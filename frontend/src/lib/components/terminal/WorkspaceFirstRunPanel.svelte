@@ -15,6 +15,7 @@
     type HostSummary,
   } from "../../api/fleet-snapshot.ts";
   import { SelectDropdown } from "@middleman/ui";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import {
     emitWorkspaceCommand,
     getWorkspaceData,
@@ -61,7 +62,7 @@
   let { firstRun = true, hostKey = null }: Props = $props();
   let mode = $state<ActionId | null>(null);
   let inFlight = $state(false);
-  let lastError = $state<string | null>(null);
+  let repositoryLoadError = $state<string | null>(null);
 
   let existingPath = $state("");
   let cloneURL = $state("");
@@ -190,7 +191,7 @@
   function chooseMode(definition: ActionDefinition): void {
     if (isDisabled(definition)) return;
     mode = definition.id;
-    lastError = null;
+    repositoryLoadError = null;
     if (definition.id === "connect-github") {
       void loadGitHubRepositories();
     }
@@ -210,18 +211,18 @@
 
   function backToActions(): void {
     mode = null;
-    lastError = null;
+    repositoryLoadError = null;
     inFlight = false;
   }
 
   async function loadGitHubRepositories(): Promise<void> {
     githubLoading = true;
-    lastError = null;
+    repositoryLoadError = null;
     try {
       githubRepos = await listUserRepositories();
       selectedGithubRepo = githubRepos[0]?.name_with_owner ?? "";
     } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
+      repositoryLoadError = err instanceof Error ? err.message : String(err);
     } finally {
       githubLoading = false;
     }
@@ -235,8 +236,10 @@
 
     const result = await emitWorkspaceCommand("project-registered", payload);
     if (!result.ok) {
-      lastError =
-        result.message ?? "Project registered, but the host did not refresh.";
+      showFlash(
+        result.message ?? "Project registered, but the host did not refresh.",
+        { tone: "danger" },
+      );
       return;
     }
     if (scopedHostKey) {
@@ -267,11 +270,12 @@
   async function submitExisting(): Promise<void> {
     if (inFlight) return;
     inFlight = true;
-    lastError = null;
     try {
       await finishProject(await registerProject(existingPath));
     } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), {
+        tone: "danger",
+      });
     } finally {
       inFlight = false;
     }
@@ -280,13 +284,14 @@
   async function submitClone(): Promise<void> {
     if (inFlight) return;
     inFlight = true;
-    lastError = null;
     try {
       await finishProject(
         await cloneProjectForHost(cloneURL, clonePath, cloneBranch),
       );
     } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), {
+        tone: "danger",
+      });
     } finally {
       inFlight = false;
     }
@@ -295,11 +300,12 @@
   async function submitGitHub(): Promise<void> {
     if (inFlight || !chosenGithubRepo) return;
     if (!chosenGithubRepo.ssh_url) {
-      lastError = "Selected repository does not expose an SSH clone URL.";
+      showFlash("Selected repository does not expose an SSH clone URL.", {
+        tone: "danger",
+      });
       return;
     }
     inFlight = true;
-    lastError = null;
     try {
       await finishProject(
         await cloneProjectForHost(
@@ -309,7 +315,9 @@
         ),
       );
     } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), {
+        tone: "danger",
+      });
     } finally {
       inFlight = false;
     }
@@ -531,9 +539,9 @@
     </div>
   {/if}
 
-  {#if lastError}
+  {#if repositoryLoadError}
     <p class="first-run__error" role="alert">
-      {lastError}
+      {repositoryLoadError}
     </p>
   {/if}
 

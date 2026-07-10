@@ -169,7 +169,6 @@
   let runtimeForId = $state<string>("");
   let runtimeForHostKey = $state<string | undefined>(undefined);
   let loadError = $state<string | null>(null);
-  let actionError = $state<string | null>(null);
   let retryingSetup = $state(false);
   let refreshingWorkspace = $state(false);
   type DeletingWorkspaceTarget = {
@@ -1026,7 +1025,6 @@
         workspace = nextWorkspace;
         syncSidebarTabForWorkspace(nextWorkspace);
         loadError = null;
-        actionError = null;
 
         if (nextWorkspace.status !== "creating") {
           stopPolling();
@@ -1056,7 +1054,6 @@
       workspace = data as Workspace;
       syncSidebarTabForWorkspace(workspace);
       loadError = null;
-      actionError = null;
 
       if (data.status !== "creating") {
         stopPolling();
@@ -1151,7 +1148,6 @@
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     launchingKey = targetKey;
-    runtimeError = null;
     try {
       const session = await launchWorkspaceSession(
         id,
@@ -1168,8 +1164,9 @@
       selectWorkspaceTab(workflowTabKeyForSession(session.key));
     } catch (err) {
       if (!isCurrentWorkspace(id, hostKey)) return;
-      runtimeError =
-        err instanceof Error ? err.message : "Launch failed";
+      showFlash(err instanceof Error ? err.message : "Launch failed", {
+        tone: "danger",
+      });
     } finally {
       if (isCurrentWorkspace(id, hostKey)) launchingKey = null;
     }
@@ -1244,8 +1241,9 @@
       }
     } catch (err) {
       if (!isCurrentWorkspace(id, hostKey)) return;
-      runtimeError =
-        err instanceof Error ? err.message : "Stop failed";
+      showFlash(err instanceof Error ? err.message : "Stop failed", {
+        tone: "danger",
+      });
     }
   }
 
@@ -1278,7 +1276,6 @@
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     terminalLaunching = true;
-    runtimeError = null;
     try {
       const session = await launchWorkspaceSession(
         id,
@@ -1321,10 +1318,10 @@
       return session;
     } catch (err) {
       if (!isCurrentWorkspace(id, hostKey)) return null;
-      runtimeError =
-        err instanceof Error
-          ? err.message
-          : "Terminal launch failed";
+      showFlash(
+        err instanceof Error ? err.message : "Terminal launch failed",
+        { tone: "danger" },
+      );
     } finally {
       if (isCurrentWorkspace(id, hostKey)) terminalLaunching = false;
     }
@@ -1598,7 +1595,6 @@
     const hostKey = workspaceHostKey;
     const sessionKey = renamePrompt.sessionKey;
     renameSaving = true;
-    runtimeError = null;
     try {
       const updated = await renameWorkspaceSession(
         id,
@@ -1619,8 +1615,9 @@
       renameInputValue = "";
     } catch (err) {
       if (!isCurrentWorkspace(id, hostKey)) return;
-      runtimeError =
-        err instanceof Error ? err.message : "Rename failed";
+      showFlash(err instanceof Error ? err.message : "Rename failed", {
+        tone: "danger",
+      });
     } finally {
       if (isCurrentWorkspace(id, hostKey)) renameSaving = false;
     }
@@ -1681,7 +1678,6 @@
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     applyingWorkflowPreset = true;
-    runtimeError = null;
     try {
       const keyMap: Record<string, string> = {};
       for (const spec of preset.sessions) {
@@ -1719,8 +1715,9 @@
       selectWorkspaceTab(firstWorkflowTab(terminalLayout) ?? "home");
     } catch (err) {
       if (!isCurrentWorkspace(id, hostKey)) return;
-      runtimeError =
-        err instanceof Error ? err.message : "Preset launch failed";
+      showFlash(err instanceof Error ? err.message : "Preset launch failed", {
+        tone: "danger",
+      });
     } finally {
       if (isCurrentWorkspace(id, hostKey)) applyingWorkflowPreset = false;
     }
@@ -2029,7 +2026,6 @@
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     retryingSetup = true;
-    actionError = null;
     try {
       if (hostKey) {
         const { data, error, response } = await client.POST(
@@ -2039,9 +2035,9 @@
           },
         );
         if (!data) {
-          actionError = apiErrorMessage(
-            error,
-            `Retry failed (${response.status})`,
+          showFlash(
+            apiErrorMessage(error, `Retry failed (${response.status})`),
+            { tone: "danger" },
           );
           return;
         }
@@ -2061,9 +2057,9 @@
         },
       );
       if (!data) {
-        actionError = apiErrorMessage(
-          error,
-          `Retry failed (${response.status})`,
+        showFlash(
+          apiErrorMessage(error, `Retry failed (${response.status})`),
+          { tone: "danger" },
         );
         return;
       }
@@ -2075,10 +2071,9 @@
       }
     } catch (err) {
       if (!isCurrentWorkspace(id, hostKey)) return;
-      actionError =
-        err instanceof Error
-          ? err.message
-          : "Retry failed";
+      showFlash(err instanceof Error ? err.message : "Retry failed", {
+        tone: "danger",
+      });
     } finally {
       if (isCurrentWorkspace(id, hostKey)) retryingSetup = false;
     }
@@ -2090,7 +2085,6 @@
     const id = workspace.id;
     const hostKey = workspaceHostKey;
     refreshingWorkspace = true;
-    actionError = null;
     try {
       if (hostKey) {
         const { data, error, response } = await client.POST(
@@ -2101,9 +2095,9 @@
         );
         if (!isCurrentWorkspace(id, hostKey)) return;
         if (!data) {
-          actionError = apiErrorMessage(
-            error,
-            `Refresh failed (${response.status})`,
+          showFlash(
+            apiErrorMessage(error, `Refresh failed (${response.status})`),
+            { tone: "danger" },
           );
           return;
         }
@@ -2127,8 +2121,7 @@
           error,
           `Refresh failed (${response.status})`,
         );
-        actionError = message;
-        showFlash(message);
+        showFlash(message, { tone: "danger" });
         return;
       }
       workspace = data as Workspace;
@@ -2143,8 +2136,7 @@
         err instanceof Error
           ? err.message
           : "Refresh failed";
-      actionError = message;
-      showFlash(message);
+      showFlash(message, { tone: "danger" });
     } finally {
       if (isCurrentWorkspace(id, hostKey)) refreshingWorkspace = false;
     }
@@ -2154,7 +2146,6 @@
     triggerEl: HTMLElement | null = null,
   ): Promise<void> {
     if (actionsBlocked) return;
-    actionError = null;
     const targetId = workspaceId;
     const targetHostKey = workspaceHostKey;
     // Capture the trigger synchronously: the click handler runs
@@ -2188,9 +2179,9 @@
         return;
       }
       if (!response.ok && response.status !== 204) {
-        actionError = apiErrorMessage(
-          error,
-          `Delete failed (${response.status})`,
+        showFlash(
+          apiErrorMessage(error, `Delete failed (${response.status})`),
+          { tone: "danger" },
         );
         return;
       }
@@ -2248,7 +2239,6 @@
     const targetGen = workspaceGen;
     forceDeleting = true;
     addDeletingWorkspaceTarget(targetId, targetHostKey);
-    actionError = null;
     try {
       const { error, response } = targetHostKey
         ? await client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}", {
@@ -2270,9 +2260,9 @@
       if (!isCurrentWorkspace(targetId, targetHostKey)) return;
       if (!response.ok && response.status !== 204) {
         if (targetGen !== workspaceGen) return;
-        actionError = apiErrorMessage(
-          error,
-          `Delete failed (${response.status})`,
+        showFlash(
+          apiErrorMessage(error, `Delete failed (${response.status})`),
+          { tone: "danger" },
         );
         forcePromptMessage = null;
         forcePromptForId = null;
@@ -2372,7 +2362,6 @@
     // Errors/transient flags from the prior workspace should not
     // bleed across — clear them but don't touch workspace/runtime.
     loadError = null;
-    actionError = null;
     runtimeError = null;
     // A 409 force-delete prompt is bound to the workspace that
     // produced it. Dismiss it on any route change so the user
@@ -2613,9 +2602,6 @@
           >
             Delete
           </button>
-          {#if actionError}
-            <span class="action-error">{actionError}</span>
-          {/if}
         </div>
       {:else}
         <div class="header-bar">
@@ -3250,12 +3236,6 @@
     border-color: var(--accent-red);
     color: var(--text-on-accent);
   }
-
-  .action-error {
-    color: var(--accent-red);
-    font-size: var(--font-size-sm);
-  }
-
 
   .header-bar {
     display: flex;

@@ -5,6 +5,14 @@ import WorkspaceProjectCard from "./WorkspaceProjectCard.svelte";
 
 const win = window as any;
 
+const mocks = vi.hoisted(() => ({
+  showFlash: vi.fn(),
+}));
+
+vi.mock("@middleman/ui/stores/flash", () => ({
+  showFlash: mocks.showFlash,
+}));
+
 const projectGet = vi.fn();
 const worktreesGet = vi.fn();
 
@@ -73,6 +81,7 @@ function setWorktreesResponse(
 describe("WorkspaceProjectCard", () => {
   beforeEach(() => {
     delete win.__middleman_config;
+    mocks.showFlash.mockReset();
   });
 
   afterEach(() => {
@@ -310,7 +319,10 @@ describe("WorkspaceProjectCard", () => {
         name: /Create your first worktree/i,
       }),
     );
-    expect(await screen.findByText("user cancelled the sheet")).toBeTruthy();
+    expect(mocks.showFlash).toHaveBeenCalledWith("user cancelled the sheet", {
+      tone: "danger",
+    });
+    expect(screen.queryByText("user cancelled the sheet")).toBeNull();
   });
 
   it("renders an upgrade-host hint when the new-worktree action is missing", async () => {
@@ -331,6 +343,10 @@ describe("WorkspaceProjectCard", () => {
         name: /Create your first worktree/i,
       }),
     );
-    expect(await screen.findByText(/not available in this build/i)).toBeTruthy();
+    expect(mocks.showFlash).toHaveBeenCalledWith(
+      "New Worktree is not available in this build. Please update the host application.",
+      { tone: "danger" },
+    );
+    expect(screen.queryByText(/not available in this build/i)).toBeNull();
   });
 });

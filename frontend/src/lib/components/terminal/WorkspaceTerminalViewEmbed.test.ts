@@ -288,6 +288,10 @@ describe("WorkspaceTerminalView embed props", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Refresh workspace details" }));
 
-    await waitFor(() => expect(mocks.showFlash).toHaveBeenCalledWith("Refresh failed (503)"));
+    await waitFor(() => {
+      expect(mocks.showFlash).toHaveBeenCalledWith("Refresh failed (503)", {
+        tone: "danger",
+      });
+    });
   });
 });

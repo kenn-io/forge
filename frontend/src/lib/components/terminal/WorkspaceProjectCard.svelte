@@ -10,6 +10,7 @@
   import { onMount } from "svelte";
 
   import { apiErrorMessage, client } from "../../api/runtime.ts";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import {
     getProjectAction,
@@ -50,7 +51,6 @@
   let loadError = $state<string | null>(null);
   let loading = $state<boolean>(true);
   let inFlight = $state<boolean>(false);
-  let actionError = $state<string | null>(null);
   const scopedHostKey = $derived(hostKey?.trim() || undefined);
 
   async function load(): Promise<void> {
@@ -109,13 +109,14 @@
     if (inFlight) return;
     const action = getProjectAction("new-worktree");
     if (!action) {
-      actionError =
+      showFlash(
         "New Worktree is not available in this build. " +
-        "Please update the host application.";
+          "Please update the host application.",
+        { tone: "danger" },
+      );
       return;
     }
     inFlight = true;
-    actionError = null;
     try {
       const result = await invokeProjectAction(action, {
         surface: "project-card",
@@ -123,7 +124,9 @@
         ...(scopedHostKey ? { hostKey: scopedHostKey } : {}),
       });
       if (!result.ok) {
-        actionError = result.message ?? "Couldn't start a new worktree.";
+        showFlash(result.message ?? "Couldn't start a new worktree.", {
+          tone: "danger",
+        });
         return;
       }
       // Refresh worktree list on success so the new row shows up.
@@ -219,10 +222,6 @@
         <span aria-hidden="true">…</span>
       {/if}
     </button>
-
-    {#if actionError}
-      <p class="project-card__error" role="alert">{actionError}</p>
-    {/if}
   {/if}
 </section>
 

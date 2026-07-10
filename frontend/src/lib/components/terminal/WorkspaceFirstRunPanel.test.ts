@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   loadSnapshotHosts: vi.fn(),
   navigate: vi.fn(),
   registerExistingProject: vi.fn(),
+  showFlash: vi.fn(),
 }));
 
 vi.mock("../../api/fleet-snapshot.ts", () => ({
@@ -23,6 +24,10 @@ vi.mock("../../api/project-intake.ts", () => ({
 
 vi.mock("../../stores/router.svelte.ts", () => ({
   navigate: mocks.navigate,
+}));
+
+vi.mock("@middleman/ui/stores/flash", () => ({
+  showFlash: mocks.showFlash,
 }));
 
 const win = window as any;
@@ -73,6 +78,7 @@ describe("WorkspaceFirstRunPanel", () => {
     mocks.loadSnapshotHosts.mockResolvedValue([]);
     mocks.navigate.mockReset();
     mocks.registerExistingProject.mockReset();
+    mocks.showFlash.mockReset();
   });
 
   afterEach(() => {
@@ -366,7 +372,12 @@ describe("WorkspaceFirstRunPanel", () => {
     });
     await fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
 
-    expect(await screen.findByText("refresh failed")).toBeTruthy();
+    await waitFor(() => {
+      expect(mocks.showFlash).toHaveBeenCalledWith("refresh failed", {
+        tone: "danger",
+      });
+    });
+    expect(screen.queryByText("refresh failed")).toBeNull();
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 

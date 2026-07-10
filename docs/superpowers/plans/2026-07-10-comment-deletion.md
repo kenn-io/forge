@@ -6,7 +6,7 @@
 
 **Architecture:** Extend the existing provider-neutral `CommentMutator`, expose paired provider-aware Huma DELETE routes, remove the persisted event only after upstream success, and regenerate the API clients. Thread delete callbacks through the existing detail stores into `EventTimeline`, where a kit-ui confirmation modal owns pending and error state.
 
-**Tech Stack:** Go 1.25, Huma, SQLite, provider SDKs, Svelte 5, TypeScript, kit-ui, Vitest/Vite+.
+**Tech Stack:** Go 1.26, Huma, SQLite, provider SDKs, Svelte 5, TypeScript, kit-ui, Vitest/Vite+.
 
 ## Global Constraints
 
@@ -133,14 +133,14 @@ Expected: missing DB methods/routes and 404 responses.
 
 - [ ] **Step 3: Implement scoped persistence deletion and handlers**
 
-Delete exactly one ordinary comment row and require `RowsAffected() == 1`:
+Delete the parent-scoped ordinary comment row idempotently after the provider confirms deletion or absence:
 
 ```sql
 DELETE FROM middleman_mr_events
 WHERE merge_request_id = ? AND platform_id = ? AND event_type = 'issue_comment'
 ```
 
-Register paired operations with `DefaultStatus: http.StatusNoContent`. Each handler must resolve the repo/item, validate `MRCommentEventExists` or `IssueCommentEventExists`, call the provider, then delete the local row. Use `statusOnlyOutput{Status: http.StatusNoContent}` and existing problem helpers.
+Register paired operations with `DefaultStatus: http.StatusNoContent` and add a typed `delete_comment` repository operation derived from comment mutation, write credentials, and REST rate state. Each handler must resolve the repo/item, validate `MRCommentEventExists` or `IssueCommentEventExists`, call the provider, then delete the local row. A provider not-found after that scoped validation and a zero-row local delete are idempotent success states. Use `statusOnlyOutput{Status: http.StatusNoContent}` and existing problem helpers.
 
 - [ ] **Step 4: Generate clients and review the contract**
 
@@ -169,9 +169,9 @@ git commit -m "feat: expose provider-aware comment deletion"
 
 **Files:**
 - Modify: `packages/ui/src/stores/detail.svelte.ts`
-- Modify: `packages/ui/src/stores/detail.svelte.test.ts`
+- Modify: `frontend/src/lib/stores/detail-comment.svelte.test.ts`
 - Modify: `packages/ui/src/stores/issues.svelte.ts`
-- Modify: `packages/ui/src/stores/issues.svelte.test.ts`
+- Modify: `frontend/src/lib/stores/issues-comment.svelte.test.ts`
 
 **Interfaces:**
 - Consumes: Task 2 generated DELETE paths.
@@ -190,25 +190,24 @@ expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/comments/44"), 
 - [ ] **Step 2: Run tests and verify RED**
 
 ```bash
-./node_modules/.bin/vp test packages/ui/src/stores/detail.svelte.test.ts packages/ui/src/stores/issues.svelte.test.ts
+cd frontend && ../node_modules/.bin/vp test src/lib/stores/detail-comment.svelte.test.ts src/lib/stores/issues-comment.svelte.test.ts
 ```
 
 Expected: delete store methods are missing.
 
 - [ ] **Step 3: Implement minimal store methods**
 
-Follow edit-comment error handling but call generated DELETE and refresh only on success:
+Capture the selected identity and generation before DELETE. After success, invalidate older refreshes and report success only when the authoritative detail refresh succeeds and omits the comment; navigation to another item skips assignment.
 
 ```ts
 async function deleteComment(owner: string, name: string, number: number, commentID: number): Promise<boolean> {
   const ref = currentDetailRef(owner, name, number);
-  storeError = null;
-  const { error } = await apiClient.DELETE(providerItemPath("pulls", ref, "/comments/{comment_id}"), {
-    params: { path: { ...providerRouteParams(ref), number, comment_id: commentID } },
-  });
-  if (error) { storeError = apiErrorMessage(error, "failed to delete comment"); return false; }
-  await refreshDetail(owner, name, number, syncGeneration, ref);
-  return true;
+  const deleteGen = syncGeneration;
+  // DELETE with provider-aware route params; preserve stable API detail on failure.
+  if (deleteGen !== syncGeneration || !isDetailShowingRef(ref)) return true;
+  const refreshGen = ++syncGeneration;
+  const refreshed = await refreshDetail(owner, name, number, refreshGen, ref);
+  return refreshed.ok && !detail?.events.some((event) => event.PlatformID === commentID);
 }
 ```
 
@@ -240,14 +239,14 @@ git commit -m "feat: refresh details after deleting comments"
 
 **Interfaces:**
 - Consumes: Task 3 store methods.
-- Produces: `EventTimeline.onDeleteComment?: (event) => Promise<boolean>`.
+- Produces: `EventTimeline.onDeleteComment?: (event) => Promise<string | null>`.
 
 - [ ] **Step 1: Write failing component tests**
 
 Cover hidden action without callback, confirmation without immediate mutation, cancel, author/excerpt rendering, single-flight pending state, success close, and failure error:
 
 ```ts
-const onDeleteComment = vi.fn().mockResolvedValue(true);
+const onDeleteComment = vi.fn().mockResolvedValue(null);
 render(EventTimeline, { props: { events: [comment], onDeleteComment } });
 await fireEvent.click(screen.getByRole("button", { name: "Delete comment" }));
 expect(onDeleteComment).not.toHaveBeenCalled();
@@ -265,7 +264,7 @@ Expected: Delete comment action/dialog are absent.
 
 - [ ] **Step 3: Implement the confirmation modal and callbacks**
 
-Import `Trash2Icon`, `Modal`, and `Button`. Add reactive selected/pending/error state, a plain-text bounded excerpt helper, and a `canDeleteComment` predicate matching edit eligibility. Render the trash action in each ordinary comment action layout and a kit-ui modal:
+Import `Trash2Icon`, `Modal`, and `Button`. Add reactive selected/pending/error state, a plain-text bounded excerpt helper, modal-stack registration, and an ordinary-comment `canDeleteComment` predicate. Catch rejected callbacks as inline errors and render the trash action in each ordinary comment action layout and a kit-ui modal:
 
 ```svelte
 {#if deleteTarget}
@@ -284,7 +283,7 @@ Import `Trash2Icon`, `Modal`, and `Button`. Add reactive selected/pending/error 
 {/if}
 ```
 
-Wire `PullDetail.editTimelineComment`-adjacent and `IssueDetail.editTimelineComment`-adjacent delete callbacks to their stores. Pass `onDeleteComment` under the same capability, stale-detail, and operation gate as Edit.
+Wire `PullDetail.editTimelineComment`-adjacent and `IssueDetail.editTimelineComment`-adjacent delete callbacks to their stores. Pass `onDeleteComment` under the comment capability, stale-detail check, and distinct `delete_comment` operation gate.
 
 - [ ] **Step 4: Run Svelte autofix and targeted tests**
 
@@ -307,13 +306,13 @@ go test ./internal/platform/... ./internal/github ./internal/db ./internal/serve
 Run the affected Playwright mock lane. Expected: PASS with no new warnings.
 
 ```bash
-./node_modules/.bin/playwright test frontend/tests/e2e/comment-editing.spec.ts
+cd frontend && ../node_modules/.bin/playwright test tests/e2e/comment-editing.spec.ts
 ```
 
 - [ ] **Step 6: Commit UI**
 
 ```bash
-git add packages/ui/src
+git add packages/ui/src frontend/tests/e2e/comment-editing.spec.ts
 git commit -m "feat: confirm deletion of timeline comments"
 ```
 

@@ -89,6 +89,60 @@ describe("createDetailStore submitComment", () => {
     expect(store.getDetail()?.events).toEqual([{ ID: 44 }]);
   });
 
+  it("reports failure when the refreshed PR still cannot be loaded", async () => {
+    let getCalls = 0;
+    const get = vi.fn(async () => {
+      getCalls++;
+      if (getCalls === 1) return { data: makeDetail([{ PlatformID: 44 }]) };
+      return { error: { detail: "refresh failed" } };
+    });
+    const store = createDetailStore({
+      client: {
+        GET: get,
+        POST: vi.fn(async () => ({ data: undefined })),
+        PUT: vi.fn(),
+        DELETE: vi.fn(async () => ({ error: undefined })),
+      } as unknown as MiddlemanClient,
+    });
+    await store.loadDetail("octo", "repo", 1, { ...pullRef, sync: false });
+
+    const ok = await store.deleteComment("octo", "repo", 1, 44);
+
+    expect(ok).toBe(false);
+    expect(store.getDetailError()).toBe("refresh failed");
+    expect(store.getDetail()?.events).toEqual([{ PlatformID: 44 }]);
+  });
+
+  it("does not restore the deleted PR over a newer selection", async () => {
+    let finishDelete: () => void = () => {};
+    const deletePending = new Promise<void>((resolve) => {
+      finishDelete = resolve;
+    });
+    const get = vi.fn(async (_path: string, request: { params: { path: { number: number } } }) => ({
+      data: makeDetail(request.params.path.number === 1 ? [] : [{ PlatformID: 99 }], request.params.path.number),
+    }));
+    const store = createDetailStore({
+      client: {
+        GET: get,
+        POST: vi.fn(async () => ({ data: undefined })),
+        PUT: vi.fn(),
+        DELETE: vi.fn(async () => {
+          await deletePending;
+          return { error: undefined };
+        }),
+      } as unknown as MiddlemanClient,
+    });
+    await store.loadDetail("octo", "repo", 1, { ...pullRef, sync: false });
+
+    const deleting = store.deleteComment("octo", "repo", 1, 44);
+    await store.loadDetail("octo", "repo", 2, { ...pullRef, sync: false });
+    finishDelete();
+    await deleting;
+
+    expect(store.getDetail()?.merge_request.Number).toBe(2);
+    expect(store.getDetail()?.events).toEqual([{ PlatformID: 99 }]);
+  });
+
   it("never flips loading flag while refreshing after a comment", async () => {
     const detailData = makeDetail();
     const loadingDuringRefresh: boolean[] = [];

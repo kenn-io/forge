@@ -67,6 +67,60 @@ describe("createIssuesStore submitIssueComment", () => {
     expect(get).toHaveBeenCalled();
   });
 
+  it("reports failure when the refreshed issue still cannot be loaded", async () => {
+    let getCalls = 0;
+    const get = vi.fn(async () => {
+      getCalls++;
+      if (getCalls === 1) return { data: makeDetail([{ PlatformID: 44 }]) };
+      return { error: { detail: "refresh failed" } };
+    });
+    const store = createIssuesStore({
+      client: {
+        GET: get,
+        POST: vi.fn(async () => ({ data: undefined })),
+        PUT: vi.fn(),
+        DELETE: vi.fn(async () => ({ error: undefined })),
+      } as unknown as MiddlemanClient,
+    });
+    await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
+
+    const ok = await store.deleteIssueComment("octo", "repo", 1, 44);
+
+    expect(ok).toBe(false);
+    expect(store.getIssueDetailError()).toBe("refresh failed");
+    expect(store.getIssueDetail()?.events).toEqual([{ PlatformID: 44 }]);
+  });
+
+  it("does not restore the deleted issue over a newer selection", async () => {
+    let finishDelete: () => void = () => {};
+    const deletePending = new Promise<void>((resolve) => {
+      finishDelete = resolve;
+    });
+    const get = vi.fn(async (_path: string, request: { params: { path: { number: number } } }) => ({
+      data: makeDetail(request.params.path.number === 1 ? [] : [{ PlatformID: 99 }], request.params.path.number),
+    }));
+    const store = createIssuesStore({
+      client: {
+        GET: get,
+        POST: vi.fn(async () => ({ data: undefined })),
+        PUT: vi.fn(),
+        DELETE: vi.fn(async () => {
+          await deletePending;
+          return { error: undefined };
+        }),
+      } as unknown as MiddlemanClient,
+    });
+    await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
+
+    const deleting = store.deleteIssueComment("octo", "repo", 1, 44);
+    await store.loadIssueDetail("octo", "repo", 2, { ...issueRef, sync: false });
+    finishDelete();
+    await deleting;
+
+    expect(store.getIssueDetail()?.issue.Number).toBe(2);
+    expect(store.getIssueDetail()?.events).toEqual([{ PlatformID: 99 }]);
+  });
+
   it("refreshes the issues list after posting a comment when on the issues page", async () => {
     const detailData = makeDetail();
     const getCalls: string[] = [];

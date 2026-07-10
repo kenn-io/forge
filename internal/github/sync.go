@@ -6196,8 +6196,16 @@ func (s *Syncer) fetchProviderIssueDetail(
 	}
 	if err == nil {
 		dbEvents := make([]db.IssueEvent, 0, len(events))
+		commentDedupeKeys := make([]string, 0, len(events))
 		for _, event := range events {
-			dbEvents = append(dbEvents, platform.DBIssueEvent(issueID, event))
+			dbEvent := platform.DBIssueEvent(issueID, event)
+			dbEvents = append(dbEvents, dbEvent)
+			if dbEvent.EventType == "issue_comment" {
+				commentDedupeKeys = append(commentDedupeKeys, dbEvent.DedupeKey)
+			}
+		}
+		if err := s.db.DeleteMissingIssueCommentEvents(ctx, issueID, commentDedupeKeys); err != nil {
+			return calls, fmt.Errorf("delete missing comment events for issue #%d: %w", number, err)
 		}
 		if err := s.db.UpsertIssueEvents(ctx, dbEvents); err != nil {
 			return calls, fmt.Errorf("upsert issue events for #%d: %w", number, err)

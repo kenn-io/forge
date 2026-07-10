@@ -1,7 +1,7 @@
 # Comment Deletion Design
 
 **Date:** 2026-07-10
-**Goal:** Let maintainers delete their own pull request and issue comments from the activity timeline.
+**Goal:** Let maintainers delete provider-authorized pull request and issue comments from the activity timeline.
 
 ## Context
 
@@ -12,7 +12,7 @@ Deletion must remove the provider comment rather than hide a local event. The pr
 ## Requirements
 
 1. Pull request and issue timeline comments support provider-backed deletion across every supported provider whose comment mutation capability is enabled.
-2. A trash action appears in the existing comment action group under the same eligibility and operation-availability rules as Edit.
+2. A trash action appears in the existing ordinary-comment action group and uses a distinct `delete_comment` operation-availability verdict.
 3. Selecting Delete opens an in-app confirmation dialog. No provider request is made until the user confirms.
 4. The dialog identifies the selected comment with its author and a short, plain-text excerpt, states that deletion cannot be undone, and offers Cancel and Delete actions.
 5. While deletion is pending, the dialog remains open, its actions cannot be submitted twice, and mutation actions for that comment are disabled.
@@ -40,11 +40,14 @@ Handlers must:
 - resolve the repository and parent item with full provider identity;
 - prove the comment ID belongs to the requested PR or issue using the persisted event before calling the provider;
 - call the provider deletion operation; and
-- remove the persisted comment event only after provider success.
+- treat provider not-found as an idempotent success only after the persisted parent-scoped comment has been validated; and
+- remove the persisted comment event only after provider success or validated provider absence.
 
 Return `204 No Content` on success. Use the existing stable problem envelopes for unsupported capability, missing repository/item/comment, provider rejection, rate limits, and internal persistence failure. Regenerate the OpenAPI document and Go/TypeScript clients after adding the operations.
 
-If the provider delete succeeds but local event removal fails, return an internal error. A later authoritative detail refresh or sync must still reconcile the now-missing provider comment; do not invent a compatibility or tombstone path for this partial failure.
+If provider deletion succeeds but local removal fails, return an internal error. A retry sees the still-persisted scoped event, treats provider not-found as already deleted, and retries local removal. Local removal is idempotent when synchronization already removed the row; no compatibility or tombstone path is needed.
+
+Removing a persisted event decrements `comment_count` transactionally and never below zero. `last_activity_at` remains provider-authored metadata and is reconciled by the next authoritative sync rather than guessed from the remaining local event subset.
 
 ## UI Design
 
@@ -54,14 +57,14 @@ Use the shared in-app confirmation-dialog treatment rather than `window.confirm`
 
 The timeline owns the selected event and pending/error state. `PullDetail` and `IssueDetail` provide provider-aware delete callbacks backed by their existing detail stores. On success, the store refreshes the authoritative detail response before reporting success; on failure, it preserves the current state and exposes the stable API error detail for the dialog.
 
-The button follows the existing Edit eligibility because middleman does not have a provider-neutral authenticated-user identity in timeline payloads. The provider is the final ownership and permission check. A rejected attempt must be non-destructive and explain the provider failure.
+Middleman has no provider-neutral authenticated-user identity in timeline payloads, so it exposes deletion for ordinary provider comments and leaves ownership and permission enforcement to the provider. A rejected attempt must be non-destructive and explain the provider failure.
 
 ## Error And Concurrency Behavior
 
 - Cancel and dialog dismissal perform no mutation.
 - Confirm is single-flight for the selected comment.
 - The selected comment cannot enter edit mode while its delete is pending.
-- A failed deletion keeps the confirmation open and displays an inline error; retry repeats the authoritative provider request.
+- A failed deletion keeps the confirmation open and displays an inline error; retry is safe when the provider already completed deletion because provider absence triggers local reconciliation.
 - A successful deletion closes the dialog only after the refreshed timeline no longer contains the event.
 - Navigation or component teardown may discard local dialog state, but must not cancel or reinterpret a provider response already in flight.
 
@@ -69,9 +72,9 @@ The button follows the existing Edit eligibility because middleman does not have
 
 Use test-driven changes at the smallest boundaries that establish the contract:
 
-- Provider tests verify the correct native delete endpoint, identifier, method, and error mapping for GitHub, GitLab, Forgejo, and Gitea.
-- Server HTTP tests verify PR and issue deletion, host-prefixed routing, capability gating, comment-to-parent validation, provider failure preservation, successful local event removal, and the `204` response.
-- Store tests verify generated-client route construction, detail refresh after success, and state preservation/error reporting after failure.
+- Provider tests verify the correct native delete endpoint, identifier, method, write credential, and error mapping for GitHub, GitLab, Forgejo, and Gitea.
+- Server HTTP tests verify PR and issue deletion, host-prefixed routing, capability gating, comment-to-parent validation, provider failure preservation, idempotent not-found reconciliation, subsequent detail retrieval, and the `204` response.
+- Store tests verify generated-client route construction, confirmed removal after refresh, refresh failure reporting, and navigation-generation safety.
 - `EventTimeline` component tests verify action eligibility, cancellation, comment identification, single-flight confirmation, success, and failure display across representative timeline layouts.
 - An affected browser or full-stack test verifies the visible confirmation-and-removal workflow without duplicating backend authorization coverage.
 
@@ -80,7 +83,7 @@ Run API generation and review all checked-in artifacts. Run Svelte autofix on ev
 ## Non-Goals
 
 - Hiding a comment only in middleman's SQLite state.
-- Deleting another user's comment through a maintainer/admin-only workflow.
+- Bypassing the provider's authenticated-user ownership and permission checks.
 - Deleting review-draft comments, review-thread comments, reviews, system events, or comment-deletion timeline events.
 - Adding authenticated-user identity to every timeline response solely to hide unauthorized delete buttons.
 - Undo or restoration after provider deletion.

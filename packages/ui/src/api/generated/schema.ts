@@ -6575,6 +6575,7 @@ export interface components {
             close_issue: components["schemas"]["OperationAvailability"];
             close_pr: components["schemas"]["OperationAvailability"];
             create_issue: components["schemas"]["OperationAvailability"];
+            delete_comment: components["schemas"]["OperationAvailability"];
             edit_comment: components["schemas"]["OperationAvailability"];
             mark_draft: components["schemas"]["OperationAvailability"];
             mark_ready_for_review: components["schemas"]["OperationAvailability"];

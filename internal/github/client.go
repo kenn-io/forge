@@ -2500,6 +2500,15 @@ func (c *liveClient) DeleteIssueComment(
 	resp, err := c.writeGH().Issues.DeleteComment(ctx, owner, repo, commentID)
 	c.trackWriteRate(resp)
 	if err != nil {
+		var responseErr *gh.ErrorResponse
+		if errors.As(err, &responseErr) && responseErr.Response != nil && responseErr.Response.StatusCode == http.StatusNotFound {
+			return &platform.Error{
+				Code:         platform.ErrCodeNotFound,
+				Provider:     platform.KindGitHub,
+				PlatformHost: c.platformHost,
+				Err:          err,
+			}
+		}
 		return fmt.Errorf("deleting comment %d on %s/%s: %w", commentID, owner, repo, err)
 	}
 	return nil

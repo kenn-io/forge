@@ -26,6 +26,7 @@ const (
 	operationReviewDraft           = "review_draft"
 	operationAddComment            = "add_comment"
 	operationEditComment           = "edit_comment"
+	operationDeleteComment         = "delete_comment"
 	operationAddLabel              = "add_label"
 	operationRemoveLabel           = "remove_label"
 	operationSetAssignees          = "set_assignees"
@@ -97,6 +98,7 @@ type RepoOperations struct {
 	ReviewDraft           OperationAvailability `json:"review_draft"`
 	AddComment            OperationAvailability `json:"add_comment"`
 	EditComment           OperationAvailability `json:"edit_comment"`
+	DeleteComment         OperationAvailability `json:"delete_comment"`
 	AddLabel              OperationAvailability `json:"add_label"`
 	RemoveLabel           OperationAvailability `json:"remove_label"`
 	SetAssignees          OperationAvailability `json:"set_assignees"`
@@ -141,6 +143,7 @@ var (
 	descReviewDraft        = operationDescriptor{name: operationReviewDraft, requiredCapabilities: []string{capabilityReviewDraftMutation}, bucket: apiBucketREST}
 	descAddComment         = operationDescriptor{name: operationAddComment, requiredCapabilities: []string{capabilityCommentMutation}, bucket: apiBucketREST}
 	descEditComment        = operationDescriptor{name: operationEditComment, requiredCapabilities: []string{capabilityCommentMutation}, bucket: apiBucketREST}
+	descDeleteComment      = operationDescriptor{name: operationDeleteComment, requiredCapabilities: []string{capabilityCommentMutation}, bucket: apiBucketREST}
 	descAddLabel           = operationDescriptor{name: operationAddLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}, bucket: apiBucketREST}
 	descRemoveLabel        = operationDescriptor{name: operationRemoveLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}, bucket: apiBucketREST}
 	descSetAssignees       = operationDescriptor{name: operationSetAssignees, requiredCapabilities: []string{capabilityAssigneeMutation}, bucket: apiBucketREST}
@@ -203,6 +206,7 @@ func (s *Server) repoOperationsWithContext(
 		ReviewDraft:           derive(descReviewDraft),
 		AddComment:            derive(descAddComment),
 		EditComment:           derive(descEditComment),
+		DeleteComment:         derive(descDeleteComment),
 		AddLabel:              derive(descAddLabel),
 		RemoveLabel:           derive(descRemoveLabel),
 		SetAssignees:          derive(descSetAssignees),

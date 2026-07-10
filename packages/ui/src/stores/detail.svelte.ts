@@ -264,10 +264,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
     number: number,
     expectedGen: number = syncGeneration,
     identity: DetailRequestRef,
-  ): Promise<void> {
+  ): Promise<{ ok: boolean; error?: string }> {
     const ref = detailRequestRef(owner, name, number, identity);
     try {
-      const { data } = await apiClient.GET(providerItemPath("pulls", ref, ""), {
+      const { data, error: requestError } = await apiClient.GET(providerItemPath("pulls", ref, ""), {
         params: {
           path: { ...providerRouteParams(ref), number: ref.number },
         },
@@ -275,16 +275,21 @@ export function createDetailStore(opts: DetailStoreOptions) {
       // Re-check the generation after the awaited request: if the
       // selected PR changed mid-flight, dropping the assignment keeps
       // the new selection's data from being clobbered.
-      if (expectedGen !== syncGeneration) return;
+      if (expectedGen !== syncGeneration) return { ok: false };
+      if (requestError) {
+        return { ok: false, error: apiErrorMessage(requestError, "failed to refresh pull request") };
+      }
       if (data !== undefined) {
         detail = withPreservedLocalBody({
           ...data,
           events: data.events ?? [],
         } as PullDetail);
         detailLoaded = data.detail_loaded ?? detailLoaded;
+        return { ok: true };
       }
-    } catch {
-      // Silent refresh
+      return { ok: false, error: "Pull request refresh returned no detail" };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 
@@ -1103,6 +1108,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   async function deleteComment(owner: string, name: string, number: number, commentID: number): Promise<boolean> {
     const ref = currentDetailRef(owner, name, number);
+    const deleteGen = syncGeneration;
     storeError = null;
     try {
       const { error: requestError } = await apiClient.DELETE(providerItemPath("pulls", ref, "/comments/{comment_id}"), {
@@ -1122,7 +1128,19 @@ export function createDetailStore(opts: DetailStoreOptions) {
       storeError = err instanceof Error ? err.message : String(err);
       return false;
     }
-    await refreshDetail(owner, name, number, syncGeneration, ref);
+    if (deleteGen !== syncGeneration || !isDetailShowingRef(ref)) return true;
+    const refreshGen = ++syncGeneration;
+    const refreshed = await refreshDetail(owner, name, number, refreshGen, ref);
+    if (!refreshed.ok) {
+      if (refreshGen === syncGeneration && isDetailShowingRef(ref)) {
+        storeError = refreshed.error ?? "Could not refresh pull request after deleting comment";
+      }
+      return false;
+    }
+    if (detail?.events?.some((event) => event.PlatformID === commentID)) {
+      storeError = "Deleted comment is still visible after refresh";
+      return false;
+    }
     return true;
   }
 

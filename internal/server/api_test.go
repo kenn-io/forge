@@ -6950,6 +6950,114 @@ func TestAPIDeleteIssueCommentKeepsLocalCommentWhenProviderRejects(t *testing.T)
 	assert.Equal("keep me", events[0].Body)
 }
 
+func TestAPIDeletePrCommentReconcilesProviderNotFound(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	commentID := int64(4321)
+	mock := &mockGH{
+		deleteIssueCommentFn: func(context.Context, string, string, int64) error {
+			return platform.ErrNotFound
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	mrID := seedPR(t, database, "acme", "widget", 7)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &commentID,
+		EventType:      "issue_comment",
+		Author:         "maintainer",
+		Body:           "already absent upstream",
+		CreatedAt:      time.Now().UTC(),
+		DedupeKey:      "comment-4321",
+	}}))
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/pulls/gh/acme/widget/7/comments/4321", nil)
+	deleteReq.Header.Set("Content-Type", "application/json")
+	deleteRec := httptest.NewRecorder()
+	srv.ServeHTTP(deleteRec, deleteReq)
+	require.Equal(http.StatusNoContent, deleteRec.Code, deleteRec.Body.String())
+
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
+	detailRec := httptest.NewRecorder()
+	srv.ServeHTTP(detailRec, detailReq)
+	require.Equal(http.StatusOK, detailRec.Code, detailRec.Body.String())
+	var detail mergeRequestDetailResponse
+	require.NoError(json.NewDecoder(detailRec.Body).Decode(&detail))
+	assert.Empty(detail.Events)
+}
+
+func TestAPIDeleteIssueCommentRemovesProviderAndDetailComment(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	commentID := int64(5432)
+	var deleteCalls atomic.Int32
+	mock := &mockGH{
+		deleteIssueCommentFn: func(context.Context, string, string, int64) error {
+			deleteCalls.Add(1)
+			return nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	issueID := seedIssue(t, database, "acme", "widget", 5, "open")
+	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
+		IssueID:    issueID,
+		PlatformID: &commentID,
+		EventType:  "issue_comment",
+		Author:     "maintainer",
+		Body:       "remove from issue detail",
+		CreatedAt:  time.Now().UTC(),
+		DedupeKey:  "issue-comment-5432",
+	}}))
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/5432", nil)
+	deleteReq.Header.Set("Content-Type", "application/json")
+	deleteRec := httptest.NewRecorder()
+	srv.ServeHTTP(deleteRec, deleteReq)
+	require.Equal(http.StatusNoContent, deleteRec.Code, deleteRec.Body.String())
+	assert.Equal(int32(1), deleteCalls.Load())
+
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/v1/issues/gh/acme/widget/5", nil)
+	detailRec := httptest.NewRecorder()
+	srv.ServeHTTP(detailRec, detailReq)
+	require.Equal(http.StatusOK, detailRec.Code, detailRec.Body.String())
+	var detail issueDetailResponse
+	require.NoError(json.NewDecoder(detailRec.Body).Decode(&detail))
+	assert.Empty(detail.Events)
+}
+
+func TestAPIDeletePrCommentRejectsAnotherParentBeforeProviderCall(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	commentID := int64(6543)
+	var deleteCalls atomic.Int32
+	mock := &mockGH{
+		deleteIssueCommentFn: func(context.Context, string, string, int64) error {
+			deleteCalls.Add(1)
+			return nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 7)
+	otherMRID := seedPR(t, database, "acme", "widget", 8)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: otherMRID,
+		PlatformID:     &commentID,
+		EventType:      "issue_comment",
+		Author:         "maintainer",
+		Body:           "belongs to another pull request",
+		CreatedAt:      time.Now().UTC(),
+		DedupeKey:      "comment-6543",
+	}}))
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/pulls/gh/acme/widget/7/comments/6543", nil)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	assert.Equal(http.StatusNotFound, rec.Code)
+	assert.Equal(int32(0), deleteCalls.Load())
+}
+
 func TestAPICommentAutocomplete(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

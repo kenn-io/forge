@@ -65,8 +65,9 @@ Rules:
 - Capability flags and implemented interfaces must agree.
 - Handlers must check capabilities before performing mutations. A missing
   capability is a feature-level failure, not a whole-provider failure.
-- Provider-backed deletes must succeed upstream before synchronized local rows
-  are removed; an upstream failure leaves local state intact for an honest retry
+- Provider-backed comment deletes remove synchronized local rows only after upstream
+  success or typed `not_found`; other upstream failures preserve local state, and local
+  removal tolerates an already-absent row
   (`internal/server/huma_routes.go::deleteComment`,
   `internal/server/huma_routes.go::deleteIssueComment`).
 - Keep operation availability split by scope. `repoOperations` handles

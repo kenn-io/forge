@@ -511,9 +511,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     number: number,
     ref: IssueDetailRequestRef,
     expectedGen: number = issueSyncGeneration,
-  ): Promise<void> {
+  ): Promise<{ ok: boolean; error?: string }> {
     try {
-      const { data } = await apiClient.GET(providerItemPath("issues", ref, ""), {
+      const { data, error: requestError } = await apiClient.GET(providerItemPath("issues", ref, ""), {
         params: {
           path: { ...providerRouteParams(ref), number: ref.number },
         },
@@ -521,16 +521,21 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       // Re-check the generation after the awaited request: if the
       // selected issue changed mid-flight, dropping the assignment
       // keeps the new selection's data from being clobbered.
-      if (expectedGen !== issueSyncGeneration) return;
+      if (expectedGen !== issueSyncGeneration) return { ok: false };
+      if (requestError) {
+        return { ok: false, error: apiErrorMessage(requestError, "failed to refresh issue") };
+      }
       if (data !== undefined) {
         issueDetail = withPreservedLocalBody({
           ...data,
           events: data.events ?? [],
         } as IssueDetail);
         issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
+        return { ok: true };
       }
-    } catch {
-      /* silent */
+      return { ok: false, error: "Issue refresh returned no detail" };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 
@@ -690,6 +695,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   async function deleteIssueComment(owner: string, name: string, number: number, commentID: number): Promise<boolean> {
     const ref = currentIssueDetailRef(owner, name, number);
+    const deleteGen = issueSyncGeneration;
     detailError = null;
     try {
       const { error: requestError } = await apiClient.DELETE(
@@ -712,7 +718,19 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       detailError = err instanceof Error ? err.message : String(err);
       return false;
     }
-    await refreshIssueDetail(owner, name, number, ref);
+    if (deleteGen !== issueSyncGeneration || !isIssueDetailShowingRef(ref)) return true;
+    const refreshGen = ++issueSyncGeneration;
+    const refreshed = await refreshIssueDetail(owner, name, number, ref, refreshGen);
+    if (!refreshed.ok) {
+      if (refreshGen === issueSyncGeneration && isIssueDetailShowingRef(ref)) {
+        detailError = refreshed.error ?? "Could not refresh issue after deleting comment";
+      }
+      return false;
+    }
+    if (issueDetail?.events?.some((event) => event.PlatformID === commentID)) {
+      detailError = "Deleted comment is still visible after refresh";
+      return false;
+    }
     return true;
   }
 

@@ -2630,23 +2630,31 @@ func (d *DB) MRCommentEventExists(
 }
 
 func (d *DB) DeleteMRCommentEvent(ctx context.Context, mrID, platformID int64) error {
-	result, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_mr_events
-		WHERE merge_request_id = ? AND platform_id = ? AND event_type = 'issue_comment'`,
-		mrID,
-		platformID,
-	)
-	if err != nil {
-		return fmt.Errorf("delete mr comment event: %w", err)
-	}
-	deleted, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("get deleted mr comment event count: %w", err)
-	}
-	if deleted != 1 {
-		return fmt.Errorf("delete mr comment event: expected 1 row, deleted %d", deleted)
-	}
-	return nil
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `
+			DELETE FROM middleman_mr_events
+			WHERE merge_request_id = ? AND platform_id = ? AND event_type = 'issue_comment'`,
+			mrID,
+			platformID,
+		)
+		if err != nil {
+			return fmt.Errorf("delete mr comment event: %w", err)
+		}
+		deleted, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("get deleted mr comment event count: %w", err)
+		}
+		if deleted == 0 {
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE middleman_merge_requests
+			SET comment_count = MAX(comment_count - ?, 0)
+			WHERE id = ?`, deleted, mrID); err != nil {
+			return fmt.Errorf("decrement merge request comment count: %w", err)
+		}
+		return nil
+	})
 }
 
 // DeleteMissingMRCommentEvents removes issue_comment rows for a PR whose
@@ -3903,23 +3911,31 @@ func (d *DB) IssueCommentEventExists(
 }
 
 func (d *DB) DeleteIssueCommentEvent(ctx context.Context, issueID, platformID int64) error {
-	result, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_issue_events
-		WHERE issue_id = ? AND platform_id = ? AND event_type = 'issue_comment'`,
-		issueID,
-		platformID,
-	)
-	if err != nil {
-		return fmt.Errorf("delete issue comment event: %w", err)
-	}
-	deleted, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("get deleted issue comment event count: %w", err)
-	}
-	if deleted != 1 {
-		return fmt.Errorf("delete issue comment event: expected 1 row, deleted %d", deleted)
-	}
-	return nil
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `
+			DELETE FROM middleman_issue_events
+			WHERE issue_id = ? AND platform_id = ? AND event_type = 'issue_comment'`,
+			issueID,
+			platformID,
+		)
+		if err != nil {
+			return fmt.Errorf("delete issue comment event: %w", err)
+		}
+		deleted, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("get deleted issue comment event count: %w", err)
+		}
+		if deleted == 0 {
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE middleman_issues
+			SET comment_count = MAX(comment_count - ?, 0)
+			WHERE id = ?`, deleted, issueID); err != nil {
+			return fmt.Errorf("decrement issue comment count: %w", err)
+		}
+		return nil
+	})
 }
 
 // DeleteMissingIssueCommentEvents removes issue_comment rows for an issue whose

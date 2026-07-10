@@ -7,6 +7,7 @@ import { STORES_KEY } from "../../context.js";
 import { copyToClipboard } from "@kenn-io/kit-ui";
 import type { DiffResult, PREvent } from "../../api/types.js";
 import type { DiffStore } from "../../stores/diff.svelte.js";
+import { getStackDepth, resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
 
 vi.mock("@kenn-io/kit-ui", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@kenn-io/kit-ui")>()),
@@ -60,6 +61,7 @@ afterAll(() => {
 
 afterEach(() => {
   vi.mocked(copyToClipboard).mockClear();
+  resetModalStack();
 });
 
 function makeEvent(overrides: Partial<PREvent> = {}): PREvent {
@@ -2347,6 +2349,7 @@ describe("EventTimeline", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Delete comment" }));
 
     const dialog = screen.getByRole("dialog", { name: "Delete comment?" });
+    expect(getStackDepth()).toBe(1);
     expect(dialog.textContent).toContain("alice");
     expect(dialog.textContent).toContain("Remove this detailed comment");
     expect(onDeleteComment).not.toHaveBeenCalled();
@@ -2354,6 +2357,7 @@ describe("EventTimeline", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onDeleteComment).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog", { name: "Delete comment?" })).toBeNull();
+    expect(getStackDepth()).toBe(0);
   });
 
   it("submits comment deletion once and closes after success", async () => {
@@ -2394,6 +2398,24 @@ describe("EventTimeline", () => {
 
     await waitFor(() => {
       expect(screen.getByText("provider denied deletion")).toBeTruthy();
+    });
+    expect(screen.getByRole("dialog", { name: "Delete comment?" })).toBeTruthy();
+  });
+
+  it("shows a stable error when the deletion callback rejects", async () => {
+    const onDeleteComment = vi.fn().mockRejectedValue(new Error("transport exploded"));
+    render(EventTimeline, {
+      props: {
+        events: [makeEvent({ Body: "Keep me", EventType: "issue_comment", PlatformID: 44 })],
+        onDeleteComment,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Delete comment" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("transport exploded")).toBeTruthy();
     });
     expect(screen.getByRole("dialog", { name: "Delete comment?" })).toBeTruthy();
   });

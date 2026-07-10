@@ -2594,6 +2594,7 @@ type RepoOperations struct {
 	CloseIssue            OperationAvailability `json:"close_issue"`
 	ClosePr               OperationAvailability `json:"close_pr"`
 	CreateIssue           OperationAvailability `json:"create_issue"`
+	DeleteComment         OperationAvailability `json:"delete_comment"`
 	EditComment           OperationAvailability `json:"edit_comment"`
 	MarkDraft             OperationAvailability `json:"mark_draft"`
 	MarkReadyForReview    OperationAvailability `json:"mark_ready_for_review"`

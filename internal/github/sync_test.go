@@ -7180,6 +7180,7 @@ func TestSyncIssueUsesProviderIssueReader(t *testing.T) {
 		Owner:        "acme",
 		Name:         "widget",
 	}
+	commentID := int64(2101)
 	provider := &syncTestReadProvider{
 		syncTestProvider: syncTestProvider{
 			kind: platform.KindGitLab,
@@ -7196,6 +7197,17 @@ func TestSyncIssueUsesProviderIssueReader(t *testing.T) {
 			CreatedAt:      now,
 			UpdatedAt:      now,
 			LastActivityAt: now,
+			CommentCount:   1,
+		}},
+		listIssueReadEvents: []platform.IssueEvent{{
+			Repo:        platformRepoRef(repo),
+			PlatformID:  commentID,
+			IssueNumber: 11,
+			EventType:   "issue_comment",
+			Author:      "grace",
+			Body:        "remove after provider refresh",
+			CreatedAt:   now,
+			DedupeKey:   "gitlab-issue-comment-2101",
 		}},
 	}
 	registry, err := platform.NewRegistry(provider)
@@ -7212,6 +7224,16 @@ func TestSyncIssueUsesProviderIssueReader(t *testing.T) {
 	require.NotNil(issue)
 	assert.Equal("Provider issue detail", issue.Title)
 	assert.NotNil(issue.DetailFetchedAt)
+	events, err := d.ListIssueEvents(t.Context(), issue.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+
+	provider.listIssueReadEvents = nil
+	provider.issues[0].CommentCount = 0
+	require.NoError(syncer.SyncIssue(t.Context(), "acme", "widget", 11))
+	events, err = d.ListIssueEvents(t.Context(), issue.ID)
+	require.NoError(err)
+	assert.Empty(events)
 }
 
 func TestOnMRSyncedCalledDuringSync(t *testing.T) {

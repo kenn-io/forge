@@ -400,6 +400,7 @@
   const repoOperations = $derived(issues.getIssueDetail()?.repo?.operations);
   const addCommentGate = $derived(operationGate(repoOperations?.add_comment));
   const editCommentGate = $derived(operationGate(repoOperations?.edit_comment));
+  const deleteCommentGate = $derived(operationGate(repoOperations?.delete_comment));
   const labelGate = $derived(firstUnavailableGate(
     repoOperations?.add_label, repoOperations?.remove_label,
   ));
@@ -1208,7 +1209,7 @@
             onEditComment={capabilities.comment_mutation && !staleIssue && !editCommentGate.unavailable
               ? editTimelineComment
               : undefined}
-            onDeleteComment={capabilities.comment_mutation && !staleIssue && !editCommentGate.unavailable
+            onDeleteComment={capabilities.comment_mutation && !staleIssue && !deleteCommentGate.unavailable
               ? deleteTimelineComment
               : undefined}
           />

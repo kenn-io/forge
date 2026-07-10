@@ -758,6 +758,7 @@
   );
   const addCommentGate = $derived(operationGate(repoOperations?.add_comment));
   const editCommentGate = $derived(operationGate(repoOperations?.edit_comment));
+  const deleteCommentGate = $derived(operationGate(repoOperations?.delete_comment));
   const labelGate = $derived(firstUnavailableGate(
     repoOperations?.add_label, repoOperations?.remove_label,
   ));
@@ -2380,7 +2381,7 @@
             onEditComment={capabilities.comment_mutation && !stalePR && !editCommentGate.unavailable
               ? editTimelineComment
               : undefined}
-            onDeleteComment={capabilities.comment_mutation && !stalePR && !editCommentGate.unavailable
+            onDeleteComment={capabilities.comment_mutation && !stalePR && !deleteCommentGate.unavailable
               ? deleteTimelineComment
               : undefined}
             onApplySuggestion={capabilities.review_suggestion_application

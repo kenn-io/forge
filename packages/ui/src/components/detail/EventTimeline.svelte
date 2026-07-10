@@ -12,6 +12,7 @@
   import { slide } from "svelte/transition";
   import type { IssueEvent, PREvent } from "../../api/types.js";
   import type { DetailActivityViewMode } from "../../stores/detail-activity-view.svelte.js";
+  import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import type { StoreInstances } from "../../types.js";
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import { Button, Modal, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
@@ -921,6 +922,11 @@
   );
   let savingSuggestionBatch = $state(false);
 
+  $effect(() => {
+    if (deleteTarget === null) return;
+    return untrack(() => pushModalFrame("delete-timeline-comment", []));
+  });
+
   function canEditComment(event: PREvent | IssueEvent): boolean {
     return (
       event.EventType === "issue_comment" &&
@@ -965,6 +971,8 @@
       } else {
         deleteError = error;
       }
+    } catch (err) {
+      deleteError = err instanceof Error ? err.message : String(err);
     } finally {
       deletingId = null;
     }

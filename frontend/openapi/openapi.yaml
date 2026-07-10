@@ -5313,6 +5313,8 @@ components:
           $ref: "#/components/schemas/OperationAvailability"
         create_issue:
           $ref: "#/components/schemas/OperationAvailability"
+        delete_comment:
+          $ref: "#/components/schemas/OperationAvailability"
         edit_comment:
           $ref: "#/components/schemas/OperationAvailability"
         mark_draft:
@@ -5351,6 +5353,7 @@ components:
         - review_draft
         - add_comment
         - edit_comment
+        - delete_comment
         - add_label
         - remove_label
         - set_assignees

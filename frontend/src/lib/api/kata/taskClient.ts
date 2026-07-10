@@ -617,8 +617,8 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
       }
     },
 
-    async issues(query) {
-      const daemonId = await resolveOperationDaemonId();
+    async issues(query, opts) {
+      const daemonId = await resolveOperationDaemonId(opts?.daemonId);
       const status = query.view === "logbook" ? "closed" : "open";
       const genericIssuesPromise =
         query.project_uid === undefined ? fetchIssuesByStatus(status, daemonId, undefined, true) : undefined;

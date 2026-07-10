@@ -399,7 +399,7 @@ export interface KataTaskAPI {
     draft: KataTaskCreateDraft,
     idempotencyKey?: string | undefined,
   ): Promise<KataTaskMutationResponse>;
-  issues(query: KataTaskIssuesQuery): Promise<KataTaskViewResponse>;
+  issues(query: KataTaskIssuesQuery, opts?: { daemonId?: string }): Promise<KataTaskViewResponse>;
   search(filters: KataTaskSearchFilters, opts?: { daemonId?: string }): Promise<KataTaskSearchResponse>;
   issue(uid: string, opts?: { daemonId?: string; pinned?: boolean; signal?: AbortSignal }): Promise<KataTaskDetail>;
   reachableGraph(

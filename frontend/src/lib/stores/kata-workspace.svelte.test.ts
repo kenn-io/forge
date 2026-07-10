@@ -852,7 +852,7 @@ describe("kata workspace store", () => {
       label: "",
       query: "",
     });
-    expect(api.mocks.issues).toHaveBeenLastCalledWith({ view: "inbox" });
+    expect(api.mocks.issues).toHaveBeenLastCalledWith({ view: "inbox" }, { daemonId: "home" });
   });
 
   test("normalizes duplicate candidates from tolerant task error details", () => {
@@ -1289,7 +1289,10 @@ describe("kata workspace store", () => {
     });
 
     expect(api.mocks.search).not.toHaveBeenCalled();
-    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "upcoming", project_uid: "project-kata" });
+    expect(api.mocks.issues).toHaveBeenCalledWith(
+      { view: "upcoming", project_uid: "project-kata" },
+      { daemonId: "home" },
+    );
     expect(store.currentView.name).toBe("upcoming");
   });
 
@@ -1311,7 +1314,10 @@ describe("kata workspace store", () => {
       "followup",
     );
     expect(api.mocks.search).not.toHaveBeenCalled();
-    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "upcoming", project_uid: "project-kata" });
+    expect(api.mocks.issues).toHaveBeenCalledWith(
+      { view: "upcoming", project_uid: "project-kata" },
+      { daemonId: "home" },
+    );
     expect(store.currentView.name).toBe("upcoming");
     expect(store.selectedIssue?.issue.uid).toBe("issue-read-design-notes");
   });
@@ -1768,7 +1774,7 @@ describe("kata workspace store", () => {
     await store.syncEventCursor();
 
     expect(store.eventCursor).toBe(2);
-    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "inbox" });
+    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "inbox" }, { daemonId: "home" });
     expect(store.selectedIssue?.issue.uid).toBe("issue-renew-passport");
   });
 
@@ -1821,7 +1827,7 @@ describe("kata workspace store", () => {
     });
 
     expect(store.eventCursor).toBe(lowID);
-    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "today" });
+    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "today" }, { daemonId: "home" });
   });
 
   test("remote events do not advance the cursor when refreshing the view fails", async () => {
@@ -1875,7 +1881,7 @@ describe("kata workspace store", () => {
     });
 
     expect(store.eventCursor).toBe(77);
-    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "today" });
+    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "today" }, { daemonId: "home" });
     expect(api.mocks.issue).toHaveBeenCalledWith("issue-pay-rent", { signal: expect.any(AbortSignal) });
     expect(store.selectedIssue?.comments.map((comment) => comment.body)).toContain("Remote note.");
   });
@@ -1908,7 +1914,7 @@ describe("kata workspace store", () => {
     });
 
     expect(store.eventCursor).toBe(77);
-    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "today" });
+    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "today" }, { daemonId: "home" });
     expect(store.selectedIssue?.issue.metadata).toMatchObject({
       scheduled_on: "2026-05-20",
       someday: true,
@@ -2008,7 +2014,7 @@ describe("kata workspace store", () => {
 
     await store.syncEventCursor();
 
-    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "inbox" });
+    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "inbox" }, { daemonId: "home" });
     expect(store.eventCursor).toBe(25);
   });
 
@@ -2025,7 +2031,7 @@ describe("kata workspace store", () => {
     });
 
     expect(store.eventCursor).toBe(100);
-    expect(api.mocks.issues).toHaveBeenLastCalledWith({ view: "inbox" });
+    expect(api.mocks.issues).toHaveBeenLastCalledWith({ view: "inbox" }, { daemonId: "home" });
     expect(store.currentView.name).toBe("inbox");
     expect(store.connection.status).toBe("online");
   });
@@ -2055,7 +2061,7 @@ describe("kata workspace store", () => {
       owner: "agent:planner",
       query: "design",
     });
-    expect(api.mocks.search).toHaveBeenLastCalledWith(store.searchFilters);
+    expect(api.mocks.search).toHaveBeenLastCalledWith(store.searchFilters, { daemonId: "home" });
     expect(store.selectedIssue?.issue.uid).toBe("issue-read-design-notes");
   });
 

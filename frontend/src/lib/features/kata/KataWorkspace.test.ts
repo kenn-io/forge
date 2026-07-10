@@ -957,13 +957,20 @@ describe("KataWorkspace", () => {
     );
   });
 
-  it("creates a workspace from the selected Kata task when a repository target resolves", async () => {
+  it("creates a workspace with the accepted view daemon after the browser default changes", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({
         daemons: [
           {
             id: "home",
             url: "http://127.0.0.1:7777",
+            default: false,
+            auth: "none",
+            health: "connected",
+          },
+          {
+            id: "work",
+            url: "http://127.0.0.1:8888",
             default: true,
             auth: "none",
             health: "connected",
@@ -992,6 +999,11 @@ describe("KataWorkspace", () => {
       status: "creating",
     });
     const { api } = createWorkspaceAPI();
+    const loadIssues = vi.mocked(api.issues).getMockImplementation()!;
+    vi.mocked(api.issues).mockImplementation(async (query) => ({
+      ...(await loadIssues(query)),
+      daemon_id: "home",
+    }));
     vi.mocked(api.issue).mockImplementation(async (uid: string) => ({
       ...detail(uid, initialIssues),
       workspace_target: target,

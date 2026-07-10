@@ -172,6 +172,7 @@
   let fullShellStores: StoreInstances | undefined;
   const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
   const kataAPI = createKataTaskAPI();
+  const kataWorkspaceAPI = createKataTaskAPI();
   const docsAPI = createDocsAPI();
   const messageIssueLinker = createMessageIssueLinker(kataAPI);
 
@@ -1147,7 +1148,7 @@
         {@const route = getRoute()}
         {#if route.page === "kata"}
           <KataFeature
-            api={kataAPI}
+            api={kataWorkspaceAPI}
             selectedIssueUID={route.issue ?? null}
             routeViewName={route.view ?? null}
             routeScopeUID={route.scope ?? null}

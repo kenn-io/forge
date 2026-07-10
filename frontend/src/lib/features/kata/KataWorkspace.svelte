@@ -636,20 +636,18 @@
     // daemon reload: its failure mid-switch would otherwise surface a
     // stale error from the previous daemon.
     store.invalidatePendingLoads();
-    store.clearSelection();
-    store.clearDaemonBinding();
+    store.clearDaemonState(previousView);
     setActiveKataDaemon(id);
     stopEventStream();
     try {
-      store.resetEventCursor();
       const ok = await runViewTask(async () => {
         await store.bootstrap(previousView);
         store.resetSearchFilters();
       }, "daemon");
       if (!ok) {
+        store.clearDaemonState(previousView);
         setActiveKataDaemon(previousExplicitDaemon);
         const restored = await runViewTask(async () => {
-          store.resetEventCursor();
           await store.bootstrap(previousView, previousIssueUID);
           await store.updateSearchFilters(previousFilters);
           if (store.currentView.name !== previousView) {
@@ -661,8 +659,8 @@
         }, "daemon");
         if (restored) {
           await store.syncEventCursor();
+          startEventStream();
         }
-        startEventStream();
         return;
       }
 
@@ -800,7 +798,11 @@
     requestError = null;
     try {
       const created = await createKataWorkspaceForTask(
-        kataWorkspaceIdentityFromIssue(selected, activeKataDaemonId ?? null, projectNameForIssue(selected)),
+        kataWorkspaceIdentityFromIssue(
+          selected,
+          store.daemonId ?? activeKataDaemonId ?? null,
+          projectNameForIssue(selected),
+        ),
       );
       openWorkspace(created.id);
     } catch (err) {

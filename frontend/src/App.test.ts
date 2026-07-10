@@ -17,6 +17,10 @@ const messagesHealth = vi.hoisted(() => ({
   pendingCapabilities: false,
 }));
 
+const kataClients = vi.hoisted(() => ({
+  create: vi.fn(() => ({})),
+}));
+
 vi.mock("@middleman/ui", async () => {
   const Provider = (await import("./lib/testing/AppProviderMock.svelte")).default;
   const Stub = (await import("./lib/testing/AppViewStub.svelte")).default;
@@ -111,7 +115,7 @@ vi.mock("./lib/api/kata/daemons.js", () => ({
   fetchKataDaemons: vi.fn(async () => []),
 }));
 vi.mock("./lib/api/kata/taskClient.js", () => ({
-  createKataTaskAPI: () => ({}),
+  createKataTaskAPI: kataClients.create,
 }));
 vi.mock("./lib/api/docs/api.js", () => ({
   createDocsAPI: () => ({}),
@@ -308,5 +312,16 @@ describe("App feature routes", () => {
     await fireEvent.click(screen.getByRole("button", { name: "message" }));
 
     expect(window.location.pathname + window.location.search).toBe("/messages?message=42");
+  });
+
+  it("isolates the Kata workspace client from cross-surface searches", async () => {
+    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
+    replaceUrl("/kata");
+    const { default: App } = await import("./App.svelte");
+
+    render(App, { target: createAppTarget() });
+    await waitFor(() => expect(screen.queryByText("Loading")).toBeNull());
+
+    expect(kataClients.create).toHaveBeenCalledTimes(2);
   });
 });

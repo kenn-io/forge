@@ -340,10 +340,39 @@ Run the complete task-client unit suite, full Vite+ suite, and complete Chromium
 
 Assert the switch clears the client binding and that the full-stack sidebar replaces the old daemon's project catalog alongside the new task rows.
 
-- [x] **Step 2: Clear old selection and binding at the explicit switch boundary**
+- [x] **Step 2: Clear old daemon state at the explicit switch boundary**
 
-After invalidating pending loads, clear the old selected task and workflow daemon before setting the new active daemon. The subsequent bootstrap can then route instance, projects, issues, and stream setup consistently; failed switches re-bootstrap the captured previous daemon and selection.
+After invalidating pending loads, clear projects, rows, selection, caches, cursor, and workflow binding before setting the new active daemon. Clear any partial replacement again before restoring the captured previous daemon and selection; leave state empty and the stream stopped if restoration also fails.
 
 - [x] **Step 3: Run final verification and commit**
 
 Run the full affected frontend and Kata Playwright suites before committing.
+
+### Task 6: Keep workspace follow-up operations on accepted provenance
+
+**Files:**
+
+- Modify: `frontend/src/App.svelte`
+- Modify: `frontend/src/lib/api/kata/taskClient.ts`
+- Modify: `frontend/src/lib/stores/kata-workspace.svelte.ts`
+- Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte`
+- Test: `frontend/src/App.test.ts`
+- Test: `frontend/src/lib/stores/kata-workspace.svelte.test.ts`
+- Test: `frontend/src/lib/features/kata/KataWorkspace.test.ts`
+- Test: `frontend/tests/e2e-full/kata.spec.ts`
+
+- [x] **Step 1: Reproduce browser-default drift and the switch transition window**
+
+Release an app-owned roster request after the configured default changes, then prove mutation/event refreshes and workspace creation would leave accepted provenance. Stall an explicit switch and prove old project and row controls remain visible.
+
+- [x] **Step 2: Pin workspace ownership without affecting other surfaces**
+
+Give Kata workspace its own task client. Pass its accepted daemon explicitly to workspace-owned list/search reloads and use the same identity for workspace creation while palette, Docs, and Messages keep a separate client.
+
+- [x] **Step 3: Make explicit switch state and rollback atomic**
+
+Clear daemon-scoped display state before changing the selector. On replacement failure, clear partial replacement state before restoration; restart the previous stream only after restoration succeeds.
+
+- [x] **Step 4: Run final verification and commit**
+
+Run the full Vite+ suite and complete Chromium/Firefox Kata Playwright spec before committing.

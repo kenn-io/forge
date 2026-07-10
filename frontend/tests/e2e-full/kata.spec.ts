@@ -3034,6 +3034,8 @@ test("kata daemon switch drops a pending detail load from the previous daemon", 
     work.state.issuesBarrier = stalledIssues;
     await page.getByTestId("daemon-chip").click();
     await page.getByTestId("daemon-row-work").click();
+    await expect(rentRow).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toHaveCount(0);
     releaseDetail();
     await page.waitForTimeout(750);
     await expect(page.getByRole("status", { name: "Connection: error" })).toHaveCount(0);
@@ -3045,6 +3047,52 @@ test("kata daemon switch drops a pending detail load from the previous daemon", 
   } finally {
     releaseDetail();
     releaseIssues();
+    await server.stop();
+    kataHome.restore();
+    await home.close();
+    await work.close();
+  }
+});
+
+test("kata daemon switch restores the previous workspace after target bootstrap fails", async ({ page }) => {
+  const home = await startKataBackend();
+  const work = await startKataBackend();
+  const kataHome = await configureKataHomeDaemons(
+    [
+      { name: "home", url: home.url },
+      { name: "work", url: work.url },
+    ],
+    "home",
+  );
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?view=all&issue=issue-rent`);
+    await expectKataDaemonSwitcherReady(page);
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Send June rent from checking.");
+    const homeListsBeforeSwitch = home.state.seenPaths.filter(
+      (seenPath) => seenPath === "GET /api/v1/issues?status=open",
+    ).length;
+    const homeStreamsBeforeSwitch = home.state.seenPaths.filter((seenPath) =>
+      seenPath.startsWith("GET /api/v1/events/stream"),
+    ).length;
+    work.state.duplicateIssueListResponses.push({
+      candidates: [{ title: "Foreign collision", qualified_id: "Work#foreign" }],
+    });
+
+    await page.getByTestId("daemon-chip").click();
+    await page.getByTestId("daemon-row-work").click();
+
+    await expect(page.getByTestId("daemon-chip")).toContainText("home");
+    await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Send June rent from checking.");
+    await expect
+      .poll(() => home.state.seenPaths.filter((seenPath) => seenPath === "GET /api/v1/issues?status=open").length)
+      .toBeGreaterThan(homeListsBeforeSwitch);
+    await expect
+      .poll(() => home.state.seenPaths.filter((seenPath) => seenPath.startsWith("GET /api/v1/events/stream")).length)
+      .toBeGreaterThan(homeStreamsBeforeSwitch);
+  } finally {
     await server.stop();
     kataHome.restore();
     await home.close();
@@ -3682,6 +3730,11 @@ test("kata workspace switches between configured external daemons", async ({ pag
 });
 
 test("kata project scope stays on the starting default daemon when configuration changes", async ({ page }) => {
+  let releaseBrowserRoster!: () => void;
+  const browserRosterBarrier = new Promise<void>((resolve) => {
+    releaseBrowserRoster = resolve;
+  });
+  let browserRosterRequests = 0;
   let releaseProjects!: () => void;
   const projectsBarrier = new Promise<void>((resolve) => {
     releaseProjects = resolve;
@@ -3750,6 +3803,11 @@ test("kata project scope stays on the starting default daemon when configuration
   const server = await startIsolatedE2EServer();
 
   try {
+    await page.route("**/api/v1/kata/daemons", async (route) => {
+      browserRosterRequests += 1;
+      if (browserRosterRequests === 1) await browserRosterBarrier;
+      await route.continue();
+    });
     await page.goto(`${server.info.base_url}/kata?view=all`);
 
     await expect(page.getByTestId("daemon-chip")).toContainText("home");
@@ -3782,13 +3840,8 @@ test("kata project scope stays on the starting default daemon when configuration
         "",
       ].join("\n"),
     );
-    await expect
-      .poll(async () => {
-        const response = await page.request.get(`${server.info.base_url}/api/v1/kata/daemons`);
-        const roster = (await response.json()) as { daemons?: Array<{ id: string; default: boolean }> };
-        return roster.daemons?.find((daemon) => daemon.default)?.id;
-      })
-      .toBe("work");
+    releaseBrowserRoster();
+    await expect(page.getByTestId("daemon-chip")).toContainText("work");
     releaseProjects();
 
     await expect(taskList.getByRole("button", { name: /Home scoped task/ })).toBeVisible();
@@ -3812,6 +3865,9 @@ test("kata project scope stays on the starting default daemon when configuration
     expect(work.state.seenPaths).not.toContain(`GET /api/v1/issues/${targetIssue.uid}`);
 
     const detail = page.getByRole("region", { name: "Task detail" });
+    const homeIssueRefreshesBeforeClose = home.state.seenPaths.filter(
+      (seenPath) => seenPath === "GET /api/v1/projects/7/issues?status=open",
+    ).length;
     await detail.getByRole("button", { name: "Complete" }).click();
     const dialog = page.getByRole("dialog", { name: "Complete task" });
     await dialog.getByRole("button", { name: "Complete" }).click();
@@ -3819,7 +3875,15 @@ test("kata project scope stays on the starting default daemon when configuration
       .poll(() => home.state.seenPaths)
       .toContain(`POST /api/v1/projects/7/issues/${targetIssue.uid}/actions/close`);
     expect(work.state.seenPaths).not.toContain(`POST /api/v1/projects/7/issues/${targetIssue.uid}/actions/close`);
+    await expect
+      .poll(
+        () =>
+          home.state.seenPaths.filter((seenPath) => seenPath === "GET /api/v1/projects/7/issues?status=open").length,
+      )
+      .toBeGreaterThan(homeIssueRefreshesBeforeClose);
+    expect(work.state.seenPaths).not.toContain("GET /api/v1/projects/7/issues?status=open");
   } finally {
+    releaseBrowserRoster();
     releaseProjects();
     await server.stop();
     kataHome.restore();

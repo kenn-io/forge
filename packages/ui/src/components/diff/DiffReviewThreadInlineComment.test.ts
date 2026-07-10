@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import DiffReviewThreadInlineComment from "./DiffReviewThreadInlineComment.svelte";
 import type { ReviewThread } from "./review-thread-context.js";
@@ -77,5 +77,28 @@ describe("DiffReviewThreadInlineComment", () => {
     await waitFor(() => {
       expect(card?.style.getPropertyValue("--inline-review-thread-width")).toBe("376px");
     });
+  });
+
+  it("keeps a failed reply open without adding a duplicate inline action error", async () => {
+    const onreply = vi.fn().mockResolvedValue(false);
+    render(DiffReviewThreadInlineComment, {
+      props: {
+        thread: makeReviewThread(),
+        canReply: true,
+        onreply,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+    await fireEvent.input(screen.getByPlaceholderText("Reply to thread"), {
+      target: { value: "Please take another look" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+
+    await waitFor(() => {
+      expect(onreply).toHaveBeenCalledWith(expect.objectContaining({ id: "thread-1" }), "Please take another look");
+    });
+    expect(screen.getByDisplayValue("Please take another look")).toBeTruthy();
+    expect(screen.queryByText("Could not reply to thread")).toBeNull();
   });
 });

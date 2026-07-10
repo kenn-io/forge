@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { MiddlemanClient } from "../types.js";
 import type { ProviderRouteRef } from "../api/provider-routes.js";
 import { createDiffReviewDraftStore } from "./diff-review-draft.svelte.js";
+import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 
 interface MockDraftLoad {
   data: {
@@ -124,6 +125,10 @@ function deferred<T>() {
 }
 
 describe("createDiffReviewDraftStore", () => {
+  afterEach(() => {
+    for (const flash of getFlashes()) dismissFlash(flash.id);
+  });
+
   it("refreshes PR detail after a successful publish", async () => {
     const client = mockClient();
     const onPublished = vi.fn();
@@ -159,9 +164,12 @@ describe("createDiffReviewDraftStore", () => {
 
     store.setContext(providerRef(), 42, true);
     await Promise.resolve();
-    await store.publish("comment", "summary");
+    const ok = await store.publish("comment", "summary");
 
+    expect(ok).toBe(false);
     expect(onPublished).not.toHaveBeenCalled();
+    expect(store.getError()).toBeNull();
+    expect(getFlash()).toMatchObject({ message: "failed", tone: "danger" });
   });
 
   it("reloads detail and draft after a stale publish conflict", async () => {

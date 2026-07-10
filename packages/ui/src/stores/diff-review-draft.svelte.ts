@@ -2,6 +2,7 @@ import type { MiddlemanClient } from "../types.js";
 import type { components } from "../api/generated/schema.js";
 import { isProblem, problemConflictReason } from "../api/problems.js";
 import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../api/provider-routes.js";
+import { showFlash } from "./flash.svelte.js";
 
 export type DiffReviewDraft = components["schemas"]["DiffReviewDraftResponse"];
 export type DiffReviewDraftComment = components["schemas"]["DiffReviewDraftComment"];
@@ -291,7 +292,9 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       return true;
     } catch (err) {
       if (isCurrent()) {
-        storeError = err instanceof Error ? err.message : String(err);
+        showFlash(err instanceof Error ? err.message : String(err), {
+          tone: "danger",
+        });
       }
       return false;
     } finally {
@@ -330,7 +333,9 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       return true;
     } catch (err) {
       if (isCurrent()) {
-        storeError = err instanceof Error ? err.message : String(err);
+        showFlash(err instanceof Error ? err.message : String(err), {
+          tone: "danger",
+        });
       }
       return false;
     } finally {
@@ -373,7 +378,9 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       return true;
     } catch (err) {
       if (isCurrent()) {
-        storeError = err instanceof Error ? err.message : String(err);
+        showFlash(err instanceof Error ? err.message : String(err), {
+          tone: "danger",
+        });
       }
       return false;
     } finally {
@@ -429,7 +436,9 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       return true;
     } catch (err) {
       if (isCurrent()) {
-        storeError = err instanceof Error ? err.message : String(err);
+        showFlash(err instanceof Error ? err.message : String(err), {
+          tone: "danger",
+        });
       }
       return false;
     } finally {
@@ -461,7 +470,9 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       return true;
     } catch (err) {
       if (isCurrent()) {
-        storeError = err instanceof Error ? err.message : String(err);
+        showFlash(err instanceof Error ? err.message : String(err), {
+          tone: "danger",
+        });
       }
       return false;
     } finally {
@@ -495,7 +506,9 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       return true;
     } catch (err) {
       if (isCurrent()) {
-        storeError = err instanceof Error ? err.message : String(err);
+        showFlash(err instanceof Error ? err.message : String(err), {
+          tone: "danger",
+        });
       }
       return false;
     } finally {

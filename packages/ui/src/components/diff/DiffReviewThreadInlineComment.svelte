@@ -114,8 +114,6 @@
       const ok = await onreply(thread, body);
       if (ok) {
         cancelReply();
-      } else {
-        error = "Could not reply to thread";
       }
     } finally {
       submitting = false;

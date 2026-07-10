@@ -329,9 +329,10 @@ Kata frontend adaptation:
 - Kata workspace owns a dedicated task client; accepted provenance pins its
   selector, row actions, reloads, workspace identity, events, and stream while
   other surfaces follow their own selection (`frontend/src/App.svelte::kataWorkspaceAPI`).
-- An explicit daemon switch clears all old daemon-scoped state before changing
-  selectors and is disabled during mutations/switches; failed rollback stays
-  empty with its stream stopped (`frontend/src/lib/features/kata/KataWorkspace.svelte::switchKataDaemon`).
+- Removed accepted daemons remain selected and visibly unavailable until the
+  user chooses a configured daemon (`frontend/src/lib/features/kata/KataDaemonSwitcher.svelte::displayId`).
+- Daemon switching is disabled during writes, view work, and switches; failed
+  rollback stays empty with its stream stopped (`frontend/src/lib/features/kata/KataWorkspace.svelte::switchKataDaemon`).
 - Replace direct daemon URL/localStorage bootstrap with calls to middleman's
   Kata daemon roster and proxy.
 - Use a middleman-owned selector header for proxied daemon requests.

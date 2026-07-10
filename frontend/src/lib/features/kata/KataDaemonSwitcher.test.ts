@@ -114,4 +114,23 @@ describe("KataDaemonSwitcher", () => {
 
     expect(screen.getByRole("status", { name: "Connection: error" }).textContent).toContain("Connection failed");
   });
+
+  it("keeps an accepted removed daemon visible and allows selecting a remaining daemon", async () => {
+    const onSelect = vi.fn();
+    render(KataDaemonSwitcher, {
+      props: {
+        daemons: [daemons[1]!],
+        activeId: "home",
+        activeStatusLabel: "Daemon is no longer configured",
+        activeStatusTone: "error",
+        onSelect,
+      },
+    });
+
+    expect(screen.getByTestId("daemon-chip").textContent).toContain("home");
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+    await fireEvent.click(screen.getByTestId("daemon-row-work"));
+
+    expect(onSelect).toHaveBeenCalledWith("work");
+  });
 });

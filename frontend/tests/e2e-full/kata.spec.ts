@@ -125,6 +125,7 @@ type BackendState = {
   issueDetailGates: Map<string, IssueDetailGate>;
   onEventsRequest?: ((state: BackendState, url: URL) => void) | undefined;
   projectsBarrier?: Promise<void> | undefined;
+  projectCreateBarrier?: Promise<void> | undefined;
 };
 
 // Stalls one issue-detail response until `barrier` resolves; when
@@ -845,6 +846,8 @@ function writeReachableGraph(
 }
 
 async function handleProjectCreate(state: BackendState, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  await state.projectCreateBarrier;
+  state.projectCreateBarrier = undefined;
   const payload = await readJSONBody(req);
   const name = typeof payload.name === "string" ? payload.name.trim() : "";
   if (!name) {
@@ -3135,6 +3138,7 @@ test("kata daemon switch leaves empty stopped state when target and rollback fai
     await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toHaveCount(0);
     await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
     await expect(page.getByRole("region", { name: "Task detail" })).not.toContainText("Send June rent from checking.");
+    await expect.poll(() => home.state.streams.size).toBe(0);
     expect(home.state.seenPaths.filter((seenPath) => seenPath.startsWith("GET /api/v1/events/stream")).length).toBe(
       homeStreamsBeforeSwitch,
     );
@@ -3465,6 +3469,10 @@ test("kata sidebar switches system views and renders project areas", async ({ pa
 });
 
 test("kata project create submits inline input and switches scope", async ({ page }) => {
+  let releaseCreate!: () => void;
+  const createBarrier = new Promise<void>((resolve) => {
+    releaseCreate = resolve;
+  });
   const backend = await startKataBackend();
   const kataHome = await configureKataHome(backend.url);
   const server = await startIsolatedE2EServer();
@@ -3477,12 +3485,18 @@ test("kata project create submits inline input and switches scope", async ({ pag
     const input = page.getByRole("textbox", { name: "New project name" });
     await expect(input).toBeVisible();
     await input.fill("Sabbatical");
+    backend.state.projectCreateBarrier = createBarrier;
     await input.press("Enter");
+
+    await expect.poll(() => backend.state.seenPaths).toContain("POST /api/v1/projects");
+    await expect(page.getByTestId("daemon-chip")).toBeDisabled();
+    releaseCreate();
 
     await expect(page.getByRole("button", { name: /^Sabbatical\s+0$/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Sabbatical", level: 2 })).toBeVisible();
-    await expect.poll(() => backend.state.seenPaths).toContain("POST /api/v1/projects");
+    await expect(page.getByTestId("daemon-chip")).toBeEnabled();
   } finally {
+    releaseCreate();
     await server.stop();
     kataHome.restore();
     await backend.close();
@@ -3812,6 +3826,76 @@ test("kata workspace switches between configured external daemons", async ({ pag
     await expect(page.getByRole("button", { name: /^Work\s+1$/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Home\s+1$/ })).toHaveCount(0);
   } finally {
+    await server.stop();
+    kataHome.restore();
+    await home.close();
+    await work.close();
+  }
+});
+
+test("kata workspace keeps a removed accepted daemon visible until the user switches", async ({ page }) => {
+  let releaseBrowserRoster!: () => void;
+  const browserRosterBarrier = new Promise<void>((resolve) => {
+    releaseBrowserRoster = resolve;
+  });
+  let browserRosterRequests = 0;
+  const workProject = {
+    id: 9,
+    uid: "project-work",
+    name: "Work",
+    metadata: { area: "Work", sidebar_order: 1 },
+    open_count: 1,
+  };
+  const workIssue = issueSummary({
+    id: 901,
+    uid: "issue-work-only",
+    project_id: workProject.id,
+    project_uid: workProject.uid,
+    project_name: workProject.name,
+    short_id: "work-only",
+    qualified_id: "Work#work-only",
+    title: "Work-only task",
+    body: "This row proves the remaining daemon bootstrapped.",
+    labels: ["work"],
+  });
+  const home = await startKataBackend();
+  const work = await startKataBackend({ projects: [workProject], issues: [workIssue] });
+  const kataHome = await configureKataHomeDaemons(
+    [
+      { name: "home", url: home.url },
+      { name: "work", url: work.url },
+    ],
+    "home",
+  );
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.route("**/api/v1/kata/daemons", async (route) => {
+      browserRosterRequests += 1;
+      if (browserRosterRequests === 1) await browserRosterBarrier;
+      await route.continue();
+    });
+    await page.goto(`${server.info.base_url}/kata?view=all`);
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toBeVisible();
+
+    await writeFile(
+      path.join(kataHome.home, "config.toml"),
+      ['active_daemon = "work"', "", "[[daemon]]", 'name = "work"', `url = "${work.url}"`, ""].join("\n"),
+    );
+    releaseBrowserRoster();
+
+    await expect(page.getByTestId("daemon-chip")).toContainText("home");
+    await expect(page.getByRole("status", { name: "Connection: error" })).toContainText(
+      "Daemon is no longer configured",
+    );
+    await page.getByTestId("daemon-chip").click();
+    await page.getByTestId("daemon-row-work").click();
+
+    await expect(page.getByTestId("daemon-chip")).toContainText("work");
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Work-only task/ })).toBeVisible();
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
+  } finally {
+    releaseBrowserRoster();
     await server.stop();
     kataHome.restore();
     await home.close();

@@ -377,6 +377,32 @@ Clear daemon-scoped display state before changing the selector. On replacement f
 
 Run the full Vite+ suite and complete Chromium/Firefox Kata Playwright spec before committing.
 
+### Task 8: Cover removed provenance and every visible work gate
+
+**Files:**
+
+- Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte`
+- Modify: `frontend/src/lib/features/kata/KataDaemonSwitcher.svelte`
+- Test: `frontend/src/lib/features/kata/KataWorkspace.test.ts`
+- Test: `frontend/src/lib/features/kata/KataDaemonSwitcher.test.ts`
+- Test: `frontend/tests/e2e-full/kata.spec.ts`
+
+- [x] **Step 1: Preserve an accepted daemon that leaves the roster**
+
+Keep its ID on the chip with an unavailable status instead of falling back visually. Compare menu choices to accepted identity so selecting a remaining daemon performs a real bootstrap.
+
+- [x] **Step 2: Cover project writes and overlapping view work**
+
+Route project creation and rename through the shared view-work guard. Reference-count all overlapping work for selector availability while retaining latest-request loading presentation.
+
+- [x] **Step 3: Prove terminal streams close**
+
+Assert a double-failed switch leaves no active connection for the old daemon in addition to starting no replacement stream.
+
+- [x] **Step 4: Run final verification and commit**
+
+Run the full Vite+ suite and complete Chromium/Firefox Kata Playwright spec before committing.
+
 ### Task 7: Align selector and mutation lifecycle with accepted provenance
 
 **Files:**

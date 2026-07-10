@@ -30,6 +30,8 @@
   import {
     getActiveKataDaemon,
     getDefaultKataDaemon,
+    getKataDaemonRoster,
+    getKataDaemonRosterLoaded,
     setActiveKataDaemon,
     setKataDaemonRoster,
   } from "../../stores/active-kata-daemon.svelte.js";
@@ -88,6 +90,7 @@
   let loading = $state(true);
   let viewLoading = $state(false);
   let viewLoadingGeneration = 0;
+  let viewWorkCount = $state(0);
   let error = $state<string | null>(null);
   let requestError = $state<string | null>(null);
   let lastTaskError: string | null = null;
@@ -171,13 +174,14 @@
 
   function beginViewLoading(): number {
     const generation = ++viewLoadingGeneration;
+    viewWorkCount += 1;
     viewLoading = true;
     return generation;
   }
 
   function endViewLoading(generation: number): void {
-    if (generation !== viewLoadingGeneration) return;
-    viewLoading = false;
+    viewWorkCount = Math.max(0, viewWorkCount - 1);
+    if (generation === viewLoadingGeneration) viewLoading = false;
   }
 
   function kataRequestErrorMessage(err: unknown): string {
@@ -447,6 +451,13 @@
 
   function activeDaemonStatusLabel(): string | undefined {
     if (error) return error;
+    if (
+      store.daemonId &&
+      getKataDaemonRosterLoaded() &&
+      !getKataDaemonRoster().includes(store.daemonId)
+    ) {
+      return "Daemon is no longer configured";
+    }
     if (store.connection.status !== "error") return undefined;
     return store.connection.message ?? "Connection failed";
   }
@@ -604,11 +615,15 @@
   }
 
   async function createKataProject(name: string): Promise<KataProjectSummary> {
-    return store.createProject(name);
+    let created: KataProjectSummary | undefined;
+    await runViewTaskOrThrow(async () => {
+      created = await store.createProject(name);
+    });
+    return created!;
   }
 
   async function renameKataProject(id: number, name: string): Promise<void> {
-    await store.renameProject(id, name);
+    await runViewTaskOrThrow(() => store.renameProject(id, name));
   }
 
   async function submitQuickCapture(title: string): Promise<void> {
@@ -620,7 +635,7 @@
   }
 
   async function switchKataDaemon(id: string): Promise<void> {
-    if (switchingDaemon || viewLoading || store.hasPendingMutations) return;
+    if (switchingDaemon || viewWorkCount > 0 || store.hasPendingMutations || workspaceActionBusy) return;
     const previousExplicitDaemon = getActiveKataDaemon();
     const previousDaemon = store.daemonId ?? activeKataDaemonId;
     if (id === activeKataDaemonId) return;
@@ -911,7 +926,7 @@
           activeId={activeKataDaemonId}
           activeStatusLabel={activeDaemonStatusLabel()}
           activeStatusTone={activeDaemonStatusLabel() ? "error" : undefined}
-          disabled={switchingDaemon || viewLoading || store.hasPendingMutations}
+          disabled={switchingDaemon || viewWorkCount > 0 || store.hasPendingMutations || workspaceActionBusy}
           onSelect={(id) => {
             void switchKataDaemon(id);
           }}

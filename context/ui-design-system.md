@@ -103,9 +103,9 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   Provider-mode repo selector visibility must not move the tab row; non-provider
   modes reserve its footprint unless embed config hides it
   (`frontend/src/lib/components/layout/AppHeader.svelte::reserveProviderRepoSelectorSlot`).
-- Flash: one shared store (`@middleman/ui/stores/flash`); kit
-  `FlashBanner` mounts once per shell; stacking (not latest-wins) is
-  intended. Tests assert `.kit-flash-stack`.
+- Flash: one shared store (`@middleman/ui/stores/flash`); kit `FlashBanner`
+  mounts once per shell in a page-level fixed layer beneath shell chrome,
+  never inside feature containers; stacking is intended (`frontend/src/App.svelte:967`).
 
 `kit-ui-check` gates at zero findings in both `make frontend-check` and the
 Vite+ `frontend-check` task behind CI's `vp run -w check`. Suppress only

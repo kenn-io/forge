@@ -22,6 +22,8 @@ Failures must appear on only one error surface. A path migrated to a flash remov
 
 Use the existing `@middleman/ui/stores/flash` re-export and the single shell-level kit-ui `FlashBanner`. Feature components report transient failures through `showFlash(message, { tone: "danger" })`; they do not mount additional banners or introduce feature-specific toast stores.
 
+The shell mounts the banner in a page-level fixed layer: immediately below the global header in the full application and at the top edge in a headerless embedded presentation. Feature layouts, panes, modals, and scrolling containers must not position or contain the flash stack, so local scrolling cannot move or hide an application error.
+
 Keep error normalization close to the API boundary that already understands the failure envelope. This change standardizes presentation, not backend error contracts or message wording.
 
 ## Application Pass
@@ -42,7 +44,7 @@ An operation failure must leave the initiating surface usable: busy state clears
 
 Add or update focused component and store tests for representative migrated paths. Tests should spy on the shared flash module and assert the normalized message and error tone, while confirming the former duplicate inline error is absent where relevant.
 
-Retain coverage for inline validation, persistent load failures, conflicts, and degraded status. Existing shell tests continue to prove that shared-store flashes render in desktop, compact, and embedded presentations.
+Retain coverage for inline validation, persistent load failures, conflicts, and degraded status. Browser shell coverage proves that shared-store flashes render at the page-level top edge in desktop, compact, and embedded presentations rather than inheriting a feature container's position or scroll behavior.
 
 Run Svelte analysis on every edited component, kit-ui checks, affected focused tests, and the complete frontend test suite after the final frontend edit.
 

@@ -459,6 +459,7 @@ Run the full Vite+ suite and complete Chromium/Firefox Kata Playwright spec befo
 **Files:**
 
 - Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte`
+- Test: `frontend/src/lib/features/kata/KataWorkspaceEventStream.test.ts`
 - Test: `frontend/tests/e2e-full/kata.spec.ts`
 
 - [x] **Step 1: Count stream callbacks as view work**
@@ -468,6 +469,29 @@ Keep daemon selection disabled while a live-event callback reloads old-daemon pr
 - [x] **Step 2: Prove switching waits for a stalled stream refresh**
 
 Stall an issue reload triggered by a reset frame, assert the selector remains disabled, then release it and prove a later switch renders only the replacement daemon.
+
+- [x] **Step 3: Prove failed stream refreshes release the gate**
+
+Reject a reset-triggered refresh and assert the selector re-enables, the stream reconnects, and stale rows are not accepted.
+
+- [x] **Step 4: Run final verification and commit**
+
+Run the full Vite+ suite and complete Chromium/Firefox Kata Playwright spec before committing.
+
+### Task 11: Queue route changes until daemon transactions settle
+
+**Files:**
+
+- Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte`
+- Test: `frontend/tests/e2e-full/kata.spec.ts`
+
+- [x] **Step 1: Defer route effects during switching**
+
+Prevent route pre-effects, view/scope loads, and detail selection from invalidating provisional target or rollback bootstraps. Apply the latest route after `switchingDaemon` clears.
+
+- [x] **Step 2: Cover route churn followed by target failure**
+
+Stall a target bootstrap, navigate browser history to another issue, then fail the target and prove rollback restores accepted provenance before applying the queued route.
 
 - [x] **Step 3: Run final verification and commit**
 

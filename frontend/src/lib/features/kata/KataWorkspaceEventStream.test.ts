@@ -602,6 +602,62 @@ describe("KataWorkspace", () => {
     expect(api.issues).toHaveBeenCalledTimes(viewLoadsAfterDrain);
   });
 
+  it("releases the daemon switch gate and reconnects when a stream refresh fails", async () => {
+    const streamControllers: ReadableStreamDefaultController<Uint8Array>[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
+      if (url.pathname === "/api/v1/kata/daemons") {
+        return Response.json({
+          daemons: [
+            {
+              id: "home",
+              url: "http://127.0.0.1:7777",
+              default: true,
+              auth: "none",
+              health: "connected",
+            },
+          ],
+        });
+      }
+      if (url.pathname === "/api/v1/kata/proxy/api/v1/events/stream") {
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              streamControllers.push(controller);
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const { api } = createWorkspaceAPI([initialIssues[0]!]);
+    const failedRefresh = deferred<Awaited<ReturnType<KataTaskAPI["issues"]>>>();
+
+    render(KataWorkspace, { props: { api } });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Pay rent/ })).toBeTruthy();
+      expect(streamControllers).toHaveLength(1);
+    });
+
+    vi.mocked(api.issues).mockImplementationOnce(() => failedRefresh.promise);
+    streamControllers[0]?.enqueue(
+      new TextEncoder().encode(
+        `id: 6\nevent: sync.reset_required\ndata: ${JSON.stringify({ event_id: 6, reset_after_id: 6 })}\n\n`,
+      ),
+    );
+    await waitFor(() => {
+      expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    failedRefresh.reject(new Error("stream refresh failed"));
+    await waitFor(() => {
+      expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(false);
+      expect(streamControllers).toHaveLength(2);
+    });
+    expect(screen.getByRole("button", { name: /Pay rent/ })).toBeTruthy();
+  });
+
   it("restarts the live stream after a stale daemon switch completion", async () => {
     const streamControllers: ReadableStreamDefaultController<Uint8Array>[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {

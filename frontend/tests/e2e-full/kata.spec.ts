@@ -3136,8 +3136,12 @@ test("kata daemon switch stays disabled until initial workspace bootstrap settle
 });
 
 test("kata daemon switch restores the previous workspace after target bootstrap fails", async ({ page }) => {
+  let releaseIssues!: () => void;
+  const issuesBarrier = new Promise<void>((resolve) => {
+    releaseIssues = resolve;
+  });
   const home = await startKataBackend();
-  const work = await startKataBackend();
+  const work = await startKataBackend({ issuesBarrier });
   const kataHome = await configureKataHomeDaemons(
     [
       { name: "home", url: home.url },
@@ -3163,10 +3167,18 @@ test("kata daemon switch restores the previous workspace after target bootstrap 
 
     await page.getByTestId("daemon-chip").click();
     await page.getByTestId("daemon-row-work").click();
+    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/issues?status=open");
+    await page.evaluate(() => {
+      window.history.pushState({}, "", "/kata?view=all&issue=issue-q3");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    releaseIssues();
 
     await expect(page.getByTestId("daemon-chip")).toContainText("home");
     await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Send June rent from checking.");
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText(
+      "Confirm the Q3 project review agenda.",
+    );
     await expect
       .poll(() => home.state.seenPaths.filter((seenPath) => seenPath === "GET /api/v1/issues?status=open").length)
       .toBeGreaterThan(homeListsBeforeSwitch);
@@ -3174,6 +3186,7 @@ test("kata daemon switch restores the previous workspace after target bootstrap 
       .poll(() => home.state.seenPaths.filter((seenPath) => seenPath.startsWith("GET /api/v1/events/stream")).length)
       .toBeGreaterThan(homeStreamsBeforeSwitch);
   } finally {
+    releaseIssues();
     await server.stop();
     kataHome.restore();
     await home.close();

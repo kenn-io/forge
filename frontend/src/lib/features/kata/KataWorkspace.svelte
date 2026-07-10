@@ -358,7 +358,7 @@
 
   $effect(() => {
     const uid = selectedIssueUID ?? null;
-    if (loading) return;
+    if (loading || switchingDaemon) return;
     if (awaitingSelectedIssueRouteUID) {
       if (uid === awaitingSelectedIssueRouteUID) {
         awaitingSelectedIssueRouteUID = null;
@@ -410,7 +410,7 @@
   }
 
   $effect.pre(() => {
-    if (loading) return;
+    if (loading || switchingDaemon) return;
     const snapshot = currentRouteSnapshot();
     const signature = routeSignature(snapshot);
     if (signature === observedRouteSignature) return;
@@ -424,7 +424,7 @@
     const viewName = routeViewName ?? null;
     const scopeUID = routeScopeUID ?? null;
     const issueUID = selectedIssueUID ?? null;
-    if (loading) return;
+    if (loading || switchingDaemon) return;
     if (viewName === syncedRouteViewName && scopeUID === syncedRouteScopeUID) return;
     void untrack(() => runViewTask(() => applyRouteViewScope(viewName, scopeUID, issueUID)));
   });

@@ -98,6 +98,7 @@
   let unlinkError = $state<string | null>(null);
   let daemonInfos = $state.raw<KataDaemonInfo[]>([]);
   let switchingDaemon = $state(false);
+  let terminalDaemonFailure = $state(false);
   let captureOpen = $state(false);
   let listResetGeneration = $state(0);
   let checklistRevealed = $state(false);
@@ -280,6 +281,7 @@
         }
       } catch (err) {
         if (!cancelled) {
+          terminalDaemonFailure = true;
           error =
             store.connection.status === "error" && store.connection.message
               ? store.connection.message
@@ -358,7 +360,7 @@
 
   $effect(() => {
     const uid = selectedIssueUID ?? null;
-    if (loading || switchingDaemon) return;
+    if (loading || switchingDaemon || terminalDaemonFailure) return;
     if (awaitingSelectedIssueRouteUID) {
       if (uid === awaitingSelectedIssueRouteUID) {
         awaitingSelectedIssueRouteUID = null;
@@ -410,7 +412,7 @@
   }
 
   $effect.pre(() => {
-    if (loading || switchingDaemon) return;
+    if (loading || switchingDaemon || terminalDaemonFailure) return;
     const snapshot = currentRouteSnapshot();
     const signature = routeSignature(snapshot);
     if (signature === observedRouteSignature) return;
@@ -424,7 +426,7 @@
     const viewName = routeViewName ?? null;
     const scopeUID = routeScopeUID ?? null;
     const issueUID = selectedIssueUID ?? null;
-    if (loading || switchingDaemon) return;
+    if (loading || switchingDaemon || terminalDaemonFailure) return;
     if (viewName === syncedRouteViewName && scopeUID === syncedRouteScopeUID) return;
     void untrack(() => runViewTask(() => applyRouteViewScope(viewName, scopeUID, issueUID)));
   });
@@ -654,6 +656,7 @@
     const previousFilters = store.searchFilters;
     const previousIssueUID = store.selectedIssue?.issue.uid ?? null;
     switchingDaemon = true;
+    terminalDaemonFailure = false;
     closeReachableGraph();
     resetDetailDrafts();
     resetIssueExpansion();
@@ -689,6 +692,7 @@
           startEventStream();
         } else {
           store.clearDaemonState(previousView);
+          terminalDaemonFailure = true;
         }
         return;
       }

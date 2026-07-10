@@ -338,11 +338,15 @@ Kata frontend adaptation:
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::switchKataDaemon`).
 - Browser route changes remain queued while a daemon switch or rollback is
   provisional, then apply to the accepted workspace after the transaction
-  settles (`frontend/src/lib/features/kata/KataWorkspace.svelte::routeSignature`).
+  settles. If target and rollback both fail, no workspace is accepted and route
+  effects remain suppressed until a later successful bootstrap
+  (`frontend/src/lib/features/kata/KataWorkspace.svelte::routeSignature`).
 - Event-driven proxy reads keep switching fail-closed until they settle. The
-  Kata proxy's 30-second upstream timeout bounds ordinary refreshes; rejection
-  releases the view-work gate and propagates to stream reconnect handling
-  (`internal/server/kata_proxy.go::newKataProxy`).
+  Kata proxy applies a 30-second total deadline to ordinary TCP and Unix-socket
+  requests, including response bodies, while the live event stream stays
+  exempt. Rejection releases the view-work gate and propagates to stream
+  reconnect handling
+  (`internal/server/kata_proxy.go::newKataDaemonProxyEntryWithTimeout`).
 - Replace direct daemon URL/localStorage bootstrap with calls to middleman's
   Kata daemon roster and proxy.
 - Use a middleman-owned selector header for proxied daemon requests.

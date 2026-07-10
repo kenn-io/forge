@@ -493,6 +493,34 @@ Prevent route pre-effects, view/scope loads, and detail selection from invalidat
 
 Stall a target bootstrap, navigate browser history to another issue, then fail the target and prove rollback restores accepted provenance before applying the queued route.
 
-- [x] **Step 3: Run final verification and commit**
+- [x] **Step 3: Suppress queued routes after terminal rollback failure**
+
+Queue a project scope while target bootstrap is stalled, fail target and rollback, then prove the workspace stays empty and no scoped request or stream starts.
+
+- [x] **Step 4: Run final verification and commit**
 
 Run the full Vite+ suite and complete Chromium/Firefox Kata Playwright spec before committing.
+
+### Task 12: Bound ordinary Kata proxy requests
+
+**Files:**
+
+- Modify: `internal/server/kata_proxy.go`
+- Test: `internal/server/kata_proxy_test.go`
+- Test: `frontend/tests/e2e-full/kata.spec.ts`
+
+- [x] **Step 1: Apply a total non-stream request deadline**
+
+Wrap ordinary reverse-proxy requests in a 30-second context deadline that covers headers and body copying for both TCP and Unix transports, while exempting the long-lived event stream.
+
+- [x] **Step 2: Test stalled headers, bodies, and SSE exemption**
+
+Use a short injected deadline to prove connected upstreams are cancelled while a delayed event-stream frame remains deliverable.
+
+- [x] **Step 3: Exercise refresh failure through the real proxy**
+
+Fail a reset-triggered issue refresh in the Playwright backend and assert the selector releases, the stream reconnects, and prior rows remain visible.
+
+- [x] **Step 4: Run final verification and commit**
+
+Run Go proxy tests, the full Vite+ suite, and the complete Chromium/Firefox Kata Playwright spec before committing.

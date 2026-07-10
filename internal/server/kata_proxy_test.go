@@ -261,6 +261,107 @@ token = "stream-secret"
 	assert.Equal("issue.updated", secondFrame.Event)
 }
 
+func TestKataProxyOrdinaryRequestsHaveTotalDeadline(t *testing.T) {
+	tests := []struct {
+		name        string
+		writeHeader bool
+	}{
+		{name: "stalled headers"},
+		{name: "stalled body", writeHeader: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstreamCancelled := make(chan struct{})
+			daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tt.writeHeader {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"partial":`))
+					if flusher, ok := w.(http.Flusher); ok {
+						flusher.Flush()
+					}
+				}
+				<-r.Context().Done()
+				close(upstreamCancelled)
+			}))
+			defer daemon.Close()
+
+			entry, err := newKataDaemonProxyEntryWithTimeout(
+				kata.Daemon{ID: "home", URL: daemon.URL},
+				25*time.Millisecond,
+			)
+			require.NoError(t, err)
+			rr := httptest.NewRecorder()
+			started := time.Now()
+			entry.handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/issues", nil))
+
+			assert.Less(t, time.Since(started), time.Second)
+			select {
+			case <-upstreamCancelled:
+			case <-time.After(time.Second):
+				require.Fail(t, "upstream request was not cancelled")
+			}
+		})
+	}
+}
+
+func TestKataProxyRequestDeadlineExemptsEventStream(t *testing.T) {
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(40 * time.Millisecond)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("id: 1\nevent: issue.updated\ndata: {}\n\n"))
+	}))
+	defer daemon.Close()
+
+	entry, err := newKataDaemonProxyEntryWithTimeout(
+		kata.Daemon{ID: "home", URL: daemon.URL},
+		10*time.Millisecond,
+	)
+	require.NoError(t, err)
+	rr := httptest.NewRecorder()
+	entry.handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/events/stream", nil))
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "event: issue.updated")
+}
+
+func TestKataProxyUnixRequestHasTotalDeadline(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	upstreamCancelled := make(chan struct{})
+	t.Setenv("TMPDIR", "/tmp") // Keep Unix socket paths below macOS' length limit.
+	socketPath := filepath.Join(t.TempDir(), "kata.sock")
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(err)
+	daemon := &http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+		close(upstreamCancelled)
+	})}
+	go func() {
+		_ = daemon.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		require.NoError(daemon.Close())
+	})
+
+	entry, err := newKataDaemonProxyEntryWithTimeout(
+		kata.Daemon{ID: "home", URL: "unix://" + socketPath},
+		25*time.Millisecond,
+	)
+	require.NoError(err)
+	rr := httptest.NewRecorder()
+	started := time.Now()
+	entry.handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/issues", nil))
+
+	assert.Less(time.Since(started), time.Second)
+	select {
+	case <-upstreamCancelled:
+	case <-time.After(time.Second):
+		require.Fail("Unix upstream request was not cancelled")
+	}
+}
+
 func TestKataProxyReusesProxyForResolvedDaemon(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	kataDaemonHeaderName = "X-Middleman-Kata-Daemon"
-	kataProxyPrefix      = "/api/v1/kata/proxy"
+	kataDaemonHeaderName          = "X-Middleman-Kata-Daemon"
+	kataProxyPrefix               = "/api/v1/kata/proxy"
+	kataDaemonProxyRequestTimeout = 30 * time.Second
 )
 
 type kataProxyCacheKey struct {
@@ -33,6 +34,21 @@ type kataProxyCacheKey struct {
 type kataProxyCacheEntry struct {
 	handler   http.Handler
 	closeIdle func()
+}
+
+type kataProxyDeadlineHandler struct {
+	proxy          http.Handler
+	requestTimeout time.Duration
+}
+
+func (h *kataProxyDeadlineHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api/v1/events/stream" {
+		h.proxy.ServeHTTP(w, r)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), h.requestTimeout)
+	defer cancel()
+	h.proxy.ServeHTTP(w, r.WithContext(ctx))
 }
 
 func (s *Server) kataProxy() http.Handler {
@@ -190,6 +206,10 @@ func selectKataDaemonForID(headerID string) (kata.Daemon, *ProblemError) {
 }
 
 func newKataDaemonProxyEntry(d kata.Daemon) (kataProxyCacheEntry, error) {
+	return newKataDaemonProxyEntryWithTimeout(d, kataDaemonProxyRequestTimeout)
+}
+
+func newKataDaemonProxyEntryWithTimeout(d kata.Daemon, requestTimeout time.Duration) (kataProxyCacheEntry, error) {
 	target, transport, err := kataDaemonProxyTarget(d.URL)
 	if err != nil {
 		return kataProxyCacheEntry{}, err
@@ -269,7 +289,11 @@ func newKataDaemonProxyEntry(d kata.Daemon) (kataProxyCacheEntry, error) {
 	if idleCloser, ok := transport.(interface{ CloseIdleConnections() }); ok {
 		closeIdle = idleCloser.CloseIdleConnections
 	}
-	return kataProxyCacheEntry{handler: proxy, closeIdle: closeIdle}, nil
+	handler := http.Handler(proxy)
+	if requestTimeout > 0 {
+		handler = &kataProxyDeadlineHandler{proxy: proxy, requestTimeout: requestTimeout}
+	}
+	return kataProxyCacheEntry{handler: handler, closeIdle: closeIdle}, nil
 }
 
 func kataDaemonProxyTarget(target string) (*url.URL, http.RoundTripper, error) {

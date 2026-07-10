@@ -117,6 +117,7 @@ type BackendState = {
   seenPaths: string[];
   streams: Set<ServerResponse>;
   failNextAssignOwner?: string | undefined;
+  failNextIssuesStatus?: number | undefined;
   failNextMetadataMessage?: string | undefined;
   closeBarrier?: Promise<void> | undefined;
   eventsBarrier?: Promise<void> | undefined;
@@ -665,6 +666,14 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
         const barrier = state.issuesBarrier;
         state.issuesBarrier = undefined;
         await barrier;
+        const failureStatus = state.failNextIssuesStatus;
+        state.failNextIssuesStatus = undefined;
+        if (failureStatus !== undefined) {
+          writeJSON(res, failureStatus, {
+            error: { code: "internal", message: "kata daemon exploded" },
+          });
+          return;
+        }
         const duplicate = state.duplicateIssueListResponses.shift();
         if (duplicate) {
           writeJSON(res, 409, {
@@ -2053,6 +2062,45 @@ test("kata daemon switch waits for an in-flight event stream refresh", async ({ 
   }
 });
 
+test("kata stream refresh failure releases switching and reconnects", async ({ page }) => {
+  let releaseIssues!: () => void;
+  const issuesBarrier = new Promise<void>((resolve) => {
+    releaseIssues = resolve;
+  });
+  const backend = await startKataBackend({ issues: [issues[0]!] });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?view=all`);
+    const taskList = page.locator(".kata-list");
+    await expect(taskList.getByRole("button", { name: /Pay rent/ })).toBeVisible();
+    await expect.poll(() => backend.state.streams.size).toBeGreaterThan(0);
+    const issueLoadsBefore = backend.state.seenPaths.filter((path) => path === "GET /api/v1/issues?status=open").length;
+    const streamsBefore = backend.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/events/stream")).length;
+
+    backend.state.issuesBarrier = issuesBarrier;
+    backend.state.failNextIssuesStatus = 500;
+    emitKataReset(backend.state, 6);
+    await expect
+      .poll(() => backend.state.seenPaths.filter((path) => path === "GET /api/v1/issues?status=open").length)
+      .toBeGreaterThan(issueLoadsBefore);
+    await expect(page.getByTestId("daemon-chip")).toBeDisabled();
+
+    releaseIssues();
+    await expect(page.getByTestId("daemon-chip")).toBeEnabled();
+    await expect
+      .poll(() => backend.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/events/stream")).length)
+      .toBeGreaterThan(streamsBefore);
+    await expect(taskList.getByRole("button", { name: /Pay rent/ })).toBeVisible();
+  } finally {
+    releaseIssues();
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata workspace applies a final reset frame when the configured daemon stream closes", async ({ page }) => {
   const backend = await startKataBackend({ issues: [issues[0]!] });
   const kataHome = await configureKataHome(backend.url);
@@ -3195,8 +3243,12 @@ test("kata daemon switch restores the previous workspace after target bootstrap 
 });
 
 test("kata daemon switch leaves empty stopped state when target and rollback fail", async ({ page }) => {
+  let releaseIssues!: () => void;
+  const issuesBarrier = new Promise<void>((resolve) => {
+    releaseIssues = resolve;
+  });
   const home = await startKataBackend();
-  const work = await startKataBackend();
+  const work = await startKataBackend({ issuesBarrier });
   const kataHome = await configureKataHomeDaemons(
     [
       { name: "home", url: home.url },
@@ -3218,6 +3270,12 @@ test("kata daemon switch leaves empty stopped state when target and rollback fai
 
     await page.getByTestId("daemon-chip").click();
     await page.getByTestId("daemon-row-work").click();
+    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/issues?status=open");
+    await page.evaluate(() => {
+      window.history.pushState({}, "", "/kata?view=all&scope=project-kata");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    releaseIssues();
 
     await expect(page.getByTestId("daemon-chip")).toContainText("home");
     await expect(page.getByRole("status", { name: "Connection: error" })).toBeVisible();
@@ -3228,7 +3286,10 @@ test("kata daemon switch leaves empty stopped state when target and rollback fai
     expect(home.state.seenPaths.filter((seenPath) => seenPath.startsWith("GET /api/v1/events/stream")).length).toBe(
       homeStreamsBeforeSwitch,
     );
+    await page.waitForTimeout(250);
+    expect(home.state.seenPaths).not.toContain("GET /api/v1/projects/2/issues?status=open");
   } finally {
+    releaseIssues();
     await server.stop();
     kataHome.restore();
     await home.close();

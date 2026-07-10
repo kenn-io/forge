@@ -199,7 +199,9 @@ describe("itemRefHandler", () => {
 
     expect(open).not.toHaveBeenCalled();
     expect(mocks.navigate).not.toHaveBeenCalled();
-    expect(mocks.showFlash).toHaveBeenCalledWith("other/repo is not tracked. Add it in Settings to navigate here.");
+    expect(mocks.showFlash).toHaveBeenCalledWith("other/repo is not tracked. Add it in Settings to navigate here.", {
+      tone: "danger",
+    });
   });
 
   it("keeps the not-tracked flash for references without an external fallback", async () => {
@@ -218,7 +220,9 @@ describe("itemRefHandler", () => {
       "data-number": "77",
     });
 
-    expect(mocks.showFlash).toHaveBeenCalledWith("other/repo is not tracked. Add it in Settings to navigate here.");
+    expect(mocks.showFlash).toHaveBeenCalledWith("other/repo is not tracked. Add it in Settings to navigate here.", {
+      tone: "danger",
+    });
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 });

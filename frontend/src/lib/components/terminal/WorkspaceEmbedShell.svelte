@@ -56,7 +56,7 @@
 <Provider
   {client}
   roborevBaseUrl="/api/roborev"
-  onError={showFlash}
+  onError={(msg) => showFlash(msg, { tone: "danger" })}
   onNavigate={(e) =>
     navigate(typeof e === "string" ? e : e.path)}
   onWorkspaceCommand={emitWorkspaceCommand}

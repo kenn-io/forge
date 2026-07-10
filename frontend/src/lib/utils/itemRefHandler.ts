@@ -55,9 +55,9 @@ async function resolveAndNavigate(
 
     if (error) {
       if (response.status === 404) {
-        showFlash(`Item ${owner}/${name}#${number} not found.`);
+        showFlash(`Item ${owner}/${name}#${number} not found.`, { tone: "danger" });
       } else {
-        showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`);
+        showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`, { tone: "danger" });
       }
       return;
     }
@@ -68,7 +68,7 @@ async function resolveAndNavigate(
         window.open(safeExternalUrl, "_blank", "noopener,noreferrer");
         return;
       }
-      showFlash(`${owner}/${name} is not tracked. Add it in Settings to navigate here.`);
+      showFlash(`${owner}/${name} is not tracked. Add it in Settings to navigate here.`, { tone: "danger" });
       return;
     }
 
@@ -84,7 +84,7 @@ async function resolveAndNavigate(
     navigate(path);
   } catch {
     if (thisRequestId !== requestId) return;
-    showFlash("Failed to resolve item reference. Check your connection.");
+    showFlash("Failed to resolve item reference. Check your connection.", { tone: "danger" });
   }
 }
 

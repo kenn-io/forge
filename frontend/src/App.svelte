@@ -384,7 +384,7 @@
         openKataIssue(match.uid, daemonId);
       }
     } catch {
-      showFlash("Could not open linked task");
+      showFlash("Could not open linked task", { tone: "danger" });
     }
   }
 
@@ -899,7 +899,7 @@
           repoPath: sel.repoPath,
         });
       },
-      onError: (msg: string) => showFlash(msg),
+      onError: (msg: string) => showFlash(msg, { tone: "danger" }),
     };
 
   }
@@ -918,7 +918,7 @@
   <Provider
     {client}
     roborevBaseUrl="/api/roborev"
-    onError={showFlash}
+    onError={(msg) => showFlash(msg, { tone: "danger" })}
     onNotification={showFlash}
     onNavigate={(e) =>
       navigate(typeof e === "string" ? e : e.path)}
@@ -968,7 +968,7 @@
   <!-- Mounted once above the focus/full-shell branching so flashes raised
        through the shared store stay visible in every presentation, not just
        the desktop shell. -->
-  <FlashBanner top="var(--header-height)" />
+  <FlashBanner top={shouldUseFocusPresentation() ? "0" : "var(--header-height)"} />
   {#if shouldUseFocusPresentation()}
     {@const r = getRoute()}
     <main

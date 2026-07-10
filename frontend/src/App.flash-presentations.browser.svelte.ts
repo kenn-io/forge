@@ -29,16 +29,41 @@ describe("flash rendering across app shells", () => {
     mounted = null;
   });
 
+  async function visibleFlash(message: string): Promise<HTMLElement> {
+    const { showFlash } = await import("@middleman/ui/stores/flash");
+    showFlash(message, { tone: "danger" });
+    return vi.waitFor(() => {
+      const stack = document.querySelector<HTMLElement>(".kit-flash-stack");
+      expect(stack?.textContent).toContain(message);
+      return stack!;
+    }, WAIT);
+  }
+
+  function expectBelowHeader(stack: HTMLElement): void {
+    const header = document.querySelector<HTMLElement>(".app-top-bar");
+    expect(header).not.toBeNull();
+    expect(Math.abs(stack.getBoundingClientRect().top - header!.getBoundingClientRect().bottom)).toBeLessThan(1);
+    expect(stack.closest(".focus-layout, .desktop-layout, .embed-layout")).toBeNull();
+    expect(stack.querySelector(".kit-flash-banner")?.getAttribute("data-kit-tone")).toBe("danger");
+  }
+
   it("renders shared-store flashes in the desktop shell", async () => {
     await page.viewport(1280, 900);
     mounted = await mountBrowserApp("/pulls");
     await vi.waitFor(() => expect(document.querySelector(".kit-sidebar-layout__sidebar")).not.toBeNull(), WAIT);
 
-    const { showFlash } = await import("@middleman/ui/stores/flash");
-    showFlash("desktop shell flash");
-    await vi.waitFor(() => {
-      expect(document.querySelector(".kit-flash-stack")?.textContent).toContain("desktop shell flash");
-    }, WAIT);
+    expectBelowHeader(await visibleFlash("desktop shell flash"));
+  });
+
+  it("renders danger flashes at the compact page edge", async () => {
+    await page.viewport(390, 844);
+    mounted = await mountBrowserApp("/pulls");
+    await vi.waitFor(() => expect(document.querySelector(".focus-layout")).not.toBeNull(), WAIT);
+
+    const stack = await visibleFlash("compact shell flash");
+    expect(stack.getBoundingClientRect().top).toBe(0);
+    expect(stack.closest(".focus-layout, .desktop-layout, .embed-layout")).toBeNull();
+    expect(stack.querySelector(".kit-flash-banner")?.getAttribute("data-kit-tone")).toBe("danger");
   });
 
   it("renders shared-store flashes in the workspace embed shell", async () => {
@@ -46,10 +71,9 @@ describe("flash rendering across app shells", () => {
     mounted = await mountBrowserApp("/workspaces/embed/empty/noSelection");
     await vi.waitFor(() => expect(document.querySelector(".embed-layout")).not.toBeNull(), WAIT);
 
-    const { showFlash } = await import("@middleman/ui/stores/flash");
-    showFlash("embed shell flash");
-    await vi.waitFor(() => {
-      expect(document.querySelector(".kit-flash-stack")?.textContent).toContain("embed shell flash");
-    }, WAIT);
+    const stack = await visibleFlash("embed shell flash");
+    expect(stack.getBoundingClientRect().top).toBe(0);
+    expect(stack.closest(".focus-layout, .desktop-layout, .embed-layout")).toBeNull();
+    expect(stack.querySelector(".kit-flash-banner")?.getAttribute("data-kit-tone")).toBe("danger");
   });
 });

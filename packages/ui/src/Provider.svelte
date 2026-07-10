@@ -355,7 +355,7 @@
         if (event.status === "merged") {
           notificationCb?.(`${event.owner}/${event.name}#${event.number} merged after CI passed.`);
         } else {
-          (notificationCb ?? errorCb)?.(
+          errorCb?.(
             `Deferred merge for ${event.owner}/${event.name}#${event.number} failed: ${event.error ?? "checks did not pass"}`,
           );
         }

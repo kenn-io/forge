@@ -720,7 +720,7 @@
     if (await copyToClipboard(value)) {
       showFlash(successMessage);
     } else {
-      showFlash("Could not copy to clipboard.");
+      showFlash("Could not copy to clipboard.", { tone: "danger" });
     }
   }
 
@@ -737,7 +737,7 @@
           params: { path: { id: ws.id } },
         });
     if (!response.ok) {
-      showFlash(apiErrorMessage(error, `Refresh failed (${response.status})`));
+      showFlash(apiErrorMessage(error, `Refresh failed (${response.status})`), { tone: "danger" });
       return;
     }
     await fetchWorkspaces();
@@ -807,13 +807,13 @@
             },
           );
       if (!response.ok) {
-        showFlash(apiErrorMessage(error, `${label} failed (${response.status})`));
+        showFlash(apiErrorMessage(error, `${label} failed (${response.status})`), { tone: "danger" });
         return;
       }
       await fetchWorkspaces();
       closeContextMenu();
     } catch (err) {
-      showFlash(err instanceof Error ? err.message : `${label} failed.`);
+      showFlash(err instanceof Error ? err.message : `${label} failed.`, { tone: "danger" });
     } finally {
       finishWorkspaceAction(ws);
     }
@@ -833,12 +833,12 @@
             params: { path: { id: ws.id } },
           });
       if (!response.ok) {
-        showFlash(apiErrorMessage(error, `${label} failed (${response.status})`));
+        showFlash(apiErrorMessage(error, `${label} failed (${response.status})`), { tone: "danger" });
         return;
       }
       closeContextMenu();
     } catch (err) {
-      showFlash(err instanceof Error ? err.message : `${label} failed.`);
+      showFlash(err instanceof Error ? err.message : `${label} failed.`, { tone: "danger" });
     } finally {
       finishWorkspaceAction(ws);
     }
@@ -872,7 +872,7 @@
         const fallback = response.status === 409
           ? "Workspace has uncommitted changes. Open it to force delete."
           : `Delete failed (${response.status})`;
-        showFlash(apiErrorMessage(error, fallback));
+        showFlash(apiErrorMessage(error, fallback), { tone: "danger" });
         return;
       }
       await fetchWorkspaces();
@@ -881,7 +881,7 @@
         navigate("/workspaces");
       }
     } catch (err) {
-      showFlash(err instanceof Error ? err.message : "Delete failed.");
+      showFlash(err instanceof Error ? err.message : "Delete failed.", { tone: "danger" });
     } finally {
       onWorkspaceDeletePendingChange?.(ws.id, ws.fleet_host_key, false);
       finishWorkspaceAction(ws);
@@ -893,7 +893,7 @@
     const url = providerItemURL(ws);
     closeContextMenu();
     if (!url) {
-      showFlash("Provider URL is not available for this workspace.");
+      showFlash("Provider URL is not available for this workspace.", { tone: "danger" });
       return;
     }
     window.open(url, "_blank", "noopener,noreferrer");
@@ -903,7 +903,7 @@
     const url = providerItemURL(ws);
     if (!url) {
       closeContextMenu();
-      showFlash("Provider URL is not available for this workspace.");
+      showFlash("Provider URL is not available for this workspace.", { tone: "danger" });
       return;
     }
     void copyMenuText(url, "Copied item URL.");

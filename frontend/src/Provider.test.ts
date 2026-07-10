@@ -301,4 +301,26 @@ describe("Provider events store wiring", () => {
     render(Provider, { props: { client: stubClient } });
     expect(captured.store?.options.getBasePath).toBeUndefined();
   });
+
+  it("routes deferred merge failures only through the error callback", () => {
+    const onError = vi.fn();
+    const onNotification = vi.fn();
+    render(Provider, { props: { client: stubClient, onError, onNotification } });
+
+    captured.store?.options.onDeferredMergeCompleted?.({
+      provider: "github",
+      platform_host: "github.com",
+      repo_path: "acme/widget",
+      owner: "acme",
+      name: "widget",
+      number: 42,
+      head_sha: "2222222",
+      status: "failed",
+      error: "checks did not pass",
+      completed_at: "2026-07-10T15:00:00Z",
+    });
+
+    expect(onError).toHaveBeenCalledWith("Deferred merge for acme/widget#42 failed: checks did not pass");
+    expect(onNotification).not.toHaveBeenCalled();
+  });
 });

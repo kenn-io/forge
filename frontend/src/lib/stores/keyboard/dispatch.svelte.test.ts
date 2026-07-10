@@ -170,7 +170,7 @@ describe("dispatchKeydown — error handling", () => {
     ]);
     dispatchKeydown(event({ key: "j" }), () => ctx);
     await new Promise((r) => setTimeout(r, 0));
-    expect(flash).toHaveBeenCalledWith(expect.stringContaining("boom"));
+    expect(flash).toHaveBeenCalledWith(expect.stringContaining("boom"), { tone: "danger" });
     flash.mockRestore();
   });
 });

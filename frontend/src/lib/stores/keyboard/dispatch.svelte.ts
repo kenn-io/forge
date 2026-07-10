@@ -98,7 +98,7 @@ function surfaceError(actionId: string, err: unknown): void {
   if (!(err instanceof Error) || !err.message) {
     console.error(`keyboard action ${actionId} failed`, err);
   }
-  showFlash(msg);
+  showFlash(msg, { tone: "danger" });
 }
 
 function matches(spec: Action["binding"] | KeySpec, event: KeyboardEvent): boolean {

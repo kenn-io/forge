@@ -2007,6 +2007,52 @@ test("kata workspace reloads from reset frames on the configured daemon stream",
   }
 });
 
+test("kata daemon switch waits for an in-flight event stream refresh", async ({ page }) => {
+  let releaseIssues!: () => void;
+  const issuesBarrier = new Promise<void>((resolve) => {
+    releaseIssues = resolve;
+  });
+  const home = await startKataBackend({ issues: [issues[0]!] });
+  const work = await startKataBackend({ issues: [issues[1]!] });
+  const kataHome = await configureKataHomeDaemons(
+    [
+      { name: "home", url: home.url },
+      { name: "work", url: work.url },
+    ],
+    "home",
+  );
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?view=all`);
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toBeVisible();
+    await expect.poll(() => home.state.streams.size).toBeGreaterThan(0);
+    const homeIssueLoads = home.state.seenPaths.filter((path) => path === "GET /api/v1/issues?status=open").length;
+
+    home.state.issuesBarrier = issuesBarrier;
+    emitKataReset(home.state, 6);
+    await expect
+      .poll(() => home.state.seenPaths.filter((path) => path === "GET /api/v1/issues?status=open").length)
+      .toBeGreaterThan(homeIssueLoads);
+
+    await expect(page.getByTestId("daemon-chip")).toBeDisabled();
+    releaseIssues();
+    await expect(page.getByTestId("daemon-chip")).toBeEnabled();
+    await page.getByTestId("daemon-chip").click();
+    await page.getByTestId("daemon-row-work").click();
+
+    await expect(page.getByTestId("daemon-chip")).toContainText("work");
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Email Susan re: Q3/ })).toBeVisible();
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
+  } finally {
+    releaseIssues();
+    await server.stop();
+    kataHome.restore();
+    await home.close();
+    await work.close();
+  }
+});
+
 test("kata workspace applies a final reset frame when the configured daemon stream closes", async ({ page }) => {
   const backend = await startKataBackend({ issues: [issues[0]!] });
   const kataHome = await configureKataHome(backend.url);

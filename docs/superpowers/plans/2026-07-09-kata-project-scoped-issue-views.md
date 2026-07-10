@@ -453,3 +453,22 @@ After removing accepted provenance from the roster, attempt an old-row detail re
 - [x] **Step 4: Run final verification and commit**
 
 Run the full Vite+ suite and complete Chromium/Firefox Kata Playwright spec before committing.
+
+### Task 10: Drain live-event refreshes before switching
+
+**Files:**
+
+- Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte`
+- Test: `frontend/tests/e2e-full/kata.spec.ts`
+
+- [x] **Step 1: Count stream callbacks as view work**
+
+Keep daemon selection disabled while a live-event callback reloads old-daemon projects or issues, preserving its error propagation to the stream controller.
+
+- [x] **Step 2: Prove switching waits for a stalled stream refresh**
+
+Stall an issue reload triggered by a reset frame, assert the selector remains disabled, then release it and prove a later switch renders only the replacement daemon.
+
+- [x] **Step 3: Run final verification and commit**
+
+Run the full Vite+ suite and complete Chromium/Firefox Kata Playwright spec before committing.

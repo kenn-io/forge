@@ -331,9 +331,10 @@ Kata frontend adaptation:
   other surfaces follow their own selection (`frontend/src/App.svelte::kataWorkspaceAPI`).
 - Removed accepted daemons remain selected and visibly unavailable until the
   user chooses a configured daemon (`frontend/src/lib/features/kata/KataDaemonSwitcher.svelte::displayId`).
-- Daemon switching is disabled during initial bootstrap, writes, view work, and
-  switches. The entire Kata workspace is inert while a switch is provisional,
-  and failed rollback clears any partially restored state and stops its stream
+- Daemon switching is disabled during initial bootstrap, writes, view work
+  (including live-event refresh callbacks), and switches. The entire Kata
+  workspace is inert while a switch is provisional, and failed rollback clears
+  any partially restored state and stops its stream
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::switchKataDaemon`).
 - Replace direct daemon URL/localStorage bootstrap with calls to middleman's
   Kata daemon roster and proxy.

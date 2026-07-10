@@ -144,7 +144,7 @@
       store.connection = { status: "online" };
     },
     onMessage: async (message) => {
-      await store.applyEventStreamMessage(message);
+      await trackViewWork(() => store.applyEventStreamMessage(message));
     },
     onReset: () => {
       resetIssueExpansion();
@@ -182,6 +182,15 @@
   function endViewLoading(generation: number): void {
     viewWorkCount = Math.max(0, viewWorkCount - 1);
     if (generation === viewLoadingGeneration) viewLoading = false;
+  }
+
+  async function trackViewWork<T>(task: () => Promise<T>): Promise<T> {
+    const generation = beginViewLoading();
+    try {
+      return await task();
+    } finally {
+      endViewLoading(generation);
+    }
   }
 
   function kataRequestErrorMessage(err: unknown): string {

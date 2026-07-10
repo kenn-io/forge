@@ -292,6 +292,7 @@ export class KataWorkspaceStore {
   selectedEvents = $state.raw<KataTaskEvent[]>([]);
   selectedRecurrences = $state.raw<KataRecurrence[]>([]);
   eventCursor = $state(0);
+  daemonId = $state<string | undefined>(undefined);
   searchFilters = $state.raw<KataTaskSearchFilters>(defaultKataTaskSearchFilters());
   duplicateCandidates = $state.raw<KataDuplicateCandidateDisplay[]>([]);
   pendingSelectionUID = $state<string | null>(null);
@@ -323,6 +324,7 @@ export class KataWorkspaceStore {
         this.connection = { status: "online" };
         return;
       }
+      this.acceptWorkflowResult(view);
       this.clearTaskCache();
       this.projects = projects.projects;
       this.areas = deriveKataAreas(projects.projects);
@@ -357,6 +359,7 @@ export class KataWorkspaceStore {
     const requestID = ++this.viewRequestID;
     const view = await this.api.issues({ view: viewName, ...scopedIssueQuery(this.searchFilters) });
     if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
+    this.acceptWorkflowResult(view);
     this.cacheView(view);
     this.currentView = {
       name: view.view,
@@ -396,6 +399,7 @@ export class KataWorkspaceStore {
     try {
       const results = await this.api.search(this.searchFilters);
       if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
+      this.acceptWorkflowResult(results);
       this.duplicateCandidates = [];
       this.cacheTasks(results.issues);
       const groups = groupSearchIssues(results.issues);
@@ -427,6 +431,7 @@ export class KataWorkspaceStore {
       const requestID = ++this.viewRequestID;
       const view = await this.api.issues({ view: nextUnscopedViewName });
       if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
+      this.acceptWorkflowResult(view);
       this.searchFilters = nextFilters;
       this.duplicateCandidates = [];
       this.cacheView(view);
@@ -447,6 +452,7 @@ export class KataWorkspaceStore {
     try {
       const results = await this.api.search(nextFilters);
       if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
+      this.acceptWorkflowResult(results);
       if (previousFilters.scope.kind === "all" && nextFilters.scope.kind === "project") {
         this.unscopedViewName = this.currentView.name;
       }
@@ -490,6 +496,7 @@ export class KataWorkspaceStore {
     this.duplicateCandidates = [];
     const view = await this.api.issues({ view: "inbox" });
     if (requestID !== this.viewRequestID) return;
+    this.acceptWorkflowResult(view);
     this.cacheView(view);
     this.currentView = {
       name: "inbox",
@@ -743,6 +750,13 @@ export class KataWorkspaceStore {
     this.cacheTasks(view.groups.flatMap((group) => group.issues));
   }
 
+  private acceptWorkflowResult(result: { daemon_id?: string | undefined }): void {
+    const daemonId = result.daemon_id?.trim();
+    if (!daemonId) return;
+    this.daemonId = daemonId;
+    this.api.bindWorkflowDaemon?.(daemonId);
+  }
+
   private cacheDetail(detail: KataTaskDetail): void {
     this.cacheTasks([detail.issue, ...(detail.children ?? [])]);
   }
@@ -921,6 +935,7 @@ export class KataWorkspaceStore {
         return false;
       }
       if (requestID !== this.viewRequestID) return false;
+      this.acceptWorkflowResult(results);
       this.duplicateCandidates = [];
       this.cacheTasks(results.issues);
       const groups = groupSearchIssues(results.issues);
@@ -941,6 +956,7 @@ export class KataWorkspaceStore {
         return false;
       }
       if (requestID !== this.viewRequestID) return false;
+      this.acceptWorkflowResult(view);
       this.duplicateCandidates = [];
       this.cacheView(view);
       nextView = {

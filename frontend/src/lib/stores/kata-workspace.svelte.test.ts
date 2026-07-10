@@ -199,6 +199,7 @@ type FakeKataTaskAPI = KataTaskAPI & {
     ifMatch: string,
   ): Promise<{ changed: boolean; issue?: KataTaskSummary; etag?: string; new_short_id: string }>;
   mocks: {
+    bindWorkflowDaemon: ReturnType<typeof vi.fn>;
     instance: ReturnType<typeof vi.fn>;
     projects: ReturnType<typeof vi.fn>;
     createProject: ReturnType<typeof vi.fn>;
@@ -230,6 +231,7 @@ type FakeKataTaskAPI = KataTaskAPI & {
 };
 
 function createFakeKataTaskAPI(): FakeKataTaskAPI {
+  const bindWorkflowDaemon = vi.fn();
   const instance = vi.fn(
     async (): Promise<KataInstanceResponse> => ({
       instance_uid: "instance-1",
@@ -292,13 +294,16 @@ function createFakeKataTaskAPI(): FakeKataTaskAPI {
       );
       rows = rows.filter((item) => allowed.has(item.project_uid));
     }
-    return buildKataTaskView({
-      view: query.view,
-      issues: rows,
-      projects,
-      today: "2026-05-15",
-      fetched_at: fetchedAt,
-    });
+    return {
+      ...buildKataTaskView({
+        view: query.view,
+        issues: rows,
+        projects,
+        today: "2026-05-15",
+        fetched_at: fetchedAt,
+      }),
+      daemon_id: "home",
+    };
   });
   const search = vi.fn(async (filters: KataTaskSearchFilters): Promise<KataTaskSearchResponse> => {
     const query = filters.query.trim().toLowerCase();
@@ -317,7 +322,7 @@ function createFakeKataTaskAPI(): FakeKataTaskAPI {
       }
       return true;
     });
-    return { filters, issues: rows, fetched_at: fetchedAt };
+    return { filters, issues: rows, fetched_at: fetchedAt, daemon_id: "home" };
   });
   const issueMock = vi.fn(async (uid: string) => detailFor(uid));
   const reachableGraph = vi.fn(
@@ -413,6 +418,7 @@ function createFakeKataTaskAPI(): FakeKataTaskAPI {
   }));
   const deleteRecurrence = vi.fn(async () => undefined);
   return {
+    bindWorkflowDaemon,
     instance,
     projects: projectsMock,
     createProject,
@@ -441,6 +447,7 @@ function createFakeKataTaskAPI(): FakeKataTaskAPI {
     patchRecurrence,
     deleteRecurrence,
     mocks: {
+      bindWorkflowDaemon,
       instance,
       projects: projectsMock,
       createProject,
@@ -1493,6 +1500,7 @@ describe("kata workspace store", () => {
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "new" },
       issues: [issues[1]!],
       fetched_at: "new",
+      daemon_id: "work",
     });
     await second;
 
@@ -1500,6 +1508,7 @@ describe("kata workspace store", () => {
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "old" },
       issues: [issues[0]!],
       fetched_at: "old",
+      daemon_id: "home",
     });
     await first;
 
@@ -1508,6 +1517,8 @@ describe("kata workspace store", () => {
       "Call dentist",
     ]);
     expect(store.selectedIssue?.issue.uid).toBe("issue-call-dentist");
+    expect(store.daemonId).toBe("work");
+    expect(api.mocks.bindWorkflowDaemon).toHaveBeenLastCalledWith("work");
   });
 
   test("ignores stale bootstrap view data after newer navigation", async () => {

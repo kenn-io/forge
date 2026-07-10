@@ -3754,6 +3754,9 @@ test("kata project scope stays on the starting default daemon when configuration
     await expect.poll(() => page.evaluate(() => localStorage.getItem("middleman:kata:active_daemon"))).toBeNull();
     const taskList = page.locator(".kata-list");
     await expect(taskList.getByRole("button", { name: /Home scoped task/ })).toBeVisible();
+    const homeStreamsBeforeRosterRefresh = home.state.seenPaths.filter((seenPath) =>
+      seenPath.startsWith("GET /api/v1/events/stream"),
+    ).length;
     const projectRequestsBeforeScope = home.state.seenPaths.filter(
       (seenPath) => seenPath === "GET /api/v1/projects?include=stats",
     ).length;
@@ -3790,6 +3793,10 @@ test("kata project scope stays on the starting default daemon when configuration
     await expect(taskList.getByRole("button", { name: /Foreign work task/ })).toHaveCount(0);
     await expect.poll(() => home.state.seenPaths).toContain("GET /api/v1/projects/7/issues?status=open");
     expect(work.state.seenPaths).not.toContain("GET /api/v1/projects/7/issues?status=open");
+    await expect
+      .poll(() => home.state.seenPaths.filter((seenPath) => seenPath.startsWith("GET /api/v1/events/stream")).length)
+      .toBeGreaterThan(homeStreamsBeforeRosterRefresh);
+    expect(work.state.seenPaths.some((seenPath) => seenPath.startsWith("GET /api/v1/events/stream"))).toBe(false);
 
     const targetIssue = homeFollowUp;
     const detailRequestPromise = page.waitForRequest((request) =>

@@ -134,7 +134,7 @@
     store.currentView.name === "logbook" ? "all" : store.searchFilters.status,
   );
   const eventStream = createKataEventStreamController({
-    getDaemonId: () => activeKataDaemonId,
+    getDaemonId: () => store.daemonId ?? activeKataDaemonId,
     getLastEventID: () => store.eventCursor,
     onOpen: () => {
       store.connection = { status: "online" };

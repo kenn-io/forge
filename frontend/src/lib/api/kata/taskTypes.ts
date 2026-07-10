@@ -94,6 +94,7 @@ export interface KataTaskViewResponse {
   view: KataTaskViewName;
   groups: KataTaskGroup[];
   fetched_at: string;
+  daemon_id?: string | undefined;
 }
 
 export type KataTaskStatusFilter = "open" | "closed" | "all";
@@ -111,6 +112,7 @@ export interface KataTaskSearchResponse {
   filters: KataTaskSearchFilters;
   issues: KataTaskSummary[];
   fetched_at: string;
+  daemon_id?: string | undefined;
 }
 
 export type KataReachableGraphDepth = "full" | "1" | "2" | "3";
@@ -380,6 +382,7 @@ export interface KataTaskIssuesQuery {
 }
 
 export interface KataTaskAPI {
+  bindWorkflowDaemon?(daemonId?: string): void;
   instance(): Promise<KataInstanceResponse>;
   projects(): Promise<KataProjectsResponse>;
   createProject(name: string): Promise<KataProjectSummary>;

@@ -294,14 +294,18 @@ Run the complete task-client unit suite, full Vite+ suite, and complete Chromium
 **Files:**
 
 - Modify: `frontend/src/lib/api/kata/taskClient.ts:260-290,604-640`
+- Modify: `frontend/src/lib/api/kata/taskTypes.ts`
+- Modify: `frontend/src/lib/stores/kata-workspace.svelte.ts`
+- Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte`
 - Test: `frontend/src/lib/api/kata/taskClient.test.ts`
+- Test: `frontend/src/lib/stores/kata-workspace.svelte.test.ts`
 - Test: `frontend/tests/e2e-full/kata.spec.ts`
 - Modify: `docs/superpowers/specs/2026-07-09-kata-project-scoped-issue-views-design.md`
 
 **Interfaces:**
 
 - Consumes: the concrete daemon resolved for issue views and non-explicit searches.
-- Produces: a workflow daemon that related detail, event, project, and mutation requests use ahead of later stored-default changes.
+- Produces: daemon provenance on list/search results and an accepted workspace binding that related detail, event, project, and mutation requests use ahead of later active/default changes.
 
 - [x] **Step 1: Add a failing client regression for post-load default drift**
 
@@ -313,8 +317,12 @@ Delay the app-level roster request while Kata workspace bootstraps on `home`. St
 
 - [x] **Step 3: Add a replaceable workflow daemon pin**
 
-Set the workflow daemon when the latest issue view or non-explicit search succeeds. Related requests select active daemon, workflow daemon, stored default, then on-demand fallback. New view/search resolution ignores the old workflow pin so an intentional active/default reload can replace it, while failed or superseded loads preserve the old pin; an explicit search for another integration does not replace the workspace pin.
+Return `daemon_id` on issue-view and search responses. After request-generation checks reject stale results, the workspace store binds the accepted daemon into the client and exposes it to live-stream setup. Related requests select bound workflow daemon, active daemon, stored default, then on-demand fallback. New view/search resolution ignores the old workflow pin so an intentional active/default reload can replace it after acceptance; external shared-client searches do not bind themselves.
 
-- [x] **Step 4: Run final verification and commit**
+- [x] **Step 4: Pin multi-page event walks**
+
+Resolve the effective workflow daemon once at the start of `events()` and send that concrete header on every page. Change the default getter after the first page in the pagination regression and assert both requests retain the starting daemon.
+
+- [x] **Step 5: Run final verification and commit**
 
 Run the complete task-client unit suite, full Vite+ suite, and complete Chromium/Firefox Kata Playwright spec before committing.

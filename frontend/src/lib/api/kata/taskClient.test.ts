@@ -620,6 +620,32 @@ describe("kata task HTTP client", () => {
     expect(calls.map((call) => proxyPath(call.url))).toEqual(["/api/v1/kata/daemons"]);
   });
 
+  test("rejects a whitespace-only roster daemon before project search", async () => {
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/kata/daemons": {
+        body: {
+          daemons: [{ id: "   ", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }],
+        },
+      },
+    });
+    const api = createKataTaskAPI({
+      fetchImpl,
+      getDaemonId: () => undefined,
+      getDefaultDaemonId: () => undefined,
+    });
+
+    await expect(
+      api.search({
+        scope: { kind: "project", project_uid: "project-work" },
+        status: "open",
+        owner: "",
+        label: "",
+        query: "",
+      }),
+    ).rejects.toMatchObject({ status: 503, code: "service_unavailable" });
+    expect(calls.map((call) => proxyPath(call.url))).toEqual(["/api/v1/kata/daemons"]);
+  });
+
   test("searches a project by integer project id and normalizes server search results", async () => {
     const { calls, fetchImpl } = createFetchStub({
       "/api/v1/projects?include=stats": {
@@ -1006,7 +1032,8 @@ describe("kata task HTTP client", () => {
       getDefaultDaemonId: () => defaultDaemonId,
     });
 
-    await api.issues({ view: "all", project_uid: "project-work" });
+    const view = await api.issues({ view: "all", project_uid: "project-work" });
+    api.bindWorkflowDaemon?.(view.daemon_id!);
     defaultDaemonId = "work";
     await api.issue("issue-1");
     await api.closeIssue({ project_id: 1, ref: "issue-1" }, "middleman");
@@ -1036,13 +1063,48 @@ describe("kata task HTTP client", () => {
       getDefaultDaemonId: () => defaultDaemonId,
     });
 
-    await api.issues({ view: "all", project_uid: "project-work" });
+    const view = await api.issues({ view: "all", project_uid: "project-work" });
+    api.bindWorkflowDaemon?.(view.daemon_id!);
     defaultDaemonId = "work";
     projectsRoute.status = 503;
     projectsRoute.body = { error: { code: "service_unavailable", message: "work is unavailable" } };
     await expect(api.issues({ view: "all", project_uid: "project-work" })).rejects.toMatchObject({ status: 503 });
     await api.issue("issue-1");
 
+    expect(calls.at(-1)!.headers.get(KATA_DAEMON_HEADER)).toBe("home");
+  });
+
+  test("does not let an external search replace the bound workflow daemon", async () => {
+    let defaultDaemonId = "home";
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/projects?include=stats": {
+        body: { projects: [project("project-work", "Work")] },
+      },
+      "/api/v1/projects/1/issues?status=open": {
+        body: { issues: [issue("issue-1", "Shown issue", "project-work")] },
+      },
+      "/api/v1/issues?status=open": {
+        body: { issues: [issue("issue-work", "External result", "project-work")] },
+      },
+      "/api/v1/kata/tasks/issue-1": {
+        body: {
+          detail: { issue: { ...issue("issue-1", "Shown issue"), body: "Body" }, comments: [], labels: [], links: [] },
+        },
+      },
+    });
+    const api = createKataTaskAPI({
+      fetchImpl,
+      getDaemonId: () => undefined,
+      getDefaultDaemonId: () => defaultDaemonId,
+    });
+
+    const view = await api.issues({ view: "all", project_uid: "project-work" });
+    api.bindWorkflowDaemon?.(view.daemon_id!);
+    defaultDaemonId = "work";
+    await api.search({ scope: { kind: "all" }, status: "open", owner: "", label: "", query: "" });
+    await api.issue("issue-1");
+
+    expect(calls.at(-2)!.headers.get(KATA_DAEMON_HEADER)).toBe("work");
     expect(calls.at(-1)!.headers.get(KATA_DAEMON_HEADER)).toBe("home");
   });
 
@@ -1141,6 +1203,7 @@ describe("kata task HTTP client", () => {
   });
 
   test("paginates issue-scoped event reads in large pages until the requested filtered limit is reached", async () => {
+    let defaultDaemonId = "home";
     const { calls, fetchImpl } = createFetchStub({
       "/api/v1/events?after_id=4&limit=1000": {
         body: {
@@ -1163,7 +1226,15 @@ describe("kata task HTTP client", () => {
         },
       },
     });
-    const api = createKataTaskAPI({ fetchImpl });
+    const api = createKataTaskAPI({
+      getDaemonId: () => undefined,
+      getDefaultDaemonId: () => defaultDaemonId,
+      fetchImpl: async (input, init) => {
+        const response = await fetchImpl(input, init);
+        if (calls.length === 1) defaultDaemonId = "work";
+        return response;
+      },
+    });
 
     const events = await api.events({ issue_uid: "issue-1", after_id: 4, limit: 2 });
 
@@ -1171,6 +1242,7 @@ describe("kata task HTTP client", () => {
       "/api/v1/events?after_id=4&limit=1000",
       "/api/v1/events?after_id=6&limit=1000",
     ]);
+    expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual(["home", "home"]);
     expect(events.events.map((event) => event.event_uid)).toEqual(["event-6", "event-8"]);
   });
 

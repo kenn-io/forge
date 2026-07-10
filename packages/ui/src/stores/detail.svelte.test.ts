@@ -4,6 +4,7 @@ import { ProblemCodes, type ProblemBody } from "../api/problems.js";
 import type { PullDetail } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 import { createDetailStore } from "./detail.svelte.js";
+import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 
 function pullDetail(headSHA: string): PullDetail {
   return {
@@ -54,7 +55,36 @@ function mockClient(overrides: Partial<MiddlemanClient> = {}): MiddlemanClient {
 
 describe("createDetailStore", () => {
   afterEach(() => {
+    for (const item of getFlashes()) dismissFlash(item.id);
     vi.useRealTimers();
+  });
+
+  it("flashes failed optimistic state changes without poisoning detail load state", async () => {
+    const optimisticKanbanUpdate = vi.fn();
+    const store = createDetailStore({
+      client: mockClient({
+        GET: vi.fn().mockResolvedValue({ data: pullDetail("head") }),
+        PUT: vi.fn().mockResolvedValue({ error: { detail: "permission denied" } }),
+      }),
+      getPage: () => "pulls",
+      pulls: {
+        loadPulls: vi.fn().mockResolvedValue(undefined),
+        getPullKanbanStatus: vi.fn(() => "new"),
+        optimisticKanbanUpdate,
+      },
+    });
+    await store.loadDetail("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+
+    await store.updateKanbanState("acme", "widget", 7, "reviewing");
+
+    expect(getFlash()).toMatchObject({ message: "permission denied", tone: "danger" });
+    expect(store.getDetailError()).toBeNull();
+    expect(optimisticKanbanUpdate).toHaveBeenLastCalledWith(expect.anything(), 7, "new");
   });
 
   it("syncs detail and resolves after applying the refreshed head", async () => {

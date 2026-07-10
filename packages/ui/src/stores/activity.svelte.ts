@@ -1,5 +1,6 @@
 import type { ActivityItem, ActivityParams, ActivitySettings } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
+import { showFlash } from "./flash.svelte.js";
 
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
@@ -338,9 +339,16 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const acked = !!data && [...(data.succeeded ?? []), ...(data.queued ?? [])].includes(id);
       if (requestError || !acked) {
         rollback();
+        showFlash(
+          requestError
+            ? apiErrorMessage(requestError, "failed to mark notification as read")
+            : "Failed to mark notification as read.",
+          { tone: "danger" },
+        );
       }
-    } catch {
+    } catch (err) {
       rollback();
+      showFlash(err instanceof Error ? err.message : "Failed to mark notification as read.", { tone: "danger" });
     }
   }
 

@@ -26,8 +26,7 @@
     provider?: string;
     platformHost?: string | undefined;
     repoPath?: string;
-    submitComment?: (owner: string, name: string, number: number, body: string) => Promise<void>;
-    getError?: () => string | null;
+    submitComment?: (owner: string, name: string, number: number, body: string) => Promise<void | boolean>;
     autocompleteResponse?: AutocompleteResponse;
     onAutocompleteQuery?: ((query: Record<string, unknown> | undefined) => void) | undefined;
   }
@@ -40,8 +39,7 @@
     provider = "github",
     platformHost = "github.com",
     repoPath = `${owner}/${name}`,
-    submitComment = async () => {},
-    getError = () => null,
+    submitComment = async () => true,
     autocompleteResponse = { users: [], references: [] },
     onAutocompleteQuery = undefined,
   }: Props = $props();
@@ -51,12 +49,12 @@
   // would freeze the initial function values.
   setContext(STORES_KEY, {
     detail: {
-      submitComment: (o: string, n: string, num: number, body: string) => submitComment(o, n, num, body),
-      getDetailError: () => getError(),
+      submitComment: async (o: string, n: string, num: number, body: string) =>
+        (await submitComment(o, n, num, body)) !== false,
     },
     issues: {
-      submitIssueComment: (o: string, n: string, num: number, body: string) => submitComment(o, n, num, body),
-      getIssueDetailError: () => getError(),
+      submitIssueComment: async (o: string, n: string, num: number, body: string) =>
+        (await submitComment(o, n, num, body)) !== false,
     },
   });
 

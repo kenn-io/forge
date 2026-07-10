@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button } from "@kenn-io/kit-ui";
   import WorkflowIcon from "@lucide/svelte/icons/workflow";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import { getClient, getStores } from "../../context.js";
     import {
     runApproveWorkflows, type PRDetailActionInput,
@@ -39,7 +40,6 @@
   }: Props = $props();
 
   let submitting = $state(false);
-  let error = $state<string | null>(null);
 
   const label = $derived(
     count > 1 ? `Approve workflows (${count})` : "Approve workflows",
@@ -70,11 +70,10 @@
   async function handleApproveWorkflows(): Promise<void> {
     if (disabled) return;
     submitting = true;
-    error = null;
     try {
       await runApproveWorkflows(buildInput());
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       submitting = false;
     }
@@ -95,9 +94,6 @@
   >
     <WorkflowIcon size="14" strokeWidth="2.2" aria-hidden="true" />
   </Button>
-  {#if error}
-    <p class="workflow-approval-error">{error}</p>
-  {/if}
 </div>
 
 <style>
@@ -107,8 +103,4 @@
     gap: 8px;
   }
 
-  .workflow-approval-error {
-    font-size: var(--font-size-sm);
-    color: var(--accent-red);
-  }
 </style>

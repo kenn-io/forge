@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 import { createPullsStore } from "./pulls.svelte.js";
+import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
+
+afterEach(() => {
+  for (const item of getFlashes()) dismissFlash(item.id);
+});
 
 function pull(id: number, repoName: string, lastActivityAt: string, overrides: Partial<PullRequest> = {}): PullRequest {
   const provider = overrides.repo?.provider ?? "github";
@@ -42,6 +47,23 @@ function clientWithPulls(data: PullRequest[]): MiddlemanClient {
 }
 
 describe("pulls store display order", () => {
+  it("flashes star failures without replacing list load errors", async () => {
+    const store = createPullsStore({
+      client: {
+        DELETE: vi.fn(async () => ({ error: { detail: "permission denied" } })),
+      } as unknown as MiddlemanClient,
+    });
+
+    await store.togglePRStar(
+      { provider: "github", platformHost: "github.com", owner: "acme", name: "api", repoPath: "acme/api" },
+      7,
+      true,
+    );
+
+    expect(getFlash()).toMatchObject({ message: "permission denied", tone: "danger" });
+    expect(store.getError()).toBeNull();
+  });
+
   it("preserves the API order for flat display", async () => {
     const store = createPullsStore({
       client: clientWithPulls([

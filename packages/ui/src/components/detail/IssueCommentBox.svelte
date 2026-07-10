@@ -3,14 +3,11 @@
   import CommentEditor from "./CommentEditor.svelte";
   import {
     beginCommentSubmit,
-    clearCommentSubmitError,
     clearCommentDraft,
     finishCommentSubmit,
     getCommentDraft,
     getCommentDraftKey,
-    getCommentSubmitError,
     isCommentSubmitPending,
-    setCommentSubmitError,
     setCommentDraft,
   } from "./comment-drafts.svelte.js";
 
@@ -48,9 +45,6 @@
   );
 
   const isEmpty = $derived(body.trim() === "");
-  const visibleError = $derived(
-    getCommentSubmitError("issue", owner, name, number, platformHost),
-  );
   const isPostingCurrent = $derived(
     isCommentSubmitPending("issue", owner, name, number, platformHost),
   );
@@ -69,39 +63,15 @@
       submittedNumber,
       submittedPlatformHost,
     );
-    clearCommentSubmitError(
-      "issue",
-      submittedOwner,
-      submittedName,
-      submittedNumber,
-      submittedPlatformHost,
-    );
     try {
-      await issues.submitIssueComment(
+      const posted = await issues.submitIssueComment(
         submittedOwner,
         submittedName,
         submittedNumber,
         submittedBody,
       );
-      const storeError = issues.getIssueDetailError();
-      if (storeError !== null) {
-        setCommentSubmitError(
-          "issue",
-          submittedOwner,
-          submittedName,
-          submittedNumber,
-          storeError,
-          submittedPlatformHost,
-        );
-      } else {
+      if (posted) {
         clearCommentDraft(
-          "issue",
-          submittedOwner,
-          submittedName,
-          submittedNumber,
-          submittedPlatformHost,
-        );
-        clearCommentSubmitError(
           "issue",
           submittedOwner,
           submittedName,
@@ -151,9 +121,6 @@
   {/key}
   {#if disabled && disabledReason !== undefined}
     <p class="error-msg">{disabledReason}</p>
-  {/if}
-  {#if visibleError !== null}
-    <p class="error-msg">{visibleError}</p>
   {/if}
 </div>
 

@@ -13,6 +13,7 @@
   import { Chip } from "@kenn-io/kit-ui";
   import UserPicker from "./UserPicker.svelte";
   import { floatingPopoverStyle } from "@kenn-io/kit-ui";
+  import { showFlash } from "../../stores/flash.svelte.js";
 
   interface Props {
     label: string;
@@ -52,11 +53,7 @@
   let candidatesQuery = $state("");
   let candidatesLoading = $state(false);
   let pendingUser = $state<string | null>(null);
-  // Candidate-fetch and mutation failures are tracked separately so a
-  // late-resolving fetch success cannot erase the error from a save
-  // that genuinely failed. The mutation error wins when both are set.
   let candidatesError = $state<string | null>(null);
-  let mutationError = $state<string | null>(null);
   let autofocusFilter = $state(false);
   let anchorEl = $state<HTMLSpanElement>();
   let popoverEl = $state<HTMLDivElement>();
@@ -77,7 +74,6 @@
     open = false;
     pendingUser = null;
     candidatesError = null;
-    mutationError = null;
     if (queryDebounce !== null) {
       clearTimeout(queryDebounce);
       queryDebounce = null;
@@ -92,8 +88,7 @@
       if (seq !== candidateFetchSeq) return;
       candidates = next;
       candidatesQuery = query;
-      // A fresh successful fetch supersedes any candidate-load error a
-      // previous request left behind; mutation errors stay visible.
+      // A fresh successful fetch supersedes any previous candidate-load error.
       candidatesError = null;
       void tick().then(() => {
         if (open) positionPicker();
@@ -156,7 +151,6 @@
     closeOpenEditor = closePicker;
     open = true;
     candidatesError = null;
-    mutationError = null;
     await tick();
     positionPicker();
     await fetchCandidates("");
@@ -168,7 +162,6 @@
     if (disabled || !canEdit) return;
     if (pendingUser !== null) return;
     pendingUser = username;
-    mutationError = null;
     const key = username.toLowerCase();
     const next = users.some((user) => user.toLowerCase() === key)
       ? users.filter((user) => user.toLowerCase() !== key)
@@ -176,7 +169,7 @@
     try {
       await onchange(next);
     } catch (err) {
-      mutationError = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       pendingUser = null;
     }
@@ -186,11 +179,10 @@
     if (disabled || !canEdit) return;
     if (pendingUser !== null || users.length === 0) return;
     pendingUser = "";
-    mutationError = null;
     try {
       await onchange([]);
     } catch (err) {
-      mutationError = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       pendingUser = null;
     }
@@ -282,7 +274,7 @@
         loading={candidatesLoading}
         {candidatesQuery}
         {pendingUser}
-        error={mutationError ?? candidatesError}
+        error={candidatesError}
         {autofocusFilter}
         {avatarUrlForUser}
         onquery={onPickerQuery}

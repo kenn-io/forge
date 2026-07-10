@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem, ActivitySettings } from "../api/types.js";
 import {
   buildActivityFilterTypes,
@@ -6,6 +6,7 @@ import {
   DEFAULT_EVENT_TYPES,
   notificationDbId,
 } from "./activity.svelte.js";
+import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 
 const fakeClient = {
   GET: async () => ({
@@ -30,6 +31,10 @@ function makeStore() {
 
 beforeEach(() => {
   window.history.replaceState(null, "", "/");
+});
+
+afterEach(() => {
+  for (const item of getFlashes()) dismissFlash(item.id);
 });
 
 describe("activity store collapse state", () => {
@@ -364,6 +369,7 @@ describe("activity store markNotificationSeen", () => {
     await s.markNotificationSeen(s.getActivityItems()[0]!);
 
     expect(s.getActivityItems()[0]!.item_state).toBe("unread");
+    expect(getFlash()).toMatchObject({ message: "boom", tone: "danger" });
   });
 
   it("rolls back when the bulk response reports the id as failed despite a 200", async () => {
@@ -377,6 +383,7 @@ describe("activity store markNotificationSeen", () => {
     await s.markNotificationSeen(s.getActivityItems()[0]!);
 
     expect(s.getActivityItems()[0]!.item_state).toBe("unread");
+    expect(getFlash()).toMatchObject({ message: "Failed to mark notification as read.", tone: "danger" });
   });
 
   it("ignores rows that are not notification feed rows", async () => {

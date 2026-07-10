@@ -62,7 +62,6 @@
   let body = $state("");
   let submitting = $state(false);
   let submittingAction = $state<"approve" | "request_changes" | null>(null);
-  let error = $state<string | null>(null);
   let commentInput = $state<HTMLTextAreaElement | undefined>();
   const canRequestChanges = $derived(supportedReviewActions.includes("request_changes"));
 
@@ -79,7 +78,6 @@
     void number;
     expanded = false;
     body = "";
-    error = null;
     pinAtOpen = "";
   });
 
@@ -116,7 +114,6 @@
 
   function handleHeadConflict(reason: "stale_state" | "head_unknown", context?: string): void {
     expanded = false;
-    error = null;
     pinAtOpen = "";
     onheadconflict?.(reason, context);
   }
@@ -125,7 +122,6 @@
     if (disabled || submitting) return;
     submitting = true;
     submittingAction = "approve";
-    error = null;
     try {
       const approved = await submitApprovePR(buildInput());
       if (!approved) return;
@@ -141,9 +137,7 @@
         showFlash("Pull request approved, but it could not be refreshed.");
       }
     } catch (err) {
-      if (expanded) {
-        error = err instanceof Error ? err.message : String(err);
-      }
+      if (expanded) showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       submitting = false;
       submittingAction = null;
@@ -158,7 +152,6 @@
     if (disabled || submitting || body.trim() === "") return;
     submitting = true;
     submittingAction = "request_changes";
-    error = null;
     try {
       const { error: requestError } = await client.POST(providerItemPath("pulls", {
         provider, platformHost, owner, name, repoPath,
@@ -191,9 +184,7 @@
         showFlash("Changes were requested, but the pull request could not be refreshed.");
       }
     } catch (err) {
-      if (expanded) {
-        error = err instanceof Error ? err.message : String(err);
-      }
+      if (expanded) showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       submitting = false;
       submittingAction = null;
@@ -232,9 +223,6 @@
         bind:value={body}
         rows={3}
       ></textarea>
-      {#if error}
-        <p class="approve-error">{error}</p>
-      {/if}
       <div class="approve-actions">
         <Button
           class="btn btn--secondary"
@@ -318,11 +306,6 @@
     border-color: var(--accent-blue);
     outline: none;
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 32%, transparent);
-  }
-
-  .approve-error {
-    font-size: var(--font-size-sm);
-    color: var(--accent-red);
   }
 
   .approve-actions {

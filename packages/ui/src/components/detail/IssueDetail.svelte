@@ -7,6 +7,7 @@
     getUIConfig, getNavigate,
   } from "../../context.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
@@ -203,8 +204,6 @@
     void number;
     branchConflict = null;
     workspaceCreating = false;
-    workspaceError = null;
-    stateError = null;
     labelPickerOpen = false;
     labelPickerError = null;
     pendingLabel = null;
@@ -318,8 +317,8 @@
     const nextNames = nextCatalogLabelNames(currentLabels, labelCatalog, labelName);
     try {
       await issues.setIssueLabels(owner, name, number, nextNames);
-    } catch (err) {
-      labelPickerError = err instanceof Error ? err.message : String(err);
+    } catch {
+      // The issues store reports mutation failures through the shared flash.
     } finally {
       pendingLabel = null;
     }
@@ -334,8 +333,8 @@
     labelPickerError = null;
     try {
       await issues.setIssueLabels(owner, name, number, []);
-    } catch (err) {
-      labelPickerError = err instanceof Error ? err.message : String(err);
+    } catch {
+      // The issues store reports mutation failures through the shared flash.
     } finally {
       pendingLabel = null;
     }
@@ -394,7 +393,6 @@
   }
 
   let stateSubmitting = $state(false);
-  let stateError = $state<string | null>(null);
 
   // Per-operation mutation availability from the issue detail payload.
   const repoOperations = $derived(issues.getIssueDetail()?.repo?.operations);
@@ -415,7 +413,6 @@
     if (staleIssue) return;
     if (!currentCapabilities().state_mutation) return;
     stateSubmitting = true;
-    stateError = null;
     try {
       const { error: requestError } = await client.POST(
         providerItemPath("issues", routeRef, "/github-state"),
@@ -440,15 +437,13 @@
       await issues.loadIssues();
       await activity.loadActivity();
     } catch (err) {
-      stateError =
-        err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       stateSubmitting = false;
     }
   }
 
   let workspaceCreating = $state(false);
-  let workspaceError = $state<string | null>(null);
   const createWorkspaceTitle =
     "Create an issue worktree, then open Workspaces to launch agents or shells on that branch.";
   const createWorkspaceDescriptionId =
@@ -566,7 +561,6 @@
     }
 
     workspaceCreating = true;
-    workspaceError = null;
     if (branchConflict) {
       branchConflict.error = null;
     }
@@ -608,10 +602,6 @@
           requestError.detail
           ?? requestError.title
           ?? "failed to create workspace";
-        if (options.fromConflictDialog && branchConflict) {
-          branchConflict.error = message;
-          return;
-        }
         throw new Error(
           message,
         );
@@ -620,8 +610,7 @@
         navigate(`/terminal/${data.id}`);
       }
     } catch (err) {
-      workspaceError =
-        err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       workspaceCreating = false;
     }
@@ -1149,9 +1138,6 @@
             <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </Button>
         {/if}
-        {#if workspaceError}
-          <span class="action-error">{workspaceError}</span>
-        {/if}
         {#each actions.issue ?? [] as action (action.id)}
           <Button
             class="btn--embedding-action"
@@ -1169,9 +1155,6 @@
             {action.label}
           </Button>
         {/each}
-        {#if stateError}
-          <span class="action-error">{stateError}</span>
-        {/if}
       </div>
 
       <!-- Comment box -->
@@ -1541,11 +1524,6 @@
     padding: 8px 0;
   }
 
-  .action-error {
-    font-size: var(--font-size-xs);
-    color: var(--accent-red, #d73a49);
-  }
-
   .refresh-banner {
     display: flex;
     align-items: center;
@@ -1709,7 +1687,6 @@
     .sync-indicator,
     .section-title,
     .section-title-inline,
-    .action-error,
     .refresh-banner,
     .loading-placeholder {
       font-size: var(--font-size-sm);

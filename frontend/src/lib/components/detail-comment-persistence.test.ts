@@ -5,10 +5,8 @@ import { API_CLIENT_KEY, STORES_KEY } from "../../../../packages/ui/src/context.
 import CommentBox from "../../../../packages/ui/src/components/detail/CommentBox.svelte";
 import IssueCommentBox from "../../../../packages/ui/src/components/detail/IssueCommentBox.svelte";
 import {
-  clearCommentSubmitError,
   finishCommentSubmit,
   getCommentDraft,
-  getCommentSubmitError,
   isCommentSubmitPending,
   setCommentDraft,
 } from "../../../../packages/ui/src/components/detail/comment-drafts.svelte.js";
@@ -88,7 +86,7 @@ function renderPullCommentBox(owner = "octo", name = "repo", number = 1) {
         STORES_KEY,
         {
           detail: {
-            submitComment: async () => {},
+            submitComment: async () => true,
             getDetailError: () => null,
           },
         },
@@ -113,7 +111,7 @@ function renderIssueCommentBox(owner = "octo", name = "repo", number = 1) {
         STORES_KEY,
         {
           issues: {
-            submitIssueComment: async () => {},
+            submitIssueComment: async () => true,
             getIssueDetailError: () => null,
           },
         },
@@ -134,14 +132,6 @@ describe("comment draft persistence", () => {
     setCommentDraft("issue", "octo", "repo", 1, "", "ghe.example.com");
     setCommentDraft("pull", "group", "project", 1, "", "gitlab.example.com");
     setCommentDraft("issue", "group", "project", 1, "", "gitlab.example.com");
-    clearCommentSubmitError("pull", "octo", "repo", 1);
-    clearCommentSubmitError("pull", "octo", "repo", 2);
-    clearCommentSubmitError("issue", "octo", "repo", 1);
-    clearCommentSubmitError("issue", "octo", "repo", 2);
-    clearCommentSubmitError("pull", "octo", "repo", 1, "github.com");
-    clearCommentSubmitError("pull", "octo", "repo", 1, "ghe.example.com");
-    clearCommentSubmitError("issue", "octo", "repo", 1, "github.com");
-    clearCommentSubmitError("issue", "octo", "repo", 1, "ghe.example.com");
     finishCommentSubmit("pull", "octo", "repo", 1);
     finishCommentSubmit("pull", "octo", "repo", 2);
     finishCommentSubmit("issue", "octo", "repo", 1);
@@ -245,6 +235,22 @@ describe("comment draft persistence", () => {
     });
     expect(getCommentDraft(kind, "octo", "repo", 1, "github.com")).toBe("github draft");
     expect(getCommentDraft(kind, "octo", "repo", 1, "ghe.example.com")).toBe("ghe draft");
+  });
+
+  it.each(["pull", "issue"] as const)("keeps the %s draft when submission fails", async (kind) => {
+    render(CommentBoxContextHarness, {
+      props: {
+        kind,
+        submitComment: async () => false,
+      },
+    });
+    setCommentDraft(kind, "octo", "repo", 1, "retry this", "github.com");
+    await waitForCommentButtonEnabled();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    await waitFor(() => expect(isCommentSubmitPending(kind, "octo", "repo", 1, "github.com")).toBe(false));
+    expect(getCommentDraft(kind, "octo", "repo", 1, "github.com")).toBe("retry this");
   });
 
   it.each(["pull", "issue"] as const)(
@@ -580,80 +586,6 @@ describe("comment draft persistence", () => {
     await waitFor(() => {
       expect(isCommentSubmitPending("issue", "octo", "repo", 1, "github.com")).toBe(false);
     });
-  });
-
-  it("keeps a pull request submit error visible across remounts", async () => {
-    const submit = deferred();
-    const firstRender = render(CommentBoxContextHarness, {
-      props: {
-        kind: "pull",
-        owner: "octo",
-        name: "repo",
-        number: 1,
-        submitComment: async () => submit.promise,
-        getError: () => "pull submit failed",
-      },
-    });
-
-    setCommentDraft("pull", "octo", "repo", 1, "draft review note");
-    await waitForCommentButtonEnabled();
-    await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
-
-    submit.resolve();
-    await waitFor(() => {
-      expect(getCommentSubmitError("pull", "octo", "repo", 1, "github.com")).toBe("pull submit failed");
-    });
-
-    firstRender.unmount();
-    render(CommentBoxContextHarness, {
-      props: {
-        kind: "pull",
-        owner: "octo",
-        name: "repo",
-        number: 1,
-        submitComment: async () => Promise.resolve(),
-        getError: () => "pull submit failed",
-      },
-    });
-
-    expect(screen.getByText("pull submit failed")).toBeTruthy();
-  });
-
-  it("keeps an issue submit error visible across remounts", async () => {
-    const submit = deferred();
-    const firstRender = render(CommentBoxContextHarness, {
-      props: {
-        kind: "issue",
-        owner: "octo",
-        name: "repo",
-        number: 1,
-        submitComment: async () => submit.promise,
-        getError: () => "issue submit failed",
-      },
-    });
-
-    setCommentDraft("issue", "octo", "repo", 1, "draft issue note");
-    await waitForCommentButtonEnabled();
-    await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
-
-    submit.resolve();
-    await waitFor(() => {
-      expect(getCommentSubmitError("issue", "octo", "repo", 1, "github.com")).toBe("issue submit failed");
-    });
-
-    firstRender.unmount();
-    render(CommentBoxContextHarness, {
-      props: {
-        kind: "issue",
-        owner: "octo",
-        name: "repo",
-        number: 1,
-        submitComment: async () => Promise.resolve(),
-        getError: () => "issue submit failed",
-      },
-    });
-
-    expect(screen.getByText("issue submit failed")).toBeTruthy();
   });
 
   it("shows username autocomplete suggestions and inserts the selected mention", async () => {

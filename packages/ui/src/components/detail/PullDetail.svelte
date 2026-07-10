@@ -13,6 +13,7 @@
     RepoOperations,
   } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import {
     getStores, getClient, getActions,
     getUIConfig, getNavigate,
@@ -500,7 +501,6 @@
   }
 
   let stateSubmitting = $state(false);
-  let stateError = $state<string | null>(null);
 
   // Title editing
   let editingTitle = $state(false);
@@ -622,7 +622,6 @@
       return;
     }
     stateSubmitting = true;
-    stateError = null;
     try {
       const { error: requestError } = await client.POST(
         providerItemPath("pulls", routeRef, "/github-state"),
@@ -646,8 +645,7 @@
       await refreshPulls();
       await activity.loadActivity();
     } catch (err) {
-      stateError =
-        err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       stateSubmitting = false;
     }
@@ -905,7 +903,6 @@
 
   const workspace = $derived(detailStore.getDetail()?.workspace);
   let wsCreating = $state(false);
-  let wsError = $state<string | null>(null);
   const createWorkspaceTitle =
     "Create a PR head worktree, then open Workspaces to launch agents, shells, or local review sessions on that branch.";
   const createWorkspaceDescriptionId =
@@ -1072,8 +1069,8 @@
     const nextNames = nextCatalogLabelNames(labels, labelCatalog, labelName);
     try {
       await detailStore.setPullLabels(owner, name, number, nextNames);
-    } catch (err) {
-      labelPickerError = err instanceof Error ? err.message : String(err);
+    } catch {
+      // The detail store reports mutation failures through the shared flash.
     } finally {
       pendingLabel = null;
     }
@@ -1086,8 +1083,8 @@
     labelPickerError = null;
     try {
       await detailStore.setPullLabels(owner, name, number, []);
-    } catch (err) {
-      labelPickerError = err instanceof Error ? err.message : String(err);
+    } catch {
+      // The detail store reports mutation failures through the shared flash.
     } finally {
       pendingLabel = null;
     }
@@ -1162,7 +1159,6 @@
     if (!detail) return;
 
     wsCreating = true;
-    wsError = null;
     try {
       const { data, error: reqError } = await client.POST(
         "/workspaces",
@@ -1185,7 +1181,7 @@
         navigate(`/terminal/${data.id}`);
       }
     } catch (err) {
-      wsError = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       wsCreating = false;
     }
@@ -2089,9 +2085,6 @@
             {#if !hideWorkspaceAction}
               <div class="primary-workspace-action">
                 {@render workspaceActionButton()}
-                {#if wsError}
-                  <span class="action-error action-error--workspace-compact">{wsError}</span>
-                {/if}
               </div>
             {/if}
           </div>
@@ -2118,16 +2111,10 @@
                   <div class="actions-menu-popover__item">
                     {@render workspaceActionButton()}
                   </div>
-                  {#if wsError}
-                    <span class="action-error">{wsError}</span>
-                  {/if}
                 {/if}
               </div>
             {/if}
           </div>
-          {#if stateError}
-            <span class="action-error action-error--state">{stateError}</span>
-          {/if}
           {#if headConflict === "stale_state"}
             <span class="action-error action-error--state" role="status">
               The head commit changed since this pull request was reviewed. Re-review the latest changes before approving or merging.
@@ -2147,9 +2134,6 @@
         <!-- Workspace actions -->
         <div class="actions-row actions-row--workspace">
           {@render workspaceActionButton()}
-          {#if wsError}
-            <span class="action-error">{wsError}</span>
-          {/if}
         </div>
       {/if}
 
@@ -3017,11 +3001,6 @@
   }
 
   .action-error--state {
-    display: block;
-    margin-top: 6px;
-  }
-
-  .action-error--workspace-compact {
     display: block;
     margin-top: 6px;
   }

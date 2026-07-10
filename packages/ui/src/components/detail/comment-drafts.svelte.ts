@@ -2,7 +2,6 @@ type CommentDraftTarget = "issue" | "pull";
 
 let drafts = $state<Record<string, string>>({});
 let pendingSubmitCounts = $state<Record<string, number>>({});
-let submitErrors = $state<Record<string, string>>({});
 
 export function getCommentDraftKey(
   target: CommentDraftTarget,
@@ -134,46 +133,4 @@ export function finishCommentSubmit(
     ...pendingSubmitCounts,
     [key]: nextCount,
   };
-}
-
-export function getCommentSubmitError(
-  target: CommentDraftTarget,
-  owner: string,
-  name: string,
-  number: number,
-  platformHost?: string | undefined,
-): string | null {
-  const keys = getCommentDraftKeys(target, owner, name, number, platformHost);
-  return submitErrors[keys.primary] ?? (keys.legacy ? submitErrors[keys.legacy] : undefined) ?? null;
-}
-
-export function setCommentSubmitError(
-  target: CommentDraftTarget,
-  owner: string,
-  name: string,
-  number: number,
-  error: string,
-  platformHost?: string | undefined,
-): void {
-  const key = getCommentDraftKey(target, owner, name, number, platformHost);
-  submitErrors = {
-    ...submitErrors,
-    [key]: error,
-  };
-}
-
-export function clearCommentSubmitError(
-  target: CommentDraftTarget,
-  owner: string,
-  name: string,
-  number: number,
-  platformHost?: string | undefined,
-): void {
-  const keys = getCommentDraftKeys(target, owner, name, number, platformHost);
-  const next = { ...submitErrors };
-  delete next[keys.primary];
-  if (keys.legacy) {
-    delete next[keys.legacy];
-  }
-  submitErrors = next;
 }

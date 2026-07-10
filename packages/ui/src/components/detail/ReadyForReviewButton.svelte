@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button } from "@kenn-io/kit-ui";
   import SendHorizontalIcon from "@lucide/svelte/icons/send-horizontal";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import { getClient, getStores } from "../../context.js";
     import { runMarkReady, type PRDetailActionInput } from "./keyboard-actions.js";
 
@@ -35,7 +36,6 @@
   }: Props = $props();
 
   let submitting = $state(false);
-  let error = $state<string | null>(null);
 
   function buildInput(): PRDetailActionInput {
     return {
@@ -57,11 +57,10 @@
   async function handleReadyForReview(): Promise<void> {
     if (disabled) return;
     submitting = true;
-    error = null;
     try {
       await runMarkReady(buildInput());
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       submitting = false;
     }
@@ -82,9 +81,6 @@
   >
     <SendHorizontalIcon size="14" strokeWidth="2.2" aria-hidden="true" />
   </Button>
-  {#if error}
-    <p class="ready-error">{error}</p>
-  {/if}
 </div>
 
 <style>
@@ -94,8 +90,4 @@
     gap: 8px;
   }
 
-  .ready-error {
-    font-size: var(--font-size-sm);
-    color: var(--accent-red);
-  }
 </style>

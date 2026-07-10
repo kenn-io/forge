@@ -8,6 +8,7 @@ import {
 import type { MiddlemanClient } from "../types.js";
 import { bucketCIChecks, parseCIChecks } from "../utils/ci-buckets.js";
 import { normalizeKanbanStatus } from "./workflow.svelte.js";
+import { showFlash } from "./flash.svelte.js";
 
 export type FetchPullResult =
   | { status: "found"; pull: PullRequest }
@@ -323,7 +324,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
         }
       }
     } catch (err) {
-      storeError = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
       return;
     }
     await loadPulls();

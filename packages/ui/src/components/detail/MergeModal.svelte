@@ -5,6 +5,7 @@
   import { isProblem, problemConflictContext, problemConflictReason } from "../../api/problems.js";
   import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient } from "../../context.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
 
   const client = getClient();
@@ -138,7 +139,13 @@
       onclose();
       return true;
     }
-    throw new Error(requestError.detail ?? requestError.title ?? "failed to merge pull request");
+    const message = requestError.detail ?? requestError.title ?? "failed to merge pull request";
+    if (reason === "conflict") {
+      error = message;
+    } else {
+      showFlash(message, { tone: "danger" });
+    }
+    return true;
   }
 
   async function submitMerge(deferred: boolean): Promise<void> {
@@ -166,7 +173,7 @@
       }
       onmerged();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       activeMergeSubmission = null;
     }

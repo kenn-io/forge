@@ -6,6 +6,7 @@ import {
   type ProviderRouteRef,
 } from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
+import { showFlash } from "./flash.svelte.js";
 
 export type IssueDetailSyncMode = boolean | "background";
 
@@ -620,7 +621,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     });
     if (requestError) {
       const message = apiErrorMessage(requestError, "failed to update labels");
-      detailError = message;
+      showFlash(message, { tone: "danger" });
       throw new Error(message);
     }
     const nextLabels = (data?.labels ?? []) as Label[];
@@ -652,7 +653,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     });
     if (requestError) {
       const message = apiErrorMessage(requestError, "failed to update assignees");
-      detailError = message;
       throw new Error(message);
     }
     const nextAssignees = data?.assignees ?? [];
@@ -669,10 +669,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return nextAssignees;
   }
 
-  async function submitIssueComment(owner: string, name: string, number: number, body: string): Promise<void> {
+  async function submitIssueComment(owner: string, name: string, number: number, body: string): Promise<boolean> {
     const ref = currentIssueDetailRef(owner, name, number);
-
-    detailError = null;
     try {
       const { error: requestError } = await apiClient.POST(providerItemPath("issues", ref, "/comments"), {
         params: {
@@ -684,8 +682,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         throw new Error(apiErrorMessage(requestError, "failed to post comment"));
       }
     } catch (err) {
-      detailError = err instanceof Error ? err.message : String(err);
-      return;
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
+      return false;
     }
     // Supersede any in-flight syncIssueDetail so its stale response
     // cannot overwrite the detail we are about to fetch.
@@ -699,6 +697,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     if (gen === issueSyncGeneration) {
       void syncIssueDetail(owner, name, number, gen, ref);
     }
+    return true;
   }
 
   async function editIssueComment(
@@ -710,7 +709,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   ): Promise<boolean> {
     const ref = currentIssueDetailRef(owner, name, number);
 
-    detailError = null;
     try {
       const { error: requestError } = await apiClient.PATCH(providerItemPath("issues", ref, "/comments/{comment_id}"), {
         params: {
@@ -726,7 +724,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         throw new Error(apiErrorMessage(requestError, "failed to edit comment"));
       }
     } catch (err) {
-      detailError = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
       return false;
     }
     await refreshIssueDetail(owner, name, number, ref);
@@ -870,7 +868,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         issueDetail = data as IssueDetail;
       }
     } catch (err) {
-      detailError = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     }
     if (
       succeeded &&
@@ -889,7 +887,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   // Fire-and-forget PATCH for the issue body. Does NOT apply an
   // optimistic update or revert on failure — the caller already owns
-  // local state. On error, detailError surfaces a banner.
+  // local state. On error, the shared flash reports the failed save.
   //
   // The caller passes the full route ref so the PATCH always targets
   // the captured issue even if the user has since navigated away.
@@ -958,7 +956,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         }
       }
     } catch (err) {
-      storeError = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
       return;
     }
     await loadIssues();

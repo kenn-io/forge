@@ -635,7 +635,7 @@
   }
 
   async function switchKataDaemon(id: string): Promise<void> {
-    if (switchingDaemon || viewWorkCount > 0 || store.hasPendingMutations || workspaceActionBusy) return;
+    if (loading || switchingDaemon || viewWorkCount > 0 || store.hasPendingMutations || workspaceActionBusy) return;
     const previousExplicitDaemon = getActiveKataDaemon();
     const previousDaemon = store.daemonId ?? activeKataDaemonId;
     if (id === activeKataDaemonId) return;
@@ -678,6 +678,8 @@
           setActiveKataDaemon(previousExplicitDaemon);
           await store.syncEventCursor();
           startEventStream();
+        } else {
+          store.clearDaemonState(previousView);
         }
         return;
       }
@@ -916,7 +918,7 @@
   }
 </script>
 
-<section class="kata-feature" aria-labelledby="kata-title">
+<section class="kata-feature" aria-labelledby="kata-title" inert={switchingDaemon} aria-busy={switchingDaemon}>
   <header class="kata-header">
     <div class="kata-header-title">
       <h1 id="kata-title">Kata</h1>
@@ -926,7 +928,7 @@
           activeId={activeKataDaemonId}
           activeStatusLabel={activeDaemonStatusLabel()}
           activeStatusTone={activeDaemonStatusLabel() ? "error" : undefined}
-          disabled={switchingDaemon || viewWorkCount > 0 || store.hasPendingMutations || workspaceActionBusy}
+          disabled={loading || switchingDaemon || viewWorkCount > 0 || store.hasPendingMutations || workspaceActionBusy}
           onSelect={(id) => {
             void switchKataDaemon(id);
           }}

@@ -800,6 +800,7 @@ describe("KataWorkspace", () => {
     });
     expect(screen.queryByRole("heading", { name: "Email Susan re: Q3" })).toBeNull();
 
+    await waitFor(() => expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(false));
     await fireEvent.click(screen.getByTestId("daemon-chip"));
     await fireEvent.click(screen.getByTestId("daemon-row-work"));
 
@@ -909,6 +910,7 @@ describe("KataWorkspace", () => {
     });
     vi.mocked(api.issue).mockClear();
 
+    await waitFor(() => expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(false));
     await fireEvent.click(screen.getByTestId("daemon-chip"));
     await fireEvent.click(screen.getByTestId("daemon-row-empty"));
 
@@ -991,13 +993,15 @@ describe("KataWorkspace", () => {
       item_type: "kata_task",
       item_key: "issue-pay-rent",
     };
-    mockCreateKataWorkspaceForTask.mockResolvedValue({
+    const createdWorkspace = {
       id: "workspace-kata",
       item_type: "kata_task",
       item_key: "issue-pay-rent",
       git_head_ref: "middleman/kata/pay-rent",
       status: "creating",
-    });
+    } as const;
+    const workspaceCreate = deferred<typeof createdWorkspace>();
+    mockCreateKataWorkspaceForTask.mockReturnValue(workspaceCreate.promise);
     const { api } = createWorkspaceAPI();
     const loadIssues = vi.mocked(api.issues).getMockImplementation()!;
     vi.mocked(api.issues).mockImplementation(async (query) => ({
@@ -1016,6 +1020,8 @@ describe("KataWorkspace", () => {
       expect(screen.getByRole("button", { name: "Create workspace" })).toBeTruthy();
     });
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(true);
+    workspaceCreate.resolve(createdWorkspace);
 
     await waitFor(() => {
       expect(mockCreateKataWorkspaceForTask).toHaveBeenCalledWith(
@@ -1027,6 +1033,7 @@ describe("KataWorkspace", () => {
         }),
       );
       expect(mockNavigate).toHaveBeenCalledWith("/terminal/workspace-kata");
+      expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(false);
     });
   });
 

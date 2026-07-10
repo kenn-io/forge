@@ -3042,6 +3042,7 @@ test("kata daemon switch drops a pending detail load from the previous daemon", 
     work.state.issuesBarrier = stalledIssues;
     await page.getByTestId("daemon-chip").click();
     await page.getByTestId("daemon-row-work").click();
+    await expect(page.getByRole("region", { name: "Kata" })).toHaveAttribute("inert", "");
     await expect(rentRow).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toHaveCount(0);
     releaseDetail();
@@ -3059,6 +3060,32 @@ test("kata daemon switch drops a pending detail load from the previous daemon", 
     kataHome.restore();
     await home.close();
     await work.close();
+  }
+});
+
+test("kata daemon switch stays disabled until initial workspace bootstrap settles", async ({ page }) => {
+  let releaseIssues!: () => void;
+  const issuesBarrier = new Promise<void>((resolve) => {
+    releaseIssues = resolve;
+  });
+  const backend = await startKataBackend({ issuesBarrier });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?view=all`);
+
+    await expect(page.getByTestId("daemon-chip")).toBeVisible();
+    await expect(page.getByTestId("daemon-chip")).toBeDisabled();
+    releaseIssues();
+
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toBeVisible();
+    await expect(page.getByTestId("daemon-chip")).toBeEnabled();
+  } finally {
+    releaseIssues();
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
   }
 });
 
@@ -3128,7 +3155,7 @@ test("kata daemon switch leaves empty stopped state when target and rollback fai
     ).length;
     const collision = { candidates: [{ title: "Foreign collision", qualified_id: "Work#foreign" }] };
     work.state.duplicateIssueListResponses.push(collision);
-    home.state.duplicateIssueListResponses.push(collision);
+    home.state.issueDetailGates.set("issue-rent", { barrier: Promise.resolve(), status: 500 });
 
     await page.getByTestId("daemon-chip").click();
     await page.getByTestId("daemon-row-work").click();
@@ -3876,7 +3903,9 @@ test("kata workspace keeps a removed accepted daemon visible until the user swit
       await route.continue();
     });
     await page.goto(`${server.info.base_url}/kata?view=all`);
-    await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toBeVisible();
+    const homeTaskList = page.locator(".kata-list");
+    await homeTaskList.getByRole("button", { name: /Pay rent/ }).click();
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Send June rent from checking.");
 
     await writeFile(
       path.join(kataHome.home, "config.toml"),
@@ -3888,6 +3917,19 @@ test("kata workspace keeps a removed accepted daemon visible until the user swit
     await expect(page.getByRole("status", { name: "Connection: error" })).toContainText(
       "Daemon is no longer configured",
     );
+    const detail = page.getByRole("region", { name: "Task detail" });
+    await detail.getByRole("button", { name: "Complete" }).click();
+    const dialog = page.getByRole("dialog", { name: "Complete task" });
+    await dialog.getByRole("button", { name: "Complete" }).click();
+    await expect(page.getByRole("alert")).toBeVisible();
+    expect(work.state.seenPaths).not.toContain("POST /api/v1/projects/1/issues/issue-rent/actions/close");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+
+    await homeTaskList.getByRole("button", { name: /Email Susan re: Q3/ }).click();
+    await expect(page.getByRole("alert")).toBeVisible();
+    expect(work.state.seenPaths).not.toContain("GET /api/v1/issues/issue-q3");
+
+    await expect(page.getByTestId("daemon-chip")).toBeEnabled();
     await page.getByTestId("daemon-chip").click();
     await page.getByTestId("daemon-row-work").click();
 
@@ -4156,7 +4198,10 @@ test("kata daemon switch restarts the target stream after stale route churn", as
     await page.getByTestId("daemon-row-work").click();
     await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/events?limit=1000");
 
-    await page.getByRole("button", { name: "All Open" }).click();
+    await page.evaluate(() => {
+      window.history.pushState({}, "", "/kata?view=all");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
     releaseEvents();
 
     await expect(page.getByTestId("daemon-chip")).toContainText("work");

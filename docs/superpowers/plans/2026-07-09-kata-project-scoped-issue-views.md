@@ -377,6 +377,33 @@ Clear daemon-scoped display state before changing the selector. On replacement f
 
 Run the full Vite+ suite and complete Chromium/Firefox Kata Playwright spec before committing.
 
+### Task 7: Align selector and mutation lifecycle with accepted provenance
+
+**Files:**
+
+- Modify: `frontend/src/lib/stores/kata-workspace.svelte.ts`
+- Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte`
+- Modify: `frontend/src/lib/features/kata/KataDaemonSwitcher.svelte`
+- Test: `frontend/src/lib/stores/kata-workspace.svelte.test.ts`
+- Test: `frontend/src/lib/features/kata/KataDaemonSwitcher.test.ts`
+- Test: `frontend/tests/e2e-full/kata.spec.ts`
+
+- [x] **Step 1: Keep selector identity on the accepted workspace daemon**
+
+Render and compare explicit choices against accepted provenance. Capture that daemon for rollback even when a refreshed roster advertises another default.
+
+- [x] **Step 2: Block switching through mutation and switch transitions**
+
+Track task mutations through their post-mutation refresh and disable the selector while mutation, view, or switch work is active, including overlapping selector choices.
+
+- [x] **Step 3: Cover drifted selection and terminal rollback failure**
+
+After browser-side default drift, fail a third-daemon switch and prove rollback restores the accepted daemon before a real switch to the displayed default. Also prove double failure leaves empty state, a stopped stream, and a visible connection error.
+
+- [x] **Step 4: Run final verification and commit**
+
+Run the full Vite+ suite and complete Chromium/Firefox Kata Playwright spec before committing.
+
 ### Task 8: Cover removed provenance and every visible work gate
 
 **Files:**
@@ -403,28 +430,25 @@ Assert a double-failed switch leaves no active connection for the old daemon in 
 
 Run the full Vite+ suite and complete Chromium/Firefox Kata Playwright spec before committing.
 
-### Task 7: Align selector and mutation lifecycle with accepted provenance
+### Task 9: Close remaining transition entry points
 
 **Files:**
 
-- Modify: `frontend/src/lib/stores/kata-workspace.svelte.ts`
 - Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte`
-- Modify: `frontend/src/lib/features/kata/KataDaemonSwitcher.svelte`
-- Test: `frontend/src/lib/stores/kata-workspace.svelte.test.ts`
-- Test: `frontend/src/lib/features/kata/KataDaemonSwitcher.test.ts`
+- Test: `frontend/src/lib/features/kata/KataWorkspace.test.ts`
 - Test: `frontend/tests/e2e-full/kata.spec.ts`
 
-- [x] **Step 1: Keep selector identity on the accepted workspace daemon**
+- [x] **Step 1: Guard initial bootstrap and the entire switch surface**
 
-Render and compare explicit choices against accepted provenance. Capture that daemon for rollback even when a refreshed roster advertises another default.
+Disable daemon selection during initial bootstrap and make the workspace inert during switching so quick capture, project creation, and other mutation entry points cannot start against provisional state.
 
-- [x] **Step 2: Block switching through mutation and switch transitions**
+- [x] **Step 2: Clear partial rollback state and close its stream**
 
-Track task mutations through their post-mutation refresh and disable the selector while mutation, view, or switch work is active, including overlapping selector choices.
+Fail rollback after its project/list commit but before detail completion, then prove the workspace is cleared again, the connection error remains visible, and the old stream is disconnected.
 
-- [x] **Step 3: Cover drifted selection and terminal rollback failure**
+- [x] **Step 3: Prove removed-daemon operations never fall through**
 
-After browser-side default drift, fail a third-daemon switch and prove rollback restores the accepted daemon before a real switch to the displayed default. Also prove double failure leaves empty state, a stopped stream, and a visible connection error.
+After removing accepted provenance from the roster, attempt an old-row detail read and mutation before recovery; assert the remaining daemon receives neither request.
 
 - [x] **Step 4: Run final verification and commit**
 

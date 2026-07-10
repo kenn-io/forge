@@ -261,7 +261,10 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
   const getDefaultDaemonId = options.getDefaultDaemonId ?? getDefaultKataDaemon;
   const baseFetchImpl = options.fetchImpl ?? fetch;
   let resolvedDefaultDaemonId: string | undefined;
-  const getEffectiveDaemonId = () => getDaemonId() ?? getDefaultDaemonId() ?? resolvedDefaultDaemonId;
+  let workflowDaemonId: string | undefined;
+  let workflowOperationID = 0;
+  const getEffectiveDaemonId = () =>
+    getDaemonId() ?? workflowDaemonId ?? getDefaultDaemonId() ?? resolvedDefaultDaemonId;
   const fetchImpl = withKataDaemon(baseFetchImpl, getEffectiveDaemonId);
   let api: KataTaskAPI;
 
@@ -273,8 +276,13 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     return { [KATA_DAEMON_HEADER]: daemonId ?? "" };
   }
 
-  async function resolveOperationDaemonId(explicitDaemonId?: string): Promise<string> {
-    const selected = explicitDaemonId?.trim() || getEffectiveDaemonId()?.trim();
+  async function resolveOperationDaemonId(explicitDaemonId?: string, preferWorkflow = false): Promise<string> {
+    const selected =
+      explicitDaemonId?.trim() ||
+      getDaemonId()?.trim() ||
+      (preferWorkflow ? workflowDaemonId?.trim() : undefined) ||
+      getDefaultDaemonId()?.trim() ||
+      resolvedDefaultDaemonId?.trim();
     if (selected) return selected;
 
     const daemons = await fetchKataDaemons(baseFetchImpl);
@@ -562,7 +570,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     },
 
     async createIssue(projectID, actor, draft, idempotencyKey) {
-      const daemonId = await resolveOperationDaemonId();
+      const daemonId = await resolveOperationDaemonId(undefined, true);
       const { metadata, ...createDraft } = draft;
       const result = await request<unknown>(taskPath(`/projects/${projectID}/issues`), {
         method: "POST",
@@ -606,6 +614,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     },
 
     async issues(query) {
+      const operationID = ++workflowOperationID;
       const daemonId = await resolveOperationDaemonId();
       const status = query.view === "logbook" ? "closed" : "open";
       const genericIssuesPromise =
@@ -620,16 +629,19 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
       const [issues, projects] = await Promise.all([issuesPromise, projectsPromise]);
       const projectMap = new Map(projects.projects.map((project) => [project.uid, project]));
       const scopedIssues = issues.filter((issue) => issueMatchesScope(issue, query, projectMap));
-      return buildKataTaskView({
+      const view = buildKataTaskView({
         view: query.view,
         issues: scopedIssues,
         projects: projects.projects,
         today: localDateString(),
         fetched_at: new Date().toISOString(),
       });
+      if (operationID === workflowOperationID) workflowDaemonId = daemonId;
+      return view;
     },
 
     async search(filters, opts): Promise<KataTaskSearchResponse> {
+      const operationID = opts?.daemonId === undefined ? ++workflowOperationID : undefined;
       const daemonId = await resolveOperationDaemonId(opts?.daemonId);
       const issues =
         filters.scope.kind === "project"
@@ -639,11 +651,13 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
               true,
             )
           : await searchAllProjects(filters, daemonId, true);
-      return {
+      const response = {
         filters,
         issues,
         fetched_at: new Date().toISOString(),
       };
+      if (operationID !== undefined && operationID === workflowOperationID) workflowDaemonId = daemonId;
+      return response;
     },
 
     async issue(uid, opts) {

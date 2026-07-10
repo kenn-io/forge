@@ -288,3 +288,33 @@ Use `getActiveDaemon() ?? getStoredDefault() ?? resolvedOnDemandDefault` as the 
 - [x] **Step 4: Run final affected verification and commit**
 
 Run the complete task-client unit suite, full Vite+ suite, and complete Chromium/Firefox Kata Playwright spec. Commit only after all three pass.
+
+### Task 4: Preserve the daemon associated with loaded results
+
+**Files:**
+
+- Modify: `frontend/src/lib/api/kata/taskClient.ts:260-290,604-640`
+- Test: `frontend/src/lib/api/kata/taskClient.test.ts`
+- Test: `frontend/tests/e2e-full/kata.spec.ts`
+- Modify: `docs/superpowers/specs/2026-07-09-kata-project-scoped-issue-views-design.md`
+
+**Interfaces:**
+
+- Consumes: the concrete daemon resolved for issue views and non-explicit searches.
+- Produces: a workflow daemon that related detail, event, project, and mutation requests use ahead of later stored-default changes.
+
+- [x] **Step 1: Add a failing client regression for post-load default drift**
+
+Load a project view on `home`, change the injected stored-default getter to `work`, then assert detail and close requests for the loaded row retain the `home` header.
+
+- [x] **Step 2: Make the browser roster race observable**
+
+Delay the app-level roster request while Kata workspace bootstraps on `home`. Start a scoped view and stall its project catalog request, change the server default to `work`, then release the app roster so the browser's visible effective default changes before the home-scoped response completes. Use colliding issue UIDs on both daemons and assert the selected detail request header and completion mutation remain on `home`.
+
+- [x] **Step 3: Add a replaceable workflow daemon pin**
+
+Set the workflow daemon when the latest issue view or non-explicit search succeeds. Related requests select active daemon, workflow daemon, stored default, then on-demand fallback. New view/search resolution ignores the old workflow pin so an intentional active/default reload can replace it, while failed or superseded loads preserve the old pin; an explicit search for another integration does not replace the workspace pin.
+
+- [x] **Step 4: Run final verification and commit**
+
+Run the complete task-client unit suite, full Vite+ suite, and complete Chromium/Firefox Kata Playwright spec before committing.

@@ -3736,7 +3736,6 @@ test("kata project scope stays on the starting default daemon when configuration
   const home = await startKataBackend({
     projects: [sharedProject],
     issues: [homeIssue, homeFollowUp],
-    projectsBarrier,
   });
   const work = await startKataBackend({ projects: [sharedProject], issues: [workIssue, workCollision] });
   const kataHome = await configureKataHomeDaemons(
@@ -3749,11 +3748,20 @@ test("kata project scope stays on the starting default daemon when configuration
   const server = await startIsolatedE2EServer();
 
   try {
-    await page.goto(`${server.info.base_url}/kata?view=all&scope=project-shared`);
+    await page.goto(`${server.info.base_url}/kata?view=all`);
 
     await expect(page.getByTestId("daemon-chip")).toContainText("home");
     await expect.poll(() => page.evaluate(() => localStorage.getItem("middleman:kata:active_daemon"))).toBeNull();
-    await expect.poll(() => home.state.seenPaths).toContain("GET /api/v1/projects?include=stats");
+    const taskList = page.locator(".kata-list");
+    await expect(taskList.getByRole("button", { name: /Home scoped task/ })).toBeVisible();
+    const projectRequestsBeforeScope = home.state.seenPaths.filter(
+      (seenPath) => seenPath === "GET /api/v1/projects?include=stats",
+    ).length;
+    home.state.projectsBarrier = projectsBarrier;
+    await page.getByRole("button", { name: /^Shared\s+2$/ }).click();
+    await expect
+      .poll(() => home.state.seenPaths.filter((seenPath) => seenPath === "GET /api/v1/projects?include=stats").length)
+      .toBeGreaterThan(projectRequestsBeforeScope);
     await writeFile(
       path.join(kataHome.home, "config.toml"),
       [
@@ -3778,7 +3786,6 @@ test("kata project scope stays on the starting default daemon when configuration
       .toBe("work");
     releaseProjects();
 
-    const taskList = page.locator(".kata-list");
     await expect(taskList.getByRole("button", { name: /Home scoped task/ })).toBeVisible();
     await expect(taskList.getByRole("button", { name: /Foreign work task/ })).toHaveCount(0);
     await expect.poll(() => home.state.seenPaths).toContain("GET /api/v1/projects/7/issues?status=open");
@@ -3794,6 +3801,15 @@ test("kata project scope stays on the starting default daemon when configuration
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText(targetIssue.body);
     await expect.poll(() => home.state.seenPaths).toContain(`GET /api/v1/issues/${targetIssue.uid}`);
     expect(work.state.seenPaths).not.toContain(`GET /api/v1/issues/${targetIssue.uid}`);
+
+    const detail = page.getByRole("region", { name: "Task detail" });
+    await detail.getByRole("button", { name: "Complete" }).click();
+    const dialog = page.getByRole("dialog", { name: "Complete task" });
+    await dialog.getByRole("button", { name: "Complete" }).click();
+    await expect
+      .poll(() => home.state.seenPaths)
+      .toContain(`POST /api/v1/projects/7/issues/${targetIssue.uid}/actions/close`);
+    expect(work.state.seenPaths).not.toContain(`POST /api/v1/projects/7/issues/${targetIssue.uid}/actions/close`);
   } finally {
     releaseProjects();
     await server.stop();

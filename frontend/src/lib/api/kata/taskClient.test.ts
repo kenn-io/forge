@@ -982,6 +982,70 @@ describe("kata task HTTP client", () => {
     expect(calls[0]!.headers.get(KATA_DAEMON_HEADER)).toBe("home");
   });
 
+  test("keeps detail reads and mutations on the daemon that loaded the current view", async () => {
+    let defaultDaemonId = "home";
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/projects?include=stats": {
+        body: { projects: [project("project-work", "Work")] },
+      },
+      "/api/v1/projects/1/issues?status=open": {
+        body: { issues: [issue("issue-1", "Shown issue", "project-work")] },
+      },
+      "/api/v1/kata/tasks/issue-1": {
+        body: {
+          detail: { issue: { ...issue("issue-1", "Shown issue"), body: "Body" }, comments: [], labels: [], links: [] },
+        },
+      },
+      "/api/v1/projects/1/issues/issue-1/actions/close": {
+        body: { changed: true, issue: issue("issue-1", "Shown issue", "project-work", {}, "closed") },
+      },
+    });
+    const api = createKataTaskAPI({
+      fetchImpl,
+      getDaemonId: () => undefined,
+      getDefaultDaemonId: () => defaultDaemonId,
+    });
+
+    await api.issues({ view: "all", project_uid: "project-work" });
+    defaultDaemonId = "work";
+    await api.issue("issue-1");
+    await api.closeIssue({ project_id: 1, ref: "issue-1" }, "middleman");
+
+    expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual(["home", "home", "home", "home"]);
+  });
+
+  test("does not replace the workflow daemon when a new view fails", async () => {
+    let defaultDaemonId = "home";
+    const projectsRoute: { status?: number; body?: unknown } = {
+      body: { projects: [project("project-work", "Work")] },
+    };
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/projects?include=stats": projectsRoute,
+      "/api/v1/projects/1/issues?status=open": {
+        body: { issues: [issue("issue-1", "Shown issue", "project-work")] },
+      },
+      "/api/v1/kata/tasks/issue-1": {
+        body: {
+          detail: { issue: { ...issue("issue-1", "Shown issue"), body: "Body" }, comments: [], labels: [], links: [] },
+        },
+      },
+    });
+    const api = createKataTaskAPI({
+      fetchImpl,
+      getDaemonId: () => undefined,
+      getDefaultDaemonId: () => defaultDaemonId,
+    });
+
+    await api.issues({ view: "all", project_uid: "project-work" });
+    defaultDaemonId = "work";
+    projectsRoute.status = 503;
+    projectsRoute.body = { error: { code: "service_unavailable", message: "work is unavailable" } };
+    await expect(api.issues({ view: "all", project_uid: "project-work" })).rejects.toMatchObject({ status: 503 });
+    await api.issue("issue-1");
+
+    expect(calls.at(-1)!.headers.get(KATA_DAEMON_HEADER)).toBe("home");
+  });
+
   test("threads abort signals through issue and events fetches", async () => {
     const { fetchImpl } = createFetchStub({
       "/api/v1/kata/tasks/issue-1": {

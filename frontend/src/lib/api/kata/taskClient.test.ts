@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import {
   createKataTaskAPI,
@@ -8,6 +8,7 @@ import {
 } from "./taskClient.js";
 import { KATA_DAEMON_HEADER } from "./daemons.js";
 import type { KataProjectSummary, KataTaskSummary } from "./taskTypes.js";
+import { resetKataDaemonRoster, setKataDaemonRoster } from "../../stores/active-kata-daemon.svelte.js";
 
 type FetchCall = {
   url: string;
@@ -95,8 +96,13 @@ function createFetchStub(
 }
 
 describe("kata task HTTP client", () => {
+  beforeEach(() => {
+    setKataDaemonRoster(["default"], "default");
+  });
+
   afterEach(() => {
     delete window.__BASE_PATH__;
+    resetKataDaemonRoster();
   });
 
   test("uses middleman proxy routes for instance, projects, and open issue views", async () => {
@@ -466,6 +472,53 @@ describe("kata task HTTP client", () => {
     await api.issues({ view: "all", project_uid: "project-work" });
 
     expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual(["home", "home"]);
+  });
+
+  test("resolves a concrete default daemon on demand before scoped views", async () => {
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/kata/daemons": {
+        body: {
+          daemons: [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }],
+        },
+      },
+      "/api/v1/projects?include=stats": {
+        body: { projects: [project("project-work", "Work")] },
+      },
+      "/api/v1/projects/1/issues?status=open": {
+        body: { issues: [issue("issue-work", "Work task", "project-work")] },
+      },
+    });
+    const api = createKataTaskAPI({
+      fetchImpl,
+      getDaemonId: () => undefined,
+      getDefaultDaemonId: () => undefined,
+    });
+
+    await api.issues({ view: "all", project_uid: "project-work" });
+
+    expect(calls.map((call) => proxyPath(call.url))).toEqual([
+      "/api/v1/kata/daemons",
+      "/api/v1/projects?include=stats",
+      "/api/v1/projects/1/issues?status=open",
+    ]);
+    expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual([null, "home", "home"]);
+  });
+
+  test("fails scoped views before project reads when no concrete daemon is available", async () => {
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/kata/daemons": { body: { daemons: [] } },
+    });
+    const api = createKataTaskAPI({
+      fetchImpl,
+      getDaemonId: () => undefined,
+      getDefaultDaemonId: () => undefined,
+    });
+
+    await expect(api.issues({ view: "all", project_uid: "project-work" })).rejects.toMatchObject({
+      status: 503,
+      code: "service_unavailable",
+    });
+    expect(calls.map((call) => proxyPath(call.url))).toEqual(["/api/v1/kata/daemons"]);
   });
 
   test("searches a project by integer project id and normalizes server search results", async () => {

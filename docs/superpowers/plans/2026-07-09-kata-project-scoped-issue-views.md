@@ -117,7 +117,7 @@ Expected: FAIL because the generic route is requested and its contaminating row 
 Replace the unconditional issue-list promise in `issues()` with project-aware selection while retaining parallel loading for unscoped views:
 
 ```typescript
-const daemonId = getDaemonId() ?? getDefaultDaemonId();
+const daemonId = getDaemonId();
 const status = query.view === "logbook" ? "closed" : "open";
 const genericIssuesPromise =
   query.project_uid === undefined ? fetchIssuesByStatus(status, daemonId, undefined, true) : undefined;
@@ -170,7 +170,7 @@ Stage only the plan, client, client test, and Kata e2e spec, then create a hook-
 
 **Interfaces:**
 
-- Consumes: `getActiveKataDaemon()` and `getDefaultKataDaemon()` from the active-daemon store.
+- Consumes: `getActiveKataDaemon()`, `getDefaultKataDaemon()`, and `fetchKataDaemons()`.
 - Produces: operation-wide concrete daemon pinning for `KataTaskAPI.issues()` and `KataTaskAPI.search()`.
 
 - [x] **Step 1: Add failing unit regressions for issue views, searches, and label hydration**
@@ -184,6 +184,8 @@ expect(labelHydrationCalls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).
 ```
 
 The label-hydration case must use `query: "rent"`, `label: "money"`, a search response without labels, and `/api/v1/projects/1/issues?status=open` returning the `money` label.
+
+Add public-API readiness cases with both getters returning `undefined`: one roster response with default daemon `home` must produce request paths `[/api/v1/kata/daemons, /api/v1/projects?include=stats, /api/v1/projects/1/issues?status=open]` and headers `[null, home, home]`; an empty roster must reject before project reads with status `503` and code `service_unavailable`.
 
 - [x] **Step 2: Run the focused unit regressions and verify they fail on daemon drift**
 
@@ -218,10 +220,24 @@ Expected before the fix: FAIL because `Foreign work task` renders after the serv
 
 - [x] **Step 5: Resolve the concrete daemon and propagate pinned headers**
 
-Resolve the operation daemon once at both public entry points:
+Resolve the operation daemon once at both public entry points. The resolver must never return an empty daemon ID:
 
 ```typescript
-const daemonId = opts?.daemonId ?? getDaemonId() ?? getDefaultDaemonId();
+async function resolveOperationDaemonId(explicitDaemonId?: string): Promise<string> {
+  const selected = explicitDaemonId?.trim() || getDaemonId()?.trim() || getDefaultDaemonId()?.trim();
+  if (selected) return selected;
+
+  const daemons = await fetchKataDaemons(baseFetchImpl);
+  const fallback = daemons.find((daemon) => daemon.default) ?? daemons[0];
+  if (fallback?.id) return fallback.id;
+
+  throw new KataTaskAPIError({
+    status: 503,
+    code: "service_unavailable",
+    message: "no Kata daemon is available",
+    headers: new Headers(),
+  });
+}
 ```
 
 Thread `pinned = true` through `fetchProjects`, `fetchIssuesByStatus`, `searchAllProjects`, `searchProjectIssueList`, `searchProject`, and `hydrateProjectSearchRows`. Each request must choose `pinnedDaemonHeaders(daemonId)` when pinned so catalog, open/closed lists, text search, and label hydration share the same concrete header.

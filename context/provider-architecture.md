@@ -65,6 +65,10 @@ Rules:
 - Capability flags and implemented interfaces must agree.
 - Handlers must check capabilities before performing mutations. A missing
   capability is a feature-level failure, not a whole-provider failure.
+- Provider-backed deletes must succeed upstream before synchronized local rows
+  are removed; an upstream failure leaves local state intact for an honest retry
+  (`internal/server/huma_routes.go::deleteComment`,
+  `internal/server/huma_routes.go::deleteIssueComment`).
 - Keep operation availability split by scope. `repoOperations` handles
   repo-level gates: provider capability, write credentials, rate limits, and
   repo-wide viewer permissions. Detail responses may add item-level gates with

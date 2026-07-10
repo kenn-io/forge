@@ -178,6 +178,13 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 - For Kata, Docs, and Messages/msgvault mode integration, follow `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` until dedicated context docs exist.
 - Datetimes are UTC across storage and API boundaries. Store timestamps in UTC, emit API timestamps as UTC RFC3339, and only convert to local time in the Svelte UI presentation layer.
 
+## Roborev
+
+- Never manually invoke `roborev review` in any form unless the user explicitly
+  asks for it. Never invoke a roborev skill (including `roborev-fix` or
+  `roborev-design-review-branch`) unless the user explicitly asks for that
+  skill.
+
 ## Git Workflow
 
 - **Commit every turn** — always commit your work at the end of each turn, no exceptions

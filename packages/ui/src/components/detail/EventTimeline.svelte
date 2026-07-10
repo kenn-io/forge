@@ -6,6 +6,7 @@
   import LinkIcon from "@lucide/svelte/icons/link";
   import MessageSquareReplyIcon from "@lucide/svelte/icons/message-square-reply";
   import PencilIcon from "@lucide/svelte/icons/pencil";
+  import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import XIcon from "@lucide/svelte/icons/x";
   import { untrack } from "svelte";
   import { slide } from "svelte/transition";
@@ -13,7 +14,7 @@
   import type { DetailActivityViewMode } from "../../stores/detail-activity-view.svelte.js";
   import type { StoreInstances } from "../../types.js";
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
-  import { copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
+  import { Button, Modal, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
   import {
     parseMarkdownSuggestions,
     type ApplySuggestionRequest,
@@ -49,6 +50,7 @@
     showCommitDetails?: boolean;
     activityViewMode?: DetailActivityViewMode;
     onEditComment?: ((event: PREvent | IssueEvent, body: string) => Promise<boolean>) | undefined;
+    onDeleteComment?: ((event: PREvent | IssueEvent) => Promise<string | null>) | undefined;
     onApplySuggestion?: ((input: ApplySuggestionRequest) => Promise<boolean>) | undefined;
     jumpToReviewThread?: ((thread: ReviewThread) => void) | undefined;
   }
@@ -69,6 +71,7 @@
     showCommitDetails = true,
     activityViewMode = "normal",
     onEditComment,
+    onDeleteComment,
     onApplySuggestion,
     jumpToReviewThread,
   }: Props = $props();
@@ -891,6 +894,9 @@
   let editDraft = $state("");
   let savingEditId = $state<number | null>(null);
   let editError = $state<string | null>(null);
+  let deleteTarget = $state<PREvent | IssueEvent | null>(null);
+  let deletingId = $state<number | null>(null);
+  let deleteError = $state<string | null>(null);
   let collapsedThreads = $state<string[]>([]);
   let expandedCompactRows = $state<string[]>([]);
   let replyingThreadID = $state<string | null>(null);
@@ -923,6 +929,45 @@
       repoName !== undefined &&
       onEditComment !== undefined
     );
+  }
+
+  function canDeleteComment(event: PREvent | IssueEvent): boolean {
+    return event.EventType === "issue_comment" && event.PlatformID != null && onDeleteComment !== undefined;
+  }
+
+  function startDelete(event: PREvent | IssueEvent): void {
+    if (!canDeleteComment(event) || deletingId !== null) return;
+    deleteTarget = event;
+    deleteError = null;
+  }
+
+  function cancelDelete(): void {
+    if (deletingId !== null) return;
+    deleteTarget = null;
+    deleteError = null;
+  }
+
+  function commentExcerpt(body: string): string {
+    const compact = body.replace(/\s+/g, " ").trim();
+    if (compact === "") return "Empty comment";
+    return compact.length > 160 ? `${compact.slice(0, 159)}…` : compact;
+  }
+
+  async function confirmDelete(): Promise<void> {
+    const target = deleteTarget;
+    if (!target || !onDeleteComment || deletingId !== null) return;
+    deletingId = target.ID;
+    deleteError = null;
+    try {
+      const error = await onDeleteComment(target);
+      if (error === null) {
+        deleteTarget = null;
+      } else {
+        deleteError = error;
+      }
+    } finally {
+      deletingId = null;
+    }
   }
 
   function startEdit(event: PREvent | IssueEvent): void {
@@ -1259,6 +1304,20 @@
   }
 </script>
 
+{#snippet deleteAction(event: PREvent | IssueEvent)}
+  {#if canDeleteComment(event)}
+    <button
+      class="event-action-btn event-action-btn--danger"
+      onclick={() => startDelete(event)}
+      title="Delete comment"
+      aria-label="Delete comment"
+      disabled={savingEditId !== null || deletingId !== null}
+    >
+      <Trash2Icon size={14} />
+    </button>
+  {/if}
+{/snippet}
+
 {#snippet eventBody(
   event: PREvent | IssueEvent,
   nested = false,
@@ -1292,11 +1351,12 @@
               onclick={() => startEdit(event)}
               title="Edit comment"
               aria-label="Edit comment"
-              disabled={savingEditId !== null}
+              disabled={savingEditId !== null || deletingId !== null}
             >
               <PencilIcon size={14} />
             </button>
           {/if}
+          {@render deleteAction(event)}
           {#if event.DirectURL}
             {@const directCopyID = directLinkCopyID(event)}
             <button
@@ -1389,11 +1449,12 @@
                   onclick={() => startEdit(event)}
                   title="Edit comment"
                   aria-label="Edit comment"
-                  disabled={savingEditId !== null}
+                  disabled={savingEditId !== null || deletingId !== null}
                 >
                   <PencilIcon size={14} />
                 </button>
               {/if}
+              {@render deleteAction(event)}
               {#if event.DirectURL}
                 {@const directCopyID = directLinkCopyID(event)}
                 <button
@@ -1494,7 +1555,7 @@
         </div>
       {/if}
     </div>
-	{:else if canEditComment(event)}
+	{:else if canEditComment(event) || canDeleteComment(event)}
 	  <div class={nested ? "event-body-wrap event-body-wrap--nested" : "event-body-wrap"}>
       {#if editingId === event.ID && provider && repoOwner && repoName && repoPath}
         <div class="edit-panel">
@@ -1536,15 +1597,20 @@
           </div>
         </div>
       {:else}
-        <button
-          class="event-action-btn empty-edit-btn"
-          onclick={() => startEdit(event)}
-          title="Edit comment"
-          aria-label="Edit comment"
-          disabled={savingEditId !== null}
-        >
-          <PencilIcon size={14} />
-        </button>
+        <div class="event-actions empty-comment-actions">
+          {#if canEditComment(event)}
+            <button
+              class="event-action-btn"
+              onclick={() => startEdit(event)}
+              title="Edit comment"
+              aria-label="Edit comment"
+              disabled={savingEditId !== null || deletingId !== null}
+            >
+              <PencilIcon size={14} />
+            </button>
+          {/if}
+          {@render deleteAction(event)}
+        </div>
       {/if}
 	  </div>
 	{/if}
@@ -1897,6 +1963,29 @@
       </li>
     {/each}
   </ol>
+{/if}
+
+{#if deleteTarget}
+  <Modal title="Delete comment?" width="min(440px, calc(100vw - 40px))" onclose={cancelDelete}>
+    <div class="delete-confirmation">
+      <p class="delete-confirmation__message">
+        Delete {deleteTarget.Author || "Unknown"}'s comment?
+      </p>
+      <blockquote>{commentExcerpt(deleteTarget.Body)}</blockquote>
+      <p class="delete-confirmation__hint">This cannot be undone.</p>
+      {#if deleteError}
+        <p class="delete-confirmation__error" role="alert">{deleteError}</p>
+      {/if}
+    </div>
+    {#snippet footer()}
+      <Button tone="neutral" surface="outline" onclick={cancelDelete} disabled={deletingId !== null}>
+        Cancel
+      </Button>
+      <Button tone="danger" surface="solid" onclick={() => void confirmDelete()} disabled={deletingId !== null}>
+        {deletingId !== null ? "Deleting..." : "Delete"}
+      </Button>
+    {/snippet}
+  </Modal>
 {/if}
 
 <style>
@@ -2360,6 +2449,45 @@
   .event-action-btn:hover:not(:disabled) {
     background: var(--bg-surface-hover);
     color: var(--text-secondary);
+  }
+
+  .event-action-btn--danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+    color: var(--accent-red);
+  }
+
+  .delete-confirmation {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .delete-confirmation__message,
+  .delete-confirmation__hint,
+  .delete-confirmation__error {
+    margin: 0;
+  }
+
+  .delete-confirmation blockquote {
+    max-height: 7.5rem;
+    overflow: auto;
+    margin: 0;
+    padding: var(--space-3);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+  }
+
+  .delete-confirmation__hint {
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  .delete-confirmation__error {
+    color: var(--accent-red);
+    font-size: var(--font-size-sm);
   }
 
   .event-action-btn:active:not(:disabled) {

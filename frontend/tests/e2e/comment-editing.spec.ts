@@ -227,6 +227,51 @@ test("copies a direct provider link from a pull request timeline comment", async
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(directURL);
 });
 
+test("confirms and deletes a pull request timeline comment", async ({ page }) => {
+  let deleted = false;
+  let deleteContentType = "";
+  const event: TimelineEvent = {
+    ID: 11,
+    MergeRequestID: 1,
+    PlatformID: 9101,
+    EventType: "issue_comment",
+    Author: "marius",
+    Summary: "",
+    Body: "Comment to delete",
+    MetadataJSON: "",
+    CreatedAt: "2026-03-30T14:00:00Z",
+    DedupeKey: "comment-9101",
+  };
+
+  await page.route(/\/api\/v1\/pulls\/github\/acme\/widgets\/42(?:[/?]|$)/, async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    const detail = prDetail("Comment to delete", event);
+    if (deleted) detail.events = [];
+    await fulfillJson(route, detail);
+  });
+  await page.route("**/api/v1/pulls/github/acme/widgets/42/comments/9101", async (route) => {
+    deleteContentType = route.request().headers()["content-type"] ?? "";
+    deleted = true;
+    await route.fulfill({ status: 204, body: "" });
+  });
+
+  await page.goto("/pulls/github/acme/widgets/42");
+  const timelineComment = page.getByRole("listitem").getByText("Comment to delete");
+  await timelineComment.hover();
+  await page.getByRole("button", { name: "Delete comment" }).click();
+  await expect(page.getByRole("dialog", { name: "Delete comment?" })).toContainText("marius");
+  await expect(timelineComment).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+
+  await expect.poll(() => deleted).toBe(true);
+  await expect.poll(() => deleteContentType).toContain("application/json");
+  await expect(timelineComment).toHaveCount(0);
+});
+
 test("edits an issue timeline comment", async ({ page }) => {
   let commentBody = "Original issue comment";
   let patchedBody = "";

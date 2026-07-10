@@ -326,6 +326,9 @@ Kata frontend adaptation:
 - Project-scoped task filters must resolve the Kata project UID and read the
   daemon's project issue list instead of filtering the all-project issue list
   locally (`frontend/src/lib/api/kata/taskClient.ts::searchProject`).
+- Row-bound detail, mutation, paginated-event, and live-stream requests stay on
+  the daemon provenance of the latest workspace-accepted list/search result;
+  roster changes never fall existing rows through to another daemon (`frontend/src/lib/stores/kata-workspace.svelte.ts::acceptWorkflowResult`).
 - Replace direct daemon URL/localStorage bootstrap with calls to middleman's
   Kata daemon roster and proxy.
 - Use a middleman-owned selector header for proxied daemon requests.

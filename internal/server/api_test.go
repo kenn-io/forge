@@ -6879,6 +6879,77 @@ func TestAPIEditIssueCommentRejectsCommentFromDifferentIssue(t *testing.T) {
 	require.Equal(int32(0), editCalls.Load())
 }
 
+func TestAPIDeletePrCommentRemovesProviderAndLocalComment(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	commentID := int64(9876)
+	var deleteCalls atomic.Int32
+	mock := &mockGH{
+		deleteIssueCommentFn: func(_ context.Context, owner, repo string, gotCommentID int64) error {
+			deleteCalls.Add(1)
+			assert.Equal("acme", owner)
+			assert.Equal("widget", repo)
+			assert.Equal(commentID, gotCommentID)
+			return nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	mrID := seedPR(t, database, "acme", "widget", 7)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &commentID,
+		EventType:      "issue_comment",
+		Author:         "maintainer",
+		Body:           "remove me",
+		CreatedAt:      time.Now().UTC(),
+		DedupeKey:      "comment-9876",
+	}}))
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/pulls/gh/acme/widget/7/comments/9876", nil)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	assert.Equal(http.StatusNoContent, rec.Code)
+	assert.Equal(int32(1), deleteCalls.Load())
+	events, err := database.ListMREvents(t.Context(), mrID)
+	require.NoError(err)
+	assert.Empty(events)
+}
+
+func TestAPIDeleteIssueCommentKeepsLocalCommentWhenProviderRejects(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	commentID := int64(1234)
+	mock := &mockGH{
+		deleteIssueCommentFn: func(context.Context, string, string, int64) error {
+			return errors.New("provider denied deletion")
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	issueID := seedIssue(t, database, "acme", "widget", 5, "open")
+	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
+		IssueID:    issueID,
+		PlatformID: &commentID,
+		EventType:  "issue_comment",
+		Author:     "maintainer",
+		Body:       "keep me",
+		CreatedAt:  time.Now().UTC(),
+		DedupeKey:  "issue-comment-1234",
+	}}))
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/1234", nil)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	assert.Equal(http.StatusBadGateway, rec.Code)
+	events, err := database.ListIssueEvents(t.Context(), issueID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("keep me", events[0].Body)
+}
+
 func TestAPICommentAutocomplete(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

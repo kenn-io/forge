@@ -9407,6 +9407,53 @@ paths:
       tags:
         - Issues
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}:
+    delete:
+      operationId: delete-issue-comment-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Delete issue comment
+      tags:
+        - Issues
     patch:
       operationId: edit-issue-comment-on-host
       parameters:
@@ -10054,6 +10101,53 @@ paths:
       tags:
         - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}:
+    delete:
+      operationId: delete-pr-comment-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Delete pull request comment
+      tags:
+        - Pull Requests
     patch:
       operationId: edit-pr-comment-on-host
       parameters:
@@ -12572,6 +12666,48 @@ paths:
       tags:
         - Issues
   /issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}:
+    delete:
+      operationId: delete-issue-comment
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Delete issue comment
+      tags:
+        - Issues
     patch:
       operationId: edit-issue-comment
       parameters:
@@ -14530,6 +14666,48 @@ paths:
       tags:
         - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}:
+    delete:
+      operationId: delete-pr-comment
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Delete pull request comment
+      tags:
+        - Pull Requests
     patch:
       operationId: edit-pr-comment
       parameters:

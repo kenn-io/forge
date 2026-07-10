@@ -55,6 +55,15 @@ type editCommentHostInput struct {
 	}
 }
 
+type deleteCommentHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	CommentID    int64  `path:"comment_id"`
+}
+
 type replyToDiscussionHostInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string `path:"platform_host"`
@@ -178,6 +187,15 @@ type editIssueCommentHostInput struct {
 	Body         struct {
 		Body string `json:"body"`
 	}
+}
+
+type deleteIssueCommentHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	CommentID    int64  `path:"comment_id"`
 }
 
 type getRepoHostInput struct {
@@ -426,6 +444,13 @@ func (s *Server) editCommentOnHost(ctx context.Context, input *editCommentHostIn
 	return s.editComment(ctx, &next)
 }
 
+func (s *Server) deleteCommentOnHost(ctx context.Context, input *deleteCommentHostInput) (*deleteCommentOutput, error) {
+	return s.deleteComment(ctx, &deleteCommentInput{
+		Provider: input.Provider, PlatformHost: input.PlatformHost,
+		Owner: input.Owner, Name: input.Name, Number: input.Number, CommentID: input.CommentID,
+	})
+}
+
 func (s *Server) replyToDiscussionOnHost(ctx context.Context, input *replyToDiscussionHostInput) (*replyToDiscussionOutput, error) {
 	next := replyToDiscussionInput{
 		Provider:     input.Provider,
@@ -661,6 +686,16 @@ func (s *Server) editIssueCommentOnHost(ctx context.Context, input *editIssueCom
 		Body:         input.Body,
 	}
 	return s.editIssueComment(ctx, &next)
+}
+
+func (s *Server) deleteIssueCommentOnHost(
+	ctx context.Context,
+	input *deleteIssueCommentHostInput,
+) (*deleteIssueCommentOutput, error) {
+	return s.deleteIssueComment(ctx, &deleteIssueCommentInput{
+		Provider: input.Provider, PlatformHost: input.PlatformHost,
+		Owner: input.Owner, Name: input.Name, Number: input.Number, CommentID: input.CommentID,
+	})
 }
 
 func (s *Server) setIssueLabelsOnHost(ctx context.Context, input *setIssueLabelsHostInput) (*setLabelsOutput, error) {

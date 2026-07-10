@@ -115,7 +115,6 @@ function renderDetail(props: Partial<KataIssueDetailProps> = {}) {
       ownerOptions: [],
       messageLinks: [],
       unlinkBusyIds: new Set<number>(),
-      unlinkError: null,
       selectedRecurrences: [makeRecurrence()],
       checklistRevealed: false,
       onMoveIssue: vi.fn(async () => {}),

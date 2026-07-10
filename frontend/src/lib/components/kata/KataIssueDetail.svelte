@@ -40,7 +40,6 @@
     ownerOptions: TypeaheadOption[];
     messageLinks: MessageLinkRef[];
     unlinkBusyIds: ReadonlySet<number>;
-    unlinkError: string | null;
     selectedRecurrences: KataRecurrence[];
     checklistRevealed: boolean;
     onMoveIssue: (toProjectUID: string | null) => void | Promise<void>;
@@ -79,7 +78,6 @@
     ownerOptions,
     messageLinks,
     unlinkBusyIds,
-    unlinkError,
     selectedRecurrences,
     checklistRevealed,
     onMoveIssue,
@@ -356,9 +354,6 @@
       void onUnlinkMessage(link);
     }}
   />
-  {#if unlinkError}
-    <p class="unlink-error" role="alert">{unlinkError}</p>
-  {/if}
 
   <KataChecklistEditor {issue} revealed={checklistRevealed} onPatchMetadata={onPatchMetadata} onReveal={onRevealChecklist} />
 
@@ -688,9 +683,4 @@
     opacity: 0.62;
   }
 
-  .unlink-error {
-    margin: 8px 0 18px;
-    color: var(--color-danger-fg, #991b1b);
-    font-size: var(--font-size-sm);
-  }
 </style>

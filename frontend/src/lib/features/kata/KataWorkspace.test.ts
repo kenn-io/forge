@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import * as flash from "@middleman/ui/stores/flash";
 
 import { KataTaskAPIError } from "../../api/kata/taskClient.js";
 import type {
@@ -75,6 +76,7 @@ describe("KataWorkspace", () => {
 
   afterEach(() => {
     cleanup();
+    for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -1031,6 +1033,51 @@ describe("KataWorkspace", () => {
     });
   });
 
+  it("flashes workspace creation failures and leaves the action retryable", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          {
+            id: "home",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      }),
+    );
+    const target: KataWorkspaceTarget = {
+      available: true,
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "middleman",
+        repo_path: "acme/middleman",
+        capabilities: defaultProviderCapabilities,
+      },
+      item_type: "kata_task",
+      item_key: "issue-pay-rent",
+    };
+    mockCreateKataWorkspaceForTask.mockRejectedValueOnce(new Error("workspace unavailable"));
+    const { api } = createWorkspaceAPI();
+    vi.mocked(api.issue).mockImplementation(async (uid: string) => ({
+      ...detail(uid, initialIssues),
+      workspace_target: target,
+    }));
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: "issue-pay-rent" } });
+    const createButton = await screen.findByRole("button", { name: "Create workspace" });
+    await fireEvent.click(createButton);
+
+    await waitFor(() => {
+      expect(flash.getFlash()).toMatchObject({ message: "workspace unavailable", tone: "danger" });
+    });
+    expect(screen.queryByText("workspace unavailable")).toBeNull();
+    expect(createButton.hasAttribute("disabled")).toBe(false);
+  });
+
   it("keeps the create workspace action visible while refreshing the same selected task", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({
@@ -1490,8 +1537,10 @@ describe("KataWorkspace", () => {
     await fireEvent.input(ownerInput, { target: { value: "agent:new" } });
     await fireEvent.keyDown(ownerInput, { key: "Enter" });
 
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("owner unavailable");
+    await waitFor(() => {
+      expect(flash.getFlash()).toMatchObject({ message: "owner unavailable", tone: "danger" });
+    });
+    expect(screen.queryByText("owner unavailable")).toBeNull();
     expect(ownerInput.value).toBe("agent:new");
     expect(screen.getByTestId("daemon-chip").textContent).not.toContain("owner unavailable");
   });

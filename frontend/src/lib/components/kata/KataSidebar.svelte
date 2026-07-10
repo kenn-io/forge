@@ -7,6 +7,7 @@
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import StarIcon from "@lucide/svelte/icons/star";
+  import { showFlash } from "@middleman/ui/stores/flash";
 
   import type { KataProjectSummary, KataTaskSearchFilters, KataTaskViewName } from "../../api/kata/taskTypes.js";
   import type { KataAreaSummary, KataCurrentView } from "../../stores/kata-workspace.svelte.js";
@@ -49,7 +50,6 @@
   let creatingProject = $state(false);
   let createDraft = $state("");
   let createSaving = $state(false);
-  let createError = $state<string | null>(null);
   let renamingProjectID = $state<number | null>(null);
   let renameDraft = $state("");
   let renameSaving = $state(false);
@@ -73,28 +73,25 @@
   function startCreatingProject(): void {
     creatingProject = true;
     createDraft = "";
-    createError = null;
     queueMicrotask(() => createInput?.focus());
   }
 
   function cancelCreatingProject(): void {
     creatingProject = false;
     createDraft = "";
-    createError = null;
   }
 
   async function submitCreateProject(): Promise<void> {
     const name = createDraft.trim();
     if (!name || createSaving) return;
     createSaving = true;
-    createError = null;
     try {
       const project = await onCreateProject(name);
       creatingProject = false;
       createDraft = "";
       await onOpenProject(project.uid);
     } catch (err) {
-      createError = err instanceof Error ? err.message : "Could not create project.";
+      showFlash(err instanceof Error ? err.message : "Could not create project.", { tone: "danger" });
     } finally {
       createSaving = false;
     }
@@ -127,7 +124,7 @@
       renamingProjectID = null;
       renameDraft = "";
     } catch (err) {
-      renameError = err instanceof Error ? err.message : "Could not rename project.";
+      showFlash(err instanceof Error ? err.message : "Could not rename project.", { tone: "danger" });
     } finally {
       renameSaving = false;
     }
@@ -250,9 +247,6 @@
           disabled={createSaving}
         />
       </form>
-      {#if createError}
-        <p class="sidebar-error" role="alert">{createError}</p>
-      {/if}
     {:else}
       <button type="button" class="project-create-button" onclick={startCreatingProject}>
         <PlusIcon size={13} strokeWidth={1.9} />

@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import * as flash from "@middleman/ui/stores/flash";
 
 import type { KataProjectSummary, KataTaskSearchFilters } from "../../api/kata/taskTypes.js";
 import type { KataAreaSummary, KataCurrentView } from "../../stores/kata-workspace.svelte.js";
@@ -33,6 +34,7 @@ const allScopeFilters: KataTaskSearchFilters = {
 describe("KataSidebar", () => {
   afterEach(() => {
     cleanup();
+    for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
     vi.restoreAllMocks();
   });
 
@@ -139,6 +141,64 @@ describe("KataSidebar", () => {
     await waitFor(() => {
       expect(onRenameProject).toHaveBeenCalledWith(2, "Household");
     });
+  });
+
+  it("flashes project creation failures while preserving the draft", async () => {
+    render(KataSidebar, {
+      props: {
+        areas,
+        projects,
+        currentView,
+        searchFilters: allScopeFilters,
+        onOpenView: vi.fn(),
+        onOpenProject: vi.fn(),
+        onCreateProject: vi.fn(async () => {
+          throw new Error("create unavailable");
+        }),
+        onRenameProject: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    const input = screen.getByRole("textbox", { name: "New project name" }) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: "New Project" } });
+    await fireEvent.submit(input.closest("form")!);
+
+    await waitFor(() => expect(flash.getFlash()).toMatchObject({ message: "create unavailable", tone: "danger" }));
+    expect(input.value).toBe("New Project");
+    expect(screen.queryByText("create unavailable")).toBeNull();
+  });
+
+  it("keeps rename validation inline but flashes transport failures", async () => {
+    const onRenameProject = vi.fn(async () => {
+      throw new Error("rename unavailable");
+    });
+    render(KataSidebar, {
+      props: {
+        areas,
+        projects,
+        currentView,
+        searchFilters: allScopeFilters,
+        onOpenView: vi.fn(),
+        onOpenProject: vi.fn(),
+        onCreateProject: vi.fn(),
+        onRenameProject,
+      },
+    });
+
+    const personal = screen.getByRole("region", { name: "Personal" });
+    await fireEvent.click(within(personal).getByRole("button", { name: "Rename Finances" }));
+    const input = screen.getByRole("textbox", { name: "Rename project" }) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: " " } });
+    await fireEvent.submit(input.closest("form")!);
+    expect(screen.getByRole("alert").textContent).toContain("Project name can't be empty.");
+    expect(flash.getFlash()).toBeNull();
+
+    await fireEvent.input(input, { target: { value: "Household" } });
+    await fireEvent.submit(input.closest("form")!);
+    await waitFor(() => expect(flash.getFlash()).toMatchObject({ message: "rename unavailable", tone: "danger" }));
+    expect(input.value).toBe("Household");
+    expect(screen.queryByText("rename unavailable")).toBeNull();
   });
 });
 

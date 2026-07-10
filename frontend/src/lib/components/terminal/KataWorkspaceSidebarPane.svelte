@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createKataTaskAPI } from "../../api/kata/taskClient.js";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import type {
     KataCreateRecurrenceInput,
     KataPatchRecurrenceInput,
@@ -26,10 +27,9 @@
   const store = createKataWorkspaceStore({ api });
 
   let loading = $state(true);
-  let error = $state<string | null>(null);
+  let loadError = $state<string | null>(null);
   let checklistRevealed = $state(false);
   let unlinkBusyIds = $state<ReadonlySet<number>>(new Set());
-  let unlinkError = $state<string | null>(null);
   let loadRequestID = 0;
   let recurrenceDialogs = $state<{
     openCreateRecurrence: () => void;
@@ -42,13 +42,13 @@
     const issueUID = kata.issue_uid;
     const requestID = ++loadRequestID;
     loading = true;
-    error = null;
+    loadError = null;
     checklistRevealed = false;
     void store
       .bootstrap("all", issueUID, { selectFirst: false })
       .catch((err) => {
         if (requestID !== loadRequestID) return;
-        error = err instanceof Error ? err.message : "Could not load Kata task.";
+        loadError = err instanceof Error ? err.message : "Could not load Kata task.";
       })
       .finally(() => {
         if (requestID === loadRequestID) {
@@ -71,22 +71,25 @@
   }
 
   async function runTask(task: () => Promise<void | boolean>): Promise<boolean> {
-    error = null;
     try {
       return (await task()) ?? true;
     } catch (err) {
-      error = err instanceof Error ? err.message : "Kata request failed.";
+      showFlash(err instanceof Error ? err.message : "Kata request failed.", { tone: "danger" });
       return false;
     }
   }
 
   async function runTaskOrThrow(task: () => Promise<void>): Promise<void> {
-    error = null;
+    await task();
+  }
+
+  async function runLoadTask(task: () => Promise<void | boolean>): Promise<boolean> {
+    loadError = null;
     try {
-      await task();
+      return (await task()) ?? true;
     } catch (err) {
-      error = err instanceof Error ? err.message : "Kata request failed.";
-      throw err;
+      loadError = err instanceof Error ? err.message : "Could not load Kata task.";
+      return false;
     }
   }
 
@@ -175,31 +178,27 @@
     const patch = computeRemoveMessageLinkPatch(links, link.message_id);
     if (patch === null) return;
     unlinkBusyIds = new Set([link.message_id]);
-    unlinkError = null;
-    const ok = await runTask(() =>
+    await runTask(() =>
       store.patchMetadata(selected.issue.uid, actor, {
         mail_links: patch.mail_links,
       }),
     );
     unlinkBusyIds = new Set();
-    if (!ok) {
-      unlinkError = error;
-    }
   }
 
   async function selectIssue(uid: string): Promise<void> {
-    await runTask(() => store.selectIssue(uid));
+    await runLoadTask(() => store.selectIssue(uid));
   }
 </script>
 
 <div class="kata-workspace-sidebar" inert={disabled}>
   {#if loading}
     <div class="state">Loading task</div>
-  {:else if error && !store.selectedIssue}
-    <div class="state error" role="alert">{error}</div>
+  {:else if loadError && !store.selectedIssue}
+    <div class="state error" role="alert">{loadError}</div>
   {:else if store.selectedIssue}
-    {#if error}
-      <p class="inline-error" role="alert">{error}</p>
+    {#if loadError}
+      <p class="inline-error" role="alert">{loadError}</p>
     {/if}
     <KataIssueDetail
       issue={store.selectedIssue}
@@ -211,7 +210,6 @@
       ownerOptions={ownerOptions()}
       messageLinks={selectedMessageLinks()}
       unlinkBusyIds={unlinkBusyIds}
-      {unlinkError}
       selectedRecurrences={store.selectedRecurrences}
       {checklistRevealed}
       onMoveIssue={moveSelectedIssue}

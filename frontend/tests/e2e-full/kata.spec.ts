@@ -3689,7 +3689,7 @@ test("kata project scope stays on the starting default daemon when configuration
     uid: "project-shared",
     name: "Shared",
     metadata: { area: "Work", sidebar_order: 1 },
-    open_count: 1,
+    open_count: 2,
   };
   const homeIssue = issueSummary({
     id: 701,
@@ -3705,7 +3705,7 @@ test("kata project scope stays on the starting default daemon when configuration
   });
   const workIssue = issueSummary({
     id: 702,
-    uid: "issue-work-shared",
+    uid: "issue-home-shared",
     project_id: sharedProject.id,
     project_uid: sharedProject.uid,
     project_name: sharedProject.name,
@@ -3715,12 +3715,30 @@ test("kata project scope stays on the starting default daemon when configuration
     body: "This row must not cross the daemon boundary.",
     labels: ["work"],
   });
+  const homeFollowUp = issueSummary({
+    id: 703,
+    uid: "issue-shared-follow-up",
+    project_id: sharedProject.id,
+    project_uid: sharedProject.uid,
+    project_name: sharedProject.name,
+    short_id: "shared-follow-up",
+    qualified_id: "Shared#shared-follow-up",
+    title: "Home follow-up task",
+    body: "This detail belongs to the starting default daemon.",
+    labels: ["home"],
+  });
+  const workCollision = issueSummary({
+    ...homeFollowUp,
+    title: "Foreign colliding task",
+    body: "This colliding detail belongs to the changed default daemon.",
+    labels: ["work"],
+  });
   const home = await startKataBackend({
     projects: [sharedProject],
-    issues: [homeIssue],
+    issues: [homeIssue, homeFollowUp],
     projectsBarrier,
   });
-  const work = await startKataBackend({ projects: [sharedProject], issues: [workIssue] });
+  const work = await startKataBackend({ projects: [sharedProject], issues: [workIssue, workCollision] });
   const kataHome = await configureKataHomeDaemons(
     [
       { name: "home", url: home.url },
@@ -3734,6 +3752,7 @@ test("kata project scope stays on the starting default daemon when configuration
     await page.goto(`${server.info.base_url}/kata?view=all&scope=project-shared`);
 
     await expect(page.getByTestId("daemon-chip")).toContainText("home");
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("middleman:kata:active_daemon"))).toBeNull();
     await expect.poll(() => home.state.seenPaths).toContain("GET /api/v1/projects?include=stats");
     await writeFile(
       path.join(kataHome.home, "config.toml"),
@@ -3750,6 +3769,13 @@ test("kata project scope stays on the starting default daemon when configuration
         "",
       ].join("\n"),
     );
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(`${server.info.base_url}/api/v1/kata/daemons`);
+        const roster = (await response.json()) as { daemons?: Array<{ id: string; default: boolean }> };
+        return roster.daemons?.find((daemon) => daemon.default)?.id;
+      })
+      .toBe("work");
     releaseProjects();
 
     const taskList = page.locator(".kata-list");
@@ -3757,6 +3783,17 @@ test("kata project scope stays on the starting default daemon when configuration
     await expect(taskList.getByRole("button", { name: /Foreign work task/ })).toHaveCount(0);
     await expect.poll(() => home.state.seenPaths).toContain("GET /api/v1/projects/7/issues?status=open");
     expect(work.state.seenPaths).not.toContain("GET /api/v1/projects/7/issues?status=open");
+
+    const targetIssue = homeFollowUp;
+    const detailRequestPromise = page.waitForRequest((request) =>
+      request.url().endsWith(`/api/v1/kata/tasks/${targetIssue.uid}`),
+    );
+    await taskList.getByRole("button", { name: new RegExp(targetIssue.title) }).click();
+    const detailRequest = await detailRequestPromise;
+    expect(detailRequest.headers()["x-middleman-kata-daemon"]).toBe("home");
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText(targetIssue.body);
+    await expect.poll(() => home.state.seenPaths).toContain(`GET /api/v1/issues/${targetIssue.uid}`);
+    expect(work.state.seenPaths).not.toContain(`GET /api/v1/issues/${targetIssue.uid}`);
   } finally {
     releaseProjects();
     await server.stop();

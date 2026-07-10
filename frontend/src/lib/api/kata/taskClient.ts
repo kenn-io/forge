@@ -260,7 +260,9 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
   const getDaemonId = options.getDaemonId ?? getActiveKataDaemon;
   const getDefaultDaemonId = options.getDefaultDaemonId ?? getDefaultKataDaemon;
   const baseFetchImpl = options.fetchImpl ?? fetch;
-  const fetchImpl = withKataDaemon(baseFetchImpl, getDaemonId);
+  let resolvedDefaultDaemonId: string | undefined;
+  const getEffectiveDaemonId = () => getDaemonId() ?? getDefaultDaemonId() ?? resolvedDefaultDaemonId;
+  const fetchImpl = withKataDaemon(baseFetchImpl, getEffectiveDaemonId);
   let api: KataTaskAPI;
 
   function daemonHeaders(daemonId?: string): Record<string, string> | undefined {
@@ -272,12 +274,15 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
   }
 
   async function resolveOperationDaemonId(explicitDaemonId?: string): Promise<string> {
-    const selected = explicitDaemonId?.trim() || getDaemonId()?.trim() || getDefaultDaemonId()?.trim();
+    const selected = explicitDaemonId?.trim() || getEffectiveDaemonId()?.trim();
     if (selected) return selected;
 
     const daemons = await fetchKataDaemons(baseFetchImpl);
     const fallback = daemons.find((daemon) => daemon.default) ?? daemons[0];
-    if (fallback?.id) return fallback.id;
+    if (fallback?.id) {
+      resolvedDefaultDaemonId = fallback.id;
+      return fallback.id;
+    }
 
     throw new KataTaskAPIError({
       status: 503,
@@ -557,7 +562,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     },
 
     async createIssue(projectID, actor, draft, idempotencyKey) {
-      const daemonId = getDaemonId();
+      const daemonId = await resolveOperationDaemonId();
       const { metadata, ...createDraft } = draft;
       const result = await request<unknown>(taskPath(`/projects/${projectID}/issues`), {
         method: "POST",

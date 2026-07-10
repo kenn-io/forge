@@ -286,6 +286,47 @@ describe("kata task HTTP client", () => {
     });
   });
 
+  test("resolves one concrete daemon before creating a task with metadata", async () => {
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/kata/daemons": {
+        body: {
+          daemons: [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }],
+        },
+      },
+      "/api/v1/projects/7/issues": {
+        headers: { etag: '"rev-1"' },
+        body: {
+          changed: true,
+          issue: issue("issue-capture", "Capture from notes", "project-inbox"),
+        },
+      },
+      "/api/v1/projects/7/issues/issue-capture/metadata": {
+        headers: { etag: '"rev-2"' },
+        body: {
+          changed: true,
+          issue: issue("issue-capture", "Capture from notes", "project-inbox", { scheduled_on: "2026-05-20" }),
+        },
+      },
+    });
+    const api = createKataTaskAPI({
+      fetchImpl,
+      getDaemonId: () => undefined,
+      getDefaultDaemonId: () => undefined,
+    });
+
+    await api.createIssue(7, "middleman", {
+      title: "Capture from notes",
+      metadata: { scheduled_on: "2026-05-20" },
+    });
+
+    expect(calls.map((call) => proxyPath(call.url))).toEqual([
+      "/api/v1/kata/daemons",
+      "/api/v1/projects/7/issues",
+      "/api/v1/projects/7/issues/issue-capture/metadata",
+    ]);
+    expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual([null, "home", "home"]);
+  });
+
   test("treats create retry metadata conflicts as success when desired metadata is already applied", async () => {
     const { calls, fetchImpl } = createFetchStub({
       "/api/v1/projects/7/issues": {
@@ -518,6 +559,64 @@ describe("kata task HTTP client", () => {
       status: 503,
       code: "service_unavailable",
     });
+    expect(calls.map((call) => proxyPath(call.url))).toEqual(["/api/v1/kata/daemons"]);
+  });
+
+  test("resolves a concrete default daemon on demand before project search", async () => {
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/kata/daemons": {
+        body: {
+          daemons: [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }],
+        },
+      },
+      "/api/v1/projects?include=stats": {
+        body: { projects: [project("project-work", "Work")] },
+      },
+      "/api/v1/projects/1/issues?status=open": {
+        body: { issues: [issue("issue-work", "Work task", "project-work")] },
+      },
+    });
+    const api = createKataTaskAPI({
+      fetchImpl,
+      getDaemonId: () => undefined,
+      getDefaultDaemonId: () => undefined,
+    });
+
+    await api.search({
+      scope: { kind: "project", project_uid: "project-work" },
+      status: "open",
+      owner: "",
+      label: "",
+      query: "",
+    });
+
+    expect(calls.map((call) => proxyPath(call.url))).toEqual([
+      "/api/v1/kata/daemons",
+      "/api/v1/projects?include=stats",
+      "/api/v1/projects/1/issues?status=open",
+    ]);
+    expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual([null, "home", "home"]);
+  });
+
+  test("fails project search before project reads when no concrete daemon is available", async () => {
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/kata/daemons": { body: { daemons: [] } },
+    });
+    const api = createKataTaskAPI({
+      fetchImpl,
+      getDaemonId: () => undefined,
+      getDefaultDaemonId: () => undefined,
+    });
+
+    await expect(
+      api.search({
+        scope: { kind: "project", project_uid: "project-work" },
+        status: "open",
+        owner: "",
+        label: "",
+        query: "",
+      }),
+    ).rejects.toMatchObject({ status: 503, code: "service_unavailable" });
     expect(calls.map((call) => proxyPath(call.url))).toEqual(["/api/v1/kata/daemons"]);
   });
 
@@ -862,6 +961,25 @@ describe("kata task HTTP client", () => {
     await api.issue("issue-1", { daemonId: "work", pinned: true });
 
     expect(calls[0]!.headers.get(KATA_DAEMON_HEADER)).toBe("work");
+  });
+
+  test("uses the stored default daemon for issue detail reads", async () => {
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/kata/tasks/issue-1": {
+        body: {
+          detail: { issue: { ...issue("issue-1", "Shown issue"), body: "Body" }, comments: [], labels: [], links: [] },
+        },
+      },
+    });
+    const api = createKataTaskAPI({
+      fetchImpl,
+      getDaemonId: () => undefined,
+      getDefaultDaemonId: () => "home",
+    });
+
+    await api.issue("issue-1");
+
+    expect(calls[0]!.headers.get(KATA_DAEMON_HEADER)).toBe("home");
   });
 
   test("threads abort signals through issue and events fetches", async () => {

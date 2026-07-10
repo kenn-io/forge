@@ -4,7 +4,7 @@
 
 **Goal:** Ensure project-scoped Kata views render only rows returned by the selected project's issue-list endpoint.
 
-**Architecture:** Keep unscoped views on the generic issue list and preserve their parallel project/list loading. For scoped views and searches, resolve `activeDaemonId ?? rosterDefaultDaemonId` to a concrete starting daemon, resolve `project_uid` from its project catalog before loading issues, pass the resolved project into the existing `fetchIssuesByStatus` helper, and treat an unknown UID as an empty scope.
+**Architecture:** Keep unscoped views on the generic issue list and preserve their parallel project/list loading. Resolve a concrete starting daemon for issue, search, and multi-request create operations; use the same effective daemon selector for related reads and mutations. For scoped views, resolve `project_uid` from that daemon's project catalog, pass the project into `fetchIssuesByStatus`, and treat an unknown UID as an empty scope.
 
 **Tech Stack:** TypeScript, Vite+ unit tests, Playwright full-stack e2e fixture.
 
@@ -117,7 +117,7 @@ Expected: FAIL because the generic route is requested and its contaminating row 
 Replace the unconditional issue-list promise in `issues()` with project-aware selection while retaining parallel loading for unscoped views:
 
 ```typescript
-const daemonId = getDaemonId();
+const daemonId = await resolveOperationDaemonId();
 const status = query.view === "logbook" ? "closed" : "open";
 const genericIssuesPromise =
   query.project_uid === undefined ? fetchIssuesByStatus(status, daemonId, undefined, true) : undefined;
@@ -258,3 +258,33 @@ Expected: all commands exit zero; the full Vite+ and complete Chromium/Firefox K
 - [x] **Step 7: Commit the daemon-pinning follow-up**
 
 Stage the client, unit tests, Kata full-stack spec, design, and plan. Create a hook-enforced conventional commit explaining that concrete daemon IDs prevent numeric project IDs from crossing daemon boundaries.
+
+### Task 3: Keep detail and mutation requests on the loaded daemon
+
+**Files:**
+
+- Modify: `frontend/src/lib/api/kata/taskClient.ts:258-290,560`
+- Test: `frontend/src/lib/api/kata/taskClient.test.ts`
+- Test: `frontend/tests/e2e-full/kata.spec.ts`
+- Modify: `docs/superpowers/specs/2026-07-09-kata-project-scoped-issue-views-design.md`
+
+**Interfaces:**
+
+- Consumes: active selection, stored roster default, and the existing on-demand roster resolver.
+- Produces: one effective daemon selector for all client requests and concrete operation pinning for `createIssue()`.
+
+- [x] **Step 1: Add failing client regressions**
+
+Add tests proving an unpinned detail read uses the stored default and a create-plus-metadata operation with no ready getters first loads the roster, then sends both mutations with the resolved daemon header. Add matching on-demand roster and empty-roster cases for project search.
+
+- [x] **Step 2: Extend the two-daemon browser regression**
+
+After the starting daemon's scoped row renders, select it and assert its body loads from the starting backend. Verify the starting backend sees `GET /api/v1/issues/{uid}` and the newly configured backend does not.
+
+- [x] **Step 3: Unify effective selection and creation pinning**
+
+Use `getActiveDaemon() ?? getStoredDefault() ?? resolvedOnDemandDefault` as the selector passed to `withKataDaemon`. Cache a roster fallback only when neither getter supplies an ID. Resolve `createIssue()` through `resolveOperationDaemonId()` before its first mutation so the create and metadata requests cannot cross daemon boundaries.
+
+- [x] **Step 4: Run final affected verification and commit**
+
+Run the complete task-client unit suite, full Vite+ suite, and complete Chromium/Firefox Kata Playwright spec. Commit only after all three pass.

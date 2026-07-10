@@ -1,6 +1,7 @@
 <script lang="ts">
   import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
   import type { Settings } from "@middleman/ui/api/types";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import Modal from "../shared/Modal.svelte";
   import { bulkAddRepos, previewRepos, type RepoPreviewRow } from "../../api/settings.js";
   import RepoPreviewTable from "./RepoPreviewTable.svelte";
@@ -143,7 +144,7 @@
       onImported(settings);
       onClose();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       submitting = false;
     }

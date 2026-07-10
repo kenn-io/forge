@@ -5,6 +5,7 @@
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
   import type { AgentSettings as AgentSettingsType } from "@middleman/ui/api/types";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import { slide } from "svelte/transition";
   import { updateSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
@@ -44,7 +45,6 @@
   const embedded = isEmbedded();
   let customID = 0;
   let saving = $state(false);
-  let error = $state<string | null>(null);
   // svelte-ignore state_referenced_locally
   let drafts = $state<AgentDraft[]>(initialDrafts(agents));
 
@@ -212,7 +212,6 @@
   async function save(): Promise<void> {
     if (!canSave) return;
     saving = true;
-    error = null;
     try {
       const settings = await updateSettings({ agents: serializedAgents });
       const nextAgents = settings.agents ?? [];
@@ -220,7 +219,7 @@
       drafts = initialDrafts(nextAgents);
       onUpdate(nextAgents);
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       saving = false;
     }
@@ -384,9 +383,6 @@
     {/each}
   </div>
 
-  {#if error}
-    <p class="error-msg">{error}</p>
-  {/if}
 
   <div class="settings-actions">
     <button
@@ -553,12 +549,6 @@
   .add-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-
-  .error-msg {
-    margin: 0;
-    color: var(--accent-red);
-    font-size: var(--font-size-sm);
   }
 
   @media (max-width: 900px) {

@@ -9,6 +9,7 @@
     FleetSettings as FleetSettingsType,
     FleetSettingsUpdate,
   } from "@middleman/ui/api/types";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import { updateFleetSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import TypeaheadTrigger, { type TypeaheadOption } from "../shared/TypeaheadTrigger.svelte";
@@ -46,7 +47,6 @@
   let currentFleet = $state(fleet);
   let nextID = 0;
   let saving = $state(false);
-  let error = $state<string | null>(null);
   // svelte-ignore state_referenced_locally
   let enabledDraft = $state(currentFleet.enabled);
   // svelte-ignore state_referenced_locally
@@ -169,7 +169,6 @@
       currentFleet.sessions.include_unmanaged_details ?? false;
     httpPeerDrafts = httpDraftsFromFleet(currentFleet);
     sshPeerDrafts = sshDraftsFromFleet(currentFleet);
-    error = null;
   }
 
   function addHTTPPeer(): void {
@@ -217,14 +216,13 @@
   async function save(): Promise<void> {
     if (!canSave) return;
     saving = true;
-    error = null;
     try {
       const updated = await updateFleetSettings(pendingFleet);
       currentFleet = updated;
       resetDraft();
       onUpdate(updated);
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       saving = false;
     }
@@ -251,9 +249,6 @@
     <p class="restart-banner">Restart required</p>
   {/if}
 
-  {#if error}
-    <p class="settings-error">{error}</p>
-  {/if}
 
   <div class="settings-grid">
     <label class="field">
@@ -605,8 +600,7 @@
     height: 30px;
   }
 
-  .restart-banner,
-  .settings-error {
+  .restart-banner {
     margin: 0;
     padding: 8px 10px;
     border-radius: var(--radius-sm);
@@ -617,12 +611,6 @@
     border: 1px solid var(--diff-stale-border);
     background: var(--diff-stale-bg);
     color: var(--diff-stale-text);
-  }
-
-  .settings-error {
-    border: 1px solid color-mix(in srgb, var(--accent-red) 45%, var(--border-muted));
-    background: color-mix(in srgb, var(--accent-red) 9%, var(--bg-primary));
-    color: var(--accent-red);
   }
 
   .peer-section {

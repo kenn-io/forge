@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import * as flash from "@middleman/ui/stores/flash";
 import AddFolderDialog from "./AddFolderDialog.svelte";
 import type { DocsAPI } from "../../api/docs/api";
 import { createMockDocsBackend } from "./docsTestBackend";
@@ -9,6 +10,7 @@ afterEach(() => {
   cleanup();
   setActiveKataDaemon(undefined);
   setKataDaemonRoster([], undefined);
+  for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
 });
 
 function renderDialog(
@@ -135,6 +137,20 @@ describe("AddFolderDialog", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
     const alert = await waitFor(() => screen.getByRole("alert"));
     expect(alert.textContent).toContain("id taken");
+    expect(onAdded).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  test("generic add failures use the shared danger flash and keep the dialog open", async () => {
+    const api = createMockDocsBackend();
+    vi.spyOn(api, "addFolder").mockRejectedValue(new Error("daemon unavailable"));
+    const { onAdded, onClose } = renderDialog({ api });
+    await waitFor(() => screen.getByText("Documents"));
+    await fireEvent.input(screen.getByPlaceholderText("~/Notes"), { target: { value: "/mock/notes" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
+
+    await waitFor(() => expect(flash.getFlash()).toMatchObject({ message: "daemon unavailable", tone: "danger" }));
+    expect(screen.queryByText("daemon unavailable")).toBeNull();
     expect(onAdded).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });

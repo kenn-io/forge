@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import * as flash from "@middleman/ui/stores/flash";
 
 import type { FleetSettings as FleetSettingsType } from "@middleman/ui/api/types";
 
@@ -16,6 +17,10 @@ vi.mock("../../stores/embed-config.svelte.js", () => ({
 }));
 
 import FleetSettings from "./FleetSettings.svelte";
+
+afterEach(() => {
+  for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
+});
 
 function fleetSettings(overrides: Partial<FleetSettingsType> = {}): FleetSettingsType {
   return {
@@ -188,7 +193,13 @@ describe("FleetSettings", () => {
     });
     await fireEvent.click(screen.getByRole("button", { name: "Save fleet federation" }));
 
-    expect(await screen.findByText("fleet.peers[0]: base_url is required")).toBeTruthy();
+    await waitFor(() =>
+      expect(flash.getFlash()).toMatchObject({
+        message: "fleet.peers[0]: base_url is required",
+        tone: "danger",
+      }),
+    );
+    expect(screen.queryByText("fleet.peers[0]: base_url is required")).toBeNull();
     expect((screen.getByLabelText("HTTP peer mini name") as HTMLInputElement).value).toBe("Mini");
   });
 });

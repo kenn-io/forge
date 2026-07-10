@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import * as flash from "@middleman/ui/stores/flash";
 
 import type { MessageDetailData } from "../../api/messages/types";
 import type { MessageLinkInput } from "../../messages/messageLinks";
@@ -8,6 +9,7 @@ import MessageDetail from "./MessageDetail.svelte";
 
 afterEach(() => {
   cleanup();
+  for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -510,7 +512,7 @@ describe("MessageDetail link to task", () => {
     expect(toast.textContent).toContain("Linked to Kata#42.");
   });
 
-  it("shows link failures as an alert", async () => {
+  it("shows link failures as a danger flash", async () => {
     vi.useFakeTimers();
     const kata = makeKata(async () =>
       searchResponse([fakeIssue({ id: 42, uid: "uid-42", qualified_id: "Kata#42", title: "Pick me" })]),
@@ -524,7 +526,7 @@ describe("MessageDetail link to task", () => {
     await fireEvent.click(await waitFor(() => screen.getByRole("button", { name: /Kata#42.*Pick me/i })));
     await fireEvent.click(screen.getByRole("button", { name: /^Link$/ }));
 
-    const alert = await waitFor(() => screen.getByRole("alert"));
-    expect(alert.textContent).toContain("oops");
+    await waitFor(() => expect(flash.getFlash()).toMatchObject({ message: "oops", tone: "danger" }));
+    expect(screen.queryByText("oops")).toBeNull();
   });
 });

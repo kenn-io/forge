@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import * as flash from "@middleman/ui/stores/flash";
 
 const mockRefreshSyncStatus = vi.fn();
 
@@ -59,6 +60,7 @@ describe("RepoSettings", () => {
     mockPreviewRepos.mockReset();
     mockBulkAddRepos.mockReset();
     mockRemoveRepo.mockReset();
+    for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
   });
 
   it("renders the glob count and refresh action", () => {
@@ -79,7 +81,7 @@ describe("RepoSettings", () => {
       },
     });
 
-    expect(screen.getByText((_, element) => element?.textContent === "roborev-dev/* (2)")).toBeTruthy();
+    expect(screen.getByText("roborev-dev/* (2)", { selector: ".repo-name" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Refresh" })).toBeTruthy();
   });
 
@@ -665,7 +667,8 @@ describe("RepoSettings", () => {
         host: "github.com",
       }),
     );
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("path does not exist"));
+    await waitFor(() => expect(flash.getFlash()).toMatchObject({ message: "path does not exist", tone: "danger" }));
+    expect(screen.queryByText("path does not exist")).toBeNull();
     expect(onUpdate).not.toHaveBeenCalled();
     expect(mockRefreshSyncStatus).not.toHaveBeenCalled();
   });

@@ -6,6 +6,7 @@
     getStores,
     SelectDropdown,
   } from "@middleman/ui";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import type { TerminalSettings as TerminalSettingsType } from "@middleman/ui/api/types";
   import { updateSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
@@ -292,7 +293,7 @@
       if (livePreview) {
         settingsStore.setTerminalSettings(currentTerminal);
       }
-      console.warn("Failed to save terminal settings:", err);
+      showFlash(err instanceof Error ? err.message : "Failed to save terminal settings.", { tone: "danger" });
     } finally {
       saving = false;
       onSavingChange?.(false);

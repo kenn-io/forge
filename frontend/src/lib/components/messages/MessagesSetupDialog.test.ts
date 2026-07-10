@@ -1,10 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import * as flash from "@middleman/ui/stores/flash";
 
 import type { MessagesCapabilities } from "../../api/messages/types";
 import MessagesSetupDialog from "./MessagesSetupDialog.svelte";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
+});
 
 const syntheticURL = "https://messages.example.com";
 const syntheticEnv = "MSGVAULT_API_KEY";
@@ -300,7 +304,7 @@ describe("MessagesSetupDialog save flow", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
-  test("onSave rejection keeps the dialog open and shows the error", async () => {
+  test("onSave rejection keeps the dialog open and flashes the error", async () => {
     const onSave = vi.fn().mockRejectedValueOnce(new Error("server says no"));
     const onClose = vi.fn();
     renderDialog({ onSave, onClose });
@@ -308,8 +312,8 @@ describe("MessagesSetupDialog save flow", () => {
     await fireEvent.input(getURLInput(), { target: { value: syntheticURL } });
     await fireEvent.submit(getForm());
 
-    const alert = await waitFor(() => screen.getByRole("alert"));
-    expect(alert.textContent).toContain("server says no");
+    await waitFor(() => expect(flash.getFlash()).toMatchObject({ message: "server says no", tone: "danger" }));
+    expect(screen.queryByText("server says no")).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
     expect(getURLInput()).toBeTruthy();
   });

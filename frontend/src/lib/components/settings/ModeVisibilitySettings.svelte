@@ -3,6 +3,7 @@
     DEFAULT_MODE_VISIBILITY,
     getStores,
   } from "@middleman/ui";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import type { ModeVisibility } from "@middleman/ui/api/types";
   import { updateSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
@@ -93,7 +94,7 @@
       settingsStore.setModeVisibility(updated);
     } catch (err) {
       draft = source;
-      console.warn("Failed to save visible modes:", err);
+      showFlash(err instanceof Error ? err.message : "Failed to save visible modes.", { tone: "danger" });
     } finally {
       saving = false;
       onSavingChange?.(false);

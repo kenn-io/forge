@@ -10,6 +10,7 @@
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import Upload from "@lucide/svelte/icons/upload";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import type { DocsRoute } from "../../api/docs/route.js";
   import { createDocsAPI, type DocsAPI } from "../../api/docs/api";
   import type { DocsAPIError, GitPublishResponse, GitStatusEntry, TreeNode, Folder } from "../../api/docs/types";
@@ -518,7 +519,12 @@
       editorDirty = false;
       editTarget = null;
     } catch (err) {
-      saveError = err instanceof Error ? err.message : "Failed to save";
+      const message = describeFileError(err, "Failed to save");
+      if (isFileInputError(err)) {
+        saveError = message;
+      } else {
+        showFlash(message, { tone: "danger" });
+      }
     } finally {
       saving = false;
     }
@@ -658,7 +664,12 @@
       newFileOpen = false;
       onRouteChange({ mode: "docs", folder: route.folder, doc: name });
     } catch (err) {
-      newFileError = describeFileError(err, "Could not create file.");
+      const message = describeFileError(err, "Could not create file.");
+      if (isFileInputError(err)) {
+        newFileError = message;
+      } else {
+        showFlash(message, { tone: "danger" });
+      }
     } finally {
       newFileSaving = false;
     }
@@ -749,7 +760,12 @@
         { replace: true },
       );
     } catch (err) {
-      renameError = describeFileError(err, "Could not rename file.");
+      const message = describeFileError(err, "Could not rename file.");
+      if (isFileInputError(err)) {
+        renameError = message;
+      } else {
+        showFlash(message, { tone: "danger" });
+      }
     } finally {
       renameSaving = false;
     }
@@ -772,7 +788,12 @@
         { replace: true },
       );
     } catch (err) {
-      deleteError = describeFileError(err, "Could not delete file.");
+      const message = describeFileError(err, "Could not delete file.");
+      if (isFileInputError(err)) {
+        deleteError = message;
+      } else {
+        showFlash(message, { tone: "danger" });
+      }
     } finally {
       deleting = false;
     }
@@ -785,6 +806,11 @@
     if (e?.code === "outside_folder") return "That path isn't allowed.";
     if (e?.message) return e.message;
     return fallback;
+  }
+
+  function isFileInputError(err: unknown): boolean {
+    const code = (err as DocsAPIError | undefined)?.code;
+    return code === "already_exists" || code === "unsupported_extension" || code === "outside_folder";
   }
 
   function toggleFileMenu() {
@@ -856,7 +882,7 @@
       folders = folders.map((n) => (n.id === target.id ? updated : n));
       renameFolderTarget = null;
     } catch (err) {
-      renameFolderError = describeFileError(err, "Could not rename folder.");
+      showFlash(describeFileError(err, "Could not rename folder."), { tone: "danger" });
     } finally {
       renameFolderSaving = false;
     }
@@ -895,7 +921,7 @@
         onRouteChange({ mode: "docs", folder: fallback, doc: null });
       }
     } catch (err) {
-      removeFolderError = describeFileError(err, "Could not remove folder.");
+      showFlash(describeFileError(err, "Could not remove folder."), { tone: "danger" });
     } finally {
       removingFolder = false;
     }

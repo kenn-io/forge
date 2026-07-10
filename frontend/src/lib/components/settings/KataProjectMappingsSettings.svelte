@@ -5,6 +5,7 @@
   import { onMount, untrack } from "svelte";
   import { Button, Chip, SelectDropdown } from "@middleman/ui";
   import type { KataProjectRepoMapping } from "@middleman/ui/api/types";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import { updateSettings } from "../../api/settings.js";
   import { fetchKataDaemons, type KataDaemonInfo } from "../../api/kata/daemons.js";
   import {
@@ -44,7 +45,6 @@
   const embedded = isEmbedded();
   let nextID = 0;
   let saving = $state(false);
-  let error = $state<string | null>(null);
   let daemons = $state.raw<KataDaemonInfo[]>([]);
   let selectedDaemonID = $state("");
   let diagnostics = $state.raw<KataProjectMappingsResponse | null>(null);
@@ -259,7 +259,6 @@
 
   function resetDraft(): void {
     drafts = draftsFromMappings(currentMappings);
-    error = null;
   }
 
   function rowLabel(draft: MappingDraft, index: number): string {
@@ -269,7 +268,6 @@
   async function save(): Promise<void> {
     if (!canSave) return;
     saving = true;
-    error = null;
     try {
       const settings = await updateSettings({ kata_projects: pendingMappings });
       const nextMappings = settings.kata_projects ?? [];
@@ -278,7 +276,7 @@
       onUpdate(nextMappings);
       await loadDiagnostics();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       saving = false;
     }
@@ -286,9 +284,6 @@
 </script>
 
 <div class="kata-project-mappings">
-  {#if error}
-    <p class="settings-error" role="alert">{error}</p>
-  {/if}
 
   <section class="mapping-section" aria-label="Effective Kata project mappings">
     <div class="mapping-section-header">
@@ -522,16 +517,6 @@
     color: var(--text-muted);
     font-size: var(--font-size-xs);
     line-height: 1.4;
-  }
-
-  .settings-error {
-    margin: 0;
-    padding: 8px 10px;
-    border: 1px solid color-mix(in srgb, var(--accent-red) 45%, var(--border-muted));
-    border-radius: var(--radius-sm);
-    background: color-mix(in srgb, var(--accent-red) 9%, var(--bg-primary));
-    color: var(--accent-red);
-    font-size: var(--font-size-sm);
   }
 
   .mapping-table-wrap {

@@ -2,6 +2,7 @@
   import { tick } from "svelte";
   import { getStores } from "@middleman/ui";
   import type { ConfigRepo } from "@middleman/ui/api/types";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import {
     addRepo,
     removeRepo,
@@ -32,12 +33,9 @@
   let adding = $state(false);
   let addError = $state<string | null>(null);
   let confirmingRemove = $state<string | null>(null);
-  let removeError = $state<string | null>(null);
   let refreshingByKey = $state<Record<string, boolean>>({});
-  let refreshErrors = $state<Record<string, string>>({});
   let worktreeBaseDrafts = $state<Record<string, string>>({});
   let savingWorktreeBaseByKey = $state<Record<string, boolean>>({});
-  let worktreeBaseErrors = $state<Record<string, string>>({});
   let cloneEditorOpen = $state<Record<string, boolean>>({});
   let promoteRepo = $state<ConfigRepo | null>(null);
 
@@ -84,7 +82,7 @@
       onUpdate(settings.repos);
       void sync.refreshSyncStatus();
     } catch (err) {
-      addError = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       adding = false;
     }
@@ -92,7 +90,6 @@
 
   async function handleRemove(repo: ConfigRepo): Promise<void> {
     if (embedded) return;
-    removeError = null;
     try {
       await removeRepo(repo.owner, repo.name, {
         provider: repo.provider,
@@ -103,7 +100,7 @@
       onUpdate(settings.repos);
       void sync.refreshSyncStatus();
     } catch (err) {
-      removeError = err instanceof Error ? err.message : String(err);
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     }
   }
 
@@ -111,11 +108,6 @@
     if (embedded) return;
     const key = repoKey(repo);
     refreshingByKey = { ...refreshingByKey, [key]: true };
-    if (refreshErrors[key]) {
-      const nextErrors = { ...refreshErrors };
-      delete nextErrors[key];
-      refreshErrors = nextErrors;
-    }
     try {
       const settings = await refreshRepo(repo.owner, repo.name, {
         provider: repo.provider,
@@ -124,10 +116,7 @@
       onUpdate(settings.repos);
       void sync.refreshSyncStatus();
     } catch (err) {
-      refreshErrors = {
-        ...refreshErrors,
-        [key]: err instanceof Error ? err.message : String(err),
-      };
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       refreshingByKey = { ...refreshingByKey, [key]: false };
     }
@@ -137,11 +126,6 @@
     if (embedded || repo.is_glob) return;
     const key = repoKey(repo);
     savingWorktreeBaseByKey = { ...savingWorktreeBaseByKey, [key]: true };
-    if (worktreeBaseErrors[key]) {
-      const nextErrors = { ...worktreeBaseErrors };
-      delete nextErrors[key];
-      worktreeBaseErrors = nextErrors;
-    }
     try {
       const settings = await updateRepoWorktreeBasePath(
         repo.owner,
@@ -157,10 +141,7 @@
       worktreeBaseDrafts = nextDrafts;
       onUpdate(settings.repos);
     } catch (err) {
-      worktreeBaseErrors = {
-        ...worktreeBaseErrors,
-        [key]: err instanceof Error ? err.message : String(err),
-      };
+      showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       savingWorktreeBaseByKey = { ...savingWorktreeBaseByKey, [key]: false };
     }
@@ -213,15 +194,12 @@
       <div class="repo-line">
         <div class="repo-main">
           <span class="repo-name">{#if showProviderIcons}<ProviderIcon provider={repo.provider} size={16} class="repo-provider-icon" />{/if}{repoDisplayLabel(repo)}</span>
-          {#if refreshErrors[key]}
-            <div class="error-msg row-error">{refreshErrors[key]}</div>
-          {/if}
         </div>
         {#if confirmingRemove === key}
           <span class="confirm-prompt">
             Remove?
             <button class="confirm-btn confirm-yes" onclick={() => void handleRemove(repo)}>Yes</button>
-            <button class="confirm-btn confirm-no" onclick={() => { confirmingRemove = null; removeError = null; }}>No</button>
+            <button class="confirm-btn confirm-no" onclick={() => { confirmingRemove = null; }}>No</button>
           </span>
         {:else}
           <div class="repo-actions">
@@ -257,12 +235,6 @@
               title={`Remove ${key}`}
               onclick={() => {
                 confirmingRemove = key;
-                removeError = null;
-                if (refreshErrors[key]) {
-                  const nextErrors = { ...refreshErrors };
-                  delete nextErrors[key];
-                  refreshErrors = nextErrors;
-                }
               }}
             >&times;</button>
           </div>
@@ -304,18 +276,11 @@
           <p class="worktree-base-hint">
             Workspaces are created as worktrees of this clone instead of starting from a fresh clone.
           </p>
-          {#if worktreeBaseErrors[key]}
-            <div class="error-msg row-error">{worktreeBaseErrors[key]}</div>
-          {/if}
         </div>
       {/if}
     </div>
   {/each}
 </div>
-
-{#if removeError}
-  <div class="error-msg">{removeError}</div>
-{/if}
 
 {#if !embedded}
   <details class="advanced-add">
@@ -426,5 +391,4 @@
   .add-btn:hover:not(:disabled) { opacity: 0.9; }
   .add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .error-msg { font-size: var(--font-size-sm); color: var(--accent-red); padding: 4px 0; }
-  .row-error { padding: 0; }
 </style>

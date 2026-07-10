@@ -1,6 +1,7 @@
 <script lang="ts">
   import { SegmentedControl } from "@kenn-io/kit-ui";
   import { getStores } from "@middleman/ui";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import type { ActivitySettings as ActivitySettingsType } from "@middleman/ui/api/types";
   import { updateSettings } from "../../api/settings.js";
 
@@ -30,7 +31,7 @@
       onUpdate(settings.activity);
       activityStore.hydrateDefaults(settings.activity);
     } catch (err) {
-      console.warn("Failed to save activity settings:", err);
+      showFlash(err instanceof Error ? err.message : "Failed to save activity settings.", { tone: "danger" });
     }
   }
 

@@ -4,6 +4,7 @@
   import FolderOpen from "@lucide/svelte/icons/folder-open";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import { SelectDropdown } from "@middleman/ui";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import Modal from "../shared/Modal.svelte";
   import type { DocsAPI } from "../../api/docs/api";
   import type { BrowseEntry, DocsAPIError, Folder } from "../../api/docs/types";
@@ -134,7 +135,12 @@
       onAdded(folder);
       onClose();
     } catch (err) {
-      error = describeError(err, "Could not add folder");
+      const message = describeError(err, "Could not add folder");
+      if (["already_exists", "duplicate_folder_id"].includes((err as DocsAPIError | undefined)?.code ?? "")) {
+        error = message;
+      } else {
+        showFlash(message, { tone: "danger" });
+      }
     } finally {
       saving = false;
     }

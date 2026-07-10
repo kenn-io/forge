@@ -1,5 +1,6 @@
 <script lang="ts">
   import { copyToClipboard } from "@kenn-io/kit-ui";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import { onDestroy } from "svelte";
   import type { MessageDetailData } from "../../api/messages/types";
   import type { MessageLinkInput } from "../../messages/messageLinks";
@@ -66,7 +67,6 @@
   let copyTimer: ReturnType<typeof setTimeout> | null = null;
   let pickerOpen = $state(false);
   let saving = $state(false);
-  let saveError = $state<string | null>(null);
   let linkedToast = $state<string | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let destroyed = false;
@@ -102,7 +102,6 @@
     if (!onLinkMessage || !detail) return;
     pickerOpen = false;
     saving = true;
-    saveError = null;
     linkedToast = null;
     if (toastTimer !== null) {
       clearTimeout(toastTimer);
@@ -127,7 +126,7 @@
       }, 3000);
     } catch (err) {
       if (destroyed) return;
-      saveError = err instanceof Error ? err.message : "Link failed.";
+      showFlash(err instanceof Error ? err.message : "Link failed.", { tone: "danger" });
     } finally {
       if (!destroyed) saving = false;
     }
@@ -408,9 +407,6 @@
       </footer>
       {#if linkedToast}
         <p class="link-status" role="status">{linkedToast}</p>
-      {/if}
-      {#if saveError}
-        <p class="link-error" role="alert">{saveError}</p>
       {/if}
       {#if reverseLinks && reverseLinks.length > 0 && onOpenIssue}
         <section class="reverse-links" aria-label="Linked tasks">
@@ -721,15 +717,6 @@
     border-radius: var(--radius-sm, 4px);
     background: color-mix(in srgb, var(--accent-green) 12%, transparent);
     color: var(--accent-green);
-    font-size: var(--font-size-xs);
-  }
-
-  .link-error {
-    margin: 8px 0 0;
-    padding: 6px 10px;
-    border-radius: var(--radius-sm, 4px);
-    background: var(--accent-red-soft, rgba(193, 74, 60, 0.12));
-    color: var(--accent-red, #c14a3c);
     font-size: var(--font-size-xs);
   }
 

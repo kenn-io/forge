@@ -2,6 +2,7 @@
   import { EmptyState, SearchInput, Spinner } from "@kenn-io/kit-ui";
   import { tick, untrack } from "svelte";
   import type { ConfigRepo, Settings } from "@middleman/ui/api/types";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import Modal from "../shared/Modal.svelte";
   import {
     bulkAddRepos,
@@ -167,7 +168,7 @@
           return;
         }
       }
-      error = message;
+      showFlash(message, { tone: "danger" });
     } finally {
       submitting = false;
     }

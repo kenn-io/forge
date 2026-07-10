@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "../shared/Modal.svelte";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import type { MessagesCapabilities } from "../../api/messages/types";
   import { hasEmptyAuthority, isLoopbackHostname } from "../../api/messages/setupURL";
 
@@ -111,7 +112,9 @@
       await onSave({ url: trimmedURL, api_key_env: trimmedEnv });
       onClose();
     } catch (err) {
-      error = err instanceof Error && err.message ? err.message : "Could not save configuration.";
+      showFlash(err instanceof Error && err.message ? err.message : "Could not save configuration.", {
+        tone: "danger",
+      });
     } finally {
       saving = false;
     }

@@ -7,6 +7,7 @@
   } from "@middleman/ui/api/provider-routes";
   import type { RepoSummary } from "@middleman/ui/api/types";
   import { buildIssueRoute, buildRepoBrowserRoute } from "@middleman/ui/routes";
+  import { showFlash } from "@middleman/ui/stores/flash";
 
   import {
     RefreshIcon,
@@ -191,7 +192,11 @@
   }
 
   async function refreshSummaries(): Promise<void> {
-    await client.POST("/sync");
+    const { error } = await client.POST("/sync");
+    if (error) {
+      showFlash(apiErrorMessage(error, "failed to refresh repositories"), { tone: "danger" });
+      return;
+    }
     await loadSummaries();
   }
 
@@ -310,10 +315,7 @@
 
     issueSubmittingByRepo[key] = false;
     if (error || !data) {
-      issueErrorByRepo[key] = apiErrorMessage(
-        error,
-        "failed to create issue",
-      );
+      showFlash(apiErrorMessage(error, "failed to create issue"), { tone: "danger" });
       return;
     }
 

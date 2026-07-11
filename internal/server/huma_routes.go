@@ -2969,7 +2969,7 @@ func (s *Server) requestChangesPR(ctx context.Context, input *requestChangesPRIn
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
-		capabilityReviewDraftMutation,
+		capabilityReviewMutation,
 	)
 	if err != nil {
 		return nil, err
@@ -2990,18 +2990,20 @@ func (s *Server) requestChangesPR(ctx context.Context, input *requestChangesPRIn
 	if mr == nil {
 		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
-	mutator, err := s.syncer.DiffReviewDraftMutator(
+	if s.mergeRequestAuthoredByViewer(ctx, *repo, *mr) {
+		return nil, problemForbidden(
+			"You cannot request changes on your own pull request",
+			map[string]any{"reason": availabilityCodeSelfApproval, "provider": string(repoProviderKind(*repo)), "platformHost": repoProviderHost(*repo)},
+		)
+	}
+	mutator, err := s.syncer.RequestChangesMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityReviewDraftMutation)
+		return nil, problemUnsupportedCapability(*repo, "review_action_request_changes")
 	}
 	expectedHeadSHA := approvalReviewHeadSHA(mr, input.Body.ExpectedHeadSHA)
-	_, err = mutator.PublishDiffReviewDraft(ctx, platformRepoRefFromDB(*repo), input.Number, platform.PublishDiffReviewDraftInput{
-		Body:    body,
-		Action:  platform.ReviewActionRequestChanges,
-		HeadSHA: expectedHeadSHA,
-	})
+	err = mutator.RequestChanges(ctx, platformRepoRefFromDB(*repo), input.Number, body, expectedHeadSHA)
 	if err != nil {
 		if errors.Is(err, platform.ErrStaleState) {
 			s.syncAfterStaleReviewDraftPublish(*repo, input.Number)

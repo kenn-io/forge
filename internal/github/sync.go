@@ -1621,6 +1621,76 @@ func (p *gitHubClientProvider) ApproveMergeRequest(
 	return platformgithub.NormalizeReviewEvent(ref, number, review), nil
 }
 
+func (p *gitHubClientProvider) RequestChanges(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	body string,
+	expectedHeadSHA string,
+) error {
+	if err := p.requireReviewHead(ctx, ref, number, expectedHeadSHA); err != nil {
+		return err
+	}
+	review, err := p.client.CreateReviewWithComments(
+		ctx, ref.Owner, ref.Name, number, "REQUEST_CHANGES", body, expectedHeadSHA, nil,
+	)
+	if err != nil {
+		return err
+	}
+	if review == nil {
+		return fmt.Errorf("provider returned no review")
+	}
+	if err := p.requireReviewHead(ctx, ref, number, expectedHeadSHA); err == nil {
+		return nil
+	}
+	reviewID := review.GetID()
+	_, dismissErr := p.client.DismissReview(
+		ctx, ref.Owner, ref.Name, number, reviewID,
+		"The pull request head changed while this review was submitted.",
+	)
+	if dismissErr != nil {
+		return &platform.Error{
+			Code:         platform.ErrCodeStaleState,
+			Provider:     platform.KindGitHub,
+			PlatformHost: p.host,
+			Capability:   "review_action_request_changes",
+			Hint:         fmt.Sprintf("request-changes review %d could not be removed after the head moved", reviewID),
+			Details:      map[string]string{"revocation": "failed", "review_id": strconv.FormatInt(reviewID, 10)},
+			Err:          dismissErr,
+		}
+	}
+	return &platform.Error{
+		Code:         platform.ErrCodeStaleState,
+		Provider:     platform.KindGitHub,
+		PlatformHost: p.host,
+		Capability:   "review_action_request_changes",
+		Hint:         fmt.Sprintf("request-changes review %d was removed after the head moved", reviewID),
+		Details:      map[string]string{"revocation": "succeeded", "review_id": strconv.FormatInt(reviewID, 10)},
+	}
+}
+
+func (p *gitHubClientProvider) requireReviewHead(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	expectedHeadSHA string,
+) error {
+	if expectedHeadSHA == "" {
+		return nil
+	}
+	pr, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
+	if err != nil {
+		return err
+	}
+	if pr == nil || pr.GetHead().GetSHA() != expectedHeadSHA {
+		return &platform.Error{
+			Code: platform.ErrCodeStaleState, Provider: platform.KindGitHub,
+			PlatformHost: p.host, Capability: "review_action_request_changes",
+		}
+	}
+	return nil
+}
+
 func (p *gitHubClientProvider) ListMergeRequestReviewThreads(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -2292,6 +2362,13 @@ func (s *Syncer) ReviewMutator(
 	host string,
 ) (platform.ReviewMutator, error) {
 	return s.clients.ReviewMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) RequestChangesMutator(
+	kind platform.Kind,
+	host string,
+) (platform.RequestChangesMutator, error) {
+	return s.clients.RequestChangesMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) AssigneeMutator(

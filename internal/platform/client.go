@@ -175,6 +175,19 @@ type ReviewMutator interface {
 	) (MergeRequestEvent, error)
 }
 
+type RequestChangesMutator interface {
+	// RequestChanges submits a blocking review against expectedHeadSHA.
+	// Implementations must reject a stale target and revoke a review if the
+	// head moves while the provider request is in flight.
+	RequestChanges(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+		body string,
+		expectedHeadSHA string,
+	) error
+}
+
 type ThreadReplier interface {
 	ReplyToThread(
 		ctx context.Context,

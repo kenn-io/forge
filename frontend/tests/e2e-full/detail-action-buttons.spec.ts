@@ -802,6 +802,18 @@ test.describe("detail action buttons", () => {
       await expect(page.getByText("Could not refresh the pull request. Try again.")).toBeVisible();
       await expect(page.locator(".btn--approve")).toBeDisabled();
       await expect(page.locator(".btn--merge")).toBeDisabled();
+
+      await page.unroute("**/api/v1/pulls/github/acme/widgets/1/sync");
+      const reopenResponse = await page.request.post(`${baseURL}/__e2e/merge/conflict/open`);
+      expect(reopenResponse.ok()).toBe(true);
+      await page.getByRole("button", { name: "Refresh reviewed state" }).click();
+      await expect(
+        page.getByText(
+          "This pull request is no longer open. Its current state is being refreshed before any further action.",
+        ),
+      ).toHaveCount(0);
+      await expect(page.locator(".btn--approve")).toBeEnabled();
+      await expect(page.locator(".btn--merge")).toBeEnabled();
     } finally {
       await isolatedServer?.stop();
     }

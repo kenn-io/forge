@@ -825,7 +825,12 @@ describe("RepoSummaryPage", () => {
 
     await fireEvent.click(screen.getByRole("checkbox", { name: "I checked the issue list and want to retry." }));
     expect((screen.getByRole("button", { name: "Create issue" }) as HTMLButtonElement).disabled).toBe(false);
-    await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
+    await fireEvent.keyDown(
+      screen.getByRole("textbox", {
+        name: "Describe the problem, context, or follow-up work",
+      }),
+      { key: "Enter", ctrlKey: true },
+    );
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledTimes(2);
       expect(mockNavigate).toHaveBeenCalledWith("/issues/github/acme/widgets/27");

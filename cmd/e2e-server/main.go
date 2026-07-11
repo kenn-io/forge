@@ -1450,6 +1450,23 @@ func buildAppState(
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/merge/conflict/open" {
+			repo, err := database.GetRepoByIdentity(
+				r.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"),
+			)
+			if err != nil || repo == nil {
+				http.Error(w, "repo not found", http.StatusNotFound)
+				return
+			}
+			if err := database.UpdateMRState(
+				r.Context(), repo.ID, 1, string(db.MergeRequestStateOpen), nil, nil,
+			); err != nil {
+				http.Error(w, "update pull request state", http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/merge/fail" {
 			fc.SetMergePullRequestError(errors.New("provider rejected merge"))
 			w.WriteHeader(http.StatusNoContent)

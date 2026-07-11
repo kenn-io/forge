@@ -59,6 +59,7 @@
       routeGeneration: number,
     ) => void) | undefined;
     onmutationchange?: ((active: boolean) => void) | undefined;
+    mutationUnavailable?: boolean;
   }
 
   const {
@@ -69,6 +70,7 @@
     deferUntilChecksPass = false,
     alreadyQueued = false, midStackWarning,
     onclose, onmerged, onqueued, onstateconflict, onmutationchange,
+    mutationUnavailable = false,
   }: Props = $props();
 
   // Offer to queue a deferred merge only when none is queued yet.
@@ -171,7 +173,7 @@
   }
 
   async function submitMerge(deferred: boolean): Promise<void> {
-    if (headPinMissing) return;
+    if (headPinMissing || mutationUnavailable) return;
     activeMergeSubmission = deferred ? "deferred" : "immediate";
     onmutationchange?.(true);
     error = null;
@@ -328,7 +330,7 @@
     <Button
       class="btn btn--primary btn--green"
       onclick={handleMerge}
-      disabled={merging || headPinMissing}
+      disabled={merging || headPinMissing || mutationUnavailable}
       tone="success"
       surface="solid"
     >
@@ -338,7 +340,7 @@
       <Button
         class="btn btn--merge-anyway"
         onclick={handleMergeAnyway}
-        disabled={merging || headPinMissing}
+        disabled={merging || headPinMissing || mutationUnavailable}
         tone="success"
         surface="soft"
       >

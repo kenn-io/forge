@@ -443,7 +443,10 @@ describe("createDetailStore", () => {
     const syncResponse = new Promise<{ data: PullDetail; error: undefined }>((resolve) => {
       resolveSync = resolve;
     });
-    const get = vi.fn().mockResolvedValue({ data: pullDetail("stale-cached-head") });
+    let reconciled = false;
+    const get = vi.fn(async () => ({
+      data: pullDetail(reconciled ? "applied-head" : "stale-cached-head"),
+    }));
     const post = vi.fn((path: string) => {
       if (path.endsWith("/review-suggestions/apply")) {
         return Promise.resolve({ data: { status: "applied" }, error: undefined });
@@ -465,6 +468,8 @@ describe("createDetailStore", () => {
     });
     await vi.waitFor(() => expect(post.mock.calls.some(([path]) => String(path).endsWith("/sync"))).toBe(true));
     const loading = store.loadDetail("acme", "widget", 7, options);
+    expect(get).toHaveBeenCalledTimes(1);
+    reconciled = true;
     resolveSync({ data: pullDetail("applied-head"), error: undefined });
 
     await expect(applying).resolves.toBe(true);

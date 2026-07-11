@@ -2381,7 +2381,7 @@
             : undefined}
           onstateconflict={handleStateConflict}
           onmutationchange={handleHeadMutationChange}
-          mutationUnavailable={headMutationInFlight}
+          mutationUnavailable={headActionsUnavailable}
           onclose={() => { showMergeModal = false; }}
           onqueued={() => {
             showMergeModal = false;

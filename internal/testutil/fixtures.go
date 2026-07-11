@@ -119,6 +119,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		Body:              w1Body,
 		HeadBranch:        "feature/caching",
 		BaseBranch:        "main",
+		HeadRepoCloneURL:  "https://github.com/acme/widgets.git",
 		PlatformHeadSHA:   widgetsPR1HeadSHA,
 		Additions:         240,
 		Deletions:         30,
@@ -1216,6 +1217,7 @@ func buildGHPR(
 ) *gh.PullRequest {
 	url := fmt.Sprintf(
 		"https://github.com/%s/%s/pull/%d", owner, repo, number)
+	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
 	pr := &gh.PullRequest{
 		ID:        new(id),
 		Number:    new(number),
@@ -1226,8 +1228,11 @@ func buildGHPR(
 		User:      &gh.User{Login: new(login)},
 		CreatedAt: &gh.Timestamp{Time: createdAt},
 		UpdatedAt: &gh.Timestamp{Time: updatedAt},
-		Head:      &gh.PullRequestBranch{Ref: new("feature")},
-		Base:      &gh.PullRequestBranch{Ref: new("main")},
+		Head: &gh.PullRequestBranch{
+			Ref:  new("feature"),
+			Repo: &gh.Repository{CloneURL: &cloneURL},
+		},
+		Base: &gh.PullRequestBranch{Ref: new("main")},
 	}
 	if mergeableState != "" {
 		pr.MergeableState = new(mergeableState)

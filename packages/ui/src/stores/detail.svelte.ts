@@ -507,6 +507,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
       activeSelectionKey = key;
       ++selectionGeneration;
     }
+    const activeReconciliation = suggestionReconciliationPromises.get(key);
+    if (activeReconciliation) {
+      await activeReconciliation;
+      if (activeSelectionKey !== key) return;
+    }
     if (loading && activeLoad?.key === key && activeLoad.promise !== null) {
       activeLoad.syncMode = strongerSyncMode(activeLoad.syncMode, syncMode);
       activeLoad.workflowApprovalSync ||= options.workflowApprovalSync ?? true;

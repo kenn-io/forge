@@ -1418,6 +1418,13 @@ func buildAppState(
 		srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
 	})
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/review-suggestion/succeed" {
+			fc.SetReviewSuggestionResult(&platform.AppliedReviewSuggestions{
+				CommitSHA: diffRepo.AltHeadSHA,
+			}, diffRepo.BaseSHA)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/merge/conflict/stale-head" {
 			patchFixturePRSHAs(
 				fc, "acme", "widgets", 1,

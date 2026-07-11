@@ -285,6 +285,17 @@ func (s *Server) applyReviewSuggestions(
 			"apply review suggestions on provider failed",
 		)
 	}
+	if result != nil && strings.TrimSpace(result.CommitSHA) != "" {
+		if updateErr := s.db.UpdatePlatformSHAs(
+			ctx,
+			repo.ID,
+			input.Number,
+			strings.TrimSpace(result.CommitSHA),
+			mr.PlatformBaseSHA,
+		); updateErr != nil {
+			slog.WarnContext(ctx, "persist applied review suggestion head", "err", updateErr)
+		}
+	}
 	s.syncAfterReviewSuggestionApply(*repo, input.Number)
 	response := applyReviewSuggestionResponse{Status: "applied"}
 	if result != nil {

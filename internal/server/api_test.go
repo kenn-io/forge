@@ -764,13 +764,18 @@ func (p *apiTestGitLabProvider) PublishDiffReviewDraft(
 func (p *apiTestGitLabProvider) ApplyReviewSuggestions(
 	_ context.Context,
 	_ platform.RepoRef,
-	_ int,
+	number int,
 	input platform.ApplyReviewSuggestionsInput,
 ) (*platform.AppliedReviewSuggestions, error) {
 	if p.applySuggestionsErr != nil {
 		return nil, p.applySuggestionsErr
 	}
 	p.appliedSuggestions = append(p.appliedSuggestions, input)
+	for i := range p.mergeRequests {
+		if p.mergeRequests[i].Number == number {
+			p.mergeRequests[i].HeadSHA = "suggestion-commit-sha"
+		}
+	}
 	return &platform.AppliedReviewSuggestions{CommitSHA: "suggestion-commit-sha"}, nil
 }
 
@@ -16158,6 +16163,11 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 		},
 	)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	updatedMR, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(updatedMR)
+	assert.Equal("suggestion-commit-sha", updatedMR.PlatformHeadSHA)
+	assert.Equal("def456", updatedMR.PlatformBaseSHA)
 	require.Len(provider.appliedSuggestions, 1)
 	applied := provider.appliedSuggestions[0]
 	require.Len(applied.Suggestions, 1)

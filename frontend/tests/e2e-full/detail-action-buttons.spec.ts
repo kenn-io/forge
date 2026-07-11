@@ -819,6 +819,63 @@ test.describe("detail action buttons", () => {
     }
   });
 
+  test("delayed successful suggestion reconciles after an A-to-B-to-A route cycle", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServerWithOptions({ freshProcess: true });
+      const baseURL = isolatedServer.info.base_url;
+      const detailURL = `${baseURL}/api/v1/pulls/github/acme/widgets/1`;
+      const initialDetail = (await (await page.request.get(detailURL)).json()) as { platform_head_sha: string };
+
+      let releaseResponse!: () => void;
+      const release = new Promise<void>((resolve) => {
+        releaseResponse = resolve;
+      });
+      let markApplied!: () => void;
+      const providerApplied = new Promise<void>((resolve) => {
+        markApplied = resolve;
+      });
+      await page.route("**/api/v1/pulls/github/acme/widgets/1/review-suggestions/apply", async (route) => {
+        const response = await route.fetch();
+        const responseBody = await response.body();
+        expect(response.status(), responseBody.toString()).toBe(200);
+        markApplied();
+        await release;
+        await route.fulfill({ response, body: responseBody });
+      });
+
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
+      const commitSuggestion = page.getByRole("button", { name: "Commit suggestion" });
+      await expect(commitSuggestion).toBeEnabled();
+      const configure = await page.request.post(`${baseURL}/__e2e/review-suggestion/succeed`);
+      expect(configure.ok()).toBe(true);
+      const applying = commitSuggestion.click();
+      await providerApplied;
+
+      await page.getByRole("button", { name: /Fix race condition in event loop #2/ }).click();
+      await expect(page.locator(".detail-title")).toContainText("Fix race condition in event loop");
+      await page.getByRole("button", { name: /Add widget caching layer.*#1/ }).click();
+      await expect(page.locator(".detail-title")).toContainText("Add widget caching layer");
+
+      releaseResponse();
+      await applying;
+      await expect
+        .poll(async () => {
+          const detail = (await (await page.request.get(detailURL)).json()) as { platform_head_sha: string };
+          return detail.platform_head_sha;
+        })
+        .not.toBe(initialDetail.platform_head_sha);
+      await expect(commitSuggestion).toBeDisabled();
+      await expect(page.locator(".btn--approve")).toBeEnabled();
+      await expect(page.locator(".btn--merge")).toBeEnabled();
+
+      await page.reload();
+      await expect(page.getByRole("button", { name: "Commit suggestion" })).toBeDisabled();
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
   test("narrow actions menu closes when clicking outside", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await page.goto("/pulls/github/acme/widgets/1");

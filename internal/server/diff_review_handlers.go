@@ -272,7 +272,7 @@ func (s *Server) applyReviewSuggestions(
 			Replacement:       replacement,
 		})
 	}
-	if err := s.db.BeginProviderHeadMutation(ctx, repo.ID, input.Number); err != nil {
+	if err := s.db.BeginProviderHeadMutation(ctx, repo.ID, input.Number, expectedHeadSHA); err != nil {
 		return nil, problemInternal("persist provider mutation intent failed")
 	}
 	result, err := applier.ApplyReviewSuggestions(
@@ -343,8 +343,7 @@ func providerMutationDefinitelyRejected(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	var providerErr *platform.Error
-	return errors.As(err, &providerErr)
+	return platform.MutationDefinitelyRejected(err)
 }
 
 func validateReviewSuggestionThread(thread db.MRReviewThread, expectedHeadSHA string) error {

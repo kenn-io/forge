@@ -3231,6 +3231,7 @@ func (d *DB) BeginProviderHeadMutation(
 	ctx context.Context,
 	repoID int64,
 	number int,
+	expectedHead string,
 ) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		var generation int64
@@ -3245,12 +3246,12 @@ func (d *DB) BeginProviderHeadMutation(
 		result, err := tx.ExecContext(ctx, `
 			UPDATE middleman_merge_requests
 			SET provider_mutation_in_progress = 1,
-			    pending_provider_head_sha = '',
+			    pending_provider_head_sha = ?,
 			    pending_provider_head_generation = ?
 			WHERE repo_id = ? AND number = ?
 			  AND provider_mutation_in_progress = 0
 			  AND pending_provider_head_generation = 0`,
-			generation, repoID, number,
+			expectedHead, generation, repoID, number,
 		)
 		if err != nil {
 			return fmt.Errorf("begin provider head mutation for MR %d: %w", number, err)
@@ -3313,17 +3314,23 @@ func (d *DB) PrepareProviderHeadMutationReconciliation(
 	ctx context.Context,
 	repoID int64,
 	number int,
-) error {
-	_, err := d.rw.ExecContext(ctx, `
+	observedHead string,
+) (bool, error) {
+	result, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_merge_requests
 		SET provider_mutation_in_progress = 0
 		WHERE repo_id = ? AND number = ?
-		  AND provider_mutation_in_progress = 1`, repoID, number,
+		  AND provider_mutation_in_progress = 1
+		  AND pending_provider_head_sha <> ?`, repoID, number, observedHead,
 	)
 	if err != nil {
-		return fmt.Errorf("prepare provider head mutation reconciliation for MR %d: %w", number, err)
+		return false, fmt.Errorf("prepare provider head mutation reconciliation for MR %d: %w", number, err)
 	}
-	return nil
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read provider head mutation reconciliation for MR %d: %w", number, err)
+	}
+	return updated > 0, nil
 }
 
 // MarkAppliedProviderHead records a provider-confirmed head mutation and

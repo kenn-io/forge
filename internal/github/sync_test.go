@@ -8476,6 +8476,47 @@ func TestWatchedSyncMRUsesPersistedPullRequestETag(t *testing.T) {
 		"304 should skip timeline/comment refresh")
 }
 
+func TestWatchedSyncMRBypassesETagForPendingMutationIntent(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1000, Number: 1,
+		URL: "https://github.com/owner/repo/pull/1", Title: "test PR",
+		Author: "alice", State: "open", HeadBranch: "feature-branch", BaseBranch: "main",
+		PlatformHeadSHA: "abc123def456",
+		CreatedAt:       updatedAt, UpdatedAt: updatedAt, LastActivityAt: updatedAt,
+	})
+	require.NoError(err)
+	require.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo", "pull_request", 1, `"etag-v1"`,
+	))
+	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 1, "abc123def456"))
+
+	mc := &conditionalPRTrackingClient{notModified: true}
+	mc.singlePR = buildOpenPR(1, updatedAt)
+	mc.singlePR.Head.SHA = new("abc123def456")
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
+	)
+
+	require.NoError(syncer.syncMRWithWatchedRef(ctx, WatchedMR{
+		Owner: "owner", Name: "repo", Number: 1, PlatformHost: "github.com",
+	}))
+
+	assert.Zero(int(mc.conditionalCalls.Load()))
+	assert.Equal(1, int(mc.getPRCalls.Load()))
+	inProgress, err := d.ProviderHeadMutationInProgress(ctx, repoID, 1)
+	require.NoError(err)
+	assert.True(inProgress, "unchanged provider head must retain an ambiguous intent")
+}
+
 func TestWatchedSyncMRDoesNotBackfillMergedActorOn304(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

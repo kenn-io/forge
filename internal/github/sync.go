@@ -8105,7 +8105,7 @@ func (s *Syncer) syncMRForRepo(
 	if rawReader, ok := mrReader.(interface {
 		GetGitHubPullRequest(context.Context, platform.RepoRef, int) (*gh.PullRequest, platform.MergeRequest, error)
 	}); ok {
-		if client, ok := s.optionalGitHubClientFor(repo); ok && useConditionalPRDetail {
+		if client, ok := s.optionalGitHubClientFor(repo); ok && useConditionalPRDetail && !mutationInProgress {
 			var notModified bool
 			ghPR, newETag, notModified, err = s.getPullRequestForDetail(
 				ctx, client, repo, number,
@@ -8155,8 +8155,14 @@ func (s *Syncer) syncMRForRepo(
 		defer unlockProviderWrites()
 	}
 	if mutationInProgress {
-		if err := s.db.PrepareProviderHeadMutationReconciliation(ctx, repoID, number); err != nil {
-			return err
+		prepared, prepareErr := s.db.PrepareProviderHeadMutationReconciliation(
+			ctx, repoID, number, normalized.PlatformHeadSHA,
+		)
+		if prepareErr != nil {
+			return prepareErr
+		}
+		if !prepared {
+			return nil
 		}
 	}
 	headChanged := existing != nil &&

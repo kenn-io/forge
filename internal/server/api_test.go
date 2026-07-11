@@ -17064,7 +17064,10 @@ func TestAPIApplyReviewSuggestionReconcilesLostProviderResponse(t *testing.T) {
 	provider.mrFetchStarted = confirmFetchStarted
 	provider.mrFetchRelease = releaseConfirmFetch
 	provider.blockNextMRFetch.Store(true)
-	provider.applySuggestionsErrAfterMutation = errors.New("provider response lost after commit")
+	provider.applySuggestionsErrAfterMutation = &platform.Error{
+		Code: platform.PlatformErrorCode("upstream_failure"),
+		Err:  errors.New("provider response lost after commit"),
+	}
 
 	failed := doJSON(
 		t,

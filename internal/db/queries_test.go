@@ -2337,7 +2337,7 @@ func TestProviderHeadMutationIntentSurvivesFinalizeFailure(t *testing.T) {
 	_, err := d.UpsertMergeRequest(ctx, current)
 	require.NoError(err)
 
-	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 7))
+	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 7, "reviewed-head"))
 	generation, err := d.ProviderSnapshotGeneration(ctx)
 	require.NoError(err)
 	stale := testMR(repoID, 7, withMRActivity(baseTime().Add(time.Minute)))
@@ -2380,8 +2380,8 @@ func TestCancelProviderHeadMutationAllowsFreshSnapshot(t *testing.T) {
 	_, err := d.UpsertMergeRequest(ctx, current)
 	require.NoError(err)
 
-	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 7))
-	require.Error(d.BeginProviderHeadMutation(ctx, repoID, 7))
+	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 7, "reviewed-head"))
+	require.Error(d.BeginProviderHeadMutation(ctx, repoID, 7, "reviewed-head"))
 	require.NoError(d.CancelProviderHeadMutation(ctx, repoID, 7))
 	generation, err := d.ProviderSnapshotGeneration(ctx)
 	require.NoError(err)

@@ -40,6 +40,31 @@ var (
 	ErrConflict              = &Error{Code: ErrCodeConflict}
 )
 
+// MutationDefinitelyRejected reports only error categories whose contract
+// guarantees that the provider did not apply the requested mutation. Unknown
+// and future categories remain ambiguous and must retain any durable intent.
+func MutationDefinitelyRejected(err error) bool {
+	var providerErr *Error
+	if !errors.As(err, &providerErr) || providerErr == nil {
+		return false
+	}
+	switch providerErr.Code {
+	case ErrCodeUnsupportedCapability,
+		ErrCodeProviderNotConfigured,
+		ErrCodeMissingToken,
+		ErrCodeInvalidRepoRef,
+		ErrCodeInvalidArgument,
+		ErrCodePermissionDenied,
+		ErrCodeNotFound,
+		ErrCodeRateLimited,
+		ErrCodeStaleState,
+		ErrCodeConflict:
+		return true
+	default:
+		return false
+	}
+}
+
 type Error struct {
 	Code         PlatformErrorCode
 	Provider     Kind

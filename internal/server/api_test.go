@@ -22299,7 +22299,7 @@ func TestCICheckDedupLatestRunWinsE2E(t *testing.T) {
 
 	srv, database := setupTestServerWithMock(t, mock)
 	client := setupTestClient(t, srv)
-	seedPR(t, database, "acme", "widget", prNumber)
+	seedPR(t, database, "acme", "widget", prNumber, withSeedPRHeadSHA(headSHA))
 
 	resp, err := client.HTTP.SyncPullWithResponse(
 		context.Background(), "gh", "acme", "widget", int64(prNumber),

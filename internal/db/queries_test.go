@@ -2200,6 +2200,27 @@ func TestUpsertMergeRequestPreservesNewerLastActivity(t *testing.T) {
 	assert.True(got.LastActivityAt.Equal(newerActivity))
 }
 
+func TestUpsertMergeRequestSnapshotReportsTimestampRejection(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	newer := testMR(repoID, 7, withMRTitle("newer"), withMRActivity(baseTime().Add(time.Hour)))
+	_, err := d.UpsertMergeRequest(ctx, newer)
+	require.NoError(err)
+	older := testMR(repoID, 7, withMRTitle("older"), withMRActivity(baseTime()))
+
+	_, accepted, err := d.UpsertMergeRequestSnapshot(ctx, older)
+	require.NoError(err)
+	assert.False(accepted)
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("newer", got.Title)
+}
+
 func TestAppliedProviderHeadFenceRejectsOlderFetchAndAcceptsNewerHead(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

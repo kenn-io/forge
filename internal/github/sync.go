@@ -6519,6 +6519,26 @@ func (s *Syncer) refreshCIStatus(
 	return s.db.UpdateMRCIStatus(ctx, repoID, number, result.Status, result.ChecksJSON)
 }
 
+func (s *Syncer) refreshCIStatusForHead(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	number int,
+	headSHA string,
+) error {
+	result, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
+	if err != nil {
+		return err
+	}
+	if !result.Updated {
+		return nil
+	}
+	return s.db.UpdateMRCIStatusForHead(
+		ctx, repoID, number, headSHA,
+		result.Status, result.ChecksJSON, result.Status == "pending",
+	)
+}
+
 const ciRefreshWarning = "Could not refresh CI checks; showing last known status."
 
 type ciStatusFetchResult struct {
@@ -8041,6 +8061,19 @@ func (s *Syncer) syncMRForRepo(
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
 	if !accepted {
+		current, currentErr := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+		if currentErr != nil {
+			return currentErr
+		}
+		generationCurrent := current != nil &&
+			current.PendingProviderHeadGeneration <= snapshotGeneration &&
+			current.ProviderSnapshotGeneration <= snapshotGeneration
+		if ghPR != nil && generationCurrent && current.PlatformHeadSHA == normalized.PlatformHeadSHA {
+			syncMRHeadSHA := ghPR.GetHead().GetSHA()
+			if err := s.refreshCIStatusForHead(ctx, repo, repoID, number, syncMRHeadSHA); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {

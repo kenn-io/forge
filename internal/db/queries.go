@@ -2298,27 +2298,19 @@ func (d *DB) UpsertMergeRequestSnapshot(
 	if err != nil {
 		return 0, false, fmt.Errorf("upsert merge request: %w", err)
 	}
-	_, err = result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return 0, false, fmt.Errorf("read upsert merge request result: %w", err)
 	}
-	var (
-		id                int64
-		pendingGeneration int64
-		storedGeneration  int64
-	)
+	var id int64
 	err = d.ro.QueryRowContext(ctx,
-		`SELECT id, pending_provider_head_generation, provider_snapshot_generation
-		 FROM middleman_merge_requests
-		 WHERE repo_id = ? AND number = ?`,
+		`SELECT id FROM middleman_merge_requests WHERE repo_id = ? AND number = ?`,
 		mr.RepoID, mr.Number,
-	).Scan(&id, &pendingGeneration, &storedGeneration)
+	).Scan(&id)
 	if err != nil {
 		return 0, false, fmt.Errorf("get mr id after upsert: %w", err)
 	}
-	accepted := pendingGeneration <= mr.ProviderSnapshotGeneration &&
-		storedGeneration <= mr.ProviderSnapshotGeneration
-	return id, accepted, nil
+	return id, rowsAffected > 0, nil
 }
 
 // GetMergeRequest returns a merge request by repository identity and MR number, or nil if not found.

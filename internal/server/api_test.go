@@ -27336,18 +27336,20 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 }
 
 type rawWorkspaceStatusResponse struct {
-	ID                 string  `json:"id"`
-	PlatformHost       string  `json:"platform_host"`
-	RepoOwner          string  `json:"repo_owner"`
-	RepoName           string  `json:"repo_name"`
-	ItemType           string  `json:"item_type"`
-	ItemNumber         int     `json:"item_number"`
-	GitHeadRef         string  `json:"git_head_ref"`
-	WorktreePath       string  `json:"worktree_path"`
-	TmuxSession        string  `json:"tmux_session"`
-	Status             string  `json:"status"`
-	ErrorMessage       *string `json:"error_message"`
-	AssociatedPRNumber *int    `json:"associated_pr_number"`
+	ID                 string                    `json:"id"`
+	PlatformHost       string                    `json:"platform_host"`
+	RepoOwner          string                    `json:"repo_owner"`
+	RepoName           string                    `json:"repo_name"`
+	ItemType           string                    `json:"item_type"`
+	ItemNumber         int                       `json:"item_number"`
+	ItemKey            string                    `json:"item_key"`
+	GitHeadRef         string                    `json:"git_head_ref"`
+	WorktreePath       string                    `json:"worktree_path"`
+	TmuxSession        string                    `json:"tmux_session"`
+	Status             string                    `json:"status"`
+	ErrorMessage       *string                   `json:"error_message"`
+	AssociatedPRNumber *int                      `json:"associated_pr_number"`
+	Kata               *db.WorkspaceKataMetadata `json:"kata"`
 }
 
 type rawIssueWorkspaceRef struct {
@@ -28517,6 +28519,7 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 		ShortID:    "task-1",
 		Title:      "Track Kata workspace association",
 	}
+	kataItemKey := db.KataWorkspaceItemKey(kataMetadata)
 	require.NoError(fixture.database.InsertWorkspace(ctx, &db.Workspace{
 		ID:              "ws-kata-refresh",
 		Platform:        "github",
@@ -28524,7 +28527,7 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 		RepoOwner:       "acme",
 		RepoName:        "widget",
 		ItemType:        db.WorkspaceItemTypeKataTask,
-		ItemKey:         db.KataWorkspaceItemKey(kataMetadata),
+		ItemKey:         kataItemKey,
 		GitHeadRef:      headRef,
 		WorkspaceBranch: headRef,
 		WorktreePath:    worktreePath,
@@ -28545,12 +28548,18 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	var refreshed rawWorkspaceStatusResponse
 	require.NoError(json.NewDecoder(refreshRR.Body).Decode(&refreshed))
 	assert.Equal(db.WorkspaceItemTypeKataTask, refreshed.ItemType)
+	assert.Equal(kataItemKey, refreshed.ItemKey)
+	require.NotNil(refreshed.Kata)
+	assert.Equal(kataMetadata, *refreshed.Kata)
 	require.NotNil(refreshed.AssociatedPRNumber)
 	assert.Equal(42, *refreshed.AssociatedPRNumber)
 
 	stored, err := fixture.database.GetWorkspace(ctx, "ws-kata-refresh")
 	require.NoError(err)
 	require.NotNil(stored)
+	assert.Equal(kataItemKey, stored.ItemKey)
+	require.NotNil(stored.KataMetadata)
+	assert.Equal(kataMetadata, *stored.KataMetadata)
 	require.NotNil(stored.AssociatedPRNumber)
 	assert.Equal(42, *stored.AssociatedPRNumber)
 

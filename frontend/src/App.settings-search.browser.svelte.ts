@@ -28,7 +28,7 @@ describe("settings sidebar search", () => {
   it("filters categories by keywords, shows an empty notice, and restores on clear", async () => {
     await page.viewport(1280, 900);
     mounted = await mountBrowserApp("/settings");
-    await vi.waitFor(() => expect(navLabels()).toHaveLength(7), WAIT);
+    await vi.waitFor(() => expect(navLabels()).toHaveLength(8), WAIT);
 
     const search = document.querySelector<HTMLInputElement>(".kit-settings__sidebar-header input[type='search']");
     expect(search).not.toBeNull();
@@ -53,14 +53,14 @@ describe("settings sidebar search", () => {
     expect(document.querySelector(".settings-page")?.textContent).toContain("No matching settings");
 
     await setQuery("");
-    await vi.waitFor(() => expect(navLabels()).toHaveLength(7), WAIT);
+    await vi.waitFor(() => expect(navLabels()).toHaveLength(8), WAIT);
     expect(document.querySelector(".settings-page")?.textContent).not.toContain("No matching settings");
   });
 
   it("keeps the selected category while it is filtered out and restores it on clear", async () => {
     await page.viewport(1280, 900);
     mounted = await mountBrowserApp("/settings");
-    await vi.waitFor(() => expect(navLabels()).toHaveLength(7), WAIT);
+    await vi.waitFor(() => expect(navLabels()).toHaveLength(8), WAIT);
 
     const terminalButton = Array.from(document.querySelectorAll<HTMLButtonElement>(".kit-settings__nav-item")).find(
       (btn) => btn.textContent?.includes("Terminal"),
@@ -87,7 +87,7 @@ describe("settings sidebar search", () => {
   it("'Back to app' routes to an in-app view rather than browser history", async () => {
     await page.viewport(1280, 900);
     mounted = await mountBrowserApp("/settings");
-    await vi.waitFor(() => expect(navLabels()).toHaveLength(7), WAIT);
+    await vi.waitFor(() => expect(navLabels()).toHaveLength(8), WAIT);
 
     // The fix's contract is that this control must not fall back to
     // window.history.back(): on a direct or bookmarked /settings entry the

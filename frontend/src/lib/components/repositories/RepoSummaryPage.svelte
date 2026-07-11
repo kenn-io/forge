@@ -341,7 +341,10 @@
         }),
       );
     } catch (err) {
-      showFlash(err instanceof Error ? err.message : "failed to create issue", { tone: "danger" });
+      const message = err instanceof Error ? err.message : "failed to create issue";
+      showFlash(`${message} The request outcome is unknown; check the issue list before retrying.`, {
+        tone: "danger",
+      });
     } finally {
       issueSubmittingByRepo[key] = false;
     }

@@ -79,6 +79,7 @@
     providerItemPath,
     providerRepoPath,
     providerRouteParams,
+    type ProviderRouteRef,
   } from "../../api/provider-routes.js";
   import { supportsLocked } from "../../api/provider-capabilities.js";
   import { buildDiffSummaryKey } from "./diff-summary-key.js";
@@ -290,7 +291,15 @@
   async function applyTimelineSuggestion(input: ApplySuggestionRequest): Promise<boolean> {
     if (stalePR || headActionsBlocked || applySuggestionGate.unavailable) return false;
     if (currentPR()?.State !== "open") return false;
-    return detailStore.applyReviewSuggestions(owner, name, number, input);
+    return detailStore.applyReviewSuggestions(owner, name, number, input, (conflict) => {
+      handleStateConflict(
+        conflict.reason,
+        conflict.context,
+        conflict.expectedHeadSha,
+        conflict.ref,
+        conflict.number,
+      );
+    });
   }
 
   function updateTimelineFilter(next: PRTimelineFilterState): void {
@@ -726,7 +735,17 @@
     reason: Exclude<ConflictReason, "conflict">,
     context?: string,
     failedHeadSha?: string,
+    failedRef: ProviderRouteRef = routeRef,
+    failedNumber: number = number,
   ): void {
+    if (
+      failedNumber !== number
+      || failedRef.provider !== routeRef.provider
+      || failedRef.platformHost !== routeRef.platformHost
+      || failedRef.owner !== routeRef.owner
+      || failedRef.name !== routeRef.name
+      || failedRef.repoPath !== routeRef.repoPath
+    ) return;
     conflictReviewedHead = failedHeadSha ?? detailHeadSha;
     stateConflict = reason;
     headConflictContext = context ?? null;
@@ -793,8 +812,10 @@
     reason: "stale_state" | "head_unknown",
     context: string | undefined,
     failedHeadSha: string,
+    failedRef: ProviderRouteRef,
+    failedNumber: number,
   ): void {
-    handleStateConflict(reason, context, failedHeadSha);
+    handleStateConflict(reason, context, failedHeadSha, failedRef, failedNumber);
   }
 
   $effect(() => {

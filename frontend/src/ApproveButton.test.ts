@@ -222,7 +222,19 @@ describe("ApproveButton tooltips", () => {
     await fireEvent.click(screen.getByTitle("Submit an approving code review on this pull request"));
 
     await waitFor(() => {
-      expect(onHeadConflict).toHaveBeenCalledWith("stale_state", undefined, "stale-pin");
+      expect(onHeadConflict).toHaveBeenCalledWith(
+        "stale_state",
+        undefined,
+        "stale-pin",
+        {
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widget",
+          repoPath: "acme/widget",
+        },
+        1,
+      );
     });
     expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
 

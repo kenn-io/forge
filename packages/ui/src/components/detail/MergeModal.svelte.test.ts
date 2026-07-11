@@ -144,7 +144,21 @@ describe("MergeModal head pinning", () => {
 
       await confirmMerge();
 
-      await waitFor(() => expect(onstateconflict).toHaveBeenCalledWith(reason, undefined, "abc123"));
+      await waitFor(() =>
+        expect(onstateconflict).toHaveBeenCalledWith(
+          reason,
+          undefined,
+          "abc123",
+          {
+            provider: "github",
+            platformHost: "github.com",
+            owner: "octo",
+            name: "repo",
+            repoPath: "octo/repo",
+          },
+          1,
+        ),
+      );
       expect(onclose).toHaveBeenCalledTimes(1);
       expect(onmerged).not.toHaveBeenCalled();
       expect(screen.queryByText("target changed since it was reviewed; refresh and retry")).toBeNull();

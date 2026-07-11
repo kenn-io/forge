@@ -1215,6 +1215,9 @@
     const eligible = eligibleBatchedSuggestions;
     if (onApplySuggestion === undefined || eligible.length === 0) return;
     const submittedKeys = eligible.map((item) => item.key);
+    suggestionErrors = Object.fromEntries(
+      Object.entries(suggestionErrors).filter(([key]) => !submittedKeys.includes(key)),
+    );
     savingSuggestionBatch = true;
     try {
       const ok = await onApplySuggestion({ suggestions: eligible.map((item) => item.request) });

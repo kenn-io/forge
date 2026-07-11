@@ -781,6 +781,62 @@ describe("EventTimeline", () => {
     ]);
   });
 
+  it("clears a batch error before a successful retry", async () => {
+    let detailError: string | null = null;
+    const applySuggestion = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        detailError = "pull request state changed";
+        return false;
+      })
+      .mockImplementationOnce(async () => {
+        detailError = null;
+        return true;
+      });
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeReviewThreadEvent({
+            Body: ["Batch this.", "", "```suggestion", "return publish();", "```"].join("\n"),
+            diff_thread: {
+              ...makeReviewThreadEvent().diff_thread!,
+              diff_head_sha: "abc123",
+            },
+          }),
+        ],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        currentHeadSHA: "abc123",
+        onApplySuggestion: applySuggestion,
+      },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            detail: { getDetailError: () => detailError },
+            diff: makeDiffStore(),
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
+          },
+        ],
+      ]),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Add suggestion to batch" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Commit batch" }));
+    await waitFor(() => expect(screen.getByText("pull request state changed")).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole("button", { name: "Commit batch" }));
+    await waitFor(() => expect(screen.queryByText("pull request state changed")).toBeNull());
+    expect(applySuggestion).toHaveBeenCalledTimes(2);
+  });
+
   it("disables suggestion application when the reviewed head is missing", async () => {
     const applySuggestion = vi.fn(async () => true);
     render(EventTimeline, {

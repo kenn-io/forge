@@ -229,6 +229,8 @@ export interface PRDetailActionInput {
     reason: "stale_state" | "head_unknown",
     context: string | undefined,
     expectedHeadSha: string,
+    ref: ProviderRouteRef,
+    number: number,
   ) => void;
   /** Owned by PullDetail; runOpenMerge flips this to true. */
   setMergeModalOpen?: (open: boolean) => void;
@@ -289,7 +291,7 @@ export async function submitApprovePR(input: PRDetailActionInput): Promise<boole
     const reason = isProblem(error) ? problemConflictReason(error) : undefined;
     if (reason === "stale_state" || reason === "head_unknown") {
       const context = isProblem(error) ? problemConflictContext(error) : undefined;
-      input.onHeadConflict?.(reason, context, expectedHeadSha);
+      input.onHeadConflict?.(reason, context, expectedHeadSha, ref, number);
     }
     const msg = describeError(error, "failed to approve pull request");
     input.onError?.(msg);

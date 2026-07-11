@@ -1,6 +1,12 @@
 import type { KanbanStatus, Label, PullDetail } from "../api/types.js";
 import type { ApplySuggestionRequest } from "../utils/markdown-suggestions.js";
-import { isProblem, problemConflictReason, type ConflictReason, type ProblemBody } from "../api/problems.js";
+import {
+  isProblem,
+  problemConflictContext,
+  problemConflictReason,
+  type ConflictReason,
+  type ProblemBody,
+} from "../api/problems.js";
 import {
   providerDefaultHost,
   providerItemPath,
@@ -41,6 +47,14 @@ export interface DetailStoreOptions {
     subscribeSyncComplete: (cb: () => void) => () => void;
     refreshSyncStatus?: () => Promise<void>;
   };
+}
+
+export interface ApplySuggestionConflict {
+  reason: Exclude<ConflictReason, "conflict">;
+  context?: string | undefined;
+  expectedHeadSha: string;
+  ref: ProviderRouteRef;
+  number: number;
 }
 
 function apiErrorMessage(error: { detail?: string; title?: string }, fallback: string): string {
@@ -1211,6 +1225,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     name: string,
     number: number,
     input: ApplySuggestionRequest,
+    onConflict?: (conflict: ApplySuggestionConflict) => void,
   ): Promise<boolean> {
     const ref = currentDetailRef(owner, name, number);
     const expectedHeadSHA = detail?.platform_head_sha ?? "";
@@ -1238,7 +1253,15 @@ export function createDetailStore(opts: DetailStoreOptions) {
         const message = apiErrorMessage(requestError, "failed to apply suggestion");
         const refreshReason = isProblem(requestError) ? applySuggestionRefreshReason(requestError) : undefined;
         if (refreshReason) {
-          if (isDetailShowingRef(ref)) {
+          if (onConflict) {
+            onConflict({
+              reason: refreshReason,
+              context: isProblem(requestError) ? problemConflictContext(requestError) : undefined,
+              expectedHeadSha: expectedHeadSHA,
+              ref,
+              number,
+            });
+          } else if (isDetailShowingRef(ref)) {
             const refreshed = await syncDetail(owner, name, number, syncGeneration, ref);
             if (!refreshed && isDetailShowingRef(ref)) {
               failClosedAfterApplySuggestionConflict(refreshReason);

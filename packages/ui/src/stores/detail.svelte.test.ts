@@ -269,6 +269,49 @@ describe("createDetailStore", () => {
     }
   });
 
+  it("reports a typed suggestion conflict with the submitted head and route identity", async () => {
+    const get = vi.fn().mockResolvedValue({ data: pullDetail("reviewed-head") });
+    const post = vi.fn(async (path: string) => {
+      if (path.endsWith("/review-suggestions/apply")) {
+        return { error: conflictProblem("stale_state") };
+      }
+      return { error: undefined };
+    });
+    const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
+    await store.loadDetail("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    const onConflict = vi.fn();
+
+    const ok = await store.applyReviewSuggestions(
+      "acme",
+      "widget",
+      7,
+      { suggestions: [{ threadID: "thread-1", replacement: "return publish();" }] },
+      onConflict,
+    );
+
+    expect(ok).toBe(false);
+    expect(onConflict).toHaveBeenCalledWith({
+      reason: "stale_state",
+      context: undefined,
+      expectedHeadSha: "reviewed-head",
+      ref: {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+      },
+      number: 7,
+    });
+    expect(post.mock.calls.some(([path]) => String(path).endsWith("/sync"))).toBe(false);
+  });
+
   it("fails closed when apply-suggestion conflict refresh returns no detail", async () => {
     const tests = [
       {

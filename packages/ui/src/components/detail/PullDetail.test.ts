@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffResult, PullDetail } from "../../api/types.js";
 import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
@@ -194,6 +194,7 @@ function renderPullDetail(
     toggleDetailPRStar: vi.fn(),
     updatePRContent: vi.fn(),
     refreshPendingCI: vi.fn(async () => undefined),
+    syncDetailNow: vi.fn(async () => true),
     editComment: vi.fn(),
     applyReviewSuggestions: vi.fn(async () => true),
   };
@@ -935,7 +936,7 @@ describe("PullDetail approvals", () => {
     expect(screen.queryByRole("button", { name: "Add suggestion to batch" })).toBeNull();
   });
 
-  it("disables review suggestion controls after failed apply recovery cannot refresh detail", async () => {
+  it("routes a failed suggestion refresh through shared conflict recovery", async () => {
     const detail = pullDetail();
     addReviewSuggestionToDetail(detail);
     const repoSettings = {
@@ -1022,14 +1023,11 @@ describe("PullDetail approvals", () => {
     await fireEvent.click(commitButton);
 
     await vi.waitFor(() => {
-      const nextCommit = screen.getByRole("button", { name: "Commit suggestion" }) as HTMLButtonElement;
-      expect(nextCommit.disabled).toBe(true);
-      expect(nextCommit.title).toBe("The current pull request head is not known yet");
-      expect((screen.getByRole("button", { name: "Add suggestion to batch" }) as HTMLButtonElement).disabled).toBe(
-        true,
-      );
+      expect(screen.queryByRole("button", { name: "Commit suggestion" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Add suggestion to batch" })).toBeNull();
+      expect(screen.getByText(/head commit changed since this pull request was reviewed/i)).toBeTruthy();
+      expect(screen.getByRole("alert").textContent).toContain("Could not refresh the pull request");
     });
-    expect(detailStore.getDetail()?.platform_head_sha).toBe("");
   });
 
   it("disables approve with reason when submit_review is unavailable", async () => {
@@ -1178,6 +1176,65 @@ describe("PullDetail approvals", () => {
     // A failed aggregate with a still-running check must not route to deferred
     // merge, since the backend would reject that with a 409.
     expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
+  });
+
+  it("ignores a delayed merge conflict after navigating to another provider-aware pull", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    let resolveMerge: ((value: unknown) => void) | undefined;
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: {
+          AllowSquashMerge: true,
+          AllowMergeCommit: false,
+          AllowRebaseMerge: false,
+          ViewerCanMerge: true,
+        },
+      })),
+      POST: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveMerge = resolve;
+          }),
+      ),
+    };
+    const { rerender, detailStore } = renderPullDetail(
+      detail,
+      {
+        AllowSquashMerge: true,
+        AllowMergeCommit: false,
+        AllowRebaseMerge: false,
+        ViewerCanMerge: true,
+      },
+      apiClient,
+    );
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Merge Pull Request" })).getByRole("button", {
+        name: "Squash and merge",
+      }),
+    );
+    await rerender({
+      owner: "acme",
+      name: "other-widget",
+      number: 2,
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      repoPath: "acme/other-widget",
+      hideWorkspaceAction: true,
+    });
+    resolveMerge?.({
+      error: {
+        status: 409,
+        detail: "head changed",
+        details: { reason: "stale_state" },
+      },
+    });
+
+    await vi.waitFor(() => expect(apiClient.POST).toHaveBeenCalledTimes(1));
+    expect(detailStore.syncDetailNow).not.toHaveBeenCalled();
+    expect(screen.queryByText(/head commit changed since/i)).toBeNull();
   });
 });
 

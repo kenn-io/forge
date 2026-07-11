@@ -8,7 +8,7 @@
     problemConflictReason,
     type ConflictReason,
   } from "../../api/problems.js";
-  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
+  import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../../api/provider-routes.js";
   import { getClient } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
@@ -53,6 +53,8 @@
       reason: Exclude<ConflictReason, "conflict">,
       context: string | undefined,
       expectedHeadSha: string,
+      ref: ProviderRouteRef,
+      number: number,
     ) => void) | undefined;
   }
 
@@ -148,6 +150,8 @@
         reason,
         isProblem(requestError) ? problemConflictContext(requestError) : undefined,
         pinnedHeadShaAtOpen,
+        { provider, platformHost, owner, name, repoPath },
+        number,
       );
       onclose();
       return true;

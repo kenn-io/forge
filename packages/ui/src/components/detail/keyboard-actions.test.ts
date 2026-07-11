@@ -308,7 +308,19 @@ describe("runApprovePR", () => {
       await expect(
         runApprovePR(buildInput({ client, stores, expectedHeadSha: "abc123", onHeadConflict })),
       ).rejects.toThrow("target changed since it was reviewed; refresh and retry");
-      expect(onHeadConflict).toHaveBeenCalledWith(reason, undefined, "abc123");
+      expect(onHeadConflict).toHaveBeenCalledWith(
+        reason,
+        undefined,
+        "abc123",
+        {
+          provider: "github",
+          platformHost: "github.com",
+          owner: "octo",
+          name: "repo",
+          repoPath: "octo/repo",
+        },
+        42,
+      );
       // The conflict owner refreshes; the closure must not double-load.
       expect(stores.detail.loadDetail).not.toHaveBeenCalled();
       expect(stores.pulls.loadPulls).not.toHaveBeenCalled();
@@ -325,7 +337,19 @@ describe("runApprovePR", () => {
     });
     const onHeadConflict = vi.fn();
     await expect(runApprovePR(buildInput({ client, expectedHeadSha: "abc123", onHeadConflict }))).rejects.toThrow();
-    expect(onHeadConflict).toHaveBeenCalledWith("stale_state", sideEffect, "abc123");
+    expect(onHeadConflict).toHaveBeenCalledWith(
+      "stale_state",
+      sideEffect,
+      "abc123",
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "octo",
+        name: "repo",
+        repoPath: "octo/repo",
+      },
+      42,
+    );
   });
 
   it("does not report generic conflicts via onHeadConflict", async () => {

@@ -807,7 +807,7 @@ describe("RepoSummaryPage", () => {
 
     await waitFor(() => {
       expect(flash.getFlash()).toMatchObject({
-        message: "issue transport unavailable",
+        message: expect.stringContaining("issue transport unavailable"),
         tone: "danger",
       });
       expect((screen.getByRole("button", { name: "Create issue" }) as HTMLButtonElement).disabled).toBe(false);

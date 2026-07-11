@@ -4,7 +4,7 @@
   import { tick } from "svelte";
   import { getClient, getStores } from "../../context.js";
   import { isProblem, problemConflictContext, problemConflictReason } from "../../api/problems.js";
-  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
+  import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../../api/provider-routes.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { submitApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
 
@@ -31,6 +31,8 @@
       reason: "stale_state" | "head_unknown",
       context: string | undefined,
       expectedHeadSha: string,
+      ref: ProviderRouteRef,
+      number: number,
     ) => void) | undefined;
     oncompleted?: (() => void) | undefined;
     /** Tooltip override; pass the unavailable_reason when disabling. */
@@ -116,11 +118,16 @@
     };
   }
 
-  function handleHeadConflict(reason: "stale_state" | "head_unknown", context?: string): void {
-    const failedHeadSha = pinAtOpen;
+  function handleHeadConflict(
+    reason: "stale_state" | "head_unknown",
+    context: string | undefined,
+    failedHeadSha: string,
+    failedRef: ProviderRouteRef,
+    failedNumber: number,
+  ): void {
     expanded = false;
     pinAtOpen = "";
-    onheadconflict?.(reason, context, failedHeadSha);
+    onheadconflict?.(reason, context, failedHeadSha, failedRef, failedNumber);
   }
 
   async function handleApprove(): Promise<void> {

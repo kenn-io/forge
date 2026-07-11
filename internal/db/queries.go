@@ -3019,6 +3019,24 @@ func (d *DB) UpdateMRDerivedFields(
 	return nil
 }
 
+// UpdateMRReviewActivity updates non-count fields after a complete comment
+// replacement has already derived comment_count from persisted rows.
+func (d *DB) UpdateMRReviewActivity(
+	ctx context.Context,
+	mrID int64,
+	reviewDecision string,
+	lastActivityAt time.Time,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET review_decision = ?, last_activity_at = ?
+		WHERE id = ?`, reviewDecision, lastActivityAt, mrID)
+	if err != nil {
+		return fmt.Errorf("update mr review activity: %w", err)
+	}
+	return nil
+}
+
 // UpdateIssueDerivedFields writes computed fields back to the issues row.
 func (d *DB) UpdateIssueDerivedFields(
 	ctx context.Context,
@@ -3035,6 +3053,23 @@ func (d *DB) UpdateIssueDerivedFields(
 	)
 	if err != nil {
 		return fmt.Errorf("update issue derived fields: %w", err)
+	}
+	return nil
+}
+
+// UpdateIssueActivity updates activity after a complete comment replacement
+// has already derived comment_count from persisted rows.
+func (d *DB) UpdateIssueActivity(
+	ctx context.Context,
+	issueID int64,
+	lastActivityAt time.Time,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_issues
+		SET last_activity_at = ?
+		WHERE id = ?`, lastActivityAt, issueID)
+	if err != nil {
+		return fmt.Errorf("update issue activity: %w", err)
 	}
 	return nil
 }

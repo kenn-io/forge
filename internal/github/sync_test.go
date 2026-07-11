@@ -12111,8 +12111,9 @@ func TestSyncRepoGraphQLIssues(t *testing.T) {
 	assert.Equal("Bug report", issue.Title)
 	assert.Equal("alice", issue.Author)
 	assert.Equal("open", issue.State)
-	// Count comes from GraphQL TotalCount (5), not len(Nodes) (1).
-	assert.Equal(5, issue.CommentCount)
+	// Complete replacement derives the count from the unique rows persisted,
+	// rather than trusting a contradictory aggregate total.
+	assert.Equal(1, issue.CommentCount)
 
 	// Verify comment event.
 	events, err := d.ListIssueEvents(ctx, issue.ID)

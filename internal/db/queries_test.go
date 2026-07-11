@@ -3016,6 +3016,8 @@ func TestReplaceCommentEventsCountsPersistedUniqueRows(t *testing.T) {
 		}
 
 		require.NoError(database.ReplaceMRCommentEvents(t.Context(), mrID, events, nil))
+		newActivityAt := lastActivityAt.Add(time.Hour)
+		require.NoError(database.UpdateMRReviewActivity(t.Context(), mrID, "changes_requested", newActivityAt))
 		stored, err := database.ListMREvents(t.Context(), mrID)
 		require.NoError(err)
 		require.Len(stored, 1)
@@ -3024,8 +3026,8 @@ func TestReplaceCommentEventsCountsPersistedUniqueRows(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(mr)
 		require.Equal(1, mr.CommentCount)
-		require.Equal("approved", mr.ReviewDecision)
-		require.Equal(lastActivityAt, mr.LastActivityAt)
+		require.Equal("changes_requested", mr.ReviewDecision)
+		require.Equal(newActivityAt, mr.LastActivityAt)
 	})
 
 	t.Run("issue", func(t *testing.T) {
@@ -3041,6 +3043,8 @@ func TestReplaceCommentEventsCountsPersistedUniqueRows(t *testing.T) {
 		}
 
 		require.NoError(database.ReplaceIssueCommentEvents(t.Context(), issueID, events, nil))
+		newActivityAt := lastActivityAt.Add(time.Hour)
+		require.NoError(database.UpdateIssueActivity(t.Context(), issueID, newActivityAt))
 		stored, err := database.ListIssueEvents(t.Context(), issueID)
 		require.NoError(err)
 		require.Len(stored, 1)
@@ -3049,7 +3053,7 @@ func TestReplaceCommentEventsCountsPersistedUniqueRows(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(issue)
 		require.Equal(1, issue.CommentCount)
-		require.Equal(lastActivityAt, issue.LastActivityAt)
+		require.Equal(newActivityAt, issue.LastActivityAt)
 	})
 }
 

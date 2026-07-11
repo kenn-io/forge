@@ -5275,11 +5275,8 @@ func (s *Syncer) syncOpenIssueFromBulk(
 				"upsert issue timeline events for #%d: %w", number, err,
 			)
 		}
-		if err := s.db.UpdateIssueDerivedFields(
-			ctx, repoID, number, db.IssueDerivedFields{
-				CommentCount:   normalized.CommentCount,
-				LastActivityAt: computeIssueCommentLastActivity(bulk.Issue, bulk.Comments),
-			},
+		if err := s.db.UpdateIssueActivity(
+			ctx, issueID, computeIssueCommentLastActivity(bulk.Issue, bulk.Comments),
 		); err != nil {
 			return fmt.Errorf(
 				"update issue #%d derived fields: %w", number, err,
@@ -5532,12 +5529,8 @@ func (s *Syncer) syncOpenMRFromBulk(
 		} else if nonCommentLatest.After(lastActivity) {
 			lastActivity = nonCommentLatest
 		}
-		if err := s.db.UpdateMRDerivedFields(
-			ctx, repoID, number, db.MRDerivedFields{
-				ReviewDecision: normalized.ReviewDecision,
-				CommentCount:   len(bulk.Comments),
-				LastActivityAt: lastActivity,
-			},
+		if err := s.db.UpdateMRReviewActivity(
+			ctx, mrID, normalized.ReviewDecision, lastActivity,
 		); err != nil {
 			slog.Warn("update comment-derived fields failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -5556,12 +5549,8 @@ func (s *Syncer) syncOpenMRFromBulk(
 		lastActivity := computeLastActivity(
 			bulk.PR, bulk.Comments, bulk.Reviews, bulk.Commits, bulk.TimelineEvents,
 		)
-		if err := s.db.UpdateMRDerivedFields(
-			ctx, repoID, number, db.MRDerivedFields{
-				ReviewDecision: reviewDecision,
-				CommentCount:   len(bulk.Comments),
-				LastActivityAt: lastActivity,
-			},
+		if err := s.db.UpdateMRReviewActivity(
+			ctx, mrID, reviewDecision, lastActivity,
 		); err != nil {
 			slog.Warn("update derived fields failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -6495,11 +6484,7 @@ func (s *Syncer) refreshTimeline(
 		}
 	}
 
-	return s.db.UpdateMRDerivedFields(ctx, repoID, number, db.MRDerivedFields{
-		ReviewDecision: reviewDecision,
-		CommentCount:   len(comments),
-		LastActivityAt: lastActivityAt,
-	})
+	return s.db.UpdateMRReviewActivity(ctx, mrID, reviewDecision, lastActivityAt)
 }
 
 // RefreshMRCIStatusOnProvider fetches only CI checks for a PR's head SHA and
@@ -7195,12 +7180,7 @@ func (s *Syncer) refreshIssueTimeline(
 
 	lastActivity := computeIssueCommentLastActivity(ghIssue, comments)
 
-	_, err = s.db.WriteDB().ExecContext(ctx,
-		`UPDATE middleman_issues SET comment_count = ?, last_activity_at = ?
-		 WHERE id = ?`,
-		len(comments), lastActivity, issueID,
-	)
-	return err
+	return s.db.UpdateIssueActivity(ctx, issueID, lastActivity)
 }
 
 func (s *Syncer) upsertIssueTimelineEvents(

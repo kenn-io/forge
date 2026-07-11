@@ -906,6 +906,7 @@
   let savingReplyThreadID = $state<string | null>(null);
   let replyError = $state<string | null>(null);
   let applyingSuggestionKey = $state<string | null>(null);
+  let suggestionErrors = $state<Record<string, string>>({});
   let batchedSuggestions = $state<BatchedSuggestion[]>([]);
   const batchedSuggestionKeys = $derived(batchedSuggestions.map((item) => item.key));
   // Suggestions batched before the PR head moved (or while it is unknown)
@@ -1172,6 +1173,8 @@
   ): Promise<void> {
     if (onApplySuggestion === undefined) return;
     const key = suggestionKey(event, block);
+    const { [key]: _discardedError, ...remainingErrors } = suggestionErrors;
+    suggestionErrors = remainingErrors;
     applyingSuggestionKey = key;
     try {
       const ok = await onApplySuggestion({
@@ -1179,6 +1182,11 @@
       });
       if (ok) {
         batchedSuggestions = batchedSuggestions.filter((item) => item.key !== key);
+      } else {
+        suggestionErrors = {
+          ...suggestionErrors,
+          [key]: detailStore?.getDetailError() ?? "Could not apply suggestion.",
+        };
       }
     } finally {
       applyingSuggestionKey = null;
@@ -1212,6 +1220,12 @@
       const ok = await onApplySuggestion({ suggestions: eligible.map((item) => item.request) });
       if (ok) {
         batchedSuggestions = batchedSuggestions.filter((item) => !submittedKeys.includes(item.key));
+      } else {
+        const message = detailStore?.getDetailError() ?? "Could not apply suggestions.";
+        suggestionErrors = {
+          ...suggestionErrors,
+          ...Object.fromEntries(submittedKeys.map((key) => [key, message])),
+        };
       }
     } finally {
       savingSuggestionBatch = false;
@@ -1503,7 +1517,7 @@
                       {currentHeadSHA}
                       applying={applyingSuggestionKey === blockKey}
                       batched={batchedSuggestionKeys.includes(blockKey)}
-                      error={null}
+                      error={suggestionErrors[blockKey] ?? null}
                       onCommit={onApplySuggestion !== undefined
                         ? () => void commitSuggestion(event, block, reviewThread.thread)
                         : undefined}

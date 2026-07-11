@@ -643,6 +643,14 @@ test.describe("detail action buttons", () => {
       await expect(modal).toBeVisible();
       const conflict = await page.request.post(`${server.info.base_url}/__e2e/merge/conflict/stale-head`);
       expect(conflict.status()).toBe(204);
+      let blockConflictSync = true;
+      await page.route("**/api/v1/pulls/github/acme/widgets/1/sync", async (route) => {
+        if (blockConflictSync) {
+          await route.abort("connectionfailed");
+        } else {
+          await route.continue();
+        }
+      });
 
       let mergeRequests = 0;
       page.on("request", (request) => {
@@ -673,6 +681,12 @@ test.describe("detail action buttons", () => {
 
       const refresh = page.getByRole("button", { name: "Refresh reviewed state" });
       await expect(refresh).toBeEnabled();
+      await refresh.click();
+      await expect(page.getByRole("alert")).toContainText("Could not refresh the pull request");
+      await expect(page.locator(".btn--merge").first()).toBeDisabled();
+      await expect(page.getByRole("button", { name: /^approve$/i }).first()).toBeDisabled();
+
+      blockConflictSync = false;
       await refresh.click();
 
       await expect(page.locator(".action-error--state")).toHaveCount(0);

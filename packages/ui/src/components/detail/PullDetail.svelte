@@ -459,6 +459,8 @@
       return keepExpanded;
     });
     showMergeModal = false;
+    conflictRefreshRequestID += 1;
+    conflictRefreshBusy = false;
     stateConflict = null;
     headConflictContext = null;
     conflictReviewedHead = null;
@@ -681,6 +683,7 @@
   let conflictReviewedHead = $state<string | null>(null);
   let conflictRefreshBusy = $state(false);
   let conflictRefreshError = $state<string | null>(null);
+  let conflictRefreshRequestID = 0;
   const detailHeadSha = $derived(
     detailStore.getDetail()?.reviewed_head_sha ?? "",
   );
@@ -722,8 +725,9 @@
   function handleStateConflict(
     reason: Exclude<ConflictReason, "conflict">,
     context?: string,
+    failedHeadSha?: string,
   ): void {
-    conflictReviewedHead = detailHeadSha;
+    conflictReviewedHead = failedHeadSha ?? detailHeadSha;
     stateConflict = reason;
     headConflictContext = context ?? null;
     conflictRefreshError = null;
@@ -757,6 +761,8 @@
   async function refreshConflictState(allowRecovery = true): Promise<void> {
     const reason = stateConflict;
     if (!reason || conflictRefreshBusy) return;
+    const requestID = ++conflictRefreshRequestID;
+    const routeKey = `${provider}\n${platformHost}\n${repoPath}\n${owner}\n${name}\n${number}`;
     const reviewedHeadAtConflict = conflictReviewedHead;
     conflictRefreshBusy = true;
     conflictRefreshError = null;
@@ -765,16 +771,17 @@
       platformHost,
       repoPath,
     });
+    const currentRouteKey = `${provider}\n${platformHost}\n${repoPath}\n${owner}\n${name}\n${number}`;
+    if (requestID !== conflictRefreshRequestID || routeKey !== currentRouteKey) {
+      return;
+    }
     if (stateConflict !== reason) {
       conflictRefreshBusy = false;
       return;
     }
     if (!refreshed) {
       conflictRefreshError = "Could not refresh the pull request. Try again.";
-    } else if (
-      (allowRecovery || reason === "head_unknown")
-      && conflictHasFreshContext(reason, reviewedHeadAtConflict)
-    ) {
+    } else if (allowRecovery && conflictHasFreshContext(reason, reviewedHeadAtConflict)) {
       stateConflict = null;
       headConflictContext = null;
       conflictReviewedHead = null;
@@ -782,8 +789,12 @@
     conflictRefreshBusy = false;
   }
 
-  function handleHeadConflict(reason: "stale_state" | "head_unknown", context?: string): void {
-    handleStateConflict(reason, context);
+  function handleHeadConflict(
+    reason: "stale_state" | "head_unknown",
+    context: string | undefined,
+    failedHeadSha: string,
+  ): void {
+    handleStateConflict(reason, context, failedHeadSha);
   }
 
   $effect(() => {
@@ -2187,7 +2198,7 @@
             </span>
           {:else if headActionsBlocked}
             <span class="action-error action-error--state" role="status">
-              The head commit has not been synced yet. Approve and merge are unavailable until the next sync records it.
+              The head commit has not been synced yet. After the next sync records it, refresh the reviewed state before approving or merging.
             </span>
           {/if}
           {#if stateConflict}

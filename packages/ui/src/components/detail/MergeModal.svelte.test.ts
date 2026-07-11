@@ -144,7 +144,7 @@ describe("MergeModal head pinning", () => {
 
       await confirmMerge();
 
-      await waitFor(() => expect(onstateconflict).toHaveBeenCalledWith(reason, undefined));
+      await waitFor(() => expect(onstateconflict).toHaveBeenCalledWith(reason, undefined, "abc123"));
       expect(onclose).toHaveBeenCalledTimes(1);
       expect(onmerged).not.toHaveBeenCalled();
       expect(screen.queryByText("target changed since it was reviewed; refresh and retry")).toBeNull();

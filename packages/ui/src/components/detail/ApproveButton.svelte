@@ -27,7 +27,11 @@
     /** capabilities.mutation_head_binding for this repo's provider. */
     requireHeadPin?: boolean;
     supportedReviewActions?: string[];
-    onheadconflict?: ((reason: "stale_state" | "head_unknown", context?: string) => void) | undefined;
+    onheadconflict?: ((
+      reason: "stale_state" | "head_unknown",
+      context: string | undefined,
+      expectedHeadSha: string,
+    ) => void) | undefined;
     oncompleted?: (() => void) | undefined;
     /** Tooltip override; pass the unavailable_reason when disabling. */
     title?: string | undefined;
@@ -113,9 +117,10 @@
   }
 
   function handleHeadConflict(reason: "stale_state" | "head_unknown", context?: string): void {
+    const failedHeadSha = pinAtOpen;
     expanded = false;
     pinAtOpen = "";
-    onheadconflict?.(reason, context);
+    onheadconflict?.(reason, context, failedHeadSha);
   }
 
   async function handleApprove(): Promise<void> {

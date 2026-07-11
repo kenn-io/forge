@@ -49,7 +49,11 @@
     onmerged: () => void;
     /** Called when a deferred merge was accepted and now waits on CI. */
     onqueued: () => void;
-    onstateconflict?: ((reason: Exclude<ConflictReason, "conflict">, context?: string) => void) | undefined;
+    onstateconflict?: ((
+      reason: Exclude<ConflictReason, "conflict">,
+      context: string | undefined,
+      expectedHeadSha: string,
+    ) => void) | undefined;
   }
 
   const {
@@ -140,7 +144,11 @@
     if (!requestError) return false;
     const reason = isProblem(requestError) ? problemConflictReason(requestError) : undefined;
     if (reason && reason !== "conflict") {
-      onstateconflict?.(reason, isProblem(requestError) ? problemConflictContext(requestError) : undefined);
+      onstateconflict?.(
+        reason,
+        isProblem(requestError) ? problemConflictContext(requestError) : undefined,
+        pinnedHeadShaAtOpen,
+      );
       onclose();
       return true;
     }

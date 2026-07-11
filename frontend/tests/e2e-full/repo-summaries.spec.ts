@@ -171,4 +171,44 @@ test.describe("repository summaries", () => {
       }),
     ).toBeVisible();
   });
+
+  test("keeps an issue draft retryable after the first request is interrupted", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      let interruptNextCreate = true;
+      await page.route("**/api/v1/issues/github/acme/widgets", async (route) => {
+        if (interruptNextCreate && route.request().method() === "POST") {
+          interruptNextCreate = false;
+          await route.abort("connectionfailed");
+        } else {
+          await route.continue();
+        }
+      });
+      await page.goto(`${server.info.base_url}/repos`);
+
+      const widgetsCard = page
+        .locator(".repo-card")
+        .filter({ has: page.getByRole("button", { name: /acme\s*\/\s*widgets/ }) })
+        .first();
+      await widgetsCard.waitFor({ state: "visible", timeout: 10_000 });
+      await widgetsCard.getByRole("button", { name: "New issue" }).click();
+
+      const dialog = page.getByRole("dialog", { name: "New issue in acme/widgets" });
+      const title = dialog.getByPlaceholder("Issue title");
+      const create = dialog.getByRole("button", { name: "Create issue" });
+      await title.fill("Retry interrupted issue creation");
+      await create.click();
+
+      await expect(page.locator(".kit-flash-stack").getByRole("status")).not.toHaveText("");
+      await expect(dialog).toBeVisible();
+      await expect(title).toHaveValue("Retry interrupted issue creation");
+      await expect(create).toBeEnabled();
+
+      await create.click();
+      await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/\d+$/);
+      await expect(page.locator(".issue-detail")).toContainText("Retry interrupted issue creation");
+    } finally {
+      await server.stop();
+    }
+  });
 });

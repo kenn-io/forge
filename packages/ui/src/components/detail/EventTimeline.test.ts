@@ -653,6 +653,59 @@ describe("EventTimeline", () => {
     });
   });
 
+  it("shows the detail-store error when suggestion application fails", async () => {
+    let detailError: string | null = null;
+    const applySuggestion = vi.fn(async () => {
+      detailError = "pull request state changed";
+      return false;
+    });
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeReviewThreadEvent({
+            Body: ["This can return directly.", "", "```suggestion", "return client.publishThreads();", "```"].join(
+              "\n",
+            ),
+            diff_thread: {
+              ...makeReviewThreadEvent().diff_thread!,
+              diff_head_sha: "abc123",
+            },
+          }),
+        ],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        currentHeadSHA: "abc123",
+        onApplySuggestion: applySuggestion,
+      },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            detail: {
+              getDetailError: () => detailError,
+            },
+            diff: makeDiffStore(),
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
+          },
+        ],
+      ]),
+    });
+
+    expect(screen.queryByText("pull request state changed")).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Commit suggestion" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("pull request state changed")).toBeTruthy();
+    });
+  });
+
   it("keeps hidden selected suggestions in the batch apply request", async () => {
     const applySuggestion = vi.fn(async () => true);
     const baseThread = makeReviewThreadEvent().diff_thread!;

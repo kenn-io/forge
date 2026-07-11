@@ -61,7 +61,7 @@ describe("ApproveButton", () => {
     const dialog = screen.getByRole("dialog", { name: "Submit pull request review" });
     await fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }));
 
-    await waitFor(() => expect(onheadconflict).toHaveBeenCalledWith("stale_state", undefined));
+    await waitFor(() => expect(onheadconflict).toHaveBeenCalledWith("stale_state", undefined, "reviewed-sha"));
     expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
 
     await fireEvent.click(screen.getByRole("button", { name: "Approve" }));

@@ -10809,6 +10809,9 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
 		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
 	}}
+	// A complete provider snapshot can contain overlapping pages or duplicate
+	// identities. Detail count must follow the unique synchronized event row.
+	mockComments = append(mockComments, mockComments[0])
 	mock.listIssueCommentsFn = func(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
 		return mockComments, nil
 	}
@@ -10939,6 +10942,9 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
 		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
 	}}
+	// Exercise the PR detail API with the same duplicate-identity snapshot
+	// that the atomic replacement layer must collapse.
+	mockComments = append(mockComments, mockComments[0])
 	mock.listIssueCommentsFn = func(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
 		return mockComments, nil
 	}
@@ -11314,6 +11320,9 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
 		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
 	}}
+	// The issue detail API must expose the unique persisted count even when a
+	// complete provider snapshot repeats the same comment identity.
+	mockComments = append(mockComments, mockComments[0])
 	mock.listIssueCommentsFn = func(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
 		return mockComments, nil
 	}

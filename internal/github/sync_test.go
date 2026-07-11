@@ -476,6 +476,51 @@ func testBudget(limit int) map[string]*SyncBudget {
 	}
 }
 
+func TestMRProviderWriteLockCancelsWaitAndRemovesIdleEntry(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	syncer := &Syncer{}
+	repo := RepoRef{
+		Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
+		Owner: "group", Name: "project",
+	}
+	unlock, err := syncer.lockMRProviderWrites(t.Context(), repo, 7)
+	require.NoError(err)
+	released := false
+	t.Cleanup(func() {
+		if !released {
+			unlock()
+		}
+	})
+
+	waitCtx, cancel := context.WithCancel(t.Context())
+	waitDone := make(chan error, 1)
+	go func() {
+		_, lockErr := syncer.lockMRProviderWrites(waitCtx, repo, 7)
+		waitDone <- lockErr
+	}()
+	require.Eventually(func() bool {
+		syncer.mrProviderWriteLocksMu.Lock()
+		defer syncer.mrProviderWriteLocksMu.Unlock()
+		for _, entry := range syncer.mrProviderWriteLocks {
+			if entry.refs == 2 {
+				return true
+			}
+		}
+		return false
+	}, time.Second, 10*time.Millisecond)
+
+	cancel()
+	require.ErrorIs(<-waitDone, context.Canceled)
+	unlock()
+	released = true
+	assert.Eventually(func() bool {
+		syncer.mrProviderWriteLocksMu.Lock()
+		defer syncer.mrProviderWriteLocksMu.Unlock()
+		return len(syncer.mrProviderWriteLocks) == 0
+	}, time.Second, 10*time.Millisecond)
+}
+
 // mockClient implements Client with configurable canned responses.
 type mockClient struct {
 	budget                          *SyncBudget // optional: simulates transport counting
@@ -9478,6 +9523,59 @@ func TestRefreshCIStatusPreservesExistingStatusWhenChecksFail(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal("pending", mr.CIStatus)
+	assert.Contains(mr.CIChecksJSON, "in_progress")
+}
+
+func TestRefreshCIStatusForHeadRetainsMixedPendingChecks(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	now := time.Now().UTC()
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1001,
+		Number:          1,
+		Title:           "mixed checks",
+		State:           "open",
+		PlatformHeadSHA: "abc123",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
+
+	mock := &mockClient{
+		checkRuns: []*gh.CheckRun{
+			{Name: new("failed"), Status: new("completed"), Conclusion: new("failure")},
+			{Name: new("running"), Status: new("in_progress")},
+		},
+		ciStatus: &gh.CombinedStatus{},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	err = syncer.refreshCIStatusForHead(
+		ctx,
+		RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		repoID,
+		1,
+		"abc123",
+	)
+	require.NoError(err)
+	mr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("failure", mr.CIStatus)
+	assert.True(mr.CIHadPending)
 	assert.Contains(mr.CIChecksJSON, "in_progress")
 }
 

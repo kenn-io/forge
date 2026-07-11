@@ -3246,12 +3246,13 @@ func (d *DB) MarkAppliedProviderHead(
 			return fmt.Errorf("advance provider snapshot generation: %w", err)
 		}
 
+		var mrID int64
 		var currentHead string
 		if err := tx.QueryRowContext(ctx, `
-			SELECT platform_head_sha
+			SELECT id, platform_head_sha
 			FROM middleman_merge_requests
 			WHERE repo_id = ? AND number = ?`, repoID, number,
-		).Scan(&currentHead); err != nil {
+		).Scan(&mrID, &currentHead); err != nil {
 			return fmt.Errorf("get current provider head for MR %d: %w", number, err)
 		}
 		marked = currentHead == expectedHead || (appliedHead != "" && currentHead == appliedHead)
@@ -3263,7 +3264,22 @@ func (d *DB) MarkAppliedProviderHead(
 			        ELSE platform_head_sha
 			    END,
 			    pending_provider_head_sha = ?,
-			    pending_provider_head_generation = ?
+			    pending_provider_head_generation = ?,
+			    diff_head_sha = '',
+			    diff_base_sha = '',
+			    merge_base_sha = '',
+			    additions = 0,
+			    deletions = 0,
+			    review_decision = '',
+			    ci_status = '',
+			    ci_checks_json = '',
+			    ci_had_pending = 0,
+			    mergeable_state = '',
+			    detail_fetched_at = NULL,
+			    workflow_approval_checked_at = NULL,
+			    workflow_approval_head_sha = '',
+			    workflow_approval_required = 0,
+			    workflow_approval_count = 0
 			WHERE repo_id = ? AND number = ?`,
 			appliedHead, expectedHead, appliedHead,
 			appliedHead, generation, repoID, number,
@@ -3277,6 +3293,12 @@ func (d *DB) MarkAppliedProviderHead(
 		}
 		if updated == 0 {
 			return fmt.Errorf("mark applied provider head for MR %d: merge request not found", number)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM middleman_mr_review_threads
+			WHERE merge_request_id = ?`, mrID,
+		); err != nil {
+			return fmt.Errorf("clear stale review threads for MR %d: %w", number, err)
 		}
 		return nil
 	})

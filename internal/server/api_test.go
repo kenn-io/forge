@@ -697,35 +697,37 @@ func (m *mockGH) MarkNotificationThreadRead(ctx context.Context, threadID string
 func (m *mockGH) InvalidateListETagsForRepo(_, _ string, _ ...string) {}
 
 type apiTestGitLabProvider struct {
-	mu                    sync.Mutex
-	ref                   platform.RepoRef
-	capabilities          *platform.Capabilities
-	mergeRequests         []platform.MergeRequest
-	mergeRequestDetail    map[int]platform.MergeRequest
-	mergeRequestEvents    map[int][]platform.MergeRequestEvent
-	issues                []platform.Issue
-	issueEvents           map[int][]platform.IssueEvent
-	releases              []platform.Release
-	tags                  []platform.Tag
-	ciChecks              map[string][]platform.CICheck
-	ciErr                 error
-	reviewThreads         []platform.MergeRequestReviewThread
-	reviewThreadsErr      error
-	publishedReviews      []platform.PublishDiffReviewDraftInput
-	publishReviewErr      error
-	appliedSuggestions    []platform.ApplyReviewSuggestionsInput
-	applySuggestionsErr   error
-	applySuggestionResult *platform.AppliedReviewSuggestions
-	applySuggestionHead   string
-	blockNextMRFetch      atomic.Bool
-	mrFetchStarted        chan struct{}
-	mrFetchRelease        <-chan struct{}
-	blockNextReviewFetch  atomic.Bool
-	reviewFetchStarted    chan struct{}
-	reviewFetchRelease    <-chan struct{}
-	rateLimitBuckets      map[platform.OperationName][]platform.RateLimitBucket
-	resolvedThreads       []string
-	unresolvedThreads     []string
+	mu                      sync.Mutex
+	ref                     platform.RepoRef
+	capabilities            *platform.Capabilities
+	mergeRequests           []platform.MergeRequest
+	mergeRequestDetail      map[int]platform.MergeRequest
+	mergeRequestEvents      map[int][]platform.MergeRequestEvent
+	issues                  []platform.Issue
+	issueEvents             map[int][]platform.IssueEvent
+	releases                []platform.Release
+	tags                    []platform.Tag
+	ciChecks                map[string][]platform.CICheck
+	ciErr                   error
+	reviewThreads           []platform.MergeRequestReviewThread
+	reviewThreadsErr        error
+	publishedReviews        []platform.PublishDiffReviewDraftInput
+	publishReviewErr        error
+	appliedSuggestions      []platform.ApplyReviewSuggestionsInput
+	applySuggestionsErr     error
+	applySuggestionResult   *platform.AppliedReviewSuggestions
+	applySuggestionHead     string
+	applySuggestionsStarted chan struct{}
+	applySuggestionsRelease <-chan struct{}
+	blockNextMRFetch        atomic.Bool
+	mrFetchStarted          chan struct{}
+	mrFetchRelease          <-chan struct{}
+	blockNextReviewFetch    atomic.Bool
+	reviewFetchStarted      chan struct{}
+	reviewFetchRelease      <-chan struct{}
+	rateLimitBuckets        map[platform.OperationName][]platform.RateLimitBucket
+	resolvedThreads         []string
+	unresolvedThreads       []string
 }
 
 func (p *apiTestGitLabProvider) Platform() platform.Kind {
@@ -776,6 +778,12 @@ func (p *apiTestGitLabProvider) ApplyReviewSuggestions(
 	number int,
 	input platform.ApplyReviewSuggestionsInput,
 ) (*platform.AppliedReviewSuggestions, error) {
+	if p.applySuggestionsStarted != nil {
+		p.applySuggestionsStarted <- struct{}{}
+	}
+	if p.applySuggestionsRelease != nil {
+		<-p.applySuggestionsRelease
+	}
 	if p.applySuggestionsErr != nil {
 		return nil, p.applySuggestionsErr
 	}
@@ -16346,6 +16354,147 @@ func TestAPIApplyReviewSuggestionWaitsForAcceptedSnapshotDerivedWrites(t *testin
 	require.NoError(err)
 	require.NotNil(mr)
 	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
+	provider.reviewThreads = []platform.MergeRequestReviewThread{{
+		ProviderThreadID:  thread.ProviderThreadID,
+		ProviderCommentID: thread.ProviderCommentID,
+		Body:              thread.Body,
+		AuthorLogin:       thread.AuthorLogin,
+		Range:             platformReviewLineRange(thread.Range),
+		CreatedAt:         thread.CreatedAt,
+		UpdatedAt:         thread.UpdatedAt,
+	}}
+	provider.ciChecks = map[string][]platform.CICheck{
+		"abc123": {{Name: "pipeline", Status: "in_progress"}},
+	}
+
+	derivedStarted := make(chan struct{}, 1)
+	releaseDerived := make(chan struct{})
+	applyStarted := make(chan struct{}, 1)
+	releaseApply := make(chan struct{})
+	var releaseApplyOnce sync.Once
+	t.Cleanup(func() {
+		releaseApplyOnce.Do(func() { close(releaseApply) })
+	})
+	provider.applySuggestionsStarted = applyStarted
+	provider.applySuggestionsRelease = releaseApply
+	provider.reviewFetchStarted = derivedStarted
+	provider.reviewFetchRelease = releaseDerived
+	provider.blockNextReviewFetch.Store(true)
+	syncDone := make(chan error, 1)
+	go func() {
+		syncDone <- srv.syncer.SyncMROnProvider(
+			ctx, platform.KindGitLab, "gitlab.example.com", "group", "project", 7,
+		)
+	}()
+	require.Eventually(func() bool {
+		select {
+		case <-derivedStarted:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	confirmFetchStarted := make(chan struct{}, 1)
+	releaseConfirmFetch := make(chan struct{})
+	var releaseConfirmOnce sync.Once
+	t.Cleanup(func() {
+		releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
+	})
+	provider.mrFetchStarted = confirmFetchStarted
+	provider.mrFetchRelease = releaseConfirmFetch
+	provider.blockNextMRFetch.Store(true)
+
+	body := fmt.Sprintf(
+		`{"expected_head_sha":"abc123","suggestions":[{"thread_id":"%d","replacement":"return client.publishThreads();"}]}`,
+		thread.ID,
+	)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	applyDone := make(chan struct{})
+	go func() {
+		srv.ServeHTTP(recorder, req)
+		close(applyDone)
+	}()
+	providerCalledEarly := false
+	select {
+	case <-applyStarted:
+		providerCalledEarly = true
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(releaseDerived)
+	require.NoError(<-syncDone)
+	require.Eventually(func() bool {
+		select {
+		case <-applyStarted:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	accepted, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(accepted)
+	assert.Equal("pending", accepted.CIStatus)
+	assert.NotNil(accepted.DetailFetchedAt)
+	acceptedThreads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(acceptedThreads, 1)
+	releaseApplyOnce.Do(func() { close(releaseApply) })
+	<-applyDone
+	assert.False(providerCalledEarly, "provider mutation started before accepted snapshot derived writes")
+	require.Equal(http.StatusOK, recorder.Code, recorder.Body.String())
+	current, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(current)
+	assert.Equal("suggestion-commit-sha", current.PlatformHeadSHA)
+	assert.Empty(current.DiffHeadSHA)
+	assert.Empty(current.CIStatus)
+	assert.Nil(current.DetailFetchedAt)
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	assert.Empty(threads)
+	require.Eventually(func() bool {
+		select {
+		case <-confirmFetchStarted:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
+}
+
+func TestAPIApplyReviewSuggestionRevalidatesThreadsAfterWaitingForSync(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
 
 	derivedStarted := make(chan struct{}, 1)
 	releaseDerived := make(chan struct{})
@@ -16383,22 +16532,12 @@ func TestAPIApplyReviewSuggestionWaitsForAcceptedSnapshotDerivedWrites(t *testin
 		srv.ServeHTTP(recorder, req)
 		close(applyDone)
 	}()
-	completedEarly := false
-	select {
-	case <-applyDone:
-		completedEarly = true
-	case <-time.After(50 * time.Millisecond):
-	}
 
 	close(releaseDerived)
 	require.NoError(<-syncDone)
 	<-applyDone
-	assert.False(completedEarly, "suggestion apply completed before accepted snapshot derived writes")
-	require.Equal(http.StatusOK, recorder.Code, recorder.Body.String())
-	current, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(current)
-	assert.Equal("suggestion-commit-sha", current.PlatformHeadSHA)
+	require.Equal(http.StatusNotFound, recorder.Code, recorder.Body.String())
+	assert.Empty(provider.appliedSuggestions)
 }
 
 func TestAPIApplyReviewSuggestionWithoutCommitAdvancesReconciliationGeneration(t *testing.T) {

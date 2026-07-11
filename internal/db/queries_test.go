@@ -2232,8 +2232,38 @@ func TestAppliedProviderHeadFenceRejectsOlderFetchAndAcceptsNewerHead(t *testing
 	current := testMR(repoID, 7, withMRActivity(base))
 	current.PlatformHeadSHA = "reviewed-head"
 	current.PlatformBaseSHA = "reviewed-base"
-	_, err := d.UpsertMergeRequest(ctx, current)
+	current.DiffHeadSHA = "reviewed-head"
+	current.DiffBaseSHA = "reviewed-base"
+	current.MergeBaseSHA = "merge-base"
+	current.Additions = 12
+	current.Deletions = 4
+	current.ReviewDecision = "approved"
+	current.CIStatus = "failure"
+	current.CIChecksJSON = `[{"name":"running","status":"in_progress"}]`
+	current.CIHadPending = true
+	current.MergeableState = "mergeable"
+	fetchedAt := base.Add(time.Minute)
+	current.DetailFetchedAt = &fetchedAt
+	current.WorkflowApprovalCheckedAt = &fetchedAt
+	current.WorkflowApprovalHeadSHA = "reviewed-head"
+	current.WorkflowApprovalRequired = true
+	current.WorkflowApprovalCount = 1
+	mrID, err := d.UpsertMergeRequest(ctx, current)
 	require.NoError(err)
+	require.NoError(d.UpdateDiffSHAs(
+		ctx, repoID, 7, "reviewed-head", "reviewed-base", "merge-base",
+	))
+	require.NoError(d.UpdateMRWorkflowApproval(
+		ctx, repoID, 7, fetchedAt, "reviewed-head", true, 1,
+	))
+	require.NoError(d.UpsertMRReviewThreads(ctx, mrID, []MRReviewThread{{
+		MergeRequestID:   mrID,
+		ProviderThreadID: "thread-1",
+		Body:             "stale suggestion",
+		Range:            testReviewLineRange(),
+		CreatedAt:        base,
+		UpdatedAt:        base,
+	}}))
 
 	marked, err := d.MarkAppliedProviderHead(ctx, repoID, 7, "reviewed-head", "applied-head")
 	require.NoError(err)
@@ -2252,6 +2282,24 @@ func TestAppliedProviderHeadFenceRejectsOlderFetchAndAcceptsNewerHead(t *testing
 	assert.Equal("reviewed-base", got.PlatformBaseSHA)
 	assert.Equal("applied-head", got.PendingProviderHeadSHA)
 	assert.Positive(got.PendingProviderHeadGeneration)
+	assert.Empty(got.DiffHeadSHA)
+	assert.Empty(got.DiffBaseSHA)
+	assert.Empty(got.MergeBaseSHA)
+	assert.Zero(got.Additions)
+	assert.Zero(got.Deletions)
+	assert.Empty(got.ReviewDecision)
+	assert.Empty(got.CIStatus)
+	assert.Empty(got.CIChecksJSON)
+	assert.False(got.CIHadPending)
+	assert.Empty(got.MergeableState)
+	assert.Nil(got.DetailFetchedAt)
+	assert.Nil(got.WorkflowApprovalCheckedAt)
+	assert.Empty(got.WorkflowApprovalHeadSHA)
+	assert.False(got.WorkflowApprovalRequired)
+	assert.Zero(got.WorkflowApprovalCount)
+	threads, err := d.ListMRReviewThreads(ctx, mrID)
+	require.NoError(err)
+	assert.Empty(threads)
 	assert.NotEqual("stale snapshot", got.Title)
 
 	postMutationGeneration, err := d.ProviderSnapshotGeneration(ctx)

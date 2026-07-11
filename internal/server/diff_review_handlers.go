@@ -213,6 +213,9 @@ func (s *Server) applyReviewSuggestions(
 	if mr == nil {
 		return nil, huma.Error404NotFound("pull request not found")
 	}
+	if err := requireProviderHeadReconciled(mr); err != nil {
+		return nil, err
+	}
 	if mr.State != db.MergeRequestStateOpen {
 		return nil, problemConflict(
 			CodeConflict,
@@ -300,8 +303,10 @@ func (s *Server) applyReviewSuggestions(
 	if commitSHA == "" {
 		responseStatus = "applied_reconciliation_pending"
 	}
+	persistCtx, cancelPersist := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancelPersist()
 	marked, updateErr := s.db.MarkAppliedProviderHead(
-		ctx,
+		persistCtx,
 		repo.ID,
 		input.Number,
 		expectedHeadSHA,
@@ -521,12 +526,23 @@ func (s *Server) publishDiffReviewDraft(
 	if err != nil {
 		return nil, err
 	}
+	unlockProviderWrites, err := s.syncer.LockMRProviderWrites(
+		ctx,
+		repoProviderKind(*repo), repoProviderHost(*repo), repo.Owner, repo.Name, input.Number,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer unlockProviderWrites()
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request failed")
 	}
 	if mr == nil {
 		return nil, huma.Error404NotFound("pull request not found")
+	}
+	if err := requireProviderHeadReconciled(mr); err != nil {
+		return nil, err
 	}
 	action, err := parseReviewAction(input.Body.Action)
 	if err != nil {

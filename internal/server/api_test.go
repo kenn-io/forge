@@ -697,38 +697,39 @@ func (m *mockGH) MarkNotificationThreadRead(ctx context.Context, threadID string
 func (m *mockGH) InvalidateListETagsForRepo(_, _ string, _ ...string) {}
 
 type apiTestGitLabProvider struct {
-	mu                      sync.Mutex
-	ref                     platform.RepoRef
-	capabilities            *platform.Capabilities
-	mergeRequests           []platform.MergeRequest
-	mergeRequestDetail      map[int]platform.MergeRequest
-	mergeRequestEvents      map[int][]platform.MergeRequestEvent
-	issues                  []platform.Issue
-	issueEvents             map[int][]platform.IssueEvent
-	releases                []platform.Release
-	tags                    []platform.Tag
-	ciChecks                map[string][]platform.CICheck
-	ciErr                   error
-	reviewThreads           []platform.MergeRequestReviewThread
-	reviewThreadsErr        error
-	publishedReviews        []platform.PublishDiffReviewDraftInput
-	publishReviewErr        error
-	appliedSuggestions      []platform.ApplyReviewSuggestionsInput
-	applySuggestionsErr     error
-	applySuggestionResult   *platform.AppliedReviewSuggestions
-	applySuggestionHead     string
-	applySuggestionsStarted chan struct{}
-	applySuggestionsRelease <-chan struct{}
-	cancelAfterApply        func()
-	blockNextMRFetch        atomic.Bool
-	mrFetchStarted          chan struct{}
-	mrFetchRelease          <-chan struct{}
-	blockNextReviewFetch    atomic.Bool
-	reviewFetchStarted      chan struct{}
-	reviewFetchRelease      <-chan struct{}
-	rateLimitBuckets        map[platform.OperationName][]platform.RateLimitBucket
-	resolvedThreads         []string
-	unresolvedThreads       []string
+	mu                               sync.Mutex
+	ref                              platform.RepoRef
+	capabilities                     *platform.Capabilities
+	mergeRequests                    []platform.MergeRequest
+	mergeRequestDetail               map[int]platform.MergeRequest
+	mergeRequestEvents               map[int][]platform.MergeRequestEvent
+	issues                           []platform.Issue
+	issueEvents                      map[int][]platform.IssueEvent
+	releases                         []platform.Release
+	tags                             []platform.Tag
+	ciChecks                         map[string][]platform.CICheck
+	ciErr                            error
+	reviewThreads                    []platform.MergeRequestReviewThread
+	reviewThreadsErr                 error
+	publishedReviews                 []platform.PublishDiffReviewDraftInput
+	publishReviewErr                 error
+	appliedSuggestions               []platform.ApplyReviewSuggestionsInput
+	applySuggestionsErr              error
+	applySuggestionsErrAfterMutation error
+	applySuggestionResult            *platform.AppliedReviewSuggestions
+	applySuggestionHead              string
+	applySuggestionsStarted          chan struct{}
+	applySuggestionsRelease          <-chan struct{}
+	cancelAfterApply                 func()
+	blockNextMRFetch                 atomic.Bool
+	mrFetchStarted                   chan struct{}
+	mrFetchRelease                   <-chan struct{}
+	blockNextReviewFetch             atomic.Bool
+	reviewFetchStarted               chan struct{}
+	reviewFetchRelease               <-chan struct{}
+	rateLimitBuckets                 map[platform.OperationName][]platform.RateLimitBucket
+	resolvedThreads                  []string
+	unresolvedThreads                []string
 }
 
 func (p *apiTestGitLabProvider) Platform() platform.Kind {
@@ -806,6 +807,9 @@ func (p *apiTestGitLabProvider) ApplyReviewSuggestions(
 	}
 	if p.cancelAfterApply != nil {
 		p.cancelAfterApply()
+	}
+	if p.applySuggestionsErrAfterMutation != nil {
+		return nil, p.applySuggestionsErrAfterMutation
 	}
 	return &result, nil
 }
@@ -17020,6 +17024,87 @@ func TestAPIApplyReviewSuggestionPersistsAfterRequestCancellation(t *testing.T) 
 	require.Eventually(func() bool {
 		current, getErr := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
 		return getErr == nil && current != nil &&
+			current.PlatformHeadSHA == "suggestion-commit-sha" &&
+			current.PendingProviderHeadGeneration == 0
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestAPIApplyReviewSuggestionReconcilesLostProviderResponse(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
+
+	confirmFetchStarted := make(chan struct{}, 1)
+	releaseConfirmFetch := make(chan struct{})
+	var releaseConfirmOnce sync.Once
+	t.Cleanup(func() {
+		releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
+	})
+	provider.mrFetchStarted = confirmFetchStarted
+	provider.mrFetchRelease = releaseConfirmFetch
+	provider.blockNextMRFetch.Store(true)
+	provider.applySuggestionsErrAfterMutation = errors.New("provider response lost after commit")
+
+	failed := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(thread.ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+	require.Equal(http.StatusBadGateway, failed.Code, failed.Body.String())
+	require.Eventually(func() bool {
+		select {
+		case <-confirmFetchStarted:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	inProgress, err := database.ProviderHeadMutationInProgress(ctx, repo.ID, 7)
+	require.NoError(err)
+	assert.True(inProgress)
+	pending, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(pending)
+	assert.Equal("abc123", pending.PlatformHeadSHA)
+	assert.Positive(pending.PendingProviderHeadGeneration)
+
+	releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
+	require.Eventually(func() bool {
+		current, getErr := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+		if getErr != nil || current == nil {
+			return false
+		}
+		intent, intentErr := database.ProviderHeadMutationInProgress(ctx, repo.ID, 7)
+		return intentErr == nil && !intent &&
 			current.PlatformHeadSHA == "suggestion-commit-sha" &&
 			current.PendingProviderHeadGeneration == 0
 	}, time.Second, 10*time.Millisecond)

@@ -8074,6 +8074,25 @@ func (s *Syncer) syncMRForRepo(
 	if err != nil {
 		return fmt.Errorf("get existing MR #%d: %w", number, err)
 	}
+	mutationInProgress := false
+	var unlockProviderWrites func()
+	if existing != nil {
+		mutationInProgress, err = s.db.ProviderHeadMutationInProgress(ctx, repoID, number)
+		if err != nil {
+			return err
+		}
+	}
+	if mutationInProgress {
+		unlockProviderWrites, err = s.lockMRProviderWrites(ctx, repo, number)
+		if err != nil {
+			return err
+		}
+		defer unlockProviderWrites()
+		existing, err = s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+		if err != nil {
+			return fmt.Errorf("reload existing MR #%d for provider mutation reconciliation: %w", number, err)
+		}
+	}
 	snapshotGeneration, err := s.db.ProviderSnapshotGeneration(ctx)
 	if err != nil {
 		return err
@@ -8128,11 +8147,18 @@ func (s *Syncer) syncMRForRepo(
 		return fmt.Errorf("get MR %s/%s#%d: provider returned no merge request", owner, name, number)
 	}
 	normalized.ProviderSnapshotGeneration = snapshotGeneration
-	unlock, err := s.lockMRProviderWrites(ctx, repo, number)
-	if err != nil {
-		return err
+	if unlockProviderWrites == nil {
+		unlockProviderWrites, err = s.lockMRProviderWrites(ctx, repo, number)
+		if err != nil {
+			return err
+		}
+		defer unlockProviderWrites()
 	}
-	defer unlock()
+	if mutationInProgress {
+		if err := s.db.PrepareProviderHeadMutationReconciliation(ctx, repoID, number); err != nil {
+			return err
+		}
+	}
 	headChanged := existing != nil &&
 		existing.PlatformHeadSHA != normalized.PlatformHeadSHA
 	if existing != nil {

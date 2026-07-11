@@ -3288,6 +3288,44 @@ func (d *DB) CancelProviderHeadMutation(
 	return nil
 }
 
+func (d *DB) ProviderHeadMutationInProgress(
+	ctx context.Context,
+	repoID int64,
+	number int,
+) (bool, error) {
+	var inProgress bool
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT provider_mutation_in_progress
+		FROM middleman_merge_requests
+		WHERE repo_id = ? AND number = ?`, repoID, number,
+	).Scan(&inProgress)
+	if err != nil {
+		return false, fmt.Errorf("get provider head mutation intent for MR %d: %w", number, err)
+	}
+	return inProgress, nil
+}
+
+// PrepareProviderHeadMutationReconciliation allows a provider snapshot fetched
+// while holding the per-pull write lock to resolve an abandoned or ambiguous
+// mutation intent. The pending generation remains until the authoritative
+// snapshot upsert succeeds.
+func (d *DB) PrepareProviderHeadMutationReconciliation(
+	ctx context.Context,
+	repoID int64,
+	number int,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET provider_mutation_in_progress = 0
+		WHERE repo_id = ? AND number = ?
+		  AND provider_mutation_in_progress = 1`, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("prepare provider head mutation reconciliation for MR %d: %w", number, err)
+	}
+	return nil
+}
+
 // MarkAppliedProviderHead records a provider-confirmed head mutation and
 // advances the fetch generation in the same transaction. Upserts from fetches
 // that started before this transaction preserve the pending result; the first

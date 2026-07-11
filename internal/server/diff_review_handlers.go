@@ -288,11 +288,15 @@ func (s *Server) applyReviewSuggestions(
 		},
 	)
 	if err != nil {
-		cancelCtx, cancelIntent := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		if cancelErr := s.db.CancelProviderHeadMutation(cancelCtx, repo.ID, input.Number); cancelErr != nil {
-			slog.WarnContext(ctx, "clear failed provider mutation intent", "err", cancelErr)
+		if providerMutationDefinitelyRejected(err) {
+			cancelCtx, cancelIntent := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			if cancelErr := s.db.CancelProviderHeadMutation(cancelCtx, repo.ID, input.Number); cancelErr != nil {
+				slog.WarnContext(ctx, "clear failed provider mutation intent", "err", cancelErr)
+			}
+			cancelIntent()
+		} else {
+			s.syncAfterReviewSuggestionApply(*repo, input.Number)
 		}
-		cancelIntent()
 		if errors.Is(err, platform.ErrStaleState) {
 			s.syncAfterReviewSuggestionApply(*repo, input.Number)
 		}
@@ -333,6 +337,14 @@ func (s *Server) applyReviewSuggestions(
 		response.CommitURL = result.CommitURL
 	}
 	return &applyReviewSuggestionOutput{Body: response}, nil
+}
+
+func providerMutationDefinitelyRejected(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var providerErr *platform.Error
+	return errors.As(err, &providerErr)
 }
 
 func validateReviewSuggestionThread(thread db.MRReviewThread, expectedHeadSHA string) error {

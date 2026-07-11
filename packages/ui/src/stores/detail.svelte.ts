@@ -550,11 +550,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
     name: string,
     number: number,
     identity: DetailRequestOptions,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const ref = detailRequestRef(owner, name, number, identity);
     activeLoad = null;
     const gen = ++syncGeneration;
-    await syncDetail(owner, name, number, gen, ref);
+    return syncDetail(owner, name, number, gen, ref);
   }
 
   async function refreshPendingCI(

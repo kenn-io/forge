@@ -632,6 +632,62 @@ test.describe("detail action buttons", () => {
     }
   });
 
+  test("typed stale-head conflict blocks retry until reviewed state is refreshed", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      await page.locator(".btn--merge").first().click();
+
+      const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
+      await expect(modal).toBeVisible();
+      const conflict = await page.request.post(`${server.info.base_url}/__e2e/merge/conflict/stale-head`);
+      expect(conflict.status()).toBe(204);
+
+      let mergeRequests = 0;
+      page.on("request", (request) => {
+        if (
+          request.method() === "POST" &&
+          new URL(request.url()).pathname === "/api/v1/pulls/github/acme/widgets/1/merge"
+        ) {
+          mergeRequests += 1;
+        }
+      });
+      const mergeResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
+      });
+      await modal.getByRole("button", { name: "Merge Anyway" }).click();
+      const response = await mergeResponse;
+      expect(response.status()).toBe(409);
+      expect(await response.json()).toMatchObject({ details: { reason: "stale_state" } });
+
+      await expect(modal).toHaveCount(0);
+      await expect(page.locator(".action-error--state")).toContainText("head commit changed");
+      await expect(page.locator(".btn--merge").first()).toBeDisabled();
+      await expect(page.getByRole("button", { name: /^approve$/i }).first()).toBeDisabled();
+
+      await page.keyboard.press("m");
+      await expect.poll(() => mergeRequests).toBe(1);
+      await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toHaveCount(0);
+
+      const refresh = page.getByRole("button", { name: "Refresh reviewed state" });
+      await expect(refresh).toBeEnabled();
+      await refresh.click();
+
+      await expect(page.locator(".action-error--state")).toHaveCount(0);
+      await expect(page.locator(".btn--merge").first()).toBeEnabled();
+      await expect(page.getByRole("button", { name: /^approve$/i }).first()).toBeEnabled();
+      expect(mergeRequests).toBe(1);
+
+      const detailResponse = await page.request.get(`${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`);
+      expect(detailResponse.ok()).toBe(true);
+      expect(await detailResponse.json()).toMatchObject({ merge_request: { State: "open" } });
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("repo merge permission disables merge action with reason end-to-end", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {

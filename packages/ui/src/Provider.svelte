@@ -224,12 +224,13 @@
           platformHost: ref.platformHost,
           repoPath: ref.repoPath,
         }),
-      onStalePublish: (ref, number) =>
-        detailStore.syncDetailNow(ref.owner, ref.name, number, {
+      onStalePublish: async (ref, number) => {
+        await detailStore.syncDetailNow(ref.owner, ref.name, number, {
           provider: ref.provider,
           platformHost: ref.platformHost,
           repoPath: ref.repoPath,
-        }),
+        });
+      },
     });
 
     function hydrateSettings(

@@ -1320,6 +1320,20 @@ func buildAppState(
 		srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
 	})
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/merge/conflict/stale-head" {
+			patchFixturePRSHAs(
+				fc, "acme", "widgets", 1,
+				diffRepo.AltHeadSHA, diffRepo.BaseSHA,
+			)
+			fc.SetMergePullRequestError(&platform.Error{
+				Code:         platform.ErrCodeStaleState,
+				Provider:     platform.KindGitHub,
+				PlatformHost: "github.com",
+				Err:          errors.New("head commit changed"),
+			})
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/merge/conflict/not-open" {
 			repo, err := database.GetRepoByIdentity(
 				r.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"),

@@ -100,14 +100,32 @@ describe("createDetailStore", () => {
       pulls,
     });
 
-    await store.syncDetailNow("acme", "widget", 7, {
+    const refreshed = await store.syncDetailNow("acme", "widget", 7, {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widget",
     });
 
+    expect(refreshed).toBe(true);
     expect(store.getDetail()?.platform_head_sha).toBe("fresh-head");
     expect(pulls.loadPulls).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports when an explicit detail sync cannot refresh state", async () => {
+    const store = createDetailStore({
+      client: mockClient({
+        POST: vi.fn().mockResolvedValue({ error: { detail: "provider unavailable" } }),
+      }),
+    });
+
+    const refreshed = await store.syncDetailNow("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+
+    expect(refreshed).toBe(false);
+    expect(store.getDetail()).toBeNull();
   });
 
   it("enqueues background sync when active detail polling fires", async () => {

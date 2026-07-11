@@ -461,6 +461,8 @@
     showMergeModal = false;
     stateConflict = null;
     headConflictContext = null;
+    conflictReviewedHead = null;
+    conflictRefreshError = null;
     expandedPanel = keepStackExpanded ? "stack" : null;
     editingTitle = false;
     editingBody = false;
@@ -676,6 +678,9 @@
   // would repeat); rendered with the stale banner so the consequence
   // is not hidden behind the generic re-review prompt.
   let headConflictContext = $state<string | null>(null);
+  let conflictReviewedHead = $state<string | null>(null);
+  let conflictRefreshBusy = $state(false);
+  let conflictRefreshError = $state<string | null>(null);
   const detailHeadSha = $derived(
     detailStore.getDetail()?.reviewed_head_sha ?? "",
   );
@@ -718,17 +723,60 @@
     reason: Exclude<ConflictReason, "conflict">,
     context?: string,
   ): void {
+    conflictReviewedHead = detailHeadSha;
     stateConflict = reason;
     headConflictContext = context ?? null;
+    conflictRefreshError = null;
     showMergeModal = false;
-    // loadDetail's default sync mode pulls fresh provider state, which
-    // is what re-binds the head (stale_state) or populates a missing
-    // one (head_unknown).
-    void detailStore.loadDetail(owner, name, number, {
+    void refreshConflictState(false);
+  }
+
+  function conflictHasFreshContext(
+    reason: Exclude<ConflictReason, "conflict">,
+    reviewedHeadAtConflict: string | null,
+  ): boolean {
+    const detail = detailStore.getDetail();
+    if (!detail) return false;
+    const currentReviewedHead = detail.reviewed_head_sha.trim();
+    const currentPlatformHead = detail.platform_head_sha.trim();
+    const headIsCurrent = currentReviewedHead !== ""
+      && currentReviewedHead === currentPlatformHead;
+
+    if (reason === "not_open") {
+      return detail.merge_request.State === "open" && headIsCurrent;
+    }
+    if (reason === "head_repo_unknown") {
+      return detail.merge_request.HeadRepoCloneURL.trim() !== "" && headIsCurrent;
+    }
+    if (reason === "stale_state") {
+      return headIsCurrent && currentReviewedHead !== reviewedHeadAtConflict;
+    }
+    return headIsCurrent;
+  }
+
+  async function refreshConflictState(allowRecovery = true): Promise<void> {
+    const reason = stateConflict;
+    if (!reason || conflictRefreshBusy) return;
+    const reviewedHeadAtConflict = conflictReviewedHead;
+    conflictRefreshBusy = true;
+    conflictRefreshError = null;
+    const refreshed = await detailStore.syncDetailNow(owner, name, number, {
       provider,
       platformHost,
       repoPath,
     });
+    if (stateConflict !== reason) {
+      conflictRefreshBusy = false;
+      return;
+    }
+    if (!refreshed) {
+      conflictRefreshError = "Could not refresh the pull request. Try again.";
+    } else if (allowRecovery && conflictHasFreshContext(reason, reviewedHeadAtConflict)) {
+      stateConflict = null;
+      headConflictContext = null;
+      conflictReviewedHead = null;
+    }
+    conflictRefreshBusy = false;
   }
 
   function handleHeadConflict(reason: "stale_state" | "head_unknown", context?: string): void {
@@ -2139,6 +2187,24 @@
               The head commit has not been synced yet. Approve and merge are unavailable until the next sync records it.
             </span>
           {/if}
+          {#if stateConflict}
+            <div class="state-conflict-recovery">
+              <Button
+                class="btn--conflict-refresh"
+                disabled={conflictRefreshBusy}
+                onclick={() => void refreshConflictState()}
+                tone="neutral"
+                surface="soft"
+                size="sm"
+                label={conflictRefreshBusy ? "Refreshing reviewed state..." : "Refresh reviewed state"}
+              >
+                <RefreshCwIcon size="14" aria-hidden="true" />
+              </Button>
+              {#if conflictRefreshError}
+                <span class="action-error" role="alert">{conflictRefreshError}</span>
+              {/if}
+            </div>
+          {/if}
         </div>
       {/if}
 
@@ -3014,6 +3080,13 @@
 
   .action-error--state {
     display: block;
+    margin-top: 6px;
+  }
+
+  .state-conflict-recovery {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin-top: 6px;
   }
 

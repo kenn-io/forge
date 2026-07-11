@@ -698,7 +698,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   async function deleteIssueComment(owner: string, name: string, number: number, commentID: number): Promise<boolean> {
     const ref = currentIssueDetailRef(owner, name, number);
-    const deleteGen = issueSyncGeneration;
     const deletionKey = `${ref.provider}:${ref.platformHost}:${ref.repoPath}/${number}:comment:${commentID}`;
     detailError = null;
     if (!pendingCommentConfirmations.has(deletionKey)) {
@@ -720,7 +719,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           throw new Error(apiErrorMessage(requestError, "failed to delete comment"));
         }
       } catch (err) {
-        if (deleteGen === issueSyncGeneration && isIssueDetailShowingRef(ref)) {
+        if (isIssueDetailShowingRef(ref)) {
           detailError = err instanceof Error ? err.message : String(err);
         }
         return false;

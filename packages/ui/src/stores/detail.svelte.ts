@@ -1112,7 +1112,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   async function deleteComment(owner: string, name: string, number: number, commentID: number): Promise<boolean> {
     const ref = currentDetailRef(owner, name, number);
-    const deleteGen = syncGeneration;
     const deletionKey = `${prKey(ref)}:comment:${commentID}`;
     storeError = null;
     if (!pendingCommentConfirmations.has(deletionKey)) {
@@ -1134,7 +1133,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
           throw new Error(apiErrorMessage(requestError, "failed to delete comment"));
         }
       } catch (err) {
-        if (deleteGen === syncGeneration && isDetailShowingRef(ref)) {
+        if (isDetailShowingRef(ref)) {
           storeError = err instanceof Error ? err.message : String(err);
         }
         return false;

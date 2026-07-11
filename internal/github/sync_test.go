@@ -34,6 +34,42 @@ func openTestDB(t *testing.T) *db.DB {
 	return dbtest.Open(t)
 }
 
+func TestItemWriteLockSerializesSameProviderItem(t *testing.T) {
+	syncer := &Syncer{}
+	firstEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	secondAttempting := make(chan struct{})
+	secondEntered := make(chan struct{})
+
+	go func() {
+		_ = syncer.WithItemWriteLock(platform.KindGitHub, "github.com", "acme/widget", "pr", 7, func() error {
+			close(firstEntered)
+			<-releaseFirst
+			return nil
+		})
+	}()
+	<-firstEntered
+	go func() {
+		close(secondAttempting)
+		_ = syncer.WithItemWriteLock(platform.KindGitHub, "github.com", "acme/widget", "pr", 7, func() error {
+			close(secondEntered)
+			return nil
+		})
+	}()
+	<-secondAttempting
+	select {
+	case <-secondEntered:
+		assert.Fail(t, "second item write entered before the first released")
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(releaseFirst)
+	select {
+	case <-secondEntered:
+	case <-time.After(time.Second):
+		assert.Fail(t, "second item write did not resume")
+	}
+}
+
 func setupBareRemoteForSyncTest(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

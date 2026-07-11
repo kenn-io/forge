@@ -492,6 +492,8 @@ type Syncer struct {
 	commentRefreshMu         sync.Mutex
 	pendingPRCommentSyncs    []queuedPRCommentSync
 	pendingIssueCommentSyncs []queuedIssueCommentSync
+	itemWriteLocksMu         sync.Mutex
+	itemWriteLocks           map[string]*itemWriteLock
 }
 
 type queuedPRCommentSync struct {
@@ -502,6 +504,50 @@ type queuedPRCommentSync struct {
 type queuedIssueCommentSync struct {
 	repo   RepoRef
 	number int
+}
+
+type itemWriteLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+// WithItemWriteLock serializes a mutation with detail sync writes for one
+// provider-scoped item. This prevents a sync fetched before a destructive
+// mutation from applying stale events after the mutation commits.
+func (s *Syncer) WithItemWriteLock(
+	kind platform.Kind,
+	host, repoPath, itemType string,
+	number int,
+	fn func() error,
+) error {
+	unlock := s.lockItemWrite(kind, host, repoPath, itemType, number)
+	defer unlock()
+	return fn()
+}
+
+func (s *Syncer) lockItemWrite(kind platform.Kind, host, repoPath, itemType string, number int) func() {
+	key := string(kind) + ":" + host + ":" + repoPath + ":" + itemType + ":" + strconv.Itoa(number)
+	s.itemWriteLocksMu.Lock()
+	if s.itemWriteLocks == nil {
+		s.itemWriteLocks = make(map[string]*itemWriteLock)
+	}
+	lock := s.itemWriteLocks[key]
+	if lock == nil {
+		lock = &itemWriteLock{}
+		s.itemWriteLocks[key] = lock
+	}
+	lock.refs++
+	s.itemWriteLocksMu.Unlock()
+	lock.mu.Lock()
+	return func() {
+		lock.mu.Unlock()
+		s.itemWriteLocksMu.Lock()
+		lock.refs--
+		if lock.refs == 0 {
+			delete(s.itemWriteLocks, key)
+		}
+		s.itemWriteLocksMu.Unlock()
+	}
 }
 
 // ensureRunCtx lazily initializes runCtx/runCancel. Safe to call
@@ -6050,6 +6096,8 @@ func (s *Syncer) fetchIssueDetail(
 	repoID int64,
 	number int,
 ) (int, error) {
+	unlock := s.lockItemWrite(repoPlatform(repo), repoHost(repo), repo.RepoPath, "issue", number)
+	defer unlock()
 	calls := 0
 	issueReader, err := s.issueReaderFor(repo)
 	if err != nil {
@@ -7862,6 +7910,8 @@ func (s *Syncer) syncMRForRepo(
 	number int,
 	useConditionalPRDetail bool,
 ) error {
+	unlock := s.lockItemWrite(repoPlatform(repo), repoHost(repo), repo.RepoPath, "pr", number)
+	defer unlock()
 	owner := repo.Owner
 	name := repo.Name
 	mrReader, err := s.mergeRequestReaderFor(repo)

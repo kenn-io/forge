@@ -99,6 +99,7 @@ git commit -m "feat: delete comments through every provider"
 **Files:**
 - Modify: `internal/db/queries.go`
 - Modify: `internal/db/queries_activity_test.go`
+- Add: `internal/db/migrations/000039_comment_deletion_receipts.{up,down}.sql`
 - Modify: `internal/server/huma_routes.go`
 - Modify: `internal/server/provider_route_wrappers.go`
 - Modify: `internal/server/api_test.go`
@@ -140,7 +141,7 @@ DELETE FROM middleman_mr_events
 WHERE merge_request_id = ? AND platform_id = ? AND event_type = 'issue_comment'
 ```
 
-Register paired operations with `DefaultStatus: http.StatusNoContent` and add a typed `delete_comment` repository operation derived from comment mutation, write credentials, and REST rate state. Each handler must resolve the repo/item, validate `MRCommentEventExists` or `IssueCommentEventExists`, call the provider, then delete the local row. Preserve local state for every provider error, including typed not-found, because a write credential may conceal authorization failure as 404. A zero-row local delete remains an idempotent success after provider success. Use `statusOnlyOutput{Status: http.StatusNoContent}` and existing problem helpers.
+Register paired operations with `DefaultStatus: http.StatusNoContent` and add a typed `delete_comment` repository operation derived from comment mutation, write credentials, and REST rate state. Persist a bounded deletion-attempt receipt before the provider call. Remove it after an ordinary first-attempt failure; retain it across success or ambiguous interruption. A retry may reconcile typed not-found only after an authoritative sync confirms absence, and a retained receipt makes a lost `204` retry idempotent. Serialize provider deletion/local writes with item detail synchronization on full provider identity so stale pre-delete fetches cannot restore the comment. A zero-row local delete remains idempotent after provider success.
 
 - [ ] **Step 4: Generate clients and review the contract**
 
@@ -180,7 +181,7 @@ git commit -m "feat: expose provider-aware comment deletion"
 
 - [ ] **Step 1: Write failing store tests**
 
-Assert route parameters include provider/host identity, success refreshes detail, and API failure returns false without refreshing while retaining the API error. Also cover DELETE success followed by refresh failure and retry, a same-item generation change, navigation during a failed DELETE, and another event type sharing the numeric platform ID.
+Assert route parameters include provider/host identity, success refreshes detail, and API failure returns false without refreshing while retaining the API error. Also cover DELETE success followed by refresh failure and retry, same-item success and failure generation changes, navigation during a failed DELETE, and another event type sharing the numeric platform ID.
 
 ```ts
 await expect(store.deleteComment("acme", "widget", 7, 44)).resolves.toBe(true);

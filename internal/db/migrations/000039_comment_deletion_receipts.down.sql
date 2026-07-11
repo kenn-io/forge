@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS idx_comment_deletion_receipts_created_at;
+DROP TABLE IF EXISTS middleman_comment_deletion_receipts;

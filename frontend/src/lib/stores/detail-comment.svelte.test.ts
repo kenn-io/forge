@@ -228,6 +228,28 @@ describe("createDetailStore submitComment", () => {
     expect(store.getDetailError()).toBeNull();
   });
 
+  it("keeps a provider error after reloading the same PR", async () => {
+    let finishDelete: () => void = () => {};
+    const pending = new Promise<void>((resolve) => (finishDelete = resolve));
+    const store = createDetailStore({
+      client: {
+        GET: vi.fn(async () => ({ data: makeDetail([{ EventType: "issue_comment", PlatformID: 44 }]) })),
+        POST: vi.fn(),
+        PUT: vi.fn(),
+        DELETE: vi.fn(async () => {
+          await pending;
+          return { error: { detail: "provider denied deletion" } };
+        }),
+      } as unknown as MiddlemanClient,
+    });
+    await store.loadDetail("octo", "repo", 1, { ...pullRef, sync: false });
+    const deleting = store.deleteComment("octo", "repo", 1, 44);
+    await store.loadDetail("octo", "repo", 1, { ...pullRef, sync: false });
+    finishDelete();
+    expect(await deleting).toBe(false);
+    expect(store.getDetailError()).toBe("provider denied deletion");
+  });
+
   it("does not restore the deleted PR over a newer selection", async () => {
     let finishDelete: () => void = () => {};
     const deletePending = new Promise<void>((resolve) => {

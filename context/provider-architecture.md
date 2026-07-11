@@ -68,7 +68,9 @@ Rules:
 - Provider-backed comment deletes remove synchronized local rows only after upstream
   success. Typed `not_found` is not sufficient because provider write credentials may
   conceal authorization failures as absence; all upstream failures preserve local state,
-  and local removal tolerates an already-absent row
+  unless a retained deletion-attempt receipt plus an authoritative read sync confirms
+  absence. Item-scoped mutation/sync serialization prevents stale pre-delete fetches
+  from restoring deleted comments, and local removal tolerates an already-absent row
   (`internal/server/huma_routes.go::deleteComment`,
   `internal/server/huma_routes.go::deleteIssueComment`).
 - Keep operation availability split by scope. `repoOperations` handles

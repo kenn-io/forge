@@ -208,6 +208,28 @@ describe("createIssuesStore submitIssueComment", () => {
     expect(store.getIssueDetailError()).toBeNull();
   });
 
+  it("keeps a provider error after reloading the same issue", async () => {
+    let finishDelete: () => void = () => {};
+    const pending = new Promise<void>((resolve) => (finishDelete = resolve));
+    const store = createIssuesStore({
+      client: {
+        GET: vi.fn(async () => ({ data: makeDetail([{ EventType: "issue_comment", PlatformID: 44 }]) })),
+        POST: vi.fn(),
+        PUT: vi.fn(),
+        DELETE: vi.fn(async () => {
+          await pending;
+          return { error: { detail: "provider denied deletion" } };
+        }),
+      } as unknown as MiddlemanClient,
+    });
+    await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
+    const deleting = store.deleteIssueComment("octo", "repo", 1, 44);
+    await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
+    finishDelete();
+    expect(await deleting).toBe(false);
+    expect(store.getIssueDetailError()).toBe("provider denied deletion");
+  });
+
   it("does not restore the deleted issue over a newer selection", async () => {
     let finishDelete: () => void = () => {};
     const deletePending = new Promise<void>((resolve) => {

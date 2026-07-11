@@ -44,7 +44,7 @@ Handlers must:
 
 Return `204 No Content` on success. Use the existing stable problem envelopes for unsupported capability, missing repository/item/comment, provider rejection, rate limits, and internal persistence failure. Regenerate the OpenAPI document and Go/TypeScript clients after adding the operations.
 
-Provider not-found is not proof of absence: write credentials can conceal authorization failures as 404, especially when read and write credentials differ. Preserve the local event and surface the typed provider error unless an authoritative read independently confirms absence. Local removal remains idempotent when synchronization already removed the row; no compatibility or tombstone path is needed.
+Provider not-found is not proof of absence: write credentials can conceal authorization failures as 404, especially when read and write credentials differ. Before the first provider call, persist a deletion-attempt receipt keyed by repository, item type/number, and comment ID. Remove it after an ordinary first-attempt provider failure; retain it after provider success or an ambiguous interruption. A retry with a retained receipt may reconcile typed not-found only after an authoritative read-credential sync confirms the comment is absent. Successful receipts remain for 30 days so a lost `204` is idempotent, then are pruned opportunistically. This receipt records operation identity, not a hidden-comment tombstone.
 
 Removing a persisted event decrements `comment_count` transactionally and never below zero. `last_activity_at` remains provider-authored metadata and is reconciled by the next authoritative sync rather than guessed from the remaining local event subset.
 
@@ -66,13 +66,14 @@ Middleman has no provider-neutral authenticated-user identity in timeline payloa
 - A failed deletion keeps the confirmation open and displays an inline error. If DELETE already returned 204 but confirmation refresh failed, retry performs only the safe detail refresh.
 - A successful deletion closes the dialog only after the refreshed timeline no longer contains the event.
 - A same-item generation change starts a new authoritative refresh; navigation or component teardown may discard local dialog state, but stale results and errors must not overwrite the newly selected detail.
+- Provider deletion/local reconciliation and detail synchronization serialize on the full provider-scoped item identity, preventing a pre-delete fetch from upserting stale comments after deletion commits.
 
 ## Testing
 
 Use test-driven changes at the smallest boundaries that establish the contract:
 
 - Provider tests verify the correct native delete endpoint, identifier, method, write credential, and error mapping for GitHub, GitLab, Forgejo, and Gitea.
-- Server HTTP tests verify PR and issue deletion, host-prefixed routing, capability gating, comment-to-parent validation, provider failure preservation (including not-found), subsequent detail retrieval, and the `204` response.
+- Server HTTP tests verify PR and issue deletion, host-prefixed routing, capability gating, comment-to-parent validation, provider failure preservation (including first-attempt not-found), ambiguous-success reconciliation, lost-response retries, subsequent detail retrieval, and the `204` response.
 - Store tests verify generated-client route construction, two-phase refresh retry, event-type-aware confirmation, refresh failure reporting, and same-item/navigation generation safety.
 - `EventTimeline` component tests verify action eligibility, cancellation, comment identification, single-flight confirmation, success, and failure display across representative timeline layouts.
 - An affected browser or full-stack test verifies the visible confirmation-and-removal workflow without duplicating backend authorization coverage.

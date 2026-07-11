@@ -2657,6 +2657,45 @@ func (d *DB) DeleteMRCommentEvent(ctx context.Context, mrID, platformID int64) e
 	})
 }
 
+func (d *DB) RecordCommentDeletionAttempt(ctx context.Context, repoID int64, itemType string, itemNumber int, commentID int64) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM middleman_comment_deletion_receipts WHERE created_at < ?`, time.Now().UTC().Add(-30*24*time.Hour)); err != nil {
+			return fmt.Errorf("prune comment deletion receipts: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO middleman_comment_deletion_receipts
+				(repo_id, item_type, item_number, comment_id, created_at)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(repo_id, item_type, item_number, comment_id) DO NOTHING`,
+			repoID, itemType, itemNumber, commentID, time.Now().UTC()); err != nil {
+			return fmt.Errorf("record comment deletion attempt: %w", err)
+		}
+		return nil
+	})
+}
+
+func (d *DB) CommentDeletionAttemptExists(ctx context.Context, repoID int64, itemType string, itemNumber int, commentID int64) (bool, error) {
+	var exists bool
+	err := d.ro.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM middleman_comment_deletion_receipts
+		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND comment_id = ?
+	)`, repoID, itemType, itemNumber, commentID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check comment deletion attempt: %w", err)
+	}
+	return exists, nil
+}
+
+func (d *DB) DeleteCommentDeletionAttempt(ctx context.Context, repoID int64, itemType string, itemNumber int, commentID int64) error {
+	if _, err := d.rw.ExecContext(ctx, `
+		DELETE FROM middleman_comment_deletion_receipts
+		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND comment_id = ?`,
+		repoID, itemType, itemNumber, commentID); err != nil {
+		return fmt.Errorf("delete comment deletion attempt: %w", err)
+	}
+	return nil
+}
+
 // DeleteMissingMRCommentEvents removes issue_comment rows for a PR whose
 // dedupe keys are absent from the latest GitHub comment list.
 func (d *DB) DeleteMissingMRCommentEvents(

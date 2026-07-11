@@ -2293,18 +2293,51 @@ func (s *Server) deleteComment(ctx context.Context, input *deleteCommentInput) (
 		return nil, problemInternal("validate comment target failed")
 	}
 	if !exists {
+		receipt, receiptErr := s.db.CommentDeletionAttemptExists(ctx, repo.ID, "pr", input.Number, input.CommentID)
+		if receiptErr != nil {
+			return nil, problemInternal("check comment deletion receipt failed")
+		}
+		if receipt {
+			return &deleteCommentOutput{Status: http.StatusNoContent}, nil
+		}
 		return nil, problemNotFound(CodeCommentNotFound, "comment not found for pull request", nil)
 	}
-	if err := mutator.DeleteMergeRequestComment(
-		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID,
-	); err != nil {
+	hadReceipt, err := s.db.CommentDeletionAttemptExists(ctx, repo.ID, "pr", input.Number, input.CommentID)
+	if err != nil {
+		return nil, problemInternal("check comment deletion receipt failed")
+	}
+	var providerErr error
+	err = s.syncer.WithItemWriteLock(repoProviderKind(*repo), repoProviderHost(*repo), repo.RepoPath, "pr", input.Number, func() error {
+		if !hadReceipt {
+			if err := s.db.RecordCommentDeletionAttempt(ctx, repo.ID, "pr", input.Number, input.CommentID); err != nil {
+				return err
+			}
+		}
+		providerErr = mutator.DeleteMergeRequestComment(ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID)
+		if providerErr != nil {
+			if !hadReceipt {
+				return s.db.DeleteCommentDeletionAttempt(ctx, repo.ID, "pr", input.Number, input.CommentID)
+			}
+			return nil
+		}
+		return s.db.DeleteMRCommentEvent(ctx, mrID, input.CommentID)
+	})
+	if err != nil {
+		return nil, problemInternal("persist comment deletion state failed")
+	}
+	if providerErr != nil && errors.Is(providerErr, platform.ErrNotFound) && hadReceipt {
+		if syncErr := s.syncer.SyncMROnProvider(ctx, repoProviderKind(*repo), repoProviderHost(*repo), repo.Owner, repo.Name, input.Number); syncErr == nil {
+			stillExists, checkErr := s.db.MRCommentEventExists(ctx, mrID, input.CommentID)
+			if checkErr == nil && !stillExists {
+				return &deleteCommentOutput{Status: http.StatusNoContent}, nil
+			}
+		}
+	}
+	if providerErr != nil {
 		return nil, providerCallProblemWithDetail(
-			err, string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			providerErr, string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"delete comment on provider failed",
 		)
-	}
-	if err := s.db.DeleteMRCommentEvent(ctx, mrID, input.CommentID); err != nil {
-		return nil, problemInternal("persist deleted comment failed")
 	}
 	return &deleteCommentOutput{Status: http.StatusNoContent}, nil
 }
@@ -2878,18 +2911,51 @@ func (s *Server) deleteIssueComment(
 		return nil, problemInternal("validate comment target failed")
 	}
 	if !exists {
+		receipt, receiptErr := s.db.CommentDeletionAttemptExists(ctx, repo.ID, "issue", input.Number, input.CommentID)
+		if receiptErr != nil {
+			return nil, problemInternal("check comment deletion receipt failed")
+		}
+		if receipt {
+			return &deleteIssueCommentOutput{Status: http.StatusNoContent}, nil
+		}
 		return nil, problemNotFound(CodeCommentNotFound, "comment not found for issue", nil)
 	}
-	if err := mutator.DeleteIssueComment(
-		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID,
-	); err != nil {
+	hadReceipt, err := s.db.CommentDeletionAttemptExists(ctx, repo.ID, "issue", input.Number, input.CommentID)
+	if err != nil {
+		return nil, problemInternal("check comment deletion receipt failed")
+	}
+	var providerErr error
+	err = s.syncer.WithItemWriteLock(repoProviderKind(*repo), repoProviderHost(*repo), repo.RepoPath, "issue", input.Number, func() error {
+		if !hadReceipt {
+			if err := s.db.RecordCommentDeletionAttempt(ctx, repo.ID, "issue", input.Number, input.CommentID); err != nil {
+				return err
+			}
+		}
+		providerErr = mutator.DeleteIssueComment(ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID)
+		if providerErr != nil {
+			if !hadReceipt {
+				return s.db.DeleteCommentDeletionAttempt(ctx, repo.ID, "issue", input.Number, input.CommentID)
+			}
+			return nil
+		}
+		return s.db.DeleteIssueCommentEvent(ctx, issueID, input.CommentID)
+	})
+	if err != nil {
+		return nil, problemInternal("persist comment deletion state failed")
+	}
+	if providerErr != nil && errors.Is(providerErr, platform.ErrNotFound) && hadReceipt {
+		if syncErr := s.syncer.SyncIssueOnProvider(ctx, repoProviderKind(*repo), repoProviderHost(*repo), repo.Owner, repo.Name, input.Number); syncErr == nil {
+			stillExists, checkErr := s.db.IssueCommentEventExists(ctx, issueID, input.CommentID)
+			if checkErr == nil && !stillExists {
+				return &deleteIssueCommentOutput{Status: http.StatusNoContent}, nil
+			}
+		}
+	}
+	if providerErr != nil {
 		return nil, providerCallProblemWithDetail(
-			err, string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			providerErr, string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"delete comment on provider failed",
 		)
-	}
-	if err := s.db.DeleteIssueCommentEvent(ctx, issueID, input.CommentID); err != nil {
-		return nil, problemInternal("persist deleted comment failed")
 	}
 	return &deleteIssueCommentOutput{Status: http.StatusNoContent}, nil
 }

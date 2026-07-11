@@ -6915,6 +6915,13 @@ func TestAPIDeletePrCommentRemovesProviderAndLocalComment(t *testing.T) {
 	events, err := database.ListMREvents(t.Context(), mrID)
 	require.NoError(err)
 	assert.Empty(events)
+
+	retry := httptest.NewRecorder()
+	retryReq := httptest.NewRequest(http.MethodDelete, "/api/v1/pulls/gh/acme/widget/7/comments/9876", nil)
+	retryReq.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(retry, retryReq)
+	assert.Equal(http.StatusNoContent, retry.Code)
+	assert.Equal(int32(1), deleteCalls.Load())
 }
 
 func TestAPIDeleteIssueCommentKeepsLocalCommentWhenProviderRejects(t *testing.T) {
@@ -7016,6 +7023,38 @@ func TestAPIDeleteIssueCommentKeepsLocalCommentWhenProviderReportsNotFound(t *te
 	assert.Equal("keep until deletion is confirmed", events[0].Body)
 }
 
+func TestAPIDeleteIssueCommentReconcilesAmbiguousPriorSuccess(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	commentID := int64(7654)
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	mock := &mockGH{
+		deleteIssueCommentFn: func(context.Context, string, string, int64) error { return platform.ErrNotFound },
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			id, state, title, url, author := int64(500), "open", "issue", "https://github.com/acme/widget/issues/5", "alice"
+			return &gh.Issue{ID: &id, Number: &number, State: &state, Title: &title, HTMLURL: &url, User: &gh.User{Login: &author}, CreatedAt: &now, UpdatedAt: &now}, nil
+		},
+		listIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) { return nil, nil },
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	issueID := seedIssue(t, database, "acme", "widget", 5, "open")
+	repo, err := database.GetRepoByID(t.Context(), 1)
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{IssueID: issueID, PlatformID: &commentID, EventType: "issue_comment", Body: "deleted upstream", CreatedAt: now.Time, DedupeKey: "issue-comment-7654"}}))
+	require.NoError(database.RecordCommentDeletionAttempt(t.Context(), repo.ID, "issue", 5, commentID))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/7654", nil)
+	req.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(rec, req)
+
+	assert.Equal(http.StatusNoContent, rec.Code)
+	events, err := database.ListIssueEvents(t.Context(), issueID)
+	require.NoError(err)
+	assert.Empty(events)
+}
+
 func TestAPIDeleteIssueCommentRemovesProviderAndDetailComment(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -7053,6 +7092,13 @@ func TestAPIDeleteIssueCommentRemovesProviderAndDetailComment(t *testing.T) {
 	var detail issueDetailResponse
 	require.NoError(json.NewDecoder(detailRec.Body).Decode(&detail))
 	assert.Empty(detail.Events)
+
+	retry := httptest.NewRecorder()
+	retryReq := httptest.NewRequest(http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/5432", nil)
+	retryReq.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(retry, retryReq)
+	assert.Equal(http.StatusNoContent, retry.Code)
+	assert.Equal(int32(1), deleteCalls.Load())
 }
 
 func TestAPIDeletePrCommentRejectsAnotherParentBeforeProviderCall(t *testing.T) {

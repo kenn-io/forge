@@ -6960,6 +6960,114 @@ func TestAPIDeletePrCommentCoalescesConcurrentRetries(t *testing.T) {
 	assert.Equal(int32(1), deleteCalls.Load())
 }
 
+func TestAPIDeleteCommentWaitsForInFlightItemSync(t *testing.T) {
+	t.Run("pull request", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		commentID := int64(9878)
+		var deleteCalls atomic.Int32
+		srv, database := setupTestServerWithMock(t, &mockGH{deleteIssueCommentFn: func(context.Context, string, string, int64) error {
+			deleteCalls.Add(1)
+			return nil
+		}})
+		mrID := seedPR(t, database, "acme", "widget", 7)
+		comment := db.MREvent{MergeRequestID: mrID, PlatformID: &commentID, EventType: "issue_comment", CreatedAt: time.Now().UTC(), DedupeKey: "comment-9878"}
+		require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{comment}))
+
+		syncRemovedComment := make(chan struct{})
+		releaseSync := make(chan struct{})
+		syncDone := make(chan error, 1)
+		go func() {
+			syncDone <- srv.syncer.WithItemWriteLock(platform.KindGitHub, "github.com", "acme/widget", "pr", 7, func() error {
+				if err := database.DeleteMRCommentEvent(t.Context(), mrID, commentID); err != nil {
+					return err
+				}
+				close(syncRemovedComment)
+				<-releaseSync
+				return database.UpsertMREvents(t.Context(), []db.MREvent{comment})
+			})
+		}()
+		<-syncRemovedComment
+
+		response := make(chan int, 1)
+		go func() {
+			req := httptest.NewRequest(http.MethodDelete, "/api/v1/pulls/gh/acme/widget/7/comments/9878", nil)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+			response <- rec.Code
+		}()
+		var earlyStatus int
+		select {
+		case earlyStatus = <-response:
+		case <-time.After(250 * time.Millisecond):
+		}
+		close(releaseSync)
+		require.NoError(<-syncDone)
+		status := earlyStatus
+		if status == 0 {
+			status = <-response
+		}
+
+		assert.Zero(earlyStatus)
+		assert.Equal(http.StatusNoContent, status)
+		assert.Equal(int32(1), deleteCalls.Load())
+	})
+
+	t.Run("issue", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		commentID := int64(1235)
+		var deleteCalls atomic.Int32
+		srv, database := setupTestServerWithMock(t, &mockGH{deleteIssueCommentFn: func(context.Context, string, string, int64) error {
+			deleteCalls.Add(1)
+			return nil
+		}})
+		issueID := seedIssue(t, database, "acme", "widget", 5, "open")
+		comment := db.IssueEvent{IssueID: issueID, PlatformID: &commentID, EventType: "issue_comment", CreatedAt: time.Now().UTC(), DedupeKey: "issue-comment-1235"}
+		require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{comment}))
+
+		syncRemovedComment := make(chan struct{})
+		releaseSync := make(chan struct{})
+		syncDone := make(chan error, 1)
+		go func() {
+			syncDone <- srv.syncer.WithItemWriteLock(platform.KindGitHub, "github.com", "acme/widget", "issue", 5, func() error {
+				if err := database.DeleteIssueCommentEvent(t.Context(), issueID, commentID); err != nil {
+					return err
+				}
+				close(syncRemovedComment)
+				<-releaseSync
+				return database.UpsertIssueEvents(t.Context(), []db.IssueEvent{comment})
+			})
+		}()
+		<-syncRemovedComment
+
+		response := make(chan int, 1)
+		go func() {
+			req := httptest.NewRequest(http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/1235", nil)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+			response <- rec.Code
+		}()
+		var earlyStatus int
+		select {
+		case earlyStatus = <-response:
+		case <-time.After(250 * time.Millisecond):
+		}
+		close(releaseSync)
+		require.NoError(<-syncDone)
+		status := earlyStatus
+		if status == 0 {
+			status = <-response
+		}
+
+		assert.Zero(earlyStatus)
+		assert.Equal(http.StatusNoContent, status)
+		assert.Equal(int32(1), deleteCalls.Load())
+	})
+}
+
 func TestAPIDeleteIssueCommentKeepsLocalCommentWhenProviderRejects(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

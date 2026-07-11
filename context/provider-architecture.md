@@ -80,6 +80,9 @@ Rules:
   `internal/server/huma_routes.go::deleteIssueComment`,
   `internal/db/queries.go::ReplaceMRCommentEvents`,
   `internal/db/queries.go::ReplaceIssueCommentEvents`).
+- Comment deletion must acquire the provider-scoped item lock before target-existence
+  or receipt reads decide between `404` and idempotent success
+  (`internal/server/huma_routes.go::deleteComment`).
 - Keep operation availability split by scope. `repoOperations` handles
   repo-level gates: provider capability, write credentials, rate limits, and
   repo-wide viewer permissions. Detail responses may add item-level gates with

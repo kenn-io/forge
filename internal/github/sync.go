@@ -6439,8 +6439,22 @@ func (s *Syncer) fetchProviderIssueDetail(
 	if err != nil {
 		return calls, fmt.Errorf("get issue #%d: %w", number, err)
 	}
+	events, eventsErr := reader.ListIssueEvents(ctx, platformRepoRef(repo), number)
+	calls++
+	if eventsErr != nil && !errors.Is(eventsErr, platform.ErrUnsupportedCapability) {
+		return calls, fmt.Errorf("list issue events for #%d: %w", number, eventsErr)
+	}
 
 	normalized := platform.DBIssue(repoID, issue)
+	if eventsErr == nil {
+		existing, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoID, number)
+		if err != nil {
+			return calls, fmt.Errorf("get existing issue #%d: %w", number, err)
+		}
+		if existing != nil {
+			normalized.CommentCount = existing.CommentCount
+		}
+	}
 	issueID, err := s.db.UpsertIssue(ctx, normalized)
 	if err != nil {
 		return calls, fmt.Errorf(
@@ -6451,26 +6465,22 @@ func (s *Syncer) fetchProviderIssueDetail(
 		return calls, fmt.Errorf("persist labels for issue #%d: %w", number, err)
 	}
 
-	events, err := reader.ListIssueEvents(ctx, platformRepoRef(repo), number)
-	calls++
-	if err != nil && !errors.Is(err, platform.ErrUnsupportedCapability) {
-		return calls, fmt.Errorf("list issue events for #%d: %w", number, err)
-	}
-	if err == nil {
-		dbEvents := make([]db.IssueEvent, 0, len(events))
-		commentDedupeKeys := make([]string, 0, len(events))
+	if eventsErr == nil {
+		commentEvents := make([]db.IssueEvent, 0, len(events))
+		nonCommentEvents := make([]db.IssueEvent, 0, len(events))
 		for _, event := range events {
 			dbEvent := platform.DBIssueEvent(issueID, event)
-			dbEvents = append(dbEvents, dbEvent)
 			if dbEvent.EventType == "issue_comment" {
-				commentDedupeKeys = append(commentDedupeKeys, dbEvent.DedupeKey)
+				commentEvents = append(commentEvents, dbEvent)
+			} else {
+				nonCommentEvents = append(nonCommentEvents, dbEvent)
 			}
 		}
-		if err := s.db.DeleteMissingIssueCommentEvents(ctx, issueID, commentDedupeKeys); err != nil {
-			return calls, fmt.Errorf("delete missing comment events for issue #%d: %w", number, err)
+		if err := s.db.ReplaceIssueCommentEvents(ctx, issueID, commentEvents, nil); err != nil {
+			return calls, fmt.Errorf("replace comment events for issue #%d: %w", number, err)
 		}
-		if err := s.db.UpsertIssueEvents(ctx, dbEvents); err != nil {
-			return calls, fmt.Errorf("upsert issue events for #%d: %w", number, err)
+		if err := s.db.UpsertIssueEvents(ctx, nonCommentEvents); err != nil {
+			return calls, fmt.Errorf("upsert non-comment issue events for #%d: %w", number, err)
 		}
 	}
 

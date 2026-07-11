@@ -7453,6 +7453,86 @@ func TestSyncIssueUsesProviderIssueReader(t *testing.T) {
 	assert.Empty(events)
 }
 
+func TestSyncIssueProviderCommentReplacementRollsBack(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	detailFetchedAt := now.Add(time.Minute)
+	repo := RepoRef{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	}
+	repoID, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	issue := &db.Issue{
+		RepoID:          repoID,
+		PlatformID:      2001,
+		Number:          11,
+		URL:             "https://gitlab.com/acme/widget/-/issues/11",
+		Title:           "Provider issue detail",
+		Author:          "grace",
+		State:           "open",
+		CommentCount:    1,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+		DetailFetchedAt: &detailFetchedAt,
+	}
+	issue.ID, err = database.UpsertIssue(t.Context(), issue)
+	require.NoError(err)
+	oldCommentID := int64(2101)
+	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
+		IssueID: issue.ID, PlatformID: &oldCommentID, EventType: "issue_comment",
+		Body: "old", CreatedAt: now, DedupeKey: "old-comment",
+	}}))
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		CREATE TRIGGER reject_new_provider_issue_comment
+		BEFORE INSERT ON middleman_issue_events
+		WHEN NEW.dedupe_key = 'new-comment'
+		BEGIN SELECT RAISE(ABORT, 'reject new comment'); END`)
+	require.NoError(err)
+
+	newCommentID := int64(2102)
+	secondNewCommentID := int64(2103)
+	provider := &syncTestReadProvider{
+		syncTestProvider: syncTestProvider{kind: platform.KindGitLab, host: "gitlab.com"},
+		issues: []platform.Issue{{
+			Repo: platformRepoRef(repo), PlatformID: 2001, Number: 11,
+			URL: issue.URL, Title: issue.Title, Author: issue.Author, State: "open",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now, CommentCount: 2,
+		}},
+		listIssueReadEvents: []platform.IssueEvent{
+			{
+				Repo: platformRepoRef(repo), PlatformID: newCommentID, IssueNumber: 11,
+				EventType: "issue_comment", Body: "new", CreatedAt: now, DedupeKey: "new-comment",
+			},
+			{
+				Repo: platformRepoRef(repo), PlatformID: secondNewCommentID, IssueNumber: 11,
+				EventType: "issue_comment", Body: "second", CreatedAt: now, DedupeKey: "second-new-comment",
+			},
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncer(nil, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
+	syncer.clients = registry
+
+	require.Error(syncer.SyncIssue(t.Context(), "acme", "widget", 11))
+	events, err := database.ListIssueEvents(t.Context(), issue.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("old-comment", events[0].DedupeKey)
+	stored, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 11)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(1, stored.CommentCount)
+	assert.NotNil(stored.DetailFetchedAt)
+}
+
 func TestOnMRSyncedCalledDuringSync(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -44,6 +44,10 @@ func (c *Client) ListMergeRequestEvents(
 	return c.provider.ListMergeRequestEvents(ctx, ref, number)
 }
 
+func (c *Client) ListMergeRequestComments(ctx context.Context, ref platform.RepoRef, number int) ([]platform.MergeRequestEvent, error) {
+	return c.provider.ListMergeRequestComments(ctx, ref, number)
+}
+
 func (c *Client) ListOpenIssues(ctx context.Context, ref platform.RepoRef) ([]platform.Issue, error) {
 	return c.provider.ListOpenIssues(ctx, ref)
 }
@@ -62,6 +66,10 @@ func (c *Client) ListIssueEvents(
 	number int,
 ) ([]platform.IssueEvent, error) {
 	return c.provider.ListIssueEvents(ctx, ref, number)
+}
+
+func (c *Client) ListIssueComments(ctx context.Context, ref platform.RepoRef, number int) ([]platform.IssueEvent, error) {
+	return c.provider.ListIssueComments(ctx, ref, number)
 }
 
 func (c *Client) ListReleases(ctx context.Context, ref platform.RepoRef) ([]platform.Release, error) {

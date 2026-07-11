@@ -2350,7 +2350,24 @@ func (s *Server) deleteComment(ctx context.Context, input *deleteCommentInput) (
 
 func definitiveCommentDeletionFailure(err error) bool {
 	var providerErr *platform.Error
-	return errors.As(err, &providerErr)
+	if !errors.As(err, &providerErr) {
+		return false
+	}
+	switch providerErr.Code {
+	case platform.ErrCodeUnsupportedCapability,
+		platform.ErrCodeProviderNotConfigured,
+		platform.ErrCodeMissingToken,
+		platform.ErrCodeInvalidRepoRef,
+		platform.ErrCodeInvalidArgument,
+		platform.ErrCodePermissionDenied,
+		platform.ErrCodeNotFound,
+		platform.ErrCodeRateLimited,
+		platform.ErrCodeStaleState,
+		platform.ErrCodeConflict:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussionInput) (*replyToDiscussionOutput, error) {

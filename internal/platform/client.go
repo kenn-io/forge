@@ -57,6 +57,11 @@ type IssueReader interface {
 	ListIssueEvents(ctx context.Context, ref RepoRef, number int) ([]IssueEvent, error)
 }
 
+type CommentReader interface {
+	ListMergeRequestComments(ctx context.Context, ref RepoRef, number int) ([]MergeRequestEvent, error)
+	ListIssueComments(ctx context.Context, ref RepoRef, number int) ([]IssueEvent, error)
+}
+
 type LabelCatalog struct {
 	Labels      []Label
 	NotModified bool

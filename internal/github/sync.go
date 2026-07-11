@@ -599,11 +599,15 @@ func (s *Syncer) RefreshCommentsOnProvider(
 		if err != nil || item == nil {
 			return fmt.Errorf("get pull request for comment refresh: %w", err)
 		}
-		events, err := reader.ListMergeRequestEvents(ctx, platformRepoRef(repo), number)
+		commentReader, ok := reader.(platform.CommentReader)
+		if !ok {
+			return platform.ErrUnsupportedCapability
+		}
+		events, err := commentReader.ListMergeRequestComments(ctx, platformRepoRef(repo), number)
 		if err != nil {
 			return err
 		}
-		return s.replacePlatformMRComments(ctx, item.ID, events)
+		return s.replacePlatformMRComments(ctx, item, events)
 	}
 	reader, err := s.issueReaderFor(repo)
 	if err != nil {
@@ -613,43 +617,53 @@ func (s *Syncer) RefreshCommentsOnProvider(
 	if err != nil || item == nil {
 		return fmt.Errorf("get issue for comment refresh: %w", err)
 	}
-	events, err := reader.ListIssueEvents(ctx, platformRepoRef(repo), number)
+	commentReader, ok := reader.(platform.CommentReader)
+	if !ok {
+		return platform.ErrUnsupportedCapability
+	}
+	events, err := commentReader.ListIssueComments(ctx, platformRepoRef(repo), number)
 	if err != nil {
 		return err
 	}
-	return s.replacePlatformIssueComments(ctx, item.ID, events)
+	return s.replacePlatformIssueComments(ctx, item, events)
 }
 
-func (s *Syncer) replacePlatformMRComments(ctx context.Context, itemID int64, events []platform.MergeRequestEvent) error {
+func (s *Syncer) replacePlatformMRComments(ctx context.Context, item *db.MergeRequest, events []platform.MergeRequestEvent) error {
 	dbEvents := make([]db.MREvent, 0, len(events))
 	keys := make([]string, 0, len(events))
 	for _, event := range events {
 		if event.EventType != "issue_comment" {
 			continue
 		}
-		dbEvent := platform.DBMREvent(itemID, event)
+		dbEvent := platform.DBMREvent(item.ID, event)
 		dbEvents, keys = append(dbEvents, dbEvent), append(keys, dbEvent.DedupeKey)
 	}
-	if err := s.db.DeleteMissingMRCommentEvents(ctx, itemID, keys); err != nil {
+	if err := s.db.DeleteMissingMRCommentEvents(ctx, item.ID, keys); err != nil {
 		return err
 	}
-	return s.db.UpsertMREvents(ctx, dbEvents)
+	if err := s.db.UpsertMREvents(ctx, dbEvents); err != nil {
+		return err
+	}
+	return s.db.UpdateMRDerivedFields(ctx, item.RepoID, item.Number, db.MRDerivedFields{ReviewDecision: item.ReviewDecision, CommentCount: len(dbEvents), LastActivityAt: item.LastActivityAt})
 }
 
-func (s *Syncer) replacePlatformIssueComments(ctx context.Context, itemID int64, events []platform.IssueEvent) error {
+func (s *Syncer) replacePlatformIssueComments(ctx context.Context, item *db.Issue, events []platform.IssueEvent) error {
 	dbEvents := make([]db.IssueEvent, 0, len(events))
 	keys := make([]string, 0, len(events))
 	for _, event := range events {
 		if event.EventType != "issue_comment" {
 			continue
 		}
-		dbEvent := platform.DBIssueEvent(itemID, event)
+		dbEvent := platform.DBIssueEvent(item.ID, event)
 		dbEvents, keys = append(dbEvents, dbEvent), append(keys, dbEvent.DedupeKey)
 	}
-	if err := s.db.DeleteMissingIssueCommentEvents(ctx, itemID, keys); err != nil {
+	if err := s.db.DeleteMissingIssueCommentEvents(ctx, item.ID, keys); err != nil {
 		return err
 	}
-	return s.db.UpsertIssueEvents(ctx, dbEvents)
+	if err := s.db.UpsertIssueEvents(ctx, dbEvents); err != nil {
+		return err
+	}
+	return s.db.UpdateIssueDerivedFields(ctx, item.RepoID, item.Number, db.IssueDerivedFields{CommentCount: len(dbEvents), LastActivityAt: item.LastActivityAt})
 }
 
 // ensureRunCtx lazily initializes runCtx/runCancel. Safe to call

@@ -103,6 +103,8 @@ git commit -m "feat: delete comments through every provider"
 - Modify: `internal/server/huma_routes.go`
 - Modify: `internal/server/provider_route_wrappers.go`
 - Modify: `internal/server/api_test.go`
+- Modify: `internal/github/sync.go`
+- Modify: `internal/github/sync_test.go`
 - Regenerate: `frontend/openapi/openapi.yaml`
 - Regenerate: `packages/ui/src/api/generated/schema.ts`
 - Regenerate: `internal/apiclient/generated/client.gen.go`
@@ -141,7 +143,7 @@ DELETE FROM middleman_mr_events
 WHERE merge_request_id = ? AND platform_id = ? AND event_type = 'issue_comment'
 ```
 
-Register paired operations with `DefaultStatus: http.StatusNoContent` and add a typed `delete_comment` repository operation derived from comment mutation, write credentials, and REST rate state. Persist a bounded deletion-attempt receipt before the provider call. Remove it after an ordinary first-attempt failure; retain it across success or ambiguous interruption. A retry may reconcile typed not-found only after an authoritative sync confirms absence, and a retained receipt makes a lost `204` retry idempotent. Serialize provider deletion/local writes with item detail synchronization on full provider identity so stale pre-delete fetches cannot restore the comment. A zero-row local delete remains idempotent after provider success.
+Register paired operations with `DefaultStatus: http.StatusNoContent` and add a typed `delete_comment` repository operation derived from comment mutation, write credentials, and REST rate state. Read/create the bounded deletion-attempt receipt inside the item lock before the provider call. Remove a receipt created by this request only after a typed, definitive provider rejection; retain it across success or ambiguous transport failure. A retry may reconcile typed not-found only after a dedicated unconditional comment refresh confirms absence, and a retained receipt makes a lost `204` retry idempotent. Serialize provider deletion/local writes with item detail synchronization on full provider identity so concurrent deletes coalesce and stale pre-delete fetches cannot restore the comment.
 
 - [ ] **Step 4: Generate clients and review the contract**
 
@@ -160,7 +162,7 @@ Run the command from Step 2. Expected: PASS.
 - [ ] **Step 6: Commit API support**
 
 ```bash
-git add internal/db internal/server internal/apiclient/generated/client.gen.go frontend/openapi/openapi.yaml packages/ui/src/api/generated/schema.ts
+git add internal/db internal/github/sync.go internal/github/sync_test.go internal/server internal/apiclient/generated/client.gen.go frontend/openapi/openapi.yaml packages/ui/src/api/generated/schema.ts
 git commit -m "feat: expose provider-aware comment deletion"
 ```
 

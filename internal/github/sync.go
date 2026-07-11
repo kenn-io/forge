@@ -550,6 +550,108 @@ func (s *Syncer) lockItemWrite(kind platform.Kind, host, repoPath, itemType stri
 	}
 }
 
+func (s *Syncer) RefreshCommentsOnProvider(
+	ctx context.Context,
+	kind platform.Kind,
+	host, owner, name string,
+	itemType string,
+	number int,
+) error {
+	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
+	if !ok {
+		return fmt.Errorf("repo %s/%s on %s/%s is not tracked", owner, name, kind, host)
+	}
+	repo.Owner, repo.Name, repo.PlatformHost = owner, name, repoHost(repo)
+	unlock := s.lockItemWrite(kind, repo.PlatformHost, repo.RepoPath, itemType, number)
+	defer unlock()
+	repoRow, err := s.db.GetRepoByIdentity(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	if err != nil || repoRow == nil {
+		return fmt.Errorf("get comment refresh repo: %w", err)
+	}
+	if kind == platform.KindGitHub {
+		client, err := s.clientFor(repo)
+		if err != nil {
+			return err
+		}
+		comments, err := client.ListIssueComments(ctx, owner, name, number)
+		if err != nil {
+			return fmt.Errorf("list authoritative comments: %w", err)
+		}
+		if itemType == "pr" {
+			item, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoRow.ID, number)
+			if err != nil || item == nil {
+				return fmt.Errorf("get pull request for comment refresh: %w", err)
+			}
+			return s.persistPRComments(ctx, item, comments)
+		}
+		item, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoRow.ID, number)
+		if err != nil || item == nil {
+			return fmt.Errorf("get issue for comment refresh: %w", err)
+		}
+		return s.persistIssueComments(ctx, item, comments)
+	}
+	if itemType == "pr" {
+		reader, err := s.mergeRequestReaderFor(repo)
+		if err != nil {
+			return err
+		}
+		item, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoRow.ID, number)
+		if err != nil || item == nil {
+			return fmt.Errorf("get pull request for comment refresh: %w", err)
+		}
+		events, err := reader.ListMergeRequestEvents(ctx, platformRepoRef(repo), number)
+		if err != nil {
+			return err
+		}
+		return s.replacePlatformMRComments(ctx, item.ID, events)
+	}
+	reader, err := s.issueReaderFor(repo)
+	if err != nil {
+		return err
+	}
+	item, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoRow.ID, number)
+	if err != nil || item == nil {
+		return fmt.Errorf("get issue for comment refresh: %w", err)
+	}
+	events, err := reader.ListIssueEvents(ctx, platformRepoRef(repo), number)
+	if err != nil {
+		return err
+	}
+	return s.replacePlatformIssueComments(ctx, item.ID, events)
+}
+
+func (s *Syncer) replacePlatformMRComments(ctx context.Context, itemID int64, events []platform.MergeRequestEvent) error {
+	dbEvents := make([]db.MREvent, 0, len(events))
+	keys := make([]string, 0, len(events))
+	for _, event := range events {
+		if event.EventType != "issue_comment" {
+			continue
+		}
+		dbEvent := platform.DBMREvent(itemID, event)
+		dbEvents, keys = append(dbEvents, dbEvent), append(keys, dbEvent.DedupeKey)
+	}
+	if err := s.db.DeleteMissingMRCommentEvents(ctx, itemID, keys); err != nil {
+		return err
+	}
+	return s.db.UpsertMREvents(ctx, dbEvents)
+}
+
+func (s *Syncer) replacePlatformIssueComments(ctx context.Context, itemID int64, events []platform.IssueEvent) error {
+	dbEvents := make([]db.IssueEvent, 0, len(events))
+	keys := make([]string, 0, len(events))
+	for _, event := range events {
+		if event.EventType != "issue_comment" {
+			continue
+		}
+		dbEvent := platform.DBIssueEvent(itemID, event)
+		dbEvents, keys = append(dbEvents, dbEvent), append(keys, dbEvent.DedupeKey)
+	}
+	if err := s.db.DeleteMissingIssueCommentEvents(ctx, itemID, keys); err != nil {
+		return err
+	}
+	return s.db.UpsertIssueEvents(ctx, dbEvents)
+}
+
 // ensureRunCtx lazily initializes runCtx/runCancel. Safe to call
 // multiple times; the first caller wins and later calls are no-ops.
 func (s *Syncer) ensureRunCtx() context.Context {

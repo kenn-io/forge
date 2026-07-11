@@ -6924,6 +6924,42 @@ func TestAPIDeletePrCommentRemovesProviderAndLocalComment(t *testing.T) {
 	assert.Equal(int32(1), deleteCalls.Load())
 }
 
+func TestAPIDeletePrCommentCoalescesConcurrentRetries(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	commentID := int64(9877)
+	providerStarted := make(chan struct{})
+	releaseProvider := make(chan struct{})
+	var deleteCalls atomic.Int32
+	mock := &mockGH{deleteIssueCommentFn: func(context.Context, string, string, int64) error {
+		deleteCalls.Add(1)
+		close(providerStarted)
+		<-releaseProvider
+		return nil
+	}}
+	srv, database := setupTestServerWithMock(t, mock)
+	mrID := seedPR(t, database, "acme", "widget", 7)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: mrID, PlatformID: &commentID, EventType: "issue_comment", CreatedAt: time.Now().UTC(), DedupeKey: "comment-9877"}}))
+
+	responses := make(chan int, 2)
+	deleteRequest := func() {
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/pulls/gh/acme/widget/7/comments/9877", nil)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		responses <- rec.Code
+	}
+	go deleteRequest()
+	<-providerStarted
+	go deleteRequest()
+	time.Sleep(25 * time.Millisecond)
+	close(releaseProvider)
+
+	assert.Equal(http.StatusNoContent, <-responses)
+	assert.Equal(http.StatusNoContent, <-responses)
+	assert.Equal(int32(1), deleteCalls.Load())
+}
+
 func TestAPIDeleteIssueCommentKeepsLocalCommentWhenProviderRejects(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -7028,8 +7064,14 @@ func TestAPIDeleteIssueCommentReconcilesAmbiguousPriorSuccess(t *testing.T) {
 	require := require.New(t)
 	commentID := int64(7654)
 	now := gh.Timestamp{Time: time.Now().UTC()}
+	var deleteCalls atomic.Int32
 	mock := &mockGH{
-		deleteIssueCommentFn: func(context.Context, string, string, int64) error { return platform.ErrNotFound },
+		deleteIssueCommentFn: func(context.Context, string, string, int64) error {
+			if deleteCalls.Add(1) == 1 {
+				return errors.New("connection reset after provider accepted deletion")
+			}
+			return platform.ErrNotFound
+		},
 		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
 			id, state, title, url, author := int64(500), "open", "issue", "https://github.com/acme/widget/issues/5", "alice"
 			return &gh.Issue{ID: &id, Number: &number, State: &state, Title: &title, HTMLURL: &url, User: &gh.User{Login: &author}, CreatedAt: &now, UpdatedAt: &now}, nil
@@ -7038,18 +7080,21 @@ func TestAPIDeleteIssueCommentReconcilesAmbiguousPriorSuccess(t *testing.T) {
 	}
 	srv, database := setupTestServerWithMock(t, mock)
 	issueID := seedIssue(t, database, "acme", "widget", 5, "open")
-	repo, err := database.GetRepoByID(t.Context(), 1)
-	require.NoError(err)
-	require.NotNil(repo)
 	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{IssueID: issueID, PlatformID: &commentID, EventType: "issue_comment", Body: "deleted upstream", CreatedAt: now.Time, DedupeKey: "issue-comment-7654"}}))
-	require.NoError(database.RecordCommentDeletionAttempt(t.Context(), repo.ID, "issue", 5, commentID))
+
+	first := httptest.NewRecorder()
+	firstReq := httptest.NewRequest(http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/7654", nil)
+	firstReq.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(first, firstReq)
+	assert.Equal(http.StatusBadGateway, first.Code)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/7654", nil)
-	req.Header.Set("Content-Type", "application/json")
-	srv.ServeHTTP(rec, req)
+	retryReq := httptest.NewRequest(http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/7654", nil)
+	retryReq.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(rec, retryReq)
 
 	assert.Equal(http.StatusNoContent, rec.Code)
+	assert.Equal(int32(2), deleteCalls.Load())
 	events, err := database.ListIssueEvents(t.Context(), issueID)
 	require.NoError(err)
 	assert.Empty(events)

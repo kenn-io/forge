@@ -2679,7 +2679,8 @@ func (d *DB) CommentDeletionAttemptExists(ctx context.Context, repoID int64, ite
 	err := d.ro.QueryRowContext(ctx, `SELECT EXISTS(
 		SELECT 1 FROM middleman_comment_deletion_receipts
 		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND comment_id = ?
-	)`, repoID, itemType, itemNumber, commentID).Scan(&exists)
+			AND created_at >= ?
+	)`, repoID, itemType, itemNumber, commentID, time.Now().UTC().Add(-30*24*time.Hour)).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("check comment deletion attempt: %w", err)
 	}

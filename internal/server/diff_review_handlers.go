@@ -261,6 +261,10 @@ func (s *Server) applyReviewSuggestions(
 	if rate := s.mutationOperationRateLimit(*repo, descApplyReviewSuggestion); rate.limited {
 		return nil, problemOperationRateLimited(*repo, rate)
 	}
+	unlockProviderWrites := s.syncer.LockMRProviderWrites(
+		repoProviderKind(*repo), repoProviderHost(*repo), repo.Owner, repo.Name, input.Number,
+	)
+	defer unlockProviderWrites()
 
 	result, err := applier.ApplyReviewSuggestions(
 		ctx,

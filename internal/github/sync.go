@@ -492,6 +492,7 @@ type Syncer struct {
 	commentRefreshMu         sync.Mutex
 	pendingPRCommentSyncs    []queuedPRCommentSync
 	pendingIssueCommentSyncs []queuedIssueCommentSync
+	mrProviderWriteLocks     sync.Map
 }
 
 type queuedPRCommentSync struct {
@@ -502,6 +503,29 @@ type queuedPRCommentSync struct {
 type queuedIssueCommentSync struct {
 	repo   RepoRef
 	number int
+}
+
+func (s *Syncer) lockMRProviderWrites(repo RepoRef, number int) func() {
+	key := fmt.Sprintf(
+		"%s:%s:%s/%s#%d",
+		repoPlatform(repo), repoHost(repo), repo.Owner, repo.Name, number,
+	)
+	value, _ := s.mrProviderWriteLocks.LoadOrStore(key, &sync.Mutex{})
+	mu := value.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
+// LockMRProviderWrites serializes a provider mutation with snapshot-derived
+// persistence for the same provider-aware pull request.
+func (s *Syncer) LockMRProviderWrites(
+	kind platform.Kind,
+	host, owner, name string,
+	number int,
+) func() {
+	return s.lockMRProviderWrites(RepoRef{
+		Platform: kind, PlatformHost: host, Owner: owner, Name: name,
+	}, number)
 }
 
 // ensureRunCtx lazily initializes runCtx/runCancel. Safe to call
@@ -4592,6 +4616,8 @@ func (s *Syncer) indexUpsertMergeRequestAtGeneration(
 ) error {
 	normalized := platform.DBMergeRequest(repoID, mr)
 	normalized.ProviderSnapshotGeneration = snapshotGeneration
+	unlock := s.lockMRProviderWrites(repo, mr.Number)
+	defer unlock()
 
 	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
 		ctx, repoID, mr.Number,
@@ -4704,6 +4730,8 @@ func (s *Syncer) indexUpsertMR(
 	if err != nil {
 		return fmt.Errorf("normalize MR #%d: %w", ghPR.GetNumber(), err)
 	}
+	unlock := s.lockMRProviderWrites(repo, ghPR.GetNumber())
+	defer unlock()
 
 	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
 		ctx, repoID, ghPR.GetNumber(),
@@ -5253,6 +5281,8 @@ func (s *Syncer) syncOpenMRFromBulkAtGeneration(
 		return fmt.Errorf("normalize MR #%d: %w", number, err)
 	}
 	normalized.ProviderSnapshotGeneration = snapshotGeneration
+	unlock := s.lockMRProviderWrites(repo, number)
+	defer unlock()
 
 	// Preserve derived fields that NormalizePR doesn't populate.
 	// Without this, upsert overwrites them with zero values; if
@@ -5625,6 +5655,8 @@ func (s *Syncer) fetchMRDetail(
 		return calls, fmt.Errorf("normalize full PR #%d: %w", number, err)
 	}
 	normalized.ProviderSnapshotGeneration = snapshotGeneration
+	unlock := s.lockMRProviderWrites(repo, number)
+	defer unlock()
 	preserveMergeableStateIfOmitted(normalized, existing)
 
 	if normalized.Author != "" &&
@@ -5865,6 +5897,8 @@ func (s *Syncer) fetchProviderMRDetail(
 
 	normalized := platform.DBMergeRequest(repoID, mr)
 	normalized.ProviderSnapshotGeneration = snapshotGeneration
+	unlock := s.lockMRProviderWrites(repo, number)
+	defer unlock()
 	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
 		ctx, repoID, number,
 	)
@@ -7674,6 +7708,7 @@ func (s *Syncer) backfillRepo(
 					break
 				}
 				normalized.ProviderSnapshotGeneration = snapshotGeneration
+				unlock := s.lockMRProviderWrites(repo, ghPR.GetNumber())
 				mrID, accepted, uErr := s.db.UpsertMergeRequestSnapshot(
 					ctx, normalized,
 				)
@@ -7683,10 +7718,12 @@ func (s *Syncer) backfillRepo(
 						"number", ghPR.GetNumber(),
 						"err", uErr,
 					)
+					unlock()
 					pageFailed = true
 					break
 				}
 				if !accepted {
+					unlock()
 					continue
 				}
 				if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
@@ -7695,9 +7732,11 @@ func (s *Syncer) backfillRepo(
 						"number", ghPR.GetNumber(),
 						"err", err,
 					)
+					unlock()
 					pageFailed = true
 					break
 				}
+				unlock()
 			}
 			if pageFailed {
 				prPage--
@@ -8023,6 +8062,8 @@ func (s *Syncer) syncMRForRepo(
 		return fmt.Errorf("get MR %s/%s#%d: provider returned no merge request", owner, name, number)
 	}
 	normalized.ProviderSnapshotGeneration = snapshotGeneration
+	unlock := s.lockMRProviderWrites(repo, number)
+	defer unlock()
 	headChanged := existing != nil &&
 		existing.PlatformHeadSHA != normalized.PlatformHeadSHA
 	if existing != nil {
@@ -8557,6 +8598,8 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 			number,
 		)
 	}
+	unlock := s.lockMRProviderWrites(repo, number)
+	defer unlock()
 
 	state := ghPR.GetState()
 	if pullRequestWasMerged(ghPR) {
@@ -8765,6 +8808,8 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 	}
 	normalized := platform.DBMergeRequest(repoID, mr)
 	normalized.ProviderSnapshotGeneration = snapshotGeneration
+	unlock := s.lockMRProviderWrites(repo, number)
+	defer unlock()
 	mrID, accepted, err := s.db.UpsertMergeRequestSnapshot(ctx, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert closed MR #%d: %w", number, err)

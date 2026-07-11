@@ -53,14 +53,14 @@ describe("ApproveButton head conflicts", () => {
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    const dialog = screen.getByRole("dialog", { name: "Approve pull request" });
+    const dialog = screen.getByRole("dialog", { name: "Submit pull request review" });
     await fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }));
 
     await waitFor(() => expect(onheadconflict).toHaveBeenCalledWith("stale_state", undefined));
-    expect(screen.queryByRole("dialog", { name: "Approve pull request" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
 
     await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    expect(screen.getByRole("dialog", { name: "Approve pull request" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Submit pull request review" })).toBeTruthy();
     expect(screen.queryByText("target changed since it was reviewed; refresh and retry")).toBeNull();
   });
 
@@ -99,7 +99,7 @@ describe("ApproveButton head conflicts", () => {
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    const dialog = screen.getByRole("dialog", { name: "Approve pull request" });
+    const dialog = screen.getByRole("dialog", { name: "Submit pull request review" });
     await fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }));
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));

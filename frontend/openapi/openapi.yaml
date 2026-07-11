@@ -5746,6 +5746,40 @@ components:
       required:
         - worktree_base_path
       type: object
+    RequestChangesPRHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RequestChangesPRHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+        expected_head_sha:
+          type: string
+      required:
+        - body
+      type: object
+    RequestChangesPRInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RequestChangesPRInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+        expected_head_sha:
+          type: string
+      required:
+        - body
+      type: object
     ResolveDiscussionHostInputBody:
       additionalProperties: false
       properties:
@@ -10769,6 +10803,58 @@ paths:
       summary: Mark pull request ready for review
       tags:
         - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/request-changes:
+    post:
+      operationId: request-pull-changes-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestChangesPRHostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Request pull request changes
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft:
     delete:
       operationId: discard-pr-review-draft-on-host
@@ -15178,6 +15264,53 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Mark pull request ready for review
+      tags:
+        - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/request-changes:
+    post:
+      operationId: request-pull-changes
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestChangesPRInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Request pull request changes
       tags:
         - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/review-draft:

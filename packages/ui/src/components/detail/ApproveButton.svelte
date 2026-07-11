@@ -3,7 +3,9 @@
   import CheckIcon from "@lucide/svelte/icons/check";
   import { tick } from "svelte";
   import { getClient, getStores } from "../../context.js";
-    import { runApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
+  import { isProblem, problemConflictContext, problemConflictReason } from "../../api/problems.js";
+  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
+  import { runApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
 
   const client = getClient();
   const { detail, pulls } = getStores();
@@ -23,6 +25,7 @@
     platformHeadSha?: string | undefined;
     /** capabilities.mutation_head_binding for this repo's provider. */
     requireHeadPin?: boolean;
+    supportedReviewActions?: string[];
     onheadconflict?: ((reason: "stale_state" | "head_unknown", context?: string) => void) | undefined;
     oncompleted?: (() => void) | undefined;
     /** Tooltip override; pass the unavailable_reason when disabling. */
@@ -41,6 +44,7 @@
     expectedHeadSha,
     platformHeadSha,
     requireHeadPin = false,
+    supportedReviewActions = [],
     onheadconflict,
     oncompleted,
     title = undefined,
@@ -54,8 +58,10 @@
   let expanded = $state(false);
   let body = $state("");
   let submitting = $state(false);
+  let submittingAction = $state<"approve" | "request_changes" | null>(null);
   let error = $state<string | null>(null);
   let commentInput = $state<HTMLTextAreaElement | undefined>();
+  const canRequestChanges = $derived(supportedReviewActions.includes("request_changes"));
 
   // Reset draft state on full provider-aware PR identity change so an
   // open form with PR A's body or head pin cannot submit to PR B once
@@ -115,6 +121,7 @@
   async function handleApprove(): Promise<void> {
     if (disabled || submitting) return;
     submitting = true;
+    submittingAction = "approve";
     error = null;
     try {
       await runApprovePR(buildInput());
@@ -127,6 +134,47 @@
       }
     } finally {
       submitting = false;
+      submittingAction = null;
+    }
+  }
+
+  async function handleRequestChanges(): Promise<void> {
+    if (disabled || submitting || body.trim() === "") return;
+    submitting = true;
+    submittingAction = "request_changes";
+    error = null;
+    try {
+      const { error: requestError } = await client.POST(providerItemPath("pulls", {
+        provider, platformHost, owner, name, repoPath,
+      }, "/request-changes"), {
+        params: { path: { ...providerRouteParams({ provider, platformHost, owner, name, repoPath }), number } },
+        body: {
+          body: body.trim(),
+          ...(pinAtOpen !== "" && { expected_head_sha: pinAtOpen }),
+        },
+      });
+      if (requestError) {
+        const reason = isProblem(requestError) ? problemConflictReason(requestError) : undefined;
+        if (reason === "stale_state" || reason === "head_unknown") {
+          handleHeadConflict(
+            reason,
+            isProblem(requestError) ? problemConflictContext(requestError) : undefined,
+          );
+        }
+        throw new Error(requestError.detail ?? requestError.title ?? "failed to request changes");
+      }
+      await detail.loadDetail(owner, name, number, { provider, platformHost, repoPath });
+      await pulls.loadPulls();
+      body = "";
+      expanded = false;
+      oncompleted?.();
+    } catch (err) {
+      if (expanded) {
+        error = err instanceof Error ? err.message : String(err);
+      }
+    } finally {
+      submitting = false;
+      submittingAction = null;
     }
   }
 </script>
@@ -154,7 +202,7 @@
   </Button>
 
   {#if expanded}
-    <div class="approve-popover kit-popover-card" role="dialog" aria-label="Approve pull request">
+    <div class="approve-popover kit-popover-card" role="dialog" aria-label="Submit pull request review">
       <textarea
         bind:this={commentInput}
         class="approve-comment"
@@ -175,6 +223,20 @@
         >
           Cancel
         </Button>
+        {#if canRequestChanges}
+          <Button
+            class="btn btn--request-changes"
+            onclick={() => void handleRequestChanges()}
+            disabled={submitting || disabled || body.trim() === ""}
+            tone="danger"
+            surface="solid"
+            title={body.trim() === ""
+              ? "Add a comment explaining the requested changes"
+              : "Submit a review requesting changes on this pull request"}
+          >
+            {submittingAction === "request_changes" ? "Submitting…" : "Request changes"}
+          </Button>
+        {/if}
         <Button
           class="btn btn--primary btn--green"
           onclick={() => void handleApprove()}
@@ -183,7 +245,7 @@
           surface="solid"
           title="Submit an approving code review on this pull request"
         >
-          {submitting ? "Approving\u2026" : "Approve"}
+          {submittingAction === "approve" ? "Approving\u2026" : "Approve"}
         </Button>
       </div>
     </div>

@@ -1427,6 +1427,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/request-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request pull request changes */
+        post: operations["request-pull-changes-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft": {
         parameters: {
             query?: never;
@@ -3031,6 +3048,23 @@ export interface paths {
         put?: never;
         /** Mark pull request ready for review */
         post: operations["mark-pull-ready-for-review"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/request-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request pull request changes */
+        post: operations["request-pull-changes"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6735,6 +6769,26 @@ export interface components {
              */
             readonly $schema?: string;
             worktree_base_path: string;
+        };
+        RequestChangesPRHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RequestChangesPRHostInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            expected_head_sha?: string;
+        };
+        RequestChangesPRInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RequestChangesPRInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            expected_head_sha?: string;
         };
         ResolveDiscussionHostInputBody: {
             /**
@@ -10489,6 +10543,45 @@ export interface operations {
             };
         };
     };
+    "request-pull-changes-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestChangesPRHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "get-pr-review-draft-on-host": {
         parameters: {
             query?: never;
@@ -14128,6 +14221,44 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "request-pull-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestChangesPRInputBody"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {

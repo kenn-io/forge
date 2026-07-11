@@ -73,6 +73,7 @@ type PullSuffix =
   | "/merge"
   | "/merge/deferred"
   | "/ready-for-review"
+  | "/request-changes"
   | "/reviewers"
   | "/discussions/{discussion_id}/reply"
   | "/review-draft"

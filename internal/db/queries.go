@@ -2694,6 +2694,32 @@ func (d *DB) CommentDeletionAttemptExists(ctx context.Context, repoID int64, ite
 	return exists, nil
 }
 
+func (d *DB) CommentDeletionAttemptIDs(ctx context.Context, repoID int64, itemType string, itemNumber int) ([]int64, error) {
+	rows, err := d.ro.QueryContext(ctx, `
+		SELECT comment_id FROM middleman_comment_deletion_receipts
+		WHERE repo_id = ? AND item_type = ? AND item_number = ?
+			AND created_at >= ?
+		ORDER BY comment_id`,
+		repoID, itemType, itemNumber, time.Now().UTC().Add(-30*24*time.Hour))
+	if err != nil {
+		return nil, fmt.Errorf("list comment deletion attempts: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan comment deletion attempt: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate comment deletion attempts: %w", err)
+	}
+	return ids, nil
+}
+
 func (d *DB) DeleteCommentDeletionAttempt(ctx context.Context, repoID int64, itemType string, itemNumber int, commentID int64) error {
 	if _, err := d.rw.ExecContext(ctx, `
 		DELETE FROM middleman_comment_deletion_receipts

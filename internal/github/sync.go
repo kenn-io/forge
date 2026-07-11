@@ -4897,6 +4897,25 @@ func (s *Syncer) refreshPRCommentsForItem(
 	repo RepoRef,
 	pr *db.MergeRequest,
 ) {
+	if pr == nil {
+		return
+	}
+	number := pr.Number
+	unlock := s.lockItemWrite(
+		repoPlatform(repo), repoHost(repo), platformRepoRef(repo).RepoPath,
+		"pr", number,
+	)
+	defer unlock()
+
+	pr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, pr.RepoID, number)
+	if err != nil {
+		slog.Warn("comment refresh: reload PR failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+		return
+	}
 	if pr == nil || pr.DetailFetchedAt == nil {
 		return
 	}
@@ -4934,6 +4953,25 @@ func (s *Syncer) refreshIssueCommentsForItem(
 	repo RepoRef,
 	issue *db.Issue,
 ) {
+	if issue == nil {
+		return
+	}
+	number := issue.Number
+	unlock := s.lockItemWrite(
+		repoPlatform(repo), repoHost(repo), platformRepoRef(repo).RepoPath,
+		"issue", number,
+	)
+	defer unlock()
+
+	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, issue.RepoID, number)
+	if err != nil {
+		slog.Warn("comment refresh: reload issue failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+		return
+	}
 	if issue == nil || issue.DetailFetchedAt == nil {
 		return
 	}
@@ -4963,6 +5001,55 @@ func (s *Syncer) refreshIssueCommentsForItem(
 			"err", err,
 		)
 	}
+}
+
+// commentsForBulkPersistence validates a pre-fetched GraphQL comment snapshot
+// against recent deletion attempts. A matching receipt means the provider may
+// have changed after the bulk request began, so re-read the authoritative
+// comment list while the caller holds the item write lock.
+func (s *Syncer) commentsForBulkPersistence(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	itemType string,
+	number int,
+	comments []*gh.IssueComment,
+) ([]*gh.IssueComment, error) {
+	receiptIDs, err := s.db.CommentDeletionAttemptIDs(
+		ctx, repoID, itemType, number,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(receiptIDs) == 0 {
+		return comments, nil
+	}
+	receipts := make(map[int64]struct{}, len(receiptIDs))
+	for _, id := range receiptIDs {
+		receipts[id] = struct{}{}
+	}
+
+	for _, comment := range comments {
+		if comment == nil || comment.GetID() == 0 {
+			continue
+		}
+		if _, exists := receipts[comment.GetID()]; !exists {
+			continue
+		}
+
+		client, err := s.clientFor(repo)
+		if err != nil {
+			return nil, err
+		}
+		fresh, err := client.ListIssueComments(
+			ctx, repo.Owner, repo.Name, number,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("list authoritative comments: %w", err)
+		}
+		return fresh, nil
+	}
+	return comments, nil
 }
 
 func (s *Syncer) resetPendingCommentSyncs() {
@@ -5208,6 +5295,24 @@ func (s *Syncer) syncOpenIssueFromBulk(
 	bulk *BulkIssue,
 ) error {
 	number := bulk.Issue.GetNumber()
+	unlock := s.lockItemWrite(
+		repoPlatform(repo), repoHost(repo), platformRepoRef(repo).RepoPath,
+		"issue", number,
+	)
+	defer unlock()
+
+	if bulk.CommentsComplete && bulk.TimelineComplete {
+		comments, err := s.commentsForBulkPersistence(
+			ctx, repo, repoID, "issue", number, bulk.Comments,
+		)
+		if err != nil {
+			return fmt.Errorf("validate issue #%d bulk comments: %w", number, err)
+		}
+		bulkCopy := *bulk
+		bulkCopy.Comments = comments
+		bulk = &bulkCopy
+	}
+
 	normalized, err := NormalizeIssue(repoID, bulk.Issue)
 	if err != nil {
 		return fmt.Errorf("normalize issue #%d: %w", number, err)
@@ -5327,6 +5432,24 @@ func (s *Syncer) syncOpenMRFromBulk(
 	cloneFetchOK bool,
 ) error {
 	number := bulk.PR.GetNumber()
+	unlock := s.lockItemWrite(
+		repoPlatform(repo), repoHost(repo), platformRepoRef(repo).RepoPath,
+		"pr", number,
+	)
+	defer unlock()
+
+	if bulk.CommentsComplete {
+		comments, err := s.commentsForBulkPersistence(
+			ctx, repo, repoID, "pr", number, bulk.Comments,
+		)
+		if err != nil {
+			return fmt.Errorf("validate MR #%d bulk comments: %w", number, err)
+		}
+		bulkCopy := *bulk
+		bulkCopy.Comments = comments
+		bulk = &bulkCopy
+	}
+
 	normalized, err := NormalizePR(repoID, bulk.PR)
 	if err != nil {
 		return fmt.Errorf("normalize MR #%d: %w", number, err)

@@ -310,9 +310,12 @@ Header/navigation changes:
 Kata frontend adaptation:
 
 - Keep the existing task workspace behavior and daemon switcher semantics.
-- Ready Kata workspaces use the same unique branch/upstream/HEAD PR association as
-  issue workspaces; refresh must reveal a pushed PR without replacing the Kata source
-  identity (`internal/workspace/monitor.go::workspacePRMonitorEligible`).
+- Ready Kata workspaces use the issue-workspace association order: prefer one unique
+  upstream branch/remote match, then one unique local branch/HEAD match; absent or
+  ambiguous matches stay unassociated (`internal/workspace/monitor.go::detectAssociatedPR`).
+- Association uses repo sync and local Git independently of Kata daemon availability,
+  and must not change `ItemType`, `ItemKey`, or `KataMetadata`
+  (`internal/workspace/monitor.go::refreshWorkspaceAssociation`).
 - Treat task lists as trees: a row stays out of the top-level projection only
   when its parent is present in the same result set (so it can fold under that
   ancestor once expanded). A child whose parent is absent — e.g. a search or

@@ -2395,6 +2395,17 @@ func TestReconcileProviderHeadMutationSnapshotIsAtomic(t *testing.T) {
 
 	changed := testMR(repoID, 7, withMRActivity(baseTime().Add(2*time.Minute)))
 	changed.PlatformHeadSHA = "provider-head"
+	changed.ProviderSnapshotGeneration = generation - 1
+	_, _, err = d.ReconcileProviderHeadMutationSnapshot(ctx, changed)
+	require.ErrorContains(err, "authoritative provider mutation snapshot was rejected")
+	inProgress, err = d.ProviderHeadMutationInProgress(ctx, repoID, 7)
+	require.NoError(err)
+	assert.True(inProgress)
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("reviewed-head", got.PlatformHeadSHA)
+
 	changed.ProviderSnapshotGeneration = generation
 	canceledCtx, cancel := context.WithCancel(ctx)
 	cancel()
@@ -2407,7 +2418,7 @@ func TestReconcileProviderHeadMutationSnapshotIsAtomic(t *testing.T) {
 	_, accepted, err = d.ReconcileProviderHeadMutationSnapshot(ctx, changed)
 	require.NoError(err)
 	assert.True(accepted)
-	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	got, err = d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal("provider-head", got.PlatformHeadSHA)

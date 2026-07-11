@@ -2279,6 +2279,7 @@ func (d *DB) UpsertMergeRequestSnapshot(
 		                                THEN middleman_merge_requests.reviewers_json
 		                                ELSE excluded.reviewers_json END
 		WHERE excluded.updated_at >= middleman_merge_requests.updated_at
+		  AND middleman_merge_requests.provider_mutation_in_progress = 0
 		  AND middleman_merge_requests.pending_provider_head_generation <= excluded.provider_snapshot_generation
 		  AND middleman_merge_requests.provider_snapshot_generation <= excluded.provider_snapshot_generation`,
 		mr.RepoID, mr.PlatformID, mr.PlatformExternalID, mr.Number, mr.URL, mr.Title,
@@ -3152,6 +3153,7 @@ func (d *DB) UpdateClosedMRStateFromSnapshot(
 		    pending_provider_head_generation = 0,
 		    provider_snapshot_generation = MAX(provider_snapshot_generation, ?)
 		WHERE repo_id = ? AND number = ?
+		  AND provider_mutation_in_progress = 0
 		  AND pending_provider_head_generation <= ?
 		  AND provider_snapshot_generation <= ?`,
 		state, mergedAt, closedAt, updatedAt, updatedAt,
@@ -3221,6 +3223,71 @@ func (d *DB) ProviderSnapshotGeneration(ctx context.Context) (int64, error) {
 	return generation, nil
 }
 
+// BeginProviderHeadMutation installs a durable fail-closed fence before a
+// provider call that may change the merge-request head. Ordinary provider
+// snapshots cannot clear this intent; the caller must either finalize the
+// successful mutation or cancel the intent after a confirmed provider error.
+func (d *DB) BeginProviderHeadMutation(
+	ctx context.Context,
+	repoID int64,
+	number int,
+) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		var generation int64
+		if err := tx.QueryRowContext(ctx, `
+			UPDATE middleman_app_metadata
+			SET value = CAST(value AS INTEGER) + 1, updated_at = CURRENT_TIMESTAMP
+			WHERE key = ?
+			RETURNING CAST(value AS INTEGER)`, providerSnapshotGenerationKey,
+		).Scan(&generation); err != nil {
+			return fmt.Errorf("advance provider mutation generation: %w", err)
+		}
+		result, err := tx.ExecContext(ctx, `
+			UPDATE middleman_merge_requests
+			SET provider_mutation_in_progress = 1,
+			    pending_provider_head_sha = '',
+			    pending_provider_head_generation = ?
+			WHERE repo_id = ? AND number = ?
+			  AND provider_mutation_in_progress = 0
+			  AND pending_provider_head_generation = 0`,
+			generation, repoID, number,
+		)
+		if err != nil {
+			return fmt.Errorf("begin provider head mutation for MR %d: %w", number, err)
+		}
+		updated, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("read provider head mutation intent for MR %d: %w", number, err)
+		}
+		if updated == 0 {
+			return fmt.Errorf("begin provider head mutation for MR %d: reconciliation already pending", number)
+		}
+		return nil
+	})
+}
+
+// CancelProviderHeadMutation removes an intent after the provider confirms
+// that no mutation was applied. The global generation remains advanced so
+// snapshots that began before the attempted mutation stay ordered behind it.
+func (d *DB) CancelProviderHeadMutation(
+	ctx context.Context,
+	repoID int64,
+	number int,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET provider_mutation_in_progress = 0,
+		    pending_provider_head_sha = '',
+		    pending_provider_head_generation = 0
+		WHERE repo_id = ? AND number = ?
+		  AND provider_mutation_in_progress = 1`, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("cancel provider head mutation for MR %d: %w", number, err)
+	}
+	return nil
+}
+
 // MarkAppliedProviderHead records a provider-confirmed head mutation and
 // advances the fetch generation in the same transaction. Upserts from fetches
 // that started before this transaction preserve the pending result; the first
@@ -3265,6 +3332,7 @@ func (d *DB) MarkAppliedProviderHead(
 			    END,
 			    pending_provider_head_sha = ?,
 			    pending_provider_head_generation = ?,
+			    provider_mutation_in_progress = 0,
 			    diff_head_sha = '',
 			    diff_base_sha = '',
 			    merge_base_sha = '',

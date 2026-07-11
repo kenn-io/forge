@@ -3016,6 +3016,21 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 	if err := s.requireSyncerCapability(*repo, capabilityReviewMutation); err != nil {
 		return nil, err
 	}
+	unlockProviderWrites, err := s.syncer.LockMRProviderWrites(
+		ctx,
+		repoProviderKind(*repo), repoProviderHost(*repo), repo.Owner, repo.Name, input.Number,
+	)
+	if err != nil {
+		return nil, err
+	}
+	providerWritesLocked := true
+	releaseProviderWrites := func() {
+		if providerWritesLocked {
+			unlockProviderWrites()
+			providerWritesLocked = false
+		}
+	}
+	defer releaseProviderWrites()
 
 	mutator, err := s.syncer.ReviewMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -3064,6 +3079,7 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 			"provider API error",
 		)
 	}
+	releaseProviderWrites()
 
 	event := platform.DBMREvent(mr.ID, platformEvent)
 	_ = s.db.UpsertMREvents(ctx, []db.MREvent{event})
@@ -3185,6 +3201,21 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 	if err := s.requireSyncerCapability(*repo, capabilityWorkflowApproval); err != nil {
 		return nil, err
 	}
+	unlockProviderWrites, err := s.syncer.LockMRProviderWrites(
+		ctx,
+		repoProviderKind(*repo), repoProviderHost(*repo), repo.Owner, repo.Name, input.Number,
+	)
+	if err != nil {
+		return nil, err
+	}
+	providerWritesLocked := true
+	releaseProviderWrites := func() {
+		if providerWritesLocked {
+			unlockProviderWrites()
+			providerWritesLocked = false
+		}
+	}
+	defer releaseProviderWrites()
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
@@ -3246,6 +3277,7 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 			ctx, platformRepoRefFromDB(*repo), strconv.FormatInt(run.GetID(), 10),
 		); err != nil {
 			if approvedCount > 0 {
+				releaseProviderWrites()
 				if syncErr := s.syncer.SyncMROnProvider(
 					context.WithoutCancel(ctx),
 					repoProviderKind(*repo), repoProviderHost(*repo),
@@ -3262,6 +3294,7 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 		}
 		approvedCount++
 	}
+	releaseProviderWrites()
 
 	if syncErr := s.syncer.SyncMROnProvider(
 		context.WithoutCancel(ctx),
@@ -3405,6 +3438,14 @@ func (s *Server) mergePRWithBody(
 	if err := s.requireSyncerCapability(*repo, capabilityMergeMutation); err != nil {
 		return mergePRBody{}, err
 	}
+	unlockProviderWrites, err := s.syncer.LockMRProviderWrites(
+		ctx,
+		repoProviderKind(*repo), repoProviderHost(*repo), repo.Owner, repo.Name, number,
+	)
+	if err != nil {
+		return mergePRBody{}, err
+	}
+	defer unlockProviderWrites()
 
 	mutator, err := s.syncer.MergeMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),

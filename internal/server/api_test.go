@@ -3036,6 +3036,77 @@ func TestAPIApproveWorkflows(t *testing.T) {
 	assert.Equal(0, pr.WorkflowApprovalCount)
 }
 
+func TestAPIApproveWorkflowsWaitsForProviderWriteLock(t *testing.T) {
+	require := require.New(t)
+	providerCalled := make(chan struct{}, 2)
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			providerCalled <- struct{}{}
+			id := int64(1001)
+			sha := "abc123"
+			state := "open"
+			title := "Workflow PR"
+			url := "https://github.com/acme/widget/pull/1"
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID: &id, Number: &number, State: &state, Title: &title, HTMLURL: &url,
+				UpdatedAt: &now, CreatedAt: &now,
+				Head: &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base: &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+		listWorkflowRunsForHeadFn: func(context.Context, string, string, string) ([]*gh.WorkflowRun, error) {
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA("abc123"))
+	client := setupTestClient(t, srv)
+	unlock, err := srv.syncer.LockMRProviderWrites(
+		t.Context(), platform.KindGitHub, "github.com", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	var unlockOnce sync.Once
+	t.Cleanup(func() { unlockOnce.Do(unlock) })
+
+	response := make(chan *generated.ApprovePullWorkflowsResponse, 1)
+	responseErr := make(chan error, 1)
+	go func() {
+		resp, callErr := client.HTTP.ApprovePullWorkflowsWithResponse(
+			t.Context(), "gh", "acme", "widget", 1,
+		)
+		if callErr != nil {
+			responseErr <- callErr
+			return
+		}
+		response <- resp
+	}()
+	calledEarly := false
+	select {
+	case <-providerCalled:
+		calledEarly = true
+	case <-time.After(50 * time.Millisecond):
+	}
+	unlockOnce.Do(unlock)
+	require.False(calledEarly, "workflow approval reached provider while suggestion write lock was held")
+	require.Eventually(func() bool {
+		select {
+		case <-providerCalled:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	select {
+	case err := <-responseErr:
+		require.NoError(err)
+	case resp := <-response:
+		require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	case <-time.After(time.Second):
+		require.Fail("timed out waiting for workflow approval response")
+	}
+}
+
 func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -6607,6 +6678,134 @@ func TestAPIApprovePRSubmitsGitHubReview(t *testing.T) {
 	require.Len(events, 1)
 	assert.Equal("review", events[0].EventType)
 	assert.Equal("APPROVE", events[0].Summary)
+}
+
+func TestAPIApprovePRWaitsForProviderWriteLock(t *testing.T) {
+	require := require.New(t)
+	providerCalled := make(chan struct{}, 1)
+	mock := &mockGH{
+		createReviewWithCommentsFn: func(
+			_ context.Context, _, _ string, _ int,
+			event, body, _ string, _ []*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
+			providerCalled <- struct{}{}
+			id := int64(101)
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequestReview{
+				ID: &id, State: &event, Body: &body, SubmittedAt: &now,
+				User: &gh.User{Login: new("reviewer")},
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	expectedHeadSHA := "reviewed-sha"
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
+	client := setupTestClient(t, srv)
+	unlock, err := srv.syncer.LockMRProviderWrites(
+		t.Context(), platform.KindGitHub, "github.com", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	var unlockOnce sync.Once
+	t.Cleanup(func() { unlockOnce.Do(unlock) })
+
+	response := make(chan *generated.ApprovePullResponse, 1)
+	responseErr := make(chan error, 1)
+	go func() {
+		resp, callErr := client.HTTP.ApprovePullWithResponse(
+			t.Context(), "gh", "acme", "widget", 1,
+			generated.ApprovePullJSONRequestBody{ExpectedHeadSha: &expectedHeadSHA},
+		)
+		if callErr != nil {
+			responseErr <- callErr
+			return
+		}
+		response <- resp
+	}()
+	select {
+	case <-providerCalled:
+		require.Fail("approval reached provider while suggestion write lock was held")
+	case <-time.After(50 * time.Millisecond):
+	}
+	unlockOnce.Do(unlock)
+	require.Eventually(func() bool {
+		select {
+		case <-providerCalled:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	select {
+	case err := <-responseErr:
+		require.NoError(err)
+	case resp := <-response:
+		require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	case <-time.After(time.Second):
+		require.Fail("timed out waiting for approval response")
+	}
+}
+
+func TestAPIMergePRWaitsForProviderWriteLock(t *testing.T) {
+	require := require.New(t)
+	providerCalled := make(chan struct{}, 1)
+	mock := &mockGH{
+		mergePullRequestFn: func(
+			_ context.Context, _, _ string, _ int, _, _, _ string,
+		) (*gh.PullRequestMergeResult, error) {
+			providerCalled <- struct{}{}
+			return &gh.PullRequestMergeResult{
+				Merged: new(true), SHA: new("merge-sha"), Message: new("merged"),
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	expectedHeadSHA := "reviewed-sha"
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
+	client := setupTestClient(t, srv)
+	unlock, err := srv.syncer.LockMRProviderWrites(
+		t.Context(), platform.KindGitHub, "github.com", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	var unlockOnce sync.Once
+	t.Cleanup(func() { unlockOnce.Do(unlock) })
+
+	response := make(chan *generated.MergePullResponse, 1)
+	responseErr := make(chan error, 1)
+	go func() {
+		resp, callErr := client.HTTP.MergePullWithResponse(
+			t.Context(), "gh", "acme", "widget", 1,
+			generated.MergePullJSONRequestBody{
+				Method: "squash", ExpectedHeadSha: &expectedHeadSHA,
+			},
+		)
+		if callErr != nil {
+			responseErr <- callErr
+			return
+		}
+		response <- resp
+	}()
+	select {
+	case <-providerCalled:
+		require.Fail("merge reached provider while suggestion write lock was held")
+	case <-time.After(50 * time.Millisecond):
+	}
+	unlockOnce.Do(unlock)
+	require.Eventually(func() bool {
+		select {
+		case <-providerCalled:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	select {
+	case err := <-responseErr:
+		require.NoError(err)
+	case resp := <-response:
+		require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	case <-time.After(time.Second):
+		require.Fail("timed out waiting for merge response")
+	}
 }
 
 func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {

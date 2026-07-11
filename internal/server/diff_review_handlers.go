@@ -272,6 +272,9 @@ func (s *Server) applyReviewSuggestions(
 			Replacement:       replacement,
 		})
 	}
+	if err := s.db.BeginProviderHeadMutation(ctx, repo.ID, input.Number); err != nil {
+		return nil, problemInternal("persist provider mutation intent failed")
+	}
 	result, err := applier.ApplyReviewSuggestions(
 		ctx,
 		platformRepoRefFromDB(*repo),
@@ -285,6 +288,11 @@ func (s *Server) applyReviewSuggestions(
 		},
 	)
 	if err != nil {
+		cancelCtx, cancelIntent := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		if cancelErr := s.db.CancelProviderHeadMutation(cancelCtx, repo.ID, input.Number); cancelErr != nil {
+			slog.WarnContext(ctx, "clear failed provider mutation intent", "err", cancelErr)
+		}
+		cancelIntent()
 		if errors.Is(err, platform.ErrStaleState) {
 			s.syncAfterReviewSuggestionApply(*repo, input.Number)
 		}

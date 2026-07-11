@@ -2326,6 +2326,77 @@ func TestAppliedProviderHeadFenceRejectsOlderFetchAndAcceptsNewerHead(t *testing
 	assert.Equal("newer-head", got.PlatformHeadSHA)
 }
 
+func TestProviderHeadMutationIntentSurvivesFinalizeFailure(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	current := testMR(repoID, 7, withMRActivity(baseTime()))
+	current.PlatformHeadSHA = "reviewed-head"
+	_, err := d.UpsertMergeRequest(ctx, current)
+	require.NoError(err)
+
+	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 7))
+	generation, err := d.ProviderSnapshotGeneration(ctx)
+	require.NoError(err)
+	stale := testMR(repoID, 7, withMRActivity(baseTime().Add(time.Minute)))
+	stale.PlatformHeadSHA = "stale-head"
+	stale.ProviderSnapshotGeneration = generation
+	_, accepted, err := d.UpsertMergeRequestSnapshot(ctx, stale)
+	require.NoError(err)
+	assert.False(accepted)
+
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = d.MarkAppliedProviderHead(
+		canceledCtx, repoID, 7, "reviewed-head", "applied-head",
+	)
+	require.ErrorIs(err, context.Canceled)
+	_, accepted, err = d.UpsertMergeRequestSnapshot(ctx, stale)
+	require.NoError(err)
+	assert.False(accepted)
+
+	marked, err := d.MarkAppliedProviderHead(
+		ctx, repoID, 7, "reviewed-head", "applied-head",
+	)
+	require.NoError(err)
+	assert.True(marked)
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("applied-head", got.PlatformHeadSHA)
+	assert.Positive(got.PendingProviderHeadGeneration)
+}
+
+func TestCancelProviderHeadMutationAllowsFreshSnapshot(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	current := testMR(repoID, 7, withMRActivity(baseTime()))
+	current.PlatformHeadSHA = "reviewed-head"
+	_, err := d.UpsertMergeRequest(ctx, current)
+	require.NoError(err)
+
+	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 7))
+	require.Error(d.BeginProviderHeadMutation(ctx, repoID, 7))
+	require.NoError(d.CancelProviderHeadMutation(ctx, repoID, 7))
+	generation, err := d.ProviderSnapshotGeneration(ctx)
+	require.NoError(err)
+	fresh := testMR(repoID, 7, withMRActivity(baseTime().Add(time.Minute)))
+	fresh.PlatformHeadSHA = "fresh-head"
+	fresh.ProviderSnapshotGeneration = generation
+	_, accepted, err := d.UpsertMergeRequestSnapshot(ctx, fresh)
+	require.NoError(err)
+	assert.True(accepted)
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("fresh-head", got.PlatformHeadSHA)
+}
+
 func TestMarkAppliedProviderHeadLeavesDifferentCurrentHeadUntouched(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

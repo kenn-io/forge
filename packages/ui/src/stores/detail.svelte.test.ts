@@ -356,6 +356,46 @@ describe("createDetailStore", () => {
     expect(store.getDetail()?.repo_name).toBe("widget");
   });
 
+  it("accepts a delayed suggestion conflict after a same-pull refresh", async () => {
+    let resolveApply!: (value: { error: ProblemBody }) => void;
+    const applyResponse = new Promise<{ error: ProblemBody }>((resolve) => {
+      resolveApply = resolve;
+    });
+    const get = vi.fn().mockResolvedValue({ data: pullDetail("reviewed-head") });
+    const post = vi.fn((path: string) => {
+      if (path.endsWith("/review-suggestions/apply")) return applyResponse;
+      return Promise.resolve({ error: undefined });
+    });
+    const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
+    const options = {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false as const,
+    };
+    await store.loadDetail("acme", "widget", 7, options);
+    const onConflict = vi.fn();
+    const applying = store.applyReviewSuggestions(
+      "acme",
+      "widget",
+      7,
+      { suggestions: [{ threadID: "thread-1", replacement: "return publish();" }] },
+      onConflict,
+    );
+
+    await store.loadDetail("acme", "widget", 7, options);
+    resolveApply({ error: conflictProblem("stale_state") });
+
+    await expect(applying).resolves.toBe(false);
+    expect(onConflict).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "stale_state",
+        expectedHeadSha: "reviewed-head",
+      }),
+    );
+    expect(store.getDetailError()).toBe("pull request state changed");
+  });
+
   it("fails closed when apply-suggestion conflict refresh returns no detail", async () => {
     const tests = [
       {

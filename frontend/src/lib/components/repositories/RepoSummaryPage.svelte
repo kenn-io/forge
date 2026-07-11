@@ -292,6 +292,7 @@
     if (!summary.repo.capabilities.issue_mutation) return;
     const key = repoStateKey(summary);
     if (issueSubmittingByRepo[key]) return;
+    if (issueOutcomeUnknownByRepo[key]) return;
 
     const title = (issueTitleByRepo[key] ?? "").trim();
     if (title === "") {

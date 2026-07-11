@@ -113,6 +113,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
   let storeError = $state<string | null>(null);
   let detailLoaded = $state(false);
   let syncGeneration = 0;
+  let selectionGeneration = 0;
+  let activeSelectionKey: string | null = null;
   // Tracks the PR (if any) whose local body has been edited since
   // the last server confirmation. While set, background sync paths
   // preserve the local body when applying refreshed server data for
@@ -412,6 +414,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   function clearDetail(): void {
     ++syncGeneration;
+    ++selectionGeneration;
+    activeSelectionKey = null;
     activeLoad = null;
     detail = null;
     loading = false;
@@ -428,6 +432,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // sync mode joins the in-flight load and may promote the sync
     // intent if its requested mode is stronger.
     const key = prKey(requestRef);
+    if (activeSelectionKey !== key) {
+      activeSelectionKey = key;
+      ++selectionGeneration;
+    }
     if (loading && activeLoad?.key === key && activeLoad.promise !== null) {
       activeLoad.syncMode = strongerSyncMode(activeLoad.syncMode, syncMode);
       activeLoad.workflowApprovalSync ||= options.workflowApprovalSync ?? true;
@@ -1228,7 +1236,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     onConflict?: (conflict: ApplySuggestionConflict) => void,
   ): Promise<boolean> {
     const ref = currentDetailRef(owner, name, number);
-    const requestGeneration = syncGeneration;
+    const requestSelectionGeneration = selectionGeneration;
     const expectedHeadSHA = detail?.platform_head_sha ?? "";
     try {
       const { error: requestError } = await apiClient.POST(
@@ -1250,7 +1258,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
           },
         },
       );
-      if (requestGeneration !== syncGeneration || !isDetailShowingRef(ref)) {
+      if (requestSelectionGeneration !== selectionGeneration || !isDetailShowingRef(ref)) {
         return false;
       }
       if (requestError) {
@@ -1266,7 +1274,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
               number,
             });
           } else if (isDetailShowingRef(ref)) {
-            const refreshed = await syncDetail(owner, name, number, requestGeneration, ref);
+            const refreshGeneration = ++syncGeneration;
+            const refreshed = await syncDetail(owner, name, number, refreshGeneration, ref);
             if (!refreshed && isDetailShowingRef(ref)) {
               failClosedAfterApplySuggestionConflict(refreshReason);
             }
@@ -1277,7 +1286,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         throw new Error(message);
       }
     } catch (err) {
-      if (requestGeneration !== syncGeneration || !isDetailShowingRef(ref)) {
+      if (requestSelectionGeneration !== selectionGeneration || !isDetailShowingRef(ref)) {
         return false;
       }
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
@@ -1287,9 +1296,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // server's async post-apply sync and leave stale controls enabled.
     // Await a sync-enabled refresh so the detail reflects the new head,
     // falling back to the cached view when the sync fails.
-    const synced = await syncDetail(owner, name, number, requestGeneration, ref);
+    const refreshGeneration = ++syncGeneration;
+    const synced = await syncDetail(owner, name, number, refreshGeneration, ref);
     if (!synced) {
-      await refreshDetail(owner, name, number, requestGeneration, ref);
+      await refreshDetail(owner, name, number, refreshGeneration, ref);
     }
     await refreshPullsIfActive();
     return true;

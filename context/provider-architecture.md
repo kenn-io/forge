@@ -66,8 +66,9 @@ Rules:
 - Handlers must check capabilities before performing mutations. A missing
   capability is a feature-level failure, not a whole-provider failure.
 - Provider-backed comment deletes remove synchronized local rows only after upstream
-  success or typed `not_found`; other upstream failures preserve local state, and local
-  removal tolerates an already-absent row
+  success. Typed `not_found` is not sufficient because provider write credentials may
+  conceal authorization failures as absence; all upstream failures preserve local state,
+  and local removal tolerates an already-absent row
   (`internal/server/huma_routes.go::deleteComment`,
   `internal/server/huma_routes.go::deleteIssueComment`).
 - Keep operation availability split by scope. `repoOperations` handles

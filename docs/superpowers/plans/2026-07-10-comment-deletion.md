@@ -133,14 +133,14 @@ Expected: missing DB methods/routes and 404 responses.
 
 - [ ] **Step 3: Implement scoped persistence deletion and handlers**
 
-Delete the parent-scoped ordinary comment row idempotently after the provider confirms deletion or absence:
+Delete the parent-scoped ordinary comment row idempotently after the provider confirms successful deletion:
 
 ```sql
 DELETE FROM middleman_mr_events
 WHERE merge_request_id = ? AND platform_id = ? AND event_type = 'issue_comment'
 ```
 
-Register paired operations with `DefaultStatus: http.StatusNoContent` and add a typed `delete_comment` repository operation derived from comment mutation, write credentials, and REST rate state. Each handler must resolve the repo/item, validate `MRCommentEventExists` or `IssueCommentEventExists`, call the provider, then delete the local row. A provider not-found after that scoped validation and a zero-row local delete are idempotent success states. Use `statusOnlyOutput{Status: http.StatusNoContent}` and existing problem helpers.
+Register paired operations with `DefaultStatus: http.StatusNoContent` and add a typed `delete_comment` repository operation derived from comment mutation, write credentials, and REST rate state. Each handler must resolve the repo/item, validate `MRCommentEventExists` or `IssueCommentEventExists`, call the provider, then delete the local row. Preserve local state for every provider error, including typed not-found, because a write credential may conceal authorization failure as 404. A zero-row local delete remains an idempotent success after provider success. Use `statusOnlyOutput{Status: http.StatusNoContent}` and existing problem helpers.
 
 - [ ] **Step 4: Generate clients and review the contract**
 
@@ -180,7 +180,7 @@ git commit -m "feat: expose provider-aware comment deletion"
 
 - [ ] **Step 1: Write failing store tests**
 
-Assert route parameters include provider/host identity, success refreshes detail, and API failure returns false without refreshing while retaining the API error.
+Assert route parameters include provider/host identity, success refreshes detail, and API failure returns false without refreshing while retaining the API error. Also cover DELETE success followed by refresh failure and retry, a same-item generation change, navigation during a failed DELETE, and another event type sharing the numeric platform ID.
 
 ```ts
 await expect(store.deleteComment("acme", "widget", 7, 44)).resolves.toBe(true);
@@ -197,17 +197,19 @@ Expected: delete store methods are missing.
 
 - [ ] **Step 3: Implement minimal store methods**
 
-Capture the selected identity and generation before DELETE. After success, invalidate older refreshes and report success only when the authoritative detail refresh succeeds and omits the comment; navigation to another item skips assignment.
+Capture the selected identity and generation before DELETE. Record a pending confirmation only after DELETE returns 204. Retries for that comment skip DELETE and repeat only the authoritative detail refresh. A same-item generation change must start a new refresh; navigation to another item skips assignment. Report success only when the refreshed timeline omits an `issue_comment` with the target platform ID.
 
 ```ts
 async function deleteComment(owner: string, name: string, number: number, commentID: number): Promise<boolean> {
   const ref = currentDetailRef(owner, name, number);
-  const deleteGen = syncGeneration;
-  // DELETE with provider-aware route params; preserve stable API detail on failure.
-  if (deleteGen !== syncGeneration || !isDetailShowingRef(ref)) return true;
+  const deletionKey = commentDeletionKey(ref, commentID);
+  // Run DELETE only when this key is not already awaiting confirmation.
+  if (!isDetailShowingRef(ref)) return true;
   const refreshGen = ++syncGeneration;
   const refreshed = await refreshDetail(owner, name, number, refreshGen, ref);
-  return refreshed.ok && !detail?.events.some((event) => event.PlatformID === commentID);
+  return refreshed.ok && !detail?.events.some(
+    (event) => event.EventType === "issue_comment" && event.PlatformID === commentID,
+  );
 }
 ```
 
@@ -220,7 +222,7 @@ Run the command from Step 2. Expected: PASS.
 - [ ] **Step 5: Commit stores**
 
 ```bash
-git add packages/ui/src/stores
+git add packages/ui/src/stores frontend/src/lib/stores/detail-comment.svelte.test.ts frontend/src/lib/stores/issues-comment.svelte.test.ts
 git commit -m "feat: refresh details after deleting comments"
 ```
 

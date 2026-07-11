@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { IssueDetail } from "../../api/types.js";
 import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
@@ -128,7 +128,7 @@ function issueDetail(): IssueDetail {
   };
 }
 
-function renderIssueDetail(detail: IssueDetail) {
+function renderIssueDetail(detail: IssueDetail, deleteIssueComment = vi.fn(async () => true)) {
   const issuesStore = {
     loadIssueDetail: vi.fn(async () => undefined),
     startIssueDetailPolling: vi.fn(),
@@ -143,13 +143,14 @@ function renderIssueDetail(detail: IssueDetail) {
     updateIssueKanbanState: vi.fn(),
     toggleIssueStar: vi.fn(),
     editIssueComment: vi.fn(),
+    deleteIssueComment,
     setIssueLabels: vi.fn(),
     setIssueAssignees: vi.fn(),
     saveIssueBodyInBackground: vi.fn(),
     setLocalIssueBody: vi.fn(),
   };
 
-  return render(IssueDetailComponent, {
+  const result = render(IssueDetailComponent, {
     props: {
       owner: "acme",
       name: "widget",
@@ -173,6 +174,7 @@ function renderIssueDetail(detail: IssueDetail) {
       [NAVIGATE_KEY, vi.fn()],
     ]),
   });
+  return { ...result, deleteIssueComment };
 }
 
 describe("IssueDetail activity view", () => {
@@ -210,6 +212,39 @@ describe("IssueDetail activity view", () => {
     const descriptionId = button.getAttribute("aria-describedby");
     expect(descriptionId).toBeTruthy();
     expect(document.getElementById(descriptionId ?? "")?.textContent).toContain(button.getAttribute("title"));
+  });
+
+  it("deletes an ordinary issue comment through the issues store", async () => {
+    const detail = issueDetail();
+    detail.repo.capabilities.comment_mutation = true;
+    detail.repo.operations = {
+      delete_comment: { available: true },
+    } as IssueDetail["repo"]["operations"];
+    const { deleteIssueComment } = renderIssueDetail(detail);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Delete comment" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(deleteIssueComment).toHaveBeenCalledWith("acme", "widget", 7, 20);
+      expect(screen.queryByRole("dialog", { name: "Delete comment?" })).toBeNull();
+    });
+  });
+
+  it("hides issue comment deletion when the operation is unavailable", () => {
+    const detail = issueDetail();
+    detail.repo.capabilities.comment_mutation = true;
+    detail.repo.operations = {
+      delete_comment: {
+        available: false,
+        code: "missing_write_credential",
+        unavailable_reason: "No user credential for writes on github.com",
+      },
+    } as IssueDetail["repo"]["operations"];
+
+    renderIssueDetail(detail);
+
+    expect(screen.queryByRole("button", { name: "Delete comment" })).toBeNull();
   });
 });
 

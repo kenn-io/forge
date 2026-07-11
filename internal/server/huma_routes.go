@@ -2297,7 +2297,7 @@ func (s *Server) deleteComment(ctx context.Context, input *deleteCommentInput) (
 	}
 	if err := mutator.DeleteMergeRequestComment(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID,
-	); err != nil && !errors.Is(err, platform.ErrNotFound) {
+	); err != nil {
 		return nil, providerCallProblemWithDetail(
 			err, string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"delete comment on provider failed",
@@ -2882,7 +2882,7 @@ func (s *Server) deleteIssueComment(
 	}
 	if err := mutator.DeleteIssueComment(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID,
-	); err != nil && !errors.Is(err, platform.ErrNotFound) {
+	); err != nil {
 		return nil, providerCallProblemWithDetail(
 			err, string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"delete comment on provider failed",

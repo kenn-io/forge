@@ -122,6 +122,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
     key: string;
     promise: Promise<void>;
   } | null = null;
+  // A provider/local DELETE may succeed even when the follow-up detail
+  // refresh fails. Keep that partial success separate from confirmation
+  // so retrying the dialog never repeats the destructive request.
+  const pendingCommentConfirmations = new Set<string>();
 
   // Per-PR monotonic counters for kanban updates.
   const kanbanSeqByPR = new Map<string, number>();
@@ -1109,26 +1113,35 @@ export function createDetailStore(opts: DetailStoreOptions) {
   async function deleteComment(owner: string, name: string, number: number, commentID: number): Promise<boolean> {
     const ref = currentDetailRef(owner, name, number);
     const deleteGen = syncGeneration;
+    const deletionKey = `${prKey(ref)}:comment:${commentID}`;
     storeError = null;
-    try {
-      const { error: requestError } = await apiClient.DELETE(providerItemPath("pulls", ref, "/comments/{comment_id}"), {
-        headers: { "Content-Type": "application/json" },
-        params: {
-          path: {
-            ...providerRouteParams(ref),
-            number,
-            comment_id: commentID,
+    if (!pendingCommentConfirmations.has(deletionKey)) {
+      try {
+        const { error: requestError } = await apiClient.DELETE(
+          providerItemPath("pulls", ref, "/comments/{comment_id}"),
+          {
+            headers: { "Content-Type": "application/json" },
+            params: {
+              path: {
+                ...providerRouteParams(ref),
+                number,
+                comment_id: commentID,
+              },
+            },
           },
-        },
-      });
-      if (requestError) {
-        throw new Error(apiErrorMessage(requestError, "failed to delete comment"));
+        );
+        if (requestError) {
+          throw new Error(apiErrorMessage(requestError, "failed to delete comment"));
+        }
+      } catch (err) {
+        if (deleteGen === syncGeneration && isDetailShowingRef(ref)) {
+          storeError = err instanceof Error ? err.message : String(err);
+        }
+        return false;
       }
-    } catch (err) {
-      storeError = err instanceof Error ? err.message : String(err);
-      return false;
+      pendingCommentConfirmations.add(deletionKey);
     }
-    if (deleteGen !== syncGeneration || !isDetailShowingRef(ref)) return true;
+    if (!isDetailShowingRef(ref)) return true;
     const refreshGen = ++syncGeneration;
     const refreshed = await refreshDetail(owner, name, number, refreshGen, ref);
     if (!refreshed.ok) {
@@ -1137,10 +1150,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
       }
       return false;
     }
-    if (detail?.events?.some((event) => event.PlatformID === commentID)) {
+    if (detail?.events?.some((event) => event.EventType === "issue_comment" && event.PlatformID === commentID)) {
       storeError = "Deleted comment is still visible after refresh";
       return false;
     }
+    pendingCommentConfirmations.delete(deletionKey);
     return true;
   }
 

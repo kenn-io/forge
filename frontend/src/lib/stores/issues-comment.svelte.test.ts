@@ -91,6 +91,123 @@ describe("createIssuesStore submitIssueComment", () => {
     expect(store.getIssueDetail()?.events).toEqual([{ PlatformID: 44 }]);
   });
 
+  it("retries only confirmation after deletion succeeds but the refresh fails", async () => {
+    let getCalls = 0;
+    const get = vi.fn(async () => {
+      getCalls++;
+      if (getCalls === 1) {
+        return { data: makeDetail([{ EventType: "issue_comment", PlatformID: 44 }]) };
+      }
+      if (getCalls === 2) return { error: { detail: "refresh failed" } };
+      return { data: makeDetail([]) };
+    });
+    const del = vi.fn(async () => ({ error: undefined }));
+    const store = createIssuesStore({
+      client: {
+        GET: get,
+        POST: vi.fn(async () => ({ data: undefined })),
+        PUT: vi.fn(),
+        DELETE: del,
+      } as unknown as MiddlemanClient,
+    });
+    await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
+
+    expect(await store.deleteIssueComment("octo", "repo", 1, 44)).toBe(false);
+    expect(await store.deleteIssueComment("octo", "repo", 1, 44)).toBe(true);
+
+    expect(del).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(3);
+  });
+
+  it("confirms deletion when another event type shares the comment platform ID", async () => {
+    let getCalls = 0;
+    const get = vi.fn(async () => {
+      getCalls++;
+      return {
+        data: makeDetail(
+          getCalls === 1
+            ? [{ EventType: "issue_comment", PlatformID: 44 }]
+            : [{ EventType: "state_change", PlatformID: 44 }],
+        ),
+      };
+    });
+    const store = createIssuesStore({
+      client: {
+        GET: get,
+        POST: vi.fn(async () => ({ data: undefined })),
+        PUT: vi.fn(),
+        DELETE: vi.fn(async () => ({ error: undefined })),
+      } as unknown as MiddlemanClient,
+    });
+    await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
+
+    expect(await store.deleteIssueComment("octo", "repo", 1, 44)).toBe(true);
+  });
+
+  it("confirms deletion after a concurrent reload of the same issue", async () => {
+    let finishDelete: () => void = () => {};
+    const deletePending = new Promise<void>((resolve) => {
+      finishDelete = resolve;
+    });
+    let getCalls = 0;
+    const get = vi.fn(async () => {
+      getCalls++;
+      return {
+        data: makeDetail(getCalls < 3 ? [{ EventType: "issue_comment", PlatformID: 44 }] : []),
+      };
+    });
+    const store = createIssuesStore({
+      client: {
+        GET: get,
+        POST: vi.fn(async () => ({ data: undefined })),
+        PUT: vi.fn(),
+        DELETE: vi.fn(async () => {
+          await deletePending;
+          return { error: undefined };
+        }),
+      } as unknown as MiddlemanClient,
+    });
+    await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
+
+    const deleting = store.deleteIssueComment("octo", "repo", 1, 44);
+    await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
+    finishDelete();
+
+    expect(await deleting).toBe(true);
+    expect(get).toHaveBeenCalledTimes(3);
+    expect(store.getIssueDetail()?.events).toEqual([]);
+  });
+
+  it("does not expose a failed deletion from a previous issue", async () => {
+    let finishDelete: () => void = () => {};
+    const deletePending = new Promise<void>((resolve) => {
+      finishDelete = resolve;
+    });
+    const get = vi.fn(async (_path: string, request: { params: { path: { number: number } } }) => ({
+      data: makeDetail([], request.params.path.number),
+    }));
+    const store = createIssuesStore({
+      client: {
+        GET: get,
+        POST: vi.fn(async () => ({ data: undefined })),
+        PUT: vi.fn(),
+        DELETE: vi.fn(async () => {
+          await deletePending;
+          return { error: { detail: "old deletion failed" } };
+        }),
+      } as unknown as MiddlemanClient,
+    });
+    await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
+
+    const deleting = store.deleteIssueComment("octo", "repo", 1, 44);
+    await store.loadIssueDetail("octo", "repo", 2, { ...issueRef, sync: false });
+    finishDelete();
+    await deleting;
+
+    expect(store.getIssueDetail()?.issue.Number).toBe(2);
+    expect(store.getIssueDetailError()).toBeNull();
+  });
+
   it("does not restore the deleted issue over a newer selection", async () => {
     let finishDelete: () => void = () => {};
     const deletePending = new Promise<void>((resolve) => {

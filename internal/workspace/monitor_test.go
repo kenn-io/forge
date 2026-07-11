@@ -192,6 +192,51 @@ func TestPRMonitorRunOnceFallsBackToLocalBranchNameAndHeadSHA(t *testing.T) {
 	assert.Equal(42, *ws.AssociatedPRNumber)
 }
 
+func TestPRMonitorRefreshWorkspaceAssociationAssociatesKataTask(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	worktreePath := setupMonitorRepo(t)
+	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "feature/kata-task")
+	headSHA, err := gitHeadSHA(ctx, worktreePath)
+	require.NoError(err)
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/kata-task", headSHA)
+	kataMetadata := db.WorkspaceKataMetadata{
+		DaemonID:   "local",
+		ProjectUID: "project-1",
+		IssueUID:   "issue-1",
+	}
+	require.NoError(d.InsertWorkspace(ctx, &db.Workspace{
+		ID:           "ws-kata",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypeKataTask,
+		ItemKey:      db.KataWorkspaceItemKey(kataMetadata),
+		GitHeadRef:   "feature/kata-task",
+		WorktreePath: worktreePath,
+		TmuxSession:  "middleman-ws-kata",
+		Status:       "ready",
+		KataMetadata: &kataMetadata,
+	}))
+
+	monitor := NewPRMonitor(d)
+	update, changed, err := monitor.RefreshWorkspaceAssociation(ctx, "ws-kata")
+	require.NoError(err)
+	assert.True(changed)
+	assert.Equal(PRAssociationUpdate{WorkspaceID: "ws-kata", PRNumber: 42}, update)
+
+	ws, err := d.GetWorkspace(ctx, "ws-kata")
+	require.NoError(err)
+	require.NotNil(ws)
+	require.NotNil(ws.AssociatedPRNumber)
+	assert.Equal(42, *ws.AssociatedPRNumber)
+}
+
 func TestPRMonitorRunOnceFallsBackToLocalHeadSHAWhenUpstreamRepoMetadataMissing(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -679,6 +724,15 @@ func TestWorkspacePRMonitorEligible(t *testing.T) {
 			name: "ready issue workspace without association",
 			ws: &db.Workspace{
 				ItemType:     db.WorkspaceItemTypeIssue,
+				Status:       "ready",
+				WorktreePath: "/tmp/work",
+			},
+			want: true,
+		},
+		{
+			name: "ready kata task workspace without association",
+			ws: &db.Workspace{
+				ItemType:     db.WorkspaceItemTypeKataTask,
 				Status:       "ready",
 				WorktreePath: "/tmp/work",
 			},

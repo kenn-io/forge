@@ -6608,7 +6608,7 @@ func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 	require.NoError(err)
 	syncer := NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
 
-	calls, err := syncer.fetchProviderMRDetail(ctx, provider, repo, repoID, 42)
+	calls, err := syncer.fetchProviderMRDetail(ctx, provider, repo, repoID, 42, 0)
 	require.NoError(err)
 	assert.Equal(3, calls)
 	assert.Equal(int32(1), provider.listReviewThreads.Load())
@@ -6632,7 +6632,7 @@ func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 	assert.Equal("thread-42", *events[0].ThreadID)
 
 	provider.reviewThreads = nil
-	calls, err = syncer.fetchProviderMRDetail(ctx, provider, repo, repoID, 42)
+	calls, err = syncer.fetchProviderMRDetail(ctx, provider, repo, repoID, 42, 0)
 	require.NoError(err)
 	assert.Equal(3, calls)
 

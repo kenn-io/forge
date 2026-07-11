@@ -697,6 +697,7 @@ func (m *mockGH) MarkNotificationThreadRead(ctx context.Context, threadID string
 func (m *mockGH) InvalidateListETagsForRepo(_, _ string, _ ...string) {}
 
 type apiTestGitLabProvider struct {
+	mu                  sync.Mutex
 	ref                 platform.RepoRef
 	capabilities        *platform.Capabilities
 	mergeRequests       []platform.MergeRequest
@@ -714,6 +715,9 @@ type apiTestGitLabProvider struct {
 	publishReviewErr    error
 	appliedSuggestions  []platform.ApplyReviewSuggestionsInput
 	applySuggestionsErr error
+	blockMRFetchOnce    sync.Once
+	mrFetchStarted      chan struct{}
+	mrFetchRelease      <-chan struct{}
 	rateLimitBuckets    map[platform.OperationName][]platform.RateLimitBucket
 	resolvedThreads     []string
 	unresolvedThreads   []string
@@ -770,6 +774,8 @@ func (p *apiTestGitLabProvider) ApplyReviewSuggestions(
 	if p.applySuggestionsErr != nil {
 		return nil, p.applySuggestionsErr
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.appliedSuggestions = append(p.appliedSuggestions, input)
 	for i := range p.mergeRequests {
 		if p.mergeRequests[i].Number == number {
@@ -840,7 +846,9 @@ func (p *apiTestGitLabProvider) ListOpenMergeRequests(
 	context.Context,
 	platform.RepoRef,
 ) ([]platform.MergeRequest, error) {
-	return p.mergeRequests, nil
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.mergeRequests), nil
 }
 
 func (p *apiTestGitLabProvider) GetMergeRequest(
@@ -848,15 +856,37 @@ func (p *apiTestGitLabProvider) GetMergeRequest(
 	_ platform.RepoRef,
 	number int,
 ) (platform.MergeRequest, error) {
+	p.mu.Lock()
+	var found platform.MergeRequest
+	foundOK := false
 	if p.mergeRequestDetail != nil {
 		if mr, ok := p.mergeRequestDetail[number]; ok {
-			return mr, nil
+			found = mr
+			foundOK = true
 		}
 	}
-	for _, mr := range p.mergeRequests {
-		if mr.Number == number {
-			return mr, nil
+	if !foundOK {
+		for _, mr := range p.mergeRequests {
+			if mr.Number == number {
+				found = mr
+				foundOK = true
+				break
+			}
 		}
+	}
+	p.mu.Unlock()
+	if foundOK {
+		if p.mrFetchStarted != nil || p.mrFetchRelease != nil {
+			p.blockMRFetchOnce.Do(func() {
+				if p.mrFetchStarted != nil {
+					p.mrFetchStarted <- struct{}{}
+				}
+				if p.mrFetchRelease != nil {
+					<-p.mrFetchRelease
+				}
+			})
+		}
+		return found, nil
 	}
 	return platform.MergeRequest{}, fmt.Errorf("missing merge request %d", number)
 }
@@ -16178,6 +16208,92 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 	assert.Equal("provider-comment-1", applied.Suggestions[0].ProviderCommentID)
 	assert.Equal("src/review.ts", applied.Suggestions[0].Range.Path)
 	assert.Equal("return client.publishThreads();", applied.Suggestions[0].Replacement)
+}
+
+func TestAPIApplyReviewSuggestionRejectsPreMutationSyncSnapshot(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
+
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	provider.mrFetchStarted = started
+	provider.mrFetchRelease = release
+	staleSync := make(chan error, 1)
+	go func() {
+		staleSync <- srv.syncer.SyncMROnProvider(
+			ctx, platform.KindGitLab, "gitlab.example.com", "group", "project", 7,
+		)
+	}()
+	require.Eventually(func() bool {
+		select {
+		case <-started:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(thread.ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var applied applyReviewSuggestionResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&applied))
+	assert.Equal("applied", applied.Status)
+	assert.Equal("suggestion-commit-sha", applied.CommitSHA)
+
+	close(release)
+	require.NoError(<-staleSync)
+	require.Eventually(func() bool {
+		current, getErr := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+		return getErr == nil && current != nil &&
+			current.PlatformHeadSHA == "suggestion-commit-sha" &&
+			current.PendingProviderHeadSHA == ""
+	}, time.Second, 10*time.Millisecond)
+
+	detail := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7",
+		nil,
+	)
+	require.Equal(http.StatusOK, detail.Code, detail.Body.String())
+	var refreshed mergeRequestDetailResponse
+	require.NoError(json.NewDecoder(detail.Body).Decode(&refreshed))
+	assert.Equal("suggestion-commit-sha", refreshed.PlatformHeadSHA)
 }
 
 func TestAPIApplyReviewSuggestionRejectsNonOpenPullRequest(t *testing.T) {

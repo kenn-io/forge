@@ -4279,6 +4279,10 @@ func (s *Syncer) indexSyncRepo(
 
 	prListUnchanged := false
 	if caps.ReadMergeRequests {
+		mrSnapshotGeneration, err := s.db.ProviderSnapshotGeneration(ctx)
+		if err != nil {
+			return err
+		}
 		mrReader, err := s.mergeRequestReaderFor(repo)
 		if err != nil {
 			return fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
@@ -4322,7 +4326,7 @@ func (s *Syncer) indexSyncRepo(
 						)
 					} else {
 						if err := s.doSyncRepoGraphQL(
-							ctx, repo, repoID, result, cloneFetchOK,
+							ctx, repo, repoID, result, cloneFetchOK, mrSnapshotGeneration,
 						); err != nil {
 							failedScope |= failMR
 						}
@@ -4333,7 +4337,7 @@ func (s *Syncer) indexSyncRepo(
 
 			if !graphQLDone {
 				if err := s.syncMergeRequestsFromList(
-					ctx, mrReader, repo, repoID, openMRs, cloneFetchOK,
+					ctx, mrReader, repo, repoID, openMRs, cloneFetchOK, mrSnapshotGeneration,
 				); err != nil {
 					slog.Error("merge request sync failed",
 						"repo", repo.Owner+"/"+repo.Name,
@@ -4464,6 +4468,7 @@ func (s *Syncer) syncMergeRequestsFromList(
 	repoID int64,
 	mrs []platform.MergeRequest,
 	cloneFetchOK bool,
+	snapshotGeneration int64,
 ) error {
 	stillOpen := make(map[int]bool, len(mrs))
 	for _, mr := range mrs {
@@ -4473,7 +4478,9 @@ func (s *Syncer) syncMergeRequestsFromList(
 	var hadItemFailure bool
 	progress := newMergeRequestSyncProgressLogger(repo, "provider", len(mrs))
 	for i, mr := range mrs {
-		if err := s.indexUpsertMergeRequest(ctx, repo, repoID, mr, cloneFetchOK); err != nil {
+		if err := s.indexUpsertMergeRequestAtGeneration(
+			ctx, repo, repoID, mr, cloneFetchOK, snapshotGeneration,
+		); err != nil {
 			slog.Error("index upsert MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", mr.Number,
@@ -4572,7 +4579,19 @@ func (s *Syncer) indexUpsertMergeRequest(
 	mr platform.MergeRequest,
 	cloneFetchOK bool,
 ) error {
+	return s.indexUpsertMergeRequestAtGeneration(ctx, repo, repoID, mr, cloneFetchOK, 0)
+}
+
+func (s *Syncer) indexUpsertMergeRequestAtGeneration(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	mr platform.MergeRequest,
+	cloneFetchOK bool,
+	snapshotGeneration int64,
+) error {
 	normalized := platform.DBMergeRequest(repoID, mr)
+	normalized.ProviderSnapshotGeneration = snapshotGeneration
 
 	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
 		ctx, repoID, mr.Number,
@@ -4977,6 +4996,7 @@ func (s *Syncer) doSyncRepoGraphQL(
 	repoID int64,
 	result *RepoBulkResult,
 	cloneFetchOK bool,
+	snapshotGeneration int64,
 ) error {
 	var failedScope failScope
 	stillOpen := make(map[int]bool, len(result.PullRequests))
@@ -4987,8 +5007,8 @@ func (s *Syncer) doSyncRepoGraphQL(
 		number := bulk.PR.GetNumber()
 		stillOpen[number] = true
 
-		if err := s.syncOpenMRFromBulk(
-			ctx, repo, repoID, bulk, cloneFetchOK,
+		if err := s.syncOpenMRFromBulkAtGeneration(
+			ctx, repo, repoID, bulk, cloneFetchOK, snapshotGeneration,
 		); err != nil {
 			slog.Error("GraphQL sync MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -5210,11 +5230,23 @@ func (s *Syncer) syncOpenMRFromBulk(
 	bulk *BulkPR,
 	cloneFetchOK bool,
 ) error {
+	return s.syncOpenMRFromBulkAtGeneration(ctx, repo, repoID, bulk, cloneFetchOK, 0)
+}
+
+func (s *Syncer) syncOpenMRFromBulkAtGeneration(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	bulk *BulkPR,
+	cloneFetchOK bool,
+	snapshotGeneration int64,
+) error {
 	number := bulk.PR.GetNumber()
 	normalized, err := NormalizePR(repoID, bulk.PR)
 	if err != nil {
 		return fmt.Errorf("normalize MR #%d: %w", number, err)
 	}
+	normalized.ProviderSnapshotGeneration = snapshotGeneration
 
 	// Preserve derived fields that NormalizePR doesn't populate.
 	// Without this, upsert overwrites them with zero values; if
@@ -5534,6 +5566,10 @@ func (s *Syncer) fetchMRDetail(
 	cloneFetchOK bool,
 ) (int, error) {
 	calls := 0
+	snapshotGeneration, err := s.db.ProviderSnapshotGeneration(ctx)
+	if err != nil {
+		return calls, err
+	}
 	mrReader, err := s.mergeRequestReaderFor(repo)
 	if err != nil {
 		return calls, fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
@@ -5541,7 +5577,7 @@ func (s *Syncer) fetchMRDetail(
 	if _, ok := mrReader.(interface {
 		GetGitHubPullRequest(context.Context, platform.RepoRef, int) (*gh.PullRequest, platform.MergeRequest, error)
 	}); !ok {
-		return s.fetchProviderMRDetail(ctx, mrReader, repo, repoID, number)
+		return s.fetchProviderMRDetail(ctx, mrReader, repo, repoID, number, snapshotGeneration)
 	}
 
 	client, err := s.clientFor(repo)
@@ -5579,6 +5615,7 @@ func (s *Syncer) fetchMRDetail(
 	if err != nil {
 		return calls, fmt.Errorf("normalize full PR #%d: %w", number, err)
 	}
+	normalized.ProviderSnapshotGeneration = snapshotGeneration
 	preserveMergeableStateIfOmitted(normalized, existing)
 
 	if normalized.Author != "" &&
@@ -5805,6 +5842,7 @@ func (s *Syncer) fetchProviderMRDetail(
 	repo RepoRef,
 	repoID int64,
 	number int,
+	snapshotGeneration int64,
 ) (int, error) {
 	calls := 0
 	mr, err := reader.GetMergeRequest(ctx, platformRepoRef(repo), number)
@@ -5814,6 +5852,7 @@ func (s *Syncer) fetchProviderMRDetail(
 	}
 
 	normalized := platform.DBMergeRequest(repoID, mr)
+	normalized.ProviderSnapshotGeneration = snapshotGeneration
 	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
 		ctx, repoID, number,
 	)
@@ -7570,6 +7609,13 @@ func (s *Syncer) backfillRepo(
 			}
 			prPage++
 			pageFailed := false
+			snapshotGeneration, generationErr := s.db.ProviderSnapshotGeneration(ctx)
+			if generationErr != nil {
+				slog.Warn("backfill provider snapshot generation failed",
+					"repo", repo.Owner+"/"+repo.Name, "err", generationErr,
+				)
+				break
+			}
 			prs, hasMore, err := client.ListPullRequestsPage(
 				ctx, repo.Owner, repo.Name,
 				"closed", prPage,
@@ -7592,6 +7638,7 @@ func (s *Syncer) backfillRepo(
 					pageFailed = true
 					break
 				}
+				normalized.ProviderSnapshotGeneration = snapshotGeneration
 				if mrID, uErr := s.db.UpsertMergeRequest(
 					ctx, normalized,
 				); uErr != nil {
@@ -7882,6 +7929,10 @@ func (s *Syncer) syncMRForRepo(
 	if err != nil {
 		return fmt.Errorf("get existing MR #%d: %w", number, err)
 	}
+	snapshotGeneration, err := s.db.ProviderSnapshotGeneration(ctx)
+	if err != nil {
+		return err
+	}
 
 	var ghPR *gh.PullRequest
 	var platformMR platform.MergeRequest
@@ -7931,6 +7982,7 @@ func (s *Syncer) syncMRForRepo(
 	if normalized == nil {
 		return fmt.Errorf("get MR %s/%s#%d: provider returned no merge request", owner, name, number)
 	}
+	normalized.ProviderSnapshotGeneration = snapshotGeneration
 	headChanged := existing != nil &&
 		existing.PlatformHeadSHA != normalized.PlatformHeadSHA
 	if existing != nil {
@@ -8435,6 +8487,10 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	if err != nil {
 		return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
+	snapshotGeneration, err := s.db.ProviderSnapshotGeneration(ctx)
+	if err != nil {
+		return err
+	}
 	ghPR, err := client.GetPullRequest(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
 		return fmt.Errorf("get closed PR #%d: %w", number, err)
@@ -8461,11 +8517,11 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		closedAt = &t
 	}
 
-	if err := s.db.UpdateClosedMRState(
+	if err := s.db.UpdateClosedMRStateFromSnapshot(
 		ctx, repoID, number, state,
 		ghPR.GetUpdatedAt().Time,
 		mergedAt, closedAt,
-		ghPR.GetHead().GetSHA(), ghPR.GetBase().GetSHA(),
+		ghPR.GetHead().GetSHA(), ghPR.GetBase().GetSHA(), snapshotGeneration,
 	); err != nil {
 		return fmt.Errorf("update closed MR #%d: %w", number, err)
 	}
@@ -8639,11 +8695,16 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 		return s.fetchAndUpdateClosed(ctx, repo, repoID, number, cloneFetchOK)
 	}
 
+	snapshotGeneration, err := s.db.ProviderSnapshotGeneration(ctx)
+	if err != nil {
+		return err
+	}
 	mr, err := reader.GetMergeRequest(ctx, platformRepoRef(repo), number)
 	if err != nil {
 		return fmt.Errorf("get closed MR #%d: %w", number, err)
 	}
 	normalized := platform.DBMergeRequest(repoID, mr)
+	normalized.ProviderSnapshotGeneration = snapshotGeneration
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert closed MR #%d: %w", number, err)

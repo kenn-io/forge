@@ -2200,7 +2200,7 @@ func TestUpsertMergeRequestPreservesNewerLastActivity(t *testing.T) {
 	assert.True(got.LastActivityAt.Equal(newerActivity))
 }
 
-func TestAppliedProviderHeadFenceRejectsStaleSnapshotsUntilConfirmed(t *testing.T) {
+func TestAppliedProviderHeadFenceRejectsOlderFetchAndAcceptsNewerHead(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -2219,6 +2219,7 @@ func TestAppliedProviderHeadFenceRejectsStaleSnapshotsUntilConfirmed(t *testing.
 	assert.True(marked)
 
 	stale := testMR(repoID, 7, withMRActivity(base.Add(time.Minute)))
+	stale.Title = "stale snapshot"
 	stale.PlatformHeadSHA = "reviewed-head"
 	stale.PlatformBaseSHA = "stale-base"
 	_, err = d.UpsertMergeRequest(ctx, stale)
@@ -2229,18 +2230,31 @@ func TestAppliedProviderHeadFenceRejectsStaleSnapshotsUntilConfirmed(t *testing.
 	assert.Equal("applied-head", got.PlatformHeadSHA)
 	assert.Equal("reviewed-base", got.PlatformBaseSHA)
 	assert.Equal("applied-head", got.PendingProviderHeadSHA)
+	assert.Positive(got.PendingProviderHeadGeneration)
+	assert.NotEqual("stale snapshot", got.Title)
 
-	confirmed := testMR(repoID, 7, withMRActivity(base.Add(2*time.Minute)))
-	confirmed.PlatformHeadSHA = "applied-head"
-	confirmed.PlatformBaseSHA = "confirmed-base"
-	_, err = d.UpsertMergeRequest(ctx, confirmed)
+	postMutationGeneration, err := d.ProviderSnapshotGeneration(ctx)
+	require.NoError(err)
+	newer := testMR(repoID, 7, withMRActivity(base.Add(2*time.Minute)))
+	newer.PlatformHeadSHA = "newer-head"
+	newer.PlatformBaseSHA = "newer-base"
+	newer.ProviderSnapshotGeneration = postMutationGeneration
+	_, err = d.UpsertMergeRequest(ctx, newer)
 	require.NoError(err)
 	got, err = d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(got)
-	assert.Equal("applied-head", got.PlatformHeadSHA)
-	assert.Equal("confirmed-base", got.PlatformBaseSHA)
+	assert.Equal("newer-head", got.PlatformHeadSHA)
+	assert.Equal("newer-base", got.PlatformBaseSHA)
 	assert.Empty(got.PendingProviderHeadSHA)
+	assert.Zero(got.PendingProviderHeadGeneration)
+
+	_, err = d.UpsertMergeRequest(ctx, stale)
+	require.NoError(err)
+	got, err = d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("newer-head", got.PlatformHeadSHA)
 }
 
 func TestMarkAppliedProviderHeadLeavesDifferentCurrentHeadUntouched(t *testing.T) {
@@ -2262,7 +2276,8 @@ func TestMarkAppliedProviderHeadLeavesDifferentCurrentHeadUntouched(t *testing.T
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal("newer-head", got.PlatformHeadSHA)
-	assert.Empty(got.PendingProviderHeadSHA)
+	assert.Equal("applied-head", got.PendingProviderHeadSHA)
+	assert.Positive(got.PendingProviderHeadGeneration)
 }
 
 func TestListPullRequests(t *testing.T) {

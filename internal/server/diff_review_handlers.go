@@ -286,15 +286,24 @@ func (s *Server) applyReviewSuggestions(
 		)
 	}
 	responseStatus := "applied"
-	if result != nil && strings.TrimSpace(result.CommitSHA) != "" {
-		if _, updateErr := s.db.MarkAppliedProviderHead(
+	commitSHA := ""
+	if result != nil {
+		commitSHA = strings.TrimSpace(result.CommitSHA)
+	}
+	if commitSHA == "" {
+		responseStatus = "applied_reconciliation_pending"
+	} else {
+		marked, updateErr := s.db.MarkAppliedProviderHead(
 			ctx,
 			repo.ID,
 			input.Number,
 			expectedHeadSHA,
-			strings.TrimSpace(result.CommitSHA),
-		); updateErr != nil {
+			commitSHA,
+		)
+		if updateErr != nil {
 			slog.WarnContext(ctx, "persist applied review suggestion head", "err", updateErr)
+			responseStatus = "applied_reconciliation_pending"
+		} else if !marked {
 			responseStatus = "applied_reconciliation_pending"
 		}
 	}

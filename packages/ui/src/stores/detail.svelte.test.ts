@@ -199,7 +199,7 @@ describe("createDetailStore", () => {
     const get = vi.fn().mockResolvedValue({ data: pullDetail("cached-head") });
     const post = vi.fn(async (path: string) => {
       if (path.endsWith("/review-suggestions/apply")) {
-        return { data: { status: "applied" }, error: undefined };
+        return { data: { status: "applied_reconciliation_pending" }, error: undefined };
       }
       if (path.endsWith("/sync")) {
         return { error: undefined };
@@ -223,6 +223,10 @@ describe("createDetailStore", () => {
     expect(store.getDetail()?.platform_head_sha).toBe("cached-head");
     expect(store.isSuggestionReconciliationPending("acme", "widget", 7)).toBe(true);
     expect(store.getDetailError()).toBe("Could not reconcile the applied suggestion");
+    expect(getFlash()).toMatchObject({
+      message: "Suggestion was applied, but its updated head still needs to be reconciled.",
+      tone: "warning",
+    });
   });
 
   it("syncs detail before returning false for apply-suggestion state conflicts", async () => {

@@ -2214,7 +2214,9 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		INSERT INTO middleman_merge_requests
 		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_display_name,
 		     state, is_draft, is_locked, body, head_branch, base_branch,
-		     platform_head_sha, platform_base_sha, pending_provider_head_sha,
+		     platform_head_sha, platform_base_sha,
+		     pending_provider_head_sha, pending_provider_head_generation,
+		     provider_snapshot_generation,
 		     head_repo_clone_url,
 		     additions, deletions, comment_count,
 		     review_decision, ci_status, ci_checks_json,
@@ -2222,7 +2224,7 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		     created_at, updated_at,
 		     last_activity_at, merged_at, closed_at, mergeable_state,
 		     assignees_json, reviewers_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id          = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), middleman_merge_requests.platform_external_id),
@@ -2236,24 +2238,14 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		    body                 = excluded.body,
 		    head_branch          = excluded.head_branch,
 		    base_branch          = excluded.base_branch,
-		    platform_head_sha    = CASE
-		        WHEN middleman_merge_requests.pending_provider_head_sha <> ''
-		         AND excluded.platform_head_sha <> middleman_merge_requests.pending_provider_head_sha
-		        THEN middleman_merge_requests.platform_head_sha
-		        ELSE excluded.platform_head_sha
-		    END,
-		    platform_base_sha    = CASE
-		        WHEN middleman_merge_requests.pending_provider_head_sha <> ''
-		         AND excluded.platform_head_sha <> middleman_merge_requests.pending_provider_head_sha
-		        THEN middleman_merge_requests.platform_base_sha
-		        ELSE excluded.platform_base_sha
-		    END,
-		    pending_provider_head_sha = CASE
-		        WHEN middleman_merge_requests.pending_provider_head_sha <> ''
-		         AND excluded.platform_head_sha = middleman_merge_requests.pending_provider_head_sha
-		        THEN ''
-		        ELSE middleman_merge_requests.pending_provider_head_sha
-		    END,
+		    platform_head_sha    = excluded.platform_head_sha,
+		    platform_base_sha    = excluded.platform_base_sha,
+		    pending_provider_head_sha = '',
+		    pending_provider_head_generation = 0,
+		    provider_snapshot_generation = MAX(
+		        middleman_merge_requests.provider_snapshot_generation,
+		        excluded.provider_snapshot_generation
+		    ),
 		    head_repo_clone_url  = excluded.head_repo_clone_url,
 		    additions            = excluded.additions,
 		    deletions            = excluded.deletions,
@@ -2274,11 +2266,15 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		    reviewers_json       = CASE WHEN excluded.reviewers_json = ''
 		                                THEN middleman_merge_requests.reviewers_json
 		                                ELSE excluded.reviewers_json END
-		WHERE excluded.updated_at >= middleman_merge_requests.updated_at`,
+		WHERE excluded.updated_at >= middleman_merge_requests.updated_at
+		  AND middleman_merge_requests.pending_provider_head_generation <= excluded.provider_snapshot_generation
+		  AND middleman_merge_requests.provider_snapshot_generation <= excluded.provider_snapshot_generation`,
 		mr.RepoID, mr.PlatformID, mr.PlatformExternalID, mr.Number, mr.URL, mr.Title,
 		mr.Author, mr.AuthorDisplayName,
 		mr.State, mr.IsDraft, mr.IsLocked, mr.Body, mr.HeadBranch, mr.BaseBranch,
-		mr.PlatformHeadSHA, mr.PlatformBaseSHA, mr.PendingProviderHeadSHA,
+		mr.PlatformHeadSHA, mr.PlatformBaseSHA,
+		mr.PendingProviderHeadSHA, mr.PendingProviderHeadGeneration,
+		mr.ProviderSnapshotGeneration,
 		mr.HeadRepoCloneURL,
 		mr.Additions, mr.Deletions, mr.CommentCount, mr.ReviewDecision,
 		mr.CIStatus, mr.CIChecksJSON,
@@ -2314,7 +2310,9 @@ func (d *DB) GetMergeRequest(
 		SELECT p.id, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
 		       p.body, p.head_branch, p.base_branch,
-		       p.platform_head_sha, p.platform_base_sha, p.pending_provider_head_sha,
+		       p.platform_head_sha, p.platform_base_sha,
+		       p.pending_provider_head_sha, p.pending_provider_head_generation,
+		       p.provider_snapshot_generation,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.head_repo_clone_url,
 		       p.additions, p.deletions, p.comment_count, p.review_decision,
@@ -2341,7 +2339,9 @@ func (d *DB) GetMergeRequest(
 		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.PlatformExternalID, &mr.Number, &mr.URL, &mr.Title,
 		&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft, &mr.IsLocked,
 		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
-		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA, &mr.PendingProviderHeadSHA,
+		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
+		&mr.PendingProviderHeadSHA, &mr.PendingProviderHeadGeneration,
+		&mr.ProviderSnapshotGeneration,
 		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
 		&mr.HeadRepoCloneURL,
 		&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
@@ -2376,7 +2376,9 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 		SELECT p.id, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
 		       p.body, p.head_branch, p.base_branch,
-		       p.platform_head_sha, p.platform_base_sha, p.pending_provider_head_sha,
+		       p.platform_head_sha, p.platform_base_sha,
+		       p.pending_provider_head_sha, p.pending_provider_head_generation,
+		       p.provider_snapshot_generation,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.head_repo_clone_url,
 		       p.additions, p.deletions, p.comment_count, p.review_decision,
@@ -2400,7 +2402,9 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.PlatformExternalID, &mr.Number, &mr.URL, &mr.Title,
 		&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft, &mr.IsLocked,
 		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
-		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA, &mr.PendingProviderHeadSHA,
+		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
+		&mr.PendingProviderHeadSHA, &mr.PendingProviderHeadGeneration,
+		&mr.ProviderSnapshotGeneration,
 		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
 		&mr.HeadRepoCloneURL,
 		&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
@@ -2501,7 +2505,9 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		SELECT p.id, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
 		       p.body, p.head_branch, p.base_branch,
-		       p.platform_head_sha, p.platform_base_sha, p.pending_provider_head_sha,
+		       p.platform_head_sha, p.platform_base_sha,
+		       p.pending_provider_head_sha, p.pending_provider_head_generation,
+		       p.provider_snapshot_generation,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.head_repo_clone_url,
 		       p.additions, p.deletions, p.comment_count, p.review_decision,
@@ -2536,7 +2542,9 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 			&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.PlatformExternalID, &mr.Number, &mr.URL, &mr.Title,
 			&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft, &mr.IsLocked,
 			&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
-			&mr.PlatformHeadSHA, &mr.PlatformBaseSHA, &mr.PendingProviderHeadSHA,
+			&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
+			&mr.PendingProviderHeadSHA, &mr.PendingProviderHeadGeneration,
+			&mr.ProviderSnapshotGeneration,
 			&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
 			&mr.HeadRepoCloneURL,
 			&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
@@ -3100,14 +3108,38 @@ func (d *DB) UpdateClosedMRState(
 	mergedAt, closedAt *time.Time,
 	platformHeadSHA, platformBaseSHA string,
 ) error {
+	return d.UpdateClosedMRStateFromSnapshot(
+		ctx, repoID, number, state, updatedAt, mergedAt, closedAt,
+		platformHeadSHA, platformBaseSHA, 0,
+	)
+}
+
+// UpdateClosedMRStateFromSnapshot applies a closed-state provider snapshot
+// only when its fetch generation is not older than a pending head mutation.
+func (d *DB) UpdateClosedMRStateFromSnapshot(
+	ctx context.Context,
+	repoID int64,
+	number int,
+	state string,
+	updatedAt time.Time,
+	mergedAt, closedAt *time.Time,
+	platformHeadSHA, platformBaseSHA string,
+	snapshotGeneration int64,
+) error {
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_merge_requests
 		SET state = ?, merged_at = ?, closed_at = ?,
 		    updated_at = ?, last_activity_at = ?,
-		    platform_head_sha = ?, platform_base_sha = ?
-		WHERE repo_id = ? AND number = ?`,
+		    platform_head_sha = ?, platform_base_sha = ?,
+		    pending_provider_head_sha = '',
+		    pending_provider_head_generation = 0,
+		    provider_snapshot_generation = MAX(provider_snapshot_generation, ?)
+		WHERE repo_id = ? AND number = ?
+		  AND pending_provider_head_generation <= ?
+		  AND provider_snapshot_generation <= ?`,
 		state, mergedAt, closedAt, updatedAt, updatedAt,
-		platformHeadSHA, platformBaseSHA, repoID, number,
+		platformHeadSHA, platformBaseSHA, snapshotGeneration,
+		repoID, number, snapshotGeneration, snapshotGeneration,
 	)
 	if err != nil {
 		return fmt.Errorf("update closed MR state: %w", err)
@@ -3150,12 +3182,30 @@ func (d *DB) UpdatePlatformSHAs(
 	return nil
 }
 
-// MarkAppliedProviderHead records a provider-confirmed head mutation only
-// while the locally stored head still matches the head the caller submitted.
-// The pending fence prevents a provider snapshot fetched before the mutation
-// from restoring the old head; an upsert that observes the applied head clears
-// the fence. A false result means another sync already installed a different,
-// authoritative head and this mutation result was intentionally not written.
+const providerSnapshotGenerationKey = "provider_snapshot_generation"
+
+// ProviderSnapshotGeneration returns a token that provider sync paths capture
+// before fetching merge-request state. A later mutation advances the token so
+// snapshots already in flight cannot overwrite its confirmed head result.
+func (d *DB) ProviderSnapshotGeneration(ctx context.Context) (int64, error) {
+	var generation int64
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT CAST(value AS INTEGER)
+		FROM middleman_app_metadata
+		WHERE key = ?`, providerSnapshotGenerationKey,
+	).Scan(&generation)
+	if err != nil {
+		return 0, fmt.Errorf("get provider snapshot generation: %w", err)
+	}
+	return generation, nil
+}
+
+// MarkAppliedProviderHead records a provider-confirmed head mutation and
+// advances the fetch generation in the same transaction. Upserts from fetches
+// that started before this transaction preserve the pending result; the first
+// post-mutation fetch can install either the applied head or a newer provider
+// head and clear the fence. A false result means the row already held a
+// different head, so the result was recorded as pending without replacing it.
 func (d *DB) MarkAppliedProviderHead(
 	ctx context.Context,
 	repoID int64,
@@ -3163,20 +3213,52 @@ func (d *DB) MarkAppliedProviderHead(
 	expectedHead string,
 	appliedHead string,
 ) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET platform_head_sha = ?, pending_provider_head_sha = ?
-		WHERE repo_id = ? AND number = ? AND platform_head_sha = ?`,
-		appliedHead, appliedHead, repoID, number, expectedHead,
-	)
-	if err != nil {
-		return false, fmt.Errorf("mark applied provider head for MR %d: %w", number, err)
-	}
-	updated, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("read applied provider head update for MR %d: %w", number, err)
-	}
-	return updated > 0, nil
+	marked := false
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		var generation int64
+		if err := tx.QueryRowContext(ctx, `
+			UPDATE middleman_app_metadata
+			SET value = CAST(value AS INTEGER) + 1, updated_at = CURRENT_TIMESTAMP
+			WHERE key = ?
+			RETURNING CAST(value AS INTEGER)`, providerSnapshotGenerationKey,
+		).Scan(&generation); err != nil {
+			return fmt.Errorf("advance provider snapshot generation: %w", err)
+		}
+
+		var currentHead string
+		if err := tx.QueryRowContext(ctx, `
+			SELECT platform_head_sha
+			FROM middleman_merge_requests
+			WHERE repo_id = ? AND number = ?`, repoID, number,
+		).Scan(&currentHead); err != nil {
+			return fmt.Errorf("get current provider head for MR %d: %w", number, err)
+		}
+		marked = currentHead == expectedHead || currentHead == appliedHead
+
+		result, err := tx.ExecContext(ctx, `
+			UPDATE middleman_merge_requests
+			SET platform_head_sha = CASE
+			        WHEN platform_head_sha = ? THEN ?
+			        ELSE platform_head_sha
+			    END,
+			    pending_provider_head_sha = ?,
+			    pending_provider_head_generation = ?
+			WHERE repo_id = ? AND number = ?`,
+			expectedHead, appliedHead, appliedHead, generation, repoID, number,
+		)
+		if err != nil {
+			return fmt.Errorf("mark applied provider head for MR %d: %w", number, err)
+		}
+		updated, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("read applied provider head update for MR %d: %w", number, err)
+		}
+		if updated == 0 {
+			return fmt.Errorf("mark applied provider head for MR %d: merge request not found", number)
+		}
+		return nil
+	})
+	return marked, err
 }
 
 // DiffSHAs holds the SHA columns needed by the diff endpoint.

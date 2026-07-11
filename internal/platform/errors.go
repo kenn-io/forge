@@ -8,6 +8,13 @@ import (
 
 type PlatformErrorCode string
 
+type MutationOutcome string
+
+const (
+	MutationOutcomeUnknown            MutationOutcome = ""
+	MutationOutcomeDefinitelyRejected MutationOutcome = "definitely_rejected"
+)
+
 const (
 	ErrCodeUnsupportedCapability PlatformErrorCode = "unsupported_capability"
 	ErrCodeProviderNotConfigured PlatformErrorCode = "provider_not_configured"
@@ -48,21 +55,7 @@ func MutationDefinitelyRejected(err error) bool {
 	if !errors.As(err, &providerErr) || providerErr == nil {
 		return false
 	}
-	switch providerErr.Code {
-	case ErrCodeUnsupportedCapability,
-		ErrCodeProviderNotConfigured,
-		ErrCodeMissingToken,
-		ErrCodeInvalidRepoRef,
-		ErrCodeInvalidArgument,
-		ErrCodePermissionDenied,
-		ErrCodeNotFound,
-		ErrCodeRateLimited,
-		ErrCodeStaleState,
-		ErrCodeConflict:
-		return true
-	default:
-		return false
-	}
+	return providerErr.MutationOutcome == MutationOutcomeDefinitelyRejected
 }
 
 type Error struct {
@@ -85,7 +78,10 @@ type Error struct {
 	// without parsing Hint prose. Keys must not collide with the
 	// reserved problem members (reason, provider, platformHost).
 	Details map[string]string
-	Err     error
+	// MutationOutcome is set only by mutation adapters at a point where they
+	// can prove whether the provider performed the requested side effect.
+	MutationOutcome MutationOutcome
+	Err             error
 }
 
 func (e *Error) Error() string {

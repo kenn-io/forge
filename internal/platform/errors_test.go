@@ -14,9 +14,13 @@ func TestMutationDefinitelyRejected(t *testing.T) {
 		err  error
 		want bool
 	}{
-		{name: "stale state", err: ErrStaleState, want: true},
-		{name: "permission denied", err: ErrPermissionDenied, want: true},
-		{name: "wrapped conflict", err: fmt.Errorf("apply: %w", ErrConflict), want: true},
+		{name: "explicit rejection", err: &Error{
+			Code: ErrCodeStaleState, MutationOutcome: MutationOutcomeDefinitelyRejected,
+		}, want: true},
+		{name: "wrapped explicit rejection", err: fmt.Errorf("apply: %w", &Error{
+			Code: ErrCodeConflict, MutationOutcome: MutationOutcomeDefinitelyRejected,
+		}), want: true},
+		{name: "code without outcome", err: ErrStaleState},
 		{name: "unknown typed outcome", err: &Error{Code: PlatformErrorCode("upstream_failure")}},
 		{name: "transport error", err: errors.New("connection reset")},
 	}

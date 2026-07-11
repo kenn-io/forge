@@ -17296,11 +17296,12 @@ func TestAPIApplyReviewSuggestionMapsProviderConflictReason(t *testing.T) {
 			)
 			ctx := t.Context()
 			provider.applySuggestionsErr = &platform.Error{
-				Code:         platform.ErrCodeConflict,
-				Provider:     platform.KindGitHub,
-				PlatformHost: "github.example.com",
-				Details:      map[string]string{"reason": tt.reason},
-				Err:          errors.New("live pull request state rejected the apply"),
+				Code:            platform.ErrCodeConflict,
+				Provider:        platform.KindGitHub,
+				PlatformHost:    "github.example.com",
+				MutationOutcome: platform.MutationOutcomeDefinitelyRejected,
+				Details:         map[string]string{"reason": tt.reason},
+				Err:             errors.New("live pull request state rejected the apply"),
 			}
 
 			repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -17356,10 +17357,11 @@ func TestAPIApplyReviewSuggestionMapsProviderStaleStateAndRefreshesDetail(t *tes
 	)
 	ctx := t.Context()
 	provider.applySuggestionsErr = &platform.Error{
-		Code:         platform.ErrCodeStaleState,
-		Provider:     platform.KindGitHub,
-		PlatformHost: "github.example.com",
-		Err:          errors.New("pull request head branch changed since it was reviewed"),
+		Code:            platform.ErrCodeStaleState,
+		Provider:        platform.KindGitHub,
+		PlatformHost:    "github.example.com",
+		MutationOutcome: platform.MutationOutcomeDefinitelyRejected,
+		Err:             errors.New("pull request head branch changed since it was reviewed"),
 	}
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{

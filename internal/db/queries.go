@@ -3333,6 +3333,23 @@ func (d *DB) PrepareProviderHeadMutationReconciliation(
 	return updated > 0, nil
 }
 
+func (d *DB) RestoreProviderHeadMutationIntent(
+	ctx context.Context,
+	repoID int64,
+	number int,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET provider_mutation_in_progress = 1
+		WHERE repo_id = ? AND number = ?
+		  AND pending_provider_head_generation > 0`, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("restore provider head mutation intent for MR %d: %w", number, err)
+	}
+	return nil
+}
+
 // MarkAppliedProviderHead records a provider-confirmed head mutation and
 // advances the fetch generation in the same transaction. Upserts from fetches
 // that started before this transaction preserve the pending result; the first

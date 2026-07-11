@@ -2724,20 +2724,22 @@ func (c *liveClient) ensureReviewSuggestionHeadRepoReachable(
 
 func (c *liveClient) githubSuggestionConflict(reason string, message string) error {
 	return &platform.Error{
-		Code:         platform.ErrCodeConflict,
-		Provider:     platform.KindGitHub,
-		PlatformHost: c.platformHost,
-		Details:      map[string]string{"reason": reason},
-		Err:          fmt.Errorf("%s", message),
+		Code:            platform.ErrCodeConflict,
+		Provider:        platform.KindGitHub,
+		PlatformHost:    c.platformHost,
+		MutationOutcome: platform.MutationOutcomeDefinitelyRejected,
+		Details:         map[string]string{"reason": reason},
+		Err:             fmt.Errorf("%s", message),
 	}
 }
 
 func (c *liveClient) githubSuggestionStaleState(message string) error {
 	return &platform.Error{
-		Code:         platform.ErrCodeStaleState,
-		Provider:     platform.KindGitHub,
-		PlatformHost: c.platformHost,
-		Err:          fmt.Errorf("%s", message),
+		Code:            platform.ErrCodeStaleState,
+		Provider:        platform.KindGitHub,
+		PlatformHost:    c.platformHost,
+		MutationOutcome: platform.MutationOutcomeDefinitelyRejected,
+		Err:             fmt.Errorf("%s", message),
 	}
 }
 
@@ -2932,9 +2934,10 @@ func githubCreateCommitGraphQLError(
 	)
 	if githubCreateCommitStaleError(graphQLErrors) {
 		return &platform.Error{
-			Code:     platform.ErrCodeStaleState,
-			Provider: platform.KindGitHub,
-			Err:      wrapped,
+			Code:            platform.ErrCodeStaleState,
+			Provider:        platform.KindGitHub,
+			MutationOutcome: platform.MutationOutcomeDefinitelyRejected,
+			Err:             wrapped,
 		}
 	}
 	for _, graphQLError := range graphQLErrors {
@@ -2945,10 +2948,11 @@ func githubCreateCommitGraphQLError(
 			// same stable reason as the preflight so clients run
 			// conflict recovery.
 			return &platform.Error{
-				Code:     platform.ErrCodeConflict,
-				Provider: platform.KindGitHub,
-				Details:  map[string]string{"reason": "head_repo_unknown"},
-				Err:      wrapped,
+				Code:            platform.ErrCodeConflict,
+				Provider:        platform.KindGitHub,
+				MutationOutcome: platform.MutationOutcomeDefinitelyRejected,
+				Details:         map[string]string{"reason": "head_repo_unknown"},
+				Err:             wrapped,
 			}
 		}
 	}
@@ -2979,9 +2983,10 @@ func githubSuggestionPlatformError(
 		err = errors.New(message)
 	}
 	return &platform.Error{
-		Code:     code,
-		Provider: platform.KindGitHub,
-		Err:      err,
+		Code:            code,
+		Provider:        platform.KindGitHub,
+		MutationOutcome: platform.MutationOutcomeDefinitelyRejected,
+		Err:             err,
 	}
 }
 

@@ -8154,17 +8154,6 @@ func (s *Syncer) syncMRForRepo(
 		}
 		defer unlockProviderWrites()
 	}
-	if mutationInProgress {
-		prepared, prepareErr := s.db.PrepareProviderHeadMutationReconciliation(
-			ctx, repoID, number, normalized.PlatformHeadSHA,
-		)
-		if prepareErr != nil {
-			return prepareErr
-		}
-		if !prepared {
-			return nil
-		}
-	}
 	headChanged := existing != nil &&
 		existing.PlatformHeadSHA != normalized.PlatformHeadSHA
 	if existing != nil {
@@ -8198,20 +8187,18 @@ func (s *Syncer) syncMRForRepo(
 		}
 	}
 
-	mrID, accepted, err := s.db.UpsertMergeRequestSnapshot(ctx, normalized)
+	var mrID int64
+	var accepted bool
+	if mutationInProgress {
+		mrID, accepted, err = s.db.ReconcileProviderHeadMutationSnapshot(ctx, normalized)
+	} else {
+		mrID, accepted, err = s.db.UpsertMergeRequestSnapshot(ctx, normalized)
+	}
 	if err != nil {
-		if mutationInProgress {
-			if restoreErr := s.db.RestoreProviderHeadMutationIntent(ctx, repoID, number); restoreErr != nil {
-				return errors.Join(fmt.Errorf("upsert MR #%d: %w", number, err), restoreErr)
-			}
-		}
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
 	if !accepted {
 		if mutationInProgress {
-			if restoreErr := s.db.RestoreProviderHeadMutationIntent(ctx, repoID, number); restoreErr != nil {
-				return restoreErr
-			}
 			return nil
 		}
 		current, currentErr := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)

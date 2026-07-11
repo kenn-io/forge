@@ -2369,6 +2369,55 @@ func TestProviderHeadMutationIntentSurvivesFinalizeFailure(t *testing.T) {
 	assert.Positive(got.PendingProviderHeadGeneration)
 }
 
+func TestReconcileProviderHeadMutationSnapshotIsAtomic(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	current := testMR(repoID, 7, withMRActivity(baseTime()))
+	current.PlatformHeadSHA = "reviewed-head"
+	_, err := d.UpsertMergeRequest(ctx, current)
+	require.NoError(err)
+	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 7, "reviewed-head"))
+
+	generation, err := d.ProviderSnapshotGeneration(ctx)
+	require.NoError(err)
+	unchanged := testMR(repoID, 7, withMRActivity(baseTime().Add(time.Minute)))
+	unchanged.PlatformHeadSHA = "reviewed-head"
+	unchanged.ProviderSnapshotGeneration = generation
+	_, accepted, err := d.ReconcileProviderHeadMutationSnapshot(ctx, unchanged)
+	require.NoError(err)
+	assert.False(accepted)
+	inProgress, err := d.ProviderHeadMutationInProgress(ctx, repoID, 7)
+	require.NoError(err)
+	assert.True(inProgress)
+
+	changed := testMR(repoID, 7, withMRActivity(baseTime().Add(2*time.Minute)))
+	changed.PlatformHeadSHA = "provider-head"
+	changed.ProviderSnapshotGeneration = generation
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	_, _, err = d.ReconcileProviderHeadMutationSnapshot(canceledCtx, changed)
+	require.ErrorIs(err, context.Canceled)
+	inProgress, err = d.ProviderHeadMutationInProgress(ctx, repoID, 7)
+	require.NoError(err)
+	assert.True(inProgress)
+
+	_, accepted, err = d.ReconcileProviderHeadMutationSnapshot(ctx, changed)
+	require.NoError(err)
+	assert.True(accepted)
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("provider-head", got.PlatformHeadSHA)
+	assert.Empty(got.PendingProviderHeadSHA)
+	assert.Zero(got.PendingProviderHeadGeneration)
+	inProgress, err = d.ProviderHeadMutationInProgress(ctx, repoID, 7)
+	require.NoError(err)
+	assert.False(inProgress)
+}
+
 func TestCancelProviderHeadMutationAllowsFreshSnapshot(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

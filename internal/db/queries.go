@@ -2222,7 +2222,20 @@ func (d *DB) UpsertMergeRequestSnapshot(
 	mr *MergeRequest,
 ) (int64, bool, error) {
 	canonicalizeMergeRequestTimestamps(mr)
-	result, err := d.rw.ExecContext(ctx, `
+	return upsertMergeRequestSnapshot(ctx, d.rw, mr)
+}
+
+type mergeRequestSnapshotExecutor interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func upsertMergeRequestSnapshot(
+	ctx context.Context,
+	executor mergeRequestSnapshotExecutor,
+	mr *MergeRequest,
+) (int64, bool, error) {
+	result, err := executor.ExecContext(ctx, `
 		INSERT INTO middleman_merge_requests
 		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_display_name,
 		     state, is_draft, is_locked, body, head_branch, base_branch,
@@ -2304,7 +2317,7 @@ func (d *DB) UpsertMergeRequestSnapshot(
 		return 0, false, fmt.Errorf("read upsert merge request result: %w", err)
 	}
 	var id int64
-	err = d.ro.QueryRowContext(ctx,
+	err = executor.QueryRowContext(ctx,
 		`SELECT id FROM middleman_merge_requests WHERE repo_id = ? AND number = ?`,
 		mr.RepoID, mr.Number,
 	).Scan(&id)
@@ -3306,48 +3319,48 @@ func (d *DB) ProviderHeadMutationInProgress(
 	return inProgress, nil
 }
 
-// PrepareProviderHeadMutationReconciliation allows a provider snapshot fetched
-// while holding the per-pull write lock to resolve an abandoned or ambiguous
-// mutation intent. The pending generation remains until the authoritative
-// snapshot upsert succeeds.
-func (d *DB) PrepareProviderHeadMutationReconciliation(
+// ReconcileProviderHeadMutationSnapshot atomically clears an ambiguous intent
+// and installs an authoritative changed-head snapshot. An unchanged head or a
+// rejected snapshot leaves the durable intent untouched.
+func (d *DB) ReconcileProviderHeadMutationSnapshot(
 	ctx context.Context,
-	repoID int64,
-	number int,
-	observedHead string,
-) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET provider_mutation_in_progress = 0
-		WHERE repo_id = ? AND number = ?
-		  AND provider_mutation_in_progress = 1
-		  AND pending_provider_head_sha <> ?`, repoID, number, observedHead,
-	)
+	mr *MergeRequest,
+) (int64, bool, error) {
+	canonicalizeMergeRequestTimestamps(mr)
+	var id int64
+	accepted := false
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `
+			UPDATE middleman_merge_requests
+			SET provider_mutation_in_progress = 0
+			WHERE repo_id = ? AND number = ?
+			  AND provider_mutation_in_progress = 1
+			  AND pending_provider_head_sha <> ?`,
+			mr.RepoID, mr.Number, mr.PlatformHeadSHA,
+		)
+		if err != nil {
+			return fmt.Errorf("prepare provider head mutation reconciliation for MR %d: %w", mr.Number, err)
+		}
+		updated, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("read provider head mutation reconciliation for MR %d: %w", mr.Number, err)
+		}
+		if updated == 0 {
+			return nil
+		}
+		id, accepted, err = upsertMergeRequestSnapshot(ctx, tx, mr)
+		if err != nil {
+			return err
+		}
+		if !accepted {
+			return errors.New("authoritative provider mutation snapshot was rejected")
+		}
+		return nil
+	})
 	if err != nil {
-		return false, fmt.Errorf("prepare provider head mutation reconciliation for MR %d: %w", number, err)
+		return 0, false, fmt.Errorf("reconcile provider head mutation for MR %d: %w", mr.Number, err)
 	}
-	updated, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("read provider head mutation reconciliation for MR %d: %w", number, err)
-	}
-	return updated > 0, nil
-}
-
-func (d *DB) RestoreProviderHeadMutationIntent(
-	ctx context.Context,
-	repoID int64,
-	number int,
-) error {
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET provider_mutation_in_progress = 1
-		WHERE repo_id = ? AND number = ?
-		  AND pending_provider_head_generation > 0`, repoID, number,
-	)
-	if err != nil {
-		return fmt.Errorf("restore provider head mutation intent for MR %d: %w", number, err)
-	}
-	return nil
+	return id, accepted, nil
 }
 
 // MarkAppliedProviderHead records a provider-confirmed head mutation and

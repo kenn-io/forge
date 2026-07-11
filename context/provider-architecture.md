@@ -69,8 +69,11 @@ Rules:
   success. Typed `not_found` is not sufficient because provider write credentials may
   conceal authorization failures as absence; all upstream failures preserve local state,
   unless a retained deletion-attempt receipt plus an authoritative read sync confirms
-  absence. Item-scoped mutation/sync serialization prevents stale pre-delete fetches
-  from restoring deleted comments, and local removal tolerates an already-absent row
+  absence. A provider's explicit uncertain-mutation marker overrides generic mapped
+  error codes for transport and 5xx failures
+  (`internal/platform/errors.go::ErrMutationOutcomeUncertain`). Item-scoped
+  mutation/sync serialization prevents stale pre-delete fetches from restoring
+  deleted comments, and local removal tolerates an already-absent row
   (`internal/server/huma_routes.go::deleteComment`,
   `internal/server/huma_routes.go::deleteIssueComment`).
 - Keep operation availability split by scope. `repoOperations` handles

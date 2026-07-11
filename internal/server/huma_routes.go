@@ -2349,6 +2349,9 @@ func (s *Server) deleteComment(ctx context.Context, input *deleteCommentInput) (
 }
 
 func definitiveCommentDeletionFailure(err error) bool {
+	if errors.Is(err, platform.ErrMutationOutcomeUncertain) {
+		return false
+	}
 	var providerErr *platform.Error
 	if !errors.As(err, &providerErr) {
 		return false

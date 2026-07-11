@@ -902,7 +902,9 @@ func mapGitLabErrorForHost(platformHost, capability string, err error) error {
 	}
 	var gitlabErr *gitlab.ErrorResponse
 	code := platform.ErrCodeInvalidRepoRef
-	if errors.As(err, &gitlabErr) {
+	if errors.Is(err, gitlab.ErrNotFound) {
+		code = platform.ErrCodeNotFound
+	} else if errors.As(err, &gitlabErr) {
 		switch {
 		case gitlabErr.HasStatusCode(http.StatusUnauthorized), gitlabErr.HasStatusCode(http.StatusForbidden):
 			code = platform.ErrCodePermissionDenied

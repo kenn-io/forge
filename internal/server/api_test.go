@@ -7068,7 +7068,10 @@ func TestAPIDeleteIssueCommentReconcilesAmbiguousPriorSuccess(t *testing.T) {
 	mock := &mockGH{
 		deleteIssueCommentFn: func(context.Context, string, string, int64) error {
 			if deleteCalls.Add(1) == 1 {
-				return errors.New("connection reset after provider accepted deletion")
+				return platform.MutationOutcomeUncertain(&platform.Error{
+					Code: platform.ErrCodeInvalidArgument,
+					Err:  errors.New("connection reset after provider accepted deletion"),
+				})
 			}
 			return platform.ErrNotFound
 		},

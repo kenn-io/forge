@@ -630,40 +630,26 @@ func (s *Syncer) RefreshCommentsOnProvider(
 
 func (s *Syncer) replacePlatformMRComments(ctx context.Context, item *db.MergeRequest, events []platform.MergeRequestEvent) error {
 	dbEvents := make([]db.MREvent, 0, len(events))
-	keys := make([]string, 0, len(events))
 	for _, event := range events {
 		if event.EventType != "issue_comment" {
 			continue
 		}
 		dbEvent := platform.DBMREvent(item.ID, event)
-		dbEvents, keys = append(dbEvents, dbEvent), append(keys, dbEvent.DedupeKey)
+		dbEvents = append(dbEvents, dbEvent)
 	}
-	if err := s.db.DeleteMissingMRCommentEvents(ctx, item.ID, keys); err != nil {
-		return err
-	}
-	if err := s.db.UpsertMREvents(ctx, dbEvents); err != nil {
-		return err
-	}
-	return s.db.UpdateMRDerivedFields(ctx, item.RepoID, item.Number, db.MRDerivedFields{ReviewDecision: item.ReviewDecision, CommentCount: len(dbEvents), LastActivityAt: item.LastActivityAt})
+	return s.db.ReplaceMRCommentEvents(ctx, item.ID, dbEvents, item.ReviewDecision, item.LastActivityAt)
 }
 
 func (s *Syncer) replacePlatformIssueComments(ctx context.Context, item *db.Issue, events []platform.IssueEvent) error {
 	dbEvents := make([]db.IssueEvent, 0, len(events))
-	keys := make([]string, 0, len(events))
 	for _, event := range events {
 		if event.EventType != "issue_comment" {
 			continue
 		}
 		dbEvent := platform.DBIssueEvent(item.ID, event)
-		dbEvents, keys = append(dbEvents, dbEvent), append(keys, dbEvent.DedupeKey)
+		dbEvents = append(dbEvents, dbEvent)
 	}
-	if err := s.db.DeleteMissingIssueCommentEvents(ctx, item.ID, keys); err != nil {
-		return err
-	}
-	if err := s.db.UpsertIssueEvents(ctx, dbEvents); err != nil {
-		return err
-	}
-	return s.db.UpdateIssueDerivedFields(ctx, item.RepoID, item.Number, db.IssueDerivedFields{CommentCount: len(dbEvents), LastActivityAt: item.LastActivityAt})
+	return s.db.ReplaceIssueCommentEvents(ctx, item.ID, dbEvents, item.LastActivityAt)
 }
 
 // ensureRunCtx lazily initializes runCtx/runCancel. Safe to call

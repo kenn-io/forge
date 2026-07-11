@@ -7103,6 +7103,65 @@ func TestAPIDeleteIssueCommentReconcilesAmbiguousPriorSuccess(t *testing.T) {
 	assert.Empty(events)
 }
 
+func TestAPIDeleteGitLabPrCommentReconcilesServerFailureThenNotFound(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	commentID := int64(9001)
+	var deleteCalls atomic.Int32
+	gitlabServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodDelete && r.URL.EscapedPath() == "/api/v4/projects/4242/merge_requests/7/notes/9001":
+			if deleteCalls.Add(1) == 1 {
+				http.Error(w, "provider response lost", http.StatusInternalServerError)
+				return
+			}
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && r.URL.EscapedPath() == "/api/v4/projects/4242/merge_requests/7/discussions":
+			_, _ = io.WriteString(w, `[]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer gitlabServer.Close()
+
+	srv, database, repoID := setupActualGitLabReviewServer(t, gitlabServer.URL, now)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: mr.ID,
+		PlatformID:     &commentID,
+		EventType:      "issue_comment",
+		Body:           "deleted upstream",
+		CreatedAt:      now,
+		DedupeKey:      "gitlab:gitlab.example.com:group/project:mr:7:note:9001",
+	}}))
+	require.NoError(database.UpdateMRDerivedFields(t.Context(), repoID, 7, db.MRDerivedFields{CommentCount: 1, LastActivityAt: now}))
+
+	path := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/comments/9001"
+	first := httptest.NewRecorder()
+	firstReq := httptest.NewRequest(http.MethodDelete, path, nil)
+	firstReq.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(first, firstReq)
+	assert.Equal(http.StatusBadGateway, first.Code)
+
+	retry := httptest.NewRecorder()
+	retryReq := httptest.NewRequest(http.MethodDelete, path, nil)
+	retryReq.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(retry, retryReq)
+	assert.Equal(http.StatusNoContent, retry.Code)
+	assert.Equal(int32(2), deleteCalls.Load())
+	events, err := database.ListMREvents(t.Context(), mr.ID)
+	require.NoError(err)
+	assert.Empty(events)
+	refreshed, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(refreshed)
+	assert.Equal(0, refreshed.CommentCount)
+}
+
 func TestAPIDeleteIssueCommentRemovesProviderAndDetailComment(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -15242,6 +15301,7 @@ func setupActualGitLabReviewServer(
 		"gitlab.example.com",
 		testTokenSource("token"),
 		platformgitlab.WithBaseURLForTesting(gitlabServerURL+"/api/v4"),
+		platformgitlab.WithoutRetriesForTesting(),
 	)
 	require.NoError(err)
 	registry, err := platform.NewRegistry(client)

@@ -196,6 +196,8 @@ func TestGitLabDeleteCommentMutationOutcomeClassification(t *testing.T) {
 	}{
 		{name: "client rejection is definitive", status: http.StatusBadRequest},
 		{name: "not found response is definitive", status: http.StatusNotFound, wantNotFound: true},
+		{name: "request timeout is uncertain", status: http.StatusRequestTimeout, wantUncertain: true},
+		{name: "too early is uncertain", status: http.StatusTooEarly, wantUncertain: true},
 		{name: "server failure is uncertain", status: http.StatusInternalServerError, wantUncertain: true},
 	}
 

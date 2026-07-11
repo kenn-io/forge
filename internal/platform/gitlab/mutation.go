@@ -245,10 +245,22 @@ func (c *Client) mapCommentDeletionError(capability string, err error) error {
 		return mappedErr
 	}
 	var responseErr *gitlab.ErrorResponse
-	if errors.As(err, &responseErr) && responseErr.Response != nil && responseErr.Response.StatusCode < http.StatusInternalServerError {
+	if errors.As(err, &responseErr) && responseErr.Response != nil && definitiveCommentDeletionRejectionStatus(responseErr.Response.StatusCode) {
 		return mappedErr
 	}
 	return platform.MutationOutcomeUncertain(mappedErr)
+}
+
+func definitiveCommentDeletionRejectionStatus(status int) bool {
+	if status < http.StatusBadRequest || status >= http.StatusInternalServerError {
+		return false
+	}
+	switch status {
+	case http.StatusRequestTimeout, http.StatusTooEarly, 499:
+		return false
+	default:
+		return true
+	}
 }
 
 func (c *Client) SetMergeRequestState(

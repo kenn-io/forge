@@ -73,9 +73,12 @@ Rules:
   error codes for transport and 5xx failures
   (`internal/platform/errors.go::ErrMutationOutcomeUncertain`). Item-scoped
   mutation/sync serialization prevents stale pre-delete fetches from restoring
-  deleted comments, and local removal tolerates an already-absent row
+  deleted comments; authoritative replacement updates comment rows and the parent
+  count in one transaction. Local removal tolerates an already-absent row
   (`internal/server/huma_routes.go::deleteComment`,
-  `internal/server/huma_routes.go::deleteIssueComment`).
+  `internal/server/huma_routes.go::deleteIssueComment`,
+  `internal/db/queries.go::ReplaceMRCommentEvents`,
+  `internal/db/queries.go::ReplaceIssueCommentEvents`).
 - Keep operation availability split by scope. `repoOperations` handles
   repo-level gates: provider capability, write credentials, rate limits, and
   repo-wide viewer permissions. Detail responses may add item-level gates with

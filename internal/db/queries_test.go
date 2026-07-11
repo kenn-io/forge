@@ -2954,6 +2954,69 @@ func TestPREvents(t *testing.T) {
 	assert.Len(got2, 2)
 }
 
+func TestReplaceCommentEventsRollsBackWhenDerivedUpdateFails(t *testing.T) {
+	t.Run("merge request", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		database := openTestDB(t)
+		repoID := insertTestRepo(t, database, "o", "r")
+		mrID := insertTestMR(t, database, repoID, 1, "pr", baseTime())
+		require.NoError(database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "old"}}))
+		require.NoError(database.UpdateMRDerivedFields(t.Context(), repoID, 1, MRDerivedFields{CommentCount: 1, LastActivityAt: baseTime()}))
+		_, err := database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_mr_comment_count BEFORE UPDATE OF comment_count ON middleman_merge_requests BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
+		require.NoError(err)
+
+		err = database.ReplaceMRCommentEvents(t.Context(), mrID, []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "new"}}, "", baseTime())
+		require.Error(err)
+		events, err := database.ListMREvents(t.Context(), mrID)
+		require.NoError(err)
+		require.Len(events, 1)
+		assert.Equal("old", events[0].DedupeKey)
+		mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+		require.NoError(err)
+		require.NotNil(mr)
+		assert.Equal(1, mr.CommentCount)
+	})
+
+	t.Run("issue", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		database := openTestDB(t)
+		repoID := insertTestRepo(t, database, "o", "r")
+		issueID := insertTestIssue(t, database, repoID, 1, "issue", baseTime())
+		require.NoError(database.UpsertIssueEvents(t.Context(), []IssueEvent{{IssueID: issueID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "old"}}))
+		require.NoError(database.UpdateIssueDerivedFields(t.Context(), repoID, 1, IssueDerivedFields{CommentCount: 1, LastActivityAt: baseTime()}))
+		_, err := database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_issue_comment_count BEFORE UPDATE OF comment_count ON middleman_issues BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
+		require.NoError(err)
+
+		err = database.ReplaceIssueCommentEvents(t.Context(), issueID, []IssueEvent{{IssueID: issueID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "new"}}, baseTime())
+		require.Error(err)
+		events, err := database.ListIssueEvents(t.Context(), issueID)
+		require.NoError(err)
+		require.Len(events, 1)
+		assert.Equal("old", events[0].DedupeKey)
+		issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 1)
+		require.NoError(err)
+		require.NotNil(issue)
+		assert.Equal(1, issue.CommentCount)
+	})
+}
+
+func TestCommentDeletionAttemptExpiryEndsRetryWindow(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	repoID := insertTestRepo(t, database, "o", "r")
+	_, err := database.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO middleman_comment_deletion_receipts
+			(repo_id, item_type, item_number, comment_id, created_at)
+		VALUES (?, 'pr', 1, 9001, ?)`, repoID, time.Now().UTC().Add(-31*24*time.Hour))
+	require.NoError(err)
+
+	exists, err := database.CommentDeletionAttemptExists(t.Context(), repoID, "pr", 1, 9001)
+	require.NoError(err)
+	require.False(exists)
+}
+
 func TestMREventsDedupeIsScopedToMergeRequest(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

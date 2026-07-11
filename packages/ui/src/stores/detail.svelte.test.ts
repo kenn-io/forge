@@ -312,6 +312,50 @@ describe("createDetailStore", () => {
     expect(post.mock.calls.some(([path]) => String(path).endsWith("/sync"))).toBe(false);
   });
 
+  it("ignores a delayed suggestion conflict after an A-to-B-to-A route cycle", async () => {
+    let resolveApply!: (value: { error: ProblemBody }) => void;
+    const applyResponse = new Promise<{ error: ProblemBody }>((resolve) => {
+      resolveApply = resolve;
+    });
+    const get = vi.fn(async (_path: string, options: { params: { path: { name: string; number: number } } }) => {
+      const loaded = pullDetail("reviewed-head");
+      loaded.repo_name = options.params.path.name;
+      loaded.repo.repo_path = `acme/${options.params.path.name}`;
+      loaded.merge_request.Number = options.params.path.number;
+      return { data: loaded };
+    });
+    const post = vi.fn((path: string) => {
+      if (path.endsWith("/review-suggestions/apply")) return applyResponse;
+      return Promise.resolve({ error: undefined });
+    });
+    const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
+    const load = (name: string, number: number) =>
+      store.loadDetail("acme", name, number, {
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: `acme/${name}`,
+        sync: false,
+      });
+    await load("widget", 7);
+    const onConflict = vi.fn();
+    const applying = store.applyReviewSuggestions(
+      "acme",
+      "widget",
+      7,
+      { suggestions: [{ threadID: "thread-1", replacement: "return publish();" }] },
+      onConflict,
+    );
+
+    await load("other-widget", 8);
+    await load("widget", 7);
+    resolveApply({ error: conflictProblem("stale_state") });
+
+    await expect(applying).resolves.toBe(false);
+    expect(onConflict).not.toHaveBeenCalled();
+    expect(store.getDetailError()).toBeNull();
+    expect(store.getDetail()?.repo_name).toBe("widget");
+  });
+
   it("fails closed when apply-suggestion conflict refresh returns no detail", async () => {
     const tests = [
       {

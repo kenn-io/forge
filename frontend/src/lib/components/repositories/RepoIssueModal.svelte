@@ -16,10 +16,12 @@
     body: string;
     error?: string | null;
     submitting?: boolean;
+    outcomeUnknown?: boolean;
     ontitlechange: (value: string) => void;
     onbodychange: (value: string) => void;
     oncancel: () => void;
     onsubmitissue: () => void;
+    onacknowledgeoutcome?: () => void;
   }
 
   let {
@@ -28,10 +30,12 @@
     body,
     error = null,
     submitting = false,
+    outcomeUnknown = false,
     ontitlechange,
     onbodychange,
     oncancel,
     onsubmitissue,
+    onacknowledgeoutcome = () => {},
   }: Props = $props();
 
   const key = $derived(repoKey(summary));
@@ -127,6 +131,17 @@
         {#if error}
           <p class="issue-modal__error">{error}</p>
         {/if}
+        {#if outcomeUnknown}
+          <label class="issue-modal__acknowledgement">
+            <input
+              type="checkbox"
+              onchange={(event) => {
+                if (event.currentTarget.checked) onacknowledgeoutcome();
+              }}
+            />
+            <span>I checked the issue list and want to retry.</span>
+          </label>
+        {/if}
       </div>
 
       <footer class="issue-modal__footer">
@@ -134,7 +149,7 @@
           type="submit"
           tone="info"
           surface="soft"
-          disabled={submitting}
+          disabled={submitting || outcomeUnknown}
         >
           {submitting ? "Creating..." : "Create issue"}
         </Button>
@@ -169,6 +184,13 @@
     max-height: min(720px, calc(100vh - 48px));
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .issue-modal__acknowledgement {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    color: var(--text-secondary);
   }
 
   .issue-modal__header,

@@ -653,12 +653,11 @@ describe("EventTimeline", () => {
     });
   });
 
-  it("shows the detail-store error when suggestion application fails", async () => {
-    let detailError: string | null = null;
-    const applySuggestion = vi.fn(async () => {
-      detailError = "pull request state changed";
-      return false;
-    });
+  it("shows an inline error only when suggestion application reports a durable conflict", async () => {
+    const applySuggestion = vi.fn(async () => ({
+      ok: false,
+      error: "pull request state changed",
+    }));
     render(EventTimeline, {
       props: {
         events: [
@@ -685,9 +684,6 @@ describe("EventTimeline", () => {
         [
           STORES_KEY,
           {
-            detail: {
-              getDetailError: () => detailError,
-            },
             diff: makeDiffStore(),
             diffReviewDraft: {
               setRouteContext: vi.fn(),
@@ -704,6 +700,46 @@ describe("EventTimeline", () => {
     await waitFor(() => {
       expect(screen.getByText("pull request state changed")).toBeTruthy();
     });
+  });
+
+  it("does not reuse a stale detail error for a generic suggestion failure", async () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeReviewThreadEvent({
+            Body: ["Try this.", "", "```suggestion", "return publish();", "```"].join("\n"),
+            diff_thread: {
+              ...makeReviewThreadEvent().diff_thread!,
+              diff_head_sha: "abc123",
+            },
+          }),
+        ],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        currentHeadSHA: "abc123",
+        onApplySuggestion: vi.fn(async () => false),
+      },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            detail: { getDetailError: () => "unrelated previous error" },
+            diff: makeDiffStore(),
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
+          },
+        ],
+      ]),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Commit suggestion" }));
+    await waitFor(() => expect(screen.queryByText("unrelated previous error")).toBeNull());
   });
 
   it("keeps hidden selected suggestions in the batch apply request", async () => {
@@ -782,17 +818,13 @@ describe("EventTimeline", () => {
   });
 
   it("clears a batch error before a successful retry", async () => {
-    let detailError: string | null = null;
     const applySuggestion = vi
       .fn()
-      .mockImplementationOnce(async () => {
-        detailError = "pull request state changed";
-        return false;
-      })
-      .mockImplementationOnce(async () => {
-        detailError = null;
-        return true;
-      });
+      .mockImplementationOnce(async () => ({
+        ok: false,
+        error: "pull request state changed",
+      }))
+      .mockImplementationOnce(async () => true);
     render(EventTimeline, {
       props: {
         events: [
@@ -817,7 +849,6 @@ describe("EventTimeline", () => {
         [
           STORES_KEY,
           {
-            detail: { getDetailError: () => detailError },
             diff: makeDiffStore(),
             diffReviewDraft: {
               setRouteContext: vi.fn(),

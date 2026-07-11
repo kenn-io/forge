@@ -1178,7 +1178,7 @@ describe("PullDetail approvals", () => {
     expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
   });
 
-  it("ignores a delayed merge conflict after navigating to another provider-aware pull", async () => {
+  it("ignores a delayed merge conflict after an A-to-B-to-A route cycle", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;
     let resolveMerge: ((value: unknown) => void) | undefined;
@@ -1222,6 +1222,15 @@ describe("PullDetail approvals", () => {
       provider: "gitlab",
       platformHost: "gitlab.example.com",
       repoPath: "acme/other-widget",
+      hideWorkspaceAction: true,
+    });
+    await rerender({
+      owner: "acme",
+      name: "widget",
+      number: 1,
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
       hideWorkspaceAction: true,
     });
     resolveMerge?.({

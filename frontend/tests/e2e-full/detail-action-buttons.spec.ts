@@ -1,7 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { access } from "node:fs/promises";
 import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
-import { startIsolatedE2EServer, startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import {
+  startIsolatedE2EServer,
+  startIsolatedE2EServerWithOptions,
+  startIsolatedWorkspaceE2EServer,
+  type IsolatedE2EServer,
+} from "./support/e2eServer";
 
 type WorkspaceStatusResponse = {
   id: string;
@@ -753,6 +758,50 @@ test.describe("detail action buttons", () => {
       await expect(merge).toBeDisabled();
       await merge.click({ force: true });
       await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toHaveCount(0);
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("typed suggestion conflict blocks stale actions through the real server", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServerWithOptions({ freshProcess: true });
+      const baseURL = isolatedServer.info.base_url;
+
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
+      const commitSuggestion = page.getByRole("button", { name: "Commit suggestion" });
+      await expect(commitSuggestion).toBeVisible();
+
+      const closeResponse = await page.request.post(`${baseURL}/__e2e/merge/conflict/not-open`);
+      expect(closeResponse.ok()).toBe(true);
+      await page.route("**/api/v1/pulls/github/acme/widgets/1/sync", async (route) => {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/problem+json",
+          body: JSON.stringify({ detail: "fixture refresh unavailable" }),
+        });
+      });
+
+      const [conflictResponse] = await Promise.all([
+        page.waitForResponse(
+          (response) => response.url().endsWith("/review-suggestions/apply") && response.request().method() === "POST",
+        ),
+        commitSuggestion.click(),
+      ]);
+      expect(conflictResponse.status()).toBe(409);
+      await expect(conflictResponse.json()).resolves.toMatchObject({
+        code: "conflict",
+        details: { reason: "not_open" },
+      });
+      await expect(
+        page.getByText(
+          "This pull request is no longer open. Its current state is being refreshed before any further action.",
+        ),
+      ).toBeVisible();
+      await expect(page.getByText("Could not refresh the pull request. Try again.")).toBeVisible();
+      await expect(page.locator(".btn--approve")).toBeDisabled();
+      await expect(page.locator(".btn--merge")).toBeDisabled();
     } finally {
       await isolatedServer?.stop();
     }

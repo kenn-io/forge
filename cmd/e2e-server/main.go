@@ -386,6 +386,100 @@ func seedFixtureClientLabels(fc *testutil.FixtureClient) {
 	}
 }
 
+func seedReviewSuggestionFixture(
+	ctx context.Context,
+	database *db.DB,
+	owner, name string,
+	number int,
+) error {
+	repo, err := database.GetRepoByIdentity(
+		ctx,
+		db.GitHubRepoIdentity("github.com", owner, name),
+	)
+	if err != nil {
+		return fmt.Errorf("get review suggestion repo: %w", err)
+	}
+	if repo == nil {
+		return fmt.Errorf("get review suggestion repo: not found")
+	}
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+	if err != nil {
+		return fmt.Errorf("get review suggestion pull request: %w", err)
+	}
+	if mr == nil {
+		return fmt.Errorf("get review suggestion pull request: not found")
+	}
+
+	const providerThreadID = "e2e-review-suggestion-1"
+	now := time.Date(2026, 7, 1, 16, 30, 0, 0, time.UTC)
+	body := "Consider returning the published value.\n\n```suggestion\nreturn publish();\n```"
+	if err := database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID:     mr.ID,
+		PlatformExternalID: providerThreadID,
+		EventType:          "review_comment",
+		Author:             "reviewer",
+		Body:               body,
+		CreatedAt:          now,
+		DedupeKey:          "review-comment-" + providerThreadID,
+	}}); err != nil {
+		return fmt.Errorf("seed review suggestion event: %w", err)
+	}
+	line := 1
+	if err := database.UpsertMRReviewThreads(ctx, mr.ID, []db.MRReviewThread{{
+		ProviderThreadID:  providerThreadID,
+		ProviderCommentID: providerThreadID,
+		Body:              body,
+		AuthorLogin:       "reviewer",
+		Range: db.ReviewLineRange{
+			Path:        "internal/cache.go",
+			Side:        "right",
+			Line:        line,
+			NewLine:     &line,
+			LineType:    "context",
+			DiffHeadSHA: mr.PlatformHeadSHA,
+			CommitSHA:   mr.PlatformHeadSHA,
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}}); err != nil {
+		return fmt.Errorf("seed review suggestion thread: %w", err)
+	}
+	return nil
+}
+
+func seedReviewSuggestionProviderFixture(
+	fc *testutil.FixtureClient,
+	owner, name string,
+	number int,
+	headSHA string,
+) {
+	const providerThreadID = "e2e-review-suggestion-1"
+	now := time.Date(2026, 7, 1, 16, 30, 0, 0, time.UTC)
+	body := "Consider returning the published value.\n\n```suggestion\nreturn publish();\n```"
+	key := fmt.Sprintf("%s/%s#%d", owner, name, number)
+	fc.ReviewThreads[key] = append(fc.ReviewThreads[key], ghclient.PullRequestReviewThread{
+		NodeID: providerThreadID,
+		Path:   "internal/cache.go",
+		Side:   "RIGHT",
+		Line:   1,
+		Comments: []ghclient.PullRequestReviewThreadComment{{
+			NodeID:           providerThreadID,
+			DatabaseID:       6901,
+			ReviewDatabaseID: 5012,
+			SubjectType:      "LINE",
+			Body:             body,
+			AuthorLogin:      "reviewer",
+			Path:             "internal/cache.go",
+			Line:             1,
+			URL:              "https://github.com/acme/widgets/pull/1#discussion_r6901",
+			CommitID:         headSHA,
+			OriginalCommitID: headSHA,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}},
+	})
+}
+
 // seedAssigneeReviewerFixture gives acme/widgets#1 a starting assignee
 // and requested reviewer in both SQLite and the fixture provider so the
 // Playwright suite can exercise the assignee/reviewer pickers.
@@ -1042,6 +1136,10 @@ func buildAppState(
 		return repos, nil
 	}
 	patchFixturePRSHAs(fc, "acme", "widgets", 1, diffRepo.HeadSHA, diffRepo.BaseSHA)
+	seedReviewSuggestionProviderFixture(fc, "acme", "widgets", 1, diffRepo.HeadSHA)
+	if err := seedReviewSuggestionFixture(ctx, database, "acme", "widgets", 1); err != nil {
+		return nil, err
+	}
 	for _, target := range []struct {
 		owner  string
 		name   string

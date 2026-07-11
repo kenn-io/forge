@@ -27,12 +27,14 @@
     /** capabilities.mutation_head_binding for this repo's provider. */
     requireHeadPin?: boolean;
     supportedReviewActions?: string[];
+    routeGeneration?: number;
     onheadconflict?: ((
       reason: "stale_state" | "head_unknown",
       context: string | undefined,
       expectedHeadSha: string,
       ref: ProviderRouteRef,
       number: number,
+      routeGeneration: number,
     ) => void) | undefined;
     oncompleted?: (() => void) | undefined;
     /** Tooltip override; pass the unavailable_reason when disabling. */
@@ -52,6 +54,7 @@
     platformHeadSha,
     requireHeadPin = false,
     supportedReviewActions = [],
+    routeGeneration = 0,
     onheadconflict,
     oncompleted,
     title = undefined,
@@ -63,6 +66,7 @@
   // Approve and Request changes submit this same pin — the two form
   // actions share one head-binding contract.
   let pinAtOpen = $state("");
+  let generationAtOpen = $state(0);
 
   let expanded = $state(false);
   let body = $state("");
@@ -85,6 +89,7 @@
     expanded = false;
     body = "";
     pinAtOpen = "";
+    generationAtOpen = routeGeneration;
   });
 
   $effect(() => {
@@ -125,9 +130,10 @@
     failedRef: ProviderRouteRef,
     failedNumber: number,
   ): void {
+    const failedGeneration = generationAtOpen;
     expanded = false;
     pinAtOpen = "";
-    onheadconflict?.(reason, context, failedHeadSha, failedRef, failedNumber);
+    onheadconflict?.(reason, context, failedHeadSha, failedRef, failedNumber, failedGeneration);
   }
 
   async function handleApprove(): Promise<void> {
@@ -209,7 +215,10 @@
     class="btn btn--approve"
     onclick={() => {
       if (disabled || submitting) return;
-      if (!expanded) pinAtOpen = (platformHeadSha ?? expectedHeadSha ?? "").trim();
+      if (!expanded) {
+        pinAtOpen = (platformHeadSha ?? expectedHeadSha ?? "").trim();
+        generationAtOpen = routeGeneration;
+      }
       expanded = !expanded;
     }}
     disabled={disabled || submitting}

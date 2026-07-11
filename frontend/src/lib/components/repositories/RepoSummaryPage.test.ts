@@ -807,12 +807,16 @@ describe("RepoSummaryPage", () => {
 
     await waitFor(() => {
       expect(flash.getFlash()).toMatchObject({
-        message: expect.stringContaining("issue transport unavailable"),
+        message: expect.stringMatching(
+          /issue transport unavailable.*outcome is unknown.*check the issue list before retrying/i,
+        ),
         tone: "danger",
       });
-      expect((screen.getByRole("button", { name: "Create issue" }) as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByRole("button", { name: "Create issue" }) as HTMLButtonElement).disabled).toBe(true);
     });
 
+    await fireEvent.click(screen.getByRole("checkbox", { name: "I checked the issue list and want to retry." }));
+    expect((screen.getByRole("button", { name: "Create issue" }) as HTMLButtonElement).disabled).toBe(false);
     await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledTimes(2);

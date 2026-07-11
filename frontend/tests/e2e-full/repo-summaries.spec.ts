@@ -200,10 +200,15 @@ test.describe("repository summaries", () => {
       await create.click();
 
       await expect(page.locator(".kit-flash-stack").getByRole("status")).not.toHaveText("");
+      await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText(
+        "The request outcome is unknown; check the issue list before retrying.",
+      );
       await expect(dialog).toBeVisible();
       await expect(title).toHaveValue("Retry interrupted issue creation");
-      await expect(create).toBeEnabled();
+      await expect(create).toBeDisabled();
 
+      await dialog.getByRole("checkbox", { name: "I checked the issue list and want to retry." }).click();
+      await expect(create).toBeEnabled();
       await create.click();
       await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/\d+$/);
       await expect(page.locator(".issue-detail")).toContainText("Retry interrupted issue creation");

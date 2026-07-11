@@ -35,6 +35,7 @@
     expectedHeadSha?: string | undefined;
     /** capabilities.mutation_head_binding for this repo's provider. */
     requireHeadPin?: boolean;
+    routeGeneration?: number;
     /** When true, the primary action waits for currently pending CI before merging. */
     deferUntilChecksPass?: boolean;
     /**
@@ -55,6 +56,7 @@
       expectedHeadSha: string,
       ref: ProviderRouteRef,
       number: number,
+      routeGeneration: number,
     ) => void) | undefined;
   }
 
@@ -62,7 +64,7 @@
     owner, name, number, provider, platformHost, repoPath, prTitle, prBody,
     prAuthor, prAuthorDisplayName,
     allowSquash, allowMerge, allowRebase,
-    expectedHeadSha, requireHeadPin = false,
+    expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
     deferUntilChecksPass = false,
     alreadyQueued = false, midStackWarning,
     onclose, onmerged, onqueued, onstateconflict,
@@ -76,6 +78,7 @@
   // while the form is already on screen. If the head really moved, the
   // server rejects this stale pin and the conflict flow takes over.
   const pinnedHeadShaAtOpen = untrack(() => (expectedHeadSha ?? "").trim());
+  const routeGenerationAtOpen = untrack(() => routeGeneration);
 
   // A head-binding provider cannot merge without a pinned head; the user
   // must wait for sync and re-review before merging.
@@ -152,6 +155,7 @@
         pinnedHeadShaAtOpen,
         { provider, platformHost, owner, name, repoPath },
         number,
+        routeGenerationAtOpen,
       );
       onclose();
       return true;

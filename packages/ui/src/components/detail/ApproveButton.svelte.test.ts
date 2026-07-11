@@ -38,6 +38,7 @@ describe("ApproveButton", () => {
         repoPath: "acme/widget",
         expectedHeadSha: "reviewed-sha",
         requireHeadPin: true,
+        routeGeneration: 12,
         onheadconflict,
       },
       context: new Map<symbol, unknown>([
@@ -74,6 +75,7 @@ describe("ApproveButton", () => {
           repoPath: "acme/widget",
         },
         7,
+        12,
       ),
     );
     expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();

@@ -214,6 +214,7 @@ describe("ApproveButton tooltips", () => {
       props: {
         ...defaultProps,
         expectedHeadSha: "stale-pin",
+        routeGeneration: 12,
         onheadconflict: onHeadConflict,
       },
     });
@@ -234,6 +235,7 @@ describe("ApproveButton tooltips", () => {
           repoPath: "acme/widget",
         },
         1,
+        12,
       );
     });
     expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();

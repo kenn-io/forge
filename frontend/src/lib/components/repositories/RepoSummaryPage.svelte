@@ -53,6 +53,7 @@
   let issueSubmittingByRepo = $state<Record<string, boolean>>(
     {},
   );
+  let issueOutcomeUnknownByRepo = $state<Record<string, boolean>>({});
   let searchQuery = $state(initialFilters.searchQuery);
   let activeFilter = $state<RepoFilter>(initialFilters.activeFilter);
   let sortMode = $state<RepoSort>(initialFilters.sortMode);
@@ -258,7 +259,7 @@
     if (!summary.repo.capabilities.issue_mutation) return;
     const key = repoStateKey(summary);
     composerSummary = summary;
-    issueErrorByRepo[key] = null;
+    if (!issueOutcomeUnknownByRepo[key]) issueErrorByRepo[key] = null;
     if (issueTitleByRepo[key] === undefined) {
       issueTitleByRepo[key] = "";
     }
@@ -271,7 +272,7 @@
     if (composerSummary && repoStateKey(composerSummary) === key) {
       composerSummary = null;
     }
-    issueErrorByRepo[key] = null;
+    if (!issueOutcomeUnknownByRepo[key]) issueErrorByRepo[key] = null;
   }
 
   function updateIssueTitle(
@@ -322,12 +323,14 @@
         },
       );
       if (error || !data) {
+        issueOutcomeUnknownByRepo[key] = false;
         showFlash(apiErrorMessage(error, "failed to create issue"), { tone: "danger" });
         return;
       }
 
       issueTitleByRepo[key] = "";
       issueBodyByRepo[key] = "";
+      issueOutcomeUnknownByRepo[key] = false;
       composerSummary = null;
       setGlobalRepo(repoStateKey(summary));
       navigate(
@@ -342,7 +345,10 @@
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : "failed to create issue";
-      showFlash(`${message} The request outcome is unknown; check the issue list before retrying.`, {
+      const warning = `${message} The request outcome is unknown; check the issue list before retrying.`;
+      issueOutcomeUnknownByRepo[key] = true;
+      issueErrorByRepo[key] = warning;
+      showFlash(warning, {
         tone: "danger",
       });
     } finally {
@@ -353,6 +359,11 @@
   function submitActiveIssue(): void {
     if (!composerSummary) return;
     void submitIssue(composerSummary);
+  }
+
+  function acknowledgeUnknownIssueOutcome(key: string): void {
+    issueOutcomeUnknownByRepo[key] = false;
+    issueErrorByRepo[key] = null;
   }
 
   onMount(() => {
@@ -535,10 +546,12 @@
       body={issueBodyByRepo[key] ?? ""}
       error={issueErrorByRepo[key] ?? null}
       submitting={issueSubmittingByRepo[key] ?? false}
+      outcomeUnknown={issueOutcomeUnknownByRepo[key] ?? false}
       ontitlechange={(title) => updateIssueTitle(key, title)}
       onbodychange={(body) => updateIssueBody(key, body)}
       oncancel={() => closeComposer(key)}
       onsubmitissue={submitActiveIssue}
+      onacknowledgeoutcome={() => acknowledgeUnknownIssueOutcome(key)}
     />
   {/if}
 </section>

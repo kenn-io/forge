@@ -1228,6 +1228,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     onConflict?: (conflict: ApplySuggestionConflict) => void,
   ): Promise<boolean> {
     const ref = currentDetailRef(owner, name, number);
+    const requestGeneration = syncGeneration;
     const expectedHeadSHA = detail?.platform_head_sha ?? "";
     try {
       const { error: requestError } = await apiClient.POST(
@@ -1249,6 +1250,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
           },
         },
       );
+      if (requestGeneration !== syncGeneration || !isDetailShowingRef(ref)) {
+        return false;
+      }
       if (requestError) {
         const message = apiErrorMessage(requestError, "failed to apply suggestion");
         const refreshReason = isProblem(requestError) ? applySuggestionRefreshReason(requestError) : undefined;
@@ -1262,7 +1266,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               number,
             });
           } else if (isDetailShowingRef(ref)) {
-            const refreshed = await syncDetail(owner, name, number, syncGeneration, ref);
+            const refreshed = await syncDetail(owner, name, number, requestGeneration, ref);
             if (!refreshed && isDetailShowingRef(ref)) {
               failClosedAfterApplySuggestionConflict(refreshReason);
             }
@@ -1273,6 +1277,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
         throw new Error(message);
       }
     } catch (err) {
+      if (requestGeneration !== syncGeneration || !isDetailShowingRef(ref)) {
+        return false;
+      }
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
       return false;
     }
@@ -1280,10 +1287,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // server's async post-apply sync and leave stale controls enabled.
     // Await a sync-enabled refresh so the detail reflects the new head,
     // falling back to the cached view when the sync fails.
-    const identity = currentDetailRef(owner, name, number);
-    const synced = await syncDetail(owner, name, number, syncGeneration, identity);
+    const synced = await syncDetail(owner, name, number, requestGeneration, ref);
     if (!synced) {
-      await refreshDetail(owner, name, number, syncGeneration, identity);
+      await refreshDetail(owner, name, number, requestGeneration, ref);
     }
     await refreshPullsIfActive();
     return true;

@@ -52,9 +52,14 @@
     activityViewMode?: DetailActivityViewMode;
     onEditComment?: ((event: PREvent | IssueEvent, body: string) => Promise<boolean>) | undefined;
     onDeleteComment?: ((event: PREvent | IssueEvent) => Promise<string | null>) | undefined;
-    onApplySuggestion?: ((input: ApplySuggestionRequest) => Promise<boolean>) | undefined;
+    onApplySuggestion?: ((input: ApplySuggestionRequest) => Promise<boolean | SuggestionApplyResult>) | undefined;
     jumpToReviewThread?: ((thread: ReviewThread) => void) | undefined;
   }
+
+  type SuggestionApplyResult = {
+    ok: boolean;
+    error?: string | undefined;
+  };
 
   const {
     events,
@@ -1177,15 +1182,16 @@
     suggestionErrors = remainingErrors;
     applyingSuggestionKey = key;
     try {
-      const ok = await onApplySuggestion({
+      const result = await onApplySuggestion({
         suggestions: [suggestionRequest(thread, block.replacement)],
       });
+      const ok = typeof result === "boolean" ? result : result.ok;
       if (ok) {
         batchedSuggestions = batchedSuggestions.filter((item) => item.key !== key);
-      } else {
+      } else if (typeof result !== "boolean" && result.error) {
         suggestionErrors = {
           ...suggestionErrors,
-          [key]: detailStore?.getDetailError() ?? "Could not apply suggestion.",
+          [key]: result.error,
         };
       }
     } finally {
@@ -1220,14 +1226,14 @@
     );
     savingSuggestionBatch = true;
     try {
-      const ok = await onApplySuggestion({ suggestions: eligible.map((item) => item.request) });
+      const result = await onApplySuggestion({ suggestions: eligible.map((item) => item.request) });
+      const ok = typeof result === "boolean" ? result : result.ok;
       if (ok) {
         batchedSuggestions = batchedSuggestions.filter((item) => !submittedKeys.includes(item.key));
-      } else {
-        const message = detailStore?.getDetailError() ?? "Could not apply suggestions.";
+      } else if (typeof result !== "boolean" && result.error) {
         suggestionErrors = {
           ...suggestionErrors,
-          ...Object.fromEntries(submittedKeys.map((key) => [key, message])),
+          ...Object.fromEntries(submittedKeys.map((key) => [key, result.error!])),
         };
       }
     } finally {

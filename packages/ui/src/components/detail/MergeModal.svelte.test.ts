@@ -140,7 +140,13 @@ describe("MergeModal head pinning", () => {
       const onclose = vi.fn();
       const onstateconflict = vi.fn();
       const onmerged = vi.fn();
-      renderModal(post, { expectedHeadSha: "abc123", onclose, onstateconflict, onmerged });
+      renderModal(post, {
+        expectedHeadSha: "abc123",
+        routeGeneration: 12,
+        onclose,
+        onstateconflict,
+        onmerged,
+      });
 
       await confirmMerge();
 
@@ -157,6 +163,7 @@ describe("MergeModal head pinning", () => {
             repoPath: "octo/repo",
           },
           1,
+          12,
         ),
       );
       expect(onclose).toHaveBeenCalledTimes(1);

@@ -288,18 +288,30 @@
     return ok ? null : detailStore.getDetailError() ?? "Could not delete comment";
   }
 
-  async function applyTimelineSuggestion(input: ApplySuggestionRequest): Promise<boolean> {
+  async function applyTimelineSuggestion(
+    input: ApplySuggestionRequest,
+  ): Promise<boolean | { ok: false; error: string }> {
     if (stalePR || headActionsBlocked || applySuggestionGate.unavailable) return false;
     if (currentPR()?.State !== "open") return false;
-    return detailStore.applyReviewSuggestions(owner, name, number, input, (conflict) => {
-      handleStateConflict(
+    const requestGeneration = mutationRouteGeneration;
+    let durableConflict = false;
+    const ok = await detailStore.applyReviewSuggestions(owner, name, number, input, (conflict) => {
+      durableConflict = handleStateConflict(
         conflict.reason,
         conflict.context,
         conflict.expectedHeadSha,
         conflict.ref,
         conflict.number,
+        requestGeneration,
       );
     });
+    if (!ok && durableConflict) {
+      return {
+        ok: false,
+        error: detailStore.getDetailError() ?? "Pull request state changed.",
+      };
+    }
+    return ok;
   }
 
   function updateTimelineFilter(next: PRTimelineFilterState): void {
@@ -449,6 +461,8 @@
     cancelAnimationFrame(pullDetailScrollRestoreRaf);
   });
 
+  let mutationRouteGeneration = $state(0);
+
   // Clear modal/edit state on route change so PR A's open modal
   // can't reappear for PR B once `stalePR` clears.
   $effect(() => {
@@ -461,6 +475,7 @@
     void provider;
     void platformHost;
     void repoPath;
+    mutationRouteGeneration = untrack(() => mutationRouteGeneration) + 1;
     const keepStackExpanded = untrack(() => {
       const keepExpanded = keepStackExpandedOnRouteChange &&
         expandedPanel === "stack";
@@ -737,21 +752,24 @@
     failedHeadSha?: string,
     failedRef: ProviderRouteRef = routeRef,
     failedNumber: number = number,
-  ): void {
+    failedGeneration: number = mutationRouteGeneration,
+  ): boolean {
     if (
-      failedNumber !== number
+      failedGeneration !== mutationRouteGeneration
+      || failedNumber !== number
       || failedRef.provider !== routeRef.provider
       || failedRef.platformHost !== routeRef.platformHost
       || failedRef.owner !== routeRef.owner
       || failedRef.name !== routeRef.name
       || failedRef.repoPath !== routeRef.repoPath
-    ) return;
+    ) return false;
     conflictReviewedHead = failedHeadSha ?? detailHeadSha;
     stateConflict = reason;
     headConflictContext = context ?? null;
     conflictRefreshError = null;
     showMergeModal = false;
     void refreshConflictState(false);
+    return true;
   }
 
   function conflictHasFreshContext(
@@ -814,8 +832,9 @@
     failedHeadSha: string,
     failedRef: ProviderRouteRef,
     failedNumber: number,
+    failedGeneration: number,
   ): void {
-    handleStateConflict(reason, context, failedHeadSha, failedRef, failedNumber);
+    handleStateConflict(reason, context, failedHeadSha, failedRef, failedNumber, failedGeneration);
   }
 
   $effect(() => {
@@ -2011,6 +2030,7 @@
               platformHeadSha={latestPlatformHeadSha}
               requireHeadPin={capabilities.mutation_head_binding}
               supportedReviewActions={capabilities.supported_review_actions ?? []}
+              routeGeneration={mutationRouteGeneration}
               title={approveGate.unavailable ? approveGate.reason : undefined}
               onheadconflict={handleHeadConflict}
               oncompleted={() => { stateConflict = null; headConflictContext = null; }}
@@ -2335,6 +2355,7 @@
           allowRebase={repoSettings.allowRebase}
           expectedHeadSha={detailHeadSha}
           requireHeadPin={capabilities.mutation_head_binding}
+          routeGeneration={mutationRouteGeneration}
           deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
           alreadyQueued={deferredMergePending}
           midStackWarning={midStackBlocker

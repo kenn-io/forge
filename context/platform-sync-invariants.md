@@ -113,6 +113,12 @@ registry helpers return typed errors for missing providers or capabilities.
 - Post-apply refresh goes through the detail-sync broadcaster and must rerun
   after any in-flight sync for the same PR — that sync may predate the commit
   (`internal/server/detail_sync.go::enqueueDetailSyncOrRerun`).
+- Head-changing mutations install a durable generation fence before provider
+  I/O; all snapshot-derived writes and competing head-bound mutations stay
+  ordered behind it (`internal/db/queries.go::BeginProviderHeadMutation`).
+- An uncertain provider outcome stays fail-closed until an authoritative fetch
+  observes a changed head. Clearing that fence and installing the snapshot must
+  commit atomically (`internal/db/queries.go::ReconcileProviderHeadMutationSnapshot`).
 - The UI only exposes apply actions when the thread head matches a known
   current PR head; stale or unknown heads disable actions, and stale batched
   suggestions must not reach batch submit while staying removable. A suggestion

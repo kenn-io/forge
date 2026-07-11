@@ -37,6 +37,8 @@
      * queue) and the modal offers an immediate merge instead.
      */
     alreadyQueued?: boolean;
+    /** Warning shown when the configured override permits a mid-stack merge. */
+    midStackWarning?: string | undefined;
     onclose: () => void;
     onmerged: () => void;
     /** Called when a deferred merge was accepted and now waits on CI. */
@@ -50,7 +52,7 @@
     allowSquash, allowMerge, allowRebase,
     expectedHeadSha, requireHeadPin = false,
     deferUntilChecksPass = false,
-    alreadyQueued = false,
+    alreadyQueued = false, midStackWarning,
     onclose, onmerged, onqueued, onheadconflict,
   }: Props = $props();
 
@@ -207,6 +209,12 @@
   {onclose}
 >
   <div class="merge-body">
+      {#if midStackWarning}
+        <div class="mid-stack-warning" role="alert">
+          <strong>Warning: this is a mid-stack merge.</strong>
+          <span>{midStackWarning} Merging now can leave the remaining stack based on an unexpected branch.</span>
+        </div>
+      {/if}
       {#if methods.length > 1}
         <div class="field" role="group" aria-label="Merge method">
           <span class="field-label">Merge method</span>
@@ -310,6 +318,23 @@
 </Modal>
 
 <style>
+  .mid-stack-warning {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    border: 1px solid var(--accent-amber-soft, rgba(217, 119, 6, 0.45));
+    border-radius: var(--radius-sm);
+    background: var(--accent-amber-soft, rgba(217, 119, 6, 0.12));
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+  }
+
+  .mid-stack-warning strong {
+    color: var(--text-primary);
+  }
+
   .ci-defer-note {
     padding: 8px 10px;
     border: 1px solid var(--accent-amber-soft, rgba(217, 119, 6, 0.35));

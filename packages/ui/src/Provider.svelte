@@ -237,10 +237,12 @@
       activity: ActivitySettings,
       terminal: TerminalSettings,
       modes: Settings["modes"],
+      pullRequests: Settings["pull_requests"],
     ): void {
       settingsStore.setConfiguredRepos(repos);
       settingsStore.setTerminalSettings(terminal);
       settingsStore.setModeVisibility(modes);
+      settingsStore.setPullRequestSettings(pullRequests);
       activityStore.hydrateDefaults(activity);
     }
 
@@ -252,6 +254,7 @@
         data.activity,
         data.terminal,
         data.modes,
+        data.pull_requests,
       );
     }
 

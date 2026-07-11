@@ -63,6 +63,7 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
         stores.settings.setConfiguredRepos(settings.repos);
         stores.settings.setModeVisibility(settings.modes);
         stores.settings.setTerminalSettings(settings.terminal);
+        stores.settings.setPullRequestSettings(settings.pull_requests);
         stores.activity.hydrateDefaults(settings.activity);
       }
     } catch (err) {

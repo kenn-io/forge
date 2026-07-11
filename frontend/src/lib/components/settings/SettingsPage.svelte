@@ -13,6 +13,7 @@
   import AgentSettings from "./AgentSettings.svelte";
   import FleetSettings from "./FleetSettings.svelte";
   import KataProjectMappingsSettings from "./KataProjectMappingsSettings.svelte";
+  import PullRequestSettings from "./PullRequestSettings.svelte";
 
   // Switched-panel model on kit SettingsLayout: this list is the single
   // source of category order, sidebar labels, and per-panel section header
@@ -36,6 +37,14 @@
       group: "Providers",
       description: "Tracked repositories and import tools",
       keywords: "repos repositories providers github gitlab forgejo gitea import glob",
+    },
+    {
+      id: "settings-pull-requests",
+      label: "Pull requests",
+      title: "Pull request safeguards",
+      group: "Workflow",
+      description: "Merge safeguards for stacked branches",
+      keywords: "pull requests merge stack stacked branches safety",
     },
     {
       id: "settings-activity",
@@ -124,6 +133,7 @@
       settingsStore.setConfiguredRepos(settings.repos);
       settingsStore.setModeVisibility(settings.modes);
       settingsStore.setTerminalSettings(settings.terminal);
+      settingsStore.setPullRequestSettings(settings.pull_requests);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -187,6 +197,14 @@
               activity={loaded.activity}
               onUpdate={(activity) => {
                 settings = { ...settings!, activity };
+              }}
+            />
+          {:else if meta.id === "settings-pull-requests"}
+            <PullRequestSettings
+              pullRequests={loaded.pull_requests}
+              onUpdate={(pull_requests) => {
+                settings = { ...settings!, pull_requests };
+                settingsStore.setPullRequestSettings(pull_requests);
               }}
             />
           {:else if meta.id === "settings-terminal"}

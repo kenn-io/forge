@@ -6170,6 +6170,9 @@ export interface components {
             short_commit: string;
             upstream?: string;
         };
+        PullRequests: {
+            allow_mid_stack_merges: boolean;
+        };
         RateLimitHostStatus: {
             /** Format: int64 */
             budget_limit: number;
@@ -6934,6 +6937,7 @@ export interface components {
             launch_targets?: components["schemas"]["LaunchTarget"][] | null;
             modes?: components["schemas"]["ModeVisibility"];
             notifications: components["schemas"]["NotificationsSettingsResponse"];
+            pull_requests: components["schemas"]["PullRequests"];
             repos: components["schemas"]["ConfiguredRepoStatus"][];
             terminal: components["schemas"]["Terminal"];
         };
@@ -7152,6 +7156,7 @@ export interface components {
             agents?: components["schemas"]["Agent"][];
             kata_projects?: components["schemas"]["KataProjectRepoMapping"][];
             modes?: components["schemas"]["ModeVisibility"];
+            pull_requests?: components["schemas"]["PullRequests"];
             terminal?: components["schemas"]["Terminal"];
         };
         UserRepository: {

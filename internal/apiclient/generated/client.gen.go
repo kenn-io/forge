@@ -2236,6 +2236,11 @@ type PublishResponse struct {
 	Upstream    *string          `json:"upstream,omitempty"`
 }
 
+// PullRequests defines model for PullRequests.
+type PullRequests struct {
+	AllowMidStackMerges bool `json:"allow_mid_stack_merges"`
+}
+
 // RateLimitHostStatus defines model for RateLimitHostStatus.
 type RateLimitHostStatus struct {
 	BudgetLimit        int64  `json:"budget_limit"`
@@ -2912,6 +2917,7 @@ type SettingsResponse struct {
 	LaunchTargets *[]LaunchTarget               `json:"launch_targets,omitempty"`
 	Modes         *ModeVisibility               `json:"modes,omitempty"`
 	Notifications NotificationsSettingsResponse `json:"notifications"`
+	PullRequests  PullRequests                  `json:"pull_requests"`
 	Repos         []ConfiguredRepoStatus        `json:"repos"`
 	Terminal      Terminal                      `json:"terminal"`
 }
@@ -3103,6 +3109,7 @@ type UpdateSettingsRequest struct {
 	Agents       *[]Agent                  `json:"agents,omitempty"`
 	KataProjects *[]KataProjectRepoMapping `json:"kata_projects,omitempty"`
 	Modes        *ModeVisibility           `json:"modes,omitempty"`
+	PullRequests *PullRequests             `json:"pull_requests,omitempty"`
 	Terminal     *Terminal                 `json:"terminal,omitempty"`
 }
 

@@ -3204,6 +3204,9 @@ func (s *Server) mergePRWithBody(
 	if mr == nil {
 		return mergePRBody{}, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
+	if err := s.requireMidStackMergeAllowed(ctx, repo.ID, number); err != nil {
+		return mergePRBody{}, err
+	}
 	expectedHeadSHA, err := s.preflightMergePR(repo, mr, number, body)
 	if err != nil {
 		return mergePRBody{}, err
@@ -3289,6 +3292,40 @@ func (s *Server) mergePRWithBody(
 		SHA:     result.SHA,
 		Message: result.Message,
 	}, nil
+}
+
+func (s *Server) requireMidStackMergeAllowed(ctx context.Context, repoID int64, number int) error {
+	s.cfgMu.Lock()
+	allowed := s.cfg != nil && s.cfg.PullRequests.AllowMidStackMerges
+	s.cfgMu.Unlock()
+	if allowed {
+		return nil
+	}
+
+	stack, members, err := s.db.GetStackForPRByRepoID(ctx, repoID, number)
+	if err != nil {
+		return problemInternal("get stack for pull request failed")
+	}
+	if stack == nil {
+		return nil
+	}
+
+	for _, member := range members {
+		if member.Number == number {
+			return nil
+		}
+		if member.State != string(db.MergeRequestStateMerged) {
+			return problemConflict(
+				CodeConflict,
+				"mid-stack merges are disabled; merge the bottom unmerged branch first",
+				map[string]any{
+					"reason":          "mid_stack_merge_disallowed",
+					"blocking_number": member.Number,
+				},
+			)
+		}
+	}
+	return nil
 }
 
 func (s *Server) preflightMergePR(

@@ -62,6 +62,7 @@ export interface CICheck {
 }
 
 export type ActivitySettings = components["schemas"]["Activity"];
+export type PullRequestSettings = components["schemas"]["PullRequests"];
 export type TerminalSettings = components["schemas"]["Terminal"];
 export type TerminalRenderer = TerminalSettings["renderer"];
 export type ModeVisibility = components["schemas"]["ModeVisibility"];
@@ -89,6 +90,10 @@ export const DEFAULT_MODE_VISIBILITY: ModeVisibility = {
   board: true,
   reviews: true,
   workspaces: true,
+};
+
+export const DEFAULT_PULL_REQUEST_SETTINGS: PullRequestSettings = {
+  allow_mid_stack_merges: false,
 };
 
 export type AgentSettings = components["schemas"]["Agent"];

@@ -9,6 +9,7 @@ function makeStores(): StoreInstances {
       setConfiguredRepos: vi.fn(),
       setModeVisibility: vi.fn(),
       setTerminalSettings: vi.fn(),
+      setPullRequestSettings: vi.fn(),
       setTerminalFontFamily: vi.fn(),
       setTerminalRenderer: vi.fn(),
     },
@@ -37,6 +38,7 @@ function makeStores(): StoreInstances {
 function makeSettings(): Settings {
   return {
     repos: [],
+    pull_requests: { allow_mid_stack_merges: false },
     kata_projects: [],
     fleet: {
       enabled: false,

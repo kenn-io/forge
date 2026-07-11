@@ -26,6 +26,7 @@ export interface RepoInput extends RepoRequestOptions {
 
 function normalizeUpdateRequest(settings: {
   activity?: Settings["activity"];
+  pull_requests?: Settings["pull_requests"];
   modes?: Settings["modes"];
   terminal?: Settings["terminal"];
   agents?: Settings["agents"];
@@ -34,6 +35,9 @@ function normalizeUpdateRequest(settings: {
   const request: UpdateSettingsRequest = {};
   if (settings.activity) {
     request.activity = settings.activity;
+  }
+  if (settings.pull_requests) {
+    request.pull_requests = settings.pull_requests;
   }
   if (settings.modes) {
     request.modes = settings.modes;
@@ -60,6 +64,7 @@ export async function getSettings(): Promise<Settings> {
 
 export async function updateSettings(settings: {
   activity?: Settings["activity"];
+  pull_requests?: Settings["pull_requests"];
   modes?: Settings["modes"];
   terminal?: Settings["terminal"];
   agents?: Settings["agents"];

@@ -125,6 +125,7 @@ describe("RepoImportModal", () => {
     bulk.mockResolvedValue({
       repos: [],
       kata_projects: [],
+      pull_requests: { allow_mid_stack_merges: false },
       activity: {
         view_mode: "threaded",
         time_range: "7d",
@@ -202,6 +203,7 @@ describe("RepoImportModal", () => {
     bulk.mockResolvedValue({
       repos: [],
       kata_projects: [],
+      pull_requests: { allow_mid_stack_merges: false },
       activity: {
         view_mode: "threaded",
         time_range: "7d",

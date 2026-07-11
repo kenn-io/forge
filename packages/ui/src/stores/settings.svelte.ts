@@ -1,8 +1,10 @@
 import {
   DEFAULT_MODE_VISIBILITY,
+  DEFAULT_PULL_REQUEST_SETTINGS,
   DEFAULT_TERMINAL_SETTINGS,
   type ConfigRepo,
   type ModeVisibility,
+  type PullRequestSettings,
   type TerminalRenderer,
   type TerminalSettings,
 } from "../api/types.js";
@@ -14,6 +16,9 @@ export function createSettingsStore() {
   });
   let modeVisibility = $state<ModeVisibility>({
     ...DEFAULT_MODE_VISIBILITY,
+  });
+  let pullRequestSettings = $state<PullRequestSettings>({
+    ...DEFAULT_PULL_REQUEST_SETTINGS,
   });
   let loaded = $state(false);
 
@@ -47,6 +52,17 @@ export function createSettingsStore() {
 
   function isModeVisible(mode: keyof ModeVisibility): boolean {
     return modeVisibility[mode] ?? DEFAULT_MODE_VISIBILITY[mode];
+  }
+
+  function getPullRequestSettings(): PullRequestSettings {
+    return pullRequestSettings;
+  }
+
+  function setPullRequestSettings(settings: PullRequestSettings | null | undefined): void {
+    pullRequestSettings = {
+      ...DEFAULT_PULL_REQUEST_SETTINGS,
+      ...(settings ?? {}),
+    };
   }
 
   function getTerminalFontFamily(): string {
@@ -111,6 +127,8 @@ export function createSettingsStore() {
     getModeVisibility,
     setModeVisibility,
     isModeVisible,
+    getPullRequestSettings,
+    setPullRequestSettings,
     getTerminalFontFamily,
     setTerminalFontFamily,
     getTerminalFontSize,

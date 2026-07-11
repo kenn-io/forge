@@ -126,6 +126,9 @@ func (s *Server) enqueueDeferredMerge(
 			map[string]any{"reason": "not_open"},
 		)
 	}
+	if err := s.requireMidStackMergeAllowed(ctx, repo.ID, number); err != nil {
+		return deferMergePRBody{}, err
+	}
 	expectedHeadSHA, err := s.preflightMergePR(repo, mr, number, body)
 	if err != nil {
 		return deferMergePRBody{}, err

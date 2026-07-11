@@ -91,7 +91,7 @@
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
-  const { detail: detailStore, pulls, activity, diff: diffStore, detailActivityView } = getStores();
+  const { detail: detailStore, pulls, activity, diff: diffStore, detailActivityView, settings } = getStores();
   const client = getClient();
   const actions = getActions();
   const uiConfig = getUIConfig();
@@ -697,6 +697,19 @@
   const deferredMergePending = $derived(
     detailStore.getDetail()?.deferred_merge_pending ?? false,
   );
+  const midStackBlocker = $derived.by(() => {
+    const stack = detailStore.getDetail()?.stack;
+    if (!stack) return undefined;
+    return stack.members?.find(
+      (member) => member.position < stack.position && member.state !== "merged",
+    );
+  });
+  const allowMidStackMerges = $derived(
+    settings.getPullRequestSettings().allow_mid_stack_merges,
+  );
+  const midStackMergeBlocked = $derived(
+    midStackBlocker !== undefined && !allowMidStackMerges,
+  );
 
   function handleHeadConflict(
     reason: "stale_state" | "head_unknown",
@@ -835,7 +848,7 @@
       repoSettings,
       // Treat a blocked head as stale for gating: the merge modal must
       // not open while the reviewed head is unknown.
-      stale: stalePR || headActionsBlocked,
+      stale: stalePR || headActionsBlocked || midStackMergeBlocked,
       stores: { detail: detailStore, pulls },
       client,
       requireHeadPin: capabilities.mutation_head_binding,
@@ -1935,8 +1948,10 @@
               || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}
             {@const mergeSettings = repoSettings}
             {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
-            {@const mergeTitle = mergeDisabledByConflicts
-              ? "Resolve merge conflicts before merging"
+            {@const mergeTitle = midStackMergeBlocked
+              ? `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`
+              : mergeDisabledByConflicts
+                ? "Resolve merge conflicts before merging"
               : headPinMissing
                 ? "The reviewed head commit has not been synced yet; merging is disabled until the next sync records it"
                 : mergeOpUnavailable
@@ -1946,10 +1961,10 @@
                     : ""}
             <Button
               class={deferredMergePending ? "btn--merge btn--merge-queued" : "btn--merge"}
-              disabled={stalePR || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
+              disabled={stalePR || midStackMergeBlocked || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
               title={mergeTitle}
               onclick={() => {
-                if (stalePR || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
+                if (stalePR || midStackMergeBlocked || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
                 runOpenMerge(buildOpenMergeInput(pr, capabilities));
               }}
               tone="success"
@@ -2216,6 +2231,9 @@
           requireHeadPin={capabilities.mutation_head_binding}
           deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
           alreadyQueued={deferredMergePending}
+          midStackWarning={midStackBlocker
+            ? `This is stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}. Branch #${midStackBlocker.number} below it has not been merged.`
+            : undefined}
           onheadconflict={handleHeadConflict}
           onclose={() => { showMergeModal = false; }}
           onqueued={() => {

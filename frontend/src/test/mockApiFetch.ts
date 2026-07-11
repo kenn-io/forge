@@ -279,6 +279,9 @@ const settings = {
     hide_closed: false,
     hide_bots: false,
   },
+  pull_requests: {
+    allow_mid_stack_merges: false,
+  },
   terminal: {
     font_family: "",
     font_size: 14,

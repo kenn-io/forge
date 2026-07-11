@@ -4470,6 +4470,14 @@ components:
         - pushed
         - files
       type: object
+    PullRequests:
+      additionalProperties: false
+      properties:
+        allow_mid_stack_merges:
+          type: boolean
+      required:
+        - allow_mid_stack_merges
+      type: object
     RateLimitHostStatus:
       additionalProperties: false
       properties:
@@ -6137,6 +6145,8 @@ components:
           $ref: "#/components/schemas/ModeVisibility"
         notifications:
           $ref: "#/components/schemas/NotificationsSettingsResponse"
+        pull_requests:
+          $ref: "#/components/schemas/PullRequests"
         repos:
           items:
             $ref: "#/components/schemas/ConfiguredRepoStatus"
@@ -6146,6 +6156,7 @@ components:
       required:
         - repos
         - activity
+        - pull_requests
         - notifications
         - terminal
         - agents
@@ -6629,6 +6640,8 @@ components:
           type: array
         modes:
           $ref: "#/components/schemas/ModeVisibility"
+        pull_requests:
+          $ref: "#/components/schemas/PullRequests"
         terminal:
           $ref: "#/components/schemas/Terminal"
       type: object

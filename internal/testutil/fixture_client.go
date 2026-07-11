@@ -50,6 +50,7 @@ type FixtureClient struct {
 	ListRepositoriesByOwnerFn func(context.Context, string) ([]*gh.Repository, error)
 	mu                        sync.RWMutex
 	nextID                    int64
+	mergePullRequestError     error
 }
 
 // NewFixtureClient returns a FixtureClient with empty fixture maps.
@@ -87,6 +88,12 @@ func (c *FixtureClient) MarkNotificationThreadRead(
 ) error {
 	c.MarkReadNotifications = append(c.MarkReadNotifications, threadID)
 	return nil
+}
+
+func (c *FixtureClient) SetMergePullRequestError(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.mergePullRequestError = err
 }
 
 func repoKey(owner, repo string) string {
@@ -995,12 +1002,15 @@ func (c *FixtureClient) ConvertPullRequestToDraft(
 	return clonePullRequest(pr), nil
 }
 
-// MergePullRequest returns an error (mutations not supported).
+// MergePullRequest updates the seeded pull request unless a test configured a failure.
 func (c *FixtureClient) MergePullRequest(
 	_ context.Context, owner, repo string, number int, _, _, _, _ string,
 ) (*gh.PullRequestMergeResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.mergePullRequestError != nil {
+		return nil, c.mergePullRequestError
+	}
 
 	pr := c.findPullRequest(owner, repo, number)
 	if pr == nil {

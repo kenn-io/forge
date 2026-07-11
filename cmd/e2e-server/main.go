@@ -1320,6 +1320,11 @@ func buildAppState(
 		srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
 	})
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/merge/fail" {
+			fc.SetMergePullRequestError(errors.New("provider rejected merge"))
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-workflow-approval/required" {
 			repo, err := database.GetRepoByIdentity(

@@ -13,6 +13,7 @@
     RepoOperations,
   } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
+  import type { ConflictReason } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
     getStores, getClient, getActions,
@@ -458,7 +459,7 @@
       return keepExpanded;
     });
     showMergeModal = false;
-    headConflict = null;
+    stateConflict = null;
     headConflictContext = null;
     expandedPanel = keepStackExpanded ? "stack" : null;
     editingTitle = false;
@@ -666,8 +667,8 @@
   // Head-pinning conflict state (context/provider-architecture.md
   // "Head binding"). Merge echoes the rendered reviewed head, while
   // approve sends the latest synced provider head when known. A 409
-  // conflict with reason stale_state or head_unknown lands here.
-  let headConflict = $state<"stale_state" | "head_unknown" | null>(null);
+  // typed merge or head-binding conflicts land here and force a refresh.
+  let stateConflict = $state<Exclude<ConflictReason, "conflict"> | null>(null);
   // Provider side-effect context from the conflict response (an
   // approval that could not be revoked, posted review text a retry
   // would repeat); rendered with the stale banner so the consequence
@@ -686,7 +687,7 @@
   // stale_state prompt instead stays until the user completes a
   // head-bound action or navigates away.
   const headActionsBlocked = $derived(
-    headConflict === "head_unknown" && detailHeadSha === "",
+    (stateConflict === "head_unknown" || stateConflict === "head_repo_unknown") && detailHeadSha === "",
   );
   // Preflight guard for merge: a head-binding provider must never merge
   // against an unbound reviewed diff, so merge stays disabled until diff
@@ -716,11 +717,11 @@
     midStackBlocker !== undefined && !allowMidStackMerges,
   );
 
-  function handleHeadConflict(
-    reason: "stale_state" | "head_unknown",
+  function handleStateConflict(
+    reason: Exclude<ConflictReason, "conflict">,
     context?: string,
   ): void {
-    headConflict = reason;
+    stateConflict = reason;
     headConflictContext = context ?? null;
     showMergeModal = false;
     // loadDetail's default sync mode pulls fresh provider state, which
@@ -731,6 +732,10 @@
       platformHost,
       repoPath,
     });
+  }
+
+  function handleHeadConflict(reason: "stale_state" | "head_unknown", context?: string): void {
+    handleStateConflict(reason, context);
   }
 
   $effect(() => {
@@ -1928,7 +1933,7 @@
               supportedReviewActions={capabilities.supported_review_actions ?? []}
               title={approveGate.unavailable ? approveGate.reason : undefined}
               onheadconflict={handleHeadConflict}
-              oncompleted={() => { headConflict = null; headConflictContext = null; }}
+              oncompleted={() => { stateConflict = null; headConflictContext = null; }}
             />
           {/if}
           {#if capabilities.workflow_approval && workflowApproval?.checked && workflowApproval.required}
@@ -2115,12 +2120,20 @@
               </div>
             {/if}
           </div>
-          {#if headConflict === "stale_state"}
+          {#if stateConflict === "stale_state"}
             <span class="action-error action-error--state" role="status">
               The head commit changed since this pull request was reviewed. Re-review the latest changes before approving or merging.
               {#if headConflictContext}
                 {" "}{headConflictContext}.
               {/if}
+            </span>
+          {:else if stateConflict === "not_open"}
+            <span class="action-error action-error--state" role="status">
+              This pull request is no longer open. Its current state is being refreshed before any further action.
+            </span>
+          {:else if stateConflict === "head_repo_unknown"}
+            <span class="action-error action-error--state" role="status">
+              The head repository is no longer available. Merge is unavailable while the pull request state refreshes.
             </span>
           {:else if headActionsBlocked}
             <span class="action-error action-error--state" role="status">
@@ -2227,7 +2240,7 @@
           midStackWarning={midStackBlocker
             ? `This is stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}. Branch #${midStackBlocker.number} below it has not been merged.`
             : undefined}
-          onheadconflict={handleHeadConflict}
+          onstateconflict={handleStateConflict}
           onclose={() => { showMergeModal = false; }}
           onqueued={() => {
             showMergeModal = false;
@@ -2241,7 +2254,7 @@
           }}
           onmerged={() => {
             showMergeModal = false;
-            headConflict = null;
+            stateConflict = null;
             headConflictContext = null;
             void detailStore.loadDetail(owner, name, number, {
               provider,

@@ -552,6 +552,41 @@ test.describe("detail action buttons", () => {
     }
   });
 
+  test("rejected merge keeps the edited modal retryable and pull request open", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const failure = await page.request.post(`${server.info.base_url}/__e2e/merge/fail`);
+      expect(failure.status()).toBe(204);
+
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      await page.locator(".btn--merge").first().click();
+
+      const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
+      await expect(modal).toBeVisible();
+      await modal.getByLabel("Commit title").fill("Preserve this title");
+      await modal.getByLabel("Commit message").fill("Preserve this message");
+
+      const mergeResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
+      });
+      await modal.getByRole("button", { name: "Merge Anyway" }).click();
+      expect((await mergeResponse).status()).toBe(502);
+
+      await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("provider rejected merge");
+      await expect(modal).toBeVisible();
+      await expect(modal.getByLabel("Commit title")).toHaveValue("Preserve this title");
+      await expect(modal.getByLabel("Commit message")).toHaveValue("Preserve this message");
+
+      await page.reload();
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      await expect(page.getByRole("button", { name: "State: Open" })).toBeVisible();
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("repo merge permission disables merge action with reason end-to-end", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {

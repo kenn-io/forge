@@ -2,7 +2,12 @@
   import { Button, Modal } from "@kenn-io/kit-ui";
   import { onMount, untrack } from "svelte";
 
-  import { isProblem, problemConflictContext, problemConflictReason } from "../../api/problems.js";
+  import {
+    isProblem,
+    problemConflictContext,
+    problemConflictReason,
+    type ConflictReason,
+  } from "../../api/problems.js";
   import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
@@ -44,7 +49,7 @@
     onmerged: () => void;
     /** Called when a deferred merge was accepted and now waits on CI. */
     onqueued: () => void;
-    onheadconflict?: ((reason: "stale_state" | "head_unknown", context?: string) => void) | undefined;
+    onstateconflict?: ((reason: Exclude<ConflictReason, "conflict">, context?: string) => void) | undefined;
   }
 
   const {
@@ -54,7 +59,7 @@
     expectedHeadSha, requireHeadPin = false,
     deferUntilChecksPass = false,
     alreadyQueued = false, midStackWarning,
-    onclose, onmerged, onqueued, onheadconflict,
+    onclose, onmerged, onqueued, onstateconflict,
   }: Props = $props();
 
   // Offer to queue a deferred merge only when none is queued yet.
@@ -134,8 +139,8 @@
   function handleMergeError(requestError: { detail?: string; title?: string; details?: unknown } | undefined): boolean {
     if (!requestError) return false;
     const reason = isProblem(requestError) ? problemConflictReason(requestError) : undefined;
-    if (reason === "stale_state" || reason === "head_unknown") {
-      onheadconflict?.(reason, isProblem(requestError) ? problemConflictContext(requestError) : undefined);
+    if (reason && reason !== "conflict") {
+      onstateconflict?.(reason, isProblem(requestError) ? problemConflictContext(requestError) : undefined);
       onclose();
       return true;
     }

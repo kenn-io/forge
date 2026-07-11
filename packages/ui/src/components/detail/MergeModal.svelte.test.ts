@@ -122,31 +122,34 @@ describe("MergeModal head pinning", () => {
     expect(init.body).not.toHaveProperty("expected_head_sha");
   });
 
-  it("closes and reports head-pinning conflicts instead of showing an inline error", async () => {
-    const post = vi.fn().mockResolvedValue({
-      data: undefined,
-      error: {
-        type: "about:blank",
-        title: "Conflict",
-        status: 409,
-        detail: "target changed since it was reviewed; refresh and retry",
-        code: "conflict",
-        details: { reason: "stale_state" },
-      },
-      response: new Response("{}", { status: 409 }),
-    });
-    const onclose = vi.fn();
-    const onheadconflict = vi.fn();
-    const onmerged = vi.fn();
-    renderModal(post, { expectedHeadSha: "abc123", onclose, onheadconflict, onmerged });
+  it.each(["stale_state", "head_unknown", "not_open", "head_repo_unknown"] as const)(
+    "closes and reports the %s conflict instead of leaving a stale retry open",
+    async (reason) => {
+      const post = vi.fn().mockResolvedValue({
+        data: undefined,
+        error: {
+          type: "about:blank",
+          title: "Conflict",
+          status: 409,
+          detail: "target changed since it was reviewed; refresh and retry",
+          code: "conflict",
+          details: { reason },
+        },
+        response: new Response("{}", { status: 409 }),
+      });
+      const onclose = vi.fn();
+      const onstateconflict = vi.fn();
+      const onmerged = vi.fn();
+      renderModal(post, { expectedHeadSha: "abc123", onclose, onstateconflict, onmerged });
 
-    await confirmMerge();
+      await confirmMerge();
 
-    await waitFor(() => expect(onheadconflict).toHaveBeenCalledWith("stale_state", undefined));
-    expect(onclose).toHaveBeenCalledTimes(1);
-    expect(onmerged).not.toHaveBeenCalled();
-    expect(screen.queryByText("target changed since it was reviewed; refresh and retry")).toBeNull();
-  });
+      await waitFor(() => expect(onstateconflict).toHaveBeenCalledWith(reason, undefined));
+      expect(onclose).toHaveBeenCalledTimes(1);
+      expect(onmerged).not.toHaveBeenCalled();
+      expect(screen.queryByText("target changed since it was reviewed; refresh and retry")).toBeNull();
+    },
+  );
 
   it("shows the provider message inline for generic merge conflicts", async () => {
     const post = vi.fn().mockResolvedValue({

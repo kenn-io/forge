@@ -285,19 +285,21 @@ func (s *Server) applyReviewSuggestions(
 			"apply review suggestions on provider failed",
 		)
 	}
+	responseStatus := "applied"
 	if result != nil && strings.TrimSpace(result.CommitSHA) != "" {
-		if updateErr := s.db.UpdatePlatformSHAs(
+		if _, updateErr := s.db.MarkAppliedProviderHead(
 			ctx,
 			repo.ID,
 			input.Number,
+			expectedHeadSHA,
 			strings.TrimSpace(result.CommitSHA),
-			mr.PlatformBaseSHA,
 		); updateErr != nil {
 			slog.WarnContext(ctx, "persist applied review suggestion head", "err", updateErr)
+			responseStatus = "applied_reconciliation_pending"
 		}
 	}
 	s.syncAfterReviewSuggestionApply(*repo, input.Number)
-	response := applyReviewSuggestionResponse{Status: "applied"}
+	response := applyReviewSuggestionResponse{Status: responseStatus}
 	if result != nil {
 		response.CommitSHA = result.CommitSHA
 		response.CommitURL = result.CommitURL

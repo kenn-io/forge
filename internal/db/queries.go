@@ -2214,7 +2214,7 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		INSERT INTO middleman_merge_requests
 		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_display_name,
 		     state, is_draft, is_locked, body, head_branch, base_branch,
-		     platform_head_sha, platform_base_sha,
+		     platform_head_sha, platform_base_sha, pending_provider_head_sha,
 		     head_repo_clone_url,
 		     additions, deletions, comment_count,
 		     review_decision, ci_status, ci_checks_json,
@@ -2222,7 +2222,7 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		     created_at, updated_at,
 		     last_activity_at, merged_at, closed_at, mergeable_state,
 		     assignees_json, reviewers_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id          = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), middleman_merge_requests.platform_external_id),
@@ -2236,8 +2236,24 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		    body                 = excluded.body,
 		    head_branch          = excluded.head_branch,
 		    base_branch          = excluded.base_branch,
-		    platform_head_sha    = excluded.platform_head_sha,
-		    platform_base_sha    = excluded.platform_base_sha,
+		    platform_head_sha    = CASE
+		        WHEN middleman_merge_requests.pending_provider_head_sha <> ''
+		         AND excluded.platform_head_sha <> middleman_merge_requests.pending_provider_head_sha
+		        THEN middleman_merge_requests.platform_head_sha
+		        ELSE excluded.platform_head_sha
+		    END,
+		    platform_base_sha    = CASE
+		        WHEN middleman_merge_requests.pending_provider_head_sha <> ''
+		         AND excluded.platform_head_sha <> middleman_merge_requests.pending_provider_head_sha
+		        THEN middleman_merge_requests.platform_base_sha
+		        ELSE excluded.platform_base_sha
+		    END,
+		    pending_provider_head_sha = CASE
+		        WHEN middleman_merge_requests.pending_provider_head_sha <> ''
+		         AND excluded.platform_head_sha = middleman_merge_requests.pending_provider_head_sha
+		        THEN ''
+		        ELSE middleman_merge_requests.pending_provider_head_sha
+		    END,
 		    head_repo_clone_url  = excluded.head_repo_clone_url,
 		    additions            = excluded.additions,
 		    deletions            = excluded.deletions,
@@ -2262,7 +2278,7 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		mr.RepoID, mr.PlatformID, mr.PlatformExternalID, mr.Number, mr.URL, mr.Title,
 		mr.Author, mr.AuthorDisplayName,
 		mr.State, mr.IsDraft, mr.IsLocked, mr.Body, mr.HeadBranch, mr.BaseBranch,
-		mr.PlatformHeadSHA, mr.PlatformBaseSHA,
+		mr.PlatformHeadSHA, mr.PlatformBaseSHA, mr.PendingProviderHeadSHA,
 		mr.HeadRepoCloneURL,
 		mr.Additions, mr.Deletions, mr.CommentCount, mr.ReviewDecision,
 		mr.CIStatus, mr.CIChecksJSON,
@@ -2298,7 +2314,7 @@ func (d *DB) GetMergeRequest(
 		SELECT p.id, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
 		       p.body, p.head_branch, p.base_branch,
-		       p.platform_head_sha, p.platform_base_sha,
+		       p.platform_head_sha, p.platform_base_sha, p.pending_provider_head_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.head_repo_clone_url,
 		       p.additions, p.deletions, p.comment_count, p.review_decision,
@@ -2325,7 +2341,7 @@ func (d *DB) GetMergeRequest(
 		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.PlatformExternalID, &mr.Number, &mr.URL, &mr.Title,
 		&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft, &mr.IsLocked,
 		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
-		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
+		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA, &mr.PendingProviderHeadSHA,
 		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
 		&mr.HeadRepoCloneURL,
 		&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
@@ -2360,7 +2376,7 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 		SELECT p.id, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
 		       p.body, p.head_branch, p.base_branch,
-		       p.platform_head_sha, p.platform_base_sha,
+		       p.platform_head_sha, p.platform_base_sha, p.pending_provider_head_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.head_repo_clone_url,
 		       p.additions, p.deletions, p.comment_count, p.review_decision,
@@ -2384,7 +2400,7 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.PlatformExternalID, &mr.Number, &mr.URL, &mr.Title,
 		&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft, &mr.IsLocked,
 		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
-		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
+		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA, &mr.PendingProviderHeadSHA,
 		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
 		&mr.HeadRepoCloneURL,
 		&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
@@ -2485,7 +2501,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		SELECT p.id, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
 		       p.body, p.head_branch, p.base_branch,
-		       p.platform_head_sha, p.platform_base_sha,
+		       p.platform_head_sha, p.platform_base_sha, p.pending_provider_head_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.head_repo_clone_url,
 		       p.additions, p.deletions, p.comment_count, p.review_decision,
@@ -2520,7 +2536,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 			&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.PlatformExternalID, &mr.Number, &mr.URL, &mr.Title,
 			&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft, &mr.IsLocked,
 			&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
-			&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
+			&mr.PlatformHeadSHA, &mr.PlatformBaseSHA, &mr.PendingProviderHeadSHA,
 			&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
 			&mr.HeadRepoCloneURL,
 			&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
@@ -3132,6 +3148,35 @@ func (d *DB) UpdatePlatformSHAs(
 			"update platform SHAs for MR %d: %w", number, err)
 	}
 	return nil
+}
+
+// MarkAppliedProviderHead records a provider-confirmed head mutation only
+// while the locally stored head still matches the head the caller submitted.
+// The pending fence prevents a provider snapshot fetched before the mutation
+// from restoring the old head; an upsert that observes the applied head clears
+// the fence. A false result means another sync already installed a different,
+// authoritative head and this mutation result was intentionally not written.
+func (d *DB) MarkAppliedProviderHead(
+	ctx context.Context,
+	repoID int64,
+	number int,
+	expectedHead string,
+	appliedHead string,
+) (bool, error) {
+	result, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET platform_head_sha = ?, pending_provider_head_sha = ?
+		WHERE repo_id = ? AND number = ? AND platform_head_sha = ?`,
+		appliedHead, appliedHead, repoID, number, expectedHead,
+	)
+	if err != nil {
+		return false, fmt.Errorf("mark applied provider head for MR %d: %w", number, err)
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read applied provider head update for MR %d: %w", number, err)
+	}
+	return updated > 0, nil
 }
 
 // DiffSHAs holds the SHA columns needed by the diff endpoint.

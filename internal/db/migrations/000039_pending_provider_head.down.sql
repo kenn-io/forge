@@ -1,0 +1,1 @@
+ALTER TABLE middleman_merge_requests DROP COLUMN pending_provider_head_sha;

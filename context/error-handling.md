@@ -78,6 +78,8 @@ Rules for handler code:
   of the generic `notFound` fallback.
 - Branch-conflict payloads put branch names in top-level `details`; do not rely
   on nested `errors[].value` payloads.
+- Mid-stack merges fail closed for immediate and deferred paths unless explicitly
+  enabled; return `conflict` with reason `mid_stack_merge_disallowed` and `blocking_number` (`internal/server/huma_routes.go::requireMidStackMergeAllowed`).
 - Huma's `errors[]` field is reserved for Huma validation compatibility. Do not
   add new machine-readable contracts there.
 

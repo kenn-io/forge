@@ -368,6 +368,18 @@ type approvePRInput struct {
 	}
 }
 
+type requestChangesPRInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
+		Body            string `json:"body"`
+		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
+	}
+}
+
 type actionStatusBody struct {
 	Status        string `json:"status"`
 	ApprovedCount int    `json:"approved_count,omitempty"`
@@ -1335,6 +1347,10 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 		documentOperation("approve-pull", "Approve pull request", "Pull Requests"))
 	huma.Post(api, hostPullPath+"/approve", s.approvePROnHost,
 		documentOperation("approve-pull-on-host", "Approve pull request", "Pull Requests"))
+	huma.Post(api, pullPath+"/request-changes", s.requestChangesPR,
+		documentOperation("request-pull-changes", "Request pull request changes", "Pull Requests"))
+	huma.Post(api, hostPullPath+"/request-changes", s.requestChangesPROnHost,
+		documentOperation("request-pull-changes-on-host", "Request pull request changes", "Pull Requests"))
 	huma.Post(api, pullPath+"/approve-workflows", s.approveWorkflows,
 		documentOperation("approve-pull-workflows", "Approve pull request workflows", "Pull Requests"))
 	huma.Post(api, hostPullPath+"/approve-workflows", s.approveWorkflowsOnHost,
@@ -2947,6 +2963,64 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 	}
 
 	return &actionStatusOutput{Body: actionStatusBody{Status: "approved"}}, nil
+}
+
+func (s *Server) requestChangesPR(ctx context.Context, input *requestChangesPRInput) (*actionStatusOutput, error) {
+	repo, err := s.requireRepoRouteCapability(
+		ctx,
+		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		capabilityReviewDraftMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	caps := s.capabilitiesForRepo(*repo)
+	if !reviewActionSupported(caps, platform.ReviewActionRequestChanges) {
+		return nil, problemUnsupportedCapability(*repo, "review_action_request_changes")
+	}
+	body := strings.TrimSpace(input.Body.Body)
+	if body == "" {
+		return nil, huma.Error400BadRequest("request changes review body is required")
+	}
+
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, problemInternal("get pull request failed")
+	}
+	if mr == nil {
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+	}
+	mutator, err := s.syncer.DiffReviewDraftMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
+	if err != nil {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityReviewDraftMutation)
+	}
+	expectedHeadSHA := approvalReviewHeadSHA(mr, input.Body.ExpectedHeadSHA)
+	_, err = mutator.PublishDiffReviewDraft(ctx, platformRepoRefFromDB(*repo), input.Number, platform.PublishDiffReviewDraftInput{
+		Body:    body,
+		Action:  platform.ReviewActionRequestChanges,
+		HeadSHA: expectedHeadSHA,
+	})
+	if err != nil {
+		if errors.Is(err, platform.ErrStaleState) {
+			s.syncAfterStaleReviewDraftPublish(*repo, input.Number)
+		}
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"provider API error",
+		)
+	}
+
+	if syncErr := s.syncer.SyncMROnProvider(
+		ctx,
+		repoProviderKind(*repo), repoProviderHost(*repo),
+		repo.Owner, repo.Name, input.Number,
+	); syncErr != nil {
+		slog.Warn("sync after requesting changes", "err", syncErr)
+	}
+	return &actionStatusOutput{Body: actionStatusBody{Status: "changes_requested"}}, nil
 }
 
 // approvalReviewHeadSHA resolves the provider commit to attach a direct

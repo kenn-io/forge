@@ -14041,6 +14041,68 @@ func TestAPIGitHubPublishReviewDraftSendsCommentsThroughServer(t *testing.T) {
 	assert.Nil(storedDraft)
 }
 
+func TestAPIGitHubRequestChangesDoesNotPublishSavedDraftComments(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	var captured platform.PublishDiffReviewDraftInput
+	mock := &mockGH{
+		createReviewWithCommentsFn: func(
+			_ context.Context,
+			_, _ string,
+			_ int,
+			event string,
+			body string,
+			commitID string,
+			comments []*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
+			captured = platform.PublishDiffReviewDraftInput{
+				Body:    body,
+				Action:  platform.ReviewActionRequestChanges,
+				HeadSHA: commitID,
+			}
+			assert.Equal("REQUEST_CHANGES", event)
+			assert.Empty(comments)
+			id := int64(502)
+			state := "CHANGES_REQUESTED"
+			return &gh.PullRequestReview{ID: &id, State: &state}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 42)
+	mr, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 42)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NoError(database.UpdateDiffSHAs(ctx, mr.RepoID, 42, "reviewed-head", "base", "merge-base"))
+
+	basePath := "/api/v1/pulls/gh/acme/widget/42/review-draft"
+	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+		"body": "Saved for the later inline review.",
+		"range": map[string]any{
+			"path": "src/main.go", "side": "right", "line": 42,
+			"new_line": 42, "line_type": "add", "diff_head_sha": "reviewed-head",
+		},
+	})
+	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
+
+	requestRR := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/42/request-changes", map[string]string{
+		"body":              " Please cover the empty state. ",
+		"expected_head_sha": "provider-head",
+	})
+	require.Equal(http.StatusOK, requestRR.Code, requestRR.Body.String())
+	assert.Equal("Please cover the empty state.", captured.Body)
+	assert.Equal(platform.ReviewActionRequestChanges, captured.Action)
+	assert.Equal("provider-head", captured.HeadSHA)
+
+	storedDraft, err := database.GetMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	require.NotNil(storedDraft)
+	comments, err := database.ListMRReviewDraftComments(ctx, storedDraft.ID)
+	require.NoError(err)
+	require.Len(comments, 1)
+	assert.Equal("Saved for the later inline review.", comments[0].Body)
+}
+
 func TestAPIGitHubPublishReviewDraftRejectsSelfApprovalBeforeProvider(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

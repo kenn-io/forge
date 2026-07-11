@@ -2750,6 +2750,22 @@ type RepoWorktreeBaseRequest struct {
 	WorktreeBasePath string  `json:"worktree_base_path"`
 }
 
+// RequestChangesPRHostInputBody defines model for RequestChangesPRHostInputBody.
+type RequestChangesPRHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema          *string `json:"$schema,omitempty"`
+	Body            string  `json:"body"`
+	ExpectedHeadSha *string `json:"expected_head_sha,omitempty"`
+}
+
+// RequestChangesPRInputBody defines model for RequestChangesPRInputBody.
+type RequestChangesPRInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema          *string `json:"$schema,omitempty"`
+	Body            string  `json:"body"`
+	ExpectedHeadSha *string `json:"expected_head_sha,omitempty"`
+}
+
 // ResolveDiscussionHostInputBody defines model for ResolveDiscussionHostInputBody.
 type ResolveDiscussionHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -3988,6 +4004,9 @@ type MergePullOnHostJSONRequestBody = MergePRInputBody
 // DeferMergePullOnHostJSONRequestBody defines body for DeferMergePullOnHost for application/json ContentType.
 type DeferMergePullOnHostJSONRequestBody = MergePRInputBody
 
+// RequestPullChangesOnHostJSONRequestBody defines body for RequestPullChangesOnHost for application/json ContentType.
+type RequestPullChangesOnHostJSONRequestBody = RequestChangesPRHostInputBody
+
 // CreatePrReviewDraftCommentOnHostJSONRequestBody defines body for CreatePrReviewDraftCommentOnHost for application/json ContentType.
 type CreatePrReviewDraftCommentOnHostJSONRequestBody = CreateDiffReviewDraftCommentHostInputBody
 
@@ -4110,6 +4129,9 @@ type MergePullJSONRequestBody = MergePRInputBody
 
 // DeferMergePullJSONRequestBody defines body for DeferMergePull for application/json ContentType.
 type DeferMergePullJSONRequestBody = MergePRInputBody
+
+// RequestPullChangesJSONRequestBody defines body for RequestPullChanges for application/json ContentType.
+type RequestPullChangesJSONRequestBody = RequestChangesPRInputBody
 
 // CreatePrReviewDraftCommentJSONRequestBody defines body for CreatePrReviewDraftComment for application/json ContentType.
 type CreatePrReviewDraftCommentJSONRequestBody = CreateDiffReviewDraftCommentInputBody
@@ -4613,6 +4635,11 @@ type ClientInterface interface {
 	// MarkPullReadyForReviewOnHost request
 	MarkPullReadyForReviewOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// RequestPullChangesOnHostWithBody request with any body
+	RequestPullChangesOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RequestPullChangesOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body RequestPullChangesOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// DiscardPrReviewDraftOnHost request
 	DiscardPrReviewDraftOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -5003,6 +5030,11 @@ type ClientInterface interface {
 
 	// MarkPullReadyForReview request
 	MarkPullReadyForReview(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RequestPullChangesWithBody request with any body
+	RequestPullChangesWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RequestPullChanges(ctx context.Context, provider string, owner string, name string, number int64, body RequestPullChangesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DiscardPrReviewDraft request
 	DiscardPrReviewDraft(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6888,6 +6920,30 @@ func (c *Client) MarkPullReadyForReviewOnHost(ctx context.Context, platformHost 
 	return c.Client.Do(req)
 }
 
+func (c *Client) RequestPullChangesOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRequestPullChangesOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RequestPullChangesOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body RequestPullChangesOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRequestPullChangesOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) DiscardPrReviewDraftOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDiscardPrReviewDraftOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
@@ -8606,6 +8662,30 @@ func (c *Client) DeferMergePull(ctx context.Context, provider string, owner stri
 
 func (c *Client) MarkPullReadyForReview(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewMarkPullReadyForReviewRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RequestPullChangesWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRequestPullChangesRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RequestPullChanges(ctx context.Context, provider string, owner string, name string, number int64, body RequestPullChangesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRequestPullChangesRequest(c.Server, provider, owner, name, number, body)
 	if err != nil {
 		return nil, err
 	}
@@ -15601,6 +15681,81 @@ func NewMarkPullReadyForReviewOnHostRequest(server string, platformHost string, 
 	return req, nil
 }
 
+// NewRequestPullChangesOnHostRequest calls the generic RequestPullChangesOnHost builder with application/json body
+func NewRequestPullChangesOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body RequestPullChangesOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRequestPullChangesOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewRequestPullChangesOnHostRequestWithBody generates requests for RequestPullChangesOnHost with any type of body
+func NewRequestPullChangesOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/request-changes", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewDiscardPrReviewDraftOnHostRequest generates requests for DiscardPrReviewDraftOnHost
 func NewDiscardPrReviewDraftOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
@@ -22348,6 +22503,74 @@ func NewMarkPullReadyForReviewRequest(server string, provider string, owner stri
 	return req, nil
 }
 
+// NewRequestPullChangesRequest calls the generic RequestPullChanges builder with application/json body
+func NewRequestPullChangesRequest(server string, provider string, owner string, name string, number int64, body RequestPullChangesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRequestPullChangesRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewRequestPullChangesRequestWithBody generates requests for RequestPullChanges with any type of body
+func NewRequestPullChangesRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/request-changes", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewDiscardPrReviewDraftRequest generates requests for DiscardPrReviewDraft
 func NewDiscardPrReviewDraftRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
@@ -26963,6 +27186,11 @@ type ClientWithResponsesInterface interface {
 	// MarkPullReadyForReviewOnHostWithResponse request
 	MarkPullReadyForReviewOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*MarkPullReadyForReviewOnHostResponse, error)
 
+	// RequestPullChangesOnHostWithBodyWithResponse request with any body
+	RequestPullChangesOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RequestPullChangesOnHostResponse, error)
+
+	RequestPullChangesOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body RequestPullChangesOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*RequestPullChangesOnHostResponse, error)
+
 	// DiscardPrReviewDraftOnHostWithResponse request
 	DiscardPrReviewDraftOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*DiscardPrReviewDraftOnHostResponse, error)
 
@@ -27353,6 +27581,11 @@ type ClientWithResponsesInterface interface {
 
 	// MarkPullReadyForReviewWithResponse request
 	MarkPullReadyForReviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*MarkPullReadyForReviewResponse, error)
+
+	// RequestPullChangesWithBodyWithResponse request with any body
+	RequestPullChangesWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RequestPullChangesResponse, error)
+
+	RequestPullChangesWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body RequestPullChangesJSONRequestBody, reqEditors ...RequestEditorFn) (*RequestPullChangesResponse, error)
 
 	// DiscardPrReviewDraftWithResponse request
 	DiscardPrReviewDraftWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*DiscardPrReviewDraftResponse, error)
@@ -29787,6 +30020,29 @@ func (r MarkPullReadyForReviewOnHostResponse) StatusCode() int {
 	return 0
 }
 
+type RequestPullChangesOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ActionStatusBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RequestPullChangesOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RequestPullChangesOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type DiscardPrReviewDraftOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -32133,6 +32389,29 @@ func (r MarkPullReadyForReviewResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r MarkPullReadyForReviewResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RequestPullChangesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ActionStatusBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RequestPullChangesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RequestPullChangesResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -35052,6 +35331,23 @@ func (c *ClientWithResponses) MarkPullReadyForReviewOnHostWithResponse(ctx conte
 	return ParseMarkPullReadyForReviewOnHostResponse(rsp)
 }
 
+// RequestPullChangesOnHostWithBodyWithResponse request with arbitrary body returning *RequestPullChangesOnHostResponse
+func (c *ClientWithResponses) RequestPullChangesOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RequestPullChangesOnHostResponse, error) {
+	rsp, err := c.RequestPullChangesOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRequestPullChangesOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) RequestPullChangesOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body RequestPullChangesOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*RequestPullChangesOnHostResponse, error) {
+	rsp, err := c.RequestPullChangesOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRequestPullChangesOnHostResponse(rsp)
+}
+
 // DiscardPrReviewDraftOnHostWithResponse request returning *DiscardPrReviewDraftOnHostResponse
 func (c *ClientWithResponses) DiscardPrReviewDraftOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*DiscardPrReviewDraftOnHostResponse, error) {
 	rsp, err := c.DiscardPrReviewDraftOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
@@ -36305,6 +36601,23 @@ func (c *ClientWithResponses) MarkPullReadyForReviewWithResponse(ctx context.Con
 		return nil, err
 	}
 	return ParseMarkPullReadyForReviewResponse(rsp)
+}
+
+// RequestPullChangesWithBodyWithResponse request with arbitrary body returning *RequestPullChangesResponse
+func (c *ClientWithResponses) RequestPullChangesWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RequestPullChangesResponse, error) {
+	rsp, err := c.RequestPullChangesWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRequestPullChangesResponse(rsp)
+}
+
+func (c *ClientWithResponses) RequestPullChangesWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body RequestPullChangesJSONRequestBody, reqEditors ...RequestEditorFn) (*RequestPullChangesResponse, error) {
+	rsp, err := c.RequestPullChanges(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRequestPullChangesResponse(rsp)
 }
 
 // DiscardPrReviewDraftWithResponse request returning *DiscardPrReviewDraftResponse
@@ -40243,6 +40556,39 @@ func ParseMarkPullReadyForReviewOnHostResponse(rsp *http.Response) (*MarkPullRea
 	return response, nil
 }
 
+// ParseRequestPullChangesOnHostResponse parses an HTTP response from a RequestPullChangesOnHostWithResponse call
+func ParseRequestPullChangesOnHostResponse(rsp *http.Response) (*RequestPullChangesOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RequestPullChangesOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ActionStatusBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseDiscardPrReviewDraftOnHostResponse parses an HTTP response from a DiscardPrReviewDraftOnHostWithResponse call
 func ParseDiscardPrReviewDraftOnHostResponse(rsp *http.Response) (*DiscardPrReviewDraftOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -43499,6 +43845,39 @@ func ParseMarkPullReadyForReviewResponse(rsp *http.Response) (*MarkPullReadyForR
 	}
 
 	response := &MarkPullReadyForReviewResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ActionStatusBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRequestPullChangesResponse parses an HTTP response from a RequestPullChangesWithResponse call
+func ParseRequestPullChangesResponse(rsp *http.Response) (*RequestPullChangesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RequestPullChangesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

@@ -22,6 +22,7 @@ const defaultProps = {
   name: "widget",
   repoPath: "acme/widget",
   number: 1,
+  supportedReviewActions: [] as string[],
 };
 
 function renderApproveButton(overrides: Partial<typeof defaultProps> = {}) {
@@ -67,7 +68,7 @@ describe("ApproveButton tooltips", () => {
     await fireEvent.click(trigger);
 
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("dialog", { name: "Approve pull request" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Submit pull request review" })).toBeTruthy();
 
     await waitFor(() => {
       expect(document.activeElement).toBe(screen.getByRole("textbox"));
@@ -81,6 +82,27 @@ describe("ApproveButton tooltips", () => {
 
     expect(screen.getByPlaceholderText("Leave an optional comment…")).toBeTruthy();
     expect(screen.queryByPlaceholderText(/\\u2026/)).toBeNull();
+  });
+
+  it("submits a change request with the typed review comment", async () => {
+    renderApproveButton({ supportedReviewActions: ["approve", "request_changes"] });
+
+    await fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    const requestChanges = screen.getByRole("button", { name: "Request changes" });
+    expect(requestChanges.hasAttribute("disabled")).toBe(true);
+
+    await fireEvent.input(screen.getByRole("textbox"), {
+      target: { value: "Please cover the empty state." },
+    });
+    await fireEvent.click(requestChanges);
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledTimes(1);
+    });
+    expect(mockPost.mock.calls[0]?.[0]).toContain("/request-changes");
+    const [, init] = mockPost.mock.calls[0] as [string, { body: { body: string } }];
+    expect(init.body.body).toBe("Please cover the empty state.");
+    expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
   });
 
   it("collapses the approval popover from cancel without removing the trigger", async () => {
@@ -113,15 +135,15 @@ describe("ApproveButton tooltips", () => {
     await waitFor(() => {
       expect(trigger.hasAttribute("disabled")).toBe(true);
     });
-    expect(screen.getByRole("dialog", { name: "Approve pull request" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Submit pull request review" })).toBeTruthy();
 
     await fireEvent.click(trigger);
-    expect(screen.getByRole("dialog", { name: "Approve pull request" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Submit pull request review" })).toBeTruthy();
 
     resolvePost({ data: { status: "approved" } });
 
     await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "Approve pull request" })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
     });
   });
 
@@ -132,7 +154,7 @@ describe("ApproveButton tooltips", () => {
 
     const trigger = screen.getByRole("button", { name: /^approve$/i });
     await fireEvent.click(trigger);
-    expect(screen.getByRole("dialog", { name: "Approve pull request" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Submit pull request review" })).toBeTruthy();
 
     // Same owner/name/number on a different provider+host+repoPath:
     // the open form and its captured pin must not survive the route.
@@ -144,7 +166,7 @@ describe("ApproveButton tooltips", () => {
       expectedHeadSha: "gitea-pin",
     });
 
-    expect(screen.queryByRole("dialog", { name: "Approve pull request" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
 
     await fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
     await fireEvent.click(screen.getByTitle("Submit an approving code review on this pull request"));
@@ -179,7 +201,7 @@ describe("ApproveButton tooltips", () => {
     await waitFor(() => {
       expect(onHeadConflict).toHaveBeenCalledWith("stale_state", undefined);
     });
-    expect(screen.queryByRole("dialog", { name: "Approve pull request" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
 
     await rerender({
       ...defaultProps,

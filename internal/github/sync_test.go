@@ -12776,6 +12776,64 @@ func TestComputePRCommentRefreshLastActivity_PreservesNonCommentEvents(t *testin
 		"no comments and no stored events should fall back to PR UpdatedAt")
 }
 
+func TestPersistGitHubCommentsRollsBackRecoveryWrites(t *testing.T) {
+	t.Run("pull request", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		database := openTestDB(t)
+		repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "owner", "repo"))
+		require.NoError(err)
+		now := time.Now().UTC().Truncate(time.Second)
+		mr := &db.MergeRequest{RepoID: repoID, PlatformID: 101, Number: 1, URL: "https://github.com/owner/repo/pull/1", Title: "PR", Author: "alice", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now, CommentCount: 1}
+		mr.ID, err = database.UpsertMergeRequest(t.Context(), mr)
+		require.NoError(err)
+		oldID := int64(11)
+		require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: mr.ID, PlatformID: &oldID, EventType: "issue_comment", CreatedAt: now, DedupeKey: "old"}}))
+		_, err = database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_github_pr_comment_count BEFORE UPDATE OF comment_count ON middleman_merge_requests BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
+		require.NoError(err)
+
+		newID, body, login := int64(12), "new", "bob"
+		err = (&Syncer{db: database}).persistPRComments(t.Context(), mr, []*gh.IssueComment{{ID: &newID, Body: &body, User: &gh.User{Login: &login}, CreatedAt: &gh.Timestamp{Time: now}}})
+		require.Error(err)
+		events, err := database.ListMREvents(t.Context(), mr.ID)
+		require.NoError(err)
+		require.Len(events, 1)
+		assert.Equal("old", events[0].DedupeKey)
+		stored, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+		require.NoError(err)
+		require.NotNil(stored)
+		assert.Equal(1, stored.CommentCount)
+	})
+
+	t.Run("issue", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		database := openTestDB(t)
+		repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "owner", "repo"))
+		require.NoError(err)
+		now := time.Now().UTC().Truncate(time.Second)
+		issue := &db.Issue{RepoID: repoID, PlatformID: 201, Number: 2, URL: "https://github.com/owner/repo/issues/2", Title: "Issue", Author: "alice", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now, CommentCount: 1}
+		issue.ID, err = database.UpsertIssue(t.Context(), issue)
+		require.NoError(err)
+		oldID := int64(21)
+		require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{IssueID: issue.ID, PlatformID: &oldID, EventType: "issue_comment", CreatedAt: now, DedupeKey: "old"}}))
+		_, err = database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_github_issue_comment_count BEFORE UPDATE OF comment_count ON middleman_issues BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
+		require.NoError(err)
+
+		newID, body, login := int64(22), "new", "bob"
+		err = (&Syncer{db: database}).persistIssueComments(t.Context(), issue, []*gh.IssueComment{{ID: &newID, Body: &body, User: &gh.User{Login: &login}, CreatedAt: &gh.Timestamp{Time: now}}})
+		require.Error(err)
+		events, err := database.ListIssueEvents(t.Context(), issue.ID)
+		require.NoError(err)
+		require.Len(events, 1)
+		assert.Equal("old", events[0].DedupeKey)
+		stored, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 2)
+		require.NoError(err)
+		require.NotNil(stored)
+		assert.Equal(1, stored.CommentCount)
+	})
+}
+
 func TestRefreshRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

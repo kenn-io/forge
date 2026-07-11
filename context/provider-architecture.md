@@ -74,7 +74,8 @@ Rules:
   (`internal/platform/errors.go::ErrMutationOutcomeUncertain`). Item-scoped
   mutation/sync serialization prevents stale pre-delete fetches from restoring
   deleted comments; authoritative replacement updates comment rows and the parent
-  count in one transaction. Local removal tolerates an already-absent row
+  count in one transaction without rewriting unrelated parent fields. Local
+  removal tolerates an already-absent row
   (`internal/server/huma_routes.go::deleteComment`,
   `internal/server/huma_routes.go::deleteIssueComment`,
   `internal/db/queries.go::ReplaceMRCommentEvents`,

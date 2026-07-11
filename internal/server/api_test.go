@@ -7037,6 +7037,14 @@ func TestAPIDeleteIssueCommentKeepsLocalCommentWhenProviderReportsNotFound(t *te
 	}
 	srv, database := setupTestServerWithMock(t, mock)
 	issueID := seedIssue(t, database, "acme", "widget", 5, "open")
+	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO middleman_comment_deletion_receipts
+			(repo_id, item_type, item_number, comment_id, created_at)
+		VALUES (?, 'issue', 5, ?, ?)`, repo.ID, commentID, time.Now().UTC().Add(-31*24*time.Hour))
+	require.NoError(err)
 	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
 		IssueID:    issueID,
 		PlatformID: &commentID,
@@ -7057,6 +7065,9 @@ func TestAPIDeleteIssueCommentKeepsLocalCommentWhenProviderReportsNotFound(t *te
 	require.NoError(err)
 	require.Len(events, 1)
 	assert.Equal("keep until deletion is confirmed", events[0].Body)
+	receipt, err := database.CommentDeletionAttemptExists(t.Context(), repo.ID, "issue", 5, commentID)
+	require.NoError(err)
+	assert.False(receipt, "the expired receipt must not convert a new provider rejection into recovery")
 }
 
 func TestAPIDeleteIssueCommentReconcilesAmbiguousPriorSuccess(t *testing.T) {
@@ -7084,6 +7095,10 @@ func TestAPIDeleteIssueCommentReconcilesAmbiguousPriorSuccess(t *testing.T) {
 	srv, database := setupTestServerWithMock(t, mock)
 	issueID := seedIssue(t, database, "acme", "widget", 5, "open")
 	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{IssueID: issueID, PlatformID: &commentID, EventType: "issue_comment", Body: "deleted upstream", CreatedAt: now.Time, DedupeKey: "issue-comment-7654"}}))
+	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.UpdateIssueDerivedFields(t.Context(), repo.ID, 5, db.IssueDerivedFields{CommentCount: 1, LastActivityAt: now.Time}))
 
 	first := httptest.NewRecorder()
 	firstReq := httptest.NewRequest(http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/7654", nil)
@@ -7101,6 +7116,10 @@ func TestAPIDeleteIssueCommentReconcilesAmbiguousPriorSuccess(t *testing.T) {
 	events, err := database.ListIssueEvents(t.Context(), issueID)
 	require.NoError(err)
 	assert.Empty(events)
+	refreshed, err := database.GetIssueByRepoIDAndNumber(t.Context(), repo.ID, 5)
+	require.NoError(err)
+	require.NotNil(refreshed)
+	assert.Equal(0, refreshed.CommentCount)
 }
 
 func TestAPIDeleteGitLabPrCommentReconcilesServerFailureThenNotFound(t *testing.T) {

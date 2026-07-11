@@ -2732,8 +2732,7 @@ func (d *DB) ReplaceMRCommentEvents(
 	ctx context.Context,
 	mrID int64,
 	events []MREvent,
-	reviewDecision string,
-	lastActivityAt time.Time,
+	lastActivityAt *time.Time,
 ) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		query := `DELETE FROM middleman_mr_events
@@ -2753,8 +2752,11 @@ func (d *DB) ReplaceMRCommentEvents(
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE middleman_merge_requests
-			SET review_decision = ?, comment_count = ?, last_activity_at = ?
-			WHERE id = ?`, reviewDecision, len(events), lastActivityAt, mrID); err != nil {
+			SET comment_count = (
+				SELECT COUNT(*) FROM middleman_mr_events
+				WHERE merge_request_id = ? AND event_type = 'issue_comment'
+			), last_activity_at = COALESCE(?, last_activity_at)
+			WHERE id = ?`, mrID, lastActivityAt, mrID); err != nil {
 			return fmt.Errorf("update mr derived fields: %w", err)
 		}
 		return nil
@@ -4055,7 +4057,7 @@ func (d *DB) ReplaceIssueCommentEvents(
 	ctx context.Context,
 	issueID int64,
 	events []IssueEvent,
-	lastActivityAt time.Time,
+	lastActivityAt *time.Time,
 ) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		query := `DELETE FROM middleman_issue_events
@@ -4075,8 +4077,11 @@ func (d *DB) ReplaceIssueCommentEvents(
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE middleman_issues
-			SET comment_count = ?, last_activity_at = ?
-			WHERE id = ?`, len(events), lastActivityAt, issueID); err != nil {
+			SET comment_count = (
+				SELECT COUNT(*) FROM middleman_issue_events
+				WHERE issue_id = ? AND event_type = 'issue_comment'
+			), last_activity_at = COALESCE(?, last_activity_at)
+			WHERE id = ?`, issueID, lastActivityAt, issueID); err != nil {
 			return fmt.Errorf("update issue derived fields: %w", err)
 		}
 		return nil

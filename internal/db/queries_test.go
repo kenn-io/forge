@@ -2966,7 +2966,7 @@ func TestReplaceCommentEventsRollsBackWhenDerivedUpdateFails(t *testing.T) {
 		_, err := database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_mr_comment_count BEFORE UPDATE OF comment_count ON middleman_merge_requests BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
 		require.NoError(err)
 
-		err = database.ReplaceMRCommentEvents(t.Context(), mrID, []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "new"}}, "", baseTime())
+		err = database.ReplaceMRCommentEvents(t.Context(), mrID, []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "new"}}, nil)
 		require.Error(err)
 		events, err := database.ListMREvents(t.Context(), mrID)
 		require.NoError(err)
@@ -2989,7 +2989,7 @@ func TestReplaceCommentEventsRollsBackWhenDerivedUpdateFails(t *testing.T) {
 		_, err := database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_issue_comment_count BEFORE UPDATE OF comment_count ON middleman_issues BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
 		require.NoError(err)
 
-		err = database.ReplaceIssueCommentEvents(t.Context(), issueID, []IssueEvent{{IssueID: issueID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "new"}}, baseTime())
+		err = database.ReplaceIssueCommentEvents(t.Context(), issueID, []IssueEvent{{IssueID: issueID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "new"}}, nil)
 		require.Error(err)
 		events, err := database.ListIssueEvents(t.Context(), issueID)
 		require.NoError(err)
@@ -2999,6 +2999,57 @@ func TestReplaceCommentEventsRollsBackWhenDerivedUpdateFails(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(issue)
 		assert.Equal(1, issue.CommentCount)
+	})
+}
+
+func TestReplaceCommentEventsCountsPersistedUniqueRows(t *testing.T) {
+	t.Run("merge request", func(t *testing.T) {
+		require := require.New(t)
+		database := openTestDB(t)
+		repoID := insertTestRepo(t, database, "o", "r")
+		mrID := insertTestMR(t, database, repoID, 1, "pr", baseTime())
+		lastActivityAt := baseTime().Add(time.Hour)
+		require.NoError(database.UpdateMRDerivedFields(t.Context(), repoID, 1, MRDerivedFields{ReviewDecision: "approved", LastActivityAt: lastActivityAt}))
+		events := []MREvent{
+			{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "same", Body: "old"},
+			{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "same", Body: "new"},
+		}
+
+		require.NoError(database.ReplaceMRCommentEvents(t.Context(), mrID, events, nil))
+		stored, err := database.ListMREvents(t.Context(), mrID)
+		require.NoError(err)
+		require.Len(stored, 1)
+		require.Equal("new", stored[0].Body)
+		mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+		require.NoError(err)
+		require.NotNil(mr)
+		require.Equal(1, mr.CommentCount)
+		require.Equal("approved", mr.ReviewDecision)
+		require.Equal(lastActivityAt, mr.LastActivityAt)
+	})
+
+	t.Run("issue", func(t *testing.T) {
+		require := require.New(t)
+		database := openTestDB(t)
+		repoID := insertTestRepo(t, database, "o", "r")
+		issueID := insertTestIssue(t, database, repoID, 1, "issue", baseTime())
+		lastActivityAt := baseTime().Add(time.Hour)
+		require.NoError(database.UpdateIssueDerivedFields(t.Context(), repoID, 1, IssueDerivedFields{LastActivityAt: lastActivityAt}))
+		events := []IssueEvent{
+			{IssueID: issueID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "same", Body: "old"},
+			{IssueID: issueID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "same", Body: "new"},
+		}
+
+		require.NoError(database.ReplaceIssueCommentEvents(t.Context(), issueID, events, nil))
+		stored, err := database.ListIssueEvents(t.Context(), issueID)
+		require.NoError(err)
+		require.Len(stored, 1)
+		require.Equal("new", stored[0].Body)
+		issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 1)
+		require.NoError(err)
+		require.NotNil(issue)
+		require.Equal(1, issue.CommentCount)
+		require.Equal(lastActivityAt, issue.LastActivityAt)
 	})
 }
 

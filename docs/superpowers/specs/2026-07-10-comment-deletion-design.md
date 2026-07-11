@@ -46,9 +46,16 @@ Return `204 No Content` on success. Use the existing stable problem envelopes fo
 
 Provider not-found is not proof of absence: write credentials can conceal authorization failures as 404, especially when read and write credentials differ. Inside the item write lock and before the first provider call, persist a deletion-attempt receipt keyed by repository, item type/number, and comment ID. Remove a newly created receipt only for an explicit provider-neutral rejection code (authorization, validation, not-found, rate, stale-state, or conflict); retain it after success, unclassified provider errors, 5xx responses, or transport/cancellation errors. Providers mark a mutation outcome uncertain when no authoritative response exists or a response cannot prove whether the mutation was applied; for GitLab this includes 5xx, 408, 425, and non-standard 499 responses, while other explicit 4xx rejections are definitive. The uncertainty marker takes precedence over any generic platform error code wrapped around the transport failure. A retry with a retained receipt may reconcile typed not-found only through the provider-neutral `CommentReader`, which performs a dedicated unconditional read-credential comment refresh; unrelated detail, review, CI, timeline, commit, and ETag outcomes do not participate. Receipts are valid for 30 days (enforced on lookup) so a lost `204` is idempotent, then are pruned opportunistically. Expiry ends this special retry window: a later DELETE is treated as a new attempt, while ordinary authoritative synchronization remains responsible for removing provider-absent comments. This receipt records operation identity, not a hidden-comment tombstone.
 
-Removing a persisted event decrements `comment_count` transactionally and never below zero. `last_activity_at` remains provider-authored metadata and is reconciled by the next authoritative sync rather than guessed from the remaining local event subset.
+Removing a persisted event decrements `comment_count` transactionally and never below zero. Authoritative replacement collapses duplicate `dedupe_key` identities with the last normalized event winning, then derives `comment_count` from the stored rows inside the same transaction. Comment-only replacement does not rewrite `review_decision`; GitHub may advance `last_activity_at` from authoritative comment timestamps, while provider-neutral recovery leaves it unchanged.
 
-Implementation order is: preserve provider outcome certainty; add atomic comment-and-count replacement; expose comment-only reads; integrate receipt recovery under the item lock; then prove the complete provider-to-HTTP-to-SQLite path with provider-specific and provider-neutral tests.
+### Implementation Stages
+
+1. Classify provider responses versus uncertain outcomes; provider tests cover definitive 4xx, timeout-like 4xx, 5xx, and transport loss.
+2. Add atomic PR and issue comment replacement; database tests prove rollback, duplicate-identity counting, and preservation of unrelated parent fields.
+3. Add PR and issue comment-only readers for every provider and verify they do not depend on commits, reviews, or aggregate timelines.
+4. Integrate receipts and item locks for PR and issue handlers; HTTP tests prove first-attempt rejection, ambiguous retry, expiry, and concurrent requests.
+5. Wire frontend confirmation as separate DELETE and refresh phases, with store/component coverage for retry and navigation safety.
+6. Prove provider-to-HTTP-to-SQLite recovery for both item types, including final events and `comment_count`, then run the full affected frontend and browser suites.
 
 ## UI Design
 

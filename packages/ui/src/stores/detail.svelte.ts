@@ -1259,7 +1259,19 @@ export function createDetailStore(opts: DetailStoreOptions) {
         },
       );
       if (requestSelectionGeneration !== selectionGeneration || !isDetailShowingRef(ref)) {
-        return false;
+        if (requestError) return false;
+        showFlash("Suggestion was applied after navigation. Refresh before applying it again.", {
+          tone: "warning",
+        });
+        if (isDetailShowingRef(ref)) {
+          const refreshGeneration = ++syncGeneration;
+          const synced = await syncDetail(owner, name, number, refreshGeneration, ref);
+          if (!synced) {
+            await refreshDetail(owner, name, number, refreshGeneration, ref);
+          }
+          await refreshPullsIfActive();
+        }
+        return true;
       }
       if (requestError) {
         const message = apiErrorMessage(requestError, "failed to apply suggestion");

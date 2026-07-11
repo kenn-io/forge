@@ -58,6 +58,7 @@
       number: number,
       routeGeneration: number,
     ) => void) | undefined;
+    onmutationchange?: ((active: boolean) => void) | undefined;
   }
 
   const {
@@ -67,7 +68,7 @@
     expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
     deferUntilChecksPass = false,
     alreadyQueued = false, midStackWarning,
-    onclose, onmerged, onqueued, onstateconflict,
+    onclose, onmerged, onqueued, onstateconflict, onmutationchange,
   }: Props = $props();
 
   // Offer to queue a deferred merge only when none is queued yet.
@@ -172,6 +173,7 @@
   async function submitMerge(deferred: boolean): Promise<void> {
     if (headPinMissing) return;
     activeMergeSubmission = deferred ? "deferred" : "immediate";
+    onmutationchange?.(true);
     error = null;
     try {
       // Pin the merge to the head the user reviewed; the server rejects
@@ -197,6 +199,7 @@
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       activeMergeSubmission = null;
+      onmutationchange?.(false);
     }
   }
 

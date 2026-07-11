@@ -1215,6 +1215,7 @@ describe("PullDetail approvals", () => {
         name: "Squash and merge",
       }),
     );
+    expect((screen.getByRole("button", { name: "Approve" }) as HTMLButtonElement).disabled).toBe(true);
     await rerender({
       owner: "acme",
       name: "other-widget",

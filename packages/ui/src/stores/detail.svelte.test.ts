@@ -396,6 +396,48 @@ describe("createDetailStore", () => {
     expect(store.getDetailError()).toBe("pull request state changed");
   });
 
+  it("reconciles a successful suggestion response after an A-to-B-to-A route cycle", async () => {
+    let resolveApply!: (value: { data: { status: string }; error: undefined }) => void;
+    const applyResponse = new Promise<{ data: { status: string }; error: undefined }>((resolve) => {
+      resolveApply = resolve;
+    });
+    const get = vi.fn(async (_path: string, options: { params: { path: { name: string; number: number } } }) => {
+      const loaded = pullDetail(options.params.path.name === "widget" ? "reviewed-head" : "other-head");
+      loaded.repo_name = options.params.path.name;
+      loaded.repo.repo_path = `acme/${options.params.path.name}`;
+      loaded.merge_request.Number = options.params.path.number;
+      return { data: loaded };
+    });
+    const post = vi.fn((path: string) => {
+      if (path.endsWith("/review-suggestions/apply")) return applyResponse;
+      if (path.endsWith("/sync")) return Promise.resolve({ data: pullDetail("applied-head"), error: undefined });
+      return Promise.resolve({ error: undefined });
+    });
+    const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
+    const load = (name: string, number: number) =>
+      store.loadDetail("acme", name, number, {
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: `acme/${name}`,
+        sync: false,
+      });
+    await load("widget", 7);
+    const applying = store.applyReviewSuggestions("acme", "widget", 7, {
+      suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
+    });
+
+    await load("other-widget", 8);
+    await load("widget", 7);
+    resolveApply({ data: { status: "applied" }, error: undefined });
+
+    await expect(applying).resolves.toBe(true);
+    expect(store.getDetail()?.platform_head_sha).toBe("applied-head");
+    expect(getFlash()).toMatchObject({
+      message: "Suggestion was applied after navigation. Refresh before applying it again.",
+      tone: "warning",
+    });
+  });
+
   it("fails closed when apply-suggestion conflict refresh returns no detail", async () => {
     const tests = [
       {

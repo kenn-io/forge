@@ -36,6 +36,7 @@
       number: number,
       routeGeneration: number,
     ) => void) | undefined;
+    onmutationchange?: ((active: boolean) => void) | undefined;
     oncompleted?: (() => void) | undefined;
     /** Tooltip override; pass the unavailable_reason when disabling. */
     title?: string | undefined;
@@ -56,6 +57,7 @@
     supportedReviewActions = [],
     routeGeneration = 0,
     onheadconflict,
+    onmutationchange,
     oncompleted,
     title = undefined,
   }: Props = $props();
@@ -140,6 +142,7 @@
     if (disabled || submitting) return;
     submitting = true;
     submittingAction = "approve";
+    onmutationchange?.(true);
     try {
       const approved = await submitApprovePR(buildInput());
       if (!approved) return;
@@ -159,6 +162,7 @@
     } finally {
       submitting = false;
       submittingAction = null;
+      onmutationchange?.(false);
     }
   }
 
@@ -170,6 +174,7 @@
     if (disabled || submitting || body.trim() === "") return;
     submitting = true;
     submittingAction = "request_changes";
+    onmutationchange?.(true);
     try {
       const { error: requestError } = await client.POST(providerItemPath("pulls", {
         provider, platformHost, owner, name, repoPath,
@@ -206,6 +211,7 @@
     } finally {
       submitting = false;
       submittingAction = null;
+      onmutationchange?.(false);
     }
   }
 </script>

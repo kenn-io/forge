@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import * as flash from "@middleman/ui/stores/flash";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
@@ -86,6 +87,34 @@ describe("RepoSummaryPage", () => {
 
   afterEach(() => {
     cleanup();
+    for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
+  });
+
+  it("flashes a rejected repository refresh", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        repoSummaryFixture({
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widgets",
+        }),
+      ],
+      error: undefined,
+    });
+    mockPost.mockRejectedValue(new Error("sync transport unavailable"));
+
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh repositories" }));
+
+    await waitFor(() => {
+      expect(flash.getFlash()).toMatchObject({
+        message: "sync transport unavailable",
+        tone: "danger",
+      });
+    });
   });
 
   it("renders repository summaries from the API", async () => {
@@ -746,6 +775,47 @@ describe("RepoSummaryPage", () => {
       error: undefined,
     });
     await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("/issues/github/acme/widgets/27");
+    });
+  });
+
+  it("allows issue creation to retry after a rejected request", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        repoSummaryFixture({
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widgets",
+        }),
+      ],
+      error: undefined,
+    });
+    mockPost
+      .mockRejectedValueOnce(new Error("issue transport unavailable"))
+      .mockResolvedValueOnce({ data: { Number: 27 }, error: undefined });
+
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), {
+      target: { value: "Retry this issue" },
+    });
+    const createButton = screen.getByRole("button", { name: "Create issue" });
+    await fireEvent.submit(createButton);
+
+    await waitFor(() => {
+      expect(flash.getFlash()).toMatchObject({
+        message: "issue transport unavailable",
+        tone: "danger",
+      });
+      expect((screen.getByRole("button", { name: "Create issue" }) as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledTimes(2);
       expect(mockNavigate).toHaveBeenCalledWith("/issues/github/acme/widgets/27");
     });
   });

@@ -177,27 +177,35 @@
     if (showSpinner) loading = true;
     loadError = null;
 
-    const { data, error } = await client.GET("/repos/summary");
-    if (error) {
-      loadError = apiErrorMessage(
-        error,
-        "failed to load repositories",
-      );
-      if (showSpinner) loading = false;
-      return;
-    }
+    try {
+      const { data, error } = await client.GET("/repos/summary");
+      if (error) {
+        loadError = apiErrorMessage(
+          error,
+          "failed to load repositories",
+        );
+        return;
+      }
 
-    summaries = normalizeSummaries(data as RepoSummary[] | null);
-    loading = false;
+      summaries = normalizeSummaries(data as RepoSummary[] | null);
+    } catch (err) {
+      loadError = err instanceof Error ? err.message : "failed to load repositories";
+    } finally {
+      loading = false;
+    }
   }
 
   async function refreshSummaries(): Promise<void> {
-    const { error } = await client.POST("/sync");
-    if (error) {
-      showFlash(apiErrorMessage(error, "failed to refresh repositories"), { tone: "danger" });
-      return;
+    try {
+      const { error } = await client.POST("/sync");
+      if (error) {
+        showFlash(apiErrorMessage(error, "failed to refresh repositories"), { tone: "danger" });
+        return;
+      }
+      await loadSummaries();
+    } catch (err) {
+      showFlash(err instanceof Error ? err.message : "failed to refresh repositories", { tone: "danger" });
     }
-    await loadSummaries();
   }
 
   function setFilter(filter: RepoFilter): void {
@@ -300,39 +308,43 @@
       name: summary.repo.name,
       repoPath: summary.repo.repo_path,
     };
-    const { data, error } = await client.POST(
-      providerCollectionPath("issues", ref),
-      {
-        params: {
-          path: providerRouteParams(ref),
+    try {
+      const { data, error } = await client.POST(
+        providerCollectionPath("issues", ref),
+        {
+          params: {
+            path: providerRouteParams(ref),
+          },
+          body: {
+            title,
+            body: issueBodyByRepo[key] ?? "",
+          },
         },
-        body: {
-          title,
-          body: issueBodyByRepo[key] ?? "",
-        },
-      },
-    );
+      );
+      if (error || !data) {
+        showFlash(apiErrorMessage(error, "failed to create issue"), { tone: "danger" });
+        return;
+      }
 
-    issueSubmittingByRepo[key] = false;
-    if (error || !data) {
-      showFlash(apiErrorMessage(error, "failed to create issue"), { tone: "danger" });
-      return;
+      issueTitleByRepo[key] = "";
+      issueBodyByRepo[key] = "";
+      composerSummary = null;
+      setGlobalRepo(repoStateKey(summary));
+      navigate(
+        buildIssueRoute({
+          provider: summary.repo.provider,
+          platformHost: summary.repo.platform_host,
+          owner: summary.repo.owner,
+          name: summary.repo.name,
+          repoPath: summary.repo.repo_path,
+          number: data.Number,
+        }),
+      );
+    } catch (err) {
+      showFlash(err instanceof Error ? err.message : "failed to create issue", { tone: "danger" });
+    } finally {
+      issueSubmittingByRepo[key] = false;
     }
-
-    issueTitleByRepo[key] = "";
-    issueBodyByRepo[key] = "";
-    composerSummary = null;
-    setGlobalRepo(repoStateKey(summary));
-    navigate(
-      buildIssueRoute({
-        provider: summary.repo.provider,
-        platformHost: summary.repo.platform_host,
-        owner: summary.repo.owner,
-        name: summary.repo.name,
-        repoPath: summary.repo.repo_path,
-        number: data.Number,
-      }),
-    );
   }
 
   function submitActiveIssue(): void {

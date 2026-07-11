@@ -771,7 +771,10 @@
     }
     if (!refreshed) {
       conflictRefreshError = "Could not refresh the pull request. Try again.";
-    } else if (allowRecovery && conflictHasFreshContext(reason, reviewedHeadAtConflict)) {
+    } else if (
+      (allowRecovery || reason === "head_unknown")
+      && conflictHasFreshContext(reason, reviewedHeadAtConflict)
+    ) {
       stateConflict = null;
       headConflictContext = null;
       conflictReviewedHead = null;

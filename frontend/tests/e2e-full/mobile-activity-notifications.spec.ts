@@ -103,4 +103,39 @@ test.describe("mobile activity notifications", () => {
       await server.stop();
     }
   });
+
+  test("keeps a failed notification action below the mobile header", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await page.goto(`${server.info.base_url}/m`);
+      await waitForMobileCards(page);
+
+      const reviewSlot = page.locator(".mobile-activity-event-slot", { hasText: "Review requested" });
+      const seen = reviewSlot.getByRole("button", { name: "Mark notification seen" });
+      await expect(seen.first()).toBeVisible();
+
+      const removed = await page.request.delete(`${server.info.base_url}/api/v1/repo/github/acme/widgets`, {
+        data: {},
+      });
+      expect(removed.ok()).toBe(true);
+
+      const readResponse = page.waitForResponse(
+        (response) => response.request().method() === "POST" && response.url().endsWith("/api/v1/notifications/read"),
+      );
+      await seen.first().click();
+      expect((await readResponse).status()).toBe(200);
+
+      const flash = page.locator(".kit-flash-stack").getByRole("status");
+      await expect(flash).toContainText("Failed to mark notification as read.");
+      await expect(seen.first()).toBeVisible();
+
+      const [headerBottom, flashTop] = await Promise.all([
+        page.locator(".mobile-topbar").evaluate((node) => node.getBoundingClientRect().bottom),
+        page.locator(".kit-flash-stack").evaluate((node) => node.getBoundingClientRect().top),
+      ]);
+      expect(Math.abs(flashTop - headerBottom)).toBeLessThan(1);
+    } finally {
+      await server.stop();
+    }
+  });
 });

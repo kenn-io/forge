@@ -587,6 +587,51 @@ test.describe("detail action buttons", () => {
     }
   });
 
+  test("typed not-open merge conflict closes stale fields and blocks retry", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      await page.locator(".btn--merge").first().click();
+
+      const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
+      await expect(modal).toBeVisible();
+      await modal.getByLabel("Commit title").fill("Stale title must not retry");
+
+      const conflict = await page.request.post(`${server.info.base_url}/__e2e/merge/conflict/not-open`);
+      expect(conflict.status()).toBe(204);
+
+      let mergeRequests = 0;
+      page.on("request", (request) => {
+        if (
+          request.method() === "POST" &&
+          new URL(request.url()).pathname === "/api/v1/pulls/github/acme/widgets/1/merge"
+        ) {
+          mergeRequests += 1;
+        }
+      });
+      const mergeResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
+      });
+      await modal.getByRole("button", { name: "Merge Anyway" }).click();
+      const response = await mergeResponse;
+      expect(response.status()).toBe(409);
+      expect(await response.json()).toMatchObject({ details: { reason: "not_open" } });
+
+      await expect(modal).toHaveCount(0);
+      await expect(page.locator(".action-error--state")).toContainText("no longer open");
+      await expect(page.locator(".btn--merge")).toHaveCount(0);
+      expect(mergeRequests).toBe(1);
+
+      await page.keyboard.press("m");
+      await expect.poll(() => mergeRequests).toBe(1);
+      await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toHaveCount(0);
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("repo merge permission disables merge action with reason end-to-end", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {

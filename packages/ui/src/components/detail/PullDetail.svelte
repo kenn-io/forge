@@ -643,6 +643,8 @@
         platformHost,
         repoPath,
       });
+      stateConflict = null;
+      headConflictContext = null;
       await refreshPulls();
       await activity.loadActivity();
     } catch (err) {
@@ -680,15 +682,10 @@
   const latestPlatformHeadSha = $derived(
     detailStore.getDetail()?.platform_head_sha ?? "",
   );
-  // After head_unknown the reviewed head stays unbound until diff sync
-  // records a current snapshot,
-  // so merge is disabled until the refreshed detail carries a reviewed
-  // head SHA again. Once the SHA arrives this clears on its own; the
-  // stale_state prompt instead stays until the user completes a
-  // head-bound action or navigates away.
-  const headActionsBlocked = $derived(
-    (stateConflict === "head_unknown" || stateConflict === "head_repo_unknown") && detailHeadSha === "",
-  );
+  // A typed conflict invalidates the state the user reviewed. Keep every
+  // head-bound action closed until route navigation or a successful state
+  // mutation establishes a fresh workflow context.
+  const headActionsBlocked = $derived(stateConflict !== null);
   // Preflight guard for merge: a head-binding provider must never merge
   // against an unbound reviewed diff, so merge stays disabled until diff
   // sync proves the rendered code matches the current head — no request,
@@ -1962,7 +1959,9 @@
               ? `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`
               : mergeDisabledByConflicts
                 ? "Resolve merge conflicts before merging"
-              : headPinMissing
+              : stateConflict
+                ? "Refresh and re-review the pull request before merging"
+                : headPinMissing
                 ? "The reviewed head commit has not been synced yet; merging is disabled until the next sync records it"
                 : mergeOpUnavailable
                   ? mergeOp?.unavailable_reason ?? ""

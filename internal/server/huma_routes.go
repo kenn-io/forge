@@ -3533,6 +3533,13 @@ func (s *Server) preflightMergePR(
 	number int,
 	body mergePRInputBody,
 ) (string, error) {
+	if mr.State == db.MergeRequestStateClosed || mr.State == db.MergeRequestStateMerged {
+		return "", problemConflict(
+			CodeConflict,
+			"pull request is not open",
+			map[string]any{"reason": "not_open"},
+		)
+	}
 	validMethods := map[string]bool{"merge": true, "squash": true, "rebase": true}
 	if !validMethods[body.Method] {
 		return "", problemValidation(

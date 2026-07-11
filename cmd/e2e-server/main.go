@@ -1320,6 +1320,24 @@ func buildAppState(
 		srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
 	})
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/merge/conflict/not-open" {
+			repo, err := database.GetRepoByIdentity(
+				r.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"),
+			)
+			if err != nil || repo == nil {
+				http.Error(w, "repo not found", http.StatusNotFound)
+				return
+			}
+			closedAt := time.Now().UTC()
+			if err := database.UpdateMRState(
+				r.Context(), repo.ID, 1, string(db.MergeRequestStateClosed), nil, &closedAt,
+			); err != nil {
+				http.Error(w, "update pull request state", http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/merge/fail" {
 			fc.SetMergePullRequestError(errors.New("provider rejected merge"))
 			w.WriteHeader(http.StatusNoContent)

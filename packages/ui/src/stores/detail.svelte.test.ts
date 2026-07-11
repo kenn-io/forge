@@ -56,6 +56,7 @@ function mockClient(overrides: Partial<MiddlemanClient> = {}): MiddlemanClient {
 describe("createDetailStore", () => {
   afterEach(() => {
     for (const item of getFlashes()) dismissFlash(item.id);
+    localStorage.clear();
     vi.useRealTimers();
   });
 
@@ -227,6 +228,47 @@ describe("createDetailStore", () => {
       message: "Suggestion was applied, but its updated head still needs to be reconciled.",
       tone: "warning",
     });
+  });
+
+  it("restores pending suggestion reconciliation after store recreation", async () => {
+    const firstStore = createDetailStore({
+      client: mockClient({
+        GET: vi.fn().mockResolvedValue({ data: pullDetail("cached-head") }),
+        POST: vi.fn(async (path: string) => {
+          if (path.endsWith("/review-suggestions/apply")) {
+            return { data: { status: "applied_reconciliation_pending" }, error: undefined };
+          }
+          return { error: undefined };
+        }),
+      }),
+    });
+    const options = {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false as const,
+    };
+    await firstStore.loadDetail("acme", "widget", 7, options);
+    await firstStore.applyReviewSuggestions("acme", "widget", 7, {
+      suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
+    });
+
+    const secondStore = createDetailStore({
+      client: mockClient({
+        GET: vi.fn().mockResolvedValue({ data: pullDetail("cached-head") }),
+        POST: vi.fn(async (path: string) => {
+          if (path.endsWith("/sync")) {
+            return { data: pullDetail("reconciled-head"), error: undefined };
+          }
+          return { error: undefined };
+        }),
+      }),
+    });
+    await secondStore.loadDetail("acme", "widget", 7, options);
+
+    expect(secondStore.getDetail()?.platform_head_sha).toBe("reconciled-head");
+    expect(secondStore.isSuggestionReconciliationPending("acme", "widget", 7)).toBe(false);
+    expect(localStorage.getItem("middleman:pendingSuggestionReconciliations")).toBeNull();
   });
 
   it("syncs detail before returning false for apply-suggestion state conflicts", async () => {

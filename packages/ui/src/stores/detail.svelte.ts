@@ -57,6 +57,36 @@ export interface ApplySuggestionConflict {
   number: number;
 }
 
+const PENDING_SUGGESTION_RECONCILIATIONS_KEY = "middleman:pendingSuggestionReconciliations";
+
+function readPendingSuggestionReconciliations(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(PENDING_SUGGESTION_RECONCILIATIONS_KEY);
+    if (raw === null) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, boolean] => typeof entry[0] === "string" && entry[1] === true,
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function writePendingSuggestionReconciliations(value: Record<string, boolean>): void {
+  try {
+    if (Object.keys(value).length === 0) {
+      localStorage.removeItem(PENDING_SUGGESTION_RECONCILIATIONS_KEY);
+      return;
+    }
+    localStorage.setItem(PENDING_SUGGESTION_RECONCILIATIONS_KEY, JSON.stringify(value));
+  } catch {
+    // Keep the in-memory lock when durable browser storage is unavailable.
+  }
+}
+
 function apiErrorMessage(error: { detail?: string; title?: string }, fallback: string): string {
   return error.detail ?? error.title ?? fallback;
 }
@@ -115,7 +145,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   let syncGeneration = 0;
   let selectionGeneration = 0;
   let activeSelectionKey: string | null = null;
-  let pendingSuggestionReconciliations = $state<Record<string, boolean>>({});
+  let pendingSuggestionReconciliations = $state<Record<string, boolean>>(readPendingSuggestionReconciliations());
   const suggestionReconciliationPromises = new Map<string, Promise<boolean>>();
   // Tracks the PR (if any) whose local body has been edited since
   // the last server confirmation. While set, background sync paths
@@ -301,10 +331,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const key = suggestionReconciliationKey(ref);
     if (pending) {
       pendingSuggestionReconciliations = { ...pendingSuggestionReconciliations, [key]: true };
+      writePendingSuggestionReconciliations(pendingSuggestionReconciliations);
       return;
     }
     const { [key]: _removed, ...remaining } = pendingSuggestionReconciliations;
     pendingSuggestionReconciliations = remaining;
+    writePendingSuggestionReconciliations(pendingSuggestionReconciliations);
   }
 
   function isSuggestionReconciliationPending(owner: string, name: string, number: number): boolean {

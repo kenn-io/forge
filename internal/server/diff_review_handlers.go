@@ -292,20 +292,19 @@ func (s *Server) applyReviewSuggestions(
 	}
 	if commitSHA == "" {
 		responseStatus = "applied_reconciliation_pending"
-	} else {
-		marked, updateErr := s.db.MarkAppliedProviderHead(
-			ctx,
-			repo.ID,
-			input.Number,
-			expectedHeadSHA,
-			commitSHA,
-		)
-		if updateErr != nil {
-			slog.WarnContext(ctx, "persist applied review suggestion head", "err", updateErr)
-			responseStatus = "applied_reconciliation_pending"
-		} else if !marked {
-			responseStatus = "applied_reconciliation_pending"
-		}
+	}
+	marked, updateErr := s.db.MarkAppliedProviderHead(
+		ctx,
+		repo.ID,
+		input.Number,
+		expectedHeadSHA,
+		commitSHA,
+	)
+	if updateErr != nil {
+		slog.WarnContext(ctx, "persist applied review suggestion head", "err", updateErr)
+		responseStatus = "applied_reconciliation_pending"
+	} else if !marked {
+		responseStatus = "applied_reconciliation_pending"
 	}
 	s.syncAfterReviewSuggestionApply(*repo, input.Number)
 	response := applyReviewSuggestionResponse{Status: responseStatus}

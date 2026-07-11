@@ -3352,8 +3352,12 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 
 	if repo != nil {
 		normalized := platform.DBMergeRequest(repo.ID, pr)
-		if mrID, upsertErr := s.db.UpsertMergeRequest(ctx, normalized); upsertErr == nil {
-			_ = s.db.EnsureKanbanState(ctx, mrID)
+		generation, generationErr := s.db.ProviderSnapshotGeneration(ctx)
+		if generationErr == nil {
+			normalized.ProviderSnapshotGeneration = generation
+			if mrID, accepted, upsertErr := s.db.UpsertMergeRequestSnapshot(ctx, normalized); upsertErr == nil && accepted {
+				_ = s.db.EnsureKanbanState(ctx, mrID)
+			}
 		}
 	}
 
@@ -3798,6 +3802,10 @@ func (s *Server) setPRGitHubState(
 				if clientErr != nil {
 					return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 				}
+				snapshotGeneration, generationErr := s.db.ProviderSnapshotGeneration(ctx)
+				if generationErr != nil {
+					return nil, huma.Error500InternalServerError("get provider snapshot generation failed")
+				}
 				ghPR, fetchErr := client.GetPullRequest(
 					ctx, input.Owner, input.Name, input.Number,
 				)
@@ -3815,7 +3823,8 @@ func (s *Server) setPRGitHubState(
 							string(repoProviderKind(*repo)), repoProviderHost(*repo),
 						)
 					}
-					_, _ = s.db.UpsertMergeRequest(ctx, normalized)
+					normalized.ProviderSnapshotGeneration = snapshotGeneration
+					_, _, _ = s.db.UpsertMergeRequestSnapshot(ctx, normalized)
 					s.markClosedLinkedNotificationsDone(ctx)
 					if ghPR.GetMerged() {
 						return nil, problemConflict(

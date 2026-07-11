@@ -2209,8 +2209,20 @@ func (d *DB) UpdateIssueAssignees(ctx context.Context, repoID, issueID int64, as
 }
 
 func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, error) {
+	id, _, err := d.UpsertMergeRequestSnapshot(ctx, mr)
+	return id, err
+}
+
+// UpsertMergeRequestSnapshot reports whether the provider snapshot was
+// accepted. A false result means a newer fetch generation or timestamp already
+// owns the row, so callers must skip all downstream writes derived from the
+// rejected snapshot.
+func (d *DB) UpsertMergeRequestSnapshot(
+	ctx context.Context,
+	mr *MergeRequest,
+) (int64, bool, error) {
 	canonicalizeMergeRequestTimestamps(mr)
-	_, err := d.rw.ExecContext(ctx, `
+	result, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_merge_requests
 		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_display_name,
 		     state, is_draft, is_locked, body, head_branch, base_branch,
@@ -2284,17 +2296,29 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		mr.AssigneesJSON, mr.ReviewersJSON,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("upsert merge request: %w", err)
+		return 0, false, fmt.Errorf("upsert merge request: %w", err)
 	}
-	var id int64
-	err = d.ro.QueryRowContext(ctx,
-		`SELECT id FROM middleman_merge_requests WHERE repo_id = ? AND number = ?`,
-		mr.RepoID, mr.Number,
-	).Scan(&id)
+	_, err = result.RowsAffected()
 	if err != nil {
-		return 0, fmt.Errorf("get mr id after upsert: %w", err)
+		return 0, false, fmt.Errorf("read upsert merge request result: %w", err)
 	}
-	return id, nil
+	var (
+		id                int64
+		pendingGeneration int64
+		storedGeneration  int64
+	)
+	err = d.ro.QueryRowContext(ctx,
+		`SELECT id, pending_provider_head_generation, provider_snapshot_generation
+		 FROM middleman_merge_requests
+		 WHERE repo_id = ? AND number = ?`,
+		mr.RepoID, mr.Number,
+	).Scan(&id, &pendingGeneration, &storedGeneration)
+	if err != nil {
+		return 0, false, fmt.Errorf("get mr id after upsert: %w", err)
+	}
+	accepted := pendingGeneration <= mr.ProviderSnapshotGeneration &&
+		storedGeneration <= mr.ProviderSnapshotGeneration
+	return id, accepted, nil
 }
 
 // GetMergeRequest returns a merge request by repository identity and MR number, or nil if not found.
@@ -3108,10 +3132,11 @@ func (d *DB) UpdateClosedMRState(
 	mergedAt, closedAt *time.Time,
 	platformHeadSHA, platformBaseSHA string,
 ) error {
-	return d.UpdateClosedMRStateFromSnapshot(
+	_, err := d.UpdateClosedMRStateFromSnapshot(
 		ctx, repoID, number, state, updatedAt, mergedAt, closedAt,
 		platformHeadSHA, platformBaseSHA, 0,
 	)
+	return err
 }
 
 // UpdateClosedMRStateFromSnapshot applies a closed-state provider snapshot
@@ -3125,8 +3150,8 @@ func (d *DB) UpdateClosedMRStateFromSnapshot(
 	mergedAt, closedAt *time.Time,
 	platformHeadSHA, platformBaseSHA string,
 	snapshotGeneration int64,
-) error {
-	_, err := d.rw.ExecContext(ctx, `
+) (bool, error) {
+	result, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_merge_requests
 		SET state = ?, merged_at = ?, closed_at = ?,
 		    updated_at = ?, last_activity_at = ?,
@@ -3142,9 +3167,13 @@ func (d *DB) UpdateClosedMRStateFromSnapshot(
 		repoID, number, snapshotGeneration, snapshotGeneration,
 	)
 	if err != nil {
-		return fmt.Errorf("update closed MR state: %w", err)
+		return false, fmt.Errorf("update closed MR state: %w", err)
 	}
-	return nil
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read closed MR state update: %w", err)
+	}
+	return updated > 0, nil
 }
 
 // UpdateDiffSHAs stores the locally-verified diff SHAs for a merge request.
@@ -3233,18 +3262,19 @@ func (d *DB) MarkAppliedProviderHead(
 		).Scan(&currentHead); err != nil {
 			return fmt.Errorf("get current provider head for MR %d: %w", number, err)
 		}
-		marked = currentHead == expectedHead || currentHead == appliedHead
+		marked = currentHead == expectedHead || (appliedHead != "" && currentHead == appliedHead)
 
 		result, err := tx.ExecContext(ctx, `
 			UPDATE middleman_merge_requests
 			SET platform_head_sha = CASE
-			        WHEN platform_head_sha = ? THEN ?
+			        WHEN ? <> '' AND platform_head_sha = ? THEN ?
 			        ELSE platform_head_sha
 			    END,
 			    pending_provider_head_sha = ?,
 			    pending_provider_head_generation = ?
 			WHERE repo_id = ? AND number = ?`,
-			expectedHead, appliedHead, appliedHead, generation, repoID, number,
+			appliedHead, expectedHead, appliedHead,
+			appliedHead, generation, repoID, number,
 		)
 		if err != nil {
 			return fmt.Errorf("mark applied provider head for MR %d: %w", number, err)

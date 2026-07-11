@@ -28424,6 +28424,149 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	assert.Equal(headSHA, pr.PlatformHeadSHA)
 }
 
+func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+
+	const headRef = "kata-task-1"
+	var headSHA string
+	now := time.Now().UTC().Truncate(time.Second)
+	prID := int64(42001)
+	prTitleFromList := "Indexed PR title"
+	prTitleFromDetail := "Fresh PR detail title"
+	prState := "open"
+	prBody := "fresh body"
+	prURL := "https://github.com/acme/widget/pull/42"
+	baseRef := "main"
+	baseSHA := "base-sha"
+	author := "alice"
+	cloneURL := "https://github.com/acme/widget.git"
+	intPointer := func(value int) *int { return &value }
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+			return []*gh.PullRequest{{
+				ID:        &prID,
+				Number:    intPointer(42),
+				Title:     &prTitleFromList,
+				State:     &prState,
+				HTMLURL:   &prURL,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+				Head: &gh.PullRequestBranch{
+					Ref:  new(headRef),
+					SHA:  &headSHA,
+					Repo: &gh.Repository{CloneURL: &cloneURL},
+				},
+				Base: &gh.PullRequestBranch{Ref: &baseRef, SHA: &baseSHA},
+			}}, nil
+		},
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			return &gh.PullRequest{
+				ID:        &prID,
+				Number:    intPointer(42),
+				Title:     &prTitleFromDetail,
+				Body:      &prBody,
+				State:     &prState,
+				HTMLURL:   &prURL,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+				Head: &gh.PullRequestBranch{
+					Ref:  new(headRef),
+					SHA:  &headSHA,
+					Repo: &gh.Repository{CloneURL: &cloneURL},
+				},
+				Base: &gh.PullRequestBranch{Ref: &baseRef, SHA: &baseSHA},
+			}, nil
+		},
+	}
+	fixture := setupWorkspaceServerFixtureWithMockHostAndOptions(
+		t, nil, mock, "github.com",
+		ServerOptions{
+			PtyOwnerInProcess:                  true,
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+
+	worktreePath := filepath.Join(t.TempDir(), "kata-worktree")
+	runGit(t, t.TempDir(), "clone", fixture.remote, worktreePath)
+	runGit(t, worktreePath, "config", "user.email", "test@test.com")
+	runGit(t, worktreePath, "config", "user.name", "Test")
+	runGit(t, worktreePath, "checkout", "-b", headRef)
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "feature.txt"),
+		[]byte("feature\n"),
+		0o644,
+	))
+	runGit(t, worktreePath, "add", ".")
+	runGit(t, worktreePath, "commit", "-m", "feature commit")
+	runGit(t, worktreePath, "push", "-u", "origin", headRef)
+	runGit(
+		t, worktreePath,
+		"remote", "set-url", "origin", "git@github.com:acme/widget.git",
+	)
+	headSHA = testGitSHA(t, worktreePath, "HEAD")
+	kataMetadata := db.WorkspaceKataMetadata{
+		DaemonID:   "local",
+		ProjectUID: "project-1",
+		IssueUID:   "issue-1",
+		ShortID:    "task-1",
+		Title:      "Track Kata workspace association",
+	}
+	require.NoError(fixture.database.InsertWorkspace(ctx, &db.Workspace{
+		ID:              "ws-kata-refresh",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypeKataTask,
+		ItemKey:         db.KataWorkspaceItemKey(kataMetadata),
+		GitHeadRef:      headRef,
+		WorkspaceBranch: headRef,
+		WorktreePath:    worktreePath,
+		TmuxSession:     "middleman-ws-kata-refresh",
+		Status:          "ready",
+		KataMetadata:    &kataMetadata,
+	}))
+
+	refreshRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/workspaces/ws-kata-refresh/refresh",
+		nil,
+	)
+	require.Equal(http.StatusOK, refreshRR.Code, refreshRR.Body.String())
+
+	var refreshed rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(refreshRR.Body).Decode(&refreshed))
+	assert.Equal(db.WorkspaceItemTypeKataTask, refreshed.ItemType)
+	require.NotNil(refreshed.AssociatedPRNumber)
+	assert.Equal(42, *refreshed.AssociatedPRNumber)
+
+	stored, err := fixture.database.GetWorkspace(ctx, "ws-kata-refresh")
+	require.NoError(err)
+	require.NotNil(stored)
+	require.NotNil(stored.AssociatedPRNumber)
+	assert.Equal(42, *stored.AssociatedPRNumber)
+
+	repo, err := fixture.database.GetRepoByIdentity(
+		ctx,
+		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	pr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 42)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal(prTitleFromDetail, pr.Title)
+	assert.Equal(headSHA, pr.PlatformHeadSHA)
+}
+
 func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {
 	t.Parallel()
 

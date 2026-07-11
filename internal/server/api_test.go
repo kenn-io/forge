@@ -14047,6 +14047,10 @@ func TestAPIGitHubRequestChangesDoesNotPublishSavedDraftComments(t *testing.T) {
 	ctx := t.Context()
 	var captured platform.PublishDiffReviewDraftInput
 	mock := &mockGH{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			head := "provider-head"
+			return &gh.PullRequest{Head: &gh.PullRequestBranch{SHA: &head}}, nil
+		},
 		createReviewWithCommentsFn: func(
 			_ context.Context,
 			_, _ string,
@@ -14101,6 +14105,52 @@ func TestAPIGitHubRequestChangesDoesNotPublishSavedDraftComments(t *testing.T) {
 	require.NoError(err)
 	require.Len(comments, 1)
 	assert.Equal("Saved for the later inline review.", comments[0].Body)
+}
+
+func TestAPIGitHubRequestChangesRevokesReviewWhenHeadMovesDuringSubmit(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	var headReads int
+	var dismissedReviewID int64
+	mock := &mockGH{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			headReads++
+			head := "provider-head"
+			if headReads > 1 {
+				head = "moved-head"
+			}
+			return &gh.PullRequest{Head: &gh.PullRequestBranch{SHA: &head}}, nil
+		},
+		createReviewWithCommentsFn: func(
+			context.Context, string, string, int, string, string, string, []*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
+			id := int64(503)
+			return &gh.PullRequestReview{ID: &id}, nil
+		},
+		dismissReviewFn: func(
+			_ context.Context, _, _ string, _ int, reviewID int64, _ string,
+		) (*gh.PullRequestReview, error) {
+			dismissedReviewID = reviewID
+			return &gh.PullRequestReview{ID: &reviewID}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 42)
+	mr, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 42)
+	require.NoError(err)
+	require.NotNil(mr)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/42/request-changes", map[string]string{
+		"body": "Please cover the empty state.", "expected_head_sha": "provider-head",
+	})
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem rawProblemDetail
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("stale_state", problem.Details["reason"])
+	assert.Equal("succeeded", problem.Details["revocation"])
+	assert.Equal("503", problem.Details["review_id"])
+	assert.EqualValues(503, dismissedReviewID)
 }
 
 func TestAPIGitHubPublishReviewDraftRejectsSelfApprovalBeforeProvider(t *testing.T) {

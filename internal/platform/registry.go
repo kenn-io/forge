@@ -336,6 +336,18 @@ func (r *Registry) ReviewMutator(kind Kind, host string) (ReviewMutator, error) 
 	return mutator, nil
 }
 
+func (r *Registry) RequestChangesMutator(kind Kind, host string) (RequestChangesMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(RequestChangesMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "review_action_request_changes")
+	}
+	return mutator, nil
+}
+
 func (r *Registry) DiffReviewDraftMutator(
 	kind Kind,
 	host string,

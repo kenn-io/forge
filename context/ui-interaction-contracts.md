@@ -203,7 +203,7 @@ context.
 
 Inline diff review draft comments are local staged review state until publish.
 Direct detail-form review actions must leave that staged state untouched; do not
-route them through draft publish (`internal/server/huma_routes.go::requestChangesPR`).
+load or publish saved draft comments (`internal/server/huma_routes.go::requestChangesPR`).
 Editing a saved draft comment should change only the body and preserve the
 original diff range, so the PATCH path must rebuild the range from the stored
 comment rather than from whichever line is currently selected

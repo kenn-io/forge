@@ -270,7 +270,7 @@ test("settings rolls back a promoted glob match when the local clone path is inv
   expect(saveResponse.status(), "invalid worktree path should fail validation").not.toBe(200);
   expect(rollbackResponse.ok(), `DELETE promoted repo returned ${rollbackResponse.status()}`).toBe(true);
 
-  await expect(dialog.getByRole("alert")).toContainText("path does not exist");
+  await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("path does not exist");
 
   if (!api) throw new Error("settings-globs API context not initialized");
   await expect

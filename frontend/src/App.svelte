@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, untrack } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import {
     Provider,
     PRListView,
@@ -145,6 +146,7 @@
   let appReady = $state(false);
   let viewportWidth = $state(window.innerWidth);
   let renderedHeaderHeight = $state(0);
+  let renderedMobileHeaderHeight = $state(0);
   let hasCoarsePointer = $state(window.matchMedia("(pointer: coarse)").matches);
   let kataDaemonInfos = $state<Awaited<ReturnType<typeof fetchKataDaemons>>>([]);
   let kataDefaultDaemonId = $state<string | undefined>(undefined);
@@ -174,6 +176,19 @@
   const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
   const kataAPI = createKataTaskAPI();
   const kataWorkspaceAPI = createKataTaskAPI();
+
+  const trackMobileHeaderHeight: Attachment<HTMLElement> = (node) => {
+    const update = () => {
+      renderedMobileHeaderHeight = node.getBoundingClientRect().height;
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      renderedMobileHeaderHeight = 0;
+    };
+  };
   const docsAPI = createDocsAPI();
   const messageIssueLinker = createMessageIssueLinker(kataAPI);
 
@@ -539,6 +554,14 @@
     if (shouldUseDesktopOnPhone()) return false;
     if (getPage() !== "activity") return false;
     return isCompactViewport() || shouldForceMobileRoutes();
+  }
+
+  function flashTopOffset(): string {
+    if (shouldUseFocusPresentation() || isHeaderHidden()) return "0";
+    if (isMobilePage(getPage()) || shouldUseResponsiveMobileActivityPresentation()) {
+      return renderedMobileHeaderHeight > 0 ? `${renderedMobileHeaderHeight}px` : "0";
+    }
+    return renderedHeaderHeight > 0 ? `${renderedHeaderHeight}px` : "var(--header-height)";
   }
 
   function navigateFocusPRDetailTab(
@@ -969,13 +992,7 @@
   <!-- Mounted once above the focus/full-shell branching so flashes raised
        through the shared store stay visible in every presentation, not just
        the desktop shell. -->
-  <FlashBanner
-    top={shouldUseFocusPresentation() || isHeaderHidden()
-      ? "0"
-      : renderedHeaderHeight > 0
-        ? `${renderedHeaderHeight}px`
-        : "var(--header-height)"}
-  />
+  <FlashBanner top={flashTopOffset()} />
   {#if shouldUseFocusPresentation()}
     {@const r = getRoute()}
     <main
@@ -1050,7 +1067,7 @@
     </main>
   {:else if isMobilePage(getPage()) || shouldUseResponsiveMobileActivityPresentation()}
     <section class="mobile-shell" aria-label="Phone view">
-      <header class="mobile-topbar">
+      <header class="mobile-topbar" {@attach trackMobileHeaderHeight}>
         <span class="mobile-brand">
           <img class="mobile-app-icon" src={appIconSrc} alt="" aria-hidden="true" />
           <span class="mobile-title">middleman</span>

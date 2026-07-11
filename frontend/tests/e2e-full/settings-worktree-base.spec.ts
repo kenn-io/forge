@@ -98,7 +98,7 @@ test("local clone editor opens from the row gear and saves a valid path", async 
   await expect(reloadedInput).toBeHidden();
 });
 
-test("local clone editor surfaces validation errors inline", async ({ page }) => {
+test("local clone editor keeps its draft open after a validation failure", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
 
@@ -109,7 +109,6 @@ test("local clone editor surfaces validation errors inline", async ({ page }) =>
   await input.fill("/nonexistent/clone/path");
   await row.getByRole("button", { name: "Save local clone path for acme/widgets" }).click();
 
-  await expect(row.locator(".error-msg")).toBeVisible();
-  await expect(row.locator(".error-msg")).not.toHaveText("");
+  await expect(page.locator(".kit-flash-stack").getByRole("status")).not.toHaveText("");
   await expect(input).toBeVisible();
 });

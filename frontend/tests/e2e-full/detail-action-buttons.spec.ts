@@ -637,8 +637,7 @@ test.describe("detail action buttons", () => {
     await page.locator(".actions-menu-popover .btn--close").click();
 
     await expect(page.locator(".actions-menu-popover")).toHaveCount(0);
-    await expect(page.locator(".primary-actions-wrap .action-error")).toHaveText("backend down");
-    await expect(page.locator(".primary-actions-wrap .action-error")).toBeVisible();
+    await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("backend down");
   });
 
   test("narrow actions menu includes supported approve action", async ({ page }) => {

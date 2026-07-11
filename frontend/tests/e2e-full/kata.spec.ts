@@ -2257,7 +2257,7 @@ test("kata message unlink failure keeps the linked message visible", async ({ pa
     await expect(taskLinks).toContainText("Lease renewal");
     await taskLinks.getByRole("button", { name: "Unlink Lease renewal" }).click();
 
-    await expect(page.getByText("Could not unlink message.")).toBeVisible();
+    await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("Could not unlink message.");
     await expect(taskLinks).toContainText("Lease renewal");
     await expect.poll(() => backend.state.seenPaths).toContain("PUT /api/v1/projects/1/issues/issue-rent/metadata");
     expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")?.metadata.mail_links).toEqual(
@@ -6024,7 +6024,7 @@ test("kata owner assignment failure keeps the custom owner editor open", async (
     await expect
       .poll(() => backend.state.seenPaths)
       .toContain("POST /api/v1/projects/1/issues/issue-rent/actions/assign");
-    await expect(page.getByRole("alert")).toContainText("owner unavailable");
+    await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("owner unavailable");
     await expect(detail.getByLabel("Owner", { exact: true })).toHaveValue("agent:new");
     await expect(detail.getByRole("button", { name: "Owner: Wes" })).toHaveCount(0);
     expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")?.owner).toBe("Wes");

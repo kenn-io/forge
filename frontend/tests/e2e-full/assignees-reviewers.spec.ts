@@ -192,7 +192,7 @@ test.describe("assignee and reviewer editing", () => {
       );
       await page.getByRole("menuitemcheckbox", { name: /add .ghost./i }).click();
       expect((await failedUpdate).status()).toBeGreaterThanOrEqual(400);
-      await expect(page.getByRole("alert")).toBeVisible();
+      await expect(page.locator(".kit-flash-stack").getByRole("status")).toBeVisible();
 
       // A subsequent successful candidate search must not clear the
       // mutation error: the save still has not happened.
@@ -202,7 +202,7 @@ test.describe("assignee and reviewer editing", () => {
       await page.getByLabel("Filter users").fill("bo");
       expect((await retryQueryResponse).status()).toBe(200);
       await expect(page.getByRole("menuitemcheckbox", { name: /bob/i })).toBeVisible();
-      await expect(page.getByRole("alert")).toBeVisible();
+      await expect(page.locator(".kit-flash-stack").getByRole("status")).toBeVisible();
     } finally {
       await isolatedServer?.stop();
     }

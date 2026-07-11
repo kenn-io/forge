@@ -1119,7 +1119,10 @@
 
     unlinkBusyIds = new Set(links.map((item) => item.message_id));
     try {
-      await runViewTask(() => store.patchMetadata(uid, actor, metadataPatch), "flash");
+      const ok = await runViewTask(() => store.patchMetadata(uid, actor, metadataPatch), "none");
+      if (!ok) {
+        showFlash(lastTaskError || "Could not unlink message.", { tone: "danger" });
+      }
     } finally {
       unlinkBusyIds = new Set();
     }

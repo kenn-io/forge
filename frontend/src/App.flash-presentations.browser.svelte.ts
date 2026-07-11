@@ -83,6 +83,19 @@ describe("flash rendering across app shells", () => {
     expectBelowHeader(await visibleFlash("compact header flash"));
   });
 
+  it("tracks the rendered height of the phone-route header", async () => {
+    await page.viewport(390, 844);
+    mounted = await mountBrowserApp("/m");
+    const header = await vi.waitFor(() => {
+      const element = document.querySelector<HTMLElement>(".mobile-topbar");
+      expect(element).not.toBeNull();
+      return element!;
+    }, WAIT);
+
+    const stack = await visibleFlash("phone header flash");
+    expect(Math.abs(stack.getBoundingClientRect().top - header.getBoundingClientRect().bottom)).toBeLessThan(1);
+  });
+
   it("pins flashes to the page edge when embed config hides the header", async () => {
     await page.viewport(1280, 900);
     window.__middleman_config = { embed: { hideHeader: true } };

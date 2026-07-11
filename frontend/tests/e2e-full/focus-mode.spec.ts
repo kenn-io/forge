@@ -123,9 +123,7 @@ test.describe("focus mode", () => {
     await expect(page.locator(".meta-sep--sync")).toBeHidden();
 
     await page.locator(".actions-row--primary .primary-workspace-action .btn--workspace").click();
-    await expect(page.locator(".actions-row--primary .primary-workspace-action .action-error")).toHaveText(
-      "workspace setup failed",
-    );
+    await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("workspace setup failed");
   });
 
   test("narrow merged PR focus route keeps labels and workspace actions available", async ({ page }) => {

@@ -120,7 +120,9 @@ describe("KataWorkspace", () => {
       expect(screen.getByRole("heading", { name: "Today" })).toBeTruthy();
       expect(screen.getByTestId("daemon-chip").textContent).toContain("home");
     });
-    await waitFor(() => expect(api.issues).toHaveBeenCalledTimes(2));
+    // Bootstrap loads the routed view directly; there is no second
+    // route-application reload.
+    await waitFor(() => expect(api.issues).toHaveBeenCalledTimes(1));
     await Promise.resolve();
     await Promise.resolve();
     vi.mocked(api.issues).mockImplementationOnce(async (_query: KataTaskIssuesQuery) => stalledView.promise);

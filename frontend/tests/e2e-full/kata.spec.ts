@@ -3464,6 +3464,113 @@ test("missing routed issue leaves its accepted daemon workspace usable", async (
   }
 });
 
+test("kata routed daemon open keeps the project scope on the target daemon", async ({ page }) => {
+  const sharedHomeProject = {
+    id: 301,
+    uid: "project-shared",
+    name: "Shared",
+    metadata: { area: "Work", sidebar_order: 1 },
+    open_count: 1,
+  };
+  const sharedWorkProject = {
+    id: 302,
+    uid: "project-shared",
+    name: "Shared",
+    metadata: { area: "Work", sidebar_order: 1 },
+    open_count: 1,
+  };
+  const noiseWorkProject = {
+    id: 303,
+    uid: "project-noise",
+    name: "Noise",
+    metadata: { area: "Work", sidebar_order: 2 },
+    open_count: 1,
+  };
+  const home = await startKataBackend({
+    projects: [sharedHomeProject],
+    issues: [
+      issueSummary({
+        id: 3011,
+        uid: "issue-home-scoped",
+        project_id: sharedHomeProject.id,
+        project_uid: sharedHomeProject.uid,
+        project_name: sharedHomeProject.name,
+        short_id: "shared-home",
+        qualified_id: "Shared#shared-home",
+        title: "Home scoped task",
+        body: "Scoped on the home daemon.",
+        labels: ["work"],
+      }),
+    ],
+  });
+  const work = await startKataBackend({
+    projects: [sharedWorkProject, noiseWorkProject],
+    issues: [
+      issueSummary({
+        id: 3021,
+        uid: "issue-work-scoped",
+        project_id: sharedWorkProject.id,
+        project_uid: sharedWorkProject.uid,
+        project_name: sharedWorkProject.name,
+        short_id: "shared-work",
+        qualified_id: "Shared#shared-work",
+        title: "Work scoped task",
+        body: "Scoped on the work daemon.",
+        labels: ["work"],
+      }),
+      issueSummary({
+        id: 3031,
+        uid: "issue-work-noise",
+        project_id: noiseWorkProject.id,
+        project_uid: noiseWorkProject.uid,
+        project_name: noiseWorkProject.name,
+        short_id: "noise-1",
+        qualified_id: "Noise#noise-1",
+        title: "Work backlog noise",
+        body: "Outside the routed scope.",
+        labels: ["work"],
+      }),
+    ],
+  });
+  const kataHome = await configureKataHomeDaemons(
+    [
+      { name: "home", url: home.url },
+      { name: "work", url: work.url },
+    ],
+    "home",
+  );
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?view=all&scope=project-shared`);
+    await expectKataDaemonSwitcherReady(page);
+    const taskList = page.locator(".kata-list");
+    await expect(taskList.getByRole("button", { name: /Home scoped task/ })).toBeVisible();
+
+    // Open a result on the work daemon while the project scope is active
+    // (a palette hit or docs link navigates exactly like this).
+    await page.evaluate(() => {
+      window.history.pushState({}, "", "/kata?view=all&scope=project-shared&issue=issue-work-scoped&daemon=work");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    await expect(page.getByTestId("daemon-chip")).toContainText("work");
+    await expect(page).toHaveURL(/scope=project-shared/);
+    await expect(page).not.toHaveURL(/daemon=/);
+    // The scoped list must load from the target daemon: the routed scope
+    // may not be dropped into an unscoped backlog after the switch.
+    await expect(taskList.getByRole("button", { name: /Work scoped task/ })).toBeVisible();
+    await expect(taskList.getByRole("button", { name: /Work backlog noise/ })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Scoped on the work daemon.");
+    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/projects/302/issues?status=open");
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await home.close();
+    await work.close();
+  }
+});
+
 test("kata daemon switch waits for an in-flight mutation and its refresh", async ({ page }) => {
   let releaseClose!: () => void;
   const closeBarrier = new Promise<void>((resolve) => {

@@ -16,6 +16,7 @@ import {
 } from "../../stores/active-kata-daemon.svelte.js";
 import { defaultProviderCapabilities } from "../../components/repositories/repoSummary.js";
 import KataWorkspace from "./KataWorkspace.svelte";
+import KataWorkspaceRouteHost from "./KataWorkspaceRouteHost.svelte";
 import {
   createDaemonWorkspaceAPI,
   createWorkspaceAPI,
@@ -370,7 +371,7 @@ describe("KataWorkspace", () => {
     });
   });
 
-  it("selects a graph node immediately and tolerates the route prop catching up later", async () => {
+  it("selects a graph node immediately and routes the selection", async () => {
     const root = {
       ...issue("issue-root", "Root graph task", "project-kata"),
       blocks: [{ uid: "issue-blocked", short_id: "blocked" }],
@@ -379,10 +380,10 @@ describe("KataWorkspace", () => {
     const { api } = createWorkspaceAPI([root, blocked]);
     const onSelectedIssueChange = vi.fn();
 
-    const { rerender } = render(KataWorkspace, {
+    render(KataWorkspaceRouteHost, {
       props: {
         api,
-        selectedIssueUID: root.uid,
+        initialIssue: root.uid,
         onSelectedIssueChange,
       },
     });
@@ -397,14 +398,11 @@ describe("KataWorkspace", () => {
     );
 
     await fireEvent.click(graphNodeWithText("Blocked follow-up"));
-    expect(onSelectedIssueChange).toHaveBeenCalledWith("issue-blocked");
     await waitFor(() => {
+      expect(onSelectedIssueChange).toHaveBeenCalledWith("issue-blocked");
       expect(screen.getByRole("heading", { name: "Blocked follow-up" })).toBeTruthy();
     });
-
-    await rerender({ api, selectedIssueUID: blocked.uid, onSelectedIssueChange });
-
-    expect(screen.getByRole("heading", { name: "Blocked follow-up" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Reachable task graph" })).toBeTruthy();
   });
 
   it("routes and starts loading graph node selections before the task detail resolves", async () => {
@@ -421,10 +419,10 @@ describe("KataWorkspace", () => {
     });
     const onSelectedIssueChange = vi.fn();
 
-    const { rerender } = render(KataWorkspace, {
+    render(KataWorkspaceRouteHost, {
       props: {
         api,
-        selectedIssueUID: root.uid,
+        initialIssue: root.uid,
         onSelectedIssueChange,
       },
     });
@@ -441,11 +439,9 @@ describe("KataWorkspace", () => {
     await fireEvent.click(graphNodeWithText("Blocked follow-up"));
 
     expect(onSelectedIssueChange).toHaveBeenCalledWith(blocked.uid);
-    expect(screen.getByText("Loading task")).toBeTruthy();
-
-    await rerender({ api, selectedIssueUID: blocked.uid, onSelectedIssueChange });
-
-    expect(screen.getByText("Loading task")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByText("Loading task")).toBeTruthy();
+    });
     expect(api.issue).toHaveBeenCalledTimes(2);
     expect(api.issue).toHaveBeenLastCalledWith(
       blocked.uid,
@@ -478,10 +474,10 @@ describe("KataWorkspace", () => {
     });
     const onSelectedIssueChange = vi.fn();
 
-    const { rerender } = render(KataWorkspace, {
+    render(KataWorkspaceRouteHost, {
       props: {
         api,
-        selectedIssueUID: root.uid,
+        initialIssue: root.uid,
         onSelectedIssueChange,
       },
     });
@@ -496,7 +492,6 @@ describe("KataWorkspace", () => {
     );
 
     await fireEvent.click(graphNodeWithText("Blocked follow-up"));
-    await rerender({ api, selectedIssueUID: blocked.uid, onSelectedIssueChange });
 
     await waitFor(() => {
       expect(screen.getByText("detail failed").getAttribute("role")).toBe("alert");
@@ -572,10 +567,10 @@ describe("KataWorkspace", () => {
     });
     const onSelectedIssueChange = vi.fn();
 
-    const { rerender } = render(KataWorkspace, {
+    const { component } = render(KataWorkspaceRouteHost, {
       props: {
         api,
-        selectedIssueUID: root.uid,
+        initialIssue: root.uid,
         onSelectedIssueChange,
       },
     });
@@ -589,13 +584,12 @@ describe("KataWorkspace", () => {
       }),
     );
     await fireEvent.click(graphNodeWithText("Blocked follow-up"));
-    await rerender({ api, selectedIssueUID: blocked.uid, onSelectedIssueChange });
 
     await waitFor(() => {
       expect(screen.getByText("Loading task")).toBeTruthy();
     });
 
-    await rerender({ api, selectedIssueUID: root.uid, onSelectedIssueChange });
+    component.setRoute({ issue: root.uid });
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Root graph task" })).toBeTruthy();
@@ -654,7 +648,7 @@ describe("KataWorkspace", () => {
     const { api } = createWorkspaceAPI(rows);
     const onRouteStateChange = vi.fn();
 
-    render(KataWorkspace, { props: { api, onRouteStateChange } });
+    render(KataWorkspaceRouteHost, { props: { api, onRouteStateChange } });
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "All Open" })).toBeTruthy();
@@ -897,10 +891,10 @@ describe("KataWorkspace", () => {
     });
     const onSelectedIssueChange = vi.fn();
 
-    render(KataWorkspace, {
+    render(KataWorkspaceRouteHost, {
       props: {
         api,
-        selectedIssueUID: "issue-pay-rent",
+        initialIssue: "issue-pay-rent",
         onSelectedIssueChange,
       },
     });
@@ -1606,7 +1600,7 @@ describe("KataWorkspace", () => {
     );
     const { api } = createWorkspaceAPI();
 
-    render(KataWorkspace, { props: { api, selectedIssueUID: "issue-pay-rent" } });
+    render(KataWorkspaceRouteHost, { props: { api, initialIssue: "issue-pay-rent" } });
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy();

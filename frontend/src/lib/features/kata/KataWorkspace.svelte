@@ -115,17 +115,25 @@
   let graphSourceIssue = $state.raw<KataTaskSummary | null>(null);
   const store = createKataWorkspaceStore({ api: untrack(() => api) });
   const actor = "middleman";
-  let syncedRouteIssueUID = $state<string | null>(null);
-  let syncedRouteViewName: KataTaskViewName | null = null;
-  let syncedRouteScopeUID: string | null = null;
-  let awaitingSelectedIssueRouteUID = $state<string | null>(null);
+  // Route synchronization is level-triggered: the URL is the source of
+  // truth and one reconciler effect converges the store to it whenever
+  // they differ. The component keeps no memory of what was already
+  // synchronized; the only residual route state is:
+  // - selectionFromRoute: whether the current selection was applied from
+  //   the route. A null issue param means "deselect" only for routed
+  //   selections; an auto-selected task (bootstrap, daemon switch) stays
+  //   without polluting the URL.
+  // - failedRouteSignature: the route whose convergence last failed, so
+  //   a missing task or dead scope is not refetched until the URL moves.
+  let reconciling = $state(false);
+  let selectionFromRoute = false;
+  let failedRouteSignature: string | null = null;
   let navigationGeneration = 0;
   // Reactive shadow of navigationGeneration so the issue list can drop
   // a pending keyboard selection the moment any navigation starts —
   // the list only remounts after the new view's data arrives, which is
   // too late for a selection released mid-transition.
   let navigationEpoch = $state(0);
-  let observedRouteSignature = "";
   const layoutStorageKey = "middleman:kata:task-layout/v1";
   const defaultSplitSizes: Record<SplitOrientation, number> = {
     vertical: 420,
@@ -278,7 +286,6 @@
           daemons.find((daemon) => daemon.default)?.id,
         );
         const bootstrapRoute = currentRouteSnapshot();
-        observedRouteSignature = routeSignature(bootstrapRoute);
         const bootstrapViewName = bootstrapRoute.view ?? "all";
         const bootstrapIssueUID = bootstrapRoute.issue;
         const hasDaemonRoute = requestedDaemonId !== null;
@@ -292,27 +299,23 @@
           hasDaemonRoute ? null : bootstrapIssueUID,
           { selectFirst: !hasDaemonRoute && bootstrapIssueUID !== null },
         );
-        if (bootstrapRoute.view || bootstrapRoute.scope) {
-          await applyRouteViewScope(
-            bootstrapRoute.view,
-            bootstrapRoute.scope,
-            hasDaemonRoute ? null : bootstrapRoute.issue,
-          );
+        if (bootstrapRoute.scope) {
+          await loadRouteViewScope(bootstrapRoute.view, bootstrapRoute.scope);
         }
         await store.syncEventCursor();
         if (routedDaemonId) {
           setActiveKataDaemon(routedDaemonId);
         }
-        let routedIssueFailed = false;
-        if (routedDaemonId && bootstrapIssueUID) {
-          routedIssueFailed = !(await runViewTask(() => store.selectIssue(bootstrapIssueUID)));
+        const routedIssueUID = bootstrapIssueUID && store.selectedIssue?.issue.uid !== bootstrapIssueUID
+          ? bootstrapIssueUID
+          : null;
+        if (routedIssueUID) {
+          const selected = await runViewTask(() => store.selectIssue(routedIssueUID));
+          if (!selected) {
+            failedRouteSignature = fullRouteSignature();
+          }
         }
-        syncedRouteIssueUID =
-          routedIssueFailed || (bootstrapRoute.issue && store.selectedIssue?.issue.uid === bootstrapRoute.issue)
-            ? bootstrapRoute.issue
-            : null;
-        syncedRouteViewName = bootstrapRoute.view;
-        syncedRouteScopeUID = bootstrapRoute.scope;
+        selectionFromRoute = bootstrapIssueUID !== null && store.selectedIssue?.issue.uid === bootstrapIssueUID;
         if (routedDaemonId && store.daemonId === routedDaemonId) {
           onRouteStateChange?.({
             view: bootstrapRoute.view,
@@ -365,79 +368,6 @@
     return generation === navigationGeneration;
   }
 
-  async function applyRouteViewScope(
-    viewName: KataTaskViewName | null,
-    scopeUID: string | null,
-    issueUID: string | null,
-  ): Promise<void> {
-    const generation = beginNavigation();
-    closeReachableGraph();
-    store.invalidatePendingLoads();
-    resetDetailDrafts();
-    store.resetSearchFilters();
-    const shouldApplyRouteLoad = () =>
-      isCurrentNavigation(generation) &&
-      (routeViewName ?? null) === viewName &&
-      (routeScopeUID ?? null) === scopeUID;
-    const routeLoadOptions = { shouldApply: shouldApplyRouteLoad, selectFirst: issueUID !== null };
-    if (scopeUID) {
-      await store.updateSearchFilters(
-        { scope: { kind: "project", project_uid: scopeUID } },
-        routeLoadOptions,
-      );
-      if (viewName) {
-        await store.openView(viewName, routeLoadOptions);
-      }
-    } else {
-      if (viewName) {
-        await store.openView(viewName, routeLoadOptions);
-      } else if (store.currentView.name !== "all") {
-        await store.openView("all", routeLoadOptions);
-      }
-    }
-    if (!isCurrentNavigation(generation)) return;
-    if (issueUID) {
-      await store.selectIssue(issueUID);
-    } else {
-      store.clearSelection();
-    }
-    if (!isCurrentNavigation(generation)) return;
-    syncedRouteViewName = viewName;
-    syncedRouteScopeUID = scopeUID;
-    syncedRouteIssueUID = issueUID && store.selectedIssue?.issue.uid === issueUID ? issueUID : null;
-  }
-
-  $effect(() => {
-    const uid = selectedIssueUID ?? null;
-    if (loading || switchingDaemon || terminalDaemonFailure || routeRequiresDaemonSwitch()) return;
-    if (awaitingSelectedIssueRouteUID) {
-      if (uid === awaitingSelectedIssueRouteUID) {
-        awaitingSelectedIssueRouteUID = null;
-      } else if (uid !== syncedRouteIssueUID) {
-        awaitingSelectedIssueRouteUID = null;
-      } else {
-        return;
-      }
-    }
-    if ((routeViewName ?? null) !== syncedRouteViewName || (routeScopeUID ?? null) !== syncedRouteScopeUID) return;
-    if (!uid) {
-      if (syncedRouteIssueUID === null) return;
-      clearTaskErrors();
-      resetDetailDrafts();
-      store.clearSelection();
-      syncedRouteIssueUID = null;
-      return;
-    }
-    if (uid === syncedRouteIssueUID) return;
-    if (store.pendingSelectionUID === uid) return;
-    if (store.selectedIssue?.issue.uid === uid && store.pendingSelectionUID !== uid) {
-      syncedRouteIssueUID = uid;
-      return;
-    }
-    syncedRouteIssueUID = uid;
-    void selectIssue(uid, false);
-  });
-
   function currentRouteSnapshot(): KataRouteSnapshot {
     return {
       view: routeViewName ?? null,
@@ -450,39 +380,245 @@
     return `${route.view ?? ""}\u0000${route.scope ?? ""}\u0000${route.issue ?? ""}`;
   }
 
-  function routeChangeMatchesAwaitedSelection(route: KataRouteSnapshot): boolean {
-    return (
-      route.view === syncedRouteViewName &&
-      route.scope === syncedRouteScopeUID &&
-      route.issue !== null &&
-      route.issue === awaitingSelectedIssueRouteUID &&
-      (route.issue === store.pendingSelectionUID || route.issue === store.selectedIssue?.issue.uid)
-    );
+  function fullRouteSignature(): string {
+    return `${routeSignature(currentRouteSnapshot())} ${requestedDaemonId ?? ""}`;
   }
 
-  function routeRequiresDaemonSwitch(): boolean {
-    return requestedDaemonId !== null && requestedDaemonId !== store.daemonId;
+  function actualIssueUID(): string | null {
+    return store.pendingSelectionUID ?? store.selectedIssue?.issue.uid ?? null;
   }
 
-  $effect.pre(() => {
-    if (loading || switchingDaemon || terminalDaemonFailure || routeRequiresDaemonSwitch()) return;
-    const snapshot = currentRouteSnapshot();
-    const signature = routeSignature(snapshot);
-    if (signature === observedRouteSignature) return;
-    observedRouteSignature = signature;
-    if (routeChangeMatchesAwaitedSelection(snapshot)) return;
+  // Interactions that load the store and then emit the matching URL
+  // update hold this count so the reconciler never treats their
+  // store-ahead-of-URL window as drift to converge away.
+  let routeEmissionWork = $state(0);
+
+  async function withRouteEmission<T>(task: () => Promise<T>): Promise<T> {
+    routeEmissionWork += 1;
+    try {
+      return await task();
+    } finally {
+      routeEmissionWork -= 1;
+    }
+  }
+
+  function reconcilerBusy(): boolean {
+    return loading || switchingDaemon || terminalDaemonFailure || routeEmissionWork > 0;
+  }
+
+  type RouteMismatch = "daemon" | "viewScope" | "select" | "clear" | null;
+
+  // A daemon switch is transactional and refuses while other work is in
+  // flight. The reconciler must check the same gates before attempting
+  // it: an attempt that would refuse must be a no-op evaluation, not a
+  // reconcile pass, or the effect re-fires itself in a busy loop.
+  function daemonSwitchGated(): boolean {
+    return viewWorkCount > 0 || store.hasPendingMutations || workspaceActionBusy;
+  }
+
+  // Route list loads are not abortable, so the reconciler starts them
+  // without awaiting: a stalled fetch must not block converging to a
+  // newer route (the store's request guards drop the late result). This
+  // records which route's list load is in flight so re-evaluations do
+  // not start a duplicate.
+  let viewScopeLoadSignature = $state<string | null>(null);
+
+  function startViewScopeLoad(signature: string): void {
     beginNavigation();
+    closeReachableGraph();
+    resetDetailDrafts();
     store.invalidatePendingLoads();
+    if ((selectedIssueUID ?? null) === null) {
+      store.clearSelection();
+      selectionFromRoute = false;
+    }
+    viewScopeLoadSignature = signature;
+    const viewName = routeViewName ?? null;
+    const scopeUID = routeScopeUID ?? null;
+    void runViewTask(() => loadRouteViewScope(viewName, scopeUID)).then((ok) => {
+      if (viewScopeLoadSignature === signature) {
+        viewScopeLoadSignature = null;
+      }
+      if (!ok && fullRouteSignature() === signature) {
+        failedRouteSignature = signature;
+      }
+    });
+  }
+
+  function routeMismatch(): RouteMismatch {
+    if (requestedDaemonId !== null && requestedDaemonId !== store.daemonId) {
+      // An unknown routed daemon surfaces routedDaemonError instead of
+      // looping; a roster change re-evaluates through daemonInfos.
+      return daemonInfos.some((daemon) => daemon.id === requestedDaemonId) ? "daemon" : null;
+    }
+    const desiredScope = routeScopeUID ?? null;
+    const desiredView = routeViewName ?? null;
+    if (desiredScope !== scopeUIDFromFilters(store.searchFilters)) return "viewScope";
+    // A null routed view constrains nothing while scoped (the backlog
+    // and filtered variants both live under a bare scope route); without
+    // a scope it means the default "all" view.
+    if (desiredView !== null && desiredView !== store.currentView.name) return "viewScope";
+    if (desiredView === null && desiredScope === null && store.currentView.name !== "all") return "viewScope";
+    const desiredIssue = selectedIssueUID ?? null;
+    const actualIssue = actualIssueUID();
+    if (desiredIssue === actualIssue) return null;
+    if (desiredIssue) return "select";
+    return selectionFromRoute ? "clear" : null;
+  }
+
+  // Shared by the reconciler and bootstrap: load the routed view/scope
+  // combination. Route-driven list loads never auto-select; the issue
+  // convergence step owns the routed selection.
+  async function loadRouteViewScope(viewName: KataTaskViewName | null, scopeUID: string | null): Promise<void> {
+    store.resetSearchFilters();
+    if (scopeUID) {
+      await store.updateSearchFilters(
+        { scope: { kind: "project", project_uid: scopeUID } },
+        { selectFirst: false },
+      );
+      if (viewName) {
+        await store.openView(viewName, { selectFirst: false });
+      }
+      return;
+    }
+    await store.openView(viewName ?? "all", { selectFirst: false });
+  }
+
+  async function reconcileRoute(): Promise<void> {
+    reconciling = true;
+    try {
+      for (;;) {
+        if (reconcilerBusy()) return;
+        const signature = fullRouteSignature();
+        if (failedRouteSignature !== null && failedRouteSignature !== signature) {
+          // The route moved off a failed target; drop the stale failure
+          // surface so the new destination starts clean.
+          clearTaskErrors();
+          failedRouteSignature = null;
+        }
+        if (failedRouteSignature === signature) return;
+        const mismatch = routeMismatch();
+        if (mismatch === null) {
+          if ((selectedIssueUID ?? null) !== null) selectionFromRoute = true;
+          return;
+        }
+        if (mismatch === "daemon") {
+          if (daemonSwitchGated()) return;
+          await switchKataDaemon(requestedDaemonId!);
+          if (requestedDaemonId !== null && requestedDaemonId !== store.daemonId) {
+            // The switch refused or failed; the effect re-fires when its
+            // gates clear or the route moves.
+            return;
+          }
+          continue;
+        }
+        if (mismatch === "viewScope") {
+          if (viewScopeLoadSignature !== signature) {
+            startViewScopeLoad(signature);
+          }
+          // The effect re-fires when the load lands (or fails) and the
+          // loop resumes from the then-current route.
+          return;
+        }
+        if (mismatch === "select") {
+          beginNavigation();
+          resetDetailDrafts();
+          const uid = selectedIssueUID!;
+          const ok = await runViewTask(() => store.selectIssue(uid));
+          if (!ok) {
+            // The routed task cannot be shown; keeping the previous
+            // detail under the new URL would lie about what is open.
+            if (fullRouteSignature() === signature) {
+              failedRouteSignature = signature;
+              store.clearSelection();
+              selectionFromRoute = false;
+              return;
+            }
+          } else {
+            selectionFromRoute = true;
+          }
+          continue;
+        }
+        // mismatch === "clear"
+        beginNavigation();
+        clearTaskErrors();
+        resetDetailDrafts();
+        store.clearSelection();
+        selectionFromRoute = false;
+      }
+    } finally {
+      reconciling = false;
+    }
+  }
+
+  // Route changes preempt in-flight loads: the abort unblocks a stalled
+  // detail read immediately and the store's request guards drop any late
+  // list results. Interaction echoes also land here, harmlessly — their
+  // loads have already applied by the time they emit.
+  $effect.pre(() => {
+    void requestedDaemonId;
+    void routeViewName;
+    void routeScopeUID;
+    void selectedIssueUID;
+    untrack(() => {
+      // The daemon-switch transaction owns its loads; queued route
+      // changes converge through the reconciler once it settles.
+      if (loading || switchingDaemon) return;
+      // Echoes of already-applied interactions (the store converged
+      // before emitting) must not abort their own follow-up reads,
+      // e.g. the selected task's slow event-log walk.
+      if (routeMismatch() === null) return;
+      beginNavigation();
+      store.invalidatePendingLoads();
+    });
   });
 
   $effect(() => {
-    const viewName = routeViewName ?? null;
-    const scopeUID = routeScopeUID ?? null;
-    const issueUID = selectedIssueUID ?? null;
-    if (loading || switchingDaemon || terminalDaemonFailure || routeRequiresDaemonSwitch()) return;
-    if (viewName === syncedRouteViewName && scopeUID === syncedRouteScopeUID) return;
-    void untrack(() => runViewTask(() => applyRouteViewScope(viewName, scopeUID, issueUID)));
+    // Every input the reconciler compares is read here so the effect
+    // re-fires when any of them changes, including changes that land
+    // while a previous reconcile pass is still draining.
+    void requestedDaemonId;
+    void routeViewName;
+    void routeScopeUID;
+    void selectedIssueUID;
+    void store.daemonId;
+    void store.currentView.name;
+    void store.searchFilters;
+    void store.pendingSelectionUID;
+    void store.selectedIssue;
+    void daemonInfos;
+    void viewWorkCount;
+    void store.hasPendingMutations;
+    void workspaceActionBusy;
+    if (reconciling || reconcilerBusy()) return;
+    if (failedRouteSignature !== null && failedRouteSignature !== fullRouteSignature()) {
+      // The route moved off a failed target; drop the stale failure
+      // surface even when the new route is already converged.
+      clearTaskErrors();
+      failedRouteSignature = null;
+    }
+    if (failedRouteSignature === fullRouteSignature()) return;
+    const mismatch = routeMismatch();
+    if (mismatch === null) {
+      if ((selectedIssueUID ?? null) !== null && actualIssueUID() === (selectedIssueUID ?? null)) {
+        selectionFromRoute = true;
+      }
+      return;
+    }
+    if (mismatch === "daemon" && daemonSwitchGated()) return;
+    if (mismatch === "viewScope" && viewScopeLoadSignature === fullRouteSignature()) return;
+    void untrack(() => reconcileRoute());
   });
+
+  // After an interaction load shifts the selection away from a routed
+  // issue, the URL must follow the store: a stale issue param would make
+  // the reconciler revert the shift on its next pass.
+  function emitRouteSelectionSync(): void {
+    const actual = actualIssueUID();
+    if ((selectedIssueUID ?? null) !== null && (selectedIssueUID ?? null) !== actual) {
+      onRouteStateChange?.({ issue: actual }, { replace: true });
+    }
+  }
 
   function selectedProjectName(): string | null {
     const scope = store.searchFilters.scope;
@@ -607,71 +743,75 @@
   }
 
   async function updateSearchFilters(filters: Partial<KataTaskSearchFilters>): Promise<void> {
-    const generation = beginNavigation();
-    const nextStatus = filters.status ?? store.searchFilters.status;
-    closeReachableGraph();
-    resetDetailDrafts();
-    // Same rationale as openRoutedProjectScope: a pending detail load is
-    // abandoned by the filter reload, so drop it before awaiting.
-    store.invalidatePendingLoads();
-    if (!selectedIssueMatchesStatusFilter(nextStatus)) {
-      store.clearSelection();
-    }
-    await runViewTask(() => store.updateSearchFilters(filters));
-    if (!isCurrentNavigation(generation)) return;
-    const nextScopeUID = scopeUIDFromFilters(store.searchFilters);
-    if (nextScopeUID !== syncedRouteScopeUID) {
-      const nextViewName = nextScopeUID ? null : store.currentView.name === "all" ? null : store.currentView.name;
-      syncedRouteViewName = nextViewName;
-      syncedRouteScopeUID = nextScopeUID;
-      onRouteStateChange?.({
-        view: nextViewName,
-        scope: nextScopeUID,
-        issue: store.selectedIssue?.issue.uid ?? null,
-      });
-    }
+    await withRouteEmission(async () => {
+      const generation = beginNavigation();
+      const nextStatus = filters.status ?? store.searchFilters.status;
+      closeReachableGraph();
+      resetDetailDrafts();
+      // A pending detail load is abandoned by the filter reload, so drop
+      // it before awaiting.
+      store.invalidatePendingLoads();
+      if (!selectedIssueMatchesStatusFilter(nextStatus)) {
+        store.clearSelection();
+      }
+      await runViewTask(() => store.updateSearchFilters(filters));
+      if (!isCurrentNavigation(generation)) return;
+      const nextScopeUID = scopeUIDFromFilters(store.searchFilters);
+      if (nextScopeUID !== (routeScopeUID ?? null)) {
+        const nextViewName = nextScopeUID ? null : store.currentView.name === "all" ? null : store.currentView.name;
+        onRouteStateChange?.({
+          view: nextViewName,
+          scope: nextScopeUID,
+          issue: store.selectedIssue?.issue.uid ?? null,
+        });
+        return;
+      }
+      emitRouteSelectionSync();
+    });
   }
 
   async function openRoutedSystemView(viewName: KataTaskViewName): Promise<void> {
-    const generation = beginNavigation();
-    closeReachableGraph();
-    resetDetailDrafts();
-    store.resetSearchFilters();
-    // Clear (and thereby abort) the abandoned selection before awaiting
-    // the new view: while that fetch is in flight, a still-running
-    // detail load could fail and surface a stale error for a selection
-    // this navigation has already discarded.
-    store.clearSelection();
-    await runViewTask(() => store.openView(viewName, { selectFirst: false }));
-    if (!isCurrentNavigation(generation)) return;
-    syncedRouteViewName = viewName;
-    syncedRouteScopeUID = null;
-    syncedRouteIssueUID = null;
-    onRouteStateChange?.({
-      view: viewName,
-      scope: null,
-      issue: null,
+    await withRouteEmission(async () => {
+      const generation = beginNavigation();
+      closeReachableGraph();
+      resetDetailDrafts();
+      store.resetSearchFilters();
+      // Clear (and thereby abort) the abandoned selection before awaiting
+      // the new view: while that fetch is in flight, a still-running
+      // detail load could fail and surface a stale error for a selection
+      // this navigation has already discarded.
+      store.clearSelection();
+      selectionFromRoute = false;
+      await runViewTask(() => store.openView(viewName, { selectFirst: false }));
+      if (!isCurrentNavigation(generation)) return;
+      onRouteStateChange?.({
+        view: viewName,
+        scope: null,
+        issue: null,
+      });
     });
   }
 
   async function openRoutedProjectScope(projectUID: string): Promise<void> {
-    const generation = beginNavigation();
-    closeReachableGraph();
-    resetDetailDrafts();
-    // Scope changes keep a completed selection but abandon an in-flight
-    // one (the scoped reload re-selects from selectedIssue, which a
-    // pending load hasn't populated). Invalidate up front so the doomed
-    // detail request can't fail into a stale workspace error while the
-    // scoped list is still loading.
-    store.invalidatePendingLoads();
-    const ok = await runViewTask(() => store.updateSearchFilters({ scope: { kind: "project", project_uid: projectUID } }));
-    if (!ok || !isCurrentNavigation(generation)) return;
-    syncedRouteViewName = null;
-    syncedRouteScopeUID = projectUID;
-    onRouteStateChange?.({
-      view: null,
-      scope: projectUID,
-      issue: store.selectedIssue?.issue.uid ?? null,
+    await withRouteEmission(async () => {
+      const generation = beginNavigation();
+      closeReachableGraph();
+      resetDetailDrafts();
+      // Scope changes keep a completed selection but abandon an in-flight
+      // one (the scoped reload re-selects from selectedIssue, which a
+      // pending load hasn't populated). Invalidate up front so the doomed
+      // detail request can't fail into a stale workspace error while the
+      // scoped list is still loading.
+      store.invalidatePendingLoads();
+      const ok = await runViewTask(() =>
+        store.updateSearchFilters({ scope: { kind: "project", project_uid: projectUID } }),
+      );
+      if (!ok || !isCurrentNavigation(generation)) return;
+      onRouteStateChange?.({
+        view: null,
+        scope: projectUID,
+        issue: store.selectedIssue?.issue.uid ?? null,
+      });
     });
   }
 
@@ -692,10 +832,19 @@
   }
 
   async function submitQuickCapture(title: string): Promise<void> {
-    await runViewTaskOrThrow(async () => {
-      closeReachableGraph();
-      resetDetailDrafts();
-      await store.captureIssue(actor, { title });
+    await withRouteEmission(async () => {
+      await runViewTaskOrThrow(async () => {
+        closeReachableGraph();
+        resetDetailDrafts();
+        await store.captureIssue(actor, { title });
+      });
+      // Capture navigates the workspace to the inbox and selects the
+      // created task; the URL follows both.
+      onRouteStateChange?.({
+        view: store.currentView.name,
+        scope: scopeUIDFromFilters(store.searchFilters),
+        issue: actualIssueUID(),
+      });
     });
   }
 
@@ -767,6 +916,9 @@
       }
       const nextUID = store.selectedIssue?.issue.uid ?? null;
       if (requestedDaemonId === id) {
+        // Consume the transient daemon param; the current route (which
+        // may have changed while the switch was in flight) stays put and
+        // the reconciler converges the fresh workspace to it.
         onRouteStateChange?.({
           view: routeViewName,
           scope: routeScopeUID,
@@ -774,7 +926,6 @@
           daemon: null,
         }, { replace: true });
       } else if (routeSignature(currentRouteSnapshot()) === routeAtSwitchStart) {
-        syncedRouteIssueUID = selectedIssueUID ?? null;
         onSelectedIssueChange?.(nextUID);
       }
       startEventStream();
@@ -783,64 +934,28 @@
     }
   }
 
-  $effect(() => {
-    const targetDaemon = requestedDaemonId;
-    if (!targetDaemon || loading || switchingDaemon || terminalDaemonFailure) return;
-    if (targetDaemon === store.daemonId) return;
-    if (!daemonInfos.some((daemon) => daemon.id === targetDaemon)) return;
-    if (viewWorkCount > 0 || store.hasPendingMutations || workspaceActionBusy) return;
-    void untrack(() => switchKataDaemon(targetDaemon));
-  });
-
   function resetDetailDrafts(): void {
     checklistRevealed = false;
     recurrenceDialogs?.closeAll();
   }
 
   async function selectIssue(uid: string, notify = true): Promise<void> {
-    const generation = beginNavigation();
-    if (notify) {
-      awaitingSelectedIssueRouteUID = uid;
-    }
-    resetDetailDrafts();
-    const ok = await runViewTask(() => store.selectIssue(uid));
-    if (!ok || !isCurrentNavigation(generation)) {
-      if (awaitingSelectedIssueRouteUID === uid) {
-        awaitingSelectedIssueRouteUID = null;
-      }
-      if (
-        !notify &&
-        selectedIssueUID === uid &&
-        syncedRouteIssueUID === uid &&
-        lastTaskError !== null
-      ) {
-        store.clearSelection();
-        syncedRouteIssueUID = uid;
-      }
-      return;
-    }
-    // syncedRouteIssueUID asserts that the route prop and the store selection
-    // agree, so it may only be recorded when the prop actually carries this
-    // UID. Recording it for a non-routed selection (no onSelectedIssueChange,
-    // prop stays null) makes the route-sync effect read the null prop as a
-    // route-driven deselect and immediately clear the selection.
-    if (selectedIssueUID === uid) {
-      syncedRouteIssueUID = uid;
-    }
-    if (notify) onSelectedIssueChange?.(uid);
+    await withRouteEmission(async () => {
+      const generation = beginNavigation();
+      resetDetailDrafts();
+      const ok = await runViewTask(() => store.selectIssue(uid));
+      if (!ok || !isCurrentNavigation(generation)) return;
+      if (notify) onSelectedIssueChange?.(uid);
+    });
   }
 
   function selectReachableGraphIssue(uid: string): void {
-    if (!onSelectedIssueChange) {
-      void selectIssue(uid, false);
+    if (onSelectedIssueChange && selectedIssueUID !== uid) {
+      // Route the node first; the echo lands synchronously and the
+      // reconciler applies the selection (and owns its failure surface).
+      onSelectedIssueChange(uid);
       return;
     }
-    if (selectedIssueUID === uid) {
-      void selectIssue(uid, false);
-      return;
-    }
-    awaitingSelectedIssueRouteUID = uid;
-    onSelectedIssueChange(uid);
     void selectIssue(uid, false);
   }
 

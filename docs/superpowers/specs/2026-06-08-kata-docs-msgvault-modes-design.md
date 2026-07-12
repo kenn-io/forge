@@ -350,6 +350,13 @@ Kata frontend adaptation:
   both fail, no workspace is accepted and route effects remain suppressed until
   a later successful bootstrap
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::routeSignature`).
+- Kata route synchronization is level-triggered: the URL is the source of
+  truth and a single reconciler converges the workspace to it whenever they
+  differ, with no memory of what was previously synchronized. Interactions
+  load optimistically and must emit the matching route update afterwards
+  (their consumers echo it synchronously); store state that should survive
+  navigation lives in the URL
+  (`frontend/src/lib/features/kata/KataWorkspace.svelte::reconcileRoute`).
 - Event-driven proxy reads keep switching fail-closed until they settle. The
   Kata proxy applies a 30-second total deadline to ordinary TCP and Unix-socket
   requests, including response bodies, while the live event stream stays

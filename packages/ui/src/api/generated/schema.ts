@@ -5343,7 +5343,6 @@ export interface components {
         };
         KataMappingTargetResponse: {
             display_name: string;
-            project_id: string;
             repo: components["schemas"]["RepoRefResponse"];
         };
         KataProjectMappingDiagnostic: {

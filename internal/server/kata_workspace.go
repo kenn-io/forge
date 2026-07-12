@@ -53,6 +53,7 @@ type kataResolvedWorkspaceRepo struct {
 	PlatformHost string
 	Owner        string
 	Name         string
+	BasePath     string
 }
 
 type kataWorkspaceRepoResolution struct {
@@ -81,7 +82,6 @@ type kataProjectMappingsResponse struct {
 }
 
 type kataMappingTargetResponse struct {
-	ProjectID   string          `json:"project_id"`
 	DisplayName string          `json:"display_name"`
 	Repo        repoRefResponse `json:"repo"`
 }
@@ -165,11 +165,12 @@ func (s *Server) createKataWorkspace(
 	if err != nil {
 		return nil, err
 	}
-	target, ok, err := s.resolveKataWorkspaceRepo(ctx, metadata)
+	resolution, err := s.resolveKataWorkspaceRepoResolution(ctx, metadata)
 	if err != nil {
 		return nil, err
 	}
-	if !ok {
+	target := resolution.Target
+	if resolution.Status != "mapped" {
 		return nil, problemNotFound(
 			CodeNotFound,
 			"no repository mapping for Kata project",
@@ -226,7 +227,7 @@ func (s *Server) createKataWorkspace(
 		return nil, problemInternal("create Kata workspace: " + err.Error())
 	}
 
-	s.runWorkspaceSetup(ws)
+	s.runWorkspaceSetupWithBasePath(ws, target.BasePath)
 	return s.kataWorkspaceCreateOutput(ctx, ws.ID)
 }
 
@@ -339,16 +340,23 @@ func (s *Server) kataManualWorkspaceTarget(
 		}
 		for _, repo := range repos {
 			if !repo.HasNameGlob() && kataMappingMatchesRepo(mapping, repo) {
-				return target, true, true, nil
+				return kataResolvedRepoFromConfig(repo), true, true, nil
 			}
 		}
+		var registered []kataResolvedWorkspaceRepo
 		for _, project := range projects {
 			if project.IsStale || project.PlatformIdentity == nil {
 				continue
 			}
 			if kataResolvedRepoKey(kataResolvedRepoFromProject(project)) == kataResolvedRepoKey(target) {
-				return target, true, true, nil
+				registered = append(registered, kataResolvedRepoFromProject(project))
 			}
+		}
+		if len(registered) == 1 {
+			return registered[0], true, true, nil
+		}
+		if len(registered) > 1 {
+			return kataResolvedWorkspaceRepo{}, true, false, nil
 		}
 		repo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
 			Platform: target.Provider, PlatformHost: target.PlatformHost,
@@ -357,7 +365,7 @@ func (s *Server) kataManualWorkspaceTarget(
 		if err != nil {
 			return kataResolvedWorkspaceRepo{}, false, false, err
 		}
-		return target, true, repo != nil, nil
+		return target, true, repo != nil && kataTrackedRepoMatchesAnyConfig(*repo, repos), nil
 	}
 	return kataResolvedWorkspaceRepo{}, false, false, nil
 }
@@ -418,7 +426,7 @@ func kataRegisteredProjectRepoMatches(
 			continue
 		}
 		target := kataResolvedRepoFromProject(project)
-		matched[kataResolvedRepoKey(target)] = target
+		matched[kataResolvedRepoKey(target)+"\x00"+filepath.Clean(project.LocalPath)] = target
 	}
 	if len(matched) != 1 {
 		return kataResolvedWorkspaceRepo{}, len(matched)
@@ -651,6 +659,7 @@ func kataResolvedRepoFromConfig(repo config.Repo) kataResolvedWorkspaceRepo {
 		PlatformHost: repo.PlatformHostOrDefault(),
 		Owner:        repo.Owner,
 		Name:         repo.Name,
+		BasePath:     repo.WorktreeBasePath,
 	}
 }
 
@@ -670,6 +679,7 @@ func kataResolvedRepoFromProject(project db.Project) kataResolvedWorkspaceRepo {
 		PlatformHost: identity.Host,
 		Owner:        identity.Owner,
 		Name:         identity.Name,
+		BasePath:     project.LocalPath,
 	}
 }
 
@@ -743,23 +753,66 @@ func (s *Server) getKataProjectMappings(
 }
 
 func (s *Server) kataMappingTargets(ctx context.Context) ([]kataMappingTargetResponse, error) {
+	seen := make(map[string]kataMappingTargetResponse)
+	var configured []config.Repo
+	if s.cfg != nil {
+		s.cfgMu.Lock()
+		configured = slices.Clone(s.cfg.Repos)
+		s.cfgMu.Unlock()
+	}
+	for _, repo := range configured {
+		if repo.HasNameGlob() {
+			continue
+		}
+		target := kataResolvedRepoFromConfig(repo)
+		seen[kataResolvedRepoKey(target)] = kataMappingTargetResponse{
+			DisplayName: configRepoPath(repo),
+			Repo:        s.repoRefFromParts(target.Provider, target.PlatformHost, target.Owner, target.Name),
+		}
+	}
+	tracked, err := s.db.ListRepos(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, repo := range tracked {
+		if !kataTrackedRepoMatchesAnyConfig(repo, configured) {
+			continue
+		}
+		target := kataResolvedRepoFromDB(repo)
+		key := kataResolvedRepoKey(target)
+		if _, exists := seen[key]; !exists {
+			seen[key] = kataMappingTargetResponse{
+				DisplayName: kataTrackedRepoPath(repo),
+				Repo:        s.repoRefFromParts(target.Provider, target.PlatformHost, target.Owner, target.Name),
+			}
+		}
+	}
 	projects, err := s.db.ListProjects(ctx)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]kataMappingTargetResponse, 0, len(projects))
 	for _, project := range projects {
 		if project.IsStale || project.PlatformIdentity == nil {
 			continue
 		}
 		target := kataResolvedRepoFromProject(project)
-		result = append(result, kataMappingTargetResponse{
-			ProjectID: project.ID, DisplayName: project.DisplayName,
-			Repo: s.repoRefFromParts(target.Provider, target.PlatformHost, target.Owner, target.Name),
-		})
+		key := kataResolvedRepoKey(target)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = kataMappingTargetResponse{
+			DisplayName: project.DisplayName,
+			Repo:        s.repoRefFromParts(target.Provider, target.PlatformHost, target.Owner, target.Name),
+		}
+	}
+	result := make([]kataMappingTargetResponse, 0, len(seen))
+	for _, target := range seen {
+		result = append(result, target)
 	}
 	sort.Slice(result, func(i, j int) bool {
-		return strings.ToLower(result[i].DisplayName) < strings.ToLower(result[j].DisplayName)
+		left := strings.ToLower(result[i].DisplayName) + "\x00" + result[i].Repo.RepoPath
+		right := strings.ToLower(result[j].DisplayName) + "\x00" + result[j].Repo.RepoPath
+		return left < right
 	})
 	return result, nil
 }

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -344,6 +345,144 @@ port = 8091
 	require.NoError(err)
 	assert.True(ok)
 	assert.Equal(projectPath, basePath)
+}
+
+func TestKataWorkspaceTargetRegisteredProjectsWithDifferentCheckoutsAreAmbiguous(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+`, &mockGH{})
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kata"))
+	require.NoError(err)
+	for _, localPath := range []string{t.TempDir(), t.TempDir()} {
+		_, err = database.CreateProject(t.Context(), db.CreateProjectInput{
+			DisplayName: "Kata",
+			LocalPath:   localPath,
+			RepoID:      sql.NullInt64{Int64: repoID, Valid: true},
+		})
+		require.NoError(err)
+	}
+
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
+		"daemon_id":    "desktop",
+		"project_uid":  "project-kata",
+		"project_name": "Kata",
+		"issue_uid":    "issue-kata-1",
+	})
+
+	assert.False(resp.Available)
+	assert.Nil(resp.Repo)
+}
+
+func TestCreateKataWorkspaceUsesRegisteredProjectCheckout(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	projectPath, _, platformHost := setupHTTPWorktreeBaseForServerTest(t, "feature")
+
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+`, &mockGH{})
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity(platformHost, "acme", "widget"))
+	require.NoError(err)
+	_, err = database.CreateProject(t.Context(), db.CreateProjectInput{
+		DisplayName: "Widget",
+		LocalPath:   projectPath,
+		RepoID:      sql.NullInt64{Int64: repoID, Valid: true},
+	})
+	require.NoError(err)
+	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	srv.workspaces.SetTmuxCommand([]string{"sh", "-c", "exit 0"})
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspaces", map[string]any{
+		"daemon_id":    "desktop",
+		"project_uid":  "project-kata",
+		"project_name": "Widget",
+		"issue_uid":    "issue-kata-1",
+		"short_id":     "task-123",
+		"title":        "Use registered checkout",
+	})
+	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+	var created workspaceResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&created))
+
+	var stored *db.Workspace
+	require.Eventually(func() bool {
+		stored, err = database.GetWorkspace(t.Context(), created.ID)
+		return err == nil && stored != nil && stored.Status == "ready"
+	}, 10*time.Second, 25*time.Millisecond)
+	commonDir := strings.TrimSpace(gitOutput(t, stored.WorktreePath, "rev-parse", "--git-common-dir"))
+	if !filepath.IsAbs(commonDir) {
+		commonDir = filepath.Join(stored.WorktreePath, commonDir)
+	}
+	commonDir, err = filepath.EvalSymlinks(commonDir)
+	require.NoError(err)
+	wantCommonDir, err := filepath.EvalSymlinks(filepath.Join(projectPath, ".git"))
+	require.NoError(err)
+	assert.Equal(wantCommonDir, commonDir)
+}
+
+func TestKataManualMappingRejectsHistoricalUnconfiguredRepo(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[kata_projects]]
+project_uid = "project-kata"
+provider = "github"
+platform_host = "github.com"
+repo_path = "acme/old"
+`, &mockGH{})
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "old"))
+	require.NoError(err)
+
+	resolution, err := srv.resolveKataWorkspaceRepoResolution(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID: "desktop", ProjectUID: "project-kata", ProjectName: "Kata",
+	})
+	require.NoError(err)
+	assert.Equal("invalid", resolution.Status)
+	assert.Equal("manual_global", resolution.Source)
+}
+
+func TestKataMappingTargetsIncludeConfiguredRepositories(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "exact"
+
+[[repos]]
+owner = "acme"
+name = "glob-*"
+`, &mockGH{})
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "glob-match"))
+	require.NoError(err)
+
+	targets, err := srv.kataMappingTargets(t.Context())
+	require.NoError(err)
+	require.Len(targets, 2)
+	assert.Equal("acme/exact", targets[0].Repo.RepoPath)
+	assert.Equal("acme/glob-match", targets[1].Repo.RepoPath)
 }
 
 func TestKataProjectMappingsReportsManualRegisteredProjectTarget(t *testing.T) {

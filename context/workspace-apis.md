@@ -100,17 +100,22 @@ only allowed per clone when that clone has no usable `project.uid` or
 is required. If no `.kata.toml` mapping matches, the
 resolver may fall back to a case-insensitive exact match between the Kata
 project and exactly one non-stale registered Middleman Project with provider
-identity; use `.kata.toml` before display/repository name, and reuse the local
-checkout as the workspace base. Only then may one synced repo matched by exact
-or globbed config resolve by name. Ambiguous, mismatched, or missing matches
+identity; use `.kata.toml` before display/repository name. Distinct matching
+registered checkout paths are ambiguous. A unique registered match carries its
+checkout through workspace creation, while a configured clone carries its own
+base path. Only then may one synced repo matched by exact
+or globbed config and lacking readable project metadata resolve by name.
+Ambiguous, mismatched, or missing matches
 mean the Create/Open
 workspace button must not render
 (`internal/server/kata_workspace.go::resolveKataWorkspaceRepo`).
 
 Settings lists each selected-daemon Kata project with the status and source from
-the workspace resolver. Its selector lists known registered Middleman Projects,
-defaults to the inferred identity match, and persists the chosen project's repo
-identity (`internal/server/kata_workspace.go::getKataProjectMappings`).
+the workspace resolver. Its selector lists repository identities known from
+exact watched repositories, currently matched tracked repositories, or
+non-stale registered Projects. It defaults only to an inferred identity match
+and persists that repository identity
+(`internal/server/kata_workspace.go::getKataProjectMappings`).
 
 Persisted workspace `worktree_path` values should be absolute. Workspace setup
 runs `git worktree add` from the managed clone or configured base checkout, so

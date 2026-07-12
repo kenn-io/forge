@@ -2469,12 +2469,9 @@ components:
       properties:
         display_name:
           type: string
-        project_id:
-          type: string
         repo:
           $ref: "#/components/schemas/RepoRefResponse"
       required:
-        - project_id
         - display_name
         - repo
       type: object

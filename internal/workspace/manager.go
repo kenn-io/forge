@@ -634,6 +634,15 @@ func workspaceHeadRepo(platformHost, owner, name, cloneURL string) *string {
 func (m *Manager) Setup(
 	ctx context.Context, ws *Workspace,
 ) error {
+	return m.SetupWithWorktreeBasePath(ctx, ws, "")
+}
+
+// SetupWithWorktreeBasePath sets up a workspace from the exact checkout that
+// justified a caller's repository resolution. An empty path uses the manager's
+// normal repository-identity resolver.
+func (m *Manager) SetupWithWorktreeBasePath(
+	ctx context.Context, ws *Workspace, worktreeBasePath string,
+) error {
 	m.recordSetupEvent(
 		ctx,
 		ws.ID, workspaceSetupStageSetup, "started",
@@ -647,7 +656,7 @@ func (m *Manager) Setup(
 	}
 	if !reusedWorktree {
 		var refreshBeforeAdd bool
-		gitDir, refreshBeforeAdd, err = m.workspaceSetupGitDir(ctx, ws)
+		gitDir, refreshBeforeAdd, err = m.workspaceSetupGitDir(ctx, ws, worktreeBasePath)
 		if err != nil {
 			return m.failSetup(
 				ctx,
@@ -990,9 +999,15 @@ func worktreeCurrentBranch(ctx context.Context, path string) (string, error) {
 }
 
 func (m *Manager) workspaceSetupGitDir(
-	ctx context.Context, ws *Workspace,
+	ctx context.Context, ws *Workspace, worktreeBasePath string,
 ) (string, bool, error) {
 	if ws.MRHeadRepo == nil {
+		if strings.TrimSpace(worktreeBasePath) != "" {
+			baseDir, err := ValidateWorktreeBasePath(
+				ctx, worktreeBasePath, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+			)
+			return baseDir, err == nil, err
+		}
 		if baseDir, ok, err := m.localWorktreeBaseDir(
 			ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		); err != nil || ok {

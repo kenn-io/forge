@@ -1496,7 +1496,6 @@ type KataDaemonRosterResponse struct {
 // KataMappingTargetResponse defines model for KataMappingTargetResponse.
 type KataMappingTargetResponse struct {
 	DisplayName string          `json:"display_name"`
-	ProjectId   string          `json:"project_id"`
 	Repo        RepoRefResponse `json:"repo"`
 }
 

@@ -107,8 +107,9 @@
         <!-- Every panel stays mounted; only the active one is shown. Panel
              components keep unsaved edits in local draft state, so switching
              categories must hide, not unmount, or drafts are silently lost. -->
-        {#each visiblePanels as meta (meta.id)}
-          <div class="settings-panel" hidden={meta.id !== activeId}>
+        {#each SETTINGS_PANELS as meta (meta.id)}
+          {@const panelVisible = visiblePanels.some((panel) => panel.id === meta.id)}
+          <div class="settings-panel" hidden={!panelVisible || meta.id !== activeId}>
             <SettingsSection title={meta.title} description={meta.description}>
               {#if meta.id === "settings-repositories"}
             <RepoSettings
@@ -144,6 +145,7 @@
           {:else if meta.id === "settings-kata-projects"}
             <KataProjectMappingsSettings
               mappings={loaded.kata_projects}
+              enabled={loaded.modes?.kata === true}
               onUpdate={(kata_projects) => {
                 settings = { ...settings!, kata_projects };
               }}

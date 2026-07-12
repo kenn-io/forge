@@ -2,7 +2,7 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { Button, Chip, SelectDropdown } from "@middleman/ui";
   import type { KataProjectRepoMapping } from "@middleman/ui/api/types";
   import { updateSettings } from "../../api/settings.js";
@@ -16,6 +16,7 @@
 
   interface Props {
     mappings?: KataProjectRepoMapping[] | undefined;
+    enabled?: boolean;
     onUpdate: (mappings: KataProjectRepoMapping[]) => void;
   }
 
@@ -26,14 +27,19 @@
     repoKey: string;
   }
 
+  type MappingRepoRef = Pick<
+    KataProjectMappingsResponse["targets"][number]["repo"],
+    "provider" | "platform_host" | "owner" | "name" | "repo_path"
+  >;
+
   interface RepoOption {
     key: string;
     label: string;
     displayName: string;
-    repo: KataProjectMappingsResponse["targets"][number]["repo"];
+    repo: MappingRepoRef;
   }
 
-  let { mappings, onUpdate }: Props = $props();
+  let { mappings, enabled = true, onUpdate }: Props = $props();
 
   const embedded = isEmbedded();
   let nextID = 0;
@@ -44,18 +50,36 @@
   let diagnostics = $state.raw<KataProjectMappingsResponse | null>(null);
   let diagnosticsLoading = $state(true);
   let diagnosticsError = $state<string | null>(null);
+  let diagnosticsEnabled = false;
+  let previousEnabled = false;
   // svelte-ignore state_referenced_locally
   let currentMappings = $state(normalizeMappings(mappings));
   // svelte-ignore state_referenced_locally
   let drafts = $state<MappingDraft[]>(draftsFromMappings(currentMappings));
 
   const repoOptions = $derived.by(() => {
-    const targets = (diagnostics?.targets ?? []).map((target) => ({
+    const targets: RepoOption[] = (diagnostics?.targets ?? []).map((target) => ({
       key: repoKey(target.repo.provider, target.repo.platform_host, target.repo.repo_path),
       label: `${target.display_name} · ${target.repo.repo_path}`,
       displayName: target.display_name,
       repo: target.repo,
     }));
+    for (const mapping of currentMappings) {
+      const key = repoKeyFromMapping(mapping);
+      if (targets.some((option) => option.key === key)) continue;
+      targets.push({
+        key,
+        label: `${mapping.repo_path} · unavailable`,
+        displayName: mapping.repo_path,
+        repo: {
+          provider: mapping.provider,
+          platform_host: mapping.platform_host,
+          owner: mapping.repo_path.slice(0, mapping.repo_path.lastIndexOf("/")),
+          name: mapping.repo_path.slice(mapping.repo_path.lastIndexOf("/") + 1),
+          repo_path: mapping.repo_path,
+        },
+      });
+    }
     return [...new Map(targets.map((option) => [option.key, option])).values()]
       .sort((left, right) => left.label.localeCompare(right.label));
   });
@@ -74,7 +98,22 @@
   const daemonOptions = $derived(daemons.map((daemon) => ({ value: daemon.id, label: daemon.id })));
 
   onMount(() => {
-    void loadDiagnostics();
+    diagnosticsEnabled = true;
+  });
+
+  $effect(() => {
+    if (!diagnosticsEnabled) return;
+    if (!enabled) {
+      diagnostics = null;
+      diagnosticsError = null;
+      diagnosticsLoading = false;
+      previousEnabled = false;
+      return;
+    }
+    if (!previousEnabled) {
+      previousEnabled = true;
+      untrack(() => void loadDiagnostics());
+    }
   });
 
   async function loadDiagnostics(daemonID = selectedDaemonID): Promise<void> {
@@ -159,14 +198,13 @@
   }
 
   function addMapping(): void {
-    const firstRepo = repoOptions[0]?.key ?? "";
     drafts = [
       ...drafts,
       {
         id: nextDraftID(),
         daemonID: "",
         projectUID: "",
-        repoKey: firstRepo,
+        repoKey: "",
       },
     ];
   }
@@ -186,7 +224,7 @@
         id: nextDraftID(),
         daemonID,
         projectUID: project.project_uid,
-        repoKey: repoOptionsByKey.has(mappedRepo) ? mappedRepo : (repoOptions[0]?.key ?? ""),
+        repoKey: repoOptionsByKey.has(mappedRepo) ? mappedRepo : "",
       },
     ];
   }
@@ -284,7 +322,7 @@
           <thead>
             <tr>
               <th scope="col">Kata project</th>
-              <th scope="col">Middleman project</th>
+              <th scope="col">Repository target</th>
               <th scope="col">Resolution</th>
               <th scope="col" aria-label="Mapping actions"></th>
             </tr>
@@ -304,7 +342,7 @@
                     <span>{inferredTarget.displayName}</span>
                     <span class="mapping-meta">{inferredTarget.repo.repo_path}</span>
                   {:else if project.repo}
-                    <span class="mapping-empty">No registered project</span>
+                    <span class="mapping-empty">No selectable repository</span>
                     <span class="mapping-meta">Inferred repository: {project.repo.repo_path}</span>
                   {:else}
                     <span class="mapping-empty">No inferred project</span>
@@ -356,10 +394,12 @@
       </Button>
     </div>
 
-    {#if repoOptions.length === 0}
-      <p class="empty-mappings">No registered Middleman projects with repository identity are available.</p>
-    {:else if drafts.length === 0}
-      <p class="empty-mappings">No manual Kata project mappings configured.</p>
+    {#if drafts.length === 0}
+      <p class="empty-mappings">
+        {repoOptions.length === 0
+          ? "No known repository targets are available."
+          : "No manual Kata project mappings configured."}
+      </p>
     {:else}
       <div class="mapping-table-wrap">
         <table class="mapping-table" aria-label="Kata project mappings">
@@ -373,7 +413,7 @@
             <tr>
               <th scope="col">Daemon</th>
               <th scope="col">Project UID</th>
-              <th scope="col">Middleman project</th>
+              <th scope="col">Repository target</th>
               <th scope="col" aria-label="Mapping actions"></th>
             </tr>
           </thead>
@@ -398,9 +438,9 @@
                 </td>
                 <td>
                   <SelectDropdown
-                    title={`Kata project ${label} Middleman project`}
+                    title={`Kata project ${label} repository target`}
                     value={draft.repoKey}
-                    options={repoSelectOptions}
+                    options={[{ value: "", label: "Select a repository" }, ...repoSelectOptions]}
                     onchange={(value) => { draft.repoKey = value; }}
                     disabled={embedded || saving}
                   />

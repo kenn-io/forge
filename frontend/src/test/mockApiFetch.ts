@@ -261,7 +261,7 @@ const syncStatus = {
   last_error: "",
 };
 
-const settings = {
+export const mockSettings = {
   repos: [
     {
       provider: "github",
@@ -282,6 +282,10 @@ const settings = {
   pull_requests: {
     allow_mid_stack_merges: false,
   },
+  modes: {
+    kata: true,
+  },
+  kata_projects: [],
   terminal: {
     font_family: "",
     font_size: 14,
@@ -672,7 +676,7 @@ export function createMockApiHandler(overrides: MockRouteOverride[] = []): MockA
     }
 
     if (method === "GET" && pathname === "/api/v1/settings") {
-      return jsonResponse(settings);
+      return jsonResponse(mockSettings);
     }
 
     if (method === "GET" && pathname === "/api/v1/rate-limits") {

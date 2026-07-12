@@ -49,7 +49,17 @@ describe("KataProjectMappingsSettings", () => {
     });
 
     expect(screen.getByRole("button", { name: "Add mapping" })).toBeTruthy();
-    expect(screen.getByText("No registered Middleman projects with repository identity are available.")).toBeTruthy();
+    expect(screen.getByText("No known repository targets are available.")).toBeTruthy();
+  });
+
+  it("does not load diagnostics while Kata mode is disabled", async () => {
+    render(KataProjectMappingsSettings, {
+      props: { mappings: [], enabled: false, onUpdate: vi.fn() },
+    });
+
+    await Promise.resolve();
+    expect(mockFetchKataDaemons).not.toHaveBeenCalled();
+    expect(mockGetKataProjectMappings).not.toHaveBeenCalled();
   });
 
   it("shows the effective mapping and prefills a registered-project override", async () => {
@@ -74,7 +84,6 @@ describe("KataProjectMappingsSettings", () => {
       ],
       targets: [
         {
-          project_id: "project-middleman",
           display_name: "Middleman",
           repo: {
             provider: "github",
@@ -100,7 +109,7 @@ describe("KataProjectMappingsSettings", () => {
 
     expect((screen.getByLabelText("Kata project project-kata daemon ID") as HTMLInputElement).value).toBe("work");
     expect((screen.getByLabelText("Kata project project-kata UID") as HTMLInputElement).value).toBe("project-kata");
-    expect(screen.getByRole("combobox", { name: /project-kata Middleman project/ }).textContent).toContain("Middleman");
+    expect(screen.getByRole("combobox", { name: /project-kata repository target/ }).textContent).toContain("Middleman");
   });
 
   it("saves a Kata mapping to a selected known Middleman project", async () => {
@@ -119,7 +128,6 @@ describe("KataProjectMappingsSettings", () => {
       projects: [],
       targets: [
         {
-          project_id: "project-middleman",
           display_name: "Middleman",
           repo: {
             provider: "github",
@@ -152,8 +160,10 @@ describe("KataProjectMappingsSettings", () => {
       target: { value: "project-kata" },
     });
 
-    await fireEvent.click(screen.getByRole("combobox", { name: /Middleman project/ }));
-    expect(screen.getByRole("option", { name: "Middleman · kenn-io/middleman" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("combobox", { name: /repository target/ }));
+    const option = screen.getByRole("option", { name: "Middleman · kenn-io/middleman" });
+    expect(option).toBeTruthy();
+    await fireEvent.click(option);
 
     await fireEvent.click(screen.getByRole("button", { name: "Save Kata mappings" }));
 
@@ -161,5 +171,59 @@ describe("KataProjectMappingsSettings", () => {
       expect(mockUpdateSettings).toHaveBeenCalledWith({ kata_projects: savedMappings });
       expect(onUpdate).toHaveBeenCalledWith(savedMappings);
     });
+  });
+
+  it("requires an explicit repository choice when inference has no selectable target", async () => {
+    mockGetKataProjectMappings.mockResolvedValue({
+      daemon_id: "work",
+      projects: [
+        {
+          daemon_id: "work",
+          project_uid: "project-unmapped",
+          project_name: "Unmapped",
+          status: "unmapped",
+        },
+      ],
+      targets: [
+        {
+          display_name: "Unrelated",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "other",
+            repo_path: "acme/other",
+            capabilities: defaultProviderCapabilities,
+          },
+        },
+      ],
+    });
+
+    render(KataProjectMappingsSettings, { props: { mappings: [], onUpdate: vi.fn() } });
+    await fireEvent.click(await screen.findByRole("button", { name: "Add override" }));
+
+    expect(screen.getByRole("combobox", { name: /project-unmapped repository target/ }).textContent).toContain(
+      "Select a repository",
+    );
+    expect((screen.getByRole("button", { name: "Save Kata mappings" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("keeps an unavailable configured mapping visible so it can be removed", async () => {
+    render(KataProjectMappingsSettings, {
+      props: {
+        mappings: [
+          {
+            project_uid: "project-old",
+            provider: "github",
+            platform_host: "github.com",
+            repo_path: "acme/old",
+          },
+        ],
+        onUpdate: vi.fn(),
+      },
+    });
+
+    expect(screen.getByText("acme/old · unavailable")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove Kata project mapping project-old" })).toBeTruthy();
   });
 });

@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import { mountBrowserApp, type MountedBrowserApp } from "./test/browserAppHarness.js";
+import { mockSettings } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
 
@@ -107,5 +108,28 @@ describe("settings sidebar search", () => {
     expect(document.querySelector(".settings-page")).toBeNull();
     expect(new URL(window.location.href).pathname).toBe("/");
     backSpy.mockRestore();
+  });
+
+  it("hides Kata mapping settings without starting diagnostics when Kata is disabled", async () => {
+    await page.viewport(1280, 900);
+    mounted = await mountBrowserApp("/settings", {
+      overrides: [
+        (req) => {
+          if (req.method !== "GET" || req.url.pathname !== "/api/v1/settings") return null;
+          return new Response(
+            JSON.stringify({
+              ...mockSettings,
+              modes: { ...mockSettings.modes, kata: false },
+            }),
+            { headers: { "content-type": "application/json" } },
+          );
+        },
+      ],
+    });
+
+    await vi.waitFor(() => expect(navLabels()).toHaveLength(7), WAIT);
+    expect(navLabels()).not.toContain("Kata mappings");
+    expect(mounted.api.requests.filter((req) => req.url.pathname.includes("/kata/daemons"))).toHaveLength(1);
+    expect(mounted.api.requests.some((req) => req.url.pathname.includes("/kata/project-mappings"))).toBe(false);
   });
 });

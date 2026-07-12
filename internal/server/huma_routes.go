@@ -5205,9 +5205,13 @@ func (s *Server) createWorkspaceProvider(
 }
 
 func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
+	s.runWorkspaceSetupWithBasePath(ws, "")
+}
+
+func (s *Server) runWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePath string) {
 	s.runBackground(func(bgCtx context.Context) {
 		for {
-			setupErr := s.workspaces.Setup(bgCtx, ws)
+			setupErr := s.workspaces.SetupWithWorktreeBasePath(bgCtx, ws, basePath)
 			summary, getErr := s.workspaces.GetSummary(
 				bgCtx, ws.ID,
 			)

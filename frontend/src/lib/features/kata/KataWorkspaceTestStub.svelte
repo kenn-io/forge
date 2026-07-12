@@ -14,7 +14,7 @@
         view?: KataTaskViewName | null;
         scope?: string | null;
         daemon?: string | null;
-      }) => void
+      }, options?: { replace?: boolean }) => void
     ) | undefined;
     onOpenMessage?: ((messageId: number) => void) | undefined;
   }

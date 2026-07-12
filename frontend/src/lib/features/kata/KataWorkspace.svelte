@@ -57,7 +57,7 @@
         view?: KataTaskViewName | null;
         scope?: string | null;
         daemon?: string | null;
-      }) => void
+      }, options?: { replace?: boolean }) => void
     ) | undefined;
     onOpenMessage?: ((messageId: number) => void) | undefined;
   }
@@ -141,6 +141,11 @@
       getDefaultKataDaemon() ??
       daemonInfos.find((daemon) => daemon.default)?.id ??
       daemonInfos[0]?.id,
+  );
+  const routedDaemonError = $derived(
+    requestedDaemonId && daemonInfos.length > 0 && !daemonInfos.some((daemon) => daemon.id === requestedDaemonId)
+      ? `Kata daemon ${requestedDaemonId} is not configured.`
+      : null,
   );
   const listStatusFilter = $derived<KataTaskSearchFilters["status"]>(
     store.currentView.name === "logbook" ? "all" : store.searchFilters.status,
@@ -262,6 +267,8 @@
     loadLayoutPrefs();
 
     void (async () => {
+      let routedDaemonId: string | null = null;
+      let previousExplicitDaemon: string | undefined;
       try {
         const daemons = await fetchKataDaemons();
         if (cancelled) return;
@@ -274,45 +281,55 @@
         observedRouteSignature = routeSignature(bootstrapRoute);
         const bootstrapViewName = bootstrapRoute.view ?? "all";
         const bootstrapIssueUID = bootstrapRoute.issue;
-        const hasRoutedDaemon =
-          requestedDaemonId !== null && daemons.some((daemon) => daemon.id === requestedDaemonId);
-        if (hasRoutedDaemon && requestedDaemonId) {
-          store.clearDaemonBinding();
-          setActiveKataDaemon(requestedDaemonId);
+        const hasDaemonRoute = requestedDaemonId !== null;
+        routedDaemonId = daemons.some((daemon) => daemon.id === requestedDaemonId) ? requestedDaemonId : null;
+        if (routedDaemonId) {
+          previousExplicitDaemon = getActiveKataDaemon();
+          store.bindDaemonForBootstrap(routedDaemonId);
         }
         await store.bootstrap(
           bootstrapViewName,
-          hasRoutedDaemon ? null : bootstrapIssueUID,
-          { selectFirst: !hasRoutedDaemon && bootstrapIssueUID !== null },
+          hasDaemonRoute ? null : bootstrapIssueUID,
+          { selectFirst: !hasDaemonRoute && bootstrapIssueUID !== null },
         );
         if (bootstrapRoute.view || bootstrapRoute.scope) {
           await applyRouteViewScope(
             bootstrapRoute.view,
             bootstrapRoute.scope,
-            hasRoutedDaemon ? null : bootstrapRoute.issue,
+            hasDaemonRoute ? null : bootstrapRoute.issue,
           );
         }
         await store.syncEventCursor();
-        if (hasRoutedDaemon && bootstrapIssueUID) {
-          await store.selectIssue(bootstrapIssueUID);
+        if (routedDaemonId) {
+          setActiveKataDaemon(routedDaemonId);
+        }
+        let routedIssueFailed = false;
+        if (routedDaemonId && bootstrapIssueUID) {
+          routedIssueFailed = !(await runViewTask(() => store.selectIssue(bootstrapIssueUID)));
         }
         syncedRouteIssueUID =
-          bootstrapRoute.issue && store.selectedIssue?.issue.uid === bootstrapRoute.issue ? bootstrapRoute.issue : null;
+          routedIssueFailed || (bootstrapRoute.issue && store.selectedIssue?.issue.uid === bootstrapRoute.issue)
+            ? bootstrapRoute.issue
+            : null;
         syncedRouteViewName = bootstrapRoute.view;
         syncedRouteScopeUID = bootstrapRoute.scope;
-        if (requestedDaemonId && store.daemonId === requestedDaemonId) {
+        if (routedDaemonId && store.daemonId === routedDaemonId) {
           onRouteStateChange?.({
             view: bootstrapRoute.view,
             scope: bootstrapRoute.scope,
             issue: bootstrapRoute.issue,
             daemon: null,
-          });
+          }, { replace: true });
         }
         if (!cancelled) {
           startEventStream();
         }
       } catch (err) {
         if (!cancelled) {
+          if (routedDaemonId) {
+            store.clearDaemonState();
+            setActiveKataDaemon(previousExplicitDaemon);
+          }
           terminalDaemonFailure = true;
           error =
             store.connection.status === "error" && store.connection.message
@@ -444,11 +461,7 @@
   }
 
   function routeRequiresDaemonSwitch(): boolean {
-    return (
-      requestedDaemonId !== null &&
-      daemonInfos.some((daemon) => daemon.id === requestedDaemonId) &&
-      requestedDaemonId !== store.daemonId
-    );
+    return requestedDaemonId !== null && requestedDaemonId !== store.daemonId;
   }
 
   $effect.pre(() => {
@@ -501,6 +514,7 @@
   }
 
   function activeDaemonStatusLabel(): string | undefined {
+    if (routedDaemonError) return routedDaemonError;
     if (error) return error;
     if (
       store.daemonId &&
@@ -737,7 +751,7 @@
               scope: scopeUIDFromFilters(previousFilters),
               issue: previousIssueUID,
               daemon: null,
-            });
+            }, { replace: true });
           }
           startEventStream();
         } else {
@@ -758,7 +772,7 @@
           scope: routeScopeUID,
           issue: selectedIssueUID,
           daemon: null,
-        });
+        }, { replace: true });
       } else if (routeSignature(currentRouteSnapshot()) === routeAtSwitchStart) {
         syncedRouteIssueUID = selectedIssueUID ?? null;
         onSelectedIssueChange?.(nextUID);
@@ -772,8 +786,9 @@
   $effect(() => {
     const targetDaemon = requestedDaemonId;
     if (!targetDaemon || loading || switchingDaemon || terminalDaemonFailure) return;
-    if (!daemonInfos.some((daemon) => daemon.id === targetDaemon)) return;
     if (targetDaemon === store.daemonId) return;
+    if (!daemonInfos.some((daemon) => daemon.id === targetDaemon)) return;
+    if (viewWorkCount > 0 || store.hasPendingMutations || workspaceActionBusy) return;
     void untrack(() => switchKataDaemon(targetDaemon));
   });
 

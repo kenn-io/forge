@@ -317,6 +317,11 @@ export class KataWorkspaceStore {
     this.api.bindWorkflowDaemon?.();
   }
 
+  bindDaemonForBootstrap(daemonId: string): void {
+    this.daemonId = daemonId;
+    this.api.bindWorkflowDaemon?.(daemonId);
+  }
+
   clearDaemonState(viewName: KataTaskViewName = this.currentView.name): void {
     this.clearSelection();
     this.clearDaemonBinding();

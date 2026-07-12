@@ -340,6 +340,9 @@ Kata frontend adaptation:
 - Cross-mode task links carry their daemon target in route state until the
   workspace accepts that switch; linked issue selection must not run against
   the previously accepted daemon (`frontend/src/App.svelte::openKataIssue`).
+- Daemon-route cleanup replaces the transient history entry. Unknown targets
+  stay unresolved with an error, and failed initial acceptance restores the
+  prior daemon preference (`frontend/src/lib/features/kata/KataWorkspace.svelte::routedDaemonError`).
 - Browser route changes remain queued while a daemon switch or rollback is
   provisional, then apply to the accepted workspace after the transaction
   settles. A successful bootstrap does not publish its provisional selection

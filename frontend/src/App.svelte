@@ -245,8 +245,10 @@
     navigate(kataIssueHref(uid, targetDaemon));
   }
 
-  function updateKataRoute(update: KataRouteUpdate): void {
-    navigate(kataHref({ ...currentKataRouteUpdate(), ...update }));
+  function updateKataRoute(update: KataRouteUpdate, options?: { replace?: boolean }): void {
+    const href = kataHref({ ...currentKataRouteUpdate(), ...update });
+    if (options?.replace) replaceUrl(href);
+    else navigate(href);
   }
 
   function updateRepoBrowserRoute(route: RepoBrowserRouteRef, options?: { replace?: boolean }): void {

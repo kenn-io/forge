@@ -8350,6 +8350,100 @@ func TestFetchMRDetailUsesPersistedPullRequestETag(t *testing.T) {
 		"304 should skip timeline/comment refresh")
 }
 
+type mutatingConditionalPRClient struct {
+	conditionalPRTrackingClient
+	onConditionalFetch func()
+}
+
+func (c *mutatingConditionalPRClient) GetPullRequestIfChanged(
+	ctx context.Context,
+	owner, repo string,
+	number int,
+	etag string,
+) (*gh.PullRequest, string, bool, error) {
+	if c.onConditionalFetch != nil {
+		c.onConditionalFetch()
+	}
+	return c.conditionalPRTrackingClient.GetPullRequestIfChanged(
+		ctx, owner, repo, number, etag,
+	)
+}
+
+// A conditional detail fetch races the review-suggestion apply flow: the
+// 304 is computed against the pre-mutation row, so if the applied head
+// lands while the request is in flight, the response must not attach the
+// old head's CI to the mutated row or re-stamp the detail_fetched_at that
+// MarkAppliedProviderHead cleared to force a real refetch.
+func TestFetchMRDetail304StaleAfterHeadMutationLeavesRowForRefetch(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	detailFetchedAt := time.Date(2024, 6, 1, 9, 0, 0, 0, time.UTC)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1000,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "test PR",
+		Author:          "alice",
+		State:           "open",
+		HeadBranch:      "feature-branch",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "reviewed-head",
+		CIHadPending:    true,
+		CreatedAt:       updatedAt,
+		UpdatedAt:       updatedAt,
+		LastActivityAt:  updatedAt,
+		DetailFetchedAt: &detailFetchedAt,
+	})
+	require.NoError(err)
+	require.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo",
+		"pull_request", 1, `"etag-v1"`,
+	))
+
+	mc := &mutatingConditionalPRClient{}
+	mc.notModified = true
+	ciState := "success"
+	checkName := "build"
+	checkStatus := "completed"
+	checkConclusion := "success"
+	mc.ciStatus = &gh.CombinedStatus{State: &ciState}
+	mc.checkRuns = []*gh.CheckRun{{
+		Name:       &checkName,
+		Status:     &checkStatus,
+		Conclusion: &checkConclusion,
+	}}
+	mc.onConditionalFetch = func() {
+		require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 1, "reviewed-head"))
+		_, markErr := d.MarkAppliedProviderHead(ctx, repoID, 1, "reviewed-head", "applied-head")
+		require.NoError(markErr)
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{repo},
+		time.Minute, nil, testBudget(1000),
+	)
+
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
+	require.NoError(err)
+
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("applied-head", got.PlatformHeadSHA)
+	assert.Empty(got.CIStatus,
+		"stale 304 must not attach the old head's CI to the mutated row")
+	assert.Nil(got.DetailFetchedAt,
+		"stale 304 must not mark the cleared detail as freshly fetched")
+}
+
 func TestFetchMRDetailDoesNotBackfillMergedActorOn304(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

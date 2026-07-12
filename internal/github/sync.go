@@ -5691,7 +5691,7 @@ func (s *Syncer) fetchMRDetail(
 	if err == nil && fullPR == nil {
 		if notModified && existing != nil {
 			return s.markUnchangedMRDetailFetched(
-				ctx, repo, repoID, number, existing, calls,
+				ctx, repo, repoID, number, existing, snapshotGeneration, calls,
 			)
 		}
 		err = fmt.Errorf("client returned nil pull request")
@@ -5895,18 +5895,45 @@ func (s *Syncer) getPullRequestForDetail(
 	)
 }
 
+// markUnchangedMRDetailFetched finalizes a conditional detail fetch that
+// returned 304. The response proves the provider resource was unchanged
+// relative to the row as it existed before the network call, so it
+// revalidates under the per-MR provider write lock: a head mutation fence,
+// a newer snapshot generation, or a changed head that landed while the
+// request was in flight makes the 304 stale, and the row is left untouched
+// for the next full fetch instead of overwriting post-mutation state.
 func (s *Syncer) markUnchangedMRDetailFetched(
 	ctx context.Context,
 	repo RepoRef,
 	repoID int64,
 	number int,
 	existing *db.MergeRequest,
+	snapshotGeneration int64,
 	calls int,
 ) (int, error) {
-	pending := existing.CIHadPending
-	if existing.CIHadPending && existing.PlatformHeadSHA != "" {
-		if err := s.refreshCIStatus(
-			ctx, repo, repoID, number, existing.PlatformHeadSHA,
+	unlock, err := s.lockMRProviderWrites(ctx, repo, number)
+	if err != nil {
+		return calls, err
+	}
+	defer unlock()
+	mutationInProgress, err := s.db.ProviderHeadMutationInProgress(ctx, repoID, number)
+	if err != nil {
+		return calls, err
+	}
+	current, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return calls, fmt.Errorf("reload MR #%d for unchanged detail: %w", number, err)
+	}
+	if current == nil || mutationInProgress ||
+		current.PendingProviderHeadGeneration > snapshotGeneration ||
+		current.ProviderSnapshotGeneration > snapshotGeneration ||
+		current.PlatformHeadSHA != existing.PlatformHeadSHA {
+		return calls, nil
+	}
+	pending := current.CIHadPending
+	if current.CIHadPending && current.PlatformHeadSHA != "" {
+		if err := s.refreshCIStatusForHead(
+			ctx, repo, repoID, number, current.PlatformHeadSHA,
 		); err != nil {
 			calls += 2
 			return calls, err
@@ -8113,7 +8140,7 @@ func (s *Syncer) syncMRForRepo(
 			if err == nil && ghPR == nil {
 				if notModified && existing != nil {
 					_, err := s.markUnchangedMRDetailFetched(
-						ctx, repo, repoID, number, existing, 1,
+						ctx, repo, repoID, number, existing, snapshotGeneration, 1,
 					)
 					return err
 				}

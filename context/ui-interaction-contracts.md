@@ -209,6 +209,9 @@ the same head pin, the same provider-side binding, the same post-success refresh
 handling. Do not give either action stronger client-side verification, staleness
 checks, or revocation behavior than the other
 (`internal/server/huma_routes.go::approvalReviewHeadSHA`).
+Once either provider mutation succeeds, close and clear its form before the
+follow-up refresh. A refresh failure may show a warning, but must not leave the
+successful mutation available for an accidental duplicate submission.
 Editing a saved draft comment should change only the body and preserve the
 original diff range, so the PATCH path must rebuild the range from the stored
 comment rather than from whichever line is currently selected

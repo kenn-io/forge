@@ -126,7 +126,10 @@ registry helpers return typed errors for missing providers or capabilities.
   reviewed heads, renamed/deleted/binary files, unsupported encodings,
   whitespace-padded paths) fail the entire batch with stable reasons.
 - Forgejo and Gitea currently expose only SDK-proven mutations: comments,
-  issue creation, issue and PR content/state edits, merge, and review approval.
+  issue creation, issue and PR content/state edits, merge, review approval, and
+  request changes. Their shared review mutations must map SDK failures through
+  the provider error mapper so permission and not-found responses retain typed
+  platform errors.
   Workflow approval and ready-for-review must remain hidden or return typed
   `unsupported_capability` errors until proven per provider.
 - GitHub GraphQL bulk fetch, ETag recovery, and detailed diff behavior are

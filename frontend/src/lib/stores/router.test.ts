@@ -283,6 +283,9 @@ describe("router basic routes", () => {
       issue: "issue-email-susan",
     });
     expect(getPage()).toBe("kata");
+
+    navigate("/kata?issue=issue-email-susan&daemon=work");
+    expect(getRoute()).toEqual({ page: "kata", issue: "issue-email-susan", daemon: "work" });
   });
 
   it("parses /docs route state", () => {

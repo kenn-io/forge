@@ -6,9 +6,15 @@
     selectedIssueUID?: string | null | undefined;
     routeViewName?: KataTaskViewName | null | undefined;
     routeScopeUID?: string | null | undefined;
+    requestedDaemonId?: string | null | undefined;
     onSelectedIssueChange?: ((uid: string | null) => void) | undefined;
     onRouteStateChange?: (
-      (state: { issue?: string | null; view?: KataTaskViewName | null; scope?: string | null }) => void
+      (state: {
+        issue?: string | null;
+        view?: KataTaskViewName | null;
+        scope?: string | null;
+        daemon?: string | null;
+      }) => void
     ) | undefined;
     onOpenMessage?: ((messageId: number) => void) | undefined;
   }
@@ -18,6 +24,7 @@
     selectedIssueUID = null,
     routeViewName = null,
     routeScopeUID = null,
+    requestedDaemonId = null,
     onSelectedIssueChange = undefined,
     onRouteStateChange = undefined,
     onOpenMessage = undefined,
@@ -30,6 +37,7 @@
   data-selected-issue={selectedIssueUID ?? ""}
   data-route-view={routeViewName ?? ""}
   data-route-scope={routeScopeUID ?? ""}
+  data-requested-daemon={requestedDaemonId ?? ""}
 >
   <button type="button" onclick={() => onSelectedIssueChange?.("issue-next")}>select</button>
   <button type="button" onclick={() => onRouteStateChange?.({ view: "today", scope: "project-a", issue: "issue-next" })}>route</button>

@@ -25,6 +25,7 @@ describe("KataFeature", () => {
         selectedIssueUID: "issue-current",
         routeViewName: "inbox",
         routeScopeUID: "project-a",
+        requestedDaemonId: "work",
         onSelectedIssueChange,
         onRouteStateChange,
         onOpenMessage,
@@ -36,6 +37,7 @@ describe("KataFeature", () => {
     expect(stub.dataset.selectedIssue).toBe("issue-current");
     expect(stub.dataset.routeView).toBe("inbox");
     expect(stub.dataset.routeScope).toBe("project-a");
+    expect(stub.dataset.requestedDaemon).toBe("work");
 
     await fireEvent.click(screen.getByRole("button", { name: "select" }));
     await fireEvent.click(screen.getByRole("button", { name: "route" }));

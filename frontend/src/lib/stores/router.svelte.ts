@@ -24,7 +24,7 @@ export type Route =
   | { page: "mobile-issues" }
   | { page: "design-system" }
   | { page: "repos" }
-  | { page: "kata"; issue?: string; view?: KataTaskViewName; scope?: string }
+  | { page: "kata"; issue?: string; view?: KataTaskViewName; scope?: string; daemon?: string }
   | { page: "docs"; folder: string | null; doc: string | null }
   | { page: "messages"; q: string | null; message: string | null; view?: "linked" }
   | {
@@ -323,11 +323,13 @@ function parseRoute(fullPath: string): Route {
     const issue = emptyToNull(sp.get("issue"));
     const view = parseKataView(sp.get("view"));
     const scope = emptyToNull(sp.get("scope"));
+    const daemon = emptyToNull(sp.get("daemon"));
     return {
       page: "kata",
       ...(view ? { view } : {}),
       ...(scope ? { scope } : {}),
       ...(issue ? { issue } : {}),
+      ...(daemon ? { daemon } : {}),
     };
   }
   if (path === "/docs") {

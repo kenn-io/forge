@@ -119,6 +119,14 @@ registry helpers return typed errors for missing providers or capabilities.
 - An uncertain provider outcome stays fail-closed until an authoritative fetch
   observes a changed head. Clearing that fence and installing the snapshot must
   commit atomically (`internal/db/queries.go::ReconcileProviderHeadMutationSnapshot`).
+- A confirmed mutation whose new head the provider did not report keeps the
+  fence and the expected pre-mutation head: a fresh-generation fetch can still
+  return an eventually consistent unchanged head, and accepting it would
+  unlock a duplicate apply (`internal/db/queries.go::MarkAppliedProviderHead`).
+- A conditional-fetch 304 proves nothing about rows changed while the request
+  was in flight; its writes must revalidate fence, generation, and head under
+  the per-MR provider write lock and skip when stale
+  (`internal/github/sync.go::markUnchangedMRDetailFetched`).
 - The UI only exposes apply actions when the thread head matches a known
   current PR head; stale or unknown heads disable actions, and stale batched
   suggestions must not reach batch submit while staying removable. A suggestion

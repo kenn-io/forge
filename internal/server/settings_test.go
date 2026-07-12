@@ -830,7 +830,7 @@ func TestHandleDeleteRepo(t *testing.T) {
 	assert.Equal(t, "other-org", cfg2.Repos[0].Owner)
 }
 
-func TestHandleDeleteRepoRemovesKataProjectMappings(t *testing.T) {
+func TestHandleDeleteRepoPreservesKataProjectMappings(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
@@ -878,9 +878,9 @@ func TestHandleDeleteRepoRemovesKataProjectMappings(t *testing.T) {
 	require.NoError(err)
 	require.Len(cfg2.Repos, 1)
 	assert.Equal("other-org", cfg2.Repos[0].Owner)
-	require.Len(cfg2.KataProjects, 1)
-	assert.Equal("project-other", cfg2.KataProjects[0].ProjectUID)
-	assert.Equal("other-org/other-repo", cfg2.KataProjects[0].RepoPath)
+	require.Len(cfg2.KataProjects, 2)
+	assert.Equal("project-widget", cfg2.KataProjects[0].ProjectUID)
+	assert.Equal("acme/widget", cfg2.KataProjects[0].RepoPath)
 }
 
 func TestGetSettingsWithoutPersistence(t *testing.T) {

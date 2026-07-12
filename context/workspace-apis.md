@@ -85,12 +85,11 @@ owning provider item has not synced yet, the summary leaves
 `item_last_activity_at` absent rather than inventing a value.
 
 Kata task repository resolution is deliberately exact. Manual settings mappings
-key by optional daemon ID plus Kata project UID and point to a configured exact
-repo identity. Config validation rejects mappings whose repo target is no
-longer configured, so settings repo deletion must remove mappings for the
-deleted repo in the same save/rollback path
+key by optional daemon ID plus Kata project UID and point to a known repository
+identity, including registered Middleman Projects. Removing a watched repo does
+not delete an override because a registered Project may still own that identity
 (`internal/config/config.go::validateKataProjectRepoMappings`,
-`internal/server/settings_handlers.go::deleteConfiguredRepo`). Automatic
+`internal/server/kata_workspace.go::kataManualWorkspaceTarget`). Automatic
 resolution first uses watched exact repos with `worktree_base_path` whose clone
 contains a matching `.kata.toml`. Matching first compares both explicit
 identifiers, `project.uid` and `project.identity`, to the Kata project UID. If
@@ -107,6 +106,10 @@ or globbed config resolve by name. Ambiguous, mismatched, or missing matches
 mean the Create/Open
 workspace button must not render
 (`internal/server/kata_workspace.go::resolveKataWorkspaceRepo`).
+
+Settings lists each selected-daemon Kata project with the status and source from
+the workspace resolver, and manual overrides may target watched, tracked, or
+registered repositories (`internal/server/kata_workspace.go::getKataProjectMappings`).
 
 Persisted workspace `worktree_path` values should be absolute. Workspace setup
 runs `git worktree add` from the managed clone or configured base checkout, so

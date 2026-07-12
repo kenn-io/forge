@@ -1493,6 +1493,25 @@ type KataDaemonRosterResponse struct {
 	Source  *string               `json:"source,omitempty"`
 }
 
+// KataProjectMappingDiagnostic defines model for KataProjectMappingDiagnostic.
+type KataProjectMappingDiagnostic struct {
+	DaemonId    string           `json:"daemon_id"`
+	ProjectName string           `json:"project_name"`
+	ProjectUid  string           `json:"project_uid"`
+	Repo        *RepoRefResponse `json:"repo,omitempty"`
+	Source      *string          `json:"source,omitempty"`
+	Status      string           `json:"status"`
+}
+
+// KataProjectMappingsResponse defines model for KataProjectMappingsResponse.
+type KataProjectMappingsResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string                        `json:"$schema,omitempty"`
+	DaemonId     string                         `json:"daemon_id"`
+	Projects     []KataProjectMappingDiagnostic `json:"projects"`
+	Repositories []RepoRefResponse              `json:"repositories"`
+}
+
 // KataProjectRepoMapping defines model for KataProjectRepoMapping.
 type KataProjectRepoMapping struct {
 	DaemonId     *string `json:"daemon_id,omitempty"`
@@ -3592,6 +3611,12 @@ type ListIssuesParams struct {
 	Offset   *int64  `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// GetKataProjectMappingsParams defines parameters for GetKataProjectMappings.
+type GetKataProjectMappingsParams struct {
+	// XMiddlemanKataDaemon Kata daemon id; the effective default daemon when empty
+	XMiddlemanKataDaemon *string `json:"X-Middleman-Kata-Daemon,omitempty"`
+}
+
 // GetKataTaskDetailParams defines parameters for GetKataTaskDetail.
 type GetKataTaskDetailParams struct {
 	// XMiddlemanKataDaemon Kata daemon id; the effective default daemon when empty
@@ -4785,6 +4810,9 @@ type ClientInterface interface {
 
 	// ListKataDaemons request
 	ListKataDaemons(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetKataProjectMappings request
+	GetKataProjectMappings(ctx context.Context, params *GetKataProjectMappingsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetKataTaskDetail request
 	GetKataTaskDetail(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -7618,6 +7646,18 @@ func (c *Client) CreateIssueWorkspace(ctx context.Context, provider string, owne
 
 func (c *Client) ListKataDaemons(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListKataDaemonsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetKataProjectMappings(ctx context.Context, params *GetKataProjectMappingsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetKataProjectMappingsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -19139,6 +19179,48 @@ func NewListKataDaemonsRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetKataProjectMappingsRequest generates requests for GetKataProjectMappings
+func NewGetKataProjectMappingsRequest(server string, params *GetKataProjectMappingsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/kata/project-mappings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.XMiddlemanKataDaemon != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Kata-Daemon", *params.XMiddlemanKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Middleman-Kata-Daemon", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
 // NewGetKataTaskDetailRequest generates requests for GetKataTaskDetail
 func NewGetKataTaskDetailRequest(server string, issueUid string, params *GetKataTaskDetailParams) (*http.Request, error) {
 	var err error
@@ -27458,6 +27540,9 @@ type ClientWithResponsesInterface interface {
 	// ListKataDaemonsWithResponse request
 	ListKataDaemonsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListKataDaemonsResponse, error)
 
+	// GetKataProjectMappingsWithResponse request
+	GetKataProjectMappingsWithResponse(ctx context.Context, params *GetKataProjectMappingsParams, reqEditors ...RequestEditorFn) (*GetKataProjectMappingsResponse, error)
+
 	// GetKataTaskDetailWithResponse request
 	GetKataTaskDetailWithResponse(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*GetKataTaskDetailResponse, error)
 
@@ -31146,6 +31231,29 @@ func (r ListKataDaemonsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListKataDaemonsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetKataProjectMappingsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataProjectMappingsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetKataProjectMappingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetKataProjectMappingsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -36005,6 +36113,15 @@ func (c *ClientWithResponses) ListKataDaemonsWithResponse(ctx context.Context, r
 		return nil, err
 	}
 	return ParseListKataDaemonsResponse(rsp)
+}
+
+// GetKataProjectMappingsWithResponse request returning *GetKataProjectMappingsResponse
+func (c *ClientWithResponses) GetKataProjectMappingsWithResponse(ctx context.Context, params *GetKataProjectMappingsParams, reqEditors ...RequestEditorFn) (*GetKataProjectMappingsResponse, error) {
+	rsp, err := c.GetKataProjectMappings(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetKataProjectMappingsResponse(rsp)
 }
 
 // GetKataTaskDetailWithResponse request returning *GetKataTaskDetailResponse
@@ -42093,6 +42210,39 @@ func ParseListKataDaemonsResponse(rsp *http.Response) (*ListKataDaemonsResponse,
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest KataDaemonRosterResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetKataProjectMappingsResponse parses an HTTP response from a GetKataProjectMappingsWithResponse call
+func ParseGetKataProjectMappingsResponse(rsp *http.Response) (*GetKataProjectMappingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetKataProjectMappingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataProjectMappingsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

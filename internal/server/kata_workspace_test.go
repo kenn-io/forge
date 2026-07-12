@@ -346,6 +346,58 @@ port = 8091
 	assert.Equal(projectPath, basePath)
 }
 
+func TestKataProjectMappingsReportsManualRegisteredProjectTarget(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	daemon := startKataTaskDetailDaemon(t, `{}`, `{"projects":[
+		{"id":7,"uid":"project-kata","name":"Kata"},
+		{"id":8,"uid":"project-unmapped","name":"Unmapped"}
+	]}`)
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeKataProxyCatalog(t, home, `
+[[daemon]]
+name = "desktop"
+url = "`+daemon.URL+`"
+`)
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[kata_projects]]
+daemon_id = "desktop"
+project_uid = "project-kata"
+provider = "github"
+platform_host = "github.com"
+repo_path = "acme/middleman"
+`, &mockGH{})
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
+	require.NoError(err)
+	_, err = database.CreateProject(t.Context(), db.CreateProjectInput{
+		DisplayName: "Middleman",
+		LocalPath:   t.TempDir(),
+		RepoID:      sql.NullInt64{Int64: repoID, Valid: true},
+	})
+	require.NoError(err)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/project-mappings", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.Contains(rr.Header().Values("Vary"), kataDaemonHeaderName)
+	var resp kataProjectMappingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp.Projects, 2)
+	assert.Equal("mapped", resp.Projects[0].Status)
+	assert.Equal("manual_daemon", resp.Projects[0].Source)
+	require.NotNil(resp.Projects[0].Repo)
+	assert.Equal("acme/middleman", resp.Projects[0].Repo.RepoPath)
+	assert.Equal("unmapped", resp.Projects[1].Status)
+	require.Len(resp.Repositories, 1)
+	assert.Equal("acme/middleman", resp.Repositories[0].RepoPath)
+}
+
 func TestKataWorkspaceTargetTrackedRepoNameFallbackRequiresOneMatch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

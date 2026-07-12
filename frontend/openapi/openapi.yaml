@@ -2464,6 +2464,52 @@ components:
       required:
         - daemons
       type: object
+    KataProjectMappingDiagnostic:
+      additionalProperties: false
+      properties:
+        daemon_id:
+          type: string
+        project_name:
+          type: string
+        project_uid:
+          type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
+        source:
+          type: string
+        status:
+          type: string
+      required:
+        - daemon_id
+        - project_uid
+        - project_name
+        - status
+      type: object
+    KataProjectMappingsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/KataProjectMappingsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        daemon_id:
+          type: string
+        projects:
+          items:
+            $ref: "#/components/schemas/KataProjectMappingDiagnostic"
+          type: array
+        repositories:
+          items:
+            $ref: "#/components/schemas/RepoRefResponse"
+          type: array
+      required:
+        - daemon_id
+        - projects
+        - repositories
+      type: object
     KataProjectRepoMapping:
       additionalProperties: false
       properties:
@@ -13012,6 +13058,36 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List Kata daemons
+      tags:
+        - Kata
+  /kata/project-mappings:
+    get:
+      operationId: get-kata-project-mappings
+      parameters:
+        - description: Kata daemon id; the effective default daemon when empty
+          in: header
+          name: X-Middleman-Kata-Daemon
+          schema:
+            description: Kata daemon id; the effective default daemon when empty
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataProjectMappingsResponse"
+          description: OK
+          headers:
+            Vary:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Inspect effective Kata project repository mappings
       tags:
         - Kata
   /kata/tasks/{issue_uid}:

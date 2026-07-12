@@ -2083,6 +2083,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kata/project-mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect effective Kata project repository mappings */
+        get: operations["get-kata-project-mappings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kata/tasks/{issue_uid}": {
         parameters: {
             query?: never;
@@ -5323,6 +5340,25 @@ export interface components {
             readonly $schema?: string;
             daemons: components["schemas"]["KataDaemonResponse"][] | null;
             source?: string;
+        };
+        KataProjectMappingDiagnostic: {
+            daemon_id: string;
+            project_name: string;
+            project_uid: string;
+            repo?: components["schemas"]["RepoRefResponse"];
+            source?: string;
+            status: string;
+        };
+        KataProjectMappingsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/KataProjectMappingsResponse.json
+             */
+            readonly $schema?: string;
+            daemon_id: string;
+            projects: components["schemas"]["KataProjectMappingDiagnostic"][];
+            repositories: components["schemas"]["RepoRefResponse"][];
         };
         KataProjectRepoMapping: {
             daemon_id?: string;
@@ -12134,6 +12170,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KataDaemonRosterResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-kata-project-mappings": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Kata daemon id; the effective default daemon when empty */
+                "X-Middleman-Kata-Daemon"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    Vary?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataProjectMappingsResponse"];
                 };
             };
             /** @description Error */

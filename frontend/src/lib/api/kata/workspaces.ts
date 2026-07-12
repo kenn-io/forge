@@ -1,6 +1,7 @@
 import type { components } from "@middleman/ui/api/schema";
 
 import { apiErrorMessage, client } from "../runtime.js";
+import { KATA_DAEMON_HEADER } from "./daemons.js";
 import type { KataTaskSummary } from "./taskTypes.js";
 
 export type KataWorkspaceTaskIdentity = components["schemas"]["KataWorkspaceTaskRequest"];
@@ -10,6 +11,8 @@ export type KataWorkspaceResponse = components["schemas"]["WorkspaceResponse"] &
   item_type: "kata_task";
   kata?: KataWorkspaceMetadata;
 };
+export type KataProjectMappingDiagnostic = components["schemas"]["KataProjectMappingDiagnostic"];
+export type KataProjectMappingsResponse = components["schemas"]["KataProjectMappingsResponse"];
 
 function requestErrorMessage(error: { detail?: string; title?: string } | undefined, fallback: string): string {
   return apiErrorMessage(error, fallback);
@@ -45,4 +48,14 @@ export function createKataWorkspaceForTask(identity: KataWorkspaceTaskIdentity):
       }
       return data as KataWorkspaceResponse;
     });
+}
+
+export async function getKataProjectMappings(daemonID?: string): Promise<KataProjectMappingsResponse> {
+  const { data, error, response } = await client.GET("/kata/project-mappings", {
+    params: daemonID ? { header: { [KATA_DAEMON_HEADER]: daemonID } } : {},
+  });
+  if (!data) {
+    throw new Error(requestErrorMessage(error, `GET /kata/project-mappings -> ${response.status}`));
+  }
+  return data;
 }

@@ -2567,8 +2567,8 @@ repo_path = "acme/widget"
 	assert.Contains(t, err.Error(), "duplicate kata project mapping")
 }
 
-func TestKataProjectMappingsRejectUnconfiguredRepos(t *testing.T) {
-	_, err := Load(writeConfig(t, `
+func TestKataProjectMappingsAllowRegisteredProjectTargets(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
 [[repos]]
 owner = "acme"
 name = "widget"
@@ -2579,8 +2579,9 @@ provider = "github"
 platform_host = "github.com"
 repo_path = "acme/other"
 `))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not match a configured exact repo")
+	require.NoError(t, err)
+	require.Len(t, cfg.KataProjects, 1)
+	assert.Equal(t, "acme/other", cfg.KataProjects[0].RepoPath)
 }
 
 func TestTerminalRendererRejectsInvalidValue(t *testing.T) {

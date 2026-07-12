@@ -2333,6 +2333,28 @@ endpoint = "http://custom:9999"
 	assert.Equal("http://custom:9999", cfg2.RoborevEndpoint())
 }
 
+func TestPullRequestsConfigRoundTrip(t *testing.T) {
+	assert := assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[pull_requests]
+allow_mid_stack_merges = true
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.True(cfg.PullRequests.AllowMidStackMerges)
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(t, cfg.Save(savePath))
+
+	cfg2, err := Load(savePath)
+	require.NoError(t, err)
+	assert.True(cfg2.PullRequests.AllowMidStackMerges)
+}
+
 func TestTerminalConfigRoundTrip(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

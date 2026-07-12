@@ -2646,6 +2646,7 @@ type configFile struct {
 	Agents                    []Agent                  `toml:"agents,omitempty"`
 	DocFolders                []DocFolder              `toml:"doc_folders,omitempty"`
 	Roborev                   Roborev                  `toml:"roborev,omitempty"`
+	PullRequests              PullRequests             `toml:"pull_requests,omitempty"`
 	Msgvault                  *Msgvault                `toml:"msgvault,omitempty"`
 	Tmux                      Tmux                     `toml:"tmux,omitempty"`
 	Shell                     Shell                    `toml:"shell,omitempty"`
@@ -2680,6 +2681,7 @@ func (c *Config) Save(path string) error {
 		Agents:                  cfg.Agents,
 		DocFolders:              cfg.DocFolders,
 		Roborev:                 cfg.Roborev,
+		PullRequests:            cfg.PullRequests,
 		Msgvault:                cfg.Msgvault,
 		Tmux:                    cfg.Tmux,
 		Shell:                   cfg.Shell,

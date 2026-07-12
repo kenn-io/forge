@@ -14,6 +14,7 @@ import (
 func commitTestRun(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
 	require.Equal(t, "git", name)
+	args = append([]string{"-c", "gc.auto=0", "-c", "maintenance.auto=false"}, args...)
 	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "command %s %v failed: %s%s", name, args, out, stderr)
 }

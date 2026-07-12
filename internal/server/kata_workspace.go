@@ -700,9 +700,9 @@ func (s *Server) getKataProjectMappings(
 	if err != nil {
 		return nil, problemBadRequest("", "invalid Kata daemon target", map[string]any{"daemon": daemon.ID})
 	}
-	ctx, cancel := context.WithTimeout(ctx, kataDaemonReadTimeout)
-	defer cancel()
-	result := kataDaemonGet(ctx, client, daemon, baseURL+"/api/v1/projects")
+	upstreamCtx, cancel := context.WithTimeout(ctx, kataDaemonReadTimeout)
+	result := kataDaemonGet(upstreamCtx, client, daemon, baseURL+"/api/v1/projects")
+	cancel()
 	if result.err != nil || result.status < http.StatusOK || result.status >= http.StatusMultipleChoices {
 		return nil, newProblem(http.StatusBadGateway, CodeUpstreamError, "Kata daemon projects read failed", map[string]any{"daemon": daemon.ID})
 	}

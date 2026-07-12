@@ -3,6 +3,7 @@
   import { groupByWorkflow } from "../../stores/workflow.svelte.js";
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
+  import SidebarScrollArea from "../shared/SidebarScrollArea.svelte";
   import PullItem from "./PullItem.svelte";
   import { Chip, SearchInput } from "@kenn-io/kit-ui";
   import { FilterDropdown } from "@kenn-io/kit-ui";
@@ -423,11 +424,15 @@
   {#if pulls.getFilterState() !== "open"}
     <p class="state-note">Showing items closed after middleman began tracking them</p>
   {/if}
-  <div
-    data-test="pr-list"
-    class="list-body"
-    class:list-body--diff-focus={isDiffFocus}
-    class:list-body--diff-focus-worktree={isDiffFocus && isSelectedActiveWorktree}
+  <SidebarScrollArea
+    dataTest="pr-list"
+    class={[
+      "list-body",
+      {
+        "list-body--diff-focus": isDiffFocus,
+        "list-body--diff-focus-worktree": isDiffFocus && isSelectedActiveWorktree,
+      },
+    ]}
   >
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
       <p class="state-message">No repositories configured.<br />
@@ -496,7 +501,7 @@
         {/each}
       {/if}
     {/if}
-  </div>
+  </SidebarScrollArea>
   {#if needsFallbackFileList}
     <div class="diff-files-wrap">
                   <DiffSidebar showCommits={false} />
@@ -571,33 +576,28 @@
     flex-shrink: 0;
   }
 
-  .list-body {
-    flex: 1;
-    overflow-y: auto;
-  }
-
   /* Diff focus: combine typographic mute on siblings + a continuous
      accent rail that extends from the selected card through the inline
      file list, binding them as one visual unit. */
-  .list-body--diff-focus :global(.pull-item:not(.selected) .title) {
+  .pull-list :global(.list-body--diff-focus .pull-item:not(.selected) .title) {
     color: var(--text-muted);
     font-weight: 400;
     transition: color 0.15s ease;
   }
 
-  .list-body--diff-focus :global(.pull-item:not(.selected) .state-dot) {
+  .pull-list :global(.list-body--diff-focus .pull-item:not(.selected) .state-dot) {
     opacity: 0.45;
   }
 
-  .list-body--diff-focus :global(.pull-item:not(.selected):hover .title) {
+  .pull-list :global(.list-body--diff-focus .pull-item:not(.selected):hover .title) {
     color: var(--text-secondary);
   }
 
-  .list-body--diff-focus .diff-files-wrap {
+  .pull-list :global(.list-body--diff-focus .diff-files-wrap) {
     border-left: 3px solid var(--accent-blue);
   }
 
-  .list-body--diff-focus-worktree .diff-files-wrap {
+  .pull-list :global(.list-body--diff-focus-worktree .diff-files-wrap) {
     border-left-color: var(--accent-teal, var(--accent-green));
   }
 

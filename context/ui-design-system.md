@@ -185,7 +185,7 @@ Use it inside left sidebar headers and collapsed strips. Pass a specific label s
 
 ### GroupedSidebarSection
 
-Use `GroupedSidebarSection` for collapsible groups in PR, issue, and workspace list rails. Keep group chrome and the `--sidebar-*` surface/row-state tokens shared; domain-specific row content stays with its owner. (`packages/ui/src/components/shared/GroupedSidebarSection.svelte`, `frontend/src/app.css:39`)
+Use `GroupedSidebarSection` for collapsible groups in PR, issue, and workspace list rails. Keep group chrome and the `--sidebar-*` surface/row-state tokens shared; domain-specific row content stays with its owner. Wrap the rail's virtual-list content in `SidebarScrollArea` so its scroll indicator overlays content and only appears during scrolling instead of reserving a permanent gutter. (`packages/ui/src/components/shared/GroupedSidebarSection.svelte`, `packages/ui/src/components/shared/SidebarScrollArea.svelte`, `frontend/src/app.css:39`)
 
 ### SplitResizeHandle
 

@@ -12,6 +12,7 @@
     DiffStats,
     FilterDropdown,
     GroupedSidebarSection,
+    SidebarScrollArea,
     SidebarToggle,
   } from "@middleman/ui";
   import {
@@ -1046,7 +1047,8 @@
       {/if}
     </section>
   {/if}
-  <div class="sidebar-list">
+  <SidebarScrollArea class="sidebar-list">
+    {#snippet children()}
     {#if sortMode === "repo"}
     {#each grouped as { key: repoKey, items } (repoKey)}
       {@const collapsed =
@@ -1237,7 +1239,8 @@
     {:else if visibleWorkspaces.length === 0}
       <p class="filter-empty">No workspaces yet.</p>
     {/if}
-  </div>
+    {/snippet}
+  </SidebarScrollArea>
 
 </div>
 
@@ -1597,11 +1600,6 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-2xs);
     font-weight: 600;
-  }
-
-  .sidebar-list {
-    flex: 1;
-    overflow-y: auto;
   }
 
   .filter-empty {

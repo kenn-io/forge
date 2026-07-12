@@ -190,6 +190,10 @@ clones its own bare repo and worktree root. Keep tests serial when they call
 resources, or intentionally verify ordering against another test-visible shared
 resource.
 
+Disable Git auto-GC and auto-maintenance in synthetic repositories under
+`t.TempDir`; detached maintenance can recreate files during fixture cleanup
+(`internal/gitclone/commits_test.go::commitTestRun`).
+
 Real tmux and PTY tests can still run in parallel when each test owns its
 session names, temp dirs, sockets, and cleanup. If the bottleneck is external
 resource pressure rather than correctness, keep `t.Parallel()` and gate the

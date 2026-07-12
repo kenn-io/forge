@@ -2464,6 +2464,20 @@ components:
       required:
         - daemons
       type: object
+    KataMappingTargetResponse:
+      additionalProperties: false
+      properties:
+        display_name:
+          type: string
+        project_id:
+          type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
+      required:
+        - project_id
+        - display_name
+        - repo
+      type: object
     KataProjectMappingDiagnostic:
       additionalProperties: false
       properties:
@@ -2501,14 +2515,14 @@ components:
           items:
             $ref: "#/components/schemas/KataProjectMappingDiagnostic"
           type: array
-        repositories:
+        targets:
           items:
-            $ref: "#/components/schemas/RepoRefResponse"
+            $ref: "#/components/schemas/KataMappingTargetResponse"
           type: array
       required:
         - daemon_id
         - projects
-        - repositories
+        - targets
       type: object
     KataProjectRepoMapping:
       additionalProperties: false

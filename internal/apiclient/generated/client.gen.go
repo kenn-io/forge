@@ -1493,6 +1493,13 @@ type KataDaemonRosterResponse struct {
 	Source  *string               `json:"source,omitempty"`
 }
 
+// KataMappingTargetResponse defines model for KataMappingTargetResponse.
+type KataMappingTargetResponse struct {
+	DisplayName string          `json:"display_name"`
+	ProjectId   string          `json:"project_id"`
+	Repo        RepoRefResponse `json:"repo"`
+}
+
 // KataProjectMappingDiagnostic defines model for KataProjectMappingDiagnostic.
 type KataProjectMappingDiagnostic struct {
 	DaemonId    string           `json:"daemon_id"`
@@ -1506,10 +1513,10 @@ type KataProjectMappingDiagnostic struct {
 // KataProjectMappingsResponse defines model for KataProjectMappingsResponse.
 type KataProjectMappingsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string                        `json:"$schema,omitempty"`
-	DaemonId     string                         `json:"daemon_id"`
-	Projects     []KataProjectMappingDiagnostic `json:"projects"`
-	Repositories []RepoRefResponse              `json:"repositories"`
+	Schema   *string                        `json:"$schema,omitempty"`
+	DaemonId string                         `json:"daemon_id"`
+	Projects []KataProjectMappingDiagnostic `json:"projects"`
+	Targets  []KataMappingTargetResponse    `json:"targets"`
 }
 
 // KataProjectRepoMapping defines model for KataProjectRepoMapping.

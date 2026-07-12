@@ -30,7 +30,7 @@ describe("KataProjectMappingsSettings", () => {
     mockFetchKataDaemons.mockResolvedValue([
       { id: "work", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
     ]);
-    mockGetKataProjectMappings.mockResolvedValue({ daemon_id: "work", projects: [], repositories: [] });
+    mockGetKataProjectMappings.mockResolvedValue({ daemon_id: "work", projects: [], targets: [] });
   });
 
   afterEach(() => {
@@ -44,13 +44,12 @@ describe("KataProjectMappingsSettings", () => {
     render(KataProjectMappingsSettings, {
       props: {
         mappings: undefined,
-        repos: [],
         onUpdate: vi.fn(),
       },
     });
 
     expect(screen.getByRole("button", { name: "Add mapping" })).toBeTruthy();
-    expect(screen.getByText("No watched repositories or registered projects are available.")).toBeTruthy();
+    expect(screen.getByText("No registered Middleman projects with repository identity are available.")).toBeTruthy();
   });
 
   it("shows the effective mapping and prefills a registered-project override", async () => {
@@ -73,20 +72,24 @@ describe("KataProjectMappingsSettings", () => {
           },
         },
       ],
-      repositories: [
+      targets: [
         {
-          provider: "github",
-          platform_host: "github.com",
-          owner: "kenn-io",
-          name: "middleman",
-          repo_path: "kenn-io/middleman",
-          capabilities: defaultProviderCapabilities,
+          project_id: "project-middleman",
+          display_name: "Middleman",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            repo_path: "kenn-io/middleman",
+            capabilities: defaultProviderCapabilities,
+          },
         },
       ],
     });
 
     render(KataProjectMappingsSettings, {
-      props: { mappings: [], repos: [], onUpdate: vi.fn() },
+      props: { mappings: [], onUpdate: vi.fn() },
     });
 
     await waitFor(() => {
@@ -97,10 +100,10 @@ describe("KataProjectMappingsSettings", () => {
 
     expect((screen.getByLabelText("Kata project project-kata daemon ID") as HTMLInputElement).value).toBe("work");
     expect((screen.getByLabelText("Kata project project-kata UID") as HTMLInputElement).value).toBe("project-kata");
-    expect(screen.getByRole("combobox", { name: /project-kata repository/ })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: /project-kata Middleman project/ }).textContent).toContain("Middleman");
   });
 
-  it("saves a Kata project mapping to an exact watched repository", async () => {
+  it("saves a Kata mapping to a selected known Middleman project", async () => {
     const savedMappings = [
       {
         daemon_id: "work",
@@ -111,35 +114,36 @@ describe("KataProjectMappingsSettings", () => {
       },
     ];
     mockUpdateSettings.mockResolvedValue({ kata_projects: savedMappings });
-    const onUpdate = vi.fn();
-
-    render(KataProjectMappingsSettings, {
-      props: {
-        mappings: [],
-        repos: [
-          {
+    mockGetKataProjectMappings.mockResolvedValue({
+      daemon_id: "work",
+      projects: [],
+      targets: [
+        {
+          project_id: "project-middleman",
+          display_name: "Middleman",
+          repo: {
             provider: "github",
             platform_host: "github.com",
             owner: "kenn-io",
             name: "middleman",
             repo_path: "kenn-io/middleman",
-            is_glob: false,
-            matched_repo_count: 1,
+            capabilities: defaultProviderCapabilities,
           },
-          {
-            provider: "github",
-            platform_host: "github.com",
-            owner: "kenn-io",
-            name: "*",
-            repo_path: "kenn-io/*",
-            is_glob: true,
-            matched_repo_count: 3,
-          },
-        ],
+        },
+      ],
+    });
+    const onUpdate = vi.fn();
+
+    render(KataProjectMappingsSettings, {
+      props: {
+        mappings: [],
         onUpdate,
       },
     });
 
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: "Add mapping" }) as HTMLButtonElement).disabled).toBe(false);
+    });
     await fireEvent.click(screen.getByRole("button", { name: "Add mapping" }));
     await fireEvent.input(screen.getByLabelText("Kata project mapping 1 daemon ID"), {
       target: { value: "work" },
@@ -148,9 +152,8 @@ describe("KataProjectMappingsSettings", () => {
       target: { value: "project-kata" },
     });
 
-    await fireEvent.click(screen.getByRole("combobox", { name: /repository/ }));
-    expect(screen.getByRole("option", { name: "github / github.com / kenn-io/middleman" })).toBeTruthy();
-    expect(screen.queryByRole("option", { name: "github / github.com / kenn-io/*" })).toBeNull();
+    await fireEvent.click(screen.getByRole("combobox", { name: /Middleman project/ }));
+    expect(screen.getByRole("option", { name: "Middleman · kenn-io/middleman" })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Save Kata mappings" }));
 

@@ -108,8 +108,9 @@ workspace button must not render
 (`internal/server/kata_workspace.go::resolveKataWorkspaceRepo`).
 
 Settings lists each selected-daemon Kata project with the status and source from
-the workspace resolver, and manual overrides may target watched, tracked, or
-registered repositories (`internal/server/kata_workspace.go::getKataProjectMappings`).
+the workspace resolver. Its selector lists known registered Middleman Projects,
+defaults to the inferred identity match, and persists the chosen project's repo
+identity (`internal/server/kata_workspace.go::getKataProjectMappings`).
 
 Persisted workspace `worktree_path` values should be absolute. Workspace setup
 runs `git worktree add` from the managed clone or configured base checkout, so

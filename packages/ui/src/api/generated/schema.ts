@@ -5341,6 +5341,11 @@ export interface components {
             daemons: components["schemas"]["KataDaemonResponse"][] | null;
             source?: string;
         };
+        KataMappingTargetResponse: {
+            display_name: string;
+            project_id: string;
+            repo: components["schemas"]["RepoRefResponse"];
+        };
         KataProjectMappingDiagnostic: {
             daemon_id: string;
             project_name: string;
@@ -5358,7 +5363,7 @@ export interface components {
             readonly $schema?: string;
             daemon_id: string;
             projects: components["schemas"]["KataProjectMappingDiagnostic"][];
-            repositories: components["schemas"]["RepoRefResponse"][];
+            targets: components["schemas"]["KataMappingTargetResponse"][];
         };
         KataProjectRepoMapping: {
             daemon_id?: string;

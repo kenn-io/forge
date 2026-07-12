@@ -4,10 +4,7 @@
   import TrashIcon from "@lucide/svelte/icons/trash-2";
   import { onMount } from "svelte";
   import { Button, Chip, SelectDropdown } from "@middleman/ui";
-  import type {
-    ConfigRepo,
-    KataProjectRepoMapping,
-  } from "@middleman/ui/api/types";
+  import type { KataProjectRepoMapping } from "@middleman/ui/api/types";
   import { updateSettings } from "../../api/settings.js";
   import { fetchKataDaemons, type KataDaemonInfo } from "../../api/kata/daemons.js";
   import {
@@ -19,7 +16,6 @@
 
   interface Props {
     mappings?: KataProjectRepoMapping[] | undefined;
-    repos: ConfigRepo[];
     onUpdate: (mappings: KataProjectRepoMapping[]) => void;
   }
 
@@ -33,10 +29,11 @@
   interface RepoOption {
     key: string;
     label: string;
-    repo: ConfigRepo;
+    displayName: string;
+    repo: KataProjectMappingsResponse["targets"][number]["repo"];
   }
 
-  let { mappings, repos, onUpdate }: Props = $props();
+  let { mappings, onUpdate }: Props = $props();
 
   const embedded = isEmbedded();
   let nextID = 0;
@@ -53,28 +50,13 @@
   let drafts = $state<MappingDraft[]>(draftsFromMappings(currentMappings));
 
   const repoOptions = $derived.by(() => {
-    const configured = repos
-      .filter((repo) => !repo.is_glob)
-      .map((repo) => ({
-        key: repoKey(repo.provider, repo.platform_host, repo.repo_path),
-        label: repoLabel(repo),
-        repo,
-      }));
-    const effectiveRepos = (diagnostics?.projects ?? []).flatMap((project) => project.repo ? [project.repo] : []);
-    const discovered = [...(diagnostics?.repositories ?? []), ...effectiveRepos].map((repo) => ({
-      key: repoKey(repo.provider, repo.platform_host, repo.repo_path),
-      label: `${repo.provider} / ${repo.platform_host} / ${repo.repo_path}`,
-      repo: {
-        provider: repo.provider,
-        platform_host: repo.platform_host,
-        owner: repo.owner,
-        name: repo.name,
-        repo_path: repo.repo_path,
-        is_glob: false,
-        matched_repo_count: 1,
-      } satisfies ConfigRepo,
+    const targets = (diagnostics?.targets ?? []).map((target) => ({
+      key: repoKey(target.repo.provider, target.repo.platform_host, target.repo.repo_path),
+      label: `${target.display_name} · ${target.repo.repo_path}`,
+      displayName: target.display_name,
+      repo: target.repo,
     }));
-    return [...new Map([...configured, ...discovered].map((option) => [option.key, option])).values()]
+    return [...new Map(targets.map((option) => [option.key, option])).values()]
       .sort((left, right) => left.label.localeCompare(right.label));
   });
   const repoOptionsByKey = $derived.by(() => new Map(repoOptions.map((option) => [option.key, option])));
@@ -120,10 +102,6 @@
 
   function repoKey(provider: string, platformHost: string, repoPath: string): string {
     return `${provider}\u0000${platformHost}\u0000${repoPath}`;
-  }
-
-  function repoLabel(repo: ConfigRepo): string {
-    return `${repo.provider} / ${repo.platform_host} / ${repo.repo_path}`;
   }
 
   function repoKeyFromMapping(mapping: KataProjectRepoMapping): string {
@@ -306,24 +284,30 @@
           <thead>
             <tr>
               <th scope="col">Kata project</th>
-              <th scope="col">Repository</th>
+              <th scope="col">Middleman project</th>
               <th scope="col">Resolution</th>
               <th scope="col" aria-label="Mapping actions"></th>
             </tr>
           </thead>
           <tbody>
             {#each diagnostics.projects as project (project.project_uid)}
+              {@const inferredTarget = project.repo
+                ? repoOptionsByKey.get(repoKey(project.repo.provider, project.repo.platform_host, project.repo.repo_path))
+                : undefined}
               <tr>
                 <td>
                   <strong>{project.project_name || project.project_uid}</strong>
                   <span class="mapping-meta">{project.project_uid}</span>
                 </td>
                 <td>
-                  {#if project.repo}
-                    <span>{project.repo.repo_path}</span>
-                    <span class="mapping-meta">{project.repo.provider} / {project.repo.platform_host}</span>
+                  {#if inferredTarget}
+                    <span>{inferredTarget.displayName}</span>
+                    <span class="mapping-meta">{inferredTarget.repo.repo_path}</span>
+                  {:else if project.repo}
+                    <span class="mapping-empty">No registered project</span>
+                    <span class="mapping-meta">Inferred repository: {project.repo.repo_path}</span>
                   {:else}
-                    <span class="mapping-empty">No repository</span>
+                    <span class="mapping-empty">No inferred project</span>
                   {/if}
                 </td>
                 <td>
@@ -373,7 +357,7 @@
     </div>
 
     {#if repoOptions.length === 0}
-      <p class="empty-mappings">No watched repositories or registered projects are available.</p>
+      <p class="empty-mappings">No registered Middleman projects with repository identity are available.</p>
     {:else if drafts.length === 0}
       <p class="empty-mappings">No manual Kata project mappings configured.</p>
     {:else}
@@ -389,7 +373,7 @@
             <tr>
               <th scope="col">Daemon</th>
               <th scope="col">Project UID</th>
-              <th scope="col">Repository</th>
+              <th scope="col">Middleman project</th>
               <th scope="col" aria-label="Mapping actions"></th>
             </tr>
           </thead>
@@ -414,7 +398,7 @@
                 </td>
                 <td>
                   <SelectDropdown
-                    title={`Kata project ${label} repository`}
+                    title={`Kata project ${label} Middleman project`}
                     value={draft.repoKey}
                     options={repoSelectOptions}
                     onchange={(value) => { draft.repoKey = value; }}

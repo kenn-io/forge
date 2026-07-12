@@ -163,9 +163,10 @@ mappings and allows adding, editing, and removing one mapping at a time:
 - Platform host.
 - Repository path.
 
-The repository selector is backed by watched/tracked repositories and registered
-Middleman Projects. Removing a watched repo keeps its mapping because a registered
-Project may still own the same provider identity; diagnostics report an invalid
+The selector lists registered Middleman Projects with provider identity and
+defaults to the project matching the inferred repository. Saving persists that
+project's provider identity. Removing a watched repo keeps its mapping because a
+registered Project may still own the same identity; diagnostics report an invalid
 override when no known repository owns it.
 
 Persist manual mappings in middleman config, not in Kata metadata, because they

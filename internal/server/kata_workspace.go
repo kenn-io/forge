@@ -75,9 +75,15 @@ type kataProjectMappingsInput struct {
 }
 
 type kataProjectMappingsResponse struct {
-	DaemonID     string                         `json:"daemon_id"`
-	Projects     []kataProjectMappingDiagnostic `json:"projects" nullable:"false"`
-	Repositories []repoRefResponse              `json:"repositories" nullable:"false"`
+	DaemonID string                         `json:"daemon_id"`
+	Projects []kataProjectMappingDiagnostic `json:"projects" nullable:"false"`
+	Targets  []kataMappingTargetResponse    `json:"targets" nullable:"false"`
+}
+
+type kataMappingTargetResponse struct {
+	ProjectID   string          `json:"project_id"`
+	DisplayName string          `json:"display_name"`
+	Repo        repoRefResponse `json:"repo"`
 }
 
 type kataProjectMappingsOutput struct {
@@ -729,61 +735,32 @@ func (s *Server) getKataProjectMappings(
 	sort.Slice(out.Body.Projects, func(i, j int) bool {
 		return strings.ToLower(out.Body.Projects[i].ProjectName) < strings.ToLower(out.Body.Projects[j].ProjectName)
 	})
-	out.Body.Repositories, err = s.kataMappingRepositories(ctx)
+	out.Body.Targets, err = s.kataMappingTargets(ctx)
 	if err != nil {
-		return nil, problemInternal("list Kata mapping repositories: " + err.Error())
+		return nil, problemInternal("list Kata mapping targets: " + err.Error())
 	}
 	return out, nil
 }
 
-func (s *Server) kataMappingRepositories(ctx context.Context) ([]repoRefResponse, error) {
-	seen := make(map[string]repoRefResponse)
-	var configured []config.Repo
-	if s.cfg != nil {
-		s.cfgMu.Lock()
-		configured = slices.Clone(s.cfg.Repos)
-		s.cfgMu.Unlock()
-		for _, repo := range configured {
-			if repo.HasNameGlob() {
-				continue
-			}
-			target := kataResolvedRepoFromConfig(repo)
-			seen[kataResolvedRepoKey(target)] = s.repoRefFromParts(
-				target.Provider, target.PlatformHost, target.Owner, target.Name,
-			)
-		}
-	}
-	tracked, err := s.db.ListRepos(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, repo := range tracked {
-		if !kataTrackedRepoMatchesAnyConfig(repo, configured) {
-			continue
-		}
-		target := kataResolvedRepoFromDB(repo)
-		seen[kataResolvedRepoKey(target)] = s.repoRefFromParts(
-			target.Provider, target.PlatformHost, target.Owner, target.Name,
-		)
-	}
+func (s *Server) kataMappingTargets(ctx context.Context) ([]kataMappingTargetResponse, error) {
 	projects, err := s.db.ListProjects(ctx)
 	if err != nil {
 		return nil, err
 	}
+	result := make([]kataMappingTargetResponse, 0, len(projects))
 	for _, project := range projects {
 		if project.IsStale || project.PlatformIdentity == nil {
 			continue
 		}
 		target := kataResolvedRepoFromProject(project)
-		seen[kataResolvedRepoKey(target)] = s.repoRefFromParts(
-			target.Provider, target.PlatformHost, target.Owner, target.Name,
-		)
+		result = append(result, kataMappingTargetResponse{
+			ProjectID: project.ID, DisplayName: project.DisplayName,
+			Repo: s.repoRefFromParts(target.Provider, target.PlatformHost, target.Owner, target.Name),
+		})
 	}
-	result := make([]repoRefResponse, 0, len(seen))
-	for _, repo := range seen {
-		result = append(result, repo)
-	}
-	sort.Slice(result, func(i, j int) bool { return result[i].RepoPath < result[j].RepoPath })
+	sort.Slice(result, func(i, j int) bool {
+		return strings.ToLower(result[i].DisplayName) < strings.ToLower(result[j].DisplayName)
+	})
 	return result, nil
 }
 

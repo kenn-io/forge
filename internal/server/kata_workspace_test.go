@@ -394,8 +394,9 @@ repo_path = "acme/middleman"
 	require.NotNil(resp.Projects[0].Repo)
 	assert.Equal("acme/middleman", resp.Projects[0].Repo.RepoPath)
 	assert.Equal("unmapped", resp.Projects[1].Status)
-	require.Len(resp.Repositories, 1)
-	assert.Equal("acme/middleman", resp.Repositories[0].RepoPath)
+	require.Len(resp.Targets, 1)
+	assert.Equal("Middleman", resp.Targets[0].DisplayName)
+	assert.Equal("acme/middleman", resp.Targets[0].Repo.RepoPath)
 }
 
 func TestKataWorkspaceTargetTrackedRepoNameFallbackRequiresOneMatch(t *testing.T) {

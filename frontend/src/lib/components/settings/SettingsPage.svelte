@@ -144,7 +144,6 @@
           {:else if meta.id === "settings-kata-projects"}
             <KataProjectMappingsSettings
               mappings={loaded.kata_projects}
-              repos={loaded.repos}
               onUpdate={(kata_projects) => {
                 settings = { ...settings!, kata_projects };
               }}

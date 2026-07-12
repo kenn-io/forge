@@ -333,9 +333,13 @@ Kata frontend adaptation:
   user chooses a configured daemon (`frontend/src/lib/features/kata/KataDaemonSwitcher.svelte::displayId`).
 - Daemon switching is disabled during initial bootstrap, writes, view work
   (including live-event refresh callbacks), and switches. The entire Kata
-  workspace is inert while a switch is provisional, and failed rollback clears
-  any partially restored state and stops its stream
+  workspace is inert while a switch is provisional. Cursor catch-up is part of
+  target and rollback acceptance; dual failure clears partial state and stops
+  the stream
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::switchKataDaemon`).
+- Cross-mode task links carry their daemon target in route state until the
+  workspace accepts that switch; linked issue selection must not run against
+  the previously accepted daemon (`frontend/src/App.svelte::openKataIssue`).
 - Browser route changes remain queued while a daemon switch or rollback is
   provisional, then apply to the accepted workspace after the transaction
   settles. A successful bootstrap does not publish its provisional selection

@@ -375,7 +375,7 @@ type requestChangesPRInput struct {
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
 	Body         struct {
-		Body            string `json:"body"`
+		Body            string `json:"body" minLength:"1" doc:"Explanation of the changes required; whitespace-only values are rejected."`
 		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
 	}
 }
@@ -3003,6 +3003,13 @@ func (s *Server) requestChangesPR(ctx context.Context, input *requestChangesPRIn
 		return nil, problemUnsupportedCapability(*repo, "review_action_request_changes")
 	}
 	expectedHeadSHA := approvalReviewHeadSHA(mr, input.Body.ExpectedHeadSHA)
+	if expectedHeadSHA == "" {
+		return nil, problemConflict(
+			CodeConflict,
+			"pull request head commit has not been synced; retry once sync completes",
+			map[string]any{"reason": "head_unknown"},
+		)
+	}
 	err = mutator.RequestChanges(ctx, platformRepoRefFromDB(*repo), input.Number, body, expectedHeadSHA)
 	if err != nil {
 		if errors.Is(err, platform.ErrStaleState) {

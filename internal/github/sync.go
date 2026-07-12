@@ -1640,8 +1640,12 @@ func (p *gitHubClientProvider) RequestChanges(
 	if review == nil {
 		return fmt.Errorf("provider returned no review")
 	}
-	if err := p.requireReviewHead(ctx, ref, number, expectedHeadSHA); err == nil {
+	postCheckErr := p.requireReviewHead(ctx, ref, number, expectedHeadSHA)
+	if postCheckErr == nil {
 		return nil
+	}
+	if !errors.Is(postCheckErr, platform.ErrStaleState) {
+		return postCheckErr
 	}
 	reviewID := review.GetID()
 	_, dismissErr := p.client.DismissReview(
@@ -1676,7 +1680,10 @@ func (p *gitHubClientProvider) requireReviewHead(
 	expectedHeadSHA string,
 ) error {
 	if expectedHeadSHA == "" {
-		return nil
+		return &platform.Error{
+			Code: platform.ErrCodeInvalidArgument, Provider: platform.KindGitHub,
+			PlatformHost: p.host, Capability: "review_action_request_changes", Field: "expected_head_sha",
+		}
 	}
 	pr, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
 	if err != nil {

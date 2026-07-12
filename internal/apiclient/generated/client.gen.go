@@ -2753,7 +2753,9 @@ type RepoWorktreeBaseRequest struct {
 // RequestChangesPRHostInputBody defines model for RequestChangesPRHostInputBody.
 type RequestChangesPRHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema          *string `json:"$schema,omitempty"`
+	Schema *string `json:"$schema,omitempty"`
+
+	// Body Explanation of the changes required; whitespace-only values are rejected.
 	Body            string  `json:"body"`
 	ExpectedHeadSha *string `json:"expected_head_sha,omitempty"`
 }
@@ -2761,7 +2763,9 @@ type RequestChangesPRHostInputBody struct {
 // RequestChangesPRInputBody defines model for RequestChangesPRInputBody.
 type RequestChangesPRInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema          *string `json:"$schema,omitempty"`
+	Schema *string `json:"$schema,omitempty"`
+
+	// Body Explanation of the changes required; whitespace-only values are rejected.
 	Body            string  `json:"body"`
 	ExpectedHeadSha *string `json:"expected_head_sha,omitempty"`
 }

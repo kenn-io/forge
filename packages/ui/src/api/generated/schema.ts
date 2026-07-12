@@ -6777,6 +6777,7 @@ export interface components {
              * @example /api/v1/schemas/RequestChangesPRHostInputBody.json
              */
             readonly $schema?: string;
+            /** @description Explanation of the changes required; whitespace-only values are rejected. */
             body: string;
             expected_head_sha?: string;
         };
@@ -6787,6 +6788,7 @@ export interface components {
              * @example /api/v1/schemas/RequestChangesPRInputBody.json
              */
             readonly $schema?: string;
+            /** @description Explanation of the changes required; whitespace-only values are rejected. */
             body: string;
             expected_head_sha?: string;
         };

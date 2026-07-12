@@ -132,7 +132,7 @@ type requestChangesPRHostInput struct {
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
 	Body         struct {
-		Body            string `json:"body"`
+		Body            string `json:"body" minLength:"1" doc:"Explanation of the changes required; whitespace-only values are rejected."`
 		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
 	}
 }

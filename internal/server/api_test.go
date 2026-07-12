@@ -14153,6 +14153,63 @@ func TestAPIGitHubRequestChangesRevokesReviewWhenHeadMovesDuringSubmit(t *testin
 	assert.EqualValues(503, dismissedReviewID)
 }
 
+func TestAPIGitHubRequestChangesPropagatesPostSubmitHeadLookupFailure(t *testing.T) {
+	assert := assert.New(t)
+	var headReads int
+	var dismissCalls int
+	mock := &mockGH{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			headReads++
+			if headReads > 1 {
+				return nil, errors.New("head lookup unavailable")
+			}
+			head := "provider-head"
+			return &gh.PullRequest{Head: &gh.PullRequestBranch{SHA: &head}}, nil
+		},
+		createReviewWithCommentsFn: func(
+			context.Context, string, string, int, string, string, string, []*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
+			id := int64(504)
+			return &gh.PullRequestReview{ID: &id}, nil
+		},
+		dismissReviewFn: func(
+			context.Context, string, string, int, int64, string,
+		) (*gh.PullRequestReview, error) {
+			dismissCalls++
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 42)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/42/request-changes", map[string]string{
+		"body": "Please cover the empty state.", "expected_head_sha": "provider-head",
+	})
+	assert.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
+	assert.Zero(dismissCalls)
+}
+
+func TestAPIGitHubRequestChangesRejectsMissingHeadBeforeProvider(t *testing.T) {
+	assert := assert.New(t)
+	var createCalls int
+	mock := &mockGH{
+		createReviewWithCommentsFn: func(
+			context.Context, string, string, int, string, string, string, []*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
+			createCalls++
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 42)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/42/request-changes", map[string]string{
+		"body": "Please cover the empty state.",
+	})
+	assert.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	assert.Zero(createCalls)
+}
+
 func TestAPIGitHubPublishReviewDraftRejectsSelfApprovalBeforeProvider(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

@@ -5757,6 +5757,8 @@ components:
           readOnly: true
           type: string
         body:
+          description: Explanation of the changes required; whitespace-only values are rejected.
+          minLength: 1
           type: string
         expected_head_sha:
           type: string
@@ -5774,6 +5776,8 @@ components:
           readOnly: true
           type: string
         body:
+          description: Explanation of the changes required; whitespace-only values are rejected.
+          minLength: 1
           type: string
         expected_head_sha:
           type: string

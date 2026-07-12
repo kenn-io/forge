@@ -2,6 +2,7 @@ package forgejo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -26,8 +27,12 @@ func (c *Client) RequestChanges(
 	if err != nil {
 		return err
 	}
-	if err := c.requireReviewHead(ctx, ref, number, expectedHeadSHA); err == nil {
+	postCheckErr := c.requireReviewHead(ctx, ref, number, expectedHeadSHA)
+	if postCheckErr == nil {
 		return nil
+	}
+	if !errors.Is(postCheckErr, platform.ErrStaleState) {
+		return postCheckErr
 	}
 	reviewID, parseErr := strconv.ParseInt(published.ProviderReviewID, 10, 64)
 	if parseErr != nil {
@@ -66,7 +71,10 @@ func (c *Client) requireReviewHead(
 	expectedHeadSHA string,
 ) error {
 	if expectedHeadSHA == "" {
-		return nil
+		return &platform.Error{
+			Code: platform.ErrCodeInvalidArgument, Provider: platform.KindForgejo,
+			PlatformHost: c.host, Capability: "review_action_request_changes", Field: "expected_head_sha",
+		}
 	}
 	mr, err := c.GetMergeRequest(ctx, ref, number)
 	if err != nil {

@@ -173,6 +173,9 @@ provider-equivalent behavior from the flags alone:
 - Reviews: GitLab has no `request_changes` state. `SupportedReviewActions` is
   comment/approve only, and publishing a request-changes review returns the
   typed `unsupportedCapability` envelope (`review_action_request_changes`).
+  On supporting providers, request-changes requires a known reviewed head;
+  only a proven post-submit head mismatch revokes the blocking review, while
+  head-read failures propagate without revocation (`internal/github/sync.go::RequestChanges`).
 - Approvals: the approvals API carries no body and returns approval state,
   not a review object. A non-empty approve body is posted as a regular MR
   note first, and the returned "review/approved" event is synthesized with an

@@ -638,7 +638,7 @@ describe("WorkspaceListSidebar", () => {
     // Identical host and repo path, different providers: the rows must
     // not collapse into a single group whose label and icon come from
     // only the first item. Each provider keeps its own group + icon.
-    expect(container.querySelectorAll(".group-header")).toHaveLength(2);
+    expect(container.querySelectorAll(".sidebar-group-header")).toHaveLength(2);
     expect(screen.getByRole("img", { name: "Gitea" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "Forgejo" })).toBeTruthy();
   });
@@ -764,7 +764,7 @@ describe("WorkspaceListSidebar", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Created" }));
 
     expect(rowTitles(container)).toEqual(["Newest created", "Most recently active", "Oldest without activity"]);
-    expect(container.querySelectorAll(".group-header")).toHaveLength(0);
+    expect(container.querySelectorAll(".sidebar-group-header")).toHaveLength(0);
     // Flat rows carry their own repo context instead of a header.
     expect(container.querySelectorAll(".repo-context")).toHaveLength(3);
   });
@@ -899,7 +899,7 @@ describe("WorkspaceListSidebar", () => {
     await fireEvent.click(itemActivitySort);
 
     expect(rowTitles(container)).toEqual(["Issue recently changed", "PR recently changed", "Newest created fallback"]);
-    expect(container.querySelectorAll(".group-header")).toHaveLength(0);
+    expect(container.querySelectorAll(".sidebar-group-header")).toHaveLength(0);
   });
 
   it("persists the selected sort across mounts", async () => {
@@ -922,7 +922,7 @@ describe("WorkspaceListSidebar", () => {
     await screen.findByText("Newest created");
 
     expect(rowTitles(container)).toEqual(["Most recently active", "Newest created", "Oldest without activity"]);
-    expect(container.querySelectorAll(".group-header")).toHaveLength(0);
+    expect(container.querySelectorAll(".sidebar-group-header")).toHaveLength(0);
   });
 
   it("folds sort choices into the workspace view menu", async () => {
@@ -1014,11 +1014,9 @@ describe("WorkspaceListSidebar", () => {
     await fireEvent.click(screen.getByRole("button", { name: "View" }));
     await fireEvent.click(screen.getByRole("button", { name: "Show org names" }));
 
-    expect(Array.from(container.querySelectorAll(".group-label")).map((el) => el.textContent?.trim())).toEqual([
-      "github.com/acme/widgets",
-      "ghe.example.com/acme/widgets",
-      "platform/widgets",
-    ]);
+    expect(
+      Array.from(container.querySelectorAll(".sidebar-group-header__name")).map((el) => el.textContent?.trim()),
+    ).toEqual(["github.com/acme/widgets", "ghe.example.com/acme/widgets", "platform/widgets"]);
 
     await fireEvent.click(screen.getByRole("button", { name: "Created" }));
 
@@ -1060,14 +1058,12 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("GitHub acme widgets");
 
-    expect(Array.from(container.querySelectorAll(".group-label")).map((el) => el.textContent?.trim())).toEqual([
-      "github/github.com/acme/widgets",
-      "gitea/github.com/acme/widgets",
-    ]);
-    expect(Array.from(container.querySelectorAll(".group-count")).map((el) => el.textContent?.trim())).toEqual([
-      "1",
-      "1",
-    ]);
+    expect(
+      Array.from(container.querySelectorAll(".sidebar-group-header__name")).map((el) => el.textContent?.trim()),
+    ).toEqual(["github/github.com/acme/widgets", "gitea/github.com/acme/widgets"]);
+    expect(
+      Array.from(container.querySelectorAll(".sidebar-group-header__count")).map((el) => el.textContent?.trim()),
+    ).toEqual(["1", "1"]);
   });
 
   it("can hide PR diff stats while keeping branch metadata visible", async () => {

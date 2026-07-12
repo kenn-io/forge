@@ -36,6 +36,15 @@
   --kanban-reviewing: var(--accent-amber);
   --kanban-waiting: var(--accent-purple);
   --kanban-awaiting-merge: var(--accent-green);
+  --sidebar-list-bg: var(--bg-surface);
+  --sidebar-list-border: var(--border-default);
+  --sidebar-list-border-muted: var(--border-muted);
+  --sidebar-group-header-bg: var(--bg-inset);
+  --sidebar-group-header-padding: 6px 12px 4px;
+  --sidebar-row-bg: var(--bg-surface);
+  --sidebar-row-hover-bg: var(--bg-surface-hover);
+  --sidebar-row-padding: 10px 12px;
+  --bg-row-selected: var(--bg-inset);
 
   /* Review status colors */
   --review-queued: var(--accent-amber);
@@ -88,6 +97,7 @@
 :root.dark {
   --budget-bar-bg: #2a2a3e; /* kit-ui-check-ignore: budget-bar palette */
   --kanban-new: #a8a29e; /* kit-ui-check-ignore: kanban palette */
+  --bg-row-selected: color-mix(in srgb, var(--bg-surface-hover) 50%, var(--bg-surface));
 
   /* Diff view — dark theme (GitHub Dark palette) */
   --diff-bg: #0d1117; /* kit-ui-check-ignore: GitHub diff palette */

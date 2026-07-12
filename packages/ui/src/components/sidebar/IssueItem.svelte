@@ -103,21 +103,30 @@
     display: block;
     width: 100%;
     text-align: left;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border-muted);
-    background: var(--bg-surface);
+    padding: var(--sidebar-row-padding, 10px 12px);
+    border-bottom: 1px solid var(--sidebar-list-border-muted, var(--border-muted));
+    background: var(--sidebar-row-bg, var(--bg-surface));
     cursor: pointer;
     transition: background 0.1s;
     border-left: 3px solid transparent;
   }
 
   .issue-item:hover {
-    background: var(--bg-surface-hover);
+    background: var(--sidebar-row-hover-bg, var(--bg-surface-hover));
   }
 
   .issue-item.selected {
-    background: var(--bg-inset);
+    background: var(--bg-row-selected, var(--bg-inset));
     border-left-color: var(--accent-blue);
+  }
+
+  .issue-item.selected:hover {
+    background: var(--sidebar-row-hover-bg, var(--bg-surface-hover));
+  }
+
+  .issue-item:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--accent-blue);
   }
 
   .title {

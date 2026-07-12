@@ -127,9 +127,9 @@ function listOverrides(): MockRouteOverride[] {
 
 function header(label: string): HTMLElement | null {
   return (
-    (Array.from(document.querySelectorAll(".repo-header")).find((h) => (h.textContent ?? "").includes(label)) as
-      | HTMLElement
-      | undefined) ?? null
+    (Array.from(document.querySelectorAll(".sidebar-group-header")).find((h) =>
+      (h.textContent ?? "").includes(label),
+    ) as HTMLElement | undefined) ?? null
   );
 }
 
@@ -138,7 +138,7 @@ function expanded(label: string): string | null {
 }
 
 function groupCount(label: string): string {
-  return header(label)?.querySelector(".repo-header__count")?.textContent?.trim() ?? "";
+  return header(label)?.querySelector(".sidebar-group-header__count")?.textContent?.trim() ?? "";
 }
 
 function count(selector: string): number {

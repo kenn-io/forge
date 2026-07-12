@@ -2,7 +2,6 @@
   import { copyToClipboard, SearchInput } from "@kenn-io/kit-ui";
   import { onMount, tick } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
-  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
@@ -12,6 +11,7 @@
   import {
     DiffStats,
     FilterDropdown,
+    GroupedSidebarSection,
     SidebarToggle,
   } from "@middleman/ui";
   import {
@@ -1051,31 +1051,25 @@
     {#each grouped as { key: repoKey, items } (repoKey)}
       {@const collapsed =
         !normalizedSearchQuery && collapsedGroups.includes(repoKey)}
-      <button
-        class={["group-header", { collapsed }]}
+      <GroupedSidebarSection
+        label={repoLabel(items[0]!)}
+        count={items.length}
+        {collapsed}
         onclick={() => toggleGroup(repoKey)}
       >
-        <ChevronDownIcon
-          class="group-chevron"
-          size="12"
-          strokeWidth="2.25"
-          aria-hidden="true"
-        />
-        {#if showProviderIcons && workspaceProvider(items[0]!)}
-          <ProviderIcon
-            provider={workspaceProvider(items[0]!)!}
-            size={14}
-            class="group-provider-icon"
-          />
-        {/if}
-        <span class="group-label">{repoLabel(items[0]!)}</span>
-        <span class="group-count">{items.length}</span>
-      </button>
-      {#if !collapsed}
+        {#snippet leading()}
+          {#if showProviderIcons && workspaceProvider(items[0]!)}
+            <ProviderIcon
+              provider={workspaceProvider(items[0]!)!}
+              size={14}
+              class="group-provider-icon"
+            />
+          {/if}
+        {/snippet}
         {#each items as ws (workspaceRowKey(ws))}
           {@render workspaceRow(ws, false)}
         {/each}
-      {/if}
+      </GroupedSidebarSection>
     {/each}
     {:else}
       {#each sortedFlat as ws (workspaceRowKey(ws))}
@@ -1420,7 +1414,7 @@
   .workspace-list-sidebar {
     width: 100%;
     height: 100%;
-    background: var(--bg-inset);
+    background: var(--sidebar-list-bg, var(--bg-surface));
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1438,10 +1432,11 @@
   .sidebar-header {
     display: flex;
     align-items: center;
-    gap: 6px;
-    height: 28px;
-    padding: 0 4px 0 12px;
+    gap: var(--space-3);
+    min-height: 40px;
+    padding: 6px 10px;
     border-bottom: 1px solid var(--border-muted);
+    background: var(--bg-surface);
     flex-shrink: 0;
   }
 
@@ -1461,7 +1456,9 @@
   }
 
   .workspace-filter {
-    margin: 6px 8px 4px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-default);
+    background: var(--bg-surface);
     flex-shrink: 0;
   }
 
@@ -1605,21 +1602,6 @@
   .sidebar-list {
     flex: 1;
     overflow-y: auto;
-    padding: 2px 0 8px;
-  }
-
-  .sidebar-list::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  .sidebar-list::-webkit-scrollbar-thumb {
-    background: var(--border-muted);
-    border-radius: 4px;
-    border: 2px solid var(--bg-inset);
-  }
-
-  .sidebar-list::-webkit-scrollbar-thumb:hover {
-    background: var(--text-muted);
   }
 
   .filter-empty {
@@ -1629,61 +1611,8 @@
     line-height: 1.4;
   }
 
-  .group-header {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    width: 100%;
-    padding: 4px 10px 4px 8px;
-    margin-top: 6px;
-    border: 0;
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    color: var(--text-muted);
-    text-align: left;
-    cursor: pointer;
-    letter-spacing: 0;
-    transition: color 80ms ease;
-  }
-
-  .group-header:first-of-type {
-    margin-top: 2px;
-  }
-
-  .group-header:hover {
-    color: var(--text-secondary);
-  }
-
-  :global(.group-chevron) {
-    color: var(--text-muted);
-    flex-shrink: 0;
-    transition: transform 100ms ease;
-  }
-
   :global(.group-provider-icon) {
     color: var(--text-secondary);
-  }
-
-  .group-header.collapsed :global(.group-chevron) {
-    transform: rotate(-90deg);
-  }
-
-  .group-label {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--text-secondary);
-  }
-
-  .group-count {
-    flex-shrink: 0;
-    font-size: var(--font-size-2xs);
-    color: var(--text-muted);
-    opacity: 0.65;
-    padding: 0 1px;
   }
 
   .ws-row {
@@ -1695,16 +1624,18 @@
      * right edge for every row. */
     display: flex;
     align-items: flex-start;
-    gap: 8px;
-    padding: 4px 8px 5px 14px;
-    border-left: 2px solid transparent;
+    gap: var(--space-4);
+    padding: var(--sidebar-row-padding, 10px 12px);
+    border-bottom: 1px solid var(--sidebar-list-border-muted, var(--border-muted));
+    border-left: 3px solid transparent;
+    background: var(--sidebar-row-bg, var(--bg-surface));
     cursor: pointer;
     position: relative;
     outline: none;
   }
 
   .ws-row:hover {
-    background: var(--bg-surface-hover);
+    background: var(--sidebar-row-hover-bg, var(--bg-surface-hover));
   }
 
   .ws-row:focus-visible {
@@ -1713,12 +1644,12 @@
   }
 
   .ws-row.selected {
-    background: var(--bg-surface);
+    background: var(--bg-row-selected, var(--bg-surface));
     border-left-color: var(--accent-blue);
   }
 
   .ws-row.selected:hover {
-    background: color-mix(in srgb, var(--accent-blue) 8%, var(--bg-surface));
+    background: var(--sidebar-row-hover-bg, var(--bg-surface-hover));
   }
 
   .ws-row-text {

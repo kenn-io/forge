@@ -201,7 +201,7 @@ function typeaheadValue(): string {
 }
 
 function repoHeaderNames(): string[] {
-  return Array.from(document.querySelectorAll(".repo-header__name")).map((el) => el.textContent?.trim() ?? "");
+  return Array.from(document.querySelectorAll(".sidebar-group-header__name")).map((el) => el.textContent?.trim() ?? "");
 }
 
 function clickPullItem(title: string): Promise<void> {

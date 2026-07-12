@@ -288,7 +288,7 @@ describe("grouping toggle", () => {
 
   it("PR list defaults to grouped with repo headers and no badges", async () => {
     await mountPulls();
-    await vi.waitFor(() => expect(document.querySelector(".repo-header")).not.toBeNull(), WAIT);
+    await vi.waitFor(() => expect(document.querySelector(".sidebar-group-header")).not.toBeNull(), WAIT);
     expect(count(".repo-chip")).toBe(0);
   });
 
@@ -296,7 +296,7 @@ describe("grouping toggle", () => {
     await mountPulls();
     await selectPullGrouping("All");
 
-    await vi.waitFor(() => expect(count(".repo-header")).toBe(0), WAIT);
+    await vi.waitFor(() => expect(count(".sidebar-group-header")).toBe(0), WAIT);
     await vi.waitFor(() => expect(count(".repo-chip")).toBe(count(".pull-item")), WAIT);
     expect(count(".pull-item")).toBe(pulls.length);
   });
@@ -304,7 +304,7 @@ describe("grouping toggle", () => {
   it("toggle persists across a reload", async () => {
     await mountPulls();
     await selectPullGrouping("All");
-    await vi.waitFor(() => expect(count(".repo-header")).toBe(0), WAIT);
+    await vi.waitFor(() => expect(count(".sidebar-group-header")).toBe(0), WAIT);
 
     // Assert the choice is written to localStorage, not just held in module
     // state: this is what survives a real reload, and proves a regression that
@@ -315,26 +315,26 @@ describe("grouping toggle", () => {
     mounted?.unmount();
     mounted = await mountBrowserApp("/pulls", { overrides: overrides() });
     await vi.waitFor(() => expect(document.querySelector(".pull-item")).not.toBeNull(), WAIT);
-    expect(count(".repo-header")).toBe(0);
+    expect(count(".sidebar-group-header")).toBe(0);
     expect(document.querySelector(".repo-chip")).not.toBeNull();
   });
 
   it("toggle syncs from PRs to the issue list", async () => {
     await mountPulls();
     await selectPullGrouping("All");
-    await vi.waitFor(() => expect(count(".repo-header")).toBe(0), WAIT);
+    await vi.waitFor(() => expect(count(".sidebar-group-header")).toBe(0), WAIT);
 
     mounted?.unmount();
     mounted = await mountBrowserApp("/issues", { overrides: overrides() });
     await vi.waitFor(() => expect(document.querySelector(".issue-item")).not.toBeNull(), WAIT);
-    expect(count(".repo-header")).toBe(0);
+    expect(count(".sidebar-group-header")).toBe(0);
     expect(document.querySelector(".repo-chip")).not.toBeNull();
   });
 
   it("toggle syncs into the threaded activity view", async () => {
     await mountPulls();
     await selectPullGrouping("All");
-    await vi.waitFor(() => expect(count(".repo-header")).toBe(0), WAIT);
+    await vi.waitFor(() => expect(count(".sidebar-group-header")).toBe(0), WAIT);
 
     mounted?.unmount();
     mounted = await mountBrowserApp("/", { overrides: overrides() });

@@ -211,13 +211,14 @@ func (s *Server) resolveKataWorkspaceRepo(
 	ctx context.Context,
 	metadata db.WorkspaceKataMetadata,
 ) (kataResolvedWorkspaceRepo, bool, error) {
-	if s.cfg == nil {
-		return kataResolvedWorkspaceRepo{}, false, nil
+	var repos []config.Repo
+	var mappings []config.KataProjectRepoMapping
+	if s.cfg != nil {
+		s.cfgMu.Lock()
+		repos = slices.Clone(s.cfg.Repos)
+		mappings = slices.Clone(s.cfg.KataProjects)
+		s.cfgMu.Unlock()
 	}
-	s.cfgMu.Lock()
-	repos := slices.Clone(s.cfg.Repos)
-	mappings := slices.Clone(s.cfg.KataProjects)
-	s.cfgMu.Unlock()
 
 	if repo, ok := kataManualWorkspaceRepo(repos, mappings, metadata, true); ok {
 		return kataResolvedRepoFromConfig(repo), true, nil
@@ -232,6 +233,17 @@ func (s *Server) resolveKataWorkspaceRepo(
 	if matches > 1 {
 		return kataResolvedWorkspaceRepo{}, false, nil
 	}
+	projects, err := s.db.ListProjects(ctx)
+	if err != nil {
+		return kataResolvedWorkspaceRepo{}, false, fmt.Errorf("list registered projects for Kata workspace: %w", err)
+	}
+	if target, matches := kataAutomaticWorkspaceRepoByRegisteredProjects(
+		projects, metadata.ProjectUID, metadata.ProjectName,
+	); matches == 1 {
+		return target, true, nil
+	} else if matches > 1 {
+		return kataResolvedWorkspaceRepo{}, false, nil
+	}
 	tracked, err := s.db.ListRepos(ctx)
 	if err != nil {
 		return kataResolvedWorkspaceRepo{}, false, fmt.Errorf("list tracked repos for Kata workspace: %w", err)
@@ -240,6 +252,68 @@ func (s *Server) resolveKataWorkspaceRepo(
 		return target, true, nil
 	}
 	return kataResolvedWorkspaceRepo{}, false, nil
+}
+
+func kataAutomaticWorkspaceRepoByRegisteredProjects(
+	projects []db.Project,
+	projectUID string,
+	projectName string,
+) (kataResolvedWorkspaceRepo, int) {
+	if target, matches := kataRegisteredProjectRepoMatches(projects, func(project db.Project) bool {
+		metadata, ok := readKataProjectTOML(project.LocalPath)
+		return ok && metadata.matchesProjectUID(projectUID)
+	}); matches != 0 {
+		return target, matches
+	}
+
+	name := strings.TrimSpace(projectName)
+	if name == "" {
+		return kataResolvedWorkspaceRepo{}, 0
+	}
+	if target, matches := kataRegisteredProjectRepoMatches(projects, func(project db.Project) bool {
+		metadata, ok := readKataProjectTOML(project.LocalPath)
+		return ok && !metadata.hasIdentifier() && strings.EqualFold(metadata.Name, name)
+	}); matches != 0 {
+		return target, matches
+	}
+
+	return kataRegisteredProjectRepoMatches(projects, func(project db.Project) bool {
+		if metadata, ok := readKataProjectTOML(project.LocalPath); ok && metadata.hasAnyProjectMetadata() {
+			return false
+		}
+		identity := project.PlatformIdentity
+		return strings.EqualFold(project.DisplayName, name) ||
+			strings.EqualFold(identity.Name, name) ||
+			strings.EqualFold(identity.Owner+"/"+identity.Name, name)
+	})
+}
+
+func kataRegisteredProjectRepoMatches(
+	projects []db.Project,
+	matches func(db.Project) bool,
+) (kataResolvedWorkspaceRepo, int) {
+	matched := make(map[string]kataResolvedWorkspaceRepo)
+	for _, project := range projects {
+		if project.IsStale || project.PlatformIdentity == nil || !matches(project) {
+			continue
+		}
+		target := kataResolvedRepoFromProject(project)
+		matched[kataResolvedRepoKey(target)] = target
+	}
+	if len(matched) != 1 {
+		return kataResolvedWorkspaceRepo{}, len(matched)
+	}
+	for _, target := range matched {
+		return target, 1
+	}
+	return kataResolvedWorkspaceRepo{}, 0
+}
+
+func kataResolvedRepoKey(repo kataResolvedWorkspaceRepo) string {
+	return strings.ToLower(repo.Provider) + "\x00" +
+		strings.ToLower(repo.PlatformHost) + "\x00" +
+		strings.ToLower(repo.Owner) + "\x00" +
+		strings.ToLower(repo.Name)
 }
 
 func kataManualWorkspaceRepo(
@@ -492,6 +566,16 @@ func kataResolvedRepoFromDB(repo db.Repo) kataResolvedWorkspaceRepo {
 		PlatformHost: repo.PlatformHost,
 		Owner:        repo.Owner,
 		Name:         repo.Name,
+	}
+}
+
+func kataResolvedRepoFromProject(project db.Project) kataResolvedWorkspaceRepo {
+	identity := project.PlatformIdentity
+	return kataResolvedWorkspaceRepo{
+		Provider:     identity.Platform,
+		PlatformHost: identity.Host,
+		Owner:        identity.Owner,
+		Name:         identity.Name,
 	}
 }
 

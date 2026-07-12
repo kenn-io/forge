@@ -1,6 +1,7 @@
 package server
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -304,6 +305,45 @@ name = "middleman"
 		ProjectUID: "project-middleman",
 		IssueUID:   "issue-kata-1",
 	}), resp.ItemKey)
+}
+
+func TestKataWorkspaceTargetAutomaticMappingFromRegisteredProject(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+`, &mockGH{})
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kata"))
+	require.NoError(err)
+	projectPath := t.TempDir()
+	_, err = database.CreateProject(t.Context(), db.CreateProjectInput{
+		DisplayName: "Kata",
+		LocalPath:   projectPath,
+		RepoID:      sql.NullInt64{Int64: repoID, Valid: true},
+	})
+	require.NoError(err)
+
+	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
+		"daemon_id":    "desktop",
+		"project_uid":  "project-kata",
+		"project_name": "Kata",
+		"issue_uid":    "issue-kata-1",
+	})
+
+	assert.True(resp.Available)
+	require.NotNil(resp.Repo)
+	assert.Equal("acme", resp.Repo.Owner)
+	assert.Equal("kata", resp.Repo.Name)
+	basePath, ok, err := srv.worktreeBasePathForRepo(
+		t.Context(), "github", "github.com", "acme", "kata",
+	)
+	require.NoError(err)
+	assert.True(ok)
+	assert.Equal(projectPath, basePath)
 }
 
 func TestKataWorkspaceTargetTrackedRepoNameFallbackRequiresOneMatch(t *testing.T) {

@@ -101,14 +101,10 @@ only allowed per clone when that clone has no usable `project.uid` or
 is required. If no `.kata.toml` mapping matches, the
 resolver may fall back to a case-insensitive exact match between the Kata
 project and exactly one non-stale registered Middleman Project with provider
-identity. Registered Projects participate through `.kata.toml` identity/name
-matching first, then through their display name or provider repository name
-when they have no readable project metadata; their local checkout is also a
-workspace setup base. If no registered Project matches, the resolver may fall
-back to a case-insensitive exact match against one synced tracked repo matched
-by current repo configuration, whether that configuration entry is exact or
-globbed, but only for repos without readable `.kata.toml` project metadata.
-Ambiguous, mismatched, or missing matches mean the Create/Open
+identity; use `.kata.toml` before display/repository name, and reuse the local
+checkout as the workspace base. Only then may one synced repo matched by exact
+or globbed config resolve by name. Ambiguous, mismatched, or missing matches
+mean the Create/Open
 workspace button must not render
 (`internal/server/kata_workspace.go::resolveKataWorkspaceRepo`).
 

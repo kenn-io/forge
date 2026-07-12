@@ -3,7 +3,6 @@ package gitlab
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -185,46 +184,6 @@ func TestGitLabDeleteCommentMutations(t *testing.T) {
 			assert.NoError(tt.call(newTestClient(t, server.URL)))
 		})
 	}
-}
-
-func TestGitLabDeleteCommentMutationOutcomeClassification(t *testing.T) {
-	tests := []struct {
-		name          string
-		status        int
-		wantUncertain bool
-		wantNotFound  bool
-	}{
-		{name: "client rejection is definitive", status: http.StatusBadRequest},
-		{name: "not found response is definitive", status: http.StatusNotFound, wantNotFound: true},
-		{name: "request timeout is uncertain", status: http.StatusRequestTimeout, wantUncertain: true},
-		{name: "too early is uncertain", status: http.StatusTooEarly, wantUncertain: true},
-		{name: "server failure is uncertain", status: http.StatusInternalServerError, wantUncertain: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(tt.status)
-			}))
-			defer server.Close()
-
-			err := newTestClient(t, server.URL).DeleteIssueComment(t.Context(), projectRef(), 11, 9001)
-			Require.Error(t, err)
-			assert.Equal(t, tt.wantUncertain, errors.Is(err, platform.ErrMutationOutcomeUncertain))
-			assert.Equal(t, tt.wantNotFound, errors.Is(err, platform.ErrNotFound))
-		})
-	}
-}
-
-func TestGitLabDeleteCommentTransportLossIsUncertain(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		panic(http.ErrAbortHandler)
-	}))
-	defer server.Close()
-
-	err := newTestClient(t, server.URL).DeleteMergeRequestComment(t.Context(), projectRef(), 7, 9001)
-	Require.Error(t, err)
-	assert.ErrorIs(t, err, platform.ErrMutationOutcomeUncertain)
 }
 
 func TestGitLabSetMergeRequestStateSendsStateEvent(t *testing.T) {

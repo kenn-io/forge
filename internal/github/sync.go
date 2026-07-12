@@ -492,8 +492,6 @@ type Syncer struct {
 	commentRefreshMu         sync.Mutex
 	pendingPRCommentSyncs    []queuedPRCommentSync
 	pendingIssueCommentSyncs []queuedIssueCommentSync
-	itemWriteLocksMu         sync.Mutex
-	itemWriteLocks           map[string]*itemWriteLock
 }
 
 type queuedPRCommentSync struct {
@@ -504,152 +502,6 @@ type queuedPRCommentSync struct {
 type queuedIssueCommentSync struct {
 	repo   RepoRef
 	number int
-}
-
-type itemWriteLock struct {
-	mu   sync.Mutex
-	refs int
-}
-
-// WithItemWriteLock serializes a mutation with detail sync writes for one
-// provider-scoped item. This prevents a sync fetched before a destructive
-// mutation from applying stale events after the mutation commits.
-func (s *Syncer) WithItemWriteLock(
-	kind platform.Kind,
-	host, repoPath, itemType string,
-	number int,
-	fn func() error,
-) error {
-	unlock := s.lockItemWrite(kind, host, repoPath, itemType, number)
-	defer unlock()
-	return fn()
-}
-
-func (s *Syncer) lockItemWrite(kind platform.Kind, host, repoPath, itemType string, number int) func() {
-	key := string(kind) + ":" + host + ":" + repoPath + ":" + itemType + ":" + strconv.Itoa(number)
-	s.itemWriteLocksMu.Lock()
-	if s.itemWriteLocks == nil {
-		s.itemWriteLocks = make(map[string]*itemWriteLock)
-	}
-	lock := s.itemWriteLocks[key]
-	if lock == nil {
-		lock = &itemWriteLock{}
-		s.itemWriteLocks[key] = lock
-	}
-	lock.refs++
-	s.itemWriteLocksMu.Unlock()
-	lock.mu.Lock()
-	return func() {
-		lock.mu.Unlock()
-		s.itemWriteLocksMu.Lock()
-		lock.refs--
-		if lock.refs == 0 {
-			delete(s.itemWriteLocks, key)
-		}
-		s.itemWriteLocksMu.Unlock()
-	}
-}
-
-func (s *Syncer) RefreshCommentsOnProvider(
-	ctx context.Context,
-	kind platform.Kind,
-	host, owner, name string,
-	itemType string,
-	number int,
-) error {
-	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
-	if !ok {
-		return fmt.Errorf("repo %s/%s on %s/%s is not tracked", owner, name, kind, host)
-	}
-	repo.Owner, repo.Name, repo.PlatformHost = owner, name, repoHost(repo)
-	unlock := s.lockItemWrite(kind, repo.PlatformHost, repo.RepoPath, itemType, number)
-	defer unlock()
-	repoRow, err := s.db.GetRepoByIdentity(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
-	if err != nil || repoRow == nil {
-		return fmt.Errorf("get comment refresh repo: %w", err)
-	}
-	if kind == platform.KindGitHub {
-		client, err := s.clientFor(repo)
-		if err != nil {
-			return err
-		}
-		comments, err := client.ListIssueComments(ctx, owner, name, number)
-		if err != nil {
-			return fmt.Errorf("list authoritative comments: %w", err)
-		}
-		if itemType == "pr" {
-			item, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoRow.ID, number)
-			if err != nil || item == nil {
-				return fmt.Errorf("get pull request for comment refresh: %w", err)
-			}
-			return s.persistPRComments(ctx, item, comments)
-		}
-		item, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoRow.ID, number)
-		if err != nil || item == nil {
-			return fmt.Errorf("get issue for comment refresh: %w", err)
-		}
-		return s.persistIssueComments(ctx, item, comments)
-	}
-	if itemType == "pr" {
-		reader, err := s.mergeRequestReaderFor(repo)
-		if err != nil {
-			return err
-		}
-		item, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoRow.ID, number)
-		if err != nil || item == nil {
-			return fmt.Errorf("get pull request for comment refresh: %w", err)
-		}
-		commentReader, ok := reader.(platform.CommentReader)
-		if !ok {
-			return platform.ErrUnsupportedCapability
-		}
-		events, err := commentReader.ListMergeRequestComments(ctx, platformRepoRef(repo), number)
-		if err != nil {
-			return err
-		}
-		return s.replacePlatformMRComments(ctx, item, events)
-	}
-	reader, err := s.issueReaderFor(repo)
-	if err != nil {
-		return err
-	}
-	item, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoRow.ID, number)
-	if err != nil || item == nil {
-		return fmt.Errorf("get issue for comment refresh: %w", err)
-	}
-	commentReader, ok := reader.(platform.CommentReader)
-	if !ok {
-		return platform.ErrUnsupportedCapability
-	}
-	events, err := commentReader.ListIssueComments(ctx, platformRepoRef(repo), number)
-	if err != nil {
-		return err
-	}
-	return s.replacePlatformIssueComments(ctx, item, events)
-}
-
-func (s *Syncer) replacePlatformMRComments(ctx context.Context, item *db.MergeRequest, events []platform.MergeRequestEvent) error {
-	dbEvents := make([]db.MREvent, 0, len(events))
-	for _, event := range events {
-		if event.EventType != "issue_comment" {
-			continue
-		}
-		dbEvent := platform.DBMREvent(item.ID, event)
-		dbEvents = append(dbEvents, dbEvent)
-	}
-	return s.db.ReplaceMRCommentEvents(ctx, item.ID, dbEvents, nil)
-}
-
-func (s *Syncer) replacePlatformIssueComments(ctx context.Context, item *db.Issue, events []platform.IssueEvent) error {
-	dbEvents := make([]db.IssueEvent, 0, len(events))
-	for _, event := range events {
-		if event.EventType != "issue_comment" {
-			continue
-		}
-		dbEvent := platform.DBIssueEvent(item.ID, event)
-		dbEvents = append(dbEvents, dbEvent)
-	}
-	return s.db.ReplaceIssueCommentEvents(ctx, item.ID, dbEvents, nil)
 }
 
 // ensureRunCtx lazily initializes runCtx/runCancel. Safe to call
@@ -4897,25 +4749,6 @@ func (s *Syncer) refreshPRCommentsForItem(
 	repo RepoRef,
 	pr *db.MergeRequest,
 ) {
-	if pr == nil {
-		return
-	}
-	number := pr.Number
-	unlock := s.lockItemWrite(
-		repoPlatform(repo), repoHost(repo), platformRepoRef(repo).RepoPath,
-		"pr", number,
-	)
-	defer unlock()
-
-	pr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, pr.RepoID, number)
-	if err != nil {
-		slog.Warn("comment refresh: reload PR failed",
-			"repo", repo.Owner+"/"+repo.Name,
-			"number", number,
-			"err", err,
-		)
-		return
-	}
 	if pr == nil || pr.DetailFetchedAt == nil {
 		return
 	}
@@ -4953,25 +4786,6 @@ func (s *Syncer) refreshIssueCommentsForItem(
 	repo RepoRef,
 	issue *db.Issue,
 ) {
-	if issue == nil {
-		return
-	}
-	number := issue.Number
-	unlock := s.lockItemWrite(
-		repoPlatform(repo), repoHost(repo), platformRepoRef(repo).RepoPath,
-		"issue", number,
-	)
-	defer unlock()
-
-	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, issue.RepoID, number)
-	if err != nil {
-		slog.Warn("comment refresh: reload issue failed",
-			"repo", repo.Owner+"/"+repo.Name,
-			"number", number,
-			"err", err,
-		)
-		return
-	}
 	if issue == nil || issue.DetailFetchedAt == nil {
 		return
 	}
@@ -5001,55 +4815,6 @@ func (s *Syncer) refreshIssueCommentsForItem(
 			"err", err,
 		)
 	}
-}
-
-// commentsForBulkPersistence validates a pre-fetched GraphQL comment snapshot
-// against recent deletion attempts. A matching receipt means the provider may
-// have changed after the bulk request began, so re-read the authoritative
-// comment list while the caller holds the item write lock.
-func (s *Syncer) commentsForBulkPersistence(
-	ctx context.Context,
-	repo RepoRef,
-	repoID int64,
-	itemType string,
-	number int,
-	comments []*gh.IssueComment,
-) ([]*gh.IssueComment, error) {
-	receiptIDs, err := s.db.CommentDeletionAttemptIDs(
-		ctx, repoID, itemType, number,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if len(receiptIDs) == 0 {
-		return comments, nil
-	}
-	receipts := make(map[int64]struct{}, len(receiptIDs))
-	for _, id := range receiptIDs {
-		receipts[id] = struct{}{}
-	}
-
-	for _, comment := range comments {
-		if comment == nil || comment.GetID() == 0 {
-			continue
-		}
-		if _, exists := receipts[comment.GetID()]; !exists {
-			continue
-		}
-
-		client, err := s.clientFor(repo)
-		if err != nil {
-			return nil, err
-		}
-		fresh, err := client.ListIssueComments(
-			ctx, repo.Owner, repo.Name, number,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("list authoritative comments: %w", err)
-		}
-		return fresh, nil
-	}
-	return comments, nil
 }
 
 func (s *Syncer) resetPendingCommentSyncs() {
@@ -5295,24 +5060,6 @@ func (s *Syncer) syncOpenIssueFromBulk(
 	bulk *BulkIssue,
 ) error {
 	number := bulk.Issue.GetNumber()
-	unlock := s.lockItemWrite(
-		repoPlatform(repo), repoHost(repo), platformRepoRef(repo).RepoPath,
-		"issue", number,
-	)
-	defer unlock()
-
-	if bulk.CommentsComplete && bulk.TimelineComplete {
-		comments, err := s.commentsForBulkPersistence(
-			ctx, repo, repoID, "issue", number, bulk.Comments,
-		)
-		if err != nil {
-			return fmt.Errorf("validate issue #%d bulk comments: %w", number, err)
-		}
-		bulkCopy := *bulk
-		bulkCopy.Comments = comments
-		bulk = &bulkCopy
-	}
-
 	normalized, err := NormalizeIssue(repoID, bulk.Issue)
 	if err != nil {
 		return fmt.Errorf("normalize issue #%d: %w", number, err)
@@ -5432,24 +5179,6 @@ func (s *Syncer) syncOpenMRFromBulk(
 	cloneFetchOK bool,
 ) error {
 	number := bulk.PR.GetNumber()
-	unlock := s.lockItemWrite(
-		repoPlatform(repo), repoHost(repo), platformRepoRef(repo).RepoPath,
-		"pr", number,
-	)
-	defer unlock()
-
-	if bulk.CommentsComplete {
-		comments, err := s.commentsForBulkPersistence(
-			ctx, repo, repoID, "pr", number, bulk.Comments,
-		)
-		if err != nil {
-			return fmt.Errorf("validate MR #%d bulk comments: %w", number, err)
-		}
-		bulkCopy := *bulk
-		bulkCopy.Comments = comments
-		bulk = &bulkCopy
-	}
-
 	normalized, err := NormalizePR(repoID, bulk.PR)
 	if err != nil {
 		return fmt.Errorf("normalize MR #%d: %w", number, err)
@@ -6310,8 +6039,6 @@ func (s *Syncer) fetchIssueDetail(
 	repoID int64,
 	number int,
 ) (int, error) {
-	unlock := s.lockItemWrite(repoPlatform(repo), repoHost(repo), repo.RepoPath, "issue", number)
-	defer unlock()
 	calls := 0
 	issueReader, err := s.issueReaderFor(repo)
 	if err != nil {
@@ -8102,8 +7829,6 @@ func (s *Syncer) syncMRForRepo(
 	number int,
 	useConditionalPRDetail bool,
 ) error {
-	unlock := s.lockItemWrite(repoPlatform(repo), repoHost(repo), repo.RepoPath, "pr", number)
-	defer unlock()
 	owner := repo.Owner
 	name := repo.Name
 	mrReader, err := s.mergeRequestReaderFor(repo)

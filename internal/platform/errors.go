@@ -38,19 +38,7 @@ var (
 	ErrRateLimited           = &Error{Code: ErrCodeRateLimited}
 	ErrStaleState            = &Error{Code: ErrCodeStaleState}
 	ErrConflict              = &Error{Code: ErrCodeConflict}
-	// ErrMutationOutcomeUncertain marks provider mutation failures where no
-	// authoritative response proves whether the provider applied the change.
-	ErrMutationOutcomeUncertain = errors.New("provider mutation outcome uncertain")
 )
-
-// MutationOutcomeUncertain preserves the provider error chain while marking a
-// mutation result as unsafe to treat as a definitive rejection.
-func MutationOutcomeUncertain(err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("%w: %w", ErrMutationOutcomeUncertain, err)
-}
 
 type Error struct {
 	Code         PlatformErrorCode

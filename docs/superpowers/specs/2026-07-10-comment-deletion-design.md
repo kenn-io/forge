@@ -16,7 +16,7 @@ Deletion must remove the provider comment rather than hide a local event. The pr
 3. Selecting Delete opens an in-app confirmation dialog. No provider request is made until the user confirms.
 4. The dialog identifies the selected comment with its author and a short, plain-text excerpt, states that deletion cannot be undone, and offers Cancel and Delete actions.
 5. While deletion is pending, the dialog remains open, its actions cannot be submitted twice, and mutation actions for that comment are disabled.
-6. After success, middleman refreshes the current detail timeline and the deleted comment disappears.
+6. After success, the deleted card disappears immediately and ordinary detail synchronization converges SQLite to provider state.
 7. After failure, the comment remains visible, the dialog remains available for retry or cancellation, and the provider-derived error is shown without replacing stable API error handling with prose matching.
 8. PR and issue routes retain the full provider and host identity and use the shared frontend provider-route helpers.
 9. Review-draft comments and published inline review comments are outside this feature; their lifecycle and provider APIs differ from ordinary PR/issue timeline comments.
@@ -40,20 +40,20 @@ Handlers must:
 - resolve the repository and parent item with full provider identity;
 - prove the comment ID belongs to the requested PR or issue using the persisted event before calling the provider;
 - call the provider deletion operation; and
-- remove the persisted comment event only after provider success.
+- leave persisted events unchanged until ordinary synchronization observes provider state.
 
 Return `204 No Content` on success. Use the existing stable problem envelopes for unsupported capability, missing repository/item/comment, provider rejection, rate limits, and internal persistence failure. Regenerate the OpenAPI document and Go/TypeScript clients after adding the operations.
 
-Provider not-found is not proof of absence: write credentials can conceal authorization failures as 404, especially when read and write credentials differ. Inside the item write lock and before the first provider call, persist a deletion-attempt receipt keyed by repository, item type/number, and comment ID. Remove a newly created receipt only for an explicit provider-neutral rejection code (authorization, validation, not-found, rate, stale-state, or conflict); retain it after success, unclassified provider errors, 5xx responses, or transport/cancellation errors. Providers mark a mutation outcome uncertain when no authoritative response exists or a response cannot prove whether the mutation was applied; for GitLab this includes 5xx, 408, 425, and non-standard 499 responses, while other explicit 4xx rejections are definitive. The uncertainty marker takes precedence over any generic platform error code wrapped around the transport failure. A retry with a retained receipt may reconcile typed not-found only through the provider-neutral `CommentReader`, which performs a dedicated unconditional read-credential comment refresh; unrelated detail, review, CI, timeline, commit, and ETag outcomes do not participate. Receipts are valid for 30 days (enforced on lookup) so a lost `204` is idempotent, then are pruned opportunistically. Expiry ends this special retry window: a later DELETE is treated as a new attempt, while ordinary authoritative synchronization remains responsible for removing provider-absent comments. This receipt records operation identity, not a hidden-comment tombstone.
+Deletion is eventually complete: a successful provider response hides the selected card locally and starts the existing detail sync. SQLite remains provider-derived, so bulk or periodic refreshes continue normally and later authoritative synchronization removes the persisted event and updates its parent count. Failed provider deletion leaves the card and stored event unchanged.
 
 Removing a persisted event decrements `comment_count` transactionally and never below zero. Authoritative replacement collapses duplicate `dedupe_key` identities with the last normalized event winning, then derives `comment_count` from the stored rows inside the same transaction. Comment-only replacement does not rewrite `review_decision`; GitHub may advance `last_activity_at` from authoritative comment timestamps, while provider-neutral recovery leaves it unchanged.
 
 ### Implementation Stages
 
-1. Classify provider responses versus uncertain outcomes; provider tests cover definitive 4xx, timeout-like 4xx, 5xx, and transport loss.
+1. Map provider deletion responses through the normal mutation error path.
 2. Add atomic PR and issue comment replacement; database tests prove rollback, duplicate-identity counting, and preservation of unrelated parent fields.
 3. Add PR and issue comment-only readers for every provider and verify they do not depend on commits, reviews, or aggregate timelines.
-4. Integrate receipts and item locks for PR and issue handlers; HTTP tests prove first-attempt rejection, ambiguous retry, expiry, and concurrent requests.
+4. Keep PR and issue handlers provider-backed without delete-specific SQLite state.
 5. Wire frontend confirmation as separate DELETE and refresh phases, with store/component coverage for retry and navigation safety.
 6. Prove provider-to-HTTP-to-SQLite recovery for both item types, including final events and `comment_count`, then run the full affected frontend and browser suites.
 
@@ -63,7 +63,7 @@ Add a trash icon button beside Edit in every ordinary comment action-group layou
 
 Use the shared in-app confirmation-dialog treatment rather than `window.confirm`. The dialog title is `Delete comment?`, the destructive action is `Delete`, and the pending label is `Deleting...`. The body includes the author and a bounded plain-text excerpt so markdown, HTML, or an unusually long comment cannot expand the dialog or be rendered as active content.
 
-The timeline owns the selected event and pending/error state. `PullDetail` and `IssueDetail` provide provider-aware delete callbacks backed by their existing detail stores. The stores model provider/local deletion and UI confirmation as separate phases: after DELETE returns 204, retries repeat only the authoritative detail GET until the ordinary `issue_comment` event is absent. On failure before 204, the stores preserve the current state and expose the stable API error detail for the dialog.
+The timeline owns the selected event and pending/error state. `PullDetail` and `IssueDetail` provide provider-aware delete callbacks backed by their existing detail stores. After DELETE returns 204, the store hides that comment ID immediately and starts the existing detail sync; stale responses keep the card hidden until synchronization no longer returns it. Provider failure preserves the card and exposes the stable API error detail.
 
 Middleman has no provider-neutral authenticated-user identity in timeline payloads, so it exposes deletion for ordinary provider comments and leaves ownership and permission enforcement to the provider. A rejected attempt must be non-destructive and explain the provider failure.
 
@@ -72,18 +72,18 @@ Middleman has no provider-neutral authenticated-user identity in timeline payloa
 - Cancel and dialog dismissal perform no mutation.
 - Confirm is single-flight for the selected comment.
 - The selected comment cannot enter edit mode while its delete is pending.
-- A failed deletion keeps the confirmation open and displays an inline error. If DELETE already returned 204 but confirmation refresh failed, retry performs only the safe detail refresh.
-- A successful deletion closes the dialog only after the refreshed timeline no longer contains the event.
+- A failed deletion keeps the confirmation open and displays an inline error.
+- A successful deletion closes the dialog after the local card is hidden; synchronization completes in the background.
 - A same-item generation change starts a new authoritative refresh; navigation or component teardown may discard local dialog state, but stale results and errors must not overwrite the newly selected detail.
-- Provider deletion/local reconciliation and detail synchronization serialize on the full provider-scoped item identity, preventing a pre-delete fetch from upserting stale comments after deletion commits.
+- Temporary SQLite staleness is acceptable after provider success; the hidden card prevents visual reappearance while ordinary synchronization converges.
 
 ## Testing
 
 Use test-driven changes at the smallest boundaries that establish the contract:
 
 - Provider tests verify the correct native delete endpoint, identifier, method, write credential, and error mapping for GitHub, GitLab, Forgejo, and Gitea.
-- Server HTTP tests verify PR and issue deletion, host-prefixed routing, capability gating, comment-to-parent validation, provider failure preservation (including first-attempt not-found), ambiguous-success reconciliation, lost-response retries, subsequent detail retrieval, and the `204` response.
-- Store tests verify generated-client route construction, two-phase refresh retry, event-type-aware confirmation, refresh failure reporting, and same-item/navigation generation safety.
+- Server HTTP tests verify PR and issue deletion, host-prefixed routing, capability gating, comment-to-parent validation, provider failure preservation, unchanged immediate SQLite state, and the `204` response.
+- Store tests verify generated-client route construction, immediate card suppression, stale-sync filtering, provider failure reporting, and navigation safety.
 - `EventTimeline` component tests verify action eligibility, cancellation, comment identification, single-flight confirmation, success, and failure display across representative timeline layouts.
 - An affected browser or full-stack test verifies the visible confirmation-and-removal workflow without duplicating backend authorization coverage.
 

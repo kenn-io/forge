@@ -2636,100 +2636,6 @@ func (d *DB) MRCommentEventExists(
 	return exists, nil
 }
 
-func (d *DB) DeleteMRCommentEvent(ctx context.Context, mrID, platformID int64) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		result, err := tx.ExecContext(ctx, `
-			DELETE FROM middleman_mr_events
-			WHERE merge_request_id = ? AND platform_id = ? AND event_type = 'issue_comment'`,
-			mrID,
-			platformID,
-		)
-		if err != nil {
-			return fmt.Errorf("delete mr comment event: %w", err)
-		}
-		deleted, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("get deleted mr comment event count: %w", err)
-		}
-		if deleted == 0 {
-			return nil
-		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE middleman_merge_requests
-			SET comment_count = MAX(comment_count - ?, 0)
-			WHERE id = ?`, deleted, mrID); err != nil {
-			return fmt.Errorf("decrement merge request comment count: %w", err)
-		}
-		return nil
-	})
-}
-
-func (d *DB) RecordCommentDeletionAttempt(ctx context.Context, repoID int64, itemType string, itemNumber int, commentID int64) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM middleman_comment_deletion_receipts WHERE created_at < ?`, time.Now().UTC().Add(-30*24*time.Hour)); err != nil {
-			return fmt.Errorf("prune comment deletion receipts: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO middleman_comment_deletion_receipts
-				(repo_id, item_type, item_number, comment_id, created_at)
-			VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT(repo_id, item_type, item_number, comment_id) DO NOTHING`,
-			repoID, itemType, itemNumber, commentID, time.Now().UTC()); err != nil {
-			return fmt.Errorf("record comment deletion attempt: %w", err)
-		}
-		return nil
-	})
-}
-
-func (d *DB) CommentDeletionAttemptExists(ctx context.Context, repoID int64, itemType string, itemNumber int, commentID int64) (bool, error) {
-	var exists bool
-	err := d.ro.QueryRowContext(ctx, `SELECT EXISTS(
-		SELECT 1 FROM middleman_comment_deletion_receipts
-		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND comment_id = ?
-			AND created_at >= ?
-	)`, repoID, itemType, itemNumber, commentID, time.Now().UTC().Add(-30*24*time.Hour)).Scan(&exists)
-	if err != nil {
-		return false, fmt.Errorf("check comment deletion attempt: %w", err)
-	}
-	return exists, nil
-}
-
-func (d *DB) CommentDeletionAttemptIDs(ctx context.Context, repoID int64, itemType string, itemNumber int) ([]int64, error) {
-	rows, err := d.ro.QueryContext(ctx, `
-		SELECT comment_id FROM middleman_comment_deletion_receipts
-		WHERE repo_id = ? AND item_type = ? AND item_number = ?
-			AND created_at >= ?
-		ORDER BY comment_id`,
-		repoID, itemType, itemNumber, time.Now().UTC().Add(-30*24*time.Hour))
-	if err != nil {
-		return nil, fmt.Errorf("list comment deletion attempts: %w", err)
-	}
-	defer rows.Close()
-
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scan comment deletion attempt: %w", err)
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate comment deletion attempts: %w", err)
-	}
-	return ids, nil
-}
-
-func (d *DB) DeleteCommentDeletionAttempt(ctx context.Context, repoID int64, itemType string, itemNumber int, commentID int64) error {
-	if _, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_comment_deletion_receipts
-		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND comment_id = ?`,
-		repoID, itemType, itemNumber, commentID); err != nil {
-		return fmt.Errorf("delete comment deletion attempt: %w", err)
-	}
-	return nil
-}
-
 // DeleteMissingMRCommentEvents removes issue_comment rows for a PR whose
 // dedupe keys are absent from the latest GitHub comment list.
 func (d *DB) DeleteMissingMRCommentEvents(
@@ -4060,34 +3966,6 @@ func (d *DB) IssueCommentEventExists(
 		return false, fmt.Errorf("check issue comment event exists: %w", err)
 	}
 	return exists, nil
-}
-
-func (d *DB) DeleteIssueCommentEvent(ctx context.Context, issueID, platformID int64) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		result, err := tx.ExecContext(ctx, `
-			DELETE FROM middleman_issue_events
-			WHERE issue_id = ? AND platform_id = ? AND event_type = 'issue_comment'`,
-			issueID,
-			platformID,
-		)
-		if err != nil {
-			return fmt.Errorf("delete issue comment event: %w", err)
-		}
-		deleted, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("get deleted issue comment event count: %w", err)
-		}
-		if deleted == 0 {
-			return nil
-		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE middleman_issues
-			SET comment_count = MAX(comment_count - ?, 0)
-			WHERE id = ?`, deleted, issueID); err != nil {
-			return fmt.Errorf("decrement issue comment count: %w", err)
-		}
-		return nil
-	})
 }
 
 // DeleteMissingIssueCommentEvents removes issue_comment rows for an issue whose

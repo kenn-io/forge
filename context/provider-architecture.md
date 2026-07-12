@@ -66,23 +66,13 @@ Rules:
 - Handlers must check capabilities before performing mutations. A missing
   capability is a feature-level failure, not a whole-provider failure.
 - Provider-backed comment deletes remove synchronized local rows only after upstream
-  success. Typed `not_found` is not sufficient because provider write credentials may
-  conceal authorization failures as absence; all upstream failures preserve local state,
-  unless a retained deletion-attempt receipt plus an authoritative read sync confirms
-  absence. A provider's explicit uncertain-mutation marker overrides generic mapped
-  error codes for transport and 5xx failures
-  (`internal/platform/errors.go::ErrMutationOutcomeUncertain`). Item-scoped
-  mutation/sync serialization prevents stale pre-delete fetches from restoring
-  deleted comments; authoritative replacement updates comment rows and the parent
-  count in one transaction without rewriting unrelated parent fields. Local
-  removal tolerates an already-absent row
+  synchronization observes provider absence. DELETE itself changes no SQLite comment
+  state; the UI hides a confirmed deletion while ordinary sync converges. Authoritative
+  replacement updates comment rows and the parent count in one transaction
   (`internal/server/huma_routes.go::deleteComment`,
   `internal/server/huma_routes.go::deleteIssueComment`,
   `internal/db/queries.go::ReplaceMRCommentEvents`,
   `internal/db/queries.go::ReplaceIssueCommentEvents`).
-- Comment deletion must acquire the provider-scoped item lock before target-existence
-  or receipt reads decide between `404` and idempotent success
-  (`internal/server/huma_routes.go::deleteComment`).
 - Keep operation availability split by scope. `repoOperations` handles
   repo-level gates: provider capability, write credentials, rate limits, and
   repo-wide viewer permissions. Detail responses may add item-level gates with

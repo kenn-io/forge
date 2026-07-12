@@ -52,11 +52,6 @@ what "current" means.
   one item.
 - If a PR or issue is marked as detail-fetched, the persisted fields that power
   the user-visible detail view must match that claim.
-- Queued comment refreshes must hold the provider-scoped item write lock across
-  both fetch and persistence (`internal/github/sync.go::refreshPRCommentsForItem`).
-- A pre-fetched bulk snapshot containing a comment with a live deletion receipt
-  must be authoritatively refetched under that lock before replacement
-  (`internal/github/sync.go::commentsForBulkPersistence`).
 
 For pull requests, that means:
 

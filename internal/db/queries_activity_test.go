@@ -620,65 +620,6 @@ func TestListActivity(t *testing.T) {
 	_ = prID2
 }
 
-func TestDeleteCommentEventsAreParentScoped(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := openTestDB(t)
-	repoID := insertTestRepo(t, database, "acme", "widget")
-	mrID := insertTestMR(t, database, repoID, 7, "Pull", baseTime())
-	otherMRID := insertTestMR(t, database, repoID, 8, "Other pull", baseTime())
-	issueID := insertTestIssue(t, database, repoID, 9, "Issue", baseTime())
-	otherIssueID := insertTestIssue(t, database, repoID, 10, "Other issue", baseTime())
-	commentID := int64(44)
-
-	require.NoError(database.UpsertMREvents(t.Context(), []MREvent{
-		{MergeRequestID: mrID, PlatformID: &commentID, EventType: "issue_comment", DedupeKey: "mr-comment"},
-		{MergeRequestID: mrID, PlatformID: &commentID, EventType: "review", DedupeKey: "mr-review"},
-		{MergeRequestID: otherMRID, PlatformID: &commentID, EventType: "issue_comment", DedupeKey: "other-mr-comment"},
-	}))
-	require.NoError(database.UpsertIssueEvents(t.Context(), []IssueEvent{
-		{IssueID: issueID, PlatformID: &commentID, EventType: "issue_comment", DedupeKey: "issue-comment"},
-		{IssueID: otherIssueID, PlatformID: &commentID, EventType: "issue_comment", DedupeKey: "other-issue-comment"},
-	}))
-	_, err := database.rw.ExecContext(t.Context(), `UPDATE middleman_merge_requests SET comment_count = 2 WHERE id = ?`, mrID)
-	require.NoError(err)
-	_, err = database.rw.ExecContext(t.Context(), `UPDATE middleman_issues SET comment_count = 2 WHERE id = ?`, issueID)
-	require.NoError(err)
-
-	require.NoError(database.DeleteMRCommentEvent(t.Context(), mrID, commentID))
-	require.NoError(database.DeleteIssueCommentEvent(t.Context(), issueID, commentID))
-	require.NoError(database.DeleteMRCommentEvent(t.Context(), mrID, commentID))
-	require.NoError(database.DeleteIssueCommentEvent(t.Context(), issueID, commentID))
-
-	exists, err := database.MRCommentEventExists(t.Context(), mrID, commentID)
-	require.NoError(err)
-	assert.False(exists)
-	exists, err = database.MRCommentEventExists(t.Context(), otherMRID, commentID)
-	require.NoError(err)
-	assert.True(exists)
-	exists, err = database.IssueCommentEventExists(t.Context(), issueID, commentID)
-	require.NoError(err)
-	assert.False(exists)
-	exists, err = database.IssueCommentEventExists(t.Context(), otherIssueID, commentID)
-	require.NoError(err)
-	assert.True(exists)
-	var mrCommentCount int
-	require.NoError(database.ro.QueryRowContext(t.Context(),
-		`SELECT comment_count FROM middleman_merge_requests WHERE id = ?`, mrID,
-	).Scan(&mrCommentCount))
-	assert.Equal(1, mrCommentCount)
-	var issueCommentCount int
-	require.NoError(database.ro.QueryRowContext(t.Context(),
-		`SELECT comment_count FROM middleman_issues WHERE id = ?`, issueID,
-	).Scan(&issueCommentCount))
-	assert.Equal(1, issueCommentCount)
-
-	events, err := database.ListMREvents(t.Context(), mrID)
-	require.NoError(err)
-	require.Len(events, 1)
-	assert.Equal("review", events[0].EventType)
-}
-
 func insertOversizedBranchCommitRow(
 	ctx context.Context,
 	d *DB,

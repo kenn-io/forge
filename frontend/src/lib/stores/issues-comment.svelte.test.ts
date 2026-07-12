@@ -40,13 +40,15 @@ function makeDetail(events: unknown[] = [], number = 1): MockIssueDetail {
 }
 
 describe("createIssuesStore submitIssueComment", () => {
-  it("deletes an issue comment and refreshes the detail", async () => {
-    const get = vi.fn(async () => ({ data: makeDetail([]) }));
+  it("hides a deleted issue comment while ordinary sync converges", async () => {
+    const staleDetail = makeDetail([{ EventType: "issue_comment", PlatformID: 44 }]);
+    const get = vi.fn(async () => ({ data: staleDetail }));
+    const post = vi.fn(async () => ({ data: staleDetail }));
     const del = vi.fn(async () => ({ error: undefined }));
     const store = createIssuesStore({
       client: {
         GET: get,
-        POST: vi.fn(async () => ({ data: undefined })),
+        POST: post,
         PUT: vi.fn(),
         DELETE: del,
       } as unknown as MiddlemanClient,
@@ -64,118 +66,11 @@ describe("createIssuesStore submitIssueComment", () => {
         path: { provider: "github", owner: "octo", name: "repo", number: 1, comment_id: 44 },
       },
     });
-    expect(get).toHaveBeenCalled();
-  });
-
-  it("reports failure when the refreshed issue still cannot be loaded", async () => {
-    let getCalls = 0;
-    const get = vi.fn(async () => {
-      getCalls++;
-      if (getCalls === 1) return { data: makeDetail([{ PlatformID: 44 }]) };
-      return { error: { detail: "refresh failed" } };
-    });
-    const store = createIssuesStore({
-      client: {
-        GET: get,
-        POST: vi.fn(async () => ({ data: undefined })),
-        PUT: vi.fn(),
-        DELETE: vi.fn(async () => ({ error: undefined })),
-      } as unknown as MiddlemanClient,
-    });
-    await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
-
-    const ok = await store.deleteIssueComment("octo", "repo", 1, 44);
-
-    expect(ok).toBe(false);
-    expect(store.getIssueDetailError()).toBe("refresh failed");
-    expect(store.getIssueDetail()?.events).toEqual([{ PlatformID: 44 }]);
-  });
-
-  it("retries only confirmation after deletion succeeds but the refresh fails", async () => {
-    let getCalls = 0;
-    const get = vi.fn(async () => {
-      getCalls++;
-      if (getCalls === 1) {
-        return { data: makeDetail([{ EventType: "issue_comment", PlatformID: 44 }]) };
-      }
-      if (getCalls === 2) return { error: { detail: "refresh failed" } };
-      return { data: makeDetail([]) };
-    });
-    const del = vi.fn(async () => ({ error: undefined }));
-    const store = createIssuesStore({
-      client: {
-        GET: get,
-        POST: vi.fn(async () => ({ data: undefined })),
-        PUT: vi.fn(),
-        DELETE: del,
-      } as unknown as MiddlemanClient,
-    });
-    await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
-
-    expect(await store.deleteIssueComment("octo", "repo", 1, 44)).toBe(false);
-    expect(await store.deleteIssueComment("octo", "repo", 1, 44)).toBe(true);
-
-    expect(del).toHaveBeenCalledTimes(1);
-    expect(get).toHaveBeenCalledTimes(3);
-  });
-
-  it("confirms deletion when another event type shares the comment platform ID", async () => {
-    let getCalls = 0;
-    const get = vi.fn(async () => {
-      getCalls++;
-      return {
-        data: makeDetail(
-          getCalls === 1
-            ? [{ EventType: "issue_comment", PlatformID: 44 }]
-            : [{ EventType: "state_change", PlatformID: 44 }],
-        ),
-      };
-    });
-    const store = createIssuesStore({
-      client: {
-        GET: get,
-        POST: vi.fn(async () => ({ data: undefined })),
-        PUT: vi.fn(),
-        DELETE: vi.fn(async () => ({ error: undefined })),
-      } as unknown as MiddlemanClient,
-    });
-    await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
-
-    expect(await store.deleteIssueComment("octo", "repo", 1, 44)).toBe(true);
-  });
-
-  it("confirms deletion after a concurrent reload of the same issue", async () => {
-    let finishDelete: () => void = () => {};
-    const deletePending = new Promise<void>((resolve) => {
-      finishDelete = resolve;
-    });
-    let getCalls = 0;
-    const get = vi.fn(async () => {
-      getCalls++;
-      return {
-        data: makeDetail(getCalls < 3 ? [{ EventType: "issue_comment", PlatformID: 44 }] : []),
-      };
-    });
-    const store = createIssuesStore({
-      client: {
-        GET: get,
-        POST: vi.fn(async () => ({ data: undefined })),
-        PUT: vi.fn(),
-        DELETE: vi.fn(async () => {
-          await deletePending;
-          return { error: undefined };
-        }),
-      } as unknown as MiddlemanClient,
-    });
-    await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
-
-    const deleting = store.deleteIssueComment("octo", "repo", 1, 44);
-    await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
-    finishDelete();
-
-    expect(await deleting).toBe(true);
-    expect(get).toHaveBeenCalledTimes(3);
     expect(store.getIssueDetail()?.events).toEqual([]);
+    expect(post).toHaveBeenCalledWith("/issues/{provider}/{owner}/{name}/{number}/sync", {
+      params: { path: { provider: "github", owner: "octo", name: "repo", number: 1 } },
+    });
+    expect(get).not.toHaveBeenCalled();
   });
 
   it("does not expose a failed deletion from a previous issue", async () => {

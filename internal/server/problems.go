@@ -493,12 +493,6 @@ func providerCallProblemWithDetail(
 		}
 		return problemBadRequest(CodeBadRequest, detail, nil)
 	}
-	if errors.Is(err, platform.ErrMutationOutcomeUncertain) {
-		if detail == "" {
-			detail = err.Error()
-		}
-		return problemUpstream(detail, provider, host)
-	}
 	var pe *platform.Error
 	if errors.As(err, &pe) {
 		if mapped := mapPlatformError(err); mapped != nil {
@@ -525,13 +519,6 @@ func mapPlatformError(err error) huma.StatusError {
 	}
 	if errors.Is(err, tokenauth.ErrMissingToken) {
 		return problemBadRequest(CodeBadRequest, err.Error(), nil)
-	}
-	if errors.Is(err, platform.ErrMutationOutcomeUncertain) {
-		var pe *platform.Error
-		if errors.As(err, &pe) {
-			return problemUpstream(err.Error(), string(pe.Provider), pe.PlatformHost)
-		}
-		return problemUpstream(err.Error(), "", "")
 	}
 	var pe *platform.Error
 	if !errors.As(err, &pe) {

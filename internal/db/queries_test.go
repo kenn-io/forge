@@ -3057,44 +3057,6 @@ func TestReplaceCommentEventsCountsPersistedUniqueRows(t *testing.T) {
 	})
 }
 
-func TestCommentDeletionAttemptExpiryEndsRetryWindow(t *testing.T) {
-	require := require.New(t)
-	database := openTestDB(t)
-	repoID := insertTestRepo(t, database, "o", "r")
-	_, err := database.WriteDB().ExecContext(t.Context(), `
-		INSERT INTO middleman_comment_deletion_receipts
-			(repo_id, item_type, item_number, comment_id, created_at)
-		VALUES (?, 'pr', 1, 9001, ?)`, repoID, time.Now().UTC().Add(-31*24*time.Hour))
-	require.NoError(err)
-
-	exists, err := database.CommentDeletionAttemptExists(t.Context(), repoID, "pr", 1, 9001)
-	require.NoError(err)
-	require.False(exists)
-}
-
-func TestCommentDeletionAttemptIDsAreScopedAndUnexpired(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := openTestDB(t)
-	repoID := insertTestRepo(t, database, "o", "r")
-	otherRepoID := insertTestRepo(t, database, "other", "r")
-	ctx := t.Context()
-	require.NoError(database.RecordCommentDeletionAttempt(ctx, repoID, "pr", 1, 9002))
-	require.NoError(database.RecordCommentDeletionAttempt(ctx, repoID, "pr", 1, 9001))
-	require.NoError(database.RecordCommentDeletionAttempt(ctx, repoID, "issue", 1, 9003))
-	require.NoError(database.RecordCommentDeletionAttempt(ctx, repoID, "pr", 2, 9004))
-	require.NoError(database.RecordCommentDeletionAttempt(ctx, otherRepoID, "pr", 1, 9005))
-	_, err := database.WriteDB().ExecContext(ctx, `
-		INSERT INTO middleman_comment_deletion_receipts
-			(repo_id, item_type, item_number, comment_id, created_at)
-		VALUES (?, 'pr', 1, 9000, ?)`, repoID, time.Now().UTC().Add(-31*24*time.Hour))
-	require.NoError(err)
-
-	ids, err := database.CommentDeletionAttemptIDs(ctx, repoID, "pr", 1)
-	require.NoError(err)
-	assert.Equal([]int64{9001, 9002}, ids)
-}
-
 func TestMREventsDedupeIsScopedToMergeRequest(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

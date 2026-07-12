@@ -169,7 +169,7 @@ func (c *Client) DeleteMergeRequestComment(
 		pid, int64(number), commentID, gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return c.mapCommentDeletionError("delete_merge_request_comment", err)
+		return c.mapGitLabError("delete_merge_request_comment", err)
 	}
 	return nil
 }
@@ -234,33 +234,9 @@ func (c *Client) DeleteIssueComment(
 		pid, int64(number), commentID, gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return c.mapCommentDeletionError("delete_issue_comment", err)
+		return c.mapGitLabError("delete_issue_comment", err)
 	}
 	return nil
-}
-
-func (c *Client) mapCommentDeletionError(capability string, err error) error {
-	mappedErr := c.mapGitLabError(capability, err)
-	if errors.Is(err, gitlab.ErrNotFound) {
-		return mappedErr
-	}
-	var responseErr *gitlab.ErrorResponse
-	if errors.As(err, &responseErr) && responseErr.Response != nil && definitiveCommentDeletionRejectionStatus(responseErr.Response.StatusCode) {
-		return mappedErr
-	}
-	return platform.MutationOutcomeUncertain(mappedErr)
-}
-
-func definitiveCommentDeletionRejectionStatus(status int) bool {
-	if status < http.StatusBadRequest || status >= http.StatusInternalServerError {
-		return false
-	}
-	switch status {
-	case http.StatusRequestTimeout, http.StatusTooEarly, 499:
-		return false
-	default:
-		return true
-	}
 }
 
 func (c *Client) SetMergeRequestState(

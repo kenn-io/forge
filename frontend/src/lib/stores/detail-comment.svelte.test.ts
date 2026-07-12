@@ -40,13 +40,15 @@ function makeDetail(events: unknown[] = [], number = 1): MockDetail {
 }
 
 describe("createDetailStore submitComment", () => {
-  it("deletes a PR comment and refreshes the detail", async () => {
-    const get = vi.fn(async () => ({ data: makeDetail([]) }));
+  it("hides a deleted PR comment while ordinary sync converges", async () => {
+    const staleDetail = makeDetail([{ EventType: "issue_comment", PlatformID: 44 }]);
+    const get = vi.fn(async () => ({ data: staleDetail }));
+    const post = vi.fn(async () => ({ data: staleDetail }));
     const del = vi.fn(async () => ({ error: undefined }));
     const store = createDetailStore({
       client: {
         GET: get,
-        POST: vi.fn(async () => ({ data: undefined })),
+        POST: post,
         PUT: vi.fn(),
         DELETE: del,
       } as unknown as MiddlemanClient,
@@ -64,7 +66,11 @@ describe("createDetailStore submitComment", () => {
         path: { provider: "github", owner: "octo", name: "repo", number: 1, comment_id: 44 },
       },
     });
-    expect(get).toHaveBeenCalled();
+    expect(store.getDetail()?.events).toEqual([]);
+    expect(post).toHaveBeenCalledWith("/pulls/{provider}/{owner}/{name}/{number}/sync", {
+      params: { path: { provider: "github", owner: "octo", name: "repo", number: 1 } },
+    });
+    expect(get).not.toHaveBeenCalled();
   });
 
   it("keeps PR detail unchanged when comment deletion fails", async () => {
@@ -87,115 +93,6 @@ describe("createDetailStore submitComment", () => {
     expect(get).not.toHaveBeenCalled();
     expect(store.getDetailError()).toBe("provider denied deletion");
     expect(store.getDetail()?.events).toEqual([{ ID: 44 }]);
-  });
-
-  it("reports failure when the refreshed PR still cannot be loaded", async () => {
-    let getCalls = 0;
-    const get = vi.fn(async () => {
-      getCalls++;
-      if (getCalls === 1) return { data: makeDetail([{ PlatformID: 44 }]) };
-      return { error: { detail: "refresh failed" } };
-    });
-    const store = createDetailStore({
-      client: {
-        GET: get,
-        POST: vi.fn(async () => ({ data: undefined })),
-        PUT: vi.fn(),
-        DELETE: vi.fn(async () => ({ error: undefined })),
-      } as unknown as MiddlemanClient,
-    });
-    await store.loadDetail("octo", "repo", 1, { ...pullRef, sync: false });
-
-    const ok = await store.deleteComment("octo", "repo", 1, 44);
-
-    expect(ok).toBe(false);
-    expect(store.getDetailError()).toBe("refresh failed");
-    expect(store.getDetail()?.events).toEqual([{ PlatformID: 44 }]);
-  });
-
-  it("retries only confirmation after deletion succeeds but the refresh fails", async () => {
-    let getCalls = 0;
-    const get = vi.fn(async () => {
-      getCalls++;
-      if (getCalls === 1) {
-        return { data: makeDetail([{ EventType: "issue_comment", PlatformID: 44 }]) };
-      }
-      if (getCalls === 2) return { error: { detail: "refresh failed" } };
-      return { data: makeDetail([]) };
-    });
-    const del = vi.fn(async () => ({ error: undefined }));
-    const store = createDetailStore({
-      client: {
-        GET: get,
-        POST: vi.fn(async () => ({ data: undefined })),
-        PUT: vi.fn(),
-        DELETE: del,
-      } as unknown as MiddlemanClient,
-    });
-    await store.loadDetail("octo", "repo", 1, { ...pullRef, sync: false });
-
-    expect(await store.deleteComment("octo", "repo", 1, 44)).toBe(false);
-    expect(await store.deleteComment("octo", "repo", 1, 44)).toBe(true);
-
-    expect(del).toHaveBeenCalledTimes(1);
-    expect(get).toHaveBeenCalledTimes(3);
-  });
-
-  it("confirms deletion when another event type shares the comment platform ID", async () => {
-    let getCalls = 0;
-    const get = vi.fn(async () => {
-      getCalls++;
-      return {
-        data: makeDetail(
-          getCalls === 1 ? [{ EventType: "issue_comment", PlatformID: 44 }] : [{ EventType: "review", PlatformID: 44 }],
-        ),
-      };
-    });
-    const store = createDetailStore({
-      client: {
-        GET: get,
-        POST: vi.fn(async () => ({ data: undefined })),
-        PUT: vi.fn(),
-        DELETE: vi.fn(async () => ({ error: undefined })),
-      } as unknown as MiddlemanClient,
-    });
-    await store.loadDetail("octo", "repo", 1, { ...pullRef, sync: false });
-
-    expect(await store.deleteComment("octo", "repo", 1, 44)).toBe(true);
-  });
-
-  it("confirms deletion after a concurrent reload of the same PR", async () => {
-    let finishDelete: () => void = () => {};
-    const deletePending = new Promise<void>((resolve) => {
-      finishDelete = resolve;
-    });
-    let getCalls = 0;
-    const get = vi.fn(async () => {
-      getCalls++;
-      return {
-        data: makeDetail(getCalls < 3 ? [{ EventType: "issue_comment", PlatformID: 44 }] : []),
-      };
-    });
-    const store = createDetailStore({
-      client: {
-        GET: get,
-        POST: vi.fn(async () => ({ data: undefined })),
-        PUT: vi.fn(),
-        DELETE: vi.fn(async () => {
-          await deletePending;
-          return { error: undefined };
-        }),
-      } as unknown as MiddlemanClient,
-    });
-    await store.loadDetail("octo", "repo", 1, { ...pullRef, sync: false });
-
-    const deleting = store.deleteComment("octo", "repo", 1, 44);
-    await store.loadDetail("octo", "repo", 1, { ...pullRef, sync: false });
-    finishDelete();
-
-    expect(await deleting).toBe(true);
-    expect(get).toHaveBeenCalledTimes(3);
-    expect(store.getDetail()?.events).toEqual([]);
   });
 
   it("does not expose a failed deletion from a previous PR", async () => {

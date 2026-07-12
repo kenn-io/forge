@@ -122,10 +122,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
     key: string;
     promise: Promise<void>;
   } | null = null;
-  // A provider/local DELETE may succeed even when the follow-up detail
-  // refresh fails. Keep that partial success separate from confirmation
-  // so retrying the dialog never repeats the destructive request.
-  const pendingCommentConfirmations = new Set<string>();
+  // Provider synchronization is eventually complete. Keep a successfully
+  // deleted comment hidden locally until an ordinary sync no longer returns it.
+  const hiddenDeletedCommentIDs: Record<string, number[]> = {};
 
   // Per-PR monotonic counters for kanban updates.
   const kanbanSeqByPR = new Map<string, number>();
@@ -196,6 +195,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // owner/name/number (different host or provider) doesn't inherit
   // another repo's pending body.
   function withPreservedLocalBody(next: PullDetail): PullDetail {
+    next = withHiddenDeletedComments(next);
     if (!unsavedLocalBody) return next;
     if (!detail) return next;
     if (
@@ -220,6 +220,42 @@ export function createDetailStore(opts: DetailStoreOptions) {
         ...next.merge_request,
         Body: detail.merge_request.Body,
       },
+    };
+  }
+
+  function withHiddenDeletedComments(next: PullDetail): PullDetail {
+    if (Object.keys(hiddenDeletedCommentIDs).length === 0) return next;
+    const key = `${next.repo.provider}:${next.repo.platform_host ?? ""}:${next.repo.repo_path}/${next.merge_request.Number}`;
+    const hidden = hiddenDeletedCommentIDs[key];
+    if (!hidden || hidden.length === 0) return next;
+    const events = next.events ?? [];
+    const stillHidden = hidden.filter((id) =>
+      events.some((event) => event.EventType === "issue_comment" && event.PlatformID === id),
+    );
+    if (stillHidden.length === 0) {
+      delete hiddenDeletedCommentIDs[key];
+      return next;
+    }
+    hiddenDeletedCommentIDs[key] = stillHidden;
+    return {
+      ...next,
+      events: events.filter(
+        (event) =>
+          event.EventType !== "issue_comment" || event.PlatformID === null || !stillHidden.includes(event.PlatformID),
+      ),
+    };
+  }
+
+  function hideDeletedComment(ref: DetailRequestRef, commentID: number): void {
+    const key = prKey(ref);
+    const hidden = hiddenDeletedCommentIDs[key] ?? [];
+    if (!hidden.includes(commentID)) hiddenDeletedCommentIDs[key] = [...hidden, commentID];
+    if (!isDetailShowingRef(ref) || !detail) return;
+    detail = {
+      ...detail,
+      events: (detail.events ?? []).filter(
+        (event) => event.EventType !== "issue_comment" || event.PlatformID !== commentID,
+      ),
     };
   }
 
@@ -1112,48 +1148,31 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   async function deleteComment(owner: string, name: string, number: number, commentID: number): Promise<boolean> {
     const ref = currentDetailRef(owner, name, number);
-    const deletionKey = `${prKey(ref)}:comment:${commentID}`;
     storeError = null;
-    if (!pendingCommentConfirmations.has(deletionKey)) {
-      try {
-        const { error: requestError } = await apiClient.DELETE(
-          providerItemPath("pulls", ref, "/comments/{comment_id}"),
-          {
-            headers: { "Content-Type": "application/json" },
-            params: {
-              path: {
-                ...providerRouteParams(ref),
-                number,
-                comment_id: commentID,
-              },
-            },
+    try {
+      const { error: requestError } = await apiClient.DELETE(providerItemPath("pulls", ref, "/comments/{comment_id}"), {
+        headers: { "Content-Type": "application/json" },
+        params: {
+          path: {
+            ...providerRouteParams(ref),
+            number,
+            comment_id: commentID,
           },
-        );
-        if (requestError) {
-          throw new Error(apiErrorMessage(requestError, "failed to delete comment"));
-        }
-      } catch (err) {
-        if (isDetailShowingRef(ref)) {
-          storeError = err instanceof Error ? err.message : String(err);
-        }
-        return false;
+        },
+      });
+      if (requestError) {
+        throw new Error(apiErrorMessage(requestError, "failed to delete comment"));
       }
-      pendingCommentConfirmations.add(deletionKey);
-    }
-    if (!isDetailShowingRef(ref)) return true;
-    const refreshGen = ++syncGeneration;
-    const refreshed = await refreshDetail(owner, name, number, refreshGen, ref);
-    if (!refreshed.ok) {
-      if (refreshGen === syncGeneration && isDetailShowingRef(ref)) {
-        storeError = refreshed.error ?? "Could not refresh pull request after deleting comment";
+    } catch (err) {
+      if (isDetailShowingRef(ref)) {
+        storeError = err instanceof Error ? err.message : String(err);
       }
       return false;
     }
-    if (detail?.events?.some((event) => event.EventType === "issue_comment" && event.PlatformID === commentID)) {
-      storeError = "Deleted comment is still visible after refresh";
-      return false;
+    hideDeletedComment(ref, commentID);
+    if (isDetailShowingRef(ref)) {
+      void syncDetail(owner, name, number, syncGeneration, ref);
     }
-    pendingCommentConfirmations.delete(deletionKey);
     return true;
   }
 

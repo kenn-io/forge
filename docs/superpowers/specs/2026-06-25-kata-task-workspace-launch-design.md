@@ -415,8 +415,9 @@ Frontend coverage:
 
 This can ship behind the existing Kata mode. Automatic mapping needs no config
 migration. Manual mappings require a config schema addition but can default to an
-empty list. Workspaces require a database migration for `item_key` before the
-Kata workspace endpoint ships.
+empty list; the mapping settings category is mounted only while Kata mode is
+enabled. Workspaces require a database migration for `item_key` before the Kata
+workspace endpoint ships.
 
 The implementation should update OpenAPI artifacts after adding the endpoint and
 settings schema, then regenerate the frontend API types through the existing

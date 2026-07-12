@@ -14,112 +14,38 @@
   import FleetSettings from "./FleetSettings.svelte";
   import KataProjectMappingsSettings from "./KataProjectMappingsSettings.svelte";
   import PullRequestSettings from "./PullRequestSettings.svelte";
+  import { SETTINGS_PANELS, settingsPanelsForModes } from "./settingsPanels.js";
 
   // Switched-panel model on kit SettingsLayout: this list is the single
   // source of category order, sidebar labels, and per-panel section header
   // copy. The old scroll-spy page let the nav and section orders drift
   // apart; here they cannot.
-  interface SettingsPanelMeta {
-    id: string;
-    label: string;
-    title: string;
-    group: string;
-    description: string;
-    /** Extra search-only terms; never rendered. */
-    keywords: string;
-  }
-
-  const panels: SettingsPanelMeta[] = [
-    {
-      id: "settings-repositories",
-      label: "Repositories",
-      title: "Repositories",
-      group: "Providers",
-      description: "Tracked repositories and import tools",
-      keywords: "repos repositories providers github gitlab forgejo gitea import glob",
-    },
-    {
-      id: "settings-pull-requests",
-      label: "Pull requests",
-      title: "Pull request safeguards",
-      group: "Workflow",
-      description: "Merge safeguards for stacked branches",
-      keywords: "pull requests merge stack stacked branches safety",
-    },
-    {
-      id: "settings-activity",
-      label: "Activity",
-      title: "Activity feed defaults",
-      group: "Workflow",
-      description: "Default activity feed filters",
-      keywords: "activity feed defaults filters time range closed bots",
-    },
-    {
-      id: "settings-terminal",
-      label: "Terminal",
-      title: "Workspace terminal",
-      group: "Workspace",
-      description: "Workspace terminal rendering and behavior",
-      keywords: "workspace terminal font renderer cursor scrollback ligatures",
-    },
-    {
-      id: "settings-kata-projects",
-      label: "Kata mappings",
-      title: "Kata project mappings",
-      group: "Workspace",
-      description: "Kata project repository identity overrides",
-      keywords: "kata projects repositories mappings workspaces daemon project uid",
-    },
-    {
-      id: "settings-agents",
-      label: "Workspace agents",
-      title: "Workspace agents",
-      group: "Workspace",
-      description: "Agent commands available in workspaces",
-      keywords: "workspace agents codex claude gemini opencode aider binary arguments",
-    },
-    {
-      id: "settings-fleet",
-      label: "Fleet federation",
-      title: "Fleet federation",
-      group: "Workspace",
-      description: "Remote hosts and fleet membership",
-      keywords: "fleet federation remote hosts peers ssh http membership",
-    },
-    {
-      id: "settings-modes",
-      label: "Visible modes",
-      title: "Visible modes",
-      group: "Navigation",
-      description: "Modes shown in the app header",
-      keywords: "visible modes navigation tabs prs issues board reviews docs messages kata",
-    },
-  ];
-
   let searchQuery = $state("");
+  const { settings: settingsStore } = getStores();
+  let settings = $state<Settings | null>(null);
+  let loading = $state(true);
+  let error = $state<string | null>(null);
+  let active = $state(SETTINGS_PANELS[0]!.id);
 
   // The host owns search semantics: kit renders whatever category list it is
   // given, and its display falls back to the first visible category while the
   // bound `active` id is filtered out (the selection itself survives clearing
   // the query). kit renders group headings between runs in array order, so
-  // `panels` keeps each group's entries contiguous.
+  // `visiblePanels` keeps each group's entries contiguous.
+  const visiblePanels = $derived.by(() => {
+    const loaded = settings;
+    return loaded ? settingsPanelsForModes(loaded.modes?.kata === true) : SETTINGS_PANELS;
+  });
   const categories: SettingsCategory[] = $derived.by(() => {
     const query = searchQuery.trim().toLowerCase();
     const visible =
       query === ""
-        ? panels
-        : panels.filter((p) =>
+        ? visiblePanels
+        : visiblePanels.filter((p) =>
             `${p.label} ${p.group} ${p.description} ${p.keywords}`.toLowerCase().includes(query),
           );
     return visible.map((p) => ({ id: p.id, label: p.label, group: p.group, summary: p.description }));
   });
-
-  const { settings: settingsStore } = getStores();
-
-  let settings = $state<Settings | null>(null);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
-  let active = $state(panels[0]!.id);
 
   onMount(() => {
     void loadSettings();
@@ -181,7 +107,7 @@
         <!-- Every panel stays mounted; only the active one is shown. Panel
              components keep unsaved edits in local draft state, so switching
              categories must hide, not unmount, or drafts are silently lost. -->
-        {#each panels as meta (meta.id)}
+        {#each visiblePanels as meta (meta.id)}
           <div class="settings-panel" hidden={meta.id !== activeId}>
             <SettingsSection title={meta.title} description={meta.description}>
               {#if meta.id === "settings-repositories"}

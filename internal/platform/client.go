@@ -176,9 +176,13 @@ type ReviewMutator interface {
 }
 
 type RequestChangesMutator interface {
-	// RequestChanges submits a blocking review against expectedHeadSHA.
-	// Implementations must reject a stale target and revoke a review if the
-	// head moves while the provider request is in flight.
+	// RequestChanges submits a blocking review pinned to expectedHeadSHA
+	// with the same head-binding semantics as
+	// ReviewMutator.ApproveMergeRequest: the pin is forwarded to the
+	// provider, which attaches the review to that commit or rejects a
+	// stale head where it can natively. Implementations must not layer
+	// extra client-side head verification or post-submit revocation on
+	// top — request changes and approve share one submission contract.
 	RequestChanges(
 		ctx context.Context,
 		ref RepoRef,

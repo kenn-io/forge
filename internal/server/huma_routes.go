@@ -3026,14 +3026,17 @@ func (s *Server) requestChangesPR(ctx context.Context, input *requestChangesPRIn
 }
 
 // approvalReviewHeadSHA resolves the provider commit to attach a direct
-// approval to. Direct /approve is a provider-head mutation: clients should
-// send the head captured when the approval UI opened, normally
-// platform_head_sha. Omitting the pin is a compatibility path for older
-// clients; in that case middleman binds the approval to the best stored
-// provider head rather than rejecting the request. Stale supplied pins are
-// delegated to provider head-binding where available and mapped through the
-// normal stale_state path. Merge and draft-review publish use reviewedHeadSHA
-// instead because those paths require a verified diff snapshot.
+// review to. Direct /approve and /request-changes are provider-head
+// mutations sharing this resolution on purpose: both come from the same
+// review form, and a change request must not be pinned more strictly (or
+// more loosely) than an approval. Clients should send the head captured
+// when the review UI opened, normally platform_head_sha. Omitting the pin
+// is a compatibility path for older clients; in that case middleman binds
+// the review to the best stored provider head rather than rejecting the
+// request. Stale supplied pins are delegated to provider head-binding where
+// available and mapped through the normal stale_state path. Merge and
+// draft-review publish use reviewedHeadSHA instead because those paths
+// require a verified diff snapshot.
 func approvalReviewHeadSHA(mr *db.MergeRequest, clientSHA string) string {
 	if sha := strings.TrimSpace(clientSHA); sha != "" {
 		return sha

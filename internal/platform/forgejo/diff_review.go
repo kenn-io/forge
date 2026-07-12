@@ -10,6 +10,12 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 )
 
+// RequestChanges submits a blocking review with exactly the head-binding
+// contract of ApproveMergeRequest: the pin is forwarded as the review
+// commit and Forgejo attaches the review to it. No client-side head
+// verification or post-submit revocation is layered on top — a change
+// request from the review form must not carry a stronger submission
+// contract than an approval from the same form.
 func (c *Client) RequestChanges(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -17,68 +23,10 @@ func (c *Client) RequestChanges(
 	body string,
 	expectedHeadSHA string,
 ) error {
-	if err := c.requireReviewHead(ctx, ref, number, expectedHeadSHA); err != nil {
-		return err
-	}
-	published, err := c.PublishDiffReviewDraft(ctx, ref, number, platform.PublishDiffReviewDraftInput{
+	_, err := c.PublishDiffReviewDraft(ctx, ref, number, platform.PublishDiffReviewDraftInput{
 		Body: body, Action: platform.ReviewActionRequestChanges, HeadSHA: expectedHeadSHA,
 	})
-	if err != nil {
-		return err
-	}
-	if err := c.requireReviewHead(ctx, ref, number, expectedHeadSHA); err == nil {
-		return nil
-	}
-	reviewID, parseErr := strconv.ParseInt(published.ProviderReviewID, 10, 64)
-	if parseErr != nil {
-		return fmt.Errorf("parse stale review id: %w", parseErr)
-	}
-	var resp *forgejosdk.Response
-	dismissErr := c.transport.withRequestContext(ctx, func() error {
-		var err error
-		resp, err = c.transport.api.DismissPullReview(
-			ref.Owner, ref.Name, int64(number), reviewID,
-			forgejosdk.DismissPullReviewOptions{Message: "The pull request head changed while this review was submitted."},
-		)
-		return err
-	})
-	if dismissErr != nil {
-		dismissErr = forgejoHTTPError(resp, dismissErr)
-		return &platform.Error{
-			Code: platform.ErrCodeStaleState, Provider: platform.KindForgejo,
-			PlatformHost: c.host, Capability: "review_action_request_changes",
-			Hint:    fmt.Sprintf("request-changes review %d could not be removed after the head moved", reviewID),
-			Details: map[string]string{"revocation": "failed", "review_id": strconv.FormatInt(reviewID, 10)}, Err: dismissErr,
-		}
-	}
-	return &platform.Error{
-		Code: platform.ErrCodeStaleState, Provider: platform.KindForgejo,
-		PlatformHost: c.host, Capability: "review_action_request_changes",
-		Hint:    fmt.Sprintf("request-changes review %d was removed after the head moved", reviewID),
-		Details: map[string]string{"revocation": "succeeded", "review_id": strconv.FormatInt(reviewID, 10)},
-	}
-}
-
-func (c *Client) requireReviewHead(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	expectedHeadSHA string,
-) error {
-	if expectedHeadSHA == "" {
-		return nil
-	}
-	mr, err := c.GetMergeRequest(ctx, ref, number)
-	if err != nil {
-		return err
-	}
-	if mr.HeadSHA != expectedHeadSHA {
-		return &platform.Error{
-			Code: platform.ErrCodeStaleState, Provider: platform.KindForgejo,
-			PlatformHost: c.host, Capability: "review_action_request_changes",
-		}
-	}
-	return nil
+	return err
 }
 
 func (c *Client) PublishDiffReviewDraft(

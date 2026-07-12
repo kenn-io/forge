@@ -53,6 +53,8 @@
   // Captured when the approval form opens: a background detail refresh
   // must not silently rebind the pin while the form is on screen. A
   // provider with SHA guards can reject a moved head against this pin.
+  // Approve and Request changes submit this same pin — the two form
+  // actions share one head-binding contract.
   let pinAtOpen = $state("");
 
   let expanded = $state(false);
@@ -138,6 +140,11 @@
     }
   }
 
+  // Mirrors handleApprove/runApprovePR on purpose: the same pinAtOpen
+  // captured when the form opened is submitted as expected_head_sha, and
+  // a refresh failure after a successful POST surfaces in the form the
+  // same way an approve refresh failure does. Request changes must not
+  // carry a stronger (or weaker) submission contract than approve.
   async function handleRequestChanges(): Promise<void> {
     if (disabled || submitting || body.trim() === "") return;
     submitting = true;

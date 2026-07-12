@@ -276,6 +276,10 @@
         const bootstrapIssueUID = bootstrapRoute.issue;
         const hasRoutedDaemon =
           requestedDaemonId !== null && daemons.some((daemon) => daemon.id === requestedDaemonId);
+        if (hasRoutedDaemon && requestedDaemonId) {
+          store.clearDaemonBinding();
+          setActiveKataDaemon(requestedDaemonId);
+        }
         await store.bootstrap(
           bootstrapViewName,
           hasRoutedDaemon ? null : bootstrapIssueUID,
@@ -289,6 +293,9 @@
           );
         }
         await store.syncEventCursor();
+        if (hasRoutedDaemon && bootstrapIssueUID) {
+          await store.selectIssue(bootstrapIssueUID);
+        }
         syncedRouteIssueUID =
           bootstrapRoute.issue && store.selectedIssue?.issue.uid === bootstrapRoute.issue ? bootstrapRoute.issue : null;
         syncedRouteViewName = bootstrapRoute.view;

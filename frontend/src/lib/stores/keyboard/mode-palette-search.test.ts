@@ -87,6 +87,7 @@ describe("searchModePalette", () => {
             filters: { scope: { kind: "all" }, status: "all", owner: "", label: "", query: "budget" },
             issues: [task()],
             fetched_at: "2026-05-17T00:00:00Z",
+            daemon_id: "daemon-work",
           }),
         ),
       }),
@@ -124,6 +125,7 @@ describe("searchModePalette", () => {
           title: "Set monthly budget",
           project_name: "Finances",
           status: "open",
+          daemon_id: "daemon-work",
         },
       ],
     });

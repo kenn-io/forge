@@ -5079,6 +5079,103 @@ test("command palette opens task and docs search results", async ({ page }) => {
   }
 });
 
+test("command palette results open tasks on the daemon that served the search", async ({ page }) => {
+  const homeProject = {
+    id: 101,
+    uid: "project-home",
+    name: "Home",
+    metadata: { area: "Personal", sidebar_order: 1 },
+    open_count: 1,
+  };
+  const workProject = {
+    id: 202,
+    uid: "project-work",
+    name: "Work",
+    metadata: { area: "Work", sidebar_order: 1 },
+    open_count: 1,
+  };
+  // The same UID exists on both daemons: opening a palette hit must pin
+  // the daemon that served the search, not fall back to whatever daemon
+  // the workspace happens to resolve.
+  const home = await startKataBackend({
+    projects: [homeProject],
+    issues: [
+      issueSummary({
+        id: 1011,
+        uid: "issue-shared",
+        project_id: homeProject.id,
+        project_uid: homeProject.uid,
+        project_name: homeProject.name,
+        short_id: "shared-1",
+        qualified_id: "Home#shared-1",
+        title: "Shared provenance task",
+        body: "Home daemon copy.",
+        labels: ["home"],
+      }),
+    ],
+  });
+  const work = await startKataBackend({
+    projects: [workProject],
+    issues: [
+      issueSummary({
+        id: 2021,
+        uid: "issue-shared",
+        project_id: workProject.id,
+        project_uid: workProject.uid,
+        project_name: workProject.name,
+        short_id: "shared-1",
+        qualified_id: "Work#shared-1",
+        title: "Shared provenance task",
+        body: "Work daemon copy.",
+        labels: ["work"],
+      }),
+    ],
+  });
+  const kataHome = await configureKataHomeDaemons(
+    [
+      { name: "home", url: home.url },
+      { name: "work", url: work.url },
+    ],
+    "home",
+  );
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata`);
+    await expectKataDaemonSwitcherReady(page);
+    await page.getByTestId("daemon-chip").click();
+    await page.getByTestId("daemon-row-work").click();
+    await expect(page.getByTestId("daemon-chip")).toContainText("work");
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Shared provenance task/ })).toBeVisible();
+    const homeDetailReads = home.state.seenPaths.filter(
+      (seenPath) => seenPath === "GET /api/v1/issues/issue-shared",
+    ).length;
+
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
+    const dialog = page.getByRole("dialog", { name: "Command palette" });
+    await expect(dialog).toBeVisible();
+    await dialog.locator(".palette-input").fill("provenance");
+    const taskRow = dialog
+      .locator(".palette-group", { hasText: "Kata tasks" })
+      .locator(".palette-row", { hasText: "Shared provenance task" });
+    await expect(taskRow).toBeVisible();
+    await taskRow.click();
+
+    await expect(page).toHaveURL(/issue=issue-shared/);
+    await expect(page).toHaveURL(/daemon=work/);
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Work daemon copy.");
+    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/issues/issue-shared");
+    expect(home.state.seenPaths.filter((seenPath) => seenPath === "GET /api/v1/issues/issue-shared")).toHaveLength(
+      homeDetailReads,
+    );
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await home.close();
+    await work.close();
+  }
+});
+
 test("docs task links switch an accepted workspace to the folder-bound external daemon", async ({ page }) => {
   const homeProject = {
     id: 101,

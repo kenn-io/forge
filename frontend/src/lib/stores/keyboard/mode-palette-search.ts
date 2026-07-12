@@ -12,6 +12,9 @@ export interface ModeTaskResult {
   title: string;
   project_name: string;
   status: KataTaskSummary["status"];
+  // The daemon that served this search hit. Task UIDs are only unique
+  // per daemon, so opening a result must target the same daemon.
+  daemon_id?: string | undefined;
 }
 
 export interface ModeDocResult {
@@ -58,7 +61,7 @@ export async function searchModePalette(query: string, deps: ModePaletteSearchDe
   return { query: trimmed, tasks, docs };
 }
 
-function taskRowFromIssue(issue: KataTaskSummary): ModeTaskResult {
+function taskRowFromIssue(issue: KataTaskSummary, daemonId: string | undefined): ModeTaskResult {
   return {
     kind: "kata-task",
     uid: issue.uid,
@@ -67,6 +70,7 @@ function taskRowFromIssue(issue: KataTaskSummary): ModeTaskResult {
     title: issue.title,
     project_name: issue.project_name,
     status: issue.status,
+    daemon_id: daemonId,
   };
 }
 
@@ -82,7 +86,7 @@ async function searchTasks(
       label: "",
       query,
     });
-    const rows = response.issues.map(taskRowFromIssue);
+    const rows = response.issues.map((issue) => taskRowFromIssue(issue, response.daemon_id));
     const truncated = rows.length > MODE_SEARCH_DISPLAY_LIMIT;
     return {
       ok: true,

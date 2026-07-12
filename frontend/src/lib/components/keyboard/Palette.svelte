@@ -42,7 +42,7 @@
 
   interface Props {
     modeSearch?: ((query: string) => Promise<ModePaletteResults>) | undefined;
-    onOpenKataIssue?: ((uid: string) => void) | undefined;
+    onOpenKataIssue?: ((uid: string, daemonId?: string) => void) | undefined;
     onOpenDoc?: ((folder: string, relPath: string) => void) | undefined;
   }
 
@@ -358,8 +358,9 @@
     }
     if (result.kind === "kata-task") {
       closePalette();
-      if (onOpenKataIssue) onOpenKataIssue(result.item.uid);
-      else navigate(`/kata?issue=${encodeURIComponent(result.item.uid)}`);
+      const daemonSuffix = result.item.daemon_id ? `&daemon=${encodeURIComponent(result.item.daemon_id)}` : "";
+      if (onOpenKataIssue) onOpenKataIssue(result.item.uid, result.item.daemon_id);
+      else navigate(`/kata?issue=${encodeURIComponent(result.item.uid)}${daemonSuffix}`);
       return;
     }
     if (result.kind === "doc") {

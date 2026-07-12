@@ -86,6 +86,13 @@ var (
 
 var runServer = run
 
+type versionOutput struct {
+	Name      string `json:"name"`
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	BuildDate string `json:"buildDate"`
+}
+
 func main() {
 	closeLog, err := configureLogging(os.Stderr)
 	if err != nil {
@@ -187,12 +194,7 @@ func runCLI(args []string, stdout io.Writer) error {
 	if len(args) > 0 {
 		switch args[0] {
 		case "version":
-			_, err := fmt.Fprintf(
-				stdout,
-				"middleman %s (%s) built %s\n",
-				version, commit, buildDate,
-			)
-			return err
+			return runVersionCLI(args[1:], stdout)
 		case "config":
 			return runConfigCLI(args[1:], stdout)
 		case "docs":
@@ -220,6 +222,27 @@ func runCLI(args []string, stdout io.Writer) error {
 	}
 
 	return serve.Run(args, runServer)
+}
+
+func runVersionCLI(args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		_, err := fmt.Fprintf(
+			stdout,
+			"middleman %s (%s) built %s\n",
+			version, commit, buildDate,
+		)
+		return err
+	}
+	if len(args) != 1 || args[0] != "--json" {
+		return fmt.Errorf("usage: middleman version [--json]")
+	}
+
+	return json.NewEncoder(stdout).Encode(versionOutput{
+		Name:      "middleman",
+		Version:   version,
+		Commit:    commit,
+		BuildDate: buildDate,
+	})
 }
 
 func runPtyOwnerCLI(args []string) error {

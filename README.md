@@ -75,7 +75,7 @@ Expandable check run section on each PR shows pass/fail/pending status with colo
 - **Copy to clipboard** -- one-click copy of PR/issue bodies and comments
 - **Settings UI** -- add/remove repos and configure activity feed defaults from the browser
 - **Reverse proxy support** -- deploy behind a proxy with the `base_path` config
-- **Version info** -- `middleman version` prints the version, commit, and build date
+- **Version info** -- `middleman version` prints build metadata, with `--json` for integrations
 
 ### Additional modes in this integration branch
 

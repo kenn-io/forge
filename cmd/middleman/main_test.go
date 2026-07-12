@@ -866,6 +866,39 @@ func TestRunCLIConfigReadPort(t *testing.T) {
 	assert.Equal("9123\n", stdout.String())
 }
 
+func TestRunCLIVersionPreservesHumanOutput(t *testing.T) {
+	originalVersion, originalCommit, originalBuildDate := version, commit, buildDate
+	version, commit, buildDate = "1.2.3", "abc1234", "2026-07-12T12:00:00Z"
+	t.Cleanup(func() {
+		version, commit, buildDate = originalVersion, originalCommit, originalBuildDate
+	})
+
+	var stdout bytes.Buffer
+	err := runCLI([]string{"version"}, &stdout)
+
+	require.NoError(t, err)
+	assert.Equal(t, "middleman 1.2.3 (abc1234) built 2026-07-12T12:00:00Z\n", stdout.String())
+}
+
+func TestRunCLIVersionJSONReturnsStableBuildMetadata(t *testing.T) {
+	originalVersion, originalCommit, originalBuildDate := version, commit, buildDate
+	version, commit, buildDate = "1.2.3", "abc1234", "2026-07-12T12:00:00Z"
+	t.Cleanup(func() {
+		version, commit, buildDate = originalVersion, originalCommit, originalBuildDate
+	})
+
+	var stdout bytes.Buffer
+	err := runCLI([]string{"version", "--json"}, &stdout)
+
+	require.NoError(t, err)
+	assert.JSONEq(t, `{
+		"name": "middleman",
+		"version": "1.2.3",
+		"commit": "abc1234",
+		"buildDate": "2026-07-12T12:00:00Z"
+	}`, stdout.String())
+}
+
 func TestRunCLIConfigReadPortCreatesDefaultConfig(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

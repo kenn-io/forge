@@ -14,9 +14,21 @@ Without a subcommand, `middleman` starts the daemon and web UI.
 
 ```sh
 middleman version
+middleman version --json
 ```
 
-Prints the version, commit, and build date.
+Prints the version, commit, and build date. Use `--json` for fleet inventory
+and other integrations. The JSON contract is a single object written to stdout:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `name` | string | Canonical tool name, always `middleman` |
+| `version` | string | Semantic version for a release build; development identifier otherwise |
+| `commit` | string | Build commit identifier |
+| `buildDate` | string | UTC RFC3339 timestamp for a release build; `unknown` when not injected |
+
+The command does not read configuration, connect to a daemon, or require a
+workspace.
 
 ## Status
 

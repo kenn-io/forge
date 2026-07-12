@@ -4334,15 +4334,20 @@ test("kata daemon switch restarts the target stream after stale route churn", as
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Visible only from the work daemon.");
 
     await page.evaluate(() => {
-      window.history.pushState({}, "", "/kata?view=all&issue=issue-work-queued");
+      window.history.pushState({}, "", "/kata?view=all&scope=project-work&issue=issue-work-queued");
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
     releaseEvents();
 
     await expect(page.getByTestId("daemon-chip")).toContainText("work");
+    await expect(page).toHaveURL(/scope=project-work/);
     await expect(page.getByRole("button", { name: /Ship the release/ })).toBeVisible();
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText(queuedWorkIssue.body);
     await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/issues/issue-work-queued");
+    // The queued route also changed the project scope, so the accepted
+    // daemon must serve the scoped backlog; the abandoned daemon must not.
+    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/projects/202/issues?status=open");
+    expect(home.state.seenPaths).not.toContain("GET /api/v1/projects/202/issues?status=open");
     await expect
       .poll(() => work.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/events/stream")).length)
       .toBeGreaterThanOrEqual(1);

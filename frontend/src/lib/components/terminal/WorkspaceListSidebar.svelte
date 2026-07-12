@@ -1047,7 +1047,7 @@
       {/if}
     </section>
   {/if}
-  <SidebarScrollArea class="sidebar-list">
+  <SidebarScrollArea class="sidebar-list" label="Workspaces">
     {#snippet children()}
     {#if sortMode === "repo"}
     {#each grouped as { key: repoKey, items } (repoKey)}

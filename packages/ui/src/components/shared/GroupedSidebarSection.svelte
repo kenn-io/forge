@@ -63,6 +63,7 @@
     border-bottom: 1px solid var(--sidebar-list-border-muted, var(--border-muted));
     background: var(--sidebar-group-header-bg, var(--bg-inset));
     color: var(--text-muted);
+    cursor: pointer;
     font-family: inherit;
     font-size: var(--font-size-xs);
     font-weight: 600;
@@ -94,6 +95,10 @@
     flex-shrink: 0;
   }
 
+  .sidebar-group-header__leading:empty {
+    display: none;
+  }
+
   .sidebar-group-header__name {
     flex: 1;
     min-width: 0;
@@ -107,5 +112,11 @@
     color: var(--text-muted);
     font-family: var(--font-mono);
     font-size: var(--font-size-2xs);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar-group-header__chevron {
+      transition: none;
+    }
   }
 </style>

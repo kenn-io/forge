@@ -6,12 +6,14 @@
   interface Props {
     class?: ClassValue;
     dataTest?: string;
+    label: string;
     children: Snippet;
   }
 
   const {
     class: className = "",
     dataTest,
+    label,
     children,
   }: Props = $props();
 
@@ -61,10 +63,15 @@
 </script>
 
 <div class={["sidebar-scroll-area", className]} data-test={dataTest}>
+  <!-- Scrollable regions need keyboard access. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     class="sidebar-scroll-area__viewport"
+    aria-label={label}
     bind:this={viewport}
     onscroll={handleScroll}
+    role="region"
+    tabindex="0"
   >
     <div
       class="sidebar-scroll-area__content"
@@ -112,6 +119,7 @@
   .sidebar-scroll-indicator {
     position: absolute;
     inset: 0 2px 0 auto;
+    z-index: 2;
     width: 4px;
     pointer-events: none;
     opacity: 0;
@@ -134,6 +142,13 @@
   @media (prefers-reduced-motion: reduce) {
     .sidebar-scroll-indicator {
       transition: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .sidebar-scroll-indicator__thumb {
+      background: CanvasText;
+      box-shadow: none;
     }
   }
 </style>

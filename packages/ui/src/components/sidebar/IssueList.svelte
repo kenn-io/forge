@@ -209,7 +209,7 @@
   {#if issues.getIssueFilterState() !== "open"}
     <p class="state-note">Showing items closed after middleman began tracking them</p>
   {/if}
-  <SidebarScrollArea class="list-body">
+  <SidebarScrollArea class="list-body" label="Issues">
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
       <p class="state-message">No repositories configured.<br />
         {#if !isEmbedded()}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}</p>

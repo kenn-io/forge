@@ -426,6 +426,7 @@
   {/if}
   <SidebarScrollArea
     dataTest="pr-list"
+    label="Pull requests"
     class={[
       "list-body",
       {

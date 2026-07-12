@@ -76,3 +76,33 @@ test("PR, issue, and workspace rails share labeled overlay scroll regions", asyn
     await expect(scrollArea.locator("..").locator(".sidebar-scroll-indicator")).toHaveCount(1);
   }
 });
+
+test("dark grouped rows keep selected between the surface and hover", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("middleman-theme", "dark"));
+  await page.goto("/pulls");
+
+  const lightness = await page.evaluate(() => {
+    const colors = ["--sidebar-row-bg", "--bg-row-selected", "--sidebar-row-hover-bg"].map((token) => {
+      const sample = document.createElement("div");
+      sample.style.background = `var(${token})`;
+      document.body.append(sample);
+      const color = getComputedStyle(sample).backgroundColor;
+      sample.remove();
+      return color;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext("2d", { willReadFrequently: true })!;
+    return colors.map((color) => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      const [red, green, blue] = context.getImageData(0, 0, 1, 1).data;
+      return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+    });
+  });
+
+  expect(lightness[1]).toBeGreaterThan(lightness[0]!);
+  expect(lightness[1]).toBeLessThan(lightness[2]!);
+});

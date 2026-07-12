@@ -97,7 +97,8 @@
 :root.dark {
   --budget-bar-bg: #2a2a3e; /* kit-ui-check-ignore: budget-bar palette */
   --kanban-new: #a8a29e; /* kit-ui-check-ignore: kanban palette */
-  --bg-row-selected: color-mix(in srgb, var(--bg-surface-hover) 50%, var(--bg-surface));
+  --sidebar-row-hover-bg: color-mix(in srgb, var(--bg-surface-hover) 82%, var(--text-muted) 18%);
+  --bg-row-selected: color-mix(in srgb, var(--sidebar-row-hover-bg) 38%, var(--bg-surface));
 
   /* Diff view — dark theme (GitHub Dark palette) */
   --diff-bg: #0d1117; /* kit-ui-check-ignore: GitHub diff palette */

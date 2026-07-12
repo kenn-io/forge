@@ -21,9 +21,14 @@ test("renders mocked frontend data", async ({ page }) => {
   await page.goto("/pulls");
 
   await expect(page.getByText("Add browser regression coverage")).toBeVisible();
-  await expect(page.getByText("acme/widgets")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Pull requests" })
+      .getByRole("button", { name: /^acme\/widgets \d+$/ })
+      .first(),
+  ).toBeVisible();
   await expect(page.getByRole("contentinfo").getByText("3 PRs")).toBeVisible();
-  await expect(page.getByRole("contentinfo").getByText("1 repos")).toBeVisible();
+  await expect(page.getByRole("contentinfo").getByText("2 repos")).toBeVisible();
 
   await page.getByRole("button", { name: "Issues" }).click();
 

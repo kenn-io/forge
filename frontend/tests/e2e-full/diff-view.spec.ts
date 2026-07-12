@@ -3511,8 +3511,11 @@ test.describe("diff view", () => {
     await expect(treeFileItems(detailFiles)).toHaveCount(4);
 
     // Collapse the acme/widgets repo group (containing the selected PR).
-    await page.locator(".repo-header", { hasText: "acme/widgets" }).click();
-    await expect(page.locator(".repo-header", { hasText: "acme/widgets" })).toHaveAttribute("aria-expanded", "false");
+    await page.locator(".sidebar-group-header", { hasText: "acme/widgets" }).click();
+    await expect(page.locator(".sidebar-group-header", { hasText: "acme/widgets" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
 
     // PR row hidden, but the detail Files pane keeps the file list available.
     await expect(page.locator(".pull-item").filter({ hasText: "caching layer" })).toHaveCount(0);

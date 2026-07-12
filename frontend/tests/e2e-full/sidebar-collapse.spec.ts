@@ -333,7 +333,7 @@ test.describe("collapsible sidebar", () => {
 
     await dropdown.locator(".kit-filter-dropdown__item", { hasText: "Flat list" }).click();
     await expect(dropdown).toBeVisible();
-    await expect(page.locator(".repo-header")).toHaveCount(0, {
+    await expect(page.locator(".sidebar-group-header")).toHaveCount(0, {
       timeout: 5_000,
     });
     await expect(page.locator(".repo-chip").first()).toBeVisible();
@@ -413,7 +413,7 @@ test.describe("collapsible sidebar", () => {
 
     await dropdown.locator(".kit-filter-dropdown__item", { hasText: "All" }).last().click();
     await expect(dropdown).toBeVisible();
-    await expect(page.locator(".repo-header")).toHaveCount(0, {
+    await expect(page.locator(".sidebar-group-header")).toHaveCount(0, {
       timeout: 5_000,
     });
     await expect(page.locator(".repo-chip").first()).toBeVisible();

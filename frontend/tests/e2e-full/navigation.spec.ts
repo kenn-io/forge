@@ -50,16 +50,16 @@ test.describe("view navigation", () => {
   test("Kata shell does not expose repo selector or respond to PR number shortcuts", async ({ page }) => {
     await page.goto("/kata");
 
-    await expect(page).toHaveURL(/\/kata$/);
+    await expect.poll(() => new URL(page.url()).pathname).toBe("/kata");
     await expect(page.getByRole("heading", { name: "Kata" })).toBeVisible();
     await expect(page.getByTitle("Select repository")).not.toBeAttached();
 
     await page.locator("main.app-main").click();
     await page.keyboard.press("1");
-    await expect(page).toHaveURL(/\/kata$/);
+    await expect.poll(() => new URL(page.url()).pathname).toBe("/kata");
 
     await page.keyboard.press("2");
-    await expect(page).toHaveURL(/\/kata$/);
+    await expect.poll(() => new URL(page.url()).pathname).toBe("/kata");
   });
 
   test("Docs and Messages routes load their mode shells directly", async ({ page }) => {

@@ -141,9 +141,9 @@ test.describe("PR list view", () => {
 
     await selectPullGrouping(page, "Status");
 
-    const headers = page.locator(".repo-header");
+    const headers = page.locator(".sidebar-group-header");
     await expect(headers).toHaveCount(1);
-    await expect(headers.first().locator(".repo-header__name")).toHaveText("Closed");
+    await expect(headers.first().locator(".sidebar-group-header__name")).toHaveText("Closed");
   });
 
   test("search filters PRs by title", async ({ page }) => {

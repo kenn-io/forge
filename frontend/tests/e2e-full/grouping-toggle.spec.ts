@@ -54,7 +54,7 @@ test.describe("grouping toggle", () => {
   test("j/k navigation follows flat order in ungrouped mode", async ({ page }) => {
     // Switch to ungrouped.
     await selectPullGrouping(page, "All");
-    await expect(page.locator(".repo-header")).toHaveCount(0, {
+    await expect(page.locator(".sidebar-group-header")).toHaveCount(0, {
       timeout: 5_000,
     });
 

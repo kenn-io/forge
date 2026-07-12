@@ -14,7 +14,7 @@ async function waitForPullList(page: Page): Promise<void> {
 }
 
 function widgetsHeader(page: Page) {
-  return page.locator(".repo-header", { hasText: "acme/widgets" });
+  return page.locator(".sidebar-group-header", { hasText: "acme/widgets" });
 }
 
 test("PR list — keyboard activation via Enter and Space toggles collapse", async ({ page }) => {

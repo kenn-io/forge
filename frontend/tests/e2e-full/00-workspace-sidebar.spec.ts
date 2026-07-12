@@ -211,15 +211,15 @@ test.describe("workspace sidebar full-stack", () => {
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${githubWorkspace.id}`);
 
-      const githubGroup = page.locator(".workspace-list-sidebar .group-header").filter({
-        has: page.locator(".group-label", {
+      const githubGroup = page.locator(".workspace-list-sidebar .sidebar-group-header").filter({
+        has: page.locator(".sidebar-group-header__name", {
           hasText: "acme/widgets",
         }),
       });
       await expect(githubGroup.getByRole("img", { name: "GitHub" })).toBeVisible();
 
-      const gitlabGroup = page.locator(".workspace-list-sidebar .group-header").filter({
-        has: page.locator(".group-label", {
+      const gitlabGroup = page.locator(".workspace-list-sidebar .sidebar-group-header").filter({
+        has: page.locator(".sidebar-group-header__name", {
           hasText: "group/project",
         }),
       });
@@ -280,7 +280,7 @@ test.describe("workspace sidebar full-stack", () => {
       await page.goto(`${isolatedServer.info.base_url}/terminal/${githubWorkspace.id}`);
 
       const rows = page.locator(".workspace-list-sidebar .ws-row");
-      const headers = page.locator(".workspace-list-sidebar .group-header");
+      const headers = page.locator(".workspace-list-sidebar .sidebar-group-header");
       await expect(rows).toHaveCount(2);
       await expect(headers).toHaveCount(2);
 
@@ -370,7 +370,7 @@ test.describe("workspace sidebar full-stack", () => {
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
 
-      const groupLabel = page.locator(".workspace-list-sidebar .group-header .group-label");
+      const groupLabel = page.locator(".workspace-list-sidebar .sidebar-group-header .sidebar-group-header__name");
       const diffStats = page.locator(".workspace-list-sidebar .workspace-diff-stats");
       const viewTrigger = page.getByTitle("View workspace options");
       const viewBadge = viewTrigger.locator(".kit-filter-dropdown__badge");
@@ -492,8 +492,8 @@ test.describe("workspace sidebar full-stack", () => {
       await page.goto(`${isolatedServer.info.base_url}/terminal/${safariWorkspace.id}`);
 
       const rows = page.locator(".workspace-list-sidebar .ws-row");
-      const groupHeader = page.locator(".workspace-list-sidebar .group-header").filter({
-        has: page.locator(".group-label", {
+      const groupHeader = page.locator(".workspace-list-sidebar .sidebar-group-header").filter({
+        has: page.locator(".sidebar-group-header__name", {
           hasText: "acme/widgets",
         }),
       });

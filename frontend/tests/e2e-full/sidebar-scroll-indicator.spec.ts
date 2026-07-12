@@ -70,7 +70,8 @@ test("PR, issue, and workspace rails share labeled overlay scroll regions", asyn
 
   for (const rail of rails) {
     await page.goto(rail.path);
-    const scrollArea = page.getByRole("region", { name: rail.label });
+    const scope = rail.path === "/workspaces" ? page.locator(".workspace-list-sidebar") : page;
+    const scrollArea = scope.getByRole("region", { name: rail.label, exact: true });
     await expect(scrollArea).toBeVisible();
     await expect(scrollArea).toHaveAttribute("tabindex", "0");
     await expect(scrollArea.locator("..").locator(".sidebar-scroll-indicator")).toHaveCount(1);

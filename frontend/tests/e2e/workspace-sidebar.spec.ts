@@ -3559,7 +3559,7 @@ test.describe("workspace list sorting", () => {
     await page.goto("/workspaces");
 
     const names = page.locator(".workspace-list-sidebar .ws-name");
-    const headers = page.locator(".workspace-list-sidebar .group-header");
+    const headers = page.locator(".workspace-list-sidebar .sidebar-group-header");
     await expect(names).toHaveText(["Newest created", "Oldest without activity", "Most recently active"]);
     await expect(headers).toHaveCount(2);
 
@@ -3634,7 +3634,7 @@ test.describe("workspace list sorting", () => {
 
     await page.goto("/workspaces");
 
-    const groupLabels = page.locator(".workspace-list-sidebar .group-label");
+    const groupLabels = page.locator(".workspace-list-sidebar .sidebar-group-header__name");
     await expect(groupLabels).toHaveText([
       "github/github.com/acme/widgets",
       "gitea/github.com/acme/widgets",

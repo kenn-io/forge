@@ -27,17 +27,16 @@
  *          body: { body: body.trim() }
  *        on error -> throw `error.detail ?? error.title ??
  *                            "failed to approve pull request"`
- *        on success:
- *          body = ""; expanded = false;
- *          await detail.loadDetail(owner, name, number, ref)
- *          await pulls.loadPulls()
+ *        on success, the component closes and clears the form before
+ *          starting its best-effort detail and pull-list refresh
  *        finally -> submitting = false
  *    - Input props: owner, name, number, provider, platformHost,
  *      repoPath, size, disabled.
  *    - Endpoint: POST /pulls/.../approve.
- *    - Refresh path: detail.loadDetail(...) + pulls.loadPulls().
- *    - Toast/flash: none. Errors render inline as the button's own
- *      `let error = $state<string|null>(null)` text.
+ *    - Refresh path: owned by ApproveButton so mutation success closes
+ *      the form even when the follow-up refresh fails.
+ *    - Toast/flash: mutation errors render inline; refresh errors use
+ *      the shared flash store.
  *
  * 2. ApproveWorkflowsButton.svelte
  *    - Render guard: rendered when caller passes it in (PullDetail
@@ -266,8 +265,8 @@ export function canApprovePR(input: PRDetailActionInput): boolean {
   return input.pr.State === "open" && input.viewerCan.approve && !input.stale;
 }
 
-export async function runApprovePR(input: PRDetailActionInput): Promise<void> {
-  if (!canApprovePR(input)) return;
+export async function submitApprovePR(input: PRDetailActionInput): Promise<boolean> {
+  if (!canApprovePR(input)) return false;
   const { ref, number } = input;
   const body = (input.approveCommentBody ?? "").trim();
   // Include the latest synced PR head when available. Providers that
@@ -292,6 +291,12 @@ export async function runApprovePR(input: PRDetailActionInput): Promise<void> {
     input.onError?.(msg);
     throw new Error(msg);
   }
+  return true;
+}
+
+export async function runApprovePR(input: PRDetailActionInput): Promise<void> {
+  if (!(await submitApprovePR(input))) return;
+  const { ref, number } = input;
   await input.stores.detail.loadDetail(ref.owner, ref.name, number, {
     provider: ref.provider,
     platformHost: ref.platformHost,

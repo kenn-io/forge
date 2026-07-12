@@ -6,7 +6,7 @@
   import { isProblem, problemConflictContext, problemConflictReason } from "../../api/problems.js";
   import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import { runApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
+  import { submitApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
 
   const client = getClient();
   const { detail, pulls } = getStores();
@@ -127,10 +127,19 @@
     submittingAction = "approve";
     error = null;
     try {
-      await runApprovePR(buildInput());
+      const approved = await submitApprovePR(buildInput());
+      if (!approved) return;
       body = "";
       expanded = false;
       oncompleted?.();
+      try {
+        await Promise.all([
+          detail.loadDetail(owner, name, number, { provider, platformHost, repoPath }),
+          pulls.loadPulls(),
+        ]);
+      } catch {
+        showFlash("Pull request approved, but it could not be refreshed.");
+      }
     } catch (err) {
       if (expanded) {
         error = err instanceof Error ? err.message : String(err);
@@ -141,7 +150,7 @@
     }
   }
 
-  // Mirrors handleApprove/runApprovePR on purpose: the same pinAtOpen
+  // Mirrors handleApprove/submitApprovePR on purpose: the same pinAtOpen
   // captured when the form opened is submitted as expected_head_sha.
   // Request changes must not carry a stronger (or weaker) provider
   // submission contract than approve.

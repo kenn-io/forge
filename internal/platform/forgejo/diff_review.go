@@ -10,12 +10,6 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 )
 
-// RequestChanges submits a blocking review with exactly the head-binding
-// contract of ApproveMergeRequest: the pin is forwarded as the review
-// commit and Forgejo attaches the review to it. No client-side head
-// verification or post-submit revocation is layered on top — a change
-// request from the review form must not carry a stronger submission
-// contract than an approval from the same form.
 func (c *Client) RequestChanges(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -23,10 +17,7 @@ func (c *Client) RequestChanges(
 	body string,
 	expectedHeadSHA string,
 ) error {
-	_, err := c.PublishDiffReviewDraft(ctx, ref, number, platform.PublishDiffReviewDraftInput{
-		Body: body, Action: platform.ReviewActionRequestChanges, HeadSHA: expectedHeadSHA,
-	})
-	return err
+	return c.provider.RequestChanges(ctx, ref, number, body, expectedHeadSHA)
 }
 
 func (c *Client) PublishDiffReviewDraft(

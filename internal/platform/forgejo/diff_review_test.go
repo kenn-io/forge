@@ -126,6 +126,24 @@ func TestPublishDiffReviewDraftApproveSubmitsReview(t *testing.T) {
 	assert.Equal(submitted, result.SubmittedAt)
 }
 
+func TestRequestChangesMapsNotFoundResponse(t *testing.T) {
+	require := Require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	err = client.RequestChanges(
+		context.Background(), platform.RepoRef{Owner: "acme", Name: "widgets"},
+		42, "needs work", "reviewed-head",
+	)
+
+	require.Error(err)
+	require.ErrorIs(err, platform.ErrNotFound)
+}
+
 func TestListMergeRequestReviewThreadsReadsForgejoReviewComments(t *testing.T) {
 	assert := assert.New(t)
 	require := Require.New(t)

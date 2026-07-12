@@ -84,6 +84,11 @@ func (p *Provider) Capabilities() platform.Capabilities {
 		caps.AssigneeMutation = true
 		if _, ok := p.transport.(ReviewMutationTransport); ok {
 			caps.ReviewMutation = true
+			caps.SupportedReviewActions = []platform.ReviewAction{
+				platform.ReviewActionComment,
+				platform.ReviewActionApprove,
+				platform.ReviewActionRequestChanges,
+			}
 		}
 		if _, ok := p.transport.(ReviewRequestTransport); ok {
 			caps.ReviewerMutation = true
@@ -589,6 +594,28 @@ func (p *Provider) ApproveMergeRequest(
 		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review event")
 	}
 	return events[0], nil
+}
+
+func (p *Provider) RequestChanges(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	body string,
+	expectedHeadSHA string,
+) error {
+	transport, ok := p.transport.(ReviewMutationTransport)
+	if !ok || !p.options.Mutations {
+		return platform.UnsupportedCapability(p.kind, p.host, "review_action_request_changes")
+	}
+	_, err := transport.CreatePullReview(ctx, ref, number, ReviewOptions{
+		State:    "REQUEST_CHANGES",
+		Body:     body,
+		CommitID: expectedHeadSHA,
+	})
+	if err != nil {
+		return p.mapError(err)
+	}
+	return nil
 }
 
 func (p *Provider) EditMergeRequestContent(

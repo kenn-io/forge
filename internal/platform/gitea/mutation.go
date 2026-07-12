@@ -95,6 +95,16 @@ func (c *Client) ApproveMergeRequest(
 	return c.provider.ApproveMergeRequest(ctx, ref, number, body, expectedHeadSHA)
 }
 
+func (c *Client) RequestChanges(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	body string,
+	expectedHeadSHA string,
+) error {
+	return c.provider.RequestChanges(ctx, ref, number, body, expectedHeadSHA)
+}
+
 func (t *transport) CreatePullReview(
 	ctx context.Context,
 	ref platform.RepoRef,

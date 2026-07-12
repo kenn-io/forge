@@ -13441,6 +13441,13 @@ func TestAPICapabilityGatedMutationsHandleMissingSyncer(t *testing.T) {
 			capability: "review_mutation",
 		},
 		{
+			name:       "request changes",
+			method:     http.MethodPost,
+			path:       "/api/v1/pulls/gh/acme/widget/7/request-changes",
+			body:       map[string]string{"body": "needs work"},
+			capability: "review_mutation",
+		},
+		{
 			name:       "workflow approval",
 			method:     http.MethodPost,
 			path:       "/api/v1/pulls/gh/acme/widget/7/approve-workflows",
@@ -17831,6 +17838,29 @@ func TestAPIGitealikeApproveBeforeHeadRace(t *testing.T) {
 	assert.Contains(transport.mutationCalls, "review:7:approved:abc123")
 }
 
+func TestAPIGitealikeRequestChangesPassesReviewedHeadPinToProvider(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	transport := newAPIGitealikeHeadPinTransport(t)
+	client, _ := setupAPIGitealikeHeadPinServer(t, transport)
+	expectedHeadSHA := "abc123"
+
+	resp, err := client.HTTP.RequestPullChangesOnHostWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
+		generated.RequestPullChangesOnHostJSONRequestBody{
+			Body:            "needs work",
+			ExpectedHeadSha: &expectedHeadSHA,
+		},
+	)
+
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	assert.Equal("REQUEST_CHANGES", transport.lastReviewOpts.State)
+	assert.Equal("needs work", transport.lastReviewOpts.Body)
+	assert.Equal("abc123", transport.lastReviewOpts.CommitID)
+}
+
 type apiTestGitealikeTransport struct {
 	repo           gitealike.RepositoryDTO
 	pulls          []gitealike.PullRequestDTO
@@ -17845,6 +17875,7 @@ type apiTestGitealikeTransport struct {
 	nextIssueIndex int
 	mutationCalls  []string
 	mergeHeadPins  []string
+	lastReviewOpts gitealike.ReviewOptions
 
 	lastMergeOpts gitealike.MergeOptions
 	// headOverrides, when non-empty, replaces the head SHA returned by
@@ -18169,6 +18200,7 @@ func (t *apiTestGitealikeTransport) CreatePullReview(
 		return gitealike.ReviewDTO{}, platform.ErrNotFound
 	}
 	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("review:%d:%s:%s", number, opts.Body, opts.CommitID))
+	t.lastReviewOpts = opts
 	return gitealike.ReviewDTO{
 		ID:        980,
 		User:      gitealike.UserDTO{UserName: "mutation-bot"},

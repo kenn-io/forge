@@ -261,6 +261,11 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 		AssigneeMutation:    true,
 		ReviewerMutation:    true,
 		MutationHeadBinding: true,
+		SupportedReviewActions: []platform.ReviewAction{
+			platform.ReviewActionComment,
+			platform.ReviewActionApprove,
+			platform.ReviewActionRequestChanges,
+		},
 	}, client.Capabilities())
 }
 
@@ -555,6 +560,40 @@ func TestClientApproveMergeRequestSubmitsReview(t *testing.T) {
 	assert.True(sawRequest)
 	assert.Equal("review", event.EventType)
 	assert.Equal("APPROVED", event.Summary)
+}
+
+func TestClientRequestChangesSubmitsReview(t *testing.T) {
+	assert := assert.New(t)
+	require := Require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(http.MethodPost, r.Method)
+		assert.Equal("/api/v1/repos/owner/repo/pulls/7/reviews", r.URL.Path)
+		var body struct {
+			Event    string `json:"event"`
+			Body     string `json:"body"`
+			CommitID string `json:"commit_id"`
+		}
+		if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		assert.Equal("REQUEST_CHANGES", body.Event)
+		assert.Equal("needs work", body.Body)
+		assert.Equal("reviewed-head", body.CommitID)
+		w.Header().Set("Content-Type", "application/json")
+		assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+			"id": 41, "state": "REQUEST_CHANGES", "body": "needs work",
+			"user": map[string]any{"login": "dana"}, "submitted_at": "2026-05-01T12:00:00Z",
+		}))
+	}))
+	defer server.Close()
+
+	client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	require.NoError(client.RequestChanges(
+		context.Background(), platform.RepoRef{Owner: "owner", Name: "repo"},
+		7, "needs work", "reviewed-head",
+	))
 }
 
 func TestClientMapsNotFoundResponsesToPlatformError(t *testing.T) {

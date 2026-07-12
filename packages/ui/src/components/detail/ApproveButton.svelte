@@ -5,6 +5,7 @@
   import { getClient, getStores } from "../../context.js";
   import { isProblem, problemConflictContext, problemConflictReason } from "../../api/problems.js";
   import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
   import { runApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
 
   const client = getClient();
@@ -141,10 +142,9 @@
   }
 
   // Mirrors handleApprove/runApprovePR on purpose: the same pinAtOpen
-  // captured when the form opened is submitted as expected_head_sha, and
-  // a refresh failure after a successful POST surfaces in the form the
-  // same way an approve refresh failure does. Request changes must not
-  // carry a stronger (or weaker) submission contract than approve.
+  // captured when the form opened is submitted as expected_head_sha.
+  // Request changes must not carry a stronger (or weaker) provider
+  // submission contract than approve.
   async function handleRequestChanges(): Promise<void> {
     if (disabled || submitting || body.trim() === "") return;
     submitting = true;
@@ -170,11 +170,17 @@
         }
         throw new Error(requestError.detail ?? requestError.title ?? "failed to request changes");
       }
-      await detail.loadDetail(owner, name, number, { provider, platformHost, repoPath });
-      await pulls.loadPulls();
       body = "";
       expanded = false;
       oncompleted?.();
+      try {
+        await Promise.all([
+          detail.loadDetail(owner, name, number, { provider, platformHost, repoPath }),
+          pulls.loadPulls(),
+        ]);
+      } catch {
+        showFlash("Changes were requested, but the pull request could not be refreshed.");
+      }
     } catch (err) {
       if (expanded) {
         error = err instanceof Error ? err.message : String(err);

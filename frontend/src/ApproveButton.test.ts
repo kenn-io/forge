@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 const mockPost = vi.hoisted(() => vi.fn());
 const mockLoadDetail = vi.hoisted(() => vi.fn());
 const mockLoadPulls = vi.hoisted(() => vi.fn());
+const mockShowFlash = vi.hoisted(() => vi.fn());
 
 vi.mock("../../packages/ui/src/context.js", () => ({
   getClient: () => ({ POST: mockPost }),
@@ -11,6 +12,10 @@ vi.mock("../../packages/ui/src/context.js", () => ({
     detail: { loadDetail: mockLoadDetail },
     pulls: { loadPulls: mockLoadPulls },
   }),
+}));
+
+vi.mock("../../packages/ui/src/stores/flash.svelte.js", () => ({
+  showFlash: mockShowFlash,
 }));
 
 import ApproveButton from "../../packages/ui/src/components/detail/ApproveButton.svelte";
@@ -36,6 +41,7 @@ describe("ApproveButton tooltips", () => {
     mockPost.mockResolvedValue({ data: { status: "approved" } });
     mockLoadDetail.mockResolvedValue(undefined);
     mockLoadPulls.mockResolvedValue(undefined);
+    mockShowFlash.mockReset();
   });
 
   afterEach(() => {
@@ -103,6 +109,23 @@ describe("ApproveButton tooltips", () => {
     const [, init] = mockPost.mock.calls[0] as [string, { body: { body: string } }];
     expect(init.body.body).toBe("Please cover the empty state.");
     expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
+  });
+
+  it("closes a successful change request before reporting a refresh failure", async () => {
+    mockLoadDetail.mockRejectedValueOnce(new Error("offline"));
+    renderApproveButton({ supportedReviewActions: ["approve", "request_changes"] });
+
+    await fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    await fireEvent.input(screen.getByRole("textbox"), {
+      target: { value: "Please cover the empty state." },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Request changes" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
+    });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockShowFlash).toHaveBeenCalledWith("Changes were requested, but the pull request could not be refreshed.");
   });
 
   it("collapses the approval popover from cancel without removing the trigger", async () => {

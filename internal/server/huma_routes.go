@@ -2974,6 +2974,9 @@ func (s *Server) requestChangesPR(ctx context.Context, input *requestChangesPRIn
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityReviewMutation); err != nil {
+		return nil, err
+	}
 	caps := s.capabilitiesForRepo(*repo)
 	if !reviewActionSupported(caps, platform.ReviewActionRequestChanges) {
 		return nil, problemUnsupportedCapability(*repo, "review_action_request_changes")

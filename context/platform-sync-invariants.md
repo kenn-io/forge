@@ -123,10 +123,16 @@ registry helpers return typed errors for missing providers or capabilities.
   fence and the expected pre-mutation head: a fresh-generation fetch can still
   return an eventually consistent unchanged head, and accepting it would
   unlock a duplicate apply (`internal/db/queries.go::MarkAppliedProviderHead`).
-- A conditional-fetch 304 proves nothing about rows changed while the request
-  was in flight; its writes must revalidate fence, generation, and head under
-  the per-MR provider write lock and skip when stale
-  (`internal/github/sync.go::markUnchangedMRDetailFetched`).
+- A stored ETag predates any head mutation, so a 304 is untrustworthy while a
+  fence or pending head is unresolved: detail fetches go unconditional until
+  an authoritative full response resolves it, and 304 handling revalidates
+  fence, pending head, generation, and head under the per-MR provider write
+  lock (`internal/github/sync.go::markUnchangedMRDetailFetched`).
+- The budgeted detail drain is the fence's recovery path after a restart or a
+  failed one-shot post-apply sync (fenced rows keep `detail_fetched_at`
+  NULL); both detail-fetch paths must reconcile fenced rows, not just get
+  rejected by the snapshot guard (`internal/github/sync.go::fetchMRDetail`,
+  `internal/github/sync.go::fetchProviderMRDetail`).
 - The UI only exposes apply actions when the thread head matches a known
   current PR head; stale or unknown heads disable actions, and stale batched
   suggestions must not reach batch submit while staying removable. A suggestion

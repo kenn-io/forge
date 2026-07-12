@@ -16932,6 +16932,28 @@ func TestAPIApplyReviewSuggestionWithoutCommitAdvancesReconciliationGeneration(t
 	assert.True(inProgress,
 		"a confirmed apply without a commit SHA must stay fenced until a changed head is observed")
 
+	// A replay of the original request while reconciliation is pending
+	// serializes behind the per-pull provider write lock (held by the
+	// blocked confirmation fetch) and must be rejected once reconciliation
+	// installs the changed head — never applied a second time.
+	retryBody := fmt.Sprintf(
+		`{"expected_head_sha":"abc123","suggestions":[{"thread_id":"%d","replacement":"return client.publishThreads();"}]}`,
+		thread.ID,
+	)
+	retryDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+			strings.NewReader(retryBody),
+		)
+		req.Host = "127.0.0.1:8091"
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		retryDone <- rr
+	}()
+
 	releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
 	require.Eventually(func() bool {
 		current, getErr := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
@@ -16940,23 +16962,10 @@ func TestAPIApplyReviewSuggestionWithoutCommitAdvancesReconciliationGeneration(t
 			current.PendingProviderHeadGeneration == 0
 	}, time.Second, 10*time.Millisecond)
 
-	// After reconciliation the head moved, so replaying the original apply
-	// request must be rejected instead of committing the suggestion twice.
-	retry := doJSON(
-		t,
-		srv,
-		http.MethodPost,
-		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
-		map[string]any{
-			"expected_head_sha": "abc123",
-			"suggestions": []map[string]any{{
-				"thread_id":   strconv.FormatInt(thread.ID, 10),
-				"replacement": "return client.publishThreads();",
-			}},
-		},
-	)
+	retry := <-retryDone
 	require.Equal(http.StatusConflict, retry.Code, retry.Body.String())
-	assert.Len(provider.appliedSuggestions, 1)
+	assert.Len(provider.appliedSuggestions, 1,
+		"a retry during pending reconciliation must not apply the suggestion twice")
 }
 
 func TestAPIApplyReviewSuggestionPersistsAfterRequestCancellation(t *testing.T) {

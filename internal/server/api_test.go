@@ -16927,7 +16927,21 @@ func TestAPIApplyReviewSuggestionWithoutCommitAdvancesReconciliationGeneration(t
 	assert.Equal("abc123", pending.PlatformHeadSHA)
 	assert.Positive(pending.PendingProviderHeadGeneration)
 	assert.Empty(pending.DiffHeadSHA)
+	inProgress, err := database.ProviderHeadMutationInProgress(ctx, repo.ID, 7)
+	require.NoError(err)
+	assert.True(inProgress,
+		"a confirmed apply without a commit SHA must stay fenced until a changed head is observed")
 
+	releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
+	require.Eventually(func() bool {
+		current, getErr := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+		return getErr == nil && current != nil &&
+			current.PlatformHeadSHA == "provider-head-without-result-sha" &&
+			current.PendingProviderHeadGeneration == 0
+	}, time.Second, 10*time.Millisecond)
+
+	// After reconciliation the head moved, so replaying the original apply
+	// request must be rejected instead of committing the suggestion twice.
 	retry := doJSON(
 		t,
 		srv,
@@ -16943,13 +16957,6 @@ func TestAPIApplyReviewSuggestionWithoutCommitAdvancesReconciliationGeneration(t
 	)
 	require.Equal(http.StatusConflict, retry.Code, retry.Body.String())
 	assert.Len(provider.appliedSuggestions, 1)
-	releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
-	require.Eventually(func() bool {
-		current, getErr := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-		return getErr == nil && current != nil &&
-			current.PlatformHeadSHA == "provider-head-without-result-sha" &&
-			current.PendingProviderHeadGeneration == 0
-	}, time.Second, 10*time.Millisecond)
 }
 
 func TestAPIApplyReviewSuggestionPersistsAfterRequestCancellation(t *testing.T) {

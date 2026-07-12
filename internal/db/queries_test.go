@@ -2480,6 +2480,87 @@ func TestMarkAppliedProviderHeadLeavesDifferentCurrentHeadUntouched(t *testing.T
 	assert.Positive(got.PendingProviderHeadGeneration)
 }
 
+func TestMarkAppliedProviderHeadWithoutCommitKeepsMutationFence(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+	current := testMR(repoID, 7, withMRActivity(base))
+	current.PlatformHeadSHA = "reviewed-head"
+	current.CIStatus = "success"
+	fetchedAt := base.Add(time.Minute)
+	current.DetailFetchedAt = &fetchedAt
+	mrID, err := d.UpsertMergeRequest(ctx, current)
+	require.NoError(err)
+	require.NoError(d.UpsertMRReviewThreads(ctx, mrID, []MRReviewThread{{
+		MergeRequestID:   mrID,
+		ProviderThreadID: "thread-1",
+		Body:             "stale suggestion",
+		Range:            testReviewLineRange(),
+		CreatedAt:        base,
+		UpdatedAt:        base,
+	}}))
+	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 7, "reviewed-head"))
+
+	marked, err := d.MarkAppliedProviderHead(ctx, repoID, 7, "reviewed-head", "")
+	require.NoError(err)
+	assert.True(marked)
+
+	inProgress, err := d.ProviderHeadMutationInProgress(ctx, repoID, 7)
+	require.NoError(err)
+	assert.True(inProgress,
+		"a confirmed mutation without a reported head must stay fenced")
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("reviewed-head", got.PlatformHeadSHA)
+	assert.Equal("reviewed-head", got.PendingProviderHeadSHA)
+	assert.Positive(got.PendingProviderHeadGeneration)
+	assert.Empty(got.CIStatus)
+	assert.Nil(got.DetailFetchedAt)
+	threads, err := d.ListMRReviewThreads(ctx, mrID)
+	require.NoError(err)
+	assert.Empty(threads)
+
+	// A fresh snapshot that still observes the unchanged pre-mutation head
+	// (an eventually consistent read) must not clear the fence: doing so
+	// would let a retry re-apply the suggestion against the same head.
+	generation, err := d.ProviderSnapshotGeneration(ctx)
+	require.NoError(err)
+	unchanged := testMR(repoID, 7, withMRActivity(base.Add(time.Minute)))
+	unchanged.PlatformHeadSHA = "reviewed-head"
+	unchanged.ProviderSnapshotGeneration = generation
+	_, accepted, err := d.UpsertMergeRequestSnapshot(ctx, unchanged)
+	require.NoError(err)
+	assert.False(accepted)
+	_, accepted, err = d.ReconcileProviderHeadMutationSnapshot(ctx, unchanged)
+	require.NoError(err)
+	assert.False(accepted)
+	inProgress, err = d.ProviderHeadMutationInProgress(ctx, repoID, 7)
+	require.NoError(err)
+	assert.True(inProgress)
+
+	// Only an authoritative snapshot with a changed head reconciles.
+	changed := testMR(repoID, 7, withMRActivity(base.Add(2*time.Minute)))
+	changed.PlatformHeadSHA = "provider-head"
+	changed.ProviderSnapshotGeneration = generation
+	_, accepted, err = d.ReconcileProviderHeadMutationSnapshot(ctx, changed)
+	require.NoError(err)
+	assert.True(accepted)
+	got, err = d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("provider-head", got.PlatformHeadSHA)
+	assert.Empty(got.PendingProviderHeadSHA)
+	assert.Zero(got.PendingProviderHeadGeneration)
+	inProgress, err = d.ProviderHeadMutationInProgress(ctx, repoID, 7)
+	require.NoError(err)
+	assert.False(inProgress)
+}
+
 func TestListPullRequests(t *testing.T) {
 	d := openTestDB(t)
 

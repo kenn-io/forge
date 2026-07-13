@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import type { ComponentProps } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { KataProjectSummary, KataTaskDetail } from "../../api/kata/taskTypes.js";
@@ -168,7 +168,10 @@ describe("KataIssueOverflowMenu", () => {
     const oldMove = new Promise<boolean>((resolve) => {
       finishOldMove = resolve;
     });
-    const onMoveIssue = vi.fn(() => oldMove);
+    const onMoveIssue = vi
+      .fn()
+      .mockImplementationOnce(() => oldMove)
+      .mockResolvedValueOnce(true);
     const view = renderMenu({ onMoveIssue });
 
     await openMovePicker();
@@ -180,6 +183,71 @@ describe("KataIssueOverflowMenu", () => {
     finishOldMove(true);
     await oldMove;
     expect(screen.getByRole("searchbox", { name: "Find project" })).toBeTruthy();
+    const destination = screen.getByRole("button", { name: /Roadmap/ }) as HTMLButtonElement;
+    expect(destination.disabled).toBe(false);
+    await fireEvent.click(destination);
+    expect(onMoveIssue).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("searchbox", { name: "Find project" })).toBeNull();
+  });
+
+  it("updates destinations reactively and retains the pending destination snapshot", async () => {
+    let finishMove!: (moved: boolean) => void;
+    const pendingMove = new Promise<boolean>((resolve) => {
+      finishMove = resolve;
+    });
+    const view = renderMenu({ onMoveIssue: vi.fn(() => pendingMove) });
+
+    await openMovePicker();
+    await view.rerender({
+      projects: projects.map((project) =>
+        project.uid === "project-roadmap" ? { ...project, name: "Roadmap 2027" } : project,
+      ),
+    });
+    expect(screen.getByRole("button", { name: /Roadmap 2027/ })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("button", { name: /Roadmap 2027/ }));
+    await view.rerender({
+      projects: projects.filter((project) => project.uid !== "project-roadmap"),
+    });
+    expect((screen.getByRole("button", { name: /Roadmap 2027/ }) as HTMLButtonElement).disabled).toBe(true);
+
+    finishMove(false);
+    await pendingMove;
+    await view.rerender({ projects: projects.filter((project) => project.uid !== "project-roadmap") });
+    expect(screen.queryByRole("button", { name: /Roadmap 2027/ })).toBeNull();
+  });
+
+  it("dismisses an empty move picker with Escape and restores trigger focus", async () => {
+    const onMoveIssue = vi.fn(async () => true);
+    renderMenu({ onMoveIssue });
+
+    const trigger = screen.getByRole("button", { name: "More actions" });
+    trigger.focus();
+    await fireEvent.click(trigger);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Move to another project" }));
+
+    const search = screen.getByRole("searchbox", { name: "Find project" });
+    await waitFor(() => expect(search).toBe(document.activeElement));
+    await fireEvent.keyDown(search, { key: "Escape" });
+
+    expect(onMoveIssue).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Move to another project" })).toBeNull();
+    await waitFor(() => expect(trigger).toBe(document.activeElement));
+  });
+
+  it("clears a move search before Escape dismisses the picker", async () => {
+    renderMenu();
+    await openMovePicker();
+
+    const search = screen.getByRole("searchbox", { name: "Find project" });
+    await fireEvent.input(search, { target: { value: "road" } });
+    await fireEvent.keyDown(search, { key: "Escape" });
+
+    expect((search as HTMLInputElement).value).toBe("");
+    expect(screen.getByRole("dialog", { name: "Move to another project" })).toBeTruthy();
+
+    await fireEvent.keyDown(search, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Move to another project" })).toBeNull();
   });
 
   it("does not dismiss while a move is pending", async () => {

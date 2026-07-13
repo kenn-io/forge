@@ -31,6 +31,7 @@
   let unlinkBusyIds = $state<ReadonlySet<number>>(new Set());
   let unlinkError = $state<string | null>(null);
   let loadRequestID = 0;
+  let issueContextGeneration = 0;
   let recurrenceDialogs = $state<{
     openCreateRecurrence: () => void;
     openEditRecurrence: (recurrence: KataRecurrence) => void;
@@ -40,6 +41,7 @@
 
   $effect(() => {
     const issueUID = kata.issue_uid;
+    issueContextGeneration += 1;
     const requestID = ++loadRequestID;
     loading = true;
     error = null;
@@ -70,12 +72,17 @@
     return store.selectedIssue ? readMessageLinks(store.selectedIssue.issue.metadata) : [];
   }
 
-  async function runTask(task: () => Promise<void | boolean>): Promise<boolean> {
+  async function runTask(
+    task: () => Promise<void | boolean>,
+    shouldSurfaceFailure: () => boolean = () => true,
+  ): Promise<boolean> {
     error = null;
     try {
       return (await task()) ?? true;
     } catch (err) {
-      error = err instanceof Error ? err.message : "Kata request failed.";
+      if (shouldSurfaceFailure()) {
+        error = err instanceof Error ? err.message : "Kata request failed.";
+      }
       return false;
     }
   }
@@ -93,7 +100,11 @@
   async function moveSelectedIssue(toProjectUID: string): Promise<boolean> {
     const selected = store.selectedIssue?.issue;
     if (!selected) return false;
-    return runTask(() => store.moveIssue(selected.uid, actor, toProjectUID));
+    const generation = issueContextGeneration;
+    return runTask(
+      () => store.moveIssue(selected.uid, actor, toProjectUID),
+      () => generation === issueContextGeneration,
+    );
   }
 
   function patchSelectedMetadata(uid: string, patch: Record<string, unknown>): Promise<boolean> {
@@ -188,6 +199,7 @@
   }
 
   async function selectIssue(uid: string): Promise<void> {
+    issueContextGeneration += 1;
     await runTask(() => store.selectIssue(uid));
   }
 </script>

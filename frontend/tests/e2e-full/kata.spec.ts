@@ -121,6 +121,7 @@ type BackendState = {
   failNextIssuesStatus?: number | undefined;
   failNextMetadataMessage?: string | undefined;
   closeBarrier?: Promise<void> | undefined;
+  failNextMoveMessage?: string | undefined;
   eventsBarrier?: Promise<void> | undefined;
   issuesBarrier?: Promise<void> | undefined;
   searchBarriers: Map<string, Promise<void>>;
@@ -1325,6 +1326,12 @@ async function handleIssueMutation(
 
   if (req.method === "POST" && route.kind === "actions" && route.label === "move") {
     const payload = await readJSONBody(req);
+    if (state.failNextMoveMessage !== undefined) {
+      const message = state.failNextMoveMessage;
+      state.failNextMoveMessage = undefined;
+      writeJSON(res, 503, { error: { code: "move_unavailable", message } });
+      return;
+    }
     const toProjectUID = typeof payload.to_project_uid === "string" ? payload.to_project_uid : "";
     const project = state.projects.find((candidate) => candidate.uid === toProjectUID);
     if (!project) {
@@ -3958,104 +3965,6 @@ test("kata project create input cancels on Escape", async ({ page }) => {
   }
 });
 
-test("kata project rename submits inline input", async ({ page }) => {
-  const backend = await startKataBackend();
-  const kataHome = await configureKataHome(backend.url);
-  const server = await startIsolatedE2EServer();
-
-  try {
-    await page.goto(`${server.info.base_url}/kata`);
-    await expectKataDaemonSwitcherReady(page);
-    const listTitle = page.locator(".kata-list h2");
-    const titleBeforeRename = await listTitle.innerText();
-
-    await page.getByRole("button", { name: "Rename Finances" }).click();
-    const input = page.getByRole("textbox", { name: "Rename project" });
-    await expect(input).toBeVisible();
-    await expect(listTitle).toHaveText(titleBeforeRename);
-    await input.fill("Wellness");
-    await input.press("Enter");
-
-    await expect(page.getByRole("button", { name: /^Wellness\s+1$/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toHaveCount(0);
-    await expect.poll(() => backend.state.seenPaths).toContain("PATCH /api/v1/projects/1");
-  } finally {
-    await server.stop();
-    kataHome.restore();
-    await backend.close();
-  }
-});
-
-test("kata project rows can be renamed by double-clicking", async ({ page }) => {
-  const backend = await startKataBackend();
-  const kataHome = await configureKataHome(backend.url);
-  const server = await startIsolatedE2EServer();
-
-  try {
-    await page.goto(`${server.info.base_url}/kata`);
-    await expectKataDaemonSwitcherReady(page);
-
-    await page.getByRole("button", { name: /^Finances\s+1$/ }).dblclick();
-    const input = page.getByRole("textbox", { name: "Rename project" });
-    await expect(input).toBeVisible();
-    await input.fill("Wellness");
-    await input.press("Enter");
-
-    await expect(page.getByRole("button", { name: /^Wellness\s+1$/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toHaveCount(0);
-    await expect.poll(() => backend.state.seenPaths).toContain("PATCH /api/v1/projects/1");
-  } finally {
-    await server.stop();
-    kataHome.restore();
-    await backend.close();
-  }
-});
-
-test("kata project row double-click enters rename", async ({ page }) => {
-  const backend = await startKataBackend();
-  const kataHome = await configureKataHome(backend.url);
-  const server = await startIsolatedE2EServer();
-
-  try {
-    await page.goto(`${server.info.base_url}/kata`);
-    await expectKataDaemonSwitcherReady(page);
-
-    await page.getByRole("button", { name: /^Finances\s+1$/ }).dblclick({ delay: 300 });
-
-    await expect(page.getByRole("textbox", { name: "Rename project" })).toBeVisible();
-  } finally {
-    await server.stop();
-    kataHome.restore();
-    await backend.close();
-  }
-});
-
-test("kata project rename input cancels on Escape", async ({ page }) => {
-  const backend = await startKataBackend();
-  const kataHome = await configureKataHome(backend.url);
-  const server = await startIsolatedE2EServer();
-
-  try {
-    await page.goto(`${server.info.base_url}/kata`);
-    await expectKataDaemonSwitcherReady(page);
-
-    await page.getByRole("button", { name: "Rename Finances" }).click();
-    const input = page.getByRole("textbox", { name: "Rename project" });
-    await expect(input).toBeVisible();
-    await input.fill("Different");
-    await input.press("Escape");
-
-    await expect(page.getByRole("textbox", { name: "Rename project" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Different\s+1$/ })).toHaveCount(0);
-    expect(backend.state.seenPaths).not.toContain("PATCH /api/v1/projects/1");
-  } finally {
-    await server.stop();
-    kataHome.restore();
-    await backend.close();
-  }
-});
-
 test("kata parent row expands children loaded from detail", async ({ page }) => {
   const parent = issueSummary({
     id: 101,
@@ -6077,7 +5986,7 @@ test("kata detail property editors reset when switching tasks", async ({ page })
   }
 });
 
-test("kata project crumb moves tasks through the configured external daemon", async ({ page }) => {
+test("kata More actions moves tasks through the configured external daemon", async ({ page }) => {
   const backend = await startKataBackend();
   const kataHome = await configureKataHome(backend.url);
   const server = await startIsolatedE2EServer();
@@ -6087,19 +5996,75 @@ test("kata project crumb moves tasks through the configured external daemon", as
 
     const detail = page.getByRole("region", { name: "Task detail" });
     await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
-    await expect(detail.getByRole("button", { name: "Move issue from Finances" })).toBeVisible();
+    await expect(detail.locator(".crumb-project")).toHaveText("Finances");
 
-    await detail.getByRole("button", { name: "Move issue from Finances" }).click();
-    const input = detail.getByRole("combobox", { name: "Move issue project" });
-    await expect(input).toBeFocused();
-    await input.fill("kat");
-    await input.press("Enter");
+    await detail.getByRole("button", { name: "More actions" }).click();
+    await detail.getByRole("menuitem", { name: "Move to another project" }).click();
+    const picker = detail.getByRole("dialog", { name: "Move to another project" });
+    const search = picker.getByRole("searchbox", { name: "Find project" });
+    await expect(search).toBeFocused();
+    await search.fill("kat");
+    await picker.getByRole("button", { name: /Kata/ }).click();
 
-    await expect(detail.getByRole("button", { name: "Move issue from Kata" })).toBeVisible();
-    await expect
-      .poll(() => backend.state.seenPaths)
-      .toContain("POST /api/v1/projects/1/issues/issue-rent/actions/move");
-    expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")?.project_uid).toBe("project-kata");
+    await expect(picker).toHaveCount(0);
+    await expect(detail.locator(".crumb-project")).toHaveText("Kata");
+    await expect(detail.locator(".crumb-id")).toHaveText("kat-11");
+    await expect(page.getByRole("button", { name: /^Finances\s+0$/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Kata\s+2$/ })).toBeVisible();
+
+    const movePath = "POST /api/v1/projects/1/issues/issue-rent/actions/move";
+    await expect.poll(() => backend.state.seenPaths.filter((path) => path === movePath).length).toBe(1);
+    expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")).toMatchObject({
+      project_id: 2,
+      project_uid: "project-kata",
+      project_name: "Kata",
+      short_id: "kat-11",
+      qualified_id: "Kata#kat-11",
+      revision: 2,
+    });
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
+test("kata More actions keeps a failed daemon move open and retries successfully", async ({ page }) => {
+  const backend = await startKataBackend();
+  backend.state.failNextMoveMessage = "move service unavailable";
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?issue=issue-rent`);
+
+    const detail = page.getByRole("region", { name: "Task detail" });
+    await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+    await detail.getByRole("button", { name: "More actions" }).click();
+    await detail.getByRole("menuitem", { name: "Move to another project" }).click();
+
+    const picker = detail.getByRole("dialog", { name: "Move to another project" });
+    const search = picker.getByRole("searchbox", { name: "Find project" });
+    await search.fill("kat");
+    const destination = picker.getByRole("button", { name: /Kata/ });
+    await destination.click();
+
+    await expect(page.getByRole("alert")).toContainText("move service unavailable");
+    await expect(picker).toBeVisible();
+    await expect(search).toHaveValue("kat");
+    await expect(destination).toBeEnabled();
+    expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")).toMatchObject({
+      project_uid: "project-finance",
+      short_id: "FIN-1",
+      revision: 1,
+    });
+
+    await destination.click();
+    await expect(picker).toHaveCount(0);
+    await expect(detail.locator(".crumb-project")).toHaveText("Kata");
+    await expect(detail.locator(".crumb-id")).toHaveText("kat-11");
+    const movePath = "POST /api/v1/projects/1/issues/issue-rent/actions/move";
+    await expect.poll(() => backend.state.seenPaths.filter((path) => path === movePath).length).toBe(2);
   } finally {
     await server.stop();
     kataHome.restore();

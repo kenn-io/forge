@@ -1496,6 +1496,46 @@ describe("KataWorkspace", () => {
     expect(screen.getByTestId("daemon-chip").textContent).not.toContain("owner unavailable");
   });
 
+  it("does not surface a stale move failure after navigating A to B to A", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          {
+            id: "home",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      }),
+    );
+    const pendingMove = deferred<never>();
+    const { api, moveIssue } = createWorkspaceAPI();
+    moveIssue.mockImplementationOnce(() => pendingMove.promise);
+
+    const { rerender } = render(KataWorkspace, {
+      props: { api, selectedIssueUID: "issue-pay-rent" },
+    });
+
+    await screen.findByRole("heading", { name: "Pay rent" });
+    const detail = within(screen.getByRole("region", { name: "Task detail" }));
+    await fireEvent.click(detail.getByRole("button", { name: "More actions" }));
+    await fireEvent.click(detail.getByRole("menuitem", { name: "Move to another project" }));
+    await fireEvent.click(detail.getByRole("button", { name: /Kata/ }));
+
+    await rerender({ api, selectedIssueUID: "issue-email-susan" });
+    await screen.findByRole("heading", { name: "Email Susan re: Q3" });
+    await rerender({ api, selectedIssueUID: "issue-pay-rent" });
+    await screen.findByRole("heading", { name: "Pay rent" });
+
+    pendingMove.reject(new Error("old move failed"));
+    await pendingMove.promise.catch(() => undefined);
+    await Promise.resolve();
+    expect(moveIssue).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("old move failed")).toBeNull();
+  });
+
   it("rehydrates linked task titles when switching daemons with matching peer uids", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({

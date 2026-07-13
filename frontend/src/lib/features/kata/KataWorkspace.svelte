@@ -236,6 +236,7 @@
   async function runViewTask(
     task: () => Promise<void | boolean>,
     failureSurface: FailureSurface = "request",
+    shouldSurfaceFailure: () => boolean = () => true,
   ): Promise<boolean> {
     const loadingGeneration = beginViewLoading();
     clearTaskErrors();
@@ -247,7 +248,9 @@
       }
       return ok;
     } catch (err) {
-      surfaceTaskError(kataRequestErrorMessage(err), failureSurface);
+      if (shouldSurfaceFailure()) {
+        surfaceTaskError(kataRequestErrorMessage(err), failureSurface);
+      }
       return false;
     } finally {
       endViewLoading(loadingGeneration);
@@ -973,7 +976,12 @@
   async function moveSelectedIssue(toProjectUID: string): Promise<boolean> {
     const selected = store.selectedIssue?.issue;
     if (!selected) return false;
-    return runViewTask(() => store.moveIssue(selected.uid, actor, toProjectUID));
+    const generation = navigationGeneration;
+    return runViewTask(
+      () => store.moveIssue(selected.uid, actor, toProjectUID),
+      "request",
+      () => isCurrentNavigation(generation),
+    );
   }
 
   async function patchSelectedMetadata(uid: string, patch: Record<string, unknown>): Promise<boolean> {

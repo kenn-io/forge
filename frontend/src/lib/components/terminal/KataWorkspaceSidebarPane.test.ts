@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { KataProjectSummary, KataTaskDetail, KataTaskSummary } from "../../api/kata/taskTypes.js";
@@ -111,5 +111,8 @@ describe("KataWorkspaceSidebarPane", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: /Roadmap/ }));
     expect(moveAttempts()).toBe(2);
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Move to another project" })).toBeNull();
+    });
   });
 });

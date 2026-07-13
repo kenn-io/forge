@@ -7,6 +7,7 @@
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import StarIcon from "@lucide/svelte/icons/star";
+  import { GroupedSidebarSection, SidebarScrollArea } from "@middleman/ui";
 
   import type { KataProjectSummary, KataTaskSearchFilters, KataTaskViewName } from "../../api/kata/taskTypes.js";
   import type { KataAreaSummary, KataCurrentView } from "../../stores/kata-workspace.svelte.js";
@@ -56,6 +57,13 @@
   let renameError = $state<string | null>(null);
   let createInput: HTMLInputElement | null = $state(null);
   let renameInput: HTMLInputElement | null = $state(null);
+  let collapsedAreas = $state<string[]>([]);
+
+  function toggleArea(name: string): void {
+    collapsedAreas = collapsedAreas.includes(name)
+      ? collapsedAreas.filter((area) => area !== name)
+      : [...collapsedAreas, name];
+  }
 
   function viewCount(name: KataTaskViewName): number | undefined {
     const inboxProject = projects.find((project) => project.metadata.role === "inbox");
@@ -134,8 +142,9 @@
   }
 </script>
 
-<aside class="kata-sidebar" aria-label="Kata navigation">
-  <nav class="kata-nav" aria-label="System views">
+<aside class="kata-sidebar">
+  <SidebarScrollArea label="Kata navigation">
+    <nav class="kata-nav" aria-label="System views">
     {#each systemViews as view (view.name)}
       {@const Icon = view.icon}
       {@const count = viewCount(view.name)}
@@ -156,12 +165,14 @@
     {/each}
   </nav>
 
-  {#if areas.length > 0}
-    <div class="project-groups">
-      {#each areas as area (area.name)}
-        <section class="project-group" aria-labelledby={`kata-area-${area.name}`}>
-          <h2 id={`kata-area-${area.name}`}>{area.name}</h2>
-          {#each area.projects as project (project.uid)}
+    {#each areas as area (area.name)}
+      <GroupedSidebarSection
+        label={area.name}
+        count={area.projects.length}
+        collapsed={collapsedAreas.includes(area.name)}
+        onclick={() => toggleArea(area.name)}
+      >
+        {#each area.projects as project (project.uid)}
             {#if renamingProjectID === project.id}
               <form
                 class="project-rename-form"
@@ -218,13 +229,11 @@
                 </button>
               </div>
             {/if}
-          {/each}
-        </section>
-      {/each}
-    </div>
-  {/if}
+        {/each}
+      </GroupedSidebarSection>
+    {/each}
 
-  <div class="project-create">
+    <div class="project-create">
     {#if creatingProject}
       <form
         class="project-create-form"
@@ -258,23 +267,30 @@
         <PlusIcon size={13} strokeWidth={1.9} />
         <span>New project</span>
       </button>
-    {/if}
-  </div>
+      {/if}
+    </div>
+  </SidebarScrollArea>
 </aside>
 
 <style>
   .kata-sidebar {
+    --sidebar-list-border: var(--border-default);
+    --sidebar-row-bg: transparent;
+    --sidebar-row-hover-bg: var(--bg-surface-hover);
+    --sidebar-row-padding: 6px 10px;
+
+    display: flex;
+    flex-direction: column;
     min-width: 0;
+    min-height: 0;
     border-right: 1px solid var(--border-default);
-    background: var(--bg-secondary);
-    overflow: auto;
-    padding: 12px;
+    background: var(--bg-inset);
   }
 
-  .kata-nav,
-  .project-group {
+  .kata-nav {
     display: grid;
     gap: 4px;
+    padding: 12px;
   }
 
   .kata-nav button,
@@ -284,13 +300,13 @@
     min-height: 30px;
     border: 0;
     border-radius: 6px;
-    background: transparent;
+    background: var(--sidebar-row-bg);
     color: var(--text-secondary);
     display: grid;
     grid-template-columns: 18px minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-3);
-    padding: 4px 8px;
+    padding: var(--sidebar-row-padding);
     text-align: left;
     font: inherit;
     font-size: var(--font-size-sm);
@@ -300,16 +316,13 @@
   .kata-nav button:hover,
   .project-row:hover,
   .project-create-button:hover {
-    background: var(--bg-hover);
+    background: var(--sidebar-row-hover-bg);
     color: var(--text-primary);
   }
 
   .kata-nav button.active,
   .project-row.active {
-    background: color-mix(in srgb, var(--accent-blue) 28%, var(--bg-secondary));
-    box-shadow:
-      inset 3px 0 0 var(--accent-blue),
-      inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 42%, transparent);
+    background: var(--bg-row-selected);
     color: var(--text-primary);
   }
 
@@ -349,22 +362,8 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .project-groups {
-    display: grid;
-    gap: var(--space-6);
-    margin-top: 22px;
-  }
-
   .project-create {
-    margin-top: 16px;
-  }
-
-  .project-group h2 {
-    margin: 0 4px 6px;
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-weight: 650;
-    text-transform: uppercase;
+    padding: 12px;
   }
 
   .project-row {

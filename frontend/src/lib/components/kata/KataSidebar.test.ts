@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import type { ComponentProps } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { KataProjectSummary, KataTaskSearchFilters } from "../../api/kata/taskTypes.js";
@@ -30,28 +31,68 @@ const allScopeFilters: KataTaskSearchFilters = {
   query: "",
 };
 
+type SidebarProps = ComponentProps<typeof KataSidebar>;
+
+function renderSidebar(overrides: Partial<SidebarProps> = {}) {
+  return render(KataSidebar, {
+    props: {
+      areas,
+      projects,
+      currentView,
+      searchFilters: allScopeFilters,
+      onOpenView: vi.fn(),
+      onOpenProject: vi.fn(),
+      onCreateProject: vi.fn(),
+      onRenameProject: vi.fn(),
+      ...overrides,
+    },
+  });
+}
+
 describe("KataSidebar", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
   });
 
+  it("renders system views, expanded area groups, and project creation in order", () => {
+    renderSidebar();
+
+    const navigation = screen.getByRole("region", { name: "Kata navigation" });
+    const inbox = within(navigation).getByRole("button", { name: /^Inbox\b/ });
+    const personal = within(navigation).getByRole("button", { name: /^Personal\s+1$/ });
+    const work = within(navigation).getByRole("button", { name: /^Work\s+1$/ });
+    const create = within(navigation).getByRole("button", { name: "New project" });
+
+    expect(personal.getAttribute("aria-expanded")).toBe("true");
+    expect(work.getAttribute("aria-expanded")).toBe("true");
+    const ordered = [inbox, personal, work, create];
+    for (let index = 0; index < ordered.length - 1; index += 1) {
+      expect(ordered[index]!.compareDocumentPosition(ordered[index + 1]!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+  });
+
+  it("keeps area collapse state while mounted and resets it after remount", async () => {
+    const view = renderSidebar();
+    const personal = screen.getByRole("button", { name: /^Personal\s+1$/ });
+
+    await fireEvent.click(personal);
+    expect(personal.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("button", { name: /^Finances\b/ })).toBeNull();
+
+    await view.rerender({ areas: [...areas] });
+    expect(screen.getByRole("button", { name: /^Personal\s+1$/ }).getAttribute("aria-expanded")).toBe("false");
+
+    view.unmount();
+    renderSidebar();
+    expect(screen.getByRole("button", { name: /^Personal\s+1$/ }).getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("opens system views and project scopes from the restored sidebar", async () => {
     const onOpenView = vi.fn();
     const onOpenProject = vi.fn();
 
-    render(KataSidebar, {
-      props: {
-        areas,
-        projects,
-        currentView,
-        searchFilters: allScopeFilters,
-        onOpenView,
-        onOpenProject,
-        onCreateProject: vi.fn(),
-        onRenameProject: vi.fn(),
-      },
-    });
+    renderSidebar({ onOpenView, onOpenProject });
 
     await fireEvent.click(screen.getByRole("button", { name: /^Inbox\b/ }));
     expect(onOpenView).toHaveBeenCalledWith("inbox");
@@ -63,18 +104,7 @@ describe("KataSidebar", () => {
   it("double-clicking a project enters rename mode", async () => {
     const onOpenProject = vi.fn();
 
-    render(KataSidebar, {
-      props: {
-        areas,
-        projects,
-        currentView,
-        searchFilters: allScopeFilters,
-        onOpenView: vi.fn(),
-        onOpenProject,
-        onCreateProject: vi.fn(),
-        onRenameProject: vi.fn(),
-      },
-    });
+    renderSidebar({ onOpenProject });
 
     await fireEvent.doubleClick(screen.getByRole("button", { name: /^Finances\b/ }));
 
@@ -88,18 +118,7 @@ describe("KataSidebar", () => {
     const onCreateProject = vi.fn(async () => created);
     const onOpenProject = vi.fn();
 
-    render(KataSidebar, {
-      props: {
-        areas,
-        projects,
-        currentView,
-        searchFilters: allScopeFilters,
-        onOpenView: vi.fn(),
-        onOpenProject,
-        onCreateProject,
-        onRenameProject: vi.fn(),
-      },
-    });
+    renderSidebar({ onCreateProject, onOpenProject });
 
     await fireEvent.click(screen.getByRole("button", { name: "New project" }));
     const input = screen.getByRole("textbox", { name: "New project name" });
@@ -116,21 +135,12 @@ describe("KataSidebar", () => {
   it("renames a project from the project row", async () => {
     const onRenameProject = vi.fn(async () => {});
 
-    render(KataSidebar, {
-      props: {
-        areas,
-        projects,
-        currentView,
-        searchFilters: { ...allScopeFilters, scope: { kind: "project", project_uid: "project-finances" } },
-        onOpenView: vi.fn(),
-        onOpenProject: vi.fn(),
-        onCreateProject: vi.fn(),
-        onRenameProject,
-      },
+    renderSidebar({
+      searchFilters: { ...allScopeFilters, scope: { kind: "project", project_uid: "project-finances" } },
+      onRenameProject,
     });
 
-    const personal = screen.getByRole("region", { name: "Personal" });
-    await fireEvent.click(within(personal).getByRole("button", { name: "Rename Finances" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Rename Finances" }));
 
     const input = screen.getByRole("textbox", { name: "Rename project" });
     await fireEvent.input(input, { target: { value: "Household" } });

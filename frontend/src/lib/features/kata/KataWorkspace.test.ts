@@ -1528,6 +1528,10 @@ describe("KataWorkspace", () => {
     await screen.findByRole("heading", { name: "Email Susan re: Q3" });
     await rerender({ api, selectedIssueUID: "issue-pay-rent" });
     await screen.findByRole("heading", { name: "Pay rent" });
+    const returnedDetail = within(screen.getByRole("region", { name: "Task detail" }));
+    await fireEvent.click(returnedDetail.getByRole("button", { name: "More actions" }));
+    expect(returnedDetail.queryByRole("menuitem", { name: "Move to another project" })).toBeNull();
+    expect(moveIssue).toHaveBeenCalledTimes(1);
 
     pendingMove.reject(new Error("old move failed"));
     await pendingMove.promise.catch(() => undefined);

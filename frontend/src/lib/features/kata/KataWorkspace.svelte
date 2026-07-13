@@ -109,6 +109,7 @@
   let captureOpen = $state(false);
   let listResetGeneration = $state(0);
   let checklistRevealed = $state(false);
+  let pendingMoveIssueUIDs = $state.raw<ReadonlySet<string>>(new Set());
   let recurrenceDialogs = $state<KataRecurrenceDialogController | null>(null);
   let workspaceActionBusy = $state(false);
   let listMode = $state<ListMode>("tasks");
@@ -975,13 +976,21 @@
 
   async function moveSelectedIssue(toProjectUID: string): Promise<boolean> {
     const selected = store.selectedIssue?.issue;
-    if (!selected) return false;
+    if (!selected || pendingMoveIssueUIDs.has(selected.uid)) return false;
+    const sourceIssueUID = selected.uid;
     const generation = navigationGeneration;
-    return runViewTask(
-      () => store.moveIssue(selected.uid, actor, toProjectUID),
-      "request",
-      () => isCurrentNavigation(generation),
-    );
+    pendingMoveIssueUIDs = new Set(pendingMoveIssueUIDs).add(sourceIssueUID);
+    try {
+      return await runViewTask(
+        () => store.moveIssue(sourceIssueUID, actor, toProjectUID),
+        "request",
+        () => isCurrentNavigation(generation),
+      );
+    } finally {
+      const nextPendingMoves = new Set(pendingMoveIssueUIDs);
+      nextPendingMoves.delete(sourceIssueUID);
+      pendingMoveIssueUIDs = nextPendingMoves;
+    }
   }
 
   async function patchSelectedMetadata(uid: string, patch: Record<string, unknown>): Promise<boolean> {
@@ -1269,6 +1278,7 @@
       {unlinkError}
       selectedRecurrences={store.selectedRecurrences}
       {checklistRevealed}
+      movePending={pendingMoveIssueUIDs.has(store.selectedIssue.issue.uid)}
       onMoveIssue={moveSelectedIssue}
       onPatchMetadata={patchSelectedMetadata}
       onAddComment={addSelectedComment}

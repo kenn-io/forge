@@ -28,6 +28,7 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let checklistRevealed = $state(false);
+  let pendingMoveIssueUIDs = $state.raw<ReadonlySet<string>>(new Set());
   let unlinkBusyIds = $state<ReadonlySet<number>>(new Set());
   let unlinkError = $state<string | null>(null);
   let loadRequestID = 0;
@@ -99,12 +100,20 @@
 
   async function moveSelectedIssue(toProjectUID: string): Promise<boolean> {
     const selected = store.selectedIssue?.issue;
-    if (!selected) return false;
+    if (!selected || pendingMoveIssueUIDs.has(selected.uid)) return false;
+    const sourceIssueUID = selected.uid;
     const generation = issueContextGeneration;
-    return runTask(
-      () => store.moveIssue(selected.uid, actor, toProjectUID),
-      () => generation === issueContextGeneration,
-    );
+    pendingMoveIssueUIDs = new Set(pendingMoveIssueUIDs).add(sourceIssueUID);
+    try {
+      return await runTask(
+        () => store.moveIssue(sourceIssueUID, actor, toProjectUID),
+        () => generation === issueContextGeneration,
+      );
+    } finally {
+      const nextPendingMoves = new Set(pendingMoveIssueUIDs);
+      nextPendingMoves.delete(sourceIssueUID);
+      pendingMoveIssueUIDs = nextPendingMoves;
+    }
   }
 
   function patchSelectedMetadata(uid: string, patch: Record<string, unknown>): Promise<boolean> {
@@ -226,6 +235,7 @@
       {unlinkError}
       selectedRecurrences={store.selectedRecurrences}
       {checklistRevealed}
+      movePending={pendingMoveIssueUIDs.has(store.selectedIssue.issue.uid)}
       onMoveIssue={moveSelectedIssue}
       onPatchMetadata={patchSelectedMetadata}
       onAddComment={addSelectedComment}

@@ -43,6 +43,7 @@
     unlinkError: string | null;
     selectedRecurrences: KataRecurrence[];
     checklistRevealed: boolean;
+    movePending?: boolean | undefined;
     onMoveIssue: (toProjectUID: string) => boolean | Promise<boolean>;
     onPatchMetadata: (uid: string, patch: Record<string, unknown>) => boolean | Promise<boolean>;
     onAddComment: (uid: string, body: string) => boolean | Promise<boolean>;
@@ -82,6 +83,7 @@
     unlinkError,
     selectedRecurrences,
     checklistRevealed,
+    movePending = false,
     onMoveIssue,
     onPatchMetadata,
     onAddComment,
@@ -264,6 +266,7 @@
         {projects}
         hasChecklist={checklistItems().length > 0 || checklistRevealed}
         hasRecurrence={!canCreateRecurrence}
+        {movePending}
         {onMoveIssue}
         onAddChecklist={onRevealChecklist}
         onCreateRecurrence={onCreateRecurrence}

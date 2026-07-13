@@ -10,6 +10,7 @@
     projects: KataProjectSummary[];
     hasChecklist: boolean;
     hasRecurrence: boolean;
+    movePending?: boolean | undefined;
     onMoveIssue: (toProjectUID: string) => boolean | Promise<boolean>;
     onAddChecklist: () => void;
     onCreateRecurrence: () => void;
@@ -21,6 +22,7 @@
     projects,
     hasChecklist,
     hasRecurrence,
+    movePending = false,
     onMoveIssue,
     onAddChecklist,
     onCreateRecurrence,
@@ -111,7 +113,7 @@
   $effect(() => {
     if (!menuOpen) return;
     function onPointerDown(event: PointerEvent): void {
-      if (!menuRoot || activeMoveOperation !== null) return;
+      if (!menuRoot || movePending || activeMoveOperation !== null) return;
       if (event.target instanceof Node && menuRoot.contains(event.target)) return;
       closeMenu();
     }
@@ -134,7 +136,7 @@
   }
 
   function closeMenu(force = false, restoreFocus = false): void {
-    if (activeMoveOperation !== null && !force) return;
+    if ((movePending || activeMoveOperation !== null) && !force) return;
     interactionGeneration += 1;
     menuOpen = false;
     menuView = "actions";
@@ -160,7 +162,7 @@
   }
 
   function handleMoveKeydown(event: KeyboardEvent): void {
-    if (event.key !== "Escape" || activeMoveOperation !== null) return;
+    if (event.key !== "Escape" || movePending || activeMoveOperation !== null) return;
     event.preventDefault();
     closeMenu(false, true);
   }
@@ -220,7 +222,7 @@
       ariaHaspopup={menuView === "move" ? "dialog" : "menu"}
       ariaExpanded={menuOpen}
       onclick={() => {
-        if (activeMoveOperation !== null) return;
+        if (movePending || activeMoveOperation !== null) return;
         if (menuOpen) closeMenu();
         else menuOpen = true;
       }}
@@ -280,7 +282,7 @@
           {#each displayedProjects as project (project.uid)}
             <button
               type="button"
-              disabled={activeMoveOperation !== null}
+              disabled={movePending || activeMoveOperation !== null}
               aria-busy={movingProjectUID === project.uid}
               onclick={() => void moveIssue(project)}
             >

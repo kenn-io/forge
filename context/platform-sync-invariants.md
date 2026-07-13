@@ -113,12 +113,12 @@ registry helpers return typed errors for missing providers or capabilities.
 - Post-apply refresh goes through the detail-sync broadcaster and must rerun
   after any in-flight sync for the same PR — that sync may predate the commit
   (`internal/server/detail_sync.go::enqueueDetailSyncOrRerun`).
-- Unexpected or ambiguous mutation outcomes recover through authoritative
-  upstream detail sync; middleman must not persist a local mutation fence that
-  can indefinitely block future actions. Provider snapshots use ordinary
-  timestamp ordering, queued unconditional detail reruns repair stale
-  post-mutation snapshots, and expected-head binding remains the mutation
-  integrity boundary.
+- Unexpected or ambiguous mutation outcomes trigger an immediate best-effort
+  authoritative detail refresh; ordinary periodic sync is the eventual recovery
+  path if that refresh fails or still observes stale provider state. Middleman
+  must not persist a local mutation fence that can indefinitely block future
+  actions. Provider snapshots use ordinary timestamp ordering, and expected-head
+  binding remains the mutation integrity boundary.
 - Background and watched GitHub detail syncs may use the persisted PR ETag; a
   normal 304 marks detail fetched and may refresh pending CI. Explicit
   `SyncMROnProvider` refreshes bypass the PR ETag.

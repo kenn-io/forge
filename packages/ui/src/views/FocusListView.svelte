@@ -239,7 +239,7 @@
     </p>
   {/if}
 
-  <ScrollBox label="Focus list">
+  <ScrollBox class="list-body" label="Focus list">
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
       <p class="state-message">No repositories configured.</p>
     {:else if listType === "mrs"}

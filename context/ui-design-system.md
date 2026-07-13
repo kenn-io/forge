@@ -185,7 +185,7 @@ Use it inside left sidebar headers and collapsed strips. Pass a specific label s
 
 ### GroupedSidebarSection
 
-Use `GroupedSidebarSection` for collapsible groups in PR, issue, and workspace list rails. Keep group chrome and the `--sidebar-*` surface/row-state tokens shared; domain-specific row content stays with its owner. Wrap scrollable rail content in `SidebarScrollArea` so its scroll indicator overlays rows and sticky group headers, appears only during scrolling, and does not reserve a permanent gutter. Give each scroll area a concise accessible label so keyboard users can identify and scroll the region. (`packages/ui/src/components/shared/GroupedSidebarSection.svelte`, `packages/ui/src/components/shared/SidebarScrollArea.svelte`, `frontend/src/app.css:39`)
+Use `GroupedSidebarSection` for collapsible groups in PR, issue, and workspace list rails. Keep group chrome and the `--sidebar-*` surface/row-state tokens shared; domain-specific row content stays with its owner. Wrap large always-visible vertical scroll panes (list rails, diff area, pull/issue detail, activity views) in `ScrollBox` so the floating scroll indicator overlays content and sticky headers, appears only during scrolling, and does not reserve a permanent gutter; bind `viewport` when a host needs imperative scroll logic, and note the scrolling element is the viewport, not the host's content wrapper class. Give each scroll area a concise accessible label so keyboard users can identify and scroll the region. (`packages/ui/src/components/shared/GroupedSidebarSection.svelte`, `packages/ui/src/components/shared/ScrollBox.svelte`, `frontend/src/app.css:39`)
 
 ### SplitResizeHandle
 

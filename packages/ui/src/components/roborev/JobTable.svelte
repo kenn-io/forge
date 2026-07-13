@@ -69,7 +69,9 @@
   }
 </script>
 
-<div class="table-wrapper">
+<!-- Scrollable regions need keyboard access. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div class="table-wrapper" role="region" aria-label="Review jobs" tabindex="0">
   <table class="job-table">
     <thead>
       <tr>

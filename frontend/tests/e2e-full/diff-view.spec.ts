@@ -3779,6 +3779,44 @@ test.describe("diff view performance", () => {
     expect(await renderedPierreDiffCount(page)).toBeLessThan(largeDiff.files.length);
   });
 
+  test("pre-renders files within the observer margin below the fold", async ({ page }) => {
+    await mockDiffApi(page, largeDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    // DiffFile's IntersectionObserver uses the ScrollBox viewport as its
+    // root with a 600px margin. Files below the fold but inside that
+    // margin must render before they are scrolled into view; if the
+    // observer root regresses to a non-scrolling ancestor, the viewport
+    // clip zeroes the intersection and the pre-render buffer disappears.
+    const bufferState = () =>
+      page.evaluate(() => {
+        const viewport = document.querySelector(".diff-area .scroll-box__viewport");
+        if (!viewport) return { inMargin: 0, rendered: 0 };
+        const viewportBottom = viewport.getBoundingClientRect().bottom;
+        const inMargin = Array.from(document.querySelectorAll(".diff-file")).filter((file) => {
+          const rect = file.getBoundingClientRect();
+          return rect.top > viewportBottom && rect.top < viewportBottom + 600;
+        });
+        return {
+          inMargin: inMargin.length,
+          rendered: inMargin.filter(
+            (file) => file.querySelector(".pierre-diff")?.shadowRoot?.querySelector("[data-content]") != null,
+          ).length,
+        };
+      });
+
+    await expect
+      .poll(
+        async () => {
+          const state = await bufferState();
+          return state.inMargin > 0 && state.rendered === state.inMargin;
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+  });
+
   test("large diff (50 files) renders all file headers within timeout", async ({ page }) => {
     await mockDiffApi(page, largeDiff);
     await navigateToDiff(page);

@@ -256,6 +256,8 @@ Intent:
 
 Before placing an overlay inside a split view, compact sidebar, drawer, or scrollable region, verify that it can extend past its trigger container without being cut off.
 
+Popover surface chrome (background, border, radius, shadow) comes from `kit-popover-card`; do not re-declare it in component-scoped styles. Scoped rules outrank the kit class, and a `var()` referencing an undefined token (there is no `--bg-elevated`) computes to transparent with no build-time error.
+
 ### GitHubLabels
 
 Use `GitHubLabels` for actual GitHub labels.

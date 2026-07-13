@@ -72,13 +72,13 @@
   <!-- Scrollable regions need keyboard access. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
+    tabindex="0"
     {...rest}
     class="scroll-box__viewport"
     aria-label={label}
     bind:this={viewport}
     onscroll={handleScroll}
     role="region"
-    tabindex="0"
   >
     <div
       class="scroll-box__content"

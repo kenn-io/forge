@@ -566,7 +566,6 @@
     const area = diffArea;
     if (!area) return;
 
-    area.tabIndex = -1;
     area.addEventListener("wheel", onDiffUserScrollIntent, { passive: false });
     area.addEventListener("touchstart", onDiffUserScrollIntent);
     area.addEventListener("pointerdown", onDiffUserScrollIntent);
@@ -605,6 +604,7 @@
           label="Changed file diffs"
           bind:viewport={diffArea}
           onscroll={onDiffScroll}
+          tabindex={-1}
           style="tab-size: {tabWidth}; overscroll-behavior: contain"
         >
           <div class="diff-content" bind:this={diffContent}>

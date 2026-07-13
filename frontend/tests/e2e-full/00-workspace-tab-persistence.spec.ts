@@ -309,7 +309,7 @@ test.describe("workspace tab persistence", () => {
           });
         })
         .toBeLessThanOrEqual(56);
-      const rightDiffArea = page.locator(".right-sidebar .diff-area");
+      const rightDiffArea = page.locator(".right-sidebar .diff-area .scroll-box__viewport");
       await expect.poll(async () => rightDiffArea.evaluate((area) => area.scrollHeight > area.clientHeight)).toBe(true);
       const beforePageDownScrollTop = await rightDiffArea.evaluate((area) => area.scrollTop);
       await rightDiffHost.click();
@@ -355,7 +355,7 @@ test.describe("workspace tab persistence", () => {
       await expect(fileJump).toBeHidden();
       await expect
         .poll(async () =>
-          page.locator(".right-sidebar .diff-area").evaluate((area) => {
+          page.locator(".right-sidebar .diff-area .scroll-box__viewport").evaluate((area) => {
             const beta = area.querySelector<HTMLElement>('[data-file-path="beta_test.go"]');
             const areaRect = area.getBoundingClientRect();
             const betaRect = beta?.getBoundingClientRect();

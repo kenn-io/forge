@@ -61,16 +61,22 @@ test("grouped rail scroll indicator floats above sticky headers", async ({ page 
   await expect(indicator).toHaveCSS("opacity", "0", { timeout: 1_500 });
 });
 
-test("PR, issue, and workspace rails share labeled overlay scroll regions", async ({ page }) => {
+test("grouped rails share labeled overlay scroll regions", async ({ page }) => {
   const rails = [
     { path: "/pulls", label: "Pull requests" },
     { path: "/issues", label: "Issues" },
     { path: "/workspaces", label: "Workspaces" },
+    { path: "/kata", label: "Kata navigation" },
   ];
 
   for (const rail of rails) {
     await page.goto(rail.path);
-    const scope = rail.path === "/workspaces" ? page.locator(".workspace-list-sidebar") : page;
+    const scope =
+      rail.path === "/workspaces"
+        ? page.locator(".workspace-list-sidebar")
+        : rail.path === "/kata"
+          ? page.locator(".kata-sidebar")
+          : page;
     const scrollArea = scope.getByRole("region", { name: rail.label, exact: true });
     await expect(scrollArea).toBeVisible();
     await expect(scrollArea).toHaveAttribute("tabindex", "0");

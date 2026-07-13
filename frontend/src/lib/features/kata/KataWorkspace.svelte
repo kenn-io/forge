@@ -827,10 +827,6 @@
     return created!;
   }
 
-  async function renameKataProject(id: number, name: string): Promise<void> {
-    await runViewTaskOrThrow(() => store.renameProject(id, name));
-  }
-
   async function submitQuickCapture(title: string): Promise<void> {
     await withRouteEmission(async () => {
       await runViewTaskOrThrow(async () => {
@@ -1184,7 +1180,6 @@
         scheduleProjectScope(projectUID);
       }}
       onCreateProject={createKataProject}
-      onRenameProject={renameKataProject}
     />
 
     <main class="kata-main" aria-label="Kata tasks">

@@ -26,11 +26,13 @@ Only `KataSidebar` project-renaming controls are removed. Project rows will no l
 
 The current project in `KataIssueDetail` will become passive breadcrumb text. It will no longer look like navigation or open a picker when clicked.
 
-The existing issue overflow menu will gain a **Move to another project** action. Selecting it replaces the normal action list with a dialog-like searchable destination panel. Eligible destinations preserve the current rules: exclude the current project and inbox-role projects, sort by project name, and show open-task counts. Duplicate names include the project area or UID as a secondary label. The action is absent when no destination is eligible.
+The existing issue overflow menu will gain a **Move to another project** action. Selecting it replaces the normal action list with a dialog-like searchable destination panel. Eligible destinations preserve the current rules: exclude the current project and inbox-role projects, sort by project name, and show open-task counts. Duplicate names use the project area only when it uniquely identifies the destination within that duplicate-name group; otherwise they show the project UID. The action is absent when no destination is eligible.
 
-`onMoveIssue` will return `boolean | Promise<boolean>` from both workspace hosts: `true` means the mutation succeeded and `false` means the workspace handled and displayed an error. Success closes the overflow interaction; failure leaves the picker and query available for retry. Destinations are disabled while a move is pending, and an in-flight result cannot update a newly selected issue’s menu state.
+`onMoveIssue` will return `boolean | Promise<boolean>` from both workspace hosts: `true` means the mutation succeeded and `false` means the workspace handled and displayed an error. Success closes the overflow interaction; failure leaves the picker and query available for retry. Each request receives a monotonic operation token, and only the current token may close the interaction or clear pending state after navigation, including A → B → A selection sequences.
 
-The search field and destination buttons use normal Tab/Shift+Tab navigation rather than claiming listbox semantics. Opening the picker focuses search; Escape first clears a nonempty search, then closes the interaction and returns focus to **More actions** when search is empty. Outside click closes without restoring focus, and changing the selected issue resets the interaction.
+Destinations are disabled while a move is pending. Escape and outside-click dismissal are ignored until the request settles, so reopening cannot submit a second concurrent move. Project inputs remain reactive while the picker is open: renames and area changes update visible labels, while removed or newly inbox-role projects disappear unless they are the active pending destination, which remains visible and disabled until its request settles.
+
+The search field and destination buttons use normal Tab/Shift+Tab navigation rather than claiming listbox semantics. Opening the picker focuses search; Tab traverses every visible destination and the no-results state is announced as status text. Escape first clears a nonempty search, then closes the interaction and returns focus to **More actions** when search is empty and no move is pending. Outside click closes without restoring focus only when no move is pending, and changing the selected issue resets the visible interaction without invalidating the operation token.
 
 ## State and Errors
 
@@ -61,8 +63,8 @@ Full-stack Playwright coverage will replace the existing pencil-button and doubl
 
 1. Migrate sidebar scrolling and area groups while preserving navigation and creation behavior.
 2. Remove sidebar rename state, controls, callback wiring, and contradictory tests.
-3. Add overflow-menu reassignment, update both workspace callbacks to return success, then make the issue breadcrumb passive in the same reviewable change.
-4. Update component tests for both interactions.
+3. Add overflow-menu reassignment and update both workspace callbacks to return success. This intermediate commit intentionally leaves the existing breadcrumb control available so reassignment is never removed before its replacement lands.
+4. Make the issue breadcrumb passive immediately afterward, then update component tests for both interactions.
 5. Replace the obsolete full-stack rename scenarios and run the affected frontend suites.
 
 ## Scope

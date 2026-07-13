@@ -29,6 +29,7 @@
 - `frontend/src/lib/components/kata/KataSidebar.test.ts`: sidebar grouping, collapse lifetime, ordering, navigation, creation, and absence of rename affordances.
 - `frontend/src/lib/features/kata/KataWorkspace.svelte`: remove sidebar rename forwarding and return move success from the existing task wrapper.
 - `frontend/src/lib/components/terminal/KataWorkspaceSidebarPane.svelte`: match the boolean issue-move callback contract in the embedded workspace.
+- `frontend/src/lib/components/terminal/KataWorkspaceSidebarPane.test.ts`: exercise handled move failure and retry through the embedded host's real task wrapper.
 - `frontend/src/lib/components/kata/KataIssueDetail.svelte`: passive project breadcrumb and project/move props forwarded to the overflow menu.
 - `frontend/src/lib/components/kata/KataIssueDetail.test.ts`: passive breadcrumb and project-name fallback coverage.
 - `frontend/src/lib/components/kata/KataIssueOverflowMenu.svelte`: explicit move action, searchable destination view, pending/retry state, focus restoration, and issue-identity reset.
@@ -40,10 +41,12 @@
 ### Task 1: Adopt Shared Kata Sidebar Grouping
 
 **Files:**
+
 - Modify: `frontend/src/lib/components/kata/KataSidebar.test.ts`
 - Modify: `frontend/src/lib/components/kata/KataSidebar.svelte`
 
 **Interfaces:**
+
 - Consumes: `GroupedSidebarSection` and `SidebarScrollArea` already implemented and exported by `@middleman/ui` in merged PR #662 (`packages/ui/src/components/shared/` and `packages/ui/src/index.ts`).
 - Produces: mounted `collapsedAreas: string[]` state and one native project button per visible project.
 
@@ -65,8 +68,7 @@ it("renders system views, expanded area groups, and project creation in order", 
   expect(work).toHaveAttribute("aria-expanded", "true");
   const ordered = [inbox, personal, work, create];
   for (let index = 0; index < ordered.length - 1; index += 1) {
-    expect(ordered[index]!.compareDocumentPosition(ordered[index + 1]!))
-      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(ordered[index]!.compareDocumentPosition(ordered[index + 1]!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   }
 });
 ```
@@ -126,7 +128,7 @@ Do not synchronize this state into URL, local storage, or the workspace store.
 Keep the outer `aside`, but make `SidebarScrollArea` the only scrolling owner:
 
 ```svelte
-<aside class="kata-sidebar">
+<aside class="kata-sidebar" aria-label="Kata navigation">
   <SidebarScrollArea label="Kata navigation">
     <nav class="kata-nav" aria-label="System views">
       <!-- retain the existing keyed system-view loop unchanged -->
@@ -198,11 +200,13 @@ Expected: focused test PASS; commit hooks PASS.
 ### Task 2: Make Sidebar Project Rows Navigation-Only
 
 **Files:**
+
 - Modify: `frontend/src/lib/components/kata/KataSidebar.test.ts`
 - Modify: `frontend/src/lib/components/kata/KataSidebar.svelte`
 - Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte`
 
 **Interfaces:**
+
 - Removes: `KataSidebar` prop `onRenameProject: (id: number, name: string) => Promise<void>`.
 - Preserves: `KataWorkspaceStore.renameProject(id, name)` and task-client rename operations.
 
@@ -306,13 +310,16 @@ git commit -m "feat: make Kata project rows navigation-only"
 ### Task 3: Move Issue Reassignment Into More Actions
 
 **Files:**
+
 - Modify: `frontend/src/lib/components/kata/KataIssueOverflowMenu.test.ts`
 - Modify: `frontend/src/lib/components/kata/KataIssueOverflowMenu.svelte`
 - Modify: `frontend/src/lib/components/kata/KataIssueDetail.svelte`
 - Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte`
 - Modify: `frontend/src/lib/components/terminal/KataWorkspaceSidebarPane.svelte`
+- Create: `frontend/src/lib/components/terminal/KataWorkspaceSidebarPane.test.ts`
 
 **Interfaces:**
+
 - Adds to `KataIssueOverflowMenu` props:
   - `projects: KataProjectSummary[]`
   - `onMoveIssue: (toProjectUID: string) => boolean | Promise<boolean>`
@@ -326,12 +333,7 @@ Add to `KataIssueOverflowMenu.test.ts`:
 ```ts
 import type { KataProjectSummary, KataTaskDetail } from "../../api/kata/taskTypes.js";
 
-function makeProject(
-  uid: string,
-  name: string,
-  openCount: number,
-  role = "",
-): KataProjectSummary {
+function makeProject(uid: string, name: string, openCount: number, role = ""): KataProjectSummary {
   return {
     id: uid === "project-1" ? 1 : 2,
     uid,
@@ -349,6 +351,7 @@ const projects = [
   makeProject("project-roadmap", "Roadmap", 5),
   { ...makeProject("project-shared-work", "Shared", 2), metadata: { area: "Work" } },
   { ...makeProject("project-shared-home", "Shared", 4), metadata: { area: "Home" } },
+  { ...makeProject("project-shared-home-2", "Shared", 1), metadata: { area: "Home" } },
 ];
 ```
 
@@ -370,7 +373,8 @@ it("shows sorted eligible destinations with open counts", async () => {
 
   const options = screen.getAllByRole("button", { name: /Alpha|Roadmap|Shared/ });
   expect(options.slice(0, 2).map((button) => button.textContent)).toEqual(["Alpha3", "Roadmap5"]);
-  expect(screen.getByRole("button", { name: /Shared.*Home.*4/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Shared.*project-shared-home.*4/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Shared.*project-shared-home-2.*1/ })).toBeTruthy();
   expect(screen.getByRole("button", { name: /Shared.*Work.*2/ })).toBeTruthy();
   expect(screen.queryByText("Inbox")).toBeNull();
 });
@@ -410,7 +414,7 @@ it("keeps the picker open when the workspace reports move failure", async () => 
 
 Implement local `renderMenu(overrides)` and `openMovePicker()` helpers with concrete default props from the existing tests.
 
-- [ ] **Step 4: Add failing issue-identity reset coverage**
+- [ ] **Step 4: Add failing issue-identity and stale-operation coverage**
 
 ```ts
 it("resets the destination view when the selected issue changes", async () => {
@@ -422,7 +426,46 @@ it("resets the destination view when the selected issue changes", async () => {
 
   await view.rerender({ issue: makeIssue("open", { uid: "issue-2" }), projects });
   expect(screen.queryByRole("searchbox", { name: "Find project" })).toBeNull();
-  expect(screen.getByRole("button", { name: "More actions" })).toHaveAttribute("aria-expanded", "false");
+  expect(screen.getByRole("button", { name: "More actions" }).getAttribute("aria-expanded")).toBe("false");
+});
+
+it("ignores an old A move after navigating A to B to A", async () => {
+  let finishOldMove!: (moved: boolean) => void;
+  const oldMove = new Promise<boolean>((resolve) => {
+    finishOldMove = resolve;
+  });
+  const onMoveIssue = vi.fn(() => oldMove);
+  const view = renderMenu({ onMoveIssue });
+
+  await openMovePicker();
+  await fireEvent.click(screen.getByRole("button", { name: /Roadmap/ }));
+  await view.rerender({ issue: makeIssue("open", { uid: "issue-b" }), projects });
+  await view.rerender({ issue: makeIssue("open", { uid: "issue-1" }), projects });
+  await openMovePicker();
+
+  finishOldMove(true);
+  await oldMove;
+  expect(screen.getByRole("searchbox", { name: "Find project" })).toBeTruthy();
+});
+
+it("does not dismiss or resubmit while a move is pending", async () => {
+  let finishMove!: (moved: boolean) => void;
+  const pendingMove = new Promise<boolean>((resolve) => {
+    finishMove = resolve;
+  });
+  const onMoveIssue = vi.fn(() => pendingMove);
+  renderMenu({ onMoveIssue });
+
+  await openMovePicker();
+  await fireEvent.click(screen.getByRole("button", { name: /Roadmap/ }));
+  await fireEvent.keyDown(screen.getByRole("dialog", { name: "Move to another project" }), { key: "Escape" });
+  await fireEvent.mouseDown(document.body);
+
+  expect(screen.getByRole("searchbox", { name: "Find project" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Roadmap/ })).toBeDisabled();
+  expect(onMoveIssue).toHaveBeenCalledTimes(1);
+  finishMove(false);
+  await pendingMove;
 });
 ```
 
@@ -449,6 +492,8 @@ async function moveSelectedIssue(toProjectUID: string): Promise<boolean> {
 ```
 
 Apply the same shape in `KataWorkspaceSidebarPane.svelte`, returning its existing `runTask(...)` result. This keeps error copy owned by `requestError`/`error` and gives the menu a close/retry signal.
+
+Add `frontend/src/lib/components/terminal/KataWorkspaceSidebarPane.test.ts` with a mounted-host fixture that stubs the Kata API bootstrap and move endpoint. Exercise `More actions → Move to another project` through the real pane: one test returns a handled move failure and asserts the pane's alert plus retryable picker, then a retry succeeds and closes it. This is required alongside `KataWorkspace.test.ts`; do not substitute an isolated callback unit test.
 
 - [ ] **Step 7: Forward projects and the move callback**
 
@@ -494,6 +539,9 @@ interface Props {
 let menuView = $state<"actions" | "move">("actions");
 let moveQuery = $state("");
 let movingProjectUID = $state<string | null>(null);
+let interactionGeneration = 0;
+let moveOperationGeneration = 0;
+let activeMoveOperation = $state<number | null>(null);
 
 let eligibleProjects = $derived.by(() =>
   projects
@@ -501,20 +549,31 @@ let eligibleProjects = $derived.by(() =>
     .toSorted((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
 );
 
-let duplicateNames = $derived.by(() => {
-  const counts = new Map<string, number>();
+let duplicateContexts = $derived.by(() => {
+  const groups = new Map<string, KataProjectSummary[]>();
   for (const project of eligibleProjects) {
     const key = project.name.trim().toLocaleLowerCase();
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+    groups.set(key, [...(groups.get(key) ?? []), project]);
   }
-  return counts;
+
+  const contexts = new Map<string, string>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const areaCounts = new Map<string, number>();
+    for (const project of group) {
+      const area = typeof project.metadata.area === "string" ? project.metadata.area.trim() : "";
+      if (area) areaCounts.set(area, (areaCounts.get(area) ?? 0) + 1);
+    }
+    for (const project of group) {
+      const area = typeof project.metadata.area === "string" ? project.metadata.area.trim() : "";
+      contexts.set(project.uid, area && areaCounts.get(area) === 1 ? area : project.uid);
+    }
+  }
+  return contexts;
 });
 
 function destinationContext(project: KataProjectSummary): string | null {
-  const duplicate = (duplicateNames.get(project.name.trim().toLocaleLowerCase()) ?? 0) > 1;
-  if (!duplicate) return null;
-  const area = typeof project.metadata.area === "string" ? project.metadata.area.trim() : "";
-  return area || project.uid;
+  return duplicateContexts.get(project.uid) ?? null;
 }
 
 let filteredProjects = $derived.by(() => {
@@ -527,7 +586,7 @@ let filteredProjects = $derived.by(() => {
 });
 ```
 
-Include `eligibleProjects.length > 0` in `hasAnyAction`. Reset `menuView`, `moveQuery`, and move pending state when the issue UID changes or the menu closes.
+Include `eligibleProjects.length > 0` in `hasAnyAction`. Increment `interactionGeneration` and reset `menuView` and `moveQuery` whenever the issue UID changes or a non-pending interaction closes. Do not clear `activeMoveOperation` or `movingProjectUID` from close/reset helpers while a request is pending; dismissal is disabled until that operation settles. Keep the pending destination in the rendered list if reactive project updates would otherwise remove it.
 
 - [ ] **Step 9: Render the explicit action and searchable picker**
 
@@ -580,15 +639,26 @@ Declare `let moveSearchInput: HTMLInputElement | undefined = $state();` and focu
 
 ```ts
 async function moveIssue(projectUID: string): Promise<void> {
-  if (movingProjectUID !== null) return;
+  if (activeMoveOperation !== null) return;
   const sourceIssueUID = issue.issue.uid;
+  const sourceInteraction = interactionGeneration;
+  const operation = ++moveOperationGeneration;
+  activeMoveOperation = operation;
   movingProjectUID = projectUID;
   try {
     const moved = await onMoveIssue(projectUID);
-    if (issue.issue.uid !== sourceIssueUID) return;
+    if (
+      activeMoveOperation !== operation ||
+      interactionGeneration !== sourceInteraction ||
+      issue.issue.uid !== sourceIssueUID
+    )
+      return;
     if (moved !== false) closeMenu();
   } finally {
-    if (issue.issue.uid === sourceIssueUID) movingProjectUID = null;
+    if (activeMoveOperation === operation) {
+      activeMoveOperation = null;
+      movingProjectUID = null;
+    }
   }
 }
 ```
@@ -601,13 +671,15 @@ Do not duplicate mutation error messages in the menu.
 node ../node_modules/vite-plus/bin/vp test run --project unit \
   src/lib/components/kata/KataIssueDetail.test.ts \
   src/lib/components/kata/KataIssueOverflowMenu.test.ts \
-  src/lib/features/kata/KataWorkspace.test.ts
+  src/lib/features/kata/KataWorkspace.test.ts \
+  src/lib/components/terminal/KataWorkspaceSidebarPane.test.ts
 git add frontend/src/lib/components/kata/KataIssueOverflowMenu.svelte \
   frontend/src/lib/components/kata/KataIssueOverflowMenu.test.ts \
   frontend/src/lib/components/kata/KataIssueDetail.svelte \
   frontend/src/lib/components/kata/KataIssueDetail.test.ts \
   frontend/src/lib/features/kata/KataWorkspace.svelte \
-  frontend/src/lib/components/terminal/KataWorkspaceSidebarPane.svelte
+  frontend/src/lib/components/terminal/KataWorkspaceSidebarPane.svelte \
+  frontend/src/lib/components/terminal/KataWorkspaceSidebarPane.test.ts
 git commit -m "feat: move Kata reassignment into task actions"
 ```
 
@@ -616,10 +688,12 @@ git commit -m "feat: move Kata reassignment into task actions"
 ### Task 4: Make the Issue Project Breadcrumb Passive
 
 **Files:**
+
 - Modify: `frontend/src/lib/components/kata/KataIssueDetail.test.ts`
 - Modify: `frontend/src/lib/components/kata/KataIssueDetail.svelte`
 
 **Interfaces:**
+
 - Preserves: `currentProjectName(): string` fallback order.
 - Removes: breadcrumb-owned destination picker; issue reassignment is already available through the overflow menu added in Task 3 before the breadcrumb control is removed.
 
@@ -690,11 +764,13 @@ git commit -m "feat: make Kata project breadcrumbs passive"
 ### Task 5: Preserve Escape and Focus Behavior
 
 **Files:**
+
 - Modify: `frontend/src/lib/components/kata/KataIssueOverflowMenu.test.ts`
 - Modify: `frontend/src/lib/components/kata/KataIssueOverflowMenu.svelte`
 - Create only if jsdom cannot reliably assert focus: `frontend/src/lib/components/kata/KataIssueOverflowMenu.browser.svelte.ts`
 
 **Interfaces:**
+
 - Consumes: kit `SearchInput` behavior where Escape clears a nonempty value before the owner handles an empty-query Escape.
 - Produces: empty-query Escape closes the move picker without moving and restores focus to More actions.
 
@@ -785,9 +861,11 @@ If no browser file exists, omit it from `git add`.
 ### Task 6: Replace Obsolete Full-Stack Rename Workflows
 
 **Files:**
+
 - Modify: `frontend/tests/e2e-full/kata.spec.ts`
 
 **Interfaces:**
+
 - Preserves: seeded real backend, project creation, project scope routing, daemon move endpoint, and rename API fixture support.
 - Replaces: four tests that require pencil-button or double-click sidebar renaming.
 
@@ -956,7 +1034,7 @@ Use the same backend/home/server setup as the surrounding test, navigate directl
 - [ ] **Step 8: Run targeted full-stack tests**
 
 ```bash
-node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts --grep "kata (sidebar|project|More actions|move picker)"
+node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts --grep "kata (sidebar|project|More actions|move picker|move failure)"
 ```
 
 Expected: PASS in both configured browser projects. During iteration, `--project=chromium` is acceptable, but this two-browser command must pass before commit.
@@ -973,9 +1051,11 @@ git commit -m "test: cover the cleaned-up Kata project workflows"
 ### Task 7: Final Verification
 
 **Files:**
+
 - Verify only; do not edit after these commands without rerunning the affected lane.
 
 **Interfaces:**
+
 - Confirms all spec acceptance criteria and repository pre-push requirements.
 
 - [ ] **Step 1: Run focused unit coverage**
@@ -988,6 +1068,7 @@ node ../node_modules/vite-plus/bin/vp test run --project unit \
   src/lib/components/kata/KataIssueDetail.test.ts \
   src/lib/components/kata/KataIssueOverflowMenu.test.ts \
   src/lib/features/kata/KataWorkspace.test.ts \
+  src/lib/components/terminal/KataWorkspaceSidebarPane.test.ts \
   src/lib/stores/kata-workspace.svelte.test.ts \
   src/lib/api/kata/taskClient.test.ts
 ```

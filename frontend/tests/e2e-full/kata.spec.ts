@@ -3853,10 +3853,19 @@ test("kata sidebar switches system views and renders project areas", async ({ pa
     await expect(page.getByRole("button", { name: "Inbox" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Today" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Logbook" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Personal" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Work" })).toBeVisible();
+    const personal = page.getByRole("button", { name: /^Personal\s+1$/ });
+    const work = page.getByRole("button", { name: /^Work\s+1$/ });
+    await expect(personal).toHaveAttribute("aria-expanded", "true");
+    await expect(work).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Kata\s+1$/ })).toBeVisible();
+
+    await personal.click();
+    await expect(personal).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toHaveCount(0);
+    await personal.click();
+    await expect(personal).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toBeVisible();
 
     await page.getByRole("button", { name: "Inbox" }).click();
     await expect(page.getByRole("heading", { name: "Inbox", level: 2 })).toBeVisible();

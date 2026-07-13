@@ -43,7 +43,6 @@ function renderSidebar(overrides: Partial<SidebarProps> = {}) {
       onOpenView: vi.fn(),
       onOpenProject: vi.fn(),
       onCreateProject: vi.fn(),
-      onRenameProject: vi.fn(),
       ...overrides,
     },
   });
@@ -101,16 +100,22 @@ describe("KataSidebar", () => {
     expect(onOpenProject).toHaveBeenCalledWith("project-finances");
   });
 
-  it("double-clicking a project enters rename mode", async () => {
+  it("keeps project rows navigation-only without rename affordances", async () => {
     const onOpenProject = vi.fn();
+    renderSidebar({
+      onOpenProject,
+      searchFilters: { ...allScopeFilters, scope: { kind: "project", project_uid: "project-finances" } },
+    });
 
-    renderSidebar({ onOpenProject });
+    const finances = screen.getByRole("button", { name: /^Finances\b/ });
+    expect(finances.classList.contains("active")).toBe(true);
+    expect(screen.queryByRole("button", { name: "Rename Finances" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Rename project" })).toBeNull();
 
-    await fireEvent.doubleClick(screen.getByRole("button", { name: /^Finances\b/ }));
-
-    const input = screen.getByRole("textbox", { name: "Rename project" });
-    expect(input).toBeTruthy();
-    await waitFor(() => expect(input).toBe(document.activeElement));
+    await fireEvent.click(finances);
+    await fireEvent.doubleClick(finances);
+    expect(screen.queryByRole("textbox", { name: "Rename project" })).toBeNull();
+    expect(onOpenProject).toHaveBeenCalledWith("project-finances");
   });
 
   it("creates a project and opens the created scope", async () => {
@@ -129,25 +134,6 @@ describe("KataSidebar", () => {
     await waitFor(() => {
       expect(onCreateProject).toHaveBeenCalledWith("New Project");
       expect(onOpenProject).toHaveBeenCalledWith("project-new");
-    });
-  });
-
-  it("renames a project from the project row", async () => {
-    const onRenameProject = vi.fn(async () => {});
-
-    renderSidebar({
-      searchFilters: { ...allScopeFilters, scope: { kind: "project", project_uid: "project-finances" } },
-      onRenameProject,
-    });
-
-    await fireEvent.click(screen.getByRole("button", { name: "Rename Finances" }));
-
-    const input = screen.getByRole("textbox", { name: "Rename project" });
-    await fireEvent.input(input, { target: { value: "Household" } });
-    await fireEvent.submit(input.closest("form")!);
-
-    await waitFor(() => {
-      expect(onRenameProject).toHaveBeenCalledWith(2, "Household");
     });
   });
 });

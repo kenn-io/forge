@@ -4,7 +4,6 @@
   import CheckCircleIcon from "@lucide/svelte/icons/check-circle-2";
   import InboxIcon from "@lucide/svelte/icons/inbox";
   import LayersIcon from "@lucide/svelte/icons/layers";
-  import PencilIcon from "@lucide/svelte/icons/pencil";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import StarIcon from "@lucide/svelte/icons/star";
   import { GroupedSidebarSection, SidebarScrollArea } from "@middleman/ui";
@@ -20,7 +19,6 @@
     onOpenView: (name: KataTaskViewName) => void | Promise<void>;
     onOpenProject: (projectUID: string) => void | Promise<void>;
     onCreateProject: (name: string) => Promise<KataProjectSummary>;
-    onRenameProject: (id: number, name: string) => Promise<void>;
   }
 
   let {
@@ -31,7 +29,6 @@
     onOpenView,
     onOpenProject,
     onCreateProject,
-    onRenameProject,
   }: Props = $props();
 
   const systemViews: Array<{
@@ -51,12 +48,7 @@
   let createDraft = $state("");
   let createSaving = $state(false);
   let createError = $state<string | null>(null);
-  let renamingProjectID = $state<number | null>(null);
-  let renameDraft = $state("");
-  let renameSaving = $state(false);
-  let renameError = $state<string | null>(null);
   let createInput: HTMLInputElement | null = $state(null);
-  let renameInput: HTMLInputElement | null = $state(null);
   let collapsedAreas = $state<string[]>([]);
 
   function toggleArea(name: string): void {
@@ -107,42 +99,9 @@
       createSaving = false;
     }
   }
-
-  function startRenamingProject(project: KataProjectSummary): void {
-    renamingProjectID = project.id;
-    renameDraft = project.name;
-    renameError = null;
-    queueMicrotask(() => renameInput?.focus());
-  }
-
-  function cancelRenamingProject(): void {
-    renamingProjectID = null;
-    renameDraft = "";
-    renameError = null;
-  }
-
-  async function submitRenameProject(): Promise<void> {
-    if (renamingProjectID === null || renameSaving) return;
-    const name = renameDraft.trim();
-    if (!name) {
-      renameError = "Project name can't be empty.";
-      return;
-    }
-    renameSaving = true;
-    renameError = null;
-    try {
-      await onRenameProject(renamingProjectID, name);
-      renamingProjectID = null;
-      renameDraft = "";
-    } catch (err) {
-      renameError = err instanceof Error ? err.message : "Could not rename project.";
-    } finally {
-      renameSaving = false;
-    }
-  }
 </script>
 
-<aside class="kata-sidebar">
+<aside class="kata-sidebar" aria-label="Kata navigation">
   <SidebarScrollArea label="Kata navigation">
     <nav class="kata-nav" aria-label="System views">
     {#each systemViews as view (view.name)}
@@ -173,62 +132,15 @@
         onclick={() => toggleArea(area.name)}
       >
         {#each area.projects as project (project.uid)}
-            {#if renamingProjectID === project.id}
-              <form
-                class="project-rename-form"
-                onsubmit={(event) => {
-                  event.preventDefault();
-                  void submitRenameProject();
-                }}
-              >
-                <input
-                  bind:this={renameInput}
-                  aria-label="Rename project"
-                  bind:value={renameDraft}
-                  onkeydown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void submitRenameProject();
-                    } else if (event.key === "Escape") {
-                      event.preventDefault();
-                      cancelRenamingProject();
-                    }
-                  }}
-                  onblur={() => {
-                    if (!renameSaving) cancelRenamingProject();
-                  }}
-                  disabled={renameSaving}
-                />
-              </form>
-              {#if renameError}
-                <p class="sidebar-error" role="alert">{renameError}</p>
-              {/if}
-            {:else}
-              <div class:active={isProjectActive(project.uid)} class="project-row">
-                <button
-                  type="button"
-                  class="project-select-button"
-                  onclick={() => {
-                    void onOpenProject(project.uid);
-                  }}
-                  ondblclick={(event) => {
-                    event.preventDefault();
-                    startRenamingProject(project);
-                  }}
-                >
-                  <span class="project-name">{project.name}</span>
-                  <span class="project-count count">{project.open_count}</span>
-                </button>
-                <button
-                  type="button"
-                  class="project-rename-button"
-                  aria-label={`Rename ${project.name}`}
-                  onclick={() => startRenamingProject(project)}
-                >
-                  <PencilIcon size={13} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-              </div>
-            {/if}
+          <button
+            type="button"
+            class="project-select-button"
+            class:active={isProjectActive(project.uid)}
+            onclick={() => void onOpenProject(project.uid)}
+          >
+            <span class="project-name">{project.name}</span>
+            <span class="project-count count">{project.open_count}</span>
+          </button>
         {/each}
       </GroupedSidebarSection>
     {/each}
@@ -314,14 +226,14 @@
   }
 
   .kata-nav button:hover,
-  .project-row:hover,
+  .project-select-button:hover,
   .project-create-button:hover {
     background: var(--sidebar-row-hover-bg);
     color: var(--text-primary);
   }
 
   .kata-nav button.active,
-  .project-row.active {
+  .project-select-button.active {
     background: var(--bg-row-selected);
     color: var(--text-primary);
   }
@@ -337,13 +249,13 @@
     color: var(--accent-blue);
   }
 
-  .project-row.active .project-count,
+  .project-select-button.active .project-count,
   .kata-nav button.active .nav-count {
     color: var(--text-primary);
   }
 
   .kata-nav button.active .nav-label,
-  .project-row.active .project-name {
+  .project-select-button.active .project-name {
     font-weight: 650;
   }
 
@@ -366,35 +278,11 @@
     padding: 12px;
   }
 
-  .project-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 26px;
-    align-items: center;
-    border-radius: 6px;
-  }
-
   .project-select-button {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .project-rename-button {
-    width: 24px;
-    height: 24px;
-    border: 0;
-    border-radius: 5px;
-    background: transparent;
-    color: var(--text-muted);
-    opacity: 0;
-    cursor: pointer;
-  }
-
-  .project-row:hover .project-rename-button,
-  .project-rename-button:focus-visible {
-    opacity: 1;
-  }
-
-  .project-create-form input,
-  .project-rename-form input {
+  .project-create-form input {
     width: 100%;
     min-height: 30px;
     border: 1px solid var(--border-default);
@@ -406,8 +294,7 @@
     padding: 5px 8px;
   }
 
-  .project-create-form input:focus,
-  .project-rename-form input:focus {
+  .project-create-form input:focus {
     outline: none;
     border-color: var(--accent-blue);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 18%, transparent);

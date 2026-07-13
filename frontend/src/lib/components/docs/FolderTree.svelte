@@ -255,7 +255,6 @@
   :global(.folder-tree-context-menu) {
     min-width: 140px;
     padding: 4px;
-    background: var(--bg-elevated);
     font-size: var(--font-size-sm);
   }
   :global(.folder-tree-context-menu-item) {

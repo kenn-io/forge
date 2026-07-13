@@ -1546,7 +1546,6 @@
     list-style: none;
     margin: 0;
     padding: 4px;
-    background: var(--bg-elevated);
     max-height: 320px;
     overflow: auto;
   }
@@ -1859,7 +1858,6 @@
     margin: 0;
     padding: 4px;
     min-width: 160px;
-    background: var(--bg-elevated);
   }
 
   .file-menu-item {
@@ -1956,7 +1954,6 @@
     right: 16px;
     z-index: 50;
     padding: 8px 14px;
-    background: var(--bg-elevated);
     color: var(--text-primary);
     font-size: var(--font-size-sm);
   }

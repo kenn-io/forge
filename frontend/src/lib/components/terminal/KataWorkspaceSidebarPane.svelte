@@ -90,10 +90,10 @@
     }
   }
 
-  async function moveSelectedIssue(toProjectUID: string | null): Promise<void> {
+  async function moveSelectedIssue(toProjectUID: string): Promise<boolean> {
     const selected = store.selectedIssue?.issue;
-    if (!selected || !toProjectUID) return;
-    await runTask(() => store.moveIssue(selected.uid, actor, toProjectUID));
+    if (!selected) return false;
+    return runTask(() => store.moveIssue(selected.uid, actor, toProjectUID));
   }
 
   function patchSelectedMetadata(uid: string, patch: Record<string, unknown>): Promise<boolean> {

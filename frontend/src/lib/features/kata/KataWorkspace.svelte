@@ -970,10 +970,10 @@
     graphSourceIssue = null;
   }
 
-  async function moveSelectedIssue(toProjectUID: string | null): Promise<void> {
+  async function moveSelectedIssue(toProjectUID: string): Promise<boolean> {
     const selected = store.selectedIssue?.issue;
-    if (!selected || !toProjectUID) return;
-    await runViewTask(() => store.moveIssue(selected.uid, actor, toProjectUID));
+    if (!selected) return false;
+    return runViewTask(() => store.moveIssue(selected.uid, actor, toProjectUID));
   }
 
   async function patchSelectedMetadata(uid: string, patch: Record<string, unknown>): Promise<boolean> {

@@ -43,7 +43,7 @@
     unlinkError: string | null;
     selectedRecurrences: KataRecurrence[];
     checklistRevealed: boolean;
-    onMoveIssue: (toProjectUID: string | null) => void | Promise<void>;
+    onMoveIssue: (toProjectUID: string) => boolean | Promise<boolean>;
     onPatchMetadata: (uid: string, patch: Record<string, unknown>) => boolean | Promise<boolean>;
     onAddComment: (uid: string, body: string) => boolean | Promise<boolean>;
     onEditIssue: (uid: string, patch: KataTaskEditPatch) => boolean | Promise<boolean>;
@@ -162,6 +162,11 @@
     return project?.name ?? issue.issue.project_uid;
   }
 
+  function moveFromBreadcrumb(toProjectUID: string | null): boolean | Promise<boolean> {
+    if (!toProjectUID) return false;
+    return onMoveIssue(toProjectUID);
+  }
+
   function startEditingTitle(): void {
     cancelingTitle = false;
     titleDraft = issue.issue.title;
@@ -232,7 +237,7 @@
             clearLabel={currentProjectName()}
             placeholder="Move to project..."
             emptyLabel="No matching projects"
-            onChange={onMoveIssue}
+            onChange={moveFromBreadcrumb}
           />
         </div>
         <span class="crumb-sep">/</span>
@@ -288,8 +293,10 @@
       {/if}
       <KataIssueOverflowMenu
         {issue}
+        {projects}
         hasChecklist={checklistItems().length > 0 || checklistRevealed}
         hasRecurrence={!canCreateRecurrence}
+        {onMoveIssue}
         onAddChecklist={onRevealChecklist}
         onCreateRecurrence={onCreateRecurrence}
         onDeleteIssue={onDeleteIssue}

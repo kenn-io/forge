@@ -118,7 +118,7 @@ function renderDetail(props: Partial<KataIssueDetailProps> = {}) {
       unlinkError: null,
       selectedRecurrences: [makeRecurrence()],
       checklistRevealed: false,
-      onMoveIssue: vi.fn(async () => {}),
+      onMoveIssue: vi.fn(async () => true),
       onPatchMetadata: vi.fn(async () => true),
       onAddComment: vi.fn(async () => true),
       onEditIssue: vi.fn(async () => true),
@@ -185,7 +185,7 @@ describe("KataIssueDetail", () => {
   });
 
   it("moves to a non-inbox project from the crumb picker", async () => {
-    const onMoveIssue = vi.fn(async () => {});
+    const onMoveIssue = vi.fn(async () => true);
     renderDetail({ onMoveIssue });
 
     await fireEvent.click(screen.getByRole("button", { name: /Move issue from Inbox/ }));

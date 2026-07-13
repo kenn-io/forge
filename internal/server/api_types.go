@@ -108,21 +108,22 @@ type workflowApprovalResponse struct {
 }
 
 type mergeRequestDetailResponse struct {
-	MergeRequest     *db.MergeRequest            `json:"merge_request"`
-	Events           []mergeRequestEventResponse `json:"events"`
-	Repo             repoRefResponse             `json:"repo"`
-	RepoOwner        string                      `json:"repo_owner"`
-	RepoName         string                      `json:"repo_name"`
-	PlatformHost     string                      `json:"platform_host"`
-	PlatformHeadSHA  string                      `json:"platform_head_sha"`
-	PlatformBaseSHA  string                      `json:"platform_base_sha"`
-	ReviewedHeadSHA  string                      `json:"reviewed_head_sha"`
-	DiffHeadSHA      string                      `json:"diff_head_sha"`
-	MergeBaseSHA     string                      `json:"merge_base_sha"`
-	WorktreeLinks    []worktreeLinkResponse      `json:"worktree_links"`
-	WorkflowApproval workflowApprovalResponse    `json:"workflow_approval"`
-	Warnings         []string                    `json:"warnings,omitempty"`
-	DetailLoaded     bool                        `json:"detail_loaded"`
+	MergeRequest                      *db.MergeRequest            `json:"merge_request"`
+	Events                            []mergeRequestEventResponse `json:"events"`
+	Repo                              repoRefResponse             `json:"repo"`
+	RepoOwner                         string                      `json:"repo_owner"`
+	RepoName                          string                      `json:"repo_name"`
+	PlatformHost                      string                      `json:"platform_host"`
+	PlatformHeadSHA                   string                      `json:"platform_head_sha"`
+	PlatformBaseSHA                   string                      `json:"platform_base_sha"`
+	ReviewedHeadSHA                   string                      `json:"reviewed_head_sha"`
+	DiffHeadSHA                       string                      `json:"diff_head_sha"`
+	MergeBaseSHA                      string                      `json:"merge_base_sha"`
+	WorktreeLinks                     []worktreeLinkResponse      `json:"worktree_links"`
+	WorkflowApproval                  workflowApprovalResponse    `json:"workflow_approval"`
+	Warnings                          []string                    `json:"warnings,omitempty"`
+	DetailLoaded                      bool                        `json:"detail_loaded"`
+	ProviderHeadReconciliationPending bool                        `json:"provider_head_reconciliation_pending"`
 	// DeferredMergePending reports whether a background "merge after CI"
 	// worker is currently waiting on this pull request in this server
 	// process, so the UI can show the queued state instead of a merge

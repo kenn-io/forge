@@ -272,9 +272,8 @@ func (s *Server) applyReviewSuggestions(
 			Replacement:       replacement,
 		})
 	}
-	if err := s.db.BeginProviderHeadMutation(ctx, repo.ID, input.Number, expectedHeadSHA); err != nil {
-		return nil, problemInternal("persist provider mutation intent failed")
-	}
+	fenceInstalled := false
+	var fenceErr error
 	result, err := applier.ApplyReviewSuggestions(
 		ctx,
 		platformRepoRefFromDB(*repo),
@@ -285,16 +284,24 @@ func (s *Server) applyReviewSuggestions(
 			ExpectedHeadSHA:  expectedHeadSHA,
 			Message:          strings.TrimSpace(input.Body.Message),
 			Suggestions:      suggestions,
+			BeforeMutationDispatch: func() error {
+				fenceErr = s.db.BeginProviderHeadMutation(ctx, repo.ID, input.Number, expectedHeadSHA)
+				fenceInstalled = fenceErr == nil
+				return fenceErr
+			},
 		},
 	)
+	if fenceErr != nil {
+		return nil, problemInternal("persist provider mutation intent failed")
+	}
 	if err != nil {
-		if providerMutationDefinitelyRejected(err) {
+		if fenceInstalled && providerMutationDefinitelyRejected(err) {
 			cancelCtx, cancelIntent := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			if cancelErr := s.db.CancelProviderHeadMutation(cancelCtx, repo.ID, input.Number); cancelErr != nil {
 				slog.WarnContext(ctx, "clear failed provider mutation intent", "err", cancelErr)
 			}
 			cancelIntent()
-		} else {
+		} else if fenceInstalled {
 			s.syncAfterReviewSuggestionApply(*repo, input.Number)
 		}
 		if errors.Is(err, platform.ErrStaleState) {
@@ -306,6 +313,9 @@ func (s *Server) applyReviewSuggestions(
 			repoProviderHost(*repo),
 			"apply review suggestions on provider failed",
 		)
+	}
+	if !fenceInstalled {
+		return nil, problemInternal("provider skipped review suggestion mutation fence")
 	}
 	responseStatus := "applied"
 	commitSHA := ""

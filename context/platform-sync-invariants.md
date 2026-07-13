@@ -119,9 +119,9 @@ registry helpers return typed errors for missing providers or capabilities.
 - An uncertain provider outcome stays fail-closed until an authoritative fetch
   observes a changed head. Clearing that fence and installing the snapshot must
   commit atomically (`internal/db/queries.go::ReconcileProviderHeadMutationSnapshot`).
-- A confirmed mutation whose new head the provider did not report keeps the
-  fence and the expected pre-mutation head: a fresh-generation fetch can still
-  return an eventually consistent unchanged head, and accepting it would
+- A confirmed mutation keeps the fence and the expected pre-mutation head even
+  when the provider reports its new commit SHA: a fresh-generation fetch can
+  still return an eventually consistent unchanged head, and accepting it would
   unlock a duplicate apply (`internal/db/queries.go::MarkAppliedProviderHead`).
 - A stored ETag predates any head mutation, so a 304 is untrustworthy while a
   fence or pending head is unresolved: detail fetches go unconditional until

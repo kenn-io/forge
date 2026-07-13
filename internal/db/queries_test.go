@@ -2264,6 +2264,7 @@ func TestAppliedProviderHeadFenceRejectsOlderFetchAndAcceptsNewerHead(t *testing
 		CreatedAt:        base,
 		UpdatedAt:        base,
 	}}))
+	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 7, "reviewed-head"))
 
 	marked, err := d.MarkAppliedProviderHead(ctx, repoID, 7, "reviewed-head", "applied-head")
 	require.NoError(err)
@@ -2280,8 +2281,11 @@ func TestAppliedProviderHeadFenceRejectsOlderFetchAndAcceptsNewerHead(t *testing
 	require.NotNil(got)
 	assert.Equal("applied-head", got.PlatformHeadSHA)
 	assert.Equal("reviewed-base", got.PlatformBaseSHA)
-	assert.Equal("applied-head", got.PendingProviderHeadSHA)
+	assert.Equal("reviewed-head", got.PendingProviderHeadSHA)
 	assert.Positive(got.PendingProviderHeadGeneration)
+	inProgress, err := d.ProviderHeadMutationInProgress(ctx, repoID, 7)
+	require.NoError(err)
+	assert.True(inProgress)
 	assert.Empty(got.DiffHeadSHA)
 	assert.Empty(got.DiffBaseSHA)
 	assert.Empty(got.MergeBaseSHA)
@@ -2304,12 +2308,23 @@ func TestAppliedProviderHeadFenceRejectsOlderFetchAndAcceptsNewerHead(t *testing
 
 	postMutationGeneration, err := d.ProviderSnapshotGeneration(ctx)
 	require.NoError(err)
+	unchanged := testMR(repoID, 7, withMRActivity(base.Add(2*time.Minute)))
+	unchanged.PlatformHeadSHA = "reviewed-head"
+	unchanged.ProviderSnapshotGeneration = postMutationGeneration
+	_, accepted, err := d.ReconcileProviderHeadMutationSnapshot(ctx, unchanged)
+	require.NoError(err)
+	assert.False(accepted)
+	inProgress, err = d.ProviderHeadMutationInProgress(ctx, repoID, 7)
+	require.NoError(err)
+	assert.True(inProgress)
+
 	newer := testMR(repoID, 7, withMRActivity(base.Add(2*time.Minute)))
 	newer.PlatformHeadSHA = "newer-head"
 	newer.PlatformBaseSHA = "newer-base"
 	newer.ProviderSnapshotGeneration = postMutationGeneration
-	_, err = d.UpsertMergeRequest(ctx, newer)
+	_, accepted, err = d.ReconcileProviderHeadMutationSnapshot(ctx, newer)
 	require.NoError(err)
+	assert.True(accepted)
 	got, err = d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(got)
@@ -2367,6 +2382,10 @@ func TestProviderHeadMutationIntentSurvivesFinalizeFailure(t *testing.T) {
 	require.NotNil(got)
 	assert.Equal("applied-head", got.PlatformHeadSHA)
 	assert.Positive(got.PendingProviderHeadGeneration)
+	assert.Equal("reviewed-head", got.PendingProviderHeadSHA)
+	inProgress, err := d.ProviderHeadMutationInProgress(ctx, repoID, 7)
+	require.NoError(err)
+	assert.True(inProgress)
 }
 
 func TestReconcileProviderHeadMutationSnapshotIsAtomic(t *testing.T) {
@@ -2468,6 +2487,7 @@ func TestMarkAppliedProviderHeadLeavesDifferentCurrentHeadUntouched(t *testing.T
 	current.PlatformHeadSHA = "newer-head"
 	_, err := d.UpsertMergeRequest(ctx, current)
 	require.NoError(err)
+	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 7, "reviewed-head"))
 
 	marked, err := d.MarkAppliedProviderHead(ctx, repoID, 7, "reviewed-head", "applied-head")
 	require.NoError(err)
@@ -2476,7 +2496,7 @@ func TestMarkAppliedProviderHeadLeavesDifferentCurrentHeadUntouched(t *testing.T
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal("newer-head", got.PlatformHeadSHA)
-	assert.Equal("applied-head", got.PendingProviderHeadSHA)
+	assert.Equal("reviewed-head", got.PendingProviderHeadSHA)
 	assert.Positive(got.PendingProviderHeadGeneration)
 }
 

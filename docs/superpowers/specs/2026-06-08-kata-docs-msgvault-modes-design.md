@@ -363,6 +363,9 @@ Kata frontend adaptation:
   (their consumers echo it synchronously); store state that should survive
   navigation lives in the URL
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::reconcileRoute`).
+- Superseded route detail reads remain retryable; only a real request failure
+  may pin a route as failed, or an event refresh can strand a valid deep link
+  (`frontend/src/lib/features/kata/KataWorkspace.svelte::reconcileRoute`).
 - Event-driven proxy reads keep switching fail-closed until they settle. The
   Kata proxy applies a 30-second total deadline to ordinary TCP and Unix-socket
   requests, including response bodies, while the live event stream stays

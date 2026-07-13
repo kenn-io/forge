@@ -565,6 +565,9 @@ func (m *mockGH) ApplyReviewSuggestions(
 	if m.applyReviewSuggestionsFn != nil {
 		return m.applyReviewSuggestionsFn(ctx, owner, repo, number, input)
 	}
+	if err := input.PrepareMutationDispatch(); err != nil {
+		return nil, err
+	}
 	return &platform.AppliedReviewSuggestions{CommitSHA: "suggestion-commit-sha"}, nil
 }
 
@@ -788,6 +791,9 @@ func (p *apiTestGitLabProvider) ApplyReviewSuggestions(
 	}
 	if p.applySuggestionsErr != nil {
 		return nil, p.applySuggestionsErr
+	}
+	if err := input.PrepareMutationDispatch(); err != nil {
+		return nil, err
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -8937,6 +8943,9 @@ func TestAPIReadyForReviewSnapshotStartedBeforeAppliedHeadIsRejected(t *testing.
 		}
 	}, time.Second, 10*time.Millisecond)
 
+	require.NoError(database.BeginProviderHeadMutation(
+		t.Context(), repoID, 1, "reviewed-head",
+	))
 	marked, err := database.MarkAppliedProviderHead(
 		t.Context(), repoID, 1, "reviewed-head", "applied-head",
 	)
@@ -16931,6 +16940,17 @@ func TestAPIApplyReviewSuggestionWithoutCommitAdvancesReconciliationGeneration(t
 	require.NoError(err)
 	assert.True(inProgress,
 		"a confirmed apply without a commit SHA must stay fenced until a changed head is observed")
+	detailResponse := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7",
+		nil,
+	)
+	require.Equal(http.StatusOK, detailResponse.Code, detailResponse.Body.String())
+	var detail mergeRequestDetailResponse
+	require.NoError(json.NewDecoder(detailResponse.Body).Decode(&detail))
+	assert.True(detail.ProviderHeadReconciliationPending)
 
 	// A replay of the original request while reconciliation is pending
 	// serializes behind the per-pull provider write lock (held by the
@@ -17127,6 +17147,62 @@ func TestAPIApplyReviewSuggestionReconcilesLostProviderResponse(t *testing.T) {
 			current.PlatformHeadSHA == "suggestion-commit-sha" &&
 			current.PendingProviderHeadGeneration == 0
 	}, time.Second, 10*time.Millisecond)
+}
+
+func TestAPIApplyReviewSuggestionPreDispatchFailureDoesNotInstallFence(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+	provider.applySuggestionsErr = &platform.Error{
+		Code: platform.PlatformErrorCode("upstream_failure"),
+		Err:  errors.New("provider preflight read failed"),
+	}
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
+
+	failed := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(thread.ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+
+	require.Equal(http.StatusBadGateway, failed.Code, failed.Body.String())
+	inProgress, err := database.ProviderHeadMutationInProgress(ctx, repo.ID, 7)
+	require.NoError(err)
+	assert.False(inProgress)
+	current, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(current)
+	assert.Empty(current.PendingProviderHeadSHA)
+	assert.Zero(current.PendingProviderHeadGeneration)
+	assert.Empty(provider.appliedSuggestions)
 }
 
 func TestAPIApplyReviewSuggestionRejectsNonOpenPullRequest(t *testing.T) {

@@ -329,11 +329,21 @@ type ReviewSuggestion struct {
 }
 
 type ApplyReviewSuggestionsInput struct {
-	HeadBranch       string
-	HeadRepoCloneURL string
-	ExpectedHeadSHA  string
-	Message          string
-	Suggestions      []ReviewSuggestion
+	HeadBranch             string
+	HeadRepoCloneURL       string
+	ExpectedHeadSHA        string
+	Message                string
+	Suggestions            []ReviewSuggestion
+	BeforeMutationDispatch func() error
+}
+
+// PrepareMutationDispatch runs the caller-owned durable-fence hook at the
+// provider adapter's last safe point before issuing the write request.
+func (i ApplyReviewSuggestionsInput) PrepareMutationDispatch() error {
+	if i.BeforeMutationDispatch == nil {
+		return nil
+	}
+	return i.BeforeMutationDispatch()
 }
 
 type AppliedReviewSuggestions struct {

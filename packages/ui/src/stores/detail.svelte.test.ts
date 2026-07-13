@@ -230,6 +230,37 @@ describe("createDetailStore", () => {
     });
   });
 
+  it("keeps actions fail-closed while a successful sync reports pending head reconciliation", async () => {
+    const pendingDetail = pullDetail("applied-head");
+    pendingDetail.provider_head_reconciliation_pending = true;
+    const get = vi.fn().mockResolvedValue({ data: pullDetail("reviewed-head") });
+    const post = vi.fn(async (path: string) => {
+      if (path.endsWith("/review-suggestions/apply")) {
+        return { data: { status: "applied", commit_sha: "applied-head" }, error: undefined };
+      }
+      if (path.endsWith("/sync")) {
+        return { data: pendingDetail, error: undefined };
+      }
+      return { error: undefined };
+    });
+    const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
+    await store.loadDetail("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+
+    const ok = await store.applyReviewSuggestions("acme", "widget", 7, {
+      suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
+    });
+
+    expect(ok).toBe(true);
+    expect(store.getDetail()?.platform_head_sha).toBe("applied-head");
+    expect(store.isSuggestionReconciliationPending("acme", "widget", 7)).toBe(true);
+    expect(store.getDetailError()).toBe("Applied suggestion is still waiting for provider head reconciliation");
+  });
+
   it("restores pending suggestion reconciliation after store recreation", async () => {
     const firstStore = createDetailStore({
       client: mockClient({

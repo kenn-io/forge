@@ -3384,19 +3384,12 @@ const appliedProviderHeadCacheResetSQL = `
 	    workflow_approval_count = 0`
 
 // MarkAppliedProviderHead records a provider-confirmed head mutation and
-// advances the fetch generation in the same transaction. Upserts from fetches
-// that started before this transaction preserve the pending result; the first
-// post-mutation fetch can install either the applied head or a newer provider
-// head and clear the fence. A false result means the row already held a
-// different head, so the result was recorded as pending without replacing it.
-//
-// When the provider confirmed the mutation without reporting the new head
-// (appliedHead is empty), the durable fence and the expected pre-mutation
-// head stay in place: releasing them would let the next fresh fetch install
-// an eventually consistent read of the unchanged head as reconciled and
-// unlock a retry that applies the same suggestion again. Only
-// ReconcileProviderHeadMutationSnapshot observing a changed head clears that
-// state; the mutation succeeded, so a changed head is guaranteed to appear.
+// advances the fetch generation in the same transaction. The durable fence
+// always retains the expected pre-mutation head, even when the provider reports
+// the new commit SHA: an eventually consistent fresh snapshot can still show
+// the old head. Only ReconcileProviderHeadMutationSnapshot observing a changed
+// authoritative head clears the fence. A false result means the row already
+// held a different head, so the reported result did not replace it.
 func (d *DB) MarkAppliedProviderHead(
 	ctx context.Context,
 	repoID int64,
@@ -3426,33 +3419,22 @@ func (d *DB) MarkAppliedProviderHead(
 			return fmt.Errorf("get current provider head for MR %d: %w", number, err)
 		}
 		marked = currentHead == expectedHead || (appliedHead != "" && currentHead == appliedHead)
-
-		var result sql.Result
-		var err error
-		if appliedHead == "" {
-			result, err = tx.ExecContext(ctx, `
-				UPDATE middleman_merge_requests
-				SET `+appliedProviderHeadCacheResetSQL+`
-				WHERE repo_id = ? AND number = ?
-				  AND provider_mutation_in_progress = 1`,
-				repoID, number,
-			)
-		} else {
-			result, err = tx.ExecContext(ctx, `
-				UPDATE middleman_merge_requests
-				SET platform_head_sha = CASE
-				        WHEN platform_head_sha = ? THEN ?
-				        ELSE platform_head_sha
-				    END,
-				    pending_provider_head_sha = ?,
-				    pending_provider_head_generation = ?,
-				    provider_mutation_in_progress = 0,
-				`+appliedProviderHeadCacheResetSQL+`
-				WHERE repo_id = ? AND number = ?`,
-				expectedHead, appliedHead,
-				appliedHead, generation, repoID, number,
-			)
+		nextHead := currentHead
+		if appliedHead != "" && currentHead == expectedHead {
+			nextHead = appliedHead
 		}
+		result, err := tx.ExecContext(ctx, `
+			UPDATE middleman_merge_requests
+			SET platform_head_sha = ?,
+			    pending_provider_head_sha = ?,
+			    pending_provider_head_generation = ?,
+			    provider_mutation_in_progress = 1,
+			`+appliedProviderHeadCacheResetSQL+`
+			WHERE repo_id = ? AND number = ?
+			  AND provider_mutation_in_progress = 1
+			  AND pending_provider_head_sha = ?`,
+			nextHead, expectedHead, generation, repoID, number, expectedHead,
+		)
 		if err != nil {
 			return fmt.Errorf("mark applied provider head for MR %d: %w", number, err)
 		}
@@ -3461,10 +3443,7 @@ func (d *DB) MarkAppliedProviderHead(
 			return fmt.Errorf("read applied provider head update for MR %d: %w", number, err)
 		}
 		if updated == 0 {
-			if appliedHead == "" {
-				return fmt.Errorf("mark applied provider head for MR %d: no mutation in progress to finalize", number)
-			}
-			return fmt.Errorf("mark applied provider head for MR %d: merge request not found", number)
+			return fmt.Errorf("mark applied provider head for MR %d: no matching mutation in progress", number)
 		}
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM middleman_mr_review_threads

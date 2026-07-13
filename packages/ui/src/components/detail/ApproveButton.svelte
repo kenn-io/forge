@@ -191,6 +191,9 @@
           handleHeadConflict(
             reason,
             isProblem(requestError) ? problemConflictContext(requestError) : undefined,
+			pinAtOpen,
+			{ provider, platformHost, owner, name, repoPath },
+			number,
           );
         }
         throw new Error(requestError.detail ?? requestError.title ?? "failed to request changes");

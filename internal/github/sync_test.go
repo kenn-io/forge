@@ -1129,6 +1129,9 @@ func (m *mockClient) ApplyReviewSuggestions(
 	if m.applyReviewSuggestionsFn != nil {
 		return m.applyReviewSuggestionsFn(ctx, owner, repo, number, input)
 	}
+	if err := input.PrepareMutationDispatch(); err != nil {
+		return nil, err
+	}
 	m.appliedReviewSuggestions = append(m.appliedReviewSuggestions, input)
 	return &platform.AppliedReviewSuggestions{CommitSHA: "suggestion-sha"}, nil
 }

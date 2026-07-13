@@ -2662,7 +2662,18 @@ func (c *liveClient) ApplyReviewSuggestions(
 		})
 	}
 
-	return c.createCommitForReviewSuggestions(ctx, owner, repo, number, headFullName, headBranch, expectedHeadSHA, strings.TrimSpace(input.Message), additions)
+	return c.createCommitForReviewSuggestions(
+		ctx,
+		owner,
+		repo,
+		number,
+		headFullName,
+		headBranch,
+		expectedHeadSHA,
+		strings.TrimSpace(input.Message),
+		additions,
+		input.PrepareMutationDispatch,
+	)
 }
 
 func (c *liveClient) ensureReviewSuggestionPullMutable(
@@ -2821,6 +2832,7 @@ func (c *liveClient) createCommitForReviewSuggestions(
 	expectedHeadSHA string,
 	message string,
 	additions []map[string]string,
+	prepareMutationDispatch func() error,
 ) (*platform.AppliedReviewSuggestions, error) {
 	if err := c.ensureReviewSuggestionPullMutable(ctx, owner, repo, number, headFullName, headBranch, expectedHeadSHA); err != nil {
 		return nil, err
@@ -2871,6 +2883,9 @@ func (c *liveClient) createCommitForReviewSuggestions(
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Content-Type", "application/json")
 
+	if err := prepareMutationDispatch(); err != nil {
+		return nil, err
+	}
 	resp, err := c.writeHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("applying review suggestions on %s/%s#%d: %w", owner, repo, number, err)

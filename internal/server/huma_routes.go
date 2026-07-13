@@ -1697,21 +1697,22 @@ func (s *Server) buildPullDetailResponse(
 		return mergeRequestDetailResponse{}, problemInternal("load repo failed")
 	}
 	resp := mergeRequestDetailResponse{
-		Events:               eventResponses,
-		Repo:                 s.repoRefWithMergeRequestOperations(ctx, *repo, *mr),
-		RepoOwner:            repo.Owner,
-		RepoName:             repo.Name,
-		PlatformHost:         repo.PlatformHost,
-		PlatformHeadSHA:      mr.PlatformHeadSHA,
-		PlatformBaseSHA:      mr.PlatformBaseSHA,
-		ReviewedHeadSHA:      verifiedReviewedHeadSHA(mr),
-		DiffHeadSHA:          mr.DiffHeadSHA,
-		MergeBaseSHA:         mr.MergeBaseSHA,
-		WorktreeLinks:        toWorktreeLinkResponses(dbLinks, s.fleetSelfKey("")),
-		WorkflowApproval:     s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr),
-		Warnings:             s.diffWarnings(mr),
-		DetailLoaded:         mr.DetailFetchedAt != nil,
-		DeferredMergePending: s.isDeferredMergePending(*repo, mr.Number),
+		Events:                            eventResponses,
+		Repo:                              s.repoRefWithMergeRequestOperations(ctx, *repo, *mr),
+		RepoOwner:                         repo.Owner,
+		RepoName:                          repo.Name,
+		PlatformHost:                      repo.PlatformHost,
+		PlatformHeadSHA:                   mr.PlatformHeadSHA,
+		PlatformBaseSHA:                   mr.PlatformBaseSHA,
+		ReviewedHeadSHA:                   verifiedReviewedHeadSHA(mr),
+		DiffHeadSHA:                       mr.DiffHeadSHA,
+		MergeBaseSHA:                      mr.MergeBaseSHA,
+		WorktreeLinks:                     toWorktreeLinkResponses(dbLinks, s.fleetSelfKey("")),
+		WorkflowApproval:                  s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr),
+		Warnings:                          s.diffWarnings(mr),
+		DetailLoaded:                      mr.DetailFetchedAt != nil,
+		ProviderHeadReconciliationPending: mr.PendingProviderHeadGeneration > 0,
+		DeferredMergePending:              s.isDeferredMergePending(*repo, mr.Number),
 	}
 	if mr.DetailFetchedAt != nil {
 		resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)

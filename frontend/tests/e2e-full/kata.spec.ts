@@ -3455,7 +3455,7 @@ test("missing routed issue leaves its accepted daemon workspace usable", async (
     await expect(page.getByTestId("daemon-chip")).toContainText("e2e");
     await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toBeVisible();
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Select a task");
-    await expect(page.locator(".kata-request-error")).toBeVisible();
+    await expect(page.getByRole("alert")).toContainText("Kata task not found");
     await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/events/stream");
   } finally {
     await server.stop();
@@ -4315,7 +4315,7 @@ test("kata workspace keeps a removed accepted daemon visible until the user swit
     await detail.getByRole("button", { name: "Complete" }).click();
     const dialog = page.getByRole("dialog", { name: "Complete task" });
     await dialog.getByRole("button", { name: "Complete" }).click();
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.locator(".kit-flash-banner")).toBeVisible();
     expect(work.state.seenPaths).not.toContain("POST /api/v1/projects/1/issues/issue-rent/actions/close");
     await dialog.getByRole("button", { name: "Cancel" }).click();
 
@@ -4621,8 +4621,8 @@ test("kata daemon switch restarts the target stream after stale route churn", as
     await expect(page.getByTestId("daemon-chip")).toContainText("work");
     await expect(page).toHaveURL(/scope=project-work/);
     await expect(page.getByRole("button", { name: /Ship the release/ })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Task detail" })).toContainText(queuedWorkIssue.body);
     await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/issues/issue-work-queued");
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText(queuedWorkIssue.body);
     // The queued route also changed the project scope, so the accepted
     // daemon must serve the scoped backlog; the abandoned daemon must not.
     await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/projects/202/issues?status=open");

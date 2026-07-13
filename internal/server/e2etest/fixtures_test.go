@@ -289,12 +289,15 @@ func (m *mockGH) CreateReviewWithComments(
 	return nil, nil
 }
 func (m *mockGH) ApplyReviewSuggestions(
-	context.Context,
-	string,
-	string,
-	int,
-	platform.ApplyReviewSuggestionsInput,
+	_ context.Context,
+	_ string,
+	_ string,
+	_ int,
+	input platform.ApplyReviewSuggestionsInput,
 ) (*platform.AppliedReviewSuggestions, error) {
+	if err := input.PrepareMutationDispatch(); err != nil {
+		return nil, err
+	}
 	return nil, nil
 }
 func (m *mockGH) MarkPullRequestReadyForReview(context.Context, string, string, int) (*gh.PullRequest, error) {

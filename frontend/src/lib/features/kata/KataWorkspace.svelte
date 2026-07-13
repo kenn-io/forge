@@ -528,6 +528,11 @@
           const uid = selectedIssueUID!;
           const ok = await runViewTask(() => store.selectIssue(uid), "view");
           if (!ok) {
+            // A competing refresh can supersede this detail read without an
+            // error. Leave the route retryable; the refresh completion will
+            // re-run the reconciler. Only an actual request failure makes the
+            // current route a terminal failed target.
+            if (lastTaskError === null) return;
             // The routed task cannot be shown; keeping the previous
             // detail under the new URL would lie about what is open.
             if (fullRouteSignature() === signature) {

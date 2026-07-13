@@ -113,26 +113,13 @@ registry helpers return typed errors for missing providers or capabilities.
 - Post-apply refresh goes through the detail-sync broadcaster and must rerun
   after any in-flight sync for the same PR — that sync may predate the commit
   (`internal/server/detail_sync.go::enqueueDetailSyncOrRerun`).
-- Head-changing mutations install a durable generation fence before provider
-  I/O; all snapshot-derived writes and competing head-bound mutations stay
-  ordered behind it (`internal/db/queries.go::BeginProviderHeadMutation`).
-- An uncertain provider outcome stays fail-closed until an authoritative fetch
-  observes a changed head. Clearing that fence and installing the snapshot must
-  commit atomically (`internal/db/queries.go::ReconcileProviderHeadMutationSnapshot`).
-- A confirmed mutation keeps the fence and the expected pre-mutation head even
-  when the provider reports its new commit SHA: a fresh-generation fetch can
-  still return an eventually consistent unchanged head, and accepting it would
-  unlock a duplicate apply (`internal/db/queries.go::MarkAppliedProviderHead`).
-- A stored ETag predates any head mutation, so a 304 is untrustworthy while a
-  fence or pending head is unresolved: detail fetches go unconditional until
-  an authoritative full response resolves it, and 304 handling revalidates
-  fence, pending head, generation, and head under the per-MR provider write
-  lock (`internal/github/sync.go::markUnchangedMRDetailFetched`).
-- The budgeted detail drain is the fence's recovery path after a restart or a
-  failed one-shot post-apply sync (fenced rows keep `detail_fetched_at`
-  NULL); both detail-fetch paths must reconcile fenced rows, not just get
-  rejected by the snapshot guard (`internal/github/sync.go::fetchMRDetail`,
-  `internal/github/sync.go::fetchProviderMRDetail`).
+- Provider snapshots use ordinary timestamp ordering. A concurrent or eventually
+  consistent fetch may briefly persist an old head after a mutation; the queued
+  unconditional detail rerun repairs it. Expected-head binding, not local write
+  serialization, remains the mutation integrity boundary.
+- Background and watched GitHub detail syncs may use the persisted PR ETag; a
+  normal 304 marks detail fetched and may refresh pending CI. Explicit
+  `SyncMROnProvider` refreshes bypass the PR ETag.
 - The UI only exposes apply actions when the thread head matches a known
   current PR head; stale or unknown heads disable actions, and stale batched
   suggestions must not reach batch submit while staying removable. A suggestion

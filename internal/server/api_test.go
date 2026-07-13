@@ -565,9 +565,6 @@ func (m *mockGH) ApplyReviewSuggestions(
 	if m.applyReviewSuggestionsFn != nil {
 		return m.applyReviewSuggestionsFn(ctx, owner, repo, number, input)
 	}
-	if err := input.PrepareMutationDispatch(); err != nil {
-		return nil, err
-	}
 	return &platform.AppliedReviewSuggestions{CommitSHA: "suggestion-commit-sha"}, nil
 }
 
@@ -720,6 +717,7 @@ type apiTestGitLabProvider struct {
 	applySuggestionsErr              error
 	applySuggestionsErrAfterMutation error
 	applySuggestionResult            *platform.AppliedReviewSuggestions
+	applySuggestionReturnsNil        bool
 	applySuggestionHead              string
 	applySuggestionsStarted          chan struct{}
 	applySuggestionsRelease          <-chan struct{}
@@ -792,9 +790,6 @@ func (p *apiTestGitLabProvider) ApplyReviewSuggestions(
 	if p.applySuggestionsErr != nil {
 		return nil, p.applySuggestionsErr
 	}
-	if err := input.PrepareMutationDispatch(); err != nil {
-		return nil, err
-	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.appliedSuggestions = append(p.appliedSuggestions, input)
@@ -816,6 +811,9 @@ func (p *apiTestGitLabProvider) ApplyReviewSuggestions(
 	}
 	if p.applySuggestionsErrAfterMutation != nil {
 		return nil, p.applySuggestionsErrAfterMutation
+	}
+	if p.applySuggestionReturnsNil {
+		return nil, nil
 	}
 	return &result, nil
 }
@@ -3044,77 +3042,6 @@ func TestAPIApproveWorkflows(t *testing.T) {
 	assert.Equal("abc123", pr.WorkflowApprovalHeadSHA)
 	assert.False(pr.WorkflowApprovalRequired)
 	assert.Equal(0, pr.WorkflowApprovalCount)
-}
-
-func TestAPIApproveWorkflowsWaitsForProviderWriteLock(t *testing.T) {
-	require := require.New(t)
-	providerCalled := make(chan struct{}, 2)
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
-			providerCalled <- struct{}{}
-			id := int64(1001)
-			sha := "abc123"
-			state := "open"
-			title := "Workflow PR"
-			url := "https://github.com/acme/widget/pull/1"
-			now := gh.Timestamp{Time: time.Now().UTC()}
-			return &gh.PullRequest{
-				ID: &id, Number: &number, State: &state, Title: &title, HTMLURL: &url,
-				UpdatedAt: &now, CreatedAt: &now,
-				Head: &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
-				Base: &gh.PullRequestBranch{Ref: new("main")},
-			}, nil
-		},
-		listWorkflowRunsForHeadFn: func(context.Context, string, string, string) ([]*gh.WorkflowRun, error) {
-			return nil, nil
-		},
-	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA("abc123"))
-	client := setupTestClient(t, srv)
-	unlock, err := srv.syncer.LockMRProviderWrites(
-		t.Context(), platform.KindGitHub, "github.com", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	var unlockOnce sync.Once
-	t.Cleanup(func() { unlockOnce.Do(unlock) })
-
-	response := make(chan *generated.ApprovePullWorkflowsResponse, 1)
-	responseErr := make(chan error, 1)
-	go func() {
-		resp, callErr := client.HTTP.ApprovePullWorkflowsWithResponse(
-			t.Context(), "gh", "acme", "widget", 1,
-		)
-		if callErr != nil {
-			responseErr <- callErr
-			return
-		}
-		response <- resp
-	}()
-	calledEarly := false
-	select {
-	case <-providerCalled:
-		calledEarly = true
-	case <-time.After(50 * time.Millisecond):
-	}
-	unlockOnce.Do(unlock)
-	require.False(calledEarly, "workflow approval reached provider while suggestion write lock was held")
-	require.Eventually(func() bool {
-		select {
-		case <-providerCalled:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond)
-	select {
-	case err := <-responseErr:
-		require.NoError(err)
-	case resp := <-response:
-		require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
-	case <-time.After(time.Second):
-		require.Fail("timed out waiting for workflow approval response")
-	}
 }
 
 func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
@@ -6690,134 +6617,6 @@ func TestAPIApprovePRSubmitsGitHubReview(t *testing.T) {
 	assert.Equal("APPROVE", events[0].Summary)
 }
 
-func TestAPIApprovePRWaitsForProviderWriteLock(t *testing.T) {
-	require := require.New(t)
-	providerCalled := make(chan struct{}, 1)
-	mock := &mockGH{
-		createReviewWithCommentsFn: func(
-			_ context.Context, _, _ string, _ int,
-			event, body, _ string, _ []*gh.DraftReviewComment,
-		) (*gh.PullRequestReview, error) {
-			providerCalled <- struct{}{}
-			id := int64(101)
-			now := gh.Timestamp{Time: time.Now().UTC()}
-			return &gh.PullRequestReview{
-				ID: &id, State: &event, Body: &body, SubmittedAt: &now,
-				User: &gh.User{Login: new("reviewer")},
-			}, nil
-		},
-	}
-	srv, database := setupTestServerWithMock(t, mock)
-	expectedHeadSHA := "reviewed-sha"
-	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
-	client := setupTestClient(t, srv)
-	unlock, err := srv.syncer.LockMRProviderWrites(
-		t.Context(), platform.KindGitHub, "github.com", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	var unlockOnce sync.Once
-	t.Cleanup(func() { unlockOnce.Do(unlock) })
-
-	response := make(chan *generated.ApprovePullResponse, 1)
-	responseErr := make(chan error, 1)
-	go func() {
-		resp, callErr := client.HTTP.ApprovePullWithResponse(
-			t.Context(), "gh", "acme", "widget", 1,
-			generated.ApprovePullJSONRequestBody{ExpectedHeadSha: &expectedHeadSHA},
-		)
-		if callErr != nil {
-			responseErr <- callErr
-			return
-		}
-		response <- resp
-	}()
-	select {
-	case <-providerCalled:
-		require.Fail("approval reached provider while suggestion write lock was held")
-	case <-time.After(50 * time.Millisecond):
-	}
-	unlockOnce.Do(unlock)
-	require.Eventually(func() bool {
-		select {
-		case <-providerCalled:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond)
-	select {
-	case err := <-responseErr:
-		require.NoError(err)
-	case resp := <-response:
-		require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
-	case <-time.After(time.Second):
-		require.Fail("timed out waiting for approval response")
-	}
-}
-
-func TestAPIMergePRWaitsForProviderWriteLock(t *testing.T) {
-	require := require.New(t)
-	providerCalled := make(chan struct{}, 1)
-	mock := &mockGH{
-		mergePullRequestFn: func(
-			_ context.Context, _, _ string, _ int, _, _, _ string,
-		) (*gh.PullRequestMergeResult, error) {
-			providerCalled <- struct{}{}
-			return &gh.PullRequestMergeResult{
-				Merged: new(true), SHA: new("merge-sha"), Message: new("merged"),
-			}, nil
-		},
-	}
-	srv, database := setupTestServerWithMock(t, mock)
-	expectedHeadSHA := "reviewed-sha"
-	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
-	client := setupTestClient(t, srv)
-	unlock, err := srv.syncer.LockMRProviderWrites(
-		t.Context(), platform.KindGitHub, "github.com", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	var unlockOnce sync.Once
-	t.Cleanup(func() { unlockOnce.Do(unlock) })
-
-	response := make(chan *generated.MergePullResponse, 1)
-	responseErr := make(chan error, 1)
-	go func() {
-		resp, callErr := client.HTTP.MergePullWithResponse(
-			t.Context(), "gh", "acme", "widget", 1,
-			generated.MergePullJSONRequestBody{
-				Method: "squash", ExpectedHeadSha: &expectedHeadSHA,
-			},
-		)
-		if callErr != nil {
-			responseErr <- callErr
-			return
-		}
-		response <- resp
-	}()
-	select {
-	case <-providerCalled:
-		require.Fail("merge reached provider while suggestion write lock was held")
-	case <-time.After(50 * time.Millisecond):
-	}
-	unlockOnce.Do(unlock)
-	require.Eventually(func() bool {
-		select {
-		case <-providerCalled:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond)
-	select {
-	case err := <-responseErr:
-		require.NoError(err)
-	case resp := <-response:
-		require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
-	case <-time.After(time.Second):
-		require.Fail("timed out waiting for merge response")
-	}
-}
-
 func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -8871,103 +8670,6 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 	assert.False(finalPR.IsDraft)
 	assert.Equal("ready for review", finalPR.Title)
 	assert.True(finalPR.UpdatedAt.Equal(readyUpdatedAt))
-}
-
-func TestAPIReadyForReviewSnapshotStartedBeforeAppliedHeadIsRejected(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	providerStarted := make(chan struct{}, 1)
-	releaseProvider := make(chan struct{})
-	var releaseOnce sync.Once
-	t.Cleanup(func() {
-		releaseOnce.Do(func() { close(releaseProvider) })
-	})
-	now := time.Now().UTC().Truncate(time.Second)
-	mock := &mockGH{
-		markReadyForReviewFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
-			providerStarted <- struct{}{}
-			<-releaseProvider
-			id := int64(101)
-			state := "open"
-			title := "ready from stale response"
-			url := "https://github.com/acme/widget/pull/1"
-			author := "alice"
-			draft := false
-			headSHA := "reviewed-head"
-			baseSHA := "base-head"
-			featureRef := "feature"
-			mainRef := "main"
-			timestamp := gh.Timestamp{Time: now.Add(time.Minute)}
-			return &gh.PullRequest{
-				ID: &id, Number: &number, State: &state, Title: &title,
-				HTMLURL: &url, Draft: &draft, User: &gh.User{Login: &author},
-				CreatedAt: &timestamp, UpdatedAt: &timestamp,
-				Head: &gh.PullRequestBranch{SHA: &headSHA, Ref: &featureRef},
-				Base: &gh.PullRequestBranch{SHA: &baseSHA, Ref: &mainRef},
-			}, nil
-		},
-	}
-
-	srv, database := setupTestServerWithMock(t, mock)
-	client := setupTestClient(t, srv)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
-	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
-		RepoID: repoID, PlatformID: 101, Number: 1,
-		URL: "https://github.com/acme/widget/pull/1", Title: "draft PR",
-		Author: "alice", State: "open", IsDraft: true,
-		HeadBranch: "feature", BaseBranch: "main",
-		PlatformHeadSHA: "reviewed-head", PlatformBaseSHA: "base-head",
-		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
-	})
-	require.NoError(err)
-
-	readyDone := make(chan *generated.MarkPullReadyForReviewResponse, 1)
-	readyErr := make(chan error, 1)
-	go func() {
-		resp, callErr := client.HTTP.MarkPullReadyForReviewWithResponse(
-			t.Context(), "gh", "acme", "widget", 1,
-		)
-		if callErr != nil {
-			readyErr <- callErr
-			return
-		}
-		readyDone <- resp
-	}()
-	require.Eventually(func() bool {
-		select {
-		case <-providerStarted:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond)
-
-	require.NoError(database.BeginProviderHeadMutation(
-		t.Context(), repoID, 1, "reviewed-head",
-	))
-	marked, err := database.MarkAppliedProviderHead(
-		t.Context(), repoID, 1, "reviewed-head", "applied-head",
-	)
-	require.NoError(err)
-	assert.True(marked)
-	releaseOnce.Do(func() { close(releaseProvider) })
-
-	select {
-	case err := <-readyErr:
-		require.NoError(err)
-	case resp := <-readyDone:
-		require.Equal(http.StatusOK, resp.StatusCode())
-	case <-time.After(time.Second):
-		require.Fail("timed out waiting for ready-for-review response")
-	}
-	current, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
-	require.NoError(err)
-	require.NotNil(current)
-	assert.Equal("applied-head", current.PlatformHeadSHA)
-	assert.Positive(current.PendingProviderHeadGeneration)
-	assert.True(current.IsDraft)
-	assert.NotEqual("ready from stale response", current.Title)
 }
 
 func TestAPIMarkDraftDoesNotGetRevertedByStaleSync(t *testing.T) {
@@ -16530,11 +16232,10 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 		},
 	)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	updatedMR, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(updatedMR)
-	assert.Equal("suggestion-commit-sha", updatedMR.PlatformHeadSHA)
-	assert.Equal("def456", updatedMR.PlatformBaseSHA)
+	var response applyReviewSuggestionResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
+	assert.Equal("applied", response.Status)
+	assert.Equal("suggestion-commit-sha", response.CommitSHA)
 	require.Len(provider.appliedSuggestions, 1)
 	applied := provider.appliedSuggestions[0]
 	require.Len(applied.Suggestions, 1)
@@ -16545,251 +16246,6 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 	assert.Equal("provider-comment-1", applied.Suggestions[0].ProviderCommentID)
 	assert.Equal("src/review.ts", applied.Suggestions[0].Range.Path)
 	assert.Equal("return client.publishThreads();", applied.Suggestions[0].Replacement)
-}
-
-func TestAPIApplyReviewSuggestionRejectsPreMutationSyncSnapshot(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	caps := platform.Capabilities{
-		ReadRepositories:            true,
-		ReadMergeRequests:           true,
-		ReadIssues:                  true,
-		ReadComments:                true,
-		ReviewSuggestionApplication: true,
-		MutationHeadBinding:         true,
-		ReadReviewThreads:           true,
-	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
-	ctx := t.Context()
-	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		RepoPath:     "group/project",
-	})
-	require.NoError(err)
-	require.NotNil(repo)
-	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(mr)
-	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
-
-	started := make(chan struct{}, 1)
-	release := make(chan struct{})
-	provider.mrFetchStarted = started
-	provider.mrFetchRelease = release
-	provider.blockNextMRFetch.Store(true)
-	staleSync := make(chan error, 1)
-	go func() {
-		staleSync <- srv.syncer.SyncMROnProvider(
-			ctx, platform.KindGitLab, "gitlab.example.com", "group", "project", 7,
-		)
-	}()
-	require.Eventually(func() bool {
-		select {
-		case <-started:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond)
-
-	rr := doJSON(
-		t,
-		srv,
-		http.MethodPost,
-		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
-		map[string]any{
-			"expected_head_sha": "abc123",
-			"suggestions": []map[string]any{{
-				"thread_id":   strconv.FormatInt(thread.ID, 10),
-				"replacement": "return client.publishThreads();",
-			}},
-		},
-	)
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	var applied applyReviewSuggestionResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&applied))
-	assert.Equal("applied", applied.Status)
-	assert.Equal("suggestion-commit-sha", applied.CommitSHA)
-
-	require.Eventually(func() bool {
-		current, getErr := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-		return getErr == nil && current != nil &&
-			current.PlatformHeadSHA == "suggestion-commit-sha" &&
-			current.PendingProviderHeadSHA == ""
-	}, time.Second, 10*time.Millisecond)
-
-	close(release)
-	require.NoError(<-staleSync)
-	current, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(current)
-	assert.Equal("suggestion-commit-sha", current.PlatformHeadSHA)
-
-	detail := doJSON(
-		t,
-		srv,
-		http.MethodGet,
-		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7",
-		nil,
-	)
-	require.Equal(http.StatusOK, detail.Code, detail.Body.String())
-	var refreshed mergeRequestDetailResponse
-	require.NoError(json.NewDecoder(detail.Body).Decode(&refreshed))
-	assert.Equal("suggestion-commit-sha", refreshed.PlatformHeadSHA)
-}
-
-func TestAPIApplyReviewSuggestionWaitsForAcceptedSnapshotDerivedWrites(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	caps := platform.Capabilities{
-		ReadRepositories:            true,
-		ReadMergeRequests:           true,
-		ReadIssues:                  true,
-		ReadComments:                true,
-		ReviewSuggestionApplication: true,
-		MutationHeadBinding:         true,
-		ReadReviewThreads:           true,
-	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
-	ctx := t.Context()
-	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		RepoPath:     "group/project",
-	})
-	require.NoError(err)
-	require.NotNil(repo)
-	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(mr)
-	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
-	provider.reviewThreads = []platform.MergeRequestReviewThread{{
-		ProviderThreadID:  thread.ProviderThreadID,
-		ProviderCommentID: thread.ProviderCommentID,
-		Body:              thread.Body,
-		AuthorLogin:       thread.AuthorLogin,
-		Range:             platformReviewLineRange(thread.Range),
-		CreatedAt:         thread.CreatedAt,
-		UpdatedAt:         thread.UpdatedAt,
-	}}
-	provider.ciChecks = map[string][]platform.CICheck{
-		"abc123": {{Name: "pipeline", Status: "in_progress"}},
-	}
-
-	derivedStarted := make(chan struct{}, 1)
-	releaseDerived := make(chan struct{})
-	applyStarted := make(chan struct{}, 1)
-	releaseApply := make(chan struct{})
-	var releaseApplyOnce sync.Once
-	t.Cleanup(func() {
-		releaseApplyOnce.Do(func() { close(releaseApply) })
-	})
-	provider.applySuggestionsStarted = applyStarted
-	provider.applySuggestionsRelease = releaseApply
-	provider.reviewFetchStarted = derivedStarted
-	provider.reviewFetchRelease = releaseDerived
-	provider.blockNextReviewFetch.Store(true)
-	syncDone := make(chan error, 1)
-	go func() {
-		syncDone <- srv.syncer.SyncMROnProvider(
-			ctx, platform.KindGitLab, "gitlab.example.com", "group", "project", 7,
-		)
-	}()
-	require.Eventually(func() bool {
-		select {
-		case <-derivedStarted:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond)
-	confirmFetchStarted := make(chan struct{}, 1)
-	releaseConfirmFetch := make(chan struct{})
-	var releaseConfirmOnce sync.Once
-	t.Cleanup(func() {
-		releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
-	})
-	provider.mrFetchStarted = confirmFetchStarted
-	provider.mrFetchRelease = releaseConfirmFetch
-	provider.blockNextMRFetch.Store(true)
-
-	body := fmt.Sprintf(
-		`{"expected_head_sha":"abc123","suggestions":[{"thread_id":"%d","replacement":"return client.publishThreads();"}]}`,
-		thread.ID,
-	)
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
-		strings.NewReader(body),
-	)
-	req.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	applyDone := make(chan struct{})
-	go func() {
-		srv.ServeHTTP(recorder, req)
-		close(applyDone)
-	}()
-	providerCalledEarly := false
-	select {
-	case <-applyStarted:
-		providerCalledEarly = true
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	close(releaseDerived)
-	require.NoError(<-syncDone)
-	require.Eventually(func() bool {
-		select {
-		case <-applyStarted:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond)
-	accepted, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(accepted)
-	assert.Equal("pending", accepted.CIStatus)
-	assert.NotNil(accepted.DetailFetchedAt)
-	acceptedThreads, err := database.ListMRReviewThreads(ctx, mr.ID)
-	require.NoError(err)
-	require.Len(acceptedThreads, 1)
-	releaseApplyOnce.Do(func() { close(releaseApply) })
-	<-applyDone
-	assert.False(providerCalledEarly, "provider mutation started before accepted snapshot derived writes")
-	require.Equal(http.StatusOK, recorder.Code, recorder.Body.String())
-	current, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(current)
-	assert.Equal("suggestion-commit-sha", current.PlatformHeadSHA)
-	assert.Empty(current.DiffHeadSHA)
-	assert.Empty(current.CIStatus)
-	assert.Nil(current.DetailFetchedAt)
-	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
-	require.NoError(err)
-	assert.Empty(threads)
-	require.Eventually(func() bool {
-		select {
-		case <-confirmFetchStarted:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond)
-	provider.reviewThreads = nil
-	provider.ciChecks = map[string][]platform.CICheck{
-		"suggestion-commit-sha": {{Name: "pipeline", Status: "completed", Conclusion: "success"}},
-	}
-	releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
-	require.Eventually(func() bool {
-		current, getErr := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-		return getErr == nil && current != nil &&
-			current.PlatformHeadSHA == "suggestion-commit-sha" &&
-			current.PendingProviderHeadGeneration == 0 &&
-			current.CIStatus == "success" &&
-			current.DetailFetchedAt != nil
-	}, time.Second, 10*time.Millisecond)
 }
 
 func TestAPIApplyReviewSuggestionRevalidatesThreadsAfterWaitingForSync(t *testing.T) {
@@ -16859,349 +16315,6 @@ func TestAPIApplyReviewSuggestionRevalidatesThreadsAfterWaitingForSync(t *testin
 	require.NoError(<-syncDone)
 	<-applyDone
 	require.Equal(http.StatusNotFound, recorder.Code, recorder.Body.String())
-	assert.Empty(provider.appliedSuggestions)
-}
-
-func TestAPIApplyReviewSuggestionWithoutCommitAdvancesReconciliationGeneration(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	caps := platform.Capabilities{
-		ReadRepositories:            true,
-		ReadMergeRequests:           true,
-		ReadIssues:                  true,
-		ReadComments:                true,
-		ReviewSuggestionApplication: true,
-		MutationHeadBinding:         true,
-		ReadReviewThreads:           true,
-	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
-	ctx := t.Context()
-	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		RepoPath:     "group/project",
-	})
-	require.NoError(err)
-	require.NotNil(repo)
-	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(mr)
-	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
-	generationBefore, err := database.ProviderSnapshotGeneration(ctx)
-	require.NoError(err)
-	provider.applySuggestionResult = &platform.AppliedReviewSuggestions{}
-	provider.applySuggestionHead = "provider-head-without-result-sha"
-	confirmFetchStarted := make(chan struct{}, 1)
-	releaseConfirmFetch := make(chan struct{})
-	var releaseConfirmOnce sync.Once
-	t.Cleanup(func() {
-		releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
-	})
-	provider.mrFetchStarted = confirmFetchStarted
-	provider.mrFetchRelease = releaseConfirmFetch
-	provider.blockNextMRFetch.Store(true)
-
-	rr := doJSON(
-		t,
-		srv,
-		http.MethodPost,
-		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
-		map[string]any{
-			"expected_head_sha": "abc123",
-			"suggestions": []map[string]any{{
-				"thread_id":   strconv.FormatInt(thread.ID, 10),
-				"replacement": "return client.publishThreads();",
-			}},
-		},
-	)
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	var applied applyReviewSuggestionResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&applied))
-	assert.Equal("applied_reconciliation_pending", applied.Status)
-	assert.Empty(applied.CommitSHA)
-	generationAfter, err := database.ProviderSnapshotGeneration(ctx)
-	require.NoError(err)
-	assert.Greater(generationAfter, generationBefore)
-	require.Eventually(func() bool {
-		select {
-		case <-confirmFetchStarted:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond)
-	pending, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(pending)
-	assert.Equal("abc123", pending.PlatformHeadSHA)
-	assert.Positive(pending.PendingProviderHeadGeneration)
-	assert.Empty(pending.DiffHeadSHA)
-	inProgress, err := database.ProviderHeadMutationInProgress(ctx, repo.ID, 7)
-	require.NoError(err)
-	assert.True(inProgress,
-		"a confirmed apply without a commit SHA must stay fenced until a changed head is observed")
-	detailResponse := doJSON(
-		t,
-		srv,
-		http.MethodGet,
-		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7",
-		nil,
-	)
-	require.Equal(http.StatusOK, detailResponse.Code, detailResponse.Body.String())
-	var detail mergeRequestDetailResponse
-	require.NoError(json.NewDecoder(detailResponse.Body).Decode(&detail))
-	assert.True(detail.ProviderHeadReconciliationPending)
-
-	// A replay of the original request while reconciliation is pending
-	// serializes behind the per-pull provider write lock (held by the
-	// blocked confirmation fetch) and must be rejected once reconciliation
-	// installs the changed head — never applied a second time.
-	retryBody := fmt.Sprintf(
-		`{"expected_head_sha":"abc123","suggestions":[{"thread_id":"%d","replacement":"return client.publishThreads();"}]}`,
-		thread.ID,
-	)
-	retryDone := make(chan *httptest.ResponseRecorder, 1)
-	go func() {
-		req := httptest.NewRequest(
-			http.MethodPost,
-			"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
-			strings.NewReader(retryBody),
-		)
-		req.Host = "127.0.0.1:8091"
-		req.Header.Set("Content-Type", "application/json")
-		rr := httptest.NewRecorder()
-		srv.ServeHTTP(rr, req)
-		retryDone <- rr
-	}()
-
-	releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
-	require.Eventually(func() bool {
-		current, getErr := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-		return getErr == nil && current != nil &&
-			current.PlatformHeadSHA == "provider-head-without-result-sha" &&
-			current.PendingProviderHeadGeneration == 0
-	}, time.Second, 10*time.Millisecond)
-
-	retry := <-retryDone
-	require.Equal(http.StatusConflict, retry.Code, retry.Body.String())
-	assert.Len(provider.appliedSuggestions, 1,
-		"a retry during pending reconciliation must not apply the suggestion twice")
-}
-
-func TestAPIApplyReviewSuggestionPersistsAfterRequestCancellation(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	caps := platform.Capabilities{
-		ReadRepositories:            true,
-		ReadMergeRequests:           true,
-		ReadIssues:                  true,
-		ReadComments:                true,
-		ReviewSuggestionApplication: true,
-		MutationHeadBinding:         true,
-		ReadReviewThreads:           true,
-	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
-	ctx := t.Context()
-	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		RepoPath:     "group/project",
-	})
-	require.NoError(err)
-	require.NotNil(repo)
-	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(mr)
-	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
-
-	confirmFetchStarted := make(chan struct{}, 1)
-	releaseConfirmFetch := make(chan struct{})
-	var releaseConfirmOnce sync.Once
-	t.Cleanup(func() {
-		releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
-	})
-	provider.mrFetchStarted = confirmFetchStarted
-	provider.mrFetchRelease = releaseConfirmFetch
-	provider.blockNextMRFetch.Store(true)
-	requestCtx, cancelRequest := context.WithCancel(ctx)
-	provider.cancelAfterApply = cancelRequest
-
-	body := fmt.Sprintf(
-		`{"expected_head_sha":"abc123","suggestions":[{"thread_id":"%d","replacement":"return client.publishThreads();"}]}`,
-		thread.ID,
-	)
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
-		strings.NewReader(body),
-	).WithContext(requestCtx)
-	req.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	srv.ServeHTTP(recorder, req)
-
-	require.Eventually(func() bool {
-		select {
-		case <-confirmFetchStarted:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond)
-	pending, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(pending)
-	assert.Equal("suggestion-commit-sha", pending.PlatformHeadSHA)
-	assert.Positive(pending.PendingProviderHeadGeneration)
-	assert.Empty(pending.DiffHeadSHA)
-	assert.Empty(pending.CIStatus)
-	assert.Len(provider.appliedSuggestions, 1)
-
-	releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
-	require.Eventually(func() bool {
-		current, getErr := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-		return getErr == nil && current != nil &&
-			current.PlatformHeadSHA == "suggestion-commit-sha" &&
-			current.PendingProviderHeadGeneration == 0
-	}, time.Second, 10*time.Millisecond)
-}
-
-func TestAPIApplyReviewSuggestionReconcilesLostProviderResponse(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	caps := platform.Capabilities{
-		ReadRepositories:            true,
-		ReadMergeRequests:           true,
-		ReadIssues:                  true,
-		ReadComments:                true,
-		ReviewSuggestionApplication: true,
-		MutationHeadBinding:         true,
-		ReadReviewThreads:           true,
-	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
-	ctx := t.Context()
-	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		RepoPath:     "group/project",
-	})
-	require.NoError(err)
-	require.NotNil(repo)
-	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(mr)
-	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
-
-	confirmFetchStarted := make(chan struct{}, 1)
-	releaseConfirmFetch := make(chan struct{})
-	var releaseConfirmOnce sync.Once
-	t.Cleanup(func() {
-		releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
-	})
-	provider.mrFetchStarted = confirmFetchStarted
-	provider.mrFetchRelease = releaseConfirmFetch
-	provider.blockNextMRFetch.Store(true)
-	provider.applySuggestionsErrAfterMutation = &platform.Error{
-		Code: platform.PlatformErrorCode("upstream_failure"),
-		Err:  errors.New("provider response lost after commit"),
-	}
-
-	failed := doJSON(
-		t,
-		srv,
-		http.MethodPost,
-		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
-		map[string]any{
-			"expected_head_sha": "abc123",
-			"suggestions": []map[string]any{{
-				"thread_id":   strconv.FormatInt(thread.ID, 10),
-				"replacement": "return client.publishThreads();",
-			}},
-		},
-	)
-	require.Equal(http.StatusBadGateway, failed.Code, failed.Body.String())
-	require.Eventually(func() bool {
-		select {
-		case <-confirmFetchStarted:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond)
-	inProgress, err := database.ProviderHeadMutationInProgress(ctx, repo.ID, 7)
-	require.NoError(err)
-	assert.True(inProgress)
-	pending, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(pending)
-	assert.Equal("abc123", pending.PlatformHeadSHA)
-	assert.Positive(pending.PendingProviderHeadGeneration)
-
-	releaseConfirmOnce.Do(func() { close(releaseConfirmFetch) })
-	require.Eventually(func() bool {
-		current, getErr := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-		if getErr != nil || current == nil {
-			return false
-		}
-		intent, intentErr := database.ProviderHeadMutationInProgress(ctx, repo.ID, 7)
-		return intentErr == nil && !intent &&
-			current.PlatformHeadSHA == "suggestion-commit-sha" &&
-			current.PendingProviderHeadGeneration == 0
-	}, time.Second, 10*time.Millisecond)
-}
-
-func TestAPIApplyReviewSuggestionPreDispatchFailureDoesNotInstallFence(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	caps := platform.Capabilities{
-		ReadRepositories:            true,
-		ReadMergeRequests:           true,
-		ReadIssues:                  true,
-		ReadComments:                true,
-		ReviewSuggestionApplication: true,
-		MutationHeadBinding:         true,
-		ReadReviewThreads:           true,
-	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
-	ctx := t.Context()
-	provider.applySuggestionsErr = &platform.Error{
-		Code: platform.PlatformErrorCode("upstream_failure"),
-		Err:  errors.New("provider preflight read failed"),
-	}
-	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		RepoPath:     "group/project",
-	})
-	require.NoError(err)
-	require.NotNil(repo)
-	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(mr)
-	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
-
-	failed := doJSON(
-		t,
-		srv,
-		http.MethodPost,
-		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
-		map[string]any{
-			"expected_head_sha": "abc123",
-			"suggestions": []map[string]any{{
-				"thread_id":   strconv.FormatInt(thread.ID, 10),
-				"replacement": "return client.publishThreads();",
-			}},
-		},
-	)
-
-	require.Equal(http.StatusBadGateway, failed.Code, failed.Body.String())
-	inProgress, err := database.ProviderHeadMutationInProgress(ctx, repo.ID, 7)
-	require.NoError(err)
-	assert.False(inProgress)
-	current, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(current)
-	assert.Empty(current.PendingProviderHeadSHA)
-	assert.Zero(current.PendingProviderHeadGeneration)
 	assert.Empty(provider.appliedSuggestions)
 }
 
@@ -17359,10 +16472,6 @@ func TestAPIApplyReviewSuggestionPassesHeadRepoToGitHubProvider(t *testing.T) {
 }
 
 func TestAPIApplyReviewSuggestionMapsProviderConflictReason(t *testing.T) {
-	// An open local row is not the last word: the provider re-verifies
-	// live PR state before mutating, and its stable conflict reasons
-	// must survive the wire mapping instead of collapsing into a
-	// generic conflict.
 	tests := []struct {
 		name   string
 		reason string
@@ -17388,12 +16497,11 @@ func TestAPIApplyReviewSuggestionMapsProviderConflictReason(t *testing.T) {
 			)
 			ctx := t.Context()
 			provider.applySuggestionsErr = &platform.Error{
-				Code:            platform.ErrCodeConflict,
-				Provider:        platform.KindGitHub,
-				PlatformHost:    "github.example.com",
-				MutationOutcome: platform.MutationOutcomeDefinitelyRejected,
-				Details:         map[string]string{"reason": tt.reason},
-				Err:             errors.New("live pull request state rejected the apply"),
+				Code:         platform.ErrCodeConflict,
+				Provider:     platform.KindGitHub,
+				PlatformHost: "github.example.com",
+				Details:      map[string]string{"reason": tt.reason},
+				Err:          errors.New("live pull request state rejected the apply"),
 			}
 
 			repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -17449,11 +16557,10 @@ func TestAPIApplyReviewSuggestionMapsProviderStaleStateAndRefreshesDetail(t *tes
 	)
 	ctx := t.Context()
 	provider.applySuggestionsErr = &platform.Error{
-		Code:            platform.ErrCodeStaleState,
-		Provider:        platform.KindGitHub,
-		PlatformHost:    "github.example.com",
-		MutationOutcome: platform.MutationOutcomeDefinitelyRejected,
-		Err:             errors.New("pull request head branch changed since it was reviewed"),
+		Code:         platform.ErrCodeStaleState,
+		Provider:     platform.KindGitHub,
+		PlatformHost: "github.example.com",
+		Err:          errors.New("pull request head branch changed since it was reviewed"),
 	}
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -17491,6 +16598,156 @@ func TestAPIApplyReviewSuggestionMapsProviderStaleStateAndRefreshesDetail(t *tes
 	require.NotNil(problem.Details)
 	assert.Equal("stale_state", problem.Details["reason"])
 	assert.Empty(provider.appliedSuggestions)
+	changed := readEventMatching(t, ch, func(ev Event) bool {
+		return ev.Type == "data_changed"
+	})
+	assert.Equal("data_changed", changed.Type)
+}
+
+func TestAPIApplyReviewSuggestionReturnsAppliedWithoutCommitMetadata(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+	provider.applySuggestionResult = &platform.AppliedReviewSuggestions{}
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(thread.ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var response applyReviewSuggestionResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
+	assert.Equal("applied", response.Status)
+	assert.Empty(response.CommitSHA)
+	assert.Empty(response.CommitURL)
+}
+
+func TestAPIApplyReviewSuggestionReturnsAppliedForNilProviderResult(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+	provider.applySuggestionReturnsNil = true
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(thread.ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var response applyReviewSuggestionResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
+	assert.Equal("applied", response.Status)
+	assert.Empty(response.CommitSHA)
+	assert.Empty(response.CommitURL)
+}
+
+func TestAPIApplyReviewSuggestionProviderErrorQueuesDetailSync(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+	provider.applySuggestionsErr = errors.New("provider response was lost")
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
+	ch, _ := srv.Hub().Subscribe(ctx, false)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "abc123",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(thread.ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+
+	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
 	changed := readEventMatching(t, ch, func(ev Event) bool {
 		return ev.Type == "data_changed"
 	})
@@ -17775,6 +17032,57 @@ func TestAPIApplyReviewSuggestionRejectsRateLimitedOperationBeforeProviderCall(t
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
 	assert.Equal("rateLimited", problem.Code)
 	assert.Empty(provider.appliedSuggestions)
+}
+
+func TestAPIApplyReviewSuggestionPreProviderValidationFailureDoesNotQueueDetailSync(t *testing.T) {
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:            true,
+		ReadMergeRequests:           true,
+		ReadIssues:                  true,
+		ReadComments:                true,
+		ReviewSuggestionApplication: true,
+		MutationHeadBinding:         true,
+		ReadReviewThreads:           true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
+	provider.blockNextMRFetch.Store(true)
+	provider.mrFetchStarted = make(chan struct{}, 1)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
+		map[string]any{
+			"expected_head_sha": "stale-head",
+			"suggestions": []map[string]any{{
+				"thread_id":   strconv.FormatInt(thread.ID, 10),
+				"replacement": "return client.publishThreads();",
+			}},
+		},
+	)
+
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	require.Empty(provider.appliedSuggestions)
+	select {
+	case <-provider.mrFetchStarted:
+		require.Fail("pre-provider validation failure queued detail sync")
+	case <-time.After(100 * time.Millisecond):
+	}
 }
 
 func TestAPIApplyReviewSuggestionRejectsStaleHead(t *testing.T) {
@@ -18648,7 +17956,7 @@ func TestAPIGitealikeApproveSubmitsReview(t *testing.T) {
 	assert.Contains(transport.mutationCalls, "review:7:lgtm:abc123")
 }
 
-func TestAPIGitealikeApproveDoesNotReadRacingHead(t *testing.T) {
+func TestAPIGitealikeApproveRefreshesAfterMutation(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	transport := &apiTestGitealikeTransport{}
@@ -18665,7 +17973,7 @@ func TestAPIGitealikeApproveDoesNotReadRacingHead(t *testing.T) {
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
-	assert.Equal(0, transport.headCalls)
+	assert.Equal(1, transport.headCalls)
 	assert.Contains(transport.mutationCalls, "review:7:lgtm:abc123")
 }
 
@@ -23137,7 +22445,11 @@ func TestCICheckDedupLatestRunWinsE2E(t *testing.T) {
 
 	srv, database := setupTestServerWithMock(t, mock)
 	client := setupTestClient(t, srv)
-	seedPR(t, database, "acme", "widget", prNumber, withSeedPRHeadSHA(headSHA))
+	seedPR(
+		t, database, "acme", "widget", prNumber,
+		withSeedPRHeadSHA(headSHA),
+		withSeedPRTimes(older, older, older),
+	)
 
 	resp, err := client.HTTP.SyncPullWithResponse(
 		context.Background(), "gh", "acme", "widget", int64(prNumber),

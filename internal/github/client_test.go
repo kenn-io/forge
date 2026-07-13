@@ -230,11 +230,9 @@ func TestApplyReviewSuggestionsCreatesBoundCommit(t *testing.T) {
 	var graphqlPayload graphQLRequest
 	var graphqlDecodeErr error
 	var pullCalls int
-	mutationDispatchPrepared := false
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v3/repos/acme/widget/pulls/7", func(w http.ResponseWriter, _ *http.Request) {
-		assert.False(mutationDispatchPrepared)
 		pullCalls++
 		writeReviewSuggestionPullResponse(w, "open", "fork/widget")
 	})
@@ -242,14 +240,12 @@ func TestApplyReviewSuggestionsCreatesBoundCommit(t *testing.T) {
 		writeReviewSuggestionRepositoryResponse(w, "fork/widget")
 	})
 	mux.HandleFunc("/api/v3/repos/fork/widget/contents/src/main.go", func(w http.ResponseWriter, r *http.Request) {
-		assert.False(mutationDispatchPrepared)
 		assert.Equal(http.MethodGet, r.Method)
 		assert.Equal("head-sha", r.URL.Query().Get("ref"))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"type":"file","encoding":"base64","content":"` + content + `","path":"src/main.go","sha":"file-sha"}`))
 	})
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
-		assert.True(mutationDispatchPrepared)
 		assert.Equal(http.MethodPost, r.Method)
 		graphqlDecodeErr = json.NewDecoder(r.Body).Decode(&graphqlPayload)
 		w.Header().Set("Content-Type", "application/json")
@@ -275,11 +271,6 @@ func TestApplyReviewSuggestionsCreatesBoundCommit(t *testing.T) {
 		HeadRepoCloneURL: "https://github.com/fork/widget.git",
 		ExpectedHeadSHA:  "head-sha",
 		Message:          "Apply suggested fix",
-		BeforeMutationDispatch: func() error {
-			assert.False(mutationDispatchPrepared)
-			mutationDispatchPrepared = true
-			return nil
-		},
 		Suggestions: []platform.ReviewSuggestion{{
 			Range:       platform.DiffReviewLineRange{Path: "src/main.go", Side: "right", Line: 2},
 			Replacement: "TWO",
@@ -289,7 +280,6 @@ func TestApplyReviewSuggestionsCreatesBoundCommit(t *testing.T) {
 	require.NoError(err)
 	require.NoError(graphqlDecodeErr)
 	assert.Equal("commit-sha", result.CommitSHA)
-	assert.True(mutationDispatchPrepared)
 	variables := graphqlPayload.Variables["input"].(map[string]any)
 	branch := variables["branch"].(map[string]any)
 	assert.Equal("fork/widget", branch["repositoryNameWithOwner"])

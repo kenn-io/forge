@@ -5671,7 +5671,6 @@ export interface components {
             platform_base_sha: string;
             platform_head_sha: string;
             platform_host: string;
-            provider_head_reconciliation_pending: boolean;
             repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;

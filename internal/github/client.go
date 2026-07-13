@@ -2672,7 +2672,6 @@ func (c *liveClient) ApplyReviewSuggestions(
 		expectedHeadSHA,
 		strings.TrimSpace(input.Message),
 		additions,
-		input.PrepareMutationDispatch,
 	)
 }
 
@@ -2735,22 +2734,20 @@ func (c *liveClient) ensureReviewSuggestionHeadRepoReachable(
 
 func (c *liveClient) githubSuggestionConflict(reason string, message string) error {
 	return &platform.Error{
-		Code:            platform.ErrCodeConflict,
-		Provider:        platform.KindGitHub,
-		PlatformHost:    c.platformHost,
-		MutationOutcome: platform.MutationOutcomeDefinitelyRejected,
-		Details:         map[string]string{"reason": reason},
-		Err:             fmt.Errorf("%s", message),
+		Code:         platform.ErrCodeConflict,
+		Provider:     platform.KindGitHub,
+		PlatformHost: c.platformHost,
+		Details:      map[string]string{"reason": reason},
+		Err:          fmt.Errorf("%s", message),
 	}
 }
 
 func (c *liveClient) githubSuggestionStaleState(message string) error {
 	return &platform.Error{
-		Code:            platform.ErrCodeStaleState,
-		Provider:        platform.KindGitHub,
-		PlatformHost:    c.platformHost,
-		MutationOutcome: platform.MutationOutcomeDefinitelyRejected,
-		Err:             fmt.Errorf("%s", message),
+		Code:         platform.ErrCodeStaleState,
+		Provider:     platform.KindGitHub,
+		PlatformHost: c.platformHost,
+		Err:          fmt.Errorf("%s", message),
 	}
 }
 
@@ -2832,7 +2829,6 @@ func (c *liveClient) createCommitForReviewSuggestions(
 	expectedHeadSHA string,
 	message string,
 	additions []map[string]string,
-	prepareMutationDispatch func() error,
 ) (*platform.AppliedReviewSuggestions, error) {
 	if err := c.ensureReviewSuggestionPullMutable(ctx, owner, repo, number, headFullName, headBranch, expectedHeadSHA); err != nil {
 		return nil, err
@@ -2883,9 +2879,6 @@ func (c *liveClient) createCommitForReviewSuggestions(
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Content-Type", "application/json")
 
-	if err := prepareMutationDispatch(); err != nil {
-		return nil, err
-	}
 	resp, err := c.writeHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("applying review suggestions on %s/%s#%d: %w", owner, repo, number, err)
@@ -2949,10 +2942,9 @@ func githubCreateCommitGraphQLError(
 	)
 	if githubCreateCommitStaleError(graphQLErrors) {
 		return &platform.Error{
-			Code:            platform.ErrCodeStaleState,
-			Provider:        platform.KindGitHub,
-			MutationOutcome: platform.MutationOutcomeDefinitelyRejected,
-			Err:             wrapped,
+			Code:     platform.ErrCodeStaleState,
+			Provider: platform.KindGitHub,
+			Err:      wrapped,
 		}
 	}
 	for _, graphQLError := range graphQLErrors {
@@ -2963,11 +2955,10 @@ func githubCreateCommitGraphQLError(
 			// same stable reason as the preflight so clients run
 			// conflict recovery.
 			return &platform.Error{
-				Code:            platform.ErrCodeConflict,
-				Provider:        platform.KindGitHub,
-				MutationOutcome: platform.MutationOutcomeDefinitelyRejected,
-				Details:         map[string]string{"reason": "head_repo_unknown"},
-				Err:             wrapped,
+				Code:     platform.ErrCodeConflict,
+				Provider: platform.KindGitHub,
+				Details:  map[string]string{"reason": "head_repo_unknown"},
+				Err:      wrapped,
 			}
 		}
 	}
@@ -2998,10 +2989,9 @@ func githubSuggestionPlatformError(
 		err = errors.New(message)
 	}
 	return &platform.Error{
-		Code:            code,
-		Provider:        platform.KindGitHub,
-		MutationOutcome: platform.MutationOutcomeDefinitelyRejected,
-		Err:             err,
+		Code:     code,
+		Provider: platform.KindGitHub,
+		Err:      err,
 	}
 }
 

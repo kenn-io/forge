@@ -979,9 +979,6 @@ func (c *FixtureClient) ApplyReviewSuggestions(
 	result := *c.reviewSuggestionResult
 	baseSHA := c.reviewSuggestionBaseSHA
 	c.mu.RUnlock()
-	if err := input.PrepareMutationDispatch(); err != nil {
-		return nil, err
-	}
 	c.UpdatePullRequestSHAs(owner, repo, number, result.CommitSHA, baseSHA)
 	return &result, nil
 }

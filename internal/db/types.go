@@ -188,32 +188,26 @@ type MergeRequest struct {
 	BaseBranch         string
 	// PlatformHeadSHA is exposed so clients can echo the head they
 	// rendered back as expected_head_sha on head-bound mutations.
-	PlatformHeadSHA string `json:"platform_head_sha,omitempty"`
-	PlatformBaseSHA string `json:"-"`
-	// PendingProviderHeadSHA prevents provider snapshots fetched before a
-	// confirmed head mutation from restoring the previous head. A later
-	// snapshot that started after the mutation clears the fence during upsert.
-	PendingProviderHeadSHA        string `json:"-"`
-	PendingProviderHeadGeneration int64  `json:"-"`
-	ProviderSnapshotGeneration    int64  `json:"-"`
-	DiffHeadSHA                   string `json:"-"`
-	DiffBaseSHA                   string `json:"-"`
-	MergeBaseSHA                  string `json:"-"`
-	HeadRepoCloneURL              string
-	Additions                     int
-	Deletions                     int
-	CommentCount                  int
-	ReviewDecision                string
-	CIStatus                      string
-	CIChecksJSON                  string
-	CreatedAt                     time.Time
-	UpdatedAt                     time.Time
-	LastActivityAt                time.Time
-	MergedAt                      *time.Time
-	ClosedAt                      *time.Time
-	MergeableState                string
-	DetailFetchedAt               *time.Time
-	CIHadPending                  bool
+	PlatformHeadSHA  string `json:"platform_head_sha,omitempty"`
+	PlatformBaseSHA  string `json:"-"`
+	DiffHeadSHA      string `json:"-"`
+	DiffBaseSHA      string `json:"-"`
+	MergeBaseSHA     string `json:"-"`
+	HeadRepoCloneURL string
+	Additions        int
+	Deletions        int
+	CommentCount     int
+	ReviewDecision   string
+	CIStatus         string
+	CIChecksJSON     string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	LastActivityAt   time.Time
+	MergedAt         *time.Time
+	ClosedAt         *time.Time
+	MergeableState   string
+	DetailFetchedAt  *time.Time
+	CIHadPending     bool
 	// WorkflowApprovalCheckedAt is when middleman last reconciled the
 	// workflow-approval state for this merge request. Nil means never
 	// checked; the GET path treats persisted state as authoritative

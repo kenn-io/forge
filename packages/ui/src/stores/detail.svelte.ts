@@ -377,10 +377,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
           events: data.events ?? [],
         } as PullDetail);
         detailLoaded = data.detail_loaded ?? detailLoaded;
-        if (data.provider_head_reconciliation_pending) {
-          storeError = "Applied suggestion is still waiting for provider head reconciliation";
-          return false;
-        }
         storeError = null;
         setSuggestionReconciliationPending(ref, false);
         await refreshPullsIfActive();
@@ -1411,11 +1407,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
           return false;
         }
         throw new Error(message);
-      }
-      if (applyResult?.status === "applied_reconciliation_pending") {
-        showFlash("Suggestion was applied, but its updated head still needs to be reconciled.", {
-          tone: "warning",
-        });
       }
     } catch (err) {
       if (requestSelectionGeneration !== selectionGeneration || !isDetailShowingRef(ref)) {

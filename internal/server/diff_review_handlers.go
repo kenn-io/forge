@@ -197,24 +197,12 @@ func (s *Server) applyReviewSuggestions(
 	if rate := s.mutationOperationRateLimit(*repo, descApplyReviewSuggestion); rate.limited {
 		return nil, problemOperationRateLimited(*repo, rate)
 	}
-	unlockProviderWrites, err := s.syncer.LockMRProviderWrites(
-		ctx,
-		repoProviderKind(*repo), repoProviderHost(*repo), repo.Owner, repo.Name, input.Number,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer unlockProviderWrites()
-
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request failed")
 	}
 	if mr == nil {
 		return nil, huma.Error404NotFound("pull request not found")
-	}
-	if err := requireProviderHeadReconciled(mr); err != nil {
-		return nil, err
 	}
 	if mr.State != db.MergeRequestStateOpen {
 		return nil, problemConflict(
@@ -230,7 +218,7 @@ func (s *Server) applyReviewSuggestions(
 			map[string]any{"reason": "head_repo_unknown"},
 		)
 	}
-	if err := s.verifyClientReviewedHead(repo, input.Number, expectedHeadSHA, mr.PlatformHeadSHA); err != nil {
+	if err := verifyClientReviewedHeadWithoutRefresh(expectedHeadSHA, mr.PlatformHeadSHA); err != nil {
 		return nil, err
 	}
 	suggestions := make([]platform.ReviewSuggestion, 0, len(input.Body.Suggestions))
@@ -272,8 +260,6 @@ func (s *Server) applyReviewSuggestions(
 			Replacement:       replacement,
 		})
 	}
-	fenceInstalled := false
-	var fenceErr error
 	result, err := applier.ApplyReviewSuggestions(
 		ctx,
 		platformRepoRefFromDB(*repo),
@@ -284,29 +270,10 @@ func (s *Server) applyReviewSuggestions(
 			ExpectedHeadSHA:  expectedHeadSHA,
 			Message:          strings.TrimSpace(input.Body.Message),
 			Suggestions:      suggestions,
-			BeforeMutationDispatch: func() error {
-				fenceErr = s.db.BeginProviderHeadMutation(ctx, repo.ID, input.Number, expectedHeadSHA)
-				fenceInstalled = fenceErr == nil
-				return fenceErr
-			},
 		},
 	)
-	if fenceErr != nil {
-		return nil, problemInternal("persist provider mutation intent failed")
-	}
+	s.syncAfterReviewSuggestionApply(*repo, input.Number)
 	if err != nil {
-		if fenceInstalled && providerMutationDefinitelyRejected(err) {
-			cancelCtx, cancelIntent := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-			if cancelErr := s.db.CancelProviderHeadMutation(cancelCtx, repo.ID, input.Number); cancelErr != nil {
-				slog.WarnContext(ctx, "clear failed provider mutation intent", "err", cancelErr)
-			}
-			cancelIntent()
-		} else if fenceInstalled {
-			s.syncAfterReviewSuggestionApply(*repo, input.Number)
-		}
-		if errors.Is(err, platform.ErrStaleState) {
-			s.syncAfterReviewSuggestionApply(*repo, input.Number)
-		}
 		return nil, providerCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)),
@@ -314,46 +281,12 @@ func (s *Server) applyReviewSuggestions(
 			"apply review suggestions on provider failed",
 		)
 	}
-	if !fenceInstalled {
-		return nil, problemInternal("provider skipped review suggestion mutation fence")
-	}
-	responseStatus := "applied"
-	commitSHA := ""
-	if result != nil {
-		commitSHA = strings.TrimSpace(result.CommitSHA)
-	}
-	if commitSHA == "" {
-		responseStatus = "applied_reconciliation_pending"
-	}
-	persistCtx, cancelPersist := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancelPersist()
-	marked, updateErr := s.db.MarkAppliedProviderHead(
-		persistCtx,
-		repo.ID,
-		input.Number,
-		expectedHeadSHA,
-		commitSHA,
-	)
-	if updateErr != nil {
-		slog.WarnContext(ctx, "persist applied review suggestion head", "err", updateErr)
-		responseStatus = "applied_reconciliation_pending"
-	} else if !marked {
-		responseStatus = "applied_reconciliation_pending"
-	}
-	s.syncAfterReviewSuggestionApply(*repo, input.Number)
-	response := applyReviewSuggestionResponse{Status: responseStatus}
+	response := applyReviewSuggestionResponse{Status: "applied"}
 	if result != nil {
 		response.CommitSHA = result.CommitSHA
 		response.CommitURL = result.CommitURL
 	}
 	return &applyReviewSuggestionOutput{Body: response}, nil
-}
-
-func providerMutationDefinitelyRejected(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return false
-	}
-	return platform.MutationDefinitelyRejected(err)
 }
 
 func validateReviewSuggestionThread(thread db.MRReviewThread, expectedHeadSHA string) error {
@@ -555,23 +488,12 @@ func (s *Server) publishDiffReviewDraft(
 	if err != nil {
 		return nil, err
 	}
-	unlockProviderWrites, err := s.syncer.LockMRProviderWrites(
-		ctx,
-		repoProviderKind(*repo), repoProviderHost(*repo), repo.Owner, repo.Name, input.Number,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer unlockProviderWrites()
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request failed")
 	}
 	if mr == nil {
 		return nil, huma.Error404NotFound("pull request not found")
-	}
-	if err := requireProviderHeadReconciled(mr); err != nil {
-		return nil, err
 	}
 	action, err := parseReviewAction(input.Body.Action)
 	if err != nil {

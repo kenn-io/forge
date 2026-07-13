@@ -1697,22 +1697,21 @@ func (s *Server) buildPullDetailResponse(
 		return mergeRequestDetailResponse{}, problemInternal("load repo failed")
 	}
 	resp := mergeRequestDetailResponse{
-		Events:                            eventResponses,
-		Repo:                              s.repoRefWithMergeRequestOperations(ctx, *repo, *mr),
-		RepoOwner:                         repo.Owner,
-		RepoName:                          repo.Name,
-		PlatformHost:                      repo.PlatformHost,
-		PlatformHeadSHA:                   mr.PlatformHeadSHA,
-		PlatformBaseSHA:                   mr.PlatformBaseSHA,
-		ReviewedHeadSHA:                   verifiedReviewedHeadSHA(mr),
-		DiffHeadSHA:                       mr.DiffHeadSHA,
-		MergeBaseSHA:                      mr.MergeBaseSHA,
-		WorktreeLinks:                     toWorktreeLinkResponses(dbLinks, s.fleetSelfKey("")),
-		WorkflowApproval:                  s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr),
-		Warnings:                          s.diffWarnings(mr),
-		DetailLoaded:                      mr.DetailFetchedAt != nil,
-		ProviderHeadReconciliationPending: mr.PendingProviderHeadGeneration > 0,
-		DeferredMergePending:              s.isDeferredMergePending(*repo, mr.Number),
+		Events:               eventResponses,
+		Repo:                 s.repoRefWithMergeRequestOperations(ctx, *repo, *mr),
+		RepoOwner:            repo.Owner,
+		RepoName:             repo.Name,
+		PlatformHost:         repo.PlatformHost,
+		PlatformHeadSHA:      mr.PlatformHeadSHA,
+		PlatformBaseSHA:      mr.PlatformBaseSHA,
+		ReviewedHeadSHA:      verifiedReviewedHeadSHA(mr),
+		DiffHeadSHA:          mr.DiffHeadSHA,
+		MergeBaseSHA:         mr.MergeBaseSHA,
+		WorktreeLinks:        toWorktreeLinkResponses(dbLinks, s.fleetSelfKey("")),
+		WorkflowApproval:     s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr),
+		Warnings:             s.diffWarnings(mr),
+		DetailLoaded:         mr.DetailFetchedAt != nil,
+		DeferredMergePending: s.isDeferredMergePending(*repo, mr.Number),
 	}
 	if mr.DetailFetchedAt != nil {
 		resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)
@@ -3017,22 +3016,6 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 	if err := s.requireSyncerCapability(*repo, capabilityReviewMutation); err != nil {
 		return nil, err
 	}
-	unlockProviderWrites, err := s.syncer.LockMRProviderWrites(
-		ctx,
-		repoProviderKind(*repo), repoProviderHost(*repo), repo.Owner, repo.Name, input.Number,
-	)
-	if err != nil {
-		return nil, err
-	}
-	providerWritesLocked := true
-	releaseProviderWrites := func() {
-		if providerWritesLocked {
-			unlockProviderWrites()
-			providerWritesLocked = false
-		}
-	}
-	defer releaseProviderWrites()
-
 	mutator, err := s.syncer.ReviewMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
@@ -3046,9 +3029,6 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 	}
 	if mr == nil {
 		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
-	}
-	if err := requireProviderHeadReconciled(mr); err != nil {
-		return nil, err
 	}
 	if s.mergeRequestAuthoredByViewer(ctx, *repo, *mr) {
 		return nil, selfApprovalProblem(*repo)
@@ -3080,23 +3060,16 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 			"provider API error",
 		)
 	}
-	releaseProviderWrites()
 
 	event := platform.DBMREvent(mr.ID, platformEvent)
 	_ = s.db.UpsertMREvents(ctx, []db.MREvent{event})
 
-	// Providers like GitLab store the approval body as a separate upstream
-	// comment that is not part of the returned event. Sync inline so the
-	// comment is visible in the next local detail load instead of waiting
-	// for the periodic sync.
-	if strings.TrimSpace(input.Body.Body) != "" && platformEvent.Body == "" {
-		if syncErr := s.syncer.SyncMROnProvider(
-			ctx,
-			repoProviderKind(*repo), repoProviderHost(*repo),
-			repo.Owner, repo.Name, input.Number,
-		); syncErr != nil {
-			slog.Warn("sync after approval with comment", "err", syncErr)
-		}
+	if syncErr := s.syncer.SyncMROnProvider(
+		ctx,
+		repoProviderKind(*repo), repoProviderHost(*repo),
+		repo.Owner, repo.Name, input.Number,
+	); syncErr != nil {
+		slog.Warn("sync after approval", "err", syncErr)
 	}
 
 	return &actionStatusOutput{Body: actionStatusBody{Status: "approved"}}, nil
@@ -3202,31 +3175,12 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 	if err := s.requireSyncerCapability(*repo, capabilityWorkflowApproval); err != nil {
 		return nil, err
 	}
-	unlockProviderWrites, err := s.syncer.LockMRProviderWrites(
-		ctx,
-		repoProviderKind(*repo), repoProviderHost(*repo), repo.Owner, repo.Name, input.Number,
-	)
-	if err != nil {
-		return nil, err
-	}
-	providerWritesLocked := true
-	releaseProviderWrites := func() {
-		if providerWritesLocked {
-			unlockProviderWrites()
-			providerWritesLocked = false
-		}
-	}
-	defer releaseProviderWrites()
-
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, problemInternal("get pull request failed")
 	}
 	if mr == nil {
 		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
-	}
-	if err := requireProviderHeadReconciled(mr); err != nil {
-		return nil, err
 	}
 
 	client, err := s.syncer.ClientForHost(repo.PlatformHost)
@@ -3278,7 +3232,6 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 			ctx, platformRepoRefFromDB(*repo), strconv.FormatInt(run.GetID(), 10),
 		); err != nil {
 			if approvedCount > 0 {
-				releaseProviderWrites()
 				if syncErr := s.syncer.SyncMROnProvider(
 					context.WithoutCancel(ctx),
 					repoProviderKind(*repo), repoProviderHost(*repo),
@@ -3295,7 +3248,6 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 		}
 		approvedCount++
 	}
-	releaseProviderWrites()
 
 	if syncErr := s.syncer.SyncMROnProvider(
 		context.WithoutCancel(ctx),
@@ -3332,11 +3284,6 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 	if err := s.requireSyncerCapability(*repo, capabilityReadyForReview); err != nil {
 		return nil, err
 	}
-	snapshotGeneration, err := s.db.ProviderSnapshotGeneration(ctx)
-	if err != nil {
-		return nil, problemInternal("get provider snapshot generation failed")
-	}
-
 	mutator, err := s.syncer.ReadyForReviewMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
@@ -3395,15 +3342,6 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 	}
 
 	normalized := platform.DBMergeRequest(repo.ID, pr)
-	normalized.ProviderSnapshotGeneration = snapshotGeneration
-	unlockProviderWrites, lockErr := s.syncer.LockMRProviderWrites(
-		ctx,
-		repoProviderKind(*repo), repoProviderHost(*repo), repo.Owner, repo.Name, input.Number,
-	)
-	if lockErr != nil {
-		return nil, lockErr
-	}
-	defer unlockProviderWrites()
 	if mrID, accepted, upsertErr := s.db.UpsertMergeRequestSnapshot(ctx, normalized); upsertErr == nil && accepted {
 		_ = s.db.EnsureKanbanState(ctx, mrID)
 	}
@@ -3439,15 +3377,6 @@ func (s *Server) mergePRWithBody(
 	if err := s.requireSyncerCapability(*repo, capabilityMergeMutation); err != nil {
 		return mergePRBody{}, err
 	}
-	unlockProviderWrites, err := s.syncer.LockMRProviderWrites(
-		ctx,
-		repoProviderKind(*repo), repoProviderHost(*repo), repo.Owner, repo.Name, number,
-	)
-	if err != nil {
-		return mergePRBody{}, err
-	}
-	defer unlockProviderWrites()
-
 	mutator, err := s.syncer.MergeMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
@@ -3644,9 +3573,6 @@ func (s *Server) reviewedHeadSHA(
 	repo *db.Repo,
 	mr *db.MergeRequest,
 ) (string, error) {
-	if err := requireProviderHeadReconciled(mr); err != nil {
-		return "", err
-	}
 	if !s.capabilitiesForRepo(*repo).MutationHeadBinding {
 		return mr.PlatformHeadSHA, nil
 	}
@@ -3676,17 +3602,6 @@ func (s *Server) reviewedHeadSHA(
 	return mr.DiffHeadSHA, nil
 }
 
-func requireProviderHeadReconciled(mr *db.MergeRequest) error {
-	if mr == nil || mr.PendingProviderHeadGeneration == 0 {
-		return nil
-	}
-	return problemConflict(
-		CodeConflict,
-		"provider head reconciliation is pending; wait for sync and re-review the pull request",
-		map[string]any{"reason": "head_unknown"},
-	)
-}
-
 // verifyClientReviewedHead enforces the client's optional assertion of
 // the head commit it rendered. The locally stored head is only a cache —
 // any sync between render and click can move it — so when the client
@@ -3697,7 +3612,26 @@ func (s *Server) verifyClientReviewedHead(
 	number int,
 	clientSHA, boundSHA string,
 ) error {
+	err := verifyClientReviewedHeadWithoutRefresh(clientSHA, boundSHA)
+	if err == nil || strings.TrimSpace(clientSHA) == "" || strings.TrimSpace(boundSHA) == "" ||
+		strings.TrimSpace(clientSHA) == strings.TrimSpace(boundSHA) {
+		return err
+	}
+	s.runBackground(func(bgCtx context.Context) {
+		if syncErr := s.syncer.SyncMROnProvider(
+			bgCtx,
+			repoProviderKind(*repo), repoProviderHost(*repo),
+			repo.Owner, repo.Name, number,
+		); syncErr != nil {
+			slog.Warn("background sync after stale client head", "err", syncErr)
+		}
+	})
+	return err
+}
+
+func verifyClientReviewedHeadWithoutRefresh(clientSHA, boundSHA string) error {
 	clientSHA = strings.TrimSpace(clientSHA)
+	boundSHA = strings.TrimSpace(boundSHA)
 	if clientSHA == "" {
 		return nil
 	}
@@ -3709,15 +3643,6 @@ func (s *Server) verifyClientReviewedHead(
 		)
 	}
 	if clientSHA != boundSHA {
-		s.runBackground(func(bgCtx context.Context) {
-			if syncErr := s.syncer.SyncMROnProvider(
-				bgCtx,
-				repoProviderKind(*repo), repoProviderHost(*repo),
-				repo.Owner, repo.Name, number,
-			); syncErr != nil {
-				slog.Warn("background sync after stale client head", "err", syncErr)
-			}
-		})
 		return problemConflict(
 			CodeConflict,
 			"target changed since it was reviewed; refresh and retry",
@@ -3871,10 +3796,6 @@ func (s *Server) setPRGitHubState(
 				if clientErr != nil {
 					return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 				}
-				snapshotGeneration, generationErr := s.db.ProviderSnapshotGeneration(ctx)
-				if generationErr != nil {
-					return nil, huma.Error500InternalServerError("get provider snapshot generation failed")
-				}
 				ghPR, fetchErr := client.GetPullRequest(
 					ctx, input.Owner, input.Name, input.Number,
 				)
@@ -3892,17 +3813,7 @@ func (s *Server) setPRGitHubState(
 							string(repoProviderKind(*repo)), repoProviderHost(*repo),
 						)
 					}
-					normalized.ProviderSnapshotGeneration = snapshotGeneration
-					unlockProviderWrites, lockErr := s.syncer.LockMRProviderWrites(
-						ctx,
-						repoProviderKind(*repo), repoProviderHost(*repo),
-						repo.Owner, repo.Name, input.Number,
-					)
-					if lockErr != nil {
-						return nil, lockErr
-					}
 					_, _, _ = s.db.UpsertMergeRequestSnapshot(ctx, normalized)
-					unlockProviderWrites()
 					s.markClosedLinkedNotificationsDone(ctx)
 					if ghPR.GetMerged() {
 						return nil, problemConflict(

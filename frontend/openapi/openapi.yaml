@@ -3130,8 +3130,6 @@ components:
           type: string
         platform_host:
           type: string
-        provider_head_reconciliation_pending:
-          type: boolean
         repo:
           $ref: "#/components/schemas/RepoRefResponse"
         repo_name:
@@ -3173,7 +3171,6 @@ components:
         - worktree_links
         - workflow_approval
         - detail_loaded
-        - provider_head_reconciliation_pending
         - deferred_merge_pending
       type: object
     MergeRequestEventResponse:

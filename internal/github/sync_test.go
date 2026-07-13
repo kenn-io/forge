@@ -476,51 +476,6 @@ func testBudget(limit int) map[string]*SyncBudget {
 	}
 }
 
-func TestMRProviderWriteLockCancelsWaitAndRemovesIdleEntry(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	syncer := &Syncer{}
-	repo := RepoRef{
-		Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
-		Owner: "group", Name: "project",
-	}
-	unlock, err := syncer.lockMRProviderWrites(t.Context(), repo, 7)
-	require.NoError(err)
-	released := false
-	t.Cleanup(func() {
-		if !released {
-			unlock()
-		}
-	})
-
-	waitCtx, cancel := context.WithCancel(t.Context())
-	waitDone := make(chan error, 1)
-	go func() {
-		_, lockErr := syncer.lockMRProviderWrites(waitCtx, repo, 7)
-		waitDone <- lockErr
-	}()
-	require.Eventually(func() bool {
-		syncer.mrProviderWriteLocksMu.Lock()
-		defer syncer.mrProviderWriteLocksMu.Unlock()
-		for _, entry := range syncer.mrProviderWriteLocks {
-			if entry.refs == 2 {
-				return true
-			}
-		}
-		return false
-	}, time.Second, 10*time.Millisecond)
-
-	cancel()
-	require.ErrorIs(<-waitDone, context.Canceled)
-	unlock()
-	released = true
-	assert.Eventually(func() bool {
-		syncer.mrProviderWriteLocksMu.Lock()
-		defer syncer.mrProviderWriteLocksMu.Unlock()
-		return len(syncer.mrProviderWriteLocks) == 0
-	}, time.Second, 10*time.Millisecond)
-}
-
 // mockClient implements Client with configurable canned responses.
 type mockClient struct {
 	budget                          *SyncBudget // optional: simulates transport counting
@@ -1128,9 +1083,6 @@ func (m *mockClient) ApplyReviewSuggestions(
 	m.trackCall()
 	if m.applyReviewSuggestionsFn != nil {
 		return m.applyReviewSuggestionsFn(ctx, owner, repo, number, input)
-	}
-	if err := input.PrepareMutationDispatch(); err != nil {
-		return nil, err
 	}
 	m.appliedReviewSuggestions = append(m.appliedReviewSuggestions, input)
 	return &platform.AppliedReviewSuggestions{CommitSHA: "suggestion-sha"}, nil
@@ -6690,25 +6642,6 @@ func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 	events, err = d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
 	assert.Empty(events)
-
-	// A persisted head-mutation fence must be reconcilable from this same
-	// detail path: it is the drain's recovery route after a restart or a
-	// failed one-shot post-apply sync, and a plain snapshot upsert would
-	// be rejected by the fence guard forever.
-	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 42, "head-sha"))
-	provider.mergeRequests[0].HeadSHA = "head-sha-2"
-	provider.mergeRequests[0].UpdatedAt = now.Add(time.Minute)
-	_, err = syncer.fetchProviderMRDetail(ctx, provider, repo, repoID, 42)
-	require.NoError(err)
-	inProgress, err := d.ProviderHeadMutationInProgress(ctx, repoID, 42)
-	require.NoError(err)
-	assert.False(inProgress,
-		"provider detail fetch must reconcile a persisted fence from a changed head")
-	reconciled, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 42)
-	require.NoError(err)
-	require.NotNil(reconciled)
-	assert.Equal("head-sha-2", reconciled.PlatformHeadSHA)
-	assert.Zero(reconciled.PendingProviderHeadGeneration)
 }
 
 func TestFetchGitHubMRDetailSyncsReviewThreads(t *testing.T) {
@@ -8372,233 +8305,6 @@ func TestFetchMRDetailUsesPersistedPullRequestETag(t *testing.T) {
 		"304 should skip timeline/comment refresh")
 }
 
-type mutatingConditionalPRClient struct {
-	conditionalPRTrackingClient
-	onConditionalFetch func()
-}
-
-func (c *mutatingConditionalPRClient) GetPullRequestIfChanged(
-	ctx context.Context,
-	owner, repo string,
-	number int,
-	etag string,
-) (*gh.PullRequest, string, bool, error) {
-	if c.onConditionalFetch != nil {
-		c.onConditionalFetch()
-	}
-	return c.conditionalPRTrackingClient.GetPullRequestIfChanged(
-		ctx, owner, repo, number, etag,
-	)
-}
-
-// A conditional detail fetch races the review-suggestion apply flow: the
-// 304 is computed against the pre-mutation row, so if the applied head
-// lands while the request is in flight, the response must not attach the
-// old head's CI to the mutated row or re-stamp the detail_fetched_at that
-// MarkAppliedProviderHead cleared to force a real refetch.
-func TestFetchMRDetail304StaleAfterHeadMutationLeavesRowForRefetch(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-
-	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
-	require.NoError(err)
-	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
-	detailFetchedAt := time.Date(2024, 6, 1, 9, 0, 0, 0, time.UTC)
-	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:          repoID,
-		PlatformID:      1000,
-		Number:          1,
-		URL:             "https://github.com/owner/repo/pull/1",
-		Title:           "test PR",
-		Author:          "alice",
-		State:           "open",
-		HeadBranch:      "feature-branch",
-		BaseBranch:      "main",
-		PlatformHeadSHA: "reviewed-head",
-		CIHadPending:    true,
-		CreatedAt:       updatedAt,
-		UpdatedAt:       updatedAt,
-		LastActivityAt:  updatedAt,
-		DetailFetchedAt: &detailFetchedAt,
-	})
-	require.NoError(err)
-	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"pull_request", 1, `"etag-v1"`,
-	))
-
-	mc := &mutatingConditionalPRClient{}
-	mc.notModified = true
-	ciState := "success"
-	checkName := "build"
-	checkStatus := "completed"
-	checkConclusion := "success"
-	mc.ciStatus = &gh.CombinedStatus{State: &ciState}
-	mc.checkRuns = []*gh.CheckRun{{
-		Name:       &checkName,
-		Status:     &checkStatus,
-		Conclusion: &checkConclusion,
-	}}
-	mc.onConditionalFetch = func() {
-		require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 1, "reviewed-head"))
-		_, markErr := d.MarkAppliedProviderHead(ctx, repoID, 1, "reviewed-head", "applied-head")
-		require.NoError(markErr)
-	}
-	syncer := NewSyncer(
-		map[string]Client{"github.com": mc}, d, nil,
-		[]RepoRef{repo},
-		time.Minute, nil, testBudget(1000),
-	)
-
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
-	require.NoError(err)
-
-	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
-	require.NoError(err)
-	require.NotNil(got)
-	assert.Equal("applied-head", got.PlatformHeadSHA)
-	assert.Empty(got.CIStatus,
-		"stale 304 must not attach the old head's CI to the mutated row")
-	assert.Nil(got.DetailFetchedAt,
-		"stale 304 must not mark the cleared detail as freshly fetched")
-}
-
-// The budgeted detail drain is the only sync path guaranteed to revisit a
-// fenced MR after a restart or a failed one-shot post-apply sync (fenced
-// rows keep detail_fetched_at NULL). It must reconcile the fence from an
-// authoritative changed-head response instead of being rejected by the
-// snapshot guard, or the MR stays locked out of head-bound actions forever.
-func TestFetchMRDetailReconcilesPersistedMutationFence(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-
-	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
-	require.NoError(err)
-	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
-	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:          repoID,
-		PlatformID:      1000,
-		Number:          1,
-		URL:             "https://github.com/owner/repo/pull/1",
-		Title:           "test PR",
-		Author:          "alice",
-		State:           "open",
-		HeadBranch:      "feature-branch",
-		BaseBranch:      "main",
-		PlatformHeadSHA: "reviewed-head",
-		CreatedAt:       updatedAt,
-		UpdatedAt:       updatedAt,
-		LastActivityAt:  updatedAt,
-	})
-	require.NoError(err)
-	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"pull_request", 1, `"etag-v1"`,
-	))
-	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 1, "reviewed-head"))
-
-	mc := &conditionalPRTrackingClient{notModified: true}
-	mc.singlePR = buildOpenPRWithSHA(1, updatedAt.Add(time.Minute), "provider-head")
-	ciState := "success"
-	mc.ciStatus = &gh.CombinedStatus{State: &ciState}
-	mc.comments = []*gh.IssueComment{}
-	mc.reviews = []*gh.PullRequestReview{}
-	mc.commits = []*gh.RepositoryCommit{}
-	syncer := NewSyncer(
-		map[string]Client{"github.com": mc}, d, nil,
-		[]RepoRef{repo},
-		time.Minute, nil, testBudget(1000),
-	)
-
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
-	require.NoError(err)
-
-	assert.Zero(int(mc.conditionalCalls.Load()),
-		"a fenced row must not trust a conditional 304 against a pre-mutation ETag")
-	inProgress, err := d.ProviderHeadMutationInProgress(ctx, repoID, 1)
-	require.NoError(err)
-	assert.False(inProgress,
-		"detail drain must reconcile a persisted fence from a changed head")
-	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
-	require.NoError(err)
-	require.NotNil(got)
-	assert.Equal("provider-head", got.PlatformHeadSHA)
-	assert.Zero(got.PendingProviderHeadGeneration)
-	assert.NotNil(got.DetailFetchedAt)
-}
-
-// After MarkAppliedProviderHead records an applied head, the stored ETag
-// still describes the pre-mutation resource, so an eventually consistent
-// provider can keep answering 304 while the pending head is unresolved. The
-// next detail fetch must bypass the conditional request entirely and confirm
-// the row with a full response.
-func TestFetchMRDetailPendingHeadForcesUnconditionalFetch(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-
-	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
-	require.NoError(err)
-	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
-	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:          repoID,
-		PlatformID:      1000,
-		Number:          1,
-		URL:             "https://github.com/owner/repo/pull/1",
-		Title:           "test PR",
-		Author:          "alice",
-		State:           "open",
-		HeadBranch:      "feature-branch",
-		BaseBranch:      "main",
-		PlatformHeadSHA: "reviewed-head",
-		CreatedAt:       updatedAt,
-		UpdatedAt:       updatedAt,
-		LastActivityAt:  updatedAt,
-	})
-	require.NoError(err)
-	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"pull_request", 1, `"etag-v1"`,
-	))
-	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 1, "reviewed-head"))
-	_, err = d.MarkAppliedProviderHead(ctx, repoID, 1, "reviewed-head", "applied-head")
-	require.NoError(err)
-
-	mc := &conditionalPRTrackingClient{notModified: true}
-	mc.singlePR = buildOpenPRWithSHA(1, updatedAt.Add(time.Minute), "applied-head")
-	ciState := "success"
-	mc.ciStatus = &gh.CombinedStatus{State: &ciState}
-	mc.comments = []*gh.IssueComment{}
-	mc.reviews = []*gh.PullRequestReview{}
-	mc.commits = []*gh.RepositoryCommit{}
-	syncer := NewSyncer(
-		map[string]Client{"github.com": mc}, d, nil,
-		[]RepoRef{repo},
-		time.Minute, nil, testBudget(1000),
-	)
-
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
-	require.NoError(err)
-
-	assert.Zero(int(mc.conditionalCalls.Load()),
-		"an unresolved pending head must force an unconditional detail fetch")
-	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
-	require.NoError(err)
-	require.NotNil(got)
-	assert.Equal("applied-head", got.PlatformHeadSHA)
-	assert.Zero(got.PendingProviderHeadGeneration,
-		"the full response must resolve the pending head")
-	assert.NotNil(got.DetailFetchedAt)
-}
-
 func TestFetchMRDetailDoesNotBackfillMergedActorOn304(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -8723,47 +8429,6 @@ func TestWatchedSyncMRUsesPersistedPullRequestETag(t *testing.T) {
 		"304 should skip the unconditional PR detail fetch")
 	assert.Zero(int(mc.listIssueCommentsCalled.Load()),
 		"304 should skip timeline/comment refresh")
-}
-
-func TestWatchedSyncMRBypassesETagForPendingMutationIntent(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
-	require.NoError(err)
-	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
-	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID: repoID, PlatformID: 1000, Number: 1,
-		URL: "https://github.com/owner/repo/pull/1", Title: "test PR",
-		Author: "alice", State: "open", HeadBranch: "feature-branch", BaseBranch: "main",
-		PlatformHeadSHA: "abc123def456",
-		CreatedAt:       updatedAt, UpdatedAt: updatedAt, LastActivityAt: updatedAt,
-	})
-	require.NoError(err)
-	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo", "pull_request", 1, `"etag-v1"`,
-	))
-	require.NoError(d.BeginProviderHeadMutation(ctx, repoID, 1, "abc123def456"))
-
-	mc := &conditionalPRTrackingClient{notModified: true}
-	mc.singlePR = buildOpenPR(1, updatedAt)
-	mc.singlePR.Head.SHA = new("abc123def456")
-	syncer := NewSyncer(
-		map[string]Client{"github.com": mc}, d, nil,
-		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
-	)
-
-	require.NoError(syncer.syncMRWithWatchedRef(ctx, WatchedMR{
-		Owner: "owner", Name: "repo", Number: 1, PlatformHost: "github.com",
-	}))
-
-	assert.Zero(int(mc.conditionalCalls.Load()))
-	assert.Equal(1, int(mc.getPRCalls.Load()))
-	inProgress, err := d.ProviderHeadMutationInProgress(ctx, repoID, 1)
-	require.NoError(err)
-	assert.True(inProgress, "unchanged provider head must retain an ambiguous intent")
 }
 
 func TestWatchedSyncMRDoesNotBackfillMergedActorOn304(t *testing.T) {
@@ -9853,7 +9518,7 @@ func TestRefreshCIStatusForHeadRetainsMixedPendingChecks(t *testing.T) {
 		nil,
 	)
 
-	err = syncer.refreshCIStatusForHead(
+	err = syncer.refreshCIStatus(
 		ctx,
 		RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 		repoID,

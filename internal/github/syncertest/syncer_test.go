@@ -152,9 +152,6 @@ func (m *mockClient) ApplyReviewSuggestions(
 	_ int,
 	input platform.ApplyReviewSuggestionsInput,
 ) (*platform.AppliedReviewSuggestions, error) {
-	if err := input.PrepareMutationDispatch(); err != nil {
-		return nil, err
-	}
 	return nil, nil
 }
 func (m *mockClient) MarkPullRequestReadyForReview(context.Context, string, string, int) (*gh.PullRequest, error) {

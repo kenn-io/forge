@@ -168,10 +168,12 @@ test.describe("issue list view", () => {
     // seeded fixture (max-width 800px centered layout).
     await page.locator(".issue-item").filter({ hasText: "Safari" }).first().click();
 
-    // IssueListView renders IssueDetail into .kit-sidebar-layout__main, where
-    // .issue-detail is the designated internal scroll container.
+    // IssueListView renders IssueDetail into .kit-sidebar-layout__main;
+    // .issue-detail is the content wrapper and the ScrollBox viewport is
+    // the designated internal scroll container.
     const issueDetail = page.locator(".issue-detail");
     await expect(issueDetail).toBeVisible();
+    const scroller = page.getByRole("region", { name: "Issue conversation" });
 
     // Inject a tall filler so overflow is guaranteed even with the
     // short seeded body. flex-shrink: 0 is required because
@@ -186,12 +188,11 @@ test.describe("issue list view", () => {
       el.appendChild(filler);
     });
 
-    // .issue-detail owns vertical scroll (overflow-y: auto in the
-    // component style).
-    const overflowY = await issueDetail.evaluate((el) => getComputedStyle(el).overflowY);
+    // The ScrollBox viewport owns vertical scroll.
+    const overflowY = await scroller.evaluate((el) => getComputedStyle(el).overflowY);
     expect(["auto", "scroll"]).toContain(overflowY);
 
-    const before = await issueDetail.evaluate((el) => ({
+    const before = await scroller.evaluate((el) => ({
       scrollHeight: el.scrollHeight,
       clientHeight: el.clientHeight,
       scrollTop: el.scrollTop,
@@ -199,11 +200,11 @@ test.describe("issue list view", () => {
     expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
     expect(before.scrollTop).toBe(0);
 
-    await issueDetail.evaluate((el) => {
+    await scroller.evaluate((el) => {
       el.scrollTop = el.scrollHeight;
     });
 
-    const finalScroll = await issueDetail.evaluate((el) => el.scrollTop);
+    const finalScroll = await scroller.evaluate((el) => el.scrollTop);
     expect(finalScroll).toBeGreaterThan(0);
 
     // The scroll container should span the detail pane so the native
@@ -212,13 +213,13 @@ test.describe("issue list view", () => {
     const detailArea = page.locator(".kit-sidebar-layout__main");
     const contentHeader = page.locator(".issue-detail .detail-header");
     const areaBox = await detailArea.boundingBox();
-    const detailBox = await issueDetail.boundingBox();
+    const detailBox = await scroller.boundingBox();
     const headerBox = await contentHeader.boundingBox();
     expect(areaBox).not.toBeNull();
     expect(detailBox).not.toBeNull();
     expect(headerBox).not.toBeNull();
     if (areaBox !== null && detailBox !== null && headerBox !== null) {
-      const scrollportWidth = await issueDetail.evaluate((el) => el.clientWidth);
+      const scrollportWidth = await scroller.evaluate((el) => el.clientWidth);
       const scrollportCenter = detailBox.x + scrollportWidth / 2;
       const headerCenter = headerBox.x + headerBox.width / 2;
       // Allow small slack for sub-pixel layout differences.

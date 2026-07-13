@@ -169,6 +169,9 @@ test.describe("PR list view", () => {
 
     const pullDetail = page.locator(".pull-detail");
     await expect(pullDetail).toBeVisible();
+    // .pull-detail is the content wrapper; the ScrollBox viewport owns
+    // vertical scrolling for the conversation pane.
+    const scroller = page.getByRole("region", { name: "Pull request conversation" });
 
     await pullDetail.evaluate((el) => {
       const filler = document.createElement("div");
@@ -179,10 +182,10 @@ test.describe("PR list view", () => {
       el.appendChild(filler);
     });
 
-    const overflowY = await pullDetail.evaluate((el) => getComputedStyle(el).overflowY);
+    const overflowY = await scroller.evaluate((el) => getComputedStyle(el).overflowY);
     expect(["auto", "scroll"]).toContain(overflowY);
 
-    const before = await pullDetail.evaluate((el) => ({
+    const before = await scroller.evaluate((el) => ({
       scrollHeight: el.scrollHeight,
       clientHeight: el.clientHeight,
       scrollTop: el.scrollTop,
@@ -190,23 +193,23 @@ test.describe("PR list view", () => {
     expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
     expect(before.scrollTop).toBe(0);
 
-    await pullDetail.evaluate((el) => {
+    await scroller.evaluate((el) => {
       el.scrollTop = el.scrollHeight;
     });
 
-    const finalScroll = await pullDetail.evaluate((el) => el.scrollTop);
+    const finalScroll = await scroller.evaluate((el) => el.scrollTop);
     expect(finalScroll).toBeGreaterThan(0);
 
     const detailArea = page.locator(".kit-sidebar-layout__main");
     const contentHeader = page.locator(".pull-detail .detail-header");
     const areaBox = await detailArea.boundingBox();
-    const detailBox = await pullDetail.boundingBox();
+    const detailBox = await scroller.boundingBox();
     const headerBox = await contentHeader.boundingBox();
     expect(areaBox).not.toBeNull();
     expect(detailBox).not.toBeNull();
     expect(headerBox).not.toBeNull();
     if (areaBox !== null && detailBox !== null && headerBox !== null) {
-      const scrollportWidth = await pullDetail.evaluate((el) => el.clientWidth);
+      const scrollportWidth = await scroller.evaluate((el) => el.clientWidth);
       const scrollportCenter = detailBox.x + scrollportWidth / 2;
       const headerCenter = headerBox.x + headerBox.width / 2;
       expect(Math.abs(detailBox.x + detailBox.width - (areaBox.x + areaBox.width))).toBeLessThan(2);

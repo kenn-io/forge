@@ -50,6 +50,7 @@
   import { Button, Chip } from "@kenn-io/kit-ui";
   import { Spinner } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
+  import ScrollBox from "../shared/ScrollBox.svelte";
   import LabelPicker from "./LabelPicker.svelte";
   import UserListEditor from "./UserListEditor.svelte";
   import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
@@ -1523,11 +1524,12 @@
           reviewThreads={reviewThreadsFromEvents(detail.events)}
         />
       {:else}
-        <div
-          class="pull-detail"
-          bind:this={pullDetailScroller}
+        <ScrollBox
+          label="Pull request conversation"
+          bind:viewport={pullDetailScroller}
           onscroll={handlePullDetailScroll}
         >
+        <div class="pull-detail">
           <div
             class="pull-detail-content"
             class:pull-detail-content--has-compact-actions={pr.State !== "merged" && !stalePR}
@@ -2423,6 +2425,7 @@
       </div>
           </div>
         </div>
+        </ScrollBox>
       {/if}
     </div>
   {/if}
@@ -2466,10 +2469,7 @@
     padding: 20px 24px;
     display: flex;
     flex-direction: column;
-    flex: 1;
-    min-height: 0;
     min-width: 0;
-    overflow-y: auto;
     overflow-x: hidden;
     width: 100%;
   }

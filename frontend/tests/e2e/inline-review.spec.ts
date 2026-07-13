@@ -1234,7 +1234,7 @@ test("preserves PR detail scroll positions while switching tabs", async ({ page 
   await page.addStyleTag({
     content: ".pull-detail { min-height: 1800px; }",
   });
-  const conversationScroller = page.locator(".pull-detail");
+  const conversationScroller = page.getByRole("region", { name: "Pull request conversation" });
   await expect(conversationScroller).toBeVisible();
   await conversationScroller.evaluate((element) => {
     element.scrollTop = 420;
@@ -1328,7 +1328,7 @@ test("preserves PR detail scroll position after pushed refresh events", async ({
   await page.addStyleTag({
     content: ".pull-detail { min-height: 1800px; }",
   });
-  const conversationScroller = page.locator(".pull-detail");
+  const conversationScroller = page.getByRole("region", { name: "Pull request conversation" });
   await expect(conversationScroller).toBeVisible();
   await conversationScroller.evaluate((element) => {
     element.scrollTop = 420;

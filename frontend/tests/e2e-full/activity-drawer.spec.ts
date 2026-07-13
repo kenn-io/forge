@@ -1100,6 +1100,9 @@ test.describe("activity split view and detail drawers", () => {
     // The issue-detail element exists inside the detail pane.
     const issueDetail = detail.locator(".issue-detail");
     await expect(issueDetail).toBeVisible();
+    // .issue-detail is the content wrapper; the ScrollBox viewport owns
+    // vertical scrolling.
+    const scroller = detail.getByRole("region", { name: "Issue conversation" });
 
     // Inject a tall filler so the content guarantees overflow. The
     // seeded issue body is short; this isolates the test from fixture
@@ -1115,12 +1118,12 @@ test.describe("activity split view and detail drawers", () => {
       el.appendChild(filler);
     });
 
-    // Verify .issue-detail is the actual scroll container.
-    const overflowY = await issueDetail.evaluate((el) => getComputedStyle(el).overflowY);
+    // Verify the viewport is the actual scroll container.
+    const overflowY = await scroller.evaluate((el) => getComputedStyle(el).overflowY);
     expect(["auto", "scroll"]).toContain(overflowY);
 
     // Content now overflows and scroll starts at top.
-    const before = await issueDetail.evaluate((el) => ({
+    const before = await scroller.evaluate((el) => ({
       scrollHeight: el.scrollHeight,
       clientHeight: el.clientHeight,
       scrollTop: el.scrollTop,
@@ -1129,12 +1132,12 @@ test.describe("activity split view and detail drawers", () => {
     expect(before.scrollTop).toBe(0);
 
     // Scroll to bottom on the intended container.
-    await issueDetail.evaluate((el) => {
+    await scroller.evaluate((el) => {
       el.scrollTop = el.scrollHeight;
     });
 
     // Scroll position advanced from 0.
-    const finalScroll = await issueDetail.evaluate((el) => el.scrollTop);
+    const finalScroll = await scroller.evaluate((el) => el.scrollTop);
     expect(finalScroll).toBeGreaterThan(0);
 
     // The split detail itself should still be visible after the scroll action.

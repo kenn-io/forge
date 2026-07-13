@@ -889,7 +889,7 @@
       renderRange?: { bufferAfter: number; bufferBefore: number; startingLine: number; totalLines: number };
       top?: number;
     };
-    const area = host.closest(".diff-area");
+    const area = host.closest(".scroll-box__viewport");
     const hostRect = host.getBoundingClientRect();
     const areaRect = area?.getBoundingClientRect();
     const scrollTop = area instanceof HTMLElement ? area.scrollTop : undefined;
@@ -1490,7 +1490,7 @@
 
   function isHostInScrollViewport(): boolean {
     if (!host) return false;
-    const root = host.closest(".diff-area");
+    const root = host.closest(".scroll-box__viewport");
     const hostRect = host.getBoundingClientRect();
     const rootRect = root?.getBoundingClientRect() ?? {
       top: 0,

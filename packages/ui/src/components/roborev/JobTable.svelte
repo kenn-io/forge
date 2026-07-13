@@ -3,7 +3,6 @@
   import { getStores } from "../../context.js";
   import { isPanelParent } from "../../utils/roborev-panel.js";
   import JobRow from "./JobRow.svelte";
-  import ScrollBox from "../shared/ScrollBox.svelte";
 
   const stores = getStores();
   const jobsStore = stores.roborevJobs;
@@ -70,7 +69,7 @@
   }
 </script>
 
-<ScrollBox class="table-wrapper" label="Review jobs">
+<div class="table-wrapper">
   <table class="job-table">
     <thead>
       <tr>
@@ -177,9 +176,19 @@
       </button>
     </div>
   {/if}
-</ScrollBox>
+</div>
 
 <style>
+  /* Tables scroll both axes in narrow hosts (640px workspace sidebar), so
+     this stays a native scroller instead of the vertical-only ScrollBox:
+     hiding the native bars would drop the horizontal affordance, and a
+     nested x-scroller would detach the sticky thead from the scrollport. */
+  .table-wrapper {
+    overflow: auto;
+    flex: 1;
+    min-height: 0;
+  }
+
   .job-table {
     width: 100%;
     border-collapse: collapse;

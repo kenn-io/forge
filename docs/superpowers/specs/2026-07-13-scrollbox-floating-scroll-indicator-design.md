@@ -37,7 +37,7 @@ Converted in this change:
 | Pull detail | `packages/ui/src/components/detail/PullDetail.svelte` (`.pull-detail`) | Uses `bind:viewport` for the existing scroll position save/restore. |
 | Issue detail | `packages/ui/src/components/detail/IssueDetail.svelte` | Simple wrap; no scroll wiring today. |
 | Focus list | `packages/ui/src/views/FocusListView.svelte` | Simple wrap. |
-| Reviews list | `packages/ui/src/views/ReviewsView.svelte` | Simple wrap. |
+| Reviews list | `packages/ui/src/views/ReviewsView.svelte` | Not converted after all: the effective scroller is `JobTable`'s table wrapper, a two-axis table scroller (640px workspace sidebar hosts overflow horizontally), which falls under the exclusion below. It keeps native scrolling. |
 | Mobile activity | `packages/ui/src/views/MobileActivityView.svelte` | Simple wrap. |
 | Activity feed | `packages/ui/src/components/ActivityFeed.svelte` | Simple wrap. |
 | Threaded activity | `packages/ui/src/components/ActivityThreaded.svelte` | Simple wrap. |

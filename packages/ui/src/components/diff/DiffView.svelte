@@ -10,6 +10,7 @@
   const stores = getStores();
   const diffStore = stores.diff;
   const diffReviewDraft = stores.diffReviewDraft;
+  import ScrollBox from "../shared/ScrollBox.svelte";
   import DiffFileComponent from "./DiffFile.svelte";
   import DiffReviewDraftTray from "./DiffReviewDraftTray.svelte";
 
@@ -599,15 +600,12 @@
       </div>
     {:else if diff}
       <div class="diff-main">
-        <div
-          class="diff-area"
-          class:diff-area--word-wrap={wordWrap}
-          bind:this={diffArea}
+        <ScrollBox
+          class={["diff-area", { "diff-area--word-wrap": wordWrap }]}
+          label="Changed file diffs"
+          bind:viewport={diffArea}
           onscroll={onDiffScroll}
-          role="region"
-          aria-label="Changed file diffs"
-          style:tab-size={tabWidth}
-          style:overscroll-behavior="contain"
+          style="tab-size: {tabWidth}; overscroll-behavior: contain"
         >
           <div class="diff-content" bind:this={diffContent}>
             {#if visibleFiles.length === 0}
@@ -643,7 +641,7 @@
               <div class="review-warning">{reviewUnavailableReason}</div>
             {/if}
           </div>
-        </div>
+        </ScrollBox>
       </div>
     {/if}
   </div>
@@ -688,11 +686,6 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
-  }
-
-  .diff-area {
-    flex: 1;
-    overflow: auto;
   }
 
   .diff-content {

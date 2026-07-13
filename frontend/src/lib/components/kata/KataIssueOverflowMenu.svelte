@@ -32,15 +32,19 @@
   let menuRoot: HTMLDivElement | null = $state(null);
   let moveSearchInput = $state() as HTMLInputElement;
   let moveQuery = $state("");
-  let movingProjectUID = $state<string | null>(null);
-  let pendingProject = $state.raw<KataProjectSummary | null>(null);
+  let pendingMoves = $state.raw(
+    new Map<string, { operation: number; project: KataProjectSummary }>(),
+  );
   let interactionGeneration = 0;
   let moveOperationGeneration = 0;
-  let activeMoveOperation = $state<number | null>(null);
   let deleteOpen = $state(false);
   let deletePending = $state(false);
   let trackedUID = $state<string | null>(null);
 
+  const activeMove = $derived(pendingMoves.get(issue.issue.uid) ?? null);
+  const activeMoveOperation = $derived(activeMove?.operation ?? null);
+  const movingProjectUID = $derived(activeMove?.project.uid ?? null);
+  const pendingProject = $derived(activeMove?.project ?? null);
   const canAddChecklist = $derived(!hasChecklist);
   const canCreateRecurrence = $derived(!hasRecurrence);
   const canDeleteIssue = $derived(issue.issue.status !== "closed");
@@ -97,9 +101,6 @@
     if (issue.issue.uid === trackedUID) return;
     trackedUID = issue.issue.uid;
     interactionGeneration += 1;
-    activeMoveOperation = null;
-    movingProjectUID = null;
-    pendingProject = null;
     menuOpen = false;
     menuView = "actions";
     moveQuery = "";
@@ -165,17 +166,15 @@
   }
 
   async function moveIssue(project: KataProjectSummary): Promise<void> {
-    if (activeMoveOperation !== null) return;
     const sourceIssueUID = issue.issue.uid;
+    if (pendingMoves.has(sourceIssueUID)) return;
     const sourceInteraction = interactionGeneration;
     const operation = ++moveOperationGeneration;
-    activeMoveOperation = operation;
-    movingProjectUID = project.uid;
-    pendingProject = project;
+    pendingMoves = new Map(pendingMoves).set(sourceIssueUID, { operation, project });
     try {
       const moved = await onMoveIssue(project.uid);
       if (
-        activeMoveOperation !== operation ||
+        pendingMoves.get(sourceIssueUID)?.operation !== operation ||
         interactionGeneration !== sourceInteraction ||
         issue.issue.uid !== sourceIssueUID
       ) {
@@ -183,10 +182,10 @@
       }
       if (moved !== false) closeMenu(true);
     } finally {
-      if (activeMoveOperation === operation) {
-        activeMoveOperation = null;
-        movingProjectUID = null;
-        pendingProject = null;
+      if (pendingMoves.get(sourceIssueUID)?.operation === operation) {
+        const nextPendingMoves = new Map(pendingMoves);
+        nextPendingMoves.delete(sourceIssueUID);
+        pendingMoves = nextPendingMoves;
       }
     }
   }

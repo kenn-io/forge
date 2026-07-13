@@ -163,7 +163,7 @@ describe("KataIssueOverflowMenu", () => {
     expect(screen.getByRole("button", { name: "More actions" }).getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("ignores an old A move after navigating A to B to A", async () => {
+  it("blocks a second A move until the old A move settles after A to B to A navigation", async () => {
     let finishOldMove!: (moved: boolean) => void;
     const oldMove = new Promise<boolean>((resolve) => {
       finishOldMove = resolve;
@@ -178,11 +178,18 @@ describe("KataIssueOverflowMenu", () => {
     await fireEvent.click(screen.getByRole("button", { name: /Roadmap/ }));
     await view.rerender({ issue: makeIssue("open", { uid: "issue-b" }) });
     await view.rerender({ issue: makeIssue("open", { uid: "issue-1" }) });
-    await openMovePicker();
+    await fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+
+    expect(screen.queryByRole("menuitem", { name: "Move to another project" })).toBeNull();
+    expect(onMoveIssue).toHaveBeenCalledTimes(1);
 
     finishOldMove(true);
     await oldMove;
-    expect(screen.getByRole("searchbox", { name: "Find project" })).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More actions" }).getAttribute("aria-expanded")).toBe("false");
+    });
+    await Promise.resolve();
+    await openMovePicker();
     const destination = screen.getByRole("button", { name: /Roadmap/ }) as HTMLButtonElement;
     expect(destination.disabled).toBe(false);
     await fireEvent.click(destination);

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { EmptyState } from "@kenn-io/kit-ui";
+  import ScrollBox from "./shared/ScrollBox.svelte";
   import type { ActivityItem } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
@@ -577,6 +578,7 @@
   }
 </script>
 
+<ScrollBox label="Threaded activity">
 <div
   class="threaded-view"
   class:threaded-view--compact={compact}
@@ -767,6 +769,7 @@
     <EmptyState title="No activity found" />
   {/if}
 </div>
+</ScrollBox>
 
 <style>
   /* The threaded view is one grid so every row — column headers, item
@@ -778,8 +781,6 @@
    * sensible maximum; the cap means hiding the org name automatically
    * shrinks the repo column because cell content is shorter. */
   .threaded-view {
-    flex: 1;
-    overflow-y: auto;
     padding: 0 16px;
     --threaded-col-repo-max: 220px;
     --threaded-col-author-max: 140px;

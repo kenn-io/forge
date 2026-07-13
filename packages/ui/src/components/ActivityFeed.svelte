@@ -10,6 +10,7 @@
   } from "../stores/activity.svelte.js";
   import { getStores, getNavigate, getSidebar } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
+  import ScrollBox from "./shared/ScrollBox.svelte";
   import { FilterDropdown } from "@kenn-io/kit-ui";
   import {
     isDefaultBranchActivity,
@@ -627,19 +628,23 @@
   {/if}
 
   {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
+    <ScrollBox label="Activity feed">
     <div class="table-container">
       <EmptyState title="No repositories configured.">
         {#if !isEmbedded()}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}
       </EmptyState>
     </div>
+    </ScrollBox>
   {:else if activity.getViewMode() === "threaded"}
     {#if displayItems.length === 0 && activity.isActivityLoading()}
+      <ScrollBox label="Activity feed">
       <div class="table-container">
         <div class="loading-placeholder">
           <Spinner size={14} label="Loading activity" />
           Loading...
         </div>
       </div>
+      </ScrollBox>
     {:else}
       <ActivityThreaded
         items={displayItems}
@@ -651,6 +656,7 @@
       />
     {/if}
   {:else}
+    <ScrollBox label="Activity feed">
     <div class="table-container">
       {#if compact}
         <div class="activity-compact-list">
@@ -913,6 +919,7 @@
         <EmptyState title="No activity found" />
       {/if}
     </div>
+    </ScrollBox>
   {/if}
 
   {#if activity.isActivityCapped()}
@@ -1024,8 +1031,6 @@
   }
 
   .table-container {
-    flex: 1;
-    overflow-y: auto;
     padding: 0 16px;
   }
 

@@ -6139,7 +6139,7 @@ test("kata complete dialog closes and reopens through the configured external da
   try {
     await page.goto(`${server.info.base_url}/kata?issue=issue-rent`);
     const detail = page.getByRole("region", { name: "Task detail" });
-    const financeCount = page.locator(".project-groups button", { hasText: "Finances" }).locator(".count");
+    const financeCount = page.getByRole("button", { name: /^Finances\s+\d+$/ }).locator(".count");
     await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
     await expect(financeCount).toHaveText("1");
 
@@ -6233,7 +6233,7 @@ test("kata overflow menu reveals checklist and deletes through the configured ex
   try {
     await page.goto(`${server.info.base_url}/kata?issue=issue-q3`);
     const detail = page.getByRole("region", { name: "Task detail" });
-    const kataCount = page.locator(".project-groups button", { hasText: "Kata" }).locator(".count");
+    const kataCount = page.getByRole("button", { name: /^Kata\s+\d+$/ }).locator(".count");
     await expect(detail.getByRole("heading", { name: "Email Susan re: Q3" })).toBeVisible();
     await expect(detail.getByRole("region", { name: "Checklist" })).toHaveCount(0);
     await expect(kataCount).toHaveText("1");

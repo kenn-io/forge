@@ -26,9 +26,11 @@ Only `KataSidebar` project-renaming controls are removed. Project rows will no l
 
 The current project in `KataIssueDetail` will become passive breadcrumb text. It will no longer look like navigation or open a picker when clicked.
 
-The existing issue overflow menu will gain a **Move to another project** action. Selecting it opens a searchable destination picker within the overflow interaction. Eligible destinations preserve the current rules: exclude the current project and inbox-role projects, sort by project name, and show open-task counts. The action is absent when no destination is eligible.
+The existing issue overflow menu will gain a **Move to another project** action. Selecting it replaces the normal action list with a dialog-like searchable destination panel. Eligible destinations preserve the current rules: exclude the current project and inbox-role projects, sort by project name, and show open-task counts. Duplicate names include the project area or UID as a secondary label. The action is absent when no destination is eligible.
 
-Successful selection uses the existing `onMoveIssue` callback and closes the picker. Existing mutation errors continue through the workspace/store error path; the picker stays available when reassignment fails so the user can retry or dismiss it. Opening the menu, its actions, and the destination picker must remain keyboard reachable, with Escape returning focus out of the picker without moving the issue.
+`onMoveIssue` will return `boolean | Promise<boolean>` from both workspace hosts: `true` means the mutation succeeded and `false` means the workspace handled and displayed an error. Success closes the overflow interaction; failure leaves the picker and query available for retry. Destinations are disabled while a move is pending, and an in-flight result cannot update a newly selected issue’s menu state.
+
+The search field and destination buttons use normal Tab/Shift+Tab navigation rather than claiming listbox semantics. Opening the picker focuses search; Escape first clears a nonempty search, then closes the interaction and returns focus to **More actions** when search is empty. Outside click closes without restoring focus, and changing the selected issue resets the interaction.
 
 ## State and Errors
 
@@ -43,22 +45,23 @@ The issue overflow menu owns whether its normal actions or destination picker ar
 - No sidebar control, double-click, or keyboard path starts project renaming.
 - The rename client and store operations remain available.
 - The issue breadcrumb displays the current project name or existing UID fallback as passive text.
-- Issue reassignment is available only through **More actions → Move to another project** and excludes ineligible destinations.
-- The overflow interaction remains usable with pointer and keyboard input at desktop and narrow widths.
+- Issue reassignment is available only through **More actions → Move to another project**, excludes ineligible destinations, and disambiguates duplicate names.
+- Successful reassignment closes the menu; handled failure surfaces the workspace error and remains retryable.
+- The overflow interaction uses normal dialog/button keyboard navigation at desktop and narrow widths, with the specified two-stage Escape behavior.
 
 ## Testing
 
 Component tests will cover area ordering, default expansion, collapse and expansion, collapse-state lifetime, project navigation, project creation, and the absence of sidebar rename controls and inline rename behavior.
 
-Issue-detail and overflow-menu component tests will prove that the project breadcrumb is passive, its fallback text remains correct, the move action is hidden without destinations, and selecting an eligible destination invokes reassignment. Store and client reassignment tests remain unchanged.
+Issue-detail and overflow-menu component tests will prove that the project breadcrumb is passive, its fallback text remains correct, destination names are disambiguated, the move action is hidden without destinations, success closes the picker, failure remains retryable, and keyboard dismissal restores focus. Store and client reassignment tests remain unchanged.
 
-Full-stack Playwright coverage will replace the existing pencil-button and double-click rename scenarios. The replacement must prove project navigation and creation still work and that neither rename affordance is available. Existing browser coverage for grouped-sidebar scrolling remains the geometry-level check for the shared overlay indicator.
+Full-stack Playwright coverage will replace the existing pencil-button and double-click rename scenarios. The replacement must prove project navigation and creation still work and that neither rename affordance is available. The existing real-daemon move scenario will be migrated to **More actions**, including successful keyboard selection and a forced daemon failure that surfaces the workspace error, leaves the picker open, and succeeds on retry. Existing browser coverage for grouped-sidebar scrolling remains the geometry-level check for the shared overlay indicator.
 
 ## Implementation Order
 
 1. Migrate sidebar scrolling and area groups while preserving navigation and creation behavior.
 2. Remove sidebar rename state, controls, callback wiring, and contradictory tests.
-3. Make the issue breadcrumb passive and add overflow-menu reassignment.
+3. Add overflow-menu reassignment, update both workspace callbacks to return success, then make the issue breadcrumb passive in the same reviewable change.
 4. Update component tests for both interactions.
 5. Replace the obsolete full-stack rename scenarios and run the affected frontend suites.
 

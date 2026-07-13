@@ -33,7 +33,7 @@
 - `frontend/src/lib/components/kata/KataIssueDetail.test.ts`: passive breadcrumb and project-name fallback coverage.
 - `frontend/src/lib/components/kata/KataIssueOverflowMenu.svelte`: explicit move action, searchable destination view, pending/retry state, focus restoration, and issue-identity reset.
 - `frontend/src/lib/components/kata/KataIssueOverflowMenu.test.ts`: destination rules, sorting, search, success/failure, issue reset, and keyboard dismissal.
-- `frontend/tests/e2e-full/kata.spec.ts`: replace obsolete rename workflows and move the real-daemon reassignment flow to More actions.
+- `frontend/tests/e2e-full/kata.spec.ts`: replace obsolete rename workflows, move real-daemon reassignment to More actions, and add one-shot failure/retry coverage in the local Kata backend fixture.
 
 ---
 
@@ -44,7 +44,7 @@
 - Modify: `frontend/src/lib/components/kata/KataSidebar.svelte`
 
 **Interfaces:**
-- Consumes: `GroupedSidebarSection` and `SidebarScrollArea` exported by `@middleman/ui`.
+- Consumes: `GroupedSidebarSection` and `SidebarScrollArea` already implemented and exported by `@middleman/ui` in merged PR #662 (`packages/ui/src/components/shared/` and `packages/ui/src/index.ts`).
 - Produces: mounted `collapsedAreas: string[]` state and one native project button per visible project.
 
 - [ ] **Step 1: Add failing group and order coverage**
@@ -63,11 +63,11 @@ it("renders system views, expanded area groups, and project creation in order", 
 
   expect(personal).toHaveAttribute("aria-expanded", "true");
   expect(work).toHaveAttribute("aria-expanded", "true");
-  expect(
-    [inbox, personal, work, create].map((element) =>
-      inbox.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ),
-  ).toEqual([0, Node.DOCUMENT_POSITION_FOLLOWING, Node.DOCUMENT_POSITION_FOLLOWING, Node.DOCUMENT_POSITION_FOLLOWING]);
+  const ordered = [inbox, personal, work, create];
+  for (let index = 0; index < ordered.length - 1; index += 1) {
+    expect(ordered[index]!.compareDocumentPosition(ordered[index + 1]!))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  }
 });
 ```
 
@@ -176,7 +176,7 @@ Remove `overflow: auto` from `.kata-sidebar`. Preserve the existing `900px` narr
 }
 
 .kata-nav button.active,
-.project-row.active .project-select-button {
+.project-select-button.active {
   background: var(--bg-row-selected);
 }
 ```
@@ -213,9 +213,13 @@ Delete `double-clicking a project enters rename mode` and `renames a project fro
 ```ts
 it("keeps project rows navigation-only without rename affordances", async () => {
   const onOpenProject = vi.fn();
-  renderSidebar({ onOpenProject });
+  renderSidebar({
+    onOpenProject,
+    searchFilters: { ...allScopeFilters, scope: { kind: "project", project_uid: "project-finances" } },
+  });
 
   const finances = screen.getByRole("button", { name: /^Finances\b/ });
+  expect(finances).toHaveClass("active");
   expect(screen.queryByRole("button", { name: "Rename Finances" })).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Rename project" })).toBeNull();
 
@@ -299,81 +303,7 @@ git commit -m "feat: make Kata project rows navigation-only"
 
 ---
 
-### Task 3: Make the Issue Project Breadcrumb Passive
-
-**Files:**
-- Modify: `frontend/src/lib/components/kata/KataIssueDetail.test.ts`
-- Modify: `frontend/src/lib/components/kata/KataIssueDetail.svelte`
-
-**Interfaces:**
-- Preserves: `currentProjectName(): string` fallback order.
-- Removes: breadcrumb-owned destination picker; issue reassignment remains available through the unchanged `onMoveIssue` prop until Task 4 forwards it to the overflow menu.
-
-- [ ] **Step 1: Replace the breadcrumb-move test**
-
-Remove the existing `moves to a non-inbox project from the crumb picker` test. Add:
-
-```ts
-it("renders the current project as passive breadcrumb text", () => {
-  renderDetail();
-  const detail = screen.getByRole("region", { name: "Task detail" });
-
-  expect(within(detail).getByText("Inbox")).toBeTruthy();
-  expect(within(detail).queryByRole("button", { name: /^Move issue from/ })).toBeNull();
-  expect(within(detail).queryByRole("combobox", { name: "Move issue project" })).toBeNull();
-});
-```
-
-- [ ] **Step 2: Cover both fallback levels**
-
-Update the existing fallback test to assert loaded project name text, then add the final UID fallback:
-
-```ts
-it("uses the loaded project name when issue project_name is empty", () => {
-  renderDetail({ issue: makeIssue({ project_uid: "project-2", project_name: "" }) });
-  expect(screen.getByText("Roadmap")).toBeTruthy();
-});
-
-it("uses the project UID when no project name can be resolved", () => {
-  renderDetail({
-    issue: makeIssue({ project_id: 99, project_uid: "project-missing", project_name: "" }),
-    projects: [],
-  });
-  expect(screen.getByText("project-missing")).toBeTruthy();
-});
-```
-
-- [ ] **Step 3: Run the focused test to verify failure**
-
-```bash
-node ../node_modules/vite-plus/bin/vp test run --project unit src/lib/components/kata/KataIssueDetail.test.ts
-```
-
-Expected: FAIL because the project remains a `TypeaheadTrigger` button.
-
-- [ ] **Step 4: Render passive text**
-
-In `KataIssueDetail.svelte`, replace the breadcrumb `TypeaheadTrigger` with:
-
-```svelte
-<span class="crumb-project" title={currentProjectName()}>{currentProjectName()}</span>
-<span class="crumb-sep">/</span>
-<span class="crumb-id">{issue.issue.short_id}</span>
-```
-
-Keep `currentProjectName()` unchanged. Remove only breadcrumb-picker imports, options, and CSS; retain `TypeaheadTrigger` if other detail controls still use it. Style `.crumb-project` with truncation and muted text, without a border, hover state, cursor, or chevron.
-
-- [ ] **Step 5: Run and commit**
-
-```bash
-node ../node_modules/vite-plus/bin/vp test run --project unit src/lib/components/kata/KataIssueDetail.test.ts
-git add frontend/src/lib/components/kata/KataIssueDetail.svelte frontend/src/lib/components/kata/KataIssueDetail.test.ts
-git commit -m "feat: make Kata project breadcrumbs passive"
-```
-
----
-
-### Task 4: Move Issue Reassignment Into More Actions
+### Task 3: Move Issue Reassignment Into More Actions
 
 **Files:**
 - Modify: `frontend/src/lib/components/kata/KataIssueOverflowMenu.test.ts`
@@ -417,6 +347,8 @@ const projects = [
   makeProject("project-1", "Inbox", 2, "inbox"),
   makeProject("project-alpha", "Alpha", 3),
   makeProject("project-roadmap", "Roadmap", 5),
+  { ...makeProject("project-shared-work", "Shared", 2), metadata: { area: "Work" } },
+  { ...makeProject("project-shared-home", "Shared", 4), metadata: { area: "Home" } },
 ];
 ```
 
@@ -436,8 +368,10 @@ it("shows sorted eligible destinations with open counts", async () => {
   await fireEvent.click(screen.getByRole("button", { name: "More actions" }));
   await fireEvent.click(screen.getByRole("menuitem", { name: "Move to another project" }));
 
-  const options = screen.getAllByRole("button", { name: /Alpha|Roadmap/ });
-  expect(options.map((button) => button.textContent)).toEqual(["Alpha3", "Roadmap5"]);
+  const options = screen.getAllByRole("button", { name: /Alpha|Roadmap|Shared/ });
+  expect(options.slice(0, 2).map((button) => button.textContent)).toEqual(["Alpha3", "Roadmap5"]);
+  expect(screen.getByRole("button", { name: /Shared.*Home.*4/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Shared.*Work.*2/ })).toBeTruthy();
   expect(screen.queryByText("Inbox")).toBeNull();
 });
 ```
@@ -567,10 +501,28 @@ let eligibleProjects = $derived.by(() =>
     .toSorted((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
 );
 
+let duplicateNames = $derived.by(() => {
+  const counts = new Map<string, number>();
+  for (const project of eligibleProjects) {
+    const key = project.name.trim().toLocaleLowerCase();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+});
+
+function destinationContext(project: KataProjectSummary): string | null {
+  const duplicate = (duplicateNames.get(project.name.trim().toLocaleLowerCase()) ?? 0) > 1;
+  if (!duplicate) return null;
+  const area = typeof project.metadata.area === "string" ? project.metadata.area.trim() : "";
+  return area || project.uid;
+}
+
 let filteredProjects = $derived.by(() => {
   const query = moveQuery.trim().toLowerCase();
   return query
-    ? eligibleProjects.filter((project) => project.name.toLowerCase().includes(query))
+    ? eligibleProjects.filter((project) =>
+        [project.name, destinationContext(project) ?? ""].some((value) => value.toLowerCase().includes(query)),
+      )
     : eligibleProjects;
 });
 ```
@@ -602,17 +554,18 @@ When `menuView === "move"`, render a popover panel with honest dialog/list seman
     ariaLabel="Find project"
     placeholder="Search projects"
   />
-  <div class="move-options" role="listbox" aria-label="Project destinations">
+  <div class="move-options" aria-label="Project destinations">
     {#each filteredProjects as project (project.uid)}
       <button
         type="button"
-        role="option"
-        aria-selected="false"
         disabled={movingProjectUID !== null}
         onclick={() => void moveIssue(project.uid)}
       >
-        <span>{project.name}</span>
-        <span>{project.open_count}</span>
+        <span class="move-project-name">{project.name}</span>
+        {#if destinationContext(project)}
+          <span class="move-project-context">{destinationContext(project)}</span>
+        {/if}
+        <span class="move-project-count">{project.open_count}</span>
       </button>
     {:else}
       <p>No matching projects</p>
@@ -656,6 +609,80 @@ git add frontend/src/lib/components/kata/KataIssueOverflowMenu.svelte \
   frontend/src/lib/features/kata/KataWorkspace.svelte \
   frontend/src/lib/components/terminal/KataWorkspaceSidebarPane.svelte
 git commit -m "feat: move Kata reassignment into task actions"
+```
+
+---
+
+### Task 4: Make the Issue Project Breadcrumb Passive
+
+**Files:**
+- Modify: `frontend/src/lib/components/kata/KataIssueDetail.test.ts`
+- Modify: `frontend/src/lib/components/kata/KataIssueDetail.svelte`
+
+**Interfaces:**
+- Preserves: `currentProjectName(): string` fallback order.
+- Removes: breadcrumb-owned destination picker; issue reassignment is already available through the overflow menu added in Task 3 before the breadcrumb control is removed.
+
+- [ ] **Step 1: Replace the breadcrumb-move test**
+
+Remove the existing `moves to a non-inbox project from the crumb picker` test. Add:
+
+```ts
+it("renders the current project as passive breadcrumb text", () => {
+  renderDetail();
+  const detail = screen.getByRole("region", { name: "Task detail" });
+
+  expect(within(detail).getByText("Inbox")).toBeTruthy();
+  expect(within(detail).queryByRole("button", { name: /^Move issue from/ })).toBeNull();
+  expect(within(detail).queryByRole("combobox", { name: "Move issue project" })).toBeNull();
+});
+```
+
+- [ ] **Step 2: Cover both fallback levels**
+
+Update the existing fallback test to assert loaded project name text, then add the final UID fallback:
+
+```ts
+it("uses the loaded project name when issue project_name is empty", () => {
+  renderDetail({ issue: makeIssue({ project_uid: "project-2", project_name: "" }) });
+  expect(screen.getByText("Roadmap")).toBeTruthy();
+});
+
+it("uses the project UID when no project name can be resolved", () => {
+  renderDetail({
+    issue: makeIssue({ project_id: 99, project_uid: "project-missing", project_name: "" }),
+    projects: [],
+  });
+  expect(screen.getByText("project-missing")).toBeTruthy();
+});
+```
+
+- [ ] **Step 3: Run the focused test to verify failure**
+
+```bash
+node ../node_modules/vite-plus/bin/vp test run --project unit src/lib/components/kata/KataIssueDetail.test.ts
+```
+
+Expected: FAIL because the project remains a `TypeaheadTrigger` button.
+
+- [ ] **Step 4: Render passive text**
+
+In `KataIssueDetail.svelte`, replace the breadcrumb `TypeaheadTrigger` with:
+
+```svelte
+<span class="crumb-project" title={currentProjectName()}>{currentProjectName()}</span>
+<span class="crumb-sep">/</span>
+<span class="crumb-id">{issue.issue.short_id}</span>
+```
+
+Keep `currentProjectName()` unchanged. Remove only breadcrumb-picker imports, options, and CSS; retain `TypeaheadTrigger` if other detail controls still use it. Style `.crumb-project` with truncation and muted text, without a border, hover state, cursor, or chevron.
+
+- [ ] **Step 5: Run and commit**
+
+```bash
+node ../node_modules/vite-plus/bin/vp test run --project unit src/lib/components/kata/KataIssueDetail.test.ts
+git add frontend/src/lib/components/kata/KataIssueDetail.svelte frontend/src/lib/components/kata/KataIssueDetail.test.ts
+git commit -m "feat: make Kata project breadcrumbs passive"
 ```
 
 ---
@@ -799,7 +826,7 @@ test("kata project rows select scopes without rename controls", async ({ page })
 });
 ```
 
-Follow the surrounding tests’ concrete setup sequence: start `startKataBackend()`, call `configureKataHome(backend.url)`, start `startMiddlemanServer({ extraEnv: { KATA_HOME: kataHome.home } })`, navigate to `${server.info.base_url}/kata`, and restore/stop all handles in `finally`. Extract a helper only if at least three of the newly edited tests use the identical sequence.
+Follow the surrounding tests’ concrete setup sequence: start `startKataBackend()`, call `configureKataHome(backend.url)`, start `startIsolatedE2EServer()`, navigate to `${server.info.base_url}/kata`, and restore/stop all handles in `finally`. Extract a helper only if at least three of the newly edited tests use the identical sequence.
 
 - [ ] **Step 3: Add the double-click regression**
 
@@ -834,21 +861,72 @@ await expect(page.getByRole("button", { name: /^Work\s+1$/ })).toHaveAttribute("
 
 Keep project creation, system-view switching, and inbox-project hiding tests.
 
-- [ ] **Step 5: Move the real-daemon reassignment flow**
+- [ ] **Step 5: Move the real-daemon reassignment flow with keyboard selection**
 
 Rename the existing breadcrumb move test to `kata More actions moves tasks through the configured external daemon` and change only the UI path:
 
 ```ts
-await page.getByRole("button", { name: "More actions" }).click();
-await page.getByRole("menuitem", { name: "Move to another project" }).click();
-await page.getByRole("searchbox", { name: "Find project" }).fill("kat");
-await page.getByRole("option", { name: /Kata/ }).click();
+const moreActions = page.getByRole("button", { name: "More actions" });
+await moreActions.focus();
+await page.keyboard.press("Enter");
+await page.getByRole("menuitem", { name: "Move to another project" }).press("Enter");
+const search = page.getByRole("searchbox", { name: "Find project" });
+await search.fill("kat");
+await page.keyboard.press("Tab");
+await page.keyboard.press("Enter");
 await expect(page.getByText("Kata", { exact: true })).toBeVisible();
 ```
 
 Retain the existing assertions for `POST /api/v1/projects/1/issues/issue-rent/actions/move` and backend state changing to the Kata project.
 
-- [ ] **Step 6: Add narrow-width keyboard cancellation**
+- [ ] **Step 6: Add full-stack failure and retry coverage**
+
+Add `moveFailures?: number[] | undefined` to `KataBackendOptions`, add required `moveFailures: number[]` to `BackendState`, initialize it in `startKataBackend` with `moveFailures: [...(options.moveFailures ?? [])]`, and consume the next status in the move-action handler before mutating state:
+
+```ts
+const moveFailure = state.moveFailures.shift();
+if (moveFailure !== undefined) {
+  writeJSON(res, moveFailure, {
+    error: { code: "internal", message: "move failed" },
+  });
+  return;
+}
+```
+
+Add:
+
+```ts
+test("kata move failure stays retryable through the configured external daemon", async ({ page }) => {
+  const backend = await startKataBackend({ moveFailures: [500] });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?issue=issue-rent`);
+    const detail = page.getByRole("region", { name: "Task detail" });
+    await detail.getByRole("button", { name: "More actions" }).click();
+    await detail.getByRole("menuitem", { name: "Move to another project" }).click();
+    await detail.getByRole("searchbox", { name: "Find project" }).fill("kat");
+    await detail.getByRole("button", { name: /Kata/ }).click();
+
+    await expect(page.getByRole("alert")).toContainText("move failed");
+    await expect(detail.getByRole("dialog", { name: "Move to another project" })).toBeVisible();
+    expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")?.project_uid).toBe("project-finance");
+
+    await detail.getByRole("button", { name: /Kata/ }).click();
+    await expect(detail.getByText("Kata", { exact: true })).toBeVisible();
+    expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")?.project_uid).toBe("project-kata");
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+```
+
+Assert the actual workspace error wording emitted by the implementation if it wraps the daemon message; branch on the stable visible alert, not a CSS selector.
+
+- [ ] **Step 7: Add narrow-width keyboard cancellation**
 
 ```ts
 test("kata move picker dismisses at narrow width without moving", async ({ page }) => {
@@ -875,7 +953,7 @@ test("kata move picker dismisses at narrow width without moving", async ({ page 
 
 Use the same backend/home/server setup as the surrounding test, navigate directly to `${server.info.base_url}/kata?issue=issue-rent`, and wait for `page.getByRole("region", { name: "Task detail" })` before interacting.
 
-- [ ] **Step 7: Run targeted full-stack tests**
+- [ ] **Step 8: Run targeted full-stack tests**
 
 ```bash
 node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts --grep "kata (sidebar|project|More actions|move picker)"
@@ -883,7 +961,7 @@ node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts --grep "kata (side
 
 Expected: PASS in both configured browser projects. During iteration, `--project=chromium` is acceptable, but this two-browser command must pass before commit.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add frontend/tests/e2e-full/kata.spec.ts

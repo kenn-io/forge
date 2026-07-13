@@ -3,7 +3,7 @@
   import { groupByWorkflow } from "../../stores/workflow.svelte.js";
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
-  import SidebarScrollArea from "../shared/SidebarScrollArea.svelte";
+  import ScrollBox from "../shared/ScrollBox.svelte";
   import PullItem from "./PullItem.svelte";
   import { Chip, SearchInput } from "@kenn-io/kit-ui";
   import { FilterDropdown } from "@kenn-io/kit-ui";
@@ -424,7 +424,7 @@
   {#if pulls.getFilterState() !== "open"}
     <p class="state-note">Showing items closed after middleman began tracking them</p>
   {/if}
-  <SidebarScrollArea
+  <ScrollBox
     dataTest="pr-list"
     label="Pull requests"
     class={[
@@ -502,7 +502,7 @@
         {/each}
       {/if}
     {/if}
-  </SidebarScrollArea>
+  </ScrollBox>
   {#if needsFallbackFileList}
     <div class="diff-files-wrap">
                   <DiffSidebar showCommits={false} />

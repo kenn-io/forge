@@ -2,7 +2,7 @@
   import { getStores, getNavigate, getSidebar } from "../../context.js";
   import IssueItem from "./IssueItem.svelte";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
-  import SidebarScrollArea from "../shared/SidebarScrollArea.svelte";
+  import ScrollBox from "../shared/ScrollBox.svelte";
   import { Chip, SearchInput } from "@kenn-io/kit-ui";
   import { FilterDropdown } from "@kenn-io/kit-ui";
   import { SidebarToggle } from "@kenn-io/kit-ui";
@@ -209,7 +209,7 @@
   {#if issues.getIssueFilterState() !== "open"}
     <p class="state-note">Showing items closed after middleman began tracking them</p>
   {/if}
-  <SidebarScrollArea class="list-body" label="Issues">
+  <ScrollBox class="list-body" label="Issues">
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
       <p class="state-message">No repositories configured.<br />
         {#if !isEmbedded()}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}</p>
@@ -260,7 +260,7 @@
         {/each}
       {/if}
     {/if}
-  </SidebarScrollArea>
+  </ScrollBox>
   <div class="sidebar-footer">
     {#if !isEmbedded()}
       <button class="add-repo-link" onclick={() => navigate("/settings")}>

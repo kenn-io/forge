@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getScrollIndicatorGeometry } from "./sidebarScrollIndicator.js";
+import { getScrollIndicatorGeometry } from "./scrollIndicator.js";
 
 describe("getScrollIndicatorGeometry", () => {
   it("hides the indicator when content fits", () => {

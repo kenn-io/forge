@@ -57,36 +57,6 @@ export interface ApplySuggestionConflict {
   number: number;
 }
 
-const PENDING_SUGGESTION_RECONCILIATIONS_KEY = "middleman:pendingSuggestionReconciliations";
-
-function readPendingSuggestionReconciliations(): Record<string, boolean> {
-  try {
-    const raw = localStorage.getItem(PENDING_SUGGESTION_RECONCILIATIONS_KEY);
-    if (raw === null) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed).filter(
-        (entry): entry is [string, boolean] => typeof entry[0] === "string" && entry[1] === true,
-      ),
-    );
-  } catch {
-    return {};
-  }
-}
-
-function writePendingSuggestionReconciliations(value: Record<string, boolean>): void {
-  try {
-    if (Object.keys(value).length === 0) {
-      localStorage.removeItem(PENDING_SUGGESTION_RECONCILIATIONS_KEY);
-      return;
-    }
-    localStorage.setItem(PENDING_SUGGESTION_RECONCILIATIONS_KEY, JSON.stringify(value));
-  } catch {
-    // Keep the in-memory lock when durable browser storage is unavailable.
-  }
-}
-
 function apiErrorMessage(error: { detail?: string; title?: string }, fallback: string): string {
   return error.detail ?? error.title ?? fallback;
 }
@@ -145,8 +115,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
   let syncGeneration = 0;
   let selectionGeneration = 0;
   let activeSelectionKey: string | null = null;
-  let pendingSuggestionReconciliations = $state<Record<string, boolean>>(readPendingSuggestionReconciliations());
-  const suggestionReconciliationPromises = new Map<string, Promise<boolean>>();
   // Tracks the PR (if any) whose local body has been edited since
   // the last server confirmation. While set, background sync paths
   // preserve the local body when applying refreshed server data for
@@ -323,77 +291,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
     );
   }
 
-  function suggestionReconciliationKey(ref: DetailRequestRef): string {
-    return prKey(ref);
-  }
-
-  function setSuggestionReconciliationPending(ref: DetailRequestRef, pending: boolean): void {
-    const key = suggestionReconciliationKey(ref);
-    if (pending) {
-      pendingSuggestionReconciliations = { ...pendingSuggestionReconciliations, [key]: true };
-      writePendingSuggestionReconciliations(pendingSuggestionReconciliations);
-      return;
-    }
-    const { [key]: _removed, ...remaining } = pendingSuggestionReconciliations;
-    pendingSuggestionReconciliations = remaining;
-    writePendingSuggestionReconciliations(pendingSuggestionReconciliations);
-  }
-
-  function isSuggestionReconciliationPending(owner: string, name: string, number: number): boolean {
-    if (!detail) return false;
-    const ref = currentDetailRef(owner, name, number);
-    return pendingSuggestionReconciliations[suggestionReconciliationKey(ref)] === true;
-  }
-
-  function reconcileAppliedSuggestion(
-    owner: string,
-    name: string,
-    number: number,
-    ref: DetailRequestRef,
-  ): Promise<boolean> {
-    const key = suggestionReconciliationKey(ref);
-    const existing = suggestionReconciliationPromises.get(key);
-    if (existing) return existing;
-
-    // Supersede any ordinary refresh that could reinstall the pre-mutation
-    // snapshot. Later same-route loads see the pending marker and remain
-    // fail-closed until this authoritative sync finishes.
-    ++syncGeneration;
-    const selectionAtStart = selectionGeneration;
-    const promise = (async () => {
-      try {
-        const { data, error: requestError } = await apiClient.POST(providerItemPath("pulls", ref, "/sync"), {
-          params: { path: { ...providerRouteParams(ref), number: ref.number } },
-        });
-        if (selectionAtStart !== selectionGeneration || !isDetailShowingRef(ref)) return false;
-        if (requestError || !data) {
-          storeError = requestError
-            ? apiErrorMessage(requestError, "Could not reconcile the applied suggestion")
-            : "Could not reconcile the applied suggestion";
-          return false;
-        }
-        detail = withPreservedLocalBody({
-          ...data,
-          events: data.events ?? [],
-        } as PullDetail);
-        detailLoaded = data.detail_loaded ?? detailLoaded;
-        storeError = null;
-        setSuggestionReconciliationPending(ref, false);
-        await refreshPullsIfActive();
-        return true;
-      } catch (err) {
-        if (selectionAtStart === selectionGeneration && isDetailShowingRef(ref)) {
-          storeError = err instanceof Error ? err.message : String(err);
-        }
-        return false;
-      } finally {
-        suggestionReconciliationPromises.delete(key);
-      }
-    })();
-    suggestionReconciliationPromises.set(key, promise);
-    return promise;
-  }
-
   function currentDetailRef(owner: string, name: string, number: number): DetailRequestRef {
     if (!detail?.repo?.provider || !detail.repo.repo_path) {
       throw new Error("pull detail missing provider repo identity");
@@ -539,11 +436,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
       activeSelectionKey = key;
       ++selectionGeneration;
     }
-    const activeReconciliation = suggestionReconciliationPromises.get(key);
-    if (activeReconciliation) {
-      await activeReconciliation;
-      if (activeSelectionKey !== key) return;
-    }
     if (loading && activeLoad?.key === key && activeLoad.promise !== null) {
       activeLoad.syncMode = strongerSyncMode(activeLoad.syncMode, syncMode);
       activeLoad.workflowApprovalSync ||= options.workflowApprovalSync ?? true;
@@ -596,10 +488,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
             } as PullDetail)
           : null;
         detailLoaded = data?.detail_loaded ?? false;
-        if (detail && pendingSuggestionReconciliations[suggestionReconciliationKey(requestRef)] === true) {
-          await reconcileAppliedSuggestion(owner, name, number, requestRef);
-          if (activeSelectionKey === key) loading = false;
-        }
       } catch (err) {
         if (gen !== syncGeneration) return;
         storeError = err instanceof Error ? err.message : String(err);
@@ -686,9 +574,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
     identity: DetailRequestOptions,
   ): Promise<boolean> {
     const ref = detailRequestRef(owner, name, number, identity);
-    if (pendingSuggestionReconciliations[suggestionReconciliationKey(ref)] === true) {
-      return reconcileAppliedSuggestion(owner, name, number, ref);
-    }
     activeLoad = null;
     const gen = ++syncGeneration;
     return syncDetail(owner, name, number, gen, ref);
@@ -1375,13 +1260,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
       );
       if (requestSelectionGeneration !== selectionGeneration || !isDetailShowingRef(ref)) {
         if (requestError) return false;
-        setSuggestionReconciliationPending(ref, true);
         showFlash("Suggestion was applied after navigation. Refresh before applying it again.", {
           tone: "warning",
         });
-        if (isDetailShowingRef(ref)) {
-          await reconcileAppliedSuggestion(owner, name, number, ref);
-        }
         return true;
       }
       if (requestError) {
@@ -1415,8 +1296,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
       return false;
     }
-    setSuggestionReconciliationPending(ref, true);
-    await reconcileAppliedSuggestion(owner, name, number, ref);
+    const refreshGeneration = ++syncGeneration;
+    await syncDetail(owner, name, number, refreshGeneration, ref);
     return true;
   }
 
@@ -1447,7 +1328,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
     editComment,
     deleteComment,
     replyToDiscussion,
-    isSuggestionReconciliationPending,
     applyReviewSuggestions,
   };
 }

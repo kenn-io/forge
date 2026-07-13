@@ -725,12 +725,7 @@
   // mutation establishes a fresh workflow context.
   const headActionsBlocked = $derived(stateConflict !== null);
   const headMutationInFlight = $derived(headMutationCount > 0);
-  const suggestionReconciliationPending = $derived(
-    detailStore.isSuggestionReconciliationPending?.(owner, name, number) ?? false,
-  );
-  const headActionsUnavailable = $derived(
-    headActionsBlocked || headMutationInFlight || suggestionReconciliationPending,
-  );
+  const headActionsUnavailable = $derived(headActionsBlocked || headMutationInFlight);
 
   function handleHeadMutationChange(active: boolean): void {
     headMutationCount = Math.max(0, headMutationCount + (active ? 1 : -1));

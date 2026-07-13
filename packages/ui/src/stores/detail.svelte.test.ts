@@ -366,7 +366,7 @@ describe("createDetailStore", () => {
     expect(store.getDetailError()).toBe("pull request state changed");
   });
 
-  it("reconciles a successful suggestion response after an A-to-B-to-A route cycle", async () => {
+  it("does not retain a pending suggestion reconciliation after navigation", async () => {
     let resolveApply!: (value: { data: { status: string }; error: undefined }) => void;
     const applyResponse = new Promise<{ data: { status: string }; error: undefined }>((resolve) => {
       resolveApply = resolve;
@@ -380,7 +380,6 @@ describe("createDetailStore", () => {
     });
     const post = vi.fn((path: string) => {
       if (path.endsWith("/review-suggestions/apply")) return applyResponse;
-      if (path.endsWith("/sync")) return Promise.resolve({ data: pullDetail("applied-head"), error: undefined });
       return Promise.resolve({ error: undefined });
     });
     const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
@@ -402,51 +401,12 @@ describe("createDetailStore", () => {
     await expect(applying).resolves.toBe(true);
     expect(store.getDetail()?.repo_name).toBe("other-widget");
     await load("widget", 7);
-    expect(store.getDetail()?.platform_head_sha).toBe("applied-head");
+    expect(store.getDetail()?.platform_head_sha).toBe("reviewed-head");
+    expect(post.mock.calls.some(([path]) => String(path).endsWith("/sync"))).toBe(false);
     expect(getFlash()).toMatchObject({
       message: "Suggestion was applied after navigation. Refresh before applying it again.",
       tone: "warning",
     });
-  });
-
-  it("keeps post-success reconciliation authoritative over a later same-pull load", async () => {
-    let resolveSync!: (value: { data: PullDetail; error: undefined }) => void;
-    const syncResponse = new Promise<{ data: PullDetail; error: undefined }>((resolve) => {
-      resolveSync = resolve;
-    });
-    let reconciled = false;
-    const get = vi.fn(async () => ({
-      data: pullDetail(reconciled ? "applied-head" : "stale-cached-head"),
-    }));
-    const post = vi.fn((path: string) => {
-      if (path.endsWith("/review-suggestions/apply")) {
-        return Promise.resolve({ data: { status: "applied" }, error: undefined });
-      }
-      if (path.endsWith("/sync")) return syncResponse;
-      return Promise.resolve({ error: undefined });
-    });
-    const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
-    const options = {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-      sync: false as const,
-    };
-    await store.loadDetail("acme", "widget", 7, options);
-
-    const applying = store.applyReviewSuggestions("acme", "widget", 7, {
-      suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
-    });
-    await vi.waitFor(() => expect(post.mock.calls.some(([path]) => String(path).endsWith("/sync"))).toBe(true));
-    const loading = store.loadDetail("acme", "widget", 7, options);
-    expect(get).toHaveBeenCalledTimes(1);
-    reconciled = true;
-    resolveSync({ data: pullDetail("applied-head"), error: undefined });
-
-    await expect(applying).resolves.toBe(true);
-    await loading;
-    expect(store.getDetail()?.platform_head_sha).toBe("applied-head");
-    expect(store.isSuggestionReconciliationPending("acme", "widget", 7)).toBe(false);
   });
 
   it("fails closed when apply-suggestion conflict refresh returns no detail", async () => {

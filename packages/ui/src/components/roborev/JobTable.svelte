@@ -3,6 +3,7 @@
   import { getStores } from "../../context.js";
   import { isPanelParent } from "../../utils/roborev-panel.js";
   import JobRow from "./JobRow.svelte";
+  import ScrollBox from "../shared/ScrollBox.svelte";
 
   const stores = getStores();
   const jobsStore = stores.roborevJobs;
@@ -69,7 +70,7 @@
   }
 </script>
 
-<div class="table-wrapper">
+<ScrollBox class="table-wrapper" label="Review jobs">
   <table class="job-table">
     <thead>
       <tr>
@@ -176,14 +177,9 @@
       </button>
     </div>
   {/if}
-</div>
+</ScrollBox>
 
 <style>
-  .table-wrapper {
-    overflow-y: auto;
-    flex: 1;
-  }
-
   .job-table {
     width: 100%;
     border-collapse: collapse;

@@ -7,6 +7,7 @@
     type ItemFilter,
     type TimeRange,
   } from "../stores/activity.svelte.js";
+  import ScrollBox from "../components/shared/ScrollBox.svelte";
   import { parseAPITimestamp } from "../utils/time.js";
   import { Chip, SearchInput } from "@kenn-io/kit-ui";
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";
@@ -357,6 +358,7 @@
 </script>
 
 <section class="mobile-activity-inbox" aria-label="Mobile activity inbox">
+  <ScrollBox label="Activity inbox">
   <div class="mobile-activity-scroll">
     <header class="mobile-activity-hero">
       <p class="mobile-activity-eyebrow">
@@ -535,6 +537,7 @@
       </div>
     {/if}
   </div>
+  </ScrollBox>
 </section>
 
 <style>
@@ -555,6 +558,8 @@
     --mobile-hit-target: 45.5px;
     container-type: inline-size;
     font-size: var(--font-size-md);
+    display: flex;
+    flex-direction: column;
     flex: 1;
     min-height: 0;
     overflow: hidden;
@@ -562,8 +567,6 @@
   }
 
   .mobile-activity-scroll {
-    height: 100%;
-    overflow-y: auto;
     padding:
       var(--mobile-space-md)
       var(--mobile-space-sm)

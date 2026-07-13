@@ -426,7 +426,7 @@
 
   .sidebar-reviews-table {
     flex: 1;
-    overflow-y: auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
   }

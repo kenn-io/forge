@@ -3,6 +3,7 @@
   import { getStores, getNavigate, getActions } from "../context.js";
   import { groupByWorkflow } from "../stores/workflow.svelte.js";
   import PullItem from "../components/sidebar/PullItem.svelte";
+  import ScrollBox from "../components/shared/ScrollBox.svelte";
   import IssueItem from "../components/sidebar/IssueItem.svelte";
   import type { Issue, PullRequest } from "../api/types.js";
   import {
@@ -238,7 +239,7 @@
     </p>
   {/if}
 
-  <div class="list-body">
+  <ScrollBox label="Focus list">
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
       <p class="state-message">No repositories configured.</p>
     {:else if listType === "mrs"}
@@ -313,7 +314,7 @@
         {/each}
       {/if}
     {/if}
-  </div>
+  </ScrollBox>
 </div>
 
 <style>
@@ -456,11 +457,6 @@
     padding: 4px 10px;
     margin: 0;
     border-bottom: 1px solid var(--border-muted);
-  }
-
-  .list-body {
-    flex: 1;
-    overflow-y: auto;
   }
 
   .state-message {

@@ -938,7 +938,7 @@ describe("KataWorkspace", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy();
     });
-    const nav = within(screen.getByLabelText("Kata navigation"));
+    const nav = within(screen.getByRole("complementary", { name: "Kata navigation" }));
     expect(nav.getByRole("button", { name: /^Finances\s+1$/ })).toBeTruthy();
     expect(screen.getByText("Pay rent body")).toBeTruthy();
 

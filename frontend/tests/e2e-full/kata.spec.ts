@@ -1624,8 +1624,25 @@ test("kata reachable graph renders and selects tasks through the configured exte
       });
     await selectGraphFilterItem(graph, "depth-full");
     await expect
-      .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.depthLimit))
-      .toBe("full");
+      .poll(() =>
+        page.evaluate(() => {
+          const latest = window.__middleman_kata_graph_debug?.snapshot().latestGraph;
+          return latest
+            ? {
+                depthLimit: latest.depthLimit,
+                hasDeepFollowUp: latest.nodeIds.includes("issue-deep-follow-up"),
+                edgeCount: latest.edgeCount,
+                layoutEdgeCount: latest.layoutEdgeCount,
+              }
+            : null;
+        }),
+      )
+      .toMatchObject({
+        depthLimit: "full",
+        hasDeepFollowUp: true,
+        edgeCount: 4,
+        layoutEdgeCount: 3,
+      });
     const fullSnapshotBeforeContext = await page.evaluate(() => {
       const latest = window.__middleman_kata_graph_debug?.snapshot().latestGraph;
       return latest

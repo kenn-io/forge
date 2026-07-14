@@ -6,7 +6,7 @@
   import LayersIcon from "@lucide/svelte/icons/layers";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import StarIcon from "@lucide/svelte/icons/star";
-  import { GroupedSidebarSection, SidebarScrollArea } from "@middleman/ui";
+  import { GroupedSidebarSection, ScrollBox } from "@middleman/ui";
 
   import type { KataProjectSummary, KataTaskSearchFilters, KataTaskViewName } from "../../api/kata/taskTypes.js";
   import type { KataAreaSummary, KataCurrentView } from "../../stores/kata-workspace.svelte.js";
@@ -102,7 +102,7 @@
 </script>
 
 <aside class="kata-sidebar" aria-label="Kata navigation">
-  <SidebarScrollArea label="Kata navigation">
+  <ScrollBox label="Kata navigation">
     <nav class="kata-nav" aria-label="System views">
     {#each systemViews as view (view.name)}
       {@const Icon = view.icon}
@@ -181,7 +181,7 @@
       </button>
       {/if}
     </div>
-  </SidebarScrollArea>
+  </ScrollBox>
 </aside>
 
 <style>

@@ -15,7 +15,7 @@ func TestClassifyPushURLDriveLetterPaths(t *testing.T) {
 	// URL for a single-letter host.
 	gitParsesDrivePaths = false
 	t.Cleanup(func() { gitParsesDrivePaths = false })
-	class, err := classifyPushURL(root, `C:/evil.git`)
+	class, err := classifyRemoteURL(root, `C:/evil.git`, "push")
 	require.NoError(t, err)
 	assert.Equal(pushTargetNetwork, class)
 
@@ -24,7 +24,7 @@ func TestClassifyPushURLDriveLetterPaths(t *testing.T) {
 	// hardening), never the network one.
 	gitParsesDrivePaths = true
 	for _, raw := range []string{`C:\evil.git`, `C:/evil.git`, `c:relative.git`, `file:///C:/evil.git`} {
-		class, err := classifyPushURL(root, raw)
+		class, err := classifyRemoteURL(root, raw, "push")
 		if err == nil {
 			assert.Equal(pushTargetLocal, class, "url %s classified as network", raw)
 		}
@@ -33,4 +33,22 @@ func TestClassifyPushURLDriveLetterPaths(t *testing.T) {
 	assert.False(hasDriveLetterPrefix("host:path"))
 	assert.False(hasDriveLetterPrefix("ab:path"))
 	assert.True(hasDriveLetterPrefix(`Z:\x`))
+}
+
+func TestClassifyRemoteURLLabelsDirection(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	root := t.TempDir()
+
+	_, pushErr := classifyRemoteURL(root, "ext::sh -c true", "push")
+	require.Error(pushErr)
+	assert.Contains(pushErr.Error(), "push url ext::sh -c true")
+
+	_, fetchErr := classifyRemoteURL(root, "ext::sh -c true", "fetch")
+	require.Error(fetchErr)
+	assert.Contains(fetchErr.Error(), "fetch url ext::sh -c true")
+
+	_, insideErr := classifyRemoteURL(root, root, "fetch")
+	require.Error(insideErr)
+	assert.Contains(insideErr.Error(), "fetch target resolves inside the docs folder")
 }

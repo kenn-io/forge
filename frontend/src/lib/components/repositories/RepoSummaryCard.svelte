@@ -1,7 +1,6 @@
 <script lang="ts">
   import { Button, Chip, operationGate } from "@middleman/ui";
-  import type { ChipTone } from "@kenn-io/kit-ui";
-  import { formatRelativeTime } from "@kenn-io/kit-ui";
+  import { Card, formatRelativeTime, type ChipTone } from "@kenn-io/kit-ui";
   import { ExternalLinkIcon, FolderTreeIcon } from "../../icons.js";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import RepoMetricGrid from "./RepoMetricGrid.svelte";
@@ -183,47 +182,48 @@
 
 <svelte:document onclick={handleDocumentClick} />
 
-<article class="repo-card" aria-labelledby={`repo-${stateKey}`} bind:this={cardElement}>
-  <div class="repo-card__header">
+<article aria-labelledby={`repo-${stateKey}`} bind:this={cardElement}>
+  <Card level="raised" padding="none" class="repo-card">
+    <div class="repo-card__header">
       <div class="repo-card__identity">
-      <div class="repo-card__name-row">
-        {#if showProviderIcon}
-          <ProviderIcon
-            provider={summary.repo.provider}
-            size={16}
-            class="repo-card__provider-icon"
-          />
+        <div class="repo-card__name-row">
+          {#if showProviderIcon}
+            <ProviderIcon
+              provider={summary.repo.provider}
+              size={16}
+              class="repo-card__provider-icon"
+            />
+          {/if}
+          <button
+            id={`repo-${stateKey}`}
+            class="repo-card__name"
+            onclick={onviewprs}
+          >
+            <span>{summary.owner}</span>
+            <span class="repo-card__slash">/</span>
+            <span>{summary.name}</span>
+          </button>
+          <a
+            class="repo-card__gh-link"
+            href={repoURL}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`Open on ${summary.platform_host}`}
+            aria-label={`Open ${summary.owner}/${summary.name} on ${summary.platform_host}`}
+          >
+            <ExternalLinkIcon
+              size="14"
+              strokeWidth="2"
+              aria-hidden="true"
+            />
+          </a>
+        </div>
+        {#if showPlatformHost}
+          <Chip size="xs" tone="muted" uppercase={false}>
+            {summary.platform_host}
+          </Chip>
         {/if}
-        <button
-          id={`repo-${stateKey}`}
-          class="repo-card__name"
-          onclick={onviewprs}
-        >
-          <span>{summary.owner}</span>
-          <span class="repo-card__slash">/</span>
-          <span>{summary.name}</span>
-        </button>
-        <a
-          class="repo-card__gh-link"
-          href={repoURL}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={`Open on ${summary.platform_host}`}
-          aria-label={`Open ${summary.owner}/${summary.name} on ${summary.platform_host}`}
-        >
-          <ExternalLinkIcon
-            size="14"
-            strokeWidth="2"
-            aria-hidden="true"
-          />
-        </a>
       </div>
-      {#if showPlatformHost}
-        <Chip size="xs" tone="muted" uppercase={false}>
-          {summary.platform_host}
-        </Chip>
-      {/if}
-    </div>
 
     <div class="repo-card__actions">
       <Button
@@ -380,16 +380,12 @@
       <span>Not synced yet</span>
     {/if}
   </footer>
+  </Card>
 </article>
 
 <style>
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .repo-card {
+  :global(.repo-card) {
     overflow: hidden;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-lg);
-    background: var(--bg-surface);
-    box-shadow: var(--shadow-sm);
   }
 
   .repo-card__header {

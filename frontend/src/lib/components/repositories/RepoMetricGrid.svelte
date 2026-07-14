@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Card } from "@kenn-io/kit-ui";
   import type { RepoMetric } from "./repoSummary.js";
 
   interface Props {
@@ -10,37 +11,47 @@
   let { metrics, compact = false, strip = false }: Props = $props();
 </script>
 
-<div
-  class={[
-    "repo-metrics",
-    {
-      "repo-metrics--compact": compact,
-      "repo-metrics--strip": strip,
-    },
-  ]}
->
-  {#each metrics as metric (metric.label)}
-    {#if metric.onclick}
-      <button
-        type="button"
-        class={[
-          "repo-metric",
-          "repo-metric--action",
-          `repo-metric--${metric.tone ?? "neutral"}`,
-        ]}
-        onclick={metric.onclick}
-      >
-        <span class="repo-metric__value">{metric.value}</span>
-        <span class="repo-metric__label">{metric.label}</span>
-      </button>
-    {:else}
-      <div class={["repo-metric", `repo-metric--${metric.tone ?? "neutral"}`]}>
-        <span class="repo-metric__value">{metric.value}</span>
-        <span class="repo-metric__label">{metric.label}</span>
-      </div>
-    {/if}
-  {/each}
-</div>
+{#snippet metricGrid()}
+  <div
+    class={[
+      "repo-metrics",
+      {
+        "repo-metrics--compact": compact,
+        "repo-metrics--strip": strip,
+      },
+    ]}
+  >
+    {#each metrics as metric (metric.label)}
+      {#if metric.onclick}
+        <button
+          type="button"
+          class={[
+            "repo-metric",
+            "repo-metric--action",
+            `repo-metric--${metric.tone ?? "neutral"}`,
+          ]}
+          onclick={metric.onclick}
+        >
+          <span class="repo-metric__value">{metric.value}</span>
+          <span class="repo-metric__label">{metric.label}</span>
+        </button>
+      {:else}
+        <div class={["repo-metric", `repo-metric--${metric.tone ?? "neutral"}`]}>
+          <span class="repo-metric__value">{metric.value}</span>
+          <span class="repo-metric__label">{metric.label}</span>
+        </div>
+      {/if}
+    {/each}
+  </div>
+{/snippet}
+
+{#if strip}
+  <Card level="raised" padding="none" class="repo-metrics-card">
+    {@render metricGrid()}
+  </Card>
+{:else}
+  {@render metricGrid()}
+{/if}
 
 <style>
   .repo-metrics {
@@ -56,15 +67,13 @@
     border-bottom: 1px solid var(--border-muted);
   }
 
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
+  :global(.repo-metrics-card) {
+    overflow: hidden;
+  }
+
   .repo-metrics--strip {
     grid-template-columns: repeat(5, minmax(92px, 1fr));
     gap: 0;
-    overflow: hidden;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-lg);
-    background: var(--bg-surface);
-    box-shadow: var(--shadow-sm);
   }
 
   .repo-metric {

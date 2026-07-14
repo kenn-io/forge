@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from "@middleman/ui";
+  import { Card } from "@kenn-io/kit-ui";
 
   interface Props {
     title: string;
@@ -18,7 +19,7 @@
   }: Props = $props();
 </script>
 
-<div class={["repo-state", `repo-state--${tone}`]}>
+<Card level="raised" padding="md" class={["repo-state", `repo-state--${tone}`].join(" ")}>
   <h2>{title}</h2>
   <p>{message}</p>
   {#if actionLabel && onaction}
@@ -26,20 +27,14 @@
       {actionLabel}
     </Button>
   {/if}
-</div>
+</Card>
 
 <style>
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .repo-state {
+  :global(.repo-state) {
     max-width: 520px;
-    padding: 20px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-lg);
-    background: var(--bg-surface);
-    box-shadow: var(--shadow-sm);
   }
 
-  .repo-state--error {
+  :global(.repo-state--error) {
     border-color: color-mix(
       in srgb,
       var(--accent-red) 38%,
@@ -47,14 +42,14 @@
     );
   }
 
-  .repo-state h2 {
+  :global(.repo-state) h2 {
     margin-bottom: 6px;
     color: var(--text-primary);
     font-size: var(--font-size-lg);
     font-weight: 600;
   }
 
-  .repo-state p {
+  :global(.repo-state) p {
     margin-bottom: 12px;
     color: var(--text-secondary);
   }

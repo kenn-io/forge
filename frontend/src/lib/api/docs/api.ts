@@ -255,6 +255,8 @@ function docsErrorCodeFromEnvelope(
         return "pull_failed";
       case "gitOperationInProgress":
         return "git_operation_in_progress";
+      case "notGitRepo":
+        return "not_a_git_repo";
       case "conflict":
         return "conflict";
       case "alreadyExists":

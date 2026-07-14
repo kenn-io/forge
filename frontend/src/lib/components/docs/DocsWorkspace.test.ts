@@ -450,6 +450,49 @@ describe("DocsWorkspace", () => {
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("diverged"));
   });
 
+  test("a pull resolving while the editor is open does not reload the doc over the draft", async () => {
+    const backend = createMockDocsBackend();
+    let resolvePull!: (v: {
+      branch: string;
+      upstream: string;
+      up_to_date: boolean;
+      commit: string;
+      short_commit: string;
+    }) => void;
+    const gitPull = vi.fn(
+      () =>
+        new Promise<{
+          branch: string;
+          upstream: string;
+          up_to_date: boolean;
+          commit: string;
+          short_commit: string;
+        }>((resolve) => {
+          resolvePull = resolve;
+        }),
+    );
+    const readFile = vi.fn(backend.readFile);
+    const api = { ...backend, readFile, gitPull };
+    const route: DocsRoute = { mode: "docs", folder: "notes", doc: "README.md" };
+    render(DocsWorkspace, { props: { route, onRouteChange: vi.fn(), api } });
+    await waitFor(() => expect(screen.getByRole("heading", { name: /Welcome to Notes/ })).toBeTruthy());
+    await fireEvent.click(screen.getByRole("button", { name: "Pull from git" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await screen.findByRole("button", { name: "Cancel" });
+    const readsBeforeResolve = readFile.mock.calls.length;
+    resolvePull({
+      branch: "main",
+      upstream: "origin/main",
+      up_to_date: true,
+      commit: "0000000000000000000000000000000000000000",
+      short_commit: "0000000",
+    });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Already up to date."));
+    // Still in the editor, and the doc was not re-fetched underneath it.
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+    expect(readFile.mock.calls.length).toBe(readsBeforeResolve);
+  });
+
   test("pull button is disabled while the editor is open", async () => {
     renderWorkspace({ folder: "notes", doc: "README.md" });
     await waitFor(() => expect(screen.getByRole("heading", { name: /Welcome to Notes/ })).toBeTruthy());

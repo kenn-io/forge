@@ -923,20 +923,29 @@
   }
 
   async function pullFromGit() {
-    if (!route.folder || pulling) return;
+    const folderID = route.folder;
+    if (!folderID || pulling) return;
     pulling = true;
     try {
-      const result = await api.gitPull(route.folder);
-      await loadTree(route.folder);
-      await loadGitStatus(route.folder);
-      // The pulled commit may have rewritten the open document on disk.
-      if (route.doc) await loadDoc(route.folder, route.doc);
+      const result = await api.gitPull(folderID);
+      // The user may have switched folders while the pull ran; a refresh
+      // or notice for the initiating folder would then describe the wrong
+      // view, so bail out and let the next visit load fresh state.
+      if (route.folder !== folderID) return;
+      await loadTree(folderID);
+      await loadGitStatus(folderID);
+      // The pulled commit may have rewritten the open document on disk —
+      // but never reload it over an editor opened mid-pull: recreating
+      // the editor would silently discard the draft.
+      if (route.doc && !editing) await loadDoc(folderID, route.doc);
       gitNotice = {
         kind: "success",
         text: result.up_to_date ? "Already up to date." : `Pulled to ${result.short_commit}.`,
       };
     } catch (err) {
-      gitNotice = { kind: "error", text: err instanceof Error ? err.message : "Pull failed" };
+      if (route.folder === folderID) {
+        gitNotice = { kind: "error", text: err instanceof Error ? err.message : "Pull failed" };
+      }
     } finally {
       pulling = false;
     }

@@ -324,6 +324,7 @@ test("gitPull maps server pull reasons onto frontend error codes", async () => {
     { reason: "pullFailed", code: "pull_failed", status: 502 },
     { reason: "gitOperationInProgress", code: "git_operation_in_progress", status: 409 },
     { reason: "noUpstream", code: "no_upstream", status: 400 },
+    { reason: "notGitRepo", code: "not_a_git_repo", status: 400 },
   ];
   for (const { reason, code, status } of cases) {
     const { fn } = fakeFetch([

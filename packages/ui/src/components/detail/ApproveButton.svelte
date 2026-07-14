@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button } from "@kenn-io/kit-ui";
+  import { Button, Card } from "@kenn-io/kit-ui";
   import CheckIcon from "@lucide/svelte/icons/check";
   import { tick } from "svelte";
   import { getClient, getStores } from "../../context.js";
@@ -247,15 +247,16 @@
   </Button>
 
   {#if expanded}
-    <div class="approve-popover kit-popover-card" role="dialog" aria-label="Submit pull request review">
-      <textarea
-        bind:this={commentInput}
-        class="approve-comment"
-        placeholder="Leave an optional comment…"
-        bind:value={body}
-        rows={3}
-      ></textarea>
-      <div class="approve-actions">
+    <div class="approve-popover" role="dialog" aria-label="Submit pull request review">
+      <Card level="default" padding="sm" class="approve-popover-card">
+        <textarea
+          bind:this={commentInput}
+          class="approve-comment"
+          placeholder="Leave an optional comment…"
+          bind:value={body}
+          rows={3}
+        ></textarea>
+        <div class="approve-actions">
         <Button
           class="btn btn--secondary"
           onclick={() => { expanded = false; }}
@@ -289,7 +290,8 @@
         >
           {submittingAction === "approve" ? "Approving\u2026" : "Approve"}
         </Button>
-      </div>
+        </div>
+      </Card>
     </div>
   {/if}
 </div>
@@ -311,22 +313,23 @@
     position: absolute;
     top: calc(100% + 8px);
     left: 0;
+    width: min(360px, calc(100vw - 32px));
+  }
+
+  :global(.approve-popover-card .kit-card__body) {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    width: min(360px, calc(100vw - 32px));
-    padding: 10px;
   }
 
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .approve-comment {
     width: 100%;
     min-height: 74px;
     font-size: var(--font-size-root);
-    padding: 9px 10px;
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-surface);
+    border: var(--border-width) solid var(--border-default);
+    border-radius: var(--radius-md);
     color: var(--text-primary);
     resize: vertical;
     max-height: 150px;

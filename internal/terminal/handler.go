@@ -12,9 +12,11 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/creack/pty/v2"
+	"go.opentelemetry.io/otel/attribute"
 
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/ptyowner"
+	"go.kenn.io/middleman/internal/tracing"
 	"go.kenn.io/middleman/internal/workspace"
 )
 
@@ -31,6 +33,15 @@ type Handler struct {
 func (h *Handler) ServeHTTP(
 	w http.ResponseWriter, r *http.Request,
 ) {
+	ctx, attachSpan := tracing.StartAttachSpan(r, "terminal.attach")
+	r = r.WithContext(ctx)
+	// endAttachSpan is called explicitly before the streaming/bridge
+	// phase so the span stays bounded to setup, and is deferred as a
+	// safety net for every early-return error path; OnceFunc makes
+	// the double-call harmless.
+	endAttachSpan := sync.OnceFunc(func() { attachSpan.End() })
+	defer endAttachSpan()
+
 	id := r.PathValue("id")
 	if id == "" {
 		http.Error(w, "missing workspace id", http.StatusBadRequest)
@@ -48,6 +59,7 @@ func (h *Handler) ServeHTTP(
 	ws, err := h.Workspaces.Get(r.Context(), id)
 	if err != nil {
 		slog.Error("get workspace", "id", id, "err", err)
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		http.Error(
 			w, "internal error",
 			http.StatusInternalServerError,
@@ -102,6 +114,7 @@ func (h *Handler) ServeHTTP(
 	})
 	if err != nil {
 		slog.Error("websocket accept", "err", err)
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		return
 	}
 	logWebsocketDebug("workspace terminal websocket accepted", "workspace_id", id)
@@ -112,6 +125,7 @@ func (h *Handler) ServeHTTP(
 	if h.Workspaces.UsesPtyOwnerForWorkspace(ws) {
 		if err := h.Workspaces.EnsureTerminal(ctx, ws); err != nil {
 			slog.Error("ensure pty owner", "err", err)
+			attachSpan.SetAttributes(attribute.Bool("error", true))
 			conn.Close(websocket.StatusInternalError, "failed to start pty owner")
 			return
 		}
@@ -120,9 +134,13 @@ func (h *Handler) ServeHTTP(
 		)
 		if err != nil {
 			slog.Error("attach pty owner", "err", err)
+			attachSpan.SetAttributes(attribute.Bool("error", true))
 			conn.Close(websocket.StatusInternalError, "failed to attach pty owner")
 			return
 		}
+		// Setup is complete; end the span before the long-lived bridge
+		// loop so terminal.attach stays bounded to the attach phase.
+		endAttachSpan()
 		exited := bridgePtyOwnerAttachment(ctx, conn, attachment)
 		if exited {
 			conn.Close(websocket.StatusNormalClosure, "session ended")
@@ -136,6 +154,7 @@ func (h *Handler) ServeHTTP(
 		ctx, ws.TmuxSession, ws.WorktreePath,
 	); tmuxErr != nil {
 		slog.Error("ensure tmux", "err", tmuxErr)
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		reason := "failed to start tmux"
 		if procutil.IsResourceExhausted(tmuxErr) {
 			reason = "host process limit reached"
@@ -174,6 +193,7 @@ func (h *Handler) ServeHTTP(
 	)
 	if err != nil {
 		slog.Error("terminal attach capacity", "err", err)
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		conn.Close(
 			websocket.StatusInternalError,
 			"host process limit reached",
@@ -189,6 +209,7 @@ func (h *Handler) ServeHTTP(
 	ptmx, err := pty.StartWithSize(cmd, winSize)
 	if err != nil {
 		slog.Error("pty start", "err", err)
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		reason := "failed to start pty"
 		if procutil.IsResourceExhausted(err) {
 			reason = "host process limit reached"
@@ -205,6 +226,10 @@ func (h *Handler) ServeHTTP(
 		"workspace_id", id,
 		"pid", cmd.Process.Pid,
 	)
+
+	// Setup is complete; end the span before the long-lived bridge
+	// loops so terminal.attach stays bounded to the attach phase.
+	endAttachSpan()
 
 	var wg sync.WaitGroup
 	wg.Add(2)

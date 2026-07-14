@@ -7,11 +7,15 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/tracing"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
@@ -26,6 +30,15 @@ func (s *Server) handleWorkspaceRuntimeSessionTerminal(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
+	ctx, attachSpan := tracing.StartAttachSpan(r, "terminal.attach")
+	r = r.WithContext(ctx)
+	// endAttachSpan is called explicitly once setup (attach + initial
+	// resize) completes, so the span stays bounded and never covers
+	// the bridge loop; it is also deferred as a safety net for every
+	// early-return error path. OnceFunc makes the double-call harmless.
+	endAttachSpan := sync.OnceFunc(func() { attachSpan.End() })
+	defer endAttachSpan()
+
 	logWebsocketDebug(
 		"runtime terminal websocket request",
 		"workspace_id", r.PathValue("id"),
@@ -37,6 +50,7 @@ func (s *Server) handleWorkspaceRuntimeSessionTerminal(
 		w, r, r.PathValue("id"),
 	)
 	if !ok {
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		return
 	}
 
@@ -54,10 +68,11 @@ func (s *Server) handleWorkspaceRuntimeSessionTerminal(
 			"session_key", r.PathValue("session_key"),
 			"err", err,
 		)
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	s.serveRuntimeTerminal(w, r, attachment)
+	s.serveRuntimeTerminal(w, r, attachment, attachSpan, endAttachSpan)
 }
 
 func runtimeTerminalResizePriority(r *http.Request) localruntime.ResizePriority {
@@ -76,12 +91,15 @@ func (s *Server) serveRuntimeTerminal(
 	w http.ResponseWriter,
 	r *http.Request,
 	attachment *localruntime.Attachment,
+	attachSpan trace.Span,
+	endAttachSpan func(),
 ) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
 		slog.Error("websocket accept", "err", err)
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		attachment.Close()
 		return
 	}
@@ -124,6 +142,11 @@ func (s *Server) serveRuntimeTerminal(
 		}
 		refreshCancel()
 	}
+
+	// Setup (attach + initial resize/refresh) is complete; end the
+	// span before the long-lived bridge loop so terminal.attach stays
+	// bounded to the attach phase.
+	endAttachSpan()
 
 	exited := bridgeRuntimeAttachment(r.Context(), conn, attachment)
 	if exited {

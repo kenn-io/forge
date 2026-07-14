@@ -15,7 +15,18 @@
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import type { StoreInstances } from "../../types.js";
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
-  import { Button, Modal, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
+  import {
+    Button,
+    Card,
+    CommentCard,
+    IconButton,
+    Modal,
+    Timeline,
+    TimelineItem,
+    copyToClipboard,
+    formatRelativeTime,
+    type TimelineTone,
+  } from "@kenn-io/kit-ui";
   import {
     parseMarkdownSuggestions,
     type ApplySuggestionRequest,
@@ -154,19 +165,24 @@
     reopened: "Reopened",
   };
 
-  const typeColors: Record<string, string> = {
-    issue_comment: "var(--accent-blue)",
-    comment_deleted: "var(--text-muted)",
-    review: "var(--accent-purple)",
-    review_comment: "var(--accent-purple)",
-    commit: "var(--accent-green)",
-    force_push: "var(--accent-red)",
-    assigned: "var(--accent-blue)",
-    unassigned: "var(--text-muted)",
-    merged: "var(--accent-purple)",
-    closed: "var(--text-muted)",
-    reopened: "var(--accent-blue)",
-  };
+  function eventTimelineTone(eventType: string): TimelineTone {
+    switch (eventType) {
+      case "issue_comment":
+      case "assigned":
+      case "reopened":
+        return "info";
+      case "review":
+      case "review_comment":
+      case "merged":
+        return "merged";
+      case "commit":
+        return "success";
+      case "force_push":
+        return "danger";
+      default:
+        return "muted";
+    }
+  }
 
   const mergedCloseCoalesceWindowMs = 60_000;
 
@@ -1324,15 +1340,58 @@
 
 {#snippet deleteAction(event: PREvent | IssueEvent)}
   {#if canDeleteComment(event)}
-    <button
-      class="event-action-btn event-action-btn--danger"
+    <IconButton
+      size="sm"
+      tone="danger"
       onclick={() => startDelete(event)}
-      title="Delete comment"
-      aria-label="Delete comment"
+      ariaLabel="Delete comment"
       disabled={savingEditId !== null || deletingId !== null}
     >
       <Trash2Icon size={14} />
-    </button>
+    </IconButton>
+  {/if}
+{/snippet}
+
+{#snippet eventActions(event: PREvent | IssueEvent)}
+  {#if canEditComment(event)}
+    <IconButton
+      size="sm"
+      onclick={() => startEdit(event)}
+      ariaLabel="Edit comment"
+      disabled={savingEditId !== null || deletingId !== null}
+    >
+      <PencilIcon size={14} />
+    </IconButton>
+  {/if}
+  {@render deleteAction(event)}
+  {#if event.DirectURL}
+    {@const directCopyID = directLinkCopyID(event)}
+    <IconButton
+      size="sm"
+      tone={copiedId === directCopyID ? "success" : "neutral"}
+      onclick={() => copyText(directCopyID, event.DirectURL)}
+      ariaLabel={copiedId === directCopyID ? "Copied" : "Copy direct link"}
+    >
+      {#if copiedId === directCopyID}
+        <CheckIcon size={14} />
+      {:else}
+        <LinkIcon size={14} />
+      {/if}
+    </IconButton>
+  {/if}
+  {#if event.Body}
+    <IconButton
+      size="sm"
+      tone={copiedId === String(event.ID) ? "success" : "neutral"}
+      onclick={() => copyText(String(event.ID), event.Body)}
+      ariaLabel={copiedId === String(event.ID) ? "Copied" : "Copy comment"}
+    >
+      {#if copiedId === String(event.ID)}
+        <CheckIcon size={14} />
+      {:else}
+        <CopyIcon size={14} />
+      {/if}
+    </IconButton>
   {/if}
 {/snippet}
 
@@ -1360,51 +1419,6 @@
             ? () => jumpToReviewThread(reviewThread.thread)
             : undefined}
         />
-      {/if}
-      {#if !inlineReplyEntry}
-        <div class="event-actions">
-          {#if canEditComment(event)}
-            <button
-              class="event-action-btn"
-              onclick={() => startEdit(event)}
-              title="Edit comment"
-              aria-label="Edit comment"
-              disabled={savingEditId !== null || deletingId !== null}
-            >
-              <PencilIcon size={14} />
-            </button>
-          {/if}
-          {@render deleteAction(event)}
-          {#if event.DirectURL}
-            {@const directCopyID = directLinkCopyID(event)}
-            <button
-              class="event-action-btn"
-              class:copied={copiedId === directCopyID}
-              onclick={() => copyText(directCopyID, event.DirectURL)}
-              title={copiedId === directCopyID ? "Copied!" : "Copy direct link"}
-              aria-label={copiedId === directCopyID ? "Copied" : "Copy direct link"}
-            >
-              {#if copiedId === directCopyID}
-                <CheckIcon size={14} />
-              {:else}
-                <LinkIcon size={14} />
-              {/if}
-            </button>
-          {/if}
-          <button
-            class="event-action-btn"
-            class:copied={copiedId === String(event.ID)}
-            onclick={() => copyText(String(event.ID), event.Body)}
-            title={copiedId === String(event.ID) ? "Copied!" : "Copy to clipboard"}
-            aria-label={copiedId === String(event.ID) ? "Copied" : "Copy comment"}
-          >
-            {#if copiedId === String(event.ID)}
-              <CheckIcon size={14} />
-            {:else}
-              <CopyIcon size={14} />
-            {/if}
-          </button>
-        </div>
       {/if}
       {#if editingId === event.ID && provider && repoOwner && repoName && repoPath}
         <div class="edit-panel">
@@ -1459,51 +1473,6 @@
           onkeydown={(keyEvent) => handleInlineReplyBodyKeydown(keyEvent, inlineReplyEntry)}
           role="presentation"
         >
-          {#if inlineReplyEntry}
-            <div class="event-actions event-actions--inline-reply">
-              {#if canEditComment(event)}
-                <button
-                  class="event-action-btn"
-                  onclick={() => startEdit(event)}
-                  title="Edit comment"
-                  aria-label="Edit comment"
-                  disabled={savingEditId !== null || deletingId !== null}
-                >
-                  <PencilIcon size={14} />
-                </button>
-              {/if}
-              {@render deleteAction(event)}
-              {#if event.DirectURL}
-                {@const directCopyID = directLinkCopyID(event)}
-                <button
-                  class="event-action-btn"
-                  class:copied={copiedId === directCopyID}
-                  onclick={() => copyText(directCopyID, event.DirectURL)}
-                  title={copiedId === directCopyID ? "Copied!" : "Copy direct link"}
-                  aria-label={copiedId === directCopyID ? "Copied" : "Copy direct link"}
-                >
-                  {#if copiedId === directCopyID}
-                    <CheckIcon size={14} />
-                  {:else}
-                    <LinkIcon size={14} />
-                  {/if}
-                </button>
-              {/if}
-              <button
-                class="event-action-btn"
-                class:copied={copiedId === String(event.ID)}
-                onclick={() => copyText(String(event.ID), event.Body)}
-                title={copiedId === String(event.ID) ? "Copied!" : "Copy to clipboard"}
-                aria-label={copiedId === String(event.ID) ? "Copied" : "Copy comment"}
-              >
-                {#if copiedId === String(event.ID)}
-                  <CheckIcon size={14} />
-                {:else}
-                  <CopyIcon size={14} />
-                {/if}
-              </button>
-            </div>
-          {/if}
           {#if shouldRenderMarkdown(event.EventType)}
             {@const blocks = eventSuggestionBlocks(event)}
             {#if hasSuggestionBlocks(blocks)}
@@ -1574,63 +1543,46 @@
         </div>
       {/if}
     </div>
-	{:else if canEditComment(event) || canDeleteComment(event)}
+	{:else if editingId === event.ID && provider && repoOwner && repoName && repoPath}
 	  <div class={nested ? "event-body-wrap event-body-wrap--nested" : "event-body-wrap"}>
-      {#if editingId === event.ID && provider && repoOwner && repoName && repoPath}
-        <div class="edit-panel">
-          <CommentEditor
-            {provider}
-            {platformHost}
-            owner={repoOwner}
-            name={repoName}
-            {repoPath}
-            value={editDraft}
+      <div class="edit-panel">
+        <CommentEditor
+          {provider}
+          {platformHost}
+          owner={repoOwner}
+          name={repoName}
+          {repoPath}
+          value={editDraft}
+          disabled={savingEditId === event.ID}
+          oninput={(nextBody) => {
+            editDraft = nextBody;
+          }}
+          onsubmit={() => {
+            void saveEdit(event);
+          }}
+        />
+        {#if editError}
+          <p class="edit-error">{editError}</p>
+        {/if}
+        <div class="edit-actions">
+          <button
+            class="edit-action edit-action--primary"
+            onclick={() => void saveEdit(event)}
             disabled={savingEditId === event.ID}
-            oninput={(nextBody) => {
-              editDraft = nextBody;
-            }}
-            onsubmit={() => {
-              void saveEdit(event);
-            }}
-          />
-          {#if editError}
-            <p class="edit-error">{editError}</p>
-          {/if}
-          <div class="edit-actions">
-            <button
-              class="edit-action edit-action--primary"
-              onclick={() => void saveEdit(event)}
-              disabled={savingEditId === event.ID}
-            >
-              <CheckIcon size={14} />
-              {savingEditId === event.ID ? "Saving..." : "Save"}
-            </button>
-            <button
-              class="edit-action"
-              onclick={cancelEdit}
-              disabled={savingEditId === event.ID}
-            >
-              <XIcon size={14} />
-              Cancel
-            </button>
-          </div>
+          >
+            <CheckIcon size={14} />
+            {savingEditId === event.ID ? "Saving..." : "Save"}
+          </button>
+          <button
+            class="edit-action"
+            onclick={cancelEdit}
+            disabled={savingEditId === event.ID}
+          >
+            <XIcon size={14} />
+            Cancel
+          </button>
         </div>
-      {:else}
-        <div class="event-actions empty-comment-actions">
-          {#if canEditComment(event)}
-            <button
-              class="event-action-btn"
-              onclick={() => startEdit(event)}
-              title="Edit comment"
-              aria-label="Edit comment"
-              disabled={savingEditId !== null || deletingId !== null}
-            >
-              <PencilIcon size={14} />
-            </button>
-          {/if}
-          {@render deleteAction(event)}
-        </div>
-      {/if}
+      </div>
 	  </div>
 	{/if}
 {/snippet}
@@ -1693,32 +1645,30 @@
   <p class="empty">{filtered ? "No activity matches the current filters" : "No activity yet"}</p>
 {:else}
   {#if onApplySuggestion !== undefined && eligibleBatchedSuggestions.length > 0}
-    <div class="suggestion-batch-bar">
-      <span>{eligibleBatchedSuggestions.length} {eligibleBatchedSuggestions.length === 1 ? "suggestion" : "suggestions"} in batch</span>
-      <button
-        class="thread-toggle thread-reply-action"
-        type="button"
-        onclick={() => void commitSuggestionBatch()}
-        disabled={suggestionSubmissionBusy}
-      >
-        <CheckIcon size={14} />
-        {savingSuggestionBatch ? "Committing..." : "Commit batch"}
-      </button>
-    </div>
+    <Card level="default" padding="sm" class="suggestion-batch-bar">
+      <div class="suggestion-batch-content">
+        <span>{eligibleBatchedSuggestions.length} {eligibleBatchedSuggestions.length === 1 ? "suggestion" : "suggestions"} in batch</span>
+        <button
+          class="thread-toggle thread-reply-action"
+          type="button"
+          onclick={() => void commitSuggestionBatch()}
+          disabled={suggestionSubmissionBusy}
+        >
+          <CheckIcon size={14} />
+          {savingSuggestionBatch ? "Committing..." : "Commit batch"}
+        </button>
+      </div>
+    </Card>
   {/if}
-  <ol class="timeline">
+  <Timeline ariaLabel="Item activity">
     {#each renderedTimelineEntries as entry (entry.key)}
       {@const event = entry.event}
       {@const targetID = replyTargetID(entry)}
       {@const hasReplyOnlyAction = entry.replies.length === 0 && canReplyToThread(entry)}
-      <li class={activityViewMode === "compact" || isCompactEvent(event.EventType) ? "event event--compact" : "event"}>
-        <div class="event-rail">
-          <span
-            class="dot"
-            style="background: {typeColors[event.EventType] ?? 'var(--text-muted)'}"
-          ></span>
-          <span class="rail-line"></span>
-        </div>
+      <TimelineItem
+        tone={eventTimelineTone(event.EventType)}
+        class={activityViewMode === "compact" || isCompactEvent(event.EventType) ? "event--compact" : ""}
+      >
         {#if activityViewMode === "compact"}
           {@const compactContext = compactEventContext(event, entry.reviewThread)}
           {@const compactSummary = compactEventSummary(event, entry.reviewThread)}
@@ -1728,7 +1678,11 @@
           {@const canExpandCompact = compactEntryCanExpand(entry)}
           {@const compactExpanded = isCompactEntryExpanded(entry)}
           {@const canCopyCompact = compactEntryCanCopy(entry)}
-          <div class={["event-card event-card--compact event-card--compact-row", hasReplyOnlyAction && compactExpanded && "event-card--reply-inline"]}>
+          <Card
+            level="default"
+            padding="sm"
+            class={["event-card--compact-row", hasReplyOnlyAction && compactExpanded && "event-card--reply-inline"].filter(Boolean).join(" ")}
+          >
             <div class="compact-event-line">
               {#if canExpandCompact}
                 <button
@@ -1745,10 +1699,7 @@
                       <ChevronRightIcon size={14} />
                     {/if}
                   </span>
-                  <span
-                    class="event-type compact-event-type"
-                    style="color: {typeColors[event.EventType] ?? 'var(--text-muted)'}"
-                  >
+                  <span class="event-type compact-event-type">
                     {compactEventLabel(event.EventType)}
                   </span>
                   {@render eventAuthorByline(event, true)}
@@ -1763,10 +1714,7 @@
               {:else}
                 <div class="compact-event-row">
                   <span class="compact-event-expander" aria-hidden="true"></span>
-                  <span
-                    class="event-type compact-event-type"
-                    style="color: {typeColors[event.EventType] ?? 'var(--text-muted)'}"
-                  >
+                  <span class="event-type compact-event-type">
                     {compactEventLabel(event.EventType)}
                   </span>
                   {@render eventAuthorByline(event, true)}
@@ -1792,19 +1740,18 @@
                 </div>
               {/if}
               {#if canCopyCompact}
-                <button
-                  class="event-action-btn compact-copy-btn"
-                  class:copied={copiedId === String(event.ID)}
+                <IconButton
+                  size="sm"
+                  tone={copiedId === String(event.ID) ? "success" : "neutral"}
                   onclick={() => copyText(String(event.ID), event.Body)}
-                  title={copiedId === String(event.ID) ? "Copied!" : "Copy to clipboard"}
-                  aria-label={copiedId === String(event.ID) ? "Copied" : "Copy comment"}
+                  ariaLabel={copiedId === String(event.ID) ? "Copied" : "Copy comment"}
                 >
                   {#if copiedId === String(event.ID)}
                     <CheckIcon size={14} />
                   {:else}
                     <CopyIcon size={14} />
                   {/if}
-                </button>
+                </IconButton>
               {/if}
             </div>
             {#if canExpandCompact && compactExpanded}
@@ -1821,98 +1768,87 @@
             {#if isReplyingToEntry(entry) && targetID !== null}
               {@render threadReplyPanel(entry, targetID)}
             {/if}
-          </div>
+          </Card>
         {:else if isCompactEvent(event.EventType)}
           {@const metadata = parseMetadata(event)}
           {@const commitDetails = event.EventType === "commit" ? commitDetailsBody(event.Body) : ""}
-          <div class="event-card event-card--compact">
-            <div class="event-header event-header--compact">
-              {#if event.EventType !== "comment_deleted" && event.EventType !== "assigned" && event.EventType !== "unassigned"}
-                <span
-                  class="event-type"
-                  style="color: {typeColors[event.EventType] ?? 'var(--text-muted)'}"
-                >
-                  {systemEventLabel(event.EventType)}
-                </span>
-              {/if}
-              {#if event.EventType === "commit"}
-                {#if event.Author}
-                  <span class="event-author">{event.Author}</span>
-                {/if}
+          {#if isLifecycleTransitionEvent(event.EventType)}
+            <CommentCard
+              class="event-card--compact event--lifecycle"
+              typeLabel={systemEventLabel(event.EventType)}
+              tone={eventTimelineTone(event.EventType)}
+              author={event.Author ? `by ${event.Author}` : undefined}
+              time={formatRelativeTime(event.CreatedAt)}
+            />
+          {:else if event.EventType === "commit"}
+            <CommentCard
+              class="event-card--compact"
+              typeLabel="Commit"
+              tone={eventTimelineTone(event.EventType)}
+              author={event.Author || undefined}
+              time={formatRelativeTime(event.CreatedAt)}
+            >
+              <div class="event-header event-header--compact">
                 <span class="commit-sha">{shortCommit(event.Summary)}</span>
                 {#if !showCommitDetails}
                   <span class="commit-title">{commitTitle(event.Body)}</span>
                 {/if}
-                <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
-              {:else if event.EventType === "comment_deleted"}
-                {#if event.Author}
-                  <span class="event-author">{event.Author}</span>
-                {/if}
-                <span class="system-event-summary system-event-summary--sentence">{event.Summary}</span>
-                <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
-              {:else if event.EventType === "assigned" || event.EventType === "unassigned"}
-                {#if event.Author}
-                  <span class="event-author">{event.Author}</span>
-                {/if}
-                <span class="system-event-summary system-event-summary--sentence">{event.Summary}</span>
-                <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
-              {:else if isLifecycleTransitionEvent(event.EventType)}
-                {#if event.Author}
-                  {@render eventAuthorByline(event)}
-                {/if}
-                <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
-              {:else if event.EventType === "cross_referenced"}
-                {#if event.Author}
-                  <span class="event-author">{event.Author}</span>
-                {/if}
-                {@const sourceUrl = metadataString(metadata, "source_url")}
-                {@const sourceTitle = metadataString(metadata, "source_title") ?? event.Summary}
-                {@const sourceLink = crossReferenceLink(metadata, sourceUrl)}
-                <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
-                {#if sourceLink}
-                  <a
-                    class={["system-event-link", { "item-ref": sourceLink.internal }]}
-                    href={sourceLink.href}
-                    target={sourceLink.internal ? undefined : "_blank"}
-                    rel={sourceLink.internal ? undefined : "noopener noreferrer"}
-                    {...(sourceLink.dataAttributes ?? {})}
-                  >
-                    {sourceTitle}
-                  </a>
-                {:else}
-                  <span class="system-event-summary">{sourceTitle}</span>
-                {/if}
-              {:else}
-                {#if event.Author}
-                  <span class="event-author">{event.Author}</span>
-                {/if}
-                <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
-                <span class="system-event-summary">{event.Summary}</span>
-              {/if}
-            </div>
-            {#if event.EventType === "commit" && showCommitDetails && commitDetails}
-              <div
-                class="event-body commit-body-details"
-                transition:slide={{ duration: 100 }}
-              >
-                {commitDetails}
               </div>
-            {/if}
-          </div>
-        {:else}
-          <div class={["event-card", hasReplyOnlyAction && "event-card--reply-inline"]}>
-            <div class="event-header">
-              <span
-                class="event-type"
-                style="color: {typeColors[event.EventType] ?? 'var(--text-muted)'}"
-              >
-                {typeLabels[event.EventType] ?? event.EventType}
-              </span>
-              {#if event.Author}
-                <span class="event-author">{event.Author}</span>
+              {#if showCommitDetails && commitDetails}
+                <div class="event-body commit-body-details" transition:slide={{ duration: 100 }}>
+                  {commitDetails}
+                </div>
               {/if}
-              <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
-            </div>
+            </CommentCard>
+          {:else if event.EventType === "cross_referenced"}
+            {@const sourceUrl = metadataString(metadata, "source_url")}
+            {@const sourceTitle = metadataString(metadata, "source_title") ?? event.Summary}
+            {@const sourceLink = crossReferenceLink(metadata, sourceUrl)}
+            <CommentCard
+              class="event-card--compact"
+              typeLabel="Referenced"
+              tone={eventTimelineTone(event.EventType)}
+              author={event.Author || undefined}
+              time={formatRelativeTime(event.CreatedAt)}
+            >
+              {#if sourceLink}
+                <a
+                  class={["system-event-link", { "item-ref": sourceLink.internal }]}
+                  href={sourceLink.href}
+                  target={sourceLink.internal ? undefined : "_blank"}
+                  rel={sourceLink.internal ? undefined : "noopener noreferrer"}
+                  {...(sourceLink.dataAttributes ?? {})}
+                >
+                  {sourceTitle}
+                </a>
+              {:else}
+                <span class="system-event-summary">{sourceTitle}</span>
+              {/if}
+            </CommentCard>
+          {:else}
+            <CommentCard
+              class="event-card--compact"
+              typeLabel={event.EventType === "comment_deleted" || event.EventType === "assigned" || event.EventType === "unassigned"
+                ? undefined
+                : systemEventLabel(event.EventType)}
+              tone={eventTimelineTone(event.EventType)}
+              author={event.Author || undefined}
+              time={formatRelativeTime(event.CreatedAt)}
+            >
+              <span class="system-event-summary system-event-summary--sentence">{event.Summary}</span>
+            </CommentCard>
+          {/if}
+        {:else}
+          <CommentCard
+            class={hasReplyOnlyAction ? "event-card--reply-inline" : ""}
+            typeLabel={typeLabels[event.EventType] ?? event.EventType}
+            tone={eventTimelineTone(event.EventType)}
+            author={event.Author || undefined}
+            time={formatRelativeTime(event.CreatedAt)}
+          >
+            {#snippet actions()}
+              {@render eventActions(event)}
+            {/snippet}
             {#if event.Summary && (event.EventType === "commit" || event.EventType === "force_push")}
               <p class="event-summary">{event.Summary}</p>
             {/if}
@@ -1977,11 +1913,11 @@
             {#if isReplyingToEntry(entry) && targetID !== null}
               {@render threadReplyPanel(entry, targetID)}
             {/if}
-          </div>
+          </CommentCard>
         {/if}
-      </li>
+      </TimelineItem>
     {/each}
-  </ol>
+  </Timeline>
 {/if}
 
 {#if deleteTarget}
@@ -2014,77 +1950,21 @@
     padding: 16px 0;
   }
 
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .suggestion-batch-bar {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--focus-detail-space-sm, 0.62rem);
+  :global(.suggestion-batch-bar) {
     margin: 0.31rem 0 0.31rem 2.47rem;
-    padding: 0.46rem 0.62rem;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }
 
-  .timeline {
-    list-style: none;
+  .suggestion-batch-content {
     display: flex;
-    flex-direction: column;
-    gap: 0;
-  }
-
-  .event {
-    display: flex;
-    gap: 0;
-  }
-
-  /* Left rail: dot + connector line */
-  .event-rail {
-    display: flex;
-    flex-direction: column;
     align-items: center;
-    width: 24px;
-    flex-shrink: 0;
-    padding-top: 14px;
+    justify-content: flex-end;
+    gap: var(--focus-detail-space-sm, 0.62rem);
   }
 
-  .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    z-index: 1;
-    box-shadow: 0 0 0 3px var(--bg-primary);
-  }
-
-  .rail-line {
-    width: 2px;
-    flex: 1;
-    background: var(--border-default);
-    margin-top: 2px;
-  }
-
-  .event:last-child .rail-line {
-    display: none;
-  }
-
-  /* Right side: card */
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .event-card {
-    flex: 1;
-    min-width: 0;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-md);
-    padding: var(--focus-detail-space-sm, 10px) var(--focus-detail-space-sm, 12px);
-    margin: 4px 0 4px var(--focus-detail-space-xs, 8px);
-  }
-
-  .event-card--compact {
-    padding: var(--focus-detail-space-xs, 7px) var(--focus-detail-space-sm, 10px);
+  :global(.event-card--compact) {
+    --kit-card-padding-block: var(--focus-detail-space-xs, 7px);
   }
 
   .event-header {
@@ -2097,14 +1977,6 @@
   .event-header--compact {
     min-width: 0;
     flex-wrap: nowrap;
-  }
-
-  .event-header--compact .event-time {
-    margin-left: 0;
-  }
-
-  .event-header--compact .event-type + .event-author--lifecycle {
-    margin-left: calc(var(--focus-detail-space-xs, 0.46rem) * -0.5);
   }
 
   .event-card--compact-row {
@@ -2156,18 +2028,6 @@
     align-items: center;
     justify-content: center;
     color: var(--text-muted);
-  }
-
-  .event-action-btn.compact-copy-btn {
-    width: 23px;
-    height: 23px;
-    opacity: 0.72;
-  }
-
-  .compact-event-line:hover .compact-copy-btn,
-  .event-action-btn.compact-copy-btn:focus-visible,
-  .event-action-btn.compact-copy-btn.copied {
-    opacity: 1;
   }
 
   .compact-expanded-content {
@@ -2427,56 +2287,6 @@
     color: var(--text-secondary);
   }
 
-  .event-actions {
-    position: absolute;
-    top: var(--focus-detail-space-xs, 6px);
-    right: var(--focus-detail-space-xs, 6px);
-    display: flex;
-    gap: 2px;
-    z-index: 1;
-  }
-
-  .event-body-wrap--with-thread .event-actions {
-    position: static;
-    float: right;
-    margin: 0 0 var(--focus-detail-space-xs, 6px) var(--focus-detail-space-xs, 6px);
-  }
-
-  .event-card--reply-inline .event-body-wrap--with-thread .event-actions--inline-reply {
-    position: absolute;
-    top: var(--focus-detail-space-sm, 8px);
-    right: 0;
-    float: none;
-    margin: 0;
-  }
-
-  .event-action-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--focus-detail-hit-target, 26px);
-    height: var(--focus-detail-hit-target, 26px);
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    opacity: 0;
-    transition: opacity 0.15s, background 0.15s, color 0.15s;
-  }
-
-  .event-body-wrap:hover .event-action-btn,
-  .event-action-btn:focus-visible {
-    opacity: 1;
-  }
-
-  .event-action-btn:hover:not(:disabled) {
-    background: var(--bg-surface-hover);
-    color: var(--text-secondary);
-  }
-
-  .event-action-btn--danger:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent-red) 12%, transparent);
-    color: var(--accent-red);
-  }
-
   .delete-confirmation {
     display: grid;
     gap: var(--space-3);
@@ -2511,27 +2321,6 @@
     font-size: var(--font-size-sm);
   }
 
-  .event-action-btn:active:not(:disabled) {
-    transform: scale(0.92);
-  }
-
-  .event-action-btn.copied {
-    opacity: 1;
-    color: var(--accent-green);
-    background: color-mix(in srgb, var(--accent-green) 12%, transparent);
-  }
-
-  .event-action-btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-
-  @media (hover: none) {
-    .event-action-btn {
-      opacity: 1;
-    }
-  }
-
   .event-body {
     font-size: var(--font-size-sm);
     color: var(--text-primary);
@@ -2546,7 +2335,7 @@
     padding-right: var(--focus-detail-space-xs, 6px);
   }
 
-  .event-card--reply-inline .event-body {
+  :global(.event-card--reply-inline) .event-body {
     padding-bottom: 0;
   }
 
@@ -2592,7 +2381,7 @@
     vertical-align: text-bottom;
   }
 
-  .event-card--reply-inline:hover .event-body--with-inline-reply :global(.thread-reply-action--inline),
+  :global(.event-card--reply-inline:hover) .event-body--with-inline-reply :global(.thread-reply-action--inline),
   .event-body--with-inline-reply :global(.thread-reply-action--inline:focus-visible),
   .event-body--with-inline-reply :global(.thread-reply-action--inline[aria-expanded="true"]) {
     opacity: 1;

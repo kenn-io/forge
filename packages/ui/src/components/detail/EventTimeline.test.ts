@@ -220,7 +220,8 @@ describe("EventTimeline", () => {
 
     const label = screen.getByText("Force-pushed");
     expect(label).toBeTruthy();
-    expect(label.getAttribute("style")).toContain("var(--accent-red)");
+    expect(label.classList.contains("kit-card__eyebrow--tone-danger")).toBe(true);
+    expect(label.closest(".kit-timeline-item")?.classList.contains("kit-timeline-item--tone-danger")).toBe(true);
     expect(screen.getByText("alice")).toBeTruthy();
     expect(screen.getByText("aaaaaaa -> bbbbbbb")).toBeTruthy();
   });
@@ -257,21 +258,12 @@ describe("EventTimeline", () => {
     expect(screen.getByText("Merged")).toBeTruthy();
     expect(screen.getByText("Closed")).toBeTruthy();
     expect(screen.getByText("Reopened")).toBeTruthy();
-    const authors = Array.from(document.querySelectorAll(".event-author")).map((element) =>
+    const authors = Array.from(document.querySelectorAll(".kit-card__title")).map((element) =>
       element.textContent?.replace(/\s+/g, " ").trim(),
     );
     expect(authors).toContain("by merge-admin");
     expect(authors).toContain("by reviewer");
     expect(authors).toContain("by maintainer");
-    expect(document.querySelector(".event-author-prefix")?.textContent).toBe("by");
-    expect(document.querySelector(".event-author--lifecycle")?.textContent?.replace(/\s+/g, " ").trim()).toBe(
-      "by merge-admin",
-    );
-    const prefixStyle = findCompiledStyleRule(".event-author-prefix");
-    expect(prefixStyle.color).toBe("var(--text-muted)");
-    expect(prefixStyle.fontWeight).toBe("400");
-    expect(compiledCss).toContain(".event-author--lifecycle");
-    expect(compiledCss).toContain("margin-left: calc(var(--focus-detail-space-xs, 0.46rem) * -0.5)");
     expect(screen.queryByText("merged this")).toBeNull();
     expect(screen.queryByText("closed this")).toBeNull();
     expect(screen.queryByText("reopened this")).toBeNull();
@@ -291,9 +283,8 @@ describe("EventTimeline", () => {
     });
 
     const label = screen.getByText("Merged");
-    const dot = document.querySelector(".dot");
-    expect(label.getAttribute("style")).toContain("var(--accent-purple)");
-    expect(dot?.getAttribute("style")).toContain("var(--accent-purple)");
+    expect(label.classList.contains("kit-card__eyebrow--tone-merged")).toBe(true);
+    expect(label.closest(".kit-timeline-item")?.classList.contains("kit-timeline-item--tone-merged")).toBe(true);
   });
 
   it("renders compact activity lifecycle rows with actor bylines", () => {
@@ -420,7 +411,7 @@ describe("EventTimeline", () => {
     expect(screen.getByText("Merged")).toBeTruthy();
     expect(screen.getByText("Reopened")).toBeTruthy();
     expect(screen.getByText("Closed")).toBeTruthy();
-    const authors = Array.from(document.querySelectorAll(".event-author")).map((element) =>
+    const authors = Array.from(document.querySelectorAll(".kit-card__title")).map((element) =>
       element.textContent?.replace(/\s+/g, " ").trim(),
     );
     expect(authors.filter((author) => author === "by mariusvniekerk")).toHaveLength(3);
@@ -440,7 +431,7 @@ describe("EventTimeline", () => {
       },
     });
 
-    const cards = container.querySelectorAll(".event-card");
+    const cards = container.querySelectorAll(".kit-comment-card.kit-card--default");
     const wrapper = cards[0];
     const body = container.querySelector(".event-body");
     const bodyWrap = container.querySelector(".event-body-wrap");
@@ -451,17 +442,7 @@ describe("EventTimeline", () => {
 
     expect(wrapper!.contains(bodyWrap)).toBe(true);
     expect(bodyWrap!.contains(body)).toBe(true);
-    expect(body!.classList.contains("event-card")).toBe(false);
-
-    const cardStyle = findCompiledStyleRule(".event-card");
-    const bodyStyle = findCompiledStyleRule(".event-body", [".event-body-wrap", ".markdown-body"]);
-
-    expect(cardStyle.getPropertyValue("background")).toBe("var(--bg-surface)");
-    expect(cardStyle.getPropertyValue("border")).toBe("1px solid var(--border-muted)");
-    expect(cardStyle.getPropertyValue("border-radius")).toBe("var(--radius-md)");
-    expect(bodyStyle.getPropertyValue("background")).toBe("");
-    expect(bodyStyle.getPropertyValue("border")).toBe("");
-    expect(bodyStyle.getPropertyValue("border-radius")).toBe("");
+    expect(bodyWrap!.querySelector(".kit-card")).toBeNull();
   });
 
   it("groups discussion comments with the root comment first and reverse-chronological replies", () => {
@@ -511,11 +492,12 @@ describe("EventTimeline", () => {
       },
     });
 
-    expect(container.querySelectorAll(".event")).toHaveLength(2);
+    const activity = screen.getByRole("list", { name: "Item activity" });
+    expect(activity.querySelectorAll(":scope > .kit-timeline-item")).toHaveLength(2);
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(3);
     expect(screen.getByRole("list", { name: "Threaded replies" })).toBeTruthy();
 
-    const threadText = container.querySelector(".event-card")?.textContent ?? "";
+    const threadText = container.querySelector(".kit-comment-card")?.textContent ?? "";
     expect(threadText.indexOf("Main threaded comment")).toBeLessThan(threadText.indexOf("Newest threaded reply"));
     expect(threadText.indexOf("Newest threaded reply")).toBeLessThan(threadText.indexOf("Middle threaded reply"));
     expect(threadText.indexOf("Middle threaded reply")).toBeLessThan(threadText.indexOf("Oldest threaded reply"));
@@ -593,7 +575,7 @@ describe("EventTimeline", () => {
     await expectPierreTimelineText(/client\.publishThreads\(\);/);
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(2);
 
-    const threadText = container.querySelector(".event-card")?.textContent ?? "";
+    const threadText = container.querySelector(".kit-comment-card")?.textContent ?? "";
     expect(threadText.indexOf("This needs a named helper")).toBeLessThan(threadText.indexOf("Pushed an update"));
     expect(threadText.indexOf("Pushed an update")).toBeLessThan(
       threadText.indexOf("The wrapper should stay close to the call site"),
@@ -1613,9 +1595,7 @@ describe("EventTimeline", () => {
     expect(document.querySelector(".event--compact")).toBeTruthy();
     expect(document.querySelector(".commit-title")).toBeNull();
     expect(document.querySelector(".commit-body-details")?.classList.contains("event-body")).toBe(true);
-    expect(document.querySelector(".event-header--compact")?.lastElementChild?.classList.contains("event-time")).toBe(
-      true,
-    );
+    expect(document.querySelector(".kit-card__meta")?.textContent).toBe("4h ago");
   });
 
   it("expands single-line commit messages when commit details are shown", () => {
@@ -1662,9 +1642,7 @@ describe("EventTimeline", () => {
     expect(screen.getByText("feat: add timeline filters")).toBeTruthy();
     expect(screen.getByText("4h ago")).toBeTruthy();
     expect(screen.queryByText("Long body")).toBeNull();
-    expect(document.querySelector(".event-header--compact")?.lastElementChild?.classList.contains("event-time")).toBe(
-      true,
-    );
+    expect(document.querySelector(".kit-card__meta")?.textContent).toBe("4h ago");
   });
 
   it("renders force pushes as boundaries between commit generations", () => {
@@ -2267,6 +2245,9 @@ describe("EventTimeline", () => {
   });
 
   it("renders system events as compact rows", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));
+
     render(EventTimeline, {
       props: {
         events: [
@@ -2325,13 +2306,11 @@ describe("EventTimeline", () => {
     expect(screen.queryByText("Comment deleted")).toBeNull();
     expect(screen.getByText("maintainer")).toBeTruthy();
     expect(screen.getByText("deleted a comment from reviewer")).toBeTruthy();
-    const deletedHeader = document.querySelector(".event-header--compact");
-    const deletedChildren = Array.from(deletedHeader?.children ?? []);
-    expect(deletedChildren).toHaveLength(3);
-    expect(deletedChildren[0]?.classList.contains("event-author")).toBe(true);
-    expect(deletedChildren[1]?.classList.contains("system-event-summary")).toBe(true);
-    expect(deletedChildren[1]?.classList.contains("system-event-summary--sentence")).toBe(true);
-    expect(deletedChildren[2]?.classList.contains("event-time")).toBe(true);
+    const deletedSummary = screen.getByText("deleted a comment from reviewer");
+    const deletedCard = deletedSummary.closest(".kit-comment-card");
+    expect(deletedCard?.querySelector(".kit-card__eyebrow")).toBeNull();
+    expect(deletedCard?.querySelector(".kit-card__title")?.textContent).toBe("maintainer");
+    expect(deletedCard?.querySelector(".kit-card__meta")?.textContent).toBe("4h ago");
     expect(screen.getByText("Title changed")).toBeTruthy();
     expect(screen.getByText("Base changed")).toBeTruthy();
     expect(screen.getByText("Referenced")).toBeTruthy();
@@ -2713,14 +2692,11 @@ describe("EventTimeline", () => {
 
     expect(screen.getByText("src/review.ts:10-11")).toBeTruthy();
     await expectPierreTimelineText(/client\.publishThreads\(\);/);
-    expect(container.querySelector(".event-body-wrap--with-thread .event-actions")).toBeTruthy();
+    expect(container.querySelector(".kit-card__actions")).toBeTruthy();
+    expect(container.querySelector(".event-body-wrap--with-thread .event-actions")).toBeNull();
 
     const threadedActions = findCompiledStyleRule(".event-body-wrap--with-thread");
     expect(threadedActions.getPropertyValue("display")).toBe("flow-root");
-
-    const threadedActionButtons = findCompiledStyleRule(".event-body-wrap--with-thread .event-actions");
-    expect(threadedActionButtons.getPropertyValue("position")).toBe("static");
-    expect(threadedActionButtons.getPropertyValue("float")).toBe("right");
 
     await fireEvent.click(screen.getByRole("button", { name: "Jump to diff" }));
 

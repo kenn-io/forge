@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Checkbox } from "@kenn-io/kit-ui";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
@@ -230,21 +231,19 @@
 </script>
 
 <div class="fleet-settings">
-  <label class="toggle-row">
+  <Checkbox
+    class="toggle-row"
+    bind:checked={enabledDraft}
+    disabled={embedded || saving}
+    ariaLabel="Enable fleet federation"
+  >
     <span>
       <span class="field-label">Enable fleet federation</span>
       <span class="field-help">
         Remote hosts stay unavailable while federation is off.
       </span>
     </span>
-    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
-    <input
-      type="checkbox"
-      bind:checked={enabledDraft}
-      disabled={embedded || saving}
-      aria-label="Enable fleet federation"
-    />
-  </label>
+  </Checkbox>
 
   {#if currentFleet.restart_required}
     <p class="restart-banner">Restart required</p>
@@ -284,18 +283,17 @@
     </label>
   </div>
 
-  <label class="check-row">
-    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
-    <input
-      type="checkbox"
-      bind:checked={includeUnmanagedDetailsDraft}
-      disabled={embedded || saving}
-    />
+  <Checkbox
+    class="check-row"
+    bind:checked={includeUnmanagedDetailsDraft}
+    disabled={embedded || saving}
+    ariaLabel="Include unmanaged tmux details"
+  >
     <span>
       <span class="field-label">Include unmanaged tmux details</span>
       <span class="field-help">Changing this monitor setting applies after restart.</span>
     </span>
-  </label>
+  </Checkbox>
 
   <section class="peer-section" aria-label="HTTP fleet peers">
     <div class="peer-section-header">
@@ -525,20 +523,23 @@
     gap: var(--space-5);
   }
 
-  .toggle-row,
-  .check-row {
+  :global(.toggle-row) {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     gap: 16px;
   }
 
-  .check-row {
-    justify-content: flex-start;
+  :global(.toggle-row .kit-checkbox__box) {
+    order: 2;
+    margin-top: 2px;
   }
 
-  .toggle-row input,
-  .check-row input {
+  :global(.check-row) {
+    align-items: flex-start;
+  }
+
+  :global(.check-row .kit-checkbox__box) {
     margin-top: 2px;
   }
 

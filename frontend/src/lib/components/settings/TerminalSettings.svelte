@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Checkbox } from "@kenn-io/kit-ui";
   import Modal from "../shared/Modal.svelte";
   import { onDestroy } from "svelte";
   import {
@@ -404,35 +405,26 @@
     </div>
   </div>
 
-  <label class="toggle-field">
-    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
-    <input
-      type="checkbox"
-      bind:checked={cursorBlinkDraft}
-      disabled={saving}
-    />
-    <span>Cursor blink</span>
-  </label>
+  <Checkbox
+    class="toggle-field"
+    bind:checked={cursorBlinkDraft}
+    disabled={saving}
+    label="Cursor blink"
+  />
 
-  <label class="toggle-field">
-    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
-    <input
-      type="checkbox"
-      bind:checked={fontLigaturesDraft}
-      disabled={saving || !xtermOnlyControlsEnabled}
-    />
-    <span>Font ligatures</span>
-  </label>
+  <Checkbox
+    class="toggle-field"
+    bind:checked={fontLigaturesDraft}
+    disabled={saving || !xtermOnlyControlsEnabled}
+    label="Font ligatures"
+  />
 
-  <label class="toggle-field">
-    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
-    <input
-      type="checkbox"
-      bind:checked={hideTmuxStatusDraft}
-      disabled={saving}
-    />
-    <span>Hide tmux status line in new sessions</span>
-  </label>
+  <Checkbox
+    class="toggle-field"
+    bind:checked={hideTmuxStatusDraft}
+    disabled={saving}
+    label="Hide tmux status line in new sessions"
+  />
 
   <div class="setting-actions">
     <p class="setting-help">
@@ -586,12 +578,8 @@
     min-width: 0;
   }
 
-  .toggle-field {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
+  :global(.toggle-field .kit-checkbox__label) {
     color: var(--text-secondary);
-    font-size: var(--font-size-sm);
     font-weight: 600;
   }
 

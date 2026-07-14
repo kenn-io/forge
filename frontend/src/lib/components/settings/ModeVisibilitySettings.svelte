@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Checkbox } from "@kenn-io/kit-ui";
   import {
     DEFAULT_MODE_VISIBILITY,
     getStores,
@@ -105,16 +106,15 @@
 <div class={["mode-visibility-settings", compact && "compact"].filter(Boolean).join(" ")}>
   <div class="mode-grid">
     {#each modeOptions as option (option.key)}
-      <label class="mode-toggle">
-        <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
-        <input
-          type="checkbox"
-          checked={draft[option.key]}
-          disabled={saving}
-          onchange={() => toggleMode(option.key)}
-        />
-        <span>{option.label}</span>
-      </label>
+      <Checkbox
+        class="mode-toggle"
+        checked={draft[option.key]}
+        disabled={saving}
+        label={option.label}
+        onchange={(checked) => {
+          if (checked !== draft[option.key]) toggleMode(option.key);
+        }}
+      />
     {/each}
   </div>
 
@@ -143,26 +143,12 @@
     gap: var(--space-4) var(--space-5);
   }
 
-  .mode-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
+  :global(.mode-toggle) {
     min-width: 0;
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
     line-height: 1.2;
   }
 
-  .mode-toggle input {
-    width: 14px;
-    height: 14px;
-    margin: 0;
-    flex: 0 0 auto;
-    accent-color: var(--accent-blue);
-  }
-
-  .mode-toggle span {
-    min-width: 0;
+  :global(.mode-toggle .kit-checkbox__label) {
     overflow-wrap: anywhere;
   }
 

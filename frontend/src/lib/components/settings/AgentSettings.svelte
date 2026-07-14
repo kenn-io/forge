@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { IconButton } from "@kenn-io/kit-ui";
+  import { Checkbox, IconButton } from "@kenn-io/kit-ui";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
@@ -285,11 +285,9 @@
     {#each drafts as draft (draft.id)}
       <div class={["agent-row", !draft.builtin && "agent-row--custom"]}>
         <div class="agent-row-header">
-          <label class="enable-field">
-            <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
-            <input type="checkbox" bind:checked={draft.enabled} disabled={saving} />
-            <span>{agentName(draft)}</span>
-          </label>
+          <Checkbox class="enable-field" bind:checked={draft.enabled} disabled={saving}>
+            {agentName(draft)}
+          </Checkbox>
 
           <div class="row-actions">
             {#if draft.builtin && draft.expanded}
@@ -461,7 +459,6 @@
       minmax(96px, 1fr) minmax(128px, 1.2fr);
   }
 
-  .enable-field,
   .field {
     display: flex;
     flex-direction: column;
@@ -469,13 +466,13 @@
     min-width: 0;
   }
 
-  .enable-field {
+  :global(.enable-field) {
     align-self: center;
-    flex-direction: row;
-    align-items: center;
     flex: 1 1 auto;
+  }
+
+  :global(.enable-field .kit-checkbox__label) {
     color: var(--text-primary);
-    font-size: var(--font-size-sm);
     font-weight: 600;
   }
 

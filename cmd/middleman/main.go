@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	oteltelemetry "go.kenn.io/kit/telemetry"
 	"go.kenn.io/middleman/internal/cli/ctl"
 	"go.kenn.io/middleman/internal/cli/serve"
 	"go.kenn.io/middleman/internal/config"
@@ -660,6 +661,18 @@ func run(opts serve.Options) error {
 		notificationLoops := startNotificationLoops(ctx, syncer, cfg)
 		defer notificationLoops.Stop()
 	}
+
+	otelShutdown, err := oteltelemetry.Init(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := otelShutdown(shutdownCtx); err != nil {
+			slog.Warn("telemetry shutdown failed", "err", err)
+		}
+	}()
 
 	profilerSrv, err = profiler.Start(opts.ProfilerAddr)
 	if err != nil {

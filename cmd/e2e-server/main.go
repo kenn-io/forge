@@ -26,6 +26,7 @@ import (
 
 	gh "github.com/google/go-github/v88/github"
 	gitcmd "go.kenn.io/kit/git/cmd"
+	oteltelemetry "go.kenn.io/kit/telemetry"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
@@ -1984,6 +1985,21 @@ func run(
 		BaseURL:    fmt.Sprintf("http://127.0.0.1:%d", tcpAddr.Port),
 		PID:        os.Getpid(),
 		ConfigPath: state.cfgPath,
+	}
+
+	// OTel export is opt-in via OTEL_TRACES_EXPORTER; a malformed value
+	// must not take down the e2e suite, so warn and continue instead of
+	// failing startup the way the primary server does.
+	if otelShutdown, err := oteltelemetry.Init(ctx); err != nil {
+		slog.Warn("e2e telemetry init failed", "err", err)
+	} else {
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := otelShutdown(shutdownCtx); err != nil {
+				slog.Warn("e2e telemetry shutdown failed", "err", err)
+			}
+		}()
 	}
 
 	// The workspace-switch profiling harness sets MIDDLEMAN_PPROF_ADDR

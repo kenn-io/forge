@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { IconButton } from "@kenn-io/kit-ui";
+  import { Card, IconButton } from "@kenn-io/kit-ui";
   import { onDestroy, onMount, tick } from "svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
   import PencilIcon from "@lucide/svelte/icons/pencil";
@@ -133,92 +133,93 @@
   $effect(() => scheduleMeasure(comment.body, expanded));
 </script>
 
-<div class="draft-item">
-  <div class="draft-content">
-    <button
-      class="draft-jump"
-      type="button"
-      onclick={() => onjump?.(comment)}
-    >
-      {location}
-    </button>
-    {#if editing}
-      <textarea
-        bind:this={editorElement}
-        value={draftBody}
-        class="draft-editor"
-        aria-label="Draft comment body"
-        rows="3"
-        disabled={editDisabled}
-        oninput={handleDraftBodyInput}
-      ></textarea>
-    {:else}
-      <p
-        bind:this={bodyElement}
-        class={["draft-body", expanded && "draft-body--expanded"]}
+<Card level="default" padding="sm" class="draft-item">
+  <div class="draft-item__layout">
+    <div class="draft-content">
+      <button
+        class="draft-jump"
+        type="button"
+        onclick={() => onjump?.(comment)}
       >
-        {comment.body}
-      </p>
-      {#if truncated || expanded}
-        <button class="draft-expand" type="button" onclick={toggleExpanded}>
-          {expanded ? "Show less" : "Show full comment"}
-        </button>
+        {location}
+      </button>
+      {#if editing}
+        <textarea
+          bind:this={editorElement}
+          value={draftBody}
+          class="draft-editor"
+          aria-label="Draft comment body"
+          rows="3"
+          disabled={editDisabled}
+          oninput={handleDraftBodyInput}
+        ></textarea>
+      {:else}
+        <p
+          bind:this={bodyElement}
+          class={["draft-body", expanded && "draft-body--expanded"]}
+        >
+          {comment.body}
+        </p>
+        {#if truncated || expanded}
+          <button class="draft-expand" type="button" onclick={toggleExpanded}>
+            {expanded ? "Show less" : "Show full comment"}
+          </button>
+        {/if}
       {/if}
-    {/if}
+    </div>
+    <div class="draft-actions">
+      {#if editing}
+        <IconButton
+          size="sm"
+          tone="success"
+          ariaLabel="Save draft comment"
+          onclick={() => void saveEdit()}
+          disabled={saveDisabled}
+        >
+          <CheckIcon size={13} />
+        </IconButton>
+        <IconButton
+          size="sm"
+          ariaLabel="Cancel editing draft comment"
+          onclick={cancelEdit}
+          disabled={editDisabled}
+        >
+          <XIcon size={13} />
+        </IconButton>
+      {:else}
+        <IconButton
+          size="sm"
+          ariaLabel="Edit draft comment"
+          onclick={beginEdit}
+          disabled={disabled}
+        >
+          <PencilIcon size={13} />
+        </IconButton>
+        <IconButton
+          size="sm"
+          tone="danger"
+          ariaLabel="Delete draft comment"
+          onclick={() => ondelete(comment.id)}
+          disabled={disabled}
+        >
+          <XIcon size={13} />
+        </IconButton>
+      {/if}
+    </div>
   </div>
-  <div class="draft-actions">
-    {#if editing}
-      <IconButton
-        size="sm"
-        tone="success"
-        ariaLabel="Save draft comment"
-        onclick={() => void saveEdit()}
-        disabled={saveDisabled}
-      >
-        <CheckIcon size={13} />
-      </IconButton>
-      <IconButton
-        size="sm"
-        ariaLabel="Cancel editing draft comment"
-        onclick={cancelEdit}
-        disabled={editDisabled}
-      >
-        <XIcon size={13} />
-      </IconButton>
-    {:else}
-      <IconButton
-        size="sm"
-        ariaLabel="Edit draft comment"
-        onclick={beginEdit}
-        disabled={disabled}
-      >
-        <PencilIcon size={13} />
-      </IconButton>
-      <IconButton
-        size="sm"
-        tone="danger"
-        ariaLabel="Delete draft comment"
-        onclick={() => ondelete(comment.id)}
-        disabled={disabled}
-      >
-        <XIcon size={13} />
-      </IconButton>
-    {/if}
-  </div>
-</div>
+</Card>
 
 <style>
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .draft-item {
+  :global(.draft-item) {
+    min-width: 0;
+  }
+
+  .draft-item__layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
     gap: var(--space-4);
     min-width: 0;
-    padding: 8px 8px 8px 10px;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--bg-inset) 84%, var(--bg-surface));
   }
 
   .draft-content {

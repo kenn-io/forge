@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Card } from "@kenn-io/kit-ui";
   import CheckIcon from "@lucide/svelte/icons/check";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import type { ReviewThread, ReviewThreadContext } from "../diff/review-thread-context.js";
@@ -55,7 +56,7 @@
   });
 </script>
 
-<div class="review-suggestion">
+<Card level="default" padding="none" class="review-suggestion">
   <div class="review-suggestion__header">
     <span>Suggested change</span>
     <span class="review-suggestion__path">{file.path}</span>
@@ -91,16 +92,12 @@
       </button>
     </div>
   {/if}
-</div>
+</Card>
 
 <style>
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .review-suggestion {
+  :global(.review-suggestion) {
     overflow: hidden;
     margin: var(--space-3, 0.75rem) 0;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface);
   }
 
   .review-suggestion__header {

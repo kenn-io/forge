@@ -20,6 +20,7 @@
     import { Button, Chip, Modal } from "@kenn-io/kit-ui";
   import { Spinner } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
+  import { ScrollBox } from "@kenn-io/kit-ui";
   import LabelPicker from "./LabelPicker.svelte";
   import UserListEditor from "./UserListEditor.svelte";
   import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
@@ -885,6 +886,7 @@
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
+    <ScrollBox label="Issue conversation">
     <div class="issue-detail">
       <div class="issue-detail-content">
       {#if staleLoadError}
@@ -1207,6 +1209,7 @@
       </div>
       </div>
     </div>
+    </ScrollBox>
 
     {#if branchConflict}
       {@const conflict = branchConflict}
@@ -1323,10 +1326,7 @@
     padding: 20px 24px;
     display: flex;
     flex-direction: column;
-    flex: 1;
-    min-height: 0;
     min-width: 0;
-    overflow-y: auto;
     overflow-x: hidden;
     width: 100%;
   }

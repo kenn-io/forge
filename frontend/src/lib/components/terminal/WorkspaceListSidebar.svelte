@@ -12,7 +12,7 @@
     DiffStats,
     FilterDropdown,
     GroupedSidebarSection,
-    SidebarScrollArea,
+    ScrollBox,
     SidebarToggle,
   } from "@middleman/ui";
   import {
@@ -1047,7 +1047,7 @@
       {/if}
     </section>
   {/if}
-  <SidebarScrollArea class="sidebar-list" label="Workspaces">
+  <ScrollBox class="sidebar-list" label="Workspaces">
     {#snippet children()}
     {#if sortMode === "repo"}
     {#each grouped as { key: repoKey, items } (repoKey)}
@@ -1240,7 +1240,7 @@
       <p class="filter-empty">No workspaces yet.</p>
     {/if}
     {/snippet}
-  </SidebarScrollArea>
+  </ScrollBox>
 
 </div>
 

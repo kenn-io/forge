@@ -834,7 +834,7 @@
     padding: 0 8px;
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
-    background: var(--bg-elevated);
+    background: var(--bg-surface);
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
     font-weight: 500;

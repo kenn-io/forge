@@ -16,7 +16,7 @@
   import type { MessageLinkRef } from "../../messages/types";
   import IssueMessageLinks from "../../features/kata/IssueMessageLinks.svelte";
   import RecurrencePanel from "../recurrence/RecurrencePanel.svelte";
-  import TypeaheadTrigger, { type TypeaheadOption } from "../shared/TypeaheadTrigger.svelte";
+  import type { TypeaheadOption } from "../shared/TypeaheadTrigger.svelte";
   import KataChecklistEditor from "./KataChecklistEditor.svelte";
   import KataIssueActions from "./KataIssueActions.svelte";
   import KataIssueDiscussion from "./KataIssueDiscussion.svelte";
@@ -42,7 +42,8 @@
     unlinkBusyIds: ReadonlySet<number>;
     selectedRecurrences: KataRecurrence[];
     checklistRevealed: boolean;
-    onMoveIssue: (toProjectUID: string | null) => void | Promise<void>;
+    movePending?: boolean | undefined;
+    onMoveIssue: (toProjectUID: string) => boolean | Promise<boolean>;
     onPatchMetadata: (uid: string, patch: Record<string, unknown>) => boolean | Promise<boolean>;
     onAddComment: (uid: string, body: string) => boolean | Promise<boolean>;
     onEditIssue: (uid: string, patch: KataTaskEditPatch) => boolean | Promise<boolean>;
@@ -80,6 +81,7 @@
     unlinkBusyIds,
     selectedRecurrences,
     checklistRevealed,
+    movePending = false,
     onMoveIssue,
     onPatchMetadata,
     onAddComment,
@@ -137,22 +139,6 @@
 
   function checklistItems() {
     return issue.issue.metadata.checklist ?? [];
-  }
-
-  function isTaskInboxProject(project: KataProjectSummary): boolean {
-    return project.metadata.role === "inbox";
-  }
-
-  function moveOptions(): TypeaheadOption[] {
-    return projects
-      .filter((project) => project.uid !== issue.issue.project_uid)
-      .filter((project) => !isTaskInboxProject(project))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
-      .map((project) => ({
-        value: project.uid,
-        label: project.name,
-        meta: String(project.open_count),
-      }));
   }
 
   function currentProjectName(): string {
@@ -245,18 +231,7 @@
   <div class="detail-heading">
     <div class="detail-heading-main">
       <div class="detail-kicker">
-        <div class="crumb-project-control">
-          <TypeaheadTrigger
-            ariaLabel="Move issue project"
-            triggerAriaLabel={`Move issue from ${currentProjectName()}`}
-            options={moveOptions()}
-            selected={null}
-            clearLabel={currentProjectName()}
-            placeholder="Move to project..."
-            emptyLabel="No matching projects"
-            onChange={onMoveIssue}
-          />
-        </div>
+        <span class="crumb-project">{currentProjectName()}</span>
         <span class="crumb-sep">/</span>
         <span class="crumb-id">{issue.issue.short_id}</span>
         <span class="kit-sr-only">{issue.issue.qualified_id}</span>
@@ -311,8 +286,11 @@
       {/if}
       <KataIssueOverflowMenu
         {issue}
+        {projects}
         hasChecklist={checklistItems().length > 0 || checklistRevealed}
         hasRecurrence={!canCreateRecurrence}
+        {movePending}
+        {onMoveIssue}
         onAddChecklist={onRevealChecklist}
         onCreateRecurrence={onCreateRecurrence}
         onDeleteIssue={onDeleteIssue}
@@ -442,34 +420,14 @@
     min-width: 0;
   }
 
-  .crumb-project-control {
-    width: clamp(160px, 22vw, 292px);
+  .crumb-project {
     min-width: 0;
-  }
-
-  .crumb-project-control :global(.typeahead-trigger),
-  .crumb-project-control :global(.typeahead-input) {
-    height: 22px;
-    padding: 0 8px;
+    max-width: clamp(160px, 22vw, 292px);
+    overflow: hidden;
     color: var(--text-primary);
-    font-size: var(--font-size-xs);
     font-weight: 600;
-    background: var(--bg-inset);
-    border-color: var(--border-muted);
-  }
-
-  .crumb-project-control :global(.typeahead-list) {
-    width: clamp(240px, 28vw, 320px);
-    right: auto;
-  }
-
-  .crumb-project-control :global(.typeahead-trigger:hover) {
-    background: var(--bg-surface-hover);
-    border-color: var(--border-default);
-  }
-
-  .crumb-project-control :global(.typeahead-trigger > svg) {
-    display: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .crumb-id {

@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && if [ -f node_modules/vite-plus/bin/vp ]; then exit 0; elif command -v vp >/dev/null 2>&1; then vp install --frozen-lockfile --ignore-scripts && test -f node_modules/vite-plus/bin/vp; else bun install --frozen-lockfile --ignore-scripts && test -f node_modules/vite-plus/bin/vp; fi",
+            "timeout": 300
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

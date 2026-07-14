@@ -69,7 +69,9 @@
   }
 </script>
 
-<div class="table-wrapper">
+<!-- Scrollable regions need keyboard access. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div class="table-wrapper" role="region" aria-label="Review jobs" tabindex="0">
   <table class="job-table">
     <thead>
       <tr>
@@ -179,9 +181,14 @@
 </div>
 
 <style>
+  /* Tables scroll both axes in narrow hosts (640px workspace sidebar), so
+     this stays a native scroller instead of the vertical-only ScrollBox:
+     hiding the native bars would drop the horizontal affordance, and a
+     nested x-scroller would detach the sticky thead from the scrollport. */
   .table-wrapper {
-    overflow-y: auto;
+    overflow: auto;
     flex: 1;
+    min-height: 0;
   }
 
   .job-table {

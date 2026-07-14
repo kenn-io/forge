@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import type { ComponentProps } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import * as flash from "@middleman/ui/stores/flash";
 
 import type { KataProjectSummary, KataTaskSearchFilters } from "../../api/kata/taskTypes.js";
 import type { KataAreaSummary, KataCurrentView } from "../../stores/kata-workspace.svelte.js";
@@ -31,29 +31,67 @@ const allScopeFilters: KataTaskSearchFilters = {
   query: "",
 };
 
+type SidebarProps = ComponentProps<typeof KataSidebar>;
+
+function renderSidebar(overrides: Partial<SidebarProps> = {}) {
+  return render(KataSidebar, {
+    props: {
+      areas,
+      projects,
+      currentView,
+      searchFilters: allScopeFilters,
+      onOpenView: vi.fn(),
+      onOpenProject: vi.fn(),
+      onCreateProject: vi.fn(),
+      ...overrides,
+    },
+  });
+}
+
 describe("KataSidebar", () => {
   afterEach(() => {
     cleanup();
-    for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
     vi.restoreAllMocks();
+  });
+
+  it("renders system views, expanded area groups, and project creation in order", () => {
+    renderSidebar();
+
+    const navigation = screen.getByRole("region", { name: "Kata navigation" });
+    const inbox = within(navigation).getByRole("button", { name: /^Inbox\b/ });
+    const personal = within(navigation).getByRole("button", { name: /^Personal\s+1$/ });
+    const work = within(navigation).getByRole("button", { name: /^Work\s+1$/ });
+    const create = within(navigation).getByRole("button", { name: "New project" });
+
+    expect(personal.getAttribute("aria-expanded")).toBe("true");
+    expect(work.getAttribute("aria-expanded")).toBe("true");
+    const ordered = [inbox, personal, work, create];
+    for (let index = 0; index < ordered.length - 1; index += 1) {
+      expect(ordered[index]!.compareDocumentPosition(ordered[index + 1]!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+  });
+
+  it("keeps area collapse state while mounted and resets it after remount", async () => {
+    const view = renderSidebar();
+    const personal = screen.getByRole("button", { name: /^Personal\s+1$/ });
+
+    await fireEvent.click(personal);
+    expect(personal.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("button", { name: /^Finances\b/ })).toBeNull();
+
+    await view.rerender({ areas: [...areas] });
+    expect(screen.getByRole("button", { name: /^Personal\s+1$/ }).getAttribute("aria-expanded")).toBe("false");
+
+    view.unmount();
+    renderSidebar();
+    expect(screen.getByRole("button", { name: /^Personal\s+1$/ }).getAttribute("aria-expanded")).toBe("true");
   });
 
   it("opens system views and project scopes from the restored sidebar", async () => {
     const onOpenView = vi.fn();
     const onOpenProject = vi.fn();
 
-    render(KataSidebar, {
-      props: {
-        areas,
-        projects,
-        currentView,
-        searchFilters: allScopeFilters,
-        onOpenView,
-        onOpenProject,
-        onCreateProject: vi.fn(),
-        onRenameProject: vi.fn(),
-      },
-    });
+    renderSidebar({ onOpenView, onOpenProject });
 
     await fireEvent.click(screen.getByRole("button", { name: /^Inbox\b/ }));
     expect(onOpenView).toHaveBeenCalledWith("inbox");
@@ -62,27 +100,22 @@ describe("KataSidebar", () => {
     expect(onOpenProject).toHaveBeenCalledWith("project-finances");
   });
 
-  it("double-clicking a project enters rename mode", async () => {
+  it("keeps project rows navigation-only without rename affordances", async () => {
     const onOpenProject = vi.fn();
-
-    render(KataSidebar, {
-      props: {
-        areas,
-        projects,
-        currentView,
-        searchFilters: allScopeFilters,
-        onOpenView: vi.fn(),
-        onOpenProject,
-        onCreateProject: vi.fn(),
-        onRenameProject: vi.fn(),
-      },
+    renderSidebar({
+      onOpenProject,
+      searchFilters: { ...allScopeFilters, scope: { kind: "project", project_uid: "project-finances" } },
     });
 
-    await fireEvent.doubleClick(screen.getByRole("button", { name: /^Finances\b/ }));
+    const finances = screen.getByRole("button", { name: /^Finances\b/ });
+    expect(finances.classList.contains("active")).toBe(true);
+    expect(screen.queryByRole("button", { name: "Rename Finances" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Rename project" })).toBeNull();
 
-    const input = screen.getByRole("textbox", { name: "Rename project" });
-    expect(input).toBeTruthy();
-    await waitFor(() => expect(input).toBe(document.activeElement));
+    await fireEvent.click(finances);
+    await fireEvent.doubleClick(finances);
+    expect(screen.queryByRole("textbox", { name: "Rename project" })).toBeNull();
+    expect(onOpenProject).toHaveBeenCalledWith("project-finances");
   });
 
   it("creates a project and opens the created scope", async () => {
@@ -90,18 +123,7 @@ describe("KataSidebar", () => {
     const onCreateProject = vi.fn(async () => created);
     const onOpenProject = vi.fn();
 
-    render(KataSidebar, {
-      props: {
-        areas,
-        projects,
-        currentView,
-        searchFilters: allScopeFilters,
-        onOpenView: vi.fn(),
-        onOpenProject,
-        onCreateProject,
-        onRenameProject: vi.fn(),
-      },
-    });
+    renderSidebar({ onCreateProject, onOpenProject });
 
     await fireEvent.click(screen.getByRole("button", { name: "New project" }));
     const input = screen.getByRole("textbox", { name: "New project name" });
@@ -113,92 +135,6 @@ describe("KataSidebar", () => {
       expect(onCreateProject).toHaveBeenCalledWith("New Project");
       expect(onOpenProject).toHaveBeenCalledWith("project-new");
     });
-  });
-
-  it("renames a project from the project row", async () => {
-    const onRenameProject = vi.fn(async () => {});
-
-    render(KataSidebar, {
-      props: {
-        areas,
-        projects,
-        currentView,
-        searchFilters: { ...allScopeFilters, scope: { kind: "project", project_uid: "project-finances" } },
-        onOpenView: vi.fn(),
-        onOpenProject: vi.fn(),
-        onCreateProject: vi.fn(),
-        onRenameProject,
-      },
-    });
-
-    const personal = screen.getByRole("region", { name: "Personal" });
-    await fireEvent.click(within(personal).getByRole("button", { name: "Rename Finances" }));
-
-    const input = screen.getByRole("textbox", { name: "Rename project" });
-    await fireEvent.input(input, { target: { value: "Household" } });
-    await fireEvent.submit(input.closest("form")!);
-
-    await waitFor(() => {
-      expect(onRenameProject).toHaveBeenCalledWith(2, "Household");
-    });
-  });
-
-  it("flashes project creation failures while preserving the draft", async () => {
-    render(KataSidebar, {
-      props: {
-        areas,
-        projects,
-        currentView,
-        searchFilters: allScopeFilters,
-        onOpenView: vi.fn(),
-        onOpenProject: vi.fn(),
-        onCreateProject: vi.fn(async () => {
-          throw new Error("create unavailable");
-        }),
-        onRenameProject: vi.fn(),
-      },
-    });
-
-    await fireEvent.click(screen.getByRole("button", { name: "New project" }));
-    const input = screen.getByRole("textbox", { name: "New project name" }) as HTMLInputElement;
-    await fireEvent.input(input, { target: { value: "New Project" } });
-    await fireEvent.submit(input.closest("form")!);
-
-    await waitFor(() => expect(flash.getFlash()).toMatchObject({ message: "create unavailable", tone: "danger" }));
-    expect(input.value).toBe("New Project");
-    expect(screen.queryByText("create unavailable")).toBeNull();
-  });
-
-  it("keeps rename validation inline but flashes transport failures", async () => {
-    const onRenameProject = vi.fn(async () => {
-      throw new Error("rename unavailable");
-    });
-    render(KataSidebar, {
-      props: {
-        areas,
-        projects,
-        currentView,
-        searchFilters: allScopeFilters,
-        onOpenView: vi.fn(),
-        onOpenProject: vi.fn(),
-        onCreateProject: vi.fn(),
-        onRenameProject,
-      },
-    });
-
-    const personal = screen.getByRole("region", { name: "Personal" });
-    await fireEvent.click(within(personal).getByRole("button", { name: "Rename Finances" }));
-    const input = screen.getByRole("textbox", { name: "Rename project" }) as HTMLInputElement;
-    await fireEvent.input(input, { target: { value: " " } });
-    await fireEvent.submit(input.closest("form")!);
-    expect(screen.getByRole("alert").textContent).toContain("Project name can't be empty.");
-    expect(flash.getFlash()).toBeNull();
-
-    await fireEvent.input(input, { target: { value: "Household" } });
-    await fireEvent.submit(input.closest("form")!);
-    await waitFor(() => expect(flash.getFlash()).toMatchObject({ message: "rename unavailable", tone: "danger" }));
-    expect(input.value).toBe("Household");
-    expect(screen.queryByText("rename unavailable")).toBeNull();
   });
 });
 

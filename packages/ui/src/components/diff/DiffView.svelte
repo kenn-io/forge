@@ -10,6 +10,7 @@
   const stores = getStores();
   const diffStore = stores.diff;
   const diffReviewDraft = stores.diffReviewDraft;
+  import { ScrollBox } from "@kenn-io/kit-ui";
   import DiffFileComponent from "./DiffFile.svelte";
   import DiffReviewDraftTray from "./DiffReviewDraftTray.svelte";
 
@@ -565,7 +566,6 @@
     const area = diffArea;
     if (!area) return;
 
-    area.tabIndex = -1;
     area.addEventListener("wheel", onDiffUserScrollIntent, { passive: false });
     area.addEventListener("touchstart", onDiffUserScrollIntent);
     area.addEventListener("pointerdown", onDiffUserScrollIntent);
@@ -599,15 +599,13 @@
       </div>
     {:else if diff}
       <div class="diff-main">
-        <div
-          class="diff-area"
-          class:diff-area--word-wrap={wordWrap}
-          bind:this={diffArea}
+        <ScrollBox
+          class={["diff-area", { "diff-area--word-wrap": wordWrap }]}
+          label="Changed file diffs"
+          bind:viewport={diffArea}
           onscroll={onDiffScroll}
-          role="region"
-          aria-label="Changed file diffs"
-          style:tab-size={tabWidth}
-          style:overscroll-behavior="contain"
+          tabindex={-1}
+          style="tab-size: {tabWidth}; overscroll-behavior: contain"
         >
           <div class="diff-content" bind:this={diffContent}>
             {#if visibleFiles.length === 0}
@@ -643,7 +641,7 @@
               <div class="review-warning">{reviewUnavailableReason}</div>
             {/if}
           </div>
-        </div>
+        </ScrollBox>
       </div>
     {/if}
   </div>
@@ -688,11 +686,6 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
-  }
-
-  .diff-area {
-    flex: 1;
-    overflow: auto;
   }
 
   .diff-content {

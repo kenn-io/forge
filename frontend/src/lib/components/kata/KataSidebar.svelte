@@ -4,9 +4,9 @@
   import CheckCircleIcon from "@lucide/svelte/icons/check-circle-2";
   import InboxIcon from "@lucide/svelte/icons/inbox";
   import LayersIcon from "@lucide/svelte/icons/layers";
-  import PencilIcon from "@lucide/svelte/icons/pencil";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import StarIcon from "@lucide/svelte/icons/star";
+  import { GroupedSidebarSection, ScrollBox } from "@middleman/ui";
   import { showFlash } from "@middleman/ui/stores/flash";
 
   import type { KataProjectSummary, KataTaskSearchFilters, KataTaskViewName } from "../../api/kata/taskTypes.js";
@@ -20,7 +20,6 @@
     onOpenView: (name: KataTaskViewName) => void | Promise<void>;
     onOpenProject: (projectUID: string) => void | Promise<void>;
     onCreateProject: (name: string) => Promise<KataProjectSummary>;
-    onRenameProject: (id: number, name: string) => Promise<void>;
   }
 
   let {
@@ -31,7 +30,6 @@
     onOpenView,
     onOpenProject,
     onCreateProject,
-    onRenameProject,
   }: Props = $props();
 
   const systemViews: Array<{
@@ -50,12 +48,14 @@
   let creatingProject = $state(false);
   let createDraft = $state("");
   let createSaving = $state(false);
-  let renamingProjectID = $state<number | null>(null);
-  let renameDraft = $state("");
-  let renameSaving = $state(false);
-  let renameError = $state<string | null>(null);
   let createInput: HTMLInputElement | null = $state(null);
-  let renameInput: HTMLInputElement | null = $state(null);
+  let collapsedAreas = $state<string[]>([]);
+
+  function toggleArea(name: string): void {
+    collapsedAreas = collapsedAreas.includes(name)
+      ? collapsedAreas.filter((area) => area !== name)
+      : [...collapsedAreas, name];
+  }
 
   function viewCount(name: KataTaskViewName): number | undefined {
     const inboxProject = projects.find((project) => project.metadata.role === "inbox");
@@ -96,43 +96,11 @@
       createSaving = false;
     }
   }
-
-  function startRenamingProject(project: KataProjectSummary): void {
-    renamingProjectID = project.id;
-    renameDraft = project.name;
-    renameError = null;
-    queueMicrotask(() => renameInput?.focus());
-  }
-
-  function cancelRenamingProject(): void {
-    renamingProjectID = null;
-    renameDraft = "";
-    renameError = null;
-  }
-
-  async function submitRenameProject(): Promise<void> {
-    if (renamingProjectID === null || renameSaving) return;
-    const name = renameDraft.trim();
-    if (!name) {
-      renameError = "Project name can't be empty.";
-      return;
-    }
-    renameSaving = true;
-    renameError = null;
-    try {
-      await onRenameProject(renamingProjectID, name);
-      renamingProjectID = null;
-      renameDraft = "";
-    } catch (err) {
-      showFlash(err instanceof Error ? err.message : "Could not rename project.", { tone: "danger" });
-    } finally {
-      renameSaving = false;
-    }
-  }
 </script>
 
 <aside class="kata-sidebar" aria-label="Kata navigation">
-  <nav class="kata-nav" aria-label="System views">
+  <ScrollBox label="Kata navigation">
+    <nav class="kata-nav" aria-label="System views">
     {#each systemViews as view (view.name)}
       {@const Icon = view.icon}
       {@const count = viewCount(view.name)}
@@ -153,75 +121,28 @@
     {/each}
   </nav>
 
-  {#if areas.length > 0}
-    <div class="project-groups">
-      {#each areas as area (area.name)}
-        <section class="project-group" aria-labelledby={`kata-area-${area.name}`}>
-          <h2 id={`kata-area-${area.name}`}>{area.name}</h2>
-          {#each area.projects as project (project.uid)}
-            {#if renamingProjectID === project.id}
-              <form
-                class="project-rename-form"
-                onsubmit={(event) => {
-                  event.preventDefault();
-                  void submitRenameProject();
-                }}
-              >
-                <input
-                  bind:this={renameInput}
-                  aria-label="Rename project"
-                  bind:value={renameDraft}
-                  onkeydown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void submitRenameProject();
-                    } else if (event.key === "Escape") {
-                      event.preventDefault();
-                      cancelRenamingProject();
-                    }
-                  }}
-                  onblur={() => {
-                    if (!renameSaving) cancelRenamingProject();
-                  }}
-                  disabled={renameSaving}
-                />
-              </form>
-              {#if renameError}
-                <p class="sidebar-error" role="alert">{renameError}</p>
-              {/if}
-            {:else}
-              <div class:active={isProjectActive(project.uid)} class="project-row">
-                <button
-                  type="button"
-                  class="project-select-button"
-                  onclick={() => {
-                    void onOpenProject(project.uid);
-                  }}
-                  ondblclick={(event) => {
-                    event.preventDefault();
-                    startRenamingProject(project);
-                  }}
-                >
-                  <span class="project-name">{project.name}</span>
-                  <span class="project-count count">{project.open_count}</span>
-                </button>
-                <button
-                  type="button"
-                  class="project-rename-button"
-                  aria-label={`Rename ${project.name}`}
-                  onclick={() => startRenamingProject(project)}
-                >
-                  <PencilIcon size={13} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-              </div>
-            {/if}
-          {/each}
-        </section>
-      {/each}
-    </div>
-  {/if}
+    {#each areas as area (area.name)}
+      <GroupedSidebarSection
+        label={area.name}
+        count={area.projects.length}
+        collapsed={collapsedAreas.includes(area.name)}
+        onclick={() => toggleArea(area.name)}
+      >
+        {#each area.projects as project (project.uid)}
+          <button
+            type="button"
+            class="project-select-button"
+            class:active={isProjectActive(project.uid)}
+            onclick={() => void onOpenProject(project.uid)}
+          >
+            <span class="project-name">{project.name}</span>
+            <span class="project-count count">{project.open_count}</span>
+          </button>
+        {/each}
+      </GroupedSidebarSection>
+    {/each}
 
-  <div class="project-create">
+    <div class="project-create">
     {#if creatingProject}
       <form
         class="project-create-form"
@@ -252,23 +173,30 @@
         <PlusIcon size={13} strokeWidth={1.9} />
         <span>New project</span>
       </button>
-    {/if}
-  </div>
+      {/if}
+    </div>
+  </ScrollBox>
 </aside>
 
 <style>
   .kata-sidebar {
+    --sidebar-list-border: var(--border-default);
+    --sidebar-row-bg: transparent;
+    --sidebar-row-hover-bg: var(--bg-surface-hover);
+    --sidebar-row-padding: 6px 10px;
+
+    display: flex;
+    flex-direction: column;
     min-width: 0;
+    min-height: 0;
     border-right: 1px solid var(--border-default);
-    background: var(--bg-secondary);
-    overflow: auto;
-    padding: 12px;
+    background: var(--bg-inset);
   }
 
-  .kata-nav,
-  .project-group {
+  .kata-nav {
     display: grid;
     gap: 4px;
+    padding: 12px;
   }
 
   .kata-nav button,
@@ -278,13 +206,13 @@
     min-height: 30px;
     border: 0;
     border-radius: 6px;
-    background: transparent;
+    background: var(--sidebar-row-bg);
     color: var(--text-secondary);
     display: grid;
     grid-template-columns: 18px minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-3);
-    padding: 4px 8px;
+    padding: var(--sidebar-row-padding);
     text-align: left;
     font: inherit;
     font-size: var(--font-size-sm);
@@ -292,18 +220,15 @@
   }
 
   .kata-nav button:hover,
-  .project-row:hover,
+  .project-select-button:hover,
   .project-create-button:hover {
-    background: var(--bg-hover);
+    background: var(--sidebar-row-hover-bg);
     color: var(--text-primary);
   }
 
   .kata-nav button.active,
-  .project-row.active {
-    background: color-mix(in srgb, var(--accent-blue) 28%, var(--bg-secondary));
-    box-shadow:
-      inset 3px 0 0 var(--accent-blue),
-      inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 42%, transparent);
+  .project-select-button.active {
+    background: var(--bg-row-selected);
     color: var(--text-primary);
   }
 
@@ -318,13 +243,13 @@
     color: var(--accent-blue);
   }
 
-  .project-row.active .project-count,
+  .project-select-button.active .project-count,
   .kata-nav button.active .nav-count {
     color: var(--text-primary);
   }
 
   .kata-nav button.active .nav-label,
-  .project-row.active .project-name {
+  .project-select-button.active .project-name {
     font-weight: 650;
   }
 
@@ -343,53 +268,15 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .project-groups {
-    display: grid;
-    gap: var(--space-6);
-    margin-top: 22px;
-  }
-
   .project-create {
-    margin-top: 16px;
-  }
-
-  .project-group h2 {
-    margin: 0 4px 6px;
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-weight: 650;
-    text-transform: uppercase;
-  }
-
-  .project-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 26px;
-    align-items: center;
-    border-radius: 6px;
+    padding: 12px;
   }
 
   .project-select-button {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .project-rename-button {
-    width: 24px;
-    height: 24px;
-    border: 0;
-    border-radius: 5px;
-    background: transparent;
-    color: var(--text-muted);
-    opacity: 0;
-    cursor: pointer;
-  }
-
-  .project-row:hover .project-rename-button,
-  .project-rename-button:focus-visible {
-    opacity: 1;
-  }
-
-  .project-create-form input,
-  .project-rename-form input {
+  .project-create-form input {
     width: 100%;
     min-height: 30px;
     border: 1px solid var(--border-default);
@@ -401,17 +288,10 @@
     padding: 5px 8px;
   }
 
-  .project-create-form input:focus,
-  .project-rename-form input:focus {
+  .project-create-form input:focus {
     outline: none;
     border-color: var(--accent-blue);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 18%, transparent);
-  }
-
-  .sidebar-error {
-    margin: 4px 6px;
-    color: var(--accent-red);
-    font-size: var(--font-size-xs);
   }
 
   @media (max-width: 900px) {

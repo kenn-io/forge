@@ -477,6 +477,7 @@ test.describe("repository source browser", () => {
       const historyHandle = browser.getByRole("button", { name: "Resize file history" });
 
       await expect(viewer.locator(".repo-browser__path")).toContainText("README.md");
+      await expect(viewer.locator(".repo-browser__source")).toContainText("# Widget Service");
       await expect(sidebar).toBeVisible();
       await expect(history).toBeVisible();
       await expect(filesHandle).toBeVisible();

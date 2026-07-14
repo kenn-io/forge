@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { createKataTaskAPI } from "../../api/kata/taskClient.js";
   import { showFlash } from "@middleman/ui/stores/flash";
+
+  import { createKataTaskAPI } from "../../api/kata/taskClient.js";
   import type {
     KataCreateRecurrenceInput,
     KataPatchRecurrenceInput,
@@ -29,8 +30,10 @@
   let loading = $state(true);
   let loadError = $state<string | null>(null);
   let checklistRevealed = $state(false);
+  let pendingMoveIssueUIDs = $state.raw<ReadonlySet<string>>(new Set());
   let unlinkBusyIds = $state<ReadonlySet<number>>(new Set());
   let loadRequestID = 0;
+  let issueContextGeneration = 0;
   let recurrenceDialogs = $state<{
     openCreateRecurrence: () => void;
     openEditRecurrence: (recurrence: KataRecurrence) => void;
@@ -40,6 +43,7 @@
 
   $effect(() => {
     const issueUID = kata.issue_uid;
+    issueContextGeneration += 1;
     const requestID = ++loadRequestID;
     loading = true;
     loadError = null;
@@ -70,11 +74,16 @@
     return store.selectedIssue ? readMessageLinks(store.selectedIssue.issue.metadata) : [];
   }
 
-  async function runTask(task: () => Promise<void | boolean>): Promise<boolean> {
+  async function runTask(
+    task: () => Promise<void | boolean>,
+    shouldSurfaceFailure: () => boolean = () => true,
+  ): Promise<boolean> {
     try {
       return (await task()) ?? true;
     } catch (err) {
-      showFlash(err instanceof Error ? err.message : "Kata request failed.", { tone: "danger" });
+      if (shouldSurfaceFailure()) {
+        showFlash(err instanceof Error ? err.message : "Kata request failed.", { tone: "danger" });
+      }
       return false;
     }
   }
@@ -93,10 +102,22 @@
     }
   }
 
-  async function moveSelectedIssue(toProjectUID: string | null): Promise<void> {
+  async function moveSelectedIssue(toProjectUID: string): Promise<boolean> {
     const selected = store.selectedIssue?.issue;
-    if (!selected || !toProjectUID) return;
-    await runTask(() => store.moveIssue(selected.uid, actor, toProjectUID));
+    if (!selected || pendingMoveIssueUIDs.has(selected.uid)) return false;
+    const sourceIssueUID = selected.uid;
+    const generation = issueContextGeneration;
+    pendingMoveIssueUIDs = new Set(pendingMoveIssueUIDs).add(sourceIssueUID);
+    try {
+      return await runTask(
+        () => store.moveIssue(sourceIssueUID, actor, toProjectUID),
+        () => generation === issueContextGeneration,
+      );
+    } finally {
+      const nextPendingMoves = new Set(pendingMoveIssueUIDs);
+      nextPendingMoves.delete(sourceIssueUID);
+      pendingMoveIssueUIDs = nextPendingMoves;
+    }
   }
 
   function patchSelectedMetadata(uid: string, patch: Record<string, unknown>): Promise<boolean> {
@@ -187,6 +208,7 @@
   }
 
   async function selectIssue(uid: string): Promise<void> {
+    issueContextGeneration += 1;
     await runLoadTask(() => store.selectIssue(uid));
   }
 </script>
@@ -212,6 +234,7 @@
       unlinkBusyIds={unlinkBusyIds}
       selectedRecurrences={store.selectedRecurrences}
       {checklistRevealed}
+      movePending={pendingMoveIssueUIDs.has(store.selectedIssue.issue.uid)}
       onMoveIssue={moveSelectedIssue}
       onPatchMetadata={patchSelectedMetadata}
       onAddComment={addSelectedComment}

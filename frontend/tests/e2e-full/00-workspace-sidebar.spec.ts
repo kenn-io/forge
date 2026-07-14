@@ -541,6 +541,28 @@ test.describe("workspace sidebar full-stack", () => {
       await page.locator(".terminal-view .panel-toggle-btn", { hasText: "Issue" }).click();
       await expect(page.locator(".right-sidebar")).toBeVisible();
       await expect(page.locator(".right-sidebar .detail-title")).toContainText("Widget rendering broken on Safari");
+
+      // The sidebar detail must scroll internally: .pr-scroll is a
+      // constrained flex host, so the ScrollBox viewport owns the overflow
+      // instead of the pane growing into an outer native scroller.
+      const sidebarDetail = page.locator(".right-sidebar .issue-detail");
+      await sidebarDetail.evaluate((el) => {
+        const filler = document.createElement("div");
+        filler.style.height = "3000px";
+        filler.style.flexShrink = "0";
+        filler.setAttribute("data-test-filler", "sidebar-scroll");
+        el.appendChild(filler);
+      });
+      const sidebarScroller = page.locator(".right-sidebar").getByRole("region", { name: "Issue conversation" });
+      const overflow = await sidebarScroller.evaluate((el) => ({
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+      }));
+      expect(overflow.scrollHeight).toBeGreaterThan(overflow.clientHeight);
+      await sidebarScroller.evaluate((el) => {
+        el.scrollTop = el.scrollHeight;
+      });
+      expect(await sidebarScroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

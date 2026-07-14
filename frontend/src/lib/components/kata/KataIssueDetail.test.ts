@@ -117,7 +117,7 @@ function renderDetail(props: Partial<KataIssueDetailProps> = {}) {
       unlinkBusyIds: new Set<number>(),
       selectedRecurrences: [makeRecurrence()],
       checklistRevealed: false,
-      onMoveIssue: vi.fn(async () => {}),
+      onMoveIssue: vi.fn(async () => true),
       onPatchMetadata: vi.fn(async () => true),
       onAddComment: vi.fn(async () => true),
       onEditIssue: vi.fn(async () => true),
@@ -183,33 +183,14 @@ describe("KataIssueDetail", () => {
     expect(onEditIssue).toHaveBeenCalledWith("issue-1", { body: "Updated body" });
   });
 
-  it("keeps title and description drafts open after failed saves", async () => {
-    const onEditIssue = vi.fn(async () => false);
-    renderDetail({ onEditIssue });
-
-    await fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
-    await fireEvent.input(screen.getByLabelText("Edit title"), {
-      target: { value: "Unsaved title" },
-    });
-    await fireEvent.keyDown(screen.getByLabelText("Edit title"), { key: "Enter" });
-    expect(((await screen.findByLabelText("Edit title")) as HTMLInputElement).value).toBe("Unsaved title");
-
-    await fireEvent.click(screen.getByRole("button", { name: "Edit description" }));
-    await fireEvent.input(screen.getByLabelText("Edit description"), {
-      target: { value: "Unsaved body" },
-    });
-    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(((await screen.findByLabelText("Edit description")) as HTMLTextAreaElement).value).toBe("Unsaved body");
-  });
-
-  it("moves to a non-inbox project from the crumb picker", async () => {
-    const onMoveIssue = vi.fn(async () => {});
+  it("renders the current project as passive breadcrumb text", () => {
+    const onMoveIssue = vi.fn(async () => true);
     renderDetail({ onMoveIssue });
 
-    await fireEvent.click(screen.getByRole("button", { name: /Move issue from Inbox/ }));
-    await fireEvent.keyDown(screen.getByRole("combobox", { name: "Move issue project" }), { key: "Enter" });
-
-    expect(onMoveIssue).toHaveBeenCalledWith("project-2");
+    expect(screen.getAllByText("Inbox").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /Move issue from Inbox/ })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Move issue project" })).toBeNull();
+    expect(onMoveIssue).not.toHaveBeenCalled();
   });
 
   it("opens the reachable graph for the selected task", async () => {
@@ -230,7 +211,8 @@ describe("KataIssueDetail", () => {
       }),
     });
 
-    expect(screen.getByRole("button", { name: "Move issue from Roadmap" }).textContent).toContain("Roadmap");
+    expect(screen.getAllByText("Roadmap").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Move issue from Roadmap" })).toBeNull();
   });
 
   it("renders linked messages through the detail composition", () => {

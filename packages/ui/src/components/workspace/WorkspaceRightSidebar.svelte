@@ -403,7 +403,10 @@
 
   .pr-scroll {
     flex: 1;
-    overflow-y: auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .sidebar-reviews {
@@ -426,7 +429,7 @@
 
   .sidebar-reviews-table {
     flex: 1;
-    overflow-y: auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
   }

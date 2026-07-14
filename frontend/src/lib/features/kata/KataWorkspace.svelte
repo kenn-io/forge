@@ -109,6 +109,7 @@
   let captureOpen = $state(false);
   let listResetGeneration = $state(0);
   let checklistRevealed = $state(false);
+  let pendingMoveIssueUIDs = $state.raw<ReadonlySet<string>>(new Set());
   let recurrenceDialogs = $state<KataRecurrenceDialogController | null>(null);
   let workspaceActionBusy = $state(false);
   let listMode = $state<ListMode>("tasks");
@@ -238,6 +239,7 @@
   async function runViewTask(
     task: () => Promise<void | boolean>,
     failureSurface: FailureSurface = "daemon",
+    shouldSurfaceFailure: () => boolean = () => true,
   ): Promise<boolean> {
     const loadingGeneration = beginViewLoading();
     clearTaskErrors(failureSurface);
@@ -249,7 +251,9 @@
       }
       return ok;
     } catch (err) {
-      surfaceTaskError(kataRequestErrorMessage(err), failureSurface);
+      if (shouldSurfaceFailure()) {
+        surfaceTaskError(kataRequestErrorMessage(err), failureSurface);
+      }
       return false;
     } finally {
       endViewLoading(loadingGeneration);
@@ -613,6 +617,11 @@
       return;
     }
     if (mismatch === "daemon" && daemonSwitchGated()) return;
+    // A project route load applies its scope before its optional view load
+    // finishes. That intermediate state can leave only the issue selection
+    // mismatched, but selecting now would be aborted when the remaining view
+    // load clears selection. Wait for the complete route load to settle.
+    if (viewScopeLoadSignature !== null && mismatch !== "viewScope") return;
     if (mismatch === "viewScope" && viewScopeLoadSignature === fullRouteSignature()) return;
     void untrack(() => reconcileRoute());
   });
@@ -835,10 +844,6 @@
     return created!;
   }
 
-  async function renameKataProject(id: number, name: string): Promise<void> {
-    await runViewTaskOrThrow(() => store.renameProject(id, name));
-  }
-
   async function submitQuickCapture(title: string): Promise<void> {
     await withRouteEmission(async () => {
       await runViewTaskOrThrow(async () => {
@@ -982,10 +987,23 @@
     graphSourceIssue = null;
   }
 
-  async function moveSelectedIssue(toProjectUID: string | null): Promise<void> {
+  async function moveSelectedIssue(toProjectUID: string): Promise<boolean> {
     const selected = store.selectedIssue?.issue;
-    if (!selected || !toProjectUID) return;
-    await runViewTask(() => store.moveIssue(selected.uid, actor, toProjectUID), "flash");
+    if (!selected || pendingMoveIssueUIDs.has(selected.uid)) return false;
+    const sourceIssueUID = selected.uid;
+    const generation = navigationGeneration;
+    pendingMoveIssueUIDs = new Set(pendingMoveIssueUIDs).add(sourceIssueUID);
+    try {
+      return await runViewTask(
+        () => store.moveIssue(sourceIssueUID, actor, toProjectUID),
+        "flash",
+        () => isCurrentNavigation(generation),
+      );
+    } finally {
+      const nextPendingMoves = new Set(pendingMoveIssueUIDs);
+      nextPendingMoves.delete(sourceIssueUID);
+      pendingMoveIssueUIDs = nextPendingMoves;
+    }
   }
 
   async function patchSelectedMetadata(uid: string, patch: Record<string, unknown>): Promise<boolean> {
@@ -1093,11 +1111,12 @@
   ): Promise<boolean> {
     const selected = store.selectedIssue;
     if (!selected) return false;
-    return runViewTask(() =>
-      store.closeIssue(selected.issue.uid, actor, {
-        reason,
-        message,
-      }),
+    return runViewTask(
+      () =>
+        store.closeIssue(selected.issue.uid, actor, {
+          reason,
+          message,
+        }),
       "flash",
     );
   }
@@ -1188,7 +1207,6 @@
         scheduleProjectScope(projectUID);
       }}
       onCreateProject={createKataProject}
-      onRenameProject={renameKataProject}
     />
 
     <main class="kata-main" aria-label="Kata tasks">
@@ -1272,6 +1290,7 @@
       unlinkBusyIds={unlinkBusyIds}
       selectedRecurrences={store.selectedRecurrences}
       {checklistRevealed}
+      movePending={pendingMoveIssueUIDs.has(store.selectedIssue.issue.uid)}
       onMoveIssue={moveSelectedIssue}
       onPatchMetadata={patchSelectedMetadata}
       onAddComment={addSelectedComment}
@@ -1331,6 +1350,13 @@
     flex-direction: column;
   }
 
+  .kata-view-error {
+    flex: 0 0 auto;
+    margin: var(--space-4) var(--space-5) 0;
+    color: var(--accent-red);
+    font-size: var(--font-size-sm);
+  }
+
   .kata-header {
     min-height: 56px;
     padding: 16px 20px;
@@ -1339,13 +1365,6 @@
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-  }
-
-  .kata-view-error {
-    flex: 0 0 auto;
-    margin: var(--space-4) var(--space-5) 0;
-    color: var(--accent-red);
-    font-size: var(--font-size-sm);
   }
 
   .kata-header-title {
@@ -1399,7 +1418,6 @@
     min-width: 0;
     min-height: 0;
     display: flex;
-    flex-direction: column;
     overflow: hidden;
   }
 

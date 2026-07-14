@@ -243,6 +243,12 @@
 
     --trees-search-fg-override: var(--text-primary);
     --trees-search-bg-override: var(--bg-inset);
+    /* The library defaults to a 16px inline gutter; the rest of the
+       docs sidebar (folder chip header, folder dropdown) sits on the
+       app's 8px gutter. This variable drives both the search row and
+       the tree's scroll container, so they stay aligned with each
+       other while matching the header. */
+    --trees-padding-inline-override: 8px;
 
     --trees-selected-fg-override: var(--text-primary);
     --trees-selected-bg-override: var(--bg-surface-hover);
@@ -255,7 +261,6 @@
   :global(.folder-tree-context-menu) {
     min-width: 140px;
     padding: 4px;
-    background: var(--bg-elevated);
     font-size: var(--font-size-sm);
   }
   :global(.folder-tree-context-menu-item) {

@@ -119,7 +119,7 @@
           },
           ".cm-tooltip.cm-tooltip-autocomplete": {
             border: "1px solid var(--border-default)",
-            background: "var(--bg-elevated)",
+            background: "var(--bg-surface)",
             color: "var(--text-primary)",
             borderRadius: "var(--radius-md)",
             boxShadow: "var(--shadow-md)",

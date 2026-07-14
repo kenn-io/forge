@@ -18,7 +18,12 @@ export default defineConfig({
         cache: false,
       },
       "kit-ui-check": {
-        command: `(cd frontend && node node_modules/@kenn-io/kit-ui/bin/kit-ui-check.mjs src ../packages/ui/src)`,
+        // hand-rolled-card/-checkbox/-toggle arrived with kit-ui's
+        // Card/Checkbox/Toggle components (kit-ui #26) and flag 54
+        // pre-existing sites; re-enable rule by rule as those surfaces
+        // migrate to the components (kata wa1f). Keep the --disable list
+        // in sync with frontend-check-no-deps in the Makefile.
+        command: `(cd frontend && node node_modules/@kenn-io/kit-ui/bin/kit-ui-check.mjs --disable hand-rolled-card,hand-rolled-checkbox,hand-rolled-toggle src ../packages/ui/src)`,
         cache: false,
       },
       "frontend-fmt": {

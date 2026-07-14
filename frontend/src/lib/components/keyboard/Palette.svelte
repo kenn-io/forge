@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { tick, untrack } from "svelte";
+  import { untrack } from "svelte";
 
-  import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
   import type { ModalFrameAction } from "@middleman/ui/stores/keyboard/keyspec";
   import { getStores, ItemStateChip } from "@middleman/ui";
-  import { formatRelativeTime } from "@kenn-io/kit-ui";
+  import { formatRelativeTime, TextInput } from "@kenn-io/kit-ui";
+  import Modal from "../shared/Modal.svelte";
   import type { Issue, PullRequest } from "@middleman/ui/api/types";
   import {
     buildIssueRoute,
@@ -61,8 +61,7 @@
     | ReturnType<typeof getStores>
     | undefined;
 
-  let dialogEl: HTMLDivElement | undefined = $state();
-  let inputEl: HTMLInputElement | undefined = $state();
+  let paletteEl: HTMLDivElement | undefined = $state();
   let query = $state("");
   let highlightIndex = $state(0);
   let recents = $state<RecentsState>({ version: 1, items: [] });
@@ -251,8 +250,8 @@
   // unit tests) doesn't implement scrollIntoView, so guard the call.
   $effect(() => {
     void highlightIndex;
-    if (!dialogEl) return;
-    const row = dialogEl.querySelector<HTMLElement>(".palette-row-highlight");
+    if (!paletteEl) return;
+    const row = paletteEl.querySelector<HTMLElement>(".palette-row-highlight");
     if (row && typeof row.scrollIntoView === "function") {
       row.scrollIntoView({ block: "nearest" });
     }
@@ -409,13 +408,11 @@
     }
   }
 
-  $effect(() => {
-    if (!isPaletteOpen()) return;
-    const closeAction: ModalFrameAction = {
+  const modalActions: ModalFrameAction[] = [
+    {
       id: "palette.close",
       label: "Close palette",
       binding: [
-        { key: "Escape" },
         { key: "k", ctrlOrMeta: true },
         { key: "p", ctrlOrMeta: true },
         { key: "p", ctrlOrMeta: true, shift: true },
@@ -423,66 +420,31 @@
       priority: 100,
       when: () => true,
       handler: () => closePalette(),
-    };
-    const cleanup = untrack(() => pushModalFrame("palette", [closeAction]));
-    // Move keyboard focus into the search input on open. Without this the
-    // user's existing focus stays on whatever was active before, so typed
-    // characters land in the wrong field.
-    void tick().then(() => inputEl?.focus());
-    return cleanup;
-  });
-
-  // Focus trap: keep Tab / Shift+Tab cycling within the palette dialog so
-  // focus never escapes to the page underneath while the palette is open.
-  // Initial focus is handled by the effect above via tick(); this trap only
-  // intercepts subsequent Tab navigation.
-  $effect(() => {
-    if (!isPaletteOpen() || !dialogEl) return;
-    const focusable = (): HTMLElement[] =>
-      Array.from(
-        dialogEl!.querySelectorAll<HTMLElement>(
-          // kit-ui-check-ignore: palette-style actions move focus as their outcome; kit trapFocus restores pre-open focus on teardown, undoing the selected action
-          "input, button, [tabindex]:not([tabindex='-1'])",
-        ),
-      ).filter((e) => !e.hasAttribute("disabled"));
-    function trap(e: KeyboardEvent): void {
-      if (e.key !== "Tab") return;
-      const els = focusable();
-      if (els.length === 0) return;
-      const currentIndex = els.findIndex((el) => el === document.activeElement);
-      const nextIndex = e.shiftKey
-        ? (currentIndex <= 0 ? els.length - 1 : currentIndex - 1)
-        : (currentIndex < 0 || currentIndex === els.length - 1 ? 0 : currentIndex + 1);
-      els[nextIndex]?.focus();
-      e.preventDefault();
-    }
-    // Capture dialogEl into a local before registering so the cleanup
-    // detaches from the same node we attached to, even if dialogEl is
-    // reassigned or unmounted before cleanup runs.
-    const el = dialogEl;
-    el.addEventListener("keydown", trap);
-    return () => el.removeEventListener("keydown", trap);
-  });
+    },
+  ];
 </script>
 
 {#if isPaletteOpen()}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="palette-backdrop" onclick={closePalette}></div>
-  <div
-    bind:this={dialogEl}
-    class="palette"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Command palette"
+  <Modal
+    open
+    ariaLabel="Command palette"
+    width={920}
+    frameId="palette"
+    actions={modalActions}
+    onClose={closePalette}
   >
-    <input
-      bind:this={inputEl}
-      bind:value={query}
-      onkeydown={onPaletteKeyDown}
-      class="palette-input"
-      placeholder="Search PRs, issues, commands, tasks, docs..."
-    />
+    <div bind:this={paletteEl} class="palette">
+      <TextInput
+        class="palette-input"
+        block
+        size="md"
+        value={query}
+        placeholder="Search PRs, issues, commands, tasks, docs..."
+        ariaLabel="Search command palette"
+        autofocus
+        oninput={(value) => (query = value)}
+        onkeydown={onPaletteKeyDown}
+      />
     <div class="palette-body">
       <div class="palette-list">
         {#if parsed.scope === "reserved"}
@@ -744,49 +706,35 @@
         {/if}
       </div>
     </div>
-    <div class="palette-footer">
-      <span>up/down navigate</span>
-      <span>enter run</span>
-      <span>esc close</span>
+      <div class="palette-footer">
+        <span>up/down navigate</span>
+        <span>enter run</span>
+        <span>esc close</span>
+      </div>
     </div>
-  </div>
+  </Modal>
 {/if}
 
 <style>
-  .palette-backdrop {
-    position: fixed;
-    /* kit-ui-check-ignore: command palette owns its overlay, query focus, and result keyboard model; a kit CommandPalette adoption is a separate migration */
-    inset: 0;
-    background: var(--overlay-bg);
-    z-index: 90;
+  :global(.kit-modal-body:has(> .modal-scope > .palette)) {
+    padding: 0;
+    overflow: hidden;
   }
 
   .palette {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 920px;
-    max-width: calc(100vw - 32px);
-    height: 480px;
-    max-height: calc(100vh - 32px);
+    height: min(480px, calc(100vh - 32px));
     display: grid;
-    grid-template-rows: auto 1fr auto;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: 10px;
-    box-shadow: var(--shadow-lg);
-    z-index: 91;
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
-  .palette-input {
-    padding: 12px 16px;
+  :global(.palette-input.kit-text-input) {
+    height: 48px;
+    padding: 0 16px;
     border: none;
     border-bottom: 1px solid var(--border-muted);
+    border-radius: 0;
     background: transparent;
-    color: var(--text-primary);
     font-size: var(--font-size-lg);
-    outline: none;
   }
 
   .palette-body {

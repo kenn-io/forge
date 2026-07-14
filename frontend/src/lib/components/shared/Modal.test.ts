@@ -63,9 +63,21 @@ describe("Modal shell", () => {
     await waitFor(() => expect(getStack()).toHaveLength(0));
   });
 
-  it("uses the provided frameId for its stack frame", async () => {
-    renderModal({ frameId: "example-frame" });
+  it("uses the provided frame and actions for keyboard dispatch", async () => {
+    const handler = vi.fn();
+    renderModal({
+      frameId: "example-frame",
+      actions: [
+        {
+          id: "example.close",
+          label: "Close example",
+          binding: { key: "k", ctrlOrMeta: true },
+          handler,
+        },
+      ],
+    });
     await waitFor(() => expect(getStack()[0]?.frameId).toBe("example-frame"));
+    expect(getStack()[0]?.actions[0]?.handler).toBe(handler);
   });
 
   it("stacks frames for nested dialogs and unwinds them independently", async () => {

@@ -2,6 +2,7 @@
   import { Modal as KitModal } from "@kenn-io/kit-ui";
   import { untrack } from "svelte";
   import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
+  import type { ModalFrameAction } from "@middleman/ui/stores/keyboard/keyspec";
   import type { Snippet } from "svelte";
 
   // Shared in-app dialog shell: adapts kit-ui Modal (backdrop, frame, header,
@@ -15,6 +16,7 @@
     ariaLabel?: string | undefined;
     width?: number | undefined;
     frameId?: string | undefined;
+    actions?: ModalFrameAction[] | undefined;
     // Header close (X) button, off by default. Dialogs here provide an explicit
     // Cancel/close in their footer, so an X would duplicate it and add a stop to
     // the focus trap. Opt in with showClose only for content-only dialogs that
@@ -34,6 +36,7 @@
     ariaLabel = undefined,
     width = 440,
     frameId = undefined,
+    actions = [],
     showClose = false,
     onClose,
     children,
@@ -50,7 +53,7 @@
   // background action underneath it.
   $effect(() => {
     if (!open) return;
-    return untrack(() => pushModalFrame(frameId ?? "shared-modal", []));
+    return untrack(() => pushModalFrame(frameId ?? "shared-modal", actions));
   });
 
   $effect(() => {

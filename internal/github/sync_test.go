@@ -5543,26 +5543,25 @@ func TestSyncRepoUpdatesViewerCanMergeWithoutMergeSettings(t *testing.T) {
 	assert.False(repos[0].ViewerCanMerge)
 }
 
-func TestRefreshRepoSettingsPersistsGitHubProviderMetadata(t *testing.T) {
+func TestSyncRepoPersistsGitHubProviderMetadataWhenIdentityPrefilled(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
-	// The modern resolution path pre-fills the platform repo id, so
-	// syncRepoIdentity never resolves the repository itself and
-	// refreshRepoSettings receives resolvedRepo == nil. Provider metadata
-	// must still be persisted from the GitHub settings fetch, or the row
-	// keeps an empty default branch forever and downstream consumers (the
-	// worktree diff sampler) fall back to a bare HEAD diff.
-	repoID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: "R_kgDOexample",
-		Owner:          "acme",
-		Name:           "widgets",
-		RepoPath:       "acme/widgets",
-	})
-	require.NoError(err)
+	// Repo resolution (glob listing and explicit lookup) pre-fills the
+	// platform repo id, so syncRepoIdentity never resolves the repository
+	// itself and the GitHub settings-refresh branch is the row's only
+	// metadata writer. It must persist provider metadata from its own
+	// settings fetch, or the row keeps an empty default branch forever and
+	// the worktree diff sampler degrades to a bare HEAD diff.
+	repo := RepoRef{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "widgets",
+		RepoPath:           "acme/widgets",
+		PlatformExternalID: "R_kgDOexample",
+	}
 	client := &mockClient{getRepositoryFn: func(
 		context.Context,
 		string,
@@ -5576,15 +5575,10 @@ func TestRefreshRepoSettingsPersistsGitHubProviderMetadata(t *testing.T) {
 			DefaultBranch: new("main"),
 		}, nil
 	}}
-	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{{
-		Platform:     platform.KindGitHub,
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widgets",
-		RepoPath:     "acme/widgets",
-	}}, time.Minute, nil, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil)
 
-	syncer.refreshRepoSettings(ctx, syncer.repos[0], repoID, nil)
+	require.NoError(syncer.syncRepo(ctx, repo))
 
 	repos, err := d.ListRepos(ctx)
 	require.NoError(err)

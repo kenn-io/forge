@@ -177,6 +177,7 @@ function renderPullDetail(
   options: {
     hideWorkspaceAction?: boolean;
     actions?: { pull: unknown[] };
+    staleRefreshing?: boolean;
   } = {},
 ) {
   const actions = options.actions ?? { pull: [] };
@@ -187,7 +188,7 @@ function renderPullDetail(
     getDetail: () => detail,
     isDetailLoading: () => false,
     getDetailError: () => null,
-    isStaleRefreshing: () => false,
+    isStaleRefreshing: () => options.staleRefreshing ?? false,
     isDetailSyncing: () => false,
     getDetailLoaded: () => true,
     updateKanbanState: vi.fn(),
@@ -374,6 +375,13 @@ describe("PullDetail approvals", () => {
     await fireEvent.mouseDown(document.body);
 
     expect(document.querySelector(".approval-popup")).toBeNull();
+  });
+
+  it("labels an active stale-detail refresh", () => {
+    renderPullDetail(pullDetail(), undefined, undefined, { staleRefreshing: true });
+
+    expect(screen.getByLabelText("Refreshing pull request details")).toBeTruthy();
+    expect(screen.getByText("Refreshing...")).toBeTruthy();
   });
 
   it("keeps task checkboxes disabled while highlighted markdown is pending", () => {

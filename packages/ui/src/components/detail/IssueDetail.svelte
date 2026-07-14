@@ -12,8 +12,12 @@
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
-  import { CopyButton, formatRelativeTime } from "@kenn-io/kit-ui";
-  import { copyToClipboard } from "@kenn-io/kit-ui";
+  import {
+    CopyButton,
+    copyToClipboard,
+    formatRelativeTime,
+    StatusDot,
+  } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
@@ -896,8 +900,8 @@
       {/if}
       {#if issues.isIssueStaleRefreshing()}
         <div class="refresh-banner">
-          <span class="sync-dot"></span>
-          Refreshing...
+          <StatusDot status="working" label="Refreshing issue details" size={5} />
+          <span aria-hidden="true">Refreshing...</span>
         </div>
       {/if}
       <!-- Header -->
@@ -1547,18 +1551,6 @@
     margin-bottom: 8px;
   }
 
-  .sync-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--accent-green);
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 1; }
-  }
 
   .loading-placeholder {
     display: flex;

@@ -59,6 +59,9 @@ interface WorkspaceFixtureOptions {
   deletions?: number | null;
   commitsAhead?: number | null;
   commitsBehind?: number | null;
+  tmuxWorking?: boolean;
+  tmuxPaneTitle?: string | null;
+  tmuxActivitySource?: string;
 }
 
 function workspaceFixture({
@@ -81,6 +84,9 @@ function workspaceFixture({
   deletions = null,
   commitsAhead = null,
   commitsBehind = null,
+  tmuxWorking = false,
+  tmuxPaneTitle = null,
+  tmuxActivitySource = "unknown",
 }: WorkspaceFixtureOptions) {
   const isKata = itemType === "kata_task";
   return {
@@ -102,6 +108,9 @@ function workspaceFixture({
     git_head_ref: branch,
     worktree_path: `/tmp/${id}`,
     tmux_session: id,
+    tmux_working: tmuxWorking,
+    tmux_pane_title: tmuxPaneTitle,
+    tmux_activity_source: tmuxActivitySource,
     status: "ready",
     created_at: createdAt,
     tmux_last_output_at: tmuxLastOutputAt,
@@ -1344,6 +1353,33 @@ describe("WorkspaceListSidebar", () => {
     expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
   });
 
+  it("labels active terminal work with its pane title", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-working",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 9,
+            title: "Working workspace",
+            tmuxWorking: true,
+            tmuxPaneTitle: "Running focused tests",
+            tmuxActivitySource: "title",
+          }),
+        ],
+      },
+    });
+
+    render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-working" },
+    });
+
+    expect(await screen.findByLabelText("Working (title): Running focused tests")).toBeTruthy();
+  });
+
   it("pushes an ahead workspace branch and shows a busy state while pending", async () => {
     const push = deferred<{
       error?: unknown;
@@ -1383,10 +1419,12 @@ describe("WorkspaceListSidebar", () => {
       params: { path: { id: "ws-ahead" } },
     });
     expect((screen.getByRole("menuitem", { name: /Pushing\.\.\./ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByLabelText("Pushing branch")).toBeTruthy();
 
     push.resolve({ response: { ok: true, status: 200 } });
     await waitFor(() => {
       expect(screen.queryByRole("menuitem", { name: /Pushing\.\.\./ })).toBeNull();
+      expect(screen.queryByLabelText("Pushing branch")).toBeNull();
     });
   });
 

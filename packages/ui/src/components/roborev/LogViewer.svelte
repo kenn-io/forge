@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { StatusDot } from "@kenn-io/kit-ui";
   import { onDestroy } from "svelte";
   import { getStores } from "../../context.js";
 
@@ -51,8 +52,8 @@
   <div class="log-toolbar">
     <span class="log-status">
       {#if isStreaming}
-        <span class="streaming-dot"></span>
-        Streaming...
+        <StatusDot status="working" label="Streaming review log" size={6} />
+        <span aria-hidden="true">Streaming...</span>
       {:else}
         {lineCount} lines
       {/if}
@@ -113,24 +114,6 @@
     color: var(--text-secondary);
   }
 
-  .streaming-dot {
-    display: inline-block;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--accent-green);
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.4;
-    }
-  }
 
   .follow-btn {
     padding: 2px 10px;

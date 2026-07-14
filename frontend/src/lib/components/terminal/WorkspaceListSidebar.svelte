@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { copyToClipboard, SearchInput } from "@kenn-io/kit-ui";
+  import { copyToClipboard, SearchInput, StatusDot } from "@kenn-io/kit-ui";
   import { onMount, tick } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
@@ -1138,17 +1138,9 @@
                 ></span>
                 <span class="ws-name">{displayName(ws)}</span>
                 {#if ws.tmux_working}
-                  <span
-                    class="working-pulse"
-                    title={workingTitle(ws)}
-                    aria-label={workingTitle(ws)}
-                  ></span>
+                  <StatusDot status="working" label={workingTitle(ws)} size={6} />
                 {:else if workspaceActionMatches(ws) || workspaceActionsDisabled(ws)}
-                  <span
-                    class="working-pulse"
-                    title={workspaceBusyLabel(ws)}
-                    aria-label={workspaceBusyLabel(ws)}
-                  ></span>
+                  <StatusDot status="working" label={workspaceBusyLabel(ws)} size={6} />
                 {/if}
               </div>
               <div class="ws-row-meta">
@@ -1738,27 +1730,6 @@
     font-weight: 600;
   }
 
-  .working-pulse {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--accent-amber);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--accent-amber) 70%, transparent);
-    animation: workingBlink 1.4s ease-in-out infinite;
-    flex-shrink: 0;
-  }
-
-  @keyframes workingBlink {
-    0%,
-    100% {
-      opacity: 1;
-      transform: scale(1);
-    }
-    50% {
-      opacity: 0.45;
-      transform: scale(0.8);
-    }
-  }
 
   .repo-context {
     /* Flat sorts drop the per-repo group headers, so each row

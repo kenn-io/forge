@@ -128,7 +128,11 @@ function issueDetail(): IssueDetail {
   };
 }
 
-function renderIssueDetail(detail: IssueDetail, deleteIssueComment = vi.fn(async () => true)) {
+function renderIssueDetail(
+  detail: IssueDetail,
+  deleteIssueComment = vi.fn(async () => true),
+  options: { staleRefreshing?: boolean } = {},
+) {
   const issuesStore = {
     loadIssueDetail: vi.fn(async () => undefined),
     startIssueDetailPolling: vi.fn(),
@@ -136,7 +140,7 @@ function renderIssueDetail(detail: IssueDetail, deleteIssueComment = vi.fn(async
     getIssueDetail: () => detail,
     isIssueDetailLoading: () => false,
     getIssueDetailError: () => null,
-    isIssueStaleRefreshing: () => false,
+    isIssueStaleRefreshing: () => options.staleRefreshing ?? false,
     isIssueDetailSyncing: () => false,
     getIssueDetailLoaded: () => true,
     loadIssues: vi.fn(async () => undefined),
@@ -212,6 +216,13 @@ describe("IssueDetail activity view", () => {
     const descriptionId = button.getAttribute("aria-describedby");
     expect(descriptionId).toBeTruthy();
     expect(document.getElementById(descriptionId ?? "")?.textContent).toContain(button.getAttribute("title"));
+  });
+
+  it("labels an active stale-detail refresh", () => {
+    renderIssueDetail(issueDetail(), undefined, { staleRefreshing: true });
+
+    expect(screen.getByLabelText("Refreshing issue details")).toBeTruthy();
+    expect(screen.getByText("Refreshing...")).toBeTruthy();
   });
 
   it("deletes an ordinary issue comment through the issues store", async () => {

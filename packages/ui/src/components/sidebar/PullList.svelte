@@ -1,13 +1,17 @@
 <script lang="ts">
   import { getStores, getNavigate, getSidebar, getActions, getHostState } from "../../context.js";
   import { groupByWorkflow } from "../../stores/workflow.svelte.js";
+  import {
+    Chip,
+    FilterDropdown,
+    ScrollBox,
+    SearchInput,
+    SidebarToggle,
+    StatusDot,
+  } from "@kenn-io/kit-ui";
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
-  import { ScrollBox } from "@kenn-io/kit-ui";
   import PullItem from "./PullItem.svelte";
-  import { Chip, SearchInput } from "@kenn-io/kit-ui";
-  import { FilterDropdown } from "@kenn-io/kit-ui";
-  import { SidebarToggle } from "@kenn-io/kit-ui";
   import type { KanbanStatus, PullRequest } from "../../api/types.js";
   import type { GroupingMode } from "../../stores/grouping.svelte.js";
   import type { PullAttributeFilter } from "../../stores/pulls.svelte.js";
@@ -484,8 +488,8 @@
       <p class="state-message state-message--error">Error: {pulls.getError()}</p>
     {:else if visiblePulls.length === 0 && sync.getSyncState()?.running && pulls.getPulls().length === 0}
       <div class="state-message sync-message">
-        <span class="sync-dot"></span>
-        Syncing from GitHub…
+        <StatusDot status="working" label="Syncing pull requests from GitHub" size={6} />
+        <span aria-hidden="true">Syncing from GitHub…</span>
       </div>
     {:else if visiblePulls.length === 0 && !sync.getSyncState()?.last_run_at && pulls.getPulls().length === 0}
       <p class="state-message">Waiting for first sync…</p>
@@ -686,18 +690,6 @@
     gap: 8px;
   }
 
-  .sync-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--accent-green);
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 1; }
-  }
 
   .sidebar-footer {
     padding: 8px 12px;

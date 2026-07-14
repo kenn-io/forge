@@ -1,9 +1,8 @@
 <script lang="ts">
-  import { SearchInput } from "@kenn-io/kit-ui";
+  import { ScrollBox, SearchInput, StatusDot } from "@kenn-io/kit-ui";
   import { getStores, getNavigate, getActions } from "../context.js";
   import { groupByWorkflow } from "../stores/workflow.svelte.js";
   import PullItem from "../components/sidebar/PullItem.svelte";
-  import { ScrollBox } from "@kenn-io/kit-ui";
   import IssueItem from "../components/sidebar/IssueItem.svelte";
   import type { Issue, PullRequest } from "../api/types.js";
   import { createRepoLabelFormatter } from "../utils/repo-label.js";
@@ -277,8 +276,8 @@
         </p>
       {:else if prItems.length === 0 && sync.getSyncState()?.running}
         <div class="state-message sync-message">
-          <span class="sync-dot"></span>
-          Syncing...
+          <StatusDot status="working" label="Syncing pull requests" size={6} />
+          <span aria-hidden="true">Syncing...</span>
         </div>
       {:else if prItems.length === 0 && !sync.getSyncState()?.last_run_at}
         <p class="state-message">Waiting for first sync...</p>
@@ -335,8 +334,8 @@
         </p>
       {:else if issueItems.length === 0 && sync.getSyncState()?.running}
         <div class="state-message sync-message">
-          <span class="sync-dot"></span>
-          Syncing...
+          <StatusDot status="working" label="Syncing issues" size={6} />
+          <span aria-hidden="true">Syncing...</span>
         </div>
       {:else if issueItems.length === 0 && !sync.getSyncState()?.last_run_at}
         <p class="state-message">Waiting for first sync...</p>
@@ -524,23 +523,6 @@
     gap: 8px;
   }
 
-  .sync-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--accent-green);
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%,
-    100% {
-      opacity: 0.4;
-    }
-    50% {
-      opacity: 1;
-    }
-  }
 
   :global(.mobile-main) .focus-list {
     --focus-mobile-space-2xs: 4.5px;

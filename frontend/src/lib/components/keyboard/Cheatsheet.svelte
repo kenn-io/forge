@@ -1,9 +1,7 @@
 <script lang="ts">
-  import { tick, untrack } from "svelte";
-
-  import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
-  import type { ModalFrameAction } from "@middleman/ui/stores/keyboard/keyspec";
   import { getStores, KbdBadge } from "@middleman/ui";
+  import { TextInput } from "@kenn-io/kit-ui";
+  import Modal from "../shared/Modal.svelte";
   import {
     closeCheatsheet,
     isCheatsheetOpen,
@@ -27,8 +25,6 @@
   // shell without setting up a full app context. Mirrors Palette.svelte.
   const stores = getStores() as ReturnType<typeof getStores> | undefined;
 
-  let dialogEl: HTMLDivElement | undefined = $state();
-  let filterEl: HTMLInputElement | undefined = $state();
   let filter = $state("");
 
   const viewScope = $derived<ScopeTag | null>(
@@ -111,74 +107,29 @@
     if (b === null) return [];
     return Array.isArray(b) ? b : [b];
   }
-
-  $effect(() => {
-    if (!isCheatsheetOpen()) return;
-    // Cheatsheet listens only for Escape — the Cmd+K / Cmd+P close bindings
-    // are palette-only. Restricting the modal frame here keeps those chords
-    // available for whoever owns them when this dialog isn't on top.
-    const closeAction: ModalFrameAction = {
-      id: "cheatsheet.close",
-      label: "Close cheatsheet",
-      binding: { key: "Escape" },
-      priority: 100,
-      when: () => true,
-      handler: () => closeCheatsheet(),
-    };
-    const cleanup = untrack(() => pushModalFrame("cheatsheet", [closeAction]));
-    void tick().then(() => filterEl?.focus());
-    return cleanup;
-  });
-
-  // Focus trap: keep Tab / Shift+Tab cycling within the cheatsheet dialog so
-  // focus never escapes to the page underneath while the dialog is open.
-  // Initial focus is handled by the effect above via tick(); this trap only
-  // intercepts subsequent Tab navigation. Mirrors Palette's pattern.
-  $effect(() => {
-    if (!isCheatsheetOpen() || !dialogEl) return;
-    const focusable = (): HTMLElement[] =>
-      Array.from(
-        dialogEl!.querySelectorAll<HTMLElement>(
-          // kit-ui-check-ignore: palette-style actions move focus as their outcome; kit trapFocus restores pre-open focus on teardown, undoing the selected action
-          "input, button, [tabindex]:not([tabindex='-1'])",
-        ),
-      ).filter((e) => !e.hasAttribute("disabled"));
-    function trap(e: KeyboardEvent): void {
-      if (e.key !== "Tab") return;
-      const els = focusable();
-      if (els.length === 0) return;
-      const currentIndex = els.findIndex((el) => el === document.activeElement);
-      const nextIndex = e.shiftKey
-        ? (currentIndex <= 0 ? els.length - 1 : currentIndex - 1)
-        : (currentIndex < 0 || currentIndex === els.length - 1 ? 0 : currentIndex + 1);
-      els[nextIndex]?.focus();
-      e.preventDefault();
-    }
-    const el = dialogEl;
-    el.addEventListener("keydown", trap);
-    return () => el.removeEventListener("keydown", trap);
-  });
 </script>
 
 {#if isCheatsheetOpen()}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="cheatsheet-backdrop" onclick={closeCheatsheet}></div>
-  <div
-    bind:this={dialogEl}
-    class="cheatsheet"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Keyboard shortcuts"
+  <Modal
+    open
+    ariaLabel="Keyboard shortcuts"
+    width={720}
+    frameId="cheatsheet"
+    onClose={closeCheatsheet}
   >
-    <input
-      bind:this={filterEl}
-      bind:value={filter}
-      class="cheatsheet-filter"
-      placeholder="Filter shortcuts…"
-    />
-    <div class="cheatsheet-body">
-      {#if onThisViewActions.length > 0}
+    <div class="cheatsheet">
+      <TextInput
+        class="cheatsheet-filter"
+        block
+        size="md"
+        value={filter}
+        placeholder="Filter shortcuts…"
+        ariaLabel="Filter shortcuts"
+        autofocus
+        oninput={(value) => (filter = value)}
+      />
+      <div class="cheatsheet-body">
+        {#if onThisViewActions.length > 0}
         <section class="cheatsheet-section">
           <div class="cheatsheet-section-header">On this view</div>
           {#each onThisViewActions as action (action.id)}
@@ -242,46 +193,32 @@
             </div>
           {/each}
         </section>
-      {/if}
+        {/if}
+      </div>
     </div>
-  </div>
+  </Modal>
 {/if}
 
 <style>
-  .cheatsheet-backdrop {
-    position: fixed;
-    /* kit-ui-check-ignore: keyboard cheatsheet is a palette-style surface with its own key handling and layout, not a kit Modal dialog */
-    inset: 0;
-    background: var(--overlay-bg);
-    z-index: 90;
+  :global(.kit-modal-body:has(> .modal-scope > .cheatsheet)) {
+    padding: 0;
+    overflow: hidden;
   }
 
   .cheatsheet {
-    position: fixed;
-    top: 80px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 720px;
-    max-width: calc(100vw - 32px);
-    height: 540px;
-    max-height: calc(100vh - 120px);
+    height: min(540px, calc(100vh - 120px));
     display: grid;
-    grid-template-rows: auto 1fr;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: 10px;
-    box-shadow: var(--shadow-lg);
-    z-index: 91;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
-  .cheatsheet-filter {
-    padding: 12px 16px;
+  :global(.cheatsheet-filter.kit-text-input) {
+    height: 48px;
+    padding: 0 16px;
     border: none;
     border-bottom: 1px solid var(--border-muted);
+    border-radius: 0;
     background: transparent;
-    color: var(--text-primary);
     font-size: var(--font-size-lg);
-    outline: none;
   }
 
   .cheatsheet-body {

@@ -106,9 +106,8 @@ describe("Cheatsheet", () => {
     expect(before!.textContent ?? "").toContain("Alpha command");
     expect(before!.textContent ?? "").toContain("Beta command");
 
-    const input = dialog.querySelector(".cheatsheet-filter");
-    expect(input).not.toBeNull();
-    await fireEvent.input(input!, { target: { value: "alpha" } });
+    const input = screen.getByRole("textbox", { name: "Filter shortcuts" });
+    await fireEvent.input(input, { target: { value: "alpha" } });
     await rerender({});
 
     const dialog2 = screen.getByRole("dialog", {
@@ -120,14 +119,14 @@ describe("Cheatsheet", () => {
     expect(after!.textContent ?? "").not.toContain("Beta command");
   });
 
-  it("clicking the backdrop closes the cheatsheet", async () => {
+  it("clicking the shared overlay closes the cheatsheet", async () => {
     const { rerender, container } = render(Cheatsheet, { props: {} });
     openCheatsheet();
     await rerender({});
     expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).not.toBeNull();
-    const backdrop = container.querySelector(".cheatsheet-backdrop");
-    expect(backdrop).not.toBeNull();
-    await fireEvent.click(backdrop!);
+    const overlay = container.querySelector(".kit-modal-overlay");
+    expect(overlay).not.toBeNull();
+    await fireEvent.pointerDown(overlay!);
     await rerender({});
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
   });

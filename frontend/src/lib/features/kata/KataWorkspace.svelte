@@ -610,6 +610,11 @@
       return;
     }
     if (mismatch === "daemon" && daemonSwitchGated()) return;
+    // A project route load applies its scope before its optional view load
+    // finishes. That intermediate state can leave only the issue selection
+    // mismatched, but selecting now would be aborted when the remaining view
+    // load clears selection. Wait for the complete route load to settle.
+    if (viewScopeLoadSignature !== null && mismatch !== "viewScope") return;
     if (mismatch === "viewScope" && viewScopeLoadSignature === fullRouteSignature()) return;
     void untrack(() => reconcileRoute());
   });

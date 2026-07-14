@@ -2018,8 +2018,12 @@ func run(
 					slog.Warn("e2e pprof listener shutdown failed", "err", err)
 				}
 			}()
-			info.PprofAddr = pprofSrv.Addr().String()
-			slog.Info(fmt.Sprintf("e2e pprof listener at http://%s/debug/pprof/", info.PprofAddr))
+			// Addr() is non-nil whenever Start succeeded, but its
+			// signature allows nil; guard so nilaway can prove it.
+			if addr := pprofSrv.Addr(); addr != nil {
+				info.PprofAddr = addr.String()
+				slog.Info(fmt.Sprintf("e2e pprof listener at http://%s/debug/pprof/", info.PprofAddr))
+			}
 		}
 	}
 

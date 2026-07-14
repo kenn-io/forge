@@ -411,7 +411,7 @@ describe("RecurrenceEditor — edit diff", () => {
     [
       "weekly omitted BYDAY",
       { rrule: "FREQ=WEEKLY;INTERVAL=1", dtstart: "2026-05-20" },
-      "Monday, May 18, 2026",
+      "May 18, 2026",
       "2026-05-18",
       "FREQ=WEEKLY;INTERVAL=1;BYDAY=WE",
       0,
@@ -419,7 +419,7 @@ describe("RecurrenceEditor — edit diff", () => {
     [
       "monthly omitted BYMONTHDAY",
       { rrule: "FREQ=MONTHLY;INTERVAL=1", dtstart: "2026-05-20" },
-      "Monday, May 18, 2026",
+      "May 18, 2026",
       "2026-05-18",
       "FREQ=MONTHLY;INTERVAL=1;BYMONTHDAY=20",
       0,
@@ -427,7 +427,7 @@ describe("RecurrenceEditor — edit diff", () => {
     [
       "yearly omitted BYMONTH",
       { rrule: "FREQ=YEARLY;INTERVAL=1", dtstart: "2026-05-20" },
-      "Saturday, June 20, 2026",
+      "Jun 20, 2026",
       "2026-06-20",
       "FREQ=YEARLY;INTERVAL=1;BYMONTH=5",
       1,

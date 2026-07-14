@@ -1,8 +1,7 @@
 <script lang="ts">
   import CalendarIcon from "@lucide/svelte/icons/calendar";
-  import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
-  import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import XIcon from "@lucide/svelte/icons/x";
+  import { Calendar, todayStr } from "@kenn-io/kit-ui";
 
   interface Props {
     value: string;
@@ -28,28 +27,16 @@
     class: className = "",
   }: Props = $props();
 
-  const today = new Date();
   let open = $state(false);
   let rootEl = $state<HTMLDivElement>();
   let buttonEl = $state<HTMLButtonElement>();
-  let viewYear = $state(today.getFullYear());
-  let viewMonth = $state(today.getMonth());
+  let calendarMonth = $state(todayStr());
 
-  const weekdays = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
   const popoverID = `date-picker-${Math.random().toString(36).slice(2)}`;
-
   const displayValue = $derived(value ? formatDate(value) : placeholder);
-  const monthLabel = $derived(new Date(viewYear, viewMonth, 1).toLocaleDateString(undefined, {
-    month: "long",
-    year: "numeric",
-  }));
-  const calendarDays = $derived(buildCalendarDays(viewYear, viewMonth));
 
   $effect(() => {
-    if (!value) return;
-    const next = initialDate(value);
-    viewYear = next.getFullYear();
-    viewMonth = next.getMonth();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) calendarMonth = value;
   });
 
   $effect(() => {
@@ -84,13 +71,6 @@
     return new Date();
   }
 
-  function toISO(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }
-
   function formatDate(input: string): string {
     const date = initialDate(input);
     return date.toLocaleDateString(undefined, {
@@ -100,27 +80,13 @@
     });
   }
 
-  function buildCalendarDays(year: number, month: number): Date[] {
-    const first = new Date(year, month, 1);
-    const startOffset = (first.getDay() + 6) % 7;
-    const start = new Date(year, month, 1 - startOffset);
-    return Array.from({ length: 42 }, (_, index) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + index));
-  }
-
-  function shiftMonth(delta: number): void {
-    const next = new Date(viewYear, viewMonth + delta, 1);
-    viewYear = next.getFullYear();
-    viewMonth = next.getMonth();
-  }
-
-  function pick(date: Date): void {
-    onchange(toISO(date));
+  function pick(date: string): void {
+    onchange(date);
     open = false;
     buttonEl?.focus();
   }
 
-  function clearDate(event: MouseEvent): void {
-    event.stopPropagation();
+  function clearDate(): void {
     onchange("");
     open = false;
     buttonEl?.focus();
@@ -172,38 +138,17 @@
   {#if open}
     <div
       id={popoverID}
-      class="date-picker-popover"
+      class="date-picker-popover kit-popover-card"
       role="dialog"
       aria-label={ariaLabel}
       tabindex="-1"
       onkeydown={handleDatePickerKeydown}
     >
-      <div class="date-picker-header">
-        <button type="button" class="date-picker-nav" aria-label="Previous month" onclick={() => shiftMonth(-1)}>
-          <ChevronLeftIcon size="14" strokeWidth="2" aria-hidden="true" />
-        </button>
-        <span>{monthLabel}</span>
-        <button type="button" class="date-picker-nav" aria-label="Next month" onclick={() => shiftMonth(1)}>
-          <ChevronRightIcon size="14" strokeWidth="2" aria-hidden="true" />
-        </button>
-      </div>
-      <div class="date-picker-grid" role="grid" aria-label={monthLabel}>
-        {#each weekdays as day (day)}
-          <span class="date-picker-weekday">{day}</span>
-        {/each}
-        {#each calendarDays as day (toISO(day))}
-          <button
-            type="button"
-            class="date-picker-day"
-            class:outside={day.getMonth() !== viewMonth}
-            class:selected={toISO(day) === value}
-            aria-label={day.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
-            onclick={() => pick(day)}
-          >
-            {day.getDate()}
-          </button>
-        {/each}
-      </div>
+      <Calendar
+        bind:month={calendarMonth}
+        selected={value ? { from: value, to: value } : null}
+        onpick={pick}
+      />
     </div>
   {/if}
 </div>
@@ -217,7 +162,7 @@
     min-width: 136px;
   }
 
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
+  /* kit-ui-check-ignore: popup trigger needs native button focus ownership plus aria-haspopup, aria-expanded, aria-controls, and Escape propagation; kit Button cannot preserve the full composite contract */
   .date-picker-trigger {
     box-sizing: border-box;
     display: inline-flex;
@@ -259,7 +204,7 @@
     color: var(--text-muted);
   }
 
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
+  /* kit-ui-check-ignore: native clear control participates in the DatePicker Escape/focus composite; kit IconButton cannot forward the required keydown handler */
   .date-picker-clear {
     flex: 0 0 auto;
     display: inline-flex;
@@ -283,81 +228,6 @@
     z-index: 94;
     top: calc(100% + 3px);
     left: 0;
-    width: 224px;
-    padding: 8px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface);
-    box-shadow: var(--shadow-md);
-  }
-
-  .date-picker-header {
-    display: grid;
-    grid-template-columns: 28px 1fr 28px;
-    align-items: center;
-    gap: 4px;
-    margin-bottom: 6px;
-    color: var(--text-primary);
-    font-size: var(--font-size-xs);
-    font-weight: 700;
-    text-align: center;
-  }
-
-  .date-picker-nav {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 24px;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-  }
-
-  .date-picker-nav:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .date-picker-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 2px;
-  }
-
-  .date-picker-weekday,
-  .date-picker-day {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 24px;
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-2xs);
-    line-height: 1;
-  }
-
-  .date-picker-weekday {
-    color: var(--text-muted);
-    font-weight: 700;
-  }
-
-  .date-picker-day {
-    color: var(--text-secondary);
-  }
-
-  .date-picker-day:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .date-picker-day.outside {
-    color: var(--text-faint);
-    opacity: 0.7;
-  }
-
-  .date-picker-day.selected {
-    background: var(--accent-blue);
-    color: var(--text-on-accent);
-    font-weight: 700;
+    width: max-content;
   }
 </style>

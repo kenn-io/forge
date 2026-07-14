@@ -156,7 +156,7 @@ describe("KataIssueProperties", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit due date" }));
     await fireEvent.click(screen.getByRole("button", { name: /Due:/ }));
-    await fireEvent.click(screen.getByRole("button", { name: /Monday, June 8, 2026/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Jun 8, 2026/ }));
 
     expect(onPatchMetadata).toHaveBeenCalledWith("issue-1", { deadline_on: "2026-06-08" });
 
@@ -173,7 +173,7 @@ describe("KataIssueProperties", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit scheduled" }));
     await fireEvent.click(screen.getByRole("button", { name: /Scheduled:/ }));
-    await fireEvent.click(screen.getByRole("button", { name: /Wednesday, June 10, 2026/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Jun 10, 2026/ }));
 
     expect(onPatchMetadata).toHaveBeenCalledWith("issue-1", { scheduled_on: "2026-06-10" });
     await waitFor(() => {
@@ -182,7 +182,7 @@ describe("KataIssueProperties", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit due date" }));
     await fireEvent.click(screen.getByRole("button", { name: /Due:/ }));
-    await fireEvent.click(screen.getByRole("button", { name: /Monday, June 8, 2026/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Jun 8, 2026/ }));
 
     expect(onPatchMetadata).toHaveBeenCalledWith("issue-1", { deadline_on: "2026-06-08" });
     await waitFor(() => {
@@ -230,7 +230,7 @@ describe("KataIssueProperties", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit scheduled" }));
     await fireEvent.click(screen.getByRole("button", { name: /Scheduled:/ }));
-    await fireEvent.click(screen.getByRole("button", { name: /Wednesday, June 10, 2026/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Jun 10, 2026/ }));
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Scheduled: Jun 10/ })).toBeTruthy();

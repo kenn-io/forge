@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SearchInput } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import CommitListSection from "./CommitListSection.svelte";
   import PierreFileTree from "./PierreFileTree.svelte";
@@ -61,10 +62,11 @@
   {:else if filteredDiffFiles}
     {#if showFileFilter}
       <div class="diff-files-filter">
-        <input
-          type="text"
-          class="diff-files-filter__input"
+        <SearchInput
+          size="sm"
+          block
           placeholder="Filter files..."
+          ariaLabel="Filter files"
           bind:value={fileFilterText}
         />
       </div>
@@ -91,22 +93,6 @@
 
   .diff-files-filter {
     padding: 4px 10px 6px 24px;
-  }
-
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .diff-files-filter__input {
-    width: 100%;
-    font-size: var(--font-size-xs);
-    padding: 3px 8px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-muted);
-    background: var(--bg-inset);
-    color: var(--text-primary);
-  }
-
-  .diff-files-filter__input:focus {
-    border-color: var(--accent-blue);
-    outline: none;
   }
 
   .diff-files-state {

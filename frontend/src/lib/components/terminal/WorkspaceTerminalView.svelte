@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { EmptyState, Spinner } from "@kenn-io/kit-ui";
+  import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
   import { onDestroy, tick } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import { isNarrow } from "../../stores/container.svelte.js";
@@ -2800,11 +2800,11 @@
                   </button>
                 {/if}
               </div>
-              <!-- kit-ui-check-ignore: icon variant of the 22px header-btn rail; kit IconButton's 24px minimum breaks the rail rhythm -->
-              <button class="header-btn header-icon-btn"
+              <IconButton
+                class="workspace-refresh-button"
+                size="sm"
                 disabled={actionsBlocked || refreshingWorkspace}
-                title="Refresh workspace details"
-                aria-label="Refresh workspace details"
+                ariaLabel="Refresh workspace details"
                 onclick={() => void handleRefreshWorkspace()}
               >
                 {#if refreshingWorkspace}
@@ -2817,7 +2817,7 @@
                     aria-hidden="true"
                   />
                 {/if}
-              </button>
+              </IconButton>
             {/if}
             <button
               class="header-btn danger"
@@ -3435,12 +3435,8 @@
       border-color 80ms ease;
   }
 
-  .header-icon-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    padding: 0;
+  :global(.workspace-refresh-button.kit-icon-button) {
+    border: 1px solid var(--border-default);
   }
 
   :global(.header-icon) {

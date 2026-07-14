@@ -6,33 +6,21 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCleanGitEnvStripsConfigRedirects(t *testing.T) {
+// GIT_* binding and config-redirect variables are stripped by kit's
+// gitcmd.Runner (StripEnv); only the middleman-specific secret stripping
+// is owned and therefore tested here.
+func TestStripDocsSecretEnvDropsCredentialLikeVars(t *testing.T) {
 	assert := assert.New(t)
 
-	got := cleanGitEnv([]string{
+	got := stripDocsSecretEnv([]string{
 		"PATH=/bin",
-		"GIT_DIR=/tmp/host/.git",
-		"GIT_WORK_TREE=/tmp/host",
-		"GIT_CONFIG=/tmp/host/.git/config",
-		"GIT_CONFIG_GLOBAL=/tmp/global",
-		"GIT_CONFIG_COUNT=1",
-		"GIT_CONFIG_KEY_0=user.name",
-		"GIT_CONFIG_VALUE_0=Middleman Fixture",
-		"GIT_AUTHOR_NAME=Middleman Fixture",
-		"GIT_COMMITTER_EMAIL=middleman-fixture@example.invalid",
-		"GIT_SSH_COMMAND=ssh -i /tmp/key",
 		"MIDDLEMAN_GITHUB_TOKEN=provider-secret",
 		"MIDDLEMAN_CUSTOM_TOKEN=custom-secret",
 		"MSGVAULT_API_KEY=message-secret",
 		"SERVICE_PASSWORD=password-secret",
+		"AWS_ACCESS_KEY=cloud-secret",
 		"UNRELATED=value",
 	})
 
-	assert.Equal([]string{
-		"PATH=/bin",
-		"GIT_AUTHOR_NAME=Middleman Fixture",
-		"GIT_COMMITTER_EMAIL=middleman-fixture@example.invalid",
-		"GIT_SSH_COMMAND=ssh -i /tmp/key",
-		"UNRELATED=value",
-	}, got)
+	assert.Equal([]string{"PATH=/bin", "UNRELATED=value"}, got)
 }

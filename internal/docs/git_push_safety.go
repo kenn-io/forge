@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-
-	"go.kenn.io/middleman/internal/procutil"
 )
 
 // pushTargetClass describes where the receive side of a push executes.
@@ -81,11 +79,7 @@ func assertPushTargetSafe(ctx context.Context, root, remote string) (pushTargetC
 // remote; get-url fails for those and the string itself is the one push
 // target.
 func remotePushURLs(ctx context.Context, root, remote string) ([]string, error) {
-	cmd, err := gitCommand(ctx, root, "remote", "get-url", "--push", "--all", remote)
-	if err != nil {
-		return nil, err
-	}
-	out, err := procutil.Output(ctx, cmd, "resolving docs git push url")
+	out, err := runDocsGit(ctx, root, nil, "remote", "get-url", "--push", "--all", remote)
 	if err != nil {
 		return []string{remote}, nil
 	}
@@ -175,7 +169,7 @@ func fileURLPath(raw string) (string, error) {
 func classifyLocalPushPath(root, displayURL, p string) (pushTargetClass, error) {
 	abs := p
 	if !filepath.IsAbs(abs) {
-		// Relative remote URLs resolve against the repo root: gitCommand
+		// Relative remote URLs resolve against the repo root: runDocsGit
 		// runs every push with its working directory there.
 		abs = filepath.Join(root, abs)
 	}

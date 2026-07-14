@@ -8,11 +8,8 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"go.kenn.io/middleman/internal/procutil"
 )
 
 type PorcelainRecord struct {
@@ -241,11 +238,7 @@ func (r *Registry) GitChanges(ctx context.Context, folderID string) (GitChangesR
 }
 
 func currentBranch(ctx context.Context, root string) (string, error) {
-	cmd, err := gitCommand(ctx, root, "symbolic-ref", "--short", "HEAD")
-	if err != nil {
-		return "", err
-	}
-	out, err := procutil.Output(ctx, cmd, "reading docs git branch")
+	out, err := runDocsGit(ctx, root, nil, "symbolic-ref", "--short", "HEAD")
 	if err != nil {
 		return "", fmt.Errorf("git symbolic-ref: %w", err)
 	}
@@ -253,11 +246,7 @@ func currentBranch(ctx context.Context, root string) (string, error) {
 }
 
 func currentUpstream(ctx context.Context, root, branch string) (string, error) {
-	cmd, err := gitCommand(ctx, root, "rev-parse", "--abbrev-ref", branch+"@{upstream}")
-	if err != nil {
-		return "", err
-	}
-	out, err := procutil.Output(ctx, cmd, "reading docs git upstream")
+	out, err := runDocsGit(ctx, root, nil, "rev-parse", "--abbrev-ref", branch+"@{upstream}")
 	if err != nil {
 		return "", err
 	}
@@ -265,19 +254,11 @@ func currentUpstream(ctx context.Context, root, branch string) (string, error) {
 }
 
 func currentUpstreamPushTarget(ctx context.Context, root, branch string) (remote, mergeRef string, err error) {
-	remoteCmd, err := gitCommand(ctx, root, "config", "--get", "branch."+branch+".remote")
+	remoteOut, err := runDocsGit(ctx, root, nil, "config", "--get", "branch."+branch+".remote")
 	if err != nil {
 		return "", "", err
 	}
-	remoteOut, err := procutil.Output(ctx, remoteCmd, "reading docs git upstream remote")
-	if err != nil {
-		return "", "", err
-	}
-	mergeCmd, err := gitCommand(ctx, root, "config", "--get", "branch."+branch+".merge")
-	if err != nil {
-		return "", "", err
-	}
-	mergeOut, err := procutil.Output(ctx, mergeCmd, "reading docs git upstream merge ref")
+	mergeOut, err := runDocsGit(ctx, root, nil, "config", "--get", "branch."+branch+".merge")
 	if err != nil {
 		return "", "", err
 	}
@@ -285,23 +266,14 @@ func currentUpstreamPushTarget(ctx context.Context, root, branch string) (remote
 }
 
 func readPorcelain(ctx context.Context, root string) ([]PorcelainRecord, error) {
-	cmd, err := gitCommand(ctx, root,
+	out, err := runDocsGit(ctx, root, nil,
 		"-c", "color.status=false",
 		"status", "--porcelain=v1", "-z",
 		"--untracked-files=all",
 		"--ignored",
 	)
 	if err != nil {
-		return nil, err
-	}
-	out, err := procutil.Output(ctx, cmd, "reading docs git status")
-	if err != nil {
-		stderr := ""
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			stderr = strings.TrimSpace(string(ee.Stderr))
-		}
-		return nil, fmt.Errorf("git status: %w: %s", err, stderr)
+		return nil, fmt.Errorf("git status: %w", err)
 	}
 	return parsePorcelainRecords(out)
 }
@@ -467,13 +439,8 @@ func stagePublishSet(ctx context.Context, root string, changes []PublishChange) 
 			return fmt.Errorf("stat old path %s: %w", c.OldPath, statErr)
 		}
 	}
-	cmd, err := gitCommand(ctx, root, args...)
-	if err != nil {
+	if _, err := runDocsGit(ctx, root, nil, args...); err != nil {
 		return err
-	}
-	out, err := procutil.CombinedOutput(ctx, cmd, "staging docs git changes")
-	if err != nil {
-		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
@@ -493,19 +460,10 @@ func runCommit(ctx context.Context, root, message string) (string, error) {
 		return "", err
 	}
 
-	cmd, err := gitCommand(ctx, root, "commit", "-F", messagePath)
-	if err != nil {
-		return "", err
+	if _, err := runDocsGit(ctx, root, nil, "commit", "-F", messagePath); err != nil {
+		return "", &CommitFailedError{Stderr: gitStderr(err)}
 	}
-	out, err := procutil.CombinedOutput(ctx, cmd, "committing docs git changes")
-	if err != nil {
-		return "", &CommitFailedError{Stderr: strings.TrimSpace(string(out))}
-	}
-	cmd, err = gitCommand(ctx, root, "rev-parse", "HEAD")
-	if err != nil {
-		return "", err
-	}
-	headOut, err := procutil.Output(ctx, cmd, "reading docs git commit")
+	headOut, err := runDocsGit(ctx, root, nil, "rev-parse", "HEAD")
 	if err != nil {
 		return "", err
 	}
@@ -522,18 +480,8 @@ func runPush(ctx context.Context, root, remote, mergeRef string, target pushTarg
 		args = append(args, "--receive-pack="+receivePack)
 	}
 	args = append(args, remote, "HEAD:"+mergeRef)
-	cmd, err := gitCommand(ctx, root, args...)
-	if err != nil {
-		return "", err
-	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := procutil.Run(ctx, cmd, "pushing docs git changes"); err != nil {
-		raw := strings.TrimSpace(stderr.String())
-		if raw == "" {
-			raw = err.Error()
-		}
-		return raw, err
+	if _, err := runDocsGit(ctx, root, nil, args...); err != nil {
+		return gitStderr(err), err
 	}
 	return "", nil
 }

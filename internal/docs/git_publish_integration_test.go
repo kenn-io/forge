@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/kit/git/env"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/procutil"
@@ -83,25 +84,41 @@ func runGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := procutil.Command("git", args...)
 	cmd.Dir = dir
-	cmd.Env = isolatedGitEnv
+	cmd.Env = fixtureGitEnv
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git %s: %s", strings.Join(args, " "), string(out))
 	return string(out)
 }
 
+// fixtureGitEnv is the environment for git commands run directly by test
+// fixtures (repo setup, out-of-band asserts). useIsolatedGitEnv replaces it
+// alongside the production runner so fixtures and code under test share the
+// same isolated global/system config.
+var fixtureGitEnv = append(gitenv.StripAll(os.Environ()), "GIT_CONFIG_NOSYSTEM=1")
+
 func useIsolatedGitEnv(t *testing.T) {
 	t.Helper()
-	old := isolatedGitEnv
+	oldBase := docsGitBase
+	oldFixture := fixtureGitEnv
 	home := t.TempDir()
 	xdgConfig := t.TempDir()
-	isolatedGitEnv = append(gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_CONFIG_GLOBAL="+filepath.Join(home, ".gitconfig"),
+	env := append(gitenv.StripAll(os.Environ()),
 		"HOME="+home,
 		"XDG_CONFIG_HOME="+xdgConfig,
 	)
+	docsGitBase = gitcmd.Runner{
+		Env:              env,
+		StripEnv:         true,
+		NullGlobalConfig: true,
+		NoSystemConfig:   true,
+	}
+	fixtureGitEnv = append(append([]string(nil), env...),
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL="+filepath.Join(home, ".gitconfig"),
+	)
 	t.Cleanup(func() {
-		isolatedGitEnv = old
+		docsGitBase = oldBase
+		fixtureGitEnv = oldFixture
 	})
 }
 
@@ -272,7 +289,7 @@ func TestGitPublishRefusesConflict(t *testing.T) {
 	runGit(t, g.dir, "commit", "-am", "main")
 	cmd := procutil.Command("git", "merge", "side")
 	cmd.Dir = g.dir
-	cmd.Env = isolatedGitEnv
+	cmd.Env = fixtureGitEnv
 	out, mergeErr := cmd.CombinedOutput()
 	require.Error(t, mergeErr, "expected merge conflict, got clean merge: %s", out)
 

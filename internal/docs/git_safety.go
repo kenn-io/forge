@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-
-	"go.kenn.io/middleman/internal/procutil"
 )
 
 // UnsafeGitConfigError reports that a docs repository carries git
@@ -14,7 +12,7 @@ import (
 // trusted code, so publish refuses these repos rather than running them.
 //
 // Hooks, fsmonitor, and the ext transport are neutralized unconditionally
-// by safeGitConfigArgs and are therefore not part of this gate; this gate
+// by docsGitRunner's overrides and are therefore not part of this gate; this gate
 // covers the command-bearing surfaces that cannot be safely overridden
 // without breaking legitimate global auth (filters, signing programs,
 // credential helpers, SSH command, external diff/textconv).
@@ -66,11 +64,7 @@ func assertWorktreeAttributesSafe(ctx context.Context, root string) error {
 // docs repo. git ls-files reads the index and directory listing only; it
 // never runs a filter, so it is safe to call before the attribute gate.
 func worktreePaths(ctx context.Context, root string) ([]string, error) {
-	cmd, err := gitCommand(ctx, root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
-	if err != nil {
-		return nil, err
-	}
-	out, err := procutil.Output(ctx, cmd, "listing docs worktree paths")
+	out, err := runDocsGit(ctx, root, nil, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	if err != nil {
 		return nil, fmt.Errorf("listing docs worktree paths: %w", err)
 	}
@@ -93,12 +87,8 @@ func assertPathsAttributesSafe(ctx context.Context, root string, paths []string)
 	if len(paths) == 0 {
 		return nil
 	}
-	cmd, err := gitCommand(ctx, root, "check-attr", "-z", "--stdin", "filter", "diff")
-	if err != nil {
-		return err
-	}
-	cmd.Stdin = strings.NewReader(strings.Join(paths, "\x00") + "\x00")
-	out, err := procutil.Output(ctx, cmd, "checking docs git attributes")
+	stdin := strings.NewReader(strings.Join(paths, "\x00") + "\x00")
+	out, err := runDocsGit(ctx, root, stdin, "check-attr", "-z", "--stdin", "filter", "diff")
 	if err != nil {
 		return fmt.Errorf("checking docs git attributes: %w", err)
 	}
@@ -129,11 +119,7 @@ func attributeValueIsDriver(value string) bool {
 }
 
 func unsafeGitConfigEntries(ctx context.Context, root string) ([]string, error) {
-	cmd, err := gitCommand(ctx, root, "config", "--local", "--list", "-z")
-	if err != nil {
-		return nil, err
-	}
-	out, err := procutil.Output(ctx, cmd, "reading docs git config")
+	out, err := runDocsGit(ctx, root, nil, "config", "--local", "--list", "-z")
 	if err != nil {
 		// A repo with no local config still exits 0 with empty output, so a
 		// non-zero exit is a real failure worth surfacing.
@@ -155,7 +141,7 @@ func unsafeGitConfigEntries(ctx context.Context, root string) ([]string, error) 
 // isCommandBearingConfigKey reports whether a local config entry lets git
 // run an external command during status/add/commit/push. core.hooksPath,
 // core.fsmonitor, and protocol.*.allow are intentionally excluded:
-// safeGitConfigArgs already overrides them on every invocation.
+// docsGitRunner already overrides them on every invocation.
 //
 // This is a denylist of the program-valued keys git honors in the publish
 // command set; new program-valued keys must be added here.

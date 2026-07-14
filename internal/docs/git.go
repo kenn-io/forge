@@ -6,16 +6,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/procutil"
 )
 
-var isolatedGitEnv = cleanGitEnv(os.Environ())
+// docsGitBase is the base kit runner for every git command against a docs
+// folder. StripEnv drops inherited GIT_* variables so a docs git command
+// can never bind to another repository or splice in caller config, and the
+// secret stripping keeps middleman and msgvault credentials out of git
+// child processes. Unlike gitcmd.New(), global and system config stay
+// readable: docs commits rely on the maintainer's identity, filters, and
+// credential helpers. A package variable so tests can substitute fully
+// isolated config.
+var docsGitBase = gitcmd.Runner{Env: stripDocsSecretEnv(os.Environ()), StripEnv: true}
 
 // emptyHooksDir is an empty directory used as core.hooksPath so that
 // hooks shipped inside a docs folder's .git/hooks (or pointed to by a
@@ -26,9 +35,9 @@ var emptyHooksDir = sync.OnceValues(func() (string, error) {
 	return os.MkdirTemp("", "middleman-docs-no-hooks-")
 })
 
-// safeGitConfigArgs returns `-c` overrides that neutralize the
-// command-execution vectors git would otherwise honor from an untrusted
-// docs repo's local config or tracked .gitattributes:
+// docsGitRunner returns the kit runner with command-scope overrides that
+// neutralize the command-execution vectors git would otherwise honor from
+// an untrusted docs repo's local config or tracked .gitattributes:
 //
 //   - core.hooksPath: ignore any .git/hooks or hooksPath override.
 //   - core.fsmonitor=false: never run a configured fsmonitor program
@@ -40,68 +49,67 @@ var emptyHooksDir = sync.OnceValues(func() (string, error) {
 //     policy layer even if URL classification in assertPushTargetSafe
 //     were ever bypassed.
 //
-// These overrides have no legitimate-use cost for the docs publish flow.
+// These overrides have no legitimate-use cost for the docs git flows.
 // Other command-bearing config (clean/smudge filters used by git-lfs,
 // gpg.program for signed commits, credential.helper, core.sshCommand) is
 // left intact because disabling it would break real workflows; treat
 // such repos as trusted before registering them as docs folders.
-func safeGitConfigArgs() ([]string, error) {
+func docsGitRunner() (gitcmd.Runner, error) {
 	hooksDir, err := emptyHooksDir()
 	if err != nil {
-		return nil, fmt.Errorf("creating empty git hooks dir: %w", err)
+		return gitcmd.Runner{}, fmt.Errorf("creating empty git hooks dir: %w", err)
 	}
-	return []string{
-		"-c", "core.hooksPath=" + hooksDir,
-		"-c", "core.fsmonitor=false",
-		"-c", "protocol.allow=never",
-		"-c", "protocol.file.allow=always",
-		"-c", "protocol.git.allow=always",
-		"-c", "protocol.http.allow=always",
-		"-c", "protocol.https.allow=always",
-		"-c", "protocol.ssh.allow=always",
-	}, nil
+	return docsGitBase.
+		WithConfig("core.hooksPath", hooksDir).
+		WithConfig("core.fsmonitor", "false").
+		WithConfig("protocol.allow", "never").
+		WithConfig("protocol.file.allow", "always").
+		WithConfig("protocol.git.allow", "always").
+		WithConfig("protocol.http.allow", "always").
+		WithConfig("protocol.https.allow", "always").
+		WithConfig("protocol.ssh.allow", "always"), nil
 }
 
-// gitCommand builds a git invocation against a docs folder root with the
-// safe config overrides applied. It is fallible only because preparing
-// the empty hooks directory can fail.
-func gitCommand(ctx context.Context, root string, args ...string) (*exec.Cmd, error) {
-	safe, err := safeGitConfigArgs()
+// runDocsGit runs one git command against a docs folder root under the
+// shared subprocess limiter. Failures unwrap to *gitcmd.GitError, whose
+// message and Stderr field carry git's trimmed stderr.
+func runDocsGit(ctx context.Context, root string, stdin io.Reader, args ...string) ([]byte, error) {
+	runner, err := docsGitRunner()
 	if err != nil {
 		return nil, err
 	}
-	cmd := procutil.CommandContext(ctx, "git", append(safe, args...)...)
-	cmd.Dir = root
-	cmd.Env = isolatedGitEnv
-	return cmd, nil
+	release, err := procutil.TryAcquire(ctx, "git subprocess capacity")
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	stdout, _, err := runner.Run(ctx, root, stdin, args...)
+	return stdout, err
 }
 
-func cleanGitEnv(env []string) []string {
+// gitStderr extracts trimmed stderr from a failed docs git command,
+// falling back to the error text when no stderr was captured.
+func gitStderr(err error) string {
+	var ge *gitcmd.GitError
+	if errors.As(err, &ge) && ge.Stderr != "" {
+		return ge.Stderr
+	}
+	if err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+func stripDocsSecretEnv(env []string) []string {
 	out := make([]string, 0, len(env))
 	for _, entry := range env {
 		key, _, _ := strings.Cut(entry, "=")
-		if isDocsGitBindingEnv(key) || isDocsSecretEnv(key) {
+		if isDocsSecretEnv(key) {
 			continue
 		}
 		out = append(out, entry)
 	}
 	return out
-}
-
-func isDocsGitBindingEnv(key string) bool {
-	switch key {
-	case "GIT_DIR",
-		"GIT_WORK_TREE",
-		"GIT_INDEX_FILE",
-		"GIT_OBJECT_DIRECTORY",
-		"GIT_ALTERNATE_OBJECT_DIRECTORIES",
-		"GIT_COMMON_DIR",
-		"GIT_NAMESPACE",
-		"GIT_PREFIX":
-		return true
-	default:
-		return strings.HasPrefix(key, "GIT_CONFIG")
-	}
 }
 
 func isDocsSecretEnv(key string) bool {
@@ -178,22 +186,16 @@ func isGitRepo(root string) bool {
 }
 
 func runGitStatus(ctx context.Context, root string) ([]GitStatusEntry, error) {
-	cmd, err := gitCommand(ctx, root,
+	out, err := runDocsGit(ctx, root, nil,
 		"-c", "color.status=false",
 		"status", "--porcelain=v1", "-z",
 		"--untracked-files=all",
 		"--ignored",
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("git status: %w", err)
 	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := procutil.Run(ctx, cmd, "running docs git status"); err != nil {
-		return nil, fmt.Errorf("git status: %w: %s", err, strings.TrimSpace(stderr.String()))
-	}
-	return parsePorcelainV1(stdout.Bytes())
+	return parsePorcelainV1(out)
 }
 
 // parsePorcelainV1 reads `git status --porcelain=v1 -z` output. Each

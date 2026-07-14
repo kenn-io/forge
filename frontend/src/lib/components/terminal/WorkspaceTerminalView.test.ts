@@ -474,6 +474,17 @@ describe("WorkspaceTerminalView", () => {
     expect((screen.getByRole("button", { name: /Shell/i }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("uses an idle status for a live workflow session without changing the tab name", async () => {
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    expect(await screen.findByRole("tab", { name: "Helper" })).toBeTruthy();
+    expect(screen.getByLabelText("Helper running").classList.contains("kit-status-dot--idle")).toBe(true);
+  });
+
   it("closes an agent tab immediately when its terminal exits", async () => {
     render(WorkspaceTerminalView, {
       props: {

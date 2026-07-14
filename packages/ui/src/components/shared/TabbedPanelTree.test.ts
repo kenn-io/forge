@@ -64,7 +64,7 @@ describe("TabbedPanelTree", () => {
     expect(screen.getByTestId("panel-feed").dataset.active).toBe("false");
     expect(screen.getByTestId("icon-detail")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Action Detail" }).className).toContain("tabbed-panel-tab-tool");
-    expect(screen.getByRole("tab", { name: /Feed/ }).querySelector(".tabbed-panel-status-dot.running")).toBeTruthy();
+    expect(screen.getByLabelText("Feed updating").classList.contains("kit-status-dot--working")).toBe(true);
   });
 
   it("shows a moving insertion slot while sorting tabs", async () => {

@@ -435,6 +435,22 @@
       (session) => sessionRegion(session) === "workflow",
     ),
   );
+  function workflowSessionStatus(
+    session: RuntimeSession,
+    label: string,
+  ): WorkflowTabDescriptor["status"] {
+    if (session.status === "running") {
+      return { value: "idle", label: `${label} running` };
+    }
+    if (session.status === "starting") {
+      return { value: "stale", label: `${label} starting` };
+    }
+    if (session.status === "error") {
+      return { value: "unclean", label: `${label} unavailable` };
+    }
+    return undefined;
+  }
+
   const workflowTabDescriptors = $derived.by<WorkflowTabDescriptor[]>(() => {
     const tabs: WorkflowTabDescriptor[] = [
       {
@@ -455,11 +471,12 @@
       });
     }
     for (const session of workflowSessions) {
+      const label = sessionDisplayLabels[session.key] ?? session.label;
       tabs.push({
         key: workflowTabKeyForSession(session.key),
-        label: sessionDisplayLabels[session.key] ?? session.label,
+        label,
         kind: session.kind === "plain_shell" ? "plain_shell" : "agent",
-        status: session.status,
+        status: workflowSessionStatus(session, label),
         renamable: true,
         movableToTerminal: true,
         closable: true,

@@ -1,11 +1,17 @@
+import type { StatusDotStatus } from "@kenn-io/kit-ui";
+
 export type TabbedPanelDirection = "horizontal" | "vertical";
 export type TabbedPanelSplitEdge = "top" | "right" | "bottom" | "left";
+
+export interface TabbedPanelStatus {
+  value: StatusDotStatus;
+  label: string;
+}
 
 export interface TabbedPanelDescriptor {
   key: string;
   label: string;
-  status?: string | undefined;
-  statusTone?: string | undefined;
+  status?: TabbedPanelStatus | undefined;
 }
 
 export interface TabbedPanelLeaf {

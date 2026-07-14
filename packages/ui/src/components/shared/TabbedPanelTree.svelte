@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { StatusDot } from "@kenn-io/kit-ui";
   import type { Snippet } from "svelte";
   import Self from "./TabbedPanelTree.svelte";
   import {
@@ -385,10 +386,6 @@
     return `--dragged-tab-width: ${width}px;`;
   }
 
-  function statusClass(tab: TabbedPanelDescriptor): string {
-    return tab.statusTone ?? tab.status ?? "default";
-  }
-
   function startResize(event: PointerEvent): void {
     if (disabled) return;
     if (node.type !== "split" || !splitEl) return;
@@ -475,6 +472,7 @@
               ondragend={finishTabDrag}
               ondblclick={() => onTabDoubleClick?.(tab.key)}
               aria-selected={activeTabKey === tab.key}
+              aria-label={tab.label}
               role="tab"
               onclick={() => onSelectTab?.(tab.key)}
             >
@@ -485,10 +483,11 @@
               {/if}
               <span class="tabbed-panel-tab-label">{tab.label}</span>
               {#if tab.status}
-                <span
-                  class={["tabbed-panel-status-dot", statusClass(tab)]}
-                  title={tab.status}
-                ></span>
+                <StatusDot
+                  status={tab.status.value}
+                  label={tab.status.label}
+                  size={6}
+                />
               {/if}
             </button>
             {#if tabActions}
@@ -823,34 +822,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .tabbed-panel-status-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--text-muted);
-    flex-shrink: 0;
-  }
-
-  .tabbed-panel-status-dot.running {
-    background: var(--accent-green);
-  }
-
-  .tabbed-panel-status-dot.starting {
-    background: var(--accent-amber);
-  }
-
-  .tabbed-panel-status-dot.success {
-    background: var(--accent-green);
-  }
-
-  .tabbed-panel-status-dot.warning {
-    background: var(--accent-amber);
-  }
-
-  .tabbed-panel-status-dot.danger {
-    background: var(--accent-red);
   }
 
   .tabbed-panel-tab :global(.tabbed-panel-tab-tool) {

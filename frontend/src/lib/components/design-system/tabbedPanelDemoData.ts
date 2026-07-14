@@ -24,9 +24,21 @@ export interface TabbedPanelDemoCopy {
 }
 
 export const tabbedPanelDemoTabs: TabbedPanelDescriptor[] = [
-  { key: "overview", label: "Overview", status: "success" },
-  { key: "activity", label: "Activity", status: "running" },
-  { key: "terminal", label: "Terminal", status: "warning" },
+  {
+    key: "overview",
+    label: "Overview",
+    status: { value: "idle", label: "Overview current" },
+  },
+  {
+    key: "activity",
+    label: "Activity",
+    status: { value: "working", label: "Activity updating" },
+  },
+  {
+    key: "terminal",
+    label: "Terminal",
+    status: { value: "unclean", label: "Terminal needs attention" },
+  },
 ];
 
 export const tabbedPanelDemoCopy: Record<string, TabbedPanelDemoCopy> = {

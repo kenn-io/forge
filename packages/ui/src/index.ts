@@ -162,6 +162,7 @@ export type {
   TabbedPanelLeaf,
   TabbedPanelNode,
   TabbedPanelSplit,
+  TabbedPanelStatus,
   TabbedPanelSplitEdge,
 } from "./components/shared/tabbed-panel-layout.js";
 export { default as WorkspaceRightSidebar } from "./components/workspace/WorkspaceRightSidebar.svelte";

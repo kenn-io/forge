@@ -34,9 +34,17 @@
   }: Props = $props();
 
   const tabs: TabbedPanelDescriptor[] = [
-    { key: "feed", label: "Feed", status: "running" },
+    {
+      key: "feed",
+      label: "Feed",
+      status: { value: "working", label: "Feed updating" },
+    },
     { key: "detail", label: "Detail" },
-    { key: "files", label: "Files", status: "warning" },
+    {
+      key: "files",
+      label: "Files",
+      status: { value: "unclean", label: "Files need attention" },
+    },
   ];
 </script>
 

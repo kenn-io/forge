@@ -134,6 +134,16 @@ Notes:
 The `[tmux] command` setting follows the same wrap-it-in-systemd-run
 pattern for similar reasons; the two are independent.
 
+## Switch-Timing Instrumentation
+
+The frontend emits one-shot `workspace-switch:<phase>` User Timing measures per
+workspace switch (route selection through terminal first paint), recorded via
+`frontend/src/lib/instrumentation/workspaceSwitchTiming.ts`. The phase names
+are stable API for before/after performance comparisons — do not rename them,
+and record new phases through that module so superseded-switch and duplicate
+guards keep applying. `make profile-workspace-switch` captures a reproducible
+profile; see `frontend/tests/profiling/README.md`.
+
 ## Testing Expectations
 
 Prefer full-stack coverage when the bug crosses backend lifecycle and frontend

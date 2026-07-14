@@ -1,10 +1,9 @@
 <script lang="ts">
   import FileSearchIcon from "@lucide/svelte/icons/file-search";
-  import SearchIcon from "@lucide/svelte/icons/search";
   import { tick } from "svelte";
   import type { DiffFile } from "../../api/types.js";
   import { getStores } from "../../context.js";
-  import { floatingPopoverStyle } from "@kenn-io/kit-ui";
+  import { Card, IconButton, SearchInput, floatingPopoverStyle } from "@kenn-io/kit-ui";
 
   interface Props {
     disabled?: boolean;
@@ -16,9 +15,9 @@
   let open = $state(false);
   let query = $state("");
   let highlightIndex = $state(0);
-  let inputEl = $state<HTMLInputElement>();
+  let inputEl = $state<HTMLInputElement>(undefined!);
   let pickerEl = $state<HTMLDivElement>();
-  let triggerEl = $state<HTMLButtonElement>();
+  let triggerEl = $state<HTMLSpanElement>();
   let menuEl = $state<HTMLDivElement>();
   let menuStyle = $state("");
 
@@ -148,61 +147,64 @@
 </script>
 
 <div class="file-jump" bind:this={pickerEl}>
-  <button
-    bind:this={triggerEl}
-    class="file-jump-trigger"
-    class:file-jump-trigger--active={open}
-    type="button"
-    aria-label="Jump to file"
-    aria-expanded={open}
-    title="Jump to file"
-    disabled={disabled || files.length === 0}
-    onclick={toggle}
-  >
-    <FileSearchIcon size={16} strokeWidth={1.9} aria-hidden="true" />
-  </button>
+  <span class="file-jump-trigger-anchor" bind:this={triggerEl}>
+    <IconButton
+      size="sm"
+      tone="info"
+      ariaLabel="Jump to file"
+      ariaExpanded={open}
+      ariaHaspopup="listbox"
+      {...(open ? { ariaControls: "changed-files-listbox" } : {})}
+      ariaPressed={open}
+      disabled={disabled || files.length === 0}
+      onclick={toggle}
+    >
+      <FileSearchIcon size={16} strokeWidth={1.9} aria-hidden="true" />
+    </IconButton>
+  </span>
   {#if open}
     <div class="file-jump-menu" bind:this={menuEl} style={menuStyle}>
-      <div class="file-jump-search">
-        <SearchIcon size={14} strokeWidth={1.8} aria-hidden="true" />
-        <input
-          bind:this={inputEl}
-          type="text"
-          role="searchbox"
-          aria-label="Jump to file"
-          placeholder="Jump to file"
-          autocomplete="off"
-          bind:value={query}
-          oninput={handleInput}
-          onkeydown={handleKeydown}
-        />
-      </div>
-      <!-- kit-ui-check-ignore: command-palette-style jump list with rich rows and active-file state, not a form dropdown -->
-      <div class="file-jump-list" role="listbox" aria-label="Changed files">
-        {#each filteredFiles as file, index (file.path)}
-          {@const dir = directory(file.path)}
-          <button
-            class="file-jump-option"
-            class:file-jump-option--active={file.path === activeFile}
-            class:file-jump-option--highlighted={index === highlightIndex}
-            type="button"
-            role="option"
-            aria-selected={file.path === activeFile}
-            disabled={disabled}
-            onmouseenter={() => {
-              highlightIndex = index;
-            }}
-            onclick={() => selectFile(file)}
-          >
-            <span class="file-jump-name">{fileName(file.path)}</span>
-            {#if dir}
-              <span class="file-jump-dir">{dir}</span>
-            {/if}
-          </button>
-        {:else}
-          <div class="file-jump-empty">No matching files</div>
-        {/each}
-      </div>
+      <Card level="default" padding="none" class="file-jump-menu-card">
+        <div class="file-jump-search">
+          <SearchInput
+            bind:inputEl
+            bind:value={query}
+            size="sm"
+            block
+            ariaLabel="Jump to file"
+            placeholder="Jump to file"
+            oninput={handleInput}
+            onkeydown={handleKeydown}
+          />
+        </div>
+        <!-- kit-ui-check-ignore: command-palette-style jump list with rich rows and active-file state, not a form dropdown -->
+        <div id="changed-files-listbox" class="file-jump-list" role="listbox" aria-label="Changed files">
+          {#each filteredFiles as file, index (file.path)}
+            {@const dir = directory(file.path)}
+            <button
+              id={`changed-file-option-${index}`}
+              class="file-jump-option"
+              class:file-jump-option--active={file.path === activeFile}
+              class:file-jump-option--highlighted={index === highlightIndex}
+              type="button"
+              role="option"
+              aria-selected={file.path === activeFile}
+              disabled={disabled}
+              onmouseenter={() => {
+                highlightIndex = index;
+              }}
+              onclick={() => selectFile(file)}
+            >
+              <span class="file-jump-name">{fileName(file.path)}</span>
+              {#if dir}
+                <span class="file-jump-dir">{dir}</span>
+              {/if}
+            </button>
+          {:else}
+            <div class="file-jump-empty">No matching files</div>
+          {/each}
+        </div>
+      </Card>
     </div>
   {/if}
 </div>
@@ -219,68 +221,23 @@
     flex-shrink: 0;
   }
 
-  .file-jump-trigger {
+  .file-jump-trigger-anchor {
     display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 24px;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    background: var(--bg-surface);
-  }
-
-  .file-jump-trigger:hover:not(:disabled),
-  .file-jump-trigger--active {
-    color: var(--accent-blue);
-    border-color: var(--accent-blue);
-  }
-
-  .file-jump-trigger:disabled {
-    cursor: default;
-    opacity: 0.45;
   }
 
   .file-jump-menu {
     position: fixed;
     z-index: var(--z-popover);
+  }
+
+  :global(.file-jump-menu-card) {
     max-height: min(520px, 70vh);
     overflow: hidden;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
     box-shadow: var(--shadow-md);
-    padding: 2px;
   }
 
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .file-jump-search {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 28px;
-    margin: 2px;
-    padding: 0 8px;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    background: var(--bg-inset);
-    color: var(--text-muted);
-  }
-
-  .file-jump-search input {
-    width: 100%;
-    min-width: 0;
-    border: 0;
-    outline: none;
-    background: transparent;
-    color: var(--text-primary);
-    font: inherit;
-    font-size: var(--font-size-xs);
-  }
-
-  .file-jump-search input::placeholder {
-    color: var(--text-muted);
+    margin: 4px;
   }
 
   .file-jump-list {

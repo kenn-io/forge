@@ -32,6 +32,8 @@ describe("ToolingStatusBlock", () => {
     expect(screen.getByText("Available (2.45.0)")).toBeTruthy();
     expect(screen.getByText("gh")).toBeTruthy();
     expect(screen.getByText("Authenticated as wesm on github.com")).toBeTruthy();
+    expect(screen.getByLabelText("git available").classList.contains("kit-status-dot--idle")).toBe(true);
+    expect(screen.getByLabelText("gh authenticated").classList.contains("kit-status-dot--idle")).toBe(true);
   });
 
   it("renders the GitLab CLI row for GitLab providers", () => {
@@ -90,6 +92,7 @@ describe("ToolingStatusBlock", () => {
     });
 
     expect(screen.getByText("Not authenticated")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "gh authentication required" })).toBeTruthy();
     const code = screen.getByText("gh auth login");
     expect(code).toBeTruthy();
   });
@@ -105,6 +108,7 @@ describe("ToolingStatusBlock", () => {
     });
 
     expect(screen.getByText("Not installed")).toBeTruthy();
+    expect(screen.getByLabelText("gh CLI missing").classList.contains("kit-status-dot--unclean")).toBe(true);
     expect(screen.getByText("brew install gh")).toBeTruthy();
   });
 
@@ -151,6 +155,7 @@ describe("ToolingStatusBlock", () => {
     // Both rows show their unknown indicator without recovery copy.
     expect(screen.getByText("git")).toBeTruthy();
     expect(screen.getByText("gh")).toBeTruthy();
+    expect(screen.getByLabelText("git status unavailable").classList.contains("kit-status-dot--stale")).toBe(true);
     expect(screen.queryByText("brew install gh")).toBeNull();
     expect(screen.queryByText("gh auth login")).toBeNull();
   });

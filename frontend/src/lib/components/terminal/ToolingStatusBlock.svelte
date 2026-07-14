@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { copyToClipboard } from "@kenn-io/kit-ui";
+  import {
+    copyToClipboard,
+    StatusDot,
+    type StatusDotStatus,
+  } from "@kenn-io/kit-ui";
   // ToolingStatusBlock renders the embedding host's view of git and
   // provider CLI availability/authentication. It is consumed by the
   // First Run Panel (gates provider-dependent actions) and the New
@@ -25,6 +29,13 @@
 
   type ToolStatus = "ok" | "missing" | "unauthed" | "unknown";
   type ProviderToolName = "gh" | "glab";
+
+  const semanticStatuses: Record<ToolStatus, StatusDotStatus> = {
+    ok: "idle",
+    missing: "unclean",
+    unauthed: "waiting",
+    unknown: "stale",
+  };
   type ProviderTooling = NonNullable<ToolingStatusValue[ProviderToolName]>;
 
   const providerToolName = $derived<ProviderToolName>(
@@ -76,6 +87,30 @@
       providerCliStatus !== "unknown",
   );
 
+  function gitStatusLabel(status: ToolStatus): string {
+    switch (status) {
+      case "ok":
+        return "git available";
+      case "missing":
+        return "git missing";
+      default:
+        return "git status unavailable";
+    }
+  }
+
+  function providerStatusLabel(status: ToolStatus): string {
+    switch (status) {
+      case "ok":
+        return `${providerToolName} authenticated`;
+      case "missing":
+        return `${providerToolName} CLI missing`;
+      case "unauthed":
+        return `${providerToolName} authentication required`;
+      default:
+        return `${providerToolName} status unavailable`;
+    }
+  }
+
   async function copyCommand(command: string): Promise<void> {
     if (!(await copyToClipboard(command))) {
       console.error("Copy failed");
@@ -94,11 +129,11 @@
     <ul class="tooling-block__list">
       <li class="tooling-row" data-status={gitStatus}>
         <div class="tooling-row__main">
-          <span
-            class="tooling-row__indicator"
-            data-status={gitStatus}
-            aria-hidden="true"
-          ></span>
+          <StatusDot
+            status={semanticStatuses[gitStatus]}
+            label={gitStatusLabel(gitStatus)}
+            size={8}
+          />
           <span class="tooling-row__name">git</span>
           <span class="tooling-row__detail">{gitDetail}</span>
         </div>
@@ -112,11 +147,11 @@
 
       <li class="tooling-row" data-status={providerCliStatus}>
         <div class="tooling-row__main">
-          <span
-            class="tooling-row__indicator"
-            data-status={providerCliStatus}
-            aria-hidden="true"
-          ></span>
+          <StatusDot
+            status={semanticStatuses[providerCliStatus]}
+            label={providerStatusLabel(providerCliStatus)}
+            size={8}
+          />
           <span class="tooling-row__name">{providerToolName}</span>
           <span class="tooling-row__detail">{providerCliDetail}</span>
         </div>
@@ -197,29 +232,6 @@
     align-items: center;
     gap: 8px;
     font-size: var(--font-size-md);
-  }
-
-  .tooling-row__indicator {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
-  .tooling-row__indicator[data-status="ok"] {
-    background: var(--accent-green);
-  }
-
-  .tooling-row__indicator[data-status="missing"] {
-    background: var(--accent-red);
-  }
-
-  .tooling-row__indicator[data-status="unauthed"] {
-    background: var(--accent-amber);
-  }
-
-  .tooling-row__indicator[data-status="unknown"] {
-    background: var(--text-muted);
   }
 
   .tooling-row__name {

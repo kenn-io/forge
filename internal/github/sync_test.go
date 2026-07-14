@@ -5543,6 +5543,58 @@ func TestSyncRepoUpdatesViewerCanMergeWithoutMergeSettings(t *testing.T) {
 	assert.False(repos[0].ViewerCanMerge)
 }
 
+func TestRefreshRepoSettingsPersistsGitHubProviderMetadata(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	// The modern resolution path pre-fills the platform repo id, so
+	// syncRepoIdentity never resolves the repository itself and
+	// refreshRepoSettings receives resolvedRepo == nil. Provider metadata
+	// must still be persisted from the GitHub settings fetch, or the row
+	// keeps an empty default branch forever and downstream consumers (the
+	// worktree diff sampler) fall back to a bare HEAD diff.
+	repoID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_kgDOexample",
+		Owner:          "acme",
+		Name:           "widgets",
+		RepoPath:       "acme/widgets",
+	})
+	require.NoError(err)
+	client := &mockClient{getRepositoryFn: func(
+		context.Context,
+		string,
+		string,
+	) (*gh.Repository, error) {
+		return &gh.Repository{
+			Name:          new("widgets"),
+			NodeID:        new("R_kgDOexample"),
+			HTMLURL:       new("https://github.com/acme/widgets"),
+			CloneURL:      new("https://github.com/acme/widgets.git"),
+			DefaultBranch: new("main"),
+		}, nil
+	}}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widgets",
+		RepoPath:     "acme/widgets",
+	}}, time.Minute, nil, nil)
+
+	syncer.refreshRepoSettings(ctx, syncer.repos[0], repoID, nil)
+
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal("main", repos[0].DefaultBranch)
+	assert.Equal("https://github.com/acme/widgets", repos[0].WebURL)
+	assert.Equal("https://github.com/acme/widgets.git", repos[0].CloneURL)
+	assert.Equal("R_kgDOexample", repos[0].PlatformRepoID)
+}
+
 func TestRefreshRepoSettingsPreservesViewerCanMergeWhenGitHubOmitsPermissions(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

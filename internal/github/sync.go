@@ -3772,6 +3772,21 @@ func (s *Syncer) refreshRepoSettings(
 			)
 			return
 		}
+		// This branch is the only settings refresh most GitHub repos ever
+		// take (resolution pre-fills the platform repo id, so resolvedRepo
+		// is nil), so it must persist provider metadata too — otherwise a
+		// newly discovered repo keeps an empty default branch and the
+		// worktree diff sampler degrades to a bare HEAD diff.
+		if err := s.db.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
+			PlatformRepoID: ghRepo.GetNodeID(),
+			WebURL:         ghRepo.GetHTMLURL(),
+			CloneURL:       ghRepo.GetCloneURL(),
+			DefaultBranch:  ghRepo.GetDefaultBranch(),
+		}); err != nil {
+			slog.Warn("update repo provider metadata failed",
+				"repo", repo.Owner+"/"+repo.Name, "err", err,
+			)
+		}
 		if canMerge := gitHubViewerCanMerge(ghRepo); canMerge != nil {
 			_ = s.db.UpdateRepoSettings(ctx, repoID,
 				ghRepo.GetAllowSquashMerge(),

@@ -1241,14 +1241,12 @@ describe("WorkspaceTerminalView", () => {
 
     window.history.pushState({}, "", "/terminal/ws-2");
     await view.rerender({ workspaceId: "ws-2" });
+    // Wait for ws-2's data to be applied (Delete re-enables), not
+    // merely for its request to be issued: handleDelete intentionally
+    // ignores clicks during the in-place transition window, so
+    // clicking earlier races the metadata response's microtasks.
     await waitFor(() => {
-      expect(
-        fetchMock.mock.calls.some(([input]) => {
-          if (!(input instanceof Request)) return false;
-          const { pathname } = new URL(input.url);
-          return pathname === "/api/v1/workspaces/ws-2";
-        }),
-      ).toBe(true);
+      expect(screen.getByRole("button", { name: "Delete" }).hasAttribute("disabled")).toBe(false);
     });
     await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => {

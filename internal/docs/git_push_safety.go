@@ -48,7 +48,7 @@ func assertPushTargetSafe(ctx context.Context, root, remote string) (pushTargetC
 	}
 	var localURLs, networkURLs []string
 	for _, raw := range urls {
-		c, err := classifyRemoteURL(root, raw, "push")
+		c, err := classifyPushURL(root, raw)
 		if err != nil {
 			return 0, err
 		}
@@ -101,36 +101,36 @@ func remotePushURLs(ctx context.Context, root, remote string) ([]string, error) 
 	return urls, nil
 }
 
-func classifyRemoteURL(root, raw, direction string) (pushTargetClass, error) {
+func classifyPushURL(root, raw string) (pushTargetClass, error) {
 	if scheme, _, ok := strings.Cut(raw, "://"); ok {
 		switch strings.ToLower(scheme) {
 		case "http", "https", "ssh", "git":
 			return pushTargetNetwork, nil
 		case "file":
-			path, err := fileURLPath(raw, direction)
+			path, err := fileURLPath(raw)
 			if err != nil {
 				return 0, err
 			}
-			return classifyLocalRemotePath(root, raw, path, direction)
+			return classifyLocalPushPath(root, raw, path)
 		default:
-			return 0, unsafeRemoteTarget(direction, raw, "remote helper transports are not allowed")
+			return 0, unsafePushTarget(raw, "remote helper transports are not allowed")
 		}
 	}
 	if head, _, ok := strings.Cut(raw, "::"); ok && !strings.Contains(head, "/") {
 		// <transport>::<address> remote-helper syntax (ext:: and friends).
-		return 0, unsafeRemoteTarget(direction, raw, "remote helper transports are not allowed")
+		return 0, unsafePushTarget(raw, "remote helper transports are not allowed")
 	}
 	if gitParsesDrivePaths && hasDriveLetterPrefix(raw) {
 		// Drive-letter paths (C:\docs, C:relative) would otherwise match
 		// the scp-like colon rule below and dodge containment and
 		// receive-pack hardening.
-		return classifyLocalRemotePath(root, raw, raw, direction)
+		return classifyLocalPushPath(root, raw, raw)
 	}
 	if colon := strings.IndexByte(raw, ':'); colon > 0 && !strings.Contains(raw[:colon], "/") {
-		// scp-like user@host:path — ssh, the serving side runs remotely.
+		// scp-like user@host:path — ssh, receive side runs remotely.
 		return pushTargetNetwork, nil
 	}
-	return classifyLocalRemotePath(root, raw, raw, direction)
+	return classifyLocalPushPath(root, raw, raw)
 }
 
 // gitParsesDrivePaths mirrors git's has_dos_drive_prefix: only on Windows
@@ -154,13 +154,13 @@ func hasDriveLetterPrefix(s string) bool {
 // behind percent-escapes would be misclassified as outside the folder.
 // Only an empty or "localhost" host is local; any other host is a
 // remote/UNC form this flow does not support, so it is rejected.
-func fileURLPath(raw, direction string) (string, error) {
+func fileURLPath(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", unsafeRemoteTarget(direction, raw, "unparsable file url")
+		return "", unsafePushTarget(raw, "unparsable file url")
 	}
 	if u.Host != "" && !strings.EqualFold(u.Host, "localhost") {
-		return "", unsafeRemoteTarget(direction, raw, "non-local file url host")
+		return "", unsafePushTarget(raw, "non-local file url host")
 	}
 	// url.Parse already decodes percent-escapes into u.Path.
 	path := u.Path
@@ -172,15 +172,15 @@ func fileURLPath(raw, direction string) (string, error) {
 	return path, nil
 }
 
-func classifyLocalRemotePath(root, displayURL, p, direction string) (pushTargetClass, error) {
+func classifyLocalPushPath(root, displayURL, p string) (pushTargetClass, error) {
 	abs := p
 	if !filepath.IsAbs(abs) {
 		// Relative remote URLs resolve against the repo root: gitCommand
-		// runs every git command with its working directory there.
+		// runs every push with its working directory there.
 		abs = filepath.Join(root, abs)
 	}
 	if pathWithin(resolveBestEffort(root), resolveBestEffort(abs)) {
-		return 0, unsafeRemoteTarget(direction, displayURL, direction+" target resolves inside the docs folder")
+		return 0, unsafePushTarget(displayURL, "push target resolves inside the docs folder")
 	}
 	return pushTargetLocal, nil
 }
@@ -200,9 +200,9 @@ func resolveBestEffort(p string) string {
 	return filepath.Join(resolveBestEffort(dir), filepath.Base(clean))
 }
 
-func unsafeRemoteTarget(direction, url, why string) error {
+func unsafePushTarget(url, why string) error {
 	return &UnsafeGitConfigError{
-		Entries: []string{fmt.Sprintf("%s url %s (%s)", direction, url, why)},
+		Entries: []string{fmt.Sprintf("push url %s (%s)", url, why)},
 	}
 }
 

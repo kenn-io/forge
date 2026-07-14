@@ -13,6 +13,7 @@
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
   import {
+    Card,
     CopyButton,
     copyToClipboard,
     formatRelativeTime,
@@ -1042,24 +1043,26 @@
               title="Copy to clipboard"
               copiedTitle="Copied!"
             />
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div
-              class="inset-box markdown-body"
-              class:dragging={dragSourceIndex !== null}
-              onclick={onBodyClick}
-              ondragstart={onBodyDragStart}
-              ondragover={onBodyDragOver}
-              ondragleave={onBodyDragLeave}
-              ondrop={onBodyDrop}
-              ondragend={onBodyDragEnd}
-            >
-              {#await renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
-                {@html renderMarkdownSync(issue.Body, { provider, platformHost, owner, name, repoPath })}
-              {:then html}
-                {@html html}
-              {/await}
-            </div>
+            <Card level="inset" padding="none" class="inset-box">
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                class="inset-box__content markdown-body"
+                class:dragging={dragSourceIndex !== null}
+                onclick={onBodyClick}
+                ondragstart={onBodyDragStart}
+                ondragover={onBodyDragOver}
+                ondragleave={onBodyDragLeave}
+                ondrop={onBodyDrop}
+                ondragend={onBodyDragEnd}
+              >
+                {#await renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
+                  {@html renderMarkdownSync(issue.Body, { provider, platformHost, owner, name, repoPath })}
+                {:then html}
+                  {@html html}
+                {/await}
+              </div>
+            </Card>
           </div>
         </div>
       {/if}
@@ -1510,14 +1513,14 @@
     opacity: 1;
   }
 
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .inset-box {
+  :global(.inset-box) {
+    overflow: hidden;
+  }
+
+  .inset-box__content {
+    padding: 10px 12px;
     font-size: var(--font-size-root);
     color: var(--text-primary);
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    padding: 10px 12px;
     word-break: break-word;
     line-height: 1.6;
   }
@@ -1686,7 +1689,7 @@
       line-height: 1.35;
     }
 
-    .inset-box,
+    .inset-box__content,
     .modal-copy,
     .branch-conflict-heading,
     .branch-conflict-copy,
@@ -1700,9 +1703,8 @@
       line-height: 1.55;
     }
 
-    .inset-box {
+    .inset-box__content {
       padding: var(--detail-mobile-space-sm) var(--detail-mobile-space-md);
-      border-radius: 10px;
     }
 
     :global(.markdown-body pre),

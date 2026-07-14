@@ -23,12 +23,12 @@
   --chrome-dock-resize-hit-outset: 4px;
   --chrome-dock-resize-stripe-offset: 2px;
   --z-flash: 1050;
-  --budget-green: #4ade80; /* kit-ui-check-ignore: budget-bar palette */
-  --budget-yellow: #fbbf24; /* kit-ui-check-ignore: budget-bar palette */
-  --budget-red: #f87171; /* kit-ui-check-ignore: budget-bar palette */
-  --budget-blue: #60a5fa; /* kit-ui-check-ignore: budget-bar palette */
-  --budget-bar-bg: #e5e7eb; /* kit-ui-check-ignore: budget-bar palette */
-  --kanban-new: #78716c; /* kit-ui-check-ignore: kanban palette */
+  --budget-green: var(--accent-green);
+  --budget-yellow: var(--accent-amber);
+  --budget-red: var(--accent-red);
+  --budget-blue: var(--accent-blue);
+  --budget-bar-bg: var(--border-muted);
+  --kanban-new: var(--text-muted);
   --kanban-reviewing: var(--accent-amber);
   --kanban-waiting: var(--accent-purple);
   --kanban-awaiting-merge: var(--accent-green);
@@ -53,66 +53,43 @@
   --verdict-pass: var(--accent-green);
   --verdict-fail: var(--accent-red);
 
-  /* Diff view — light theme (GitHub Light palette) */
-  --diff-bg: #ffffff; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-header-bg: #f6f8fa; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-border: #d0d7de; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-text: #1f2328; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-line-num: #656d76; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-add-bg: #dafbe1; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-add-text: #1a7f37; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-del-bg: #ffebe9; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-del-text: #cf222e; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-sidebar-bg: #f6f8fa; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-sidebar-active: #ddf4ff; /* kit-ui-check-ignore: GitHub diff palette */
+  /* Diff view follows the shared theme palette. */
+  --diff-bg: var(--bg-surface);
+  --diff-header-bg: var(--bg-primary);
+  --diff-border: var(--border-default);
+  --diff-text: var(--text-primary);
+  --diff-line-num: var(--text-muted);
+  --diff-add-bg: color-mix(in srgb, var(--accent-green) 16%, var(--bg-surface));
+  --diff-add-text: var(--accent-green);
+  --diff-del-bg: color-mix(in srgb, var(--accent-red) 14%, var(--bg-surface));
+  --diff-del-text: var(--accent-red);
+  --diff-sidebar-bg: var(--bg-primary);
+  --diff-sidebar-active: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-surface));
   --diff-sidebar-accent: var(--accent-blue);
-  --diff-toolbar-bg: #f6f8fa; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-stale-bg: #fff8c5; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-stale-text: #9a6700; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-stale-border: #d4a72c; /* kit-ui-check-ignore: GitHub diff palette */
+  --diff-toolbar-bg: var(--bg-primary);
+  --diff-stale-bg: color-mix(in srgb, var(--accent-amber) 14%, var(--bg-surface));
+  --diff-stale-text: var(--accent-amber);
+  --diff-stale-border: color-mix(in srgb, var(--accent-amber) 55%, var(--border-default));
 
-  /* Media-viewer glass chrome (markdown image lightbox): fixed
-     GitHub-dark glass regardless of app theme so controls stay legible
-     over media surfaces. --viewer-scrim comes from kit-ui's mermaid.css. */
-  --viewer-control-bg: rgba(36, 41, 47, 0.92); /* kit-ui-check-ignore: viewer glass palette */
-  --viewer-control-hover: rgba(48, 54, 61, 0.96); /* kit-ui-check-ignore: viewer glass palette */
-  --viewer-control-border: rgba(139, 148, 158, 0.48); /* kit-ui-check-ignore: viewer glass palette */
-  --viewer-control-text: #f0f6fc; /* kit-ui-check-ignore: viewer glass palette */
-  --viewer-control-shadow: 0 1px 4px rgba(1, 4, 9, 0.24); /* kit-ui-check-ignore: viewer glass palette */
-  --viewer-panel-shadow: 0 8px 24px rgba(1, 4, 9, 0.38); /* kit-ui-check-ignore: viewer glass palette */
+  /* Media-viewer chrome uses shared tokens so it remains theme-aware. */
+  --viewer-control-bg: color-mix(in srgb, var(--bg-inset) 92%, transparent);
+  --viewer-control-hover: color-mix(in srgb, var(--bg-surface-hover) 96%, transparent);
+  --viewer-control-border: color-mix(in srgb, var(--border-default) 48%, transparent);
+  --viewer-control-text: var(--text-primary);
+  --viewer-control-shadow: var(--shadow-sm);
+  --viewer-panel-shadow: var(--shadow-lg);
 
-  /* Theme-invariant ink anchors: white text on solid accent fills, the
-     always-dark xterm surface, and the near-black ink mixed into accent
-     bubble fills. Identical in light and dark by design. */
-  --text-on-accent: #ffffff; /* kit-ui-check-ignore: white ink on solid accent fills, both themes */
-  --terminal-bg: #0d1117; /* kit-ui-check-ignore: xterm surface stays GitHub-dark in both themes */
-  --bubble-ink: #0a0d14; /* kit-ui-check-ignore: near-black ink for accent bubble color-mixes, both themes */
+  --text-on-accent: var(--bg-surface);
+  --terminal-bg: var(--bg-inset);
+  --bubble-ink: var(--text-primary);
 }
 
 /* App-specific tokens — dark theme */
 :root.dark {
-  --budget-bar-bg: #2a2a3e; /* kit-ui-check-ignore: budget-bar palette */
-  --kanban-new: #a8a29e; /* kit-ui-check-ignore: kanban palette */
+  --budget-bar-bg: var(--border-muted);
+  --kanban-new: var(--text-muted);
   --sidebar-row-hover-bg: color-mix(in srgb, var(--bg-surface-hover) 82%, var(--text-muted) 18%);
   --bg-row-selected: color-mix(in srgb, var(--sidebar-row-hover-bg) 38%, var(--bg-surface));
-
-  /* Diff view — dark theme (GitHub Dark palette) */
-  --diff-bg: #0d1117; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-header-bg: #161b22; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-border: #30363d; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-text: #e6edf3; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-line-num: #8b949e; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-add-bg: rgba(46, 160, 67, 0.15); /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-add-text: #3fb950; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-del-bg: rgba(248, 81, 73, 0.15); /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-del-text: #f85149; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-sidebar-bg: #161b22; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-sidebar-active: rgba(56, 139, 253, 0.15); /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-sidebar-accent: #58a6ff; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-toolbar-bg: #161b22; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-stale-bg: rgba(187, 128, 9, 0.15); /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-stale-text: #d29922; /* kit-ui-check-ignore: GitHub diff palette */
-  --diff-stale-border: #9e6a03; /* kit-ui-check-ignore: GitHub diff palette */
 }
 
 /* Base. The root stays at the browser default (no html font-size) so the
@@ -206,11 +183,10 @@ a:hover {
   padding: 1px 4px;
   border-radius: 3px;
 }
-/* kit-ui-check-ignore: Card migration pending (kata wa1f) */
 .markdown-body pre {
-  background: var(--bg-inset);
-  border: 1px solid var(--border-muted);
-  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-md);
   padding: 8px 10px;
   overflow-x: auto;
   margin: 6px 0;

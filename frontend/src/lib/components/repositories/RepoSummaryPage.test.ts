@@ -837,6 +837,61 @@ describe("RepoSummaryPage", () => {
     });
   });
 
+  it("requires acknowledgement after an ambiguous issue creation response", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        repoSummaryFixture({
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widgets",
+        }),
+      ],
+      error: undefined,
+    });
+    mockPost
+      .mockResolvedValueOnce({
+        data: undefined,
+        error: { detail: "provider response unavailable" },
+        response: { status: 502 },
+      })
+      .mockResolvedValueOnce({ data: { Number: 27 }, error: undefined });
+
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), {
+      target: { value: "Retry this issue" },
+    });
+    await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
+
+    await waitFor(() => {
+      expect(flash.getFlash()).toMatchObject({
+        message: expect.stringMatching(
+          /provider response unavailable.*outcome is unknown.*check the issue list before retrying/i,
+        ),
+        tone: "danger",
+      });
+      expect((screen.getByRole("button", { name: "Create issue" }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    await fireEvent.keyDown(
+      screen.getByRole("textbox", {
+        name: "Describe the problem, context, or follow-up work",
+      }),
+      { key: "Enter", ctrlKey: true },
+    );
+    expect(mockPost).toHaveBeenCalledTimes(1);
+
+    await fireEvent.click(screen.getByRole("checkbox", { name: "I checked the issue list and want to retry." }));
+    await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledTimes(2);
+      expect(mockNavigate).toHaveBeenCalledWith("/issues/github/acme/widgets/27");
+    });
+  });
+
   it("keeps issue composer state separate for duplicate repos on different hosts", async () => {
     mockGet.mockResolvedValue({
       data: [

@@ -311,7 +311,7 @@
       repoPath: summary.repo.repo_path,
     };
     try {
-      const { data, error } = await client.POST(
+      const { data, error, response } = await client.POST(
         providerCollectionPath("issues", ref),
         {
           params: {
@@ -324,8 +324,16 @@
         },
       );
       if (error || !data) {
-        issueOutcomeUnknownByRepo[key] = false;
-        showFlash(apiErrorMessage(error, "failed to create issue"), { tone: "danger" });
+        const message = apiErrorMessage(error, "failed to create issue");
+        if (response?.status >= 500) {
+          const warning = `${message} The request outcome is unknown; check the issue list before retrying.`;
+          issueOutcomeUnknownByRepo[key] = true;
+          issueErrorByRepo[key] = warning;
+          showFlash(warning, { tone: "danger" });
+        } else {
+          issueOutcomeUnknownByRepo[key] = false;
+          showFlash(message, { tone: "danger" });
+        }
         return;
       }
 

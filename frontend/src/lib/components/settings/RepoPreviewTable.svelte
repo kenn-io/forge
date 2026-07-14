@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Chip, Table, TableHeaderCell } from "@kenn-io/kit-ui";
+  import { Checkbox, Chip, Table, TableHeaderCell } from "@kenn-io/kit-ui";
   import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
   import type { RepoImportRow, SortState, StatusFilter } from "./repoImportSelection.js";
   import { rowKey } from "./repoImportSelection.js";
@@ -73,24 +73,18 @@
     options={statusFilterOptions}
     onchange={(value) => onStatusFilter(value as StatusFilter)}
   />
-  <label class="toggle-filter">
-    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
-    <input
-      type="checkbox"
-      checked={hideForks}
-      onchange={(event) => onHideForks(event.currentTarget.checked)}
-    />
-    <span>Hide forks</span>
-  </label>
-  <label class="toggle-filter">
-    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
-    <input
-      type="checkbox"
-      checked={hidePrivate}
-      onchange={(event) => onHidePrivate(event.currentTarget.checked)}
-    />
-    <span>Hide private</span>
-  </label>
+  <Checkbox
+    class="toggle-filter"
+    checked={hideForks}
+    label="Hide forks"
+    onchange={onHideForks}
+  />
+  <Checkbox
+    class="toggle-filter"
+    checked={hidePrivate}
+    label="Hide private"
+    onchange={onHidePrivate}
+  />
   <button type="button" class="shortcut-btn" onclick={onSelectVisible}>All</button>
   <button type="button" class="shortcut-btn" onclick={onDeselectVisible}>None</button>
 </div>
@@ -147,8 +141,8 @@
   .repo-preview-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .filter-input { flex: 1; min-width: 220px; font-size: var(--font-size-md); padding: 6px 10px; background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
-  .toggle-filter { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-sm); color: var(--text-secondary); white-space: nowrap; }
-  .toggle-filter input { margin: 0; }
+  :global(.toggle-filter) { white-space: nowrap; }
+  :global(.toggle-filter .kit-checkbox__label) { color: var(--text-secondary); }
   .shortcut-btn { font-size: var(--font-size-sm); color: var(--accent-blue); }
   .table-wrap { overflow: auto; border: 1px solid var(--border-muted); border-radius: var(--radius-md); }
   .table-wrap :global(.kit-table) { font-size: var(--font-size-sm); }

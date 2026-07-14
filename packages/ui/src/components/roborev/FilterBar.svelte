@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getStores } from "../../context.js";
-  import { FilterDropdown, SearchInput } from "@kenn-io/kit-ui";
+  import { Checkbox, FilterDropdown, SearchInput } from "@kenn-io/kit-ui";
   import RepoTreePicker from "./RepoTreePicker.svelte";
 
   interface Props {
@@ -74,22 +74,12 @@
     }, 300);
   }
 
-  function onHideClosedChange(
-    e: Event & { currentTarget: HTMLInputElement },
-  ): void {
-    jobsStore?.setFilter(
-      "hideClosed",
-      e.currentTarget.checked,
-    );
+  function onHideClosedChange(checked: boolean): void {
+    jobsStore?.setFilter("hideClosed", checked);
   }
 
-  function onShowAutoDesignChange(
-    e: Event & { currentTarget: HTMLInputElement },
-  ): void {
-    jobsStore?.setFilter(
-      "showAutoDesign",
-      e.currentTarget.checked,
-    );
+  function onShowAutoDesignChange(checked: boolean): void {
+    jobsStore?.setFilter("showAutoDesign", checked);
   }
 </script>
 
@@ -121,27 +111,21 @@
     />
   </div>
 
-  <label class="hide-closed">
-    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
-    <input
-      type="checkbox"
-      checked={jobsStore?.getFilterHideClosed() ?? false}
-      onchange={onHideClosedChange}
-      {disabled}
-    />
-    Hide closed
-  </label>
+  <Checkbox
+    class="filter-checkbox"
+    checked={jobsStore?.getFilterHideClosed() ?? false}
+    label="Hide closed"
+    onchange={onHideClosedChange}
+    {disabled}
+  />
 
-  <label class="hide-closed">
-    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
-    <input
-      type="checkbox"
-      checked={jobsStore?.getFilterShowAutoDesign() ?? false}
-      onchange={onShowAutoDesignChange}
-      {disabled}
-    />
-    Show auto-design
-  </label>
+  <Checkbox
+    class="filter-checkbox"
+    checked={jobsStore?.getFilterShowAutoDesign() ?? false}
+    label="Show auto-design"
+    onchange={onShowAutoDesignChange}
+    {disabled}
+  />
 
   <button
     class="help-btn"
@@ -170,19 +154,14 @@
     max-width: 220px;
   }
 
-  .hide-closed {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    cursor: pointer;
+  :global(.filter-checkbox) {
+    gap: var(--space-2);
     white-space: nowrap;
     user-select: none;
   }
 
-  .hide-closed input {
-    cursor: pointer;
+  :global(.filter-checkbox .kit-checkbox__label) {
+    color: var(--text-secondary);
   }
 
   .help-btn {

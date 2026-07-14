@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { IconButton } from "@kenn-io/kit-ui";
+  import { Checkbox, IconButton } from "@kenn-io/kit-ui";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import XIcon from "@lucide/svelte/icons/x";
 
@@ -55,9 +55,9 @@
     }
   }
 
-  async function toggleChecklistItem(id: string): Promise<void> {
+  async function toggleChecklistItem(id: string, done: boolean): Promise<void> {
     await guarded(() =>
-      replaceChecklist(checklistItems().map((item) => (item.id === id ? { ...item, done: !item.done } : item))),
+      replaceChecklist(checklistItems().map((item) => (item.id === id ? { ...item, done } : item))),
     );
   }
 
@@ -92,19 +92,15 @@
       <div class="checklist-items">
         {#each checklistItems() as item (item.id)}
           <div class="checklist-row" class:done={item.done}>
-            <label>
-              <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
-              <input
-                type="checkbox"
-                aria-label={item.text}
-                checked={item.done}
-                disabled={checklistPending}
-                onchange={() => {
-                  void toggleChecklistItem(item.id);
-                }}
-              />
-              <span>{item.text}</span>
-            </label>
+            <Checkbox
+              class="checklist-item"
+              checked={item.done}
+              disabled={checklistPending}
+              label={item.text}
+              onchange={(done) => {
+                void toggleChecklistItem(item.id, done);
+              }}
+            />
             <IconButton
               size="sm"
               tone="danger"
@@ -187,26 +183,16 @@
     background: var(--bg-hover);
   }
 
-  .checklist-row label {
+  :global(.checklist-item) {
     flex: 1;
     min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  }
+
+  :global(.checklist-item .kit-checkbox__label) {
     color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    cursor: pointer;
   }
 
-  /* kit-ui-check-ignore: Checkbox migration pending (kata wa1f) */
-  .checklist-row input[type="checkbox"] {
-    width: 14px;
-    height: 14px;
-    margin: 0;
-    accent-color: var(--accent-blue);
-  }
-
-  .checklist-row.done label span {
+  .checklist-row.done :global(.checklist-item .kit-checkbox__label) {
     color: var(--text-muted);
     text-decoration: line-through;
   }

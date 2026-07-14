@@ -3,6 +3,7 @@
   import FolderIcon from "@lucide/svelte/icons/folder";
   import FolderOpen from "@lucide/svelte/icons/folder-open";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
+  import { Checkbox } from "@kenn-io/kit-ui";
   import { SelectDropdown } from "@middleman/ui";
   import { showFlash } from "@middleman/ui/stores/flash";
   import Modal from "../shared/Modal.svelte";
@@ -273,11 +274,11 @@
       </ul>
 
       {#if hiddenCount > 0}
-        <label class="picker-hidden-toggle">
-          <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
-          <input type="checkbox" bind:checked={showHidden} />
-          <span>Show hidden ({hiddenCount})</span>
-        </label>
+        <Checkbox
+          class="picker-hidden-toggle"
+          bind:checked={showHidden}
+          label={`Show hidden (${hiddenCount})`}
+        />
       {/if}
     </div>
 
@@ -514,15 +515,15 @@
     color: var(--text-error, #cf222e);
   }
 
-  .picker-hidden-toggle {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  :global(.picker-hidden-toggle) {
     padding: 6px 10px;
-    font-size: var(--font-size-xs);
-    color: var(--text-muted);
     border-top: 1px solid var(--border-default);
     background: var(--bg-surface);
+  }
+
+  :global(.picker-hidden-toggle .kit-checkbox__label) {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
   }
 
   .advanced-toggle {

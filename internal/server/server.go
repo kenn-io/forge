@@ -33,6 +33,7 @@ import (
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const middlemanCSRFHeaderName = "X-Middleman-Csrf"
@@ -849,14 +850,17 @@ func newServer(
 	s.startConfigWatcher()
 
 	healthAPI := humago.New(mux, healthAPIConfig())
+	healthAPI.UseMiddleware(otelSpanMiddleware)
 	s.registerHealthAPI(healthAPI)
 
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig(basePath))
 	api.UseMiddleware(newResponseCompressionMiddleware(responseCompressionMinSize))
+	api.UseMiddleware(otelSpanMiddleware)
 	s.registerAPI(api)
 	if s.workspaces != nil {
 		s.registerTerminalAPI(api, tmuxCmd)
 		wsAPI := humago.NewWithPrefix(mux, "/ws/v1", terminalAPIConfig())
+		wsAPI.UseMiddleware(otelSpanMiddleware)
 		s.registerTerminalAPI(wsAPI, tmuxCmd)
 	}
 
@@ -876,16 +880,20 @@ func newServer(
 	// StripPrefix so the inner mux sees clean paths like /api/v1/...
 	// Health endpoints stay at the root so external probes do not need
 	// to know about the UI base path.
+	var assembled http.Handler
 	if basePath != "/" {
 		outer := http.NewServeMux()
 		prefix := strings.TrimSuffix(basePath, "/")
 		outer.Handle("/healthz", mux)
 		outer.Handle("/livez", mux)
 		outer.Handle(basePath, http.StripPrefix(prefix, mux))
-		s.handler = outer
+		assembled = outer
 	} else {
-		s.handler = mux
+		assembled = mux
 	}
+	s.handler = otelhttp.NewHandler(assembled, "middleman.http",
+		otelhttp.WithFilter(otelTraceable),
+		otelhttp.WithSpanNameFormatter(otelSpanName))
 
 	return s
 }

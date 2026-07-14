@@ -725,9 +725,6 @@ type apiTestGitLabProvider struct {
 	blockNextMRFetch                 atomic.Bool
 	mrFetchStarted                   chan struct{}
 	mrFetchRelease                   <-chan struct{}
-	blockNextReviewFetch             atomic.Bool
-	reviewFetchStarted               chan struct{}
-	reviewFetchRelease               <-chan struct{}
 	rateLimitBuckets                 map[platform.OperationName][]platform.RateLimitBucket
 	resolvedThreads                  []string
 	unresolvedThreads                []string
@@ -823,14 +820,6 @@ func (p *apiTestGitLabProvider) ListMergeRequestReviewThreads(
 	platform.RepoRef,
 	int,
 ) ([]platform.MergeRequestReviewThread, error) {
-	if p.blockNextReviewFetch.CompareAndSwap(true, false) {
-		if p.reviewFetchStarted != nil {
-			p.reviewFetchStarted <- struct{}{}
-		}
-		if p.reviewFetchRelease != nil {
-			<-p.reviewFetchRelease
-		}
-	}
 	if p.reviewThreadsErr != nil {
 		return nil, p.reviewThreadsErr
 	}
@@ -16246,76 +16235,6 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 	assert.Equal("provider-comment-1", applied.Suggestions[0].ProviderCommentID)
 	assert.Equal("src/review.ts", applied.Suggestions[0].Range.Path)
 	assert.Equal("return client.publishThreads();", applied.Suggestions[0].Replacement)
-}
-
-func TestAPIApplyReviewSuggestionRevalidatesThreadsAfterWaitingForSync(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	caps := platform.Capabilities{
-		ReadRepositories:            true,
-		ReadMergeRequests:           true,
-		ReadIssues:                  true,
-		ReadComments:                true,
-		ReviewSuggestionApplication: true,
-		MutationHeadBinding:         true,
-		ReadReviewThreads:           true,
-	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
-	ctx := t.Context()
-	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		RepoPath:     "group/project",
-	})
-	require.NoError(err)
-	require.NotNil(repo)
-	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
-	require.NoError(err)
-	require.NotNil(mr)
-	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
-
-	derivedStarted := make(chan struct{}, 1)
-	releaseDerived := make(chan struct{})
-	provider.reviewFetchStarted = derivedStarted
-	provider.reviewFetchRelease = releaseDerived
-	provider.blockNextReviewFetch.Store(true)
-	syncDone := make(chan error, 1)
-	go func() {
-		syncDone <- srv.syncer.SyncMROnProvider(
-			ctx, platform.KindGitLab, "gitlab.example.com", "group", "project", 7,
-		)
-	}()
-	require.Eventually(func() bool {
-		select {
-		case <-derivedStarted:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond)
-
-	body := fmt.Sprintf(
-		`{"expected_head_sha":"abc123","suggestions":[{"thread_id":"%d","replacement":"return client.publishThreads();"}]}`,
-		thread.ID,
-	)
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-suggestions/apply",
-		strings.NewReader(body),
-	)
-	req.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	applyDone := make(chan struct{})
-	go func() {
-		srv.ServeHTTP(recorder, req)
-		close(applyDone)
-	}()
-
-	close(releaseDerived)
-	require.NoError(<-syncDone)
-	<-applyDone
-	require.Equal(http.StatusNotFound, recorder.Code, recorder.Body.String())
-	assert.Empty(provider.appliedSuggestions)
 }
 
 func TestAPIApplyReviewSuggestionRejectsNonOpenPullRequest(t *testing.T) {

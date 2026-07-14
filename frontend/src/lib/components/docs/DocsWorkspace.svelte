@@ -2089,8 +2089,7 @@
     font-size: var(--font-size-sm);
   }
 
-  /* kit-ui-check-ignore: two-pane docs threshold above the shared ladder (900 is the widest step) */
-  @media (max-width: 1100px) {
+  @media (max-width: 900px) {
     .doc-pane {
       grid-template-columns: minmax(0, 1fr);
     }

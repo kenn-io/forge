@@ -1393,8 +1393,7 @@
     font-size: var(--font-size-xs);
   }
 
-  /* kit-ui-check-ignore: three-pane threshold above the shared ladder (900 is the widest step) */
-  @media (max-width: 980px) {
+  @media (max-width: 900px) {
     :global(.repo-browser__history-resize),
     .repo-browser__history {
       display: none;

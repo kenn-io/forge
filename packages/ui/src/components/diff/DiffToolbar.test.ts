@@ -51,12 +51,12 @@ describe("DiffToolbar", () => {
     const wordWrap = screen.getByRole("switch", { name: "Word wrap" });
 
     expect(diff.getWordWrap()).toBe(false);
-    expect(wordWrap.getAttribute("aria-checked")).toBe("false");
+    expect((wordWrap as HTMLInputElement).checked).toBe(false);
 
     await fireEvent.click(wordWrap);
 
     expect(diff.getWordWrap()).toBe(true);
-    expect(wordWrap.getAttribute("aria-checked")).toBe("true");
+    expect((wordWrap as HTMLInputElement).checked).toBe(true);
     expect(localStorage.getItem("diff-word-wrap")).toBe("true");
   });
 
@@ -69,18 +69,18 @@ describe("DiffToolbar", () => {
     });
 
     expect(diff.getViewMode()).toBe("unified");
-    expect(sideBySide.getAttribute("aria-checked")).toBe("false");
+    expect((sideBySide as HTMLInputElement).checked).toBe(false);
 
     await fireEvent.click(sideBySide);
 
     expect(diff.getViewMode()).toBe("split");
-    expect(sideBySide.getAttribute("aria-checked")).toBe("true");
+    expect((sideBySide as HTMLInputElement).checked).toBe(true);
     expect(localStorage.getItem("diff-view-mode")).toBe("split");
 
     await fireEvent.click(sideBySide);
 
     expect(diff.getViewMode()).toBe("unified");
-    expect(sideBySide.getAttribute("aria-checked")).toBe("false");
+    expect((sideBySide as HTMLInputElement).checked).toBe(false);
     expect(localStorage.getItem("diff-view-mode")).toBe("unified");
   });
 

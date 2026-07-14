@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Toggle } from "@kenn-io/kit-ui";
   import MoreHorizontalIcon from "@lucide/svelte/icons/more-horizontal";
   import { getStores } from "../../context.js";
   import {
@@ -122,101 +123,53 @@
   </div>
   <div class="compact-menu-section">
     {#if onToggleFileList}
-      <button
+      <Toggle
         class="compact-switch-row"
-        type="button"
-        data-kit-ui-check-ignore="Toggle migration pending (kata wa1f)"
-        role="switch"
-        aria-label="File list"
-        aria-checked={!fileListHidden}
+        checked={!fileListHidden}
         disabled={disabled}
-        onclick={onToggleFileList}
+        ariaLabel="File list"
+        onchange={() => onToggleFileList()}
       >
-        <span>File list</span>
-        <span
-          class="toggle-switch"
-          class:toggle-switch--on={!fileListHidden}
-          aria-hidden="true"
-        >
-          <span class="toggle-knob"></span>
-        </span>
-      </button>
+        File list
+      </Toggle>
     {/if}
-    <button
+    <Toggle
       class="compact-switch-row"
-      type="button"
-      data-kit-ui-check-ignore="Toggle migration pending (kata wa1f)"
-      role="switch"
-      aria-label="Hide whitespace changes"
-      aria-checked={diff.getHideWhitespace()}
+      checked={diff.getHideWhitespace()}
       disabled={disabled}
-      onclick={() => diff.setHideWhitespace(!diff.getHideWhitespace())}
+      ariaLabel="Hide whitespace changes"
+      onchange={diff.setHideWhitespace}
     >
-      <span>Hide whitespace</span>
-      <span
-        class="toggle-switch"
-        class:toggle-switch--on={diff.getHideWhitespace()}
-        aria-hidden="true"
-      >
-        <span class="toggle-knob"></span>
-      </span>
-    </button>
-    <button
+      Hide whitespace
+    </Toggle>
+    <Toggle
       class="compact-switch-row"
-      type="button"
-      data-kit-ui-check-ignore="Toggle migration pending (kata wa1f)"
-      role="switch"
-      aria-label="Side-by-side diffs"
-      aria-checked={diff.getViewMode() === "split"}
+      checked={diff.getViewMode() === "split"}
       disabled={disabled}
-      onclick={() => diff.setViewMode(diff.getViewMode() === "split" ? "unified" : "split")}
+      ariaLabel="Side-by-side diffs"
+      onchange={(checked) => diff.setViewMode(checked ? "split" : "unified")}
     >
-      <span>Side-by-side</span>
-      <span
-        class="toggle-switch"
-        class:toggle-switch--on={diff.getViewMode() === "split"}
-        aria-hidden="true"
-      >
-        <span class="toggle-knob"></span>
-      </span>
-    </button>
-    <button
+      Side-by-side
+    </Toggle>
+    <Toggle
       class="compact-switch-row"
-      type="button"
-      data-kit-ui-check-ignore="Toggle migration pending (kata wa1f)"
-      role="switch"
-      aria-checked={diff.getWordWrap()}
+      checked={diff.getWordWrap()}
       disabled={disabled}
-      onclick={() => diff.setWordWrap(!diff.getWordWrap())}
+      ariaLabel="Word wrap"
+      onchange={diff.setWordWrap}
     >
-      <span>Word wrap</span>
-      <span
-        class="toggle-switch"
-        class:toggle-switch--on={diff.getWordWrap()}
-        aria-hidden="true"
-      >
-        <span class="toggle-knob"></span>
-      </span>
-    </button>
+      Word wrap
+    </Toggle>
     {#if showRichPreview}
-      <button
+      <Toggle
         class="compact-switch-row"
-        type="button"
-        data-kit-ui-check-ignore="Toggle migration pending (kata wa1f)"
-        role="switch"
-        aria-checked={diff.getRichPreview()}
+        checked={diff.getRichPreview()}
         disabled={disabled}
-        onclick={() => diff.setRichPreview(!diff.getRichPreview())}
+        ariaLabel="Rich preview"
+        onchange={diff.setRichPreview}
       >
-        <span>Rich preview</span>
-        <span
-          class="toggle-switch"
-          class:toggle-switch--on={diff.getRichPreview()}
-          aria-hidden="true"
-        >
-          <span class="toggle-knob"></span>
-        </span>
-      </button>
+        Rich preview
+      </Toggle>
     {/if}
   </div>
 {/snippet}
@@ -407,8 +360,7 @@
   }
 
   .compact-menu-item,
-  .compact-menu-action,
-  .compact-switch-row {
+  .compact-menu-action {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -429,7 +381,7 @@
 
   .compact-menu-item:hover,
   .compact-menu-action:hover,
-  .compact-switch-row:hover {
+  :global(.compact-switch-row:hover) {
     background: var(--bg-surface-hover);
     color: var(--text-primary);
   }
@@ -440,9 +392,24 @@
     font-weight: 600;
   }
 
-  .compact-switch-row {
+  :global(.compact-switch-row) {
+    flex-direction: row-reverse;
     justify-content: space-between;
+    width: 100%;
+    min-height: 26px;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
   }
+
+  :global(.compact-switch-row .kit-toggle__label) {
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+  }
+
+  :global(.compact-switch-row:hover .kit-toggle__label) {
+    color: var(--text-primary);
+  }
+
   .category-toggle {
     display: flex;
     gap: 2px;
@@ -478,37 +445,6 @@
   .category-count {
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    border-radius: 10px;
-    background: var(--border-default);
-    transition: background 0.2s;
-    flex-shrink: 0;
-  }
-
-  .toggle-switch--on {
-    background: var(--accent-blue);
-  }
-
-  .toggle-knob {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    /* kit-ui-check-ignore: switch knob stays white on the accent track in both themes */
-    background: #ffffff;
-    transition: transform 0.2s;
-    box-shadow: var(--shadow-sm);
-  }
-
-  .toggle-switch--on .toggle-knob {
-    transform: translateX(16px);
   }
 
   @media (max-width: 760px) {

@@ -2212,12 +2212,12 @@ test.describe("diff view", () => {
     await openDiffFilterMenu(page);
     const wrapToggle = page.getByRole("switch", { name: "Word wrap" });
 
-    await expect(wrapToggle).toHaveAttribute("aria-checked", "false");
+    await expect(wrapToggle).not.toBeChecked();
     await expect(firstCodeLine).toHaveCSS("white-space", "pre");
 
     await wrapToggle.click();
 
-    await expect(wrapToggle).toHaveAttribute("aria-checked", "true");
+    await expect(wrapToggle).toBeChecked();
     await expect(firstCodeLine).toHaveCSS("white-space", "pre-wrap");
   });
 
@@ -2249,10 +2249,10 @@ test.describe("diff view", () => {
     const previewToggle = page.getByRole("switch", {
       name: "Rich preview",
     });
-    await expect(previewToggle).toHaveAttribute("aria-checked", "false");
+    await expect(previewToggle).not.toBeChecked();
 
     await previewToggle.click();
-    await expect(previewToggle).toHaveAttribute("aria-checked", "true");
+    await expect(previewToggle).toBeChecked();
     const markdownPreview = page.locator(".markdown-rich-diff--unified");
     await expect(markdownPreview.getByRole("heading", { name: "Rendered preview" })).toBeVisible();
     await expect(markdownPreview).toContainText("Markdown task");
@@ -2793,9 +2793,9 @@ test.describe("diff view", () => {
     const sideBySide = page.getByRole("switch", {
       name: "Side-by-side diffs",
     });
-    await expect(sideBySide).toHaveAttribute("aria-checked", "false");
+    await expect(sideBySide).not.toBeChecked();
     await sideBySide.click();
-    await expect(sideBySide).toHaveAttribute("aria-checked", "true");
+    await expect(sideBySide).toBeChecked();
     await expect
       .poll(async () => {
         return await firstFile.locator(".pierre-diff").evaluate((host) => {

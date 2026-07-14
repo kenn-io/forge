@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { EmptyState, SearchInput, Spinner } from "@kenn-io/kit-ui";
+  import { Button, EmptyState, SearchInput, Spinner, TextInput } from "@kenn-io/kit-ui";
   import { tick, untrack } from "svelte";
   import type { ConfigRepo, Settings } from "@middleman/ui/api/types";
   import { showFlash } from "@middleman/ui/stores/flash";
@@ -242,17 +242,17 @@
       {#if selectedRow}
         <label class="path-field">
           <span>Local clone path for {selectedRow.repo_path}</span>
-          <input
-            type="text"
+          <TextInput
+            block
             placeholder="/path/to/existing/clone"
-            aria-label={`Local clone path for ${selectedRow.repo_path}`}
+            ariaLabel={`Local clone path for ${selectedRow.repo_path}`}
             value={selectedKey ? (pathDrafts[selectedKey] ?? "") : ""}
             disabled={submitting || selectedRow.already_configured}
-            oninput={(event) => {
+            oninput={(value) => {
               if (!selectedKey) return;
               pathDrafts = {
                 ...pathDrafts,
-                [selectedKey]: event.currentTarget.value,
+                [selectedKey]: value,
               };
             }}
             onkeydown={(event) => {
@@ -269,15 +269,15 @@
   {#snippet footer()}
     <span class="footer-status">{availableCount} available of {rows.length} matches</span>
     <div class="footer-actions">
-      <button class="secondary-btn" type="button" onclick={closeIfAllowed} disabled={submitting}>Cancel</button>
-      <button
-        class="submit-btn"
-        type="button"
+      <Button onclick={closeIfAllowed} disabled={submitting}>Cancel</Button>
+      <Button
+        tone="info"
+        surface="solid"
         onclick={() => void handlePromote()}
         disabled={submitting || !selectedRow || selectedRow.already_configured || selectedPath.trim() === ""}
       >
         {submitting ? "Promoting..." : "Promote repository"}
-      </button>
+      </Button>
     </div>
   {/snippet}
 </Modal>
@@ -315,20 +315,6 @@
     gap: 6px;
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
-  }
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  input[type="text"] {
-    min-width: 0;
-    padding: 7px 10px;
-    color: var(--text-primary);
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-md);
-  }
-  input:focus {
-    border-color: var(--accent-blue);
-    outline: none;
   }
   .match-list {
     min-height: 0;
@@ -384,27 +370,6 @@
     flex-shrink: 0;
     color: var(--text-muted);
     font-size: var(--font-size-xs);
-  }
-  .secondary-btn,
-  .submit-btn {
-    padding: 7px 14px;
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-md);
-    font-weight: 600;
-  }
-  .secondary-btn {
-    color: var(--text-secondary);
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-  }
-  .submit-btn {
-    color: white;
-    background: var(--accent-blue);
-  }
-  button:disabled,
-  input:disabled {
-    cursor: not-allowed;
-    opacity: 0.5;
   }
   .error-msg {
     color: var(--accent-red);

@@ -90,8 +90,7 @@ func runDocsGit(ctx context.Context, root string, stdin io.Reader, args ...strin
 // gitStderr extracts trimmed stderr from a failed docs git command,
 // falling back to the error text when no stderr was captured.
 func gitStderr(err error) string {
-	var ge *gitcmd.GitError
-	if errors.As(err, &ge) && ge.Stderr != "" {
+	if ge, ok := errors.AsType[*gitcmd.GitError](err); ok && ge.Stderr != "" {
 		return ge.Stderr
 	}
 	if err != nil {

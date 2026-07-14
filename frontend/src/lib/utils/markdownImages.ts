@@ -1,3 +1,4 @@
+import { trapFocus } from "@kenn-io/kit-ui";
 import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
 
 export interface MarkdownImageExpansionController {
@@ -7,15 +8,6 @@ export interface MarkdownImageExpansionController {
 
 const IMAGE_SELECTOR = ".markdown-body img, .doc-markdown img";
 const EXPANDER_CLASS = "markdown-image-expander";
-const FOCUSABLE_SELECTOR = [
-  "a[href]",
-  "button:not([disabled])",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  // kit-ui-check-ignore: imperative lightbox mounted into a caller-provided document; kit trapFocus binds the component's own document and body
-  '[tabindex]:not([tabindex="-1"])',
-].join(",");
 let closeActiveMarkdownImageLightbox: (() => void) | null = null;
 
 export function expandMarkdownImages(root: ParentNode): number {
@@ -85,7 +77,6 @@ function openMarkdownImageLightbox(sourceImage: HTMLImageElement): void {
   closeActiveMarkdownImageLightbox?.();
 
   const doc = sourceImage.ownerDocument;
-  const HTMLElementCtor = doc.defaultView?.HTMLElement ?? HTMLElement;
   const overlay = doc.createElement("div");
   overlay.className = "markdown-image-lightbox";
   overlay.setAttribute("aria-label", "Expanded image");
@@ -116,17 +107,12 @@ function openMarkdownImageLightbox(sourceImage: HTMLImageElement): void {
   panel.append(expanded, closeButton);
   overlay.append(panel);
 
-  const restoreFocusTo = doc.activeElement instanceof HTMLElementCtor ? doc.activeElement : null;
   const popModalFrame = pushModalFrame("markdown-image-lightbox", []);
   const onKeyDown = (event: KeyboardEvent) => {
     event.stopPropagation();
     if (event.key === "Escape") {
       event.preventDefault();
       closeLightbox();
-      return;
-    }
-    if (event.key === "Tab") {
-      trapLightboxFocus(event);
     }
   };
 
@@ -136,41 +122,18 @@ function openMarkdownImageLightbox(sourceImage: HTMLImageElement): void {
   overlay.addEventListener("keydown", onKeyDown);
   doc.addEventListener("keydown", onKeyDown);
   doc.body.append(overlay);
+  const releaseFocus = trapFocus(overlay);
   closeActiveMarkdownImageLightbox = closeLightbox;
-  overlay.focus({ preventScroll: true });
 
   function closeLightbox(): void {
     overlay.removeEventListener("keydown", onKeyDown);
     doc.removeEventListener("keydown", onKeyDown);
     popModalFrame();
+    releaseFocus();
     overlay.remove();
     if (closeActiveMarkdownImageLightbox === closeLightbox) {
       closeActiveMarkdownImageLightbox = null;
     }
-    restoreFocusTo?.focus({ preventScroll: true });
-  }
-
-  function trapLightboxFocus(event: KeyboardEvent): void {
-    const focusableElements = Array.from(overlay.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-      (element) => !element.hidden,
-    );
-    event.preventDefault();
-
-    if (focusableElements.length === 0) {
-      overlay.focus({ preventScroll: true });
-      return;
-    }
-
-    const activeElement = doc.activeElement instanceof HTMLElementCtor ? doc.activeElement : null;
-    const currentIndex = activeElement ? focusableElements.indexOf(activeElement) : -1;
-    const nextIndex = event.shiftKey
-      ? currentIndex <= 0
-        ? focusableElements.length - 1
-        : currentIndex - 1
-      : currentIndex >= focusableElements.length - 1
-        ? 0
-        : currentIndex + 1;
-    focusableElements[nextIndex]?.focus({ preventScroll: true });
   }
 }
 

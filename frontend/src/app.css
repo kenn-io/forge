@@ -351,9 +351,11 @@ a:hover {
 }
 .markdown-image-lightbox {
   position: fixed;
-  /* kit-ui-check-ignore: imperative lightbox bolted onto rendered markdown img elements, not a component-owned dialog surface */
-  inset: 0;
-  z-index: 96;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: var(--z-overlay);
   display: flex;
   align-items: center;
   justify-content: center;

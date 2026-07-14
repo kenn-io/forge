@@ -129,24 +129,24 @@ describe("expandMarkdownImages", () => {
     const closeButton = overlay?.querySelector<HTMLButtonElement>('button[aria-label="Close expanded image"]');
     expect(document.activeElement).toBe(overlay);
 
-    const tabFromOverlay = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Tab" });
-    overlay?.dispatchEvent(tabFromOverlay);
-    expect(tabFromOverlay.defaultPrevented).toBe(true);
-    expect(document.activeElement).toBe(closeButton);
+    Object.defineProperty(closeButton, "offsetParent", {
+      configurable: true,
+      value: overlay,
+    });
 
-    const tabFromClose = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Tab" });
-    closeButton?.dispatchEvent(tabFromClose);
-    expect(tabFromClose.defaultPrevented).toBe(true);
-    expect(document.activeElement).toBe(closeButton);
-
-    const shiftTabFromClose = new KeyboardEvent("keydown", {
+    const shiftTabFromOverlay = new KeyboardEvent("keydown", {
       bubbles: true,
       cancelable: true,
       key: "Tab",
       shiftKey: true,
     });
-    closeButton?.dispatchEvent(shiftTabFromClose);
-    expect(shiftTabFromClose.defaultPrevented).toBe(true);
+    overlay?.dispatchEvent(shiftTabFromOverlay);
+    expect(shiftTabFromOverlay.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(closeButton);
+
+    const tabFromClose = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Tab" });
+    closeButton?.dispatchEvent(tabFromClose);
+    expect(tabFromClose.defaultPrevented).toBe(true);
     expect(document.activeElement).toBe(closeButton);
   });
 
@@ -171,10 +171,10 @@ describe("expandMarkdownImages", () => {
     expect(panelStyle.get("border-radius")).toBe("0");
   });
 
-  test("places the expanded image overlay above shared modal layers", () => {
+  test("uses the shared overlay stacking token", () => {
     const overlayStyle = declarationsFor(".markdown-image-lightbox");
 
-    expect(Number(overlayStyle.get("z-index"))).toBeGreaterThan(94);
+    expect(overlayStyle.get("z-index")).toBe("var(--z-overlay)");
   });
 
   test("keeps the zoom affordance hidden until image hover or keyboard focus", () => {

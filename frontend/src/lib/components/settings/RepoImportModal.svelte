@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
+  import { Button, SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
+  import { TextInput } from "@kenn-io/kit-ui";
   import type { Settings } from "@middleman/ui/api/types";
   import { showFlash } from "@middleman/ui/stores/flash";
   import Modal from "../shared/Modal.svelte";
@@ -198,25 +199,32 @@
         </label>
         <label class="host-field">
           <span>Host</span>
-          <input
+          <TextInput
+            block
             value={hostInput}
             placeholder={providerMeta.defaultHost}
-            oninput={(event) => { hostInput = event.currentTarget.value; }}
+            oninput={(value) => { hostInput = value; }}
           />
         </label>
         <label>
           <span>Repository pattern</span>
-          <input
-            data-autofocus
+          <TextInput
+            block
+            autofocus
             value={patternInput}
             placeholder={providerMeta.ownerPatternPlaceholder}
-            oninput={(event) => handlePatternInput(event.currentTarget.value)}
+            oninput={handlePatternInput}
             onkeydown={(event) => { if (event.key === "Enter" && !loading) void handlePreview(); }}
           />
         </label>
-        <button class="preview-btn" type="button" onclick={() => void handlePreview()} disabled={loading || !patternInput.trim()}>
+        <Button
+          tone="info"
+          surface="solid"
+          onclick={() => void handlePreview()}
+          disabled={loading || !patternInput.trim()}
+        >
           {loading ? "Previewing…" : "Preview"}
-        </button>
+        </Button>
       </div>
 
       {#if error}
@@ -249,10 +257,15 @@
   {#snippet footer()}
     <span class="footer-status">Selected {selectedCount} of {selectableVisibleCount}</span>
     <div class="footer-actions">
-      <button class="secondary-btn" type="button" onclick={closeIfAllowed} disabled={submitting}>Cancel</button>
-      <button class="submit-btn" type="button" onclick={() => void handleSubmit()} disabled={submitting || selectedCount === 0}>
+      <Button onclick={closeIfAllowed} disabled={submitting}>Cancel</Button>
+      <Button
+        tone="info"
+        surface="solid"
+        onclick={() => void handleSubmit()}
+        disabled={submitting || selectedCount === 0}
+      >
         {submitting ? "Adding…" : "Add selected repositories"}
-      </button>
+      </Button>
     </div>
   {/snippet}
 </Modal>
@@ -264,14 +277,8 @@
   label { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: var(--font-size-sm); color: var(--text-secondary); }
   .provider-field { flex: 0 0 120px; }
   .host-field { flex: 0 0 190px; }
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  input { font-size: var(--font-size-md); padding: 7px 10px; color: var(--text-primary); background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
   .provider-field :global(.provider-select) { width: 100%; min-width: 0; }
-  .provider-field :global(.kit-select-dropdown__trigger) { height: 34px; font-size: var(--font-size-md); font-weight: 400; }
-  .preview-btn, .submit-btn { padding: 7px 14px; font-size: var(--font-size-md); font-weight: 600; color: white; background: var(--accent-blue); border-radius: var(--radius-sm); }
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .secondary-btn { padding: 7px 14px; font-size: var(--font-size-md); color: var(--text-secondary); background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .provider-field :global(.kit-select-dropdown__trigger) { height: 28px; font-size: var(--font-size-sm); font-weight: 400; }
   .error-msg { color: var(--accent-red); font-size: var(--font-size-sm); }
   .empty-preview { border: 1px dashed var(--border-muted); border-radius: var(--radius-md); padding: 28px; color: var(--text-muted); text-align: center; font-size: var(--font-size-md); }
   .footer-actions { display: flex; gap: 8px; }

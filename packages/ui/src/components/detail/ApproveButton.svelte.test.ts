@@ -79,10 +79,95 @@ describe("ApproveButton", () => {
       ),
     );
     expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
+    expect(showFlash).not.toHaveBeenCalled();
 
     await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     expect(screen.getByRole("dialog", { name: "Submit pull request review" })).toBeTruthy();
     expect(screen.queryByText("target changed since it was reviewed; refresh and retry")).toBeNull();
+  });
+
+  for (const action of [
+    { label: "Approve", supportedReviewActions: [] as string[], error: "approval rejected" },
+    { label: "Request changes", supportedReviewActions: ["request_changes"], error: "change request rejected" },
+  ]) {
+    it(`flashes a delayed ${action.label.toLowerCase()} failure after route navigation`, async () => {
+      let resolvePost!: (value: { error: { detail: string } }) => void;
+      const post = vi.fn().mockReturnValue(
+        new Promise<{ error: { detail: string } }>((resolve) => {
+          resolvePost = resolve;
+        }),
+      );
+      const props = {
+        owner: "acme",
+        name: "widget",
+        number: 7,
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+        supportedReviewActions: action.supportedReviewActions,
+      };
+      const { rerender } = render(ApproveButton, {
+        props,
+        context: new Map<symbol, unknown>([
+          [API_CLIENT_KEY, { POST: post }],
+          [STORES_KEY, { detail: { loadDetail: vi.fn() }, pulls: { loadPulls: vi.fn() } }],
+        ]),
+      });
+
+      await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+      if (action.label === "Request changes") {
+        await fireEvent.input(screen.getByRole("textbox"), { target: { value: "Please revise this." } });
+      }
+      await fireEvent.click(
+        action.label === "Approve"
+          ? screen.getByTitle("Submit an approving code review on this pull request")
+          : screen.getByRole("button", { name: action.label }),
+      );
+      await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+
+      await rerender({ ...props, name: "other-widget", number: 8, repoPath: "acme/other-widget" });
+      expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
+      resolvePost({ error: { detail: action.error } });
+
+      await waitFor(() => expect(showFlash).toHaveBeenCalledWith(action.error, { tone: "danger" }));
+      expect(showFlash).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it("keeps a request-changes head conflict parent-handled without a danger flash", async () => {
+    const post = vi.fn().mockResolvedValue({
+      error: {
+        code: "conflict",
+        detail: "target changed since it was reviewed",
+        details: { reason: "head_unknown" },
+      },
+    });
+    const onheadconflict = vi.fn();
+    render(ApproveButton, {
+      props: {
+        owner: "acme",
+        name: "widget",
+        number: 7,
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+        expectedHeadSha: "reviewed-sha",
+        supportedReviewActions: ["request_changes"],
+        onheadconflict,
+      },
+      context: new Map<symbol, unknown>([
+        [API_CLIENT_KEY, { POST: post }],
+        [STORES_KEY, { detail: { loadDetail: vi.fn() }, pulls: { loadPulls: vi.fn() } }],
+      ]),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await fireEvent.input(screen.getByRole("textbox"), { target: { value: "Please revise this." } });
+    await fireEvent.click(screen.getByRole("button", { name: "Request changes" }));
+
+    await waitFor(() => expect(onheadconflict).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
+    expect(showFlash).not.toHaveBeenCalled();
   });
 
   it("submits the latest synced platform head when it differs from reviewed head", async () => {

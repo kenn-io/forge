@@ -102,7 +102,7 @@
     });
   });
 
-  function buildInput(): PRDetailActionInput {
+  function buildInput(onHandledHeadConflict?: () => void): PRDetailActionInput {
     return {
       pr: {
         State: "open", IsDraft: false, MergeableState: "",
@@ -121,7 +121,10 @@
       client,
       approveCommentBody: body,
       ...(pinAtOpen !== "" && { expectedHeadSha: pinAtOpen }),
-      onHeadConflict: handleHeadConflict,
+      onHeadConflict: (...args) => {
+        onHandledHeadConflict?.();
+        handleHeadConflict(...args);
+      },
     };
   }
 
@@ -143,8 +146,11 @@
     submitting = true;
     submittingAction = "approve";
     onmutationchange?.(true);
+    let handledHeadConflict = false;
     try {
-      const approved = await submitApprovePR(buildInput());
+      const approved = await submitApprovePR(buildInput(() => {
+        handledHeadConflict = true;
+      }));
       if (!approved) return;
       body = "";
       expanded = false;
@@ -158,7 +164,7 @@
         showFlash("Pull request approved, but it could not be refreshed.");
       }
     } catch (err) {
-      if (expanded) showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
+      if (!handledHeadConflict) showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       submitting = false;
       submittingAction = null;
@@ -175,6 +181,7 @@
     submitting = true;
     submittingAction = "request_changes";
     onmutationchange?.(true);
+    let handledHeadConflict = false;
     try {
       const { error: requestError } = await client.POST(providerItemPath("pulls", {
         provider, platformHost, owner, name, repoPath,
@@ -188,6 +195,7 @@
       if (requestError) {
         const reason = isProblem(requestError) ? problemConflictReason(requestError) : undefined;
         if (reason === "stale_state" || reason === "head_unknown") {
+          handledHeadConflict = true;
           handleHeadConflict(
             reason,
             isProblem(requestError) ? problemConflictContext(requestError) : undefined,
@@ -210,7 +218,7 @@
         showFlash("Changes were requested, but the pull request could not be refreshed.");
       }
     } catch (err) {
-      if (expanded) showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
+      if (!handledHeadConflict) showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       submitting = false;
       submittingAction = null;

@@ -1259,7 +1259,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
         },
       );
       if (requestSelectionGeneration !== selectionGeneration || !isDetailShowingRef(ref)) {
-        if (requestError) return false;
+        // A typed stale-head response belongs to the original detail view;
+        // do not attach its inline conflict handling to a new selection.
+        if (requestError && isProblem(requestError) && applySuggestionRefreshReason(requestError)) return false;
+        if (requestError) throw new Error(apiErrorMessage(requestError, "failed to apply suggestion"));
         showFlash("Suggestion was applied after navigation. Refresh before applying it again.", {
           tone: "warning",
         });
@@ -1290,9 +1293,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
         throw new Error(message);
       }
     } catch (err) {
-      if (requestSelectionGeneration !== selectionGeneration || !isDetailShowingRef(ref)) {
-        return false;
-      }
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
       return false;
     }

@@ -409,6 +409,45 @@ describe("createDetailStore", () => {
     });
   });
 
+  it("flashes a delayed ordinary suggestion failure without changing the new selection", async () => {
+    let resolveApply!: (value: { error: { detail: string } }) => void;
+    const applyResponse = new Promise<{ error: { detail: string } }>((resolve) => {
+      resolveApply = resolve;
+    });
+    const get = vi.fn(async (_path: string, options: { params: { path: { name: string; number: number } } }) => {
+      const loaded = pullDetail(options.params.path.name === "widget" ? "reviewed-head" : "other-head");
+      loaded.repo_name = options.params.path.name;
+      loaded.repo.repo_path = `acme/${options.params.path.name}`;
+      loaded.merge_request.Number = options.params.path.number;
+      return { data: loaded };
+    });
+    const post = vi.fn((path: string) => {
+      if (path.endsWith("/review-suggestions/apply")) return applyResponse;
+      return Promise.resolve({ error: undefined });
+    });
+    const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
+    const load = (name: string, number: number) =>
+      store.loadDetail("acme", name, number, {
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: `acme/${name}`,
+        sync: false,
+      });
+    await load("widget", 7);
+    const applying = store.applyReviewSuggestions("acme", "widget", 7, {
+      suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
+    });
+
+    await load("other-widget", 8);
+    resolveApply({ error: { detail: "provider rejected suggestion" } });
+
+    await expect(applying).resolves.toBe(false);
+    expect(store.getDetail()?.repo_name).toBe("other-widget");
+    expect(store.getDetail()?.merge_request.Number).toBe(8);
+    expect(getFlashes()).toHaveLength(1);
+    expect(getFlash()).toMatchObject({ message: "provider rejected suggestion", tone: "danger" });
+  });
+
   it("fails closed when apply-suggestion conflict refresh returns no detail", async () => {
     const tests = [
       {

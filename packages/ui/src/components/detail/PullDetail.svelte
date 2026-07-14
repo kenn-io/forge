@@ -3195,6 +3195,7 @@
     opacity: 1;
   }
 
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .inset-box {
     font-size: var(--font-size-root);
     color: var(--text-primary);

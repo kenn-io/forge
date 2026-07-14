@@ -605,6 +605,7 @@
             of the month
           </label>
           <label class="last-day">
+            <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
             <input type="checkbox" bind:checked={dayInMonthLastDay}
                    disabled={dayInMonthMode !== "dayOfMonth"} />
             Last day of month

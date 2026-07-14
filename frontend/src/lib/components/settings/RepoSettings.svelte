@@ -328,6 +328,7 @@
   .clone-btn.configured { color: var(--accent-blue); }
   .worktree-base-body { display: flex; flex-direction: column; gap: 4px; }
   .worktree-base-control { display: flex; gap: 8px; }
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .worktree-base-input {
     flex: 1; min-width: 0; font-size: var(--font-size-sm); padding: 5px 8px;
     color: var(--text-primary); background: var(--bg-inset);
@@ -349,6 +350,7 @@
     color: var(--accent-blue); border: 1px solid color-mix(in srgb, var(--accent-blue) 35%, var(--border-muted));
     border-radius: var(--radius-sm); transition: background 0.12s, opacity 0.12s;
   }
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .promote-btn {
     padding: 4px 10px; font-size: var(--font-size-sm); font-weight: 600;
     color: var(--text-primary); background: var(--bg-inset);
@@ -379,6 +381,7 @@
   .confirm-no { color: var(--text-muted); border: 1px solid var(--border-muted); }
   .confirm-no:hover { background: var(--bg-surface-hover); }
   .add-form { display: flex; gap: 8px; }
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .add-input {
     flex: 1; font-size: var(--font-size-md); padding: 6px 10px;
     background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm);

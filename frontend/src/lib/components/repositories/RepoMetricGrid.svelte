@@ -56,6 +56,7 @@
     border-bottom: 1px solid var(--border-muted);
   }
 
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .repo-metrics--strip {
     grid-template-columns: repeat(5, minmax(92px, 1fr));
     gap: 0;

@@ -74,6 +74,7 @@
     onchange={(value) => onStatusFilter(value as StatusFilter)}
   />
   <label class="toggle-filter">
+    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
     <input
       type="checkbox"
       checked={hideForks}
@@ -82,6 +83,7 @@
     <span>Hide forks</span>
   </label>
   <label class="toggle-filter">
+    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
     <input
       type="checkbox"
       checked={hidePrivate}
@@ -117,6 +119,7 @@
       {@const key = rowKey(row)}
       <tr class={[row.already_configured && "disabled-row"]}>
         <td>
+          <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
           <input
             type="checkbox"
             aria-label={`Select ${repoLabel(row)}`}
@@ -142,6 +145,7 @@
 
 <style>
   .repo-preview-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .filter-input { flex: 1; min-width: 220px; font-size: var(--font-size-md); padding: 6px 10px; background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
   .toggle-filter { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-sm); color: var(--text-secondary); white-space: nowrap; }
   .toggle-filter input { margin: 0; }

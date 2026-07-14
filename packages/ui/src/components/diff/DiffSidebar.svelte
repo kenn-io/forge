@@ -93,6 +93,7 @@
     padding: 4px 10px 6px 24px;
   }
 
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .diff-files-filter__input {
     width: 100%;
     font-size: var(--font-size-xs);

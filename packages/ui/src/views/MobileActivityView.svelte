@@ -701,6 +701,7 @@
     gap: var(--mobile-space-md);
   }
 
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .mobile-activity-card {
     overflow: hidden;
     border: thin solid var(--border-default);

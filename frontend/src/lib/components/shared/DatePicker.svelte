@@ -217,6 +217,7 @@
     min-width: 136px;
   }
 
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .date-picker-trigger {
     box-sizing: border-box;
     display: inline-flex;
@@ -258,6 +259,7 @@
     color: var(--text-muted);
   }
 
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .date-picker-clear {
     flex: 0 0 auto;
     display: inline-flex;

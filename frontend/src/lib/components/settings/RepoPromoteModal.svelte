@@ -316,6 +316,7 @@
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   input[type="text"] {
     min-width: 0;
     padding: 7px 10px;

@@ -40,6 +40,7 @@
   class:tree-check--partial={value === "partial"}
   class:tree-check--decorative={decorative}
 >
+  <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
   <input
     bind:this={inputEl}
     class="tree-check__input"

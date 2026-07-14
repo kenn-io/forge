@@ -286,6 +286,7 @@
       <div class={["agent-row", !draft.builtin && "agent-row--custom"]}>
         <div class="agent-row-header">
           <label class="enable-field">
+            <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
             <input type="checkbox" bind:checked={draft.enabled} disabled={saving} />
             <span>{agentName(draft)}</span>
           </label>

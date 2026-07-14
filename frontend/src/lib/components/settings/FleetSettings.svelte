@@ -237,6 +237,7 @@
         Remote hosts stay unavailable while federation is off.
       </span>
     </span>
+    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
     <input
       type="checkbox"
       bind:checked={enabledDraft}
@@ -284,6 +285,7 @@
   </div>
 
   <label class="check-row">
+    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
     <input
       type="checkbox"
       bind:checked={includeUnmanagedDetailsDraft}

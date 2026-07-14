@@ -93,6 +93,7 @@
         {#each checklistItems() as item (item.id)}
           <div class="checklist-row" class:done={item.done}>
             <label>
+              <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
               <input
                 type="checkbox"
                 aria-label={item.text}
@@ -197,6 +198,7 @@
     cursor: pointer;
   }
 
+  /* kit-ui-check-ignore: Checkbox migration pending (kata wa1f) */
   .checklist-row input[type="checkbox"] {
     width: 14px;
     height: 14px;

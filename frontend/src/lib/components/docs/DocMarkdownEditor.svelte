@@ -176,6 +176,7 @@
 <div class="editor-host" bind:this={host}></div>
 
 <style>
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .editor-host {
     height: 100%;
     overflow: hidden;

@@ -264,10 +264,12 @@
   label { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: var(--font-size-sm); color: var(--text-secondary); }
   .provider-field { flex: 0 0 120px; }
   .host-field { flex: 0 0 190px; }
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   input { font-size: var(--font-size-md); padding: 7px 10px; color: var(--text-primary); background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
   .provider-field :global(.provider-select) { width: 100%; min-width: 0; }
   .provider-field :global(.kit-select-dropdown__trigger) { height: 34px; font-size: var(--font-size-md); font-weight: 400; }
   .preview-btn, .submit-btn { padding: 7px 14px; font-size: var(--font-size-md); font-weight: 600; color: white; background: var(--accent-blue); border-radius: var(--radius-sm); }
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .secondary-btn { padding: 7px 14px; font-size: var(--font-size-md); color: var(--text-secondary); background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .error-msg { color: var(--accent-red); font-size: var(--font-size-sm); }

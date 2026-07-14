@@ -475,6 +475,7 @@
     white-space: nowrap;
   }
 
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .activity-rail-close {
     width: 22px;
     height: 22px;

@@ -106,6 +106,7 @@
   <div class="mode-grid">
     {#each modeOptions as option (option.key)}
       <label class="mode-toggle">
+        <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
         <input
           type="checkbox"
           checked={draft[option.key]}

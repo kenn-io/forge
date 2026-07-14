@@ -94,6 +94,7 @@
 </div>
 
 <style>
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .review-suggestion {
     overflow: hidden;
     margin: var(--space-3, 0.75rem) 0;

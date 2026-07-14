@@ -125,6 +125,7 @@
       <button
         class="compact-switch-row"
         type="button"
+        data-kit-ui-check-ignore="Toggle migration pending (kata wa1f)"
         role="switch"
         aria-label="File list"
         aria-checked={!fileListHidden}
@@ -144,6 +145,7 @@
     <button
       class="compact-switch-row"
       type="button"
+      data-kit-ui-check-ignore="Toggle migration pending (kata wa1f)"
       role="switch"
       aria-label="Hide whitespace changes"
       aria-checked={diff.getHideWhitespace()}
@@ -162,6 +164,7 @@
     <button
       class="compact-switch-row"
       type="button"
+      data-kit-ui-check-ignore="Toggle migration pending (kata wa1f)"
       role="switch"
       aria-label="Side-by-side diffs"
       aria-checked={diff.getViewMode() === "split"}
@@ -180,6 +183,7 @@
     <button
       class="compact-switch-row"
       type="button"
+      data-kit-ui-check-ignore="Toggle migration pending (kata wa1f)"
       role="switch"
       aria-checked={diff.getWordWrap()}
       disabled={disabled}
@@ -198,6 +202,7 @@
       <button
         class="compact-switch-row"
         type="button"
+        data-kit-ui-check-ignore="Toggle migration pending (kata wa1f)"
         role="switch"
         aria-checked={diff.getRichPreview()}
         disabled={disabled}

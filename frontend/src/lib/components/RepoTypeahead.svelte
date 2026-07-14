@@ -397,6 +397,7 @@
     max-width: 260px;
   }
 
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .typeahead-trigger {
     height: 26px;
     width: 100%;

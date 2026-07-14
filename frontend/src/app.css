@@ -206,6 +206,7 @@ a:hover {
   padding: 1px 4px;
   border-radius: 3px;
 }
+/* kit-ui-check-ignore: Card migration pending (kata wa1f) */
 .markdown-body pre {
   background: var(--bg-inset);
   border: 1px solid var(--border-muted);
@@ -518,11 +519,13 @@ a:hover {
 .markdown-body .task-list-item > ol {
   margin: 0;
 }
+/* kit-ui-check-ignore: Checkbox migration pending (kata wa1f) */
 .markdown-body .task-list-item input[type="checkbox"] {
   margin: 0 8px 0 0;
   vertical-align: -0.1em;
   cursor: default;
 }
+/* kit-ui-check-ignore: Checkbox migration pending (kata wa1f) */
 .markdown-body .task-list-item--interactive input[type="checkbox"] {
   cursor: pointer;
 }

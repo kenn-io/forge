@@ -254,6 +254,7 @@
     padding: 2px;
   }
 
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .file-jump-search {
     display: flex;
     align-items: center;

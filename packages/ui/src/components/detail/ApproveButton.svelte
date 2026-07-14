@@ -318,6 +318,7 @@
     padding: 10px;
   }
 
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .approve-comment {
     width: 100%;
     min-height: 74px;

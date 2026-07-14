@@ -208,6 +208,7 @@
 </div>
 
 <style>
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .draft-item {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;

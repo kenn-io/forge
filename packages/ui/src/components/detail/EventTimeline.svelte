@@ -2014,6 +2014,7 @@
     padding: 16px 0;
   }
 
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .suggestion-batch-bar {
     display: flex;
     align-items: center;
@@ -2071,6 +2072,7 @@
   }
 
   /* Right side: card */
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .event-card {
     flex: 1;
     min-width: 0;

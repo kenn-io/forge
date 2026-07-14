@@ -287,6 +287,7 @@
     padding: 0;
   }
 
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .issue-chip {
     display: inline-block;
     padding: 2px 7px;

@@ -405,6 +405,7 @@
   </div>
 
   <label class="toggle-field">
+    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
     <input
       type="checkbox"
       bind:checked={cursorBlinkDraft}
@@ -414,6 +415,7 @@
   </label>
 
   <label class="toggle-field">
+    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
     <input
       type="checkbox"
       bind:checked={fontLigaturesDraft}
@@ -423,6 +425,7 @@
   </label>
 
   <label class="toggle-field">
+    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
     <input
       type="checkbox"
       bind:checked={hideTmuxStatusDraft}

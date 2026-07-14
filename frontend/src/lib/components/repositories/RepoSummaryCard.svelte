@@ -383,6 +383,7 @@
 </article>
 
 <style>
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .repo-card {
     overflow: hidden;
     border: 1px solid var(--border-default);

@@ -29,6 +29,7 @@
 </div>
 
 <style>
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .repo-state {
     max-width: 520px;
     padding: 20px;

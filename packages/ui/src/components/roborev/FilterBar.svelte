@@ -122,6 +122,7 @@
   </div>
 
   <label class="hide-closed">
+    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
     <input
       type="checkbox"
       checked={jobsStore?.getFilterHideClosed() ?? false}
@@ -132,6 +133,7 @@
   </label>
 
   <label class="hide-closed">
+    <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
     <input
       type="checkbox"
       checked={jobsStore?.getFilterShowAutoDesign() ?? false}

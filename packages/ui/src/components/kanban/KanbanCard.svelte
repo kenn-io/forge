@@ -37,6 +37,7 @@
 </button>
 
 <style>
+  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
   .kanban-card {
     display: block;
     width: 100%;

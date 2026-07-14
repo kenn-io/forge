@@ -274,6 +274,7 @@
 
       {#if hiddenCount > 0}
         <label class="picker-hidden-toggle">
+          <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
           <input type="checkbox" bind:checked={showHidden} />
           <span>Show hidden ({hiddenCount})</span>
         </label>

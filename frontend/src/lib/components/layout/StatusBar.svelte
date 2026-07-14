@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { StatusBar as KitStatusBar } from "@kenn-io/kit-ui";
+  import { StatusBar as KitStatusBar, StatusDot } from "@kenn-io/kit-ui";
   import { getStores } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
   import BudgetBars from "./BudgetBars.svelte";
@@ -188,7 +188,7 @@
     {/if}
     <span class="status-item" class:status-item--active={sync.getSyncState()?.running}>
       {#if sync.getSyncState()?.running}
-        <span class="sync-dot"></span>
+        <StatusDot status="working" label="Syncing" size={5} />
       {/if}
       {syncText()}
     </span>
@@ -212,20 +212,9 @@
     align-items: center;
     gap: 4px;
   }
-  .sync-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--accent-green);
-    animation: pulse 1.5s ease-in-out infinite;
-  }
   .budget-wrapper {
     position: relative;
     display: flex;
     align-items: center;
-  }
-  @keyframes pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 1; }
   }
 </style>

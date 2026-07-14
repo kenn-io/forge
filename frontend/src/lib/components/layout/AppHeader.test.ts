@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { compile } from "svelte/compiler";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import headerIconButtonSource from "./HeaderIconButton.svelte?raw";
@@ -18,6 +18,8 @@ type ModeKey =
   | "board"
   | "reviews"
   | "workspaces";
+
+const mockedReviewsDaemonAvailable = vi.hoisted(() => ({ value: true }));
 
 const mockedModeVisibility = vi.hoisted(() => ({
   value: {
@@ -59,6 +61,9 @@ vi.mock("@middleman/ui", async (importOriginal) => {
       },
       settings: {
         isModeVisible: (mode: ModeKey) => mockedModeVisibility.value[mode],
+      },
+      roborevDaemon: {
+        isAvailable: () => mockedReviewsDaemonAvailable.value,
       },
     }),
   };
@@ -129,6 +134,7 @@ describe("AppHeader", () => {
     mockMatchMedia(false);
     setSidebarCollapsed(false);
     mockedContainerSize.value = "wide";
+    mockedReviewsDaemonAvailable.value = true;
     delete window.__middleman_config;
     window.__middleman_notify_config_changed?.();
     mockedModeVisibility.value = {
@@ -154,6 +160,7 @@ describe("AppHeader", () => {
     localStorage.clear();
     setSidebarCollapsed(false);
     mockedContainerSize.value = "wide";
+    mockedReviewsDaemonAvailable.value = true;
     delete window.__middleman_config;
     window.__middleman_notify_config_changed?.();
     mockedModeVisibility.value = {
@@ -352,6 +359,32 @@ describe("AppHeader", () => {
     const { container } = render(AppHeader);
 
     expect(container.querySelector("button[title='Expand sidebar'] svg")).toBeTruthy();
+  });
+
+  it("places Reviews daemon status on the Reviews tab", () => {
+    initTheme();
+    mockedReviewsDaemonAvailable.value = false;
+    render(AppHeader);
+
+    const reviewsTab = screen.getByRole("button", {
+      name: "Reviews Reviews daemon unavailable",
+    });
+    expect(within(reviewsTab).getByRole("img", { name: "Reviews daemon unavailable" })).toBeTruthy();
+    expect(screen.getAllByRole("img", { name: "Reviews daemon unavailable" })).toHaveLength(1);
+  });
+
+  it("removes Reviews daemon status when available or hidden", () => {
+    initTheme();
+    render(AppHeader);
+    expect(screen.queryByRole("img", { name: "Reviews daemon unavailable" })).toBeNull();
+
+    cleanup();
+    mockedReviewsDaemonAvailable.value = false;
+    mockedModeVisibility.value = { ...mockedModeVisibility.value, reviews: false };
+    render(AppHeader);
+
+    expect(screen.queryByRole("img", { name: "Reviews daemon unavailable" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Reviews/ })).toBeNull();
   });
 
   it("marks the Workspaces tab current on terminal routes", () => {

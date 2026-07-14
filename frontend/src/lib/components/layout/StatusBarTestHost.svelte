@@ -11,11 +11,13 @@
     if (!stores || loaded) return;
     loaded = true;
     stores.activity.initializeFromMount();
+    stores.sync.startPolling();
     void Promise.all([
       stores.pulls.loadPulls(),
       stores.issues.loadIssues(),
       stores.activity.loadActivity(),
     ]);
+    return () => stores?.sync.stopPolling();
   });
 </script>
 

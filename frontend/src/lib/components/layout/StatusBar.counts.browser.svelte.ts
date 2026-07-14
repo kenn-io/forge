@@ -75,6 +75,18 @@ function issuesWithClosedRows(): MockRouteOverride {
   };
 }
 
+function runningSyncStatus(): MockRouteOverride {
+  return (req) => {
+    if (req.method !== "GET" || req.url.pathname !== "/api/v1/sync/status") return null;
+    return jsonResponse({
+      running: true,
+      progress: "github.com/acme/widgets",
+      last_run_at: "2026-03-30T14:00:30Z",
+      last_error: "",
+    });
+  };
+}
+
 function activityItem(
   id: string,
   number: number,
@@ -228,6 +240,17 @@ describe("status bar counts", () => {
     mounted = null;
     localStorage.clear();
     await resetKeyboardModuleState();
+  });
+
+  it("labels active sync with the shared working status", async () => {
+    mounted = await mountStatusBar("/repos", [runningSyncStatus()]);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[aria-label="Syncing"]')).not.toBeNull();
+      expect(document.querySelector(".kit-status-bar__section--right")?.textContent).toContain(
+        "syncing (github.com/acme/widgets)",
+      );
+    }, WAIT);
   });
 
   it("counts only open PRs when the loaded pull cache includes closed and merged rows", async () => {

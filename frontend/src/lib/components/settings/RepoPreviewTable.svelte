@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Checkbox, Chip, Table, TableHeaderCell } from "@kenn-io/kit-ui";
+  import { Button, Card, Checkbox, Chip, SearchInput, Table, TableHeaderCell } from "@kenn-io/kit-ui";
   import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
   import type { RepoImportRow, SortState, StatusFilter } from "./repoImportSelection.js";
   import { rowKey } from "./repoImportSelection.js";
@@ -56,16 +56,17 @@
     return row.repo_path || `${row.owner}/${row.name}`;
   }
 
+  let rangeShiftKey = false;
 </script>
 
 <div class="repo-preview-controls">
-  <input
+  <SearchInput
     class="filter-input"
-    type="text"
-    aria-label="Filter repositories"
+    block
+    ariaLabel="Filter repositories"
     placeholder="Filter by name or description…"
     value={filterText}
-    oninput={(event) => onFilterText(event.currentTarget.value)}
+    oninput={onFilterText}
   />
   <SelectDropdown
     title="Repository status filter"
@@ -85,11 +86,11 @@
     label="Hide private"
     onchange={onHidePrivate}
   />
-  <button type="button" class="shortcut-btn" onclick={onSelectVisible}>All</button>
-  <button type="button" class="shortcut-btn" onclick={onDeselectVisible}>None</button>
+  <Button size="sm" surface="soft" tone="info" onclick={onSelectVisible}>All</Button>
+  <Button size="sm" surface="soft" onclick={onDeselectVisible}>None</Button>
 </div>
 
-<div class="table-wrap">
+<Card level="default" padding="none" class="table-wrap">
   <Table ariaLabel="Repository import preview" zebra={false} stickyHeader={false}>
     {#snippet header()}
       <TableHeaderCell label="Select" class="select-col" />
@@ -112,14 +113,18 @@
     {#each rows as row (rowKey(row))}
       {@const key = rowKey(row)}
       <tr class={[row.already_configured && "disabled-row"]}>
-        <td>
-          <!-- kit-ui-check-ignore: repository range selection needs the native click event's shiftKey alongside the post-toggle checked value; kit Checkbox exposes only checked -->
-          <input
-            type="checkbox"
-            aria-label={`Select ${repoLabel(row)}`}
+        <td
+          onpointerdown={(event) => { rangeShiftKey = event.shiftKey; }}
+          onkeydown={(event) => { rangeShiftKey = event.shiftKey; }}
+        >
+          <Checkbox
             checked={selected.has(key)}
             disabled={row.already_configured}
-            onclick={(event) => onToggle(row, event.currentTarget.checked, event.shiftKey)}
+            ariaLabel={`Select ${repoLabel(row)}`}
+            onchange={(checked) => {
+              onToggle(row, checked, rangeShiftKey);
+              rangeShiftKey = false;
+            }}
           />
         </td>
         <td class="repo-name">{repoLabel(row)}</td>
@@ -135,18 +140,16 @@
       <tr><td colspan="6" class="empty-cell">No repositories match current filters.</td></tr>
     {/each}
   </Table>
-</div>
+</Card>
 
 <style>
   .repo-preview-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .filter-input { flex: 1; min-width: 220px; font-size: var(--font-size-md); padding: 6px 10px; background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
+  :global(.filter-input) { flex: 1; min-width: 220px; }
   :global(.toggle-filter) { white-space: nowrap; }
   :global(.toggle-filter .kit-checkbox__label) { color: var(--text-secondary); }
-  .shortcut-btn { font-size: var(--font-size-sm); color: var(--accent-blue); }
-  .table-wrap { overflow: auto; border: 1px solid var(--border-muted); border-radius: var(--radius-md); }
-  .table-wrap :global(.kit-table) { font-size: var(--font-size-sm); }
-  .table-wrap :global(th.select-col) { width: 52px; }
+  :global(.table-wrap) { overflow: auto; }
+  :global(.table-wrap .kit-table) { font-size: var(--font-size-sm); }
+  :global(.table-wrap th.select-col) { width: 52px; }
   td { padding: 8px 10px; border-bottom: 1px solid var(--border-muted); text-align: left; vertical-align: middle; }
   tr:last-child td { border-bottom: none; }
   .repo-name { font-weight: 600; color: var(--text-primary); white-space: nowrap; }

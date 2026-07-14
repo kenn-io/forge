@@ -1,6 +1,7 @@
 <script lang="ts">
   import Check from "@lucide/svelte/icons/check";
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
+  import Download from "@lucide/svelte/icons/download";
   import FileText from "@lucide/svelte/icons/file-text";
   import FolderIcon from "@lucide/svelte/icons/folder";
   import MoreHorizontal from "@lucide/svelte/icons/more-horizontal";
@@ -116,7 +117,8 @@
   let folderIsRepo: Record<string, boolean> = $state({});
 
   let publishOpen = $state(false);
-  let publishSuccess: string | null = $state(null);
+  let gitNotice: { kind: "success" | "error"; text: string } | null = $state(null);
+  let pulling = $state(false);
 
   let lastFolderLoaded: string | null = null;
   let lastDocLoaded: string | null = null;
@@ -913,9 +915,31 @@
   });
 
   async function onPublishedSuccess(result: GitPublishResponse) {
-    publishSuccess =
-      `Committed and pushed ${result.files.length} ${result.files.length === 1 ? "file" : "files"} as ${result.short_commit}.`;
+    gitNotice = {
+      kind: "success",
+      text: `Committed and pushed ${result.files.length} ${result.files.length === 1 ? "file" : "files"} as ${result.short_commit}.`,
+    };
     if (route.folder) await loadGitStatus(route.folder);
+  }
+
+  async function pullFromGit() {
+    if (!route.folder || pulling) return;
+    pulling = true;
+    try {
+      const result = await api.gitPull(route.folder);
+      await loadTree(route.folder);
+      await loadGitStatus(route.folder);
+      // The pulled commit may have rewritten the open document on disk.
+      if (route.doc) await loadDoc(route.folder, route.doc);
+      gitNotice = {
+        kind: "success",
+        text: result.up_to_date ? "Already up to date." : `Pulled to ${result.short_commit}.`,
+      };
+    } catch (err) {
+      gitNotice = { kind: "error", text: err instanceof Error ? err.message : "Pull failed" };
+    } finally {
+      pulling = false;
+    }
   }
 </script>
 
@@ -967,6 +991,19 @@
             <Plus size={14} strokeWidth={2} />
           </button>
           {#if activeFolderIsRepo}
+            <!-- Disabled while the editor is open: a pull that rewrites the
+                 open document would recreate the editor and silently discard
+                 an unsaved draft. -->
+            <button
+              type="button"
+              class="list-action"
+              aria-label="Pull from git"
+              title="Pull from git"
+              onclick={pullFromGit}
+              disabled={pulling || editing}
+            >
+              <Download size={14} strokeWidth={1.75} />
+            </button>
             <button
               type="button"
               class="list-action"
@@ -1365,8 +1402,14 @@
   />
 {/if}
 
-{#if publishSuccess}
-  <p class="publish-success kit-popover-card" role="status">{publishSuccess}</p>
+{#if gitNotice}
+  <p
+    class="publish-success kit-popover-card"
+    class:notice-error={gitNotice.kind === "error"}
+    role="status"
+  >
+    {gitNotice.text}
+  </p>
 {/if}
 
 <Modal
@@ -1956,6 +1999,10 @@
     padding: 8px 14px;
     color: var(--text-primary);
     font-size: var(--font-size-sm);
+  }
+
+  .publish-success.notice-error {
+    color: var(--accent-red);
   }
 
   .doc-scroll {

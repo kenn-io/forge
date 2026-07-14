@@ -353,6 +353,115 @@ describe("DocsWorkspace", () => {
     await waitFor(() => expect(within(dialog).getByText(/command-bearing config or attributes/i)).toBeTruthy());
   });
 
+  test("pull button is hidden for non-git folders", async () => {
+    const api = createMockDocsBackend({
+      folders: [{ meta: { id: "x", name: "X", path: "/x" }, files: { "README.md": "# x" } }],
+    });
+    const route: DocsRoute = { mode: "docs", folder: "x", doc: null };
+    const { queryByRole } = render(DocsWorkspace, {
+      props: { route, onRouteChange: vi.fn(), api },
+    });
+    await waitFor(() => expect(queryByRole("button", { name: "Pull from git" })).toBeNull());
+  });
+
+  test("pull reports the commit and refreshes tree, git status, and the open doc", async () => {
+    const backend = createMockDocsBackend({
+      folders: [
+        {
+          meta: { id: "x", name: "X", path: "/x" },
+          files: { "README.md": "# x" },
+          git: { "README.md": "modified" },
+        },
+      ],
+    });
+    const tree = vi.fn(backend.tree);
+    const gitStatus = vi.fn(backend.gitStatus);
+    const readFile = vi.fn(backend.readFile);
+    const gitPull = vi.fn(async () => ({
+      branch: "main",
+      upstream: "origin/main",
+      up_to_date: false,
+      commit: "abcdef1234567890abcdef1234567890abcdef12",
+      short_commit: "abcdef1",
+    }));
+    const api = { ...backend, tree, gitStatus, readFile, gitPull };
+    const route: DocsRoute = { mode: "docs", folder: "x", doc: "README.md" };
+    const { findByRole } = render(DocsWorkspace, {
+      props: { route, onRouteChange: vi.fn(), api },
+    });
+    const button = await findByRole("button", { name: "Pull from git" });
+    await waitFor(() => expect(readFile).toHaveBeenCalled());
+    const treeCalls = tree.mock.calls.length;
+    const statusCalls = gitStatus.mock.calls.length;
+    const readCalls = readFile.mock.calls.length;
+    await fireEvent.click(button);
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Pulled to abcdef1"));
+    expect(gitPull).toHaveBeenCalledWith("x");
+    expect(tree.mock.calls.length).toBeGreaterThan(treeCalls);
+    expect(gitStatus.mock.calls.length).toBeGreaterThan(statusCalls);
+    expect(readFile.mock.calls.length).toBeGreaterThan(readCalls);
+  });
+
+  test("pull reports an up-to-date repo", async () => {
+    const backend = createMockDocsBackend({
+      folders: [
+        {
+          meta: { id: "x", name: "X", path: "/x" },
+          files: { "README.md": "# x" },
+          git: { "README.md": "modified" },
+        },
+      ],
+    });
+    const route: DocsRoute = { mode: "docs", folder: "x", doc: null };
+    const { findByRole } = render(DocsWorkspace, {
+      props: { route, onRouteChange: vi.fn(), api: backend },
+    });
+    const button = await findByRole("button", { name: "Pull from git" });
+    await fireEvent.click(button);
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Already up to date."));
+  });
+
+  test("pull failure surfaces the error in the notice line", async () => {
+    const backend = createMockDocsBackend({
+      folders: [
+        {
+          meta: { id: "x", name: "X", path: "/x" },
+          files: { "README.md": "# x" },
+          git: { "README.md": "modified" },
+        },
+      ],
+    });
+    const gitPull = vi.fn(async () => {
+      const err = new Error("local branch and upstream have diverged; resolve with a git client") as Error & {
+        status?: number;
+        code?: string;
+      };
+      err.status = 409;
+      err.code = "diverged";
+      throw err;
+    });
+    const api = { ...backend, gitPull };
+    const route: DocsRoute = { mode: "docs", folder: "x", doc: null };
+    const { findByRole } = render(DocsWorkspace, {
+      props: { route, onRouteChange: vi.fn(), api },
+    });
+    const button = await findByRole("button", { name: "Pull from git" });
+    await fireEvent.click(button);
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("diverged"));
+  });
+
+  test("pull button is disabled while the editor is open", async () => {
+    renderWorkspace({ folder: "notes", doc: "README.md" });
+    await waitFor(() => expect(screen.getByRole("heading", { name: /Welcome to Notes/ })).toBeTruthy());
+    const button = screen.getByRole("button", { name: "Pull from git" });
+    expect(button.hasAttribute("disabled")).toBe(false);
+    await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await screen.findByRole("button", { name: "Cancel" });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  });
+
   test("publish button opens the PublishDocsDialog for a git-backed folder", async () => {
     const api = createMockDocsBackend({
       folders: [

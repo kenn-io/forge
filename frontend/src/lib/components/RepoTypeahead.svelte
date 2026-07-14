@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Card } from "@kenn-io/kit-ui";
   import { onMount, tick } from "svelte";
   import {
     canonicalRepoFilterValue,
@@ -378,7 +379,12 @@
       {/each}
     </ul>
   {:else}
-    <button class="typeahead-trigger" onclick={openDropdown} title="Select repository">
+    <Card
+      class="typeahead-trigger"
+      level="inset"
+      padding="none"
+      onclick={openDropdown}
+    >
       <span class="typeahead-value">{displayValue}</span>
       <ChevronDownIcon
         class="typeahead-chevron"
@@ -386,7 +392,7 @@
         strokeWidth="2"
         aria-hidden="true"
       />
-    </button>
+    </Card>
   {/if}
 </div>
 
@@ -397,26 +403,20 @@
     max-width: 260px;
   }
 
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .typeahead-trigger {
+  :global(.typeahead-trigger.kit-card) {
     height: 26px;
     width: 100%;
-    display: flex;
-    align-items: center;
     gap: 4px;
     padding: 0 8px;
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    cursor: pointer;
-    transition: border-color 0.15s;
-    text-align: left;
   }
 
-  .typeahead-trigger:hover {
-    border-color: var(--border-default);
+  :global(.typeahead-trigger .kit-card__body) {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 4px;
   }
 
   .typeahead-value {

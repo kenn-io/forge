@@ -470,8 +470,13 @@
     // loading, and edits A's body into B's path.
     if (!editReady || docContent === null) return;
     if (!route.folder || !route.doc) return;
+    // A pull may rewrite this doc on disk; an editor opened mid-pull would
+    // capture the pre-pull body and a later save would overwrite the pulled
+    // content with it. The Edit button is disabled while pulling; re-check
+    // after the lazy import too, since a pull can start during that await.
+    if (pulling) return;
     await loadEditor();
-    if (!DocMarkdownEditor) return;
+    if (!DocMarkdownEditor || pulling) return;
     editorDraft = docContent;
     editorDirty = false;
     saveError = null;
@@ -926,18 +931,25 @@
     const folderID = route.folder;
     if (!folderID || pulling) return;
     pulling = true;
+    // The user may switch folders while the pull or any refresh below is
+    // awaited. An old-folder refresh issued after the switch would take a
+    // newer request token and supersede the new folder's loads, so
+    // re-check the route after every await and abandon the rest — the
+    // next visit to this folder loads fresh state anyway.
+    const stillCurrent = () => route.folder === folderID;
     try {
       const result = await api.gitPull(folderID);
-      // The user may have switched folders while the pull ran; a refresh
-      // or notice for the initiating folder would then describe the wrong
-      // view, so bail out and let the next visit load fresh state.
-      if (route.folder !== folderID) return;
+      if (!stillCurrent()) return;
       await loadTree(folderID);
+      if (!stillCurrent()) return;
       await loadGitStatus(folderID);
-      // The pulled commit may have rewritten the open document on disk —
-      // but never reload it over an editor opened mid-pull: recreating
-      // the editor would silently discard the draft.
+      if (!stillCurrent()) return;
+      // The pulled commit may have rewritten the open document on disk.
+      // `!editing` is a backstop: Edit and Pull disable each other, so a
+      // draft can't normally exist here — but reloading over one would
+      // silently discard it, so never take that risk.
       if (route.doc && !editing) await loadDoc(folderID, route.doc);
+      if (!stillCurrent()) return;
       gitNotice = {
         kind: "success",
         text: result.up_to_date ? "Already up to date." : `Pulled to ${result.short_commit}.`,
@@ -1188,7 +1200,7 @@
                 type="button"
                 class="toolbar-btn"
                 onclick={() => void beginEdit()}
-                disabled={!editReady || editorLoading}
+                disabled={!editReady || editorLoading || pulling}
               >{editorLoading ? "Loading…" : "Edit"}</button>
               <button
                 type="button"

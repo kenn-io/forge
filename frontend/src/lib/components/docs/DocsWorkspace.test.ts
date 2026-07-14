@@ -450,7 +450,7 @@ describe("DocsWorkspace", () => {
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("diverged"));
   });
 
-  test("a pull resolving while the editor is open does not reload the doc over the draft", async () => {
+  test("edit is disabled while a pull is in flight so a draft can't capture pre-pull content", async () => {
     const backend = createMockDocsBackend();
     let resolvePull!: (v: {
       branch: string;
@@ -471,15 +471,17 @@ describe("DocsWorkspace", () => {
           resolvePull = resolve;
         }),
     );
-    const readFile = vi.fn(backend.readFile);
-    const api = { ...backend, readFile, gitPull };
+    const api = { ...backend, gitPull };
     const route: DocsRoute = { mode: "docs", folder: "notes", doc: "README.md" };
     render(DocsWorkspace, { props: { route, onRouteChange: vi.fn(), api } });
     await waitFor(() => expect(screen.getByRole("heading", { name: /Welcome to Notes/ })).toBeTruthy());
+    const editButton = screen.getByRole("button", { name: "Edit" });
+    expect(editButton.hasAttribute("disabled")).toBe(false);
     await fireEvent.click(screen.getByRole("button", { name: "Pull from git" }));
-    await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    await screen.findByRole("button", { name: "Cancel" });
-    const readsBeforeResolve = readFile.mock.calls.length;
+    // Opening the editor mid-pull would capture the pre-pull body and a
+    // later save would overwrite the pulled content, so Edit must stay
+    // unavailable until the pull settles.
+    expect(editButton.hasAttribute("disabled")).toBe(true);
     resolvePull({
       branch: "main",
       upstream: "origin/main",
@@ -488,9 +490,52 @@ describe("DocsWorkspace", () => {
       short_commit: "0000000",
     });
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Already up to date."));
-    // Still in the editor, and the doc was not re-fetched underneath it.
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
-    expect(readFile.mock.calls.length).toBe(readsBeforeResolve);
+    expect(editButton.hasAttribute("disabled")).toBe(false);
+  });
+
+  test("switching folders while the pull's refreshes are pending abandons the stale reloads", async () => {
+    const backend = createMockDocsBackend();
+    let releaseTree!: () => void;
+    const treeGate = new Promise<void>((resolve) => {
+      releaseTree = resolve;
+    });
+    let deferNotesTree = false;
+    const tree = vi.fn(async (folderID: string) => {
+      if (deferNotesTree && folderID === "notes") await treeGate;
+      return backend.tree(folderID);
+    });
+    const gitStatus = vi.fn(backend.gitStatus);
+    const readFile = vi.fn(backend.readFile);
+    const gitPull = vi.fn(async () => ({
+      branch: "main",
+      upstream: "origin/main",
+      up_to_date: true,
+      commit: "0000000000000000000000000000000000000000",
+      short_commit: "0000000",
+    }));
+    const api = { ...backend, tree, gitStatus, readFile, gitPull };
+    const onRouteChange = vi.fn();
+    const route: DocsRoute = { mode: "docs", folder: "notes", doc: "README.md" };
+    const { rerender } = render(DocsWorkspace, { props: { route, onRouteChange, api } });
+    await waitFor(() => expect(screen.getByRole("heading", { name: /Welcome to Notes/ })).toBeTruthy());
+    const mountTreeCalls = tree.mock.calls.length;
+    deferNotesTree = true;
+    await fireEvent.click(screen.getByRole("button", { name: "Pull from git" }));
+    // The pull resolved and its tree refresh is now parked on the gate.
+    await waitFor(() => expect(tree.mock.calls.length).toBeGreaterThan(mountTreeCalls));
+    await rerender({ route: { mode: "docs", folder: "engineering", doc: null }, onRouteChange, api });
+    await waitFor(() => expect(gitStatus).toHaveBeenCalledWith("engineering"));
+    const notesStatusCalls = gitStatus.mock.calls.filter((c) => c[0] === "notes").length;
+    const notesReads = readFile.mock.calls.filter((c) => c[0] === "notes").length;
+    releaseTree();
+    // Let the parked pull refresh chain settle before asserting it went
+    // no further than the folder guard.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(gitStatus.mock.calls.filter((c) => c[0] === "notes").length).toBe(notesStatusCalls);
+    expect(readFile.mock.calls.filter((c) => c[0] === "notes").length).toBe(notesReads);
+    // The old folder's pull outcome must not be announced over the new view.
+    expect(screen.queryByRole("status")?.textContent ?? "").not.toContain("Already up to date.");
   });
 
   test("pull button is disabled while the editor is open", async () => {

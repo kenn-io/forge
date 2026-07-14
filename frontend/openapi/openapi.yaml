@@ -4535,6 +4535,33 @@ components:
       required:
         - allow_mid_stack_merges
       type: object
+    PullResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/PullResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        branch:
+          type: string
+        commit:
+          type: string
+        short_commit:
+          type: string
+        up_to_date:
+          type: boolean
+        upstream:
+          type: string
+      required:
+        - branch
+        - upstream
+        - up_to_date
+        - commit
+        - short_commit
+      type: object
     RateLimitHostStatus:
       additionalProperties: false
       properties:
@@ -7615,6 +7642,31 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Publish docs Git changes
+      tags:
+        - Docs
+  /docs/folders/{id}/git/pull:
+    post:
+      operationId: pull-docs-git
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PullResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Pull docs Git changes
       tags:
         - Docs
   /docs/folders/{id}/search:

@@ -2266,6 +2266,17 @@ type PullRequests struct {
 	AllowMidStackMerges bool `json:"allow_mid_stack_merges"`
 }
 
+// PullResponse defines model for PullResponse.
+type PullResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string `json:"$schema,omitempty"`
+	Branch      string  `json:"branch"`
+	Commit      string  `json:"commit"`
+	ShortCommit string  `json:"short_commit"`
+	UpToDate    bool    `json:"up_to_date"`
+	Upstream    string  `json:"upstream"`
+}
+
 // RateLimitHostStatus defines model for RateLimitHostStatus.
 type RateLimitHostStatus struct {
 	BudgetLimit        int64  `json:"budget_limit"`
@@ -4368,6 +4379,9 @@ type ClientInterface interface {
 
 	PublishDocsGit(ctx context.Context, id string, body PublishDocsGitJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PullDocsGit request
+	PullDocsGit(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// SearchDocsFolder request
 	SearchDocsFolder(ctx context.Context, id string, params *SearchDocsFolderParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -5608,6 +5622,18 @@ func (c *Client) PublishDocsGitWithBody(ctx context.Context, id string, contentT
 
 func (c *Client) PublishDocsGit(ctx context.Context, id string, body PublishDocsGitJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPublishDocsGitRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PullDocsGit(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPullDocsGitRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -10791,6 +10817,40 @@ func NewPublishDocsGitRequestWithBody(server string, id string, contentType stri
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPullDocsGitRequest generates requests for PullDocsGit
+func NewPullDocsGitRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders/%s/git/pull", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -27301,6 +27361,9 @@ type ClientWithResponsesInterface interface {
 
 	PublishDocsGitWithResponse(ctx context.Context, id string, body PublishDocsGitJSONRequestBody, reqEditors ...RequestEditorFn) (*PublishDocsGitResponse, error)
 
+	// PullDocsGitWithResponse request
+	PullDocsGitWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*PullDocsGitResponse, error)
+
 	// SearchDocsFolderWithResponse request
 	SearchDocsFolderWithResponse(ctx context.Context, id string, params *SearchDocsFolderParams, reqEditors ...RequestEditorFn) (*SearchDocsFolderResponse, error)
 
@@ -28632,6 +28695,29 @@ func (r PublishDocsGitResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r PublishDocsGitResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PullDocsGitResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *PullResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r PullDocsGitResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PullDocsGitResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -34900,6 +34986,15 @@ func (c *ClientWithResponses) PublishDocsGitWithResponse(ctx context.Context, id
 	return ParsePublishDocsGitResponse(rsp)
 }
 
+// PullDocsGitWithResponse request returning *PullDocsGitResponse
+func (c *ClientWithResponses) PullDocsGitWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*PullDocsGitResponse, error) {
+	rsp, err := c.PullDocsGit(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePullDocsGitResponse(rsp)
+}
+
 // SearchDocsFolderWithResponse request returning *SearchDocsFolderResponse
 func (c *ClientWithResponses) SearchDocsFolderWithResponse(ctx context.Context, id string, params *SearchDocsFolderParams, reqEditors ...RequestEditorFn) (*SearchDocsFolderResponse, error) {
 	rsp, err := c.SearchDocsFolder(ctx, id, params, reqEditors...)
@@ -38535,6 +38630,39 @@ func ParsePublishDocsGitResponse(rsp *http.Response) (*PublishDocsGitResponse, e
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest PublishResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePullDocsGitResponse parses an HTTP response from a PullDocsGitWithResponse call
+func ParsePullDocsGitResponse(rsp *http.Response) (*PullDocsGitResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PullDocsGitResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PullResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

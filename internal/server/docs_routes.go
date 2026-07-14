@@ -261,6 +261,14 @@ func (s *Server) registerDocsAPI(api huma.API) {
 		Tags:          []string{"Docs"},
 		MaxBodyBytes:  docsMaxBodyBytes,
 	}, s.publishDocsGit)
+	huma.Register(api, huma.Operation{
+		OperationID:   "pull-docs-git",
+		Method:        http.MethodPost,
+		Path:          "/docs/folders/{id}/git/pull",
+		DefaultStatus: http.StatusOK,
+		Summary:       "Pull docs Git changes",
+		Tags:          []string{"Docs"},
+	}, s.pullDocsGit)
 	huma.Get(api, "/docs/folders/{id}/file", s.readDocsFile,
 		documentOperation("read-docs-file", "Read docs file", "Docs"))
 	huma.Register(api, huma.Operation{
@@ -473,20 +481,48 @@ func (s *Server) getDocsGitChanges(ctx context.Context, in *docsFolderIDInput) (
 }
 
 func (s *Server) publishDocsGit(ctx context.Context, in *docsGitPublishInput) (*bodyOutput[docs.PublishResponse], error) {
-	if !s.docsPublishLocks.tryAcquire(in.ID) {
+	folder, err := s.docsRegistry.Lookup(in.ID)
+	if err != nil {
+		return nil, docsRegistryProblem(err)
+	}
+	// Git operations lock on the folder path, not the folder ID: the
+	// registry allows several IDs over one path, and a git operation is
+	// per-repository (FETCH_HEAD, the index, and HEAD are repo-global).
+	if !s.docsPublishLocks.tryAcquire(folder.Path) {
 		return nil, problemConflict(
 			CodeConflict,
 			"another publish is in flight for this folder",
 			map[string]any{"reason": "publishInProgress"},
 		)
 	}
-	defer s.docsPublishLocks.release(in.ID)
+	defer s.docsPublishLocks.release(folder.Path)
 
 	published, err := s.docsRegistry.GitPublish(ctx, in.ID, in.Body.Message)
 	if err != nil {
 		return nil, docsGitPublishProblem(err)
 	}
 	return &bodyOutput[docs.PublishResponse]{Body: published}, nil
+}
+
+func (s *Server) pullDocsGit(ctx context.Context, in *docsFolderIDInput) (*bodyOutput[docs.PullResponse], error) {
+	folder, err := s.docsRegistry.Lookup(in.ID)
+	if err != nil {
+		return nil, docsRegistryProblem(err)
+	}
+	if !s.docsPublishLocks.tryAcquire(folder.Path) {
+		return nil, problemConflict(
+			CodeConflict,
+			"another git operation is in flight for this folder",
+			map[string]any{"reason": "gitOperationInProgress"},
+		)
+	}
+	defer s.docsPublishLocks.release(folder.Path)
+
+	pulled, err := s.docsRegistry.GitPull(ctx, in.ID)
+	if err != nil {
+		return nil, docsGitPullProblem(err)
+	}
+	return &bodyOutput[docs.PullResponse]{Body: pulled}, nil
 }
 
 func (s *Server) readDocsFile(_ context.Context, in *docsFolderPathInput) (*docsReadFileOutput, error) {
@@ -691,6 +727,29 @@ func docsGitPublishProblem(err error) huma.StatusError {
 		return newProblem(http.StatusBadGateway, CodeUpstreamError, pushFailed.Error(), map[string]any{
 			"reason": "pushFailedAfterCommit",
 			"commit": pushFailed.Commit,
+		})
+	default:
+		return docsRegistryProblem(err)
+	}
+}
+
+func docsGitPullProblem(err error) huma.StatusError {
+	var noUpstream *docs.NoUpstreamError
+	var pullFailed *docs.PullFailedError
+	switch {
+	case errors.Is(err, docs.ErrNotAGitRepo):
+		return problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "notGitRepo"})
+	case errors.Is(err, docs.ErrDiverged):
+		return problemConflict(CodeConflict, err.Error(), map[string]any{"reason": "diverged"})
+	case errors.As(err, &noUpstream):
+		return problemBadRequest(CodeBadRequest, noUpstream.Error(), map[string]any{
+			"reason":            "noUpstream",
+			"branch":            noUpstream.Branch,
+			"suggested_command": noUpstream.SuggestedCommand,
+		})
+	case errors.As(err, &pullFailed):
+		return newProblem(http.StatusBadGateway, CodeUpstreamError, pullFailed.Error(), map[string]any{
+			"reason": "pullFailed",
 		})
 	default:
 		return docsRegistryProblem(err)

@@ -547,8 +547,10 @@ func TestDocsGitPublishEndpointLockHeldReturnsConflict(t *testing.T) {
 	repo := newDocsGitRepo(t, true)
 	repo.write(t, "new.md", "# new\n")
 	srv := setupDocsGitRouteServer(t, repo.dir)
-	require.True(srv.docsPublishLocks.tryAcquire("f"))
-	defer srv.docsPublishLocks.release("f")
+	folder, lookupErr := srv.docsRegistry.Lookup("f")
+	require.NoError(lookupErr)
+	require.True(srv.docsPublishLocks.tryAcquire(folder.Path))
+	defer srv.docsPublishLocks.release(folder.Path)
 
 	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", map[string]string{
 		"message": "docs: x",
@@ -659,4 +661,138 @@ func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
 		"message": "docs: after",
 	})
 	assert.Equal(http.StatusOK, afterRR.Code, afterRR.Body.String())
+}
+
+// remoteAdvance advances the bare fixture remote by one commit created in a
+// scratch clone, returning the new remote head SHA. The explicit checkout
+// matters: under the stripped git env the bare remote's default HEAD is
+// master, so a fresh clone would otherwise sit on an unborn branch.
+func (g docsGitRepo) remoteAdvance(t *testing.T, rel, body string) string {
+	t.Helper()
+	clone := t.TempDir()
+	runDocsGit(t, g.dir, "clone", g.remote, clone)
+	runDocsGit(t, clone, "checkout", "main")
+	runDocsGit(t, clone, "config", "user.email", "middleman-fixture@example.invalid")
+	runDocsGit(t, clone, "config", "user.name", "Middleman Fixture")
+	runDocsGit(t, clone, "config", "commit.gpgsign", "false")
+	require.NoError(t, os.WriteFile(filepath.Join(clone, filepath.FromSlash(rel)), []byte(body), 0o644))
+	runDocsGit(t, clone, "add", "--", rel)
+	runDocsGit(t, clone, "commit", "-m", "remote update")
+	runDocsGit(t, clone, "push", "origin", "main")
+	return strings.TrimSpace(runDocsGit(t, clone, "rev-parse", "HEAD"))
+}
+
+func TestDocsGitPullEndpointFastForwards(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	repo := newDocsGitRepo(t, true)
+	want := repo.remoteAdvance(t, "remote.md", "# remote\n")
+	srv := setupDocsGitRouteServer(t, repo.dir)
+
+	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var body docs.PullResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	assert.False(body.UpToDate)
+	assert.Equal(want, body.Commit)
+	assert.Equal("main", body.Branch)
+	assert.Equal("origin/main", body.Upstream)
+	_, statErr := os.Stat(filepath.Join(repo.dir, "remote.md"))
+	assert.NoError(statErr)
+}
+
+func TestDocsGitPullEndpointUpToDate(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	repo := newDocsGitRepo(t, true)
+	srv := setupDocsGitRouteServer(t, repo.dir)
+
+	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var body docs.PullResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	assert.True(body.UpToDate)
+	assert.NotEmpty(body.Commit)
+}
+
+func TestDocsGitPullEndpointDivergedIs409(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	repo := newDocsGitRepo(t, true)
+	repo.remoteAdvance(t, "remote.md", "remote\n")
+	repo.write(t, "local.md", "local\n")
+	runDocsGit(t, repo.dir, "add", "--", "local.md")
+	runDocsGit(t, repo.dir, "commit", "-m", "local update")
+	srv := setupDocsGitRouteServer(t, repo.dir)
+
+	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
+
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem ProblemError
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("diverged", problem.Details["reason"])
+}
+
+func TestDocsGitPullEndpointNoUpstreamIs400(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	repo := newDocsGitRepo(t, false)
+	srv := setupDocsGitRouteServer(t, repo.dir)
+
+	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
+
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	var problem ProblemError
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("noUpstream", problem.Details["reason"])
+	assert.Contains(problem.Details["suggested_command"], "--set-upstream-to")
+}
+
+func TestDocsGitPullEndpointHeldLockIs409(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	repo := newDocsGitRepo(t, true)
+	srv := setupDocsGitRouteServer(t, repo.dir)
+	folder, lookupErr := srv.docsRegistry.Lookup("f")
+	require.NoError(lookupErr)
+	require.True(srv.docsPublishLocks.tryAcquire(folder.Path))
+	defer srv.docsPublishLocks.release(folder.Path)
+
+	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
+
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem ProblemError
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("gitOperationInProgress", problem.Details["reason"])
+}
+
+// Two folder IDs registered over one path must contend for the same lock:
+// git operations are per-repository, and FETCH_HEAD is repo-global state.
+func TestDocsGitPullEndpointAliasedFoldersShareLock(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	repo := newDocsGitRepo(t, true)
+	cfg := &config.Config{
+		DocFolders: []config.DocFolder{
+			{ID: "f", Name: "F", Path: repo.dir},
+			{ID: "alias", Name: "Alias", Path: repo.dir},
+		},
+	}
+	srv := New(openTestDB(t), nil, nil, "/", cfg, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	// Acquire through the primary ID's canonical path; the aliased ID must
+	// contend for the same key.
+	folder, lookupErr := srv.docsRegistry.Lookup("f")
+	require.NoError(lookupErr)
+	require.True(srv.docsPublishLocks.tryAcquire(folder.Path))
+	defer srv.docsPublishLocks.release(folder.Path)
+
+	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/alias/git/pull", nil)
+
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem ProblemError
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("gitOperationInProgress", problem.Details["reason"])
 }

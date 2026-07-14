@@ -179,6 +179,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/docs/folders/{id}/git/pull": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pull docs Git changes */
+        post: operations["pull-docs-git"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/docs/folders/{id}/search": {
         parameters: {
             query?: never;
@@ -6251,6 +6268,19 @@ export interface components {
         PullRequests: {
             allow_mid_stack_merges: boolean;
         };
+        PullResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/PullResponse.json
+             */
+            readonly $schema?: string;
+            branch: string;
+            commit: string;
+            short_commit: string;
+            up_to_date: boolean;
+            upstream: string;
+        };
         RateLimitHostStatus: {
             /** Format: int64 */
             budget_limit: number;
@@ -7936,6 +7966,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublishResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "pull-docs-git": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PullResponse"];
                 };
             };
             /** @description Error */

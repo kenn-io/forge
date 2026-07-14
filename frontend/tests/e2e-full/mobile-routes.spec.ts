@@ -1,4 +1,5 @@
 import { devices, expect, test, type Page } from "@playwright/test";
+import { startIsolatedE2EServerWithOptions } from "./support/e2eServer.js";
 
 const iPhone13 = devices["iPhone 13"];
 test.use({
@@ -473,14 +474,24 @@ test.describe("phone routes", () => {
     await expectReadableFocusList(page, ".issue-item");
   });
 
-  test("mobile PR and issue lists respect the shared hide-org preference", async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem("middleman:hideOrgName", "1"));
+  test("mobile PR and issue lists respect hide-org while preserving provider collisions", async ({ browser }) => {
+    const server = await startIsolatedE2EServerWithOptions({ providerCollision: true });
+    const page = await browser.newPage();
+    try {
+      await page.addInitScript(() => localStorage.setItem("middleman:hideOrgName", "1"));
 
-    await page.goto("/m/pulls");
-    await expect(page.locator(".pull-item .repo-chip").first()).toHaveText("widgets");
+      await page.goto(`${server.info.base_url}/m/pulls`);
+      await expect(page.locator(".pull-item .repo-chip").first()).toHaveText("widgets");
 
-    await page.getByRole("link", { name: "Issues" }).click();
-    await expect(page.locator(".issue-item .repo-chip").first()).toHaveText("widgets");
+      await page.getByRole("link", { name: "Issues" }).click();
+      await expect(page.locator(".issue-item .repo-chip", { hasText: "github/github.com/acme/widgets" })).toHaveCount(
+        3,
+      );
+      await expect(page.locator(".issue-item .repo-chip", { hasText: "gitea/github.com/acme/widgets" })).toHaveCount(1);
+    } finally {
+      await page.close();
+      await server.stop();
+    }
   });
 });
 

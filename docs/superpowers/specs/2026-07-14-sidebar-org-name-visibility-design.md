@@ -12,6 +12,7 @@ Make organization-name visibility controllable from the PR, issue, and workspace
 - The workspace view menu labels its existing inverse control **Hide org name** and keeps using the workspace list's existing persisted display preference.
 - Selecting an item immediately updates repository labels in that sidebar.
 - PR and issue compact filter menus include the visibility item. Their changed-state indicator and reset behavior account for it.
+- The issue visibility item remains reachable in both compact and expanded sidebar layouts.
 - Existing sidebar layout, grouping, state filters, and workspace sort behavior remain unchanged.
 
 ## Components and data flow
@@ -19,6 +20,8 @@ Make organization-name visibility controllable from the PR, issue, and workspace
 `PullList.svelte` and `IssueList.svelte` add a Visibility section to their filter-section definitions. The item reads `grouping.getHideOrgName()` and toggles it through `grouping.setHideOrgName()`.
 
 PR and issue lists format their group headers and per-item repo chips through the shared collision-safe repository-label formatter, so no new store or persistence key is needed.
+
+Repository chip color remains keyed to the full provider, host, and repository identity rather than the shortened display label.
 
 `WorkspaceListSidebar.svelte` continues to use `displayOptions.showOrgNames`; only the menu-facing label, identifier, description, and active-state polarity change. This avoids coupling workspace display preferences to the global PR/issue/activity preference.
 

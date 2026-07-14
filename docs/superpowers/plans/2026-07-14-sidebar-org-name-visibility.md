@@ -13,6 +13,7 @@
 - Keep PR/issue/activity on `middleman:hideOrgName`.
 - Keep workspace display persistence independent.
 - Preserve provider/host disambiguation when organization names are hidden.
+- Keep repository chip color tied to full repository identity when display labels change.
 - Use existing shared filter and repository-label primitives.
 
 ---
@@ -41,6 +42,7 @@
 - Modify: `packages/ui/src/components/sidebar/IssueList.svelte`
 - Modify: `packages/ui/src/components/sidebar/PullItem.svelte`
 - Modify: `packages/ui/src/components/sidebar/IssueItem.svelte`
+- Modify: `packages/ui/src/views/FocusListView.svelte`
 
 **Interfaces:**
 
@@ -52,6 +54,8 @@
 - [x] Build a repository-label formatter from the visible PRs/issues and use it for grouped headers and flat/workflow row repo chips.
 - [x] Replace each item component's locally concatenated owner/repo label with its parent-provided collision-safe `repoLabel` prop.
 - [x] Run the focused browser test and confirm PR/issue assertions pass.
+- [x] Keep issue visibility reachable above and below its compact breakpoint, with full-stack responsive coverage.
+- [x] Cover compact badge/reset behavior and workspace active-state polarity.
 
 ### Task 3: Normalize the workspace menu wording
 

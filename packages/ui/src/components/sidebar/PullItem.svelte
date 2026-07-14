@@ -16,6 +16,7 @@
   import { Chip } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
+  import { repoIdentityKey } from "../../utils/repo-label.js";
 
   const { pulls } = getStores();
   const hostState = getHostState();
@@ -109,6 +110,13 @@
     pr.State === "open",
   );
   const labels = $derived(pr.labels ?? []);
+  const repoColorKey = $derived(repoIdentityKey({
+    provider: pr.repo.provider,
+    platformHost: pr.repo.platform_host,
+    owner: pr.repo.owner,
+    name: pr.repo.name,
+    repoPath: pr.repo.repo_path,
+  }));
   const reviewDecision = $derived(pr.ReviewDecision.trim().toUpperCase());
   const reviewIndicator = $derived.by(
     ():
@@ -176,7 +184,7 @@
         uppercase={false}
         title={repoLabel}
         tone="muted" class="repo-chip"
-        style={`color: ${hashColor(repoLabel)}; background: color-mix(in srgb, ${hashColor(repoLabel)} 15%, transparent);`}
+        style={`color: ${hashColor(repoColorKey)}; background: color-mix(in srgb, ${hashColor(repoColorKey)} 15%, transparent);`}
       >{repoLabel}</Chip>
     </div>
   {/if}

@@ -942,7 +942,7 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByRole("button", { name: "Created" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Activity" })).toBeTruthy();
     expect(screen.getByText("Visibility")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Hide org name" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Hide org name" }).classList.contains("active")).toBe(false);
     expect(screen.getByRole("button", { name: "Show PR diff stats" })).toBeTruthy();
   });
 
@@ -957,7 +957,9 @@ describe("WorkspaceListSidebar", () => {
     await screen.findByText("kenn-io/middleman");
 
     await fireEvent.click(screen.getByRole("button", { name: "View" }));
-    await fireEvent.click(screen.getByRole("button", { name: "Hide org name" }));
+    const hideOrgName = screen.getByRole("button", { name: "Hide org name" });
+    await fireEvent.click(hideOrgName);
+    expect(hideOrgName.classList.contains("active")).toBe(true);
 
     expect(screen.queryByText("kenn-io/middleman")).toBeNull();
     expect(screen.getByText("middleman")).toBeTruthy();

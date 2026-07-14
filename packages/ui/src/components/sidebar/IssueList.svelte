@@ -28,9 +28,9 @@
     { byRepo: true, label: "By Repo" },
     { byRepo: false, label: "All" },
   ];
-  // Playwright-measured with a buffered "9999 issues" count label:
-  // the full issue filter row first fits at 373px.
-  const COMPACT_FILTER_MAX_WIDTH = 372;
+  // Playwright-measured with a buffered "9999 issues" count label and the
+  // icon-only visibility control: the full issue filter row first fits at 402px.
+  const COMPACT_FILTER_MAX_WIDTH = 401;
 
   let searchInput = $state(issues.getIssueSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
@@ -91,6 +91,18 @@
     grouping.setHideOrgName(false);
   }
 
+  const visibilityFilterSection = $derived({
+    title: "Visibility",
+    items: [
+      {
+        id: "hide-org-name",
+        label: "Hide org name",
+        active: grouping.getHideOrgName(),
+        onSelect: () => grouping.setHideOrgName(!grouping.getHideOrgName()),
+      },
+    ],
+  });
+
   const compactFilterSections = $derived.by(() => [
     {
       title: "State",
@@ -110,17 +122,7 @@
         onSelect: () => grouping.setGroupByRepo(option.byRepo),
       })),
     },
-    {
-      title: "Visibility",
-      items: [
-        {
-          id: "hide-org-name",
-          label: "Hide org name",
-          active: grouping.getHideOrgName(),
-          onSelect: () => grouping.setHideOrgName(!grouping.getHideOrgName()),
-        },
-      ],
-    },
+    visibilityFilterSection,
   ]);
 
   const hasCompactFilterChanges = $derived(
@@ -200,6 +202,18 @@
         resetLabel="Reset view"
         onReset={resetCompactView}
         minWidth="160px"
+      />
+    </div>
+    <div class="issue-visibility-menu">
+      <FilterDropdown
+        label="Visibility"
+        title="Issue visibility"
+        active={grouping.getHideOrgName()}
+        showBadge={false}
+        sections={[visibilityFilterSection]}
+        resetLabel="Reset visibility"
+        onReset={() => grouping.setHideOrgName(false)}
+        minWidth="180px"
       />
     </div>
     {#if isSidebarToggleEnabled()}
@@ -461,6 +475,21 @@
     transform-origin: left center;
   }
 
+  .issue-visibility-menu {
+    display: block;
+  }
+
+  .issue-visibility-menu :global(.kit-filter-dropdown__btn) {
+    width: 28px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .issue-visibility-menu :global(.kit-filter-dropdown__trigger-label),
+  .issue-visibility-menu :global(.kit-filter-dropdown__trigger-detail) {
+    display: none;
+  }
+
   .compact-filter-menu :global(.kit-filter-dropdown__btn) {
     width: 26px;
     justify-content: center;
@@ -521,6 +550,10 @@
 
   .filter-bar--compact .state-toggle,
   .filter-bar--compact .group-toggle {
+    display: none;
+  }
+
+  .filter-bar--compact .issue-visibility-menu {
     display: none;
   }
 

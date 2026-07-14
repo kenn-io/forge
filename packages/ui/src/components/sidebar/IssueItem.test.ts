@@ -14,6 +14,13 @@ const mkIssue = (overrides: Record<string, unknown>): Issue =>
     LastActivityAt: "2026-05-01T12:00:00Z",
     repo_owner: "acme",
     repo_name: "widgets",
+    repo: {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    },
     Starred: false,
     labels: [],
     ...overrides,

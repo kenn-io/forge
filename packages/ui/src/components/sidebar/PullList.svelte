@@ -401,7 +401,7 @@
         label="Filters"
         title="Filters"
         active={hasCompactFilterChanges}
-        badgeCount={pulls.getLocalFilterCount()}
+        badgeCount={localViewFilterCount}
         sections={compactFilterSections}
         resetLabel="Reset view"
         onReset={resetCompactView}

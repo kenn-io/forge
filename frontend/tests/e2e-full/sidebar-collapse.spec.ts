@@ -315,9 +315,23 @@ test.describe("collapsible sidebar", () => {
     await expectPullLocalFilterLabeled(await setPersistedSidebarWidth(page, "/pulls", 521, waitForPRList));
   });
 
-  test("issue filters switch at the buffered 373px fit point", async ({ page }) => {
-    await expectCompactFilterBar(await setPersistedSidebarWidth(page, "/issues", 372, waitForIssueList));
-    await expectExpandedFilterBar(await setPersistedSidebarWidth(page, "/issues", 373, waitForIssueList));
+  test("issue filters switch at the buffered 402px fit point", async ({ page }) => {
+    await expectCompactFilterBar(await setPersistedSidebarWidth(page, "/issues", 401, waitForIssueList));
+    await expectExpandedFilterBar(await setPersistedSidebarWidth(page, "/issues", 402, waitForIssueList));
+  });
+
+  test("issue org-name visibility remains accessible in the expanded filter bar", async ({ page }) => {
+    const filterBar = await setPersistedSidebarWidth(page, "/issues", 402, waitForIssueList);
+
+    const visibilityButton = filterBar.getByRole("button", { name: "Visibility" });
+    await expect(visibilityButton).toBeVisible();
+    await visibilityButton.click();
+    const hideOrgName = page.getByRole("button", { name: "Hide org name" });
+    await expect(hideOrgName).toBeVisible();
+    await hideOrgName.click();
+    await expect(page.locator(".sidebar-group-header__name").first()).toHaveText("widgets");
+    await page.getByRole("button", { name: "Reset visibility" }).click();
+    await expect(page.locator(".sidebar-group-header__name").first()).toHaveText("acme/widgets");
   });
 
   test("pull compact filters update state and grouping", async ({ page }) => {
@@ -337,6 +351,16 @@ test.describe("collapsible sidebar", () => {
       timeout: 5_000,
     });
     await expect(page.locator(".repo-chip").first()).toBeVisible();
+  });
+
+  test("pull compact filter badge counts org-name visibility", async ({ page }) => {
+    const filterBar = await setPersistedSidebarWidth(page, "/pulls", 395, waitForPRList);
+    const dropdown = await openCompactFilters(filterBar);
+
+    await dropdown.getByRole("button", { name: "Hide org name" }).click();
+    await expect(filterBar.locator(".compact-filter-menu .kit-filter-dropdown__badge")).toHaveText("1");
+    await dropdown.getByRole("button", { name: "Reset view" }).click();
+    await expect(filterBar.locator(".compact-filter-menu .kit-filter-dropdown__badge")).toHaveCount(0);
   });
 
   test("pull compact filters apply PR attributes and kanban status against the real API", async ({ page }) => {

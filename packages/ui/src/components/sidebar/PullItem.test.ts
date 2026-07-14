@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import type { PullRequest } from "../../api/types.js";
 import { HOST_STATE_KEY, STORES_KEY } from "../../context.js";
 import { __resetCIWarnings } from "../../utils/ci-buckets-warn.js";
+import { hashColor } from "@kenn-io/kit-ui";
 import PullItem from "./PullItem.svelte";
 
 const mkPR = (overrides: Record<string, unknown>): PullRequest =>
@@ -22,6 +23,13 @@ const mkPR = (overrides: Record<string, unknown>): PullRequest =>
     PlatformExternalID: "ext-1",
     repo_owner: "o",
     repo_name: "n",
+    repo: {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "o",
+      name: "n",
+      repo_path: "o/n",
+    },
     worktree_links: [],
     Starred: false,
     ...overrides,
@@ -203,6 +211,37 @@ describe("PullItem CI cluster", () => {
     expect(document.querySelector("[data-testid='ci-token-pending']")).toBeNull();
     expect(document.querySelector("[data-testid='ci-token-passed']")).toBeNull();
     expect(document.querySelector("[data-testid='ci-token-skipped']")).toBeNull();
+  });
+});
+
+describe("PullItem repository label", () => {
+  it("keeps chip color tied to repository identity when the display label changes", () => {
+    const pr = mkPR({
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repo_path: "acme/widgets",
+      },
+    });
+    render(PullItem, {
+      props: {
+        pr,
+        selected: false,
+        showRepo: true,
+        repoLabel: "widgets",
+        onclick: () => {},
+      },
+      context: new Map<symbol, unknown>([
+        [STORES_KEY, { pulls: { togglePRStar: vi.fn() } }],
+        [HOST_STATE_KEY, {}],
+      ]),
+    });
+
+    expect(document.querySelector(".kit-chip.repo-chip")?.getAttribute("style")).toContain(
+      hashColor("github|github.com|acme/widgets"),
+    );
   });
 });
 

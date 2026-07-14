@@ -6,6 +6,7 @@
   import { Chip } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
+  import { repoIdentityKey } from "../../utils/repo-label.js";
 
   const { issues } = getStores();
 
@@ -43,6 +44,13 @@
   }
 
   const labels = $derived(issue.labels ?? []);
+  const repoColorKey = $derived(repoIdentityKey({
+    provider: issue.repo.provider,
+    platformHost: issue.repo.platform_host,
+    owner: issue.repo.owner,
+    name: issue.repo.name,
+    repoPath: issue.repo.repo_path,
+  }));
   const ago = $derived(formatRelativeTime(issue.LastActivityAt));
   const stateLabel = $derived(
     issue.State === "open" ? "Open" : "Closed",
@@ -59,7 +67,7 @@
         uppercase={false}
         title={repoLabel}
         tone="muted" class="repo-chip"
-        style={`color: ${hashColor(repoLabel)}; background: color-mix(in srgb, ${hashColor(repoLabel)} 15%, transparent);`}
+        style={`color: ${hashColor(repoColorKey)}; background: color-mix(in srgb, ${hashColor(repoColorKey)} 15%, transparent);`}
       >{repoLabel}</Chip>
     </div>
   {/if}

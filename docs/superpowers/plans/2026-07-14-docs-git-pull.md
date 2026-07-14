@@ -1,6 +1,22 @@
 # Docs Git Pull Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **SUPERSEDED (2026-07-14).** Mid-execution review redirected this plan; do
+> not execute the tasks below as written. What shipped instead (see the
+> revised spec for the rationale):
+>
+> - Task 1's classifier rename was reverted — pull does not classify fetch
+>   URLs at all.
+> - Instead of `git_fetch_safety.go` and hardened upload-pack, the docs git
+>   plumbing was ported onto kit's `gitcmd.Runner`
+>   (`internal/docs/git.go`), and `GitPull` is a minimal fetch +
+>   `merge --ff-only` with merge-base divergence detection.
+> - The route landed as planned but the shared in-flight lock is keyed by
+>   folder path (not ID), covering aliased folders.
+> - The frontend landed as planned, plus the pull button is disabled while
+>   the editor is open, and the success notice fires only after the tree,
+>   git status, and open doc reload.
+
+**Original plan follows for the record.**
 
 **Goal:** Add a fast-forward-only "pull from git" action to the docs view, next to the existing commit-and-push button.
 

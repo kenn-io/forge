@@ -296,7 +296,7 @@ describe("RepoBrowserFeature", () => {
       target: { value: "v1" },
     });
     await fireEvent.click(screen.getByRole("tab", { name: "Tags 1" }));
-    await fireEvent.click(screen.getByRole("option", { name: "v1.0.0 tag-sha" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "v1.0.0 tag-sha" }));
     await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(9));
     await waitFor(() => {
       expect(onRouteChange).toHaveBeenLastCalledWith(
@@ -371,7 +371,7 @@ describe("RepoBrowserFeature", () => {
 
     await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(5));
     await fireEvent.click(await screen.findByRole("button", { name: "Select repository ref: branch: main main-sha" }));
-    await fireEvent.click(screen.getByRole("option", { name: "main main-sha" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "main main-sha" }));
     await tick();
 
     expect(client.GET).toHaveBeenCalledTimes(5);

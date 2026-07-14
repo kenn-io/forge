@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { SearchInput } from "@kenn-io/kit-ui";
-  import { tick, untrack } from "svelte";
+  import { SearchInput, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
+  import { untrack } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {
     buildRepoBrowserRoute,
@@ -19,7 +19,7 @@
   import type { RepoBrowserCommit, RepoBrowserRef } from "@middleman/ui/api/types";
   import { providerDefaultHost } from "@middleman/ui/api/provider-routes";
   import DocMarkdownView from "../../components/docs/DocMarkdownView.svelte";
-  import { ChevronDownIcon, RefreshIcon, ExternalLinkIcon, SpinnerIcon } from "../../icons";
+  import { RefreshIcon, ExternalLinkIcon, SpinnerIcon } from "../../icons";
   import {
     chooseRepoBrowserInitialPath,
     formatRepoBrowserCommitAge,
@@ -75,14 +75,9 @@
   let pathFilter = $state("");
   let selectedPathRevealKey = $state(0);
   let pendingMarkdownAnchor = $state(initialMarkdownAnchor());
-  let refPickerOpen = $state(false);
-  let refPickerQuery = $state("");
   let refPickerType = $state<RefPickerType>("branch");
-  let refPickerHighlightIndex = $state(0);
-  let refPickerInputEl: HTMLInputElement | null = $state(null);
-  let refPickerRootEl: HTMLDivElement | null = $state(null);
-  let refPickerSelectionInFlight = false;
-  const refPickerListID = `repo-browser-ref-${Math.random().toString(36).slice(2)}`;
+  let refPickerError = $state("");
+  let refPickerSelectionInFlight = $state(false);
   const refPickerRenderLimit = 100;
   let contentEl = $state<HTMLElement | null>(null);
   let sidebarEl = $state<HTMLElement | null>(null);
@@ -116,8 +111,26 @@
   const forgeHref = $derived(buildForgeHref(route, selectedRef, selectedPath));
   const branchRefs = $derived(store.getRefs().filter((ref) => refPickerRefType(ref) === "branch"));
   const tagRefs = $derived(store.getRefs().filter((ref) => refPickerRefType(ref) === "tag"));
-  const filteredRefs = $derived.by(() => filterRefs(refPickerType === "branch" ? branchRefs : tagRefs, refPickerQuery));
-  const visibleFilteredRefs = $derived(filteredRefs.slice(0, refPickerRenderLimit));
+  const refPickerOptions = $derived<TypeaheadOption[]>(
+    (refPickerType === "branch" ? branchRefs : tagRefs).slice(0, refPickerRenderLimit).map((ref) => ({
+      name: refKey(ref),
+      label: ref.name || ref.sha.slice(0, 12),
+      displayLabel: refOptionLabel(ref),
+      meta: ref.sha.slice(0, 8),
+    })),
+  );
+  const refPickerTruncated = $derived(
+    (refPickerType === "branch" ? branchRefs.length : tagRefs.length) > refPickerRenderLimit,
+  );
+
+  $effect(() => {
+    const type = selectedRef ? refPickerRefType(selectedRef) : null;
+    if (type) {
+      refPickerType = type;
+    } else if (branchRefs.length === 0 && tagRefs.length > 0) {
+      refPickerType = "tag";
+    }
+  });
 
   $effect(() => {
     if (!contentEl || !sidebarEl) return;
@@ -297,31 +310,16 @@
     pushRoute({ path: store.getSelectedPath() ?? undefined });
   }
 
-  async function openRefPicker(): Promise<void> {
-    refPickerQuery = "";
-    refPickerType = initialRefPickerType();
-    refPickerHighlightIndex = 0;
-    refPickerOpen = true;
-    await tick();
-    refPickerInputEl?.focus();
-  }
-
-  function closeRefPicker(): void {
-    refPickerOpen = false;
-    refPickerQuery = "";
-    refPickerHighlightIndex = 0;
-  }
-
-  async function selectRefFromPicker(ref: RepoBrowserRef): Promise<void> {
-    if (selectedRef !== null && refKey(selectedRef) === refKey(ref)) {
-      closeRefPicker();
-      return;
-    }
-    if (refPickerSelectionInFlight) return;
+  async function selectRefFromPicker(key: string): Promise<boolean | void> {
+    refPickerError = "";
+    if (selectedRef !== null && refKey(selectedRef) === key) return;
+    if (refPickerSelectionInFlight) return false;
     refPickerSelectionInFlight = true;
-    closeRefPicker();
     try {
-      await selectRefByKey(refKey(ref));
+      await selectRefByKey(key);
+    } catch {
+      refPickerError = "Couldn't load repository ref";
+      return false;
     } finally {
       refPickerSelectionInFlight = false;
     }
@@ -329,47 +327,7 @@
 
   function setRefPickerType(type: RefPickerType): void {
     refPickerType = type;
-    refPickerHighlightIndex = 0;
-    void tick().then(() => refPickerInputEl?.focus());
-  }
-
-  function handleRefPickerInput(): void {
-    refPickerHighlightIndex = 0;
-  }
-
-  function handleRefPickerKeydown(event: KeyboardEvent): void {
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      refPickerHighlightIndex = Math.min(refPickerHighlightIndex + 1, Math.max(visibleFilteredRefs.length - 1, 0));
-      return;
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      refPickerHighlightIndex = Math.max(refPickerHighlightIndex - 1, 0);
-      return;
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      const ref = visibleFilteredRefs[refPickerHighlightIndex];
-      if (ref) void selectRefFromPicker(ref);
-      return;
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeRefPicker();
-    }
-  }
-
-  function handleRefPickerBlur(event: FocusEvent): void {
-    const related = event.relatedTarget as Node | null;
-    if (refPickerRootEl && related && refPickerRootEl.contains(related)) return;
-    closeRefPicker();
-  }
-
-  function initialRefPickerType(): RefPickerType {
-    if (selectedRef?.type === "tag") return "tag";
-    if (selectedRef?.type === "branch") return "branch";
-    return branchRefs.length > 0 ? "branch" : "tag";
+    refPickerError = "";
   }
 
   function setCategoryFilter(filter: DiffFileCategoryFilter): void {
@@ -519,14 +477,6 @@
     return null;
   }
 
-  function filterRefs(refs: readonly RepoBrowserRef[], query: string): RepoBrowserRef[] {
-    const q = query.trim().toLowerCase();
-    if (!q) return [...refs];
-    return refs.filter((ref) =>
-      [ref.type, ref.name, ref.sha, refOptionLabel(ref)].some((part) => part.toLowerCase().includes(q)),
-    );
-  }
-
   function buildMarkdownIndex(files: readonly SourceBrowserFileEntry[]): FolderIndex {
     const byPath = new SvelteMap<string, string>();
     const byBasename = new SvelteMap<string, string[]>();
@@ -645,6 +595,30 @@
   }
 </script>
 
+{#snippet refPickerHeader()}
+  <div class="repo-browser__ref-tabs" role="tablist" aria-label="Repository ref types">
+    <button
+      type="button"
+      role="tab"
+      aria-selected={refPickerType === "branch"}
+      class:repo-browser__ref-tab--active={refPickerType === "branch"}
+      onclick={() => setRefPickerType("branch")}
+    >Branches {branchRefs.length}</button>
+    <button
+      type="button"
+      role="tab"
+      aria-selected={refPickerType === "tag"}
+      class:repo-browser__ref-tab--active={refPickerType === "tag"}
+      onclick={() => setRefPickerType("tag")}
+    >Tags {tagRefs.length}</button>
+  </div>
+  {#if refPickerTruncated}
+    <div class="repo-browser__ref-more">
+      Showing first {refPickerOptions.length} of {refPickerType === "branch" ? branchRefs.length : tagRefs.length}
+    </div>
+  {/if}
+{/snippet}
+
 <section class="repo-browser" aria-label="Repository source browser">
   <header class="repo-browser__toolbar">
     <div class="repo-browser__identity">
@@ -653,93 +627,20 @@
       <span class="repo-browser__ref">{refLabel(selectedRef)}</span>
     </div>
     <div class="repo-browser__actions">
-      <div class="repo-browser__ref-picker typeahead" bind:this={refPickerRootEl}>
-        {#if refPickerOpen}
-          <!-- kit-ui-check-ignore: ref picker needs a Branches/Tags tab switcher inside the menu and async loading rows; kit Typeahead has no menu-header snippet (kit-ui#ry18) -->
-          <input role="combobox"
-            bind:this={refPickerInputEl}
-            class="typeahead-input"
-            aria-label="Search repository refs"
-            aria-expanded="true"
-            aria-controls={refPickerListID}
-            aria-autocomplete="list"
-            type="text"
-            bind:value={refPickerQuery}
-            placeholder="Search refs"
-            autocomplete="off"
-            oninput={handleRefPickerInput}
-            onkeydown={handleRefPickerKeydown}
-            onblur={handleRefPickerBlur}
-          />
-          <div
-            class="typeahead-list repo-browser__ref-popover"
-            data-surface="solid"
-          >
-            <div class="repo-browser__ref-tabs" role="tablist" aria-label="Repository ref types">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={refPickerType === "branch"}
-                class:repo-browser__ref-tab--active={refPickerType === "branch"}
-                onclick={() => setRefPickerType("branch")}
-              >Branches {branchRefs.length}</button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={refPickerType === "tag"}
-                class:repo-browser__ref-tab--active={refPickerType === "tag"}
-                onclick={() => setRefPickerType("tag")}
-              >Tags {tagRefs.length}</button>
-            </div>
-            <!-- kit-ui-check-ignore: same ref-picker gap set as the combobox above (kit-ui#ry18) -->
-            <ul role="listbox"
-              id={refPickerListID}
-              class="repo-browser__ref-list"
-              tabindex="-1"
-              aria-label="Repository ref options"
-            >
-              {#each visibleFilteredRefs as ref, index (refKey(ref))}
-                <li
-                  class="typeahead-option"
-                  class:highlighted={index === refPickerHighlightIndex}
-                  class:selected={selectedRef !== null && refKey(ref) === refKey(selectedRef)}
-                  role="option"
-                  aria-selected={selectedRef !== null && refKey(ref) === refKey(selectedRef)}
-                  tabindex="-1"
-                  onclick={() => void selectRefFromPicker(ref)}
-                  onmousedown={() => void selectRefFromPicker(ref)}
-                  onkeydown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") void selectRefFromPicker(ref);
-                  }}
-                  onmouseenter={() => (refPickerHighlightIndex = index)}
-                >
-                  <span class="option-label">{ref.name || ref.sha.slice(0, 12)}</span>
-                  {#if ref.sha}
-                    <span class="option-meta">{ref.sha.slice(0, 8)}</span>
-                  {/if}
-                </li>
-              {:else}
-                <li class="typeahead-empty">No {refPickerType === "branch" ? "branches" : "tags"} match</li>
-              {/each}
-            </ul>
-            {#if filteredRefs.length > visibleFilteredRefs.length}
-              <div class="repo-browser__ref-more">Showing first {visibleFilteredRefs.length} of {filteredRefs.length}</div>
-            {/if}
-          </div>
-        {:else}
-          <button
-            class="typeahead-trigger"
-            type="button"
-            aria-label={`Select repository ref: ${selectedRef ? refOptionLabel(selectedRef) : "No ref"}`}
-            aria-haspopup="listbox"
-            onclick={() => void openRefPicker()}
-          >
-            <span class="typeahead-value">
-              <span>{selectedRef ? refOptionLabel(selectedRef) : "No ref"}</span>
-            </span>
-            <ChevronDownIcon size={12} strokeWidth={2} aria-hidden="true" />
-          </button>
-        {/if}
+      <div class="repo-browser__ref-picker">
+        <Typeahead
+          options={refPickerOptions}
+          value={selectedRef && refPickerRefType(selectedRef) ? refKey(selectedRef) : ""}
+          fallbackLabel="No ref"
+          placeholder="Search repository refs"
+          triggerPrefix="Select repository ref:"
+          emptyLabel={`No ${refPickerType === "branch" ? "branches" : "tags"} match`}
+          loading={refPickerSelectionInFlight}
+          loadingLabel="Loading repository ref…"
+          error={refPickerError}
+          header={refPickerHeader}
+          onselect={selectRefFromPicker}
+        />
       </div>
       <button class="repo-browser__icon-button" type="button" title="Refresh repository" onclick={refreshRepo}>
         <RefreshIcon size="15" strokeWidth="1.75" aria-hidden="true" />
@@ -978,84 +879,18 @@
   }
 
   .repo-browser__ref-picker {
-    position: relative;
     width: min(280px, 38vw);
     min-width: 210px;
-  }
-
-  .typeahead-trigger,
-  .typeahead-input {
-    width: 100%;
-    height: 30px;
-    box-sizing: border-box;
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-sm);
-  }
-
-  .typeahead-trigger {
-    display: inline-flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-    padding: 0 8px;
-    overflow: hidden;
-    color: var(--text-secondary);
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    cursor: pointer;
-    text-align: left;
-  }
-
-  .typeahead-trigger:hover {
-    color: var(--text-primary);
-    background: var(--bg-surface-hover);
-    border-color: var(--border-default);
-  }
-
-  .typeahead-value {
-    min-width: 0;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .typeahead-input {
-    padding: 0 8px;
-    color: var(--text-primary);
-    background: var(--bg-surface);
-    border: 1px solid var(--accent-blue);
-    outline: none;
-    box-shadow: 0 0 0 3px var(--accent-blue-soft);
-  }
-
-  .typeahead-list {
-    position: absolute;
-    top: calc(100% + 3px);
-    right: 0;
-    z-index: 80;
-    width: min(380px, calc(100vw - 24px));
-    max-height: min(360px, 60vh);
-    overflow-y: auto;
-    padding: 3px;
-    color: var(--text-secondary);
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-lg);
+    --typeahead-min-width: 210px;
+    --typeahead-max-width: min(280px, 38vw);
+    --typeahead-control-height: 30px;
+    --typeahead-control-font-size: var(--font-size-sm);
   }
 
   .repo-browser__ref-tabs {
-    position: sticky;
-    top: -3px;
-    z-index: 1;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--space-1);
-    padding: 3px 3px 5px;
-    background: var(--bg-surface);
   }
 
   .repo-browser__ref-tabs button {
@@ -1078,53 +913,8 @@
     background: var(--bg-inset) !important;
   }
 
-  .repo-browser__ref-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  .typeahead-option {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
-    min-height: 28px;
-    padding: 5px 8px;
-    border-radius: 3px;
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    line-height: 1.2;
-    cursor: pointer;
-  }
-
-  .typeahead-option.highlighted {
-    color: var(--text-primary);
-    background: var(--bg-surface-hover);
-  }
-
-  .typeahead-option.selected {
-    color: var(--accent-blue);
-    font-weight: 600;
-  }
-
-  .option-label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .option-meta {
-    flex: 0 0 auto;
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .typeahead-empty,
   .repo-browser__ref-more {
-    padding: 7px 8px;
+    padding: 5px 8px 3px;
     color: var(--text-muted);
     font-size: var(--font-size-xs);
   }

@@ -62,6 +62,7 @@ interface WorkspaceFixtureOptions {
   tmuxWorking?: boolean;
   tmuxPaneTitle?: string | null;
   tmuxActivitySource?: string;
+  status?: string;
 }
 
 function workspaceFixture({
@@ -87,6 +88,7 @@ function workspaceFixture({
   tmuxWorking = false,
   tmuxPaneTitle = null,
   tmuxActivitySource = "unknown",
+  status = "ready",
 }: WorkspaceFixtureOptions) {
   const isKata = itemType === "kata_task";
   return {
@@ -111,7 +113,7 @@ function workspaceFixture({
     tmux_working: tmuxWorking,
     tmux_pane_title: tmuxPaneTitle,
     tmux_activity_source: tmuxActivitySource,
-    status: "ready",
+    status,
     created_at: createdAt,
     tmux_last_output_at: tmuxLastOutputAt,
     item_last_activity_at: itemLastActivityAt,
@@ -1351,6 +1353,62 @@ describe("WorkspaceListSidebar", () => {
 
     await fireEvent.input(filter, { target: { value: "project-kata" } });
     expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
+  });
+
+  it.each([
+    ["ready", "Workspace ready", "kit-status-dot--idle"],
+    ["creating", "Creating workspace", "kit-status-dot--working"],
+    ["error", "Workspace error", "kit-status-dot--unclean"],
+    ["pending", "Workspace pending", "kit-status-dot--stale"],
+  ] as const)("maps %s workspace state to the shared semantic status", async (status, label, className) => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: `ws-${status}`,
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 9,
+            status,
+          }),
+        ],
+      },
+    });
+
+    render(WorkspaceListSidebar, {
+      props: { selectedId: `ws-${status}` },
+    });
+
+    expect((await screen.findByLabelText(label)).classList.contains(className)).toBe(true);
+  });
+
+  it("does not describe an externally disabled workspace as active work", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-disabled",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 9,
+          }),
+        ],
+      },
+    });
+
+    render(WorkspaceListSidebar, {
+      props: {
+        selectedId: "ws-disabled",
+        isWorkspaceActionDisabled: () => true,
+      },
+    });
+
+    await screen.findByText("PR 9");
+    expect(screen.queryByLabelText("Deleting workspace")).toBeNull();
   });
 
   it("labels active terminal work with its pane title", async () => {

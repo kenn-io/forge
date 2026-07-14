@@ -11,9 +11,10 @@
 // test-results/workspace-switch-profile/<timestamp>/.
 
 import { execFileSync } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { load as loadToml } from "js-toml";
 import { expect, request as playwrightRequest, test, type APIRequestContext, type Page } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServerWithOptions, type IsolatedE2EServer } from "../e2e-full/support/e2eServer";
 
@@ -73,6 +74,51 @@ function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   } catch {
     return false;
   }
+}
+
+// The profiling command is only ever run deliberately, so a missing
+// host dependency is a hard failure — a skip would let
+// `make profile-workspace-switch` exit 0 without profiling anything.
+function requireHostCommands(): void {
+  const missing = [["git", ["--version"]] as const, ["tmux", ["-V"]] as const, ["less", ["--version"]] as const].filter(
+    ([command, args]) => !hasCommand(command, [...args]),
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `workspace-switch profiling requires ${missing.map(([command]) => command).join(", ")} on the host`,
+    );
+  }
+}
+
+// Reads the isolated server's generated config to find its private
+// tmux socket, then asserts some pane on that server is actually in
+// alternate-screen mode running the pager. Without this, a shell or
+// environment quirk could silently turn the "alt-screen" scenario
+// into a second ordinary-shell measurement.
+async function assertAlternateScreenActive(configPath: string): Promise<void> {
+  const config = loadToml(await readFile(configPath, "utf8")) as {
+    tmux?: { command?: string[] };
+  };
+  const [tmuxBin, ...tmuxArgs] = config.tmux?.command ?? [];
+  if (!tmuxBin) {
+    throw new Error(`config at ${configPath} must define the e2e tmux command`);
+  }
+  // Space separator: tmux replaces control characters (tabs included)
+  // with "_" when expanding formats, and pane_current_command is a
+  // single token anyway.
+  const panes = execFileSync(
+    tmuxBin,
+    [...tmuxArgs, "list-panes", "-a", "-F", "#{alternate_on} #{pane_current_command}"],
+    { encoding: "utf8" },
+  );
+  const altPanes = panes
+    .trim()
+    .split("\n")
+    .filter((line) => line.startsWith("1 "));
+  expect(
+    altPanes.some((line) => line.includes("less")),
+    `expected a tmux pane running less in alternate-screen mode, got:\n${panes}`,
+  ).toBe(true);
 }
 
 async function waitForWorkspaceReady(api: APIRequestContext, workspaceId: string): Promise<void> {
@@ -276,17 +322,16 @@ function summaryLines(measurements: SwitchMeasurement[]): string[] {
 
 test.describe("workspace switch profiling", () => {
   test("captures warm and cold switch profiles", async ({ page, browser }) => {
-    test.skip(
-      !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("less"),
-      "git, tmux, and less are required for the workspace-switch profiling flow",
-    );
+    requireHostCommands();
 
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     try {
-      // 127.0.0.1:0 lets the OS pick a free port; the resolved address
-      // comes back in the server info for the Go-side capture below.
-      process.env.MIDDLEMAN_PPROF_ADDR ??= "127.0.0.1:0";
+      // Always an ephemeral loopback port: a fixed address inherited
+      // from the environment could be occupied and silently cost the
+      // run its Go trace. The resolved address comes back in the
+      // server info for the Go-side capture below.
+      process.env.MIDDLEMAN_PPROF_ADDR = "127.0.0.1:0";
       isolatedServer = await startIsolatedWorkspaceE2EServerWithOptions({ freshProcess: true });
       const baseURL = isolatedServer.info.base_url;
       api = await playwrightRequest.newContext({ baseURL });
@@ -309,6 +354,7 @@ test.describe("workspace switch profiling", () => {
       await openWorkspaceAndLaunchTerminal(page, baseURL, shellWorkspace.id);
       await openWorkspaceAndLaunchTerminal(page, baseURL, altScreenWorkspace.id);
       await runShellCommandInTerminal(page, `less ${pagerFile}`);
+      await assertAlternateScreenActive(isolatedServer.info.config_path);
 
       await mkdir(outputDir, { recursive: true });
 
@@ -316,8 +362,15 @@ test.describe("workspace switch profiling", () => {
       // window, for correlating server-side stalls (tmux subprocesses,
       // replay buffering) with the browser timings. See README.md.
       let goTrace: Promise<Buffer> | null = null;
+      const goTraceEnabled = process.env.MIDDLEMAN_PROFILE_GO_TRACE !== "0";
       const pprofAddr = isolatedServer.info.pprof_addr;
-      if (pprofAddr && process.env.MIDDLEMAN_PROFILE_GO_TRACE !== "0") {
+      if (goTraceEnabled) {
+        expect(
+          pprofAddr,
+          "e2e server did not report a pprof listener; the Go trace artifact would be missing",
+        ).toBeTruthy();
+      }
+      if (pprofAddr && goTraceEnabled) {
         const seconds = Math.min(30, 10 + iterations * 5);
         goTrace = api
           .get(`http://${pprofAddr}/debug/pprof/trace?seconds=${seconds}`, {
@@ -369,13 +422,9 @@ test.describe("workspace switch profiling", () => {
         await writeFile(path.join(outputDir, "go-trace.out"), await goTrace);
       }
 
-      for (const measurement of measurements) {
-        const phases = measurement.entries.map((entry) => entry.name.replace("workspace-switch:", ""));
-        for (const phase of requiredPhases) {
-          expect(phases, `${measurement.scenario} #${measurement.iteration} must record ${phase}`).toContain(phase);
-        }
-      }
-
+      // Artifacts are written before the phase assertions below so an
+      // instrumentation regression still leaves the evidence needed to
+      // diagnose it.
       const lines = summaryLines(measurements);
       await writeFile(
         path.join(outputDir, "timings.json"),
@@ -385,6 +434,14 @@ test.describe("workspace switch profiling", () => {
             baseURL,
             iterations,
             pprofAddr: pprofAddr ?? null,
+            environment: {
+              commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+              browserVersion: browser.version(),
+              platform: `${process.platform}/${process.arch}`,
+              // The harness runs middleman's default renderer; ghostty
+              // emits the same timing names but is not exercised here.
+              terminalRenderer: "xterm",
+            },
             measurements,
           },
           null,
@@ -394,6 +451,13 @@ test.describe("workspace switch profiling", () => {
       await writeFile(path.join(outputDir, "summary.txt"), lines.join("\n") + "\n");
 
       console.log(`\n${lines.join("\n")}\n\nartifacts: ${outputDir}`);
+
+      for (const measurement of measurements) {
+        const phases = measurement.entries.map((entry) => entry.name.replace("workspace-switch:", ""));
+        for (const phase of requiredPhases) {
+          expect(phases, `${measurement.scenario} #${measurement.iteration} must record ${phase}`).toContain(phase);
+        }
+      }
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

@@ -273,14 +273,22 @@
         const bytes = new Uint8Array(ev.data);
         if (!sawFirstBytes) {
           sawFirstBytes = true;
-          switchTimer.record("first-bytes", { byteLength: bytes.byteLength });
-          // The write callback fires once the payload is parsed; the
-          // following animation frame is when that content is painted.
-          terminal.write(bytes, () => {
-            requestAnimationFrame(() => {
-              switchTimer.record("first-paint");
+          // first-paint must describe the same pane as first-bytes, so
+          // only the pane whose first-bytes actually recorded chains
+          // the paint measurement. The write callback fires once the
+          // payload is parsed; the double animation frame lands after
+          // the frame showing that content has painted.
+          if (switchTimer.record("first-bytes", { byteLength: bytes.byteLength })) {
+            terminal.write(bytes, () => {
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  switchTimer.record("first-paint");
+                });
+              });
             });
-          });
+          } else {
+            terminal.write(bytes);
+          }
         } else {
           terminal.write(bytes);
         }

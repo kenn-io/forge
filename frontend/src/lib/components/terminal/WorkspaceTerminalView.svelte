@@ -1077,6 +1077,9 @@
         stopRuntimePolling();
       }
     } catch (err) {
+      recordWorkspaceSwitchPhase("workspace-request-end", id, hostKey, {
+        error: true,
+      });
       if (!isCurrentWorkspace(id, hostKey)) return;
       loadError =
         err instanceof Error
@@ -1134,6 +1137,9 @@
         );
         return data;
       } catch (err) {
+        recordWorkspaceSwitchPhase("runtime-request-end", id, hostKey, {
+          error: true,
+        });
         if (!isCurrentWorkspace(id, hostKey) || seq !== runtimeFetchSeq) return null;
         runtimeError =
           err instanceof Error
@@ -2348,8 +2354,12 @@
     const id = workspaceId;
     // Route selection is the zero point for workspace-switch timing:
     // every workspace-switch:* measure is a duration from this call.
+    // The token lets the cleanup below cancel exactly this switch when
+    // the user leaves the workspace surface entirely, without being
+    // able to cancel a newer switch begun elsewhere.
+    let switchToken: string | null = null;
     if (id) {
-      beginWorkspaceSwitch(id, workspaceHostKey);
+      switchToken = beginWorkspaceSwitch(id, workspaceHostKey);
     } else {
       cancelWorkspaceSwitch();
     }
@@ -2469,6 +2479,16 @@
       source.close();
       if (eventSource === source) {
         eventSource = null;
+      }
+      // Leaving the workspace surface (view unmount) must end the
+      // switch so late responses and pane callbacks cannot append
+      // phases. On a switch to another workspace this cleanup runs
+      // just before the next effect run, cancelling the old switch the
+      // new beginWorkspaceSwitch was about to supersede anyway; the
+      // token guard only prevents cancelling a switch this run does
+      // not own.
+      if (switchToken !== null) {
+        cancelWorkspaceSwitch(switchToken);
       }
     };
   });

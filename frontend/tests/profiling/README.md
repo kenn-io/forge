@@ -36,7 +36,10 @@ is always on: it records at most nine `performance.measure` calls per
 workspace switch and nothing else, so there is no production telemetry
 and no measurable steady-state cost. Repeated work inside one switch
 (runtime polling, reconnects, extra panes) does not re-record a phase,
-which keeps the numbers stable across runs.
+which keeps the numbers stable across runs. Phases arriving more than
+30 seconds after route selection are dropped (they belong to a later
+user action, not the switch), and leaving the workspace surface
+cancels the switch outright.
 
 Every measure is named `workspace-switch:<phase>` and its duration is
 the time from route selection (the terminal view reacting to the new
@@ -50,19 +53,30 @@ workspace route) to that phase:
 | `terminal-constructed`             | Terminal constructed and attached to the DOM |
 | `socket-open`                      | Terminal WebSocket reported open             |
 | `first-bytes`                      | First binary frame (start of tmux replay)    |
-| `first-paint`                      | First frame after that payload was parsed    |
+| `first-paint`                      | Frame showing that payload has painted       |
 
-Both terminal renderers (xterm and ghostty-web) emit the same names.
-Derived values in the output answer the usual questions directly:
-time before terminal creation (`routeToTerminalConstructed`), before
-socket connection (`routeToSocketOpen`), and between first bytes and
-visible paint (`firstBytesToFirstPaint`).
+`first-paint` is recorded on the second animation frame after the
+first payload finished parsing, i.e. after the frame that renders it
+has been presented. Terminal phases are one-shot across all panes of a
+switch — the first pane to reach a phase wins, and each measure's
+`detail.paneId` says which pane that was — except that `first-paint`
+is always recorded by the same pane as `first-bytes`, so
+`firstBytesToFirstPaint` describes one real terminal.
+
+Both terminal renderers (xterm and ghostty-web) emit the same names,
+but the profiling harness exercises only the default xterm renderer;
+treat ghostty numbers from live sessions as informative, not
+harness-verified. Derived values in the output answer the usual
+questions directly: time before terminal creation
+(`routeToTerminalConstructed`), before socket connection
+(`routeToSocketOpen`), and between first bytes and visible paint
+(`firstBytesToFirstPaint`).
 
 The measures are queryable anywhere —
 `performance.getEntriesByName("workspace-switch:first-paint")` in the
 DevTools console works against any running middleman, not just this
 harness. Each entry's `detail` carries the `workspaceId` it was
-recorded for.
+recorded for, plus `error: true` on request phases that failed.
 
 For a cold load the zero point is still route selection, which happens
 after the SPA boots; use the Chromium trace for the full
@@ -72,7 +86,12 @@ navigation-start timeline.
 
 - `summary.txt` — the per-switch table also printed to the console.
 - `timings.json` — every scenario/iteration with raw entries, derived
-  metrics, and `timeOriginEpochMs` for wall-clock alignment.
+  metrics, `timeOriginEpochMs` for wall-clock alignment, and an
+  `environment` block (commit, browser version, platform, renderer)
+  for comparing runs. Written before the harness's own assertions, so
+  a failed run still leaves its evidence. The harness also verifies
+  the alternate-screen scenario is real by asking the e2e server's
+  tmux for a pane with `alternate_on=1` running the pager.
 - `trace.chrome.json` — Chromium trace including the
   `workspace-switch:*` timings, network, and frame events. Open in
   [Perfetto](https://ui.perfetto.dev) or DevTools Performance → Load

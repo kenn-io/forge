@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import {
   beginWorkspaceSwitch,
@@ -16,6 +16,10 @@ describe("workspace switch timing", () => {
     cancelWorkspaceSwitch();
     performance.clearMarks();
     performance.clearMeasures();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   test("records phases for the live switch with the workspace in the detail", () => {
@@ -55,26 +59,39 @@ describe("workspace switch timing", () => {
     const staleTimer = createWorkspaceSwitchPaneTimer();
 
     beginWorkspaceSwitch("ws-2", undefined);
-    staleTimer.record("first-bytes");
+    expect(staleTimer.record("first-bytes")).toBe(false);
     recordWorkspaceSwitchPhase("workspace-request-end", "ws-1", undefined);
 
     expect(measures("first-bytes")).toHaveLength(0);
     expect(measures("workspace-request-end")).toHaveLength(0);
 
-    createWorkspaceSwitchPaneTimer().record("first-bytes");
+    expect(createWorkspaceSwitchPaneTimer().record("first-bytes")).toBe(true);
     expect(measures("first-bytes")).toHaveLength(1);
     expect((measures("first-bytes")[0] as PerformanceMeasure).detail).toMatchObject({
       workspaceId: "ws-2",
     });
   });
 
-  test("a pane timer shares the per-switch one-shot guard with other panes", () => {
+  test("pane timers share the per-switch one-shot guard and identify the winning pane", () => {
     beginWorkspaceSwitch("ws-1", undefined);
 
-    createWorkspaceSwitchPaneTimer().record("socket-open");
-    createWorkspaceSwitchPaneTimer().record("socket-open");
+    const first = createWorkspaceSwitchPaneTimer();
+    const second = createWorkspaceSwitchPaneTimer();
+    expect(first.record("socket-open")).toBe(true);
+    expect(second.record("socket-open")).toBe(false);
 
-    expect(measures("socket-open")).toHaveLength(1);
+    const entries = measures("socket-open");
+    expect(entries).toHaveLength(1);
+    const detail = (entries[0] as PerformanceMeasure).detail as { paneId?: unknown };
+    expect(typeof detail.paneId).toBe("number");
+
+    // The losing pane can still win a different phase, and its paneId
+    // differs from the first pane's.
+    expect(second.record("first-bytes")).toBe(true);
+    const firstBytesDetail = (measures("first-bytes")[0] as PerformanceMeasure).detail as {
+      paneId?: unknown;
+    };
+    expect(firstBytesDetail.paneId).not.toBe(detail.paneId);
   });
 
   test("cancelling the switch stops all further recording", () => {
@@ -82,18 +99,50 @@ describe("workspace switch timing", () => {
     const timer = createWorkspaceSwitchPaneTimer();
     cancelWorkspaceSwitch();
 
-    timer.record("first-paint");
+    expect(timer.record("first-paint")).toBe(false);
     recordWorkspaceSwitchPhase("workspace-request-start", "ws-1", undefined);
 
     expect(measures("first-paint")).toHaveLength(0);
     expect(measures("workspace-request-start")).toHaveLength(0);
   });
 
+  test("a stale token cannot cancel a newer switch", () => {
+    const staleToken = beginWorkspaceSwitch("ws-1", undefined);
+    beginWorkspaceSwitch("ws-2", undefined);
+
+    cancelWorkspaceSwitch(staleToken);
+    recordWorkspaceSwitchPhase("workspace-request-start", "ws-2", undefined);
+
+    expect(measures("workspace-request-start")).toHaveLength(1);
+  });
+
+  test("a matching token cancels its own switch", () => {
+    const token = beginWorkspaceSwitch("ws-1", undefined);
+
+    cancelWorkspaceSwitch(token);
+    recordWorkspaceSwitchPhase("workspace-request-start", "ws-1", undefined);
+
+    expect(measures("workspace-request-start")).toHaveLength(0);
+  });
+
+  test("phases arriving after the recording window are dropped", () => {
+    beginWorkspaceSwitch("ws-1", undefined);
+    const timer = createWorkspaceSwitchPaneTimer();
+    const realNow = performance.now();
+    vi.spyOn(performance, "now").mockReturnValue(realNow + 31_000);
+
+    expect(timer.record("terminal-constructed")).toBe(false);
+    recordWorkspaceSwitchPhase("runtime-request-end", "ws-1", undefined);
+
+    expect(measures("terminal-constructed")).toHaveLength(0);
+    expect(measures("runtime-request-end")).toHaveLength(0);
+  });
+
   test("a pane timer created with no live switch records nothing", () => {
     const timer = createWorkspaceSwitchPaneTimer();
     beginWorkspaceSwitch("ws-1", undefined);
 
-    timer.record("terminal-constructed");
+    expect(timer.record("terminal-constructed")).toBe(false);
 
     expect(measures("terminal-constructed")).toHaveLength(0);
   });

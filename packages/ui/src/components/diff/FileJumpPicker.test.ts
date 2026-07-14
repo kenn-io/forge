@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffFile } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
@@ -38,30 +38,31 @@ function renderPicker() {
 describe("FileJumpPicker", () => {
   afterEach(cleanup);
 
-  it("filters rich file rows with the shared search field", async () => {
+  it("filters file options with the shared typeahead", async () => {
     renderPicker();
 
     await fireEvent.click(screen.getByRole("button", { name: "Jump to file" }));
-    const search = screen.getByRole("searchbox", { name: "Jump to file" });
+    const search = screen.getByRole("combobox", { name: "Jump to file" });
     expect(document.activeElement).toBe(search);
 
     await fireEvent.input(search, { target: { value: "readme" } });
 
-    const listbox = screen.getByRole("listbox", { name: "Changed files" });
-    expect(within(listbox).getAllByRole("option")).toHaveLength(1);
-    expect(within(listbox).getByText("README.md")).toBeTruthy();
+    const options = screen.getAllByRole("option");
+    expect(options).toHaveLength(1);
+    expect(options[0]!.textContent).toContain("README.md");
   });
 
   it("selects the highlighted file from the keyboard", async () => {
     const { requestScrollToFile } = renderPicker();
 
     await fireEvent.click(screen.getByRole("button", { name: "Jump to file" }));
-    const search = screen.getByRole("searchbox", { name: "Jump to file" });
+    const search = screen.getByRole("combobox", { name: "Jump to file" });
+    await fireEvent.keyDown(search, { key: "ArrowDown" });
     await fireEvent.keyDown(search, { key: "ArrowDown" });
     await fireEvent.keyDown(search, { key: "Enter" });
 
     expect(requestScrollToFile).toHaveBeenCalledOnce();
     expect(requestScrollToFile).toHaveBeenCalledWith("README.md");
-    expect(screen.queryByRole("listbox", { name: "Changed files" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Jump to file" })).toBeNull();
   });
 });

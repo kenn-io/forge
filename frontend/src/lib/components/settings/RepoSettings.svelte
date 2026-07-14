@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import { Button, IconButton, TextInput } from "@kenn-io/kit-ui";
   import { getStores } from "@middleman/ui";
   import type { ConfigRepo } from "@middleman/ui/api/types";
   import { showFlash } from "@middleman/ui/stores/flash";
@@ -11,6 +12,7 @@
     updateRepoWorktreeBasePath,
   } from "../../api/settings.js";
   import SettingsIcon from "@lucide/svelte/icons/settings";
+  import XIcon from "@lucide/svelte/icons/x";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import RepoImportModal from "./RepoImportModal.svelte";
   import RepoPromoteModal from "./RepoPromoteModal.svelte";
@@ -163,7 +165,14 @@
 
 {#if !embedded}
   <div class="repo-import-entry">
-    <button bind:this={importTrigger} class="primary-import-btn" type="button" onclick={() => { importOpen = true; }}>Add repositories…</button>
+    <Button
+      tone="info"
+      surface="solid"
+      onclick={(event) => {
+        importTrigger = event.currentTarget as HTMLButtonElement;
+        importOpen = true;
+      }}
+    >Add repositories…</Button>
     <p>Preview a glob, filter results, and add selected repositories as exact entries.</p>
   </div>
 {/if}
@@ -198,63 +207,79 @@
         {#if confirmingRemove === key}
           <span class="confirm-prompt">
             Remove?
-            <button class="confirm-btn confirm-yes" onclick={() => void handleRemove(repo)}>Yes</button>
-            <button class="confirm-btn confirm-no" onclick={() => { confirmingRemove = null; }}>No</button>
+            <Button
+              size="sm"
+              tone="danger"
+              surface="outline"
+              onclick={() => void handleRemove(repo)}
+            >Yes</Button>
+            <Button
+              size="sm"
+              onclick={() => {
+                confirmingRemove = null;
+              }}
+            >No</Button>
           </span>
         {:else}
           <div class="repo-actions">
             {#if repo.is_glob}
-              <button
-                class="promote-btn"
+              <Button
+                size="sm"
                 onclick={() => { promoteRepo = repo; }}
                 disabled={embedded}
-                aria-label={`Promote glob repository ${repoLabel(repo)}`}
+                ariaLabel={`Promote glob repository ${repoLabel(repo)}`}
               >
                 Promote
-              </button>
-              <button
-                class="refresh-btn"
+              </Button>
+              <Button
+                size="sm"
+                tone="info"
+                surface="soft"
                 onclick={() => void handleRefresh(repo)}
                 disabled={Boolean(refreshingByKey[key])}
               >
                 {refreshingByKey[key] ? "Refreshing..." : "Refresh"}
-              </button>
+              </Button>
             {:else}
-              <button
-                class={["clone-btn", { configured: Boolean(repo.worktree_base_path), open: Boolean(cloneEditorOpen[key]) }]}
-                aria-label={`Local clone for ${repoDisplayLabel(repo)}`}
-                aria-expanded={Boolean(cloneEditorOpen[key])}
+              <IconButton
+                size="sm"
+                tone="info"
+                ariaLabel={`Local clone for ${repoDisplayLabel(repo)}`}
+                ariaExpanded={Boolean(cloneEditorOpen[key])}
+                ariaPressed={Boolean(repo.worktree_base_path) || Boolean(cloneEditorOpen[key])}
                 title={repo.worktree_base_path ? `Local clone: ${repo.worktree_base_path}` : "Set local clone"}
                 onclick={() => {
                   cloneEditorOpen = { ...cloneEditorOpen, [key]: !cloneEditorOpen[key] };
                 }}
-              ><SettingsIcon size={14} aria-hidden="true" /></button>
+              ><SettingsIcon size={14} aria-hidden="true" /></IconButton>
             {/if}
-            <button
-              class="remove-btn"
+            <IconButton
+              size="sm"
+              tone="danger"
+              ariaLabel={`Remove ${repoDisplayLabel(repo)}`}
               title={`Remove ${key}`}
               onclick={() => {
                 confirmingRemove = key;
               }}
-            >&times;</button>
+            ><XIcon size={14} aria-hidden="true" /></IconButton>
           </div>
         {/if}
       </div>
       {#if !repo.is_glob && cloneEditorOpen[key]}
         <div class="worktree-base-body">
           <div class="worktree-base-control">
-            <input
+            <TextInput
               id={`worktree-base-${key}`}
               class="worktree-base-input"
-              type="text"
+              block
               placeholder="/path/to/existing/clone"
-              aria-label={`Local clone path for ${repoDisplayLabel(repo)}`}
+              ariaLabel={`Local clone path for ${repoDisplayLabel(repo)}`}
               value={worktreeBaseValue(repo, key)}
               disabled={embedded || Boolean(savingWorktreeBaseByKey[key])}
-              oninput={(event) => {
+              oninput={(value) => {
                 worktreeBaseDrafts = {
                   ...worktreeBaseDrafts,
-                  [key]: event.currentTarget.value,
+                  [key]: value,
                 };
               }}
               onkeydown={(event) => {
@@ -264,14 +289,16 @@
                 }
               }}
             />
-            <button
-              class="worktree-base-save"
-              aria-label={`Save local clone path for ${repoDisplayLabel(repo)}`}
+            <Button
+              size="sm"
+              tone="info"
+              surface="outline"
+              ariaLabel={`Save local clone path for ${repoDisplayLabel(repo)}`}
               onclick={() => void handleWorktreeBaseSave(repo)}
               disabled={embedded || Boolean(savingWorktreeBaseByKey[key]) || worktreeBaseValue(repo, key).trim() === (repo.worktree_base_path ?? "")}
             >
               {savingWorktreeBaseByKey[key] ? "Saving..." : "Save"}
-            </button>
+            </Button>
           </div>
           <p class="worktree-base-hint">
             Workspaces are created as worktrees of this clone instead of starting from a fresh clone.
@@ -287,10 +314,22 @@
     <summary>Advanced: add provider-scoped repo or tracking glob directly</summary>
     <div class="advanced-body">
       <div class="add-form">
-        <input class="add-input" type="text" placeholder="provider/owner/name" bind:value={inputValue} onkeydown={handleInputKeydown} disabled={adding} />
-        <button class="add-btn" onclick={() => void handleAdd()} disabled={adding || !inputValue.trim()}>
+        <TextInput
+          class="add-input"
+          block
+          placeholder="provider/owner/name"
+          bind:value={inputValue}
+          onkeydown={handleInputKeydown}
+          disabled={adding}
+        />
+        <Button
+          tone="info"
+          surface="solid"
+          onclick={() => void handleAdd()}
+          disabled={adding || !inputValue.trim()}
+        >
           {adding ? "Adding..." : "Add"}
-        </button>
+        </Button>
       </div>
 
       {#if addError}
@@ -301,8 +340,7 @@
 {/if}
 
 <style>
-  .repo-import-entry { display: flex; flex-direction: column; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--border-muted); }
-  .primary-import-btn { align-self: flex-start; padding: 6px 14px; font-size: var(--font-size-md); font-weight: 600; color: white; background: var(--accent-blue); border-radius: var(--radius-sm); }
+  .repo-import-entry { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--border-muted); }
   .repo-import-entry p { margin: 0; color: var(--text-muted); font-size: var(--font-size-sm); }
   .advanced-add { padding-top: 8px; }
   .advanced-add summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-sm); }
@@ -317,81 +355,13 @@
   .repo-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
   .repo-name { display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-size-md); color: var(--text-primary); font-weight: 500; }
   :global(.repo-provider-icon) { color: var(--text-secondary); }
-  .clone-btn {
-    display: inline-flex; align-items: center; color: var(--text-muted);
-    padding: 3px 6px; border-radius: var(--radius-sm);
-    transition: color 0.1s, background 0.1s;
-  }
-  .clone-btn:hover, .clone-btn.open {
-    color: var(--accent-blue); background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
-  }
-  .clone-btn.configured { color: var(--accent-blue); }
   .worktree-base-body { display: flex; flex-direction: column; gap: 4px; }
   .worktree-base-control { display: flex; gap: 8px; }
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .worktree-base-input {
-    flex: 1; min-width: 0; font-size: var(--font-size-sm); padding: 5px 8px;
-    color: var(--text-primary); background: var(--bg-inset);
-    border: 1px solid var(--border-muted); border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-  }
-  .worktree-base-input:focus { border-color: var(--accent-blue); outline: none; }
-  .worktree-base-save {
-    flex-shrink: 0; padding: 4px 10px; font-size: var(--font-size-sm); font-weight: 600;
-    color: var(--accent-blue); border: 1px solid color-mix(in srgb, var(--accent-blue) 35%, var(--border-muted));
-    border-radius: var(--radius-sm);
-  }
-  .worktree-base-save:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-blue) 10%, transparent); }
-  .worktree-base-save:disabled { opacity: 0.45; cursor: not-allowed; }
+  :global(.worktree-base-input) { flex: 1; min-width: 0; font-family: var(--font-mono); }
   .worktree-base-hint { margin: 0; color: var(--text-muted); font-size: var(--font-size-xs); }
   .repo-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-  .refresh-btn {
-    padding: 4px 10px; font-size: var(--font-size-sm); font-weight: 500;
-    color: var(--accent-blue); border: 1px solid color-mix(in srgb, var(--accent-blue) 35%, var(--border-muted));
-    border-radius: var(--radius-sm); transition: background 0.12s, opacity 0.12s;
-  }
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .promote-btn {
-    padding: 4px 10px; font-size: var(--font-size-sm); font-weight: 600;
-    color: var(--text-primary); background: var(--bg-inset);
-    border: 1px solid var(--border-muted); border-radius: var(--radius-sm);
-    transition: background 0.12s, border-color 0.12s, opacity 0.12s;
-  }
-  .promote-btn:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--accent-blue) 35%, var(--border-muted));
-    background: color-mix(in srgb, var(--accent-blue) 8%, var(--bg-inset));
-  }
-  .promote-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .refresh-btn:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
-  }
-  .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .remove-btn {
-    font-size: var(--font-size-lg); color: var(--text-muted); padding: 2px 6px;
-    border-radius: var(--radius-sm); line-height: 1; transition: color 0.1s, background 0.1s;
-  }
-  .remove-btn:hover:not(:disabled) {
-    color: var(--accent-red); background: color-mix(in srgb, var(--accent-red) 10%, transparent);
-  }
-  .remove-btn:disabled { opacity: 0.3; cursor: not-allowed; }
   .confirm-prompt { font-size: var(--font-size-sm); color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
-  .confirm-btn { font-size: var(--font-size-xs); font-weight: 600; padding: 2px 8px; border-radius: var(--radius-sm); }
-  .confirm-yes { color: var(--accent-red); border: 1px solid var(--accent-red); }
-  .confirm-yes:hover { background: color-mix(in srgb, var(--accent-red) 10%, transparent); }
-  .confirm-no { color: var(--text-muted); border: 1px solid var(--border-muted); }
-  .confirm-no:hover { background: var(--bg-surface-hover); }
   .add-form { display: flex; gap: 8px; }
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .add-input {
-    flex: 1; font-size: var(--font-size-md); padding: 6px 10px;
-    background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm);
-  }
-  .add-input:focus { border-color: var(--accent-blue); outline: none; }
-  .add-btn {
-    padding: 6px 14px; font-size: var(--font-size-md); font-weight: 500; color: white;
-    background: var(--accent-blue); border-radius: var(--radius-sm); transition: opacity 0.12s;
-  }
-  .add-btn:hover:not(:disabled) { opacity: 0.9; }
-  .add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  :global(.add-input) { flex: 1; min-width: 0; }
   .error-msg { font-size: var(--font-size-sm); color: var(--accent-red); padding: 4px 0; }
 </style>

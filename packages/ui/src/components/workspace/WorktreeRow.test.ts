@@ -36,6 +36,28 @@ describe("WorktreeRow", () => {
     cleanup();
   });
 
+  it.each([
+    ["idle", "Worktree idle", "kit-status-dot--idle"],
+    ["active", "Worktree active", "kit-status-dot--working"],
+    ["running", "Worktree running", "kit-status-dot--working"],
+    ["needsAttention", "Worktree needs attention", "kit-status-dot--unclean"],
+  ] as const)("maps %s activity to the shared semantic status", (state, label, className) => {
+    const worktree = createWorktree();
+    worktree.activity.state = state;
+
+    render(WorktreeRow, {
+      props: {
+        worktree,
+        hostKey: "local",
+        projectKey: "middleman",
+        isSelected: false,
+        onCommand: () => {},
+      },
+    });
+
+    expect(screen.getByLabelText(label).classList.contains(className)).toBe(true);
+  });
+
   it("renders the linked PR chip as passive metadata that still activates the row", async () => {
     const onCommand = vi.fn();
 

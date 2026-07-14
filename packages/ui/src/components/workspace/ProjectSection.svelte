@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { StatusDot } from "@kenn-io/kit-ui";
   import type { WorkspaceProject } from "../../api/types.js";
   import WorktreeRow from "./WorktreeRow.svelte";
 
@@ -110,7 +111,7 @@
         {project.worktrees.length} worktree{project.worktrees.length !== 1 ? "s" : ""}
       </span>
       {#if hasStaleWorktrees}
-        <span class="stale-dot" title="Has stale worktrees">&#9888;</span>
+        <StatusDot status="stale" label="Has stale worktrees" />
       {/if}
       {#if collapsed && hiddenWorktrees.length > 0}
         <span class="hidden-count">
@@ -255,11 +256,6 @@
   .worktree-count {
     color: var(--text-muted);
     font-size: var(--font-size-xs);
-  }
-
-  .stale-dot {
-    color: var(--accent-amber);
-    font-size: var(--font-size-2xs);
   }
 
   .repo-link {

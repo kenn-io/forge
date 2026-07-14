@@ -27,7 +27,7 @@ describe("CommitListItem", () => {
 
   it("flags commits that have not been pushed", () => {
     renderItem(makeCommit({ pushed: false }));
-    expect(screen.getByRole("img", { name: "Not pushed to remote" })).toBeTruthy();
+    expect(screen.getByLabelText("Not pushed to remote").classList.contains("kit-status-dot--stale")).toBe(true);
   });
 
   it("does not flag pushed commits", () => {

@@ -3,10 +3,13 @@
     WorkspaceActivity,
     WorkspaceWorktree,
   } from "../../api/types.js";
-  import { Chip,
+  import {
+    Chip,
+    DiffStats,
+    StatusDot,
     type ChipTone,
+    type StatusDotStatus,
   } from "@kenn-io/kit-ui";
-  import { DiffStats } from "@kenn-io/kit-ui";
 
   interface Props {
     worktree: WorkspaceWorktree;
@@ -40,14 +43,18 @@
     worktree.branch !== title,
   );
 
-  const activityColors: Record<
-    WorkspaceActivity["state"],
-    string
-  > = {
-    idle: "var(--text-muted)",
-    active: "var(--accent-green)",
-    running: "var(--accent-blue)",
-    needsAttention: "var(--accent-amber)",
+  const activityStatuses: Record<WorkspaceActivity["state"], StatusDotStatus> = {
+    idle: "idle",
+    active: "working",
+    running: "working",
+    needsAttention: "unclean",
+  };
+
+  const activityLabels: Record<WorkspaceActivity["state"], string> = {
+    idle: "Worktree idle",
+    active: "Worktree active",
+    running: "Worktree running",
+    needsAttention: "Worktree needs attention",
   };
 
   function linkedPRTone(state: string): ChipTone {
@@ -142,11 +149,11 @@
   onmouseenter={startHoverTimer}
   onmouseleave={cancelHoverTimer}
 >
-  <span
-    class="activity-dot {worktree.activity.state}"
-    style="background: {activityColors[worktree.activity.state]}"
-    title={worktree.activity.state}
-  ></span>
+  <StatusDot
+    status={activityStatuses[worktree.activity.state]}
+    label={activityLabels[worktree.activity.state]}
+    size={8}
+  />
 
   <span class="content">
     <span class="name-row">
@@ -312,23 +319,6 @@
 
   .worktree-row.stale {
     opacity: 0.55;
-  }
-
-  .activity-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(1.3); }
-  }
-
-  .activity-dot.running,
-  .activity-dot.needsAttention {
-    animation: pulse 1.5s ease-in-out infinite;
   }
 
   .content {

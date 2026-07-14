@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem } from "../api/types.js";
 import MobileActivityView from "./MobileActivityView.svelte";
@@ -114,13 +114,14 @@ describe("MobileActivityView branch activity", () => {
       props: { onSelectItem },
     });
 
-    const card = container.querySelector(".mobile-activity-card");
-    expect(card?.textContent).toContain("Refresh cache warmer");
-    expect(card?.textContent).toContain("main");
-    expect(card?.textContent).toContain("a1b2c3d");
-    expect(card?.textContent).not.toContain("#0");
-    expect(card?.querySelector(".chip--kind-pr")).toBeNull();
-    expect(card?.querySelector(".chip--kind-issue")).toBeNull();
+    const article = container.querySelector("article");
+    expect(article?.querySelector(".kit-card--raised")).toBeTruthy();
+    expect(article?.textContent).toContain("Refresh cache warmer");
+    expect(article?.textContent).toContain("main");
+    expect(article?.textContent).toContain("a1b2c3d");
+    expect(article?.textContent).not.toContain("#0");
+    expect(article?.querySelector(".chip--kind-pr")).toBeNull();
+    expect(article?.querySelector(".chip--kind-issue")).toBeNull();
   });
 
   it("uses the shared repo path by default", () => {
@@ -172,6 +173,32 @@ describe("MobileActivityView branch activity", () => {
     expect(repoLabels).toEqual(["acme/widgets", "platform/widgets"]);
   });
 
+  it("uses shared timeline anatomy and semantic event tones", () => {
+    items.value = [
+      branchActivityItem("force-push", {
+        activity_type: "default_branch_force_push",
+        before_sha: "1111111111111111111111111111111111111111",
+        after_sha: "2222222222222222222222222222222222222222",
+        created_at: "2026-04-27T13:00:00Z",
+      }),
+      branchActivityItem("commit", {
+        created_at: "2026-04-27T12:00:00Z",
+      }),
+    ];
+
+    render(MobileActivityView, {
+      props: { onSelectItem },
+    });
+
+    const timeline = screen.getByRole("list", {
+      name: "Recent activity for 1111111 -> 2222222",
+    });
+    const timelineItems = within(timeline).getAllByRole("listitem");
+    expect(timelineItems).toHaveLength(2);
+    expect(timelineItems[0]?.classList.contains("kit-timeline-item--tone-danger")).toBe(true);
+    expect(timelineItems[1]?.classList.contains("kit-timeline-item--tone-success")).toBe(true);
+  });
+
   it("exposes a mobile hide org toggle", async () => {
     const { getByRole } = render(MobileActivityView, {
       props: { onSelectItem },
@@ -188,13 +215,12 @@ describe("MobileActivityView branch activity", () => {
   it("does not select a PR or issue when tapping a branch event", async () => {
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
 
-    const { container } = render(MobileActivityView, {
+    render(MobileActivityView, {
       props: { onSelectItem },
     });
 
-    const event = container.querySelector(".mobile-activity-event");
-    expect(event).not.toBeNull();
-    await fireEvent.click(event!);
+    const event = screen.getByRole("button", { name: /Commit.*a1b2c3d.*Alice Example/ });
+    await fireEvent.click(event);
 
     expect(onSelectItem).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledWith(
@@ -251,12 +277,11 @@ describe("MobileActivityView notifications", () => {
   it("labels notification events by their reason, not the raw type", () => {
     items.value = [notificationItem("1", "Review me", "open")];
 
-    const { container } = render(MobileActivityView, {
+    render(MobileActivityView, {
       props: { onSelectItem },
     });
 
-    const event = container.querySelector(".mobile-activity-event__body strong");
-    expect(event?.textContent).toBe("Review requested");
+    expect(screen.getByText("Review requested", { selector: "strong" })).toBeTruthy();
   });
 
   it("hides notifications through a mobile toggle wired to the store", async () => {

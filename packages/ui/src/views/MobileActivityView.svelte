@@ -7,9 +7,16 @@
     type ItemFilter,
     type TimeRange,
   } from "../stores/activity.svelte.js";
-  import { ScrollBox } from "@kenn-io/kit-ui";
+  import {
+    Card,
+    Chip,
+    ScrollBox,
+    SearchInput,
+    Timeline,
+    TimelineItem,
+    type TimelineTone,
+  } from "@kenn-io/kit-ui";
   import { parseAPITimestamp } from "../utils/time.js";
-  import { Chip, SearchInput } from "@kenn-io/kit-ui";
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";
   import ItemStateChip from "../components/shared/ItemStateChip.svelte";
   import { SelectDropdown } from "@kenn-io/kit-ui";
@@ -305,15 +312,19 @@
     return `${Math.floor(days / 30)}mo ago`;
   }
 
-  function eventTone(type: string): string {
+  function eventTone(type: string): TimelineTone {
     switch (type) {
-      case "comment": return "comment";
-      case "review": return "review";
-      case "commit": return "commit";
-      case "default_branch_commit": return "commit";
-      case "force_push": return "force-push";
-      case "default_branch_force_push": return "force-push";
-      default: return "opened";
+      case "comment":
+        return "warning";
+      case "review":
+      case "commit":
+      case "default_branch_commit":
+        return "success";
+      case "force_push":
+      case "default_branch_force_push":
+        return "danger";
+      default:
+        return "info";
     }
   }
 
@@ -459,73 +470,77 @@
       <div class="mobile-activity-card-list">
         {#each visibleGroups as group (group.key)}
           {@const item = group.representative}
-          <article class="mobile-activity-card">
-            <button
-              type="button"
-              class="mobile-activity-card__button"
-              onclick={() => handleCardClick(group)}
-            >
-              <span class="mobile-activity-card__top">
-                <span class="mobile-activity-card__chips">
-                  {#if isDefaultBranchActivity(item)}
-                    <Chip size="sm" tone="muted" uppercase={false}>Branch</Chip>
-                    <span class="mobile-activity-number">{branchName(item)}</span>
-                  {:else}
-                    <ItemKindChip kind={item.item_type === "issue" ? "issue" : "pr"} size="sm" />
-                    <span class="mobile-activity-number">#{item.item_number}</span>
-                    {#if item.workspace}
-                      <WorkspaceIndicator status={item.workspace.status} size={16} />
+          <article>
+            <Card level="raised" padding="none" class="mobile-activity-card">
+              <button
+                type="button"
+                class="mobile-activity-card__button"
+                onclick={() => handleCardClick(group)}
+              >
+                <span class="mobile-activity-card__top">
+                  <span class="mobile-activity-card__chips">
+                    {#if isDefaultBranchActivity(item)}
+                      <Chip size="sm" tone="muted" uppercase={false}>Branch</Chip>
+                      <span class="mobile-activity-number">{branchName(item)}</span>
+                    {:else}
+                      <ItemKindChip kind={item.item_type === "issue" ? "issue" : "pr"} size="sm" />
+                      <span class="mobile-activity-number">#{item.item_number}</span>
+                      {#if item.workspace}
+                        <WorkspaceIndicator status={item.workspace.status} size={16} />
+                      {/if}
+                      {#if item.item_state === "merged" || item.item_state === "closed"}
+                        <ItemStateChip state={item.item_state} size="sm" />
+                      {/if}
                     {/if}
-                    {#if item.item_state === "merged" || item.item_state === "closed"}
-                      <ItemStateChip state={item.item_state} size="sm" />
-                    {/if}
-                  {/if}
+                  </span>
+                  <time>{relativeTime(group.latestTime)}</time>
                 </span>
-                <time>{relativeTime(group.latestTime)}</time>
-              </span>
 
-              <span class="mobile-activity-card__title">
-                {isDefaultBranchActivity(item) ? branchActivityTitle(item) : item.item_title}
-              </span>
-              <span class="mobile-activity-card__meta">
-                <span>{repoLabel(item)}</span>
-                <span>{group.eventCount} {group.eventCount === 1 ? "event" : "events"}</span>
-              </span>
-            </button>
+                <span class="mobile-activity-card__title">
+                  {isDefaultBranchActivity(item) ? branchActivityTitle(item) : item.item_title}
+                </span>
+                <span class="mobile-activity-card__meta">
+                  <span>{repoLabel(item)}</span>
+                  <span>{group.eventCount} {group.eventCount === 1 ? "event" : "events"}</span>
+                </span>
+              </button>
 
-            <div class="mobile-activity-events">
-              {#each latestEvents(group) as event (event.id)}
-                <div class="mobile-activity-event-slot">
-                  <button
-                    type="button"
-                    class="mobile-activity-event"
-                    class:event-comment={eventTone(event.activity_type) === "comment"}
-                    class:event-review={eventTone(event.activity_type) === "review"}
-                    class:event-commit={eventTone(event.activity_type) === "commit"}
-                    class:event-force-push={eventTone(event.activity_type) === "force-push"}
-                    onclick={() => handleEventClick(event)}
-                  >
-                    <span class="mobile-activity-event__dot" aria-hidden="true"></span>
-                    <span class="mobile-activity-event__body">
-                      <strong>{eventLabel(event)}</strong>
-                      <span>{eventDetail(event)}</span>
-                    </span>
-                    <time>{relativeTime(event.created_at)}</time>
-                  </button>
-                  {#if isUnreadNotification(event)}
-                    <button
-                      type="button"
-                      class="mobile-activity-event-seen"
-                      aria-label="Mark notification seen"
-                      title="Mark seen"
-                      onclick={(domEvent) => handleMarkSeen(domEvent, event)}
-                    >
-                      <CheckIcon size="20" strokeWidth="2" aria-hidden="true" />
-                    </button>
-                  {/if}
-                </div>
-              {/each}
-            </div>
+              <Timeline
+                class="mobile-activity-events"
+                ariaLabel={`Recent activity for ${
+                  isDefaultBranchActivity(item) ? branchActivityTitle(item) : item.item_title
+                }`}
+              >
+                {#each latestEvents(group) as event (event.id)}
+                  <TimelineItem class="mobile-activity-event-item" tone={eventTone(event.activity_type)}>
+                    <div class="mobile-activity-event-slot">
+                      <button
+                        type="button"
+                        class="mobile-activity-event"
+                        onclick={() => handleEventClick(event)}
+                      >
+                        <span class="mobile-activity-event__body">
+                          <strong>{eventLabel(event)}</strong>
+                          <span>{eventDetail(event)}</span>
+                        </span>
+                        <time>{relativeTime(event.created_at)}</time>
+                      </button>
+                      {#if isUnreadNotification(event)}
+                        <button
+                          type="button"
+                          class="mobile-activity-event-seen"
+                          aria-label="Mark notification seen"
+                          title="Mark seen"
+                          onclick={(domEvent) => handleMarkSeen(domEvent, event)}
+                        >
+                          <CheckIcon size="20" strokeWidth="2" aria-hidden="true" />
+                        </button>
+                      {/if}
+                    </div>
+                  </TimelineItem>
+                {/each}
+              </Timeline>
+            </Card>
           </article>
         {/each}
       </div>
@@ -701,14 +716,10 @@
     gap: var(--mobile-space-md);
   }
 
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .mobile-activity-card {
+  :global(.mobile-activity-card) {
     overflow: hidden;
-    border: thin solid var(--border-default);
-    border-radius: var(--radius-lg);
-    background: var(--bg-surface);
-    box-shadow: var(--shadow-sm);
   }
+
 
   .mobile-activity-card__button {
     display: flex;
@@ -796,10 +807,25 @@
     white-space: nowrap;
   }
 
-  .mobile-activity-events {
-    display: grid;
-    gap: var(--mobile-space-xs);
+  :global(.mobile-activity-events) {
     padding: 0 var(--mobile-space-sm) var(--mobile-space-sm);
+    --kit-timeline-halo: var(--bg-surface);
+  }
+
+  :global(.mobile-activity-events .kit-timeline-item) {
+    gap: var(--mobile-space-xs);
+  }
+
+  :global(.mobile-activity-events .kit-timeline-item__rail) {
+    width: 14px;
+  }
+
+  :global(.mobile-activity-events .kit-timeline-item__content) {
+    padding: 0 0 var(--mobile-space-xs);
+  }
+
+  :global(.mobile-activity-events .kit-timeline-item:last-child .kit-timeline-item__content) {
+    padding-bottom: 0;
   }
 
   .mobile-activity-event-slot {
@@ -835,7 +861,7 @@
   .mobile-activity-event {
     min-height: var(--mobile-hit-target);
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--mobile-space-sm);
     padding: var(--mobile-space-sm);
@@ -846,25 +872,6 @@
     text-align: left;
   }
 
-  .mobile-activity-event__dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--accent-blue);
-  }
-
-  .mobile-activity-event.event-comment .mobile-activity-event__dot {
-    background: var(--accent-amber);
-  }
-
-  .mobile-activity-event.event-review .mobile-activity-event__dot,
-  .mobile-activity-event.event-commit .mobile-activity-event__dot {
-    background: var(--accent-green);
-  }
-
-  .mobile-activity-event.event-force-push .mobile-activity-event__dot {
-    background: var(--accent-red);
-  }
 
   .mobile-activity-event__body {
     min-width: 0;

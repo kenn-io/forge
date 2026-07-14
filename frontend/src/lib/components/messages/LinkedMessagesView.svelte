@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Chip } from "@kenn-io/kit-ui";
   import type { LinkedMessageRow } from "../../messages/reverseLinks";
 
   interface Props {
@@ -100,12 +101,14 @@
                 <ul class="chip-list">
                   {#each row.issues as issue (issue.uid)}
                     <li>
-                      <button
-                        type="button"
-                        class="issue-chip"
+                      <Chip
+                        size="sm"
+                        tone="info"
+                        interactive
+                        uppercase={false}
                         onclick={() => onOpenIssue(issue.uid)}
                         title={issue.title}
-                      >{issue.qualified_id}</button>
+                      >{issue.qualified_id}</Chip>
                     </li>
                   {/each}
                 </ul>
@@ -285,26 +288,6 @@
     list-style: none;
     margin: 0;
     padding: 0;
-  }
-
-  /* kit-ui-check-ignore: Card migration pending (kata wa1f) */
-  .issue-chip {
-    display: inline-block;
-    padding: 2px 7px;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    background: var(--bg-inset);
-    color: var(--accent-blue);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    line-height: 1.5;
-    cursor: pointer;
-    transition: background 0.07s, border-color 0.07s;
-  }
-
-  .issue-chip:hover {
-    background: var(--accent-blue-soft);
-    border-color: var(--accent-blue);
   }
 
   .linked-truncated {

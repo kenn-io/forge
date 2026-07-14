@@ -91,7 +91,7 @@ describe("LinkedMessagesView table", () => {
     expect(screen.getByRole("columnheader", { name: "Linked tasks" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Hello from Alice" })).toBeTruthy();
     expect(screen.getByText("Alice")).toBeTruthy();
-    const chips = document.querySelectorAll(".issue-chip");
+    const chips = screen.getAllByRole("button", { name: /^PROJ-/ });
     expect(chips).toHaveLength(2);
     expect(chips[0]?.textContent).toContain("PROJ-10010");
     expect(chips[1]?.textContent).toContain("PROJ-10011");
@@ -117,9 +117,7 @@ describe("LinkedMessagesView table", () => {
     const onOpenIssue = vi.fn();
     renderView({ rows: [oneRow], onOpenIssue });
 
-    const chip = document.querySelector<HTMLButtonElement>(".issue-chip");
-    expect(chip).not.toBeNull();
-    await fireEvent.click(chip!);
+    await fireEvent.click(screen.getByRole("button", { name: "PROJ-10010" }));
 
     expect(onOpenIssue).toHaveBeenCalledOnce();
     expect(onOpenIssue).toHaveBeenCalledWith("uid-1001-0");

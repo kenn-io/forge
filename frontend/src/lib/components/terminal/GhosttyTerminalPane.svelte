@@ -15,6 +15,7 @@
   import { FitAddon, Terminal } from "ghostty-web";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
   import { createWorkspaceSwitchPaneTimer } from "../../instrumentation/workspaceSwitchTiming.js";
+  import { traceHeadersForRequest } from "../../instrumentation/traceContext.js";
   import {
     isMultilinePaste,
     sanitizeTerminalPasteText,
@@ -111,7 +112,10 @@
   ): string {
     const sep = url.includes("?") ? "&" : "?";
     const resizeActive = active ? "1" : "0";
-    return `${url}${sep}cols=${cols}&rows=${rows}&resize_active=${resizeActive}`;
+    const { traceparent, baggage } = traceHeadersForRequest();
+    let result = `${url}${sep}cols=${cols}&rows=${rows}&resize_active=${resizeActive}&traceparent=${encodeURIComponent(traceparent)}`;
+    if (baggage !== null) result += `&baggage=${encodeURIComponent(baggage)}`;
+    return result;
   }
 
   function buildWsUrl(

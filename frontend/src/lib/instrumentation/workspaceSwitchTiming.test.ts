@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
+import { currentInteractionTraceId } from "./traceContext.js";
 import {
   beginWorkspaceSwitch,
   cancelWorkspaceSwitch,
@@ -145,5 +146,23 @@ describe("workspace switch timing", () => {
     expect(timer.record("terminal-constructed")).toBe(false);
 
     expect(measures("terminal-constructed")).toHaveLength(0);
+  });
+
+  test("measure details carry the interaction trace id", () => {
+    beginWorkspaceSwitch("ws-1", undefined);
+    recordWorkspaceSwitchPhase("workspace-request-start", "ws-1", undefined);
+
+    const detail = (measures("workspace-request-start")[0] as PerformanceMeasure).detail as {
+      traceId?: unknown;
+    };
+    expect(detail.traceId).toBe(currentInteractionTraceId());
+    expect(typeof detail.traceId).toBe("string");
+  });
+
+  test("cancelling the switch ends its interaction trace", () => {
+    const token = beginWorkspaceSwitch("ws-1", undefined);
+    cancelWorkspaceSwitch(token);
+
+    expect(currentInteractionTraceId()).toBeNull();
   });
 });

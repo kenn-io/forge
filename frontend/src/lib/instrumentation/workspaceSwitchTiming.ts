@@ -12,6 +12,7 @@
 // nothing further.
 
 import { clearInteraction, markInteractionStart, measureInteraction } from "./interactionTiming.js";
+import { beginInteractionTrace, endInteractionTrace } from "./traceContext.js";
 
 export const WORKSPACE_SWITCH_INTERACTION = "workspace-switch";
 
@@ -37,6 +38,7 @@ interface WorkspaceSwitch {
   hostKey: string | undefined;
   beganAt: number;
   recorded: Set<WorkspaceSwitchPhase>;
+  traceId: string;
 }
 
 // Phases arriving later than this after route selection belong to some
@@ -55,10 +57,15 @@ let switchSeq = 0;
 export function beginWorkspaceSwitch(workspaceId: string, hostKey: string | undefined): string {
   if (current) {
     clearInteraction(WORKSPACE_SWITCH_INTERACTION, current.token);
+    endInteractionTrace(current.traceId);
   }
   switchSeq += 1;
   const token = String(switchSeq);
-  current = { token, workspaceId, hostKey, beganAt: performance.now(), recorded: new Set() };
+  const traceId = beginInteractionTrace(WORKSPACE_SWITCH_INTERACTION, {
+    "workspace.id": workspaceId,
+    ...(hostKey !== undefined ? { "host.key": hostKey } : {}),
+  });
+  current = { token, workspaceId, hostKey, beganAt: performance.now(), recorded: new Set(), traceId };
   markInteractionStart(WORKSPACE_SWITCH_INTERACTION, token);
   return token;
 }
@@ -71,6 +78,7 @@ export function cancelWorkspaceSwitch(token?: string): void {
   if (!current) return;
   if (token !== undefined && current.token !== token) return;
   clearInteraction(WORKSPACE_SWITCH_INTERACTION, current.token);
+  endInteractionTrace(current.traceId);
   current = null;
 }
 
@@ -81,6 +89,7 @@ function recordPhase(sw: WorkspaceSwitch, phase: WorkspaceSwitchPhase, detail?: 
   measureInteraction(WORKSPACE_SWITCH_INTERACTION, phase, sw.token, {
     workspaceId: sw.workspaceId,
     ...(sw.hostKey !== undefined ? { hostKey: sw.hostKey } : {}),
+    traceId: sw.traceId,
     ...detail,
   });
   return true;

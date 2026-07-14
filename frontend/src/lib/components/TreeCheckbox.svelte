@@ -40,7 +40,7 @@
   class:tree-check--partial={value === "partial"}
   class:tree-check--decorative={decorative}
 >
-  <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
+  <!-- kit-ui-check-ignore: controlled tree selection requires mousedown handling, native-toggle cancellation, negative tabindex, delegated row focus, and pointer-transparent decorative state that kit Checkbox does not expose -->
   <input
     bind:this={inputEl}
     class="tree-check__input"

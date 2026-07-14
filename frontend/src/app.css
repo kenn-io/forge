@@ -519,13 +519,13 @@ a:hover {
 .markdown-body .task-list-item > ol {
   margin: 0;
 }
-/* kit-ui-check-ignore: Checkbox migration pending (kata wa1f) */
+/* kit-ui-check-ignore: markdown task checkboxes are sanitized generated HTML with delegated source editing and task indices, so they cannot instantiate a Svelte Checkbox */
 .markdown-body .task-list-item input[type="checkbox"] {
   margin: 0 8px 0 0;
   vertical-align: -0.1em;
   cursor: default;
 }
-/* kit-ui-check-ignore: Checkbox migration pending (kata wa1f) */
+/* kit-ui-check-ignore: interactive generated Markdown checkboxes keep delegated task editing, drag/reorder indices, and blockquote disabling outside kit Checkbox's component contract */
 .markdown-body .task-list-item--interactive input[type="checkbox"] {
   cursor: pointer;
 }

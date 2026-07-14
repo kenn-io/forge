@@ -113,7 +113,7 @@
       {@const key = rowKey(row)}
       <tr class={[row.already_configured && "disabled-row"]}>
         <td>
-          <!-- kit-ui-check-ignore: Checkbox migration pending (kata wa1f) -->
+          <!-- kit-ui-check-ignore: repository range selection needs the native click event's shiftKey alongside the post-toggle checked value; kit Checkbox exposes only checked -->
           <input
             type="checkbox"
             aria-label={`Select ${repoLabel(row)}`}

@@ -137,7 +137,12 @@ registry helpers return typed errors for missing providers or capabilities.
   path.
 - Provider-supplied web URLs, clone URLs, default branches, platform ids, and
   external ids should be persisted when available instead of reconstructed from
-  host/owner/name.
+  host/owner/name. Every settings-refresh branch must write this metadata:
+  repo resolution pre-fills the platform repo id, so the identity sync never
+  re-resolves the repository and whichever refresh branch runs is the row's
+  only metadata writer. A branch that skips the write leaves default_branch
+  empty forever, which silently degrades the worktree diff sampler to a bare
+  HEAD diff (0/0 sidebar stats).
 
 ## Label Catalogs And Mutations
 

@@ -38,6 +38,22 @@ type PullResponse struct {
 // through the standard docs runner. Divergence is detected with
 // merge-base ancestry checks (no stderr parsing) and reported as a typed
 // error instead of a conflict state on disk.
+//
+// Pull deliberately skips publish's command-bearing-config and attribute
+// gates (assertSafeToPublish, assertWorktreeAttributesSafe). Those gates
+// exist because publish-side commands rehash worktree content implicitly —
+// the status/changes previews run whenever the UI shows a folder, so a
+// repo-local filter must be rejected before middleman triggers it in the
+// background. Pull is the opposite shape: an explicit user action against
+// a folder and upstream the user registered by hand, carrying exactly the
+// trust of typing `git pull` in that directory. The docs runner still
+// neutralizes the surfaces that need no trust decision at all (hooks,
+// fsmonitor, transport allowlist, stripped env).
+//
+// Nothing here can silently overwrite local work: the fast-forward
+// checkout is git's own, and it refuses to touch tracked files whose
+// worktree content differs from HEAD — the same protection a terminal
+// pull gives against a concurrent editor save.
 func (r *Registry) GitPull(ctx context.Context, folderID string) (PullResponse, error) {
 	v, err := r.Lookup(folderID)
 	if err != nil {
@@ -62,6 +78,10 @@ func (r *Registry) GitPull(ctx context.Context, folderID string) (PullResponse, 
 	if err != nil || remote == "" || mergeRef == "" {
 		return PullResponse{}, noUpstream
 	}
+	// A source-only refspec still updates the remote-tracking ref: git
+	// opportunistically writes refs/remotes/<remote>/<branch> whenever the
+	// command-line ref matches the configured fetch refspec, so origin/main
+	// does not go stale after this fetch (asserted in the integration test).
 	if _, err := runDocsGit(ctx, v.Path, nil, "fetch", remote, mergeRef); err != nil {
 		return PullResponse{}, &PullFailedError{Stderr: gitStderr(err)}
 	}

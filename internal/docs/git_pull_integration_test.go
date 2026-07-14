@@ -49,6 +49,10 @@ func TestGitPullFastForwards(t *testing.T) {
 	assert.Equal("main", res.Branch)
 	assert.Equal("origin/main", res.Upstream)
 	assert.Equal(want, gitOutput(t, g.dir, "rev-parse", "HEAD"))
+	// The source-only refspec fetch must still refresh the remote-tracking
+	// ref via git's opportunistic update, or origin/main would go stale and
+	// the branch would wrongly appear ahead of its upstream.
+	assert.Equal(want, gitOutput(t, g.dir, "rev-parse", "origin/main"))
 	body, readErr := os.ReadFile(filepath.Join(g.dir, "remote.md"))
 	require.NoError(readErr)
 	assert.Equal("# remote\n", string(body))

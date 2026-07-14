@@ -509,6 +509,12 @@ func (s *Server) pullDocsGit(ctx context.Context, in *docsFolderIDInput) (*bodyO
 	if err != nil {
 		return nil, docsRegistryProblem(err)
 	}
+	// The lock serializes git operations (pull vs publish) only. File
+	// saves, renames, and deletes are deliberately not serialized against
+	// pull: git's fast-forward checkout refuses to overwrite tracked files
+	// with uncommitted changes — the same protection a terminal `git pull`
+	// gives against a concurrent editor save — and the UI additionally
+	// disables pull while the markdown editor is open.
 	if !s.docsPublishLocks.tryAcquire(folder.Path) {
 		return nil, problemConflict(
 			CodeConflict,

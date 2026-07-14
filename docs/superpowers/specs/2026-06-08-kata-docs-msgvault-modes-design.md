@@ -363,6 +363,9 @@ Kata frontend adaptation:
   (their consumers echo it synchronously); store state that should survive
   navigation lives in the URL
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::reconcileRoute`).
+- Routed issue selection waits for any in-flight view/scope load to settle;
+  intermediate list state may clear selection and abort an early detail read
+  (`frontend/src/lib/features/kata/KataWorkspace.svelte::viewScopeLoadSignature`).
 - Event-driven proxy reads keep switching fail-closed until they settle. The
   Kata proxy applies a 30-second total deadline to ordinary TCP and Unix-socket
   requests, including response bodies, while the live event stream stays

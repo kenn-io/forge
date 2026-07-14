@@ -632,6 +632,24 @@ func seedGiteaProviderCollisionFixture(
 	if err != nil {
 		return fmt.Errorf("upsert gitea collision repo: %w", err)
 	}
+	if _, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:             repoID,
+		PlatformID:         9102,
+		PlatformExternalID: "gitea-acme-widgets-902",
+		Number:             902,
+		URL:                "https://github.com/acme/widgets/pulls/902",
+		Title:              "Gitea provider collision pull request",
+		Author:             "gina",
+		AuthorDisplayName:  "Gina",
+		State:              "open",
+		HeadBranch:         "provider-collision",
+		BaseBranch:         "main",
+		CreatedAt:          issue.CreatedAt,
+		UpdatedAt:          issue.UpdatedAt,
+		LastActivityAt:     issue.LastActivityAt,
+	}); err != nil {
+		return fmt.Errorf("upsert gitea collision pull request: %w", err)
+	}
 	if _, err := database.UpsertIssue(ctx, &db.Issue{
 		RepoID:             repoID,
 		PlatformID:         issue.PlatformID,

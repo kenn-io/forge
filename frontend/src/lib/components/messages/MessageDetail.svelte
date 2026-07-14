@@ -229,11 +229,9 @@
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <style>
-  /* kit-ui-check-ignore: sandboxed email srcdoc; app theme tokens cannot cascade into the iframe */
-  html,body{--font-size-md:0.875em;margin:0;padding:0 16px;font:var(--font-size-md)/1.5 -apple-system,Segoe UI,sans-serif;color:#222;background:#fff;word-wrap:break-word}
+  html,body{--font-size-md:0.875em;margin:0;padding:0 16px;font:var(--font-size-md)/1.5 -apple-system,Segoe UI,sans-serif;color:CanvasText;background:Canvas;word-wrap:break-word}
   img{max-width:100%;height:auto}
-  /* kit-ui-check-ignore: sandboxed email srcdoc; app theme tokens cannot cascade into the iframe */
-  a{color:#0a66c2}
+  a{color:LinkText}
 </style>
 </head><body>${body}</body></html>`;
   });

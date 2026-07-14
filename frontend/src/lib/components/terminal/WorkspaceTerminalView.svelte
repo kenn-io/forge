@@ -3573,13 +3573,10 @@
   }
 
   .panel-toggle-group .panel-toggle-btn.active:disabled {
-    /* kit-ui-check-ignore: pure neutral gray desaturates the disabled-active state the same way in both themes */
-    background: color-mix(in srgb, rgb(128 128 128) 28%, var(--bg-surface)) !important;
-    /* kit-ui-check-ignore: pure neutral gray desaturates the disabled-active state the same way in both themes */
-    color: color-mix(in srgb, rgb(115 115 115) 80%, var(--text-primary)) !important;
+    background: color-mix(in srgb, var(--text-muted) 28%, var(--bg-surface)) !important;
+    color: color-mix(in srgb, var(--text-muted) 80%, var(--text-primary)) !important;
     box-shadow: inset 0 0 0 1px
-      /* kit-ui-check-ignore: pure neutral gray desaturates the disabled-active state the same way in both themes */
-      color-mix(in srgb, rgb(128 128 128) 35%, var(--border-muted));
+      color-mix(in srgb, var(--text-muted) 35%, var(--border-muted));
   }
 
   .terminal-and-sidebar {

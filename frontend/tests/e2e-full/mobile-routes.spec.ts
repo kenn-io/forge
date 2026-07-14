@@ -472,6 +472,16 @@ test.describe("phone routes", () => {
     await expect(page.locator(".focus-list")).toBeVisible();
     await expectReadableFocusList(page, ".issue-item");
   });
+
+  test("mobile PR and issue lists respect the shared hide-org preference", async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("middleman:hideOrgName", "1"));
+
+    await page.goto("/m/pulls");
+    await expect(page.locator(".pull-item .repo-chip").first()).toHaveText("widgets");
+
+    await page.getByRole("link", { name: "Issues" }).click();
+    await expect(page.locator(".issue-item .repo-chip").first()).toHaveText("widgets");
+  });
 });
 
 test.describe("high-density phone routes", () => {

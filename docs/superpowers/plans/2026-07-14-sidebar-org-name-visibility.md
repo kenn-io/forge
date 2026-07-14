@@ -56,6 +56,7 @@
 - [x] Run the focused browser test and confirm PR/issue assertions pass.
 - [x] Keep issue visibility reachable above and below its compact breakpoint, with full-stack responsive coverage.
 - [x] Cover compact badge/reset behavior and workspace active-state polarity.
+- [x] Apply the shared formatter to responsive focus/mobile lists and cover both item types in full-stack mobile tests.
 
 ### Task 3: Normalize the workspace menu wording
 

@@ -13,6 +13,7 @@ Make organization-name visibility controllable from the PR, issue, and workspace
 - Selecting an item immediately updates repository labels in that sidebar.
 - PR and issue compact filter menus include the visibility item. Their changed-state indicator and reset behavior account for it.
 - The issue visibility item remains reachable in both compact and expanded sidebar layouts.
+- Responsive focus and mobile PR/issue lists use the same preference and collision-safe labels.
 - Existing sidebar layout, grouping, state filters, and workspace sort behavior remain unchanged.
 
 ## Components and data flow

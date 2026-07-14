@@ -394,7 +394,7 @@
   }
 
   .sync-icon--spinning {
-    animation: header-spin 0.9s linear infinite;
+    animation: kit-spin 0.9s linear infinite;
   }
 
   .sync-label {
@@ -406,15 +406,6 @@
     height: 26px;
     pointer-events: none;
     visibility: hidden;
-  }
-
-  /* Busy state spins the sync affordance icon itself, matching kit-ui
-     RefreshControl's pattern; the sync button carries app-specific
-     label/disable semantics RefreshControl does not model. */
-  /* kit-ui-check-ignore: RefreshControl-style icon spin on an app button */
-  @keyframes header-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
   }
 
   .action-btn:hover:not(:disabled) {

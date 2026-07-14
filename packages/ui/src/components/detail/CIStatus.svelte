@@ -435,15 +435,7 @@
 
   .spin {
     display: inline-flex;
-    animation: spin 0.9s linear infinite;
-  }
-
-  /* Pending-status loader icon tinted by row-icon-amber; kit-ui Spinner
-     has no tone and would drop the semantic color. */
-  /* kit-ui-check-ignore: status-colored loader icon spin */
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    animation: kit-spin 0.9s linear infinite;
   }
 
   .ci-unavailable-wrap {

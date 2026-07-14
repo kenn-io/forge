@@ -96,9 +96,5 @@
   .tok-green { color: var(--accent-green); }
   .tok-muted { color: var(--text-muted); }
   .tok-purple { color: var(--accent-purple); }
-  .spin { display: inline-flex; animation: spin 0.9s linear infinite; }
-  /* Pending CI token spins its status-colored loader icon; kit-ui Spinner
-     has no tone and would drop the semantic color. */
-  /* kit-ui-check-ignore: status-colored loader icon spin */
-  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .spin { display: inline-flex; animation: kit-spin 0.9s linear infinite; }
 </style>

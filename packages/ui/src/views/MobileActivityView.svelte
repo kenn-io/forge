@@ -7,7 +7,7 @@
     type ItemFilter,
     type TimeRange,
   } from "../stores/activity.svelte.js";
-  import ScrollBox from "../components/shared/ScrollBox.svelte";
+  import { ScrollBox } from "@kenn-io/kit-ui";
   import { parseAPITimestamp } from "../utils/time.js";
   import { Chip, SearchInput } from "@kenn-io/kit-ui";
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";

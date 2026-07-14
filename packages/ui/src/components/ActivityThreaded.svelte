@@ -1,6 +1,6 @@
 <script lang="ts">
   import { EmptyState } from "@kenn-io/kit-ui";
-  import ScrollBox from "./shared/ScrollBox.svelte";
+  import { ScrollBox } from "@kenn-io/kit-ui";
   import type { ActivityItem } from "../api/types.js";
   import { getStores } from "../context.js";
   import {

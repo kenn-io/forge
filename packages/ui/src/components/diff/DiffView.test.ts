@@ -131,7 +131,7 @@ describe("DiffView", () => {
   it("pages the diff area with PageDown even when focus is outside the diff pane", async () => {
     const diff = makeDiffStore();
     const { container } = renderDiffView(diff);
-    const diffArea = container.querySelector(".scroll-box__viewport") as HTMLDivElement;
+    const diffArea = container.querySelector(".kit-scrollbox__viewport") as HTMLDivElement;
     Object.defineProperty(diffArea, "clientHeight", {
       configurable: true,
       value: 400,
@@ -161,7 +161,7 @@ describe("DiffView", () => {
       keyboardActive: false,
       pageKeyboardActive: true,
     });
-    const diffArea = container.querySelector(".scroll-box__viewport") as HTMLDivElement;
+    const diffArea = container.querySelector(".kit-scrollbox__viewport") as HTMLDivElement;
     Object.defineProperty(diffArea, "clientHeight", {
       configurable: true,
       value: 400,
@@ -211,7 +211,7 @@ describe("DiffView", () => {
     });
 
     const { container } = renderDiffView(diff);
-    const diffArea = container.querySelector(".scroll-box__viewport") as HTMLDivElement;
+    const diffArea = container.querySelector(".kit-scrollbox__viewport") as HTMLDivElement;
     await fireEvent.wheel(diffArea);
 
     expect(consumeScrollTarget).toHaveBeenCalledOnce();
@@ -221,7 +221,7 @@ describe("DiffView", () => {
   it("contains wheel overscroll at diff pane boundaries", async () => {
     const diff = makeDiffStore();
     const { container } = renderDiffView(diff);
-    const diffArea = container.querySelector(".scroll-box__viewport") as HTMLDivElement;
+    const diffArea = container.querySelector(".kit-scrollbox__viewport") as HTMLDivElement;
     Object.defineProperty(diffArea, "clientHeight", {
       configurable: true,
       value: 400,
@@ -270,7 +270,7 @@ describe("DiffView", () => {
     const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     Element.prototype.scrollIntoView = scrollIntoView;
     Element.prototype.getBoundingClientRect = function () {
-      if (this instanceof HTMLElement && this.classList.contains("scroll-box__viewport")) {
+      if (this instanceof HTMLElement && this.classList.contains("kit-scrollbox__viewport")) {
         return {
           top: 100,
           bottom: 500,
@@ -284,7 +284,7 @@ describe("DiffView", () => {
         } as DOMRect;
       }
       if (this instanceof HTMLElement && this.dataset.filePath === "b.ts") {
-        const diffArea = document.querySelector(".scroll-box__viewport") as HTMLDivElement;
+        const diffArea = document.querySelector(".kit-scrollbox__viewport") as HTMLDivElement;
         const top = 460 - diffArea.scrollTop;
         return {
           top,
@@ -317,7 +317,7 @@ describe("DiffView", () => {
 
       const { container } = renderDiffView(diff);
 
-      const diffArea = container.querySelector(".scroll-box__viewport") as HTMLDivElement;
+      const diffArea = container.querySelector(".kit-scrollbox__viewport") as HTMLDivElement;
       await waitFor(() => {
         expect(diffArea.scrollTop).toBe(360);
         expect(scrollIntoView).not.toHaveBeenCalled();
@@ -333,7 +333,7 @@ describe("DiffView", () => {
     const consumeScrollTarget = vi.fn();
     const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     Element.prototype.getBoundingClientRect = function () {
-      if (this instanceof HTMLElement && this.classList.contains("scroll-box__viewport")) {
+      if (this instanceof HTMLElement && this.classList.contains("kit-scrollbox__viewport")) {
         return {
           top: 100,
           bottom: 500,
@@ -347,7 +347,7 @@ describe("DiffView", () => {
         } as DOMRect;
       }
       if (this instanceof HTMLElement && this.dataset.filePath === "b.ts") {
-        const diffArea = document.querySelector(".scroll-box__viewport") as HTMLDivElement;
+        const diffArea = document.querySelector(".kit-scrollbox__viewport") as HTMLDivElement;
         const top = 460 - diffArea.scrollTop;
         return {
           top,
@@ -379,7 +379,7 @@ describe("DiffView", () => {
       });
 
       const { container } = renderDiffView(diff);
-      const diffArea = container.querySelector(".scroll-box__viewport") as HTMLDivElement;
+      const diffArea = container.querySelector(".kit-scrollbox__viewport") as HTMLDivElement;
 
       await waitFor(() => {
         expect(diffArea.scrollTop).toBe(360);
@@ -396,7 +396,7 @@ describe("DiffView", () => {
     let targetMeasurements = 0;
 
     Element.prototype.getBoundingClientRect = function () {
-      if (this instanceof HTMLElement && this.classList.contains("scroll-box__viewport")) {
+      if (this instanceof HTMLElement && this.classList.contains("kit-scrollbox__viewport")) {
         return {
           top: 100,
           bottom: 500,
@@ -424,7 +424,7 @@ describe("DiffView", () => {
             toJSON: () => ({}),
           } as DOMRect;
         }
-        const diffArea = document.querySelector(".scroll-box__viewport") as HTMLDivElement;
+        const diffArea = document.querySelector(".kit-scrollbox__viewport") as HTMLDivElement;
         const top = 460 - diffArea.scrollTop;
         return {
           top,
@@ -457,7 +457,7 @@ describe("DiffView", () => {
 
       const { container } = renderDiffView(diff);
 
-      const diffArea = container.querySelector(".scroll-box__viewport") as HTMLDivElement;
+      const diffArea = container.querySelector(".kit-scrollbox__viewport") as HTMLDivElement;
       await waitFor(() => {
         expect(diffArea.scrollTop).toBe(360);
         expect(consumeScrollTarget).toHaveBeenCalled();
@@ -475,7 +475,7 @@ describe("DiffView", () => {
     const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     HTMLElement.prototype.focus = focus;
     Element.prototype.getBoundingClientRect = function () {
-      if (this instanceof HTMLElement && this.classList.contains("scroll-box__viewport")) {
+      if (this instanceof HTMLElement && this.classList.contains("kit-scrollbox__viewport")) {
         return {
           top: 100,
           bottom: 500,
@@ -489,7 +489,7 @@ describe("DiffView", () => {
         } as DOMRect;
       }
       if (this instanceof HTMLElement && this.dataset.diffPath === "b.ts" && this.dataset.diffNewLine === "2") {
-        const diffArea = document.querySelector(".scroll-box__viewport") as HTMLDivElement;
+        const diffArea = document.querySelector(".kit-scrollbox__viewport") as HTMLDivElement;
         const top = 460 - diffArea.scrollTop;
         return {
           top,
@@ -543,7 +543,7 @@ describe("DiffView", () => {
     const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     HTMLElement.prototype.focus = focus;
     Element.prototype.getBoundingClientRect = function () {
-      if (this instanceof HTMLElement && this.classList.contains("scroll-box__viewport")) {
+      if (this instanceof HTMLElement && this.classList.contains("kit-scrollbox__viewport")) {
         return {
           top: 100,
           bottom: 500,
@@ -557,7 +557,7 @@ describe("DiffView", () => {
         } as DOMRect;
       }
       if (this instanceof HTMLElement && this.dataset.diffPath === "b.ts" && this.dataset.diffNewLine === "42") {
-        const diffArea = document.querySelector(".scroll-box__viewport") as HTMLDivElement;
+        const diffArea = document.querySelector(".kit-scrollbox__viewport") as HTMLDivElement;
         const top = 460 - diffArea.scrollTop;
         return {
           top,
@@ -628,7 +628,7 @@ describe("DiffView", () => {
     const consumeScrollTarget = vi.fn();
     const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     Element.prototype.getBoundingClientRect = function () {
-      if (this instanceof HTMLElement && this.classList.contains("scroll-box__viewport")) {
+      if (this instanceof HTMLElement && this.classList.contains("kit-scrollbox__viewport")) {
         return {
           top: 100,
           bottom: 500,
@@ -703,7 +703,7 @@ describe("DiffView", () => {
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
 
     Element.prototype.getBoundingClientRect = function () {
-      if (this instanceof HTMLElement && this.classList.contains("scroll-box__viewport")) {
+      if (this instanceof HTMLElement && this.classList.contains("kit-scrollbox__viewport")) {
         return {
           top: 100,
           bottom: 500,

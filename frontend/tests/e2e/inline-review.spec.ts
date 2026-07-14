@@ -1243,7 +1243,7 @@ test("preserves PR detail scroll positions while switching tabs", async ({ page 
   await expect.poll(async () => conversationScroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(350);
 
   await page.getByRole("button", { name: /Files changed/ }).click();
-  const diffArea = page.locator(".diff-area .scroll-box__viewport");
+  const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
   await expect(diffArea).toBeVisible();
   await diffArea.evaluate((element) => {
     element.scrollTop = 560;

@@ -14,8 +14,8 @@ test("grouped rail scroll indicator floats above sticky headers", async ({ page 
 
   const scrollArea = page.getByRole("region", { name: "Pull requests" });
   const scrollRoot = scrollArea.locator("..");
-  const indicator = scrollRoot.locator(".scroll-box__indicator");
-  const thumb = indicator.locator(".scroll-box__thumb");
+  const indicator = scrollRoot.locator(".kit-scrollbox__indicator");
+  const thumb = indicator.locator(".kit-scrollbox__thumb");
   const stickyHeader = scrollArea.locator(".sidebar-group-header").first();
   await constrainScrollArea(scrollArea);
 
@@ -37,7 +37,7 @@ test("grouped rail scroll indicator floats above sticky headers", async ({ page 
   const stacking = await scrollArea.evaluate((node) => {
     const root = node.parentElement;
     const header = node.querySelector(".sidebar-group-header");
-    const overlay = root?.querySelector(".scroll-box__indicator");
+    const overlay = root?.querySelector(".kit-scrollbox__indicator");
     return {
       header: Number.parseInt(getComputedStyle(header!).zIndex, 10),
       overlay: Number.parseInt(getComputedStyle(overlay!).zIndex, 10),
@@ -74,7 +74,7 @@ test("PR, issue, and workspace rails share labeled overlay scroll regions", asyn
     const scrollArea = scope.getByRole("region", { name: rail.label, exact: true });
     await expect(scrollArea).toBeVisible();
     await expect(scrollArea).toHaveAttribute("tabindex", "0");
-    await expect(scrollArea.locator("..").locator(".scroll-box__indicator")).toHaveCount(1);
+    await expect(scrollArea.locator("..").locator(".kit-scrollbox__indicator")).toHaveCount(1);
   }
 });
 

@@ -1976,7 +1976,7 @@ test.describe("diff view", () => {
     await waitForSidebarFilesLoaded(page);
 
     const mainArea = page.locator(".kit-sidebar-layout__main");
-    const diffArea = page.locator(".diff-area .scroll-box__viewport");
+    const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
     await expect.poll(() => mainArea.evaluate((el) => Math.round(el.scrollTop))).toBe(0);
 
     await clickTreeFileItem(page, "src/pkg9/file_45.go");
@@ -1993,7 +1993,7 @@ test.describe("diff view", () => {
     await waitForSidebarFilesLoaded(page);
 
     const mainArea = page.locator(".kit-sidebar-layout__main");
-    const diffArea = page.locator(".diff-area .scroll-box__viewport");
+    const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
     await page.evaluate(() => {
       document.documentElement.style.overflow = "hidden";
       document.body.style.overflow = "hidden";
@@ -2069,7 +2069,7 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    const diffArea = page.locator(".diff-area .scroll-box__viewport");
+    const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
 
     await clickTreeFileItem(page, "src/pkg8/file_40.go");
     await expect(page.locator('[data-file-path="src/pkg8/file_40.go"]')).toBeVisible();
@@ -2226,7 +2226,7 @@ test.describe("diff view", () => {
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
-    await page.locator(".diff-area .scroll-box__viewport").evaluate((area) => {
+    await page.locator(".diff-area .kit-scrollbox__viewport").evaluate((area) => {
       area.scrollTop = area.scrollHeight * 0.55;
       area.dispatchEvent(new Event("scroll", { bubbles: true }));
     });
@@ -3218,7 +3218,7 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    const diffArea = page.locator(".diff-area .scroll-box__viewport");
+    const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
     const schemaFile = page.locator('[data-file-path="src/api/generated/schema.ts"]');
     const detailFile = page.locator('[data-file-path="src/components/detail/PullDetail.svelte"]');
 
@@ -3721,7 +3721,7 @@ test.describe("diff view performance", () => {
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
-    await page.locator(".diff-area .scroll-box__viewport").evaluate((area) => {
+    await page.locator(".diff-area .kit-scrollbox__viewport").evaluate((area) => {
       for (let i = 0; i < 16; i++) {
         area.scrollTop = area.scrollHeight * ((i + 1) / 16);
         area.dispatchEvent(new Event("scroll", { bubbles: true }));
@@ -3766,7 +3766,7 @@ test.describe("diff view performance", () => {
     await page.waitForTimeout(500);
     expect(await renderedPierreDiffCount(page)).toBeLessThan(largeDiff.files.length);
 
-    await page.locator(".diff-area .scroll-box__viewport").evaluate((area) => {
+    await page.locator(".diff-area .kit-scrollbox__viewport").evaluate((area) => {
       area.scrollTop = area.scrollHeight;
       area.dispatchEvent(new Event("scroll", { bubbles: true }));
     });
@@ -3791,7 +3791,7 @@ test.describe("diff view performance", () => {
     // clip zeroes the intersection and the pre-render buffer disappears.
     const bufferState = () =>
       page.evaluate(() => {
-        const viewport = document.querySelector(".diff-area .scroll-box__viewport");
+        const viewport = document.querySelector(".diff-area .kit-scrollbox__viewport");
         if (!viewport) return { inMargin: 0, rendered: 0 };
         const viewportBottom = viewport.getBoundingClientRect().bottom;
         const inMargin = Array.from(document.querySelectorAll(".diff-file")).filter((file) => {

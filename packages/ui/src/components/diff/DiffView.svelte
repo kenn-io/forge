@@ -10,7 +10,7 @@
   const stores = getStores();
   const diffStore = stores.diff;
   const diffReviewDraft = stores.diffReviewDraft;
-  import ScrollBox from "../shared/ScrollBox.svelte";
+  import { ScrollBox } from "@kenn-io/kit-ui";
   import DiffFileComponent from "./DiffFile.svelte";
   import DiffReviewDraftTray from "./DiffReviewDraftTray.svelte";
 

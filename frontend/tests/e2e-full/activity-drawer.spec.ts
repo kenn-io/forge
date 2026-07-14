@@ -1013,7 +1013,7 @@ test.describe("activity split view and detail drawers", () => {
     const detail = await openActivityPRSplit(page);
     await detail.locator(".detail-tab", { hasText: "Files changed" }).click();
 
-    const diffArea = detail.locator(".diff-area .scroll-box__viewport");
+    const diffArea = detail.locator(".diff-area .kit-scrollbox__viewport");
 
     await expect(diffArea).toBeVisible();
     await expect(detail.locator(".diff-file")).toHaveCount(20);
@@ -1051,7 +1051,7 @@ test.describe("activity split view and detail drawers", () => {
     await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
 
     const sidebar = drawer.locator(".files-layout > .files-sidebar");
-    const diffArea = drawer.locator(".files-layout > .files-main .diff-area .scroll-box__viewport");
+    const diffArea = drawer.locator(".files-layout > .files-main .diff-area .kit-scrollbox__viewport");
 
     await expect(diffArea).toBeVisible();
     await expect(treeFileItems(sidebar)).toHaveCount(20);
@@ -1085,7 +1085,7 @@ test.describe("activity split view and detail drawers", () => {
     await expect(treeFileItem(sidebar, "src/file_11.go")).toHaveAttribute("aria-selected", "true");
 
     releaseDiff();
-    const diffArea = filesMain.locator(".diff-area .scroll-box__viewport");
+    const diffArea = filesMain.locator(".diff-area .kit-scrollbox__viewport");
     await expect(diffArea).toBeVisible();
     await expect(drawer.locator(".diff-file")).toHaveCount(20);
     await expectDiffFileVisibleInScrollArea(diffArea, "src/file_11.go");
@@ -1452,7 +1452,7 @@ test.describe("activity split view and detail drawers", () => {
     // The diff-area inside the drawer is the internal scroll
     // container. Wait for all 20 seeded files to render before
     // measuring overflow.
-    const diffArea = drawer.locator(".diff-area .scroll-box__viewport");
+    const diffArea = drawer.locator(".diff-area .kit-scrollbox__viewport");
     await expect(diffArea).toBeVisible();
     await expect(drawer.locator(".diff-file")).toHaveCount(20);
 

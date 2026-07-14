@@ -42,7 +42,7 @@ test.describe("threaded activity sticky headers", () => {
     // and a later section is in view; the sticky column header must remain
     // at (or near) its original top y to stay in viewport.
     await page.evaluate(() => {
-      const view = document.querySelector('.scroll-box__viewport[aria-label="Threaded activity"]');
+      const view = document.querySelector('.kit-scrollbox__viewport[aria-label="Threaded activity"]');
       if (view) view.scrollTop = 500;
     });
 
@@ -85,7 +85,7 @@ test.describe("threaded activity sticky headers", () => {
 
     // Scroll into the second section so it has the chance to stick.
     await page.evaluate(() => {
-      const view = document.querySelector('.scroll-box__viewport[aria-label="Threaded activity"]');
+      const view = document.querySelector('.kit-scrollbox__viewport[aria-label="Threaded activity"]');
       if (view) view.scrollTop = 400;
     });
 

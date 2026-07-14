@@ -3,7 +3,7 @@
   import { getStores, getNavigate, getActions } from "../context.js";
   import { groupByWorkflow } from "../stores/workflow.svelte.js";
   import PullItem from "../components/sidebar/PullItem.svelte";
-  import ScrollBox from "../components/shared/ScrollBox.svelte";
+  import { ScrollBox } from "@kenn-io/kit-ui";
   import IssueItem from "../components/sidebar/IssueItem.svelte";
   import type { Issue, PullRequest } from "../api/types.js";
   import {

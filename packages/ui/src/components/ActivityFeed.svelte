@@ -10,7 +10,7 @@
   } from "../stores/activity.svelte.js";
   import { getStores, getNavigate, getSidebar } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
-  import ScrollBox from "./shared/ScrollBox.svelte";
+  import { ScrollBox } from "@kenn-io/kit-ui";
   import { FilterDropdown } from "@kenn-io/kit-ui";
   import {
     isDefaultBranchActivity,

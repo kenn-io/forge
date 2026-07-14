@@ -124,7 +124,7 @@ export { default as CommentEditor } from "./components/detail/CommentEditor.svel
 export { Chip } from "@kenn-io/kit-ui";
 export { default as ItemKindChip } from "./components/shared/ItemKindChip.svelte";
 export { default as GroupedSidebarSection } from "./components/shared/GroupedSidebarSection.svelte";
-export { default as ScrollBox } from "./components/shared/ScrollBox.svelte";
+export { ScrollBox } from "@kenn-io/kit-ui";
 export { default as ItemStateChip } from "./components/shared/ItemStateChip.svelte";
 export { CollapsibleSidebar, SidebarToggle } from "@kenn-io/kit-ui";
 export { DiffStats } from "@kenn-io/kit-ui";

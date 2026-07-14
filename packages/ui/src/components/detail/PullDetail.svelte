@@ -50,7 +50,7 @@
   import { Button, Chip } from "@kenn-io/kit-ui";
   import { Spinner } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
-  import ScrollBox from "../shared/ScrollBox.svelte";
+  import { ScrollBox } from "@kenn-io/kit-ui";
   import LabelPicker from "./LabelPicker.svelte";
   import UserListEditor from "./UserListEditor.svelte";
   import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";

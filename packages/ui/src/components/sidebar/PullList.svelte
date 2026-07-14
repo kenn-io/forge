@@ -3,7 +3,7 @@
   import { groupByWorkflow } from "../../stores/workflow.svelte.js";
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
-  import ScrollBox from "../shared/ScrollBox.svelte";
+  import { ScrollBox } from "@kenn-io/kit-ui";
   import PullItem from "./PullItem.svelte";
   import { Chip, SearchInput } from "@kenn-io/kit-ui";
   import { FilterDropdown } from "@kenn-io/kit-ui";

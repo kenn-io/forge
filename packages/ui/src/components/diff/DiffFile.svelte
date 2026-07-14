@@ -167,7 +167,7 @@
     if (typeof IntersectionObserver === "undefined") {
       inViewport = true;
     } else if (fileEl) {
-      const root = fileEl.closest(".scroll-box__viewport");
+      const root = fileEl.closest(".kit-scrollbox__viewport");
       observer = new IntersectionObserver(
         (entries) => { inViewport = entries[0]!.isIntersecting; },
         { root, rootMargin: "600px 0px" },

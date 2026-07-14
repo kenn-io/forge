@@ -2,7 +2,7 @@
   import { getStores, getNavigate, getSidebar } from "../../context.js";
   import IssueItem from "./IssueItem.svelte";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
-  import ScrollBox from "../shared/ScrollBox.svelte";
+  import { ScrollBox } from "@kenn-io/kit-ui";
   import { Chip, SearchInput } from "@kenn-io/kit-ui";
   import { FilterDropdown } from "@kenn-io/kit-ui";
   import { SidebarToggle } from "@kenn-io/kit-ui";

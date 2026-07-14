@@ -385,7 +385,7 @@ test.describe("workspace sidebar full-stack", () => {
       // in a single pass before dismissing it.
       await viewTrigger.click();
       await page
-        .locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", { hasText: "Show org names" })
+        .locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", { hasText: "Hide org name" })
         .click();
       await page
         .locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", { hasText: "Show PR diff stats" })

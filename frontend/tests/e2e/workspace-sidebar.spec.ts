@@ -3644,7 +3644,7 @@ test.describe("workspace list sorting", () => {
 
     const viewTrigger = page.getByTitle("View workspace options");
     await viewTrigger.click();
-    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Show org names" }).click();
+    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Hide org name" }).click();
 
     await expect(groupLabels).toHaveText([
       "github/github.com/acme/widgets",

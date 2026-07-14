@@ -406,6 +406,7 @@ const config = {
       "@lucide/svelte/icons/columns-2",
       "@lucide/svelte/icons/copy",
       "@lucide/svelte/icons/dot",
+      "@lucide/svelte/icons/download",
       "@lucide/svelte/icons/ellipsis",
       "@lucide/svelte/icons/eraser",
       "@lucide/svelte/icons/external-link",

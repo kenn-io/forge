@@ -28,12 +28,12 @@ function renderWorkspace(overrides: Partial<DocsRoute> = {}) {
 
 async function openFolderMenu() {
   const trigger = await waitFor(() => {
-    const btn = screen.getByRole("button", { name: "Switch folder" });
-    if (btn.hasAttribute("disabled")) throw new Error("folder chip still disabled");
-    return btn;
+    const control = screen.getByRole("combobox", { name: /^Switch folder:/ });
+    if (control.hasAttribute("disabled")) throw new Error("folder selector still disabled");
+    return control;
   });
   await fireEvent.click(trigger);
-  return screen.getByRole("listbox", { name: "Folders" });
+  return screen.getByRole("listbox");
 }
 
 describe("DocsWorkspace", () => {
@@ -271,34 +271,28 @@ describe("DocsWorkspace", () => {
     expect(screen.getByRole("heading", { name: /Welcome to Notes/ })).toBeTruthy();
   });
 
-  test("Add folder entry opens the AddFolderDialog", async () => {
+  test("Add folder action opens the AddFolderDialog", async () => {
     renderWorkspace();
-    const menu = await openFolderMenu();
-    await fireEvent.click(within(menu).getByRole("button", { name: /Add folder/ }));
+    await fireEvent.click(await screen.findByRole("button", { name: /Add folder/ }));
     await waitFor(() => screen.getByRole("dialog", { name: "Add folder" }));
   });
 
-  test("renaming a folder from the menu updates the list", async () => {
-    const { onRouteChange } = renderWorkspace();
-    await waitFor(() => screen.getByRole("button", { name: "Switch folder" }));
-    onRouteChange.mockClear();
-    const menu = await openFolderMenu();
-    await fireEvent.click(within(menu).getByRole("button", { name: "Rename Notes" }));
+  test("renaming the active folder updates the selector", async () => {
+    renderWorkspace({ folder: "notes" });
+    await fireEvent.click(await screen.findByRole("button", { name: "Rename Notes" }));
     const dialog = await waitFor(() => screen.getByRole("dialog", { name: "Rename folder" }));
     const input = within(dialog).getByRole("textbox") as HTMLInputElement;
     await fireEvent.input(input, { target: { value: "Personal Notes" } });
     await fireEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Rename folder" })).toBeNull());
-    const reopened = await openFolderMenu();
-    expect(within(reopened).getByRole("option", { name: "Personal Notes" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Switch folder: Personal Notes" })).toBeTruthy();
   });
 
   test("removing the active folder switches to the remaining one", async () => {
     const { onRouteChange } = renderWorkspace({ folder: "notes" });
-    await waitFor(() => screen.getByRole("button", { name: "Switch folder" }));
+    await screen.findByRole("combobox", { name: "Switch folder: Notes" });
     onRouteChange.mockClear();
-    const menu = await openFolderMenu();
-    await fireEvent.click(within(menu).getByRole("button", { name: "Remove Notes" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Remove Notes" }));
     const dialog = await waitFor(() => screen.getByRole("dialog", { name: "Remove folder" }));
     await fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
     await waitFor(() =>

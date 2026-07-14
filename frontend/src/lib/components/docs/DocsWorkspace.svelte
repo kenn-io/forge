@@ -1,9 +1,6 @@
 <script lang="ts">
-  import Check from "@lucide/svelte/icons/check";
-  import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import Download from "@lucide/svelte/icons/download";
   import FileText from "@lucide/svelte/icons/file-text";
-  import FolderIcon from "@lucide/svelte/icons/folder";
   import MoreHorizontal from "@lucide/svelte/icons/more-horizontal";
   import PanelRight from "@lucide/svelte/icons/panel-right";
   import PanelRightClose from "@lucide/svelte/icons/panel-right-close";
@@ -36,6 +33,8 @@
   import { buildMentionCompletionSource, collectMentionNames } from "./mentionCompletion";
   import { buildWikilinkCompletionSource } from "./wikilinkCompletion";
   import type { IssueSummary, KataAPI } from "./docsIssueTypes";
+  import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
+  import { IconButton } from "@kenn-io/kit-ui";
 
   interface Props {
     route: DocsRoute;
@@ -561,12 +560,10 @@
     });
   });
 
-  function isFolderActive(id: string): boolean {
-    return route.folder === id;
-  }
-
   let activeFolder = $derived(folders.find((folder) => folder.id === route.folder));
-  let activeFolderName = $derived(activeFolder?.name ?? "Docs");
+  let folderOptions = $derived<SelectDropdownOption[]>(
+    folders.map((folder) => ({ value: folder.id, label: folder.name })),
+  );
   let staleFolderDaemon = $derived.by(() => {
     if (!getKataDaemonRosterLoaded()) return undefined;
     const daemon = activeFolder?.daemon?.trim();
@@ -580,9 +577,6 @@
   let activeFolderIsRepo = $derived(
     route.folder ? folderIsRepo[route.folder] === true : false,
   );
-
-  let folderMenuOpen = $state(false);
-  let folderMenuRoot: HTMLDivElement | null = $state(null);
 
   // Folder-management modal state. AddFolderDialog owns its own
   // form; rename/remove are local because they only need a tiny
@@ -835,25 +829,7 @@
     return () => window.removeEventListener("pointerdown", onPointerDown, true);
   });
 
-  function toggleFolderMenu() {
-    folderMenuOpen = !folderMenuOpen;
-  }
-
-  function closeFolderMenu() {
-    folderMenuOpen = false;
-  }
-
-  function pickFolder(id: string) {
-    selectFolder(id);
-    closeFolderMenu();
-  }
-
-  function handleFolderMenuKeydown(event: KeyboardEvent) {
-    if (event.key === "Escape") closeFolderMenu();
-  }
-
   function openAddFolder() {
-    closeFolderMenu();
     addFolderOpen = true;
   }
 
@@ -864,7 +840,6 @@
   }
 
   function openRenameFolder(folder: Folder) {
-    closeFolderMenu();
     renameFolderTarget = folder;
     renameFolderValue = folder.name;
     renameFolderError = null;
@@ -896,7 +871,6 @@
   }
 
   function openRemoveFolder(folder: Folder) {
-    closeFolderMenu();
     removeFolderTarget = folder;
     removeFolderError = null;
   }
@@ -933,17 +907,6 @@
       removingFolder = false;
     }
   }
-
-  $effect(() => {
-    if (!folderMenuOpen) return;
-    function onPointerDown(event: PointerEvent) {
-      if (!folderMenuRoot) return;
-      if (event.target instanceof Node && folderMenuRoot.contains(event.target)) return;
-      closeFolderMenu();
-    }
-    window.addEventListener("pointerdown", onPointerDown, true);
-    return () => window.removeEventListener("pointerdown", onPointerDown, true);
-  });
 
   async function onPublishedSuccess(result: GitPublishResponse) {
     gitNotice = {
@@ -992,144 +955,76 @@
 
 <div class="docs-workspace" bind:this={workspaceRoot}>
   <div class="docs-list">
-    <div
-      class="list-header"
-      bind:this={folderMenuRoot}
-      onkeydown={handleFolderMenuKeydown}
-      role="presentation"
-    >
-      {#if !loadingFolders && folders.length === 0 && !foldersError}
-        <!-- No folders configured AND no load error: the chip itself is
-             the "Add folder" CTA so the user isn't staring at a
-             disabled "Docs" label with a greyed-out + next to it.
-             When loading failed we keep the regular menu chip below so
-             the error message inside the menu remains reachable. -->
-        <button
-          type="button"
-          class="folder-chip folder-chip--add"
-          onclick={openAddFolder}
-        >
-          <FolderIcon size={14} strokeWidth={1.75} />
-          <span class="folder-chip-name">Add folder…</span>
-          <Plus size={14} strokeWidth={2} />
-        </button>
-      {:else}
-        <button
-          type="button"
-          class="folder-chip"
-          aria-label="Switch folder"
-          aria-haspopup="listbox"
-          aria-expanded={folderMenuOpen}
-          onclick={toggleFolderMenu}
+    <div class="list-header">
+      {#if folders.length > 0}
+        <SelectDropdown
+          class="folder-select"
+          title="Switch folder"
+          value={route.folder ?? folders[0]?.id ?? ""}
+          options={folderOptions}
           disabled={loadingFolders}
+          onchange={selectFolder}
+        />
+      {:else}
+        <span
+          class:folder-status--error={Boolean(foldersError)}
+          class="folder-status"
+          role="status"
         >
-          <FolderIcon size={14} strokeWidth={1.75} />
-          <span class="folder-chip-name">{activeFolderName}</span>
-          <ChevronDown size={14} strokeWidth={1.75} />
-        </button>
+          {foldersError ?? (loadingFolders ? "Loading folders…" : "No folders configured.")}
+        </span>
+      {/if}
+      <div class="folder-actions">
+        <IconButton size="sm" ariaLabel="Add folder" onclick={openAddFolder}>
+          <Plus size={14} strokeWidth={2} />
+        </IconButton>
         {#if route.folder}
-          <button
-            type="button"
-            class="list-action"
-            aria-label="New file"
-            title="New file"
-            onclick={openNewFileModal}
-          >
-            <Plus size={14} strokeWidth={2} />
-          </button>
+          <IconButton size="sm" ariaLabel="New file" onclick={openNewFileModal}>
+            <FileText size={13} strokeWidth={1.75} />
+          </IconButton>
           {#if activeFolderIsRepo}
             <!-- Disabled while the editor is open: a pull that rewrites the
                  open document would recreate the editor and silently discard
                  an unsaved draft. -->
-            <button
-              type="button"
-              class="list-action"
-              aria-label="Pull from git"
+            <IconButton
+              size="sm"
+              ariaLabel="Pull from git"
               title="Pull from git"
               onclick={pullFromGit}
               disabled={pulling || editing}
             >
               <Download size={14} strokeWidth={1.75} />
-            </button>
-            <button
-              type="button"
-              class="list-action"
-              aria-label="Publish to git"
+            </IconButton>
+            <IconButton
+              size="sm"
+              ariaLabel="Publish to git"
               title="Commit & push to git"
               onclick={() => (publishOpen = true)}
             >
               <Upload size={14} strokeWidth={1.75} />
-            </button>
+            </IconButton>
+          {/if}
+          {#if activeFolder}
+            <IconButton
+              size="sm"
+              ariaLabel={`Rename ${activeFolder.name}`}
+              title="Rename folder"
+              onclick={() => openRenameFolder(activeFolder!)}
+            >
+              <Pencil size={12} strokeWidth={1.75} />
+            </IconButton>
+            <IconButton
+              size="sm"
+              tone="danger"
+              ariaLabel={`Remove ${activeFolder.name}`}
+              title="Remove folder"
+              onclick={() => openRemoveFolder(activeFolder!)}
+            >
+              <Trash2 size={12} strokeWidth={1.75} />
+            </IconButton>
           {/if}
         {/if}
-      {/if}
-      {#if folderMenuOpen}
-        <!-- kit-ui-check-ignore: folder switcher renders error/empty message rows kit SelectDropdown lacks (kit-ui#ry18) -->
-        <ul class="folder-menu kit-popover-card" role="listbox" aria-label="Folders">
-          {#if foldersError}
-            <li class="folder-menu-msg error">{foldersError}</li>
-          {:else if folders.length === 0}
-            <li class="folder-menu-msg muted">No folders configured.</li>
-          {:else}
-            {#each folders as folder (folder.id)}
-              <li class="folder-menu-li">
-                <button
-                  type="button"
-                  class="folder-menu-row"
-                  class:active={isFolderActive(folder.id)}
-                  role="option"
-                  aria-selected={isFolderActive(folder.id)}
-                  onclick={() => pickFolder(folder.id)}
-                >
-                  <span class="folder-menu-check" aria-hidden="true">
-                    {#if isFolderActive(folder.id)}
-                      <Check size={13} strokeWidth={2} />
-                    {/if}
-                  </span>
-                  <span class="folder-menu-name">{folder.name}</span>
-                </button>
-                <div class="folder-menu-actions">
-                  <button
-                    type="button"
-                    class="folder-menu-icon"
-                    aria-label={`Rename ${folder.name}`}
-                    title="Rename"
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      openRenameFolder(folder);
-                    }}
-                  >
-                    <Pencil size={12} strokeWidth={1.75} />
-                  </button>
-                  <button
-                    type="button"
-                    class="folder-menu-icon folder-menu-icon--danger"
-                    aria-label={`Remove ${folder.name}`}
-                    title="Remove"
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      openRemoveFolder(folder);
-                    }}
-                  >
-                    <Trash2 size={12} strokeWidth={1.75} />
-                  </button>
-                </div>
-              </li>
-            {/each}
-          {/if}
-          <li class="folder-menu-divider" role="presentation"></li>
-          <li>
-            <button
-              type="button"
-              class="folder-menu-add"
-              onclick={openAddFolder}
-            >
-              <Plus size={13} strokeWidth={2} />
-              <span>Add folder…</span>
-            </button>
-          </li>
-        </ul>
-      {/if}
+      </div>
     </div>
 
     <div class="list-body">
@@ -1554,216 +1449,27 @@
     border-bottom: 1px solid var(--border-muted);
   }
 
-  .list-action {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    border-radius: var(--radius-sm);
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-  }
-
-  .list-action:hover:not(:disabled) {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-    border-color: var(--border-muted);
-  }
-
-  .list-action:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-
-  .folder-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    padding: 6px 8px;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-primary);
-    font-size: var(--font-size-md);
-    font-weight: 600;
-    text-align: left;
-    cursor: pointer;
-    border: 1px solid transparent;
-  }
-
-  .folder-chip:hover:not(:disabled),
-  .folder-chip[aria-expanded="true"] {
-    background: var(--bg-surface-hover);
-    border-color: var(--border-muted);
-  }
-
-  .folder-chip:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .folder-chip--add {
-    color: var(--text-muted);
-    font-weight: 500;
-    font-style: italic;
-  }
-
-  .folder-chip--add:hover {
-    color: var(--text-primary);
-  }
-
-  .folder-chip-name {
-    flex: 1;
+  :global(.folder-select) {
+    flex: 1 1 auto;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
-  .folder-chip :global(svg) {
-    color: var(--text-muted);
-  }
-
-  .folder-menu {
-    position: absolute;
-    top: calc(100% - 2px);
-    left: 8px;
-    right: 8px;
-    z-index: 30;
-    list-style: none;
-    margin: 0;
-    padding: 4px;
-    max-height: 320px;
-    overflow: auto;
-  }
-
-  .folder-menu-msg {
-    padding: 8px 10px;
-    font-size: var(--font-size-sm);
-    color: var(--text-muted);
-  }
-
-  .folder-menu-msg.error {
-    color: var(--accent-red);
-  }
-
-  .folder-menu-row {
-    width: 100%;
+  .folder-actions {
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
-    gap: 6px;
-    padding: 6px 8px;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    text-align: left;
-    border: none;
-    cursor: pointer;
+    gap: var(--space-1);
   }
 
-  .folder-menu-row:hover {
-    background: var(--bg-surface-hover);
-  }
-
-  .folder-menu-row.active {
-    color: var(--accent-blue);
-  }
-
-  .folder-menu-check {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 14px;
-    color: var(--accent-blue);
-  }
-
-  .folder-menu-name {
-    flex: 1;
+  .folder-status {
+    flex: 1 1 auto;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .folder-menu-li {
-    position: relative;
-    display: flex;
-    align-items: center;
-  }
-
-  .folder-menu-li .folder-menu-row {
-    flex: 1;
-    padding-right: 56px;
-  }
-
-  .folder-menu-actions {
-    position: absolute;
-    right: 4px;
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    gap: 2px;
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .folder-menu-li:hover .folder-menu-actions,
-  .folder-menu-li:focus-within .folder-menu-actions {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .folder-menu-icon {
-    width: 22px;
-    height: 22px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: none;
-    background: none;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    cursor: pointer;
-  }
-
-  .folder-menu-icon:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .folder-menu-icon--danger:hover {
-    color: var(--accent-red);
-  }
-
-  .folder-menu-divider {
-    height: 1px;
-    background: var(--border-default);
-    margin: 4px 0;
-    list-style: none;
-  }
-
-  .folder-menu-add {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 8px;
-    border: none;
-    background: none;
     color: var(--text-muted);
     font-size: var(--font-size-sm);
-    text-align: left;
-    cursor: pointer;
-    border-radius: var(--radius-sm);
   }
 
-  .folder-menu-add:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
+  .folder-status--error {
+    color: var(--accent-red);
   }
 
   .list-body {

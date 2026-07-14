@@ -11,6 +11,7 @@ import type {
   GitPublishChange,
   GitPublishChangeStatus,
   GitPublishResponse,
+  GitPullResponse,
   GitStatusEntry,
   GitStatusResponse,
   SearchHit,
@@ -316,6 +317,30 @@ export function createMockDocsBackend(options: MockDocsBackendOptions = {}): Doc
         upstream: repo.upstream,
         pushed: true,
         files: publishable,
+      };
+    },
+    async gitPull(folderID): Promise<GitPullResponse> {
+      const idx = state.findIndex((v) => v.meta.id === folderID);
+      if (idx < 0) throw makeError(404, "folder_not_found", `folder not found: ${folderID}`);
+      const repo = repoState[idx]!;
+      if (!repo.isRepo) {
+        throw makeError(400, "not_a_git_repo", "folder is not a git repository");
+      }
+      if (!repo.upstream) {
+        throw makeError(
+          400,
+          "no_upstream",
+          `No upstream is configured for ${repo.branch}. Run: git branch --set-upstream-to=origin/${repo.branch} ${repo.branch}`,
+        );
+      }
+      // The mock has no remote to advance, so a pull is always up to date.
+      const commit = generateMockSHA();
+      return {
+        branch: repo.branch,
+        upstream: repo.upstream,
+        up_to_date: true,
+        commit,
+        short_commit: commit.slice(0, 7),
       };
     },
     blobURL(folderID, relPath) {

@@ -145,6 +145,15 @@ export interface GitPublishResponse {
   files: GitPublishChange[];
 }
 
+// Wire shape returned by POST /git/pull. Mirrors internal/docs.PullResponse.
+export interface GitPullResponse {
+  branch: string;
+  upstream: string;
+  up_to_date: boolean;
+  commit: string;
+  short_commit: string;
+}
+
 // push_failed_after_commit carries an extra field beyond the standard
 // error envelope: the SHA of the local commit that succeeded. DocsAPIError
 // callers can inspect `commit` to render the "local commit exists, push

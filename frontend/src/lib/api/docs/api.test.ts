@@ -296,3 +296,43 @@ test("file operations map server reasons onto frontend error codes", async () =>
     });
   }
 });
+
+test("gitPull POSTs to /git/pull and returns the parsed response", async () => {
+  const { fn, calls } = fakeFetch([
+    {
+      status: 200,
+      body: {
+        branch: "main",
+        upstream: "origin/main",
+        up_to_date: false,
+        commit: "abcdef1234567890abcdef1234567890abcdef12",
+        short_commit: "abcdef1",
+      },
+    },
+  ]);
+  const api = createDocsAPI({ fetch: fn });
+  const res = await api.gitPull("notes");
+  expect(calls[0]!.url).toContain("/api/v1/docs/folders/notes/git/pull");
+  expect(calls[0]!.init?.method).toBe("POST");
+  expect(res.up_to_date).toBe(false);
+  expect(res.short_commit).toBe("abcdef1");
+});
+
+test("gitPull maps server pull reasons onto frontend error codes", async () => {
+  const cases: Array<{ reason: string; code: string; status: number }> = [
+    { reason: "diverged", code: "diverged", status: 409 },
+    { reason: "pullFailed", code: "pull_failed", status: 502 },
+    { reason: "gitOperationInProgress", code: "git_operation_in_progress", status: 409 },
+    { reason: "noUpstream", code: "no_upstream", status: 400 },
+  ];
+  for (const { reason, code, status } of cases) {
+    const { fn } = fakeFetch([
+      { status, body: problemWithDetails(status, "conflict", `pull refused: ${reason}`, { reason }) },
+    ]);
+    const api = createDocsAPI({ fetch: fn });
+    const err = await api.gitPull("notes").catch((e: unknown) => e as Error & { code?: string; status?: number });
+    expect(err).toBeInstanceOf(Error);
+    expect((err as { code?: string }).code).toBe(code);
+    expect((err as { status?: number }).status).toBe(status);
+  }
+});

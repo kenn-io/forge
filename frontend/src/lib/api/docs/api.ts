@@ -6,6 +6,7 @@ import type {
   DocsPublishError,
   GitChangesResponse,
   GitPublishResponse,
+  GitPullResponse,
   GitStatusResponse,
   SearchResponse,
   TreeNode,
@@ -46,6 +47,9 @@ export interface DocsAPI {
   gitStatus(folderID: string): Promise<GitStatusResponse>;
   gitChanges(folderID: string): Promise<GitChangesResponse>;
   gitPublish(folderID: string, message: string): Promise<GitPublishResponse>;
+  // Fast-forward the folder's branch to its upstream. Throws DocsAPIError
+  // with code "diverged" when local and remote history have both moved.
+  gitPull(folderID: string): Promise<GitPullResponse>;
   blobURL(folderID: string, relPath: string): string;
 }
 
@@ -181,6 +185,13 @@ export function createDocsAPI(options: DocsAPIClientOptions = {}): DocsAPI {
       throwOnDocsError(error, response);
       return { ...data!, files: data!.files ?? [] } as GitPublishResponse;
     },
+    async gitPull(folderID) {
+      const { data, error, response } = await api.POST("/docs/folders/{id}/git/pull", {
+        params: { path: { id: folderID } },
+      });
+      throwOnDocsError(error, response);
+      return data as GitPullResponse;
+    },
     blobURL(folderID, relPath) {
       return blobURLFor(folderID, relPath);
     },
@@ -238,6 +249,12 @@ function docsErrorCodeFromEnvelope(
         return "push_failed_after_commit";
       case "unsafeGitConfig":
         return "unsafe_git_config";
+      case "diverged":
+        return "diverged";
+      case "pullFailed":
+        return "pull_failed";
+      case "gitOperationInProgress":
+        return "git_operation_in_progress";
       case "conflict":
         return "conflict";
       case "alreadyExists":

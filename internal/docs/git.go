@@ -20,10 +20,14 @@ import (
 // folder. StripEnv drops inherited GIT_* variables so a docs git command
 // can never bind to another repository or splice in caller config, and the
 // secret stripping keeps middleman and msgvault credentials out of git
-// child processes. Unlike gitcmd.New(), global and system config stay
-// readable: docs commits rely on the maintainer's identity, filters, and
-// credential helpers. A package variable so tests can substitute fully
-// isolated config.
+// child processes. Stripping is deliberately wholesale — env-based
+// customization such as GIT_SSH_COMMAND and GIT_AUTHOR_*/GIT_COMMITTER_*
+// goes too, rather than resurrecting a hand-maintained allowlist; the
+// supported customization surface is gitconfig (core.sshCommand,
+// user.name/user.email, credential.helper). Unlike gitcmd.New(), global
+// and system config stay readable: docs commits rely on the maintainer's
+// identity, filters, and credential helpers. A package variable so tests
+// can substitute fully isolated config.
 var docsGitBase = gitcmd.Runner{Env: stripDocsSecretEnv(os.Environ()), StripEnv: true}
 
 // emptyHooksDir is an empty directory used as core.hooksPath so that

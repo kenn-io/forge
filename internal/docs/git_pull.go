@@ -50,10 +50,13 @@ type PullResponse struct {
 // neutralizes the surfaces that need no trust decision at all (hooks,
 // fsmonitor, transport allowlist, stripped env).
 //
-// Nothing here can silently overwrite local work: the fast-forward
-// checkout is git's own, and it refuses to touch tracked files whose
-// worktree content differs from HEAD — the same protection a terminal
-// pull gives against a concurrent editor save.
+// Overwrite behavior is exactly a terminal pull's, no more and no less:
+// the fast-forward checkout is git's own, so it refuses to touch tracked
+// files whose worktree content differs from HEAD (the same protection a
+// terminal pull gives against a concurrent editor save), and it applies
+// git's standard rule that a gitignored untracked file may be replaced
+// when an incoming commit starts tracking the same path. Guarding beyond
+// git's own semantics is deliberately out of scope.
 func (r *Registry) GitPull(ctx context.Context, folderID string) (PullResponse, error) {
 	v, err := r.Lookup(folderID)
 	if err != nil {

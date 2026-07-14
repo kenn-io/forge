@@ -126,6 +126,10 @@ polling for state that the app already owns in JavaScript. Browser/e2e tests
 should call `reset()` before assertions, and the graph component clears the
 bridge on unmount so assertions do not read stale graph sessions.
 
+Playwright waits must observe the rendered state consumed by the next assertion,
+not only the request completion or control value that triggered it; route refinement
+can leave new controls paired with old or loading content (`frontend/tests/e2e-full/kata.spec.ts:1625`, `frontend/tests/e2e-full/repo-browser.spec.ts:480`).
+
 ## Huma API Contract
 
 Every public operation in `/api/v1/openapi.json` must have explicit OpenAPI

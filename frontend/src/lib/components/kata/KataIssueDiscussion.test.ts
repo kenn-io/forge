@@ -246,7 +246,7 @@ describe("KataIssueDiscussion", () => {
     await fireEvent.input(composer, { target: { value: "see #" } });
 
     await waitFor(() => {
-      expect(screen.getByRole("listbox", { name: "Insert task reference" })).toBeTruthy();
+      expect(screen.getByRole("listbox", { name: "Insert reference" })).toBeTruthy();
     });
     expect(api.search).toHaveBeenLastCalledWith({
       scope: { kind: "all" },
@@ -261,7 +261,7 @@ describe("KataIssueDiscussion", () => {
     await waitFor(() => {
       expect(composer.value).toBe("see #pay-rent ");
     });
-    expect(screen.queryByRole("listbox", { name: "Insert task reference" })).toBeNull();
+    expect(screen.queryByRole("listbox", { name: "Insert reference" })).toBeNull();
   });
 
   it("qualifies ambiguous task references even when the peer is outside the visible limit", async () => {
@@ -302,7 +302,7 @@ describe("KataIssueDiscussion", () => {
     await fireEvent.input(composer, { target: { value: "see #shared" } });
 
     await waitFor(() => {
-      expect(screen.getByRole("listbox", { name: "Insert task reference" })).toBeTruthy();
+      expect(screen.getByRole("listbox", { name: "Insert reference" })).toBeTruthy();
     });
     expect(screen.queryByText("Work shared")).toBeNull();
 
@@ -331,12 +331,12 @@ describe("KataIssueDiscussion", () => {
     await fireEvent.input(composer, { target: { value: "see #r" } });
 
     await waitFor(() => {
-      expect(screen.getByRole("listbox", { name: "Insert task reference" })).toBeTruthy();
+      expect(screen.getByRole("listbox", { name: "Insert reference" })).toBeTruthy();
     });
 
     await fireEvent.keyDown(composer, { key: "Escape" });
 
-    expect(screen.queryByRole("listbox", { name: "Insert task reference" })).toBeNull();
+    expect(screen.queryByRole("listbox", { name: "Insert reference" })).toBeNull();
     expect(composer.value).toBe("see #r");
   });
 

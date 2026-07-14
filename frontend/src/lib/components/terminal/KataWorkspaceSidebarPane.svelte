@@ -10,7 +10,7 @@
   } from "../../api/kata/taskTypes.js";
   import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
   import KataIssueDetail from "../../components/kata/KataIssueDetail.svelte";
-  import type { TypeaheadOption } from "../../components/shared/TypeaheadTrigger.svelte";
+  import type { TypeaheadOption } from "@kenn-io/kit-ui";
   import { computeRemoveMessageLinkPatch, readMessageLinks } from "../../messages/messageLinks.js";
   import type { MessageLinkRef } from "../../messages/types";
   import KataRecurrenceDialogs from "../../features/kata/KataRecurrenceDialogs.svelte";
@@ -67,7 +67,7 @@
       .filter((owner): owner is string => typeof owner === "string" && owner.trim().length > 0)
       .filter((owner, index, owners) => owners.indexOf(owner) === index)
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
-      .map((owner) => ({ value: owner, label: owner }));
+      .map((owner) => ({ name: owner, label: owner }));
   }
 
   function selectedMessageLinks(): MessageLinkRef[] {

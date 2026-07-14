@@ -4,10 +4,10 @@
   import FlagIcon from "@lucide/svelte/icons/flag";
   import UserIcon from "@lucide/svelte/icons/user-round";
   import XIcon from "@lucide/svelte/icons/x";
+  import { Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { Button, Chip, SelectDropdown } from "@middleman/ui";
   import type { KataTaskDetail } from "../../api/kata/taskTypes.js";
   import DatePicker from "../shared/DatePicker.svelte";
-  import TypeaheadTrigger, { type TypeaheadOption } from "../shared/TypeaheadTrigger.svelte";
 
   interface Props {
     issue: KataTaskDetail;
@@ -88,10 +88,6 @@
     return value ? formatDate(value) : "No due date";
   }
 
-  function ownerLabel(): string {
-    return issue.issue.owner ?? "Unassigned";
-  }
-
   function priorityLabel(): string {
     const priority = issue.issue.priority;
     return priority === undefined || priority === null ? "No priority" : `P${priority}`;
@@ -124,8 +120,8 @@
     }
   }
 
-  async function updateOwner(value: string | null): Promise<boolean> {
-    const owner = value?.trim() ?? "";
+  async function updateOwner(value: string): Promise<boolean> {
+    const owner = value.trim();
     const ok = owner
       ? await onAssignOwner(uid(), owner)
       : await onUnassignOwner(uid());
@@ -231,18 +227,17 @@
 
   <div class="property-pill property-pill--typeahead">
     <UserIcon size={13} strokeWidth={1.8} />
-    <TypeaheadTrigger
-      ariaLabel="Owner"
+    <Typeahead
       options={ownerOptions}
-      selected={issue.issue.owner ?? null}
+      value={issue.issue.owner ?? ""}
+      fallbackLabel="Unassigned"
+      placeholder="Owner"
       allowClear
       allowCustom
       clearLabel="Unassigned"
-      triggerPrefix="Owner"
-      triggerAriaLabel={`Owner: ${ownerLabel()}`}
-      placeholder="Owner..."
+      triggerPrefix="Owner:"
       emptyLabel="Enter an owner"
-      onChange={updateOwner}
+      onselect={updateOwner}
     />
   </div>
 
@@ -400,19 +395,19 @@
     margin-left: 8px;
   }
 
-  .property-pill--typeahead :global(.typeahead) {
+  .property-pill--typeahead :global(.kit-typeahead) {
     min-width: 136px;
   }
 
-  .property-pill--typeahead :global(.typeahead-trigger),
-  .property-pill--typeahead :global(.typeahead-input) {
+  .property-pill--typeahead :global(.kit-typeahead__trigger),
+  .property-pill--typeahead :global(.kit-typeahead__input) {
     min-height: 28px;
     height: 28px;
     border-color: transparent;
     background: var(--bg-inset);
   }
 
-  .property-pill--typeahead :global(.typeahead-trigger:hover) {
+  .property-pill--typeahead :global(.kit-typeahead__trigger:hover) {
     border-color: var(--border-default);
     background: var(--bg-surface-hover);
   }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { MentionTextarea, type MentionOption } from "@kenn-io/kit-ui";
   import { Button } from "@middleman/ui";
   import { renderMarkdown, renderMarkdownSync } from "@middleman/ui/utils/markdown";
   import { localDateTimeLabel, timeAgo } from "@middleman/ui/utils/time";
@@ -12,7 +13,6 @@
     KataTaskLink,
   } from "../../api/kata/taskTypes.js";
   import { describeKataEvent } from "../../features/kata/eventFormatter";
-  import TaskReferenceTextarea from "../shared/TaskReferenceTextarea.svelte";
 
   interface Props {
     issue: KataTaskDetail;
@@ -144,6 +144,26 @@
       void submitRelatedLink();
     }
   }
+
+  async function searchTaskReferences(query: string): Promise<MentionOption[]> {
+    const response = await api.search({
+      scope: { kind: "all" },
+      status: "open",
+      owner: "",
+      label: "",
+      query,
+    });
+    const shortIDCounts = new Map<string, number>();
+    for (const task of response.issues) {
+      shortIDCounts.set(task.short_id, (shortIDCounts.get(task.short_id) ?? 0) + 1);
+    }
+    return response.issues.map((task) => ({
+      id: task.uid,
+      insert: shortIDCounts.get(task.short_id) === 1 ? task.short_id : task.qualified_id,
+      label: task.title,
+      meta: task.project_name,
+    }));
+  }
 </script>
 
 <section class="task-links" aria-label="Links">
@@ -207,11 +227,12 @@
       void submitComment();
     }}
   >
-    <TaskReferenceTextarea
+    <MentionTextarea
       ariaLabel="Comment"
       rows={3}
       bind:value={commentDraft}
-      {api}
+      search={searchTaskReferences}
+      emptyLabel="No matching tasks"
       placeholder="Add a comment..."
     />
     <Button

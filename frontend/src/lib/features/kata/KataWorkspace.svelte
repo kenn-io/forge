@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { IconButton } from "@kenn-io/kit-ui";
+  import { IconButton, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { showFlash } from "@middleman/ui/stores/flash";
   import LayoutPanelLeftIcon from "@lucide/svelte/icons/layout-panel-left";
   import LayoutPanelTopIcon from "@lucide/svelte/icons/layout-panel-top";
@@ -25,7 +25,6 @@
   import KataResizableSash from "../../components/kata/KataResizableSash.svelte";
   import KataSidebar from "../../components/kata/KataSidebar.svelte";
   import QuickCapture from "../../components/shared/QuickCapture.svelte";
-  import type { TypeaheadOption } from "../../components/shared/TypeaheadTrigger.svelte";
   import { computeRemoveMessageLinkPatch, readMessageLinks } from "../../messages/messageLinks.js";
   import type { MessageLinkRef } from "../../messages/types";
   import {

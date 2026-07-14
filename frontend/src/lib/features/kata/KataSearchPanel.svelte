@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SearchInput } from "@kenn-io/kit-ui";
+  import { SearchInput, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { SelectDropdown } from "@middleman/ui";
 
   import type {
@@ -7,7 +7,6 @@
     KataProjectSummary,
     KataTaskSearchFilters,
   } from "../../api/kata/taskTypes.js";
-  import TypeaheadTrigger, { type TypeaheadOption } from "../../components/shared/TypeaheadTrigger.svelte";
 
   interface Props {
     filters: KataTaskSearchFilters;
@@ -36,7 +35,7 @@
   const projectOptions = $derived.by<TypeaheadOption[]>(() =>
     projects
       .map((project) => ({
-        value: project.uid,
+        name: project.uid,
         label: project.name,
         meta: String(project.open_count),
       }))
@@ -75,16 +74,17 @@
 
     <div class="filter-control filter-control-project">
       <span class="kit-sr-only">Project scope</span>
-      <TypeaheadTrigger
-        ariaLabel="Project scope"
+      <Typeahead
         options={projectOptions}
-        selected={draft.scope.kind === "project" ? draft.scope.project_uid : null}
+        value={draft.scope.kind === "project" ? draft.scope.project_uid : ""}
+        fallbackLabel="All projects"
+        placeholder="Project scope"
+        triggerPrefix="Project scope:"
         allowClear
         clearLabel="All projects"
-        placeholder="Filter projects..."
         emptyLabel="No matching projects"
-        onChange={(value) => {
-          emit({ scope: value === null ? { kind: "all" } : { kind: "project", project_uid: value } });
+        onselect={(value) => {
+          emit({ scope: value === "" ? { kind: "all" } : { kind: "project", project_uid: value } });
         }}
       />
     </div>
@@ -180,12 +180,16 @@
     outline-offset: -1px;
   }
 
-  .filter-control-project :global(.typeahead) {
+  .filter-control-project :global(.kit-typeahead) {
     width: 168px;
   }
 
-  .filter-control-project :global(.typeahead-trigger),
-  .filter-control-project :global(.typeahead-input) {
+  .filter-control-project :global(.kit-typeahead__prefix) {
+    display: none;
+  }
+
+  .filter-control-project :global(.kit-typeahead__trigger),
+  .filter-control-project :global(.kit-typeahead__input) {
     height: 28px;
     font-size: var(--font-size-xs);
     background: var(--bg-primary);

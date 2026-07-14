@@ -31,8 +31,8 @@ function makeIssue(overrides: Partial<KataTaskDetail["issue"]> = {}): KataTaskDe
 }
 
 const ownerOptions = [
-  { value: "fixture-user", label: "fixture-user" },
-  { value: "agent:planner", label: "agent:planner" },
+  { name: "fixture-user", label: "fixture-user" },
+  { name: "agent:planner", label: "agent:planner" },
 ];
 
 function renderProperties(

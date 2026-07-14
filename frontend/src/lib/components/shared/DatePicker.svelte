@@ -1,7 +1,7 @@
 <script lang="ts">
   import CalendarIcon from "@lucide/svelte/icons/calendar";
   import XIcon from "@lucide/svelte/icons/x";
-  import { Calendar, todayStr } from "@kenn-io/kit-ui";
+  import { Button, Calendar, IconButton, todayStr } from "@kenn-io/kit-ui";
 
   interface Props {
     value: string;
@@ -104,35 +104,50 @@
 </script>
 
 <div class={["date-picker", className]} bind:this={rootEl}>
-  <button
-    bind:this={buttonEl}
-    class="date-picker-trigger"
-    type="button"
-    onclick={() => {
-      if (!disabled) open = !open;
+  <span
+    class="date-picker-trigger-host"
+    {@attach (element) => {
+      buttonEl = element.querySelector<HTMLButtonElement>("button") ?? undefined;
+      if (!buttonEl) return;
+      buttonEl.setAttribute("aria-haspopup", "dialog");
+      buttonEl.setAttribute("aria-controls", popoverID);
+      buttonEl.onkeydown = handleDatePickerKeydown;
     }}
-    onkeydown={handleDatePickerKeydown}
-    aria-haspopup="dialog"
-    aria-expanded={open}
-    aria-controls={popoverID}
-    aria-label={`${ariaLabel}: ${displayValue}`}
-    {disabled}
   >
-    <CalendarIcon size="13" strokeWidth="1.9" aria-hidden="true" />
-    <span class:placeholder={!value}>{displayValue}</span>
-  </button>
-
-  {#if clearable && value}
-    <button
-      class="date-picker-clear"
-      type="button"
-      aria-label={clearLabel ?? `Clear ${ariaLabel.toLowerCase()}`}
-      onclick={clearDate}
-      onkeydown={handleDatePickerKeydown}
+    <Button
+      class="date-picker-trigger"
+      size="sm"
+      ariaLabel={`${ariaLabel}: ${displayValue}`}
+      ariaExpanded={open}
+      onclick={() => {
+        if (!disabled) open = !open;
+      }}
       {disabled}
     >
-      <XIcon size="12" strokeWidth="2" aria-hidden="true" />
-    </button>
+      <CalendarIcon size="13" strokeWidth="1.9" aria-hidden="true" />
+      <span class:placeholder={!value}>{displayValue}</span>
+    </Button>
+  </span>
+
+  {#if clearable && value}
+    <span
+      class="date-picker-clear-host"
+      {@attach (element) => {
+        const clearButton = element.querySelector<HTMLButtonElement>("button");
+        if (clearButton) clearButton.onkeydown = handleDatePickerKeydown;
+      }}
+    >
+      <IconButton
+        class="date-picker-clear"
+        size="sm"
+        tone="danger"
+        ariaLabel={clearLabel ?? `Clear ${ariaLabel.toLowerCase()}`}
+        onclick={clearDate}
+        {disabled}
+      >
+        <XIcon size="12" strokeWidth="2" aria-hidden="true" />
+      </IconButton>
+    </span>
   {/if}
 
   {#if open}
@@ -162,65 +177,53 @@
     min-width: 136px;
   }
 
-  /* kit-ui-check-ignore: popup trigger needs native button focus ownership plus aria-haspopup, aria-expanded, aria-controls, and Escape propagation; kit Button cannot preserve the full composite contract */
-  .date-picker-trigger {
-    box-sizing: border-box;
+  .date-picker-trigger-host {
     display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    height: 26px;
-    padding: 0 8px;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    background: var(--bg-inset);
-    color: var(--text-secondary);
-    font-family: inherit;
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    text-align: left;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
-  .date-picker-trigger:hover:not(:disabled),
-  .date-picker-trigger[aria-expanded="true"] {
+  :global(.date-picker-trigger.kit-button) {
+    justify-content: flex-start;
+    width: 100%;
+    height: 26px;
+    min-height: 26px;
+    padding: 0 8px;
+    border-color: var(--border-muted);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+  }
+
+  :global(.date-picker-trigger.kit-button:hover:not(:disabled)),
+  :global(.date-picker-trigger.kit-button[aria-expanded="true"]) {
     border-color: var(--border-default);
     color: var(--text-primary);
   }
 
-  .date-picker-trigger:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .date-picker-trigger > span {
+  :global(.date-picker-trigger.kit-button > span) {
     flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-align: left;
   }
 
   .placeholder {
     color: var(--text-muted);
   }
 
-  /* kit-ui-check-ignore: native clear control participates in the DatePicker Escape/focus composite; kit IconButton cannot forward the required keydown handler */
-  .date-picker-clear {
-    flex: 0 0 auto;
+  .date-picker-clear-host {
     display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 26px;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    border: 1px solid var(--border-muted);
-    background: var(--bg-inset);
+    flex: 0 0 auto;
   }
 
-  .date-picker-clear:hover {
-    background: var(--bg-surface-hover);
-    color: var(--accent-red);
+  :global(.date-picker-clear.kit-icon-button) {
+    width: 22px;
+    height: 26px;
+    border: 1px solid var(--border-muted);
+    background: var(--bg-inset);
   }
 
   .date-picker-popover {

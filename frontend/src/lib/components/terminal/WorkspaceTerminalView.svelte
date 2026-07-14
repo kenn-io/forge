@@ -31,6 +31,11 @@
     type WorkspaceRuntimeState,
   } from "../../api/workspace-runtime.js";
   import {
+    beginWorkspaceSwitch,
+    cancelWorkspaceSwitch,
+    recordWorkspaceSwitchPhase,
+  } from "../../instrumentation/workspaceSwitchTiming.js";
+  import {
     activateWorkflowTab,
     addTerminalGroup,
     appendWorkflowTabToLeaf,
@@ -1005,6 +1010,7 @@
     // back to the previous workspace).
     const id = workspaceId;
     const hostKey = workspaceHostKey;
+    recordWorkspaceSwitchPhase("workspace-request-start", id, hostKey);
     try {
       if (hostKey) {
         const { data, error, response } = await client.GET(
@@ -1013,6 +1019,9 @@
             params: { path: { host_key: hostKey, id } },
           },
         );
+        recordWorkspaceSwitchPhase("workspace-request-end", id, hostKey, {
+          status: response.status,
+        });
         if (!isCurrentWorkspace(id, hostKey)) return;
         if (!data) {
           loadError = apiErrorMessage(
@@ -1043,6 +1052,9 @@
           params: { path: { id } },
         },
       );
+      recordWorkspaceSwitchPhase("workspace-request-end", id, hostKey, {
+        status: response.status,
+      });
       if (!isCurrentWorkspace(id, hostKey)) return;
       if (!data) {
         loadError = apiErrorMessage(
@@ -1094,8 +1106,12 @@
     const seq = runtimeFetchSeq + 1;
     runtimeFetchSeq = seq;
     const fetchPromise = (async () => {
+      recordWorkspaceSwitchPhase("runtime-request-start", id, hostKey);
       try {
         const data = await getWorkspaceRuntime(id, hostKey);
+        recordWorkspaceSwitchPhase("runtime-request-end", id, hostKey, {
+          sessions: data.sessions.length,
+        });
         if (!isCurrentWorkspace(id, hostKey) || seq !== runtimeFetchSeq) return null;
         runtime = data;
         runtimeForId = id;
@@ -2330,6 +2346,13 @@
   // it in place.
   $effect(() => {
     const id = workspaceId;
+    // Route selection is the zero point for workspace-switch timing:
+    // every workspace-switch:* measure is a duration from this call.
+    if (id) {
+      beginWorkspaceSwitch(id, workspaceHostKey);
+    } else {
+      cancelWorkspaceSwitch();
+    }
     const storageId = id ? workspaceStorageId(id, workspaceHostKey) : "";
     const restoredLayout = id ? loadTerminalLayout(storageId) : defaultTerminalLayout();
     const restoredTab = restoreWorkspaceTab(storageId);

@@ -14,6 +14,9 @@ export type E2EServerInfo = {
   base_url: string;
   pid: number;
   config_path: string;
+  // Present when the server was spawned with MIDDLEMAN_PPROF_ADDR set
+  // (the workspace-switch profiling harness does this).
+  pprof_addr?: string;
 };
 
 export type IsolatedE2EServer = {

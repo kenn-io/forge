@@ -16,7 +16,8 @@
     "test:browser": "node ../node_modules/vite-plus/bin/vp test run --project browser",
     "test:e2e": "node ./scripts/run-e2e-to-file.ts",
     "test:e2e:mock": "node ../node_modules/vite-plus/bin/vp exec -- playwright test --config=playwright.config.ts",
-    "demo-workspace": "node node_modules/.bin/playwright test --config tests/demo/playwright-demo.config.ts"
+    "demo-workspace": "node node_modules/.bin/playwright test --config tests/demo/playwright-demo.config.ts",
+    "profile:workspace-switch": "node node_modules/.bin/playwright test --config tests/profiling/playwright-profile.config.ts"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.2",

@@ -1,0 +1,110 @@
+# Workspace-switch profiling
+
+Developer tooling for diagnosing workspace switching latency. One
+command drives a real seeded backend (git worktrees + tmux), performs
+warm and cold workspace switches against workspaces running an
+ordinary shell and an alternate-screen application (`less`), and
+captures stable timings plus browser- and Go-side traces for
+before/after comparison.
+
+## Running
+
+```bash
+make profile-workspace-switch
+```
+
+or, from `frontend/`:
+
+```bash
+bun run profile:workspace-switch
+```
+
+Requires `git`, `tmux`, and `less` on the host (the same requirements
+as the real-workspace e2e specs). Knobs, all optional:
+
+| Env var                        | Effect                                                                            |
+| ------------------------------ | --------------------------------------------------------------------------------- |
+| `MIDDLEMAN_PROFILE_ITERATIONS` | Warm-switch iterations per scenario (default 3)                                   |
+| `MIDDLEMAN_PROFILE_OUT_DIR`    | Artifact directory (default `test-results/workspace-switch-profile/<timestamp>/`) |
+| `MIDDLEMAN_PROFILE_GO_TRACE=0` | Skip the Go execution trace capture                                               |
+
+## Timing names
+
+The frontend emits User Timing entries via
+`src/lib/instrumentation/workspaceSwitchTiming.ts`. The instrumentation
+is always on: it records at most nine `performance.measure` calls per
+workspace switch and nothing else, so there is no production telemetry
+and no measurable steady-state cost. Repeated work inside one switch
+(runtime polling, reconnects, extra panes) does not re-record a phase,
+which keeps the numbers stable across runs.
+
+Every measure is named `workspace-switch:<phase>` and its duration is
+the time from route selection (the terminal view reacting to the new
+workspace route) to that phase:
+
+| Phase                              | Meaning                                      |
+| ---------------------------------- | -------------------------------------------- |
+| `workspace-request-start` / `-end` | Workspace metadata API request               |
+| `runtime-request-start` / `-end`   | Runtime state (sessions) API request         |
+| `fonts-ready`                      | The pane's font-readiness wait resolved      |
+| `terminal-constructed`             | Terminal constructed and attached to the DOM |
+| `socket-open`                      | Terminal WebSocket reported open             |
+| `first-bytes`                      | First binary frame (start of tmux replay)    |
+| `first-paint`                      | First frame after that payload was parsed    |
+
+Both terminal renderers (xterm and ghostty-web) emit the same names.
+Derived values in the output answer the usual questions directly:
+time before terminal creation (`routeToTerminalConstructed`), before
+socket connection (`routeToSocketOpen`), and between first bytes and
+visible paint (`firstBytesToFirstPaint`).
+
+The measures are queryable anywhere —
+`performance.getEntriesByName("workspace-switch:first-paint")` in the
+DevTools console works against any running middleman, not just this
+harness. Each entry's `detail` carries the `workspaceId` it was
+recorded for.
+
+For a cold load the zero point is still route selection, which happens
+after the SPA boots; use the Chromium trace for the full
+navigation-start timeline.
+
+## Artifacts
+
+- `summary.txt` — the per-switch table also printed to the console.
+- `timings.json` — every scenario/iteration with raw entries, derived
+  metrics, and `timeOriginEpochMs` for wall-clock alignment.
+- `trace.chrome.json` — Chromium trace including the
+  `workspace-switch:*` timings, network, and frame events. Open in
+  [Perfetto](https://ui.perfetto.dev) or DevTools Performance → Load
+  profile.
+- `go-trace.out` — Go execution trace from the backend spanning the
+  warm-switch window. Open with `go tool trace go-trace.out`.
+
+## Correlating browser timings with Go pprof
+
+The harness starts the backend with `MIDDLEMAN_PPROF_ADDR=127.0.0.1:0`,
+which serves the standard `net/http/pprof` endpoints (the resolved
+address is `pprofAddr` in `timings.json`). The real server supports the
+same via `middleman serve -pprof-addr 127.0.0.1:6060` or the
+`MIDDLEMAN_PPROF_ADDR` env var.
+
+To line up a browser phase with Go-side work:
+
+1. Compute the phase's wall-clock time from `timings.json`:
+   `timeOriginEpochMs + entry.startTime + entry.duration` is the epoch
+   milliseconds at which the phase completed (`+ startTime` alone is
+   route selection).
+2. The Go execution trace records a wall-clock sync (visible in
+   `go tool trace` and in `go tool trace -d=parsed`), so those epoch
+   times identify the matching region of the trace. Look at goroutines
+   in the WebSocket attach and tmux paths between route selection and
+   `first-bytes`.
+3. For sampled CPU profiles instead of traces, capture
+   `curl -o cpu.pprof "http://127.0.0.1:6060/debug/pprof/profile?seconds=10"`
+   while reproducing switches (e.g. `MIDDLEMAN_PROFILE_ITERATIONS=10`),
+   then `go tool pprof cpu.pprof`. Sampling windows longer than 30s are
+   rejected by the profiler listener.
+
+Note the profiler rejects requests that look like they come from a
+browser without same-origin fetch metadata; `curl` and `go tool pprof`
+work as-is, but custom clients must not send a browser User-Agent.

@@ -293,6 +293,17 @@ func waitForServerInfoBaseURL(
 	t *testing.T, path string, done <-chan error,
 ) string {
 	t.Helper()
+	return waitForServerInfo(t, path, done).BaseURL
+}
+
+// waitForServerInfo polls the server-info file until run() writes it,
+// then returns the parsed info. Fails the test if run() returns early
+// (done is closed with an error) or the file does not appear within
+// the timeout.
+func waitForServerInfo(
+	t *testing.T, path string, done <-chan error,
+) e2eServerInfo {
+	t.Helper()
 	r := require.New(t)
 	// 30s headroom: run() does SeedFixtures + SetupDiffRepo + stack
 	// detection before it starts listening, and `go test ./...` can
@@ -309,13 +320,51 @@ func waitForServerInfoBaseURL(
 		if err == nil && len(data) > 0 {
 			var info e2eServerInfo
 			if jsonErr := json.Unmarshal(data, &info); jsonErr == nil && info.BaseURL != "" {
-				return info.BaseURL
+				return info
 			}
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	r.FailNow("timed out waiting for server-info file")
-	return ""
+	return e2eServerInfo{}
+}
+
+// TestRunPprofListenerFromEnv pins the contract the workspace-switch
+// profiling harness depends on: MIDDLEMAN_PPROF_ADDR makes run()
+// start the diagnostics listener, report its resolved address in the
+// server-info file, and serve the pprof index there.
+func TestRunPprofListenerFromEnv(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	t.Setenv("MIDDLEMAN_PPROF_ADDR", "127.0.0.1:0")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", "", false, false)
+	}()
+
+	info := waitForServerInfo(t, serverInfoFile, done)
+	require.NotEmpty(info.PprofAddr,
+		"server info must report the resolved pprof listener address")
+
+	resp, err := http.Get("http://" + info.PprofAddr + "/debug/pprof/")
+	require.NoError(err)
+	defer resp.Body.Close()
+	assert.Equal(http.StatusOK, resp.StatusCode)
+
+	cancel()
+	select {
+	case runErr := <-done:
+		require.NoError(runErr)
+	case <-time.After(10 * time.Second):
+		require.Fail("run() did not exit within 10s of cancellation")
+	}
 }
 
 // TestResetSwapsFixtureState pins the /__e2e/reset contract that the

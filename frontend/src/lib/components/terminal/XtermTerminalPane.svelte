@@ -7,6 +7,7 @@
   import { WebglAddon } from "@xterm/addon-webgl";
   import "@xterm/xterm/css/xterm.css";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
+  import { createWorkspaceSwitchPaneTimer } from "../../instrumentation/workspaceSwitchTiming.js";
   import {
     createTerminalPastePayload,
     isMultilinePaste,
@@ -61,8 +62,12 @@
   let appliedFontLigatures = false;
   let disposed = false;
   let exited = false;
+  let sawFirstBytes = false;
   const encoder = new TextEncoder();
   const tmuxMouseDragFilter = createTmuxMouseDragFilter();
+  // Binds this pane to the workspace switch that was live at creation;
+  // panes surviving from a previous workspace record nothing.
+  const switchTimer = createWorkspaceSwitchPaneTimer();
 
   const MAX_RECONNECT_DELAY = 30000;
   const TERMINAL_SMOOTH_SCROLL_DURATION = 0;
@@ -310,6 +315,7 @@
     ws = socket;
 
     socket.onopen = () => {
+      switchTimer.record("socket-open");
       reconnectDelay = 1000;
       sendResizeActive(active);
       if (active) scheduleTerminalRefresh();
@@ -318,7 +324,20 @@
     socket.onmessage = (ev: MessageEvent) => {
       if (!terminal) return;
       if (ev.data instanceof ArrayBuffer) {
-        terminal.write(new Uint8Array(ev.data));
+        const bytes = new Uint8Array(ev.data);
+        if (!sawFirstBytes) {
+          sawFirstBytes = true;
+          switchTimer.record("first-bytes", { byteLength: bytes.byteLength });
+          // The write callback fires once the payload is parsed; the
+          // following animation frame is when that content is painted.
+          terminal.write(bytes, () => {
+            requestAnimationFrame(() => {
+              switchTimer.record("first-paint");
+            });
+          });
+        } else {
+          terminal.write(bytes);
+        }
       } else if (typeof ev.data === "string") {
         try {
           const msg = JSON.parse(ev.data) as {
@@ -506,6 +525,7 @@
       terminal = term;
 
       term.open(containerEl);
+      switchTimer.record("terminal-constructed");
       containerEl.addEventListener("paste", handleTerminalPaste, true);
 
       const fit = new FitAddon();
@@ -570,8 +590,12 @@
     // looks like cursor/prompt overlap in the running shell.
     const fontsReady = document.fonts?.ready;
     if (fontsReady) {
-      void fontsReady.then(start);
+      void fontsReady.then(() => {
+        switchTimer.record("fonts-ready");
+        start();
+      });
     } else {
+      switchTimer.record("fonts-ready", { unsupported: true });
       start();
     }
 

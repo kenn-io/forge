@@ -127,3 +127,24 @@ To line up a browser phase with Go-side work:
 Note the profiler rejects requests that look like they come from a
 browser without same-origin fetch metadata; `curl` and `go tool pprof`
 work as-is, but custom clients must not send a browser User-Agent.
+
+## Live tracing
+
+W3C trace context propagation (frontend-minted `traceparent`/`baggage`
+on every API request and terminal WS attach) is always on; exporting
+those traces to an OTel backend is opt-in. To inspect a live trace:
+
+1. Start a local all-in-one OTLP collector + Grafana/Tempo UI:
+   `make otel-lgtm` (requires Docker; serves the UI at
+   `http://127.0.0.1:3000` and OTLP on `4317`/`4318`).
+2. Start middleman with export enabled:
+   `OTEL_TRACES_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 middleman serve`.
+3. Perform a workspace switch in the browser, then find its trace ID
+   from any `workspace-switch:*` measure's `detail.traceId` (e.g.
+   `performance.getEntriesByName("workspace-switch:first-paint")[0].detail.traceId`
+   in the DevTools console).
+4. In Tempo (via Grafana at `http://127.0.0.1:3000`), search for that
+   trace ID directly, or by the `workspace.id` span attribute. Expect
+   HTTP spans named after the matched route (e.g.
+   `GET /workspaces/{id}`) and a bounded `terminal.attach` span for the
+   WS attach.

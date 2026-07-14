@@ -142,7 +142,9 @@ workspace switch (route selection through terminal first paint), recorded via
 are stable API for before/after performance comparisons — do not rename them,
 and record new phases through that module so superseded-switch and duplicate
 guards keep applying. `make profile-workspace-switch` captures a reproducible
-profile; see `frontend/tests/profiling/README.md`.
+profile; see `frontend/tests/profiling/README.md`. Each measure's `detail.traceId`
+joins it to the same request's server-side OTel trace, whose export is opt-in
+via `OTEL_TRACES_EXPORTER`.
 
 ## Testing Expectations
 

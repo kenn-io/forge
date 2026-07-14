@@ -39,7 +39,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check frontend-check-no-deps api-generate roborev-api-generate \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
-        profile-workspace-switch \
+        profile-workspace-switch otel-lgtm \
         frontend-api-client-check font-size-token-check huma-route-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
         dev-clone-db frontend-dev-clone-db
 
@@ -300,6 +300,11 @@ test-e2e: frontend
 profile-workspace-switch: frontend
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go build -o ./cmd/e2e-server/e2e-server$(EXE_SUFFIX) ./cmd/e2e-server
 	$(VITE_PLUS_BIN) run middleman-frontend#profile:workspace-switch
+
+# Run the local all-in-one OTLP collector + Grafana/Tempo UI for
+# middleman trace export. See frontend/tests/profiling/README.md.
+otel-lgtm:
+	docker run --rm -ti -p 3000:3000 -p 4317:4317 -p 4318:4318 grafana/otel-lgtm
 
 # Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF, ROBOREV_PORT configurable)
 test-e2e-roborev:

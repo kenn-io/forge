@@ -7,6 +7,7 @@
   import { FilterDropdown } from "@kenn-io/kit-ui";
   import { SidebarToggle } from "@kenn-io/kit-ui";
   import type { Issue } from "../../api/types.js";
+  import { createRepoLabelFormatter } from "../../utils/repo-label.js";
   import {
     buildIssueRoute,
     type IssueRouteRef,
@@ -34,6 +35,18 @@
   let searchInput = $state(issues.getIssueSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
   let refreshHandle: ReturnType<typeof setInterval> | null = null;
+  const repoLabelFormatter = $derived(
+    createRepoLabelFormatter(
+      issues.getIssues().map((issue) => ({
+        provider: issue.repo.provider,
+        platformHost: issue.repo.platform_host,
+        owner: issue.repo.owner,
+        name: issue.repo.name,
+        repoPath: issue.repo.repo_path,
+      })),
+      { showOrgNames: !grouping.getHideOrgName() },
+    ),
+  );
 
   $effect(() => {
     void issues.loadIssues();
@@ -72,6 +85,12 @@
     void issues.loadIssues();
   }
 
+  function resetCompactView(): void {
+    if (issues.getIssueFilterState() !== "open") setIssueState("open");
+    grouping.setGroupByRepo(true);
+    grouping.setHideOrgName(false);
+  }
+
   const compactFilterSections = $derived.by(() => [
     {
       title: "State",
@@ -91,10 +110,23 @@
         onSelect: () => grouping.setGroupByRepo(option.byRepo),
       })),
     },
+    {
+      title: "Visibility",
+      items: [
+        {
+          id: "hide-org-name",
+          label: "Hide org name",
+          active: grouping.getHideOrgName(),
+          onSelect: () => grouping.setHideOrgName(!grouping.getHideOrgName()),
+        },
+      ],
+    },
   ]);
 
   const hasCompactFilterChanges = $derived(
-    issues.getIssueFilterState() !== "open" || !grouping.getGroupByRepo(),
+    issues.getIssueFilterState() !== "open"
+      || !grouping.getGroupByRepo()
+      || grouping.getHideOrgName(),
   );
   const useCompactFilters = $derived(
     sidebarWidth <= COMPACT_FILTER_MAX_WIDTH,
@@ -165,6 +197,8 @@
         active={hasCompactFilterChanges}
         showBadge={false}
         sections={compactFilterSections}
+        resetLabel="Reset view"
+        onReset={resetCompactView}
         minWidth="160px"
       />
     </div>
@@ -230,7 +264,13 @@
       {#if grouping.getGroupByRepo()}
         {#each [...issues.issuesByRepo().entries()] as [repo, repoIssues] (repo)}
           {@const collapsed = collapsedRepos.isCollapsed("issues", repo)}
-          {@const repoLabel = repoIssues[0]?.repo.repo_path ?? repo}
+          {@const repoLabel = repoIssues[0] ? repoLabelFormatter.format({
+            provider: repoIssues[0].repo.provider,
+            platformHost: repoIssues[0].repo.platform_host,
+            owner: repoIssues[0].repo.owner,
+            name: repoIssues[0].repo.name,
+            repoPath: repoIssues[0].repo.repo_path,
+          }) : repo}
           <GroupedSidebarSection
             label={repoLabel}
             count={repoIssues.length}
@@ -241,6 +281,13 @@
                 {@const issueRef = routeRefForIssue(issue)}
                 <IssueItem
                   {issue}
+                  repoLabel={repoLabelFormatter.format({
+                    provider: issue.repo.provider,
+                    platformHost: issue.repo.platform_host,
+                    owner: issue.repo.owner,
+                    name: issue.repo.name,
+                    repoPath: issue.repo.repo_path,
+                  })}
                   showRepo={false}
                   selected={isSelected(issueRef)}
                   onclick={() => handleSelect(issueRef)}
@@ -253,6 +300,13 @@
           {@const issueRef = routeRefForIssue(issue)}
           <IssueItem
             {issue}
+            repoLabel={repoLabelFormatter.format({
+              provider: issue.repo.provider,
+              platformHost: issue.repo.platform_host,
+              owner: issue.repo.owner,
+              name: issue.repo.name,
+              repoPath: issue.repo.repo_path,
+            })}
             showRepo={true}
             selected={isSelected(issueRef)}
             onclick={() => handleSelect(issueRef)}

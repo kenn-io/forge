@@ -25,6 +25,7 @@ function renderItem(issue: Issue): void {
       issue,
       selected: false,
       showRepo: false,
+      repoLabel: "acme/widgets",
       onclick: () => {},
     },
     context: new Map<symbol, unknown>([[STORES_KEY, { issues: { toggleIssueStar: vi.fn() } }]]),

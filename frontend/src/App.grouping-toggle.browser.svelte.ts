@@ -228,6 +228,25 @@ async function selectPullGrouping(label: string): Promise<void> {
   await page.elementLocator(item!).click();
 }
 
+async function selectCompactFilterItem(label: string): Promise<void> {
+  await vi.waitFor(
+    () => expect(document.querySelector(".compact-filter-menu .kit-filter-dropdown__btn")).not.toBeNull(),
+    WAIT,
+  );
+  if (!document.querySelector(".compact-filter-menu .kit-filter-dropdown__panel")) {
+    await page.elementLocator(document.querySelector(".compact-filter-menu .kit-filter-dropdown__btn")!).click();
+  }
+  await vi.waitFor(
+    () => expect(document.querySelector(".compact-filter-menu .kit-filter-dropdown__panel")).not.toBeNull(),
+    WAIT,
+  );
+  const item = Array.from(document.querySelectorAll(".compact-filter-menu .kit-filter-dropdown__item")).find((el) =>
+    (el.textContent ?? "").includes(label),
+  );
+  expect(item).toBeDefined();
+  await page.elementLocator(item!).click();
+}
+
 function compactPullGroupingLabel(label: string): string {
   if (label === "Repo") return "By repo";
   if (label === "Status") return "By status";
@@ -329,6 +348,30 @@ describe("grouping toggle", () => {
     await vi.waitFor(() => expect(document.querySelector(".issue-item")).not.toBeNull(), WAIT);
     expect(count(".sidebar-group-header")).toBe(0);
     expect(document.querySelector(".repo-chip")).not.toBeNull();
+  });
+
+  it("PR and issue filters share the hide org name preference", async () => {
+    await mountPulls();
+    await selectPullGrouping("All");
+    await vi.waitFor(
+      () => expect(document.querySelector(".repo-chip")?.textContent?.trim()).toBe("acme/widgets"),
+      WAIT,
+    );
+
+    await selectCompactFilterItem("Hide org name");
+    await vi.waitFor(() => expect(document.querySelector(".repo-chip")?.textContent?.trim()).toBe("widgets"), WAIT);
+    expect(localStorage.getItem("middleman:hideOrgName")).toBe("1");
+
+    mounted?.unmount();
+    mounted = await mountBrowserApp("/issues", { overrides: overrides() });
+    await vi.waitFor(() => expect(document.querySelector(".issue-item")).not.toBeNull(), WAIT);
+    expect(document.querySelector(".repo-chip")?.textContent?.trim()).toBe("widgets");
+
+    await selectCompactFilterItem("Hide org name");
+    await vi.waitFor(
+      () => expect(document.querySelector(".repo-chip")?.textContent?.trim()).toBe("acme/widgets"),
+      WAIT,
+    );
   });
 
   it("toggle syncs into the threaded activity view", async () => {

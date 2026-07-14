@@ -33,6 +33,7 @@ function renderItem(pr: PullRequest): void {
       pr,
       selected: false,
       showRepo: false,
+      repoLabel: "o/n",
       onclick: () => {},
     },
     context: new Map<symbol, unknown>([

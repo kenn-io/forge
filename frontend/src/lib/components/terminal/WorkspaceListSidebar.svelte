@@ -222,10 +222,10 @@
       title: "Visibility",
       items: [
         {
-          id: "show-org-names",
-          label: "Show org names",
-          description: "Include owner or organization names in workspace repo labels.",
-          active: displayOptions.showOrgNames,
+          id: "hide-org-name",
+          label: "Hide org name",
+          description: "Hide owner or organization names in workspace repo labels.",
+          active: !displayOptions.showOrgNames,
           onSelect: () =>
             setDisplayOption(
               "showOrgNames",

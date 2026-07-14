@@ -18,7 +18,7 @@ Make organization-name visibility controllable from the PR, issue, and workspace
 
 `PullList.svelte` and `IssueList.svelte` add a Visibility section to their filter-section definitions. The item reads `grouping.getHideOrgName()` and toggles it through `grouping.setHideOrgName()`.
 
-PR and issue label rendering already consumes the grouping preference through the shared repository-label path, so no new store or persistence key is needed.
+PR and issue lists format their group headers and per-item repo chips through the shared collision-safe repository-label formatter, so no new store or persistence key is needed.
 
 `WorkspaceListSidebar.svelte` continues to use `displayOptions.showOrgNames`; only the menu-facing label, identifier, description, and active-state polarity change. This avoids coupling workspace display preferences to the global PR/issue/activity preference.
 

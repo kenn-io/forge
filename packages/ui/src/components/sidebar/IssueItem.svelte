@@ -13,14 +13,11 @@
     issue: Issue;
     selected: boolean;
     showRepo: boolean;
+    repoLabel: string;
     onclick: () => void;
   }
 
-  const { issue, selected, showRepo, onclick }: Props = $props();
-
-  const repoSlug = $derived(
-    `${issue.repo_owner ?? ""}/${issue.repo_name ?? ""}`,
-  );
+  const { issue, selected, showRepo, repoLabel, onclick }: Props = $props();
 
   let el: HTMLButtonElement;
 
@@ -60,10 +57,10 @@
       <Chip
         size="xs"
         uppercase={false}
-        title={repoSlug}
+        title={repoLabel}
         tone="muted" class="repo-chip"
-        style={`color: ${hashColor(repoSlug)}; background: color-mix(in srgb, ${hashColor(repoSlug)} 15%, transparent);`}
-      >{repoSlug}</Chip>
+        style={`color: ${hashColor(repoLabel)}; background: color-mix(in srgb, ${hashColor(repoLabel)} 15%, transparent);`}
+      >{repoLabel}</Chip>
     </div>
   {/if}
   <div class="meta-row">

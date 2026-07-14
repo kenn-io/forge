@@ -266,6 +266,7 @@
               {@const prRef = routeRefForPull(pr)}
               <PullItem
                 {pr}
+                repoLabel={`${pr.repo_owner ?? ""}/${pr.repo_name ?? ""}`}
                 showRepo={!repo}
                 selected={false}
                 {importAction}
@@ -279,6 +280,7 @@
           {@const prRef = routeRefForPull(pr)}
           <PullItem
             {pr}
+            repoLabel={`${pr.repo_owner ?? ""}/${pr.repo_name ?? ""}`}
             showRepo={!repo}
             selected={false}
             {importAction}
@@ -307,6 +309,7 @@
           {@const issueRef = routeRefForIssue(issue)}
           <IssueItem
             {issue}
+            repoLabel={`${issue.repo_owner ?? ""}/${issue.repo_name ?? ""}`}
             showRepo={!repo}
             selected={false}
             onclick={() => handleIssueSelect(issueRef)}

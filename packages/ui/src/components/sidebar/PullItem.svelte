@@ -24,6 +24,7 @@
     pr: PullRequest;
     selected: boolean;
     showRepo: boolean;
+    repoLabel: string;
     onclick: () => void;
     importAction?: Action | undefined;
   }
@@ -32,13 +33,10 @@
     pr,
     selected,
     showRepo,
+    repoLabel,
     onclick,
     importAction,
   }: Props = $props();
-
-  const repoSlug = $derived(
-    `${pr.repo_owner ?? ""}/${pr.repo_name ?? ""}`,
-  );
 
   function handleStarClick(e: MouseEvent): void {
     e.stopPropagation();
@@ -176,10 +174,10 @@
       <Chip
         size="xs"
         uppercase={false}
-        title={repoSlug}
+        title={repoLabel}
         tone="muted" class="repo-chip"
-        style={`color: ${hashColor(repoSlug)}; background: color-mix(in srgb, ${hashColor(repoSlug)} 15%, transparent);`}
-      >{repoSlug}</Chip>
+        style={`color: ${hashColor(repoLabel)}; background: color-mix(in srgb, ${hashColor(repoLabel)} 15%, transparent);`}
+      >{repoLabel}</Chip>
     </div>
   {/if}
   <div class="meta-row">

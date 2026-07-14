@@ -11,6 +11,7 @@
   import type { KanbanStatus, PullRequest } from "../../api/types.js";
   import type { GroupingMode } from "../../stores/grouping.svelte.js";
   import type { PullAttributeFilter } from "../../stores/pulls.svelte.js";
+  import { createRepoLabelFormatter } from "../../utils/repo-label.js";
   import {
     buildPullRequestFilesRoute,
     buildPullRequestRoute,
@@ -87,6 +88,18 @@
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
   let refreshHandle: ReturnType<typeof setInterval> | null = null;
   const visiblePulls = $derived(pulls.getDisplayOrderPRs());
+  const repoLabelFormatter = $derived(
+    createRepoLabelFormatter(
+      visiblePulls.map((pr) => ({
+        provider: pr.repo.provider,
+        platformHost: pr.repo.platform_host,
+        owner: pr.repo.owner,
+        name: pr.repo.name,
+        repoPath: pr.repo.repo_path,
+      })),
+      { showOrgNames: !grouping.getHideOrgName() },
+    ),
+  );
 
   $effect(() => {
     void pulls.loadPulls();
@@ -140,9 +153,15 @@
   function resetCompactView(): void {
     pulls.clearLocalFilters();
     grouping.setGroupingMode("byRepo");
+    grouping.setHideOrgName(false);
     if (pulls.getFilterState() !== "open") {
       setPullState("open");
     }
+  }
+
+  function clearLocalViewFilters(): void {
+    pulls.clearLocalFilters();
+    grouping.setHideOrgName(false);
   }
 
   const toolbarFilterSections = $derived.by(() => [
@@ -185,6 +204,17 @@
         onSelect: () => pulls.toggleKanbanStatusFilter(option.value),
       })),
     },
+    {
+      title: "Visibility",
+      items: [
+        {
+          id: "hide-org-name",
+          label: "Hide org name",
+          active: grouping.getHideOrgName(),
+          onSelect: () => grouping.setHideOrgName(!grouping.getHideOrgName()),
+        },
+      ],
+    },
   ]);
   const compactFilterSections = $derived.by(() => [
     ...toolbarFilterSections,
@@ -193,7 +223,11 @@
   const hasCompactFilterChanges = $derived(
     pulls.getFilterState() !== "open"
       || groupingMode !== "byRepo"
-      || pulls.getLocalFilterCount() > 0,
+      || pulls.getLocalFilterCount() > 0
+      || grouping.getHideOrgName(),
+  );
+  const localViewFilterCount = $derived(
+    pulls.getLocalFilterCount() + Number(grouping.getHideOrgName()),
   );
   const useCompactFilters = $derived(
     sidebarWidth <= COMPACT_FILTER_MAX_WIDTH,
@@ -215,7 +249,13 @@
       return [...pulls.pullsByRepo().entries()].map(([repo, prs]) => ({
         key: `repo:${repo}`,
         collapseKey: repo,
-        label: prs[0]?.repo.repo_path ?? repo,
+        label: prs[0] ? repoLabelFormatter.format({
+          provider: prs[0].repo.provider,
+          platformHost: prs[0].repo.platform_host,
+          owner: prs[0].repo.owner,
+          name: prs[0].repo.name,
+          repoPath: prs[0].repo.repo_path,
+        }) : repo,
         showRepo: false,
         items: prs,
       }));
@@ -375,11 +415,11 @@
       <FilterDropdown
         label="PR filters"
         title="PR filters"
-        active={pulls.getLocalFilterCount() > 0}
-        badgeCount={pulls.getLocalFilterCount()}
+        active={localViewFilterCount > 0}
+        badgeCount={localViewFilterCount}
         sections={localFilterSections}
         resetLabel="Clear filters"
-        onReset={pulls.clearLocalFilters}
+        onReset={clearLocalViewFilters}
         minWidth="190px"
       />
     </div>
@@ -470,6 +510,13 @@
                 {@const prSelected = isSelected(prRef)}
                 <PullItem
                   {pr}
+                  repoLabel={repoLabelFormatter.format({
+                    provider: pr.repo.provider,
+                    platformHost: pr.repo.platform_host,
+                    owner: pr.repo.owner,
+                    name: pr.repo.name,
+                    repoPath: pr.repo.repo_path,
+                  })}
                   showRepo={group.showRepo}
                   selected={prSelected}
                   {importAction}
@@ -489,6 +536,13 @@
           {@const prSelected = isSelected(prRef)}
           <PullItem
             {pr}
+            repoLabel={repoLabelFormatter.format({
+              provider: pr.repo.provider,
+              platformHost: pr.repo.platform_host,
+              owner: pr.repo.owner,
+              name: pr.repo.name,
+              repoPath: pr.repo.repo_path,
+            })}
             showRepo={true}
             selected={prSelected}
             {importAction}

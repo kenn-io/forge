@@ -942,7 +942,7 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByRole("button", { name: "Created" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Activity" })).toBeTruthy();
     expect(screen.getByText("Visibility")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Show org names" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Hide org name" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Show PR diff stats" })).toBeTruthy();
   });
 
@@ -957,7 +957,7 @@ describe("WorkspaceListSidebar", () => {
     await screen.findByText("kenn-io/middleman");
 
     await fireEvent.click(screen.getByRole("button", { name: "View" }));
-    await fireEvent.click(screen.getByRole("button", { name: "Show org names" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Hide org name" }));
 
     expect(screen.queryByText("kenn-io/middleman")).toBeNull();
     expect(screen.getByText("middleman")).toBeTruthy();
@@ -1012,7 +1012,7 @@ describe("WorkspaceListSidebar", () => {
     await screen.findByText("GitHub acme widgets");
 
     await fireEvent.click(screen.getByRole("button", { name: "View" }));
-    await fireEvent.click(screen.getByRole("button", { name: "Show org names" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Hide org name" }));
 
     expect(
       Array.from(container.querySelectorAll(".sidebar-group-header__name")).map((el) => el.textContent?.trim()),

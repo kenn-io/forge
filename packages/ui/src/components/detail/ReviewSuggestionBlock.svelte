@@ -11,6 +11,7 @@
     replacement: string;
     currentHeadSHA?: string | undefined;
     applying?: boolean;
+    submissionBusy?: boolean;
     batched?: boolean;
     error?: string | null;
     onCommit?: (() => void) | undefined;
@@ -23,6 +24,7 @@
     replacement,
     currentHeadSHA = "",
     applying = false,
+    submissionBusy = false,
     batched = false,
     error = null,
     onCommit,
@@ -70,7 +72,7 @@
         class="review-suggestion__action review-suggestion__action--primary"
         type="button"
         onclick={onCommit}
-        disabled={!canApply || applying}
+        disabled={!canApply || submissionBusy}
         title={!canApply ? disabledReason : undefined}
       >
         <CheckIcon size={14} />
@@ -81,7 +83,7 @@
         class:review-suggestion__action--selected={batched}
         type="button"
         onclick={onToggleBatch}
-        disabled={(!canApply && !batched) || applying || onToggleBatch === undefined}
+        disabled={(!canApply && !batched) || submissionBusy || onToggleBatch === undefined}
         title={!canApply && !batched ? disabledReason : undefined}
       >
         <PlusIcon size={14} />

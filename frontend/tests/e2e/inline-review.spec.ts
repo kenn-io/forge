@@ -845,35 +845,33 @@ test("keeps split-mode inline composers on trailing right-side hunk lines", asyn
 
     await button.click();
     await expect(page.getByPlaceholder("Leave a comment")).toBeVisible();
-    await expect(
-      page
-        .locator(".pierre-diff")
-        .first()
-        .evaluate((host, lineNumber) => {
-          const root = host.shadowRoot;
-          const slot = root?.querySelector(`slot[name="annotation-additions-${lineNumber}"]`);
-          return slot ? pierreCodeSide(root, slot) : null;
+    const diff = page.locator(".pierre-diff").first();
+    const composerSide = () =>
+      diff.evaluate((host, lineNumber) => {
+        const root = host.shadowRoot;
+        const slot = root?.querySelector(`slot[name="annotation-additions-${lineNumber}"]`);
+        return slot ? pierreCodeSide(root, slot) : null;
 
-          function pierreCodeSide(
-            root: ShadowRoot | null | undefined,
-            element: Element,
-          ): "deletions" | "additions" | null {
-            const code = Array.from(root?.querySelectorAll<HTMLElement>("code") ?? []).find((candidate) =>
-              candidate.contains(element),
-            );
-            const pre = code?.parentElement;
-            if (!code || !pre) return null;
-            if (code.hasAttribute("data-additions")) return "additions";
-            if (code.hasAttribute("data-deletions")) return "deletions";
-            const index = Array.from(pre.children)
-              .filter((child) => child.tagName.toLowerCase() === "code")
-              .indexOf(code);
-            if (index === 0) return "deletions";
-            if (index === 1) return "additions";
-            return null;
-          }
-        }, line),
-    ).resolves.toBe("additions");
+        function pierreCodeSide(
+          root: ShadowRoot | null | undefined,
+          element: Element,
+        ): "deletions" | "additions" | null {
+          const code = Array.from(root?.querySelectorAll<HTMLElement>("code") ?? []).find((candidate) =>
+            candidate.contains(element),
+          );
+          const pre = code?.parentElement;
+          if (!code || !pre) return null;
+          if (code.hasAttribute("data-additions")) return "additions";
+          if (code.hasAttribute("data-deletions")) return "deletions";
+          const index = Array.from(pre.children)
+            .filter((child) => child.tagName.toLowerCase() === "code")
+            .indexOf(code);
+          if (index === 0) return "deletions";
+          if (index === 1) return "additions";
+          return null;
+        }
+      }, line);
+    await expect.poll(composerSide).toBe("additions");
     await page.getByRole("button", { name: "Cancel" }).click();
     await expect(page.getByPlaceholder("Leave a comment")).toHaveCount(0);
   }
@@ -895,10 +893,9 @@ test("keeps final added-file line visible when opening an inline composer", asyn
     await expect(page.getByPlaceholder("Leave a comment")).toBeVisible();
     await expect(page.getByText(lineText)).toBeVisible();
 
-    const layout = await page
-      .locator(".pierre-diff")
-      .first()
-      .evaluate(
+    const diff = page.locator(".pierre-diff").first();
+    const readLayout = () =>
+      diff.evaluate(
         (host, { lineNumber, lineText, followingText }) => {
           const root = host.shadowRoot;
           const line = Array.from(
@@ -926,11 +923,23 @@ test("keeps final added-file line visible when opening an inline composer", asyn
         },
         { lineNumber, lineText, followingText },
       );
-    expect(layout).not.toBeNull();
-    expect(layout!.assignedCount).toBeGreaterThan(0);
-    expect(layout!.slotInsideLine).toBe(false);
-    expect(layout!.composerTop).toBeGreaterThanOrEqual(layout!.lineBottom);
-    expect(layout!.followingTop).toBeGreaterThanOrEqual(layout!.composerBottom);
+    await expect
+      .poll(async () => {
+        const layout = await readLayout();
+        if (layout === null) return null;
+        return {
+          assigned: layout.assignedCount > 0,
+          composerAfterLine: layout.composerTop >= layout.lineBottom,
+          followingAfterComposer: layout.followingTop >= layout.composerBottom,
+          slotInsideLine: layout.slotInsideLine,
+        };
+      })
+      .toEqual({
+        assigned: true,
+        composerAfterLine: true,
+        followingAfterComposer: true,
+        slotInsideLine: false,
+      });
     await page.getByRole("button", { name: "Cancel" }).click();
     await expect(page.getByPlaceholder("Leave a comment")).toHaveCount(0);
   }
@@ -1393,9 +1402,12 @@ test("enables inline review on public Forgejo and Gitea files routes", async ({ 
 });
 
 test("does not create multiline draft ranges across separate PR diff hunks", async ({ page }) => {
-  let createdRange: Record<string, unknown> | undefined;
+  let resolveCreatedRange!: (range: Record<string, unknown>) => void;
+  const createdRangePromise = new Promise<Record<string, unknown>>((resolve) => {
+    resolveCreatedRange = resolve;
+  });
   await mockInlineReviewAPI(page, baseCapabilities, "github", "github.com", multiHunkDiffResponse, (body) => {
-    createdRange = body.range;
+    resolveCreatedRange(body.range);
   });
 
   await page.goto("/pulls/github/acme/widgets/42/files");
@@ -1411,6 +1423,7 @@ test("does not create multiline draft ranges across separate PR diff hunks", asy
   await page.getByPlaceholder("Leave a comment").fill("Only the second hunk.");
   await page.getByRole("button", { name: "Add comment" }).click();
 
+  const createdRange = await createdRangePromise;
   expect(createdRange).toMatchObject({
     path: "src/main.ts",
     side: "right",

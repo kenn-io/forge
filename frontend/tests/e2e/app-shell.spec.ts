@@ -24,7 +24,7 @@ test("renders mocked frontend data", async ({ page }) => {
   await expect(
     page
       .getByRole("region", { name: "Pull requests" })
-      .getByRole("button", { name: /^acme\/widgets \d+$/ })
+      .getByRole("button", { name: /^github\.com\/acme\/widgets \d+$/ })
       .first(),
   ).toBeVisible();
   await expect(page.getByRole("contentinfo").getByText("3 PRs")).toBeVisible();

@@ -1004,7 +1004,7 @@ test.describe("terminal state icons", () => {
 
     await stateMessage.getByRole("button", { name: "Retry" }).click();
 
-    expect(retryCalls).toBe(1);
+    await expect.poll(() => retryCalls).toBe(1);
     await expect(page.locator(".header-name")).toContainText("Add auth middleware");
   });
 
@@ -1408,9 +1408,7 @@ test.describe("terminal state icons", () => {
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
 
-    await expect(page).toHaveURL(/\/workspaces$/, {
-      timeout: 2000,
-    });
+    await expect(page).toHaveURL(/\/workspaces$/);
   });
 });
 
@@ -4471,7 +4469,7 @@ test.describe("issue workspace sidebar", () => {
 
     await page.addInitScript(() => {
       localStorage.setItem("middleman-workspace-sidebar-open", "true");
-      localStorage.setItem("middleman-workspace-sidebar-tab", "pr");
+      localStorage.setItem("middleman-workspace-sidebar-tab", "issue");
 
       const instances: Array<{
         listeners: Map<string, Set<(event: MessageEvent) => void>>;
@@ -4553,6 +4551,7 @@ test.describe("issue workspace sidebar", () => {
     const prButton = page.locator(".panel-toggle-btn", { hasText: "PR" });
     await expect(prButton).toBeVisible();
     await expect(issueButton).toBeVisible();
+    await expect(issueButton).toHaveClass(/active/);
 
     await prButton.click();
     await expect(prButton).toHaveClass(/active/);

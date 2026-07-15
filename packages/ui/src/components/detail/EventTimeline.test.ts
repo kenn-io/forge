@@ -653,6 +653,80 @@ describe("EventTimeline", () => {
     });
   });
 
+  it("blocks concurrent individual and batch suggestion submissions", async () => {
+    let resolveApplication: ((value: boolean) => void) | undefined;
+    const applySuggestion = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveApplication = resolve;
+        }),
+    );
+    const baseThread = makeReviewThreadEvent().diff_thread!;
+    const first = makeReviewThreadEvent({
+      ID: 1,
+      CreatedAt: "2024-06-01T12:01:00Z",
+      Body: ["First suggestion.", "", "```suggestion", "return firstSuggestion();", "```"].join("\n"),
+      diff_thread: { ...baseThread, id: "thread-1", diff_head_sha: "abc123" },
+    });
+    const second = makeReviewThreadEvent({
+      ID: 2,
+      CreatedAt: "2024-06-01T12:02:00Z",
+      Body: ["Second suggestion.", "", "```suggestion", "return secondSuggestion();", "```"].join("\n"),
+      diff_thread: { ...baseThread, id: "thread-2", diff_head_sha: "abc123" },
+    });
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [first, second],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        currentHeadSHA: "abc123",
+        onApplySuggestion: applySuggestion,
+      },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            diff: makeDiffStore(),
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
+          },
+        ],
+      ]),
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Add suggestion to batch" })).toHaveLength(2);
+    });
+    await fireEvent.click(screen.getAllByRole("button", { name: "Add suggestion to batch" })[1]!);
+    await fireEvent.click(screen.getAllByRole("button", { name: "Commit suggestion" })[0]!);
+    await waitFor(() => expect(applySuggestion).toHaveBeenCalledTimes(1));
+
+    const suggestionActions = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".review-suggestion__actions button"),
+    );
+    expect(suggestionActions.every((button) => button.disabled)).toBe(true);
+    expect((screen.getByRole("button", { name: "Commit batch" }) as HTMLButtonElement).disabled).toBe(true);
+
+    await fireEvent.click(suggestionActions[2]!);
+    await fireEvent.click(screen.getByRole("button", { name: "Commit batch" }));
+    expect(applySuggestion).toHaveBeenCalledTimes(1);
+
+    resolveApplication?.(true);
+    await waitFor(() => {
+      expect(
+        Array.from(container.querySelectorAll<HTMLButtonElement>(".review-suggestion__actions button")).every(
+          (button) => !button.disabled,
+        ),
+      ).toBe(true);
+    });
+  });
+
   it("shows an inline error only when suggestion application reports a durable conflict", async () => {
     const applySuggestion = vi.fn(async () => ({
       ok: false,

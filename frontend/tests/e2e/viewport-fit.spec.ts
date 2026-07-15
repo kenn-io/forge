@@ -92,26 +92,28 @@ test("settings sidebar lists every panel in declaration order under group headin
   await page.goto("/settings");
 
   await expect(page.locator(".settings-page")).toBeVisible();
-  await expect(
-    page.evaluate(() =>
-      Array.from(document.querySelectorAll<HTMLElement>(".kit-settings__nav-label, .kit-settings__group-title")).map(
-        (item) => item.textContent?.trim() ?? "",
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Array.from(document.querySelectorAll<HTMLElement>(".kit-settings__nav-label, .kit-settings__group-title")).map(
+          (item) => item.textContent?.trim() ?? "",
+        ),
       ),
-    ),
-  ).resolves.toEqual([
-    "Providers",
-    "Repositories",
-    "Workflow",
-    "Pull requests",
-    "Activity",
-    "Workspace",
-    "Terminal",
-    "Kata mappings",
-    "Workspace agents",
-    "Fleet federation",
-    "Navigation",
-    "Visible modes",
-  ]);
+    )
+    .toEqual([
+      "Providers",
+      "Repositories",
+      "Workflow",
+      "Pull requests",
+      "Activity",
+      "Workspace",
+      "Terminal",
+      "Kata mappings",
+      "Workspace agents",
+      "Fleet federation",
+      "Navigation",
+      "Visible modes",
+    ]);
 });
 
 test("settings navigation stacks on phone-width viewports", async ({ page }) => {

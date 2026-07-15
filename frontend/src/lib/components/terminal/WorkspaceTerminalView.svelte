@@ -202,10 +202,10 @@
   let renameInputValue = $state("");
   let renameSaving = $state(false);
   let renameInputEl = $state<HTMLInputElement | null>(null);
-  // Bumps on every workspace route change so non-delete async
-  // callbacks can detect stale responses for the previous route.
-  // Delete requests track their own target separately because the
-  // same workspace must stay blocked across A -> B -> A navigation.
+  // Bumps on every workspace route change so async callbacks can detect
+  // stale, non-destructive responses from a previous visit. Delete targets
+  // remain blocked across A -> B -> A navigation, while a successful delete
+  // still navigates away if the user returned to the destroyed workspace.
   let workspaceGen = 0;
   let runtimeError = $state<string | null>(null);
   let pollTimer = $state<ReturnType<
@@ -2213,6 +2213,7 @@
     if (actionsBlocked) return;
     const targetId = workspaceId;
     const targetHostKey = workspaceHostKey;
+    const targetGen = workspaceGen;
     // Capture the trigger synchronously: the click handler runs
     // before `inert` is applied to .terminal-view, so this is the
     // last point we can read the originating focused element. By
@@ -2235,6 +2236,7 @@
       // about this response applies.
       if (!isCurrentWorkspace(targetId, targetHostKey)) return;
       if (response.status === 409) {
+        if (targetGen !== workspaceGen) return;
         previouslyFocusedEl = triggerEl;
         forcePromptForId = targetId;
         forcePromptMessage = apiErrorMessage(
@@ -2244,6 +2246,7 @@
         return;
       }
       if (!response.ok && response.status !== 204) {
+        if (targetGen !== workspaceGen) return;
         showFlash(
           apiErrorMessage(error, `Delete failed (${response.status})`),
           { tone: "danger" },

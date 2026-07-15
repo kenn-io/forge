@@ -158,10 +158,14 @@ async function openMergeModalAndConfirm(page: Page): Promise<void> {
 }
 
 async function submitApproval(page: Page): Promise<void> {
+  const approvalResponse = page.waitForResponse((response) => {
+    return response.request().method() === "POST" && /\/approve$/.test(new URL(response.url()).pathname);
+  });
   await page.locator(".btn--approve").first().click();
   const popover = page.locator(".approve-popover");
   await expect(popover).toBeVisible();
   await popover.getByRole("button", { name: "Approve", exact: true }).click();
+  await approvalResponse;
 }
 
 test.describe("head-pinned merge and approve", () => {
@@ -276,9 +280,13 @@ test.describe("head-pinned merge and approve", () => {
     await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toHaveCount(0);
     await expect(page.getByText(STALE_PROMPT)).toBeVisible();
     await refresh;
-    // The prompt asks for a re-review; the actions themselves stay
-    // available once the refreshed head is rendered.
-    await expect(page.locator(".btn--merge").first()).toBeEnabled();
+    // The refreshed detail stays blocked until the user re-reviews the
+    // moved head; rendering fresh data alone must not clear the conflict.
+    await expect(page.locator(".btn--merge").first()).toBeDisabled();
+    await expect(page.locator(".btn--merge").first()).toHaveAttribute(
+      "title",
+      "Refresh and re-review the pull request before merging",
+    );
   });
 
   test("generic merge conflict keeps the modal open and shows the provider message", async ({ page }) => {

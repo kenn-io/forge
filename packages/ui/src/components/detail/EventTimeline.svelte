@@ -913,7 +913,11 @@
   let applyingSuggestionKey = $state<string | null>(null);
   let suggestionErrors = $state<Record<string, string>>({});
   let batchedSuggestions = $state<BatchedSuggestion[]>([]);
+  let savingSuggestionBatch = $state(false);
   const batchedSuggestionKeys = $derived(batchedSuggestions.map((item) => item.key));
+  const suggestionSubmissionBusy = $derived(
+    applyingSuggestionKey !== null || savingSuggestionBatch,
+  );
   // Suggestions batched before the PR head moved (or while it is unknown)
   // must not reach batch submit; the server would reject the whole batch.
   // A stale cached diff context also withholds the batch, matching the
@@ -925,8 +929,6 @@
           (item) => currentHeadSHA !== "" && item.reviewedHeadSHA === currentHeadSHA,
         ),
   );
-  let savingSuggestionBatch = $state(false);
-
   $effect(() => {
     if (deleteTarget === null) return;
     return untrack(() => pushModalFrame("delete-timeline-comment", []));
@@ -1176,7 +1178,7 @@
     block: Extract<MarkdownSuggestionBlock, { type: "suggestion" }>,
     thread: ReviewThread,
   ): Promise<void> {
-    if (onApplySuggestion === undefined) return;
+    if (onApplySuggestion === undefined || suggestionSubmissionBusy) return;
     const key = suggestionKey(event, block);
     const { [key]: _discardedError, ...remainingErrors } = suggestionErrors;
     suggestionErrors = remainingErrors;
@@ -1219,7 +1221,7 @@
 
   async function commitSuggestionBatch(): Promise<void> {
     const eligible = eligibleBatchedSuggestions;
-    if (onApplySuggestion === undefined || eligible.length === 0) return;
+    if (onApplySuggestion === undefined || eligible.length === 0 || suggestionSubmissionBusy) return;
     const submittedKeys = eligible.map((item) => item.key);
     suggestionErrors = Object.fromEntries(
       Object.entries(suggestionErrors).filter(([key]) => !submittedKeys.includes(key)),
@@ -1525,6 +1527,7 @@
                       replacement={block.replacement}
                       {currentHeadSHA}
                       applying={applyingSuggestionKey === blockKey}
+                      submissionBusy={suggestionSubmissionBusy}
                       batched={batchedSuggestionKeys.includes(blockKey)}
                       error={suggestionErrors[blockKey] ?? null}
                       onCommit={onApplySuggestion !== undefined
@@ -1696,7 +1699,7 @@
         class="thread-toggle thread-reply-action"
         type="button"
         onclick={() => void commitSuggestionBatch()}
-        disabled={savingSuggestionBatch}
+        disabled={suggestionSubmissionBusy}
       >
         <CheckIcon size={14} />
         {savingSuggestionBatch ? "Committing..." : "Commit batch"}

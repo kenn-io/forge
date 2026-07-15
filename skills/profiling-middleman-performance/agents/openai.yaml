@@ -1,0 +1,4 @@
+interface:
+  display_name: "Profile Middleman Performance"
+  short_description: "Diagnose frontend and backend latency"
+  default_prompt: "Use $profiling-middleman-performance to measure and diagnose this Middleman performance regression."

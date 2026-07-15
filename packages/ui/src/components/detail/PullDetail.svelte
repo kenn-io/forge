@@ -672,8 +672,6 @@
         platformHost,
         repoPath,
       });
-      stateConflict = null;
-      headConflictContext = null;
       await refreshPulls();
       await activity.loadActivity();
     } catch (err) {
@@ -716,8 +714,8 @@
     detailStore.getDetail()?.platform_head_sha ?? "",
   );
   // A typed conflict invalidates the state the user reviewed. Keep every
-  // head-bound action closed until route navigation or a successful state
-  // mutation establishes a fresh workflow context.
+  // head-bound action closed until route navigation or explicit conflict
+  // recovery verifies a fresh workflow context.
   const headActionsBlocked = $derived(stateConflict !== null);
   // Preflight guard for merge: a head-binding provider must never merge
   // against an unbound reviewed diff, so merge stays disabled until diff
@@ -2035,7 +2033,6 @@
               routeGeneration={mutationRouteGeneration}
               title={approveGate.unavailable ? approveGate.reason : undefined}
               onheadconflict={handleHeadConflict}
-              oncompleted={() => { stateConflict = null; headConflictContext = null; }}
             />
           {/if}
           {#if capabilities.workflow_approval && workflowApproval?.checked && workflowApproval.required}
@@ -2377,8 +2374,6 @@
           }}
           onmerged={() => {
             showMergeModal = false;
-            stateConflict = null;
-            headConflictContext = null;
             void detailStore.loadDetail(owner, name, number, {
               provider,
               platformHost,

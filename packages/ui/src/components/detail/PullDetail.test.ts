@@ -1178,6 +1178,87 @@ describe("PullDetail approvals", () => {
     expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
   });
 
+  it("keeps a newer head conflict after an overlapping approval succeeds", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.repo.capabilities.review_mutation = true;
+    let resolveApprove!: (value: unknown) => void;
+    const approveRequest = new Promise((resolve) => {
+      resolveApprove = resolve;
+    });
+    let resolveMerge!: (value: unknown) => void;
+    const mergeRequest = new Promise((resolve) => {
+      resolveMerge = resolve;
+    });
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: {
+          AllowSquashMerge: true,
+          AllowMergeCommit: false,
+          AllowRebaseMerge: false,
+          ViewerCanMerge: true,
+        },
+      })),
+      POST: vi.fn((path: string) => {
+        if (path.endsWith("/approve")) return approveRequest;
+        if (path.endsWith("/merge")) return mergeRequest;
+        return Promise.resolve({ data: {} });
+      }),
+    };
+    const { detailStore } = renderPullDetail(
+      detail,
+      {
+        AllowSquashMerge: true,
+        AllowMergeCommit: false,
+        AllowRebaseMerge: false,
+        ViewerCanMerge: true,
+      },
+      apiClient,
+    );
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Submit pull request review" })).getByRole("button", {
+        name: "Approve",
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(apiClient.POST.mock.calls.some(([path]) => String(path).endsWith("/approve"))).toBe(true);
+    });
+    await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Merge Pull Request" })).getByRole("button", {
+        name: "Squash and merge",
+      }),
+    );
+
+    resolveMerge({
+      error: {
+        code: "conflict",
+        type: "about:blank",
+        status: 409,
+        detail: "head changed",
+        details: { reason: "stale_state" },
+      },
+    });
+    await vi.waitFor(() => {
+      expect(screen.getByText(/head commit changed since this pull request was reviewed/i)).toBeTruthy();
+    });
+
+    const detailLoadsBeforeApproval = detailStore.loadDetail.mock.calls.length;
+    resolveApprove({
+      data: { status: "approved" },
+      error: undefined,
+      response: new Response("{}"),
+    });
+    await vi.waitFor(() => {
+      expect(detailStore.loadDetail.mock.calls.length).toBeGreaterThan(detailLoadsBeforeApproval);
+    });
+
+    expect(screen.getByText(/head commit changed since this pull request was reviewed/i)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Approve" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("ignores a delayed merge conflict after an A-to-B-to-A route cycle", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;

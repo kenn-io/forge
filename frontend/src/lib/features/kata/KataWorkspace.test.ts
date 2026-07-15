@@ -953,6 +953,7 @@ describe("KataWorkspace", () => {
     expect(screen.getByText("Email Susan re: Q3 body")).toBeTruthy();
     expect(search).toHaveBeenCalledWith(
       expect.objectContaining({ scope: { kind: "project", project_uid: "project-kata" } }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 
@@ -1259,13 +1260,16 @@ describe("KataWorkspace", () => {
     await fireEvent.keyDown(projectInput, { key: "Enter" });
 
     await waitFor(() => {
-      expect(search).toHaveBeenLastCalledWith({
-        scope: { kind: "project", project_uid: "project-kata" },
-        status: "all",
-        owner: "fixture-user",
-        label: "work",
-        query: "q3",
-      });
+      expect(search).toHaveBeenLastCalledWith(
+        {
+          scope: { kind: "project", project_uid: "project-kata" },
+          status: "all",
+          owner: "fixture-user",
+          label: "work",
+          query: "q3",
+        },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
     });
   });
 
@@ -1374,9 +1378,19 @@ describe("KataWorkspace", () => {
       expect(screen.getByRole("heading", { name: "All Open" })).toBeTruthy();
     });
     await fireEvent.input(screen.getByLabelText("Search tasks"), { target: { value: "old" } });
-    await waitFor(() => expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: "old" })));
+    await waitFor(() =>
+      expect(search).toHaveBeenCalledWith(
+        expect.objectContaining({ query: "old" }),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
     await fireEvent.input(screen.getByLabelText("Search tasks"), { target: { value: "new" } });
-    await waitFor(() => expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: "new" })));
+    await waitFor(() =>
+      expect(search).toHaveBeenCalledWith(
+        expect.objectContaining({ query: "new" }),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
 
     oldSearch.resolve({
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "old" },
@@ -1388,7 +1402,7 @@ describe("KataWorkspace", () => {
     expect(screen.queryByText("Loading snapshot")).toBeTruthy();
     await fireEvent.click(screen.getByTestId("daemon-chip"));
     const homeDaemonRow = screen.getByTestId("daemon-row-home") as HTMLButtonElement;
-    expect(homeDaemonRow.disabled).toBe(true);
+    expect(homeDaemonRow.disabled).toBe(false);
 
     newSearch.resolve({
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "new" },
@@ -1436,9 +1450,19 @@ describe("KataWorkspace", () => {
       expect(screen.getByRole("heading", { name: "All Open" })).toBeTruthy();
     });
     await fireEvent.input(screen.getByLabelText("Search tasks"), { target: { value: "old" } });
-    await waitFor(() => expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: "old" })));
+    await waitFor(() =>
+      expect(search).toHaveBeenCalledWith(
+        expect.objectContaining({ query: "old" }),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
     await fireEvent.input(screen.getByLabelText("Search tasks"), { target: { value: "new" } });
-    await waitFor(() => expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: "new" })));
+    await waitFor(() =>
+      expect(search).toHaveBeenCalledWith(
+        expect.objectContaining({ query: "new" }),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
 
     newSearch.resolve({
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "new" },
@@ -1452,7 +1476,7 @@ describe("KataWorkspace", () => {
     });
     await fireEvent.click(screen.getByTestId("daemon-chip"));
     const homeDaemonRow = screen.getByTestId("daemon-row-home") as HTMLButtonElement;
-    expect(homeDaemonRow.disabled).toBe(true);
+    expect(homeDaemonRow.disabled).toBe(false);
 
     oldSearch.resolve({
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "old" },

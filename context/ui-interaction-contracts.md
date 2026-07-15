@@ -154,6 +154,14 @@ Rows that contain buttons, links, or toggles need clear event ownership.
 - Gate unavailable menu actions at the items when the menu remains safe to
   inspect; native-disabled triggers swallow clicks and make pending work look
   like broken UI (`frontend/src/lib/features/kata/KataDaemonSwitcher.svelte::choose`).
+- Keep navigation and context switches available during supersedable reads.
+  Start those reads with an `AbortSignal`, abort them when a newer navigation
+  begins, and retain stale-response generation checks as the application-state
+  backstop (`frontend/src/lib/stores/kata-workspace.svelte.ts::beginViewRequest`).
+- Reserve disabled navigation choices for exclusive transactions such as
+  writes, initial ownership setup, or a context switch already in progress;
+  background refresh counters are presentation state, not transaction locks
+  (`frontend/src/lib/features/kata/KataWorkspace.svelte::daemonSwitchLocked`).
 
 ## Controlled Form Controls
 

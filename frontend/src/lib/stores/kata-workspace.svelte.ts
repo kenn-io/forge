@@ -302,6 +302,7 @@ export class KataWorkspaceStore {
   cachedTasks = $derived([...this.taskCache.values()]);
 
   private viewRequestID = 0;
+  private viewAbort: AbortController | null = null;
   private detailRequestID = 0;
   private detailAbort: AbortController | null = null;
   private unscopedViewName: KataTaskViewName = "today";
@@ -310,6 +311,13 @@ export class KataWorkspaceStore {
 
   constructor(options: CreateKataWorkspaceStoreOptions = {}) {
     this.api = options.api ?? createKataTaskAPI();
+  }
+
+  private beginViewRequest(): { requestID: number; signal: AbortSignal } {
+    this.viewAbort?.abort();
+    const controller = new AbortController();
+    this.viewAbort = controller;
+    return { requestID: ++this.viewRequestID, signal: controller.signal };
   }
 
   clearDaemonBinding(): void {
@@ -339,11 +347,14 @@ export class KataWorkspaceStore {
     preferredIssueUID?: string | null,
     options: KataBootstrapOptions = {},
   ): Promise<void> {
-    const requestID = ++this.viewRequestID;
+    const { requestID, signal } = this.beginViewRequest();
     this.connection = { status: "connecting" };
     try {
-      await this.api.instance();
-      const [projects, view] = await Promise.all([this.api.projects(), this.loadIssues({ view: viewName })]);
+      await this.api.instance({ signal });
+      const [projects, view] = await Promise.all([
+        this.api.projects({ signal }),
+        this.loadIssues({ view: viewName }, signal),
+      ]);
       if (requestID !== this.viewRequestID) {
         this.connection = { status: "online" };
         return;
@@ -380,8 +391,14 @@ export class KataWorkspaceStore {
 
   async openView(viewName: KataTaskViewName, options: KataLoadOptions = {}): Promise<void> {
     if (!shouldApplyLoad(options)) return;
-    const requestID = ++this.viewRequestID;
-    const view = await this.loadIssues({ view: viewName, ...scopedIssueQuery(this.searchFilters) });
+    const { requestID, signal } = this.beginViewRequest();
+    let view: KataTaskViewResponse;
+    try {
+      view = await this.loadIssues({ view: viewName, ...scopedIssueQuery(this.searchFilters) }, signal);
+    } catch (error) {
+      if (requestID !== this.viewRequestID) return;
+      throw error;
+    }
     if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
     this.acceptWorkflowResult(view);
     this.cacheView(view);
@@ -419,9 +436,9 @@ export class KataWorkspaceStore {
       return;
     }
 
-    const requestID = ++this.viewRequestID;
+    const { requestID, signal } = this.beginViewRequest();
     try {
-      const results = await this.searchIssues(this.searchFilters);
+      const results = await this.searchIssues(this.searchFilters, signal);
       if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
       this.acceptWorkflowResult(results);
       this.duplicateCandidates = [];
@@ -452,8 +469,14 @@ export class KataWorkspaceStore {
         : this.unscopedViewName;
 
     if (!hasActiveSearchFilters(nextFilters)) {
-      const requestID = ++this.viewRequestID;
-      const view = await this.loadIssues({ view: nextUnscopedViewName });
+      const { requestID, signal } = this.beginViewRequest();
+      let view: KataTaskViewResponse;
+      try {
+        view = await this.loadIssues({ view: nextUnscopedViewName }, signal);
+      } catch (error) {
+        if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
+        throw error;
+      }
       if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
       this.acceptWorkflowResult(view);
       this.searchFilters = nextFilters;
@@ -472,9 +495,9 @@ export class KataWorkspaceStore {
       return;
     }
 
-    const requestID = ++this.viewRequestID;
+    const { requestID, signal } = this.beginViewRequest();
     try {
-      const results = await this.searchIssues(nextFilters);
+      const results = await this.searchIssues(nextFilters, signal);
       if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
       this.acceptWorkflowResult(results);
       if (previousFilters.scope.kind === "all" && nextFilters.scope.kind === "project") {
@@ -500,41 +523,47 @@ export class KataWorkspaceStore {
   }
 
   async createProject(name: string): Promise<KataProjectSummary> {
-    const project = await this.api.createProject(name);
-    await this.reloadProjects();
-    return project;
+    return this.withMutation(async () => {
+      const project = await this.api.createProject(name);
+      await this.reloadProjects();
+      return project;
+    });
   }
 
   async captureIssue(actor: string, draft: KataTaskCreateDraft, idempotencyKey = createULID()): Promise<void> {
-    const inbox =
-      this.projects.find(isTaskInboxProject) ??
-      (await this.api.projects()).projects.find((project) => isTaskInboxProject(project));
-    if (!inbox) throw new Error("task inbox project is not available");
+    await this.withMutation(async () => {
+      const inbox =
+        this.projects.find(isTaskInboxProject) ??
+        (await this.api.projects()).projects.find((project) => isTaskInboxProject(project));
+      if (!inbox) throw new Error("task inbox project is not available");
 
-    const result = await this.api.createIssue(inbox.id, actor, draft, idempotencyKey);
-    this.captureMutationETag(result);
-    await this.reloadProjects();
+      const result = await this.api.createIssue(inbox.id, actor, draft, idempotencyKey);
+      this.captureMutationETag(result);
+      await this.reloadProjects();
 
-    const requestID = ++this.viewRequestID;
-    this.searchFilters = defaultKataTaskSearchFilters();
-    this.duplicateCandidates = [];
-    const view = await this.loadIssues({ view: "inbox" });
-    if (requestID !== this.viewRequestID) return;
-    this.acceptWorkflowResult(view);
-    this.cacheView(view);
-    this.currentView = {
-      name: "inbox",
-      groups: view.groups,
-      fetched_at: view.fetched_at,
-    };
-    this.unscopedViewName = "inbox";
-    await this.loadSelectedIssue(result.issue?.uid ?? null, requestID, ++this.detailRequestID);
+      const { requestID, signal } = this.beginViewRequest();
+      this.searchFilters = defaultKataTaskSearchFilters();
+      this.duplicateCandidates = [];
+      const view = await this.loadIssues({ view: "inbox" }, signal);
+      if (requestID !== this.viewRequestID) return;
+      this.acceptWorkflowResult(view);
+      this.cacheView(view);
+      this.currentView = {
+        name: "inbox",
+        groups: view.groups,
+        fetched_at: view.fetched_at,
+      };
+      this.unscopedViewName = "inbox";
+      await this.loadSelectedIssue(result.issue?.uid ?? null, requestID, ++this.detailRequestID);
+    });
   }
 
   async renameProject(projectID: number, name: string): Promise<void> {
-    await this.api.renameProject(projectID, name);
-    await this.reloadProjects();
-    await this.refreshCurrentView(this.selectedIssue?.issue.uid);
+    await this.withMutation(async () => {
+      await this.api.renameProject(projectID, name);
+      await this.reloadProjects();
+      await this.refreshCurrentView(this.selectedIssue?.issue.uid);
+    });
   }
 
   async selectIssue(uid: string): Promise<boolean> {
@@ -585,13 +614,17 @@ export class KataWorkspaceStore {
   }
 
   async closeIssue(uid: string, actor: string, options: KataTaskCloseOptions = {}): Promise<void> {
-    await this.mutateIssue(uid, (target) => this.api.closeIssue(target, actor, options));
-    await this.reloadProjects();
+    await this.withMutation(async () => {
+      await this.mutateIssue(uid, (target) => this.api.closeIssue(target, actor, options));
+      await this.reloadProjects();
+    });
   }
 
   async reopenIssue(uid: string, actor: string): Promise<void> {
-    await this.mutateIssue(uid, (target) => this.api.reopenIssue(target, actor));
-    await this.reloadProjects();
+    await this.withMutation(async () => {
+      await this.mutateIssue(uid, (target) => this.api.reopenIssue(target, actor));
+      await this.reloadProjects();
+    });
   }
 
   async editIssue(uid: string, actor: string, patch: KataTaskEditPatch): Promise<void> {
@@ -612,20 +645,24 @@ export class KataWorkspaceStore {
   }
 
   async moveIssue(uid: string, actor: string, toProjectUID: string): Promise<void> {
-    const issue = this.issueForMutation(uid);
-    const selectedETag = this.selectedIssue?.issue.uid === uid ? this.selectedIssue.etag : undefined;
-    const ifMatch = this.issueETags.get(uid) ?? selectedETag ?? `"rev-${issue.revision}"`;
-    await this.mutateIssue(uid, (target) => this.api.moveIssue(target, actor, toProjectUID, ifMatch));
-    await this.reloadProjects();
+    await this.withMutation(async () => {
+      const issue = this.issueForMutation(uid);
+      const selectedETag = this.selectedIssue?.issue.uid === uid ? this.selectedIssue.etag : undefined;
+      const ifMatch = this.issueETags.get(uid) ?? selectedETag ?? `"rev-${issue.revision}"`;
+      await this.mutateIssue(uid, (target) => this.api.moveIssue(target, actor, toProjectUID, ifMatch));
+      await this.reloadProjects();
+    });
   }
 
   async createRecurrence(
     projectID: number,
     input: KataCreateRecurrenceInput,
   ): Promise<KataRecurrenceResponse["recurrence"]> {
-    const response = await this.api.createRecurrence(projectID, input);
-    await this.refreshSelectedRecurrences();
-    return response.recurrence;
+    return this.withMutation(async () => {
+      const response = await this.api.createRecurrence(projectID, input);
+      await this.refreshSelectedRecurrences();
+      return response.recurrence;
+    });
   }
 
   async patchRecurrence(
@@ -633,31 +670,35 @@ export class KataWorkspaceStore {
     input: KataPatchRecurrenceInput,
     ifMatch: string,
   ): Promise<KataRecurrenceResponse["recurrence"]> {
-    const target = this.recurrenceTarget(id);
-    try {
-      const response = await this.api.patchRecurrence(target.projectID, target.uid, input, ifMatch);
-      await this.refreshSelectedRecurrences();
-      return response.recurrence;
-    } catch (error) {
-      if (error && typeof error === "object" && (error as { status?: number }).status === 412) {
-        const latest = await this.api.showRecurrence(target.projectID, target.uid);
-        throw Object.assign(error, { response: latest });
+    return this.withMutation(async () => {
+      const target = this.recurrenceTarget(id);
+      try {
+        const response = await this.api.patchRecurrence(target.projectID, target.uid, input, ifMatch);
+        await this.refreshSelectedRecurrences();
+        return response.recurrence;
+      } catch (error) {
+        if (error && typeof error === "object" && (error as { status?: number }).status === 412) {
+          const latest = await this.api.showRecurrence(target.projectID, target.uid);
+          throw Object.assign(error, { response: latest });
+        }
+        throw error;
       }
-      throw error;
-    }
+    });
   }
 
   async deleteRecurrence(id: number, actor: string): Promise<void> {
-    const target = this.recurrenceTarget(id);
-    try {
-      await this.api.deleteRecurrence(target.projectID, target.uid, actor, target.ifMatch);
-      await this.refreshSelectedRecurrences();
-    } catch (error) {
-      if (error && typeof error === "object" && (error as { status?: number }).status === 412) {
+    await this.withMutation(async () => {
+      const target = this.recurrenceTarget(id);
+      try {
+        await this.api.deleteRecurrence(target.projectID, target.uid, actor, target.ifMatch);
         await this.refreshSelectedRecurrences();
+      } catch (error) {
+        if (error && typeof error === "object" && (error as { status?: number }).status === 412) {
+          await this.refreshSelectedRecurrences();
+        }
+        throw error;
       }
-      throw error;
-    }
+    });
   }
 
   resetSearchFilters(): void {
@@ -670,6 +711,8 @@ export class KataWorkspaceStore {
   }
 
   invalidatePendingLoads(): void {
+    this.viewAbort?.abort();
+    this.viewAbort = null;
     this.viewRequestID++;
     this.detailRequestID++;
     this.abortPendingDetail();
@@ -781,17 +824,21 @@ export class KataWorkspaceStore {
     this.api.bindWorkflowDaemon?.(daemonId);
   }
 
-  private workflowRequestOptions(): { daemonId: string } | undefined {
-    return this.daemonId ? { daemonId: this.daemonId } : undefined;
+  private workflowRequestOptions(signal?: AbortSignal): { daemonId?: string; signal?: AbortSignal } | undefined {
+    if (!this.daemonId && !signal) return undefined;
+    return {
+      ...(this.daemonId ? { daemonId: this.daemonId } : {}),
+      ...(signal ? { signal } : {}),
+    };
   }
 
-  private loadIssues(query: KataTaskIssuesQuery): Promise<KataTaskViewResponse> {
-    const options = this.workflowRequestOptions();
+  private loadIssues(query: KataTaskIssuesQuery, signal?: AbortSignal): Promise<KataTaskViewResponse> {
+    const options = this.workflowRequestOptions(signal);
     return options ? this.api.issues(query, options) : this.api.issues(query);
   }
 
-  private searchIssues(filters: KataTaskSearchFilters): Promise<KataTaskSearchResponse> {
-    const options = this.workflowRequestOptions();
+  private searchIssues(filters: KataTaskSearchFilters, signal?: AbortSignal): Promise<KataTaskSearchResponse> {
+    const options = this.workflowRequestOptions(signal);
     return options ? this.api.search(filters, options) : this.api.search(filters);
   }
 
@@ -908,13 +955,21 @@ export class KataWorkspaceStore {
     await this.mutateIssue(uid, (target) => this.api.patchIssueMetadata(target, actor, patch, ifMatch));
   }
 
+  private async withMutation<T>(task: () => Promise<T>): Promise<T> {
+    this.pendingMutationCount += 1;
+    try {
+      return await task();
+    } finally {
+      this.pendingMutationCount -= 1;
+    }
+  }
+
   private async mutateIssue(
     uid: string,
     operation: (target: KataTaskMutationTarget) => Promise<KataTaskMutationResponse>,
     options: { preserveSelection?: boolean } = {},
   ): Promise<void> {
-    this.pendingMutationCount += 1;
-    try {
+    await this.withMutation(async () => {
       const preserveSelection = options.preserveSelection ?? true;
       const target = this.targetForIssue(uid);
       const selectionBeforeMutation = this.detailRequestID;
@@ -927,9 +982,7 @@ export class KataWorkspaceStore {
           : currentSelectedUID
         : undefined;
       await this.refreshCurrentView(preferredUID);
-    } finally {
-      this.pendingMutationCount -= 1;
-    }
+    });
   }
 
   private targetForIssue(uid: string): KataTaskMutationTarget {
@@ -960,7 +1013,7 @@ export class KataWorkspaceStore {
   }
 
   private async refreshCurrentView(preferredUID?: string | null): Promise<boolean> {
-    const requestID = ++this.viewRequestID;
+    const { requestID, signal } = this.beginViewRequest();
     // Selection epoch at refresh start: any selection or clear that lands
     // while the view fetch below is in flight bumps detailRequestID,
     // which makes the preferredUID captured by the caller stale.
@@ -970,7 +1023,7 @@ export class KataWorkspaceStore {
     if (shouldRefreshViaSearch(this.searchFilters, this.currentView.name)) {
       let results: KataTaskSearchResponse;
       try {
-        results = await this.searchIssues(this.searchFilters);
+        results = await this.searchIssues(this.searchFilters, signal);
       } catch (error) {
         if (requestID !== this.viewRequestID) return false;
         this.duplicateCandidates = duplicateCandidatesFromError(error);
@@ -991,7 +1044,7 @@ export class KataWorkspaceStore {
     } else {
       let view: KataTaskViewResponse;
       try {
-        view = await this.loadIssues({ view: this.currentView.name, ...scopedIssueQuery(this.searchFilters) });
+        view = await this.loadIssues({ view: this.currentView.name, ...scopedIssueQuery(this.searchFilters) }, signal);
       } catch (error) {
         if (requestID !== this.viewRequestID) return false;
         this.duplicateCandidates = duplicateCandidatesFromError(error);

@@ -852,7 +852,10 @@ describe("kata workspace store", () => {
       label: "",
       query: "",
     });
-    expect(api.mocks.issues).toHaveBeenLastCalledWith({ view: "inbox" }, { daemonId: "home" });
+    expect(api.mocks.issues).toHaveBeenLastCalledWith(
+      { view: "inbox" },
+      expect.objectContaining({ daemonId: "home", signal: expect.any(AbortSignal) }),
+    );
   });
 
   test("normalizes duplicate candidates from tolerant task error details", () => {
@@ -1126,6 +1129,32 @@ describe("kata workspace store", () => {
     expect(store.pendingSelectionUID).toBeNull();
   });
 
+  test("invalidating pending loads aborts the in-flight view load", async () => {
+    const api = createFakeKataTaskAPI();
+    const response = deferred<KataTaskViewResponse>();
+    api.mocks.issues.mockImplementationOnce(() => response.promise);
+    const store = createKataWorkspaceStore({ api });
+
+    const pending = store.openView("all");
+    await vi.waitFor(() => expect(api.mocks.issues).toHaveBeenCalledOnce());
+    const signal = api.mocks.issues.mock.calls[0]?.[1]?.signal as AbortSignal | undefined;
+    store.invalidatePendingLoads();
+    response.resolve({
+      ...buildKataTaskView({
+        view: "all",
+        issues,
+        projects,
+        today: "2026-05-15",
+        fetched_at: fetchedAt,
+      }),
+      daemon_id: "home",
+    });
+
+    await pending;
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal?.aborted).toBe(true);
+  });
+
   test("explicit empty relationship fields clear stale cached graph links", () => {
     const store = createKataWorkspaceStore({ api: createFakeKataTaskAPI() });
     const stale = {
@@ -1291,7 +1320,7 @@ describe("kata workspace store", () => {
     expect(api.mocks.search).not.toHaveBeenCalled();
     expect(api.mocks.issues).toHaveBeenCalledWith(
       { view: "upcoming", project_uid: "project-kata" },
-      { daemonId: "home" },
+      expect.objectContaining({ daemonId: "home", signal: expect.any(AbortSignal) }),
     );
     expect(store.currentView.name).toBe("upcoming");
   });
@@ -1316,7 +1345,7 @@ describe("kata workspace store", () => {
     expect(api.mocks.search).not.toHaveBeenCalled();
     expect(api.mocks.issues).toHaveBeenCalledWith(
       { view: "upcoming", project_uid: "project-kata" },
-      { daemonId: "home" },
+      expect.objectContaining({ daemonId: "home", signal: expect.any(AbortSignal) }),
     );
     expect(store.currentView.name).toBe("upcoming");
     expect(store.selectedIssue?.issue.uid).toBe("issue-read-design-notes");
@@ -1800,7 +1829,10 @@ describe("kata workspace store", () => {
     await store.syncEventCursor();
 
     expect(store.eventCursor).toBe(2);
-    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "inbox" }, { daemonId: "home" });
+    expect(api.mocks.issues).toHaveBeenCalledWith(
+      { view: "inbox" },
+      expect.objectContaining({ daemonId: "home", signal: expect.any(AbortSignal) }),
+    );
     expect(store.selectedIssue?.issue.uid).toBe("issue-renew-passport");
   });
 
@@ -1853,7 +1885,10 @@ describe("kata workspace store", () => {
     });
 
     expect(store.eventCursor).toBe(lowID);
-    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "today" }, { daemonId: "home" });
+    expect(api.mocks.issues).toHaveBeenCalledWith(
+      { view: "today" },
+      expect.objectContaining({ daemonId: "home", signal: expect.any(AbortSignal) }),
+    );
   });
 
   test("remote events do not advance the cursor when refreshing the view fails", async () => {
@@ -1907,7 +1942,10 @@ describe("kata workspace store", () => {
     });
 
     expect(store.eventCursor).toBe(77);
-    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "today" }, { daemonId: "home" });
+    expect(api.mocks.issues).toHaveBeenCalledWith(
+      { view: "today" },
+      expect.objectContaining({ daemonId: "home", signal: expect.any(AbortSignal) }),
+    );
     expect(api.mocks.issue).toHaveBeenCalledWith("issue-pay-rent", { signal: expect.any(AbortSignal) });
     expect(store.selectedIssue?.comments.map((comment) => comment.body)).toContain("Remote note.");
   });
@@ -1940,7 +1978,10 @@ describe("kata workspace store", () => {
     });
 
     expect(store.eventCursor).toBe(77);
-    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "today" }, { daemonId: "home" });
+    expect(api.mocks.issues).toHaveBeenCalledWith(
+      { view: "today" },
+      expect.objectContaining({ daemonId: "home", signal: expect.any(AbortSignal) }),
+    );
     expect(store.selectedIssue?.issue.metadata).toMatchObject({
       scheduled_on: "2026-05-20",
       someday: true,
@@ -2040,7 +2081,10 @@ describe("kata workspace store", () => {
 
     await store.syncEventCursor();
 
-    expect(api.mocks.issues).toHaveBeenCalledWith({ view: "inbox" }, { daemonId: "home" });
+    expect(api.mocks.issues).toHaveBeenCalledWith(
+      { view: "inbox" },
+      expect.objectContaining({ daemonId: "home", signal: expect.any(AbortSignal) }),
+    );
     expect(store.eventCursor).toBe(25);
   });
 
@@ -2057,7 +2101,10 @@ describe("kata workspace store", () => {
     });
 
     expect(store.eventCursor).toBe(100);
-    expect(api.mocks.issues).toHaveBeenLastCalledWith({ view: "inbox" }, { daemonId: "home" });
+    expect(api.mocks.issues).toHaveBeenLastCalledWith(
+      { view: "inbox" },
+      expect.objectContaining({ daemonId: "home", signal: expect.any(AbortSignal) }),
+    );
     expect(store.currentView.name).toBe("inbox");
     expect(store.connection.status).toBe("online");
   });
@@ -2087,7 +2134,10 @@ describe("kata workspace store", () => {
       owner: "agent:planner",
       query: "design",
     });
-    expect(api.mocks.search).toHaveBeenLastCalledWith(store.searchFilters, { daemonId: "home" });
+    expect(api.mocks.search).toHaveBeenLastCalledWith(
+      store.searchFilters,
+      expect.objectContaining({ daemonId: "home", signal: expect.any(AbortSignal) }),
+    );
     expect(store.selectedIssue?.issue.uid).toBe("issue-read-design-notes");
   });
 
@@ -2177,7 +2227,10 @@ describe("kata workspace store", () => {
       lastEventID: 100,
     });
     await vi.waitFor(() => {
-      expect(api.mocks.issues).toHaveBeenCalledWith({ view: "today" });
+      expect(api.mocks.issues).toHaveBeenCalledWith(
+        { view: "today" },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
     });
 
     await store.openView("inbox");

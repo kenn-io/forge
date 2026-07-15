@@ -198,8 +198,14 @@
     cursor: pointer;
   }
 
-  .daemon-row:hover {
+  .daemon-row:hover:not(:disabled) {
     background: var(--bg-surface-hover);
+  }
+
+  .daemon-row:disabled {
+    color: var(--text-muted);
+    cursor: not-allowed;
+    opacity: 0.6;
   }
 
   .daemon-row.selected {

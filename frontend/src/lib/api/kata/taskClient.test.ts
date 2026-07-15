@@ -1134,6 +1134,36 @@ describe("kata task HTTP client", () => {
     expect(signals.every((signal) => signal === controller.signal)).toBe(true);
   });
 
+  test("threads abort signals through view and search fetches", async () => {
+    const { fetchImpl } = createFetchStub({
+      "/api/v1/projects?include=stats": {
+        body: { projects: [project("project-work", "Work")] },
+      },
+      "/api/v1/projects/1/issues?status=open": {
+        body: { issues: [issue("issue-1", "Shown issue", "project-work")] },
+      },
+      "/api/v1/issues?status=open": {
+        body: { issues: [issue("issue-1", "Shown issue", "project-work")] },
+      },
+    });
+    const signals: (AbortSignal | null | undefined)[] = [];
+    const recordingFetch: typeof fetch = (input, init) => {
+      signals.push(init?.signal);
+      return fetchImpl(input, init);
+    };
+    const api = createKataTaskAPI({ fetchImpl: recordingFetch });
+    const controller = new AbortController();
+
+    await api.issues({ view: "all", project_uid: "project-work" }, { signal: controller.signal });
+    await api.search(
+      { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "" },
+      { signal: controller.signal },
+    );
+
+    expect(signals).toHaveLength(3);
+    expect(signals.every((signal) => signal === controller.signal)).toBe(true);
+  });
+
   test("fetches events with supported server params and filters issue_uid client-side", async () => {
     const { calls, fetchImpl } = createFetchStub({
       "/api/v1/events?project_id=2&after_id=4": {

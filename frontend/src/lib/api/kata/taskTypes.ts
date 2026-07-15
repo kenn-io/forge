@@ -383,8 +383,8 @@ export interface KataTaskIssuesQuery {
 
 export interface KataTaskAPI {
   bindWorkflowDaemon?(daemonId?: string): void;
-  instance(): Promise<KataInstanceResponse>;
-  projects(): Promise<KataProjectsResponse>;
+  instance(opts?: { signal?: AbortSignal }): Promise<KataInstanceResponse>;
+  projects(opts?: { signal?: AbortSignal }): Promise<KataProjectsResponse>;
   createProject(name: string): Promise<KataProjectSummary>;
   renameProject(projectID: number, name: string): Promise<KataProjectSummary>;
   patchProjectMetadata(
@@ -399,8 +399,11 @@ export interface KataTaskAPI {
     draft: KataTaskCreateDraft,
     idempotencyKey?: string | undefined,
   ): Promise<KataTaskMutationResponse>;
-  issues(query: KataTaskIssuesQuery, opts?: { daemonId?: string }): Promise<KataTaskViewResponse>;
-  search(filters: KataTaskSearchFilters, opts?: { daemonId?: string }): Promise<KataTaskSearchResponse>;
+  issues(query: KataTaskIssuesQuery, opts?: { daemonId?: string; signal?: AbortSignal }): Promise<KataTaskViewResponse>;
+  search(
+    filters: KataTaskSearchFilters,
+    opts?: { daemonId?: string; signal?: AbortSignal },
+  ): Promise<KataTaskSearchResponse>;
   issue(uid: string, opts?: { daemonId?: string; pinned?: boolean; signal?: AbortSignal }): Promise<KataTaskDetail>;
   reachableGraph(
     projectID: number,

@@ -2049,7 +2049,7 @@ test("kata workspace reloads from reset frames on the configured daemon stream",
   }
 });
 
-test("kata daemon switch waits for an in-flight event stream refresh", async ({ page }) => {
+test("kata daemon switch supersedes an in-flight event stream refresh", async ({ page }) => {
   let releaseIssues!: () => void;
   const issuesBarrier = new Promise<void>((resolve) => {
     releaseIssues = resolve;
@@ -2080,25 +2080,15 @@ test("kata daemon switch waits for an in-flight event stream refresh", async ({ 
     const daemonChip = page.getByTestId("daemon-chip");
     await expect(daemonChip).toBeEnabled();
     await daemonChip.click();
-    await expect(page.getByTestId("daemon-row-work")).toBeDisabled();
-    await daemonChip.click();
-    await page.evaluate(() => {
-      window.history.pushState({}, "", "/kata?view=all&issue=issue-q3&daemon=work");
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    });
-    await expect(page).toHaveURL(/daemon=work/);
-    await page.evaluate(
-      () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
-    );
-    expect(work.state.seenPaths).not.toContain("GET /api/v1/issues?status=open");
+    const workDaemonRow = page.getByTestId("daemon-row-work");
+    await expect(workDaemonRow).toBeEnabled();
+    await workDaemonRow.click();
+    await expect(page.getByTestId("daemon-chip")).toContainText("work");
+    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/issues?status=open");
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Email Susan re: Q3/ })).toBeVisible();
 
     releaseIssues();
 
-    await expect(page.getByTestId("daemon-chip")).toContainText("work");
-    await expect(page.locator(".kata-list").getByRole("button", { name: /Email Susan re: Q3/ })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Task detail" })).toContainText(
-      "Confirm the Q3 project review agenda.",
-    );
     await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
   } finally {
     releaseIssues();
@@ -2109,7 +2099,7 @@ test("kata daemon switch waits for an in-flight event stream refresh", async ({ 
   }
 });
 
-test("kata stream refresh failure releases switching and reconnects", async ({ page }) => {
+test("kata stream refresh failure does not block switching and reconnects", async ({ page }) => {
   let releaseIssues!: () => void;
   const issuesBarrier = new Promise<void>((resolve) => {
     releaseIssues = resolve;
@@ -2136,7 +2126,7 @@ test("kata stream refresh failure releases switching and reconnects", async ({ p
     await expect(daemonChip).toBeEnabled();
     await daemonChip.click();
     const daemonRow = page.getByTestId("daemon-row-e2e");
-    await expect(daemonRow).toBeDisabled();
+    await expect(daemonRow).toBeEnabled();
 
     releaseIssues();
     await expect(daemonRow).toBeEnabled();

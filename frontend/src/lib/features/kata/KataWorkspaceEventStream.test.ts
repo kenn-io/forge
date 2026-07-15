@@ -508,7 +508,7 @@ describe("KataWorkspace", () => {
     expect(streamHeaders[2]?.get("Last-Event-ID")).toBe("6");
   });
 
-  it("drains queued old-stream messages before enabling a daemon switch", async () => {
+  it("keeps daemon switching available while draining queued old-stream messages", async () => {
     const streamControllers: ReadableStreamDefaultController<Uint8Array>[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
@@ -589,7 +589,7 @@ describe("KataWorkspace", () => {
     await oldStreamRefreshStarted.promise;
     await fireEvent.click(screen.getByTestId("daemon-chip"));
     const homeDaemonRow = screen.getByTestId("daemon-row-home") as HTMLButtonElement;
-    expect(homeDaemonRow.disabled).toBe(true);
+    expect(homeDaemonRow.disabled).toBe(false);
 
     releaseOldStreamRefresh.resolve();
     await waitFor(() => {
@@ -604,7 +604,7 @@ describe("KataWorkspace", () => {
     expect(api.issues).toHaveBeenCalledTimes(viewLoadsAfterDrain);
   });
 
-  it("releases the daemon switch gate and reconnects when a stream refresh fails", async () => {
+  it("keeps daemon switching available and reconnects when a stream refresh fails", async () => {
     const streamControllers: ReadableStreamDefaultController<Uint8Array>[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
@@ -651,7 +651,7 @@ describe("KataWorkspace", () => {
     await fireEvent.click(screen.getByTestId("daemon-chip"));
     const homeDaemonRow = screen.getByTestId("daemon-row-home") as HTMLButtonElement;
     await waitFor(() => {
-      expect(homeDaemonRow.disabled).toBe(true);
+      expect(homeDaemonRow.disabled).toBe(false);
     });
 
     failedRefresh.reject(new Error("stream refresh failed"));

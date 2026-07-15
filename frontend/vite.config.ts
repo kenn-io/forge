@@ -200,7 +200,19 @@ const browserTestProject = defineProject(async () => {
         // Vite can reject its module-runner socket promise while Vitest closes
         // the browser server after every assertion has completed. Ignore only
         // that framework teardown error; all application errors still fail.
-        if (error.message === "WebSocket closed without opened." && error.stack?.includes("@vite/client")) {
+        const serializedStacks = "stacks" in error ? error.stacks : undefined;
+        const hasViteClientFrame =
+          error.stack?.includes("@vite/client") ||
+          (Array.isArray(serializedStacks) &&
+            serializedStacks.some(
+              (frame: unknown) =>
+                typeof frame === "object" &&
+                frame !== null &&
+                "file" in frame &&
+                typeof frame.file === "string" &&
+                frame.file.includes("@vite/client"),
+            ));
+        if (error.message === "WebSocket closed without opened." && hasViteClientFrame) {
           return false;
         }
         return undefined;

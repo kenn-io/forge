@@ -68,6 +68,7 @@ type remoteHeadGitReader interface {
 	BranchName(ctx context.Context, dir string) (string, error)
 	UpstreamState(ctx context.Context, dir, branch string) (upstreamState, error)
 	RemoteTrackingSHA(ctx context.Context, dir, remote, branch string) (string, string, bool, error)
+	SetBranchUpstream(ctx context.Context, dir, branch, remote, mergeRef string) error
 }
 
 const (
@@ -87,6 +88,12 @@ func (gitRemoteHeadReader) UpstreamState(ctx context.Context, dir, branch string
 	gitCtx, cancel := context.WithTimeout(ctx, pushedHeadGitTimeout)
 	defer cancel()
 	return gitUpstreamState(gitCtx, dir, branch)
+}
+
+func (gitRemoteHeadReader) SetBranchUpstream(ctx context.Context, dir, branch, remote, mergeRef string) error {
+	gitCtx, cancel := context.WithTimeout(ctx, pushedHeadGitTimeout)
+	defer cancel()
+	return setBranchUpstream(gitCtx, dir, branch, remote, mergeRef)
 }
 
 func (gitRemoteHeadReader) RemoteTrackingSHA(ctx context.Context, dir, remote, branch string) (string, string, bool, error) {
@@ -300,8 +307,19 @@ func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspa
 		return PushedHeadUpdate{}, false, err
 	}
 	if !upstream.hasTracking || upstream.remoteName == "" || upstream.branchName == "" {
-		slog.Debug("workspace pushed-head observer missing upstream", "workspace_id", ws.ID, "branch", branch)
-		return PushedHeadUpdate{}, false, nil
+		healed, healErr := o.configureMissingUpstream(ctx, ws, mr, branch)
+		if healErr != nil {
+			return PushedHeadUpdate{}, false, healErr
+		}
+		if !healed {
+			slog.Debug("workspace pushed-head observer missing upstream", "workspace_id", ws.ID, "branch", branch)
+			return PushedHeadUpdate{}, false, nil
+		}
+		upstream = upstreamState{
+			hasTracking: true,
+			remoteName:  "origin",
+			branchName:  mr.HeadBranch,
+		}
 	}
 	if upstream.branchName != mr.HeadBranch {
 		return PushedHeadUpdate{}, false, nil
@@ -381,6 +399,40 @@ func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspa
 	prior.ObservedAt = observedAt
 	o.observed[key] = prior
 	return update, true, nil
+}
+
+// configureMissingUpstream restores tracking configuration for a workspace
+// branch that should follow the open PR's head branch but has no upstream —
+// the state every synthetic fallback branch was created in before upstreams
+// were configured at worktree add. Without an upstream, every derived surface
+// (sidebar ahead/behind counts, push, pull, unpushed-commit flags) silently
+// reports nothing. Only same-repo heads are wired, and only when the checked
+// out branch is the PR head branch or middleman's synthetic PR branch: origin
+// cannot track a fork's head branch, and an unrelated user branch must not be
+// rewired.
+func (o *PushedHeadObserver) configureMissingUpstream(
+	ctx context.Context, ws *Workspace, mr db.MergeRequest, branch string,
+) (bool, error) {
+	if ws.MRHeadRepo != nil {
+		return false, nil
+	}
+	head := strings.TrimSpace(mr.HeadBranch)
+	if head == "" {
+		return false, nil
+	}
+	synthetic := ws.ItemType == db.WorkspaceItemTypePullRequest &&
+		branch == syntheticPRWorktreeBranch(ws.ItemNumber)
+	if branch != head && !synthetic {
+		return false, nil
+	}
+	if err := o.git.SetBranchUpstream(
+		ctx, ws.WorktreePath, branch, "origin", "refs/heads/"+head,
+	); err != nil {
+		return false, fmt.Errorf("configure branch upstream: %w", err)
+	}
+	slog.Info("configured missing workspace branch upstream",
+		"workspace_id", ws.ID, "branch", branch, "head_branch", head)
+	return true, nil
 }
 
 func (o *PushedHeadObserver) recordFailure(workspaceID string, err error) {

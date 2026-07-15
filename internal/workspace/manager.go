@@ -1453,6 +1453,14 @@ func (m *Manager) addWorktreeLocked(
 		"-b", fallbackBranch, startRef,
 	)
 	if fallbackErr == nil {
+		if upErr := configureFallbackBranchUpstream(
+			ctx, cloneDir, ws, fallbackBranch,
+		); upErr != nil {
+			cleanupWorktreeAddOnUpstreamFailure(
+				ctx, cloneDir, ws.WorktreePath, fallbackBranch,
+			)
+			return "", fmt.Errorf("configure branch upstream: %w", upErr)
+		}
 		return fallbackBranch, nil
 	}
 	return "", fmt.Errorf(
@@ -1531,15 +1539,8 @@ func (m *Manager) addPreferredWorktree(
 			ctx, ws.WorktreePath, ws.GitHeadRef,
 			"origin", "refs/heads/"+ws.GitHeadRef,
 		); err != nil {
-			cleanupCtx, cancel := cleanupContext(ctx)
-			defer cancel()
-			_ = runGitWithoutHooks(
-				cleanupCtx, cloneDir,
-				"worktree", "remove", "--force", ws.WorktreePath,
-			)
-			_ = runGitWithoutHooks(
-				cleanupCtx, cloneDir,
-				"branch", "-D", "--", ws.GitHeadRef,
+			cleanupWorktreeAddOnUpstreamFailure(
+				ctx, cloneDir, ws.WorktreePath, ws.GitHeadRef,
 			)
 			return "", fmt.Errorf("configure branch upstream: %w", err)
 		}
@@ -1575,11 +1576,10 @@ func (m *Manager) addPreferredWorktree(
 			ctx, ws.WorktreePath, ws.GitHeadRef,
 			"origin", "refs/heads/"+ws.GitHeadRef,
 		); err != nil {
-			cleanupCtx, cancel := cleanupContext(ctx)
-			defer cancel()
-			_ = runGitWithoutHooks(
-				cleanupCtx, cloneDir,
-				"worktree", "remove", "--force", ws.WorktreePath,
+			// Empty branch: the branch pre-existed this workspace and
+			// stays in place; only the worktree is rolled back.
+			cleanupWorktreeAddOnUpstreamFailure(
+				ctx, cloneDir, ws.WorktreePath, "",
 			)
 			return "", fmt.Errorf("configure branch upstream: %w", err)
 		}
@@ -1623,6 +1623,51 @@ func workspaceMergeRequestHeadRef(ws *Workspace) string {
 
 func syntheticPRWorktreeBranch(mrNumber int) string {
 	return fmt.Sprintf("middleman/pr-%d", mrNumber)
+}
+
+// cleanupWorktreeAddOnUpstreamFailure rolls back a just-added worktree (and,
+// when middleman created it, its branch) after configuring the branch
+// upstream failed. Callers must already hold the per-repo lock for cloneDir.
+// An empty branch leaves a pre-existing user-owned branch in place.
+func cleanupWorktreeAddOnUpstreamFailure(
+	ctx context.Context, cloneDir, worktreePath, branch string,
+) {
+	cleanupCtx, cancel := cleanupContext(ctx)
+	defer cancel()
+	_ = runGitWithoutHooks(
+		cleanupCtx, cloneDir,
+		"worktree", "remove", "--force", worktreePath,
+	)
+	if branch == "" {
+		return
+	}
+	_ = runGitWithoutHooks(
+		cleanupCtx, cloneDir,
+		"branch", "-D", "--", branch,
+	)
+}
+
+// configureFallbackBranchUpstream points the synthetic PR fallback branch at
+// the PR's head branch on origin, so divergence counts, push, and pull treat
+// the remote PR branch as the sync target exactly like a preferred-name
+// checkout would. Fork heads and deleted head branches have no origin
+// tracking ref to bind to and are left without an upstream.
+func configureFallbackBranchUpstream(
+	ctx context.Context,
+	cloneDir string,
+	ws *Workspace,
+	fallbackBranch string,
+) error {
+	if ws.MRHeadRepo != nil {
+		return nil
+	}
+	if !gitRefExists(ctx, cloneDir, "refs/remotes/origin/"+ws.GitHeadRef) {
+		return nil
+	}
+	return setBranchUpstream(
+		ctx, ws.WorktreePath, fallbackBranch,
+		"origin", "refs/heads/"+ws.GitHeadRef,
+	)
 }
 
 func setBranchUpstream(

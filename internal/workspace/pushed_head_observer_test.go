@@ -13,15 +13,24 @@ import (
 )
 
 type fakeRemoteHeadReader struct {
-	branchCalls   int
-	upstreamCalls int
-	trackingCalls int
-	branch        string
-	upstream      upstreamState
-	trackingSHA   string
-	trackingRef   string
-	trackingOK    bool
-	trackingErr   error
+	branchCalls      int
+	upstreamCalls    int
+	trackingCalls    int
+	branch           string
+	upstream         upstreamState
+	trackingSHA      string
+	trackingRef      string
+	trackingOK       bool
+	trackingErr      error
+	setUpstreamCalls []fakeSetUpstreamCall
+	setUpstreamErr   error
+}
+
+type fakeSetUpstreamCall struct {
+	dir      string
+	branch   string
+	remote   string
+	mergeRef string
 }
 
 func (r *fakeRemoteHeadReader) BranchName(context.Context, string) (string, error) {
@@ -37,6 +46,16 @@ func (r *fakeRemoteHeadReader) UpstreamState(context.Context, string, string) (u
 func (r *fakeRemoteHeadReader) RemoteTrackingSHA(context.Context, string, string, string) (string, string, bool, error) {
 	r.trackingCalls++
 	return r.trackingSHA, r.trackingRef, r.trackingOK, r.trackingErr
+}
+
+func (r *fakeRemoteHeadReader) SetBranchUpstream(_ context.Context, dir, branch, remote, mergeRef string) error {
+	r.setUpstreamCalls = append(r.setUpstreamCalls, fakeSetUpstreamCall{
+		dir:      dir,
+		branch:   branch,
+		remote:   remote,
+		mergeRef: mergeRef,
+	})
+	return r.setUpstreamErr
 }
 
 func insertPushedHeadWorkspace(
@@ -335,4 +354,85 @@ func TestPushedHeadObserverMissingRefAndTransientErrorKeepObservationState(t *te
 	require.Len(recovered.HeadChanges, 1)
 	assert.Equal("1111111", recovered.HeadChanges[0].OldSHA)
 	assert.Equal("2222222", recovered.HeadChanges[0].NewSHA)
+}
+
+func TestPushedHeadObserverUpstreamHeal(t *testing.T) {
+	forkHeadRepo := "https://github.com/contributor/widget.git"
+	cases := []struct {
+		name       string
+		branch     string
+		mrHeadRepo *string
+		wantHeal   bool
+	}{
+		{
+			name:     "synthetic PR branch is rewired to the PR head",
+			branch:   "middleman/pr-42",
+			wantHeal: true,
+		},
+		{
+			name:     "head-branch checkout is rewired to itself",
+			branch:   "feature/remote-head",
+			wantHeal: true,
+		},
+		{
+			name:   "unrelated branch is left alone",
+			branch: "scratch/unrelated",
+		},
+		{
+			name:       "fork PR head cannot be tracked by origin",
+			branch:     "feature/remote-head",
+			mrHeadRepo: &forkHeadRepo,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			d := openTestDB(t)
+			repoID := seedRepo(t, d, "github.com", "acme", "widget")
+			seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "2222222")
+			require.NoError(d.InsertWorkspace(t.Context(), &db.Workspace{
+				ID:              "ws-pr",
+				Platform:        "github",
+				PlatformHost:    "github.com",
+				RepoOwner:       "acme",
+				RepoName:        "widget",
+				ItemType:        db.WorkspaceItemTypePullRequest,
+				ItemNumber:      42,
+				GitHeadRef:      "feature/remote-head",
+				MRHeadRepo:      tc.mrHeadRepo,
+				WorkspaceBranch: tc.branch,
+				WorktreePath:    "/tmp/worktree",
+				TmuxSession:     "middleman-ws-pr",
+				Status:          "ready",
+			}))
+			reader := &fakeRemoteHeadReader{
+				branch:      tc.branch,
+				upstream:    upstreamState{},
+				trackingSHA: "2222222",
+				trackingRef: "refs/remotes/origin/feature/remote-head",
+				trackingOK:  true,
+			}
+			observer := newPushedHeadObserverForTest(t, d, reader)
+
+			result, err := observer.RunOnce(context.Background())
+			require.NoError(err)
+			assert.Empty(result.HeadChanges)
+			if !tc.wantHeal {
+				assert.Empty(reader.setUpstreamCalls,
+					"branch must not be rewired")
+				assert.Zero(reader.trackingCalls)
+				return
+			}
+			require.Len(reader.setUpstreamCalls, 1,
+				"missing upstream must be configured")
+			call := reader.setUpstreamCalls[0]
+			assert.Equal("/tmp/worktree", call.dir)
+			assert.Equal(tc.branch, call.branch)
+			assert.Equal("origin", call.remote)
+			assert.Equal("refs/heads/feature/remote-head", call.mergeRef)
+			assert.Equal(1, reader.trackingCalls,
+				"observation must continue against the healed upstream")
+		})
+	}
 }

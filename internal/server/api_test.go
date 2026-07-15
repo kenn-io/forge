@@ -25570,6 +25570,69 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 	assert.Equal(int64(0), *found.CommitsBehind)
 }
 
+// TestWorkspaceListRestoresAheadBehindAfterUpstreamHealE2E covers the repair
+// path for workspaces whose branch lost (or never received) an upstream —
+// the state every synthetic middleman/pr-N fallback branch was created in
+// before upstreams were configured at worktree add. The list must omit the
+// counts while the upstream is missing, and a pushed-head observer pass must
+// rewire the branch to the PR head branch so the counts come back without
+// recreating the workspace.
+func TestWorkspaceListRestoresAheadBehindAfterUpstreamHealE2E(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := assert.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "ahead-1.txt"),
+		[]byte("a1\n"), 0o644,
+	))
+	runGit(t, ws.WorktreePath, "add", ".")
+	runGit(t, ws.WorktreePath, "commit", "-m", "ahead 1")
+
+	// Strip the branch's upstream configuration to reproduce a workspace
+	// created by the fallback path.
+	branch := ws.GitHeadRef
+	runGit(t, ws.WorktreePath, "config", "--unset", "branch."+branch+".remote")
+	runGit(t, ws.WorktreePath, "config", "--unset", "branch."+branch+".merge")
+
+	findWorkspace := func() *generated.WorkspaceResponse {
+		listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
+		require.NoError(err)
+		require.Equal(http.StatusOK, listResp.StatusCode())
+		require.NotNil(listResp.JSON200)
+		require.NotNil(listResp.JSON200.Workspaces)
+		for i := range *listResp.JSON200.Workspaces {
+			entry := &(*listResp.JSON200.Workspaces)[i]
+			if entry.Id == ws.Id {
+				return entry
+			}
+		}
+		require.Fail("workspace missing from list", ws.Id)
+		return nil
+	}
+
+	broken := findWorkspace()
+	require.Nil(broken.CommitsAhead,
+		"counts must be omitted while the branch has no upstream")
+	require.Nil(broken.CommitsBehind)
+
+	srv.runWorkspacePushedHeadObserverPass(ctx)
+
+	healed := findWorkspace()
+	require.NotNil(healed.CommitsAhead,
+		"observer pass must restore the branch upstream")
+	require.NotNil(healed.CommitsBehind)
+	assert.Equal(int64(1), *healed.CommitsAhead)
+	assert.Equal(int64(0), *healed.CommitsBehind)
+}
+
 func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	t.Parallel()
 

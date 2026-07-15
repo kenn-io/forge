@@ -2106,6 +2106,75 @@ func TestAddWorktreeUsesFallbackWhenLocalBasePreferredBranchCheckedOut(t *testin
 	assert.Equal(originSHA, headSHA)
 }
 
+func TestAddWorktreeFallbackBranchTracksPRHeadBranch(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	// Managed clones always carry the remote-tracking refspec (gitclone
+	// EnsureRefspecs); without it git cannot resolve `@{upstream}` from
+	// the branch config this test asserts on.
+	runWorkspaceTestGit(
+		t, cloneDir, "config", "remote.origin.fetch",
+		"+refs/heads/*:refs/remotes/origin/*",
+	)
+	prNumber := 44
+	headBranch := "feature/tracked-fallback"
+	headSHA := configureSameRepoPRRefs(t, cloneDir, headBranch, prNumber)
+
+	// Point the local branch with the preferred name at a divergent
+	// commit so addPreferredWorktree rejects it and the synthetic
+	// fallback branch is used instead.
+	treeOut, err := gitOutput(t.Context(), cloneDir, "rev-parse", "main^{tree}")
+	require.NoError(err)
+	divergentSHA, err := gitOutput(
+		t.Context(), cloneDir,
+		"commit-tree", strings.TrimSpace(treeOut),
+		"-p", headSHA, "-m", "divergent local branch",
+	)
+	require.NoError(err)
+	runWorkspaceTestGit(
+		t, cloneDir, "update-ref",
+		"refs/heads/"+headBranch, strings.TrimSpace(divergentSHA),
+	)
+
+	ws := &Workspace{
+		ID:              "ws-fallback-tracks-head",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      prNumber,
+		GitHeadRef:      headBranch,
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
+		TmuxSession:     "ws-fallback-tracks-head",
+		Status:          "creating",
+	}
+	mgr := NewManager(openTestDB(t), t.TempDir())
+
+	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+
+	require.NoError(err)
+	require.Equal(syntheticPRWorktreeBranch(prNumber), branch)
+	remote, err := gitConfigValue(
+		t.Context(), ws.WorktreePath, "branch."+branch+".remote",
+	)
+	require.NoError(err, "fallback branch must track the PR head branch")
+	assert.Equal("origin", remote)
+	mergeRef, err := gitConfigValue(
+		t.Context(), ws.WorktreePath, "branch."+branch+".merge",
+	)
+	require.NoError(err)
+	assert.Equal("refs/heads/"+headBranch, mergeRef)
+	div, ok, err := WorktreeDivergence(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	require.True(ok, "divergence probe must resolve @{upstream}")
+	assert.Equal(0, div.Ahead)
+	assert.Equal(0, div.Behind)
+}
+
 func TestAddWorktreeLocalBaseFetchesPullRefWhenHeadBranchDeleted(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -2472,6 +2541,12 @@ func TestAddWorktreeMergedSameRepoPRUsesPullRefWhenHeadBranchDeleted(
 	gotSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
 	require.NoError(err)
 	assert.Equal(headSHA, gotSHA)
+	// The head branch no longer exists on origin, so there is nothing
+	// for the fallback branch to track.
+	_, err = gitConfigValue(
+		t.Context(), ws.WorktreePath, "branch."+branch+".remote",
+	)
+	assert.Error(err, "deleted head branch must not be configured as upstream")
 }
 
 func TestAddWorktreeGitLabMRUsesMergeRequestRefWhenHeadBranchDeleted(

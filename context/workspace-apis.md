@@ -167,6 +167,19 @@ response as expected rather than an error, and a future change should expose a
 resolved-merge-target signal on the workspace summary so the UI gate matches the
 server check exactly.
 
+## Branch Upstream
+
+The branch's git upstream config (`branch.<name>.remote`/`.merge`) is the
+single source of truth for every sync-derived workspace surface:
+`commits_ahead`/`commits_behind` in the list response, the sidebar
+ahead/behind arrows, push, pull, and unpushed-commit flags. All of them
+silently report nothing when the upstream is missing, so every path that
+creates a workspace-owned branch must configure it — including the synthetic
+`middleman/pr-N` fallback, which tracks the PR's head branch on origin. The
+pushed-head observer pass rewires a missing upstream for same-repo open-PR
+workspaces (head-branch or synthetic checkouts only); fork heads stay
+untracked because origin has no ref for them.
+
 ## Sidebar Ordering
 
 The workspace sidebar has two separate activity concepts:

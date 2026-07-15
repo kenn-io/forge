@@ -134,9 +134,12 @@ Playwright waits must observe the rendered state consumed by the next assertion,
 not only the request completion or control value that triggered it; route refinement
 can leave new controls paired with old or loading content (`frontend/tests/e2e-full/kata.spec.ts:1625`, `frontend/tests/e2e-full/repo-browser.spec.ts:480`).
 
-CI executes `frontend/tests/e2e-full/`, not the local mock suite in
-`frontend/tests/e2e/`; Playwright regressions that must gate CI belong in the
-full-stack suite (`.github/workflows/ci.yml:395`, `frontend/playwright-e2e.config.ts:16`).
+CI executes both Playwright suites in Chromium and Firefox. Frontend-owned
+browser workflows using intercepted API responses belong in
+`frontend/tests/e2e/` (`frontend/playwright.config.ts`); workflows that must
+cross the built SPA, Go server, middleware, persistence, or provider fixture
+boundaries belong in `frontend/tests/e2e-full/`
+(`frontend/playwright-e2e.config.ts`).
 
 A full-stack test claiming a user-triggered mutation works must drive the actual
 control and observe its request or visible result; `page.request` proves only the

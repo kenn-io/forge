@@ -325,6 +325,43 @@ jobs:
       - name: Build binary
         run: go build -o middleman ./cmd/middleman
 
+  e2e-mock:
+    runs-on: ubuntu-latest
+    needs: detect_changes
+    if: needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+    container: mcr.microsoft.com/playwright@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48 # v1.61.1-noble
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox]
+    name: e2e mock (${{ matrix.browser }})
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Make $HOME owned by the current user for Firefox
+        if: matrix.browser == 'firefox'
+        run: chown "$(id -u):$(id -g)" "$HOME"
+
+      - name: Run mock E2E tests
+        run: cd frontend && vp exec -- playwright test --config=playwright.config.ts --project=${{ matrix.browser }}
+
+      - name: Upload mock Playwright report
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-mock-report-${{ matrix.browser }}
+          path: frontend/playwright-report/
+          retention-days: 7
+
   e2e:
     runs-on: ubuntu-latest
     needs: detect_changes

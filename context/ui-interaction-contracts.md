@@ -223,6 +223,9 @@ the same head pin, the same provider-side binding, the same post-success refresh
 handling. Do not give either action stronger client-side verification, staleness
 checks, or revocation behavior than the other
 (`internal/server/huma_routes.go::approvalReviewHeadSHA`).
+PR head mutations must not share an in-flight lock. Approve, request-changes,
+merge, and suggestion application keep local submission guards; only durable
+head-conflict state blocks the other actions (`packages/ui/src/components/detail/PullDetail.svelte::headActionsBlocked`).
 Once either provider mutation succeeds, close and clear its form before the
 follow-up refresh. A refresh failure may show a warning, but must not leave the
 successful mutation available for an accidental duplicate submission.

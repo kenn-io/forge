@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   mockOpen: vi.fn(),
   mockTerminalInstances: [] as Array<{ options: Record<string, unknown> }>,
   renameWorkspaceSession: vi.fn(),
+  showFlash: vi.fn(),
   stopWorkspaceSession: vi.fn(),
   terminalWrite: vi.fn(),
 }));
@@ -147,6 +148,10 @@ vi.mock("../../api/workspace-runtime.js", () => ({
   workspaceSessionWebSocketPath: (workspaceId: string, sessionKey: string) =>
     `/ws/v1/workspaces/${workspaceId}/runtime/sessions/${sessionKey}/terminal`,
   workspaceTmuxWebSocketPath: (workspaceId: string) => `/ws/v1/workspaces/${workspaceId}/terminal`,
+}));
+
+vi.mock("@middleman/ui/stores/flash", () => ({
+  showFlash: mocks.showFlash,
 }));
 
 import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";
@@ -327,6 +332,7 @@ describe("WorkspaceTerminalView", () => {
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
     mocks.launchWorkspaceSession.mockReset();
     mocks.renameWorkspaceSession.mockReset();
+    mocks.showFlash.mockReset();
     mocks.renameWorkspaceSession.mockImplementation(
       async (_workspaceId: string, sessionKey: string, label: string) => ({
         ...(sessionKey === duplicateAgentSession.key ? duplicateAgentSession : runningSession),
@@ -1580,6 +1586,53 @@ describe("WorkspaceTerminalView", () => {
     otherDeleteRequest.resolve(new Response(null, { status: 204 }));
     deleteRequest.resolve(new Response(null, { status: 204 }));
     await waitFor(() => expect(window.location.pathname).toBe("/workspaces"));
+  });
+
+  it("drops a failed delete response after unmounting and remounting the workspace", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    const deleteRequest = deferred<Response>();
+    const fetchMock = vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+      const { pathname } = new URL(url, "http://localhost");
+      if (method === "DELETE" && pathname.endsWith("/workspaces/ws-1")) {
+        return deleteRequest.promise;
+      }
+      if (pathname.endsWith("/workspaces/ws-1")) {
+        return Promise.resolve(Response.json(workspaceResponse));
+      }
+      if (pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+      }
+      return Promise.resolve(Response.json({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.pushState({}, "", "/terminal/ws-1");
+
+    const firstVisit = render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await screen.findByRole("button", { name: "Delete" });
+    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => input instanceof Request && input.method === "DELETE")).toBe(true);
+    });
+
+    firstVisit.unmount();
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+    await screen.findByRole("button", { name: "Delete" });
+
+    deleteRequest.resolve(Response.json({ detail: "Old workspace delete failed." }, { status: 500 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mocks.showFlash).not.toHaveBeenCalled();
   });
 
   it("disables active workflow terminal input while the selected workspace is deleting", async () => {

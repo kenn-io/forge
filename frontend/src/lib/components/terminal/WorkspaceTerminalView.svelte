@@ -1,6 +1,6 @@
 <script lang="ts">
   import { EmptyState, Spinner } from "@kenn-io/kit-ui";
-  import { tick } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import { isNarrow } from "../../stores/container.svelte.js";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
@@ -207,6 +207,9 @@
   // remain blocked across A -> B -> A navigation, while a successful delete
   // still navigates away if the user returned to the destroyed workspace.
   let workspaceGen = 0;
+  onDestroy(() => {
+    workspaceGen += 1;
+  });
   let runtimeError = $state<string | null>(null);
   let pollTimer = $state<ReturnType<
     typeof setInterval
@@ -2232,11 +2235,14 @@
         : await client.DELETE("/workspaces/{id}", {
             params: { path: { id: targetId } },
           });
+      const responseFailed =
+        response.status === 409 ||
+        (!response.ok && response.status !== 204);
+      if (responseFailed && targetGen !== workspaceGen) return;
       // Different workspace now: the user has moved on and nothing
       // about this response applies.
       if (!isCurrentWorkspace(targetId, targetHostKey)) return;
       if (response.status === 409) {
-        if (targetGen !== workspaceGen) return;
         previouslyFocusedEl = triggerEl;
         forcePromptForId = targetId;
         forcePromptMessage = apiErrorMessage(
@@ -2246,7 +2252,6 @@
         return;
       }
       if (!response.ok && response.status !== 204) {
-        if (targetGen !== workspaceGen) return;
         showFlash(
           apiErrorMessage(error, `Delete failed (${response.status})`),
           { tone: "danger" },
@@ -2321,13 +2326,15 @@
               query: { force: true },
             },
           });
+      const responseFailed =
+        !response.ok && response.status !== 204;
+      if (responseFailed && targetGen !== workspaceGen) return;
       // The force-delete on the server is destructive and runs to
       // completion either way; once the user has moved to a
       // different workspace we just drop the response on the
       // floor so navigate() doesn't pull them away.
       if (!isCurrentWorkspace(targetId, targetHostKey)) return;
       if (!response.ok && response.status !== 204) {
-        if (targetGen !== workspaceGen) return;
         showFlash(
           apiErrorMessage(error, `Delete failed (${response.status})`),
           { tone: "danger" },

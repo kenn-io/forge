@@ -192,6 +192,9 @@ func (m *Manager) PrepareAgentLaunchContext(
 	if summary == nil {
 		return ErrWorkspaceNotFound
 	}
+	if err := m.refreshWorkspaceHeadRepo(ctx, &summary.Workspace); err != nil {
+		return fmt.Errorf("refresh workspace head repository: %w", err)
+	}
 
 	writable, err := generatedFileWritable(filepath.Join(summary.WorktreePath, relPath))
 	if err != nil {

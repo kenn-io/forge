@@ -4,7 +4,7 @@
 
 **Goal:** Prevent workspace pushes from targeting a base-repository branch unless current clone metadata proves the PR head belongs to that repository, while preserving nested GitLab namespaces.
 
-**Architecture:** Encode the approved same/fork/unknown tri-state in the existing nullable `MRHeadRepo` field and refresh it from the current merge-request row before PR setup. Replace the GitHub-only clone-path parser with provider-neutral full-path normalization, then make observer healing trust the current MR row rather than the workspace snapshot.
+**Architecture:** Encode the approved same/fork/unknown tri-state in the existing nullable `MRHeadRepo` field and refresh it from the current merge-request row before PR setup and agent-context generation. Replace the GitHub-only clone-path parser with provider-aware full-path normalization, then make observer healing trust the current MR row rather than the workspace snapshot.
 
 **Tech Stack:** Go, SQLite-backed workspace fixtures, real temporary Git repositories, testify.
 
@@ -31,8 +31,8 @@
 - Modify: `internal/db/types.go`
 
 **Interfaces:**
-- Produces: `normalizeCloneRepoIdentity(cloneURL string) string`, preserving the full clone path.
-- Produces: `workspaceHeadRepo(platformHost, owner, name, cloneURL string) *string`, with the approved tri-state encoding.
+- Produces: `normalizeCloneRepoIdentity(provider, cloneURL string) string`, preserving provider and the full clone path.
+- Produces: `workspaceHeadRepo(provider, platformHost, owner, name, cloneURL string) *string`, with the approved tri-state encoding.
 - Consumes: existing `normalizeCloneURLHost` and `normalizePlatformHostIdentity` host rules.
 
 - [ ] **Step 1: Add failing nested-path and tri-state tests**
@@ -41,12 +41,12 @@ Extend `TestNormalizeCloneRepoIdentity` with:
 
 ```go
 assert.Equal(
-    "gitlab.com/group/subgroup/project",
-    normalizeCloneRepoIdentity("https://gitlab.com/Group/Subgroup/Project.git"),
+    "gitlab/gitlab.com/group/subgroup/project",
+    normalizeCloneRepoIdentity("gitlab", "https://gitlab.com/Group/Subgroup/Project.git"),
 )
 assert.Equal(
-    "gitlab.com/group/subgroup/project",
-    normalizeCloneRepoIdentity("git@gitlab.com:Group/Subgroup/Project.git"),
+    "gitlab/gitlab.com/group/subgroup/project",
+    normalizeCloneRepoIdentity("gitlab", "git@gitlab.com:Group/Subgroup/Project.git"),
 )
 ```
 
@@ -99,8 +99,9 @@ func cloneRepoPath(cloneURL string) string {
 }
 ```
 
-Have `normalizeCloneRepoIdentity` combine the normalized host with this entire
-path and lowercase only the comparison identity. Remove the now-unused
+Have `normalizeCloneRepoIdentity` combine the provider and normalized host with
+this entire path and lowercase only the comparison identity. Thread the
+provider through monitor candidate matching and remove the now-unused
 `internal/github` import.
 
 Change `workspaceHeadRepo` so empty or unparseable clone metadata returns a
@@ -133,6 +134,9 @@ git commit -m "fix: preserve explicit workspace head identity"
 **Files:**
 - Modify: `internal/workspace/manager.go`
 - Modify: `internal/workspace/manager_test.go`
+- Modify: `internal/workspace/agent_context.go`
+- Modify: `internal/workspace/agent_context_test.go`
+- Modify: `internal/server/api_test.go`
 
 **Interfaces:**
 - Produces: `(*Manager).refreshWorkspaceHeadRepo(ctx context.Context, ws *Workspace) error`.
@@ -144,6 +148,10 @@ Add a table test for `refreshWorkspaceHeadRepo` covering current same-repo,
 fork, and missing clone metadata. Seed a persisted PR workspace with the old
 `nil` representation, invoke the helper, and assert the refreshed pointer
 matches the current MR row.
+
+Add an agent-context test that persists the legacy `nil` representation while
+the current MR row has unknown metadata, then verifies launch context does not
+advertise an origin push target.
 
 Add `TestAddWorktreeUnknownHeadRepoDoesNotTrackMatchingOriginBranch`:
 
@@ -163,12 +171,18 @@ assert.Error(err, "unknown repository identity must leave the branch untracked")
 The fixture must configure `origin/<head>` and the provider merge-request ref
 at the same SHA to reproduce the reported attack precondition.
 
+Add `TestWorkspaceRetryLegacyUnknownHeadRepoLeavesBranchUntrackedE2E` in
+`internal/server/api_test.go`. Insert an errored legacy workspace with
+`MRHeadRepo == nil`, retry it through the generated HTTP client, wait for setup,
+and assert the real Git branch has no `branch.<name>.remote` configuration.
+
 - [ ] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
 ```bash
 go test ./internal/workspace -run 'TestRefreshWorkspaceHeadRepo|TestAddWorktreeUnknownHeadRepoDoesNotTrackMatchingOriginBranch' -shuffle=on
+go test ./internal/server -run '^TestWorkspaceRetryLegacyUnknownHeadRepoLeavesBranchUntrackedE2E$' -shuffle=on
 ```
 
 Expected: the refresh helper is missing and current creation classifies empty
@@ -204,7 +218,7 @@ func (m *Manager) refreshWorkspaceHeadRepo(
         cloneURL = mr.HeadRepoCloneURL
     }
     ws.MRHeadRepo = workspaceHeadRepo(
-        ws.PlatformHost, ws.RepoOwner, ws.RepoName, cloneURL,
+        ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName, cloneURL,
     )
     return nil
 }
@@ -283,7 +297,7 @@ Remove the early `ws.MRHeadRepo != nil` rejection from
 
 ```go
 if strings.TrimSpace(mr.HeadRepoCloneURL) == "" || workspaceHeadRepo(
-    ws.PlatformHost, ws.RepoOwner, ws.RepoName, mr.HeadRepoCloneURL,
+    ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName, mr.HeadRepoCloneURL,
 ) != nil {
     return false, nil
 }

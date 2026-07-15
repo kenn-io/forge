@@ -1216,25 +1216,26 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts 
 	numberText := strconv.Itoa(number)
 	now := time.Now().UTC().Truncate(time.Second)
 	pr := &db.MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     int64(number) * 1000,
-		Number:         number,
-		URL:            "https://github.com/" + owner + "/" + name + "/pull/" + numberText,
-		Title:          "Test PR #" + numberText,
-		Author:         "testuser",
-		State:          "open",
-		IsDraft:        false,
-		Body:           "test body",
-		HeadBranch:     "feature",
-		BaseBranch:     "main",
-		Additions:      5,
-		Deletions:      2,
-		CommentCount:   0,
-		ReviewDecision: "",
-		CIStatus:       "",
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		LastActivityAt: now,
+		RepoID:           repoID,
+		PlatformID:       int64(number) * 1000,
+		Number:           number,
+		URL:              "https://github.com/" + owner + "/" + name + "/pull/" + numberText,
+		Title:            "Test PR #" + numberText,
+		Author:           "testuser",
+		State:            "open",
+		IsDraft:          false,
+		Body:             "test body",
+		HeadBranch:       "feature",
+		HeadRepoCloneURL: "https://github.com/" + owner + "/" + name + ".git",
+		BaseBranch:       "main",
+		Additions:        5,
+		Deletions:        2,
+		CommentCount:     0,
+		ReviewDecision:   "",
+		CIStatus:         "",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		LastActivityAt:   now,
 	}
 	for _, opt := range opts {
 		opt(pr)
@@ -29797,6 +29798,61 @@ func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) 
 			t, ws.WorktreePath,
 			"config", "--get", "branch.feature.merge",
 		),
+	)
+}
+
+func TestWorkspaceRetryLegacyUnknownHeadRepoLeavesBranchUntrackedE2E(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	headSHA := testGitSHA(t, fixture.remote, "refs/heads/feature")
+	runGit(t, fixture.remote, "update-ref", "refs/pull/2/head", headSHA)
+	seedPR(
+		t, fixture.database, "acme", "widget", 2,
+		withSeedPRHeadRepoCloneURL(""),
+	)
+	errMessage := "retry legacy workspace"
+	const workspaceID = "legacy-unknown-head-repo"
+	require.NoError(fixture.database.InsertWorkspace(ctx, &db.Workspace{
+		ID:              workspaceID,
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      2,
+		GitHeadRef:      "feature",
+		MRHeadRepo:      nil,
+		WorkspaceBranch: "__middleman_unknown__",
+		WorktreePath:    filepath.Join(fixture.worktrees, workspaceID),
+		TmuxSession:     "middleman-" + workspaceID,
+		Status:          "error",
+		ErrorMessage:    &errMessage,
+	}))
+
+	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, workspaceID)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, retryResp.StatusCode())
+
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, workspaceID)
+	assert.Equal(headSHA, testGitSHA(t, ready.WorktreePath, "HEAD"))
+	branch := gitOutput(t, ready.WorktreePath, "branch", "--show-current")
+	remoteOut, remoteErrOut, upstreamErr := gitcmd.New().Run(
+		ctx, ready.WorktreePath, nil,
+		"config", "--get", "branch."+branch+".remote",
+	)
+	mergeOut, _, _ := gitcmd.New().Run(
+		ctx, ready.WorktreePath, nil,
+		"config", "--get", "branch."+branch+".merge",
+	)
+	assert.Error(
+		upstreamErr,
+		"legacy unknown workspace must remain untracked after retry; branch=%q remote=%q merge=%q stderr=%q",
+		branch, strings.TrimSpace(string(remoteOut)), strings.TrimSpace(string(mergeOut)), strings.TrimSpace(string(remoteErrOut)),
 	)
 }
 

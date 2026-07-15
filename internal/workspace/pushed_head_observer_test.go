@@ -360,6 +360,7 @@ func TestPushedHeadObserverMissingRefAndTransientErrorKeepObservationState(t *te
 func TestPushedHeadObserverUpstreamHeal(t *testing.T) {
 	forkHeadRepo := "https://github.com/contributor/widget.git"
 	sameRepoURL := "https://github.com/acme/widget.git"
+	unknownHeadRepo := ""
 	cases := []struct {
 		name             string
 		branch           string
@@ -378,6 +379,14 @@ func TestPushedHeadObserverUpstreamHeal(t *testing.T) {
 		{
 			name:             "head-branch checkout is rewired to itself",
 			branch:           "feature/remote-head",
+			headRepoCloneURL: sameRepoURL,
+			trackingOK:       true,
+			wantHeal:         true,
+		},
+		{
+			name:             "legacy unknown snapshot heals from current same-repo metadata",
+			branch:           "feature/remote-head",
+			mrHeadRepo:       &unknownHeadRepo,
 			headRepoCloneURL: sameRepoURL,
 			trackingOK:       true,
 			wantHeal:         true,
@@ -468,6 +477,86 @@ func TestPushedHeadObserverUpstreamHeal(t *testing.T) {
 			assert.Equal("refs/heads/feature/remote-head", call.mergeRef)
 			assert.Equal(1, reader.trackingCalls,
 				"heal probe and observation must share one tracking lookup")
+		})
+	}
+}
+
+func TestConfigureMissingUpstreamForRefreshMappedWorkspaces(t *testing.T) {
+	tests := []struct {
+		name         string
+		platform     string
+		platformHost string
+		owner        string
+		repoName     string
+		itemType     string
+		cloneURL     string
+	}{
+		{
+			name:         "provider issue associated during refresh",
+			platform:     "github",
+			platformHost: "github.com",
+			owner:        "acme",
+			repoName:     "widget",
+			itemType:     db.WorkspaceItemTypeIssue,
+			cloneURL:     "https://github.com/acme/widget.git",
+		},
+		{
+			name:         "Kata task associated during refresh",
+			platform:     "github",
+			platformHost: "github.com",
+			owner:        "acme",
+			repoName:     "widget",
+			itemType:     db.WorkspaceItemTypeKataTask,
+			cloneURL:     "https://github.com/acme/widget.git",
+		},
+		{
+			name:         "GitLab nested group",
+			platform:     "gitlab",
+			platformHost: "gitlab.com",
+			owner:        "group/subgroup",
+			repoName:     "project",
+			itemType:     db.WorkspaceItemTypePullRequest,
+			cloneURL:     "https://gitlab.com/group/subgroup/project.git",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			reader := &fakeRemoteHeadReader{
+				branch:      "feature/remote-head",
+				trackingSHA: "2222222",
+				trackingRef: "refs/remotes/origin/feature/remote-head",
+				trackingOK:  true,
+			}
+			observer := newPushedHeadObserverForTest(t, openTestDB(t), reader)
+			ws := &Workspace{
+				ID:           "ws-refresh-mapped",
+				Platform:     tt.platform,
+				PlatformHost: tt.platformHost,
+				RepoOwner:    tt.owner,
+				RepoName:     tt.repoName,
+				ItemType:     tt.itemType,
+				ItemNumber:   42,
+				WorktreePath: "/tmp/worktree",
+			}
+			mr := db.MergeRequest{
+				Number:           42,
+				HeadBranch:       "feature/remote-head",
+				HeadRepoCloneURL: tt.cloneURL,
+			}
+
+			healed, err := observer.configureMissingUpstream(
+				t.Context(), ws, mr, "feature/remote-head",
+				map[string]trackingLookup{},
+			)
+
+			require.NoError(err)
+			assert.True(healed)
+			require.Len(reader.setUpstreamCalls, 1)
+			assert.Equal("origin", reader.setUpstreamCalls[0].remote)
+			assert.Equal("refs/heads/feature/remote-head", reader.setUpstreamCalls[0].mergeRef)
 		})
 	}
 }

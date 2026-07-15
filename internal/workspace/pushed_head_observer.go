@@ -434,15 +434,12 @@ func (o *PushedHeadObserver) configureMissingUpstream(
 	ctx context.Context, ws *Workspace, mr db.MergeRequest, branch string,
 	trackingCache map[string]trackingLookup,
 ) (bool, error) {
-	if ws.MRHeadRepo != nil {
-		return false, nil
-	}
 	head := strings.TrimSpace(mr.HeadBranch)
 	if head == "" {
 		return false, nil
 	}
 	if strings.TrimSpace(mr.HeadRepoCloneURL) == "" || workspaceHeadRepo(
-		ws.PlatformHost, ws.RepoOwner, ws.RepoName, mr.HeadRepoCloneURL,
+		ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName, mr.HeadRepoCloneURL,
 	) != nil {
 		return false, nil
 	}

@@ -336,6 +336,63 @@ func TestCreatePRHeadRepoClassification(t *testing.T) {
 	}
 }
 
+func TestRefreshWorkspaceHeadRepo(t *testing.T) {
+	tests := []struct {
+		name        string
+		cloneURL    string
+		wantUnknown bool
+		wantFork    string
+	}{
+		{
+			name:     "current same-repo metadata",
+			cloneURL: "https://github.com/acme/widget.git",
+		},
+		{
+			name:        "missing current metadata",
+			wantUnknown: true,
+		},
+		{
+			name:     "current fork metadata",
+			cloneURL: "https://github.com/contributor/widget.git",
+			wantFork: "https://github.com/contributor/widget.git",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			d := openTestDB(t)
+			repoID := seedRepo(t, d, "github.com", "acme", "widget")
+			seedMRWithHeadRepo(t, d, repoID, 42, "feature/thing", tt.cloneURL)
+			ws := &Workspace{
+				Platform:     "github",
+				PlatformHost: "github.com",
+				RepoOwner:    "acme",
+				RepoName:     "widget",
+				ItemType:     db.WorkspaceItemTypePullRequest,
+				ItemNumber:   42,
+				GitHeadRef:   "feature/thing",
+			}
+			mgr := NewManager(d, t.TempDir())
+
+			err := mgr.refreshWorkspaceHeadRepo(t.Context(), ws)
+
+			require.NoError(err)
+			switch {
+			case tt.wantUnknown:
+				require.NotNil(ws.MRHeadRepo)
+				assert.Empty(*ws.MRHeadRepo)
+			case tt.wantFork != "":
+				require.NotNil(ws.MRHeadRepo)
+				assert.Equal(tt.wantFork, *ws.MRHeadRepo)
+			default:
+				assert.Nil(ws.MRHeadRepo)
+			}
+		})
+	}
+}
+
 func TestCreateIssueDefaultBranchSluggified(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -637,14 +694,14 @@ func TestSetupFailurePersistsStatusWhenContextCanceled(t *testing.T) {
 
 	err = mgr.Setup(ctx, ws)
 	require.Error(err)
-	require.Contains(err.Error(), "clone manager not set")
+	require.ErrorIs(err, context.Canceled)
 
 	got, err := d.GetWorkspace(t.Context(), ws.ID)
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal("error", got.Status)
 	require.NotNil(got.ErrorMessage)
-	assert.Contains(*got.ErrorMessage, "clone manager not set")
+	assert.Contains(*got.ErrorMessage, "context canceled")
 
 	events, err := d.ListWorkspaceSetupEvents(
 		t.Context(), ws.ID,
@@ -653,9 +710,9 @@ func TestSetupFailurePersistsStatusWhenContextCanceled(t *testing.T) {
 	require.Len(events, 2)
 	assert.Equal("setup", events[0].Stage)
 	assert.Equal("started", events[0].Outcome)
-	assert.Equal("clone", events[1].Stage)
+	assert.Equal("setup", events[1].Stage)
 	assert.Equal("failure", events[1].Outcome)
-	assert.Contains(events[1].Message, "clone manager not set")
+	assert.Contains(events[1].Message, "context canceled")
 }
 
 func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
@@ -2220,6 +2277,49 @@ func TestAddWorktreeFallbackBranchTracksPRHeadBranch(t *testing.T) {
 	require.True(ok, "divergence probe must resolve @{upstream}")
 	assert.Equal(0, div.Ahead)
 	assert.Equal(0, div.Behind)
+}
+
+func TestAddWorktreeUnknownHeadRepoDoesNotTrackMatchingOriginBranch(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	const prNumber = 45
+	const headBranch = "feature/unknown-head-repo"
+	headSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, cloneDir, "rev-parse", "main",
+	)))
+	runWorkspaceTestGit(
+		t, cloneDir, "push", "origin",
+		headSHA+":refs/heads/"+headBranch,
+	)
+	runWorkspaceTestGit(
+		t, cloneDir, "push", "origin",
+		fmt.Sprintf("%s:refs/pull/%d/head", headSHA, prNumber),
+	)
+	runWorkspaceTestGit(
+		t, cloneDir, "fetch", "origin",
+		"+refs/heads/"+headBranch+":refs/remotes/origin/"+headBranch,
+	)
+
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMRWithHeadRepo(t, d, repoID, prNumber, headBranch, "")
+	mgr := NewManager(d, t.TempDir())
+	ws, err := mgr.Create(
+		t.Context(), "github", "github.com", "acme", "widget", prNumber,
+	)
+	require.NoError(err)
+
+	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+	require.NoError(err)
+	gotSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	assert.Equal(headSHA, gotSHA)
+	_, err = gitConfigValue(
+		t.Context(), ws.WorktreePath, "branch."+branch+".remote",
+	)
+	assert.Error(err, "unknown repository identity must leave the branch untracked")
 }
 
 func TestAddWorktreeLocalBaseFetchesPullRefWhenHeadBranchDeleted(t *testing.T) {

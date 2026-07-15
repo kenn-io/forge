@@ -656,14 +656,14 @@ func TestSelectPRByUpstream(t *testing.T) {
 		},
 	}
 
-	number, ok := selectPRByUpstream(candidates, upstreamState{
+	number, ok := selectPRByUpstream("github", candidates, upstreamState{
 		branchName: "shared-branch",
 		remoteURL:  "git@github.com:Fork-Two/Widget.git",
 	})
 	assert.True(ok)
 	assert.Equal(42, number)
 
-	number, ok = selectPRByUpstream([]db.MergeRequest{{
+	number, ok = selectPRByUpstream("github", []db.MergeRequest{{
 		Number:           44,
 		HeadBranch:       "shared-branch",
 		HeadRepoCloneURL: "https://ghe.example.com/fork-two/widget.git",
@@ -679,7 +679,7 @@ func TestSelectPRByUpstream(t *testing.T) {
 		{branchName: "missing", remoteURL: "git@github.com:Fork-Two/Widget.git"},
 		{branchName: ""},
 	} {
-		number, ok = selectPRByUpstream(candidates, upstream)
+		number, ok = selectPRByUpstream("github", candidates, upstream)
 		assert.False(ok)
 		assert.Zero(number)
 	}
@@ -695,19 +695,19 @@ func TestSelectPRByBranchRejectsAmbiguousMatches(t *testing.T) {
 	}
 
 	number, ok := selectPRByLocalBranch(
-		candidates, "single-local", "abc123", upstreamState{},
+		"github", candidates, "single-local", "abc123", upstreamState{},
 	)
 	assert.True(ok)
 	assert.Equal(43, number)
 
 	number, ok = selectPRByLocalBranch(
-		candidates, "shared-local", "abc123", upstreamState{},
+		"github", candidates, "shared-local", "abc123", upstreamState{},
 	)
 	assert.False(ok)
 	assert.Zero(number)
 
 	number, ok = selectPRByLocalBranch(
-		candidates, "wrong-head", "abc123", upstreamState{},
+		"github", candidates, "wrong-head", "abc123", upstreamState{},
 	)
 	assert.False(ok)
 	assert.Zero(number)
@@ -776,31 +776,35 @@ func TestNormalizeCloneRepoIdentity(t *testing.T) {
 	assert := assert.New(t)
 
 	assert.Equal(
-		"github.com/fork/widget",
-		normalizeCloneRepoIdentity(" git@GitHub.com:Fork/Widget.git "),
+		"github/github.com/fork/widget",
+		normalizeCloneRepoIdentity("github", " git@GitHub.com:Fork/Widget.git "),
 	)
 	assert.Equal(
-		"github.com/fork/widget",
-		normalizeCloneRepoIdentity("https://token@github.com/Fork/Widget/"),
+		"github/github.com/fork/widget",
+		normalizeCloneRepoIdentity("github", "https://token@github.com/Fork/Widget/"),
 	)
 	assert.Equal(
-		"github.com/fork/widget",
-		normalizeCloneRepoIdentity("ssh://git@github.com:22/Fork/Widget.git"),
+		"github/github.com/fork/widget",
+		normalizeCloneRepoIdentity("github", "ssh://git@github.com:22/Fork/Widget.git"),
 	)
 	assert.Equal(
-		"ghe.example.com:8443/fork/widget",
-		normalizeCloneRepoIdentity("https://ghe.example.com:8443/Fork/Widget.git"),
+		"github/ghe.example.com:8443/fork/widget",
+		normalizeCloneRepoIdentity("github", "https://ghe.example.com:8443/Fork/Widget.git"),
 	)
 	assert.Equal(
-		"gitlab.com/group/subgroup/project",
-		normalizeCloneRepoIdentity("https://gitlab.com/Group/Subgroup/Project.git"),
+		"gitlab/gitlab.com/group/subgroup/project",
+		normalizeCloneRepoIdentity("gitlab", "https://gitlab.com/Group/Subgroup/Project.git"),
 	)
 	assert.Equal(
-		"gitlab.com/group/subgroup/project",
-		normalizeCloneRepoIdentity("git@gitlab.com:Group/Subgroup/Project.git"),
+		"gitlab/gitlab.com/group/subgroup/project",
+		normalizeCloneRepoIdentity("gitlab", "git@gitlab.com:Group/Subgroup/Project.git"),
 	)
-	assert.Empty(normalizeCloneRepoIdentity("/tmp/workspace/remote.git"))
-	assert.Empty(normalizeCloneRepoIdentity("not a clone url"))
+	assert.NotEqual(
+		normalizeCloneRepoIdentity("github", "https://forge.example/acme/widget.git"),
+		normalizeCloneRepoIdentity("gitlab", "https://forge.example/acme/widget.git"),
+	)
+	assert.Empty(normalizeCloneRepoIdentity("github", "/tmp/workspace/remote.git"))
+	assert.Empty(normalizeCloneRepoIdentity("github", "not a clone url"))
 }
 
 func TestNormalizePlatformHostIdentity(t *testing.T) {

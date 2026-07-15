@@ -16,8 +16,8 @@ namespace so same-repository merge requests under paths such as
 PR head identity has three states:
 
 - **same repository**: a non-empty, parseable head clone URL resolves to the
-  workspace's normalized base repository identity;
-- **fork**: a non-empty, parseable head clone URL resolves to a different
+  workspace's provider, normalized host, and complete base repository path;
+- **fork**: that provider-aware identity differs from the workspace's base
   repository identity;
 - **unknown**: the clone URL is empty or cannot be normalized.
 
@@ -72,14 +72,14 @@ associated PR and supplies explicit same-repository metadata.
 
 ## Clone URL Normalization
 
-Repository identity normalization keeps the normalized host and the complete
-repository path. It supports URL clone forms and SCP-style SSH forms while
-trimming surrounding slashes and a final `.git` suffix.
+Repository identity normalization keeps the provider, normalized host, and the
+complete repository path. It supports URL clone forms and SCP-style SSH forms
+while trimming surrounding slashes and a final `.git` suffix.
 
 Examples:
 
-- `https://gitlab.com/group/subgroup/project.git` becomes
-  `gitlab.com/group/subgroup/project`;
+- provider `gitlab` plus `https://gitlab.com/group/subgroup/project.git`
+  becomes `gitlab/gitlab.com/group/subgroup/project`;
 - `git@gitlab.com:group/subgroup/project.git` becomes the same identity;
 - existing two-segment GitHub and self-hosted identities remain unchanged.
 
@@ -101,10 +101,12 @@ Regression coverage will prove:
   associated-PR metadata proves a same-repository head;
 - malformed or absent clone metadata remains untracked.
 
-Tests stay in the workspace package because they exercise its owned repository
-classification and Git branch behavior. No provider container is required: the
-defects are deterministic identity and local Git configuration logic rather
-than upstream API-shape drift.
+Workspace-package tests cover repository classification, Git branch behavior,
+observer healing, and refresh-mapped issue/Kata workspaces. A server e2e test
+uses the generated HTTP client, real SQLite, and real temporary Git repositories
+to retry a legacy unknown workspace and verify its branch remains untracked.
+No provider container is required because the defect is deterministic local
+identity and Git configuration logic rather than upstream API-shape drift.
 
 ## Scope
 

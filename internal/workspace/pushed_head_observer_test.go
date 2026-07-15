@@ -318,6 +318,61 @@ func TestPushedHeadObserverAssociatesIssueWorkspaceAndObservesHead(t *testing.T)
 	assert.Equal(42, *ws.AssociatedPRNumber)
 }
 
+func TestPushedHeadObserverRunOnceHealsAssociatedKataWorkspace(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	worktreePath := setupMonitorRepo(t)
+	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "feature/kata-task")
+	runWorkspaceTestGit(t, worktreePath, "push", "origin", "feature/kata-task")
+	headSHA, err := gitHeadSHA(ctx, worktreePath)
+	require.NoError(err)
+	seedMRWithPlatformHead(
+		t, d, repoID, 42, "feature/kata-task", headSHA,
+		"https://github.com/acme/widget.git",
+	)
+	associatedPRNumber := 42
+	kataMetadata := db.WorkspaceKataMetadata{
+		DaemonID:   "local",
+		ProjectUID: "project-1",
+		IssueUID:   "issue-1",
+	}
+	require.NoError(d.InsertWorkspace(ctx, &db.Workspace{
+		ID:                 "ws-kata",
+		Platform:           "github",
+		PlatformHost:       "github.com",
+		RepoOwner:          "acme",
+		RepoName:           "widget",
+		ItemType:           db.WorkspaceItemTypeKataTask,
+		ItemKey:            db.KataWorkspaceItemKey(kataMetadata),
+		AssociatedPRNumber: &associatedPRNumber,
+		GitHeadRef:         "feature/kata-task",
+		WorkspaceBranch:    "feature/kata-task",
+		WorktreePath:       worktreePath,
+		TmuxSession:        "middleman-ws-kata",
+		Status:             "ready",
+		KataMetadata:       &kataMetadata,
+	}))
+
+	before, err := gitUpstreamState(ctx, worktreePath, "feature/kata-task")
+	require.NoError(err)
+	assert.False(before.hasTracking)
+
+	observer := NewPushedHeadObserver(d)
+	result, err := observer.RunOnce(ctx)
+	require.NoError(err)
+	assert.Empty(result.Associations)
+	assert.Empty(result.HeadChanges)
+
+	after, err := gitUpstreamState(ctx, worktreePath, "feature/kata-task")
+	require.NoError(err)
+	assert.True(after.hasTracking)
+	assert.Equal("origin", after.remoteName)
+	assert.Equal("feature/kata-task", after.branchName)
+}
+
 func TestPushedHeadObserverMissingRefAndTransientErrorKeepObservationState(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

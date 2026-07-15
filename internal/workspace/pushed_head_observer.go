@@ -216,7 +216,9 @@ func pushedHeadWorkspaceEligible(ws *Workspace) bool {
 	if strings.TrimSpace(ws.PlatformHost) == "" || strings.TrimSpace(ws.RepoOwner) == "" || strings.TrimSpace(ws.RepoName) == "" {
 		return false
 	}
-	return ws.ItemType == db.WorkspaceItemTypePullRequest || ws.ItemType == db.WorkspaceItemTypeIssue
+	return ws.ItemType == db.WorkspaceItemTypePullRequest ||
+		ws.ItemType == db.WorkspaceItemTypeIssue ||
+		ws.ItemType == db.WorkspaceItemTypeKataTask
 }
 
 func (o *PushedHeadObserver) resolveWorkspacePR(ctx context.Context, ws *Workspace) (*WorkspacePRAssociation, *db.Repo, *db.MergeRequest, bool, error) {
@@ -238,9 +240,11 @@ func (o *PushedHeadObserver) resolveWorkspacePR(ctx context.Context, ws *Workspa
 	switch ws.ItemType {
 	case db.WorkspaceItemTypePullRequest:
 		prNumber = ws.ItemNumber
-	case db.WorkspaceItemTypeIssue:
+	case db.WorkspaceItemTypeIssue, db.WorkspaceItemTypeKataTask:
 		if ws.AssociatedPRNumber != nil {
 			prNumber = *ws.AssociatedPRNumber
+		} else if ws.ItemType == db.WorkspaceItemTypeKataTask {
+			return nil, repo, nil, false, nil
 		} else {
 			detected, ok, err := o.monitor.detectAssociatedPR(ctx, ws)
 			if err != nil {

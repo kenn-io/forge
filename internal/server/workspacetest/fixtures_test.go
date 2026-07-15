@@ -88,6 +88,7 @@ func setupWorkspaceServerFixture(
 	if cfg != nil && cfg.BasePath != "" {
 		basePath = cfg.BasePath
 	}
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
 	srv := server.New(database, syncer, nil, basePath, cfg, server.ServerOptions{
 		Clones:      clones,
 		WorktreeDir: worktreeDir,
@@ -101,8 +102,6 @@ func setupWorkspaceServerFixture(
 		defer cancel()
 		require.NoError(t, srv.Shutdown(ctx))
 	})
-
-	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
 
 	clientBaseURL := "http://middleman.test"
 	if basePath != "/" {

@@ -91,6 +91,12 @@ function acceptHomeDaemon(): void {
   setActiveKataDaemon("home");
 }
 
+async function waitForWorkspaceWritable(): Promise<void> {
+  await waitFor(() =>
+    expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(false),
+  );
+}
+
 describe("KataWorkspace", () => {
   beforeEach(() => {
     resetKataWorkspaceTestState();
@@ -560,7 +566,7 @@ describe("KataWorkspace", () => {
     parentDetail.resolve(detail(parent.uid, [parent, child]));
   });
 
-  it("drops a superseded routed ancestor walk before it crosses into the fallback daemon", async () => {
+  it("drops an accepted routed ancestor walk when the route selection changes", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({
         daemons: [
@@ -603,11 +609,13 @@ describe("KataWorkspace", () => {
     await waitFor(() => expect(api.issue).toHaveBeenCalledWith(parent.uid, { daemonId: "work" }));
 
     component.setRoute({ issue: null, daemon: null });
-    await waitFor(() => expect(vi.mocked(api.bindWorkflowDaemon!).mock.calls.at(-1)?.[0]).toBe("home"));
+    await tick();
+    expect(component.route().issue).toBeNull();
     parentDetail.resolve(detail(parent.uid, [grandparent, parent, child]));
     await Promise.resolve();
     await Promise.resolve();
 
+    expect(getActiveKataDaemon()).toBe("work");
     expect(api.issue).not.toHaveBeenCalledWith(grandparent.uid);
     expect(screen.queryByText("ancestor crossed daemon boundary")).toBeNull();
   });
@@ -625,8 +633,10 @@ describe("KataWorkspace", () => {
     render(KataWorkspaceRouteHost, { props: { api, initialIssue: child.uid } });
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Routed child" })).toBeTruthy());
+    await waitFor(() =>
+      expect(issueDetail).toHaveBeenCalledWith(parent.uid, expect.objectContaining({ daemonId: "home" })),
+    );
     await waitFor(() => expect(screen.getByText("Routed child", { selector: ".title-text" })).toBeTruthy());
-    expect(issueDetail).toHaveBeenCalledWith(parent.uid, expect.objectContaining({ daemonId: "home" }));
   });
 
   it("keeps an accepted task selected while retrying transient ancestor failures", async () => {
@@ -658,10 +668,8 @@ describe("KataWorkspace", () => {
     const layout = screen.getByLabelText("Kata tasks").parentElement as HTMLElement & {
       inert: boolean;
     };
+    await waitForWorkspaceWritable();
     expect(layout.inert).toBe(false);
-    await waitFor(() =>
-      expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(false),
-    );
     expect(screen.getByRole("heading", { name: "Child retry task" })).toBeTruthy();
     expect(component.route().issue).toBe(child.uid);
     expect(loadKataWorkspaceState("home")?.selectedIssueUID).toBe(child.uid);
@@ -1788,6 +1796,9 @@ describe("KataWorkspace", () => {
 
       render(KataWorkspaceRouteHost, { props: { api, initialView: view, initialIssue: initial.uid } });
       await waitFor(() => expect(screen.getByRole("heading", { name: initial.title })).toBeTruthy());
+      await waitFor(() =>
+        expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(false),
+      );
       saveKataWorkspaceState("home", {
         view,
         filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "" },
@@ -2091,6 +2102,29 @@ describe("KataWorkspace", () => {
     expect(screen.getByText("Select a task")).toBeTruthy();
   });
 
+  it("recovers the accepted daemon when an unknown routed daemon is removed on the same mount", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }],
+      }),
+    );
+    setActiveKataDaemon("home");
+    const home = initialIssues[0]!;
+    const api = createDaemonWorkspaceAPI({ home: [home] });
+
+    const { component } = render(KataWorkspaceRouteHost, {
+      props: { api, initialIssue: home.uid, initialDaemon: "missing" },
+    });
+
+    await screen.findByText("Kata daemon missing is not configured.");
+    component.setRoute({ issue: home.uid, daemon: null });
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy());
+    expect(getActiveKataDaemon()).toBe("home");
+    expect(api.issue).toHaveBeenCalledWith(home.uid, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("accepts a routed daemon after a successful restoration retry", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({
@@ -2124,6 +2158,37 @@ describe("KataWorkspace", () => {
       expect(component.route().daemon).toBeNull();
       expect(screen.getByRole("heading", { name: "Email Susan re: Q3" })).toBeTruthy();
     });
+  });
+
+  it("persists a routed daemon selection only after the target is accepted", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          { id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
+          { id: "work", url: "http://127.0.0.1:8888", default: false, auth: "none", health: "connected" },
+        ],
+      }),
+    );
+    setActiveKataDaemon("home");
+    const home = initialIssues[0]!;
+    const work = initialIssues[1]!;
+    const api = createDaemonWorkspaceAPI({ home: [home], work: [work] });
+    saveKataWorkspaceState("work", {
+      view: "all",
+      filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "" },
+      selectedIssueUID: null,
+    });
+
+    const { component } = render(KataWorkspaceRouteHost, {
+      props: { api, initialIssue: work.uid, initialDaemon: "work" },
+    });
+
+    await waitFor(() => {
+      expect(getActiveKataDaemon()).toBe("work");
+      expect(component.route().daemon).toBeNull();
+      expect(screen.getByRole("heading", { name: "Email Susan re: Q3" })).toBeTruthy();
+    });
+    expect(loadKataWorkspaceState("work")?.selectedIssueUID).toBe(work.uid);
   });
 
   it("keeps transient routed detail failures provisional and read-only", async () => {
@@ -2691,6 +2756,55 @@ describe("KataWorkspace", () => {
     expect(getActiveKataDaemon()).toBe("work");
   });
 
+  it("accepts a target daemon when candidate ancestor reconstruction fails transiently", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          { id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
+          { id: "work", url: "http://127.0.0.1:8888", default: false, auth: "none", health: "connected" },
+        ],
+      }),
+    );
+    setActiveKataDaemon("home");
+    const home = initialIssues[0]!;
+    const parent = issue("issue-work-parent-failed", "Unavailable parent", "project-kata");
+    const child = {
+      ...issue("issue-work-child-accepted", "Accepted child", "project-kata"),
+      parent: { uid: parent.uid, short_id: parent.short_id },
+      parent_short_id: parent.short_id,
+    };
+    const api = createDaemonWorkspaceAPI({ home: [home], work: [child] });
+    saveKataWorkspaceState("home", {
+      view: "all",
+      filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "" },
+      selectedIssueUID: home.uid,
+    });
+    vi.mocked(api.issue).mockImplementation(async (uid, opts) => {
+      if (uid === child.uid && opts?.daemonId === "work") return detail(child.uid, [child]);
+      if (uid === parent.uid && opts?.daemonId === "work") throw new Error("ancestor timed out");
+      return detail(uid, [home]);
+    });
+    saveKataWorkspaceState("work", {
+      view: "all",
+      filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "" },
+      selectedIssueUID: child.uid,
+    });
+
+    render(KataWorkspace, { props: { api } });
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy());
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+    const workDaemonRow = (await screen.findByTestId("daemon-row-work")) as HTMLButtonElement;
+    await waitFor(() => expect(workDaemonRow.disabled).toBe(false));
+    await fireEvent.click(workDaemonRow);
+
+    await waitFor(() => {
+      expect(getActiveKataDaemon()).toBe("work");
+      expect(screen.getByRole("heading", { name: "Accepted child" })).toBeTruthy();
+      expect(screen.getByText("ancestor timed out")).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
   it("does not reveal candidate ancestors while rollback is pending", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({
@@ -2767,6 +2881,60 @@ describe("KataWorkspace", () => {
 
     rollbackCursor.resolve({ reset_required: false, events: [], next_after_id: 0 });
     await waitFor(() => expect(getActiveKataDaemon()).toBe("home"));
+  });
+
+  it("drops rollback cursor work after a route change supersedes the switch", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          { id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
+          { id: "work", url: "http://127.0.0.1:8888", default: false, auth: "none", health: "connected" },
+        ],
+      }),
+    );
+    setActiveKataDaemon("home");
+    const home = initialIssues[0]!;
+    const api = createDaemonWorkspaceAPI({ home: [home], work: [initialIssues[1]!] });
+    const rollbackInstance = deferred<Awaited<ReturnType<KataTaskAPI["instance"]>>>();
+    let workAttempted = false;
+    let homeCursorCalls = 0;
+    vi.mocked(api.instance).mockImplementation(async (opts) => {
+      const daemonID = opts?.daemonId ?? vi.mocked(api.bindWorkflowDaemon!).mock.calls.at(-1)?.[0];
+      if (daemonID === "work") {
+        workAttempted = true;
+        throw new Error("work unavailable");
+      }
+      if (workAttempted && daemonID === "home") return rollbackInstance.promise;
+      return { instance_uid: "instance-1", version: "dev", schema_version: 1 };
+    });
+    vi.mocked(api.events).mockImplementation(async (query = {}, opts) => {
+      const daemonID = opts?.daemonId ?? vi.mocked(api.bindWorkflowDaemon!).mock.calls.at(-1)?.[0];
+      if (daemonID === "home" && query.after_id !== undefined && query.issue_uid === undefined) {
+        homeCursorCalls += 1;
+      }
+      return { reset_required: false, events: [], next_after_id: query.after_id ?? 0 };
+    });
+
+    const { component } = render(KataWorkspaceRouteHost, {
+      props: { api, initialIssue: home.uid },
+    });
+    await waitForWorkspaceWritable();
+    expect(homeCursorCalls).toBe(1);
+
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+    const workDaemonRow = (await screen.findByTestId("daemon-row-work")) as HTMLButtonElement;
+    await waitFor(() => expect(workDaemonRow.disabled).toBe(false));
+    await fireEvent.click(workDaemonRow);
+    await waitFor(() => expect(workAttempted).toBe(true));
+
+    component.setRoute({ issue: null, daemon: null });
+    await tick();
+    rollbackInstance.resolve({ instance_uid: "instance-1", version: "dev", schema_version: 1 });
+    await tick();
+    await tick();
+
+    expect(component.route().issue).toBeNull();
+    expect(homeCursorCalls).toBe(1);
   });
 
   it("waits for candidate history and recurrence reads before adopting the target detail", async () => {
@@ -2988,6 +3156,50 @@ describe("KataWorkspace", () => {
     cursor.resolve({ reset_required: false, events: [], next_after_id: 0 });
 
     await waitFor(() => expect(captureButton.disabled).toBe(false));
+  });
+
+  it("keeps the workspace inert after an initial cursor failure until Retry accepts ownership", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
+      if (url.pathname === "/api/v1/kata/daemons") {
+        return Response.json({
+          daemons: [
+            {
+              id: "home",
+              url: "http://127.0.0.1:7777",
+              default: true,
+              auth: "none",
+              health: "connected",
+            },
+          ],
+        });
+      }
+      if (url.pathname === "/api/v1/kata/proxy/api/v1/events/stream") {
+        return new Response(new ReadableStream<Uint8Array>({}), {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const api = createDaemonWorkspaceAPI({ home: [...initialIssues] });
+    vi.mocked(api.events)
+      .mockRejectedValueOnce(new Error("initial cursor unavailable"))
+      .mockResolvedValue({ reset_required: false, events: [], next_after_id: 0 });
+
+    render(KataWorkspace, { props: { api } });
+
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    const captureButton = screen.getByRole("button", { name: "New task" }) as HTMLButtonElement;
+    const layout = screen.getByLabelText("Kata tasks").parentElement as HTMLElement & { inert: boolean };
+    expect(captureButton.disabled).toBe(true);
+    expect(layout.inert).toBe(true);
+    expect(screen.getByText("Select a task")).toBeTruthy();
+
+    await fireEvent.click(retry);
+
+    await waitFor(() => expect(captureButton.disabled).toBe(false));
+    expect(layout.inert).toBe(false);
   });
 
   it("preserves a selection made while cursor catch-up that started unselected refreshes membership", async () => {
@@ -3637,6 +3849,7 @@ describe("KataWorkspace", () => {
       expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy();
       expect(screen.getByRole("button", { name: "Create workspace" })).toBeTruthy();
     });
+    await waitForWorkspaceWritable();
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
     await fireEvent.click(screen.getByTestId("daemon-chip"));
     const workDaemonRow = screen.getByTestId("daemon-row-work") as HTMLButtonElement;
@@ -3693,6 +3906,7 @@ describe("KataWorkspace", () => {
 
     render(KataWorkspace, { props: { api, selectedIssueUID: "issue-pay-rent" } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Create workspace" })).toBeTruthy());
+    await waitForWorkspaceWritable();
 
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
 
@@ -3736,6 +3950,7 @@ describe("KataWorkspace", () => {
 
     render(KataWorkspace, { props: { api, selectedIssueUID: "issue-pay-rent" } });
     const createButton = await screen.findByRole("button", { name: "Create workspace" });
+    await waitForWorkspaceWritable();
     await fireEvent.click(createButton);
 
     await waitFor(() => {
@@ -3783,6 +3998,7 @@ describe("KataWorkspace", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Create workspace" })).toBeTruthy();
     });
+    await waitForWorkspaceWritable();
 
     await fireEvent.click(screen.getByRole("button", { name: "Add label" }));
     await fireEvent.input(screen.getByLabelText("New label"), { target: { value: "blocked" } });
@@ -4226,6 +4442,7 @@ describe("KataWorkspace", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy();
     });
+    await waitForWorkspaceWritable();
     const detailRegion = within(screen.getByRole("region", { name: "Task detail" }));
     await fireEvent.click(detailRegion.getByRole("button", { name: "Owner: fixture-user" }));
     const ownerInput = detailRegion.getByRole("combobox", { name: "Owner" }) as HTMLInputElement;
@@ -4263,6 +4480,7 @@ describe("KataWorkspace", () => {
     });
 
     await screen.findByRole("heading", { name: "Pay rent" });
+    await waitForWorkspaceWritable();
     const detail = within(screen.getByRole("region", { name: "Task detail" }));
     await fireEvent.click(detail.getByRole("button", { name: "More actions" }));
     await fireEvent.click(detail.getByRole("menuitem", { name: "Move to another project" }));
@@ -4438,6 +4656,7 @@ describe("KataWorkspace", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy();
     });
+    await waitForWorkspaceWritable();
     await fireEvent.click(screen.getByRole("button", { name: "Unlink Lease renewal" }));
 
     await waitFor(() => {
@@ -4469,6 +4688,7 @@ describe("KataWorkspace", () => {
 
     render(KataWorkspace, { props: { api, selectedIssueUID: "issue-pay-rent" } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Unlink Lease renewal" })).toBeTruthy());
+    await waitForWorkspaceWritable();
 
     await fireEvent.click(screen.getByRole("button", { name: "Unlink Lease renewal" }));
 

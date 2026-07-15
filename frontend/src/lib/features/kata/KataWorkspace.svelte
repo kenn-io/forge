@@ -103,6 +103,7 @@
     startEventStream: boolean;
     persistenceDelta: RestorePersistenceDelta | undefined;
     ancestorReveal: { uid: string; chain: readonly KataTaskSummary[] } | null;
+    ancestorRevealError?: string | undefined;
   }
 
   interface KataRecurrenceDialogController {
@@ -157,6 +158,7 @@
   let recurrenceDialogs = $state<KataRecurrenceDialogController | null>(null);
   let workspaceActionBusy = $state(false);
   let workspaceOwnershipPending = $state(true);
+  let unknownRoutedBootstrapPending = $state(false);
   let listMode = $state<ListMode>("tasks");
   let graphSourceIssue = $state.raw<KataTaskSummary | null>(null);
   const store = createKataWorkspaceStore({ api: untrack(() => api) });
@@ -405,7 +407,6 @@
   async function resolveRestoredAncestorChain(
     selected: KataTaskSummary,
     daemonID: string,
-    generation: number,
     shouldApply: () => boolean,
     workspaceStore = store,
   ): Promise<readonly KataTaskSummary[] | null | undefined> {
@@ -413,7 +414,7 @@
     const visited = new Set([selected.uid]);
     let current = selected;
     for (let depth = 0; current.parent; depth += 1) {
-      if (generation !== navigationGeneration || !shouldApply()) return undefined;
+      if (!shouldApply()) return undefined;
       if (depth >= 32 || visited.has(current.parent.uid)) return null;
       visited.add(current.parent.uid);
       let detail: KataTaskDetail;
@@ -423,7 +424,7 @@
         if (isDefinitiveRestoreFailure(error)) return null;
         throw error;
       }
-      if (generation !== navigationGeneration || !shouldApply()) return undefined;
+      if (!shouldApply()) return undefined;
       if (!detail.issue) return null;
       workspaceStore.rememberTasks([detail.issue, ...(detail.children ?? [])]);
       current = detail.issue;
@@ -439,33 +440,33 @@
     workspaceStore = store,
   ): Promise<void> {
     const retrySignature = fullRouteSignature();
+    const isCurrent = (): boolean =>
+      shouldApply() &&
+      retrySignature === fullRouteSignature() &&
+      (workspaceStore.daemonId === undefined || workspaceStore.daemonId === daemonID) &&
+      workspaceStore.selectedIssue?.issue.uid === selected.uid;
     try {
-      const restoreGeneration = navigationGeneration;
       const chain = await resolveRestoredAncestorChain(
         selected,
         daemonID,
-        restoreGeneration,
-        shouldApply,
+        isCurrent,
         workspaceStore,
       );
-      if (chain === undefined || restoreGeneration !== navigationGeneration || !shouldApply()) return;
+      if (chain === undefined || !isCurrent()) return;
       ancestorRevealError = null;
       ancestorRevealRetry = null;
       ancestorRevealRetryRouteSignature = null;
       if (chain) revealRequest = { uid: selected.uid, chain, generation: ++revealGeneration };
     } catch (error) {
       if (
-        !shouldApply() ||
-        (workspaceStore.daemonId !== undefined && workspaceStore.daemonId !== daemonID) ||
-        fullRouteSignature() !== retrySignature ||
-        workspaceStore.selectedIssue?.issue.uid !== selected.uid
+        !isCurrent()
       ) {
         return;
       }
       ancestorRevealError = kataRequestErrorMessage(error);
       ancestorRevealRetryRouteSignature = retrySignature;
       ancestorRevealRetry = async () => {
-        if (!shouldApply() || retrySignature !== fullRouteSignature()) return;
+        if (!isCurrent()) return;
         ancestorRevealError = null;
         await revealSelectedAncestors(selected, daemonID, shouldApply, workspaceStore);
       };
@@ -543,6 +544,7 @@
     let acceptedPersisted: KataPersistedWorkspaceState | null = persisted;
     let persistenceDelta: RestorePersistenceDelta | undefined;
     let ancestorReveal: RestoreResult["ancestorReveal"] = null;
+    let ancestorRevealErrorMessage: string | undefined;
     let scopeUID = route.scope;
     let view = route.view ?? (inheritRouteFields ? persisted?.view : undefined) ?? "all";
     let issueUID = route.issue ?? (inheritRouteFields ? persisted?.selectedIssueUID : null) ?? null;
@@ -773,17 +775,19 @@
       if (sources.selection === "persisted") {
         const restoredIssue = workspaceStore.selectedIssue.issue;
         workspaceStore.rememberTasks([restoredIssue, ...(workspaceStore.selectedIssue.children ?? [])]);
-        if (workspaceStore === store) {
-          void revealSelectedAncestors(restoredIssue, daemonID, shouldApply, workspaceStore);
-        } else {
-          const chain = await resolveRestoredAncestorChain(
-            restoredIssue,
-            daemonID,
-            navigationGeneration,
-            shouldApply,
-            workspaceStore,
-          );
-          if (chain && shouldApply()) ancestorReveal = { uid: restoredIssue.uid, chain };
+        if (workspaceStore !== store) {
+          try {
+            const chain = await resolveRestoredAncestorChain(
+              restoredIssue,
+              daemonID,
+              shouldApply,
+              workspaceStore,
+            );
+            if (chain && shouldApply()) ancestorReveal = { uid: restoredIssue.uid, chain };
+          } catch (error) {
+            if (!shouldApply()) return;
+            ancestorRevealErrorMessage = kataRequestErrorMessage(error);
+          }
         }
       }
     };
@@ -822,6 +826,7 @@
       startEventStream: true,
       persistenceDelta,
       ancestorReveal,
+      ancestorRevealError: ancestorRevealErrorMessage,
     };
   }
 
@@ -843,8 +848,10 @@
         const unknownRoutedDaemon = requestedDaemonId !== null && !daemons.some((daemon) => daemon.id === requestedDaemonId);
         if (unknownRoutedDaemon) {
           store.resetToInertWorkspace();
+          store.clearDaemonBinding();
           stopEventStream();
-          workspaceOwnershipPending = false;
+          unknownRoutedBootstrapPending = true;
+          workspaceOwnershipPending = true;
           return;
         }
         routedDaemonId = requestedDaemonId;
@@ -894,9 +901,6 @@
               if (store.selectedIssue) {
                 const restoredIssue = store.selectedIssue.issue;
                 store.rememberTasks([restoredIssue, ...(store.selectedIssue.children ?? [])]);
-                void revealSelectedAncestors(restoredIssue, daemonID, () =>
-                  routedDaemonId === null || routedRestoreIsCurrent(restoreGeneration, attemptedSignature),
-                );
               }
             } else if (
               isDefinitiveRestoreFailure(selectionError) &&
@@ -933,8 +937,29 @@
                   }
                 : currentRouteSnapshot();
             onRouteStateChange?.({ ...route, daemon: null }, { replace: true });
+            persistActiveWorkspaceState();
+            if (store.selectedIssue) {
+              const restoredIssue = store.selectedIssue.issue;
+              void revealSelectedAncestors(restoredIssue, routedDaemonId, () =>
+                store.daemonId === routedDaemonId &&
+                fullRouteSignature() === fullRouteSignatureFor(route),
+              );
+            }
+          } else if (restored.startEventStream && catchUpCursor) {
+            workspaceOwnershipPending = false;
+          } else if (routedDaemonId === null && !restored.startEventStream) {
+            workspaceOwnershipPending = false;
           }
-          if (restored.startEventStream && catchUpCursor) startEventStream();
+          if (restored.startEventStream && catchUpCursor) {
+            startEventStream();
+            if (store.selectedIssue) {
+              const restoredIssue = store.selectedIssue.issue;
+              void revealSelectedAncestors(restoredIssue, daemonID, () =>
+                (store.daemonId === undefined || store.daemonId === daemonID) &&
+                store.selectedIssue?.issue.uid === restoredIssue.uid,
+              );
+            }
+          }
           error = null;
           if (restoreRetryRouteSignature === null) {
             restoreError = null;
@@ -1047,12 +1072,19 @@
             if (!cancelled) {
               startEventStream();
               workspaceOwnershipPending = false;
+              if (store.selectedIssue) {
+                const restoredIssue = store.selectedIssue.issue;
+                void revealSelectedAncestors(restoredIssue, daemonID, () =>
+                  (store.daemonId === undefined || store.daemonId === daemonID) &&
+                  store.selectedIssue?.issue.uid === restoredIssue.uid,
+                );
+              }
             }
           } catch (cursorError) {
             if (cancelled) return;
             cursorCatchupError = kataRequestErrorMessage(cursorError);
             cursorCatchupRetry = () => retryEventCursorCatchup(true);
-            workspaceOwnershipPending = false;
+            workspaceOwnershipPending = true;
             terminalDaemonFailure = false;
             terminalRecovery = null;
             error = null;
@@ -1176,6 +1208,7 @@
           setActiveKataDaemon(recoveryDaemonID);
           terminalDaemonFailure = false;
           terminalRecovery = null;
+          workspaceOwnershipPending = false;
           error = null;
           if (restored.startEventStream) startEventStream();
           routedRestoreRouteSignature = null;
@@ -1256,7 +1289,16 @@
   // completions cannot repaint the new daemon. Only ownership setup, another
   // switch transaction, or non-supersedable writes hold the exclusive lock.
   function daemonSwitchLocked(): boolean {
-    return loading || switchingDaemon || workspaceReadOnly || store.hasPendingMutations || workspaceActionBusy;
+    return (
+      loading ||
+      switchingDaemon ||
+      provisionalRoutedDaemon !== null ||
+      routedFallbackRecovering ||
+      restoreRetry !== null ||
+      terminalDaemonFailure ||
+      store.hasPendingMutations ||
+      workspaceActionBusy
+    );
   }
 
   // The reconciler starts route list loads without awaiting so a newer
@@ -1439,6 +1481,11 @@
     void routeScopeUID;
     void selectedIssueUID;
     untrack(() => {
+      if (unknownRoutedBootstrapPending && requestedDaemonId === null) {
+        unknownRoutedBootstrapPending = false;
+        workspaceOwnershipPending = true;
+        if (acceptedKataDaemonId) void recoverRoutedFallbackDaemon(acceptedKataDaemonId);
+      }
       if (pendingDirectGraphSelectionUID !== null && pendingDirectGraphSelectionUID !== (selectedIssueUID ?? null)) {
         pendingDirectGraphSelectionUID = null;
       }
@@ -1776,7 +1823,10 @@
         terminalDaemonFailure = false;
         terminalRecovery = null;
         error = null;
-        if (startStreamAfterSuccess) startEventStream();
+        if (startStreamAfterSuccess) {
+          workspaceOwnershipPending = false;
+          startEventStream();
+        }
       }
     } catch (error) {
       if (isCursorCatchupScopeCurrent(scope)) {
@@ -1954,6 +2004,7 @@
   }
 
   async function createKataProject(name: string): Promise<KataProjectSummary> {
+    if (workspaceActionsBlocked) throw new Error("Kata workspace is not writable.");
     let created: KataProjectSummary | undefined;
     await runViewTaskOrThrow(async () => {
       created = await store.createProject(name);
@@ -2054,25 +2105,32 @@
     store.invalidatePendingLoads();
     stopEventStream();
 
-    const recoverPreviousWorkspace = async (): Promise<void> => {
+    const recoverPreviousWorkspace = async (
+      shouldApply: () => boolean = () => switchOwnsTransaction(ownedSwitchGeneration, ownedRouteSignature),
+    ): Promise<boolean> => {
       if (!previousDaemonID) throw new Error("Previous Kata daemon is unavailable.");
+      if (!shouldApply()) return false;
       store.clearDaemonState(previousView);
       store.bindDaemonForBootstrap(previousDaemonID);
       setActiveKataDaemon(previousDaemonID, false);
       restoreWorkspaceMemory(previousWorkspace);
       store.bindDaemonForBootstrap(previousDaemonID);
       await store.api.instance();
+      if (!shouldApply()) return false;
       const rollbackSelectedUID = store.selectedIssue?.issue.uid ?? null;
       let rollbackMembershipRefreshed = false;
       try {
-        rollbackMembershipRefreshed = await store.syncEventCursor();
+        rollbackMembershipRefreshed = await store.syncEventCursor({ shouldApply });
+        if (!shouldApply()) return false;
         restoreCursorCatchupError(previousCursorCatchupError, previousCursorCatchupRetry);
       } catch (catchupError) {
+        if (!shouldApply()) return false;
         if (!(catchupError instanceof KataEventCursorSyncError)) throw catchupError;
         rollbackMembershipRefreshed = true;
         cursorCatchupError = kataRequestErrorMessage(catchupError.cursorSyncCause);
         cursorCatchupRetry = retryEventCursorCatchup;
       }
+      if (!shouldApply()) return false;
       if (rollbackMembershipRefreshed) {
         reconcileSelectionMembership(previousDaemonID, false, rollbackSelectedUID, false);
       }
@@ -2097,6 +2155,7 @@
       terminalRecovery = null;
       error = null;
       startEventStream();
+      return true;
     };
 
     try {
@@ -2183,7 +2242,17 @@
       committedRouteSignature = fullRouteSignature();
       if (restored.ancestorReveal) {
         revealRequest = { ...restored.ancestorReveal, generation: ++revealGeneration };
+      } else if (restored.ancestorRevealError && store.selectedIssue) {
+        ancestorRevealError = restored.ancestorRevealError;
+        const restoredIssue = store.selectedIssue.issue;
+        ancestorRevealRetryRouteSignature = committedRouteSignature;
+        ancestorRevealRetry = async () => {
+          if (!switchTransactionCanApply() || store.selectedIssue?.issue.uid !== restoredIssue.uid) return;
+          ancestorRevealError = null;
+          await revealSelectedAncestors(restoredIssue, id, switchTransactionCanApply);
+        };
       }
+      persistActiveWorkspaceState();
       startEventStream();
     } catch (targetError) {
       restoreError = null;
@@ -2196,8 +2265,8 @@
       try {
         if (!workspaceMounted) return;
         if (!switchOwnsTransaction(ownedSwitchGeneration, ownedRouteSignature)) return;
-        await recoverPreviousWorkspace();
-        if (workspaceMounted) showFlash(targetMessage, { tone: "danger" });
+        const recovered = await recoverPreviousWorkspace();
+        if (recovered && workspaceMounted) showFlash(targetMessage, { tone: "danger" });
       } catch (rollbackError) {
         terminalDaemonFailure = true;
         setActiveKataDaemon(previousDaemonID, false);
@@ -2207,9 +2276,12 @@
         error = `${targetMessage} ${kataRequestErrorMessage(rollbackError)}`;
         terminalRecovery = async () => {
           if (terminalRecovering) return;
+          const recoveryRouteSignature = fullRouteSignature();
           terminalRecovering = true;
           try {
-            await recoverPreviousWorkspace();
+            await recoverPreviousWorkspace(
+              () => workspaceMounted && terminalRecovering && fullRouteSignature() === recoveryRouteSignature,
+            );
           } catch (recoveryError) {
             terminalDaemonFailure = true;
             error = `${targetMessage} ${kataRequestErrorMessage(recoveryError)}`;
@@ -2274,7 +2346,7 @@
 
   async function moveSelectedIssue(toProjectUID: string): Promise<boolean> {
     const selected = store.selectedIssue?.issue;
-    if (!selected || !toProjectUID || pendingMoveIssueUIDs.has(selected.uid)) return false;
+    if (workspaceActionsBlocked || !selected || !toProjectUID || pendingMoveIssueUIDs.has(selected.uid)) return false;
     const sourceIssueUID = selected.uid;
     const generation = navigationGeneration;
     pendingMoveIssueUIDs = new Set(pendingMoveIssueUIDs).add(sourceIssueUID);
@@ -2294,46 +2366,54 @@
   }
 
   async function patchSelectedMetadata(uid: string, patch: Record<string, unknown>): Promise<boolean> {
+    if (workspaceActionsBlocked) return false;
     const ok = await runViewTask(() => store.patchMetadata(uid, actor, patch), "flash");
     if (ok) reconcilePersistedSelection(true);
     return ok;
   }
 
   async function addSelectedComment(uid: string, body: string): Promise<boolean> {
+    if (workspaceActionsBlocked) return false;
     return runViewTask(() => store.addComment(uid, actor, body), "flash");
   }
 
   async function editSelectedIssue(uid: string, patch: KataTaskEditPatch): Promise<boolean> {
+    if (workspaceActionsBlocked) return false;
     const ok = await runViewTask(() => store.editIssue(uid, actor, patch), "flash");
     if (ok) reconcilePersistedSelection(true);
     return ok;
   }
 
   async function assignSelectedOwner(uid: string, owner: string): Promise<boolean> {
+    if (workspaceActionsBlocked) return false;
     const ok = await runViewTask(() => store.assignOwner(uid, actor, owner), "flash");
     if (ok) reconcilePersistedSelection(true);
     return ok;
   }
 
   async function unassignSelectedOwner(uid: string): Promise<boolean> {
+    if (workspaceActionsBlocked) return false;
     const ok = await runViewTask(() => store.unassignOwner(uid, actor), "flash");
     if (ok) reconcilePersistedSelection(true);
     return ok;
   }
 
   async function setSelectedPriority(uid: string, priority: number | null): Promise<boolean> {
+    if (workspaceActionsBlocked) return false;
     const ok = await runViewTask(() => store.setPriority(uid, actor, priority), "flash");
     if (ok) reconcilePersistedSelection(true);
     return ok;
   }
 
   async function addSelectedLabel(uid: string, label: string): Promise<boolean> {
+    if (workspaceActionsBlocked) return false;
     const ok = await runViewTask(() => store.addLabel(uid, actor, label), "flash");
     if (ok) reconcilePersistedSelection(true);
     return ok;
   }
 
   async function removeSelectedLabel(uid: string, label: string): Promise<void> {
+    if (workspaceActionsBlocked) return;
     const ok = await runViewTask(() => store.removeLabel(uid, actor, label), "flash");
     if (ok) reconcilePersistedSelection(true);
   }
@@ -2348,7 +2428,7 @@
 
   async function createWorkspaceForSelectedIssue(): Promise<void> {
     const selected = store.selectedIssue?.issue;
-    if (!selected || workspaceActionBusy) return;
+    if (workspaceActionsBlocked || !selected || workspaceActionBusy) return;
     workspaceActionBusy = true;
     try {
       const created = await createKataWorkspaceForTask(
@@ -2380,7 +2460,7 @@
     return {
       label: "Create workspace",
       busy: workspaceActionBusy,
-      disabled: workspaceActionBusy,
+      disabled: workspaceActionsBlocked,
       onClick: createWorkspaceForSelectedIssue,
     };
   }
@@ -2390,18 +2470,21 @@
   }
 
   async function createRecurrence(projectID: number, input: KataCreateRecurrenceInput): Promise<void> {
+    if (workspaceActionsBlocked) return;
     await runViewTaskOrThrow(async () => {
       await store.createRecurrence(projectID, input);
     }, "none");
   }
 
   async function patchRecurrence(id: number, input: KataPatchRecurrenceInput, etag: string): Promise<void> {
+    if (workspaceActionsBlocked) return;
     await runViewTaskOrThrow(async () => {
       await store.patchRecurrence(id, input, etag);
     }, "none");
   }
 
   async function deleteRecurrence(recurrence: KataRecurrence): Promise<boolean> {
+    if (workspaceActionsBlocked) return false;
     return runViewTask(() => store.deleteRecurrence(recurrence.id, actor), "flash");
   }
 
@@ -2410,7 +2493,7 @@
     message: string,
   ): Promise<boolean> {
     const selected = store.selectedIssue;
-    if (!selected) return false;
+    if (workspaceActionsBlocked || !selected) return false;
     const ok = await runViewTask(
       () =>
         store.closeIssue(selected.issue.uid, actor, {
@@ -2425,7 +2508,7 @@
 
   async function reopenSelectedIssue(): Promise<void> {
     const selected = store.selectedIssue;
-    if (!selected) return;
+    if (workspaceActionsBlocked || !selected) return;
     const ok = await runViewTask(() => store.reopenIssue(selected.issue.uid, actor), "flash");
     if (ok) reconcilePersistedSelection(true);
   }
@@ -2435,7 +2518,7 @@
   }
 
   async function unlinkMessageLink(link: MessageLinkRef): Promise<void> {
-    if (unlinkBusyIds.size > 0) return;
+    if (workspaceActionsBlocked || unlinkBusyIds.size > 0) return;
     const selected = store.selectedIssue;
     if (!selected) return;
     const uid = selected.issue.uid;
@@ -2554,7 +2637,7 @@
     </p>
   {/if}
 
-  <div class="kata-layout" inert={workspaceReadOnly} aria-busy={restoreRetrying || terminalRecovering}>
+  <div class="kata-layout" inert={workspaceOwnershipPending || workspaceReadOnly} aria-busy={restoreRetrying || terminalRecovering}>
     <KataSidebar
       areas={visibleAreas}
       projects={visibleProjects}

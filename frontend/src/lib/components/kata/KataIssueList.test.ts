@@ -1151,7 +1151,7 @@ describe("KataIssueList", () => {
     expect(screen.getByRole("heading", { level: 3, name: /^Today\s+1$/ })).toBeTruthy();
   });
 
-  it("keeps a restored nested row visible after selecting it", async () => {
+  it("clears reveal-owned expansion after ordinary row selection", async () => {
     const parent = task({
       uid: "issue-reveal-parent",
       short_id: "reveal-parent",
@@ -1192,8 +1192,8 @@ describe("KataIssueList", () => {
     await fireEvent.click(childRow);
 
     await waitFor(() => expect(onSelect).toHaveBeenCalledWith(child));
-    expect(screen.getByRole("button", { name: /Child task/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Parent task/ }).getAttribute("aria-expanded")).toBe("true");
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Child task/ })).toBeNull());
+    expect(screen.getByRole("button", { name: /Parent task/ }).getAttribute("aria-expanded")).toBe("false");
   });
 
   it("ignores stale child loads that finish after the list resets", async () => {

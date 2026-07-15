@@ -10,6 +10,12 @@ import {
   resetKataWorkspaceTestState,
 } from "./KataWorkspaceTestSupport.js";
 
+async function waitForWorkspaceWritable(): Promise<void> {
+  await waitFor(() =>
+    expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(false),
+  );
+}
+
 describe("KataWorkspace", () => {
   beforeEach(() => {
     resetKataWorkspaceTestState();
@@ -42,6 +48,7 @@ describe("KataWorkspace", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy();
     });
+    await waitForWorkspaceWritable();
     const detail = screen.getByRole("region", { name: "Task detail" });
 
     await fireEvent.click(within(detail).getByRole("button", { name: "More actions" }));
@@ -72,6 +79,7 @@ describe("KataWorkspace", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy();
     });
+    await waitForWorkspaceWritable();
     const detail = screen.getByRole("region", { name: "Task detail" });
     await fireEvent.click(within(detail).getByRole("button", { name: "More actions" }));
     await fireEvent.click(within(detail).getByRole("menuitem", { name: "Mark as recurring..." }));

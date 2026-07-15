@@ -397,20 +397,18 @@
 
   onDestroy(cancelPendingKeyboardSelect);
 
-  function clearTemporaryReveal(preserveExpansion = false) {
+  function clearTemporaryReveal() {
     if (revealOwnedExpansionUIDs.size > 0) {
-      if (!preserveExpansion) {
-        expanded = Object.fromEntries(
-          Object.entries(expanded).filter(([uid]) => !revealOwnedExpansionUIDs.has(uid)),
-        );
-      }
+      expanded = Object.fromEntries(
+        Object.entries(expanded).filter(([uid]) => !revealOwnedExpansionUIDs.has(uid)),
+      );
       revealOwnedExpansionUIDs = new Set();
     }
     if (temporaryRevealChain.length > 0) temporaryRevealChain = [];
   }
 
   function selectNow(issue: KataTaskSummary) {
-    clearTemporaryReveal(true);
+    clearTemporaryReveal();
     cancelPendingKeyboardSelect();
     onSelect(issue);
   }

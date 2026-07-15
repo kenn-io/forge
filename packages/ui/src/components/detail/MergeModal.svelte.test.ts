@@ -122,18 +122,6 @@ describe("MergeModal head pinning", () => {
     expect(init.body).not.toHaveProperty("expected_head_sha");
   });
 
-  it("blocks an already-open modal while another head mutation is active", async () => {
-    const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
-    const { rerender } = renderModal(post, { expectedHeadSha: "abc123" });
-
-    await rerender({ ...baseProps, expectedHeadSha: "abc123", mutationUnavailable: true });
-    const merge = screen.getByText("Squash and merge", { selector: ".kit-modal-footer button" });
-    expect((merge as HTMLButtonElement).disabled).toBe(true);
-    await fireEvent.click(merge);
-
-    expect(post).not.toHaveBeenCalled();
-  });
-
   it.each(["stale_state", "head_unknown", "not_open", "head_repo_unknown"] as const)(
     "closes and reports the %s conflict instead of leaving a stale retry open",
     async (reason) => {

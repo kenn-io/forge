@@ -58,8 +58,6 @@
       number: number,
       routeGeneration: number,
     ) => void) | undefined;
-    onmutationchange?: ((active: boolean) => void) | undefined;
-    mutationUnavailable?: boolean;
   }
 
   const {
@@ -69,8 +67,7 @@
     expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
     deferUntilChecksPass = false,
     alreadyQueued = false, midStackWarning,
-    onclose, onmerged, onqueued, onstateconflict, onmutationchange,
-    mutationUnavailable = false,
+    onclose, onmerged, onqueued, onstateconflict,
   }: Props = $props();
 
   // Offer to queue a deferred merge only when none is queued yet.
@@ -173,9 +170,8 @@
   }
 
   async function submitMerge(deferred: boolean): Promise<void> {
-    if (headPinMissing || mutationUnavailable) return;
+    if (headPinMissing) return;
     activeMergeSubmission = deferred ? "deferred" : "immediate";
-    onmutationchange?.(true);
     error = null;
     try {
       // Pin the merge to the head the user reviewed; the server rejects
@@ -201,7 +197,6 @@
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
       activeMergeSubmission = null;
-      onmutationchange?.(false);
     }
   }
 
@@ -330,7 +325,7 @@
     <Button
       class="btn btn--primary btn--green"
       onclick={handleMerge}
-      disabled={merging || headPinMissing || mutationUnavailable}
+      disabled={merging || headPinMissing}
       tone="success"
       surface="solid"
     >
@@ -340,7 +335,7 @@
       <Button
         class="btn btn--merge-anyway"
         onclick={handleMergeAnyway}
-        disabled={merging || headPinMissing || mutationUnavailable}
+        disabled={merging || headPinMissing}
         tone="success"
         surface="soft"
       >

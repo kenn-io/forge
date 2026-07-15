@@ -1181,6 +1181,7 @@ describe("PullDetail approvals", () => {
   it("ignores a delayed merge conflict after an A-to-B-to-A route cycle", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;
+    detail.repo.capabilities.review_mutation = true;
     let resolveMerge: ((value: unknown) => void) | undefined;
     const apiClient = {
       GET: vi.fn(async () => ({
@@ -1215,7 +1216,7 @@ describe("PullDetail approvals", () => {
         name: "Squash and merge",
       }),
     );
-    expect((screen.getByRole("button", { name: "Approve" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Approve" }) as HTMLButtonElement).disabled).toBe(false);
     await rerender({
       owner: "acme",
       name: "other-widget",

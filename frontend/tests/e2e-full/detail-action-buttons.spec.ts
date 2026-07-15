@@ -922,28 +922,34 @@ test.describe("detail action buttons", () => {
     await expect(menu.locator(".btn--close")).toBeVisible();
   });
 
-  test("GitHub approve action is available in UI and API", async ({ page }) => {
+  test("GitHub approve action submits from the review popover", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
       isolatedServer = await startIsolatedE2EServer();
 
       const baseURL = isolatedServer.info.base_url;
-      const detailURL = `${baseURL}/api/v1/pulls/github/acme/widgets/1`;
-
       await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
       await expect(page.locator(".pull-detail")).toBeVisible();
-      await expect(page.locator(".btn--approve")).toBeVisible();
+      await page.locator(".btn--approve").click();
 
-      const response = await page.request.post(`${detailURL}/approve`, {
-        data: {
-          body: "LGTM from approve e2e",
-          expected_head_sha: "head-sha",
-        },
+      const popover = page.getByRole("dialog", { name: "Submit pull request review" });
+      await expect(popover).toBeVisible();
+      await popover.getByRole("textbox").fill("LGTM from approve e2e");
+
+      const approvalResponse = page.waitForResponse((response) => {
+        return (
+          response.request().method() === "POST" &&
+          response.url() === `${baseURL}/api/v1/pulls/github/acme/widgets/1/approve`
+        );
       });
+      await popover.getByRole("button", { name: "Approve", exact: true }).click();
+
+      const response = await approvalResponse;
       expect(response.status()).toBe(200);
       expect((await response.json()) as { status?: string }).toMatchObject({
         status: "approved",
       });
+      await expect(popover).toHaveCount(0);
     } finally {
       await isolatedServer?.stop();
     }

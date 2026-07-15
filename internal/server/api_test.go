@@ -22550,6 +22550,7 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 		}
 	}
 	srv := New(database, syncer, nil, basePath, cfg, options)
+	srv.workspaceEnrichmentDisabled = true
 	t.Cleanup(func() { cleanupWorkspaceServerFixtureTmuxSessions(t, dir) })
 	// Cleanup callbacks run LIFO. Drain the server first so async
 	// workspace setup cannot create a tmux session after fixture
@@ -23335,6 +23336,7 @@ func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 	assert := assert.New(t)
 
 	fixture, _, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
+	fixture.server.workspaceEnrichmentDisabled = false
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
@@ -24605,6 +24607,7 @@ exit 0
 		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	srv.workspaceEnrichmentDisabled = false
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
@@ -24647,19 +24650,25 @@ exit 0
 	assert.Contains(newSession, "@middleman_owner")
 	assert.Contains(newSession, srv.workspaces.TmuxOwnerMarker())
 
-	listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
-	require.NoError(err)
-	require.Equal(http.StatusOK, listResp.StatusCode())
-	require.NotNil(listResp.JSON200)
-	require.NotNil(listResp.JSON200.Workspaces)
-
 	var listed *generated.WorkspaceResponse
-	for i := range *listResp.JSON200.Workspaces {
-		if (*listResp.JSON200.Workspaces)[i].Id == ws.Id {
-			listed = &(*listResp.JSON200.Workspaces)[i]
-			break
+	require.Eventually(func() bool {
+		listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
+		require.NoError(err)
+		if listResp.StatusCode() != http.StatusOK ||
+			listResp.JSON200 == nil || listResp.JSON200.Workspaces == nil {
+			return false
 		}
-	}
+		listed = nil
+		for i := range *listResp.JSON200.Workspaces {
+			if (*listResp.JSON200.Workspaces)[i].Id == ws.Id {
+				listed = &(*listResp.JSON200.Workspaces)[i]
+				break
+			}
+		}
+		return listed != nil && listed.TmuxWorking &&
+			listed.TmuxActivitySource == tmuxActivitySourceTitle &&
+			listed.TmuxPaneTitle != nil
+	}, 2*time.Second, 10*time.Millisecond)
 	require.NotNil(listed)
 	assert.True(listed.TmuxWorking)
 	assert.Equal(tmuxActivitySourceTitle, listed.TmuxActivitySource)
@@ -24843,14 +24852,23 @@ exit 0
 	})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
-	resp, err := client.HTTP.GetWorkspaceWithResponse(t.Context(), ws.ID)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	assert.True(resp.JSON200.TmuxWorking)
-	assert.Equal(tmuxActivitySourceTitle, resp.JSON200.TmuxActivitySource)
-	require.NotNil(resp.JSON200.TmuxPaneTitle)
-	assert.Equal("⠴ t3code-b5014b03", *resp.JSON200.TmuxPaneTitle)
+	var got *generated.WorkspaceResponse
+	require.Eventually(func() bool {
+		resp, err := client.HTTP.GetWorkspaceWithResponse(t.Context(), ws.ID)
+		require.NoError(err)
+		if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
+			return false
+		}
+		got = resp.JSON200
+		return got.TmuxWorking &&
+			got.TmuxActivitySource == tmuxActivitySourceTitle &&
+			got.TmuxPaneTitle != nil
+	}, 2*time.Second, 10*time.Millisecond)
+	require.NotNil(got)
+	assert.True(got.TmuxWorking)
+	assert.Equal(tmuxActivitySourceTitle, got.TmuxActivitySource)
+	require.NotNil(got.TmuxPaneTitle)
+	assert.Equal("⠴ t3code-b5014b03", *got.TmuxPaneTitle)
 	assert.Contains(readTmuxRecord(t, record), []string{
 		"display-message", "-p", "-t",
 		sessionName, "#{pane_title}",
@@ -25330,7 +25348,8 @@ fi
 exit 0
 `), 0o755))
 	cfg := &config.Config{Tmux: config.Tmux{Command: []string{tmuxPath}}}
-	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	srv.workspaceEnrichmentDisabled = false
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 	require.NotEmpty(ws.TmuxSession)
@@ -25349,19 +25368,25 @@ exit 0
 		t, database, ws.Id, "", "claude", ws.TmuxSession+"-claude", time.Time{},
 	)
 
-	listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
-	require.NoError(err)
-	require.Equal(http.StatusOK, listResp.StatusCode())
-	require.NotNil(listResp.JSON200)
-	require.NotNil(listResp.JSON200.Workspaces)
-
 	var listed *generated.WorkspaceResponse
-	for i := range *listResp.JSON200.Workspaces {
-		if (*listResp.JSON200.Workspaces)[i].Id == ws.Id {
-			listed = &(*listResp.JSON200.Workspaces)[i]
-			break
+	require.Eventually(func() bool {
+		listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
+		require.NoError(err)
+		if listResp.StatusCode() != http.StatusOK ||
+			listResp.JSON200 == nil || listResp.JSON200.Workspaces == nil {
+			return false
 		}
-	}
+		listed = nil
+		for i := range *listResp.JSON200.Workspaces {
+			if (*listResp.JSON200.Workspaces)[i].Id == ws.Id {
+				listed = &(*listResp.JSON200.Workspaces)[i]
+				break
+			}
+		}
+		return listed != nil && listed.TmuxWorking &&
+			listed.TmuxActivitySource == tmuxActivitySourceTitle &&
+			listed.TmuxPaneTitle != nil
+	}, 2*time.Second, 10*time.Millisecond)
 	require.NotNil(listed)
 	assert.True(listed.TmuxWorking)
 	assert.Equal(tmuxActivitySourceTitle, listed.TmuxActivitySource)
@@ -25518,9 +25543,23 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, nil)
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	srv.workspaceEnrichmentDisabled = false
+	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	var clockNow atomic.Int64
+	clockNow.Store(now.UnixNano())
+	srv.now = func() time.Time {
+		return time.Unix(0, clockNow.Load()).UTC()
+	}
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
+	require.Eventually(func() bool {
+		srv.workspaceEnrichmentMu.Lock()
+		_, cached := srv.workspaceEnrichmentCache[ws.Id]
+		_, inFlight := srv.workspaceEnrichmentInFlight[ws.Id]
+		srv.workspaceEnrichmentMu.Unlock()
+		return cached && !inFlight
+	}, 2*time.Second, 10*time.Millisecond)
 
 	// runGit strips global/system git config, so the workspace's
 	// worktree has no committer identity. Set one locally so the
@@ -25542,21 +25581,28 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 	))
 	runGit(t, ws.WorktreePath, "add", ".")
 	runGit(t, ws.WorktreePath, "commit", "-m", "ahead 2")
-
-	listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
-	require.NoError(err)
-	require.Equal(http.StatusOK, listResp.StatusCode())
-	require.NotNil(listResp.JSON200)
-	require.NotNil(listResp.JSON200.Workspaces)
+	clockNow.Store(now.Add(workspaceEnrichmentTTL + time.Second).UnixNano())
 
 	var found *generated.WorkspaceResponse
-	for i := range *listResp.JSON200.Workspaces {
-		entry := &(*listResp.JSON200.Workspaces)[i]
-		if entry.Id == ws.Id {
-			found = entry
-			break
+	require.Eventually(func() bool {
+		listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
+		require.NoError(err)
+		if listResp.StatusCode() != http.StatusOK ||
+			listResp.JSON200 == nil || listResp.JSON200.Workspaces == nil {
+			return false
 		}
-	}
+		found = nil
+		for i := range *listResp.JSON200.Workspaces {
+			entry := &(*listResp.JSON200.Workspaces)[i]
+			if entry.Id == ws.Id {
+				found = entry
+				break
+			}
+		}
+		return found != nil && found.CommitsAhead != nil &&
+			found.CommitsBehind != nil &&
+			*found.CommitsAhead == 2 && *found.CommitsBehind == 0
+	}, 2*time.Second, 10*time.Millisecond)
 	require.NotNil(found, "workspace %s missing from list", ws.Id)
 	require.NotNil(
 		found.CommitsAhead,
@@ -26518,7 +26564,8 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 	cfg := &config.Config{
 		Tmux: config.Tmux{Command: []string{script}},
 	}
-	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	srv.workspaceEnrichmentDisabled = false
 	ctx := context.Background()
 
 	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
@@ -26541,13 +26588,18 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 		time.Time{},
 	)
 
-	listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
-	require.NoError(err)
-	require.Equal(http.StatusOK, listResp.StatusCode())
-	require.NotNil(listResp.JSON200)
-	require.NotNil(listResp.JSON200.Workspaces)
-	require.Len(*listResp.JSON200.Workspaces, 1)
-	got := (*listResp.JSON200.Workspaces)[0]
+	var got generated.WorkspaceResponse
+	require.Eventually(func() bool {
+		listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
+		require.NoError(err)
+		if listResp.StatusCode() != http.StatusOK ||
+			listResp.JSON200 == nil || listResp.JSON200.Workspaces == nil ||
+			len(*listResp.JSON200.Workspaces) != 1 {
+			return false
+		}
+		got = (*listResp.JSON200.Workspaces)[0]
+		return got.Status == "error" && got.ErrorMessage != nil
+	}, 2*time.Second, 10*time.Millisecond)
 	assert.Equal("0000000000000002", got.Id)
 	assert.Equal("error", got.Status)
 	require.NotNil(got.ErrorMessage)

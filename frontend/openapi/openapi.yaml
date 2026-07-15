@@ -6884,6 +6884,18 @@ components:
           type: integer
         created_at:
           type: string
+        enrichment_error:
+          type: string
+        enrichment_refreshed_at:
+          type: string
+        enrichment_status:
+          enum:
+            - not_applicable
+            - pending
+            - fresh
+            - stale
+            - failed
+          type: string
         error_message:
           type: string
         git_head_ref:
@@ -6958,6 +6970,7 @@ components:
         - tmux_last_output_at
         - status
         - created_at
+        - enrichment_status
       type: object
     WorkspaceRuntimeResponse:
       additionalProperties: false

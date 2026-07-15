@@ -70,7 +70,7 @@ func (s *Server) runWorkspaceBranchAction(
 	if refreshed == nil {
 		return nil, problemNotFound(CodeWorkspaceNotFound, "workspace not found", nil)
 	}
-	resp := s.toWorkspaceResponse(ctx, refreshed)
+	resp := s.refreshWorkspaceResponse(ctx, refreshed)
 	return &workspaceBranchActionOutput{Body: resp}, nil
 }
 

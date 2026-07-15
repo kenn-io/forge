@@ -166,34 +166,48 @@ type Server struct {
 	// hostOpts is atomic: Serve repoints an ephemeral (port-0) bind
 	// at the kernel-assigned port while requests may already be
 	// reading the options.
-	hostOpts               atomic.Pointer[HostCheckOptions]
-	version                string
-	now                    func() time.Time
-	handler                http.Handler
-	hub                    *EventHub
-	activeWorktreeMu       sync.Mutex
-	activeWorktreeKey      string
-	activeWorktreeSet      bool
-	labelCatalogRefreshMu  sync.Mutex
-	labelCatalogRefreshIDs map[int64]struct{}
-	detailSyncMu           sync.Mutex
-	detailSyncInFlight     map[string]struct{}
-	detailSyncPending      map[string]detailSyncJob
-	deferredMergeMu        sync.Mutex
-	deferredMergeInFlight  map[string]*deferredMergeHandle
-	deferredMergeMaxWait   time.Duration
-	writeCredProbeMu       sync.Mutex
-	writeCredProbes        map[string]writeCredentialProbe
-	writeCredProbeInFlight map[string]chan struct{}
-	kataHealthMu           sync.Mutex
-	kataHealthCache        map[string]kataDaemonHealthCacheEntry
-	kataHealthInFlight     map[string]*kataDaemonInflightProbe
-	kataProxyMu            sync.Mutex
-	kataProxyCache         map[kataProxyCacheKey]kataProxyCacheEntry
-	kataProxyIdleCloseOnce sync.Once
-	docsRegistry           *docs.Registry
-	docsPublishLocks       *docsPublishLockSet
-	msgvault               *msgvaultHandler
+	hostOpts                       atomic.Pointer[HostCheckOptions]
+	version                        string
+	now                            func() time.Time
+	handler                        http.Handler
+	hub                            *EventHub
+	activeWorktreeMu               sync.Mutex
+	activeWorktreeKey              string
+	activeWorktreeSet              bool
+	labelCatalogRefreshMu          sync.Mutex
+	labelCatalogRefreshIDs         map[int64]struct{}
+	detailSyncMu                   sync.Mutex
+	detailSyncInFlight             map[string]struct{}
+	detailSyncPending              map[string]detailSyncJob
+	workspaceEnrichmentMu          sync.Mutex
+	workspaceEnrichmentCache       map[string]workspaceEnrichmentCacheEntry
+	workspaceEnrichmentInFlight    map[string]uint64
+	workspaceEnrichmentGenerations map[string]uint64
+	workspaceEnrichmentPending     map[string]workspaceEnrichmentJob
+	workspaceEnrichmentWorkers     int
+	workspaceEnrichmentSlots       chan struct{}
+	// workspaceEnrichmentDisabled keeps the shared heavyweight test fixture
+	// from starting reconciliation unrelated to the behavior under test.
+	// Production constructors leave it false.
+	workspaceEnrichmentDisabled bool
+	workspaceTmuxPrunedAt       time.Time
+	workspaceTmuxPrunePending   bool
+	workspaceTmuxPruneInFlight  bool
+	deferredMergeMu             sync.Mutex
+	deferredMergeInFlight       map[string]*deferredMergeHandle
+	deferredMergeMaxWait        time.Duration
+	writeCredProbeMu            sync.Mutex
+	writeCredProbes             map[string]writeCredentialProbe
+	writeCredProbeInFlight      map[string]chan struct{}
+	kataHealthMu                sync.Mutex
+	kataHealthCache             map[string]kataDaemonHealthCacheEntry
+	kataHealthInFlight          map[string]*kataDaemonInflightProbe
+	kataProxyMu                 sync.Mutex
+	kataProxyCache              map[kataProxyCacheKey]kataProxyCacheEntry
+	kataProxyIdleCloseOnce      sync.Once
+	docsRegistry                *docs.Registry
+	docsPublishLocks            *docsPublishLockSet
+	msgvault                    *msgvaultHandler
 
 	// toolingStatus caches the assembled CLI tooling probe;
 	// toolingRun overrides the probe subprocess runner in tests.
@@ -678,26 +692,31 @@ func newServer(
 	}
 
 	s := &Server{
-		db:                      database,
-		basePath:                basePath,
-		syncer:                  syncer,
-		clones:                  clones,
-		telemetry:               options.Telemetry,
-		cfg:                     cfg,
-		cfgPath:                 cfgPath,
-		tokenSources:            options.TokenSources,
-		repoBrowserRefreshEvery: repoBrowserRefreshIntervalForConfig(cfg),
-		bootCfgSnapshot:         snapshotStartupConfig(cfg),
-		runtimeStripEnvVars:     initialRuntimeStripEnvNames(cfg),
-		options:                 options,
-		apiAuthToken:            options.APIAuthToken,
-		now:                     time.Now,
-		hub:                     NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
-		tmuxActivity:            newTmuxActivityTracker(nil),
-		labelCatalogRefreshIDs:  make(map[int64]struct{}),
-		deferredMergeMaxWait:    deferredMergeMaxWait,
-		docsPublishLocks:        newDocsPublishLockSet(),
-		msgvault:                newMsgvaultHandler(cfg, basePath, options.msgvaultRemoteImageDeps),
+		db:                             database,
+		basePath:                       basePath,
+		syncer:                         syncer,
+		clones:                         clones,
+		telemetry:                      options.Telemetry,
+		cfg:                            cfg,
+		cfgPath:                        cfgPath,
+		tokenSources:                   options.TokenSources,
+		repoBrowserRefreshEvery:        repoBrowserRefreshIntervalForConfig(cfg),
+		bootCfgSnapshot:                snapshotStartupConfig(cfg),
+		runtimeStripEnvVars:            initialRuntimeStripEnvNames(cfg),
+		options:                        options,
+		apiAuthToken:                   options.APIAuthToken,
+		now:                            time.Now,
+		hub:                            NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
+		tmuxActivity:                   newTmuxActivityTracker(nil),
+		labelCatalogRefreshIDs:         make(map[int64]struct{}),
+		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
+		workspaceEnrichmentInFlight:    make(map[string]uint64),
+		workspaceEnrichmentGenerations: make(map[string]uint64),
+		workspaceEnrichmentPending:     make(map[string]workspaceEnrichmentJob),
+		workspaceEnrichmentSlots:       make(chan struct{}, tmuxProbeMaxConcurrency),
+		deferredMergeMaxWait:           deferredMergeMaxWait,
+		docsPublishLocks:               newDocsPublishLockSet(),
+		msgvault:                       newMsgvaultHandler(cfg, basePath, options.msgvaultRemoteImageDeps),
 		bgCtx: shutdownAwareContext{
 			parent:   bgBaseCtx,
 			deadline: bgDeadline,
@@ -1011,6 +1030,7 @@ func (s *Server) handleRuntimeSessionExit(info localruntime.SessionInfo) {
 	if s.workspaces == nil {
 		return
 	}
+	s.invalidateWorkspaceEnrichment(info.WorkspaceID)
 	s.runBackground(func(ctx context.Context) {
 		cleanupCtx, cancel := context.WithTimeout(
 			ctx, runtimeSessionCleanupTimeout,

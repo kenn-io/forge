@@ -14,7 +14,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -5523,36 +5522,17 @@ func (s *Server) listWorkspaces(
 		return out, nil
 	}
 
-	if err := s.workspaces.PruneMissingTmuxSessions(ctx); err != nil {
-		slog.Debug("prune missing tmux sessions", "err", err)
-	}
+	s.scheduleWorkspaceTmuxPrune()
 
 	summaries, err := s.workspaces.ListSummaries(ctx)
 	if err != nil {
 		return nil, problemInternal("list workspaces failed")
 	}
+	s.trimWorkspaceEnrichmentCache(summaries)
 
 	list := make([]workspaceResponse, len(summaries))
-	if len(summaries) == 1 {
-		list[0] = s.toWorkspaceResponse(ctx, &summaries[0])
-	} else {
-		workers := min(len(summaries), tmuxProbeMaxConcurrency)
-		jobs := make(chan int)
-		var wg sync.WaitGroup
-		wg.Add(workers)
-		for range workers {
-			go func() {
-				defer wg.Done()
-				for i := range jobs {
-					list[i] = s.toWorkspaceResponse(ctx, &summaries[i])
-				}
-			}()
-		}
-		for i := range summaries {
-			jobs <- i
-		}
-		close(jobs)
-		wg.Wait()
+	for i := range summaries {
+		list[i] = s.toCachedWorkspaceResponse(&summaries[i])
 	}
 
 	out := &listWorkspacesOutput{}
@@ -5587,7 +5567,7 @@ func (s *Server) getWorkspace(
 	}
 
 	return &getWorkspaceOutput{
-		Body: s.toWorkspaceResponse(ctx, summary),
+		Body: s.toCachedWorkspaceResponse(summary),
 	}, nil
 }
 
@@ -5686,7 +5666,7 @@ func (s *Server) refreshWorkspace(
 		}
 	}
 
-	resp := s.toWorkspaceResponse(ctx, refreshed)
+	resp := s.refreshWorkspaceResponse(ctx, refreshed)
 	s.hub.Broadcast(Event{Type: "workspace_status", Data: resp})
 	s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
 	return &refreshWorkspaceOutput{Body: resp}, nil
@@ -6333,6 +6313,7 @@ func (s *Server) retryWorkspace(
 		}
 		return nil, problemInternal("retry workspace: " + err.Error())
 	}
+	s.invalidateWorkspaceEnrichment(ws.ID)
 
 	if startNow {
 		s.runWorkspaceSetup(ws)
@@ -6360,35 +6341,64 @@ func (s *Server) toWorkspaceResponse(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 ) workspaceResponse {
+	return s.workspaceResponseWithEnrichment(ctx, summary).response
+}
+
+func (s *Server) workspaceResponseWithEnrichment(
+	ctx context.Context,
+	summary *db.WorkspaceSummary,
+) workspaceEnrichmentProbeResult {
 	resp := toWorkspaceResponse(summary)
 	resp.Repo = s.repoRefFromParts(
 		summary.Platform, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
 	)
 	if s.workspaces == nil ||
 		summary.Status != "ready" {
-		return resp
+		return workspaceEnrichmentProbeResult{response: resp}
 	}
 
-	applyWorktreeDivergence(ctx, &resp, summary.WorktreePath)
-	if activity, ok := s.probeWorkspaceTmuxActivity(
-		ctx, summary, s.workspaceTmuxActivitySessions(ctx, summary),
-	); ok {
+	divergenceErr := applyWorktreeDivergence(ctx, &resp, summary.WorktreePath)
+	sessions, sessionsErr := s.workspaceTmuxActivitySessions(ctx, summary)
+	activity, hasActivity, activityErr := s.probeWorkspaceTmuxActivity(
+		ctx, summary, sessions,
+	)
+	if hasActivity {
 		applyTmuxActivity(&resp, activity)
 	}
-	return resp
+	err := errors.Join(divergenceErr, sessionsErr, activityErr)
+	result := workspaceEnrichmentProbeResult{
+		response:           resp,
+		divergenceComplete: divergenceErr == nil,
+		tmuxComplete:       sessionsErr == nil && activityErr == nil,
+		err:                err,
+	}
+	if err != nil {
+		resp.EnrichmentStatus = workspaceEnrichmentFailed
+		message := err.Error()
+		resp.EnrichmentError = &message
+		result.response = resp
+		return result
+	}
+	resp.EnrichmentStatus = workspaceEnrichmentFresh
+	refreshedAt := s.now().UTC().Format(time.RFC3339)
+	resp.EnrichmentRefreshedAt = &refreshedAt
+	result.response = resp
+	return result
 }
 
 func (s *Server) workspaceTmuxActivitySessions(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
-) []string {
+) ([]string, error) {
 	sessions := make([]string, 0, 1)
 	seen := map[string]bool{}
+	var listErr error
 	if s.workspaces != nil {
 		stored, err := s.workspaces.TmuxSessionsForWorkspace(
 			ctx, summary.ID, summary.TmuxSession,
 		)
 		if err != nil {
+			listErr = err
 			slog.Debug(
 				"list workspace tmux sessions",
 				"workspace_id", summary.ID,
@@ -6409,7 +6419,7 @@ func (s *Server) workspaceTmuxActivitySessions(
 		seen[summary.TmuxSession] = true
 	}
 	if s.runtime == nil {
-		return sessions
+		return sessions, listErr
 	}
 	for _, session := range s.runtime.TmuxSessions(summary.ID) {
 		if session == "" || seen[session] {
@@ -6418,16 +6428,16 @@ func (s *Server) workspaceTmuxActivitySessions(
 		sessions = append(sessions, session)
 		seen[session] = true
 	}
-	return sessions
+	return sessions, listErr
 }
 
 func (s *Server) probeWorkspaceTmuxActivity(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 	sessions []string,
-) (tmuxActivityResult, bool) {
+) (tmuxActivityResult, bool, error) {
 	if len(sessions) == 0 {
-		return tmuxActivityResult{}, false
+		return tmuxActivityResult{}, false, nil
 	}
 	tracker := s.tmuxActivity
 	if tracker == nil {
@@ -6437,6 +6447,7 @@ func (s *Server) probeWorkspaceTmuxActivity(
 	defer cancelProbe()
 
 	results := make([]tmuxActivityResult, 0, len(sessions))
+	var probeErrs []error
 	for _, session := range sessions {
 		if s.tmuxActivity != nil {
 			if result, ok := tracker.Cached(session); ok {
@@ -6444,14 +6455,18 @@ func (s *Server) probeWorkspaceTmuxActivity(
 				continue
 			}
 		}
-		result, ok := s.probeOneTmuxSession(
+		result, ok, err := s.probeOneTmuxSession(
 			probeCtx, tracker, summary, session,
 		)
 		if ok {
 			results = append(results, result)
 		}
+		if err != nil {
+			probeErrs = append(probeErrs, err)
+		}
 	}
-	return mergeTmuxActivityResults(results)
+	result, ok := mergeTmuxActivityResults(results)
+	return result, ok, errors.Join(probeErrs...)
 }
 
 func (s *Server) probeOneTmuxSession(
@@ -6459,20 +6474,29 @@ func (s *Server) probeOneTmuxSession(
 	tracker *tmuxActivityTracker,
 	summary *db.WorkspaceSummary,
 	session string,
-) (tmuxActivityResult, bool) {
+) (tmuxActivityResult, bool, error) {
 	probe := tracker.StartProbe(ctx, session)
 	if !probe.Started {
 		if probe.HasFallback {
-			return probe.Fallback, true
+			err := ctx.Err()
+			if err == nil {
+				err = errors.New("tmux activity probe pending")
+			}
+			return probe.Fallback, true, err
 		}
 		if probe.Wait != nil {
 			select {
 			case <-probe.Wait:
-				return tracker.Cached(session)
+				result, ok := tracker.Cached(session)
+				if !ok {
+					return tmuxActivityResult{}, false,
+						errors.New("tmux activity probe produced no sample")
+				}
+				return result, true, nil
 			case <-ctx.Done():
 			}
 		}
-		return tmuxActivityResult{}, false
+		return tmuxActivityResult{}, false, ctx.Err()
 	}
 
 	snapshot, err := s.workspaces.TerminalPaneSnapshot(
@@ -6487,16 +6511,16 @@ func (s *Server) probeOneTmuxSession(
 			"err", err,
 		)
 		if probe.HasFallback {
-			return probe.Fallback, true
+			return probe.Fallback, true, err
 		}
-		return tmuxActivityResult{}, false
+		return tmuxActivityResult{}, false, err
 	}
 
 	return probe.Probe.Finish(tmuxActivityObservation{
 		PaneTitle: snapshot.Title,
 		Output:    snapshot.Output,
 		HasOutput: true,
-	}), true
+	}), true, nil
 }
 
 func applyTmuxActivity(resp *workspaceResponse, activity tmuxActivityResult) {
@@ -6522,9 +6546,9 @@ func applyWorktreeDivergence(
 	ctx context.Context,
 	resp *workspaceResponse,
 	worktreePath string,
-) {
+) error {
 	if worktreePath == "" {
-		return
+		return nil
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, worktreeDivergenceTimeout)
 	defer cancel()
@@ -6537,15 +6561,16 @@ func applyWorktreeDivergence(
 			"path", worktreePath,
 			"err", err,
 		)
-		return
+		return err
 	}
 	if !ok {
-		return
+		return nil
 	}
 	ahead := div.Ahead
 	behind := div.Behind
 	resp.CommitsAhead = &ahead
 	resp.CommitsBehind = &behind
+	return nil
 }
 
 func isWorkingTmuxTitle(title string) bool {
@@ -6714,6 +6739,7 @@ func (s *Server) launchWorkspaceRuntimeSession(
 		_ = s.runtime.Stop(cleanupCtx, summary.ID, session.Key)
 		return nil, err
 	}
+	s.invalidateWorkspaceEnrichment(summary.ID)
 	s.forgetRecordedRuntimeSessionIfExited(ctx, session)
 	return &workspaceRuntimeSessionOutput{Body: session}, nil
 }
@@ -6759,7 +6785,9 @@ func (s *Server) forgetRecordedRuntimeSessionIfExited(
 			"session_key", session.Key,
 			"err", err,
 		)
+		return
 	}
+	s.invalidateWorkspaceEnrichment(session.WorkspaceID)
 }
 
 func (s *Server) recordRuntimeSession(
@@ -6828,6 +6856,7 @@ func (s *Server) stopWorkspaceRuntimeSession(
 				)
 			}
 			if stopped {
+				s.invalidateWorkspaceEnrichment(summary.ID)
 				return nil, nil
 			}
 			return nil, problemNotFound(CodeNotFound, err.Error(), nil)
@@ -6839,6 +6868,7 @@ func (s *Server) stopWorkspaceRuntimeSession(
 	); err != nil {
 		return nil, problemInternal("forget runtime session: " + err.Error())
 	}
+	s.invalidateWorkspaceEnrichment(summary.ID)
 	return nil, nil
 }
 

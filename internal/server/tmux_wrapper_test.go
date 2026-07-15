@@ -397,24 +397,19 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 
 	waitForWorkspaceReady(t, ctx, client, wsID)
 
-	getResp, err := client.HTTP.GetWorkspace(ctx, wsID)
-	require.NoError(err)
-	defer getResp.Body.Close()
-	require.Equal(http.StatusOK, getResp.StatusCode)
-
 	var got struct {
-		TmuxPaneTitle *string `json:"tmux_pane_title"`
-		TmuxWorking   bool    `json:"tmux_working"`
+		TmuxPaneTitle      *string `json:"tmux_pane_title"`
+		TmuxWorking        bool    `json:"tmux_working"`
+		TmuxActivitySource string  `json:"tmux_activity_source"`
+		TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
 	}
-	require.NoError(json.NewDecoder(getResp.Body).Decode(&got))
+	require.Eventually(func() bool {
+		got = getRawWorkspaceActivity(t, client, ctx, wsID)
+		return got.TmuxPaneTitle != nil && got.TmuxWorking
+	}, time.Second, 10*time.Millisecond)
 	require.NotNil(got.TmuxPaneTitle)
 	assert.Equal("⠴ t3code-b5014b03", *got.TmuxPaneTitle)
 	assert.True(got.TmuxWorking)
-
-	listResp, err := client.HTTP.ListWorkspaces(ctx)
-	require.NoError(err)
-	defer listResp.Body.Close()
-	require.Equal(http.StatusOK, listResp.StatusCode)
 
 	var listed struct {
 		Workspaces []struct {
@@ -423,7 +418,17 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 			TmuxWorking   bool    `json:"tmux_working"`
 		} `json:"workspaces"`
 	}
-	require.NoError(json.NewDecoder(listResp.Body).Decode(&listed))
+	require.Eventually(func() bool {
+		listResp, listErr := client.HTTP.ListWorkspaces(ctx)
+		require.NoError(listErr)
+		defer listResp.Body.Close()
+		require.Equal(http.StatusOK, listResp.StatusCode)
+		listed.Workspaces = nil
+		require.NoError(json.NewDecoder(listResp.Body).Decode(&listed))
+		return len(listed.Workspaces) == 1 &&
+			listed.Workspaces[0].TmuxPaneTitle != nil &&
+			listed.Workspaces[0].TmuxWorking
+	}, time.Second, 10*time.Millisecond)
 	require.Len(listed.Workspaces, 1)
 	assert.Equal(wsID, listed.Workspaces[0].ID)
 	require.NotNil(listed.Workspaces[0].TmuxPaneTitle)
@@ -476,6 +481,9 @@ func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
 	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
 		return time.Unix(0, clockNow.Load()).UTC()
 	})
+	srv.now = func() time.Time {
+		return time.Unix(0, clockNow.Load()).UTC()
+	}
 	ctx := context.Background()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
@@ -495,7 +503,16 @@ func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
 
 	waitForWorkspaceReady(t, ctx, client, wsID)
 
-	first := getRawWorkspaceActivity(t, client, ctx, wsID)
+	var first struct {
+		TmuxPaneTitle      *string `json:"tmux_pane_title"`
+		TmuxWorking        bool    `json:"tmux_working"`
+		TmuxActivitySource string  `json:"tmux_activity_source"`
+		TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
+	}
+	require.Eventually(func() bool {
+		first = getRawWorkspaceActivity(t, client, ctx, wsID)
+		return first.TmuxPaneTitle != nil
+	}, time.Second, 10*time.Millisecond)
 	require.NotNil(first.TmuxPaneTitle)
 	assert.Equal("workspace", *first.TmuxPaneTitle)
 	assert.False(first.TmuxWorking)
@@ -536,16 +553,26 @@ func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
 	assert.False(lastOutputAt.Before(firstProbeAt), "last output must be observed at or after the first eligible probe")
 	assert.False(lastOutputAt.After(probeAt), "last output must not be newer than the final poll clock")
 	setClock(lastOutputAt.Add(tmuxActivityTTL + time.Second))
-	expired := getRawWorkspaceActivity(t, client, ctx, wsID)
+	var expired struct {
+		TmuxPaneTitle      *string `json:"tmux_pane_title"`
+		TmuxWorking        bool    `json:"tmux_working"`
+		TmuxActivitySource string  `json:"tmux_activity_source"`
+		TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
+	}
+	require.Eventually(func() bool {
+		expired = getRawWorkspaceActivity(t, client, ctx, wsID)
+		return !expired.TmuxWorking &&
+			expired.TmuxActivitySource == tmuxActivitySourceNone &&
+			expired.TmuxLastOutputAt != nil
+	}, time.Second, 10*time.Millisecond)
 	assert.False(expired.TmuxWorking)
 	assert.Equal(tmuxActivitySourceNone, expired.TmuxActivitySource)
 	require.NotNil(expired.TmuxLastOutputAt)
 	assert.Equal(*second.TmuxLastOutputAt, *expired.TmuxLastOutputAt)
 }
 
-func TestListWorkspacesFetchesTmuxActivityConcurrently(t *testing.T) {
+func TestListWorkspacesRefreshesTmuxActivityInBackground(t *testing.T) {
 	require := require.New(t)
-	assert := assert.New(t)
 
 	dir := t.TempDir()
 	activeDir := filepath.Join(dir, "active")
@@ -587,8 +614,10 @@ func TestListWorkspacesFetchesTmuxActivityConcurrently(t *testing.T) {
 	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
 		t, script,
 	)
+	var clockNow atomic.Int64
+	clockNow.Store(time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC).UnixNano())
 	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
-		return time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+		return time.Unix(0, clockNow.Load()).UTC()
 	})
 	ctx := context.Background()
 
@@ -630,9 +659,16 @@ func TestListWorkspacesFetchesTmuxActivityConcurrently(t *testing.T) {
 			"middleman-" + createResp2.JSON202.Id,
 		}, "\n"),
 	)
-	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
-		return time.Date(2026, 4, 23, 12, 0, 5, 0, time.UTC)
-	})
+	clockNow.Store(time.Date(2026, 4, 23, 12, 0, 5, 0, time.UTC).UnixNano())
+	require.Eventually(func() bool {
+		srv.workspaceEnrichmentMu.Lock()
+		idle := len(srv.workspaceEnrichmentInFlight) == 0
+		srv.workspaceEnrichmentMu.Unlock()
+		return idle
+	}, time.Second, 10*time.Millisecond)
+	srv.workspaceEnrichmentMu.Lock()
+	clear(srv.workspaceEnrichmentCache)
+	srv.workspaceEnrichmentMu.Unlock()
 	require.NoError(os.RemoveAll(activeDir))
 	err = os.Remove(overlapPath)
 	if err != nil && !os.IsNotExist(err) {
@@ -652,8 +688,136 @@ func TestListWorkspacesFetchesTmuxActivityConcurrently(t *testing.T) {
 	require.NoError(json.NewDecoder(resp.Body).Decode(&listed))
 	require.Len(listed.Workspaces, 2)
 
-	_, err = os.Stat(overlapPath)
-	assert.NoError(err, "expected overlapping tmux activity probes")
+	require.Eventually(func() bool {
+		srv.workspaceEnrichmentMu.Lock()
+		_, firstCached := srv.workspaceEnrichmentCache[createResp1.JSON202.Id]
+		_, secondCached := srv.workspaceEnrichmentCache[createResp2.JSON202.Id]
+		srv.workspaceEnrichmentMu.Unlock()
+		return firstCached && secondCached
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestWorkspaceResponsesDoNotWaitForEnrichmentSubprocesses(t *testing.T) {
+	type responseResult struct {
+		status int
+		err    error
+	}
+	assertFastResponse := func(
+		t *testing.T,
+		started string,
+		resultCh <-chan responseResult,
+	) {
+		t.Helper()
+		require := require.New(t)
+		require.Eventually(func() bool {
+			_, err := os.Stat(started)
+			return err == nil
+		}, time.Second, 10*time.Millisecond, "enrichment probe did not start")
+		select {
+		case result := <-resultCh:
+			require.NoError(result.err)
+			require.Equal(http.StatusOK, result.status)
+		case <-time.After(500 * time.Millisecond):
+			require.Fail("workspace response waited for enrichment")
+		}
+	}
+
+	t.Run("list", func(t *testing.T) {
+		require := require.New(t)
+		dir := t.TempDir()
+		release := filepath.Join(dir, "release")
+		started := filepath.Join(dir, "tmux-started")
+		t.Cleanup(func() { require.NoError(os.WriteFile(release, nil, 0o644)) })
+		script := filepath.Join(dir, "fake-tmux")
+		body := "#!/bin/sh\n" +
+			`if [ "$BLOCK_WORKSPACE_PROBES" = "1" ]; then` + "\n" +
+			`  : > "$TMUX_PROBE_STARTED"` + "\n" +
+			`  while [ ! -e "$WORKSPACE_PROBE_RELEASE" ]; do sleep 0.01; done` + "\n" +
+			`fi` + "\n" +
+			`for a in "$@"; do` + "\n" +
+			`  if [ "$a" = "list-sessions" ]; then exit 0; fi` + "\n" +
+			`done` + "\n" +
+			"exit 0\n"
+		require.NoError(os.WriteFile(script, []byte(body), 0o755))
+		client, _, _, _ := setupWrapperServerWithScriptAndDBAndServer(t, script)
+		t.Setenv("BLOCK_WORKSPACE_PROBES", "1")
+		t.Setenv("WORKSPACE_PROBE_RELEASE", release)
+		t.Setenv("TMUX_PROBE_STARTED", started)
+
+		resultCh := make(chan responseResult, 1)
+		go func() {
+			resp, err := client.HTTP.ListWorkspaces(context.Background())
+			if resp != nil {
+				defer resp.Body.Close()
+				resultCh <- responseResult{status: resp.StatusCode, err: err}
+				return
+			}
+			resultCh <- responseResult{err: err}
+		}()
+		assertFastResponse(t, started, resultCh)
+	})
+
+	t.Run("get", func(t *testing.T) {
+		require := require.New(t)
+		dir := t.TempDir()
+		tmuxScript, _ := writeTmuxRecorder(t)
+		client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
+			t, tmuxScript,
+		)
+		require.NoError(database.InsertWorkspace(context.Background(), &db.Workspace{
+			ID:              "ws-enrichment",
+			PlatformHost:    "github.com",
+			RepoOwner:       "acme",
+			RepoName:        "widget",
+			ItemType:        db.WorkspaceItemTypePullRequest,
+			ItemNumber:      1,
+			GitHeadRef:      "feature",
+			WorkspaceBranch: "feature",
+			WorktreePath:    filepath.Join(dir, "worktree"),
+			TmuxSession:     "middleman-ws-enrichment",
+			Status:          "ready",
+		}))
+		for range cap(srv.workspaceEnrichmentSlots) {
+			srv.workspaceEnrichmentSlots <- struct{}{}
+		}
+		released := false
+		releaseSlots := func() {
+			if released {
+				return
+			}
+			released = true
+			for range cap(srv.workspaceEnrichmentSlots) {
+				<-srv.workspaceEnrichmentSlots
+			}
+		}
+		t.Cleanup(releaseSlots)
+
+		resultCh := make(chan responseResult, 1)
+		go func() {
+			resp, err := client.HTTP.GetWorkspace(context.Background(), "ws-enrichment")
+			if resp != nil {
+				defer resp.Body.Close()
+				resultCh <- responseResult{status: resp.StatusCode, err: err}
+				return
+			}
+			resultCh <- responseResult{err: err}
+		}()
+		require.Eventually(func() bool {
+			srv.workspaceEnrichmentMu.Lock()
+			_, pending := srv.workspaceEnrichmentPending["ws-enrichment"]
+			_, inFlight := srv.workspaceEnrichmentInFlight["ws-enrichment"]
+			srv.workspaceEnrichmentMu.Unlock()
+			return pending && !inFlight
+		}, time.Second, 10*time.Millisecond)
+		select {
+		case result := <-resultCh:
+			require.NoError(result.err)
+			require.Equal(http.StatusOK, result.status)
+		case <-time.After(500 * time.Millisecond):
+			require.Fail("workspace response waited for enrichment")
+		}
+		releaseSlots()
+	})
 }
 
 func TestWorkspaceListReturnsUnknownWhenTmuxActivityProbeTimesOut(t *testing.T) {
@@ -801,14 +965,19 @@ func TestConcurrentWorkspaceListsCoalesceTmuxActivityProbe(t *testing.T) {
 
 	var displayMessageCalls int
 	var capturePaneCalls int
-	for _, argv := range readTmuxRecord(t, record) {
-		if containsArg(argv, "display-message") {
-			displayMessageCalls++
+	require.Eventually(func() bool {
+		displayMessageCalls = 0
+		capturePaneCalls = 0
+		for _, argv := range readTmuxRecord(t, record) {
+			if containsArg(argv, "display-message") {
+				displayMessageCalls++
+			}
+			if containsArg(argv, "capture-pane") {
+				capturePaneCalls++
+			}
 		}
-		if containsArg(argv, "capture-pane") {
-			capturePaneCalls++
-		}
-	}
+		return displayMessageCalls == 1 && capturePaneCalls == 1
+	}, time.Second, 10*time.Millisecond)
 	assert.Equal(1, displayMessageCalls)
 	assert.Equal(1, capturePaneCalls)
 }
@@ -885,15 +1054,19 @@ func TestWorkspaceListTmuxActivityRefreshesEveryReadyWorkspace(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode)
 
 	gotSessions := make(map[string]bool)
-	for _, argv := range readTmuxRecord(t, record) {
-		if !containsArg(argv, "capture-pane") {
-			continue
+	require.Eventually(func() bool {
+		clear(gotSessions)
+		for _, argv := range readTmuxRecord(t, record) {
+			if !containsArg(argv, "capture-pane") {
+				continue
+			}
+			session, ok := argAfter(argv, "-t")
+			if ok {
+				gotSessions[session] = true
+			}
 		}
-		session, ok := argAfter(argv, "-t")
-		if ok {
-			gotSessions[session] = true
-		}
-	}
+		return len(gotSessions) == len(wantSessions)
+	}, time.Second, 10*time.Millisecond)
 	assert.Equal(wantSessions, gotSessions)
 }
 
@@ -987,8 +1160,14 @@ func TestWorkspaceListTmuxActivityStressDoesNotLeakProcesses(t *testing.T) {
 		assert.Equal(http.StatusOK, status)
 	}
 
-	assert.NoFileExists(violationPath)
 	require.Eventually(func() bool {
+		srv.workspaceEnrichmentMu.Lock()
+		complete := len(srv.workspaceEnrichmentCache) == 12 &&
+			len(srv.workspaceEnrichmentInFlight) == 0
+		srv.workspaceEnrichmentMu.Unlock()
+		if !complete {
+			return false
+		}
 		entries, err := os.ReadDir(activeDir)
 		if os.IsNotExist(err) {
 			return true
@@ -996,6 +1175,7 @@ func TestWorkspaceListTmuxActivityStressDoesNotLeakProcesses(t *testing.T) {
 		require.NoError(err)
 		return len(entries) == 0
 	}, time.Second, 10*time.Millisecond)
+	assert.NoFileExists(violationPath)
 }
 
 func getRawWorkspaceActivity(
@@ -1762,7 +1942,7 @@ func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
 	assert.Contains(*failed.ErrorMessage, "host process limit reached")
 }
 
-func TestWorkspaceListWaitsForSubprocessCapacityThenCompletesViaAPI(t *testing.T) {
+func TestWorkspaceListReturnsWhileSubprocessCapacityIsHeld(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1807,17 +1987,6 @@ func TestWorkspaceListWaitsForSubprocessCapacityThenCompletesViaAPI(t *testing.T
 
 	select {
 	case got := <-listDone:
-		if got.resp != nil && got.resp.Body != nil {
-			got.resp.Body.Close()
-		}
-		require.Fail("workspace list returned before subprocess capacity was released")
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	releaseHeld()
-
-	select {
-	case got := <-listDone:
 		require.NoError(got.err)
 		defer got.resp.Body.Close()
 		require.Equal(http.StatusOK, got.resp.StatusCode)
@@ -1830,9 +1999,11 @@ func TestWorkspaceListWaitsForSubprocessCapacityThenCompletesViaAPI(t *testing.T
 		require.NoError(json.NewDecoder(got.resp.Body).Decode(&listed))
 		require.Len(listed.Workspaces, 1)
 		assert.Equal(createResp.JSON202.Id, listed.Workspaces[0].ID)
-	case <-time.After(time.Second):
-		require.Fail("workspace list did not complete after subprocess capacity was released")
+	case <-time.After(200 * time.Millisecond):
+		require.Fail("workspace list waited for subprocess capacity")
 	}
+
+	releaseHeld()
 }
 
 func TestWorkspaceSetupLimiterTimeoutSurfacesResourceExhaustionViaAPI(t *testing.T) {

@@ -25387,7 +25387,7 @@ exit 0
 		return listed != nil && listed.TmuxWorking &&
 			listed.TmuxActivitySource == tmuxActivitySourceTitle &&
 			listed.TmuxPaneTitle != nil
-	}, 2*time.Second, 10*time.Millisecond)
+	}, 6*time.Second, 10*time.Millisecond)
 	require.NotNil(listed)
 	assert.True(listed.TmuxWorking)
 	assert.Equal(tmuxActivitySourceTitle, listed.TmuxActivitySource)

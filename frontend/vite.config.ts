@@ -195,6 +195,7 @@ const browserTestProject = defineProject(async () => {
     },
     test: {
       name: "browser",
+      setupFiles: ["./src/test/browserSetup.ts"],
       include: ["src/**/*.browser.svelte.ts"],
       browser: {
         enabled: true,

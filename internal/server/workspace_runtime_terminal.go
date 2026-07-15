@@ -26,6 +26,8 @@ type runtimeTerminalControlMsg struct {
 	Active *bool  `json:"active,omitempty"`
 }
 
+const runtimeTerminalSetupStepTimeout = 2 * time.Second
+
 func (s *Server) handleWorkspaceRuntimeSessionTerminal(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -121,6 +123,23 @@ func (s *Server) serveRuntimeTerminal(
 		if err := attachment.Resize(cols, rows); err != nil {
 			slog.Warn("runtime terminal initial resize", "err", err)
 		}
+		// subscribe queues ordinary-screen replay before the websocket is
+		// accepted. Forward that already-available frame before the
+		// synchronous tmux refresh so the browser can paint while tmux
+		// drains its resize IPC. A closed Output remains closed for the
+		// bridge to observe, and any later output stays bridge-owned.
+		if err := forwardAvailableRuntimeOutput(
+			r.Context(), runtimeTerminalSetupStepTimeout, attachment.Output,
+			func(ctx context.Context, data []byte) error {
+				return conn.Write(ctx, websocket.MessageBinary, data)
+			},
+		); err != nil {
+			slog.Warn("runtime terminal initial replay", "err", err)
+			attachSpan.SetAttributes(attribute.Bool("error", true))
+			attachment.Close()
+			_ = conn.CloseNow()
+			return
+		}
 		// pty.Setsize SIGWINCHs the foreground process of the master,
 		// but for tmux-backed sessions the pane refit happens via
 		// async client-to-server IPC. If the bridge starts forwarding
@@ -133,7 +152,7 @@ func (s *Server) serveRuntimeTerminal(
 		// no-op. The 2 s budget mirrors the bridge's resize/refresh
 		// control handler.
 		refreshCtx, refreshCancel := context.WithTimeout(
-			r.Context(), 2*time.Second,
+			r.Context(), runtimeTerminalSetupStepTimeout,
 		)
 		if err := attachment.Refresh(refreshCtx); err != nil {
 			slog.Warn(
@@ -164,6 +183,24 @@ func (s *Server) serveRuntimeTerminal(
 		)
 		conn.Close(websocket.StatusNormalClosure, "detached")
 	}
+}
+
+func forwardAvailableRuntimeOutput(
+	ctx context.Context,
+	timeout time.Duration,
+	output <-chan []byte,
+	write func(context.Context, []byte) error,
+) error {
+	select {
+	case data, ok := <-output:
+		if ok {
+			writeCtx, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
+			return write(writeCtx, data)
+		}
+	default:
+	}
+	return nil
 }
 
 func (s *Server) runtimeWorkspaceForHTTP(

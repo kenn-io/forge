@@ -1,5 +1,7 @@
 package localruntime
 
+import "context"
+
 // AttachmentForTestingOptions configures NewAttachmentForTesting.
 // Output and Done are required; sessionOutputClosed lets callers
 // distinguish a real session exit from a per-subscriber drop, which
@@ -10,6 +12,8 @@ type AttachmentForTestingOptions struct {
 	Output              <-chan []byte
 	Done                <-chan struct{}
 	Info                func() SessionInfo
+	Resize              func(cols, rows int) error
+	Refresh             func(context.Context) error
 	SessionOutputClosed func() bool
 }
 
@@ -32,6 +36,8 @@ func NewAttachmentForTesting(opts AttachmentForTestingOptions) *Attachment {
 		Output:              opts.Output,
 		Done:                opts.Done,
 		info:                info,
+		resize:              opts.Resize,
+		refresh:             opts.Refresh,
 		sessionOutputClosed: sessionOutputClosed,
 	}
 }

@@ -358,6 +358,42 @@ describe("RepoBrowserFeature", () => {
     expect(screen.queryByRole("option", { name: "branch: release/v1 release-" })).toBeNull();
   });
 
+  it("searches the full ref collection before applying the render limit", async () => {
+    const overflowRef = {
+      type: "branch" as const,
+      name: "target/beyond-limit",
+      sha: "target-sha",
+      stale: false,
+    };
+    const refs = [
+      { type: "branch" as const, name: "main", sha: "main-sha", stale: false },
+      ...Array.from({ length: 100 }, (_, index) => ({
+        type: "branch" as const,
+        name: `feature/${String(index).padStart(3, "0")}`,
+        sha: `feature-${String(index).padStart(3, "0")}`,
+        stale: false,
+      })),
+      overflowRef,
+    ];
+    render(RepoBrowserFeature, {
+      props: {
+        client: testClient({ refs }),
+        route,
+        onRouteChange: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Select repository ref: branch: main main-sha" }));
+    expect(screen.queryByRole("option", { name: "target/beyond-limit target-s" })).toBeNull();
+
+    await fireEvent.input(screen.getByRole("combobox", { name: "Search repository refs" }), {
+      target: { value: "beyond-limit" },
+    });
+
+    expect(screen.getByRole("option", { name: "target/beyond-limit target-s" })).toBeTruthy();
+    expect(screen.queryByText(/Showing first/)).toBeNull();
+  });
+
   it("does not reload when the active ref is selected again", async () => {
     const client = testClient();
     const onRouteChange = vi.fn();

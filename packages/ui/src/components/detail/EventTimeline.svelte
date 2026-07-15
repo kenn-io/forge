@@ -1059,10 +1059,6 @@
     );
   }
 
-  function compactEntryCanCopy(entry: TimelineEntry): boolean {
-    return shouldRenderMarkdown(entry.event.EventType) && entry.event.Body.trim().length > 0;
-  }
-
   function isCompactEntryExpanded(entry: TimelineEntry): boolean {
     return expandedCompactRows.includes(entry.key);
   }
@@ -1677,7 +1673,6 @@
           {@const compactSourceLink = compactMetadata ? crossReferenceLink(compactMetadata, compactSourceUrl) : null}
           {@const canExpandCompact = compactEntryCanExpand(entry)}
           {@const compactExpanded = isCompactEntryExpanded(entry)}
-          {@const canCopyCompact = compactEntryCanCopy(entry)}
           <Card
             level="default"
             padding="sm"
@@ -1739,20 +1734,9 @@
                   <span class="event-time compact-event-time">{formatRelativeTime(event.CreatedAt)}</span>
                 </div>
               {/if}
-              {#if canCopyCompact}
-                <IconButton
-                  size="sm"
-                  tone={copiedId === String(event.ID) ? "success" : "neutral"}
-                  onclick={() => copyText(String(event.ID), event.Body)}
-                  ariaLabel={copiedId === String(event.ID) ? "Copied" : "Copy comment"}
-                >
-                  {#if copiedId === String(event.ID)}
-                    <CheckIcon size={14} />
-                  {:else}
-                    <CopyIcon size={14} />
-                  {/if}
-                </IconButton>
-              {/if}
+              <div class="compact-event-actions">
+                {@render eventActions(event)}
+              </div>
             </div>
             {#if canExpandCompact && compactExpanded}
               <div class="compact-expanded-content">
@@ -1902,6 +1886,9 @@
                             <span class="event-author">{reply.Author}</span>
                           {/if}
                           <span class="event-time">{formatRelativeTime(reply.CreatedAt)}</span>
+                          <span class="thread-reply-actions">
+                            {@render eventActions(reply)}
+                          </span>
                         </div>
                         {@render eventBody(reply, true)}
                       </div>
@@ -1997,6 +1984,13 @@
     align-items: center;
     gap: var(--focus-detail-space-xs, 4px);
     min-width: 0;
+  }
+
+  .compact-event-actions,
+  .thread-reply-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--focus-detail-space-xs, 4px);
   }
 
   .compact-event-row {
@@ -2277,6 +2271,10 @@
     min-width: 0;
     min-height: var(--thread-reply-header-line-height);
     align-items: center;
+  }
+
+  .thread-reply-actions {
+    margin-left: auto;
   }
 
   .thread-reply-header .event-type {

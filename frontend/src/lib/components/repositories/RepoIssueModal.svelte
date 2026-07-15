@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { TextInput } from "@kenn-io/kit-ui";
+  import { Checkbox, TextInput } from "@kenn-io/kit-ui";
   import { Button, Chip, CommentEditor } from "@middleman/ui";
   import Modal from "../shared/Modal.svelte";
   import {
@@ -102,15 +102,13 @@
           <p class="issue-modal__error">{error}</p>
         {/if}
         {#if outcomeUnknown}
-          <label class="issue-modal__acknowledgement">
-            <input
-              type="checkbox"
-              onchange={(event) => {
-                if (event.currentTarget.checked) onacknowledgeoutcome();
-              }}
-            />
-            <span>I checked the issue list and want to retry.</span>
-          </label>
+          <Checkbox
+            class="issue-modal__acknowledgement"
+            label="I checked the issue list and want to retry."
+            onchange={(checked) => {
+              if (checked) onacknowledgeoutcome();
+            }}
+          />
         {/if}
       </div>
 
@@ -144,10 +142,8 @@
     grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
-  .issue-modal__acknowledgement {
-    display: flex;
+  :global(.issue-modal__acknowledgement.kit-checkbox) {
     align-items: flex-start;
-    gap: var(--space-2);
     color: var(--text-secondary);
   }
 

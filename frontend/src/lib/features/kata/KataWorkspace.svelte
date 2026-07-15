@@ -1617,7 +1617,7 @@
         return true;
       })
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
-      .map((owner) => ({ value: owner, label: owner }));
+      .map((owner) => ({ name: owner, label: owner }));
   }
 
   function listTitle(): string {

@@ -76,6 +76,7 @@
   let selectedPathRevealKey = $state(0);
   let pendingMarkdownAnchor = $state(initialMarkdownAnchor());
   let refPickerType = $state<RefPickerType>("branch");
+  let refPickerQuery = $state("");
   let refPickerError = $state("");
   let refPickerSelectionInFlight = $state(false);
   const refPickerRenderLimit = 100;
@@ -111,17 +112,21 @@
   const forgeHref = $derived(buildForgeHref(route, selectedRef, selectedPath));
   const branchRefs = $derived(store.getRefs().filter((ref) => refPickerRefType(ref) === "branch"));
   const tagRefs = $derived(store.getRefs().filter((ref) => refPickerRefType(ref) === "tag"));
+  const refPickerFilteredRefs = $derived.by(() => {
+    const query = refPickerQuery.trim().toLowerCase();
+    const refs = refPickerType === "branch" ? branchRefs : tagRefs;
+    if (!query) return refs;
+    return refs.filter((ref) => refOptionLabel(ref).toLowerCase().includes(query));
+  });
   const refPickerOptions = $derived<TypeaheadOption[]>(
-    (refPickerType === "branch" ? branchRefs : tagRefs).slice(0, refPickerRenderLimit).map((ref) => ({
+    refPickerFilteredRefs.slice(0, refPickerRenderLimit).map((ref) => ({
       name: refKey(ref),
       label: ref.name || ref.sha.slice(0, 12),
       displayLabel: refOptionLabel(ref),
       meta: ref.sha.slice(0, 8),
     })),
   );
-  const refPickerTruncated = $derived(
-    (refPickerType === "branch" ? branchRefs.length : tagRefs.length) > refPickerRenderLimit,
-  );
+  const refPickerTruncated = $derived(refPickerFilteredRefs.length > refPickerRenderLimit);
 
   $effect(() => {
     const type = selectedRef ? refPickerRefType(selectedRef) : null;
@@ -317,6 +322,7 @@
     refPickerSelectionInFlight = true;
     try {
       await selectRefByKey(key);
+      refPickerQuery = "";
     } catch {
       refPickerError = "Couldn't load repository ref";
       return false;
@@ -327,6 +333,7 @@
 
   function setRefPickerType(type: RefPickerType): void {
     refPickerType = type;
+    refPickerQuery = "";
     refPickerError = "";
   }
 
@@ -353,7 +360,7 @@
     historyRailVisible =
       typeof window === "undefined" || typeof window.matchMedia !== "function"
         ? true
-        : window.matchMedia("(min-width: 981px)").matches;
+        : window.matchMedia("(min-width: 901px)").matches;
     contentWidth = nextContentWidth;
     if (nextContentWidth <= 0) return;
     const nextFilesWidth = clampFilesWidth(filesWidth, nextContentWidth, historyWidth, historyRailVisible);
@@ -614,7 +621,7 @@
   </div>
   {#if refPickerTruncated}
     <div class="repo-browser__ref-more">
-      Showing first {refPickerOptions.length} of {refPickerType === "branch" ? branchRefs.length : tagRefs.length}
+      Showing first {refPickerOptions.length} of {refPickerFilteredRefs.length}
     </div>
   {/if}
 {/snippet}
@@ -639,6 +646,8 @@
           loadingLabel="Loading repository ref…"
           error={refPickerError}
           header={refPickerHeader}
+          remote
+          onquery={(query) => (refPickerQuery = query)}
           onselect={selectRefFromPicker}
         />
       </div>

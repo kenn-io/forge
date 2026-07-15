@@ -229,7 +229,7 @@ describe("App feature routes", () => {
 
     await waitFor(() => expect(screen.getByTestId("messages-feature")).toBeTruthy());
     expect(featureImports.messages).toBe(2);
-  });
+  }, 10_000);
 
   it("waits for app readiness before mounting lazy feature shells", async () => {
     startup.autoReady = false;

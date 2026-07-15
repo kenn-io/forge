@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { compile } from "svelte/compiler";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import componentSource from "./EventTimeline.svelte?raw";
@@ -2477,6 +2477,76 @@ describe("EventTimeline", () => {
     });
 
     expect(screen.getByText("No activity matches the current filters")).toBeTruthy();
+  });
+
+  it("keeps comment actions available in compact activity rows", () => {
+    render(EventTimeline, {
+      props: {
+        activityViewMode: "compact",
+        events: [
+          makeEvent({
+            Body: "Compact comment",
+            DirectURL: "https://github.com/acme/widget/pull/7#issuecomment-44",
+            EventType: "issue_comment",
+            PlatformID: 44,
+          }),
+        ],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        onEditComment: vi.fn(),
+        onDeleteComment: vi.fn(),
+      },
+    });
+
+    expect(screen.getByRole("button", { name: "Edit comment" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete comment" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy direct link" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy comment" })).toBeTruthy();
+  });
+
+  it("keeps comment actions available on threaded replies", () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 2,
+            Body: "Reply body",
+            DirectURL: "https://github.com/acme/widget/pull/7#issuecomment-45",
+            EventType: "issue_comment",
+            PlatformID: 45,
+            ThreadID: "discussion-1",
+            CreatedAt: "2024-06-01T12:01:00Z",
+          }),
+          makeEvent({
+            ID: 1,
+            Body: "Root body",
+            DirectURL: "https://github.com/acme/widget/pull/7#issuecomment-44",
+            EventType: "issue_comment",
+            PlatformID: 44,
+            ThreadID: "discussion-1",
+            CreatedAt: "2024-06-01T12:00:00Z",
+          }),
+        ],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        onEditComment: vi.fn(),
+        onDeleteComment: vi.fn(),
+      },
+    });
+
+    const reply = container.querySelector<HTMLElement>(".thread-reply-content");
+    expect(reply).not.toBeNull();
+    const replyActions = within(reply!);
+    expect(replyActions.getByRole("button", { name: "Edit comment" })).toBeTruthy();
+    expect(replyActions.getByRole("button", { name: "Delete comment" })).toBeTruthy();
+    expect(replyActions.getByRole("button", { name: "Copy direct link" })).toBeTruthy();
+    expect(replyActions.getByRole("button", { name: "Copy comment" })).toBeTruthy();
   });
 
   it("shows inline edit controls for editable issue comments", async () => {

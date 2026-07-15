@@ -65,7 +65,7 @@ async function openActivityViewMenu(
 }
 
 async function expectTimelineTextOrder(page: Page, labels: string[]): Promise<void> {
-  const timeline = page.locator(".timeline");
+  const timeline = page.getByRole("list", { name: "Item activity" });
   await expect(timeline).toBeVisible();
   for (const label of labels) {
     await expect(timeline).toContainText(label);
@@ -210,7 +210,7 @@ test.describe("PR timeline filters", () => {
       const response = await page.request.post(`${server.info.base_url}/__e2e/pr-review-thread-regroup/add-reply`);
       expect(response.ok()).toBe(true);
 
-      const regroupedThreadCard = page.locator(".pull-detail .event-card", {
+      const regroupedThreadCard = page.locator(".pull-detail .kit-comment-card", {
         hasText: "Regroup root review thread comment.",
       });
       await expect(regroupedThreadCard).toContainText("Regroup reply added during detail refresh.");

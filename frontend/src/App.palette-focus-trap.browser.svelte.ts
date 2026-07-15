@@ -65,13 +65,21 @@ describe("palette focus trap", () => {
     const palette = document.querySelector(".palette");
     expect(palette).not.toBeNull();
 
-    // Forward Tab: focus must stay inside the .palette dialog.
-    pressKey("Tab", {}, input);
-    expect(palette!.contains(document.activeElement)).toBe(true);
+    const panel = document.querySelector<HTMLElement>("[role='dialog'][aria-label='Command palette']");
+    expect(panel).not.toBeNull();
+    const resultButtons = panel!.querySelectorAll<HTMLButtonElement>(".palette-row:not(.palette-row-disabled)");
+    const lastResult = resultButtons.item(resultButtons.length - 1);
+    expect(resultButtons.length).toBeGreaterThan(0);
 
-    // Reverse Tab: same containment guarantee.
-    pressKey("Tab", { shift: true }, document.activeElement!);
-    expect(palette!.contains(document.activeElement)).toBe(true);
+    lastResult.focus();
+    const forwardTab = pressKey("Tab", {}, lastResult);
+    expect(forwardTab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(input);
+
+    input.focus();
+    const reverseTab = pressKey("Tab", { shift: true }, input);
+    expect(reverseTab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(lastResult);
 
     // Escape closes the palette and tears down the modal frame.
     pressKey("Escape", {}, document.activeElement!);

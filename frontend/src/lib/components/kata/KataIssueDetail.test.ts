@@ -183,14 +183,14 @@ describe("KataIssueDetail", () => {
     expect(onEditIssue).toHaveBeenCalledWith("issue-1", { body: "Updated body" });
   });
 
-  it("renders the current project as passive breadcrumb text", () => {
+  it("moves the issue from the current project breadcrumb", async () => {
     const onMoveIssue = vi.fn(async () => true);
     renderDetail({ onMoveIssue });
 
-    expect(screen.getAllByText("Inbox").length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: /Move issue from Inbox/ })).toBeNull();
-    expect(screen.queryByRole("combobox", { name: "Move issue project" })).toBeNull();
-    expect(onMoveIssue).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole("button", { name: "Move issue from Inbox" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Roadmap 1" }));
+
+    expect(onMoveIssue).toHaveBeenCalledWith("project-2");
   });
 
   it("opens the reachable graph for the selected task", async () => {
@@ -211,8 +211,7 @@ describe("KataIssueDetail", () => {
       }),
     });
 
-    expect(screen.getAllByText("Roadmap").length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: "Move issue from Roadmap" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Move issue from Roadmap" })).toBeTruthy();
   });
 
   it("renders linked messages through the detail composition", () => {

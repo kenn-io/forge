@@ -101,6 +101,10 @@ icon mid-run, re-bundles, and the page reload breaks unrelated suites with
 "Failed to fetch dynamically imported module". Verify with the grep documented
 above that list in the config.
 
+Vitest owns unhandled errors in the root runner, so `onUnhandledError` belongs
+in the root `test` config rather than a browser project; keep any ignored error
+exact by message and framework stack frame (`frontend/vite.config.ts:495`).
+
 Full-stack e2e serves the frontend embedded in the e2e-server binary
 (`internal/web/dist`), not live sources: run `make frontend` before building
 `cmd/e2e-server` locally, or the suite silently validates a stale bundle and
@@ -246,6 +250,10 @@ trigger, treat the HTTP 202 and DB row timestamps as intermediate observations.
 `TriggerRun` is non-blocking and single-flight; wait for `/api/v1/sync/status`
 to report `running=false` with a `last_run_at` before issuing the next trigger,
 or the next trigger can race the still-running sync and be skipped.
+
+Workspace fixtures with background monitors must seed observer inputs before
+`server.New`; the pushed-head observer runs an immediate first pass and can
+capture transitional fixture state (`internal/server/server.go::runWorkspacePushedHeadObserverLoop`).
 
 `testing/synctest` is appropriate only when all goroutines and timers under test
 are pure in-process work created inside the `synctest.Run` bubble. Good

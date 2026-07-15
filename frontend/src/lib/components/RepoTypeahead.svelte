@@ -339,7 +339,7 @@
       aria-label="Filter repos"
       autocomplete="off"
     />
-    <!-- kit-ui-check-ignore: grouped provider tree with expand/collapse + cheatsheet-registered keys; kit Typeahead is flat (kit-ui#t662) -->
+    <!-- kit-ui-check-ignore: checkable provider tree owns tri-state multi-selection, All repos, persistent expansion, and provider-host-qualified identity; kit Typeahead is single-select -->
     <ul class="typeahead-list kit-popover-card" role="listbox" onmousedown={preventBlur}>
       <li
         class="typeahead-option"

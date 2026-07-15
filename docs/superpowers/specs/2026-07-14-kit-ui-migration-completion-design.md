@@ -26,7 +26,7 @@ Already completed stage-4 migrations remain intact. This work does not rewrite a
 4. Checker output is supporting evidence, not the inventory. Audit semantic equivalents that use different names.
 5. Delete replaced local markup, CSS, helpers, and components in the same slice.
 6. Do not introduce compatibility shims. Adapt call sites to the canonical shared API.
-7. If the checker reports application-owned UI that kit-ui does not support, fix the checker rule rather than reshaping production markup or adding a suppression solely to reach zero findings. The only new shared contracts approved in this work are axis-aware `SplitResizeHandle` behavior and a reusable resizable inline bottom dock; other middleman-specific gaps remain local.
+7. If the checker reports application-owned UI that kit-ui does not support, fix the checker rule rather than reshaping production markup or adding a suppression solely to reach zero findings. This PR uses the installed kit-ui contracts only; axis-aware `SplitResizeHandle` behavior and a reusable resizable inline bottom dock are deferred follow-up work, and other middleman-specific gaps remain local.
 
 ## Stage-4 completion audit
 
@@ -213,7 +213,7 @@ The final source search must find no temporary `wa1f` markers and no obsolete ex
 
 ## Kata and PR completion
 
-As each slice lands, add concise completion evidence to the relevant Kata child. Create or update Kata records only for genuine migration work. Application-owned behavior that the checker misclassifies is resolved in the checker, not converted into an upstream component enhancement; `jvxt` and `ba3w` are the approved shared-contract exceptions.
+As each slice lands, add concise completion evidence to the relevant Kata child. Create or update Kata records only for genuine migration work. Application-owned behavior that the checker misclassifies is resolved in later checker work, not converted into an upstream component enhancement; `jvxt` and `ba3w` remain explicit follow-up tasks outside this PR.
 
 Close `fn3y`, `2df7`, and `wa1f` only after their current acceptance criteria are satisfied. Close `kqyv` only after:
 

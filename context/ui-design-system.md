@@ -192,11 +192,11 @@ Use `GroupedSidebarSection` for collapsible groups in PR, issue, and workspace l
 
 ### SplitResizeHandle
 
-Use kit-ui's `SplitResizeHandle` for draggable pane dividers, including
-horizontal and vertical pane layouts. Pane trees and ratio/size bounds remain
-application-owned; the shared component owns only the axis-aware pointer,
-keyboard, focus, cursor, and separator interaction. Pass a specific accessible
-label such as `Resize Activity rail`.
+Use the installed kit-ui `SplitResizeHandle` for compatible horizontal pane
+dividers. Recursive horizontal/vertical pane trees retain their application
+handles until the separately owned axis-aware contract lands; pane-tree logic
+and ratio/size bounds always remain application-owned. Pass a specific
+accessible label such as `Resize Activity rail`.
 
 ### TabbedPanelTree
 

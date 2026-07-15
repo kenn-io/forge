@@ -300,10 +300,10 @@ const taskListRenderer: RendererObject = {
       if (stack.length > 0) {
         stack[stack.length - 1]!.checkboxIndex = index;
       }
-      // kit-ui-check-ignore: Checkbox migration pending (kata wa1f)
+      // kit-ui-check-ignore: generated sanitized HTML uses delegated task indices and cannot instantiate a Svelte Checkbox
       return `<input${checkedAttr} type="checkbox" data-task-index="${index}">`;
     }
-    // kit-ui-check-ignore: Checkbox migration pending (kata wa1f)
+    // kit-ui-check-ignore: generated sanitized HTML uses delegated task indices and cannot instantiate a Svelte Checkbox
     return `<input${checkedAttr} disabled="" type="checkbox">`;
   },
   listitem(token): string {

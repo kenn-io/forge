@@ -631,6 +631,48 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.queryByRole("tab", { name: /Review helper/ })).toBeNull();
   });
 
+  it("ignores a runtime poll that started before a local rename", async () => {
+    const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
+    vi.spyOn(globalThis, "setInterval").mockImplementation((callback: TimerHandler, delay?: number) => {
+      intervalCallbacks.push({ callback: callback as () => void, delay });
+      return 1 as unknown as ReturnType<typeof setInterval>;
+    });
+    vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    const stalePoll = deferred<ReturnType<typeof runtimeWithStaleSession>>();
+    mocks.getWorkspaceRuntime
+      .mockResolvedValueOnce(runtimeWithStaleSession())
+      .mockReturnValueOnce(stalePoll.promise)
+      .mockResolvedValueOnce({
+        ...runtimeWithStaleSession(),
+        sessions: [{ ...runningSession, label: "Review helper" }],
+      });
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await screen.findByRole("tab", { name: /^Helper$/ });
+    const runtimePoll = intervalCallbacks.find((interval) => interval.delay === 3000);
+    expect(runtimePoll).toBeTruthy();
+    runtimePoll!.callback();
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Rename Helper" }));
+    const input = await screen.findByRole("textbox", { name: "Name" });
+    await fireEvent.input(input, { target: { value: "Review helper" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByRole("tab", { name: /Review helper/ });
+
+    stalePoll.resolve(runtimeWithStaleSession());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole("tab", { name: /Review helper/ })).toBeTruthy();
+
+    runtimePoll!.callback();
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(3));
+  });
+
   it("polls remote workspace runtime so peer-spawned sessions appear", async () => {
     localStorage.setItem("middleman-workspace-active-tab:fleet:member:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
@@ -1148,6 +1190,51 @@ describe("WorkspaceTerminalView", () => {
 
     await waitFor(() => expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(true));
     expect(screen.getByRole("button", { name: "Shell 2" })).toBeTruthy();
+  });
+
+  it("keeps a split terminal when an older runtime poll resolves", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
+    vi.spyOn(globalThis, "setInterval").mockImplementation((callback: TimerHandler, delay?: number) => {
+      intervalCallbacks.push({ callback: callback as () => void, delay });
+      return 1 as unknown as ReturnType<typeof setInterval>;
+    });
+    vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    const stalePoll = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
+    mocks.getWorkspaceRuntime
+      .mockResolvedValueOnce(runtimeWithTerminalSession())
+      .mockReturnValueOnce(stalePoll.promise)
+      .mockResolvedValueOnce(runtimeWithTwoTerminalSessions());
+    mocks.launchWorkspaceSession.mockResolvedValue({
+      ...relaunchedShellSession,
+      label: "Shell 2",
+    });
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    const terminalButton = await screen.findByRole("button", {
+      name: "Open terminal panel",
+    });
+    await fireEvent.click(terminalButton);
+    await waitFor(() => expect(sockets.some((socket) => socket.url.includes("ws-1_shell_a"))).toBe(true));
+    const runtimePoll = intervalCallbacks.find((interval) => interval.delay === 3000);
+    expect(runtimePoll).toBeTruthy();
+    runtimePoll!.callback();
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Split terminal right" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Shell 2" })).toBeTruthy());
+
+    stalePoll.resolve(runtimeWithTerminalSession());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole("button", { name: "Shell 2" })).toBeTruthy();
+
+    runtimePoll!.callback();
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(3));
   });
 
   it("shows newly discovered terminal sessions without auto-splitting them", async () => {

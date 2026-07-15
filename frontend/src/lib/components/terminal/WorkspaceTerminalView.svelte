@@ -375,6 +375,14 @@
       appliedRuntimeState.hostKey === hostKey
     );
   }
+
+  function invalidateRuntimeSnapshot(): void {
+    runtimeFetchSeq += 1;
+    runtimeFetchInFlight = null;
+    runtimeFetchInFlightId = "";
+    runtimeFetchInFlightHostKey = undefined;
+    appliedRuntimeState = null;
+  }
   const runtimeSessions = $derived(
     runtimeLive
       ? (runtime?.sessions ?? []).filter(
@@ -406,7 +414,7 @@
       session,
     ];
     if (runtimeLive && runtime) {
-      appliedRuntimeState = null;
+      invalidateRuntimeSnapshot();
       runtime = {
         ...runtime,
         sessions: [
@@ -1657,7 +1665,7 @@
       );
       if (!isCurrentWorkspace(id, hostKey)) return;
       if (runtime) {
-        appliedRuntimeState = null;
+        invalidateRuntimeSnapshot();
       }
       runtime = runtime
         ? {

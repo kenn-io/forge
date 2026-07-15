@@ -1795,6 +1795,37 @@ describe("kata workspace store", () => {
     expect(store.eventCursor).toBe(99);
   });
 
+  test("an unrelated remote event preserves the cached selected detail", async () => {
+    const api = createFakeKataTaskAPI();
+    const store = createKataWorkspaceStore({ api });
+    await store.bootstrap();
+    expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
+    api.mocks.issue.mockClear();
+
+    await store.applyRemoteEvent({ ...events[1]!, event_id: 99 });
+
+    expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
+    expect(api.mocks.issue).not.toHaveBeenCalled();
+  });
+
+  test("view loads do not wait for selected issue history", async () => {
+    const api = createFakeKataTaskAPI();
+    const slowEvents = deferred<KataTaskEventsResponse>();
+    api.mocks.events.mockImplementationOnce(() => slowEvents.promise);
+    const store = createKataWorkspaceStore({ api });
+
+    const bootstrap = store.bootstrap();
+    try {
+      await vi.waitFor(() => {
+        expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
+      });
+      await bootstrap;
+    } finally {
+      slowEvents.resolve({ reset_required: false, events: [], next_after_id: 0 });
+      await bootstrap;
+    }
+  });
+
   test("syncs event cursor through paged event reads", async () => {
     const api = createFakeKataTaskAPI();
     api.mocks.events.mockImplementation(async (query: KataTaskEventsQuery = {}) => {
@@ -1820,6 +1851,30 @@ describe("kata workspace store", () => {
     expect(cursorReads.map(([query]) => query?.after_id)).toEqual([0, 1, 2]);
   });
 
+  test("syncing a multi-page event backlog revalidates the view once", async () => {
+    const api = createFakeKataTaskAPI();
+    api.mocks.events
+      .mockResolvedValueOnce({
+        reset_required: false,
+        events: [{ ...events[0]!, event_id: 100 }],
+        next_after_id: 100,
+      })
+      .mockResolvedValueOnce({
+        reset_required: false,
+        events: [{ ...events[1]!, event_id: 101 }],
+        next_after_id: 101,
+      })
+      .mockResolvedValueOnce({ reset_required: false, events: [], next_after_id: 101 });
+    const store = createKataWorkspaceStore({ api });
+    await store.bootstrap("all", null, { selectFirst: false });
+    api.mocks.issues.mockClear();
+
+    await store.syncEventCursor();
+
+    expect(store.eventCursor).toBe(101);
+    expect(api.mocks.issues).toHaveBeenCalledOnce();
+  });
+
   test("syncing the event cursor applies observed events before advancing", async () => {
     const api = createFakeKataTaskAPI();
     const store = createKataWorkspaceStore({ api });
@@ -1836,7 +1891,7 @@ describe("kata workspace store", () => {
     expect(store.selectedIssue?.issue.uid).toBe("issue-renew-passport");
   });
 
-  test("syncing the event cursor stops after an unapplied event in a multi-event page", async () => {
+  test("syncing the event cursor does not advance when batched revalidation is unapplied", async () => {
     const api = createFakeKataTaskAPI();
     const store = createKataWorkspaceStore({ api });
     await store.bootstrap("all");
@@ -1862,7 +1917,7 @@ describe("kata workspace store", () => {
     expect(store.eventCursor).toBe(0);
     expect(api.mocks.search).toHaveBeenCalledTimes(2);
     const cursorReads = api.mocks.events.mock.calls.filter(([query]) => query?.after_id !== undefined);
-    expect(cursorReads.map(([query]) => query?.after_id)).toEqual([0]);
+    expect(cursorReads.map(([query]) => query?.after_id)).toEqual([0, 101]);
   });
 
   test("resetEventCursor lets lower-id events from a new daemon apply", async () => {

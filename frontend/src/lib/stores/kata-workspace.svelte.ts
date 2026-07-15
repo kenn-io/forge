@@ -738,6 +738,7 @@ export class KataWorkspaceStore {
 
   async syncEventCursor(): Promise<void> {
     let afterID = this.eventCursor;
+    const pendingEvents: KataTaskEvent[] = [];
     for (;;) {
       const response = await this.api.events({ after_id: afterID, limit: 100 });
       const nextAfterID = Math.max(afterID, response.next_after_id, ...response.events.map((event) => event.event_id));
@@ -748,27 +749,26 @@ export class KataWorkspaceStore {
           reset_after_id: response.reset_after_id ?? nextAfterID,
           lastEventID: nextAfterID,
         });
-      } else {
-        for (const event of response.events) {
-          const refreshed = await this.applyRemoteEvent(event);
-          if (!refreshed) return;
-        }
-        this.eventCursor = Math.max(this.eventCursor, nextAfterID);
+        return;
       }
-      if (response.events.length === 0 || nextAfterID === afterID) return;
+      pendingEvents.push(...response.events.filter((event) => event.event_id > this.eventCursor));
+      const reachedEnd = response.events.length === 0 || nextAfterID === afterID;
       afterID = nextAfterID;
+      if (reachedEnd) break;
     }
+    if (pendingEvents.length === 0) {
+      this.eventCursor = Math.max(this.eventCursor, afterID);
+      return;
+    }
+    const refreshed = await this.refreshForRemoteEvents(pendingEvents);
+    if (!refreshed) return;
+    this.eventCursor = Math.max(this.eventCursor, afterID);
   }
 
   async applyRemoteEvent(event: KataTaskEvent): Promise<boolean> {
     if (event.event_id <= this.eventCursor) return true;
-    if (event.type.startsWith("project.")) {
-      await this.reloadProjects();
-    }
-    const preferredUID = this.pendingSelectionUID ?? this.selectedIssue?.issue.uid ?? null;
-    const refreshed = await this.refreshCurrentView(preferredUID);
+    const refreshed = await this.refreshForRemoteEvents([event]);
     if (!refreshed) return false;
-    this.applyTrivialMetadataEvent(event);
     this.eventCursor = event.event_id;
     return true;
   }
@@ -790,6 +790,26 @@ export class KataWorkspaceStore {
     const projects = await this.api.projects();
     this.projects = projects.projects;
     this.areas = deriveKataAreas(projects.projects);
+  }
+
+  private async refreshForRemoteEvents(events: readonly KataTaskEvent[]): Promise<boolean> {
+    if (events.some((event) => event.type.startsWith("project."))) {
+      await this.reloadProjects();
+    }
+    const preferredUID = this.pendingSelectionUID ?? this.selectedIssue?.issue.uid ?? null;
+    const selectedProjectID = this.selectedIssue?.issue.project_id;
+    const refreshSelectedDetail = events.some(
+      (event) =>
+        event.issue_uid === preferredUID ||
+        event.related_issue_uid === preferredUID ||
+        (event.type.startsWith("project.") && event.project_id === selectedProjectID),
+    );
+    const refreshed = await this.refreshCurrentView(preferredUID, { refreshSelectedDetail });
+    if (!refreshed) return false;
+    for (const event of events) {
+      this.applyTrivialMetadataEvent(event);
+    }
+    return true;
   }
 
   private clearTaskCache(): void {
@@ -1012,7 +1032,10 @@ export class KataWorkspaceStore {
     }
   }
 
-  private async refreshCurrentView(preferredUID?: string | null): Promise<boolean> {
+  private async refreshCurrentView(
+    preferredUID?: string | null,
+    options: { refreshSelectedDetail?: boolean } = {},
+  ): Promise<boolean> {
     const { requestID, signal } = this.beginViewRequest();
     // Selection epoch at refresh start: any selection or clear that lands
     // while the view fetch below is in flight bumps detailRequestID,
@@ -1063,6 +1086,7 @@ export class KataWorkspaceStore {
       issues = selectableViewIssues(view.groups);
     }
     this.currentView = nextView;
+    if (options.refreshSelectedDetail === false) return true;
     let resolvedUID = preferredUID;
     if (this.detailRequestID !== selectionEpoch) {
       // The selection changed while the view fetch was in flight, so the
@@ -1155,50 +1179,15 @@ export class KataWorkspaceStore {
       clearInteraction(KATA_SELECT_ISSUE_INTERACTION, timingToken);
       return false;
     }
-    // Direct selections render the pane and resolve as soon as the detail
-    // lands: callers sync the route from this promise, so it must not wait
-    // on (or fail with) the event-log walk, which finishes in a guarded
-    // background continuation. View loads keep the original atomic apply:
-    // their callers update route bookkeeping only after this promise
-    // settles, and an intermediate reactive flush would let the workspace
-    // route-sync effect stomp the fresh selection with the stale route
-    // issue.
-    if (viewRequestID === undefined) {
-      applyDetail();
-      void this.finishSelectedEvents(eventsPromise, abort, uid, detailRequestID, timingToken);
-      return true;
-    }
-
-    let events: KataTaskEventsResponse;
-    try {
-      events = await eventsPromise;
-    } catch (error) {
-      clearInteraction(KATA_SELECT_ISSUE_INTERACTION, timingToken);
-      if (abort.signal.aborted) return false;
-      throw error;
-    } finally {
-      if (this.detailAbort === abort) this.detailAbort = null;
-    }
-    if (viewRequestID !== this.viewRequestID) {
-      this.observeGraphStore("detail-load-stale", { uid, detailRequestID, viewRequestID });
-      clearInteraction(KATA_SELECT_ISSUE_INTERACTION, timingToken);
-      return false;
-    }
-    if (detailRequestID !== this.detailRequestID) {
-      clearInteraction(KATA_SELECT_ISSUE_INTERACTION, timingToken);
-      return false;
-    }
+    // Issue history may require a client-side walk of the daemon's whole
+    // event log. The selected detail is already usable, so history fills in
+    // as a guarded continuation instead of extending list/view loading.
     applyDetail();
-    this.selectedEvents = events.events;
-    measureInteraction(KATA_SELECT_ISSUE_INTERACTION, "events-loaded", timingToken, {
-      uid,
-      count: events.events.length,
-    });
-    clearInteraction(KATA_SELECT_ISSUE_INTERACTION, timingToken);
+    void this.finishSelectedEvents(eventsPromise, abort, uid, detailRequestID, timingToken);
     return true;
   }
 
-  // Completes a direct selection's best-effort event-log read after the
+  // Completes a selection's best-effort event-log read after the
   // detail has already been applied and the selection promise resolved. A
   // failed or superseded read leaves the rendered detail in place with an
   // empty event log instead of failing the selection.

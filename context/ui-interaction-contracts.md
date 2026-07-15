@@ -162,6 +162,9 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   writes, initial ownership setup, or a context switch already in progress;
   background refresh counters are presentation state, not transaction locks
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::daemonSwitchLocked`).
+- Treat event streams as cache invalidation, not render replay: batch cursor
+  catch-up into one view revalidation, and hydrate selected-item history off
+  the blocking view-load path (`frontend/src/lib/stores/kata-workspace.svelte.ts::syncEventCursor`).
 
 ## Controlled Form Controls
 

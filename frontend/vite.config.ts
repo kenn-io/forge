@@ -193,12 +193,8 @@ const browserTestProject = defineProject(async () => {
     resolve: {
       conditions: [...defaultClientConditions],
     },
-    server: {
-      hmr: false,
-    },
     test: {
       name: "browser",
-      setupFiles: ["./src/test/browserSetup.ts"],
       include: ["src/**/*.browser.svelte.ts"],
       browser: {
         enabled: true,

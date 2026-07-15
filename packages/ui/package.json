@@ -148,7 +148,7 @@
     "@types/node": "^26.0.0",
     "openapi-fetch": "^0.17.0",
     "svelte": "^5.55.7",
-    "vite-plus": "0.2.4"
+    "vite-plus": "0.2.3"
   },
   "peerDependencies": {
     "svelte": "^5.55.7"

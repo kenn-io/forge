@@ -22518,6 +22518,8 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 	runGit(t, tmpWork, "add", ".")
 	runGit(t, tmpWork, "commit", "-m", "feature commit")
 	runGit(t, tmpWork, "push", "origin", "feature")
+	featureSHA := gitOutput(t, tmpWork, "rev-parse", "HEAD")
+	runGit(t, remote, "update-ref", "refs/pull/1/head", featureSHA)
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
@@ -25641,10 +25643,9 @@ func TestWorkspaceListRestoresAheadBehindAfterUpstreamHealE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
-	// The observer only rewires an upstream when the merge-request row
-	// positively places the head branch in the base repository.
+	// Keep the missing-upstream state stable until the explicit observer pass.
 	seedPR(t, database, "acme", "widget", 1,
-		withSeedPRHeadRepoCloneURL("https://github.com/acme/widget.git"))
+		withSeedPRHeadRepoCloneURL("https://github.com/contributor/widget.git"))
 
 	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
 	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
@@ -25660,6 +25661,7 @@ func TestWorkspaceListRestoresAheadBehindAfterUpstreamHealE2E(t *testing.T) {
 	branch := ws.GitHeadRef
 	runGit(t, ws.WorktreePath, "config", "--unset", "branch."+branch+".remote")
 	runGit(t, ws.WorktreePath, "config", "--unset", "branch."+branch+".merge")
+	clockNow.Store(now.Add(workspaceEnrichmentTTL + time.Second).UnixNano())
 
 	findWorkspace := func() *generated.WorkspaceResponse {
 		listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
@@ -25677,7 +25679,6 @@ func TestWorkspaceListRestoresAheadBehindAfterUpstreamHealE2E(t *testing.T) {
 		return nil
 	}
 
-	clockNow.Store(now.Add(workspaceEnrichmentTTL + time.Second).UnixNano())
 	var broken *generated.WorkspaceResponse
 	require.Eventually(func() bool {
 		broken = findWorkspace()
@@ -25687,8 +25688,11 @@ func TestWorkspaceListRestoresAheadBehindAfterUpstreamHealE2E(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond,
 		"counts must be omitted while the branch has no upstream")
 
+	// The observer only rewires an upstream when the merge-request row
+	// positively places the head branch in the base repository.
+	seedPR(t, database, "acme", "widget", 1,
+		withSeedPRHeadRepoCloneURL("https://github.com/acme/widget.git"))
 	srv.runWorkspacePushedHeadObserverPass(ctx)
-
 	clockNow.Store(now.Add(2 * (workspaceEnrichmentTTL + time.Second)).UnixNano())
 	var healed *generated.WorkspaceResponse
 	require.Eventually(func() bool {
@@ -28504,6 +28508,8 @@ func TestWorkspaceCreateFetchesCloneThroughAPI(t *testing.T) {
 	runGit(t, remoteWork, "add", ".")
 	runGit(t, remoteWork, "commit", "-m", "feature after fixture clone")
 	runGit(t, remoteWork, "push", "origin", "feature")
+	featureSHA := gitOutput(t, remoteWork, "rev-parse", "HEAD")
+	runGit(t, fixture.remote, "update-ref", "refs/pull/1/head", featureSHA)
 
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx,

@@ -200,6 +200,17 @@ Test fixtures that seed PR rows must either carry a same-repo
 unknown-provenance setup resolves heads exclusively through the fork-safe ref
 and fails outright when the remote does not serve it.
 
+## Pushed-Head Refresh Convergence
+
+A tracking-ref/provider-head mismatch is not proof of a local push: when the
+PR advanced from another checkout, the local tracking ref is the stale side
+and a provider sync can never converge. The observer therefore enqueues a PR
+sync on mismatch, retries on failure after `pushedHeadRefreshRetryInterval`,
+but must stop once a refresh for the same observed SHA succeeded and the
+provider head still differs (`LastRefreshSucceededAt >= LastRefreshEnqueuedAt`)
+— otherwise the visible PR is re-synced and re-rendered forever. A tracking-ref
+move restarts the cycle.
+
 ## Sidebar Ordering
 
 The workspace sidebar has two separate activity concepts:

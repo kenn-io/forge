@@ -54,28 +54,42 @@ func (s *Server) toCachedWorkspaceResponse(
 	if s.workspaces == nil || summary.Status != "ready" {
 		return resp
 	}
-	resp.EnrichmentStatus = workspaceEnrichmentPending
 
 	entry, refreshDue := s.cachedWorkspaceEnrichment(summary.ID)
-	if entry != nil {
-		applyWorkspaceEnrichmentCacheEntry(&resp, *entry)
-		hasResponse := entry.hasDivergence || entry.hasTmux
-		switch {
-		case entry.lastError != "":
-			resp.EnrichmentStatus = workspaceEnrichmentFailed
-			errMessage := entry.lastError
-			resp.EnrichmentError = &errMessage
-		case hasResponse:
-			refreshedAt, _ := entry.oldestRefreshedAt()
-			if s.now().Sub(refreshedAt) < workspaceEnrichmentTTL {
-				resp.EnrichmentStatus = workspaceEnrichmentFresh
-			} else {
-				resp.EnrichmentStatus = workspaceEnrichmentStale
-			}
-		}
-	}
+	resp = s.workspaceResponseFromEnrichmentCacheEntry(summary, entry)
 	if refreshDue {
 		s.scheduleWorkspaceEnrichment(*summary)
+	}
+	return resp
+}
+
+func (s *Server) workspaceResponseFromEnrichmentCacheEntry(
+	summary *db.WorkspaceSummary,
+	entry *workspaceEnrichmentCacheEntry,
+) workspaceResponse {
+	resp := toWorkspaceResponse(summary)
+	resp.Repo = s.repoRefFromParts(
+		summary.Platform, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
+	)
+	resp.EnrichmentStatus = workspaceEnrichmentPending
+	if entry == nil {
+		return resp
+	}
+
+	applyWorkspaceEnrichmentCacheEntry(&resp, *entry)
+	hasResponse := entry.hasDivergence || entry.hasTmux
+	switch {
+	case entry.lastError != "":
+		resp.EnrichmentStatus = workspaceEnrichmentFailed
+		errMessage := entry.lastError
+		resp.EnrichmentError = &errMessage
+	case hasResponse:
+		refreshedAt, _ := entry.oldestRefreshedAt()
+		if s.now().Sub(refreshedAt) < workspaceEnrichmentTTL {
+			resp.EnrichmentStatus = workspaceEnrichmentFresh
+		} else {
+			resp.EnrichmentStatus = workspaceEnrichmentStale
+		}
 	}
 	return resp
 }
@@ -147,11 +161,26 @@ func (s *Server) refreshWorkspaceResponse(
 	generation := s.supersedeWorkspaceEnrichment(summary.ID)
 	result := s.workspaceResponseWithEnrichment(ctx, summary)
 	if summary.Status == "ready" {
-		entry, _ := s.recordWorkspaceEnrichmentResult(
+		entry, recorded := s.recordWorkspaceEnrichmentResult(
 			summary.ID, generation, result,
 		)
-		applyWorkspaceEnrichmentCacheEntry(&result.response, entry)
+		return s.workspaceResponseAfterEnrichmentAttempt(
+			summary, result, entry, recorded,
+		)
 	}
+	return result.response
+}
+
+func (s *Server) workspaceResponseAfterEnrichmentAttempt(
+	summary *db.WorkspaceSummary,
+	result workspaceEnrichmentProbeResult,
+	entry workspaceEnrichmentCacheEntry,
+	recorded bool,
+) workspaceResponse {
+	if !recorded {
+		return s.workspaceResponseFromEnrichmentCacheEntry(summary, &entry)
+	}
+	applyWorkspaceEnrichmentCacheEntry(&result.response, entry)
 	return result.response
 }
 

@@ -71,6 +71,41 @@ func TestWorkspaceEnrichmentRejectsResultAfterGenerationIsTrimmed(t *testing.T) 
 	assert.NotContains(srv.workspaceEnrichmentCache, "deleted-workspace")
 }
 
+func TestWorkspaceEnrichmentSupersededResponseUsesCurrentCacheState(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	srv := &Server{now: func() time.Time { return now }}
+	summary := db.WorkspaceSummary{Workspace: db.Workspace{
+		ID:     "ws-superseded",
+		Status: "ready",
+	}}
+	currentAhead := 7
+	entry := workspaceEnrichmentCacheEntry{
+		response:              workspaceResponse{CommitsAhead: &currentAhead},
+		hasDivergence:         true,
+		divergenceRefreshedAt: now,
+	}
+	rejectedAhead := 1
+	rejectedError := "rejected probe failed"
+	result := workspaceEnrichmentProbeResult{response: workspaceResponse{
+		CommitsAhead:     &rejectedAhead,
+		TmuxWorking:      true,
+		EnrichmentStatus: workspaceEnrichmentFailed,
+		EnrichmentError:  &rejectedError,
+	}}
+
+	response := srv.workspaceResponseAfterEnrichmentAttempt(
+		&summary, result, entry, false,
+	)
+
+	require.NotNil(response.CommitsAhead)
+	assert.Equal(currentAhead, *response.CommitsAhead)
+	assert.False(response.TmuxWorking)
+	assert.Equal(workspaceEnrichmentFresh, response.EnrichmentStatus)
+	assert.Nil(response.EnrichmentError)
+}
+
 func TestWorkspaceEnrichmentPendingJobUsesLatestSummary(t *testing.T) {
 	require := require.New(t)
 	_, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)

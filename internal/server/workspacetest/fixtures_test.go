@@ -90,8 +90,9 @@ func setupWorkspaceServerFixture(
 	}
 	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
 	srv := server.New(database, syncer, nil, basePath, cfg, server.ServerOptions{
-		Clones:      clones,
-		WorktreeDir: worktreeDir,
+		Clones:                             clones,
+		WorktreeDir:                        worktreeDir,
+		DisableWorkspaceBackgroundMonitors: true,
 		HostCheck: server.HostCheckOptions{
 			Bind:    config.HostKey{Host: "127.0.0.1", Port: "8091"},
 			Allowed: []config.HostKey{{Host: "middleman.test", Port: ""}},

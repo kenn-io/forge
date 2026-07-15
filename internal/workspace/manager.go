@@ -609,19 +609,20 @@ func issueWorkspaceBranchConflict(
 }
 
 func workspaceHeadRepo(platformHost, owner, name, cloneURL string) *string {
-	if cloneURL == "" {
-		return nil
-	}
 	// MRHeadRepo means "this PR head must be resolved through fork-safe refs"
 	// in setup. GitHub also fills head.repo.clone_url for same-repo PRs, so
 	// compare clone identities before treating a non-empty URL as fork metadata.
 	headRepo := normalizeCloneRepoIdentity(cloneURL)
+	if headRepo == "" {
+		unknown := ""
+		return &unknown
+	}
 	baseRepo := strings.ToLower(strings.Join([]string{
 		normalizePlatformHostIdentity(platformHost),
 		strings.TrimSpace(owner),
 		strings.TrimSpace(name),
 	}, "/"))
-	if headRepo != "" && headRepo == baseRepo {
+	if headRepo == baseRepo {
 		return nil
 	}
 	s := cloneURL

@@ -45,6 +45,9 @@ type AgentContext struct {
 	// push must target to update the PR. It is forge-side state, unlike the
 	// locally discoverable checked-out branch.
 	HeadBranch string
+	// HeadRepoUnknown means the PR head repository identity was unavailable,
+	// so no origin push target is authorized.
+	HeadRepoUnknown bool
 	// ForkHeadRepo is set when the PR head lives in a fork, where pushing
 	// to origin does not update the PR.
 	ForkHeadRepo string
@@ -110,7 +113,9 @@ func BuildAgentContext(ws WorkspaceSummary) AgentContext {
 		// Prefer the currently synced PR head branch: the creation-time
 		// GitHeadRef snapshot goes stale when the head branch is renamed.
 		ctx.HeadBranch = firstNonEmpty(stringPtrValue(ws.MRHeadBranch), ws.GitHeadRef)
-		if ws.MRHeadRepo != nil {
+		if ws.MRHeadRepo != nil && strings.TrimSpace(*ws.MRHeadRepo) == "" {
+			ctx.HeadRepoUnknown = true
+		} else if ws.MRHeadRepo != nil {
 			ctx.ForkHeadRepo = *ws.MRHeadRepo
 		}
 	}
@@ -147,6 +152,9 @@ func RenderAgentContext(ctx AgentContext) string {
 	default:
 		writeMarkdownLine(&b, "PR", itemNumberLabel(ctx.ItemNumber))
 		switch {
+		case ctx.HeadRepoUnknown:
+			writeMarkdownLine(&b, "PR head",
+				ctx.HeadBranch+"; repository identity unavailable; no push upstream configured")
 		case ctx.ForkHeadRepo != "":
 			writeMarkdownLine(&b, "PR head",
 				forkHeadLabel(ctx.HeadBranch, ctx.ForkHeadRepo)+"; pushing to origin does not update this PR")

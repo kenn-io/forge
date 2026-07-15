@@ -791,6 +791,14 @@ func TestNormalizeCloneRepoIdentity(t *testing.T) {
 		"ghe.example.com:8443/fork/widget",
 		normalizeCloneRepoIdentity("https://ghe.example.com:8443/Fork/Widget.git"),
 	)
+	assert.Equal(
+		"gitlab.com/group/subgroup/project",
+		normalizeCloneRepoIdentity("https://gitlab.com/Group/Subgroup/Project.git"),
+	)
+	assert.Equal(
+		"gitlab.com/group/subgroup/project",
+		normalizeCloneRepoIdentity("git@gitlab.com:Group/Subgroup/Project.git"),
+	)
 	assert.Empty(normalizeCloneRepoIdentity("/tmp/workspace/remote.git"))
 	assert.Empty(normalizeCloneRepoIdentity("not a clone url"))
 }

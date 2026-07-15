@@ -10,7 +10,6 @@ import (
 
 	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
 )
 
 type PRAssociationUpdate struct {
@@ -347,11 +346,38 @@ func normalizeCloneRepoIdentity(cloneURL string) string {
 	if host == "" {
 		return ""
 	}
-	fullName := ghclient.ParseHeadRepoFullName(cloneURL)
-	if fullName == "" {
+	repoPath := cloneRepoPath(cloneURL)
+	if repoPath == "" {
 		return ""
 	}
-	return strings.ToLower(host + "/" + fullName)
+	return strings.ToLower(host + "/" + repoPath)
+}
+
+func cloneRepoPath(cloneURL string) string {
+	var repoPath string
+	if strings.Contains(cloneURL, "://") {
+		parsed, err := url.Parse(cloneURL)
+		if err != nil {
+			return ""
+		}
+		repoPath = parsed.Path
+	} else {
+		beforePath, path, ok := strings.Cut(cloneURL, ":")
+		if !ok || !strings.Contains(beforePath, "@") {
+			return ""
+		}
+		repoPath = path
+	}
+	unescaped, err := url.PathUnescape(repoPath)
+	if err != nil {
+		return ""
+	}
+	repoPath = strings.Trim(strings.TrimSpace(unescaped), "/")
+	repoPath = strings.TrimSuffix(repoPath, ".git")
+	if strings.Count(repoPath, "/") < 1 {
+		return ""
+	}
+	return repoPath
 }
 
 func normalizeCloneURLHost(cloneURL string) string {

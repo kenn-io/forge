@@ -732,7 +732,9 @@ type Workspace struct {
 	ItemKey            string
 	AssociatedPRNumber *int
 	GitHeadRef         string
-	MRHeadRepo         *string // nil for same-repo PRs
+	// MRHeadRepo is nil for confirmed same-repo PRs, non-nil empty when
+	// repository identity is unknown, and non-nil with a clone URL for forks.
+	MRHeadRepo *string
 	// WorkspaceBranch is the exact branch name checked out in the
 	// worktree after setup. Before setup completes it may contain the
 	// requested branch name or workspaceBranchUnknown.

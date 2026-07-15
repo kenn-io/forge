@@ -59,6 +59,22 @@ func TestBuildAgentContext(t *testing.T) {
 			},
 		},
 		{
+			name: "pull request with unknown head repo has no push target",
+			ws: WorkspaceSummary{
+				Workspace: db.Workspace{
+					ID: "ws-unknown-pr", Platform: "github", PlatformHost: "github.com",
+					RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypePullRequest,
+					ItemNumber: 44, GitHeadRef: "feature/unknown",
+					MRHeadRepo: ptr(""),
+				},
+			},
+			want: []string{
+				"Source kind: pull request",
+				"PR: #44",
+				"PR head: feature/unknown; repository identity unavailable; no push upstream configured",
+			},
+		},
+		{
 			name: "provider issue",
 			ws: WorkspaceSummary{
 				Workspace: db.Workspace{

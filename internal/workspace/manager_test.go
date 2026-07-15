@@ -62,21 +62,25 @@ func seedMR(
 	repoID int64, number int, headBranch string,
 ) {
 	t.Helper()
+	repo, err := d.GetRepoByID(t.Context(), repoID)
+	require.NoError(t, err)
+	require.NotNil(t, repo)
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	mr := &db.MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     repoID*10000 + int64(number),
-		Number:         number,
-		Title:          "Test PR",
-		Author:         "author",
-		State:          "open",
-		HeadBranch:     headBranch,
-		BaseBranch:     "main",
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		LastActivityAt: now,
+		RepoID:           repoID,
+		PlatformID:       repoID*10000 + int64(number),
+		Number:           number,
+		Title:            "Test PR",
+		Author:           "author",
+		State:            "open",
+		HeadBranch:       headBranch,
+		HeadRepoCloneURL: "https://" + repo.PlatformHost + "/" + repo.Owner + "/" + repo.Name + ".git",
+		BaseBranch:       "main",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		LastActivityAt:   now,
 	}
-	_, err := d.UpsertMergeRequest(t.Context(), mr)
+	_, err = d.UpsertMergeRequest(t.Context(), mr)
 	require.NoError(t, err)
 }
 
@@ -225,11 +229,15 @@ func TestWorkspaceSummaryCacheDoesNotResurrectDeletedWorkspace(t *testing.T) {
 func TestCreatePRHeadRepoClassification(t *testing.T) {
 	tests := []struct {
 		name           string
+		provider       string
 		platformHost   string
+		owner          string
+		repoName       string
 		number         int
 		headBranch     string
 		headRepoURL    string
 		wantMRHeadRepo string
+		wantUnknown    bool
 	}{
 		{
 			name:           "fork PR keeps head repo",
@@ -251,30 +259,69 @@ func TestCreatePRHeadRepoClassification(t *testing.T) {
 			headBranch:   "feature/enterprise",
 			headRepoURL:  "https://GHE.example.com:8443/Acme/Widget.git",
 		},
+		{
+			name:        "missing head repo metadata is unknown",
+			number:      247,
+			headBranch:  "feature/unknown",
+			wantUnknown: true,
+		},
+		{
+			name:         "same-repo GitLab nested group is not fork",
+			provider:     "gitlab",
+			platformHost: "gitlab.com",
+			owner:        "group/subgroup",
+			repoName:     "project",
+			number:       248,
+			headBranch:   "feature/nested",
+			headRepoURL:  "https://gitlab.com/group/subgroup/project.git",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
+			require := require.New(t)
 			d := openTestDB(t)
+			provider := tt.provider
+			if provider == "" {
+				provider = "github"
+			}
 			platformHost := tt.platformHost
 			if platformHost == "" {
 				platformHost = "github.com"
 			}
-			repoID := seedRepo(
-				t, d, platformHost, "acme", "widget",
-			)
+			owner := tt.owner
+			if owner == "" {
+				owner = "acme"
+			}
+			repoName := tt.repoName
+			if repoName == "" {
+				repoName = "widget"
+			}
+			repoID, err := d.UpsertRepo(t.Context(), db.RepoIdentity{
+				Platform:     provider,
+				PlatformHost: platformHost,
+				Owner:        owner,
+				Name:         repoName,
+				RepoPath:     owner + "/" + repoName,
+			})
+			require.NoError(err)
 			seedMRWithHeadRepo(
 				t, d, repoID, tt.number, tt.headBranch, tt.headRepoURL,
 			)
 
 			mgr := NewManager(d, t.TempDir())
 			ws, err := mgr.Create(
-				t.Context(), "github", platformHost, "acme", "widget", tt.number,
+				t.Context(), provider, platformHost, owner, repoName, tt.number,
 			)
-			require.NoError(t, err)
-			require.NotNil(t, ws)
+			require.NoError(err)
+			require.NotNil(ws)
 
+			if tt.wantUnknown {
+				require.NotNil(ws.MRHeadRepo)
+				assert.Empty(*ws.MRHeadRepo)
+				return
+			}
 			if tt.wantMRHeadRepo == "" {
 				// Same-repo PRs still have head repo clone URLs in GitHub
 				// payloads. Keeping MRHeadRepo nil sends workspace setup down
@@ -283,7 +330,7 @@ func TestCreatePRHeadRepoClassification(t *testing.T) {
 				assert.Nil(ws.MRHeadRepo)
 				return
 			}
-			require.NotNil(t, ws.MRHeadRepo)
+			require.NotNil(ws.MRHeadRepo)
 			assert.Equal(tt.wantMRHeadRepo, *ws.MRHeadRepo)
 		})
 	}

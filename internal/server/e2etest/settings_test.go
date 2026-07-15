@@ -1144,19 +1144,23 @@ func seedSettingsWorkspaceMR(
 	repoID int64, number int, headBranch string,
 ) {
 	t.Helper()
+	repo, err := database.GetRepoByID(t.Context(), repoID)
+	require.NoError(t, err)
+	require.NotNil(t, repo)
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
-	_, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     repoID*10000 + int64(number),
-		Number:         number,
-		Title:          "Test PR",
-		Author:         "author",
-		State:          db.MergeRequestStateOpen,
-		HeadBranch:     headBranch,
-		BaseBranch:     "main",
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		LastActivityAt: now,
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID:           repoID,
+		PlatformID:       repoID*10000 + int64(number),
+		Number:           number,
+		Title:            "Test PR",
+		Author:           "author",
+		State:            db.MergeRequestStateOpen,
+		HeadBranch:       headBranch,
+		HeadRepoCloneURL: "https://" + repo.PlatformHost + "/" + repo.Owner + "/" + repo.Name + ".git",
+		BaseBranch:       "main",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		LastActivityAt:   now,
 	})
 	require.NoError(t, err)
 }

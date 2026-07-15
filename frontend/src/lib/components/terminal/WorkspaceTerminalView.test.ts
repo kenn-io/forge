@@ -556,6 +556,48 @@ describe("WorkspaceTerminalView", () => {
     clearIntervalSpy.mockRestore();
   });
 
+  it("does not reapply identical runtime polls to an active terminal", async () => {
+    const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
+    vi.spyOn(globalThis, "setInterval").mockImplementation((callback: TimerHandler, delay?: number) => {
+      intervalCallbacks.push({ callback: callback as () => void, delay });
+      return 1 as unknown as ReturnType<typeof setInterval>;
+    });
+    vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    const requestAnimationFrameSpy = vi.fn((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal("requestAnimationFrame", requestAnimationFrameSpy);
+    const layoutStorageSpy = vi.spyOn(Storage.prototype, "setItem");
+    const runtimePayload = runtimeWithStaleSession();
+    mocks.getWorkspaceRuntime.mockImplementation(async () => structuredClone(runtimePayload));
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await screen.findByRole("tab", { name: /Helper/ });
+    await waitFor(() => expect(mocks.mockTerminalInstances).toHaveLength(1));
+    const runtimePoll = intervalCallbacks.find((interval) => interval.delay === 3000);
+    expect(runtimePoll).toBeTruthy();
+    const runtimeRequestCount = mocks.getWorkspaceRuntime.mock.calls.length;
+    const terminalCount = mocks.mockTerminalInstances.length;
+    mocks.mockFit.mockClear();
+    requestAnimationFrameSpy.mockClear();
+    layoutStorageSpy.mockClear();
+
+    runtimePoll!.callback();
+
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(runtimeRequestCount + 1));
+    await Promise.resolve();
+    expect(mocks.mockTerminalInstances).toHaveLength(terminalCount);
+    expect(mocks.mockFit).not.toHaveBeenCalled();
+    expect(requestAnimationFrameSpy).not.toHaveBeenCalled();
+    expect(layoutStorageSpy).not.toHaveBeenCalled();
+  });
+
   it("polls remote workspace runtime so peer-spawned sessions appear", async () => {
     localStorage.setItem("middleman-workspace-active-tab:fleet:member:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];

@@ -158,6 +158,13 @@
 
   let workspace = $state<Workspace | null>(null);
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
+  let appliedRuntimeState:
+    | {
+        workspaceId: string;
+        hostKey: string | undefined;
+        fingerprint: string;
+      }
+    | null = null;
   let runtimeFetchSeq = 0;
   let runtimeFetchInFlight:
     | Promise<WorkspaceRuntimeState | null>
@@ -1116,9 +1123,19 @@
           sessions: data.sessions.length,
         });
         if (!isCurrentWorkspace(id, hostKey) || seq !== runtimeFetchSeq) return null;
+        const fingerprint = JSON.stringify(data);
+        if (
+          appliedRuntimeState?.workspaceId === id &&
+          appliedRuntimeState.hostKey === hostKey &&
+          appliedRuntimeState.fingerprint === fingerprint
+        ) {
+          runtimeError = null;
+          return data;
+        }
         runtime = data;
         runtimeForId = id;
         runtimeForHostKey = hostKey;
+        appliedRuntimeState = { workspaceId: id, hostKey, fingerprint };
         runtimeError = null;
         terminalLayout = normalizeLayoutForSessions(data.sessions);
         if (
@@ -2352,6 +2369,12 @@
   // it in place.
   $effect(() => {
     const id = workspaceId;
+    if (
+      appliedRuntimeState?.workspaceId !== id ||
+      appliedRuntimeState.hostKey !== workspaceHostKey
+    ) {
+      appliedRuntimeState = null;
+    }
     // Route selection is the zero point for workspace-switch timing:
     // every workspace-switch:* measure is a duration from this call.
     // The token lets the cleanup below cancel exactly this switch when

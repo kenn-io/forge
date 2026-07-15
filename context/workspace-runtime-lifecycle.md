@@ -146,6 +146,13 @@ profile; see `frontend/tests/profiling/README.md`. Each measure's `detail.traceI
 joins it to the same request's server-side OTel trace, whose export is opt-in
 via `OTEL_TRACES_EXPORTER`.
 
+- Every frontend HTTP path, including hand-written runtime requests, must use
+  the shared traced fetch boundary so `traceparent` and `baggage` are not lost
+  when code bypasses the generated client (`frontend/src/lib/api/runtime.ts::tracedFetch`).
+- Base-path routing must preserve the inner Huma route pattern for outer OTel
+  middleware; otherwise prefixed API spans collapse to the base-path pattern
+  (`internal/server/otel_middleware.go::stripPrefixPreservingPattern`).
+
 ## Testing Expectations
 
 Prefer full-stack coverage when the bug crosses backend lifecycle and frontend

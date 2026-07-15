@@ -37,6 +37,20 @@ func otelSpanName(operation string, r *http.Request) string {
 	return operation
 }
 
+// stripPrefixPreservingPattern lets an inner ServeMux match against a
+// stripped path while copying that matched route back to the request
+// retained by outer middleware such as otelhttp.
+func stripPrefixPreservingPattern(prefix string, handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.StripPrefix(prefix, http.HandlerFunc(func(w http.ResponseWriter, stripped *http.Request) {
+			handler.ServeHTTP(w, stripped)
+			if stripped.Pattern != "" {
+				r.Pattern = stripped.Pattern
+			}
+		})).ServeHTTP(w, r)
+	})
+}
+
 // otelSpanMiddleware renames the otelhttp-created span to the matched
 // Huma route pattern (otelhttp cannot see it at span start) and copies
 // allow-listed baggage onto it.

@@ -1,5 +1,7 @@
 import type { LaunchTarget, RuntimeSession, WorkspaceRuntime } from "@middleman/ui/api/types";
 
+import { tracedFetch } from "./runtime.js";
+
 export type WorkspaceRuntimeState = Omit<WorkspaceRuntime, "launch_targets" | "sessions"> & {
   launch_targets: LaunchTarget[];
   sessions: RuntimeSession[];
@@ -45,7 +47,7 @@ export async function getWorkspaceRuntime(
   fetchFn: RuntimeFetch = fetch,
 ): Promise<WorkspaceRuntimeState> {
   const hostKey = typeof hostKeyOrFetch === "string" ? hostKeyOrFetch : undefined;
-  const runtimeFetch = typeof hostKeyOrFetch === "function" ? hostKeyOrFetch : fetchFn;
+  const runtimeFetch = tracedFetch(typeof hostKeyOrFetch === "function" ? hostKeyOrFetch : fetchFn);
   const response = await runtimeFetch(workspaceRuntimeURL(workspaceId, hostKey));
   const runtime = await readJSON<WorkspaceRuntime>(response, `GET workspace runtime failed (${response.status})`);
   return {
@@ -64,12 +66,13 @@ export async function launchWorkspaceSession(
 ): Promise<RuntimeSession> {
   const hostKey = typeof hostKeyOrRegionOrFetch === "string" ? hostKeyOrRegionOrFetch : undefined;
   const displayRegion = regionOrFetch === "workflow" || regionOrFetch === "terminal" ? regionOrFetch : undefined;
-  const runtimeFetch =
+  const runtimeFetch = tracedFetch(
     typeof hostKeyOrRegionOrFetch === "function"
       ? hostKeyOrRegionOrFetch
       : typeof regionOrFetch === "function"
         ? regionOrFetch
-        : fetchFn;
+        : fetchFn,
+  );
   const response = await runtimeFetch(`${workspaceRuntimeURL(workspaceId, hostKey)}/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -88,7 +91,7 @@ export async function stopWorkspaceSession(
   fetchFn: RuntimeFetch = fetch,
 ): Promise<void> {
   const hostKey = typeof hostKeyOrFetch === "string" ? hostKeyOrFetch : undefined;
-  const runtimeFetch = typeof hostKeyOrFetch === "function" ? hostKeyOrFetch : fetchFn;
+  const runtimeFetch = tracedFetch(typeof hostKeyOrFetch === "function" ? hostKeyOrFetch : fetchFn);
   const response = await runtimeFetch(
     `${workspaceRuntimeURL(workspaceId, hostKey)}/sessions/${encodeURIComponent(sessionKey)}`,
     {
@@ -109,7 +112,7 @@ export async function renameWorkspaceSession(
   fetchFn: RuntimeFetch = fetch,
 ): Promise<RuntimeSession> {
   const hostKey = typeof hostKeyOrFetch === "string" ? hostKeyOrFetch : undefined;
-  const runtimeFetch = typeof hostKeyOrFetch === "function" ? hostKeyOrFetch : fetchFn;
+  const runtimeFetch = tracedFetch(typeof hostKeyOrFetch === "function" ? hostKeyOrFetch : fetchFn);
   const response = await runtimeFetch(
     `${workspaceRuntimeURL(workspaceId, hostKey)}/sessions/${encodeURIComponent(sessionKey)}`,
     {

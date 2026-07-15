@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -58,4 +59,25 @@ func TestHTTPSpansParentedOnTraceparent(t *testing.T) {
 		}
 	}
 	assert.Equal("ws-9", attrs["workspace.id"])
+}
+
+func TestHTTPSpanUsesMatchedRouteUnderBasePath(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder)))
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+
+	database := dbtest.Open(t)
+	srv := New(database, nil, nil, "/middleman/", nil, ServerOptions{})
+
+	req := httptest.NewRequest(http.MethodGet, "/middleman/api/v1/sync/status", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	spanNames := make([]string, 0, len(recorder.Ended()))
+	for _, span := range recorder.Ended() {
+		spanNames = append(spanNames, span.Name())
+	}
+	assert.Contains(t, spanNames, "GET /api/v1/sync/status")
 }

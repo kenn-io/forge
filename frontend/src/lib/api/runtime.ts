@@ -1,4 +1,4 @@
-import type { Middleware, QuerySerializerOptions } from "openapi-fetch";
+import type { QuerySerializerOptions } from "openapi-fetch";
 
 import { createAPIClient } from "@middleman/ui/api/client";
 import type { components } from "@middleman/ui/api/schema";
@@ -23,23 +23,25 @@ export const querySerializer: QuerySerializerOptions = {
 
 // Attaches W3C trace context to every request so server spans join the
 // frontend's minted traces (see frontend/src/lib/instrumentation/traceContext.ts).
-const traceMiddleware: Middleware = {
-  onRequest({ request }) {
+export function tracedFetch(inner: FetchFn): FetchFn {
+  return (input, init) => {
+    const headers = new Headers(input instanceof Request ? input.headers : init?.headers);
+    if (input instanceof Request && init?.headers) {
+      new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+    }
     const { traceparent, baggage } = traceHeadersForRequest();
-    request.headers.set("traceparent", traceparent);
-    if (baggage !== null) request.headers.set("baggage", baggage);
-    return request;
-  },
-};
+    headers.set("traceparent", traceparent);
+    if (baggage !== null) headers.set("baggage", baggage);
+    return inner(input, { ...init, headers });
+  };
+}
 
 export function createRuntimeClient(fetch?: FetchFn, clientBaseURL = baseUrl) {
   const inner = fetch ?? ((...args: Parameters<typeof globalThis.fetch>) => globalThis.fetch(...args));
-  const apiClient = createAPIClient(clientBaseURL, {
-    fetch: csrfFetch(inner),
+  return createAPIClient(clientBaseURL, {
+    fetch: csrfFetch(tracedFetch(inner)),
     querySerializer,
   });
-  apiClient.use(traceMiddleware);
-  return apiClient;
 }
 
 export const client = createRuntimeClient();

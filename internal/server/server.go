@@ -886,7 +886,7 @@ func newServer(
 		prefix := strings.TrimSuffix(basePath, "/")
 		outer.Handle("/healthz", mux)
 		outer.Handle("/livez", mux)
-		outer.Handle(basePath, http.StripPrefix(prefix, mux))
+		outer.Handle(basePath, stripPrefixPreservingPattern(prefix, mux))
 		assembled = outer
 	} else {
 		assembled = mux

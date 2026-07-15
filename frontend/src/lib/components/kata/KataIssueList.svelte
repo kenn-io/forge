@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import ChevronUpIcon from "@lucide/svelte/icons/chevron-up";
@@ -17,6 +17,12 @@
     type KataTaskSortKey,
   } from "../../features/kata/taskSort.js";
 
+  export interface KataIssueRevealRequest {
+    uid: string;
+    chain: readonly KataTaskSummary[];
+    generation: number;
+  }
+
   interface Props {
     currentView: KataCurrentView;
     scopeLabel?: string;
@@ -26,6 +32,7 @@
     statusFilter?: KataTaskSearchFilters["status"];
     resetGeneration?: number;
     navigationGeneration?: number;
+    revealRequest?: KataIssueRevealRequest | null;
     api?: KataTaskAPI;
     onSelect: (issue: KataTaskSummary) => void;
     onOpenGraph?: ((issue: KataTaskSummary) => void) | undefined;
@@ -41,6 +48,7 @@
     statusFilter = "all",
     resetGeneration = 0,
     navigationGeneration = 0,
+    revealRequest = null,
     api = undefined,
     onSelect,
     onOpenGraph = undefined,
@@ -57,6 +65,9 @@
   let tableBody: HTMLDivElement | null = $state(null);
   let childLoadGeneration = 0;
   let lastResetGeneration = $state<number | null>(null);
+  let temporaryRevealChain = $state<readonly KataTaskSummary[]>([]);
+  let revealOwnedExpansionUIDs = $state<ReadonlySet<string>>(new Set());
+  let lastRevealGeneration: number | null = null;
 
   // When the user is scoped to a single project, server-side groupings
   // like "Today / This Evening" feel like noise — they're a kata
@@ -102,10 +113,19 @@
   // so keep its labeled region instead of dropping it to a bare list.
   let shouldFlatten = $derived(!isProjectScoped && sort.key === "updated" && visibleGroups.length > 1);
   let globalSortedIssues = $derived(shouldFlatten ? sortKataTasks(visibleGroups.flatMap((group) => group.issues), sort) : []);
-  let visibleRootIssues = $derived.by(() => {
+  let ordinaryRootIssues = $derived.by(() => {
     if (isProjectScoped) return sortKataTasks(flatIssues, sort);
     if (shouldFlatten) return globalSortedIssues;
     return visibleGroups.flatMap((group) => sortKataTasks(group.issues, sort));
+  });
+  let hasTemporaryReveal = $derived(temporaryRevealChain.length > 0);
+  let visibleRootIssues = $derived.by(() => {
+    const chainUIDs = new Set(temporaryRevealChain.map((issue) => issue.uid));
+    const ordinary = ordinaryRootIssues.filter(
+      (issue) => !chainUIDs.has(issue.uid) || issue.uid === temporaryRevealChain[0]?.uid,
+    );
+    const root = temporaryRevealChain[0];
+    return root && !ordinary.some((issue) => issue.uid === root.uid) ? [root, ...ordinary] : ordinary;
   });
   let knownExpandableIssues = $derived.by(() => collectKnownExpandableIssues(visibleRootIssues));
   let hasExpandableVisibleRows = $derived(knownExpandableIssues.length > 0);
@@ -164,8 +184,13 @@
     return selectedIssueUID === issue.uid;
   }
 
+  function revealSuccessor(issue: KataTaskSummary): KataTaskSummary | undefined {
+    const index = temporaryRevealChain.findIndex((candidate) => candidate.uid === issue.uid);
+    return index >= 0 ? temporaryRevealChain[index + 1] : undefined;
+  }
+
   function hasChildren(issue: KataTaskSummary): boolean {
-    return (issue.child_counts?.total ?? 0) > 0;
+    return revealSuccessor(issue) !== undefined || (issue.child_counts?.total ?? 0) > 0;
   }
 
   function priorityLabel(priority: number | undefined): string | null {
@@ -243,16 +268,20 @@
 
   async function loadChildren(issue: KataTaskSummary, generation: number): Promise<KataTaskSummary[]> {
     if (!hasChildren(issue)) return [];
-    if (childrenByUID[issue.uid]) return visibleChildren(issue);
-    if (!api) return [];
+    const successor = revealSuccessor(issue);
+    if (childrenByUID[issue.uid] && !successor) return visibleChildren(issue);
+    if (!api) return visibleChildren(issue);
 
     loadingChildren = { ...loadingChildren, [issue.uid]: true };
     try {
       const detail = await api.issue(issue.uid);
       if (generation !== childLoadGeneration || !findIssueByUID(issue.uid)) return [];
       const children = detail.children ?? [];
+      onRememberTasks?.([detail.issue, ...children]);
       childrenByUID = { ...childrenByUID, [issue.uid]: children };
-      return children.filter(issueMatchesStatusFilter);
+      return visibleChildren(issue);
+    } catch {
+      return visibleChildren(issue);
     } finally {
       if (generation === childLoadGeneration) {
         loadingChildren = { ...loadingChildren, [issue.uid]: false };
@@ -268,6 +297,9 @@
   ) {
     if (!hasChildren(issue) || seen.has(issue.uid)) return;
     seen.add(issue.uid);
+    revealOwnedExpansionUIDs = new Set(
+      [...revealOwnedExpansionUIDs].filter((uid) => uid !== issue.uid),
+    );
     nextExpanded[issue.uid] = true;
     expanded = { ...expanded, ...nextExpanded };
 
@@ -298,6 +330,7 @@
     if (!hasAnyExpandedRows && !bulkExpanding) return;
     childLoadGeneration += 1;
     expanded = {};
+    revealOwnedExpansionUIDs = new Set();
     loadingChildren = {};
     bulkExpanding = false;
     cancelPendingKeyboardSelect();
@@ -307,6 +340,9 @@
     event.stopPropagation();
     const uid = issue.uid;
     const currentlyExpanded = expanded[uid] === true;
+    revealOwnedExpansionUIDs = new Set(
+      [...revealOwnedExpansionUIDs].filter((ownedUID) => ownedUID !== uid),
+    );
     expanded = { ...expanded, [uid]: !currentlyExpanded };
     if (!currentlyExpanded && !childrenByUID[uid] && api) {
       const generation = childLoadGeneration;
@@ -361,7 +397,20 @@
 
   onDestroy(cancelPendingKeyboardSelect);
 
+  function clearTemporaryReveal(preserveExpansion = false) {
+    if (revealOwnedExpansionUIDs.size > 0) {
+      if (!preserveExpansion) {
+        expanded = Object.fromEntries(
+          Object.entries(expanded).filter(([uid]) => !revealOwnedExpansionUIDs.has(uid)),
+        );
+      }
+      revealOwnedExpansionUIDs = new Set();
+    }
+    if (temporaryRevealChain.length > 0) temporaryRevealChain = [];
+  }
+
   function selectNow(issue: KataTaskSummary) {
+    clearTemporaryReveal(true);
     cancelPendingKeyboardSelect();
     onSelect(issue);
   }
@@ -485,6 +534,8 @@
   }
 
   function findIssueByUID(uid: string): KataTaskSummary | undefined {
+    const temporary = temporaryRevealChain.find((issue) => issue.uid === uid);
+    if (temporary) return temporary;
     for (const group of statusVisibleGroups) {
       const match = group.issues.find((issue) => issue.uid === uid);
       if (match) return match;
@@ -497,8 +548,46 @@
   }
 
   function visibleChildren(issue: KataTaskSummary): KataTaskSummary[] {
-    return (childrenByUID[issue.uid] ?? []).filter(issueMatchesStatusFilter);
+    const children = childrenByUID[issue.uid] ?? [];
+    const successor = revealSuccessor(issue);
+    const visible = children.filter(
+      (child) => issueMatchesStatusFilter(child) || child.uid === successor?.uid,
+    );
+    if (successor && !visible.some((child) => child.uid === successor.uid)) {
+      visible.push(successor);
+    }
+    return visible;
   }
+
+  $effect(() => {
+    if (!revealRequest) {
+      clearTemporaryReveal();
+      lastRevealGeneration = null;
+      return;
+    }
+    if (revealRequest.generation === lastRevealGeneration) return;
+    clearTemporaryReveal();
+    lastRevealGeneration = revealRequest.generation;
+    temporaryRevealChain = revealRequest.chain.length > 1 ? revealRequest.chain : [];
+    const generation = childLoadGeneration;
+    void (async () => {
+      const request = revealRequest;
+      for (const issue of request.chain.slice(0, -1)) {
+        if (generation !== childLoadGeneration || revealRequest?.generation !== request.generation) return;
+        if (expanded[issue.uid] !== true) {
+          expanded = { ...expanded, [issue.uid]: true };
+          revealOwnedExpansionUIDs = new Set([...revealOwnedExpansionUIDs, issue.uid]);
+        }
+        await loadChildren(issue, generation);
+        if (generation !== childLoadGeneration || revealRequest?.generation !== request.generation) return;
+      }
+      await tick();
+      if (generation !== childLoadGeneration || revealRequest?.generation !== request.generation) return;
+      tableBody?.querySelector<HTMLElement>(`button.row[data-uid="${request.uid}"]`)?.scrollIntoView({
+        block: "nearest",
+      });
+    })();
+  });
 
   $effect(() => {
     if (lastResetGeneration === null) {
@@ -508,6 +597,7 @@
     if (resetGeneration === lastResetGeneration) return;
     lastResetGeneration = resetGeneration;
     childLoadGeneration += 1;
+    clearTemporaryReveal();
     expanded = {};
     childrenByUID = {};
     loadingChildren = {};
@@ -522,6 +612,8 @@
   let lastNavigationGeneration: number | null = null;
   $effect(() => {
     if (lastNavigationGeneration !== null && navigationGeneration !== lastNavigationGeneration) {
+      childLoadGeneration += 1;
+      clearTemporaryReveal();
       cancelPendingKeyboardSelect();
     }
     lastNavigationGeneration = navigationGeneration;
@@ -654,8 +746,12 @@
         <div class="empty">No tasks</div>
       {/if}
 
-      {#if isProjectScoped}
-        {#each sortKataTasks(flatIssues, sort) as issue (issue.uid)}
+      {#if hasTemporaryReveal}
+        {#each visibleRootIssues as issue (issue.uid)}
+          {@render row(issue)}
+        {/each}
+      {:else if isProjectScoped}
+        {#each visibleRootIssues as issue (issue.uid)}
           {@render row(issue)}
         {/each}
       {:else if shouldFlatten}

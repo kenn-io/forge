@@ -58,8 +58,18 @@ interface KataLoadOptions {
   selectFirst?: boolean | undefined;
 }
 
-interface KataBootstrapOptions {
-  selectFirst?: boolean | undefined;
+interface KataBootstrapOptions extends KataLoadOptions {}
+
+interface KataRefreshOptions extends KataLoadOptions {
+  refreshSelectedDetail?: boolean | undefined;
+  eventDriven?: boolean | undefined;
+}
+
+export interface KataEventDeliveryOptions {
+  // The workspace owns daemon identity, while the store owns cursor mutation.
+  // This guard lets an abandoned daemon generation finish its request without
+  // applying its response to the active daemon's shared store.
+  shouldApply?: (() => boolean) | undefined;
 }
 
 function emptyView(name: KataTaskViewName = "today"): KataCurrentView {
@@ -282,6 +292,31 @@ export function duplicateCandidatesFromError(error: unknown): KataDuplicateCandi
   });
 }
 
+export interface KataWorkspaceStoreSnapshot {
+  connection: KataConnectionState;
+  projects: KataProjectSummary[];
+  areas: KataAreaSummary[];
+  currentView: KataCurrentView;
+  selectedIssue: KataTaskDetail | null;
+  selectedEvents: KataTaskEvent[];
+  selectedRecurrences: KataRecurrence[];
+  searchFilters: KataTaskSearchFilters;
+  duplicateCandidates: KataDuplicateCandidateDisplay[];
+  cachedTasks: KataTaskSummary[];
+  eventCursor: number;
+  unscopedViewName: KataTaskViewName;
+}
+
+export class KataEventCursorSyncError extends Error {
+  readonly cursorSyncCause: unknown;
+
+  constructor(cursorSyncCause: unknown) {
+    super(cursorSyncCause instanceof Error ? cursorSyncCause.message : "Kata event cursor sync failed.");
+    this.name = "KataEventCursorSyncError";
+    this.cursorSyncCause = cursorSyncCause;
+  }
+}
+
 export class KataWorkspaceStore {
   readonly api: KataTaskAPI;
   connection = $state<KataConnectionState>({ status: "offline" });
@@ -305,9 +340,18 @@ export class KataWorkspaceStore {
   private viewAbort: AbortController | null = null;
   private detailRequestID = 0;
   private detailAbort: AbortController | null = null;
+  private selectedEventsRead: Promise<void> = Promise.resolve();
+  private selectedRecurrencesRead: Promise<void> = Promise.resolve();
   private unscopedViewName: KataTaskViewName = "today";
   private issueETags = new Map<string, string>();
   private metadataQueues = new Map<string, Promise<void>>();
+  // Cursor delivery is one ordered lane shared by paginated catch-up and SSE.
+  // A task starts only after its predecessor settles, so an event observed by
+  // both transports is deduplicated against the cursor before it can refresh
+  // the visible workspace a second time.
+  private eventDeliveryGeneration = 0;
+  private activeEventDeliveryGenerations = new Set<number>();
+  private pendingEventDeliveries = new Map<number, Array<() => void>>();
 
   constructor(options: CreateKataWorkspaceStoreOptions = {}) {
     this.api = options.api ?? createKataTaskAPI();
@@ -321,25 +365,81 @@ export class KataWorkspaceStore {
   }
 
   clearDaemonBinding(): void {
-    this.daemonId = undefined;
     this.api.bindWorkflowDaemon?.();
   }
 
-  bindDaemonForBootstrap(daemonId: string): void {
+  bindDaemonForBootstrap(daemonId: string, bindSharedAPI = true): void {
     this.daemonId = daemonId;
-    this.api.bindWorkflowDaemon?.(daemonId);
+    if (bindSharedAPI) this.api.bindWorkflowDaemon?.(daemonId);
   }
 
   clearDaemonState(viewName: KataTaskViewName = this.currentView.name): void {
+    this.eventDeliveryGeneration += 1;
     this.clearSelection();
+    this.daemonId = undefined;
     this.clearDaemonBinding();
     this.projects = [];
     this.areas = [];
     this.currentView = emptyView(viewName);
-    this.duplicateCandidates = [];
+    this.resetSearchFilters();
     this.clearTaskCache();
     this.issueETags.clear();
     this.resetEventCursor();
+  }
+
+  async loadProjectCatalog(shouldApply: () => boolean = () => true): Promise<void> {
+    const projects = await this.loadProjects();
+    if (!shouldApply()) return;
+    this.projects = projects.projects;
+    this.areas = deriveKataAreas(projects.projects);
+  }
+
+  resetToInertWorkspace(): void {
+    this.invalidatePendingLoads();
+    this.clearTaskCache();
+    this.issueETags.clear();
+    this.currentView = emptyView("all");
+    this.searchFilters = defaultKataTaskSearchFilters();
+    this.duplicateCandidates = [];
+    this.selectedIssue = null;
+    this.selectedEvents = [];
+    this.selectedRecurrences = [];
+    this.pendingSelectionUID = null;
+    this.unscopedViewName = "all";
+    this.connection = { status: "offline" };
+  }
+
+  captureSnapshot(): KataWorkspaceStoreSnapshot {
+    return {
+      connection: this.connection,
+      projects: this.projects,
+      areas: this.areas,
+      currentView: this.currentView,
+      selectedIssue: this.selectedIssue,
+      selectedEvents: this.selectedEvents,
+      selectedRecurrences: this.selectedRecurrences,
+      searchFilters: this.searchFilters,
+      duplicateCandidates: this.duplicateCandidates,
+      cachedTasks: this.cachedTasks,
+      eventCursor: this.eventCursor,
+      unscopedViewName: this.unscopedViewName,
+    };
+  }
+
+  restoreSnapshot(snapshot: KataWorkspaceStoreSnapshot): void {
+    this.resetToInertWorkspace();
+    this.connection = snapshot.connection;
+    this.projects = snapshot.projects;
+    this.areas = snapshot.areas;
+    this.currentView = snapshot.currentView;
+    this.selectedIssue = snapshot.selectedIssue;
+    this.selectedEvents = snapshot.selectedEvents;
+    this.selectedRecurrences = snapshot.selectedRecurrences;
+    this.searchFilters = snapshot.searchFilters;
+    this.duplicateCandidates = snapshot.duplicateCandidates;
+    this.cacheTasks(snapshot.cachedTasks);
+    this.eventCursor = snapshot.eventCursor;
+    this.unscopedViewName = snapshot.unscopedViewName;
   }
 
   async bootstrap(
@@ -347,14 +447,17 @@ export class KataWorkspaceStore {
     preferredIssueUID?: string | null,
     options: KataBootstrapOptions = {},
   ): Promise<void> {
+    if (!shouldApplyLoad(options)) return;
     const { requestID, signal } = this.beginViewRequest();
     this.connection = { status: "connecting" };
     try {
-      await this.api.instance({ signal });
+      await this.loadInstance(signal);
+      if (!shouldApplyLoad(options)) return;
       const [projects, view] = await Promise.all([
-        this.api.projects({ signal }),
+        this.loadProjects(signal),
         this.loadIssues({ view: viewName }, signal),
       ]);
+      if (!shouldApplyLoad(options)) return;
       if (requestID !== this.viewRequestID) {
         this.connection = { status: "online" };
         return;
@@ -377,14 +480,40 @@ export class KataWorkspaceStore {
         preferredIssueUID && rawIssues.some((issue) => issue.uid === preferredIssueUID)
           ? preferredIssueUID
           : firstIssue?.uid;
-      await this.loadSelectedIssue(nextUID ?? preferredIssueUID ?? null, requestID, ++this.detailRequestID);
-      this.connection = { status: "online" };
+      await this.loadSelectedIssue(nextUID ?? preferredIssueUID ?? null, requestID, ++this.detailRequestID, options);
+      if (shouldApplyLoad(options)) this.connection = { status: "online" };
     } catch (error) {
-      if (requestID !== this.viewRequestID) return;
+      if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
       this.connection = {
         status: "error",
         message: connectionErrorMessage(error),
       };
+      throw error;
+    }
+  }
+
+  async restoreViewAndFilters(
+    viewName: KataTaskViewName,
+    filters: KataTaskSearchFilters,
+    options: KataLoadOptions = {},
+  ): Promise<void> {
+    const snapshot = this.captureSnapshot();
+    const expectedRequestID = () => this.viewRequestID + 1;
+    let rollbackRequestID = expectedRequestID();
+    try {
+      this.searchFilters = filters;
+      this.duplicateCandidates = [];
+      await this.openView(viewName, { ...options, selectFirst: false });
+      if (hasActiveSearchFilters(filters)) {
+        rollbackRequestID = expectedRequestID();
+        await this.updateSearchFilters({}, { ...options, selectFirst: false });
+      }
+    } catch (error) {
+      // A restored workspace is accepted only after every required load
+      // succeeds. Do not roll back over a newer navigation that superseded it.
+      if (this.viewRequestID === rollbackRequestID) {
+        this.restoreSnapshot(snapshot);
+      }
       throw error;
     }
   }
@@ -411,7 +540,7 @@ export class KataWorkspaceStore {
       this.unscopedViewName = view.view;
     }
     const firstIssue = options.selectFirst === false ? undefined : selectableViewIssues(view.groups)[0];
-    await this.loadSelectedIssue(firstIssue?.uid ?? null, requestID, ++this.detailRequestID);
+    await this.loadSelectedIssue(firstIssue?.uid ?? null, requestID, ++this.detailRequestID, options);
   }
 
   async updateSearchFilters(next: Partial<KataTaskSearchFilters>, options: KataLoadOptions = {}): Promise<void> {
@@ -450,7 +579,7 @@ export class KataWorkspaceStore {
         fetched_at: results.fetched_at,
       };
       const firstIssue = options.selectFirst === false ? undefined : selectableViewIssues(groups)[0];
-      await this.loadSelectedIssue(firstIssue?.uid ?? null, requestID, ++this.detailRequestID);
+      await this.loadSelectedIssue(firstIssue?.uid ?? null, requestID, ++this.detailRequestID, options);
     } catch (error) {
       if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
       this.duplicateCandidates = duplicateCandidatesFromError(error);
@@ -491,7 +620,7 @@ export class KataWorkspaceStore {
         this.unscopedViewName = view.view;
       }
       const firstIssue = options.selectFirst === false ? undefined : selectableViewIssues(view.groups)[0];
-      await this.loadSelectedIssue(firstIssue?.uid ?? null, requestID, ++this.detailRequestID);
+      await this.loadSelectedIssue(firstIssue?.uid ?? null, requestID, ++this.detailRequestID, options);
       return;
     }
 
@@ -513,7 +642,7 @@ export class KataWorkspaceStore {
         fetched_at: results.fetched_at,
       };
       const firstIssue = options.selectFirst === false ? undefined : selectableViewIssues(groups)[0];
-      await this.loadSelectedIssue(firstIssue?.uid ?? null, requestID, ++this.detailRequestID);
+      await this.loadSelectedIssue(firstIssue?.uid ?? null, requestID, ++this.detailRequestID, options);
     } catch (error) {
       if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
       this.searchFilters = nextFilters;
@@ -534,7 +663,7 @@ export class KataWorkspaceStore {
     await this.withMutation(async () => {
       const inbox =
         this.projects.find(isTaskInboxProject) ??
-        (await this.api.projects()).projects.find((project) => isTaskInboxProject(project));
+        (await this.loadProjects()).projects.find((project) => isTaskInboxProject(project));
       if (!inbox) throw new Error("task inbox project is not available");
 
       const result = await this.api.createIssue(inbox.id, actor, draft, idempotencyKey);
@@ -566,12 +695,13 @@ export class KataWorkspaceStore {
     });
   }
 
-  async selectIssue(uid: string): Promise<boolean> {
+  async selectIssue(uid: string, options: KataLoadOptions = {}): Promise<boolean> {
+    if (!shouldApplyLoad(options)) return false;
     this.pendingSelectionUID = uid;
     const requestID = ++this.detailRequestID;
     this.observeGraphStore("selection-start", { uid, detailRequestID: requestID });
     try {
-      return await this.loadSelectedIssue(uid, undefined, requestID);
+      return await this.loadSelectedIssue(uid, undefined, requestID, options);
     } catch (error) {
       if (this.detailRequestID === requestID && this.pendingSelectionUID === uid) {
         this.pendingSelectionUID = null;
@@ -587,6 +717,10 @@ export class KataWorkspaceStore {
     this.selectedEvents = [];
     this.selectedRecurrences = [];
     this.pendingSelectionUID = null;
+  }
+
+  async awaitSelectedAuxiliaryReads(): Promise<void> {
+    await Promise.all([this.selectedEventsRead, this.selectedRecurrencesRead]);
   }
 
   async addComment(uid: string, actor: string, body: string): Promise<void> {
@@ -736,65 +870,147 @@ export class KataWorkspaceStore {
     this.eventCursor = 0;
   }
 
-  async syncEventCursor(): Promise<void> {
+  async syncEventCursor(options: KataEventDeliveryOptions = {}): Promise<boolean> {
+    return this.enqueueEventDelivery(() => this.syncEventCursorNow(options));
+  }
+
+  async applyRemoteEvent(event: KataTaskEvent, options: KataEventDeliveryOptions = {}): Promise<boolean> {
+    return this.enqueueEventDelivery(() => this.applyRemoteEventNow(event, options));
+  }
+
+  async applyEventStreamMessage(
+    message: KataTaskEventStreamMessage,
+    options: KataEventDeliveryOptions = {},
+  ): Promise<boolean> {
+    return this.enqueueEventDelivery(() => this.applyEventStreamMessageNow(message, options));
+  }
+
+  private enqueueEventDelivery<T>(operation: () => Promise<T>): Promise<T> {
+    const generation = this.eventDeliveryGeneration;
+    return new Promise<T>((resolve, reject) => {
+      const run = () => {
+        void operation()
+          .then(resolve, reject)
+          .finally(() => {
+            const queue = this.pendingEventDeliveries.get(generation);
+            const next = queue?.shift();
+            if (next) {
+              next();
+            } else {
+              this.pendingEventDeliveries.delete(generation);
+              this.activeEventDeliveryGenerations.delete(generation);
+            }
+          });
+      };
+      if (this.activeEventDeliveryGenerations.has(generation)) {
+        const queue = this.pendingEventDeliveries.get(generation) ?? [];
+        queue.push(run);
+        this.pendingEventDeliveries.set(generation, queue);
+      } else {
+        this.activeEventDeliveryGenerations.add(generation);
+        run();
+      }
+    });
+  }
+
+  private shouldApplyEventDelivery(options: KataEventDeliveryOptions): boolean {
+    return options.shouldApply?.() ?? true;
+  }
+
+  private async syncEventCursorNow(options: KataEventDeliveryOptions): Promise<boolean> {
+    if (!this.shouldApplyEventDelivery(options)) return false;
+
     let afterID = this.eventCursor;
     const pendingEvents: KataTaskEvent[] = [];
+    let pageError: unknown;
+
     for (;;) {
-      const response = await this.api.events({ after_id: afterID, limit: 100 });
+      let response: KataTaskEventsResponse;
+      try {
+        response = await this.loadEvents({ after_id: afterID, limit: 100 });
+      } catch (error) {
+        pageError = error;
+        break;
+      }
+      if (!this.shouldApplyEventDelivery(options)) return false;
+
       const nextAfterID = Math.max(afterID, response.next_after_id, ...response.events.map((event) => event.event_id));
       if (response.reset_required) {
-        await this.applyEventStreamMessage({
-          kind: "reset",
-          event_id: nextAfterID,
-          reset_after_id: response.reset_after_id ?? nextAfterID,
-          lastEventID: nextAfterID,
-        });
-        return;
+        return this.applyEventStreamMessageNow(
+          {
+            kind: "reset",
+            event_id: nextAfterID,
+            reset_after_id: response.reset_after_id ?? nextAfterID,
+            lastEventID: nextAfterID,
+          },
+          options,
+        );
       }
+
       pendingEvents.push(...response.events.filter((event) => event.event_id > this.eventCursor));
       const reachedEnd = response.events.length === 0 || nextAfterID === afterID;
       afterID = nextAfterID;
       if (reachedEnd) break;
     }
-    if (pendingEvents.length === 0) {
+
+    let membershipRefreshed = false;
+    if (pendingEvents.length > 0) {
+      membershipRefreshed = await this.refreshForRemoteEvents(pendingEvents, options);
+      if (!this.shouldApplyEventDelivery(options)) return false;
+      if (membershipRefreshed) this.eventCursor = Math.max(this.eventCursor, afterID);
+    } else if (pageError === undefined) {
       this.eventCursor = Math.max(this.eventCursor, afterID);
-      return;
     }
-    const refreshed = await this.refreshForRemoteEvents(pendingEvents);
-    if (!refreshed) return;
-    this.eventCursor = Math.max(this.eventCursor, afterID);
+
+    if (pageError !== undefined) {
+      if (membershipRefreshed) throw new KataEventCursorSyncError(pageError);
+      throw pageError;
+    }
+    return membershipRefreshed;
   }
 
-  async applyRemoteEvent(event: KataTaskEvent): Promise<boolean> {
+  private async applyRemoteEventNow(event: KataTaskEvent, options: KataEventDeliveryOptions): Promise<boolean> {
+    if (!this.shouldApplyEventDelivery(options)) return false;
     if (event.event_id <= this.eventCursor) return true;
-    const refreshed = await this.refreshForRemoteEvents([event]);
-    if (!refreshed) return false;
-    this.eventCursor = event.event_id;
+    const refreshed = await this.refreshForRemoteEvents([event], options);
+    if (!this.shouldApplyEventDelivery(options) || !refreshed) return false;
+    this.eventCursor = Math.max(this.eventCursor, event.event_id);
     return true;
   }
 
-  async applyEventStreamMessage(message: KataTaskEventStreamMessage): Promise<void> {
+  private async applyEventStreamMessageNow(
+    message: KataTaskEventStreamMessage,
+    options: KataEventDeliveryOptions,
+  ): Promise<boolean> {
+    if (!this.shouldApplyEventDelivery(options)) return false;
     if (message.kind === "reset") {
+      if (message.reset_after_id <= this.eventCursor) return true;
       const refreshed = await this.refreshCurrentView(
         this.pendingSelectionUID ?? this.selectedIssue?.issue.uid ?? null,
+        { eventDriven: true, shouldApply: options.shouldApply },
       );
-      if (refreshed) {
+      if (refreshed && this.shouldApplyEventDelivery(options)) {
         this.eventCursor = Math.max(this.eventCursor, message.reset_after_id);
       }
-      return;
+      return refreshed && this.shouldApplyEventDelivery(options);
     }
-    await this.applyRemoteEvent(message.event);
+    return this.applyRemoteEventNow(message.event, options);
   }
 
-  private async reloadProjects(): Promise<void> {
-    const projects = await this.api.projects();
+  private async reloadProjects(shouldApply?: () => boolean): Promise<void> {
+    const projects = await this.loadProjects();
+    if (shouldApply?.() === false) return;
     this.projects = projects.projects;
     this.areas = deriveKataAreas(projects.projects);
   }
 
-  private async refreshForRemoteEvents(events: readonly KataTaskEvent[]): Promise<boolean> {
+  private async refreshForRemoteEvents(
+    events: readonly KataTaskEvent[],
+    options: KataEventDeliveryOptions = {},
+  ): Promise<boolean> {
     if (events.some((event) => event.type.startsWith("project."))) {
-      await this.reloadProjects();
+      await this.reloadProjects(options.shouldApply);
+      if (!this.shouldApplyEventDelivery(options)) return false;
     }
     const preferredUID = this.pendingSelectionUID ?? this.selectedIssue?.issue.uid ?? null;
     const selectedProjectID = this.selectedIssue?.issue.project_id;
@@ -804,11 +1020,13 @@ export class KataWorkspaceStore {
         event.related_issue_uid === preferredUID ||
         (event.type.startsWith("project.") && event.project_id === selectedProjectID),
     );
-    const refreshed = await this.refreshCurrentView(preferredUID, { refreshSelectedDetail });
-    if (!refreshed) return false;
-    for (const event of events) {
-      this.applyTrivialMetadataEvent(event);
-    }
+    const refreshed = await this.refreshCurrentView(preferredUID, {
+      refreshSelectedDetail,
+      eventDriven: true,
+      shouldApply: options.shouldApply,
+    });
+    if (!this.shouldApplyEventDelivery(options) || !refreshed) return false;
+    for (const event of events) this.applyTrivialMetadataEvent(event);
     return true;
   }
 
@@ -841,7 +1059,6 @@ export class KataWorkspaceStore {
     const daemonId = result.daemon_id?.trim();
     if (!daemonId) return;
     this.daemonId = daemonId;
-    this.api.bindWorkflowDaemon?.(daemonId);
   }
 
   private workflowRequestOptions(signal?: AbortSignal): { daemonId?: string; signal?: AbortSignal } | undefined {
@@ -850,6 +1067,24 @@ export class KataWorkspaceStore {
       ...(this.daemonId ? { daemonId: this.daemonId } : {}),
       ...(signal ? { signal } : {}),
     };
+  }
+
+  private loadInstance(signal?: AbortSignal): Promise<Awaited<ReturnType<KataTaskAPI["instance"]>>> {
+    const options = this.workflowRequestOptions(signal);
+    return options ? this.api.instance(options) : this.api.instance();
+  }
+
+  private loadProjects(signal?: AbortSignal): Promise<Awaited<ReturnType<KataTaskAPI["projects"]>>> {
+    const options = this.workflowRequestOptions(signal);
+    return options ? this.api.projects(options) : this.api.projects();
+  }
+
+  private loadEvents(
+    query: Parameters<KataTaskAPI["events"]>[0],
+    options: Omit<NonNullable<Parameters<KataTaskAPI["events"]>[1]>, "daemonId"> = {},
+  ): Promise<KataTaskEventsResponse> {
+    const workflowOptions = this.workflowRequestOptions(options.signal);
+    return this.api.events(query, { ...options, ...workflowOptions });
   }
 
   private loadIssues(query: KataTaskIssuesQuery, signal?: AbortSignal): Promise<KataTaskViewResponse> {
@@ -1032,10 +1267,8 @@ export class KataWorkspaceStore {
     }
   }
 
-  private async refreshCurrentView(
-    preferredUID?: string | null,
-    options: { refreshSelectedDetail?: boolean } = {},
-  ): Promise<boolean> {
+  private async refreshCurrentView(preferredUID?: string | null, options: KataRefreshOptions = {}): Promise<boolean> {
+    if (!shouldApplyLoad(options)) return false;
     const { requestID, signal } = this.beginViewRequest();
     // Selection epoch at refresh start: any selection or clear that lands
     // while the view fetch below is in flight bumps detailRequestID,
@@ -1048,12 +1281,12 @@ export class KataWorkspaceStore {
       try {
         results = await this.searchIssues(this.searchFilters, signal);
       } catch (error) {
-        if (requestID !== this.viewRequestID) return false;
+        if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return false;
         this.duplicateCandidates = duplicateCandidatesFromError(error);
         if (this.duplicateCandidates.length === 0) throw error;
         return false;
       }
-      if (requestID !== this.viewRequestID) return false;
+      if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return false;
       this.acceptWorkflowResult(results);
       this.duplicateCandidates = [];
       this.cacheTasks(results.issues);
@@ -1069,12 +1302,12 @@ export class KataWorkspaceStore {
       try {
         view = await this.loadIssues({ view: this.currentView.name, ...scopedIssueQuery(this.searchFilters) }, signal);
       } catch (error) {
-        if (requestID !== this.viewRequestID) return false;
+        if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return false;
         this.duplicateCandidates = duplicateCandidatesFromError(error);
         if (this.duplicateCandidates.length === 0) throw error;
         return false;
       }
-      if (requestID !== this.viewRequestID) return false;
+      if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return false;
       this.acceptWorkflowResult(view);
       this.duplicateCandidates = [];
       this.cacheView(view);
@@ -1105,18 +1338,28 @@ export class KataWorkspaceStore {
       resolvedUID = this.pendingSelectionUID ?? this.selectedIssue?.issue.uid ?? null;
     }
     const nextSelectedUID = resolvedUID === undefined ? (issues[0]?.uid ?? null) : resolvedUID;
-    return await this.loadSelectedIssue(nextSelectedUID, requestID, ++this.detailRequestID);
+    try {
+      return await this.loadSelectedIssue(nextSelectedUID, requestID, ++this.detailRequestID, options);
+    } catch (error) {
+      if (!shouldApplyLoad(options)) return false;
+      // Event delivery can accept authoritative list membership even if a
+      // selected detail cannot be refreshed. Interactive callers must retain
+      // the failure so their action is not reported as fully refreshed.
+      if (options.eventDriven) return true;
+      throw error;
+    }
   }
 
   private async loadSelectedIssue(
     uid: string | null,
     viewRequestID: number | undefined,
     detailRequestID: number,
+    options: KataLoadOptions = {},
   ): Promise<boolean> {
     this.abortPendingDetail();
 
     if (!uid) {
-      if (viewRequestID === undefined || viewRequestID === this.viewRequestID) {
+      if (shouldApplyLoad(options) && (viewRequestID === undefined || viewRequestID === this.viewRequestID)) {
         this.selectedIssue = null;
         this.selectedEvents = [];
         this.selectedRecurrences = [];
@@ -1135,11 +1378,12 @@ export class KataWorkspaceStore {
     // The events read may walk the daemon's whole event log (the daemon has
     // no issue_uid filter), which takes seconds against remote daemons. Start
     // it alongside the detail read so the pane never waits on the walk.
-    const eventsPromise = this.api.events({ issue_uid: uid, limit: 100 }, { signal: abort.signal });
+    const requestOptions = this.workflowRequestOptions();
+    const eventsPromise = this.loadEvents({ issue_uid: uid, limit: 100 }, { signal: abort.signal });
     eventsPromise.catch(() => {});
     let detail: KataTaskDetail;
     try {
-      detail = await this.api.issue(uid, { signal: abort.signal });
+      detail = await this.api.issue(uid, { signal: abort.signal, ...requestOptions });
     } catch (error) {
       if (this.detailAbort === abort) this.detailAbort = null;
       clearInteraction(KATA_SELECT_ISSUE_INTERACTION, timingToken);
@@ -1166,10 +1410,10 @@ export class KataWorkspaceStore {
       this.pendingSelectionUID = null;
       this.observeGraphStore("detail-load-complete", { uid, detailRequestID });
       measureInteraction(KATA_SELECT_ISSUE_INTERACTION, "detail-visible", timingToken, { uid });
-      void this.loadSelectedRecurrences(detail.issue.project_id, detailRequestID);
+      this.selectedRecurrencesRead = this.loadSelectedRecurrences(detail.issue.project_id, detailRequestID);
     };
 
-    if (viewRequestID !== undefined && viewRequestID !== this.viewRequestID) {
+    if (!shouldApplyLoad(options) || (viewRequestID !== undefined && viewRequestID !== this.viewRequestID)) {
       this.observeGraphStore("detail-load-stale", { uid, detailRequestID, viewRequestID });
       clearInteraction(KATA_SELECT_ISSUE_INTERACTION, timingToken);
       return false;
@@ -1183,7 +1427,7 @@ export class KataWorkspaceStore {
     // event log. The selected detail is already usable, so history fills in
     // as a guarded continuation instead of extending list/view loading.
     applyDetail();
-    void this.finishSelectedEvents(eventsPromise, abort, uid, detailRequestID, timingToken);
+    this.selectedEventsRead = this.finishSelectedEvents(eventsPromise, abort, uid, detailRequestID, timingToken);
     return true;
   }
 
@@ -1236,7 +1480,8 @@ export class KataWorkspaceStore {
   }
 
   private async recurrencesForProject(projectID: number): Promise<KataRecurrence[]> {
-    const response = await this.api.recurrences(projectID);
+    const options = this.workflowRequestOptions();
+    const response = options ? await this.api.recurrences(projectID, options) : await this.api.recurrences(projectID);
     return response.recurrences;
   }
 }

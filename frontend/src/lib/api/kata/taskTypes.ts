@@ -381,10 +381,15 @@ export interface KataTaskIssuesQuery {
   area?: string | undefined;
 }
 
+export interface KataTaskRequestOptions {
+  daemonId?: string | undefined;
+  signal?: AbortSignal | undefined;
+}
+
 export interface KataTaskAPI {
   bindWorkflowDaemon?(daemonId?: string): void;
-  instance(opts?: { signal?: AbortSignal }): Promise<KataInstanceResponse>;
-  projects(opts?: { signal?: AbortSignal }): Promise<KataProjectsResponse>;
+  instance(opts?: KataTaskRequestOptions): Promise<KataInstanceResponse>;
+  projects(opts?: KataTaskRequestOptions): Promise<KataProjectsResponse>;
   createProject(name: string): Promise<KataProjectSummary>;
   renameProject(projectID: number, name: string): Promise<KataProjectSummary>;
   patchProjectMetadata(
@@ -399,19 +404,19 @@ export interface KataTaskAPI {
     draft: KataTaskCreateDraft,
     idempotencyKey?: string | undefined,
   ): Promise<KataTaskMutationResponse>;
-  issues(query: KataTaskIssuesQuery, opts?: { daemonId?: string; signal?: AbortSignal }): Promise<KataTaskViewResponse>;
-  search(
-    filters: KataTaskSearchFilters,
-    opts?: { daemonId?: string; signal?: AbortSignal },
-  ): Promise<KataTaskSearchResponse>;
-  issue(uid: string, opts?: { daemonId?: string; pinned?: boolean; signal?: AbortSignal }): Promise<KataTaskDetail>;
+  issues(query: KataTaskIssuesQuery, opts?: KataTaskRequestOptions): Promise<KataTaskViewResponse>;
+  search(filters: KataTaskSearchFilters, opts?: KataTaskRequestOptions): Promise<KataTaskSearchResponse>;
+  issue(uid: string, opts?: KataTaskRequestOptions & { pinned?: boolean | undefined }): Promise<KataTaskDetail>;
   reachableGraph(
     projectID: number,
     ref: string,
     query?: KataReachableGraphQuery,
     opts?: { daemonId?: string; signal?: AbortSignal },
   ): Promise<KataReachableGraphResponse>;
-  events(query?: KataTaskEventsQuery, opts?: { signal?: AbortSignal }): Promise<KataTaskEventsResponse>;
+  events(
+    query?: KataTaskEventsQuery,
+    opts?: KataTaskRequestOptions & { signal?: AbortSignal },
+  ): Promise<KataTaskEventsResponse>;
   addComment(target: KataTaskMutationTarget, actor: string, body: string): Promise<KataTaskMutationResponse>;
   addLabel(target: KataTaskMutationTarget, actor: string, label: string): Promise<KataTaskMutationResponse>;
   removeLabel(target: KataTaskMutationTarget, actor: string, label: string): Promise<KataTaskMutationResponse>;
@@ -441,7 +446,7 @@ export interface KataTaskAPI {
     toProjectUID: string,
     ifMatch: string,
   ): Promise<KataTaskMoveResponse>;
-  recurrences(projectID: number): Promise<KataRecurrencesResponse>;
+  recurrences(projectID: number, opts?: KataTaskRequestOptions): Promise<KataRecurrencesResponse>;
   createRecurrence(projectID: number, input: KataCreateRecurrenceInput): Promise<KataRecurrenceResponse>;
   showRecurrence(projectID: number, recurrenceUID: string): Promise<KataRecurrenceResponse>;
   patchRecurrence(

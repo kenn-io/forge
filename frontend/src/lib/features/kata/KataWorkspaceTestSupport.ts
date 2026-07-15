@@ -236,13 +236,28 @@ function reachableGraph(
   };
 }
 
-function createDaemonWorkspaceAPI(rowsByDaemon: Record<string, KataTaskSummary[]>): KataTaskAPI {
-  function rows(): KataTaskSummary[] {
-    return rowsByDaemon[getActiveKataDaemon() ?? getDefaultKataDaemon() ?? "home"] ?? [];
+function createDaemonWorkspaceAPI(
+  rowsByDaemon: Record<string, KataTaskSummary[]>,
+  projectsByDaemon: Record<string, KataProjectSummary[]> = {},
+): KataTaskAPI {
+  let workflowDaemonID: string | undefined;
+
+  function daemonID(explicitDaemonID?: string): string {
+    return explicitDaemonID ?? workflowDaemonID ?? getActiveKataDaemon() ?? getDefaultKataDaemon() ?? "home";
+  }
+
+  function rows(explicitDaemonID?: string): KataTaskSummary[] {
+    return rowsByDaemon[daemonID(explicitDaemonID)] ?? [];
+  }
+
+  function projectCatalog(explicitDaemonID?: string): KataProjectSummary[] {
+    return projectsByDaemon[daemonID(explicitDaemonID)] ?? projects;
   }
 
   return {
-    bindWorkflowDaemon: vi.fn(),
+    bindWorkflowDaemon: vi.fn((daemonID?: string) => {
+      workflowDaemonID = daemonID;
+    }),
     instance: vi.fn(
       async (): Promise<KataInstanceResponse> => ({
         instance_uid: "instance-1",
@@ -250,7 +265,7 @@ function createDaemonWorkspaceAPI(rowsByDaemon: Record<string, KataTaskSummary[]
         schema_version: 1,
       }),
     ),
-    projects: vi.fn(async () => ({ projects, fetched_at: fetchedAt })),
+    projects: vi.fn(async (opts) => ({ projects: projectCatalog(opts?.daemonId), fetched_at: fetchedAt })),
     createProject: vi.fn(async (name: string) => ({
       id: 90,
       uid: `project-${name.toLowerCase()}`,
@@ -282,30 +297,34 @@ function createDaemonWorkspaceAPI(rowsByDaemon: Record<string, KataTaskSummary[]
       },
       etag: '"rev-1"',
     })),
-    issues: vi.fn(async (query: KataTaskIssuesQuery) =>
-      buildKataTaskView({
+    issues: vi.fn(async (query: KataTaskIssuesQuery, opts) => ({
+      ...buildKataTaskView({
         view: query.view,
-        issues: rows().filter((item) => (query.project_uid ? item.project_uid === query.project_uid : true)),
-        projects,
+        issues: rows(opts?.daemonId).filter((item) =>
+          query.project_uid ? item.project_uid === query.project_uid : true,
+        ),
+        projects: projectCatalog(opts?.daemonId),
         today: "2026-05-15",
         fetched_at: fetchedAt,
       }),
-    ),
+      daemon_id: daemonID(opts?.daemonId),
+    })),
     search: vi.fn(
-      async (filters: KataTaskSearchFilters): Promise<KataTaskSearchResponse> => ({
+      async (filters: KataTaskSearchFilters, opts): Promise<KataTaskSearchResponse> => ({
         filters,
-        issues: rows().filter((item) =>
+        issues: rows(opts?.daemonId).filter((item) =>
           filters.scope.kind === "project" ? item.project_uid === filters.scope.project_uid : true,
         ),
         fetched_at: fetchedAt,
+        daemon_id: daemonID(opts?.daemonId),
       }),
     ),
-    issue: vi.fn(async (uid: string) => detail(uid, rows())),
+    issue: vi.fn(async (uid: string, opts) => detail(uid, rows(opts?.daemonId))),
     reachableGraph: vi.fn(async (_projectID: number, ref: string, query = {}) =>
       reachableGraph(ref, rows(), query.depth ?? "full", query.hide_done === true),
     ),
     events: vi.fn(
-      async (): Promise<KataTaskEventsResponse> => ({
+      async (_query, _opts): Promise<KataTaskEventsResponse> => ({
         reset_required: false,
         events: [],
         next_after_id: 0,
@@ -336,6 +355,9 @@ function createWorkspaceAPI(
 ): {
   api: KataTaskAPI;
   instance: ReturnType<typeof vi.fn>;
+  projects: ReturnType<typeof vi.fn>;
+  issues: ReturnType<typeof vi.fn>;
+  issue: ReturnType<typeof vi.fn>;
   search: ReturnType<typeof vi.fn>;
   addComment: ReturnType<typeof vi.fn>;
   addLabel: ReturnType<typeof vi.fn>;
@@ -427,10 +449,21 @@ function createWorkspaceAPI(
       schema_version: 1,
     }),
   );
+  const projectCatalog = vi.fn(async () => ({ projects, fetched_at: fetchedAt }));
+  const issues = vi.fn(async (query: KataTaskIssuesQuery) =>
+    buildKataTaskView({
+      view: query.view,
+      issues: rows.filter((item) => (query.project_uid ? item.project_uid === query.project_uid : true)),
+      projects,
+      today: "2026-05-15",
+      fetched_at: fetchedAt,
+    }),
+  );
+  const issueDetail = vi.fn(async (uid: string) => detail(uid, rows, commentsByUID));
   return {
     api: {
       instance,
-      projects: vi.fn(async () => ({ projects, fetched_at: fetchedAt })),
+      projects: projectCatalog,
       createProject: vi.fn(async (name: string) => ({
         id: 90,
         uid: `project-${name.toLowerCase()}`,
@@ -454,17 +487,9 @@ function createWorkspaceAPI(
         };
       }),
       createIssue,
-      issues: vi.fn(async (query: KataTaskIssuesQuery) =>
-        buildKataTaskView({
-          view: query.view,
-          issues: rows.filter((item) => (query.project_uid ? item.project_uid === query.project_uid : true)),
-          projects,
-          today: "2026-05-15",
-          fetched_at: fetchedAt,
-        }),
-      ),
+      issues,
       search,
-      issue: vi.fn(async (uid: string) => detail(uid, rows, commentsByUID)),
+      issue: issueDetail,
       reachableGraph: vi.fn(async (_projectID: number, ref: string, query = {}) =>
         reachableGraph(ref, rows, query.depth ?? "full", query.hide_done === true),
       ),
@@ -496,6 +521,9 @@ function createWorkspaceAPI(
       deleteRecurrence: vi.fn(async () => undefined),
     },
     instance,
+    projects: projectCatalog,
+    issues,
+    issue: issueDetail,
     search,
     addComment,
     addLabel,

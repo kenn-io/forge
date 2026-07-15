@@ -1502,6 +1502,17 @@ describe("kata task HTTP client", () => {
     expect(proxyPath(calls[0]!.url)).toBe("/api/v1/projects/7/recurrences");
   });
 
+  test("pins project recurrence reads to an explicit daemon", async () => {
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/projects/7/recurrences": { body: { recurrences: [] } },
+    });
+    const api = createKataTaskAPI({ fetchImpl });
+
+    await api.recurrences(7, { daemonId: "work" });
+
+    expect(calls[0]!.headers.get(KATA_DAEMON_HEADER)).toBe("work");
+  });
+
   test("creates, patches, shows, and deletes recurrences with ETag handling", async () => {
     const created = {
       id: 9,

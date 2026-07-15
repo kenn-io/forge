@@ -329,6 +329,29 @@ Kata frontend adaptation:
 - Task-list header controls should expand every visible task tree recursively
   through the task-detail API, and collapse should hide cached descendants
   without reintroducing them as top-level flat rows.
+- Restored nested-task ancestor reconstruction is presentation-only. Temporary
+  ancestors and each contextual successor bypass only the active status filter
+  for the selected path; unrelated children still obey that filter and all
+  other active filters. Context rows do not affect task counts, membership
+  checks, or persisted workspace state. Their synthetic edges and reveal-owned
+  expansion disappear when the reveal is cleared or superseded. Clicking a
+  contextual row's disclosure control or invoking the task-list Expand all
+  control promotes that row to user-owned expansion; ordinary selection does
+  not. User-owned expansion survives reveal cleanup. An authoritative
+  child response replaces cached edges and a transient refresh failure retains
+  the seeded path for that reveal. A task
+  admitted by raw filtered membership remains selected if resolution finds a
+  cycle, missing parent, depth limit, missing ancestor detail, ancestor 404, or
+  a transient ancestor request failure; only the temporary reveal chain is
+  omitted, and transient failure remains retryable. Definitive absence of the
+  selected task itself still clears persisted selection. Ancestor reconstruction
+  walks serially to a maximum depth of 32 with one active walk per workspace.
+  Route change, selection change, switch, or unmount aborts the walk where
+  supported and prevents subsequent ancestor requests. At most one stale
+  non-abortable request may drain; further changes coalesce to the latest
+  selected UID. Retry starts a new walk only for the current UID and generation.
+  Candidate ancestor data remains transaction-local and is published only after
+  the candidate workspace is accepted.
 - Project-scoped task filters must resolve the Kata project UID and read the
   daemon's project issue list instead of filtering the all-project issue list
   locally (`frontend/src/lib/api/kata/taskClient.ts::searchProject`).
@@ -338,37 +361,141 @@ Kata frontend adaptation:
 - Removed accepted daemons remain selected and visibly unavailable until the
   user chooses a configured daemon (`frontend/src/lib/features/kata/KataDaemonSwitcher.svelte::displayId`).
 - Daemon switching is disabled during initial bootstrap, writes, view work
-  (including live-event refresh callbacks), and switches. The entire Kata
-  workspace is inert while a switch is provisional. Cursor catch-up is part of
-  target and rollback acceptance; dual failure clears partial state and stops
-  the stream
+  (including live-event refresh callbacks), and switches. Restoration is one
+  discriminated transaction state, not a set of independent booleans. Each
+  variant owns its accepted or candidate stores, daemon binding, route
+  signature, generation, persistence delta, Retry owner, and stream state;
+  transitions are the only operations allowed to publish those resources:
+
+  | State             | Displayed daemon      | Persisted preference  | Accepted binding / staged reads                                    | Live workspace and actions                                                  |
+  | ----------------- | --------------------- | --------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+  | accepted          | accepted daemon       | accepted daemon       | shared binding is accepted daemon                                  | accepted snapshot, one stream, interactive                                  |
+  | provisional       | prior accepted daemon | prior accepted daemon | shared binding stays prior; candidate reads name target explicitly | prior snapshot displayed inert; target state staged                         |
+  | rollback          | prior accepted daemon | prior accepted daemon | shared binding restored to prior accepted daemon                   | prior snapshot displayed inert while network state is rebuilt               |
+  | terminal-retained | prior accepted daemon | prior accepted daemon | prior accepted daemon                                              | last accepted snapshot retained read-only; stream stopped; Retry exposed    |
+  | terminal-cold     | none                  | unchanged or none     | none                                                               | inert empty workspace; stream stopped; Retry exposes initial restoration    |
+  | superseded        | prior accepted daemon | prior accepted daemon | restored prior accepted daemon                                     | late target success/error is inert; current route owns the next transaction |
+
+  A target is accepted only after catalog load, route restoration, and required
+  cursor acceptance. Before that commit, target persistence deltas, route
+  cleanup, selection cleanup, cursor state, and stream startup remain staged in
+  a candidate workspace. The displayed snapshot, persisted preference, shared
+  request binding, candidate read target, and accepted live workspace are
+  separate concepts and must not be inferred from one another
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::switchKataDaemon`).
+  Only `accepted` owns a live stream. Leaving it detaches that stream before
+  candidate reads begin. Provisional, rollback, terminal, and superseded states
+  own no stream. Stream callbacks and queued events carry daemon plus generation;
+  detached or superseded delivery is discarded and recovered through cursor
+  catch-up. Acceptance atomically starts exactly one stream after cursor
+  acceptance.
+
+- A routed Retry captures the full route signature plus a monotonically
+  increasing restoration generation. Any route change invalidates the
+  generation before restoring the prior accepted daemon. A running request need
+  not be physically abortable, but its late success or rejection must not
+  mutate the store, reinstall Retry, publish route cleanup, persist target
+  state, or start a target stream. Cancelling a settled or running Retry performs
+  full fallback rehydration: catalog, accepted route state, health validation,
+  cursor catch-up, persistence deltas, and exactly one stream restart. A terminal
+  state records URL changes without applying them. Retry captures the then-current
+  full route signature and a new generation, never the originally failed
+  signature; a route change during Retry supersedes that attempt and leaves Retry
+  available for the newest signature.
+- Target failures use network-backed rollback except for the initial and routed
+  zero-progress cursor outcomes below. Rollback restores the prior accepted
+  daemon, or the roster default when no explicit accepted preference exists. If
+  target and rollback both fail after a workspace was accepted, enter
+  `terminal-retained`: retain that snapshot read-only, stop its stream, suppress
+  persistence and route reconciliation, and expose Retry. If initial restoration
+  has no accepted snapshot, enter `terminal-cold` with an inert empty workspace
+  and Retry. Retained Retry revalidates the prior daemon, catches up its cursor,
+  applies selection and route correction, and restarts one stream before actions
+  resume; cold Retry repeats initial acceptance without publishing provisional
+  state.
+- Cursor catch-up is serialized with SSE delivery and scoped by daemon plus
+  workspace generation. Cursor state is session-local memory: it is neither
+  written to daemon workspace persistence nor restored after page reload.
+  Acceptance is defined by transaction and outcome:
+
+  | Transaction                   | Failure before progress                                                                                                                                     | Partial progress then failure                                                                                          | Success                                      |
+  | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+  | Initial, no accepted snapshot | enter `terminal-cold`; publish no persistence or stream; Retry owns the latest full route signature                                                         | accept target degraded at the last cursor, commit it, start one stream, and bind cursor Retry to the target generation | accept and commit target; start one stream   |
+  | Routed, prior snapshot exists | remain `provisional`; retain the prior snapshot read-only with unchanged binding and persistence; start no stream; routed Retry owns the captured signature | accept target degraded, commit it, start one stream, and bind cursor Retry to the target generation                    | accept and commit target; start one stream   |
+  | Manual switch                 | enter network-backed rollback; target publishes nothing                                                                                                     | accept target degraded, commit it, start one stream, and bind cursor Retry to the target generation                    | accept and commit target; start one stream   |
+  | Rollback or rehydration       | enter retained terminal when a prior snapshot exists, otherwise cold terminal; start no stream                                                              | accept recovered daemon degraded at the last cursor and start one stream                                               | accept recovered daemon and start one stream |
+
+  Cursor catch-up uses 100-event pages and coalesces each accepted batch into one
+  view/detail reconciliation. Implementations must impose a finite acceptance
+  budget of 1,000 events or two seconds and perform one authoritative reset at
+  the daemon high-water cursor when either bound is exceeded rather than issue an
+  unbounded request chain. Cursor and stream
+  delivery remain serialized through the same daemon/generation queue.
+
+  A cursor Retry whose daemon or generation no longer matches is inert. If
+  accepted delivery removes the selected task from raw filtered membership,
+  clear in-memory detail, replace the route with `issue` removed, and set only
+  that daemon snapshot's `selectedIssueUID` to null; retain its view, filters,
+  scope, and accepted cursor progress.
+
 - Cross-mode task links carry their daemon target in route state until the
   workspace accepts that switch; linked issue selection must not run against
   the previously accepted daemon (`frontend/src/App.svelte::openKataIssue`).
 - Daemon-route cleanup replaces the transient history entry. Unknown targets
   stay unresolved with an error, and failed initial acceptance restores the
   prior daemon preference (`frontend/src/lib/features/kata/KataWorkspace.svelte::routedDaemonError`).
-- Browser route changes remain queued while a daemon switch or rollback is
-  provisional, then apply to the accepted workspace after the transaction
-  settles. A successful bootstrap does not publish its provisional selection
-  when the route signature changed during the switch. If target and rollback
-  both fail, no workspace is accepted and route effects remain suppressed until
-  a later successful bootstrap
-  (`frontend/src/lib/features/kata/KataWorkspace.svelte::routeSignature`).
-- Kata route synchronization is level-triggered: the URL is the source of
-  truth and a single reconciler converges the workspace to it whenever they
-  differ, with no memory of what was previously synchronized. Interactions
-  load optimistically and must emit the matching route update afterwards
-  (their consumers echo it synchronously); store state that should survive
-  navigation lives in the URL
+- Route changes preempt routed restoration, routed Retry, manual switching, and
+  fallback rehydration by invalidating the owning full-route signature and
+  generation. Non-abortable requests may finish, but late target results are
+  inert. Routed restoration and fallback immediately restart against the latest
+  route on the prior accepted daemon; a manual switch restores the accepted
+  binding/stream and lets the level-triggered reconciler apply the new route.
+  Rollback continues only to recover the prior daemon, then applies the latest
+  route. Terminal states suppress route effects until Retry accepts a workspace.
+  Each workspace permits one current restoration chain and one draining stale
+  non-abortable request per catalog, view, detail, cursor, or ancestor request
+  class. Further route changes coalesce to the latest full signature. All task
+  client methods accept `AbortSignal`; the proxy deadline remains the outer bound
+  for requests that cannot abort
+  (`frontend/src/lib/features/kata/KataWorkspace.svelte::fullRouteSignature`).
+- Kata route synchronization is level-triggered after workspace acceptance:
+  the reconciler converges the workspace to the canonical URL whenever they
+  differ. Persistence inheritance is initial-bootstrap-only. On that bootstrap,
+  an explicit URL `view`, `scope`, or `issue` overrides only its corresponding
+  persisted field; an omitted field inherits the persisted value, including a
+  persisted null selection, or the default when no snapshot exists. After mount,
+  omission means clear that route-owned field rather than re-inherit persistence:
+  omitted `issue` deselects and persists null, omitted `scope` becomes unscoped,
+  omitted `view` becomes the canonical default, and omitted `daemon` means the
+  already accepted daemon rather than a new persisted lookup. Persisted
+  non-route filters remain in force. A definitive task 404 clears in-memory
+  detail and the route; transient catalog, list, detail, or cursor failure
+  preserves source state for Retry. Invalid explicit scope canonicalizes to an
+  unscoped route without deleting the saved daemon snapshot. Invalid persisted
+  scope invalidates the entire daemon snapshot so its remaining fields cannot be
+  partially inherited. Accepted state replaces the current history entry;
+  interactions load optimistically and emit their matching route update.
+- Routed issue selection waits only for the view/scope load whose complete
+  route signature matches the current route. Superseded list loads are not
+  awaited, and request/generation guards discard late results so stale work
+  neither delays current selection nor aborts a newer detail request
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::reconcileRoute`).
-- Superseded route detail reads remain retryable; only a real request failure
-  may pin a route as failed, or an event refresh can strand a valid deep link
-  (`frontend/src/lib/features/kata/KataWorkspace.svelte::reconcileRoute`).
-- Routed issue selection waits for any in-flight view/scope load to settle;
-  intermediate list state may clear selection and abort an early detail read
-  (`frontend/src/lib/features/kata/KataWorkspace.svelte::viewScopeLoadSignature`).
+- Daemon-scoped persistence contains view, filters, scope, and selected issue.
+  Selection provenance is explicit: persisted selection is inherited only during
+  initial bootstrap and changes only after a definitive replacement; explicit
+  routed selection is staged and replaces that daemon snapshot only after detail
+  and workspace acceptance; routed 404 clears only the route-owned candidate;
+  default null selection is written only on commit; direct accepted selection
+  persists after definitive detail success and direct deselection persists null;
+  accepted membership loss or definitive absence clears the accepted daemon's
+  saved selection. Invalid persisted scope invalidates that whole snapshot,
+  whereas invalid explicit scope affects only the route candidate. Contextual
+  ancestors are never selection or membership evidence. Persistence is versioned
+  per daemon; unsupported old schemas are discarded rather than migrated. Storage
+  reads and writes are best-effort and failures expose non-blocking unsaved-status
+  feedback. Cross-tab events merge per daemon and revision so one daemon cannot
+  overwrite another. Global browser layout preferences continue to persist
+  independently. Scroll, expansion, pending work, and task caches do not persist.
 - Event-driven proxy reads keep switching fail-closed until they settle. The
   Kata proxy applies a 30-second total deadline to ordinary TCP and Unix-socket
   requests, including response bodies, while the live event stream stays
@@ -480,6 +607,24 @@ Backend test inventory:
 
 Frontend test inventory:
 
+- Kata completion requires deterministic coverage for initial and running
+  routed-Retry supersession (late success and late rejection), settled Retry
+  cancellation with full fallback catalog/cursor/stream restoration, manual
+  switch route/unmount cancellation, rollback failure and retained/cold terminal
+  Retry, all cursor acceptance outcomes, invalid explicit versus persisted
+  scope, initial inheritance versus post-mount omission for every route field,
+  bare-route deselection persistence, and contextual ancestor status filtering
+  and expansion ownership. Transition-table tests assert displayed daemon,
+  accepted binding, persistence delta, Retry owner, queued-event disposal, and
+  zero-or-one stream ownership for every transaction/cursor outcome.
+  Deterministic coverage also owns catch-up budget reset, stale-request
+  coalescing, the 32-request ancestor bound, storage unavailable/quota behavior,
+  per-daemon cross-tab merging, and old-schema discard. Full-stack coverage must
+  include failed routed Retry followed by successful acceptance, same-mounted
+  late-resolve and late-reject route supersession, and initial zero-progress
+  `terminal-cold` failure followed by a URL change and successful Retry against
+  the latest full route signature with exactly one target stream, in Chromium
+  and Firefox; component/store tests own the remainder of the race matrix.
 - Kata API wrappers, daemon switcher, route parsing, stores, task workspace,
   issue detail/list/actions, metadata editors, recurrence, command palette, and
   e2e harness behavior.
@@ -528,9 +673,31 @@ new navigation can stay hidden until each mode passes its migrated tests.
    switching and base-path tests pass.
 9. Restore cross-mode links between Kata tasks, docs references, and msgvault
    messages. Done when links are covered in focused frontend and API tests.
-10. Flip visible navigation for completed modes, run focused tests
-    slice-by-slice, then run full affected Go/frontend/e2e suites before
-    merging.
+10. Keep visible navigation guarded while the remaining state contracts are
+    implemented and validated.
+11. Add versioned per-daemon persistence, corrupt/old-schema discard,
+    storage-failure UI, and cross-tab merge behavior.
+12. Add the discriminated restoration state and common candidate-workspace
+    transaction primitive, including side-effect ownership and exactly-one-stream
+    invariants.
+13. Add daemon/generation cursor transport, serialized cursor/SSE delivery,
+    stale-request coalescing, and bounded catch-up/reset behavior without
+    selection mutation.
+14. Add URL/persistence precedence and selection provenance, then add
+    cursor-driven membership reconciliation using that policy.
+15. Add routed target staging and acceptance commit points.
+16. Add routed Retry, latest-signature terminal semantics, cancellation, and
+    supersession.
+17. Add manual target staging using the same candidate primitive.
+18. Add rollback, retained/cold terminal recovery, and default-daemon fallback.
+19. Add bounded temporary ancestor reconstruction and reveal ownership.
+20. Run focused transition, persistence, cursor-budget, cancellation, and
+    stream-invariant tests.
+21. Run full-stack routed and terminal-cold failure-to-success transactions,
+    including same-mounted late resolve/reject, in Chromium and Firefox.
+22. Flip visible navigation as a separate edit.
+23. Rerun affected shell, routing, frontend, Chromium, and Firefox suites after
+    the navigation edit.
 
 ## Documentation Updates
 

@@ -29,8 +29,9 @@ export function getDefaultKataDaemon(): string | undefined {
   return defaultKataDaemon;
 }
 
-export function setActiveKataDaemon(id: string | undefined): void {
+export function setActiveKataDaemon(id: string | undefined, persist = true): void {
   activeKataDaemon = id;
+  if (!persist) return;
   try {
     if (id) {
       localStorage.setItem(STORAGE_KEY, id);

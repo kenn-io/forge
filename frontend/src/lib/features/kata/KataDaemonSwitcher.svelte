@@ -34,14 +34,14 @@
   }
 
   function daemonStatusLabel(daemon: KataDaemonInfo): string {
-    if (daemon.id === active?.id && activeStatusLabel) return activeStatusLabel;
+    if (daemon.id === displayId && activeStatusLabel) return activeStatusLabel;
     if (daemon.health === "connected") return "connected";
     if (daemon.health === "auth_required") return "needs auth";
     return "unreachable";
   }
 
   function daemonStatusTone(daemon: KataDaemonInfo): string {
-    if (daemon.id === active?.id && activeStatusTone) return activeStatusTone;
+    if (daemon.id === displayId && activeStatusTone) return activeStatusTone;
     return daemon.health;
   }
 </script>

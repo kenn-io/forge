@@ -5,11 +5,12 @@
 
   interface Props {
     open: boolean;
+    disabled?: boolean | undefined;
     onClose: () => void;
     onSubmit: (title: string) => void | Promise<void>;
   }
 
-  let { open, onClose, onSubmit }: Props = $props();
+  let { open, disabled = false, onClose, onSubmit }: Props = $props();
 
   let title = $state("");
   let pending = $state(false);
@@ -23,7 +24,7 @@
 
   async function submit(): Promise<void> {
     const value = title.trim();
-    if (!value || pending) return;
+    if (!value || pending || disabled) return;
     pending = true;
     try {
       await onSubmit(value);
@@ -57,7 +58,7 @@
       placeholder="Task title"
       bind:value={title}
       onkeydown={handleKeydown}
-      disabled={pending}
+      disabled={pending || disabled}
     />
   </form>
   {#snippet footer()}
@@ -66,7 +67,7 @@
       class="modal-btn modal-btn-primary"
       type="button"
       onclick={submit}
-      disabled={pending || title.trim().length === 0}
+      disabled={disabled || pending || title.trim().length === 0}
     >
       <PlusIcon size={12} strokeWidth={2} />
       <span>Capture</span>

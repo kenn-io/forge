@@ -530,12 +530,15 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     },
 
     async instance(opts) {
-      const result = await request<unknown>(taskPath("/instance"), { signal: opts?.signal });
+      const result = await request<unknown>(taskPath("/instance"), {
+        headers: daemonHeaders(opts?.daemonId),
+        signal: opts?.signal,
+      });
       return normalizeKataInstance(result.body);
     },
 
     projects(opts) {
-      return fetchProjects(undefined, false, opts?.signal);
+      return fetchProjects(opts?.daemonId, opts?.daemonId !== undefined, opts?.signal);
     },
 
     async createProject(name) {
@@ -698,7 +701,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     },
 
     async events(query = {}, opts) {
-      const daemonId = await resolveOperationDaemonId(undefined, true);
+      const daemonId = await resolveOperationDaemonId(opts?.daemonId, true);
 
       async function fetchPage(afterID: number | undefined, pageLimit: number): Promise<KataTaskEventsResponse> {
         const params = new URLSearchParams();
@@ -817,8 +820,11 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
       return normalizeMoveResponse(result.body, result.headers);
     },
 
-    async recurrences(projectID) {
-      const result = await request<unknown>(taskPath(`/projects/${projectID}/recurrences`));
+    async recurrences(projectID, opts) {
+      const result = await request<unknown>(taskPath(`/projects/${projectID}/recurrences`), {
+        headers: daemonHeaders(opts?.daemonId),
+        signal: opts?.signal,
+      });
       return normalizeKataRecurrences(result.body);
     },
 

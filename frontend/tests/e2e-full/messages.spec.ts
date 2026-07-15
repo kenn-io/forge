@@ -1410,19 +1410,39 @@ test("docs and messages keep local state while switching modes", async ({ page }
   }
 });
 
-test("messages browser back restores the selected Kata task", async ({ page }) => {
-  const fixture = await startConfiguredMessagesAndKataFixture(page, "kataback");
+test("Kata restoration preserves distinct browser history entries", async ({ page }) => {
+  const fixture = await startConfiguredMessagesAndKataFixture(page, "kataback", (kata) => {
+    const linkedIssue = kata.state.issues.find((issue) => issue.uid === "issue-q3");
+    expect(linkedIssue).toBeTruthy();
+    linkedIssue!.metadata = {
+      ...linkedIssue!.metadata,
+      mail_links: [
+        {
+          message_id: 101,
+          conversation_id: 501,
+          subject: "Project sync",
+          from: "sender-primary@example.com",
+          sent_at: "2026-05-15T10:00:00Z",
+          added_at: "2026-05-15T10:00:00Z",
+        },
+      ],
+    };
+  });
 
   try {
-    await page.goto(`${fixture.server.info.base_url}/kata?issue=issue-q3`);
+    await page.goto(`${fixture.server.info.base_url}/messages?q=project&message=101`);
+    await expect(page.getByRole("heading", { name: "Project sync", exact: true })).toBeVisible({ timeout: 8_000 });
+    const messagesURL = page.url();
+
+    const linkedTasks = page.getByRole("region", { name: "Linked tasks" });
+    await linkedTasks.getByRole("button", { name: /Kata#kat-7/ }).click();
+    await expect(page).toHaveURL(/\/kata\?issue=issue-q3$/);
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText(
       "Confirm the Q3 project review agenda.",
-      { timeout: 8_000 },
     );
 
-    await appHeaderTab(page, "Messages").click();
-    await expect(page).toHaveURL(/\/messages$/);
-    await expect(page.getByRole("heading", { name: "Messages" })).toBeVisible();
+    await appHeaderTab(page, "Docs").click();
+    await expect(page).toHaveURL(/\/docs$/);
 
     await page.goBack();
     await expect(page).toHaveURL(/\/kata\?issue=issue-q3$/);
@@ -1430,9 +1450,17 @@ test("messages browser back restores the selected Kata task", async ({ page }) =
       "Confirm the Q3 project review agenda.",
     );
 
+    await page.goBack();
+    await expect(page).toHaveURL(messagesURL);
+    await expect(page.getByRole("heading", { name: "Project sync", exact: true })).toBeVisible();
+
     await page.goForward();
-    await expect(page).toHaveURL(/\/messages$/);
-    await expect(page.getByRole("heading", { name: "Messages" })).toBeVisible();
+    await expect(page).toHaveURL(/\/kata\?issue=issue-q3$/);
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText(
+      "Confirm the Q3 project review agenda.",
+    );
+    await page.goForward();
+    await expect(page).toHaveURL(/\/docs$/);
   } finally {
     await fixture.stop();
   }

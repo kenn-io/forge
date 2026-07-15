@@ -119,12 +119,16 @@ type BackendState = {
   failNextAssignOwner?: string | undefined;
   failNextCursorStatus?: number | undefined;
   failNextIssuesStatus?: number | undefined;
+  failNextProjectsStatus?: number | undefined;
   failNextMetadataMessage?: string | undefined;
   closeBarrier?: Promise<void> | undefined;
   failNextMoveMessage?: string | undefined;
+  failEventCursorAfterID?: number | undefined;
   eventsBarrier?: Promise<void> | undefined;
+  eventCursorBarriers: Map<number, Promise<void>>;
   issuesBarrier?: Promise<void> | undefined;
   searchBarriers: Map<string, Promise<void>>;
+  searchIssueUIDs: Set<string> | null;
   issueDetailGates: Map<string, IssueDetailGate>;
   onEventsRequest?: ((state: BackendState, url: URL) => void) | undefined;
   projectsBarrier?: Promise<void> | undefined;
@@ -250,12 +254,15 @@ type KataBackendOptions = {
   links?: LinkRow[] | undefined;
   recurrences?: RecurrenceRow[] | undefined;
   duplicateProjectSearches?: DuplicateProjectSearchResponse[] | undefined;
+  failEventCursorAfterID?: number | undefined;
   eventsBarrier?: Promise<void> | undefined;
+  eventCursorBarriers?: Map<number, Promise<void>> | undefined;
   issuesBarrier?: Promise<void> | undefined;
   searchBarriers?: Map<string, Promise<void>> | undefined;
   issueDetailGates?: Map<string, IssueDetailGate> | undefined;
   onEventsRequest?: ((state: BackendState, url: URL) => void) | undefined;
   failNextCursorStatus?: number | undefined;
+  failNextProjectsStatus?: number | undefined;
   projectsBarrier?: Promise<void> | undefined;
   closeBarrier?: Promise<void> | undefined;
 };
@@ -275,6 +282,7 @@ function issueSummary(input: {
   owner?: string | undefined;
   priority?: number | undefined;
   labels: string[];
+  parent?: { uid: string; short_id: string } | undefined;
   parent_short_id?: string | undefined;
   child_counts?: { open: number; total: number } | undefined;
   metadata?: Record<string, unknown> | undefined;
@@ -292,6 +300,81 @@ function issueSummary(input: {
     created_at: now,
     updated_at: now,
   };
+}
+
+function workspaceStateFixture() {
+  const parent = issueSummary({
+    id: 101,
+    uid: "issue-child-workflow-parent",
+    project_id: 2,
+    project_uid: "project-kata",
+    project_name: "Kata",
+    short_id: "kat-child-parent",
+    qualified_id: "Kata#kat-child-parent",
+    title: "Parent child workflow",
+    body: "Parent task for the child workflow.",
+    owner: "Susan",
+    labels: ["work"],
+    child_counts: { open: 1, total: 1 },
+  });
+  const child = issueSummary({
+    id: 102,
+    uid: "issue-child-workflow",
+    project_id: 2,
+    project_uid: "project-kata",
+    project_name: "Kata",
+    short_id: "kat-child",
+    qualified_id: "Kata#kat-child",
+    title: "Child child workflow",
+    body: "Child task in the child workflow.",
+    owner: "Susan",
+    labels: ["work"],
+    parent: { uid: parent.uid, short_id: parent.short_id },
+    parent_short_id: parent.short_id,
+  });
+  return {
+    child,
+    issues: [...issues, parent, child],
+    parent,
+    projects: [
+      inboxProject,
+      ...projects.map((project) =>
+        project.uid === "project-kata" ? { ...project, open_count: project.open_count + 2 } : project,
+      ),
+    ],
+  };
+}
+
+async function seedRestoredKataWorkspace(
+  page: Page,
+  baseURL: string,
+  options: { projectScoped?: boolean } = {},
+): Promise<void> {
+  await page.goto(`${baseURL}/kata`);
+  if (options.projectScoped ?? true) {
+    await page.getByRole("button", { name: /Project scope: All projects/ }).click();
+    const projectInput = page.getByRole("combobox", { name: "Project scope" });
+    await projectInput.fill("kata");
+    await projectInput.press("Enter");
+  }
+  await page.getByRole("combobox", { name: "Status: Open" }).click();
+  await page.getByRole("option", { name: "All" }).click();
+  await page.getByRole("textbox", { name: "Owner" }).fill("Susan");
+  await page.getByRole("textbox", { name: "Label" }).fill("work");
+  await page.getByLabel("Search tasks").fill("child");
+  await page.getByTestId("daemon-chip").click();
+  const daemonRow = page.getByRole("menu", { name: "Configured Kata daemons" }).locator(".daemon-row").first();
+  await expect(daemonRow).toBeEnabled();
+  await page.getByTestId("daemon-chip").click();
+
+  const parentRow = page.getByRole("button", { name: /Parent child workflow/ });
+  await expect(parentRow).toBeVisible();
+  await parentRow.press("ArrowRight");
+  await expect(parentRow).toHaveAttribute("aria-expanded", "true");
+  const childRow = page.getByRole("button", { name: /Child child workflow/ });
+  await expect(childRow).toBeVisible();
+  await childRow.click();
+  await expect(page.getByRole("heading", { name: "Child child workflow" })).toBeVisible();
 }
 
 function commentRow(input: { id: number; issue_id: number; author: string; body: string; created_at?: string }) {
@@ -449,10 +532,14 @@ async function startKataBackend(options: KataBackendOptions = {}): Promise<Backe
     seenPaths: [],
     streams: new Set(),
     failNextCursorStatus: options.failNextCursorStatus,
+    failNextProjectsStatus: options.failNextProjectsStatus,
     closeBarrier: options.closeBarrier,
+    failEventCursorAfterID: options.failEventCursorAfterID,
     eventsBarrier: options.eventsBarrier,
+    eventCursorBarriers: options.eventCursorBarriers ?? new Map(),
     issuesBarrier: options.issuesBarrier,
     searchBarriers: options.searchBarriers ?? new Map(),
+    searchIssueUIDs: null,
     issueDetailGates: options.issueDetailGates ?? new Map(),
     onEventsRequest: options.onEventsRequest,
     projectsBarrier: options.projectsBarrier,
@@ -660,6 +747,13 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
         return;
       }
       await state.projectsBarrier;
+      state.projectsBarrier = undefined;
+      if (state.failNextProjectsStatus !== undefined) {
+        const status = state.failNextProjectsStatus;
+        state.failNextProjectsStatus = undefined;
+        writeJSON(res, status, { error: { code: "internal", message: "project catalog failed" } });
+        return;
+      }
       writeJSON(res, 200, {
         projects: state.projects,
         fetched_at: now,
@@ -706,11 +800,13 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
           return;
         }
         const issueUID = url.searchParams.get("issue_uid");
-        if (url.searchParams.get("after_id") === "0") {
+        if (url.searchParams.get("after_id") === "0" && issueUID === null) {
           await state.eventsBarrier;
           state.eventsBarrier = undefined;
         }
         const afterID = Number(url.searchParams.get("after_id") ?? "0");
+        await state.eventCursorBarriers.get(afterID);
+        state.eventCursorBarriers.delete(afterID);
         const projectID = url.searchParams.get("project_id");
         const events = state.events.filter((event) => {
           if (event.event_id <= afterID) return false;
@@ -721,6 +817,11 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
         const limit = Number(url.searchParams.get("limit") ?? "0");
         const page = limit > 0 ? events.slice(0, limit) : events;
         state.onEventsRequest?.(state, url);
+        if (afterID === state.failEventCursorAfterID && url.searchParams.get("limit") === "100") {
+          state.failEventCursorAfterID = undefined;
+          writeJSON(res, 503, { error: { code: "cursor_unavailable", message: "cursor catch-up failed" } });
+          return;
+        }
         writeJSON(res, 200, {
           reset_required: false,
           events: page,
@@ -931,12 +1032,17 @@ function searchIssues(state: BackendState, input: { projectID: number; q: string
   const q = input.q.trim().toLowerCase();
   return state.issues.filter((issue) => {
     if (issue.project_id !== input.projectID) return false;
-    if (!q) return true;
-    return [issue.title, issue.body, issue.qualified_id, issue.project_name, issue.owner, issue.labels.join(" ")]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase()
-      .includes(q);
+    if (
+      q &&
+      ![issue.title, issue.body, issue.qualified_id, issue.project_name, issue.owner, issue.labels.join(" ")]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    ) {
+      return false;
+    }
+    return state.searchIssueUIDs === null || state.searchIssueUIDs.has(issue.uid);
   });
 }
 
@@ -1410,6 +1516,7 @@ function writeIssueDetail(state: BackendState, res: ServerResponse, uid: string)
   }
   writeJSON(res, 200, {
     issue: found,
+    parent: found.parent,
     comments: state.commentsByUID.get(found.uid) ?? [],
     labels: found.labels.map((label) => ({ issue_id: found.id, label, author: "e2e", created_at: now })),
     links: state.links.filter((link) => link.from.uid === found.uid || link.to.uid === found.uid),
@@ -1498,6 +1605,7 @@ async function closeServer(server: Server): Promise<void> {
       if (err) reject(err);
       else resolve();
     });
+    server.closeIdleConnections();
   });
 }
 
@@ -2590,6 +2698,185 @@ test("kata workspace applies cursor catch-up events before opening the configure
   }
 });
 
+test("kata cursor catch-up clears a removed selected task when its detail refresh fails", async ({ page }) => {
+  let releaseEvents!: () => void;
+  const eventsBarrier = new Promise<void>((resolve) => {
+    releaseEvents = resolve;
+  });
+  const backend = await startKataBackend({
+    events: [
+      eventRow({
+        event_id: 10,
+        event_uid: "event-rent-removed",
+        type: "issue.closed",
+        project_id: issues[0]!.project_id,
+        project_uid: issues[0]!.project_uid,
+        project_name: issues[0]!.project_name,
+        issue: issues[0]!,
+      }),
+    ],
+    eventsBarrier,
+  });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?issue=issue-rent`);
+    const detail = page.getByRole("region", { name: "Task detail" });
+    await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/events?after_id=0&limit=100");
+
+    backend.state.issues = backend.state.issues.filter((issue) => issue.uid !== "issue-rent");
+    backend.state.issueDetailGates.set("issue-rent", { barrier: Promise.resolve(), status: 500 });
+    releaseEvents();
+
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
+    await expect(detail).toContainText("Select a task");
+    await expect(page).not.toHaveURL(/issue=issue-rent/);
+    await expect
+      .poll(async () =>
+        page.evaluate(() => JSON.parse(window.localStorage.getItem("middleman:kata:workspace-state/v1") ?? "{}")),
+      )
+      .toEqual({});
+  } finally {
+    releaseEvents();
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
+test("kata cursor catch-up clears a removed selected task when a later cursor page fails", async ({ page }) => {
+  let releaseEvents!: () => void;
+  const eventsBarrier = new Promise<void>((resolve) => {
+    releaseEvents = resolve;
+  });
+  const backend = await startKataBackend({
+    events: [
+      eventRow({
+        event_id: 10,
+        event_uid: "event-rent-removed-before-cursor-failure",
+        type: "issue.closed",
+        project_id: issues[0]!.project_id,
+        project_uid: issues[0]!.project_uid,
+        project_name: issues[0]!.project_name,
+        issue: issues[0]!,
+      }),
+    ],
+    eventsBarrier,
+  });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?issue=issue-rent`);
+    const detail = page.getByRole("region", { name: "Task detail" });
+    await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/events?after_id=0&limit=100");
+
+    backend.state.issues = backend.state.issues.filter((issue) => issue.uid !== "issue-rent");
+    backend.state.failEventCursorAfterID = 10;
+    releaseEvents();
+
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/events?after_id=10&limit=100");
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
+    await expect(detail).toContainText("Select a task");
+    await expect(page).not.toHaveURL(/issue=issue-rent/);
+    await expect(page.getByRole("alert")).toContainText("cursor catch-up failed");
+    await expect
+      .poll(() => backend.state.seenPaths.some((path) => path.startsWith("GET /api/v1/events/stream")))
+      .toBe(true);
+    await expect
+      .poll(async () =>
+        page.evaluate(() => JSON.parse(window.localStorage.getItem("middleman:kata:workspace-state/v1") ?? "{}")),
+      )
+      .toEqual({});
+
+    await page.getByRole("button", { name: "Retry" }).click();
+    await expect
+      .poll(() => backend.state.seenPaths.filter((path) => path === "GET /api/v1/events?after_id=10&limit=100").length)
+      .toBe(2);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+
+    backend.state.issues = [];
+    emitKataEvent(
+      backend.state,
+      eventRow({
+        event_id: 11,
+        event_uid: "event-q3-removed-after-cursor-recovery",
+        type: "issue.closed",
+        project_id: issues[1]!.project_id,
+        project_uid: issues[1]!.project_uid,
+        project_name: issues[1]!.project_name,
+        issue: issues[1]!,
+      }),
+    );
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Email Susan re: Q3/ })).toHaveCount(0);
+  } finally {
+    releaseEvents();
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
+test("kata cursor retry serializes a live stream event without duplicate refresh", async ({ page }) => {
+  let releaseRetry!: () => void;
+  const retryBarrier = new Promise<void>((resolve) => {
+    releaseRetry = resolve;
+  });
+  const backend = await startKataBackend({
+    events: [
+      eventRow({
+        event_id: 10,
+        event_uid: "event-cursor-retry",
+        type: "issue.edited",
+        project_id: issues[0]!.project_id,
+        project_uid: issues[0]!.project_uid,
+        project_name: issues[0]!.project_name,
+        issue: issues[0]!,
+      }),
+    ],
+  });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    backend.state.failEventCursorAfterID = 10;
+    await page.goto(`${server.info.base_url}/kata`);
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/events?after_id=10&limit=100");
+    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+
+    backend.state.eventCursorBarriers.set(10, retryBarrier);
+    await page.getByRole("button", { name: "Retry" }).click();
+    await expect(page.getByRole("button", { name: "Retrying…" })).toBeDisabled();
+    emitKataEvent(
+      backend.state,
+      eventRow({
+        event_id: 11,
+        event_uid: "event-live-during-cursor-retry",
+        type: "issue.edited",
+        project_id: issues[0]!.project_id,
+        project_uid: issues[0]!.project_uid,
+        project_name: issues[0]!.project_name,
+        issue: issues[0]!,
+      }),
+    );
+    releaseRetry();
+
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect.poll(() => backend.state.seenStreamLastEventIDs).toEqual(["10"]);
+    await expect
+      .poll(() => backend.state.seenPaths.filter((path) => path === "GET /api/v1/events?after_id=10&limit=100").length)
+      .toBe(2);
+  } finally {
+    releaseRetry();
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata workspace reconnects after a closed configured daemon stream", async ({ page }) => {
   const backend = await startKataBackend();
   const kataHome = await configureKataHome(backend.url);
@@ -3168,8 +3455,8 @@ test("kata daemon switch drops a pending detail load from the previous daemon", 
 
     // Select Pay rent on the home daemon with its detail stalled, then
     // switch daemons while the new daemon's issue list is also stalled.
-    // The switch abandons the selection, so the old daemon's failing
-    // detail request must not paint an error over the switch.
+    // The accepted list stays visible but inert while the target is staged,
+    // and the abandoned detail failure must not paint over the switch.
     home.state.issueDetailGates.set("issue-rent", { barrier: stalledDetail, status: 500 });
     await rentRow.click();
     await expect.poll(() => home.state.seenPaths).toContain("GET /api/v1/issues/issue-rent");
@@ -3178,7 +3465,7 @@ test("kata daemon switch drops a pending detail load from the previous daemon", 
     await page.getByTestId("daemon-chip").click();
     await page.getByTestId("daemon-row-work").click();
     await expect(page.getByRole("region", { name: "Kata", exact: true })).toHaveAttribute("inert", "");
-    await expect(rentRow).toHaveCount(0);
+    await expect(rentRow).toBeVisible();
     await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toHaveCount(0);
     releaseDetail();
     await page.waitForTimeout(750);
@@ -3272,9 +3559,9 @@ test("kata daemon switch restores the previous workspace after target bootstrap 
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText(
       "Confirm the Q3 project review agenda.",
     );
-    await expect
-      .poll(() => home.state.seenPaths.filter((seenPath) => seenPath === "GET /api/v1/issues?status=open").length)
-      .toBeGreaterThan(homeListsBeforeSwitch);
+    expect(home.state.seenPaths.filter((seenPath) => seenPath === "GET /api/v1/issues?status=open")).toHaveLength(
+      homeListsBeforeSwitch,
+    );
     await expect
       .poll(() => home.state.seenPaths.filter((seenPath) => seenPath.startsWith("GET /api/v1/events/stream")).length)
       .toBeGreaterThan(homeStreamsBeforeSwitch);
@@ -3287,7 +3574,7 @@ test("kata daemon switch restores the previous workspace after target bootstrap 
   }
 });
 
-test("kata daemon switch leaves empty stopped state when target and rollback fail", async ({ page }) => {
+test("kata daemon switch retains captured state when target and rollback fail", async ({ page }) => {
   let releaseIssues!: () => void;
   const issuesBarrier = new Promise<void>((resolve) => {
     releaseIssues = resolve;
@@ -3306,33 +3593,28 @@ test("kata daemon switch leaves empty stopped state when target and rollback fai
   try {
     await page.goto(`${server.info.base_url}/kata?view=all&issue=issue-rent`);
     await expectKataDaemonSwitcherReady(page);
+    await expect.poll(() => home.state.streams.size).toBeGreaterThan(0);
     const homeStreamsBeforeSwitch = home.state.seenPaths.filter((seenPath) =>
       seenPath.startsWith("GET /api/v1/events/stream"),
     ).length;
     const collision = { candidates: [{ title: "Foreign collision", qualified_id: "Work#foreign" }] };
     work.state.duplicateIssueListResponses.push(collision);
-    home.state.issueDetailGates.set("issue-rent", { barrier: Promise.resolve(), status: 500 });
+    home.state.failNextCursorStatus = 500;
 
     await page.getByTestId("daemon-chip").click();
     await page.getByTestId("daemon-row-work").click();
     await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/issues?status=open");
-    await page.evaluate(() => {
-      window.history.pushState({}, "", "/kata?view=all&scope=project-kata");
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    });
     releaseIssues();
 
     await expect(page.getByTestId("daemon-chip")).toContainText("home");
     await expect(page.getByRole("status", { name: "Connection: error" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toHaveCount(0);
-    await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
-    await expect(page.getByRole("region", { name: "Task detail" })).not.toContainText("Send June rent from checking.");
+    await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toBeVisible();
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Send June rent from checking.");
     await expect.poll(() => home.state.streams.size).toBe(0);
     expect(home.state.seenPaths.filter((seenPath) => seenPath.startsWith("GET /api/v1/events/stream")).length).toBe(
       homeStreamsBeforeSwitch,
     );
-    await page.waitForTimeout(250);
-    expect(home.state.seenPaths).not.toContain("GET /api/v1/projects/2/issues?status=open");
   } finally {
     releaseIssues();
     await server.stop();
@@ -3379,7 +3661,7 @@ test("kata daemon switch rolls back when target event cursor synchronization fai
   }
 });
 
-test("kata daemon switch stops with empty state when target and rollback cursor synchronization fail", async ({
+test("kata daemon switch retains the captured workspace when rollback cursor synchronization fails", async ({
   page,
 }) => {
   const home = await startKataBackend();
@@ -3405,8 +3687,8 @@ test("kata daemon switch stops with empty state when target and rollback cursor 
     await page.getByTestId("daemon-row-work").click();
 
     await expect(page.getByRole("status", { name: "Connection: error" })).toBeVisible();
-    await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
-    await expect(page.getByRole("region", { name: "Task detail" })).not.toContainText("Send June rent from checking.");
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Send June rent from checking.");
     await expect.poll(() => home.state.streams.size).toBe(0);
     expect(home.state.seenPaths.filter((seenPath) => seenPath.startsWith("GET /api/v1/events/stream")).length).toBe(
       homeStreamsBeforeSwitch,
@@ -3433,7 +3715,9 @@ test("kata route does not resolve an issue through an unknown daemon", async ({ 
       "Kata daemon missing is not configured.",
     );
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Select a task");
-    expect(backend.state.seenPaths).not.toContain("GET /api/v1/issues/issue-rent");
+    await expect
+      .poll(() => backend.state.seenPaths.includes("GET /api/v1/issues/issue-rent"), { timeout: 1_000 })
+      .toBe(false);
   } finally {
     await server.stop();
     kataHome.restore();
@@ -3456,11 +3740,79 @@ test("failed initial routed daemon restores the previous daemon preference", asy
   try {
     await page.addInitScript(() => localStorage.setItem("middleman:kata:active_daemon", "home"));
     await page.goto(`${server.info.base_url}/kata?issue=issue-q3&daemon=work`);
-    await expect(page.getByRole("status", { name: "Connection: error" })).toBeVisible();
+    await expect(page.getByRole("alert")).toContainText("event cursor synchronization failed");
+    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+    await expect(page).toHaveURL(/daemon=work/);
 
     await page.goto(`${server.info.base_url}/kata?issue=issue-rent`);
     await expect(page.getByTestId("daemon-chip")).toContainText("home");
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Send June rent from checking.");
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await home.close();
+    await work.close();
+  }
+});
+
+test("routed daemon Retry commits preference, state, route, and stream only after success", async ({ page }) => {
+  const home = await startKataBackend();
+  const work = await startKataBackend({ failNextCursorStatus: 500 });
+  const kataHome = await configureKataHomeDaemons(
+    [
+      { name: "home", url: home.url },
+      { name: "work", url: work.url },
+    ],
+    "home",
+  );
+  const server = await startIsolatedE2EServer();
+  const workState = {
+    version: 1,
+    daemons: {
+      work: {
+        view: "all",
+        filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "saved" },
+        selectedIssueUID: "issue-q3",
+      },
+    },
+  };
+
+  try {
+    await page.addInitScript((state) => {
+      localStorage.setItem("middleman:kata:active_daemon", "home");
+      localStorage.setItem("middleman:kata:workspace-state/v1", JSON.stringify(state));
+    }, workState);
+    await page.goto(`${server.info.base_url}/kata?issue=issue-q3&daemon=work`);
+
+    const retry = page.getByRole("button", { name: "Retry" });
+    await expect(retry).toBeVisible();
+    await expect(page.getByTestId("daemon-chip")).toContainText("home");
+    await expect(page.locator(".kata-layout")).toHaveAttribute("inert");
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("middleman:kata:active_daemon"))).toBe("home");
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem("middleman:kata:workspace-state/v1")))
+      .toBe(JSON.stringify(workState));
+    await expect(page).toHaveURL(/daemon=work/);
+    expect(work.state.seenPaths.some((path) => path.startsWith("GET /api/v1/events/stream"))).toBe(false);
+
+    work.state.failNextCursorStatus = 500;
+    await retry.click();
+    await expect(retry).toBeVisible();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("middleman:kata:active_daemon"))).toBe("home");
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem("middleman:kata:workspace-state/v1")))
+      .toBe(JSON.stringify(workState));
+    await expect(page).toHaveURL(/daemon=work/);
+    expect(work.state.seenPaths.some((path) => path.startsWith("GET /api/v1/events/stream"))).toBe(false);
+
+    await retry.click();
+
+    await expect(page).toHaveURL(/\/kata\?issue=issue-q3$/);
+    await expect(page.getByTestId("daemon-chip")).toContainText("work");
+    await expect(page.getByRole("heading", { name: "Email Susan re: Q3" })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("middleman:kata:active_daemon"))).toBe("work");
+    await expect.poll(() => work.state.streams.size).toBeGreaterThan(0);
+    expect(work.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/events/stream"))).toHaveLength(1);
   } finally {
     await server.stop();
     kataHome.restore();
@@ -3477,11 +3829,11 @@ test("missing routed issue leaves its accepted daemon workspace usable", async (
   try {
     await page.goto(`${server.info.base_url}/kata?issue=issue-missing&daemon=e2e`);
 
-    await expect(page).toHaveURL(/\/kata\?issue=issue-missing$/);
+    await expect(page).toHaveURL(/\/kata$/);
     await expect(page.getByTestId("daemon-chip")).toContainText("e2e");
     await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toBeVisible();
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Select a task");
-    await expect(page.getByRole("alert")).toContainText("Kata task not found");
+    await expect(page.locator(".kata-request-error")).toBeHidden();
     await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/events/stream");
   } finally {
     await server.stop();
@@ -3583,6 +3935,7 @@ test("kata routed daemon open keeps the project scope on the target daemon", asy
     await expect(page.getByTestId("daemon-chip")).toContainText("work");
     await expect(page).toHaveURL(/scope=project-shared/);
     await expect(page).not.toHaveURL(/daemon=/);
+    await expect(page).toHaveURL(/scope=project-shared/);
     // The scoped list must load from the target daemon: the routed scope
     // may not be dropped into an unscoped backlog after the switch.
     await expect(taskList.getByRole("button", { name: /Work scoped task/ })).toBeVisible();
@@ -4113,6 +4466,113 @@ test("kata task list selects visible parent when child sorts first", async ({ pa
   }
 });
 
+test("kata workspace restores filtered expanded child selection after leaving Kata", async ({ page }) => {
+  const fixture = workspaceStateFixture();
+  const backend = await startKataBackend({ issues: fixture.issues, projects: fixture.projects });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await seedRestoredKataWorkspace(page, server.info.base_url);
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem("middleman:kata:workspace-state/v1")))
+      .toContain(fixture.child.uid);
+    const focusUIDBeforeLeave = await page.evaluate(() => document.activeElement?.getAttribute("data-uid"));
+    expect(focusUIDBeforeLeave).toBe(fixture.child.uid);
+
+    await appHeaderTab(page, "PRs").click();
+    await expect(page).toHaveURL(/\/pulls/);
+    await page.goto(`${server.info.base_url}/kata`);
+
+    await expect(page.getByRole("button", { name: /Project scope: Kata/ })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Status: All" })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Owner" })).toHaveValue("Susan");
+    await expect(page.getByRole("textbox", { name: "Label" })).toHaveValue("work");
+    await expect(page.getByLabel("Search tasks")).toHaveValue("child");
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/issues/issue-child-workflow-parent");
+    const parentRow = page.getByRole("button", { name: /Parent child workflow/ });
+    const childRow = page.getByRole("button", { name: /Child child workflow/ });
+    await expect(parentRow).toHaveAttribute("aria-expanded", "true");
+    await expect(childRow).toHaveAttribute("aria-current", "true");
+    await expect(childRow).toBeInViewport();
+    await expect(page.getByRole("heading", { name: "Child child workflow" })).toBeVisible();
+    await expect(childRow).not.toBeFocused();
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-uid"))).not.toBe(focusUIDBeforeLeave);
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
+test("kata workspace reconstructs an omitted parent for restored child selection", async ({ page }) => {
+  const fixture = workspaceStateFixture();
+  const backend = await startKataBackend({ issues: fixture.issues, projects: fixture.projects });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await seedRestoredKataWorkspace(page, server.info.base_url);
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem("middleman:kata:workspace-state/v1")))
+      .toContain(fixture.child.uid);
+    const searchPath = "GET /api/v1/projects/2/search?q=child";
+    const searchesBeforeRemount = backend.state.seenPaths.filter((path) => path === searchPath).length;
+    backend.state.searchIssueUIDs = new Set([fixture.child.uid]);
+    const focusUIDBeforeLeave = await page.evaluate(() => document.activeElement?.getAttribute("data-uid"));
+    expect(focusUIDBeforeLeave).toBe(fixture.child.uid);
+
+    await appHeaderTab(page, "PRs").click();
+    await page.goto(`${server.info.base_url}/kata`);
+
+    await expect
+      .poll(() => backend.state.seenPaths.filter((path) => path === searchPath).length)
+      .toBeGreaterThan(searchesBeforeRemount);
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/issues/issue-child-workflow-parent");
+    const parentRow = page.getByRole("button", { name: /Parent child workflow/ });
+    const childRow = page.getByRole("button", { name: /Child child workflow/ });
+    await expect(parentRow).toHaveAttribute("aria-expanded", "true");
+    await expect(childRow).toHaveAttribute("aria-current", "true");
+    await expect(childRow).toBeInViewport();
+    await expect(page.getByRole("heading", { name: "Child child workflow" })).toBeVisible();
+    await expect(childRow).not.toBeFocused();
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-uid"))).not.toBe(focusUIDBeforeLeave);
+  } finally {
+    backend.state.searchIssueUIDs = null;
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
+test("kata explicit URL wins over persisted selection without clearing filters", async ({ page }) => {
+  const fixture = workspaceStateFixture();
+  const backend = await startKataBackend({ issues: fixture.issues, projects: fixture.projects });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await seedRestoredKataWorkspace(page, server.info.base_url, { projectScoped: false });
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem("middleman:kata:workspace-state/v1")))
+      .toContain(fixture.child.uid);
+
+    await appHeaderTab(page, "PRs").click();
+    await page.goto(`${server.info.base_url}/kata?view=inbox&issue=issue-rent`);
+
+    await expect(page.getByRole("heading", { name: "Inbox", level: 2, exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Owner" })).toHaveValue("Susan");
+    await expect(page.getByRole("textbox", { name: "Label" })).toHaveValue("work");
+    await expect(page.getByLabel("Search tasks")).toHaveValue("child");
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata workspace switches between configured external daemons", async ({ page }) => {
   const homeProject = {
     id: 101,
@@ -4192,6 +4652,7 @@ test("kata workspace switches between configured external daemons", async ({ pag
     await expect(projectRows.filter({ hasText: /^Work\s+1$/ })).toBeVisible();
     await expect(projectRows.filter({ hasText: /^Home\s+1$/ })).toHaveCount(0);
   } finally {
+    await page.close();
     await server.stop();
     kataHome.restore();
     await home.close();
@@ -4463,7 +4924,7 @@ test("kata project scope stays on the starting default daemon when configuration
   }
 });
 
-test("kata daemon switch restarts the target stream after stale route churn", async ({ page }) => {
+test("kata route change cancels a stalled daemon switch and keeps the accepted stream", async ({ page }) => {
   let releaseEvents = () => {};
   const stalledEvents = new Promise<void>((resolve) => {
     releaseEvents = resolve;
@@ -4482,19 +4943,6 @@ test("kata daemon switch restarts the target stream after stale route churn", as
     metadata: { area: "Work", sidebar_order: 1 },
     open_count: 1,
   };
-  const queuedWorkIssue = issueSummary({
-    id: 2020,
-    uid: "issue-work-queued",
-    project_id: workProject.id,
-    project_uid: workProject.uid,
-    project_name: workProject.name,
-    short_id: "work-2",
-    qualified_id: "Work#work-2",
-    title: "Verify the rollout",
-    body: "Selected by browser history during the daemon switch.",
-    labels: ["work"],
-    metadata: { scheduled_on: today },
-  });
   const home = await startKataBackend({
     projects: [homeProject],
     issues: [
@@ -4529,7 +4977,6 @@ test("kata daemon switch restarts the target stream after stale route churn", as
         labels: ["work"],
         metadata: { scheduled_on: today },
       }),
-      queuedWorkIssue,
     ],
     eventsBarrier: stalledEvents,
   });
@@ -4550,33 +4997,77 @@ test("kata daemon switch restarts the target stream after stale route churn", as
     await page.getByTestId("daemon-chip").click();
     await page.getByTestId("daemon-row-work").click();
     await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/events?limit=1000");
-    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Visible only from the work daemon.");
+    await expect(page.getByTestId("daemon-chip")).toContainText("home");
+    await expect(page.getByRole("button", { name: /Rake the yard/ })).toBeVisible();
 
     await page.evaluate(() => {
-      window.history.pushState({}, "", "/kata?view=all&scope=project-work&issue=issue-work-queued");
+      window.history.pushState({}, "", "/kata?view=all&scope=project-home&issue=issue-home-yard");
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
-    await expect(page).toHaveURL(/scope=project-work/);
+    await expect(page).toHaveURL(/scope=project-home/);
     await page.evaluate(
       () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
     );
     expect(work.state.seenPaths).not.toContain("GET /api/v1/projects/202/issues?status=open");
     releaseEvents();
 
-    await expect(page.getByTestId("daemon-chip")).toContainText("work");
-    await expect(page).toHaveURL(/scope=project-work/);
-    await expect(page.getByRole("button", { name: /Ship the release/ })).toBeVisible();
-    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/issues/issue-work-queued");
-    await expect(page.getByRole("region", { name: "Task detail" })).toContainText(queuedWorkIssue.body);
-    // The queued route also changed the project scope, so the accepted
-    // daemon must serve the scoped backlog; the abandoned daemon must not.
-    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/projects/202/issues?status=open");
-    expect(home.state.seenPaths).not.toContain("GET /api/v1/projects/202/issues?status=open");
+    await expect(page.getByTestId("daemon-chip")).toContainText("home");
+    await expect(page).toHaveURL(/scope=project-home/);
+    await expect(page.getByRole("button", { name: /Rake the yard/ })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Visible only from the home daemon.");
+    expect(work.state.seenPaths).not.toContain("GET /api/v1/issues/issue-work-queued");
+    expect(work.state.seenPaths).not.toContain("GET /api/v1/projects/202/issues?status=open");
     await expect
-      .poll(() => work.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/events/stream")).length)
-      .toBeGreaterThanOrEqual(1);
+      .poll(() => home.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/events/stream")).length)
+      .toBeGreaterThanOrEqual(2);
   } finally {
     releaseEvents();
+    await server.stop();
+    kataHome.restore();
+    await home.close();
+    await work.close();
+  }
+});
+
+test("kata route change ignores a stalled daemon-switch rejection on the same mount", async ({ page }) => {
+  let releaseProjects = () => {};
+  const stalledProjects = new Promise<void>((resolve) => {
+    releaseProjects = resolve;
+  });
+  const home = await startKataBackend();
+  const work = await startKataBackend({ projectsBarrier: stalledProjects, failNextProjectsStatus: 500 });
+  const kataHome = await configureKataHomeDaemons(
+    [
+      { name: "home", url: home.url },
+      { name: "work", url: work.url },
+    ],
+    "home",
+  );
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata`);
+    await expect(page.getByTestId("daemon-chip")).toContainText("home");
+    await expect(page.getByRole("button", { name: /Pay rent/ })).toBeVisible();
+
+    await page.getByTestId("daemon-chip").click();
+    await page.getByTestId("daemon-row-work").click();
+    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/projects?include=stats");
+
+    await page.evaluate(() => {
+      window.history.pushState({}, "", "/kata?view=inbox");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    releaseProjects();
+
+    await expect(page).toHaveURL(/view=inbox/);
+    await expect(page.getByTestId("daemon-chip")).toContainText("home");
+    await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+    await expect(page.locator(".kata-request-error")).toBeHidden();
+    expect(work.state.seenPaths.some((path) => path.startsWith("GET /api/v1/events/stream"))).toBe(false);
+    await expect.poll(() => home.state.streams.size).toBeGreaterThan(0);
+  } finally {
+    releaseProjects();
     await server.stop();
     kataHome.restore();
     await home.close();
@@ -4747,6 +5238,7 @@ test("kata daemon switch clears stale task route when the target daemon has no t
     await expect(page.getByRole("alert")).toHaveCount(0);
     await expect(page.getByRole("region", { name: "Task detail" })).not.toContainText("Rake the yard");
   } finally {
+    await page.close();
     await server.stop();
     kataHome.restore();
     await home.close();
@@ -5332,6 +5824,98 @@ test("docs task links switch an accepted workspace to the folder-bound external 
     await page.goBack();
     await expect(page).toHaveURL(/\/docs\?folder=work-notes&doc=bound-link\.md/);
     await expect(page.getByRole("heading", { name: "Bound Link" })).toBeVisible();
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await home.close();
+    await work.close();
+  }
+});
+
+test("docs task links resolve distinct task IDs through the folder-bound external daemon", async ({ page }) => {
+  const homeProject = {
+    id: 101,
+    uid: "project-home",
+    name: "Home",
+    metadata: { area: "Personal", sidebar_order: 1 },
+    open_count: 1,
+  };
+  const workProject = {
+    id: 202,
+    uid: "project-work",
+    name: "Work",
+    metadata: { area: "Work", sidebar_order: 1 },
+    open_count: 1,
+  };
+  const home = await startKataBackend({
+    projects: [homeProject],
+    issues: [
+      issueSummary({
+        id: 1011,
+        uid: "issue-home",
+        project_id: homeProject.id,
+        project_uid: homeProject.uid,
+        project_name: homeProject.name,
+        short_id: "shared-1",
+        qualified_id: "Home#shared-1",
+        title: "Default daemon task",
+        body: "This task should not open from the bound docs folder.",
+        labels: ["home"],
+      }),
+    ],
+  });
+  const work = await startKataBackend({
+    projects: [workProject],
+    issues: [
+      issueSummary({
+        id: 2021,
+        uid: "issue-work",
+        project_id: workProject.id,
+        project_uid: workProject.uid,
+        project_name: workProject.name,
+        short_id: "shared-1",
+        qualified_id: "Work#shared-1",
+        title: "Bound daemon task",
+        body: "Opened through the folder daemon binding.",
+        labels: ["work"],
+      }),
+    ],
+  });
+  const kataHome = await configureKataHomeDaemons(
+    [
+      { name: "home", url: home.url },
+      { name: "work", url: work.url },
+    ],
+    "home",
+  );
+  const docsRoot = await createDocsFixture();
+  await writeFile(path.join(docsRoot, "bound-link.md"), ["# Bound Link", "", "Open #shared-1 here.", ""].join("\n"));
+  const server = await startIsolatedE2EServer();
+
+  try {
+    const res = await page.request.post(`${server.info.base_url}/api/v1/docs/folders`, {
+      data: {
+        id: "work-notes",
+        name: "Work Notes",
+        path: docsRoot,
+        daemon: "work",
+      },
+    });
+    expect(res.status()).toBe(201);
+    await expect(res.json()).resolves.toMatchObject({ folder: { daemon: "work" } });
+
+    await page.goto(`${server.info.base_url}/docs?folder=work-notes&doc=bound-link.md`);
+    await expect(page.getByRole("heading", { name: "Bound Link" })).toBeVisible();
+
+    await page.getByRole("link", { name: "#shared-1" }).click();
+
+    await expect(page).toHaveURL(/\/kata\?issue=issue-work/);
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText(
+      "Opened through the folder daemon binding.",
+    );
+    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/issues?status=open");
+    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/issues/issue-work");
+    expect(home.state.seenPaths).not.toContain("GET /api/v1/issues/issue-home");
   } finally {
     await server.stop();
     kataHome.restore();
@@ -6158,7 +6742,7 @@ test("kata detail title and description edit through the configured external dae
   }
 });
 
-test("kata complete dialog closes and reopens through the configured external daemon", async ({ page }) => {
+test("kata complete dialog closes through the configured external daemon", async ({ page }) => {
   const backend = await startKataBackend();
   const kataHome = await configureKataHome(backend.url);
   const server = await startIsolatedE2EServer();
@@ -6195,7 +6779,8 @@ test("kata complete dialog closes and reopens through the configured external da
     await dialog.getByPlaceholder(/What was done/).fill("Done via wire transfer");
     await dialog.getByRole("button", { name: "Complete" }).click();
 
-    await expect(detail.getByRole("button", { name: "Reopen" })).toBeVisible();
+    await expect(detail.getByText("Select a task")).toBeVisible();
+    await expect.poll(() => new URL(page.url()).searchParams.get("issue")).toBeNull();
     await expect(financeCount).toHaveText("0");
     await expect
       .poll(() => backend.state.seenPaths)
@@ -6206,14 +6791,53 @@ test("kata complete dialog closes and reopens through the configured external da
       closed_reason: "done",
       closed_message: "Done via wire transfer",
     });
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
+test("kata closed task can be reopened from Logbook through the configured external daemon", async ({ page }) => {
+  const backend = await startKataBackend();
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?issue=issue-rent`);
+    const detail = page.getByRole("region", { name: "Task detail" });
+    await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+
+    await detail.getByRole("button", { name: "Complete" }).click();
+    const dialog = page.getByRole("dialog", { name: "Complete task" });
+    await dialog.getByRole("button", { name: "Complete" }).click();
+    await expect(detail.getByText("Select a task")).toBeVisible();
+    await expect
+      .poll(
+        () =>
+          backend.state.seenPaths.filter((path) => path === "POST /api/v1/projects/1/issues/issue-rent/actions/close")
+            .length,
+      )
+      .toBe(1);
+
+    await page.getByRole("button", { name: "Logbook" }).click();
+    const taskList = page.locator(".kata-list");
+    await expect(page.getByRole("heading", { name: "Logbook" })).toBeVisible();
+    await taskList.getByRole("button", { name: /Pay rent/ }).click();
+    await expect(detail.getByRole("button", { name: "Reopen" })).toBeVisible();
 
     await detail.getByRole("button", { name: "Reopen" }).click();
-    await expect(detail.getByRole("button", { name: "Complete" })).toBeVisible();
-    await expect(financeCount).toHaveText("1");
+
+    await expect(detail.getByText("Select a task")).toBeVisible();
+    await expect(taskList.getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
     await expect
-      .poll(() => backend.state.seenPaths)
-      .toContain("POST /api/v1/projects/1/issues/issue-rent/actions/reopen");
-    expect(issue?.status).toBe("open");
+      .poll(
+        () =>
+          backend.state.seenPaths.filter((path) => path === "POST /api/v1/projects/1/issues/issue-rent/actions/reopen")
+            .length,
+      )
+      .toBe(1);
+    expect(backend.state.issues.find((item) => item.uid === "issue-rent")?.status).toBe("open");
   } finally {
     await server.stop();
     kataHome.restore();
@@ -6239,7 +6863,8 @@ test("kata complete dialog submits alternate close reasons through the configure
     await dialog.getByPlaceholder(/What was done/).fill("  landlord switched autopay  ");
     await dialog.getByRole("button", { name: "Complete" }).click();
 
-    await expect(detail.getByRole("button", { name: "Reopen" })).toBeVisible();
+    await expect(detail.getByText("Select a task")).toBeVisible();
+    await expect.poll(() => new URL(page.url()).searchParams.get("issue")).toBeNull();
     const issue = backend.state.issues.find((item) => item.uid === "issue-rent");
     expect(issue?.metadata).toMatchObject({
       closed_reason: "wontfix",
@@ -6282,7 +6907,8 @@ test("kata overflow menu reveals checklist and deletes through the configured ex
     await expect(dialog.getByText("Email Susan re: Q3")).toBeVisible();
     await dialog.getByRole("button", { name: "Delete" }).click();
 
-    await expect(detail.getByRole("button", { name: "Reopen" })).toBeVisible();
+    await expect(detail.getByText("Select a task")).toBeVisible();
+    await expect.poll(() => new URL(page.url()).searchParams.get("issue")).toBeNull();
     await expect(kataCount).toHaveText("0");
     await expect.poll(() => backend.state.seenPaths).toContain("POST /api/v1/projects/2/issues/issue-q3/actions/close");
     const issue = backend.state.issues.find((item) => item.uid === "issue-q3");

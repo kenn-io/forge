@@ -699,6 +699,503 @@ describe("KataIssueList", () => {
     expect(screen.getByRole("button", { name: /Parent task/ }).getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("expands restored ancestors root-first and scrolls the selected row nearest", async () => {
+    const root = task({
+      uid: "issue-reveal-root",
+      short_id: "reveal-root",
+      qualified_id: "Finances#reveal-root",
+      title: "Root task",
+    });
+    const parent = task({
+      uid: "issue-reveal-parent",
+      short_id: "reveal-parent",
+      qualified_id: "Finances#reveal-parent",
+      title: "Parent task",
+      parent_short_id: root.short_id,
+    });
+    const child = task({
+      uid: "issue-reveal-child",
+      short_id: "reveal-child",
+      qualified_id: "Finances#reveal-child",
+      title: "Child task",
+      parent_short_id: parent.short_id,
+    });
+    const scrollIntoView = vi.fn();
+    vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(scrollIntoView);
+    const api = {
+      issue: vi.fn(async (uid: string) => (uid === root.uid ? apiDetail(root, [parent]) : apiDetail(parent, [child]))),
+    } as unknown as KataTaskAPI;
+
+    const { rerender } = render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([child]),
+        selectedIssueUID: child.uid,
+        loading: false,
+        api,
+        onSelect: () => {},
+      },
+    });
+
+    await rerender({
+      currentView: viewWithIssues([child]),
+      selectedIssueUID: child.uid,
+      loading: false,
+      api,
+      revealRequest: { uid: child.uid, chain: [root, parent, child], generation: 1 },
+      onSelect: () => {},
+    });
+
+    const rootRow = await screen.findByRole("button", { name: /Root task/ });
+    const childRow = screen.getByRole("button", { name: /Child task/ });
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }));
+    expect(rootRow.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: /Parent task/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getAllByRole("button", { name: /Child task/ })).toHaveLength(1);
+    expect(document.activeElement).not.toBe(childRow);
+  });
+
+  it("merges a restored reveal chain with authoritative siblings during expand all", async () => {
+    const root = task({
+      uid: "issue-reveal-root",
+      short_id: "reveal-root",
+      qualified_id: "Finances#reveal-root",
+      title: "Root task",
+      child_counts: { open: 2, total: 2 },
+    });
+    const restoredChild = task({
+      uid: "issue-reveal-child",
+      short_id: "reveal-child",
+      qualified_id: "Finances#reveal-child",
+      title: "Restored child",
+      child_counts: { open: 1, total: 1 },
+      parent_short_id: root.short_id,
+    });
+    const restoredGrandchild = task({
+      uid: "issue-reveal-restored-grandchild",
+      short_id: "reveal-restored-grandchild",
+      qualified_id: "Finances#reveal-restored-grandchild",
+      title: "Restored grandchild",
+      parent_short_id: restoredChild.short_id,
+    });
+    const sibling = task({
+      uid: "issue-reveal-sibling",
+      short_id: "reveal-sibling",
+      qualified_id: "Finances#reveal-sibling",
+      title: "Sibling task",
+      child_counts: { open: 1, total: 1 },
+      parent_short_id: root.short_id,
+    });
+    const grandchild = task({
+      uid: "issue-reveal-grandchild",
+      short_id: "reveal-grandchild",
+      qualified_id: "Finances#reveal-grandchild",
+      title: "Sibling grandchild",
+      parent_short_id: sibling.short_id,
+    });
+    const api = {
+      issue: vi.fn(async (uid: string) => {
+        if (uid === root.uid) return apiDetail(root, [sibling, restoredChild]);
+        if (uid === restoredChild.uid) return apiDetail(restoredChild, [restoredGrandchild]);
+        return apiDetail(sibling, [grandchild]);
+      }),
+    } as unknown as KataTaskAPI;
+
+    const { rerender } = render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([restoredChild]),
+        selectedIssueUID: restoredChild.uid,
+        loading: false,
+        api,
+        onSelect: () => {},
+      },
+    });
+
+    await rerender({
+      currentView: viewWithIssues([restoredChild]),
+      selectedIssueUID: restoredChild.uid,
+      loading: false,
+      api,
+      revealRequest: { uid: restoredChild.uid, chain: [root, restoredChild], generation: 1 },
+      onSelect: () => {},
+    });
+
+    expect(await screen.findByRole("button", { name: /Sibling task/ })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /Restored child/ })).toHaveLength(1);
+    expect(api.issue).toHaveBeenCalledWith(root.uid);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Expand all" }));
+
+    expect(await screen.findByRole("button", { name: /Sibling grandchild/ })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /Restored grandchild/ })).toBeTruthy();
+    expect(api.issue).toHaveBeenCalledWith(sibling.uid);
+    expect(api.issue).toHaveBeenCalledWith(restoredChild.uid);
+    expect(screen.getAllByRole("button", { name: /Restored child/ })).toHaveLength(1);
+
+    await rerender({
+      currentView: viewWithIssues([root]),
+      selectedIssueUID: null,
+      loading: false,
+      api,
+      revealRequest: null,
+      onSelect: () => {},
+    });
+    expect(screen.getByRole("button", { name: /Restored child/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Restored grandchild/ })).toBeTruthy();
+  });
+
+  it("keeps a contextual successor visible without admitting unrelated filtered siblings", async () => {
+    const root = task({
+      uid: "issue-filtered-reveal-root",
+      short_id: "filtered-reveal-root",
+      qualified_id: "Finances#filtered-reveal-root",
+      title: "Filtered reveal root",
+      child_counts: { open: 1, total: 3 },
+    });
+    const contextualChild = task({
+      uid: "issue-filtered-contextual-child",
+      short_id: "filtered-contextual-child",
+      qualified_id: "Finances#filtered-contextual-child",
+      title: "Closed contextual child",
+      status: "closed",
+      parent_short_id: root.short_id,
+    });
+    const openSibling = task({
+      uid: "issue-filtered-open-sibling",
+      short_id: "filtered-open-sibling",
+      qualified_id: "Finances#filtered-open-sibling",
+      title: "Open sibling",
+      parent_short_id: root.short_id,
+    });
+    const closedSibling = task({
+      uid: "issue-filtered-closed-sibling",
+      short_id: "filtered-closed-sibling",
+      qualified_id: "Finances#filtered-closed-sibling",
+      title: "Unrelated closed sibling",
+      status: "closed",
+      parent_short_id: root.short_id,
+    });
+    const api = apiWithDetail(root, [closedSibling, openSibling, contextualChild]);
+
+    const { rerender } = render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([root]),
+        selectedIssueUID: contextualChild.uid,
+        loading: false,
+        statusFilter: "open",
+        api,
+        onSelect: () => {},
+      },
+    });
+
+    await rerender({
+      currentView: viewWithIssues([root]),
+      selectedIssueUID: contextualChild.uid,
+      loading: false,
+      statusFilter: "open",
+      api,
+      revealRequest: {
+        uid: contextualChild.uid,
+        chain: [root, contextualChild],
+        generation: 1,
+      },
+      onSelect: () => {},
+    });
+
+    expect(await screen.findByRole("button", { name: /Closed contextual child/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Open sibling/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Unrelated closed sibling/ })).toBeNull();
+  });
+
+  it("drops a synthetic reveal successor and its owned expansion after reveal cleanup", async () => {
+    const root = task({
+      uid: "issue-reveal-root-cleanup",
+      short_id: "reveal-root-cleanup",
+      qualified_id: "Finances#reveal-root-cleanup",
+      title: "Cleanup root",
+      child_counts: { open: 1, total: 1 },
+    });
+    const restoredChild = task({
+      uid: "issue-reveal-child-cleanup",
+      short_id: "reveal-child-cleanup",
+      qualified_id: "Finances#reveal-child-cleanup",
+      title: "Temporary restored child",
+      parent_short_id: root.short_id,
+    });
+    const api = apiWithDetail(root, []);
+
+    const { rerender } = render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([restoredChild]),
+        selectedIssueUID: restoredChild.uid,
+        loading: false,
+        api,
+        onSelect: () => {},
+      },
+    });
+
+    await rerender({
+      currentView: viewWithIssues([restoredChild]),
+      selectedIssueUID: restoredChild.uid,
+      loading: false,
+      api,
+      revealRequest: { uid: restoredChild.uid, chain: [root, restoredChild], generation: 1 },
+      onSelect: () => {},
+    });
+    expect(await screen.findByRole("button", { name: /Temporary restored child/ })).toBeTruthy();
+
+    await rerender({
+      currentView: viewWithIssues([root]),
+      selectedIssueUID: null,
+      loading: false,
+      api,
+      revealRequest: null,
+      onSelect: () => {},
+    });
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Temporary restored child/ })).toBeNull());
+    expect(screen.getByRole("button", { name: /Cleanup root/ }).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("releases the previous reveal expansion when a newer chain supersedes it", async () => {
+    const oldRoot = task({
+      uid: "issue-old-reveal-root",
+      short_id: "old-reveal-root",
+      qualified_id: "Finances#old-reveal-root",
+      title: "Old reveal root",
+      child_counts: { open: 1, total: 1 },
+    });
+    const oldChild = task({
+      uid: "issue-old-reveal-child",
+      short_id: "old-reveal-child",
+      qualified_id: "Finances#old-reveal-child",
+      title: "Old reveal child",
+      parent_short_id: oldRoot.short_id,
+    });
+    const newRoot = task({
+      uid: "issue-new-reveal-root",
+      short_id: "new-reveal-root",
+      qualified_id: "Finances#new-reveal-root",
+      title: "New reveal root",
+      child_counts: { open: 1, total: 1 },
+    });
+    const newChild = task({
+      uid: "issue-new-reveal-child",
+      short_id: "new-reveal-child",
+      qualified_id: "Finances#new-reveal-child",
+      title: "New reveal child",
+      parent_short_id: newRoot.short_id,
+    });
+    const api = {
+      issue: vi.fn(async (uid: string) =>
+        uid === oldRoot.uid ? apiDetail(oldRoot, [oldChild]) : apiDetail(newRoot, [newChild]),
+      ),
+    } as unknown as KataTaskAPI;
+
+    const { rerender } = render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([oldRoot, newRoot]),
+        selectedIssueUID: oldChild.uid,
+        loading: false,
+        api,
+        onSelect: () => {},
+      },
+    });
+
+    await rerender({
+      currentView: viewWithIssues([oldRoot, newRoot]),
+      selectedIssueUID: oldChild.uid,
+      loading: false,
+      api,
+      revealRequest: { uid: oldChild.uid, chain: [oldRoot, oldChild], generation: 1 },
+      onSelect: () => {},
+    });
+    expect(await screen.findByRole("button", { name: /Old reveal child/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Old reveal root/ }).getAttribute("aria-expanded")).toBe("true");
+
+    await rerender({
+      currentView: viewWithIssues([oldRoot, newRoot]),
+      selectedIssueUID: newChild.uid,
+      loading: false,
+      api,
+      revealRequest: { uid: newChild.uid, chain: [newRoot, newChild], generation: 2 },
+      onSelect: () => {},
+    });
+
+    expect(await screen.findByRole("button", { name: /New reveal child/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Old reveal root/ }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("button", { name: /New reveal root/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.queryByRole("button", { name: /Old reveal child/ })).toBeNull();
+  });
+
+  it("preserves a user-owned expansion when reveal cleanup crosses the same chain", async () => {
+    const root = task({
+      uid: "issue-user-expanded-root",
+      short_id: "user-expanded-root",
+      qualified_id: "Finances#user-expanded-root",
+      title: "User expanded root",
+      child_counts: { open: 1, total: 1 },
+    });
+    const child = task({
+      uid: "issue-user-expanded-child",
+      short_id: "user-expanded-child",
+      qualified_id: "Finances#user-expanded-child",
+      title: "User expanded child",
+      parent_short_id: root.short_id,
+    });
+    const api = apiWithDetail(root, [child]);
+
+    const { rerender } = render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([root]),
+        selectedIssueUID: null,
+        loading: false,
+        api,
+        onSelect: () => {},
+      },
+    });
+
+    const rootRow = screen.getByRole("button", { name: /User expanded root/ });
+    await fireEvent.keyDown(rootRow, { key: "ArrowRight" });
+    expect(await screen.findByRole("button", { name: /User expanded child/ })).toBeTruthy();
+
+    await rerender({
+      currentView: viewWithIssues([root]),
+      selectedIssueUID: child.uid,
+      loading: false,
+      api,
+      revealRequest: { uid: child.uid, chain: [root, child], generation: 1 },
+      onSelect: () => {},
+    });
+    await rerender({
+      currentView: viewWithIssues([root]),
+      selectedIssueUID: null,
+      loading: false,
+      api,
+      revealRequest: null,
+      onSelect: () => {},
+    });
+
+    expect(screen.getByRole("button", { name: /User expanded root/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: /User expanded child/ })).toBeTruthy();
+  });
+
+  it("continues a seeded reveal chain when authoritative refresh fails", async () => {
+    const root = task({
+      uid: "issue-reveal-root-failure",
+      short_id: "reveal-root-failure",
+      qualified_id: "Finances#reveal-root-failure",
+      title: "Fallback root",
+    });
+    const child = task({
+      uid: "issue-reveal-child-failure",
+      short_id: "reveal-child-failure",
+      qualified_id: "Finances#reveal-child-failure",
+      title: "Fallback child",
+      parent_short_id: root.short_id,
+    });
+    const api = {
+      issue: vi.fn(async () => {
+        throw new Error("child refresh failed");
+      }),
+    } as unknown as KataTaskAPI;
+
+    const { rerender } = render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([child]),
+        selectedIssueUID: child.uid,
+        loading: false,
+        api,
+        onSelect: () => {},
+      },
+    });
+
+    await rerender({
+      currentView: viewWithIssues([child]),
+      selectedIssueUID: child.uid,
+      loading: false,
+      api,
+      revealRequest: { uid: child.uid, chain: [root, child], generation: 1 },
+      onSelect: () => {},
+    });
+
+    const rootRow = await screen.findByRole("button", { name: /Fallback root/ });
+    expect(await screen.findByRole("button", { name: /Fallback child/ })).toBeTruthy();
+    expect(rootRow.getAttribute("aria-expanded")).toBe("true");
+    expect(api.issue).toHaveBeenCalledWith(root.uid);
+  });
+
+  it("keeps group headings while scrolling to a restored top-level task", async () => {
+    const scrollIntoView = vi.fn();
+    vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(scrollIntoView);
+
+    const { rerender } = render(KataIssueList, {
+      props: {
+        currentView,
+        selectedIssueUID: baseIssues[0]!.uid,
+        loading: false,
+        onSelect: () => {},
+      },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: /Sort by Priority/ }));
+
+    await rerender({
+      currentView,
+      selectedIssueUID: baseIssues[0]!.uid,
+      loading: false,
+      revealRequest: { uid: baseIssues[0]!.uid, chain: [baseIssues[0]!], generation: 1 },
+      onSelect: () => {},
+    });
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }));
+    expect(screen.getByRole("heading", { level: 3, name: /^Overdue\s+1$/ })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 3, name: /^Today\s+1$/ })).toBeTruthy();
+  });
+
+  it("keeps a restored nested row visible after selecting it", async () => {
+    const parent = task({
+      uid: "issue-reveal-parent",
+      short_id: "reveal-parent",
+      qualified_id: "Finances#reveal-parent",
+      title: "Parent task",
+      child_counts: { open: 1, total: 1 },
+    });
+    const child = task({
+      uid: "issue-reveal-child",
+      short_id: "reveal-child",
+      qualified_id: "Finances#reveal-child",
+      title: "Child task",
+      parent_short_id: parent.short_id,
+    });
+    const onSelect = vi.fn();
+    const api = apiWithDetail(parent, [child]);
+
+    const { rerender } = render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([parent, child]),
+        selectedIssueUID: child.uid,
+        loading: false,
+        api,
+        onSelect,
+      },
+    });
+
+    await rerender({
+      currentView: viewWithIssues([parent, child]),
+      selectedIssueUID: child.uid,
+      loading: false,
+      api,
+      revealRequest: { uid: child.uid, chain: [parent, child], generation: 1 },
+      onSelect,
+    });
+
+    const childRow = await screen.findByRole("button", { name: /Child task/ });
+    await fireEvent.click(childRow);
+
+    await waitFor(() => expect(onSelect).toHaveBeenCalledWith(child));
+    expect(screen.getByRole("button", { name: /Child task/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Parent task/ }).getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("ignores stale child loads that finish after the list resets", async () => {
     const parent = task({
       uid: "issue-parent",

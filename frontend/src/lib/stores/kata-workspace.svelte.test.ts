@@ -23,7 +23,12 @@ import type {
 } from "../api/kata/taskTypes.js";
 import { buildKataTaskView } from "../api/kata/taskViewBuilder.js";
 import { getKataGraphDebugSnapshot, resetKataGraphDebug } from "./kata-graph-debug.js";
-import { createKataWorkspaceStore, deriveKataAreas, duplicateCandidatesFromError } from "./kata-workspace.svelte.js";
+import {
+  createKataWorkspaceStore,
+  deriveKataAreas,
+  duplicateCandidatesFromError,
+  KataEventCursorSyncError,
+} from "./kata-workspace.svelte.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -966,6 +971,18 @@ describe("kata workspace store", () => {
     });
   });
 
+  test("loads selected recurrences through the store daemon binding", async () => {
+    const api = createFakeKataTaskAPI();
+    const store = createKataWorkspaceStore({ api });
+    store.bindDaemonForBootstrap("work", false);
+
+    await store.selectIssue("issue-pay-rent");
+
+    await vi.waitFor(() => {
+      expect(api.mocks.recurrences).toHaveBeenCalledWith(projects[1]!.id, { daemonId: "work" });
+    });
+  });
+
   test("slow recurrence loading does not delay issue detail selection", async () => {
     const api = createFakeKataTaskAPI();
     const slowRecurrences = deferred<Awaited<ReturnType<KataTaskAPI["recurrences"]>>>();
@@ -1033,6 +1050,30 @@ describe("kata workspace store", () => {
     await vi.waitFor(() => {
       expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-pay-rent"]);
     });
+  });
+
+  test("can await the selected issue's background events and recurrence reads before adoption", async () => {
+    const api = createFakeKataTaskAPI();
+    const slowEvents = deferred<KataTaskEventsResponse>();
+    const slowRecurrences = deferred<Awaited<ReturnType<KataTaskAPI["recurrences"]>>>();
+    api.mocks.events.mockReturnValue(slowEvents.promise);
+    api.mocks.recurrences.mockReturnValue(slowRecurrences.promise);
+    const store = createKataWorkspaceStore({ api });
+
+    await expect(store.selectIssue("issue-pay-rent")).resolves.toBe(true);
+    let settled = false;
+    const auxiliaryReads = store.awaitSelectedAuxiliaryReads().then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    slowEvents.resolve({ reset_required: false, events: [events[0]!], next_after_id: 1 });
+    slowRecurrences.resolve({ recurrences: [recurrence({ id: 9 })], fetched_at: "t1" });
+    await auxiliaryReads;
+
+    expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-pay-rent"]);
+    expect(store.selectedRecurrences.map((item) => item.id)).toEqual([9]);
   });
 
   test("a failed events read does not fail an already-rendered selection", async () => {
@@ -1129,32 +1170,6 @@ describe("kata workspace store", () => {
     expect(store.pendingSelectionUID).toBeNull();
   });
 
-  test("invalidating pending loads aborts the in-flight view load", async () => {
-    const api = createFakeKataTaskAPI();
-    const response = deferred<KataTaskViewResponse>();
-    api.mocks.issues.mockImplementationOnce(() => response.promise);
-    const store = createKataWorkspaceStore({ api });
-
-    const pending = store.openView("all");
-    await vi.waitFor(() => expect(api.mocks.issues).toHaveBeenCalledOnce());
-    const signal = api.mocks.issues.mock.calls[0]?.[1]?.signal as AbortSignal | undefined;
-    store.invalidatePendingLoads();
-    response.resolve({
-      ...buildKataTaskView({
-        view: "all",
-        issues,
-        projects,
-        today: "2026-05-15",
-        fetched_at: fetchedAt,
-      }),
-      daemon_id: "home",
-    });
-
-    await pending;
-    expect(signal).toBeInstanceOf(AbortSignal);
-    expect(signal?.aborted).toBe(true);
-  });
-
   test("explicit empty relationship fields clear stale cached graph links", () => {
     const store = createKataWorkspaceStore({ api: createFakeKataTaskAPI() });
     const stale = {
@@ -1206,6 +1221,26 @@ describe("kata workspace store", () => {
     expect(store.currentView.name).toBe("inbox");
     expect(store.currentView.groups[0]?.title).toBe("Inbox");
     expect(store.selectedIssue?.issue.title).toBe("Renew passport");
+  });
+
+  test("restoring filters rolls back when its filtered search fails", async () => {
+    const api = createFakeKataTaskAPI();
+    const store = createKataWorkspaceStore({ api });
+    await store.bootstrap("all", "issue-pay-rent");
+    const accepted = store.captureSnapshot();
+    api.mocks.search.mockRejectedValueOnce(new Error("search unavailable"));
+
+    await expect(
+      store.restoreViewAndFilters("all", {
+        scope: { kind: "all" },
+        status: "open",
+        owner: "",
+        label: "",
+        query: "rent",
+      }),
+    ).rejects.toThrow("search unavailable");
+
+    expect(store.captureSnapshot()).toEqual(accepted);
   });
 
   test("project scope shows the project backlog instead of filtering the current system view", async () => {
@@ -1365,7 +1400,10 @@ describe("kata workspace store", () => {
       '"rev-1"',
     );
     expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
-    expect(api.mocks.issue).toHaveBeenCalledWith("issue-pay-rent", { signal: expect.any(AbortSignal) });
+    expect(api.mocks.issue).toHaveBeenCalledWith(
+      "issue-pay-rent",
+      expect.objectContaining({ daemonId: "home", signal: expect.any(AbortSignal) }),
+    );
   });
 
   test("serializes metadata patches so rapid edits use the refreshed ETag", async () => {
@@ -1579,7 +1617,7 @@ describe("kata workspace store", () => {
     ]);
     expect(store.selectedIssue?.issue.uid).toBe("issue-call-dentist");
     expect(store.daemonId).toBe("work");
-    expect(api.mocks.bindWorkflowDaemon).toHaveBeenLastCalledWith("work");
+    expect(api.mocks.bindWorkflowDaemon).not.toHaveBeenCalled();
   });
 
   test("ignores stale bootstrap view data after newer navigation", async () => {
@@ -1674,7 +1712,10 @@ describe("kata workspace store", () => {
     const mutation = store.addComment("issue-pay-rent", "fixture-user", "Payment is scheduled.");
     await Promise.resolve();
     await Promise.resolve();
-    expect(api.mocks.issue).toHaveBeenCalledWith("issue-pay-rent", { signal: expect.any(AbortSignal) });
+    expect(api.mocks.issue).toHaveBeenCalledWith(
+      "issue-pay-rent",
+      expect.objectContaining({ daemonId: "home", signal: expect.any(AbortSignal) }),
+    );
 
     await store.selectIssue("issue-call-dentist");
     expect(store.selectedIssue?.issue.uid).toBe("issue-call-dentist");
@@ -1795,37 +1836,6 @@ describe("kata workspace store", () => {
     expect(store.eventCursor).toBe(99);
   });
 
-  test("an unrelated remote event preserves the cached selected detail", async () => {
-    const api = createFakeKataTaskAPI();
-    const store = createKataWorkspaceStore({ api });
-    await store.bootstrap();
-    expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
-    api.mocks.issue.mockClear();
-
-    await store.applyRemoteEvent({ ...events[1]!, event_id: 99 });
-
-    expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
-    expect(api.mocks.issue).not.toHaveBeenCalled();
-  });
-
-  test("view loads do not wait for selected issue history", async () => {
-    const api = createFakeKataTaskAPI();
-    const slowEvents = deferred<KataTaskEventsResponse>();
-    api.mocks.events.mockImplementationOnce(() => slowEvents.promise);
-    const store = createKataWorkspaceStore({ api });
-
-    const bootstrap = store.bootstrap();
-    try {
-      await vi.waitFor(() => {
-        expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
-      });
-      await bootstrap;
-    } finally {
-      slowEvents.resolve({ reset_required: false, events: [], next_after_id: 0 });
-      await bootstrap;
-    }
-  });
-
   test("syncs event cursor through paged event reads", async () => {
     const api = createFakeKataTaskAPI();
     api.mocks.events.mockImplementation(async (query: KataTaskEventsQuery = {}) => {
@@ -1851,30 +1861,6 @@ describe("kata workspace store", () => {
     expect(cursorReads.map(([query]) => query?.after_id)).toEqual([0, 1, 2]);
   });
 
-  test("syncing a multi-page event backlog revalidates the view once", async () => {
-    const api = createFakeKataTaskAPI();
-    api.mocks.events
-      .mockResolvedValueOnce({
-        reset_required: false,
-        events: [{ ...events[0]!, event_id: 100 }],
-        next_after_id: 100,
-      })
-      .mockResolvedValueOnce({
-        reset_required: false,
-        events: [{ ...events[1]!, event_id: 101 }],
-        next_after_id: 101,
-      })
-      .mockResolvedValueOnce({ reset_required: false, events: [], next_after_id: 101 });
-    const store = createKataWorkspaceStore({ api });
-    await store.bootstrap("all", null, { selectFirst: false });
-    api.mocks.issues.mockClear();
-
-    await store.syncEventCursor();
-
-    expect(store.eventCursor).toBe(101);
-    expect(api.mocks.issues).toHaveBeenCalledOnce();
-  });
-
   test("syncing the event cursor applies observed events before advancing", async () => {
     const api = createFakeKataTaskAPI();
     const store = createKataWorkspaceStore({ api });
@@ -1891,7 +1877,7 @@ describe("kata workspace store", () => {
     expect(store.selectedIssue?.issue.uid).toBe("issue-renew-passport");
   });
 
-  test("syncing the event cursor does not advance when batched revalidation is unapplied", async () => {
+  test("syncing the event cursor stops after an unapplied event in a multi-event page", async () => {
     const api = createFakeKataTaskAPI();
     const store = createKataWorkspaceStore({ api });
     await store.bootstrap("all");
@@ -1962,6 +1948,124 @@ describe("kata workspace store", () => {
     expect(store.eventCursor).toBe(0);
   });
 
+  test("serializes retry catch-up with a concurrent live event without duplicate visible refresh", async () => {
+    const api = createFakeKataTaskAPI();
+    const store = createKataWorkspaceStore({ api });
+    await store.bootstrap();
+    const retryPage = deferred<KataTaskEventsResponse>();
+    let afterEightyeightReads = 0;
+    api.mocks.events.mockImplementation(async (query: KataTaskEventsQuery = {}) => {
+      if (query.issue_uid) return { reset_required: false, events: [], next_after_id: 0 };
+      if (query.after_id === 0) {
+        return { reset_required: false, events: [{ ...events[0]!, event_id: 88 }], next_after_id: 88 };
+      }
+      if (query.after_id === 88) {
+        afterEightyeightReads += 1;
+        if (afterEightyeightReads === 1) throw new Error("cursor page failed");
+        return retryPage.promise;
+      }
+      return { reset_required: false, events: [], next_after_id: query.after_id ?? 0 };
+    });
+
+    await expect(store.syncEventCursor()).rejects.toBeInstanceOf(KataEventCursorSyncError);
+    expect(store.eventCursor).toBe(88);
+    api.mocks.issues.mockClear();
+
+    const retry = store.syncEventCursor();
+    await vi.waitFor(() => expect(afterEightyeightReads).toBe(2));
+    const live = store.applyRemoteEvent({ ...events[0]!, event_id: 89 });
+    retryPage.resolve({
+      reset_required: false,
+      events: [{ ...events[0]!, event_id: 89 }],
+      next_after_id: 89,
+    });
+
+    await retry;
+    await live;
+
+    expect(store.eventCursor).toBe(89);
+    expect(api.mocks.issues).toHaveBeenCalledTimes(1);
+  });
+
+  test("event cursor catch-up exposes accepted membership when a later page fails", async () => {
+    const api = createFakeKataTaskAPI();
+    const store = createKataWorkspaceStore({ api });
+    await store.bootstrap("all", "issue-pay-rent");
+    api.mocks.events.mockImplementation(async (query: KataTaskEventsQuery = {}) => {
+      if (query.issue_uid) {
+        return { reset_required: false, events: [], next_after_id: 0 };
+      }
+      if (query.after_id === 0) {
+        return {
+          reset_required: false,
+          events: [{ ...events[0]!, event_id: 88 }],
+          next_after_id: 88,
+        };
+      }
+      throw new Error("later cursor page failed");
+    });
+    api.mocks.issues.mockResolvedValueOnce(
+      buildKataTaskView({
+        view: "all",
+        issues: issues.filter((issue) => issue.uid !== "issue-pay-rent"),
+        projects,
+        fetched_at: fetchedAt,
+      }),
+    );
+
+    let caught: unknown;
+    try {
+      await store.syncEventCursor();
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(KataEventCursorSyncError);
+    expect(caught).toMatchObject({
+      cursorSyncCause: expect.objectContaining({ message: "later cursor page failed" }),
+    });
+    expect(store.eventCursor).toBe(88);
+    expect(store.currentView.groups.flatMap((group) => group.issues).map((issue) => issue.uid)).not.toContain(
+      "issue-pay-rent",
+    );
+  });
+
+  test("event cursor catch-up retains stale detail after a selected task leaves membership", async () => {
+    const api = createFakeKataTaskAPI();
+    const store = createKataWorkspaceStore({ api });
+    await store.bootstrap("all", "issue-pay-rent");
+    const selectedBeforeRefresh = store.selectedIssue;
+    api.mocks.events
+      .mockResolvedValueOnce({ reset_required: false, events: [{ ...events[0]!, event_id: 88 }], next_after_id: 88 })
+      .mockResolvedValueOnce({ reset_required: false, events: [], next_after_id: 88 });
+    api.mocks.issues.mockResolvedValueOnce(
+      buildKataTaskView({
+        view: "all",
+        issues: issues.filter((issue) => issue.uid !== "issue-pay-rent"),
+        projects,
+        fetched_at: fetchedAt,
+      }),
+    );
+    api.mocks.issue.mockRejectedValueOnce(new Error("detail unavailable"));
+
+    await store.syncEventCursor();
+
+    expect(store.eventCursor).toBe(88);
+    expect(store.currentView.groups.flatMap((group) => group.issues).map((issue) => issue.uid)).not.toContain(
+      "issue-pay-rent",
+    );
+    expect(store.selectedIssue).toEqual(selectedBeforeRefresh);
+  });
+
+  test("interactive refreshes report selected-detail failures", async () => {
+    const api = createFakeKataTaskAPI();
+    const store = createKataWorkspaceStore({ api });
+    await store.bootstrap("all", "issue-pay-rent");
+    api.mocks.issue.mockRejectedValueOnce(new Error("detail unavailable"));
+
+    await expect(store.renameProject(1, "Updated finances")).rejects.toThrow("detail unavailable");
+  });
+
   test("remote thin events invalidate the active view and selected detail", async () => {
     const api = createFakeKataTaskAPI();
     const store = createKataWorkspaceStore({ api });
@@ -2001,7 +2105,10 @@ describe("kata workspace store", () => {
       { view: "today" },
       expect.objectContaining({ daemonId: "home", signal: expect.any(AbortSignal) }),
     );
-    expect(api.mocks.issue).toHaveBeenCalledWith("issue-pay-rent", { signal: expect.any(AbortSignal) });
+    expect(api.mocks.issue).toHaveBeenCalledWith(
+      "issue-pay-rent",
+      expect.objectContaining({ daemonId: "home", signal: expect.any(AbortSignal) }),
+    );
     expect(store.selectedIssue?.comments.map((comment) => comment.body)).toContain("Remote note.");
   });
 

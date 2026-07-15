@@ -174,16 +174,13 @@ single source of truth for every sync-derived workspace surface:
 `commits_ahead`/`commits_behind` in the list response, the sidebar
 ahead/behind arrows, push, pull, and unpushed-commit flags. All of them
 silently report nothing when the upstream is missing, so every path that
-creates a workspace-owned branch must configure it — including the synthetic
-`middleman/pr-N` fallback, which tracks the PR's head branch on origin. Both
-wiring paths demand positive same-repo evidence before touching config: a nil
-`MRHeadRepo` is not proof (it is also nil when head-repo metadata was
-unavailable, and issue workspaces never set it). Creation binds only when
-`origin/<head>` resolves to the exact commit the worktree was materialized
-at; the pushed-head observer pass repairs a missing upstream only when the
-open MR row's `HeadRepoCloneURL` matches the base repository identity, the
-checked-out branch is the PR head or synthetic branch, and the
-remote-tracking ref exists. Everything else stays untracked.
+creates a workspace-owned branch should configure it when repository identity
+is known. Upstream wiring requires a non-empty head-repository identity that
+matches the base repository; matching commit SHAs are not identity evidence
+because forks preserve commit IDs. Unknown and fork heads stay untracked. The
+pushed-head observer may repair a missing upstream only when the current MR row
+proves the head is in the base repository, the checked-out branch is the PR
+head or synthetic branch, and the remote-tracking ref exists.
 
 ## Sidebar Ordering
 

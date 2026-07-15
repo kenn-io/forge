@@ -58,17 +58,7 @@ func (s *Server) toCachedWorkspaceResponse(
 
 	entry, refreshDue := s.cachedWorkspaceEnrichment(summary.ID)
 	if entry != nil {
-		if entry.hasDivergence {
-			resp.CommitsAhead = entry.response.CommitsAhead
-			resp.CommitsBehind = entry.response.CommitsBehind
-		}
-		if entry.hasTmux {
-			applyCachedWorkspaceTmux(&resp, entry.response)
-		}
-		if refreshedAt, ok := entry.oldestRefreshedAt(); ok {
-			formatted := refreshedAt.UTC().Format(time.RFC3339)
-			resp.EnrichmentRefreshedAt = &formatted
-		}
+		applyWorkspaceEnrichmentCacheEntry(&resp, *entry)
 		hasResponse := entry.hasDivergence || entry.hasTmux
 		switch {
 		case entry.lastError != "":
@@ -111,6 +101,23 @@ func applyCachedWorkspaceTmux(
 	resp.TmuxLastOutputAt = cached.TmuxLastOutputAt
 }
 
+func applyWorkspaceEnrichmentCacheEntry(
+	resp *workspaceResponse,
+	entry workspaceEnrichmentCacheEntry,
+) {
+	if entry.hasDivergence {
+		resp.CommitsAhead = entry.response.CommitsAhead
+		resp.CommitsBehind = entry.response.CommitsBehind
+	}
+	if entry.hasTmux {
+		applyCachedWorkspaceTmux(resp, entry.response)
+	}
+	if refreshedAt, ok := entry.oldestRefreshedAt(); ok {
+		formatted := refreshedAt.UTC().Format(time.RFC3339)
+		resp.EnrichmentRefreshedAt = &formatted
+	}
+}
+
 func (s *Server) cachedWorkspaceEnrichment(
 	workspaceID string,
 ) (*workspaceEnrichmentCacheEntry, bool) {
@@ -140,7 +147,12 @@ func (s *Server) refreshWorkspaceResponse(
 	generation := s.supersedeWorkspaceEnrichment(summary.ID)
 	result := s.workspaceResponseWithEnrichment(ctx, summary)
 	if summary.Status == "ready" {
-		s.recordWorkspaceEnrichmentResult(summary.ID, generation, result)
+		entry, recorded := s.recordWorkspaceEnrichmentResult(
+			summary.ID, generation, result,
+		)
+		if recorded {
+			applyWorkspaceEnrichmentCacheEntry(&result.response, entry)
+		}
 	}
 	return result.response
 }
@@ -241,7 +253,9 @@ func (s *Server) runWorkspaceEnrichmentJob(
 	)
 	defer cancel()
 	result := s.workspaceResponseWithEnrichment(probeCtx, &job.summary)
-	if s.recordWorkspaceEnrichmentResult(job.summary.ID, job.generation, result) {
+	if _, recorded := s.recordWorkspaceEnrichmentResult(
+		job.summary.ID, job.generation, result,
+	); recorded {
 		s.broadcastWorkspaceStatus(job.summary.ID)
 	}
 }
@@ -282,7 +296,7 @@ func (s *Server) storeWorkspaceEnrichment(
 	generation uint64,
 	response workspaceResponse,
 ) bool {
-	return s.recordWorkspaceEnrichmentResult(
+	_, stored := s.recordWorkspaceEnrichmentResult(
 		workspaceID,
 		generation,
 		workspaceEnrichmentProbeResult{
@@ -291,17 +305,18 @@ func (s *Server) storeWorkspaceEnrichment(
 			tmuxComplete:       true,
 		},
 	)
+	return stored
 }
 
 func (s *Server) recordWorkspaceEnrichmentResult(
 	workspaceID string,
 	generation uint64,
 	result workspaceEnrichmentProbeResult,
-) bool {
+) (workspaceEnrichmentCacheEntry, bool) {
 	s.workspaceEnrichmentMu.Lock()
 	defer s.workspaceEnrichmentMu.Unlock()
 	if s.workspaceEnrichmentGenerations[workspaceID] != generation {
-		return false
+		return workspaceEnrichmentCacheEntry{}, false
 	}
 	now := s.now()
 	entry := s.workspaceEnrichmentCache[workspaceID]
@@ -322,7 +337,7 @@ func (s *Server) recordWorkspaceEnrichmentResult(
 		entry.lastError = result.err.Error()
 	}
 	s.workspaceEnrichmentCache[workspaceID] = entry
-	return true
+	return entry, true
 }
 
 func (s *Server) finishWorkspaceEnrichment(

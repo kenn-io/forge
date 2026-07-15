@@ -6477,24 +6477,31 @@ func (s *Server) probeOneTmuxSession(
 ) (tmuxActivityResult, bool, error) {
 	probe := tracker.StartProbe(ctx, session)
 	if !probe.Started {
-		if probe.HasFallback {
-			err := ctx.Err()
-			if err == nil {
-				err = errors.New("tmux activity probe pending")
-			}
-			return probe.Fallback, true, err
-		}
 		if probe.Wait != nil {
 			select {
 			case <-probe.Wait:
 				result, ok := tracker.Cached(session)
 				if !ok {
+					if probe.HasFallback {
+						return probe.Fallback, true,
+							errors.New("tmux activity probe produced no sample")
+					}
 					return tmuxActivityResult{}, false,
 						errors.New("tmux activity probe produced no sample")
 				}
 				return result, true, nil
 			case <-ctx.Done():
+				if probe.HasFallback {
+					return probe.Fallback, true, ctx.Err()
+				}
 			}
+		}
+		if probe.HasFallback {
+			err := ctx.Err()
+			if err == nil {
+				err = errors.New("tmux activity probe unavailable")
+			}
+			return probe.Fallback, true, err
 		}
 		return tmuxActivityResult{}, false, ctx.Err()
 	}

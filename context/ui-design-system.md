@@ -109,9 +109,10 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   use the viewport edge (`frontend/src/App.svelte:968`).
 
 `kit-ui-check` gates at zero findings in both `make frontend-check` and the
-Vite+ `frontend-check` task behind CI's `vp run -w check`. Suppress only
-with a per-line `kit-ui-check-ignore` (same line or the line above) that
-states a reason.
+Vite+ `frontend-check` task behind CI's `vp run -w check`. Migrate only when
+an installed kit-ui primitive preserves the behavior; if a rule mistakes
+application-owned UI for component debt, fix the rule rather than expanding
+kit-ui or adding an ignore solely to silence the checker.
 
 ## Shared primitives
 
@@ -190,15 +191,10 @@ Use `GroupedSidebarSection` for collapsible groups in PR, issue, and workspace l
 
 ### SplitResizeHandle
 
-Use kit-ui's `SplitResizeHandle` (re-exported from `@middleman/ui`) for draggable pane dividers in split views.
-
-Intent:
-
-- one shared drag lifecycle, keyboard resize behavior, hit target, cursor, focus, and hover treatment
-- keep pane-specific width bounds and direction math in the owning layout
-- avoid one-off splitter handles in sidebars, drawers, terminal panes, and diff views
-
-Use it between resizable panes. Pass a specific accessible label such as `Resize Activity rail` or `Resize file tree`.
+Use kit-ui's `SplitResizeHandle` for compatible two-pane horizontal dividers.
+Recursive, orientation-switching split trees remain application-owned; do not
+expand kit-ui solely because the checker recognizes their resize cursors.
+Pass a specific accessible label such as `Resize Activity rail`.
 
 ### TabbedPanelTree
 

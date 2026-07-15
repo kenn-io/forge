@@ -26,7 +26,7 @@ Already completed stage-4 migrations remain intact. This work does not rewrite a
 4. Checker output is supporting evidence, not the inventory. Audit semantic equivalents that use different names.
 5. Delete replaced local markup, CSS, helpers, and components in the same slice.
 6. Do not introduce compatibility shims. Adapt call sites to the canonical shared API.
-7. If exact adoption would require changing kit-ui, prefer a narrow behavior-based exception in this PR unless the shared API is already intended to cover the use case and the necessary upstream change is small and directly enables the epic.
+7. This migration adopts the installed kit-ui contracts; it does not add kit-ui features for middleman-specific behavior. If the checker reports application-owned UI that kit-ui does not already support, fix the checker rule rather than expanding kit-ui, reshaping production markup, or adding a suppression solely to reach zero findings.
 
 ## Stage-4 completion audit
 
@@ -213,7 +213,7 @@ The final source search must find no temporary `wa1f` markers and no obsolete ex
 
 ## Kata and PR completion
 
-As each slice lands, add concise completion evidence to the relevant Kata child. Create or update Kata records for post-upgrade work where the final audit produces a durable exception or separately owned upstream enhancement.
+As each slice lands, add concise completion evidence to the relevant Kata child. Create or update Kata records only for genuine migration work. Application-owned behavior that the checker misclassifies is resolved in the checker, not converted into an upstream component enhancement.
 
 Close `fn3y`, `2df7`, and `wa1f` only after their current acceptance criteria are satisfied. Close `kqyv` only after:
 

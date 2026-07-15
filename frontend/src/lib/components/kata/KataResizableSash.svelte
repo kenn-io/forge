@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import type { Snippet } from "svelte";
 
   type Orientation = "vertical" | "horizontal";
@@ -27,8 +28,9 @@
   }: Props = $props();
 
   let container: HTMLDivElement | null = $state(null);
-  let dragging = $state(false);
   let totalSize = $state(0);
+  let resizeStartSize = 0;
+  let resizeTotalSize = 0;
 
   function axisSize(rect: DOMRect): number {
     return orientation === "vertical" ? rect.height : rect.width;
@@ -59,83 +61,36 @@
     if (clamped !== primarySize) onResize(clamped);
   });
 
-  function startDrag(event: PointerEvent): void {
+  function startResize(): void {
     if (!container) return;
-    event.preventDefault();
-    const handle = event.currentTarget as HTMLElement;
-    handle.setPointerCapture(event.pointerId);
-    dragging = true;
-
-    const rect = container.getBoundingClientRect();
-    const total = axisSize(rect);
-    const startPointer = orientation === "vertical" ? event.clientY : event.clientX;
-    const startSize = primarySize;
-
-    const move = (moveEvent: PointerEvent) => {
-      const pointer = orientation === "vertical" ? moveEvent.clientY : moveEvent.clientX;
-      onResize(clampSize(startSize + pointer - startPointer, total));
-    };
-    const release = (releaseEvent: PointerEvent) => {
-      dragging = false;
-      try {
-        handle.releasePointerCapture(releaseEvent.pointerId);
-      } catch {
-        // Pointer capture may already be gone if the browser cancelled the drag.
-      }
-      handle.removeEventListener("pointermove", move);
-      handle.removeEventListener("pointerup", release);
-      handle.removeEventListener("pointercancel", release);
-    };
-
-    handle.addEventListener("pointermove", move);
-    handle.addEventListener("pointerup", release);
-    handle.addEventListener("pointercancel", release);
+    resizeStartSize = primarySize;
+    resizeTotalSize = axisSize(container.getBoundingClientRect());
   }
 
-  function handleKeydown(event: KeyboardEvent): void {
-    const step = event.shiftKey ? 64 : 16;
-    let delta = 0;
-    if (orientation === "vertical") {
-      if (event.key === "ArrowUp") delta = -step;
-      else if (event.key === "ArrowDown") delta = step;
-    } else {
-      if (event.key === "ArrowLeft") delta = -step;
-      else if (event.key === "ArrowRight") delta = step;
-    }
-    if (delta === 0) return;
-    event.preventDefault();
-    if (!container) return;
-    onResize(clampSize(primarySize + delta, axisSize(container.getBoundingClientRect())));
+  function handleResize(event: SplitResizeEvent): void {
+    const multiplier = event.event instanceof KeyboardEvent && event.event.shiftKey ? 4 : 1;
+    onResize(clampSize(resizeStartSize + event.delta * multiplier, resizeTotalSize));
   }
 
   const appliedSize = $derived(totalSize > 0 ? clampSize(primarySize, totalSize) : primarySize);
   const valueMax = $derived(totalSize > 0 ? Math.max(minPrimary, totalSize - minSecondary) : minPrimary);
 </script>
 
-<div
-  class={["kata-sash", `kata-sash--${orientation}`, dragging && "dragging"]}
-  data-orientation={orientation}
-  bind:this={container}
->
+<div class={["kata-sash", `kata-sash--${orientation}`]} data-orientation={orientation} bind:this={container}>
   <div class="pane pane-primary" style:flex-basis={`${Math.round(appliedSize)}px`}>
     {@render primary()}
   </div>
-  <!-- The WAI-ARIA window-splitter pattern is interactive, but the linter treats
-       div-with-tabindex as noninteractive by default. -->
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div
+  <SplitResizeHandle
     class="sash-handle"
-    role="separator"
-    aria-label={ariaLabel}
-    aria-orientation={orientation === "vertical" ? "horizontal" : "vertical"}
-    aria-valuemin={minPrimary}
-    aria-valuemax={valueMax}
-    aria-valuenow={Math.round(appliedSize)}
-    tabindex="0"
-    onpointerdown={startDrag}
-    onkeydown={handleKeydown}
-  ></div>
+    {orientation}
+    {ariaLabel}
+    ariaValueMin={minPrimary}
+    ariaValueMax={Math.round(valueMax)}
+    ariaValueNow={Math.round(appliedSize)}
+    keyboardStep={16}
+    onResizeStart={startResize}
+    onResize={handleResize}
+  />
   <div class="pane pane-secondary">
     {@render secondary()}
   </div>
@@ -173,29 +128,8 @@
     flex: 1 1 auto;
   }
 
-  .sash-handle {
+  :global(.sash-handle) {
     flex: 0 0 auto;
-    border: 0;
-    padding: 0;
     background: var(--border-default);
-    appearance: none;
-  }
-
-  .kata-sash--horizontal .sash-handle {
-    width: 4px;
-    /* kit-ui-check-ignore: recursive split-tree sash (n-ary, orientation-switching), not a two-pane sidebar handle */
-    cursor: col-resize;
-  }
-
-  .kata-sash--vertical .sash-handle {
-    height: 4px;
-    cursor: row-resize;
-  }
-
-  .sash-handle:hover,
-  .sash-handle:focus-visible,
-  .dragging .sash-handle {
-    background: var(--accent-blue);
-    outline: none;
   }
 </style>

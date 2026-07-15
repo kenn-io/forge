@@ -1161,8 +1161,10 @@ test.describe("activity split view and detail drawers", () => {
     expect(detailBox!.width).toBeGreaterThan(railBox!.width);
 
     await expect(resizeHandle).toBeVisible();
-    await expect(detail.locator(".activity-detail-header .activity-rail-close")).toBeVisible();
-    await expect(page.locator(".activity-rail-header .activity-rail-close")).toHaveCount(0);
+    await expect(detail.getByRole("button", { name: "Close Activity selection" })).toBeVisible();
+    await expect(
+      page.locator(".activity-rail-header").getByRole("button", { name: "Close Activity selection" }),
+    ).toHaveCount(0);
 
     const handleBox = await resizeHandle.boundingBox();
     expect(handleBox).not.toBeNull();
@@ -1335,7 +1337,7 @@ test.describe("activity split view and detail drawers", () => {
     await expect(detail).toBeVisible();
     await expect(page.locator(".activity-collapsed-strip")).toBeVisible();
 
-    await detail.locator(".activity-detail-header .activity-rail-close").click();
+    await detail.getByRole("button", { name: "Close Activity selection" }).click();
 
     await expect(page.locator(".activity-shell--split")).toHaveCount(0);
     await expect(page.locator(".activity-collapsed-strip")).toHaveCount(0);

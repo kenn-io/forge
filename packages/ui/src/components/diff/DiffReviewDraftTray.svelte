@@ -126,7 +126,8 @@
     padding: 10px 12px;
     border-top: 1px solid var(--border-default);
     background: var(--bg-surface);
-    box-shadow: 0 -8px 20px color-mix(in srgb, var(--text-primary) 12%, transparent);
+    /* kit-ui-check-ignore: upward tray shadow; shared shadows cast downward */
+    box-shadow: 0 -8px 20px rgb(0 0 0 / 0.12);
   }
 
   .tray-header,

@@ -128,7 +128,7 @@ test("AppHeader workspaces tab navigates to /workspaces", async ({ page }) => {
 test("repo selector renders icon and still filters repos", async ({ page }) => {
   await page.goto("/pulls");
 
-  const selector = page.getByTitle("Select repository");
+  const selector = page.getByRole("button", { name: /^Select repository:/ });
   await expect(selector).toBeVisible();
   await expect(selector.locator("svg")).toBeVisible();
 

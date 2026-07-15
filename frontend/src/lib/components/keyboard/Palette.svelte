@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
 
   import type { ModalFrameAction } from "@middleman/ui/stores/keyboard/keyspec";
   import { getStores, ItemStateChip } from "@middleman/ui";
@@ -308,16 +308,7 @@
       const ctx = ctxStores
         ? buildContext(ctxStores)
         : ({} as ReturnType<typeof buildContext>);
-      try {
-        const out = untrack(() => action.handler(ctx));
-        handleCommandResult(out, (err) => {
-          console.error(`palette action ${action.id} failed`, err);
-        });
-      } catch (err) {
-        // Mirror dispatch.svelte.ts/runHandler: log and keep the palette
-        // host alive so a throwing handler doesn't crash the app.
-        console.error(`palette action ${action.id} failed`, err);
-      }
+      void runCommandAfterClose(action, ctx);
       return;
     }
     if (result.kind === "pull") {
@@ -381,6 +372,23 @@
     writeRecent("issue", result.ref);
     closePalette();
     navigate(buildIssueRoute(result.ref));
+  }
+
+  async function runCommandAfterClose(
+    action: Action,
+    ctx: ReturnType<typeof buildContext>,
+  ): Promise<void> {
+    await tick();
+    try {
+      const out = untrack(() => action.handler(ctx));
+      handleCommandResult(out, (err) => {
+        console.error(`palette action ${action.id} failed`, err);
+      });
+    } catch (err) {
+      // Mirror dispatch.svelte.ts/runHandler: log and keep the palette
+      // host alive so a throwing handler doesn't crash the app.
+      console.error(`palette action ${action.id} failed`, err);
+    }
   }
 
   function selectRowAt(index: number): void {
@@ -722,7 +730,7 @@
   }
 
   .palette {
-    height: min(480px, calc(100vh - 32px));
+    height: min(480px, calc(100vh - 64px));
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;
   }

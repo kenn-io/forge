@@ -2229,7 +2229,7 @@ test.describe("workspace launch home", () => {
     expect(dividerMetrics).toEqual({
       panelBorderTop: "0px",
       resizerCursor: "row-resize",
-      resizerHeight: 7,
+      resizerHeight: 4,
       stageToPanel: 0,
       stripeHeight: "3px",
     });
@@ -2526,7 +2526,7 @@ test.describe("sidebar toggle behavior", () => {
     const row = page.locator(".ws-row", {
       hasText: "Add auth middleware",
     });
-    const pulse = row.locator(".working-pulse");
+    const pulse = row.getByLabel("Working (title): ⠴ t3code-b5014b03");
     await expect(pulse).toBeVisible();
     await expect(pulse).toHaveAttribute("title", "Working (title): ⠴ t3code-b5014b03");
     await expect(pulse).toHaveAttribute("aria-label", "Working (title): ⠴ t3code-b5014b03");
@@ -2573,7 +2573,7 @@ test.describe("sidebar toggle behavior", () => {
     const initialListWidth = await listSidebar.evaluate((el) => el.getBoundingClientRect().width);
     const initialRightSidebarWidth = await rightSidebar.evaluate((el) => el.getBoundingClientRect().width);
 
-    const handle = page.getByRole("button", {
+    const handle = page.getByRole("separator", {
       name: "Resize sidebar",
     });
     await expect(handle).toBeVisible();
@@ -4354,7 +4354,7 @@ test.describe("issue workspace sidebar", () => {
     await expect(page.locator(".panel-toggle-btn", { hasText: "Issue" })).toBeVisible();
     await expect(page.locator(".panel-toggle-btn", { hasText: "PR" })).toHaveCount(0);
 
-    const refreshButton = page.locator(".header-end .panel-toggle-group + .header-icon-btn");
+    const refreshButton = page.getByRole("button", { name: "Refresh workspace details" });
     await expect(refreshButton).toHaveAttribute("aria-label", "Refresh workspace details");
     await refreshButton.click();
 

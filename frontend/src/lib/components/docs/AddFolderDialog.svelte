@@ -191,7 +191,7 @@
       </label>
     {/if}
 
-    <Card class="picker" level="inset" padding="none" ariaLabel="Folder browser">
+    <Card class="docs-folder-picker" level="inset" padding="none" ariaLabel="Folder browser">
       <div class="picker-head">
         <IconButton
           size="sm"
@@ -355,7 +355,7 @@
     font-weight: 400;
   }
 
-  :global(.picker) {
+  :global(.docs-folder-picker) {
     overflow: hidden;
   }
 
@@ -449,6 +449,8 @@
   }
 
   :global(.picker-hidden-toggle) {
+    width: 100%;
+    box-sizing: border-box;
     padding: 6px 10px;
     border-top: 1px solid var(--border-default);
     background: var(--bg-surface);

@@ -322,7 +322,8 @@
       const result = await api.listFolders();
       folders = result;
       foldersError = null;
-      if (!route.folder && result.length > 0) {
+      const routeFolderExists = route.folder !== null && result.some((folder) => folder.id === route.folder);
+      if ((!route.folder || !routeFolderExists) && result.length > 0) {
         // Auto-pick the first folder on landing so a fresh /docs visit isn't
         // a dead end. Preserve `doc` so a shared link like /docs?doc=foo.md
         // still opens the named doc after the folder gets filled in; null it
@@ -330,14 +331,15 @@
         // Use replaceState so the back button skips the bare /docs URL
         // instead of bouncing back into another auto-select.
         const target = result[0]!.id;
-        if (route.doc) {
+        const targetDoc = route.folder && !routeFolderExists ? null : route.doc;
+        if (targetDoc) {
           // We're honoring an explicit doc query — claim the landing slot
           // for this folder so the landing-doc effect doesn't auto-open
           // README later if the user deletes the named doc.
           autoOpenedFor = target;
         }
         onRouteChange(
-          { mode: "docs", folder: target, doc: route.doc },
+          { mode: "docs", folder: target, doc: targetDoc },
           { replace: true },
         );
       }
@@ -975,7 +977,7 @@
         </span>
       {/if}
       <div class="folder-actions">
-        <IconButton size="sm" ariaLabel="Add folder" onclick={openAddFolder}>
+        <IconButton size="sm" ariaLabel="Add folder" onclick={openAddFolder} disabled={loadingFolders}>
           <Plus size={14} strokeWidth={2} />
         </IconButton>
         {#if route.folder}

@@ -30,14 +30,11 @@
   let open = $state(false);
   let rootEl = $state<HTMLDivElement>();
   let buttonEl = $state<HTMLButtonElement>();
-  let calendarMonth = $state(todayStr());
+  let calendarMonth = $derived(validISODate(value) ? value : todayStr());
 
   const popoverID = `date-picker-${Math.random().toString(36).slice(2)}`;
   const displayValue = $derived(value ? formatDate(value) : placeholder);
-
-  $effect(() => {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) calendarMonth = value;
-  });
+  const selectedDate = $derived(validISODate(value) ? value : "");
 
   $effect(() => {
     if (!open) return;
@@ -63,16 +60,20 @@
     };
   });
 
-  function initialDate(input: string): Date {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(input)) {
-      const [year, month, day] = input.split("-").map(Number);
-      return new Date(year!, month! - 1, day!);
-    }
-    return new Date();
+  function validISODate(input: string): boolean {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input);
+    if (!match) return false;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
   }
 
   function formatDate(input: string): string {
-    const date = initialDate(input);
+    if (!validISODate(input)) return input;
+    const [year, month, day] = input.split("-").map(Number);
+    const date = new Date(year!, month! - 1, day!);
     return date.toLocaleDateString(undefined, {
       month: "short",
       day: "numeric",
@@ -161,7 +162,7 @@
     >
       <Calendar
         bind:month={calendarMonth}
-        selected={value ? { from: value, to: value } : null}
+        selected={selectedDate ? { from: selectedDate, to: selectedDate } : null}
         onpick={pick}
       />
     </div>
@@ -232,5 +233,6 @@
     top: calc(100% + 3px);
     left: 0;
     width: max-content;
+    padding: var(--space-3);
   }
 </style>

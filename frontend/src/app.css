@@ -68,7 +68,7 @@
   --diff-sidebar-accent: var(--accent-blue);
   --diff-toolbar-bg: var(--bg-primary);
   --diff-stale-bg: color-mix(in srgb, var(--accent-amber) 14%, var(--bg-surface));
-  --diff-stale-text: var(--accent-amber);
+  --diff-stale-text: #9a6700; /* kit-ui-check-ignore: darker warning ink for AA contrast on the light stale surface */
   --diff-stale-border: color-mix(in srgb, var(--accent-amber) 55%, var(--border-default));
 
   /* Media-viewer chrome uses shared tokens so it remains theme-aware. */
@@ -80,8 +80,8 @@
   --viewer-panel-shadow: var(--shadow-lg);
 
   --text-on-accent: var(--bg-surface);
-  --terminal-bg: var(--bg-inset);
-  --bubble-ink: var(--text-primary);
+  --terminal-bg: #0d1117; /* kit-ui-check-ignore: xterm surface stays dark in both themes */
+  --bubble-ink: #0a0d14; /* kit-ui-check-ignore: dark ink for light accent bubble fills in both themes */
 }
 
 /* App-specific tokens — dark theme */

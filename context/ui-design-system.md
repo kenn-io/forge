@@ -190,13 +190,32 @@ Use it inside left sidebar headers and collapsed strips. Pass a specific label s
 
 Use `GroupedSidebarSection` for collapsible groups in PR, issue, and workspace list rails. Keep group chrome and the `--sidebar-*` surface/row-state tokens shared; domain-specific row content stays with its owner. Wrap large always-visible vertical scroll panes (list rails, diff area, pull/issue detail, activity views) in `ScrollBox` so the floating scroll indicator overlays content and sticky headers, appears only during scrolling, and does not reserve a permanent gutter; bind `viewport` when a host needs imperative scroll logic, and note the scrolling element is the viewport, not the host's content wrapper class. Give each scroll area a concise accessible label so keyboard users can identify and scroll the region. (`packages/ui/src/components/shared/GroupedSidebarSection.svelte`, `ScrollBox` from `@kenn-io/kit-ui` — see kit-ui's `docs/components/scroll-box.md`, `frontend/src/app.css:39`)
 
-### SplitResizeHandle
+### SplitResizeHandle and BottomDock
 
-Use the installed kit-ui `SplitResizeHandle` for compatible horizontal pane
-dividers. Recursive horizontal/vertical pane trees retain their application
-handles until the separately owned axis-aware contract lands; pane-tree logic
-and ratio/size bounds always remain application-owned. Pass a specific
-accessible label such as `Resize Activity rail`.
+Use kit-ui `SplitResizeHandle` for horizontal and vertical pane dividers,
+including handles inside application-owned recursive trees. The app retains
+tree topology, ratio/size bounds, state, and persistence; the shared handle owns
+pointer/keyboard interaction and separator semantics. Pass a specific label
+such as `Resize Activity rail`.
+
+Use kit-ui `BottomDock` for resizable inline bottom panels. The app owns whether
+the dock is open plus its domain header/body/footer content; the shared dock
+owns shell geometry, top-edge resizing, bounds, close control, and body
+scrolling.
+
+### Styling shared components
+
+Treat component props, documented CSS custom properties, and the shared root
+class as the supported styling contract. Prefer wrapping a component with an
+application layout element or setting a public custom property over reaching
+into child markup.
+
+An inner selector such as `.kit-typeahead__trigger` or
+`.kit-checkbox__label` is allowed only when the installed component has no
+public hook for a required application layout, the dependency is pinned, and
+the affected computed layout or interaction has browser coverage. Keep such
+selectors scoped below an application-owned class; never use an unscoped
+global override. Re-audit these selectors whenever the kit-ui revision moves.
 
 ### TabbedPanelTree
 

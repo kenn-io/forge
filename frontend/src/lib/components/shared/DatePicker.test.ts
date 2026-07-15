@@ -28,6 +28,21 @@ describe("DatePicker", () => {
     expect(screen.getByRole("button", { name: /Jun 5, 2026/ }).getAttribute("aria-pressed")).toBe("true");
   });
 
+  test("opens on the current month when the stored date is malformed", async () => {
+    render(DatePicker, {
+      props: {
+        value: "2026-13-40",
+        ariaLabel: "Due",
+        onchange: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /Due:/ }));
+
+    expect(screen.getByRole("button", { name: /June 2026\. Choose month/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { pressed: true })).toBeNull();
+  });
+
   test("reports an ISO date, closes, and restores trigger focus", async () => {
     const onchange = vi.fn();
     render(DatePicker, {

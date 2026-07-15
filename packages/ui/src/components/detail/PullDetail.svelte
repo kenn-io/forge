@@ -3413,15 +3413,6 @@
       line-height: 1.35;
     }
 
-    @media (max-width: 640px) {
-      .pull-detail-content .meta-row :global(.copy-number-btn) {
-        min-width: max(44px, var(--detail-mobile-hit-target));
-        min-height: max(44px, var(--detail-mobile-hit-target));
-        padding: var(--detail-mobile-space-xs);
-        border-radius: var(--radius-sm);
-      }
-    }
-
     .meta-row,
     .chips-row,
     .actions-row,

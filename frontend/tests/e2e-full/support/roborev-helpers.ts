@@ -221,7 +221,7 @@ export async function waitForJobRows(page: Page, min: number): Promise<void> {
 
 export async function openDrawer(page: Page, jobId: number): Promise<void> {
   await page.goto(`/reviews/${jobId}`);
-  await expect(page.locator(".drawer")).toBeVisible({
+  await expect(page.getByRole("region", { name: "Review details" })).toBeVisible({
     timeout: 10_000,
   });
 }

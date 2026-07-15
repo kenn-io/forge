@@ -48,8 +48,13 @@
     opacity: 0.7;
   }
 
-  :global(.kanban-card) {
+  :global(.kanban-card.kit-card) {
     width: 100%;
+    cursor: grab;
+  }
+
+  .kanban-card-drag:active :global(.kanban-card.kit-card) {
+    cursor: grabbing;
   }
 
   :global(.kanban-card:hover) {

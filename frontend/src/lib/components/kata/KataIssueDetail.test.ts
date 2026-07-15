@@ -183,12 +183,13 @@ describe("KataIssueDetail", () => {
     expect(onEditIssue).toHaveBeenCalledWith("issue-1", { body: "Updated body" });
   });
 
-  it("moves the issue from the current project breadcrumb", async () => {
+  it("moves the issue from the task actions menu", async () => {
     const onMoveIssue = vi.fn(async () => true);
     renderDetail({ onMoveIssue });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Move issue from Inbox" }));
-    await fireEvent.mouseDown(screen.getByRole("option", { name: "Roadmap 1" }));
+    await fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Move to another project" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Roadmap 1" }));
 
     expect(onMoveIssue).toHaveBeenCalledWith("project-2");
   });
@@ -211,7 +212,7 @@ describe("KataIssueDetail", () => {
       }),
     });
 
-    expect(screen.getByRole("button", { name: "Move issue from Roadmap" })).toBeTruthy();
+    expect(screen.getByText("Roadmap")).toBeTruthy();
   });
 
   it("renders linked messages through the detail composition", () => {

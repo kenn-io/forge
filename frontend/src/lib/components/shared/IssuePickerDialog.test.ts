@@ -246,6 +246,7 @@ describe("IssuePickerDialog selection", () => {
     const row = await waitFor(() => screen.getByRole("option", { name: /Kata#101.*Second/i }));
     await fireEvent.mouseDown(row);
 
+    expect(screen.queryByRole("combobox", { name: "Title or qualified ID..." })).toBeNull();
     const linkBtn = screen.getByRole("button", { name: /^Link$/ }) as HTMLButtonElement;
     expect(linkBtn.disabled).toBe(false);
     await fireEvent.click(linkBtn);

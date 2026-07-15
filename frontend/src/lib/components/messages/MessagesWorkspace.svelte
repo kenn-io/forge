@@ -676,6 +676,8 @@
   const LAYOUT_KEY = "middleman:messagesLayout/v1";
   const DEFAULT_LIST_SIZE = 360;
   const MIN_PRIMARY = 220;
+  const MIN_DETAIL = 320;
+  const RESIZE_HANDLE_WIDTH = 4;
 
   function readListSize(): number {
     if (typeof localStorage === "undefined") return DEFAULT_LIST_SIZE;
@@ -699,7 +701,14 @@
   }
 
   let listSize = $state(readListSize());
+  let sashWidth = $state(0);
   let resizeStartSize = 0;
+  const maxListSize = $derived(
+    sashWidth > 0
+      ? Math.max(0, sashWidth - MIN_DETAIL - RESIZE_HANDLE_WIDTH)
+      : Math.max(MIN_PRIMARY, listSize),
+  );
+  const minListSize = $derived(Math.min(MIN_PRIMARY, maxListSize));
 
   function handleResize(size: number): void {
     listSize = size;
@@ -711,7 +720,7 @@
   }
 
   function resizeList(event: SplitResizeEvent): void {
-    handleResize(resizeStartSize + event.deltaX);
+    handleResize(resizeStartSize + event.delta);
   }
 
   let bannerStatus = $derived(
@@ -775,7 +784,7 @@
           })}
         />
       </aside>
-      <div class="messages-sash-wrapper">
+      <div class="messages-sash-wrapper" bind:clientWidth={sashWidth}>
         <div class="messages-pane messages-pane-list" style:flex-basis={`${listSize}px`}>
           {#if kata !== undefined && route.view === "linked"}
             <LinkedMessagesView
@@ -801,6 +810,10 @@
         </div>
         <SplitResizeHandle
           ariaLabel="Resize messages message list"
+          orientation="horizontal"
+          ariaValueMin={minListSize}
+          ariaValueMax={maxListSize}
+          ariaValueNow={listSize}
           onResizeStart={startListResize}
           onResize={resizeList}
         />

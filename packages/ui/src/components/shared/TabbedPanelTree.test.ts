@@ -21,6 +21,20 @@ function fakeDataTransfer(): DataTransfer {
   } as unknown as DataTransfer;
 }
 
+function mockSplitRect(width = 1000, height = 600): void {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    width,
+    height,
+    x: 0,
+    y: 0,
+    top: 0,
+    right: width,
+    bottom: height,
+    left: 0,
+    toJSON: () => ({}),
+  });
+}
+
 function leafNode(): TabbedPanelNode {
   return {
     type: "leaf",
@@ -30,11 +44,11 @@ function leafNode(): TabbedPanelNode {
   };
 }
 
-function splitNode(): TabbedPanelNode {
+function splitNode(direction: "horizontal" | "vertical" = "horizontal"): TabbedPanelNode {
   return {
     type: "split",
     id: "split-1",
-    direction: "horizontal",
+    direction,
     ratio: 0.4,
     first: leafNode(),
     second: {
@@ -64,6 +78,7 @@ describe("TabbedPanelTree", () => {
     expect(screen.getByTestId("panel-feed").dataset.active).toBe("false");
     expect(screen.getByTestId("icon-detail")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Action Detail" }).className).toContain("tabbed-panel-tab-tool");
+    expect(screen.getByRole("tab", { name: "Feed, Feed updating" })).toBeTruthy();
     expect(screen.getByLabelText("Feed updating").classList.contains("kit-status-dot--working")).toBe(true);
   });
 
@@ -197,31 +212,13 @@ describe("TabbedPanelTree", () => {
     expect(splitTabbedPanelTabIntoLeaf(node, "detail", "missing", "horizontal", "after")).toBe(node);
   });
 
-  it("reports split ratio changes from the divider", async () => {
-    Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
-      configurable: true,
-      value: vi.fn(),
+  it("reports horizontal split ratio changes and pixel ARIA values", async () => {
+    mockSplitRect();
+    Object.defineProperties(HTMLElement.prototype, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
     });
-    Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", {
-      configurable: true,
-      value: vi.fn(),
-    });
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
-      function rectForElement(this: HTMLElement): DOMRect {
-        const width = this.classList.contains("tabbed-panel-split") ? 1000 : 100;
-        return {
-          width,
-          height: 600,
-          x: 0,
-          y: 0,
-          top: 0,
-          right: width,
-          bottom: 600,
-          left: 0,
-          toJSON: () => ({}),
-        };
-      },
-    );
     const onRatioChange = vi.fn();
     render(TabbedPanelTreeTestHarness, {
       props: {
@@ -230,14 +227,103 @@ describe("TabbedPanelTree", () => {
       },
     });
 
-    const divider = screen.getByRole("button", {
+    const divider = screen.getByRole("separator", {
       name: "Resize test split",
     });
-    await fireEvent.pointerDown(divider, { clientX: 400, pointerId: 1 });
-    window.dispatchEvent(new MouseEvent("pointermove", { clientX: 700, bubbles: true }));
-    window.dispatchEvent(new MouseEvent("pointerup", { clientX: 700, bubbles: true }));
+    expect(divider.getAttribute("aria-orientation")).toBe("vertical");
+    expect(divider.getAttribute("aria-valuemin")).toBe("120");
+    expect(divider.getAttribute("aria-valuemax")).toBe("880");
+    expect(divider.getAttribute("aria-valuenow")).toBe("400");
+
+    await fireEvent.pointerDown(divider, { clientX: 400, clientY: 200, pointerId: 1, button: 0 });
+    await fireEvent.pointerMove(divider, { clientX: 700, clientY: 500, pointerId: 1 });
+    await fireEvent.pointerUp(divider, { clientX: 700, clientY: 500, pointerId: 1 });
 
     expect(onRatioChange).toHaveBeenCalledWith("split-1", 0.7);
+
+    onRatioChange.mockClear();
+    await fireEvent.keyDown(divider, { key: "ArrowLeft" });
+    expect(onRatioChange).toHaveBeenCalledWith("split-1", 0.376);
+
+    onRatioChange.mockClear();
+    await fireEvent.keyDown(divider, { key: "ArrowUp" });
+    expect(onRatioChange).not.toHaveBeenCalled();
+  });
+
+  it("uses the vertical axis for stacked split resizing", async () => {
+    mockSplitRect();
+    Object.defineProperties(HTMLElement.prototype, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    const onRatioChange = vi.fn();
+    render(TabbedPanelTreeTestHarness, {
+      props: {
+        node: splitNode("vertical"),
+        onRatioChange,
+      },
+    });
+
+    const divider = screen.getByRole("separator", { name: "Resize test split" });
+    expect(divider.getAttribute("aria-orientation")).toBe("horizontal");
+    expect(divider.getAttribute("aria-valuenow")).toBe("240");
+
+    await fireEvent.pointerDown(divider, { clientX: 200, clientY: 240, pointerId: 1, button: 0 });
+    await fireEvent.pointerMove(divider, { clientX: 500, clientY: 360, pointerId: 1 });
+    await fireEvent.pointerUp(divider, { clientX: 500, clientY: 360, pointerId: 1 });
+
+    expect(onRatioChange).toHaveBeenCalledWith("split-1", expect.closeTo(0.6));
+
+    onRatioChange.mockClear();
+    await fireEvent.keyDown(divider, { key: "ArrowDown" });
+    expect(onRatioChange).toHaveBeenCalledWith("split-1", 0.44);
+
+    onRatioChange.mockClear();
+    await fireEvent.keyDown(divider, { key: "ArrowRight" });
+    expect(onRatioChange).not.toHaveBeenCalled();
+  });
+
+  it("updates only the targeted split in a mixed-axis tree", async () => {
+    mockSplitRect();
+    const onRatioChange = vi.fn();
+    const nested: TabbedPanelNode = {
+      type: "split",
+      id: "outer-split",
+      direction: "horizontal",
+      ratio: 0.5,
+      first: leafNode(),
+      second: {
+        type: "split",
+        id: "inner-split",
+        direction: "vertical",
+        ratio: 0.4,
+        first: {
+          type: "leaf",
+          id: "leaf-2",
+          tabs: ["files"],
+          activeTabKey: "files",
+        },
+        second: {
+          type: "leaf",
+          id: "leaf-3",
+          tabs: [],
+          activeTabKey: "",
+        },
+      },
+    };
+    render(TabbedPanelTreeTestHarness, {
+      props: { node: nested, onRatioChange },
+    });
+
+    const dividers = screen.getAllByRole("separator", {
+      name: "Resize test split",
+    });
+    expect(dividers).toHaveLength(2);
+    await fireEvent.keyDown(dividers[1]!, { key: "ArrowDown" });
+
+    expect(onRatioChange).toHaveBeenCalledTimes(1);
+    expect(onRatioChange).toHaveBeenCalledWith("inner-split", 0.44);
   });
 
   it("disables tab movement and split resizing", async () => {
@@ -278,12 +364,12 @@ describe("TabbedPanelTree", () => {
     expect(onAppendTabToLeaf).not.toHaveBeenCalled();
     expect(onSplitTab).not.toHaveBeenCalled();
 
-    const divider = screen.getByRole("button", {
+    const divider = screen.getByRole("separator", {
       name: "Resize test split",
     });
     expect(divider.hasAttribute("disabled")).toBe(true);
     await fireEvent.pointerDown(divider, { clientX: 400, pointerId: 1 });
-    window.dispatchEvent(new MouseEvent("pointermove", { clientX: 700, bubbles: true }));
+    await fireEvent.pointerMove(divider, { clientX: 700, pointerId: 1 });
 
     expect(onRatioChange).not.toHaveBeenCalled();
   });

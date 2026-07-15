@@ -203,6 +203,7 @@ describe("TerminalPane", () => {
           resizeObserverCallbacks.push(callback);
         }
         observe(): void {}
+        unobserve(): void {}
         disconnect(): void {}
       },
     );

@@ -5,7 +5,7 @@ test.describe("label editing", () => {
   async function openLabelsFromPalette(page: import("@playwright/test").Page): Promise<void> {
     await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
     await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible();
-    await page.locator(".palette-input").fill("Edit labels");
+    await page.getByRole("textbox", { name: "Search command palette" }).fill("Edit labels");
     await expect(page.getByRole("button", { name: /Edit labels/ })).toHaveCount(1);
     await page.getByRole("button", { name: /Edit labels/ }).click();
     await expect(page.getByRole("dialog", { name: "Edit labels" })).toBeVisible();

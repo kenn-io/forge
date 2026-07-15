@@ -50,6 +50,6 @@ test("recents: typing a query hides the Recently used section", async ({ page })
   await expect(reopened.locator(".palette-group", { hasText: "Recently used" })).toBeVisible();
   // Typing a query should hide the recents section so the search results
   // own the empty/non-empty rendering paths.
-  await reopened.locator(".palette-input").fill("a");
+  await reopened.getByRole("textbox", { name: "Search command palette" }).fill("a");
   await expect(reopened.locator(".palette-group", { hasText: "Recently used" })).toBeHidden();
 });

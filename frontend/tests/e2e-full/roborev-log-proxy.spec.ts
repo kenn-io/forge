@@ -155,7 +155,7 @@ test("completed job Log tab renders output through the middleman roborev proxy",
     middleman = await startMiddlemanWithRoborev(daemon.url);
 
     await page.goto(`${middleman.info.base_url}/reviews/${job.id}`);
-    await expect(page.locator(".drawer")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
 
     await page.locator(".tab-bar .tab", { hasText: "Log" }).click();
 

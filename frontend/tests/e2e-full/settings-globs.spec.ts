@@ -42,7 +42,7 @@ test("settings shows glob match counts and refresh updates tracked repos", async
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
 
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
-  await expect(page.getByTitle("Select repository")).not.toBeAttached();
+  await expect(page.getByRole("button", { name: /^Select repository:/ })).not.toBeAttached();
 
   const row = page.locator(".repo-row", { hasText: "roborev-dev/*" });
   await expect(row).toContainText("roborev-dev/*");
@@ -63,7 +63,7 @@ test("settings shows glob match counts and refresh updates tracked repos", async
     .toBe("middleman,worker");
 
   await page.goto(`${isolatedServer!.info.base_url}/pulls`);
-  const selector = page.getByTitle("Select repository");
+  const selector = page.getByRole("button", { name: /^Select repository:/ });
   await expect(selector).toBeVisible();
   await selector.click();
   await expect(page.getByRole("option", { name: /roborev-dev\/middleman/ })).toBeVisible();
@@ -99,7 +99,7 @@ test("settings shows glob match counts and refresh updates tracked repos", async
 test("settings imports a selected subset from a repository glob", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
-  await expect(page.getByTitle("Select repository")).not.toBeAttached();
+  await expect(page.getByRole("button", { name: /^Select repository:/ })).not.toBeAttached();
 
   await page.getByRole("button", { name: "Add repositories…" }).click();
   await expect(page.getByRole("dialog", { name: "Add repositories" })).toBeVisible();
@@ -120,7 +120,7 @@ test("settings imports a selected subset from a repository glob", async ({ page 
   await expect(page.locator(".repo-row", { hasText: "import-lab/worker" })).toHaveCount(0);
 
   await page.goto(`${isolatedServer!.info.base_url}/pulls`);
-  const selector = page.getByTitle("Select repository");
+  const selector = page.getByRole("button", { name: /^Select repository:/ });
   await expect(selector).toBeVisible();
   await selector.click();
   const apiOption = page.getByRole("option", {
@@ -177,7 +177,7 @@ test("settings imports a selected subset from a repository glob", async ({ page 
     .toBe("");
 
   await page.goto(`${isolatedServer!.info.base_url}/pulls`);
-  await expect(page.getByTitle("Select repository")).toContainText("All repos");
+  await expect(page.getByRole("button", { name: /^Select repository:/ })).toContainText("All repos");
 });
 
 test("settings promotes a glob match to a persisted exact repo with a local clone", async ({ page }) => {

@@ -5593,7 +5593,7 @@ test("command palette opens task and docs search results", async ({ page }) => {
     await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
     const dialog = page.getByRole("dialog", { name: "Command palette" });
     await expect(dialog).toBeVisible();
-    await dialog.locator(".palette-input").fill("q3");
+    await dialog.getByRole("textbox", { name: "Search command palette" }).fill("q3");
 
     const taskGroup = dialog.locator(".palette-group", { hasText: "Kata tasks" });
     const docsGroup = dialog.locator(".palette-group", { hasText: "Docs" });
@@ -5610,7 +5610,7 @@ test("command palette opens task and docs search results", async ({ page }) => {
 
     await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
     await expect(dialog).toBeVisible();
-    await dialog.locator(".palette-input").fill("q3");
+    await dialog.getByRole("textbox", { name: "Search command palette" }).fill("q3");
     await expect(docRow).toBeVisible();
     await docRow.click();
 
@@ -5698,7 +5698,7 @@ test("command palette results open tasks on the daemon that served the search", 
     await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
     const dialog = page.getByRole("dialog", { name: "Command palette" });
     await expect(dialog).toBeVisible();
-    await dialog.locator(".palette-input").fill("provenance");
+    await dialog.getByRole("textbox", { name: "Search command palette" }).fill("provenance");
     const taskRow = dialog
       .locator(".palette-group", { hasText: "Kata tasks" })
       .locator(".palette-row", { hasText: "Shared provenance task" });
@@ -6362,14 +6362,14 @@ test("kata detail comments and labels mutate through the configured external dae
 
     const composer = detail.getByRole("textbox", { name: "Comment" });
     await composer.fill("see #");
-    await expect(detail.getByRole("listbox", { name: "Insert task reference" })).toBeVisible();
+    await expect(detail.getByRole("listbox", { name: "Insert reference" })).toBeVisible();
     await composer.press("Enter");
     await expect(composer).toHaveValue("see #Finances#FIN-1 ");
 
     await composer.fill("see #r");
-    await expect(detail.getByRole("listbox", { name: "Insert task reference" })).toBeVisible();
+    await expect(detail.getByRole("listbox", { name: "Insert reference" })).toBeVisible();
     await composer.press("Escape");
-    await expect(detail.getByRole("listbox", { name: "Insert task reference" })).toHaveCount(0);
+    await expect(detail.getByRole("listbox", { name: "Insert reference" })).toHaveCount(0);
     await expect(composer).toHaveValue("see #r");
 
     await composer.fill("First reply with **markdown**");
@@ -6497,8 +6497,8 @@ test("kata detail properties mutate through the configured external daemon", asy
     expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")?.metadata.deadline_on).toBeNull();
 
     await detail.getByRole("button", { name: "Owner: Wes" }).click();
-    await detail.getByLabel("Owner", { exact: true }).fill("agent:planner");
-    await detail.getByLabel("Owner", { exact: true }).press("Enter");
+    await detail.getByRole("combobox", { name: "Owner" }).fill("agent:planner");
+    await detail.getByRole("combobox", { name: "Owner" }).press("Enter");
     await expect(detail.getByRole("button", { name: "Owner: agent:planner" })).toContainText("agent:planner");
     await expect
       .poll(() => backend.state.seenPaths)
@@ -6506,7 +6506,7 @@ test("kata detail properties mutate through the configured external daemon", asy
     expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")?.owner).toBe("agent:planner");
 
     await detail.getByRole("button", { name: "Owner: agent:planner" }).click();
-    await detail.getByLabel("Owner", { exact: true }).fill("sus");
+    await detail.getByRole("combobox", { name: "Owner" }).fill("sus");
     await detail.getByRole("option", { name: "Susan" }).click();
     await expect(detail.getByRole("button", { name: "Owner: Susan" })).toContainText("Susan");
     expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")?.owner).toBe("Susan");
@@ -6546,7 +6546,7 @@ test("kata owner assignment failure keeps the custom owner editor open", async (
     await expect(detail.getByRole("button", { name: "Owner: Wes" })).toBeVisible();
 
     await detail.getByRole("button", { name: "Owner: Wes" }).click();
-    const ownerInput = detail.getByLabel("Owner", { exact: true });
+    const ownerInput = detail.getByRole("combobox", { name: "Owner" });
     await ownerInput.fill("agent:new");
     await ownerInput.press("Enter");
 
@@ -6554,7 +6554,7 @@ test("kata owner assignment failure keeps the custom owner editor open", async (
       .poll(() => backend.state.seenPaths)
       .toContain("POST /api/v1/projects/1/issues/issue-rent/actions/assign");
     await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("owner unavailable");
-    await expect(detail.getByLabel("Owner", { exact: true })).toHaveValue("agent:new");
+    await expect(detail.getByRole("combobox", { name: "Owner" })).toHaveValue("agent:new");
     await expect(detail.getByRole("button", { name: "Owner: Wes" })).toHaveCount(0);
     expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")?.owner).toBe("Wes");
   } finally {

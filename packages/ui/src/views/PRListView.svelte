@@ -171,7 +171,7 @@
   }
 
   function splitWidthFromResize(event: SplitResizeEvent): number {
-    return clampSplitPaneWidth(splitResizeStartWidth + event.deltaX);
+    return clampSplitPaneWidth(splitResizeStartWidth + event.delta);
   }
 
   function handleSplitResize(event: SplitResizeEvent): void {
@@ -352,6 +352,10 @@
           <SplitResizeHandle
             class="detail-split-resize-handle"
             ariaLabel="Resize PR split view"
+            orientation="horizontal"
+            ariaValueMin={splitPaneBounds().min}
+            ariaValueMax={splitPaneBounds().max}
+            ariaValueNow={splitConversationWidth}
             onResizeStart={handleSplitResizeStart}
             onResize={handleSplitResize}
             onResizeEnd={handleSplitResizeEnd}

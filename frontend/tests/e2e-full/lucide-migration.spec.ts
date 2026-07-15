@@ -141,7 +141,7 @@ test.describe("lucide migration", () => {
     await page.goto("/pulls");
     await waitForPRList(page);
 
-    const selector = page.getByTitle("Select repository");
+    const selector = page.getByRole("button", { name: /^Select repository:/ });
     await expect(selector).toBeVisible();
     await expect(selector.locator("svg")).toBeVisible();
 

@@ -384,7 +384,14 @@
 </article>
 
 <style>
+  article {
+    display: flex;
+    height: 100%;
+  }
+
   :global(.repo-card) {
+    width: 100%;
+    height: 100%;
     overflow: hidden;
   }
 

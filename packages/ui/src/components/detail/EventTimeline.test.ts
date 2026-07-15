@@ -2507,6 +2507,32 @@ describe("EventTimeline", () => {
     expect(screen.getByRole("button", { name: "Copy comment" })).toBeTruthy();
   });
 
+  it("opens the editor when editing a collapsed compact comment", async () => {
+    render(EventTimeline, {
+      props: {
+        activityViewMode: "compact",
+        events: [
+          makeEvent({
+            Body: "Compact comment",
+            EventType: "issue_comment",
+            PlatformID: 44,
+          }),
+        ],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        onEditComment: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit comment" }));
+
+    expect(screen.getByRole("button", { name: /save/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
+  });
+
   it("keeps comment actions available on threaded replies", () => {
     const { container } = render(EventTimeline, {
       props: {

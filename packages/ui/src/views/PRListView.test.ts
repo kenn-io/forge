@@ -6,6 +6,14 @@ import type { PullRequestRouteRef } from "../routes.js";
 
 const observedWidth = vi.hoisted(() => ({ value: 0 }));
 
+function mockPointerCapture(element: HTMLElement): void {
+  Object.defineProperties(element, {
+    setPointerCapture: { configurable: true, value: vi.fn() },
+    hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+    releasePointerCapture: { configurable: true, value: vi.fn() },
+  });
+}
+
 vi.mock("../components/sidebar/PullList.svelte", async () => ({
   default: (await import("./PRListViewTestPullList.svelte")).default,
 }));
@@ -45,6 +53,7 @@ class ResizeObserverMock {
     );
   }
 
+  unobserve(): void {}
   disconnect(): void {}
 }
 
@@ -146,16 +155,17 @@ describe("PRListView split view", () => {
     expect(conversationPane).not.toBeNull();
     expect(conversationPane!.style.flexBasis).toBe("1098px");
 
-    const resizeHandle = screen.getByRole("button", {
+    const resizeHandle = screen.getByRole("separator", {
       name: "Resize PR split view",
     });
-    await fireEvent.mouseDown(resizeHandle, { clientX: 100 });
-    await fireEvent.mouseMove(window, { clientX: 340 });
+    mockPointerCapture(resizeHandle);
+    await fireEvent.pointerDown(resizeHandle, { button: 0, clientX: 100, pointerId: 1 });
+    await fireEvent.pointerMove(resizeHandle, { clientX: 340, pointerId: 1 });
     await tick();
 
     expect(conversationPane!.style.flexBasis).toBe("1338px");
 
-    await fireEvent.mouseUp(window, { clientX: 340 });
+    await fireEvent.pointerUp(resizeHandle, { clientX: 340, pointerId: 1 });
     await tick();
 
     expect(conversationPane!.style.flexBasis).toBe("1338px");

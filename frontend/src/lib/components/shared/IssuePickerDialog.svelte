@@ -113,12 +113,12 @@
   }
 
   function updateQuery(nextQuery: string): void {
+    if (nextQuery === "" && selected !== null) return;
     query = nextQuery;
   }
 
-  function selectIssue(uid: string): false {
+  function selectIssue(uid: string): void {
     selected = visible.find((issue) => issue.uid === uid) ?? null;
-    return false;
   }
 
   function handlePick(): void {

@@ -1,4 +1,3 @@
-import { trapFocus } from "@kenn-io/kit-ui";
 import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
 
 export interface MarkdownImageExpansionController {
@@ -9,6 +8,76 @@ export interface MarkdownImageExpansionController {
 const IMAGE_SELECTOR = ".markdown-body img, .doc-markdown img";
 const EXPANDER_CLASS = "markdown-image-expander";
 let closeActiveMarkdownImageLightbox: (() => void) | null = null;
+const documentScrollLocks = new WeakMap<Document, { count: number; previousOverflow: string }>();
+
+function lockDocumentBody(doc: Document): () => void {
+  const lock = documentScrollLocks.get(doc) ?? {
+    count: 0,
+    previousOverflow: doc.body.style.overflow,
+  };
+  lock.count += 1;
+  documentScrollLocks.set(doc, lock);
+  if (lock.count === 1) doc.body.style.setProperty("overflow", "hidden");
+
+  return () => {
+    lock.count -= 1;
+    if (lock.count > 0) return;
+    if (lock.previousOverflow) doc.body.style.setProperty("overflow", lock.previousOverflow);
+    else doc.body.style.removeProperty("overflow");
+    documentScrollLocks.delete(doc);
+  };
+}
+
+function trapFocusInOwnerDocument(surface: HTMLElement): () => void {
+  const doc = surface.ownerDocument;
+  const HTMLElementCtor = doc.defaultView?.HTMLElement;
+  const previous =
+    HTMLElementCtor && doc.activeElement instanceof HTMLElementCtor ? (doc.activeElement as HTMLElement) : null;
+  const tabbableSelector = [
+    "a[href]",
+    "button:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    // kit-ui-check-ignore: lightboxes can live in an iframe document, while kit-ui trapFocus currently binds global document/body
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(", ");
+
+  surface.focus();
+
+  function tabbables(): HTMLElement[] {
+    return Array.from(surface.querySelectorAll<HTMLElement>(tabbableSelector)).filter(
+      (element) => element.offsetParent !== null || element === doc.activeElement,
+    );
+  }
+
+  function handleKeydown(event: KeyboardEvent): void {
+    if (event.defaultPrevented || event.key !== "Tab") return;
+    const items = tabbables();
+    if (items.length === 0) {
+      event.preventDefault();
+      surface.focus();
+      return;
+    }
+    const first = items[0]!;
+    const last = items[items.length - 1]!;
+    if (event.shiftKey && (doc.activeElement === first || doc.activeElement === surface)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && doc.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  surface.addEventListener("keydown", handleKeydown);
+  const unlockScroll = lockDocumentBody(doc);
+  return () => {
+    surface.removeEventListener("keydown", handleKeydown);
+    unlockScroll();
+    previous?.focus();
+  };
+}
 
 export function expandMarkdownImages(root: ParentNode): number {
   let enhanced = 0;
@@ -122,7 +191,7 @@ function openMarkdownImageLightbox(sourceImage: HTMLImageElement): void {
   overlay.addEventListener("keydown", onKeyDown);
   doc.addEventListener("keydown", onKeyDown);
   doc.body.append(overlay);
-  const releaseFocus = trapFocus(overlay);
+  const releaseFocus = trapFocusInOwnerDocument(overlay);
   closeActiveMarkdownImageLightbox = closeLightbox;
 
   function closeLightbox(): void {

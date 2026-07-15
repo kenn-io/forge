@@ -46,11 +46,11 @@ test("keybindings tour: palette, recents, reserved, cheatsheet, sidebar, modal i
   await page.keyboard.press("Meta+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await expect(palette).toBeVisible();
-  await expect(page.locator(".palette-input")).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "Search command palette" })).toBeFocused();
   await page.waitForTimeout(400);
 
   // ---- Step 2: type a command-prefix query, see the Commands group --------
-  await page.locator(".palette-input").fill(">settings");
+  await page.getByRole("textbox", { name: "Search command palette" }).fill(">settings");
   const commandsGroup = palette.locator(".palette-group", {
     hasText: "Commands",
   });
@@ -70,7 +70,7 @@ test("keybindings tour: palette, recents, reserved, cheatsheet, sidebar, modal i
   // ---- Step 4: reopen palette and use the PR prefix ----------------------
   await page.keyboard.press("Meta+K");
   await expect(palette).toBeVisible();
-  await page.locator(".palette-input").fill("pr:");
+  await page.getByRole("textbox", { name: "Search command palette" }).fill("pr:");
   const pullsGroup = palette.locator(".palette-group", {
     hasText: "Pull requests",
   });
@@ -110,7 +110,7 @@ test("keybindings tour: palette, recents, reserved, cheatsheet, sidebar, modal i
   await page.waitForTimeout(500);
 
   // ---- Step 8: reserved prefix shows the v2-search placeholder -----------
-  await page.locator(".palette-input").fill("repo:foo");
+  await page.getByRole("textbox", { name: "Search command palette" }).fill("repo:foo");
   const reservedRow = palette.locator(".palette-row-disabled");
   await expect(reservedRow).toBeVisible();
   await expect(reservedRow).toContainText(/v2|pr:|issue:/);
@@ -132,7 +132,7 @@ test("keybindings tour: palette, recents, reserved, cheatsheet, sidebar, modal i
   await page.waitForTimeout(500);
 
   // ---- Step 11: filter cheatsheet narrows the rendered set --------------
-  const cheatsheetFilter = cheatsheet.locator(".cheatsheet-filter");
+  const cheatsheetFilter = cheatsheet.getByRole("textbox", { name: "Filter shortcuts" });
   await cheatsheetFilter.fill("next");
   // After filtering, "Next pull request" is still visible but unrelated
   // actions like "Toggle theme" should no longer be present.
@@ -177,10 +177,10 @@ test("keybindings tour: palette, recents, reserved, cheatsheet, sidebar, modal i
   const beforeSelectedCount = await page.locator(".pull-item.selected").count();
   // Clear any prior input text first so the j keypress lands in an
   // empty field and the resulting value is unambiguous to assert.
-  await page.locator(".palette-input").fill("");
-  await page.locator(".palette-input").focus();
+  await page.getByRole("textbox", { name: "Search command palette" }).fill("");
+  await page.getByRole("textbox", { name: "Search command palette" }).focus();
   await page.keyboard.press("j");
-  await expect(page.locator(".palette-input")).toHaveValue("j");
+  await expect(page.getByRole("textbox", { name: "Search command palette" })).toHaveValue("j");
   const afterSelectedCount = await page.locator(".pull-item.selected").count();
   expect(afterSelectedCount).toBe(beforeSelectedCount);
   await page.waitForTimeout(500);

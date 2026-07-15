@@ -602,6 +602,7 @@
   }
 
   let containerEl = $state<HTMLElement | null>(null);
+  let containerWidth = $state(0);
 
   function maxRightSidebarWidth(
     containerWidth: number,
@@ -613,6 +614,15 @@
         RIGHT_SIDEBAR_RESIZE_HANDLE_WIDTH,
     );
   }
+
+  const rightSidebarAriaMax = $derived(
+    containerWidth > 0
+      ? maxRightSidebarWidth(containerWidth)
+      : Math.max(MIN_SIDEBAR_WIDTH, sidebarWidth),
+  );
+  const rightSidebarAriaMin = $derived(
+    Math.min(MIN_SIDEBAR_WIDTH, rightSidebarAriaMax),
+  );
 
   function clampRightSidebarWidth(
     containerWidth: number,
@@ -667,7 +677,7 @@
       sidebarResizeMinWidth,
       Math.min(
         sidebarResizeMaxWidth,
-        sidebarResizeStartWidth - event.deltaX,
+        sidebarResizeStartWidth - event.delta,
       ),
     );
   }
@@ -2829,7 +2839,11 @@
             </button>
           </div>
         </div>
-        <div class="terminal-and-sidebar" bind:this={containerEl}>
+        <div
+          class="terminal-and-sidebar"
+          bind:this={containerEl}
+          bind:clientWidth={containerWidth}
+        >
           <div class="terminal-area">
             <div class="workspace-surface">
               <div class="workspace-toolbar">
@@ -3020,6 +3034,10 @@
             <SplitResizeHandle
               class="sidebar-resize-handle"
               ariaLabel="Resize workspace details"
+              orientation="horizontal"
+              ariaValueMin={rightSidebarAriaMin}
+              ariaValueMax={rightSidebarAriaMax}
+              ariaValueNow={sidebarWidth}
               onResizeStart={handleSidebarResizeStart}
               onResize={handleSidebarResize}
             />

@@ -58,11 +58,24 @@ describe("FileJumpPicker", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Jump to file" }));
     const search = screen.getByRole("combobox", { name: "Jump to file" });
     await fireEvent.keyDown(search, { key: "ArrowDown" });
-    await fireEvent.keyDown(search, { key: "ArrowDown" });
     await fireEvent.keyDown(search, { key: "Enter" });
 
     expect(requestScrollToFile).toHaveBeenCalledOnce();
     expect(requestScrollToFile).toHaveBeenCalledWith("README.md");
+    expect(screen.queryByRole("combobox", { name: "Jump to file" })).toBeNull();
+  });
+
+  it("clears a query before Escape closes the picker", async () => {
+    renderPicker();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Jump to file" }));
+    const search = screen.getByRole("combobox", { name: "Jump to file" }) as HTMLInputElement;
+    await fireEvent.input(search, { target: { value: "readme" } });
+
+    await fireEvent.keyDown(search, { key: "Escape" });
+    expect((screen.getByRole("combobox", { name: "Jump to file" }) as HTMLInputElement).value).toBe("");
+
+    await fireEvent.keyDown(search, { key: "Escape" });
     expect(screen.queryByRole("combobox", { name: "Jump to file" })).toBeNull();
   });
 });

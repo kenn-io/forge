@@ -360,7 +360,7 @@ test.describe("repository source browser", () => {
       await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
       const palette = page.getByRole("dialog", { name: "Command palette" });
       await expect(palette).toBeVisible();
-      await palette.locator(".palette-input").fill("repo.browser.open");
+      await palette.getByRole("textbox", { name: "Search command palette" }).fill("repo.browser.open");
       await palette.getByRole("button", { name: /View repository source/ }).click();
       await readmeLoaded;
 
@@ -473,8 +473,8 @@ test.describe("repository source browser", () => {
       const sidebar = browser.locator(".repo-browser__sidebar");
       const viewer = browser.getByRole("main", { name: "Selected file" });
       const history = browser.getByRole("complementary", { name: "File history" });
-      const filesHandle = browser.getByRole("button", { name: "Resize file tree" });
-      const historyHandle = browser.getByRole("button", { name: "Resize file history" });
+      const filesHandle = browser.getByRole("separator", { name: "Resize file tree" });
+      const historyHandle = browser.getByRole("separator", { name: "Resize file history" });
 
       await expect(viewer.locator(".repo-browser__path")).toContainText("README.md");
       await expect(viewer.locator(".repo-browser__source")).toContainText("# Widget Service");

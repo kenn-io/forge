@@ -8,7 +8,7 @@ test("config file changes update visible repo choices through SSE", async ({ pag
     await page.goto(`${server.info.base_url}/pulls`);
     await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
 
-    const selector = page.getByTitle("Select repository");
+    const selector = page.getByRole("button", { name: /^Select repository:/ });
     await selector.click();
     await expect(
       page.getByRole("option", {

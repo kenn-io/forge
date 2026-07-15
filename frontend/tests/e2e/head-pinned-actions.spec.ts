@@ -326,7 +326,7 @@ test.describe("palette approve head conflict", () => {
     await page.goto("/pulls/github/acme/widgets/77");
     await expect(page.locator(".detail-title")).toContainText("Unbound head PR");
     await page.keyboard.press("Meta+K");
-    await page.locator(".palette-input").fill("approve pr");
+    await page.getByRole("textbox", { name: "Search command palette" }).fill("approve pr");
     await page.keyboard.press("Enter");
 
     const request = await approveRequest;
@@ -365,7 +365,7 @@ test.describe("palette approve head conflict", () => {
         req.method() === "POST" && /\/pulls\/github\/acme\/widgets\/42\/approve$/.test(new URL(req.url()).pathname),
     );
     await page.keyboard.press("Meta+K");
-    await page.locator(".palette-input").fill("approve pr");
+    await page.getByRole("textbox", { name: "Search command palette" }).fill("approve pr");
     await page.keyboard.press("Enter");
 
     // The approval pin must be the latest synced provider head; in this

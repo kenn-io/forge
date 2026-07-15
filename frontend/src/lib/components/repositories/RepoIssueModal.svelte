@@ -131,7 +131,7 @@
     max-height: min(720px, calc(100vh - 24px));
   }
 
-  :global(.kit-modal-body:has(> .issue-modal__form)) {
+  :global(.kit-modal-body:has(> .modal-scope > .issue-modal__form)) {
     padding: 0;
     overflow: hidden;
   }
@@ -213,6 +213,17 @@
   }
 
   @media (max-width: 640px) {
+    :global(.kit-modal-overlay:has(.issue-modal__form)) {
+      align-items: flex-end;
+    }
+
+    :global(.kit-modal-panel:has(.issue-modal__form)) {
+      width: 100%;
+      max-width: 100%;
+      max-height: calc(100dvh - 12px);
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    }
+
     .issue-modal__header {
       align-items: flex-start;
     }

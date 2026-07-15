@@ -1007,6 +1007,13 @@
     editError = null;
   }
 
+  function startCompactEdit(entry: TimelineEntry): void {
+    if (!expandedCompactRows.includes(entry.key)) {
+      expandedCompactRows = [...expandedCompactRows, entry.key];
+    }
+    startEdit(entry.event);
+  }
+
   function cancelEdit(): void {
     editingId = null;
     editDraft = "";
@@ -1348,11 +1355,11 @@
   {/if}
 {/snippet}
 
-{#snippet eventActions(event: PREvent | IssueEvent)}
+{#snippet eventActions(event: PREvent | IssueEvent, onEdit: (() => void) | undefined)}
   {#if canEditComment(event)}
     <IconButton
       size="sm"
-      onclick={() => startEdit(event)}
+      onclick={() => onEdit ? onEdit() : startEdit(event)}
       ariaLabel="Edit comment"
       disabled={savingEditId !== null || deletingId !== null}
     >
@@ -1735,7 +1742,7 @@
                 </div>
               {/if}
               <div class="compact-event-actions">
-                {@render eventActions(event)}
+                {@render eventActions(event, () => startCompactEdit(entry))}
               </div>
             </div>
             {#if canExpandCompact && compactExpanded}
@@ -1831,7 +1838,7 @@
             time={formatRelativeTime(event.CreatedAt)}
           >
             {#snippet actions()}
-              {@render eventActions(event)}
+              {@render eventActions(event, undefined)}
             {/snippet}
             {#if event.Summary && (event.EventType === "commit" || event.EventType === "force_push")}
               <p class="event-summary">{event.Summary}</p>
@@ -1887,7 +1894,7 @@
                           {/if}
                           <span class="event-time">{formatRelativeTime(reply.CreatedAt)}</span>
                           <span class="thread-reply-actions">
-                            {@render eventActions(reply)}
+                            {@render eventActions(reply, undefined)}
                           </span>
                         </div>
                         {@render eventBody(reply, true)}

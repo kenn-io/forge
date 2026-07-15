@@ -26,7 +26,7 @@ Already completed stage-4 migrations remain intact. This work does not rewrite a
 4. Checker output is supporting evidence, not the inventory. Audit semantic equivalents that use different names.
 5. Delete replaced local markup, CSS, helpers, and components in the same slice.
 6. Do not introduce compatibility shims. Adapt call sites to the canonical shared API.
-7. If the checker reports application-owned UI that kit-ui does not support, fix the checker rule rather than reshaping production markup or adding a suppression solely to reach zero findings. This PR uses the installed kit-ui contracts only; axis-aware `SplitResizeHandle` behavior and a reusable resizable inline bottom dock are deferred follow-up work, and other middleman-specific gaps remain local.
+7. If the checker reports application-owned UI that kit-ui does not support, fix the checker rule rather than reshaping production markup or adding a suppression solely to reach zero findings. This PR uses installed kit-ui contracts only; axis-aware `SplitResizeHandle` and `BottomDock` adoption land as a follow-up after their shared contracts became available, while other middleman-specific gaps remain local.
 
 ## Stage-4 completion audit
 
@@ -188,15 +188,14 @@ Work in independently validated slices so failures remain attributable:
 3. Toggle migration.
 4. Checkbox migrations and documented exceptions.
 5. Non-Card control migrations.
-6. Genuine Card hierarchy migrations.
-7. Timeline/CommentCard audit and adoption.
-8. DatePicker fit and any supported control migration.
+6. Card hierarchy and Timeline/CommentCard adoption as one coordinated slice.
+7. DatePicker fit and any supported control migration.
 
 For each slice:
 
 - update or add focused Vitest component/store tests;
-- use Vitest browser for native focus, modifier keys, popup positioning, collapsed TopBar content, drag behavior, and computed layout when no external server is needed;
-- use Playwright only for geometry or full application workflows that browser components cannot prove;
+- use Vitest browser for native focus, modifier keys, collapsed TopBar content, and non-geometric interaction behavior when no external server is needed;
+- use Playwright for popup geometry and overflow, pointer drag, or full application workflows that browser components cannot prove;
 - run targeted kit-ui-check rules and confirm temporary markers decrease.
 
 After the final frontend/test edit, run:
@@ -211,9 +210,39 @@ After the final frontend/test edit, run:
 
 The final source search must find no temporary `wa1f` markers and no obsolete exception citing a resolved kit-ui gap.
 
+## Completion inventory and evidence
+
+The completed audit uses the following decision matrix. It is the manual inventory behind the checker result; a clean heuristic scan alone is not completion evidence.
+
+| Surface family | Audited files/components | Decision | Required evidence |
+| --- | --- | --- | --- |
+| Repository summaries | `RepoSummaryCard`, `RepoPageState`, `RepoMetricGrid` | Raised/default Cards with equal-height composition; nested links and buttons remain local | Repository summary component tests and `repo-summaries.spec.ts`, including phone issue-dialog geometry |
+| Detail activity | `EventTimeline`, threaded replies, suggestion batches, `ReviewSuggestionBlock` | Shared Timeline/TimelineItem and CommentCard/Card anatomy; per-reply actions and mutation ownership remain local | EventTimeline component coverage for root, reply, compact edit, copy/link/delete plus real detail workflows |
+| Editors and review trays | `DocMarkdownEditor`, `DiffReviewDraftTray` | Default Card frames; application flex/height and upward-shadow behavior stay local | Docs and diff component tests plus affected full-stack specs |
+| Mobile and board cards | `MobileActivityView`, `KanbanCard` | Shared Card hierarchy; drag payload and nested interaction remain application-owned | Browser drag/cursor coverage and server-backed workflow-state coverage |
+| Detail descriptions | Pull and issue Markdown description surfaces | Inset Card only where it does not duplicate timeline chrome or break delegated Markdown interaction | Pull/issue component tests and focus/detail full-stack workflows |
+| Control chrome misreported as Card | File jump, repository/ref pickers, generated Markdown, review textarea | Use Button/IconButton/SearchInput/Typeahead where contracts fit; retain only behavior-based exceptions for command navigation, sanitized generated HTML, or missing editor primitives | Kit checker suppressions state the exact mismatch and focused keyboard/focus tests pin the retained behavior |
+
+The semantic status inventory is similarly domain-based:
+
+| Domain state | Shared status | Representative owners |
+| --- | --- | --- |
+| Active synchronization, refresh, log streaming, or active workspace work | `working` | `StatusBar`, pull/issue list and detail refresh, `LogViewer`, workspace busy indicators |
+| Explicitly waiting for user input | `waiting` | Tab/workflow status callers that expose a user-blocked label |
+| Live but not currently doing work | `idle` | Running terminal/workflow sessions and ready workspace activity |
+| Delayed, not pushed, or degraded-but-not-failed | `stale` | Commit push state, stale worktree/project indicators, delayed tooling state |
+| Failed or action-required | `unclean` | Workspace/tooling error mappings |
+| No visible state | `quiet` | Pushed commits and callers without a meaningful indicator |
+
+Labels remain domain-specific (`Helper running`, `Syncing pull requests`, `Has stale worktrees`) even when colors share the semantic vocabulary. Continuous health gradients, provider-specific review verdict colors, and composite workspace indicators remain application-owned because reducing them to one finite status would discard information.
+
+The required workflow verification for this migration is explicit: Kata owner/project mutation and task-reference insertion, date metadata selection/clearing, repository import Shift-range selection, settings persistence, command-palette and file-jump keyboard/focus behavior, threaded comment actions, source/diff rail pointer resizing, and modal/popup geometry at narrow and phone sizes. Component or browser tests cover local interaction state; Playwright covers geometry and real backend/daemon boundaries.
+
+The dependency contract for this completion is the exact `@kenn-io/kit-ui` revision pinned in the workspace package manifests and Bun lockfile. A dependency update must rerun the manual inventory, browser interactions, affected Playwright suites, and the stock checker before it can be treated as equivalent.
+
 ## Kata and PR completion
 
-As each slice lands, add concise completion evidence to the relevant Kata child. Create or update Kata records only for genuine migration work. Application-owned behavior that the checker misclassifies is resolved in later checker work, not converted into an upstream component enhancement; `jvxt` and `ba3w` remain explicit follow-up tasks outside this PR.
+As each slice lands, add concise completion evidence to the relevant Kata child. Create or update Kata records only for genuine migration work. Application-owned behavior that the checker misclassifies is resolved in later checker work, not converted into an upstream component enhancement. Follow-up tasks `jvxt` and `ba3w` adopt the landed axis-aware splitter and inline bottom-dock contracts without moving application state or policy into kit-ui.
 
 Close `fn3y`, `2df7`, and `wa1f` only after their current acceptance criteria are satisfied. Close `kqyv` only after:
 

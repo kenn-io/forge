@@ -1974,7 +1974,8 @@ test("message links a message to an external Kata task and refreshes linked mess
     await page.getByRole("button", { name: "Link to task" }).click();
     const dialog = page.getByRole("dialog", { name: "Link to task" });
     await expect(dialog).toBeVisible();
-    await dialog.getByLabel("Search tasks").fill("q3");
+    await dialog.getByRole("button", { name: "Title or qualified ID..." }).click();
+    await dialog.getByRole("combobox", { name: "Title or qualified ID..." }).fill("q3");
     await dialog.getByRole("option", { name: /Kata#kat-7.*Email Susan re: Q3/ }).click();
     await dialog.getByRole("button", { name: "Link", exact: true }).click();
 

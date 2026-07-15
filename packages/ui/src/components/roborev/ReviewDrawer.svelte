@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { copyToClipboard } from "@kenn-io/kit-ui";
+  import { BottomDock, copyToClipboard } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import StatusBadge from "./StatusBadge.svelte";
   import VerdictBadge from "./VerdictBadge.svelte";
@@ -12,11 +12,6 @@
     isTerminalStatus,
     panelReviewHeader,
   } from "../../utils/roborev-panel.js";
-
-  // NOTE: intentionally NOT kit-ui DetailDrawer. This is a resizable bottom
-  // dock (height: 50vh; resize: vertical; accent border-top) that lives
-  // inline in the reviews layout, not a floating dimmed right side-sheet.
-  // The kit-ui-check-ignore markers below record that deliberate choice.
 
   interface Props {
     activeTab?: "review" | "log" | "prompt";
@@ -130,12 +125,19 @@
     stores.roborevJobs?.setPanelMemberInterest(selectedPanelRun);
   });
 </script>
-
-{#if isOpen}
-  <!-- kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet -->
-  <div class="drawer">
-    <!-- kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet -->
-    <div class="drawer-header">
+<!-- kit-ui-check-ignore: this is the shared BottomDock primitive; the review-drawer class only preserves the feature's styling hook -->
+<BottomDock class="review-drawer"
+  open={isOpen}
+  onclose={close}
+  ariaLabel="Review details"
+  initialHeight="50vh"
+  minHeight="200px"
+  maxHeight="80vh"
+  closeTitle="Close review details"
+  closeAriaLabel="Close review details"
+>
+  {#snippet header()}
+    <div class="review-dock-header review-header-content">
       <div class="header-start">
         {#if selectedJob}
           <span class="job-id">
@@ -186,110 +188,89 @@
           <StatusBadge status={selectedJob.status} />
         {/if}
       </div>
-      <button
-        class="close-btn"
-        onclick={close}
-        title="Close drawer"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 16 16"
-          fill="currentColor"
-        >
-          <path
-            d="M3.72 3.72a.75.75 0 011.06 0L8
-              6.94l3.22-3.22a.75.75 0 111.06
-              1.06L9.06 8l3.22 3.22a.75.75 0
-              11-1.06 1.06L8 9.06l-3.22
-              3.22a.75.75 0 01-1.06-1.06L6.94
-              8 3.72 4.78a.75.75 0 010-1.06z"
-          />
-        </svg>
-      </button>
-    </div>
 
-    {#if panelHeader}
-      <div class="panel-line">
-        {panelHeader}
-        {#if panelError}
-          <span class="panel-error">
-            Could not refresh reviewers.
-          </span>
-          {#if selectedPanelRun}
-            <button
-              type="button"
-              class="panel-retry"
-              onclick={() =>
-                stores.roborevJobs?.refreshPanelMembers(
-                  selectedPanelRun,
-                )}
-            >
-              Retry
-            </button>
+      {#if panelHeader}
+        <div class="panel-line">
+          {panelHeader}
+          {#if panelError}
+            <span class="panel-error">
+              Could not refresh reviewers.
+            </span>
+            {#if selectedPanelRun}
+              <button
+                type="button"
+                class="panel-retry"
+                onclick={() =>
+                  stores.roborevJobs?.refreshPanelMembers(
+                    selectedPanelRun,
+                  )}
+              >
+                Retry
+              </button>
+            {/if}
+          {:else if panelLoading}
+            <span class="panel-progress">
+              Refreshing reviewers...
+            </span>
+          {:else if selectedJob && !isTerminalStatus(selectedJob.status)}
+            <span class="panel-progress">
+              Panel still synthesizing...
+            </span>
           {/if}
-        {:else if panelLoading}
-          <span class="panel-progress">
-            Refreshing reviewers...
-          </span>
-        {:else if selectedJob && !isTerminalStatus(selectedJob.status)}
-          <span class="panel-progress">
-            Panel still synthesizing...
-          </span>
-        {/if}
-      </div>
-    {/if}
-
-    <div class="tab-bar">
-      <button
-        class="tab"
-        class:active={activeTab === "review"}
-        onclick={() => (activeTab = "review")}
-      >
-        Review
-      </button>
-      <button
-        class="tab"
-        class:active={activeTab === "log"}
-        onclick={() => (activeTab = "log")}
-      >
-        Log
-      </button>
-      <button
-        class="tab"
-        class:active={activeTab === "prompt"}
-        onclick={() => (activeTab = "prompt")}
-      >
-        Prompt
-      </button>
-    </div>
-
-    <!-- kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet -->
-    <div class="drawer-body">
-      {#if activeTab === "review"}
-        {#if selectedJob?.status === "skipped" && selectedJob.skip_reason}
-          <div class="skip-reason">
-            Skipped: {selectedJob.skip_reason}
-          </div>
-        {/if}
-        <ReviewContent />
-        <div class="responses-section">
-          <ResponseList />
         </div>
-      {:else if activeTab === "log"}
-        {#if selectedJob}
-          <LogViewer
-            jobId={selectedJob.id}
-            jobStatus={selectedJob.status}
-          />
-        {/if}
-      {:else if activeTab === "prompt"}
-        <PromptViewer />
       {/if}
-    </div>
 
-    <!-- kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet -->
-    <div class="drawer-footer">
+      <div class="tab-bar">
+        <button
+          class="tab"
+          class:active={activeTab === "review"}
+          onclick={() => (activeTab = "review")}
+        >
+          Review
+        </button>
+        <button
+          class="tab"
+          class:active={activeTab === "log"}
+          onclick={() => (activeTab = "log")}
+        >
+          Log
+        </button>
+        <button
+          class="tab"
+          class:active={activeTab === "prompt"}
+          onclick={() => (activeTab = "prompt")}
+        >
+          Prompt
+        </button>
+      </div>
+    </div>
+  {/snippet}
+
+  {#snippet children()}
+    {#if activeTab === "review"}
+      {#if selectedJob?.status === "skipped" && selectedJob.skip_reason}
+        <div class="skip-reason">
+          Skipped: {selectedJob.skip_reason}
+        </div>
+      {/if}
+      <ReviewContent />
+      <div class="responses-section">
+        <ResponseList />
+      </div>
+    {:else if activeTab === "log"}
+      {#if selectedJob}
+        <LogViewer
+          jobId={selectedJob.id}
+          jobStatus={selectedJob.status}
+        />
+      {/if}
+    {:else if activeTab === "prompt"}
+      <PromptViewer />
+    {/if}
+  {/snippet}
+
+  {#snippet footer()}
+    <div class="review-dock-footer">
       <div class="footer-actions">
         {#if hasReview}
           <button
@@ -332,33 +313,18 @@
         </span>
       {/if}
     </div>
-  </div>
-{/if}
+  {/snippet}
+</BottomDock>
 
 <style>
-  /* kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet */
-  .drawer {
-    display: flex;
-    flex-direction: column;
-    height: 50vh;
-    min-height: 200px;
-    max-height: 80vh;
+  :global(.review-drawer) {
     border-top: 2px solid var(--accent-blue);
-    background: var(--bg-surface);
-    resize: vertical;
-    overflow: hidden;
   }
 
-  /* kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet */
-  .drawer-header {
+  .review-header-content {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border-muted);
-    flex-shrink: 0;
-    min-height: 36px;
+    flex-direction: column;
+    min-width: 0;
   }
 
   .header-start {
@@ -415,10 +381,11 @@
   }
 
   .panel-line {
-    padding: 4px 16px;
+    margin-top: 4px;
+    padding: 4px;
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    border-bottom: 1px solid var(--border-muted);
+    border-top: 1px solid var(--border-muted);
     display: flex;
     gap: 12px;
   }
@@ -447,31 +414,12 @@
     color: var(--text-secondary);
   }
 
-  .close-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border: none;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-
-  .close-btn:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
   .tab-bar {
     display: flex;
     gap: 0;
-    border-bottom: 1px solid var(--border-muted);
+    border-top: 1px solid var(--border-muted);
     flex-shrink: 0;
-    padding: 0 12px;
+    margin-top: 4px;
   }
 
   .tab {
@@ -495,28 +443,17 @@
     border-bottom-color: var(--accent-blue);
   }
 
-  /* kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet */
-  .drawer-body {
-    flex: 1;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-  }
-
   .responses-section {
     padding: 12px 20px 16px;
     border-top: 1px solid var(--border-muted);
   }
 
-  /* kit-ui-check-ignore: resizable inline bottom dock, not a kit side-sheet */
-  .drawer-footer {
+  .review-dock-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 8px 12px;
-    border-top: 1px solid var(--border-muted);
-    flex-shrink: 0;
+    gap: 12px;
+    width: 100%;
   }
 
   .footer-actions {

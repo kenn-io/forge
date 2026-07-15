@@ -172,6 +172,27 @@ test.describe("repository summaries", () => {
     ).toBeVisible();
   });
 
+  test("anchors the new issue dialog to the bottom of a phone viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/repos");
+
+    const widgetsCard = page
+      .locator(".repo-card")
+      .filter({ has: page.getByRole("button", { name: /acme\s*\/\s*widgets/ }) })
+      .first();
+    await widgetsCard.waitFor({ state: "visible", timeout: 10_000 });
+    await widgetsCard.getByRole("button", { name: "New issue" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "New issue in acme/widgets" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "New issue in acme/widgets" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Create issue" })).toBeVisible();
+
+    const box = await dialog.boundingBox();
+    expect(box).not.toBeNull();
+    expect(Math.abs(844 - (box!.y + box!.height))).toBeLessThanOrEqual(2);
+  });
+
   test("keeps an issue draft retryable after the first request is interrupted", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {

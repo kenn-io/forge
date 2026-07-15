@@ -337,9 +337,9 @@ test.describe("workspace tab persistence", () => {
       expect(toolbarMetrics.scrollWidth).toBeLessThanOrEqual(toolbarMetrics.clientWidth);
       await page.setViewportSize({ width: 1100, height: 720 });
       await diffToolbar.getByRole("button", { name: "Jump to file" }).click();
-      const fileJump = page.locator(".right-sidebar .file-jump-menu");
+      const fileJump = page.locator(".right-sidebar").getByRole("dialog", { name: "Jump to file" });
       await expect(fileJump).toBeVisible();
-      await expect(fileJump.getByRole("searchbox", { name: "Jump to file" })).toBeFocused();
+      await expect(fileJump.getByRole("combobox", { name: "Jump to file" })).toBeFocused();
       await expect(fileJump.getByRole("option", { name: /alpha\.ts/ })).toBeVisible();
       const jumpGeometry = await fileJump.evaluate((menu) => {
         const menuRect = menu.getBoundingClientRect();

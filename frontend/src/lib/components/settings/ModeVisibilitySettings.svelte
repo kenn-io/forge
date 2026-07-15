@@ -143,12 +143,12 @@
     gap: var(--space-4) var(--space-5);
   }
 
-  :global(.mode-toggle) {
+  .mode-visibility-settings :global(.mode-toggle) {
     min-width: 0;
     line-height: 1.2;
   }
 
-  :global(.mode-toggle .kit-checkbox__label) {
+  .mode-visibility-settings :global(.mode-toggle .kit-checkbox__label) {
     overflow-wrap: anywhere;
   }
 

@@ -150,6 +150,32 @@ describe("expandMarkdownImages", () => {
     expect(document.activeElement).toBe(closeButton);
   });
 
+  test("traps focus and scroll in the image owner's document", () => {
+    const iframe = document.createElement("iframe");
+    document.body.append(iframe);
+    const doc = iframe.contentDocument!;
+    doc.body.innerHTML = '<div class="markdown-body"><p><img src="/shots/frame.png" alt="Frame image"></p></div>';
+
+    try {
+      expandMarkdownImages(doc);
+      const opener = doc.querySelector<HTMLButtonElement>('button[aria-label="Open image in expanded view"]')!;
+      opener.focus();
+      opener.click();
+
+      const overlay = doc.querySelector<HTMLElement>(".markdown-image-lightbox");
+      expect(overlay).not.toBeNull();
+      expect(doc.activeElement).toBe(overlay);
+      expect(doc.body.style.overflow).toBe("hidden");
+      expect(document.body.style.overflow).toBe("");
+
+      overlay?.querySelector<HTMLButtonElement>('button[aria-label="Close expanded image"]')?.click();
+      expect(doc.body.style.overflow).toBe("");
+      expect(doc.activeElement).toBe(opener);
+    } finally {
+      iframe.remove();
+    }
+  });
+
   test("lets the expanded image use the viewport instead of a fixed-height canvas", () => {
     const panelStyle = declarationsFor(".markdown-image-lightbox__panel");
     const imageStyle = declarationsFor(".markdown-image-lightbox__panel img");

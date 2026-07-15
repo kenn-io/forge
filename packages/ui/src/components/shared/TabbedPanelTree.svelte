@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { StatusDot } from "@kenn-io/kit-ui";
+  import { SplitResizeHandle, StatusDot, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import type { Snippet } from "svelte";
   import Self from "./TabbedPanelTree.svelte";
   import {
@@ -76,7 +76,13 @@
     onClearDrag = undefined,
   }: Props = $props();
 
+  const MIN_RATIO = 0.12;
+  const MAX_RATIO = 0.88;
+
   let splitEl = $state<HTMLDivElement | null>(null);
+  let splitSize = $state(0);
+  let resizeStartRatio = 0.5;
+  let resizeStartSize = 0;
   let dropTargetsVisible = $state(false);
   let activeSplitEdge = $state<TabbedPanelSplitEdge | null>(null);
   let draggedTabKey = $state<string | null>(null);
@@ -386,36 +392,34 @@
     return `--dragged-tab-width: ${width}px;`;
   }
 
-  function startResize(event: PointerEvent): void {
-    if (disabled) return;
-    if (node.type !== "split" || !splitEl) return;
-    event.preventDefault();
+  function measureSplit(): number {
+    if (node.type !== "split" || !splitEl) return 0;
     const rect = splitEl.getBoundingClientRect();
-    const direction = node.direction;
-    const splitID = node.id;
-    const pointerID = event.pointerId;
-    (event.currentTarget as HTMLElement).setPointerCapture(pointerID);
+    return node.direction === "horizontal" ? rect.width : rect.height;
+  }
 
-    function onPointerMove(moveEvent: PointerEvent): void {
-      const ratio =
-        direction === "horizontal"
-          ? (moveEvent.clientX - rect.left) / Math.max(1, rect.width)
-          : (moveEvent.clientY - rect.top) / Math.max(1, rect.height);
-      onRatioChange?.(splitID, clampTabbedPanelRatio(ratio));
-    }
+  $effect(() => {
+    if (node.type !== "split" || !splitEl) return;
+    splitSize = measureSplit();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      splitSize = measureSplit();
+    });
+    observer.observe(splitEl);
+    return () => observer.disconnect();
+  });
 
-    function onPointerUp(upEvent: PointerEvent): void {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      try {
-        (event.currentTarget as HTMLElement).releasePointerCapture(upEvent.pointerId);
-      } catch {
-        // Pointer capture may already be gone after a browser-cancelled drag.
-      }
-    }
+  function startResize(): void {
+    if (node.type !== "split") return;
+    resizeStartRatio = node.ratio;
+    splitSize = measureSplit();
+    resizeStartSize = splitSize;
+  }
 
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp, { once: true });
+  function handleResize(event: SplitResizeEvent): void {
+    if (node.type !== "split") return;
+    const ratio = resizeStartRatio + event.delta / Math.max(1, resizeStartSize);
+    onRatioChange?.(node.id, clampTabbedPanelRatio(ratio));
   }
 
   function tabDragEnabled(): boolean {
@@ -472,7 +476,7 @@
               ondragend={finishTabDrag}
               ondblclick={() => onTabDoubleClick?.(tab.key)}
               aria-selected={activeTabKey === tab.key}
-              aria-label={tab.label}
+              aria-label={tab.status ? `${tab.label}, ${tab.status.label}` : tab.label}
               role="tab"
               onclick={() => onSelectTab?.(tab.key)}
             >
@@ -568,12 +572,17 @@
         {onClearDrag}
       />
     </div>
-    <button
+    <SplitResizeHandle
       class="tabbed-panel-split-divider"
-      aria-label={resizeLabel}
-      disabled={disabled}
-      onpointerdown={startResize}
-    ></button>
+      ariaLabel={resizeLabel}
+      orientation={node.direction}
+      ariaValueMin={Math.round(MIN_RATIO * splitSize)}
+      ariaValueMax={Math.round(MAX_RATIO * splitSize)}
+      ariaValueNow={Math.round(node.ratio * splitSize)}
+      {disabled}
+      onResizeStart={startResize}
+      onResize={handleResize}
+    />
     <div class="tabbed-panel-split-child second">
       <Self
         {dragScope}
@@ -638,35 +647,8 @@
     flex: var(--second-ratio) 1 0;
   }
 
-  .tabbed-panel-split-divider {
+  :global(.tabbed-panel-split-divider) {
     flex: 0 0 var(--chrome-pane-divider-width);
-    appearance: none;
-    border: 0;
-    padding: 0;
-    background: var(--border-muted);
-    /* kit-ui-check-ignore: recursive split-tree sash (n-ary, orientation-switching), not a two-pane sidebar handle */
-    cursor: col-resize;
-    flex-shrink: 0;
-  }
-
-  .tabbed-panel-split.vertical > .tabbed-panel-split-divider {
-    cursor: row-resize;
-  }
-
-  .tabbed-panel-split-divider:hover,
-  .tabbed-panel-split-divider:focus-visible {
-    background: var(--accent-blue);
-    outline: none;
-  }
-
-  .tabbed-panel-split-divider:disabled {
-    cursor: default;
-    opacity: 0.62;
-  }
-
-  .tabbed-panel-split-divider:disabled:hover,
-  .tabbed-panel-split-divider:disabled:focus-visible {
-    background: var(--border-muted);
   }
 
   :global(.tabbed-panel-split.horizontal

@@ -61,6 +61,6 @@ describe("repository browser responsive rails", () => {
       const sidebar = document.querySelector<HTMLElement>(".repo-browser__sidebar");
       expect(sidebar?.style.width).toBe("260px");
     });
-    await expect.element(page.getByRole("button", { name: "Resize file history" })).toBeVisible();
+    await expect.element(page.getByRole("separator", { name: "Resize file history" })).toBeVisible();
   });
 });

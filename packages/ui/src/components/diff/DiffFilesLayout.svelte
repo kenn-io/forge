@@ -128,7 +128,7 @@
 
   function widthFromResize(event: SplitResizeEvent): number {
     return clampFileTreeWidth(
-      fileTreeResizeStartWidth + event.deltaX,
+      fileTreeResizeStartWidth + event.delta,
     );
   }
 
@@ -176,6 +176,10 @@
     <SplitResizeHandle
       class="files-resize-handle"
       ariaLabel="Resize file tree"
+      orientation="horizontal"
+      ariaValueMin={minAllowedFileTreeWidth()}
+      ariaValueMax={maxAllowedFileTreeWidth()}
+      ariaValueNow={fileTreeWidth}
       onResizeStart={handleFileTreeResizeStart}
       onResize={handleFileTreeResize}
       onResizeEnd={handleFileTreeResizeEnd}

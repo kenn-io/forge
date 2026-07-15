@@ -177,6 +177,38 @@ describe("Palette", () => {
     expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
   });
 
+  it("keeps focus claimed by a command after the palette closes", async () => {
+    const previous = document.createElement("button");
+    const destination = document.createElement("button");
+    document.body.append(previous, destination);
+    previous.focus();
+    registerScopedActions("test-focus-command", [
+      {
+        id: "test.focus",
+        label: "Focus destination",
+        scope: "global",
+        binding: null,
+        priority: 0,
+        when: trueWhen,
+        handler: () => destination.focus(),
+      },
+    ]);
+
+    try {
+      const { rerender } = render(Palette, { props: {} });
+      openPalette();
+      await rerender({});
+      await fireEvent.click(screen.getByRole("button", { name: /Focus destination/ }));
+      await rerender({});
+
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull());
+      expect(document.activeElement).toBe(destination);
+    } finally {
+      previous.remove();
+      destination.remove();
+    }
+  });
+
   it("renders no Recently used header when localStorage is empty", async () => {
     const { rerender } = render(Palette, { props: {} });
     openPalette();

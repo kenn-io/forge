@@ -128,6 +128,11 @@
   const activityPaneWidth = $derived(
     clampActivityPaneWidth(requestedActivityPaneWidth),
   );
+  const activityPaneAriaMax = $derived(
+    Number.isFinite(maxActivityPaneWidth)
+      ? maxActivityPaneWidth
+      : Math.max(minActivityPaneWidth, activityPaneWidth),
+  );
 
   const controlled = $derived(
     controlledDrawer !== undefined || onCloseDrawer !== undefined,
@@ -259,7 +264,7 @@
     event: SplitResizeEvent,
   ): void {
     requestedActivityPaneWidth = clampActivityPaneWidth(
-      activityResizeStartWidth + event.deltaX,
+      activityResizeStartWidth + event.delta,
     );
     persistActivityPaneWidth(requestedActivityPaneWidth);
   }
@@ -341,6 +346,10 @@
     <SplitResizeHandle
       class="activity-split-resize-handle"
       ariaLabel="Resize Activity rail"
+      orientation="horizontal"
+      ariaValueMin={minActivityPaneWidth}
+      ariaValueMax={activityPaneAriaMax}
+      ariaValueNow={activityPaneWidth}
       onResizeStart={handleActivityPaneResizeStart}
       onResize={handleActivityPaneResize}
     />

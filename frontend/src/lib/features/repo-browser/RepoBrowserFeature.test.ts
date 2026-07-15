@@ -43,6 +43,14 @@ type TestClientOptions = {
   refs?: Array<{ type: "branch" | "tag"; name: string; sha: string; stale: boolean }>;
 };
 
+function mockPointerCapture(element: HTMLElement): void {
+  Object.defineProperties(element, {
+    setPointerCapture: { configurable: true, value: vi.fn() },
+    hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+    releasePointerCapture: { configurable: true, value: vi.fn() },
+  });
+}
+
 const runtimeQuerySerializerOptions: QuerySerializerOptions = {
   array: {
     style: "form",
@@ -354,8 +362,37 @@ describe("RepoBrowserFeature", () => {
     await fireEvent.click(screen.getByRole("tab", { name: "Tags 2" }));
 
     expect(screen.getByRole("tab", { name: "Tags 2" }).getAttribute("aria-selected")).toBe("true");
+    expect((screen.getByRole("combobox", { name: "Search repository refs" }) as HTMLInputElement).value).toBe("v1");
     expect(screen.getByRole("option", { name: "v1.0.0 tag-sha" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "feature-preview preview-" })).toBeNull();
     expect(screen.queryByRole("option", { name: "branch: release/v1 release-" })).toBeNull();
+  });
+
+  it("matches repository refs by the complete SHA", async () => {
+    render(RepoBrowserFeature, {
+      props: {
+        client: testClient({
+          refs: [
+            { type: "branch", name: "main", sha: "main-sha", stale: false },
+            {
+              type: "branch",
+              name: "needle-branch",
+              sha: "0123456789abcdef0123456789abcdef01234567",
+              stale: false,
+            },
+          ],
+        }),
+        route,
+        onRouteChange: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Select repository ref: branch: main main-sha" }));
+    await fireEvent.input(screen.getByRole("combobox", { name: "Search repository refs" }), {
+      target: { value: "cdef01234567" },
+    });
+
+    expect(screen.getByRole("option", { name: "needle-branch 01234567" })).toBeTruthy();
   });
 
   it("searches the full ref collection before applying the render limit", async () => {
@@ -480,36 +517,38 @@ describe("RepoBrowserFeature", () => {
     setReadonlyNumber(content!, "clientWidth", 1200);
     sidebar!.getBoundingClientRect = () => ({ width: Number.parseInt(sidebar!.style.width || "340", 10) }) as DOMRect;
 
-    const filesHandle = screen.getByRole("button", { name: "Resize file tree" });
+    const filesHandle = screen.getByRole("separator", { name: "Resize file tree" });
     expect(sidebar!.getAttribute("style")).toContain("width: 340px");
 
-    await fireEvent.mouseDown(filesHandle, { clientX: 200 });
-    await fireEvent.mouseMove(window, { clientX: 300 });
+    mockPointerCapture(filesHandle);
+    await fireEvent.pointerDown(filesHandle, { button: 0, clientX: 200, pointerId: 1 });
+    await fireEvent.pointerMove(filesHandle, { clientX: 300, pointerId: 1 });
     expect(sidebar!.getAttribute("style")).toContain("width: 440px");
 
-    await fireEvent.mouseMove(window, { clientX: 700 });
+    await fireEvent.pointerMove(filesHandle, { clientX: 700, pointerId: 1 });
     expect(sidebar!.getAttribute("style")).toContain("width: 512px");
 
-    await fireEvent.mouseMove(window, { clientX: -100 });
+    await fireEvent.pointerMove(filesHandle, { clientX: -100, pointerId: 1 });
     expect(sidebar!.getAttribute("style")).toContain("width: 260px");
-    await fireEvent.mouseUp(window, { clientX: -100 });
+    await fireEvent.pointerUp(filesHandle, { clientX: -100, pointerId: 1 });
 
     await fireEvent.keyDown(filesHandle, { key: "ArrowRight" });
     expect(sidebar!.getAttribute("style")).toContain("width: 284px");
 
-    const historyHandle = screen.getByRole("button", { name: "Resize file history" });
+    const historyHandle = screen.getByRole("separator", { name: "Resize file history" });
     expect(history.getAttribute("style")).toContain("width: 320px");
 
-    await fireEvent.mouseDown(historyHandle, { clientX: 800 });
-    await fireEvent.mouseMove(window, { clientX: 700 });
+    mockPointerCapture(historyHandle);
+    await fireEvent.pointerDown(historyHandle, { button: 0, clientX: 800, pointerId: 2 });
+    await fireEvent.pointerMove(historyHandle, { clientX: 700, pointerId: 2 });
     expect(history.getAttribute("style")).toContain("width: 420px");
 
-    await fireEvent.mouseMove(window, { clientX: 350 });
+    await fireEvent.pointerMove(historyHandle, { clientX: 350, pointerId: 2 });
     expect(history.getAttribute("style")).toContain("width: 548px");
 
-    await fireEvent.mouseMove(window, { clientX: 1200 });
+    await fireEvent.pointerMove(historyHandle, { clientX: 1200, pointerId: 2 });
     expect(history.getAttribute("style")).toContain("width: 260px");
-    await fireEvent.mouseUp(window, { clientX: 1200 });
+    await fireEvent.pointerUp(historyHandle, { clientX: 1200, pointerId: 2 });
 
     await fireEvent.keyDown(historyHandle, { key: "ArrowLeft" });
     expect(history.getAttribute("style")).toContain("width: 284px");

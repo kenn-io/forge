@@ -116,7 +116,9 @@
     const query = refPickerQuery.trim().toLowerCase();
     const refs = refPickerType === "branch" ? branchRefs : tagRefs;
     if (!query) return refs;
-    return refs.filter((ref) => refOptionLabel(ref).toLowerCase().includes(query));
+    return refs.filter((ref) =>
+      [ref.type, ref.name, ref.sha].some((part) => part.toLowerCase().includes(query)),
+    );
   });
   const refPickerOptions = $derived<TypeaheadOption[]>(
     refPickerFilteredRefs.slice(0, refPickerRenderLimit).map((ref) => ({
@@ -333,7 +335,6 @@
 
   function setRefPickerType(type: RefPickerType): void {
     refPickerType = type;
-    refPickerQuery = "";
     refPickerError = "";
   }
 
@@ -432,7 +433,7 @@
   }
 
   function resizeFiles(event: SplitResizeEvent): void {
-    filesWidth = clampFilesWidth(filesResizeStartWidth + event.deltaX);
+    filesWidth = clampFilesWidth(filesResizeStartWidth + event.delta);
   }
 
   function startHistoryResize(): void {
@@ -442,7 +443,7 @@
   }
 
   function resizeHistory(event: SplitResizeEvent): void {
-    historyWidth = clampHistoryWidth(historyResizeStartWidth - event.deltaX);
+    historyWidth = clampHistoryWidth(historyResizeStartWidth - event.delta);
   }
 
   function toTreeEntry(file: SourceBrowserFileEntry): FileTreeEntry {
@@ -706,6 +707,10 @@
     <SplitResizeHandle
       class="repo-browser__files-resize"
       ariaLabel="Resize file tree"
+      orientation="horizontal"
+      ariaValueMin={Math.min(MIN_RAIL_WIDTH, maxFilesWidth())}
+      ariaValueMax={maxFilesWidth()}
+      ariaValueNow={filesWidth}
       onResizeStart={startFilesResize}
       onResize={resizeFiles}
     />
@@ -774,6 +779,10 @@
     <SplitResizeHandle
       class="repo-browser__history-resize"
       ariaLabel="Resize file history"
+      orientation="horizontal"
+      ariaValueMin={Math.min(MIN_RAIL_WIDTH, maxHistoryWidth())}
+      ariaValueMax={maxHistoryWidth()}
+      ariaValueNow={historyWidth}
       onResizeStart={startHistoryResize}
       onResize={resizeHistory}
     />

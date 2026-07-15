@@ -52,7 +52,7 @@ test.describe("view navigation", () => {
 
     await expect.poll(() => new URL(page.url()).pathname).toBe("/kata");
     await expect(page.getByRole("heading", { name: "Kata" })).toBeVisible();
-    await expect(page.getByTitle("Select repository")).not.toBeAttached();
+    await expect(page.getByRole("button", { name: /^Select repository:/ })).not.toBeAttached();
 
     await page.locator("main.app-main").click();
     await page.keyboard.press("1");

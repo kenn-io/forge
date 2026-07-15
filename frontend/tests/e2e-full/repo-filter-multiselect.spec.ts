@@ -27,7 +27,7 @@ test("repository selector persists provider-qualified filters for provider colli
     await page.goto(`${server.info.base_url}/issues`);
     await waitForIssueList(page);
 
-    const selector = page.getByTitle("Select repository");
+    const selector = page.getByRole("button", { name: /^Select repository:/ });
     await selector.click();
 
     const input = page.getByPlaceholder("Filter repos...");
@@ -64,7 +64,7 @@ test("keyboard navigation survives a real checkbox click", async ({ page }) => {
   await page.goto("/issues");
   await waitForIssueList(page);
 
-  const selector = page.getByTitle("Select repository");
+  const selector = page.getByRole("button", { name: /^Select repository:/ });
   await selector.click();
 
   const input = page.getByPlaceholder("Filter repos...");

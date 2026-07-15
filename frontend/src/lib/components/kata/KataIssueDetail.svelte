@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
+  import type { TypeaheadOption } from "@kenn-io/kit-ui";
   import NetworkIcon from "@lucide/svelte/icons/network";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import { renderMarkdown, renderMarkdownSync } from "@middleman/ui/utils/markdown";
@@ -141,22 +141,6 @@
     return issue.issue.metadata.checklist ?? [];
   }
 
-  function isTaskInboxProject(project: KataProjectSummary): boolean {
-    return project.metadata.role === "inbox";
-  }
-
-  function moveOptions(): TypeaheadOption[] {
-    return projects
-      .filter((project) => project.uid !== issue.issue.project_uid)
-      .filter((project) => !isTaskInboxProject(project))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
-      .map((project) => ({
-        name: project.uid,
-        label: project.name,
-        meta: String(project.open_count),
-      }));
-  }
-
   function currentProjectName(): string {
     const fromIssue = issue.issue.project_name.trim();
     if (fromIssue) return fromIssue;
@@ -247,18 +231,7 @@
   <div class="detail-heading">
     <div class="detail-heading-main">
       <div class="detail-kicker">
-        <div class="crumb-project-control">
-          <Typeahead
-            options={moveOptions()}
-            value=""
-            fallbackLabel={currentProjectName()}
-            placeholder="Move issue project"
-            triggerPrefix="Move issue from"
-            title={`Move issue from ${currentProjectName()}`}
-            emptyLabel="No matching projects"
-            onselect={onMoveIssue}
-          />
-        </div>
+        <span class="crumb-project">{currentProjectName()}</span>
         <span class="crumb-sep">/</span>
         <span class="crumb-id">{issue.issue.short_id}</span>
         <span class="kit-sr-only">{issue.issue.qualified_id}</span>
@@ -447,35 +420,14 @@
     min-width: 0;
   }
 
-  .crumb-project-control {
-    width: clamp(160px, 22vw, 292px);
+  .crumb-project {
     min-width: 0;
-  }
-
-  .crumb-project-control :global(.kit-typeahead__trigger),
-  .crumb-project-control :global(.kit-typeahead__input) {
-    height: 22px;
-    padding: 0 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     color: var(--text-primary);
     font-size: var(--font-size-xs);
     font-weight: 600;
-    background: var(--bg-inset);
-    border-color: var(--border-muted);
-  }
-
-  .crumb-project-control :global(.kit-typeahead__panel) {
-    width: clamp(240px, 28vw, 320px);
-    right: auto;
-  }
-
-  .crumb-project-control :global(.kit-typeahead__trigger:hover) {
-    background: var(--bg-surface-hover);
-    border-color: var(--border-default);
-  }
-
-  .crumb-project-control :global(.kit-typeahead__prefix),
-  .crumb-project-control :global(.kit-typeahead__chevron) {
-    display: none;
   }
 
   .crumb-id {

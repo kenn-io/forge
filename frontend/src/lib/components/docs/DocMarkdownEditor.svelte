@@ -184,6 +184,11 @@
     overflow: hidden;
   }
 
+  :global(.editor-card > .kit-card__body) {
+    flex: 1;
+    min-height: 0;
+  }
+
   .editor-host {
     height: 100%;
     overflow: hidden;

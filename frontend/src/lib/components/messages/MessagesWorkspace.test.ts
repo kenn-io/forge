@@ -301,7 +301,7 @@ describe("MessagesWorkspace status and routing", () => {
     const listPane = container.querySelector(".messages-pane-list") as HTMLElement | null;
     expect(listPane?.style.flexBasis).toBe("480px");
 
-    await fireEvent.keyDown(screen.getByRole("button", { name: "Resize messages message list" }), {
+    await fireEvent.keyDown(screen.getByRole("separator", { name: "Resize messages message list" }), {
       key: "ArrowRight",
     });
     expect(listPane?.style.flexBasis).toBe("504px");

@@ -102,7 +102,7 @@ test("arrow-down past the visible window scrolls the highlighted row into view",
   // pr: filters to the injected long list. groupResults caps at 10
   // entries per group, so the list shows 10 PR rows. The .palette-list
   // pane is short enough that arrow-down past visible rows must scroll.
-  await page.locator(".palette-input").fill("pr:");
+  await page.getByRole("textbox", { name: "Search command palette" }).fill("pr:");
 
   const rows = page.locator(".palette-list .palette-row");
   await expect(rows.first()).toBeVisible();

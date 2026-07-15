@@ -192,7 +192,7 @@ test.describe.serial("Roborev", () => {
       await parent.click();
       await failureServed;
       await expect(page).toHaveURL(/\/reviews\/79$/);
-      await expect(page.locator(".drawer")).toBeVisible();
+      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
       await expect(page.locator(".panel-error")).toContainText("Could not refresh reviewers.");
       await expect(page.locator(".members-status-row.error")).toContainText("Could not refresh reviewers.");
       allowRetryRefresh = true;
@@ -223,7 +223,7 @@ test.describe.serial("Roborev", () => {
       await expect(members.nth(0)).toHaveClass(/highlighted/);
       await page.keyboard.press("Enter");
       await expect(page).toHaveURL(/\/reviews\/77$/);
-      await expect(page.locator(".drawer")).toBeVisible();
+      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
       await expect(page.locator(".header-start .review-type", { hasText: "default" })).toBeVisible();
     });
 
@@ -286,7 +286,7 @@ test.describe.serial("Roborev", () => {
       await expect(parent).toBeVisible();
       await expect(parent).toHaveAttribute("aria-expanded", "false");
       await expect(page.locator(".job-row.member")).toHaveCount(0);
-      await expect(page.locator(".drawer")).toBeVisible();
+      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
       await firstMemberFetchStarted;
       await expect(page.locator(".panel-line")).toContainText("Refreshing reviewers");
 
@@ -768,7 +768,7 @@ test.describe.serial("Roborev", () => {
       // Click the first row (which should be a done job with review)
       await page.locator(".job-row").first().click();
 
-      const drawer = page.locator(".drawer");
+      const drawer = page.getByRole("region", { name: "Review details" });
       await expect(drawer).toBeVisible({ timeout: 10_000 });
 
       // The review tab should be active by default
@@ -780,7 +780,7 @@ test.describe.serial("Roborev", () => {
       // Open drawer for job 72 (known: fix/parser, gemini)
       await openDrawer(page, 72);
 
-      const header = page.locator(".drawer-header");
+      const header = page.locator(".review-dock-header");
       await expect(header.locator(".job-id")).toContainText("72");
       await expect(header.locator(".repo-name")).toBeVisible();
       await expect(header.locator(".branch")).toHaveText("fix/parser");
@@ -823,7 +823,7 @@ test.describe.serial("Roborev", () => {
       await openDrawer(page, 71);
 
       // Find and click the close review button
-      const closeReviewBtn = page.locator(".drawer-footer .action-btn", {
+      const closeReviewBtn = page.locator(".review-dock-footer .action-btn", {
         hasText: "Close Review",
       });
       await expect(closeReviewBtn).toBeVisible({
@@ -833,7 +833,7 @@ test.describe.serial("Roborev", () => {
 
       // After close, button should change to "Reopen"
       await expect(
-        page.locator(".drawer-footer .action-btn", {
+        page.locator(".review-dock-footer .action-btn", {
           hasText: "Reopen",
         }),
       ).toBeVisible({ timeout: 10_000 });
@@ -843,7 +843,7 @@ test.describe.serial("Roborev", () => {
       await openDrawer(page, 73);
 
       // Click the rerun button
-      const rerunBtn = page.locator(".drawer-footer .action-btn", {
+      const rerunBtn = page.locator(".review-dock-footer .action-btn", {
         hasText: "Rerun",
       });
       await expect(rerunBtn).toBeVisible({
@@ -854,7 +854,7 @@ test.describe.serial("Roborev", () => {
       // The table should reload (job may now be queued again)
       // Just verify the action completed without error
       await page.waitForTimeout(500);
-      await expect(page.locator(".drawer")).toBeVisible();
+      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
     });
 
     test("cancel button hidden for non-cancelable job 70", async ({ page }) => {
@@ -862,7 +862,7 @@ test.describe.serial("Roborev", () => {
 
       // Job 70 is failed (daemon processed it), so
       // Cancel button should NOT be visible.
-      const cancelBtn = page.locator(".drawer-footer .action-btn-danger", {
+      const cancelBtn = page.locator(".review-dock-footer .action-btn-danger", {
         hasText: "Cancel",
       });
       await expect(cancelBtn).not.toBeVisible({
@@ -870,7 +870,7 @@ test.describe.serial("Roborev", () => {
       });
 
       // Rerun button should still be available
-      const rerunBtn = page.locator(".drawer-footer .action-btn", {
+      const rerunBtn = page.locator(".review-dock-footer .action-btn", {
         hasText: "Rerun",
       });
       await expect(rerunBtn).toBeVisible({
@@ -882,7 +882,7 @@ test.describe.serial("Roborev", () => {
       // Open a done job with review content
       await openDrawer(page, 72);
 
-      const copyBtn = page.locator(".drawer-footer .action-btn", {
+      const copyBtn = page.locator(".review-dock-footer .action-btn", {
         hasText: "Copy Output",
       });
       await expect(copyBtn).toBeVisible({
@@ -921,7 +921,7 @@ test.describe.serial("Roborev", () => {
       await expect(page.locator(".job-table")).toBeVisible({
         timeout: 15_000,
       });
-      await expect(page.locator(".drawer")).not.toBeVisible();
+      await expect(page.getByRole("region", { name: "Review details" })).not.toBeVisible();
     });
 
     test("/reviews/:jobId opens drawer on page load", async ({ page }) => {
@@ -943,21 +943,21 @@ test.describe.serial("Roborev", () => {
 
       // Open drawer
       await page.locator(".job-row").first().click();
-      await expect(page.locator(".drawer")).toBeVisible();
+      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
 
       // Close via X button
-      await page.locator(".drawer-header .close-btn").click();
-      await expect(page.locator(".drawer")).not.toBeVisible();
+      await page.getByRole("button", { name: "Close review details" }).click();
+      await expect(page.getByRole("region", { name: "Review details" })).not.toBeVisible();
       await expect(page).toHaveURL(/\/reviews$/);
     });
 
     test("page reload preserves drawer state for valid jobId", async ({ page }) => {
       await openDrawer(page, 72);
-      await expect(page.locator(".drawer")).toBeVisible();
+      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
 
       // Reload
       await page.reload();
-      await expect(page.locator(".drawer")).toBeVisible({
+      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible({
         timeout: 15_000,
       });
       await expect(page.locator(".job-id")).toContainText("72");
@@ -977,7 +977,7 @@ test.describe.serial("Roborev", () => {
       await expect(page.locator(".job-row.highlighted")).toBeVisible();
 
       // Drawer should NOT open
-      await expect(page.locator(".drawer")).not.toBeVisible();
+      await expect(page.getByRole("region", { name: "Review details" })).not.toBeVisible();
 
       // Press j again to move to next
       await page.keyboard.press("j");
@@ -999,7 +999,7 @@ test.describe.serial("Roborev", () => {
 
       // Press Enter to open drawer
       await page.keyboard.press("Enter");
-      await expect(page.locator(".drawer")).toBeVisible({
+      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible({
         timeout: 10_000,
       });
     });
@@ -1010,11 +1010,11 @@ test.describe.serial("Roborev", () => {
 
       // Open drawer
       await page.locator(".job-row").first().click();
-      await expect(page.locator(".drawer")).toBeVisible();
+      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
 
       // Close with Escape
       await page.keyboard.press("Escape");
-      await expect(page.locator(".drawer")).not.toBeVisible();
+      await expect(page.getByRole("region", { name: "Review details" })).not.toBeVisible();
     });
 
     test("? opens help modal, Escape closes it", async ({ page }) => {
@@ -1039,7 +1039,7 @@ test.describe.serial("Roborev", () => {
       // Cmd+R should not trigger the 'r' rerun shortcut
       // (it should be a page reload, but we just verify no
       // shortcut side-effect happens)
-      const drawerBefore = await page.locator(".drawer").isVisible();
+      const drawerBefore = await page.getByRole("region", { name: "Review details" }).isVisible();
       expect(drawerBefore).toBe(false);
 
       await page.keyboard.press("Meta+r");
@@ -1047,7 +1047,7 @@ test.describe.serial("Roborev", () => {
       await page.waitForTimeout(300);
 
       // No drawer should have opened
-      await expect(page.locator(".drawer")).not.toBeVisible();
+      await expect(page.getByRole("region", { name: "Review details" })).not.toBeVisible();
     });
   });
 
@@ -1222,13 +1222,13 @@ test.describe.serial("Roborev", () => {
       // Click a row to open the drawer and verify content
       // actually loaded (not just an empty shell)
       await page.locator(".job-row").first().click();
-      await expect(page.locator(".drawer")).toBeVisible({
+      await expect(page.getByRole("region", { name: "Review details" })).toBeVisible({
         timeout: 10_000,
       });
       await expect(page.locator(".job-id")).toBeVisible({
         timeout: 5_000,
       });
-      await expect(page.locator(".drawer-header")).toContainText(/\d+/);
+      await expect(page.locator(".review-dock-header")).toContainText(/\d+/);
     });
   });
 });

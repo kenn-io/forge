@@ -163,6 +163,7 @@ describe("WorkspaceTerminalView embed props", () => {
       "ResizeObserver",
       class {
         observe(): void {}
+        unobserve(): void {}
         disconnect(): void {}
       },
     );

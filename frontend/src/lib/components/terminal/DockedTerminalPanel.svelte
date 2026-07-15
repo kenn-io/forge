@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import type { RuntimeSession } from "@middleman/ui/api/types";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import XIcon from "@lucide/svelte/icons/x";
@@ -20,7 +21,10 @@
     TerminalDock,
   } from "./terminal-layout";
   import {
+    MAX_TERMINAL_HEIGHT,
     MAX_TERMINAL_LEAVES,
+    MIN_TERMINAL_HEIGHT,
+    clampTerminalHeight,
     collectSessionKeys,
     countLeaves,
   } from "./terminal-layout";
@@ -86,6 +90,8 @@
     onSplitSession,
   }: Props = $props();
 
+  let resizeStartHeight = 0;
+
   const visibleKeys = $derived(collectSessionKeys(tree));
   const canSplit = $derived(
     open && sessions.length > 0 && countLeaves(tree) < MAX_TERMINAL_LEAVES,
@@ -129,24 +135,12 @@
     clearActiveTerminalDrag();
   }
 
-  function startPanelResize(event: PointerEvent): void {
-    if (disabled) return;
-    if (dock !== "bottom") return;
-    event.preventDefault();
-    const startY = event.clientY;
-    const startHeight = height;
+  function startPanelResize(): void {
+    resizeStartHeight = height;
+  }
 
-    function onPointerMove(moveEvent: PointerEvent): void {
-      onResize?.(startHeight + startY - moveEvent.clientY);
-    }
-
-    function onPointerUp(): void {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-    }
-
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp, { once: true });
+  function resizePanel(event: SplitResizeEvent): void {
+    onResize?.(clampTerminalHeight(resizeStartHeight - event.delta));
   }
 </script>
 
@@ -158,12 +152,17 @@
   ondrop={handleDrop}
 >
   {#if dock === "bottom" && open}
-    <button
+    <SplitResizeHandle
       class="panel-resizer"
-      aria-label="Resize terminal panel"
-      disabled={disabled}
-      onpointerdown={startPanelResize}
-    ></button>
+      ariaLabel="Resize terminal panel"
+      orientation="vertical"
+      ariaValueMin={MIN_TERMINAL_HEIGHT}
+      ariaValueMax={MAX_TERMINAL_HEIGHT}
+      ariaValueNow={height}
+      {disabled}
+      onResizeStart={startPanelResize}
+      onResize={resizePanel}
+    />
   {/if}
 
   <div class="panel-header">
@@ -321,19 +320,17 @@
     border-top: 0;
   }
 
-  .panel-resizer {
+  :global(.panel-resizer) {
     position: absolute;
     top: calc(-1 * var(--chrome-dock-resize-hit-outset));
     left: 0;
     right: 0;
     height: var(--chrome-dock-resize-hit-size);
-    border: 0;
     background: transparent;
-    cursor: row-resize;
     z-index: 3;
   }
 
-  .panel-resizer::before {
+  :global(.panel-resizer::before) {
     content: "";
     position: absolute;
     left: 0;
@@ -343,8 +340,8 @@
     background: var(--border-default);
   }
 
-  .panel-resizer:hover::before,
-  .panel-resizer:focus-visible::before {
+  :global(.panel-resizer:hover::before),
+  :global(.panel-resizer:focus-visible::before) {
     background: var(--accent-blue);
   }
 

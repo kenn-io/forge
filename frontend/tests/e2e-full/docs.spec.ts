@@ -48,7 +48,7 @@ test.describe("docs workspace", () => {
     try {
       await page.goto(`${server.info.base_url}/docs`);
 
-      const folderButton = page.getByRole("button", { name: "Switch folder" });
+      const folderButton = page.getByRole("combobox", { name: /^Switch folder:/ });
       await expect(folderButton).toContainText("Notes");
       await expect(page).toHaveURL(/folder=notes/);
       await expect(page).toHaveURL(/doc=README\.md/);
@@ -139,7 +139,7 @@ test.describe("docs workspace", () => {
       await page.goto(`${server.info.base_url}/docs`);
       await expect(page.getByRole("heading", { name: "Welcome to Notes" })).toBeVisible();
 
-      await page.getByRole("button", { name: "Switch folder" }).click();
+      await page.getByRole("combobox", { name: /^Switch folder:/ }).click();
       await page.getByRole("option", { name: /Engineering/ }).click();
 
       await expect(page).toHaveURL(/folder=engineering/);
@@ -175,7 +175,7 @@ test.describe("docs workspace", () => {
       // Switch folders via the chip — landing auto-open loads beta/README
       // without an explicit anchor. The consumed anchor must not be reused:
       // beta opens at the top with its h1 in view.
-      await page.getByRole("button", { name: "Switch folder" }).click();
+      await page.getByRole("combobox", { name: /^Switch folder:/ }).click();
       await page.getByRole("option", { name: /Beta/ }).click();
       await expect(page).toHaveURL(/folder=beta/);
       await expect(page.getByRole("heading", { name: "Beta Home", level: 1 })).toBeVisible();

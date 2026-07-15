@@ -149,19 +149,30 @@ afterEach(() => {
 });
 
 describe("Provider events store wiring", () => {
-  it("passes onDataChanged that refreshes the core stores", () => {
-    render(Provider, { props: { client: stubClient } });
+  it.each([
+    { route: "pulls", pulls: 1, issues: 0, activity: 0 },
+    { route: "mobile-pulls", pulls: 1, issues: 0, activity: 0 },
+    { route: "issues", pulls: 0, issues: 1, activity: 0 },
+    { route: "mobile-issues", pulls: 0, issues: 1, activity: 0 },
+    { route: "activity", pulls: 0, issues: 0, activity: 1 },
+    { route: "mobile-activity", pulls: 0, issues: 0, activity: 1 },
+    { route: "focus", pulls: 1, issues: 1, activity: 0 },
+    { route: "terminal", pulls: 0, issues: 0, activity: 0 },
+    { route: "workspaces", pulls: 0, issues: 0, activity: 0 },
+  ])("refreshes only the stores visible on the $route route", ({ route, pulls, issues, activity }) => {
+    render(Provider, {
+      props: { client: stubClient, getPage: () => route },
+    });
 
     expect(captured.store).not.toBeNull();
-    const assert = expect;
     const cb = captured.store?.options.onDataChanged;
-    assert(cb).toBeTypeOf("function");
+    expect(cb).toBeTypeOf("function");
 
     cb?.();
 
-    assert(loadPulls).toHaveBeenCalledTimes(1);
-    assert(loadIssues).toHaveBeenCalledTimes(1);
-    assert(loadActivity).toHaveBeenCalledTimes(1);
+    expect(loadPulls).toHaveBeenCalledTimes(pulls);
+    expect(loadIssues).toHaveBeenCalledTimes(issues);
+    expect(loadActivity).toHaveBeenCalledTimes(activity);
   });
 
   it("passes onSyncStatus that pushes the received status into sync store", () => {

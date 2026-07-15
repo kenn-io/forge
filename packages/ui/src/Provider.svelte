@@ -271,15 +271,32 @@
       ]);
     }
 
+    function refreshVisibleData(): void {
+      switch (gp()) {
+        case "pulls":
+        case "mobile-pulls":
+          void pullsStore.loadPulls();
+          break;
+        case "issues":
+        case "mobile-issues":
+          void issuesStore.loadIssues();
+          break;
+        case "activity":
+        case "mobile-activity":
+          void activityStore.loadActivity();
+          break;
+        case "focus":
+          void pullsStore.loadPulls();
+          void issuesStore.loadIssues();
+          break;
+      }
+    }
+
     const eventsStore = createEventsStore({
       ...(cfg.basePath != null && {
         getBasePath: () => cfg.basePath as string,
       }),
-      onDataChanged: () => {
-        void pullsStore.loadPulls();
-        void issuesStore.loadIssues();
-        void activityStore.loadActivity();
-      },
+      onDataChanged: refreshVisibleData,
       onSyncStatus: (status) => {
         syncStore.setSyncStatus(status);
       },

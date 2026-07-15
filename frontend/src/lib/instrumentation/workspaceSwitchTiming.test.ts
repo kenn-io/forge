@@ -20,6 +20,8 @@ describe("workspace switch timing", () => {
   });
 
   afterEach(() => {
+    cancelWorkspaceSwitch();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -164,5 +166,42 @@ describe("workspace switch timing", () => {
     cancelWorkspaceSwitch(token);
 
     expect(currentInteractionTraceId()).toBeNull();
+  });
+
+  test("first paint ends the interaction trace and clears its fallback", () => {
+    vi.useFakeTimers();
+    beginWorkspaceSwitch("ws-1", undefined);
+
+    expect(createWorkspaceSwitchPaneTimer().record("first-paint")).toBe(true);
+
+    expect(currentInteractionTraceId()).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test("the recording-window fallback ends an unfinished interaction trace", () => {
+    vi.useFakeTimers();
+    beginWorkspaceSwitch("ws-1", undefined);
+    expect(currentInteractionTraceId()).not.toBeNull();
+
+    vi.advanceTimersByTime(30_000);
+
+    expect(currentInteractionTraceId()).toBeNull();
+  });
+
+  test("supersession and cancellation clear the matching fallback timeout", () => {
+    vi.useFakeTimers();
+    beginWorkspaceSwitch("ws-1", undefined);
+    vi.advanceTimersByTime(10_000);
+
+    const token = beginWorkspaceSwitch("ws-2", undefined);
+    const secondTraceId = currentInteractionTraceId();
+    expect(vi.getTimerCount()).toBe(1);
+
+    vi.advanceTimersByTime(20_000);
+    expect(currentInteractionTraceId()).toBe(secondTraceId);
+
+    cancelWorkspaceSwitch(token);
+    expect(currentInteractionTraceId()).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

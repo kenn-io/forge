@@ -11,14 +11,35 @@ import (
 )
 
 // otelTraceable reports whether a request should get an otelhttp
-// server span. WebSocket upgrades and the SSE events stream live for
+// server span. WebSocket upgrades and known SSE/NDJSON modes live for
 // the connection lifetime and would produce hours-long spans;
 // terminal attach gets its own bounded span instead (internal/tracing).
-func otelTraceable(r *http.Request) bool {
-	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
-		return false
+func otelTraceable(basePath string) func(*http.Request) bool {
+	prefix := strings.TrimSuffix(basePath, "/")
+	return func(r *http.Request) bool {
+		if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			return false
+		}
+		path := r.URL.Path
+		if prefix != "" && strings.HasPrefix(path, prefix+"/") {
+			path = strings.TrimPrefix(path, prefix)
+		}
+		if r.Method == http.MethodGet {
+			switch path {
+			case "/api/v1/events":
+				return false
+			case "/api/v1/kata/proxy/api/v1/events/stream":
+				return false
+			case "/api/roborev/api/stream/events":
+				return false
+			case "/api/roborev/api/job/output":
+				return r.URL.Query().Get("stream") != "1"
+			}
+		}
+		return r.Method != http.MethodPost ||
+			path != "/api/roborev/api/sync/now" ||
+			r.URL.Query().Get("stream") != "1"
 	}
-	return !strings.HasSuffix(r.URL.Path, "/events")
 }
 
 // otelSpanName formats the span name for otelhttp. otelhttp renames

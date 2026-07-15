@@ -19,6 +19,10 @@ import (
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/sshfleet"
@@ -504,6 +508,18 @@ func TestSSHFleetRelayAutoStartsRemoteDaemon(t *testing.T) {
 
 func TestSSHFleetWebSocketTerminalUsesAttachSpecCommand(t *testing.T) {
 	require := require.New(t)
+	assert := assert.New(t)
+	recorder := tracetest.NewSpanRecorder()
+	prev := otel.GetTracerProvider()
+	prevProp := otel.GetTextMapPropagator()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder)))
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{}, propagation.Baggage{},
+	))
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prev)
+		otel.SetTextMapPropagator(prevProp)
+	})
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	setTestFleetConfig(fixture.server, func(cfg *config.Config) {
@@ -536,7 +552,10 @@ func TestSSHFleetWebSocketTerminalUsesAttachSpecCommand(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/fleet/hosts/epyc/workspaces/ws_1/runtime/sessions/sess-1/terminal?cols=80&rows=24"
+		"/ws/v1/fleet/hosts/epyc/workspaces/ws_1/runtime/sessions/sess-1/terminal" +
+		"?cols=80&rows=24" +
+		"&traceparent=00-33333333333333333333333333333333-4444444444444444-01" +
+		"&baggage=interaction%3Dworkspace-switch%2Chost.key%3Depyc"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "test done")
@@ -545,6 +564,21 @@ func TestSSHFleetWebSocketTerminalUsesAttachSpecCommand(t *testing.T) {
 	readWebSocketBinaryUntil(t, ctx, conn, 5*time.Second, "echo:ping")
 	require.Contains(fake.calls,
 		"GET /api/v1/workspaces/ws_1/runtime/sessions/sess-1/attach-spec")
+
+	var attachSpan sdktrace.ReadOnlySpan
+	for _, span := range recorder.Ended() {
+		if span.Name() == "terminal.attach" {
+			attachSpan = span
+		}
+	}
+	require.NotNil(attachSpan, "bounded attach span must end before the websocket bridge")
+	assert.Equal("33333333333333333333333333333333", attachSpan.SpanContext().TraceID().String())
+	assert.Equal("4444444444444444", attachSpan.Parent().SpanID().String())
+	attrs := map[string]string{}
+	for _, kv := range attachSpan.Attributes() {
+		attrs[string(kv.Key)] = kv.Value.AsString()
+	}
+	assert.Equal("epyc", attrs["host.key"])
 }
 
 func TestSSHFleetWebSocketTerminalHonorsResizeActive(t *testing.T) {

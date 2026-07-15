@@ -18,9 +18,12 @@ import (
 	"github.com/creack/pty/v2"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/tracing"
 )
 
 type fleetRESTProxyRoute struct {
@@ -796,6 +799,8 @@ func (s *Server) serveFleetWebSocketProxy(
 		s.serveSSHFleetWebSocketTerminal(w, r, *target.sshPeer, targetPath)
 		return
 	}
+	r, attachSpan, endAttachSpan := startFleetAttachSpan(r)
+	defer endAttachSpan()
 
 	peerURL := remoteWebSocketURL(target.peer.BaseURL, targetPath, r.URL.RawQuery)
 	dialHeader := make(http.Header)
@@ -805,6 +810,7 @@ func (s *Server) serveFleetWebSocketProxy(
 		HTTPHeader: dialHeader,
 	})
 	if err != nil {
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		writeProblemResponse(w, newProblem(
 			http.StatusBadGateway,
 			CodeUpstreamError,
@@ -819,6 +825,7 @@ func (s *Server) serveFleetWebSocketProxy(
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		slog.Debug(
 			"fleet websocket accept failed",
 			"host_key", target.peer.Key,
@@ -828,7 +835,14 @@ func (s *Server) serveFleetWebSocketProxy(
 	}
 	defer clientConn.Close(websocket.StatusNormalClosure, "hub detached")
 
+	endAttachSpan()
 	bridgeWebSocketProxy(r.Context(), clientConn, peerConn)
+}
+
+func startFleetAttachSpan(r *http.Request) (*http.Request, trace.Span, func()) {
+	ctx, attachSpan := tracing.StartAttachSpan(r, "terminal.attach")
+	endAttachSpan := sync.OnceFunc(func() { attachSpan.End() })
+	return r.WithContext(ctx), attachSpan, endAttachSpan
 }
 
 func (s *Server) serveSSHFleetWebSocketTerminal(
@@ -837,8 +851,12 @@ func (s *Server) serveSSHFleetWebSocketTerminal(
 	peer config.FleetSSHPeer,
 	targetPath string,
 ) {
+	r, attachSpan, endAttachSpan := startFleetAttachSpan(r)
+	defer endAttachSpan()
+
 	attachSpecPath, ok := attachSpecPathForFleetTerminalTarget(targetPath)
 	if !ok {
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		writeProblemResponse(w, newProblem(
 			http.StatusNotImplemented,
 			CodeUnsupportedCapability,
@@ -848,12 +866,14 @@ func (s *Server) serveSSHFleetWebSocketTerminal(
 		return
 	}
 	if s.sshFleet == nil {
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		writeProblemResponse(w, fleetHostNotFoundProblem(peer.Key))
 		return
 	}
 
 	resp, err := s.sshFleet.relay(r.Context(), peer, http.MethodGet, attachSpecPath, nil)
 	if err != nil {
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		writeProblemResponse(w, newProblem(
 			http.StatusBadGateway,
 			CodeUpstreamError,
@@ -871,6 +891,7 @@ func (s *Server) serveSSHFleetWebSocketTerminal(
 		}
 	}
 	if resp.Status/100 != 2 {
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.Status)
 		_, _ = w.Write(out)
@@ -879,6 +900,7 @@ func (s *Server) serveSSHFleetWebSocketTerminal(
 
 	var spec runtimeAttachSpecResponse
 	if err := json.Unmarshal(out, &spec); err != nil {
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		writeProblemResponse(w, newProblem(
 			http.StatusBadGateway,
 			CodeUpstreamError,
@@ -889,6 +911,7 @@ func (s *Server) serveSSHFleetWebSocketTerminal(
 	}
 	attach, err := startFleetSSHAttachPTY(r.Context(), spec, r)
 	if err != nil {
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		writeProblemResponse(w, newProblem(
 			http.StatusBadGateway,
 			CodeUpstreamError,
@@ -902,6 +925,7 @@ func (s *Server) serveSSHFleetWebSocketTerminal(
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
+		attachSpan.SetAttributes(attribute.Bool("error", true))
 		attach.close()
 		slog.Debug(
 			"fleet ssh websocket accept failed",
@@ -911,6 +935,7 @@ func (s *Server) serveSSHFleetWebSocketTerminal(
 		return
 	}
 	defer clientConn.Close(websocket.StatusNormalClosure, "hub detached")
+	endAttachSpan()
 	bridgeFleetSSHAttachPTY(r.Context(), clientConn, attach)
 }
 

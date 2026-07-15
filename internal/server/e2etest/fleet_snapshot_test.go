@@ -18,6 +18,10 @@ import (
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"go.kenn.io/middleman/internal/config"
 	dbpkg "go.kenn.io/middleman/internal/db"
@@ -1004,6 +1008,17 @@ func TestFleetOperationProxyRoutesSelfNestedOwnerE2E(t *testing.T) {
 func TestFleetTerminalWebSocketProxyE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
+	recorder := tracetest.NewSpanRecorder()
+	prev := otel.GetTracerProvider()
+	prevProp := otel.GetTextMapPropagator()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder)))
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{}, propagation.Baggage{},
+	))
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prev)
+		otel.SetTextMapPropagator(prevProp)
+	})
 
 	var handlerMu sync.Mutex
 	var handlerErrors []string
@@ -1015,7 +1030,7 @@ func TestFleetTerminalWebSocketProxyE2E(t *testing.T) {
 
 	peerMux := http.NewServeMux()
 	peerMux.HandleFunc("/ws/v1/workspaces/ws-1/runtime/sessions/sess-1/terminal", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.RawQuery != "cols=80&rows=24" {
+		if r.URL.Query().Get("cols") != "80" || r.URL.Query().Get("rows") != "24" {
 			recordHandlerError("terminal query: " + r.URL.RawQuery)
 		}
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
@@ -1057,7 +1072,10 @@ func TestFleetTerminalWebSocketProxyE2E(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	wsURL := "ws" + strings.TrimPrefix(hubTS.URL, "http") +
-		"/ws/v1/fleet/hosts/peer/workspaces/ws-1/runtime/sessions/sess-1/terminal?cols=80&rows=24"
+		"/ws/v1/fleet/hosts/peer/workspaces/ws-1/runtime/sessions/sess-1/terminal" +
+		"?cols=80&rows=24" +
+		"&traceparent=00-11111111111111111111111111111111-2222222222222222-01" +
+		"&baggage=interaction%3Dworkspace-switch%2Chost.key%3Dpeer"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "test done")
@@ -1067,6 +1085,21 @@ func TestFleetTerminalWebSocketProxyE2E(t *testing.T) {
 	require.NoError(err)
 	require.Equal(websocket.MessageBinary, typ)
 	require.Equal("peer:ping", string(data))
+
+	var attachSpan sdktrace.ReadOnlySpan
+	for _, span := range recorder.Ended() {
+		if span.Name() == "terminal.attach" {
+			attachSpan = span
+		}
+	}
+	require.NotNil(attachSpan, "bounded attach span must end before the websocket bridge")
+	assert.Equal("11111111111111111111111111111111", attachSpan.SpanContext().TraceID().String())
+	assert.Equal("2222222222222222", attachSpan.Parent().SpanID().String())
+	attrs := map[string]string{}
+	for _, kv := range attachSpan.Attributes() {
+		attrs[string(kv.Key)] = kv.Value.AsString()
+	}
+	assert.Equal("peer", attrs["host.key"])
 
 	handlerMu.Lock()
 	gotHandlerErrors := append([]string(nil), handlerErrors...)

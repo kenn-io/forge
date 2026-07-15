@@ -892,7 +892,7 @@ func newServer(
 		assembled = mux
 	}
 	s.handler = otelhttp.NewHandler(assembled, "middleman.http",
-		otelhttp.WithFilter(otelTraceable),
+		otelhttp.WithFilter(otelTraceable(basePath)),
 		otelhttp.WithSpanNameFormatter(otelSpanName))
 
 	return s

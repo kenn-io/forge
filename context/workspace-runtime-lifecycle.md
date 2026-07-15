@@ -152,6 +152,15 @@ via `OTEL_TRACES_EXPORTER`.
 - Base-path routing must preserve the inner Huma route pattern for outer OTel
   middleware; otherwise prefixed API spans collapse to the base-path pattern
   (`internal/server/otel_middleware.go::stripPrefixPreservingPattern`).
+- A workspace-switch trace ends at terminal first paint or after 30 seconds;
+  cancellation and supersession must clear the matching fallback timer
+  (`frontend/src/lib/instrumentation/workspaceSwitchTiming.ts::endSwitchTrace`).
+- Automatic HTTP tracing excludes only exact long-lived stream routes/modes;
+  short endpoints such as telemetry event capture remain traced
+  (`internal/server/otel_middleware.go::otelTraceable`).
+- Fleet proxy and SSH terminal WebSockets need their own bounded attach span,
+  ending after setup and before the long-lived bridge
+  (`internal/server/fleet_proxy.go::startFleetAttachSpan`).
 
 ## Testing Expectations
 

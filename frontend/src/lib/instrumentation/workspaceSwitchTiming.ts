@@ -39,6 +39,7 @@ interface WorkspaceSwitch {
   beganAt: number;
   recorded: Set<WorkspaceSwitchPhase>;
   traceId: string;
+  traceTimeout: ReturnType<typeof setTimeout> | null;
 }
 
 // Phases arriving later than this after route selection belong to some
@@ -51,13 +52,21 @@ const MAX_PHASE_AGE_MS = 30_000;
 let current: WorkspaceSwitch | null = null;
 let switchSeq = 0;
 
+function endSwitchTrace(sw: WorkspaceSwitch): void {
+  if (sw.traceTimeout !== null) {
+    clearTimeout(sw.traceTimeout);
+    sw.traceTimeout = null;
+  }
+  endInteractionTrace(sw.traceId);
+}
+
 // Marks route selection: the moment the terminal view reacts to a new
 // workspace route. All phase measures are durations from this mark.
 // The returned token identifies this switch for cancelWorkspaceSwitch.
 export function beginWorkspaceSwitch(workspaceId: string, hostKey: string | undefined): string {
   if (current) {
     clearInteraction(WORKSPACE_SWITCH_INTERACTION, current.token);
-    endInteractionTrace(current.traceId);
+    endSwitchTrace(current);
   }
   switchSeq += 1;
   const token = String(switchSeq);
@@ -65,7 +74,21 @@ export function beginWorkspaceSwitch(workspaceId: string, hostKey: string | unde
     "workspace.id": workspaceId,
     ...(hostKey !== undefined ? { "host.key": hostKey } : {}),
   });
-  current = { token, workspaceId, hostKey, beganAt: performance.now(), recorded: new Set(), traceId };
+  const sw: WorkspaceSwitch = {
+    token,
+    workspaceId,
+    hostKey,
+    beganAt: performance.now(),
+    recorded: new Set(),
+    traceId,
+    traceTimeout: null,
+  };
+  current = sw;
+  sw.traceTimeout = setTimeout(() => {
+    if (current !== sw) return;
+    sw.traceTimeout = null;
+    endInteractionTrace(sw.traceId);
+  }, MAX_PHASE_AGE_MS);
   markInteractionStart(WORKSPACE_SWITCH_INTERACTION, token);
   return token;
 }
@@ -78,13 +101,16 @@ export function cancelWorkspaceSwitch(token?: string): void {
   if (!current) return;
   if (token !== undefined && current.token !== token) return;
   clearInteraction(WORKSPACE_SWITCH_INTERACTION, current.token);
-  endInteractionTrace(current.traceId);
+  endSwitchTrace(current);
   current = null;
 }
 
 function recordPhase(sw: WorkspaceSwitch, phase: WorkspaceSwitchPhase, detail?: PhaseDetail): boolean {
+  if (performance.now() - sw.beganAt > MAX_PHASE_AGE_MS) {
+    endSwitchTrace(sw);
+    return false;
+  }
   if (sw.recorded.has(phase)) return false;
-  if (performance.now() - sw.beganAt > MAX_PHASE_AGE_MS) return false;
   sw.recorded.add(phase);
   measureInteraction(WORKSPACE_SWITCH_INTERACTION, phase, sw.token, {
     workspaceId: sw.workspaceId,
@@ -92,6 +118,7 @@ function recordPhase(sw: WorkspaceSwitch, phase: WorkspaceSwitchPhase, detail?: 
     traceId: sw.traceId,
     ...detail,
   });
+  if (phase === "first-paint") endSwitchTrace(sw);
   return true;
 }
 

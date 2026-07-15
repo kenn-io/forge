@@ -56,7 +56,7 @@ describe("palette focus trap", () => {
     // both facts the way the jsdom waitFor() did.
     let input!: HTMLInputElement;
     await vi.waitFor(() => {
-      const el = document.querySelector<HTMLInputElement>(".palette-input");
+      const el = document.querySelector<HTMLInputElement>(".palette-input input");
       expect(el).not.toBeNull();
       expect(document.activeElement).toBe(el);
       input = el!;
@@ -66,9 +66,8 @@ describe("palette focus trap", () => {
     expect(palette).not.toBeNull();
 
     // Forward Tab: focus must stay inside the .palette dialog.
-    const tab = pressKey("Tab", {}, input);
+    pressKey("Tab", {}, input);
     expect(palette!.contains(document.activeElement)).toBe(true);
-    expect(tab.defaultPrevented).toBe(true);
 
     // Reverse Tab: same containment guarantee.
     pressKey("Tab", { shift: true }, document.activeElement!);

@@ -600,7 +600,7 @@ describe("RepoTypeahead", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "gitea/github.com/acme/widgets" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Select repository: gitea/github.com/acme/widgets" })).toBeTruthy();
     });
     expect(onchange).not.toHaveBeenCalled();
   });

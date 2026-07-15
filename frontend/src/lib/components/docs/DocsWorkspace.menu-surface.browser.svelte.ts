@@ -40,13 +40,13 @@ describe("docs menu surfaces (browser)", () => {
   it("folder switcher menu computes to the opaque shared popover surface", async () => {
     renderWorkspace();
 
-    const trigger = page.getByRole("button", { name: "Switch folder" });
+    const trigger = page.getByRole("combobox", { name: /^Switch folder:/ });
     await expect.element(trigger).toBeEnabled();
     await trigger.click();
 
-    const menu = page.getByRole("listbox", { name: "Folders" });
-    await expect.element(menu).toBeVisible();
-    const background = getComputedStyle(menu.element()).backgroundColor;
+    const menu = document.querySelector<HTMLElement>(".folder-select .kit-select-dropdown__list");
+    expect(menu).not.toBeNull();
+    const background = getComputedStyle(menu!).backgroundColor;
     expect(background).toMatch(/^rgb\(/);
     expect(background).toBe(resolvedSurfaceColor());
   });

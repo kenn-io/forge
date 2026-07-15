@@ -383,6 +383,7 @@
       class="typeahead-trigger"
       level="inset"
       padding="none"
+      ariaLabel={`Select repository: ${displayValue}`}
       onclick={openDropdown}
     >
       <span class="typeahead-value">{displayValue}</span>

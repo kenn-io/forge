@@ -59,14 +59,22 @@
   $effect(() => {
     if (!open) return;
     queueMicrotask(() => {
-      // Initial-focus priority: an explicit [data-autofocus] control, then a
-      // body input/textarea, then the first enabled body button, then the
-      // first enabled footer button — so confirmation dialogs land on their
-      // first action (Cancel) instead of the panel. Intentionally narrower
-      // than the old shell: custom [tabindex] controls defer to kit's focus
-      // trap (which focuses the panel, or an [autofocus] descendant if a
-      // dialog marks one). Use data-autofocus when the preferred control is
-      // not the first body input (e.g. an input mid-form).
+      // Preserve focus claimed by a mounted child control first. Shared inputs
+      // implement autofocus in their mount attachment rather than by retaining
+      // an HTML autofocus attribute, so replacing it here would move focus back
+      // to the first field in the dialog.
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        (bodyEl?.contains(active) || footEl?.contains(active))
+      ) {
+        return;
+      }
+
+      // Otherwise prefer an explicit [data-autofocus] control, then a body
+      // input/textarea, then the first enabled body button, then the first
+      // enabled footer button — so confirmation dialogs land on their first
+      // action (Cancel) instead of the panel.
       const explicit =
         bodyEl?.querySelector<HTMLElement>("[data-autofocus]") ??
         footEl?.querySelector<HTMLElement>("[data-autofocus]");

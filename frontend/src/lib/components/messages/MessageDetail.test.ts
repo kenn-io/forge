@@ -436,6 +436,13 @@ function makeKata(search: KataAPI["search"] = async () => searchResponse([])): P
   return { search };
 }
 
+async function openTaskPickerSearch(): Promise<HTMLInputElement> {
+  const existing = screen.queryByPlaceholderText(/Title or qualified ID/i);
+  if (existing) return existing as HTMLInputElement;
+  await fireEvent.click(screen.getByRole("button", { name: /Title or qualified ID/i }));
+  return screen.getByPlaceholderText(/Title or qualified ID/i) as HTMLInputElement;
+}
+
 describe("MessageDetail link to task", () => {
   it("hides the link button unless search and link callbacks are supplied with a detail", () => {
     renderDetail(makeDetail(), { kata: makeKata() });
@@ -477,9 +484,9 @@ describe("MessageDetail link to task", () => {
     renderDetail(detail, { kata, onLinkMessage });
 
     await fireEvent.click(screen.getByRole("button", { name: /Link to task/i }));
-    await fireEvent.input(screen.getByPlaceholderText(/Title or qualified ID/i), { target: { value: "test" } });
+    await fireEvent.input(await openTaskPickerSearch(), { target: { value: "test" } });
     await vi.advanceTimersByTimeAsync(250);
-    await fireEvent.click(await waitFor(() => screen.getByRole("button", { name: /Kata#42.*Pick me/i })));
+    await fireEvent.mouseDown(await waitFor(() => screen.getByRole("option", { name: /Kata#42.*Pick me/i })));
     await fireEvent.click(screen.getByRole("button", { name: /^Link$/ }));
 
     await waitFor(() => {
@@ -503,9 +510,9 @@ describe("MessageDetail link to task", () => {
     renderDetail(makeDetail({ id: 1001, conversation_id: 2001 }), { kata, onLinkMessage });
 
     await fireEvent.click(screen.getByRole("button", { name: /Link to task/i }));
-    await fireEvent.input(screen.getByPlaceholderText(/Title or qualified ID/i), { target: { value: "test" } });
+    await fireEvent.input(await openTaskPickerSearch(), { target: { value: "test" } });
     await vi.advanceTimersByTimeAsync(250);
-    await fireEvent.click(await waitFor(() => screen.getByRole("button", { name: /Kata#42.*Pick me/i })));
+    await fireEvent.mouseDown(await waitFor(() => screen.getByRole("option", { name: /Kata#42.*Pick me/i })));
     await fireEvent.click(screen.getByRole("button", { name: /^Link$/ }));
 
     const toast = await waitFor(() => screen.getByRole("status"));
@@ -521,9 +528,9 @@ describe("MessageDetail link to task", () => {
     renderDetail(makeDetail({ id: 1001, conversation_id: 2001 }), { kata, onLinkMessage });
 
     await fireEvent.click(screen.getByRole("button", { name: /Link to task/i }));
-    await fireEvent.input(screen.getByPlaceholderText(/Title or qualified ID/i), { target: { value: "test" } });
+    await fireEvent.input(await openTaskPickerSearch(), { target: { value: "test" } });
     await vi.advanceTimersByTimeAsync(250);
-    await fireEvent.click(await waitFor(() => screen.getByRole("button", { name: /Kata#42.*Pick me/i })));
+    await fireEvent.mouseDown(await waitFor(() => screen.getByRole("option", { name: /Kata#42.*Pick me/i })));
     await fireEvent.click(screen.getByRole("button", { name: /^Link$/ }));
 
     await waitFor(() => expect(flash.getFlash()).toMatchObject({ message: "oops", tone: "danger" }));

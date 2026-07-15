@@ -27,6 +27,13 @@ afterEach(() => {
   localStorage.clear();
 });
 
+async function openTaskPickerSearch(): Promise<HTMLInputElement> {
+  const existing = screen.queryByPlaceholderText(/Title or qualified ID/i);
+  if (existing) return existing as HTMLInputElement;
+  await fireEvent.click(screen.getByRole("button", { name: /Title or qualified ID/i }));
+  return screen.getByPlaceholderText(/Title or qualified ID/i) as HTMLInputElement;
+}
+
 function makeCapabilities(overrides: Partial<MessagesCapabilities> = {}): MessagesCapabilities {
   return {
     configured: true,
@@ -1018,12 +1025,12 @@ describe("MessagesWorkspace linked messages", () => {
     await waitFor(() => expect(refreshCalls).toBe(1));
 
     await fireEvent.click(await waitFor(() => screen.getByRole("button", { name: /Link to task/i })));
-    await fireEvent.input(await waitFor(() => screen.getByPlaceholderText(/Title or qualified ID/i)), {
+    await fireEvent.input(await openTaskPickerSearch(), {
       target: { value: "test" },
     });
     await new Promise((resolve) => setTimeout(resolve, 250));
 
-    await fireEvent.click(await waitFor(() => screen.getByRole("button", { name: /Kata#42.*Picked issue/i })));
+    await fireEvent.mouseDown(await waitFor(() => screen.getByRole("option", { name: /Kata#42.*Picked issue/i })));
     await fireEvent.click(screen.getByRole("button", { name: /^Link$/ }));
 
     await waitFor(() => expect(onLinkMessage).toHaveBeenCalledOnce());

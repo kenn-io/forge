@@ -295,7 +295,7 @@ describe("AppHeader", () => {
     expect(container.querySelector("button[title='Open command palette'] svg")).toBeTruthy();
     expect(container.querySelector("button[title='Toggle theme'] svg")).toBeTruthy();
     expect(container.querySelector("button[title='Settings'] svg")).toBeTruthy();
-    expect(container.querySelector("button[title='Select repository'] svg")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Select repository: All repos/i }).querySelector("svg")).toBeTruthy();
   });
 
   it("spaces the command palette icon and shortcut hint", () => {

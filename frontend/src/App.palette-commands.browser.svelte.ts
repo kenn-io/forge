@@ -34,7 +34,7 @@ function paletteDialogEl(): HTMLElement | null {
 }
 
 function paletteInput(): HTMLInputElement {
-  const input = document.querySelector<HTMLInputElement>(".palette-input");
+  const input = document.querySelector<HTMLInputElement>(".palette-input input");
   expect(input).not.toBeNull();
   return input!;
 }

@@ -273,7 +273,7 @@ function detailText(selector: string): string {
 }
 
 function eventTypeCount(label: string): number {
-  return inDetail(".event-type").filter((el) => (el.textContent ?? "").trim() === label).length;
+  return inDetail(".event-type, .kit-card__eyebrow").filter((el) => (el.textContent ?? "").trim() === label).length;
 }
 
 function viewButton(): Element {
@@ -317,22 +317,22 @@ describe("PR timeline filters", () => {
 
   async function mountTimeline(path: string): Promise<void> {
     mounted = await mountBrowserApp(path, { overrides: overrides() });
-    await vi.waitFor(() => expect(document.querySelector(".pull-detail .timeline")).not.toBeNull(), WAIT);
+    await vi.waitFor(() => expect(document.querySelector(".pull-detail .kit-timeline")).not.toBeNull(), WAIT);
   }
 
   it("renders seeded commit and system timeline events", async () => {
     await mountTimeline("/pulls/github/acme/widgets/1");
-    await vi.waitFor(() => expect(detailText(".timeline")).toContain("feat: add cache store"), WAIT);
+    await vi.waitFor(() => expect(detailText(".kit-timeline")).toContain("feat: add cache store"), WAIT);
 
     expect(eventTypeCount("Force-pushed")).toBe(2);
-    expect(detailText(".timeline")).toContain("abc4444 -> def5555");
-    expect(detailText(".timeline")).toContain("abc9999 -> def7777");
+    expect(detailText(".kit-timeline")).toContain("abc4444 -> def5555");
+    expect(detailText(".kit-timeline")).toContain("abc9999 -> def7777");
     expect(eventTypeCount("Referenced")).toBe(3);
-    expect(detailText(".timeline")).toContain("Widget rendering broken on Safari");
-    expect(detailText(".timeline")).toContain("Title changed");
-    expect(detailText(".timeline")).toContain('"Add widget cache" -> "Add widget caching layer"');
-    expect(detailText(".timeline")).toContain("Base changed");
-    expect(detailText(".timeline")).toContain("develop -> main");
+    expect(detailText(".kit-timeline")).toContain("Widget rendering broken on Safari");
+    expect(detailText(".kit-timeline")).toContain("Title changed");
+    expect(detailText(".kit-timeline")).toContain('"Add widget cache" -> "Add widget caching layer"');
+    expect(detailText(".kit-timeline")).toContain("Base changed");
+    expect(detailText(".kit-timeline")).toContain("develop -> main");
   });
 
   it("renders merged lifecycle transitions as one purple row", async () => {
@@ -344,15 +344,14 @@ describe("PR timeline filters", () => {
     expect(mergedRows[0]!.textContent ?? "").toContain("alice");
     expect(mergedRows[0]!.textContent ?? "").toContain("by alice");
     expect(mergedRows[0]!.textContent ?? "").not.toContain("merged this");
-    const mergedType = mergedRows[0]!.querySelector(".event-type");
-    expect(mergedType?.getAttribute("style") ?? "").toContain("var(--accent-purple)");
-    expect(mergedRows[0]!.querySelector(".dot")?.getAttribute("style") ?? "").toContain("var(--accent-purple)");
+    expect(mergedRows[0]!.classList.contains("kit-timeline-item--tone-merged")).toBe(true);
+    expect(mergedRows[0]!.querySelector(".kit-card__eyebrow--tone-merged")).not.toBeNull();
     expect(eventTypeCount("Closed")).toBe(0);
   });
 
   it("keeps commit rows while hiding and restoring system event buckets", async () => {
     await mountTimeline("/pulls/github/acme/widgets/1");
-    await vi.waitFor(() => expect(detailText(".timeline")).toContain("feat: add cache store"), WAIT);
+    await vi.waitFor(() => expect(detailText(".kit-timeline")).toContain("feat: add cache store"), WAIT);
     await openViewMenu();
 
     const cacheCommitRow = (): Element =>
@@ -376,30 +375,36 @@ describe("PR timeline filters", () => {
     }, WAIT);
 
     await toggleBucket("Events");
-    await vi.waitFor(() => expect(detailText(".timeline")).not.toContain("Widget rendering broken on Safari"), WAIT);
-    expect(detailText(".timeline")).not.toContain('"Add widget cache" -> "Add widget caching layer"');
-    expect(detailText(".timeline")).not.toContain("develop -> main");
+    await vi.waitFor(
+      () => expect(detailText(".kit-timeline")).not.toContain("Widget rendering broken on Safari"),
+      WAIT,
+    );
+    expect(detailText(".kit-timeline")).not.toContain('"Add widget cache" -> "Add widget caching layer"');
+    expect(detailText(".kit-timeline")).not.toContain("develop -> main");
 
     await toggleBucket("Events");
-    await vi.waitFor(() => expect(detailText(".timeline")).toContain("Widget rendering broken on Safari"), WAIT);
+    await vi.waitFor(() => expect(detailText(".kit-timeline")).toContain("Widget rendering broken on Safari"), WAIT);
 
     await toggleBucket("Force pushes");
-    await vi.waitFor(() => expect(detailText(".timeline")).not.toContain("abc4444 -> def5555"), WAIT);
-    expect(detailText(".timeline")).not.toContain("abc9999 -> def7777");
+    await vi.waitFor(() => expect(detailText(".kit-timeline")).not.toContain("abc4444 -> def5555"), WAIT);
+    expect(detailText(".kit-timeline")).not.toContain("abc9999 -> def7777");
     // The rebase commits stay visible once their force-push rows are hidden.
-    expect(detailText(".timeline")).toContain("fix: guard nil cache after rebase");
+    expect(detailText(".kit-timeline")).toContain("fix: guard nil cache after rebase");
 
     await toggleBucket("Force pushes");
-    await vi.waitFor(() => expect(detailText(".timeline")).toContain("abc4444 -> def5555"), WAIT);
+    await vi.waitFor(() => expect(detailText(".kit-timeline")).toContain("abc4444 -> def5555"), WAIT);
   });
 
   it("persists timeline filter preferences in localStorage", async () => {
     await mountTimeline("/pulls/github/acme/widgets/1");
-    await vi.waitFor(() => expect(detailText(".timeline")).toContain("Widget rendering broken on Safari"), WAIT);
+    await vi.waitFor(() => expect(detailText(".kit-timeline")).toContain("Widget rendering broken on Safari"), WAIT);
     await openViewMenu();
 
     await toggleBucket("Events");
-    await vi.waitFor(() => expect(detailText(".timeline")).not.toContain("Widget rendering broken on Safari"), WAIT);
+    await vi.waitFor(
+      () => expect(detailText(".kit-timeline")).not.toContain("Widget rendering broken on Safari"),
+      WAIT,
+    );
     const badge = inDetail('[title="View and filter activity"]')[0];
     expect(badge?.textContent ?? "").toContain("1");
 
@@ -411,15 +416,15 @@ describe("PR timeline filters", () => {
     // Remount is the browser-tier equivalent of a reload: localStorage persists.
     mounted?.unmount();
     mounted = await mountBrowserApp("/pulls/github/acme/widgets/1", { overrides: overrides() });
-    await vi.waitFor(() => expect(document.querySelector(".pull-detail .timeline")).not.toBeNull(), WAIT);
-    await vi.waitFor(() => expect(detailText(".timeline")).toContain("feat: add cache store"), WAIT);
-    expect(detailText(".timeline")).not.toContain("Widget rendering broken on Safari");
+    await vi.waitFor(() => expect(document.querySelector(".pull-detail .kit-timeline")).not.toBeNull(), WAIT);
+    await vi.waitFor(() => expect(detailText(".kit-timeline")).toContain("feat: add cache store"), WAIT);
+    expect(detailText(".kit-timeline")).not.toContain("Widget rendering broken on Safari");
     expect(inDetail('[title="View and filter activity"]')[0]?.textContent ?? "").toContain("1");
   });
 
   it("keeps commit rows when other event buckets are hidden", async () => {
     await mountTimeline("/pulls/github/acme/widgets/1");
-    await vi.waitFor(() => expect(detailText(".timeline")).toContain("feat: add cache store"), WAIT);
+    await vi.waitFor(() => expect(detailText(".kit-timeline")).toContain("feat: add cache store"), WAIT);
     await openViewMenu();
 
     await toggleBucket("Messages");
@@ -433,6 +438,6 @@ describe("PR timeline filters", () => {
       expect(cacheCommitRow().querySelector(".commit-title")?.textContent ?? "").toBe("feat: add cache store");
       expect(cacheCommitRow().querySelectorAll(".commit-body-details").length).toBe(0);
     }, WAIT);
-    expect(detailText(".timeline")).not.toContain("No activity matches the current filters");
+    expect(detailText(".kit-timeline")).not.toContain("No activity matches the current filters");
   });
 });

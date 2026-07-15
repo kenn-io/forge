@@ -134,6 +134,14 @@ Playwright waits must observe the rendered state consumed by the next assertion,
 not only the request completion or control value that triggered it; route refinement
 can leave new controls paired with old or loading content (`frontend/tests/e2e-full/kata.spec.ts:1625`, `frontend/tests/e2e-full/repo-browser.spec.ts:480`).
 
+CI executes `frontend/tests/e2e-full/`, not the local mock suite in
+`frontend/tests/e2e/`; Playwright regressions that must gate CI belong in the
+full-stack suite (`.github/workflows/ci.yml:395`, `frontend/playwright-e2e.config.ts:16`).
+
+A full-stack test claiming a user-triggered mutation works must drive the actual
+control and observe its request or visible result; `page.request` proves only the
+API contract (`frontend/tests/e2e-full/detail-action-buttons.spec.ts:925`).
+
 ## Huma API Contract
 
 Every public operation in `/api/v1/openapi.json` must have explicit OpenAPI

@@ -149,9 +149,7 @@ test("settings navigation stacks on phone-width viewports", async ({ page }) => 
     });
 });
 
-test("Firefox receives compact scrollbar styling for app scroll panes", async ({ page, browserName }) => {
-  test.skip(browserName !== "firefox", "Firefox-specific scrollbar regression");
-
+test("app scroll panes use browser-native scrollbar styling", async ({ page, browserName }) => {
   // Short viewport plus the tall Terminal panel so the settings panel
   // overflows its scroll pane.
   await page.setViewportSize({ width: 1280, height: 420 });
@@ -161,36 +159,40 @@ test("Firefox receives compact scrollbar styling for app scroll panes", async ({
   const pane = page.locator(".kit-settings__scroll");
   await expect(pane).toBeVisible();
   await expect.poll(() => pane.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
-  await expect(
-    page.evaluate(() => {
-      const settingsPane = document.querySelector(".kit-settings__scroll");
-      const appRules = Array.from(document.styleSheets)
-        .flatMap((sheet) => {
-          try {
-            return Array.from(sheet.cssRules);
-          } catch {
-            return [];
-          }
-        })
-        .filter((rule): rule is CSSStyleRule => "selectorText" in rule);
+  const scrollbarStyles = await pane.evaluate((element) => ({
+    color: getComputedStyle(element).scrollbarColor,
+    width: getComputedStyle(element).scrollbarWidth,
+    webkitWidth: getComputedStyle(element, "::-webkit-scrollbar").width,
+  }));
 
-      return appRules.some(
-        (rule) =>
-          settingsPane?.matches(rule.selectorText) === true &&
-          rule.style.scrollbarWidth === "thin" &&
-          rule.style.scrollbarColor.includes("transparent"),
-      );
-    }),
-  ).resolves.toBe(true);
+  expect(scrollbarStyles.color).toBe("auto");
+  expect(scrollbarStyles.width).toBe("auto");
+  if (browserName === "chromium") {
+    expect(scrollbarStyles.webkitWidth).toBe("auto");
+  }
 
   await expect(
     page.evaluate(() => {
-      const appRect = document.querySelector("#app")?.getBoundingClientRect();
+      const scrollPane = document.querySelector<HTMLElement>(".kit-settings__scroll");
+      const content = document.querySelector<HTMLElement>(".kit-settings__content");
+      if (!scrollPane || !content) return null;
+
+      const scrollPaneRect = scrollPane.getBoundingClientRect();
+      const contentRect = content.getBoundingClientRect();
 
       return {
-        heightFits: appRect?.height === window.innerHeight,
-        widthFits: appRect?.width === window.innerWidth,
+        documentFitsViewport: document.documentElement.scrollWidth <= window.innerWidth,
+        scrollPaneDoesNotOverflowHorizontally: scrollPane.scrollWidth <= scrollPane.clientWidth,
+        scrollPaneFitsContent:
+          Math.round(scrollPaneRect.left) >= Math.round(contentRect.left) &&
+          Math.round(scrollPaneRect.right) <= Math.round(contentRect.right),
+        contentFitsViewport: Math.round(contentRect.left) >= 0 && Math.round(contentRect.right) <= window.innerWidth,
       };
     }),
-  ).resolves.toEqual({ heightFits: true, widthFits: true });
+  ).resolves.toEqual({
+    documentFitsViewport: true,
+    scrollPaneDoesNotOverflowHorizontally: true,
+    scrollPaneFitsContent: true,
+    contentFitsViewport: true,
+  });
 });

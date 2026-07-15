@@ -14,11 +14,6 @@
   padding: 0;
 }
 
-* {
-  scrollbar-color: var(--border-default) transparent;
-  scrollbar-width: thin;
-}
-
 /* App-specific tokens — light theme */
 :root {
   --chrome-border-width: 1px;
@@ -152,25 +147,6 @@ body {
 /* Action failures must remain visible while their retryable modal stays open. */
 #app .kit-flash-stack {
   z-index: var(--z-flash);
-}
-
-/* Scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border-default);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
 }
 
 /* Element resets */

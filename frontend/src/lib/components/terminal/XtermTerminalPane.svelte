@@ -13,7 +13,10 @@
     createTerminalPastePayload,
     isMultilinePaste,
   } from "./bracketedPaste.js";
-  import { buildTerminalFontFamily } from "./terminalFontFamily.js";
+  import {
+    buildTerminalFontFamily,
+    primaryTerminalFontFamily,
+  } from "./terminalFontFamily.js";
   import { createTmuxMouseDragFilter } from "./tmuxMouseDragFilter.js";
 
   interface TerminalPaneProps {
@@ -73,6 +76,8 @@
   const MAX_RECONNECT_DELAY = 30000;
   const TERMINAL_SMOOTH_SCROLL_DURATION = 0;
   const TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
+  const TERMINAL_FONT_WAIT_MS = 300;
+  const TERMINAL_FONT_LOAD_GLYPHS = "0MWim@#";
 
   function isAttachableInitialStatus(status: string | undefined): boolean {
     return status === undefined || status === "running" || status === "starting";
@@ -504,6 +509,9 @@
 
   onMount(() => {
     let started = false;
+    let fontWaitTimedOut = false;
+    let lateFontRebuilt = false;
+    let fontWaitTimer: ReturnType<typeof setTimeout> | null = null;
 
     function start(): void {
       if (started || disposed) return;
@@ -595,23 +603,63 @@
       connect();
     }
 
-    // Custom fonts (JetBrains Mono, etc.) may still be loading when
-    // the pane mounts. Initializing xterm before fonts settle locks
-    // in fallback-font cell metrics, so the WebGL atlas and the
-    // measured cols/rows drift away from what gets painted — which
-    // looks like cursor/prompt overlap in the running shell.
-    const fontsReady = document.fonts?.ready;
-    if (fontsReady) {
-      void fontsReady.then(() => {
-        switchTimer.record("fonts-ready");
-        start();
-      });
-    } else {
-      switchTimer.record("fonts-ready", { unsupported: true });
+    function finishInitialFontWait(detail?: Record<string, unknown>): void {
+      if (started || disposed) return;
+      if (fontWaitTimer !== null) {
+        clearTimeout(fontWaitTimer);
+        fontWaitTimer = null;
+      }
+      switchTimer.record("fonts-ready", detail);
       start();
     }
 
-    return cleanup;
+    const fontSet = document.fonts;
+    if (typeof fontSet?.load !== "function") {
+      switchTimer.record("fonts-ready", { unsupported: true });
+      start();
+      return cleanup;
+    }
+
+    // Loading only the selected terminal face avoids making xterm wait
+    // for unrelated page fonts. The bound keeps terminal construction
+    // moving when the face is slow or unavailable; a late completion
+    // then repairs the fallback metrics once, provided the pane lives.
+    const fontDescriptor = `${terminalFontSize}px ${primaryTerminalFontFamily(terminalFontFamily)}`;
+    let selectedFontLoad: Promise<FontFace[]>;
+    try {
+      selectedFontLoad = fontSet.load(fontDescriptor, TERMINAL_FONT_LOAD_GLYPHS);
+    } catch {
+      finishInitialFontWait({ error: true });
+      return cleanup;
+    }
+    void selectedFontLoad.then(
+      () => {
+        if (!started) {
+          finishInitialFontWait();
+          return;
+        }
+        if (!fontWaitTimedOut || lateFontRebuilt || disposed || !terminal) return;
+
+        lateFontRebuilt = true;
+        terminal.clearTextureAtlas();
+        fitAddon?.fit();
+        terminal.refresh(0, Math.max(0, terminal.rows - 1));
+      },
+      () => finishInitialFontWait({ error: true }),
+    );
+    fontWaitTimer = setTimeout(() => {
+      fontWaitTimer = null;
+      fontWaitTimedOut = true;
+      finishInitialFontWait({ timedOut: true });
+    }, TERMINAL_FONT_WAIT_MS);
+
+    return () => {
+      if (fontWaitTimer !== null) {
+        clearTimeout(fontWaitTimer);
+        fontWaitTimer = null;
+      }
+      cleanup();
+    };
   });
 </script>
 

@@ -80,6 +80,10 @@ function appendUnique(result: string[], seen: Set<string>, family: string): void
   result.push(family);
 }
 
+export function primaryTerminalFontFamily(fontFamily: string): string {
+  return splitFontFamilyList(fontFamily)[0] ?? "monospace";
+}
+
 export function buildTerminalFontFamily(configuredFontFamily: string, defaultFontFamily: string): string {
   const configured = configuredFontFamily.trim();
   const fallback = defaultFontFamily.trim();

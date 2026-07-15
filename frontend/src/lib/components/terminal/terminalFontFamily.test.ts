@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildTerminalFontFamily } from "./terminalFontFamily.js";
+import { buildTerminalFontFamily, primaryTerminalFontFamily } from "./terminalFontFamily.js";
 
 describe("buildTerminalFontFamily", () => {
   const defaultStack = '"JetBrains Mono", monospace';
@@ -13,5 +13,17 @@ describe("buildTerminalFontFamily", () => {
     expect(buildTerminalFontFamily('"MesloLGS NF", "Symbols Nerd Font Mono", monospace', defaultStack)).toBe(
       '"MesloLGS NF", "Symbols Nerd Font Mono", "JetBrains Mono", monospace',
     );
+  });
+});
+
+describe("primaryTerminalFontFamily", () => {
+  it("selects the first effective family from a quoted fallback list", () => {
+    expect(primaryTerminalFontFamily('"Berkeley Mono, Variable", "Symbols Nerd Font Mono", monospace')).toBe(
+      '"Berkeley Mono, Variable"',
+    );
+  });
+
+  it("keeps a generic-only stack valid", () => {
+    expect(primaryTerminalFontFamily("monospace, sans-serif")).toBe("monospace");
   });
 });

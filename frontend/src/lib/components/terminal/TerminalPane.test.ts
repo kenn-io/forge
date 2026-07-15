@@ -1,4 +1,5 @@
 import { cleanup, render, waitFor } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const {
@@ -41,6 +42,27 @@ let configuredLetterSpacing = 0;
 let configuredCursorBlink = true;
 let configuredFontLigatures = false;
 let mockSockets: MockWebSocket[] = [];
+const originalDocumentFonts = Object.getOwnPropertyDescriptor(document, "fonts");
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
+}
+
+function stubFontLoad(promise: Promise<FontFace[]>): ReturnType<typeof vi.fn> {
+  const load = vi.fn().mockReturnValue(promise);
+  Object.defineProperty(document, "fonts", {
+    configurable: true,
+    value: {
+      load,
+      ready: new Promise<FontFaceSet>(() => undefined),
+    },
+  });
+  return load;
+}
 
 class MockWebSocket {
   static OPEN = 1;
@@ -194,7 +216,13 @@ describe("TerminalPane", () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
+    if (originalDocumentFonts) {
+      Object.defineProperty(document, "fonts", originalDocumentFonts);
+    } else {
+      Reflect.deleteProperty(document, "fonts");
+    }
   });
 
   it("uses xterm.js by default", async () => {
@@ -250,6 +278,100 @@ describe("TerminalPane", () => {
         letterSpacing: 1,
       }),
     );
+  });
+
+  it("constructs xterm when the selected font resolves", async () => {
+    configuredFontFamily = '"MesloLGS NF", monospace';
+    const fontLoad = deferred<FontFace[]>();
+    const load = stubFontLoad(fontLoad.promise);
+
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await tick();
+
+    expect(load).toHaveBeenCalledWith('14px "MesloLGS NF"', "0MWim@#");
+    expect(xtermTerminalCtor).not.toHaveBeenCalled();
+
+    fontLoad.resolve([]);
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalledTimes(1));
+  });
+
+  it("constructs xterm after the selected-font wait reaches 300 ms", async () => {
+    vi.useFakeTimers();
+    const fontLoad = deferred<FontFace[]>();
+    stubFontLoad(fontLoad.promise);
+
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await tick();
+    await vi.advanceTimersByTimeAsync(299);
+
+    expect(xtermTerminalCtor).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(xtermTerminalCtor).toHaveBeenCalledTimes(1);
+  });
+
+  it("constructs xterm when the selected font descriptor is rejected synchronously", async () => {
+    Object.defineProperty(document, "fonts", {
+      configurable: true,
+      value: {
+        load: vi.fn(() => {
+          throw new DOMException("Invalid font shorthand", "SyntaxError");
+        }),
+        ready: new Promise<FontFaceSet>(() => undefined),
+      },
+    });
+
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalledTimes(1));
+  });
+
+  it("rebuilds the xterm atlas once when the selected font resolves after the bound", async () => {
+    vi.useFakeTimers();
+    const fontLoad = deferred<FontFace[]>();
+    stubFontLoad(fontLoad.promise);
+
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await tick();
+    await vi.advanceTimersByTimeAsync(300);
+
+    const terminal = xtermInstances[0]!;
+    const fitAddon = xtermFitAddons[0]!;
+    terminal.clearTextureAtlas.mockClear();
+    terminal.refresh.mockClear();
+    fitAddon.fit.mockClear();
+
+    fontLoad.resolve([]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(terminal.clearTextureAtlas).toHaveBeenCalledTimes(1);
+    expect(fitAddon.fit).toHaveBeenCalledTimes(1);
+    expect(terminal.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not rebuild a disposed xterm when the selected font resolves late", async () => {
+    vi.useFakeTimers();
+    const fontLoad = deferred<FontFace[]>();
+    stubFontLoad(fontLoad.promise);
+
+    const { unmount } = render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await tick();
+    await vi.advanceTimersByTimeAsync(300);
+
+    const terminal = xtermInstances[0]!;
+    const fitAddon = xtermFitAddons[0]!;
+    terminal.clearTextureAtlas.mockClear();
+    terminal.refresh.mockClear();
+    fitAddon.fit.mockClear();
+    unmount();
+
+    fontLoad.resolve([]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(terminal.clearTextureAtlas).not.toHaveBeenCalled();
+    expect(fitAddon.fit).not.toHaveBeenCalled();
+    expect(terminal.refresh).not.toHaveBeenCalled();
   });
 
   it("loads the ligatures addon for xterm.js when enabled", async () => {

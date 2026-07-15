@@ -365,6 +365,16 @@
       workspace?.id === workspaceId &&
       selectedWorkspaceHostKey(workspace) === workspaceHostKey,
   );
+
+  function hasAppliedRuntimeFor(
+    id: string,
+    hostKey: string | undefined,
+  ): boolean {
+    return (
+      appliedRuntimeState?.workspaceId === id &&
+      appliedRuntimeState.hostKey === hostKey
+    );
+  }
   const runtimeSessions = $derived(
     runtimeLive
       ? (runtime?.sessions ?? []).filter(
@@ -396,6 +406,7 @@
       session,
     ];
     if (runtimeLive && runtime) {
+      appliedRuntimeState = null;
       runtime = {
         ...runtime,
         sessions: [
@@ -1047,7 +1058,9 @@
         }
         if (nextWorkspace.status === "ready") {
           startRuntimePolling();
-          void fetchRuntime();
+          if (!hasAppliedRuntimeFor(id, hostKey)) {
+            void fetchRuntime();
+          }
         } else {
           stopRuntimePolling();
         }
@@ -1079,7 +1092,9 @@
       }
       if (data.status === "ready") {
         startRuntimePolling();
-        void fetchRuntime();
+        if (!hasAppliedRuntimeFor(id, hostKey)) {
+          void fetchRuntime();
+        }
       } else {
         stopRuntimePolling();
       }
@@ -1125,9 +1140,8 @@
         if (!isCurrentWorkspace(id, hostKey) || seq !== runtimeFetchSeq) return null;
         const fingerprint = JSON.stringify(data);
         if (
-          appliedRuntimeState?.workspaceId === id &&
-          appliedRuntimeState.hostKey === hostKey &&
-          appliedRuntimeState.fingerprint === fingerprint
+          hasAppliedRuntimeFor(id, hostKey) &&
+          appliedRuntimeState?.fingerprint === fingerprint
         ) {
           runtimeError = null;
           return data;
@@ -1642,6 +1656,9 @@
         hostKey,
       );
       if (!isCurrentWorkspace(id, hostKey)) return;
+      if (runtime) {
+        appliedRuntimeState = null;
+      }
       runtime = runtime
         ? {
             ...runtime,

@@ -483,7 +483,7 @@ describe("WorkspaceTerminalView", () => {
     expect(localStorage.getItem("middleman-workspace-active-tab:ws-1")).toBe("home");
   });
 
-  it("starts the runtime request before workspace metadata resolves", async () => {
+  it("starts the runtime request before workspace metadata resolves without fetching it twice", async () => {
     const workspaceRequest = deferred<Response>();
     const runtimeRequest = deferred<ReturnType<typeof runtimeWithStaleSession>>();
     let workspaceRequestStarted = false;
@@ -504,19 +504,21 @@ describe("WorkspaceTerminalView", () => {
     );
     mocks.getWorkspaceRuntime.mockReturnValue(runtimeRequest.promise);
 
-    try {
-      render(WorkspaceTerminalView, {
-        props: {
-          workspaceId: "ws-1",
-        },
-      });
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
 
-      await waitFor(() => expect(workspaceRequestStarted).toBe(true));
-      expect(mocks.getWorkspaceRuntime).toHaveBeenCalledWith("ws-1", undefined);
-    } finally {
-      workspaceRequest.resolve(Response.json(workspaceResponse));
-      runtimeRequest.resolve(runtimeWithStaleSession());
-    }
+    await waitFor(() => expect(workspaceRequestStarted).toBe(true));
+    expect(mocks.getWorkspaceRuntime).toHaveBeenCalledWith("ws-1", undefined);
+
+    runtimeRequest.resolve(runtimeWithStaleSession());
+    workspaceRequest.resolve(Response.json(workspaceResponse));
+
+    await screen.findByText("acme/widget");
+    await screen.findByRole("tab", { name: /Helper/ });
+    expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(1);
   });
 
   it("polls local workspace runtime so peer-spawned sessions appear", async () => {
@@ -596,6 +598,37 @@ describe("WorkspaceTerminalView", () => {
     expect(mocks.mockFit).not.toHaveBeenCalled();
     expect(requestAnimationFrameSpy).not.toHaveBeenCalled();
     expect(layoutStorageSpy).not.toHaveBeenCalled();
+  });
+
+  it("reapplies an authoritative runtime response after a local rename", async () => {
+    const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
+    vi.spyOn(globalThis, "setInterval").mockImplementation((callback: TimerHandler, delay?: number) => {
+      intervalCallbacks.push({ callback: callback as () => void, delay });
+      return 1 as unknown as ReturnType<typeof setInterval>;
+    });
+    vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    const serverRuntime = runtimeWithStaleSession();
+    mocks.getWorkspaceRuntime.mockImplementation(async () => structuredClone(serverRuntime));
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await screen.findByRole("tab", { name: /Helper/ });
+    await fireEvent.click(screen.getByRole("button", { name: "Rename Helper" }));
+    const input = await screen.findByRole("textbox", { name: "Name" });
+    await fireEvent.input(input, { target: { value: "Review helper" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByRole("tab", { name: /Review helper/ });
+
+    const runtimePoll = intervalCallbacks.find((interval) => interval.delay === 3000);
+    expect(runtimePoll).toBeTruthy();
+    runtimePoll!.callback();
+
+    await waitFor(() => expect(screen.getByRole("tab", { name: /^Helper$/ })).toBeTruthy());
+    expect(screen.queryByRole("tab", { name: /Review helper/ })).toBeNull();
   });
 
   it("polls remote workspace runtime so peer-spawned sessions appear", async () => {

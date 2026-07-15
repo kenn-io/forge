@@ -195,6 +195,11 @@ pushed-head observer may repair a missing upstream only when the current MR row
 proves the head is in the base repository, the checked-out branch is the PR
 head or synthetic branch, and the remote-tracking ref exists.
 
+Test fixtures that seed PR rows must either carry a same-repo
+`HeadRepoCloneURL` or publish `refs/pull/<n>/head` on the fixture remote:
+unknown-provenance setup resolves heads exclusively through the fork-safe ref
+and fails outright when the remote does not serve it.
+
 ## Sidebar Ordering
 
 The workspace sidebar has two separate activity concepts:

@@ -33,7 +33,8 @@ func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
 
 	// Fixture already seeded PR #1; add PR #2 in the same repo so both
 	// concurrent creates target the same bare clone but different
-	// worktree paths.
+	// worktree paths. Same-repo head evidence keeps setup on the branch
+	// path; without it the fixture remote would need refs/pull/2/head.
 	seedPROnHost(
 		t, fixture.database, "github.com", "acme", "widget", 2,
 		withSeedPRHeadRepoCloneURL("https://github.com/acme/widget.git"),

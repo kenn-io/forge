@@ -232,26 +232,32 @@ func TestWorkspaceCommitsOmitsPushStatusWithoutUpstreamE2E(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	ctx := t.Context()
-	runGit(t, fixture.remote,
-		"update-ref", "refs/pull/1/head", "refs/heads/feature")
-	repo, err := fixture.database.GetRepoByIdentity(
-		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+
+	// A PR whose merge-request row carries no head-repo identity classifies
+	// as unknown provenance: setup resolves it through the fork-safe
+	// refs/pull/<n>/head path and leaves the branch untracked. @{upstream}
+	// never resolves, so push status is unknowable and the endpoint must omit
+	// it rather than report every commit as unpushed (the false "Not pushed
+	// to remote" regression roborev flagged).
+	headSHA := testGitSHA(t, fixture.remote, "refs/heads/feature")
+	runGit(t, fixture.remote, "update-ref", "refs/pull/2/head", headSHA)
+	seedPRWithoutHeadRepo(t, fixture.database, "github.com", "acme", "widget", 2)
+
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     2,
+		},
 	)
 	require.NoError(err)
-	require.NotNil(repo)
-	mr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
-	require.NoError(err)
-	require.NotNil(mr)
-	mr.HeadRepoCloneURL = "https://github.com/contributor/widget.git"
-	_, err = fixture.database.UpsertMergeRequest(ctx, mr)
-	require.NoError(err)
-	ws := createReadyWorkspace(t, ctx, fixture.client)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
 	require.NotEmpty(ws.WorktreePath)
-	require.NotEmpty(ws.GitHeadRef)
-
-	// Fork PR heads have no origin upstream. Push status is therefore
-	// unknowable, so the endpoint must omit it rather than report every commit
-	// as unpushed (the false "Not pushed to remote" regression roborev flagged).
 
 	resp, err := fixture.client.HTTP.GetWorkspaceCommitsWithResponse(ctx, ws.Id)
 	require.NoError(err)

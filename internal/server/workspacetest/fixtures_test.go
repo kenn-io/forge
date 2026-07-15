@@ -179,6 +179,33 @@ func seedPROnHost(
 	host, owner, name string, number int,
 ) int64 {
 	t.Helper()
+	// Same-repo head evidence: without it the workspace classifies as
+	// unknown provenance and setup requires refs/pull/<n>/head from the
+	// fixture remote.
+	return seedPRWithHeadRepo(
+		t, database, host, owner, name, number,
+		fmt.Sprintf("https://%s/%s/%s.git", host, owner, name),
+	)
+}
+
+// seedPRWithoutHeadRepo seeds a merge request whose head-repo identity is
+// unknown (legacy rows synced before HeadRepoCloneURL existed, or providers
+// that omit it). Workspaces for it take the fork-safe ref path and stay
+// untracked.
+func seedPRWithoutHeadRepo(
+	t *testing.T, database *db.DB,
+	host, owner, name string, number int,
+) int64 {
+	t.Helper()
+	return seedPRWithHeadRepo(t, database, host, owner, name, number, "")
+}
+
+func seedPRWithHeadRepo(
+	t *testing.T, database *db.DB,
+	host, owner, name string, number int,
+	headRepoCloneURL string,
+) int64 {
+	t.Helper()
 	ctx := t.Context()
 
 	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity(host, owner, name))
@@ -196,7 +223,7 @@ func seedPROnHost(
 		IsDraft:          false,
 		Body:             "test body",
 		HeadBranch:       "feature",
-		HeadRepoCloneURL: fmt.Sprintf("https://%s/%s/%s.git", host, owner, name),
+		HeadRepoCloneURL: headRepoCloneURL,
 		BaseBranch:       "main",
 		Additions:        5,
 		Deletions:        2,

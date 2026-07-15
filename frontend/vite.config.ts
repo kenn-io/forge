@@ -196,27 +196,6 @@ const browserTestProject = defineProject(async () => {
     test: {
       name: "browser",
       include: ["src/**/*.browser.svelte.ts"],
-      onUnhandledError(error) {
-        // Vite can reject its module-runner socket promise while Vitest closes
-        // the browser server after every assertion has completed. Ignore only
-        // that framework teardown error; all application errors still fail.
-        const serializedStacks = "stacks" in error ? error.stacks : undefined;
-        const hasViteClientFrame =
-          error.stack?.includes("@vite/client") ||
-          (Array.isArray(serializedStacks) &&
-            serializedStacks.some(
-              (frame: unknown) =>
-                typeof frame === "object" &&
-                frame !== null &&
-                "file" in frame &&
-                typeof frame.file === "string" &&
-                frame.file.includes("@vite/client"),
-            ));
-        if (error.message === "WebSocket closed without opened." && hasViteClientFrame) {
-          return false;
-        }
-        return undefined;
-      },
       browser: {
         enabled: true,
         provider: playwright() as never,
@@ -516,6 +495,28 @@ const config = {
     },
   },
   test: {
+    onUnhandledError(error) {
+      // Vitest's global state manager owns unhandled errors across projects,
+      // so this must live in the root config rather than the browser project.
+      // Ignore only Vite's module-runner socket rejection during teardown;
+      // all application errors still fail.
+      const serializedStacks = "stacks" in error ? error.stacks : undefined;
+      const hasViteClientFrame =
+        error.stack?.includes("@vite/client") ||
+        (Array.isArray(serializedStacks) &&
+          serializedStacks.some(
+            (frame: unknown) =>
+              typeof frame === "object" &&
+              frame !== null &&
+              "file" in frame &&
+              typeof frame.file === "string" &&
+              frame.file.includes("@vite/client"),
+          ));
+      if (error.message === "WebSocket closed without opened." && hasViteClientFrame) {
+        return false;
+      }
+      return undefined;
+    },
     projects: [defineProject(unitTestProject), browserTestProject],
   },
   build: {

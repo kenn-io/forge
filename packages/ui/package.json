@@ -123,7 +123,7 @@
     "typecheck": "cd ../.. && node node_modules/vite-plus/bin/vp run ui-package-typecheck"
   },
   "dependencies": {
-    "@kenn-io/kit-ui": "github:kenn-io/kit-ui#727473d47a3bb224eac90849e0a2532ef3bac8e7",
+    "@kenn-io/kit-ui": "github:kenn-io/kit-ui#c5e81a4f1f1bffac06d37406344fde0926bf4189",
     "@lucide/svelte": "1.23.0",
     "@pierre/diffs": "1.2.12",
     "@pierre/trees": "1.0.0-beta.5",

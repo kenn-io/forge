@@ -680,6 +680,26 @@ describe("PullDetail approvals", () => {
     expect(document.querySelector(".actions-menu-popover")).toBeNull();
   });
 
+  it("opens the actions-menu label picker as a non-modal popover", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities = {
+      ...capabilities,
+      read_labels: true,
+      label_mutation: true,
+    };
+
+    renderPullDetail(detail);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    await fireEvent.click(getActionMenuLabelsButton());
+
+    expect(await screen.findByRole("dialog", { name: "Edit labels" })).toBeTruthy();
+    expect(document.querySelector(".label-editor-backdrop")).toBeNull();
+
+    await fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("dialog", { name: "Edit labels" })).toBeNull();
+  });
+
   it("keeps the actions menu Labels button on the compact action geometry", async () => {
     const detail = pullDetail();
     detail.repo.capabilities = {

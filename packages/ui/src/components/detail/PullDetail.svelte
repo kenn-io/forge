@@ -1903,9 +1903,6 @@
           {/snippet}
         </UserListEditor>
         {#if labelPickerOpen}
-          {#if labelPickerLaunchedFromActionMenu}
-            <div class="label-editor-backdrop" aria-hidden="true"></div>
-          {/if}
           <!-- Escape precedence: a non-empty filter claims Escape to clear itself
                (kit SearchInput stops propagation); only an empty-field Escape
                bubbles here and dismisses the picker. -->
@@ -2626,14 +2623,6 @@
   .label-editor-popover {
     position: fixed;
     z-index: 60;
-  }
-
-  .label-editor-backdrop {
-    position: fixed;
-    /* kit-ui-check-ignore: dimmed click-catcher behind the label-editor popover, not a dialog surface */
-    inset: 0;
-    z-index: 55;
-    background: var(--overlay-bg);
   }
 
   .detail-header {

@@ -70,7 +70,10 @@ function renderDialog(opts: RenderOpts = {}) {
   return { ...result, onPick, onClose, kata };
 }
 
-function getSearchInput(): HTMLInputElement {
+async function getSearchInput(): Promise<HTMLInputElement> {
+  const existing = screen.queryByPlaceholderText(/Title or qualified ID/i);
+  if (existing) return existing as HTMLInputElement;
+  await fireEvent.click(screen.getByRole("button", { name: /Title or qualified ID/i }));
   return screen.getByPlaceholderText(/Title or qualified ID/i) as HTMLInputElement;
 }
 
@@ -81,11 +84,12 @@ describe("IssuePickerDialog structure", () => {
     expect(screen.queryByPlaceholderText(/Title or qualified ID/i)).toBeNull();
   });
 
-  it("renders the search input and empty-state hint when open", () => {
+  it("renders the task picker and empty-state hint when open", async () => {
     renderDialog();
     expect(screen.getByRole("dialog", { name: /Link to task/i })).toBeTruthy();
-    expect(screen.getByLabelText(/Search tasks/i)).toBeTruthy();
-    expect(getSearchInput()).toBeTruthy();
+    expect(screen.getByText("Search tasks")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: /Title or qualified ID/i }));
+    expect(await getSearchInput()).toBeTruthy();
     expect(screen.getByText(/Type to search open tasks/i)).toBeTruthy();
   });
 });
@@ -96,7 +100,7 @@ describe("IssuePickerDialog debounce", () => {
     const { kata, spy } = makeKata(async () => searchResponse([fakeIssue()]));
     renderDialog({ kata });
 
-    const input = getSearchInput();
+    const input = await getSearchInput();
     await fireEvent.input(input, { target: { value: "a" } });
     await fireEvent.input(input, { target: { value: "ab" } });
     await fireEvent.input(input, { target: { value: "abc" } });
@@ -124,17 +128,16 @@ describe("IssuePickerDialog results", () => {
     const { kata } = makeKata(async () => searchResponse(issues));
     renderDialog({ kata });
 
-    await fireEvent.input(getSearchInput(), { target: { value: "kata" } });
+    await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
     await vi.advanceTimersByTimeAsync(250);
 
     await waitFor(() => {
       expect(screen.getAllByRole("option")).toHaveLength(3);
     });
-    expect(screen.getByRole("listbox", { name: /Matching tasks/i })).toBeTruthy();
-    expect(screen.getByText("Kata#100")).toBeTruthy();
-    expect(screen.getByText("Kata#101")).toBeTruthy();
-    expect(screen.getByText("Kata#102")).toBeTruthy();
-    expect(screen.getByText("First")).toBeTruthy();
+    expect(screen.getByRole("listbox", { name: /Title or qualified ID/i })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Kata#100 First" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Kata#101 Second" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Kata#102 Third" })).toBeTruthy();
   });
 
   it("hides excluded results", async () => {
@@ -146,15 +149,14 @@ describe("IssuePickerDialog results", () => {
     const { kata } = makeKata(async () => searchResponse(issues));
     renderDialog({ kata, excludeIds: new Set([101]) });
 
-    await fireEvent.input(getSearchInput(), { target: { value: "kata" } });
+    await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
     await vi.advanceTimersByTimeAsync(250);
 
     await waitFor(() => {
       expect(screen.getAllByRole("option")).toHaveLength(1);
     });
-    expect(screen.getByText("Kata#100")).toBeTruthy();
-    expect(screen.queryByText("Kata#101")).toBeNull();
-    expect(screen.queryByText("Hide me")).toBeNull();
+    expect(screen.getByRole("option", { name: "Kata#100 Keep me" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /Kata#101/ })).toBeNull();
   });
 
   it("shows no matches when every result is excluded", async () => {
@@ -166,14 +168,14 @@ describe("IssuePickerDialog results", () => {
     const { kata } = makeKata(async () => searchResponse(issues));
     renderDialog({ kata, excludeIds: new Set([100, 101]) });
 
-    await fireEvent.input(getSearchInput(), { target: { value: "kata" } });
+    await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
     await vi.advanceTimersByTimeAsync(250);
 
     await waitFor(() => {
       expect(screen.getByText(/No matches/i)).toBeTruthy();
     });
     expect(screen.queryByRole("option")).toBeNull();
-    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(screen.getByRole("listbox", { name: /Title or qualified ID/i })).toBeTruthy();
   });
 
   it("discards stale slow results after a faster search wins", async () => {
@@ -193,11 +195,11 @@ describe("IssuePickerDialog results", () => {
     const kata: KataSearchOnly = { search: spy };
     renderDialog({ kata });
 
-    await fireEvent.input(getSearchInput(), { target: { value: "stale" } });
+    await fireEvent.input(await getSearchInput(), { target: { value: "stale" } });
     await vi.advanceTimersByTimeAsync(250);
     expect(spy).toHaveBeenCalledTimes(1);
 
-    await fireEvent.input(getSearchInput(), { target: { value: "fresh" } });
+    await fireEvent.input(await getSearchInput(), { target: { value: "fresh" } });
     await vi.advanceTimersByTimeAsync(250);
     expect(spy).toHaveBeenCalledTimes(2);
     await waitFor(() => screen.getByText("Fresh"));
@@ -215,7 +217,7 @@ describe("IssuePickerDialog results", () => {
     const kata: KataSearchOnly = { search: spy };
     renderDialog({ kata });
 
-    const input = getSearchInput();
+    const input = await getSearchInput();
     await fireEvent.input(input, { target: { value: "anything" } });
     await vi.advanceTimersByTimeAsync(250);
 
@@ -239,10 +241,10 @@ describe("IssuePickerDialog selection", () => {
     const onPick = vi.fn();
     renderDialog({ kata, onPick });
 
-    await fireEvent.input(getSearchInput(), { target: { value: "kata" } });
+    await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
     await vi.advanceTimersByTimeAsync(250);
-    const row = await waitFor(() => screen.getByRole("button", { name: /Kata#101.*Second/i }));
-    await fireEvent.click(row);
+    const row = await waitFor(() => screen.getByRole("option", { name: /Kata#101.*Second/i }));
+    await fireEvent.mouseDown(row);
 
     const linkBtn = screen.getByRole("button", { name: /^Link$/ }) as HTMLButtonElement;
     expect(linkBtn.disabled).toBe(false);
@@ -261,7 +263,7 @@ describe("IssuePickerDialog selection", () => {
     const { kata } = makeKata(async () => searchResponse([fakeIssue()]));
     renderDialog({ kata });
 
-    await fireEvent.input(getSearchInput(), { target: { value: "kata" } });
+    await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
     await vi.advanceTimersByTimeAsync(250);
 
     await waitFor(() => screen.getByRole("option"));
@@ -281,14 +283,14 @@ describe("IssuePickerDialog selection", () => {
     const kata: KataSearchOnly = { search: spy };
     renderDialog({ kata });
 
-    await fireEvent.input(getSearchInput(), { target: { value: "first" } });
+    await fireEvent.input(await getSearchInput(), { target: { value: "first" } });
     await vi.advanceTimersByTimeAsync(250);
-    await fireEvent.click(await waitFor(() => screen.getByRole("button", { name: /Kata#100.*First/i })));
+    await fireEvent.mouseDown(await waitFor(() => screen.getByRole("option", { name: /Kata#100.*First/i })));
 
     const linkBtn = screen.getByRole("button", { name: /^Link$/ }) as HTMLButtonElement;
     expect(linkBtn.disabled).toBe(false);
 
-    await fireEvent.input(getSearchInput(), { target: { value: "diff" } });
+    await fireEvent.input(await getSearchInput(), { target: { value: "diff" } });
     expect(linkBtn.disabled).toBe(true);
     await vi.advanceTimersByTimeAsync(250);
     await waitFor(() => screen.getByText("Kata#200"));
@@ -305,7 +307,7 @@ describe("IssuePickerDialog selection", () => {
     const kata: KataSearchOnly = { search: spy };
     renderDialog({ kata });
 
-    const input = getSearchInput();
+    const input = await getSearchInput();
     await fireEvent.input(input, { target: { value: "slow" } });
     await vi.advanceTimersByTimeAsync(250);
     expect(spy).toHaveBeenCalledTimes(1);
@@ -333,11 +335,10 @@ describe("IssuePickerDialog selection", () => {
     const { kata } = makeKata(async () => searchResponse(issues));
     renderDialog({ kata, excludeIds });
 
-    await fireEvent.input(getSearchInput(), { target: { value: "kata" } });
+    await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
     await vi.advanceTimersByTimeAsync(250);
 
-    await waitFor(() => expect(screen.getByText("Kata#999")).toBeTruthy());
-    expect(screen.getByText("Visible")).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("option", { name: "Kata#999 Visible" })).toBeTruthy());
   });
 });
 
@@ -362,7 +363,7 @@ describe("IssuePickerDialog close and reset paths", () => {
     const baseProps = { open: true, kata, onPick, onClose };
     const { rerender } = render(IssuePickerDialog, { props: baseProps });
 
-    await fireEvent.input(getSearchInput(), { target: { value: "kata" } });
+    await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
     await vi.advanceTimersByTimeAsync(250);
     await waitFor(() => screen.getByRole("option"));
 
@@ -370,7 +371,7 @@ describe("IssuePickerDialog close and reset paths", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
 
     await rerender({ ...baseProps, open: true });
-    expect(getSearchInput().value).toBe("");
+    expect((await getSearchInput()).value).toBe("");
     expect(screen.getByText(/Type to search open tasks/i)).toBeTruthy();
     expect(screen.queryByRole("option")).toBeNull();
   });

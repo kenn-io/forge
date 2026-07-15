@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { IssueSummary, KataAPI, IssueFilters, SearchScope } from "../../messages/types";
-  import { SearchInput } from "@kenn-io/kit-ui";
+  import { Button, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import Modal from "./Modal.svelte";
 
   interface Props {
@@ -43,6 +43,14 @@
     excludeIds === undefined
       ? results
       : results.filter((r) => !excludeIds.has(r.id)),
+  );
+  const options = $derived<TypeaheadOption[]>(
+    visible.map((issue) => ({
+      name: issue.uid,
+      label: issue.qualified_id,
+      displayLabel: `${issue.qualified_id} ${issue.title}`,
+      meta: issue.title,
+    })),
   );
 
   $effect(() => {
@@ -104,6 +112,15 @@
     return typeof issue.id === "number";
   }
 
+  function updateQuery(nextQuery: string): void {
+    query = nextQuery;
+  }
+
+  function selectIssue(uid: string): false {
+    selected = visible.find((issue) => issue.uid === uid) ?? null;
+    return false;
+  }
+
   function handlePick(): void {
     if (!selected) return;
     onPick({
@@ -119,53 +136,24 @@
   <div class="picker">
     <div class="picker-field">
       <span>Search tasks</span>
-      <SearchInput
-        bind:value={query}
-        block
+      <Typeahead
+        remote
+        {options}
+        value={selected?.uid ?? ""}
+        fallbackLabel="Select a task"
         placeholder="Title or qualified ID..."
-        ariaLabel="Search tasks"
+        emptyLabel={query.trim() === "" ? "Type to search open tasks." : "No matches."}
+        loading={loading}
+        loadingLabel="Searching..."
+        error={error ?? ""}
+        onquery={updateQuery}
+        onselect={selectIssue}
       />
     </div>
-    {#if loading}
-      <div class="picker-state">Searching...</div>
-    {:else if visible.length === 0}
-      <div class="picker-state">
-        {query.trim() === "" ? "Type to search open tasks." : "No matches."}
-      </div>
-    {:else}
-      <!-- kit-ui-check-ignore: async search-results list inside a dialog, not a dropdown -->
-      <ul class="picker-results" role="listbox" aria-label="Matching tasks">
-        {#each visible as r (r.uid)}
-          <li role="option" aria-selected={selected?.uid === r.uid}>
-            <button
-              type="button"
-              class="picker-result"
-              class:active={selected?.uid === r.uid}
-              onclick={() => (selected = r)}
-            >
-              <span class="picker-id">{r.qualified_id}</span>
-              <span class="picker-title">{r.title}</span>
-            </button>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-    {#if error}
-      <div role="alert" class="picker-error">{error}</div>
-    {/if}
   </div>
   {#snippet footer()}
-    <button type="button" class="picker-action" onclick={onClose}>
-      Cancel
-    </button>
-    <button
-      type="button"
-      class="picker-action primary"
-      disabled={!selected}
-      onclick={handlePick}
-    >
-      Link
-    </button>
+    <Button size="sm" onclick={onClose}>Cancel</Button>
+    <Button size="sm" surface="solid" disabled={!selected} onclick={handlePick}>Link</Button>
   {/snippet}
 </Modal>
 
@@ -191,97 +179,10 @@
     letter-spacing: 0.05em;
   }
 
-
-  .picker-state {
-    padding: 8px 10px;
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-style: italic;
-  }
-
-  .picker-results {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    max-height: 280px;
-    overflow-y: auto;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-  }
-
-  .picker-result {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 8px;
+  .picker-field :global(.kit-typeahead) {
     width: 100%;
-    padding: 6px 8px;
-    border: 0;
-    background: transparent;
-    color: var(--text-primary);
-    text-align: left;
-    font: inherit;
-    font-size: var(--font-size-sm);
-    cursor: pointer;
-  }
-
-  .picker-result:hover {
-    background: var(--bg-surface-hover);
-  }
-
-  .picker-result.active {
-    background: var(--accent-blue-soft);
-  }
-
-  .picker-id {
-    color: var(--accent-blue);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
-  .picker-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .picker-error {
-    padding: 6px 8px;
-    border-radius: var(--radius-sm);
-    background: var(--accent-red-soft);
-    color: var(--accent-red);
-    font-size: var(--font-size-xs);
-  }
-
-  .picker-action {
-    padding: 6px 12px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-  }
-
-  .picker-action:hover:not(:disabled) {
-    background: var(--bg-surface-hover);
-  }
-
-  .picker-action.primary {
-    background: var(--accent-blue);
-    border-color: var(--accent-blue);
-    color: var(--text-on-accent);
-  }
-
-  .picker-action.primary:hover:not(:disabled) {
-    filter: brightness(0.95);
-  }
-
-  .picker-action:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+    max-width: none;
+    --typeahead-control-height: 32px;
+    --typeahead-control-font-size: var(--font-size-sm);
   }
 </style>

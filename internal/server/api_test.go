@@ -25583,9 +25583,14 @@ func TestWorkspaceListRestoresAheadBehindAfterUpstreamHealE2E(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
+
+	// The observer only rewires an upstream when the merge-request row
+	// positively places the head branch in the base repository.
+	seedPR(t, database, "acme", "widget", 1,
+		withSeedPRHeadRepoCloneURL("https://github.com/acme/widget.git"))
 
 	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
 	runGit(t, ws.WorktreePath, "config", "user.name", "Test")

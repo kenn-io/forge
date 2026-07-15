@@ -1650,8 +1650,13 @@ func cleanupWorktreeAddOnUpstreamFailure(
 // configureFallbackBranchUpstream points the synthetic PR fallback branch at
 // the PR's head branch on origin, so divergence counts, push, and pull treat
 // the remote PR branch as the sync target exactly like a preferred-name
-// checkout would. Fork heads and deleted head branches have no origin
-// tracking ref to bind to and are left without an upstream.
+// checkout would. A nil MRHeadRepo alone cannot prove the head lives in the
+// base repository (it is also nil when head-repo metadata was unavailable),
+// so the binding additionally requires origin/<head> to resolve to the exact
+// commit this worktree was just materialized at. Fork heads, deleted head
+// branches, and same-named base branches with different content all fail that
+// check and are left without an upstream; the pushed-head observer can wire
+// them later with merge-request-row evidence.
 func configureFallbackBranchUpstream(
 	ctx context.Context,
 	cloneDir string,
@@ -1661,7 +1666,20 @@ func configureFallbackBranchUpstream(
 	if ws.MRHeadRepo != nil {
 		return nil
 	}
-	if !gitRefExists(ctx, cloneDir, "refs/remotes/origin/"+ws.GitHeadRef) {
+	trackingSHA, ok, err := gitRefSHA(
+		ctx, cloneDir, "refs/remotes/origin/"+ws.GitHeadRef,
+	)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	headSHA, err := gitHeadSHA(ctx, ws.WorktreePath)
+	if err != nil {
+		return err
+	}
+	if trackingSHA != headSHA {
 		return nil
 	}
 	return setBranchUpstream(

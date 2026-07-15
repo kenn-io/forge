@@ -88,23 +88,24 @@ func seedMRWithPlatformHead(
 	d *db.DB,
 	repoID int64,
 	number int,
-	branch, sha string,
+	branch, sha, headRepoCloneURL string,
 ) {
 	t.Helper()
 	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
 	_, err := d.UpsertMergeRequest(t.Context(), &db.MergeRequest{
-		RepoID:          repoID,
-		PlatformID:      repoID*10000 + int64(number),
-		Number:          number,
-		Title:           "Refresh me",
-		Author:          "author",
-		State:           db.MergeRequestStateOpen,
-		HeadBranch:      branch,
-		PlatformHeadSHA: sha,
-		BaseBranch:      "main",
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		LastActivityAt:  now,
+		RepoID:           repoID,
+		PlatformID:       repoID*10000 + int64(number),
+		Number:           number,
+		Title:            "Refresh me",
+		Author:           "author",
+		State:            db.MergeRequestStateOpen,
+		HeadBranch:       branch,
+		PlatformHeadSHA:  sha,
+		HeadRepoCloneURL: headRepoCloneURL,
+		BaseBranch:       "main",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		LastActivityAt:   now,
 	})
 	require.NoError(t, err)
 }
@@ -128,7 +129,7 @@ func TestPushedHeadObserverFirstObservationSkipsWhenProviderHeadMatches(t *testi
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "2222222")
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "2222222", "")
 	insertPushedHeadWorkspace(t, d, "ws-pr", db.WorkspaceItemTypePullRequest, 42, nil)
 	reader := &fakeRemoteHeadReader{
 		branch: "feature/remote-head",
@@ -155,7 +156,7 @@ func TestPushedHeadObserverFirstObservationEnqueuesWhenProviderHeadDiffers(t *te
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111")
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111", "")
 	insertPushedHeadWorkspace(t, d, "ws-pr", db.WorkspaceItemTypePullRequest, 42, nil)
 	reader := &fakeRemoteHeadReader{
 		branch: "feature/remote-head",
@@ -191,7 +192,7 @@ func TestPushedHeadObserverRetriesObservedSHAUntilProviderHeadMatches(t *testing
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111")
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111", "")
 	insertPushedHeadWorkspace(t, d, "ws-pr", db.WorkspaceItemTypePullRequest, 42, nil)
 	reader := &fakeRemoteHeadReader{
 		branch:      "feature/remote-head",
@@ -227,7 +228,7 @@ func TestPushedHeadObserverDoesNotRetryAfterRefreshSucceeds(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111")
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111", "")
 	insertPushedHeadWorkspace(t, d, "ws-pr", db.WorkspaceItemTypePullRequest, 42, nil)
 	reader := &fakeRemoteHeadReader{
 		branch:      "feature/remote-head",
@@ -243,7 +244,7 @@ func TestPushedHeadObserverDoesNotRetryAfterRefreshSucceeds(t *testing.T) {
 	require.Len(first.HeadChanges, 1)
 	now := time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
 	observer.MarkRefreshSucceeded(first.HeadChanges[0], now)
-	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "2222222")
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "2222222", "")
 
 	retry, err := observer.RunOnce(context.Background())
 	require.NoError(err)
@@ -255,7 +256,7 @@ func TestPushedHeadObserverDetectsSubsequentTrackingRefMove(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111")
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111", "")
 	insertPushedHeadWorkspace(t, d, "ws-pr", db.WorkspaceItemTypePullRequest, 42, nil)
 	reader := &fakeRemoteHeadReader{
 		branch: "feature/remote-head",
@@ -322,7 +323,7 @@ func TestPushedHeadObserverMissingRefAndTransientErrorKeepObservationState(t *te
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111")
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111", "")
 	insertPushedHeadWorkspace(t, d, "ws-pr", db.WorkspaceItemTypePullRequest, 42, nil)
 	reader := &fakeRemoteHeadReader{
 		branch:      "feature/remote-head",
@@ -358,30 +359,59 @@ func TestPushedHeadObserverMissingRefAndTransientErrorKeepObservationState(t *te
 
 func TestPushedHeadObserverUpstreamHeal(t *testing.T) {
 	forkHeadRepo := "https://github.com/contributor/widget.git"
+	sameRepoURL := "https://github.com/acme/widget.git"
 	cases := []struct {
-		name       string
-		branch     string
-		mrHeadRepo *string
-		wantHeal   bool
+		name             string
+		branch           string
+		mrHeadRepo       *string
+		headRepoCloneURL string
+		trackingOK       bool
+		wantHeal         bool
 	}{
 		{
-			name:     "synthetic PR branch is rewired to the PR head",
-			branch:   "middleman/pr-42",
-			wantHeal: true,
+			name:             "synthetic PR branch is rewired to the PR head",
+			branch:           "middleman/pr-42",
+			headRepoCloneURL: sameRepoURL,
+			trackingOK:       true,
+			wantHeal:         true,
 		},
 		{
-			name:     "head-branch checkout is rewired to itself",
-			branch:   "feature/remote-head",
-			wantHeal: true,
+			name:             "head-branch checkout is rewired to itself",
+			branch:           "feature/remote-head",
+			headRepoCloneURL: sameRepoURL,
+			trackingOK:       true,
+			wantHeal:         true,
 		},
 		{
-			name:   "unrelated branch is left alone",
-			branch: "scratch/unrelated",
+			name:             "unrelated branch is left alone",
+			branch:           "scratch/unrelated",
+			headRepoCloneURL: sameRepoURL,
+			trackingOK:       true,
 		},
 		{
-			name:       "fork PR head cannot be tracked by origin",
-			branch:     "feature/remote-head",
-			mrHeadRepo: &forkHeadRepo,
+			name:             "fork PR head cannot be tracked by origin",
+			branch:           "feature/remote-head",
+			mrHeadRepo:       &forkHeadRepo,
+			headRepoCloneURL: forkHeadRepo,
+			trackingOK:       true,
+		},
+		{
+			name:             "MR row without head-repo metadata is not trusted",
+			branch:           "feature/remote-head",
+			headRepoCloneURL: "",
+			trackingOK:       true,
+		},
+		{
+			name:             "fork-backed MR row blocks heal even with nil workspace head repo",
+			branch:           "feature/remote-head",
+			headRepoCloneURL: forkHeadRepo,
+			trackingOK:       true,
+		},
+		{
+			name:             "missing remote-tracking ref blocks heal",
+			branch:           "middleman/pr-42",
+			headRepoCloneURL: sameRepoURL,
+			trackingOK:       false,
 		},
 	}
 	for _, tc := range cases {
@@ -390,7 +420,10 @@ func TestPushedHeadObserverUpstreamHeal(t *testing.T) {
 			require := require.New(t)
 			d := openTestDB(t)
 			repoID := seedRepo(t, d, "github.com", "acme", "widget")
-			seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "2222222")
+			seedMRWithPlatformHead(
+				t, d, repoID, 42, "feature/remote-head", "2222222",
+				tc.headRepoCloneURL,
+			)
 			require.NoError(d.InsertWorkspace(t.Context(), &db.Workspace{
 				ID:              "ws-pr",
 				Platform:        "github",
@@ -411,7 +444,10 @@ func TestPushedHeadObserverUpstreamHeal(t *testing.T) {
 				upstream:    upstreamState{},
 				trackingSHA: "2222222",
 				trackingRef: "refs/remotes/origin/feature/remote-head",
-				trackingOK:  true,
+				trackingOK:  tc.trackingOK,
+			}
+			if !tc.trackingOK {
+				reader.trackingSHA = ""
 			}
 			observer := newPushedHeadObserverForTest(t, d, reader)
 
@@ -420,8 +456,7 @@ func TestPushedHeadObserverUpstreamHeal(t *testing.T) {
 			assert.Empty(result.HeadChanges)
 			if !tc.wantHeal {
 				assert.Empty(reader.setUpstreamCalls,
-					"branch must not be rewired")
-				assert.Zero(reader.trackingCalls)
+					"branch must not be rewired without positive same-repo evidence")
 				return
 			}
 			require.Len(reader.setUpstreamCalls, 1,
@@ -432,7 +467,7 @@ func TestPushedHeadObserverUpstreamHeal(t *testing.T) {
 			assert.Equal("origin", call.remote)
 			assert.Equal("refs/heads/feature/remote-head", call.mergeRef)
 			assert.Equal(1, reader.trackingCalls,
-				"observation must continue against the healed upstream")
+				"heal probe and observation must share one tracking lookup")
 		})
 	}
 }

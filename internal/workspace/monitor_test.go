@@ -203,7 +203,7 @@ func TestPRMonitorRefreshWorkspaceAssociationAssociatesKataTask(t *testing.T) {
 	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "feature/kata-task")
 	headSHA, err := gitHeadSHA(ctx, worktreePath)
 	require.NoError(err)
-	seedMRWithPlatformHead(t, d, repoID, 42, "feature/kata-task", headSHA)
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/kata-task", headSHA, "")
 	kataMetadata := db.WorkspaceKataMetadata{
 		DaemonID:   "local",
 		ProjectUID: "project-1",
@@ -268,7 +268,7 @@ func TestPRMonitorRunOnceFallsBackToLocalHeadSHAWhenUpstreamRepoMetadataMissing(
 	)
 	headSHA, err := gitHeadSHA(ctx, worktreePath)
 	require.NoError(err)
-	seedMRWithPlatformHead(t, d, repoID, 42, "feature/gitlab", headSHA)
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/gitlab", headSHA, "")
 	workspaceID := insertMonitorWorkspaceWithIdentity(
 		t, d, "ws-gitlab", "gitlab", "gitlab.com",
 		"Group/SubGroup", "Project", worktreePath,
@@ -594,7 +594,7 @@ func TestPRMonitorRunOnceScopesCandidatesByWorkspaceProvider(t *testing.T) {
 	headSHA, err := gitHeadSHA(ctx, worktreePath)
 	require.NoError(err)
 	seedMRWithPlatformHead(
-		t, d, githubRepoID, 42, "feature/provider-scope", headSHA,
+		t, d, githubRepoID, 42, "feature/provider-scope", headSHA, "",
 	)
 	workspaceID := insertMonitorWorkspaceWithIdentity(
 		t, d, "ws-gitlab-provider-scope", "gitlab", "git.example.com",

@@ -483,6 +483,42 @@ describe("WorkspaceTerminalView", () => {
     expect(localStorage.getItem("middleman-workspace-active-tab:ws-1")).toBe("home");
   });
 
+  it("starts the runtime request before workspace metadata resolves", async () => {
+    const workspaceRequest = deferred<Response>();
+    const runtimeRequest = deferred<ReturnType<typeof runtimeWithStaleSession>>();
+    let workspaceRequestStarted = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const url = input instanceof Request ? input.url : String(input);
+        const { pathname } = new URL(url, "http://localhost");
+        if (pathname.endsWith("/workspaces/ws-1")) {
+          workspaceRequestStarted = true;
+          return workspaceRequest.promise;
+        }
+        if (pathname.endsWith("/api/v1/workspaces")) {
+          return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+    mocks.getWorkspaceRuntime.mockReturnValue(runtimeRequest.promise);
+
+    try {
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+        },
+      });
+
+      await waitFor(() => expect(workspaceRequestStarted).toBe(true));
+      expect(mocks.getWorkspaceRuntime).toHaveBeenCalledWith("ws-1", undefined);
+    } finally {
+      workspaceRequest.resolve(Response.json(workspaceResponse));
+      runtimeRequest.resolve(runtimeWithStaleSession());
+    }
+  });
+
   it("polls local workspace runtime so peer-spawned sessions appear", async () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
@@ -493,8 +529,9 @@ describe("WorkspaceTerminalView", () => {
         return 1 as unknown as ReturnType<typeof setInterval>;
       });
     const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    const initialRuntime = deferred<{ launch_targets: never[]; sessions: never[] }>();
     mocks.getWorkspaceRuntime
-      .mockResolvedValueOnce({ launch_targets: [], sessions: [] })
+      .mockReturnValueOnce(initialRuntime.promise)
       .mockResolvedValueOnce(runtimeWithSession("2026-04-29T00:03:00Z"));
 
     render(WorkspaceTerminalView, {
@@ -504,6 +541,9 @@ describe("WorkspaceTerminalView", () => {
     });
 
     await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledWith("ws-1", undefined));
+    await waitFor(() => expect(intervalCallbacks.some((interval) => interval.delay === 3000)).toBe(true));
+    initialRuntime.resolve({ launch_targets: [], sessions: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull();
     const runtimePoll = intervalCallbacks.find((interval) => interval.delay === 3000);
     expect(runtimePoll).toBeTruthy();
@@ -526,8 +566,9 @@ describe("WorkspaceTerminalView", () => {
         return 1 as unknown as ReturnType<typeof setInterval>;
       });
     const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    const initialRuntime = deferred<{ launch_targets: never[]; sessions: never[] }>();
     mocks.getWorkspaceRuntime
-      .mockResolvedValueOnce({ launch_targets: [], sessions: [] })
+      .mockReturnValueOnce(initialRuntime.promise)
       .mockResolvedValueOnce(runtimeWithSession("2026-04-29T00:03:00Z"));
 
     render(WorkspaceTerminalView, {
@@ -538,6 +579,9 @@ describe("WorkspaceTerminalView", () => {
     });
 
     await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledWith("ws-1", "member"));
+    await waitFor(() => expect(intervalCallbacks.some((interval) => interval.delay === 3000)).toBe(true));
+    initialRuntime.resolve({ launch_targets: [], sessions: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull();
     const runtimePoll = intervalCallbacks.find((interval) => interval.delay === 3000);
     expect(runtimePoll).toBeTruthy();
@@ -659,6 +703,7 @@ describe("WorkspaceTerminalView", () => {
     });
 
     await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledWith("ws-1", "member"));
+    await waitFor(() => expect(intervalCallbacks.some((interval) => interval.delay === 3000)).toBe(true));
     const runtimePoll = intervalCallbacks.find((interval) => interval.delay === 3000);
     expect(runtimePoll).toBeTruthy();
 
@@ -726,8 +771,9 @@ describe("WorkspaceTerminalView", () => {
 
   it("shows a relaunched agent with the same key and a new generation", async () => {
     const relaunchedAt = "2026-04-29T00:01:00Z";
+    const initialRuntime = deferred<ReturnType<typeof runtimeWithStaleSession>>();
     mocks.getWorkspaceRuntime
-      .mockResolvedValueOnce(runtimeWithStaleSession())
+      .mockReturnValueOnce(initialRuntime.promise)
       .mockResolvedValueOnce(runtimeWithSession(relaunchedAt));
 
     render(WorkspaceTerminalView, {
@@ -736,6 +782,8 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
+    await screen.findByRole("button", { name: "Refresh workspace details" });
+    initialRuntime.resolve(runtimeWithStaleSession());
     await screen.findByRole("tab", { name: /Helper/ });
     await waitFor(() => expect(sockets).toHaveLength(1));
 
@@ -1037,8 +1085,9 @@ describe("WorkspaceTerminalView", () => {
         return 1 as unknown as ReturnType<typeof setInterval>;
       });
     const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+    const initialRuntime = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
     mocks.getWorkspaceRuntime
-      .mockResolvedValueOnce(runtimeWithTerminalSession())
+      .mockReturnValueOnce(initialRuntime.promise)
       .mockResolvedValueOnce(runtimeWithTwoTerminalSessions());
 
     render(WorkspaceTerminalView, {
@@ -1047,6 +1096,8 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
+    await screen.findByRole("button", { name: "Refresh workspace details" });
+    initialRuntime.resolve(runtimeWithTerminalSession());
     const terminalButton = await screen.findByRole("button", {
       name: "Open terminal panel",
     });
@@ -1068,10 +1119,11 @@ describe("WorkspaceTerminalView", () => {
 
   it("ignores older runtime responses after terminal cleanup refreshes", async () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    const initialRuntime = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
     const staleRefresh = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
     const freshRefresh = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
     mocks.getWorkspaceRuntime
-      .mockResolvedValueOnce(runtimeWithTerminalSession())
+      .mockReturnValueOnce(initialRuntime.promise)
       .mockReturnValueOnce(staleRefresh.promise)
       .mockReturnValueOnce(freshRefresh.promise);
     mocks.launchWorkspaceSession.mockResolvedValue(relaunchedShellSession);
@@ -1082,6 +1134,8 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
+    await screen.findByRole("button", { name: "Refresh workspace details" });
+    initialRuntime.resolve(runtimeWithTerminalSession());
     const terminalButton = await screen.findByRole("button", {
       name: "Open terminal panel",
     });

@@ -2465,7 +2465,9 @@
       void fetchRuntime();
     });
 
-    void fetchWorkspace().then(() => {
+    const workspaceRequest = fetchWorkspace();
+    void fetchRuntime();
+    void workspaceRequest.then(() => {
       if (workspace?.status === "creating") {
         startPolling();
       } else if (workspace?.status === "ready") {

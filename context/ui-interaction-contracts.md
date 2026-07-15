@@ -268,6 +268,9 @@ breakage.
 - Store tests for persistence scope and normalization logic.
 - Playwright/e2e tests for navigation away/back, Escape behavior, nested button
   activation, and other multi-surface flows.
+- Component tests for inert transactional surfaces must await an explicitly
+  enabled control before firing events; jsdom does not enforce browser inertness
+  (`frontend/src/lib/features/kata/KataWorkspace.svelte::workspaceActionsBlocked`).
 - For controlled native form controls, assert behavior under a real
   `fireEvent.click`, not only `fireEvent.mouseDown`. A mousedown-only test skips
   the native default action (e.g. a checkbox's own toggle) and will pass while a

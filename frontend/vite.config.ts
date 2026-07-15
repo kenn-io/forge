@@ -196,6 +196,15 @@ const browserTestProject = defineProject(async () => {
     test: {
       name: "browser",
       include: ["src/**/*.browser.svelte.ts"],
+      onUnhandledError(error) {
+        // Vite can reject its module-runner socket promise while Vitest closes
+        // the browser server after every assertion has completed. Ignore only
+        // that framework teardown error; all application errors still fail.
+        if (error.message === "WebSocket closed without opened." && error.stack?.includes("@vite/client")) {
+          return false;
+        }
+        return undefined;
+      },
       browser: {
         enabled: true,
         provider: playwright() as never,

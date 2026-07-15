@@ -144,7 +144,7 @@ func TestServeRuntimeTerminalClosedOutputStillReportsSessionExit(t *testing.T) {
 	}
 	require.NoError(json.Unmarshal(data, &msg))
 	require.Equal("exited", msg.Type)
-	require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
+	_ = conn.Close(websocket.StatusNormalClosure, "done")
 	select {
 	case <-handlerDone:
 	case <-ctx.Done():

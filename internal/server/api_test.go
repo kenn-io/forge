@@ -25631,6 +25631,13 @@ func TestWorkspaceListRestoresAheadBehindAfterUpstreamHealE2E(t *testing.T) {
 	assert := assert.New(t)
 
 	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	srv.workspaceEnrichmentDisabled = false
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	var clockNow atomic.Int64
+	clockNow.Store(now.UnixNano())
+	srv.now = func() time.Time {
+		return time.Unix(0, clockNow.Load()).UTC()
+	}
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
@@ -25670,14 +25677,28 @@ func TestWorkspaceListRestoresAheadBehindAfterUpstreamHealE2E(t *testing.T) {
 		return nil
 	}
 
-	broken := findWorkspace()
-	require.Nil(broken.CommitsAhead,
+	clockNow.Store(now.Add(workspaceEnrichmentTTL + time.Second).UnixNano())
+	var broken *generated.WorkspaceResponse
+	require.Eventually(func() bool {
+		broken = findWorkspace()
+		return broken.CommitsAhead == nil &&
+			broken.CommitsBehind == nil &&
+			string(broken.EnrichmentStatus) == workspaceEnrichmentFresh
+	}, 2*time.Second, 10*time.Millisecond,
 		"counts must be omitted while the branch has no upstream")
-	require.Nil(broken.CommitsBehind)
 
 	srv.runWorkspacePushedHeadObserverPass(ctx)
 
-	healed := findWorkspace()
+	clockNow.Store(now.Add(2 * (workspaceEnrichmentTTL + time.Second)).UnixNano())
+	var healed *generated.WorkspaceResponse
+	require.Eventually(func() bool {
+		healed = findWorkspace()
+		return healed.CommitsAhead != nil &&
+			healed.CommitsBehind != nil &&
+			*healed.CommitsAhead == 1 &&
+			*healed.CommitsBehind == 0 &&
+			string(healed.EnrichmentStatus) == workspaceEnrichmentFresh
+	}, 2*time.Second, 10*time.Millisecond)
 	require.NotNil(healed.CommitsAhead,
 		"observer pass must restore the branch upstream")
 	require.NotNil(healed.CommitsBehind)
@@ -27666,29 +27687,12 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 
 	require := require.New(t)
 	assert := assert.New(t)
-	dir := t.TempDir()
 	tmuxCommand := isolatedRealTmuxCommand(t, tmuxPath)
-	agentPath := filepath.Join(dir, "size-agent")
-	// The agent must keep running after it observes the target size. Exiting
-	// on the first match kills the pane, tmux destroys the session, and the
-	// attach client can die within the same redraw tick — before the probe
-	// line is ever painted to the websocket. Keep printing until teardown
-	// (tmux kill-server) reaps the pane; the bound only guards against a
-	// skipped cleanup and the exit status is unchecked.
-	require.NoError(os.WriteFile(agentPath, []byte(`#!/bin/sh
-attempt=0
-while [ "$attempt" -lt 200 ]; do
-	set -- $(stty size 2>/dev/null || printf '0 0')
-	printf 'size:%s:%s:probe\n' "$1" "$2"
-	attempt=$((attempt + 1))
-	sleep 0.1
-done
-`), 0o755))
 	cfg := &config.Config{
 		Agents: []config.Agent{{
 			Key:     "helper",
 			Label:   "Helper",
-			Command: []string{agentPath},
+			Command: serverRuntimeHelperCommand("size-live"),
 		}},
 		Tmux: config.Tmux{Command: tmuxCommand},
 	}
@@ -27733,7 +27737,13 @@ done
 		require.NoError(err)
 		return conn.Write(ctx, websocket.MessageText, resize)
 	}
-	require.NoError(writeResize())
+	probeSize := func() error {
+		if err := writeResize(); err != nil {
+			return err
+		}
+		return conn.Write(ctx, websocket.MessageBinary, []byte("probe\n"))
+	}
+	require.NoError(probeSize())
 	deadline := time.Now().Add(8 * time.Second)
 	var got strings.Builder
 	for time.Now().Before(deadline) {
@@ -27742,7 +27752,7 @@ done
 		cancel()
 		if readErr != nil {
 			if errors.Is(readErr, context.DeadlineExceeded) {
-				if err := writeResize(); err != nil {
+				if err := probeSize(); err != nil {
 					break
 				}
 				continue
@@ -27759,7 +27769,7 @@ done
 		if strings.Contains(got.String(), "size:40:177:probe") {
 			return
 		}
-		if err := writeResize(); err != nil {
+		if err := probeSize(); err != nil {
 			break
 		}
 	}
@@ -27976,6 +27986,18 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 			}
 		}
 		return
+	case "size-live":
+		reader := bufio.NewReader(os.Stdin)
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				return
+			}
+			rows, cols, sizeErr := pty.Getsize(os.Stdin)
+			if sizeErr == nil {
+				fmt.Printf("size:%d:%d:%s", rows, cols, line)
+			}
+		}
 	case "exit":
 		os.Exit(3)
 	case "print-exit":

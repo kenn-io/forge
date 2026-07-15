@@ -235,6 +235,17 @@ func TestWorkspaceCommitsOmitsPushStatusWithoutUpstreamE2E(t *testing.T) {
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	require.NotEmpty(ws.WorktreePath)
 	require.NotEmpty(ws.GitHeadRef)
+	repo, err := fixture.database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	mr.HeadRepoCloneURL = "https://github.com/contributor/widget.git"
+	_, err = fixture.database.UpsertMergeRequest(ctx, mr)
+	require.NoError(err)
 
 	// Drop the branch's upstream so the worktree mimics a fork PR head: the
 	// commits exist but @{upstream} no longer resolves. Push status is then

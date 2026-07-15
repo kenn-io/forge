@@ -414,19 +414,17 @@
 
   type RouteMismatch = "daemon" | "viewScope" | "select" | "clear" | null;
 
-  // A daemon switch is transactional and refuses while other work is in
-  // flight. The reconciler must check the same gates before attempting
-  // it: an attempt that would refuse must be a no-op evaluation, not a
-  // reconcile pass, or the effect re-fires itself in a busy loop.
-  function daemonSwitchGated(): boolean {
-    return viewWorkCount > 0 || store.hasPendingMutations || workspaceActionBusy;
+  // Read-only view work is intentionally absent: a daemon switch advances
+  // the navigation generation and invalidates pending loads, so stale read
+  // completions cannot repaint the new daemon. Only ownership setup, another
+  // switch transaction, or non-supersedable writes hold the exclusive lock.
+  function daemonSwitchLocked(): boolean {
+    return loading || switchingDaemon || store.hasPendingMutations || workspaceActionBusy;
   }
 
-  // Route list loads are not abortable, so the reconciler starts them
-  // without awaiting: a stalled fetch must not block converging to a
-  // newer route (the store's request guards drop the late result). This
-  // records which route's list load is in flight so re-evaluations do
-  // not start a duplicate.
+  // The reconciler starts route list loads without awaiting so a newer
+  // route can supersede and abort them. This records which route's list
+  // load is in flight so re-evaluations do not start a duplicate.
   let viewScopeLoadSignature = $state<string | null>(null);
 
   function startViewScopeLoad(signature: string): void {
@@ -509,7 +507,7 @@
           return;
         }
         if (mismatch === "daemon") {
-          if (daemonSwitchGated()) return;
+          if (daemonSwitchLocked()) return;
           await switchKataDaemon(requestedDaemonId!);
           if (requestedDaemonId !== null && requestedDaemonId !== store.daemonId) {
             // The switch refused or failed; the effect re-fires when its
@@ -616,7 +614,7 @@
       }
       return;
     }
-    if (mismatch === "daemon" && daemonSwitchGated()) return;
+    if (mismatch === "daemon" && daemonSwitchLocked()) return;
     // A project route load applies its scope before its optional view load
     // finishes. That intermediate state can leave only the issue selection
     // mismatched, but selecting now would be aborted when the remaining view
@@ -862,7 +860,7 @@
   }
 
   async function switchKataDaemon(id: string): Promise<void> {
-    if (loading || switchingDaemon || viewWorkCount > 0 || store.hasPendingMutations || workspaceActionBusy) return;
+    if (daemonSwitchLocked()) return;
     const previousExplicitDaemon = getActiveKataDaemon();
     const previousDaemon = store.daemonId ?? activeKataDaemonId;
     if (id === store.daemonId) return;
@@ -1163,7 +1161,7 @@
           activeId={activeKataDaemonId}
           activeStatusLabel={activeDaemonStatusLabel()}
           activeStatusTone={activeDaemonStatusLabel() ? "error" : undefined}
-          disabled={loading || switchingDaemon || viewWorkCount > 0 || store.hasPendingMutations || workspaceActionBusy}
+          disabled={daemonSwitchLocked()}
           onSelect={(id) => {
             void switchKataDaemon(id);
           }}

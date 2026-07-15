@@ -127,7 +127,12 @@ describe("KataWorkspace", () => {
     await Promise.resolve();
     vi.mocked(api.issues).mockImplementationOnce(async (_query: KataTaskIssuesQuery) => stalledView.promise);
     await rerender({ api, routeViewName: "inbox", selectedIssueUID: "issue-email-susan" });
-    await waitFor(() => expect(api.issues).toHaveBeenCalledWith({ view: "inbox" }));
+    await waitFor(() =>
+      expect(api.issues).toHaveBeenCalledWith(
+        { view: "inbox" },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
 
     await rerender({ api, routeViewName: null, selectedIssueUID: null });
     await waitFor(() => {

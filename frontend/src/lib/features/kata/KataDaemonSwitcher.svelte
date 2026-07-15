@@ -55,9 +55,8 @@
     title="Switch Kata daemon"
     aria-haspopup="menu"
     aria-expanded={open}
-    {disabled}
     onclick={() => {
-      if (!disabled) open = !open;
+      open = !open;
     }}
   >
     <ServerIcon class="chip-icon" size={13} strokeWidth={1.9} aria-hidden="true" />

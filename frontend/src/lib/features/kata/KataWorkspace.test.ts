@@ -1017,7 +1017,9 @@ describe("KataWorkspace", () => {
       expect(screen.getByRole("button", { name: "Create workspace" })).toBeTruthy();
     });
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
-    expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+    const workDaemonRow = screen.getByTestId("daemon-row-work") as HTMLButtonElement;
+    expect(workDaemonRow.disabled).toBe(true);
     workspaceCreate.resolve(createdWorkspace);
 
     await waitFor(() => {
@@ -1030,7 +1032,7 @@ describe("KataWorkspace", () => {
         }),
       );
       expect(mockNavigate).toHaveBeenCalledWith("/terminal/workspace-kata");
-      expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(false);
+      expect(workDaemonRow.disabled).toBe(false);
     });
   });
 
@@ -1384,7 +1386,9 @@ describe("KataWorkspace", () => {
     await waitFor(() => expect(oldSearchSettled).toBe(true));
 
     expect(screen.queryByText("Loading snapshot")).toBeTruthy();
-    expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+    const homeDaemonRow = screen.getByTestId("daemon-row-home") as HTMLButtonElement;
+    expect(homeDaemonRow.disabled).toBe(true);
 
     newSearch.resolve({
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "new" },
@@ -1395,7 +1399,7 @@ describe("KataWorkspace", () => {
       expect(screen.queryByText("Loading snapshot")).toBeNull();
       expect(screen.getByRole("heading", { name: "Email Susan re: Q3" })).toBeTruthy();
     });
-    expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(false);
+    expect(homeDaemonRow.disabled).toBe(false);
   });
 
   it("clears the loading announcement when the newest overlapping search finishes first", async () => {
@@ -1446,7 +1450,9 @@ describe("KataWorkspace", () => {
       expect(screen.queryByText("Loading snapshot")).toBeNull();
       expect(screen.getByRole("heading", { name: "Email Susan re: Q3" })).toBeTruthy();
     });
-    expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+    const homeDaemonRow = screen.getByTestId("daemon-row-home") as HTMLButtonElement;
+    expect(homeDaemonRow.disabled).toBe(true);
 
     oldSearch.resolve({
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "old" },
@@ -1457,7 +1463,7 @@ describe("KataWorkspace", () => {
 
     expect(screen.queryByText("Loading snapshot")).toBeNull();
     expect(screen.getByRole("heading", { name: "Email Susan re: Q3" })).toBeTruthy();
-    expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(false);
+    expect(homeDaemonRow.disabled).toBe(false);
   });
 
   it("shows the normalized authentication message when bootstrap fails", async () => {

@@ -61,15 +61,17 @@ describe("KataDaemonSwitcher", () => {
     expect(onSelect).toHaveBeenCalledWith("work");
   });
 
-  it("disables daemon choices while workspace work is in flight", async () => {
+  it("keeps the menu available while daemon choices are disabled", async () => {
     const onSelect = vi.fn();
     render(KataDaemonSwitcher, { props: { daemons, activeId: "home", disabled: true, onSelect } });
 
     const chip = screen.getByTestId("daemon-chip") as HTMLButtonElement;
-    expect(chip.disabled).toBe(true);
+    expect(chip.disabled).toBe(false);
     await fireEvent.click(chip);
 
-    expect(screen.queryByTestId("daemon-row-work")).toBeNull();
+    const workRow = screen.getByTestId("daemon-row-work") as HTMLButtonElement;
+    expect(workRow.disabled).toBe(true);
+    await fireEvent.click(workRow);
     expect(onSelect).not.toHaveBeenCalled();
   });
 

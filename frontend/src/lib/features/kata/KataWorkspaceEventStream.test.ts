@@ -587,12 +587,14 @@ describe("KataWorkspace", () => {
       ),
     );
     await oldStreamRefreshStarted.promise;
-    expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+    const homeDaemonRow = screen.getByTestId("daemon-row-home") as HTMLButtonElement;
+    expect(homeDaemonRow.disabled).toBe(true);
 
     releaseOldStreamRefresh.resolve();
     await waitFor(() => {
       expect(completedViewLoads).toBe(viewLoadsBeforeEvents + 2);
-      expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(false);
+      expect(homeDaemonRow.disabled).toBe(false);
     });
 
     const viewLoadsAfterDrain = vi.mocked(api.issues).mock.calls.length;
@@ -646,13 +648,15 @@ describe("KataWorkspace", () => {
         `id: 6\nevent: sync.reset_required\ndata: ${JSON.stringify({ event_id: 6, reset_after_id: 6 })}\n\n`,
       ),
     );
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+    const homeDaemonRow = screen.getByTestId("daemon-row-home") as HTMLButtonElement;
     await waitFor(() => {
-      expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(true);
+      expect(homeDaemonRow.disabled).toBe(true);
     });
 
     failedRefresh.reject(new Error("stream refresh failed"));
     await waitFor(() => {
-      expect((screen.getByTestId("daemon-chip") as HTMLButtonElement).disabled).toBe(false);
+      expect(homeDaemonRow.disabled).toBe(false);
       expect(streamControllers).toHaveLength(2);
     });
     expect(screen.getByRole("button", { name: /Pay rent/ })).toBeTruthy();

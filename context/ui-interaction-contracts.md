@@ -151,6 +151,9 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   close buttons or compact action affordances.
 - If a component claims menu-like behavior, it must honor the keyboard and focus
   contract of that role. Otherwise, use simpler semantics honestly.
+- Gate unavailable menu actions at the items when the menu remains safe to
+  inspect; native-disabled triggers swallow clicks and make pending work look
+  like broken UI (`frontend/src/lib/features/kata/KataDaemonSwitcher.svelte::choose`).
 
 ## Controlled Form Controls
 

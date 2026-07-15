@@ -2077,7 +2077,11 @@ test("kata daemon switch waits for an in-flight event stream refresh", async ({ 
       .poll(() => home.state.seenPaths.filter((path) => path === "GET /api/v1/issues?status=open").length)
       .toBeGreaterThan(homeIssueLoads);
 
-    await expect(page.getByTestId("daemon-chip")).toBeDisabled();
+    const daemonChip = page.getByTestId("daemon-chip");
+    await expect(daemonChip).toBeEnabled();
+    await daemonChip.click();
+    await expect(page.getByTestId("daemon-row-work")).toBeDisabled();
+    await daemonChip.click();
     await page.evaluate(() => {
       window.history.pushState({}, "", "/kata?view=all&issue=issue-q3&daemon=work");
       window.dispatchEvent(new PopStateEvent("popstate"));
@@ -2128,10 +2132,14 @@ test("kata stream refresh failure releases switching and reconnects", async ({ p
     await expect
       .poll(() => backend.state.seenPaths.filter((path) => path === "GET /api/v1/issues?status=open").length)
       .toBeGreaterThan(issueLoadsBefore);
-    await expect(page.getByTestId("daemon-chip")).toBeDisabled();
+    const daemonChip = page.getByTestId("daemon-chip");
+    await expect(daemonChip).toBeEnabled();
+    await daemonChip.click();
+    const daemonRow = page.getByTestId("daemon-row-e2e");
+    await expect(daemonRow).toBeDisabled();
 
     releaseIssues();
-    await expect(page.getByTestId("daemon-chip")).toBeEnabled();
+    await expect(daemonRow).toBeEnabled();
     await expect
       .poll(() => backend.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/events/stream")).length)
       .toBeGreaterThan(streamsBefore);
@@ -3212,12 +3220,16 @@ test("kata daemon switch stays disabled until initial workspace bootstrap settle
   try {
     await page.goto(`${server.info.base_url}/kata?view=all`);
 
-    await expect(page.getByTestId("daemon-chip")).toBeVisible();
-    await expect(page.getByTestId("daemon-chip")).toBeDisabled();
+    const daemonChip = page.getByTestId("daemon-chip");
+    await expect(daemonChip).toBeVisible();
+    await expect(daemonChip).toBeEnabled();
+    await daemonChip.click();
+    const daemonRow = page.getByTestId("daemon-row-e2e");
+    await expect(daemonRow).toBeDisabled();
     releaseIssues();
 
     await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toBeVisible();
-    await expect(page.getByTestId("daemon-chip")).toBeEnabled();
+    await expect(daemonRow).toBeEnabled();
   } finally {
     releaseIssues();
     await server.stop();
@@ -3620,13 +3632,16 @@ test("kata daemon switch waits for an in-flight mutation and its refresh", async
     await dialog.getByRole("button", { name: "Complete" }).click();
     await expect.poll(() => home.state.seenPaths).toContain("POST /api/v1/projects/1/issues/issue-rent/actions/close");
 
-    await expect(page.getByTestId("daemon-chip")).toBeDisabled();
+    const daemonChip = page.getByTestId("daemon-chip");
+    await expect(daemonChip).toBeEnabled();
     expect(work.state.seenPaths).not.toContain("POST /api/v1/projects/1/issues/issue-rent/actions/close");
 
     releaseClose();
-    await expect(page.getByTestId("daemon-chip")).toBeEnabled();
-    await page.getByTestId("daemon-chip").click();
-    await page.getByTestId("daemon-row-work").click();
+    await expect(dialog).toHaveCount(0);
+    await daemonChip.click();
+    const workDaemonRow = page.getByTestId("daemon-row-work");
+    await expect(workDaemonRow).toBeEnabled();
+    await workDaemonRow.click();
 
     await expect(page.getByTestId("daemon-chip")).toContainText("work");
     await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toBeVisible();
@@ -3943,12 +3958,16 @@ test("kata project create submits inline input and switches scope", async ({ pag
     await input.press("Enter");
 
     await expect.poll(() => backend.state.seenPaths).toContain("POST /api/v1/projects");
-    await expect(page.getByTestId("daemon-chip")).toBeDisabled();
+    const daemonChip = page.getByTestId("daemon-chip");
+    await expect(daemonChip).toBeEnabled();
+    await daemonChip.click();
+    const daemonRow = page.getByTestId("daemon-row-e2e");
+    await expect(daemonRow).toBeDisabled();
     releaseCreate();
 
     await expect(page.getByRole("button", { name: /^Sabbatical\s+0$/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Sabbatical", level: 2 })).toBeVisible();
-    await expect(page.getByTestId("daemon-chip")).toBeEnabled();
+    await expect(daemonRow).toBeEnabled();
   } finally {
     releaseCreate();
     await server.stop();

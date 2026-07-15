@@ -97,4 +97,4 @@ The clean package runs remain approximately at the prior 5m30s baseline. A later
 - Terminal retention measurements: [2026-07-14-terminal-retention-summary.json](artifacts/2026-07-14-terminal-retention-summary.json)
 - Profiling skill: `skills/profiling-middleman-performance/`
 
-The full Chromium and Go traces are intentionally excluded because of their size. The checked-in sample tables preserve the values used by this report, and the profiling command reproduces the raw traces when deeper inspection is needed.
+The full Chromium and Go traces are intentionally excluded because of their size. The checked-in browser-switch and terminal-retention samples preserve those report inputs. Workspace API timings, allocation profiles, and test-duration measurements came from live captures; the profiling command documents how to reproduce their raw inputs when deeper inspection is needed.

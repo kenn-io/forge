@@ -22,10 +22,13 @@ vi.mock("../../stores/router.svelte.ts", () => ({
 }));
 
 class MockEventSource {
+  static instances: MockEventSource[] = [];
   addEventListener = vi.fn();
   close = vi.fn();
 
-  constructor(readonly url: string) {}
+  constructor(readonly url: string) {
+    MockEventSource.instances.push(this);
+  }
 }
 
 interface WorkspaceFixtureOptions {
@@ -172,6 +175,7 @@ describe("WorkspaceListSidebar", () => {
     mockPost.mockReset();
     mockDelete.mockReset();
     mockNavigate.mockReset();
+    MockEventSource.instances.length = 0;
     localStorage.clear();
     vi.stubGlobal("EventSource", MockEventSource);
     Object.defineProperty(navigator, "clipboard", {
@@ -235,6 +239,33 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByText("member")).toBeTruthy();
     expect(screen.getByText("remote")).toBeTruthy();
     expect(screen.getByText("http")).toBeTruthy();
+  });
+
+  it("coalesces workspace completion bursts into one list refresh", async () => {
+    const frameCallbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frameCallbacks.push(callback);
+      return frameCallbacks.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    mockGet.mockResolvedValue({ data: { workspaces: [] } });
+
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/workspaces", expect.anything()));
+    mockGet.mockClear();
+
+    const source = MockEventSource.instances[0];
+    const listener = source?.addEventListener.mock.calls.find(([type]) => type === "workspace_status")?.[1] as
+      | (() => void)
+      | undefined;
+    listener?.();
+    listener?.();
+    listener?.();
+
+    expect(frameCallbacks).toHaveLength(1);
+    expect(mockGet).not.toHaveBeenCalled();
+    frameCallbacks[0]?.(0);
+    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
   });
 
   it("hides the fleet status block when only the local host is present", async () => {

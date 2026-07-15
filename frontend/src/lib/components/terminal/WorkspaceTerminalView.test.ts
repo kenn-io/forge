@@ -211,6 +211,7 @@ const workspaceResponse = {
   worktree_path: "/tmp/worktree",
   tmux_session: "middleman-ws-1",
   status: "ready",
+  enrichment_status: "fresh",
   created_at: "2026-04-29T00:00:00Z",
 };
 
@@ -246,6 +247,11 @@ function runtimeWithTwoWorkflowSessions() {
     launch_targets: [],
     sessions: [runningSession, reviewerSession],
   };
+}
+
+function fetchPath(input: Request | URL | string): string {
+  const url = input instanceof Request ? input.url : String(input);
+  return new URL(url, "http://localhost").pathname;
 }
 
 function runtimeWithDuplicateWorkflowSessions() {
@@ -792,6 +798,91 @@ describe("WorkspaceTerminalView", () => {
     remoteWorkspace.resolve(workspaceResponse);
 
     await waitFor(() => expect(screen.getByRole("tab", { name: /Reviewer/ })).toBeTruthy());
+  });
+
+  it("recovers pending enrichment that completed before the event stream opened", async () => {
+    const eventListeners: Record<string, () => void> = {};
+    const pendingWorkspace = {
+      ...workspaceResponse,
+      enrichment_status: "pending",
+    };
+    const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const { pathname } = new URL(url, "http://localhost");
+      if (pathname.endsWith("/workspaces/ws-1")) {
+        return Promise.resolve(Response.json(pendingWorkspace));
+      }
+      if (pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [pendingWorkspace] }));
+      }
+      return Promise.resolve(Response.json({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        addEventListener(type: string, callback: () => void): void {
+          eventListeners[type] = callback;
+        }
+        close(): void {}
+      },
+    );
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([input]) => fetchPath(input as Request | URL | string).endsWith("/workspaces/ws-1")),
+      ).toBe(true);
+    });
+    const beforeOpen = fetchMock.mock.calls.filter(([input]) =>
+      fetchPath(input as Request | URL | string).endsWith("/workspaces/ws-1"),
+    ).length;
+
+    eventListeners.open?.();
+
+    await waitFor(() => {
+      const afterOpen = fetchMock.mock.calls.filter(([input]) =>
+        fetchPath(input as Request | URL | string).endsWith("/workspaces/ws-1"),
+      ).length;
+      expect(afterOpen).toBe(beforeOpen + 1);
+    });
+  });
+
+  it("treats id-less workspace status events as global invalidation", async () => {
+    const eventListeners: Record<string, (event: MessageEvent) => void> = {};
+    const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const { pathname } = new URL(url, "http://localhost");
+      if (pathname.endsWith("/workspaces/ws-1")) {
+        return Promise.resolve(Response.json(workspaceResponse));
+      }
+      if (pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+      }
+      return Promise.resolve(Response.json({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        addEventListener(type: string, callback: (event: MessageEvent) => void): void {
+          eventListeners[type] = callback;
+        }
+        close(): void {}
+      },
+    );
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    fetchMock.mockClear();
+
+    eventListeners.workspace_status?.(new MessageEvent("workspace_status", { data: "{}" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([input]) => fetchPath(input as Request | URL | string).endsWith("/workspaces/ws-1")),
+      ).toBe(true);
+    });
   });
 
   it("does not overlap runtime polling while a slow fetch is in flight", async () => {

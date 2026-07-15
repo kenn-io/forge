@@ -147,12 +147,10 @@ func (s *Server) refreshWorkspaceResponse(
 	generation := s.supersedeWorkspaceEnrichment(summary.ID)
 	result := s.workspaceResponseWithEnrichment(ctx, summary)
 	if summary.Status == "ready" {
-		entry, recorded := s.recordWorkspaceEnrichmentResult(
+		entry, _ := s.recordWorkspaceEnrichmentResult(
 			summary.ID, generation, result,
 		)
-		if recorded {
-			applyWorkspaceEnrichmentCacheEntry(&result.response, entry)
-		}
+		applyWorkspaceEnrichmentCacheEntry(&result.response, entry)
 	}
 	return result.response
 }
@@ -160,6 +158,12 @@ func (s *Server) refreshWorkspaceResponse(
 func (s *Server) scheduleWorkspaceEnrichment(summary db.WorkspaceSummary) {
 	s.workspaceEnrichmentMu.Lock()
 	defer s.workspaceEnrichmentMu.Unlock()
+	if s.workspaceEnrichmentGenerations == nil {
+		s.workspaceEnrichmentGenerations = make(map[string]uint64)
+	}
+	if _, ok := s.workspaceEnrichmentGenerations[summary.ID]; !ok {
+		s.workspaceEnrichmentGenerations[summary.ID] = 0
+	}
 	generation := s.workspaceEnrichmentGenerations[summary.ID]
 	if inFlight, ok := s.workspaceEnrichmentInFlight[summary.ID]; ok &&
 		inFlight == generation {
@@ -291,23 +295,6 @@ func (s *Server) advanceWorkspaceEnrichmentGeneration(
 	return generation
 }
 
-func (s *Server) storeWorkspaceEnrichment(
-	workspaceID string,
-	generation uint64,
-	response workspaceResponse,
-) bool {
-	_, stored := s.recordWorkspaceEnrichmentResult(
-		workspaceID,
-		generation,
-		workspaceEnrichmentProbeResult{
-			response:           response,
-			divergenceComplete: true,
-			tmuxComplete:       true,
-		},
-	)
-	return stored
-}
-
 func (s *Server) recordWorkspaceEnrichmentResult(
 	workspaceID string,
 	generation uint64,
@@ -315,8 +302,9 @@ func (s *Server) recordWorkspaceEnrichmentResult(
 ) (workspaceEnrichmentCacheEntry, bool) {
 	s.workspaceEnrichmentMu.Lock()
 	defer s.workspaceEnrichmentMu.Unlock()
-	if s.workspaceEnrichmentGenerations[workspaceID] != generation {
-		return workspaceEnrichmentCacheEntry{}, false
+	currentGeneration, ok := s.workspaceEnrichmentGenerations[workspaceID]
+	if !ok || currentGeneration != generation {
+		return s.workspaceEnrichmentCache[workspaceID], false
 	}
 	now := s.now()
 	entry := s.workspaceEnrichmentCache[workspaceID]

@@ -106,6 +106,7 @@
     worktree_path: string;
     tmux_session: string;
     status: string;
+    enrichment_status: string;
     error_message?: string | null;
     created_at: string;
     mr_title?: string | null;
@@ -2394,9 +2395,10 @@
   // it in place.
   $effect(() => {
     const id = workspaceId;
+    const hostKey = workspaceHostKey;
     if (
       appliedRuntimeState?.workspaceId !== id ||
-      appliedRuntimeState.hostKey !== workspaceHostKey
+      appliedRuntimeState.hostKey !== hostKey
     ) {
       appliedRuntimeState = null;
     }
@@ -2407,11 +2409,11 @@
     // able to cancel a newer switch begun elsewhere.
     let switchToken: string | null = null;
     if (id) {
-      switchToken = beginWorkspaceSwitch(id, workspaceHostKey);
+      switchToken = beginWorkspaceSwitch(id, hostKey);
     } else {
       cancelWorkspaceSwitch();
     }
-    const storageId = id ? workspaceStorageId(id, workspaceHostKey) : "";
+    const storageId = id ? workspaceStorageId(id, hostKey) : "";
     const restoredLayout = id ? loadTerminalLayout(storageId) : defaultTerminalLayout();
     const restoredTab = restoreWorkspaceTab(storageId);
     const restoredActiveTab =
@@ -2477,6 +2479,8 @@
     const evtUrl = `${basePath}/api/v1/events`;
     const source = new EventSource(evtUrl);
     eventSource = source;
+    const workspaceRequest = fetchWorkspace();
+    void fetchRuntime();
 
     source.addEventListener(
       "workspace_status",
@@ -2485,7 +2489,7 @@
           const data = JSON.parse(
             e.data as string,
           ) as { id?: string };
-          if (data.id === id) {
+          if (!data.id || data.id === id) {
             void fetchWorkspace();
           }
         } catch {
@@ -2493,6 +2497,19 @@
         }
       },
     );
+    source.addEventListener("open", () => {
+      void workspaceRequest.then(() => {
+        if (
+          eventSource === source &&
+          isCurrentWorkspace(id, hostKey) &&
+          workspace?.id === id &&
+          selectedWorkspaceHostKey(workspace) === hostKey &&
+          workspace.enrichment_status === "pending"
+        ) {
+          void fetchWorkspace();
+        }
+      });
+    });
     source.addEventListener(
       "workspace_pr_associated",
       (e: MessageEvent) => {
@@ -2513,8 +2530,6 @@
       void fetchRuntime();
     });
 
-    const workspaceRequest = fetchWorkspace();
-    void fetchRuntime();
     void workspaceRequest.then(() => {
       if (workspace?.status === "creating") {
         startPolling();

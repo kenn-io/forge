@@ -18,6 +18,7 @@ import (
 )
 
 func TestWorkspaceEnrichmentSupersedeRejectsOlderRefreshAndPreservesCache(t *testing.T) {
+	assert := assert.New(t)
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	srv := &Server{
 		now:                            func() time.Time { return now },
@@ -33,15 +34,41 @@ func TestWorkspaceEnrichmentSupersedeRejectsOlderRefreshAndPreservesCache(t *tes
 		divergenceRefreshedAt: now,
 	}
 	srv.supersedeWorkspaceEnrichment("ws-1")
-	stored := srv.storeWorkspaceEnrichment(
+	entry, recorded := srv.recordWorkspaceEnrichmentResult(
 		"ws-1",
 		oldGeneration,
-		workspaceResponse{CommitsAhead: &ahead},
+		workspaceEnrichmentProbeResult{
+			response:           workspaceResponse{CommitsAhead: &ahead},
+			divergenceComplete: true,
+		},
 	)
 
-	assert.False(t, stored)
-	assert.Contains(t, srv.workspaceEnrichmentCache, "ws-1")
-	assert.Equal(t, &ahead, srv.workspaceEnrichmentCache["ws-1"].response.CommitsAhead)
+	assert.False(recorded)
+	assert.Equal(&ahead, entry.response.CommitsAhead)
+	assert.Contains(srv.workspaceEnrichmentCache, "ws-1")
+	assert.Equal(&ahead, srv.workspaceEnrichmentCache["ws-1"].response.CommitsAhead)
+}
+
+func TestWorkspaceEnrichmentRejectsResultAfterGenerationIsTrimmed(t *testing.T) {
+	assert := assert.New(t)
+	srv := &Server{
+		now:                            time.Now,
+		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
+		workspaceEnrichmentGenerations: make(map[string]uint64),
+	}
+	ahead := 1
+
+	_, recorded := srv.recordWorkspaceEnrichmentResult(
+		"deleted-workspace",
+		0,
+		workspaceEnrichmentProbeResult{
+			response:           workspaceResponse{CommitsAhead: &ahead},
+			divergenceComplete: true,
+		},
+	)
+
+	assert.False(recorded)
+	assert.NotContains(srv.workspaceEnrichmentCache, "deleted-workspace")
 }
 
 func TestWorkspaceEnrichmentPendingJobUsesLatestSummary(t *testing.T) {

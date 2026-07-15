@@ -130,6 +130,7 @@
   let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
   let workspaceListStatus = $state<"loading" | "retrying" | "loaded">("loading");
   let fetchInFlight = false;
+  let workspaceStatusRefreshFrame: number | null = null;
   let contextMenu = $state<{
     ws: Workspace;
     x: number;
@@ -399,6 +400,14 @@
       }
       fetchInFlight = false;
     }
+  }
+
+  function scheduleWorkspaceStatusRefresh(): void {
+    if (workspaceStatusRefreshFrame !== null) return;
+    workspaceStatusRefreshFrame = requestAnimationFrame(() => {
+      workspaceStatusRefreshFrame = null;
+      void fetchWorkspaces();
+    });
   }
 
   async function fetchPeerWorkspaces(
@@ -962,13 +971,17 @@
     source.addEventListener(
       "workspace_status",
       () => {
-        void fetchWorkspaces();
+        scheduleWorkspaceStatusRefresh();
       },
     );
 
     return () => {
       window.clearInterval(pollHandle);
       window.clearInterval(fleetPollHandle);
+      if (workspaceStatusRefreshFrame !== null) {
+        cancelAnimationFrame(workspaceStatusRefreshFrame);
+        workspaceStatusRefreshFrame = null;
+      }
       source.close();
     };
   });

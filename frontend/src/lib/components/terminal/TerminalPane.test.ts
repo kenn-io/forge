@@ -327,6 +327,14 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalledTimes(1));
   });
 
+  it("constructs xterm when the selected font load rejects asynchronously", async () => {
+    stubFontLoad(Promise.reject(new DOMException("Font load failed", "NetworkError")));
+
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalledTimes(1));
+  });
+
   it("rebuilds the xterm atlas once when the selected font resolves after the bound", async () => {
     vi.useFakeTimers();
     const fontLoad = deferred<FontFace[]>();
@@ -341,6 +349,7 @@ describe("TerminalPane", () => {
     terminal.clearTextureAtlas.mockClear();
     terminal.refresh.mockClear();
     fitAddon.fit.mockClear();
+    mockSockets[0]!.sent = [];
 
     fontLoad.resolve([]);
     await vi.advanceTimersByTimeAsync(0);
@@ -348,6 +357,32 @@ describe("TerminalPane", () => {
     expect(terminal.clearTextureAtlas).toHaveBeenCalledTimes(1);
     expect(fitAddon.fit).toHaveBeenCalledTimes(1);
     expect(terminal.refresh).toHaveBeenCalledTimes(1);
+    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize", cols: 80, rows: 24 }));
+  });
+
+  it("does not claim resize authority when a selected font resolves in an inactive pane", async () => {
+    vi.useFakeTimers();
+    const fontLoad = deferred<FontFace[]>();
+    stubFontLoad(fontLoad.promise);
+
+    render(TerminalPane, { props: { workspaceId: "ws-123", active: false } });
+    await tick();
+    await vi.advanceTimersByTimeAsync(300);
+
+    const terminal = xtermInstances[0]!;
+    const fitAddon = xtermFitAddons[0]!;
+    terminal.clearTextureAtlas.mockClear();
+    terminal.refresh.mockClear();
+    fitAddon.fit.mockClear();
+    mockSockets[0]!.sent = [];
+
+    fontLoad.resolve([]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(terminal.clearTextureAtlas).toHaveBeenCalledTimes(1);
+    expect(fitAddon.fit).toHaveBeenCalledTimes(1);
+    expect(terminal.refresh).toHaveBeenCalledTimes(1);
+    expect(mockSockets[0]!.sent).toHaveLength(0);
   });
 
   it("does not rebuild a disposed xterm when the selected font resolves late", async () => {

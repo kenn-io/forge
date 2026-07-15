@@ -644,6 +644,7 @@
         terminal.clearTextureAtlas();
         fitAddon?.fit();
         terminal.refresh(0, Math.max(0, terminal.rows - 1));
+        if (active) sendResize(terminal.cols, terminal.rows);
       },
       () => finishInitialFontWait({ error: true }),
     );

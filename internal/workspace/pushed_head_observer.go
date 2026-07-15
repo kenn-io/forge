@@ -389,6 +389,15 @@ func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspa
 		if providerSHA == "" || strings.EqualFold(providerSHA, lookup.sha) {
 			return PushedHeadUpdate{}, false, nil
 		}
+		// A refresh enqueued for this same observed SHA already completed:
+		// the provider authoritatively answered with a head that still
+		// differs, meaning the local tracking ref is stale (the PR moved
+		// somewhere else), not that the provider lags a local push.
+		// Re-syncing cannot converge, so stop until the local ref moves;
+		// retries stay reserved for refreshes that failed outright.
+		if !prior.LastRefreshSucceededAt.IsZero() && !prior.LastRefreshSucceededAt.Before(prior.LastRefreshEnqueuedAt) {
+			return PushedHeadUpdate{}, false, nil
+		}
 		if !prior.LastRefreshEnqueuedAt.IsZero() && observedAt.Sub(prior.LastRefreshEnqueuedAt) < pushedHeadRefreshRetryInterval {
 			return PushedHeadUpdate{}, false, nil
 		}

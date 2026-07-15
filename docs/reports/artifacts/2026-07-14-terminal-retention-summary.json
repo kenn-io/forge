@@ -1,0 +1,46 @@
+{
+  "workload": {
+    "switches": 60,
+    "workspace_sequence": "[0,1,0,2,0,1,3,0,1,2,4,0] repeated five times",
+    "renderer": "xterm with WebGL addon"
+  },
+  "results": [
+    {
+      "retention_size": 0,
+      "hits": 0,
+      "misses": 60,
+      "median_ms": 165.7,
+      "p95_ms": 191.8,
+      "resident_webgl_addons": 0,
+      "resident_canvases": 0,
+      "resident_canvas_pixels": 0,
+      "canvases_after_dispose": 0
+    },
+    {
+      "retention_size": 2,
+      "hits": 14,
+      "misses": 46,
+      "median_ms": 163.1,
+      "p95_ms": 191.5,
+      "hit_median_ms": 26.2,
+      "miss_median_ms": 165.7,
+      "resident_webgl_addons": 2,
+      "resident_canvases": 4,
+      "resident_canvas_pixels": 2410800,
+      "canvases_after_dispose": 0
+    },
+    {
+      "retention_size": 4,
+      "hits": 47,
+      "misses": 13,
+      "median_ms": 25.4,
+      "p95_ms": 195.1,
+      "hit_median_ms": 24.7,
+      "miss_median_ms": 175.3,
+      "resident_webgl_addons": 4,
+      "resident_canvases": 9,
+      "resident_canvas_pixels": 4822336,
+      "canvases_after_dispose": 0
+    }
+  ]
+}

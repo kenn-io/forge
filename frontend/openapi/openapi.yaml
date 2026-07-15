@@ -6885,10 +6885,13 @@ components:
         created_at:
           type: string
         enrichment_error:
+          description: Combined error from the most recent reconciliation attempt; populated component fields may still contain last-known-good values.
           type: string
         enrichment_refreshed_at:
+          description: Oldest successful refresh time across the populated enrichment components.
           type: string
         enrichment_status:
+          description: Aggregate git-divergence and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available.
           enum:
             - not_applicable
             - pending

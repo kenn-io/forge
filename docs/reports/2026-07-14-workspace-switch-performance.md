@@ -92,7 +92,9 @@ The clean package runs remain approximately at the prior 5m30s baseline. A later
 
 ## Artifacts
 
-- Baseline browser capture: `frontend/tmp/perf-workspace-baseline/`
-- Final browser captures: `frontend/tmp/perf-workspace-final/` and `frontend/frontend/tmp/perf-workspace-final/`
-- Terminal retention measurements: `frontend/tmp/perf-xterm-retention-repeat.json`
+- Baseline browser samples: [2026-07-14-workspace-switch-baseline.txt](artifacts/2026-07-14-workspace-switch-baseline.txt)
+- Final browser samples: [capture A](artifacts/2026-07-14-workspace-switch-final-a.txt) and [capture B](artifacts/2026-07-14-workspace-switch-final-b.txt)
+- Terminal retention measurements: [2026-07-14-terminal-retention-summary.json](artifacts/2026-07-14-terminal-retention-summary.json)
 - Profiling skill: `skills/profiling-middleman-performance/`
+
+The full Chromium and Go traces are intentionally excluded because of their size. The checked-in sample tables preserve the values used by this report, and the profiling command reproduces the raw traces when deeper inspection is needed.

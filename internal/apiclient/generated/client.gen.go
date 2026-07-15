@@ -3246,43 +3246,49 @@ type WorkspaceRef struct {
 // WorkspaceResponse defines model for WorkspaceResponse.
 type WorkspaceResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                *string                           `json:"$schema,omitempty"`
-	AssociatedPrNumber    *int64                            `json:"associated_pr_number,omitempty"`
-	CommitsAhead          *int64                            `json:"commits_ahead,omitempty"`
-	CommitsBehind         *int64                            `json:"commits_behind,omitempty"`
-	CreatedAt             string                            `json:"created_at"`
-	EnrichmentError       *string                           `json:"enrichment_error,omitempty"`
-	EnrichmentRefreshedAt *string                           `json:"enrichment_refreshed_at,omitempty"`
-	EnrichmentStatus      WorkspaceResponseEnrichmentStatus `json:"enrichment_status"`
-	ErrorMessage          *string                           `json:"error_message,omitempty"`
-	GitHeadRef            string                            `json:"git_head_ref"`
-	Id                    string                            `json:"id"`
-	ItemKey               string                            `json:"item_key"`
-	ItemLastActivityAt    *string                           `json:"item_last_activity_at,omitempty"`
-	ItemNumber            int64                             `json:"item_number"`
-	ItemType              string                            `json:"item_type"`
-	Kata                  *WorkspaceKataMetadata            `json:"kata,omitempty"`
-	MrAdditions           *int64                            `json:"mr_additions,omitempty"`
-	MrCiStatus            *string                           `json:"mr_ci_status,omitempty"`
-	MrDeletions           *int64                            `json:"mr_deletions,omitempty"`
-	MrIsDraft             *bool                             `json:"mr_is_draft,omitempty"`
-	MrReviewDecision      *string                           `json:"mr_review_decision,omitempty"`
-	MrState               *string                           `json:"mr_state,omitempty"`
-	MrTitle               *string                           `json:"mr_title,omitempty"`
-	PlatformHost          string                            `json:"platform_host"`
-	Repo                  RepoRefResponse                   `json:"repo"`
-	RepoName              string                            `json:"repo_name"`
-	RepoOwner             string                            `json:"repo_owner"`
-	Status                string                            `json:"status"`
-	TmuxActivitySource    string                            `json:"tmux_activity_source"`
-	TmuxLastOutputAt      *string                           `json:"tmux_last_output_at"`
-	TmuxPaneTitle         *string                           `json:"tmux_pane_title,omitempty"`
-	TmuxSession           string                            `json:"tmux_session"`
-	TmuxWorking           bool                              `json:"tmux_working"`
-	WorktreePath          string                            `json:"worktree_path"`
+	Schema             *string `json:"$schema,omitempty"`
+	AssociatedPrNumber *int64  `json:"associated_pr_number,omitempty"`
+	CommitsAhead       *int64  `json:"commits_ahead,omitempty"`
+	CommitsBehind      *int64  `json:"commits_behind,omitempty"`
+	CreatedAt          string  `json:"created_at"`
+
+	// EnrichmentError Combined error from the most recent reconciliation attempt; populated component fields may still contain last-known-good values.
+	EnrichmentError *string `json:"enrichment_error,omitempty"`
+
+	// EnrichmentRefreshedAt Oldest successful refresh time across the populated enrichment components.
+	EnrichmentRefreshedAt *string `json:"enrichment_refreshed_at,omitempty"`
+
+	// EnrichmentStatus Aggregate git-divergence and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available.
+	EnrichmentStatus   WorkspaceResponseEnrichmentStatus `json:"enrichment_status"`
+	ErrorMessage       *string                           `json:"error_message,omitempty"`
+	GitHeadRef         string                            `json:"git_head_ref"`
+	Id                 string                            `json:"id"`
+	ItemKey            string                            `json:"item_key"`
+	ItemLastActivityAt *string                           `json:"item_last_activity_at,omitempty"`
+	ItemNumber         int64                             `json:"item_number"`
+	ItemType           string                            `json:"item_type"`
+	Kata               *WorkspaceKataMetadata            `json:"kata,omitempty"`
+	MrAdditions        *int64                            `json:"mr_additions,omitempty"`
+	MrCiStatus         *string                           `json:"mr_ci_status,omitempty"`
+	MrDeletions        *int64                            `json:"mr_deletions,omitempty"`
+	MrIsDraft          *bool                             `json:"mr_is_draft,omitempty"`
+	MrReviewDecision   *string                           `json:"mr_review_decision,omitempty"`
+	MrState            *string                           `json:"mr_state,omitempty"`
+	MrTitle            *string                           `json:"mr_title,omitempty"`
+	PlatformHost       string                            `json:"platform_host"`
+	Repo               RepoRefResponse                   `json:"repo"`
+	RepoName           string                            `json:"repo_name"`
+	RepoOwner          string                            `json:"repo_owner"`
+	Status             string                            `json:"status"`
+	TmuxActivitySource string                            `json:"tmux_activity_source"`
+	TmuxLastOutputAt   *string                           `json:"tmux_last_output_at"`
+	TmuxPaneTitle      *string                           `json:"tmux_pane_title,omitempty"`
+	TmuxSession        string                            `json:"tmux_session"`
+	TmuxWorking        bool                              `json:"tmux_working"`
+	WorktreePath       string                            `json:"worktree_path"`
 }
 
-// WorkspaceResponseEnrichmentStatus defines model for WorkspaceResponse.EnrichmentStatus.
+// WorkspaceResponseEnrichmentStatus Aggregate git-divergence and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available.
 type WorkspaceResponseEnrichmentStatus string
 
 // WorkspaceRuntimeResponse defines model for WorkspaceRuntimeResponse.

@@ -137,7 +137,7 @@ func (s *Server) refreshWorkspaceResponse(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 ) workspaceResponse {
-	generation := s.invalidateWorkspaceEnrichment(summary.ID)
+	generation := s.supersedeWorkspaceEnrichment(summary.ID)
 	result := s.workspaceResponseWithEnrichment(ctx, summary)
 	if summary.Status == "ready" {
 		s.recordWorkspaceEnrichmentResult(summary.ID, generation, result)
@@ -155,6 +155,8 @@ func (s *Server) scheduleWorkspaceEnrichment(summary db.WorkspaceSummary) {
 	}
 	if pending, ok := s.workspaceEnrichmentPending[summary.ID]; ok &&
 		pending.generation == generation {
+		pending.summary = summary
+		s.workspaceEnrichmentPending[summary.ID] = pending
 		return
 	}
 	if s.workspaceEnrichmentPending == nil {
@@ -239,7 +241,9 @@ func (s *Server) runWorkspaceEnrichmentJob(
 	)
 	defer cancel()
 	result := s.workspaceResponseWithEnrichment(probeCtx, &job.summary)
-	s.recordWorkspaceEnrichmentResult(job.summary.ID, job.generation, result)
+	if s.recordWorkspaceEnrichmentResult(job.summary.ID, job.generation, result) {
+		s.broadcastWorkspaceStatus(job.summary.ID)
+	}
 }
 
 func (s *Server) workspaceEnrichmentGeneration(workspaceID string) uint64 {
@@ -249,6 +253,17 @@ func (s *Server) workspaceEnrichmentGeneration(workspaceID string) uint64 {
 }
 
 func (s *Server) invalidateWorkspaceEnrichment(workspaceID string) uint64 {
+	return s.advanceWorkspaceEnrichmentGeneration(workspaceID, false)
+}
+
+func (s *Server) supersedeWorkspaceEnrichment(workspaceID string) uint64 {
+	return s.advanceWorkspaceEnrichmentGeneration(workspaceID, true)
+}
+
+func (s *Server) advanceWorkspaceEnrichmentGeneration(
+	workspaceID string,
+	preserveCache bool,
+) uint64 {
 	s.workspaceEnrichmentMu.Lock()
 	defer s.workspaceEnrichmentMu.Unlock()
 	if s.workspaceEnrichmentGenerations == nil {
@@ -256,7 +271,9 @@ func (s *Server) invalidateWorkspaceEnrichment(workspaceID string) uint64 {
 	}
 	generation := s.workspaceEnrichmentGenerations[workspaceID] + 1
 	s.workspaceEnrichmentGenerations[workspaceID] = generation
-	delete(s.workspaceEnrichmentCache, workspaceID)
+	if !preserveCache {
+		delete(s.workspaceEnrichmentCache, workspaceID)
+	}
 	return generation
 }
 
@@ -332,6 +349,19 @@ func (s *Server) trimWorkspaceEnrichmentCache(
 	for workspaceID := range s.workspaceEnrichmentCache {
 		if _, ok := valid[workspaceID]; !ok {
 			delete(s.workspaceEnrichmentCache, workspaceID)
+			delete(s.workspaceEnrichmentGenerations, workspaceID)
+			delete(s.workspaceEnrichmentPending, workspaceID)
+		}
+	}
+	for workspaceID := range s.workspaceEnrichmentPending {
+		if _, ok := valid[workspaceID]; !ok {
+			delete(s.workspaceEnrichmentPending, workspaceID)
+			delete(s.workspaceEnrichmentGenerations, workspaceID)
+		}
+	}
+	for workspaceID := range s.workspaceEnrichmentGenerations {
+		if _, ok := valid[workspaceID]; !ok {
+			delete(s.workspaceEnrichmentGenerations, workspaceID)
 		}
 	}
 }
@@ -366,5 +396,7 @@ func (s *Server) runWorkspaceTmuxPrune(ctx context.Context) {
 	defer cancel()
 	if err := s.workspaces.PruneMissingTmuxSessions(pruneCtx); err != nil {
 		slog.Debug("prune missing tmux sessions", "err", err)
+		return
 	}
+	s.hub.Broadcast(Event{Type: "workspace_status", Data: map[string]string{}})
 }

@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,7 +17,7 @@ import (
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
-func TestWorkspaceEnrichmentInvalidationRejectsOlderRefresh(t *testing.T) {
+func TestWorkspaceEnrichmentSupersedeRejectsOlderRefreshAndPreservesCache(t *testing.T) {
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	srv := &Server{
 		now:                            func() time.Time { return now },
@@ -23,8 +26,13 @@ func TestWorkspaceEnrichmentInvalidationRejectsOlderRefresh(t *testing.T) {
 	}
 
 	oldGeneration := srv.workspaceEnrichmentGeneration("ws-1")
-	srv.invalidateWorkspaceEnrichment("ws-1")
 	ahead := 1
+	srv.workspaceEnrichmentCache["ws-1"] = workspaceEnrichmentCacheEntry{
+		response:              workspaceResponse{CommitsAhead: &ahead},
+		hasDivergence:         true,
+		divergenceRefreshedAt: now,
+	}
+	srv.supersedeWorkspaceEnrichment("ws-1")
 	stored := srv.storeWorkspaceEnrichment(
 		"ws-1",
 		oldGeneration,
@@ -32,7 +40,60 @@ func TestWorkspaceEnrichmentInvalidationRejectsOlderRefresh(t *testing.T) {
 	)
 
 	assert.False(t, stored)
-	assert.NotContains(t, srv.workspaceEnrichmentCache, "ws-1")
+	assert.Contains(t, srv.workspaceEnrichmentCache, "ws-1")
+	assert.Equal(t, &ahead, srv.workspaceEnrichmentCache["ws-1"].response.CommitsAhead)
+}
+
+func TestWorkspaceEnrichmentPendingJobUsesLatestSummary(t *testing.T) {
+	require := require.New(t)
+	_, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	srv.workspaceEnrichmentDisabled = false
+	for range cap(srv.workspaceEnrichmentSlots) {
+		srv.workspaceEnrichmentSlots <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for range cap(srv.workspaceEnrichmentSlots) {
+			<-srv.workspaceEnrichmentSlots
+		}
+	})
+
+	srv.scheduleWorkspaceEnrichment(db.WorkspaceSummary{Workspace: db.Workspace{
+		ID: "ws-latest", Status: "ready", WorktreePath: "/old",
+	}})
+	srv.scheduleWorkspaceEnrichment(db.WorkspaceSummary{Workspace: db.Workspace{
+		ID: "ws-latest", Status: "ready", WorktreePath: "/new",
+	}})
+
+	srv.workspaceEnrichmentMu.Lock()
+	pending := srv.workspaceEnrichmentPending["ws-latest"]
+	srv.workspaceEnrichmentMu.Unlock()
+	require.Equal("/new", pending.summary.WorktreePath)
+}
+
+func TestTrimWorkspaceEnrichmentCacheDropsDeletedPendingState(t *testing.T) {
+	assert := assert.New(t)
+	srv := &Server{
+		workspaceEnrichmentCache: map[string]workspaceEnrichmentCacheEntry{
+			"keep": {},
+			"drop": {},
+		},
+		workspaceEnrichmentGenerations: map[string]uint64{
+			"keep":            1,
+			"drop":            2,
+			"generation-only": 3,
+		},
+		workspaceEnrichmentPending: map[string]workspaceEnrichmentJob{
+			"drop": {generation: 2},
+		},
+	}
+
+	srv.trimWorkspaceEnrichmentCache([]db.WorkspaceSummary{{Workspace: db.Workspace{ID: "keep"}}})
+
+	assert.Contains(srv.workspaceEnrichmentCache, "keep")
+	assert.NotContains(srv.workspaceEnrichmentCache, "drop")
+	assert.NotContains(srv.workspaceEnrichmentGenerations, "drop")
+	assert.NotContains(srv.workspaceEnrichmentGenerations, "generation-only")
+	assert.NotContains(srv.workspaceEnrichmentPending, "drop")
 }
 
 func TestCachedWorkspaceEnrichmentReportsStaleAndFailedState(t *testing.T) {
@@ -170,6 +231,76 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 	partial := srv.toCachedWorkspaceResponse(&missingSummary)
 	assert.Equal(tmuxActivitySourceUnknown, partial.TmuxActivitySource)
 	assert.Equal(workspaceEnrichmentFailed, partial.EnrichmentStatus)
+
+	synchronousSummary := missingSummary
+	synchronousSummary.ID = "ws-synchronous-refresh"
+	srv.workspaceEnrichmentMu.Lock()
+	srv.workspaceEnrichmentCache[synchronousSummary.ID] = lastGood
+	srv.workspaceEnrichmentMu.Unlock()
+	synchronous := srv.refreshWorkspaceResponse(context.Background(), &synchronousSummary)
+	assert.Equal(workspaceEnrichmentFailed, synchronous.EnrichmentStatus)
+	srv.workspaceEnrichmentMu.Lock()
+	synchronousEntry := srv.workspaceEnrichmentCache[synchronousSummary.ID]
+	srv.workspaceEnrichmentMu.Unlock()
+	assert.True(synchronousEntry.hasTmux)
+	assert.Equal(lastGood.response.TmuxPaneTitle, synchronousEntry.response.TmuxPaneTitle)
+}
+
+func TestWorkspaceEnrichmentCompletionBroadcastsWorkspaceStatusE2E(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+	srv.workspaceEnrichmentDisabled = false
+	srv.workspaceEnrichmentMu.Lock()
+	clear(srv.workspaceEnrichmentCache)
+	srv.workspaceEnrichmentMu.Unlock()
+
+	httpServer := httptest.NewServer(srv)
+	t.Cleanup(httpServer.Close)
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, httpServer.URL+"/api/v1/events", nil,
+	)
+	require.NoError(err)
+	eventsResp, err := httpServer.Client().Do(req)
+	require.NoError(err)
+	t.Cleanup(func() { eventsResp.Body.Close() })
+	require.Equal(http.StatusOK, eventsResp.StatusCode)
+
+	initial, err := client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusOK, initial.StatusCode())
+	require.NotNil(initial.JSON200)
+	assert.Equal("pending", string(initial.JSON200.EnrichmentStatus))
+
+	scanner := bufio.NewScanner(eventsResp.Body)
+	var frame sseFrame
+	for {
+		frame = readSSEFrameWithin(t, scanner, 5*time.Second, nil)
+		if frame.Event != "workspace_status" {
+			continue
+		}
+		var payload map[string]json.RawMessage
+		require.NoError(json.Unmarshal([]byte(frame.Data), &payload))
+		if len(payload) != 1 {
+			continue
+		}
+		var id string
+		require.NoError(json.Unmarshal(payload["id"], &id))
+		if id == ws.Id {
+			break
+		}
+	}
+	assert.Equal("workspace_status", frame.Event)
+
+	require.Eventually(func() bool {
+		got, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
+		return getErr == nil &&
+			got.StatusCode() == http.StatusOK &&
+			got.JSON200 != nil &&
+			string(got.JSON200.EnrichmentStatus) == workspaceEnrichmentFresh
+	}, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestWorkspaceEnrichmentUsesBoundedWorkersPastBackgroundCapacity(t *testing.T) {

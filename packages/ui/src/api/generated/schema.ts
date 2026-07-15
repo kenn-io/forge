@@ -7344,9 +7344,14 @@ export interface components {
             /** Format: int64 */
             commits_behind?: number;
             created_at: string;
+            /** @description Combined error from the most recent reconciliation attempt; populated component fields may still contain last-known-good values. */
             enrichment_error?: string;
+            /** @description Oldest successful refresh time across the populated enrichment components. */
             enrichment_refreshed_at?: string;
-            /** @enum {string} */
+            /**
+             * @description Aggregate git-divergence and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available.
+             * @enum {string}
+             */
             enrichment_status: "not_applicable" | "pending" | "fresh" | "stale" | "failed";
             error_message?: string;
             git_head_ref: string;

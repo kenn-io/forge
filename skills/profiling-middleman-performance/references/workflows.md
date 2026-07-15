@@ -41,11 +41,11 @@ done
 Allocation delta around the same request count:
 
 ```sh
-curl -fsS -o before.pprof http://127.0.0.1:6060/debug/pprof/heap
+curl -fsS -o before.pprof 'http://127.0.0.1:6060/debug/pprof/heap?gc=1'
 for i in $(seq 1 50); do
   curl -fsS -o /dev/null "$BACKEND/api/v1/workspaces"
 done
-curl -fsS -o after.pprof http://127.0.0.1:6060/debug/pprof/heap
+curl -fsS -o after.pprof 'http://127.0.0.1:6060/debug/pprof/heap?gc=1'
 go tool pprof -top -alloc_space -base before.pprof after.pprof
 ```
 

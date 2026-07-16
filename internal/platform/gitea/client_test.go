@@ -60,7 +60,7 @@ func TestArchiveInventoryUsesAllStateOrderingAndOneBudgetedRequestPerPage(t *tes
 	client, err := NewClient("gitea.test", testTokenSource("token"), WithBaseURLForTesting(server.URL), WithSyncBudget(budget))
 	require.NoError(err)
 	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "gitea.test", Owner: "owner", Name: "repo"}
-	ctx := ghsync.WithSyncBudget(context.Background())
+	ctx := ghsync.WithArchiveSyncBudget(context.Background())
 
 	issues, err := client.ListHistoricalIssues(ctx, ref, "")
 	require.NoError(err)
@@ -71,6 +71,7 @@ func TestArchiveInventoryUsesAllStateOrderingAndOneBudgetedRequestPerPage(t *tes
 	assert.Len(pulls.Items, 1)
 	assert.Equal(2, requests)
 	assert.Equal(2, budget.Spent())
+	assert.Equal(2, budget.ArchiveSpent())
 }
 
 func TestClientLooksUpRepositoryAndSendsToken(t *testing.T) {

@@ -176,9 +176,14 @@ func (t *transport) withRequestContext(ctx context.Context, request func() error
 }
 
 func (t *transport) spendSyncBudget(ctx context.Context) {
-	if t.budget != nil && ghsync.IsSyncBudgetContext(ctx) {
-		t.budget.Spend(1)
+	if t.budget == nil || !ghsync.IsSyncBudgetContext(ctx) {
+		return
 	}
+	if ghsync.IsArchiveSyncBudgetContext(ctx) {
+		t.budget.SpendArchive(1)
+		return
+	}
+	t.budget.Spend(1)
 }
 
 type rateTrackingTransport struct {

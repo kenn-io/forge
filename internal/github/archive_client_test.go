@@ -281,7 +281,7 @@ func TestGitHubArchiveReviewThreadsStopBetweenGraphQLPages(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		more := calls == 1
 		end := fmt.Sprintf("thread-%d", calls)
-		_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"T_%d","isResolved":%t,"path":"main.go","diffSide":"RIGHT","line":%d,"comments":{"nodes":[{"id":"RC_%d","databaseId":%d,"fullDatabaseId":"900000000%d","pullRequestReview":{"databaseId":%d},"body":"thread comment %d","author":{"login":"reviewer"},"path":"main.go","line":%d,"url":"https://github.com/acme/widget/pull/7#discussion_r%d","createdAt":"2026-07-03T00:00:00Z","updatedAt":"2026-07-03T01:00:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}],"pageInfo":{"hasNextPage":%t,"endCursor":"%s"}}}}}}`, calls, calls == 2, calls, calls, calls, calls, 40+calls, calls, calls, calls, more, end)
+		_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequest":{"reviewThreads":{"edges":[{"cursor":"edge-%d","node":{"id":"T_%d","isResolved":%t,"path":"main.go","diffSide":"RIGHT","line":%d,"comments":{"nodes":[{"id":"RC_%d","databaseId":%d,"fullDatabaseId":"900000000%d","pullRequestReview":{"databaseId":%d},"body":"thread comment %d","author":{"login":"reviewer"},"path":"main.go","line":%d,"url":"https://github.com/acme/widget/pull/7#discussion_r%d","createdAt":"2026-07-03T00:00:00Z","updatedAt":"2026-07-03T01:00:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}],"pageInfo":{"hasNextPage":%t,"endCursor":"%s"}}}}}}`, calls, calls, calls == 2, calls, calls, calls, calls, 40+calls, calls, calls, calls, more, end)
 	}))
 	defer srv.Close()
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
@@ -323,7 +323,7 @@ func TestGitHubArchiveReviewThreadCommentsHaveBoundedContinuation(t *testing.T) 
 		calls++
 		w.Header().Set("Content-Type", "application/json")
 		if calls == 1 {
-			_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"T_long","isResolved":false,"path":"main.go","diffSide":"RIGHT","line":9,"comments":{"nodes":[{"id":"RC_1","databaseId":1,"body":%q,"author":{"login":"a"},"path":"main.go","line":9,"createdAt":"2026-07-03T00:00:00Z","updatedAt":"2026-07-03T00:00:00Z"}],"pageInfo":{"hasNextPage":true,"endCursor":"comment-1"}}}],"pageInfo":{"hasNextPage":false,"endCursor":"thread-1"}}}}}}`, providerBody)
+			_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequest":{"reviewThreads":{"edges":[{"cursor":"thread-1","node":{"id":"T_long","isResolved":false,"path":"main.go","diffSide":"RIGHT","line":9,"comments":{"nodes":[{"id":"RC_1","databaseId":1,"body":%q,"author":{"login":"a"},"path":"main.go","line":9,"createdAt":"2026-07-03T00:00:00Z","updatedAt":"2026-07-03T00:00:00Z"}],"pageInfo":{"hasNextPage":true,"endCursor":"comment-1"}}}}],"pageInfo":{"hasNextPage":false,"endCursor":"thread-1"}}}}}}`, providerBody)
 			return
 		}
 		_, _ = w.Write([]byte(`{"data":{"node":{"comments":{"nodes":[{"id":"RC_2","databaseId":2,"body":"reply","author":{"login":"b"},"path":"main.go","line":9,"createdAt":"2026-07-04T00:00:00Z","updatedAt":"2026-07-04T00:00:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`))

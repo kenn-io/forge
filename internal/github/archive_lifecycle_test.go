@@ -309,7 +309,7 @@ func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 	require.NoError(err)
 	require.True(allowed.Allowed)
 	assert.True(IsSyncBudgetContext(allowed.Context))
-	assert.True(isArchiveSyncBudgetContext(allowed.Context))
+	assert.True(IsArchiveSyncBudgetContext(allowed.Context))
 
 	budget.Spend(archiveLiveFloor(ref.Platform) + 87)
 	denied, err := syncer.Admit(t.Context(), ref, 1)

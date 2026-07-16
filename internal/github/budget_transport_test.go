@@ -54,6 +54,7 @@ func TestBudgetTransport_CountsArchiveContextSeparately(t *testing.T) {
 
 	assert.Equal(1, budget.Spent())
 	assert.Equal(1, budget.ArchiveSpent())
+	assert.True(IsArchiveSyncBudgetContext(req.Context()))
 }
 
 func TestBudgetTransport_SkipsNotModifiedResponses(t *testing.T) {

@@ -205,6 +205,42 @@ describe("RepoBrowserFeature", () => {
     expect(client.GET).toHaveBeenCalledTimes(5);
   });
 
+  it("does not reload the repo when a view-mode route adds the resolved branch SHA", async () => {
+    const client = testClient();
+    const onRouteChange = vi.fn();
+    const initialRoute = {
+      ...route,
+      refType: "branch" as const,
+      refName: "main",
+      mode: "source" as const,
+    };
+    const { rerender } = render(RepoBrowserFeature, {
+      props: {
+        client,
+        route: initialRoute,
+        onRouteChange,
+      },
+    });
+
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(5));
+    await fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(onRouteChange).toHaveBeenCalled());
+    const [nextRoute] = onRouteChange.mock.calls.at(-1)!;
+
+    await rerender({
+      client,
+      route: {
+        ...initialRoute,
+        refSHA: nextRoute.refSHA,
+        mode: nextRoute.viewMode,
+      },
+      onRouteChange,
+    });
+
+    await screen.findByRole("link", { name: "Guide" });
+    expect(client.GET).toHaveBeenCalledTimes(5);
+  });
+
   it("reloads the repo when the same branch route moves to a different resolved SHA", async () => {
     const client = testClient();
     const onRouteChange = vi.fn();

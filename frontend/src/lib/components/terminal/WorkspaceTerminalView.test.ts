@@ -670,7 +670,7 @@ describe("WorkspaceTerminalView", () => {
     expect(runtimePoll).toBeTruthy();
     runtimePoll!.callback();
 
-    await waitFor(() => expect(screen.getByRole("tab", { name: /^Helper$/ })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Helper, Helper running" })).toBeTruthy());
     expect(screen.queryByRole("tab", { name: /Review helper/ })).toBeNull();
   });
 
@@ -696,7 +696,7 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    await screen.findByRole("tab", { name: /^Helper$/ });
+    await screen.findByRole("tab", { name: "Helper, Helper running" });
     const runtimePoll = intervalCallbacks.find((interval) => interval.delay === 3000);
     expect(runtimePoll).toBeTruthy();
     runtimePoll!.callback();

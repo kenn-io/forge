@@ -32,7 +32,7 @@ function expandToggle(sidebar: Locator): Locator {
 }
 
 function sidebarResizeHandle(page: Page): Locator {
-  return page.getByRole("button", { name: "Resize sidebar" });
+  return page.getByRole("separator", { name: "Resize sidebar" });
 }
 
 async function dragResizeHandle(page: Page, handle: Locator, deltaX: number): Promise<void> {

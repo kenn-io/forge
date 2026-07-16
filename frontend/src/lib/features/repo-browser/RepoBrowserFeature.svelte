@@ -205,6 +205,7 @@
       path: value.path ?? null,
     });
     if (generation !== routeLoadGeneration || selectionGeneration !== pathSelectionGeneration) return;
+    repoLoadKey = routeKeyWithSelectedRef(value);
     if (!value.path) {
       const initialPath = chooseRepoBrowserInitialPath(store.getTree());
       if (initialPath && initialPath !== store.getSelectedPath()) {
@@ -212,7 +213,6 @@
         if (generation !== routeLoadGeneration || !pathSelectionStillCurrent(selectionGeneration, initialPath)) return;
       }
       if (initialPath) {
-        repoLoadKey = routeKeyWithSelectedRef(value);
         pushRoute({ path: initialPath }, { replace: true });
       }
     }

@@ -138,10 +138,13 @@ async function dragResizeHandle(page: Page, handle: Locator, deltaX: number): Pr
   const box = await handle.boundingBox();
   expect(box).not.toBeNull();
   if (!box) throw new Error("resize handle missing");
+  const viewport = page.viewportSize();
+  const startX = box.x + box.width / 2;
+  const targetX = viewport ? Math.max(1, Math.min(viewport.width - 1, startX + deltaX)) : startX + deltaX;
 
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.move(startX, box.y + box.height / 2);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2 + deltaX, box.y + box.height / 2, { steps: 10 });
+  await page.mouse.move(targetX, box.y + box.height / 2, { steps: 10 });
   await page.mouse.up();
 }
 
@@ -513,6 +516,7 @@ test.describe("repository source browser", () => {
       const constrainedHistoryWidth = Math.round(await boundingWidth(history));
       const constrainedViewerWidth = Math.round(await boundingWidth(viewer));
       await browser.getByRole("button", { name: "Preview" }).click();
+      await expect(page).toHaveURL(/mode=preview/);
       await expect(viewer.locator(".repo-browser__markdown h1")).toHaveText("Widget Service");
       expect(Math.round(await boundingWidth(sidebar))).toBe(constrainedFilesWidth);
       expect(Math.round(await boundingWidth(history))).toBe(constrainedHistoryWidth);

@@ -175,6 +175,99 @@ func TestWorkspacePushedHeadObserverE2ELocalOnlyCommitTriggersNothing(t *testing
 	assert.Equal(pushedHead, stored.PlatformHeadSHA)
 }
 
+func TestWorkspacePushedHeadObserverE2EStopsAfterNonConvergingRefresh(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	// The provider authoritatively reports a head the local worktree has
+	// never seen: the PR advanced from another checkout, so the local
+	// tracking ref is the stale side and no amount of re-syncing converges.
+	providerHead := "e2e0000000000000000000000000000000000000"
+	newTitle := "Moved elsewhere"
+	var detailSyncCalls atomic.Int64
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+			detailSyncCalls.Add(1)
+			state := "open"
+			body := "updated body"
+			url := "https://github.com/acme/widget/pull/1"
+			now := gh.Timestamp{Time: time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)}
+			return &gh.PullRequest{
+				ID:        new(int64(1001)),
+				Number:    new(1),
+				Title:     &newTitle,
+				Body:      &body,
+				State:     &state,
+				HTMLURL:   &url,
+				User:      &gh.User{Login: new("octocat")},
+				CreatedAt: &now,
+				UpdatedAt: &now,
+				Head:      &gh.PullRequestBranch{Ref: new("feature"), SHA: &providerHead},
+				Base:      &gh.PullRequestBranch{Ref: new("main"), SHA: new("base-sha")},
+			}, nil
+		},
+	}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{WorktreeDir: t.TempDir()})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	worktreePath, _ := setupPushedHeadE2EWorktree(t)
+	seedPushedHeadE2ERepoAndPR(t, database, providerHead)
+	insertPushedHeadE2EWorkspace(t, database, worktreePath)
+
+	httpServer := httptest.NewServer(srv)
+	defer httpServer.Close()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, httpServer.URL+"/api/v1/events", nil)
+	require.NoError(err)
+	resp, err := httpServer.Client().Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+	require.Eventually(func() bool {
+		return srv.SubscriberCount() == 1
+	}, 2*time.Second, 5*time.Millisecond)
+	scanner := bufio.NewScanner(resp.Body)
+
+	// First pass refreshes once: enqueue, provider sync, completion.
+	srv.runWorkspacePushedHeadObserverPass(ctx)
+	assert.Equal("workspace_pushed_head_changed", readSSEFrameWithin(t, scanner, 5*time.Second, nil).Event)
+	assert.Equal("workspace_pr_refresh_queued", readSSEFrameWithin(t, scanner, 5*time.Second, nil).Event)
+	assert.Equal("pr_detail_refreshed", readSSEFrameWithin(t, scanner, 5*time.Second, nil).Event)
+	assert.Equal("data_changed", readSSEFrameWithin(t, scanner, 5*time.Second, nil).Event)
+	require.Equal(int64(1), detailSyncCalls.Load())
+
+	// Well past the failure-retry interval, the succeeded-but-still-
+	// different refresh must not be repeated.
+	srv.workspacePushedHeadObserver.SetNowForTest(func() time.Time {
+		return time.Now().Add(time.Minute)
+	})
+	srv.runWorkspacePushedHeadObserverPass(ctx)
+	srv.Hub().Broadcast(Event{Type: "sentinel_after_pass", Data: map[string]any{}})
+	frame := readSSEFrameWithin(t, scanner, 5*time.Second, nil)
+	assert.Equal("sentinel_after_pass", frame.Event)
+	assert.Equal(int64(1), detailSyncCalls.Load(), "non-converging refresh must not be re-enqueued")
+
+	// A real local push moves the tracking ref and refreshes again.
+	pushNewPushedHeadE2ECommit(t, worktreePath)
+	srv.runWorkspacePushedHeadObserverPass(ctx)
+	assert.Equal("workspace_pushed_head_changed", readSSEFrameWithin(t, scanner, 5*time.Second, nil).Event)
+	assert.Equal("workspace_pr_refresh_queued", readSSEFrameWithin(t, scanner, 5*time.Second, nil).Event)
+	assert.Equal("pr_detail_refreshed", readSSEFrameWithin(t, scanner, 5*time.Second, nil).Event)
+	require.Eventually(func() bool {
+		return detailSyncCalls.Load() == 2
+	}, 2*time.Second, 5*time.Millisecond)
+}
+
 func seedPushedHeadE2ERepoAndPR(t *testing.T, database *db.DB, oldHead string) int64 {
 	t.Helper()
 	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))

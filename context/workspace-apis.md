@@ -60,8 +60,12 @@ state.
 - Overlapping tmux probes wait for the active sample within the caller budget;
   fallback carries an error only when waiting or sample production fails
   (`internal/server/huma_routes.go::probeOneTmuxSession`).
-- Background completion emits `workspace_status` so clients refetch promptly
-  (`internal/server/workspace_enrichment.go::runWorkspaceEnrichmentJob`).
+- Background completion emits `workspace_status` only for durable changes:
+  first completion, divergence movement, or error-state change — never for
+  tmux-activity-only movement, and tmux prune broadcasts only when it pruned.
+  Unconditional broadcasts made every client refetch schedule the next
+  enrichment, a permanent refresh loop
+  (`internal/server/workspace_enrichment.go::workspaceEnrichmentBroadcastWorthy`).
 - `DELETE /workspaces/{id}`: tear down a middleman-managed workspace and its
   local resources.
 

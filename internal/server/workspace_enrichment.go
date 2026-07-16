@@ -161,7 +161,7 @@ func (s *Server) refreshWorkspaceResponse(
 	generation := s.supersedeWorkspaceEnrichment(summary.ID)
 	result := s.workspaceResponseWithEnrichment(ctx, summary)
 	if summary.Status == "ready" {
-		entry, recorded := s.recordWorkspaceEnrichmentResult(
+		entry, recorded, _ := s.recordWorkspaceEnrichmentResult(
 			summary.ID, generation, result,
 		)
 		return s.workspaceResponseAfterEnrichmentAttempt(
@@ -286,9 +286,9 @@ func (s *Server) runWorkspaceEnrichmentJob(
 	)
 	defer cancel()
 	result := s.workspaceResponseWithEnrichment(probeCtx, &job.summary)
-	if _, recorded := s.recordWorkspaceEnrichmentResult(
+	if _, recorded, changed := s.recordWorkspaceEnrichmentResult(
 		job.summary.ID, job.generation, result,
-	); recorded {
+	); recorded && changed {
 		s.broadcastWorkspaceStatus(job.summary.ID)
 	}
 }
@@ -328,15 +328,16 @@ func (s *Server) recordWorkspaceEnrichmentResult(
 	workspaceID string,
 	generation uint64,
 	result workspaceEnrichmentProbeResult,
-) (workspaceEnrichmentCacheEntry, bool) {
+) (workspaceEnrichmentCacheEntry, bool, bool) {
 	s.workspaceEnrichmentMu.Lock()
 	defer s.workspaceEnrichmentMu.Unlock()
 	currentGeneration, ok := s.workspaceEnrichmentGenerations[workspaceID]
 	if !ok || currentGeneration != generation {
-		return s.workspaceEnrichmentCache[workspaceID], false
+		return s.workspaceEnrichmentCache[workspaceID], false, false
 	}
 	now := s.now()
-	entry := s.workspaceEnrichmentCache[workspaceID]
+	prior := s.workspaceEnrichmentCache[workspaceID]
+	entry := prior
 	if result.divergenceComplete {
 		entry.response.CommitsAhead = result.response.CommitsAhead
 		entry.response.CommitsBehind = result.response.CommitsBehind
@@ -354,7 +355,34 @@ func (s *Server) recordWorkspaceEnrichmentResult(
 		entry.lastError = result.err.Error()
 	}
 	s.workspaceEnrichmentCache[workspaceID] = entry
-	return entry, true
+	return entry, true, workspaceEnrichmentBroadcastWorthy(prior, entry)
+}
+
+// workspaceEnrichmentBroadcastWorthy reports whether a recorded enrichment
+// result should notify SSE clients. Completion of the first probe (the
+// pending → fresh transition clients wait on), a divergence change, and an
+// error-state change are notification-worthy. Tmux-activity-only changes are
+// not: an active agent moves the activity timestamp on every probe, and
+// broadcasting those turned each completion into a client refetch that
+// scheduled the next enrichment — a permanent refresh loop. The workspace
+// list's own polling still picks activity changes up.
+func workspaceEnrichmentBroadcastWorthy(prior, next workspaceEnrichmentCacheEntry) bool {
+	if prior.hasDivergence != next.hasDivergence || prior.hasTmux != next.hasTmux {
+		return true
+	}
+	if prior.lastError != next.lastError {
+		return true
+	}
+	return next.hasDivergence &&
+		(!intPointerEqual(prior.response.CommitsAhead, next.response.CommitsAhead) ||
+			!intPointerEqual(prior.response.CommitsBehind, next.response.CommitsBehind))
+}
+
+func intPointerEqual(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func (s *Server) finishWorkspaceEnrichment(
@@ -426,9 +454,15 @@ func (s *Server) runWorkspaceTmuxPrune(ctx context.Context) {
 		ctx, workspaceEnrichmentRefreshTimeout,
 	)
 	defer cancel()
-	if err := s.workspaces.PruneMissingTmuxSessions(pruneCtx); err != nil {
+	pruned, err := s.workspaces.PruneMissingTmuxSessions(pruneCtx)
+	if err != nil {
 		slog.Debug("prune missing tmux sessions", "err", err)
 		return
 	}
-	s.hub.Broadcast(Event{Type: "workspace_status", Data: map[string]string{}})
+	// Broadcast only when the pass changed state. The unconditional
+	// broadcast made every open view refetch its workspace every prune
+	// interval even though nothing happened.
+	if pruned {
+		s.hub.Broadcast(Event{Type: "workspace_status", Data: map[string]string{}})
+	}
 }

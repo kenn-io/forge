@@ -809,7 +809,7 @@ func newServer(
 			if err := s.workspaces.ReapOrphanTmuxSessions(cleanupCtx); err != nil {
 				slog.Warn("reap orphan tmux sessions", "err", err)
 			}
-			if err := s.workspaces.PruneMissingTmuxSessions(cleanupCtx); err != nil {
+			if _, err := s.workspaces.PruneMissingTmuxSessions(cleanupCtx); err != nil {
 				slog.Warn("prune missing tmux sessions", "err", err)
 			}
 			cleanupCancel()

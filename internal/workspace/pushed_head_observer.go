@@ -136,12 +136,19 @@ func (o *PushedHeadObserver) SetNowForTest(now func() time.Time) {
 	o.now = now
 }
 
+// MarkRefreshEnqueued and MarkRefreshSucceeded stamp the observation only
+// while it still tracks the SHA the refresh was enqueued for. A refresh
+// completing after the tracking ref moved on must not stamp the new SHA's
+// cycle: its timestamps would satisfy the stop-retrying gate and suppress
+// the refresh the new SHA still needs.
 func (o *PushedHeadObserver) MarkRefreshEnqueued(update PushedHeadUpdate, at time.Time) {
 	key := update.remoteHeadKey()
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	obs := o.observed[key]
-	obs.SHA = update.NewSHA
+	if !strings.EqualFold(obs.SHA, update.NewSHA) {
+		return
+	}
 	obs.LastRefreshEnqueuedAt = at
 	o.observed[key] = obs
 }
@@ -151,7 +158,9 @@ func (o *PushedHeadObserver) MarkRefreshSucceeded(update PushedHeadUpdate, at ti
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	obs := o.observed[key]
-	obs.SHA = update.NewSHA
+	if !strings.EqualFold(obs.SHA, update.NewSHA) {
+		return
+	}
 	obs.LastRefreshSucceededAt = at
 	o.observed[key] = obs
 }
@@ -405,8 +414,12 @@ func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspa
 		return update, true, nil
 	}
 	update.OldSHA = prior.SHA
-	prior.SHA = lookup.sha
-	prior.ObservedAt = observedAt
+	// The refresh timestamps belong to the previously observed SHA. If they
+	// survived a SHA change and the enqueue for the new SHA is dropped (a
+	// same-key detail sync already in flight), the old success stamp would
+	// satisfy the stop-retrying gate above and permanently suppress the new
+	// SHA's refresh.
+	prior = remoteHeadObservation{SHA: lookup.sha, ObservedAt: observedAt}
 	o.observed[key] = prior
 	return update, true, nil
 }

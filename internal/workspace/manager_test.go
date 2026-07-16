@@ -3825,7 +3825,9 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 		time.Time{},
 	)
 
-	require.NoError(mgr.PruneMissingTmuxSessions(ctx))
+	pruned, pruneErr := mgr.PruneMissingTmuxSessions(ctx)
+	require.NoError(pruneErr)
+	assert.True(pruned)
 
 	stored, err := d.ListWorkspaceRuntimeTmuxSessions(ctx, "0000000000000001")
 	require.NoError(err)
@@ -3910,7 +3912,9 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 		Status:       "ready",
 	}))
 
-	require.NoError(mgr.PruneMissingTmuxSessions(ctx))
+	pruned, pruneErr := mgr.PruneMissingTmuxSessions(ctx)
+	require.NoError(pruneErr)
+	assert.False(pruned, "no-op prune must report no change so callers stay silent")
 	live, err := d.GetWorkspace(ctx, "0000000000000001")
 	require.NoError(err)
 	require.NotNil(live)

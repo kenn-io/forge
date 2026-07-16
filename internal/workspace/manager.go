@@ -2511,11 +2511,13 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 // the host tmux server. Runtime-session rows whose tmux session was killed
 // outside middleman are removed. Ready workspaces whose primary tmux session is
 // missing are marked errored so list responses stop probing dead session names
-// and the UI can offer retry/delete.
-func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) error {
+// and the UI can offer retry/delete. It reports whether anything was pruned so
+// callers only notify clients about passes that changed state.
+func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) (bool, error) {
+	changed := false
 	sessions, err := m.listTmuxSessions(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	live := make(map[string]bool, len(sessions))
 	for _, session := range sessions {
@@ -2524,7 +2526,7 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) error {
 
 	storedSessions, err := m.db.ListAllWorkspaceRuntimeTmuxSessions(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	for _, stored := range storedSessions {
 		if stored.TmuxSession == "" {
@@ -2539,16 +2541,18 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) error {
 			"target_key", stored.TargetKey,
 			"tmux_session", stored.TmuxSession,
 		)
-		if _, err := m.db.DeleteWorkspaceRuntimeSessionCreatedAt(
+		deleted, err := m.db.DeleteWorkspaceRuntimeSessionCreatedAt(
 			ctx, stored.WorkspaceID, stored.SessionKey, stored.CreatedAt,
-		); err != nil {
-			return err
+		)
+		if err != nil {
+			return changed, err
 		}
+		changed = changed || deleted
 	}
 
 	workspaces, err := m.db.ListWorkspaces(ctx)
 	if err != nil {
-		return fmt.Errorf("list workspaces: %w", err)
+		return changed, fmt.Errorf("list workspaces: %w", err)
 	}
 	for _, ws := range workspaces {
 		if ws.Status != "ready" ||
@@ -2571,10 +2575,11 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) error {
 		if err := m.db.UpdateWorkspaceStatus(
 			ctx, ws.ID, "error", &msg,
 		); err != nil {
-			return err
+			return changed, err
 		}
+		changed = true
 	}
-	return nil
+	return changed, nil
 }
 
 func isWorkspaceTmuxSessionName(session string) bool {

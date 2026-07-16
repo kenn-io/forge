@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -34,7 +35,7 @@ func TestWorkspaceEnrichmentSupersedeRejectsOlderRefreshAndPreservesCache(t *tes
 		divergenceRefreshedAt: now,
 	}
 	srv.supersedeWorkspaceEnrichment("ws-1")
-	entry, recorded := srv.recordWorkspaceEnrichmentResult(
+	entry, recorded, _ := srv.recordWorkspaceEnrichmentResult(
 		"ws-1",
 		oldGeneration,
 		workspaceEnrichmentProbeResult{
@@ -58,7 +59,7 @@ func TestWorkspaceEnrichmentRejectsResultAfterGenerationIsTrimmed(t *testing.T) 
 	}
 	ahead := 1
 
-	_, recorded := srv.recordWorkspaceEnrichmentResult(
+	_, recorded, _ := srv.recordWorkspaceEnrichmentResult(
 		"deleted-workspace",
 		0,
 		workspaceEnrichmentProbeResult{
@@ -372,6 +373,65 @@ func TestWorkspaceEnrichmentCompletionBroadcastsWorkspaceStatusE2E(t *testing.T)
 			got.JSON200 != nil &&
 			string(got.JSON200.EnrichmentStatus) == workspaceEnrichmentFresh
 	}, 2*time.Second, 10*time.Millisecond)
+}
+
+func TestWorkspaceEnrichmentBroadcastsOnlyDurableChanges(t *testing.T) {
+	assert := assert.New(t)
+	srv := &Server{
+		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
+		workspaceEnrichmentGenerations: map[string]uint64{"ws-1": 1},
+		now: func() time.Time {
+			return time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+		},
+	}
+	ahead := 1
+	behind := 0
+	title := "pane"
+	record := func(result workspaceEnrichmentProbeResult) bool {
+		_, recorded, changed := srv.recordWorkspaceEnrichmentResult("ws-1", 1, result)
+		assert.True(recorded)
+		return changed
+	}
+
+	// First completion is the pending -> fresh transition clients wait on.
+	assert.True(record(workspaceEnrichmentProbeResult{
+		response:           workspaceResponse{CommitsAhead: &ahead, CommitsBehind: &behind, TmuxPaneTitle: &title},
+		divergenceComplete: true,
+		tmuxComplete:       true,
+	}))
+
+	// Tmux-activity-only movement (a busy agent changes it every probe)
+	// must not notify: broadcasting it re-poked every open view forever.
+	spinnerTitle := "pane *"
+	assert.False(record(workspaceEnrichmentProbeResult{
+		response: workspaceResponse{
+			CommitsAhead:  &ahead,
+			CommitsBehind: &behind,
+			TmuxPaneTitle: &spinnerTitle,
+			TmuxWorking:   true,
+		},
+		divergenceComplete: true,
+		tmuxComplete:       true,
+	}))
+
+	// Divergence movement notifies.
+	newBehind := 3
+	assert.True(record(workspaceEnrichmentProbeResult{
+		response:           workspaceResponse{CommitsAhead: &ahead, CommitsBehind: &newBehind, TmuxPaneTitle: &spinnerTitle},
+		divergenceComplete: true,
+		tmuxComplete:       true,
+	}))
+
+	// A new failure notifies once; the same repeated failure stays silent.
+	assert.True(record(workspaceEnrichmentProbeResult{err: errors.New("boom")}))
+	assert.False(record(workspaceEnrichmentProbeResult{err: errors.New("boom")}))
+
+	// Recovery notifies.
+	assert.True(record(workspaceEnrichmentProbeResult{
+		response:           workspaceResponse{CommitsAhead: &ahead, CommitsBehind: &newBehind, TmuxPaneTitle: &spinnerTitle},
+		divergenceComplete: true,
+		tmuxComplete:       true,
+	}))
 }
 
 func TestWorkspaceEnrichmentUsesBoundedWorkersPastBackgroundCapacity(t *testing.T) {

@@ -298,6 +298,94 @@ func TestPushedHeadObserverStopsRetryingAfterSuccessfulRefreshStillDiffers(t *te
 	assert.Equal("3333333", pushed.HeadChanges[0].NewSHA)
 }
 
+func TestPushedHeadObserverRetriesNewSHAWhenEnqueueWasDropped(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111", "")
+	insertPushedHeadWorkspace(t, d, "ws-pr", db.WorkspaceItemTypePullRequest, 42, nil)
+	reader := &fakeRemoteHeadReader{
+		branch:      "feature/remote-head",
+		upstream:    upstreamState{hasTracking: true, remoteName: "origin", branchName: "feature/remote-head"},
+		trackingSHA: "2222222",
+		trackingRef: "refs/remotes/origin/feature/remote-head",
+		trackingOK:  true,
+	}
+	now := time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
+	observer := NewPushedHeadObserver(d)
+	observer.SetGitReaderForTest(reader)
+	observer.SetNowForTest(func() time.Time { return now })
+
+	// Suppressed steady state for the first SHA: refresh enqueued and
+	// succeeded, provider still reports a different head.
+	first, err := observer.RunOnce(context.Background())
+	require.NoError(err)
+	require.Len(first.HeadChanges, 1)
+	observer.MarkRefreshEnqueued(first.HeadChanges[0], now)
+	observer.MarkRefreshSucceeded(first.HeadChanges[0], now.Add(2*time.Second))
+
+	// A push moves the tracking ref, but the server drops the enqueue
+	// (same-key detail sync already in flight), so neither marker runs.
+	reader.trackingSHA = "3333333"
+	now = now.Add(time.Minute)
+	moved, err := observer.RunOnce(context.Background())
+	require.NoError(err)
+	require.Len(moved.HeadChanges, 1)
+
+	// The new SHA must keep retrying: the old SHA's refresh stamps do not
+	// belong to it and must not satisfy the stop-retrying gate.
+	now = now.Add(time.Minute)
+	retry, err := observer.RunOnce(context.Background())
+	require.NoError(err)
+	require.Len(retry.HeadChanges, 1)
+	assert.Equal("3333333", retry.HeadChanges[0].NewSHA)
+}
+
+func TestPushedHeadObserverLateSuccessForOldSHADoesNotDisturbNewCycle(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111", "")
+	insertPushedHeadWorkspace(t, d, "ws-pr", db.WorkspaceItemTypePullRequest, 42, nil)
+	reader := &fakeRemoteHeadReader{
+		branch:      "feature/remote-head",
+		upstream:    upstreamState{hasTracking: true, remoteName: "origin", branchName: "feature/remote-head"},
+		trackingSHA: "2222222",
+		trackingRef: "refs/remotes/origin/feature/remote-head",
+		trackingOK:  true,
+	}
+	now := time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
+	observer := NewPushedHeadObserver(d)
+	observer.SetGitReaderForTest(reader)
+	observer.SetNowForTest(func() time.Time { return now })
+
+	first, err := observer.RunOnce(context.Background())
+	require.NoError(err)
+	require.Len(first.HeadChanges, 1)
+	observer.MarkRefreshEnqueued(first.HeadChanges[0], now)
+
+	// Push moves the ref; the new SHA's refresh is enqueued normally.
+	reader.trackingSHA = "3333333"
+	now = now.Add(time.Minute)
+	moved, err := observer.RunOnce(context.Background())
+	require.NoError(err)
+	require.Len(moved.HeadChanges, 1)
+	observer.MarkRefreshEnqueued(moved.HeadChanges[0], now)
+
+	// The first SHA's refresh completes only now. It must not rebind the
+	// observation to the old SHA: doing so re-routed the next pass through
+	// the SHA-changed branch and re-emitted the same head change inside
+	// the new refresh's retry window.
+	observer.MarkRefreshSucceeded(first.HeadChanges[0], now.Add(time.Second))
+
+	now = now.Add(5 * time.Second)
+	within, err := observer.RunOnce(context.Background())
+	require.NoError(err)
+	assert.Empty(within.HeadChanges)
+}
+
 func TestPushedHeadObserverDetectsSubsequentTrackingRefMove(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

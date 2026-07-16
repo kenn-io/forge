@@ -276,7 +276,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     }
   }
 
-  async function selectRef(ref: RepoBrowserRef): Promise<void> {
+  async function selectRef(ref: RepoBrowserRef): Promise<boolean> {
     const generation = nextTreeRequestGeneration();
     const previousPath = selectedPath;
     selectedRef = ref;
@@ -285,11 +285,13 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     clearTreeData();
     try {
       await loadTree(previousPath, generation);
+      return isCurrentTreeRequest(generation);
     } catch (err) {
       if (isCurrentTreeRequest(generation)) {
         error = err instanceof Error ? err.message : String(err);
         clearTreeData();
       }
+      return false;
     } finally {
       if (isCurrentTreeRequest(generation)) loading = false;
     }

@@ -597,8 +597,9 @@ describe("createRepoBrowserStore", () => {
     const store = createRepoBrowserStore({ client });
     await store.loadRepo(repo);
 
-    await store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false });
+    const selected = await store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false });
 
+    expect(selected).toBe(false);
     expect(store.getSelectedRef()?.name).toBe("v1.0.0");
     expect(store.getTree()).toEqual([]);
     expect(store.getSelectedPath()).toBeNull();
@@ -646,7 +647,7 @@ describe("createRepoBrowserStore", () => {
     await store.loadRepo(repo);
     await store.selectPath("src/app.ts");
 
-    await store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false });
+    expect(await store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false })).toBe(true);
 
     expect(store.getSelectedRef()?.name).toBe("v1.0.0");
     expect(store.getSelectedPath()).toBe("src/app.ts");

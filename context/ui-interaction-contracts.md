@@ -25,6 +25,9 @@ Interactive surfaces must agree on which item is selected.
   `{ owner, name, number }`-style shapes.
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
+- Commit user-initiated repository ref routes only after the selected tree
+  loads; failed switches keep the picker query open and must not advance the URL
+  to unloaded content (`frontend/src/lib/features/repo-browser/RepoBrowserFeature.svelte::selectRefFromPicker`).
 - When a background refresh replaces the selected item's backing object but
   the stable item identity is unchanged, preserve already-resolved action
   affordances instead of treating the refresh as item A -> B. Key invalidation

@@ -312,14 +312,15 @@
     return generation === pathSelectionGeneration && store.getSelectedPath() === path;
   }
 
-  async function selectRefByKey(key: string): Promise<void> {
+  async function selectRefByKey(key: string): Promise<boolean> {
     const ref = store.getRefs().find((candidate) => refKey(candidate) === key);
-    if (!ref) return;
-    await store.selectRef(ref);
+    if (!ref) return false;
+    if (!(await store.selectRef(ref))) return false;
     selectedPathRevealKey += 1;
     repoLoadKey = routeKeyWithSelectedRef(route);
     repoLoadAliasKey = "";
     pushRoute({ path: store.getSelectedPath() ?? undefined });
+    return true;
   }
 
   async function selectRefFromPicker(key: string): Promise<boolean | void> {
@@ -328,7 +329,10 @@
     if (refPickerSelectionInFlight) return false;
     refPickerSelectionInFlight = true;
     try {
-      await selectRefByKey(key);
+      if (!(await selectRefByKey(key))) {
+        refPickerError = "Couldn't load repository ref";
+        return false;
+      }
       refPickerQuery = "";
     } catch {
       refPickerError = "Couldn't load repository ref";

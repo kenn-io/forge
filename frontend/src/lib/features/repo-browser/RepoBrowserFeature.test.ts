@@ -381,6 +381,48 @@ describe("RepoBrowserFeature", () => {
     expect(client.GET).toHaveBeenCalledTimes(9);
   });
 
+  it("keeps the ref picker open and the route unchanged when the selected ref tree fails", async () => {
+    const base = testClient();
+    const client = {
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        if (
+          testURL(path, options) ===
+          "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha"
+        ) {
+          return Promise.resolve({
+            error: { detail: "tree failed" },
+            response: new Response(null, { status: 500 }),
+          });
+        }
+        return (base.GET as unknown as (path: string, options?: TestGetOptions) => unknown)(path, options);
+      }),
+    } as unknown as MiddlemanClient;
+    const onRouteChange = vi.fn();
+    render(RepoBrowserFeature, {
+      props: {
+        client,
+        route: {
+          ...route,
+          refType: "branch",
+          refName: "main",
+          refSHA: "main-sha",
+        },
+        onRouteChange,
+      },
+    });
+
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(5));
+    await fireEvent.click(await screen.findByRole("button", { name: "Select repository ref: branch: main main-sha" }));
+    const search = screen.getByRole("combobox", { name: "Search repository refs" });
+    await fireEvent.input(search, { target: { value: "v1" } });
+    await fireEvent.click(screen.getByRole("tab", { name: "Tags 1" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "v1.0.0 tag-sha" }));
+
+    expect(await screen.findByText("Couldn't load repository ref")).toBeTruthy();
+    expect((screen.getByRole("combobox", { name: "Search repository refs" }) as HTMLInputElement).value).toBe("v1");
+    expect(onRouteChange).not.toHaveBeenCalled();
+  });
+
   it("reloads the original ref when browser history returns after a user ref change", async () => {
     const client = testClient();
     const onRouteChange = vi.fn();

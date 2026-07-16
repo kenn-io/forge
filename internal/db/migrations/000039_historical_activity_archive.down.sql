@@ -5,5 +5,9 @@ DROP INDEX idx_archive_items_stable_order;
 DROP INDEX idx_archive_items_due_work;
 DROP INDEX idx_archive_repos_due_work;
 
+DROP TABLE middleman_archive_dataset_pages;
 DROP TABLE middleman_archive_items;
 DROP TABLE middleman_archive_repos;
+
+ALTER TABLE middleman_issues DROP COLUMN snapshot_revision;
+ALTER TABLE middleman_merge_requests DROP COLUMN snapshot_revision;

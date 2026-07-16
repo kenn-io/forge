@@ -1,1 +1,0 @@
-ALTER TABLE middleman_archive_items DROP COLUMN hydration_snapshot_updated_at;

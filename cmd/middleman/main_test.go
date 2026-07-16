@@ -523,7 +523,7 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 
 	set := tokenauth.NewSourceSet(tokenauth.Options{})
 	startup, err := buildProviderStartup(
-		database,
+		t.Context(), database,
 		&config.Config{SyncBudgetPerHour: 200},
 		set,
 		map[string]tokenauth.Source{
@@ -534,7 +534,7 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 				t, string(platform.KindGitea), "gitea.example.com", "GITEA_TEST_TOKEN", "gitea-token",
 			),
 		},
-		factories,
+		factories, nil,
 	)
 	require.NoError(err)
 
@@ -600,7 +600,7 @@ func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T
 		t, "codeberg", "codeberg.org", "CODEBERG_TEST_TOKEN", "codeberg-token",
 	)
 	startup, err := buildProviderStartup(
-		database,
+		t.Context(), database,
 		&config.Config{},
 		set,
 		map[string]tokenauth.Source{
@@ -620,7 +620,7 @@ func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T
 					},
 				}, nil
 			},
-		},
+		}, nil,
 	)
 	require.NoError(err)
 	assert.True(called)
@@ -685,7 +685,7 @@ func TestBuildProviderStartupSharedHostCloneAuthUsesHostLevelSource(t *testing.T
 			}}, nil
 		},
 	}
-	startup, err := buildProviderStartup(database, cfg, set, providerSources, factories)
+	startup, err := buildProviderStartup(t.Context(), database, cfg, set, providerSources, factories, nil)
 	require.NoError(err)
 
 	// Clone auth must be the host-level source under tokenauth.CloneKey,

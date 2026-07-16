@@ -55,14 +55,14 @@ func TestBuildProviderStartupScopesWriteTrackersToAppChains(t *testing.T) {
 	})
 
 	startup, err := buildProviderStartup(
-		database,
+		t.Context(), database,
 		&config.Config{SyncBudgetPerHour: 200},
 		set,
 		map[string]tokenauth.Source{
 			providerHostKey("github", "github.com"):      appChain,
 			providerHostKey("github", "ghe.example.com"): envChain,
 		},
-		defaultProviderFactories(),
+		defaultProviderFactories(), nil,
 	)
 	require.NoError(err)
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
@@ -40,6 +41,20 @@ type writeRateTrackerSetter interface {
 	SetWriteGraphQLRateTracker(*github.RateTracker)
 }
 
+type githubIdentityRuntime struct {
+	identity github.GitHubIdentity
+	budget   *github.SyncBudget
+	rest     *github.RateTracker
+	graphql  *github.RateTracker
+}
+
+type githubCredentialRoute struct {
+	key           tokenauth.Key
+	source        tokenauth.Source
+	readIdentity  github.IdentityKey
+	writeIdentity github.IdentityKey
+}
+
 type providerStartup struct {
 	registry             *platform.Registry
 	rateTrackers         map[string]*github.RateTracker
@@ -49,6 +64,8 @@ type providerStartup struct {
 	cloneSources         map[tokenauth.Key]tokenauth.Source
 	cloneAuth            map[string]tokenauth.Source
 	fetchers             map[string]*github.GraphQLFetcher
+	githubRoutes         map[tokenauth.Key]githubCredentialRoute
+	githubIdentities     map[string]*githubIdentityRuntime
 }
 
 func defaultProviderFactories() map[string]providerFactory {
@@ -150,15 +167,18 @@ func collectProviderTokenSources(
 }
 
 func buildProviderStartup(
+	ctx context.Context,
 	database *db.DB,
 	cfg *config.Config,
 	set *tokenauth.SourceSet,
 	providerSources map[string]tokenauth.Source,
 	factories map[string]providerFactory,
+	resolver github.IdentityResolver,
 ) (providerStartup, error) {
 	if err := validateProviderHostKeys(providerSources); err != nil {
 		return providerStartup{}, err
 	}
+	budgetPerHour := cfg.BudgetPerHour()
 	startup := providerStartup{
 		rateTrackers:         make(map[string]*github.RateTracker, len(providerSources)),
 		writeRateTrackers:    make(map[string]*github.RateTracker, len(providerSources)),
@@ -167,8 +187,16 @@ func buildProviderStartup(
 		cloneSources:         make(map[tokenauth.Key]tokenauth.Source, len(providerSources)),
 		cloneAuth:            make(map[string]tokenauth.Source, len(providerSources)),
 		fetchers:             make(map[string]*github.GraphQLFetcher, len(providerSources)),
+		githubRoutes:         make(map[tokenauth.Key]githubCredentialRoute),
+		githubIdentities:     make(map[string]*githubIdentityRuntime),
 	}
-	budgetPerHour := cfg.BudgetPerHour()
+	if resolver != nil {
+		if err := buildGitHubIdentityRuntimes(
+			ctx, database, cfg, set, resolver, budgetPerHour, &startup,
+		); err != nil {
+			return providerStartup{}, err
+		}
+	}
 	clients := make(map[string]github.Client, len(providerSources))
 	providers := make([]platform.Provider, 0, len(providerSources))
 	githubHosts := make(map[string]struct{}, len(providerSources))
@@ -277,6 +305,161 @@ func buildProviderStartup(
 		)
 	}
 	return startup, nil
+}
+
+func buildGitHubIdentityRuntimes(
+	ctx context.Context,
+	database *db.DB,
+	cfg *config.Config,
+	set *tokenauth.SourceSet,
+	resolver github.IdentityResolver,
+	budgetPerHour int,
+	startup *providerStartup,
+) error {
+	if cfg == nil || set == nil || resolver == nil {
+		return nil
+	}
+	plans := githubCredentialPlans(cfg)
+	resolvedPATs := make(map[string]github.GitHubIdentity, len(plans))
+	for _, plan := range plans {
+		desc := plan.Descriptor
+		source := set.Upsert(desc)
+		writeIdentity, err := resolveGitHubPATIdentity(
+			ctx, resolver, desc.Key.Host, source, resolvedPATs,
+		)
+		if err != nil {
+			if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
+				continue
+			}
+			return fmt.Errorf(
+				"resolve GitHub identity for %s via %s: %w",
+				desc.Key.Scope, desc.SafeString(), err,
+			)
+		}
+		readIdentity := writeIdentity
+		if app, ok := activeGitHubAppCandidate(desc, plan.GitHubOwner); ok {
+			if app.InstallationID <= 0 {
+				return fmt.Errorf(
+					"resolve GitHub identity for %s via %s: invalid installation id %d",
+					desc.Key.Scope, desc.SafeString(), app.InstallationID,
+				)
+			}
+			readIdentity = github.InstallationIdentity(
+				desc.Key.Host, app.InstallationID,
+			)
+		}
+		ensureGitHubIdentityRuntime(
+			database, budgetPerHour, readIdentity, startup,
+		)
+		ensureGitHubIdentityRuntime(
+			database, budgetPerHour, writeIdentity, startup,
+		)
+		startup.githubRoutes[desc.Key] = githubCredentialRoute{
+			key:           desc.Key,
+			source:        source,
+			readIdentity:  readIdentity.Key,
+			writeIdentity: writeIdentity.Key,
+		}
+	}
+	return nil
+}
+
+func githubCredentialPlans(cfg *config.Config) []config.ProviderTokenSource {
+	plans := cfg.ProviderTokenSources()
+	out := make([]config.ProviderTokenSource, 0, len(plans))
+	for _, plan := range plans {
+		if plan.Descriptor.Key.Platform != string(platform.KindGitHub) {
+			continue
+		}
+		out = append(out, plan)
+	}
+	return out
+}
+
+func resolveGitHubPATIdentity(
+	ctx context.Context,
+	resolver github.IdentityResolver,
+	host string,
+	source tokenauth.Source,
+	cache map[string]github.GitHubIdentity,
+) (github.GitHubIdentity, error) {
+	desc := source.Descriptor()
+	cacheKey := strings.ToLower(strings.TrimSpace(host)) + "\x00" +
+		mutationSourceIdentity(desc)
+	if identity, ok := cache[cacheKey]; ok {
+		return identity, nil
+	}
+	identity, err := resolver.ResolvePAT(ctx, host, source)
+	if err != nil {
+		return github.GitHubIdentity{}, err
+	}
+	cache[cacheKey] = identity
+	return identity, nil
+}
+
+func mutationSourceIdentity(desc tokenauth.Descriptor) string {
+	candidates := make([]tokenauth.Candidate, 0, len(desc.Candidates))
+	for _, candidate := range desc.Candidates {
+		if candidate.Kind != tokenauth.SourceKindGitHubApp {
+			candidates = append(candidates, candidate)
+		}
+	}
+	return (tokenauth.Descriptor{Candidates: candidates}).CanonicalSourceString()
+}
+
+func activeGitHubAppCandidate(
+	desc tokenauth.Descriptor, owner string,
+) (tokenauth.Candidate, bool) {
+	for _, candidate := range desc.Candidates {
+		if candidate.Kind != tokenauth.SourceKindGitHubApp ||
+			candidate.InstallationID == 0 {
+			continue
+		}
+		if candidate.InstallationAccount == "" ||
+			(owner != "" && strings.EqualFold(
+				candidate.InstallationAccount, owner,
+			)) {
+			return candidate, true
+		}
+	}
+	return tokenauth.Candidate{}, false
+}
+
+func ensureGitHubIdentityRuntime(
+	database *db.DB,
+	budgetPerHour int,
+	identity github.GitHubIdentity,
+	startup *providerStartup,
+) *githubIdentityRuntime {
+	key := identity.Key.String()
+	if runtime, ok := startup.githubIdentities[key]; ok {
+		return runtime
+	}
+	runtime := &githubIdentityRuntime{
+		identity: identity,
+		rest: github.NewPlatformRateTracker(
+			database, string(platform.KindGitHub), identity.Key.Host,
+			identity.Key.Principal, "rest",
+		),
+		graphql: github.NewPlatformRateTracker(
+			database, string(platform.KindGitHub), identity.Key.Host,
+			identity.Key.Principal, "graphql",
+		),
+	}
+	if budgetPerHour > 0 {
+		runtime.budget = github.NewSyncBudget(budgetPerHour)
+		runtime.rest.SetOnWindowReset(runtime.budget.Reset)
+	}
+	startup.githubIdentities[key] = runtime
+	startup.rateTrackers[github.RateBucketKey(
+		string(platform.KindGitHub), identity.Key.Host, identity.Key.Principal,
+	)] = runtime.rest
+	if runtime.budget != nil {
+		startup.budgets[github.RateBucketKey(
+			string(platform.KindGitHub), identity.Key.Host, identity.Key.Principal,
+		)] = runtime.budget
+	}
+	return runtime
 }
 
 func platformLabel(platformName string) string {

@@ -529,6 +529,21 @@ func run(opts serve.Options) error {
 		return nil
 	}
 
+	profilerSrv, err = profiler.Start(opts.ProfilerAddr)
+	if err != nil {
+		return err
+	}
+	if profilerSrv != nil {
+		profilerAddr := ""
+		if addr := profilerSrv.Addr(); addr != nil {
+			profilerAddr = addr.String()
+		}
+		slog.Info(
+			"starting profiler listener",
+			"addr", profilerAddr,
+		)
+	}
+
 	database, err = db.Open(cfg.DBPath())
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
@@ -551,7 +566,8 @@ func run(opts serve.Options) error {
 	}
 
 	startup, err := buildProviderStartup(
-		database, cfg, tokenSources, providerSources, defaultProviderFactories(),
+		ctx, database, cfg, tokenSources, providerSources,
+		defaultProviderFactories(), ghclient.HTTPIdentityResolver{},
 	)
 	if err != nil {
 		return err
@@ -690,21 +706,6 @@ func run(opts serve.Options) error {
 			slog.Warn("telemetry shutdown failed", "err", err)
 		}
 	}()
-
-	profilerSrv, err = profiler.Start(opts.ProfilerAddr)
-	if err != nil {
-		return err
-	}
-	if profilerSrv != nil {
-		profilerAddr := ""
-		if addr := profilerSrv.Addr(); addr != nil {
-			profilerAddr = addr.String()
-		}
-		slog.Info(
-			"starting profiler listener",
-			"addr", profilerAddr,
-		)
-	}
 
 	srv.SetBuildInfo(server.BuildInfo{
 		Name:      "middleman",

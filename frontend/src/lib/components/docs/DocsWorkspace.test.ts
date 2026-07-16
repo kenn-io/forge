@@ -56,6 +56,17 @@ describe("DocsWorkspace", () => {
     });
   });
 
+  test("clears a stale folder route when no folders remain", async () => {
+    const route: DocsRoute = { mode: "docs", folder: "missing", doc: "README.md" };
+    const onRouteChange = vi.fn();
+    const api = createMockDocsBackend({ folders: [] });
+    render(DocsWorkspace, { props: { route, onRouteChange, api } });
+
+    await waitFor(() => {
+      expect(onRouteChange).toHaveBeenCalledWith({ mode: "docs", folder: null, doc: null }, { replace: true });
+    });
+  });
+
   // Tree DOM and filename search are now owned by FolderTree (a thin
   // bridge to @pierre/trees). Those interactions are tested at the
   // unit level (flattenTreePaths) and rely on the library for the

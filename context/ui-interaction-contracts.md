@@ -25,6 +25,9 @@ Interactive surfaces must agree on which item is selected.
   `{ owner, name, number }`-style shapes.
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
+- Catalog-backed routes must normalize missing selections even when the catalog
+  is empty: select the first available item or `null`, and clear dependent route
+  identity (`frontend/src/lib/components/docs/DocsWorkspace.svelte::loadFolders`).
 - Commit user-initiated repository ref routes only after the selected tree
   loads; failed switches keep the picker query, prior ref identity, and last
   usable tree/path snapshot, remain retryable, and must not advance the URL

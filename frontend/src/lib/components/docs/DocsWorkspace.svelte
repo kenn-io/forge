@@ -323,7 +323,12 @@
       folders = result;
       foldersError = null;
       const routeFolderExists = route.folder !== null && result.some((folder) => folder.id === route.folder);
-      if ((!route.folder || !routeFolderExists) && result.length > 0) {
+      if (route.folder && !routeFolderExists) {
+        onRouteChange(
+          { mode: "docs", folder: result[0]?.id ?? null, doc: null },
+          { replace: true },
+        );
+      } else if (!route.folder && result.length > 0) {
         // Auto-pick the first folder on landing so a fresh /docs visit isn't
         // a dead end. Preserve `doc` so a shared link like /docs?doc=foo.md
         // still opens the named doc after the folder gets filled in; null it
@@ -331,7 +336,7 @@
         // Use replaceState so the back button skips the bare /docs URL
         // instead of bouncing back into another auto-select.
         const target = result[0]!.id;
-        const targetDoc = route.folder && !routeFolderExists ? null : route.doc;
+        const targetDoc = route.doc;
         if (targetDoc) {
           // We're honoring an explicit doc query — claim the landing slot
           // for this folder so the landing-doc effect doesn't auto-open

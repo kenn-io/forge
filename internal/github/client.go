@@ -1596,33 +1596,47 @@ func (c *liveClient) ListIssueCommentsIfChanged(
 func (c *liveClient) listIssueComments(
 	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.IssueComment, error) {
-	var all []*gh.IssueComment
-	for page := 1; ; page++ {
+	return platform.CollectArchivePages(ctx, "", func(
+		ctx context.Context, cursor string,
+	) (platform.ArchivePage[*gh.IssueComment], error) {
+		page, err := strconv.Atoi(cursor)
+		if err != nil || page < 1 {
+			page = 1
+		}
 		items, more, err := c.ListIssueCommentsPage(ctx, owner, repo, number, page)
 		if err != nil {
-			return nil, err
+			return platform.ArchivePage[*gh.IssueComment]{}, err
 		}
-		all = append(all, items...)
 		if !more {
-			return all, nil
+			return platform.ArchivePage[*gh.IssueComment]{Items: items, Exhausted: true}, nil
 		}
-	}
+		return platform.ArchivePage[*gh.IssueComment]{
+			Items: items, NextCursor: strconv.Itoa(page + 1),
+		}, nil
+	})
 }
 
 func (c *liveClient) ListReviews(
 	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.PullRequestReview, error) {
-	var all []*gh.PullRequestReview
-	for page := 1; ; page++ {
+	return platform.CollectArchivePages(ctx, "", func(
+		ctx context.Context, cursor string,
+	) (platform.ArchivePage[*gh.PullRequestReview], error) {
+		page, err := strconv.Atoi(cursor)
+		if err != nil || page < 1 {
+			page = 1
+		}
 		items, more, err := c.ListReviewsPage(ctx, owner, repo, number, page)
 		if err != nil {
-			return nil, err
+			return platform.ArchivePage[*gh.PullRequestReview]{}, err
 		}
-		all = append(all, items...)
 		if !more {
-			return all, nil
+			return platform.ArchivePage[*gh.PullRequestReview]{Items: items, Exhausted: true}, nil
 		}
-	}
+		return platform.ArchivePage[*gh.PullRequestReview]{
+			Items: items, NextCursor: strconv.Itoa(page + 1),
+		}, nil
+	})
 }
 
 func (c *liveClient) ListPullRequestReviewThreads(

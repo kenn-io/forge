@@ -19,7 +19,7 @@
         "@codemirror/lang-markdown": "^6.5.0",
         "@codemirror/state": "^6.6.0",
         "@codemirror/view": "^6.43.0",
-        "@kenn-io/kit-ui": "github:kenn-io/kit-ui#c5e81a4f1f1bffac06d37406344fde0926bf4189",
+        "@kenn-io/kit-ui": "github:kenn-io/kit-ui#4d90fdf8a81424f53e92d45dc38fc24340894ee0",
         "@lucide/svelte": "1.23.0",
         "@middleman/ui": "workspace:*",
         "@pierre/diffs": "1.2.12",
@@ -74,7 +74,7 @@
       "name": "@middleman/ui",
       "version": "0.0.1",
       "dependencies": {
-        "@kenn-io/kit-ui": "github:kenn-io/kit-ui#c5e81a4f1f1bffac06d37406344fde0926bf4189",
+        "@kenn-io/kit-ui": "github:kenn-io/kit-ui#4d90fdf8a81424f53e92d45dc38fc24340894ee0",
         "@lucide/svelte": "1.23.0",
         "@pierre/diffs": "1.2.12",
         "@pierre/trees": "1.0.0-beta.5",
@@ -232,7 +232,7 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@kenn-io/kit-ui": ["@kenn-io/kit-ui@github:kenn-io/kit-ui#c5e81a4", { "peerDependencies": { "@lucide/svelte": ">=1.0.0", "dompurify": "^3.2.0", "marked": "^18.0.0", "mermaid": ">=11.15.0 <12", "shiki": "^4.0.0", "svelte": "^5.29.0" }, "optionalPeers": ["mermaid"], "bin": { "kit-ui-check": "./bin/kit-ui-check.mjs" } }, "kenn-io-kit-ui-c5e81a4", "sha512-+f+EHoyPJk+nemnyEE0R2daVuL96oJVO0CqJXNq2fybL6h/rdMVeLg9fsLIF5/pHX0/WMcFG9aQ8++Pl6C2tGg=="],
+    "@kenn-io/kit-ui": ["@kenn-io/kit-ui@github:kenn-io/kit-ui#4d90fdf", { "peerDependencies": { "@lucide/svelte": ">=1.0.0", "dompurify": "^3.2.0", "marked": "^18.0.0", "mermaid": ">=11.15.0 <12", "shiki": "^4.0.0", "svelte": "^5.29.0" }, "optionalPeers": ["mermaid"], "bin": { "kit-ui-check": "./bin/kit-ui-check.mjs" } }, "kenn-io-kit-ui-4d90fdf", "sha512-mgje8UnOPax2RrwALBE/+ZAcyQ866TeH/M6TLL+o1QDV2U7pkgXO1s8qHOU7Sx8iQKhWeDEnGLQZNcMsOK/8vA=="],
 
     "@lezer/common": ["@lezer/common@1.5.2", "", {}, "sha512-sxQE460fPZyU3sdc8lafxiPwJHBzZRy/udNFynGQky1SePYBdhkBl1kOagA9uT3pxR8K09bOrmTUqA9wb/PjSQ=="],
 

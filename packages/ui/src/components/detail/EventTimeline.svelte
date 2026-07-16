@@ -1404,7 +1404,7 @@
   reviewThread: TimelineReviewThread | undefined = undefined,
   inlineReplyEntry: TimelineEntry | undefined = undefined,
 )}
-  {#if event.Body}
+  {#if event.Body || editingId === event.ID}
     <div
       class={[
         "event-body-wrap",
@@ -1745,7 +1745,7 @@
                 {@render eventActions(event, () => startCompactEdit(entry))}
               </div>
             </div>
-            {#if canExpandCompact && compactExpanded}
+            {#if (canExpandCompact && compactExpanded) || editingId === event.ID}
               <div class="compact-expanded-content">
                 {#if event.EventType === "commit"}
                   <div class="event-body commit-body-details">

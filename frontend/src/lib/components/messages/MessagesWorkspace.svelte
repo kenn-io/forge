@@ -710,9 +710,15 @@
   );
   const minListSize = $derived(Math.min(MIN_PRIMARY, maxListSize));
 
+  function clampListSize(size: number): number {
+    const minimumSize = Math.max(minListSize, size);
+    return sashWidth > 0 ? Math.min(maxListSize, minimumSize) : minimumSize;
+  }
+
   function handleResize(size: number): void {
-    listSize = size;
-    writeListSize(size);
+    const clampedSize = clampListSize(size);
+    listSize = clampedSize;
+    writeListSize(clampedSize);
   }
 
   function startListResize(): void {
@@ -721,6 +727,11 @@
 
   function resizeList(event: SplitResizeEvent): void {
     handleResize(resizeStartSize + event.delta);
+  }
+
+  function handleSashWidth(width: number): void {
+    sashWidth = width;
+    handleResize(listSize);
   }
 
   let bannerStatus = $derived(
@@ -784,7 +795,7 @@
           })}
         />
       </aside>
-      <div class="messages-sash-wrapper" bind:clientWidth={sashWidth}>
+      <div class="messages-sash-wrapper" bind:clientWidth={null, handleSashWidth}>
         <div class="messages-pane messages-pane-list" style:flex-basis={`${listSize}px`}>
           {#if kata !== undefined && route.view === "linked"}
             <LinkedMessagesView

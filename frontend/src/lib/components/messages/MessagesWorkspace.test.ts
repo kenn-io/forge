@@ -17,6 +17,29 @@ import type { MessageLinkInput } from "../../messages/messageLinks";
 import type { IssueFilters, IssueSummary, KataAPI, SearchResponse } from "../../messages/types";
 import MessagesWorkspace from "./MessagesWorkspace.svelte";
 
+const resizeObservers = new Map<Element, { callback: ResizeObserverCallback; observer: ResizeObserver }>();
+
+class ResizeObserverMock {
+  constructor(private callback: ResizeObserverCallback) {}
+
+  observe(target: Element): void {
+    resizeObservers.set(target, {
+      callback: this.callback,
+      observer: this as unknown as ResizeObserver,
+    });
+  }
+
+  unobserve(target: Element): void {
+    resizeObservers.delete(target);
+  }
+
+  disconnect(): void {
+    resizeObservers.clear();
+  }
+}
+
+vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+
 const LAYOUT_KEY = "middleman:messagesLayout/v1";
 const SAVED_SEARCHES_KEY = "middleman:messagesSavedSearches/v1";
 
@@ -313,6 +336,47 @@ describe("MessagesWorkspace status and routing", () => {
     const remountedListPane = remounted.container.querySelector(".messages-pane-list") as HTMLElement | null;
 
     expect(remountedListPane?.style.flexBasis).toBe("504px");
+  });
+
+  it("clamps restored and resized pane sizes when the available width changes", async () => {
+    localStorage.setItem(LAYOUT_KEY, "900");
+
+    const { container } = renderWorkspace();
+    const listPane = container.querySelector(".messages-pane-list") as HTMLElement | null;
+    const sashWrapper = container.querySelector(".messages-sash-wrapper") as HTMLElement | null;
+    const separator = screen.getByRole("separator", { name: "Resize messages message list" });
+    expect(sashWrapper).not.toBeNull();
+
+    let observedWidth = 700;
+    Object.defineProperty(sashWrapper!, "clientWidth", {
+      configurable: true,
+      get: () => observedWidth,
+    });
+    const resizeObserver = resizeObservers.get(sashWrapper!);
+    expect(resizeObserver).toBeDefined();
+    resizeObserver!.callback(
+      [{ target: sashWrapper!, contentRect: { width: observedWidth } } as unknown as ResizeObserverEntry],
+      resizeObserver!.observer,
+    );
+
+    await waitFor(() => expect(listPane?.style.flexBasis).toBe("376px"));
+    expect(localStorage.getItem(LAYOUT_KEY)).toBe("376");
+
+    await fireEvent.keyDown(separator, { key: "ArrowRight" });
+    expect(listPane?.style.flexBasis).toBe("376px");
+    expect(localStorage.getItem(LAYOUT_KEY)).toBe("376");
+
+    observedWidth = 500;
+    resizeObserver!.callback(
+      [{ target: sashWrapper!, contentRect: { width: observedWidth } } as unknown as ResizeObserverEntry],
+      resizeObserver!.observer,
+    );
+
+    await waitFor(() => expect(listPane?.style.flexBasis).toBe("176px"));
+    expect(separator.getAttribute("aria-valuemin")).toBe("176");
+    expect(separator.getAttribute("aria-valuemax")).toBe("176");
+    expect(separator.getAttribute("aria-valuenow")).toBe("176");
+    expect(localStorage.getItem(LAYOUT_KEY)).toBe("176");
   });
 });
 

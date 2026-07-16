@@ -2533,6 +2533,35 @@ describe("EventTimeline", () => {
     expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
   });
 
+  it.each([
+    ["empty", ""],
+    ["whitespace-only", "   "],
+  ])("opens the editor for an %s compact comment", async (_label, body) => {
+    render(EventTimeline, {
+      props: {
+        activityViewMode: "compact",
+        events: [
+          makeEvent({
+            Body: body,
+            EventType: "issue_comment",
+            PlatformID: 44,
+          }),
+        ],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        onEditComment: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit comment" }));
+
+    expect(screen.getByRole("button", { name: /save/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
+  });
+
   it("keeps comment actions available on threaded replies", () => {
     const { container } = render(EventTimeline, {
       props: {

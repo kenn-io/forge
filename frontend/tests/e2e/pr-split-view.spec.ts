@@ -183,7 +183,7 @@ test("lets wide PR detail panes opt into split conversation and files", async ({
   await expect(page.getByText("src/split-view.ts")).toBeVisible();
 
   const conversationPane = page.locator(".detail-split-pane--conversation");
-  const resizeHandle = page.getByRole("button", { name: "Resize PR split view" });
+  const resizeHandle = page.getByRole("separator", { name: "Resize PR split view" });
   await expect(conversationPane).toBeVisible();
   await expect(resizeHandle).toBeVisible();
   await expect(resizeHandle).toHaveCSS("cursor", "col-resize");

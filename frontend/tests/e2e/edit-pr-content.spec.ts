@@ -263,7 +263,11 @@ test("markdown image lightbox opens above drawer layers", async ({ page }) => {
 
   const dialog = page.getByRole("dialog", { name: "Expanded image" });
   await expect(dialog).toBeVisible();
-  await expect(dialog).toHaveCSS("z-index", "96");
+  const dialogLayer = await dialog.evaluate((element) => Number(getComputedStyle(element).zIndex));
+  const drawerLayer = await page
+    .locator(".test-drawer-layer")
+    .evaluate((element) => Number(getComputedStyle(element).zIndex));
+  expect(dialogLayer).toBeGreaterThan(drawerLayer);
   await expect
     .poll(async () =>
       page.evaluate(() =>

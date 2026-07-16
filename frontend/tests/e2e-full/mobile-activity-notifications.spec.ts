@@ -114,10 +114,8 @@ test.describe("mobile activity notifications", () => {
       const seen = reviewSlot.getByRole("button", { name: "Mark notification seen" });
       await expect(seen.first()).toBeVisible();
 
-      const removed = await page.request.delete(`${server.info.base_url}/api/v1/repo/github/acme/widgets`, {
-        data: {},
-      });
-      expect(removed.ok()).toBe(true);
+      const stagedFailure = await page.request.post(`${server.info.base_url}/__e2e/notifications/fail-next-read`);
+      expect(stagedFailure.ok()).toBe(true);
 
       const readResponse = page.waitForResponse(
         (response) => response.request().method() === "POST" && response.url().endsWith("/api/v1/notifications/read"),

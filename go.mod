@@ -33,6 +33,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.43.0
 	github.com/testcontainers/testcontainers-go/modules/compose v0.43.0
+	github.com/yuin/goldmark v1.7.13
 	gitlab.com/gitlab-org/api/client-go/v2 v2.44.0
 	go.kenn.io/kit v0.9.3
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0

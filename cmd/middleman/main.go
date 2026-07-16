@@ -20,6 +20,7 @@ import (
 	"time"
 
 	oteltelemetry "go.kenn.io/kit/telemetry"
+	"go.kenn.io/middleman/internal/archive"
 	"go.kenn.io/middleman/internal/cli/ctl"
 	"go.kenn.io/middleman/internal/cli/serve"
 	"go.kenn.io/middleman/internal/config"
@@ -210,6 +211,8 @@ func runCLI(args []string, stdout io.Writer) error {
 				os.Exit(exitCodeForAPIVerb(err))
 			}
 			return nil
+		case "archive":
+			return runArchiveCLI(args[1:], stdout)
 		case "serve":
 			return serve.Run(args[1:], runServer)
 		}
@@ -580,6 +583,18 @@ func run(opts serve.Options) error {
 	syncer.SetFetchers(startup.fetchers)
 	syncer.SetWriteRateTrackers(startup.writeRateTrackers)
 	syncer.SetWriteGQLRateTrackers(startup.writeGQLRateTrackers)
+	archiveService, err := archive.NewService(
+		database, startup.registry, syncer, syncer, nil, nil,
+	)
+	if err != nil {
+		return fmt.Errorf("create archive service: %w", err)
+	}
+	archiveService.SetMaintenanceInterval(cfg.SyncDuration())
+	archiveService.SetWake(syncer.WakeArchive)
+	syncer.SetArchiveService(archiveService)
+	if err := syncer.SetReposWithContext(ctx, repos, false); err != nil {
+		return fmt.Errorf("prepare archive repositories: %w", err)
+	}
 
 	telemetryReporter = telemetry.NewReporterOrDisabled(telemetry.Options{
 		Database: database,
@@ -602,6 +617,7 @@ func run(opts serve.Options) error {
 			PtyOwnerManagerPath: os.Getenv("MIDDLEMAN_PTY_MANAGER"),
 			Telemetry:           telemetryReporter,
 			TokenSources:        tokenSources,
+			Archive:             archiveService,
 		},
 	)
 	srv.AttachHTTPServer(httpSrv, ln)

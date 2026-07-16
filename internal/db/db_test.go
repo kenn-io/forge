@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -39,6 +40,8 @@ func TestOpenAndSchema(t *testing.T) {
 	require := require.New(t)
 	d := openDBWithMigrations(t)
 	tables := []string{
+		"middleman_archive_repos",
+		"middleman_archive_items",
 		"middleman_repos",
 		"middleman_merge_requests",
 		"middleman_mr_events",
@@ -98,6 +101,408 @@ func TestOpenAndSchema(t *testing.T) {
 			require.Equal(column, found)
 		}
 	}
+
+	for table := range map[string]struct{}{
+		"middleman_archive_repos": {},
+		"middleman_archive_items": {},
+	} {
+		var foreignKeyCount int
+		err := d.ReadDB().QueryRow(`
+			SELECT COUNT(*)
+			FROM pragma_foreign_key_list(?)
+			WHERE "table" = 'middleman_repos'
+			  AND "from" = 'repo_id'
+			  AND on_delete = 'CASCADE'`, table,
+		).Scan(&foreignKeyCount)
+		require.NoError(err)
+		require.Equal(1, foreignKeyCount)
+	}
+
+	assertIndexForTest(t, d.ReadDB(), "middleman_archive_repos", "idx_archive_repos_due_work", []string{
+		"operator_state", "next_retry_at", "updated_at", "repo_id",
+	}, false)
+	assertIndexForTest(t, d.ReadDB(), "middleman_archive_items", "idx_archive_items_due_work", []string{
+		"repo_id", "next_retry_at", "provider_created_at", "item_type", "item_number",
+	}, true)
+	assertIndexForTest(t, d.ReadDB(), "middleman_archive_items", "idx_archive_items_stable_order", []string{
+		"repo_id", "provider_created_at", "item_type", "item_number",
+	}, false)
+
+	_, err := d.ReadDB().Exec(`INSERT INTO middleman_repos (
+		id, platform, platform_host, owner, name, repo_path,
+		owner_key, name_key, repo_path_key, created_at
+	) VALUES (
+		1, 'github', 'github.com', 'acme', 'widget', 'acme/widget',
+		'acme', 'widget', 'acme/widget', datetime('now')
+	)`)
+	require.NoError(err)
+
+	for _, tc := range []struct {
+		name      string
+		statement string
+	}{
+		{
+			name: "collection_mode",
+			statement: `INSERT INTO middleman_archive_repos (
+				repo_id, collection_mode, operator_state, created_at, updated_at
+			 ) VALUES (1, 'invalid', 'active', datetime('now'), datetime('now'))`,
+		},
+		{
+			name: "operator_state",
+			statement: `INSERT INTO middleman_archive_repos (
+				repo_id, collection_mode, operator_state, created_at, updated_at
+			 ) VALUES (1, 'discovery', 'invalid', datetime('now'), datetime('now'))`,
+		},
+		{
+			name: "issue_inventory_complete",
+			statement: `INSERT INTO middleman_archive_repos (
+				repo_id, collection_mode, operator_state, issue_inventory_complete, created_at, updated_at
+			 ) VALUES (1, 'discovery', 'active', 2, datetime('now'), datetime('now'))`,
+		},
+		{
+			name: "comments_coverage",
+			statement: `INSERT INTO middleman_archive_repos (
+				repo_id, collection_mode, operator_state, comments_coverage, created_at, updated_at
+			 ) VALUES (1, 'discovery', 'active', 'invalid', datetime('now'), datetime('now'))`,
+		},
+	} {
+		_, err := d.ReadDB().Exec(tc.statement)
+		require.Error(err, tc.name)
+	}
+
+	_, err = d.ReadDB().Exec(`INSERT INTO middleman_archive_repos (
+		repo_id, collection_mode, operator_state, created_at, updated_at
+	) VALUES (1, 'discovery', 'active', datetime('now'), datetime('now'))`)
+	require.NoError(err)
+
+	for _, tc := range []struct {
+		name      string
+		statement string
+	}{
+		{
+			name: "item_type",
+			statement: archiveItemInsertForTest(
+				"invalid", 10, "invalid-type", "active",
+				"pending", "not_applicable", "not_applicable", 0,
+			),
+		},
+		{
+			name: "lifecycle_state",
+			statement: archiveItemInsertForTest(
+				"issue", 11, "invalid-lifecycle", "invalid",
+				"pending", "not_applicable", "not_applicable", 0,
+			),
+		},
+		{
+			name: "comments_status",
+			statement: archiveItemInsertForTest(
+				"issue", 12, "invalid-comments", "active",
+				"invalid", "not_applicable", "not_applicable", 0,
+			),
+		},
+		{
+			name: "attempt_count",
+			statement: archiveItemInsertForTest(
+				"issue", 15, "negative-attempt-count", "active",
+				"pending", "not_applicable", "not_applicable", -1,
+			),
+		},
+		{
+			name: "issue_comments_not_applicable",
+			statement: archiveItemInsertForTest(
+				"issue", 16, "issue-comments-na", "active",
+				"not_applicable", "not_applicable", "not_applicable", 0,
+			),
+		},
+		{
+			name: "merge_request_comments_not_applicable",
+			statement: archiveItemInsertForTest(
+				"merge_request", 19, "mr-comments-na", "active",
+				"not_applicable", "pending", "pending", 0,
+			),
+		},
+	} {
+		_, err := d.ReadDB().Exec(tc.statement)
+		require.Error(err, tc.name)
+	}
+
+	_, err = d.ReadDB().Exec(archiveItemInsertForTest(
+		"issue", 100, "valid-issue", "active",
+		"pending", "not_applicable", "not_applicable", 0,
+	))
+	require.NoError(err)
+
+	for i, status := range []string{
+		"pending",
+		"complete",
+		"unsupported",
+		"failed",
+	} {
+		_, err = d.ReadDB().Exec(`INSERT INTO middleman_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, hydration_snapshot_updated_at,
+			lifecycle_state,
+			comments_status, reviews_status, inline_comments_status
+		) VALUES (1, 'merge_request', ?, ?, datetime('now'), datetime('now'), datetime('now'), 'active', ?, ?, ?)`,
+			i+1, fmt.Sprintf("item-%d", i+1), status, status, status,
+		)
+		require.NoError(err)
+	}
+
+	_, err = d.ReadDB().Exec(`INSERT INTO middleman_archive_items (
+		repo_id, item_type, item_number, provider_item_id,
+		provider_created_at, provider_updated_at, hydration_snapshot_updated_at,
+		lifecycle_state,
+		comments_status, reviews_status, inline_comments_status
+	) VALUES (
+		1, 'merge_request', 1, 'different-provider-id', datetime('now'), datetime('now'), datetime('now'), 'active',
+		'pending', 'pending', 'pending'
+	)`)
+	require.Error(err)
+	_, err = d.ReadDB().Exec(`INSERT INTO middleman_archive_items (
+		repo_id, item_type, item_number, provider_item_id,
+		provider_created_at, provider_updated_at, hydration_snapshot_updated_at,
+		lifecycle_state,
+		comments_status, reviews_status, inline_comments_status
+	) VALUES (
+		1, 'merge_request', 99, 'item-1', datetime('now'), datetime('now'), datetime('now'), 'active',
+		'pending', 'pending', 'pending'
+	)`)
+	require.Error(err)
+}
+
+func TestOpenMigratesHistoricalActivityArchive(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	path := filepath.Join(t.TempDir(), "archive-upgrade.db")
+	var before historicalArchiveUpgradeSnapshotForTest
+
+	openAtVersionForTest(t, path, 38, func(raw *sql.DB) {
+		_, err := raw.Exec(`INSERT INTO middleman_repos (
+			id, platform, platform_host, owner, name, repo_path,
+			owner_key, name_key, repo_path_key, created_at
+		) VALUES (
+			1, 'github', 'github.com', 'acme', 'widget', 'acme/widget',
+			'acme', 'widget', 'acme/widget', datetime('now')
+		)`)
+		require.NoError(err)
+		_, err = raw.Exec(`INSERT INTO middleman_issues (
+			id, repo_id, platform_id, platform_external_id, number,
+			created_at, updated_at, last_activity_at
+		) VALUES (
+			11, 1, 101, 'issue-101', 7,
+			'2026-07-01 10:00:00', '2026-07-02 10:00:00', '2026-07-02 10:00:00'
+		)`)
+		require.NoError(err)
+		_, err = raw.Exec(`INSERT INTO middleman_merge_requests (
+			id, repo_id, platform_id, platform_external_id, number,
+			created_at, updated_at, last_activity_at
+		) VALUES (
+			22, 1, 202, 'merge-request-202', 9,
+			'2026-07-03 10:00:00', '2026-07-04 10:00:00', '2026-07-04 10:00:00'
+		)`)
+		require.NoError(err)
+		_, err = raw.Exec(`INSERT INTO middleman_mr_review_drafts (
+			id, merge_request_id, body, action, created_at, updated_at
+		) VALUES (
+			33, 22, 'keep this draft', 'comment',
+			'2026-07-05 10:00:00', '2026-07-05 10:00:00'
+		)`)
+		require.NoError(err)
+		_, err = raw.Exec(`INSERT INTO middleman_mr_worktree_links (
+			id, merge_request_id, worktree_key, worktree_path,
+			worktree_branch, linked_at
+		) VALUES (
+			44, 22, 'worktree-9', '/tmp/worktree-9', 'feature/archive',
+			'2026-07-05 11:00:00'
+		)`)
+		require.NoError(err)
+		_, err = raw.Exec(`INSERT INTO middleman_stacks (
+			id, repo_id, base_number, name, created_at, updated_at
+		) VALUES (
+			55, 1, 9, 'archive stack',
+			'2026-07-05 12:00:00', '2026-07-05 12:00:00'
+		)`)
+		require.NoError(err)
+		_, err = raw.Exec(`INSERT INTO middleman_stack_members (
+			stack_id, merge_request_id, position
+		) VALUES (55, 22, 1)`)
+		require.NoError(err)
+		_, err = raw.Exec(`INSERT INTO middleman_item_workflow_state (
+			repo_id, item_type, item_number, status, updated_at,
+			updated_source, updated_actor, updated_reason
+		) VALUES
+			(1, 'issue', 7, 'waiting', '2026-07-05 13:00:00', 'local', 'alice', 'triage'),
+			(1, 'pr', 9, 'reviewing', '2026-07-05 14:00:00', 'local', 'alice', 'review')`)
+		require.NoError(err)
+		before = readHistoricalArchiveUpgradeSnapshotForTest(t, raw)
+	})
+
+	d, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(d.Close()) })
+	assert.Equal(before, readHistoricalArchiveUpgradeSnapshotForTest(t, d.ReadDB()))
+
+	var integrityCheck string
+	err = d.ReadDB().QueryRow(`PRAGMA integrity_check`).Scan(&integrityCheck)
+	require.NoError(err)
+	assert.Equal("ok", integrityCheck)
+
+	var foreignKeyViolations int
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&foreignKeyViolations)
+	require.NoError(err)
+	assert.Zero(foreignKeyViolations)
+}
+
+func TestOpenMigratesArchiveStagesWithGuardedParentRevision(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	path := filepath.Join(t.TempDir(), "archive-stage-upgrade.db")
+	updatedAt := "2026-07-14 12:00:00"
+
+	openAtVersionForTest(t, path, 41, func(raw *sql.DB) {
+		_, err := raw.Exec(`INSERT INTO middleman_repos (
+			id, platform, platform_host, owner, name, repo_path,
+			owner_key, name_key, repo_path_key, created_at
+		) VALUES (
+			1, 'github', 'github.com', 'acme', 'widget', 'acme/widget',
+			'acme', 'widget', 'acme/widget', datetime('now')
+		)`)
+		require.NoError(err)
+		_, err = raw.Exec(`INSERT INTO middleman_issues (
+			id, repo_id, platform_id, platform_external_id, number,
+			created_at, updated_at, last_activity_at
+		) VALUES (11, 1, 101, 'issue-101', 7, ?, ?, ?)`, updatedAt, updatedAt, updatedAt)
+		require.NoError(err)
+		_, err = raw.Exec(`INSERT INTO middleman_archive_repos (
+			repo_id, collection_mode, operator_state, created_at, updated_at
+		) VALUES (1, 'full', 'active', ?, ?)`, updatedAt, updatedAt)
+		require.NoError(err)
+		_, err = raw.Exec(`INSERT INTO middleman_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state,
+			comments_status, reviews_status, inline_comments_status
+		) VALUES (
+			1, 'issue', 7, 'issue-101', ?, ?, 'active',
+			'pending', 'not_applicable', 'not_applicable'
+		)`, updatedAt, updatedAt)
+		require.NoError(err)
+		_, err = raw.Exec(`INSERT INTO middleman_archive_dataset_pages (
+			repo_id, item_type, item_number, dataset, snapshot_updated_at,
+			page_number, input_cursor, next_cursor, exhausted,
+			record_count, payload, created_at
+		) VALUES (1, 'issue', 7, 'comments', ?, 0, '', 'next', 0, 1, '[]', ?)`,
+			updatedAt, updatedAt)
+		require.NoError(err)
+	})
+
+	database, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+	var parentRevision, pageRevision int64
+	var hydrationSnapshotUpdatedAt time.Time
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT i.snapshot_revision, p.domain_revision, a.hydration_snapshot_updated_at
+		FROM middleman_issues i
+		JOIN middleman_archive_dataset_pages p
+		  ON p.repo_id = i.repo_id AND p.item_number = i.number
+		JOIN middleman_archive_items a
+		  ON a.repo_id = i.repo_id AND a.item_number = i.number AND a.item_type = 'issue'
+		WHERE i.repo_id = 1 AND i.number = 7`).Scan(
+		&parentRevision, &pageRevision, &hydrationSnapshotUpdatedAt,
+	))
+	assert.Positive(parentRevision)
+	assert.Equal(parentRevision, pageRevision)
+	assert.Equal(updatedAt+" +0000 UTC", hydrationSnapshotUpdatedAt.String())
+
+	issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), 1, 7)
+	require.NoError(err)
+	require.NotNil(issue)
+	_, _, accepted, err := database.UpsertIssueSnapshotWithLabels(t.Context(), issue)
+	require.NoError(err)
+	require.True(accepted)
+	_, err = database.CommitArchiveDatasetPage(t.Context(), ArchiveDatasetPage{
+		ArchiveDatasetKey: ArchiveDatasetKey{
+			RepoID: 1, ItemType: ArchiveItemTypeIssue, ItemNumber: 7,
+			Dataset: ArchiveDatasetComments, SnapshotUpdatedAt: issue.UpdatedAt,
+			DomainRevision: pageRevision,
+		},
+		InputCursor: "next", Exhausted: true, Payload: []byte(`[]`),
+		MaxPages: 2, MaxRecords: 2, MaxBytes: 32, Now: issue.UpdatedAt.Add(time.Minute),
+	})
+	require.Error(err)
+	assert.Contains(err.Error(), "domain parent revision changed")
+}
+
+func TestHistoricalActivityArchiveDownMigrationKeepsDomainRows(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	path := filepath.Join(t.TempDir(), "archive-down.db")
+
+	d, err := Open(path)
+	require.NoError(err)
+	_, err = d.WriteDB().Exec(`
+		INSERT INTO middleman_repos (
+			id, platform, platform_host, owner, name, repo_path,
+			owner_key, name_key, repo_path_key, created_at
+		) VALUES (
+			1, 'github', 'github.com', 'acme', 'widget', 'acme/widget',
+			'acme', 'widget', 'acme/widget', datetime('now')
+		);
+		INSERT INTO middleman_issues (
+			id, repo_id, platform_id, platform_external_id, number,
+			created_at, updated_at, last_activity_at
+		) VALUES (
+			11, 1, 101, 'issue-101', 7,
+			datetime('now'), datetime('now'), datetime('now')
+		);
+		INSERT INTO middleman_merge_requests (
+			id, repo_id, platform_id, platform_external_id, number,
+			created_at, updated_at, last_activity_at
+		) VALUES (
+			22, 1, 202, 'merge-request-202', 9,
+			datetime('now'), datetime('now'), datetime('now')
+		);
+		INSERT INTO middleman_archive_repos (
+			repo_id, collection_mode, operator_state, created_at, updated_at
+		) VALUES (1, 'discovery', 'active', datetime('now'), datetime('now'));
+		INSERT INTO middleman_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, hydration_snapshot_updated_at,
+			lifecycle_state,
+			comments_status, reviews_status, inline_comments_status
+		) VALUES (
+			1, 'issue', 7, 'issue-101', datetime('now'), datetime('now'), datetime('now'),
+			'active', 'pending', 'not_applicable', 'not_applicable'
+		);
+	`)
+	require.NoError(err)
+	require.NoError(d.Close())
+
+	require.NoError(migrateToVersionForTest(t, path, 38))
+	require.ErrorIs(migrateToVersionForTest(t, path, 38), migrate.ErrNoChange)
+
+	raw, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)")
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(raw.Close()) })
+
+	assert.False(tableExistsForTest(t, raw, "middleman_archive_items"))
+	assert.False(tableExistsForTest(t, raw, "middleman_archive_repos"))
+	var issueCount, mergeRequestCount int
+	require.NoError(raw.QueryRow(`SELECT COUNT(*) FROM middleman_issues`).Scan(&issueCount))
+	require.NoError(raw.QueryRow(`SELECT COUNT(*) FROM middleman_merge_requests`).Scan(&mergeRequestCount))
+	assert.Equal(1, issueCount)
+	assert.Equal(1, mergeRequestCount)
+
+	var integrityCheck string
+	require.NoError(raw.QueryRow(`PRAGMA integrity_check`).Scan(&integrityCheck))
+	assert.Equal("ok", integrityCheck)
+	var foreignKeyViolations int
+	require.NoError(raw.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&foreignKeyViolations))
+	assert.Zero(foreignKeyViolations)
 }
 
 func TestOpenMigratesKanbanRowsToItemWorkflowState(t *testing.T) {
@@ -1022,6 +1427,233 @@ func tableExistsForTest(t *testing.T, db *sql.DB, name string) bool {
 	return count > 0
 }
 
+func assertIndexForTest(
+	t *testing.T,
+	db *sql.DB,
+	table string,
+	index string,
+	expectedColumns []string,
+	partial bool,
+) {
+	t.Helper()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	var actualPartial bool
+	err := db.QueryRow(`
+		SELECT partial
+		FROM pragma_index_list(?)
+		WHERE name = ?`, table, index,
+	).Scan(&actualPartial)
+	require.NoError(err)
+	assert.Equal(partial, actualPartial)
+
+	rows, err := db.Query(`SELECT name FROM pragma_index_info(?) ORDER BY seqno`, index)
+	require.NoError(err)
+	defer rows.Close()
+
+	actualColumns := make([]string, 0, len(expectedColumns))
+	for rows.Next() {
+		var column string
+		require.NoError(rows.Scan(&column))
+		actualColumns = append(actualColumns, column)
+	}
+	require.NoError(rows.Err())
+	assert.Equal(expectedColumns, actualColumns)
+}
+
+func archiveItemInsertForTest(
+	itemType string,
+	itemNumber int,
+	providerItemID string,
+	lifecycleState string,
+	commentsStatus string,
+	reviewsStatus string,
+	inlineCommentsStatus string,
+	attemptCount int,
+) string {
+	return fmt.Sprintf(`INSERT INTO middleman_archive_items (
+		repo_id, item_type, item_number, provider_item_id,
+		provider_created_at, provider_updated_at, hydration_snapshot_updated_at,
+		lifecycle_state,
+		comments_status, reviews_status, inline_comments_status, attempt_count
+	) VALUES (
+		1, '%s', %d, '%s', datetime('now'), datetime('now'), datetime('now'), '%s',
+		'%s', '%s', '%s', %d
+	)`,
+		itemType,
+		itemNumber,
+		providerItemID,
+		lifecycleState,
+		commentsStatus,
+		reviewsStatus,
+		inlineCommentsStatus,
+		attemptCount,
+	)
+}
+
+type historicalArchiveItemSnapshotForTest struct {
+	ID                 int64
+	RepoID             int64
+	PlatformID         int64
+	PlatformExternalID string
+	Number             int
+	CreatedAt          string
+	UpdatedAt          string
+	LastActivityAt     string
+}
+
+type historicalArchiveDraftSnapshotForTest struct {
+	ID             int64
+	MergeRequestID int64
+	Body           string
+	Action         string
+	CreatedAt      string
+	UpdatedAt      string
+}
+
+type historicalArchiveWorktreeSnapshotForTest struct {
+	ID             int64
+	MergeRequestID int64
+	WorktreeKey    string
+	WorktreePath   string
+	WorktreeBranch string
+	LinkedAt       string
+}
+
+type historicalArchiveStackSnapshotForTest struct {
+	ID             int64
+	RepoID         int64
+	BaseNumber     int
+	Name           string
+	CreatedAt      string
+	UpdatedAt      string
+	MemberStackID  int64
+	MergeRequestID int64
+	Position       int
+}
+
+type historicalArchiveWorkflowSnapshotForTest struct {
+	RepoID        int64
+	ItemType      string
+	ItemNumber    int
+	Status        string
+	UpdatedAt     string
+	UpdatedSource string
+	UpdatedActor  string
+	UpdatedReason string
+}
+
+type historicalArchiveUpgradeSnapshotForTest struct {
+	Issue        historicalArchiveItemSnapshotForTest
+	MergeRequest historicalArchiveItemSnapshotForTest
+	Draft        historicalArchiveDraftSnapshotForTest
+	Worktree     historicalArchiveWorktreeSnapshotForTest
+	Stack        historicalArchiveStackSnapshotForTest
+	Workflows    []historicalArchiveWorkflowSnapshotForTest
+}
+
+func readHistoricalArchiveUpgradeSnapshotForTest(
+	t *testing.T,
+	db *sql.DB,
+) historicalArchiveUpgradeSnapshotForTest {
+	t.Helper()
+	require := require.New(t)
+	var snapshot historicalArchiveUpgradeSnapshotForTest
+
+	for query, item := range map[string]*historicalArchiveItemSnapshotForTest{
+		`SELECT
+			id, repo_id, platform_id, platform_external_id, number,
+			CAST(created_at AS TEXT), CAST(updated_at AS TEXT), CAST(last_activity_at AS TEXT)
+			FROM middleman_issues`: &snapshot.Issue,
+		`SELECT
+			id, repo_id, platform_id, platform_external_id, number,
+			CAST(created_at AS TEXT), CAST(updated_at AS TEXT), CAST(last_activity_at AS TEXT)
+			FROM middleman_merge_requests`: &snapshot.MergeRequest,
+	} {
+		err := db.QueryRow(query).Scan(
+			&item.ID,
+			&item.RepoID,
+			&item.PlatformID,
+			&item.PlatformExternalID,
+			&item.Number,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+			&item.LastActivityAt,
+		)
+		require.NoError(err)
+	}
+
+	err := db.QueryRow(`SELECT
+		id, merge_request_id, body, action,
+		CAST(created_at AS TEXT), CAST(updated_at AS TEXT)
+		FROM middleman_mr_review_drafts`).Scan(
+		&snapshot.Draft.ID,
+		&snapshot.Draft.MergeRequestID,
+		&snapshot.Draft.Body,
+		&snapshot.Draft.Action,
+		&snapshot.Draft.CreatedAt,
+		&snapshot.Draft.UpdatedAt,
+	)
+	require.NoError(err)
+
+	err = db.QueryRow(`SELECT
+		id, merge_request_id, worktree_key, worktree_path, worktree_branch,
+		CAST(linked_at AS TEXT)
+		FROM middleman_mr_worktree_links`).Scan(
+		&snapshot.Worktree.ID,
+		&snapshot.Worktree.MergeRequestID,
+		&snapshot.Worktree.WorktreeKey,
+		&snapshot.Worktree.WorktreePath,
+		&snapshot.Worktree.WorktreeBranch,
+		&snapshot.Worktree.LinkedAt,
+	)
+	require.NoError(err)
+
+	err = db.QueryRow(`SELECT
+		s.id, s.repo_id, s.base_number, s.name,
+		CAST(s.created_at AS TEXT), CAST(s.updated_at AS TEXT),
+		sm.stack_id, sm.merge_request_id, sm.position
+		FROM middleman_stacks s
+		JOIN middleman_stack_members sm ON sm.stack_id = s.id`).Scan(
+		&snapshot.Stack.ID,
+		&snapshot.Stack.RepoID,
+		&snapshot.Stack.BaseNumber,
+		&snapshot.Stack.Name,
+		&snapshot.Stack.CreatedAt,
+		&snapshot.Stack.UpdatedAt,
+		&snapshot.Stack.MemberStackID,
+		&snapshot.Stack.MergeRequestID,
+		&snapshot.Stack.Position,
+	)
+	require.NoError(err)
+
+	rows, err := db.Query(`SELECT
+		repo_id, item_type, item_number, status, CAST(updated_at AS TEXT),
+		updated_source, updated_actor, updated_reason
+		FROM middleman_item_workflow_state
+		ORDER BY item_type, item_number`)
+	require.NoError(err)
+	defer rows.Close()
+	for rows.Next() {
+		var workflow historicalArchiveWorkflowSnapshotForTest
+		require.NoError(rows.Scan(
+			&workflow.RepoID,
+			&workflow.ItemType,
+			&workflow.ItemNumber,
+			&workflow.Status,
+			&workflow.UpdatedAt,
+			&workflow.UpdatedSource,
+			&workflow.UpdatedActor,
+			&workflow.UpdatedReason,
+		))
+		snapshot.Workflows = append(snapshot.Workflows, workflow)
+	}
+	require.NoError(rows.Err())
+
+	return snapshot
+}
+
 func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*sql.DB)) {
 	t.Helper()
 	require := require.New(t)
@@ -1043,6 +1675,28 @@ func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*
 	}
 	seed(raw)
 	require.NoError(raw.Close())
+}
+
+func migrateToVersionForTest(t *testing.T, dbPath string, version uint) error {
+	t.Helper()
+	require := require.New(t)
+
+	raw, err := sql.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)")
+	require.NoError(err)
+	sourceDriver, err := iofs.New(migrationFiles, "migrations")
+	require.NoError(err)
+	databaseDriver, err := migratesqlite.WithInstance(raw, &migratesqlite.Config{
+		MigrationsTable: migrationTableName,
+	})
+	require.NoError(err)
+	m, err := migrate.NewWithInstance("iofs", sourceDriver, "sqlite", databaseDriver)
+	require.NoError(err)
+
+	migrationErr := m.Migrate(version)
+	sourceErr, databaseErr := m.Close()
+	require.NoError(sourceErr)
+	require.NoError(databaseErr)
+	return migrationErr
 }
 
 func openSchemaVersion4DBForTest(t *testing.T) (string, *sql.DB) {

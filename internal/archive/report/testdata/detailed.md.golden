@@ -1,0 +1,59 @@
+# Activity archive
+
+UTC range: 2026-06-01T00:00:00Z to 2026-06-02T00:00:00Z (exclusive)
+
+## Totals
+
+- Issues opened: 1
+- Pull or merge requests opened: 0
+- Ordinary comments added: 1
+- Reviews submitted: 0
+- Inline review comments added: 0
+- Total activity: 2
+
+## Repositories
+
+### github · github.example · acme/widget
+
+Status: current
+
+- Issues opened: 1
+- Pull or merge requests opened: 0
+- Ordinary comments added: 1
+- Reviews submitted: 0
+- Inline review comments added: 0
+- Total activity: 2
+- Comment coverage: supported
+- Review coverage: supported
+- Inline comment coverage: supported
+
+## Contributors
+
+| Provider | Host | Login | Issues | Pull/Merge Requests | Comments | Reviews | Inline Comments | Total |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| github | github.example | alice | 1 | 0 | 0 | 0 | 0 | 1 |
+| github | github.example | (unknown) | 0 | 0 | 1 | 0 | 0 | 1 |
+
+## Activity
+
+### Issue #7: Synthetic issue
+
+- Repository: github · github.example · acme/widget
+- Author: alice
+- Time: 2026-06-01T01:00:00Z
+- URL: https://github.example/acme/widget/issues/7
+
+```
+Issue body
+```
+
+### Ordinary comment on #7: Synthetic issue
+
+- Repository: github · github.example · acme/widget
+- Author: (unknown)
+- Time: 2026-06-01T02:00:00Z
+- URL: https://github.example/acme/widget/issues/7#comment-9
+
+```
+Comment body
+```

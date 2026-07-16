@@ -121,6 +121,24 @@ func (r *Registry) IssueReader(kind Kind, host string) (IssueReader, error) {
 	return reader, nil
 }
 
+func (r *Registry) ArchiveReader(kind Kind, host string) (ArchiveReader, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+
+	reader, ok := provider.(ArchiveReader)
+	if !ok || !provider.Capabilities().Archive.HasHistoricalInventory() {
+		return nil, UnsupportedCapability(kind, host, "archive_reader")
+	}
+	return &validatingArchiveReader{
+		reader: reader,
+		kind:   kind,
+		host:   host,
+		caps:   provider.Capabilities().Archive,
+	}, nil
+}
+
 func (r *Registry) LabelReader(kind Kind, host string) (LabelReader, error) {
 	provider, err := r.Provider(kind, host)
 	if err != nil {

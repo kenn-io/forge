@@ -21,6 +21,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/archive/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause historical archives */
+        post: operations["pause-archives"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/archive/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get historical archive activity report */
+        get: operations["get-archive-report"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/archive/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start historical archives */
+        post: operations["start-archives"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/archive/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List historical archive status */
+        get: operations["list-archive-status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/docs/browse": {
         parameters: {
             query?: never;
@@ -4430,6 +4498,153 @@ export interface components {
             body: string;
             expected_head_sha?: string;
         };
+        ArchiveCoverageResponse: {
+            /** @enum {string} */
+            comments: "unknown" | "supported" | "unsupported";
+            /** @enum {string} */
+            inline_comments: "unknown" | "supported" | "unsupported";
+            /** @enum {string} */
+            reviews: "unknown" | "supported" | "unsupported";
+        };
+        ArchiveFailureResponse: {
+            code: string;
+            /** Format: date-time */
+            next_retry_at?: string;
+        };
+        ArchiveMutationBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ArchiveMutationBody.json
+             */
+            readonly $schema?: string;
+            all: boolean;
+            repositories?: components["schemas"]["ArchiveRepositoryRef"][] | null;
+        };
+        ArchiveProgressCountsResponse: {
+            /** Format: int64 */
+            complete_items: number;
+            /** Format: int64 */
+            failed_items: number;
+            /** Format: int64 */
+            inaccessible_items: number;
+            /** Format: int64 */
+            items: number;
+            /** Format: int64 */
+            pending_items: number;
+            /** Format: int64 */
+            unsupported_items: number;
+        };
+        ArchiveReportActivityResponse: {
+            author: string;
+            body: string;
+            /** Format: int64 */
+            item_number: number;
+            /** @enum {string} */
+            kind: "issue" | "merge_request" | "ordinary_comment" | "review" | "inline_review_comment";
+            /** Format: date-time */
+            occurred_at: string;
+            provider_external_id: string;
+            repository: components["schemas"]["ArchiveRepositoryRef"];
+            title: string;
+            url: string;
+        };
+        ArchiveReportContributorResponse: {
+            counts: components["schemas"]["ArchiveReportCountsResponse"];
+            login: string;
+            platform_host: string;
+            provider: string;
+        };
+        ArchiveReportCountsResponse: {
+            /** Format: int64 */
+            inline_review_comments: number;
+            /** Format: int64 */
+            issues_opened: number;
+            /** Format: int64 */
+            merge_requests_opened: number;
+            /** Format: int64 */
+            ordinary_comments: number;
+            /** Format: int64 */
+            reviews_submitted: number;
+        };
+        ArchiveReportCoverageResponse: {
+            active_phases: string[] | null;
+            /** Format: int64 */
+            archived_items: number;
+            /** Format: date-time */
+            budget_wait_until?: string;
+            /** @enum {string} */
+            collection_mode: "discovery" | "full";
+            /** @enum {string} */
+            comments: "unknown" | "supported" | "unsupported";
+            /** Format: int64 */
+            inaccessible_items: number;
+            /** Format: date-time */
+            initial_completed_at?: string;
+            /** @enum {string} */
+            inline_comments: "unknown" | "supported" | "unsupported";
+            /** Format: date-time */
+            maintenance_succeeded_at?: string;
+            /** @enum {string} */
+            operator_state: "active" | "paused";
+            /** @enum {string} */
+            reviews: "unknown" | "supported" | "unsupported";
+            /** @enum {string} */
+            status: "running" | "waiting_for_budget" | "current" | "partial" | "paused" | "blocked";
+            /** Format: int64 */
+            unsupported_items: number;
+        };
+        ArchiveReportRepositoryResponse: {
+            counts: components["schemas"]["ArchiveReportCountsResponse"];
+            coverage: components["schemas"]["ArchiveReportCoverageResponse"];
+            repository: components["schemas"]["ArchiveRepositoryRef"];
+        };
+        ArchiveReportResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ArchiveReportResponse.json
+             */
+            readonly $schema?: string;
+            activity?: components["schemas"]["ArchiveReportActivityResponse"][] | null;
+            contributors: components["schemas"]["ArchiveReportContributorResponse"][] | null;
+            /** Format: date-time */
+            end: string;
+            repositories: components["schemas"]["ArchiveReportRepositoryResponse"][] | null;
+            /** Format: date-time */
+            start: string;
+            totals: components["schemas"]["ArchiveReportCountsResponse"];
+        };
+        ArchiveRepositoryRef: {
+            name: string;
+            owner: string;
+            platform_host: string;
+            provider: string;
+            repo_path: string;
+        };
+        ArchiveStatusResponse: {
+            active_phases: ("issue_inventory" | "merge_request_inventory" | "hydration" | "prompt_maintenance")[] | null;
+            /** Format: date-time */
+            budget_wait_until?: string;
+            /** @enum {string} */
+            collection_mode: "discovery" | "full";
+            counts: components["schemas"]["ArchiveProgressCountsResponse"];
+            coverage: components["schemas"]["ArchiveCoverageResponse"];
+            failure?: components["schemas"]["ArchiveFailureResponse"];
+            /** Format: date-time */
+            initial_completed_at?: string;
+            /** Format: date-time */
+            initial_started_at?: string;
+            /** Format: date-time */
+            maintenance_succeeded_at?: string;
+            /** Format: date-time */
+            maintenance_watermark?: string;
+            /** @enum {string} */
+            operator_state: "active" | "paused";
+            repository: components["schemas"]["ArchiveRepositoryRef"];
+            /** @enum {string} */
+            status: "running" | "waiting_for_budget" | "current" | "partial" | "paused" | "blocked";
+        };
         AttachmentMeta: {
             filename: string;
             mime_type: string;
@@ -7562,6 +7777,141 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActivityResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "pause-archives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArchiveMutationBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveStatusResponse"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-archive-report": {
+        parameters: {
+            query: {
+                /** @description Inclusive UTC RFC3339 boundary. */
+                start: string;
+                /** @description Exclusive UTC RFC3339 boundary. */
+                end: string;
+                /** @description Repeated provider|platform_host/repo_path filters. */
+                repo?: string[] | null;
+                verbose?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveReportResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "start-archives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArchiveMutationBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveStatusResponse"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-archive-status": {
+        parameters: {
+            query?: {
+                /** @description Repeated provider|platform_host/repo_path filters. */
+                repo?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveStatusResponse"][] | null;
                 };
             };
             /** @description Error */
@@ -17280,6 +17630,20 @@ export const pathsWorkspacesIdFilePreviewGetParametersQueryWhitespaceValues: Rea
 export const pathsWorkspacesIdFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workspaces/{id}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const activityTime_rangeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Activity"]["time_range"]> = ["24h", "7d", "30d", "90d"];
 export const activityView_modeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Activity"]["view_mode"]> = ["flat", "threaded"];
+export const archiveCoverageResponseCommentsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveCoverageResponse"]["comments"]> = ["unknown", "supported", "unsupported"];
+export const archiveCoverageResponseInline_commentsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveCoverageResponse"]["inline_comments"]> = ["unknown", "supported", "unsupported"];
+export const archiveCoverageResponseReviewsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveCoverageResponse"]["reviews"]> = ["unknown", "supported", "unsupported"];
+export const archiveReportActivityResponseKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportActivityResponse"]["kind"]> = ["issue", "merge_request", "ordinary_comment", "review", "inline_review_comment"];
+export const archiveReportCoverageResponseCollection_modeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["collection_mode"]> = ["discovery", "full"];
+export const archiveReportCoverageResponseCommentsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["comments"]> = ["unknown", "supported", "unsupported"];
+export const archiveReportCoverageResponseInline_commentsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["inline_comments"]> = ["unknown", "supported", "unsupported"];
+export const archiveReportCoverageResponseOperator_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["operator_state"]> = ["active", "paused"];
+export const archiveReportCoverageResponseReviewsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["reviews"]> = ["unknown", "supported", "unsupported"];
+export const archiveReportCoverageResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["status"]> = ["running", "waiting_for_budget", "current", "partial", "paused", "blocked"];
+export const archiveStatusResponseActive_phasesValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveStatusResponse"]["active_phases"]> = ["issue_inventory", "merge_request_inventory", "hydration", "prompt_maintenance"];
+export const archiveStatusResponseCollection_modeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveStatusResponse"]["collection_mode"]> = ["discovery", "full"];
+export const archiveStatusResponseOperator_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveStatusResponse"]["operator_state"]> = ["active", "paused"];
+export const archiveStatusResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveStatusResponse"]["status"]> = ["running", "waiting_for_budget", "current", "partial", "paused", "blocked"];
 export const issueWorkflowStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Issue"]["WorkflowStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const issueResponseWorkflowStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueResponse"]["WorkflowStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];

@@ -85,6 +85,303 @@ type RepoProviderMetadata struct {
 	DefaultBranch  string
 }
 
+type ArchiveCollectionMode string
+
+const (
+	ArchiveCollectionModeDiscovery ArchiveCollectionMode = "discovery"
+	ArchiveCollectionModeFull      ArchiveCollectionMode = "full"
+)
+
+type ArchiveOperatorState string
+
+const (
+	ArchiveOperatorStateActive ArchiveOperatorState = "active"
+	ArchiveOperatorStatePaused ArchiveOperatorState = "paused"
+)
+
+type ArchiveItemType string
+
+const (
+	ArchiveItemTypeIssue        ArchiveItemType = "issue"
+	ArchiveItemTypeMergeRequest ArchiveItemType = "merge_request"
+)
+
+type ArchiveLifecycleState string
+
+const (
+	ArchiveLifecycleStateActive          ArchiveLifecycleState = "active"
+	ArchiveLifecycleStateRemovedUpstream ArchiveLifecycleState = "removed_upstream"
+	ArchiveLifecycleStateInaccessible    ArchiveLifecycleState = "inaccessible"
+)
+
+type ArchiveDatasetStatus string
+
+const (
+	ArchiveDatasetStatusPending       ArchiveDatasetStatus = "pending"
+	ArchiveDatasetStatusComplete      ArchiveDatasetStatus = "complete"
+	ArchiveDatasetStatusUnsupported   ArchiveDatasetStatus = "unsupported"
+	ArchiveDatasetStatusFailed        ArchiveDatasetStatus = "failed"
+	ArchiveDatasetStatusNotApplicable ArchiveDatasetStatus = "not_applicable"
+)
+
+type ArchiveDataset string
+
+const (
+	ArchiveDatasetComments       ArchiveDataset = "comments"
+	ArchiveDatasetReviews        ArchiveDataset = "reviews"
+	ArchiveDatasetInlineComments ArchiveDataset = "inline_comments"
+)
+
+type ArchiveErrorCode string
+
+const (
+	ArchiveErrorCodeBudgetExhausted      ArchiveErrorCode = "budget_exhausted"
+	ArchiveErrorCodeAuthentication       ArchiveErrorCode = "authentication_failed"
+	ArchiveErrorCodeRepoBlocked          ArchiveErrorCode = "repository_blocked"
+	ArchiveErrorCodeTransient            ArchiveErrorCode = "transient"
+	ArchiveErrorCodeConfigurationRemoved ArchiveErrorCode = "configuration_removed"
+)
+
+type ArchiveCoverage string
+
+const (
+	ArchiveCoverageUnknown     ArchiveCoverage = "unknown"
+	ArchiveCoverageSupported   ArchiveCoverage = "supported"
+	ArchiveCoverageUnsupported ArchiveCoverage = "unsupported"
+)
+
+type ArchiveCoverageSet struct {
+	Comments       ArchiveCoverage
+	Reviews        ArchiveCoverage
+	InlineComments ArchiveCoverage
+}
+
+type ArchiveRefreshReason string
+
+const (
+	ArchiveRefreshReasonInitial ArchiveRefreshReason = "initial"
+	ArchiveRefreshReasonPrompt  ArchiveRefreshReason = "prompt"
+)
+
+type ArchiveRepoState struct {
+	RepoID                        int64
+	CollectionMode                ArchiveCollectionMode
+	OperatorState                 ArchiveOperatorState
+	IssueCursor                   *string
+	IssueInventoryComplete        bool
+	MergeRequestCursor            *string
+	MergeRequestInventoryComplete bool
+	InitialStartedAt              *time.Time
+	InitialCompletedAt            *time.Time
+	MaintenanceWatermark          *time.Time
+	MaintenanceSucceededAt        *time.Time
+	PromptScanStartedAt           *time.Time
+	PromptSince                   *time.Time
+	PromptIssueCursor             *string
+	PromptIssueComplete           bool
+	PromptMergeRequestCursor      *string
+	PromptMergeRequestComplete    bool
+	CommentsCoverage              ArchiveCoverage
+	ReviewsCoverage               ArchiveCoverage
+	InlineCommentsCoverage        ArchiveCoverage
+	LastErrorCode                 *string
+	LastErrorDetail               *string
+	NextRetryAt                   *time.Time
+	CreatedAt                     time.Time
+	UpdatedAt                     time.Time
+}
+
+// ArchiveRepoStateNotFoundError reports repository IDs that do not satisfy an
+// archive lifecycle operation's durable precondition.
+type ArchiveRepoStateNotFoundError struct {
+	RepoIDs []int64
+}
+
+func (e *ArchiveRepoStateNotFoundError) Error() string {
+	return fmt.Sprintf("archive repository state not found for repo IDs %v", e.RepoIDs)
+}
+
+type ArchiveItemState struct {
+	RepoID                     int64
+	ItemType                   ArchiveItemType
+	ItemNumber                 int
+	ProviderItemID             string
+	ProviderCreatedAt          time.Time
+	ProviderUpdatedAt          time.Time
+	HydrationSnapshotUpdatedAt *time.Time
+	LifecycleState             ArchiveLifecycleState
+	RefreshReason              ArchiveRefreshReason
+	CommentsStatus             ArchiveDatasetStatus
+	ReviewsStatus              ArchiveDatasetStatus
+	InlineCommentsStatus       ArchiveDatasetStatus
+	MirroredProviderUpdatedAt  *time.Time
+	AttemptCount               int
+	NextRetryAt                *time.Time
+	LastErrorCode              *string
+	LastErrorDetail            *string
+	HydratedAt                 *time.Time
+}
+
+type ClaimArchiveItemOpts struct {
+	RepoIDs []int64
+	Now     time.Time
+}
+
+type ArchiveItemFailure struct {
+	RepoID      int64
+	ItemType    ArchiveItemType
+	ItemNumber  int
+	Datasets    []ArchiveDataset
+	NextRetryAt *time.Time
+	Code        ArchiveErrorCode
+	Detail      string
+}
+
+// ArchiveDatasetStatuses is the indivisible final coverage state written with
+// a successful item hydration.
+type ArchiveDatasetStatuses struct {
+	Comments       ArchiveDatasetStatus
+	Reviews        ArchiveDatasetStatus
+	InlineComments ArchiveDatasetStatus
+}
+
+type ArchiveDatasetKey struct {
+	RepoID            int64
+	ItemType          ArchiveItemType
+	ItemNumber        int
+	Dataset           ArchiveDataset
+	SnapshotUpdatedAt time.Time
+	DomainRevision    int64
+}
+
+type ArchiveDatasetStage struct {
+	SnapshotUpdatedAt *time.Time
+	NextCursor        string
+	Exhausted         bool
+	PageCount         int
+	Records           int
+	Bytes             int64
+}
+
+type ArchiveDatasetPage struct {
+	ArchiveDatasetKey
+	InputCursor string
+	NextCursor  string
+	Exhausted   bool
+	RecordCount int
+	Payload     []byte
+	MaxPages    int
+	MaxRecords  int
+	MaxBytes    int64
+	Now         time.Time
+}
+
+type ArchiveDatasetLimitError struct {
+	Dataset ArchiveDataset
+	Limit   string
+	Value   int64
+	Max     int64
+}
+
+func (e *ArchiveDatasetLimitError) Error() string {
+	return fmt.Sprintf("archive %s dataset exceeds %s limit: %d > %d", e.Dataset, e.Limit, e.Value, e.Max)
+}
+
+// IssueSnapshot and MergeRequestSnapshot contain provider-owned content from
+// one read. Complete flags are explicit so partial pagination can never erase
+// a previously complete family.
+type IssueSnapshot struct {
+	Issue                    Issue
+	Labels                   []Label
+	OrdinaryComments         []IssueEvent
+	OrdinaryCommentsComplete bool
+	DerivedFields            *IssueDerivedFields
+}
+
+type MergeRequestSnapshot struct {
+	MergeRequest             MergeRequest
+	Labels                   []Label
+	OrdinaryComments         []MREvent
+	OrdinaryCommentsComplete bool
+	SubmittedReviews         []MREvent
+	SubmittedReviewsComplete bool
+	InlineComments           []MREvent
+	ReviewThreads            []MRReviewThread
+	InlineCommentsComplete   bool
+	DerivedFields            *MRDerivedFields
+}
+
+type ArchiveInventoryIssue struct {
+	Snapshot       IssueSnapshot
+	ProviderItemID string
+	CommentsStatus ArchiveDatasetStatus
+}
+
+type ArchiveInventoryMergeRequest struct {
+	Snapshot             MergeRequestSnapshot
+	ProviderItemID       string
+	CommentsStatus       ArchiveDatasetStatus
+	ReviewsStatus        ArchiveDatasetStatus
+	InlineCommentsStatus ArchiveDatasetStatus
+}
+
+type ArchiveInventoryCommit struct {
+	RepoID        int64
+	ItemType      ArchiveItemType
+	RefreshReason ArchiveRefreshReason
+	Issues        []ArchiveInventoryIssue
+	MergeRequests []ArchiveInventoryMergeRequest
+	NextCursor    string
+	Exhausted     bool
+	Now           time.Time
+}
+
+type ArchiveStatus string
+
+const (
+	ArchiveStatusRunning          ArchiveStatus = "running"
+	ArchiveStatusWaitingForBudget ArchiveStatus = "waiting_for_budget"
+	ArchiveStatusCurrent          ArchiveStatus = "current"
+	ArchiveStatusPartial          ArchiveStatus = "partial"
+	ArchiveStatusPaused           ArchiveStatus = "paused"
+	ArchiveStatusBlocked          ArchiveStatus = "blocked"
+)
+
+type ArchivePhase string
+
+const (
+	ArchivePhaseIssueInventory        ArchivePhase = "issue_inventory"
+	ArchivePhaseMergeRequestInventory ArchivePhase = "merge_request_inventory"
+	ArchivePhaseHydration             ArchivePhase = "hydration"
+	ArchivePhasePromptMaintenance     ArchivePhase = "prompt_maintenance"
+)
+
+type ArchiveProgressOpts struct {
+	RepoIDs []int64
+	Now     time.Time
+}
+
+type ArchiveProgressCounts struct {
+	ItemCount         int
+	CompleteItemCount int
+	PendingItemCount  int
+	FailedItemCount   int
+	// UnsupportedItemCount counts items with at least one unsupported dataset.
+	UnsupportedItemCount  int
+	InaccessibleItemCount int
+	DueItemCount          int
+}
+
+// ArchiveRepoProgress is derived from durable repository and item state. It is
+// intentionally separate from ArchiveRepoState, which represents stored data.
+type ArchiveRepoProgress struct {
+	RepoID          int64
+	Status          ArchiveStatus
+	ActivePhases    []ArchivePhase
+	Counts          ArchiveProgressCounts
+	BudgetWaitUntil *time.Time
+}
+
 type RepoSummary struct {
 	Repo                 Repo
 	CachedPRCount        int
@@ -172,6 +469,7 @@ type RepoIssueHeadline struct {
 
 type MergeRequest struct {
 	ID                 int64
+	SnapshotRevision   int64 `json:"-"`
 	RepoID             int64
 	PlatformID         int64
 	PlatformExternalID string
@@ -441,6 +739,7 @@ type RepoFilter struct {
 
 type Issue struct {
 	ID                 int64
+	SnapshotRevision   int64 `json:"-"`
 	RepoID             int64
 	PlatformID         int64
 	PlatformExternalID string

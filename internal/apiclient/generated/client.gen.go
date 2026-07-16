@@ -59,6 +59,315 @@ func (e ActivityViewMode) Valid() bool {
 	}
 }
 
+// Defines values for ArchiveCoverageResponseComments.
+const (
+	ArchiveCoverageResponseCommentsSupported   ArchiveCoverageResponseComments = "supported"
+	ArchiveCoverageResponseCommentsUnknown     ArchiveCoverageResponseComments = "unknown"
+	ArchiveCoverageResponseCommentsUnsupported ArchiveCoverageResponseComments = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveCoverageResponseComments enum.
+func (e ArchiveCoverageResponseComments) Valid() bool {
+	switch e {
+	case ArchiveCoverageResponseCommentsSupported:
+		return true
+	case ArchiveCoverageResponseCommentsUnknown:
+		return true
+	case ArchiveCoverageResponseCommentsUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveCoverageResponseInlineComments.
+const (
+	ArchiveCoverageResponseInlineCommentsSupported   ArchiveCoverageResponseInlineComments = "supported"
+	ArchiveCoverageResponseInlineCommentsUnknown     ArchiveCoverageResponseInlineComments = "unknown"
+	ArchiveCoverageResponseInlineCommentsUnsupported ArchiveCoverageResponseInlineComments = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveCoverageResponseInlineComments enum.
+func (e ArchiveCoverageResponseInlineComments) Valid() bool {
+	switch e {
+	case ArchiveCoverageResponseInlineCommentsSupported:
+		return true
+	case ArchiveCoverageResponseInlineCommentsUnknown:
+		return true
+	case ArchiveCoverageResponseInlineCommentsUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveCoverageResponseReviews.
+const (
+	ArchiveCoverageResponseReviewsSupported   ArchiveCoverageResponseReviews = "supported"
+	ArchiveCoverageResponseReviewsUnknown     ArchiveCoverageResponseReviews = "unknown"
+	ArchiveCoverageResponseReviewsUnsupported ArchiveCoverageResponseReviews = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveCoverageResponseReviews enum.
+func (e ArchiveCoverageResponseReviews) Valid() bool {
+	switch e {
+	case ArchiveCoverageResponseReviewsSupported:
+		return true
+	case ArchiveCoverageResponseReviewsUnknown:
+		return true
+	case ArchiveCoverageResponseReviewsUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveReportActivityResponseKind.
+const (
+	ArchiveReportActivityResponseKindInlineReviewComment ArchiveReportActivityResponseKind = "inline_review_comment"
+	ArchiveReportActivityResponseKindIssue               ArchiveReportActivityResponseKind = "issue"
+	ArchiveReportActivityResponseKindMergeRequest        ArchiveReportActivityResponseKind = "merge_request"
+	ArchiveReportActivityResponseKindOrdinaryComment     ArchiveReportActivityResponseKind = "ordinary_comment"
+	ArchiveReportActivityResponseKindReview              ArchiveReportActivityResponseKind = "review"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveReportActivityResponseKind enum.
+func (e ArchiveReportActivityResponseKind) Valid() bool {
+	switch e {
+	case ArchiveReportActivityResponseKindInlineReviewComment:
+		return true
+	case ArchiveReportActivityResponseKindIssue:
+		return true
+	case ArchiveReportActivityResponseKindMergeRequest:
+		return true
+	case ArchiveReportActivityResponseKindOrdinaryComment:
+		return true
+	case ArchiveReportActivityResponseKindReview:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveReportCoverageResponseCollectionMode.
+const (
+	ArchiveReportCoverageResponseCollectionModeDiscovery ArchiveReportCoverageResponseCollectionMode = "discovery"
+	ArchiveReportCoverageResponseCollectionModeFull      ArchiveReportCoverageResponseCollectionMode = "full"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveReportCoverageResponseCollectionMode enum.
+func (e ArchiveReportCoverageResponseCollectionMode) Valid() bool {
+	switch e {
+	case ArchiveReportCoverageResponseCollectionModeDiscovery:
+		return true
+	case ArchiveReportCoverageResponseCollectionModeFull:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveReportCoverageResponseComments.
+const (
+	ArchiveReportCoverageResponseCommentsSupported   ArchiveReportCoverageResponseComments = "supported"
+	ArchiveReportCoverageResponseCommentsUnknown     ArchiveReportCoverageResponseComments = "unknown"
+	ArchiveReportCoverageResponseCommentsUnsupported ArchiveReportCoverageResponseComments = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveReportCoverageResponseComments enum.
+func (e ArchiveReportCoverageResponseComments) Valid() bool {
+	switch e {
+	case ArchiveReportCoverageResponseCommentsSupported:
+		return true
+	case ArchiveReportCoverageResponseCommentsUnknown:
+		return true
+	case ArchiveReportCoverageResponseCommentsUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveReportCoverageResponseInlineComments.
+const (
+	ArchiveReportCoverageResponseInlineCommentsSupported   ArchiveReportCoverageResponseInlineComments = "supported"
+	ArchiveReportCoverageResponseInlineCommentsUnknown     ArchiveReportCoverageResponseInlineComments = "unknown"
+	ArchiveReportCoverageResponseInlineCommentsUnsupported ArchiveReportCoverageResponseInlineComments = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveReportCoverageResponseInlineComments enum.
+func (e ArchiveReportCoverageResponseInlineComments) Valid() bool {
+	switch e {
+	case ArchiveReportCoverageResponseInlineCommentsSupported:
+		return true
+	case ArchiveReportCoverageResponseInlineCommentsUnknown:
+		return true
+	case ArchiveReportCoverageResponseInlineCommentsUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveReportCoverageResponseOperatorState.
+const (
+	ArchiveReportCoverageResponseOperatorStateActive ArchiveReportCoverageResponseOperatorState = "active"
+	ArchiveReportCoverageResponseOperatorStatePaused ArchiveReportCoverageResponseOperatorState = "paused"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveReportCoverageResponseOperatorState enum.
+func (e ArchiveReportCoverageResponseOperatorState) Valid() bool {
+	switch e {
+	case ArchiveReportCoverageResponseOperatorStateActive:
+		return true
+	case ArchiveReportCoverageResponseOperatorStatePaused:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveReportCoverageResponseReviews.
+const (
+	ArchiveReportCoverageResponseReviewsSupported   ArchiveReportCoverageResponseReviews = "supported"
+	ArchiveReportCoverageResponseReviewsUnknown     ArchiveReportCoverageResponseReviews = "unknown"
+	ArchiveReportCoverageResponseReviewsUnsupported ArchiveReportCoverageResponseReviews = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveReportCoverageResponseReviews enum.
+func (e ArchiveReportCoverageResponseReviews) Valid() bool {
+	switch e {
+	case ArchiveReportCoverageResponseReviewsSupported:
+		return true
+	case ArchiveReportCoverageResponseReviewsUnknown:
+		return true
+	case ArchiveReportCoverageResponseReviewsUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveReportCoverageResponseStatus.
+const (
+	ArchiveReportCoverageResponseStatusBlocked          ArchiveReportCoverageResponseStatus = "blocked"
+	ArchiveReportCoverageResponseStatusCurrent          ArchiveReportCoverageResponseStatus = "current"
+	ArchiveReportCoverageResponseStatusPartial          ArchiveReportCoverageResponseStatus = "partial"
+	ArchiveReportCoverageResponseStatusPaused           ArchiveReportCoverageResponseStatus = "paused"
+	ArchiveReportCoverageResponseStatusRunning          ArchiveReportCoverageResponseStatus = "running"
+	ArchiveReportCoverageResponseStatusWaitingForBudget ArchiveReportCoverageResponseStatus = "waiting_for_budget"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveReportCoverageResponseStatus enum.
+func (e ArchiveReportCoverageResponseStatus) Valid() bool {
+	switch e {
+	case ArchiveReportCoverageResponseStatusBlocked:
+		return true
+	case ArchiveReportCoverageResponseStatusCurrent:
+		return true
+	case ArchiveReportCoverageResponseStatusPartial:
+		return true
+	case ArchiveReportCoverageResponseStatusPaused:
+		return true
+	case ArchiveReportCoverageResponseStatusRunning:
+		return true
+	case ArchiveReportCoverageResponseStatusWaitingForBudget:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveStatusResponseActivePhases.
+const (
+	Hydration             ArchiveStatusResponseActivePhases = "hydration"
+	IssueInventory        ArchiveStatusResponseActivePhases = "issue_inventory"
+	MergeRequestInventory ArchiveStatusResponseActivePhases = "merge_request_inventory"
+	PromptMaintenance     ArchiveStatusResponseActivePhases = "prompt_maintenance"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveStatusResponseActivePhases enum.
+func (e ArchiveStatusResponseActivePhases) Valid() bool {
+	switch e {
+	case Hydration:
+		return true
+	case IssueInventory:
+		return true
+	case MergeRequestInventory:
+		return true
+	case PromptMaintenance:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveStatusResponseCollectionMode.
+const (
+	ArchiveStatusResponseCollectionModeDiscovery ArchiveStatusResponseCollectionMode = "discovery"
+	ArchiveStatusResponseCollectionModeFull      ArchiveStatusResponseCollectionMode = "full"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveStatusResponseCollectionMode enum.
+func (e ArchiveStatusResponseCollectionMode) Valid() bool {
+	switch e {
+	case ArchiveStatusResponseCollectionModeDiscovery:
+		return true
+	case ArchiveStatusResponseCollectionModeFull:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveStatusResponseOperatorState.
+const (
+	ArchiveStatusResponseOperatorStateActive ArchiveStatusResponseOperatorState = "active"
+	ArchiveStatusResponseOperatorStatePaused ArchiveStatusResponseOperatorState = "paused"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveStatusResponseOperatorState enum.
+func (e ArchiveStatusResponseOperatorState) Valid() bool {
+	switch e {
+	case ArchiveStatusResponseOperatorStateActive:
+		return true
+	case ArchiveStatusResponseOperatorStatePaused:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveStatusResponseStatus.
+const (
+	ArchiveStatusResponseStatusBlocked          ArchiveStatusResponseStatus = "blocked"
+	ArchiveStatusResponseStatusCurrent          ArchiveStatusResponseStatus = "current"
+	ArchiveStatusResponseStatusPartial          ArchiveStatusResponseStatus = "partial"
+	ArchiveStatusResponseStatusPaused           ArchiveStatusResponseStatus = "paused"
+	ArchiveStatusResponseStatusRunning          ArchiveStatusResponseStatus = "running"
+	ArchiveStatusResponseStatusWaitingForBudget ArchiveStatusResponseStatus = "waiting_for_budget"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveStatusResponseStatus enum.
+func (e ArchiveStatusResponseStatus) Valid() bool {
+	switch e {
+	case ArchiveStatusResponseStatusBlocked:
+		return true
+	case ArchiveStatusResponseStatusCurrent:
+		return true
+	case ArchiveStatusResponseStatusPartial:
+		return true
+	case ArchiveStatusResponseStatusPaused:
+		return true
+	case ArchiveStatusResponseStatusRunning:
+		return true
+	case ArchiveStatusResponseStatusWaitingForBudget:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IssueWorkflowStatus.
 const (
 	IssueWorkflowStatusAwaitingMerge IssueWorkflowStatus = "awaiting_merge"
@@ -635,6 +944,171 @@ type ApprovePRInputBody struct {
 	Body            string  `json:"body"`
 	ExpectedHeadSha *string `json:"expected_head_sha,omitempty"`
 }
+
+// ArchiveCoverageResponse defines model for ArchiveCoverageResponse.
+type ArchiveCoverageResponse struct {
+	Comments       ArchiveCoverageResponseComments       `json:"comments"`
+	InlineComments ArchiveCoverageResponseInlineComments `json:"inline_comments"`
+	Reviews        ArchiveCoverageResponseReviews        `json:"reviews"`
+}
+
+// ArchiveCoverageResponseComments defines model for ArchiveCoverageResponse.Comments.
+type ArchiveCoverageResponseComments string
+
+// ArchiveCoverageResponseInlineComments defines model for ArchiveCoverageResponse.InlineComments.
+type ArchiveCoverageResponseInlineComments string
+
+// ArchiveCoverageResponseReviews defines model for ArchiveCoverageResponse.Reviews.
+type ArchiveCoverageResponseReviews string
+
+// ArchiveFailureResponse defines model for ArchiveFailureResponse.
+type ArchiveFailureResponse struct {
+	Code        string     `json:"code"`
+	NextRetryAt *time.Time `json:"next_retry_at,omitempty"`
+}
+
+// ArchiveMutationBody defines model for ArchiveMutationBody.
+type ArchiveMutationBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string                 `json:"$schema,omitempty"`
+	All          bool                    `json:"all"`
+	Repositories *[]ArchiveRepositoryRef `json:"repositories,omitempty"`
+}
+
+// ArchiveProgressCountsResponse defines model for ArchiveProgressCountsResponse.
+type ArchiveProgressCountsResponse struct {
+	CompleteItems     int64 `json:"complete_items"`
+	FailedItems       int64 `json:"failed_items"`
+	InaccessibleItems int64 `json:"inaccessible_items"`
+	Items             int64 `json:"items"`
+	PendingItems      int64 `json:"pending_items"`
+	UnsupportedItems  int64 `json:"unsupported_items"`
+}
+
+// ArchiveReportActivityResponse defines model for ArchiveReportActivityResponse.
+type ArchiveReportActivityResponse struct {
+	Author             string                            `json:"author"`
+	Body               string                            `json:"body"`
+	ItemNumber         int64                             `json:"item_number"`
+	Kind               ArchiveReportActivityResponseKind `json:"kind"`
+	OccurredAt         time.Time                         `json:"occurred_at"`
+	ProviderExternalId string                            `json:"provider_external_id"`
+	Repository         ArchiveRepositoryRef              `json:"repository"`
+	Title              string                            `json:"title"`
+	Url                string                            `json:"url"`
+}
+
+// ArchiveReportActivityResponseKind defines model for ArchiveReportActivityResponse.Kind.
+type ArchiveReportActivityResponseKind string
+
+// ArchiveReportContributorResponse defines model for ArchiveReportContributorResponse.
+type ArchiveReportContributorResponse struct {
+	Counts       ArchiveReportCountsResponse `json:"counts"`
+	Login        string                      `json:"login"`
+	PlatformHost string                      `json:"platform_host"`
+	Provider     string                      `json:"provider"`
+}
+
+// ArchiveReportCountsResponse defines model for ArchiveReportCountsResponse.
+type ArchiveReportCountsResponse struct {
+	InlineReviewComments int64 `json:"inline_review_comments"`
+	IssuesOpened         int64 `json:"issues_opened"`
+	MergeRequestsOpened  int64 `json:"merge_requests_opened"`
+	OrdinaryComments     int64 `json:"ordinary_comments"`
+	ReviewsSubmitted     int64 `json:"reviews_submitted"`
+}
+
+// ArchiveReportCoverageResponse defines model for ArchiveReportCoverageResponse.
+type ArchiveReportCoverageResponse struct {
+	ActivePhases           *[]string                                   `json:"active_phases"`
+	ArchivedItems          int64                                       `json:"archived_items"`
+	BudgetWaitUntil        *time.Time                                  `json:"budget_wait_until,omitempty"`
+	CollectionMode         ArchiveReportCoverageResponseCollectionMode `json:"collection_mode"`
+	Comments               ArchiveReportCoverageResponseComments       `json:"comments"`
+	InaccessibleItems      int64                                       `json:"inaccessible_items"`
+	InitialCompletedAt     *time.Time                                  `json:"initial_completed_at,omitempty"`
+	InlineComments         ArchiveReportCoverageResponseInlineComments `json:"inline_comments"`
+	MaintenanceSucceededAt *time.Time                                  `json:"maintenance_succeeded_at,omitempty"`
+	OperatorState          ArchiveReportCoverageResponseOperatorState  `json:"operator_state"`
+	Reviews                ArchiveReportCoverageResponseReviews        `json:"reviews"`
+	Status                 ArchiveReportCoverageResponseStatus         `json:"status"`
+	UnsupportedItems       int64                                       `json:"unsupported_items"`
+}
+
+// ArchiveReportCoverageResponseCollectionMode defines model for ArchiveReportCoverageResponse.CollectionMode.
+type ArchiveReportCoverageResponseCollectionMode string
+
+// ArchiveReportCoverageResponseComments defines model for ArchiveReportCoverageResponse.Comments.
+type ArchiveReportCoverageResponseComments string
+
+// ArchiveReportCoverageResponseInlineComments defines model for ArchiveReportCoverageResponse.InlineComments.
+type ArchiveReportCoverageResponseInlineComments string
+
+// ArchiveReportCoverageResponseOperatorState defines model for ArchiveReportCoverageResponse.OperatorState.
+type ArchiveReportCoverageResponseOperatorState string
+
+// ArchiveReportCoverageResponseReviews defines model for ArchiveReportCoverageResponse.Reviews.
+type ArchiveReportCoverageResponseReviews string
+
+// ArchiveReportCoverageResponseStatus defines model for ArchiveReportCoverageResponse.Status.
+type ArchiveReportCoverageResponseStatus string
+
+// ArchiveReportRepositoryResponse defines model for ArchiveReportRepositoryResponse.
+type ArchiveReportRepositoryResponse struct {
+	Counts     ArchiveReportCountsResponse   `json:"counts"`
+	Coverage   ArchiveReportCoverageResponse `json:"coverage"`
+	Repository ArchiveRepositoryRef          `json:"repository"`
+}
+
+// ArchiveReportResponse defines model for ArchiveReportResponse.
+type ArchiveReportResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string                             `json:"$schema,omitempty"`
+	Activity     *[]ArchiveReportActivityResponse    `json:"activity,omitempty"`
+	Contributors *[]ArchiveReportContributorResponse `json:"contributors"`
+	End          time.Time                           `json:"end"`
+	Repositories *[]ArchiveReportRepositoryResponse  `json:"repositories"`
+	Start        time.Time                           `json:"start"`
+	Totals       ArchiveReportCountsResponse         `json:"totals"`
+}
+
+// ArchiveRepositoryRef defines model for ArchiveRepositoryRef.
+type ArchiveRepositoryRef struct {
+	Name         string `json:"name"`
+	Owner        string `json:"owner"`
+	PlatformHost string `json:"platform_host"`
+	Provider     string `json:"provider"`
+	RepoPath     string `json:"repo_path"`
+}
+
+// ArchiveStatusResponse defines model for ArchiveStatusResponse.
+type ArchiveStatusResponse struct {
+	ActivePhases           *[]ArchiveStatusResponseActivePhases `json:"active_phases"`
+	BudgetWaitUntil        *time.Time                           `json:"budget_wait_until,omitempty"`
+	CollectionMode         ArchiveStatusResponseCollectionMode  `json:"collection_mode"`
+	Counts                 ArchiveProgressCountsResponse        `json:"counts"`
+	Coverage               ArchiveCoverageResponse              `json:"coverage"`
+	Failure                *ArchiveFailureResponse              `json:"failure,omitempty"`
+	InitialCompletedAt     *time.Time                           `json:"initial_completed_at,omitempty"`
+	InitialStartedAt       *time.Time                           `json:"initial_started_at,omitempty"`
+	MaintenanceSucceededAt *time.Time                           `json:"maintenance_succeeded_at,omitempty"`
+	MaintenanceWatermark   *time.Time                           `json:"maintenance_watermark,omitempty"`
+	OperatorState          ArchiveStatusResponseOperatorState   `json:"operator_state"`
+	Repository             ArchiveRepositoryRef                 `json:"repository"`
+	Status                 ArchiveStatusResponseStatus          `json:"status"`
+}
+
+// ArchiveStatusResponseActivePhases defines model for ArchiveStatusResponse.ActivePhases.
+type ArchiveStatusResponseActivePhases string
+
+// ArchiveStatusResponseCollectionMode defines model for ArchiveStatusResponse.CollectionMode.
+type ArchiveStatusResponseCollectionMode string
+
+// ArchiveStatusResponseOperatorState defines model for ArchiveStatusResponse.OperatorState.
+type ArchiveStatusResponseOperatorState string
+
+// ArchiveStatusResponseStatus defines model for ArchiveStatusResponse.Status.
+type ArchiveStatusResponseStatus string
 
 // AttachmentMeta defines model for AttachmentMeta.
 type AttachmentMeta struct {
@@ -3402,6 +3876,25 @@ type ListActivityParams struct {
 	Since  *string   `form:"since,omitempty" json:"since,omitempty"`
 }
 
+// GetArchiveReportParams defines parameters for GetArchiveReport.
+type GetArchiveReportParams struct {
+	// Start Inclusive UTC RFC3339 boundary.
+	Start string `form:"start" json:"start"`
+
+	// End Exclusive UTC RFC3339 boundary.
+	End string `form:"end" json:"end"`
+
+	// Repo Repeated provider|platform_host/repo_path filters.
+	Repo    *[]string `form:"repo,omitempty" json:"repo,omitempty"`
+	Verbose *bool     `form:"verbose,omitempty" json:"verbose,omitempty"`
+}
+
+// ListArchiveStatusParams defines parameters for ListArchiveStatus.
+type ListArchiveStatusParams struct {
+	// Repo Repeated provider|platform_host/repo_path filters.
+	Repo *[]string `form:"repo,omitempty" json:"repo,omitempty"`
+}
+
 // BrowseDocsFoldersParams defines parameters for BrowseDocsFolders.
 type BrowseDocsFoldersParams struct {
 	Path *string `form:"path,omitempty" json:"path,omitempty"`
@@ -4024,6 +4517,12 @@ type GetWorkspaceFilesParams struct {
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
 
+// PauseArchivesJSONRequestBody defines body for PauseArchives for application/json ContentType.
+type PauseArchivesJSONRequestBody = ArchiveMutationBody
+
+// StartArchivesJSONRequestBody defines body for StartArchives for application/json ContentType.
+type StartArchivesJSONRequestBody = ArchiveMutationBody
+
 // CreateDocsFolderJSONRequestBody defines body for CreateDocsFolder for application/json ContentType.
 type CreateDocsFolderJSONRequestBody = CreateDocsFolderInputBody
 
@@ -4411,6 +4910,22 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 type ClientInterface interface {
 	// ListActivity request
 	ListActivity(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PauseArchivesWithBody request with any body
+	PauseArchivesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PauseArchives(ctx context.Context, body PauseArchivesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetArchiveReport request
+	GetArchiveReport(ctx context.Context, params *GetArchiveReportParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StartArchivesWithBody request with any body
+	StartArchivesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	StartArchives(ctx context.Context, body StartArchivesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListArchiveStatus request
+	ListArchiveStatus(ctx context.Context, params *ListArchiveStatusParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// BrowseDocsFolders request
 	BrowseDocsFolders(ctx context.Context, params *BrowseDocsFoldersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -5475,6 +5990,78 @@ type ClientInterface interface {
 
 func (c *Client) ListActivity(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListActivityRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PauseArchivesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPauseArchivesRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PauseArchives(ctx context.Context, body PauseArchivesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPauseArchivesRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetArchiveReport(ctx context.Context, params *GetArchiveReportParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetArchiveReportRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StartArchivesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStartArchivesRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StartArchives(ctx context.Context, body StartArchivesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStartArchivesRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListArchiveStatus(ctx context.Context, params *ListArchiveStatusParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListArchiveStatusRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -10220,6 +10807,222 @@ func NewListActivityRequest(server string, params *ListActivityParams) (*http.Re
 		if params.Since != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "since", *params.Since, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPauseArchivesRequest calls the generic PauseArchives builder with application/json body
+func NewPauseArchivesRequest(server string, body PauseArchivesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPauseArchivesRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPauseArchivesRequestWithBody generates requests for PauseArchives with any type of body
+func NewPauseArchivesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/archive/pause")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetArchiveReportRequest generates requests for GetArchiveReport
+func NewGetArchiveReportRequest(server string, params *GetArchiveReportParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/archive/report")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "start", params.Start, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "end", params.End, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.Repo != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "repo", *params.Repo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Verbose != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "verbose", *params.Verbose, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewStartArchivesRequest calls the generic StartArchives builder with application/json body
+func NewStartArchivesRequest(server string, body StartArchivesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewStartArchivesRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewStartArchivesRequestWithBody generates requests for StartArchives with any type of body
+func NewStartArchivesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/archive/start")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListArchiveStatusRequest generates requests for ListArchiveStatus
+func NewListArchiveStatusRequest(server string, params *ListArchiveStatusParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/archive/status")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Repo != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "repo", *params.Repo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -27628,6 +28431,22 @@ type ClientWithResponsesInterface interface {
 	// ListActivityWithResponse request
 	ListActivityWithResponse(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*ListActivityResponse, error)
 
+	// PauseArchivesWithBodyWithResponse request with any body
+	PauseArchivesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PauseArchivesResponse, error)
+
+	PauseArchivesWithResponse(ctx context.Context, body PauseArchivesJSONRequestBody, reqEditors ...RequestEditorFn) (*PauseArchivesResponse, error)
+
+	// GetArchiveReportWithResponse request
+	GetArchiveReportWithResponse(ctx context.Context, params *GetArchiveReportParams, reqEditors ...RequestEditorFn) (*GetArchiveReportResponse, error)
+
+	// StartArchivesWithBodyWithResponse request with any body
+	StartArchivesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StartArchivesResponse, error)
+
+	StartArchivesWithResponse(ctx context.Context, body StartArchivesJSONRequestBody, reqEditors ...RequestEditorFn) (*StartArchivesResponse, error)
+
+	// ListArchiveStatusWithResponse request
+	ListArchiveStatusWithResponse(ctx context.Context, params *ListArchiveStatusParams, reqEditors ...RequestEditorFn) (*ListArchiveStatusResponse, error)
+
 	// BrowseDocsFoldersWithResponse request
 	BrowseDocsFoldersWithResponse(ctx context.Context, params *BrowseDocsFoldersParams, reqEditors ...RequestEditorFn) (*BrowseDocsFoldersResponse, error)
 
@@ -28703,6 +29522,98 @@ func (r ListActivityResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListActivityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PauseArchivesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *[]ArchiveStatusResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r PauseArchivesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PauseArchivesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetArchiveReportResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ArchiveReportResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetArchiveReportResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetArchiveReportResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StartArchivesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *[]ArchiveStatusResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r StartArchivesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StartArchivesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListArchiveStatusResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *[]ArchiveStatusResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListArchiveStatusResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListArchiveStatusResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -35185,6 +36096,58 @@ func (c *ClientWithResponses) ListActivityWithResponse(ctx context.Context, para
 	return ParseListActivityResponse(rsp)
 }
 
+// PauseArchivesWithBodyWithResponse request with arbitrary body returning *PauseArchivesResponse
+func (c *ClientWithResponses) PauseArchivesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PauseArchivesResponse, error) {
+	rsp, err := c.PauseArchivesWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePauseArchivesResponse(rsp)
+}
+
+func (c *ClientWithResponses) PauseArchivesWithResponse(ctx context.Context, body PauseArchivesJSONRequestBody, reqEditors ...RequestEditorFn) (*PauseArchivesResponse, error) {
+	rsp, err := c.PauseArchives(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePauseArchivesResponse(rsp)
+}
+
+// GetArchiveReportWithResponse request returning *GetArchiveReportResponse
+func (c *ClientWithResponses) GetArchiveReportWithResponse(ctx context.Context, params *GetArchiveReportParams, reqEditors ...RequestEditorFn) (*GetArchiveReportResponse, error) {
+	rsp, err := c.GetArchiveReport(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetArchiveReportResponse(rsp)
+}
+
+// StartArchivesWithBodyWithResponse request with arbitrary body returning *StartArchivesResponse
+func (c *ClientWithResponses) StartArchivesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StartArchivesResponse, error) {
+	rsp, err := c.StartArchivesWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStartArchivesResponse(rsp)
+}
+
+func (c *ClientWithResponses) StartArchivesWithResponse(ctx context.Context, body StartArchivesJSONRequestBody, reqEditors ...RequestEditorFn) (*StartArchivesResponse, error) {
+	rsp, err := c.StartArchives(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStartArchivesResponse(rsp)
+}
+
+// ListArchiveStatusWithResponse request returning *ListArchiveStatusResponse
+func (c *ClientWithResponses) ListArchiveStatusWithResponse(ctx context.Context, params *ListArchiveStatusParams, reqEditors ...RequestEditorFn) (*ListArchiveStatusResponse, error) {
+	rsp, err := c.ListArchiveStatus(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListArchiveStatusResponse(rsp)
+}
+
 // BrowseDocsFoldersWithResponse request returning *BrowseDocsFoldersResponse
 func (c *ClientWithResponses) BrowseDocsFoldersWithResponse(ctx context.Context, params *BrowseDocsFoldersParams, reqEditors ...RequestEditorFn) (*BrowseDocsFoldersResponse, error) {
 	rsp, err := c.BrowseDocsFolders(ctx, params, reqEditors...)
@@ -38580,6 +39543,138 @@ func ParseListActivityResponse(rsp *http.Response) (*ListActivityResponse, error
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ActivityResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePauseArchivesResponse parses an HTTP response from a PauseArchivesWithResponse call
+func ParsePauseArchivesResponse(rsp *http.Response) (*PauseArchivesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PauseArchivesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []ArchiveStatusResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetArchiveReportResponse parses an HTTP response from a GetArchiveReportWithResponse call
+func ParseGetArchiveReportResponse(rsp *http.Response) (*GetArchiveReportResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetArchiveReportResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ArchiveReportResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStartArchivesResponse parses an HTTP response from a StartArchivesWithResponse call
+func ParseStartArchivesResponse(rsp *http.Response) (*StartArchivesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StartArchivesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []ArchiveStatusResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListArchiveStatusResponse parses an HTTP response from a ListArchiveStatusWithResponse call
+func ParseListArchiveStatusResponse(rsp *http.Response) (*ListArchiveStatusResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListArchiveStatusResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []ArchiveStatusResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

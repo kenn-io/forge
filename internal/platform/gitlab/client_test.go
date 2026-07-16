@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	ghsync "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/ratelimit"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
@@ -359,6 +360,31 @@ func TestClientRecordsRateLimitRequests(t *testing.T) {
 	assert.Equal(599, row.RateRemaining)
 	require.NotNil(row.RateResetAt)
 	assert.Equal(resetAt, row.RateResetAt.Unix())
+}
+
+func TestClientSyncBudgetChargesOnlyMarkedRoundTrips(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		writeJSON(w, `{"id":42,"path":"project","path_with_namespace":"group/project","name":"Project"}`)
+	}))
+	defer server.Close()
+
+	budget := ghsync.NewSyncBudget(100)
+	client := newTestClient(t, server.URL, WithSyncBudget(budget))
+	ref := platform.RepoRef{
+		Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "group/project",
+	}
+	_, err := client.GetRepository(t.Context(), ref)
+	require.NoError(err)
+	assert.Equal(0, budget.Spent())
+
+	_, err = client.GetRepository(ghsync.WithSyncBudget(t.Context()), ref)
+	require.NoError(err)
+	assert.Equal(1, budget.Spent())
+	assert.Equal(2, requests)
 }
 
 func TestClientReadsTokenSourceForEachRequest(t *testing.T) {

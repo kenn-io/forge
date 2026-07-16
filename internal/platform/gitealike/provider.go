@@ -72,6 +72,12 @@ func (p *Provider) Capabilities() platform.Capabilities {
 		ReadReleases:      true,
 		ReadCI:            true,
 	}
+	if _, ok := p.transport.(ArchiveTransport); ok {
+		caps.Archive = platform.ArchiveCapabilities{
+			HistoricalIssues: true, HistoricalMergeRequests: true,
+			OrdinaryComments: true, SubmittedReviews: true,
+		}
+	}
 	_, hasLabels := p.transport.(LabelTransport)
 	caps.ReadLabels = hasLabels
 	if p.options.Mutations {

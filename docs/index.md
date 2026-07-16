@@ -16,8 +16,8 @@ next?
   docs folders, messages, and telemetry.
 - [Workflows](workflows.md): common ways to use Activity, PRs, issues, reviews,
   workspaces, Kata, Docs, Messages, and fleet views.
-- [Commands](commands.md): CLI commands for serving, status, docs folders, and
-  GitHub App credentials.
+- [Commands](commands.md): CLI commands for serving, status, historical
+  archives, docs folders, and GitHub App credentials.
 - [Troubleshooting](troubleshooting.md): startup, auth, sync, config, database,
   and mode issues.
 
@@ -25,6 +25,8 @@ next?
 
 - Show a cross-repository Activity feed with comment, review, commit, PR, and
   issue activity.
+- Build and report on a resumable local archive of historical issues, pull or
+  merge requests, comments, and supported review activity.
 - Browse PRs/MRs and issues with filters, keyboard navigation, details, comments,
   review actions, state changes, and merge actions where the provider supports
   them.

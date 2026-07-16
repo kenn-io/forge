@@ -3,7 +3,7 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, tick, untrack } from "svelte";
+  import { onDestroy, tick, untrack, type ComponentProps } from "svelte";
   import type {
     DiffFile,
     KanbanStatus,
@@ -97,6 +97,8 @@
     type PRTimelineFilterState,
   } from "./prTimelineFilter.js";
   import type { PullRequestRouteRef } from "../../routes.js";
+
+  type ChipTrailing = ComponentProps<typeof Chip>["trailing"];
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
@@ -1798,7 +1800,7 @@
               title={markDraftGate.unavailable ? markDraftGate.reason : undefined}
               ariaLabel={canOpenStateMenu ? `State: ${stateLabel}` : undefined}
               onclick={canOpenStateMenu ? toggleStateMenu : undefined}
-              trailing={canOpenStateMenu ? stateChevron : undefined}
+              trailing={canOpenStateMenu ? (stateChevron as ChipTrailing) : undefined}
             >
               {stateLabel}
             </Chip>

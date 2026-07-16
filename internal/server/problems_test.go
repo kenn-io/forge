@@ -405,6 +405,22 @@ func TestMapPlatformError(t *testing.T) {
 			wantCode:   CodeBadRequest,
 		},
 		{
+			name: "ProviderContract",
+			input: &platform.Error{
+				Code:         platform.ErrCodeProviderContract,
+				Provider:     platform.KindGitLab,
+				PlatformHost: "gitlab.example.com",
+				Field:        "archive_page",
+			},
+			wantStatus: http.StatusBadGateway,
+			wantCode:   CodeUpstreamError,
+			wantDetails: map[string]any{
+				"provider":     "gitlab",
+				"platformHost": "gitlab.example.com",
+				"field":        "archive_page",
+			},
+		},
+		{
 			name: "ConflictWithReason",
 			input: &platform.Error{
 				Code:         platform.ErrCodeConflict,

@@ -274,16 +274,26 @@ func scanReviewDraftComment(row scanner) (MRReviewDraftComment, error) {
 
 func (d *DB) UpsertMRReviewThreads(ctx context.Context, mrID int64, threads []MRReviewThread) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		for _, thread := range threads {
-			providerThreadID := thread.ProviderThreadID
-			if providerThreadID == "" {
-				providerThreadID = thread.ProviderCommentID
-			}
-			if providerThreadID == "" {
-				return fmt.Errorf("upsert mr review thread: provider thread id is empty")
-			}
-			resolvedAt := nullableReviewTime(thread.ResolvedAt)
-			if _, err := tx.ExecContext(ctx, `
+		return upsertMRReviewThreadsTx(ctx, tx, mrID, threads)
+	})
+}
+
+func upsertMRReviewThreadsTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	mrID int64,
+	threads []MRReviewThread,
+) error {
+	for _, thread := range threads {
+		providerThreadID := thread.ProviderThreadID
+		if providerThreadID == "" {
+			providerThreadID = thread.ProviderCommentID
+		}
+		if providerThreadID == "" {
+			return fmt.Errorf("upsert mr review thread: provider thread id is empty")
+		}
+		resolvedAt := nullableReviewTime(thread.ResolvedAt)
+		if _, err := tx.ExecContext(ctx, `
 				INSERT INTO middleman_mr_review_threads (
 					merge_request_id, provider_thread_id, provider_review_id,
 					provider_comment_id, path, old_path, side, start_side,
@@ -312,22 +322,21 @@ func (d *DB) UpsertMRReviewThreads(ctx context.Context, mrID int64, threads []MR
 					updated_at = excluded.updated_at,
 					resolved_at = excluded.resolved_at,
 					metadata_json = excluded.metadata_json`,
-				mrID, providerThreadID, nullString(thread.ProviderReviewID),
-				nullString(thread.ProviderCommentID), thread.Range.Path,
-				nullString(thread.Range.OldPath), thread.Range.Side,
-				nullString(thread.Range.StartSide), nullInt(thread.Range.StartLine),
-				thread.Range.Line, nullInt(thread.Range.OldLine), nullInt(thread.Range.NewLine),
-				thread.Range.LineType, thread.Range.DiffHeadSHA, thread.Range.CommitSHA,
-				thread.Body, nullString(thread.AuthorLogin), thread.Resolved,
-				thread.CreatedAt.UTC().Format(time.RFC3339),
-				thread.UpdatedAt.UTC().Format(time.RFC3339),
-				resolvedAt, nullString(thread.MetadataJSON),
-			); err != nil {
-				return fmt.Errorf("upsert mr review thread %s: %w", thread.ProviderThreadID, err)
-			}
+			mrID, providerThreadID, nullString(thread.ProviderReviewID),
+			nullString(thread.ProviderCommentID), thread.Range.Path,
+			nullString(thread.Range.OldPath), thread.Range.Side,
+			nullString(thread.Range.StartSide), nullInt(thread.Range.StartLine),
+			thread.Range.Line, nullInt(thread.Range.OldLine), nullInt(thread.Range.NewLine),
+			thread.Range.LineType, thread.Range.DiffHeadSHA, thread.Range.CommitSHA,
+			thread.Body, nullString(thread.AuthorLogin), thread.Resolved,
+			thread.CreatedAt.UTC().Format(time.RFC3339),
+			thread.UpdatedAt.UTC().Format(time.RFC3339),
+			resolvedAt, nullString(thread.MetadataJSON),
+		); err != nil {
+			return fmt.Errorf("upsert mr review thread %s: %w", thread.ProviderThreadID, err)
 		}
-		return nil
-	})
+	}
+	return nil
 }
 
 // DeleteMissingMRReviewThreads removes review-thread metadata and synced
@@ -339,30 +348,38 @@ func (d *DB) DeleteMissingMRReviewThreads(
 	reviewCommentDedupeKeys []string,
 ) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		threadQuery := `DELETE FROM middleman_mr_review_threads WHERE merge_request_id = ?`
-		threadArgs := []any{mrID}
-		eventQuery := `DELETE FROM middleman_mr_events WHERE merge_request_id = ? AND event_type = 'review_comment'`
-		eventArgs := []any{mrID}
-		if len(providerThreadIDs) > 0 {
-			threadQuery += ` AND provider_thread_id NOT IN (` + sqlPlaceholders(len(providerThreadIDs)) + `)`
-			for _, providerThreadID := range providerThreadIDs {
-				threadArgs = append(threadArgs, providerThreadID)
-			}
-		}
-		if len(reviewCommentDedupeKeys) > 0 {
-			eventQuery += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(reviewCommentDedupeKeys)) + `)`
-			for _, dedupeKey := range reviewCommentDedupeKeys {
-				eventArgs = append(eventArgs, dedupeKey)
-			}
-		}
-		if _, err := tx.ExecContext(ctx, threadQuery, threadArgs...); err != nil {
-			return fmt.Errorf("delete missing mr review threads: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, eventQuery, eventArgs...); err != nil {
-			return fmt.Errorf("delete missing mr review thread events: %w", err)
-		}
-		return nil
+		return deleteMissingMRReviewThreadsTx(
+			ctx, tx, mrID, providerThreadIDs, reviewCommentDedupeKeys,
+		)
 	})
+}
+
+func deleteMissingMRReviewThreadsTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	mrID int64,
+	providerThreadIDs []string,
+	reviewCommentDedupeKeys []string,
+) error {
+	threadQuery := `DELETE FROM middleman_mr_review_threads WHERE merge_request_id = ?`
+	threadArgs := []any{mrID}
+	eventQuery := `DELETE FROM middleman_mr_events WHERE merge_request_id = ? AND event_type = 'review_comment'`
+	eventArgs := []any{mrID}
+	if len(providerThreadIDs) > 0 {
+		threadQuery += ` AND provider_thread_id NOT IN (SELECT value FROM json_each(?))`
+		threadArgs = append(threadArgs, jsonStringList(providerThreadIDs))
+	}
+	if len(reviewCommentDedupeKeys) > 0 {
+		eventQuery += ` AND dedupe_key NOT IN (SELECT value FROM json_each(?))`
+		eventArgs = append(eventArgs, jsonStringList(reviewCommentDedupeKeys))
+	}
+	if _, err := tx.ExecContext(ctx, threadQuery, threadArgs...); err != nil {
+		return fmt.Errorf("delete missing mr review threads: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, eventQuery, eventArgs...); err != nil {
+		return fmt.Errorf("delete missing mr review thread events: %w", err)
+	}
+	return nil
 }
 
 func (d *DB) ListMRReviewThreads(ctx context.Context, mrID int64) ([]MRReviewThread, error) {

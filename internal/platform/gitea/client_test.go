@@ -31,7 +31,47 @@ var (
 	_ platform.MergeMutator       = (*Client)(nil)
 	_ platform.ReviewMutator      = (*Client)(nil)
 	_ platform.IssueMutator       = (*Client)(nil)
+	_ platform.ArchiveReader      = (*Client)(nil)
 )
+
+func TestArchiveInventoryUsesAllStateOrderingAndOneBudgetedRequestPerPage(t *testing.T) {
+	assert := assert.New(t)
+	require := Require.New(t)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/repos/owner/repo/issues":
+			assert.Equal("all", r.URL.Query().Get("state"))
+			assert.Equal("issues", r.URL.Query().Get("type"))
+			assert.NotEmpty(r.URL.Query().Get("before"))
+			_, _ = w.Write([]byte(`[{"id":1,"number":1,"state":"closed","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}]`))
+		case "/api/v1/repos/owner/repo/pulls":
+			assert.Equal("all", r.URL.Query().Get("state"))
+			assert.Equal("oldest", r.URL.Query().Get("sort"))
+			_, _ = w.Write([]byte(`[{"id":2,"number":2,"state":"closed","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	budget := ghsync.NewSyncBudget(20)
+	client, err := NewClient("gitea.test", testTokenSource("token"), WithBaseURLForTesting(server.URL), WithSyncBudget(budget))
+	require.NoError(err)
+	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "gitea.test", Owner: "owner", Name: "repo"}
+	ctx := ghsync.WithSyncBudget(context.Background())
+
+	issues, err := client.ListHistoricalIssues(ctx, ref, "")
+	require.NoError(err)
+	pulls, err := client.ListHistoricalMergeRequests(ctx, ref, "")
+	require.NoError(err)
+
+	assert.Len(issues.Items, 1)
+	assert.Len(pulls.Items, 1)
+	assert.Equal(2, requests)
+	assert.Equal(2, budget.Spent())
+}
 
 func TestClientLooksUpRepositoryAndSendsToken(t *testing.T) {
 	assert := assert.New(t)
@@ -265,6 +305,10 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 			platform.ReviewActionComment,
 			platform.ReviewActionApprove,
 			platform.ReviewActionRequestChanges,
+		},
+		Archive: platform.ArchiveCapabilities{
+			HistoricalIssues: true, HistoricalMergeRequests: true,
+			OrdinaryComments: true, SubmittedReviews: true,
 		},
 	}, client.Capabilities())
 }

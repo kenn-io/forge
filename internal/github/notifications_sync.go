@@ -9,6 +9,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v88/github"
+	"go.kenn.io/middleman/internal/archive"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/platform"
 )
@@ -140,7 +141,11 @@ func (s *Syncer) SyncNotifications(ctx context.Context) error {
 	clients := s.notificationClients()
 	var errs []error
 	for _, entry := range clients {
-		if err := s.syncNotificationsForHost(ctx, entry.platform, entry.host, entry.client, tracked); err != nil {
+		key := rateBucketKeyFor(entry.platform, entry.host)
+		releaseProviderWork := s.beginProviderWork(key, archive.PriorityNotificationRefresh)
+		err := s.syncNotificationsForHost(ctx, entry.platform, entry.host, entry.client, tracked)
+		releaseProviderWork()
+		if err != nil {
 			errs = append(errs, err)
 		}
 	}

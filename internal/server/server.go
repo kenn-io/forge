@@ -21,6 +21,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"go.kenn.io/middleman/internal/archive"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/configwatch"
 	"go.kenn.io/middleman/internal/db"
@@ -61,6 +62,7 @@ type ServerOptions struct {
 	PtyOwnerInProcess                  bool
 	Telemetry                          telemetry.Client
 	TokenSources                       *tokenauth.SourceSet
+	Archive                            archive.Controller
 	// HostCheck overrides the Host validation middleware options.
 	// When Valid(), the override wins over any cfg-derived options.
 	// Used by wire-level tests that want to control the bind /
@@ -134,6 +136,7 @@ func (c shutdownAwareContext) Value(key any) any {
 type Server struct {
 	db                          *db.DB
 	syncer                      *ghclient.Syncer
+	archive                     archive.Controller
 	clones                      *gitclone.Manager
 	workspaces                  *workspace.Manager
 	workspacePRMonitor          *workspace.PRMonitor
@@ -702,6 +705,7 @@ func newServer(
 		db:                             database,
 		basePath:                       basePath,
 		syncer:                         syncer,
+		archive:                        options.Archive,
 		clones:                         clones,
 		telemetry:                      options.Telemetry,
 		cfg:                            cfg,

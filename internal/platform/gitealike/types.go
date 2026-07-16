@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"go.kenn.io/middleman/internal/platform"
@@ -30,6 +31,21 @@ type Transport interface {
 
 type TimelineTransport interface {
 	ListIssueTimeline(ctx context.Context, ref platform.RepoRef, number int, opts PageOptions) ([]TimelineEventDTO, Page, error)
+}
+
+// ArchiveTransport is the bounded, one-round-trip transport surface used by
+// historical archive enumeration. ListArchiveIssues exposes the API's
+// updated-time filters; ListArchivePullRequests exposes its stable sort modes.
+type ArchiveTransport interface {
+	ListArchiveIssues(context.Context, platform.RepoRef, ArchiveListOptions) ([]IssueDTO, Page, error)
+	ListArchivePullRequests(context.Context, platform.RepoRef, ArchiveListOptions) ([]PullRequestDTO, Page, error)
+}
+
+type ArchiveListOptions struct {
+	PageOptions
+	Since  time.Time
+	Before time.Time
+	Sort   string
 }
 
 // LabelTransport is an optional transport extension for repository
@@ -75,6 +91,7 @@ type PageOptions struct {
 
 type Page struct {
 	Next int
+	Last int
 }
 
 type UserDTO struct {
@@ -324,6 +341,8 @@ func mapTransportError(kind platform.Kind, host string, err error) error {
 		code = platform.ErrCodePermissionDenied
 	case 404:
 		code = platform.ErrCodeNotFound
+	case http.StatusTooManyRequests:
+		code = platform.ErrCodeRateLimited
 	default:
 		return err
 	}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
+	ghsync "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/ratelimit"
 	"go.kenn.io/middleman/internal/tokenauth"
@@ -28,6 +29,7 @@ type clientOptions struct {
 	baseURL           string
 	foregroundTimeout time.Duration
 	rateTracker       *ratelimit.RateTracker
+	budget            *ghsync.SyncBudget
 	disableRetries    bool
 }
 
@@ -85,6 +87,12 @@ func WithRateTracker(rateTracker *ratelimit.RateTracker) ClientOption {
 	}
 }
 
+func WithSyncBudget(budget *ghsync.SyncBudget) ClientOption {
+	return func(opts *clientOptions) {
+		opts.budget = budget
+	}
+}
+
 func WithoutRetriesForTesting() ClientOption {
 	return func(opts *clientOptions) {
 		opts.disableRetries = true
@@ -105,6 +113,9 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 		clientOptions = append(clientOptions, gitlab.WithoutRetries())
 	}
 	baseTransport := http.DefaultTransport
+	if opts.budget != nil {
+		baseTransport = &syncBudgetTransport{base: baseTransport, budget: opts.budget}
+	}
 	if opts.rateTracker != nil {
 		baseTransport = &rateTrackingTransport{
 			base:        baseTransport,
@@ -134,6 +145,19 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 		userIDs:           make(map[string]int64),
 		projectCloneURLs:  make(map[int64]string),
 	}, nil
+}
+
+type syncBudgetTransport struct {
+	base   http.RoundTripper
+	budget *ghsync.SyncBudget
+}
+
+func (t *syncBudgetTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if ghsync.IsSyncBudgetContext(req.Context()) {
+		t.budget.Spend(1)
+	}
+	return resp, err
 }
 
 type rateTrackingTransport struct {
@@ -234,6 +258,12 @@ func (c *Client) Capabilities() platform.Capabilities {
 		ReadReviewThreads:      true,
 		NativeMultilineRanges:  false,
 		MutationHeadBinding:    true,
+		Archive: platform.ArchiveCapabilities{
+			HistoricalIssues:        true,
+			HistoricalMergeRequests: true,
+			OrdinaryComments:        true,
+			InlineReviewComments:    true,
+		},
 		// GitLab has no native "request changes" review state, so
 		// request_changes is intentionally absent.
 		SupportedReviewActions: []platform.ReviewAction{

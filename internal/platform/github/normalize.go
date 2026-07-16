@@ -121,6 +121,9 @@ func NormalizeIssue(repo platform.RepoRef, ghIssue *gh.Issue) (platform.Issue, e
 	if ghIssue.UpdatedAt != nil {
 		issue.UpdatedAt = ghIssue.UpdatedAt.Time
 		issue.LastActivityAt = ghIssue.UpdatedAt.Time
+	} else {
+		issue.UpdatedAt = issue.CreatedAt
+		issue.LastActivityAt = issue.CreatedAt
 	}
 	if ghIssue.ClosedAt != nil {
 		t := ghIssue.ClosedAt.Time
@@ -156,6 +159,7 @@ func NormalizeReviewEvent(
 		Author:             loginOrEmpty(r.GetUser()),
 		Body:               r.GetBody(),
 		Summary:            r.GetState(),
+		DirectURL:          r.GetHTMLURL(),
 	}
 	if r.SubmittedAt != nil {
 		event.CreatedAt = r.SubmittedAt.Time

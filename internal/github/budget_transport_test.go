@@ -29,6 +29,31 @@ func TestBudgetTransport_CountsSyncContext(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(1, budget.Spent())
+	assert.Zero(budget.ArchiveSpent())
+}
+
+func TestBudgetTransport_CountsArchiveContextSeparately(t *testing.T) {
+	assert := assert.New(t)
+	budget := NewSyncBudget(100)
+	bt := &budgetTransport{
+		base: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			return httptest.NewRecorder().Result(), nil
+		}),
+		budget: budget,
+	}
+
+	req, err := http.NewRequestWithContext(
+		WithArchiveSyncBudget(t.Context()),
+		http.MethodGet,
+		"https://api.github.com/repos/o/n/issues/1/comments",
+		nil,
+	)
+	require.NoError(t, err)
+	_, err = bt.RoundTrip(req)
+	require.NoError(t, err)
+
+	assert.Equal(1, budget.Spent())
+	assert.Equal(1, budget.ArchiveSpent())
 }
 
 func TestBudgetTransport_SkipsNotModifiedResponses(t *testing.T) {

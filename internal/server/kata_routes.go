@@ -183,6 +183,9 @@ func probeKataDaemon(id string, d kata.Daemon) string {
 			"daemon", id, "target", kata.RedactURL(d.URL), "err", err)
 		return "down"
 	}
+	if transport != nil {
+		transport = disposableKataDaemonTransport(transport)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), kataDaemonProbeTimeout)
 	defer cancel()

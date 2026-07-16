@@ -418,40 +418,26 @@ url = "http://`+addr+`"
 
 func TestKataDaemonsEndpointHealthOverUnixSocket(t *testing.T) {
 	assert := assert.New(t)
-	require := require.New(t)
 
-	t.Setenv("TMPDIR", "/tmp") // Keep Unix socket paths below macOS' length limit.
-	dir := t.TempDir()
-	socketPath := filepath.Join(dir, "h.sock")
-	listener, err := net.Listen("unix", socketPath)
-	require.NoError(err)
-	upstream := &http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	upstream := startTrackedKataUnixServer(t,
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}),
-	}
-	upstreamDone := make(chan struct{})
-	go func() {
-		_ = upstream.Serve(listener)
-		close(upstreamDone)
-	}()
-	t.Cleanup(func() {
-		require.NoError(upstream.Close())
-		<-upstreamDone
-	})
+	)
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
 	writeKataServerCatalog(t, home, `
 [[daemon]]
 name = "u"
-url = "unix://`+socketPath+`"
+url = "`+upstream.target+`"
 `)
 	srv, _ := setupTestServer(t)
 
 	got := requestKataDaemonsByID(t, srv)
 
 	assert.Equal("connected", got["u"].Health)
+	upstream.requireConnectionsDrained(t)
 }
 
 func TestKataDaemonsEndpointCachesHealthWithinTTL(t *testing.T) {

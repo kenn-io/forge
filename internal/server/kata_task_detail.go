@@ -214,6 +214,7 @@ func kataDaemonHTTPClient(d kata.Daemon) (*http.Client, string, error) {
 	if transport == nil {
 		transport = newDefaultKataDaemonTransport()
 	}
+	transport = disposableKataDaemonTransport(transport)
 	base := strings.TrimSuffix(target.String(), "/")
 	// Like the proxy and health probe, never follow daemon redirects: a
 	// misconfigured or malicious daemon must not bounce server-side reads

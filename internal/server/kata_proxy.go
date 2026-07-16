@@ -340,3 +340,13 @@ func newDefaultKataDaemonTransport() http.RoundTripper {
 		ExpectContinueTimeout: 1 * time.Second,
 	}).Clone()
 }
+
+func disposableKataDaemonTransport(transport http.RoundTripper) http.RoundTripper {
+	concrete, ok := transport.(*http.Transport)
+	if !ok {
+		return transport
+	}
+	owned := concrete.Clone()
+	owned.DisableKeepAlives = true
+	return owned
+}

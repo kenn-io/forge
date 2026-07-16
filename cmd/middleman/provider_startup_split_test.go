@@ -66,8 +66,8 @@ func TestBuildProviderStartupScopesWriteTrackersToAppChains(t *testing.T) {
 	)
 	require.NoError(err)
 
-	appKey := github.RateBucketKey(string(platform.KindGitHub), "github.com")
-	envKey := github.RateBucketKey(string(platform.KindGitHub), "ghe.example.com")
+	appKey := github.RateBucketKey(string(platform.KindGitHub), "github.com", "host")
+	envKey := github.RateBucketKey(string(platform.KindGitHub), "ghe.example.com", "host")
 	assert.Contains(startup.writeRateTrackers, appKey)
 	assert.Contains(startup.writeGQLRateTrackers, appKey)
 	assert.NotContains(startup.writeRateTrackers, envKey,

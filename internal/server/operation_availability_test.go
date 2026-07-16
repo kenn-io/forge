@@ -332,13 +332,13 @@ func TestRepoOperationsWireShape(t *testing.T) {
 func newServerWithRateTracker(t *testing.T) (*Server, *db.DB, *ratelimit.RateTracker) {
 	t.Helper()
 	database := dbtest.Open(t)
-	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	rt := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, nil,
 		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
-		map[string]*ghclient.RateTracker{ratelimit.RateBucketKey("github", "github.com"): rt},
+		map[string]*ghclient.RateTracker{ratelimit.RateBucketKey("github", "github.com", "host"): rt},
 		nil,
 	)
 	t.Cleanup(syncer.Stop)
@@ -407,14 +407,14 @@ func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testin
 	// the earlier behavior that treated either tracker's pause as
 	// blocking every operation.
 	database := dbtest.Open(t)
-	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
-	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
+	restRT := ghclient.NewRateTracker(database, "github.com", "host", "rest")
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "host", "graphql")
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, nil,
 		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
-		map[string]*ghclient.RateTracker{ratelimit.RateBucketKey("github", "github.com"): restRT},
+		map[string]*ghclient.RateTracker{ratelimit.RateBucketKey("github", "github.com", "host"): restRT},
 		nil,
 	)
 	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
@@ -454,15 +454,15 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		require := require.New(t)
 		assert := assert.New(t)
 		database := dbtest.Open(t)
-		gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
-		key := ratelimit.RateBucketKey("github", "github.com")
+		gqlRT := ghclient.NewRateTracker(database, "github.com", "host", "graphql")
+		key := ratelimit.RateBucketKey("github", "github.com", "host")
 		syncer := ghclient.NewSyncer(
 			map[string]ghclient.Client{"github.com": &mockGH{}},
 			database, nil,
 			[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 			time.Minute,
 			map[string]*ghclient.RateTracker{
-				key: ghclient.NewRateTracker(database, "github.com", "rest"),
+				key: ghclient.NewRateTracker(database, "github.com", "host", "rest"),
 			},
 			nil,
 		)
@@ -493,7 +493,7 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		require := require.New(t)
 		assert := assert.New(t)
 		database := dbtest.Open(t)
-		gqlRT := ghclient.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "graphql")
+		gqlRT := ghclient.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "host", "graphql")
 		provider := &apiTestGitLabProvider{
 			ref: platform.RepoRef{
 				Platform: platform.KindGitLab,
@@ -635,10 +635,10 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 	// app tracker must not disable PAT-backed writes, and an exhausted
 	// write tracker must disable them even while reads still flow.
 	database := dbtest.Open(t)
-	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
-	writeRT := ghclient.NewRateTracker(database, "github.com", "rest_write")
-	writeGQLRT := ghclient.NewRateTracker(database, "github.com", "graphql_write")
-	key := ratelimit.RateBucketKey("github", "github.com")
+	restRT := ghclient.NewRateTracker(database, "github.com", "host", "rest")
+	writeRT := ghclient.NewRateTracker(database, "github.com", "user:1", "rest_write")
+	writeGQLRT := ghclient.NewRateTracker(database, "github.com", "user:1", "graphql_write")
+	key := ratelimit.RateBucketKey("github", "github.com", "host")
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, nil,

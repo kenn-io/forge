@@ -154,7 +154,7 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 		},
 	})
 	c := newSplitAuthTestClient(t, srv, source)
-	writeGQLRT := NewRateTracker(openTestDB(t), "github.example.com", "graphql_write")
+	writeGQLRT := NewRateTracker(openTestDB(t), "github.example.com", "user:1", "graphql_write")
 	c.SetWriteGraphQLRateTracker(writeGQLRT)
 
 	_, err := c.ListReleases(t.Context(), "acme", "widgets", 10)
@@ -271,8 +271,8 @@ func TestNotificationAPIsUseUserAuthAndBackgroundBudget(t *testing.T) {
 		},
 	})
 	database := openTestDB(t)
-	readRT := NewRateTracker(database, "github.example.com", "rest")
-	writeRT := NewRateTracker(database, "github.example.com", "rest_write")
+	readRT := NewRateTracker(database, "github.example.com", "host", "rest")
+	writeRT := NewRateTracker(database, "github.example.com", "user:1", "rest_write")
 	budget := NewSyncBudget(100)
 	client, err := NewClient(
 		source,

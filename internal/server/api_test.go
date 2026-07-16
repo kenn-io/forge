@@ -5464,7 +5464,7 @@ func TestAPISyncRefreshesStaleCachedChecksWhenAggregateCIChanges(t *testing.T) {
 		time.Minute,
 		nil,
 		map[string]*ghclient.SyncBudget{
-			ghclient.RateBucketKey("gitlab", ref.Host): ghclient.NewSyncBudget(100),
+			ghclient.RateBucketKey("gitlab", ref.Host, "host"): ghclient.NewSyncBudget(100),
 		},
 	)
 	t.Cleanup(syncer.Stop)
@@ -5582,7 +5582,7 @@ func TestAPISyncRefreshesCachedPendingChecksThroughDetailDrain(t *testing.T) {
 		time.Minute,
 		nil,
 		map[string]*ghclient.SyncBudget{
-			ghclient.RateBucketKey("gitlab", ref.Host): ghclient.NewSyncBudget(100),
+			ghclient.RateBucketKey("gitlab", ref.Host, "host"): ghclient.NewSyncBudget(100),
 		},
 	)
 	t.Cleanup(syncer.Stop)
@@ -7698,7 +7698,7 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	}
 	trackers := map[string]*ghclient.RateTracker{
 		"github.com": ghclient.NewRateTracker(
-			database, "github.com", "rest",
+			database, "github.com", "host", "rest",
 		),
 	}
 	syncer := ghclient.NewSyncer(
@@ -17730,8 +17730,8 @@ func TestAPIApplyReviewSuggestionRejectsRateLimitedOperationBeforeProviderCall(t
 	provider.rateLimitBuckets = map[platform.OperationName][]platform.RateLimitBucket{
 		platform.OperationApplyReviewSuggestion: {platform.RateLimitBucketREST},
 	}
-	rt := ghclient.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "rest")
-	srv.syncer.RateTrackers()[ghclient.RateBucketKey("gitlab", "gitlab.example.com")] = rt
+	rt := ghclient.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "host", "rest")
+	srv.syncer.RateTrackers()[ghclient.RateBucketKey("gitlab", "gitlab.example.com", "host")] = rt
 	rt.UpdateFromRate(ghclient.Rate{
 		Limit:     5000,
 		Remaining: 0,
@@ -20572,7 +20572,7 @@ func TestAPIRateLimits(t *testing.T) {
 
 	database := dbtest.Open(t)
 
-	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	rt := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
@@ -20620,7 +20620,7 @@ func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
 
 	database := dbtest.Open(t)
 
-	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	rt := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
@@ -20678,7 +20678,7 @@ func TestAPIRateLimitsWithBudget(t *testing.T) {
 
 	database := dbtest.Open(t)
 
-	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	rt := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
@@ -20722,7 +20722,7 @@ func TestAPIRateLimitsResetExpiredBudgetWindow(t *testing.T) {
 
 	database := dbtest.Open(t)
 
-	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	rt := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 	budget := ghclient.NewSyncBudget(500)
 
 	syncer := ghclient.NewSyncer(
@@ -20771,8 +20771,8 @@ func TestAPIRateLimitsWithGQL(t *testing.T) {
 
 	database := dbtest.Open(t)
 
-	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
-	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
+	restRT := ghclient.NewRateTracker(database, "github.com", "host", "rest")
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "host", "graphql")
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
@@ -20831,8 +20831,8 @@ func TestAPIRateLimitsReadsLocalStateWithoutRefreshingGitHubRateLimit(t *testing
 	gitHubRestReset := now.Add(time.Hour)
 	gitHubGQLReset := now.Add(90 * time.Minute)
 
-	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
-	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
+	restRT := ghclient.NewRateTracker(database, "github.com", "host", "rest")
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "host", "graphql")
 	restRT.UpdateFromRate(ghclient.Rate{
 		Limit:     5000,
 		Remaining: 3000,
@@ -20914,7 +20914,7 @@ func TestAPIRateLimitsGQLDefaultsUnknown(t *testing.T) {
 
 	database := dbtest.Open(t)
 
-	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	rt := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, nil,
@@ -20954,9 +20954,9 @@ func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
 	database := dbtest.Open(t)
 
 	// Two hosts: github.com has GQL data, ghe.example.com does not.
-	ghRT := ghclient.NewRateTracker(database, "github.com", "rest")
-	gheRT := ghclient.NewRateTracker(database, "ghe.example.com", "rest")
-	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
+	ghRT := ghclient.NewRateTracker(database, "github.com", "host", "rest")
+	gheRT := ghclient.NewRateTracker(database, "ghe.example.com", "host", "rest")
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "host", "graphql")
 	gqlRT.UpdateFromRate(ghclient.Rate{
 		Limit:     5000,
 		Remaining: 4500,
@@ -21021,8 +21021,8 @@ func TestAPIRateLimitsScopesSameHostByProvider(t *testing.T) {
 	database := dbtest.Open(t)
 
 	host := "code.example.com"
-	ghRT := ghclient.NewPlatformRateTracker(database, "github", host, "rest")
-	glRT := ghclient.NewPlatformRateTracker(database, "gitlab", host, "rest")
+	ghRT := ghclient.NewPlatformRateTracker(database, "github", host, "host", "rest")
+	glRT := ghclient.NewPlatformRateTracker(database, "gitlab", host, "host", "rest")
 	ghRT.RecordRequest()
 	glRT.RecordRequest()
 	glRT.RecordRequest()
@@ -21036,8 +21036,8 @@ func TestAPIRateLimitsScopesSameHostByProvider(t *testing.T) {
 		},
 		time.Minute,
 		map[string]*ghclient.RateTracker{
-			ghclient.RateBucketKey("github", host): ghRT,
-			ghclient.RateBucketKey("gitlab", host): glRT,
+			ghclient.RateBucketKey("github", host, "host"): ghRT,
+			ghclient.RateBucketKey("gitlab", host, "host"): glRT,
 		},
 		nil,
 	)

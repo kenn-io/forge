@@ -1953,7 +1953,7 @@ func TestSyncNotificationsIgnoresReadRateReserveWhenNotificationClientBypassesRe
 	require.NoError(err)
 	number := 7
 	now := time.Now().UTC()
-	rt := NewRateTracker(d, "github.com", "rest")
+	rt := NewRateTracker(d, "github.com", "host", "rest")
 	rt.UpdateFromRate(Rate{
 		Limit:     5000,
 		Remaining: RateReserveBuffer,
@@ -2006,7 +2006,7 @@ func TestSyncNotificationsStopsBeforeListingWhenSharedReadRateReserveExhausted(t
 	d := openTestDB(t)
 	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	rt := NewRateTracker(d, "github.com", "rest")
+	rt := NewRateTracker(d, "github.com", "host", "rest")
 	rt.UpdateFromRate(Rate{
 		Limit:     5000,
 		Remaining: RateReserveBuffer,
@@ -6118,7 +6118,7 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	rateKey := RateBucketKey("gitlab", "gitlab.example.com")
+	rateKey := RateBucketKey("gitlab", "gitlab.example.com", "host")
 	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{
 		rateKey: NewSyncBudget(100),
 	})
@@ -8449,7 +8449,7 @@ func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	rt := NewRateTracker(d, "github.com", "rest")
+	rt := NewRateTracker(d, "github.com", "host", "rest")
 	// Exhaust the rate limit with a future reset.
 	futureReset := time.Now().Add(30 * time.Minute)
 	rt.UpdateFromRate(Rate{
@@ -8611,7 +8611,7 @@ func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 	}
 
 	// Set up GHE tracker with remaining below reserve buffer.
-	gheTracker := NewRateTracker(d, "ghe.corp.com", "rest")
+	gheTracker := NewRateTracker(d, "ghe.corp.com", "host", "rest")
 	gheTracker.UpdateFromRate(Rate{
 		Limit:     5000,
 		Remaining: 100, // below RateReserveBuffer (200)
@@ -9642,7 +9642,7 @@ func TestDetailDrainUsesProviderReadersForNonGitHub(t *testing.T) {
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	rateKey := RateBucketKey("gitlab", "gitlab.com")
+	rateKey := RateBucketKey("gitlab", "gitlab.com", "host")
 	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{
 		rateKey: NewSyncBudget(100),
 	})
@@ -9739,7 +9739,7 @@ func TestDetailDrainDisambiguatesSameHostOwnerNameAcrossProviders(t *testing.T) 
 		gitlabProvider,
 	)
 	require.NoError(err)
-	rateKey := RateBucketKey("gitlab", host)
+	rateKey := RateBucketKey("gitlab", host, "host")
 	syncer := NewSyncer(nil, d, nil, []RepoRef{
 		githubRepo,
 		gitlabRepo,
@@ -10122,7 +10122,7 @@ func TestBudgetResetOnRateWindowReset(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
 
-	rt := NewRateTracker(d, "github.com", "rest")
+	rt := NewRateTracker(d, "github.com", "host", "rest")
 	budget := NewSyncBudget(100)
 	rt.SetOnWindowReset(budget.Reset)
 
@@ -10456,7 +10456,7 @@ func TestSyncerRateLimitProgressUsesMinuteScaleWaits(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
 
-	rt := NewRateTracker(d, "github.com", "rest")
+	rt := NewRateTracker(d, "github.com", "host", "rest")
 	rt.UpdateFromRate(Rate{
 		Remaining: 0,
 		Reset:     time.Now().Add(25*time.Minute + 38*time.Second + 364*time.Millisecond),
@@ -14127,8 +14127,8 @@ func TestSyncerGQLRateTrackers(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
 
-	rt := NewRateTracker(d, "github.com", "rest")
-	gqlRT := NewRateTracker(d, "github.com", "graphql")
+	rt := NewRateTracker(d, "github.com", "host", "rest")
+	gqlRT := NewRateTracker(d, "github.com", "host", "graphql")
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": &mockClient{}},
@@ -14154,8 +14154,8 @@ func TestRunOnceRefreshesGitHubRateLimitSnapshotOutsideSyncBudget(t *testing.T) 
 	now := time.Now().UTC().Truncate(time.Second)
 	restReset := now.Add(time.Hour)
 	gqlReset := now.Add(90 * time.Minute)
-	restRT := NewRateTracker(d, "github.com", "rest")
-	gqlRT := NewRateTracker(d, "github.com", "graphql")
+	restRT := NewRateTracker(d, "github.com", "host", "rest")
+	gqlRT := NewRateTracker(d, "github.com", "host", "graphql")
 	budget := NewSyncBudget(100)
 	client := &rateLimitSnapshotMockClient{
 		mockClient: &mockClient{},
@@ -14211,7 +14211,7 @@ func TestRunOnceSnapshotWindowResetResetsSyncBudget(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	oldReset := now.Add(time.Hour)
 	newReset := now.Add(2 * time.Hour)
-	restRT := NewRateTracker(d, "github.com", "rest")
+	restRT := NewRateTracker(d, "github.com", "host", "rest")
 	restRT.UpdateFromRate(Rate{
 		Limit:     5000,
 		Remaining: 4999,
@@ -14260,7 +14260,7 @@ func TestRunOnceRecoveredRateLimitSnapshotClearsStaleThrottleGate(t *testing.T) 
 
 	now := time.Now().UTC().Truncate(time.Second)
 	resetAt := now.Add(time.Hour)
-	rt := NewRateTracker(d, "github.com", "rest")
+	rt := NewRateTracker(d, "github.com", "host", "rest")
 	rt.UpdateFromRate(Rate{
 		Limit:     5000,
 		Remaining: 400,
@@ -14326,7 +14326,7 @@ func TestSyncerGQLRateTrackersMixed(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
 
-	validRT := NewRateTracker(d, "github.com", "graphql")
+	validRT := NewRateTracker(d, "github.com", "host", "graphql")
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": &mockClient{}},

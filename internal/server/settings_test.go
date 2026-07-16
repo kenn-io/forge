@@ -766,7 +766,7 @@ name = "widget"
 	mock := &mockGH{}
 	trackers := map[string]*ghclient.RateTracker{
 		"github.com": ghclient.NewRateTracker(
-			database, "github.com", "rest",
+			database, "github.com", "host", "rest",
 		),
 	}
 	syncer := ghclient.NewSyncer(

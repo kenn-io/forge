@@ -2768,7 +2768,7 @@ func repoHost(repo RepoRef) string {
 }
 
 func rateBucketKeyFor(kind platform.Kind, host string) string {
-	return RateBucketKey(string(kind), host)
+	return RateBucketKey(string(kind), host, "host")
 }
 
 func repoRateBucketKey(repo RepoRef) string {

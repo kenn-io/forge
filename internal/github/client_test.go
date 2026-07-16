@@ -917,7 +917,7 @@ func TestGitHubSuggestionHeadRepoRequiresCloneURL(t *testing.T) {
 func TestListReleasesTracksRate(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
-	rt := NewRateTracker(database, "github.example.com", "rest")
+	rt := NewRateTracker(database, "github.example.com", "host", "rest")
 	resetAt := time.Now().Add(time.Hour).Unix()
 	var gotMethod string
 	var gotPerPage string
@@ -955,7 +955,7 @@ func TestListReleasesTracksRate(t *testing.T) {
 func TestListTagsTracksRate(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
-	rt := NewRateTracker(database, "github.example.com", "rest")
+	rt := NewRateTracker(database, "github.example.com", "host", "rest")
 	resetAt := time.Now().Add(time.Hour).Unix()
 	var gotMethod string
 	var gotPerPage string
@@ -994,8 +994,8 @@ func TestListTagsTracksRate(t *testing.T) {
 func TestTrackGraphQLRateHeadersUsesGraphQLTracker(t *testing.T) {
 	assert := assert.New(t)
 	database := openTestDB(t)
-	restRT := NewRateTracker(database, "github.example.com", "rest")
-	gqlRT := NewRateTracker(database, "github.example.com", "graphql")
+	restRT := NewRateTracker(database, "github.example.com", "host", "rest")
+	gqlRT := NewRateTracker(database, "github.example.com", "host", "graphql")
 	resetAt := time.Now().Add(time.Hour).Unix()
 	c := &liveClient{rateTracker: restRT}
 	c.SetGraphQLRateTracker(gqlRT)

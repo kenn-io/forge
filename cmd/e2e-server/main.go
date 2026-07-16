@@ -1233,7 +1233,7 @@ func buildAppState(
 		}
 	}
 
-	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	rt := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 	// Seed with known values so the budget bars render.
 	rt.UpdateFromRate(ghclient.Rate{
 		Limit:     5000,
@@ -1241,7 +1241,7 @@ func buildAppState(
 		Reset:     time.Now().Add(45 * time.Minute),
 	})
 
-	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "host", "graphql")
 	gqlRT.UpdateFromRate(ghclient.Rate{
 		Limit:     5000,
 		Remaining: 4800,

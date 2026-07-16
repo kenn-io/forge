@@ -199,7 +199,7 @@ func TestAdaptCheckRunURLSanitization(t *testing.T) {
 func TestGraphqlRateTransport(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
-	rt := NewRateTracker(d, "github.com", "graphql")
+	rt := NewRateTracker(d, "github.com", "host", "graphql")
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-RateLimit-Remaining", "4999")
@@ -230,7 +230,7 @@ func TestGraphqlRateTransport(t *testing.T) {
 
 func TestGraphQLFetcherRateTracker(t *testing.T) {
 	d := openTestDB(t)
-	rt := NewRateTracker(d, "github.com", "graphql")
+	rt := NewRateTracker(d, "github.com", "host", "graphql")
 	f := NewGraphQLFetcher(testTokenSource("fake-token"), "github.com", rt, nil)
 	require.Same(t, rt, f.RateTracker())
 }

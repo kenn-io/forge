@@ -17,7 +17,38 @@ func openTestDB(t *testing.T) *db.DB {
 }
 
 func newGitHubRateTracker(d *db.DB, host string, apiType string) *RateTracker {
-	return NewPlatformRateTracker(d, "github", host, apiType)
+	return NewPlatformRateTracker(d, "github", host, "host", apiType)
+}
+
+func TestRateTrackerPrincipalIsolation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	first := NewPlatformRateTracker(
+		d, "github", "github.com", "user:123", "rest",
+	)
+	second := NewPlatformRateTracker(
+		d, "github", "github.com", "user:456", "rest",
+	)
+	first.RecordRequest()
+	second.RecordRequest()
+	second.RecordRequest()
+
+	firstRow, err := d.GetPlatformRateLimit(
+		"github", "github.com", "user:123", "rest",
+	)
+	require.NoError(err)
+	require.NotNil(firstRow)
+	secondRow, err := d.GetPlatformRateLimit(
+		"github", "github.com", "user:456", "rest",
+	)
+	require.NoError(err)
+	require.NotNil(secondRow)
+	assert.Equal(1, firstRow.RequestsHour)
+	assert.Equal(2, secondRow.RequestsHour)
+	assert.Equal("user:123", first.Principal())
+	assert.NotEqual(first.BucketKey(), second.BucketKey())
 }
 
 func TestRateTrackerMissingResetStaysUnknown(t *testing.T) {
@@ -62,7 +93,7 @@ func TestRateTrackerCounting(t *testing.T) {
 	assert.Equal(3, rt.RequestsThisHour())
 
 	// Verify persisted to DB
-	rl, err := d.GetRateLimit("github.com", "rest")
+	rl, err := d.GetRateLimit("github.com", "host", "rest")
 	require.NoError(err)
 	require.NotNil(rl)
 	assert.Equal(3, rl.RequestsHour)
@@ -75,28 +106,28 @@ func TestRateTrackerScopesPersistenceByPlatform(t *testing.T) {
 	d := openTestDB(t)
 
 	host := "gitlab.example.com"
-	ghRT := NewPlatformRateTracker(d, "github", host, "rest")
-	glRT := NewPlatformRateTracker(d, "gitlab", host, "rest")
+	ghRT := NewPlatformRateTracker(d, "github", host, "host", "rest")
+	glRT := NewPlatformRateTracker(d, "gitlab", host, "host", "rest")
 
 	ghRT.RecordRequest()
 	glRT.RecordRequest()
 	glRT.RecordRequest()
 
-	ghRow, err := d.GetPlatformRateLimit("github", host, "rest")
+	ghRow, err := d.GetPlatformRateLimit("github", host, "host", "rest")
 	require.NoError(err)
 	require.NotNil(ghRow)
 	assert.Equal("github", ghRow.Platform)
 	assert.Equal(1, ghRow.RequestsHour)
 
-	glRow, err := d.GetPlatformRateLimit("gitlab", host, "rest")
+	glRow, err := d.GetPlatformRateLimit("gitlab", host, "host", "rest")
 	require.NoError(err)
 	require.NotNil(glRow)
 	assert.Equal("gitlab", glRow.Platform)
 	assert.Equal(2, glRow.RequestsHour)
 
-	reopenedGitLab := NewPlatformRateTracker(d, "gitlab", host, "rest")
+	reopenedGitLab := NewPlatformRateTracker(d, "gitlab", host, "host", "rest")
 	assert.Equal(2, reopenedGitLab.RequestsThisHour())
-	assert.Equal("gitlab:"+host, reopenedGitLab.BucketKey())
+	assert.Equal(RateBucketKey("gitlab", host, "host"), reopenedGitLab.BucketKey())
 }
 
 func TestRateTrackerBackoff(t *testing.T) {
@@ -486,12 +517,12 @@ func TestRateTrackerAPITypeIsolation(t *testing.T) {
 	assert.Equal(3, gqlRT.RequestsThisHour())
 
 	// Verify DB isolation
-	restRow, err := d.GetRateLimit("github.com", "rest")
+	restRow, err := d.GetRateLimit("github.com", "host", "rest")
 	require.NoError(err)
 	require.NotNil(restRow)
 	assert.Equal(5, restRow.RequestsHour)
 
-	gqlRow, err := d.GetRateLimit("github.com", "graphql")
+	gqlRow, err := d.GetRateLimit("github.com", "host", "graphql")
 	require.NoError(err)
 	require.NotNil(gqlRow)
 	assert.Equal(3, gqlRow.RequestsHour)

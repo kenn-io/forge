@@ -19,19 +19,24 @@ type RateLimitSnapshot struct {
 }
 
 func NewRateTracker(
-	database *db.DB, platformHost string, apiType string,
+	database *db.DB, platformHost, ratePrincipal, apiType string,
 ) *RateTracker {
-	return ratelimit.NewPlatformRateTracker(database, "github", platformHost, apiType)
+	return ratelimit.NewPlatformRateTracker(
+		database, "github", platformHost, ratePrincipal, apiType,
+	)
 }
 
 func NewPlatformRateTracker(
-	database *db.DB, platformName string, platformHost string, apiType string,
+	database *db.DB,
+	platformName, platformHost, ratePrincipal, apiType string,
 ) *RateTracker {
-	return ratelimit.NewPlatformRateTracker(database, platformName, platformHost, apiType)
+	return ratelimit.NewPlatformRateTracker(
+		database, platformName, platformHost, ratePrincipal, apiType,
+	)
 }
 
-func RateBucketKey(platformName, platformHost string) string {
-	return ratelimit.RateBucketKey(platformName, platformHost)
+func RateBucketKey(platformName, platformHost, ratePrincipal string) string {
+	return ratelimit.RateBucketKey(platformName, platformHost, ratePrincipal)
 }
 
 func rateFromGitHub(rate gh.Rate) Rate {

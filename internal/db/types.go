@@ -1020,6 +1020,7 @@ type RateLimit struct {
 	ID            int64
 	Platform      string
 	PlatformHost  string
+	RatePrincipal string
 	APIType       string
 	RequestsHour  int
 	HourStart     time.Time

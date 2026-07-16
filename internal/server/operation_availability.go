@@ -406,7 +406,7 @@ func (s *Server) mutationRateLimitedReason(
 		return rateLimitAvailability{}
 	}
 	host := httpapi.ProviderHost(repo)
-	key := ratelimit.RateBucketKey(string(httpapi.ProviderKind(repo)), host)
+	key := ratelimit.RateBucketKey(string(httpapi.ProviderKind(repo)), host, "host")
 	var writeTrackers map[string]*ratelimit.RateTracker
 	switch bucket {
 	case apiBucketREST:
@@ -431,7 +431,7 @@ func (s *Server) rateLimitedReason(repo db.Repo, bucket apiBucket) rateLimitAvai
 	}
 	host := httpapi.ProviderHost(repo)
 	providerName := string(httpapi.ProviderKind(repo))
-	key := ratelimit.RateBucketKey(providerName, host)
+	key := ratelimit.RateBucketKey(providerName, host, "host")
 
 	var trackers map[string]*ratelimit.RateTracker
 	switch bucket {

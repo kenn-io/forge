@@ -174,10 +174,10 @@ func buildProviderStartup(
 	githubHosts := make(map[string]struct{}, len(providerSources))
 	for key, tokenSource := range providerSources {
 		platformName, host := splitProviderHostKey(key)
-		rateKey := github.RateBucketKey(platformName, host)
+		rateKey := github.RateBucketKey(platformName, host, "host")
 		if _, ok := startup.rateTrackers[rateKey]; !ok {
 			startup.rateTrackers[rateKey] = github.NewPlatformRateTracker(
-				database, platformName, host, "rest",
+				database, platformName, host, "host", "rest",
 			)
 		}
 		if budgetPerHour > 0 {
@@ -237,8 +237,8 @@ func buildProviderStartup(
 	}
 	startup.registry = registry
 	for host := range githubHosts {
-		rateKey := github.RateBucketKey(string(platform.KindGitHub), host)
-		gqlRT := github.NewPlatformRateTracker(database, string(platform.KindGitHub), host, "graphql")
+		rateKey := github.RateBucketKey(string(platform.KindGitHub), host, "host")
+		gqlRT := github.NewPlatformRateTracker(database, string(platform.KindGitHub), host, "host", "graphql")
 		if setter, ok := clients[host].(graphQLRateTrackerSetter); ok {
 			setter.SetGraphQLRateTracker(gqlRT)
 		}
@@ -257,10 +257,10 @@ func buildProviderStartup(
 		if hostSource != nil && hostSource.Descriptor().HasActiveGitHubApp() {
 			if setter, ok := clients[host].(writeRateTrackerSetter); ok {
 				writeRT := github.NewPlatformRateTracker(
-					database, string(platform.KindGitHub), host, "rest_write",
+					database, string(platform.KindGitHub), host, "host", "rest_write",
 				)
 				writeGQLRT := github.NewPlatformRateTracker(
-					database, string(platform.KindGitHub), host, "graphql_write",
+					database, string(platform.KindGitHub), host, "host", "graphql_write",
 				)
 				setter.SetWriteRateTracker(writeRT)
 				setter.SetWriteGraphQLRateTracker(writeGQLRT)

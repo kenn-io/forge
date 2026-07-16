@@ -529,6 +529,51 @@ func TestOpenMigratesLegacyDatabase(t *testing.T) {
 	}
 }
 
+func TestOpenMigratesRateLimitsToPrincipals(t *testing.T) {
+	require := require.New(t)
+	path := filepath.Join(t.TempDir(), "rate-v38.db")
+	openAtVersionForTest(t, path, 38, func(raw *sql.DB) {
+		hour := time.Now().UTC().Truncate(time.Hour)
+		_, err := raw.Exec(`
+			INSERT INTO middleman_rate_limits
+			    (platform, platform_host, api_type, requests_hour, hour_start,
+			     rate_remaining, rate_limit, updated_at)
+			VALUES
+			    ('github', 'github.com', 'rest', 4, ?, 4996, 5000, datetime('now')),
+			    ('gitlab', 'gitlab.example.com', 'rest', 2, ?, 598, 600, datetime('now'))`,
+			hour, hour,
+		)
+		require.NoError(err)
+	})
+
+	database, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	var principal string
+	err = database.ReadDB().QueryRow(`
+		SELECT rate_principal FROM middleman_rate_limits
+		WHERE platform = 'gitlab' AND platform_host = 'gitlab.example.com'
+	`).Scan(&principal)
+	require.NoError(err)
+	require.Equal("host", principal)
+
+	var githubRows int
+	err = database.ReadDB().QueryRow(`
+		SELECT COUNT(*) FROM middleman_rate_limits WHERE platform = 'github'
+	`).Scan(&githubRows)
+	require.NoError(err)
+	require.Zero(githubRows)
+
+	var integrity string
+	require.NoError(database.ReadDB().QueryRow(`PRAGMA integrity_check`).Scan(&integrity))
+	require.Equal("ok", integrity)
+	rows, err := database.ReadDB().Query(`PRAGMA foreign_key_check`)
+	require.NoError(err)
+	defer rows.Close()
+	require.False(rows.Next())
+}
+
 func TestOpenBackfillsLegacyIssueLabelsIntoNormalizedTables(t *testing.T) {
 	require := require.New(t)
 	path, raw := openSchemaVersion4DBForTest(t)

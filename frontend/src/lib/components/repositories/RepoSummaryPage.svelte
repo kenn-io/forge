@@ -749,7 +749,8 @@
     gap: 12px;
   }
 
-  @media (max-width: 900px) {
+  /* kit-ui-check-ignore: header/toolbar must stack before their max-content columns overflow; 960 sits above the shared ladder's widest step */
+  @media (max-width: 960px) {
     .repo-page {
       padding: 18px;
     }

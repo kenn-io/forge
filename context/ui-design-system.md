@@ -349,6 +349,9 @@ Responsive layout work should separate presentation mode from sizing mode.
 - Use phone/mobile sizing only for phone-like contexts, such as coarse pointer, mobile user agent, or explicit force-mobile test paths.
 - Do not use one broad "phone viewport" predicate for both decisions. That makes desktop-narrow windows inherit oversized mobile typography, action grids, and touch-only geometry.
 - When a compact canonical route reuses focus presentation, keep desktop-scale tokens unless the environment is phone-like.
+- Shared breakpoints are defaults, not overflow overrides: max-content toolbars
+  must stack at the first width that contains their controls, with the boundary
+  pinned by browser geometry (`frontend/src/lib/components/repositories/RepoSummaryPage.svelte::.repo-page__toolbar`).
 
 Before adding UI styling:
 

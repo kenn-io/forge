@@ -72,9 +72,65 @@ being fetched again solely for archive bookkeeping.
 
 Provider-host work uses one priority and budget coordinator. Normal sync and
 archive selectors may independently decide what work is due, but they do not
-implement separate admission, reserve, or host-concurrency policies. The
-coordinator orders interactive detail, notification and active-item sync ahead
-of archive maintenance and historical hydration.
+implement separate admission, reserve, or host-concurrency policies. Every
+regular-sync class — interactive item refresh, open and watched item detail,
+notifications, and current index sync — outranks every archive class. Archive
+maintenance outranks historical hydration, and discovery inventory is lowest.
+
+Sharing provider and persistence primitives must not make live work a consumer
+of the archive scheduler. A live refresh starts directly, never waits for an
+archive repository or item claim, cursor, staged page, retry time, completeness
+transition, or report transaction, and does not stage provider pages on disk.
+Absent, stale, paused, or internally inconsistent archive state leaves archive
+work pending but cannot reject or delay an otherwise valid live domain write.
+When a live write can also advance archive coverage, that advancement adds no
+provider request and has no archive-state precondition; a stale conditional
+archive update simply affects zero rows.
+
+Priority is enforced at every provider-request boundary, not only when an
+archive item is first claimed. Once live work is runnable, the coordinator
+admits no new archive request for that provider host. Archive execution is
+page-bounded and may not retain host admission while traversing multiple pages,
+items, or datasets. An already-started provider request cannot be preempted, so
+one such request is the maximum archive-caused delay before live work proceeds.
+Database staging or reporting must never hold provider-host admission.
+
+Archive traffic may spend only time-released surplus after the coordinator
+reserves a hard live floor and the provider's normal rate reserve. Every shared
+provider operation declares a conservative worst-case request cost. For a
+host, the hard live floor `H` is the largest supported interactive detail cost,
+plus one current-index page cost, plus one notification page cost when that
+provider supports notifications. Unsupported classes contribute zero. The hard
+floor is never available to archive work. If the configured budget `B` is less
+than or equal to `H`, archive provider requests remain disabled for that host
+while live sync continues normally.
+
+Surplus release is deliberately back-loaded within the one-hour sync-budget
+window. With observed provider reset `R` and current time `t`, the elapsed
+fraction is `f = clamp(1 - (R - t) / 1 hour, 0, 1)`. The cumulative archive
+spend ceiling is `floor((B - H) * f²)`. A new archive request is admitted only
+when its declared cost fits both that ceiling and the remaining budget above
+`H`. Consequently archive work is conservative early, may catch up faster as
+reset approaches, and can consume nearly all otherwise expiring surplus
+immediately before reset without touching the hard live floor. The
+provider-reported rate reserve is an independent hard gate and is never
+relaxed by this ramp.
+
+The coordinator uses the provider tracker's observed reset timestamp as the
+window boundary. If it is absent, stale, or more than one hour in the future,
+archive admission uses `f = 0` rather than guessing from wall-clock hour
+boundaries. A provider window reset clears cumulative archive spend and wakes
+pending archive work. All operation-cost declarations, the live-floor
+calculation, archive spend, and reset transition are observable in scheduler
+status or diagnostics so a stalled archive can be explained without debug
+logging.
+
+This policy cannot reserve capacity for an unbounded, unknowable future burst;
+it guarantees instead that runnable live work is never displaced, the hard
+live floor is never spent by archive work, and unreleased surplus remains
+available to live sync. Archive exhaustion is expected, while archive work
+must never be the reason the hard live floor is unavailable. This remains one
+shared budget policy, not an independent archive quota.
 
 Responsibilities remain distinct:
 
@@ -92,9 +148,14 @@ whose purpose is to exhaust old issues and pull or merge requests.
 These boundaries are architectural invariants. Provider tests must exercise
 the canonical page reader, and sync/archive integration tests must prove that
 both consumers publish identical normalized datasets through the shared
-revision-aware path. Adding an archive-only provider request, normalizer,
-domain writer, or admission framework for an already supported dataset is a
-design regression.
+revision-aware path. Priority tests must prove that runnable live work is
+admitted before archive work, that the hard live floor survives archive spend,
+that archive admission increases monotonically and follows the back-loaded
+ceiling as reset approaches, that an unknown reset stays conservative, that
+live work waits for at most one already-started archive request, and that
+broken or paused archive state cannot fail a live refresh. Adding an
+archive-only provider request, normalizer, domain writer, or admission
+framework for an already supported dataset is a design regression.
 
 ## Collection modes and lifecycle
 
@@ -182,12 +243,14 @@ if it is configured.
 All provider reads pass through the same provider-host priority and budget
 coordinator. Archive traffic shares the host's `sync_budget_per_hour` bucket,
 provider-reported rate reserve, credentials, and concurrency limits with
-normal background sync; there is no separate archive quota, token chain, or
-admission framework, and mutations are unaffected. Archive work always yields
-to index sync, notification refresh, and open-item detail refresh. Manually
+normal background sync; there is no separate archive token chain or admission
+framework, and mutations are unaffected. The coordinator preserves the hard
+live floor and time-releases surplus archive capacity more aggressively as the
+observed provider reset approaches. Every archive request still yields to
+interactive, open, watched, notification, and current-index work. Manually
 starting an archive wakes its durable work selector but never bypasses shared
-budget or backoff; exhaustion is a normal `waiting_for_budget` state, not a
-failure.
+priority, live floor, release ceiling, provider reserve, or backoff; exhaustion
+is a normal `waiting_for_budget` state, not a failure.
 
 ## Reports
 

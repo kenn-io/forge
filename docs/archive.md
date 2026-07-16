@@ -32,16 +32,81 @@ lifecycle event families; previous versions of edited content; content the
 provider has deleted. The archive mirrors current provider truth — edits
 overwrite, deletions disappear, and no tombstones are kept.
 
+## Shared sync and ingestion architecture
+
+The archive is a completeness policy over the regular sync pipeline, not a
+second provider-ingestion stack. Regular sync, interactive detail refresh,
+and archive work use the same provider reads, normalization, error
+classification, rate accounting, and domain persistence.
+
+Provider integrations expose one canonical page-oriented read operation for
+each dataset. Regular sync may drain those pages immediately when it needs a
+complete interactive snapshot; archive work may commit an opaque cursor after
+each page so it can resume later. Whole-dataset helpers are collectors over
+the page operation, not separate endpoint implementations. A provider must
+not maintain parallel normal-sync and archive-sync request or normalization
+paths for the same dataset.
+
+All complete observations publish through one revision-aware ingestion API:
+
+- parent issue and merge-request snapshots use the same monotonic provider
+  timestamp and local revision rules;
+- ordinary comments use the same replacement semantics;
+- submitted reviews and review threads use the same stable-identity additive
+  semantics;
+- child datasets publish only while the parent revision that produced them is
+  current.
+
+Regular sync supplies complete datasets collected in memory. Archive work
+supplies complete datasets assembled from durable staged pages. Staged pages
+are resumable work records, not a second copy of domain content, and both
+callers use the same final publication operation.
+
+A complete regular-sync observation also advances matching archive work when
+all of the following are true: the exact repository and item are tracked, the
+full dataset page sequence was fetched, and the parent revision is still
+current. Domain publication and archive completion commit atomically. Partial
+or best-effort regular-sync reads never claim archive completeness. This lets
+active items become fully archived through normal maintenance instead of
+being fetched again solely for archive bookkeeping.
+
+Provider-host work uses one priority and budget coordinator. Normal sync and
+archive selectors may independently decide what work is due, but they do not
+implement separate admission, reserve, or host-concurrency policies. The
+coordinator orders interactive detail, notification and active-item sync ahead
+of archive maintenance and historical hydration.
+
+Responsibilities remain distinct:
+
+- regular sync owns selection of open, watched, recent, and interactively
+  requested items, plus CI and workflow-approval refreshes;
+- archive state owns historical inventory cursors, durable staged pages,
+  retries, terminal outcomes, coverage, completeness, and reports;
+- shared ingestion owns provider requests, pagination, normalization, error
+  classification, budget accounting, revision safety, and domain writes.
+
+The historical inventory maintained by archive discovery replaces the former
+regular-sync historical backfill. There must be only one background crawler
+whose purpose is to exhaust old issues and pull or merge requests.
+
+These boundaries are architectural invariants. Provider tests must exercise
+the canonical page reader, and sync/archive integration tests must prove that
+both consumers publish identical normalized datasets through the shared
+revision-aware path. Adding an archive-only provider request, normalizer,
+domain writer, or admission framework for an already supported dataset is a
+design regression.
+
 ## Collection modes and lifecycle
 
-Every configured repository starts in **discovery** mode: middleman cheaply
-enumerates historical issues and pull requests oldest-first so they exist as
-rows, without fetching their discussion or review data. Discovery mode never
-claims archive completeness.
+Every configured repository starts in **discovery** mode. Normal sync records
+items it encounters, while the archive inventory cheaply enumerates remaining
+historical issues and pull requests oldest-first so there is one exhaustive
+historical crawler. Discovery does not fetch discussion or review data solely
+for the archive and never claims archive completeness.
 
-`middleman archive start` promotes repositories to **full** mode: everything
-already discovered becomes pending hydration, and inventory plus hydration
-proceed until the archive is complete. Start and pause are idempotent; a
+`middleman archive start` promotes repositories to **full** mode. Inventory
+continues, and only supported datasets not already proven complete by shared
+ingestion become pending hydration. Start and pause are idempotent; a
 multi-repository start is validated all-or-nothing before any state changes.
 
 Configuration changes follow the config file:
@@ -54,8 +119,9 @@ Configuration changes follow the config file:
 - credential changes let blocked work retry on the next eligible cycle.
 
 Daemon restarts are safe at any point: inventory cursors commit atomically
-with the items of each page, and a hydrated item is either completely
-mirrored or untouched.
+with the items of each page, staged dataset pages resume from durable cursors,
+and shared publication either commits the complete current-revision dataset
+with its archive progress or leaves both untouched.
 
 ## Status and coverage
 
@@ -82,14 +148,19 @@ stable identity, actor, and timestamp.
 
 ## Maintenance
 
-After the initial backfill, a **prompt** stream keeps a full archive fresh
-within the same budget: it periodically enumerates items updated since an
-overlapped watermark and rehydrates them. Archive writes use the same plain
-persistence as normal sync — parent snapshots apply under the provider
-`updated_at` monotonic guard, ordinary comments are replaced per item on
-refresh, and reviews and review threads are written additively. Child edits
-or deletions that never touch the parent item's timestamp are picked up the
-next time the item is rehydrated; there is no freshness SLA.
+After the initial backfill, a **prompt** selector keeps a full archive fresh
+within the same budget. It periodically enumerates items updated since an
+overlapped watermark and queues unresolved current-revision datasets. It uses
+the same canonical page readers and ingestion path as regular sync; it does
+not run a parallel refresh implementation.
+
+A complete regular-sync refresh may satisfy that queued archive work
+atomically. Archive hydration therefore skips a provider request when shared
+ingestion has already completed the current revision. Ordinary comments are
+replaced per item on refresh, while reviews and review threads are written
+additively. Child edits or deletions that never touch the parent item's
+timestamp are picked up the next time the item is selected; there is no
+freshness SLA.
 
 ## Removed and moved items
 
@@ -108,11 +179,13 @@ if it is configured.
 
 ## Rate limits and scheduling
 
-Archive traffic shares each provider host's `sync_budget_per_hour` bucket
-and provider-reported rate reserve with normal background sync; there is no
-separate archive quota or token chain, and mutations are unaffected. Archive
-work always yields to index sync, notification refresh, and open-item detail
-refresh. Manually starting an archive wakes the scheduler but never bypasses
+All provider reads pass through the same provider-host priority and budget
+coordinator. Archive traffic shares the host's `sync_budget_per_hour` bucket,
+provider-reported rate reserve, credentials, and concurrency limits with
+normal background sync; there is no separate archive quota, token chain, or
+admission framework, and mutations are unaffected. Archive work always yields
+to index sync, notification refresh, and open-item detail refresh. Manually
+starting an archive wakes its durable work selector but never bypasses shared
 budget or backoff; exhaustion is a normal `waiting_for_budget` state, not a
 failure.
 

@@ -1,28 +1,13 @@
 # Database Migrations
 
-Migration handling depends on whether the migration has shipped:
+- **Shipped migrations are immutable.** A migration has shipped when it exists on `origin/main`, a tag or release branch, or a production database; correct it with a new forward migration.
+- **Each PR introduces at most one migration.** Amend a PR-local migration in place instead of stacking fix-ups.
 
-1. **Never modify a shipped migration.** A migration is immutable when it exists on `origin/main`, in a tag or release branch, or has been applied to a production database. Correct it with a new forward migration.
-2. **Use one migration per PR, amended in place.** A migration that exists only on the current PR branch is rewriteable. If the schema changes during the PR, update that migration instead of stacking fix-up migrations.
-
-Before editing a migration, refresh remote refs and check the boundary:
-
-```bash
-git fetch --tags origin
-git log --oneline origin/main -- internal/db/migrations/<file>
-git log --oneline --tags -- internal/db/migrations/<file>
-git branch -r --list 'origin/release/*'
-```
-
-If release branches exist, check them explicitly with `git log` as well. Empty results from every applicable history check mean the migration is PR-local unless it has been applied to production or another non-resettable environment. When the boundary cannot be established, treat the migration as immutable and ask before editing it.
-
-The pre-commit hook `go run ./tools/migrationhistorycheck` rejects staged edits to migrations on `origin/main` and duplicate migration numbers. It is a backstop, not the full policy: a passing hook does not permit multiple PR-local migrations or prove that tag, release-branch, production, or shared-environment history is safe. If a checkout uses a different main-branch ref, set `MIDDLEMAN_MIGRATION_BASE_REF` before running the hook.
+`go run ./tools/migrationhistorycheck` enforces edits to the comparison base, duplicate migration numbers, and multiple new migrations. CI compares against the immediate PR base so stacked PRs may each own one migration; local hooks inspect staged changes. The checker cannot identify production use or refs it was not given, so refresh tags and release branches before deciding a migration is PR-local. When uncertain, treat it as immutable.
 
 ## Rules
 
-- Before adding a migration, check whether the current PR already has one. If it does, amend its matching `.up.sql` and `.down.sql` files instead of creating another migration number.
-- When the PR has no migration yet, create the next sequential `NNNNNN_description.up.sql` and matching `NNNNNN_description.down.sql`.
-- Never modify `.up.sql` or `.down.sql` files that have shipped. Historical migrations must keep describing the schema at the time they were introduced.
+- New migrations use the next sequential `NNNNNN_description.up.sql` and matching `.down.sql` file.
 - Applying a PR-local migration to a resettable local or preview database does not make it immutable. Reset that database to the schema baseline after rewriting the migration so its state matches the revised history.
 - Do not add compatibility columns, dual-read/write paths, repair gates, or backfills for schema states that have never shipped. Amend the PR-local migration and current code paths directly.
 - Keep `.down.sql` honest. If the data cleanup is one-way, say that in the down migration and only undo reversible schema artifacts such as triggers or indexes.

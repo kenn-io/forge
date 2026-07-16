@@ -26,6 +26,47 @@ func TestAllowsNewMigration(t *testing.T) {
 	assert.Empty(t, stderr.String())
 }
 
+func TestBlocksMultipleNewMigrations(t *testing.T) {
+	assert := assert.New(t)
+	isolateGitEnvironment(t)
+	repo := initRepoWithMainMigration(t)
+	t.Chdir(repo)
+	t.Setenv("MIDDLEMAN_MIGRATION_BASE_REF", "main")
+
+	writeFile(t, repo, "internal/db/migrations/000002_first.up.sql", "first up\n")
+	writeFile(t, repo, "internal/db/migrations/000002_first.down.sql", "first down\n")
+	writeFile(t, repo, "internal/db/migrations/000003_second.up.sql", "second up\n")
+	writeFile(t, repo, "internal/db/migrations/000003_second.down.sql", "second down\n")
+	gitCommand(t, "add", "internal/db/migrations")
+
+	var stderr bytes.Buffer
+	assert.Equal(1, run(t.Context(), &stderr))
+	assert.Contains(stderr.String(), "one new migration")
+	assert.Contains(stderr.String(), "000002_first")
+	assert.Contains(stderr.String(), "000003_second")
+}
+
+func TestBlocksSecondMigrationAcrossPRCommits(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := initRepoWithMainMigration(t)
+	t.Chdir(repo)
+	t.Setenv("MIDDLEMAN_MIGRATION_BASE_REF", "main")
+	t.Setenv("MIDDLEMAN_MIGRATION_PR_BASE_REF", "main")
+
+	writeFile(t, repo, "internal/db/migrations/000002_first.up.sql", "first up\n")
+	writeFile(t, repo, "internal/db/migrations/000002_first.down.sql", "first down\n")
+	gitCommand(t, "add", "internal/db/migrations")
+	gitCommand(t, "commit", "-qm", "add first migration")
+
+	writeFile(t, repo, "internal/db/migrations/000003_second.up.sql", "second up\n")
+	writeFile(t, repo, "internal/db/migrations/000003_second.down.sql", "second down\n")
+	gitCommand(t, "add", "internal/db/migrations")
+
+	var stderr bytes.Buffer
+	assert.Equal(t, 1, run(t.Context(), &stderr))
+	assert.Contains(t, stderr.String(), "one new migration")
+}
+
 func TestBlocksNewMigrationWhenNumberAlreadyExistsOnMain(t *testing.T) {
 	assert := assert.New(t)
 	isolateGitEnvironment(t)

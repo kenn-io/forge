@@ -40,7 +40,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
         rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check frontend-check-no-deps api-generate roborev-api-generate \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
         profile-workspace-switch otel-lgtm \
-        frontend-api-client-check font-size-token-check huma-route-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
+        frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
         dev-clone-db frontend-dev-clone-db
 
 # gotestsum prints package names on success and full output on failure,
@@ -192,8 +192,11 @@ script-tests: check-vite-plus-bin
 # `vp exec -- node`, so this needs node_modules + vp, never a standalone `bun`.
 # Under setup-vp (CI) bun is not on PATH, so a `bun install` prerequisite here
 # fails with exit 127 even though deps are already installed.
+migration-history-check:
+	go run ./tools/migrationhistorycheck
+
 guardrail-check: check-vite-plus-bin
-	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check playwright-version-check script-tests
+	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests
 
 
 # Regenerate the checked-in OpenAPI document and generated clients

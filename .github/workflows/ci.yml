@@ -72,6 +72,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -95,6 +96,8 @@ jobs:
 
       - name: Run guardrail checks
         run: make guardrail-check
+        env:
+          MIDDLEMAN_MIGRATION_PR_BASE_REF: ${{ github.event.pull_request.base.sha }}
 
       - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:

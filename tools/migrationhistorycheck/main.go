@@ -31,6 +31,11 @@ func main() {
 
 func run(ctx context.Context, stderr io.Writer) int {
 	baseRef := getenvDefault("MIDDLEMAN_MIGRATION_BASE_REF", defaultBaseRef)
+	comparisonRef := baseRef
+	prBaseRef := os.Getenv("MIDDLEMAN_MIGRATION_PR_BASE_REF")
+	if prBaseRef != "" {
+		comparisonRef = prBaseRef
+	}
 	migrationDir := strings.TrimRight(getenvDefault("MIDDLEMAN_MIGRATION_DIR", defaultMigrationDir), "/")
 
 	if _, err := git(ctx, "rev-parse", "--git-dir"); err != nil {
@@ -38,33 +43,43 @@ func run(ctx context.Context, stderr io.Writer) int {
 		return 1
 	}
 
-	if _, err := git(ctx, "rev-parse", "--verify", "--quiet", baseRef+"^{commit}"); err != nil {
-		fmt.Fprintf(stderr, "Cannot verify migration history because %s is unavailable.\n", baseRef)
-		fmt.Fprintln(stderr, "Fetch the main branch or set MIDDLEMAN_MIGRATION_BASE_REF to the main-branch ref to compare against.")
+	if _, err := git(ctx, "rev-parse", "--verify", "--quiet", comparisonRef+"^{commit}"); err != nil {
+		fmt.Fprintf(stderr, "Cannot verify migration history because %s is unavailable.\n", comparisonRef)
+		fmt.Fprintln(stderr, "Fetch the comparison ref or set MIDDLEMAN_MIGRATION_BASE_REF or MIDDLEMAN_MIGRATION_PR_BASE_REF to an available commit.")
 		return 1
 	}
 
-	diff, err := git(ctx, "diff", "--cached", "--name-status", "--", migrationDir)
+	diffArgs := []string{"diff", "--cached", "--name-status"}
+	if prBaseRef != "" {
+		diffArgs = append(diffArgs, comparisonRef)
+	}
+	diffArgs = append(diffArgs, "--", migrationDir)
+	diff, err := git(ctx, diffArgs...)
 	if err != nil {
 		fmt.Fprintf(stderr, "failed to inspect staged migrations: %v\n", err)
 		return 1
 	}
 
-	changedViolations := changedMainBranchMigrations(ctx, baseRef, migrationDir, diff)
-	duplicateViolations, err := duplicateMigrationNumberViolations(ctx, baseRef, migrationDir, diff)
+	changedViolations := changedBaseMigrations(ctx, comparisonRef, migrationDir, diff)
+	duplicateViolations, err := duplicateMigrationNumberViolations(ctx, comparisonRef, migrationDir, diff)
 	if err != nil {
 		fmt.Fprintf(stderr, "failed to verify migration numbers: %v\n", err)
 		return 1
 	}
+	newMigrationViolations, err := multipleNewMigrationViolations(ctx, comparisonRef, migrationDir, diff)
+	if err != nil {
+		fmt.Fprintf(stderr, "failed to verify the pull request migration count: %v\n", err)
+		return 1
+	}
 
-	if len(changedViolations) == 0 && len(duplicateViolations) == 0 {
+	if len(changedViolations) == 0 && len(duplicateViolations) == 0 && len(newMigrationViolations) == 0 {
 		return 0
 	}
 
 	fmt.Fprintln(stderr, "Refusing to commit staged migration history changes.")
 	if len(changedViolations) > 0 {
-		fmt.Fprintf(stderr, "\nEdits to migrations that already exist on %s are not allowed.\n", baseRef)
-		fmt.Fprintln(stderr, "Migrations are append-only once they land on main. Add a new numbered migration instead.")
+		fmt.Fprintf(stderr, "\nEdits to migrations that already exist on %s are not allowed.\n", comparisonRef)
+		fmt.Fprintln(stderr, "Migrations inherited from the comparison base belong to earlier history. Add or amend the current pull request's migration instead.")
 		fmt.Fprintln(stderr, "\nBlocked files:")
 		for _, path := range changedViolations {
 			fmt.Fprintf(stderr, "  %s\n", path)
@@ -76,10 +91,17 @@ func run(ctx context.Context, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "  %s: %s\n", violation.number, strings.Join(violation.names, ", "))
 		}
 	}
+	if len(newMigrationViolations) > 0 {
+		fmt.Fprintln(stderr, "\nA pull request may introduce only one new migration. Found:")
+		for _, name := range newMigrationViolations {
+			fmt.Fprintf(stderr, "  %s\n", name)
+		}
+		fmt.Fprintln(stderr, "Amend the pull request's existing migration instead of stacking fix-up migrations.")
+	}
 	return 1
 }
 
-func changedMainBranchMigrations(ctx context.Context, baseRef, migrationDir, diff string) []string {
+func changedBaseMigrations(ctx context.Context, baseRef, migrationDir, diff string) []string {
 	var violations []string
 	for line := range strings.SplitSeq(diff, "\n") {
 		if line == "" {
@@ -104,6 +126,34 @@ func changedMainBranchMigrations(ctx context.Context, baseRef, migrationDir, dif
 		}
 	}
 	return violations
+}
+
+func multipleNewMigrationViolations(ctx context.Context, baseRef, migrationDir, diff string) ([]string, error) {
+	baseByNumber, err := migrationNamesByNumberOnRef(ctx, baseRef, migrationDir)
+	if err != nil {
+		return nil, err
+	}
+
+	baseNames := map[string]struct{}{}
+	for _, names := range baseByNumber {
+		maps.Copy(baseNames, names)
+	}
+
+	newNames := map[string]struct{}{}
+	for _, path := range stagedMigrationPaths(diff, migrationDir) {
+		_, name, ok := migrationIdentityFromPath(path)
+		if !ok {
+			continue
+		}
+		if _, exists := baseNames[name]; exists {
+			continue
+		}
+		newNames[name] = struct{}{}
+	}
+	if len(newNames) <= 1 {
+		return nil, nil
+	}
+	return sortedKeys(newNames), nil
 }
 
 func stagedPathMatchesBase(ctx context.Context, baseRef, path string) bool {

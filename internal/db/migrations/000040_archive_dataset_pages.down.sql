@@ -1,1 +1,0 @@
-DROP TABLE middleman_archive_dataset_pages;

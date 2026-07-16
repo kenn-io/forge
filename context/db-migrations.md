@@ -24,11 +24,9 @@ The pre-commit hook `go run ./tools/migrationhistorycheck` rejects staged edits 
 - When the PR has no migration yet, create the next sequential `NNNNNN_description.up.sql` and matching `NNNNNN_description.down.sql`.
 - Never modify `.up.sql` or `.down.sql` files that have shipped. Historical migrations must keep describing the schema at the time they were introduced.
 - Applying a PR-local migration to a resettable local or preview database does not make it immutable. Reset that database to the schema baseline after rewriting the migration so its state matches the revised history.
-- If a PR-local migration has reached a shared mutable environment, get explicit approval for the rollback or reseed procedure before rewriting it. If that environment cannot be reset, treat the migration as immutable.
 - Do not add compatibility columns, dual-read/write paths, repair gates, or backfills for schema states that have never shipped. Amend the PR-local migration and current code paths directly.
 - Keep `.down.sql` honest. If the data cleanup is one-way, say that in the down migration and only undo reversible schema artifacts such as triggers or indexes.
 - Validate migrations through `db.Open()` and application-level tests. Do not test `golang-migrate` internals.
-- Test a migration against both a fresh database and one at the previous schema version.
 - For SQLite, remember that adding constraints to existing columns usually requires a table rebuild. Do not add fill, repair, or validation triggers as a shortcut around fixing current write paths or rebuilding a table when a real schema invariant is required.
 - A recorded migration version and the physical schema must match. There is no
   supported "partially upgraded" schema state for new migrations.

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Collapse the archive schema into its one PR-local migration and prevent future pull requests from introducing more than one migration pair.
+Collapse the archive schema into its one PR-local migration and prevent future pull requests from introducing more than one migration identity.
 
 ## Migration history
 
@@ -14,11 +14,11 @@ The down migration will reverse the final `000039` schema: drop archive tables b
 
 An `.up.sql` and `.down.sql` pair with the same numbered basename is one migration identity. A pull request fails when its delta from its immediate base contains more than one new migration identity.
 
-Local pre-commit checks continue to inspect staged migration changes. CI checks the complete pull-request delta using `github.event.pull_request.base.sha`; this avoids counting migrations inherited from lower branches in a stacked PR. A migration already present in that immediate base belongs to the lower PR and remains immutable to the current PR.
+Local pre-commit checks continue to inspect staged migration changes. CI uses `github.event.pull_request.base.sha` as the immediate base, computes PR-owned changes from its merge base with `HEAD`, and separately uses the current base tree for immutability and duplicate-number checks. This excludes lower-branch changes added after the child diverged while keeping migrations owned by the lower PR immutable to the child.
 
 ## CI integration
 
-The lint checkout will fetch enough history for the PR base commit. `make guardrail-check` will run the migration-history checker with the immediate PR base SHA. Pushes to `main` and manual workflow runs will use `origin/main` and produce an empty migration delta when no new migration is being proposed.
+The lint checkout will fetch enough history for the PR base commit. `make guardrail-check` will run the migration-history checker with the immediate PR base SHA. On non-PR events the environment value is empty, so a clean checkout performs the existing staged-only check.
 
 ## Migration guide
 
@@ -26,7 +26,7 @@ The lint checkout will fetch enough history for the PR base commit. `make guardr
 
 ## Tests
 
-Checker tests will cover multiple migrations staged together and multiple migrations spread across commits when a PR base is supplied. Existing tests continue to cover edits to base migrations, duplicate numbers, and alternate hook indexes. Database tests will validate the consolidated migration through the existing `db.Open()` paths.
+Checker tests will cover multiple migrations staged together, multiple migrations spread across commits, one migration added by a child on top of a parent migration, and a parent-only migration added after the child diverged. Existing tests continue to cover edits to base migrations, duplicate numbers, and alternate hook indexes. Database tests validate the consolidated `000038 → 000039` migration through the existing `db.Open()` path.
 
 ## Non-goals
 

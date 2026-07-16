@@ -20,19 +20,6 @@ func canonicalUTCTimePtr(t *time.Time) *time.Time {
 	return &utc
 }
 
-// canonicalizeRepoTimestamps enforces UTC storage for repo metadata timestamps
-// before update statements persist sync/backfill progress.
-func canonicalizeRepoTimestamps(repo *Repo) {
-	if repo == nil {
-		return
-	}
-	repo.CreatedAt = canonicalUTCTime(repo.CreatedAt)
-	repo.LastSyncStartedAt = canonicalUTCTimePtr(repo.LastSyncStartedAt)
-	repo.LastSyncCompletedAt = canonicalUTCTimePtr(repo.LastSyncCompletedAt)
-	repo.BackfillPRCompletedAt = canonicalUTCTimePtr(repo.BackfillPRCompletedAt)
-	repo.BackfillIssueCompletedAt = canonicalUTCTimePtr(repo.BackfillIssueCompletedAt)
-}
-
 // canonicalizeMergeRequestTimestamps enforces the repo-wide contract that PR
 // timestamps are stored in UTC, even if the caller constructed local-zone
 // fixtures or legacy values upstream.

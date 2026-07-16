@@ -3209,28 +3209,22 @@ type RepoRefResponse struct {
 // RepoResponse defines model for RepoResponse.
 type RepoResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                   *string                      `json:"$schema,omitempty"`
-	AllowMergeCommit         bool                         `json:"AllowMergeCommit"`
-	AllowRebaseMerge         bool                         `json:"AllowRebaseMerge"`
-	AllowSquashMerge         bool                         `json:"AllowSquashMerge"`
-	BackfillIssueComplete    bool                         `json:"BackfillIssueComplete"`
-	BackfillIssueCompletedAt *time.Time                   `json:"BackfillIssueCompletedAt"`
-	BackfillIssuePage        int64                        `json:"BackfillIssuePage"`
-	BackfillPRComplete       bool                         `json:"BackfillPRComplete"`
-	BackfillPRCompletedAt    *time.Time                   `json:"BackfillPRCompletedAt"`
-	BackfillPRPage           int64                        `json:"BackfillPRPage"`
-	CreatedAt                time.Time                    `json:"CreatedAt"`
-	ID                       int64                        `json:"ID"`
-	LastSyncCompletedAt      *time.Time                   `json:"LastSyncCompletedAt"`
-	LastSyncError            string                       `json:"LastSyncError"`
-	LastSyncStartedAt        *time.Time                   `json:"LastSyncStartedAt"`
-	Name                     string                       `json:"Name"`
-	Owner                    string                       `json:"Owner"`
-	Platform                 string                       `json:"Platform"`
-	PlatformHost             string                       `json:"PlatformHost"`
-	ViewerCanMerge           bool                         `json:"ViewerCanMerge"`
-	Capabilities             ProviderCapabilitiesResponse `json:"capabilities"`
-	Operations               RepoOperations               `json:"operations"`
+	Schema              *string                      `json:"$schema,omitempty"`
+	AllowMergeCommit    bool                         `json:"AllowMergeCommit"`
+	AllowRebaseMerge    bool                         `json:"AllowRebaseMerge"`
+	AllowSquashMerge    bool                         `json:"AllowSquashMerge"`
+	CreatedAt           time.Time                    `json:"CreatedAt"`
+	ID                  int64                        `json:"ID"`
+	LastSyncCompletedAt *time.Time                   `json:"LastSyncCompletedAt"`
+	LastSyncError       string                       `json:"LastSyncError"`
+	LastSyncStartedAt   *time.Time                   `json:"LastSyncStartedAt"`
+	Name                string                       `json:"Name"`
+	Owner               string                       `json:"Owner"`
+	Platform            string                       `json:"Platform"`
+	PlatformHost        string                       `json:"PlatformHost"`
+	ViewerCanMerge      bool                         `json:"ViewerCanMerge"`
+	Capabilities        ProviderCapabilitiesResponse `json:"capabilities"`
+	Operations          RepoOperations               `json:"operations"`
 }
 
 // RepoSummaryAuthorResponse defines model for RepoSummaryAuthorResponse.

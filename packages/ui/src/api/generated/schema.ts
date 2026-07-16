@@ -7008,16 +7008,6 @@ export interface components {
             AllowMergeCommit: boolean;
             AllowRebaseMerge: boolean;
             AllowSquashMerge: boolean;
-            BackfillIssueComplete: boolean;
-            /** Format: date-time */
-            BackfillIssueCompletedAt: string | null;
-            /** Format: int64 */
-            BackfillIssuePage: number;
-            BackfillPRComplete: boolean;
-            /** Format: date-time */
-            BackfillPRCompletedAt: string | null;
-            /** Format: int64 */
-            BackfillPRPage: number;
             /** Format: date-time */
             CreatedAt: string;
             /** Format: int64 */

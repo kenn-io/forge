@@ -1161,27 +1161,14 @@ func TestRepoTimestampWritesStoreUTC(t *testing.T) {
 	edt := time.FixedZone("EDT", -4*60*60)
 	startedAt := time.Date(2026, 4, 11, 8, 0, 0, 0, edt)
 	completedAt := time.Date(2026, 4, 11, 8, 30, 0, 0, edt)
-	backfillPRCompletedAt := time.Date(2026, 4, 11, 9, 0, 0, 0, edt)
-	backfillIssueCompletedAt := time.Date(2026, 4, 11, 9, 30, 0, 0, edt)
-
 	require.NoError(d.UpdateRepoSyncStarted(ctx, repoID, startedAt))
 	require.NoError(d.UpdateRepoSyncCompleted(ctx, repoID, completedAt, ""))
-	require.NoError(d.UpdateBackfillCursor(
-		ctx,
-		repoID,
-		1, true, &backfillPRCompletedAt,
-		2, true, &backfillIssueCompletedAt,
-	))
 
 	rows, err := d.ReadDB().QueryContext(ctx, `
 		SELECT last_sync_started_at FROM middleman_repos WHERE id = ?
 		UNION ALL
-		SELECT last_sync_completed_at FROM middleman_repos WHERE id = ?
-		UNION ALL
-		SELECT backfill_pr_completed_at FROM middleman_repos WHERE id = ?
-		UNION ALL
-		SELECT backfill_issue_completed_at FROM middleman_repos WHERE id = ?`,
-		repoID, repoID, repoID, repoID,
+		SELECT last_sync_completed_at FROM middleman_repos WHERE id = ?`,
+		repoID, repoID,
 	)
 	require.NoError(err)
 	defer rows.Close()
@@ -1198,16 +1185,10 @@ func TestRepoTimestampWritesStoreUTC(t *testing.T) {
 	require.NotNil(repo)
 	require.NotNil(repo.LastSyncStartedAt)
 	require.NotNil(repo.LastSyncCompletedAt)
-	require.NotNil(repo.BackfillPRCompletedAt)
-	require.NotNil(repo.BackfillIssueCompletedAt)
 	require.Equal(time.UTC, repo.LastSyncStartedAt.Location())
 	require.Equal(time.UTC, repo.LastSyncCompletedAt.Location())
-	require.Equal(time.UTC, repo.BackfillPRCompletedAt.Location())
-	require.Equal(time.UTC, repo.BackfillIssueCompletedAt.Location())
 	require.Equal(startedAt.UTC(), *repo.LastSyncStartedAt)
 	require.Equal(completedAt.UTC(), *repo.LastSyncCompletedAt)
-	require.Equal(backfillPRCompletedAt.UTC(), *repo.BackfillPRCompletedAt)
-	require.Equal(backfillIssueCompletedAt.UTC(), *repo.BackfillIssueCompletedAt)
 }
 
 func TestOpenRejectsUnsupportedLegacySchemaVersion(t *testing.T) {

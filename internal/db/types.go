@@ -30,36 +30,30 @@ type LabelCatalogFreshness struct {
 }
 
 type Repo struct {
-	ID                       int64
-	Platform                 string
-	PlatformHost             string
-	PlatformRepoID           string `json:"-"`
-	Owner                    string
-	Name                     string
-	RepoPath                 string `json:"-"`
-	OwnerKey                 string `json:"-"`
-	NameKey                  string `json:"-"`
-	RepoPathKey              string `json:"-"`
-	WebURL                   string `json:"-"`
-	CloneURL                 string `json:"-"`
-	DefaultBranch            string `json:"-"`
-	LastSyncStartedAt        *time.Time
-	LastSyncCompletedAt      *time.Time
-	LastSyncError            string
-	AllowSquashMerge         bool
-	AllowMergeCommit         bool
-	AllowRebaseMerge         bool
-	ViewerCanMerge           bool
-	BackfillPRPage           int
-	BackfillPRComplete       bool
-	BackfillPRCompletedAt    *time.Time
-	BackfillIssuePage        int
-	BackfillIssueComplete    bool
-	BackfillIssueCompletedAt *time.Time
-	LabelCatalogSyncedAt     *time.Time
-	LabelCatalogCheckedAt    *time.Time
-	LabelCatalogSyncError    string
-	CreatedAt                time.Time
+	ID                    int64
+	Platform              string
+	PlatformHost          string
+	PlatformRepoID        string `json:"-"`
+	Owner                 string
+	Name                  string
+	RepoPath              string `json:"-"`
+	OwnerKey              string `json:"-"`
+	NameKey               string `json:"-"`
+	RepoPathKey           string `json:"-"`
+	WebURL                string `json:"-"`
+	CloneURL              string `json:"-"`
+	DefaultBranch         string `json:"-"`
+	LastSyncStartedAt     *time.Time
+	LastSyncCompletedAt   *time.Time
+	LastSyncError         string
+	AllowSquashMerge      bool
+	AllowMergeCommit      bool
+	AllowRebaseMerge      bool
+	ViewerCanMerge        bool
+	LabelCatalogSyncedAt  *time.Time
+	LabelCatalogCheckedAt *time.Time
+	LabelCatalogSyncError string
+	CreatedAt             time.Time
 }
 
 func (r Repo) FullName() string {

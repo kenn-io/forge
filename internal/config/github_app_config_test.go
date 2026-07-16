@@ -408,12 +408,8 @@ installation_account = "kenn-io"
 	require.ErrorContains(err, "repository_selection is required")
 }
 
-func TestGitHubAppMixedOverrideAndCoveredReposRejected(t *testing.T) {
-	// middleman resolves one credential chain per (platform, host), so
-	// a repo-level override on one repo cannot coexist with an app
-	// chain on another repo of the same host. The coverage error must
-	// not suggest that configuration; this pins that it is rejected.
-	_, err := Load(writeConfig(t, `
+func TestGitHubAppMixedOverrideAndCoveredReposUseSeparateRoutes(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
 [[repos]]
 owner = "kenn-io"
 name = "middleman"
@@ -432,8 +428,14 @@ installation_id = 99
 installation_account = "kenn-io"
 repository_selection = "all"
 `))
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "conflicting token source")
+	require.NoError(t, err)
+
+	covered := cfg.ResolveGitHubRepoTokenSource(cfg.Repos[0])
+	overridden := cfg.ResolveGitHubRepoTokenSource(cfg.Repos[1])
+	assert := assert.New(t)
+	assert.True(covered.HasActiveGitHubAppForOwner("kenn-io"))
+	assert.False(overridden.HasActiveGitHubApp())
+	assert.Equal("repo:other-org/tool", overridden.Key.Scope)
 }
 
 func TestGitHubAppHostDefaultsToPublicHost(t *testing.T) {

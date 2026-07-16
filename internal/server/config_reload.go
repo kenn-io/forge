@@ -54,6 +54,10 @@ type startupConfigSnapshot struct {
 	AllowedHosts                    []config.HostKey
 	TrustReverseProxy               bool
 	ProviderHosts                   []tokenauth.Key
+	// GitHubCredentialRoutes records the scoped client routes built at startup.
+	// Adding or removing a route requires rebuilding the bounded client pool;
+	// changing candidates within an existing route can hot-update its source.
+	GitHubCredentialRoutes []tokenauth.Key
 	// GitHubAppSplitHosts lists hosts whose effective credential chain
 	// resolves sync reads through a GitHub App installation token.
 	// Split topology is startup-bound: write rate trackers and the
@@ -92,6 +96,7 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		AllowedHosts:                    startupAllowedHosts(cfg),
 		TrustReverseProxy:               cfg.TrustReverseProxy,
 		ProviderHosts:                   startupProviderHosts(cfg),
+		GitHubCredentialRoutes:          githubCredentialRoutes(cfg),
 		GitHubAppSplitHosts:             githubAppSplitHosts(cfg),
 		Roborev:                         cfg.Roborev,
 	}
@@ -152,6 +157,32 @@ func startupProviderHosts(cfg *config.Config) []tokenauth.Key {
 		return strings.Compare(a.Host, b.Host)
 	})
 	return out
+}
+
+func githubCredentialRoutes(cfg *config.Config) []tokenauth.Key {
+	if cfg == nil {
+		return nil
+	}
+	seen := make(map[tokenauth.Key]struct{})
+	var routes []tokenauth.Key
+	for _, plan := range cfg.ProviderTokenSources() {
+		key := plan.Descriptor.Key
+		if key.Platform != string(platform.KindGitHub) || key.Scope == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		routes = append(routes, key)
+	}
+	slices.SortFunc(routes, func(a, b tokenauth.Key) int {
+		if cmp := strings.Compare(a.Host, b.Host); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Scope, b.Scope)
+	})
+	return routes
 }
 
 func startupBoundTokenEnvNames(cfg *config.Config) []string {
@@ -573,13 +604,14 @@ func validateReloadCloneTokenSources(cfg *config.Config) error {
 	byHost := make(map[string]string, len(plans))
 	for _, plan := range plans {
 		desc := plan.Descriptor
-		if desc.Key.Host == "" {
+		if desc.Key.Host == "" || len(desc.Candidates) == 0 {
 			continue
 		}
-		// A credential-less platform host imposes no clone credential;
-		// comparing its empty chain against tokened entries on the same
-		// host would reject configs that are valid at startup.
-		if len(desc.Candidates) == 0 {
+		// GitHub repository and owner routes are intentionally allowed to
+		// carry different PAT chains. Managed Git routing selects among them
+		// by repository identity; only host fallback chains participate in
+		// the cross-provider same-host validation.
+		if desc.Key.Platform == string(platform.KindGitHub) && desc.Key.Scope != "" {
 			continue
 		}
 		sourceID := desc.CanonicalSourceString()
@@ -605,6 +637,7 @@ func cloneReloadedConfig(in *config.Config) config.Config {
 	out.AllowedHosts = slices.Clone(in.AllowedHosts)
 	out.Repos = slices.Clone(in.Repos)
 	out.Platforms = slices.Clone(in.Platforms)
+	out.GitHubOwnerTokens = slices.Clone(in.GitHubOwnerTokens)
 	out.GitHubApps = slices.Clone(in.GitHubApps)
 	for i := range out.GitHubApps {
 		out.GitHubApps[i].SelectedRepos = slices.Clone(

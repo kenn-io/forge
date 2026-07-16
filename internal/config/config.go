@@ -95,6 +95,15 @@ type PlatformConfig struct {
 	TokenFile string `toml:"token_file,omitempty" json:"token_file,omitempty"`
 }
 
+// GitHubOwnerTokenConfig maps one exact GitHub resource owner to a PAT
+// source. The host defaults to github.com during validation.
+type GitHubOwnerTokenConfig struct {
+	Host      string `toml:"host,omitempty" json:"host,omitempty"`
+	Owner     string `toml:"owner" json:"owner"`
+	TokenEnv  string `toml:"token_env,omitempty" json:"token_env,omitempty"`
+	TokenFile string `toml:"token_file,omitempty" json:"token_file,omitempty"`
+}
+
 // GitHubAppConfig registers a GitHub App created by the
 // middleman-github-app CLI. Installation tokens minted from the app's
 // private key carry their own rate-limit budget, taking sync traffic
@@ -785,6 +794,7 @@ type Config struct {
 	Repos             []Repo                   `toml:"repos"`
 	KataProjects      []KataProjectRepoMapping `toml:"kata_projects"`
 	Platforms         []PlatformConfig         `toml:"platforms"`
+	GitHubOwnerTokens []GitHubOwnerTokenConfig `toml:"github_owner_tokens"`
 	GitHubApps        []GitHubAppConfig        `toml:"github_apps"`
 	Activity          Activity                 `toml:"activity"`
 	PullRequests      PullRequests             `toml:"pull_requests"`
@@ -1303,6 +1313,9 @@ func (c *Config) validate(skipAppCoverage bool) error {
 	if err := c.validatePlatforms(); err != nil {
 		return err
 	}
+	if err := c.validateGitHubOwnerTokens(); err != nil {
+		return err
+	}
 	if err := c.validateGitHubApps(); err != nil {
 		return err
 	}
@@ -1346,10 +1359,14 @@ func (c *Config) validate(skipAppCoverage bool) error {
 		}
 	}
 
-	// Reject conflicting token source descriptors for the same host.
-	// Empty repo-level fields mean "use platform/default token sources".
+	// Non-GitHub providers still resolve clone/API credentials by host, so
+	// same-host repo overrides must remain identical. GitHub routes can differ
+	// by exact repository or owner and are validated by their scoped keys.
 	hostToken := make(map[string]tokenauth.Descriptor, len(c.Repos))
 	for _, r := range c.Repos {
+		if r.PlatformOrDefault() == defaultPlatform {
+			continue
+		}
 		key := r.PlatformOrDefault() + "\x00" + r.PlatformHostOrDefault()
 		effective := c.ResolveRepoTokenSource(r)
 		if prev, ok := hostToken[key]; ok {
@@ -1719,6 +1736,46 @@ func (c *Config) validatePlatforms() error {
 			)
 		}
 		seen[key] = desc
+	}
+	return nil
+}
+
+func (c *Config) validateGitHubOwnerTokens() error {
+	seen := make(map[string]struct{}, len(c.GitHubOwnerTokens))
+	for i := range c.GitHubOwnerTokens {
+		item := &c.GitHubOwnerTokens[i]
+		item.Owner = strings.TrimSpace(item.Owner)
+		item.TokenEnv = strings.TrimSpace(item.TokenEnv)
+		item.TokenFile = strings.TrimSpace(item.TokenFile)
+		if item.Owner == "" {
+			return fmt.Errorf(
+				"config: github_owner_tokens[%d]: owner is required", i,
+			)
+		}
+		if strings.Contains(item.Owner, "/") || strings.ContainsAny(item.Owner, "*?[") {
+			return fmt.Errorf(
+				"config: github_owner_tokens[%d]: owner must be one exact GitHub owner", i,
+			)
+		}
+		host, err := normalizePlatformHost(defaultPlatform, item.Host)
+		if err != nil {
+			return fmt.Errorf("config: github_owner_tokens[%d]: %w", i, err)
+		}
+		item.Host = host
+		if item.TokenFile == "" && item.TokenEnv == "" {
+			return fmt.Errorf(
+				"config: github_owner_tokens[%d]: token_file or token_env is required", i,
+			)
+		}
+		owner := strings.ToLower(item.Owner)
+		key := strings.ToLower(host) + "\x00" + owner
+		if _, ok := seen[key]; ok {
+			return fmt.Errorf(
+				"config: github_owner_tokens[%d]: duplicate github owner token for host %q and owner %q",
+				i, host, owner,
+			)
+		}
+		seen[key] = struct{}{}
 	}
 	return nil
 }
@@ -2154,9 +2211,119 @@ func (c *Config) ResolveRepoTokenSource(r Repo) tokenauth.Descriptor {
 	if c == nil {
 		return tokenauth.Descriptor{}
 	}
+	if r.PlatformOrDefault() == defaultPlatform {
+		return c.ResolveGitHubRepoTokenSource(r)
+	}
 	return c.TokenSourceForPlatformHost(
 		r.PlatformOrDefault(), r.PlatformHostOrDefault(), r.TokenEnv, r.TokenFile,
 	)
+}
+
+// GitHubOwnerTokenFor returns the exact owner PAT mapping for host and owner.
+func (c *Config) GitHubOwnerTokenFor(
+	host, owner string,
+) (GitHubOwnerTokenConfig, bool) {
+	if c == nil {
+		return GitHubOwnerTokenConfig{}, false
+	}
+	h, err := normalizePlatformHost(defaultPlatform, host)
+	if err != nil {
+		return GitHubOwnerTokenConfig{}, false
+	}
+	for _, item := range c.GitHubOwnerTokens {
+		if strings.EqualFold(item.Host, h) && strings.EqualFold(item.Owner, owner) {
+			return item, true
+		}
+	}
+	return GitHubOwnerTokenConfig{}, false
+}
+
+// ResolveGitHubRepoTokenSource builds the credential route for one GitHub
+// repository. Repository overrides are exact routes; otherwise repositories
+// under one owner share the owner route.
+func (c *Config) ResolveGitHubRepoTokenSource(r Repo) tokenauth.Descriptor {
+	if c == nil {
+		return tokenauth.Descriptor{}
+	}
+	host := r.PlatformHostOrDefault()
+	overridden := r.TokenFile != "" || r.TokenEnv != ""
+	desc := tokenauth.Descriptor{Key: tokenauth.Key{
+		Platform: defaultPlatform,
+		Host:     host,
+		Scope:    githubCredentialScope(r.Owner, r.Name, overridden),
+	}}
+	appendTokenFileEnvCandidates(&desc, r.TokenFile, r.TokenEnv)
+	if !overridden {
+		for _, app := range c.GitHubAppsForHost(host) {
+			if app.AppID <= 0 || app.PrivateKeyPath == "" ||
+				!strings.EqualFold(app.InstallationAccount, r.Owner) {
+				continue
+			}
+			desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+				Kind:                tokenauth.SourceKindGitHubApp,
+				Host:                host,
+				FilePath:            app.PrivateKeyPath,
+				AppID:               app.AppID,
+				InstallationID:      app.InstallationID,
+				InstallationAccount: app.InstallationAccount,
+			})
+		}
+	}
+	if ownerToken, ok := c.GitHubOwnerTokenFor(host, r.Owner); ok {
+		appendTokenFileEnvCandidates(
+			&desc, ownerToken.TokenFile, ownerToken.TokenEnv,
+		)
+	}
+	c.appendPlatformTokenCandidates(&desc, defaultPlatform, host)
+	c.appendGitHubDefaultCandidates(&desc, host)
+	return desc
+}
+
+func githubCredentialScope(owner, name string, exact bool) string {
+	owner = strings.ToLower(strings.TrimSpace(owner))
+	if exact {
+		return "repo:" + owner + "/" + strings.ToLower(strings.TrimSpace(name))
+	}
+	return "owner:" + owner
+}
+
+func appendTokenFileEnvCandidates(
+	desc *tokenauth.Descriptor, tokenFile, tokenEnv string,
+) {
+	if tokenFile != "" {
+		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+			Kind: tokenauth.SourceKindFile, FilePath: tokenFile,
+		})
+	}
+	if tokenEnv != "" {
+		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+			Kind: tokenauth.SourceKindEnv, EnvName: tokenEnv,
+		})
+	}
+}
+
+func (c *Config) appendPlatformTokenCandidates(
+	desc *tokenauth.Descriptor, platform, host string,
+) {
+	for _, pc := range c.Platforms {
+		if pc.Type == platform && pc.Host == host {
+			appendTokenFileEnvCandidates(desc, pc.TokenFile, pc.TokenEnv)
+			return
+		}
+	}
+}
+
+func (c *Config) appendGitHubDefaultCandidates(
+	desc *tokenauth.Descriptor, host string,
+) {
+	if c.GitHubTokenEnv != "" && host == platformpkg.DefaultGitHubHost {
+		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+			Kind: tokenauth.SourceKindEnv, EnvName: c.GitHubTokenEnv,
+		})
+	}
+	desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+		Kind: tokenauth.SourceKindGitHubCLI, Host: host,
+	})
 }
 
 type ProviderTokenSource struct {
@@ -2238,10 +2405,15 @@ func (c *Config) CloneTokenDescriptors() []tokenauth.Descriptor {
 		idx, ok := indexByHost[host]
 		if !ok {
 			indexByHost[host] = len(out)
-			out = append(out, tokenauth.Descriptor{
-				Key:        tokenauth.CloneKey(host),
-				Candidates: plan.Descriptor.Candidates,
-			})
+			out = append(out, tokenauth.Descriptor{Key: tokenauth.CloneKey(host)})
+			idx = len(out) - 1
+		}
+		// Until the clone manager selects scoped GitHub routes directly,
+		// its host fallback must come from the unscoped provider descriptor.
+		// Non-GitHub providers remain host-scoped and use their first usable
+		// plan as before.
+		if plan.Descriptor.Key.Platform == defaultPlatform &&
+			plan.Descriptor.Key.Scope != "" {
 			continue
 		}
 		if len(out[idx].Candidates) == 0 {
@@ -2266,18 +2438,7 @@ func (c *Config) TokenSourceForPlatformHost(
 		return tokenauth.Descriptor{}
 	}
 	desc := tokenauth.Descriptor{Key: tokenauth.Key{Platform: p, Host: h}}
-	if repoTokenFile != "" {
-		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
-			Kind:     tokenauth.SourceKindFile,
-			FilePath: repoTokenFile,
-		})
-	}
-	if repoTokenEnv != "" {
-		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
-			Kind:    tokenauth.SourceKindEnv,
-			EnvName: repoTokenEnv,
-		})
-	}
+	appendTokenFileEnvCandidates(&desc, repoTokenFile, repoTokenEnv)
 	// A configured GitHub App outranks platform and default PAT
 	// candidates: installation tokens exist to take sync traffic off
 	// the PAT budget. Repo-level overrides are terminal with respect
@@ -2300,23 +2461,7 @@ func (c *Config) TokenSourceForPlatformHost(
 			})
 		}
 	}
-	for _, pc := range c.Platforms {
-		if pc.Type == p && pc.Host == h {
-			if pc.TokenFile != "" {
-				desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
-					Kind:     tokenauth.SourceKindFile,
-					FilePath: pc.TokenFile,
-				})
-			}
-			if pc.TokenEnv != "" {
-				desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
-					Kind:    tokenauth.SourceKindEnv,
-					EnvName: pc.TokenEnv,
-				})
-			}
-			break
-		}
-	}
+	c.appendPlatformTokenCandidates(&desc, p, h)
 	if defaultTokenEnv, ok := defaultTokenEnvForPlatformHost(p, h); ok {
 		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
 			Kind:    tokenauth.SourceKindEnv,
@@ -2362,9 +2507,14 @@ func (c *Config) TokenEnvNames() []string {
 	if c == nil {
 		return nil
 	}
-	names := make([]string, 0, 1+len(c.Repos)+len(c.Platforms))
+	names := make(
+		[]string, 0, 1+len(c.Repos)+len(c.Platforms)+len(c.GitHubOwnerTokens),
+	)
 	if c.GitHubTokenEnv != "" {
 		names = appendTokenEnvName(names, c.GitHubTokenEnv)
+	}
+	for _, item := range c.GitHubOwnerTokens {
+		names = appendTokenEnvName(names, item.TokenEnv)
 	}
 	for _, p := range c.Platforms {
 		names = appendTokenEnvNamesFromDescriptor(
@@ -2405,6 +2555,11 @@ func appendTokenEnvNamesFromDescriptor(
 }
 
 func (c *Config) normalizeTokenFilePaths(configDir string) {
+	for i := range c.GitHubOwnerTokens {
+		c.GitHubOwnerTokens[i].TokenFile = normalizeTokenFilePath(
+			configDir, c.GitHubOwnerTokens[i].TokenFile,
+		)
+	}
 	for i := range c.Platforms {
 		c.Platforms[i].TokenFile = normalizeTokenFilePath(configDir, c.Platforms[i].TokenFile)
 	}
@@ -2631,6 +2786,7 @@ type configFile struct {
 	Repos                     []Repo                   `toml:"repos"`
 	KataProjects              []KataProjectRepoMapping `toml:"kata_projects,omitempty"`
 	Platforms                 []PlatformConfig         `toml:"platforms,omitempty"`
+	GitHubOwnerTokens         []GitHubOwnerTokenConfig `toml:"github_owner_tokens,omitempty"`
 	GitHubApps                []GitHubAppConfig        `toml:"github_apps,omitempty"`
 	Activity                  Activity                 `toml:"activity"`
 	Notifications             Notifications            `toml:"notifications,omitempty"`
@@ -2667,6 +2823,7 @@ func (c *Config) Save(path string) error {
 		Repos:                   reposForSave(cfg.Repos),
 		KataProjects:            slices.Clone(cfg.KataProjects),
 		Platforms:               cfg.Platforms,
+		GitHubOwnerTokens:       cfg.GitHubOwnerTokens,
 		GitHubApps:              cfg.GitHubApps,
 		Activity:                cfg.Activity,
 		Notifications:           cfg.Notifications,
@@ -2754,6 +2911,7 @@ func (c *Config) copyForSave() Config {
 	cfg.KataProjects = slices.Clone(c.KataProjects)
 	cfg.Platforms = slices.Clone(c.Platforms)
 	cfg.AllowedHosts = slices.Clone(c.AllowedHosts)
+	cfg.GitHubOwnerTokens = slices.Clone(c.GitHubOwnerTokens)
 	cfg.GitHubApps = slices.Clone(c.GitHubApps)
 	for i := range cfg.GitHubApps {
 		cfg.GitHubApps[i].SelectedRepos = slices.Clone(cfg.GitHubApps[i].SelectedRepos)

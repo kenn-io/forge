@@ -879,11 +879,11 @@ func TestConfigReload_TokenSourceChangeForExistingHostUpdatesSource(t *testing.T
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	assert.True(ev.Valid)
-	assert.False(ev.RestartRequired,
-		"repo token_env change for a known provider host should hot-update")
-	newToken, err := src.Token(t.Context())
+	assert.True(ev.RestartRequired,
+		"adding an exact-repository route requires rebuilding the client pool")
+	currentToken, err := src.Token(t.Context())
 	require.NoError(err)
-	assert.Equal("new", newToken)
+	assert.Equal("old", currentToken)
 }
 
 func TestConfigReload_GitHubTokenEnvChangeUpdatesConfigSnapshot(t *testing.T) {
@@ -1583,10 +1583,11 @@ func TestConfigReload_RepoTokenOverrideWithPlatformFallbackUpdatesSource(t *test
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	assert.True(ev.Valid)
-	assert.False(ev.RestartRequired)
-	newToken, err := src.Token(t.Context())
+	assert.True(ev.RestartRequired,
+		"adding an exact-repository route requires rebuilding the client pool")
+	currentToken, err := src.Token(t.Context())
 	require.NoError(err)
-	assert.Equal("repo-token", newToken)
+	assert.Equal("platform-token", currentToken)
 }
 
 func TestConfigReload_RuntimeStripsBootAndReloadedStartupBoundTokenEnvs(t *testing.T) {

@@ -300,7 +300,10 @@ func (s *SourceSet) Keys() []Key {
 		if cmp := strings.Compare(a.Platform, b.Platform); cmp != 0 {
 			return cmp
 		}
-		return strings.Compare(a.Host, b.Host)
+		if cmp := strings.Compare(a.Host, b.Host); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Scope, b.Scope)
 	})
 	return keys
 }

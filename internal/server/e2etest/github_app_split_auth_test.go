@@ -684,11 +684,15 @@ repository_selection = "all"
 			}
 			require.NoError(err)
 		}
-		if plan.Descriptor.Key == (tokenauth.Key{Platform: "github", Host: "github.com"}) {
+		if plan.Descriptor.Key == (tokenauth.Key{
+			Platform: "github",
+			Host:     "github.com",
+			Scope:    "owner:kenn-io",
+		}) {
 			source = src
 		}
 	}
-	require.NotNil(source, "the app candidate alone must keep the host's read chain alive")
+	require.NotNil(source, "the app candidate alone must keep the owner's read chain alive")
 
 	client, err := ghclient.NewClient(
 		source, "github.com", nil, nil,

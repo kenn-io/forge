@@ -6,6 +6,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestKeyStringIncludesScope(t *testing.T) {
+	key := Key{Platform: "github", Host: "github.com", Scope: "owner:acme"}
+
+	assert.Equal(t, "github\x00github.com\x00owner:acme", key.String())
+}
+
 func TestCanonicalSourceString(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

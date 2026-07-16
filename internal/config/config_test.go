@@ -1316,17 +1316,24 @@ func TestConfigProviderTokenSourcesPlansEffectiveDescriptors(t *testing.T) {
 
 	plans := cfg.ProviderTokenSources()
 
-	require.Len(t, plans, 3)
+	require.Len(t, plans, 4)
 	assert.True(plans[0].Required)
-	assert.Equal(tokenauth.Key{Platform: "github", Host: "github.com"}, plans[0].Descriptor.Key)
+	assert.Equal(tokenauth.Key{
+		Platform: "github",
+		Host:     "github.com",
+		Scope:    "repo:acme/widget",
+	}, plans[0].Descriptor.Key)
 	assert.Equal("REPO_GITHUB_TOKEN", plans[0].Descriptor.Candidates[0].EnvName)
 	assert.Equal("PLATFORM_GITHUB_TOKEN", plans[0].Descriptor.Candidates[1].EnvName)
 	assert.True(plans[1].Required)
 	assert.Equal(tokenauth.Key{Platform: "gitlab", Host: "gitlab.com"}, plans[1].Descriptor.Key)
 	assert.Empty(plans[1].Descriptor.Candidates)
 	assert.False(plans[2].Required)
-	assert.Equal(tokenauth.Key{Platform: "forgejo", Host: "codeberg.org"}, plans[2].Descriptor.Key)
-	assert.Equal("PLATFORM_FORGEJO_TOKEN", plans[2].Descriptor.Candidates[0].EnvName)
+	assert.Equal(tokenauth.Key{Platform: "github", Host: "github.com"}, plans[2].Descriptor.Key)
+	assert.Equal("PLATFORM_GITHUB_TOKEN", plans[2].Descriptor.Candidates[0].EnvName)
+	assert.False(plans[3].Required)
+	assert.Equal(tokenauth.Key{Platform: "forgejo", Host: "codeberg.org"}, plans[3].Descriptor.Key)
+	assert.Equal("PLATFORM_FORGEJO_TOKEN", plans[3].Descriptor.Candidates[0].EnvName)
 }
 
 func TestConfigProviderTokenSourcesIncludesOptionalDefaultGitHub(t *testing.T) {
@@ -1345,20 +1352,22 @@ func TestConfigProviderTokenSourcesIncludesOptionalDefaultGitHub(t *testing.T) {
 	assert.Equal("github.com", plans[0].Descriptor.Candidates[1].Host)
 }
 
-func TestValidateRejectsConflictingTokenSources(t *testing.T) {
-	assert := assert.New(t)
-	cfg := &Config{
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
-		Repos: []Repo{
-			{Owner: "acme", Name: "one", Platform: "github", PlatformHost: "ghe.example.com", TokenFile: "/tokens/a"},
-			{Owner: "acme", Name: "two", Platform: "github", PlatformHost: "ghe.example.com", TokenFile: "/tokens/b"},
-		},
-	}
+func TestValidateAllowsDistinctGitHubRepoTokenSources(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+[[repos]]
+owner = "acme"
+name = "one"
+platform_host = "ghe.example.com"
+token_file = "/tokens/a"
 
-	err := cfg.Validate()
-	require.Error(t, err)
-	assert.Contains(err.Error(), "conflicting token source")
-	assert.NotContains(err.Error(), "ghp_")
+[[repos]]
+owner = "acme"
+name = "two"
+platform_host = "ghe.example.com"
+token_file = "/tokens/b"
+`))
+
+	require.NoError(t, err)
 }
 
 func TestValidateAllowsRepoTokenEnvMatchingPlatformFallback(t *testing.T) {
@@ -2065,7 +2074,7 @@ name = "ssh://git@gitlab.example.com:2222/group/project.git"
 	assert.Equal("project", cfg.Repos[0].Name)
 }
 
-func TestValidateRejectsConflictingTokenEnv(t *testing.T) {
+func TestValidateAllowsGitHubTokenEnvPerRepo(t *testing.T) {
 	path := writeConfig(t, `
 [[repos]]
 owner = "org1"
@@ -2080,8 +2089,7 @@ platform_host = "github.example.com"
 token_env = "GHE_TOKEN_B"
 `)
 	_, err := Load(path)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "conflicting token_env")
+	require.NoError(t, err)
 }
 
 func TestValidateScopesTokenEnvConflictsByPlatformHost(t *testing.T) {

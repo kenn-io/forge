@@ -124,6 +124,32 @@ func TestSourceSetUpsertReusesExistingSource(t *testing.T) {
 	assert.Equal(t, "env:NEW_TOKEN", second.Descriptor().SafeString())
 }
 
+func TestSourceSetKeepsScopedSourcesSeparate(t *testing.T) {
+	set := NewSourceSet(Options{})
+	first := set.Upsert(Descriptor{
+		Key: Key{
+			Platform: "github",
+			Host:     "github.com",
+			Scope:    "owner:acme",
+		},
+		Candidates: []Candidate{{Kind: SourceKindEnv, EnvName: "ACME_TOKEN"}},
+	})
+	second := set.Upsert(Descriptor{
+		Key: Key{
+			Platform: "github",
+			Host:     "github.com",
+			Scope:    "owner:example",
+		},
+		Candidates: []Candidate{{Kind: SourceKindEnv, EnvName: "EXAMPLE_TOKEN"}},
+	})
+
+	assert.NotSame(t, first, second)
+	assert.Equal(t, []Key{
+		{Platform: "github", Host: "github.com", Scope: "owner:acme"},
+		{Platform: "github", Host: "github.com", Scope: "owner:example"},
+	}, set.Keys())
+}
+
 func TestMissingTokenErrorIsDetectable(t *testing.T) {
 	src := NewManagedSource(Descriptor{
 		Key: Key{Platform: "gitlab", Host: "gitlab.com"},

@@ -1,5 +1,7 @@
 import { expect, test, type Locator } from "@playwright/test";
 
+import { authoredScrollbarWidths } from "../support/scrollbarStyles";
+
 async function constrainScrollArea(scrollArea: Locator): Promise<void> {
   await scrollArea.locator("..").evaluate((node) => {
     const root = node as HTMLElement;
@@ -25,8 +27,9 @@ test("grouped rail uses native scrollbars with sticky content", async ({ page, b
   }));
   expect(initialGeometry.scrollHeight).toBeGreaterThan(initialGeometry.clientHeight);
   expect(initialGeometry.scrollbarColor).toBe("auto");
-  expect(initialGeometry.scrollbarWidth).toBe("auto");
+  expect(await authoredScrollbarWidths(scrollArea)).toEqual([]);
   if (browserName === "chromium") {
+    expect(initialGeometry.scrollbarWidth).toBe("auto");
     expect(initialGeometry.webkitWidth).toBe("auto");
   }
   await expect(stickyHeader).toBeVisible();
@@ -36,7 +39,7 @@ test("grouped rail uses native scrollbars with sticky content", async ({ page, b
   await expect.poll(() => scrollArea.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
 });
 
-test("grouped rails share labeled native scroll regions", async ({ page }) => {
+test("grouped rails share labeled native scroll regions", async ({ page, browserName }) => {
   const rails = [
     { path: "/pulls", label: "Pull requests" },
     { path: "/issues", label: "Issues" },
@@ -56,12 +59,13 @@ test("grouped rails share labeled native scroll regions", async ({ page }) => {
     await expect(scrollArea).toBeVisible();
     await expect(scrollArea).toHaveAttribute("tabindex", "0");
     await expect(scrollArea.locator("..").locator(".kit-scrollbox__indicator")).toHaveCount(0);
-    await expect(
-      scrollArea.evaluate((node) => ({
-        color: getComputedStyle(node).scrollbarColor,
-        width: getComputedStyle(node).scrollbarWidth,
-      })),
-    ).resolves.toEqual({ color: "auto", width: "auto" });
+    const scrollbarStyles = await scrollArea.evaluate((node) => ({
+      color: getComputedStyle(node).scrollbarColor,
+      width: getComputedStyle(node).scrollbarWidth,
+    }));
+    expect(scrollbarStyles.color).toBe("auto");
+    expect(await authoredScrollbarWidths(scrollArea)).toEqual([]);
+    if (browserName === "chromium") expect(scrollbarStyles.width).toBe("auto");
   }
 });
 

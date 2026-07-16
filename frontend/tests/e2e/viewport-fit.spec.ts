@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
+import { authoredScrollbarWidths } from "../support/scrollbarStyles";
 
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
@@ -166,8 +167,9 @@ test("app scroll panes use browser-native scrollbar styling", async ({ page, bro
   }));
 
   expect(scrollbarStyles.color).toBe("auto");
-  expect(scrollbarStyles.width).toBe("auto");
+  expect(await authoredScrollbarWidths(pane)).toEqual([]);
   if (browserName === "chromium") {
+    expect(scrollbarStyles.width).toBe("auto");
     expect(scrollbarStyles.webkitWidth).toBe("auto");
   }
 

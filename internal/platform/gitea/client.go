@@ -24,11 +24,13 @@ type clientOptions struct {
 	skipVersionProbe  bool
 }
 
+type provider = gitealike.Provider
+
 type Client struct {
-	host              string
-	baseURL           string
-	transport         *transport
-	provider          *gitealike.Provider
+	host      string
+	baseURL   string
+	transport *transport
+	*provider
 	api               *giteasdk.Client
 	foregroundTimeout time.Duration
 }
@@ -129,10 +131,6 @@ func (c *Client) Platform() platform.Kind {
 
 func (c *Client) Host() string {
 	return c.host
-}
-
-func (c *Client) Capabilities() platform.Capabilities {
-	return c.provider.Capabilities()
 }
 
 type transport struct {

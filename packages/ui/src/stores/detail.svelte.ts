@@ -138,6 +138,13 @@ export function createDetailStore(opts: DetailStoreOptions) {
     key: string;
     promise: Promise<void>;
   } | null = null;
+  // Latest detail_fetched_at seen in any server payload for the current
+  // selection. The store's own detail_fetched_at intentionally freezes
+  // while refreshes are content-identical, so background-sync convergence
+  // must baseline against this value — the frozen store timestamp would
+  // make the previous cycle's sync look like this cycle's completion and
+  // end the convergence loop before the new sync has landed.
+  let lastObservedFetchedAt: string | undefined;
   // Provider synchronization is eventually complete. Keep a successfully
   // deleted comment hidden locally until an ordinary sync no longer returns it.
   const hiddenDeletedCommentIDs: Record<string, number[]> = {};
@@ -321,10 +328,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // even though nothing about the PR changed.
   function detailContentUnchanged(next: PullDetail): boolean {
     if (detail === null) return false;
+    // Only the fetch timestamp is volatile-by-design; everything else —
+    // including warnings, which the PR panel renders — is content.
     const strip = (d: PullDetail): string => {
-      // warnings are advisory (surfaced via flash on arrival, never
-      // rendered from the store), so they don't make content "new".
-      const { detail_fetched_at: _fetchedAt, warnings: _warnings, ...rest } = d as PullDetail & { warnings?: string[] };
+      const { detail_fetched_at: _fetchedAt, ...rest } = d;
       return JSON.stringify(rest);
     };
     return strip(detail) === strip(next);
@@ -333,6 +340,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
   function applyRefreshedDetail(next: PullDetail): void {
     if (detailContentUnchanged(next)) return;
     detail = next;
+  }
+
+  function noteObservedFetchedAt(fetchedAt: string | null | undefined): void {
+    if (fetchedAt != null) lastObservedFetchedAt = fetchedAt;
+  }
+
+  function observedFetchedAtBaseline(): string | undefined {
+    return lastObservedFetchedAt ?? detail?.detail_fetched_at;
   }
 
   async function refreshDetail(
@@ -363,6 +378,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
             events: data.events ?? [],
           } as PullDetail),
         );
+        noteObservedFetchedAt(data.detail_fetched_at);
         detailLoaded = data.detail_loaded ?? detailLoaded;
         return { ok: true, ...(data.detail_fetched_at != null && { fetchedAt: data.detail_fetched_at }) };
       }
@@ -400,6 +416,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
             events: data.events ?? [],
           } as PullDetail),
         );
+        noteObservedFetchedAt(data.detail_fetched_at);
         detailLoaded = data.detail_loaded ?? detailLoaded;
         refreshed = true;
       }
@@ -448,6 +465,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     storeError = null;
     detailLoaded = false;
     unsavedLocalBody = null;
+    lastObservedFetchedAt = undefined;
   }
 
   async function loadDetail(owner: string, name: string, number: number, options: DetailRequestOptions): Promise<void> {
@@ -460,6 +478,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
     if (activeSelectionKey !== key) {
       activeSelectionKey = key;
       ++selectionGeneration;
+      // The observed-timestamp baseline belongs to the previous selection;
+      // carrying it over would let another PR's sync clock gate this one.
+      lastObservedFetchedAt = undefined;
     }
     if (loading && activeLoad?.key === key && activeLoad.promise !== null) {
       activeLoad.syncMode = strongerSyncMode(activeLoad.syncMode, syncMode);
@@ -512,6 +533,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               events: data.events ?? [],
             } as PullDetail)
           : null;
+        noteObservedFetchedAt(data?.detail_fetched_at);
         detailLoaded = data?.detail_loaded ?? false;
       } catch (err) {
         if (gen !== syncGeneration) return;
@@ -531,7 +553,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
           void syncDetail(owner, name, number, gen, requestRef);
           return;
         }
-        void enqueueBackgroundDetailSync(owner, name, number, gen, detail?.detail_fetched_at, requestRef);
+        void enqueueBackgroundDetailSync(owner, name, number, gen, observedFetchedAtBaseline(), requestRef);
       }
     })();
     currentLoad.promise = promise;
@@ -641,6 +663,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               events: data.events ?? [],
             } as PullDetail),
           );
+          noteObservedFetchedAt(data.detail_fetched_at);
           detailLoaded = data.detail_loaded ?? detailLoaded;
           const warning = data.warnings?.[0];
           if (warning) {
@@ -1050,7 +1073,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const ref = detailRequestRef(owner, name, number, identity);
     stopDetailPolling();
     detailPollHandle = setInterval(() => {
-      void enqueueBackgroundDetailSync(owner, name, number, syncGeneration, detail?.detail_fetched_at, ref);
+      void enqueueBackgroundDetailSync(owner, name, number, syncGeneration, observedFetchedAtBaseline(), ref);
     }, 60_000);
     if (syncDep) {
       unsubSyncComplete = syncDep.subscribeSyncComplete(() => {

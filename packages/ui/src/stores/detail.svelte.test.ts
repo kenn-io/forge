@@ -90,6 +90,70 @@ describe("createDetailStore", () => {
     expect(store.getDetail()?.platform_head_sha).toBe("new-head");
   });
 
+  it("applies a warnings-only change since the panel renders warnings", async () => {
+    const routeIdentity = {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    };
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { ...pullDetail("head"), detail_fetched_at: "2026-07-15T10:00:00Z" } })
+      .mockResolvedValueOnce({
+        data: { ...pullDetail("head"), warnings: ["diff unavailable"], detail_fetched_at: "2026-07-15T10:01:00Z" },
+      })
+      .mockResolvedValueOnce({
+        data: { ...pullDetail("head"), warnings: ["diff unavailable"], detail_fetched_at: "2026-07-15T10:02:00Z" },
+      });
+    const store = createDetailStore({
+      client: mockClient({ GET: get }),
+      getPage: () => "pulls",
+    });
+    await store.loadDetail("acme", "widget", 7, { ...routeIdentity, sync: false });
+
+    await store.refreshDetailOnly("acme", "widget", 7, routeIdentity);
+    expect((store.getDetail() as { warnings?: string[] } | null)?.warnings).toEqual(["diff unavailable"]);
+
+    // The same warnings again are not a change.
+    const displayed = store.getDetail();
+    await store.refreshDetailOnly("acme", "widget", 7, routeIdentity);
+    expect(store.getDetail()).toBe(displayed);
+  });
+
+  it("baselines polling convergence on the latest observed timestamp, not the frozen store one", async () => {
+    vi.useFakeTimers();
+    const routeIdentity = {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    };
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { ...pullDetail("head"), detail_fetched_at: "2026-07-15T10:00:00Z" } })
+      .mockResolvedValueOnce({ data: { ...pullDetail("head"), detail_fetched_at: "2026-07-15T10:01:00Z" } })
+      .mockResolvedValueOnce({ data: { ...pullDetail("head"), detail_fetched_at: "2026-07-15T10:01:00Z" } })
+      .mockResolvedValue({ data: { ...pullDetail("new-head"), detail_fetched_at: "2026-07-15T10:02:00Z" } });
+    const post = vi.fn().mockResolvedValue({ error: undefined });
+    const store = createDetailStore({
+      client: mockClient({ GET: get, POST: post }),
+      getPage: () => "pulls",
+    });
+    await store.loadDetail("acme", "widget", 7, { ...routeIdentity, sync: false });
+    // Content-identical refresh: the store timestamp freezes at 10:00
+    // while the server clock is at 10:01.
+    await store.refreshDetailOnly("acme", "widget", 7, routeIdentity);
+
+    // The next polling cycle's first re-GET still returns 10:01. Judged
+    // against the frozen store timestamp that would look like completion
+    // and drop the real change; against the observed baseline the loop
+    // keeps going and applies the new head from the finished sync.
+    store.startDetailPolling("acme", "widget", 7, routeIdentity);
+    await vi.advanceTimersByTimeAsync(60_000 + 300 + 700 + 100);
+
+    expect(store.getDetail()?.platform_head_sha).toBe("new-head");
+    store.stopDetailPolling();
+  });
+
   it("flashes failed optimistic state changes without poisoning detail load state", async () => {
     const optimisticKanbanUpdate = vi.fn();
     const store = createDetailStore({

@@ -439,6 +439,7 @@ type Syncer struct {
 	running                  atomic.Bool
 	providerWorkMu           sync.Mutex
 	providerWork             map[string]map[archive.WorkPriority]int
+	archiveProviderRequests  map[string]archiveProviderRequest
 	status                   atomic.Value // stores *SyncStatus
 	stopCh                   chan struct{}
 	notificationSyncMu       sync.RWMutex
@@ -500,6 +501,11 @@ type Syncer struct {
 	commentRefreshMu         sync.Mutex
 	pendingPRCommentSyncs    []queuedPRCommentSync
 	pendingIssueCommentSyncs []queuedIssueCommentSync
+}
+
+type archiveProviderRequest struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 type archiveRunner interface {
@@ -679,6 +685,7 @@ func NewSyncerWithRegistry(
 		branchActivityMaxCommits: defaultBranchActivityMaxCommits,
 		nextSyncAfter:            make(map[string]time.Time),
 		nextWatchSyncAfter:       make(map[string]time.Time),
+		archiveProviderRequests:  make(map[string]archiveProviderRequest),
 		stopCh:                   make(chan struct{}),
 		archiveWake:              make(chan struct{}, 1),
 		archivePollInterval:      time.Second,
@@ -767,7 +774,8 @@ func (s *Syncer) Admit(
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
 	}
 	tracker := s.rateTrackers[key]
-	if tracker != nil && tracker.IsPaused() {
+	if tracker != nil && (tracker.IsPaused() ||
+		tracker.Known() && tracker.Remaining()-cost < RateReserveBuffer) {
 		retryAt := now.Add(time.Minute)
 		if reset := tracker.ResetAt(); reset != nil && reset.After(now) {
 			retryAt = reset.UTC()
@@ -777,39 +785,52 @@ func (s *Syncer) Admit(
 	budget := s.budgets[key]
 	resetAt := archiveBudgetResetAt(tracker)
 	if budget == nil || !budget.CanSpendArchive(cost, now, resetAt, archiveLiveFloor(ref.Platform)) {
-		retryAt := now.Add(time.Second)
-		if resetAt != nil && resetAt.After(now) {
+		retryAt := now.Add(time.Minute)
+		if resetAt != nil && resetAt.After(now) && resetAt.Before(retryAt) {
 			retryAt = resetAt.UTC()
 		}
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "archive surplus budget unavailable"}, nil
 	}
-	release, allowed := s.tryBeginArchiveProviderRequest(key)
+	requestCtx, release, allowed := s.tryBeginArchiveProviderRequest(ctx, key)
 	if !allowed {
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
 	}
 	return archive.AdmissionResult{
-		Allowed: true, Context: WithArchiveSyncBudget(ctx), Release: release,
+		Allowed: true, Context: WithArchiveSyncBudget(requestCtx), Release: release,
 	}, nil
 }
 
-func (s *Syncer) tryBeginArchiveProviderRequest(key string) (func(), bool) {
+func (s *Syncer) tryBeginArchiveProviderRequest(
+	ctx context.Context,
+	key string,
+) (context.Context, func(), bool) {
 	s.providerWorkMu.Lock()
 	if active := s.providerWork[key]; len(active) > 0 {
 		s.providerWorkMu.Unlock()
-		return nil, false
+		return nil, nil, false
 	}
 	if s.providerWork == nil {
 		s.providerWork = make(map[string]map[archive.WorkPriority]int)
 	}
 	s.providerWork[key] = map[archive.WorkPriority]int{archive.PriorityFullArchive: 1}
+	requestCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	s.archiveProviderRequests[key] = archiveProviderRequest{cancel: cancel, done: done}
 	s.providerWorkMu.Unlock()
 
 	var once sync.Once
-	return func() {
+	return requestCtx, func() {
 		once.Do(func() {
+			cancel()
 			s.providerWorkMu.Lock()
-			delete(s.providerWork, key)
+			active := s.providerWork[key]
+			delete(active, archive.PriorityFullArchive)
+			if len(active) == 0 {
+				delete(s.providerWork, key)
+			}
+			delete(s.archiveProviderRequests, key)
+			close(done)
 			s.providerWorkMu.Unlock()
 		})
 	}, true
@@ -841,7 +862,14 @@ func (s *Syncer) beginProviderWork(key string, priority archive.WorkPriority) fu
 		s.providerWork[key] = active
 	}
 	active[priority]++
+	archiveRequest, waitForArchive := s.archiveProviderRequests[key]
+	if waitForArchive {
+		archiveRequest.cancel()
+	}
 	s.providerWorkMu.Unlock()
+	if waitForArchive {
+		<-archiveRequest.done
+	}
 
 	var once sync.Once
 	return func() {

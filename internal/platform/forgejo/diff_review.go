@@ -107,7 +107,6 @@ func (t *transport) listAllPullReviews(
 	ref platform.RepoRef,
 	number int,
 ) ([]*forgejosdk.PullReview, error) {
-	t.spendSyncBudget(ctx)
 	var out []*forgejosdk.PullReview
 	page := 1
 	for {
@@ -137,7 +136,6 @@ func (t *transport) listPullReviewComments(
 	number int,
 	reviewID int64,
 ) ([]*forgejosdk.PullReviewComment, error) {
-	t.spendSyncBudget(ctx)
 	var comments []*forgejosdk.PullReviewComment
 	var resp *forgejosdk.Response
 	err := t.withRequestContext(ctx, func() error {

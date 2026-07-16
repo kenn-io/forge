@@ -44,6 +44,13 @@ type budgetTransport struct {
 	budget *SyncBudget
 }
 
+func WrapSyncBudgetTransport(base http.RoundTripper, budget *SyncBudget) http.RoundTripper {
+	if budget == nil {
+		return base
+	}
+	return &budgetTransport{base: base, budget: budget}
+}
+
 func (t *budgetTransport) RoundTrip(
 	req *http.Request,
 ) (*http.Response, error) {

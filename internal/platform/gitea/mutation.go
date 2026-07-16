@@ -129,7 +129,6 @@ func (t *transport) CreatePullReview(
 	number int,
 	opts gitealike.ReviewOptions,
 ) (gitealike.ReviewDTO, error) {
-	t.spendSyncBudget(ctx)
 	var review *giteasdk.PullReview
 	var resp *giteasdk.Response
 	err := t.withRequestContext(ctx, func() error {

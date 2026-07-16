@@ -119,7 +119,6 @@ func (t *transport) CreatePullReview(
 	number int,
 	opts gitealike.ReviewOptions,
 ) (gitealike.ReviewDTO, error) {
-	t.spendSyncBudget(ctx)
 	var review *forgejosdk.PullReview
 	var resp *forgejosdk.Response
 	err := t.withRequestContext(ctx, func() error {

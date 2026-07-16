@@ -74,6 +74,58 @@ func TestCommitMergeRequestChildSnapshotRollsBackEveryFamily(t *testing.T) {
 	assert.Equal(now, parent.LastActivityAt)
 }
 
+func TestCompleteReviewDatasetsRemainAdditive(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, database, "acme", "additive-reviews")
+	mrID, err := database.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID: repoID, PlatformID: 1, Number: 1, Title: "reviews",
+		State: MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour), UpdatedAt: now,
+	})
+	require.NoError(err)
+	parent, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(parent)
+	require.NoError(database.UpsertMREvents(ctx, []MREvent{
+		{MergeRequestID: mrID, EventType: "review", DedupeKey: "old-review", CreatedAt: now.Add(-time.Hour)},
+		{MergeRequestID: mrID, EventType: "review_comment", DedupeKey: "old-inline", CreatedAt: now.Add(-time.Hour)},
+	}))
+	require.NoError(database.UpsertMRReviewThreads(ctx, mrID, []MRReviewThread{{
+		ProviderThreadID: "old-thread", CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
+	}}))
+
+	applied, err := database.CommitMergeRequestChildSnapshot(ctx, MergeRequestChildSnapshot{
+		MergeRequestID: mrID, ExpectedRevision: parent.SnapshotRevision,
+		Reviews: []MREvent{{
+			MergeRequestID: mrID, EventType: "review", DedupeKey: "new-review", CreatedAt: now,
+		}}, ReviewsComplete: true,
+		InlineComments: []MREvent{{
+			MergeRequestID: mrID, EventType: "review_comment", DedupeKey: "new-inline", CreatedAt: now,
+		}},
+		ReviewThreads:  []MRReviewThread{{ProviderThreadID: "new-thread", CreatedAt: now, UpdatedAt: now}},
+		InlineComplete: true,
+	})
+	require.NoError(err)
+	require.True(applied)
+	events, err := database.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	keys := make([]string, len(events))
+	for i := range events {
+		keys[i] = events[i].DedupeKey
+	}
+	assert.ElementsMatch([]string{"old-review", "new-review", "old-inline", "new-inline"}, keys)
+	threads, err := database.ListMRReviewThreads(ctx, mrID)
+	require.NoError(err)
+	threadIDs := make([]string, len(threads))
+	for i := range threads {
+		threadIDs[i] = threads[i].ProviderThreadID
+	}
+	assert.ElementsMatch([]string{"old-thread", "new-thread"}, threadIDs)
+}
+
 func TestNormalSyncCompletesMatchingArchiveDatasetAndRejectsLatePage(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

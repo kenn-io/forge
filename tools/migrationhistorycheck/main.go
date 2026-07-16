@@ -51,7 +51,12 @@ func run(ctx context.Context, stderr io.Writer) int {
 
 	diffArgs := []string{"diff", "--cached", "--name-status"}
 	if prBaseRef != "" {
-		diffArgs = append(diffArgs, comparisonRef)
+		mergeBase, mergeBaseErr := git(ctx, "merge-base", comparisonRef, "HEAD")
+		if mergeBaseErr != nil {
+			fmt.Fprintf(stderr, "failed to find the pull request merge base: %v\n", mergeBaseErr)
+			return 1
+		}
+		diffArgs = append(diffArgs, strings.TrimSpace(mergeBase))
 	}
 	diffArgs = append(diffArgs, "--", migrationDir)
 	diff, err := git(ctx, diffArgs...)

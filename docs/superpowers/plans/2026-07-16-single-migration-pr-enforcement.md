@@ -17,6 +17,23 @@
 
 ---
 
+### Task 0: Confirm the archive migrations are rewriteable
+
+**Files:**
+- Inspect: `internal/db/migrations/000039_historical_activity_archive.{up,down}.sql`
+- Inspect: `internal/db/migrations/000040_archive_dataset_pages.{up,down}.sql`
+- Inspect: `internal/db/migrations/000041_version_archive_dataset_pages.{up,down}.sql`
+- Inspect: `internal/db/migrations/000042_snapshot_revisions.{up,down}.sql`
+- Inspect: `internal/db/migrations/000043_bind_archive_dataset_statuses.{up,down}.sql`
+
+**Interfaces:**
+- Consumes: refreshed `origin/main`, tags, and `origin/release/*` refs.
+- Produces: a blocking rewriteability decision before migration history is changed.
+
+- [x] Run `git fetch --tags origin`, then check all five migrations with `git log origin/main -- <file>` and `git log --tags -- <file>`.
+- [x] Check `git branch -r --list 'origin/release/*'`; no release branches or matching main/tag history were present.
+- [x] Proceed with consolidation only after the user explicitly directed these PR-local migrations to be collapsed.
+
 ### Task 1: Enforce one migration identity per PR
 
 **Files:**
@@ -29,8 +46,9 @@
 
 - [x] Add `TestBlocksMultipleNewMigrations` with two distinct staged migration basenames and assert `run` returns `1` with the one-migration-per-PR error.
 - [x] Add `TestBlocksSecondMigrationAcrossPRCommits` that commits the first branch migration, stages the second, sets `MIDDLEMAN_MIGRATION_PR_BASE_REF=main`, and asserts the same rejection.
+- [x] Add positive stacked-PR tests proving a child may add one migration over a parent migration and that a parent-only migration added after child divergence is not treated as a child deletion.
 - [x] Run `go test ./tools/migrationhistorycheck -run 'TestBlocksMultipleNewMigrations|TestBlocksSecondMigrationAcrossPRCommits' -shuffle=on` and confirm both tests fail because the checker currently accepts the migrations.
-- [x] Read the optional PR base ref. When set, obtain the candidate diff with `git diff --cached --name-status <pr-base> -- <migration-dir>` and use that ref for base-tree comparisons; otherwise retain the staged-only diff.
+- [x] Read the optional PR base ref. When set, diff the candidate index from `git merge-base <pr-base> HEAD` while using the current PR base tree for immutable-history and duplicate-number comparisons; otherwise retain the staged-only diff.
 - [x] Collect distinct migration basenames that appear in the candidate diff but not in the comparison base. Reject when the sorted set contains more than one name; matching `.up.sql` and `.down.sql` files count once.
 - [x] Re-run `go test ./tools/migrationhistorycheck -shuffle=on` and confirm the package passes.
 
@@ -53,7 +71,7 @@
 - [x] Create `middleman_archive_dataset_pages` directly with `snapshot_updated_at`, `domain_revision`, and the final composite primary key.
 - [x] Update the down migration to drop dataset pages before archive items and remove both snapshot-revision columns.
 - [x] Delete migrations `000040` through `000043` with `apply_patch`; do not add tests asserting the files stay deleted.
-- [x] Run the migration-focused database tests with `go test ./internal/db -run 'Migration|Archive' -shuffle=on`.
+- [x] Run the migration-focused database tests, including the existing `TestOpenMigratesHistoricalActivityArchive` coverage for `000038 → 000039`, with `go test ./internal/db -run 'Migration|Archive' -shuffle=on`.
 
 ### Task 3: Wire CI enforcement and shrink the guide
 

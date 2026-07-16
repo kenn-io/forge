@@ -77,11 +77,12 @@ func (s *Service) commitTerminalLookup(
 }
 
 func (s *Service) hydrateIssue(ctx context.Context, repo resolvedRepository, item *db.ArchiveItemState) error {
-	requestCtx, err := s.admit(ctx, repo, 1)
+	requestCtx, release, err := s.admit(ctx, repo, 1)
 	if err != nil {
 		return err
 	}
 	lookup, err := repo.Reader.GetArchiveIssue(requestCtx, repo.Ref, item.ItemNumber)
+	release()
 	if err != nil {
 		return err
 	}
@@ -122,11 +123,12 @@ func (s *Service) hydrateIssue(ctx context.Context, repo resolvedRepository, ite
 }
 
 func (s *Service) hydrateMergeRequest(ctx context.Context, repo resolvedRepository, item *db.ArchiveItemState) error {
-	requestCtx, err := s.admit(ctx, repo, 1)
+	requestCtx, release, err := s.admit(ctx, repo, 1)
 	if err != nil {
 		return err
 	}
 	lookup, err := repo.Reader.GetArchiveMergeRequest(requestCtx, repo.Ref, item.ItemNumber)
+	release()
 	if err != nil {
 		return err
 	}
@@ -229,11 +231,12 @@ func (s *Service) fetchIssueComments(ctx context.Context, repo resolvedRepositor
 		return err
 	}
 	for !stage.Exhausted {
-		requestCtx, err := s.admit(ctx, repo, 1)
+		requestCtx, release, err := s.admit(ctx, repo, 1)
 		if err != nil {
 			return err
 		}
 		page, err := repo.Reader.ListArchiveIssueComments(requestCtx, repo.Ref, item.ItemNumber, stage.NextCursor)
+		release()
 		if err != nil {
 			return err
 		}
@@ -279,11 +282,12 @@ func (s *Service) fetchMergeRequestEvents(ctx context.Context, repo resolvedRepo
 		return err
 	}
 	for !stage.Exhausted {
-		requestCtx, err := s.admit(ctx, repo, 1)
+		requestCtx, release, err := s.admit(ctx, repo, 1)
 		if err != nil {
 			return err
 		}
 		page, err := read(requestCtx, repo.Ref, item.ItemNumber, stage.NextCursor)
+		release()
 		if err != nil {
 			return err
 		}
@@ -322,11 +326,12 @@ func (s *Service) fetchReviewThreads(ctx context.Context, repo resolvedRepositor
 		return err
 	}
 	for !stage.Exhausted {
-		requestCtx, err := s.admit(ctx, repo, 1)
+		requestCtx, release, err := s.admit(ctx, repo, 1)
 		if err != nil {
 			return err
 		}
 		page, err := repo.Reader.ListArchiveReviewThreads(requestCtx, repo.Ref, item.ItemNumber, stage.NextCursor)
+		release()
 		if err != nil {
 			return err
 		}

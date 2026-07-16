@@ -783,7 +783,36 @@ func (s *Syncer) Admit(
 		}
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "archive surplus budget unavailable"}, nil
 	}
-	return archive.AdmissionResult{Allowed: true, Context: WithArchiveSyncBudget(ctx)}, nil
+	release, allowed := s.tryBeginArchiveProviderRequest(key)
+	if !allowed {
+		retryAt := now.Add(time.Second)
+		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
+	}
+	return archive.AdmissionResult{
+		Allowed: true, Context: WithArchiveSyncBudget(ctx), Release: release,
+	}, nil
+}
+
+func (s *Syncer) tryBeginArchiveProviderRequest(key string) (func(), bool) {
+	s.providerWorkMu.Lock()
+	if active := s.providerWork[key]; len(active) > 0 {
+		s.providerWorkMu.Unlock()
+		return nil, false
+	}
+	if s.providerWork == nil {
+		s.providerWork = make(map[string]map[archive.WorkPriority]int)
+	}
+	s.providerWork[key] = map[archive.WorkPriority]int{archive.PriorityFullArchive: 1}
+	s.providerWorkMu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.providerWorkMu.Lock()
+			delete(s.providerWork, key)
+			s.providerWorkMu.Unlock()
+		})
+	}, true
 }
 
 func archiveBudgetResetAt(tracker *RateTracker) *time.Time {

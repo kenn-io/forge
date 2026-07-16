@@ -48,7 +48,7 @@ func (s *Service) promptIssuePages(
 	cursor string,
 ) error {
 	for range maxArchiveDatasetPages {
-		requestCtx, err := s.admit(ctx, repo, 1)
+		requestCtx, release, err := s.admit(ctx, repo, 1)
 		if err != nil {
 			if errors.Is(err, errAdmissionDeferred) {
 				return err
@@ -56,6 +56,7 @@ func (s *Service) promptIssuePages(
 			return s.recordInventoryFailure(ctx, repo.ID, err)
 		}
 		page, err := repo.Reader.ListUpdatedIssues(requestCtx, repo.Ref, since, cursor)
+		release()
 		if err != nil {
 			return s.recordInventoryFailure(ctx, repo.ID, fmt.Errorf(
 				"list updated issues for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
@@ -88,7 +89,7 @@ func (s *Service) promptMergeRequestPages(
 	cursor string,
 ) error {
 	for range maxArchiveDatasetPages {
-		requestCtx, err := s.admit(ctx, repo, 1)
+		requestCtx, release, err := s.admit(ctx, repo, 1)
 		if err != nil {
 			if errors.Is(err, errAdmissionDeferred) {
 				return err
@@ -96,6 +97,7 @@ func (s *Service) promptMergeRequestPages(
 			return s.recordInventoryFailure(ctx, repo.ID, err)
 		}
 		page, err := repo.Reader.ListUpdatedMergeRequests(requestCtx, repo.Ref, since, cursor)
+		release()
 		if err != nil {
 			return s.recordInventoryFailure(ctx, repo.ID, fmt.Errorf(
 				"list updated merge requests for %s: %w", archiveRepoIdentityKey(repo.Ref), err,

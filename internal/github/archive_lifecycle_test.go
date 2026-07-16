@@ -372,6 +372,43 @@ func TestArchiveAdmissionDefersToNotificationAndActiveDetailWork(t *testing.T) {
 	assert.True(allowed.Allowed)
 }
 
+func TestArchiveAdmissionLeaseSerializesProviderRequests(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	key := RateBucketKey("github", "github.test")
+	now := time.Now().UTC()
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
+	syncer := NewSyncerWithRegistry(
+		nil, database, nil, nil, time.Hour,
+		map[string]*RateTracker{key: tracker},
+		map[string]*SyncBudget{key: NewSyncBudget(100)},
+	)
+	syncer.now = func() time.Time { return now }
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test", Owner: "acme", Name: "widget",
+	}
+
+	first, err := syncer.Admit(t.Context(), ref, 1)
+	require.NoError(err)
+	require.True(first.Allowed)
+	require.NotNil(first.Release)
+
+	second, err := syncer.Admit(t.Context(), ref, 1)
+	require.NoError(err)
+	assert.False(second.Allowed)
+	assert.Contains(second.Detail, "higher-priority sync work is active")
+
+	first.Release()
+	first.Release()
+	third, err := syncer.Admit(t.Context(), ref, 1)
+	require.NoError(err)
+	require.True(third.Allowed)
+	require.NotNil(third.Release)
+	third.Release()
+}
+
 func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

@@ -922,7 +922,7 @@
 
   .messages-pane-list {
     flex: 0 0 auto;
-    min-width: 220px;
+    min-width: 0;
   }
 
   .messages-pane-detail {

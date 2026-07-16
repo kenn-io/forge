@@ -50,7 +50,7 @@
     }
 
     function handleDocumentKeydown(event: KeyboardEvent): void {
-      if (event.key === "Escape") close();
+      if (event.key === "Escape") close(true);
     }
 
     document.addEventListener("mousedown", handleDocumentClick);
@@ -87,9 +87,7 @@
     await tick();
     positionMenu();
     inputEl?.focus();
-    menuEl
-      ?.querySelector<HTMLElement>(`#changed-file-option-${highlightIndex}`)
-      ?.scrollIntoView?.({ block: "nearest" });
+    await scrollHighlightedOptionIntoView();
   }
 
   function positionMenu(): void {
@@ -110,33 +108,50 @@
     });
   }
 
-  function close(): void {
+  function close(restoreFocus = false): void {
     open = false;
     query = "";
     highlightIndex = 0;
+    if (restoreFocus) {
+      void tick().then(() => {
+        triggerEl?.querySelector<HTMLButtonElement>("button")?.focus();
+      });
+    }
   }
 
-  function selectFile(file: DiffFile): void {
+  function selectFile(file: DiffFile, restoreFocus = false): void {
     if (disabled) return;
     diff.requestScrollToFile(file.path);
-    close();
+    close(restoreFocus);
   }
 
   function handleInput(): void {
     highlightIndex = 0;
   }
 
+  async function scrollHighlightedOptionIntoView(): Promise<void> {
+    await tick();
+    menuEl
+      ?.querySelector<HTMLElement>(`#changed-file-option-${highlightIndex}`)
+      ?.scrollIntoView?.({ block: "nearest" });
+  }
+
+  function moveHighlight(nextIndex: number): void {
+    highlightIndex = nextIndex;
+    void scrollHighlightedOptionIntoView();
+  }
+
   function handleKeydown(event: KeyboardEvent): void {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      highlightIndex = Math.min(highlightIndex + 1, filteredFiles.length - 1);
+      moveHighlight(Math.min(highlightIndex + 1, filteredFiles.length - 1));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      highlightIndex = Math.max(highlightIndex - 1, 0);
+      moveHighlight(Math.max(highlightIndex - 1, 0));
     } else if (event.key === "Enter") {
       event.preventDefault();
       const selected = filteredFiles[highlightIndex];
-      if (selected) selectFile(selected);
+      if (selected) selectFile(selected, true);
     }
   }
 </script>

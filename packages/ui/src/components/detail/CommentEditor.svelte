@@ -34,6 +34,7 @@
     repoPath: string;
     value: string;
     disabled?: boolean;
+    autofocus?: boolean;
     placeholder?: string;
     oninput: (value: string) => void;
     onsubmit: () => void;
@@ -73,6 +74,7 @@
     repoPath,
     value,
     disabled = false,
+    autofocus = false,
     placeholder = "Write a comment... (Cmd+Enter to submit)",
     oninput,
     onsubmit,
@@ -496,7 +498,7 @@
             queueMicrotask(() => {
               if (!editor || !editor.isFocused) return;
               if (!pointerFocusPending) {
-                editor.commands.focus("end");
+                editor.commands.focus("end", { scrollIntoView: false });
               }
               pointerFocusPending = false;
               editor.view.dispatch(editor.state.tr);
@@ -519,6 +521,12 @@
     });
 
     editor = current;
+
+    if (autofocus) {
+      queueMicrotask(() => {
+        current.commands.focus("end", { scrollIntoView: false });
+      });
+    }
 
     current.view.dom.addEventListener("compositionstart", handleCompositionStart);
     current.view.dom.addEventListener("compositionend", handleCompositionEnd);

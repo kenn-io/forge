@@ -3748,8 +3748,21 @@ test.describe("diff view performance", () => {
       })
       .toBeGreaterThan(0);
 
-    await page.getByRole("button", { name: "Jump to file" }).click();
-    await expect(page.getByRole("dialog", { name: "Jump to file" })).toBeVisible();
+    const jumpTrigger = page.getByRole("button", { name: "Jump to file" });
+    await jumpTrigger.click();
+    const jumpDialog = page.getByRole("dialog", { name: "Jump to file" });
+    const jumpInput = jumpDialog.getByRole("combobox", { name: "Jump to file" });
+    await expect(jumpDialog).toBeVisible();
+    await expect(jumpInput).toBeFocused();
+    for (let i = 0; i < 20; i++) {
+      await jumpInput.press("ArrowDown");
+    }
+    const highlightedOptionID = await jumpInput.getAttribute("aria-activedescendant");
+    expect(highlightedOptionID).not.toBeNull();
+    await expect(jumpDialog.locator(`#${highlightedOptionID}`)).toBeInViewport();
+    await jumpInput.press("Escape");
+    await expect(jumpDialog).toBeHidden();
+    await expect(jumpTrigger).toBeFocused();
     expect(pageErrors).toEqual([]);
   });
 

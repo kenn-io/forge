@@ -2531,6 +2531,7 @@ describe("EventTimeline", () => {
 
     expect(screen.getByRole("button", { name: /save/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
+    await waitFor(() => expect(document.activeElement?.classList.contains("comment-editor-input")).toBe(true));
   });
 
   it.each([

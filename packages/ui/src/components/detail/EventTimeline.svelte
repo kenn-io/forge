@@ -1404,7 +1404,7 @@
   reviewThread: TimelineReviewThread | undefined = undefined,
   inlineReplyEntry: TimelineEntry | undefined = undefined,
 )}
-  {#if event.Body || editingId === event.ID}
+  {#if event.Body}
     <div
       class={[
         "event-body-wrap",
@@ -1433,6 +1433,7 @@
             {repoPath}
             value={editDraft}
             disabled={savingEditId === event.ID}
+            autofocus
             oninput={(nextBody) => {
               editDraft = nextBody;
             }}
@@ -1557,6 +1558,7 @@
           {repoPath}
           value={editDraft}
           disabled={savingEditId === event.ID}
+          autofocus
           oninput={(nextBody) => {
             editDraft = nextBody;
           }}

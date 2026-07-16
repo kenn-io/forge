@@ -69,6 +69,7 @@
   const store = createRepoBrowserStore({ client });
 
   let repoLoadKey = "";
+  let repoLoadAliasKey = "";
   let routeLoadGeneration = 0;
   let pathSelectionGeneration = 0;
   let routeAnchorKey = "";
@@ -164,8 +165,9 @@
   $effect(() => {
     const nextRepoLoadKey = routeKey(route);
     applyRouteAnchor(route);
-    if (nextRepoLoadKey !== repoLoadKey) {
+    if (nextRepoLoadKey !== repoLoadKey && nextRepoLoadKey !== repoLoadAliasKey) {
       repoLoadKey = nextRepoLoadKey;
+      repoLoadAliasKey = "";
       void loadRoute(route);
       return;
     }
@@ -195,6 +197,7 @@
   }
 
   async function loadRoute(value: RepoBrowserFeatureRoute): Promise<void> {
+    const requestedLoadKey = routeKey(value);
     const generation = routeLoadGeneration + 1;
     const selectionGeneration = nextPathSelectionGeneration();
     routeLoadGeneration = generation;
@@ -205,7 +208,8 @@
       path: value.path ?? null,
     });
     if (generation !== routeLoadGeneration || selectionGeneration !== pathSelectionGeneration) return;
-    repoLoadKey = routeKeyWithSelectedRef(value);
+    repoLoadKey = requestedLoadKey;
+    repoLoadAliasKey = routeKeyWithSelectedRef(value);
     if (!value.path) {
       const initialPath = chooseRepoBrowserInitialPath(store.getTree());
       if (initialPath && initialPath !== store.getSelectedPath()) {

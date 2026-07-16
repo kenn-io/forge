@@ -239,6 +239,18 @@ describe("RepoBrowserFeature", () => {
 
     await screen.findByRole("link", { name: "Guide" });
     expect(client.GET).toHaveBeenCalledTimes(5);
+
+    await rerender({
+      client,
+      route: {
+        ...initialRoute,
+        anchor: "install",
+      },
+      onRouteChange,
+    });
+
+    await tick();
+    expect(client.GET).toHaveBeenCalledTimes(5);
   });
 
   it("reloads the repo when the same branch route moves to a different resolved SHA", async () => {

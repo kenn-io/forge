@@ -28,6 +28,12 @@ Already completed stage-4 migrations remain intact. This work does not rewrite a
 6. Do not introduce compatibility shims. Adapt call sites to the canonical shared API.
 7. If the checker reports application-owned UI that kit-ui does not support, fix the checker rule rather than reshaping production markup or adding a suppression solely to reach zero findings. This PR uses installed kit-ui contracts only; axis-aware `SplitResizeHandle` and `BottomDock` adoption land as a follow-up after their shared contracts became available, while other middleman-specific gaps remain local.
 
+## Accepted interaction changes
+
+- Kata project reassignment lives under `More actions`; the menu preserves keyboard focus, stays open on a failed move, and exposes the current project in the move dialog.
+- The compact PR label picker is a non-modal popover: Escape, a repeated trigger click, or outside click dismisses it without a backdrop, and background content remains available.
+- File-jump Escape and keyboard selection return focus to the trigger; outside-click dismissal leaves focus with the clicked target, and Escape clears a non-empty query before closing.
+
 ## Stage-4 completion audit
 
 Preserve the completed adoption of Modal, SelectDropdown, FilterDropdown, DetailDrawer exceptions, flash storage and FlashBanner, CollapsibleSidebar, SidebarToggle, SplitResizeHandle, StatusBar, SettingsLayout, SettingsSection, and TopBar.
@@ -188,8 +194,10 @@ Work in independently validated slices so failures remain attributable:
 3. Toggle migration.
 4. Checkbox migrations and documented exceptions.
 5. Non-Card control migrations.
-6. Card hierarchy and Timeline/CommentCard adoption as one coordinated slice.
-7. DatePicker fit and any supported control migration.
+6. Upgrade kit-ui and migrate horizontal, vertical-recursive, and trailing-pane `SplitResizeHandle` consumers.
+7. Migrate the terminal inline panel to `BottomDock`, retaining application-owned session state and content.
+8. Card hierarchy and Timeline/CommentCard adoption as one coordinated slice.
+9. DatePicker fit and any supported control migration.
 
 For each slice:
 
@@ -222,6 +230,18 @@ The completed audit uses the following decision matrix. It is the manual invento
 | Mobile and board cards | `MobileActivityView`, `KanbanCard` | Shared Card hierarchy; drag payload and nested interaction remain application-owned | Browser drag/cursor coverage and server-backed workflow-state coverage |
 | Detail descriptions | Pull and issue Markdown description surfaces | Inset Card only where it does not duplicate timeline chrome or break delegated Markdown interaction | Pull/issue component tests and focus/detail full-stack workflows |
 | Control chrome misreported as Card | File jump, repository/ref pickers, generated Markdown, review textarea | Use Button/IconButton/SearchInput/Typeahead where contracts fit; retain only behavior-based exceptions for command navigation, sanitized generated HTML, or missing editor primitives | Kit checker suppressions state the exact mismatch and focused keyboard/focus tests pin the retained behavior |
+| Pane dividers | PR/diff rails, repository browser, Messages, Kata, and recursive terminal/panel trees | Shared axis-aware `SplitResizeHandle`; callers retain bounds, leading/trailing interpretation, ratios, and persistence | Component/browser interaction tests plus repository, Kata, design-system, and Messages geometry workflows cover horizontal, vertical, trailing, undersized, and restored-value cases |
+| Inline bottom dock | Workspace terminal panel | Shared `BottomDock`; the workspace retains open state, session selection, header actions, and terminal content | Dock component coverage and workspace terminal Playwright geometry/session workflows |
+
+### Styling escape-hatch audit
+
+| Selector family | Owners and retained reason | Browser evidence |
+| --- | --- | --- |
+| `.kit-card__body` | Approve popover, docs editor, and repository typeahead require host-owned flex/padding geometry not exposed as a public Card property | detail/focus, docs, and repository-selection suites |
+| `.kit-checkbox__label` | Checklist, folder visibility, settings, and review filters apply domain completion or compact-row layout to the shared label | Kata, docs, settings, and review component/browser suites |
+| `.kit-typeahead__trigger` / `__input` | Kata property/search and fleet settings embed Typeahead inside compact table or pill layouts | Kata and settings browser/full-stack suites |
+
+Re-audit this table whenever the pinned kit-ui revision changes; a new public prop or custom property removes the corresponding internal-selector exception.
 
 The semantic status inventory is similarly domain-based:
 

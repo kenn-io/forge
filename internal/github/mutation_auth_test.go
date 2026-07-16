@@ -271,20 +271,21 @@ func TestNotificationAPIsUseUserAuthAndBackgroundBudget(t *testing.T) {
 		},
 	})
 	database := openTestDB(t)
-	readRT := NewRateTracker(database, "github.example.com", "host", "rest")
-	writeRT := NewRateTracker(database, "github.example.com", "user:1", "rest_write")
-	budget := NewSyncBudget(100)
+	readRT := NewRateTracker(database, "github.example.com", "installation:11", "rest")
+	writeRT := NewRateTracker(database, "github.example.com", "user:1", "rest")
+	readBudget := NewSyncBudget(100)
+	writeBudget := NewSyncBudget(100)
 	client, err := NewClient(
 		source,
 		"github.example.com",
 		readRT,
-		budget,
+		readBudget,
 		WithBaseURLForTesting(srv.URL),
+		WithNotificationAccounting(writeRT, writeBudget),
 	)
 	require.NoError(err)
 	c, ok := client.(*liveClient)
 	require.True(ok)
-	c.SetWriteRateTracker(writeRT)
 
 	syncCtx := WithSyncBudget(t.Context())
 	threads, hasNext, err := c.ListNotifications(syncCtx, NotificationListOptions{
@@ -308,9 +309,10 @@ func TestNotificationAPIsUseUserAuthAndBackgroundBudget(t *testing.T) {
 	assert.Equal(0, readRT.RequestsThisHour())
 	assert.Equal(-1, readRT.Remaining(),
 		"PAT notification responses must not overwrite the app-token read tracker")
-	assert.Equal(0, writeRT.RequestsThisHour())
-	assert.Equal(-1, writeRT.Remaining())
-	assert.Equal(3, budget.Spent())
+	assert.Equal(3, writeRT.RequestsThisHour())
+	assert.Equal(4988, writeRT.Remaining())
+	assert.Equal(0, readBudget.Spent())
+	assert.Equal(3, writeBudget.Spent())
 }
 
 // TestMutationAuthFallsBackToReadClientWhenUnsplit pins the hand-built

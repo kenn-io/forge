@@ -118,6 +118,22 @@ func TestBuildProviderStartupDeduplicatesGitHubIdentityRuntimes(t *testing.T) {
 	assert.NotSame(runtimeA.budget, runtimeC.budget)
 	assert.Same(runtimeA.budget, runtimeDWrite.budget)
 	assert.NotSame(runtimeDRead.budget, runtimeDWrite.budget)
+	assert.NotSame(routeA.client, routeB.client)
+	assert.Same(runtimeA.graphql, routeA.fetcher.RateTracker())
+	assert.Same(runtimeB.graphql, routeB.fetcher.RateTracker())
+	assert.Same(runtimeDRead.graphql, routeD.fetcher.RateTracker())
+	router := startup.githubRouters["github.com"]
+	require.NotNil(router)
+	routedA, err := router.RouteForRepo("org-a", "one")
+	require.NoError(err)
+	routedB, err := router.RouteForRepo("org-b", "two")
+	require.NoError(err)
+	assert.Same(routeA.fetcher, routedA.Fetcher)
+	assert.Same(routeB.fetcher, routedB.Fetcher)
+
+	routed, ok := startup.githubClients["github.com"].(*github.RoutedClient)
+	require.True(ok)
+	assert.NotNil(routed)
 }
 
 func TestBuildProviderStartupReportsSafeGitHubIdentityResolutionFailure(t *testing.T) {

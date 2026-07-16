@@ -51,6 +51,8 @@ type githubIdentityRuntime struct {
 type githubCredentialRoute struct {
 	key           tokenauth.Key
 	source        tokenauth.Source
+	client        github.Client
+	fetcher       *github.GraphQLFetcher
 	readIdentity  github.IdentityKey
 	writeIdentity github.IdentityKey
 }
@@ -66,6 +68,8 @@ type providerStartup struct {
 	fetchers             map[string]*github.GraphQLFetcher
 	githubRoutes         map[tokenauth.Key]githubCredentialRoute
 	githubIdentities     map[string]*githubIdentityRuntime
+	githubRouters        map[string]*github.HostRouter
+	githubClients        map[string]github.Client
 }
 
 func defaultProviderFactories() map[string]providerFactory {
@@ -189,11 +193,16 @@ func buildProviderStartup(
 		fetchers:             make(map[string]*github.GraphQLFetcher, len(providerSources)),
 		githubRoutes:         make(map[tokenauth.Key]githubCredentialRoute),
 		githubIdentities:     make(map[string]*githubIdentityRuntime),
+		githubRouters:        make(map[string]*github.HostRouter),
+		githubClients:        make(map[string]github.Client),
 	}
 	if resolver != nil {
 		if err := buildGitHubIdentityRuntimes(
 			ctx, database, cfg, set, resolver, budgetPerHour, &startup,
 		); err != nil {
+			return providerStartup{}, err
+		}
+		if err := buildGitHubRouteClients(&startup); err != nil {
 			return providerStartup{}, err
 		}
 	}
@@ -229,7 +238,11 @@ func buildProviderStartup(
 			)
 		}
 		if built.githubClient != nil {
-			clients[host] = built.githubClient
+			if routed := startup.githubClients[host]; routed != nil {
+				clients[host] = routed
+			} else {
+				clients[host] = built.githubClient
+			}
 			githubHosts[host] = struct{}{}
 		}
 		if built.provider != nil {
@@ -362,6 +375,74 @@ func buildGitHubIdentityRuntimes(
 		}
 	}
 	return nil
+}
+
+func buildGitHubRouteClients(startup *providerStartup) error {
+	if startup == nil || len(startup.githubRoutes) == 0 {
+		return nil
+	}
+	byHost := make(map[string][]*github.Route)
+	for key, configured := range startup.githubRoutes {
+		readRuntime := startup.githubIdentities[configured.readIdentity.String()]
+		writeRuntime := startup.githubIdentities[configured.writeIdentity.String()]
+		if readRuntime == nil || writeRuntime == nil {
+			return fmt.Errorf("create GitHub route %s: missing identity runtime", key.Scope)
+		}
+		client, err := github.NewClient(
+			configured.source, key.Host, readRuntime.rest, readRuntime.budget,
+			github.WithNotificationAccounting(
+				writeRuntime.rest, writeRuntime.budget,
+			),
+		)
+		if err != nil {
+			return fmt.Errorf("create GitHub route %s client: %w", key.Scope, err)
+		}
+		if setter, ok := client.(graphQLRateTrackerSetter); ok {
+			setter.SetGraphQLRateTracker(readRuntime.graphql)
+		}
+		if setter, ok := client.(writeRateTrackerSetter); ok {
+			setter.SetWriteRateTracker(writeRuntime.rest)
+			setter.SetWriteGraphQLRateTracker(writeRuntime.graphql)
+		}
+		fetcher := github.NewGraphQLFetcher(
+			configured.source, key.Host, readRuntime.graphql, readRuntime.budget,
+		)
+		configured.client = client
+		configured.fetcher = fetcher
+		startup.githubRoutes[key] = configured
+		owner, name := githubRouteOwnerAndName(key.Scope)
+		byHost[key.Host] = append(byHost[key.Host], &github.Route{
+			Key:    github.RouteKey{Host: key.Host, Owner: owner, Name: name},
+			Client: client, Fetcher: fetcher,
+			ReadIdentity:  configured.readIdentity,
+			WriteIdentity: configured.writeIdentity,
+		})
+	}
+	for host, routes := range byHost {
+		router, err := github.NewHostRouter(host, routes...)
+		if err != nil {
+			return fmt.Errorf("create GitHub router for %s: %w", host, err)
+		}
+		client, err := github.NewRoutedClient(router)
+		if err != nil {
+			return fmt.Errorf("create routed GitHub client for %s: %w", host, err)
+		}
+		startup.githubRouters[host] = router
+		startup.githubClients[host] = client
+	}
+	return nil
+}
+
+func githubRouteOwnerAndName(scope string) (string, string) {
+	switch {
+	case strings.HasPrefix(scope, "owner:"):
+		return strings.TrimPrefix(scope, "owner:"), ""
+	case strings.HasPrefix(scope, "repo:"):
+		owner, name, _ := strings.Cut(strings.TrimPrefix(scope, "repo:"), "/")
+		return owner, name
+	default:
+		return "", ""
+	}
 }
 
 func githubCredentialPlans(cfg *config.Config) []config.ProviderTokenSource {

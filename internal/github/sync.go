@@ -471,7 +471,8 @@ type Syncer struct {
 	writeRateTrackers        map[string]*RateTracker    // provider/host bucket -> mutation-credential REST tracker
 	writeGQLRateTrackers     map[string]*RateTracker    // provider/host bucket -> mutation-credential GraphQL tracker
 	budgets                  map[string]*SyncBudget     // provider/host bucket -> budget
-	fetchers                 map[string]*GraphQLFetcher // host -> GraphQL fetcher
+	fetchers                 map[string]*GraphQLFetcher // host -> fallback GraphQL fetcher
+	routers                  map[string]*HostRouter     // GitHub host -> credential router
 	rateLimitSnapshotMu      sync.Mutex
 	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
@@ -2675,21 +2676,32 @@ func (s *Syncer) SetOnNotificationSyncComplete(fn func()) {
 	s.onNotificationSyncComplete = fn
 }
 
-// SetFetchers registers GitHub GraphQL fetchers keyed by platform host.
+// SetFetchers registers fallback GitHub GraphQL fetchers keyed by platform host.
 func (s *Syncer) SetFetchers(fetchers map[string]*GraphQLFetcher) {
 	s.fetchers = fetchers
 }
 
-// fetcherFor returns the GitHub GraphQL fetcher for a repo's host,
-// or nil if none is configured.
+// SetGitHubRouters registers configuration-bounded credential routers keyed by
+// GitHub host. Route-specific GraphQL fetchers take precedence over legacy
+// host fallback fetchers.
+func (s *Syncer) SetGitHubRouters(routers map[string]*HostRouter) {
+	s.routers = routers
+}
+
+// fetcherFor returns the GitHub GraphQL fetcher selected for a repository's
+// credential route, or the host fallback fetcher when no router is configured.
 func (s *Syncer) fetcherFor(repo RepoRef) *GraphQLFetcher {
-	if s.fetchers == nil {
-		return nil
-	}
 	if repoPlatform(repo) != platform.KindGitHub {
 		return nil
 	}
 	host := repoHost(repo)
+	if router := s.routers[host]; router != nil {
+		route, err := router.RouteForRepo(repo.Owner, repo.Name)
+		if err == nil {
+			return route.Fetcher
+		}
+		return nil
+	}
 	return s.fetchers[host]
 }
 

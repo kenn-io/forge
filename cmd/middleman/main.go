@@ -598,6 +598,7 @@ func run(opts serve.Options) error {
 	syncer.SetWatchInterval(cfg.ActivePRRefreshDuration())
 	syncer.SetActiveMRWindow(cfg.ActivePRWindowDuration())
 	syncer.SetFetchers(startup.fetchers)
+	syncer.SetGitHubRouters(startup.githubRouters)
 	syncer.SetWriteRateTrackers(startup.writeRateTrackers)
 	syncer.SetWriteGQLRateTrackers(startup.writeGQLRateTrackers)
 	archiveService, err := archive.NewService(

@@ -299,7 +299,9 @@ func graphQLEndpointForHost(platformHost string) string {
 type ClientOption func(*clientOptions)
 
 type clientOptions struct {
-	baseURLOverride string
+	baseURLOverride         string
+	notificationRateTracker *RateTracker
+	notificationBudget      *SyncBudget
 }
 
 // WithBaseURLForTesting points the client's REST and GraphQL traffic
@@ -310,6 +312,19 @@ type clientOptions struct {
 func WithBaseURLForTesting(base string) ClientOption {
 	return func(o *clientOptions) {
 		o.baseURLOverride = strings.TrimRight(base, "/")
+	}
+}
+
+// WithNotificationAccounting binds user-scoped notification traffic to the
+// identity that authenticates it. GitHub App routes use installation tokens
+// for reads but PATs for notifications, so those requests must spend the PAT
+// budget and update the PAT rate tracker.
+func WithNotificationAccounting(
+	rateTracker *RateTracker, budget *SyncBudget,
+) ClientOption {
+	return func(o *clientOptions) {
+		o.notificationRateTracker = rateTracker
+		o.notificationBudget = budget
 	}
 }
 
@@ -354,8 +369,19 @@ func NewClient(
 		mutationAuthTransport{base: authRT},
 	)}
 	notificationTransport := mutationAuthTransport{base: authRT}
+	var notificationRoundTripper http.RoundTripper = notificationTransport
+	notificationBudget := budget
+	if options.notificationBudget != nil {
+		notificationBudget = options.notificationBudget
+	}
+	if notificationBudget != nil {
+		notificationRoundTripper = &budgetTransport{
+			base:   notificationRoundTripper,
+			budget: notificationBudget,
+		}
+	}
 	notificationHTTPClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(
-		notificationTransport,
+		notificationRoundTripper,
 	)}
 
 	newGHClient := func(hc *http.Client) (*gh.Client, error) {
@@ -402,6 +428,7 @@ func NewClient(
 		httpNotificationClient:  notificationHTTPClient,
 		markdownImageHTTPClient: &http.Client{Transport: wrapPublicGitHubAPIGuard(http.DefaultTransport)},
 		rateTracker:             rateTracker,
+		notificationRateTracker: options.notificationRateTracker,
 		platformHost:            normalizedPlatformHost(platformHost),
 		graphQLEndpoint:         graphQLEndpoint,
 		etag:                    et,
@@ -497,6 +524,7 @@ type liveClient struct {
 	markdownImageHTTPClient *http.Client
 	rateTracker             *RateTracker
 	writeRateTracker        *RateTracker
+	notificationRateTracker *RateTracker
 	graphQLRateTracker      *RateTracker
 	writeGraphQLRateTracker *RateTracker
 	platformHost            string
@@ -1272,6 +1300,14 @@ func (c *liveClient) trackWriteRate(resp *gh.Response) {
 // split-auth mode, reads use an installation token while notifications use
 // the user's PAT, so PAT headers cannot update the installation read tracker.
 func (c *liveClient) trackNotificationRate(resp *gh.Response) {
+	if c.notificationRateTracker != nil {
+		if resp == nil {
+			return
+		}
+		c.notificationRateTracker.RecordRequest()
+		c.notificationRateTracker.UpdateFromRate(rateFromGitHub(resp.Rate))
+		return
+	}
 	if c.splitAuthActive() {
 		return
 	}

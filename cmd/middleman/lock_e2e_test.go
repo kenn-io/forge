@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"syscall"
 	"testing"
@@ -50,6 +51,18 @@ func reserveFreePort(t *testing.T) int {
 // with the developer's real ~/.config/middleman.
 func writeMinimalConfig(t *testing.T, configPath, dataDir string, port int) {
 	t.Helper()
+	binDir := t.TempDir()
+	ghName := "gh"
+	ghBody := "#!/bin/sh\nexit 1\n"
+	if runtime.GOOS == "windows" {
+		ghName = "gh.bat"
+		ghBody = "@exit /b 1\r\n"
+	}
+	require.NoError(t, os.WriteFile(
+		filepath.Join(binDir, ghName), []byte(ghBody), 0o700,
+	))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_LOCK_E2E", "")
 	body := fmt.Sprintf(`host = "127.0.0.1"
 port = %d
 data_dir = %q

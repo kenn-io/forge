@@ -46,27 +46,21 @@ type providerCapabilitiesResponse struct {
 }
 
 type repoResponse struct {
-	ID                       int64
-	Platform                 string
-	PlatformHost             string
-	Owner                    string
-	Name                     string
-	LastSyncStartedAt        *time.Time
-	LastSyncCompletedAt      *time.Time
-	LastSyncError            string
-	AllowSquashMerge         bool
-	AllowMergeCommit         bool
-	AllowRebaseMerge         bool
-	ViewerCanMerge           bool
-	BackfillPRPage           int
-	BackfillPRComplete       bool
-	BackfillPRCompletedAt    *time.Time
-	BackfillIssuePage        int
-	BackfillIssueComplete    bool
-	BackfillIssueCompletedAt *time.Time
-	CreatedAt                time.Time
-	Capabilities             providerCapabilitiesResponse `json:"capabilities"`
-	Operations               RepoOperations               `json:"operations"`
+	ID                  int64
+	Platform            string
+	PlatformHost        string
+	Owner               string
+	Name                string
+	LastSyncStartedAt   *time.Time
+	LastSyncCompletedAt *time.Time
+	LastSyncError       string
+	AllowSquashMerge    bool
+	AllowMergeCommit    bool
+	AllowRebaseMerge    bool
+	ViewerCanMerge      bool
+	CreatedAt           time.Time
+	Capabilities        providerCapabilitiesResponse `json:"capabilities"`
+	Operations          RepoOperations               `json:"operations"`
 }
 
 // mergeRequestResponse extends db.MergeRequest with resolved repo owner/name fields.

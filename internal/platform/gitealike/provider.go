@@ -196,13 +196,9 @@ func (p *Provider) ListMergeRequestEvents(
 }
 
 func (p *Provider) ListMergeRequestComments(ctx context.Context, ref platform.RepoRef, number int) ([]platform.MergeRequestEvent, error) {
-	comments, err := collectPages(ctx, func(opts PageOptions) ([]CommentDTO, Page, error) {
-		return p.transport.ListPullRequestComments(ctx, ref, number, opts)
+	return platform.CollectArchivePages(ctx, "", func(ctx context.Context, cursor string) (platform.ArchivePage[platform.MergeRequestEvent], error) {
+		return p.ListArchiveMergeRequestComments(ctx, ref, number, cursor)
 	})
-	if err != nil {
-		return nil, p.mapError(err)
-	}
-	return NormalizeMergeRequestEvents(p.kind, ref, number, comments, nil, nil), nil
 }
 
 func (p *Provider) ListOpenIssues(
@@ -258,13 +254,9 @@ func (p *Provider) ListIssueEvents(
 }
 
 func (p *Provider) ListIssueComments(ctx context.Context, ref platform.RepoRef, number int) ([]platform.IssueEvent, error) {
-	comments, err := collectPages(ctx, func(opts PageOptions) ([]CommentDTO, Page, error) {
-		return p.transport.ListIssueComments(ctx, ref, number, opts)
+	return platform.CollectArchivePages(ctx, "", func(ctx context.Context, cursor string) (platform.ArchivePage[platform.IssueEvent], error) {
+		return p.ListArchiveIssueComments(ctx, ref, number, cursor)
 	})
-	if err != nil {
-		return nil, p.mapError(err)
-	}
-	return NormalizeIssueComments(p.kind, ref, number, comments), nil
 }
 
 func (p *Provider) listTimelineEvents(

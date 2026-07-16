@@ -143,6 +143,42 @@ func TestArchiveDetailsAndLookupOutcomes(t *testing.T) {
 	}, provider.Capabilities().Archive)
 }
 
+func TestLiveCommentsDrainCanonicalArchivePages(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+	transport := &archiveFakeTransport{
+		fakeTransport: &fakeTransport{},
+		issueCommentPages: map[int][]CommentDTO{
+			1: {{ID: 11, Body: "first issue comment", Created: now}},
+			2: {{ID: 12, Body: "second issue comment", Created: now.Add(time.Minute)}},
+		},
+		pullCommentPages: map[int][]CommentDTO{
+			1: {{ID: 21, Body: "first pull comment", Created: now}},
+			2: {{ID: 22, Body: "second pull comment", Created: now.Add(time.Minute)}},
+		},
+		commentPage: map[int]Page{1: {Next: 2}},
+	}
+	provider := NewProvider(platform.KindForgejo, "forge.example", transport)
+	ref := platform.RepoRef{
+		Platform: platform.KindForgejo, Host: "forge.example", Owner: "owner", Name: "repo",
+	}
+
+	issueComments, err := provider.ListIssueComments(t.Context(), ref, 7)
+	require.NoError(err)
+	mergeRequestComments, err := provider.ListMergeRequestComments(t.Context(), ref, 8)
+	require.NoError(err)
+
+	assert.Equal([]string{"11", "12"}, []string{
+		issueComments[0].PlatformExternalID, issueComments[1].PlatformExternalID,
+	})
+	assert.Equal([]string{"21", "22"}, []string{
+		mergeRequestComments[0].PlatformExternalID, mergeRequestComments[1].PlatformExternalID,
+	})
+	assert.Equal([]int{1, 2}, transport.issueCommentRequests)
+	assert.Equal([]int{1, 2}, transport.pullCommentRequests)
+}
+
 func TestArchiveSubmittedReviewsReturnProgressPageWhenDraftsAreFiltered(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -217,18 +253,23 @@ func TestArchiveLookupPreservesRepositoryProbeFailures(t *testing.T) {
 
 type archiveFakeTransport struct {
 	*fakeTransport
-	issuePages    map[int][]IssueDTO
-	pullPages     map[int][]PullRequestDTO
-	issueLast     int
-	issueOptions  []ArchiveListOptions
-	pullOptions   []ArchiveListOptions
-	issueRequests []int
-	requests      int
-	comments      []CommentDTO
-	reviews       []ReviewDTO
-	reviewPage    Page
-	pullPage      map[int]Page
-	issueErr      error
+	issuePages           map[int][]IssueDTO
+	pullPages            map[int][]PullRequestDTO
+	issueLast            int
+	issueOptions         []ArchiveListOptions
+	pullOptions          []ArchiveListOptions
+	issueRequests        []int
+	requests             int
+	comments             []CommentDTO
+	issueCommentPages    map[int][]CommentDTO
+	pullCommentPages     map[int][]CommentDTO
+	commentPage          map[int]Page
+	issueCommentRequests []int
+	pullCommentRequests  []int
+	reviews              []ReviewDTO
+	reviewPage           Page
+	pullPage             map[int]Page
+	issueErr             error
 }
 
 func (t *archiveFakeTransport) ListArchiveIssues(_ context.Context, _ platform.RepoRef, opts ArchiveListOptions) ([]IssueDTO, Page, error) {
@@ -244,9 +285,19 @@ func (t *archiveFakeTransport) ListArchivePullRequests(_ context.Context, _ plat
 	return t.pullPages[opts.Page], t.pullPage[opts.Page], nil
 }
 
-func (t *archiveFakeTransport) ListPullRequestComments(context.Context, platform.RepoRef, int, PageOptions) ([]CommentDTO, Page, error) {
+func (t *archiveFakeTransport) ListPullRequestComments(_ context.Context, _ platform.RepoRef, _ int, opts PageOptions) ([]CommentDTO, Page, error) {
 	t.requests++
+	t.pullCommentRequests = append(t.pullCommentRequests, opts.Page)
+	if t.pullCommentPages != nil {
+		return t.pullCommentPages[opts.Page], t.commentPage[opts.Page], nil
+	}
 	return t.comments, Page{}, nil
+}
+
+func (t *archiveFakeTransport) ListIssueComments(_ context.Context, _ platform.RepoRef, _ int, opts PageOptions) ([]CommentDTO, Page, error) {
+	t.requests++
+	t.issueCommentRequests = append(t.issueCommentRequests, opts.Page)
+	return t.issueCommentPages[opts.Page], t.commentPage[opts.Page], nil
 }
 
 func (t *archiveFakeTransport) ListPullRequestReviews(context.Context, platform.RepoRef, int, PageOptions) ([]ReviewDTO, Page, error) {

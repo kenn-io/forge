@@ -224,25 +224,40 @@ func archiveDatasetKey(item db.ArchiveItemState, dataset db.ArchiveDataset, doma
 	}
 }
 
-func (s *Service) fetchIssueComments(ctx context.Context, repo resolvedRepository, item db.ArchiveItemState, issueID, domainRevision int64) error {
-	key := archiveDatasetKey(item, db.ArchiveDatasetComments, domainRevision)
+type archiveDatasetPage[T any] func(
+	context.Context,
+	platform.RepoRef,
+	int,
+	string,
+) (platform.ArchivePage[T], error)
+
+func fetchArchiveDataset[T any](
+	s *Service,
+	ctx context.Context,
+	repo resolvedRepository,
+	item db.ArchiveItemState,
+	dataset db.ArchiveDataset,
+	domainRevision int64,
+	read archiveDatasetPage[T],
+) (db.ArchiveDatasetKey, []T, error) {
+	key := archiveDatasetKey(item, dataset, domainRevision)
 	stage, err := s.db.GetArchiveDatasetStage(ctx, key)
 	if err != nil {
-		return err
+		return key, nil, err
 	}
 	for !stage.Exhausted {
 		requestCtx, release, err := s.admit(ctx, repo, 1)
 		if err != nil {
-			return err
+			return key, nil, err
 		}
-		page, err := repo.Reader.ListArchiveIssueComments(requestCtx, repo.Ref, item.ItemNumber, stage.NextCursor)
+		page, err := read(requestCtx, repo.Ref, item.ItemNumber, stage.NextCursor)
 		release()
 		if err != nil {
-			return err
+			return key, nil, err
 		}
 		payload, err := json.Marshal(page.Items)
 		if err != nil {
-			return err
+			return key, nil, err
 		}
 		stage, err = s.db.CommitArchiveDatasetPage(ctx, db.ArchiveDatasetPage{
 			ArchiveDatasetKey: key, InputCursor: stage.NextCursor, NextCursor: page.NextCursor,
@@ -251,20 +266,37 @@ func (s *Service) fetchIssueComments(ctx context.Context, repo resolvedRepositor
 			MaxBytes: maxArchiveDatasetBytes, Now: s.now(),
 		})
 		if err != nil {
-			return err
+			return key, nil, err
 		}
 	}
 	payloads, err := s.db.LoadArchiveDatasetPages(ctx, key)
 	if err != nil {
-		return err
+		return key, nil, err
 	}
-	var comments []platform.IssueEvent
+	var values []T
 	for _, payload := range payloads {
-		var page []platform.IssueEvent
+		var page []T
 		if err := json.Unmarshal(payload, &page); err != nil {
-			return err
+			return key, nil, err
 		}
-		comments = append(comments, page...)
+		values = append(values, page...)
+	}
+	return key, values, nil
+}
+
+func (s *Service) fetchIssueComments(
+	ctx context.Context,
+	repo resolvedRepository,
+	item db.ArchiveItemState,
+	issueID int64,
+	domainRevision int64,
+) error {
+	key, comments, err := fetchArchiveDataset(
+		s, ctx, repo, item, db.ArchiveDatasetComments, domainRevision,
+		repo.Reader.ListArchiveIssueComments,
+	)
+	if err != nil {
+		return err
 	}
 	events := make([]db.IssueEvent, 0, len(comments))
 	for _, event := range comments {
@@ -273,92 +305,38 @@ func (s *Service) fetchIssueComments(ctx context.Context, repo resolvedRepositor
 	return s.db.PublishArchiveIssueComments(ctx, key, issueID, events)
 }
 
-type archiveMergeRequestEventPage func(context.Context, platform.RepoRef, int, string) (platform.ArchivePage[platform.MergeRequestEvent], error)
-
-func (s *Service) fetchMergeRequestEvents(ctx context.Context, repo resolvedRepository, item db.ArchiveItemState, mrID, domainRevision int64, dataset db.ArchiveDataset, eventType string, read archiveMergeRequestEventPage) error {
-	key := archiveDatasetKey(item, dataset, domainRevision)
-	stage, err := s.db.GetArchiveDatasetStage(ctx, key)
+func (s *Service) fetchMergeRequestEvents(
+	ctx context.Context,
+	repo resolvedRepository,
+	item db.ArchiveItemState,
+	mrID int64,
+	domainRevision int64,
+	dataset db.ArchiveDataset,
+	eventType string,
+	read archiveDatasetPage[platform.MergeRequestEvent],
+) error {
+	key, values, err := fetchArchiveDataset(s, ctx, repo, item, dataset, domainRevision, read)
 	if err != nil {
 		return err
 	}
-	for !stage.Exhausted {
-		requestCtx, release, err := s.admit(ctx, repo, 1)
-		if err != nil {
-			return err
-		}
-		page, err := read(requestCtx, repo.Ref, item.ItemNumber, stage.NextCursor)
-		release()
-		if err != nil {
-			return err
-		}
-		payload, err := json.Marshal(page.Items)
-		if err != nil {
-			return err
-		}
-		stage, err = s.db.CommitArchiveDatasetPage(ctx, db.ArchiveDatasetPage{
-			ArchiveDatasetKey: key, InputCursor: stage.NextCursor, NextCursor: page.NextCursor,
-			Exhausted: page.Exhausted, RecordCount: len(page.Items), Payload: payload,
-			MaxPages: maxArchiveDatasetPages, MaxRecords: maxArchiveDatasetRecords, MaxBytes: maxArchiveDatasetBytes, Now: s.now(),
-		})
-		if err != nil {
-			return err
-		}
-	}
-	payloads, err := s.db.LoadArchiveDatasetPages(ctx, key)
-	if err != nil {
-		return err
-	}
-	var values []platform.MergeRequestEvent
-	for _, payload := range payloads {
-		var page []platform.MergeRequestEvent
-		if err := json.Unmarshal(payload, &page); err != nil {
-			return err
-		}
-		values = append(values, page...)
-	}
-	return s.db.PublishArchiveMREvents(ctx, key, mrID, eventType, dbMergeRequestEvents(mrID, values))
+	return s.db.PublishArchiveMREvents(
+		ctx, key, mrID, eventType, dbMergeRequestEvents(mrID, values),
+	)
 }
 
-func (s *Service) fetchReviewThreads(ctx context.Context, repo resolvedRepository, item db.ArchiveItemState, mrID, domainRevision int64) error {
-	key := archiveDatasetKey(item, db.ArchiveDatasetInlineComments, domainRevision)
-	stage, err := s.db.GetArchiveDatasetStage(ctx, key)
+func (s *Service) fetchReviewThreads(
+	ctx context.Context,
+	repo resolvedRepository,
+	item db.ArchiveItemState,
+	mrID int64,
+	domainRevision int64,
+) error {
+	key, values, err := fetchArchiveDataset(
+		s, ctx, repo, item, db.ArchiveDatasetInlineComments, domainRevision,
+		repo.Reader.ListArchiveReviewThreads,
+	)
 	if err != nil {
 		return err
-	}
-	for !stage.Exhausted {
-		requestCtx, release, err := s.admit(ctx, repo, 1)
-		if err != nil {
-			return err
-		}
-		page, err := repo.Reader.ListArchiveReviewThreads(requestCtx, repo.Ref, item.ItemNumber, stage.NextCursor)
-		release()
-		if err != nil {
-			return err
-		}
-		payload, err := json.Marshal(page.Items)
-		if err != nil {
-			return err
-		}
-		stage, err = s.db.CommitArchiveDatasetPage(ctx, db.ArchiveDatasetPage{
-			ArchiveDatasetKey: key, InputCursor: stage.NextCursor, NextCursor: page.NextCursor,
-			Exhausted: page.Exhausted, RecordCount: len(page.Items), Payload: payload,
-			MaxPages: maxArchiveDatasetPages, MaxRecords: maxArchiveDatasetRecords, MaxBytes: maxArchiveDatasetBytes, Now: s.now(),
-		})
-		if err != nil {
-			return err
-		}
-	}
-	payloads, err := s.db.LoadArchiveDatasetPages(ctx, key)
-	if err != nil {
-		return err
-	}
-	var values []platform.MergeRequestReviewThread
-	for _, payload := range payloads {
-		var page []platform.MergeRequestReviewThread
-		if err := json.Unmarshal(payload, &page); err != nil {
-			return err
-		}
-		values = append(values, page...)
 	}
 	events, threads := platform.DBReviewThreads(values)
 	for i := range events {

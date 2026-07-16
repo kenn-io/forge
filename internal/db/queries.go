@@ -1879,10 +1879,6 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
 		        allow_rebase_merge, viewer_can_merge,
-		        backfill_pr_page, backfill_pr_complete,
-		        backfill_pr_completed_at,
-		        backfill_issue_page, backfill_issue_complete,
-		        backfill_issue_completed_at,
 		        label_catalog_synced_at, label_catalog_checked_at,
 		        label_catalog_sync_error,
 		        created_at
@@ -1905,10 +1901,6 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 			&r.LastSyncError,
 			&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
 			&r.ViewerCanMerge,
-			&r.BackfillPRPage, &r.BackfillPRComplete,
-			&r.BackfillPRCompletedAt,
-			&r.BackfillIssuePage, &r.BackfillIssueComplete,
-			&r.BackfillIssueCompletedAt,
 			&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
 			&r.LabelCatalogSyncError,
 			&r.CreatedAt,
@@ -1983,10 +1975,6 @@ func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Rep
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
 		        allow_rebase_merge, viewer_can_merge,
-		        backfill_pr_page, backfill_pr_complete,
-		        backfill_pr_completed_at,
-		        backfill_issue_page, backfill_issue_complete,
-		        backfill_issue_completed_at,
 		        label_catalog_synced_at, label_catalog_checked_at,
 		        label_catalog_sync_error,
 		        created_at
@@ -2004,10 +1992,6 @@ func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Rep
 		&r.LastSyncError,
 		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
 		&r.ViewerCanMerge,
-		&r.BackfillPRPage, &r.BackfillPRComplete,
-		&r.BackfillPRCompletedAt,
-		&r.BackfillIssuePage, &r.BackfillIssueComplete,
-		&r.BackfillIssueCompletedAt,
 		&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
 		&r.LabelCatalogSyncError,
 		&r.CreatedAt,
@@ -2033,10 +2017,6 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
 		        allow_rebase_merge, viewer_can_merge,
-		        backfill_pr_page, backfill_pr_complete,
-		        backfill_pr_completed_at,
-		        backfill_issue_page, backfill_issue_complete,
-		        backfill_issue_completed_at,
 		        label_catalog_synced_at, label_catalog_checked_at,
 		        label_catalog_sync_error,
 		        created_at
@@ -2050,10 +2030,6 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 		&r.LastSyncError,
 		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
 		&r.ViewerCanMerge,
-		&r.BackfillPRPage, &r.BackfillPRComplete,
-		&r.BackfillPRCompletedAt,
-		&r.BackfillIssuePage, &r.BackfillIssueComplete,
-		&r.BackfillIssueCompletedAt,
 		&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
 		&r.LabelCatalogSyncError,
 		&r.CreatedAt,
@@ -2080,14 +2056,6 @@ func normalizeRepoTimestamps(r *Repo) {
 	if r.LastSyncCompletedAt != nil {
 		t := r.LastSyncCompletedAt.UTC()
 		r.LastSyncCompletedAt = &t
-	}
-	if r.BackfillPRCompletedAt != nil {
-		t := r.BackfillPRCompletedAt.UTC()
-		r.BackfillPRCompletedAt = &t
-	}
-	if r.BackfillIssueCompletedAt != nil {
-		t := r.BackfillIssueCompletedAt.UTC()
-		r.BackfillIssueCompletedAt = &t
 	}
 	if r.LabelCatalogSyncedAt != nil {
 		t := r.LabelCatalogSyncedAt.UTC()
@@ -3919,37 +3887,6 @@ func (d *DB) UpdateIssueDetailFetched(
 	)
 	if err != nil {
 		return fmt.Errorf("update issue detail fetched: %w", err)
-	}
-	return nil
-}
-
-// UpdateBackfillCursor updates the backfill pagination state for a repo.
-func (d *DB) UpdateBackfillCursor(
-	ctx context.Context, repoID int64,
-	prPage int, prComplete bool, prCompletedAt *time.Time,
-	issuePage int, issueComplete bool,
-	issueCompletedAt *time.Time,
-) error {
-	repo := &Repo{
-		BackfillPRCompletedAt:    prCompletedAt,
-		BackfillIssueCompletedAt: issueCompletedAt,
-	}
-	canonicalizeRepoTimestamps(repo)
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_repos
-		SET backfill_pr_page = ?,
-		    backfill_pr_complete = ?,
-		    backfill_pr_completed_at = ?,
-		    backfill_issue_page = ?,
-		    backfill_issue_complete = ?,
-		    backfill_issue_completed_at = ?
-		WHERE id = ?`,
-		prPage, prComplete, repo.BackfillPRCompletedAt,
-		issuePage, issueComplete, repo.BackfillIssueCompletedAt,
-		repoID,
-	)
-	if err != nil {
-		return fmt.Errorf("update backfill cursor: %w", err)
 	}
 	return nil
 }

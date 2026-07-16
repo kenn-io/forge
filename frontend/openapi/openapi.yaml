@@ -5980,26 +5980,6 @@ components:
           type: boolean
         AllowSquashMerge:
           type: boolean
-        BackfillIssueComplete:
-          type: boolean
-        BackfillIssueCompletedAt:
-          format: date-time
-          type:
-            - string
-            - "null"
-        BackfillIssuePage:
-          format: int64
-          type: integer
-        BackfillPRComplete:
-          type: boolean
-        BackfillPRCompletedAt:
-          format: date-time
-          type:
-            - string
-            - "null"
-        BackfillPRPage:
-          format: int64
-          type: integer
         CreatedAt:
           format: date-time
           type: string
@@ -6045,12 +6025,6 @@ components:
         - AllowMergeCommit
         - AllowRebaseMerge
         - ViewerCanMerge
-        - BackfillPRPage
-        - BackfillPRComplete
-        - BackfillPRCompletedAt
-        - BackfillIssuePage
-        - BackfillIssueComplete
-        - BackfillIssueCompletedAt
         - CreatedAt
         - capabilities
         - operations

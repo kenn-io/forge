@@ -29,10 +29,10 @@ type archivePageClient interface {
 	ListArchivePullRequestsPage(
 		context.Context, string, string, string, int,
 	) ([]*gh.PullRequest, bool, error)
-	ListArchiveIssueCommentsPage(
+	ListIssueCommentsPage(
 		context.Context, string, string, int, int,
 	) ([]*gh.IssueComment, bool, error)
-	ListArchiveReviewsPage(
+	ListReviewsPage(
 		context.Context, string, string, int, int,
 	) ([]*gh.PullRequestReview, bool, error)
 	ListArchiveReviewThreadsPage(
@@ -239,7 +239,7 @@ func githubArchiveIssueFromGraphQL(node *githubArchiveIssueNode) *gh.Issue {
 	return issue
 }
 
-func (c *liveClient) ListArchiveIssueCommentsPage(
+func (c *liveClient) ListIssueCommentsPage(
 	ctx context.Context,
 	owner string,
 	repo string,
@@ -256,7 +256,7 @@ func (c *liveClient) ListArchiveIssueCommentsPage(
 	return items, resp != nil && resp.NextPage > 0, nil
 }
 
-func (c *liveClient) ListArchiveReviewsPage(
+func (c *liveClient) ListReviewsPage(
 	ctx context.Context,
 	owner string,
 	repo string,
@@ -684,7 +684,7 @@ func (p *gitHubClientProvider) ListArchiveIssueComments(
 	if err != nil {
 		return platform.ArchivePage[platform.IssueEvent]{}, err
 	}
-	comments, more, err := client.ListArchiveIssueCommentsPage(ctx, ref.Owner, ref.Name, number, state.Page)
+	comments, more, err := client.ListIssueCommentsPage(ctx, ref.Owner, ref.Name, number, state.Page)
 	if err != nil {
 		return platform.ArchivePage[platform.IssueEvent]{}, p.archiveTransportError(platform.ArchiveCapabilityOrdinaryComments, err)
 	}
@@ -705,7 +705,7 @@ func (p *gitHubClientProvider) ListArchiveMergeRequestComments(
 	if err != nil {
 		return platform.ArchivePage[platform.MergeRequestEvent]{}, err
 	}
-	comments, more, err := client.ListArchiveIssueCommentsPage(ctx, ref.Owner, ref.Name, number, state.Page)
+	comments, more, err := client.ListIssueCommentsPage(ctx, ref.Owner, ref.Name, number, state.Page)
 	if err != nil {
 		return platform.ArchivePage[platform.MergeRequestEvent]{}, p.archiveTransportError(platform.ArchiveCapabilityOrdinaryComments, err)
 	}
@@ -726,7 +726,7 @@ func (p *gitHubClientProvider) ListArchiveSubmittedReviews(
 	if err != nil {
 		return platform.ArchivePage[platform.MergeRequestEvent]{}, err
 	}
-	reviews, more, err := client.ListArchiveReviewsPage(ctx, ref.Owner, ref.Name, number, state.Page)
+	reviews, more, err := client.ListReviewsPage(ctx, ref.Owner, ref.Name, number, state.Page)
 	if err != nil {
 		return platform.ArchivePage[platform.MergeRequestEvent]{}, p.archiveTransportError(platform.ArchiveCapabilitySubmittedReviews, err)
 	}

@@ -315,10 +315,33 @@ test.describe("repository source browser", () => {
       await mainTreeLoaded;
       const routeBeforeSwitch = page.url();
 
+      const browser = page.getByRole("region", { name: "Repository source browser" });
+      const viewer = browser.getByRole("main", { name: "Selected file" });
+      await expect(viewer.locator(".repo-browser__path")).toHaveText("README.md");
+      await expect(viewer.locator(".repo-browser__source")).toContainText("# Widget Service");
+
+      let releaseGuideRequest!: () => void;
+      let markGuideRequestStarted!: () => void;
+      const guideRequestRelease = new Promise<void>((resolve) => {
+        releaseGuideRequest = resolve;
+      });
+      const guideRequestStarted = new Promise<void>((resolve) => {
+        markGuideRequestStarted = resolve;
+      });
+      await page.route("**/browser/blob**", async (route) => {
+        if (new URL(route.request().url()).searchParams.get("path") === "docs/guide.md") {
+          markGuideRequestStarted();
+          await guideRequestRelease;
+        }
+        await route.continue();
+      });
+      await browser.getByRole("treeitem", { name: "guide.md" }).click();
+      await guideRequestStarted;
+      await expect(viewer.locator(".repo-browser__path")).toHaveText("docs/guide.md");
+
       const failNextTree = await page.request.post(`${server.info.base_url}/__e2e/repo-browser/tree/fail-next`);
       expect(failNextTree.ok()).toBe(true);
 
-      const browser = page.getByRole("region", { name: "Repository source browser" });
       await browser.getByRole("button", { name: /Select repository ref: branch: main/ }).click();
       const search = browser.getByRole("combobox", { name: "Search repository refs" });
       await search.fill("feature");
@@ -333,6 +356,13 @@ test.describe("repository source browser", () => {
       await expect(search).toHaveValue("feature");
       await expect(browser.getByRole("alert")).toHaveText("Couldn't load repository ref");
       await expect(browser.locator(".repo-browser__ref")).toHaveText("main");
+      await expect(viewer.locator(".repo-browser__path")).toHaveText("README.md");
+      await expect(viewer.locator(".repo-browser__source")).toContainText("# Widget Service");
+      await expect(browser.getByRole("treeitem", { name: "guide.md" })).toBeVisible();
+
+      releaseGuideRequest();
+      await expect(viewer.locator(".repo-browser__path")).toHaveText("README.md");
+      await expect(viewer.locator(".repo-browser__source")).toContainText("# Widget Service");
 
       const featureTreeLoaded = treeResponse(page, "feature/caching");
       await browser.getByRole("option", { name: /feature\/caching/ }).click();

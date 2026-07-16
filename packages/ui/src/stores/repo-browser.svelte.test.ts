@@ -606,8 +606,63 @@ describe("createRepoBrowserStore", () => {
     expect(store.getSelectedPath()).toBe("src/app.ts");
     expect(store.getBlob()?.content).toBe("export const app = true;\n");
     expect(store.getFileHistory().map((item) => item.subject)).toEqual(["app changed"]);
-    expect(store.getError()).toBe("tree failed");
+    expect(store.getError()).toBeNull();
     expect(store.isLoading()).toBe(false);
+  });
+
+  it("restores the last usable file when a ref switch interrupts a path load", async () => {
+    const base = testClient();
+    const srcBlob = deferredResponse();
+    const srcHistory = deferredResponse();
+    const client = {
+      GET: vi.fn((path: string, options?: TestGetOptions) => {
+        const url = testURL(path, options);
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=src%2Fapp.ts"
+        ) {
+          return srcBlob.promise;
+        }
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha=main-sha&path=src%2Fapp.ts"
+        ) {
+          return srcHistory.promise;
+        }
+        if (
+          url ===
+          "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha"
+        ) {
+          return Promise.resolve({
+            error: { detail: "tree failed" },
+            response: new Response(null, { status: 500 }),
+          });
+        }
+        return base.GET(path, options);
+      }),
+    } as unknown as TestClient;
+    const store = createRepoBrowserStore({ client });
+    await store.loadRepo(repo);
+
+    const pendingPath = store.selectPath("src/app.ts");
+    expect(store.getSelectedPath()).toBe("src/app.ts");
+    expect(store.isBlobLoading()).toBe(true);
+
+    expect(await store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false })).toBe(false);
+
+    expect(store.getSelectedRef()?.name).toBe("main");
+    expect(store.getSelectedPath()).toBe("README.md");
+    expect(store.getBlob()?.content).toBe("# Widgets\n");
+    expect(store.getFileHistory().map((item) => item.subject)).toEqual(["readme changed"]);
+    expect(store.isBlobLoading()).toBe(false);
+    expect(store.getError()).toBeNull();
+
+    srcBlob.resolve(blobResponse("src/app.ts", "export const stale = true;\n"));
+    srcHistory.resolve(historyResponse("src/app.ts", "stale app"));
+    await pendingPath;
+
+    expect(store.getSelectedPath()).toBe("README.md");
+    expect(store.getBlob()?.content).toBe("# Widgets\n");
   });
 
   it("preserves refs when an initial requested ref tree fails", async () => {

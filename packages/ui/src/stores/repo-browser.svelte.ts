@@ -26,6 +26,12 @@ type RepoBrowserLastChangedResponse = components["schemas"]["RepoBrowserLastChan
 type RepoBrowserCommitResponse = components["schemas"]["RepoBrowserCommitResponse"];
 type MissingRequestedPathBehavior = "fallback" | "retain";
 type RepoBrowserPathKind = "file" | "directory" | "missing";
+type RepoBrowserPathSnapshot = {
+  selectedPath: string | null;
+  blob: RepoBrowserBlob | null;
+  fileHistory: RepoBrowserCommit[];
+  selectedCommit: RepoBrowserCommit | null;
+};
 
 const viewModeStorageKey = "repo-browser-view-mode";
 const lastChangedBatchSize = 250;
@@ -84,6 +90,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
   let blob = $state<RepoBrowserBlob | null>(null);
   let fileHistory = $state<RepoBrowserCommit[]>([]);
   let selectedCommit = $state<RepoBrowserCommit | null>(null);
+  let lastUsablePathState: RepoBrowserPathSnapshot | null = null;
   let fileCategoryFilter = $state<DiffFileCategoryFilter>("all");
   let viewMode = $state<RepoBrowserViewMode>(loadViewMode());
   let loading = $state(false);
@@ -234,6 +241,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
       blob = null;
       fileHistory = [];
       selectedCommit = null;
+      rememberUsablePathState();
     }
     void loadLastChanged(generation, selectedPath ?? firstPath ?? undefined).catch(() => {
       // Last-changed metadata is decorative; keep the tree/blob usable if it fails.
@@ -278,16 +286,14 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
 
   async function selectRef(ref: RepoBrowserRef): Promise<boolean> {
     const generation = nextTreeRequestGeneration();
+    const previousPathState = blobLoading && lastUsablePathState ? lastUsablePathState : currentPathState();
     const previousState = {
       selectedRef,
       tree,
       treeTruncated,
       lastChanged,
-      selectedPath,
-      blob,
-      fileHistory,
-      selectedCommit,
-      blobLoading,
+      error,
+      ...previousPathState,
     };
     selectedRef = ref;
     loading = true;
@@ -296,20 +302,12 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     try {
       await loadTree(previousState.selectedPath, generation);
       return isCurrentTreeRequest(generation);
-    } catch (err) {
+    } catch {
       if (isCurrentTreeRequest(generation)) {
-        error = err instanceof Error ? err.message : String(err);
-        ({
-          selectedRef,
-          tree,
-          treeTruncated,
-          lastChanged,
-          selectedPath,
-          blob,
-          fileHistory,
-          selectedCommit,
-          blobLoading,
-        } = previousState);
+        ({ selectedRef, tree, treeTruncated, lastChanged, error, selectedPath, blob, fileHistory, selectedCommit } =
+          previousState);
+        blobLoading = false;
+        rememberUsablePathState();
       }
       return false;
     } finally {
@@ -329,7 +327,10 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     blob = null;
     fileHistory = [];
     selectedCommit = null;
-    if (pathKind === "directory") return;
+    if (pathKind === "directory") {
+      rememberUsablePathState();
+      return;
+    }
     try {
       const [{ data: blobData, error: blobError, response: blobResponse }, historyResponse] = await Promise.all([
         client.GET(providerRepoPath(ref, "/browser/blob"), {
@@ -359,6 +360,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
       blob = (blobData as RepoBrowserBlobResponse).blob;
       fileHistory = (historyResponse.data as RepoBrowserHistoryResponse).commits ?? [];
       selectedCommit = fileHistory[0] ?? null;
+      rememberUsablePathState();
     } catch (err) {
       if (isCurrentPathRequest(generation)) {
         error = err instanceof Error ? err.message : String(err);
@@ -412,6 +414,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
       if (!isCurrentCommitRequest(generation)) return;
       if (!data) throw new Error(apiErrorMessage(apiError, `HTTP ${response.status}`));
       selectedCommit = (data as RepoBrowserCommitResponse).commit;
+      rememberUsablePathState();
     } catch (err) {
       if (isCurrentCommitRequest(generation)) {
         error = err instanceof Error ? err.message : String(err);
@@ -424,7 +427,16 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     refs = [];
     defaultRef = null;
     selectedRef = null;
+    lastUsablePathState = null;
     clearTreeData();
+  }
+
+  function currentPathState(): RepoBrowserPathSnapshot {
+    return { selectedPath, blob, fileHistory, selectedCommit };
+  }
+
+  function rememberUsablePathState(): void {
+    lastUsablePathState = currentPathState();
   }
 
   function clearTreeData(): void {

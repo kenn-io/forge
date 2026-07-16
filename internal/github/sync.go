@@ -416,6 +416,7 @@ type Syncer struct {
 	archiveLifecycle         archiveRepositoryLifecycle
 	archiveWake              chan struct{}
 	archivePollInterval      time.Duration
+	now                      func() time.Time
 	clones                   *gitclone.Manager
 	rateTrackers             map[string]*RateTracker    // provider/host bucket -> tracker
 	writeRateTrackers        map[string]*RateTracker    // provider/host bucket -> mutation-credential REST tracker
@@ -681,6 +682,7 @@ func NewSyncerWithRegistry(
 		stopCh:                   make(chan struct{}),
 		archiveWake:              make(chan struct{}, 1),
 		archivePollInterval:      time.Second,
+		now:                      time.Now,
 		displayNames: newDisplayNameCache(
 			displayNameCacheSize,
 			displayNameSuccessTTL,
@@ -754,7 +756,7 @@ func (s *Syncer) Admit(
 	ref platform.RepoRef,
 	cost int,
 ) (archive.AdmissionResult, error) {
-	now := time.Now().UTC()
+	now := s.now().UTC()
 	if s.running.Load() {
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "normal sync is active"}, nil
@@ -764,23 +766,39 @@ func (s *Syncer) Admit(
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
 	}
-	if tracker := s.rateTrackers[key]; tracker != nil && tracker.IsPaused() {
+	tracker := s.rateTrackers[key]
+	if tracker != nil && tracker.IsPaused() {
 		retryAt := now.Add(time.Minute)
 		if reset := tracker.ResetAt(); reset != nil && reset.After(now) {
 			retryAt = reset.UTC()
 		}
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "provider rate reserve reached"}, nil
 	}
-	if budget := s.budgets[key]; budget != nil && !budget.CanSpend(cost) {
-		retryAt := now.Truncate(time.Hour).Add(time.Hour)
-		if tracker := s.rateTrackers[key]; tracker != nil {
-			if reset := tracker.ResetAt(); reset != nil && reset.After(now) {
-				retryAt = reset.UTC()
-			}
+	budget := s.budgets[key]
+	resetAt := archiveBudgetResetAt(tracker)
+	if budget == nil || !budget.CanSpendArchive(cost, now, resetAt, archiveLiveFloor(ref.Platform)) {
+		retryAt := now.Add(time.Second)
+		if resetAt != nil && resetAt.After(now) {
+			retryAt = resetAt.UTC()
 		}
-		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "background sync budget exhausted"}, nil
+		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "archive surplus budget unavailable"}, nil
 	}
-	return archive.AdmissionResult{Allowed: true, Context: WithSyncBudget(ctx)}, nil
+	return archive.AdmissionResult{Allowed: true, Context: WithArchiveSyncBudget(ctx)}, nil
+}
+
+func archiveBudgetResetAt(tracker *RateTracker) *time.Time {
+	if tracker == nil {
+		return nil
+	}
+	return tracker.ResetAt()
+}
+
+func archiveLiveFloor(kind platform.Kind) int {
+	floor := PRDetailWorstCase + 1 // one full live detail plus one current-index page
+	if kind == platform.KindGitHub {
+		floor++ // one notification page
+	}
+	return floor
 }
 
 func (s *Syncer) beginProviderWork(key string, priority archive.WorkPriority) func() {

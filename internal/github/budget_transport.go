@@ -6,6 +6,7 @@ import (
 )
 
 type syncBudgetKey struct{}
+type archiveSyncBudgetKey struct{}
 
 // WithSyncBudget marks a context so that HTTP calls made with
 // it count against the sync budget. Background sync entry points
@@ -17,6 +18,15 @@ func WithSyncBudget(ctx context.Context) context.Context {
 
 func IsSyncBudgetContext(ctx context.Context) bool {
 	_, ok := ctx.Value(syncBudgetKey{}).(bool)
+	return ok
+}
+
+func WithArchiveSyncBudget(ctx context.Context) context.Context {
+	return context.WithValue(WithSyncBudget(ctx), archiveSyncBudgetKey{}, true)
+}
+
+func isArchiveSyncBudgetContext(ctx context.Context) bool {
+	_, ok := ctx.Value(archiveSyncBudgetKey{}).(bool)
 	return ok
 }
 
@@ -40,7 +50,11 @@ func (t *budgetTransport) RoundTrip(
 	resp, err := t.base.RoundTrip(req)
 	if IsSyncBudgetContext(req.Context()) &&
 		(resp == nil || resp.StatusCode != http.StatusNotModified) {
-		t.budget.Spend(1)
+		if isArchiveSyncBudgetContext(req.Context()) {
+			t.budget.SpendArchive(1)
+		} else {
+			t.budget.Spend(1)
+		}
 	}
 	return resp, err
 }

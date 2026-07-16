@@ -293,22 +293,25 @@ func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	key := RateBucketKey("github", "github.test")
-	budget := NewSyncBudget(2)
+	budget := NewSyncBudget(100)
 	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
-	reset := time.Now().UTC().Add(time.Hour)
+	now := time.Now().UTC()
+	reset := now.Add(time.Minute)
 	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: reset})
 	syncer := NewSyncerWithRegistry(
 		nil, database, nil, nil, time.Hour,
 		map[string]*RateTracker{key: tracker}, map[string]*SyncBudget{key: budget},
 	)
+	syncer.now = func() time.Time { return now }
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.test", Owner: "acme", Name: "widget"}
 
 	allowed, err := syncer.Admit(t.Context(), ref, 1)
 	require.NoError(err)
-	assert.True(allowed.Allowed)
+	require.True(allowed.Allowed)
 	assert.True(IsSyncBudgetContext(allowed.Context))
+	assert.True(isArchiveSyncBudgetContext(allowed.Context))
 
-	require.True(budget.TrySpend(2))
+	budget.Spend(archiveLiveFloor(ref.Platform) + 87)
 	denied, err := syncer.Admit(t.Context(), ref, 1)
 	require.NoError(err)
 	assert.False(denied.Allowed)
@@ -316,13 +319,19 @@ func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 	assert.Equal(reset, *denied.RetryAt)
 
 	budget.Reset()
-	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: RateReserveBuffer, Reset: reset})
-	denied, err = syncer.Admit(t.Context(), ref, 1)
+	reserveTracker := NewPlatformRateTracker(database, "github", "reserve.test", "rest")
+	reserveTracker.UpdateFromRate(Rate{Limit: 5000, Remaining: RateReserveBuffer, Reset: reset})
+	reserveRef := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "reserve.test", Owner: "acme", Name: "widget",
+	}
+	reserveKey := RateBucketKey("github", reserveRef.Host)
+	syncer.rateTrackers[reserveKey] = reserveTracker
+	syncer.budgets[reserveKey] = NewSyncBudget(100)
+	denied, err = syncer.Admit(t.Context(), reserveRef, 1)
 	require.NoError(err)
 	assert.False(denied.Allowed)
 	assert.Contains(denied.Detail, "reserve")
 
-	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: reset})
 	syncer.running.Store(true)
 	denied, err = syncer.Admit(t.Context(), ref, 1)
 	require.NoError(err)
@@ -335,10 +344,15 @@ func TestArchiveAdmissionDefersToNotificationAndActiveDetailWork(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	key := RateBucketKey("github", "github.test")
+	now := time.Now().UTC()
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
 	syncer := NewSyncerWithRegistry(
-		nil, database, nil, nil, time.Hour, nil,
-		map[string]*SyncBudget{key: NewSyncBudget(10)},
+		nil, database, nil, nil, time.Hour,
+		map[string]*RateTracker{key: tracker},
+		map[string]*SyncBudget{key: NewSyncBudget(100)},
 	)
+	syncer.now = func() time.Time { return now }
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.test", Owner: "acme", Name: "widget"}
 
 	for _, priority := range []archive.WorkPriority{

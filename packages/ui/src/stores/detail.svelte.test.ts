@@ -60,6 +60,36 @@ describe("createDetailStore", () => {
     vi.useRealTimers();
   });
 
+  it("keeps the displayed detail object when a refresh returns identical content", async () => {
+    const routeIdentity = {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    };
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { ...pullDetail("head"), detail_fetched_at: "2026-07-15T10:00:00Z" } })
+      .mockResolvedValueOnce({ data: { ...pullDetail("head"), detail_fetched_at: "2026-07-15T10:01:00Z" } })
+      .mockResolvedValueOnce({ data: { ...pullDetail("new-head"), detail_fetched_at: "2026-07-15T10:02:00Z" } });
+    const store = createDetailStore({
+      client: mockClient({ GET: get }),
+      getPage: () => "pulls",
+    });
+    await store.loadDetail("acme", "widget", 7, { ...routeIdentity, sync: false });
+    const displayed = store.getDetail();
+
+    // Only the sync timestamp moved: the polling refresh must not swap
+    // in an equal-but-new object, or the PR panel re-renders every cycle.
+    await store.refreshDetailOnly("acme", "widget", 7, routeIdentity);
+    expect(store.getDetail()).toBe(displayed);
+    expect(store.getDetail()?.detail_fetched_at).toBe("2026-07-15T10:00:00Z");
+
+    // Real content changes still apply.
+    await store.refreshDetailOnly("acme", "widget", 7, routeIdentity);
+    expect(store.getDetail()).not.toBe(displayed);
+    expect(store.getDetail()?.platform_head_sha).toBe("new-head");
+  });
+
   it("flashes failed optimistic state changes without poisoning detail load state", async () => {
     const optimisticKanbanUpdate = vi.fn();
     const store = createDetailStore({

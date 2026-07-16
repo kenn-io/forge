@@ -314,13 +314,34 @@ export function createDetailStore(opts: DetailStoreOptions) {
     }
   }
 
+  // A refreshed payload whose content matches the displayed detail must
+  // not replace it: the sync timestamp moves on every background poll,
+  // and swapping in an equal-but-new object re-rendered the whole PR
+  // panel (and re-ran the scroll-restore effect) every polling cycle
+  // even though nothing about the PR changed.
+  function detailContentUnchanged(next: PullDetail): boolean {
+    if (detail === null) return false;
+    const strip = (d: PullDetail): string => {
+      // warnings are advisory (surfaced via flash on arrival, never
+      // rendered from the store), so they don't make content "new".
+      const { detail_fetched_at: _fetchedAt, warnings: _warnings, ...rest } = d as PullDetail & { warnings?: string[] };
+      return JSON.stringify(rest);
+    };
+    return strip(detail) === strip(next);
+  }
+
+  function applyRefreshedDetail(next: PullDetail): void {
+    if (detailContentUnchanged(next)) return;
+    detail = next;
+  }
+
   async function refreshDetail(
     owner: string,
     name: string,
     number: number,
     expectedGen: number = syncGeneration,
     identity: DetailRequestRef,
-  ): Promise<{ ok: boolean; error?: string }> {
+  ): Promise<{ ok: boolean; error?: string; fetchedAt?: string }> {
     const ref = detailRequestRef(owner, name, number, identity);
     try {
       const { data, error: requestError } = await apiClient.GET(providerItemPath("pulls", ref, ""), {
@@ -336,12 +357,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
         return { ok: false, error: apiErrorMessage(requestError, "failed to refresh pull request") };
       }
       if (data !== undefined) {
-        detail = withPreservedLocalBody({
-          ...data,
-          events: data.events ?? [],
-        } as PullDetail);
+        applyRefreshedDetail(
+          withPreservedLocalBody({
+            ...data,
+            events: data.events ?? [],
+          } as PullDetail),
+        );
         detailLoaded = data.detail_loaded ?? detailLoaded;
-        return { ok: true };
+        return { ok: true, ...(data.detail_fetched_at != null && { fetchedAt: data.detail_fetched_at }) };
       }
       return { ok: false, error: "Pull request refresh returned no detail" };
     } catch (err) {
@@ -371,10 +394,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
       }
       if (data) {
         storeError = null;
-        detail = withPreservedLocalBody({
-          ...data,
-          events: data.events ?? [],
-        } as PullDetail);
+        applyRefreshedDetail(
+          withPreservedLocalBody({
+            ...data,
+            events: data.events ?? [],
+          } as PullDetail),
+        );
         detailLoaded = data.detail_loaded ?? detailLoaded;
         refreshed = true;
       }
@@ -548,9 +573,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
     for (const ms of [300, 700, 1_500, 3_000, 5_000]) {
       await delay(ms);
       if (gen !== syncGeneration) return;
-      await refreshDetail(owner, name, number, gen, identity);
+      // Convergence is judged on the response's fetch timestamp, not the
+      // store's: content-identical refreshes intentionally leave the
+      // store untouched, so the store timestamp can stay frozen while
+      // the background sync has in fact completed.
+      const { fetchedAt } = await refreshDetail(owner, name, number, gen, identity);
       if (gen !== syncGeneration) return;
-      const fetchedAt = detail?.detail_fetched_at;
       if (fetchedAt && fetchedAt !== previousFetchedAt) {
         return;
       }
@@ -607,10 +635,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
         }
         if (data) {
           storeError = null;
-          detail = withPreservedLocalBody({
-            ...data,
-            events: data.events ?? [],
-          } as PullDetail);
+          applyRefreshedDetail(
+            withPreservedLocalBody({
+              ...data,
+              events: data.events ?? [],
+            } as PullDetail),
+          );
           detailLoaded = data.detail_loaded ?? detailLoaded;
           const warning = data.warnings?.[0];
           if (warning) {

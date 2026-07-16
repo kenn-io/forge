@@ -66,6 +66,10 @@ state.
   Unconditional broadcasts made every client refetch schedule the next
   enrichment, a permanent refresh loop
   (`internal/server/workspace_enrichment.go::workspaceEnrichmentBroadcastWorthy`).
+- Client detail stores mirror this: a background poll or sync whose payload is
+  content-identical (ignoring fetch timestamps) must not replace displayed
+  store state — equal-but-new objects re-render the whole panel every cycle
+  (`packages/ui/src/stores/detail.svelte.ts::applyRefreshedDetail`).
 - `DELETE /workspaces/{id}`: tear down a middleman-managed workspace and its
   local resources.
 

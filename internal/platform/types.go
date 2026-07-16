@@ -1,6 +1,9 @@
 package platform
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type Kind string
 
@@ -307,18 +310,20 @@ func (e *DiffReviewPublishPartialError) Unwrap() error {
 }
 
 type MergeRequestReviewThread struct {
-	ProviderThreadID  string
-	ProviderReviewID  string
-	ProviderCommentID string
-	Body              string
-	AuthorLogin       string
-	DirectURL         string
-	Range             DiffReviewLineRange
-	Resolved          bool
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	ResolvedAt        *time.Time
-	MetadataJSON      string
+	Repo               RepoRef
+	MergeRequestNumber int
+	ProviderThreadID   string
+	ProviderReviewID   string
+	ProviderCommentID  string
+	Body               string
+	AuthorLogin        string
+	DirectURL          string
+	Range              DiffReviewLineRange
+	Resolved           bool
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	ResolvedAt         *time.Time
+	MetadataJSON       string
 }
 
 type ReviewSuggestion struct {
@@ -339,6 +344,181 @@ type ApplyReviewSuggestionsInput struct {
 type AppliedReviewSuggestions struct {
 	CommitSHA string
 	CommitURL string
+}
+
+type ArchiveCapability string
+
+const (
+	ArchiveCapabilityHistoricalIssues        ArchiveCapability = "archive_historical_issues"
+	ArchiveCapabilityHistoricalMergeRequests ArchiveCapability = "archive_historical_merge_requests"
+	ArchiveCapabilityOrdinaryComments        ArchiveCapability = "archive_ordinary_comments"
+	ArchiveCapabilitySubmittedReviews        ArchiveCapability = "archive_submitted_reviews"
+	ArchiveCapabilityInlineReviewComments    ArchiveCapability = "archive_inline_review_comments"
+)
+
+type ArchiveCapabilitySupport string
+
+const (
+	ArchiveCapabilitySupported   ArchiveCapabilitySupport = "supported"
+	ArchiveCapabilityUnsupported ArchiveCapabilitySupport = "unsupported"
+)
+
+type ArchiveCapabilities struct {
+	HistoricalIssues        bool
+	HistoricalMergeRequests bool
+	OrdinaryComments        bool
+	SubmittedReviews        bool
+	InlineReviewComments    bool
+}
+
+func (c ArchiveCapabilities) HasHistoricalInventory() bool {
+	return c.HistoricalIssues || c.HistoricalMergeRequests
+}
+
+func (c ArchiveCapabilities) Support(capability ArchiveCapability) (ArchiveCapabilitySupport, error) {
+	supported := false
+	switch capability {
+	case ArchiveCapabilityHistoricalIssues:
+		supported = c.HistoricalIssues
+	case ArchiveCapabilityHistoricalMergeRequests:
+		supported = c.HistoricalMergeRequests
+	case ArchiveCapabilityOrdinaryComments:
+		supported = c.OrdinaryComments
+	case ArchiveCapabilitySubmittedReviews:
+		supported = c.SubmittedReviews
+	case ArchiveCapabilityInlineReviewComments:
+		supported = c.InlineReviewComments
+	default:
+		return "", invalidArchiveCapability("", "", capability)
+	}
+	if supported {
+		return ArchiveCapabilitySupported, nil
+	}
+	return ArchiveCapabilityUnsupported, nil
+}
+
+func (c ArchiveCapabilities) Require(kind Kind, host string, capability ArchiveCapability) error {
+	support, err := c.Support(capability)
+	if err != nil {
+		return invalidArchiveCapability(kind, host, capability)
+	}
+	if support == ArchiveCapabilitySupported {
+		return nil
+	}
+	return UnsupportedCapability(kind, host, string(capability))
+}
+
+func invalidArchiveCapability(kind Kind, host string, capability ArchiveCapability) error {
+	return &Error{
+		Code:         ErrCodeInvalidArgument,
+		Provider:     kind,
+		PlatformHost: host,
+		Field:        "archive_capability",
+		Err:          fmt.Errorf("unknown archive capability %q", capability),
+	}
+}
+
+type ArchivePage[T any] struct {
+	Items      []T
+	NextCursor string
+	Exhausted  bool
+	// ProgressOnly explicitly records an upstream page consumed while
+	// provider-side filtering yielded no items for this dataset.
+	ProgressOnly bool
+}
+
+type ArchiveLookupOutcome string
+
+const (
+	ArchiveLookupPresent      ArchiveLookupOutcome = "present"
+	ArchiveLookupRemoved      ArchiveLookupOutcome = "removed"
+	ArchiveLookupMoved        ArchiveLookupOutcome = "moved"
+	ArchiveLookupInaccessible ArchiveLookupOutcome = "inaccessible"
+)
+
+type ArchiveItemResult[T any] struct {
+	Outcome     ArchiveLookupOutcome
+	Item        T
+	Destination *RepoRef
+}
+
+func ValidateArchivePage[T any](kind Kind, host, inputCursor string, page ArchivePage[T]) error {
+	hasCursor := page.NextCursor != ""
+	if hasCursor == page.Exhausted {
+		return archiveContractError(
+			kind,
+			host,
+			"archive_page",
+			"archive page must return either a next cursor or exhaustion",
+		)
+	}
+	if !page.Exhausted && len(page.Items) == 0 {
+		if !page.ProgressOnly {
+			return archiveContractError(
+				kind,
+				host,
+				"archive_page",
+				"non-exhausted empty archive page must declare filtered progress",
+			)
+		}
+	}
+	if page.ProgressOnly && (page.Exhausted || len(page.Items) != 0) {
+		return archiveContractError(
+			kind,
+			host,
+			"archive_page",
+			"filtered progress requires an empty non-exhausted archive page",
+		)
+	}
+	if hasCursor && page.NextCursor == inputCursor {
+		return archiveContractError(
+			kind,
+			host,
+			"archive_page_cursor",
+			"archive page repeated its nonempty input cursor",
+		)
+	}
+	return nil
+}
+
+func ValidateArchiveItemResult[T any](kind Kind, host string, result ArchiveItemResult[T]) error {
+	switch result.Outcome {
+	case ArchiveLookupMoved:
+		if !validArchiveDestination(result.Destination) {
+			return archiveContractError(
+				kind,
+				host,
+				"archive_lookup_destination",
+				"moved archive item must include a complete destination repository identity",
+			)
+		}
+	case ArchiveLookupPresent, ArchiveLookupRemoved, ArchiveLookupInaccessible:
+		if result.Destination != nil {
+			return archiveContractError(
+				kind,
+				host,
+				"archive_lookup_destination",
+				"non-moved archive item must not include a destination repository",
+			)
+		}
+	default:
+		return archiveContractError(
+			kind,
+			host,
+			"archive_lookup_outcome",
+			"archive item returned unknown lookup outcome %q",
+			result.Outcome,
+		)
+	}
+	return nil
+}
+
+func validArchiveDestination(ref *RepoRef) bool {
+	return ref != nil && ValidateCanonicalRepoRef(*ref) == nil
+}
+
+func archiveContractError(kind Kind, host, field, format string, args ...any) error {
+	return ProviderContract(kind, host, field, fmt.Errorf(format, args...))
 }
 
 type Capabilities struct {
@@ -383,6 +563,7 @@ type Capabilities struct {
 	// without it treat the expected head SHA as advisory.
 	MutationHeadBinding    bool
 	SupportedReviewActions []ReviewAction
+	Archive                ArchiveCapabilities
 }
 
 type RepositoryListOptions struct {

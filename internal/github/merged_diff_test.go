@@ -75,10 +75,10 @@ func setupSyncer(t *testing.T, ctx context.Context, mgr *gitclone.Manager) (*Syn
 }
 
 // insertMergedPR inserts a merged PR with empty diff SHAs into the DB.
-func insertMergedPR(t *testing.T, ctx context.Context, d *db.DB, repoID int64, number int, headSHA string) {
+func insertMergedPR(t *testing.T, ctx context.Context, d *db.DB, repoID int64, number int, headSHA string) (int64, int64) {
 	t.Helper()
 	now := time.Now().UTC()
-	_, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+	mrID, revision, accepted, err := d.UpsertMergeRequestSnapshotWithLabels(ctx, &db.MergeRequest{
 		RepoID:          repoID,
 		Number:          number,
 		Title:           fmt.Sprintf("test PR #%d", number),
@@ -89,6 +89,8 @@ func insertMergedPR(t *testing.T, ctx context.Context, d *db.DB, repoID int64, n
 		CreatedAt:       now,
 	})
 	require.NoError(t, err)
+	require.True(t, accepted)
+	return mrID, revision
 }
 
 func TestComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
@@ -120,9 +122,9 @@ func TestComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
 
 	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
 	syncer, repoID := setupSyncer(t, ctx, mgr)
-	insertMergedPR(t, ctx, syncer.db, repoID, 1, prHead)
+	mrID, revision := insertMergedPR(t, ctx, syncer.db, repoID, 1, prHead)
 
-	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, false))
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, mrID, revision, 1, prHead, "", mergeCommit, false))
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
@@ -158,19 +160,19 @@ func TestComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *testing.T) {
 
 	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
 	syncer, repoID := setupSyncer(t, ctx, mgr)
-	insertMergedPR(t, ctx, syncer.db, repoID, 1, prHead)
+	mrID, revision := insertMergedPR(t, ctx, syncer.db, repoID, 1, prHead)
 
 	// Seed incorrect diff SHAs (simulating prior SyncMR regression).
 	require.NoError(syncer.db.UpdateDiffSHAs(ctx, repoID, 1, "bad-head", "bad-base", "bad-merge-base"))
 
 	// Without force, the existing (incorrect) SHAs are preserved.
-	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, false))
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, mrID, revision, 1, prHead, "", mergeCommit, false))
 	shas, err := syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	assert.Equal("bad-head", shas.DiffHeadSHA, "force=false should not overwrite existing SHAs")
 
 	// With force, the incorrect SHAs are replaced with correct values.
-	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, true))
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, mrID, revision, 1, prHead, "", mergeCommit, true))
 	shas, err = syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(shas)
@@ -206,9 +208,9 @@ func TestComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
 
 	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
 	syncer, repoID := setupSyncer(t, ctx, mgr)
-	insertMergedPR(t, ctx, syncer.db, repoID, 2, prHead)
+	mrID, revision := insertMergedPR(t, ctx, syncer.db, repoID, 2, prHead)
 
-	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 2, squashCommit, false))
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, mrID, revision, 2, prHead, "", squashCommit, false))
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 2)
 	require.NoError(err)
@@ -258,9 +260,9 @@ func TestComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
 
 	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
 	syncer, repoID := setupSyncer(t, ctx, mgr)
-	insertMergedPR(t, ctx, syncer.db, repoID, 3, prHead)
+	mrID, revision := insertMergedPR(t, ctx, syncer.db, repoID, 3, prHead)
 
-	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 3, rebaseLastCommit, false))
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, mrID, revision, 3, prHead, "", rebaseLastCommit, false))
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 3)
 	require.NoError(err)

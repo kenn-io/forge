@@ -40,6 +40,33 @@ middleman status -config /path/to/config.toml
 
 Reports whether a middleman daemon is running.
 
+## Historical activity archive
+
+```sh
+middleman archive start --all
+middleman archive start --repo 'github|github.com/owner/repo'
+middleman archive status --json
+middleman archive pause --all
+middleman archive report --days 7
+middleman archive report --start 2026-07-01 --end 2026-07-07 --verbose
+```
+
+Archive collection runs in the background within each provider host's normal
+sync budget. Status reports `current`, `partial`, or blocked work honestly; a
+provider that cannot supply a required dataset remains partial rather than
+being treated as complete.
+
+Reports use only middleman's local archive, so they make no provider requests,
+but the middleman daemon must be running. `--days` uses rolling 24-hour UTC
+periods. Date-only ranges include both named dates; RFC3339 ranges use an
+inclusive start and exclusive end. Reports default to Markdown; use
+`--format json`, `--output PATH`, and repeated fully qualified `--repo` filters
+as needed.
+
+Starting from an existing middleman database discovers historical issues, pull
+or merge requests, comments, and supported review activity. No import from an
+older standalone archive is required.
+
 ## Config
 
 ```sh

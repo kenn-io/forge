@@ -8913,6 +8913,14 @@ func TestAPISyncIssueNilUpdatedAtFallsBackToCreatedAt(t *testing.T) {
 
 	srv, database := setupTestServerWithMock(t, mock)
 	seedIssue(t, database, "acme", "widget", 9, "open")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	_, err = database.WriteDB().ExecContext(ctx, `
+		UPDATE middleman_issues
+		SET created_at = ?, updated_at = ?, last_activity_at = ?
+		WHERE repo_id = ? AND number = 9`,
+		createdAt.Add(-time.Hour), createdAt.Add(-time.Hour), createdAt.Add(-time.Hour), repo.ID)
+	require.NoError(err)
 	client := setupTestClient(t, srv)
 
 	// Before the nil guard, refreshIssueTimeline panicked on
@@ -9114,7 +9122,7 @@ func TestAPIListItemsHonorsLimit(t *testing.T) {
 	assert.EqualValues(12, (*secondIssueResp.JSON200)[0].Number)
 }
 
-func TestAPIListPullsReportsBackfilledMergedPRFromMergedAt(t *testing.T) {
+func TestAPIListPullsReportsHistoricalMergedPRFromMergedAt(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -9122,60 +9130,32 @@ func TestAPIListPullsReportsBackfilledMergedPRFromMergedAt(t *testing.T) {
 	now := time.Date(2024, 6, 7, 12, 0, 0, 0, time.UTC)
 	mergedAt := now.Add(time.Hour)
 	number := 42
-	platformID := int64(42000)
-	title := "Backfilled merged PR"
-	state := "closed"
-	url := "https://github.com/acme/widget/pull/42"
-	author := "alice"
-	headRef := "feature"
+	title := "Historical merged PR"
 	headSHA := "abc123def456"
-	baseRef := "main"
 	baseSHA := "def456abc123"
-	mock := &mockGH{
-		listPullRequestsPageFn: func(_ context.Context, owner, repo, listState string, page int) ([]*gh.PullRequest, bool, error) {
-			require.Equal("acme", owner)
-			require.Equal("widget", repo)
-			require.Equal("closed", listState)
-			require.Equal(1, page)
-			return []*gh.PullRequest{{
-				ID:        &platformID,
-				Number:    &number,
-				Title:     &title,
-				State:     &state,
-				HTMLURL:   &url,
-				User:      &gh.User{Login: &author},
-				CreatedAt: &gh.Timestamp{Time: now},
-				UpdatedAt: &gh.Timestamp{Time: now},
-				ClosedAt:  &gh.Timestamp{Time: mergedAt},
-				MergedAt:  &gh.Timestamp{Time: mergedAt},
-				Head: &gh.PullRequestBranch{
-					Ref: &headRef,
-					SHA: &headSHA,
-				},
-				Base: &gh.PullRequestBranch{
-					Ref: &baseRef,
-					SHA: &baseSHA,
-				},
-			}}, false, nil
-		},
-	}
-
 	database := dbtest.Open(t)
+	seedPR(
+		t, database, "acme", "widget", number,
+		withSeedPRTitle(title),
+		withSeedPRAuthor("alice"),
+		withSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, &mergedAt),
+		withSeedPRTimes(now, now, mergedAt),
+		withSeedPRHeadSHA(headSHA),
+		withSeedPRBaseSHA(baseSHA),
+	)
 
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": mock},
+		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database,
 		nil,
 		defaultTestRepos,
 		time.Minute,
 		nil,
-		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+		nil,
 	)
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-
-	srv.syncer.RunOnce(ctx)
 
 	client := setupTestClient(t, srv)
 	filterState := "closed"

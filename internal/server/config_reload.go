@@ -376,6 +376,16 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		)
 		restartRequired = true
 	}
+	if s.syncer != nil {
+		if err := s.syncer.SetReposWithContext(ctx, resolved, true); err != nil {
+			return configChangedEvent{
+				Valid: false,
+				Error: sanitizeConfigError(
+					fmt.Errorf("apply archive repository lifecycle: %w", err), s.cfgPath,
+				),
+			}
+		}
+	}
 
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
@@ -388,7 +398,6 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	}
 
 	if s.syncer != nil {
-		s.syncer.SetRepos(resolved)
 		s.syncer.SetBranchActivityLimits(
 			newCfg.BranchActivityRetention(),
 			newCfg.Activity.DefaultBranchMaxCommits,

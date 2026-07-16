@@ -1,6 +1,6 @@
 <script lang="ts">
   import { EmptyState, Spinner } from "@kenn-io/kit-ui";
-  import { onDestroy, tick } from "svelte";
+  import { onDestroy, tick, type ComponentProps } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import { isNarrow } from "../../stores/container.svelte.js";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
@@ -86,6 +86,8 @@
   import { apiErrorMessage, client } from "../../api/runtime.js";
   import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
   import { showFlash } from "@middleman/ui/stores/flash";
+
+  type WorkspaceRightSidebarProps = ComponentProps<typeof WorkspaceRightSidebar>;
 
   interface Workspace {
     id: string;
@@ -3037,7 +3039,7 @@
                 roborevBaseUrl={basePath + "/api/roborev"}
                 refreshToken={sidebarRefreshToken}
                 disabled={actionsBlocked}
-                {kataTaskPanel}
+                kataTaskPanel={kataTaskPanel as WorkspaceRightSidebarProps["kataTaskPanel"]}
               />
             </div>
           {/if}

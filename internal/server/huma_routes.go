@@ -759,6 +759,7 @@ func (s *Server) registerAPI(api huma.API) {
 	s.registerDocsAPI(api)
 	s.registerMsgvaultAPI(api)
 	s.registerMessagesAPI(api)
+	s.registerArchiveAPI(api)
 	huma.Register(api, huma.Operation{
 		OperationID:   "list-notifications",
 		Method:        http.MethodGet,
@@ -2579,7 +2580,6 @@ func (s *Server) createIssue(
 	if err != nil {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityIssueMutation)
 	}
-
 	platformIssue, err := mutator.CreateIssue(
 		ctx, platformRepoRefFromDB(*repo), title, input.Body.Body,
 	)
@@ -3289,7 +3289,6 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 	if err != nil {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityReadyForReview)
 	}
-
 	pr, err := mutator.MarkReadyForReview(ctx, platformRepoRefFromDB(*repo), input.Number)
 	if err != nil {
 		type readyForReviewFailure interface {
@@ -3750,7 +3749,6 @@ func (s *Server) setPRGitHubState(
 			nil,
 		)
 	}
-
 	if input.Body.State == "draft" {
 		mutator, err := s.syncer.DraftMutator(
 			repoProviderKind(*repo), repoProviderHost(*repo),
@@ -3781,10 +3779,10 @@ func (s *Server) setPRGitHubState(
 	if err != nil {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 	}
-
-	if _, err := mutator.SetMergeRequestState(
+	_, err = mutator.SetMergeRequestState(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.State,
-	); err != nil {
+	)
+	if err != nil {
 		var ghErr *gh.ErrorResponse
 		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
 			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
@@ -3895,7 +3893,6 @@ func (s *Server) setIssueGitHubState(
 	if err != nil {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 	}
-
 	if _, err := mutator.SetIssueState(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.State,
 	); err != nil {

@@ -68,6 +68,7 @@ func defaultProviderFactories() map[string]providerFactory {
 			client, err := gitlabclient.NewClient(
 				input.host, input.tokenSource,
 				gitlabclient.WithRateTracker(input.rateTracker),
+				gitlabclient.WithSyncBudget(input.budget),
 			)
 			if err != nil {
 				return providerFactoryOutput{}, err

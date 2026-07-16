@@ -1,8 +1,10 @@
 <script lang="ts">
   import { Modal as KitModal } from "@kenn-io/kit-ui";
-  import { untrack } from "svelte";
+  import { untrack, type ComponentProps } from "svelte";
   import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
   import type { Snippet } from "svelte";
+
+  type KitModalFooter = NonNullable<ComponentProps<typeof KitModal>["footer"]>;
 
   // Shared in-app dialog shell: adapts kit-ui Modal (backdrop, frame, header,
   // focus trap, scroll lock, Escape/overlay close, focus restore) to this
@@ -91,7 +93,7 @@
   <KitModal
     {...title !== undefined ? { title } : {}}
     {...ariaLabel !== undefined ? { ariaLabel } : {}}
-    {...footer ? { footer: footerContent } : {}}
+    {...footer ? { footer: footerContent as KitModalFooter } : {}}
     width="100%"
     maxWidth={`min(${width}px, calc(100vw - 40px))`}
     closable={showClose}

@@ -675,7 +675,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			Summary:        "COMMENTED",
 			Body:           "Same timestamp reviewer note between force-push IDs.",
 			CreatedAt:      commitBase.Add(8 * time.Hour),
-			DedupeKey:      "w1-review-force-push-same-timestamp",
+			DedupeKey:      "review-5015",
 		},
 		{
 			MergeRequestID: w1ID,
@@ -1026,12 +1026,17 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		},
 	}
 
+	sameTimestampReview := buildGHReview(
+		5015, "reviewer", "COMMENTED", commitBase.Add(8*time.Hour),
+	)
+	sameTimestampReview.Body = new("Same timestamp reviewer note between force-push IDs.")
 	reviews := map[string][]*gh.PullRequestReview{
 		issueKey("acme", "widgets", 1): {
 			buildGHReview(5011, "alice", "APPROVED", w1Created.Add(2*time.Hour)),
 			buildGHReview(5012, "bob", "CHANGES_REQUESTED", w1Created.Add(3*time.Hour)),
 			buildGHReview(5013, "bob", "APPROVED", w1Created.Add(4*time.Hour)),
 			buildGHReview(5014, "carol", "DISMISSED", w1Created.Add(6*time.Hour)),
+			sameTimestampReview,
 		},
 	}
 	reviewThreads := map[string][]ghclient.PullRequestReviewThread{

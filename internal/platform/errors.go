@@ -10,6 +10,7 @@ type PlatformErrorCode string
 
 const (
 	ErrCodeUnsupportedCapability PlatformErrorCode = "unsupported_capability"
+	ErrCodeProviderContract      PlatformErrorCode = "provider_contract"
 	ErrCodeProviderNotConfigured PlatformErrorCode = "provider_not_configured"
 	ErrCodeMissingToken          PlatformErrorCode = "missing_token"
 	ErrCodeInvalidRepoRef        PlatformErrorCode = "invalid_repo_ref"
@@ -29,6 +30,7 @@ const (
 
 var (
 	ErrUnsupportedCapability = &Error{Code: ErrCodeUnsupportedCapability}
+	ErrProviderContract      = &Error{Code: ErrCodeProviderContract}
 	ErrProviderNotConfigured = &Error{Code: ErrCodeProviderNotConfigured}
 	ErrMissingToken          = &Error{Code: ErrCodeMissingToken}
 	ErrInvalidRepoRef        = &Error{Code: ErrCodeInvalidRepoRef}
@@ -110,5 +112,27 @@ func UnsupportedCapability(kind Kind, host, capability string) error {
 		Provider:     kind,
 		PlatformHost: host,
 		Capability:   capability,
+	}
+}
+
+func PermissionDenied(kind Kind, host string, err error) error {
+	return &Error{
+		Code: ErrCodePermissionDenied, Provider: kind, PlatformHost: host, Err: err,
+	}
+}
+
+func ProviderContract(kind Kind, host, field string, err error) error {
+	// Provider response validation may itself use typed caller-side helpers.
+	// Strip those classifications here: an upstream contract failure must not
+	// also match invalid_repo_ref or another request error through Unwrap.
+	if err != nil {
+		err = errors.New(err.Error())
+	}
+	return &Error{
+		Code:         ErrCodeProviderContract,
+		Provider:     kind,
+		PlatformHost: host,
+		Field:        field,
+		Err:          err,
 	}
 }

@@ -19,6 +19,7 @@ nav = [
   {"Configuration" = "configuration.md"},
   {"Commands" = "commands.md"},
   {"Fleet" = "federated-fleet.md"},
+  {"Archive" = "archive.md"},
   {"Troubleshooting" = "troubleshooting.md"},
 ]
 

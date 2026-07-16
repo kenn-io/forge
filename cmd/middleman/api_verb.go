@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/runtimelock"
 )
 
 // The api verb is the thin-HTTP-client primitive: it discovers the
@@ -75,20 +74,9 @@ func runAPICLI(args []string, stdout io.Writer, stdin io.Reader) error {
 		path = "/" + path
 	}
 
-	cfg, err := config.Load(*configPath)
+	daemon, err := discoverDaemonHTTP(*configPath, *timeout)
 	if err != nil {
-		return &apiVerbError{apiVerbExitNoRequest,
-			fmt.Errorf("load config: %w", err)}
-	}
-	st, err := runtimelock.Read(cfg.DataDir)
-	if err != nil {
-		return &apiVerbError{apiVerbExitNoRequest,
-			fmt.Errorf("read runtime status: %w", err)}
-	}
-	if !st.Running || st.Metadata == nil {
-		return &apiVerbError{apiVerbExitNoRequest, fmt.Errorf(
-			"no middleman daemon is running on %s", cfg.DataDir,
-		)}
+		return &apiVerbError{apiVerbExitNoRequest, err}
 	}
 
 	var body io.Reader
@@ -99,19 +87,7 @@ func runAPICLI(args []string, stdout io.Writer, stdin io.Reader) error {
 		body = strings.NewReader(*data)
 	}
 
-	// API routes mount under base_path. The running daemon's
-	// published base_path is authoritative — base_path is
-	// startup-bound, so a config edit awaiting restart must not
-	// repoint the verb. cfg.BasePath is only the fallback for
-	// metadata written before the field existed.
-	prefix := st.Metadata.BasePath
-	if prefix == "" {
-		prefix = cfg.BasePath
-	}
-	prefix = strings.TrimSuffix(prefix, "/")
-	url := fmt.Sprintf(
-		"http://%s%s%s", st.Metadata.ListenAddr, prefix, path,
-	)
+	url := daemon.BaseURL + path
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return &apiVerbError{apiVerbExitNoRequest,
@@ -123,16 +99,7 @@ func runAPICLI(args []string, stdout io.Writer, stdin io.Reader) error {
 	if body != nil || (method != http.MethodGet && method != http.MethodHead) {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	token, err := runtimelock.ReadAuthToken(cfg.DataDir)
-	if err != nil {
-		return &apiVerbError{apiVerbExitNoRequest, err}
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	client := &http.Client{Timeout: *timeout}
-	resp, err := client.Do(req)
+	resp, err := daemon.Client.Do(req)
 	if err != nil {
 		return &apiVerbError{apiVerbExitNoRequest,
 			fmt.Errorf("request failed: %w", err)}

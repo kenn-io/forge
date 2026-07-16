@@ -1,6 +1,9 @@
 package platform
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Provider interface {
 	Platform() Kind
@@ -55,6 +58,22 @@ type IssueReader interface {
 	ListOpenIssues(ctx context.Context, ref RepoRef) ([]Issue, error)
 	GetIssue(ctx context.Context, ref RepoRef, number int) (Issue, error)
 	ListIssueEvents(ctx context.Context, ref RepoRef, number int) ([]IssueEvent, error)
+}
+
+// ArchiveReader exposes bounded provider reads for historical inventory,
+// maintenance, and complete detail datasets. Cursors are opaque to callers;
+// maintenance watermarks are UTC.
+type ArchiveReader interface {
+	ListHistoricalIssues(context.Context, RepoRef, string) (ArchivePage[Issue], error)
+	ListHistoricalMergeRequests(context.Context, RepoRef, string) (ArchivePage[MergeRequest], error)
+	ListUpdatedIssues(context.Context, RepoRef, time.Time, string) (ArchivePage[Issue], error)
+	ListUpdatedMergeRequests(context.Context, RepoRef, time.Time, string) (ArchivePage[MergeRequest], error)
+	GetArchiveIssue(context.Context, RepoRef, int) (ArchiveItemResult[Issue], error)
+	GetArchiveMergeRequest(context.Context, RepoRef, int) (ArchiveItemResult[MergeRequest], error)
+	ListArchiveIssueComments(context.Context, RepoRef, int, string) (ArchivePage[IssueEvent], error)
+	ListArchiveMergeRequestComments(context.Context, RepoRef, int, string) (ArchivePage[MergeRequestEvent], error)
+	ListArchiveSubmittedReviews(context.Context, RepoRef, int, string) (ArchivePage[MergeRequestEvent], error)
+	ListArchiveReviewThreads(context.Context, RepoRef, int, string) (ArchivePage[MergeRequestReviewThread], error)
 }
 
 type LabelCatalog struct {

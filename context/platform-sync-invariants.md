@@ -153,6 +153,21 @@ registry helpers return typed errors for missing providers or capabilities.
   empty forever, which silently degrades the worktree diff sampler to a bare
   HEAD diff (0/0 sidebar stats).
 
+## Historical Archive
+
+- Domain rows are not archive completeness; derive status from repository and per-item dataset state scoped by full repository identity. (`internal/db/queries_archive.go::GetArchiveProgress`)
+- Archive inventory preserves fetched and non-diff MR detail; full hydration accepts fresh provider detail but retains known mergeability during calculating responses plus archive-unowned review/CI fields. Any head or base change clears diff-bound state. (`internal/db/queries_archive.go::preserveMergeRequestDetailTx`, `internal/db/queries_archive.go::UpsertArchiveMergeRequestSnapshot`)
+- Bind dataset statuses to `hydration_snapshot_updated_at`; when a winning parent is newer, reset supported datasets and discard losing-version pages. Prompt overlap also requeues equal-timestamp observations because child edits may not advance coarse parent timestamps. (`internal/db/queries_archive.go::reconcileArchiveItemSnapshotTx`, `internal/db/queries_archive.go::clearStagedArchiveDatasetsForNewSnapshotTx`)
+- Every accepted issue or MR parent upsert advances a local `snapshot_revision`, including equal provider timestamps. Normal sync binds child event/thread, CI clear/update, diff, workflow-approval, lifecycle-event, and detail-marker writes to that revision; head-bound writes also verify the expected head/base. A rejected same-head workflow-approval write performs one fresh fetch against the winning revision and its current head repository/branch identity; callers reserve two workflow-run reads, making the GitHub PR-detail worst case eleven provider calls, including its separate review-thread request. (`internal/db/queries.go::upsertIssueParentTx`, `internal/db/queries.go::upsertMergeRequestSnapshot`, `internal/db/queries_snapshot_children.go`, `internal/github/sync.go::refreshWorkflowApproval`, `internal/github/budget.go::PRDetailWorstCase`)
+- Archive calls return one bounded page with an advancing opaque cursor or explicit exhaustion. Cumulative staging limits count payload and cursor bytes; equal-timestamp parent advances rebind unfinished pages instead of restarting them, while authoritative normal-sync children satisfy only the dataset families fetched completely. Page commits reject already-complete datasets, and publication/finalization still verify the live snapshot. (`internal/platform/types.go::ValidateArchivePage`, `internal/db/queries_archive.go::reconcileArchiveItemSnapshotTx`, `internal/db/queries_snapshot_children.go::satisfyArchiveDatasetsFromNormalSyncTx`, `internal/db/queries_archive.go::requireArchiveDatasetSnapshotTx`)
+- Every dataset size accepted by staging must remain publishable; missing-child reconciliation must not consume one SQLite bind variable per retained record. (`internal/db/queries.go::deleteMissingIssueCommentEventsTx`, `internal/db/queries_review.go::deleteMissingMRReviewThreadsTx`)
+- Authoritative removed or moved outcomes mark archive work terminal while local content stays untouched; inaccessible or ambiguous outcomes are non-destructive. (`internal/db/queries_archive.go::MarkArchiveItemTerminal`)
+- Every configured repository starts provider-neutral discovery; do not restore provider-specific closed-item cursors or translate legacy formats. (`internal/archive/service.go::EnsureConfigured`)
+- Configuration reconciliation pauses omitted repositories with a durable `configuration_removed` reason while retaining archive content and progress. Re-adding the same full identity clears only that automatic pause; an operator pause stays paused. (`internal/db/queries_archive.go::ReconcileDiscoveryArchives`, `internal/db/queries_archive.go::EnsureDiscoveryArchives`)
+- Reconcile configured repositories only at startup or configuration reload; idle scheduler polls must remain read-only unless they claim actual work. (`internal/github/sync.go::SetReposWithContext`, `internal/archive/scheduler.go::RunEligible`)
+- Authentication and repository-blocked errors defer every archive work class, including already-pending hydration, until an explicit retry clears the repository error. (`internal/archive/scheduler.go::archiveRepoDeferred`)
+- Archive admission is provider-host scoped and yields while normal index, notification, or active-detail work is registered at a higher priority. Register repo index and item detail work inside their shared execution functions so periodic, watched, manual, API, and item-number entry points cannot bypass admission. (`internal/github/sync.go::beginProviderWork`, `internal/github/sync.go::syncRepo`, `internal/github/sync.go::syncMRForRepo`, `internal/github/sync.go::syncIssueForRepo`, `internal/github/sync.go::Admit`)
+
 ## Label Catalogs And Mutations
 
 Label picker data comes from a cached repo catalog, not from labels currently
@@ -177,6 +192,10 @@ GitLab merge request and issue `iid` values are repo-scoped numbers. Persist
 provider object ids separately from user-visible numbers, and scope events by
 provider identity so equal GitHub/GitLab ids do not collide.
 
+GitLab archive discussions normalize as ordinary or inline comments. Do not synthesize submitted reviews from notes or current approvals; without stable historical actions, that dataset stays unsupported and coverage stays partial. (`internal/platform/gitlab/client.go::Capabilities`)
+
+GitLab maintenance inventories walk mutable `updated_at` results newest-first. Updates then move toward the consumed prefix; rows that move ahead before consumption remain eligible under the next scan's inclusive watermark. (`internal/platform/gitlab/archive.go::listArchiveIssues`, `internal/platform/gitlab/archive.go::listArchiveMergeRequests`)
+
 ## Forgejo And Gitea Shape
 
 Forgejo and Gitea use owner/name repository addressing in the REST and SDK
@@ -196,6 +215,10 @@ statuses and Actions runs without duplicating a check already represented by
 the status endpoint. Neither Forgejo nor Gitea should claim workflow approval or
 ready-for-review support unless the provider interface and server/UI capability
 tests prove those exact operations.
+
+Archive access probes preserve transient and rate-limit failures for retry. Only
+authoritative repository permission or not-found responses may become permanent
+inaccessibility. (`internal/platform/gitealike/archive.go::classifyArchiveLookup`)
 
 ## Import And Routes
 

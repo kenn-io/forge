@@ -541,6 +541,17 @@ func mapPlatformError(err error) huma.StatusError {
 			"Unsupported provider capability",
 			details,
 		)
+	case platform.ErrCodeProviderContract:
+		details := platformErrorDetails(provider, host)
+		if pe.Field != "" {
+			details["field"] = pe.Field
+		}
+		return newProblem(
+			http.StatusBadGateway,
+			CodeUpstreamError,
+			err.Error(),
+			details,
+		)
 	case platform.ErrCodeRateLimited:
 		return problemRateLimited(provider, host, pe.ResetAt)
 	case platform.ErrCodePermissionDenied:

@@ -3,6 +3,7 @@ package gitea
 import (
 	"context"
 	"strings"
+	"time"
 
 	giteasdk "code.gitea.io/sdk/gitea"
 	"go.kenn.io/middleman/internal/platform"
@@ -50,6 +51,46 @@ func (c *Client) ListMergeRequestComments(ctx context.Context, ref platform.Repo
 
 func (c *Client) ListOpenIssues(ctx context.Context, ref platform.RepoRef) ([]platform.Issue, error) {
 	return c.provider.ListOpenIssues(ctx, ref)
+}
+
+func (c *Client) ListHistoricalIssues(ctx context.Context, ref platform.RepoRef, cursor string) (platform.ArchivePage[platform.Issue], error) {
+	return c.provider.ListHistoricalIssues(ctx, ref, cursor)
+}
+
+func (c *Client) ListHistoricalMergeRequests(ctx context.Context, ref platform.RepoRef, cursor string) (platform.ArchivePage[platform.MergeRequest], error) {
+	return c.provider.ListHistoricalMergeRequests(ctx, ref, cursor)
+}
+
+func (c *Client) ListUpdatedIssues(ctx context.Context, ref platform.RepoRef, since time.Time, cursor string) (platform.ArchivePage[platform.Issue], error) {
+	return c.provider.ListUpdatedIssues(ctx, ref, since, cursor)
+}
+
+func (c *Client) ListUpdatedMergeRequests(ctx context.Context, ref platform.RepoRef, since time.Time, cursor string) (platform.ArchivePage[platform.MergeRequest], error) {
+	return c.provider.ListUpdatedMergeRequests(ctx, ref, since, cursor)
+}
+
+func (c *Client) GetArchiveIssue(ctx context.Context, ref platform.RepoRef, number int) (platform.ArchiveItemResult[platform.Issue], error) {
+	return c.provider.GetArchiveIssue(ctx, ref, number)
+}
+
+func (c *Client) GetArchiveMergeRequest(ctx context.Context, ref platform.RepoRef, number int) (platform.ArchiveItemResult[platform.MergeRequest], error) {
+	return c.provider.GetArchiveMergeRequest(ctx, ref, number)
+}
+
+func (c *Client) ListArchiveIssueComments(ctx context.Context, ref platform.RepoRef, number int, cursor string) (platform.ArchivePage[platform.IssueEvent], error) {
+	return c.provider.ListArchiveIssueComments(ctx, ref, number, cursor)
+}
+
+func (c *Client) ListArchiveMergeRequestComments(ctx context.Context, ref platform.RepoRef, number int, cursor string) (platform.ArchivePage[platform.MergeRequestEvent], error) {
+	return c.provider.ListArchiveMergeRequestComments(ctx, ref, number, cursor)
+}
+
+func (c *Client) ListArchiveSubmittedReviews(ctx context.Context, ref platform.RepoRef, number int, cursor string) (platform.ArchivePage[platform.MergeRequestEvent], error) {
+	return c.provider.ListArchiveSubmittedReviews(ctx, ref, number, cursor)
+}
+
+func (c *Client) ListArchiveReviewThreads(ctx context.Context, ref platform.RepoRef, number int, cursor string) (platform.ArchivePage[platform.MergeRequestReviewThread], error) {
+	return c.provider.ListArchiveReviewThreads(ctx, ref, number, cursor)
 }
 
 func (c *Client) GetIssue(
@@ -304,6 +345,41 @@ func (t *transport) ListOpenIssues(
 	return convertIssues(issues), giteaPage(resp), nil
 }
 
+func (t *transport) ListArchiveIssues(ctx context.Context, ref platform.RepoRef, opts gitealike.ArchiveListOptions) ([]gitealike.IssueDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
+	var issues []*giteasdk.Issue
+	var resp *giteasdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		issues, resp, err = t.api.ListRepoIssues(ref.Owner, ref.Name, giteasdk.ListIssueOption{
+			ListOptions: giteaListOptions(opts.PageOptions), State: giteasdk.StateAll,
+			Type: giteasdk.IssueTypeIssue, Since: opts.Since, Before: opts.Before,
+		})
+		return err
+	})
+	if err != nil {
+		return nil, gitealike.Page{}, giteaHTTPError(resp, err)
+	}
+	return convertIssues(issues), giteaPage(resp), nil
+}
+
+func (t *transport) ListArchivePullRequests(ctx context.Context, ref platform.RepoRef, opts gitealike.ArchiveListOptions) ([]gitealike.PullRequestDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
+	var prs []*giteasdk.PullRequest
+	var resp *giteasdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		prs, resp, err = t.api.ListRepoPullRequests(ref.Owner, ref.Name, giteasdk.ListPullRequestsOptions{
+			ListOptions: giteaListOptions(opts.PageOptions), State: giteasdk.StateAll, Sort: opts.Sort,
+		})
+		return err
+	})
+	if err != nil {
+		return nil, gitealike.Page{}, giteaHTTPError(resp, err)
+	}
+	return convertPullRequests(prs, t.mergeableForPullRequest), giteaPage(resp), nil
+}
+
 func (t *transport) GetIssue(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -485,7 +561,7 @@ func giteaPage(resp *giteasdk.Response) gitealike.Page {
 	if resp == nil {
 		return gitealike.Page{}
 	}
-	return gitealike.Page{Next: resp.NextPage}
+	return gitealike.Page{Next: resp.NextPage, Last: resp.LastPage}
 }
 
 func giteaHTTPError(resp *giteasdk.Response, err error) error {

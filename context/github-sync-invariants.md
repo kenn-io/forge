@@ -145,6 +145,16 @@ change what a field means. Provider-neutral persistence should receive the same
 semantic shape regardless of whether data came from GraphQL, REST, tags, or
 fallback repository listing.
 
+## Historical Archive Rules
+
+- The legacy closed-item backfill is retired; configured repositories seed durable archive discovery before sync cutover, with no cursor translation. (`internal/github/sync.go::SetReposWithContext`)
+- Initial issue and pull-request inventory includes all states in stable created-time ascending order; issue enumeration excludes PR-shaped rows. (`internal/github/archive_client.go`)
+- Updated issue scans query one second before the durable watermark while keeping cursor identity bound to the original boundary. Updated pull-request scans run newest-first across the same overlap. (`internal/github/archive_client.go::githubArchiveIssueSince`, `internal/github/archive_client.go::listArchiveMergeRequests`)
+- Repository probes classify only authentication/access/not-found responses; transient probe failures remain retryable and non-destructive. Issue and pull-request lookups compare the response repository with the requested source identity so transfers become moved outcomes instead of source-owned snapshots. (`internal/github/archive_client.go::archiveRepositoryProbeError`, `internal/github/archive_client.go::githubArchiveDestination`)
+- Archive REST and GraphQL failures must preserve typed authentication and reset-aware rate-limit errors so scheduling defers rather than hot-looping generic retries. (`internal/github/archive_client.go::archiveTransportError`)
+- Submitted-review archive history excludes pending reviews and entries without `submitted_at`; draft review bodies are not historical activity. (`internal/github/archive_client.go::ListArchiveSubmittedReviews`)
+- A GitHub issue without `updated_at` uses `created_at` as both its freshness and initial activity boundary; zero timestamps must not bypass monotonic snapshot acceptance. (`internal/platform/github/normalize.go::NormalizeIssue`)
+
 ## GitHub App Manifest Flow
 
 `middleman-github-app create` uses GitHub's App Manifest flow so sync can read

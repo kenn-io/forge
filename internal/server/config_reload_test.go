@@ -22,10 +22,28 @@ import (
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/docs"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
+
+type reloadArchiveLifecycleRecorder struct {
+	ensured []platform.RepoRef
+	retried []platform.RepoRef
+}
+
+func (*reloadArchiveLifecycleRecorder) RunEligible(context.Context) error { return nil }
+
+func (r *reloadArchiveLifecycleRecorder) EnsureConfigured(_ context.Context, refs []platform.RepoRef) error {
+	r.ensured = append([]platform.RepoRef(nil), refs...)
+	return nil
+}
+
+func (r *reloadArchiveLifecycleRecorder) RetryAuthentication(_ context.Context, refs []platform.RepoRef) error {
+	r.retried = append([]platform.RepoRef(nil), refs...)
+	return nil
+}
 
 // waitForConfigWatcher blocks until the server's config watcher has
 // registered the directory with fsnotify, or the timeout elapses. Tests
@@ -1518,6 +1536,8 @@ func TestConfigReload_NewRepoEntersSyncerTrackedSet(t *testing.T) {
 	srv, _, cfgPath := setupTestServerWithConfigContent(
 		t, validReloadConfig, &mockGH{},
 	)
+	archiveLifecycle := &reloadArchiveLifecycleRecorder{}
+	srv.syncer.SetArchiveService(archiveLifecycle)
 	waitForConfigWatcher(t, srv, 2*time.Second)
 	stream := streamConfigEvents(t, srv)
 	defer stream.Close()
@@ -1534,6 +1554,10 @@ func TestConfigReload_NewRepoEntersSyncerTrackedSet(t *testing.T) {
 	}
 	assert.Contains(owners, "globex/engine",
 		"new repo from config edit should appear in syncer tracked set")
+	require.Len(archiveLifecycle.ensured, 2)
+	assert.Equal(archiveLifecycle.ensured, archiveLifecycle.retried)
+	assert.Equal("acme/widget", archiveLifecycle.ensured[0].RepoPath)
+	assert.Equal("globex/engine", archiveLifecycle.ensured[1].RepoPath)
 }
 
 func TestConfigReload_GlobFailureKeepsPreviouslyTrackedMatches(t *testing.T) {

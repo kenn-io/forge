@@ -1438,7 +1438,40 @@ func buildAppState(
 	syncer.SetOnNotificationSyncComplete(func() {
 		srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
 	})
+	var failNextNotificationRead atomic.Bool
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/notifications/fail-next-read" {
+			failNextNotificationRead.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/api/v1/notifications/read" &&
+			failNextNotificationRead.CompareAndSwap(true, false) {
+			var input struct {
+				IDs []int64 `json:"ids"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&input); err != nil || len(input.IDs) == 0 {
+				http.Error(w, "notification ids required", http.StatusBadRequest)
+				return
+			}
+			failed := make([]map[string]any, 0, len(input.IDs))
+			for _, id := range input.IDs {
+				failed = append(failed, map[string]any{
+					"id": id, "error": "fixture notification read failure",
+				})
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"succeeded": []int64{},
+				"queued":    []int64{},
+				"failed":    failed,
+			}); err != nil {
+				slog.Warn("write notification read failure fixture", "err", err)
+			}
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/review-suggestion/succeed" {
 			fc.SetReviewSuggestionResult(&platform.AppliedReviewSuggestions{
 				CommitSHA: diffRepo.AltHeadSHA,

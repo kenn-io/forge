@@ -145,6 +145,14 @@ A full-stack test claiming a user-triggered mutation works must drive the actual
 control and observe its request or visible result; `page.request` proves only the
 API contract (`frontend/tests/e2e-full/detail-action-buttons.spec.ts:925`).
 
+Failure-path e2e fixtures must inject the failure at the operation boundary
+without mutating unrelated source data that controls whether the asserted row
+still renders. For example, notification-read rollback coverage uses the
+one-shot `/__e2e/notifications/fail-next-read` response; deleting its repository
+also reloads activity and removes the notification row, turning the rollback
+assertion into a timing race (`cmd/e2e-server/main.go`,
+`frontend/tests/e2e-full/mobile-activity-notifications.spec.ts`).
+
 ## Huma API Contract
 
 Every public operation in `/api/v1/openapi.json` must have explicit OpenAPI
@@ -231,6 +239,20 @@ they do not need unexported internals:
 
 Leave tests in the source package when they exercise unexported helpers,
 migration state, dirty database handling, or other internal invariants.
+
+### Cross-boundary concurrency contracts
+
+- Prove multi-query snapshots at the service transaction boundary; query-only tests cannot expose torn reads. (`internal/archive/report_service_test.go::TestArchiveServiceReportUsesOneSQLiteSnapshot`)
+- Prove pause by blocking provider I/O, pausing, then releasing and asserting no cursor or dataset commit. (`internal/archive/service_test.go::TestArchiveServicePauseRejectsInFlightInventoryCommit`)
+- Prove worker readiness, wake, and shutdown through the owning loop rather than direct service calls. (`internal/github/archive_lifecycle_test.go::TestArchiveWorkerAdvancesRealServiceAfterStart`)
+- Prove cross-ingestion child replacement with a newer dataset followed by an older complete replacement; parent-only races do not cover destructive child deletes. (`internal/github/sync_test.go::TestNormalSyncRejectsChildrenAfterArchivePublishesNewerSnapshot`)
+
+### Boundary-value contracts
+
+- Exercise persistence at exact advertised record ceilings, including repeated replacement; small fixtures do not expose SQLite bind or batch-size failures. (`internal/db/queries_archive_test.go::TestArchiveIssuePublicationSupportsMaximumDatasetSize`)
+- Inclusive-watermark tests need equal-timestamp rows and stale-stage assertions; strictly newer fixtures miss coarse provider timestamp behavior. (`internal/db/queries_archive_test.go::TestArchivePromptObservationRefreshesEqualTimestampDatasetsOnce`)
+- Snapshot race coverage must include equal provider timestamps through a real sync workflow and generated HTTP client; helper-only tests miss ordering gaps where child I/O begins before the parent revision is committed. (`internal/server/e2etest/archive_snapshot_race_test.go::TestIssueSyncCannotReplaceEqualTimestampArchiveSnapshotE2E`)
+- Seeded full-stack provider fakes must return every child family represented as provider-owned seed data. Complete mirroring legitimately deletes absent comments/reviews, so a DB-only synthetic child row is not stable across background or explicit sync. (`internal/testutil/fixtures.go::SeedFixtures`)
 
 ### SQLite Fixtures
 

@@ -353,6 +353,393 @@ components:
       required:
         - body
       type: object
+    ArchiveCoverageResponse:
+      additionalProperties: false
+      properties:
+        comments:
+          enum:
+            - unknown
+            - supported
+            - unsupported
+          type: string
+        inline_comments:
+          enum:
+            - unknown
+            - supported
+            - unsupported
+          type: string
+        reviews:
+          enum:
+            - unknown
+            - supported
+            - unsupported
+          type: string
+      required:
+        - comments
+        - reviews
+        - inline_comments
+      type: object
+    ArchiveFailureResponse:
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        next_retry_at:
+          format: date-time
+          type: string
+      required:
+        - code
+      type: object
+    ArchiveMutationBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ArchiveMutationBody.json
+          format: uri
+          readOnly: true
+          type: string
+        all:
+          type: boolean
+        repositories:
+          items:
+            $ref: "#/components/schemas/ArchiveRepositoryRef"
+          type:
+            - array
+            - "null"
+      required:
+        - all
+      type: object
+    ArchiveProgressCountsResponse:
+      additionalProperties: false
+      properties:
+        complete_items:
+          format: int64
+          type: integer
+        failed_items:
+          format: int64
+          type: integer
+        inaccessible_items:
+          format: int64
+          type: integer
+        items:
+          format: int64
+          type: integer
+        pending_items:
+          format: int64
+          type: integer
+        unsupported_items:
+          format: int64
+          type: integer
+      required:
+        - items
+        - complete_items
+        - pending_items
+        - failed_items
+        - unsupported_items
+        - inaccessible_items
+      type: object
+    ArchiveReportActivityResponse:
+      additionalProperties: false
+      properties:
+        author:
+          type: string
+        body:
+          type: string
+        item_number:
+          format: int64
+          type: integer
+        kind:
+          enum:
+            - issue
+            - merge_request
+            - ordinary_comment
+            - review
+            - inline_review_comment
+          type: string
+        occurred_at:
+          format: date-time
+          type: string
+        provider_external_id:
+          type: string
+        repository:
+          $ref: "#/components/schemas/ArchiveRepositoryRef"
+        title:
+          type: string
+        url:
+          type: string
+      required:
+        - repository
+        - kind
+        - item_number
+        - provider_external_id
+        - title
+        - author
+        - occurred_at
+        - body
+        - url
+      type: object
+    ArchiveReportContributorResponse:
+      additionalProperties: false
+      properties:
+        counts:
+          $ref: "#/components/schemas/ArchiveReportCountsResponse"
+        login:
+          type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - login
+        - counts
+      type: object
+    ArchiveReportCountsResponse:
+      additionalProperties: false
+      properties:
+        inline_review_comments:
+          format: int64
+          type: integer
+        issues_opened:
+          format: int64
+          type: integer
+        merge_requests_opened:
+          format: int64
+          type: integer
+        ordinary_comments:
+          format: int64
+          type: integer
+        reviews_submitted:
+          format: int64
+          type: integer
+      required:
+        - issues_opened
+        - merge_requests_opened
+        - ordinary_comments
+        - reviews_submitted
+        - inline_review_comments
+      type: object
+    ArchiveReportCoverageResponse:
+      additionalProperties: false
+      properties:
+        active_phases:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        archived_items:
+          format: int64
+          type: integer
+        budget_wait_until:
+          format: date-time
+          type: string
+        collection_mode:
+          enum:
+            - discovery
+            - full
+          type: string
+        comments:
+          enum:
+            - unknown
+            - supported
+            - unsupported
+          type: string
+        inaccessible_items:
+          format: int64
+          type: integer
+        initial_completed_at:
+          format: date-time
+          type: string
+        inline_comments:
+          enum:
+            - unknown
+            - supported
+            - unsupported
+          type: string
+        maintenance_succeeded_at:
+          format: date-time
+          type: string
+        operator_state:
+          enum:
+            - active
+            - paused
+          type: string
+        reviews:
+          enum:
+            - unknown
+            - supported
+            - unsupported
+          type: string
+        status:
+          enum:
+            - running
+            - waiting_for_budget
+            - current
+            - partial
+            - paused
+            - blocked
+          type: string
+        unsupported_items:
+          format: int64
+          type: integer
+      required:
+        - status
+        - active_phases
+        - collection_mode
+        - operator_state
+        - comments
+        - reviews
+        - inline_comments
+        - archived_items
+        - unsupported_items
+        - inaccessible_items
+      type: object
+    ArchiveReportRepositoryResponse:
+      additionalProperties: false
+      properties:
+        counts:
+          $ref: "#/components/schemas/ArchiveReportCountsResponse"
+        coverage:
+          $ref: "#/components/schemas/ArchiveReportCoverageResponse"
+        repository:
+          $ref: "#/components/schemas/ArchiveRepositoryRef"
+      required:
+        - repository
+        - coverage
+        - counts
+      type: object
+    ArchiveReportResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ArchiveReportResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        activity:
+          items:
+            $ref: "#/components/schemas/ArchiveReportActivityResponse"
+          type:
+            - array
+            - "null"
+        contributors:
+          items:
+            $ref: "#/components/schemas/ArchiveReportContributorResponse"
+          type:
+            - array
+            - "null"
+        end:
+          format: date-time
+          type: string
+        repositories:
+          items:
+            $ref: "#/components/schemas/ArchiveReportRepositoryResponse"
+          type:
+            - array
+            - "null"
+        start:
+          format: date-time
+          type: string
+        totals:
+          $ref: "#/components/schemas/ArchiveReportCountsResponse"
+      required:
+        - start
+        - end
+        - repositories
+        - totals
+        - contributors
+      type: object
+    ArchiveRepositoryRef:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - owner
+        - name
+        - repo_path
+      type: object
+    ArchiveStatusResponse:
+      additionalProperties: false
+      properties:
+        active_phases:
+          items:
+            enum:
+              - issue_inventory
+              - merge_request_inventory
+              - hydration
+              - prompt_maintenance
+            type: string
+          type:
+            - array
+            - "null"
+        budget_wait_until:
+          format: date-time
+          type: string
+        collection_mode:
+          enum:
+            - discovery
+            - full
+          type: string
+        counts:
+          $ref: "#/components/schemas/ArchiveProgressCountsResponse"
+        coverage:
+          $ref: "#/components/schemas/ArchiveCoverageResponse"
+        failure:
+          $ref: "#/components/schemas/ArchiveFailureResponse"
+        initial_completed_at:
+          format: date-time
+          type: string
+        initial_started_at:
+          format: date-time
+          type: string
+        maintenance_succeeded_at:
+          format: date-time
+          type: string
+        maintenance_watermark:
+          format: date-time
+          type: string
+        operator_state:
+          enum:
+            - active
+            - paused
+          type: string
+        repository:
+          $ref: "#/components/schemas/ArchiveRepositoryRef"
+        status:
+          enum:
+            - running
+            - waiting_for_budget
+            - current
+            - partial
+            - paused
+            - blocked
+          type: string
+      required:
+        - repository
+        - collection_mode
+        - operator_state
+        - status
+        - active_phases
+        - counts
+        - coverage
+      type: object
     AttachmentMeta:
       additionalProperties: false
       properties:
@@ -7263,6 +7650,151 @@ paths:
       summary: List activity
       tags:
         - Activity
+  /archive/pause:
+    post:
+      operationId: pause-archives
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArchiveMutationBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/ArchiveStatusResponse"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Pause historical archives
+      tags:
+        - Archive
+  /archive/report:
+    get:
+      operationId: get-archive-report
+      parameters:
+        - description: Inclusive UTC RFC3339 boundary.
+          explode: false
+          in: query
+          name: start
+          required: true
+          schema:
+            description: Inclusive UTC RFC3339 boundary.
+            type: string
+        - description: Exclusive UTC RFC3339 boundary.
+          explode: false
+          in: query
+          name: end
+          required: true
+          schema:
+            description: Exclusive UTC RFC3339 boundary.
+            type: string
+        - description: Repeated provider|platform_host/repo_path filters.
+          explode: true
+          in: query
+          name: repo
+          schema:
+            description: Repeated provider|platform_host/repo_path filters.
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+        - explode: false
+          in: query
+          name: verbose
+          schema:
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArchiveReportResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get historical archive activity report
+      tags:
+        - Archive
+  /archive/start:
+    post:
+      operationId: start-archives
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArchiveMutationBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/ArchiveStatusResponse"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Start historical archives
+      tags:
+        - Archive
+  /archive/status:
+    get:
+      operationId: list-archive-status
+      parameters:
+        - description: Repeated provider|platform_host/repo_path filters.
+          explode: true
+          in: query
+          name: repo
+          schema:
+            description: Repeated provider|platform_host/repo_path filters.
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/ArchiveStatusResponse"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List historical archive status
+      tags:
+        - Archive
   /docs/browse:
     get:
       operationId: browse-docs-folders

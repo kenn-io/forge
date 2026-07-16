@@ -381,6 +381,55 @@ describe("RepoBrowserFeature", () => {
     expect(client.GET).toHaveBeenCalledTimes(9);
   });
 
+  it("reloads the original ref when browser history returns after a user ref change", async () => {
+    const client = testClient();
+    const onRouteChange = vi.fn();
+    const { rerender } = render(RepoBrowserFeature, {
+      props: {
+        client,
+        route,
+        onRouteChange,
+      },
+    });
+
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(5));
+    await fireEvent.click(await screen.findByRole("button", { name: "Select repository ref: branch: main main-sha" }));
+    await fireEvent.input(screen.getByRole("combobox", { name: "Search repository refs" }), {
+      target: { value: "v1" },
+    });
+    await fireEvent.click(screen.getByRole("tab", { name: "Tags 1" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "v1.0.0 tag-sha" }));
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(9));
+
+    await rerender({
+      client,
+      route: {
+        ...route,
+        refType: "tag",
+        refName: "v1.0.0",
+        refSHA: "tag-sha",
+        path: "README.md",
+      },
+      onRouteChange,
+    });
+    await tick();
+
+    await rerender({
+      client,
+      route: {
+        ...route,
+        refType: "branch",
+        refName: "main",
+        refSHA: "main-sha",
+        path: "README.md",
+      },
+      onRouteChange,
+    });
+
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(14));
+    expect(await screen.findByRole("button", { name: "Select repository ref: branch: main main-sha" })).toBeTruthy();
+  });
+
   it("filters branch and tag refs in separate typeahead tabs", async () => {
     const client = testClient({
       refs: [

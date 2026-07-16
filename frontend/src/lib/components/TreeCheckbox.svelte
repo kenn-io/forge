@@ -28,8 +28,12 @@
     input.tabIndex = -1;
     if (decorative) input.setAttribute("aria-hidden", "true");
     else input.removeAttribute("aria-hidden");
-    input.onmousedown = onmousedown ?? null;
-    input.onclick = (event) => event.preventDefault();
+    element.onmousedown = decorative ? null : onmousedown ?? null;
+    element.onclick = (event) => event.preventDefault();
+    return () => {
+      element.onmousedown = null;
+      element.onclick = null;
+    };
   }}
 >
   <Checkbox

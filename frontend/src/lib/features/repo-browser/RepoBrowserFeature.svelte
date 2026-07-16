@@ -318,6 +318,7 @@
     await store.selectRef(ref);
     selectedPathRevealKey += 1;
     repoLoadKey = routeKeyWithSelectedRef(route);
+    repoLoadAliasKey = "";
     pushRoute({ path: store.getSelectedPath() ?? undefined });
   }
 

@@ -126,6 +126,32 @@ describe("RepoTreeNode", () => {
     expect(onToggleSelect).toHaveBeenCalledOnce();
   });
 
+  it("selects an owner from the visible checkbox without toggling expansion", async () => {
+    const onToggleExpand = vi.fn();
+    const onToggleSelect = vi.fn();
+    const { container } = render(RepoTreeNode, {
+      props: {
+        kind: "owner",
+        label: "acme",
+        ariaLabel: "github.com/acme",
+        depth: 0,
+        hasChildren: true,
+        expanded: true,
+        selectionState: "unchecked",
+        highlighted: false,
+        onToggleExpand,
+        onToggleSelect,
+      },
+    });
+    const visibleBox = container.querySelector<HTMLElement>(".kit-checkbox__box");
+    expect(visibleBox).not.toBeNull();
+
+    await fireEvent.mouseDown(visibleBox!);
+
+    expect(onToggleSelect).toHaveBeenCalledOnce();
+    expect(onToggleExpand).not.toHaveBeenCalled();
+  });
+
   it("stays controlled when really clicked (native toggle suppressed)", async () => {
     // A real browser click is mousedown + mouseup + click; a native checkbox's
     // click default action toggles its own .checked, which desyncs it from the

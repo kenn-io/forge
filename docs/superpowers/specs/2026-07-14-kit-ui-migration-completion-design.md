@@ -26,13 +26,20 @@ Already completed stage-4 migrations remain intact. This work does not rewrite a
 4. Checker output is supporting evidence, not the inventory. Audit semantic equivalents that use different names.
 5. Delete replaced local markup, CSS, helpers, and components in the same slice.
 6. Do not introduce compatibility shims. Adapt call sites to the canonical shared API.
-7. If the checker reports application-owned UI that kit-ui does not support, fix the checker rule rather than reshaping production markup or adding a suppression solely to reach zero findings. This PR uses installed kit-ui contracts only; axis-aware `SplitResizeHandle` and `BottomDock` adoption land as a follow-up after their shared contracts became available, while other middleman-specific gaps remain local.
+7. If the checker reports application-owned UI that kit-ui does not support, fix the checker rule rather than reshaping production markup or adding a suppression solely to reach zero findings. This PR pins `@kenn-io/kit-ui` at `4d90fdf8a81424f53e92d45dc38fc24340894ee0` and adopts the axis-aware `SplitResizeHandle` and `BottomDock` contracts from that revision; unsupported middleman-specific gaps remain local.
 
 ## Accepted interaction changes
 
 - Kata project reassignment lives under `More actions`; the menu preserves keyboard focus, stays open on a failed move, and exposes the current project in the move dialog.
 - The compact PR label picker is a non-modal popover: Escape, a repeated trigger click, or outside click dismisses it without a backdrop, and background content remains available.
 - File-jump Escape and keyboard selection return focus to the trigger; outside-click dismissal leaves focus with the clicked target, and Escape clears a non-empty query before closing.
+- Compact empty and whitespace-only comments remain editable even when they have no expandable body. Entering edit mode mounts the editor and focuses its end once without scrolling; later value synchronization does not reclaim focus.
+
+## Preserved layout and route contracts
+
+- A persisted pane size is the last rendered size, not an unconstrained preference. Restore, pointer/keyboard resize, and every container-width change clamp it to `[minListSize, maxListSize]` and write the clamped value back; when the detail minimum consumes the available width, `minListSize === maxListSize`, resizing is a no-op, and later widening does not resurrect the discarded pre-clamp value.
+- Repository loads are keyed by provider-qualified repository identity plus ref type, ref name, and resolved SHA. Path and anchor changes reuse the loaded tree. After a successful unresolved-ref load, its resolved-SHA route is an alias only for that load; a different repository/ref or a moved branch SHA clears the alias and reloads, while generation checks discard overlapping stale completions.
+- User-selected ref routes enter history only after the new tree loads. A failed switch keeps the prior route, selected ref, picker query, and active branch/tag tab so the same option can be retried; browser Back reloads the preceding ref rather than treating a stale alias as current.
 
 ## Stage-4 completion audit
 
@@ -194,16 +201,22 @@ Work in independently validated slices so failures remain attributable:
 3. Toggle migration.
 4. Checkbox migrations and documented exceptions.
 5. Non-Card control migrations.
-6. Upgrade kit-ui and migrate horizontal, vertical-recursive, and trailing-pane `SplitResizeHandle` consumers.
-7. Migrate the terminal inline panel to `BottomDock`, retaining application-owned session state and content.
-8. Card hierarchy and Timeline/CommentCard adoption as one coordinated slice.
-9. DatePicker fit and any supported control migration.
+6. Pin the kit-ui upgrade and verify the new `SplitResizeHandle` and `BottomDock` public contracts without changing application consumers.
+7. Migrate leading horizontal split consumers: PR/diff rails, repository browser, and Messages.
+8. Migrate vertical-recursive and trailing-pane split consumers: Kata and terminal/panel trees.
+9. Normalize restored, resized, and viewport-reconciled pane persistence across the migrated split consumers.
+10. Migrate the terminal inline panel to `BottomDock`, retaining application-owned session state and content.
+11. Card hierarchy and Timeline/CommentCard adoption as one coordinated slice.
+12. DatePicker fit and any supported control migration.
+13. Preserve migration-adjacent regressions: file-jump focus/scroll, compact empty-body editing and one-time autofocus, and repository ref-route equivalence, failure rollback, retry, and browser history.
+14. Run cross-surface geometry and real-workflow verification after all independently reviewed consumer slices land.
 
 For each slice:
 
 - update or add focused Vitest component/store tests;
 - use Vitest browser for native focus, modifier keys, collapsed TopBar content, and non-geometric interaction behavior when no external server is needed;
 - use Playwright for popup geometry and overflow, pointer drag, or full application workflows that browser components cannot prove;
+- cover repository ref changes with request-counted Playwright workflows for resolved-route deduplication, moved refs, failed same-ref retry, and browser Back; cover compact comment edit entry/exit in a seeded detail workflow while component tests pin empty/whitespace rendering and autofocus;
 - run targeted kit-ui-check rules and confirm temporary markers decrease.
 
 After the final frontend/test edit, run:
@@ -258,11 +271,11 @@ Labels remain domain-specific (`Helper running`, `Syncing pull requests`, `Has s
 
 The required workflow verification for this migration is explicit: Kata owner/project mutation and task-reference insertion, date metadata selection/clearing, repository import Shift-range selection, settings persistence, command-palette and file-jump keyboard/focus behavior, threaded comment actions, source/diff rail pointer resizing, and modal/popup geometry at narrow and phone sizes. Component or browser tests cover local interaction state; Playwright covers geometry and real backend/daemon boundaries.
 
-The dependency contract for this completion is the exact `@kenn-io/kit-ui` revision pinned in the workspace package manifests and Bun lockfile. A dependency update must rerun the manual inventory, browser interactions, affected Playwright suites, and the stock checker before it can be treated as equivalent.
+The dependency contract for this completion is `@kenn-io/kit-ui` revision `4d90fdf8a81424f53e92d45dc38fc24340894ee0`, pinned in the workspace package manifests and Bun lockfile. A dependency update must rerun the manual inventory, browser interactions, affected Playwright suites, and the stock checker before it can be treated as equivalent.
 
 ## Kata and PR completion
 
-As each slice lands, add concise completion evidence to the relevant Kata child. Create or update Kata records only for genuine migration work. Application-owned behavior that the checker misclassifies is resolved in later checker work, not converted into an upstream component enhancement. Follow-up tasks `jvxt` and `ba3w` adopt the landed axis-aware splitter and inline bottom-dock contracts without moving application state or policy into kit-ui.
+As each slice lands, add concise completion evidence to the relevant Kata child. Create or update Kata records only for genuine migration work. Application-owned behavior that the checker misclassifies is resolved in later checker work, not converted into an upstream component enhancement. The splitter and bottom-dock adoption originally tracked by `jvxt` and `ba3w` is part of stages 6-10 in this completion PR; those tasks close only after their consumer slices and required geometry workflows pass, without moving application state or policy into kit-ui.
 
 Close `fn3y`, `2df7`, and `wa1f` only after their current acceptance criteria are satisfied. Close `kqyv` only after:
 

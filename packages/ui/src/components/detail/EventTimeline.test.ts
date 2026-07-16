@@ -2559,6 +2559,7 @@ describe("EventTimeline", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit comment" }));
 
+    expect(document.querySelector(".compact-expanded-content .comment-editor-input")).toBeTruthy();
     expect(screen.getByRole("button", { name: /save/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
   });

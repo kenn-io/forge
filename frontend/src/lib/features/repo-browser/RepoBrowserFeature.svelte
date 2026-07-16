@@ -132,6 +132,7 @@
   const refPickerTruncated = $derived(refPickerFilteredRefs.length > refPickerRenderLimit);
 
   $effect(() => {
+    if (refPickerSelectionInFlight || refPickerError) return;
     const type = selectedRef ? refPickerRefType(selectedRef) : null;
     if (type) {
       refPickerType = type;

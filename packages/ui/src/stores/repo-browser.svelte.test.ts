@@ -600,7 +600,7 @@ describe("createRepoBrowserStore", () => {
     const selected = await store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false });
 
     expect(selected).toBe(false);
-    expect(store.getSelectedRef()?.name).toBe("v1.0.0");
+    expect(store.getSelectedRef()?.name).toBe("main");
     expect(store.getTree()).toEqual([]);
     expect(store.getSelectedPath()).toBeNull();
     expect(store.getBlob()).toBeNull();

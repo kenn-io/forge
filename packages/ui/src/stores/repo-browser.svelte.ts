@@ -278,6 +278,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
 
   async function selectRef(ref: RepoBrowserRef): Promise<boolean> {
     const generation = nextTreeRequestGeneration();
+    const previousRef = selectedRef;
     const previousPath = selectedPath;
     selectedRef = ref;
     loading = true;
@@ -289,6 +290,7 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
     } catch (err) {
       if (isCurrentTreeRequest(generation)) {
         error = err instanceof Error ? err.message : String(err);
+        selectedRef = previousRef;
         clearTreeData();
       }
       return false;

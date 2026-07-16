@@ -268,6 +268,84 @@ test.describe("repository source browser", () => {
     }
   });
 
+  test("reloads the previous ref when browser history returns after a user ref change", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const mainTreeURLs = collectRepoBrowserResponseURLs(page, "tree", "main");
+      const featureTreeURLs = collectRepoBrowserResponseURLs(page, "tree", "feature/caching");
+      const mainTreeLoaded = treeResponse(page, "main");
+
+      await page.goto(
+        `${server.info.base_url}/repo/browser?provider=github&repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md`,
+      );
+      await mainTreeLoaded;
+      const initialRoute = page.url();
+
+      const browser = page.getByRole("region", { name: "Repository source browser" });
+      await browser.getByRole("button", { name: /Select repository ref: branch: main/ }).click();
+      await browser.getByRole("combobox", { name: "Search repository refs" }).fill("feature");
+      const featureTreeLoaded = treeResponse(page, "feature/caching");
+      await browser.getByRole("option", { name: /feature\/caching/ }).click();
+      await featureTreeLoaded;
+      await expect(page).toHaveURL(/ref_name=feature%2Fcaching/);
+
+      const restoredMainTree = treeResponse(page, "main");
+      await page.goBack();
+      await restoredMainTree;
+
+      expect(page.url()).toBe(initialRoute);
+      await expect(browser.locator(".repo-browser__ref")).toHaveText("main");
+      await expect(browser.getByRole("main", { name: "Selected file" }).locator(".repo-browser__source")).toContainText(
+        "# Widget Service",
+      );
+      expect(mainTreeURLs).toHaveLength(2);
+      expect(featureTreeURLs).toHaveLength(1);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("keeps a failed ref switch out of history and retries the same ref", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const mainTreeLoaded = treeResponse(page, "main");
+      await page.goto(
+        `${server.info.base_url}/repo/browser?provider=github&repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md`,
+      );
+      await mainTreeLoaded;
+      const routeBeforeSwitch = page.url();
+
+      const failNextTree = await page.request.post(`${server.info.base_url}/__e2e/repo-browser/tree/fail-next`);
+      expect(failNextTree.ok()).toBe(true);
+
+      const browser = page.getByRole("region", { name: "Repository source browser" });
+      await browser.getByRole("button", { name: /Select repository ref: branch: main/ }).click();
+      const search = browser.getByRole("combobox", { name: "Search repository refs" });
+      await search.fill("feature");
+      const failedTree = page.waitForResponse(
+        (response) =>
+          repoBrowserRequestMatches(response.request(), "tree", "feature/caching") && response.status() === 500,
+      );
+      await browser.getByRole("option", { name: /feature\/caching/ }).click();
+      await failedTree;
+
+      expect(page.url()).toBe(routeBeforeSwitch);
+      await expect(search).toHaveValue("feature");
+      await expect(browser.getByRole("alert")).toHaveText("Couldn't load repository ref");
+      await expect(browser.locator(".repo-browser__ref")).toHaveText("main");
+
+      const featureTreeLoaded = treeResponse(page, "feature/caching");
+      await browser.getByRole("option", { name: /feature\/caching/ }).click();
+      await featureTreeLoaded;
+
+      await expect(page).toHaveURL(/ref_name=feature%2Fcaching/);
+      await expect(browser.locator(".repo-browser__ref")).toHaveText("feature/caching");
+      await expect(browser.getByRole("combobox", { name: "Search repository refs" })).toHaveCount(0);
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("does not reload repository data when the active ref is selected again", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {

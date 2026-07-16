@@ -383,16 +383,20 @@ describe("RepoBrowserFeature", () => {
 
   it("keeps the ref picker open and the route unchanged when the selected ref tree fails", async () => {
     const base = testClient();
+    let tagTreeAttempts = 0;
     const client = {
       GET: vi.fn((path: string, options?: TestGetOptions) => {
         if (
           testURL(path, options) ===
           "/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=tag&ref_name=v1.0.0&ref_sha=tag-sha"
         ) {
-          return Promise.resolve({
-            error: { detail: "tree failed" },
-            response: new Response(null, { status: 500 }),
-          });
+          tagTreeAttempts += 1;
+          if (tagTreeAttempts === 1) {
+            return Promise.resolve({
+              error: { detail: "tree failed" },
+              response: new Response(null, { status: 500 }),
+            });
+          }
         }
         return (base.GET as unknown as (path: string, options?: TestGetOptions) => unknown)(path, options);
       }),
@@ -420,7 +424,23 @@ describe("RepoBrowserFeature", () => {
 
     expect(await screen.findByText("Couldn't load repository ref")).toBeTruthy();
     expect((screen.getByRole("combobox", { name: "Search repository refs" }) as HTMLInputElement).value).toBe("v1");
+    expect(screen.getByText("main")).toBeTruthy();
     expect(onRouteChange).not.toHaveBeenCalled();
+
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "v1.0.0 tag-sha" }));
+
+    await waitFor(() => {
+      expect(onRouteChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          refType: "tag",
+          refName: "v1.0.0",
+          refSHA: "tag-sha",
+          path: "README.md",
+        }),
+        undefined,
+      );
+    });
+    expect(screen.queryByRole("combobox", { name: "Search repository refs" })).toBeNull();
   });
 
   it("reloads the original ref when browser history returns after a user ref change", async () => {

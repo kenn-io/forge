@@ -1438,7 +1438,19 @@ func buildAppState(
 	syncer.SetOnNotificationSyncComplete(func() {
 		srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
 	})
+	var failNextRepoBrowserTree atomic.Bool
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/repo-browser/tree/fail-next" {
+			failNextRepoBrowserTree.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodGet &&
+			strings.HasSuffix(r.URL.Path, "/browser/tree") &&
+			failNextRepoBrowserTree.CompareAndSwap(true, false) {
+			http.Error(w, "tree failed", http.StatusInternalServerError)
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/review-suggestion/succeed" {
 			fc.SetReviewSuggestionResult(&platform.AppliedReviewSuggestions{
 				CommitSHA: diffRepo.AltHeadSHA,

@@ -44,8 +44,8 @@ func (d *DB) CommitIssueChildSnapshot(ctx context.Context, snapshot IssueChildSn
 		if err != nil || !current {
 			return err
 		}
-		if err := replaceIssueCommentEventsTx(
-			ctx, tx, snapshot.IssueID, snapshot.Comments, snapshot.LastActivityAt,
+		if err := replaceIssueCommentsDatasetTx(
+			ctx, tx, snapshot.IssueID, snapshot.Comments, snapshot.LastActivityAt, true,
 		); err != nil {
 			return err
 		}
@@ -79,44 +79,28 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 			return err
 		}
 		if snapshot.CommentsComplete {
-			if err := replaceMRCommentEventsTx(ctx, tx, snapshot.MergeRequestID, snapshot.Comments, nil); err != nil {
+			if err := replaceMREventDatasetTx(
+				ctx, tx, snapshot.MergeRequestID, "issue_comment", snapshot.Comments, true,
+			); err != nil {
 				return err
 			}
 		} else if err := upsertMREventsTx(ctx, tx, snapshot.Comments); err != nil {
 			return err
 		}
 		if snapshot.ReviewsComplete {
-			keys := make([]string, len(snapshot.Reviews))
-			for i := range snapshot.Reviews {
-				keys[i] = snapshot.Reviews[i].DedupeKey
-			}
-			if err := deleteMissingMREventFamilyTx(ctx, tx, snapshot.MergeRequestID, "review", keys); err != nil {
+			if err := replaceMREventDatasetTx(
+				ctx, tx, snapshot.MergeRequestID, "review", snapshot.Reviews, false,
+			); err != nil {
 				return err
 			}
-		}
-		if err := upsertMREventsTx(ctx, tx, snapshot.Reviews); err != nil {
+		} else if err := upsertMREventsTx(ctx, tx, snapshot.Reviews); err != nil {
 			return err
 		}
 		if snapshot.InlineComplete {
-			threadIDs := make([]string, len(snapshot.ReviewThreads))
-			for i := range snapshot.ReviewThreads {
-				threadIDs[i] = snapshot.ReviewThreads[i].ProviderThreadID
-			}
-			commentKeys := make([]string, len(snapshot.InlineComments))
-			for i := range snapshot.InlineComments {
-				commentKeys[i] = snapshot.InlineComments[i].DedupeKey
-			}
-			if err := deleteMissingMRReviewThreadsTx(
-				ctx, tx, snapshot.MergeRequestID, threadIDs, commentKeys,
+			if err := replaceMRReviewThreadsDatasetTx(
+				ctx, tx, snapshot.MergeRequestID,
+				snapshot.ReviewThreads, snapshot.InlineComments,
 			); err != nil {
-				return err
-			}
-			if err := upsertMRReviewThreadsTx(
-				ctx, tx, snapshot.MergeRequestID, snapshot.ReviewThreads,
-			); err != nil {
-				return err
-			}
-			if err := upsertMREventsTx(ctx, tx, snapshot.InlineComments); err != nil {
 				return err
 			}
 		}
@@ -151,6 +135,74 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 		return nil
 	})
 	return applied, err
+}
+
+func replaceIssueCommentsDatasetTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	issueID int64,
+	events []IssueEvent,
+	lastActivityAt *time.Time,
+	updateDerived bool,
+) error {
+	if updateDerived {
+		return replaceIssueCommentEventsTx(ctx, tx, issueID, events, lastActivityAt)
+	}
+	keys := make([]string, len(events))
+	for i := range events {
+		keys[i] = events[i].DedupeKey
+	}
+	if err := deleteMissingIssueCommentEventsTx(ctx, tx, issueID, keys); err != nil {
+		return err
+	}
+	return upsertIssueEventsTx(ctx, tx, events)
+}
+
+func replaceMREventDatasetTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	mergeRequestID int64,
+	eventType string,
+	events []MREvent,
+	updateDerived bool,
+) error {
+	if eventType == "issue_comment" && updateDerived {
+		return replaceMRCommentEventsTx(ctx, tx, mergeRequestID, events, nil)
+	}
+	keys := make([]string, len(events))
+	for i := range events {
+		keys[i] = events[i].DedupeKey
+	}
+	if err := deleteMissingMREventFamilyTx(ctx, tx, mergeRequestID, eventType, keys); err != nil {
+		return err
+	}
+	return upsertMREventsTx(ctx, tx, events)
+}
+
+func replaceMRReviewThreadsDatasetTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	mergeRequestID int64,
+	threads []MRReviewThread,
+	events []MREvent,
+) error {
+	threadIDs := make([]string, len(threads))
+	for i := range threads {
+		threadIDs[i] = threads[i].ProviderThreadID
+	}
+	commentKeys := make([]string, len(events))
+	for i := range events {
+		commentKeys[i] = events[i].DedupeKey
+	}
+	if err := deleteMissingMRReviewThreadsTx(
+		ctx, tx, mergeRequestID, threadIDs, commentKeys,
+	); err != nil {
+		return err
+	}
+	if err := upsertMRReviewThreadsTx(ctx, tx, mergeRequestID, threads); err != nil {
+		return err
+	}
+	return upsertMREventsTx(ctx, tx, events)
 }
 
 func satisfyArchiveDatasetsFromNormalSyncTx(

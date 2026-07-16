@@ -1746,14 +1746,7 @@ func (d *DB) PublishArchiveIssueComments(ctx context.Context, key ArchiveDataset
 		if err := requireArchiveDatasetStageReady(stage, key, "publish archive issue comments"); err != nil {
 			return err
 		}
-		keys := make([]string, 0, len(events))
-		for _, event := range events {
-			keys = append(keys, event.DedupeKey)
-		}
-		if err := deleteMissingIssueCommentEventsTx(ctx, tx, issueID, keys); err != nil {
-			return err
-		}
-		if err := upsertIssueEventsTx(ctx, tx, events); err != nil {
+		if err := replaceIssueCommentsDatasetTx(ctx, tx, issueID, events, nil, false); err != nil {
 			return err
 		}
 		return completeArchiveDatasetTx(ctx, tx, key)
@@ -1775,14 +1768,7 @@ func (d *DB) PublishArchiveMREvents(ctx context.Context, key ArchiveDatasetKey, 
 		if err := requireArchiveDatasetStageReady(stage, key, "publish archive merge-request events"); err != nil {
 			return err
 		}
-		keys := make([]string, 0, len(events))
-		for _, event := range events {
-			keys = append(keys, event.DedupeKey)
-		}
-		if err := deleteMissingMREventFamilyTx(ctx, tx, mrID, eventType, keys); err != nil {
-			return err
-		}
-		if err := upsertMREventsTx(ctx, tx, events); err != nil {
+		if err := replaceMREventDatasetTx(ctx, tx, mrID, eventType, events, false); err != nil {
 			return err
 		}
 		return completeArchiveDatasetTx(ctx, tx, key)
@@ -1804,21 +1790,7 @@ func (d *DB) PublishArchiveReviewThreads(ctx context.Context, key ArchiveDataset
 		if err := requireArchiveDatasetStageReady(stage, key, "publish archive review threads"); err != nil {
 			return err
 		}
-		threadIDs := make([]string, 0, len(threads))
-		for _, thread := range threads {
-			threadIDs = append(threadIDs, thread.ProviderThreadID)
-		}
-		keys := make([]string, 0, len(events))
-		for _, event := range events {
-			keys = append(keys, event.DedupeKey)
-		}
-		if err := deleteMissingMRReviewThreadsTx(ctx, tx, mrID, threadIDs, keys); err != nil {
-			return err
-		}
-		if err := upsertMRReviewThreadsTx(ctx, tx, mrID, threads); err != nil {
-			return err
-		}
-		if err := upsertMREventsTx(ctx, tx, events); err != nil {
+		if err := replaceMRReviewThreadsDatasetTx(ctx, tx, mrID, threads, events); err != nil {
 			return err
 		}
 		return completeArchiveDatasetTx(ctx, tx, key)

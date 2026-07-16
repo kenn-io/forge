@@ -39,7 +39,7 @@ Already completed stage-4 migrations remain intact. This work does not rewrite a
 
 - A persisted pane size is the last rendered size, not an unconstrained preference. Restore, pointer/keyboard resize, and every container-width change clamp it to `[minListSize, maxListSize]` and write the clamped value back; when the detail minimum consumes the available width, `minListSize === maxListSize`, resizing is a no-op, and later widening does not resurrect the discarded pre-clamp value.
 - Repository loads are keyed by provider-qualified repository identity plus ref type, ref name, and resolved SHA. Path and anchor changes reuse the loaded tree. After a successful unresolved-ref load, its resolved-SHA route is an alias only for that load; a different repository/ref or a moved branch SHA clears the alias and reloads, while generation checks discard overlapping stale completions.
-- User-selected ref routes enter history only after the new tree loads. A failed switch keeps the prior route, selected ref, picker query, and active branch/tag tab so the same option can be retried; browser Back reloads the preceding ref rather than treating a stale alias as current.
+- User-selected ref routes enter history only after the new tree loads. A failed switch keeps the prior route, selected ref, last usable tree/path content, picker query, and active branch/tag tab so the same option can be retried; browser Back reloads the preceding ref rather than treating a stale alias as current.
 
 ## Stage-4 completion audit
 

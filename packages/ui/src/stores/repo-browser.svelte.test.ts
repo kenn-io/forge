@@ -596,15 +596,16 @@ describe("createRepoBrowserStore", () => {
     } as unknown as TestClient;
     const store = createRepoBrowserStore({ client });
     await store.loadRepo(repo);
+    await store.selectPath("src/app.ts");
 
     const selected = await store.selectRef({ type: "tag", name: "v1.0.0", sha: "tag-sha", stale: false });
 
     expect(selected).toBe(false);
     expect(store.getSelectedRef()?.name).toBe("main");
-    expect(store.getTree()).toEqual([]);
-    expect(store.getSelectedPath()).toBeNull();
-    expect(store.getBlob()).toBeNull();
-    expect(store.getFileHistory()).toEqual([]);
+    expect(store.getTree().map((entry) => entry.path)).toEqual(["README.md", "src/app.ts"]);
+    expect(store.getSelectedPath()).toBe("src/app.ts");
+    expect(store.getBlob()?.content).toBe("export const app = true;\n");
+    expect(store.getFileHistory().map((item) => item.subject)).toEqual(["app changed"]);
     expect(store.getError()).toBe("tree failed");
     expect(store.isLoading()).toBe(false);
   });

@@ -26,8 +26,9 @@ Interactive surfaces must agree on which item is selected.
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
 - Commit user-initiated repository ref routes only after the selected tree
-  loads; failed switches keep the picker query and prior ref identity, remain
-  retryable, and must not advance the URL to unloaded content
+  loads; failed switches keep the picker query, prior ref identity, and last
+  usable tree/path snapshot, remain retryable, and must not advance the URL
+  to unloaded content
   (`frontend/src/lib/features/repo-browser/RepoBrowserFeature.svelte::selectRefFromPicker`).
 - Treat an unresolved ref and its resolved-SHA route as equivalent only for the
   successful load that produced the alias; path/anchor changes reuse that load,

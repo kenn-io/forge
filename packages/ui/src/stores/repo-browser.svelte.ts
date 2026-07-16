@@ -278,20 +278,38 @@ export function createRepoBrowserStore(opts: RepoBrowserStoreOptions = {}) {
 
   async function selectRef(ref: RepoBrowserRef): Promise<boolean> {
     const generation = nextTreeRequestGeneration();
-    const previousRef = selectedRef;
-    const previousPath = selectedPath;
+    const previousState = {
+      selectedRef,
+      tree,
+      treeTruncated,
+      lastChanged,
+      selectedPath,
+      blob,
+      fileHistory,
+      selectedCommit,
+      blobLoading,
+    };
     selectedRef = ref;
     loading = true;
     error = null;
     clearTreeData();
     try {
-      await loadTree(previousPath, generation);
+      await loadTree(previousState.selectedPath, generation);
       return isCurrentTreeRequest(generation);
     } catch (err) {
       if (isCurrentTreeRequest(generation)) {
         error = err instanceof Error ? err.message : String(err);
-        selectedRef = previousRef;
-        clearTreeData();
+        ({
+          selectedRef,
+          tree,
+          treeTruncated,
+          lastChanged,
+          selectedPath,
+          blob,
+          fileHistory,
+          selectedCommit,
+          blobLoading,
+        } = previousState);
       }
       return false;
     } finally {

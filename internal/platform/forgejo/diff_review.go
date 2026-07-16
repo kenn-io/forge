@@ -10,16 +10,6 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 )
 
-func (c *Client) RequestChanges(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	body string,
-	expectedHeadSHA string,
-) error {
-	return c.provider.RequestChanges(ctx, ref, number, body, expectedHeadSHA)
-}
-
 func (c *Client) PublishDiffReviewDraft(
 	ctx context.Context,
 	ref platform.RepoRef,

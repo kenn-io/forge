@@ -24,11 +24,13 @@ type clientOptions struct {
 	skipVersionProbe  bool
 }
 
+type provider = gitealike.Provider
+
 type Client struct {
-	host              string
-	baseURL           string
-	transport         *transport
-	provider          *gitealike.Provider
+	host      string
+	baseURL   string
+	transport *transport
+	*provider
 	api               *forgejosdk.Client
 	foregroundTimeout time.Duration
 }

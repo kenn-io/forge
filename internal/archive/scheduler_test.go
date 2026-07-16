@@ -11,7 +11,7 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 )
 
-func TestArchiveSchedulerSerializesSameHostWorkers(t *testing.T) {
+func TestArchiveSchedulerDoesNotSerializeSameHostOutsideAdmission(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	scheduler := NewScheduler()
@@ -35,15 +35,13 @@ func TestArchiveSchedulerSerializesSameHostWorkers(t *testing.T) {
 	}
 	errCh := make(chan error, 2)
 	go func() { errCh <- scheduler.Run(t.Context(), groups, work) }()
-	require.Eventually(func() bool { return len(entered) == 1 }, time.Second, time.Millisecond)
 	go func() { errCh <- scheduler.Run(t.Context(), groups, work) }()
-	assert.Never(func() bool { return len(entered) > 1 }, 50*time.Millisecond, time.Millisecond)
-	release <- struct{}{}
 	require.Eventually(func() bool { return len(entered) == 2 }, time.Second, time.Millisecond)
 	release <- struct{}{}
+	release <- struct{}{}
 	require.NoError(<-errCh)
 	require.NoError(<-errCh)
-	assert.Equal(int32(1), maximum.Load())
+	assert.Equal(int32(2), maximum.Load())
 }
 
 func TestArchiveSchedulerRunsIndependentHostsConcurrently(t *testing.T) {

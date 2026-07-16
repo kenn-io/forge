@@ -20,6 +20,7 @@ type AdmissionResult struct {
 	Allowed bool
 	RetryAt *time.Time
 	Context context.Context
+	Release func()
 	Detail  string
 }
 

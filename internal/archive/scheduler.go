@@ -21,12 +21,9 @@ const (
 	PriorityDiscoveryInventory
 )
 
-type Scheduler struct {
-	mu    sync.Mutex
-	hosts map[string]*sync.Mutex
-}
+type Scheduler struct{}
 
-func NewScheduler() *Scheduler { return &Scheduler{hosts: make(map[string]*sync.Mutex)} }
+func NewScheduler() *Scheduler { return &Scheduler{} }
 
 func (s *Scheduler) Run(ctx context.Context, groups map[string][]resolvedRepository, work func(context.Context, []resolvedRepository) error) error {
 	keys := make([]string, 0, len(groups))
@@ -39,9 +36,6 @@ func (s *Scheduler) Run(ctx context.Context, groups map[string][]resolvedReposit
 	for _, key := range keys {
 		key, repos := key, groups[key]
 		wg.Go(func() {
-			lock := s.hostLock(key)
-			lock.Lock()
-			defer lock.Unlock()
 			if err := work(ctx, repos); err != nil {
 				errCh <- fmt.Errorf("archive provider worker %s: %w", key, err)
 			}
@@ -54,17 +48,6 @@ func (s *Scheduler) Run(ctx context.Context, groups map[string][]resolvedReposit
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
-}
-
-func (s *Scheduler) hostLock(key string) *sync.Mutex {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	lock := s.hosts[key]
-	if lock == nil {
-		lock = &sync.Mutex{}
-		s.hosts[key] = lock
-	}
-	return lock
 }
 
 var errAdmissionDeferred = errors.New("archive request deferred by admission")
@@ -210,30 +193,39 @@ func resolvedRepoByID(repos []resolvedRepository, repoID int64) resolvedReposito
 	return resolvedRepository{}
 }
 
-func (s *Service) admit(ctx context.Context, repo resolvedRepository, cost int) (context.Context, error) {
+func (s *Service) admit(
+	ctx context.Context,
+	repo resolvedRepository,
+	cost int,
+) (context.Context, func(), error) {
+	if err := s.db.ClearArchiveRepositoryError(ctx, repo.ID, s.now()); err != nil {
+		return nil, nil, err
+	}
 	if s.admission == nil {
-		return ctx, nil
+		return ctx, func() {}, nil
 	}
 	result, err := s.admission.Admit(ctx, repo.Ref, cost)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !result.Allowed {
 		if result.RetryAt == nil {
-			return nil, errors.New("archive admission denied without retry time")
+			return nil, nil, errors.New("archive admission denied without retry time")
 		}
 		if err := s.db.DeferArchiveRepository(ctx, repo.ID, *result.RetryAt, result.Detail, s.now()); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return nil, errAdmissionDeferred
+		return nil, nil, errAdmissionDeferred
 	}
-	if err := s.db.ClearArchiveRepositoryError(ctx, repo.ID, s.now()); err != nil {
-		return nil, err
-	}
+	requestCtx := ctx
 	if result.Context != nil {
-		return result.Context, nil
+		requestCtx = result.Context
 	}
-	return ctx, nil
+	release := result.Release
+	if release == nil {
+		release = func() {}
+	}
+	return requestCtx, release, nil
 }
 
 type fixedClock struct{ value time.Time }

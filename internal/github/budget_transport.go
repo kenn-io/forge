@@ -25,7 +25,7 @@ func WithArchiveSyncBudget(ctx context.Context) context.Context {
 	return context.WithValue(WithSyncBudget(ctx), archiveSyncBudgetKey{}, true)
 }
 
-func isArchiveSyncBudgetContext(ctx context.Context) bool {
+func IsArchiveSyncBudgetContext(ctx context.Context) bool {
 	_, ok := ctx.Value(archiveSyncBudgetKey{}).(bool)
 	return ok
 }
@@ -50,7 +50,7 @@ func (t *budgetTransport) RoundTrip(
 	resp, err := t.base.RoundTrip(req)
 	if IsSyncBudgetContext(req.Context()) &&
 		(resp == nil || resp.StatusCode != http.StatusNotModified) {
-		if isArchiveSyncBudgetContext(req.Context()) {
+		if IsArchiveSyncBudgetContext(req.Context()) {
 			t.budget.SpendArchive(1)
 		} else {
 			t.budget.Spend(1)

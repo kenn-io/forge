@@ -384,7 +384,13 @@ func TestClientSyncBudgetChargesOnlyMarkedRoundTrips(t *testing.T) {
 	_, err = client.GetRepository(ghsync.WithSyncBudget(t.Context()), ref)
 	require.NoError(err)
 	assert.Equal(1, budget.Spent())
-	assert.Equal(2, requests)
+	assert.Zero(budget.ArchiveSpent())
+
+	_, err = client.GetRepository(ghsync.WithArchiveSyncBudget(t.Context()), ref)
+	require.NoError(err)
+	assert.Equal(2, budget.Spent())
+	assert.Equal(1, budget.ArchiveSpent())
+	assert.Equal(3, requests)
 }
 
 func TestClientReadsTokenSourceForEachRequest(t *testing.T) {

@@ -79,12 +79,15 @@ const archiveReviewThreadsQuery = `
 query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      reviewThreads(first: 1, after: $cursor) {
-        nodes {
-          id isResolved isOutdated path line originalLine startLine originalStartLine diffSide
-          comments(first: 100) {
-			nodes { id databaseId fullDatabaseId pullRequestReview { databaseId } subjectType body author { login } path line originalLine diffHunk url commit { oid } originalCommit { oid } createdAt updatedAt }
-            pageInfo { hasNextPage endCursor }
+      reviewThreads(first: 100, after: $cursor) {
+        edges {
+          cursor
+          node {
+            id isResolved isOutdated path line originalLine startLine originalStartLine diffSide
+            comments(first: 100) {
+              nodes { id databaseId fullDatabaseId pullRequestReview { databaseId } subjectType body author { login } path line originalLine diffHunk url commit { oid } originalCommit { oid } createdAt updatedAt }
+              pageInfo { hasNextPage endCursor }
+            }
           }
         }
         pageInfo { hasNextPage endCursor }
@@ -296,18 +299,21 @@ func (c *liveClient) ListArchiveReviewThreadsPage(
 			Repository *struct {
 				PullRequest *struct {
 					ReviewThreads struct {
-						Nodes []struct {
-							NodeID            string                               `json:"id"`
-							IsResolved        bool                                 `json:"isResolved"`
-							IsOutdated        bool                                 `json:"isOutdated"`
-							Path              string                               `json:"path"`
-							Line              int                                  `json:"line"`
-							OriginalLine      int                                  `json:"originalLine"`
-							StartLine         *int                                 `json:"startLine"`
-							OriginalStartLine *int                                 `json:"originalStartLine"`
-							Side              string                               `json:"diffSide"`
-							Comments          graphQLReviewThreadCommentConnection `json:"comments"`
-						} `json:"nodes"`
+						Edges []struct {
+							Cursor string `json:"cursor"`
+							Node   struct {
+								NodeID            string                               `json:"id"`
+								IsResolved        bool                                 `json:"isResolved"`
+								IsOutdated        bool                                 `json:"isOutdated"`
+								Path              string                               `json:"path"`
+								Line              int                                  `json:"line"`
+								OriginalLine      int                                  `json:"originalLine"`
+								StartLine         *int                                 `json:"startLine"`
+								OriginalStartLine *int                                 `json:"originalStartLine"`
+								Side              string                               `json:"diffSide"`
+								Comments          graphQLReviewThreadCommentConnection `json:"comments"`
+							} `json:"node"`
+						} `json:"edges"`
 						PageInfo struct {
 							HasNextPage bool    `json:"hasNextPage"`
 							EndCursor   *string `json:"endCursor"`
@@ -328,34 +334,40 @@ func (c *liveClient) ListArchiveReviewThreadsPage(
 		return nil, "", false, errors.New("missing pull request in archive review response")
 	}
 	connection := decoded.Data.Repository.PullRequest.ReviewThreads
-	if len(connection.Nodes) == 0 {
+	if len(connection.Edges) == 0 {
 		return nil, "", true, nil
 	}
-	node := connection.Nodes[0]
-	thread := PullRequestReviewThread{
-		NodeID: node.NodeID, IsResolved: node.IsResolved, IsOutdated: node.IsOutdated,
-		Path: node.Path, Side: node.Side, StartLine: node.StartLine,
-		OriginalStartLine: node.OriginalStartLine, Line: node.Line, OriginalLine: node.OriginalLine,
+	threads := make([]PullRequestReviewThread, 0, len(connection.Edges))
+	for i, edge := range connection.Edges {
+		node := edge.Node
+		thread := PullRequestReviewThread{
+			NodeID: node.NodeID, IsResolved: node.IsResolved, IsOutdated: node.IsOutdated,
+			Path: node.Path, Side: node.Side, StartLine: node.StartLine,
+			OriginalStartLine: node.OriginalStartLine, Line: node.Line, OriginalLine: node.OriginalLine,
+		}
+		for _, comment := range node.Comments.Nodes {
+			thread.Comments = append(thread.Comments, githubReviewThreadCommentFromGraphQL(comment))
+		}
+		threads = append(threads, thread)
+		if node.Comments.PageInfo.HasNextPage {
+			next, err := encodeGitHubArchiveReviewCursor(githubArchiveReviewCursor{
+				Host: host, Owner: owner, Repo: repo, Number: number,
+				Phase: "comments", CommentAfter: cursorValue(node.Comments.PageInfo.EndCursor),
+				ThreadAfter: edge.Cursor,
+				MoreThreads: i < len(connection.Edges)-1 || connection.PageInfo.HasNextPage,
+				Thread:      archiveReviewThreadCursor(thread),
+			})
+			return threads, next, false, err
+		}
 	}
-	for _, comment := range node.Comments.Nodes {
-		thread.Comments = append(thread.Comments, githubReviewThreadCommentFromGraphQL(comment))
+	if !connection.PageInfo.HasNextPage {
+		return threads, "", true, nil
 	}
-	nextState := githubArchiveReviewCursor{
+	next, err := encodeGitHubArchiveReviewCursor(githubArchiveReviewCursor{
 		Host: host, Owner: owner, Repo: repo, Number: number,
 		Phase: "threads", ThreadAfter: cursorValue(connection.PageInfo.EndCursor),
-	}
-	if node.Comments.PageInfo.HasNextPage {
-		nextState = githubArchiveReviewCursor{
-			Host: host, Owner: owner, Repo: repo, Number: number,
-			Phase: "comments", CommentAfter: cursorValue(node.Comments.PageInfo.EndCursor),
-			ThreadAfter: cursorValue(connection.PageInfo.EndCursor),
-			MoreThreads: connection.PageInfo.HasNextPage, Thread: archiveReviewThreadCursor(thread),
-		}
-	} else if !connection.PageInfo.HasNextPage {
-		return []PullRequestReviewThread{thread}, "", true, nil
-	}
-	next, err := encodeGitHubArchiveReviewCursor(nextState)
-	return []PullRequestReviewThread{thread}, next, false, err
+	})
+	return threads, next, false, err
 }
 
 func (c *liveClient) listArchiveReviewThreadCommentsPage(

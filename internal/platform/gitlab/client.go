@@ -155,7 +155,11 @@ type syncBudgetTransport struct {
 func (t *syncBudgetTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.base.RoundTrip(req)
 	if ghsync.IsSyncBudgetContext(req.Context()) {
-		t.budget.Spend(1)
+		if ghsync.IsArchiveSyncBudgetContext(req.Context()) {
+			t.budget.SpendArchive(1)
+		} else {
+			t.budget.Spend(1)
+		}
 	}
 	return resp, err
 }

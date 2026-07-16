@@ -77,7 +77,7 @@ func (s *Service) commitTerminalLookup(
 }
 
 func (s *Service) hydrateIssue(ctx context.Context, repo resolvedRepository, item *db.ArchiveItemState) error {
-	requestCtx, release, err := s.admit(ctx, repo, 1)
+	requestCtx, release, err := s.admit(ctx, repo, 2)
 	if err != nil {
 		return err
 	}
@@ -123,7 +123,7 @@ func (s *Service) hydrateIssue(ctx context.Context, repo resolvedRepository, ite
 }
 
 func (s *Service) hydrateMergeRequest(ctx context.Context, repo resolvedRepository, item *db.ArchiveItemState) error {
-	requestCtx, release, err := s.admit(ctx, repo, 1)
+	requestCtx, release, err := s.admit(ctx, repo, 2)
 	if err != nil {
 		return err
 	}

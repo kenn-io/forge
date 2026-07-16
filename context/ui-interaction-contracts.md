@@ -73,6 +73,9 @@ Whenever a control persists, document and test:
 - where it persists
 - whether it is global, per-view, or per-item
 - what happens after navigating away and back
+- for layout dimensions, clamping on restore and whenever container bounds
+  change, with the normalized value re-persisted so stale geometry cannot return
+  (`frontend/src/lib/components/messages/MessagesWorkspace.svelte::handleSashWidth`)
 
 ## Keyboard Scope Precedence
 

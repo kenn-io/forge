@@ -88,6 +88,7 @@
 :root.dark {
   --budget-bar-bg: var(--border-muted);
   --kanban-new: var(--text-muted);
+  --diff-stale-text: var(--accent-amber);
   --sidebar-row-hover-bg: color-mix(in srgb, var(--bg-surface-hover) 82%, var(--text-muted) 18%);
   --bg-row-selected: color-mix(in srgb, var(--sidebar-row-hover-bg) 38%, var(--bg-surface));
 }

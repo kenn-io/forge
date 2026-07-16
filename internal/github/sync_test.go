@@ -7027,10 +7027,12 @@ func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 
 	threads, err = d.ListMRReviewThreads(ctx, mr.ID)
 	require.NoError(err)
-	assert.Empty(threads)
+	require.Len(threads, 1)
+	assert.Equal("thread-42", threads[0].ProviderThreadID)
 	events, err = d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
-	assert.Empty(events)
+	require.Len(events, 1)
+	assert.Equal("comment-42", events[0].PlatformExternalID)
 }
 
 func TestFetchGitHubMRDetailSyncsReviewThreads(t *testing.T) {

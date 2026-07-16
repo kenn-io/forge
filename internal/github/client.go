@@ -245,20 +245,17 @@ func NewClient(
 	if options.baseURLOverride != "" {
 		allowedOrigin = options.baseURLOverride
 	}
+	readBase := WrapSyncBudgetTransport(http.DefaultTransport, budget)
 	authRT := tokenauth.AuthTransport{
 		Source:              source,
-		Base:                http.DefaultTransport,
+		Base:                readBase,
 		SetHeader:           tokenauth.BearerAuthHeader,
 		RetryOnUnauthorized: true,
 		AllowedOrigin:       allowedOrigin,
 		GitHubOwner:         githubOwnerFromRequest,
 	}
 	et := &etagTransport{base: authRT}
-	var transport http.RoundTripper = et
-	if budget != nil {
-		transport = &budgetTransport{base: transport, budget: budget}
-	}
-	httpClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(transport)}
+	httpClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(et)}
 	// Mutations resolve auth with the mutation marker so a configured
 	// GitHub App is skipped and writes stay attributed to the user's
 	// own credential. The write path is a separate gh.Client because
@@ -270,15 +267,8 @@ func NewClient(
 		mutationAuthTransport{base: authRT},
 	)}
 	notificationTransport := mutationAuthTransport{base: authRT}
-	var notificationRoundTripper http.RoundTripper = notificationTransport
-	if budget != nil {
-		notificationRoundTripper = &budgetTransport{
-			base:   notificationRoundTripper,
-			budget: budget,
-		}
-	}
 	notificationHTTPClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(
-		notificationRoundTripper,
+		notificationTransport,
 	)}
 
 	newGHClient := func(hc *http.Client) (*gh.Client, error) {

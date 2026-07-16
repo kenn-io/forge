@@ -15721,7 +15721,7 @@ func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *te
 	assert.Equal(originalLine, detail.Events[1].DiffThread.Line)
 }
 
-func TestAPIGitLabSyncPrunesMissingReviewThreadTimelineEvents(t *testing.T) {
+func TestAPIGitLabSyncPreservesMissingReviewThreadTimelineEvents(t *testing.T) {
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:  true,
@@ -15778,12 +15778,14 @@ func TestAPIGitLabSyncPrunesMissingReviewThreadTimelineEvents(t *testing.T) {
 
 	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
 	require.NoError(err)
-	require.Empty(threads)
+	require.Len(threads, 1)
+	require.Equal("stale-thread", threads[0].ProviderThreadID)
 	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7", nil)
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
 	var detail mergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
-	require.Empty(detail.Events)
+	require.Len(detail.Events, 1)
+	require.Equal("stale-thread", detail.Events[0].PlatformExternalID)
 }
 
 func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {

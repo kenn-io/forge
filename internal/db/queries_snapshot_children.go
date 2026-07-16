@@ -169,6 +169,9 @@ func replaceMREventDatasetTx(
 	if eventType == "issue_comment" && updateDerived {
 		return replaceMRCommentEventsTx(ctx, tx, mergeRequestID, events, nil)
 	}
+	if eventType == "review" {
+		return upsertMREventsTx(ctx, tx, events)
+	}
 	keys := make([]string, len(events))
 	for i := range events {
 		keys[i] = events[i].DedupeKey
@@ -186,19 +189,6 @@ func replaceMRReviewThreadsDatasetTx(
 	threads []MRReviewThread,
 	events []MREvent,
 ) error {
-	threadIDs := make([]string, len(threads))
-	for i := range threads {
-		threadIDs[i] = threads[i].ProviderThreadID
-	}
-	commentKeys := make([]string, len(events))
-	for i := range events {
-		commentKeys[i] = events[i].DedupeKey
-	}
-	if err := deleteMissingMRReviewThreadsTx(
-		ctx, tx, mergeRequestID, threadIDs, commentKeys,
-	); err != nil {
-		return err
-	}
 	if err := upsertMRReviewThreadsTx(ctx, tx, mergeRequestID, threads); err != nil {
 		return err
 	}

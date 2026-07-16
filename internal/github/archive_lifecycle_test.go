@@ -339,6 +339,57 @@ func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 	assert.Contains(denied.Detail, "normal sync")
 }
 
+func TestArchiveAdmissionPreservesProviderReserveForDeclaredCost(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	key := RateBucketKey("github", "github.test")
+	now := time.Now().UTC()
+	reset := now.Add(time.Minute)
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker.UpdateFromRate(Rate{
+		Limit: 5000, Remaining: RateReserveBuffer + 1, Reset: reset,
+	})
+	syncer := NewSyncerWithRegistry(
+		nil, database, nil, nil, time.Hour,
+		map[string]*RateTracker{key: tracker},
+		map[string]*SyncBudget{key: NewSyncBudget(100)},
+	)
+	syncer.now = func() time.Time { return now }
+	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.test", Owner: "acme", Name: "widget"}
+
+	denied, err := syncer.Admit(t.Context(), ref, 2)
+	require.NoError(err)
+	assert.False(denied.Allowed)
+	assert.Contains(denied.Detail, "reserve")
+	assert.Equal(reset, *denied.RetryAt)
+}
+
+func TestArchiveRampDenialRetriesWithinCurrentWindow(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	key := RateBucketKey("github", "github.test")
+	now := time.Now().UTC()
+	reset := now.Add(59 * time.Minute)
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: reset})
+	syncer := NewSyncerWithRegistry(
+		nil, database, nil, nil, time.Hour,
+		map[string]*RateTracker{key: tracker},
+		map[string]*SyncBudget{key: NewSyncBudget(100)},
+	)
+	syncer.now = func() time.Time { return now }
+	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.test", Owner: "acme", Name: "widget"}
+
+	denied, err := syncer.Admit(t.Context(), ref, 1)
+	require.NoError(err)
+	assert.False(denied.Allowed)
+	require.NotNil(denied.RetryAt)
+	assert.Equal(now.Add(time.Minute), *denied.RetryAt)
+	assert.True(denied.RetryAt.Before(reset))
+}
+
 func TestArchiveAdmissionDefersToNotificationAndActiveDetailWork(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -407,6 +458,41 @@ func TestArchiveAdmissionLeaseSerializesProviderRequests(t *testing.T) {
 	require.True(third.Allowed)
 	require.NotNil(third.Release)
 	third.Release()
+}
+
+func TestLiveProviderWorkCancelsAndWaitsForArchiveRequest(t *testing.T) {
+	require := require.New(t)
+	syncer := NewSyncerWithRegistry(nil, dbtest.Open(t), nil, nil, time.Hour, nil, nil)
+	key := RateBucketKey("github", "github.test")
+	archiveCtx, releaseArchive, allowed := syncer.tryBeginArchiveProviderRequest(t.Context(), key)
+	require.True(allowed)
+
+	liveStarted := make(chan struct{})
+	liveDone := make(chan struct{})
+	go func() {
+		releaseLive := syncer.beginProviderWork(key, archive.PriorityActiveDetail)
+		close(liveStarted)
+		releaseLive()
+		close(liveDone)
+	}()
+
+	select {
+	case <-archiveCtx.Done():
+	case <-time.After(time.Second):
+		require.Fail("live work did not cancel archive request")
+	}
+	select {
+	case <-liveStarted:
+		require.Fail("live work started before archive lease released")
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	releaseArchive()
+	select {
+	case <-liveDone:
+	case <-time.After(time.Second):
+		require.Fail("live work did not proceed after archive lease released")
+	}
 }
 
 func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {

@@ -20,6 +20,10 @@ Local pre-commit checks continue to inspect staged migration changes. CI checks 
 
 The lint checkout will fetch enough history for the PR base commit. `make guardrail-check` will run the migration-history checker with the immediate PR base SHA. Pushes to `main` and manual workflow runs will use `origin/main` and produce an empty migration delta when no new migration is being proposed.
 
+## Migration guide
+
+`context/db-migrations.md` will retain short summaries of shipped-migration immutability and one migration per PR, then name the checker as the enforcement for immediate-base edits, duplicate numbers, and PR migration count. Procedural bullets duplicated by the checker will be removed; guidance requiring human judgment or schema knowledge will remain.
+
 ## Tests
 
 Checker tests will cover multiple migrations staged together and multiple migrations spread across commits when a PR base is supplied. Existing tests continue to cover edits to base migrations, duplicate numbers, and alternate hook indexes. Database tests will validate the consolidated migration through the existing `db.Open()` paths.

@@ -59,11 +59,11 @@
 </script>
 
 <button class="issue-item" class:selected bind:this={el} onclick={onclick}>
+  <SidebarStatusStrip
+    tone={issue.State === "open" ? "success" : "danger"}
+    label={issue.State === "open" ? "Open issue" : "Closed issue"}
+  />
   <p class="title">
-    <SidebarStatusStrip
-      tone={issue.State === "open" ? "success" : "danger"}
-      label={issue.State === "open" ? "Open issue" : "Closed issue"}
-    />
     <span class="title-text">{issue.Title}</span>
   </p>
   <LabelRow {labels} compact />
@@ -113,6 +113,7 @@
 <style>
   .issue-item {
     display: block;
+    position: relative;
     width: 100%;
     text-align: left;
     padding: var(--sidebar-row-padding, 10px 12px);
@@ -142,9 +143,6 @@
   }
 
   .title {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
     font-size: var(--font-size-md);
     font-weight: 500;
     color: var(--text-primary);
@@ -153,6 +151,7 @@
   }
 
   .title-text {
+    display: block;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

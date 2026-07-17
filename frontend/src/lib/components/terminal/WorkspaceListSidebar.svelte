@@ -1142,12 +1142,12 @@
             tabindex="0"
             role="button"
           >
+            <SidebarStatusStrip
+              tone={workspaceStatusTone(ws)}
+              label={workspaceStatusLabel(ws)}
+            />
             <div class="ws-row-text">
               <div class="ws-row-title">
-                <SidebarStatusStrip
-                  tone={workspaceStatusTone(ws)}
-                  label={workspaceStatusLabel(ws)}
-                />
                 <span class="ws-name">{displayName(ws)}</span>
                 {#if ws.tmux_working}
                   <StatusDot status="working" label={workingTitle(ws)} size={6} />

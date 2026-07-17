@@ -60,6 +60,8 @@ describe("IssueItem", () => {
   ] as const)("renders the compact %s state rail", (state, label, className) => {
     renderItem(mkIssue({ State: state }));
 
-    expect(screen.getByLabelText(label).classList.contains(className)).toBe(true);
+    const rail = screen.getByLabelText(label);
+    expect(rail.classList.contains(className)).toBe(true);
+    expect(rail.parentElement?.classList.contains("issue-item")).toBe(true);
   });
 });

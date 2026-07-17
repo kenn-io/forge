@@ -644,7 +644,7 @@
     transition: color 0.15s ease;
   }
 
-  .pull-list :global(.list-body--diff-focus .pull-item:not(.selected) .state-dot) {
+  .pull-list :global(.list-body--diff-focus .pull-item:not(.selected) .sidebar-status-strip) {
     opacity: 0.45;
   }
 

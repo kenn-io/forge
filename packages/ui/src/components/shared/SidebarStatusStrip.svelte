@@ -18,9 +18,12 @@
 
 <style>
   .sidebar-status-strip {
-    display: inline-block;
+    position: absolute;
+    inset-block: var(--sidebar-status-rail-inset, 10px);
+    left: var(--sidebar-status-rail-left, 6px);
+    display: block;
     width: 3px;
-    height: 18px;
+    min-height: 18px;
     flex: 0 0 3px;
     border-radius: 2px;
     background: var(--text-muted);

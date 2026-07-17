@@ -2,7 +2,7 @@ import { devices, expect, test, type Page } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
-async function expectMobileTitleRailLayout(page: Page, itemSelector: string): Promise<void> {
+async function expectMobileRowRailLayout(page: Page, itemSelector: string): Promise<void> {
   const item = page.locator(itemSelector).first();
   await expect(item).toBeVisible();
 
@@ -10,28 +10,31 @@ async function expectMobileTitleRailLayout(page: Page, itemSelector: string): Pr
     const title = node.querySelector<HTMLElement>(".title");
     const strip = node.querySelector<HTMLElement>(".sidebar-status-strip");
     const titleText = node.querySelector<HTMLElement>(".title-text");
-    const titleStyle = title ? getComputedStyle(title) : null;
     const textStyle = titleText ? getComputedStyle(titleText) : null;
     const stripRect = strip?.getBoundingClientRect();
-    const textRect = titleText?.getBoundingClientRect();
+    const titleRect = title?.getBoundingClientRect();
+    const metaRect = node.querySelector<HTMLElement>(".meta-row")?.getBoundingClientRect();
     return {
-      titleDisplay: titleStyle?.display ?? "",
+      stripIsDirectChild: strip?.parentElement === node,
       titleTextLineClamp: textStyle?.webkitLineClamp ?? "",
       stripWidth: stripRect?.width ?? 0,
       stripHeight: stripRect?.height ?? 0,
       stripRight: stripRect?.right ?? 0,
-      stripCenterY: stripRect ? stripRect.top + stripRect.height / 2 : 0,
-      textLeft: textRect?.left ?? 0,
-      textCenterY: textRect ? textRect.top + textRect.height / 2 : 0,
+      stripTop: stripRect?.top ?? 0,
+      stripBottom: stripRect?.bottom ?? 0,
+      titleTop: titleRect?.top ?? 0,
+      titleLeft: titleRect?.left ?? 0,
+      metaBottom: metaRect?.bottom ?? 0,
     };
   });
 
-  expect(metrics.titleDisplay).toBe("flex");
+  expect(metrics.stripIsDirectChild).toBe(true);
   expect(metrics.titleTextLineClamp).toBe("2");
   expect(metrics.stripWidth).toBe(3);
-  expect(metrics.stripHeight).toBe(18);
-  expect(metrics.stripRight).toBeLessThanOrEqual(metrics.textLeft);
-  expect(Math.abs(metrics.stripCenterY - metrics.textCenterY)).toBeLessThanOrEqual(1);
+  expect(metrics.stripHeight).toBeGreaterThan(18);
+  expect(metrics.stripRight).toBeLessThanOrEqual(metrics.titleLeft);
+  expect(metrics.stripTop).toBeLessThanOrEqual(metrics.titleTop);
+  expect(metrics.stripBottom).toBeGreaterThanOrEqual(metrics.metaBottom);
 }
 
 async function mockMobileRepoSettings(page: Page): Promise<string[]> {
@@ -269,13 +272,13 @@ test.describe("mobile PR status grouping", () => {
     await expect(page.getByText("Needs Worktree")).toHaveCount(0);
   });
 
-  test("keeps pull and issue state rails beside their clamped titles", async ({ page }) => {
+  test("keeps pull and issue state rails spanning their row content", async ({ page }) => {
     await mockApi(page);
 
     await page.goto("/m/pulls");
-    await expectMobileTitleRailLayout(page, ".pull-item");
+    await expectMobileRowRailLayout(page, ".pull-item");
 
     await page.goto("/m/issues");
-    await expectMobileTitleRailLayout(page, ".issue-item");
+    await expectMobileRowRailLayout(page, ".issue-item");
   });
 });

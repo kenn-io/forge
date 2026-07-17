@@ -55,7 +55,9 @@ describe("WorktreeRow", () => {
       },
     });
 
-    expect(screen.getByLabelText(label).classList.contains(className)).toBe(true);
+    const rail = screen.getByLabelText(label);
+    expect(rail.classList.contains(className)).toBe(true);
+    expect(rail.parentElement?.classList.contains("worktree-row")).toBe(true);
   });
 
   it("renders the linked PR chip as passive metadata that still activates the row", async () => {

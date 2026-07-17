@@ -1381,7 +1381,9 @@ describe("WorkspaceListSidebar", () => {
       props: { selectedId: `ws-${status}` },
     });
 
-    expect((await screen.findByLabelText(label)).classList.contains(className)).toBe(true);
+    const rail = await screen.findByLabelText(label);
+    expect(rail.classList.contains(className)).toBe(true);
+    expect(rail.parentElement?.classList.contains("ws-row")).toBe(true);
   });
 
   it("does not describe an externally disabled workspace as active work", async () => {

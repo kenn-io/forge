@@ -258,7 +258,9 @@ describe("PullItem state strip", () => {
   ] as const)("renders the compact %s state rail", (overrides, label, className) => {
     renderItem(mkPR(overrides));
 
-    expect(screen.getByLabelText(label).classList.contains(className)).toBe(true);
+    const rail = screen.getByLabelText(label);
+    expect(rail.classList.contains(className)).toBe(true);
+    expect(rail.parentElement?.classList.contains("pull-item")).toBe(true);
   });
 });
 

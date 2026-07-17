@@ -28,8 +28,6 @@ func RepairLegacyTimestamps(
 		{table: "middleman_repos", column: "created_at"},
 		{table: "middleman_repos", column: "last_sync_started_at"},
 		{table: "middleman_repos", column: "last_sync_completed_at"},
-		{table: "middleman_repos", column: "backfill_pr_completed_at"},
-		{table: "middleman_repos", column: "backfill_issue_completed_at"},
 		{table: "middleman_merge_requests", column: "created_at"},
 		{table: "middleman_merge_requests", column: "updated_at"},
 		{table: "middleman_merge_requests", column: "last_activity_at"},

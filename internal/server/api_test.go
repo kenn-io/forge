@@ -14156,6 +14156,21 @@ func TestRefreshWorkspaceRepoIndexToleratesPartialSyncFailure(t *testing.T) {
 	assert.NotEmpty(repo.LastSyncError,
 		"the tolerated partial failure must still be recorded in sync health")
 
+	// MR-scope partial: a seeded open PR fails its closed-item refresh.
+	// The workspace flow depends on merge-request data, so the refresh
+	// must abort rather than report success over a stale association.
+	mrSrv, mrDB := setupTestServerWithMock(t, &mockGH{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			return nil, errors.New("closed PR refresh failed")
+		},
+	})
+	seedPR(t, mrDB, "acme", "widget", 1)
+	err = mrSrv.refreshWorkspaceRepoIndex(
+		ctx, platform.KindGitHub, "github.com", "acme", "widget",
+	)
+	require.Error(err,
+		"a merge-request-scope partial failure must abort the workspace refresh")
+
 	// Hard: the open-PR list itself fails; the refresh must abort.
 	hardSrv, _ := setupTestServerWithMock(t, &mockGH{
 		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
@@ -30239,6 +30254,96 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	require.NotNil(pr)
 	assert.Equal(prTitleFromDetail, pr.Title)
 	assert.Equal(headSHA, pr.PlatformHeadSHA)
+}
+
+// TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure drives
+// POST /workspaces/{id}/refresh through the full router with real SQLite
+// while the repo's index sync has an issue-scope partial failure (a seeded
+// open issue whose closed-item refresh fails). The refresh must succeed:
+// association discovery proceeds, the targeted PR-detail update still runs,
+// and the tolerated partial failure stays recorded in repo sync health.
+func TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	str := func(v string) *string { return &v }
+	prID := int64(1001)
+	buildPR := func(number int, title string, updatedAt time.Time) *gh.PullRequest {
+		return &gh.PullRequest{
+			ID:        &prID,
+			Number:    &number,
+			Title:     &title,
+			State:     str("open"),
+			HTMLURL:   str("https://github.com/acme/widget/pull/1"),
+			User:      &gh.User{Login: str("alice")},
+			CreatedAt: &gh.Timestamp{Time: now.Add(-time.Hour)},
+			UpdatedAt: &gh.Timestamp{Time: updatedAt},
+			Head:      &gh.PullRequestBranch{Ref: str("feature")},
+			Base:      &gh.PullRequestBranch{Ref: str("main")},
+		}
+	}
+	var detailCalls atomic.Int32
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+			return []*gh.PullRequest{buildPR(1, "list title", now.Add(time.Minute))}, nil
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			detailCalls.Add(1)
+			return buildPR(number, "detail title", now.Add(2*time.Minute)), nil
+		},
+		// The seeded open issue leaves the (empty) open list and its
+		// closed-item refresh fails: an issue-scope partial failure on
+		// every repo index sync.
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+			return nil, errors.New("closed issue refresh failed")
+		},
+	}
+	fixture := setupWorkspaceServerFixtureWithMockHostAndOptions(
+		t, nil, mock, "github.com",
+		ServerOptions{
+			PtyOwnerInProcess:                  true,
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+	seedIssue(t, fixture.database, "acme", "widget", 8, "open")
+
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	before := detailCalls.Load()
+
+	refreshRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/workspaces/"+ws.Id+"/refresh",
+		nil,
+	)
+	require.Equal(http.StatusOK, refreshRR.Code, refreshRR.Body.String())
+
+	var refreshed rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(refreshRR.Body).Decode(&refreshed))
+	assert.Equal(ws.Id, refreshed.ID,
+		"the refresh must complete association discovery and return the workspace")
+
+	assert.Greater(detailCalls.Load(), before,
+		"the targeted PR-detail refresh must still run")
+
+	repo, err := fixture.database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	assert.NotEmpty(repo.LastSyncError,
+		"the tolerated partial failure must stay recorded in sync health")
+
+	pr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal("detail title", pr.Title,
+		"the targeted PR update must land after the index refresh")
 }
 
 func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {

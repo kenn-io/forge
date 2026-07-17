@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -200,6 +201,92 @@ func TestRunOnceReportsPartialScopeFailures(t *testing.T) {
 	assert.NotEmpty(hardResults[0].Error)
 	assert.Nil(hardResults[0].PartialFailure,
 		"a hard repository failure must not be typed as partial")
+}
+
+// TestPartialSyncFailureRequiresExclusiveError pins the exclusivity rule for
+// typing a sync failure as partial: only an error that IS the partial
+// failure qualifies. A partial error joined or wrapped with any other
+// failure describes more than its scopes and must be treated as hard.
+func TestPartialSyncFailureRequiresExclusiveError(t *testing.T) {
+	assert := assert.New(t)
+
+	partial, ok := ExclusivePartialSyncFailure(&PartialSyncError{Issues: true})
+	assert.True(ok)
+	assert.NotNil(partial)
+
+	_, ok = ExclusivePartialSyncFailure(errors.Join(
+		&PartialSyncError{Issues: true},
+		errors.New("post-sync bookkeeping failed"),
+	))
+	assert.False(ok, "a joined error is not exclusively partial")
+
+	_, ok = ExclusivePartialSyncFailure(
+		fmt.Errorf("sync: %w", &PartialSyncError{Issues: true}),
+	)
+	assert.False(ok, "a wrapped error is not exclusively partial")
+
+	_, ok = ExclusivePartialSyncFailure(errors.New("hard failure"))
+	assert.False(ok)
+}
+
+// TestRunOnceTreatsJoinedPartialAndHardErrorAsHard drives a sync cycle where
+// per-item issue work fails (partial) AND the post-sync notification
+// bookkeeping fails hard (its table is dropped). The joined error must not
+// be typed partial on the result: consumers that proceed on issue-scope
+// partial failures would otherwise also proceed past the hard failure.
+func TestRunOnceTreatsJoinedPartialAndHardErrorAsHard(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	issueNumber := 7
+	title := "seeded issue"
+	state := "open"
+	url := "https://github.com/owner/repo/issues/7"
+	body := ""
+	issueID := int64(777)
+	openIssue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &title,
+		State:     &state,
+		HTMLURL:   &url,
+		Body:      &body,
+		CreatedAt: makeTimestamp(now),
+		UpdatedAt: makeTimestamp(now),
+	}
+	seedMC := &mockClient{openIssues: []*gh.Issue{openIssue}}
+	seedMC.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+		return openIssue, nil
+	}
+	seedSyncer := NewSyncer(
+		map[string]Client{"github.com": seedMC}, d, nil, repos, time.Minute, nil, nil,
+	)
+	seedSyncer.RunOnce(ctx)
+
+	// Break the post-sync notification bookkeeping only.
+	_, err := d.WriteDB().ExecContext(ctx, "DROP TABLE middleman_notification_items")
+	require.NoError(err)
+
+	mc := &mockClient{openIssues: []*gh.Issue{}}
+	mc.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+		return nil, errors.New("closed issue refresh failed")
+	}
+	var results []RepoSyncResult
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, repos, time.Minute, nil, nil,
+	)
+	syncer.SetOnSyncCompleted(func(r []RepoSyncResult) { results = r })
+	syncer.RunOnce(ctx)
+
+	require.Len(results, 1)
+	assert.NotEmpty(results[0].Error)
+	assert.Nil(results[0].PartialFailure,
+		"a partial error joined with a hard post-sync failure must be hard")
 }
 
 // TestGitHubArchiveDestinationIgnoresRepoCasing pins that transfer detection

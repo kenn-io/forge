@@ -264,6 +264,18 @@ func (e *PartialSyncError) Error() string {
 	)
 }
 
+// ExclusivePartialSyncFailure returns the typed partial failure only when the
+// complete error is the partial failure itself. A partial error joined or
+// wrapped with any other failure (for example a hard post-sync bookkeeping
+// error) describes more than its scopes, so consumers must treat it as a
+// hard failure rather than proceeding on the strength of a scope report
+// that does not cover the whole error.
+func ExclusivePartialSyncFailure(err error) (*PartialSyncError, bool) {
+	//nolint:errorlint // exclusivity is deliberate: joined or wrapped errors must not be typed partial
+	partial, ok := err.(*PartialSyncError)
+	return partial, ok
+}
+
 // RepoSyncResult holds the outcome of syncing a single repo.
 type RepoSyncResult struct {
 	Platform     platform.Kind
@@ -3674,10 +3686,11 @@ func (s *Syncer) runWorker(
 			state.errMu.Lock()
 			*state.lastErr = errStr
 			state.errMu.Unlock()
-			// Each index is written by exactly one worker.
+			// Each index is written by exactly one worker. The partial
+			// typing requires the whole error to be the partial failure:
+			// a partial joined with any other failure is hard.
 			state.results[item.index].Error = errStr
-			var partial *PartialSyncError
-			if errors.As(err, &partial) {
+			if partial, ok := ExclusivePartialSyncFailure(err); ok {
 				state.results[item.index].PartialFailure = partial
 			}
 		}

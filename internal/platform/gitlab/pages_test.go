@@ -1,0 +1,758 @@
+package gitlab
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	ghsync "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
+)
+
+func gitLabPagesTestRef() platform.RepoRef {
+	return platform.RepoRef{
+		Platform: platform.KindGitLab, Host: "gitlab.example.com",
+		Owner: "group", Name: "project", RepoPath: "group/project", PlatformID: 42,
+		PlatformExternalID: "42", WebURL: "https://gitlab.example.com/group/project",
+	}
+}
+
+// requestRecorder captures the method, path, and raw query of every request a
+// test server receives so parity tests can assert the canonical method and the
+// legacy or live delegate issued identical requests.
+type requestRecorder struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (r *requestRecorder) record(req *http.Request) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lines = append(r.lines, req.Method+" "+req.URL.EscapedPath()+"?"+req.URL.RawQuery)
+}
+
+func (r *requestRecorder) take() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := r.lines
+	r.lines = nil
+	return out
+}
+
+// TestGitLabListIssuesPageDispatchesByQuery proves one method owns all three
+// issue inventory request shapes: StateOpen drains the open list, StateAll
+// ascending-by-created runs the historical scan, and StateAll
+// ordered-by-updated runs the maintenance scan with an inclusive watermark
+// served through GitLab's exclusive updated_after filter.
+func TestGitLabListIssuesPageDispatchesByQuery(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	watermark := time.Date(2026, 7, 1, 2, 3, 4, 0, time.UTC)
+
+	var states, orders, sorts, updatedAfters []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("/api/v4/projects/42/issues", r.URL.EscapedPath())
+		assert.Equal("100", r.URL.Query().Get("per_page"))
+		states = append(states, r.URL.Query().Get("state"))
+		orders = append(orders, r.URL.Query().Get("order_by"))
+		sorts = append(sorts, r.URL.Query().Get("sort"))
+		updatedAfters = append(updatedAfters, r.URL.Query().Get("updated_after"))
+		writeJSON(w, `[{"id":101,"iid":1,"title":"issue","state":"closed","created_at":"2025-01-01T00:00:00Z","updated_at":"2026-07-01T02:03:04Z"}]`)
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+
+	open, err := client.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated,
+	})
+	require.NoError(err)
+	require.Len(open.Items, 1)
+	assert.Equal(1, open.Items[0].Number)
+	assert.True(open.Exhausted)
+
+	historical, err := client.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+	})
+	require.NoError(err)
+	require.Len(historical.Items, 1)
+	assert.True(historical.Exhausted)
+
+	updated, err := client.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &watermark,
+	})
+	require.NoError(err)
+	require.Len(updated.Items, 1)
+	assert.Equal(watermark, updated.Items[0].UpdatedAt)
+
+	assert.Equal([]string{"opened", "all", "all"}, states)
+	assert.Equal([]string{"", "created_at", "updated_at"}, orders)
+	assert.Equal([]string{"", "asc", "desc"}, sorts)
+	require.Len(updatedAfters, 3)
+	assert.Empty(updatedAfters[0])
+	assert.Empty(updatedAfters[1])
+	overlapped, err := time.Parse(time.RFC3339Nano, updatedAfters[2])
+	require.NoError(err)
+	assert.True(overlapped.Before(watermark), "updated_after must overlap the inclusive watermark")
+}
+
+// TestGitLabListMergeRequestsPageDispatchesByQuery mirrors the issue dispatch
+// proof for merge requests and pins the open-scan merge-status recheck flag to
+// the canonical open branch.
+func TestGitLabListMergeRequestsPageDispatchesByQuery(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	watermark := time.Date(2026, 7, 1, 2, 3, 4, 0, time.UTC)
+
+	var states, orders, sorts, rechecks []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("/api/v4/projects/42/merge_requests", r.URL.EscapedPath())
+		states = append(states, r.URL.Query().Get("state"))
+		orders = append(orders, r.URL.Query().Get("order_by"))
+		sorts = append(sorts, r.URL.Query().Get("sort"))
+		rechecks = append(rechecks, r.URL.Query().Get("with_merge_status_recheck"))
+		writeJSON(w, `[{"id":201,"iid":2,"project_id":42,"title":"mr","state":"merged","created_at":"2025-01-03T00:00:00Z","updated_at":"2026-07-01T02:03:04Z"}]`)
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+
+	open, err := client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated,
+	})
+	require.NoError(err)
+	require.Len(open.Items, 1)
+	assert.True(open.Exhausted)
+
+	_, err = client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+	})
+	require.NoError(err)
+	_, err = client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &watermark,
+	})
+	require.NoError(err)
+
+	assert.Equal([]string{"opened", "all", "all"}, states)
+	assert.Equal([]string{"", "created_at", "updated_at"}, orders)
+	assert.Equal([]string{"", "asc", "desc"}, sorts)
+	assert.Equal([]string{"true", "", ""}, rechecks)
+}
+
+// TestGitLabIssueInventoryLegacyMatchesCanonical proves the ArchiveReader and
+// live delegates issue the same requests and produce the same normalized rows
+// as the canonical ListIssuesPage for every query shape.
+func TestGitLabIssueInventoryLegacyMatchesCanonical(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	watermark := time.Date(2026, 7, 1, 2, 3, 4, 0, time.UTC)
+	recorder := &requestRecorder{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		recorder.record(r)
+		writeJSON(w, `[{"id":101,"iid":1,"title":"issue","state":"closed","web_url":"https://gitlab.example.com/group/project/-/issues/1","author":{"username":"ada"},"created_at":"2025-01-01T00:00:00Z","updated_at":"2026-07-01T02:03:04Z"}]`)
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+
+	canonicalHistorical, err := client.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+	})
+	require.NoError(err)
+	canonicalHistoricalReqs := recorder.take()
+	legacyHistorical, err := client.ListHistoricalIssues(t.Context(), ref, "")
+	require.NoError(err)
+	assert.Equal(canonicalHistoricalReqs, recorder.take())
+	assert.Equal(canonicalHistorical, legacyHistorical)
+
+	canonicalUpdated, err := client.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &watermark,
+	})
+	require.NoError(err)
+	canonicalUpdatedReqs := recorder.take()
+	legacyUpdated, err := client.ListUpdatedIssues(t.Context(), ref, watermark, "")
+	require.NoError(err)
+	assert.Equal(canonicalUpdatedReqs, recorder.take())
+	assert.Equal(canonicalUpdated, legacyUpdated)
+
+	canonicalOpen, err := client.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated,
+	})
+	require.NoError(err)
+	canonicalOpenReqs := recorder.take()
+	liveOpen, err := client.ListOpenIssues(t.Context(), ref)
+	require.NoError(err)
+	assert.Equal(canonicalOpenReqs, recorder.take())
+	assert.Equal(canonicalOpen.Items, liveOpen)
+}
+
+func TestGitLabMergeRequestInventoryLegacyMatchesCanonical(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	watermark := time.Date(2026, 7, 1, 2, 3, 4, 0, time.UTC)
+	recorder := &requestRecorder{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		recorder.record(r)
+		writeJSON(w, `[{"id":201,"iid":2,"project_id":42,"title":"mr","state":"merged","web_url":"https://gitlab.example.com/group/project/-/merge_requests/2","author":{"username":"lin"},"created_at":"2025-01-03T00:00:00Z","updated_at":"2026-07-01T02:03:04Z"}]`)
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+
+	canonicalHistorical, err := client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+	})
+	require.NoError(err)
+	canonicalHistoricalReqs := recorder.take()
+	legacyHistorical, err := client.ListHistoricalMergeRequests(t.Context(), ref, "")
+	require.NoError(err)
+	assert.Equal(canonicalHistoricalReqs, recorder.take())
+	assert.Equal(canonicalHistorical, legacyHistorical)
+
+	canonicalUpdated, err := client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &watermark,
+	})
+	require.NoError(err)
+	canonicalUpdatedReqs := recorder.take()
+	legacyUpdated, err := client.ListUpdatedMergeRequests(t.Context(), ref, watermark, "")
+	require.NoError(err)
+	assert.Equal(canonicalUpdatedReqs, recorder.take())
+	assert.Equal(canonicalUpdated, legacyUpdated)
+
+	canonicalOpen, err := client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated,
+	})
+	require.NoError(err)
+	canonicalOpenReqs := recorder.take()
+	liveOpen, err := client.ListOpenMergeRequests(t.Context(), ref)
+	require.NoError(err)
+	assert.Equal(canonicalOpenReqs, recorder.take())
+	assert.Equal(canonicalOpen.Items, liveOpen)
+}
+
+// TestGitLabInventoryUsesAllStatesOldestFirstAndBoundedPages proves historical
+// traversal enumerates every state oldest-first with a resumable bounded page
+// cursor.
+func TestGitLabInventoryUsesAllStatesOldestFirstAndBoundedPages(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		assert.Equal("all", r.URL.Query().Get("state"))
+		assert.Equal("asc", r.URL.Query().Get("sort"))
+		assert.Equal("created_at", r.URL.Query().Get("order_by"))
+		assert.Equal("100", r.URL.Query().Get("per_page"))
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/issues":
+			if r.URL.Query().Get("page") == "1" {
+				w.Header().Set("X-Next-Page", "2")
+			}
+			writeJSON(w, `[{"id":101,"iid":1,"title":"issue","state":"closed","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-02T00:00:00Z"}]`)
+		case "/api/v4/projects/42/merge_requests":
+			writeJSON(w, `[{"id":201,"iid":2,"title":"merge request","state":"merged","created_at":"2025-01-03T00:00:00Z","updated_at":"2025-01-04T00:00:00Z"}]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+	historical := platform.ItemPageQuery{State: platform.ItemStateAll, Order: platform.ItemOrderCreated}
+
+	issues, err := client.ListIssuesPage(t.Context(), ref, historical)
+	require.NoError(err)
+	require.Len(issues.Items, 1)
+	assert.Equal(1, issues.Items[0].Number)
+	assert.False(issues.Exhausted)
+	assert.NotEmpty(issues.NextCursor)
+	resumed := historical
+	resumed.Cursor = issues.NextCursor
+	issues2, err := client.ListIssuesPage(t.Context(), ref, resumed)
+	require.NoError(err)
+	assert.True(issues2.Exhausted)
+
+	mrs, err := client.ListMergeRequestsPage(t.Context(), ref, historical)
+	require.NoError(err)
+	require.Len(mrs.Items, 1)
+	assert.Equal(2, mrs.Items[0].Number)
+	assert.True(mrs.Exhausted)
+	assert.Equal(3, requests)
+}
+
+// TestGitLabUpdatedInventoryBindsCursorToQueryShape proves a maintenance cursor
+// only resumes the exact enumeration that produced it: watermark, repository,
+// and host all participate in the binding.
+func TestGitLabUpdatedInventoryBindsCursorToQueryShape(t *testing.T) {
+	require := require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Next-Page", "2")
+		writeJSON(w, `[{"id":101,"iid":1,"title":"issue","state":"opened","created_at":"2025-01-01T00:00:00Z","updated_at":"2026-07-01T02:03:04Z"}]`)
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+	watermark := time.Date(2026, 7, 1, 2, 3, 4, 0, time.UTC)
+	query := func(since time.Time, cursor string) platform.ItemPageQuery {
+		return platform.ItemPageQuery{
+			State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
+			UpdatedSince: &since, Cursor: cursor,
+		}
+	}
+
+	issues, err := client.ListIssuesPage(t.Context(), ref, query(watermark, ""))
+	require.NoError(err)
+	require.NotEmpty(issues.NextCursor)
+
+	_, err = client.ListIssuesPage(t.Context(), ref, query(watermark.Add(time.Second), issues.NextCursor))
+	require.ErrorIs(err, platform.ErrProviderContract)
+	otherRepo := ref
+	otherRepo.Name = "other"
+	otherRepo.RepoPath = "group/other"
+	_, err = client.ListIssuesPage(t.Context(), otherRepo, query(watermark, issues.NextCursor))
+	require.ErrorIs(err, platform.ErrProviderContract)
+	otherHost := ref
+	otherHost.Host = "other.gitlab.example.com"
+	_, err = client.ListIssuesPage(t.Context(), otherHost, query(watermark, issues.NextCursor))
+	require.ErrorIs(err, platform.ErrProviderContract)
+	_, err = client.ListIssuesPage(t.Context(), ref, query(watermark, issues.NextCursor))
+	require.NoError(err)
+}
+
+// TestGitLabUpdatedInventoryDoesNotSkipItemsMovedBetweenPages proves the
+// descending maintenance traversal keeps mid-scan updates inside the consumed
+// prefix so offset pagination cannot permanently skip an unseen item.
+func TestGitLabUpdatedInventoryDoesNotSkipItemsMovedBetweenPages(t *testing.T) {
+	watermark := time.Date(2026, 7, 1, 2, 3, 4, 0, time.UTC)
+	tests := []struct {
+		name     string
+		path     string
+		listPage func(*Client, platform.RepoRef, string) (int, string, bool, error)
+	}{
+		{
+			name: "issues",
+			path: "/api/v4/projects/42/issues",
+			listPage: func(client *Client, ref platform.RepoRef, cursor string) (int, string, bool, error) {
+				page, err := client.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
+					State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
+					UpdatedSince: &watermark, Cursor: cursor,
+				})
+				if err != nil || len(page.Items) == 0 {
+					return 0, page.NextCursor, page.Exhausted, err
+				}
+				return page.Items[0].Number, page.NextCursor, page.Exhausted, nil
+			},
+		},
+		{
+			name: "merge requests",
+			path: "/api/v4/projects/42/merge_requests",
+			listPage: func(client *Client, ref platform.RepoRef, cursor string) (int, string, bool, error) {
+				page, err := client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+					State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
+					UpdatedSince: &watermark, Cursor: cursor,
+				})
+				if err != nil || len(page.Items) == 0 {
+					return 0, page.NextCursor, page.Exhausted, err
+				}
+				return page.Items[0].Number, page.NextCursor, page.Exhausted, nil
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				assert.Equal(tt.path, r.URL.EscapedPath())
+				assert.Equal("desc", r.URL.Query().Get("sort"))
+				if requests == 1 {
+					w.Header().Set("X-Next-Page", "2")
+					writeJSON(w, `[{"id":202,"iid":2,"title":"newest","state":"opened","created_at":"2025-01-01T00:00:00Z","updated_at":"2026-07-01T02:03:06Z"}]`)
+					return
+				}
+				// Item 2 changed after page one was read. Descending pagination
+				// keeps it in the consumed prefix, so item 1 remains on page two.
+				writeJSON(w, `[{"id":201,"iid":1,"title":"unseen","state":"opened","created_at":"2025-01-01T00:00:00Z","updated_at":"2026-07-01T02:03:05Z"}]`)
+			}))
+			defer server.Close()
+			client := newTestClient(t, server.URL)
+			ref := gitLabPagesTestRef()
+
+			firstNumber, cursor, exhausted, err := tt.listPage(client, ref, "")
+			require.NoError(err)
+			assert.Equal(2, firstNumber)
+			assert.False(exhausted)
+			secondNumber, _, exhausted, err := tt.listPage(client, ref, cursor)
+			require.NoError(err)
+			assert.Equal(1, secondNumber)
+			assert.True(exhausted)
+			assert.Equal(2, requests)
+		})
+	}
+}
+
+func TestGitLabPaginationChargesEveryMarkedPage(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		if requests == 1 {
+			w.Header().Set("X-Next-Page", "2")
+		}
+		writeJSON(w, `[{"id":101,"iid":1,"title":"issue","state":"opened","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-02T00:00:00Z"}]`)
+	}))
+	defer server.Close()
+	budget := ghsync.NewSyncBudget(100)
+	client := newTestClient(t, server.URL, WithSyncBudget(budget))
+	ctx := ghsync.WithSyncBudget(t.Context())
+	historical := platform.ItemPageQuery{State: platform.ItemStateAll, Order: platform.ItemOrderCreated}
+
+	first, err := client.ListIssuesPage(ctx, gitLabPagesTestRef(), historical)
+	require.NoError(err)
+	resumed := historical
+	resumed.Cursor = first.NextCursor
+	_, err = client.ListIssuesPage(ctx, gitLabPagesTestRef(), resumed)
+	require.NoError(err)
+	assert.Equal(2, requests)
+	assert.Equal(2, budget.Spent())
+}
+
+// TestGitLabListPagesRejectInvalidQueries proves the canonical entry points
+// validate the query before spending any provider request.
+func TestGitLabListPagesRejectInvalidQueries(t *testing.T) {
+	watermark := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		writeJSON(w, `[]`)
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+
+	tests := []struct {
+		name  string
+		query platform.ItemPageQuery
+	}{
+		{
+			name:  "unknown order does not fall through to historical",
+			query: platform.ItemPageQuery{State: platform.ItemStateAll, Order: platform.ItemOrder("priority")},
+		},
+		{
+			name:  "unknown state",
+			query: platform.ItemPageQuery{State: platform.ItemStateFilter("closed"), Order: platform.ItemOrderCreated},
+		},
+		{
+			name:  "open scan rejects cursor",
+			query: platform.ItemPageQuery{State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated, Cursor: "c1"},
+		},
+		{
+			name: "open scan rejects watermark",
+			query: platform.ItemPageQuery{
+				State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated, UpdatedSince: &watermark,
+			},
+		},
+		{
+			name: "watermark requires updated order",
+			query: platform.ItemPageQuery{
+				State: platform.ItemStateAll, Order: platform.ItemOrderCreated, UpdatedSince: &watermark,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, issueErr := client.ListIssuesPage(t.Context(), ref, tt.query)
+			require.ErrorIs(t, issueErr, platform.ErrInvalidArgument)
+			_, mrErr := client.ListMergeRequestsPage(t.Context(), ref, tt.query)
+			require.ErrorIs(t, mrErr, platform.ErrInvalidArgument)
+			assert.Zero(t, requests)
+		})
+	}
+}
+
+// TestGitLabDetailPagesLegacyMatchesCanonical proves each canonical detail-page
+// method produces the same rows and requests as its ArchiveReader delegate,
+// that one discussions fetch feeds both the ordinary-comment filter and the
+// review-thread extraction, and that submitted reviews stay a typed
+// unsupported capability on both surfaces.
+func TestGitLabDetailPagesLegacyMatchesCanonical(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	recorder := &requestRecorder{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		recorder.record(r)
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/issues/7/discussions":
+			writeJSON(w, `[{"id":"issue-thread","notes":[{"id":301,"body":"issue comment","author":{"username":"ivy"},"created_at":"2026-07-01T00:00:00Z"}]}]`)
+		case "/api/v4/projects/42/merge_requests/8/discussions":
+			writeJSON(w, `[
+				{"id":"ordinary","notes":[{"id":401,"body":"ordinary comment","author":{"username":"omar"},"created_at":"2026-07-02T00:00:00Z"}]},
+				{"id":"system","notes":[{"id":404,"body":"assigned to @omar","system":true,"author":{"username":"omar"},"created_at":"2026-07-02T01:00:00Z"}]},
+				{"id":"inline","notes":[
+					{"id":402,"body":"inline comment","author":{"username":"rhea"},"created_at":"2026-07-03T00:00:00Z","updated_at":"2026-07-03T01:00:00Z","position":{"base_sha":"base","start_sha":"start","head_sha":"head","new_path":"main.go","new_line":9}},
+					{"id":403,"body":"inline reply","author":{"username":"sam"},"created_at":"2026-07-03T02:00:00Z","updated_at":"2026-07-03T02:00:00Z"}
+				]}
+			]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+
+	issueComments, err := client.ListIssueCommentsPage(t.Context(), ref, 7, "")
+	require.NoError(err)
+	issueCommentsReqs := recorder.take()
+	legacyIssueComments, err := client.ListArchiveIssueComments(t.Context(), ref, 7, "")
+	require.NoError(err)
+	assert.Equal(issueCommentsReqs, recorder.take())
+	assert.Equal(issueComments, legacyIssueComments)
+	require.Len(issueComments.Items, 1)
+	assert.Equal("issue comment", issueComments.Items[0].Body)
+	assert.True(issueComments.Exhausted)
+
+	mrComments, err := client.ListMergeRequestCommentsPage(t.Context(), ref, 8, "")
+	require.NoError(err)
+	mrCommentsReqs := recorder.take()
+	legacyMRComments, err := client.ListArchiveMergeRequestComments(t.Context(), ref, 8, "")
+	require.NoError(err)
+	assert.Equal(mrCommentsReqs, recorder.take())
+	assert.Equal(mrComments, legacyMRComments)
+	require.Len(mrComments.Items, 1)
+	assert.Equal("ordinary comment", mrComments.Items[0].Body)
+	assert.Equal("issue_comment", mrComments.Items[0].EventType)
+
+	threads, err := client.ListReviewThreadsPage(t.Context(), ref, 8, "")
+	require.NoError(err)
+	threadsReqs := recorder.take()
+	legacyThreads, err := client.ListArchiveReviewThreads(t.Context(), ref, 8, "")
+	require.NoError(err)
+	assert.Equal(threadsReqs, recorder.take())
+	assert.Equal(threads, legacyThreads)
+	require.Len(threads.Items, 2)
+	assert.Equal([]string{"402", "403"}, []string{threads.Items[0].ProviderCommentID, threads.Items[1].ProviderCommentID})
+	assert.Equal("inline", threads.Items[1].ProviderThreadID)
+	assert.Equal("main.go", threads.Items[1].Range.Path)
+	assert.Equal(9, threads.Items[1].Range.Line)
+
+	// The comments page and the thread page each consume one fetch of the same
+	// discussions endpoint with identical request shapes.
+	require.Len(mrCommentsReqs, 1)
+	assert.Equal(mrCommentsReqs, threadsReqs)
+
+	_, err = client.ListSubmittedReviewsPage(t.Context(), ref, 8, "")
+	require.ErrorIs(err, platform.ErrUnsupportedCapability)
+	_, err = client.ListArchiveSubmittedReviews(t.Context(), ref, 8, "")
+	require.ErrorIs(err, platform.ErrUnsupportedCapability)
+}
+
+func TestGitLabFilteredDiscussionPageDeclaresProgress(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Next-Page", "2")
+		writeJSON(w, `[{"id":"ordinary","notes":[{"id":401,"body":"ordinary","author":{"username":"omar"},"created_at":"2026-07-02T00:00:00Z"}]}]`)
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+
+	page, err := client.ListReviewThreadsPage(t.Context(), gitLabPagesTestRef(), 8, "")
+	require.NoError(err)
+	assert.Empty(page.Items)
+	assert.True(page.ProgressOnly)
+	assert.NotEmpty(page.NextCursor)
+	assert.NoError(platform.ValidatePage(platform.KindGitLab, "gitlab.example.com", "", page))
+}
+
+// TestGitLabLiveEventsKeepSystemNotesWhileCanonicalCommentsFilterThem proves
+// the live discussion-backed surfaces preserve system-note events and
+// non-positional replies inside inline threads (paging through the shared
+// discussions fetcher), while the canonical comments page keeps the ordinary
+// filter the archive datasets require.
+func TestGitLabLiveEventsKeepSystemNotesWhileCanonicalCommentsFilterThem(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var discussionPages, commitPages []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/merge_requests/8/discussions":
+			discussionPages = append(discussionPages, r.URL.Query().Get("page"))
+			if r.URL.Query().Get("page") == "1" {
+				w.Header().Set("X-Next-Page", "2")
+				writeJSON(w, `[
+					{"id":"ordinary","notes":[{"id":401,"body":"ordinary comment","author":{"username":"omar"},"created_at":"2026-07-02T00:00:00Z"}]},
+					{"id":"system","notes":[{"id":404,"body":"merged","system":true,"author":{"username":"maintainer"},"created_at":"2026-07-02T01:00:00Z"}]}
+				]`)
+				return
+			}
+			writeJSON(w, `[
+				{"id":"inline","notes":[
+					{"id":402,"body":"inline comment","author":{"username":"rhea"},"created_at":"2026-07-03T00:00:00Z","position":{"base_sha":"base","start_sha":"start","head_sha":"head","new_path":"main.go","new_line":9}},
+					{"id":403,"body":"discussion reply","author":{"username":"sam"},"created_at":"2026-07-03T02:00:00Z"}
+				]}
+			]`)
+		case "/api/v4/projects/42/merge_requests/8/commits":
+			commitPages = append(commitPages, r.URL.Query().Get("page"))
+			writeJSON(w, `[{"id":"abcdef123456","title":"commit title","message":"commit body","author_name":"Alice","created_at":"2026-07-01T09:00:00Z"}]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+
+	events, err := client.ListMergeRequestEvents(t.Context(), ref, 8)
+	require.NoError(err)
+	require.Len(events, 4)
+	assert.Equal("issue_comment", events[0].EventType)
+	assert.Equal("ordinary comment", events[0].Body)
+	assert.Equal("merged", events[1].EventType)
+	assert.Equal("maintainer", events[1].Author)
+	assert.Equal("issue_comment", events[2].EventType)
+	assert.Equal("discussion reply", events[2].Body)
+	assert.Equal("inline", events[2].ThreadID)
+	assert.Equal("commit", events[3].EventType)
+	assert.Equal([]string{"1", "2"}, discussionPages)
+	assert.Equal([]string{"1"}, commitPages)
+
+	discussionPages = nil
+	comments, err := client.ListMergeRequestComments(t.Context(), ref, 8)
+	require.NoError(err)
+	assert.Equal(events[:3], comments)
+	assert.Equal([]string{"1", "2"}, discussionPages)
+
+	discussionPages = nil
+	canonical, err := platform.CollectPages(t.Context(), "", func(
+		ctx context.Context, cursor string,
+	) (platform.Page[platform.MergeRequestEvent], error) {
+		return client.ListMergeRequestCommentsPage(ctx, ref, 8, cursor)
+	})
+	require.NoError(err)
+	require.Len(canonical, 1)
+	assert.Equal("ordinary comment", canonical[0].Body)
+	assert.Equal([]string{"1", "2"}, discussionPages)
+}
+
+// TestGitLabLiveIssueEventsCollectCanonicalCommentPages proves the live issue
+// event surfaces drain the canonical issue comments page method.
+func TestGitLabLiveIssueEventsCollectCanonicalCommentPages(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var pages []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("/api/v4/projects/42/issues/7/discussions", r.URL.EscapedPath())
+		pages = append(pages, r.URL.Query().Get("page"))
+		if r.URL.Query().Get("page") == "1" {
+			w.Header().Set("X-Next-Page", "2")
+			writeJSON(w, `[{"id":"first","notes":[{"id":301,"body":"first comment","author":{"username":"ivy"},"created_at":"2026-07-01T00:00:00Z"}]}]`)
+			return
+		}
+		writeJSON(w, `[{"id":"second","notes":[{"id":302,"body":"second comment","author":{"username":"joe"},"created_at":"2026-07-02T00:00:00Z"}]}]`)
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+
+	events, err := client.ListIssueEvents(t.Context(), ref, 7)
+	require.NoError(err)
+	require.Len(events, 2)
+	assert.Equal("first comment", events[0].Body)
+	assert.Equal("second comment", events[1].Body)
+	assert.Equal([]string{"1", "2"}, pages)
+
+	pages = nil
+	comments, err := client.ListIssueComments(t.Context(), ref, 7)
+	require.NoError(err)
+	assert.Equal(events, comments)
+	assert.Equal([]string{"1", "2"}, pages)
+}
+
+// TestGitLabLookupClassifiesRemovalAndAccessLoss proves the single lookup
+// operation feeds both archive delegates (recording every outcome) and live
+// gets (requiring present), with GitLab's confidential-content ambiguity
+// mapped to inaccessible rather than removed.
+func TestGitLabLookupClassifiesRemovalAndAccessLoss(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/issues/7":
+			http.NotFound(w, r)
+		case "/api/v4/projects/42/issues/8":
+			http.Error(w, "forbidden", http.StatusForbidden)
+		case "/api/v4/projects/42/merge_requests/9":
+			writeJSON(w, `{"id":209,"iid":9,"title":"present","state":"opened","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}`)
+		case "/api/v4/projects/42":
+			writeJSON(w, `{"id":42,"path":"project","path_with_namespace":"group/project","name":"Project"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+
+	// GitLab can return an item 404 for confidential content even while the
+	// source project is readable, so the lookup must retain cached content.
+	confidential, err := client.LookupIssue(t.Context(), ref, 7)
+	require.NoError(err)
+	assert.Equal(platform.LookupInaccessible, confidential.Outcome)
+	legacyConfidential, err := client.GetArchiveIssue(t.Context(), ref, 7)
+	require.NoError(err)
+	assert.Equal(confidential, legacyConfidential)
+
+	inaccessible, err := client.LookupIssue(t.Context(), ref, 8)
+	require.NoError(err)
+	assert.Equal(platform.LookupInaccessible, inaccessible.Outcome)
+
+	present, err := client.LookupMergeRequest(t.Context(), ref, 9)
+	require.NoError(err)
+	assert.Equal(platform.LookupPresent, present.Outcome)
+	assert.Equal(9, present.Item.Number)
+	legacyPresent, err := client.GetArchiveMergeRequest(t.Context(), ref, 9)
+	require.NoError(err)
+	assert.Equal(present, legacyPresent)
+
+	live, err := client.GetMergeRequest(t.Context(), ref, 9)
+	require.NoError(err)
+	assert.Equal(present.Item, live)
+
+	// Live gets require present: a non-present outcome surfaces the typed
+	// permission_denied error the raw transport produced before lookup
+	// classification existed.
+	_, liveErr := client.GetIssue(t.Context(), ref, 7)
+	require.ErrorIs(liveErr, platform.ErrPermissionDenied)
+	_, liveErr = client.GetIssue(t.Context(), ref, 8)
+	require.ErrorIs(liveErr, platform.ErrPermissionDenied)
+}
+
+func TestGitLabLookupRetainsItemWhenRepositoryIsInaccessible(t *testing.T) {
+	require := require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	_, err := client.LookupIssue(t.Context(), gitLabPagesTestRef(), 7)
+	require.ErrorIs(err, platform.ErrPermissionDenied)
+	_, err = client.GetIssue(t.Context(), gitLabPagesTestRef(), 7)
+	require.ErrorIs(err, platform.ErrPermissionDenied)
+}
+
+func TestGitLabArchiveCapabilitiesAreHonestAboutSubmittedReviews(t *testing.T) {
+	assert.Equal(t, platform.ArchiveCapabilities{
+		HistoricalIssues: true, HistoricalMergeRequests: true,
+		OrdinaryComments: true, InlineReviewComments: true,
+	}, newTestClient(t, "http://127.0.0.1:1").Capabilities().Archive)
+}

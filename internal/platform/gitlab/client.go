@@ -347,40 +347,13 @@ func (c *Client) ListOpenMergeRequests(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) ([]platform.MergeRequest, error) {
-	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
-	state := "opened"
-	recheck := true
-	opt := &gitlab.ListProjectMergeRequestsOptions{
-		State:                  &state,
-		WithMergeStatusRecheck: &recheck,
-		ListOptions: gitlab.ListOptions{
-			Page:    1,
-			PerPage: defaultPageSize,
-		},
-	}
-
-	var out []platform.MergeRequest
-	for {
-		mrs, resp, err := c.api.MergeRequests.ListProjectMergeRequests(pid, opt, gitlab.WithContext(ctx))
-		if err != nil {
-			return nil, mapGitLabError("list_merge_requests", err)
-		}
-		for _, mr := range mrs {
-			normalized := NormalizeMergeRequest(normalizedRef, mr, nil)
-			normalized.HeadRepoCloneURL, err = c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, normalized)
-		}
-		if resp == nil || resp.NextPage == 0 {
-			return out, nil
-		}
-		opt.Page = resp.NextPage
-	}
+	return platform.CollectPages(ctx, "", func(
+		ctx context.Context, cursor string,
+	) (platform.Page[platform.MergeRequest], error) {
+		return c.ListMergeRequestsPage(ctx, ref, platform.ItemPageQuery{
+			State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated, Cursor: cursor,
+		})
+	})
 }
 
 func (c *Client) GetMergeRequest(
@@ -388,20 +361,14 @@ func (c *Client) GetMergeRequest(
 	ref platform.RepoRef,
 	number int,
 ) (platform.MergeRequest, error) {
-	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
+	lookup, err := c.LookupMergeRequest(ctx, ref, number)
 	if err != nil {
 		return platform.MergeRequest{}, err
 	}
-	mr, _, err := c.api.MergeRequests.GetMergeRequest(pid, int64(number), nil, gitlab.WithContext(ctx))
-	if err != nil {
-		return platform.MergeRequest{}, mapGitLabError("get_merge_request", err)
+	if lookup.Outcome != platform.LookupPresent {
+		return platform.MergeRequest{}, c.lookupNotPresentError(ref, number, lookup.Outcome, lookup.Destination)
 	}
-	normalized := NormalizeDetailedMergeRequest(normalizedRef, mr)
-	normalized.HeadRepoCloneURL, err = c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
-	if err != nil {
-		return platform.MergeRequest{}, err
-	}
-	return normalized, nil
+	return lookup.Item, nil
 }
 
 func (c *Client) optionalHeadRepoCloneURL(
@@ -469,11 +436,11 @@ func (c *Client) ListMergeRequestEvents(
 	ref platform.RepoRef,
 	number int,
 ) ([]platform.MergeRequestEvent, error) {
-	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
+	pid, err := projectLookupArg(ref)
 	if err != nil {
 		return nil, err
 	}
-	discussions, err := c.listMergeRequestDiscussions(ctx, pid, number)
+	events, err := c.ListMergeRequestComments(ctx, ref, number)
 	if err != nil {
 		return nil, err
 	}
@@ -481,71 +448,56 @@ func (c *Client) ListMergeRequestEvents(
 	if err != nil {
 		return nil, err
 	}
-
-	events := NormalizeMergeRequestDiscussions(
-		normalizedRef,
-		number,
-		gitLabMergeRequestURL(normalizedRef, number),
-		discussions,
-	)
+	normalizedRef := c.normalizeRef(ref, ref.PlatformID)
 	for _, commit := range commits {
 		events = append(events, NormalizeCommitEvent(normalizedRef, number, commit))
 	}
 	return events, nil
 }
 
+// ListMergeRequestComments drains the shared discussions page fetcher without
+// the canonical ordinary-comment filter: the live event surface keeps
+// system-note events (assignment and lifecycle history) and position-less
+// replies inside inline threads, which the archive comments dataset
+// deliberately excludes.
 func (c *Client) ListMergeRequestComments(ctx context.Context, ref platform.RepoRef, number int) ([]platform.MergeRequestEvent, error) {
-	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
+	pid, err := projectLookupArg(ref)
 	if err != nil {
 		return nil, err
 	}
-	discussions, err := c.listMergeRequestDiscussions(ctx, pid, number)
+	discussions, err := collectGitLabPages(ctx, func(ctx context.Context, page int64) ([]*gitlab.Discussion, int64, error) {
+		discussions, nextPage, err := c.listMergeRequestDiscussionsPage(ctx, pid, number, page)
+		if err != nil {
+			return nil, 0, c.mapGitLabError("list_merge_request_discussions", err)
+		}
+		return discussions, nextPage, nil
+	})
 	if err != nil {
 		return nil, err
 	}
+	normalizedRef := c.normalizeRef(ref, ref.PlatformID)
 	return NormalizeMergeRequestDiscussions(normalizedRef, number, gitLabMergeRequestURL(normalizedRef, number), discussions), nil
 }
 
 func (c *Client) ListOpenIssues(ctx context.Context, ref platform.RepoRef) ([]platform.Issue, error) {
-	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
-	state := "opened"
-	opt := &gitlab.ListProjectIssuesOptions{
-		State: &state,
-		ListOptions: gitlab.ListOptions{
-			Page:    1,
-			PerPage: defaultPageSize,
-		},
-	}
-
-	var out []platform.Issue
-	for {
-		issues, resp, err := c.api.Issues.ListProjectIssues(pid, opt, gitlab.WithContext(ctx))
-		if err != nil {
-			return nil, mapGitLabError("list_issues", err)
-		}
-		for _, issue := range issues {
-			out = append(out, NormalizeIssue(normalizedRef, issue))
-		}
-		if resp == nil || resp.NextPage == 0 {
-			return out, nil
-		}
-		opt.Page = resp.NextPage
-	}
+	return platform.CollectPages(ctx, "", func(
+		ctx context.Context, cursor string,
+	) (platform.Page[platform.Issue], error) {
+		return c.ListIssuesPage(ctx, ref, platform.ItemPageQuery{
+			State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated, Cursor: cursor,
+		})
+	})
 }
 
 func (c *Client) GetIssue(ctx context.Context, ref platform.RepoRef, number int) (platform.Issue, error) {
-	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
+	lookup, err := c.LookupIssue(ctx, ref, number)
 	if err != nil {
 		return platform.Issue{}, err
 	}
-	issue, _, err := c.api.Issues.GetIssue(pid, int64(number), nil, gitlab.WithContext(ctx))
-	if err != nil {
-		return platform.Issue{}, mapGitLabError("get_issue", err)
+	if lookup.Outcome != platform.LookupPresent {
+		return platform.Issue{}, c.lookupNotPresentError(ref, number, lookup.Outcome, lookup.Destination)
 	}
-	return NormalizeIssue(normalizedRef, issue), nil
+	return lookup.Item, nil
 }
 
 func (c *Client) ListIssueEvents(
@@ -553,32 +505,15 @@ func (c *Client) ListIssueEvents(
 	ref platform.RepoRef,
 	number int,
 ) ([]platform.IssueEvent, error) {
-	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
-	discussions, err := c.listIssueDiscussions(ctx, pid, number)
-	if err != nil {
-		return nil, err
-	}
-	return NormalizeIssueDiscussions(
-		normalizedRef,
-		number,
-		gitLabIssueURL(normalizedRef, number),
-		discussions,
-	), nil
+	return c.ListIssueComments(ctx, ref, number)
 }
 
 func (c *Client) ListIssueComments(ctx context.Context, ref platform.RepoRef, number int) ([]platform.IssueEvent, error) {
-	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
-	discussions, err := c.listIssueDiscussions(ctx, pid, number)
-	if err != nil {
-		return nil, err
-	}
-	return NormalizeIssueDiscussions(normalizedRef, number, gitLabIssueURL(normalizedRef, number), discussions), nil
+	return platform.CollectPages(ctx, "", func(
+		ctx context.Context, cursor string,
+	) (platform.Page[platform.IssueEvent], error) {
+		return c.ListIssueCommentsPage(ctx, ref, number, cursor)
+	})
 }
 
 func (c *Client) ListReleases(ctx context.Context, ref platform.RepoRef) ([]platform.Release, error) {
@@ -666,38 +601,6 @@ func (c *Client) ListCIChecks(
 		return nil, nil
 	}
 	return []platform.CICheck{NormalizePipeline(normalizedRef, pipelines[0])}, nil
-}
-
-func (c *Client) listMergeRequestDiscussions(ctx context.Context, pid any, number int) ([]*gitlab.Discussion, error) {
-	opt := &gitlab.ListMergeRequestDiscussionsOptions{ListOptions: gitlab.ListOptions{Page: 1, PerPage: defaultPageSize}}
-	var out []*gitlab.Discussion
-	for {
-		discussions, resp, err := c.api.Discussions.ListMergeRequestDiscussions(pid, int64(number), opt, gitlab.WithContext(ctx))
-		if err != nil {
-			return nil, mapGitLabError("list_merge_request_discussions", err)
-		}
-		out = append(out, discussions...)
-		if resp == nil || resp.NextPage == 0 {
-			return out, nil
-		}
-		opt.Page = resp.NextPage
-	}
-}
-
-func (c *Client) listIssueDiscussions(ctx context.Context, pid any, number int) ([]*gitlab.Discussion, error) {
-	opt := &gitlab.ListIssueDiscussionsOptions{ListOptions: gitlab.ListOptions{Page: 1, PerPage: defaultPageSize}}
-	var out []*gitlab.Discussion
-	for {
-		discussions, resp, err := c.api.Discussions.ListIssueDiscussions(pid, int64(number), opt, gitlab.WithContext(ctx))
-		if err != nil {
-			return nil, mapGitLabError("list_issue_discussions", err)
-		}
-		out = append(out, discussions...)
-		if resp == nil || resp.NextPage == 0 {
-			return out, nil
-		}
-		opt.Page = resp.NextPage
-	}
 }
 
 func (c *Client) listMergeRequestCommits(ctx context.Context, pid any, number int) ([]*gitlab.Commit, error) {

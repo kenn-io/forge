@@ -142,29 +142,18 @@ func (c *Client) ListMergeRequestReviewThreads(
 	if err != nil {
 		return nil, err
 	}
-	var out []platform.MergeRequestReviewThread
-	page := int64(1)
-	for {
-		discussions, resp, err := c.api.Discussions.ListMergeRequestDiscussions(
-			pid,
-			int64(number),
-			&gitlab.ListMergeRequestDiscussionsOptions{
-				ListOptions: gitlab.ListOptions{Page: page, PerPage: defaultPageSize},
-			},
-			gitlab.WithContext(ctx),
-		)
+	parentURL := gitLabMergeRequestURL(ref, number)
+	return collectGitLabPages(ctx, func(ctx context.Context, page int64) ([]platform.MergeRequestReviewThread, int64, error) {
+		discussions, nextPage, err := c.listMergeRequestDiscussionsPage(ctx, pid, number, page)
 		if err != nil {
-			return nil, c.mapGitLabError("list_merge_request_discussions", err)
+			return nil, 0, c.mapGitLabError("list_merge_request_discussions", err)
 		}
-		parentURL := gitLabMergeRequestURL(ref, number)
+		var out []platform.MergeRequestReviewThread
 		for _, discussion := range discussions {
 			out = append(out, gitlabReviewThreads(parentURL, discussion)...)
 		}
-		if resp == nil || resp.NextPage == 0 {
-			return out, nil
-		}
-		page = resp.NextPage
-	}
+		return out, nextPage, nil
+	})
 }
 
 func (c *Client) ResolveDiffReviewThread(

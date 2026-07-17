@@ -167,6 +167,10 @@ sync budgets, cadence, and snapshots are selected separately by `(host,
 authenticated identity)`. Different PATs resolving to the same GitHub user ID
 must share one runtime; App reads use their installation identity.
 
+Repository `token_file` and `token_env` overrides are exact-only; reject them on
+name globs rather than creating a literal route that discovered repositories
+cannot select (`internal/config/config.go::Config.validate`).
+
 Repository preview must select the entered owner's route even before that owner
 has a tracked repository. Ownerless APIs may use only the host fallback; never
 borrow an arbitrary owner PAT. Repository notifications use the user/write

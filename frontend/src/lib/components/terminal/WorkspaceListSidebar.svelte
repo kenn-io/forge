@@ -3,7 +3,6 @@
     copyToClipboard,
     SearchInput,
     StatusDot,
-    type StatusDotStatus,
   } from "@kenn-io/kit-ui";
   import { onMount, tick } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
@@ -18,7 +17,9 @@
     FilterDropdown,
     GroupedSidebarSection,
     ScrollBox,
+    SidebarStatusStrip,
     SidebarToggle,
+    type SidebarStatusStripTone,
   } from "@middleman/ui";
   import {
     createRepoLabelFormatter,
@@ -558,11 +559,11 @@
     );
   }
 
-  function workspaceStatus(ws: Workspace): StatusDotStatus {
-    if (ws.status === "ready") return "idle";
-    if (ws.status === "creating") return "working";
-    if (ws.status === "error") return "unclean";
-    return "stale";
+  function workspaceStatusTone(ws: Workspace): SidebarStatusStripTone {
+    if (ws.status === "ready") return "success";
+    if (ws.status === "creating") return "info";
+    if (ws.status === "error") return "danger";
+    return "warning";
   }
 
   function workspaceStatusLabel(ws: Workspace): string {
@@ -1143,10 +1144,9 @@
           >
             <div class="ws-row-text">
               <div class="ws-row-title">
-                <StatusDot
-                  status={workspaceStatus(ws)}
+                <SidebarStatusStrip
+                  tone={workspaceStatusTone(ws)}
                   label={workspaceStatusLabel(ws)}
-                  size={6}
                 />
                 <span class="ws-name">{displayName(ws)}</span>
                 {#if ws.tmux_working}

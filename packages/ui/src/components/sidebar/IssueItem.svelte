@@ -6,6 +6,7 @@
   import { Chip } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
+  import SidebarStatusStrip from "../shared/SidebarStatusStrip.svelte";
   import { repoIdentityKey } from "../../utils/repo-label.js";
 
   const { issues } = getStores();
@@ -58,7 +59,13 @@
 </script>
 
 <button class="issue-item" class:selected bind:this={el} onclick={onclick}>
-  <p class="title">{issue.Title}</p>
+  <p class="title">
+    <SidebarStatusStrip
+      tone={issue.State === "open" ? "success" : "danger"}
+      label={issue.State === "open" ? "Open issue" : "Closed issue"}
+    />
+    <span class="title-text">{issue.Title}</span>
+  </p>
   <LabelRow {labels} compact />
   {#if showRepo}
     <div class="repo-row">
@@ -135,6 +142,9 @@
   }
 
   .title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: var(--font-size-md);
     font-weight: 500;
     color: var(--text-primary);
@@ -142,6 +152,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     margin-bottom: 4px;
+  }
+
+  .title-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .meta-row {

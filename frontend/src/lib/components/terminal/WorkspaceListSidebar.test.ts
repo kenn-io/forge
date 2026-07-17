@@ -1356,11 +1356,11 @@ describe("WorkspaceListSidebar", () => {
   });
 
   it.each([
-    ["ready", "Workspace ready", "kit-status-dot--idle"],
-    ["creating", "Creating workspace", "kit-status-dot--working"],
-    ["error", "Workspace error", "kit-status-dot--unclean"],
-    ["pending", "Workspace pending", "kit-status-dot--stale"],
-  ] as const)("maps %s workspace state to the shared semantic status", async (status, label, className) => {
+    ["ready", "Workspace ready", "sidebar-status-strip--success"],
+    ["creating", "Creating workspace", "sidebar-status-strip--info"],
+    ["error", "Workspace error", "sidebar-status-strip--danger"],
+    ["pending", "Workspace pending", "sidebar-status-strip--warning"],
+  ] as const)("maps %s workspace state to the compact sidebar rail", async (status, label, className) => {
     mockGet.mockResolvedValue({
       data: {
         workspaces: [

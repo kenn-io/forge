@@ -1775,18 +1775,20 @@
             />
           {:else if event.EventType === "commit"}
             <CommentCard
-              class="event-card--compact"
+              class="event-card--compact event-card--commit"
               typeLabel="Commit"
               tone={eventTimelineTone(event.EventType)}
               author={event.Author || undefined}
               time={formatRelativeTime(event.CreatedAt)}
             >
-              <div class="event-header event-header--compact">
+              {#snippet actions()}
                 <span class="commit-sha">{shortCommit(event.Summary)}</span>
-                {#if !showCommitDetails}
+              {/snippet}
+              {#if !showCommitDetails}
+                <div class="event-header event-header--compact">
                   <span class="commit-title">{commitTitle(event.Body)}</span>
-                {/if}
-              </div>
+                </div>
+              {/if}
               {#if showCommitDetails && commitDetails}
                 <div class="event-body commit-body-details" transition:slide={{ duration: 100 }}>
                   {commitDetails}
@@ -2107,6 +2109,14 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
+  }
+
+  :global(.event-card--commit .kit-card__actions) {
+    order: 2;
+  }
+
+  :global(.event-card--commit .kit-card__meta) {
+    order: 3;
   }
 
   .commit-title,

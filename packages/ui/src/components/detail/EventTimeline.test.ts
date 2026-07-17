@@ -1595,6 +1595,7 @@ describe("EventTimeline", () => {
     expect(document.querySelector(".event--compact")).toBeTruthy();
     expect(document.querySelector(".commit-title")).toBeNull();
     expect(document.querySelector(".commit-body-details")?.classList.contains("event-body")).toBe(true);
+    expect(document.querySelector(".kit-card__header")?.textContent).toContain("abcdef1");
     expect(document.querySelector(".kit-card__meta")?.textContent).toBe("4h ago");
   });
 

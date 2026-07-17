@@ -245,6 +245,23 @@ describe("PullItem repository label", () => {
   });
 });
 
+describe("PullItem state strip", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it.each([
+    [{ State: "open", IsDraft: false }, "Open pull request", "sidebar-status-strip--success"],
+    [{ State: "open", IsDraft: true }, "Draft pull request", "sidebar-status-strip--warning"],
+    [{ State: "closed", IsDraft: false }, "Closed pull request", "sidebar-status-strip--danger"],
+    [{ State: "merged", IsDraft: false }, "Merged pull request", "sidebar-status-strip--merged"],
+  ] as const)("renders the compact %s state rail", (overrides, label, className) => {
+    renderItem(mkPR(overrides));
+
+    expect(screen.getByLabelText(label).classList.contains(className)).toBe(true);
+  });
+});
+
 describe("PullItem kanban status", () => {
   afterEach(() => {
     cleanup();

@@ -16,6 +16,8 @@
   import { Chip } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
+  import SidebarStatusStrip from "../shared/SidebarStatusStrip.svelte";
+  import type { SidebarStatusStripTone } from "../shared/sidebar-status-strip.js";
   import { repoIdentityKey } from "../../utils/repo-label.js";
 
   const { pulls } = getStores();
@@ -92,11 +94,18 @@
     return "open";
   });
 
-  const stateColors: Record<PRState, string> = {
-    open: "var(--accent-green)",
-    draft: "var(--accent-amber)",
-    closed: "var(--accent-red)",
-    merged: "var(--accent-purple)",
+  const stateStripTones: Record<PRState, SidebarStatusStripTone> = {
+    open: "success",
+    draft: "warning",
+    closed: "danger",
+    merged: "merged",
+  };
+
+  const stateStripLabels: Record<PRState, string> = {
+    open: "Open pull request",
+    draft: "Draft pull request",
+    closed: "Closed pull request",
+    merged: "Merged pull request",
   };
 
   const worktreeName = $derived(
@@ -173,7 +182,7 @@
   onclick={onclick}
 >
   <p class="title">
-    <span class="state-dot" style="background: {stateColors[prState]}"></span>
+    <SidebarStatusStrip tone={stateStripTones[prState]} label={stateStripLabels[prState]} />
     {pr.Title}
   </p>
   <LabelRow {labels} compact />
@@ -336,13 +345,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     margin-bottom: 4px;
-  }
-
-  .state-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
   }
 
   .meta-row {
@@ -541,11 +543,6 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
-  }
-
-  :global(.mobile-main) .state-dot {
-    width: 10px;
-    height: 10px;
   }
 
   :global(.mobile-main) .repo-row {

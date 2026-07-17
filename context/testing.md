@@ -209,6 +209,10 @@ clones its own bare repo and worktree root. Keep tests serial when they call
 resources, or intentionally verify ordering against another test-visible shared
 resource.
 
+Tests that construct a `server.Server` must register graceful shutdown before
+database fixture cleanup; closing only an `httptest.Server` leaves background
+monitors able to race SQLite `t.TempDir` removal (`internal/server/server.go::Shutdown`).
+
 Disable Git auto-GC and auto-maintenance in synthetic repositories under
 `t.TempDir`; detached maintenance can recreate files during fixture cleanup
 (`internal/gitclone/commits_test.go::commitTestRun`).

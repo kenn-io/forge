@@ -2837,8 +2837,11 @@ func (s *Syncer) RateTrackerForRepo(repo RepoRef, apiType string) (*RateTracker,
 			return rt, true
 		}
 	}
-	rt, ok := s.rateTrackers[bucket]
-	return rt, ok && rt != nil
+	rt := s.rateTrackers[bucket]
+	if rt == nil {
+		return nil, false
+	}
+	return rt, true
 }
 
 // ReadIdentityForRepo returns the restart-bound read identity selected for
@@ -2888,8 +2891,11 @@ func (s *Syncer) BudgetForRepo(repo RepoRef) (*SyncBudget, bool) {
 	if err != nil {
 		return nil, false
 	}
-	budget, ok := s.budgets[bucket]
-	return budget, ok && budget != nil
+	budget := s.budgets[bucket]
+	if budget == nil {
+		return nil, false
+	}
+	return budget, true
 }
 
 func (s *Syncer) readBucketKeyForWatchedMR(mr WatchedMR) (string, error) {
@@ -8594,12 +8600,12 @@ func (s *Syncer) refreshRepoIssueComments(
 
 func (s *Syncer) canSpendCommentRefresh(repo RepoRef) bool {
 	budget, ok := s.BudgetForRepo(repo)
-	return !ok || budget.CanSpend(1)
+	return !ok || budget == nil || budget.CanSpend(1)
 }
 
 func (s *Syncer) canSpendWorkflowApprovalRefresh(repo RepoRef) bool {
 	budget, ok := s.BudgetForRepo(repo)
-	return !ok || budget.CanSpend(1)
+	return !ok || budget == nil || budget.CanSpend(1)
 }
 
 func (s *Syncer) persistPRComments(

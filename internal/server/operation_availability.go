@@ -413,7 +413,7 @@ func (s *Server) mutationRateLimitedReason(
 		return rateLimitAvailability{}
 	}
 	ref := operationRepoRef(repo)
-	if wt, ok := s.syncer.WriteRateTrackerForRepo(ref, apiType); ok {
+	if wt, ok := s.syncer.WriteRateTrackerForRepo(ref, apiType); ok && wt != nil {
 		if wt.IsPaused() {
 			return formatRateLimit(host, wt.ResetAt())
 		}
@@ -433,7 +433,8 @@ func (s *Server) rateLimitedReason(repo db.Repo, bucket apiBucket) rateLimitAvai
 	} else if bucket != apiBucketREST {
 		return rateLimitAvailability{}
 	}
-	if rt, ok := s.syncer.RateTrackerForRepo(operationRepoRef(repo), apiType); ok && rt.IsPaused() {
+	if rt, ok := s.syncer.RateTrackerForRepo(operationRepoRef(repo), apiType); ok &&
+		rt != nil && rt.IsPaused() {
 		return formatRateLimit(host, rt.ResetAt())
 	}
 	return rateLimitAvailability{}

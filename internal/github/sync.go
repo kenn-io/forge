@@ -2927,7 +2927,7 @@ func (s *Syncer) writeCredentialProberForRepo(
 // repositories, while selected-installation routes remain repository-exact.
 func (s *Syncer) WriteCredentialProbeKeyForRepo(repo RepoRef) (string, error) {
 	route, prober, err := s.writeCredentialProberForRepo(repo)
-	if err != nil || prober == nil {
+	if err != nil || route == nil || prober == nil {
 		return "", err
 	}
 	return fmt.Sprintf(

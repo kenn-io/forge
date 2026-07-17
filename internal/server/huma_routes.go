@@ -4706,6 +4706,13 @@ func (s *Server) resolveItem(
 	// row state via diffWarnings.
 	var diffErr *ghclient.DiffSyncError
 	if err != nil && !errors.As(err, &diffErr) {
+		// Classified lookup outcomes (removed, inaccessible, moved with
+		// its destination) arrive as platform errors; map them to their
+		// typed problems instead of collapsing into an internal error.
+		var platformErr *platform.Error
+		if errors.As(err, &platformErr) {
+			return nil, mapPlatformError(err)
+		}
 		var ghErr *gh.ErrorResponse
 		if errors.As(err, &ghErr) {
 			if ghErr.Response != nil &&

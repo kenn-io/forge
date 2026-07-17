@@ -1457,6 +1457,48 @@ func (p *gitHubClientProvider) lookupNotPresentError(
 	}
 }
 
+// issueFetchOutcomeError routes a raw single-issue fetch result through the
+// canonical lookup classification when the repo's registered reader is the
+// GitHub provider. A nil return means no outcome mapping applies (present
+// item, non-GitHub reader, or a nil conditional result).
+func (s *Syncer) issueFetchOutcomeError(
+	ctx context.Context,
+	repo RepoRef,
+	number int,
+	issue *gh.Issue,
+	err error,
+) error {
+	reader, readerErr := s.issueReaderFor(repo)
+	if readerErr != nil {
+		return nil
+	}
+	provider, ok := reader.(*gitHubClientProvider)
+	if !ok {
+		return nil
+	}
+	return provider.issueLookupOutcomeError(ctx, platformRepoRef(repo), number, issue, err)
+}
+
+// mergeRequestFetchOutcomeError is the merge-request counterpart to
+// issueFetchOutcomeError.
+func (s *Syncer) mergeRequestFetchOutcomeError(
+	ctx context.Context,
+	repo RepoRef,
+	number int,
+	pr *gh.PullRequest,
+	err error,
+) error {
+	reader, readerErr := s.mergeRequestReaderFor(repo)
+	if readerErr != nil {
+		return nil
+	}
+	provider, ok := reader.(*gitHubClientProvider)
+	if !ok {
+		return nil
+	}
+	return provider.mergeRequestLookupOutcomeError(ctx, platformRepoRef(repo), number, pr, err)
+}
+
 func (p *gitHubClientProvider) ListOpenGitHubIssues(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -7775,6 +7817,12 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 	ghIssue, err := client.GetIssue(
 		ctx, repo.Owner, repo.Name, number,
 	)
+	// Route fetch failures and detected transfers through the canonical
+	// lookup classification so removed, inaccessible, and moved items
+	// surface typed outcomes instead of generic upstream failures.
+	if outcomeErr := s.issueFetchOutcomeError(ctx, repo, number, ghIssue, err); outcomeErr != nil {
+		return fmt.Errorf("get closed issue #%d: %w", number, outcomeErr)
+	}
 	if err != nil {
 		return fmt.Errorf("get closed issue #%d: %w", number, err)
 	}
@@ -8809,6 +8857,14 @@ func (s *Syncer) SyncItemByNumber(
 		return "", fmt.Errorf("resolve client for %s/%s: %w", owner, name, err)
 	}
 	ghIssue, err := client.GetIssue(ctx, owner, name, number)
+	// Route fetch failures and detected transfers through the canonical
+	// lookup classification so removed, inaccessible, and moved items
+	// surface typed outcomes instead of generic upstream failures.
+	if outcomeErr := s.issueFetchOutcomeError(ctx, repo, number, ghIssue, err); outcomeErr != nil {
+		return "", fmt.Errorf(
+			"get item %s/%s#%d: %w", owner, name, number, outcomeErr,
+		)
+	}
 	if err != nil {
 		return "", fmt.Errorf(
 			"get item %s/%s#%d: %w", owner, name, number, err,
@@ -8855,6 +8911,12 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 	ghPR, err := client.GetPullRequest(ctx, repo.Owner, repo.Name, number)
+	// Route fetch failures and detected transfers through the canonical
+	// lookup classification so removed, inaccessible, and moved items
+	// surface typed outcomes instead of generic upstream failures.
+	if outcomeErr := s.mergeRequestFetchOutcomeError(ctx, repo, number, ghPR, err); outcomeErr != nil {
+		return fmt.Errorf("get closed PR #%d: %w", number, outcomeErr)
+	}
 	if err != nil {
 		return fmt.Errorf("get closed PR #%d: %w", number, err)
 	}

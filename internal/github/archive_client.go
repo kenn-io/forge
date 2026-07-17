@@ -832,7 +832,13 @@ func githubArchiveDestination(ref platform.RepoRef, repositoryURL string) *platf
 		destination.WebURL = ""
 		destination.CloneURL = ""
 		destination.DefaultBranch = ""
-		if destination.Owner == ref.Owner && destination.Name == ref.Name {
+		// GitHub owner/repo names are case-insensitive (canonical
+		// middleman identity lowercases them per the platform metadata's
+		// LowercaseRepoNames), so a source ref that differs from the
+		// returned repository URL only in casing is the same repository,
+		// not a transfer.
+		if strings.EqualFold(destination.Owner, ref.Owner) &&
+			strings.EqualFold(destination.Name, ref.Name) {
 			return nil
 		}
 		return &destination

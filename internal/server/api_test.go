@@ -14128,6 +14128,88 @@ func (p *issueMutatorGitLabProvider) EditMergeRequestContent(
 	return platform.MergeRequest{}, p.providerErr
 }
 
+// TestAPIResolveItemMapsLookupOutcomes drives GitHub item resolution
+// (/repo/.../resolve/{number}) through a mock client whose type-probe fetch
+// reports a removed, inaccessible, or transferred item. The problem envelope
+// must carry the classified outcome — not a raw upstream failure or a 500 —
+// and the moved outcome must include the destination extension members.
+func TestAPIResolveItemMapsLookupOutcomes(t *testing.T) {
+	const movedRepoAPIURL = "https://api.github.com/repos/newowner/newname"
+
+	statusErr := func(status int) error {
+		return &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: status, Header: http.Header{}},
+		}
+	}
+
+	cases := []struct {
+		name            string
+		getIssueErr     error
+		wantStatus      int
+		wantCode        string
+		wantDestination bool
+	}{
+		{
+			name:        "removed",
+			getIssueErr: statusErr(http.StatusNotFound),
+			wantStatus:  http.StatusNotFound,
+			wantCode:    "notFound",
+		},
+		{
+			name:        "inaccessible",
+			getIssueErr: statusErr(http.StatusForbidden),
+			wantStatus:  http.StatusForbidden,
+			wantCode:    "forbidden",
+		},
+		{
+			name:            "moved",
+			wantStatus:      http.StatusNotFound,
+			wantCode:        "notFound",
+			wantDestination: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			ctx := t.Context()
+
+			mock := &mockGH{
+				getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+					if tc.getIssueErr != nil {
+						return nil, tc.getIssueErr
+					}
+					return &gh.Issue{
+						Number:        new(5),
+						RepositoryURL: gh.Ptr(movedRepoAPIURL),
+					}, nil
+				},
+			}
+			srv, database := setupTestServerWithMock(t, mock)
+			_, err := database.UpsertRepo(
+				ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+			)
+			require.NoError(err)
+
+			rr := doJSON(t, srv, http.MethodPost, "/api/v1/repo/gh/acme/widget/resolve/5", nil)
+			require.Equal(tc.wantStatus, rr.Code, rr.Body.String())
+
+			var problem rawProblemDetail
+			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+			assert.Equal(tc.wantCode, problem.Code)
+			if !tc.wantDestination {
+				return
+			}
+			require.NotNil(problem.Details)
+			assert.Equal("github", problem.Details["destinationProvider"])
+			assert.Equal("github.com", problem.Details["destinationPlatformHost"])
+			assert.Equal("newowner", problem.Details["destinationOwner"])
+			assert.Equal("newname", problem.Details["destinationName"])
+		})
+	}
+}
+
 // movedLookupGitLabProvider embeds apiTestGitLabProvider but reports every
 // single-item lookup as moved to another repository via the supplied
 // platform.Error. Used by TestAPIMovedLookupProblemCarriesDestination.

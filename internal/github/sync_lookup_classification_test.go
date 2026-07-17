@@ -21,6 +21,55 @@ func ghLookupStatusError(status int) error {
 	}
 }
 
+// TestGitHubArchiveDestinationIgnoresRepoCasing pins that transfer detection
+// treats GitHub owner/repo names as case-insensitive: a RepoRef that differs
+// from the provider-returned repository URL only in casing identifies the
+// same repository and must not be classified as moved, while a genuinely
+// different repository still yields a lowercased canonical destination.
+func TestGitHubArchiveDestinationIgnoresRepoCasing(t *testing.T) {
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub,
+		Host:     "github.com",
+		Owner:    "MixedOwner",
+		Name:     "MixedName",
+		RepoPath: "MixedOwner/MixedName",
+	}
+
+	cases := []struct {
+		name      string
+		url       string
+		wantMoved bool
+	}{
+		{
+			name: "same repo lowercased in URL",
+			url:  "https://api.github.com/repos/mixedowner/mixedname",
+		},
+		{
+			name: "same repo mixed case in URL",
+			url:  "https://api.github.com/repos/MixedOwner/MixedName",
+		},
+		{
+			name:      "different repo",
+			url:       "https://api.github.com/repos/OtherOwner/OtherName",
+			wantMoved: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			destination := githubArchiveDestination(ref, tc.url)
+			if !tc.wantMoved {
+				assert.Nil(destination)
+				return
+			}
+			require.NotNil(t, destination)
+			assert.Equal("otherowner", destination.Owner)
+			assert.Equal("othername", destination.Name)
+		})
+	}
+}
+
 // TestSyncDetailFetchClassifiesLookupOutcomes drives the optimized GitHub
 // detail-sync paths through the real sync + SQLite with a fake client and
 // asserts that removed, inaccessible, and moved items surface the typed
@@ -121,6 +170,53 @@ func TestSyncDetailFetchClassifiesLookupOutcomes(t *testing.T) {
 				return syncer.SyncMROnProvider(
 					ctx, platform.KindGitHub, "github.com", repo.Owner, repo.Name, 5,
 				)
+			},
+		},
+		{
+			// The closed-issue refresh path.
+			name: "closed issue refresh",
+			arrange: func(mc *mockClient, fetchErr error) {
+				mc.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+					if fetchErr != nil {
+						return nil, fetchErr
+					}
+					return movedIssue(), nil
+				}
+			},
+			run: func(ctx context.Context, syncer *Syncer, repo RepoRef, repoID int64) error {
+				return syncer.fetchAndUpdateClosedIssue(ctx, repo, repoID, 5)
+			},
+		},
+		{
+			// The closed-MR refresh path.
+			name: "closed merge request refresh",
+			arrange: func(mc *mockClient, fetchErr error) {
+				mc.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
+					if fetchErr != nil {
+						return nil, fetchErr
+					}
+					return movedPR(), nil
+				}
+			},
+			run: func(ctx context.Context, syncer *Syncer, repo RepoRef, repoID int64) error {
+				return syncer.fetchAndUpdateClosed(ctx, repo, repoID, 5, false)
+			},
+		},
+		{
+			// The item-resolution path used by /resolve/{number}, which
+			// probes the Issues API to determine the item type.
+			name: "item resolution",
+			arrange: func(mc *mockClient, fetchErr error) {
+				mc.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+					if fetchErr != nil {
+						return nil, fetchErr
+					}
+					return movedIssue(), nil
+				}
+			},
+			run: func(ctx context.Context, syncer *Syncer, repo RepoRef, _ int64) error {
+				_, err := syncer.SyncItemByNumber(ctx, repo.Owner, repo.Name, 5)
+				return err
 			},
 		},
 	}

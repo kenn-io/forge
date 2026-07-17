@@ -12152,6 +12152,132 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require.Empty(*secondResp.JSON200.Events)
 }
 
+// TestE2EGraphQLBulkSyncAppliesAuthoritativeReviewDecisionOverIncompleteReviews
+// drives the real GraphQL bulk sync twice against a mocked GraphQL backend with
+// real SQLite. The first pass persists an APPROVED review decision; the second
+// pass reports a CHANGED authoritative reviewDecision (CHANGES_REQUESTED)
+// alongside an incomplete reviews connection (hasNextPage=true, so
+// ReviewsComplete is false). GitHub's reviewDecision scalar is authoritative
+// over the PR's whole review history, so nested-connection truncation must not
+// gate it: the changed decision must reach the HTTP API.
+func TestE2EGraphQLBulkSyncAppliesAuthoritativeReviewDecisionOverIncompleteReviews(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+
+	now := time.Date(2026, 5, 2, 9, 0, 0, 0, time.UTC)
+	firstUpdatedAt := now.Format(time.RFC3339)
+	secondUpdatedAt := now.Add(time.Minute).Format(time.RFC3339)
+	currentUpdatedAt := firstUpdatedAt
+	currentReviewDecision := "APPROVED"
+	// First pass: reviews connection complete (empty). The second pass
+	// overrides these to an incomplete connection carrying a changed decision.
+	currentReviewsConn := `{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}`
+
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			resp := `{"data":{"repository":{"pullRequests":{"nodes":[{
+				"databaseId":181100,
+				"number":181,
+				"title":"Authoritative review decision PR",
+				"state":"OPEN",
+				"isDraft":false,
+				"body":"GraphQL bulk PR",
+				"url":"https://github.com/acme/widget/pull/181",
+				"author":{"login":"heidi"},
+				"createdAt":"` + firstUpdatedAt + `",
+				"updatedAt":"` + currentUpdatedAt + `",
+				"mergedAt":null,
+				"closedAt":null,
+				"additions":1,
+				"deletions":0,
+				"mergeable":"MERGEABLE",
+				"reviewDecision":"` + currentReviewDecision + `",
+				"headRefName":"feature/decision",
+				"baseRefName":"main",
+				"headRefOid":"cafebabe",
+				"baseRefOid":"feedface",
+				"headRepository":{"url":"https://github.com/acme/widget"},
+				"labels":{"nodes":[]},
+				"comments":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"reviews":` + currentReviewsConn + `,
+				"allCommits":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"lastCommit":{"nodes":[]}
+			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+			_, _ = w.Write([]byte(resp))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+	}))
+	defer gqlSrv.Close()
+
+	prID := int64(181100)
+	prNumber := 181
+	prTitle := "Authoritative review decision PR"
+	prState := "open"
+	prURL := "https://github.com/acme/widget/pull/181"
+	headRef := "feature/decision"
+	headSHA := "cafebabe"
+	baseRef := "main"
+	prCreated := gh.Timestamp{Time: now}
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			updatedAt, parseErr := time.Parse(time.RFC3339, currentUpdatedAt)
+			require.NoError(parseErr)
+			updatedStamp := gh.Timestamp{Time: updatedAt}
+			return []*gh.PullRequest{{
+				ID:        &prID,
+				Number:    &prNumber,
+				Title:     &prTitle,
+				State:     &prState,
+				HTMLURL:   &prURL,
+				User:      &gh.User{Login: new("heidi")},
+				CreatedAt: &prCreated,
+				UpdatedAt: &updatedStamp,
+				Head:      &gh.PullRequestBranch{Ref: &headRef, SHA: &headSHA},
+				Base:      &gh.PullRequestBranch{Ref: &baseRef},
+			}}, nil
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+	}
+
+	srv, _ := setupTestServerWithMock(t, mock)
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
+	})
+	client := setupTestClient(t, srv)
+
+	// First pass persists the APPROVED decision through the real pipeline.
+	srv.syncer.RunOnce(ctx)
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", int64(prNumber))
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.Equal("approved", firstResp.JSON200.MergeRequest.ReviewDecision)
+
+	// Second pass: the provider reports a CHANGED authoritative decision while
+	// the reviews connection is truncated (incomplete). The authoritative
+	// scalar must still reach the API.
+	currentUpdatedAt = secondUpdatedAt
+	currentReviewDecision = "CHANGES_REQUESTED"
+	currentReviewsConn = `{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"review-cursor"}}`
+
+	srv.syncer.RunOnce(ctx)
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", int64(prNumber))
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	assert.Equal("changes_requested", secondResp.JSON200.MergeRequest.ReviewDecision)
+}
+
 // TestE2EGraphQLBulkSyncPersistsWorkflowApproval drives the periodic
 // sync through the GraphQL bulk path and verifies the persisted
 // workflow approval snapshot reaches the HTTP API. Regression test

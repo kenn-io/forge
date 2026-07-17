@@ -5655,6 +5655,21 @@ func (s *Syncer) syncOpenMRFromBulk(
 		}
 	}
 
+	// Resolve the review decision independent of nested-connection
+	// pagination. GitHub's reviewDecision scalar is provider-authoritative:
+	// it is computed over the PR's entire review history, so a truncated
+	// reviews/comments/commits/CI page on this fetch must not gate it. Apply
+	// it to the parent snapshot whenever the provider supplies it. Only when
+	// the provider reports no decision (null/empty enum) do we fall back to
+	// deriving from this fetch's reviews, and only when that reviews
+	// connection is complete; otherwise the previously persisted decision is
+	// retained (review history is additive).
+	if decision, authoritative := mapGraphQLReviewDecision(bulk.ReviewDecision); authoritative {
+		normalized.ReviewDecision = decision
+	} else if bulk.ReviewsComplete && len(bulk.Reviews) > 0 {
+		normalized.ReviewDecision = DeriveReviewDecision(bulk.Reviews)
+	}
+
 	// Resolve display name if missing.
 	if normalized.Author != "" &&
 		normalized.AuthorDisplayName == "" {
@@ -5779,22 +5794,9 @@ func (s *Syncer) syncOpenMRFromBulk(
 			CommentCount:   len(bulk.Comments),
 			LastActivityAt: computeLastActivity(bulk.PR, bulk.Comments, nil, nil, nil),
 		}
+		// ReviewDecision is already resolved on normalized (and carried into
+		// fields above) independent of nested-connection completeness.
 		if allComplete {
-			// Prefer the provider's authoritative aggregate decision. It is
-			// computed over the PR's full review history, so it stays correct
-			// even when this fetch's Reviews connection is a partial slice of
-			// the additive history persisted from earlier pages. Deriving from
-			// bulk.Reviews alone would discard an earlier approval or
-			// change-request that this page happened to omit.
-			if decision, authoritative := mapGraphQLReviewDecision(bulk.ReviewDecision); authoritative {
-				fields.ReviewDecision = decision
-			} else if len(bulk.Reviews) > 0 {
-				// The repository enforces no review decision (null enum), so the
-				// complete Reviews connection is the source of truth for this
-				// fetch. Keep the existing preserved value when no reviews were
-				// observed rather than clearing it to empty.
-				fields.ReviewDecision = DeriveReviewDecision(bulk.Reviews)
-			}
 			fields.LastActivityAt = computeLastActivity(
 				bulk.PR, bulk.Comments, bulk.Reviews, bulk.Commits, bulk.TimelineEvents,
 			)

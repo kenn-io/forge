@@ -6899,66 +6899,128 @@ func TestSyncOpenMRFromBulkPreservesReviewDecisionWhenReviewsConnectionReturnsEm
 	assert.Equal("approved", mr.ReviewDecision)
 }
 
-func TestSyncOpenMRFromBulkFollowsProviderReviewDecisionOverPartialReviewPage(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
+func TestSyncOpenMRFromBulkResolvesReviewDecisionIndependentOfNestedCompleteness(t *testing.T) {
+	reviewPtr := func(id int64, login, state string) *gh.PullRequestReview {
+		return &gh.PullRequestReview{
+			ID: &id, User: &gh.User{Login: &login}, State: &state,
+		}
+	}
 
-	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
-	require.NoError(err)
+	// Every case first establishes a persisted APPROVED decision via a fully
+	// complete sync, then applies a second fetch whose completeness/scalar
+	// combination is under test. The provider's reviewDecision scalar is
+	// authoritative over the PR's whole review history, so nested-connection
+	// truncation on the second fetch must not gate it; only a null/empty
+	// scalar falls back to deriving from a complete reviews connection, and
+	// an incomplete one preserves the additive history already persisted.
+	cases := []struct {
+		name             string
+		scalar           string
+		reviews          []*gh.PullRequestReview
+		reviewsComplete  bool
+		commitsComplete  bool
+		timelineComplete bool
+		ciComplete       bool
+		want             string
+	}{
+		{
+			name:             "authoritative scalar wins when reviews connection incomplete",
+			scalar:           "CHANGES_REQUESTED",
+			reviews:          nil,
+			reviewsComplete:  false,
+			commitsComplete:  true,
+			timelineComplete: true,
+			ciComplete:       true,
+			want:             "changes_requested",
+		},
+		{
+			name:             "authoritative scalar wins when an unrelated connection incomplete",
+			scalar:           "CHANGES_REQUESTED",
+			reviews:          []*gh.PullRequestReview{reviewPtr(710, "carol", "COMMENTED")},
+			reviewsComplete:  true,
+			commitsComplete:  false, // unrelated truncation must not gate the scalar
+			timelineComplete: true,
+			ciComplete:       true,
+			want:             "changes_requested",
+		},
+		{
+			name:             "authoritative scalar wins over a partial review page",
+			scalar:           "CHANGES_REQUESTED",
+			reviews:          []*gh.PullRequestReview{reviewPtr(711, "bob", "COMMENTED")},
+			reviewsComplete:  true,
+			commitsComplete:  true,
+			timelineComplete: true,
+			ciComplete:       true,
+			want:             "changes_requested",
+		},
+		{
+			name:             "empty scalar derives from a complete reviews connection",
+			scalar:           "",
+			reviews:          []*gh.PullRequestReview{reviewPtr(712, "alice", "CHANGES_REQUESTED")},
+			reviewsComplete:  true,
+			commitsComplete:  true,
+			timelineComplete: true,
+			ciComplete:       true,
+			want:             "changes_requested",
+		},
+		{
+			name:             "empty scalar preserves persisted history when reviews incomplete",
+			scalar:           "",
+			reviews:          nil,
+			reviewsComplete:  false,
+			commitsComplete:  true,
+			timelineComplete: true,
+			ciComplete:       true,
+			want:             "approved",
+		},
+	}
 
-	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
-	syncer := NewSyncer(
-		map[string]Client{"github.com": &mockClient{}},
-		d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil, nil,
-	)
-	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			ctx := t.Context()
+			d := openTestDB(t)
 
-	reviewer := "alice"
-	changesState := "CHANGES_REQUESTED"
-	reviewID := int64(701)
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
-		PR:             buildOpenPR(1, now),
-		ReviewDecision: "CHANGES_REQUESTED",
-		Reviews: []*gh.PullRequestReview{{
-			ID: &reviewID, User: &gh.User{Login: &reviewer}, State: &changesState,
-		}},
-		CommentsComplete: true, ReviewsComplete: true, CommitsComplete: true,
-		TimelineComplete: true, CIComplete: true,
-	}, false)
-	require.NoError(err)
+			repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+			require.NoError(err)
 
-	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
-	require.NoError(err)
-	require.NotNil(mr)
-	assert.Equal("changes_requested", mr.ReviewDecision)
+			now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
+			syncer := NewSyncer(
+				map[string]Client{"github.com": &mockClient{}},
+				d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+				time.Minute, nil, nil,
+			)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
-	// A later fetch's Reviews page holds only a newer COMMENTED review, with
-	// the older CHANGES_REQUESTED omitted (additive history retained from the
-	// earlier page). Deriving from this page alone would yield "" and drop the
-	// change request. Because the provider still reports CHANGES_REQUESTED as
-	// its authoritative decision, the stored decision must follow the provider,
-	// not the partial page.
-	commenter := "bob"
-	commentedState := "COMMENTED"
-	laterReviewID := int64(702)
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
-		PR:             buildOpenPR(1, now.Add(time.Minute)),
-		ReviewDecision: "CHANGES_REQUESTED",
-		Reviews: []*gh.PullRequestReview{{
-			ID: &laterReviewID, User: &gh.User{Login: &commenter}, State: &commentedState,
-		}},
-		CommentsComplete: true, ReviewsComplete: true, CommitsComplete: true,
-		TimelineComplete: true, CIComplete: true,
-	}, false)
-	require.NoError(err)
+			require.NoError(syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+				PR:               buildOpenPR(1, now),
+				ReviewDecision:   "APPROVED",
+				CommentsComplete: true, ReviewsComplete: true, CommitsComplete: true,
+				TimelineComplete: true, CIComplete: true,
+			}, false))
+			seeded, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+			require.NoError(err)
+			require.NotNil(seeded)
+			require.Equal("approved", seeded.ReviewDecision)
 
-	mr, err = d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
-	require.NoError(err)
-	require.NotNil(mr)
-	assert.Equal("changes_requested", mr.ReviewDecision)
+			require.NoError(syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+				PR:               buildOpenPR(1, now.Add(time.Minute)),
+				ReviewDecision:   tc.scalar,
+				Reviews:          tc.reviews,
+				CommentsComplete: true,
+				ReviewsComplete:  tc.reviewsComplete,
+				CommitsComplete:  tc.commitsComplete,
+				TimelineComplete: tc.timelineComplete,
+				CIComplete:       tc.ciComplete,
+			}, false))
+
+			mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+			require.NoError(err)
+			require.NotNil(mr)
+			assert.Equal(tc.want, mr.ReviewDecision)
+		})
+	}
 }
 
 func TestSyncOpenMRFromBulkSkipsMergedActorFallbackWhenAuthoredMergedEventExists(t *testing.T) {

@@ -611,6 +611,40 @@ func TestArchiveDatasetLimitBlocksWithoutRetry(t *testing.T) {
 	assert.Nil(states[0].NextRetryAt)
 }
 
+func TestArchivePageLimitBlocksWithoutRetry(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "oversized")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+	insert := db.ArchiveInventoryCommit{RepoID: repoID, ItemType: db.ArchiveItemTypeIssue, Exhausted: true, Now: now,
+		Issues: []db.ArchiveInventoryIssue{{ProviderItemID: "issue-1", CommentsStatus: db.ArchiveDatasetStatusPending,
+			Snapshot: db.IssueSnapshot{Issue: *platform.DBIssue(repoID, archiveTestIssue(ref))}}}}
+	require.NoError(database.CommitArchiveInventoryPage(t.Context(), insert))
+	item, err := database.ClaimArchiveItem(t.Context(), db.ClaimArchiveItemOpts{RepoIDs: []int64{repoID}, Now: now})
+	require.NoError(err)
+	require.NotNil(item)
+
+	err = service.recordHydrationFailure(t.Context(), *item, platform.ErrPageLimit)
+	require.ErrorIs(err, platform.ErrPageLimit)
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	require.NotNil(states[0].LastErrorCode)
+	assert.Equal(string(db.ArchiveErrorCodeRepoBlocked), *states[0].LastErrorCode)
+	assert.Nil(states[0].NextRetryAt)
+	status, err := service.Status(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+	assert.Equal(db.ArchiveStatusBlocked, status[0].Progress.Status)
+}
+
 func TestArchiveRepositoryAccessFailureIsBlockedAndNonDestructive(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -905,6 +939,7 @@ func TestDefaultArchiveRetryClassifierDistinguishesTerminalProviderErrors(t *tes
 	}{
 		{name: "authentication", err: platform.ErrPermissionDenied, wantCode: db.ArchiveErrorCodeAuthentication},
 		{name: "contract", err: platform.ErrProviderContract, wantCode: db.ArchiveErrorCodeRepoBlocked},
+		{name: "page limit", err: platform.ErrPageLimit, wantCode: db.ArchiveErrorCodeRepoBlocked},
 		{name: "transient", err: errors.New("temporary"), wantCode: db.ArchiveErrorCodeTransient, wantRetry: true},
 	}
 	for _, tt := range tests {

@@ -89,18 +89,21 @@ func CollectPages[T any](
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		if _, ok := seen[cursor]; ok {
+			// A detected cycle outranks the page budget: a cursor that first
+			// recurs on the budget-exhausting fetch is still a contract
+			// violation, not an oversized dataset.
+			return nil, collectContractError(
+				"collect_pages_cursor",
+				"page collection revisited cursor %q", cursor,
+			)
+		}
 		if pages >= MaxCollectPages {
 			return nil, &Error{
 				Code:  ErrCodePageLimit,
 				Field: "collect_pages_bound",
 				Err:   fmt.Errorf("page collection exceeded the maximum of %d pages", MaxCollectPages),
 			}
-		}
-		if _, ok := seen[cursor]; ok {
-			return nil, collectContractError(
-				"collect_pages_cursor",
-				"page collection revisited cursor %q", cursor,
-			)
 		}
 		seen[cursor] = struct{}{}
 		page, err := fetch(ctx, cursor)

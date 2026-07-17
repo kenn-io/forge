@@ -3,6 +3,7 @@ package platform
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -77,6 +78,25 @@ func TestCollectPagesEnforcesPageBound(t *testing.T) {
 	require.NotErrorIs(t, err, ErrProviderContract)
 	// Distinct advancing cursors never repeat, so only the page bound stops it.
 	assert.Equal(MaxCollectPages, calls)
+}
+
+func TestCollectPagesClassifiesCycleAtPageBoundAsContractError(t *testing.T) {
+	// The cursor for page N is "cN"; the fetch that would exhaust the budget
+	// instead revisits the very first cursor. Cycle detection must win over
+	// the page bound.
+	_, err := CollectPages(t.Context(), "c0", func(_ context.Context, cursor string) (Page[int], error) {
+		var n int
+		_, scanErr := fmt.Sscanf(cursor, "c%d", &n)
+		require.NoError(t, scanErr)
+		next := fmt.Sprintf("c%d", n+1)
+		if n == MaxCollectPages-1 {
+			next = "c0"
+		}
+		return Page[int]{Items: []int{n}, NextCursor: next}, nil
+	})
+
+	require.ErrorIs(t, err, ErrProviderContract)
+	require.NotErrorIs(t, err, ErrPageLimit)
 }
 
 func TestCollectPagesAllowsBoundedProgressOnlyPages(t *testing.T) {

@@ -40,7 +40,7 @@ snake_case form and translate them at the `internal/server` boundary.
 | `badRequest` | 400 | Generic malformed request fallback. |
 | `validationError` | 400 | Input validation such as blank fields, invalid formats, or allowed-value checks. Include `details.field`; include `details.allowed` when useful. |
 | `forbidden` | 403 | Authenticated caller or token lacks permission. |
-| `notFound` | 404 | Generic not-found fallback. |
+| `notFound` | 404 | Generic not-found fallback. When a provider lookup reports the item moved to another repository, include `details.destinationProvider`, `details.destinationPlatformHost`, `details.destinationOwner`, and `details.destinationName` so clients can retarget the reference. |
 | `repoNotFound` | 404 | Repository lookup miss by provider-aware identity. |
 | `pullNotFound` | 404 | Pull or merge request lookup miss. |
 | `issueNotFound` | 404 | Issue lookup miss. |

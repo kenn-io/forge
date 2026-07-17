@@ -381,6 +381,34 @@ func TestMapPlatformError(t *testing.T) {
 			wantCode:   CodeNotFound,
 		},
 		{
+			// A moved-lookup not_found carries the destination repository;
+			// the problem details must surface the full provider-aware
+			// destination identity so clients can retarget the reference.
+			name: "NotFoundMovedDestination",
+			input: &platform.Error{
+				Code:         platform.ErrCodeNotFound,
+				Provider:     "github",
+				PlatformHost: "github.com",
+				Destination: &platform.RepoRef{
+					Platform: platform.KindGitHub,
+					Host:     "github.com",
+					Owner:    "newowner",
+					Name:     "newname",
+				},
+				Err: errors.New("owner/repo#5 is not present (moved)"),
+			},
+			wantStatus: http.StatusNotFound,
+			wantCode:   CodeNotFound,
+			wantDetails: map[string]any{
+				"provider":                "github",
+				"platformHost":            "github.com",
+				"destinationProvider":     "github",
+				"destinationPlatformHost": "github.com",
+				"destinationOwner":        "newowner",
+				"destinationName":         "newname",
+			},
+		},
+		{
 			name:       "ProviderNotConfigured",
 			input:      &platform.Error{Code: platform.ErrCodeProviderNotConfigured},
 			wantStatus: http.StatusBadRequest,

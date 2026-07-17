@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	gh "github.com/google/go-github/v88/github"
 	"go.kenn.io/middleman/internal/platform"
 	platformgithub "go.kenn.io/middleman/internal/platform/github"
 )
@@ -166,6 +167,62 @@ func (p *gitHubClientProvider) classifyMergeRequestLookup(
 		return platform.ItemLookup[platform.MergeRequest]{}, p.archiveRepositoryProbeError(repoErr)
 	}
 	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupRemoved}, nil
+}
+
+// issueLookupOutcomeError maps a raw single-issue fetch result onto the
+// canonical lookup classification so the optimized GitHub detail path
+// surfaces the same typed outcomes as LookupIssue: removed is not_found,
+// inaccessible is permission_denied, and a repository transfer is not_found
+// carrying the destination. A nil return means the result needs no outcome
+// mapping. Classification may spend one repository probe on the live client;
+// this runs in live sync, not archive admission, so no admitted budget
+// applies.
+func (p *gitHubClientProvider) issueLookupOutcomeError(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	issue *gh.Issue,
+	err error,
+) error {
+	if err != nil {
+		lookup, classifyErr := p.classifyIssueLookup(ctx, ref, err)
+		if classifyErr != nil {
+			return classifyErr
+		}
+		return p.lookupNotPresentError(ref, number, lookup.Outcome, lookup.Destination)
+	}
+	if issue == nil {
+		return nil
+	}
+	if destination := githubArchiveDestination(ref, issue.GetRepositoryURL()); destination != nil {
+		return p.lookupNotPresentError(ref, number, platform.LookupMoved, destination)
+	}
+	return nil
+}
+
+// mergeRequestLookupOutcomeError is the merge-request counterpart to
+// issueLookupOutcomeError.
+func (p *gitHubClientProvider) mergeRequestLookupOutcomeError(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	pr *gh.PullRequest,
+	err error,
+) error {
+	if err != nil {
+		lookup, classifyErr := p.classifyMergeRequestLookup(ctx, ref, err)
+		if classifyErr != nil {
+			return classifyErr
+		}
+		return p.lookupNotPresentError(ref, number, lookup.Outcome, lookup.Destination)
+	}
+	if pr == nil {
+		return nil
+	}
+	if destination := githubArchiveDestination(ref, pr.GetBase().GetRepo().GetURL()); destination != nil {
+		return p.lookupNotPresentError(ref, number, platform.LookupMoved, destination)
+	}
+	return nil
 }
 
 // ListIssueCommentsPage returns one page of normalized issue comment events.

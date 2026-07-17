@@ -14128,6 +14128,159 @@ func (p *issueMutatorGitLabProvider) EditMergeRequestContent(
 	return platform.MergeRequest{}, p.providerErr
 }
 
+// movedLookupGitLabProvider embeds apiTestGitLabProvider but reports every
+// single-item lookup as moved to another repository via the supplied
+// platform.Error. Used by TestAPIMovedLookupProblemCarriesDestination.
+type movedLookupGitLabProvider struct {
+	apiTestGitLabProvider
+	lookupErr error
+}
+
+func (p *movedLookupGitLabProvider) GetIssue(
+	_ context.Context,
+	_ platform.RepoRef,
+	_ int,
+) (platform.Issue, error) {
+	return platform.Issue{}, p.lookupErr
+}
+
+func (p *movedLookupGitLabProvider) GetMergeRequest(
+	_ context.Context,
+	_ platform.RepoRef,
+	_ int,
+) (platform.MergeRequest, error) {
+	return platform.MergeRequest{}, p.lookupErr
+}
+
+// TestAPIMovedLookupProblemCarriesDestination drives item sync through a
+// fake provider whose single-item lookup reports the item moved to another
+// repository (a not_found platform.Error carrying Destination). The 404
+// problem body must carry the full provider-aware destination identity as
+// stable extension members so clients can retarget the reference.
+func TestAPIMovedLookupProblemCarriesDestination(t *testing.T) {
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	database := dbtest.Open(t)
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com/group/project",
+		CloneURL:           "https://gitlab.example.com/group/project.git",
+		DefaultBranch:      "main",
+	}
+	provider := &movedLookupGitLabProvider{
+		apiTestGitLabProvider: apiTestGitLabProvider{
+			ref: ref,
+			mergeRequests: []platform.MergeRequest{{
+				Repo:           ref,
+				PlatformID:     7001,
+				Number:         7,
+				URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+				Title:          "Existing MR",
+				Author:         "alice",
+				State:          "open",
+				HeadBranch:     "feature",
+				BaseBranch:     "main",
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				LastActivityAt: now,
+			}},
+			issues: []platform.Issue{{
+				Repo:           ref,
+				PlatformID:     8001,
+				Number:         11,
+				URL:            "https://gitlab.example.com/group/project/-/issues/11",
+				Title:          "Existing",
+				Author:         "alice",
+				State:          "open",
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				LastActivityAt: now,
+			}},
+		},
+		lookupErr: &platform.Error{
+			Code:         platform.ErrCodeNotFound,
+			Provider:     platform.KindGitLab,
+			PlatformHost: "gitlab.example.com",
+			Destination: &platform.RepoRef{
+				Platform: platform.KindGitLab,
+				Host:     "gitlab.example.com",
+				Owner:    "newgroup",
+				Name:     "project",
+				RepoPath: "newgroup/project",
+			},
+			Err: errors.New("group/project item is not present (moved)"),
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		Owner:              "group",
+		Name:               "project",
+		PlatformHost:       "gitlab.example.com",
+		RepoPath:           "group/project",
+		PlatformRepoID:     4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com/group/project",
+		CloneURL:           "https://gitlab.example.com/group/project.git",
+		DefaultBranch:      "main",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	syncer.RunOnce(ctx)
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{
+			name: "issue sync",
+			path: "/api/v1/host/gitlab.example.com/issues/gl/group/project/11/sync",
+		},
+		{
+			name: "pull sync",
+			path: "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+
+			rr := doJSON(t, srv, http.MethodPost, tt.path, nil)
+			require.Equal(http.StatusNotFound, rr.Code, rr.Body.String())
+
+			var problem rawProblemDetail
+			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+			assert.Equal("notFound", problem.Code)
+			require.NotNil(problem.Details)
+			assert.Equal("gitlab", problem.Details["provider"])
+			assert.Equal("gitlab.example.com", problem.Details["platformHost"])
+			assert.Equal("gitlab", problem.Details["destinationProvider"])
+			assert.Equal(
+				"gitlab.example.com", problem.Details["destinationPlatformHost"],
+			)
+			assert.Equal("newgroup", problem.Details["destinationOwner"])
+			assert.Equal("project", problem.Details["destinationName"])
+		})
+	}
+}
+
 func TestAPIDiffReviewDraftCRUDUsesLocalStorage(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

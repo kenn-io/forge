@@ -1335,8 +1335,11 @@ func (p *gitHubClientProvider) GetGitHubPullRequest(
 	number int,
 ) (*gh.PullRequest, platform.MergeRequest, error) {
 	pr, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
-	if err != nil {
-		return nil, platform.MergeRequest{}, err
+	// The optimized detail path needs the full SDK object, so it fetches
+	// raw; the failure and transfer outcomes still route through the one
+	// canonical lookup classification.
+	if outcomeErr := p.mergeRequestLookupOutcomeError(ctx, ref, number, pr, err); outcomeErr != nil {
+		return nil, platform.MergeRequest{}, outcomeErr
 	}
 	mr, err := platformgithub.NormalizePullRequest(ref, pr)
 	if err != nil {
@@ -1496,7 +1499,13 @@ func (p *gitHubClientProvider) GetGitHubIssue(
 	ref platform.RepoRef,
 	number int,
 ) (*gh.Issue, error) {
-	return p.client.GetIssue(ctx, ref.Owner, ref.Name, number)
+	issue, err := p.client.GetIssue(ctx, ref.Owner, ref.Name, number)
+	// Raw fetch for the optimized detail path; outcomes still route
+	// through the one canonical lookup classification.
+	if outcomeErr := p.issueLookupOutcomeError(ctx, ref, number, issue, err); outcomeErr != nil {
+		return nil, outcomeErr
+	}
+	return issue, nil
 }
 
 func (p *gitHubClientProvider) ListIssueEvents(
@@ -6006,6 +6015,16 @@ func (s *Syncer) fetchMRDetail(
 		ctx, client, repo, number,
 	)
 	calls++
+	// Route fetch failures and detected transfers through the canonical
+	// lookup classification so removed, inaccessible, and moved items
+	// surface typed outcomes instead of generic upstream failures.
+	if provider, ok := mrReader.(*gitHubClientProvider); ok {
+		if outcomeErr := provider.mergeRequestLookupOutcomeError(
+			ctx, platformRepoRef(repo), number, fullPR, err,
+		); outcomeErr != nil {
+			return calls, fmt.Errorf("get full PR #%d: %w", number, outcomeErr)
+		}
+	}
 	if err == nil && fullPR == nil {
 		if notModified && existing != nil {
 			return s.markUnchangedMRDetailFetched(
@@ -6530,6 +6549,16 @@ func (s *Syncer) fetchIssueDetail(
 		ctx, client, repo, number,
 	)
 	calls++
+	// Route fetch failures and detected transfers through the canonical
+	// lookup classification so removed, inaccessible, and moved items
+	// surface typed outcomes instead of generic upstream failures.
+	if provider, ok := issueReader.(*gitHubClientProvider); ok {
+		if outcomeErr := provider.issueLookupOutcomeError(
+			ctx, platformRepoRef(repo), number, ghIssue, err,
+		); outcomeErr != nil {
+			return calls, fmt.Errorf("get issue #%d: %w", number, outcomeErr)
+		}
+	}
 	if err == nil && ghIssue == nil {
 		if notModified {
 			if existing == nil {
@@ -8209,6 +8238,15 @@ func (s *Syncer) syncMRForRepo(
 			ghPR, newETag, notModified, err = s.getPullRequestForDetail(
 				ctx, client, repo, number,
 			)
+			// Same canonical lookup classification as the raw
+			// GetGitHubPullRequest branch below.
+			if provider, ok := mrReader.(*gitHubClientProvider); ok {
+				if outcomeErr := provider.mergeRequestLookupOutcomeError(
+					ctx, platformRepoRef(repo), number, ghPR, err,
+				); outcomeErr != nil {
+					err = outcomeErr
+				}
+			}
 			if err == nil && ghPR == nil {
 				if notModified && existing != nil {
 					_, err := s.markUnchangedMRDetailFetched(

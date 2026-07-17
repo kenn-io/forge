@@ -4924,6 +4924,23 @@ func (s *Syncer) indexSyncRepo(
 		s.refreshRepoIssueComments(ctx, repo)
 	}
 
+	if failedScope != 0 {
+		// Surface the partially-failed cycle to the caller so repo
+		// sync health (last_sync_error, sync status) records it;
+		// without this, per-item failures such as a transferred or
+		// inaccessible item look like a clean sync from the API.
+		var failedPaths []string
+		if failedScope&failMR != 0 {
+			failedPaths = append(failedPaths, "merge request")
+		}
+		if failedScope&failIssues != 0 {
+			failedPaths = append(failedPaths, "issue")
+		}
+		return fmt.Errorf(
+			"one or more %s sync items failed", strings.Join(failedPaths, " and "),
+		)
+	}
+
 	return nil
 }
 

@@ -30216,6 +30216,7 @@ func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {
 	issueURL := "https://github.com/acme/widget/issues/7"
 	author := "alice"
 	intPointer := func(value int) *int { return &value }
+	str := func(v string) *string { return &v }
 	mock := &mockGH{
 		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
 			return &gh.Issue{
@@ -30232,6 +30233,25 @@ func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {
 		},
 		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
 			return nil, nil
+		},
+		// The fixture seeds PR #1 as open; with the open list empty,
+		// closure detection refreshes it. Serve a valid closed PR so
+		// the repo sync cycle stays clean and the refresh reaches the
+		// association-inspection failure this test targets.
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(9001)
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				Title:     str("Seeded PR"),
+				State:     str("closed"),
+				HTMLURL:   str("https://github.com/acme/widget/pull/1"),
+				User:      &gh.User{Login: &author},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+				Head:      &gh.PullRequestBranch{Ref: str("feature")},
+				Base:      &gh.PullRequestBranch{Ref: str("main")},
+			}, nil
 		},
 	}
 	fixture := setupWorkspaceServerFixtureWithMockHostAndOptions(

@@ -77,13 +77,17 @@ func (s *Service) commitTerminalLookup(
 }
 
 func (s *Service) hydrateIssue(ctx context.Context, repo resolvedRepository, item *db.ArchiveItemState) error {
-	requestCtx, release, err := s.admit(ctx, repo, 2)
+	requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(2))
 	if err != nil {
 		return err
 	}
 	lookup, err := repo.Reader.GetArchiveIssue(requestCtx, repo.Ref, item.ItemNumber)
+	preempted := archivePreempted(ctx, requestCtx)
 	release()
 	if err != nil {
+		if preempted {
+			return errAdmissionDeferred
+		}
 		return err
 	}
 	if lookup.Outcome != platform.ArchiveLookupPresent {
@@ -123,13 +127,17 @@ func (s *Service) hydrateIssue(ctx context.Context, repo resolvedRepository, ite
 }
 
 func (s *Service) hydrateMergeRequest(ctx context.Context, repo resolvedRepository, item *db.ArchiveItemState) error {
-	requestCtx, release, err := s.admit(ctx, repo, 2)
+	requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(2))
 	if err != nil {
 		return err
 	}
 	lookup, err := repo.Reader.GetArchiveMergeRequest(requestCtx, repo.Ref, item.ItemNumber)
+	preempted := archivePreempted(ctx, requestCtx)
 	release()
 	if err != nil {
+		if preempted {
+			return errAdmissionDeferred
+		}
 		return err
 	}
 	if lookup.Outcome != platform.ArchiveLookupPresent {
@@ -246,13 +254,17 @@ func fetchArchiveDataset[T any](
 		return key, nil, err
 	}
 	for !stage.Exhausted {
-		requestCtx, release, err := s.admit(ctx, repo, 1)
+		requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(1))
 		if err != nil {
 			return key, nil, err
 		}
 		page, err := read(requestCtx, repo.Ref, item.ItemNumber, stage.NextCursor)
+		preempted := archivePreempted(ctx, requestCtx)
 		release()
 		if err != nil {
+			if preempted {
+				return key, nil, errAdmissionDeferred
+			}
 			return key, nil, err
 		}
 		payload, err := json.Marshal(page.Items)

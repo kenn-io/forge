@@ -231,3 +231,24 @@ func (s *Service) admit(
 type fixedClock struct{ value time.Time }
 
 func (c fixedClock) Now() time.Time { return c.value }
+
+// archiveAttemptCost converts a declared logical request count into the
+// admission cost archive work must reserve. Archive admission cost models
+// worst-case wire attempts, not logical requests: a 401-invalidate-retry
+// spends two wire attempts for one logical request, so every admit call
+// must declare double its logical cost or it can overspend the admitted
+// ceiling and the live floor it protects.
+func archiveAttemptCost(logical int) int {
+	return logical * 2
+}
+
+// archivePreempted reports whether a provider read failed because live
+// work preempted the admitted request context (canceled between admit and
+// release), not because the caller itself is shutting down. Preemption is
+// not a failure: the caller must record nothing and leave the work
+// immediately claimable. requestCtx must be sampled before release() is
+// called, since release always cancels its context and would otherwise
+// make every request look preempted.
+func archivePreempted(outerCtx, requestCtx context.Context) bool {
+	return requestCtx.Err() != nil && outerCtx.Err() == nil
+}

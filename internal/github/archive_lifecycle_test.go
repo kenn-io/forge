@@ -347,8 +347,16 @@ func TestArchiveAdmissionPreservesProviderReserveForDeclaredCost(t *testing.T) {
 	now := time.Now().UTC()
 	reset := now.Add(time.Minute)
 	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	// Every wire attempt, including an authentication retry, is counted
+	// against admission, so archive.archiveAttemptCost declares twice the
+	// logical request count. Remaining sits exactly at the reserve margin
+	// for the undoubled logical cost (2): before that doubling, a request
+	// declaring cost 2 would have been wrongly allowed here. The doubled
+	// retry-headroom cost (4) must be denied to preserve the reserve.
+	logicalCost := 2
+	retryHeadroomCost := logicalCost * 2
 	tracker.UpdateFromRate(Rate{
-		Limit: 5000, Remaining: RateReserveBuffer + 1, Reset: reset,
+		Limit: 5000, Remaining: RateReserveBuffer + logicalCost, Reset: reset,
 	})
 	syncer := NewSyncerWithRegistry(
 		nil, database, nil, nil, time.Hour,
@@ -358,7 +366,7 @@ func TestArchiveAdmissionPreservesProviderReserveForDeclaredCost(t *testing.T) {
 	syncer.now = func() time.Time { return now }
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.test", Owner: "acme", Name: "widget"}
 
-	denied, err := syncer.Admit(t.Context(), ref, 2)
+	denied, err := syncer.Admit(t.Context(), ref, retryHeadroomCost)
 	require.NoError(err)
 	assert.False(denied.Allowed)
 	assert.Contains(denied.Detail, "reserve")

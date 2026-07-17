@@ -362,6 +362,48 @@ func TestClientRecordsRateLimitRequests(t *testing.T) {
 	assert.Equal(resetAt, row.RateResetAt.Unix())
 }
 
+func TestClientDoesNotSynthesizeRateLimitResetWhenHeaderMissing(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("RateLimit-Limit", "600")
+		w.Header().Set("RateLimit-Remaining", "599")
+		// Deliberately no RateLimit-Reset header: the provider did not
+		// observe a reset time for this response.
+		writeJSON(w, `{
+			"id": 42,
+			"path": "project",
+			"path_with_namespace": "group/project",
+			"name": "Project"
+		}`)
+	}))
+	defer server.Close()
+
+	rt := ratelimit.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "rest")
+	client := newTestClient(t, server.URL, WithRateTracker(rt))
+	_, err := client.GetRepository(context.Background(), platform.RepoRef{
+		Platform: platform.KindGitLab,
+		Host:     "gitlab.example.com",
+		RepoPath: "group/project",
+	})
+	require.NoError(err)
+
+	// A missing reset header must not be turned into a plausible-looking
+	// near-future reset: the archive budget ceiling treats any resetAt
+	// within the coming hour as a live provider signal to release
+	// surplus, and a fabricated "1 minute from now" would falsely
+	// trigger that release even though no provider ever reported it.
+	resetAt := rt.ResetAt()
+	require.NotNil(resetAt)
+	assert.True(resetAt.Before(time.Now().Add(-time.Hour)),
+		"unobserved reset must not look like a provider-observed near-future reset, got %s", resetAt)
+
+	budget := ghsync.NewSyncBudget(1000)
+	assert.False(budget.CanSpendArchive(1, time.Now(), resetAt, 100))
+}
+
 func TestClientSyncBudgetChargesOnlyMarkedRoundTrips(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

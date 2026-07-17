@@ -191,7 +191,14 @@ func parseRateLimitHeaders(resp *http.Response) (ratelimit.Rate, bool) {
 		return ratelimit.Rate{}, false
 	}
 	limit, _ := parseHeaderInt(resp, "RateLimit-Limit", "X-RateLimit-Limit")
-	resetAt := time.Now().UTC().Add(time.Minute)
+	// Leave Reset at its zero value when the provider doesn't supply a
+	// reset header, matching the GitHub REST transport's behavior
+	// (parseRateLimitHeaders in graphql.go). A synthesized near-future
+	// reset here would look "plausible" to the archive budget's
+	// SyncBudget.ArchiveSpendCeiling and release archive surplus that no
+	// provider signal actually justifies; only a provider-observed reset
+	// may do that.
+	var resetAt time.Time
 	if resetUnix, ok := parseHeaderInt64(resp, "RateLimit-Reset", "X-RateLimit-Reset"); ok {
 		resetAt = time.Unix(resetUnix, 0).UTC()
 	}

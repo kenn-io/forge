@@ -719,9 +719,17 @@ func NewGraphQLFetcher(
 	rateTracker *RateTracker,
 	budget *SyncBudget,
 ) *GraphQLFetcher {
+	// The budget transport sits beneath AuthTransport so every wire
+	// attempt authRT makes on a request — including its own internal
+	// 401-invalidate-retry — is counted as a separate spend, matching the
+	// REST client's layering (internal/github/client.go). Layering it
+	// above authRT would let a 401-then-retry count as a single spend
+	// since AuthTransport's retry never becomes visible to a wrapper
+	// above it.
+	readBase := WrapSyncBudgetTransport(http.DefaultTransport, budget)
 	authRT := tokenauth.AuthTransport{
 		Source:              source,
-		Base:                http.DefaultTransport,
+		Base:                readBase,
 		SetHeader:           tokenauth.BearerAuthHeader,
 		RetryOnUnauthorized: true,
 		AllowedOrigin:       graphQLEndpointForHost(platformHost),
@@ -732,12 +740,6 @@ func NewGraphQLFetcher(
 		base = &graphqlRateTransport{
 			base:        base,
 			rateTracker: rateTracker,
-		}
-	}
-	if budget != nil {
-		base = &budgetTransport{
-			base:   base,
-			budget: budget,
 		}
 	}
 	httpClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(base)}

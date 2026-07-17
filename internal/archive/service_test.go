@@ -330,6 +330,11 @@ func TestArchiveServiceInventoriesThenCommitsCompleteHydration(t *testing.T) {
 	assert.Equal(db.ArchiveStatusPartial, status[0].Progress.Status)
 	assert.Equal([]string{"issues", "merge_requests", "get_issue", "issue_comments:", "issue_comments:c2", "get_mr", "mr_comments:"}, provider.calls)
 	assert.Equal(7, admission.calls)
+	// Every admission declares 2x its logical request count so a
+	// 401-invalidate-retry can never overspend the admitted ceiling:
+	// inventory and dataset pages are 1 logical request (cost 2), and
+	// item lookups are 2 logical requests (cost 4).
+	assert.Equal([]int{2, 2, 4, 2, 2, 4, 2}, admission.costs)
 }
 
 func TestArchiveOpenMergeRequestResumesAcrossBudgetAndDatasetDeferrals(t *testing.T) {
@@ -499,6 +504,54 @@ func TestArchiveHydrationFailurePreservesPriorDatasetAndRecordsRetry(t *testing.
 	).Scan(&eventCount, &status))
 	assert.Equal(1, eventCount)
 	assert.Equal("new snapshot", status)
+}
+
+func TestArchiveHydrationPreemptedByLiveWorkRecordsNoFailureAndStaysClaimable(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+
+	require.NoError(service.RunEligible(t.Context())) // issue inventory
+	require.NoError(service.RunEligible(t.Context())) // merge-request inventory
+
+	// Live work preempts the admitted request context during the issue
+	// hydration lookup: the read fails, but this is not a hydration
+	// failure. Nothing about the item or the read was actually wrong;
+	// live work just needed the provider-host lease first.
+	service.admission = archivePreemptingAdmission{}
+	require.NoError(service.RunEligible(t.Context())) // issue hydration, preempted
+
+	var status string
+	var attempts int
+	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+		SELECT comments_status, attempt_count FROM middleman_archive_items
+		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 1`, repoID,
+	).Scan(&status, &attempts))
+	assert.Equal("pending", status)
+	assert.Zero(attempts)
+
+	var lastErrorCode *string
+	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+		SELECT last_error_code FROM middleman_archive_repos WHERE repo_id = ?`, repoID,
+	).Scan(&lastErrorCode))
+	assert.Nil(lastErrorCode)
+
+	// No lease or retry timer was written, so the item is immediately
+	// claimable again on the very next claim.
+	item, err := database.ClaimArchiveItem(t.Context(), db.ClaimArchiveItemOpts{RepoIDs: []int64{repoID}, Now: now})
+	require.NoError(err)
+	require.NotNil(item)
+	assert.Equal(db.ArchiveItemTypeIssue, item.ItemType)
 }
 
 func TestArchiveDatasetLimitBlocksWithoutRetry(t *testing.T) {
@@ -902,6 +955,7 @@ type archiveTestAdmission struct {
 	deny      bool
 	denyAfter int
 	retryAt   time.Time
+	costs     []int
 }
 
 type archiveTestRetryClassifier struct{}
@@ -910,14 +964,28 @@ func (archiveTestRetryClassifier) Classify(error, int, time.Time) RetryDecision 
 	return RetryDecision{Code: db.ArchiveErrorCodeTransient}
 }
 
-func (a *archiveTestAdmission) Admit(ctx context.Context, _ platform.RepoRef, _ int) (AdmissionResult, error) {
+func (a *archiveTestAdmission) Admit(ctx context.Context, _ platform.RepoRef, cost int) (AdmissionResult, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.calls++
+	a.costs = append(a.costs, cost)
 	if a.deny || a.denyAfter > 0 && a.calls > a.denyAfter {
 		return AdmissionResult{RetryAt: &a.retryAt, Detail: "test budget exhausted"}, nil
 	}
 	return AdmissionResult{Allowed: true, Context: ctx}, nil
+}
+
+// archivePreemptingAdmission simulates live work preempting an admitted
+// archive request: it always returns a request context that is already
+// canceled, distinct from the caller's outer context, mirroring what
+// Syncer.Admit does when beginProviderWork cancels an in-flight archive
+// lease.
+type archivePreemptingAdmission struct{}
+
+func (archivePreemptingAdmission) Admit(ctx context.Context, _ platform.RepoRef, _ int) (AdmissionResult, error) {
+	requestCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	return AdmissionResult{Allowed: true, Context: requestCtx, Release: func() {}}, nil
 }
 
 type archiveServiceProvider struct {
@@ -1020,8 +1088,11 @@ func (p *archiveServiceProvider) ListUpdatedMergeRequests(_ context.Context, _ p
 	}
 	return platform.ArchivePage[platform.MergeRequest]{Exhausted: true}, nil
 }
-func (p *archiveServiceProvider) GetArchiveIssue(_ context.Context, ref platform.RepoRef, _ int) (platform.ArchiveItemResult[platform.Issue], error) {
+func (p *archiveServiceProvider) GetArchiveIssue(ctx context.Context, ref platform.RepoRef, _ int) (platform.ArchiveItemResult[platform.Issue], error) {
 	p.record("get_issue")
+	if err := ctx.Err(); err != nil {
+		return platform.ArchiveItemResult[platform.Issue]{}, err
+	}
 	if p.issueLookupErr != nil {
 		return platform.ArchiveItemResult[platform.Issue]{}, p.issueLookupErr
 	}

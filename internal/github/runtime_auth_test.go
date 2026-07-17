@@ -84,6 +84,31 @@ func TestArchiveBudgetCountsEveryAuthenticationAttempt(t *testing.T) {
 	assert.Equal(2, budget.ArchiveSpent())
 }
 
+func TestGraphQLArchiveBudgetCountsEveryAuthenticationAttempt(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	source := newMutableRuntimeAuthTokenSource("first-token")
+	requests := 0
+	host := withGitHubAuthTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Header.Get("Authorization") == "Bearer first-token" {
+			http.Error(w, "expired", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"viewer":{"login":"octocat"}}}`))
+	}))
+	budget := NewSyncBudget(100)
+	fetcher := NewGraphQLFetcher(source, host, nil, budget)
+
+	var query runtimeAuthViewerQuery
+	err := fetcher.client.Query(WithArchiveSyncBudget(t.Context()), &query, nil)
+	require.NoError(err)
+	assert.Equal(2, requests)
+	assert.Equal(2, budget.Spent())
+	assert.Equal(2, budget.ArchiveSpent())
+}
+
 func withGitHubAuthTLSServer(t *testing.T, handler http.Handler) string {
 	t.Helper()
 	srv := httptest.NewTLSServer(handler)

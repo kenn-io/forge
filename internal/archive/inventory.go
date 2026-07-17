@@ -18,7 +18,7 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 	if !archiveInventorySupported(repo, itemType) {
 		commit.Exhausted = true
 	} else {
-		requestCtx, release, err := s.admit(ctx, repo, 1)
+		requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(1))
 		if err != nil {
 			if errors.Is(err, errAdmissionDeferred) {
 				return err
@@ -29,8 +29,12 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 		case db.ArchiveItemTypeIssue:
 			cursor := archiveCursorValue(state.IssueCursor)
 			page, err := repo.Reader.ListHistoricalIssues(requestCtx, repo.Ref, cursor)
+			preempted := archivePreempted(ctx, requestCtx)
 			release()
 			if err != nil {
+				if preempted {
+					return errAdmissionDeferred
+				}
 				return s.recordInventoryFailure(ctx, repo.ID, fmt.Errorf(
 					"list historical issues for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
 				))
@@ -43,8 +47,12 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 		case db.ArchiveItemTypeMergeRequest:
 			cursor := archiveCursorValue(state.MergeRequestCursor)
 			page, err := repo.Reader.ListHistoricalMergeRequests(requestCtx, repo.Ref, cursor)
+			preempted := archivePreempted(ctx, requestCtx)
 			release()
 			if err != nil {
+				if preempted {
+					return errAdmissionDeferred
+				}
 				return s.recordInventoryFailure(ctx, repo.ID, fmt.Errorf(
 					"list historical merge requests for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
 				))

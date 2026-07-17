@@ -6845,6 +6845,60 @@ func TestSyncOpenMRFromBulkPersistsMergedActorEventFromPullRequest(t *testing.T)
 	assert.True(events[0].CreatedAt.Equal(mergedAt))
 }
 
+func TestSyncOpenMRFromBulkPreservesReviewDecisionWhenReviewsConnectionReturnsEmpty(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+
+	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	reviewer := "alice"
+	approvedState := "APPROVED"
+	reviewID := int64(501)
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR: buildOpenPR(1, now),
+		Reviews: []*gh.PullRequestReview{{
+			ID: &reviewID, User: &gh.User{Login: &reviewer}, State: &approvedState,
+		}},
+		CommentsComplete: true, ReviewsComplete: true, CommitsComplete: true,
+		TimelineComplete: true, CIComplete: true,
+	}, false)
+	require.NoError(err)
+
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("approved", mr.ReviewDecision)
+
+	// A later bulk fetch that legitimately completes (ReviewsComplete is
+	// true, so the connection was not truncated) but observes zero
+	// reviews must not clear the persisted decision: review history is
+	// additive, and the earlier APPROVED review is retained even though
+	// this fetch's Reviews connection came back empty.
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR:               buildOpenPR(1, now.Add(time.Minute)),
+		Reviews:          nil,
+		CommentsComplete: true, ReviewsComplete: true, CommitsComplete: true,
+		TimelineComplete: true, CIComplete: true,
+	}, false)
+	require.NoError(err)
+
+	mr, err = d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("approved", mr.ReviewDecision)
+}
+
 func TestSyncOpenMRFromBulkSkipsMergedActorFallbackWhenAuthoredMergedEventExists(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

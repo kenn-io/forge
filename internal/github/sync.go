@@ -5774,7 +5774,17 @@ func (s *Syncer) syncOpenMRFromBulk(
 			LastActivityAt: computeLastActivity(bulk.PR, bulk.Comments, nil, nil, nil),
 		}
 		if allComplete {
-			fields.ReviewDecision = DeriveReviewDecision(bulk.Reviews)
+			// A complete bulk response with zero reviews does not mean the
+			// MR has no review history: reviews are stable-identity
+			// additive history, and this fetch's Reviews connection can
+			// legitimately come back empty (e.g. a truncated retry window)
+			// while earlier review events remain persisted. Only derive a
+			// fresh decision when this fetch actually observed review
+			// states; otherwise keep the value already preserved from the
+			// existing row above rather than clearing it to empty.
+			if len(bulk.Reviews) > 0 {
+				fields.ReviewDecision = DeriveReviewDecision(bulk.Reviews)
+			}
 			fields.LastActivityAt = computeLastActivity(
 				bulk.PR, bulk.Comments, bulk.Reviews, bulk.Commits, bulk.TimelineEvents,
 			)

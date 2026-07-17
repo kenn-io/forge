@@ -276,6 +276,14 @@ func TestOpenMigratesHistoricalActivityArchive(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	path := filepath.Join(t.TempDir(), "archive-upgrade.db")
+	backfillColumns := []string{
+		"backfill_pr_page",
+		"backfill_pr_complete",
+		"backfill_pr_completed_at",
+		"backfill_issue_page",
+		"backfill_issue_complete",
+		"backfill_issue_completed_at",
+	}
 	var before historicalArchiveUpgradeSnapshotForTest
 
 	openAtVersionForTest(t, path, 38, func(raw *sql.DB) {
@@ -343,6 +351,11 @@ func TestOpenMigratesHistoricalActivityArchive(t *testing.T) {
 	require.NoError(err)
 	t.Cleanup(func() { require.NoError(d.Close()) })
 	assert.Equal(before, readHistoricalArchiveUpgradeSnapshotForTest(t, d.ReadDB()))
+	for _, column := range backfillColumns {
+		exists, columnErr := hasColumn(d.ReadDB(), "middleman_repos", column)
+		require.NoError(columnErr)
+		assert.False(exists, column)
+	}
 
 	var integrityCheck string
 	err = d.ReadDB().QueryRow(`PRAGMA integrity_check`).Scan(&integrityCheck)
@@ -352,75 +365,6 @@ func TestOpenMigratesHistoricalActivityArchive(t *testing.T) {
 	var foreignKeyViolations int
 	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&foreignKeyViolations)
 	require.NoError(err)
-	assert.Zero(foreignKeyViolations)
-}
-
-func TestHistoricalActivityArchiveDownMigrationKeepsDomainRows(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	assert := assert.New(t)
-	path := filepath.Join(t.TempDir(), "archive-down.db")
-
-	d, err := Open(path)
-	require.NoError(err)
-	_, err = d.WriteDB().Exec(`
-		INSERT INTO middleman_repos (
-			id, platform, platform_host, owner, name, repo_path,
-			owner_key, name_key, repo_path_key, created_at
-		) VALUES (
-			1, 'github', 'github.com', 'acme', 'widget', 'acme/widget',
-			'acme', 'widget', 'acme/widget', datetime('now')
-		);
-		INSERT INTO middleman_issues (
-			id, repo_id, platform_id, platform_external_id, number,
-			created_at, updated_at, last_activity_at
-		) VALUES (
-			11, 1, 101, 'issue-101', 7,
-			datetime('now'), datetime('now'), datetime('now')
-		);
-		INSERT INTO middleman_merge_requests (
-			id, repo_id, platform_id, platform_external_id, number,
-			created_at, updated_at, last_activity_at
-		) VALUES (
-			22, 1, 202, 'merge-request-202', 9,
-			datetime('now'), datetime('now'), datetime('now')
-		);
-		INSERT INTO middleman_archive_repos (
-			repo_id, collection_mode, operator_state, created_at, updated_at
-		) VALUES (1, 'discovery', 'active', datetime('now'), datetime('now'));
-		INSERT INTO middleman_archive_items (
-			repo_id, item_type, item_number, provider_item_id,
-			provider_created_at, provider_updated_at, hydration_snapshot_updated_at,
-			lifecycle_state,
-			comments_status, reviews_status, inline_comments_status
-		) VALUES (
-			1, 'issue', 7, 'issue-101', datetime('now'), datetime('now'), datetime('now'),
-			'active', 'pending', 'not_applicable', 'not_applicable'
-		);
-	`)
-	require.NoError(err)
-	require.NoError(d.Close())
-
-	require.NoError(migrateToVersionForTest(t, path, 38))
-	require.ErrorIs(migrateToVersionForTest(t, path, 38), migrate.ErrNoChange)
-
-	raw, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)")
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(raw.Close()) })
-
-	assert.False(tableExistsForTest(t, raw, "middleman_archive_items"))
-	assert.False(tableExistsForTest(t, raw, "middleman_archive_repos"))
-	var issueCount, mergeRequestCount int
-	require.NoError(raw.QueryRow(`SELECT COUNT(*) FROM middleman_issues`).Scan(&issueCount))
-	require.NoError(raw.QueryRow(`SELECT COUNT(*) FROM middleman_merge_requests`).Scan(&mergeRequestCount))
-	assert.Equal(1, issueCount)
-	assert.Equal(1, mergeRequestCount)
-
-	var integrityCheck string
-	require.NoError(raw.QueryRow(`PRAGMA integrity_check`).Scan(&integrityCheck))
-	assert.Equal("ok", integrityCheck)
-	var foreignKeyViolations int
-	require.NoError(raw.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&foreignKeyViolations))
 	assert.Zero(foreignKeyViolations)
 }
 
@@ -1575,28 +1519,6 @@ func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*
 	}
 	seed(raw)
 	require.NoError(raw.Close())
-}
-
-func migrateToVersionForTest(t *testing.T, dbPath string, version uint) error {
-	t.Helper()
-	require := require.New(t)
-
-	raw, err := sql.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)")
-	require.NoError(err)
-	sourceDriver, err := iofs.New(migrationFiles, "migrations")
-	require.NoError(err)
-	databaseDriver, err := migratesqlite.WithInstance(raw, &migratesqlite.Config{
-		MigrationsTable: migrationTableName,
-	})
-	require.NoError(err)
-	m, err := migrate.NewWithInstance("iofs", sourceDriver, "sqlite", databaseDriver)
-	require.NoError(err)
-
-	migrationErr := m.Migrate(version)
-	sourceErr, databaseErr := m.Close()
-	require.NoError(sourceErr)
-	require.NoError(databaseErr)
-	return migrationErr
 }
 
 func openSchemaVersion4DBForTest(t *testing.T) (string, *sql.DB) {

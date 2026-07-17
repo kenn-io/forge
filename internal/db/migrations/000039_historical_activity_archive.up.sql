@@ -1,3 +1,10 @@
+ALTER TABLE middleman_repos DROP COLUMN backfill_pr_page;
+ALTER TABLE middleman_repos DROP COLUMN backfill_pr_complete;
+ALTER TABLE middleman_repos DROP COLUMN backfill_pr_completed_at;
+ALTER TABLE middleman_repos DROP COLUMN backfill_issue_page;
+ALTER TABLE middleman_repos DROP COLUMN backfill_issue_complete;
+ALTER TABLE middleman_repos DROP COLUMN backfill_issue_completed_at;
+
 ALTER TABLE middleman_merge_requests
     ADD COLUMN snapshot_revision INTEGER NOT NULL DEFAULT 0
         CHECK (snapshot_revision >= 0);

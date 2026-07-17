@@ -87,6 +87,7 @@ describe("GhosttyTerminalPane", () => {
     configuredScrollback = 1000;
     configuredCursorBlink = true;
     delete window.__BASE_PATH__;
+    delete window.__KENN_EMBEDDED_WEBSOCKET_BASE_URL__;
     window.__MIDDLEMAN_DEV_API_URL__ = "http://127.0.0.1:8091";
     terminalCtor.mockReset();
     mockFit.mockReset();
@@ -166,6 +167,29 @@ describe("GhosttyTerminalPane", () => {
     const url = new URL(socketAt(0).url);
     expect(url.origin).toBe("ws://localhost:3000");
     expect(url.pathname).toBe("/ws/v1/workspaces/ws-123/terminal");
+  });
+
+  it("uses the embedding host websocket base for terminal routes", async () => {
+    window.__KENN_EMBEDDED_WEBSOCKET_BASE_URL__ = "ws://127.0.0.1:19443/lease-capability/";
+
+    await renderStarted({ workspaceId: "ws-123" });
+
+    expect(sockets).toHaveLength(1);
+    const url = new URL(socketAt(0).url);
+    expect(url.origin).toBe("ws://127.0.0.1:19443");
+    expect(url.pathname).toBe("/lease-capability/ws/v1/workspaces/ws-123/terminal");
+    expect(url.searchParams.get("cols")).toBe("80");
+    expect(url.searchParams.get("rows")).toBe("24");
+  });
+
+  it("preserves the Middleman base path through the embedding host socket", async () => {
+    window.__BASE_PATH__ = "/middleman/";
+    window.__KENN_EMBEDDED_WEBSOCKET_BASE_URL__ = "ws://127.0.0.1:19443/lease-capability/";
+
+    await renderStarted({ workspaceId: "ws-123" });
+
+    const url = new URL(socketAt(0).url);
+    expect(url.pathname).toBe("/lease-capability/middleman/ws/v1/workspaces/ws-123/terminal");
   });
 
   it("applies the base path to the default workspace socket", async () => {

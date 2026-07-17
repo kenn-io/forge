@@ -13,6 +13,7 @@
     createTerminalPastePayload,
     isMultilinePaste,
   } from "./bracketedPaste.js";
+  import { embeddedWebSocketUrl } from "./embeddedWebSocket.js";
   import {
     buildTerminalFontFamily,
     primaryTerminalFontFamily,
@@ -144,6 +145,8 @@
     if (/^wss?:\/\//.test(withSize)) {
       return withSize;
     }
+    const embeddedUrl = embeddedWebSocketUrl(withBasePath(withSize));
+    if (embeddedUrl) return embeddedUrl;
     const devUrl = buildDevApiWsUrl(withSize);
     if (devUrl) return devUrl;
     const proto = location.protocol === "https:" ? "wss" : "ws";

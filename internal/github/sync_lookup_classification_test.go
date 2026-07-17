@@ -21,6 +21,107 @@ func ghLookupStatusError(status int) error {
 	}
 }
 
+// TestSyncerDoesNotPersistTransferredIssueUnderSourceRepo proves through the
+// real repository sync + SQLite that a transferred item is never rewritten
+// under its source repository. It seeds an open issue in repo A via a full
+// sync, then runs a second full sync where the issue is absent from A's open
+// inventory and the closed-item detail fetch returns the item as it appears
+// after the transfer to repo B (GitHub follows the 301 and serves the item
+// with the destination repository URL). The source row must keep its repo-A
+// data, nothing may be persisted under repo B, and the sync outcome must be
+// observable as a failed repo cycle.
+func TestSyncerDoesNotPersistTransferredIssueUnderSourceRepo(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	issueNumber := 7
+	sourceTitle := "issue before transfer"
+	sourceURL := "https://github.com/owner/repo/issues/7"
+	openState := "open"
+	body := ""
+	issueID := int64(777)
+	sourceIssue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &sourceTitle,
+		State:     &openState,
+		HTMLURL:   &sourceURL,
+		Body:      &body,
+		CreatedAt: makeTimestamp(now),
+		UpdatedAt: makeTimestamp(now),
+	}
+
+	// Seed issue #7 as open under repo A via an initial full sync.
+	seedMC := &mockClient{openIssues: []*gh.Issue{sourceIssue}}
+	seedMC.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+		return sourceIssue, nil
+	}
+	seedSyncer := NewSyncer(
+		map[string]Client{"github.com": seedMC},
+		d, nil, repos, time.Minute, nil, nil,
+	)
+	seedSyncer.RunOnce(ctx)
+
+	seeded, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(seeded, "seed cycle should persist issue #7 under repo A")
+	require.Equal(sourceTitle, seeded.Title)
+
+	// Second sync: the issue is gone from A's open inventory, and the
+	// closed-item detail fetch returns it as it now exists in repo B.
+	movedTitle := "issue after transfer"
+	movedURL := "https://github.com/newowner/newname/issues/7"
+	movedRepositoryURL := "https://api.github.com/repos/newowner/newname"
+	movedIssue := &gh.Issue{
+		ID:            &issueID,
+		Number:        &issueNumber,
+		Title:         &movedTitle,
+		State:         &openState,
+		HTMLURL:       &movedURL,
+		RepositoryURL: &movedRepositoryURL,
+		Body:          &body,
+		CreatedAt:     makeTimestamp(now),
+		UpdatedAt:     makeTimestamp(now.Add(time.Hour)),
+	}
+	mc := &mockClient{openIssues: []*gh.Issue{}}
+	mc.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+		return movedIssue, nil
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil, nil,
+	)
+	syncer.RunOnce(ctx)
+
+	// The transfer must be observable as a failed repo cycle rather than
+	// silently swallowed or persisted.
+	_, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
+	assert.True(flagged, "repo must be marked failed after a transferred closed item")
+
+	// The source row keeps its repo-A identity and data.
+	source, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(source, "source row must survive the failed transfer refresh")
+	assert.Equal(sourceTitle, source.Title,
+		"source row must not be rewritten with destination data")
+	assert.Equal(sourceURL, source.URL,
+		"source row must keep the repo-A item URL")
+	assert.Equal("open", source.State,
+		"source row must not be flipped by the transferred item's state")
+
+	// Nothing may appear under the destination repository.
+	destination, err := d.GetIssue(
+		ctx, "github", "github.com", "newowner", "newname", issueNumber,
+	)
+	require.NoError(err)
+	assert.Nil(destination, "no row may be persisted under the destination repo")
+}
+
 // TestGitHubArchiveDestinationIgnoresRepoCasing pins that transfer detection
 // treats GitHub owner/repo names as case-insensitive: a RepoRef that differs
 // from the provider-returned repository URL only in casing identifies the

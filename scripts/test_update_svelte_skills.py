@@ -159,9 +159,10 @@ class UpdateSvelteSkillsTest(unittest.TestCase):
         self.module.apply_repo_skill_overrides("svelte-code-writer", skill_dir)
 
         text = (skill_dir / "SKILL.md").read_text()
-        self.assertIn("vp exec svelte-mcp <command>", text)
-        self.assertIn("vp exec svelte-mcp list-sections", text)
-        self.assertIn("vp exec svelte-mcp get-documentation '$state,$derived,$effect'", text)
+        self.assertIn("vp exec -- svelte-mcp <command>", text)
+        self.assertIn("vp exec -- svelte-mcp list-sections", text)
+        self.assertIn("vp exec -- svelte-mcp get-documentation '$state,$derived,$effect'", text)
+        self.assertIn("Always include the `--` separator after `vp exec`", text)
         self.assertIn("'<script>let count = $state(0);</script>'", text)
         self.assertIn("./frontend/src/lib/Component.svelte", text)
         self.assertNotIn("npx @sveltejs/mcp", text)

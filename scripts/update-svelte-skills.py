@@ -173,24 +173,24 @@ def apply_repo_skill_overrides(skill_name: str, source_dir: Path) -> None:
         "You have access to `@sveltejs/mcp` CLI for Svelte-specific assistance. Use these commands via `npx`:",
         f"Use the repo-installed `@sveltejs/mcp@{SVELTE_MCP_VERSION}` CLI for Svelte-specific assistance:\n\n"
         "```bash\n"
-        "vp exec svelte-mcp <command>\n"
+        "vp exec -- svelte-mcp <command>\n"
         "```\n\n"
-        "Run these commands from the repository root. Do not use `npx`, `npm`, or `bun x` for this tool.",
+        "Run these commands from the repository root. Always include the `--` separator after `vp exec`; without it, Vite+ exits before running `svelte-mcp`. Do not use `npx`, `npm`, or `bun x` for this tool.",
     )
-    text = text.replace("npx @sveltejs/mcp ", "vp exec svelte-mcp ")
+    text = text.replace("npx @sveltejs/mcp ", "vp exec -- svelte-mcp ")
     text = text.replace(
-        'vp exec svelte-mcp get-documentation "$state,$derived,$effect"',
-        "vp exec svelte-mcp get-documentation '$state,$derived,$effect'",
+        'vp exec -- svelte-mcp get-documentation "$state,$derived,$effect"',
+        "vp exec -- svelte-mcp get-documentation '$state,$derived,$effect'",
     )
     text = text.replace(
         "# Analyze inline code (escape $ as \\$)\n"
-        "vp exec svelte-mcp svelte-autofixer '<script>let count = \\$state(0);</script>'",
+        "vp exec -- svelte-mcp svelte-autofixer '<script>let count = \\$state(0);</script>'",
         "# Analyze inline code\n"
-        "vp exec svelte-mcp svelte-autofixer '<script>let count = $state(0);</script>'",
+        "vp exec -- svelte-mcp svelte-autofixer '<script>let count = $state(0);</script>'",
     )
     text = text.replace(
-        "vp exec svelte-mcp svelte-autofixer ./src/lib/Component.svelte",
-        "vp exec svelte-mcp svelte-autofixer ./frontend/src/lib/Component.svelte",
+        "vp exec -- svelte-mcp svelte-autofixer ./src/lib/Component.svelte",
+        "vp exec -- svelte-mcp svelte-autofixer ./frontend/src/lib/Component.svelte",
     )
     text = text.replace(
         "**Important:** When passing code with runes (`$state`, `$derived`, etc.) via the terminal, escape the `$` character as `\\$` to prevent shell variable substitution.",
@@ -199,8 +199,8 @@ def apply_repo_skill_overrides(skill_name: str, source_dir: Path) -> None:
     text = text.replace(
         "1. **Uncertain about syntax?** Run `list-sections` then `get-documentation` for relevant topics\n"
         "2. **Reviewing/debugging?** Run `svelte-autofixer` on the code to detect issues",
-        "1. **Uncertain about syntax?** Run `list-sections` then `get-documentation` for relevant topics with `vp exec svelte-mcp`\n"
-        "2. **Reviewing/debugging?** Run `svelte-autofixer` on the code with `vp exec svelte-mcp` to detect issues",
+        "1. **Uncertain about syntax?** Run `list-sections` then `get-documentation` for relevant topics with `vp exec -- svelte-mcp`\n"
+        "2. **Reviewing/debugging?** Run `svelte-autofixer` on the code with `vp exec -- svelte-mcp` to detect issues",
     )
     skill_path.write_text(text)
 

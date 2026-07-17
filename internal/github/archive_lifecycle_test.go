@@ -132,41 +132,41 @@ func (*archiveWorkerProvider) Capabilities() platform.Capabilities {
 		OrdinaryComments: true,
 	}}
 }
-func (p *archiveWorkerProvider) ListHistoricalIssues(context.Context, platform.RepoRef, string) (platform.ArchivePage[platform.Issue], error) {
+func (p *archiveWorkerProvider) ListHistoricalIssues(context.Context, platform.RepoRef, string) (platform.Page[platform.Issue], error) {
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
-	return platform.ArchivePage[platform.Issue]{Items: []platform.Issue{{
+	return platform.Page[platform.Issue]{Items: []platform.Issue{{
 		Repo: p.ref, PlatformID: 1, PlatformExternalID: "issue-1", Number: 1,
 		URL: "https://github.test/acme/widget/issues/1", Title: "Archived issue",
 		Author: "alice", State: "closed", CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 	}}, Exhausted: true}, nil
 }
-func (*archiveWorkerProvider) ListHistoricalMergeRequests(context.Context, platform.RepoRef, string) (platform.ArchivePage[platform.MergeRequest], error) {
-	return platform.ArchivePage[platform.MergeRequest]{Exhausted: true}, nil
+func (*archiveWorkerProvider) ListHistoricalMergeRequests(context.Context, platform.RepoRef, string) (platform.Page[platform.MergeRequest], error) {
+	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
 }
-func (*archiveWorkerProvider) ListUpdatedIssues(context.Context, platform.RepoRef, time.Time, string) (platform.ArchivePage[platform.Issue], error) {
-	return platform.ArchivePage[platform.Issue]{Exhausted: true}, nil
+func (*archiveWorkerProvider) ListUpdatedIssues(context.Context, platform.RepoRef, time.Time, string) (platform.Page[platform.Issue], error) {
+	return platform.Page[platform.Issue]{Exhausted: true}, nil
 }
-func (*archiveWorkerProvider) ListUpdatedMergeRequests(context.Context, platform.RepoRef, time.Time, string) (platform.ArchivePage[platform.MergeRequest], error) {
-	return platform.ArchivePage[platform.MergeRequest]{Exhausted: true}, nil
+func (*archiveWorkerProvider) ListUpdatedMergeRequests(context.Context, platform.RepoRef, time.Time, string) (platform.Page[platform.MergeRequest], error) {
+	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
 }
-func (p *archiveWorkerProvider) GetArchiveIssue(context.Context, platform.RepoRef, int) (platform.ArchiveItemResult[platform.Issue], error) {
+func (p *archiveWorkerProvider) GetArchiveIssue(context.Context, platform.RepoRef, int) (platform.ItemLookup[platform.Issue], error) {
 	page, _ := p.ListHistoricalIssues(context.Background(), p.ref, "")
-	return platform.ArchiveItemResult[platform.Issue]{Outcome: platform.ArchiveLookupPresent, Item: page.Items[0]}, nil
+	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupPresent, Item: page.Items[0]}, nil
 }
-func (*archiveWorkerProvider) GetArchiveMergeRequest(context.Context, platform.RepoRef, int) (platform.ArchiveItemResult[platform.MergeRequest], error) {
-	return platform.ArchiveItemResult[platform.MergeRequest]{Outcome: platform.ArchiveLookupRemoved}, nil
+func (*archiveWorkerProvider) GetArchiveMergeRequest(context.Context, platform.RepoRef, int) (platform.ItemLookup[platform.MergeRequest], error) {
+	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupRemoved}, nil
 }
-func (*archiveWorkerProvider) ListArchiveIssueComments(context.Context, platform.RepoRef, int, string) (platform.ArchivePage[platform.IssueEvent], error) {
-	return platform.ArchivePage[platform.IssueEvent]{Exhausted: true}, nil
+func (*archiveWorkerProvider) ListArchiveIssueComments(context.Context, platform.RepoRef, int, string) (platform.Page[platform.IssueEvent], error) {
+	return platform.Page[platform.IssueEvent]{Exhausted: true}, nil
 }
-func (*archiveWorkerProvider) ListArchiveMergeRequestComments(context.Context, platform.RepoRef, int, string) (platform.ArchivePage[platform.MergeRequestEvent], error) {
-	return platform.ArchivePage[platform.MergeRequestEvent]{Exhausted: true}, nil
+func (*archiveWorkerProvider) ListArchiveMergeRequestComments(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestEvent], error) {
+	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
 }
-func (*archiveWorkerProvider) ListArchiveSubmittedReviews(context.Context, platform.RepoRef, int, string) (platform.ArchivePage[platform.MergeRequestEvent], error) {
-	return platform.ArchivePage[platform.MergeRequestEvent]{Exhausted: true}, nil
+func (*archiveWorkerProvider) ListArchiveSubmittedReviews(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestEvent], error) {
+	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
 }
-func (*archiveWorkerProvider) ListArchiveReviewThreads(context.Context, platform.RepoRef, int, string) (platform.ArchivePage[platform.MergeRequestReviewThread], error) {
-	return platform.ArchivePage[platform.MergeRequestReviewThread]{Exhausted: true}, nil
+func (*archiveWorkerProvider) ListArchiveReviewThreads(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestReviewThread], error) {
+	return platform.Page[platform.MergeRequestReviewThread]{Exhausted: true}, nil
 }
 
 // preemptibleArchiveProvider blocks its first archive issue lookup until the
@@ -180,13 +180,13 @@ type preemptibleArchiveProvider struct {
 
 func (p *preemptibleArchiveProvider) GetArchiveIssue(
 	ctx context.Context, ref platform.RepoRef, number int,
-) (platform.ArchiveItemResult[platform.Issue], error) {
+) (platform.ItemLookup[platform.Issue], error) {
 	blocked := false
 	p.blockOnce.Do(func() { blocked = true })
 	if blocked {
 		close(p.readStarted)
 		<-ctx.Done()
-		return platform.ArchiveItemResult[platform.Issue]{}, ctx.Err()
+		return platform.ItemLookup[platform.Issue]{}, ctx.Err()
 	}
 	return p.archiveWorkerProvider.GetArchiveIssue(ctx, ref, number)
 }

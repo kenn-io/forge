@@ -28,7 +28,7 @@ func (c *Client) ListHistoricalIssues(
 	ctx context.Context,
 	ref platform.RepoRef,
 	cursor string,
-) (platform.ArchivePage[platform.Issue], error) {
+) (platform.Page[platform.Issue], error) {
 	return c.listArchiveIssues(ctx, ref, time.Time{}, cursor, "historical_issues", "created_at")
 }
 
@@ -36,7 +36,7 @@ func (c *Client) ListHistoricalMergeRequests(
 	ctx context.Context,
 	ref platform.RepoRef,
 	cursor string,
-) (platform.ArchivePage[platform.MergeRequest], error) {
+) (platform.Page[platform.MergeRequest], error) {
 	return c.listArchiveMergeRequests(
 		ctx, ref, time.Time{}, cursor, "historical_merge_requests", "created_at",
 	)
@@ -47,7 +47,7 @@ func (c *Client) ListUpdatedIssues(
 	ref platform.RepoRef,
 	since time.Time,
 	cursor string,
-) (platform.ArchivePage[platform.Issue], error) {
+) (platform.Page[platform.Issue], error) {
 	return c.listArchiveIssues(ctx, ref, since.UTC(), cursor, "updated_issues", "updated_at")
 }
 
@@ -56,7 +56,7 @@ func (c *Client) ListUpdatedMergeRequests(
 	ref platform.RepoRef,
 	since time.Time,
 	cursor string,
-) (platform.ArchivePage[platform.MergeRequest], error) {
+) (platform.Page[platform.MergeRequest], error) {
 	return c.listArchiveMergeRequests(
 		ctx, ref, since.UTC(), cursor, "updated_merge_requests", "updated_at",
 	)
@@ -69,14 +69,14 @@ func (c *Client) listArchiveIssues(
 	encodedCursor string,
 	mode string,
 	orderBy string,
-) (platform.ArchivePage[platform.Issue], error) {
+) (platform.Page[platform.Issue], error) {
 	pid, err := projectLookupArg(ref)
 	if err != nil {
-		return platform.ArchivePage[platform.Issue]{}, err
+		return platform.Page[platform.Issue]{}, err
 	}
 	cursor, err := c.decodeArchiveCursor(ref, 0, encodedCursor, mode, since)
 	if err != nil {
-		return platform.ArchivePage[platform.Issue]{}, err
+		return platform.Page[platform.Issue]{}, err
 	}
 	state, sortOrder := "all", "asc"
 	if !since.IsZero() {
@@ -95,7 +95,7 @@ func (c *Client) listArchiveIssues(
 	}
 	issues, resp, err := c.api.Issues.ListProjectIssues(pid, opts, gitlab.WithContext(ctx))
 	if err != nil {
-		return platform.ArchivePage[platform.Issue]{}, c.mapGitLabError("archive_list_issues", err)
+		return platform.Page[platform.Issue]{}, c.mapGitLabError("archive_list_issues", err)
 	}
 	normalizedRef := c.normalizeRef(ref, ref.PlatformID)
 	items := make([]platform.Issue, 0, len(issues))
@@ -112,14 +112,14 @@ func (c *Client) listArchiveMergeRequests(
 	encodedCursor string,
 	mode string,
 	orderBy string,
-) (platform.ArchivePage[platform.MergeRequest], error) {
+) (platform.Page[platform.MergeRequest], error) {
 	pid, err := projectLookupArg(ref)
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequest]{}, err
+		return platform.Page[platform.MergeRequest]{}, err
 	}
 	cursor, err := c.decodeArchiveCursor(ref, 0, encodedCursor, mode, since)
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequest]{}, err
+		return platform.Page[platform.MergeRequest]{}, err
 	}
 	state, sortOrder := "all", "asc"
 	if !since.IsZero() {
@@ -137,7 +137,7 @@ func (c *Client) listArchiveMergeRequests(
 	}
 	mrs, resp, err := c.api.MergeRequests.ListProjectMergeRequests(pid, opts, gitlab.WithContext(ctx))
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequest]{}, c.mapGitLabError("archive_list_merge_requests", err)
+		return platform.Page[platform.MergeRequest]{}, c.mapGitLabError("archive_list_merge_requests", err)
 	}
 	normalizedRef := c.normalizeRef(ref, ref.PlatformID)
 	items := make([]platform.MergeRequest, 0, len(mrs))
@@ -162,17 +162,17 @@ func (c *Client) GetArchiveIssue(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
-) (platform.ArchiveItemResult[platform.Issue], error) {
+) (platform.ItemLookup[platform.Issue], error) {
 	pid, err := projectLookupArg(ref)
 	if err != nil {
-		return platform.ArchiveItemResult[platform.Issue]{}, err
+		return platform.ItemLookup[platform.Issue]{}, err
 	}
 	issue, _, err := c.api.Issues.GetIssue(pid, int64(number), nil, gitlab.WithContext(ctx))
 	if err != nil {
 		return classifyGitLabArchiveLookup(c, ctx, pid, "archive_get_issue", err)
 	}
-	return platform.ArchiveItemResult[platform.Issue]{
-		Outcome: platform.ArchiveLookupPresent,
+	return platform.ItemLookup[platform.Issue]{
+		Outcome: platform.LookupPresent,
 		Item:    NormalizeIssue(c.normalizeRef(ref, ref.PlatformID), issue),
 	}, nil
 }
@@ -181,18 +181,18 @@ func (c *Client) GetArchiveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
-) (platform.ArchiveItemResult[platform.MergeRequest], error) {
+) (platform.ItemLookup[platform.MergeRequest], error) {
 	pid, err := projectLookupArg(ref)
 	if err != nil {
-		return platform.ArchiveItemResult[platform.MergeRequest]{}, err
+		return platform.ItemLookup[platform.MergeRequest]{}, err
 	}
 	mr, _, err := c.api.MergeRequests.GetMergeRequest(pid, int64(number), nil, gitlab.WithContext(ctx))
 	if err != nil {
 		outcome, classifyErr := classifyGitLabArchiveOutcome(c, ctx, pid, "archive_get_merge_request", err)
-		return platform.ArchiveItemResult[platform.MergeRequest]{Outcome: outcome}, classifyErr
+		return platform.ItemLookup[platform.MergeRequest]{Outcome: outcome}, classifyErr
 	}
-	return platform.ArchiveItemResult[platform.MergeRequest]{
-		Outcome: platform.ArchiveLookupPresent,
+	return platform.ItemLookup[platform.MergeRequest]{
+		Outcome: platform.LookupPresent,
 		Item:    NormalizeDetailedMergeRequest(c.normalizeRef(ref, ref.PlatformID), mr),
 	}, nil
 }
@@ -203,9 +203,9 @@ func classifyGitLabArchiveLookup(
 	pid any,
 	capability string,
 	err error,
-) (platform.ArchiveItemResult[platform.Issue], error) {
+) (platform.ItemLookup[platform.Issue], error) {
 	outcome, classifyErr := classifyGitLabArchiveOutcome(c, ctx, pid, capability, err)
-	return platform.ArchiveItemResult[platform.Issue]{Outcome: outcome}, classifyErr
+	return platform.ItemLookup[platform.Issue]{Outcome: outcome}, classifyErr
 }
 
 func classifyGitLabArchiveOutcome(
@@ -214,11 +214,11 @@ func classifyGitLabArchiveOutcome(
 	pid any,
 	capability string,
 	err error,
-) (platform.ArchiveLookupOutcome, error) {
+) (platform.LookupOutcome, error) {
 	if gitLabArchiveAccessError(err) {
 		_, _, repoErr := c.api.Projects.GetProject(pid, nil, gitlab.WithContext(ctx))
 		if repoErr == nil {
-			return platform.ArchiveLookupInaccessible, nil
+			return platform.LookupInaccessible, nil
 		}
 		if gitLabArchiveAccessError(repoErr) || isGitLabNotFound(repoErr) {
 			return "", platform.PermissionDenied(platform.KindGitLab, c.host, repoErr)
@@ -233,7 +233,7 @@ func classifyGitLabArchiveOutcome(
 		// GitLab may hide confidential issues and merge requests behind an item
 		// 404 even while the source project remains readable. Without a stable
 		// deletion signal, retain the cached item as individually inaccessible.
-		return platform.ArchiveLookupInaccessible, nil
+		return platform.LookupInaccessible, nil
 	}
 	if gitLabArchiveAccessError(repoErr) || isGitLabNotFound(repoErr) {
 		return "", platform.PermissionDenied(platform.KindGitLab, c.host, repoErr)
@@ -252,10 +252,10 @@ func (c *Client) ListArchiveIssueComments(
 	ref platform.RepoRef,
 	number int,
 	encodedCursor string,
-) (platform.ArchivePage[platform.IssueEvent], error) {
+) (platform.Page[platform.IssueEvent], error) {
 	pid, cursor, err := c.archiveDetailArgs(ref, number, encodedCursor, "issue_comments")
 	if err != nil {
-		return platform.ArchivePage[platform.IssueEvent]{}, err
+		return platform.Page[platform.IssueEvent]{}, err
 	}
 	discussions, resp, err := c.api.Discussions.ListIssueDiscussions(
 		pid, int64(number),
@@ -263,7 +263,7 @@ func (c *Client) ListArchiveIssueComments(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.ArchivePage[platform.IssueEvent]{}, c.mapGitLabError("archive_issue_comments", err)
+		return platform.Page[platform.IssueEvent]{}, c.mapGitLabError("archive_issue_comments", err)
 	}
 	items := NormalizeIssueDiscussions(
 		c.normalizeRef(ref, ref.PlatformID), number, gitLabIssueURL(ref, number), discussions,
@@ -276,10 +276,10 @@ func (c *Client) ListArchiveMergeRequestComments(
 	ref platform.RepoRef,
 	number int,
 	encodedCursor string,
-) (platform.ArchivePage[platform.MergeRequestEvent], error) {
+) (platform.Page[platform.MergeRequestEvent], error) {
 	pid, cursor, err := c.archiveDetailArgs(ref, number, encodedCursor, "merge_request_comments")
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequestEvent]{}, err
+		return platform.Page[platform.MergeRequestEvent]{}, err
 	}
 	discussions, resp, err := c.api.Discussions.ListMergeRequestDiscussions(
 		pid, int64(number),
@@ -287,7 +287,7 @@ func (c *Client) ListArchiveMergeRequestComments(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequestEvent]{}, c.mapGitLabError("archive_merge_request_comments", err)
+		return platform.Page[platform.MergeRequestEvent]{}, c.mapGitLabError("archive_merge_request_comments", err)
 	}
 	ordinary := make([]*gitlab.Discussion, 0, len(discussions))
 	for _, discussion := range discussions {
@@ -320,8 +320,8 @@ func (c *Client) ListArchiveSubmittedReviews(
 	platform.RepoRef,
 	int,
 	string,
-) (platform.ArchivePage[platform.MergeRequestEvent], error) {
-	return platform.ArchivePage[platform.MergeRequestEvent]{}, platform.UnsupportedCapability(
+) (platform.Page[platform.MergeRequestEvent], error) {
+	return platform.Page[platform.MergeRequestEvent]{}, platform.UnsupportedCapability(
 		platform.KindGitLab, c.host, string(platform.ArchiveCapabilitySubmittedReviews),
 	)
 }
@@ -331,10 +331,10 @@ func (c *Client) ListArchiveReviewThreads(
 	ref platform.RepoRef,
 	number int,
 	encodedCursor string,
-) (platform.ArchivePage[platform.MergeRequestReviewThread], error) {
+) (platform.Page[platform.MergeRequestReviewThread], error) {
 	pid, cursor, err := c.archiveDetailArgs(ref, number, encodedCursor, "review_threads")
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequestReviewThread]{}, err
+		return platform.Page[platform.MergeRequestReviewThread]{}, err
 	}
 	discussions, resp, err := c.api.Discussions.ListMergeRequestDiscussions(
 		pid, int64(number),
@@ -342,7 +342,7 @@ func (c *Client) ListArchiveReviewThreads(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequestReviewThread]{}, c.mapGitLabError("archive_review_threads", err)
+		return platform.Page[platform.MergeRequestReviewThread]{}, c.mapGitLabError("archive_review_threads", err)
 	}
 	normalizedRef := c.normalizeRef(ref, ref.PlatformID)
 	items := make([]platform.MergeRequestReviewThread, 0)
@@ -426,16 +426,16 @@ func gitLabArchivePage[T any](
 	cursor archiveCursor,
 	nextPage int64,
 	filtered bool,
-) (platform.ArchivePage[T], error) {
+) (platform.Page[T], error) {
 	if nextPage == 0 {
-		return platform.ArchivePage[T]{Items: items, Exhausted: true}, nil
+		return platform.Page[T]{Items: items, Exhausted: true}, nil
 	}
 	cursor.Page = nextPage
 	next, err := encodeGitLabArchiveCursor(cursor)
 	if err != nil {
-		return platform.ArchivePage[T]{}, err
+		return platform.Page[T]{}, err
 	}
-	return platform.ArchivePage[T]{
+	return platform.Page[T]{
 		Items: items, NextCursor: next, ProgressOnly: filtered && len(items) == 0,
 	}, nil
 }

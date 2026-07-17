@@ -1186,56 +1186,56 @@ func (p *archiveAPITestProvider) Capabilities() platform.Capabilities {
 func (p *archiveAPITestProvider) pageCall() {
 	p.calls.Add(1)
 }
-func (p *archiveAPITestProvider) ListHistoricalIssues(_ context.Context, ref platform.RepoRef, _ string) (platform.ArchivePage[platform.Issue], error) {
+func (p *archiveAPITestProvider) ListHistoricalIssues(_ context.Context, ref platform.RepoRef, _ string) (platform.Page[platform.Issue], error) {
 	p.pageCall()
 	if p.issueInventoryErr != nil {
-		return platform.ArchivePage[platform.Issue]{}, p.issueInventoryErr
+		return platform.Page[platform.Issue]{}, p.issueInventoryErr
 	}
 	if issue, ok := p.issues[ref.RepoPath]; ok {
-		return platform.ArchivePage[platform.Issue]{Items: []platform.Issue{issue}, Exhausted: true}, nil
+		return platform.Page[platform.Issue]{Items: []platform.Issue{issue}, Exhausted: true}, nil
 	}
-	return platform.ArchivePage[platform.Issue]{Exhausted: true}, nil
+	return platform.Page[platform.Issue]{Exhausted: true}, nil
 }
-func (p *archiveAPITestProvider) ListHistoricalMergeRequests(_ context.Context, ref platform.RepoRef, _ string) (platform.ArchivePage[platform.MergeRequest], error) {
+func (p *archiveAPITestProvider) ListHistoricalMergeRequests(_ context.Context, ref platform.RepoRef, _ string) (platform.Page[platform.MergeRequest], error) {
 	p.pageCall()
 	if mr, ok := p.mergeRequests[ref.RepoPath]; ok {
-		return platform.ArchivePage[platform.MergeRequest]{Items: []platform.MergeRequest{mr}, Exhausted: true}, nil
+		return platform.Page[platform.MergeRequest]{Items: []platform.MergeRequest{mr}, Exhausted: true}, nil
 	}
-	return platform.ArchivePage[platform.MergeRequest]{Exhausted: true}, nil
+	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
 }
-func (p *archiveAPITestProvider) ListUpdatedIssues(context.Context, platform.RepoRef, time.Time, string) (platform.ArchivePage[platform.Issue], error) {
+func (p *archiveAPITestProvider) ListUpdatedIssues(context.Context, platform.RepoRef, time.Time, string) (platform.Page[platform.Issue], error) {
 	p.pageCall()
-	return platform.ArchivePage[platform.Issue]{Exhausted: true}, nil
+	return platform.Page[platform.Issue]{Exhausted: true}, nil
 }
-func (p *archiveAPITestProvider) ListUpdatedMergeRequests(context.Context, platform.RepoRef, time.Time, string) (platform.ArchivePage[platform.MergeRequest], error) {
+func (p *archiveAPITestProvider) ListUpdatedMergeRequests(context.Context, platform.RepoRef, time.Time, string) (platform.Page[platform.MergeRequest], error) {
 	p.pageCall()
-	return platform.ArchivePage[platform.MergeRequest]{Exhausted: true}, nil
+	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
 }
-func (p *archiveAPITestProvider) GetArchiveIssue(_ context.Context, ref platform.RepoRef, _ int) (platform.ArchiveItemResult[platform.Issue], error) {
+func (p *archiveAPITestProvider) GetArchiveIssue(_ context.Context, ref platform.RepoRef, _ int) (platform.ItemLookup[platform.Issue], error) {
 	p.pageCall()
 	if destination, ok := p.movedDestinations[ref.RepoPath]; ok {
-		return platform.ArchiveItemResult[platform.Issue]{
-			Outcome: platform.ArchiveLookupMoved, Destination: &destination,
+		return platform.ItemLookup[platform.Issue]{
+			Outcome: platform.LookupMoved, Destination: &destination,
 		}, nil
 	}
 	if issue, ok := p.issues[ref.RepoPath]; ok {
-		return platform.ArchiveItemResult[platform.Issue]{Outcome: platform.ArchiveLookupPresent, Item: issue}, nil
+		return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupPresent, Item: issue}, nil
 	}
-	return platform.ArchiveItemResult[platform.Issue]{Outcome: platform.ArchiveLookupRemoved}, nil
+	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupRemoved}, nil
 }
-func (p *archiveAPITestProvider) GetArchiveMergeRequest(_ context.Context, ref platform.RepoRef, _ int) (platform.ArchiveItemResult[platform.MergeRequest], error) {
+func (p *archiveAPITestProvider) GetArchiveMergeRequest(_ context.Context, ref platform.RepoRef, _ int) (platform.ItemLookup[platform.MergeRequest], error) {
 	p.pageCall()
 	if destination, ok := p.movedMRDestinations[ref.RepoPath]; ok {
-		return platform.ArchiveItemResult[platform.MergeRequest]{
-			Outcome: platform.ArchiveLookupMoved, Destination: &destination,
+		return platform.ItemLookup[platform.MergeRequest]{
+			Outcome: platform.LookupMoved, Destination: &destination,
 		}, nil
 	}
 	if mr, ok := p.mergeRequests[ref.RepoPath]; ok {
-		return platform.ArchiveItemResult[platform.MergeRequest]{Outcome: platform.ArchiveLookupPresent, Item: mr}, nil
+		return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupPresent, Item: mr}, nil
 	}
-	return platform.ArchiveItemResult[platform.MergeRequest]{Outcome: platform.ArchiveLookupRemoved}, nil
+	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupRemoved}, nil
 }
-func (p *archiveAPITestProvider) ListArchiveIssueComments(_ context.Context, ref platform.RepoRef, number int, cursor string) (platform.ArchivePage[platform.IssueEvent], error) {
+func (p *archiveAPITestProvider) ListArchiveIssueComments(_ context.Context, ref platform.RepoRef, number int, cursor string) (platform.Page[platform.IssueEvent], error) {
 	p.pageCall()
 	p.mu.Lock()
 	p.issueCommentCursors = append(p.issueCommentCursors, cursor)
@@ -1251,34 +1251,34 @@ func (p *archiveAPITestProvider) ListArchiveIssueComments(_ context.Context, ref
 		<-release
 	}
 	if fail {
-		return platform.ArchivePage[platform.IssueEvent]{}, errors.New("second comment page failed")
+		return platform.Page[platform.IssueEvent]{}, errors.New("second comment page failed")
 	}
 	event := platform.IssueEvent{Repo: ref, PlatformExternalID: "comment-1", IssueNumber: number,
 		EventType: "issue_comment", Author: "alice", Body: "first", CreatedAt: time.Date(2026, 7, 1, 12, 1, 0, 0, time.UTC), DedupeKey: "comment-1"}
 	if cursor == "" {
-		return platform.ArchivePage[platform.IssueEvent]{Items: []platform.IssueEvent{event}, NextCursor: "c2"}, nil
+		return platform.Page[platform.IssueEvent]{Items: []platform.IssueEvent{event}, NextCursor: "c2"}, nil
 	}
 	event.PlatformExternalID, event.Body, event.DedupeKey = "comment-2", "second", "comment-2"
 	event.CreatedAt = event.CreatedAt.Add(time.Minute)
-	return platform.ArchivePage[platform.IssueEvent]{Items: []platform.IssueEvent{event}, Exhausted: true}, nil
+	return platform.Page[platform.IssueEvent]{Items: []platform.IssueEvent{event}, Exhausted: true}, nil
 }
-func (p *archiveAPITestProvider) ListArchiveMergeRequestComments(context.Context, platform.RepoRef, int, string) (platform.ArchivePage[platform.MergeRequestEvent], error) {
+func (p *archiveAPITestProvider) ListArchiveMergeRequestComments(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestEvent], error) {
 	p.pageCall()
 	p.mrCommentCalls.Add(1)
-	return platform.ArchivePage[platform.MergeRequestEvent]{Exhausted: true}, nil
+	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
 }
-func (p *archiveAPITestProvider) ListArchiveSubmittedReviews(context.Context, platform.RepoRef, int, string) (platform.ArchivePage[platform.MergeRequestEvent], error) {
+func (p *archiveAPITestProvider) ListArchiveSubmittedReviews(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestEvent], error) {
 	p.pageCall()
 	p.mrReviewCalls.Add(1)
 	if p.failMRReviewOnce.CompareAndSwap(true, false) {
-		return platform.ArchivePage[platform.MergeRequestEvent]{}, errors.New("synthetic review refresh failure")
+		return platform.Page[platform.MergeRequestEvent]{}, errors.New("synthetic review refresh failure")
 	}
-	return platform.ArchivePage[platform.MergeRequestEvent]{Exhausted: true}, nil
+	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
 }
-func (p *archiveAPITestProvider) ListArchiveReviewThreads(context.Context, platform.RepoRef, int, string) (platform.ArchivePage[platform.MergeRequestReviewThread], error) {
+func (p *archiveAPITestProvider) ListArchiveReviewThreads(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestReviewThread], error) {
 	p.pageCall()
 	p.mrThreadCalls.Add(1)
-	return platform.ArchivePage[platform.MergeRequestReviewThread]{Exhausted: true}, nil
+	return platform.Page[platform.MergeRequestReviewThread]{Exhausted: true}, nil
 }
 
 type archiveAPITestSource struct{ refs []platform.RepoRef }

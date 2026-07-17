@@ -135,7 +135,7 @@ func TestArchiveDetailsAndLookupOutcomes(t *testing.T) {
 	assert.Len(reviews.Items, 1)
 	assert.False(reviews.ProgressOnly)
 	assert.NotEmpty(reviews.NextCursor)
-	assert.Equal(platform.ArchiveLookupRemoved, removed.Outcome)
+	assert.Equal(platform.LookupRemoved, removed.Outcome)
 	require.ErrorIs(inlineErr, platform.ErrUnsupportedCapability)
 	assert.Equal(platform.ArchiveCapabilities{
 		HistoricalIssues: true, HistoricalMergeRequests: true,

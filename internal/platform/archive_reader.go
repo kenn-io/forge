@@ -17,7 +17,7 @@ func (r *validatingArchiveReader) ListHistoricalIssues(
 	ctx context.Context,
 	ref RepoRef,
 	cursor string,
-) (ArchivePage[Issue], error) {
+) (Page[Issue], error) {
 	return validateArchivePageRead(
 		ctx, r, ref, cursor, []ArchiveCapability{ArchiveCapabilityHistoricalIssues},
 		r.reader.ListHistoricalIssues,
@@ -31,7 +31,7 @@ func (r *validatingArchiveReader) ListHistoricalMergeRequests(
 	ctx context.Context,
 	ref RepoRef,
 	cursor string,
-) (ArchivePage[MergeRequest], error) {
+) (Page[MergeRequest], error) {
 	return validateArchivePageRead(
 		ctx, r, ref, cursor, []ArchiveCapability{ArchiveCapabilityHistoricalMergeRequests},
 		r.reader.ListHistoricalMergeRequests,
@@ -46,10 +46,10 @@ func (r *validatingArchiveReader) ListUpdatedIssues(
 	ref RepoRef,
 	watermark time.Time,
 	cursor string,
-) (ArchivePage[Issue], error) {
+) (Page[Issue], error) {
 	return validateArchivePageRead(
 		ctx, r, ref, cursor, []ArchiveCapability{ArchiveCapabilityHistoricalIssues},
-		func(ctx context.Context, ref RepoRef, cursor string) (ArchivePage[Issue], error) {
+		func(ctx context.Context, ref RepoRef, cursor string) (Page[Issue], error) {
 			return r.reader.ListUpdatedIssues(ctx, ref, watermark, cursor)
 		},
 		func(issue Issue) error {
@@ -63,10 +63,10 @@ func (r *validatingArchiveReader) ListUpdatedMergeRequests(
 	ref RepoRef,
 	watermark time.Time,
 	cursor string,
-) (ArchivePage[MergeRequest], error) {
+) (Page[MergeRequest], error) {
 	return validateArchivePageRead(
 		ctx, r, ref, cursor, []ArchiveCapability{ArchiveCapabilityHistoricalMergeRequests},
-		func(ctx context.Context, ref RepoRef, cursor string) (ArchivePage[MergeRequest], error) {
+		func(ctx context.Context, ref RepoRef, cursor string) (Page[MergeRequest], error) {
 			return r.reader.ListUpdatedMergeRequests(ctx, ref, watermark, cursor)
 		},
 		func(mr MergeRequest) error {
@@ -79,7 +79,7 @@ func (r *validatingArchiveReader) GetArchiveIssue(
 	ctx context.Context,
 	ref RepoRef,
 	number int,
-) (ArchiveItemResult[Issue], error) {
+) (ItemLookup[Issue], error) {
 	return validateArchiveItemRead(
 		ctx, r, ref, number, ArchiveCapabilityHistoricalIssues,
 		r.reader.GetArchiveIssue,
@@ -92,7 +92,7 @@ func (r *validatingArchiveReader) GetArchiveMergeRequest(
 	ctx context.Context,
 	ref RepoRef,
 	number int,
-) (ArchiveItemResult[MergeRequest], error) {
+) (ItemLookup[MergeRequest], error) {
 	return validateArchiveItemRead(
 		ctx, r, ref, number, ArchiveCapabilityHistoricalMergeRequests,
 		r.reader.GetArchiveMergeRequest,
@@ -106,11 +106,11 @@ func (r *validatingArchiveReader) ListArchiveIssueComments(
 	ref RepoRef,
 	number int,
 	cursor string,
-) (ArchivePage[IssueEvent], error) {
+) (Page[IssueEvent], error) {
 	return validateArchivePageRead(
 		ctx, r, ref, cursor,
 		[]ArchiveCapability{ArchiveCapabilityHistoricalIssues, ArchiveCapabilityOrdinaryComments},
-		func(ctx context.Context, ref RepoRef, cursor string) (ArchivePage[IssueEvent], error) {
+		func(ctx context.Context, ref RepoRef, cursor string) (Page[IssueEvent], error) {
 			return r.reader.ListArchiveIssueComments(ctx, ref, number, cursor)
 		},
 		func(event IssueEvent) error {
@@ -124,7 +124,7 @@ func (r *validatingArchiveReader) ListArchiveMergeRequestComments(
 	ref RepoRef,
 	number int,
 	cursor string,
-) (ArchivePage[MergeRequestEvent], error) {
+) (Page[MergeRequestEvent], error) {
 	return r.listMergeRequestEvents(
 		ctx, ref, number, cursor, ArchiveCapabilityOrdinaryComments,
 		r.reader.ListArchiveMergeRequestComments,
@@ -136,7 +136,7 @@ func (r *validatingArchiveReader) ListArchiveSubmittedReviews(
 	ref RepoRef,
 	number int,
 	cursor string,
-) (ArchivePage[MergeRequestEvent], error) {
+) (Page[MergeRequestEvent], error) {
 	return r.listMergeRequestEvents(
 		ctx, ref, number, cursor, ArchiveCapabilitySubmittedReviews,
 		r.reader.ListArchiveSubmittedReviews,
@@ -148,11 +148,11 @@ func (r *validatingArchiveReader) ListArchiveReviewThreads(
 	ref RepoRef,
 	number int,
 	cursor string,
-) (ArchivePage[MergeRequestReviewThread], error) {
+) (Page[MergeRequestReviewThread], error) {
 	return validateArchivePageRead(
 		ctx, r, ref, cursor,
 		[]ArchiveCapability{ArchiveCapabilityHistoricalMergeRequests, ArchiveCapabilityInlineReviewComments},
-		func(ctx context.Context, ref RepoRef, cursor string) (ArchivePage[MergeRequestReviewThread], error) {
+		func(ctx context.Context, ref RepoRef, cursor string) (Page[MergeRequestReviewThread], error) {
 			return r.reader.ListArchiveReviewThreads(ctx, ref, number, cursor)
 		},
 		func(thread MergeRequestReviewThread) error {
@@ -167,17 +167,17 @@ func validateArchivePageRead[T any](
 	ref RepoRef,
 	cursor string,
 	capabilities []ArchiveCapability,
-	read func(context.Context, RepoRef, string) (ArchivePage[T], error),
+	read func(context.Context, RepoRef, string) (Page[T], error),
 	validateItem func(T) error,
-) (ArchivePage[T], error) {
+) (Page[T], error) {
 	if err := r.prepare(ref, capabilities...); err != nil {
-		return ArchivePage[T]{}, err
+		return Page[T]{}, err
 	}
 	page, err := read(ctx, ref, cursor)
 	if err != nil {
-		return ArchivePage[T]{}, err
+		return Page[T]{}, err
 	}
-	if err := ValidateArchivePage(r.kind, r.host, cursor, page); err != nil {
+	if err := ValidatePage(r.kind, r.host, cursor, page); err != nil {
 		return page, err
 	}
 	for _, item := range page.Items {
@@ -194,24 +194,24 @@ func validateArchiveItemRead[T any](
 	ref RepoRef,
 	number int,
 	capability ArchiveCapability,
-	read func(context.Context, RepoRef, int) (ArchiveItemResult[T], error),
+	read func(context.Context, RepoRef, int) (ItemLookup[T], error),
 	identity func(T) (RepoRef, int),
 	itemName string,
-) (ArchiveItemResult[T], error) {
+) (ItemLookup[T], error) {
 	if err := r.prepareItem(ref, number, capability); err != nil {
-		return ArchiveItemResult[T]{}, err
+		return ItemLookup[T]{}, err
 	}
 	result, err := read(ctx, ref, number)
 	if err != nil {
-		return ArchiveItemResult[T]{}, err
+		return ItemLookup[T]{}, err
 	}
-	if err := ValidateArchiveItemResult(r.kind, r.host, result); err != nil {
+	if err := ValidateItemLookup(r.kind, r.host, result); err != nil {
 		return result, err
 	}
-	if result.Outcome == ArchiveLookupMoved {
+	if result.Outcome == LookupMoved {
 		return result, r.validateMovedDestination(ref, result.Destination)
 	}
-	if result.Outcome != ArchiveLookupPresent {
+	if result.Outcome != LookupPresent {
 		return result, nil
 	}
 	itemRef, itemNumber := identity(result.Item)
@@ -227,12 +227,12 @@ func (r *validatingArchiveReader) listMergeRequestEvents(
 	number int,
 	cursor string,
 	dataset ArchiveCapability,
-	read func(context.Context, RepoRef, int, string) (ArchivePage[MergeRequestEvent], error),
-) (ArchivePage[MergeRequestEvent], error) {
+	read func(context.Context, RepoRef, int, string) (Page[MergeRequestEvent], error),
+) (Page[MergeRequestEvent], error) {
 	return validateArchivePageRead(
 		ctx, r, ref, cursor,
 		[]ArchiveCapability{ArchiveCapabilityHistoricalMergeRequests, dataset},
-		func(ctx context.Context, ref RepoRef, cursor string) (ArchivePage[MergeRequestEvent], error) {
+		func(ctx context.Context, ref RepoRef, cursor string) (Page[MergeRequestEvent], error) {
 			return read(ctx, ref, number, cursor)
 		},
 		func(event MergeRequestEvent) error {

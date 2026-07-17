@@ -1586,21 +1586,21 @@ func (c *liveClient) ListIssueCommentsIfChanged(
 func (c *liveClient) listIssueComments(
 	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.IssueComment, error) {
-	return platform.CollectArchivePages(ctx, "", func(
+	return platform.CollectPages(ctx, "", func(
 		ctx context.Context, cursor string,
-	) (platform.ArchivePage[*gh.IssueComment], error) {
+	) (platform.Page[*gh.IssueComment], error) {
 		page, err := strconv.Atoi(cursor)
 		if err != nil || page < 1 {
 			page = 1
 		}
 		items, more, err := c.ListIssueCommentsPage(ctx, owner, repo, number, page)
 		if err != nil {
-			return platform.ArchivePage[*gh.IssueComment]{}, err
+			return platform.Page[*gh.IssueComment]{}, err
 		}
 		if !more {
-			return platform.ArchivePage[*gh.IssueComment]{Items: items, Exhausted: true}, nil
+			return platform.Page[*gh.IssueComment]{Items: items, Exhausted: true}, nil
 		}
-		return platform.ArchivePage[*gh.IssueComment]{
+		return platform.Page[*gh.IssueComment]{
 			Items: items, NextCursor: strconv.Itoa(page + 1),
 		}, nil
 	})
@@ -1609,21 +1609,21 @@ func (c *liveClient) listIssueComments(
 func (c *liveClient) ListReviews(
 	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.PullRequestReview, error) {
-	return platform.CollectArchivePages(ctx, "", func(
+	return platform.CollectPages(ctx, "", func(
 		ctx context.Context, cursor string,
-	) (platform.ArchivePage[*gh.PullRequestReview], error) {
+	) (platform.Page[*gh.PullRequestReview], error) {
 		page, err := strconv.Atoi(cursor)
 		if err != nil || page < 1 {
 			page = 1
 		}
 		items, more, err := c.ListReviewsPage(ctx, owner, repo, number, page)
 		if err != nil {
-			return platform.ArchivePage[*gh.PullRequestReview]{}, err
+			return platform.Page[*gh.PullRequestReview]{}, err
 		}
 		if !more {
-			return platform.ArchivePage[*gh.PullRequestReview]{Items: items, Exhausted: true}, nil
+			return platform.Page[*gh.PullRequestReview]{Items: items, Exhausted: true}, nil
 		}
-		return platform.ArchivePage[*gh.PullRequestReview]{
+		return platform.Page[*gh.PullRequestReview]{
 			Items: items, NextCursor: strconv.Itoa(page + 1),
 		}, nil
 	})

@@ -270,7 +270,7 @@ func TestGitLabArchiveFilteredDiscussionPageDeclaresProgress(t *testing.T) {
 	assert.Empty(page.Items)
 	assert.True(page.ProgressOnly)
 	assert.NotEmpty(page.NextCursor)
-	assert.NoError(platform.ValidateArchivePage(platform.KindGitLab, "gitlab.example.com", "", page))
+	assert.NoError(platform.ValidatePage(platform.KindGitLab, "gitlab.example.com", "", page))
 }
 
 func TestGitLabArchiveLookupClassifiesRemovalAndAccessLoss(t *testing.T) {
@@ -299,13 +299,13 @@ func TestGitLabArchiveLookupClassifiesRemovalAndAccessLoss(t *testing.T) {
 	// source project is readable, so the lookup must retain cached content.
 	removed, err := client.GetArchiveIssue(t.Context(), ref, 7)
 	require.NoError(err)
-	assert.Equal(platform.ArchiveLookupInaccessible, removed.Outcome)
+	assert.Equal(platform.LookupInaccessible, removed.Outcome)
 	inaccessible, err := client.GetArchiveIssue(t.Context(), ref, 8)
 	require.NoError(err)
-	assert.Equal(platform.ArchiveLookupInaccessible, inaccessible.Outcome)
+	assert.Equal(platform.LookupInaccessible, inaccessible.Outcome)
 	present, err := client.GetArchiveMergeRequest(t.Context(), ref, 9)
 	require.NoError(err)
-	assert.Equal(platform.ArchiveLookupPresent, present.Outcome)
+	assert.Equal(platform.LookupPresent, present.Outcome)
 	assert.Equal(9, present.Item.Number)
 }
 

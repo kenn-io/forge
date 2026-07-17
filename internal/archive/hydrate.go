@@ -41,7 +41,7 @@ func (s *Service) hydrateItem(ctx context.Context, repo resolvedRepository, item
 }
 
 type archiveTerminalLookup struct {
-	outcome     platform.ArchiveLookupOutcome
+	outcome     platform.LookupOutcome
 	destination *platform.RepoRef
 }
 
@@ -58,7 +58,7 @@ func (s *Service) commitTerminalLookup(
 	terminal *archiveTerminalLookup,
 ) (bool, error) {
 	lifecycle := db.ArchiveLifecycleStateInaccessible
-	if terminal.outcome == platform.ArchiveLookupRemoved || terminal.outcome == platform.ArchiveLookupMoved {
+	if terminal.outcome == platform.LookupRemoved || terminal.outcome == platform.LookupMoved {
 		lifecycle = db.ArchiveLifecycleStateRemovedUpstream
 	}
 	if err := s.db.MarkArchiveItemTerminal(ctx, db.ArchiveItemTerminal{
@@ -67,7 +67,7 @@ func (s *Service) commitTerminalLookup(
 	}); err != nil {
 		return true, s.recordHydrationFailure(ctx, item, err)
 	}
-	if terminal.outcome == platform.ArchiveLookupMoved && terminal.destination != nil {
+	if terminal.outcome == platform.LookupMoved && terminal.destination != nil {
 		destination := platform.DBRepoIdentity(*terminal.destination)
 		if err := s.db.QueueArchivePromptByIdentity(ctx, destination, s.now()); err != nil {
 			return true, err
@@ -90,7 +90,7 @@ func (s *Service) hydrateIssue(ctx context.Context, repo resolvedRepository, ite
 		}
 		return err
 	}
-	if lookup.Outcome != platform.ArchiveLookupPresent {
+	if lookup.Outcome != platform.LookupPresent {
 		return &archiveTerminalLookup{
 			outcome: lookup.Outcome, destination: lookup.Destination,
 		}
@@ -140,7 +140,7 @@ func (s *Service) hydrateMergeRequest(ctx context.Context, repo resolvedReposito
 		}
 		return err
 	}
-	if lookup.Outcome != platform.ArchiveLookupPresent {
+	if lookup.Outcome != platform.LookupPresent {
 		return &archiveTerminalLookup{
 			outcome: lookup.Outcome, destination: lookup.Destination,
 		}
@@ -237,7 +237,7 @@ type archiveDatasetPage[T any] func(
 	platform.RepoRef,
 	int,
 	string,
-) (platform.ArchivePage[T], error)
+) (platform.Page[T], error)
 
 func fetchArchiveDataset[T any](
 	s *Service,

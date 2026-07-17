@@ -196,7 +196,7 @@ func (p *Provider) ListMergeRequestEvents(
 }
 
 func (p *Provider) ListMergeRequestComments(ctx context.Context, ref platform.RepoRef, number int) ([]platform.MergeRequestEvent, error) {
-	return platform.CollectArchivePages(ctx, "", func(ctx context.Context, cursor string) (platform.ArchivePage[platform.MergeRequestEvent], error) {
+	return platform.CollectPages(ctx, "", func(ctx context.Context, cursor string) (platform.Page[platform.MergeRequestEvent], error) {
 		return p.ListArchiveMergeRequestComments(ctx, ref, number, cursor)
 	})
 }
@@ -254,7 +254,7 @@ func (p *Provider) ListIssueEvents(
 }
 
 func (p *Provider) ListIssueComments(ctx context.Context, ref platform.RepoRef, number int) ([]platform.IssueEvent, error) {
-	return platform.CollectArchivePages(ctx, "", func(ctx context.Context, cursor string) (platform.ArchivePage[platform.IssueEvent], error) {
+	return platform.CollectPages(ctx, "", func(ctx context.Context, cursor string) (platform.Page[platform.IssueEvent], error) {
 		return p.ListArchiveIssueComments(ctx, ref, number, cursor)
 	})
 }

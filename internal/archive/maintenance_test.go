@@ -33,11 +33,11 @@ func TestPromptMaintenanceCommitsPagesBeforeAdvancingScanWatermark(t *testing.T)
 	newIssue.Number = 3
 	newIssue.UpdatedAt = advanced.UpdatedAt.Add(time.Minute)
 	newIssue.LastActivityAt = newIssue.UpdatedAt
-	provider.updatedIssuePages = map[string]platform.ArchivePage[platform.Issue]{
+	provider.updatedIssuePages = map[string]platform.Page[platform.Issue]{
 		"":   {Items: []platform.Issue{advanced}, NextCursor: "u2"},
 		"u2": {Items: []platform.Issue{newIssue}, Exhausted: true},
 	}
-	provider.updatedMRPages = map[string]platform.ArchivePage[platform.MergeRequest]{
+	provider.updatedMRPages = map[string]platform.Page[platform.MergeRequest]{
 		"": {Items: []platform.MergeRequest{archiveTestMergeRequest(ref)}, Exhausted: true},
 	}
 
@@ -79,7 +79,7 @@ func TestPromptMaintenanceFailureRetainsPriorWatermarkAndCommittedPages(t *testi
 	completeArchiveInitial(t, service)
 	newIssue := archiveTestIssue(ref)
 	newIssue.PlatformID, newIssue.PlatformExternalID, newIssue.Number = 3, "issue-3", 3
-	provider.updatedIssuePages = map[string]platform.ArchivePage[platform.Issue]{
+	provider.updatedIssuePages = map[string]platform.Page[platform.Issue]{
 		"": {Items: []platform.Issue{newIssue}, NextCursor: "u2"},
 	}
 	provider.updatedIssueErrors = map[string]error{"u2": errors.New("updated issue page failed")}
@@ -107,7 +107,7 @@ func TestPromptMaintenanceResumesDurableCursorAfterBudgetDeferral(t *testing.T) 
 	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
 	service := archiveMaintenanceService(t, database, provider, ref, now)
 	completeArchiveInitial(t, service)
-	provider.updatedIssuePages = map[string]platform.ArchivePage[platform.Issue]{
+	provider.updatedIssuePages = map[string]platform.Page[platform.Issue]{
 		"":   {Items: []platform.Issue{archiveTestIssue(ref)}, NextCursor: "u2"},
 		"u2": {Exhausted: true},
 	}

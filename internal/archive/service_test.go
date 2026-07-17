@@ -372,7 +372,7 @@ func TestArchiveOpenMergeRequestResumesAcrossBudgetAndDatasetDeferrals(t *testin
 	mr.State = "open"
 	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
 	provider.mrLookupItem = &mr
-	provider.mrCommentPages = map[string]platform.ArchivePage[platform.MergeRequestEvent]{
+	provider.mrCommentPages = map[string]platform.Page[platform.MergeRequestEvent]{
 		"": {
 			Items: []platform.MergeRequestEvent{{
 				Repo: ref, PlatformID: 20, PlatformExternalID: "comment-20",
@@ -390,7 +390,7 @@ func TestArchiveOpenMergeRequestResumesAcrossBudgetAndDatasetDeferrals(t *testin
 			Exhausted: true,
 		},
 	}
-	provider.reviewPages = map[string]platform.ArchivePage[platform.MergeRequestEvent]{
+	provider.reviewPages = map[string]platform.Page[platform.MergeRequestEvent]{
 		"": {
 			Items: []platform.MergeRequestEvent{{
 				Repo: ref, PlatformID: 30, PlatformExternalID: "review-30",
@@ -513,7 +513,7 @@ func TestArchiveHydrationFailurePreservesPriorDatasetAndRecordsRetry(t *testing.
 	advanced.UpdatedAt = advanced.UpdatedAt.Add(time.Hour)
 	advanced.LastActivityAt = advanced.UpdatedAt
 	provider.issueLookupItem = &advanced
-	provider.issueCommentPages = map[string]platform.ArchivePage[platform.IssueEvent]{
+	provider.issueCommentPages = map[string]platform.Page[platform.IssueEvent]{
 		"": {Items: []platform.IssueEvent{archiveIssueComment(ref, 12, "new snapshot")}, Exhausted: true},
 	}
 	provider.calls = nil
@@ -643,12 +643,12 @@ func TestArchiveRepositoryAccessFailureIsBlockedAndNonDestructive(t *testing.T) 
 func TestArchiveHydrationCommitsTerminalLookupOutcomesWithoutFetchingDatasets(t *testing.T) {
 	tests := []struct {
 		name          string
-		outcome       platform.ArchiveLookupOutcome
+		outcome       platform.LookupOutcome
 		wantLifecycle string
 	}{
-		{name: "removed", outcome: platform.ArchiveLookupRemoved, wantLifecycle: "removed_upstream"},
-		{name: "moved", outcome: platform.ArchiveLookupMoved, wantLifecycle: "removed_upstream"},
-		{name: "inaccessible", outcome: platform.ArchiveLookupInaccessible, wantLifecycle: "inaccessible"},
+		{name: "removed", outcome: platform.LookupRemoved, wantLifecycle: "removed_upstream"},
+		{name: "moved", outcome: platform.LookupMoved, wantLifecycle: "removed_upstream"},
+		{name: "inaccessible", outcome: platform.LookupInaccessible, wantLifecycle: "inaccessible"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -661,7 +661,7 @@ func TestArchiveHydrationCommitsTerminalLookupOutcomesWithoutFetchingDatasets(t 
 			provider := newArchiveServiceProvider(ref.Platform, ref.Host)
 			provider.issueLookupOutcome = tt.outcome
 			var destinationRepoID int64
-			if tt.outcome == platform.ArchiveLookupMoved {
+			if tt.outcome == platform.LookupMoved {
 				destination := archiveServiceRef(platform.KindGitHub, "github.test", "destination")
 				provider.issueDestination = &destination
 				destinationRepoID = archiveServiceSeedRepo(t, database, destination)
@@ -691,7 +691,7 @@ func TestArchiveHydrationCommitsTerminalLookupOutcomesWithoutFetchingDatasets(t 
 			).Scan(&lifecycle))
 			assert.Equal(tt.wantLifecycle, lifecycle)
 			assert.NotContains(provider.calls, "issue_comments:")
-			if tt.outcome == platform.ArchiveLookupMoved {
+			if tt.outcome == platform.LookupMoved {
 				states, err := database.ListArchiveRepoStates(t.Context(), []int64{destinationRepoID})
 				require.NoError(err)
 				require.Len(states, 1)
@@ -711,8 +711,8 @@ func TestArchiveTerminalOutcomesCanCompleteInitialArchive(t *testing.T) {
 	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
 	archiveServiceSeedRepo(t, database, ref)
 	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
-	provider.issueLookupOutcome = platform.ArchiveLookupRemoved
-	provider.mrLookupOutcome = platform.ArchiveLookupRemoved
+	provider.issueLookupOutcome = platform.LookupRemoved
+	provider.mrLookupOutcome = platform.LookupRemoved
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
@@ -736,7 +736,7 @@ func TestArchiveResumesDiscoveryAppliesMaintenanceAndReportsDeterministically(t 
 	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
 	repoID := archiveServiceSeedRepo(t, database, ref)
 	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
-	provider.historicalIssuePages = map[string]platform.ArchivePage[platform.Issue]{
+	provider.historicalIssuePages = map[string]platform.Page[platform.Issue]{
 		"":             {Items: []platform.Issue{archiveTestIssue(ref)}, NextCursor: "issue-page-2"},
 		"issue-page-2": {Exhausted: true},
 	}
@@ -769,10 +769,10 @@ func TestArchiveResumesDiscoveryAppliesMaintenanceAndReportsDeterministically(t 
 	edited := archiveTestIssue(ref)
 	edited.UpdatedAt = edited.UpdatedAt.Add(time.Hour)
 	edited.LastActivityAt = edited.UpdatedAt
-	provider.updatedIssuePages = map[string]platform.ArchivePage[platform.Issue]{
+	provider.updatedIssuePages = map[string]platform.Page[platform.Issue]{
 		"": {Items: []platform.Issue{edited}, Exhausted: true},
 	}
-	provider.issueCommentPages = map[string]platform.ArchivePage[platform.IssueEvent]{
+	provider.issueCommentPages = map[string]platform.Page[platform.IssueEvent]{
 		"": {Items: []platform.IssueEvent{archiveIssueComment(ref, 10, "edited during maintenance")}, Exhausted: true},
 	}
 	provider.issueLookupItem = &edited
@@ -1020,25 +1020,25 @@ type archiveServiceProvider struct {
 	calls                 []string
 	failSecondCommentPage bool
 	issueInventoryErr     error
-	historicalIssuePages  map[string]platform.ArchivePage[platform.Issue]
+	historicalIssuePages  map[string]platform.Page[platform.Issue]
 	issueInventoryCursors []string
 	issueInventoryStarted chan struct{}
 	issueInventoryRelease chan struct{}
-	issueLookupOutcome    platform.ArchiveLookupOutcome
+	issueLookupOutcome    platform.LookupOutcome
 	issueLookupErr        error
 	issueLookupItem       *platform.Issue
 	issueDestination      *platform.RepoRef
-	mrLookupOutcome       platform.ArchiveLookupOutcome
+	mrLookupOutcome       platform.LookupOutcome
 	mrLookupItem          *platform.MergeRequest
-	updatedIssuePages     map[string]platform.ArchivePage[platform.Issue]
+	updatedIssuePages     map[string]platform.Page[platform.Issue]
 	updatedIssueErrors    map[string]error
-	updatedMRPages        map[string]platform.ArchivePage[platform.MergeRequest]
+	updatedMRPages        map[string]platform.Page[platform.MergeRequest]
 	updatedMRErrors       map[string]error
 	updatedIssueSince     []time.Time
 	updatedMRSince        []time.Time
-	issueCommentPages     map[string]platform.ArchivePage[platform.IssueEvent]
-	mrCommentPages        map[string]platform.ArchivePage[platform.MergeRequestEvent]
-	reviewPages           map[string]platform.ArchivePage[platform.MergeRequestEvent]
+	issueCommentPages     map[string]platform.Page[platform.IssueEvent]
+	mrCommentPages        map[string]platform.Page[platform.MergeRequestEvent]
+	reviewPages           map[string]platform.Page[platform.MergeRequestEvent]
 	mrComments            []platform.MergeRequestEvent
 	reviews               []platform.MergeRequestEvent
 	threads               []platform.MergeRequestReviewThread
@@ -1063,7 +1063,7 @@ func (p *archiveServiceProvider) record(call string) {
 	p.calls = append(p.calls, call)
 }
 
-func (p *archiveServiceProvider) ListHistoricalIssues(ctx context.Context, ref platform.RepoRef, cursor string) (platform.ArchivePage[platform.Issue], error) {
+func (p *archiveServiceProvider) ListHistoricalIssues(ctx context.Context, ref platform.RepoRef, cursor string) (platform.Page[platform.Issue], error) {
 	p.record("issues")
 	p.issueInventoryCursors = append(p.issueInventoryCursors, cursor)
 	if p.issueInventoryStarted != nil {
@@ -1075,106 +1075,106 @@ func (p *archiveServiceProvider) ListHistoricalIssues(ctx context.Context, ref p
 		select {
 		case <-p.issueInventoryRelease:
 		case <-ctx.Done():
-			return platform.ArchivePage[platform.Issue]{}, ctx.Err()
+			return platform.Page[platform.Issue]{}, ctx.Err()
 		}
 	}
 	if p.issueInventoryErr != nil {
-		return platform.ArchivePage[platform.Issue]{}, p.issueInventoryErr
+		return platform.Page[platform.Issue]{}, p.issueInventoryErr
 	}
 	if page, ok := p.historicalIssuePages[cursor]; ok {
 		return page, nil
 	}
-	return platform.ArchivePage[platform.Issue]{Items: []platform.Issue{archiveTestIssue(ref)}, Exhausted: true}, nil
+	return platform.Page[platform.Issue]{Items: []platform.Issue{archiveTestIssue(ref)}, Exhausted: true}, nil
 }
-func (p *archiveServiceProvider) ListHistoricalMergeRequests(_ context.Context, ref platform.RepoRef, _ string) (platform.ArchivePage[platform.MergeRequest], error) {
+func (p *archiveServiceProvider) ListHistoricalMergeRequests(_ context.Context, ref platform.RepoRef, _ string) (platform.Page[platform.MergeRequest], error) {
 	p.record("merge_requests")
-	return platform.ArchivePage[platform.MergeRequest]{Items: []platform.MergeRequest{archiveTestMergeRequest(ref)}, Exhausted: true}, nil
+	return platform.Page[platform.MergeRequest]{Items: []platform.MergeRequest{archiveTestMergeRequest(ref)}, Exhausted: true}, nil
 }
-func (p *archiveServiceProvider) ListUpdatedIssues(_ context.Context, _ platform.RepoRef, since time.Time, cursor string) (platform.ArchivePage[platform.Issue], error) {
+func (p *archiveServiceProvider) ListUpdatedIssues(_ context.Context, _ platform.RepoRef, since time.Time, cursor string) (platform.Page[platform.Issue], error) {
 	p.record("updated_issues:" + cursor)
 	p.updatedIssueSince = append(p.updatedIssueSince, since)
 	if err := p.updatedIssueErrors[cursor]; err != nil {
-		return platform.ArchivePage[platform.Issue]{}, err
+		return platform.Page[platform.Issue]{}, err
 	}
 	if page, ok := p.updatedIssuePages[cursor]; ok {
 		return page, nil
 	}
-	return platform.ArchivePage[platform.Issue]{Exhausted: true}, nil
+	return platform.Page[platform.Issue]{Exhausted: true}, nil
 }
-func (p *archiveServiceProvider) ListUpdatedMergeRequests(_ context.Context, _ platform.RepoRef, since time.Time, cursor string) (platform.ArchivePage[platform.MergeRequest], error) {
+func (p *archiveServiceProvider) ListUpdatedMergeRequests(_ context.Context, _ platform.RepoRef, since time.Time, cursor string) (platform.Page[platform.MergeRequest], error) {
 	p.record("updated_mrs:" + cursor)
 	p.updatedMRSince = append(p.updatedMRSince, since)
 	if err := p.updatedMRErrors[cursor]; err != nil {
-		return platform.ArchivePage[platform.MergeRequest]{}, err
+		return platform.Page[platform.MergeRequest]{}, err
 	}
 	if page, ok := p.updatedMRPages[cursor]; ok {
 		return page, nil
 	}
-	return platform.ArchivePage[platform.MergeRequest]{Exhausted: true}, nil
+	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
 }
-func (p *archiveServiceProvider) GetArchiveIssue(ctx context.Context, ref platform.RepoRef, _ int) (platform.ArchiveItemResult[platform.Issue], error) {
+func (p *archiveServiceProvider) GetArchiveIssue(ctx context.Context, ref platform.RepoRef, _ int) (platform.ItemLookup[platform.Issue], error) {
 	p.record("get_issue")
 	if err := ctx.Err(); err != nil {
-		return platform.ArchiveItemResult[platform.Issue]{}, err
+		return platform.ItemLookup[platform.Issue]{}, err
 	}
 	if p.issueLookupErr != nil {
-		return platform.ArchiveItemResult[platform.Issue]{}, p.issueLookupErr
+		return platform.ItemLookup[platform.Issue]{}, p.issueLookupErr
 	}
-	if p.issueLookupOutcome != "" && p.issueLookupOutcome != platform.ArchiveLookupPresent {
-		return platform.ArchiveItemResult[platform.Issue]{
+	if p.issueLookupOutcome != "" && p.issueLookupOutcome != platform.LookupPresent {
+		return platform.ItemLookup[platform.Issue]{
 			Outcome: p.issueLookupOutcome, Destination: p.issueDestination,
 		}, nil
 	}
 	if p.issueLookupItem != nil {
-		return platform.ArchiveItemResult[platform.Issue]{Outcome: platform.ArchiveLookupPresent, Item: *p.issueLookupItem}, nil
+		return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupPresent, Item: *p.issueLookupItem}, nil
 	}
-	return platform.ArchiveItemResult[platform.Issue]{Outcome: platform.ArchiveLookupPresent, Item: archiveTestIssue(ref)}, nil
+	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupPresent, Item: archiveTestIssue(ref)}, nil
 }
-func (p *archiveServiceProvider) GetArchiveMergeRequest(_ context.Context, ref platform.RepoRef, _ int) (platform.ArchiveItemResult[platform.MergeRequest], error) {
+func (p *archiveServiceProvider) GetArchiveMergeRequest(_ context.Context, ref platform.RepoRef, _ int) (platform.ItemLookup[platform.MergeRequest], error) {
 	p.record("get_mr")
-	if p.mrLookupOutcome != "" && p.mrLookupOutcome != platform.ArchiveLookupPresent {
-		return platform.ArchiveItemResult[platform.MergeRequest]{Outcome: p.mrLookupOutcome}, nil
+	if p.mrLookupOutcome != "" && p.mrLookupOutcome != platform.LookupPresent {
+		return platform.ItemLookup[platform.MergeRequest]{Outcome: p.mrLookupOutcome}, nil
 	}
 	if p.mrLookupItem != nil {
-		return platform.ArchiveItemResult[platform.MergeRequest]{Outcome: platform.ArchiveLookupPresent, Item: *p.mrLookupItem}, nil
+		return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupPresent, Item: *p.mrLookupItem}, nil
 	}
-	return platform.ArchiveItemResult[platform.MergeRequest]{Outcome: platform.ArchiveLookupPresent, Item: archiveTestMergeRequest(ref)}, nil
+	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupPresent, Item: archiveTestMergeRequest(ref)}, nil
 }
-func (p *archiveServiceProvider) ListArchiveIssueComments(_ context.Context, ref platform.RepoRef, _ int, cursor string) (platform.ArchivePage[platform.IssueEvent], error) {
+func (p *archiveServiceProvider) ListArchiveIssueComments(_ context.Context, ref platform.RepoRef, _ int, cursor string) (platform.Page[platform.IssueEvent], error) {
 	p.record("issue_comments:" + cursor)
 	if page, ok := p.issueCommentPages[cursor]; ok {
 		return page, nil
 	}
 	if cursor == "c2" && p.failSecondCommentPage {
-		return platform.ArchivePage[platform.IssueEvent]{}, errors.New("comment page failed")
+		return platform.Page[platform.IssueEvent]{}, errors.New("comment page failed")
 	}
 	event := platform.IssueEvent{Repo: ref, PlatformID: 10, PlatformExternalID: "comment-10", IssueNumber: 1, EventType: "issue_comment", Author: "alice", CreatedAt: archiveTestTime(), DedupeKey: "comment:" + cursor}
 	if cursor == "" {
-		return platform.ArchivePage[platform.IssueEvent]{Items: []platform.IssueEvent{event}, NextCursor: "c2"}, nil
+		return platform.Page[platform.IssueEvent]{Items: []platform.IssueEvent{event}, NextCursor: "c2"}, nil
 	}
 	event.PlatformID, event.PlatformExternalID, event.DedupeKey = 11, "comment-11", "comment:c2"
-	return platform.ArchivePage[platform.IssueEvent]{Items: []platform.IssueEvent{event}, Exhausted: true}, nil
+	return platform.Page[platform.IssueEvent]{Items: []platform.IssueEvent{event}, Exhausted: true}, nil
 }
-func (p *archiveServiceProvider) ListArchiveMergeRequestComments(_ context.Context, ref platform.RepoRef, _ int, cursor string) (platform.ArchivePage[platform.MergeRequestEvent], error) {
+func (p *archiveServiceProvider) ListArchiveMergeRequestComments(_ context.Context, ref platform.RepoRef, _ int, cursor string) (platform.Page[platform.MergeRequestEvent], error) {
 	p.record("mr_comments:" + cursor)
 	if page, ok := p.mrCommentPages[cursor]; ok {
 		return page, nil
 	}
 	if p.mrComments != nil {
-		return platform.ArchivePage[platform.MergeRequestEvent]{Items: p.mrComments, Exhausted: true}, nil
+		return platform.Page[platform.MergeRequestEvent]{Items: p.mrComments, Exhausted: true}, nil
 	}
-	return platform.ArchivePage[platform.MergeRequestEvent]{Items: []platform.MergeRequestEvent{{Repo: ref, PlatformID: 20, PlatformExternalID: "comment-20", MergeRequestNumber: 2, EventType: "issue_comment", CreatedAt: archiveTestTime(), DedupeKey: "mr-comment-20"}}, Exhausted: true}, nil
+	return platform.Page[platform.MergeRequestEvent]{Items: []platform.MergeRequestEvent{{Repo: ref, PlatformID: 20, PlatformExternalID: "comment-20", MergeRequestNumber: 2, EventType: "issue_comment", CreatedAt: archiveTestTime(), DedupeKey: "mr-comment-20"}}, Exhausted: true}, nil
 }
-func (p *archiveServiceProvider) ListArchiveSubmittedReviews(_ context.Context, _ platform.RepoRef, _ int, cursor string) (platform.ArchivePage[platform.MergeRequestEvent], error) {
+func (p *archiveServiceProvider) ListArchiveSubmittedReviews(_ context.Context, _ platform.RepoRef, _ int, cursor string) (platform.Page[platform.MergeRequestEvent], error) {
 	p.record("reviews:" + cursor)
 	if page, ok := p.reviewPages[cursor]; ok {
 		return page, nil
 	}
-	return platform.ArchivePage[platform.MergeRequestEvent]{Items: p.reviews, Exhausted: true}, nil
+	return platform.Page[platform.MergeRequestEvent]{Items: p.reviews, Exhausted: true}, nil
 }
-func (p *archiveServiceProvider) ListArchiveReviewThreads(context.Context, platform.RepoRef, int, string) (platform.ArchivePage[platform.MergeRequestReviewThread], error) {
+func (p *archiveServiceProvider) ListArchiveReviewThreads(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestReviewThread], error) {
 	p.record("threads")
-	return platform.ArchivePage[platform.MergeRequestReviewThread]{Items: p.threads, Exhausted: true}, nil
+	return platform.Page[platform.MergeRequestReviewThread]{Items: p.threads, Exhausted: true}, nil
 }
 
 func newArchiveTestService(t *testing.T, database *db.DB, registry *platform.Registry, refs []platform.RepoRef, admission Admission, now time.Time) *Service {

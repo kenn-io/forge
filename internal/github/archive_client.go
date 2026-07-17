@@ -482,7 +482,7 @@ func (p *gitHubClientProvider) ListHistoricalIssues(
 	ctx context.Context,
 	ref platform.RepoRef,
 	cursor string,
-) (platform.ArchivePage[platform.Issue], error) {
+) (platform.Page[platform.Issue], error) {
 	return p.listArchiveIssues(ctx, ref, cursor, "historical_issues", "created", time.Time{})
 }
 
@@ -490,7 +490,7 @@ func (p *gitHubClientProvider) ListHistoricalMergeRequests(
 	ctx context.Context,
 	ref platform.RepoRef,
 	cursor string,
-) (platform.ArchivePage[platform.MergeRequest], error) {
+) (platform.Page[platform.MergeRequest], error) {
 	return p.listArchiveMergeRequests(ctx, ref, cursor, "historical_merge_requests", "created", time.Time{})
 }
 
@@ -499,7 +499,7 @@ func (p *gitHubClientProvider) ListUpdatedIssues(
 	ref platform.RepoRef,
 	since time.Time,
 	cursor string,
-) (platform.ArchivePage[platform.Issue], error) {
+) (platform.Page[platform.Issue], error) {
 	return p.listArchiveIssues(ctx, ref, cursor, "updated_issues", "updated", since.UTC())
 }
 
@@ -508,7 +508,7 @@ func (p *gitHubClientProvider) ListUpdatedMergeRequests(
 	ref platform.RepoRef,
 	since time.Time,
 	cursor string,
-) (platform.ArchivePage[platform.MergeRequest], error) {
+) (platform.Page[platform.MergeRequest], error) {
 	return p.listArchiveMergeRequests(
 		ctx, ref, cursor, "updated_merge_requests", "updated", since.UTC(),
 	)
@@ -518,92 +518,92 @@ func (p *gitHubClientProvider) GetArchiveIssue(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
-) (platform.ArchiveItemResult[platform.Issue], error) {
+) (platform.ItemLookup[platform.Issue], error) {
 	issue, err := p.client.GetIssue(ctx, ref.Owner, ref.Name, number)
 	if err != nil {
 		return p.classifyArchiveIssueError(ctx, ref, err)
 	}
 	if destination := githubArchiveDestination(ref, issue.GetRepositoryURL()); destination != nil {
-		return platform.ArchiveItemResult[platform.Issue]{
-			Outcome: platform.ArchiveLookupMoved, Destination: destination,
+		return platform.ItemLookup[platform.Issue]{
+			Outcome: platform.LookupMoved, Destination: destination,
 		}, nil
 	}
 	item, err := platformgithub.NormalizeIssue(ref, issue)
 	if err != nil {
-		return platform.ArchiveItemResult[platform.Issue]{}, err
+		return platform.ItemLookup[platform.Issue]{}, err
 	}
-	return platform.ArchiveItemResult[platform.Issue]{Outcome: platform.ArchiveLookupPresent, Item: item}, nil
+	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupPresent, Item: item}, nil
 }
 
 func (p *gitHubClientProvider) GetArchiveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
-) (platform.ArchiveItemResult[platform.MergeRequest], error) {
+) (platform.ItemLookup[platform.MergeRequest], error) {
 	pr, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
 	if err != nil {
 		return p.classifyArchiveMergeRequestError(ctx, ref, err)
 	}
 	if destination := githubArchiveDestination(ref, pr.GetBase().GetRepo().GetURL()); destination != nil {
-		return platform.ArchiveItemResult[platform.MergeRequest]{
-			Outcome: platform.ArchiveLookupMoved, Destination: destination,
+		return platform.ItemLookup[platform.MergeRequest]{
+			Outcome: platform.LookupMoved, Destination: destination,
 		}, nil
 	}
 	item, err := platformgithub.NormalizePullRequest(ref, pr)
 	if err != nil {
-		return platform.ArchiveItemResult[platform.MergeRequest]{}, err
+		return platform.ItemLookup[platform.MergeRequest]{}, err
 	}
-	return platform.ArchiveItemResult[platform.MergeRequest]{Outcome: platform.ArchiveLookupPresent, Item: item}, nil
+	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupPresent, Item: item}, nil
 }
 
 func (p *gitHubClientProvider) classifyArchiveIssueError(
 	ctx context.Context,
 	ref platform.RepoRef,
 	err error,
-) (platform.ArchiveItemResult[platform.Issue], error) {
+) (platform.ItemLookup[platform.Issue], error) {
 	mapped := p.archiveTransportError(platform.ArchiveCapabilityHistoricalIssues, err)
 	if errors.Is(mapped, platform.ErrRateLimited) {
-		return platform.ArchiveItemResult[platform.Issue]{}, mapped
+		return platform.ItemLookup[platform.Issue]{}, mapped
 	}
 	status := githubStatusCode(err)
 	if status != http.StatusNotFound {
 		if status == http.StatusForbidden || status == http.StatusUnauthorized {
 			if _, repoErr := p.client.GetRepository(ctx, ref.Owner, ref.Name); repoErr != nil {
-				return platform.ArchiveItemResult[platform.Issue]{}, p.archiveRepositoryProbeError(repoErr)
+				return platform.ItemLookup[platform.Issue]{}, p.archiveRepositoryProbeError(repoErr)
 			}
-			return platform.ArchiveItemResult[platform.Issue]{Outcome: platform.ArchiveLookupInaccessible}, nil
+			return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupInaccessible}, nil
 		}
-		return platform.ArchiveItemResult[platform.Issue]{}, mapped
+		return platform.ItemLookup[platform.Issue]{}, mapped
 	}
 	if _, repoErr := p.client.GetRepository(ctx, ref.Owner, ref.Name); repoErr != nil {
-		return platform.ArchiveItemResult[platform.Issue]{}, p.archiveRepositoryProbeError(repoErr)
+		return platform.ItemLookup[platform.Issue]{}, p.archiveRepositoryProbeError(repoErr)
 	}
-	return platform.ArchiveItemResult[platform.Issue]{Outcome: platform.ArchiveLookupRemoved}, nil
+	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupRemoved}, nil
 }
 
 func (p *gitHubClientProvider) classifyArchiveMergeRequestError(
 	ctx context.Context,
 	ref platform.RepoRef,
 	err error,
-) (platform.ArchiveItemResult[platform.MergeRequest], error) {
+) (platform.ItemLookup[platform.MergeRequest], error) {
 	mapped := p.archiveTransportError(platform.ArchiveCapabilityHistoricalMergeRequests, err)
 	if errors.Is(mapped, platform.ErrRateLimited) {
-		return platform.ArchiveItemResult[platform.MergeRequest]{}, mapped
+		return platform.ItemLookup[platform.MergeRequest]{}, mapped
 	}
 	status := githubStatusCode(err)
 	if status != http.StatusNotFound {
 		if status == http.StatusForbidden || status == http.StatusUnauthorized {
 			if _, repoErr := p.client.GetRepository(ctx, ref.Owner, ref.Name); repoErr != nil {
-				return platform.ArchiveItemResult[platform.MergeRequest]{}, p.archiveRepositoryProbeError(repoErr)
+				return platform.ItemLookup[platform.MergeRequest]{}, p.archiveRepositoryProbeError(repoErr)
 			}
-			return platform.ArchiveItemResult[platform.MergeRequest]{Outcome: platform.ArchiveLookupInaccessible}, nil
+			return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupInaccessible}, nil
 		}
-		return platform.ArchiveItemResult[platform.MergeRequest]{}, mapped
+		return platform.ItemLookup[platform.MergeRequest]{}, mapped
 	}
 	if _, repoErr := p.client.GetRepository(ctx, ref.Owner, ref.Name); repoErr != nil {
-		return platform.ArchiveItemResult[platform.MergeRequest]{}, p.archiveRepositoryProbeError(repoErr)
+		return platform.ItemLookup[platform.MergeRequest]{}, p.archiveRepositoryProbeError(repoErr)
 	}
-	return platform.ArchiveItemResult[platform.MergeRequest]{Outcome: platform.ArchiveLookupRemoved}, nil
+	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupRemoved}, nil
 }
 
 func (p *gitHubClientProvider) archiveRepositoryProbeError(err error) error {
@@ -691,14 +691,14 @@ func (p *gitHubClientProvider) ListArchiveIssueComments(
 	ref platform.RepoRef,
 	number int,
 	cursor string,
-) (platform.ArchivePage[platform.IssueEvent], error) {
+) (platform.Page[platform.IssueEvent], error) {
 	client, state, err := p.archiveDetailPageClient(ref, number, cursor, "issue_comments", time.Time{})
 	if err != nil {
-		return platform.ArchivePage[platform.IssueEvent]{}, err
+		return platform.Page[platform.IssueEvent]{}, err
 	}
 	comments, more, err := client.ListIssueCommentsPage(ctx, ref.Owner, ref.Name, number, state.Page)
 	if err != nil {
-		return platform.ArchivePage[platform.IssueEvent]{}, p.archiveTransportError(platform.ArchiveCapabilityOrdinaryComments, err)
+		return platform.Page[platform.IssueEvent]{}, p.archiveTransportError(platform.ArchiveCapabilityOrdinaryComments, err)
 	}
 	items := make([]platform.IssueEvent, 0, len(comments))
 	for _, comment := range comments {
@@ -712,14 +712,14 @@ func (p *gitHubClientProvider) ListArchiveMergeRequestComments(
 	ref platform.RepoRef,
 	number int,
 	cursor string,
-) (platform.ArchivePage[platform.MergeRequestEvent], error) {
+) (platform.Page[platform.MergeRequestEvent], error) {
 	client, state, err := p.archiveDetailPageClient(ref, number, cursor, "merge_request_comments", time.Time{})
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequestEvent]{}, err
+		return platform.Page[platform.MergeRequestEvent]{}, err
 	}
 	comments, more, err := client.ListIssueCommentsPage(ctx, ref.Owner, ref.Name, number, state.Page)
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequestEvent]{}, p.archiveTransportError(platform.ArchiveCapabilityOrdinaryComments, err)
+		return platform.Page[platform.MergeRequestEvent]{}, p.archiveTransportError(platform.ArchiveCapabilityOrdinaryComments, err)
 	}
 	items := make([]platform.MergeRequestEvent, 0, len(comments))
 	for _, comment := range comments {
@@ -733,14 +733,14 @@ func (p *gitHubClientProvider) ListArchiveSubmittedReviews(
 	ref platform.RepoRef,
 	number int,
 	cursor string,
-) (platform.ArchivePage[platform.MergeRequestEvent], error) {
+) (platform.Page[platform.MergeRequestEvent], error) {
 	client, state, err := p.archiveDetailPageClient(ref, number, cursor, "submitted_reviews", time.Time{})
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequestEvent]{}, err
+		return platform.Page[platform.MergeRequestEvent]{}, err
 	}
 	reviews, more, err := client.ListReviewsPage(ctx, ref.Owner, ref.Name, number, state.Page)
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequestEvent]{}, p.archiveTransportError(platform.ArchiveCapabilitySubmittedReviews, err)
+		return platform.Page[platform.MergeRequestEvent]{}, p.archiveTransportError(platform.ArchiveCapabilitySubmittedReviews, err)
 	}
 	items := make([]platform.MergeRequestEvent, 0, len(reviews))
 	for _, review := range reviews {
@@ -757,13 +757,13 @@ func (p *gitHubClientProvider) ListArchiveReviewThreads(
 	ref platform.RepoRef,
 	number int,
 	cursor string,
-) (platform.ArchivePage[platform.MergeRequestReviewThread], error) {
+) (platform.Page[platform.MergeRequestReviewThread], error) {
 	client, err := p.archivePageClient()
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequestReviewThread]{}, err
+		return platform.Page[platform.MergeRequestReviewThread]{}, err
 	}
 	if _, err := decodeGitHubArchiveReviewCursor(cursor, ref.Host, ref.Owner, ref.Name, number); err != nil {
-		return platform.ArchivePage[platform.MergeRequestReviewThread]{}, platform.ProviderContract(
+		return platform.Page[platform.MergeRequestReviewThread]{}, platform.ProviderContract(
 			platform.KindGitHub, p.host, "archive_cursor", err,
 		)
 	}
@@ -771,7 +771,7 @@ func (p *gitHubClientProvider) ListArchiveReviewThreads(
 		ctx, ref.Host, ref.Owner, ref.Name, number, cursor,
 	)
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequestReviewThread]{}, p.archiveTransportError(platform.ArchiveCapabilityInlineReviewComments, err)
+		return platform.Page[platform.MergeRequestReviewThread]{}, p.archiveTransportError(platform.ArchiveCapabilityInlineReviewComments, err)
 	}
 	items := make([]platform.MergeRequestReviewThread, 0)
 	for _, thread := range threads {
@@ -785,7 +785,7 @@ func (p *gitHubClientProvider) ListArchiveReviewThreads(
 			items = append(items, normalized)
 		}
 	}
-	return platform.ArchivePage[platform.MergeRequestReviewThread]{
+	return platform.Page[platform.MergeRequestReviewThread]{
 		Items: items, NextCursor: next, Exhausted: exhausted,
 	}, nil
 }
@@ -817,20 +817,20 @@ func (p *gitHubClientProvider) listArchiveIssues(
 	mode string,
 	sortBy string,
 	since time.Time,
-) (platform.ArchivePage[platform.Issue], error) {
+) (platform.Page[platform.Issue], error) {
 	client, err := p.archivePageClient()
 	if err != nil {
-		return platform.ArchivePage[platform.Issue]{}, err
+		return platform.Page[platform.Issue]{}, err
 	}
 	state, err := decodeGitHubArchiveCursor(cursor, ref, 0, mode, since)
 	if err != nil {
-		return platform.ArchivePage[platform.Issue]{}, platform.ProviderContract(
+		return platform.Page[platform.Issue]{}, platform.ProviderContract(
 			platform.KindGitHub, p.host, "archive_cursor", err,
 		)
 	}
 	querySince, err := githubArchiveIssueSince(mode, state.Since)
 	if err != nil {
-		return platform.ArchivePage[platform.Issue]{}, platform.ProviderContract(
+		return platform.Page[platform.Issue]{}, platform.ProviderContract(
 			platform.KindGitHub, p.host, "archive_cursor", err,
 		)
 	}
@@ -838,7 +838,7 @@ func (p *gitHubClientProvider) listArchiveIssues(
 		ctx, ref.Owner, ref.Name, sortBy, state.After, querySince,
 	)
 	if err != nil {
-		return platform.ArchivePage[platform.Issue]{}, p.archiveTransportError(platform.ArchiveCapabilityHistoricalIssues, err)
+		return platform.Page[platform.Issue]{}, p.archiveTransportError(platform.ArchiveCapabilityHistoricalIssues, err)
 	}
 	out := make([]platform.Issue, 0, len(items))
 	for _, item := range items {
@@ -847,19 +847,19 @@ func (p *gitHubClientProvider) listArchiveIssues(
 		}
 		normalized, err := platformgithub.NormalizeIssue(ref, item)
 		if err != nil {
-			return platform.ArchivePage[platform.Issue]{}, err
+			return platform.Page[platform.Issue]{}, err
 		}
 		out = append(out, normalized)
 	}
 	if exhausted {
-		return platform.ArchivePage[platform.Issue]{Items: out, Exhausted: true}, nil
+		return platform.Page[platform.Issue]{Items: out, Exhausted: true}, nil
 	}
 	state.After = next
 	encoded, err := encodeGitHubArchiveCursor(state)
 	if err != nil {
-		return platform.ArchivePage[platform.Issue]{}, err
+		return platform.Page[platform.Issue]{}, err
 	}
-	return platform.ArchivePage[platform.Issue]{Items: out, NextCursor: encoded}, nil
+	return platform.Page[platform.Issue]{Items: out, NextCursor: encoded}, nil
 }
 
 func githubArchiveIssueSince(mode, since string) (string, error) {
@@ -880,14 +880,14 @@ func (p *gitHubClientProvider) listArchiveMergeRequests(
 	mode string,
 	sortBy string,
 	since time.Time,
-) (platform.ArchivePage[platform.MergeRequest], error) {
+) (platform.Page[platform.MergeRequest], error) {
 	client, err := p.archivePageClient()
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequest]{}, err
+		return platform.Page[platform.MergeRequest]{}, err
 	}
 	state, err := decodeGitHubArchiveCursor(cursor, ref, 0, mode, since)
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequest]{}, platform.ProviderContract(
+		return platform.Page[platform.MergeRequest]{}, platform.ProviderContract(
 			platform.KindGitHub, p.host, "archive_cursor", err,
 		)
 	}
@@ -895,7 +895,7 @@ func (p *gitHubClientProvider) listArchiveMergeRequests(
 		ctx, ref.Owner, ref.Name, sortBy, state.Page,
 	)
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequest]{}, p.archiveTransportError(platform.ArchiveCapabilityHistoricalMergeRequests, err)
+		return platform.Page[platform.MergeRequest]{}, p.archiveTransportError(platform.ArchiveCapabilityHistoricalMergeRequests, err)
 	}
 	out := make([]platform.MergeRequest, 0, len(items))
 	crossedWatermark := false
@@ -903,7 +903,7 @@ func (p *gitHubClientProvider) listArchiveMergeRequests(
 	for _, item := range items {
 		normalized, err := platformgithub.NormalizePullRequest(ref, item)
 		if err != nil {
-			return platform.ArchivePage[platform.MergeRequest]{}, err
+			return platform.Page[platform.MergeRequest]{}, err
 		}
 		if mode == "updated_merge_requests" && normalized.UpdatedAt.Before(overlapStart) {
 			crossedWatermark = true
@@ -912,7 +912,7 @@ func (p *gitHubClientProvider) listArchiveMergeRequests(
 		out = append(out, normalized)
 	}
 	if crossedWatermark {
-		return platform.ArchivePage[platform.MergeRequest]{Items: out, Exhausted: true}, nil
+		return platform.Page[platform.MergeRequest]{Items: out, Exhausted: true}, nil
 	}
 	return archivePageWithNext(out, state, hasMore)
 }
@@ -931,16 +931,16 @@ func archivePageWithNext[T any](
 	items []T,
 	cursor githubArchiveCursor,
 	hasMore bool,
-) (platform.ArchivePage[T], error) {
+) (platform.Page[T], error) {
 	if !hasMore {
-		return platform.ArchivePage[T]{Items: items, Exhausted: true}, nil
+		return platform.Page[T]{Items: items, Exhausted: true}, nil
 	}
 	cursor.Page++
 	next, err := encodeGitHubArchiveCursor(cursor)
 	if err != nil {
-		return platform.ArchivePage[T]{}, err
+		return platform.Page[T]{}, err
 	}
-	return platform.ArchivePage[T]{Items: items, NextCursor: next}, nil
+	return platform.Page[T]{Items: items, NextCursor: next}, nil
 }
 
 func decodeGitHubArchiveCursor(

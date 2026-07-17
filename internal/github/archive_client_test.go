@@ -377,18 +377,18 @@ func TestGitHubArchiveLookupOutcomes(t *testing.T) {
 
 	present, err := provider.GetArchiveIssue(t.Context(), ref, 7)
 	require.NoError(err)
-	assert.Equal(platform.ArchiveLookupPresent, present.Outcome)
+	assert.Equal(platform.LookupPresent, present.Outcome)
 	moved, err := provider.GetArchiveIssue(t.Context(), ref, 8)
 	require.NoError(err)
-	assert.Equal(platform.ArchiveLookupMoved, moved.Outcome)
+	assert.Equal(platform.LookupMoved, moved.Outcome)
 	require.NotNil(moved.Destination)
 	assert.Equal("acme/destination", moved.Destination.RepoPath)
 	removed, err := provider.GetArchiveIssue(t.Context(), ref, 9)
 	require.NoError(err)
-	assert.Equal(platform.ArchiveLookupRemoved, removed.Outcome)
+	assert.Equal(platform.LookupRemoved, removed.Outcome)
 	inaccessible, err := provider.GetArchiveIssue(t.Context(), ref, 10)
 	require.NoError(err)
-	assert.Equal(platform.ArchiveLookupInaccessible, inaccessible.Outcome)
+	assert.Equal(platform.LookupInaccessible, inaccessible.Outcome)
 }
 
 func TestGitHubArchiveMergeRequestLookupDetectsTransfer(t *testing.T) {
@@ -409,7 +409,7 @@ func TestGitHubArchiveMergeRequestLookupDetectsTransfer(t *testing.T) {
 
 	result, err := provider.GetArchiveMergeRequest(t.Context(), ref, 8)
 	require.NoError(err)
-	assert.Equal(platform.ArchiveLookupMoved, result.Outcome)
+	assert.Equal(platform.LookupMoved, result.Outcome)
 	require.NotNil(result.Destination)
 	assert.Equal("acme/destination", result.Destination.RepoPath)
 }

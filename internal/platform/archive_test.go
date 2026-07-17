@@ -12,84 +12,84 @@ import (
 type testArchiveProvider struct {
 	testProvider
 	calls                   map[string]int
-	historicalIssues        ArchivePage[Issue]
-	historicalMergeRequests ArchivePage[MergeRequest]
-	updatedIssues           ArchivePage[Issue]
-	updatedMergeRequests    ArchivePage[MergeRequest]
-	issueResult             ArchiveItemResult[Issue]
-	mergeRequestResult      ArchiveItemResult[MergeRequest]
-	issueComments           ArchivePage[IssueEvent]
-	mergeRequestComments    ArchivePage[MergeRequestEvent]
-	submittedReviews        ArchivePage[MergeRequestEvent]
-	reviewThreads           ArchivePage[MergeRequestReviewThread]
+	historicalIssues        Page[Issue]
+	historicalMergeRequests Page[MergeRequest]
+	updatedIssues           Page[Issue]
+	updatedMergeRequests    Page[MergeRequest]
+	issueResult             ItemLookup[Issue]
+	mergeRequestResult      ItemLookup[MergeRequest]
+	issueComments           Page[IssueEvent]
+	mergeRequestComments    Page[MergeRequestEvent]
+	submittedReviews        Page[MergeRequestEvent]
+	reviewThreads           Page[MergeRequestReviewThread]
 }
 
 func (p testArchiveProvider) ListHistoricalIssues(
 	context.Context, RepoRef, string,
-) (ArchivePage[Issue], error) {
+) (Page[Issue], error) {
 	p.record("historical_issues")
 	return p.historicalIssues, nil
 }
 
 func (p testArchiveProvider) ListHistoricalMergeRequests(
 	context.Context, RepoRef, string,
-) (ArchivePage[MergeRequest], error) {
+) (Page[MergeRequest], error) {
 	p.record("historical_merge_requests")
 	return p.historicalMergeRequests, nil
 }
 
 func (p testArchiveProvider) ListUpdatedIssues(
 	context.Context, RepoRef, time.Time, string,
-) (ArchivePage[Issue], error) {
+) (Page[Issue], error) {
 	p.record("updated_issues")
 	return p.updatedIssues, nil
 }
 
 func (p testArchiveProvider) ListUpdatedMergeRequests(
 	context.Context, RepoRef, time.Time, string,
-) (ArchivePage[MergeRequest], error) {
+) (Page[MergeRequest], error) {
 	p.record("updated_merge_requests")
 	return p.updatedMergeRequests, nil
 }
 
 func (p testArchiveProvider) GetArchiveIssue(
 	context.Context, RepoRef, int,
-) (ArchiveItemResult[Issue], error) {
+) (ItemLookup[Issue], error) {
 	p.record("get_issue")
 	return p.issueResult, nil
 }
 
 func (p testArchiveProvider) GetArchiveMergeRequest(
 	context.Context, RepoRef, int,
-) (ArchiveItemResult[MergeRequest], error) {
+) (ItemLookup[MergeRequest], error) {
 	p.record("get_merge_request")
 	return p.mergeRequestResult, nil
 }
 
 func (p testArchiveProvider) ListArchiveIssueComments(
 	context.Context, RepoRef, int, string,
-) (ArchivePage[IssueEvent], error) {
+) (Page[IssueEvent], error) {
 	p.record("issue_comments")
 	return p.issueComments, nil
 }
 
 func (p testArchiveProvider) ListArchiveMergeRequestComments(
 	context.Context, RepoRef, int, string,
-) (ArchivePage[MergeRequestEvent], error) {
+) (Page[MergeRequestEvent], error) {
 	p.record("merge_request_comments")
 	return p.mergeRequestComments, nil
 }
 
 func (p testArchiveProvider) ListArchiveSubmittedReviews(
 	context.Context, RepoRef, int, string,
-) (ArchivePage[MergeRequestEvent], error) {
+) (Page[MergeRequestEvent], error) {
 	p.record("submitted_reviews")
 	return p.submittedReviews, nil
 }
 
 func (p testArchiveProvider) ListArchiveReviewThreads(
 	context.Context, RepoRef, int, string,
-) (ArchivePage[MergeRequestReviewThread], error) {
+) (Page[MergeRequestReviewThread], error) {
 	p.record("review_threads")
 	return p.reviewThreads, nil
 }
@@ -407,7 +407,7 @@ func TestRegistryArchiveReaderValidatesReturnedItems(t *testing.T) {
 			name: "issue page nonpositive number",
 			call: "historical_issues",
 			seed: func(p *testArchiveProvider, ref RepoRef) {
-				p.historicalIssues = ArchivePage[Issue]{Items: []Issue{{Repo: ref}}, Exhausted: true}
+				p.historicalIssues = Page[Issue]{Items: []Issue{{Repo: ref}}, Exhausted: true}
 			},
 			wantField: "archive_item_number",
 		},
@@ -415,7 +415,7 @@ func TestRegistryArchiveReaderValidatesReturnedItems(t *testing.T) {
 			name: "issue page wrong repo",
 			call: "historical_issues",
 			seed: func(p *testArchiveProvider, ref RepoRef) {
-				p.historicalIssues = ArchivePage[Issue]{Items: []Issue{{Repo: archiveOtherRepoRef(), Number: 7}}, Exhausted: true}
+				p.historicalIssues = Page[Issue]{Items: []Issue{{Repo: archiveOtherRepoRef(), Number: 7}}, Exhausted: true}
 			},
 			wantField: "archive_item_repo",
 		},
@@ -423,7 +423,7 @@ func TestRegistryArchiveReaderValidatesReturnedItems(t *testing.T) {
 			name: "merge request page nonpositive number",
 			call: "historical_merge_requests",
 			seed: func(p *testArchiveProvider, ref RepoRef) {
-				p.historicalMergeRequests = ArchivePage[MergeRequest]{Items: []MergeRequest{{Repo: ref}}, Exhausted: true}
+				p.historicalMergeRequests = Page[MergeRequest]{Items: []MergeRequest{{Repo: ref}}, Exhausted: true}
 			},
 			wantField: "archive_item_number",
 		},
@@ -431,7 +431,7 @@ func TestRegistryArchiveReaderValidatesReturnedItems(t *testing.T) {
 			name: "merge request page wrong repo",
 			call: "historical_merge_requests",
 			seed: func(p *testArchiveProvider, ref RepoRef) {
-				p.historicalMergeRequests = ArchivePage[MergeRequest]{Items: []MergeRequest{{Repo: archiveOtherRepoRef(), Number: 7}}, Exhausted: true}
+				p.historicalMergeRequests = Page[MergeRequest]{Items: []MergeRequest{{Repo: archiveOtherRepoRef(), Number: 7}}, Exhausted: true}
 			},
 			wantField: "archive_item_repo",
 		},
@@ -439,7 +439,7 @@ func TestRegistryArchiveReaderValidatesReturnedItems(t *testing.T) {
 			name: "present issue wrong repo",
 			call: "get_issue",
 			seed: func(p *testArchiveProvider, ref RepoRef) {
-				p.issueResult = ArchiveItemResult[Issue]{Outcome: ArchiveLookupPresent, Item: Issue{Repo: archiveOtherRepoRef(), Number: 7}}
+				p.issueResult = ItemLookup[Issue]{Outcome: LookupPresent, Item: Issue{Repo: archiveOtherRepoRef(), Number: 7}}
 			},
 			wantField: "archive_item_repo",
 		},
@@ -447,7 +447,7 @@ func TestRegistryArchiveReaderValidatesReturnedItems(t *testing.T) {
 			name: "present issue wrong number",
 			call: "get_issue",
 			seed: func(p *testArchiveProvider, ref RepoRef) {
-				p.issueResult = ArchiveItemResult[Issue]{Outcome: ArchiveLookupPresent, Item: Issue{Repo: ref, Number: 8}}
+				p.issueResult = ItemLookup[Issue]{Outcome: LookupPresent, Item: Issue{Repo: ref, Number: 8}}
 			},
 			wantField: "archive_item_number",
 		},
@@ -455,7 +455,7 @@ func TestRegistryArchiveReaderValidatesReturnedItems(t *testing.T) {
 			name: "present merge request wrong repo",
 			call: "get_merge_request",
 			seed: func(p *testArchiveProvider, ref RepoRef) {
-				p.mergeRequestResult = ArchiveItemResult[MergeRequest]{Outcome: ArchiveLookupPresent, Item: MergeRequest{Repo: archiveOtherRepoRef(), Number: 7}}
+				p.mergeRequestResult = ItemLookup[MergeRequest]{Outcome: LookupPresent, Item: MergeRequest{Repo: archiveOtherRepoRef(), Number: 7}}
 			},
 			wantField: "archive_item_repo",
 		},
@@ -463,7 +463,7 @@ func TestRegistryArchiveReaderValidatesReturnedItems(t *testing.T) {
 			name: "present merge request wrong number",
 			call: "get_merge_request",
 			seed: func(p *testArchiveProvider, ref RepoRef) {
-				p.mergeRequestResult = ArchiveItemResult[MergeRequest]{Outcome: ArchiveLookupPresent, Item: MergeRequest{Repo: ref, Number: 8}}
+				p.mergeRequestResult = ItemLookup[MergeRequest]{Outcome: LookupPresent, Item: MergeRequest{Repo: ref, Number: 8}}
 			},
 			wantField: "archive_item_number",
 		},
@@ -471,7 +471,7 @@ func TestRegistryArchiveReaderValidatesReturnedItems(t *testing.T) {
 			name: "issue comment wrong repo",
 			call: "issue_comments",
 			seed: func(p *testArchiveProvider, ref RepoRef) {
-				p.issueComments = ArchivePage[IssueEvent]{Items: []IssueEvent{{Repo: archiveOtherRepoRef(), IssueNumber: 7}}, Exhausted: true}
+				p.issueComments = Page[IssueEvent]{Items: []IssueEvent{{Repo: archiveOtherRepoRef(), IssueNumber: 7}}, Exhausted: true}
 			},
 			wantField: "archive_event_repo",
 		},
@@ -479,7 +479,7 @@ func TestRegistryArchiveReaderValidatesReturnedItems(t *testing.T) {
 			name: "issue comment wrong number",
 			call: "issue_comments",
 			seed: func(p *testArchiveProvider, ref RepoRef) {
-				p.issueComments = ArchivePage[IssueEvent]{Items: []IssueEvent{{Repo: ref, IssueNumber: 8}}, Exhausted: true}
+				p.issueComments = Page[IssueEvent]{Items: []IssueEvent{{Repo: ref, IssueNumber: 8}}, Exhausted: true}
 			},
 			wantField: "archive_event_number",
 		},
@@ -487,7 +487,7 @@ func TestRegistryArchiveReaderValidatesReturnedItems(t *testing.T) {
 			name: "merge request event wrong repo",
 			call: "merge_request_comments",
 			seed: func(p *testArchiveProvider, ref RepoRef) {
-				p.mergeRequestComments = ArchivePage[MergeRequestEvent]{Items: []MergeRequestEvent{{Repo: archiveOtherRepoRef(), MergeRequestNumber: 7}}, Exhausted: true}
+				p.mergeRequestComments = Page[MergeRequestEvent]{Items: []MergeRequestEvent{{Repo: archiveOtherRepoRef(), MergeRequestNumber: 7}}, Exhausted: true}
 			},
 			wantField: "archive_event_repo",
 		},
@@ -495,7 +495,7 @@ func TestRegistryArchiveReaderValidatesReturnedItems(t *testing.T) {
 			name: "merge request event wrong number",
 			call: "merge_request_comments",
 			seed: func(p *testArchiveProvider, ref RepoRef) {
-				p.mergeRequestComments = ArchivePage[MergeRequestEvent]{Items: []MergeRequestEvent{{Repo: ref, MergeRequestNumber: 8}}, Exhausted: true}
+				p.mergeRequestComments = Page[MergeRequestEvent]{Items: []MergeRequestEvent{{Repo: ref, MergeRequestNumber: 8}}, Exhausted: true}
 			},
 			wantField: "archive_event_number",
 		},
@@ -503,7 +503,7 @@ func TestRegistryArchiveReaderValidatesReturnedItems(t *testing.T) {
 			name: "review thread wrong repo",
 			call: "review_threads",
 			seed: func(p *testArchiveProvider, ref RepoRef) {
-				p.reviewThreads = ArchivePage[MergeRequestReviewThread]{
+				p.reviewThreads = Page[MergeRequestReviewThread]{
 					Items:     []MergeRequestReviewThread{{Repo: archiveOtherRepoRef(), MergeRequestNumber: 7}},
 					Exhausted: true,
 				}
@@ -514,7 +514,7 @@ func TestRegistryArchiveReaderValidatesReturnedItems(t *testing.T) {
 			name: "review thread wrong number",
 			call: "review_threads",
 			seed: func(p *testArchiveProvider, ref RepoRef) {
-				p.reviewThreads = ArchivePage[MergeRequestReviewThread]{
+				p.reviewThreads = Page[MergeRequestReviewThread]{
 					Items:     []MergeRequestReviewThread{{Repo: ref, MergeRequestNumber: 8}},
 					Exhausted: true,
 				}
@@ -540,7 +540,7 @@ func TestRegistryArchiveReaderReportsMalformedReturnedSourceAsProviderContract(t
 	provider, reader := archiveTestReader(t, allArchiveCapabilities())
 	returned := archiveTestRepoRef()
 	returned.Host = "gitlab.example.com:bad"
-	provider.historicalIssues = ArchivePage[Issue]{
+	provider.historicalIssues = Page[Issue]{
 		Items: []Issue{{Repo: returned, Number: 7}}, Exhausted: true,
 	}
 
@@ -553,13 +553,13 @@ func TestRegistryArchiveReaderReportsMalformedReturnedSourceAsProviderContract(t
 func TestRegistryArchiveReaderValidatesMovedDestination(t *testing.T) {
 	provider, reader := archiveTestReader(t, allArchiveCapabilities())
 	source := archiveTestRepoRef()
-	provider.issueResult = ArchiveItemResult[Issue]{Outcome: ArchiveLookupMoved, Destination: &source}
+	provider.issueResult = ItemLookup[Issue]{Outcome: LookupMoved, Destination: &source}
 
 	_, err := reader.GetArchiveIssue(context.Background(), archiveTestRepoRef(), 7)
 	assertArchiveContractError(t, err, "archive_lookup_destination")
 
 	destination := archiveOtherRepoRef()
-	provider.issueResult = ArchiveItemResult[Issue]{Outcome: ArchiveLookupMoved, Destination: &destination}
+	provider.issueResult = ItemLookup[Issue]{Outcome: LookupMoved, Destination: &destination}
 
 	_, err = reader.GetArchiveIssue(context.Background(), archiveTestRepoRef(), 7)
 	assert.NoError(t, err)
@@ -568,7 +568,7 @@ func TestRegistryArchiveReaderValidatesMovedDestination(t *testing.T) {
 func TestRegistryArchiveReaderPassesCurrentCursorToValidation(t *testing.T) {
 	provider, reader := archiveTestReader(t, allArchiveCapabilities())
 	ref := archiveTestRepoRef()
-	provider.historicalIssues = ArchivePage[Issue]{
+	provider.historicalIssues = Page[Issue]{
 		Items:      []Issue{{Repo: ref, Number: 1}},
 		NextCursor: "opaque cursor",
 	}
@@ -579,12 +579,12 @@ func TestRegistryArchiveReaderPassesCurrentCursorToValidation(t *testing.T) {
 }
 
 func TestRegistryArchiveReaderDoesNotValidateGenericItemForNonPresentLookup(t *testing.T) {
-	for _, outcome := range []ArchiveLookupOutcome{
-		ArchiveLookupRemoved,
-		ArchiveLookupInaccessible,
+	for _, outcome := range []LookupOutcome{
+		LookupRemoved,
+		LookupInaccessible,
 	} {
 		provider, reader := archiveTestReader(t, allArchiveCapabilities())
-		provider.issueResult = ArchiveItemResult[Issue]{Outcome: outcome}
+		provider.issueResult = ItemLookup[Issue]{Outcome: outcome}
 
 		_, err := reader.GetArchiveIssue(context.Background(), archiveTestRepoRef(), 7)
 
@@ -595,16 +595,16 @@ func TestRegistryArchiveReaderDoesNotValidateGenericItemForNonPresentLookup(t *t
 func TestRegistryArchiveReaderValidatesAllTenSuccessfulMethods(t *testing.T) {
 	provider, reader := archiveTestReader(t, allArchiveCapabilities())
 	ref := archiveTestRepoRef()
-	provider.historicalIssues = ArchivePage[Issue]{Items: []Issue{{Repo: ref, Number: 7}}, Exhausted: true}
-	provider.historicalMergeRequests = ArchivePage[MergeRequest]{Items: []MergeRequest{{Repo: ref, Number: 7}}, Exhausted: true}
+	provider.historicalIssues = Page[Issue]{Items: []Issue{{Repo: ref, Number: 7}}, Exhausted: true}
+	provider.historicalMergeRequests = Page[MergeRequest]{Items: []MergeRequest{{Repo: ref, Number: 7}}, Exhausted: true}
 	provider.updatedIssues = provider.historicalIssues
 	provider.updatedMergeRequests = provider.historicalMergeRequests
-	provider.issueResult = ArchiveItemResult[Issue]{Outcome: ArchiveLookupPresent, Item: Issue{Repo: ref, Number: 7}}
-	provider.mergeRequestResult = ArchiveItemResult[MergeRequest]{Outcome: ArchiveLookupPresent, Item: MergeRequest{Repo: ref, Number: 7}}
-	provider.issueComments = ArchivePage[IssueEvent]{Items: []IssueEvent{{Repo: ref, IssueNumber: 7}}, Exhausted: true}
-	provider.mergeRequestComments = ArchivePage[MergeRequestEvent]{Items: []MergeRequestEvent{{Repo: ref, MergeRequestNumber: 7}}, Exhausted: true}
+	provider.issueResult = ItemLookup[Issue]{Outcome: LookupPresent, Item: Issue{Repo: ref, Number: 7}}
+	provider.mergeRequestResult = ItemLookup[MergeRequest]{Outcome: LookupPresent, Item: MergeRequest{Repo: ref, Number: 7}}
+	provider.issueComments = Page[IssueEvent]{Items: []IssueEvent{{Repo: ref, IssueNumber: 7}}, Exhausted: true}
+	provider.mergeRequestComments = Page[MergeRequestEvent]{Items: []MergeRequestEvent{{Repo: ref, MergeRequestNumber: 7}}, Exhausted: true}
 	provider.submittedReviews = provider.mergeRequestComments
-	provider.reviewThreads = ArchivePage[MergeRequestReviewThread]{
+	provider.reviewThreads = Page[MergeRequestReviewThread]{
 		Items:     []MergeRequestReviewThread{{Repo: ref, MergeRequestNumber: 7}},
 		Exhausted: true,
 	}
@@ -622,33 +622,33 @@ func TestRegistryArchiveReaderValidatesAllTenSuccessfulMethods(t *testing.T) {
 func TestValidateArchivePageAcceptsOnlyBoundedTerminationShapes(t *testing.T) {
 	tests := []struct {
 		name string
-		page ArchivePage[int]
+		page Page[int]
 	}{
 		{
 			name: "next cursor with items",
-			page: ArchivePage[int]{Items: []int{0}, NextCursor: "opaque:cursor:value"},
+			page: Page[int]{Items: []int{0}, NextCursor: "opaque:cursor:value"},
 		},
 		{
 			name: "whitespace cursor remains opaque",
-			page: ArchivePage[int]{Items: []int{1}, NextCursor: " \t"},
+			page: Page[int]{Items: []int{1}, NextCursor: " \t"},
 		},
 		{
 			name: "exhausted empty page",
-			page: ArchivePage[int]{Exhausted: true},
+			page: Page[int]{Exhausted: true},
 		},
 		{
 			name: "exhausted page with items",
-			page: ArchivePage[int]{Items: []int{1}, Exhausted: true},
+			page: Page[int]{Items: []int{1}, Exhausted: true},
 		},
 		{
 			name: "filtered progress with advancing cursor",
-			page: ArchivePage[int]{NextCursor: "next", ProgressOnly: true},
+			page: Page[int]{NextCursor: "next", ProgressOnly: true},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.NoError(t, ValidateArchivePage(KindGitLab, "gitlab.example.com", "", tt.page))
+			assert.NoError(t, ValidatePage(KindGitLab, "gitlab.example.com", "", tt.page))
 		})
 	}
 }
@@ -656,33 +656,33 @@ func TestValidateArchivePageAcceptsOnlyBoundedTerminationShapes(t *testing.T) {
 func TestValidateArchivePageReturnsTypedContractErrors(t *testing.T) {
 	tests := []struct {
 		name string
-		page ArchivePage[int]
+		page Page[int]
 	}{
 		{
 			name: "cursor and exhaustion",
-			page: ArchivePage[int]{Items: []int{1}, NextCursor: "next", Exhausted: true},
+			page: Page[int]{Items: []int{1}, NextCursor: "next", Exhausted: true},
 		},
 		{
 			name: "neither cursor nor exhaustion",
-			page: ArchivePage[int]{Items: []int{1}},
+			page: Page[int]{Items: []int{1}},
 		},
 		{
 			name: "non-exhausted empty page",
-			page: ArchivePage[int]{NextCursor: "next"},
+			page: Page[int]{NextCursor: "next"},
 		},
 		{
 			name: "progress page with items",
-			page: ArchivePage[int]{Items: []int{1}, NextCursor: "next", ProgressOnly: true},
+			page: Page[int]{Items: []int{1}, NextCursor: "next", ProgressOnly: true},
 		},
 		{
 			name: "exhausted progress page",
-			page: ArchivePage[int]{Exhausted: true, ProgressOnly: true},
+			page: Page[int]{Exhausted: true, ProgressOnly: true},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateArchivePage(KindGitLab, "gitlab.example.com", "", tt.page)
+			err := ValidatePage(KindGitLab, "gitlab.example.com", "", tt.page)
 			assertArchiveContractError(t, err, "archive_page")
 		})
 	}
@@ -690,7 +690,7 @@ func TestValidateArchivePageReturnsTypedContractErrors(t *testing.T) {
 
 func TestValidateArchivePageRejectsRepeatedOpaqueCursor(t *testing.T) {
 	for _, cursor := range []string{"opaque:cursor", " \t"} {
-		err := ValidateArchivePage(KindGitLab, "gitlab.example.com", cursor, ArchivePage[int]{
+		err := ValidatePage(KindGitLab, "gitlab.example.com", cursor, Page[int]{
 			Items:      []int{1},
 			NextCursor: cursor,
 		})
@@ -707,17 +707,17 @@ func TestValidateArchiveItemResultAcceptsLookupOutcomes(t *testing.T) {
 	}
 	tests := []struct {
 		name   string
-		result ArchiveItemResult[Issue]
+		result ItemLookup[Issue]
 	}{
-		{name: "present zero-value item", result: ArchiveItemResult[Issue]{Outcome: ArchiveLookupPresent}},
-		{name: "removed", result: ArchiveItemResult[Issue]{Outcome: ArchiveLookupRemoved}},
-		{name: "inaccessible", result: ArchiveItemResult[Issue]{Outcome: ArchiveLookupInaccessible}},
-		{name: "moved", result: ArchiveItemResult[Issue]{Outcome: ArchiveLookupMoved, Destination: destination}},
+		{name: "present zero-value item", result: ItemLookup[Issue]{Outcome: LookupPresent}},
+		{name: "removed", result: ItemLookup[Issue]{Outcome: LookupRemoved}},
+		{name: "inaccessible", result: ItemLookup[Issue]{Outcome: LookupInaccessible}},
+		{name: "moved", result: ItemLookup[Issue]{Outcome: LookupMoved, Destination: destination}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.NoError(t, ValidateArchiveItemResult(KindGitLab, "gitlab.example.com", tt.result))
+			assert.NoError(t, ValidateItemLookup(KindGitLab, "gitlab.example.com", tt.result))
 		})
 	}
 }
@@ -742,8 +742,8 @@ func TestValidateArchiveItemResultRequiresMovedDestinationIdentity(t *testing.T)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateArchiveItemResult(KindGitLab, "gitlab.example.com", ArchiveItemResult[Issue]{
-				Outcome:     ArchiveLookupMoved,
+			err := ValidateItemLookup(KindGitLab, "gitlab.example.com", ItemLookup[Issue]{
+				Outcome:     LookupMoved,
 				Destination: tt.destination,
 			})
 			assertArchiveContractError(t, err, "archive_lookup_destination")
@@ -760,34 +760,34 @@ func TestValidateArchiveItemResultRejectsUnexpectedDestinationsAndOutcomes(t *te
 	}
 	tests := []struct {
 		name      string
-		result    ArchiveItemResult[Issue]
+		result    ItemLookup[Issue]
 		wantField string
 	}{
 		{
 			name:      "unknown outcome",
-			result:    ArchiveItemResult[Issue]{Outcome: ArchiveLookupOutcome("unknown")},
+			result:    ItemLookup[Issue]{Outcome: LookupOutcome("unknown")},
 			wantField: "archive_lookup_outcome",
 		},
 		{
 			name:      "present destination",
-			result:    ArchiveItemResult[Issue]{Outcome: ArchiveLookupPresent, Destination: destination},
+			result:    ItemLookup[Issue]{Outcome: LookupPresent, Destination: destination},
 			wantField: "archive_lookup_destination",
 		},
 		{
 			name:      "removed destination",
-			result:    ArchiveItemResult[Issue]{Outcome: ArchiveLookupRemoved, Destination: destination},
+			result:    ItemLookup[Issue]{Outcome: LookupRemoved, Destination: destination},
 			wantField: "archive_lookup_destination",
 		},
 		{
 			name:      "inaccessible destination",
-			result:    ArchiveItemResult[Issue]{Outcome: ArchiveLookupInaccessible, Destination: destination},
+			result:    ItemLookup[Issue]{Outcome: LookupInaccessible, Destination: destination},
 			wantField: "archive_lookup_destination",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateArchiveItemResult(KindGitLab, "gitlab.example.com", tt.result)
+			err := ValidateItemLookup(KindGitLab, "gitlab.example.com", tt.result)
 			assertArchiveContractError(t, err, tt.wantField)
 		})
 	}

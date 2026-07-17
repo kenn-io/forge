@@ -418,7 +418,7 @@ func invalidArchiveCapability(kind Kind, host string, capability ArchiveCapabili
 	}
 }
 
-type ArchivePage[T any] struct {
+type Page[T any] struct {
 	Items      []T
 	NextCursor string
 	Exhausted  bool
@@ -427,22 +427,22 @@ type ArchivePage[T any] struct {
 	ProgressOnly bool
 }
 
-type ArchiveLookupOutcome string
+type LookupOutcome string
 
 const (
-	ArchiveLookupPresent      ArchiveLookupOutcome = "present"
-	ArchiveLookupRemoved      ArchiveLookupOutcome = "removed"
-	ArchiveLookupMoved        ArchiveLookupOutcome = "moved"
-	ArchiveLookupInaccessible ArchiveLookupOutcome = "inaccessible"
+	LookupPresent      LookupOutcome = "present"
+	LookupRemoved      LookupOutcome = "removed"
+	LookupMoved        LookupOutcome = "moved"
+	LookupInaccessible LookupOutcome = "inaccessible"
 )
 
-type ArchiveItemResult[T any] struct {
-	Outcome     ArchiveLookupOutcome
+type ItemLookup[T any] struct {
+	Outcome     LookupOutcome
 	Item        T
 	Destination *RepoRef
 }
 
-func ValidateArchivePage[T any](kind Kind, host, inputCursor string, page ArchivePage[T]) error {
+func ValidatePage[T any](kind Kind, host, inputCursor string, page Page[T]) error {
 	hasCursor := page.NextCursor != ""
 	if hasCursor == page.Exhausted {
 		return archiveContractError(
@@ -481,9 +481,9 @@ func ValidateArchivePage[T any](kind Kind, host, inputCursor string, page Archiv
 	return nil
 }
 
-func ValidateArchiveItemResult[T any](kind Kind, host string, result ArchiveItemResult[T]) error {
+func ValidateItemLookup[T any](kind Kind, host string, result ItemLookup[T]) error {
 	switch result.Outcome {
-	case ArchiveLookupMoved:
+	case LookupMoved:
 		if !validArchiveDestination(result.Destination) {
 			return archiveContractError(
 				kind,
@@ -492,7 +492,7 @@ func ValidateArchiveItemResult[T any](kind Kind, host string, result ArchiveItem
 				"moved archive item must include a complete destination repository identity",
 			)
 		}
-	case ArchiveLookupPresent, ArchiveLookupRemoved, ArchiveLookupInaccessible:
+	case LookupPresent, LookupRemoved, LookupInaccessible:
 		if result.Destination != nil {
 			return archiveContractError(
 				kind,

@@ -64,16 +64,36 @@ type IssueReader interface {
 // maintenance, and complete detail datasets. Cursors are opaque to callers;
 // maintenance watermarks are UTC.
 type ArchiveReader interface {
-	ListHistoricalIssues(context.Context, RepoRef, string) (ArchivePage[Issue], error)
-	ListHistoricalMergeRequests(context.Context, RepoRef, string) (ArchivePage[MergeRequest], error)
-	ListUpdatedIssues(context.Context, RepoRef, time.Time, string) (ArchivePage[Issue], error)
-	ListUpdatedMergeRequests(context.Context, RepoRef, time.Time, string) (ArchivePage[MergeRequest], error)
-	GetArchiveIssue(context.Context, RepoRef, int) (ArchiveItemResult[Issue], error)
-	GetArchiveMergeRequest(context.Context, RepoRef, int) (ArchiveItemResult[MergeRequest], error)
-	ListArchiveIssueComments(context.Context, RepoRef, int, string) (ArchivePage[IssueEvent], error)
-	ListArchiveMergeRequestComments(context.Context, RepoRef, int, string) (ArchivePage[MergeRequestEvent], error)
-	ListArchiveSubmittedReviews(context.Context, RepoRef, int, string) (ArchivePage[MergeRequestEvent], error)
-	ListArchiveReviewThreads(context.Context, RepoRef, int, string) (ArchivePage[MergeRequestReviewThread], error)
+	ListHistoricalIssues(context.Context, RepoRef, string) (Page[Issue], error)
+	ListHistoricalMergeRequests(context.Context, RepoRef, string) (Page[MergeRequest], error)
+	ListUpdatedIssues(context.Context, RepoRef, time.Time, string) (Page[Issue], error)
+	ListUpdatedMergeRequests(context.Context, RepoRef, time.Time, string) (Page[MergeRequest], error)
+	GetArchiveIssue(context.Context, RepoRef, int) (ItemLookup[Issue], error)
+	GetArchiveMergeRequest(context.Context, RepoRef, int) (ItemLookup[MergeRequest], error)
+	ListArchiveIssueComments(context.Context, RepoRef, int, string) (Page[IssueEvent], error)
+	ListArchiveMergeRequestComments(context.Context, RepoRef, int, string) (Page[MergeRequestEvent], error)
+	ListArchiveSubmittedReviews(context.Context, RepoRef, int, string) (Page[MergeRequestEvent], error)
+	ListArchiveReviewThreads(context.Context, RepoRef, int, string) (Page[MergeRequestReviewThread], error)
+}
+
+// IssuePageReader is the canonical page-oriented provider read surface for
+// issues. Live whole-dataset helpers and archive workers both drive these
+// methods; cursors are opaque and query state/order come from ItemPageQuery.
+type IssuePageReader interface {
+	ListIssuesPage(context.Context, RepoRef, ItemPageQuery) (Page[Issue], error)
+	LookupIssue(context.Context, RepoRef, int) (ItemLookup[Issue], error)
+	ListIssueCommentsPage(context.Context, RepoRef, int, string) (Page[IssueEvent], error)
+}
+
+// MergeRequestPageReader is the canonical page-oriented provider read surface
+// for merge requests, their comments, submitted reviews, and inline review
+// threads. Cursors are opaque; query state/order come from ItemPageQuery.
+type MergeRequestPageReader interface {
+	ListMergeRequestsPage(context.Context, RepoRef, ItemPageQuery) (Page[MergeRequest], error)
+	LookupMergeRequest(context.Context, RepoRef, int) (ItemLookup[MergeRequest], error)
+	ListMergeRequestCommentsPage(context.Context, RepoRef, int, string) (Page[MergeRequestEvent], error)
+	ListSubmittedReviewsPage(context.Context, RepoRef, int, string) (Page[MergeRequestEvent], error)
+	ListReviewThreadsPage(context.Context, RepoRef, int, string) (Page[MergeRequestReviewThread], error)
 }
 
 type LabelCatalog struct {

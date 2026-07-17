@@ -22,37 +22,37 @@ type archiveCursor struct {
 	Before string `json:"before,omitempty"`
 }
 
-func (p *Provider) ListHistoricalIssues(ctx context.Context, ref platform.RepoRef, cursor string) (platform.ArchivePage[platform.Issue], error) {
+func (p *Provider) ListHistoricalIssues(ctx context.Context, ref platform.RepoRef, cursor string) (platform.Page[platform.Issue], error) {
 	return p.listArchiveIssues(ctx, ref, time.Time{}, cursor, "historical_issues")
 }
 
-func (p *Provider) ListHistoricalMergeRequests(ctx context.Context, ref platform.RepoRef, cursor string) (platform.ArchivePage[platform.MergeRequest], error) {
+func (p *Provider) ListHistoricalMergeRequests(ctx context.Context, ref platform.RepoRef, cursor string) (platform.Page[platform.MergeRequest], error) {
 	return p.listArchiveMergeRequests(ctx, ref, time.Time{}, cursor, "historical_merge_requests")
 }
 
-func (p *Provider) ListUpdatedIssues(ctx context.Context, ref platform.RepoRef, since time.Time, cursor string) (platform.ArchivePage[platform.Issue], error) {
+func (p *Provider) ListUpdatedIssues(ctx context.Context, ref platform.RepoRef, since time.Time, cursor string) (platform.Page[platform.Issue], error) {
 	return p.listArchiveIssues(ctx, ref, since.UTC(), cursor, "updated_issues")
 }
 
-func (p *Provider) ListUpdatedMergeRequests(ctx context.Context, ref platform.RepoRef, since time.Time, cursor string) (platform.ArchivePage[platform.MergeRequest], error) {
+func (p *Provider) ListUpdatedMergeRequests(ctx context.Context, ref platform.RepoRef, since time.Time, cursor string) (platform.Page[platform.MergeRequest], error) {
 	return p.listArchiveMergeRequests(ctx, ref, since.UTC(), cursor, "updated_merge_requests")
 }
 
-func (p *Provider) listArchiveIssues(ctx context.Context, ref platform.RepoRef, since time.Time, encoded, mode string) (platform.ArchivePage[platform.Issue], error) {
+func (p *Provider) listArchiveIssues(ctx context.Context, ref platform.RepoRef, since time.Time, encoded, mode string) (platform.Page[platform.Issue], error) {
 	t, err := p.archiveTransport()
 	if err != nil {
-		return platform.ArchivePage[platform.Issue]{}, err
+		return platform.Page[platform.Issue]{}, err
 	}
 	cursor, err := p.decodeArchiveCursor(ref, 0, mode, since, encoded)
 	if err != nil {
-		return platform.ArchivePage[platform.Issue]{}, err
+		return platform.Page[platform.Issue]{}, err
 	}
 	items, page, err := t.ListArchiveIssues(ctx, ref, ArchiveListOptions{
 		PageOptions: PageOptions{Page: cursor.Page, PageSize: defaultPageSize},
 		Since:       inclusiveArchiveWatermark(since), Before: archiveBefore(cursor),
 	})
 	if err != nil {
-		return platform.ArchivePage[platform.Issue]{}, p.mapError(err)
+		return platform.Page[platform.Issue]{}, p.mapError(err)
 	}
 	// The Gitea-compatible issue endpoint has no sort parameter and returns
 	// newest pages first. The first request discovers the final page; each
@@ -75,20 +75,20 @@ func (p *Provider) listArchiveIssues(ctx context.Context, ref platform.RepoRef, 
 		out = append(out, NormalizeIssue(ref, item))
 	}
 	if cursor.Page <= 1 {
-		return platform.ArchivePage[platform.Issue]{Items: out, Exhausted: true}, nil
+		return platform.Page[platform.Issue]{Items: out, Exhausted: true}, nil
 	}
 	cursor.Page--
 	return nextArchivePage(p, out, cursor, len(out) == 0)
 }
 
-func (p *Provider) listArchiveMergeRequests(ctx context.Context, ref platform.RepoRef, since time.Time, encoded, mode string) (platform.ArchivePage[platform.MergeRequest], error) {
+func (p *Provider) listArchiveMergeRequests(ctx context.Context, ref platform.RepoRef, since time.Time, encoded, mode string) (platform.Page[platform.MergeRequest], error) {
 	t, err := p.archiveTransport()
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequest]{}, err
+		return platform.Page[platform.MergeRequest]{}, err
 	}
 	cursor, err := p.decodeArchiveCursor(ref, 0, mode, since, encoded)
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequest]{}, err
+		return platform.Page[platform.MergeRequest]{}, err
 	}
 	sortMode := "oldest"
 	if !since.IsZero() {
@@ -98,7 +98,7 @@ func (p *Provider) listArchiveMergeRequests(ctx context.Context, ref platform.Re
 		PageOptions: PageOptions{Page: cursor.Page, PageSize: defaultPageSize}, Sort: sortMode,
 	})
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequest]{}, p.mapError(err)
+		return platform.Page[platform.MergeRequest]{}, p.mapError(err)
 	}
 	out := make([]platform.MergeRequest, 0, len(items))
 	crossedWatermark := false
@@ -118,36 +118,36 @@ func (p *Provider) listArchiveMergeRequests(ctx context.Context, ref platform.Re
 		out = append(out, NormalizePullRequest(ref, item))
 	}
 	if page.Next == 0 || crossedWatermark {
-		return platform.ArchivePage[platform.MergeRequest]{Items: out, Exhausted: true}, nil
+		return platform.Page[platform.MergeRequest]{Items: out, Exhausted: true}, nil
 	}
 	cursor.Page = page.Next
 	return nextArchivePage(p, out, cursor, len(out) == 0)
 }
 
-func (p *Provider) GetArchiveIssue(ctx context.Context, ref platform.RepoRef, number int) (platform.ArchiveItemResult[platform.Issue], error) {
+func (p *Provider) GetArchiveIssue(ctx context.Context, ref platform.RepoRef, number int) (platform.ItemLookup[platform.Issue], error) {
 	item, err := p.transport.GetIssue(ctx, ref, number)
 	if err != nil {
 		outcome, classifyErr := p.classifyArchiveLookup(ctx, ref, err)
-		return platform.ArchiveItemResult[platform.Issue]{Outcome: outcome}, classifyErr
+		return platform.ItemLookup[platform.Issue]{Outcome: outcome}, classifyErr
 	}
-	return platform.ArchiveItemResult[platform.Issue]{Outcome: platform.ArchiveLookupPresent, Item: NormalizeIssue(ref, item)}, nil
+	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupPresent, Item: NormalizeIssue(ref, item)}, nil
 }
 
-func (p *Provider) GetArchiveMergeRequest(ctx context.Context, ref platform.RepoRef, number int) (platform.ArchiveItemResult[platform.MergeRequest], error) {
+func (p *Provider) GetArchiveMergeRequest(ctx context.Context, ref platform.RepoRef, number int) (platform.ItemLookup[platform.MergeRequest], error) {
 	item, err := p.transport.GetPullRequest(ctx, ref, number)
 	if err != nil {
 		outcome, classifyErr := p.classifyArchiveLookup(ctx, ref, err)
-		return platform.ArchiveItemResult[platform.MergeRequest]{Outcome: outcome}, classifyErr
+		return platform.ItemLookup[platform.MergeRequest]{Outcome: outcome}, classifyErr
 	}
-	return platform.ArchiveItemResult[platform.MergeRequest]{Outcome: platform.ArchiveLookupPresent, Item: NormalizePullRequest(ref, item)}, nil
+	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupPresent, Item: NormalizePullRequest(ref, item)}, nil
 }
 
-func (p *Provider) classifyArchiveLookup(ctx context.Context, ref platform.RepoRef, err error) (platform.ArchiveLookupOutcome, error) {
+func (p *Provider) classifyArchiveLookup(ctx context.Context, ref platform.RepoRef, err error) (platform.LookupOutcome, error) {
 	mapped := p.mapError(err)
 	if errors.Is(mapped, platform.ErrPermissionDenied) {
 		_, repoErr := p.transport.GetRepository(ctx, ref.Owner, ref.Name)
 		if repoErr == nil {
-			return platform.ArchiveLookupInaccessible, nil
+			return platform.LookupInaccessible, nil
 		}
 		mappedRepoErr := p.mapError(repoErr)
 		if errors.Is(mappedRepoErr, platform.ErrPermissionDenied) || errors.Is(mappedRepoErr, platform.ErrNotFound) {
@@ -162,7 +162,7 @@ func (p *Provider) classifyArchiveLookup(ctx context.Context, ref platform.RepoR
 	if repoErr == nil {
 		// Neither SDK exposes a transfer destination on item lookup. An item
 		// 404 in an accessible source repository is therefore terminal removal.
-		return platform.ArchiveLookupRemoved, nil
+		return platform.LookupRemoved, nil
 	}
 	mappedRepoErr := p.mapError(repoErr)
 	if errors.Is(mappedRepoErr, platform.ErrPermissionDenied) || errors.Is(mappedRepoErr, platform.ErrNotFound) {
@@ -171,38 +171,38 @@ func (p *Provider) classifyArchiveLookup(ctx context.Context, ref platform.RepoR
 	return "", mappedRepoErr
 }
 
-func (p *Provider) ListArchiveIssueComments(ctx context.Context, ref platform.RepoRef, number int, encoded string) (platform.ArchivePage[platform.IssueEvent], error) {
+func (p *Provider) ListArchiveIssueComments(ctx context.Context, ref platform.RepoRef, number int, encoded string) (platform.Page[platform.IssueEvent], error) {
 	cursor, err := p.decodeArchiveCursor(ref, number, "issue_comments", time.Time{}, encoded)
 	if err != nil {
-		return platform.ArchivePage[platform.IssueEvent]{}, err
+		return platform.Page[platform.IssueEvent]{}, err
 	}
 	comments, page, err := p.transport.ListIssueComments(ctx, ref, number, PageOptions{Page: cursor.Page, PageSize: defaultPageSize})
 	if err != nil {
-		return platform.ArchivePage[platform.IssueEvent]{}, p.mapError(err)
+		return platform.Page[platform.IssueEvent]{}, p.mapError(err)
 	}
 	return detailArchivePage(p, NormalizeIssueComments(p.kind, ref, number, comments), cursor, page)
 }
 
-func (p *Provider) ListArchiveMergeRequestComments(ctx context.Context, ref platform.RepoRef, number int, encoded string) (platform.ArchivePage[platform.MergeRequestEvent], error) {
+func (p *Provider) ListArchiveMergeRequestComments(ctx context.Context, ref platform.RepoRef, number int, encoded string) (platform.Page[platform.MergeRequestEvent], error) {
 	cursor, err := p.decodeArchiveCursor(ref, number, "merge_request_comments", time.Time{}, encoded)
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequestEvent]{}, err
+		return platform.Page[platform.MergeRequestEvent]{}, err
 	}
 	comments, page, err := p.transport.ListPullRequestComments(ctx, ref, number, PageOptions{Page: cursor.Page, PageSize: defaultPageSize})
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequestEvent]{}, p.mapError(err)
+		return platform.Page[platform.MergeRequestEvent]{}, p.mapError(err)
 	}
 	return detailArchivePage(p, NormalizeMergeRequestEvents(p.kind, ref, number, comments, nil, nil), cursor, page)
 }
 
-func (p *Provider) ListArchiveSubmittedReviews(ctx context.Context, ref platform.RepoRef, number int, encoded string) (platform.ArchivePage[platform.MergeRequestEvent], error) {
+func (p *Provider) ListArchiveSubmittedReviews(ctx context.Context, ref platform.RepoRef, number int, encoded string) (platform.Page[platform.MergeRequestEvent], error) {
 	cursor, err := p.decodeArchiveCursor(ref, number, "submitted_reviews", time.Time{}, encoded)
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequestEvent]{}, err
+		return platform.Page[platform.MergeRequestEvent]{}, err
 	}
 	reviews, page, err := p.transport.ListPullRequestReviews(ctx, ref, number, PageOptions{Page: cursor.Page, PageSize: defaultPageSize})
 	if err != nil {
-		return platform.ArchivePage[platform.MergeRequestEvent]{}, p.mapError(err)
+		return platform.Page[platform.MergeRequestEvent]{}, p.mapError(err)
 	}
 	submitted := make([]ReviewDTO, 0, len(reviews))
 	for _, review := range reviews {
@@ -223,27 +223,27 @@ func isSubmittedArchiveReviewState(state string) bool {
 	}
 }
 
-func (p *Provider) ListArchiveReviewThreads(context.Context, platform.RepoRef, int, string) (platform.ArchivePage[platform.MergeRequestReviewThread], error) {
-	return platform.ArchivePage[platform.MergeRequestReviewThread]{}, platform.UnsupportedCapability(p.kind, p.host, string(platform.ArchiveCapabilityInlineReviewComments))
+func (p *Provider) ListArchiveReviewThreads(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestReviewThread], error) {
+	return platform.Page[platform.MergeRequestReviewThread]{}, platform.UnsupportedCapability(p.kind, p.host, string(platform.ArchiveCapabilityInlineReviewComments))
 }
 
-func detailArchivePage[T any](p *Provider, items []T, cursor archiveCursor, page Page) (platform.ArchivePage[T], error) {
+func detailArchivePage[T any](p *Provider, items []T, cursor archiveCursor, page Page) (platform.Page[T], error) {
 	if page.Next == 0 {
-		return platform.ArchivePage[T]{Items: items, Exhausted: true}, nil
+		return platform.Page[T]{Items: items, Exhausted: true}, nil
 	}
 	cursor.Page = page.Next
 	return nextArchivePage(p, items, cursor, len(items) == 0)
 }
 
-func nextArchivePage[T any](p *Provider, items []T, cursor archiveCursor, progressOnly bool) (platform.ArchivePage[T], error) {
+func nextArchivePage[T any](p *Provider, items []T, cursor archiveCursor, progressOnly bool) (platform.Page[T], error) {
 	next, err := encodeArchiveCursor(cursor)
 	if err != nil {
-		return platform.ArchivePage[T]{}, err
+		return platform.Page[T]{}, err
 	}
-	return platform.ArchivePage[T]{Items: items, NextCursor: next, ProgressOnly: progressOnly}, nil
+	return platform.Page[T]{Items: items, NextCursor: next, ProgressOnly: progressOnly}, nil
 }
 
-func progressArchivePage[T any](p *Provider, cursor archiveCursor) (platform.ArchivePage[T], error) {
+func progressArchivePage[T any](p *Provider, cursor archiveCursor) (platform.Page[T], error) {
 	return nextArchivePage(p, []T{}, cursor, true)
 }
 

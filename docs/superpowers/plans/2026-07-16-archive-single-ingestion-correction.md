@@ -14,7 +14,7 @@
 
 - Repository identity is always `(platform, platform_host, owner, name)`.
 - All live work outranks archive work; archive admission is per provider page; database work never holds provider admission.
-- No compatibility adapter, dual writer, alias, or repair gate may be committed (CLAUDE.md + design non-goals). Transitional precision: at every commit, each dataset has exactly one request/normalization implementation and each domain row has exactly one writer. Existing archive-prefixed methods may remain as one-line delegates over the canonical implementation between their provider's slice and Task 11 (they are the pre-existing surface, not new scaffolding, and carry no duplicated logic); the staging schema may outlive its last writer (Task 9) until Task 10 removes it, but no commit leaves two live writers for the same rows.
+- No compatibility adapter, dual writer, alias, or repair gate may be committed (CLAUDE.md + design non-goals). Transitional precision: at every commit, each dataset has exactly one request/normalization implementation and each domain row has exactly one writer. Existing archive-prefixed methods may remain as one-line delegates over the canonical implementation between their provider's slice and Task 11 (they are the pre-existing surface, not new scaffolding, and carry no duplicated logic); the staging schema may outlive its last writer (Task 9) until Task 10 removes it, but no commit leaves two live writers for the same rows. This window is irreducible without a mega-commit: `internal/archive` consumes provider-neutral interfaces, so the switch from `ArchiveReader` to the canonical readers necessarily flips for all providers atomically (Tasks 9/11) and cannot be folded into any single provider's slice.
 - Structural gates (design: Structural Acceptance Gates): after Task 11 the strings `ArchiveReader`, `validatingArchiveReader`, `ListArchive`, `GetArchive`, `PublishArchive`, `middleman_archive_dataset_pages`, `ArchiveDatasetPage`, `ArchiveDatasetStage` have no production matches.
 - Quantitative gates measured against `3e914c24` excluding the design doc and this plan: delete ≥2,000 net handwritten production lines and ≥4,000 net total lines; end ≤ ~+6,500 production / ~+18,000 total vs `origin/main`.
 - Tests: `go test ./... -shuffle=on`, testify (`require` for preconditions, `assert` otherwise), no `-v`, no `-count=1`, table-driven, `t.TempDir()`, `openTestDB(t)` for db tests.
@@ -317,21 +317,24 @@ type ScanBlockedError struct { /* scope + reason */ }
 // upsert + work-reconciliation tx core with CommitArchiveInventoryPage — there is
 // no third parent writer.
 type ParentLookupCommit struct {
-    RepoID       int64
-    ItemType     ArchiveItemType
-    ItemNumber   int
-    Outcome      platform.LookupOutcome // present | removed | moved | inaccessible
-    Issue        *Issue                 // present + issue
-    MergeRequest *MergeRequest          // present + merge_request
-    Destination  *RepoIdentity          // moved
-    ErrorCode    string                 // terminal outcomes
-    ErrorDetail  string
-    Now          time.Time
+    RepoID         int64
+    ItemType       ArchiveItemType
+    ItemNumber     int
+    ScanGeneration int64                  // expected lookup generation; CAS'd like dataset commits
+    Outcome        platform.LookupOutcome // present | removed | moved | inaccessible
+    Issue          *Issue                 // present + issue
+    MergeRequest   *MergeRequest          // present + merge_request
+    Destination    *RepoIdentity          // moved
+    ErrorCode      string                 // terminal outcomes
+    ErrorDetail    string
+    Now            time.Time
 }
 // Present: upsert parent snapshot, bind lookup progress to the new parent revision
 // (status complete), reopen child datasets whose bound revision was superseded.
 // Removed/inaccessible: item lifecycle terminal + lookup progress terminal.
 // Moved: as removed, plus queue destination prompt (QueueArchivePromptByIdentity).
+// ScanGeneration mismatch (e.g. lookup finished after a forced reset): no writes,
+// returns *StaleDatasetProgressError — test stale lookup completion after reset.
 func (d *DB) CommitParentLookup(ctx context.Context, commit ParentLookupCommit) error
 
 func (d *DB) CommitDatasetPage(ctx context.Context, commit DatasetPageCommit) error
@@ -362,6 +365,7 @@ func (d *DB) ResetDatasetProgress(ctx context.Context, key) error   // new gener
 
 **Files:**
 - Modify: `internal/db/queries_snapshot_children.go` — re-implement `CommitIssueChildSnapshot` and `CommitMergeRequestChildSnapshot` as compositions of the Task 7 tx core (one transaction, one `commitDatasetPageTx` per complete dataset with `Final: true, Progress: nil`, plus other-event upserts and derived-field updates); `satisfyArchiveDatasetsFromNormalSyncTx` rewritten against `middleman_archive_dataset_progress`.
+- Modify: `internal/db/queries.go` + `internal/db/queries_archive.go` — unify the parent snapshot upsert: the live issue/MR upserts (the revision-advancing `RETURNING id, snapshot_revision` statements) and `UpsertArchiveIssueSnapshot`/`UpsertArchiveMergeRequestSnapshot` become one shared tx helper per item type (live callers use the progress-optional mode); delete the duplicate SQL. This is the design's "one shared revision-advancing parent upsert core" — after this task there are not separate live and archive statements writing the same parent rows.
 - Test: `internal/db/queries_snapshot_children_test.go` adaptations; a test proving a complete live observation marks matching archive progress complete without provider requests, and that missing/paused/stale progress never rejects the live write.
 
 **Steps:**
@@ -428,7 +432,7 @@ Load `kenn:db-migration-discipline`. Amend migration 39 to the **final** schema 
 Blocked scans must be recoverable (design: Provider Cursor Failure).
 
 **Files:**
-- Modify: `internal/archive/service.go` — `func (s *Service) ResetScan(ctx context.Context, ref platform.RepoRef, scope ResetScope) error` where `ResetScope{Scan *ArchiveScanKind; ItemType *ArchiveItemType; ItemNumber *int; Dataset *ArchiveDataset; Mode ResetMode}` resets exactly one repo scan or one item dataset; domain content untouched. `ResetMode` is `restart` (new generation, cursor cleared — the only valid recovery for `invalid_cursor` blocks) or `continue` (page counter cleared, cursor and generation retained — for `page_bound` blocks on legitimately oversized scans; refused with a typed error for `invalid_cursor` blocks).
+- Modify: `internal/archive/service.go` — `func (s *Service) ResetScan(ctx context.Context, ref platform.RepoRef, scope ResetScope) error` where `ResetScope{Scan *ArchiveScanKind; ItemType *ArchiveItemType; ItemNumber *int; Dataset *ArchiveDataset; Mode ResetMode}` resets exactly one repo scan or one item dataset; domain content untouched. `ResetMode` is `restart` (new generation, cursor cleared — the only valid recovery for `invalid_cursor` blocks) or `continue` (page counter cleared, cursor and generation retained — an explicit operator classification that a `page_bound` block is a legitimately oversized scan; refused with a typed error for `invalid_cursor` blocks; a misclassified cycle costs at most one further bounded window per invocation).
 - Modify: `internal/server/archive_routes.go` — `POST /archive/reset` (huma op `reset-archive-scan`; body: repo + scope + mode; 400 on non-blocked/missing target unless `force`).
 - Modify: `cmd/middleman/archive_cli.go` — `middleman archive reset --repo … [--scan …|--item TYPE/N --dataset …] [--continue]`.
 - Regenerate: `make api-generate` (openapi, Go client, TS schema).

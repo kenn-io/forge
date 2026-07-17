@@ -75,7 +75,9 @@ The parent-observation commit has two modes sharing one parent upsert and work-r
 - an inventory page: many parents from one provider page, advancing a repository-level scan cursor;
 - a single-item lookup: one parent from a lookup outcome, advancing that item's `lookup` dataset progress.
 
-A present lookup atomically upserts the refreshed parent snapshot, binds the lookup progress to the resulting parent revision, and reopens child datasets whose bound revision it superseded. A removed, moved, or inaccessible lookup atomically records the item lifecycle outcome and marks the lookup progress terminal; a moved lookup additionally queues the destination repository for prompt follow-up. There is no third parent writer.
+A present lookup atomically upserts the refreshed parent snapshot, binds the lookup progress to the resulting parent revision, and reopens child datasets whose bound revision it superseded. A removed, moved, or inaccessible lookup atomically records the item lifecycle outcome and marks the lookup progress terminal; a moved lookup additionally queues the destination repository for prompt follow-up. Lookup commits carry the expected lookup scan generation and are compare-and-swapped exactly like child-dataset commits, so a lookup completed after a forced reset cannot mark the reset progress terminal or upsert a stale parent. There is no third parent writer.
+
+Beneath both operations, every parent snapshot upsert — live sync, inventory page, single-item lookup — flows through one shared revision-advancing parent upsert core. Live sync is the progress-optional mode of that core: it advances the parent revision without touching archive progress, and there are not separate live and archive SQL paths for writing the same parent rows.
 
 ### Durable progress for scarce API work
 
@@ -280,7 +282,9 @@ The generation identifies observations belonging to one logical complete-snapsho
 
 ### Pagination bounds
 
-Cursor compare-and-swap alone cannot stop an alternating or longer cursor cycle, including cycles of progress-only or empty pages. Every scan — repository inventory, maintenance, and item datasets — enforces a per-generation maximum of 10,000 pages using its durable `page_count`. Exceeding the bound, or receiving a page whose `NextCursor` equals its input cursor without exhaustion, marks that scan `blocked`: progress is retained for diagnostics, no further provider requests are spent automatically, and recovery requires an explicit reset. The block reason is durable (`page_bound` versus `invalid_cursor` in the error code) so operators and tests can distinguish a legitimately oversized scan from a cursor cycle. Tests cover multi-cursor cycles, empty-page loops, and oversized-but-valid scans separately.
+Cursor compare-and-swap alone cannot stop an alternating or longer cursor cycle, including cycles of progress-only or empty pages. Every scan — repository inventory, maintenance, and item datasets — enforces a per-generation maximum of 10,000 pages using its durable `page_count`. Exceeding the bound, or receiving a page whose `NextCursor` equals its input cursor without exhaustion, marks that scan `blocked`: progress is retained for diagnostics, no further provider requests are spent automatically, and recovery requires an explicit reset.
+
+The durable block reason records what was detected, not a claim the system cannot make: an in-window detected cycle or provider-invalidated cursor blocks as `invalid_cursor`; reaching the page bound blocks as `page_bound`, which may be either a legitimately oversized scan or a cycle the bounded cursor memory could not see across restarts. Continuation past a `page_bound` block is therefore an explicit operator classification, not an automatic distinction, and each continuation grants at most one further bounded window, so a misclassified cycle costs one bounded window per explicit operator action. Tests cover multi-cursor cycles, empty-page loops, and oversized-but-valid scans separately.
 
 ## Incremental Ingestion
 

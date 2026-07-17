@@ -140,65 +140,79 @@ func (d *DB) CommitDatasetPage(ctx context.Context, commit DatasetPageCommit) er
 	now := time.Now().UTC()
 	var typedErr error
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
-		typedErr = nil
-		repoID, itemNumber, currentRevision, err := domainParentRowTx(ctx, tx, commit.Parent)
-		if err != nil {
-			return err
-		}
-		key := ArchiveDatasetProgressKey{
-			RepoID:     repoID,
-			ItemType:   commit.Parent.ItemType,
-			ItemNumber: itemNumber,
-			Dataset:    commit.Dataset,
-		}
-		if currentRevision != commit.ExpectedRevision {
-			if err := reopenDatasetForRevisionTx(ctx, tx, key, currentRevision, now); err != nil {
-				return err
-			}
-			typedErr = &StaleDatasetProgressError{
-				RepoID: repoID, ItemType: key.ItemType, ItemNumber: itemNumber, Dataset: commit.Dataset,
-				ExpectedRevision: commit.ExpectedRevision, GotRevision: currentRevision,
-			}
-			return nil
-		}
-		pageCount := 0
-		if commit.Progress != nil {
-			if commit.Progress.RepoID != repoID || commit.Progress.ItemNumber != itemNumber {
-				return fmt.Errorf(
-					"commit dataset page: progress repo %d item %d does not match parent repo %d item %d",
-					commit.Progress.RepoID, commit.Progress.ItemNumber, repoID, itemNumber,
-				)
-			}
-			outcome, err := checkDatasetProgressAdvanceTx(ctx, tx, key, commit, currentRevision, now)
-			if err != nil {
-				return err
-			}
-			if outcome.typedErr != nil || outcome.replay {
-				typedErr = outcome.typedErr
-				return nil
-			}
-			pageCount = outcome.newPageCount
-		}
-		if err := upsertDatasetRowsTx(ctx, tx, commit); err != nil {
-			return err
-		}
-		if commit.Final && commit.Dataset == ArchiveDatasetComments {
-			if err := reconcileOrdinaryCommentsTx(ctx, tx, commit.Parent, commit.ScanGeneration); err != nil {
-				return err
-			}
-		}
-		if commit.Progress != nil {
-			return advanceDatasetProgressTx(ctx, tx, key, commit, pageCount, now)
-		}
-		if commit.Final {
-			return satisfyDatasetProgressFromLiveTx(ctx, tx, key, currentRevision, now)
-		}
-		return nil
+		var err error
+		typedErr, err = commitDatasetPageTx(ctx, tx, commit, now)
+		return err
 	})
 	if err != nil {
 		return err
 	}
 	return typedErr
+}
+
+// commitDatasetPageTx is the transaction core of CommitDatasetPage. It is the
+// single implementation of child-dataset row writes and ordinary-comment
+// reconciliation; live child-snapshot writers compose it per complete dataset
+// inside their own transaction. A non-nil typedErr describes an outcome whose
+// progress side effects (dataset reopen, block) must still commit, so the
+// caller must not roll back on it.
+func commitDatasetPageTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	commit DatasetPageCommit,
+	now time.Time,
+) (typedErr error, err error) {
+	repoID, itemNumber, currentRevision, err := domainParentRowTx(ctx, tx, commit.Parent)
+	if err != nil {
+		return nil, err
+	}
+	key := ArchiveDatasetProgressKey{
+		RepoID:     repoID,
+		ItemType:   commit.Parent.ItemType,
+		ItemNumber: itemNumber,
+		Dataset:    commit.Dataset,
+	}
+	if currentRevision != commit.ExpectedRevision {
+		if err := reopenDatasetForRevisionTx(ctx, tx, key, currentRevision, now); err != nil {
+			return nil, err
+		}
+		return &StaleDatasetProgressError{
+			RepoID: repoID, ItemType: key.ItemType, ItemNumber: itemNumber, Dataset: commit.Dataset,
+			ExpectedRevision: commit.ExpectedRevision, GotRevision: currentRevision,
+		}, nil
+	}
+	pageCount := 0
+	if commit.Progress != nil {
+		if commit.Progress.RepoID != repoID || commit.Progress.ItemNumber != itemNumber {
+			return nil, fmt.Errorf(
+				"commit dataset page: progress repo %d item %d does not match parent repo %d item %d",
+				commit.Progress.RepoID, commit.Progress.ItemNumber, repoID, itemNumber,
+			)
+		}
+		outcome, err := checkDatasetProgressAdvanceTx(ctx, tx, key, commit, currentRevision, now)
+		if err != nil {
+			return nil, err
+		}
+		if outcome.typedErr != nil || outcome.replay {
+			return outcome.typedErr, nil
+		}
+		pageCount = outcome.newPageCount
+	}
+	if err := upsertDatasetRowsTx(ctx, tx, commit); err != nil {
+		return nil, err
+	}
+	if commit.Final && commit.Dataset == ArchiveDatasetComments {
+		if err := reconcileOrdinaryCommentsTx(ctx, tx, commit.Parent, commit.ScanGeneration); err != nil {
+			return nil, err
+		}
+	}
+	if commit.Progress != nil {
+		return nil, advanceDatasetProgressTx(ctx, tx, key, commit, pageCount, now)
+	}
+	if commit.Final {
+		return nil, satisfyDatasetProgressFromLiveTx(ctx, tx, key, currentRevision, now)
+	}
+	return nil, nil
 }
 
 type datasetAdvanceOutcome struct {

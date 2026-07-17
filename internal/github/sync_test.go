@@ -172,11 +172,8 @@ func TestNormalSyncRejectsAllMergeRequestChildrenAfterParentAdvances(t *testing.
 		UpdatedAt: currentUpdatedAt, LastActivityAt: currentUpdatedAt,
 	})
 	require.NoError(err)
-	require.NoError(database.ReplaceMRCommentEvents(ctx, mrID, []db.MREvent{{
-		MergeRequestID: mrID, EventType: "issue_comment", DedupeKey: "current-comment",
-		CreatedAt: currentUpdatedAt,
-	}}, nil))
 	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{
+		{MergeRequestID: mrID, EventType: "issue_comment", DedupeKey: "current-comment", CreatedAt: currentUpdatedAt},
 		{MergeRequestID: mrID, EventType: "review", DedupeKey: "current-review", CreatedAt: currentUpdatedAt},
 		{MergeRequestID: mrID, EventType: "review_comment", DedupeKey: "current-inline", CreatedAt: currentUpdatedAt},
 	}))

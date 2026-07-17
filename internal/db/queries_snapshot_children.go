@@ -34,25 +34,37 @@ type MergeRequestChildSnapshot struct {
 }
 
 // CommitIssueChildSnapshot replaces issue comments only while the parent still
-// matches the snapshot that initiated the provider fetch.
+// matches the snapshot that initiated the provider fetch. The comment rows go
+// through the shared dataset page-commit core in live mode (final page, no
+// durable progress), which also satisfies matching archive dataset progress
+// without ever depending on it.
 func (d *DB) CommitIssueChildSnapshot(ctx context.Context, snapshot IssueChildSnapshot) (bool, error) {
 	var applied bool
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		applied = false
 		current, err := domainParentSnapshotCurrentTx(
 			ctx, tx, ArchiveItemTypeIssue, snapshot.IssueID, snapshot.ExpectedRevision,
 		)
 		if err != nil || !current {
 			return err
 		}
-		if err := replaceIssueCommentsDatasetTx(
-			ctx, tx, snapshot.IssueID, snapshot.Comments, snapshot.LastActivityAt, true,
-		); err != nil {
+		if err := commitLiveDatasetTx(ctx, tx, DatasetPageCommit{
+			Parent:           DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: snapshot.IssueID},
+			ExpectedRevision: snapshot.ExpectedRevision,
+			Dataset:          ArchiveDatasetComments,
+			ScanGeneration:   liveIngestGeneration(),
+			Rows:             DatasetRows{IssueComments: snapshot.Comments},
+			Final:            true,
+		}); err != nil {
+			return err
+		}
+		if err := updateIssueCommentDerivedTx(ctx, tx, snapshot.IssueID, snapshot.LastActivityAt); err != nil {
 			return err
 		}
 		if err := upsertIssueEventsTx(ctx, tx, snapshot.OtherEvents); err != nil {
 			return err
 		}
-		if err := satisfyArchiveDatasetsFromNormalSyncTx(
+		if err := satisfyLegacyArchiveItemStatusFromNormalSyncTx(
 			ctx, tx, ArchiveItemTypeIssue, snapshot.IssueID,
 			[]ArchiveDataset{ArchiveDatasetComments},
 		); err != nil {
@@ -65,42 +77,67 @@ func (d *DB) CommitIssueChildSnapshot(ctx context.Context, snapshot IssueChildSn
 }
 
 // CommitMergeRequestChildSnapshot atomically applies every supplied event and
-// review-thread family only while its parent snapshot remains current.
+// review-thread family only while its parent snapshot remains current. Every
+// complete dataset flows through the shared dataset page-commit core in live
+// mode; incomplete datasets keep upsert-only semantics.
 func (d *DB) CommitMergeRequestChildSnapshot(
 	ctx context.Context,
 	snapshot MergeRequestChildSnapshot,
 ) (bool, error) {
 	var applied bool
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		applied = false
 		current, err := domainParentSnapshotCurrentTx(
 			ctx, tx, ArchiveItemTypeMergeRequest, snapshot.MergeRequestID, snapshot.ExpectedRevision,
 		)
 		if err != nil || !current {
 			return err
 		}
+		parent := DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: snapshot.MergeRequestID}
+		generation := liveIngestGeneration()
 		if snapshot.CommentsComplete {
-			if err := replaceMREventDatasetTx(
-				ctx, tx, snapshot.MergeRequestID, "issue_comment", snapshot.Comments, true,
-			); err != nil {
+			if err := commitLiveDatasetTx(ctx, tx, DatasetPageCommit{
+				Parent:           parent,
+				ExpectedRevision: snapshot.ExpectedRevision,
+				Dataset:          ArchiveDatasetComments,
+				ScanGeneration:   generation,
+				Rows:             DatasetRows{MRComments: snapshot.Comments},
+				Final:            true,
+			}); err != nil {
+				return err
+			}
+			if err := updateMRCommentCountTx(ctx, tx, snapshot.MergeRequestID); err != nil {
 				return err
 			}
 		} else if err := upsertMREventsTx(ctx, tx, snapshot.Comments); err != nil {
 			return err
 		}
 		if snapshot.ReviewsComplete {
-			if err := replaceMREventDatasetTx(
-				ctx, tx, snapshot.MergeRequestID, "review", snapshot.Reviews, false,
-			); err != nil {
+			if err := commitLiveDatasetTx(ctx, tx, DatasetPageCommit{
+				Parent:           parent,
+				ExpectedRevision: snapshot.ExpectedRevision,
+				Dataset:          ArchiveDatasetReviews,
+				ScanGeneration:   generation,
+				Rows:             DatasetRows{Reviews: snapshot.Reviews},
+				Final:            true,
+			}); err != nil {
 				return err
 			}
 		} else if err := upsertMREventsTx(ctx, tx, snapshot.Reviews); err != nil {
 			return err
 		}
 		if snapshot.InlineComplete {
-			if err := replaceMRReviewThreadsDatasetTx(
-				ctx, tx, snapshot.MergeRequestID,
-				snapshot.ReviewThreads, snapshot.InlineComments,
-			); err != nil {
+			if err := commitLiveDatasetTx(ctx, tx, DatasetPageCommit{
+				Parent:           parent,
+				ExpectedRevision: snapshot.ExpectedRevision,
+				Dataset:          ArchiveDatasetInlineComments,
+				ScanGeneration:   generation,
+				Rows: DatasetRows{
+					ReviewThreads: snapshot.ReviewThreads,
+					ThreadEvents:  snapshot.InlineComments,
+				},
+				Final: true,
+			}); err != nil {
 				return err
 			}
 		}
@@ -126,7 +163,7 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 		if snapshot.InlineComplete {
 			completeDatasets = append(completeDatasets, ArchiveDatasetInlineComments)
 		}
-		if err := satisfyArchiveDatasetsFromNormalSyncTx(
+		if err := satisfyLegacyArchiveItemStatusFromNormalSyncTx(
 			ctx, tx, ArchiveItemTypeMergeRequest, snapshot.MergeRequestID, completeDatasets,
 		); err != nil {
 			return err
@@ -137,65 +174,71 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 	return applied, err
 }
 
-func replaceIssueCommentsDatasetTx(
+// liveIngestGeneration returns the ingest-generation stamp for one complete
+// live dataset commit. Live commits carry no durable scan generation, but the
+// core's final-page reconciliation deletes ordinary comments whose stamp
+// differs from the committing generation, so a live stamp must differ from
+// every generation currently stamped on the same parent's rows. Nanosecond
+// wall time is strictly greater than any small durable scan generation and
+// any earlier live stamp.
+func liveIngestGeneration() int64 {
+	return time.Now().UnixNano()
+}
+
+// commitLiveDatasetTx routes one complete live dataset through the shared
+// page-commit core. Live compositions gate on the parent revision inside the
+// same transaction before calling it, so a typed progress outcome here is a
+// consistency bug and fails the transaction instead of committing partial
+// state.
+func commitLiveDatasetTx(ctx context.Context, tx *sql.Tx, commit DatasetPageCommit) error {
+	typedErr, err := commitDatasetPageTx(ctx, tx, commit, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	return typedErr
+}
+
+// updateIssueCommentDerivedTx refreshes the issue fields derived from the
+// ordinary-comment dataset after a complete live replacement.
+func updateIssueCommentDerivedTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	issueID int64,
-	events []IssueEvent,
 	lastActivityAt *time.Time,
-	updateDerived bool,
 ) error {
-	if updateDerived {
-		return replaceIssueCommentEventsTx(ctx, tx, issueID, events, lastActivityAt)
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE middleman_issues
+		SET comment_count = (
+			SELECT COUNT(*) FROM middleman_issue_events
+			WHERE issue_id = ? AND event_type = 'issue_comment'
+		), last_activity_at = COALESCE(?, last_activity_at)
+		WHERE id = ?`, issueID, lastActivityAt, issueID); err != nil {
+		return fmt.Errorf("update issue derived fields: %w", err)
 	}
-	keys := make([]string, len(events))
-	for i := range events {
-		keys[i] = events[i].DedupeKey
-	}
-	if err := deleteMissingIssueCommentEventsTx(ctx, tx, issueID, keys); err != nil {
-		return err
-	}
-	return upsertIssueEventsTx(ctx, tx, events)
+	return nil
 }
 
-func replaceMREventDatasetTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	mergeRequestID int64,
-	eventType string,
-	events []MREvent,
-	updateDerived bool,
-) error {
-	if eventType == "issue_comment" && updateDerived {
-		return replaceMRCommentEventsTx(ctx, tx, mergeRequestID, events, nil)
+// updateMRCommentCountTx refreshes the merge-request comment count after a
+// complete live replacement of the ordinary-comment dataset.
+func updateMRCommentCountTx(ctx context.Context, tx *sql.Tx, mrID int64) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET comment_count = (
+			SELECT COUNT(*) FROM middleman_mr_events
+			WHERE merge_request_id = ? AND event_type = 'issue_comment'
+		)
+		WHERE id = ?`, mrID, mrID); err != nil {
+		return fmt.Errorf("update mr derived fields: %w", err)
 	}
-	if eventType == "review" {
-		return upsertMREventsTx(ctx, tx, events)
-	}
-	keys := make([]string, len(events))
-	for i := range events {
-		keys[i] = events[i].DedupeKey
-	}
-	if err := deleteMissingMREventFamilyTx(ctx, tx, mergeRequestID, eventType, keys); err != nil {
-		return err
-	}
-	return upsertMREventsTx(ctx, tx, events)
+	return nil
 }
 
-func replaceMRReviewThreadsDatasetTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	mergeRequestID int64,
-	threads []MRReviewThread,
-	events []MREvent,
-) error {
-	if err := upsertMRReviewThreadsTx(ctx, tx, mergeRequestID, threads); err != nil {
-		return err
-	}
-	return upsertMREventsTx(ctx, tx, events)
-}
-
-func satisfyArchiveDatasetsFromNormalSyncTx(
+// satisfyLegacyArchiveItemStatusFromNormalSyncTx is the transitional dual-write
+// leg of live satisfaction: the archive service still schedules from the
+// per-item status columns on middleman_archive_items, so a complete live
+// observation keeps them consistent in the same transaction that satisfies
+// durable dataset progress. This leg dies with those columns (Task 9/10).
+func satisfyLegacyArchiveItemStatusFromNormalSyncTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	itemType ArchiveItemType,

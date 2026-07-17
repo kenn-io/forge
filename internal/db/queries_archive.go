@@ -1216,14 +1216,11 @@ func commitArchiveIssueParentTx(
 ) (int64, int64, bool, error) {
 	issue := &item.Snapshot.Issue
 	issue.RepoID = repoID
-	issueID, revision, accepted, err := upsertIssueParentTx(ctx, tx, issue)
+	issueID, revision, accepted, err := commitIssueParentSnapshotTx(
+		ctx, tx, issue, item.Snapshot.Labels,
+	)
 	if err != nil {
 		return 0, 0, false, err
-	}
-	if accepted {
-		if err := replaceIssueLabelsTx(ctx, tx, repoID, issueID, item.Snapshot.Labels); err != nil {
-			return 0, 0, false, err
-		}
 	}
 	if err := reactivateRemovedArchiveWorkTx(
 		ctx, tx, repoID, ArchiveItemTypeIssue, issue.Number,
@@ -1247,23 +1244,11 @@ func commitArchiveMergeRequestParentTx(
 ) (int64, int64, bool, error) {
 	mr := &item.Snapshot.MergeRequest
 	mr.RepoID = repoID
-	diffChanged, err := preserveMergeRequestDetailTx(ctx, tx, mr, true)
+	mrID, revision, accepted, err := commitMergeRequestParentSnapshotTx(
+		ctx, tx, mr, item.Snapshot.Labels, mergeRequestDetailPreserveProviderDetail,
+	)
 	if err != nil {
 		return 0, 0, false, err
-	}
-	mrID, revision, accepted, err := upsertMergeRequestParentTx(ctx, tx, mr)
-	if err != nil {
-		return 0, 0, false, err
-	}
-	if accepted {
-		if diffChanged {
-			if err := clearArchiveMergeRequestDiffDetailTx(ctx, tx, mrID); err != nil {
-				return 0, 0, false, err
-			}
-		}
-		if err := replaceMergeRequestLabelsTx(ctx, tx, repoID, mrID, item.Snapshot.Labels); err != nil {
-			return 0, 0, false, err
-		}
 	}
 	if err := reactivateRemovedArchiveWorkTx(
 		ctx, tx, repoID, ArchiveItemTypeMergeRequest, mr.Number,
@@ -1397,7 +1382,7 @@ func (d *DB) UpsertArchiveIssueSnapshot(ctx context.Context, snapshot *Issue) (i
 			accepted = true
 			return nil
 		}
-		id, revision, accepted, err = upsertIssueParentTx(ctx, tx, snapshot)
+		id, revision, accepted, err = commitIssueParentSnapshotTx(ctx, tx, snapshot, snapshot.Labels)
 		if err != nil {
 			return err
 		}
@@ -1409,15 +1394,9 @@ func (d *DB) UpsertArchiveIssueSnapshot(ctx context.Context, snapshot *Issue) (i
 				return fmt.Errorf("read winning issue snapshot: %w", err)
 			}
 		}
-		if err := reconcileArchiveItemSnapshotTx(
+		return reconcileArchiveItemSnapshotTx(
 			ctx, tx, snapshot.RepoID, ArchiveItemTypeIssue, snapshot.Number, winningUpdatedAt, revision,
-		); err != nil {
-			return err
-		}
-		if !accepted {
-			return nil
-		}
-		return replaceIssueLabelsTx(ctx, tx, snapshot.RepoID, id, snapshot.Labels)
+		)
 	})
 	return id, revision, accepted, err
 }
@@ -1443,11 +1422,9 @@ func (d *DB) UpsertArchiveMergeRequestSnapshot(ctx context.Context, snapshot *Me
 			accepted = true
 			return nil
 		}
-		diffChanged, err := preserveMergeRequestDetailTx(ctx, tx, snapshot, false)
-		if err != nil {
-			return err
-		}
-		id, revision, accepted, err = upsertMergeRequestParentTx(ctx, tx, snapshot)
+		id, revision, accepted, err = commitMergeRequestParentSnapshotTx(
+			ctx, tx, snapshot, snapshot.Labels, mergeRequestDetailPreserveDerived,
+		)
 		if err != nil {
 			return err
 		}
@@ -1459,20 +1436,9 @@ func (d *DB) UpsertArchiveMergeRequestSnapshot(ctx context.Context, snapshot *Me
 				return fmt.Errorf("read winning merge-request snapshot: %w", err)
 			}
 		}
-		if err := reconcileArchiveItemSnapshotTx(
+		return reconcileArchiveItemSnapshotTx(
 			ctx, tx, snapshot.RepoID, ArchiveItemTypeMergeRequest, snapshot.Number, winningUpdatedAt, revision,
-		); err != nil {
-			return err
-		}
-		if !accepted {
-			return nil
-		}
-		if diffChanged {
-			if err := clearArchiveMergeRequestDiffDetailTx(ctx, tx, id); err != nil {
-				return err
-			}
-		}
-		return replaceMergeRequestLabelsTx(ctx, tx, snapshot.RepoID, id, snapshot.Labels)
+		)
 	})
 	return id, revision, accepted, err
 }
@@ -1797,7 +1763,14 @@ func (d *DB) PublishArchiveIssueComments(ctx context.Context, key ArchiveDataset
 		if err := requireArchiveDatasetStageReady(stage, key, "publish archive issue comments"); err != nil {
 			return err
 		}
-		if err := replaceIssueCommentsDatasetTx(ctx, tx, issueID, events, nil, false); err != nil {
+		if err := commitLiveDatasetTx(ctx, tx, DatasetPageCommit{
+			Parent:           DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID},
+			ExpectedRevision: key.DomainRevision,
+			Dataset:          ArchiveDatasetComments,
+			ScanGeneration:   liveIngestGeneration(),
+			Rows:             DatasetRows{IssueComments: events},
+			Final:            true,
+		}); err != nil {
 			return err
 		}
 		return completeArchiveDatasetTx(ctx, tx, key)
@@ -1819,7 +1792,23 @@ func (d *DB) PublishArchiveMREvents(ctx context.Context, key ArchiveDatasetKey, 
 		if err := requireArchiveDatasetStageReady(stage, key, "publish archive merge-request events"); err != nil {
 			return err
 		}
-		if err := replaceMREventDatasetTx(ctx, tx, mrID, eventType, events, false); err != nil {
+		commit := DatasetPageCommit{
+			Parent:           DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: mrID},
+			ExpectedRevision: key.DomainRevision,
+			ScanGeneration:   liveIngestGeneration(),
+			Final:            true,
+		}
+		switch eventType {
+		case "issue_comment":
+			commit.Dataset = ArchiveDatasetComments
+			commit.Rows = DatasetRows{MRComments: events}
+		case "review":
+			commit.Dataset = ArchiveDatasetReviews
+			commit.Rows = DatasetRows{Reviews: events}
+		default:
+			return fmt.Errorf("publish archive merge-request events: invalid event type %q", eventType)
+		}
+		if err := commitLiveDatasetTx(ctx, tx, commit); err != nil {
 			return err
 		}
 		return completeArchiveDatasetTx(ctx, tx, key)
@@ -1841,7 +1830,14 @@ func (d *DB) PublishArchiveReviewThreads(ctx context.Context, key ArchiveDataset
 		if err := requireArchiveDatasetStageReady(stage, key, "publish archive review threads"); err != nil {
 			return err
 		}
-		if err := replaceMRReviewThreadsDatasetTx(ctx, tx, mrID, threads, events); err != nil {
+		if err := commitLiveDatasetTx(ctx, tx, DatasetPageCommit{
+			Parent:           DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: mrID},
+			ExpectedRevision: key.DomainRevision,
+			Dataset:          ArchiveDatasetInlineComments,
+			ScanGeneration:   liveIngestGeneration(),
+			Rows:             DatasetRows{ReviewThreads: threads, ThreadEvents: events},
+			Final:            true,
+		}); err != nil {
 			return err
 		}
 		return completeArchiveDatasetTx(ctx, tx, key)

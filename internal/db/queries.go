@@ -2182,7 +2182,8 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 }
 
 // UpsertMergeRequestSnapshotWithLabels atomically applies a provider merge
-// request snapshot and its labels. Callers must skip dependent writes when
+// request snapshot and its labels through the shared parent upsert core in
+// its live (progress-optional) mode. Callers must skip dependent writes when
 // the monotonic updated_at guard rejects the parent.
 func (d *DB) UpsertMergeRequestSnapshotWithLabels(
 	ctx context.Context,
@@ -2193,11 +2194,10 @@ func (d *DB) UpsertMergeRequestSnapshotWithLabels(
 	var accepted bool
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		var err error
-		id, revision, accepted, err = upsertMergeRequestParentTx(ctx, tx, mr)
-		if err != nil || !accepted {
-			return err
-		}
-		return replaceMergeRequestLabelsTx(ctx, tx, mr.RepoID, id, mr.Labels)
+		id, revision, accepted, err = commitMergeRequestParentSnapshotTx(
+			ctx, tx, mr, mr.Labels, mergeRequestDetailFromSnapshot,
+		)
+		return err
 	})
 	return id, revision, accepted, err
 }
@@ -2309,6 +2309,79 @@ func upsertMergeRequestSnapshot(
 func upsertMergeRequestParentTx(ctx context.Context, tx *sql.Tx, mr *MergeRequest) (int64, int64, bool, error) {
 	canonicalizeMergeRequestTimestamps(mr)
 	return upsertMergeRequestSnapshot(ctx, tx, mr)
+}
+
+// mergeRequestDetailMode selects how an incoming parent snapshot treats
+// detail fields already stored on the merge-request row.
+type mergeRequestDetailMode int
+
+const (
+	// mergeRequestDetailFromSnapshot trusts the incoming snapshot's own
+	// detail fields; live sync snapshots carry current provider detail.
+	mergeRequestDetailFromSnapshot mergeRequestDetailMode = iota
+	// mergeRequestDetailPreserveProviderDetail keeps live-owned detail
+	// (counts, diff stats, CI, review decision) over an inventory-page
+	// snapshot that lacks them.
+	mergeRequestDetailPreserveProviderDetail
+	// mergeRequestDetailPreserveDerived keeps derived review/CI state but
+	// accepts the snapshot's own counts (single-item archive refresh).
+	mergeRequestDetailPreserveDerived
+)
+
+// commitIssueParentSnapshotTx is the single revision-advancing issue parent
+// upsert shared by live sync, archive inventory pages, and single-item
+// lookups: the parent row plus accepted-gated label replacement. Live sync is
+// the progress-optional mode of this core — it advances the parent revision
+// without touching archive state.
+func commitIssueParentSnapshotTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	issue *Issue,
+	labels []Label,
+) (int64, int64, bool, error) {
+	id, revision, accepted, err := upsertIssueParentTx(ctx, tx, issue)
+	if err != nil || !accepted {
+		return id, revision, accepted, err
+	}
+	if err := replaceIssueLabelsTx(ctx, tx, issue.RepoID, id, labels); err != nil {
+		return 0, 0, false, err
+	}
+	return id, revision, true, nil
+}
+
+// commitMergeRequestParentSnapshotTx is the merge-request mode of the shared
+// revision-advancing parent upsert core used by live sync and every archive
+// parent observation.
+func commitMergeRequestParentSnapshotTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	mr *MergeRequest,
+	labels []Label,
+	detail mergeRequestDetailMode,
+) (int64, int64, bool, error) {
+	diffChanged := false
+	if detail != mergeRequestDetailFromSnapshot {
+		var err error
+		diffChanged, err = preserveMergeRequestDetailTx(
+			ctx, tx, mr, detail == mergeRequestDetailPreserveProviderDetail,
+		)
+		if err != nil {
+			return 0, 0, false, err
+		}
+	}
+	id, revision, accepted, err := upsertMergeRequestParentTx(ctx, tx, mr)
+	if err != nil || !accepted {
+		return id, revision, accepted, err
+	}
+	if diffChanged {
+		if err := clearArchiveMergeRequestDiffDetailTx(ctx, tx, id); err != nil {
+			return 0, 0, false, err
+		}
+	}
+	if err := replaceMergeRequestLabelsTx(ctx, tx, mr.RepoID, id, labels); err != nil {
+		return 0, 0, false, err
+	}
+	return id, revision, true, nil
 }
 
 // GetMergeRequest returns a merge request by repository identity and MR number, or nil if not found.
@@ -2660,87 +2733,6 @@ func (d *DB) MRCommentEventExists(
 		return false, fmt.Errorf("check mr comment event exists: %w", err)
 	}
 	return exists, nil
-}
-
-// DeleteMissingMRCommentEvents removes issue_comment rows for a PR whose
-// dedupe keys are absent from the latest GitHub comment list.
-func (d *DB) DeleteMissingMRCommentEvents(
-	ctx context.Context,
-	mrID int64,
-	dedupeKeys []string,
-) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return deleteMissingMREventFamilyTx(ctx, tx, mrID, "issue_comment", dedupeKeys)
-	})
-}
-
-func deleteMissingMREventFamilyTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	mrID int64,
-	eventType string,
-	dedupeKeys []string,
-) error {
-	query := `DELETE FROM middleman_mr_events
-		WHERE merge_request_id = ? AND event_type = ?`
-	args := []any{mrID, eventType}
-	if len(dedupeKeys) > 0 {
-		query += ` AND dedupe_key NOT IN (SELECT value FROM json_each(?))`
-		args = append(args, jsonStringList(dedupeKeys))
-	}
-	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
-		return fmt.Errorf("delete missing mr %s events: %w", eventType, err)
-	}
-	return nil
-}
-
-// ReplaceMRCommentEvents atomically replaces provider issue-comment events and
-// their parent merge request's derived comment count.
-func (d *DB) ReplaceMRCommentEvents(
-	ctx context.Context,
-	mrID int64,
-	events []MREvent,
-	lastActivityAt *time.Time,
-) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return replaceMRCommentEventsTx(ctx, tx, mrID, events, lastActivityAt)
-	})
-}
-
-func replaceMRCommentEventsTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	mrID int64,
-	events []MREvent,
-	lastActivityAt *time.Time,
-) error {
-	query := `DELETE FROM middleman_mr_events
-		WHERE merge_request_id = ? AND event_type = 'issue_comment'`
-	args := []any{mrID}
-	if len(events) > 0 {
-		keys := make([]string, len(events))
-		for i := range events {
-			keys[i] = events[i].DedupeKey
-		}
-		query += ` AND dedupe_key NOT IN (SELECT value FROM json_each(?))`
-		args = append(args, jsonStringList(keys))
-	}
-	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
-		return fmt.Errorf("delete missing mr comment events: %w", err)
-	}
-	if err := upsertMREventsTx(ctx, tx, events); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET comment_count = (
-			SELECT COUNT(*) FROM middleman_mr_events
-			WHERE merge_request_id = ? AND event_type = 'issue_comment'
-		), last_activity_at = COALESCE(?, last_activity_at)
-		WHERE id = ?`, mrID, lastActivityAt, mrID); err != nil {
-		return fmt.Errorf("update mr derived fields: %w", err)
-	}
-	return nil
 }
 
 // GetMRLatestNonCommentEventTime returns the most recent created_at across
@@ -3315,6 +3307,7 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 }
 
 // UpsertIssueSnapshotWithLabels atomically applies a provider issue snapshot
+// through the shared parent upsert core in its live (progress-optional) mode
 // and reports whether it passed the monotonic updated_at guard. Callers must
 // skip child writes derived from a rejected snapshot.
 func (d *DB) UpsertIssueSnapshotWithLabels(
@@ -3326,11 +3319,8 @@ func (d *DB) UpsertIssueSnapshotWithLabels(
 	var accepted bool
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		var err error
-		id, revision, accepted, err = upsertIssueParentTx(ctx, tx, issue)
-		if err != nil || !accepted {
-			return err
-		}
-		return replaceIssueLabelsTx(ctx, tx, issue.RepoID, id, issue.Labels)
+		id, revision, accepted, err = commitIssueParentSnapshotTx(ctx, tx, issue, issue.Labels)
+		return err
 	})
 	return id, revision, accepted, err
 }
@@ -3966,86 +3956,6 @@ func (d *DB) IssueCommentEventExists(
 		return false, fmt.Errorf("check issue comment event exists: %w", err)
 	}
 	return exists, nil
-}
-
-// DeleteMissingIssueCommentEvents removes issue_comment rows for an issue whose
-// dedupe keys are absent from the latest GitHub comment list.
-func (d *DB) DeleteMissingIssueCommentEvents(
-	ctx context.Context,
-	issueID int64,
-	dedupeKeys []string,
-) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return deleteMissingIssueCommentEventsTx(ctx, tx, issueID, dedupeKeys)
-	})
-}
-
-func deleteMissingIssueCommentEventsTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	issueID int64,
-	dedupeKeys []string,
-) error {
-	query := `DELETE FROM middleman_issue_events
-		WHERE issue_id = ? AND event_type = 'issue_comment'`
-	args := []any{issueID}
-	if len(dedupeKeys) > 0 {
-		query += ` AND dedupe_key NOT IN (SELECT value FROM json_each(?))`
-		args = append(args, jsonStringList(dedupeKeys))
-	}
-	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
-		return fmt.Errorf("delete missing issue comment events: %w", err)
-	}
-	return nil
-}
-
-// ReplaceIssueCommentEvents atomically replaces provider issue-comment events
-// and their parent issue's derived comment count.
-func (d *DB) ReplaceIssueCommentEvents(
-	ctx context.Context,
-	issueID int64,
-	events []IssueEvent,
-	lastActivityAt *time.Time,
-) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return replaceIssueCommentEventsTx(ctx, tx, issueID, events, lastActivityAt)
-	})
-}
-
-func replaceIssueCommentEventsTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	issueID int64,
-	events []IssueEvent,
-	lastActivityAt *time.Time,
-) error {
-	query := `DELETE FROM middleman_issue_events
-		WHERE issue_id = ? AND event_type = 'issue_comment'`
-	args := []any{issueID}
-	if len(events) > 0 {
-		keys := make([]string, len(events))
-		for i := range events {
-			keys[i] = events[i].DedupeKey
-		}
-		query += ` AND dedupe_key NOT IN (SELECT value FROM json_each(?))`
-		args = append(args, jsonStringList(keys))
-	}
-	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
-		return fmt.Errorf("delete missing issue comment events: %w", err)
-	}
-	if err := upsertIssueEventsTx(ctx, tx, events); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE middleman_issues
-		SET comment_count = (
-			SELECT COUNT(*) FROM middleman_issue_events
-			WHERE issue_id = ? AND event_type = 'issue_comment'
-		), last_activity_at = COALESCE(?, last_activity_at)
-		WHERE id = ?`, issueID, lastActivityAt, issueID); err != nil {
-		return fmt.Errorf("update issue derived fields: %w", err)
-	}
-	return nil
 }
 
 // ListIssueEvents returns all events for an issue ordered by created_at DESC.

@@ -25,42 +25,91 @@ import (
 type fakeGitHubIdentityResolver struct {
 	byEnv map[string]github.GitHubIdentity
 	err   map[string]error
+	calls *atomic.Int32
 }
 
 func (r fakeGitHubIdentityResolver) ResolvePAT(
-	_ context.Context, host string, source tokenauth.Source,
-) (github.GitHubIdentity, error) {
+	ctx context.Context, host string, source tokenauth.Source,
+) (github.GitHubIdentity, string, error) {
+	if r.calls != nil {
+		r.calls.Add(1)
+	}
 	desc := source.Descriptor()
 	for _, candidate := range desc.Candidates {
 		if candidate.Kind != tokenauth.SourceKindEnv {
 			continue
 		}
 		if err := r.err[candidate.EnvName]; err != nil {
-			return github.GitHubIdentity{}, err
+			return github.GitHubIdentity{}, "", err
 		}
 		if identity, ok := r.byEnv[candidate.EnvName]; ok {
-			return identity, nil
+			token, err := source.Token(tokenauth.WithMutationAuth(ctx))
+			return identity, token, err
 		}
 	}
-	return github.GitHubIdentity{}, fmt.Errorf(
+	return github.GitHubIdentity{}, "", fmt.Errorf(
 		"no fake identity for %s on %s: %w",
 		desc.SafeString(), host, tokenauth.ErrMissingToken,
 	)
+}
+
+func TestBuildProviderStartupRetainsVerifiedPATForExactRoutes(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	t.Setenv("SHARED_PAT", "shared-secret")
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Repos: []config.Repo{
+			{Owner: "org-a", Name: "one", TokenEnv: "SHARED_PAT"},
+			{Owner: "org-a", Name: "two", TokenEnv: "SHARED_PAT"},
+		},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+	var identityLookups atomic.Int32
+	startup, err := buildProviderStartup(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+		fakeGitHubIdentityResolver{
+			byEnv: map[string]github.GitHubIdentity{
+				"SHARED_PAT": {
+					Key: github.IdentityKey{Host: "github.com", Principal: "user:123"},
+				},
+			},
+			calls: &identityLookups,
+		},
+	)
+	require.NoError(err)
+	startupLookups := identityLookups.Load()
+	assert.Positive(startupLookups)
+
+	for _, repo := range []string{"one", "two"} {
+		source := startup.SourceForRepo("github", "github.com", "org-a", repo)
+		require.NotNil(source)
+		token, tokenErr := source.Token(t.Context())
+		require.NoError(tokenErr)
+		assert.Equal("shared-secret", token)
+	}
+	assert.Equal(startupLookups, identityLookups.Load(),
+		"the startup-verified PAT must not be resolved again on each exact route's first request")
 }
 
 type tokenGitHubIdentityResolver map[string]github.GitHubIdentity
 
 func (r tokenGitHubIdentityResolver) ResolvePAT(
 	ctx context.Context, host string, source tokenauth.Source,
-) (github.GitHubIdentity, error) {
+) (github.GitHubIdentity, string, error) {
 	token, err := source.Token(tokenauth.WithMutationAuth(ctx))
 	if err != nil {
-		return github.GitHubIdentity{}, err
+		return github.GitHubIdentity{}, "", err
 	}
 	if identity, ok := r[token]; ok {
-		return identity, nil
+		return identity, token, nil
 	}
-	return github.GitHubIdentity{}, fmt.Errorf(
+	return github.GitHubIdentity{}, "", fmt.Errorf(
 		"no fake identity for token on %s: %w", host, tokenauth.ErrMissingToken,
 	)
 }

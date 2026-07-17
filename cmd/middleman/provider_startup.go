@@ -401,14 +401,15 @@ func buildGitHubIdentityRuntimes(
 		return nil
 	}
 	plans := githubCredentialPlans(cfg)
-	resolvedPATs := make(map[string]github.GitHubIdentity, len(plans))
+	resolvedPATs := make(map[string]resolvedGitHubPAT, len(plans))
 	for _, plan := range plans {
 		desc := plan.Descriptor
 		var source tokenauth.Source = set.Upsert(desc)
 		app, hasApp := activeGitHubAppCandidate(desc, plan.GitHubOwner)
-		writeIdentity, err := resolveGitHubPATIdentity(
+		resolvedWrite, err := resolveGitHubPATIdentity(
 			ctx, resolver, desc.Key.Host, source, resolvedPATs,
 		)
+		writeIdentity := resolvedWrite.identity
 		if err != nil {
 			if errors.Is(err, tokenauth.ErrMissingToken) && hasApp {
 				writeIdentity = github.GitHubIdentity{}
@@ -443,7 +444,7 @@ func buildGitHubIdentityRuntimes(
 		}
 		if writeIdentity.Key.Principal != "" {
 			source = github.BindSourceIdentity(
-				source, desc.Key.Host, writeIdentity.Key, resolver,
+				source, desc.Key.Host, writeIdentity.Key, resolvedWrite.token, resolver,
 			)
 		}
 		startup.githubRoutes[desc.Key] = githubCredentialRoute{
@@ -566,25 +567,31 @@ func githubCredentialPlans(cfg *config.Config) []config.ProviderTokenSource {
 	return out
 }
 
+type resolvedGitHubPAT struct {
+	identity github.GitHubIdentity
+	token    string
+}
+
 func resolveGitHubPATIdentity(
 	ctx context.Context,
 	resolver github.IdentityResolver,
 	host string,
 	source tokenauth.Source,
-	cache map[string]github.GitHubIdentity,
-) (github.GitHubIdentity, error) {
+	cache map[string]resolvedGitHubPAT,
+) (resolvedGitHubPAT, error) {
 	desc := source.Descriptor()
 	cacheKey := strings.ToLower(strings.TrimSpace(host)) + "\x00" +
 		mutationSourceIdentity(desc)
-	if identity, ok := cache[cacheKey]; ok {
-		return identity, nil
+	if resolved, ok := cache[cacheKey]; ok {
+		return resolved, nil
 	}
-	identity, err := resolver.ResolvePAT(ctx, host, source)
+	identity, token, err := resolver.ResolvePAT(ctx, host, source)
 	if err != nil {
-		return github.GitHubIdentity{}, err
+		return resolvedGitHubPAT{}, err
 	}
-	cache[cacheKey] = identity
-	return identity, nil
+	resolved := resolvedGitHubPAT{identity: identity, token: token}
+	cache[cacheKey] = resolved
+	return resolved, nil
 }
 
 func mutationSourceIdentity(desc tokenauth.Descriptor) string {

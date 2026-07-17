@@ -45,9 +45,9 @@ func (i GitHubIdentity) Label() string {
 }
 
 // IdentityResolver resolves a user credential to GitHub's immutable numeric
-// account identity.
+// account identity and returns the exact token accepted by that lookup.
 type IdentityResolver interface {
-	ResolvePAT(context.Context, string, tokenauth.Source) (GitHubIdentity, error)
+	ResolvePAT(context.Context, string, tokenauth.Source) (GitHubIdentity, string, error)
 }
 
 var ErrIdentityChanged = errors.New("GitHub credential identity changed; restart required")
@@ -64,12 +64,14 @@ type identityBoundSource struct {
 
 // BindSourceIdentity prevents a lazily reloaded PAT from moving a live route to
 // a different GitHub user while its trackers and budget remain bound to the
-// startup identity. App reads pass through; mutation/user token values are
-// re-resolved only when they change.
+// startup identity. The startup-verified token is accepted immediately; App
+// reads pass through and later mutation/user token values are re-resolved only
+// when they change.
 func BindSourceIdentity(
 	source tokenauth.Source,
 	host string,
 	expected IdentityKey,
+	acceptedToken string,
 	resolver IdentityResolver,
 ) tokenauth.Source {
 	if source == nil || expected.Principal == "" || resolver == nil {
@@ -77,6 +79,7 @@ func BindSourceIdentity(
 	}
 	return &identityBoundSource{
 		source: source, host: host, expected: expected, resolver: resolver,
+		acceptedToken: acceptedToken,
 	}
 }
 
@@ -93,7 +96,7 @@ func (s *identityBoundSource) Token(ctx context.Context) (string, error) {
 	if token == s.acceptedToken {
 		return token, nil
 	}
-	identity, err := s.resolver.ResolvePAT(
+	identity, _, err := s.resolver.ResolvePAT(
 		ctx, s.host, staticTokenSource{token: token, desc: s.source.Descriptor()},
 	)
 	if err != nil {
@@ -130,6 +133,41 @@ type authenticatedUserLookup func(
 	context.Context, string, tokenauth.Source,
 ) (*gh.User, error)
 
+type identityRecordingSource struct {
+	source tokenauth.Source
+
+	mu    sync.Mutex
+	token string
+}
+
+func (s *identityRecordingSource) Token(ctx context.Context) (string, error) {
+	token, err := s.source.Token(ctx)
+	if err != nil {
+		return token, err
+	}
+	s.mu.Lock()
+	s.token = token
+	s.mu.Unlock()
+	return token, nil
+}
+
+func (s *identityRecordingSource) Invalidate() {
+	s.source.Invalidate()
+	s.mu.Lock()
+	s.token = ""
+	s.mu.Unlock()
+}
+
+func (s *identityRecordingSource) Descriptor() tokenauth.Descriptor {
+	return s.source.Descriptor()
+}
+
+func (s *identityRecordingSource) resolvedToken() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.token
+}
+
 // HTTPIdentityResolver resolves PAT identity through GitHub's authenticated
 // user API. Lookup is injectable so tests exercise identity semantics without
 // exposing an arbitrary request URL seam.
@@ -139,24 +177,32 @@ type HTTPIdentityResolver struct {
 
 func (r HTTPIdentityResolver) ResolvePAT(
 	ctx context.Context, host string, source tokenauth.Source,
-) (GitHubIdentity, error) {
+) (GitHubIdentity, string, error) {
 	if source == nil {
-		return GitHubIdentity{}, fmt.Errorf("resolve GitHub identity for %s: nil token source", host)
+		return GitHubIdentity{}, "", fmt.Errorf("resolve GitHub identity for %s: nil token source", host)
 	}
 	lookup := lookupAuthenticatedUser
 	if r.Lookup != nil {
 		lookup = r.Lookup
 	}
-	user, err := lookup(tokenauth.WithMutationAuth(ctx), host, source)
+	recording := &identityRecordingSource{source: source}
+	user, err := lookup(tokenauth.WithMutationAuth(ctx), host, recording)
 	if err != nil {
-		return GitHubIdentity{}, fmt.Errorf(
+		return GitHubIdentity{}, "", fmt.Errorf(
 			"resolve GitHub identity for %s via %s: %w",
 			host, source.Descriptor().SafeString(), err,
 		)
 	}
 	if user == nil || user.GetID() <= 0 {
-		return GitHubIdentity{}, fmt.Errorf(
+		return GitHubIdentity{}, "", fmt.Errorf(
 			"resolve GitHub identity for %s via %s: response lacks a positive numeric user id",
+			host, source.Descriptor().SafeString(),
+		)
+	}
+	verifiedToken := recording.resolvedToken()
+	if verifiedToken == "" {
+		return GitHubIdentity{}, "", fmt.Errorf(
+			"resolve GitHub identity for %s via %s: authenticated lookup used no token",
 			host, source.Descriptor().SafeString(),
 		)
 	}
@@ -166,7 +212,7 @@ func (r HTTPIdentityResolver) ResolvePAT(
 			Principal: fmt.Sprintf("user:%d", user.GetID()),
 		},
 		Login: strings.TrimSpace(user.GetLogin()),
-	}, nil
+	}, verifiedToken, nil
 }
 
 // InstallationIdentity returns the principal used by GitHub App installation

@@ -13,24 +13,29 @@ import (
 )
 
 func TestHTTPIdentityResolverResolvesStableUserID(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	source := identityTestSource(t, "TOKEN_A", "token-a")
 	resolver := HTTPIdentityResolver{
 		Lookup: func(ctx context.Context, host string, gotSource tokenauth.Source) (*gh.User, error) {
-			assert.Equal(t, "github.com", host)
+			assert.Equal("github.com", host)
 			token, err := gotSource.Token(ctx)
-			require.NoError(t, err)
-			assert.Equal(t, "token-a", token)
+			require.NoError(err)
+			assert.Equal("token-a", token)
 			return &gh.User{ID: new(int64(123)), Login: new("maintainer")}, nil
 		},
 	}
 
-	got, err := resolver.ResolvePAT(t.Context(), "github.com", source)
-	require.NoError(t, err)
-	assert.Equal(t, IdentityKey{Host: "github.com", Principal: "user:123"}, got.Key)
-	assert.Equal(t, "maintainer", got.Login)
+	got, token, err := resolver.ResolvePAT(t.Context(), "github.com", source)
+	require.NoError(err)
+	assert.Equal(IdentityKey{Host: "github.com", Principal: "user:123"}, got.Key)
+	assert.Equal("maintainer", got.Login)
+	assert.Equal("token-a", token)
 }
 
 func TestHTTPIdentityResolverUsesPATSideOfAppChain(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	t.Setenv("USER_PAT", "user-token")
 
 	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
@@ -50,17 +55,18 @@ func TestHTTPIdentityResolverUsesPATSideOfAppChain(t *testing.T) {
 	resolver := HTTPIdentityResolver{
 		Lookup: func(ctx context.Context, _ string, source tokenauth.Source) (*gh.User, error) {
 			token, err := source.Token(ctx)
-			require.NoError(t, err)
-			assert.Equal(t, "user-token", token)
+			require.NoError(err)
+			assert.Equal("user-token", token)
 			return &gh.User{ID: new(int64(456)), Login: new("writer")}, nil
 		},
 	}
 
-	got, err := resolver.ResolvePAT(
+	got, token, err := resolver.ResolvePAT(
 		tokenauth.WithGitHubOwner(t.Context(), "acme"), "github.com", source,
 	)
-	require.NoError(t, err)
-	assert.Equal(t, "user:456", got.Key.Principal)
+	require.NoError(err)
+	assert.Equal("user:456", got.Key.Principal)
+	assert.Equal("user-token", token)
 }
 
 func TestHTTPIdentityResolverRejectsInvalidResponsesSafely(t *testing.T) {
@@ -82,7 +88,7 @@ func TestHTTPIdentityResolverRejectsInvalidResponsesSafely(t *testing.T) {
 				},
 			}
 
-			_, err := resolver.ResolvePAT(t.Context(), "github.com", source)
+			_, _, err := resolver.ResolvePAT(t.Context(), "github.com", source)
 			require.ErrorContains(t, err, tc.want)
 			assert.NotContains(t, err.Error(), "ghp_sentinel_secret")
 		})
@@ -92,17 +98,18 @@ func TestHTTPIdentityResolverRejectsInvalidResponsesSafely(t *testing.T) {
 func TestIdentityBoundSourceRejectsCrossUserRotation(t *testing.T) {
 	require := require.New(t)
 	source := &mutableIdentityTestSource{token: "same-user-token"}
-	resolver := identityResolverFunc(func(_ context.Context, _ string, source tokenauth.Source) (GitHubIdentity, error) {
+	resolver := identityResolverFunc(func(_ context.Context, _ string, source tokenauth.Source) (GitHubIdentity, string, error) {
 		token, err := source.Token(t.Context())
 		require.NoError(err)
 		principal := "user:123"
 		if token == "different-user-token" {
 			principal = "user:456"
 		}
-		return GitHubIdentity{Key: IdentityKey{Host: "github.com", Principal: principal}}, nil
+		return GitHubIdentity{Key: IdentityKey{Host: "github.com", Principal: principal}}, token, nil
 	})
 	bound := BindSourceIdentity(
-		source, "github.com", IdentityKey{Host: "github.com", Principal: "user:123"}, resolver,
+		source, "github.com", IdentityKey{Host: "github.com", Principal: "user:123"},
+		"same-user-token", resolver,
 	)
 
 	_, err := bound.Token(tokenauth.WithMutationAuth(t.Context()))
@@ -113,9 +120,9 @@ func TestIdentityBoundSourceRejectsCrossUserRotation(t *testing.T) {
 	assert.ErrorIs(t, err, ErrIdentityChanged)
 }
 
-type identityResolverFunc func(context.Context, string, tokenauth.Source) (GitHubIdentity, error)
+type identityResolverFunc func(context.Context, string, tokenauth.Source) (GitHubIdentity, string, error)
 
-func (f identityResolverFunc) ResolvePAT(ctx context.Context, host string, source tokenauth.Source) (GitHubIdentity, error) {
+func (f identityResolverFunc) ResolvePAT(ctx context.Context, host string, source tokenauth.Source) (GitHubIdentity, string, error) {
 	return f(ctx, host, source)
 }
 

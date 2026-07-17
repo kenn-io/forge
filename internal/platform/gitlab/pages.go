@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -19,15 +20,34 @@ import (
 // gitLabPageCursor binds an opaque resumable cursor to the enumeration that
 // produced it: the query mode, the repository identity, the item number for
 // detail datasets, and the maintenance watermark. Reusing a cursor with a
-// different shape is a provider-contract violation.
+// different shape is a provider-contract violation. Exactly one continuation
+// form is populated per traversal kind: Page for offset traversals, Link for
+// keyset traversals, and Page plus an optional Window for the windowed
+// created-order merge-request traversal.
 type gitLabPageCursor struct {
 	Mode     string `json:"mode"`
 	Host     string `json:"host"`
 	RepoPath string `json:"repo_path"`
 	Number   int    `json:"number,omitempty"`
-	Page     int64  `json:"page"`
+	Page     int64  `json:"page,omitempty"`
 	Since    string `json:"since,omitempty"`
+	// Link is the provider-issued keyset next-page link; only its query
+	// parameters are ever applied, against this client's own base URL.
+	Link string `json:"link,omitempty"`
+	// Window is the created_after lower bound of the current windowed
+	// created-order traversal window (RFC3339Nano UTC).
+	Window string `json:"window,omitempty"`
 }
+
+// gitLabCursorShape names the continuation form a traversal mode expects, so a
+// decoded cursor cannot smuggle another mode's continuation state.
+type gitLabCursorShape int
+
+const (
+	gitLabCursorOffset gitLabCursorShape = iota
+	gitLabCursorKeyset
+	gitLabCursorWindowedOffset
+)
 
 // ListIssuesPage is the single owner of GitLab issue inventory requests and
 // their normalization. It dispatches on the query: StateOpen drains the open
@@ -91,11 +111,10 @@ func (c *Client) listOpenIssuesPage(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) (platform.Page[platform.Issue], error) {
-	pid, err := projectLookupArg(ref)
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return platform.Page[platform.Issue]{}, err
 	}
-	normalizedRef := c.normalizeRef(ref, ref.PlatformID)
 	state := "opened"
 	items, err := collectGitLabPages(ctx, func(ctx context.Context, page int64) ([]platform.Issue, int64, error) {
 		issues, resp, err := c.api.Issues.ListProjectIssues(pid, &gitlab.ListProjectIssuesOptions{
@@ -124,11 +143,10 @@ func (c *Client) listOpenMergeRequestsPage(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) (platform.Page[platform.MergeRequest], error) {
-	pid, err := projectLookupArg(ref)
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return platform.Page[platform.MergeRequest]{}, err
 	}
-	normalizedRef := c.normalizeRef(ref, ref.PlatformID)
 	state := "opened"
 	recheck := true
 	items, err := collectGitLabPages(ctx, func(ctx context.Context, page int64) ([]platform.MergeRequest, int64, error) {
@@ -158,8 +176,17 @@ func (c *Client) listOpenMergeRequestsPage(
 }
 
 // listInventoryIssuesPage owns the historical and maintenance issue request
-// shapes. The mode string binds the opaque cursor to this enumeration; orderBy
-// selects the provider sort field; since bounds the maintenance scan.
+// shapes. Both traversals use GitLab's keyset pagination (supported for
+// project issues with order_by created_at/updated_at since GitLab 18.3), so
+// the server's cursor carries its own id tie-break and equal timestamps have
+// a total order across page boundaries. Ordering deviation from the neutral
+// contract: created-order ties break by provider record id (the keyset
+// tie-break column), not by item number; both are monotone with insertion, so
+// restart stability holds. The maintenance traversal runs ascending — under a
+// keyset cursor an item whose updated_at moves mid-scan only moves forward
+// past the cursor, so it is re-served rather than skipped. On servers without
+// issue keyset support the pagination parameter is ignored and the returned
+// offset next-link degrades this to offset traversal.
 func (c *Client) listInventoryIssuesPage(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -168,45 +195,58 @@ func (c *Client) listInventoryIssuesPage(
 	mode string,
 	orderBy string,
 ) (platform.Page[platform.Issue], error) {
-	pid, err := projectLookupArg(ref)
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return platform.Page[platform.Issue]{}, err
 	}
-	cursor, err := c.decodePageCursor(ref, 0, encodedCursor, mode, since)
+	cursor, err := c.decodePageCursor(normalizedRef, 0, encodedCursor, mode, since, gitLabCursorKeyset)
 	if err != nil {
 		return platform.Page[platform.Issue]{}, err
 	}
-	state, sortOrder := "all", "asc"
-	if !since.IsZero() {
-		// Updated rows can only move toward the already-consumed prefix in a
-		// descending traversal. Rows that move ahead before they are consumed
-		// are covered by the next scan's inclusive watermark.
-		sortOrder = "desc"
-	}
+	state := "all"
 	opts := &gitlab.ListProjectIssuesOptions{
-		State: &state, OrderBy: &orderBy, Sort: &sortOrder,
-		ListOptions: gitlab.ListOptions{Page: cursor.Page, PerPage: defaultPageSize},
+		State: &state,
+		ListOptions: gitlab.ListOptions{
+			Pagination: "keyset", OrderBy: orderBy, Sort: "asc", PerPage: defaultPageSize,
+		},
 	}
 	if !since.IsZero() {
 		overlap := inclusiveGitLabWatermark(since)
 		opts.UpdatedAfter = &overlap
 	}
-	issues, resp, err := c.api.Issues.ListProjectIssues(pid, opts, gitlab.WithContext(ctx))
+	requestOptions := []gitlab.RequestOptionFunc{gitlab.WithContext(ctx)}
+	if cursor.Link != "" {
+		requestOptions = append(requestOptions, gitlab.WithKeysetPaginationParameters(cursor.Link))
+	}
+	issues, resp, err := c.api.Issues.ListProjectIssues(pid, opts, requestOptions...)
 	if err != nil {
 		return platform.Page[platform.Issue]{}, c.mapGitLabError(
 			string(platform.ArchiveCapabilityHistoricalIssues), err,
 		)
 	}
-	normalizedRef := c.normalizeRef(ref, ref.PlatformID)
 	items := make([]platform.Issue, 0, len(issues))
 	for _, issue := range issues {
 		items = append(items, NormalizeIssue(normalizedRef, issue))
 	}
-	return gitLabCursorPage(items, cursor, nextGitLabPage(resp), false)
+	return gitLabKeysetPage(items, cursor, resp)
 }
 
-// listInventoryMergeRequestsPage is the merge-request counterpart to
-// listInventoryIssuesPage.
+// listInventoryMergeRequestsPage owns the historical and maintenance
+// merge-request request shapes. GitLab does not support keyset pagination for
+// project merge requests, so both traversals deviate from cursor-stable
+// ordering and guarantee no-skip via overlap instead:
+//
+//   - The historical created-order traversal pages offset-ascending inside a
+//     created_after window. Each time a page's newest created_at advances the
+//     window, the cursor re-anchors one second behind it and resets to page
+//     one, so equal-created_at ties and offset shifts at a page boundary are
+//     re-delivered by the overlap rather than skipped (consumers dedupe by
+//     identity). Ties denser than one window page keep paging within the
+//     window. Ordering ties within a timestamp are server-unspecified.
+//   - The maintenance traversal pages offset-descending behind the inclusive
+//     updated_after watermark: mid-scan updates move rows into the consumed
+//     prefix, and anything shifted past the scan is covered by the next
+//     scan's watermark overlap.
 func (c *Client) listInventoryMergeRequestsPage(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -215,19 +255,19 @@ func (c *Client) listInventoryMergeRequestsPage(
 	mode string,
 	orderBy string,
 ) (platform.Page[platform.MergeRequest], error) {
-	pid, err := projectLookupArg(ref)
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return platform.Page[platform.MergeRequest]{}, err
 	}
-	cursor, err := c.decodePageCursor(ref, 0, encodedCursor, mode, since)
-	if err != nil {
-		return platform.Page[platform.MergeRequest]{}, err
-	}
+	shape := gitLabCursorWindowedOffset
 	state, sortOrder := "all", "asc"
 	if !since.IsZero() {
-		// Keep mutable rows from shifting an unseen row into an offset page we
-		// already consumed. The inclusive watermark overlaps the next scan.
+		shape = gitLabCursorOffset
 		sortOrder = "desc"
+	}
+	cursor, err := c.decodePageCursor(normalizedRef, 0, encodedCursor, mode, since, shape)
+	if err != nil {
+		return platform.Page[platform.MergeRequest]{}, err
 	}
 	opts := &gitlab.ListProjectMergeRequestsOptions{
 		State: &state, OrderBy: &orderBy, Sort: &sortOrder,
@@ -237,22 +277,97 @@ func (c *Client) listInventoryMergeRequestsPage(
 		overlap := inclusiveGitLabWatermark(since)
 		opts.UpdatedAfter = &overlap
 	}
+	if cursor.Window != "" {
+		windowStart, parseErr := time.Parse(time.RFC3339Nano, cursor.Window)
+		if parseErr != nil {
+			return platform.Page[platform.MergeRequest]{}, c.pageCursorError(parseErr)
+		}
+		opts.CreatedAfter = &windowStart
+	}
 	mrs, resp, err := c.api.MergeRequests.ListProjectMergeRequests(pid, opts, gitlab.WithContext(ctx))
 	if err != nil {
 		return platform.Page[platform.MergeRequest]{}, c.mapGitLabError(
 			string(platform.ArchiveCapabilityHistoricalMergeRequests), err,
 		)
 	}
-	normalizedRef := c.normalizeRef(ref, ref.PlatformID)
 	items := make([]platform.MergeRequest, 0, len(mrs))
 	for _, mr := range mrs {
 		items = append(items, NormalizeMergeRequest(normalizedRef, mr, nil))
 	}
+	if shape == gitLabCursorWindowedOffset {
+		return gitLabWindowedCursorPage(items, cursor, nextGitLabPage(resp))
+	}
 	return gitLabCursorPage(items, cursor, nextGitLabPage(resp), false)
+}
+
+// gitLabWindowedCursorPage advances the windowed created-order traversal:
+// when the consumed page moved the newest created_at forward, the next window
+// re-anchors one second behind it (overlap re-delivery instead of boundary
+// skips) at page one; otherwise ties denser than the window advance keep
+// offset-paging within the current window.
+func gitLabWindowedCursorPage(
+	items []platform.MergeRequest,
+	cursor gitLabPageCursor,
+	nextPage int64,
+) (platform.Page[platform.MergeRequest], error) {
+	if nextPage == 0 {
+		return platform.Page[platform.MergeRequest]{Items: items, Exhausted: true}, nil
+	}
+	advanced := false
+	if len(items) > 0 {
+		newWindow := items[len(items)-1].CreatedAt.UTC().Add(-time.Second)
+		windowStart, err := currentWindowStart(cursor.Window)
+		if err != nil {
+			return platform.Page[platform.MergeRequest]{}, err
+		}
+		if cursor.Window == "" || newWindow.After(windowStart) {
+			cursor.Window = newWindow.Format(time.RFC3339Nano)
+			cursor.Page = 1
+			advanced = true
+		}
+	}
+	if !advanced {
+		cursor.Page = nextPage
+	}
+	next, err := encodeGitLabPageCursor(cursor)
+	if err != nil {
+		return platform.Page[platform.MergeRequest]{}, err
+	}
+	return platform.Page[platform.MergeRequest]{Items: items, NextCursor: next}, nil
+}
+
+func currentWindowStart(window string) (time.Time, error) {
+	if window == "" {
+		return time.Time{}, nil
+	}
+	return time.Parse(time.RFC3339Nano, window)
 }
 
 func inclusiveGitLabWatermark(since time.Time) time.Time {
 	return since.UTC().Add(-time.Nanosecond)
+}
+
+// gitLabKeysetPage assembles a canonical page from one keyset response:
+// exhaustion when the provider issued no next link, otherwise a cursor
+// carrying the provider's keyset continuation link.
+func gitLabKeysetPage[T any](
+	items []T,
+	cursor gitLabPageCursor,
+	resp *gitlab.Response,
+) (platform.Page[T], error) {
+	nextLink := ""
+	if resp != nil {
+		nextLink = resp.NextLink
+	}
+	if nextLink == "" {
+		return platform.Page[T]{Items: items, Exhausted: true}, nil
+	}
+	cursor.Link = nextLink
+	next, err := encodeGitLabPageCursor(cursor)
+	if err != nil {
+		return platform.Page[T]{}, err
+	}
+	return platform.Page[T]{Items: items, NextCursor: next}, nil
 }
 
 func nextGitLabPage(resp *gitlab.Response) int64 {
@@ -295,7 +410,7 @@ func (c *Client) LookupIssue(
 	ref platform.RepoRef,
 	number int,
 ) (platform.ItemLookup[platform.Issue], error) {
-	pid, err := projectLookupArg(ref)
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return platform.ItemLookup[platform.Issue]{}, err
 	}
@@ -305,39 +420,48 @@ func (c *Client) LookupIssue(
 	}
 	return platform.ItemLookup[platform.Issue]{
 		Outcome: platform.LookupPresent,
-		Item:    NormalizeIssue(c.normalizeRef(ref, ref.PlatformID), issue),
+		Item:    NormalizeIssue(normalizedRef, issue),
 	}, nil
 }
 
-// LookupMergeRequest is the merge-request counterpart to LookupIssue. Present
-// items carry the fork head clone URL enrichment the live detail surface
-// depends on.
+// LookupMergeRequest is the merge-request counterpart to LookupIssue. It is
+// the core fetch plus classification only: source-project clone-URL
+// enrichment stays on the live GetMergeRequest wrapper, so archive lookups
+// never spend an unadmitted enrichment request and an enrichment failure can
+// never fail an archive lookup.
 func (c *Client) LookupMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
 ) (platform.ItemLookup[platform.MergeRequest], error) {
-	pid, err := projectLookupArg(ref)
+	lookup, _, _, err := c.lookupMergeRequestDetail(ctx, ref, number)
+	return lookup, err
+}
+
+// lookupMergeRequestDetail performs the canonical merge-request lookup and
+// additionally exposes the raw provider record and hydrated repository ref so
+// the live wrapper can enrich the present item without a second fetch.
+func (c *Client) lookupMergeRequestDetail(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) (platform.ItemLookup[platform.MergeRequest], *gitlab.MergeRequest, platform.RepoRef, error) {
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
-		return platform.ItemLookup[platform.MergeRequest]{}, err
+		return platform.ItemLookup[platform.MergeRequest]{}, nil, platform.RepoRef{}, err
 	}
 	mr, _, err := c.api.MergeRequests.GetMergeRequest(pid, int64(number), nil, gitlab.WithContext(ctx))
 	if err != nil {
 		outcome, classifyErr := c.classifyLookupOutcome(
 			ctx, pid, string(platform.ArchiveCapabilityHistoricalMergeRequests), err,
 		)
-		return platform.ItemLookup[platform.MergeRequest]{Outcome: outcome}, classifyErr
+		return platform.ItemLookup[platform.MergeRequest]{Outcome: outcome}, nil, normalizedRef, classifyErr
 	}
-	normalizedRef := c.normalizeRef(ref, ref.PlatformID)
-	item := NormalizeDetailedMergeRequest(normalizedRef, mr)
-	item.HeadRepoCloneURL, err = c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
-	if err != nil {
-		return platform.ItemLookup[platform.MergeRequest]{}, err
-	}
-	return platform.ItemLookup[platform.MergeRequest]{
+	lookup := platform.ItemLookup[platform.MergeRequest]{
 		Outcome: platform.LookupPresent,
-		Item:    item,
-	}, nil
+		Item:    NormalizeDetailedMergeRequest(normalizedRef, mr),
+	}
+	return lookup, mr, normalizedRef, nil
 }
 
 func (c *Client) classifyIssueLookup(
@@ -423,7 +547,7 @@ func (c *Client) ListIssueCommentsPage(
 	number int,
 	encodedCursor string,
 ) (platform.Page[platform.IssueEvent], error) {
-	pid, cursor, err := c.detailPageArgs(ref, number, encodedCursor, "issue_comments")
+	pid, normalizedRef, cursor, err := c.detailPageArgs(ctx, ref, number, encodedCursor, "issue_comments")
 	if err != nil {
 		return platform.Page[platform.IssueEvent]{}, err
 	}
@@ -434,7 +558,7 @@ func (c *Client) ListIssueCommentsPage(
 		)
 	}
 	items := NormalizeIssueDiscussions(
-		c.normalizeRef(ref, ref.PlatformID), number, gitLabIssueURL(ref, number), discussions,
+		normalizedRef, number, gitLabIssueURL(normalizedRef, number), discussions,
 	)
 	return gitLabCursorPage(items, cursor, nextPage, true)
 }
@@ -449,7 +573,7 @@ func (c *Client) ListMergeRequestCommentsPage(
 	number int,
 	encodedCursor string,
 ) (platform.Page[platform.MergeRequestEvent], error) {
-	pid, cursor, err := c.detailPageArgs(ref, number, encodedCursor, "merge_request_comments")
+	pid, normalizedRef, cursor, err := c.detailPageArgs(ctx, ref, number, encodedCursor, "merge_request_comments")
 	if err != nil {
 		return platform.Page[platform.MergeRequestEvent]{}, err
 	}
@@ -466,7 +590,7 @@ func (c *Client) ListMergeRequestCommentsPage(
 		}
 	}
 	items := NormalizeMergeRequestDiscussions(
-		c.normalizeRef(ref, ref.PlatformID), number, gitLabMergeRequestURL(ref, number), ordinary,
+		normalizedRef, number, gitLabMergeRequestURL(normalizedRef, number), ordinary,
 	)
 	return gitLabCursorPage(items, cursor, nextPage, true)
 }
@@ -493,7 +617,7 @@ func (c *Client) ListReviewThreadsPage(
 	number int,
 	encodedCursor string,
 ) (platform.Page[platform.MergeRequestReviewThread], error) {
-	pid, cursor, err := c.detailPageArgs(ref, number, encodedCursor, "review_threads")
+	pid, normalizedRef, cursor, err := c.detailPageArgs(ctx, ref, number, encodedCursor, "review_threads")
 	if err != nil {
 		return platform.Page[platform.MergeRequestReviewThread]{}, err
 	}
@@ -503,10 +627,9 @@ func (c *Client) ListReviewThreadsPage(
 			string(platform.ArchiveCapabilityInlineReviewComments), err,
 		)
 	}
-	normalizedRef := c.normalizeRef(ref, ref.PlatformID)
 	items := make([]platform.MergeRequestReviewThread, 0)
 	for _, discussion := range discussions {
-		for _, item := range gitLabDiscussionReviewThreads(gitLabMergeRequestURL(ref, number), discussion) {
+		for _, item := range gitLabDiscussionReviewThreads(gitLabMergeRequestURL(normalizedRef, number), discussion) {
 			item.Repo = normalizedRef
 			item.MergeRequestNumber = number
 			items = append(items, item)
@@ -626,17 +749,18 @@ func gitLabDiscussionReviewThreads(
 }
 
 func (c *Client) detailPageArgs(
+	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
 	encodedCursor string,
 	mode string,
-) (any, gitLabPageCursor, error) {
-	pid, err := projectLookupArg(ref)
+) (any, platform.RepoRef, gitLabPageCursor, error) {
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
-		return nil, gitLabPageCursor{}, err
+		return nil, platform.RepoRef{}, gitLabPageCursor{}, err
 	}
-	cursor, err := c.decodePageCursor(ref, number, encodedCursor, mode, time.Time{})
-	return pid, cursor, err
+	cursor, err := c.decodePageCursor(normalizedRef, number, encodedCursor, mode, time.Time{}, gitLabCursorOffset)
+	return pid, normalizedRef, cursor, err
 }
 
 // gitLabCursorPage assembles a canonical page from one provider response:
@@ -667,6 +791,7 @@ func (c *Client) decodePageCursor(
 	encoded string,
 	mode string,
 	since time.Time,
+	shape gitLabCursorShape,
 ) (gitLabPageCursor, error) {
 	repoPath, err := rawProjectPath(ref)
 	if err != nil {
@@ -678,9 +803,13 @@ func (c *Client) decodePageCursor(
 		expectedSince = since.UTC().Format(time.RFC3339Nano)
 	}
 	if encoded == "" {
-		return gitLabPageCursor{
-			Mode: mode, Host: ref.Host, RepoPath: repoPath, Number: number, Page: 1, Since: expectedSince,
-		}, nil
+		cursor := gitLabPageCursor{
+			Mode: mode, Host: ref.Host, RepoPath: repoPath, Number: number, Since: expectedSince,
+		}
+		if shape != gitLabCursorKeyset {
+			cursor.Page = 1
+		}
+		return cursor, nil
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(encoded)
 	if err != nil {
@@ -691,10 +820,42 @@ func (c *Client) decodePageCursor(
 		return gitLabPageCursor{}, c.pageCursorError(err)
 	}
 	if cursor.Mode != mode || cursor.Host != ref.Host || cursor.RepoPath != repoPath || cursor.Number != number ||
-		cursor.Page <= 0 || cursor.Since != expectedSince {
+		cursor.Since != expectedSince {
 		return gitLabPageCursor{}, c.pageCursorError(errors.New("cursor does not match page enumeration"))
 	}
+	if err := validateGitLabCursorShape(cursor, shape); err != nil {
+		return gitLabPageCursor{}, c.pageCursorError(err)
+	}
 	return cursor, nil
+}
+
+// validateGitLabCursorShape rejects a resumption cursor whose continuation
+// state does not belong to the traversal kind decoding it, so an offset page
+// number can never be replayed as a keyset link or vice versa.
+func validateGitLabCursorShape(cursor gitLabPageCursor, shape gitLabCursorShape) error {
+	switch shape {
+	case gitLabCursorKeyset:
+		if cursor.Link == "" || cursor.Page != 0 || cursor.Window != "" {
+			return errors.New("cursor does not carry keyset continuation state")
+		}
+		if _, err := url.Parse(cursor.Link); err != nil {
+			return fmt.Errorf("invalid keyset continuation link: %w", err)
+		}
+	case gitLabCursorWindowedOffset:
+		if cursor.Page <= 0 || cursor.Link != "" {
+			return errors.New("cursor does not carry windowed offset continuation state")
+		}
+		if cursor.Window != "" {
+			if _, err := time.Parse(time.RFC3339Nano, cursor.Window); err != nil {
+				return fmt.Errorf("invalid traversal window: %w", err)
+			}
+		}
+	default:
+		if cursor.Page <= 0 || cursor.Link != "" || cursor.Window != "" {
+			return errors.New("cursor does not carry offset continuation state")
+		}
+	}
+	return nil
 }
 
 func (c *Client) pageCursorError(err error) error {

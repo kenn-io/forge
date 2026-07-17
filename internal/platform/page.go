@@ -48,6 +48,10 @@ const (
 //     and under either order items that change mid-traversal may be observed
 //     more than once; consumers dedupe by provider identity through
 //     idempotent upserts.
+//   - For ItemStateOpen queries, Order is accepted but the traversal order is
+//     contractually unspecified: an open scan is an exhaustive single-shot
+//     drain of the current open set, so ordering is immaterial and providers
+//     may serve their native default order.
 type ItemOrder string
 
 const (

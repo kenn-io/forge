@@ -627,9 +627,16 @@ func TestGitLabListMergeRequestReviewThreadsReadsDiscussions(t *testing.T) {
 	require := Require.New(t)
 	created := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	updated := created.Add(time.Minute)
+	// Path-only refs hydrate through the project lookup before the
+	// discussions read.
+	webURL := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodGet, r.Method)
-		assert.Equal("/api/v4/projects/group%2Fproject/merge_requests/7/discussions", r.URL.EscapedPath())
+		if r.URL.EscapedPath() == "/api/v4/projects/group%2Fproject" {
+			writeJSON(w, `{"id":42,"path_with_namespace":"group/project","web_url":"`+webURL+`"}`)
+			return
+		}
+		assert.Equal("/api/v4/projects/42/merge_requests/7/discussions", r.URL.EscapedPath())
 		writeJSON(w, `[
 			{
 				"id": "discussion-1",
@@ -657,6 +664,7 @@ func TestGitLabListMergeRequestReviewThreadsReadsDiscussions(t *testing.T) {
 		]`)
 	}))
 	defer server.Close()
+	webURL = server.URL + "/group/project"
 
 	client := newTestClient(t, server.URL)
 	threads, err := client.ListMergeRequestReviewThreads(context.Background(), platform.RepoRef{
@@ -690,7 +698,11 @@ func TestGitLabListMergeRequestReviewThreadsReadsContextLinePositions(t *testing
 	created := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodGet, r.Method)
-		assert.Equal("/api/v4/projects/group%2Fproject/merge_requests/7/discussions", r.URL.EscapedPath())
+		if r.URL.EscapedPath() == "/api/v4/projects/group%2Fproject" {
+			writeJSON(w, `{"id":42,"path_with_namespace":"group/project"}`)
+			return
+		}
+		assert.Equal("/api/v4/projects/42/merge_requests/7/discussions", r.URL.EscapedPath())
 		writeJSON(w, `[
 			{
 				"id": "discussion-1",
@@ -744,7 +756,11 @@ func TestGitLabListMergeRequestReviewThreadsCollapsesDiscussionReplies(t *testin
 	created := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodGet, r.Method)
-		assert.Equal("/api/v4/projects/group%2Fproject/merge_requests/7/discussions", r.URL.EscapedPath())
+		if r.URL.EscapedPath() == "/api/v4/projects/group%2Fproject" {
+			writeJSON(w, `{"id":42,"path_with_namespace":"group/project"}`)
+			return
+		}
+		assert.Equal("/api/v4/projects/42/merge_requests/7/discussions", r.URL.EscapedPath())
 		writeJSON(w, `[
 			{
 				"id": "discussion-1",

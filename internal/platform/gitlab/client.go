@@ -361,14 +361,21 @@ func (c *Client) GetMergeRequest(
 	ref platform.RepoRef,
 	number int,
 ) (platform.MergeRequest, error) {
-	lookup, err := c.LookupMergeRequest(ctx, ref, number)
+	lookup, mr, normalizedRef, err := c.lookupMergeRequestDetail(ctx, ref, number)
 	if err != nil {
 		return platform.MergeRequest{}, err
 	}
 	if lookup.Outcome != platform.LookupPresent {
 		return platform.MergeRequest{}, c.lookupNotPresentError(ref, number, lookup.Outcome, lookup.Destination)
 	}
-	return lookup.Item, nil
+	// Source-project clone-URL enrichment is a live concern: archive lookups
+	// share the core fetch above but never spend this extra request.
+	item := lookup.Item
+	item.HeadRepoCloneURL, err = c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
+	if err != nil {
+		return platform.MergeRequest{}, err
+	}
+	return item, nil
 }
 
 func (c *Client) optionalHeadRepoCloneURL(
@@ -436,11 +443,11 @@ func (c *Client) ListMergeRequestEvents(
 	ref platform.RepoRef,
 	number int,
 ) ([]platform.MergeRequestEvent, error) {
-	pid, err := projectLookupArg(ref)
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
-	events, err := c.ListMergeRequestComments(ctx, ref, number)
+	events, err := c.listMergeRequestDiscussionEvents(ctx, pid, normalizedRef, number)
 	if err != nil {
 		return nil, err
 	}
@@ -448,23 +455,31 @@ func (c *Client) ListMergeRequestEvents(
 	if err != nil {
 		return nil, err
 	}
-	normalizedRef := c.normalizeRef(ref, ref.PlatformID)
 	for _, commit := range commits {
 		events = append(events, NormalizeCommitEvent(normalizedRef, number, commit))
 	}
 	return events, nil
 }
 
-// ListMergeRequestComments drains the shared discussions page fetcher without
-// the canonical ordinary-comment filter: the live event surface keeps
-// system-note events (assignment and lifecycle history) and position-less
-// replies inside inline threads, which the archive comments dataset
-// deliberately excludes.
 func (c *Client) ListMergeRequestComments(ctx context.Context, ref platform.RepoRef, number int) ([]platform.MergeRequestEvent, error) {
-	pid, err := projectLookupArg(ref)
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
+	return c.listMergeRequestDiscussionEvents(ctx, pid, normalizedRef, number)
+}
+
+// listMergeRequestDiscussionEvents drains the shared discussions page fetcher
+// without the canonical ordinary-comment filter: the live event surface keeps
+// system-note events (assignment and lifecycle history) and position-less
+// replies inside inline threads, which the archive comments dataset
+// deliberately excludes.
+func (c *Client) listMergeRequestDiscussionEvents(
+	ctx context.Context,
+	pid any,
+	normalizedRef platform.RepoRef,
+	number int,
+) ([]platform.MergeRequestEvent, error) {
 	discussions, err := collectGitLabPages(ctx, func(ctx context.Context, page int64) ([]*gitlab.Discussion, int64, error) {
 		discussions, nextPage, err := c.listMergeRequestDiscussionsPage(ctx, pid, number, page)
 		if err != nil {
@@ -475,7 +490,6 @@ func (c *Client) ListMergeRequestComments(ctx context.Context, ref platform.Repo
 	if err != nil {
 		return nil, err
 	}
-	normalizedRef := c.normalizeRef(ref, ref.PlatformID)
 	return NormalizeMergeRequestDiscussions(normalizedRef, number, gitLabMergeRequestURL(normalizedRef, number), discussions), nil
 }
 

@@ -138,11 +138,11 @@ func (c *Client) ListMergeRequestReviewThreads(
 	ref platform.RepoRef,
 	number int,
 ) ([]platform.MergeRequestReviewThread, error) {
-	pid, err := projectLookupArg(ref)
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
-	parentURL := gitLabMergeRequestURL(ref, number)
+	parentURL := gitLabMergeRequestURL(normalizedRef, number)
 	return collectGitLabPages(ctx, func(ctx context.Context, page int64) ([]platform.MergeRequestReviewThread, int64, error) {
 		discussions, nextPage, err := c.listMergeRequestDiscussionsPage(ctx, pid, number, page)
 		if err != nil {

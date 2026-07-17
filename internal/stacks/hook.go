@@ -21,7 +21,13 @@ func SyncCompletedHook(ctx context.Context, database *db.DB, next func([]ghclien
 			if ctx.Err() != nil {
 				return
 			}
-			if result.Error != "" {
+			// Skip only failures that affect merge-request data: hard
+			// repository failures and partial failures whose scope
+			// includes merge requests. An issue-scope partial failure
+			// leaves MR rows current, and skipping would keep stacks
+			// stale for as long as the issue failure persists.
+			if result.Error != "" &&
+				(result.PartialFailure == nil || result.PartialFailure.MergeRequests) {
 				continue
 			}
 			repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{

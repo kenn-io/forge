@@ -240,6 +240,30 @@ type RepoRef struct {
 	DefaultBranch      string
 }
 
+// PartialSyncError reports a repo sync cycle whose index scan completed but
+// failed to refresh one or more items in the listed scopes. It is recorded in
+// repo and global sync health like any other sync failure, but consumers that
+// depend only on an unaffected scope (stack detection over merge requests,
+// workspace refresh flows) should proceed instead of treating the repository
+// as failed wholesale.
+type PartialSyncError struct {
+	MergeRequests bool
+	Issues        bool
+}
+
+func (e *PartialSyncError) Error() string {
+	var failedPaths []string
+	if e.MergeRequests {
+		failedPaths = append(failedPaths, "merge request")
+	}
+	if e.Issues {
+		failedPaths = append(failedPaths, "issue")
+	}
+	return fmt.Sprintf(
+		"one or more %s sync items failed", strings.Join(failedPaths, " and "),
+	)
+}
+
 // RepoSyncResult holds the outcome of syncing a single repo.
 type RepoSyncResult struct {
 	Platform     platform.Kind
@@ -247,6 +271,10 @@ type RepoSyncResult struct {
 	Name         string
 	PlatformHost string
 	Error        string // empty on success
+	// PartialFailure carries the failed item scopes when Error records a
+	// partial per-item failure; nil on success and on hard repository
+	// failures.
+	PartialFailure *PartialSyncError
 }
 
 // WatchedMR identifies a merge request to sync on a fast interval.
@@ -3648,6 +3676,10 @@ func (s *Syncer) runWorker(
 			state.errMu.Unlock()
 			// Each index is written by exactly one worker.
 			state.results[item.index].Error = errStr
+			var partial *PartialSyncError
+			if errors.As(err, &partial) {
+				state.results[item.index].PartialFailure = partial
+			}
 		}
 		// Latch the canceled flag if ctx was canceled during
 		// syncRepo. A misbehaving Client implementation can
@@ -4928,17 +4960,13 @@ func (s *Syncer) indexSyncRepo(
 		// Surface the partially-failed cycle to the caller so repo
 		// sync health (last_sync_error, sync status) records it;
 		// without this, per-item failures such as a transferred or
-		// inaccessible item look like a clean sync from the API.
-		var failedPaths []string
-		if failedScope&failMR != 0 {
-			failedPaths = append(failedPaths, "merge request")
+		// inaccessible item look like a clean sync from the API. The
+		// typed partial error lets consumers that depend only on an
+		// unaffected scope proceed.
+		return &PartialSyncError{
+			MergeRequests: failedScope&failMR != 0,
+			Issues:        failedScope&failIssues != 0,
 		}
-		if failedScope&failIssues != 0 {
-			failedPaths = append(failedPaths, "issue")
-		}
-		return fmt.Errorf(
-			"one or more %s sync items failed", strings.Join(failedPaths, " and "),
-		)
 	}
 
 	return nil

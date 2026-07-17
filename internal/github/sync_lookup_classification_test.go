@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -120,6 +121,85 @@ func TestSyncerDoesNotPersistTransferredIssueUnderSourceRepo(t *testing.T) {
 	)
 	require.NoError(err)
 	assert.Nil(destination, "no row may be persisted under the destination repo")
+}
+
+// TestRunOnceReportsPartialScopeFailures pins the shape consumers use to
+// distinguish partial per-item failures from hard repository failures: an
+// issue-scope item failure surfaces in the result error and sync health but
+// is typed as a partial failure scoped to issues, while a hard list failure
+// carries no partial scope at all.
+func TestRunOnceReportsPartialScopeFailures(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	issueNumber := 7
+	title := "seeded issue"
+	state := "open"
+	url := "https://github.com/owner/repo/issues/7"
+	body := ""
+	issueID := int64(777)
+	openIssue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &title,
+		State:     &state,
+		HTMLURL:   &url,
+		Body:      &body,
+		CreatedAt: makeTimestamp(now),
+		UpdatedAt: makeTimestamp(now),
+	}
+	seedMC := &mockClient{openIssues: []*gh.Issue{openIssue}}
+	seedMC.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+		return openIssue, nil
+	}
+	seedSyncer := NewSyncer(
+		map[string]Client{"github.com": seedMC}, d, nil, repos, time.Minute, nil, nil,
+	)
+	seedSyncer.RunOnce(ctx)
+
+	// Partial: the seeded issue leaves the open list and its closed-item
+	// refresh fails, while the merge-request path stays clean.
+	partialMC := &mockClient{openIssues: []*gh.Issue{}}
+	partialMC.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+		return nil, errors.New("closed issue refresh failed")
+	}
+	var partialResults []RepoSyncResult
+	partialSyncer := NewSyncer(
+		map[string]Client{"github.com": partialMC}, d, nil, repos, time.Minute, nil, nil,
+	)
+	partialSyncer.SetOnSyncCompleted(func(results []RepoSyncResult) {
+		partialResults = results
+	})
+	partialSyncer.RunOnce(ctx)
+
+	require.Len(partialResults, 1)
+	assert.NotEmpty(partialResults[0].Error,
+		"a partial failure must still surface in sync health")
+	require.NotNil(partialResults[0].PartialFailure,
+		"an item-scope failure must be typed as partial")
+	assert.True(partialResults[0].PartialFailure.Issues)
+	assert.False(partialResults[0].PartialFailure.MergeRequests)
+
+	// Hard: the open-PR list itself fails; no partial scope applies.
+	hardMC := &mockClient{listOpenPRsErr: errors.New("list open PRs down")}
+	var hardResults []RepoSyncResult
+	hardSyncer := NewSyncer(
+		map[string]Client{"github.com": hardMC}, d, nil, repos, time.Minute, nil, nil,
+	)
+	hardSyncer.SetOnSyncCompleted(func(results []RepoSyncResult) {
+		hardResults = results
+	})
+	hardSyncer.RunOnce(ctx)
+
+	require.Len(hardResults, 1)
+	assert.NotEmpty(hardResults[0].Error)
+	assert.Nil(hardResults[0].PartialFailure,
+		"a hard repository failure must not be typed as partial")
 }
 
 // TestGitHubArchiveDestinationIgnoresRepoCasing pins that transfer detection

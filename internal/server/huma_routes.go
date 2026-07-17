@@ -5715,6 +5715,15 @@ func (s *Server) refreshWorkspaceRepoIndex(
 	if err == nil {
 		return nil
 	}
+	// A partial per-item failure is already recorded in repo sync health;
+	// the workspace refresh proceeds so association inspection and the
+	// targeted PR-detail refresh still run for the unaffected scope.
+	var partial *ghclient.PartialSyncError
+	if errors.As(err, &partial) {
+		slog.Warn("workspace refresh: repo sync partially failed",
+			"owner", owner, "name", name, "err", err)
+		return nil
+	}
 	if strings.Contains(err.Error(), "is not tracked") {
 		return problemForbidden(err.Error(), nil)
 	}

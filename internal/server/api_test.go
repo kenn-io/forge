@@ -14128,6 +14128,46 @@ func (p *issueMutatorGitLabProvider) EditMergeRequestContent(
 	return platform.MergeRequest{}, p.providerErr
 }
 
+// TestRefreshWorkspaceRepoIndexToleratesPartialSyncFailure pins the workspace
+// refresh decision point: a repo sync cycle that only failed per-item work in
+// one scope (here a seeded open issue whose closed-item refresh fails) must
+// not abort the workspace refresh — sync health already records the partial
+// failure — while a hard repository failure (the open-PR list itself failing)
+// still aborts.
+func TestRefreshWorkspaceRepoIndexToleratesPartialSyncFailure(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+
+	// Partial: the default mock lists no open issues, so the seeded open
+	// issue hits closure detection and its refresh fails (nil issue).
+	partialSrv, partialDB := setupTestServerWithMock(t, &mockGH{})
+	seedIssue(t, partialDB, "acme", "widget", 7, "open")
+	err := partialSrv.refreshWorkspaceRepoIndex(
+		ctx, platform.KindGitHub, "github.com", "acme", "widget",
+	)
+	require.NoError(err,
+		"an issue-scope partial failure must not abort the workspace refresh")
+	repo, err := partialDB.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	assert.NotEmpty(repo.LastSyncError,
+		"the tolerated partial failure must still be recorded in sync health")
+
+	// Hard: the open-PR list itself fails; the refresh must abort.
+	hardSrv, _ := setupTestServerWithMock(t, &mockGH{
+		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+			return nil, errors.New("list open PRs down")
+		},
+	})
+	err = hardSrv.refreshWorkspaceRepoIndex(
+		ctx, platform.KindGitHub, "github.com", "acme", "widget",
+	)
+	assert.Error(err, "a hard repository failure must still abort the refresh")
+}
+
 // TestAPIResolveItemMapsLookupOutcomes drives GitHub item resolution
 // (/repo/.../resolve/{number}) through a mock client whose type-probe fetch
 // reports a removed, inaccessible, or transferred item. The problem envelope

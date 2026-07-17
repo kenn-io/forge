@@ -4680,6 +4680,8 @@ export interface components {
             /** @description Synced PR diff snapshot head this diff was computed from. Always set for pull request diffs (the endpoint fails when no snapshot head is synced); empty for commit and workspace diffs. Compare with the pull detail's platform_head_sha to detect stale cached diff context; unrelated to 'stale', which reports clone-refresh staleness. */
             diff_head_sha?: string;
             files: components["schemas"]["DiffFile"][] | null;
+            /** @description Opaque workspace diff snapshot version used to keep files and patches coherent. */
+            snapshot_version?: string;
             stale: boolean;
             /** Format: int64 */
             whitespace_only_count: number;
@@ -5019,6 +5021,8 @@ export interface components {
              */
             readonly $schema?: string;
             files: components["schemas"]["DiffFile"][] | null;
+            /** @description Opaque workspace diff snapshot version to pin on the following workspace diff request. */
+            snapshot_version?: string;
             stale: boolean;
             /** Format: int64 */
             whitespace_only_count: number;
@@ -8118,7 +8122,10 @@ export interface operations {
     };
     "stream-events": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional selected local workspace to prewarm and validate while this stream is connected */
+                workspace_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -16671,6 +16678,8 @@ export interface operations {
                 from?: string;
                 /** @description End SHA for range diff (inclusive) */
                 to?: string;
+                /** @description Optional snapshot_version returned by the workspace files endpoint */
+                revision?: string;
             };
             header?: never;
             path: {

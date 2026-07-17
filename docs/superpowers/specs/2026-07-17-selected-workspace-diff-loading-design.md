@@ -85,14 +85,18 @@ The key includes:
 
 Path-scoped diff reads select the requested file from a prepared whole-diff
 snapshot when the matching snapshot exists. File-content previews remain
-separate bounded reads and are not stored in the snapshot cache.
+separate bounded reads and are not stored in the snapshot cache. A new-side
+worktree preview is intentionally live and can move ahead of the cached patch;
+blob-backed old/range sides remain pinned to resolved OIDs.
 
 Preparation records trace phases for base resolution, revision validation, Git
 raw metadata, numstat, patch generation, Go whitespace classification,
 untracked-file loading, generated-attribute lookup, and response assembly. The
 request span records cache result (`hit`, `stale`, `miss`, or `coalesced`) and
 snapshot size so the live trace shows whether latency is Git, Go processing,
-serialization, or cache waiting.
+serialization, or cache waiting. Both projections carry an opaque cache-generation
+plus revision token. `/diff` can require the revision returned by `/files`; a
+mismatch asks the client to restart the pair rather than combining revisions.
 
 ## Selection, validation, and refresh
 
@@ -109,36 +113,46 @@ entries are not refreshed. Fleet selections keep request-driven caching and the
 cold-path improvement; they do not create a proactive lease on the remote
 member in this change.
 
-The last requested base/scope/whitespace key becomes the selected workspace's
-active snapshot. Changing scope prepares that key; older keys remain read-only
-cache entries until eviction.
+Every base/scope/whitespace key requested by a currently selected workspace is
+active until its access lease ages out. This keeps concurrent tabs with different
+diff scopes independent. Active keys are pinned against eviction; older inactive
+keys remain read-only cache entries until eviction.
 
-Validation is cheaper than recomputation. A revision fingerprint includes the
-resolved Git refs and the selected worktree's changed-path state. Unchanged
-metadata extends freshness without running the aggregate patch. Changed
-metadata is confirmed from changed file contents so edits that retain the same
-add/delete totals are not missed. Fingerprints taken before and after
-preparation must match before the result is published; a concurrent edit leaves
-the previous snapshot in place and schedules another debounced validation.
+Validation is cheaper than recomputation. Each validation re-resolves the logical
+specification, then fingerprints the resolved Git refs and changed-path state.
+Unchanged strong stat identities reuse per-file content digests; changed metadata
+is confirmed from file contents so same-size edits are not missed without
+re-reading unchanged large files every 15 seconds. The fingerprint also includes
+the repository-local attribute input (`.git/info/attributes`); the hardened Git
+runner already excludes user and system configuration. Preparation uses resolved
+OIDs, then re-resolves and fingerprints again before publication. Equal boundary
+fingerprints are best-effort movement detection rather than a filesystem
+transaction: an A-to-B-to-A mutation can evade them. A mismatch leaves the
+previous snapshot in place and schedules a throttled retry.
 
 The existing worktree-stats change signal requests prompt validation for the
 selected worktree. A bounded selected-workspace validation interval is the
 fallback for changes that do not alter aggregate stats. Concurrent validation
 or preparation for one key is single-flight.
 
-When validation finds the same fingerprint, it performs no diff recomputation
+All entries have a 15-second validation max-age. Selected entries validate
+proactively; an older unselected entry returns its last-known-good value as stale
+and schedules request-driven validation, so frequent fleet reads cannot keep a
+snapshot fresh indefinitely. When validation finds the same fingerprint, it performs no diff recomputation
 and emits no event. When a stable recomputation produces a changed snapshot,
 the server atomically replaces the entry and broadcasts
 `workspace_diff_changed` with workspace/host identity and snapshot revision.
 The terminal filters that event to its selected workspace and reloads only the
 currently visible diff scope. The stale snapshot remains visible until the
-replacement request completes.
+replacement request completes. Revision identity includes a per-process cache
+generation, and `reconnect.stale` always triggers a preserving diff refresh, so
+restart, eviction, and replay-ring loss cannot strand an old display.
 
 ## Cache bounds and failures
 
 Snapshots use an in-memory TTL cache bounded by both inactivity and approximate
-serialized bytes. Eviction removes least-recently-used inactive entries before
-selected entries. Cache loss or eviction is never an API failure; the next read
+serialized bytes. Eviction removes least-recently-used inactive entries; actively
+leased entries are never eviction candidates. Cache loss or eviction is never an API failure; the next read
 uses the cold path.
 
 Preparation errors do not replace a last-known-good snapshot and do not emit a

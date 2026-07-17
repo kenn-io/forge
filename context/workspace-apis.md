@@ -187,6 +187,22 @@ response as expected rather than an error, and a future change should expose a
 resolved-merge-target signal on the workspace summary so the UI gate matches the
 server check exactly.
 
+## Diff Snapshot Coherence
+
+- Files, patches, and previews must project from one immutable snapshot; clients
+  pin `/diff` to the `/files` revision and retry a revision conflict atomically
+  (`internal/server/workspace_diff_cache.go::workspaceDiffCache`).
+- Cache entries are stale-while-revalidate with last-known-good fallback. Only
+  selected workspaces receive proactive refresh leases; ordinary entries validate
+  on demand so background Git work scales with active UI use
+  (`internal/server/server.go::streamEvents`).
+- Publishing a dirty-worktree snapshot requires matching before/after resolved
+  refs and fingerprints; repository-local attributes are fingerprint inputs
+  (`internal/workspace/diff_snapshot.go::PrepareDiffSnapshot`).
+- Whitespace-only classification is post-processing over aggregate Git output;
+  raw mode/type changes remain substantive even when content differs only in
+  whitespace (`internal/workspace/diff_whitespace.go::classifyWhitespaceOnly`).
+
 ## Branch Upstream
 
 The branch's git upstream config (`branch.<name>.remote`/`.merge`) is the

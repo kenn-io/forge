@@ -115,12 +115,14 @@ export interface DiffResult {
   files: DiffFile[];
   /** Synced PR diff snapshot head; compare with platform_head_sha to detect stale cached context. */
   diff_head_sha?: string;
+  snapshot_version?: string;
 }
 
 export interface FilesResult {
   stale: boolean;
   whitespace_only_count?: number;
   files: DiffFile[];
+  snapshot_version?: string;
 }
 
 export type FilePreview = components["schemas"]["FilePreviewResponse"];

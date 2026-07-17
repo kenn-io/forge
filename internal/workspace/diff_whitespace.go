@@ -40,11 +40,14 @@ func gitWhitespaceRecordEqual(left, right string) bool {
 	}
 }
 
-func classifyWhitespaceOnly(files []gitclone.DiffFile) int {
+func classifyWhitespaceOnly(
+	files []gitclone.DiffFile,
+	modeChanged map[string]bool,
+) int {
 	count := 0
 	for i := range files {
 		file := &files[i]
-		if file.Status != "modified" || file.IsBinary || len(file.Hunks) == 0 {
+		if file.Status != "modified" || file.IsBinary || modeChanged[file.Path] || len(file.Hunks) == 0 {
 			continue
 		}
 		whitespaceOnly := true

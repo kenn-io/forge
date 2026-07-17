@@ -26248,6 +26248,99 @@ func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
 	assert.False(requireWorkspaceDiffFile(t, *diff.Files, "src.ts").IsGenerated)
 }
 
+func TestWorkspaceDiffSnapshotRefreshesSameSizeEditAndPinsRevisionE2E(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ws := createReadyWorkspace(t, context.Background(), client)
+	path := filepath.Join(ws.WorktreePath, "same-size.txt")
+	require.NoError(os.WriteFile(path, []byte("a1\n"), 0o644))
+
+	firstFiles := requestWorkspaceFiles(t, srv, ws.Id, "head")
+	require.NotNil(firstFiles.SnapshotVersion)
+	firstVersion := *firstFiles.SnapshotVersion
+	firstDiff := requestWorkspaceDiffQuery(
+		t, srv, ws.Id,
+		"base=head&revision="+url.QueryEscape(firstVersion),
+	)
+	require.NotNil(firstDiff.SnapshotVersion)
+	assert.Equal(firstVersion, *firstDiff.SnapshotVersion)
+
+	events, _ := srv.hub.Subscribe(t.Context(), false)
+	require.NoError(os.WriteFile(path, []byte("b1\n"), 0o644))
+	key := workspaceDiffLogicalKey{
+		WorkspaceID: ws.Id,
+		Spec: workspace.DiffSnapshotSpec{
+			WorktreePath: ws.WorktreePath,
+			Base:         workspace.WorktreeDiffBaseHead,
+		},
+	}
+	require.NoError(srv.workspaceDiffCache.validate(t.Context(), key))
+
+	select {
+	case event := <-events:
+		assert.Equal("workspace_diff_changed", event.Event.Type)
+	case <-time.After(time.Second):
+		require.Fail("workspace diff change event not received")
+	}
+
+	staleReq := newWorkspaceFixtureRequest(
+		http.MethodGet,
+		"/api/v1/workspaces/"+ws.Id+"/diff?base=head&revision="+url.QueryEscape(firstVersion),
+		nil,
+	)
+	staleRR := httptest.NewRecorder()
+	srv.ServeHTTP(staleRR, staleReq)
+	assert.Equal(http.StatusConflict, staleRR.Code)
+
+	secondFiles := requestWorkspaceFiles(t, srv, ws.Id, "head")
+	require.NotNil(secondFiles.SnapshotVersion)
+	assert.NotEqual(firstVersion, *secondFiles.SnapshotVersion)
+	secondDiff := requestWorkspaceDiffQuery(
+		t, srv, ws.Id,
+		"base=head&revision="+url.QueryEscape(*secondFiles.SnapshotVersion),
+	)
+	file := requireWorkspaceDiffFile(t, *secondDiff.Files, "same-size.txt")
+	assert.Contains(file.Patch, "+b1\n")
+}
+
+func TestWorkspaceDiffSelectionLeaseFollowsScopedEventStreamE2E(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ws := createReadyWorkspace(t, context.Background(), client)
+	httpServer := httptest.NewServer(srv)
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		httpServer.URL+"/api/v1/events?workspace_id="+url.QueryEscape(ws.Id),
+		nil,
+	)
+	require.NoError(err)
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(err)
+	require.Equal(http.StatusOK, response.StatusCode)
+
+	srv.workspaceDiffCache.mu.Lock()
+	assert.Equal(1, srv.workspaceDiffCache.selected[ws.Id])
+	srv.workspaceDiffCache.mu.Unlock()
+
+	cancel()
+	require.NoError(response.Body.Close())
+	require.Eventually(func() bool {
+		srv.workspaceDiffCache.mu.Lock()
+		defer srv.workspaceDiffCache.mu.Unlock()
+		return srv.workspaceDiffCache.selected[ws.Id] == 0
+	}, time.Second, 10*time.Millisecond)
+}
+
 func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
 	t.Parallel()
 

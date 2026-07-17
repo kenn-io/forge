@@ -347,6 +347,7 @@ type diffResponse struct {
 	Stale               bool                `json:"stale"`
 	WhitespaceOnlyCount int                 `json:"whitespace_only_count"`
 	Files               []gitclone.DiffFile `json:"files"`
+	SnapshotVersion     string              `json:"snapshot_version,omitempty" doc:"Opaque workspace diff snapshot version used to keep files and patches coherent."`
 	// DiffHeadSHA is the synced PR diff snapshot head this diff was
 	// computed from; clients compare it against platform_head_sha to
 	// detect stale cached diff context. Empty for non-PR diffs.
@@ -357,6 +358,7 @@ type filesResponse struct {
 	Stale               bool                `json:"stale"`
 	WhitespaceOnlyCount int                 `json:"whitespace_only_count"`
 	Files               []gitclone.DiffFile `json:"files"`
+	SnapshotVersion     string              `json:"snapshot_version,omitempty" doc:"Opaque workspace diff snapshot version to pin on the following workspace diff request."`
 }
 
 type diffReviewLineRange struct {

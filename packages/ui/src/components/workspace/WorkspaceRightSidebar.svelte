@@ -53,6 +53,7 @@
     branch: string;
     roborevBaseUrl: string;
     refreshToken?: number;
+    diffRefreshToken?: number;
     disabled?: boolean;
     kataTaskPanel?: Snippet | undefined;
   }
@@ -72,6 +73,7 @@
     branch,
     roborevBaseUrl,
     refreshToken = 0,
+    diffRefreshToken = 0,
     disabled = false,
     kataTaskPanel = undefined,
   }: Props = $props();
@@ -305,6 +307,7 @@
         itemNumber={ownerItemNumber}
         active={activeTab === "diff"}
         {refreshToken}
+        {diffRefreshToken}
         {disabled}
         showMergeTarget={hasMergeTarget}
       />

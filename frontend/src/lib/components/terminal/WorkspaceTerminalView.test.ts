@@ -885,6 +885,26 @@ describe("WorkspaceTerminalView", () => {
     });
   });
 
+  it("scopes only local workspace event streams for diff prewarming", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        constructor(url: string) {
+          urls.push(url);
+        }
+        addEventListener(): void {}
+        close(): void {}
+      },
+    );
+
+    const { rerender } = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() => expect(urls).toContain("/api/v1/events?workspace_id=ws-1"));
+
+    await rerender({ workspaceId: "ws-1", workspaceHostKey: "member" });
+    await waitFor(() => expect(urls.at(-1)).toBe("/api/v1/events"));
+  });
+
   it("treats id-less workspace status events as global invalidation", async () => {
     const eventListeners: Record<string, (event: MessageEvent) => void> = {};
     const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {

@@ -39,7 +39,7 @@ func TestStreamEventsReturnsLiveEventStream(t *testing.T) {
 		err  error
 	}, 1)
 	go func() {
-		resp, err := client.StreamEvents(context.Background())
+		resp, err := client.StreamEvents(context.Background(), nil)
 		done <- struct {
 			resp *http.Response
 			err  error

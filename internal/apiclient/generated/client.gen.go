@@ -903,10 +903,13 @@ type DiffResponse struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// DiffHeadSha Synced PR diff snapshot head this diff was computed from. Always set for pull request diffs (the endpoint fails when no snapshot head is synced); empty for commit and workspace diffs. Compare with the pull detail's platform_head_sha to detect stale cached diff context; unrelated to 'stale', which reports clone-refresh staleness.
-	DiffHeadSha         *string     `json:"diff_head_sha,omitempty"`
-	Files               *[]DiffFile `json:"files"`
-	Stale               bool        `json:"stale"`
-	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
+	DiffHeadSha *string     `json:"diff_head_sha,omitempty"`
+	Files       *[]DiffFile `json:"files"`
+
+	// SnapshotVersion Opaque workspace diff snapshot version used to keep files and patches coherent.
+	SnapshotVersion     *string `json:"snapshot_version,omitempty"`
+	Stale               bool    `json:"stale"`
+	WhitespaceOnlyCount int64   `json:"whitespace_only_count"`
 }
 
 // DiffReviewDraftComment defines model for DiffReviewDraftComment.
@@ -1191,10 +1194,13 @@ type FilePreviewResponse struct {
 // FilesResponse defines model for FilesResponse.
 type FilesResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema              *string     `json:"$schema,omitempty"`
-	Files               *[]DiffFile `json:"files"`
-	Stale               bool        `json:"stale"`
-	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
+	Schema *string     `json:"$schema,omitempty"`
+	Files  *[]DiffFile `json:"files"`
+
+	// SnapshotVersion Opaque workspace diff snapshot version to pin on the following workspace diff request.
+	SnapshotVersion     *string `json:"snapshot_version,omitempty"`
+	Stale               bool    `json:"stale"`
+	WhitespaceOnlyCount int64   `json:"whitespace_only_count"`
 }
 
 // FilesystemCompleteOutputBody defines model for FilesystemCompleteOutputBody.
@@ -3426,6 +3432,12 @@ type SearchDocsParams struct {
 	Limit *int64  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// StreamEventsParams defines parameters for StreamEvents.
+type StreamEventsParams struct {
+	// WorkspaceId Optional selected local workspace to prewarm and validate while this stream is connected
+	WorkspaceId *string `form:"workspace_id,omitempty" json:"workspace_id,omitempty"`
+}
+
 // CompleteFilesystemPathParams defines parameters for CompleteFilesystemPath.
 type CompleteFilesystemPathParams struct {
 	Path string `form:"path" json:"path"`
@@ -3923,6 +3935,9 @@ type GetWorkspaceDiffParams struct {
 
 	// To End SHA for range diff (inclusive)
 	To *string `form:"to,omitempty" json:"to,omitempty"`
+
+	// Revision Optional snapshot_version returned by the workspace files endpoint
+	Revision *string `form:"revision,omitempty" json:"revision,omitempty"`
 }
 
 // GetWorkspaceFilePreviewParams defines parameters for GetWorkspaceFilePreview.
@@ -4431,7 +4446,7 @@ type ClientInterface interface {
 	SearchDocs(ctx context.Context, params *SearchDocsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// StreamEvents request
-	StreamEvents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	StreamEvents(ctx context.Context, params *StreamEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CompleteFilesystemPath request
 	CompleteFilesystemPath(ctx context.Context, params *CompleteFilesystemPathParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -5719,8 +5734,8 @@ func (c *Client) SearchDocs(ctx context.Context, params *SearchDocsParams, reqEd
 	return c.Client.Do(req)
 }
 
-func (c *Client) StreamEvents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewStreamEventsRequest(c.Server)
+func (c *Client) StreamEvents(ctx context.Context, params *StreamEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStreamEventsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -11068,7 +11083,7 @@ func NewSearchDocsRequest(server string, params *SearchDocsParams) (*http.Reques
 }
 
 // NewStreamEventsRequest generates requests for StreamEvents
-func NewStreamEventsRequest(server string) (*http.Request, error) {
+func NewStreamEventsRequest(server string, params *StreamEventsParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -11084,6 +11099,33 @@ func NewStreamEventsRequest(server string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.WorkspaceId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "workspace_id", *params.WorkspaceId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -26608,6 +26650,18 @@ func NewGetWorkspaceDiffRequest(server string, id string, params *GetWorkspaceDi
 		if params.To != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Revision != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "revision", *params.Revision, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

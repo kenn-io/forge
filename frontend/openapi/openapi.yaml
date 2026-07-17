@@ -950,6 +950,9 @@ components:
           type:
             - array
             - "null"
+        snapshot_version:
+          description: Opaque workspace diff snapshot version used to keep files and patches coherent.
+          type: string
         stale:
           type: boolean
         whitespace_only_count:
@@ -1599,6 +1602,9 @@ components:
           type:
             - array
             - "null"
+        snapshot_version:
+          description: Opaque workspace diff snapshot version to pin on the following workspace diff request.
+          type: string
         stale:
           type: boolean
         whitespace_only_count:
@@ -7780,6 +7786,14 @@ paths:
   /events:
     get:
       operationId: stream-events
+      parameters:
+        - description: Optional selected local workspace to prewarm and validate while this stream is connected
+          explode: false
+          in: query
+          name: workspace_id
+          schema:
+            description: Optional selected local workspace to prewarm and validate while this stream is connected
+            type: string
       responses:
         "200":
           content:
@@ -17843,6 +17857,13 @@ paths:
           name: to
           schema:
             description: End SHA for range diff (inclusive)
+            type: string
+        - description: Optional snapshot_version returned by the workspace files endpoint
+          explode: false
+          in: query
+          name: revision
+          schema:
+            description: Optional snapshot_version returned by the workspace files endpoint
             type: string
       responses:
         "200":

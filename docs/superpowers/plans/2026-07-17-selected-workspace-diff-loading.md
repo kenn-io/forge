@@ -6,7 +6,7 @@
 
 **Architecture:** Resolve each request into a logical key plus a Git/content fingerprint. The logical key carries workspace/path/base/scope/whitespace identity; the physical cache revision adds resolved base/head OIDs and the dirty-content digest, satisfying the resolved-base key invariant without forcing fresh validation on every warm read. A server-owned stale-while-revalidate cache stores the complete gitclone.DiffResult and a patch-free file projection, coalesces preparation, and validates only workspaces leased by the terminal SSE connection. Ordinary whitespace-only classification moves from one git diff -w subprocess per path to a Go implementation of Git xdiff record equivalence; explicit hide-whitespace patches remain aggregate Git -w output.
 
-**Tech Stack:** Go 1.25, Git CLI through go.kenn.io/kit/git/cmd, golang.org/x/sync/singleflight, OpenTelemetry, Huma/OpenAPI, Svelte 5 runes, Vite+ Vitest.
+**Tech Stack:** Go 1.26, Git CLI through go.kenn.io/kit/git/cmd, golang.org/x/sync/singleflight, OpenTelemetry, Huma/OpenAPI, Svelte 5 runes, Vite+ Vitest.
 
 ## Global Constraints
 
@@ -15,7 +15,9 @@
 - Use Git xdiff's ASCII C-locale whitespace set: space, tab, newline, vertical tab, form feed, and carriage return.
 - Keep file previews as separate bounded reads; never store preview contents in the snapshot cache.
 - Use a 15-second selected validation interval, a 10-minute inactivity TTL, and a 128 MiB approximate-byte ceiling. These are internal constants, not new configuration.
+- Treat 15 seconds as the validation max-age for every entry. Unselected entries validate on demand after that age; selected entries also validate proactively.
 - Replace a cached value only when fingerprints taken before and after preparation match. A failure never replaces the last-known-good snapshot.
+- Return an opaque cache-generation/revision token from both projections and let `/diff` require the `/files` token so replacements between requests cannot mix revisions.
 - Do not add go-git or another cache dependency; use the hardened Git wrapper, stdlib, and the existing x/sync/singleflight dependency.
 - Apply kenn-test-scope-discipline:test-scope-discipline before tests. Test middleman-owned logic, not Git/Go/Svelte library behavior.
 - Apply svelte-code-writer and svelte-core-bestpractices before Svelte edits. Run vp exec svelte-mcp svelte-autofixer on every changed Svelte file.
@@ -204,7 +206,7 @@ Normalize WorktreePath with filepath.Abs and filepath.Clean. Commit/range uses F
 
 - [ ] **Step 4: Implement the content fingerprint**
 
-Hash a versioned stream containing normalized path, resolved OIDs, mode flags, aggregate git diff --raw -z --no-renames metadata, and git ls-files --others --exclude-standard -z when untracked files participate. For each current worktree path in those sets, append lstat mode plus symlink target or streamed regular-file bytes. Encode missing/deleted state explicitly. Commit/range snapshots use immutable resolved OIDs.
+Hash a versioned stream containing normalized path, freshly resolved OIDs, mode flags, aggregate git diff --raw -z --no-renames metadata, repository-local `.git/info/attributes`, and git ls-files --others --exclude-standard -z when untracked files participate. For each current worktree path in those sets, append lstat mode plus symlink target or a content digest. Cache content digests by strong stat identity so unchanged large files are not reread on every validation. Encode missing/deleted state explicitly. Commit/range snapshots use immutable resolved OIDs.
 
 Do not use addition/deletion totals as identity.
 
@@ -214,7 +216,7 @@ PrepareDiffSnapshot calls the aggregate ref preparer from Task 1. ReadDiffSnapsh
 
 - [ ] **Step 6: Test movement during preparation**
 
-Use a narrow unexported test hook restored with t.Cleanup to edit a file between before/after fingerprints. Assert the fingerprints differ so the server can reject publication. Do not add retry machinery to the workspace package.
+Use a narrow unexported test hook restored with t.Cleanup to edit a file or move a ref between before/after fingerprints. Re-resolve the logical spec after preparation and assert the resolved OIDs or fingerprints differ so the server can reject publication. Document boundary comparison as best-effort movement detection, not a transactional filesystem snapshot. Do not add retry machinery to the workspace package.
 
 - [ ] **Step 7: Run and commit**
 
@@ -283,13 +285,15 @@ Build Files by copying each DiffFile, clearing Patch, and replacing Hunks with a
 
 Fresh returns synchronously. Expired last-known-good returns a clone marked stale and schedules validation. A cold miss waits. Shared work runs under the cache root context and callers wait via singleflight.DoChan so one canceled request does not cancel other waiters.
 
-Stable publication is:
+Stable publication re-resolves the logical spec on both sides of preparation:
 
 ~~~go
-before := fingerprint(resolved)
-result := prepare(resolved)
-after := fingerprint(resolved)
-if before != after {
+beforeResolved := resolve(logicalSpec)
+before := fingerprint(beforeResolved)
+result := prepare(beforeResolved) // exclusively from resolved OIDs
+afterResolved := resolve(logicalSpec)
+after := fingerprint(afterResolved)
+if beforeResolved.OIDs != afterResolved.OIDs || before != after {
 	return errWorkspaceDiffMovedDuringPreparation
 }
 publish(result, after)
@@ -299,9 +303,9 @@ Preparation errors or movement never replace last-known-good or emit an event.
 
 - [ ] **Step 5: Implement selected-only validation and eviction**
 
-Select refcounts workspace IDs. First lease resolves/prewarms default HEAD and starts one 15-second loop. MarkActive changes the selected workspace's validated key to the latest requested base/scope/whitespace key. Final release cancels the loop but retains entries.
+Select refcounts workspace IDs. First lease resolves/prewarms default HEAD and starts one 15-second loop. MarkActive retains every recently requested base/scope/whitespace key for a selected workspace, so concurrent tabs cannot overwrite each other's validation target. Final release cancels the loop but retains entries.
 
-ValidateSelected debounces prompt validation for selected active keys. After publish/access, evict entries idle for 10 minutes, then LRU inactive entries until at most 128 MiB. Selected entries are last-resort eviction candidates.
+ValidateSelected debounces prompt validation for selected active keys and backs off repeated failures. After publish/access, evict entries idle for 10 minutes, then LRU inactive entries until at most 128 MiB. Actively leased keys are pinned and never eviction candidates.
 
 - [ ] **Step 6: Add trace data**
 
@@ -341,7 +345,7 @@ Through httptest.Server, open a scoped stream, wait for one lease/default HEAD p
 {"workspace_id":"ws-1","revision":2}
 ~~~
 
-Using existing workspace API fixtures plus an injected counting preparer, request /files then /diff and assert one preparation with identical file/count identity. Concurrent requests coalesce. A path request after whole-snapshot preparation filters without preparation. Retain existing preview/path-safety tests.
+Using existing workspace API fixtures plus an injected counting preparer, request /files then /diff and assert one preparation with identical file/count identity. Concurrent requests coalesce. A path request after whole-snapshot preparation filters without preparation. Retain existing preview/path-safety tests. Add one real HTTP + SQLite + temporary-Git-worktree e2e scenario that makes a same-size edit, validates it, observes `workspace_diff_changed`, and reads the replacement.
 
 - [ ] **Step 2: Prove the tests fail**
 
@@ -357,7 +361,7 @@ Add workspaceDiffCache *workspaceDiffCache. Construct it after bgCtx/workspace m
 
 - [ ] **Step 4: Route all workspace reads through the snapshot**
 
-Convert workspaceDiffRequest to workspaceDiffLogicalKey after current scope validation. /files returns snapshot.Files; /diff returns snapshot.Diff.Files; both use the same whitespace count/stale state. Path-scoped /diff filters an exact Path or OldPath match from a copy. /file-preview selects membership from the snapshot then calls workspace.ReadDiffSnapshotFile.
+Convert workspaceDiffRequest to workspaceDiffLogicalKey after current scope validation. /files returns snapshot.Files; /diff returns snapshot.Diff.Files; both use the same whitespace count/stale state and opaque generation/revision token. `/diff?revision=` rejects a token mismatch so the client restarts both reads instead of publishing mixed revisions. Path-scoped /diff filters an exact Path or OldPath match from a copy. /file-preview selects membership from the snapshot then calls workspace.ReadDiffSnapshotFile.
 
 Preserve workspaceDiffBaseUnavailable and current cold-failure problem envelopes.
 
@@ -416,7 +420,7 @@ The body explains that /files prepares the whole snapshot, /diff is a projection
 
 - [ ] **Step 1: Add failing stale-visible store tests**
 
-Load snapshot A. Start a preserving refresh with deferred files/diff. Assert A remains visible. Resolve files B only and assert A remains coherent. Resolve diff B and assert both projections switch together. Reject refresh and assert A remains while getDiffError records failure.
+Load snapshot A. Start a preserving refresh with deferred files/diff. Assert A remains visible. Resolve files B only and assert A remains coherent. Resolve diff B with the pinned revision and assert both projections switch together. Simulate a revision mismatch and assert the pair retries rather than mixing. Reject refresh and assert A remains while getDiffError records failure.
 
 ~~~ts
 const refresh = store.loadWorkspaceDiff("ws-1", "head", false, {
@@ -444,7 +448,7 @@ Capture EventSource URLs/listeners. Assert local ws-1 opens events?workspace_id=
 
 - [ ] **Step 5: Thread a diff-only revision**
 
-Add diffSnapshotRevision state in WorkspaceTerminalView. Defensively parse the event, require the matching local ID and a newer numeric revision, then assign it. Pass it separately from sidebarRefreshToken so PR/issue/review panels do not redraw.
+Add diffSnapshotRevision state in WorkspaceTerminalView. Defensively parse the event, require the matching local ID and a changed opaque generation/revision token, then assign it. On `reconnect.stale`, trigger the same preserving diff refresh. Pass it separately from sidebarRefreshToken so PR/issue/review panels do not redraw.
 
 Add the prop through WorkspaceRightSidebar to WorkspaceDiffPanel. The panel key includes general refresh and diff revision. preserveVisible is true only when workspace/base identity is unchanged and the diff revision advanced. refreshCommits remains tied to manual/general refresh, not background diff replacement.
 
@@ -520,7 +524,7 @@ Expected: PASS with only intentional generated artifacts.
 
 - [ ] **Step 5: Measure the profiled live workspace**
 
-For workspace 539fb58f99084088, record cold/warm HEAD and merge-target /files then /diff spans. Verify cold preparation uses constant aggregate Git commands; following /diff is a hit with no Git work; unchanged selected validation fingerprints only; a real edit produces one replacement/event; warm latency is transfer/serialization rather than Git.
+For workspace 539fb58f99084088 and a checked-in synthetic 128-file benchmark fixture, record cold/warm HEAD and merge-target /files then /diff spans. Verify cold preparation uses constant aggregate Git commands; following /diff is a hit with no Git work; unchanged selected validation fingerprints only; a real edit produces one replacement/event; warm latency is transfer/serialization rather than Git. Record cold latency, warm lookup latency, validation duration, subprocess count, and bytes hashed so future runs are comparable.
 
 If any named cold phase remains multi-second, investigate/fix it before completion instead of hiding it with cache warmth.
 

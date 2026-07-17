@@ -138,6 +138,7 @@ type Server struct {
 	workspaces                  *workspace.Manager
 	workspacePRMonitor          *workspace.PRMonitor
 	workspacePushedHeadObserver *workspace.PushedHeadObserver
+	workspaceDiffCache          *workspaceDiffCache
 	tmuxActivity                *tmuxActivityTracker
 	fleetTmuxMonitor            *fleetTmuxMonitor
 	fleetWorktreeDiscoverer     *fleetWorktreeDiscoverer
@@ -730,6 +731,19 @@ func newServer(
 	}
 	s.docsRegistry = docs.NewRegistry(docFolders)
 	warnDocFolderDaemonBindings(docFolders)
+	s.workspaceDiffCache = newWorkspaceDiffCache(s.bgCtx, workspaceDiffCacheDeps{
+		onChanged: func(workspaceID string, revision uint64, version string) {
+			s.hub.Broadcast(Event{Type: "workspace_diff_changed", Data: struct {
+				WorkspaceID string `json:"workspace_id"`
+				Revision    uint64 `json:"revision"`
+				Version     string `json:"version"`
+			}{WorkspaceID: workspaceID, Revision: revision, Version: version}})
+		},
+	})
+	s.runBackground(func(ctx context.Context) {
+		<-ctx.Done()
+		s.workspaceDiffCache.Wait()
+	})
 
 	s.hostOpts.Store(&hostOpts)
 	if hostOpts.TrustReverseProxy && len(hostOpts.Allowed) == 0 {
@@ -1474,7 +1488,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) streamEvents(
-	_ context.Context, _ *struct{},
+	_ context.Context, input *streamEventsInput,
 ) (*huma.StreamResponse, error) {
 	return &huma.StreamResponse{
 		Body: func(ctx huma.Context) {
@@ -1483,6 +1497,22 @@ func (s *Server) streamEvents(
 			ctx.SetHeader("Connection", "keep-alive")
 
 			r, w := humago.Unwrap(ctx)
+			releaseSelection := func() {}
+			if input.WorkspaceID != "" && s.workspaceDiffCache != nil {
+				releaseSelection = s.workspaceDiffCache.Select(
+					input.WorkspaceID,
+					func(resolveCtx context.Context) (workspaceDiffLogicalKey, error) {
+						req, err := s.workspaceDiffRequest(
+							resolveCtx, input.WorkspaceID, string(workspace.WorktreeDiffBaseHead),
+						)
+						if err != nil {
+							return workspaceDiffLogicalKey{}, err
+						}
+						return s.workspaceDiffCacheKey(req, false), nil
+					},
+				)
+			}
+			defer releaseSelection()
 			rc := http.NewResponseController(w)
 			_ = rc.SetWriteDeadline(time.Time{})
 			cursor, hasCursor := parseLastEventID(r)

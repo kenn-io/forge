@@ -281,6 +281,9 @@ func (s *Server) NotifyWorktreeLinksChanged() {
 // notifyWorktreeStatsChanged is the stats-sampler callback: it
 // broadcasts a payload-free worktree_stats_changed refetch hint.
 func (s *Server) notifyWorktreeStatsChanged() {
+	if s.workspaceDiffCache != nil {
+		s.workspaceDiffCache.ValidateSelected()
+	}
 	if s.hub != nil {
 		s.hub.Broadcast(Event{
 			Type: "worktree_stats_changed", Data: struct{}{},

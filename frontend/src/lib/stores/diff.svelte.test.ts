@@ -185,6 +185,87 @@ describe("createDiffStore loadDiff", () => {
     });
   });
 
+  it("keeps a coherent workspace diff visible during a preserving refresh", async () => {
+    const filesA = makeFilesResult(["a.ts"], { snapshot_version: "generation:1" });
+    const diffA = { ...makeDiffResult(["a.ts"]), snapshot_version: "generation:1" };
+    const filesB = makeFilesResult(["b.ts"], { snapshot_version: "generation:2" });
+    const diffB = { ...makeDiffResult(["b.ts"]), snapshot_version: "generation:2" };
+    let filesCalls = 0;
+    let diffCalls = 0;
+    let signalDiffStarted: () => void = () => {};
+    let releaseDiff: () => void = () => {};
+    const diffStarted = new Promise<void>((resolve) => {
+      signalDiffStarted = resolve;
+    });
+    const diffGate = new Promise<void>((resolve) => {
+      releaseDiff = resolve;
+    });
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/workspaces/ws-1/files")) {
+        filesCalls += 1;
+        return Response.json(filesCalls === 1 ? filesA : filesB);
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        diffCalls += 1;
+        if (diffCalls === 2) {
+          signalDiffStarted();
+          await diffGate;
+        }
+        return Response.json(diffCalls === 1 ? diffA : diffB);
+      }
+      return Response.json({}, { status: 404 });
+    });
+
+    const store = createDiffStore({ client: testClient() });
+    await store.loadWorkspaceDiff("ws-1", "head");
+
+    const refresh = store.loadWorkspaceDiff("ws-1", "head", false, { preserveVisible: true });
+    await diffStarted;
+    expect(store.getFileList()?.files[0]?.path).toBe("a.ts");
+    expect(store.getDiff()?.files[0]?.path).toBe("a.ts");
+
+    releaseDiff();
+    await refresh;
+    expect(store.getFileList()?.files[0]?.path).toBe("b.ts");
+    expect(store.getDiff()?.files[0]?.path).toBe("b.ts");
+  });
+
+  it("retries a workspace diff pair when its pinned revision changes", async () => {
+    const calls: string[] = [];
+    let filesCalls = 0;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url.includes("/workspaces/ws-1/files")) {
+        filesCalls += 1;
+        return Response.json(
+          makeFilesResult([filesCalls === 1 ? "old.ts" : "new.ts"], {
+            snapshot_version: `generation:${filesCalls}`,
+          }),
+        );
+      }
+      if (url.includes("revision=generation%3A1")) {
+        return Response.json({ detail: "snapshot changed" }, { status: 409 });
+      }
+      if (url.includes("revision=generation%3A2")) {
+        return Response.json({ ...makeDiffResult(["new.ts"]), snapshot_version: "generation:2" });
+      }
+      return Response.json({}, { status: 404 });
+    });
+
+    const store = createDiffStore({ client: testClient() });
+    await store.loadWorkspaceDiff("ws-1", "head");
+
+    expect(filesCalls).toBe(2);
+    expect(store.getFileList()?.files[0]?.path).toBe("new.ts");
+    expect(store.getDiff()?.files[0]?.path).toBe("new.ts");
+    expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=head&revision=generation%3A1");
+    expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=head&revision=generation%3A2");
+  });
+
   it("loads remote workspace files, diff, commits, and previews through the fleet host route", async () => {
     const calls: string[] = [];
     const files = makeFilesResult(["src/remote.go"]);

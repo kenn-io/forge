@@ -59,9 +59,10 @@ func TestClassifyWhitespaceOnly(t *testing.T) {
 		{Path: "blank.go", Status: "modified", Hunks: []gitclone.Hunk{blankLineInsertion}},
 		{Path: "binary.dat", Status: "modified", IsBinary: true, Hunks: []gitclone.Hunk{whitespaceHunk}},
 		{Path: "renamed.go", Status: "renamed", Hunks: []gitclone.Hunk{whitespaceHunk}},
+		{Path: "mode.go", Status: "modified", Hunks: []gitclone.Hunk{whitespaceHunk}},
 	}
 
-	count := classifyWhitespaceOnly(files)
+	count := classifyWhitespaceOnly(files, map[string]bool{"mode.go": true})
 
 	assert.Equal(1, count)
 	assert.True(files[0].IsWhitespaceOnly)
@@ -69,6 +70,7 @@ func TestClassifyWhitespaceOnly(t *testing.T) {
 	assert.False(files[2].IsWhitespaceOnly)
 	assert.False(files[3].IsWhitespaceOnly)
 	assert.False(files[4].IsWhitespaceOnly)
+	assert.False(files[5].IsWhitespaceOnly)
 }
 
 func TestClassifyWhitespaceOnlyMatchesGit(t *testing.T) {
@@ -114,4 +116,21 @@ func TestClassifyWhitespaceOnlyMatchesGit(t *testing.T) {
 			assert.Equal(gitErr == nil, diff.Files[0].IsWhitespaceOnly)
 		})
 	}
+}
+
+func TestWorktreeDiffDoesNotClassifyModeChangeAsWhitespaceOnly(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	work := setupDivergenceWorktree(t)
+	path := filepath.Join(work, "f.txt")
+
+	require.NoError(os.WriteFile(path, []byte("f1  \n"), 0o755))
+	require.NoError(os.Chmod(path, 0o755))
+	diff, ok, err := WorktreeDiff(t.Context(), work, WorktreeDiffBaseHead, false)
+
+	require.NoError(err)
+	require.True(ok)
+	require.Len(diff.Files, 1)
+	assert.False(t, diff.Files[0].IsWhitespaceOnly)
+	assert.Equal(t, 0, diff.WhitespaceOnlyCount)
 }

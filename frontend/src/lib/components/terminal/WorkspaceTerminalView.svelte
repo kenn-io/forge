@@ -190,6 +190,8 @@
   };
   let deletingWorkspaceTargets = $state<DeletingWorkspaceTarget[]>([]);
   let sidebarRefreshToken = $state(0);
+  let diffRefreshToken = $state(0);
+  let lastDiffSnapshotVersion = "";
   let forcePromptMessage = $state<string | null>(null);
   let forcePromptForId = $state<string | null>(null);
   let forceDeleting = $state(false);
@@ -2513,8 +2515,11 @@
       return;
     }
 
-    const evtUrl = `${basePath}/api/v1/events`;
-    const source = new EventSource(evtUrl);
+    const evtUrl = new URL(`${basePath}/api/v1/events`, window.location.origin);
+    if (!hostKey) {
+      evtUrl.searchParams.set("workspace_id", id);
+    }
+    const source = new EventSource(`${evtUrl.pathname}${evtUrl.search}`);
     eventSource = source;
     const workspaceRequest = fetchWorkspace();
     void fetchRuntime();
@@ -2565,7 +2570,30 @@
     source.addEventListener("reconnect.stale", () => {
       void fetchWorkspace();
       void fetchRuntime();
+      diffRefreshToken += 1;
     });
+    source.addEventListener(
+      "workspace_diff_changed",
+      (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data as string) as {
+            workspace_id?: string;
+            version?: string;
+          };
+          if (
+            data.workspace_id === id &&
+            typeof data.version === "string" &&
+            data.version !== "" &&
+            data.version !== lastDiffSnapshotVersion
+          ) {
+            lastDiffSnapshotVersion = data.version;
+            diffRefreshToken += 1;
+          }
+        } catch {
+          // Malformed SSE data; ignore.
+        }
+      },
+    );
 
     void workspaceRequest.then(() => {
       if (workspace?.status === "creating") {
@@ -3071,6 +3099,7 @@
                 branch={workspace.git_head_ref}
                 roborevBaseUrl={basePath + "/api/roborev"}
                 refreshToken={sidebarRefreshToken}
+                {diffRefreshToken}
                 disabled={actionsBlocked}
                 {kataTaskPanel}
               />

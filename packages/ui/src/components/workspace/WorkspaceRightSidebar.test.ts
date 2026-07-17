@@ -156,6 +156,15 @@ describe("WorkspaceRightSidebar", () => {
     expect(calls.some((url) => url.endsWith("/api/v1/workspaces/ws-1/commits"))).toBe(true);
     expect(screen.getByRole("button", { name: "Compare with merge target" }).getAttribute("aria-pressed")).toBe("true");
     expect(calls.some((url) => url.endsWith("/api/v1/workspaces/ws-1/diff?base=head"))).toBe(false);
+
+    calls.length = 0;
+    await rerender({ diffRefreshToken: 1 });
+    await waitFor(() => {
+      expect(calls.some((url) => url.endsWith("/api/v1/workspaces/ws-1/diff?base=merge-target&commit=sha2"))).toBe(
+        true,
+      );
+    });
+    expect(calls.some((url) => url.endsWith("/api/v1/workspaces/ws-1/commits"))).toBe(false);
   });
 
   it("disables diff controls while the workspace is deleting", async () => {

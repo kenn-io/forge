@@ -16,6 +16,7 @@
     itemNumber: number;
     active?: boolean;
     refreshToken?: number;
+    diffRefreshToken?: number;
     disabled?: boolean;
     showMergeTarget?: boolean;
   }
@@ -31,6 +32,7 @@
     itemNumber,
     active = false,
     refreshToken = 0,
+    diffRefreshToken = 0,
     disabled = false,
     showMergeTarget = true,
   }: Props = $props();
@@ -41,15 +43,22 @@
     !showMergeTarget && selectedBase === "merge-target" ? "head" : selectedBase
   );
   let loadedKey = "";
+  let loadedIdentity = "";
+  let loadedDiffRefreshToken = 0;
 
   $effect(() => {
     if (!active) return;
-    const key = `${workspaceHostKey ?? "self"}:${workspaceID}:${base}:${refreshToken}`;
+    const identity = `${workspaceHostKey ?? "self"}:${workspaceID}:${base}`;
+    const key = `${identity}:${refreshToken}:${diffRefreshToken}`;
     if (loadedKey === key) return;
+    const preserveVisible = loadedIdentity === identity && diffRefreshToken !== loadedDiffRefreshToken;
     loadedKey = key;
+    loadedIdentity = identity;
+    loadedDiffRefreshToken = diffRefreshToken;
     void diff.loadWorkspaceDiff(workspaceID, base, false, {
-      refreshCommits: refreshToken > 0,
+      refreshCommits: refreshToken > 0 && !preserveVisible,
       workspaceHostKey,
+      preserveVisible,
     });
   });
 

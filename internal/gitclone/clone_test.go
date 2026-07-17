@@ -239,7 +239,7 @@ func TestIntegrationEnsureCloneDoesNotFetchGitLabMergeRequestHeadsByDefault(t *t
 
 	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
-		ctx, "gitlab.com", "testowner", "testrepo", remote))
+		ctx, "gitlab", "gitlab.com", "testowner", "testrepo", remote))
 
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "gitlab-mr.go"), []byte("package main\n"), 0o644,
@@ -252,7 +252,7 @@ func TestIntegrationEnsureCloneDoesNotFetchGitLabMergeRequestHeadsByDefault(t *t
 	run(t, work, "git", "push", "origin", "HEAD:refs/merge-requests/17/head")
 
 	require.NoError(mgr.EnsureClone(
-		ctx, "gitlab.com", "testowner", "testrepo", remote))
+		ctx, "gitlab", "gitlab.com", "testowner", "testrepo", remote))
 
 	clonePath, err := mgr.ClonePath("gitlab", "gitlab.com", "testowner", "testrepo")
 	require.NoError(err)
@@ -544,7 +544,7 @@ func TestIntegrationMergeBase(t *testing.T) {
 
 	// Merge base of HEAD with itself is HEAD.
 	mb, err := mgr.MergeBase(
-		ctx, "github.com", "testowner", "testrepo", headSHA, headSHA)
+		ctx, "github", "github.com", "testowner", "testrepo", headSHA, headSHA)
 	require.NoError(err)
 	assert.Equal(headSHA, mb)
 }

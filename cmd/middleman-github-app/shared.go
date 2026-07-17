@@ -11,11 +11,8 @@ import (
 	"go.kenn.io/middleman/internal/githubapp"
 )
 
-// loadConfig loads with GitHub App coverage validation relaxed: every
-// command of this CLI is a repair path for exactly the configs that
-// strict loading rejects (stale selected snapshot, app on the wrong
-// account), so a coverage failure must never lock the user out of
-// install/uninstall/delete. middleman itself still loads strictly.
+// loadConfig uses the GitHub App management entry point so every command
+// applies the same structural validation before changing app state.
 func (env *appEnv) loadConfig() (*config.Config, error) {
 	cfg, err := config.LoadForGitHubAppRepair(env.configPath)
 	if err != nil {

@@ -570,6 +570,10 @@ func run(opts serve.Options) error {
 		defaultProviderFactories(), ghclient.HTTPIdentityResolver{},
 	)
 	if err != nil {
+		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
+			slog.Info("shutting down")
+			return nil
+		}
 		return err
 	}
 

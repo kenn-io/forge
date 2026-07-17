@@ -2,29 +2,25 @@ package github
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
+	"fmt"
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v88/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 func TestHTTPIdentityResolverResolvesStableUserID(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/user", r.URL.Path)
-		assert.Equal(t, "Bearer token-a", r.Header.Get("Authorization"))
-		_, _ = w.Write([]byte(`{"id":123,"login":"maintainer"}`))
-	}))
-	t.Cleanup(server.Close)
-
 	source := identityTestSource(t, "TOKEN_A", "token-a")
 	resolver := HTTPIdentityResolver{
-		Endpoint: func(string) string { return server.URL + "/user" },
-		NewHTTPClient: func(_ string, source tokenauth.Source) *http.Client {
-			return identityHTTPClient(server.URL, source)
+		Lookup: func(ctx context.Context, host string, gotSource tokenauth.Source) (*gh.User, error) {
+			assert.Equal(t, "github.com", host)
+			token, err := gotSource.Token(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, "token-a", token)
+			return &gh.User{ID: new(int64(123)), Login: new("maintainer")}, nil
 		},
 	}
 
@@ -35,11 +31,6 @@ func TestHTTPIdentityResolverResolvesStableUserID(t *testing.T) {
 }
 
 func TestHTTPIdentityResolverUsesPATSideOfAppChain(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "Bearer user-token", r.Header.Get("Authorization"))
-		_, _ = w.Write([]byte(`{"id":456,"login":"writer"}`))
-	}))
-	t.Cleanup(server.Close)
 	t.Setenv("USER_PAT", "user-token")
 
 	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
@@ -57,9 +48,11 @@ func TestHTTPIdentityResolverUsesPATSideOfAppChain(t *testing.T) {
 		return "installation-token", time.Now().Add(time.Hour), nil
 	}})
 	resolver := HTTPIdentityResolver{
-		Endpoint: func(string) string { return server.URL + "/user" },
-		NewHTTPClient: func(_ string, source tokenauth.Source) *http.Client {
-			return identityHTTPClient(server.URL, source)
+		Lookup: func(ctx context.Context, _ string, source tokenauth.Source) (*gh.User, error) {
+			token, err := source.Token(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, "user-token", token)
+			return &gh.User{ID: new(int64(456)), Login: new("writer")}, nil
 		},
 	}
 
@@ -72,26 +65,20 @@ func TestHTTPIdentityResolverUsesPATSideOfAppChain(t *testing.T) {
 
 func TestHTTPIdentityResolverRejectsInvalidResponsesSafely(t *testing.T) {
 	tests := []struct {
-		name       string
-		statusCode int
-		body       string
-		want       string
+		name string
+		user *gh.User
+		err  error
+		want string
 	}{
-		{name: "non success", statusCode: http.StatusUnauthorized, body: `{"message":"bad credentials"}`, want: "status 401"},
-		{name: "missing id", statusCode: http.StatusOK, body: `{"login":"nobody"}`, want: "positive numeric user id"},
+		{name: "lookup error", err: fmt.Errorf("status 401"), want: "status 401"},
+		{name: "missing id", user: &gh.User{Login: new("nobody")}, want: "positive numeric user id"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(tc.statusCode)
-				_, _ = w.Write([]byte(tc.body))
-			}))
-			t.Cleanup(server.Close)
 			source := identityTestSource(t, "SECRET_TOKEN", "ghp_sentinel_secret")
 			resolver := HTTPIdentityResolver{
-				Endpoint: func(string) string { return server.URL + "/user" },
-				NewHTTPClient: func(_ string, source tokenauth.Source) *http.Client {
-					return identityHTTPClient(server.URL, source)
+				Lookup: func(context.Context, string, tokenauth.Source) (*gh.User, error) {
+					return tc.user, tc.err
 				},
 			}
 
@@ -159,13 +146,4 @@ func identityTestSource(t *testing.T, envName, token string) tokenauth.Source {
 			Kind: tokenauth.SourceKindEnv, EnvName: envName,
 		}},
 	}, tokenauth.Options{})
-}
-
-func identityHTTPClient(origin string, source tokenauth.Source) *http.Client {
-	return &http.Client{Transport: tokenauth.AuthTransport{
-		Source:        source,
-		Base:          http.DefaultTransport,
-		SetHeader:     tokenauth.BearerAuthHeader,
-		AllowedOrigin: origin,
-	}}
 }

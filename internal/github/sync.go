@@ -23,6 +23,7 @@ import (
 	"go.kenn.io/middleman/internal/gitclone"
 	"go.kenn.io/middleman/internal/platform"
 	platformgithub "go.kenn.io/middleman/internal/platform/github"
+	"go.kenn.io/middleman/internal/tokenauth"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -1386,6 +1387,32 @@ func (p *gitHubClientProvider) MarkNotificationThreadRead(
 	ctx context.Context,
 	threadID string,
 ) error {
+	return p.client.MarkNotificationThreadRead(ctx, threadID)
+}
+
+func (p *gitHubClientProvider) GetNotificationThreadForRepo(
+	ctx context.Context, owner, name, threadID string,
+) (NotificationThread, error) {
+	if routed, ok := p.client.(routedNotificationThreadGetter); ok {
+		return routed.GetNotificationThreadForRepo(ctx, owner, name, threadID)
+	}
+	getter, ok := notificationThreadGetterFor(p.client)
+	if !ok {
+		return NotificationThread{}, fmt.Errorf(
+			"github client does not fetch notification threads",
+		)
+	}
+	return getter.GetNotificationThread(ctx, threadID)
+}
+
+func (p *gitHubClientProvider) MarkNotificationThreadReadForRepo(
+	ctx context.Context, owner, name, threadID string,
+) error {
+	if routed, ok := p.client.(routedNotificationReadMarker); ok {
+		return routed.MarkNotificationThreadReadForRepo(
+			ctx, owner, name, threadID,
+		)
+	}
 	return p.client.MarkNotificationThreadRead(ctx, threadID)
 }
 
@@ -2866,6 +2893,38 @@ func (s *Syncer) WriteIdentityForRepo(repo RepoRef) (IdentityKey, bool) {
 	return identity, err == nil && identity.Principal != ""
 }
 
+type writeCredentialProber interface {
+	ProbeWriteCredential(context.Context) error
+}
+
+// ProbeWriteCredentialForRepo resolves the live mutation-bound credential for
+// repo. The route identity is fixed at startup, but the underlying token file,
+// environment, or gh CLI source can disappear or rotate afterwards.
+func (s *Syncer) ProbeWriteCredentialForRepo(
+	ctx context.Context, repo RepoRef,
+) error {
+	if repoPlatform(repo) != platform.KindGitHub {
+		return nil
+	}
+	router := s.routers[repoHost(repo)]
+	if router == nil {
+		return nil
+	}
+	route, err := router.RouteForRepo(repo.Owner, repo.Name)
+	if err != nil {
+		return err
+	}
+	client := route.Client
+	if route.WriteSnapshotClient != nil {
+		client = route.WriteSnapshotClient
+	}
+	prober, ok := client.(writeCredentialProber)
+	if !ok {
+		return nil
+	}
+	return prober.ProbeWriteCredential(ctx)
+}
+
 // WriteRateTrackerForRepo returns the tracker for the credential that
 // authenticates repository mutations.
 func (s *Syncer) WriteRateTrackerForRepo(repo RepoRef, apiType string) (*RateTracker, bool) {
@@ -3924,6 +3983,7 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 		client  Client
 		tracker *RateTracker
 		fetcher *GraphQLFetcher
+		owner   string
 	}
 	candidates := make(map[string][]snapshotCandidate)
 	for _, router := range s.routers {
@@ -3934,7 +3994,7 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 			)
 			candidates[readBucket] = append(candidates[readBucket], snapshotCandidate{
 				client: route.Client, tracker: s.rateTrackers[readBucket],
-				fetcher: route.Fetcher,
+				fetcher: route.Fetcher, owner: route.Key.Owner,
 			})
 			if route.WriteIdentity.Principal != "" && route.WriteIdentity != route.ReadIdentity {
 				writeBucket := RateBucketKey(
@@ -3949,7 +4009,7 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 				candidates[writeBucket] = append(candidates[writeBucket], snapshotCandidate{
 					client:  route.WriteSnapshotClient,
 					tracker: s.writeRateTrackers[writeBucket],
-					fetcher: writeFetcher,
+					fetcher: writeFetcher, owner: route.Key.Owner,
 				})
 			}
 		}
@@ -3963,7 +4023,8 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 				continue
 			}
 			snapshotRoute := &Route{Client: candidate.client, Fetcher: candidate.fetcher}
-			if s.refreshRateLimitSnapshotForRoute(ctx, snapshotRoute, candidate.tracker) {
+			snapshotCtx := tokenauth.WithGitHubOwner(ctx, candidate.owner)
+			if s.refreshRateLimitSnapshotForRoute(snapshotCtx, snapshotRoute, candidate.tracker) {
 				s.markRateLimitSnapshotRefreshed(bucket, time.Now().UTC())
 				refreshed[bucket] = struct{}{}
 				break

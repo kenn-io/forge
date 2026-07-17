@@ -724,8 +724,8 @@ func TestInstallAcceptsSelectedInstallCoveringConfiguredRepos(t *testing.T) {
 	assert := assert.New(t)
 	assert.NotZero(cfg.GitHubApps[0].InstallationID)
 	assert.Equal("kenn-io", cfg.GitHubApps[0].InstallationAccount)
-	// The recorded selection lets config validation keep enforcing
-	// coverage when repos are added later.
+	// The recorded selection lets credential routing use the App for
+	// covered repositories and fall back to PAT credentials elsewhere.
 	assert.Equal("selected", cfg.GitHubApps[0].RepositorySelection)
 	assert.Equal([]string{"kenn-io/middleman"}, cfg.GitHubApps[0].SelectedRepos)
 }
@@ -749,10 +749,10 @@ func TestInstallRefreshesStaleSelectedRepoSnapshot(t *testing.T) {
 	})
 	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
 
-	// Simulate the stale-snapshot failure mode the validation error
-	// points users at: the config gains a repo that the recorded
+	// Simulate a stale snapshot: the config gains a repo that the recorded
 	// snapshot does not list (here by shrinking the recorded list and
-	// adding the repo), so a strict load now fails.
+	// adding the repo). Ordinary loading still succeeds because the
+	// uncovered repository falls back to PAT credentials.
 	raw, err := os.ReadFile(configPath)
 	require.NoError(err)
 	stale := strings.Replace(
@@ -768,11 +768,10 @@ name = "other"
 [[repos]]`, 1)
 	require.NoError(os.WriteFile(configPath, []byte(stale), 0o600))
 	_, err = config.Load(configPath)
-	require.ErrorContains(err, "kenn-io/other is not in")
+	require.NoError(err)
 
-	// Re-running install must load the config anyway, find the
-	// recorded installation, and refresh the snapshot — no browser
-	// interaction needed.
+	// Re-running install finds the recorded installation and refreshes
+	// the snapshot without browser interaction.
 	env, out := newTestEnv(t, fake, configPath)
 	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
 	require.Contains(out.String(), "Refreshing recorded installation")

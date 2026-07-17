@@ -626,6 +626,17 @@ func (c *liveClient) splitAuthActiveForOwner(owner string) bool {
 	return c.source.Descriptor().HasActiveGitHubAppForOwner(owner)
 }
 
+// ProbeWriteCredential resolves the mutation side of the route without
+// sending a request. Identity-bound sources use this to detect a removed PAT
+// or a token that rotated to another GitHub user before the UI offers writes.
+func (c *liveClient) ProbeWriteCredential(ctx context.Context) error {
+	if c.source == nil {
+		return tokenauth.ErrMissingToken
+	}
+	_, err := c.source.Token(tokenauth.WithMutationAuth(ctx))
+	return err
+}
+
 func (c *liveClient) bypassNotificationReadRateReserve() bool {
 	return c.splitAuthActive()
 }

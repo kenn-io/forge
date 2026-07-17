@@ -517,7 +517,16 @@ func (s *Server) writeCredentialGateForRepo(repo db.Repo) writeCredentialGate {
 					),
 				}
 			}
-			return writeCredentialGate{}
+			parent := s.bgCtx
+			if parent == nil {
+				parent = context.Background()
+			}
+			ctx, cancel := context.WithTimeout(parent, writeCredentialProbeTimeout)
+			defer cancel()
+			return writeCredentialGateFromError(
+				repoProviderHost(repo),
+				s.syncer.ProbeWriteCredentialForRepo(ctx, ref),
+			)
 		}
 	}
 	if s.tokenSources == nil {
@@ -597,9 +606,21 @@ func (s *Server) probeWriteCredential(
 	ctx, cancel := context.WithTimeout(parent, writeCredentialProbeTimeout)
 	defer cancel()
 	_, err := src.Token(tokenauth.WithMutationAuth(ctx))
+	return writeCredentialGateFromError(host, err)
+}
+
+func writeCredentialGateFromError(host string, err error) writeCredentialGate {
 	switch {
 	case err == nil:
 		return writeCredentialGate{}
+	case errors.Is(err, ghclient.ErrIdentityChanged):
+		return writeCredentialGate{
+			code: availabilityCodeWriteCredentialError,
+			reason: fmt.Sprintf(
+				"The GitHub write credential for %s changed identity; restart middleman to bind the route to the new user.",
+				host,
+			),
+		}
 	case errors.Is(err, tokenauth.ErrMissingToken):
 		return writeCredentialGate{
 			code: availabilityCodeMissingWriteCredential,

@@ -498,11 +498,9 @@ func (env *appEnv) runInstallFlow(
 	app.InstallationID = picked.ID
 	app.InstallationAccount = picked.Account.Login
 	// Account ownership is not enough for an "Only select repositories"
-	// install: the token reaches only the chosen repos, and anything
-	// else 404s during sync while the config looks healthy. The
-	// selection (and, for selected installs, the reachable repo list)
-	// is recorded in config so validation can keep enforcing coverage
-	// when repos are added later.
+	// install: the token reaches only the chosen repos. Record the
+	// selection and reachable repo list so credential routing can use
+	// the App for covered repositories and PAT credentials elsewhere.
 	app.RepositorySelection = strings.ToLower(picked.RepositorySelection)
 	app.SelectedRepos = nil
 	if !strings.EqualFold(picked.RepositorySelection, "all") {

@@ -12,14 +12,17 @@ import (
 	gh "github.com/google/go-github/v88/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 type routeRecordingClient struct {
 	Client
-	marker      string
-	calls       []string
-	snapshot    *RateLimitSnapshot
-	snapshotErr error
+	marker         string
+	calls          []string
+	snapshot       *RateLimitSnapshot
+	snapshotErr    error
+	snapshotSource tokenauth.Source
+	snapshotToken  string
 }
 
 func (c *routeRecordingClient) GetRepository(
@@ -80,8 +83,15 @@ func (c *routeRecordingClient) MarkNotificationThreadRead(
 	return nil
 }
 
-func (c *routeRecordingClient) GetRateLimitSnapshot(context.Context) (*RateLimitSnapshot, error) {
+func (c *routeRecordingClient) GetRateLimitSnapshot(ctx context.Context) (*RateLimitSnapshot, error) {
 	c.calls = append(c.calls, "snapshot")
+	if c.snapshotSource != nil {
+		token, err := c.snapshotSource.Token(ctx)
+		if err != nil {
+			return nil, err
+		}
+		c.snapshotToken = token
+	}
 	if c.snapshotErr != nil {
 		return nil, c.snapshotErr
 	}
@@ -89,6 +99,79 @@ func (c *routeRecordingClient) GetRateLimitSnapshot(context.Context) (*RateLimit
 		return c.snapshot, nil
 	}
 	return &RateLimitSnapshot{}, nil
+}
+
+func TestGitHubProviderPreservesRepositoryAwareNotificationRouting(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fallback := &routeRecordingClient{marker: "fallback"}
+	owner := &routeRecordingClient{marker: "owner"}
+	router, err := NewHostRouter(
+		"github.com",
+		&Route{Key: RouteKey{Host: "github.com"}, Client: fallback},
+		&Route{Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: owner},
+	)
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+	provider := &gitHubClientProvider{client: routed, host: "github.com"}
+
+	getter, ok := any(provider).(routedNotificationThreadGetter)
+	require.True(ok, "the platform wrapper must preserve repository-aware thread reads")
+	_, err = getter.GetNotificationThreadForRepo(t.Context(), "acme", "widget", "thread-1")
+	require.NoError(err)
+	marker, ok := any(provider).(routedNotificationReadMarker)
+	require.True(ok, "the platform wrapper must preserve repository-aware read markers")
+	require.NoError(marker.MarkNotificationThreadReadForRepo(
+		t.Context(), "acme", "widget", "thread-1",
+	))
+
+	assert.Equal([]string{"thread:thread-1", "mark-read:thread-1"}, owner.calls)
+	assert.Empty(fallback.calls)
+}
+
+func TestSyncerRateSnapshotScopesAppRouteToOwner(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Setenv("SNAPSHOT_PAT", "user-token")
+	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: "github", Host: "github.com", Scope: "owner:acme"},
+		Candidates: []tokenauth.Candidate{
+			{
+				Kind: tokenauth.SourceKindGitHubApp, Host: "github.com",
+				AppID: 1, InstallationID: 2, InstallationAccount: "acme",
+			},
+			{Kind: tokenauth.SourceKindEnv, EnvName: "SNAPSHOT_PAT"},
+		},
+	}, tokenauth.Options{GitHubApp: func(
+		context.Context, tokenauth.Candidate,
+	) (string, time.Time, error) {
+		return "installation-token", time.Now().Add(time.Hour), nil
+	}})
+	database := openTestDB(t)
+	tracker := NewRateTracker(database, "github.com", "installation:2", "rest")
+	client := &routeRecordingClient{
+		snapshotSource: source,
+		snapshot:       &RateLimitSnapshot{Core: &Rate{Limit: 5000, Remaining: 4000}},
+	}
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: client,
+		ReadIdentity: IdentityKey{Host: "github.com", Principal: "installation:2"},
+	})
+	require.NoError(err)
+	syncer := &Syncer{
+		clients: registryFromGitHubClients(map[string]Client{"github.com": client}),
+		routers: map[string]*HostRouter{"github.com": router},
+		rateTrackers: map[string]*RateTracker{
+			RateBucketKey("github", "github.com", "installation:2"): tracker,
+		},
+		rateLimitSnapshotRefresh: make(map[string]time.Time),
+	}
+
+	syncer.RefreshRateLimitSnapshots(t.Context())
+
+	assert.Equal("installation-token", client.snapshotToken)
+	assert.Equal(4000, tracker.Remaining())
 }
 
 func (c *routeRecordingClient) bypassNotificationReadRateReserve() bool {

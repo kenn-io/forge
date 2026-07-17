@@ -780,6 +780,50 @@ func TestAPIRepoResponseOperationsDistinguishWriteCredentialErrors(t *testing.T)
 		"the reason must stay redacted; no raw resolver error in the wire response")
 }
 
+type writeCredentialProbeClient struct {
+	*mockGH
+	err error
+}
+
+func (c *writeCredentialProbeClient) ProbeWriteCredential(context.Context) error {
+	return c.err
+}
+
+func TestAPIRepoResponseProbesRestartBoundWriteCredential(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	client := &writeCredentialProbeClient{mockGH: &mockGH{}, err: ghclient.ErrIdentityChanged}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": client}, database, nil,
+		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	router, err := ghclient.NewHostRouter("github.com", &ghclient.Route{
+		Key: ghclient.RouteKey{Host: "github.com", Owner: "acme"}, Client: client,
+		ReadIdentity:  ghclient.IdentityKey{Host: "github.com", Principal: "installation:11"},
+		WriteIdentity: ghclient.IdentityKey{Host: "github.com", Principal: "user:22"},
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	_, err = database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	var resp repoResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	merge := resp.Operations.MergePR
+	assert.False(merge.Available)
+	assert.Equal(availabilityCodeWriteCredentialError, merge.Code)
+	assert.Contains(merge.UnavailableReason, "restart")
+}
+
 // splitTestDescriptor builds the github.com chain of a split host:
 // an installed GitHub App candidate followed by the given user write
 // candidate.

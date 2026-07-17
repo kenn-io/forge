@@ -2,14 +2,13 @@ package github
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"sync"
 
+	gh "github.com/google/go-github/v88/github"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
@@ -127,11 +126,15 @@ func (s staticTokenSource) Token(context.Context) (string, error) { return s.tok
 func (s staticTokenSource) Invalidate()                           {}
 func (s staticTokenSource) Descriptor() tokenauth.Descriptor      { return s.desc }
 
+type authenticatedUserLookup func(
+	context.Context, string, tokenauth.Source,
+) (*gh.User, error)
+
 // HTTPIdentityResolver resolves PAT identity through GitHub's authenticated
-// user endpoint. Endpoint and NewHTTPClient are injectable for tests.
+// user API. Lookup is injectable so tests exercise identity semantics without
+// exposing an arbitrary request URL seam.
 type HTTPIdentityResolver struct {
-	Endpoint      func(host string) string
-	NewHTTPClient func(host string, source tokenauth.Source) *http.Client
+	Lookup authenticatedUserLookup
 }
 
 func (r HTTPIdentityResolver) ResolvePAT(
@@ -140,46 +143,18 @@ func (r HTTPIdentityResolver) ResolvePAT(
 	if source == nil {
 		return GitHubIdentity{}, fmt.Errorf("resolve GitHub identity for %s: nil token source", host)
 	}
-	endpoint := authenticatedUserEndpoint(host)
-	if r.Endpoint != nil {
-		endpoint = r.Endpoint(host)
+	lookup := lookupAuthenticatedUser
+	if r.Lookup != nil {
+		lookup = r.Lookup
 	}
-	client := identityHTTPClientForHost(host, source)
-	if r.NewHTTPClient != nil {
-		client = r.NewHTTPClient(host, source)
-	}
-	req, err := http.NewRequestWithContext(
-		tokenauth.WithMutationAuth(ctx), http.MethodGet, endpoint, nil,
-	)
-	if err != nil {
-		return GitHubIdentity{}, fmt.Errorf("create GitHub identity request: %w", err)
-	}
-	resp, err := client.Do(req)
+	user, err := lookup(tokenauth.WithMutationAuth(ctx), host, source)
 	if err != nil {
 		return GitHubIdentity{}, fmt.Errorf(
 			"resolve GitHub identity for %s via %s: %w",
 			host, source.Descriptor().SafeString(), err,
 		)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return GitHubIdentity{}, fmt.Errorf(
-			"resolve GitHub identity for %s via %s: status %d",
-			host, source.Descriptor().SafeString(), resp.StatusCode,
-		)
-	}
-	var user struct {
-		ID    int64  `json:"id"`
-		Login string `json:"login"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
-		return GitHubIdentity{}, fmt.Errorf(
-			"decode GitHub identity for %s via %s: %w",
-			host, source.Descriptor().SafeString(), err,
-		)
-	}
-	if user.ID <= 0 {
+	if user == nil || user.GetID() <= 0 {
 		return GitHubIdentity{}, fmt.Errorf(
 			"resolve GitHub identity for %s via %s: response lacks a positive numeric user id",
 			host, source.Descriptor().SafeString(),
@@ -188,9 +163,9 @@ func (r HTTPIdentityResolver) ResolvePAT(
 	return GitHubIdentity{
 		Key: IdentityKey{
 			Host:      normalizedPlatformHost(host),
-			Principal: fmt.Sprintf("user:%d", user.ID),
+			Principal: fmt.Sprintf("user:%d", user.GetID()),
 		},
-		Login: strings.TrimSpace(user.Login),
+		Login: strings.TrimSpace(user.GetLogin()),
 	}, nil
 }
 
@@ -201,13 +176,6 @@ func InstallationIdentity(host string, installationID int64) GitHubIdentity {
 		Host:      normalizedPlatformHost(host),
 		Principal: fmt.Sprintf("installation:%d", installationID),
 	}}
-}
-
-func authenticatedUserEndpoint(host string) string {
-	if normalizedPlatformHost(host) == "github.com" {
-		return "https://api.github.com/user"
-	}
-	return "https://" + normalizedPlatformHost(host) + "/api/v3/user"
 }
 
 func identityHTTPClientForHost(
@@ -221,4 +189,24 @@ func identityHTTPClientForHost(
 		RetryOnUnauthorized: true,
 		AllowedOrigin:       origin,
 	})}
+}
+
+func lookupAuthenticatedUser(
+	ctx context.Context, host string, source tokenauth.Source,
+) (*gh.User, error) {
+	httpClient := identityHTTPClientForHost(host, source)
+	opts := []gh.ClientOptionsFunc{gh.WithHTTPClient(httpClient)}
+	host = normalizedPlatformHost(host)
+	if host != "github.com" {
+		origin := "https://" + host
+		opts = append(opts, gh.WithEnterpriseURLs(
+			origin+"/api/v3/", origin+"/api/uploads/",
+		))
+	}
+	client, err := gh.NewClient(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("create GitHub identity client: %w", err)
+	}
+	user, _, err := client.Users.Get(ctx, "")
+	return user, err
 }

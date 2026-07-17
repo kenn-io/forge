@@ -111,16 +111,11 @@ type GitHubOwnerTokenConfig struct {
 //
 // Scope decision: one app per GitHub host with one recorded
 // installation, and one active credential chain per host. An
-// installation token only reaches repos the installation covers, so
-// every same-host repo must be covered by that installation — Validate
-// enforces this so uncovered repos fail loudly at load instead of
-// 404ing during sync. There is no per-repo escape hatch: repo-level
-// token_env/token_file overrides are terminal credentials that cannot
-// be mixed with an app chain on the same host (the same-host conflict
-// check rejects that), so the remedies are installing the app on the
-// owning account, extending the installation's repository selection,
-// or removing the [[github_apps]] entry. An entry without an
-// installation_id is dormant and the PAT chain stays in effect.
+// installation token only reaches repos the installation covers. "All
+// repositories" installations build owner routes; "Only select repositories"
+// installations build exact routes for the recorded selected set, while
+// uncovered repos fall through to the owner or host PAT chain. An entry without
+// an installation_id is dormant and the PAT chain stays in effect.
 type GitHubAppConfig struct {
 	Host                string `toml:"host" json:"host"`
 	AppID               int64  `toml:"app_id" json:"app_id"`
@@ -1153,11 +1148,10 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return cfg, cfg.validate(false)
+	return cfg, cfg.validate()
 }
 
-// load reads and normalizes path without running validation; Load and
-// LoadForGitHubAppRepair pick the validation strictness.
+// load reads and normalizes path without running validation.
 func load(path string) (*Config, error) {
 	cfg := &Config{
 		SyncInterval:            defaultSyncInterval,
@@ -1248,17 +1242,14 @@ func load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// LoadForGitHubAppRepair loads path with GitHub App installation
-// coverage validation skipped. The middleman-github-app CLI uses it so
-// a config that is invalid only because the recorded installation no
-// longer covers the configured repos can still be loaded to repair
-// exactly that; every other validation rule still applies.
+// LoadForGitHubAppRepair loads path for GitHub App management commands while
+// retaining the ordinary structural validation rules.
 func LoadForGitHubAppRepair(path string) (*Config, error) {
 	cfg, err := load(path)
 	if err != nil {
 		return nil, err
 	}
-	return cfg, cfg.validate(true)
+	return cfg, cfg.validate()
 }
 
 func rejectDeprecatedConfigKeys(meta toml.MetaData) error {
@@ -1274,12 +1265,11 @@ func rejectDeprecatedConfigKeys(meta toml.MetaData) error {
 }
 
 func (c *Config) Validate() error {
-	return c.validate(false)
+	return c.validate()
 }
 
-// validate runs every config rule; skipAppCoverage relaxes only the
-// GitHub App installation coverage check for the CLI's repair path.
-func (c *Config) validate(skipAppCoverage bool) error {
+// validate runs every config rule.
+func (c *Config) validate() error {
 	var err error
 	if err := c.Fleet.Validate(); err != nil {
 		return err
@@ -1351,12 +1341,6 @@ func (c *Config) validate(skipAppCoverage bool) error {
 	}
 	if err := c.validateKataProjectRepoMappings(); err != nil {
 		return err
-	}
-
-	if !skipAppCoverage {
-		if err := c.validateGitHubAppCoverage(); err != nil {
-			return err
-		}
 	}
 
 	// Non-GitHub providers still resolve clone/API credentials by host, so
@@ -1805,9 +1789,8 @@ func (c *Config) validateGitHubApps() error {
 				"config: github_apps[%d]: private_key_path is required", i,
 			)
 		}
-		// An installation without its account would activate the app
-		// token source while silently skipping installation coverage
-		// validation, so miscovered repos would only fail at sync time.
+		// An installation without its account cannot be scoped to repository
+		// owners safely.
 		if app.InstallationID != 0 && app.InstallationAccount == "" {
 			return fmt.Errorf(
 				"config: github_apps[%d]: installation_account is required when "+
@@ -1860,73 +1843,6 @@ func (c *Config) validateGitHubApps() error {
 		}
 	}
 	return nil
-}
-
-// validateGitHubAppCoverage rejects github repos that would resolve
-// to an app installation token without being reachable by it.
-// Installation tokens are scoped to the installed account, not the
-// host. Only repos owned by that account use the app candidate; other
-// owners on the same host fall through to the PAT/gh credential chain.
-// Runs after repo normalization so owners are canonical.
-func (c *Config) validateGitHubAppCoverage() error {
-	for _, app := range c.GitHubApps {
-		if app.InstallationID == 0 || app.InstallationAccount == "" {
-			continue
-		}
-		for i, r := range c.Repos {
-			if r.PlatformOrDefault() != defaultPlatform ||
-				r.PlatformHostOrDefault() != app.Host {
-				continue
-			}
-			if r.TokenEnv != "" || r.TokenFile != "" {
-				continue
-			}
-			if !strings.EqualFold(r.Owner, app.InstallationAccount) {
-				continue
-			}
-			if err := validateSelectedRepoCoverage(i, r, app); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// validateSelectedRepoCoverage rejects a same-account repo that an
-// "Only select repositories" installation cannot reach. The reachable
-// set is recorded by middleman-github-app at install time; account
-// ownership alone is not enough because the installation token only
-// reaches the chosen repos and everything else 404s during sync.
-func validateSelectedRepoCoverage(i int, r Repo, app GitHubAppConfig) error {
-	if !strings.EqualFold(app.RepositorySelection, "selected") {
-		return nil
-	}
-	remedy := fmt.Sprintf(
-		"Add it to the installation's repository access on %s (or switch the "+
-			"installation to \"All repositories\") and re-run "+
-			"\"middleman-github-app install\" to refresh the recorded selection",
-		app.Host,
-	)
-	if r.HasNameGlob() {
-		return fmt.Errorf(
-			"config: repos[%d]: %s/%s is a glob pattern, but the github app for %s is "+
-				"installed with \"Only select repositories\": globs expand to an open-ended "+
-				"set only an \"All repositories\" install can satisfy. %s",
-			i, r.Owner, r.Name, app.Host, remedy,
-		)
-	}
-	full := strings.ToLower(r.Owner + "/" + r.Name)
-	for _, name := range app.SelectedRepos {
-		if strings.ToLower(name) == full {
-			return nil
-		}
-	}
-	return fmt.Errorf(
-		"config: repos[%d]: %s/%s is not in the \"Only select repositories\" "+
-			"installation recorded for the github app on %s, so its installation token "+
-			"would 404 during sync. %s",
-		i, r.Owner, r.Name, app.Host, remedy,
-	)
 }
 
 // GitHubAppsForHost returns the configured GitHub App installations for host.
@@ -2239,35 +2155,32 @@ func (c *Config) GitHubOwnerTokenFor(
 }
 
 // ResolveGitHubRepoTokenSource builds the credential route for one GitHub
-// repository. Repository overrides are exact routes; otherwise repositories
-// under one owner share the owner route.
+// repository. Repository overrides and selected-installation coverage are
+// exact routes; otherwise repositories under one owner share the owner route.
 func (c *Config) ResolveGitHubRepoTokenSource(r Repo) tokenauth.Descriptor {
 	if c == nil {
 		return tokenauth.Descriptor{}
 	}
 	host := r.PlatformHostOrDefault()
 	overridden := r.TokenFile != "" || r.TokenEnv != ""
+	app, appCoversRepo := c.gitHubAppForRepo(host, r.Owner, r.Name)
+	exact := overridden || (appCoversRepo &&
+		strings.EqualFold(app.RepositorySelection, "selected"))
 	desc := tokenauth.Descriptor{Key: tokenauth.Key{
 		Platform: defaultPlatform,
 		Host:     host,
-		Scope:    githubCredentialScope(r.Owner, r.Name, overridden),
+		Scope:    githubCredentialScope(r.Owner, r.Name, exact),
 	}}
 	appendTokenFileEnvCandidates(&desc, r.TokenFile, r.TokenEnv)
-	if !overridden {
-		for _, app := range c.GitHubAppsForHost(host) {
-			if app.AppID <= 0 || app.PrivateKeyPath == "" ||
-				!strings.EqualFold(app.InstallationAccount, r.Owner) {
-				continue
-			}
-			desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
-				Kind:                tokenauth.SourceKindGitHubApp,
-				Host:                host,
-				FilePath:            app.PrivateKeyPath,
-				AppID:               app.AppID,
-				InstallationID:      app.InstallationID,
-				InstallationAccount: app.InstallationAccount,
-			})
-		}
+	if !overridden && appCoversRepo {
+		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+			Kind:                tokenauth.SourceKindGitHubApp,
+			Host:                host,
+			FilePath:            app.PrivateKeyPath,
+			AppID:               app.AppID,
+			InstallationID:      app.InstallationID,
+			InstallationAccount: app.InstallationAccount,
+		})
 	}
 	if ownerToken, ok := c.GitHubOwnerTokenFor(host, r.Owner); ok {
 		appendTokenFileEnvCandidates(
@@ -2277,6 +2190,34 @@ func (c *Config) ResolveGitHubRepoTokenSource(r Repo) tokenauth.Descriptor {
 	c.appendPlatformTokenCandidates(&desc, defaultPlatform, host)
 	c.appendGitHubDefaultCandidates(&desc, host)
 	return desc
+}
+
+func (c *Config) gitHubAppForRepo(
+	host, owner, name string,
+) (GitHubAppConfig, bool) {
+	for _, app := range c.GitHubAppsForHost(host) {
+		if app.AppID <= 0 || app.InstallationID <= 0 ||
+			app.PrivateKeyPath == "" ||
+			!strings.EqualFold(app.InstallationAccount, owner) {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(app.RepositorySelection)) {
+		case "all":
+			return app, true
+		case "selected":
+			fullName := strings.ToLower(strings.TrimSpace(owner)) + "/" +
+				strings.ToLower(strings.TrimSpace(name))
+			if strings.TrimSpace(name) == "" {
+				continue
+			}
+			for _, selected := range app.SelectedRepos {
+				if strings.EqualFold(strings.TrimSpace(selected), fullName) {
+					return app, true
+				}
+			}
+		}
+	}
+	return GitHubAppConfig{}, false
 }
 
 func githubCredentialScope(owner, name string, exact bool) string {
@@ -2381,6 +2322,28 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 	}
 	for _, app := range c.GitHubApps {
 		if app.InstallationID <= 0 || strings.TrimSpace(app.InstallationAccount) == "" {
+			continue
+		}
+		if strings.EqualFold(app.RepositorySelection, "selected") {
+			for _, fullName := range app.SelectedRepos {
+				owner, name, ok := strings.Cut(strings.TrimSpace(fullName), "/")
+				if !ok || strings.TrimSpace(name) == "" ||
+					!strings.EqualFold(owner, app.InstallationAccount) {
+					continue
+				}
+				repo := Repo{
+					Platform: defaultPlatform, PlatformHost: app.Host,
+					Owner: owner, Name: name,
+				}
+				desc := c.ResolveGitHubRepoTokenSource(repo)
+				if _, ok := seen[desc.Key]; ok {
+					continue
+				}
+				seen[desc.Key] = struct{}{}
+				out = append(out, ProviderTokenSource{
+					Descriptor: desc, Required: true, GitHubOwner: owner,
+				})
+			}
 			continue
 		}
 		repo := Repo{

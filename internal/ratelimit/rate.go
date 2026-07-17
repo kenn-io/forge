@@ -160,7 +160,17 @@ func (rt *RateTracker) updateFromRate(
 ) {
 	rt.mu.Lock()
 	now := time.Now().UTC()
-	resetTime := rate.Reset.UTC()
+	// A zero reset means the provider response carried no reset time. Store it
+	// as nil (unknown), never as a non-nil zero timestamp: the tracker's
+	// nil-for-unknown contract is what makes ShouldBackoff fall back to its
+	// documented delay and keeps ArchiveSpendCeiling at zero. A non-nil year-one
+	// reset would instead look like an already-expired window and release
+	// archive surplus that no provider ever justified.
+	var resetPtr *time.Time
+	if !rate.Reset.IsZero() {
+		resetTime := rate.Reset.UTC()
+		resetPtr = &resetTime
+	}
 	// Detect provider window reset: remaining increases AND the
 	// previous resetAt has passed (proving the old window ended).
 	// Both conditions are required to avoid false resets from
@@ -176,7 +186,7 @@ func (rt *RateTracker) updateFromRate(
 	fn := rt.onWindowReset
 	rt.remaining = rate.Remaining
 	rt.limit = rate.Limit
-	rt.resetAt = &resetTime
+	rt.resetAt = resetPtr
 	rt.persist()
 	rt.mu.Unlock()
 

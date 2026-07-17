@@ -250,6 +250,27 @@ func DeriveReviewDecision(reviews []*gh.PullRequestReview) string {
 	return ""
 }
 
+// mapGraphQLReviewDecision converts GitHub's authoritative reviewDecision enum
+// into middleman's stored review decision. The second return reports whether
+// the provider supplied an authoritative decision: a non-empty enum. A null or
+// empty reviewDecision means the repository enforces no review decision, so
+// callers must derive the aggregate from the reviews themselves rather than
+// clearing an existing value.
+func mapGraphQLReviewDecision(raw string) (string, bool) {
+	switch raw {
+	case "APPROVED":
+		return "approved", true
+	case "CHANGES_REQUESTED":
+		return "changes_requested", true
+	case "REVIEW_REQUIRED":
+		// Reviews are required but no blocking change or sufficient approval
+		// exists yet, which middleman represents as no actionable decision.
+		return "", true
+	default:
+		return "", false
+	}
+}
+
 // NormalizeCheckRuns converts GitHub check runs to a JSON string of CICheck objects.
 func NormalizeCheckRuns(runs []*gh.CheckRun) string {
 	checks := normalizeCIChecks(runs, nil)

@@ -20,6 +20,31 @@ func newGitHubRateTracker(d *db.DB, host string, apiType string) *RateTracker {
 	return NewPlatformRateTracker(d, "github", host, apiType)
 }
 
+func TestRateTrackerMissingResetStaysUnknown(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	host := "gitlab.example.com"
+	rt := NewPlatformRateTracker(d, "gitlab", host, "rest")
+
+	// A provider response with an exhausted quota but no reset time must leave
+	// the reset unknown (nil), not a non-nil zero timestamp.
+	rt.UpdateFromRate(Rate{Limit: 600, Remaining: 0, Reset: time.Time{}})
+
+	require.Nil(rt.ResetAt())
+
+	// With reset unknown, an exhausted quota falls back to the documented 60s
+	// backoff instead of treating a year-one reset as an expired window.
+	backoff, wait := rt.ShouldBackoff()
+	assert.True(backoff)
+	assert.Equal(60*time.Second, wait)
+
+	// The unknown reset is persisted as SQL NULL, so a reopened tracker still
+	// reports nil rather than a fabricated timestamp.
+	reopened := NewPlatformRateTracker(d, "gitlab", host, "rest")
+	assert.Nil(reopened.ResetAt())
+}
+
 func TestRateTrackerCounting(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

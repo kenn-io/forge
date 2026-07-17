@@ -169,6 +169,116 @@ func (*archiveWorkerProvider) ListArchiveReviewThreads(context.Context, platform
 	return platform.ArchivePage[platform.MergeRequestReviewThread]{Exhausted: true}, nil
 }
 
+// preemptibleArchiveProvider blocks its first archive issue lookup until the
+// admitted request context is canceled, so a test can drive real live-work
+// preemption of an in-flight archive request. Subsequent lookups succeed.
+type preemptibleArchiveProvider struct {
+	*archiveWorkerProvider
+	readStarted chan struct{}
+	blockOnce   sync.Once
+}
+
+func (p *preemptibleArchiveProvider) GetArchiveIssue(
+	ctx context.Context, ref platform.RepoRef, number int,
+) (platform.ArchiveItemResult[platform.Issue], error) {
+	blocked := false
+	p.blockOnce.Do(func() { blocked = true })
+	if blocked {
+		close(p.readStarted)
+		<-ctx.Done()
+		return platform.ArchiveItemResult[platform.Issue]{}, ctx.Err()
+	}
+	return p.archiveWorkerProvider.GetArchiveIssue(ctx, ref, number)
+}
+
+func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}
+	provider := &preemptibleArchiveProvider{
+		archiveWorkerProvider: &archiveWorkerProvider{ref: ref},
+		readStarted:           make(chan struct{}),
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	now := time.Now().UTC()
+	key := RateBucketKey("github", ref.Host)
+	tracker := NewPlatformRateTracker(database, "github", ref.Host, "rest")
+	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
+	budget := NewSyncBudget(5000)
+	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{{
+		Platform: ref.Platform, PlatformHost: ref.Host,
+		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+	}}, time.Hour, map[string]*RateTracker{key: tracker}, map[string]*SyncBudget{key: budget})
+	syncer.now = func() time.Time { return now }
+
+	// Real Syncer admission (not nil): the admitted archive request gets a real
+	// cancellable provider lease that live work can preempt, unlike a fake
+	// already-canceled admission.
+	service, err := archive.NewService(database, registry, syncer, syncer, nil, nil)
+	require.NoError(err)
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+
+	require.NoError(service.RunEligible(t.Context())) // issue inventory
+	require.NoError(service.RunEligible(t.Context())) // merge-request inventory
+
+	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(repo)
+
+	// The hydration pass claims the seeded issue item and blocks in the lookup
+	// until live work begins.
+	hydrationDone := make(chan error, 1)
+	go func() { hydrationDone <- service.RunEligible(t.Context()) }()
+	select {
+	case <-provider.readStarted:
+	case <-time.After(2 * time.Second):
+		require.Fail("archive hydration lookup did not start")
+	}
+
+	// beginProviderWork cancels the in-flight archive lease and waits for it to
+	// release; the hydration pass observes preemption and records nothing.
+	releaseLive := syncer.beginProviderWork(key, archive.PriorityActiveDetail)
+	require.NoError(<-hydrationDone)
+
+	var status string
+	var attempts int
+	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+		SELECT comments_status, attempt_count FROM middleman_archive_items
+		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 1`, repo.ID,
+	).Scan(&status, &attempts))
+	assert.Equal("pending", status)
+	assert.Zero(attempts)
+
+	var lastErrorCode *string
+	var nextRetryAt *time.Time
+	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+		SELECT last_error_code, next_retry_at FROM middleman_archive_repos WHERE repo_id = ?`, repo.ID,
+	).Scan(&lastErrorCode, &nextRetryAt))
+	assert.Nil(lastErrorCode)
+	assert.Nil(nextRetryAt)
+
+	// Live work releases; the next archive pass claims the still-pending item
+	// and completes hydration.
+	releaseLive()
+	require.NoError(service.RunEligible(t.Context()))
+
+	var hydratedAt *time.Time
+	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+		SELECT comments_status, hydrated_at FROM middleman_archive_items
+		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 1`, repo.ID,
+	).Scan(&status, &hydratedAt))
+	assert.Equal("complete", status)
+	assert.NotNil(hydratedAt)
+}
+
 func (*archiveLifecycleRecorder) RunEligible(context.Context) error { return nil }
 
 func (r *archiveLifecycleRecorder) EnsureConfigured(_ context.Context, refs []platform.RepoRef) error {

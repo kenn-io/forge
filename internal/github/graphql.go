@@ -622,7 +622,13 @@ type BulkIssue struct {
 // fully paginated. When false, the data is partial and the detail
 // drain should fill in via REST.
 type BulkPR struct {
-	PR               *gh.PullRequest
+	PR *gh.PullRequest
+	// ReviewDecision is GitHub's authoritative aggregate review decision for
+	// the PR (raw GraphQL enum: APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED,
+	// or empty when the repository enforces no decision). It is computed by the
+	// provider over the PR's full review history, so it does not depend on the
+	// Reviews connection being complete.
+	ReviewDecision   string
 	Comments         []*gh.IssueComment
 	Reviews          []*gh.PullRequestReview
 	Commits          []*gh.RepositoryCommit
@@ -907,6 +913,7 @@ func cursorVar(cursor *string) *githubv4.String {
 func convertGQLPR(gql *gqlPR) BulkPR {
 	bulk := BulkPR{
 		PR:               adaptPR(gql),
+		ReviewDecision:   gql.ReviewDecision,
 		CommentsComplete: !gql.Comments.PageInfo.HasNextPage,
 		ReviewsComplete:  !gql.Reviews.PageInfo.HasNextPage,
 		CommitsComplete:  !gql.AllCommits.PageInfo.HasNextPage,

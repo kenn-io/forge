@@ -796,8 +796,14 @@ func (s *Syncer) Admit(
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
 	}
+	// Attach the admitted cost as a per-attempt allowance so the ceiling
+	// enforced here is also enforced atomically at every budget-counting
+	// transport: provider-SDK retries and authentication retries for this one
+	// admitted request cannot exceed the admitted cost and cross the live floor.
 	return archive.AdmissionResult{
-		Allowed: true, Context: WithArchiveSyncBudget(requestCtx), Release: release,
+		Allowed: true,
+		Context: WithArchiveAttemptAllowance(WithArchiveSyncBudget(requestCtx), cost),
+		Release: release,
 	}, nil
 }
 
@@ -5774,15 +5780,19 @@ func (s *Syncer) syncOpenMRFromBulk(
 			LastActivityAt: computeLastActivity(bulk.PR, bulk.Comments, nil, nil, nil),
 		}
 		if allComplete {
-			// A complete bulk response with zero reviews does not mean the
-			// MR has no review history: reviews are stable-identity
-			// additive history, and this fetch's Reviews connection can
-			// legitimately come back empty (e.g. a truncated retry window)
-			// while earlier review events remain persisted. Only derive a
-			// fresh decision when this fetch actually observed review
-			// states; otherwise keep the value already preserved from the
-			// existing row above rather than clearing it to empty.
-			if len(bulk.Reviews) > 0 {
+			// Prefer the provider's authoritative aggregate decision. It is
+			// computed over the PR's full review history, so it stays correct
+			// even when this fetch's Reviews connection is a partial slice of
+			// the additive history persisted from earlier pages. Deriving from
+			// bulk.Reviews alone would discard an earlier approval or
+			// change-request that this page happened to omit.
+			if decision, authoritative := mapGraphQLReviewDecision(bulk.ReviewDecision); authoritative {
+				fields.ReviewDecision = decision
+			} else if len(bulk.Reviews) > 0 {
+				// The repository enforces no review decision (null enum), so the
+				// complete Reviews connection is the source of truth for this
+				// fetch. Keep the existing preserved value when no reviews were
+				// observed rather than clearing it to empty.
 				fields.ReviewDecision = DeriveReviewDecision(bulk.Reviews)
 			}
 			fields.LastActivityAt = computeLastActivity(

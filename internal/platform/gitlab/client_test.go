@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -390,15 +391,14 @@ func TestClientDoesNotSynthesizeRateLimitResetWhenHeaderMissing(t *testing.T) {
 	})
 	require.NoError(err)
 
-	// A missing reset header must not be turned into a plausible-looking
-	// near-future reset: the archive budget ceiling treats any resetAt
-	// within the coming hour as a live provider signal to release
-	// surplus, and a fabricated "1 minute from now" would falsely
-	// trigger that release even though no provider ever reported it.
+	// A missing reset header must be recorded as unknown (nil), never as a
+	// non-nil zero timestamp. The rate tracker's nil-for-unknown contract is
+	// what keeps the archive budget ceiling at zero: any non-nil resetAt within
+	// the coming hour reads as a live provider signal to release surplus, and a
+	// fabricated or year-one reset would falsely trigger that release even
+	// though no provider ever reported it.
 	resetAt := rt.ResetAt()
-	require.NotNil(resetAt)
-	assert.True(resetAt.Before(time.Now().Add(-time.Hour)),
-		"unobserved reset must not look like a provider-observed near-future reset, got %s", resetAt)
+	require.Nil(resetAt)
 
 	budget := ghsync.NewSyncBudget(1000)
 	assert.False(budget.CanSpendArchive(1, time.Now(), resetAt, 100))
@@ -433,6 +433,43 @@ func TestClientSyncBudgetChargesOnlyMarkedRoundTrips(t *testing.T) {
 	assert.Equal(2, budget.Spent())
 	assert.Equal(1, budget.ArchiveSpent())
 	assert.Equal(3, requests)
+}
+
+func TestClientArchiveAttemptAllowanceCapsProviderRetries(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var mu sync.Mutex
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		requests++
+		mu.Unlock()
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	budget := ghsync.NewSyncBudget(100)
+	// Retries stay enabled here: the pinned GitLab SDK retries 5xx up to five
+	// times, so without a per-attempt ceiling one admitted archive request
+	// could make six wire attempts and overspend the protected live floor.
+	client, err := NewClient(
+		"gitlab.example.com", testTokenSource("token"),
+		WithBaseURLForTesting(server.URL+"/api/v4"), WithSyncBudget(budget),
+	)
+	require.NoError(err)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "group/project",
+	}
+	ctx := ghsync.WithArchiveAttemptAllowance(ghsync.WithArchiveSyncBudget(t.Context()), 2)
+
+	_, err = client.GetRepository(ctx, ref)
+	require.Error(err)
+	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(2, requests, "SDK retries must not exceed the admitted allowance")
+	assert.Equal(2, budget.ArchiveSpent())
 }
 
 func TestClientReadsTokenSourceForEachRequest(t *testing.T) {

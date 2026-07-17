@@ -16,6 +16,30 @@ import (
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
+func TestArchiveRetryClassifierTreatsAttemptBudgetRefusalAsTransient(t *testing.T) {
+	assert := assert.New(t)
+	now := archiveTestTime()
+	// A budget-transport refusal may reach the classifier bare or wrapped by a
+	// provider error mapper. GitLab maps unclassified transport errors to its
+	// default invalid_repo_ref code, which would otherwise classify as a
+	// repository-blocking contract error. The refusal must stay a transient
+	// budget deferral in every form.
+	wrapped := &platform.Error{
+		Code: platform.ErrCodeInvalidRepoRef, Err: platform.ErrArchiveAttemptBudget,
+	}
+	for name, cause := range map[string]error{
+		"bare":              platform.ErrArchiveAttemptBudget,
+		"provider-contract": wrapped,
+		"deeply-wrapped":    errors.Join(errors.New("list historical issues"), wrapped),
+	} {
+		t.Run(name, func(t *testing.T) {
+			decision := defaultArchiveRetryDecision(cause, 0, now)
+			assert.Equal(db.ArchiveErrorCodeTransient, decision.Code)
+			assert.NotNil(decision.RetryAt)
+		})
+	}
+}
+
 func TestArchiveServiceStartValidatesAllRepositoriesBeforePromotion(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

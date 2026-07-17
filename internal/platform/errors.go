@@ -42,6 +42,15 @@ var (
 	ErrConflict              = &Error{Code: ErrCodeConflict}
 )
 
+// ErrArchiveAttemptBudget is returned by budget-counting transports when an
+// archive request exhausts its admitted per-attempt allowance. It bounds the
+// total wire attempts for one admitted request — including provider-SDK and
+// authentication retries — to the admitted archive cost, so a single admitted
+// request can never overspend the protected live floor. Archive work treats it
+// as a transient budget deferral and must never let it surface as a
+// repository-blocking contract error.
+var ErrArchiveAttemptBudget = errors.New("archive per-attempt allowance exhausted")
+
 type Error struct {
 	Code         PlatformErrorCode
 	Provider     Kind

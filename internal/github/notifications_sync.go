@@ -234,7 +234,7 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 	}
 	for _, repo := range trackedRepos {
 		for page := 1; ; page++ {
-			if err := s.ensureNotificationPageBudget(host, client); err != nil {
+			if err := s.ensureNotificationPageBudget(repo, client); err != nil {
 				return err
 			}
 			threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{
@@ -310,7 +310,7 @@ func (s *Syncer) listParticipatingNotificationIDs(
 	participating := map[string]bool{}
 	for _, repo := range trackedRepos {
 		for page := 1; ; page++ {
-			if err := s.ensureNotificationPageBudget(host, client); err != nil {
+			if err := s.ensureNotificationPageBudget(repo, client); err != nil {
 				return nil, err
 			}
 			threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{
@@ -337,14 +337,36 @@ func (s *Syncer) listParticipatingNotificationIDs(
 	return participating, nil
 }
 
-func (s *Syncer) ensureNotificationPageBudget(host string, client notificationClient) error {
-	if budget := s.budgets[host]; budget != nil && !budget.CanSpend(1) {
+func (s *Syncer) ensureNotificationPageBudget(repo RepoRef, client notificationClient) error {
+	host := repoHost(repo)
+	writeIdentity := repoPlatform(repo) == platform.KindGitHub
+	if writeIdentity && s.routers[host] != nil {
+		if _, ok := s.WriteIdentityForRepo(repo); !ok {
+			return fmt.Errorf(
+				"notification sync paused for %s: no startup-resolved write identity",
+				host,
+			)
+		}
+	}
+	bucket, err := s.bucketKeyForRepo(repo, writeIdentity)
+	if err != nil {
+		return err
+	}
+	if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(1) {
 		return fmt.Errorf("notification sync paused for %s: sync budget exhausted", host)
 	}
-	if notificationBypassesReadRateReserve(client) {
+	bypassReserve := notificationBypassesReadRateReserve(client)
+	if s.routers[host] != nil {
+		bypassReserve = false
+	}
+	if bypassReserve {
 		return nil
 	}
-	if rateTracker := s.rateTrackers[host]; rateTracker != nil && rateTracker.IsPaused() {
+	trackers := s.rateTrackers
+	if writeIdentity && s.writeRateTrackers[bucket] != nil {
+		trackers = s.writeRateTrackers
+	}
+	if rateTracker := trackers[bucket]; rateTracker != nil && rateTracker.IsPaused() {
 		return fmt.Errorf("notification sync paused for %s: rate reserve exhausted", host)
 	}
 	return nil

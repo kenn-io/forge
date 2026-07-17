@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	gh "github.com/google/go-github/v88/github"
@@ -19,11 +20,12 @@ type RouteKey struct {
 // Route holds the independent authorization client and GraphQL fetcher for a
 // configured credential route, plus the identities whose capacity they use.
 type Route struct {
-	Key           RouteKey
-	Client        Client
-	Fetcher       *GraphQLFetcher
-	ReadIdentity  IdentityKey
-	WriteIdentity IdentityKey
+	Key                 RouteKey
+	Client              Client
+	WriteSnapshotClient Client
+	Fetcher             *GraphQLFetcher
+	ReadIdentity        IdentityKey
+	WriteIdentity       IdentityKey
 }
 
 // MissingRouteError reports that no configured route can serve an owner. It
@@ -162,6 +164,35 @@ func (r *HostRouter) WriteIdentityForRepo(owner, name string) (IdentityKey, erro
 		return IdentityKey{}, err
 	}
 	return route.WriteIdentity, nil
+}
+
+// Routes returns each configured route once. The returned slice is detached
+// from the router maps; route objects themselves are daemon-lifetime values.
+func (r *HostRouter) Routes() []*Route {
+	if r == nil {
+		return nil
+	}
+	out := make([]*Route, 0, 1+len(r.owners)+len(r.repos))
+	if r.fallback != nil {
+		out = append(out, r.fallback)
+	}
+	ownerKeys := make([]string, 0, len(r.owners))
+	for key := range r.owners {
+		ownerKeys = append(ownerKeys, key)
+	}
+	sort.Strings(ownerKeys)
+	for _, key := range ownerKeys {
+		out = append(out, r.owners[key])
+	}
+	repoKeys := make([]string, 0, len(r.repos))
+	for key := range r.repos {
+		repoKeys = append(repoKeys, key)
+	}
+	sort.Strings(repoKeys)
+	for _, key := range repoKeys {
+		out = append(out, r.repos[key])
+	}
+	return out
 }
 
 // RoutedClient preserves the host-level Client contract while selecting a

@@ -318,6 +318,26 @@ func TestNotificationAPIsUseUserAuthAndBackgroundBudget(t *testing.T) {
 // TestMutationAuthFallsBackToReadClientWhenUnsplit pins the hand-built
 // client shape used across this package's tests: without a dedicated
 // write client, mutations flow through the read client unchanged.
+func TestNewClientRejectsMutationsWithoutStartupWriteIdentity(t *testing.T) {
+	require := require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+	client, err := NewClient(
+		testTokenSource("late-pat"), "github.example.com", nil, nil,
+		WithBaseURLForTesting(server.URL), WithMutationsDisabled(),
+	)
+	require.NoError(err)
+
+	_, err = client.CreateIssueComment(t.Context(), "acme", "widget", 1, "body")
+	require.ErrorIs(err, ErrMissingWriteIdentity)
+	_, _, err = client.ListNotifications(t.Context(), NotificationListOptions{
+		RepoOwner: "acme", RepoName: "widget",
+	})
+	require.ErrorIs(err, ErrMissingWriteIdentity)
+}
+
 func TestMutationAuthFallsBackToReadClientWhenUnsplit(t *testing.T) {
 	var gotAuth string
 	mux := http.NewServeMux()

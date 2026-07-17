@@ -3026,8 +3026,10 @@ type RateLimitHostStatus struct {
 	HourStart          string `json:"hour_start"`
 	Known              bool   `json:"known"`
 	PlatformHost       string `json:"platform_host"`
+	PrincipalLabel     string `json:"principal_label"`
 	Provider           string `json:"provider"`
 	RateLimit          int64  `json:"rate_limit"`
+	RatePrincipal      string `json:"rate_principal"`
 	RateRemaining      int64  `json:"rate_remaining"`
 	RateResetAt        string `json:"rate_reset_at"`
 	RequestsHour       int64  `json:"requests_hour"`

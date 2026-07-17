@@ -25,13 +25,25 @@ import {
 import { jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
 
 function rateLimits(hosts: Record<string, unknown>): MockRouteOverride {
+  const normalizedHosts = Object.fromEntries(
+    Object.entries(hosts).map(([key, value]) => [
+      key,
+      key.includes("\\u0000") || key.includes("\u0000")
+        ? value
+        : { ...(value as Record<string, unknown>), platform_host: key },
+    ]),
+  );
   return (req) => {
     if (req.method !== "GET" || req.url.pathname !== "/api/v1/rate-limits") return null;
-    return jsonResponse({ hosts });
+    return jsonResponse({ hosts: normalizedHosts });
   };
 }
 
 const knownHost = {
+  provider: "github",
+  platform_host: "github.com",
+  rate_principal: "host",
+  principal_label: "Host credential",
   requests_hour: 100,
   rate_remaining: 4500,
   rate_limit: 5000,
@@ -51,6 +63,10 @@ const knownHost = {
 };
 
 const unknownHost = {
+  provider: "github",
+  platform_host: "github.com",
+  rate_principal: "host",
+  principal_label: "Host credential",
   requests_hour: 0,
   rate_remaining: -1,
   rate_limit: -1,
@@ -70,6 +86,10 @@ const unknownHost = {
 };
 
 const pausedHost = {
+  provider: "github",
+  platform_host: "github.com",
+  rate_principal: "host",
+  principal_label: "Host credential",
   requests_hour: 500,
   rate_remaining: 50,
   rate_limit: 5000,
@@ -242,6 +262,29 @@ describe("budget display", () => {
 
     pressKey("Escape", {}, document);
     await vi.waitFor(() => expect(document.querySelector(".budget-popover")).toBeNull(), WAIT);
+  });
+
+  it("identity-scoped entries render safe host and principal labels", async () => {
+    const bars = await mountStatusBar([
+      rateLimits({
+        "github\\u0000github.com\\u0000user:123": {
+          ...knownHost,
+          rate_principal: "user:123",
+          principal_label: "GitHub user maintainer",
+        },
+        "github\\u0000github.com\\u0000installation:789": {
+          ...unknownHost,
+          rate_principal: "installation:789",
+          principal_label: "GitHub App installation 789",
+        },
+      }),
+    ]);
+
+    const popover = await openPopover(bars);
+    expect(popover.textContent).toContain("github.com");
+    expect(popover.textContent).toContain("GitHub user maintainer");
+    expect(popover.textContent).toContain("GitHub App installation 789");
+    expect(popover.textContent).not.toContain("github\\u0000github.com");
   });
 
   it("mixed known/unknown hosts show worst-case from known only", async () => {

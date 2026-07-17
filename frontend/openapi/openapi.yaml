@@ -5404,11 +5404,15 @@ components:
           type: boolean
         platform_host:
           type: string
+        principal_label:
+          type: string
         provider:
           type: string
         rate_limit:
           format: int64
           type: integer
+        rate_principal:
+          type: string
         rate_remaining:
           format: int64
           type: integer
@@ -5428,6 +5432,8 @@ components:
       required:
         - provider
         - platform_host
+        - rate_principal
+        - principal_label
         - requests_hour
         - rate_remaining
         - rate_limit

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -473,6 +474,7 @@ type Syncer struct {
 	budgets                  map[string]*SyncBudget     // provider/host bucket -> budget
 	fetchers                 map[string]*GraphQLFetcher // host -> fallback GraphQL fetcher
 	routers                  map[string]*HostRouter     // GitHub host -> credential router
+	ratePrincipalLabels      map[string]string
 	rateLimitSnapshotMu      sync.Mutex
 	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
@@ -2779,16 +2781,105 @@ func repoHost(repo RepoRef) string {
 	return platform.DefaultGitHubHost
 }
 
-func rateBucketKeyFor(kind platform.Kind, host string) string {
-	return RateBucketKey(string(kind), host, "host")
+func (s *Syncer) identityForRepo(repo RepoRef, write bool) (IdentityKey, error) {
+	if repoPlatform(repo) != platform.KindGitHub {
+		return IdentityKey{Host: repoHost(repo), Principal: "host"}, nil
+	}
+	host := repoHost(repo)
+	router := s.routers[host]
+	if router == nil {
+		return IdentityKey{Host: host, Principal: "host"}, nil
+	}
+	if write {
+		return router.WriteIdentityForRepo(repo.Owner, repo.Name)
+	}
+	return router.ReadIdentityForRepo(repo.Owner, repo.Name)
 }
 
-func repoRateBucketKey(repo RepoRef) string {
-	return rateBucketKeyFor(repoPlatform(repo), repoHost(repo))
+func (s *Syncer) bucketKeyForRepo(repo RepoRef, write bool) (string, error) {
+	identity, err := s.identityForRepo(repo, write)
+	if err != nil {
+		return "", err
+	}
+	return RateBucketKey(
+		string(repoPlatform(repo)), identity.Host, identity.Principal,
+	), nil
 }
 
-func watchedMRRateBucketKey(mr WatchedMR) string {
-	return rateBucketKeyFor(watchedMRPlatform(mr), watchedMRHost(mr))
+// RateTrackerForRepo returns the identity-scoped read tracker for apiType.
+func (s *Syncer) RateTrackerForRepo(repo RepoRef, apiType string) (*RateTracker, bool) {
+	bucket, err := s.bucketKeyForRepo(repo, false)
+	if err != nil {
+		return nil, false
+	}
+	if apiType == "graphql" {
+		if fetcher := s.fetcherFor(repo); fetcher != nil && fetcher.RateTracker() != nil {
+			return fetcher.RateTracker(), true
+		}
+		if rt := s.GQLRateTrackers()[bucket]; rt != nil {
+			return rt, true
+		}
+	}
+	rt, ok := s.rateTrackers[bucket]
+	return rt, ok && rt != nil
+}
+
+// ReadIdentityForRepo returns the restart-bound read identity selected for
+// repo when a GitHub route router is configured.
+func (s *Syncer) ReadIdentityForRepo(repo RepoRef) (IdentityKey, bool) {
+	if repoPlatform(repo) != platform.KindGitHub {
+		return IdentityKey{}, false
+	}
+	router := s.routers[repoHost(repo)]
+	if router == nil {
+		return IdentityKey{}, false
+	}
+	identity, err := router.ReadIdentityForRepo(repo.Owner, repo.Name)
+	return identity, err == nil && identity.Principal != ""
+}
+
+// WriteIdentityForRepo returns the restart-bound mutation identity selected
+// for repo. App-only routes have no write identity and remain mutation-disabled
+// until restart establishes one.
+func (s *Syncer) WriteIdentityForRepo(repo RepoRef) (IdentityKey, bool) {
+	identity, err := s.identityForRepo(repo, true)
+	return identity, err == nil && identity.Principal != ""
+}
+
+// WriteRateTrackerForRepo returns the tracker for the credential that
+// authenticates repository mutations.
+func (s *Syncer) WriteRateTrackerForRepo(repo RepoRef, apiType string) (*RateTracker, bool) {
+	identity, ok := s.WriteIdentityForRepo(repo)
+	if !ok {
+		return nil, false
+	}
+	bucket := RateBucketKey(string(repoPlatform(repo)), identity.Host, identity.Principal)
+	trackers := s.writeRateTrackers
+	if apiType == "graphql" {
+		trackers = s.writeGQLRateTrackers
+	}
+	if rt := trackers[bucket]; rt != nil {
+		return rt, true
+	}
+	return s.RateTrackerForRepo(repo, apiType)
+}
+
+// BudgetForRepo returns the background sync budget owned by the repository's
+// effective read identity.
+func (s *Syncer) BudgetForRepo(repo RepoRef) (*SyncBudget, bool) {
+	bucket, err := s.bucketKeyForRepo(repo, false)
+	if err != nil {
+		return nil, false
+	}
+	budget, ok := s.budgets[bucket]
+	return budget, ok && budget != nil
+}
+
+func (s *Syncer) readBucketKeyForWatchedMR(mr WatchedMR) (string, error) {
+	return s.bucketKeyForRepo(RepoRef{
+		Owner: mr.Owner, Name: mr.Name,
+		Platform: mr.Platform, PlatformHost: mr.PlatformHost,
+	}, false)
 }
 
 func platformRepoRef(repo RepoRef) platform.RepoRef {
@@ -3400,7 +3491,11 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	watchInt, _ := s.watchSettings()
 	watchBuckets := make([]string, len(mrs))
 	for i, mr := range mrs {
-		watchBuckets[i] = watchedMRRateBucketKey(mr)
+		bucket, err := s.readBucketKeyForWatchedMR(mr)
+		if err != nil {
+			continue
+		}
+		watchBuckets[i] = bucket
 	}
 	eligibleBuckets := s.hostEligibility(
 		watchBuckets, s.nextWatchSyncAfter,
@@ -3409,7 +3504,10 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	// Check backoff once per provider/host bucket to avoid redundant checks.
 	blockedBuckets := make(map[string]bool)
 	for _, mr := range mrs {
-		bucket := watchedMRRateBucketKey(mr)
+		bucket, err := s.readBucketKeyForWatchedMR(mr)
+		if err != nil {
+			continue
+		}
 		if _, checked := blockedBuckets[bucket]; checked {
 			continue
 		}
@@ -3425,7 +3523,16 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	syncedAny := false
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
-		bucket := watchedMRRateBucketKey(mr)
+		bucket, bucketErr := s.readBucketKeyForWatchedMR(mr)
+		if bucketErr != nil {
+			slog.Warn("resolve fast-sync credential route",
+				"host", host,
+				"owner", mr.Owner,
+				"name", mr.Name,
+				"err", bucketErr,
+			)
+			continue
+		}
 		repo := RepoRef{
 			Platform:     watchedMRPlatform(mr),
 			PlatformHost: host,
@@ -3695,6 +3802,16 @@ func (s *Syncer) Status() *SyncStatus {
 	return s.status.Load().(*SyncStatus)
 }
 
+// SetRatePrincipalLabels registers safe display labels keyed by rate bucket.
+func (s *Syncer) SetRatePrincipalLabels(labels map[string]string) {
+	s.ratePrincipalLabels = labels
+}
+
+// RatePrincipalLabels returns safe display labels keyed by rate bucket.
+func (s *Syncer) RatePrincipalLabels() map[string]string {
+	return s.ratePrincipalLabels
+}
+
 // RateTrackers returns the per-host rate trackers map.
 func (s *Syncer) RateTrackers() map[string]*RateTracker {
 	return s.rateTrackers
@@ -3744,12 +3861,20 @@ func (s *Syncer) Budgets() map[string]*SyncBudget {
 // nil fetchers or trackers are skipped.
 func (s *Syncer) GQLRateTrackers() map[string]*RateTracker {
 	result := make(map[string]*RateTracker, len(s.fetchers))
-	for _, f := range s.fetchers {
+	add := func(f *GraphQLFetcher) {
 		if f == nil {
-			continue
+			return
 		}
 		if rt := f.RateTracker(); rt != nil {
 			result[rt.BucketKey()] = rt
+		}
+	}
+	for _, f := range s.fetchers {
+		add(f)
+	}
+	for _, router := range s.routers {
+		for _, route := range router.Routes() {
+			add(route.Fetcher)
 		}
 	}
 	return result
@@ -3772,8 +3897,61 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 	if s == nil || s.clients == nil {
 		return refreshed
 	}
+	type snapshotCandidate struct {
+		client  Client
+		tracker *RateTracker
+		fetcher *GraphQLFetcher
+	}
+	candidates := make(map[string][]snapshotCandidate)
+	for _, router := range s.routers {
+		for _, route := range router.Routes() {
+			readBucket := RateBucketKey(
+				string(platform.KindGitHub), route.ReadIdentity.Host,
+				route.ReadIdentity.Principal,
+			)
+			candidates[readBucket] = append(candidates[readBucket], snapshotCandidate{
+				client: route.Client, tracker: s.rateTrackers[readBucket],
+				fetcher: route.Fetcher,
+			})
+			if route.WriteIdentity.Principal != "" && route.WriteIdentity != route.ReadIdentity {
+				writeBucket := RateBucketKey(
+					string(platform.KindGitHub), route.WriteIdentity.Host,
+					route.WriteIdentity.Principal,
+				)
+				writeGQL := s.writeGQLRateTrackers[writeBucket]
+				var writeFetcher *GraphQLFetcher
+				if writeGQL != nil {
+					writeFetcher = &GraphQLFetcher{rateTracker: writeGQL}
+				}
+				candidates[writeBucket] = append(candidates[writeBucket], snapshotCandidate{
+					client:  route.WriteSnapshotClient,
+					tracker: s.writeRateTrackers[writeBucket],
+					fetcher: writeFetcher,
+				})
+			}
+		}
+	}
+	for _, bucket := range slices.Sorted(maps.Keys(candidates)) {
+		if !s.canRefreshRateLimitSnapshot(bucket, time.Now().UTC()) {
+			continue
+		}
+		for _, candidate := range candidates[bucket] {
+			if candidate.tracker == nil {
+				continue
+			}
+			snapshotRoute := &Route{Client: candidate.client, Fetcher: candidate.fetcher}
+			if s.refreshRateLimitSnapshotForRoute(ctx, snapshotRoute, candidate.tracker) {
+				s.markRateLimitSnapshotRefreshed(bucket, time.Now().UTC())
+				refreshed[bucket] = struct{}{}
+				break
+			}
+		}
+	}
 	for _, rt := range s.rateTrackers {
 		if rt == nil || rt.Provider() != string(platform.KindGitHub) || rt.APIType() != "rest" {
+			continue
+		}
+		if rt.Principal() != "host" {
 			continue
 		}
 		key := rt.BucketKey()
@@ -3781,61 +3959,74 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 			continue
 		}
 		client, err := s.clientFor(RepoRef{
-			Platform:     platform.KindGitHub,
-			PlatformHost: rt.PlatformHost(),
+			Platform: platform.KindGitHub, PlatformHost: rt.PlatformHost(),
 		})
 		if err != nil {
 			continue
 		}
-		snapshotter, ok := client.(rateLimitSnapshotter)
-		if !ok {
-			continue
+		route := &Route{
+			Client:  client,
+			Fetcher: s.fetchers[canonicalRepoHost(rt.PlatformHost())],
 		}
-		snapshot, err := snapshotter.GetRateLimitSnapshot(ctx)
-		if err != nil {
-			slog.Warn("refresh GitHub rate limit snapshot failed",
-				"host", rt.PlatformHost(), "err", err)
-			continue
-		}
-		if snapshot == nil {
-			continue
-		}
-		if snapshot.Core != nil {
-			rt.UpdateFromSnapshot(*snapshot.Core)
+		if s.refreshRateLimitSnapshotForRoute(ctx, route, rt) {
 			refreshed[key] = struct{}{}
-		}
-		if snapshot.GraphQL != nil {
-			if gqlRT := s.graphQLRateTrackerForHost(rt.PlatformHost()); gqlRT != nil {
-				gqlRT.UpdateFromSnapshot(*snapshot.GraphQL)
-			}
 		}
 	}
 	return refreshed
 }
 
-func (s *Syncer) claimRateLimitSnapshotRefresh(key string, now time.Time) bool {
+func (s *Syncer) refreshRateLimitSnapshotForRoute(
+	ctx context.Context, route *Route, rt *RateTracker,
+) bool {
+	if route == nil || route.Client == nil {
+		return false
+	}
+	snapshotter, ok := route.Client.(rateLimitSnapshotter)
+	if !ok {
+		return false
+	}
+	snapshot, err := snapshotter.GetRateLimitSnapshot(ctx)
+	if err != nil {
+		slog.Warn("refresh GitHub rate limit snapshot failed",
+			"host", rt.PlatformHost(), "principal", rt.Principal(), "err", err)
+		return false
+	}
+	if snapshot == nil {
+		return false
+	}
+	updated := false
+	if snapshot.Core != nil {
+		rt.UpdateFromSnapshot(*snapshot.Core)
+		updated = true
+	}
+	if snapshot.GraphQL != nil && route.Fetcher != nil && route.Fetcher.RateTracker() != nil {
+		route.Fetcher.RateTracker().UpdateFromSnapshot(*snapshot.GraphQL)
+	}
+	return updated
+}
+
+func (s *Syncer) canRefreshRateLimitSnapshot(key string, now time.Time) bool {
 	s.rateLimitSnapshotMu.Lock()
 	defer s.rateLimitSnapshotMu.Unlock()
+	last := s.rateLimitSnapshotRefresh[key]
+	return last.IsZero() || now.Sub(last) >= rateLimitSnapshotRefreshInterval
+}
+
+func (s *Syncer) markRateLimitSnapshotRefreshed(key string, now time.Time) {
+	s.rateLimitSnapshotMu.Lock()
 	if s.rateLimitSnapshotRefresh == nil {
 		s.rateLimitSnapshotRefresh = make(map[string]time.Time)
 	}
-	last := s.rateLimitSnapshotRefresh[key]
-	if !last.IsZero() && now.Sub(last) < rateLimitSnapshotRefreshInterval {
-		return false
-	}
 	s.rateLimitSnapshotRefresh[key] = now
-	return true
+	s.rateLimitSnapshotMu.Unlock()
 }
 
-func (s *Syncer) graphQLRateTrackerForHost(platformHost string) *RateTracker {
-	if s.fetchers == nil {
-		return nil
+func (s *Syncer) claimRateLimitSnapshotRefresh(key string, now time.Time) bool {
+	if !s.canRefreshRateLimitSnapshot(key, now) {
+		return false
 	}
-	fetcher := s.fetchers[canonicalRepoHost(platformHost)]
-	if fetcher == nil {
-		return nil
-	}
-	return fetcher.RateTracker()
+	s.markRateLimitSnapshotRefreshed(key, now)
+	return true
 }
 
 func (s *Syncer) clearRecoveredRateLimitGates(
@@ -3919,7 +4110,15 @@ func (s *Syncer) runWorker(
 			state.canceled.Store(true)
 			return
 		}
-		if rt := s.rateTrackers[repoRateBucketKey(repo)]; rt != nil {
+		bucket, bucketErr := s.bucketKeyForRepo(repo, false)
+		if bucketErr != nil {
+			state.errMu.Lock()
+			*state.lastErr = bucketErr.Error()
+			state.errMu.Unlock()
+			state.results[item.index].Error = bucketErr.Error()
+			continue
+		}
+		if rt := s.rateTrackers[bucket]; rt != nil {
 			if backoff, wait := rt.ShouldBackoff(); backoff {
 				s.publishStatus(&SyncStatus{
 					Running: true,
@@ -4098,7 +4297,10 @@ func (s *Syncer) runOnce(
 
 	repoBuckets := make([]string, len(repos))
 	for i, r := range repos {
-		repoBuckets[i] = repoRateBucketKey(r)
+		bucket, err := s.bucketKeyForRepo(r, false)
+		if err == nil {
+			repoBuckets[i] = bucket
+		}
 	}
 	nextAfter := s.nextSyncAfter
 	if bypassNextSyncAfter {
@@ -4136,7 +4338,13 @@ func (s *Syncer) runOnce(
 
 dispatch:
 	for i, r := range repos {
-		bucket := repoRateBucketKey(r)
+		bucket, err := s.bucketKeyForRepo(r, false)
+		if err != nil {
+			results[i].Error = err.Error()
+			done := completed.Add(1)
+			s.publishMonotonicProgress(state, done)
+			continue
+		}
 		if !eligibleBuckets[bucket] {
 			results[i].Error = "skipped: rate limit throttled"
 			done := completed.Add(1)
@@ -5875,8 +6083,8 @@ func (s *Syncer) drainPendingCommentSyncs(
 		if ctx.Err() != nil {
 			return
 		}
-		bucket := repoRateBucketKey(item.repo)
-		if !eligibleHosts[bucket] {
+		bucket, err := s.bucketKeyForRepo(item.repo, false)
+		if err != nil || !eligibleHosts[bucket] {
 			continue
 		}
 		client, err := s.clientFor(item.repo)
@@ -5928,8 +6136,8 @@ func (s *Syncer) drainPendingCommentSyncs(
 		if ctx.Err() != nil {
 			return
 		}
-		bucket := repoRateBucketKey(item.repo)
-		if !eligibleHosts[bucket] {
+		bucket, err := s.bucketKeyForRepo(item.repo, false)
+		if err != nil || !eligibleHosts[bucket] {
 			continue
 		}
 		client, err := s.clientFor(item.repo)
@@ -8368,13 +8576,13 @@ func (s *Syncer) refreshRepoIssueComments(
 }
 
 func (s *Syncer) canSpendCommentRefresh(repo RepoRef) bool {
-	budget := s.budgets[repoRateBucketKey(repo)]
-	return budget == nil || budget.CanSpend(1)
+	budget, ok := s.BudgetForRepo(repo)
+	return !ok || budget.CanSpend(1)
 }
 
 func (s *Syncer) canSpendWorkflowApprovalRefresh(repo RepoRef) bool {
-	budget := s.budgets[repoRateBucketKey(repo)]
-	return budget == nil || budget.CanSpend(1)
+	budget, ok := s.BudgetForRepo(repo)
+	return !ok || budget.CanSpend(1)
 }
 
 func (s *Syncer) persistPRComments(
@@ -8525,21 +8733,19 @@ func (s *Syncer) drainDetailQueue(
 			return
 		}
 		qi := &queue[i]
-		host := qi.PlatformHost
-		if host == "" {
-			host = "github.com"
+		repo := RepoRef{
+			Owner: qi.RepoOwner, Name: qi.RepoName,
+			Platform: qi.Platform, PlatformHost: qi.PlatformHost,
 		}
-		bucket := rateBucketKeyFor(qi.Platform, host)
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil {
+			continue
+		}
 
 		if !eligibleBuckets[bucket] {
 			continue
 		}
-		repo := RepoRef{
-			Platform:     qi.Platform,
-			Owner:        qi.RepoOwner,
-			Name:         qi.RepoName,
-			PlatformHost: qi.PlatformHost,
-		}
+		host := repoHost(repo)
 		if tracked, ok := s.trackedRepoByIdentity(qi.Platform, qi.RepoOwner, qi.RepoName, host); ok {
 			repo = tracked
 			repo.Owner = qi.RepoOwner

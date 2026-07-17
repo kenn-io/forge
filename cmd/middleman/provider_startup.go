@@ -48,6 +48,14 @@ type githubIdentityRuntime struct {
 	graphql  *github.RateTracker
 }
 
+type mutationTokenSource struct {
+	tokenauth.Source
+}
+
+func (s mutationTokenSource) Token(ctx context.Context) (string, error) {
+	return s.Source.Token(tokenauth.WithMutationAuth(ctx))
+}
+
 type githubCredentialRoute struct {
 	key           tokenauth.Key
 	source        tokenauth.Source
@@ -70,6 +78,7 @@ type providerStartup struct {
 	githubIdentities     map[string]*githubIdentityRuntime
 	githubRouters        map[string]*github.HostRouter
 	githubClients        map[string]github.Client
+	ratePrincipalLabels  map[string]string
 }
 
 func defaultProviderFactories() map[string]providerFactory {
@@ -195,6 +204,7 @@ func buildProviderStartup(
 		githubIdentities:     make(map[string]*githubIdentityRuntime),
 		githubRouters:        make(map[string]*github.HostRouter),
 		githubClients:        make(map[string]github.Client),
+		ratePrincipalLabels:  make(map[string]string),
 	}
 	if resolver != nil {
 		if err := buildGitHubIdentityRuntimes(
@@ -212,14 +222,17 @@ func buildProviderStartup(
 	for key, tokenSource := range providerSources {
 		platformName, host := splitProviderHostKey(key)
 		rateKey := github.RateBucketKey(platformName, host, "host")
-		if _, ok := startup.rateTrackers[rateKey]; !ok {
-			startup.rateTrackers[rateKey] = github.NewPlatformRateTracker(
-				database, platformName, host, "host", "rest",
-			)
-		}
-		if budgetPerHour > 0 {
-			if _, ok := startup.budgets[rateKey]; !ok {
-				startup.budgets[rateKey] = github.NewSyncBudget(budgetPerHour)
+		routedGitHub := platformName == string(platform.KindGitHub) && startup.githubClients[host] != nil
+		if !routedGitHub {
+			if _, ok := startup.rateTrackers[rateKey]; !ok {
+				startup.rateTrackers[rateKey] = github.NewPlatformRateTracker(
+					database, platformName, host, "host", "rest",
+				)
+			}
+			if budgetPerHour > 0 {
+				if _, ok := startup.budgets[rateKey]; !ok {
+					startup.budgets[rateKey] = github.NewSyncBudget(budgetPerHour)
+				}
 			}
 		}
 		factory, ok := factories[platformName]
@@ -278,6 +291,9 @@ func buildProviderStartup(
 	}
 	startup.registry = registry
 	for host := range githubHosts {
+		if startup.githubRouters[host] != nil {
+			continue
+		}
 		rateKey := github.RateBucketKey(string(platform.KindGitHub), host, "host")
 		gqlRT := github.NewPlatformRateTracker(database, string(platform.KindGitHub), host, "host", "graphql")
 		if setter, ok := clients[host].(graphQLRateTrackerSetter); ok {
@@ -337,20 +353,24 @@ func buildGitHubIdentityRuntimes(
 	for _, plan := range plans {
 		desc := plan.Descriptor
 		source := set.Upsert(desc)
+		app, hasApp := activeGitHubAppCandidate(desc, plan.GitHubOwner)
 		writeIdentity, err := resolveGitHubPATIdentity(
 			ctx, resolver, desc.Key.Host, source, resolvedPATs,
 		)
 		if err != nil {
-			if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
+			if errors.Is(err, tokenauth.ErrMissingToken) && hasApp {
+				writeIdentity = github.GitHubIdentity{}
+			} else if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
 				continue
+			} else {
+				return fmt.Errorf(
+					"resolve GitHub identity for %s via %s: %w",
+					desc.Key.Scope, desc.SafeString(), err,
+				)
 			}
-			return fmt.Errorf(
-				"resolve GitHub identity for %s via %s: %w",
-				desc.Key.Scope, desc.SafeString(), err,
-			)
 		}
 		readIdentity := writeIdentity
-		if app, ok := activeGitHubAppCandidate(desc, plan.GitHubOwner); ok {
+		if hasApp {
 			if app.InstallationID <= 0 {
 				return fmt.Errorf(
 					"resolve GitHub identity for %s via %s: invalid installation id %d",
@@ -364,9 +384,11 @@ func buildGitHubIdentityRuntimes(
 		ensureGitHubIdentityRuntime(
 			database, budgetPerHour, readIdentity, startup,
 		)
-		ensureGitHubIdentityRuntime(
-			database, budgetPerHour, writeIdentity, startup,
-		)
+		if writeIdentity.Key.Principal != "" {
+			ensureGitHubIdentityRuntime(
+				database, budgetPerHour, writeIdentity, startup,
+			)
+		}
 		startup.githubRoutes[desc.Key] = githubCredentialRoute{
 			key:           desc.Key,
 			source:        source,
@@ -384,15 +406,24 @@ func buildGitHubRouteClients(startup *providerStartup) error {
 	byHost := make(map[string][]*github.Route)
 	for key, configured := range startup.githubRoutes {
 		readRuntime := startup.githubIdentities[configured.readIdentity.String()]
-		writeRuntime := startup.githubIdentities[configured.writeIdentity.String()]
-		if readRuntime == nil || writeRuntime == nil {
+		var writeRuntime *githubIdentityRuntime
+		if configured.writeIdentity.Principal != "" {
+			writeRuntime = startup.githubIdentities[configured.writeIdentity.String()]
+		}
+		if readRuntime == nil || (configured.writeIdentity.Principal != "" && writeRuntime == nil) {
 			return fmt.Errorf("create GitHub route %s: missing identity runtime", key.Scope)
+		}
+		clientOptions := []github.ClientOption{}
+		if writeRuntime == nil {
+			clientOptions = append(clientOptions, github.WithMutationsDisabled())
+		} else {
+			clientOptions = append(clientOptions, github.WithNotificationAccounting(
+				writeRuntime.rest, writeRuntime.budget,
+			))
 		}
 		client, err := github.NewClient(
 			configured.source, key.Host, readRuntime.rest, readRuntime.budget,
-			github.WithNotificationAccounting(
-				writeRuntime.rest, writeRuntime.budget,
-			),
+			clientOptions...,
 		)
 		if err != nil {
 			return fmt.Errorf("create GitHub route %s client: %w", key.Scope, err)
@@ -400,21 +431,42 @@ func buildGitHubRouteClients(startup *providerStartup) error {
 		if setter, ok := client.(graphQLRateTrackerSetter); ok {
 			setter.SetGraphQLRateTracker(readRuntime.graphql)
 		}
-		if setter, ok := client.(writeRateTrackerSetter); ok {
-			setter.SetWriteRateTracker(writeRuntime.rest)
-			setter.SetWriteGraphQLRateTracker(writeRuntime.graphql)
+		if writeRuntime != nil {
+			if setter, ok := client.(writeRateTrackerSetter); ok {
+				setter.SetWriteRateTracker(writeRuntime.rest)
+				setter.SetWriteGraphQLRateTracker(writeRuntime.graphql)
+			}
+			writeBucket := github.RateBucketKey(
+				string(platform.KindGitHub), key.Host,
+				configured.writeIdentity.Principal,
+			)
+			startup.writeRateTrackers[writeBucket] = writeRuntime.rest
+			startup.writeGQLRateTrackers[writeBucket] = writeRuntime.graphql
 		}
 		fetcher := github.NewGraphQLFetcher(
 			configured.source, key.Host, readRuntime.graphql, readRuntime.budget,
 		)
+		var writeSnapshotClient github.Client
+		if writeRuntime != nil && configured.writeIdentity != configured.readIdentity {
+			writeSnapshotClient, err = github.NewClient(
+				mutationTokenSource{Source: configured.source}, key.Host,
+				writeRuntime.rest, nil,
+			)
+			if err != nil {
+				return fmt.Errorf("create GitHub route %s write snapshot client: %w", key.Scope, err)
+			}
+			if setter, ok := writeSnapshotClient.(graphQLRateTrackerSetter); ok {
+				setter.SetGraphQLRateTracker(writeRuntime.graphql)
+			}
+		}
 		configured.client = client
 		configured.fetcher = fetcher
 		startup.githubRoutes[key] = configured
 		owner, name := githubRouteOwnerAndName(key.Scope)
 		byHost[key.Host] = append(byHost[key.Host], &github.Route{
 			Key:    github.RouteKey{Host: key.Host, Owner: owner, Name: name},
-			Client: client, Fetcher: fetcher,
-			ReadIdentity:  configured.readIdentity,
+			Client: client, WriteSnapshotClient: writeSnapshotClient,
+			Fetcher: fetcher, ReadIdentity: configured.readIdentity,
 			WriteIdentity: configured.writeIdentity,
 		})
 	}
@@ -532,6 +584,10 @@ func ensureGitHubIdentityRuntime(
 		runtime.rest.SetOnWindowReset(runtime.budget.Reset)
 	}
 	startup.githubIdentities[key] = runtime
+	bucket := github.RateBucketKey(
+		string(platform.KindGitHub), identity.Key.Host, identity.Key.Principal,
+	)
+	startup.ratePrincipalLabels[bucket] = identity.Label()
 	startup.rateTrackers[github.RateBucketKey(
 		string(platform.KindGitHub), identity.Key.Host, identity.Key.Principal,
 	)] = runtime.rest

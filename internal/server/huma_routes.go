@@ -18,9 +18,14 @@ import (
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform/gitealike"
+	"go.kenn.io/middleman/internal/ratelimit"
 	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/server/issueapi"
 	"go.kenn.io/middleman/internal/server/pullapi"
+	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 type repoNumberInput struct {
@@ -849,16 +854,28 @@ func (s *Server) getRateLimits(
 	}
 	trackers := s.syncer.RateTrackers()
 	gqlTrackers := s.syncer.GQLRateTrackers()
+	for key, rt := range s.syncer.WriteGQLRateTrackers() {
+		if gqlTrackers[key] == nil {
+			gqlTrackers[key] = rt
+		}
+	}
 	budgets := s.syncer.Budgets()
+	principalLabels := s.syncer.RatePrincipalLabels()
 	hosts := make(map[string]rateLimitHostStatus, len(trackers))
 	for key, rt := range trackers {
 		resetStr := ""
 		if resetAt := rt.ResetAt(); resetAt != nil {
 			resetStr = formatUTCRFC3339(*resetAt)
 		}
+		principalLabel := principalLabels[key]
+		if principalLabel == "" {
+			principalLabel = ratePrincipalLabel(rt.Provider(), rt.Principal())
+		}
 		status := rateLimitHostStatus{
 			Provider:           rt.Provider(),
 			PlatformHost:       rt.PlatformHost(),
+			RatePrincipal:      rt.Principal(),
+			PrincipalLabel:     principalLabel,
 			RequestsHour:       rt.RequestsThisHour(),
 			RateRemaining:      rt.Remaining(),
 			RateLimit:          rt.RateLimit(),
@@ -884,11 +901,33 @@ func (s *Server) getRateLimits(
 			status.BudgetSpent = b.Spent()
 			status.BudgetRemaining = b.Remaining()
 		}
-		hosts[key] = status
+		hosts[rateLimitStatusKey(rt)] = status
 	}
 	return &rateLimitsOutput{
 		Body: rateLimitsResponse{Hosts: hosts},
 	}, nil
+}
+
+func rateLimitStatusKey(rt *ratelimit.RateTracker) string {
+	if rt.Principal() == "host" {
+		return rt.BucketKey()
+	}
+	return strings.Join([]string{
+		rt.Provider(), rt.PlatformHost(), rt.Principal(),
+	}, ":")
+}
+
+func ratePrincipalLabel(providerName, principal string) string {
+	if providerName != string(platform.KindGitHub) || principal == "host" {
+		return "Host credential"
+	}
+	if id, ok := strings.CutPrefix(principal, "installation:"); ok {
+		return "GitHub App installation " + id
+	}
+	if id, ok := strings.CutPrefix(principal, "user:"); ok {
+		return "GitHub user " + id
+	}
+	return principal
 }
 
 func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRCIOutput, error) {

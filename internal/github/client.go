@@ -302,6 +302,7 @@ type clientOptions struct {
 	baseURLOverride         string
 	notificationRateTracker *RateTracker
 	notificationBudget      *SyncBudget
+	mutationsDisabled       bool
 }
 
 // WithBaseURLForTesting points the client's REST and GraphQL traffic
@@ -312,6 +313,19 @@ type clientOptions struct {
 func WithBaseURLForTesting(base string) ClientOption {
 	return func(o *clientOptions) {
 		o.baseURLOverride = strings.TrimRight(base, "/")
+	}
+}
+
+// ErrMissingWriteIdentity is returned when startup established an App-only
+// read route without a user identity for mutations. A token that appears later
+// cannot be used until restart assigns its stable accounting identity.
+var ErrMissingWriteIdentity = errors.New("missing startup-resolved GitHub write identity")
+
+// WithMutationsDisabled prevents mutation and notification transports from
+// sending requests for an App-only route without a startup-resolved user.
+func WithMutationsDisabled() ClientOption {
+	return func(o *clientOptions) {
+		o.mutationsDisabled = true
 	}
 }
 
@@ -358,6 +372,10 @@ func NewClient(
 	}
 	et := &etagTransport{base: authRT}
 	httpClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(et)}
+	var mutationBase http.RoundTripper = mutationAuthTransport{base: authRT}
+	if options.mutationsDisabled {
+		mutationBase = errorTransport{err: ErrMissingWriteIdentity}
+	}
 	// Mutations resolve auth with the mutation marker so a configured
 	// GitHub App is skipped and writes stay attributed to the user's
 	// own credential. The write path is a separate gh.Client because
@@ -366,10 +384,9 @@ func NewClient(
 	// preemptively block app-token reads until the PAT window resets.
 	// No etag or sync-budget transports: those exist for sync reads.
 	writeHTTPClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(
-		mutationAuthTransport{base: authRT},
+		mutationBase,
 	)}
-	notificationTransport := mutationAuthTransport{base: authRT}
-	var notificationRoundTripper http.RoundTripper = notificationTransport
+	var notificationRoundTripper = mutationBase
 	notificationBudget := budget
 	if options.notificationBudget != nil {
 		notificationBudget = options.notificationBudget
@@ -476,6 +493,14 @@ func githubOwnerFromPath(path string) string {
 // mutationAuthTransport marks every request's context with
 // tokenauth.WithMutationAuth before auth resolution, steering token
 // selection away from github_app installation tokens.
+type errorTransport struct {
+	err error
+}
+
+func (t errorTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, t.err
+}
+
 type mutationAuthTransport struct {
 	base http.RoundTripper
 }

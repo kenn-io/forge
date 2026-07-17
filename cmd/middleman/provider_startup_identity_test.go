@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -118,6 +119,12 @@ func TestBuildProviderStartupDeduplicatesGitHubIdentityRuntimes(t *testing.T) {
 	assert.NotSame(runtimeA.budget, runtimeC.budget)
 	assert.Same(runtimeA.budget, runtimeDWrite.budget)
 	assert.NotSame(runtimeDRead.budget, runtimeDWrite.budget)
+	writeBucket := github.RateBucketKey("github", "github.com", "user:123")
+	assert.Same(runtimeDWrite.rest, startup.writeRateTrackers[writeBucket])
+	assert.Same(runtimeDWrite.graphql, startup.writeGQLRateTrackers[writeBucket])
+	assert.NotContains(startup.rateTrackers, github.RateBucketKey("github", "github.com", "host"))
+	assert.NotContains(startup.budgets, github.RateBucketKey("github", "github.com", "host"))
+	assert.Empty(startup.fetchers, "routed GitHub hosts must use route fetchers only")
 	assert.NotSame(routeA.client, routeB.client)
 	assert.Same(runtimeA.graphql, routeA.fetcher.RateTracker())
 	assert.Same(runtimeB.graphql, routeB.fetcher.RateTracker())
@@ -134,6 +141,41 @@ func TestBuildProviderStartupDeduplicatesGitHubIdentityRuntimes(t *testing.T) {
 	routed, ok := startup.githubClients["github.com"].(*github.RoutedClient)
 	require.True(ok)
 	assert.NotNil(routed)
+}
+
+func TestBuildProviderStartupAllowsAppOnlyReadRoute(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Repos:    []config.Repo{{Owner: "org-app", Name: "one"}},
+		GitHubApps: []config.GitHubAppConfig{{
+			Host: "github.com", AppID: 7, PrivateKeyPath: "/keys/app.pem",
+			InstallationID: 789, InstallationAccount: "org-app",
+			RepositorySelection: "all",
+		}},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			return "app-token", time.Now().Add(time.Hour), nil
+		},
+	})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+
+	startup, err := buildProviderStartup(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+		fakeGitHubIdentityResolver{},
+	)
+	require.NoError(err)
+	route := startup.githubRoutes[tokenauth.Key{
+		Platform: "github", Host: "github.com", Scope: "owner:org-app",
+	}]
+	assert.Equal("installation:789", route.readIdentity.Principal)
+	assert.Empty(route.writeIdentity.Principal)
 }
 
 func TestBuildProviderStartupReportsSafeGitHubIdentityResolutionFailure(t *testing.T) {

@@ -716,6 +716,17 @@ func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) 
 	srv, set := newSplitTestServer(t, tokenauth.Candidate{
 		Kind: tokenauth.SourceKindEnv, EnvName: "SPLIT_WRITE_CRED_PAT",
 	})
+	router, err := ghclient.NewHostRouter(
+		"github.com",
+		&ghclient.Route{
+			Key: ghclient.RouteKey{Host: "github.com", Owner: "acme"},
+			ReadIdentity: ghclient.IdentityKey{
+				Host: "github.com", Principal: "installation:11",
+			},
+		},
+	)
+	require.NoError(err)
+	srv.syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
 
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
@@ -729,10 +740,9 @@ func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) 
 	assert.False(comment.Available, "every operation is a mutation; all must gate")
 	assert.Equal(availabilityCodeMissingWriteCredential, comment.Code)
 
-	// A config reload that re-points the chain at a resolvable
-	// credential must take effect immediately: the probe cache is
-	// keyed by the canonical chain, not just the host, so the stale
-	// missing-credential verdict cannot outlive the chain it probed.
+	// Identity assignment is restart-bound. A token appearing behind an
+	// App-only route cannot silently move writes onto a new user principal in
+	// the running process, even though the source itself reloads successfully.
 	set.Upsert(splitTestDescriptor(tokenauth.Candidate{
 		Kind: tokenauth.SourceKindEnv, EnvName: "SPLIT_WRITE_CRED_PAT_NEW",
 	}))
@@ -740,9 +750,9 @@ func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) 
 	require.Equal(http.StatusOK, rr.Code)
 	resp = repoResponse{}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	assert.True(resp.Operations.MergePR.Available,
-		"a re-pointed chain must bypass the cached verdict without waiting out the TTL")
-	assert.True(resp.Operations.AddComment.Available)
+	assert.False(resp.Operations.MergePR.Available)
+	assert.Equal(availabilityCodeMissingWriteCredential, resp.Operations.MergePR.Code)
+	assert.False(resp.Operations.AddComment.Available)
 }
 
 func TestAPIRepoResponseOperationsDistinguishWriteCredentialErrors(t *testing.T) {

@@ -158,6 +158,8 @@ type diffResponse = httpapi.DiffResponse
 type rateLimitHostStatus struct {
 	Provider           string `json:"provider"`
 	PlatformHost       string `json:"platform_host"`
+	RatePrincipal      string `json:"rate_principal"`
+	PrincipalLabel     string `json:"principal_label"`
 	RequestsHour       int    `json:"requests_hour"`
 	RateRemaining      int    `json:"rate_remaining"`
 	RateLimit          int    `json:"rate_limit"`

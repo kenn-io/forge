@@ -107,6 +107,9 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   mounts once per shell in a page-level fixed layer below measured shell chrome
   and above modal backdrops, never inside feature containers; headerless shells
   use the viewport edge (`frontend/src/App.svelte:968`).
+- Commit timeline rows keep type, author, SHA, and relative time together in the
+  compact header; the SHA is metadata, not card action content
+  (`packages/ui/src/components/detail/EventTimeline.svelte`).
 
 `kit-ui-check` gates at zero findings in both `make frontend-check` and the
 Vite+ `frontend-check` task behind CI's `vp run -w check`. If a rule mistakes
@@ -189,8 +192,6 @@ Use it inside left sidebar headers and collapsed strips. Pass a specific label s
 ### GroupedSidebarSection
 
 Use `GroupedSidebarSection` for collapsible groups in PR, issue, and workspace list rails. Keep group chrome and the `--sidebar-*` surface/row-state tokens shared; domain-specific row content stays with its owner. Wrap large always-visible vertical scroll panes (list rails, diff area, pull/issue detail, activity views) in `ScrollBox` for consistent flex sizing, native vertical scrolling, and a labelled focusable region; bind `viewport` when a host needs imperative scroll logic, and note the scrolling element is the viewport, not the host's content wrapper class. Give each scroll area a concise accessible label so keyboard users can identify and scroll the region. (`packages/ui/src/components/shared/GroupedSidebarSection.svelte`, `ScrollBox` from `@kenn-io/kit-ui` — see kit-ui's `docs/components/scroll-box.md`, `frontend/src/app.css:39`)
-
-Use `SidebarStatusStrip` for persistent domain state on PR, issue, and workspace list rows. Keep it fixed-height and vertically centered in the row gutter, never in title flow or stretched with row content; reserve `StatusDot` for transient activity and the edge border for selection. (`packages/ui/src/components/shared/SidebarStatusStrip.svelte`)
 
 ### SplitResizeHandle and BottomDock
 

@@ -16,8 +16,6 @@
   import { Chip } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
-  import SidebarStatusStrip from "../shared/SidebarStatusStrip.svelte";
-  import type { SidebarStatusStripTone } from "../shared/sidebar-status-strip.js";
   import { repoIdentityKey } from "../../utils/repo-label.js";
 
   const { pulls } = getStores();
@@ -94,18 +92,11 @@
     return "open";
   });
 
-  const stateStripTones: Record<PRState, SidebarStatusStripTone> = {
-    open: "success",
-    draft: "warning",
-    closed: "danger",
-    merged: "merged",
-  };
-
-  const stateStripLabels: Record<PRState, string> = {
-    open: "Open pull request",
-    draft: "Draft pull request",
-    closed: "Closed pull request",
-    merged: "Merged pull request",
+  const stateColors: Record<PRState, string> = {
+    open: "var(--accent-green)",
+    draft: "var(--accent-amber)",
+    closed: "var(--accent-red)",
+    merged: "var(--accent-purple)",
   };
 
   const worktreeName = $derived(
@@ -181,9 +172,9 @@
   bind:this={el}
   onclick={onclick}
 >
-  <SidebarStatusStrip tone={stateStripTones[prState]} label={stateStripLabels[prState]} />
   <p class="title">
-    <span class="title-text">{pr.Title}</span>
+    <span class="state-dot" style="background: {stateColors[prState]}"></span>
+    {pr.Title}
   </p>
   <LabelRow {labels} compact />
   {#if showRepo}
@@ -298,7 +289,6 @@
 <style>
   .pull-item {
     display: block;
-    position: relative;
     width: 100%;
     text-align: left;
     padding: var(--sidebar-row-padding, 10px 12px);
@@ -336,19 +326,23 @@
   }
 
   .title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: var(--font-size-md);
     font-weight: 500;
     color: var(--text-primary);
+    white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
     margin-bottom: 4px;
   }
 
-  .title-text {
-    display: block;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .state-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
   }
 
   .meta-row {
@@ -542,14 +536,16 @@
     margin-bottom: var(--focus-mobile-space-xs, 6.5px);
     font-size: var(--font-size-xl);
     line-height: 1.3;
-  }
-
-  :global(.mobile-main) .title-text {
     white-space: normal;
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
+  }
+
+  :global(.mobile-main) .state-dot {
+    width: 10px;
+    height: 10px;
   }
 
   :global(.mobile-main) .repo-row {

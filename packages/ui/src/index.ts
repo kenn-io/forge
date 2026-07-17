@@ -124,8 +124,6 @@ export { default as CommentEditor } from "./components/detail/CommentEditor.svel
 export { Chip } from "@kenn-io/kit-ui";
 export { default as ItemKindChip } from "./components/shared/ItemKindChip.svelte";
 export { default as GroupedSidebarSection } from "./components/shared/GroupedSidebarSection.svelte";
-export { default as SidebarStatusStrip } from "./components/shared/SidebarStatusStrip.svelte";
-export type { SidebarStatusStripTone } from "./components/shared/sidebar-status-strip.js";
 export { ScrollBox } from "@kenn-io/kit-ui";
 export { default as ItemStateChip } from "./components/shared/ItemStateChip.svelte";
 export { CollapsibleSidebar, SidebarToggle } from "@kenn-io/kit-ui";

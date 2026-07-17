@@ -1595,8 +1595,8 @@ describe("EventTimeline", () => {
     expect(document.querySelector(".event--compact")).toBeTruthy();
     expect(document.querySelector(".commit-title")).toBeNull();
     expect(document.querySelector(".commit-body-details")?.classList.contains("event-body")).toBe(true);
-    expect(document.querySelector(".kit-card__header")?.textContent).toContain("abcdef1");
-    expect(document.querySelector(".kit-card__meta")?.textContent).toBe("4h ago");
+    expect(document.querySelector(".event-card--commit .event-header")?.textContent).toContain("abcdef1");
+    expect(document.querySelector(".event-card--commit .event-time")?.textContent).toBe("4h ago");
   });
 
   it("expands single-line commit messages when commit details are shown", () => {
@@ -1643,7 +1643,7 @@ describe("EventTimeline", () => {
     expect(screen.getByText("feat: add timeline filters")).toBeTruthy();
     expect(screen.getByText("4h ago")).toBeTruthy();
     expect(screen.queryByText("Long body")).toBeNull();
-    expect(document.querySelector(".kit-card__meta")?.textContent).toBe("4h ago");
+    expect(document.querySelector(".event-card--commit .event-time")?.textContent).toBe("4h ago");
   });
 
   it("renders force pushes as boundaries between commit generations", () => {

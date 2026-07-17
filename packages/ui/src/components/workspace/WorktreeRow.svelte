@@ -6,10 +6,10 @@
   import {
     Chip,
     DiffStats,
+    StatusDot,
     type ChipTone,
+    type StatusDotStatus,
   } from "@kenn-io/kit-ui";
-  import SidebarStatusStrip from "../shared/SidebarStatusStrip.svelte";
-  import type { SidebarStatusStripTone } from "../shared/sidebar-status-strip.js";
 
   interface Props {
     worktree: WorkspaceWorktree;
@@ -43,11 +43,11 @@
     worktree.branch !== title,
   );
 
-  const activityStripTones: Record<WorkspaceActivity["state"], SidebarStatusStripTone> = {
-    idle: "muted",
-    active: "success",
-    running: "info",
-    needsAttention: "warning",
+  const activityStatuses: Record<WorkspaceActivity["state"], StatusDotStatus> = {
+    idle: "idle",
+    active: "working",
+    running: "working",
+    needsAttention: "unclean",
   };
 
   const activityLabels: Record<WorkspaceActivity["state"], string> = {
@@ -149,9 +149,10 @@
   onmouseenter={startHoverTimer}
   onmouseleave={cancelHoverTimer}
 >
-  <SidebarStatusStrip
-    tone={activityStripTones[worktree.activity.state]}
+  <StatusDot
+    status={activityStatuses[worktree.activity.state]}
     label={activityLabels[worktree.activity.state]}
+    size={8}
   />
 
   <span class="content">
@@ -294,7 +295,6 @@
 <style>
   .worktree-row {
     display: flex;
-    position: relative;
     align-items: center;
     gap: 8px;
     width: 100%;

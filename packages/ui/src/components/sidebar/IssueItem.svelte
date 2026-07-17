@@ -6,7 +6,6 @@
   import { Chip } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
-  import SidebarStatusStrip from "../shared/SidebarStatusStrip.svelte";
   import { repoIdentityKey } from "../../utils/repo-label.js";
 
   const { issues } = getStores();
@@ -59,13 +58,7 @@
 </script>
 
 <button class="issue-item" class:selected bind:this={el} onclick={onclick}>
-  <SidebarStatusStrip
-    tone={issue.State === "open" ? "success" : "danger"}
-    label={issue.State === "open" ? "Open issue" : "Closed issue"}
-  />
-  <p class="title">
-    <span class="title-text">{issue.Title}</span>
-  </p>
+  <p class="title">{issue.Title}</p>
   <LabelRow {labels} compact />
   {#if showRepo}
     <div class="repo-row">
@@ -113,7 +106,6 @@
 <style>
   .issue-item {
     display: block;
-    position: relative;
     width: 100%;
     text-align: left;
     padding: var(--sidebar-row-padding, 10px 12px);
@@ -146,16 +138,10 @@
     font-size: var(--font-size-md);
     font-weight: 500;
     color: var(--text-primary);
-    overflow: hidden;
-    margin-bottom: 4px;
-  }
-
-  .title-text {
-    display: block;
-    min-width: 0;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    margin-bottom: 4px;
   }
 
   .meta-row {
@@ -251,9 +237,6 @@
     margin-bottom: var(--focus-mobile-space-xs, 6.5px);
     font-size: var(--font-size-xl);
     line-height: 1.3;
-  }
-
-  :global(.mobile-main) .title-text {
     white-space: normal;
     display: -webkit-box;
     -webkit-box-orient: vertical;

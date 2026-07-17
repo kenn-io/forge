@@ -53,15 +53,4 @@ describe("IssueItem", () => {
 
     expect(screen.getByLabelText("Workspace attached (ready)")).toBeTruthy();
   });
-
-  it.each([
-    ["open", "Open issue", "sidebar-status-strip--success"],
-    ["closed", "Closed issue", "sidebar-status-strip--danger"],
-  ] as const)("renders the compact %s state rail", (state, label, className) => {
-    renderItem(mkIssue({ State: state }));
-
-    const rail = screen.getByLabelText(label);
-    expect(rail.classList.contains(className)).toBe(true);
-    expect(rail.parentElement?.classList.contains("issue-item")).toBe(true);
-  });
 });

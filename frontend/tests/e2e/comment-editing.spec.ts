@@ -267,7 +267,7 @@ test("keeps timeline comment actions quiet until hover or keyboard focus", async
   await expect(actions).toHaveCSS("pointer-events", "auto");
 });
 
-test("keeps commit SHA between author and timestamp in the rendered header", async ({ page }) => {
+test("keeps the pre-kit commit SHA in the compact header before the timestamp", async ({ page }) => {
   const event: TimelineEvent = {
     ID: 12,
     MergeRequestID: 1,
@@ -291,22 +291,40 @@ test("keeps commit SHA between author and timestamp in the rendered header", asy
 
   await page.goto("/pulls/github/acme/widgets/42");
   const card = page.locator(".event-timeline .event-card--commit");
-  const author = card.locator(".kit-card__title");
+  const type = card.locator(".event-type");
+  const author = card.locator(".event-author");
   const sha = card.locator(".commit-sha");
-  const time = card.locator(".kit-card__meta");
+  const subject = card.locator(".commit-body-details");
+  const time = card.locator(".event-time");
 
+  await expect(type).toHaveText("Commit");
   await expect(author).toHaveText("wesm");
   await expect(sha).toHaveText("3bab070");
+  await expect(subject).toHaveText("Close fixture authority revival paths");
   await expect(time).toBeVisible();
 
+  const header = card.locator(".event-header");
+  await expect(header).toHaveCount(1);
+  await expect(header.locator(":scope > span")).toHaveCount(4);
+  await expect(header.locator(".commit-sha")).toHaveCount(1);
+
+  const typeBox = await type.boundingBox();
   const authorBox = await author.boundingBox();
   const shaBox = await sha.boundingBox();
+  const subjectBox = await subject.boundingBox();
   const timeBox = await time.boundingBox();
+  expect(typeBox).not.toBeNull();
   expect(authorBox).not.toBeNull();
   expect(shaBox).not.toBeNull();
+  expect(subjectBox).not.toBeNull();
   expect(timeBox).not.toBeNull();
+  expect(typeBox!.x + typeBox!.width).toBeLessThanOrEqual(authorBox!.x);
   expect(authorBox!.x + authorBox!.width).toBeLessThanOrEqual(shaBox!.x);
   expect(shaBox!.x + shaBox!.width).toBeLessThanOrEqual(timeBox!.x);
+  expect(timeBox!.x - (shaBox!.x + shaBox!.width)).toBeLessThanOrEqual(8);
+  const headerCenters = [typeBox!, authorBox!, shaBox!, timeBox!].map((box) => box.y + box.height / 2);
+  expect(Math.max(...headerCenters) - Math.min(...headerCenters)).toBeLessThanOrEqual(1);
+  expect(subjectBox!.y).toBeGreaterThan(shaBox!.y + shaBox!.height);
 });
 
 test("confirms and deletes a pull request timeline comment", async ({ page }) => {
@@ -402,7 +420,6 @@ test.describe("touch timeline actions", () => {
     deviceScaleFactor: iPhone13.deviceScaleFactor,
     userAgent: iPhone13.userAgent,
     hasTouch: iPhone13.hasTouch,
-    isMobile: iPhone13.isMobile,
   });
 
   test("keeps timeline comment actions visible without hover", async ({ page }) => {

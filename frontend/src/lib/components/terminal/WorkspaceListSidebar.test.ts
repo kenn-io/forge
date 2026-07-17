@@ -1356,11 +1356,11 @@ describe("WorkspaceListSidebar", () => {
   });
 
   it.each([
-    ["ready", "Workspace ready", "sidebar-status-strip--success"],
-    ["creating", "Creating workspace", "sidebar-status-strip--info"],
-    ["error", "Workspace error", "sidebar-status-strip--danger"],
-    ["pending", "Workspace pending", "sidebar-status-strip--warning"],
-  ] as const)("maps %s workspace state to the compact sidebar rail", async (status, label, className) => {
+    ["ready", "Workspace ready", "kit-status-dot--idle"],
+    ["creating", "Creating workspace", "kit-status-dot--working"],
+    ["error", "Workspace error", "kit-status-dot--unclean"],
+    ["pending", "Workspace pending", "kit-status-dot--stale"],
+  ] as const)("maps %s workspace state to the shared semantic status", async (status, label, className) => {
     mockGet.mockResolvedValue({
       data: {
         workspaces: [
@@ -1381,9 +1381,7 @@ describe("WorkspaceListSidebar", () => {
       props: { selectedId: `ws-${status}` },
     });
 
-    const rail = await screen.findByLabelText(label);
-    expect(rail.classList.contains(className)).toBe(true);
-    expect(rail.parentElement?.classList.contains("ws-row")).toBe(true);
+    expect((await screen.findByLabelText(label)).classList.contains(className)).toBe(true);
   });
 
   it("does not describe an externally disabled workspace as active work", async () => {

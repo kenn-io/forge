@@ -1775,27 +1775,33 @@
               time={formatRelativeTime(event.CreatedAt)}
             />
           {:else if event.EventType === "commit"}
-            <CommentCard
+            <Card
+              level="default"
+              padding="sm"
               class="event-card--compact event-card--commit"
-              typeLabel="Commit"
-              tone={eventTimelineTone(event.EventType)}
-              author={event.Author || undefined}
-              time={formatRelativeTime(event.CreatedAt)}
             >
-              {#snippet actions()}
+              <div class="event-header event-header--compact">
+                <span
+                  class="event-type"
+                  style="color: var(--accent-green)"
+                >
+                  {systemEventLabel(event.EventType)}
+                </span>
+                {#if event.Author}
+                  <span class="event-author">{event.Author}</span>
+                {/if}
                 <span class="commit-sha">{shortCommit(event.Summary)}</span>
-              {/snippet}
-              {#if !showCommitDetails}
-                <div class="event-header event-header--compact">
+                {#if !showCommitDetails}
                   <span class="commit-title">{commitTitle(event.Body)}</span>
-                </div>
-              {/if}
+                {/if}
+                <span class="event-time">{formatRelativeTime(event.CreatedAt)}</span>
+              </div>
               {#if showCommitDetails && commitDetails}
                 <div class="event-body commit-body-details" transition:slide={{ duration: 100 }}>
                   {commitDetails}
                 </div>
               {/if}
-            </CommentCard>
+            </Card>
           {:else if event.EventType === "cross_referenced"}
             {@const sourceUrl = metadataString(metadata, "source_url")}
             {@const sourceTitle = metadataString(metadata, "source_title") ?? event.Summary}
@@ -1979,6 +1985,10 @@
     flex-wrap: nowrap;
   }
 
+  .event-header--compact .event-time {
+    margin-left: 0;
+  }
+
   .event-card--compact-row {
     overflow: hidden;
   }
@@ -2111,14 +2121,6 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
-  }
-
-  .event-timeline :global(.event-card--commit .kit-card__actions) {
-    order: 2;
-  }
-
-  .event-timeline :global(.event-card--commit .kit-card__meta) {
-    order: 3;
   }
 
   .event-timeline :global(.kit-comment-card:not(.event-card--commit) .kit-card__actions) {

@@ -37,11 +37,11 @@ describe("WorktreeRow", () => {
   });
 
   it.each([
-    ["idle", "Worktree idle", "sidebar-status-strip--muted"],
-    ["active", "Worktree active", "sidebar-status-strip--success"],
-    ["running", "Worktree running", "sidebar-status-strip--info"],
-    ["needsAttention", "Worktree needs attention", "sidebar-status-strip--warning"],
-  ] as const)("maps %s activity to the compact sidebar rail", (state, label, className) => {
+    ["idle", "Worktree idle", "kit-status-dot--idle"],
+    ["active", "Worktree active", "kit-status-dot--working"],
+    ["running", "Worktree running", "kit-status-dot--working"],
+    ["needsAttention", "Worktree needs attention", "kit-status-dot--unclean"],
+  ] as const)("maps %s activity to the shared semantic status", (state, label, className) => {
     const worktree = createWorktree();
     worktree.activity.state = state;
 
@@ -55,9 +55,7 @@ describe("WorktreeRow", () => {
       },
     });
 
-    const rail = screen.getByLabelText(label);
-    expect(rail.classList.contains(className)).toBe(true);
-    expect(rail.parentElement?.classList.contains("worktree-row")).toBe(true);
+    expect(screen.getByLabelText(label).classList.contains(className)).toBe(true);
   });
 
   it("renders the linked PR chip as passive metadata that still activates the row", async () => {

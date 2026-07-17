@@ -144,13 +144,11 @@
   .title {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
     font-size: var(--font-size-md);
     font-weight: 500;
     color: var(--text-primary);
-    white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
     margin-bottom: 4px;
   }
 
@@ -158,6 +156,7 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .meta-row {
@@ -253,6 +252,9 @@
     margin-bottom: var(--focus-mobile-space-xs, 6.5px);
     font-size: var(--font-size-xl);
     line-height: 1.3;
+  }
+
+  :global(.mobile-main) .title-text {
     white-space: normal;
     display: -webkit-box;
     -webkit-box-orient: vertical;

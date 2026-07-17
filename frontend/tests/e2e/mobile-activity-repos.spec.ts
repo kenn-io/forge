@@ -2,6 +2,38 @@ import { devices, expect, test, type Page } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
+async function expectMobileTitleRailLayout(page: Page, itemSelector: string): Promise<void> {
+  const item = page.locator(itemSelector).first();
+  await expect(item).toBeVisible();
+
+  const metrics = await item.evaluate((node) => {
+    const title = node.querySelector<HTMLElement>(".title");
+    const strip = node.querySelector<HTMLElement>(".sidebar-status-strip");
+    const titleText = node.querySelector<HTMLElement>(".title-text");
+    const titleStyle = title ? getComputedStyle(title) : null;
+    const textStyle = titleText ? getComputedStyle(titleText) : null;
+    const stripRect = strip?.getBoundingClientRect();
+    const textRect = titleText?.getBoundingClientRect();
+    return {
+      titleDisplay: titleStyle?.display ?? "",
+      titleTextLineClamp: textStyle?.webkitLineClamp ?? "",
+      stripWidth: stripRect?.width ?? 0,
+      stripHeight: stripRect?.height ?? 0,
+      stripRight: stripRect?.right ?? 0,
+      stripCenterY: stripRect ? stripRect.top + stripRect.height / 2 : 0,
+      textLeft: textRect?.left ?? 0,
+      textCenterY: textRect ? textRect.top + textRect.height / 2 : 0,
+    };
+  });
+
+  expect(metrics.titleDisplay).toBe("flex");
+  expect(metrics.titleTextLineClamp).toBe("2");
+  expect(metrics.stripWidth).toBe(3);
+  expect(metrics.stripHeight).toBe(18);
+  expect(metrics.stripRight).toBeLessThanOrEqual(metrics.textLeft);
+  expect(Math.abs(metrics.stripCenterY - metrics.textCenterY)).toBeLessThanOrEqual(1);
+}
+
 async function mockMobileRepoSettings(page: Page): Promise<string[]> {
   const activityRepos: string[] = [];
 
@@ -83,7 +115,14 @@ async function mockMobileRepoSettings(page: Page): Promise<string[]> {
   return activityRepos;
 }
 
-test.use({ ...devices["iPhone 13"] });
+const iPhone13 = devices["iPhone 13"];
+test.use({
+  viewport: iPhone13.viewport,
+  deviceScaleFactor: iPhone13.deviceScaleFactor,
+  userAgent: iPhone13.userAgent,
+  hasTouch: iPhone13.hasTouch,
+  isMobile: iPhone13.isMobile,
+});
 
 test.describe("mobile activity repository selector", () => {
   test("uses host-qualified concrete repos and excludes glob rows", async ({ page }) => {
@@ -228,5 +267,15 @@ test.describe("mobile PR status grouping", () => {
 
     await expect(page.locator(".workflow-group .group-header")).toHaveText(["New", "Reviewing"]);
     await expect(page.getByText("Needs Worktree")).toHaveCount(0);
+  });
+
+  test("keeps pull and issue state rails beside their clamped titles", async ({ page }) => {
+    await mockApi(page);
+
+    await page.goto("/m/pulls");
+    await expectMobileTitleRailLayout(page, ".pull-item");
+
+    await page.goto("/m/issues");
+    await expectMobileTitleRailLayout(page, ".issue-item");
   });
 });

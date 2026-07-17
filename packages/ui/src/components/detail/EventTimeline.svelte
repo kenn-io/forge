@@ -1665,8 +1665,9 @@
       </div>
     </Card>
   {/if}
-  <Timeline ariaLabel="Item activity">
-    {#each renderedTimelineEntries as entry (entry.key)}
+  <div class="event-timeline">
+    <Timeline ariaLabel="Item activity">
+      {#each renderedTimelineEntries as entry (entry.key)}
       {@const event = entry.event}
       {@const targetID = replyTargetID(entry)}
       {@const hasReplyOnlyAction = entry.replies.length === 0 && canReplyToThread(entry)}
@@ -1914,8 +1915,9 @@
           </CommentCard>
         {/if}
       </TimelineItem>
-    {/each}
-  </Timeline>
+      {/each}
+    </Timeline>
+  </div>
 {/if}
 
 {#if deleteTarget}
@@ -2111,28 +2113,28 @@
     color: var(--text-secondary);
   }
 
-  :global(.event-card--commit .kit-card__actions) {
+  .event-timeline :global(.event-card--commit .kit-card__actions) {
     order: 2;
   }
 
-  :global(.event-card--commit .kit-card__meta) {
+  .event-timeline :global(.event-card--commit .kit-card__meta) {
     order: 3;
   }
 
-  :global(.kit-comment-card:not(.event-card--commit) .kit-card__actions) {
+  .event-timeline :global(.kit-comment-card:not(.event-card--commit) .kit-card__actions) {
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.15s;
   }
 
-  :global(.kit-comment-card:not(.event-card--commit):hover .kit-card__actions),
-  :global(.kit-comment-card:not(.event-card--commit):focus-within .kit-card__actions) {
+  .event-timeline :global(.kit-comment-card:not(.event-card--commit):hover .kit-card__actions),
+  .event-timeline :global(.kit-comment-card:not(.event-card--commit):focus-within .kit-card__actions) {
     opacity: 1;
     pointer-events: auto;
   }
 
   @media (hover: none), (pointer: coarse) {
-    :global(.kit-comment-card:not(.event-card--commit) .kit-card__actions) {
+    .event-timeline :global(.kit-comment-card:not(.event-card--commit) .kit-card__actions) {
       opacity: 1;
       pointer-events: auto;
     }

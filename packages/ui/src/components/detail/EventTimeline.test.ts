@@ -2509,10 +2509,10 @@ describe("EventTimeline", () => {
   });
 
   it("reveals detail-card actions on hover, focus, and touch without hiding commit SHAs", () => {
-    const hiddenActions = findCompiledStyleRule(".kit-comment-card:not(.event-card--commit) .kit-card__actions", [
-      ":hover",
-      ":focus-within",
-    ]);
+    const hiddenActions = findCompiledStyleRule(
+      ".event-timeline .kit-comment-card:not(.event-card--commit) .kit-card__actions",
+      [":hover", ":focus-within"],
+    );
 
     expect(hiddenActions.getPropertyValue("opacity")).toBe("0");
     expect(hiddenActions.getPropertyValue("pointer-events")).toBe("none");
@@ -2527,7 +2527,10 @@ describe("EventTimeline", () => {
         "conditionText" in rule && rule.conditionText === "(hover: none), (pointer: coarse)",
     );
     const touchActions = Array.from(touchMedia?.cssRules ?? []).find(
-      (rule): rule is CSSStyleRule => "selectorText" in rule && rule.selectorText.includes(":not(.event-card--commit)"),
+      (rule): rule is CSSStyleRule =>
+        "selectorText" in rule &&
+        rule.selectorText.includes(".event-timeline") &&
+        rule.selectorText.includes(":not(.event-card--commit)"),
     );
 
     expect(touchActions?.style.opacity).toBe("1");

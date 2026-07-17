@@ -30346,6 +30346,106 @@ func TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure(t *testing.
 		"the targeted PR update must land after the index refresh")
 }
 
+// TestWorkspaceRefreshAbortsOnMergeRequestScopePartialSyncFailure is the
+// route-level complement of the issue-scope test above: when the repo index
+// sync has a merge-request-scope partial failure (a seeded open PR whose
+// closed-item refresh fails), POST /workspaces/{id}/refresh must return the
+// error envelope instead of success over stale association data — the
+// association/PR-detail refresh must not continue — while sync health still
+// records the failure.
+func TestWorkspaceRefreshAbortsOnMergeRequestScopePartialSyncFailure(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	str := func(v string) *string { return &v }
+	prID := int64(1001)
+	buildPR := func(number int, title string, updatedAt time.Time) *gh.PullRequest {
+		return &gh.PullRequest{
+			ID:        &prID,
+			Number:    &number,
+			Title:     &title,
+			State:     str("open"),
+			HTMLURL:   str("https://github.com/acme/widget/pull/1"),
+			User:      &gh.User{Login: str("alice")},
+			CreatedAt: &gh.Timestamp{Time: now.Add(-time.Hour)},
+			UpdatedAt: &gh.Timestamp{Time: updatedAt},
+			Head:      &gh.PullRequestBranch{Ref: str("feature")},
+			Base:      &gh.PullRequestBranch{Ref: str("main")},
+		}
+	}
+	var pr1DetailCalls atomic.Int32
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+			return []*gh.PullRequest{buildPR(1, "list title", now.Add(3*time.Minute))}, nil
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			// Seeded PR #2 leaves the open list and its closed-item
+			// refresh fails: a merge-request-scope partial failure on
+			// every repo index sync. PR #1 detail stays healthy.
+			if number == 2 {
+				return nil, errors.New("closed PR refresh failed")
+			}
+			pr1DetailCalls.Add(1)
+			return buildPR(number, "detail title", now.Add(10*time.Minute)), nil
+		},
+	}
+	fixture := setupWorkspaceServerFixtureWithMockHostAndOptions(
+		t, nil, mock, "github.com",
+		ServerOptions{
+			PtyOwnerInProcess:                  true,
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+	seedPR(t, fixture.database, "acme", "widget", 2)
+
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+
+	repo, err := fixture.database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	before, err := fixture.database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(before)
+	detailCallsBefore := pr1DetailCalls.Load()
+
+	refreshRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/workspaces/"+ws.Id+"/refresh",
+		nil,
+	)
+	require.Equal(http.StatusBadGateway, refreshRR.Code, refreshRR.Body.String())
+
+	var problem rawProblemDetail
+	require.NoError(json.NewDecoder(refreshRR.Body).Decode(&problem))
+	assert.Equal("upstreamError", problem.Code)
+	assert.Contains(problem.Detail, "merge request sync items failed")
+
+	// The association/PR-detail refresh must not have continued.
+	assert.Equal(detailCallsBefore, pr1DetailCalls.Load(),
+		"the targeted PR-detail refresh must not run after the abort")
+	after, err := fixture.database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(after)
+	assert.Equal(before.DetailFetchedAt, after.DetailFetchedAt,
+		"no detail refresh may land on the workspace PR row")
+
+	refreshedRepo, err := fixture.database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(refreshedRepo)
+	assert.NotEmpty(refreshedRepo.LastSyncError,
+		"the aborting partial failure must be recorded in sync health")
+}
+
 func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {
 	t.Parallel()
 

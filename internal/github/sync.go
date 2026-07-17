@@ -1305,19 +1305,13 @@ func (p *gitHubClientProvider) ListOpenMergeRequests(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) ([]platform.MergeRequest, error) {
-	prs, err := p.client.ListOpenPullRequests(ctx, ref.Owner, ref.Name)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]platform.MergeRequest, 0, len(prs))
-	for _, pr := range prs {
-		mr, err := platformgithub.NormalizePullRequest(ref, pr)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, mr)
-	}
-	return out, nil
+	return platform.CollectPages(ctx, "", func(
+		ctx context.Context, cursor string,
+	) (platform.Page[platform.MergeRequest], error) {
+		return p.ListMergeRequestsPage(ctx, ref, platform.ItemPageQuery{
+			State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated, Cursor: cursor,
+		})
+	})
 }
 
 func (p *gitHubClientProvider) GetMergeRequest(
@@ -1325,8 +1319,14 @@ func (p *gitHubClientProvider) GetMergeRequest(
 	ref platform.RepoRef,
 	number int,
 ) (platform.MergeRequest, error) {
-	_, mr, err := p.GetGitHubPullRequest(ctx, ref, number)
-	return mr, err
+	lookup, err := p.LookupMergeRequest(ctx, ref, number)
+	if err != nil {
+		return platform.MergeRequest{}, err
+	}
+	if lookup.Outcome != platform.LookupPresent {
+		return platform.MergeRequest{}, p.lookupNotPresentError(ref, number, lookup.Outcome)
+	}
+	return lookup.Item, nil
 }
 
 func (p *gitHubClientProvider) GetGitHubPullRequest(
@@ -1419,19 +1419,30 @@ func (p *gitHubClientProvider) ListOpenIssues(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) ([]platform.Issue, error) {
-	issues, err := p.ListOpenGitHubIssues(ctx, ref)
-	if err != nil {
-		return nil, err
+	return platform.CollectPages(ctx, "", func(
+		ctx context.Context, cursor string,
+	) (platform.Page[platform.Issue], error) {
+		return p.ListIssuesPage(ctx, ref, platform.ItemPageQuery{
+			State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated, Cursor: cursor,
+		})
+	})
+}
+
+// lookupNotPresentError renders the typed error a live caller receives when a
+// single-item lookup resolves to a non-present outcome (removed, moved, or
+// inaccessible). Live callers require present; archive callers inspect the
+// outcome instead.
+func (p *gitHubClientProvider) lookupNotPresentError(
+	ref platform.RepoRef,
+	number int,
+	outcome platform.LookupOutcome,
+) error {
+	return &platform.Error{
+		Code:         platform.ErrCodeNotFound,
+		Provider:     platform.KindGitHub,
+		PlatformHost: p.host,
+		Err:          fmt.Errorf("%s#%d is not present (%s)", ref.DisplayName(), number, outcome),
 	}
-	out := make([]platform.Issue, 0, len(issues))
-	for _, issue := range issues {
-		normalized, err := platformgithub.NormalizeIssue(ref, issue)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, normalized)
-	}
-	return out, nil
 }
 
 func (p *gitHubClientProvider) ListOpenGitHubIssues(
@@ -1461,11 +1472,14 @@ func (p *gitHubClientProvider) GetIssue(
 	ref platform.RepoRef,
 	number int,
 ) (platform.Issue, error) {
-	issue, err := p.GetGitHubIssue(ctx, ref, number)
+	lookup, err := p.LookupIssue(ctx, ref, number)
 	if err != nil {
 		return platform.Issue{}, err
 	}
-	return platformgithub.NormalizeIssue(ref, issue)
+	if lookup.Outcome != platform.LookupPresent {
+		return platform.Issue{}, p.lookupNotPresentError(ref, number, lookup.Outcome)
+	}
+	return lookup.Item, nil
 }
 
 func (p *gitHubClientProvider) GetGitHubIssue(

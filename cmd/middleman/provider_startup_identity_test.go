@@ -331,14 +331,16 @@ func TestProductionStartupRoutesExposeRotatedPATThroughRepoAPI(t *testing.T) {
 	}
 }
 
-func TestBuildProviderStartupAllowsAppOnlyReadRoute(t *testing.T) {
+func TestBuildProviderStartupAllowsAppOnlyReadRouteButRequiresRestartForManagedGit(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
+	t.Setenv("LATE_PAT", "")
 	cfg := &config.Config{
 		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
-		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
-		Repos:    []config.Repo{{Owner: "org-app", Name: "one"}},
+		Activity:       config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		GitHubTokenEnv: "LATE_PAT",
+		Repos:          []config.Repo{{Owner: "org-app", Name: "one"}},
 		GitHubApps: []config.GitHubAppConfig{{
 			Host: "github.com", AppID: 7, PrivateKeyPath: "/keys/app.pem",
 			InstallationID: 789, InstallationAccount: "org-app",
@@ -365,11 +367,12 @@ func TestBuildProviderStartupAllowsAppOnlyReadRoute(t *testing.T) {
 	assert.Equal("installation:789", route.readIdentity.Principal)
 	assert.Empty(route.writeIdentity.Principal)
 
+	t.Setenv("LATE_PAT", "appeared-after-startup")
 	gitSource := startup.SourceForRepo("github", "github.com", "org-app", "one")
 	require.NotNil(gitSource)
 	_, err = gitSource.Token(t.Context())
-	assert.ErrorIs(err, tokenauth.ErrMissingToken,
-		"App-only routes must not expose installation tokens to managed Git")
+	assert.ErrorIs(err, github.ErrMissingWriteIdentity,
+		"managed Git must wait for restart to bind a newly available PAT identity")
 }
 
 func TestBuildProviderStartupReportsSafeGitHubIdentityResolutionFailure(t *testing.T) {

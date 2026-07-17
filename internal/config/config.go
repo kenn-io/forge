@@ -1326,6 +1326,13 @@ func (c *Config) validate() error {
 		}
 		c.Repos[i].TokenEnv = strings.TrimSpace(c.Repos[i].TokenEnv)
 		c.Repos[i].TokenFile = strings.TrimSpace(c.Repos[i].TokenFile)
+		if c.Repos[i].PlatformOrDefault() == defaultPlatform &&
+			c.Repos[i].HasNameGlob() &&
+			(c.Repos[i].TokenEnv != "" || c.Repos[i].TokenFile != "") {
+			return fmt.Errorf(
+				"config: repos[%d]: GitHub repo token override requires an exact repository name", i,
+			)
+		}
 	}
 
 	// Reject duplicate repository identities.

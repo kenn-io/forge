@@ -614,6 +614,28 @@ name = "https://github.com/acme/widgets"
 	require.Contains(t, err.Error(), "glob syntax in owner")
 }
 
+func TestLoadRejectsGitHubRepoCredentialOnNameGlob(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		credential string
+	}{
+		{name: "token env", credential: `token_env = "ACME_TOKEN"`},
+		{name: "token file", credential: `token_file = "tokens/acme"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfig(t, `
+[[repos]]
+owner = "acme"
+name = "widgets-*"
+`+tc.credential)
+
+			_, err := Load(path)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "GitHub repo token override requires an exact repository name")
+		})
+	}
+}
+
 func TestRepoHasNameGlob(t *testing.T) {
 	assert := assert.New(t)
 

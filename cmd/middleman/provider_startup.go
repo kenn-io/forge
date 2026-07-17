@@ -54,6 +54,18 @@ func (s mutationTokenSource) Token(ctx context.Context) (string, error) {
 	return s.Source.Token(tokenauth.WithMutationAuth(ctx))
 }
 
+type identityBoundMutationTokenSource struct {
+	tokenauth.Source
+	writeIdentity github.IdentityKey
+}
+
+func (s identityBoundMutationTokenSource) Token(ctx context.Context) (string, error) {
+	if s.writeIdentity.Principal == "" {
+		return "", github.ErrMissingWriteIdentity
+	}
+	return s.Source.Token(tokenauth.WithMutationAuth(ctx))
+}
+
 type githubCredentialRoute struct {
 	key           tokenauth.Key
 	source        tokenauth.Source
@@ -100,7 +112,9 @@ func (s *providerStartup) SourceForRepo(
 		if route, ok := s.githubRoutes[tokenauth.Key{
 			Platform: string(platform.KindGitHub), Host: host, Scope: scope,
 		}]; ok && route.source != nil {
-			return mutationTokenSource{Source: route.source}
+			return identityBoundMutationTokenSource{
+				Source: route.source, writeIdentity: route.writeIdentity,
+			}
 		}
 	}
 	return s.cloneAuth[host]
@@ -114,7 +128,9 @@ func (s *providerStartup) FallbackSource(host string) tokenauth.Source {
 	if route, ok := s.githubRoutes[tokenauth.Key{
 		Platform: string(platform.KindGitHub), Host: host,
 	}]; ok && route.source != nil {
-		return mutationTokenSource{Source: route.source}
+		return identityBoundMutationTokenSource{
+			Source: route.source, writeIdentity: route.writeIdentity,
+		}
 	}
 	return s.cloneAuth[host]
 }

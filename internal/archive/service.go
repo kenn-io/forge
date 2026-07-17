@@ -387,6 +387,7 @@ func defaultArchiveRetryDecision(err error, attempt int, now time.Time) RetryDec
 	case errors.Is(err, platform.ErrMissingToken), errors.Is(err, platform.ErrPermissionDenied):
 		return RetryDecision{Code: db.ArchiveErrorCodeAuthentication}
 	case errors.Is(err, platform.ErrUnsupportedCapability), errors.Is(err, platform.ErrProviderContract),
+		errors.Is(err, platform.ErrPageLimit),
 		errors.Is(err, platform.ErrInvalidRepoRef), errors.Is(err, platform.ErrInvalidArgument):
 		return RetryDecision{Code: db.ArchiveErrorCodeRepoBlocked}
 	case errors.Is(err, platform.ErrRateLimited):

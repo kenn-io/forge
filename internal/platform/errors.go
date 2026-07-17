@@ -26,6 +26,11 @@ const (
 	// the request was understood but the target's current state refuses
 	// it (for example merging an unmergeable MR).
 	ErrCodeConflict PlatformErrorCode = "conflict"
+	// ErrCodePageLimit marks a whole-dataset drain that exceeded the
+	// caller-side page budget. The provider did nothing wrong — the dataset
+	// is larger than a single in-memory collection supports; unbounded
+	// datasets belong on the durable-cursor archive path.
+	ErrCodePageLimit PlatformErrorCode = "page_limit"
 )
 
 var (
@@ -40,6 +45,7 @@ var (
 	ErrRateLimited           = &Error{Code: ErrCodeRateLimited}
 	ErrStaleState            = &Error{Code: ErrCodeStaleState}
 	ErrConflict              = &Error{Code: ErrCodeConflict}
+	ErrPageLimit             = &Error{Code: ErrCodePageLimit}
 )
 
 // ErrArchiveAttemptBudget is returned by budget-counting transports when an

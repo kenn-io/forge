@@ -73,7 +73,8 @@ func TestCollectPagesEnforcesPageBound(t *testing.T) {
 		return Page[int]{Items: []int{calls}, NextCursor: cursor + "-next"}, nil
 	})
 
-	require.ErrorIs(t, err, ErrProviderContract)
+	require.ErrorIs(t, err, ErrPageLimit)
+	require.NotErrorIs(t, err, ErrProviderContract)
 	// Distinct advancing cursors never repeat, so only the page bound stops it.
 	assert.Equal(MaxCollectPages, calls)
 }

@@ -27,6 +27,7 @@ import (
 	platformgitlab "go.kenn.io/middleman/internal/platform/gitlab"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 // setupGitLabCloneFixture builds a local git history (base commit on
@@ -124,7 +125,7 @@ func TestGitLabSyncPRSurfacesTransientForkSourceProjectLookupAsUpstream(t *testi
 		registry, database, gitclone.New(t.TempDir(), nil), []ghclient.RepoRef{repo}, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 
 	rr := doGitLabJSON(t, srv, http.MethodPost, "/api/v1/pulls/gitlab/acme/widget/7/sync", `{}`)
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
@@ -240,7 +241,7 @@ func TestGitLabNormalSyncEnablesHeadBoundMutations(t *testing.T) {
 		registry, database, clones, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 
 	// A normal periodic sync discovers the MR; the detail sync — the
 	// same one a detail view or post-conflict reload performs — fills

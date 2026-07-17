@@ -22,6 +22,7 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 func TestTriggerSyncE2EBypassesCooldown(t *testing.T) {
@@ -474,7 +475,7 @@ func startSyncCooldownE2EServerWithSyncer(
 	)
 	t.Cleanup(syncer.Stop)
 
-	srv := server.NewWithConfig(
+	srv := servertest.NewWithConfig(t,
 		database, syncer, nil, nil, cfg, cfgPath,
 		server.ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)

@@ -12,6 +12,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 func setupFleetSettingsServer(t *testing.T) (*server.Server, string) {
@@ -33,7 +34,7 @@ allowed_hosts = ["middleman.test"]
 	)
 	t.Cleanup(syncer.Stop)
 
-	srv := server.NewWithConfig(
+	srv := servertest.NewWithConfig(t,
 		database, syncer, nil, nil, cfg, cfgPath,
 		server.ServerOptions{},
 	)

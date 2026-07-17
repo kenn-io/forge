@@ -29,6 +29,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 func bootFleetServer(t *testing.T, cfg *config.Config) (*httptest.Server, *dbpkg.DB) {
@@ -42,7 +43,7 @@ func bootFleetServer(t *testing.T, cfg *config.Config) (*httptest.Server, *dbpkg
 	if cfg.Tmux.Command == nil {
 		cfg.Tmux.Command = []string{"middleman-no-such-tmux"}
 	}
-	srv := server.New(database, syncer, nil, "/", cfg, server.ServerOptions{
+	srv := servertest.New(t, database, syncer, nil, "/", cfg, server.ServerOptions{
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 		HostCheck: server.HostCheckOptions{

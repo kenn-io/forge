@@ -22,6 +22,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 type workspaceServerFixture struct {
@@ -89,7 +90,7 @@ func setupWorkspaceServerFixture(
 		basePath = cfg.BasePath
 	}
 	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
-	srv := server.New(database, syncer, nil, basePath, cfg, server.ServerOptions{
+	srv := servertest.New(t, database, syncer, nil, basePath, cfg, server.ServerOptions{
 		Clones:                             clones,
 		WorktreeDir:                        worktreeDir,
 		DisableWorkspaceBackgroundMonitors: true,

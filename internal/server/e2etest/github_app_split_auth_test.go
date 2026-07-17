@@ -24,6 +24,7 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
@@ -257,7 +258,7 @@ repository_selection = "all"
 		registry, database, nil, []ghclient.RepoRef{ref}, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	srv := server.NewWithConfig(
+	srv := servertest.NewWithConfig(t,
 		database, syncer, nil, nil, cfg, cfgPath,
 		server.ServerOptions{
 			TokenSources: sourceSet,
@@ -541,7 +542,7 @@ repository_selection = "all"
 		registry, database, nil, resolved.Expanded, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	srv := server.NewWithConfig(
+	srv := servertest.NewWithConfig(t,
 		database, syncer, nil, nil, cfg, cfgPath,
 		server.ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
@@ -738,7 +739,7 @@ repository_selection = "all"
 		registry, database, nil, []ghclient.RepoRef{ref}, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	srv := server.NewWithConfig(
+	srv := servertest.NewWithConfig(t,
 		database, syncer, nil, nil, cfg, cfgPath,
 		server.ServerOptions{
 			TokenSources: sourceSet,

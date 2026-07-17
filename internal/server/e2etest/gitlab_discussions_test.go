@@ -17,6 +17,7 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 func TestGetPRDetailIncludesThreadID(t *testing.T) {
@@ -199,7 +200,7 @@ func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
 	require.NoError(syncer.SyncMROnProvider(ctx, platform.KindGitLab, "gitlab.com", "acme", "widget", 7))
 	require.NoError(syncer.SyncIssueOnProvider(ctx, platform.KindGitLab, "gitlab.com", "acme", "widget", 11))
 
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 
 	prReq := httptest.NewRequest(http.MethodGet, "/api/v1/pulls/gitlab/acme/widget/7", nil)
 	prRR := httptest.NewRecorder()
@@ -447,7 +448,7 @@ func TestGitLabRepoCapabilitiesIncludeDiscussions(t *testing.T) {
 	)
 	t.Cleanup(syncer.Stop)
 
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	syncer.RunOnce(ctx)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/repo/gitlab/acme/widget", nil)
@@ -511,7 +512,7 @@ func TestReplyToDiscussionE2E(t *testing.T) {
 	)
 	t.Cleanup(syncer.Stop)
 
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	syncer.RunOnce(ctx)
 
 	// Create an MR to reply to
@@ -697,7 +698,7 @@ func TestReplyToDiscussionRejectsInvalidThreadID(t *testing.T) {
 	)
 	t.Cleanup(syncer.Stop)
 
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	syncer.RunOnce(ctx)
 
 	dbRepo2, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -795,7 +796,7 @@ func TestResolveDiscussionE2E(t *testing.T) {
 	)
 	t.Cleanup(syncer.Stop)
 
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	syncer.RunOnce(ctx)
 
 	dbRepo3, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -946,7 +947,7 @@ func TestDiscussionEndpointsRejectNonExistentMR(t *testing.T) {
 	)
 	t.Cleanup(syncer.Stop)
 
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	syncer.RunOnce(ctx)
 
 	// Note: We do NOT create an MR in the database, so MR #999 does not exist locally.
@@ -1023,7 +1024,7 @@ func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
 	)
 	t.Cleanup(syncer.Stop)
 
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	syncer.RunOnce(ctx)
 
 	dbRepo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{

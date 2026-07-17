@@ -17,6 +17,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 // TestE2E_WorktreeLinkChangeReachesSSE drives the sync-completed path
@@ -36,7 +37,7 @@ func TestE2E_WorktreeLinkChangeReachesSSE(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	cfg := &config.Config{BasePath: "/"}
 	cfg.Tmux.Command = []string{"middleman-no-such-tmux"}
-	srv := server.New(database, syncer, nil, "/", cfg, server.ServerOptions{
+	srv := servertest.New(t, database, syncer, nil, "/", cfg, server.ServerOptions{
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 		HostCheck: server.HostCheckOptions{

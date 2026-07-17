@@ -21,6 +21,7 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 // setupGitHubHeadPinServer boots the HTTP API with real SQLite against
@@ -91,7 +92,7 @@ func setupGitHubHeadPinServerWithDiff(
 	)
 	t.Cleanup(syncer.Stop)
 
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	return srv, database, repoID
 }
 

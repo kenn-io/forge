@@ -25,6 +25,7 @@ import (
 	platformgitlab "go.kenn.io/middleman/internal/platform/gitlab"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
@@ -124,7 +125,7 @@ token_file = %q
 		registry, database, nil, []ghclient.RepoRef{ref}, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	srv := server.NewWithConfig(
+	srv := servertest.NewWithConfig(t,
 		database, syncer, nil, nil, cfg, cfgPath,
 		server.ServerOptions{TokenSources: sourceSet},
 	)
@@ -476,7 +477,7 @@ func TestRuntimeLaunchStripsReloadedAndImplicitTokenEnvsE2E(t *testing.T) {
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	srv := server.NewWithConfig(
+	srv := servertest.NewWithConfig(t,
 		database, syncer, nil, nil, cfg, cfgPath,
 		server.ServerOptions{
 			WorktreeDir:                        filepath.Join(dir, "worktrees"),
@@ -572,7 +573,7 @@ name = "widget"
 		database, nil, nil, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	srv := server.NewWithConfig(
+	srv := servertest.NewWithConfig(t,
 		database, syncer, nil, nil, cfg, cfgPath, server.ServerOptions{},
 	)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
@@ -655,7 +656,7 @@ func TestSharedHostCloneAuthFollowsSurvivingProviderTokenE2E(t *testing.T) {
 		registry, database, nil, nil, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	srv := server.NewWithConfig(
+	srv := servertest.NewWithConfig(t,
 		database, syncer, nil, nil, cfg, cfgPath,
 		server.ServerOptions{TokenSources: sourceSet},
 	)
@@ -773,7 +774,7 @@ func startGitLabTokenSyncServer(
 		registry, database, nil, []ghclient.RepoRef{ref}, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	srv := server.NewWithConfig(
+	srv := servertest.NewWithConfig(t,
 		database, syncer, nil, nil, cfg, cfgPath,
 		server.ServerOptions{TokenSources: sourceSet},
 	)

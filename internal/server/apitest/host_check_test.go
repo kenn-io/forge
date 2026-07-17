@@ -20,6 +20,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 // TestHostValidationE2E exercises the Host validation middleware
@@ -165,7 +166,7 @@ func setupHostValidationServer(t *testing.T, opts ...server.HostCheckOptions) (*
 	if len(opts) > 0 {
 		hostCheck = opts[0]
 	}
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
 		HostCheck: hostCheck,
 	})
 	return srv, database
@@ -181,7 +182,7 @@ func setupHostValidationServerFromConfig(t *testing.T, content string) (*server.
 	syncer := ghclient.NewSyncer(nil, database, nil, defaultTestRepos, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 
-	srv := server.NewWithConfig(database, syncer, nil, nil, cfg, cfgPath, server.ServerOptions{})
+	srv := servertest.NewWithConfig(t, database, syncer, nil, nil, cfg, cfgPath, server.ServerOptions{})
 	return srv, database
 }
 

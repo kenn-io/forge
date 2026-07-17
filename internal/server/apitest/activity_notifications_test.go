@@ -14,6 +14,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 // setupNotificationsAPIServer builds an API server with a non-nil config so
@@ -30,7 +31,7 @@ func setupNotificationsAPIServer(t *testing.T) (*server.Server, *db.DB) {
 	// A non-nil config enables notifications; the explicit HostCheck override
 	// (which short-circuits config-derived host options) keeps the apitest
 	// "middleman.test" base URL accepted.
-	srv := server.New(database, syncer, nil, "/", &config.Config{}, server.ServerOptions{
+	srv := servertest.New(t, database, syncer, nil, "/", &config.Config{}, server.ServerOptions{
 		HostCheck: server.HostCheckOptions{
 			Bind: config.HostKey{Host: "127.0.0.1", Port: "8091"},
 			Allowed: []config.HostKey{

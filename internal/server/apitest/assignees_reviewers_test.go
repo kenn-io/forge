@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 type assigneesAPIResponse struct {
@@ -62,7 +63,7 @@ func setupAssigneeTestServer(t *testing.T) (*server.Server, *db.DB, *testutil.Fi
 		database, nil, defaultTestRepos, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -355,7 +356,7 @@ func TestAPIAssigneeAndReviewerMutationsAreCapabilityGated(t *testing.T) {
 	require.NoError(err)
 	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

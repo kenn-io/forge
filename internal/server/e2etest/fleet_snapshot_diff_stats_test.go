@@ -22,6 +22,7 @@ import (
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 // repoMetadataClient wraps the fixture client so GetRepository reports the
@@ -122,7 +123,7 @@ func TestFleetSnapshotBranchDiffForSyncedRepoE2E(t *testing.T) {
 
 	cfg := &config.Config{BasePath: "/"}
 	cfg.Tmux.Command = []string{"middleman-no-such-tmux"}
-	srv := server.New(database, syncer, nil, "/", cfg, server.ServerOptions{
+	srv := servertest.New(t, database, syncer, nil, "/", cfg, server.ServerOptions{
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 		HostCheck: server.HostCheckOptions{

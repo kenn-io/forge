@@ -18,6 +18,7 @@ import (
 	platformgithub "go.kenn.io/middleman/internal/platform/github"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 func TestSyncRoutesWithoutProviderSyncerE2E(t *testing.T) {
@@ -25,7 +26,7 @@ func TestSyncRoutesWithoutProviderSyncerE2E(t *testing.T) {
 	require := require.New(t)
 
 	database := dbtest.Open(t)
-	srv := server.New(database, nil, nil, "/", nil, server.ServerOptions{
+	srv := servertest.New(t, database, nil, nil, "/", nil, server.ServerOptions{
 		HostCheckAllowLoopbackAnyPort: true,
 	})
 	ts := httptest.NewServer(srv)
@@ -114,7 +115,7 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 	)
 	t.Cleanup(syncer.Stop)
 
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
 		HostCheckAllowLoopbackAnyPort: true,
 	})
 	middleman := httptest.NewServer(srv)

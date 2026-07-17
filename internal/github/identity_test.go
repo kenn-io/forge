@@ -95,6 +95,24 @@ func TestHTTPIdentityResolverRejectsInvalidResponsesSafely(t *testing.T) {
 	}
 }
 
+func TestHTTPIdentityResolverBoundsLookupDuration(t *testing.T) {
+	resolver := HTTPIdentityResolver{
+		Timeout: 20 * time.Millisecond,
+		Lookup: func(ctx context.Context, _ string, _ tokenauth.Source) (*gh.User, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+
+	started := time.Now()
+	_, _, err := resolver.ResolvePAT(
+		t.Context(), "github.com", identityTestSource(t, "TIMEOUT_TOKEN", "token"),
+	)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, time.Since(started), time.Second)
+}
+
 func TestIdentityBoundSourceRejectsCrossUserRotation(t *testing.T) {
 	require := require.New(t)
 	source := &mutableIdentityTestSource{token: "same-user-token"}

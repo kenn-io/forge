@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -286,6 +289,237 @@ func TestBuildProviderStartupRoutesUntrackedOwnerAndKeepsFallbackUnscoped(t *tes
 	fallbackRoute, err := router.RouteForRepo("unconfigured", "repo")
 	require.NoError(err)
 	assert.Equal("user:999", fallbackRoute.ReadIdentity.Principal)
+}
+
+func TestBuildProviderStartupSkipsImplicitOptionalFallbackIdentityLookup(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	t.Setenv("ORG_A_PAT", "org-a-token")
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "implicit-fallback-token")
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Repos:    []config.Repo{{Owner: "org-a", Name: "one"}},
+		GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{{
+			Host: "github.com", Owner: "org-a", TokenEnv: "ORG_A_PAT",
+		}},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+	var identityLookups atomic.Int32
+
+	startup, err := buildProviderStartup(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+		fakeGitHubIdentityResolver{
+			byEnv: map[string]github.GitHubIdentity{
+				"ORG_A_PAT": {
+					Key: github.IdentityKey{Host: "github.com", Principal: "user:123"},
+				},
+			},
+			calls: &identityLookups,
+		},
+	)
+	require.NoError(err)
+	assert.Equal(int32(1), identityLookups.Load())
+	assert.NotContains(startup.githubRoutes, tokenauth.Key{
+		Platform: "github", Host: "github.com",
+	})
+}
+
+func TestProductionStartupRoutesTwoOwnersThroughSyncAndMutationAPI(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("ORG_A_PAT", "token-a")
+	t.Setenv("ORG_B_PAT", "token-b")
+
+	var authMu sync.Mutex
+	authByCall := make(map[string]string)
+	record := func(key string, r *http.Request) {
+		authMu.Lock()
+		defer authMu.Unlock()
+		if _, exists := authByCall[key]; !exists {
+			authByCall[key] = r.Header.Get("Authorization")
+		}
+	}
+	repoIDs := map[string]int64{"org-a/one": 101, "org-b/two": 202}
+	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/user":
+			record("identity:"+r.Header.Get("Authorization"), r)
+			switch r.Header.Get("Authorization") {
+			case "Bearer token-a":
+				_, _ = io.WriteString(w, `{"id":11,"login":"owner-a-user"}`)
+			case "Bearer token-b":
+				_, _ = io.WriteString(w, `{"id":22,"login":"owner-b-user"}`)
+			default:
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = io.WriteString(w, `{"message":"bad credentials"}`)
+			}
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/rate_limit":
+			_, _ = io.WriteString(w, `{"resources":{"core":{"limit":5000,"remaining":4999,"reset":2000000000}}}`)
+			return
+		case r.Method == http.MethodPost && r.URL.Path == "/api/graphql":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"message":"force REST fallback"}`)
+			return
+		}
+
+		if !strings.HasPrefix(r.URL.Path, "/api/v3/repos/") {
+			http.NotFound(w, r)
+			return
+		}
+		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v3/repos/"), "/")
+		if len(parts) < 2 {
+			http.NotFound(w, r)
+			return
+		}
+		fullName := parts[0] + "/" + parts[1]
+		repoID, ok := repoIDs[fullName]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if len(parts) == 2 && r.Method == http.MethodGet {
+			record("sync:repo:"+fullName, r)
+			_, _ = fmt.Fprintf(w, `{
+				"id":%d,"node_id":%q,"name":%q,"full_name":%q,
+				"owner":{"login":%q},"default_branch":"main",
+				"html_url":"https://example.invalid/%s",
+				"clone_url":"https://example.invalid/%s.git",
+				"permissions":{"push":true}
+			}`, repoID, fmt.Sprintf("R_%d", repoID), parts[1], fullName, parts[0], fullName, fullName)
+			return
+		}
+		if len(parts) == 3 && parts[2] == "pulls" && r.Method == http.MethodGet {
+			record("sync:pulls:"+fullName, r)
+			_, _ = fmt.Fprintf(w, `[{
+				"id":%d,"number":1,"state":"open","title":%q,
+				"html_url":"https://example.invalid/%s/pull/1",
+				"user":{"login":"author"},"draft":false,
+				"created_at":"2026-07-17T12:00:00Z","updated_at":"2026-07-17T12:00:00Z",
+				"head":{"sha":%q,"ref":"feature","repo":{"id":%d,"full_name":%q}},
+				"base":{"sha":%q,"ref":"main","repo":{"id":%d,"full_name":%q}}
+			}]`, repoID*10+1, fullName+" PR", fullName, "head-"+parts[0], repoID, fullName, "base-"+parts[0], repoID, fullName)
+			return
+		}
+		if len(parts) == 5 && parts[2] == "issues" && parts[3] == "1" &&
+			parts[4] == "comments" && r.Method == http.MethodPost {
+			record("write:comment:"+fullName, r)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = fmt.Fprintf(w, `{
+				"id":%d,"body":"routed comment","user":{"login":"maintainer"},
+				"created_at":"2026-07-17T12:01:00Z",
+				"html_url":"https://example.invalid/%s/pull/1#issuecomment-1"
+			}`, repoID*100, fullName)
+			return
+		}
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	t.Cleanup(api.Close)
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = api.Client().Transport
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+	host := strings.TrimPrefix(api.URL, "https://")
+
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Repos: []config.Repo{
+			{Platform: "github", PlatformHost: host, Owner: "org-a", Name: "one"},
+			{Platform: "github", PlatformHost: host, Owner: "org-b", Name: "two"},
+		},
+		GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{
+			{Host: host, Owner: "org-a", TokenEnv: "ORG_A_PAT"},
+			{Host: host, Owner: "org-b", TokenEnv: "ORG_B_PAT"},
+		},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubCLI: func(context.Context, string) (string, error) {
+			return "", tokenauth.ErrMissingToken
+		},
+	})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	startup, err := buildProviderStartup(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+		github.HTTPIdentityResolver{},
+	)
+	require.NoError(err)
+
+	repos := []github.RepoRef{
+		{Platform: "github", PlatformHost: host, Owner: "org-a", Name: "one"},
+		{Platform: "github", PlatformHost: host, Owner: "org-b", Name: "two"},
+	}
+	syncer := github.NewSyncerWithRegistry(
+		startup.registry, database, nil, repos, time.Minute,
+		startup.rateTrackers, startup.budgets,
+	)
+	t.Cleanup(syncer.Stop)
+	syncer.SetGitHubRouters(startup.githubRouters)
+	syncer.SetWriteRateTrackers(startup.writeRateTrackers)
+	syncer.SetWriteGQLRateTrackers(startup.writeGQLRateTrackers)
+	srv := server.New(database, syncer, nil, "/", cfg, server.ServerOptions{
+		TokenSources: set, HostCheckAllowLoopbackAnyPort: true,
+	})
+	middleman := httptest.NewServer(srv)
+	t.Cleanup(middleman.Close)
+
+	syncReq, err := http.NewRequestWithContext(
+		t.Context(), http.MethodPost, middleman.URL+"/api/v1/sync", nil,
+	)
+	require.NoError(err)
+	syncReq.Header.Set("Content-Type", "application/json")
+	syncResp, err := middleman.Client().Do(syncReq)
+	require.NoError(err)
+	syncBody, err := io.ReadAll(syncResp.Body)
+	require.NoError(err)
+	require.NoError(syncResp.Body.Close())
+	require.Equal(http.StatusAccepted, syncResp.StatusCode, string(syncBody))
+
+	require.Eventually(func() bool {
+		for _, repo := range repos {
+			row, rowErr := database.GetMergeRequest(
+				t.Context(), "github", host, repo.Owner, repo.Name, 1,
+			)
+			if rowErr != nil || row == nil || row.Title != repo.Owner+"/"+repo.Name+" PR" {
+				return false
+			}
+		}
+		return true
+	}, 5*time.Second, 20*time.Millisecond)
+
+	for _, repo := range repos {
+		url := fmt.Sprintf(
+			"%s/api/v1/host/%s/pulls/gh/%s/%s/1/comments",
+			middleman.URL, host, repo.Owner, repo.Name,
+		)
+		commentReq, reqErr := http.NewRequestWithContext(
+			t.Context(), http.MethodPost, url,
+			strings.NewReader(`{"body":"routed comment"}`),
+		)
+		require.NoError(reqErr)
+		commentReq.Header.Set("Content-Type", "application/json")
+		commentResp, reqErr := middleman.Client().Do(commentReq)
+		require.NoError(reqErr)
+		commentBody, readErr := io.ReadAll(commentResp.Body)
+		require.NoError(readErr)
+		require.NoError(commentResp.Body.Close())
+		require.Equal(http.StatusCreated, commentResp.StatusCode, string(commentBody))
+	}
+
+	authMu.Lock()
+	defer authMu.Unlock()
+	assert.Equal("Bearer token-a", authByCall["sync:pulls:org-a/one"])
+	assert.Equal("Bearer token-b", authByCall["sync:pulls:org-b/two"])
+	assert.Equal("Bearer token-a", authByCall["write:comment:org-a/one"])
+	assert.Equal("Bearer token-b", authByCall["write:comment:org-b/two"])
 }
 
 func TestProductionStartupRoutesExposeRotatedPATThroughRepoAPI(t *testing.T) {

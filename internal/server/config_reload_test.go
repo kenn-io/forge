@@ -1359,7 +1359,7 @@ repository_selection = "all"
 	assert.Equal(int64(4242), apps[0].AppID)
 }
 
-func TestValidateReloadProviderTokenSourcesScopesGitHubAppByOwner(t *testing.T) {
+func TestValidateReloadProviderTokenSourcesReusesGitHubAppTokenAcrossRoutes(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
@@ -1370,7 +1370,11 @@ github_token_env = "UNUSED_RELOAD_GITHUB_TOKEN"
 
 [[repos]]
 owner = "acme"
-name = "widget"
+name = "widget-one"
+
+[[repos]]
+owner = "acme"
+name = "widget-two"
 
 [[github_apps]]
 host = "github.com"
@@ -1378,7 +1382,8 @@ app_id = 4242
 private_key_path = "app.pem"
 installation_id = 7
 installation_account = "acme"
-repository_selection = "all"
+repository_selection = "selected"
+selected_repos = ["acme/widget-one", "acme/widget-two"]
 `)
 	cfg, err := config.Load(cfgPath)
 	require.NoError(err)

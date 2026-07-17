@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	gh "github.com/google/go-github/v88/github"
 	"go.kenn.io/middleman/internal/tokenauth"
@@ -172,8 +173,11 @@ func (s *identityRecordingSource) resolvedToken() string {
 // user API. Lookup is injectable so tests exercise identity semantics without
 // exposing an arbitrary request URL seam.
 type HTTPIdentityResolver struct {
-	Lookup authenticatedUserLookup
+	Lookup  authenticatedUserLookup
+	Timeout time.Duration
 }
+
+const defaultIdentityLookupTimeout = 10 * time.Second
 
 func (r HTTPIdentityResolver) ResolvePAT(
 	ctx context.Context, host string, source tokenauth.Source,
@@ -185,8 +189,14 @@ func (r HTTPIdentityResolver) ResolvePAT(
 	if r.Lookup != nil {
 		lookup = r.Lookup
 	}
+	timeout := r.Timeout
+	if timeout <= 0 {
+		timeout = defaultIdentityLookupTimeout
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	recording := &identityRecordingSource{source: source}
-	user, err := lookup(tokenauth.WithMutationAuth(ctx), host, recording)
+	user, err := lookup(tokenauth.WithMutationAuth(lookupCtx), host, recording)
 	if err != nil {
 		return GitHubIdentity{}, "", fmt.Errorf(
 			"resolve GitHub identity for %s via %s: %w",

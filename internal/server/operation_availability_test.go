@@ -830,6 +830,40 @@ func TestAPIRepoResponseProbesRestartBoundWriteCredential(t *testing.T) {
 	assert.Equal(1, client.calls, "routed write credential probes must use the TTL cache")
 }
 
+func TestAPIRepoResponseDisablesWritesWhenConfiguredRouterHasNoRoute(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	client := &mockGH{}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": client}, database, nil,
+		[]ghclient.RepoRef{{Owner: "other", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	router, err := ghclient.NewHostRouter("github.com", &ghclient.Route{
+		Key: ghclient.RouteKey{Host: "github.com", Owner: "acme"}, Client: client,
+		ReadIdentity:  ghclient.IdentityKey{Host: "github.com", Principal: "user:11"},
+		WriteIdentity: ghclient.IdentityKey{Host: "github.com", Principal: "user:11"},
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	_, err = database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "other", "widget"),
+	)
+	require.NoError(err)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/other/widget", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	var resp repoResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+
+	assert.False(resp.Operations.MergePR.Available)
+	assert.Equal(availabilityCodeMissingWriteCredential, resp.Operations.MergePR.Code)
+}
+
 // splitTestDescriptor builds the github.com chain of a split host:
 // an installed GitHub App candidate followed by the given user write
 // candidate.

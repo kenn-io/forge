@@ -2885,6 +2885,16 @@ func (s *Syncer) ReadIdentityForRepo(repo RepoRef) (IdentityKey, bool) {
 	return identity, err == nil && identity.Principal != ""
 }
 
+// HasGitHubRouter reports whether startup configured route selection for the
+// repository's GitHub host. A configured router can still reject a repository
+// with MissingRouteError when no exact, owner, or fallback route matches.
+func (s *Syncer) HasGitHubRouter(repo RepoRef) bool {
+	if s == nil || repoPlatform(repo) != platform.KindGitHub {
+		return false
+	}
+	return s.routers[repoHost(repo)] != nil
+}
+
 // WriteIdentityForRepo returns the restart-bound mutation identity selected
 // for repo. App-only routes have no write identity and remain mutation-disabled
 // until restart establishes one.

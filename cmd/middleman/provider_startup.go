@@ -401,9 +401,25 @@ func buildGitHubIdentityRuntimes(
 		return nil
 	}
 	plans := githubCredentialPlans(cfg)
+	requiredHosts := make(map[string]struct{}, len(plans))
+	for _, plan := range plans {
+		if plan.Required {
+			requiredHosts[plan.Descriptor.Key.Host] = struct{}{}
+		}
+	}
 	resolvedPATs := make(map[string]resolvedGitHubPAT, len(plans))
 	for _, plan := range plans {
 		desc := plan.Descriptor
+		if !plan.Required && desc.Key.Scope == "" {
+			// Scoped routes already carry every credential needed for their
+			// repositories. Do not turn an implicit default env/gh CLI token
+			// into an additional startup /user dependency unless the user
+			// explicitly configured that host fallback.
+			if len(requiredHosts) > 0 &&
+				!hasExplicitGitHubFallback(cfg, desc.Key.Host) {
+				continue
+			}
+		}
 		var source tokenauth.Source = set.Upsert(desc)
 		app, hasApp := activeGitHubAppCandidate(desc, plan.GitHubOwner)
 		resolvedWrite, err := resolveGitHubPATIdentity(
@@ -455,6 +471,24 @@ func buildGitHubIdentityRuntimes(
 		}
 	}
 	return nil
+}
+
+func hasExplicitGitHubFallback(cfg *config.Config, host string) bool {
+	if cfg == nil {
+		return false
+	}
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == platform.DefaultGitHubHost && strings.TrimSpace(cfg.GitHubTokenEnv) != "" {
+		return true
+	}
+	for _, configured := range cfg.Platforms {
+		if strings.EqualFold(configured.Type, string(platform.KindGitHub)) &&
+			strings.EqualFold(configured.Host, host) &&
+			(strings.TrimSpace(configured.TokenEnv) != "" || strings.TrimSpace(configured.TokenFile) != "") {
+			return true
+		}
+	}
+	return false
 }
 
 func buildGitHubRouteClients(startup *providerStartup) error {

@@ -609,8 +609,7 @@ func (s *Server) cachedWriteCredentialGate(
 }
 
 func routerIdentityRequired(syncer *ghclient.Syncer, repo ghclient.RepoRef) bool {
-	_, ok := syncer.ReadIdentityForRepo(repo)
-	return ok
+	return syncer.HasGitHubRouter(repo)
 }
 
 // probeWriteCredential resolves the mutation-marked chain once and

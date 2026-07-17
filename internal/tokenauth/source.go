@@ -329,15 +329,18 @@ func (s *SourceSet) Get(key Key) (*ManagedSource, bool) {
 	return src, ok
 }
 
-// ProbeToken resolves desc with this set's options without mutating live sources.
+// ProbeToken resolves desc with this set's options without mutating live
+// sources. Probe sources share the set's installation-token cache so multiple
+// scoped routes covered by one GitHub App installation do not mint duplicates.
 func (s *SourceSet) ProbeToken(ctx context.Context, desc Descriptor) (string, error) {
 	if s == nil {
 		return NewManagedSource(desc, Options{}).Token(ctx)
 	}
 	s.mu.Lock()
 	options := s.options
+	appTokens := s.appTokens
 	s.mu.Unlock()
-	return NewManagedSource(desc, options).Token(ctx)
+	return newManagedSource(desc, options, appTokens).Token(ctx)
 }
 
 func (s *SourceSet) Keys() []Key {

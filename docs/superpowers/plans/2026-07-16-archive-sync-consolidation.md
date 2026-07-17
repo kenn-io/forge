@@ -1,12 +1,14 @@
 # Archive and Live Sync Consolidation Implementation Plan
 
+> **Status: Superseded.** This plan's architectural approach is replaced by `docs/superpowers/specs/2026-07-16-archive-single-ingestion-correction-design.md` and its implementation plan. Do not execute the remaining tasks in this document.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make regular sync and archive sync share provider paging, revision-aware dataset publication, and provider-host admission while preserving live work priority and ramping archive use of expiring hourly surplus.
 
 **Architecture:** Keep archive state responsible only for historical selection, durable cursors, retries, coverage, and reports. Move request admission into a provider-host coordinator used at every archive page boundary; expose canonical page readers that whole-dataset regular-sync helpers collect; and route both live and archive child datasets through the same transactional write helpers. A complete live observation conditionally marks matching archive datasets complete in the same transaction without depending on archive state.
 
-**Tech Stack:** Go 1.25, SQLite via `modernc.org/sqlite`, provider SDKs, `testify`.
+**Tech Stack:** Go 1.26, SQLite via `modernc.org/sqlite`, provider SDKs, `testify`.
 
 ## Global Constraints
 

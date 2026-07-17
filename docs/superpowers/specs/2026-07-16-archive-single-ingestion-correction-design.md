@@ -68,7 +68,7 @@ Each provider has one normalized page operation for each provider dataset. Live 
 
 ### One domain-ingestion implementation
 
-All provider observations enter through one revision-aware ingestion API. Archive work may attach durable progress advancement to a page commit; live work may omit it. Domain persistence is identical in both cases and cannot depend on archive state existing or being healthy.
+All provider observations enter through exactly two canonical revision-aware ingestion operations: one parent-inventory page commit and one child-dataset page commit. They are distinct domain operations because an inventory page upserts many parent items, creates or refreshes per-item archive work, and advances a repository-level cursor, while a dataset page writes child rows scoped to one parent and advances that parent's dataset progress. Neither operation has an archive-only or live-only variant. Archive work may attach durable progress advancement to a page commit; live work may omit it. Domain persistence is identical in both cases and cannot depend on archive state existing or being healthy.
 
 ### Durable progress for scarce API work
 
@@ -156,6 +156,14 @@ The final names may follow existing package conventions, but the shape and owner
 - live whole-dataset helpers are collectors over these page methods;
 - archive workers call the same methods with durable cursors.
 
+### Canonical readers stay contract-validated
+
+The provider-neutral contract checks currently owned by `validatingArchiveReader` move to a provider-neutral validating wrapper around the canonical reader interfaces; they are not deleted with it. The wrapper enforces canonical repository identity on inputs and returned parents, positive item numbers for item-scoped reads, capability declarations before provider calls, typed lookup outcomes, and cursor/page invariants (a returned page must not echo its input cursor as `NextCursor` without being exhausted). Table-driven contract tests cover every provider through this wrapper independently of the removed archive-prefixed interface.
+
+### Optimized bulk observations
+
+The GitHub ETag-gated open-item read followed by the GraphQL bulk fetch remains a supported optimization. A bulk producer is an optional canonical producer: it emits the same provider-neutral normalized parent and child values and commits them through the same two canonical ingestion operations. It must not persist through any other writer and must not be required by any caller; every dataset it covers is also reachable through the canonical page methods. Provider-equivalence gates are qualified accordingly: a bulk observation satisfies equivalence when its committed rows match what the canonical page methods would have produced, without requiring the separate detail requests it avoided.
+
 ### Inventory and current-index reads share methods
 
 Open-item sync uses `StateOpen`. Historical inventory uses `StateAll` ordered for stable traversal. Maintenance uses `StateAll` with an overlapped `UpdatedSince` watermark. A provider may choose different endpoint parameters for those queries, but the request construction and normalization live in one method per item type.
@@ -188,6 +196,8 @@ Keep durable repository cursors because they protect scarce provider requests:
 - maintenance merge-request cursor and exhausted flag;
 - last fully completed maintenance watermark.
 
+Each repository-level scan (historical issues, historical merge requests, maintenance issues, maintenance merge requests) also carries its own scan generation, status (including `blocked`), per-generation page count, and sanitized last-error metadata. Cursor commits are bound to the scan generation with compare-and-swap semantics, so a response from before an explicit reset cannot advance the new generation.
+
 `CommitArchiveInventoryPage` or its replacement continues to atomically:
 
 1. upsert the normalized parent snapshots from one provider page;
@@ -213,7 +223,7 @@ refresh_reason
 hydrated_at
 ```
 
-Dataset status, cursor, retry, and error fields move out of repeated item columns and into generic dataset progress rows.
+Dataset status, cursor, retry, and error fields move out of repeated item columns and into generic dataset progress rows. Parent item hydration (the lookup that fetches or refreshes the parent before any child dataset can be scanned) is itself modeled as the `lookup` dataset, so item-scoped transient failures, retries, backoff, and terminal outcomes use the same progress machinery as child datasets instead of dedicated item columns.
 
 ### Dataset progress
 
@@ -223,11 +233,13 @@ Replace `middleman_archive_dataset_pages` and the three status columns on each a
 repo_id
 item_type
 item_number
-dataset                 -- comments, reviews, inline_comments
+dataset                 -- lookup, comments, reviews, inline_comments
 parent_revision
 scan_generation
 next_cursor
-status                  -- pending, running, complete, unsupported, failed
+last_input_cursor       -- cursor that produced the current committed state
+page_count              -- pages committed in the current generation
+status                  -- pending, running, complete, unsupported, blocked, failed, terminal
 observed_count
 attempt_count
 next_retry_at
@@ -252,9 +264,16 @@ A dataset scan generation increments when:
 
 - a dataset is first scanned;
 - the parent provider revision changes before completion;
+- inventory or maintenance observes a newer parent provider revision after completion;
 - an operator explicitly resets an invalid scan.
 
+Completed datasets reopen: when a maintenance or inventory observation advances `provider_updated_at` past the revision a completed dataset was bound to, that dataset atomically increments its generation, clears its cursor, and returns to `pending` for the new parent revision. Existing rows are retained until the new generation completes and reconciles. Without this transition, activity added after initial completion would never be collected while reports still claimed completeness.
+
 The generation identifies observations belonging to one logical complete-snapshot attempt. Restarting an affected item/dataset does not reset repository inventory, maintenance scans, or unrelated datasets.
+
+### Pagination bounds
+
+Cursor compare-and-swap alone cannot stop an alternating or longer cursor cycle, including cycles of progress-only or empty pages. Every scan — repository inventory, maintenance, and item datasets — enforces a documented per-generation maximum page count using its durable `page_count`. Exceeding the bound, or receiving a page whose `NextCursor` equals its input cursor without exhaustion, marks that scan `blocked` exactly like a provider-invalidated cursor: progress is retained for diagnostics, no further provider requests are spent automatically, and recovery requires an explicit reset. Tests cover multi-cursor cycles and empty-page loops.
 
 ## Incremental Ingestion
 
@@ -327,7 +346,7 @@ Repository inventory and unrelated datasets keep their progress.
 
 ### No page replay after commit
 
-The database verifies the expected input cursor before advancing progress. Duplicate delivery of the same page is idempotent. Delivery of an older or unrelated cursor is rejected as a typed stale-progress error without provider refetch.
+The database verifies the expected input cursor before advancing progress. Progress rows persist both the next cursor and the last committed input cursor, which is what makes duplicate delivery distinguishable from unrelated stale delivery: a commit whose input cursor equals the stored `last_input_cursor` for the same generation is the already-committed page and returns a typed already-committed success without writing or advancing anything. A commit whose input cursor equals the stored `next_cursor` advances normally. Any other cursor is rejected as a typed stale-progress error without provider refetch.
 
 ## Provider Cursor Failure
 
@@ -340,7 +359,7 @@ On a typed invalid-cursor response:
 - expose the provider, repository, item, dataset, and sanitized error through status;
 - consume no additional provider requests automatically for that scan.
 
-Recovery requires an explicit progress reset. The reset starts a new generation for only the affected scan. It does not clear domain content or unrelated cursors. The implementation may expose this through an operator command or an internal administrative API, but automatic unbounded page-one retries are forbidden.
+Recovery requires an explicit progress reset. The reset starts a new generation for only the affected scan. It does not clear domain content or unrelated cursors. A scoped reset operation is a required deliverable of this correction — exposed through the archive CLI and API — because blocked scans are otherwise unrecoverable. Automatic unbounded page-one retries are forbidden.
 
 Transient transport, authentication, and rate-limit failures retain the cursor and use existing retry/backoff policy.
 
@@ -438,6 +457,8 @@ It is not acceptable to discard:
 - docs, messages, or Kata state;
 - any other local-only record that cannot be reconstructed from a provider.
 
+Provider-derived parent rows (issues, merge requests, comments) that protected local state references — through foreign keys or stored identifiers — must be retained or safely reattached, never deleted out from under their dependents. Before discarding any provider-derived table during migration, the implementation enumerates its foreign-key dependents and confirms none carries protected local state.
+
 No compatibility adapter, dual read, dual write, or repair gate is added without explicit user approval.
 
 ## Error Handling
@@ -533,6 +554,9 @@ Additional gates:
 - No live write requires archive state.
 - No automatic invalid-cursor recovery restarts from page one.
 - Reports retain existing user-visible behavior.
+- Canonical readers keep provider-neutral contract validation with table-driven tests.
+- Every scan enforces a per-generation page bound; exceeding it blocks the scan.
+- A scoped reset for blocked scans is exposed through the archive CLI and API.
 
 ## Quantitative Acceptance Gates
 
@@ -568,10 +592,12 @@ Tests prove:
 
 - domain rows and cursor advancement commit together;
 - a failed transaction commits neither;
-- duplicate page delivery is idempotent;
+- duplicate page delivery is idempotent and distinguishable from stale delivery;
 - stale revision or generation cannot advance progress;
 - final ordinary-comment reconciliation occurs only at exhaustion;
-- additive datasets never delete omitted history.
+- additive datasets never delete omitted history;
+- a completed dataset reopens for a newer observed parent revision;
+- cursor cycles and empty-page loops hit the page bound and block the scan.
 
 ### Live independence
 
@@ -589,6 +615,10 @@ Existing report behavior tests remain. Coverage tests prove partial dataset prog
 
 A forward migration test starts from the previous released schema, applies the final rewritten migration 39, verifies local-only/domain rows, and runs `PRAGMA integrity_check` and `PRAGMA foreign_key_check`.
 
+### Full workflow
+
+One full-stack test drives the user-visible workflow through the real HTTP API and SQLite: start an archive, commit multiple provider pages across a service restart, pause and resume, read status and completeness, and generate deterministic partial and complete reports.
+
 ### Final audit
 
 The final review records:
@@ -600,16 +630,17 @@ The final review records:
 
 ## Implementation Order
 
-1. Record baseline metrics and a function-by-function deletion map.
-2. Introduce canonical provider page and lookup interfaces without adapters.
-3. Convert live current-index and detail reads to those canonical methods provider by provider.
-4. Convert archive inventory, maintenance, and hydration to the same methods.
-5. Add compact dataset progress and one incremental page-ingestion transaction.
-6. Convert ordinary comments, reviews, and threads to incremental ingestion semantics.
-7. Rewrite migration 39 directly to the final schema.
-8. Delete payload staging, archive-only publication, and obsolete schema/types/tests.
-9. Delete `ArchiveReader`, archive-prefixed provider methods, and archive provider files.
-10. Verify reports, completeness, live priority, and cursor resumability.
-11. Enforce structural and quantitative gates before claiming completion.
+Work proceeds in vertical slices so every committed stage pairs a coherent schema with the runtime code that uses it, and so no stage needs a temporary adapter or leaves both an old and a new implementation alive.
 
-At each conversion step, the old implementation is deleted before proceeding to the next dataset or provider. A temporary adapter may not be committed. If a canonical method cannot replace the old path, implementation stops to revise the design rather than adding another permanent layer.
+1. Record baseline metrics and a function-by-function deletion map.
+2. Rewrite migration 39 to the final schema together with the canonical ingestion operations (parent-inventory page commit and child-dataset page commit) and the compact dataset progress rows, converting the archive service and live child writers in the same slice so no committed stage depends on the superseded staging schema.
+3. Introduce the canonical provider page and lookup interfaces without adapters.
+4. Convert one provider at a time as a vertical slice: introduce its canonical operations, convert both its live and archive callers, add parity tests, and delete its old live and archive implementations before starting the next provider.
+5. Convert ordinary comments, reviews, and threads to incremental ingestion semantics as each provider slice lands.
+6. Delete payload staging, archive-only publication, and obsolete schema/types/tests.
+7. Delete `ArchiveReader`, archive-prefixed provider methods, and archive provider files.
+8. Add the full-stack workflow test: through the real HTTP API and SQLite, start an archive, commit multiple pages across a service restart, pause and resume, verify status and completeness, and generate deterministic partial and complete reports.
+9. Verify reports, completeness, live priority, and cursor resumability.
+10. Enforce structural and quantitative gates before claiming completion.
+
+Within each slice, the old implementation is deleted before proceeding to the next dataset or provider. A temporary adapter may not be committed. If a canonical method cannot replace the old path, implementation stops to revise the design rather than adding another permanent layer.

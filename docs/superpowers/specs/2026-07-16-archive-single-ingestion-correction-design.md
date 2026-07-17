@@ -68,7 +68,14 @@ Each provider has one normalized page operation for each provider dataset. Live 
 
 ### One domain-ingestion implementation
 
-All provider observations enter through exactly two canonical revision-aware ingestion operations: one parent-inventory page commit and one child-dataset page commit. They are distinct domain operations because an inventory page upserts many parent items, creates or refreshes per-item archive work, and advances a repository-level cursor, while a dataset page writes child rows scoped to one parent and advances that parent's dataset progress. Neither operation has an archive-only or live-only variant. Archive work may attach durable progress advancement to a page commit; live work may omit it. Domain persistence is identical in both cases and cannot depend on archive state existing or being healthy.
+All provider observations enter through exactly two canonical revision-aware ingestion operations: one parent-observation commit and one child-dataset page commit. They are distinct domain operations because a parent observation upserts parent items, creates or refreshes per-item archive work, and advances scan progress, while a dataset page writes child rows scoped to one parent and advances that parent's dataset progress. Neither operation has an archive-only or live-only variant. Archive work may attach durable progress advancement to a page commit; live work may omit it. Domain persistence is identical in both cases and cannot depend on archive state existing or being healthy.
+
+The parent-observation commit has two modes sharing one parent upsert and work-reconciliation implementation:
+
+- an inventory page: many parents from one provider page, advancing a repository-level scan cursor;
+- a single-item lookup: one parent from a lookup outcome, advancing that item's `lookup` dataset progress.
+
+A present lookup atomically upserts the refreshed parent snapshot, binds the lookup progress to the resulting parent revision, and reopens child datasets whose bound revision it superseded. A removed, moved, or inaccessible lookup atomically records the item lifecycle outcome and marks the lookup progress terminal; a moved lookup additionally queues the destination repository for prompt follow-up. There is no third parent writer.
 
 ### Durable progress for scarce API work
 
@@ -273,7 +280,7 @@ The generation identifies observations belonging to one logical complete-snapsho
 
 ### Pagination bounds
 
-Cursor compare-and-swap alone cannot stop an alternating or longer cursor cycle, including cycles of progress-only or empty pages. Every scan — repository inventory, maintenance, and item datasets — enforces a documented per-generation maximum page count using its durable `page_count`. Exceeding the bound, or receiving a page whose `NextCursor` equals its input cursor without exhaustion, marks that scan `blocked` exactly like a provider-invalidated cursor: progress is retained for diagnostics, no further provider requests are spent automatically, and recovery requires an explicit reset. Tests cover multi-cursor cycles and empty-page loops.
+Cursor compare-and-swap alone cannot stop an alternating or longer cursor cycle, including cycles of progress-only or empty pages. Every scan — repository inventory, maintenance, and item datasets — enforces a per-generation maximum of 10,000 pages using its durable `page_count`. Exceeding the bound, or receiving a page whose `NextCursor` equals its input cursor without exhaustion, marks that scan `blocked`: progress is retained for diagnostics, no further provider requests are spent automatically, and recovery requires an explicit reset. The block reason is durable (`page_bound` versus `invalid_cursor` in the error code) so operators and tests can distinguish a legitimately oversized scan from a cursor cycle. Tests cover multi-cursor cycles, empty-page loops, and oversized-but-valid scans separately.
 
 ## Incremental Ingestion
 
@@ -359,7 +366,12 @@ On a typed invalid-cursor response:
 - expose the provider, repository, item, dataset, and sanitized error through status;
 - consume no additional provider requests automatically for that scan.
 
-Recovery requires an explicit progress reset. The reset starts a new generation for only the affected scan. It does not clear domain content or unrelated cursors. A scoped reset operation is a required deliverable of this correction — exposed through the archive CLI and API — because blocked scans are otherwise unrecoverable. Automatic unbounded page-one retries are forbidden.
+Recovery requires an explicit progress reset. A scoped reset operation is a required deliverable of this correction — exposed through the archive CLI and API — because blocked scans are otherwise unrecoverable. Automatic unbounded page-one retries are forbidden.
+
+The reset has two modes, and neither clears domain content or unrelated cursors:
+
+- **restart**: a new generation for only the affected scan, cursor cleared. This is the only valid recovery for a provider-invalidated cursor or a detected cursor cycle.
+- **continue**: page counter cleared, cursor and generation retained, granting a legitimately oversized scan another page-bound window from where it stopped. Continue is refused for `invalid_cursor` blocks, where the retained cursor is known bad.
 
 Transient transport, authentication, and rate-limit failures retain the cursor and use existing retry/backoff policy.
 
@@ -468,7 +480,7 @@ Errors remain typed and provider-scoped.
 - Authentication and permission failures block the affected repository and resume after credential change.
 - Rate limits preserve cursor progress and retry at the provider reset or shared budget retry time.
 - Transient failures preserve progress and use bounded backoff.
-- Invalid provider contracts block the affected repository or dataset without cursor advancement.
+- Invalid provider contracts on a page read — an echoed cursor, a malformed page, a wrong-parent item — block only the affected scan or dataset without cursor advancement; contract failures that are repository-wide (wrong repository identity, capability misdeclaration) block the repository.
 - Invalid cursors block the affected scan and require explicit reset.
 - Removed, moved, and inaccessible item lookups mark only the item terminal according to current product rules.
 - Stale parent revisions reset only the affected dataset generation.
@@ -618,6 +630,8 @@ A forward migration test starts from the previous released schema, applies the f
 ### Full workflow
 
 One full-stack test drives the user-visible workflow through the real HTTP API and SQLite: start an archive, commit multiple provider pages across a service restart, pause and resume, read status and completeness, and generate deterministic partial and complete reports.
+
+The blocked-scan recovery path gets the same treatment: block a scan, reset it through the real API or CLI, prove a stale pre-reset page commit is rejected by the new generation, prove unrelated scan and dataset state is untouched, and resume collection from the reset scope.
 
 ### Final audit
 

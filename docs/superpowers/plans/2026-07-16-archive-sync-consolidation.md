@@ -1,6 +1,6 @@
 # Archive and Live Sync Consolidation Implementation Plan
 
-> **Status: Superseded.** This plan's architectural approach is replaced by `docs/superpowers/specs/2026-07-16-archive-single-ingestion-correction-design.md` and its implementation plan. Do not execute the remaining tasks in this document.
+> **Status: Superseded.** This plan's architectural approach is replaced by `docs/superpowers/specs/2026-07-16-archive-single-ingestion-correction-design.md` and its implementation plan `docs/superpowers/plans/2026-07-16-archive-single-ingestion-correction.md`. Do not execute the remaining tasks in this document.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

@@ -14,7 +14,7 @@
 
 - Repository identity is always `(platform, platform_host, owner, name)`.
 - All live work outranks archive work; archive admission is per provider page; database work never holds provider admission.
-- No compatibility adapter, dual writer, alias, or repair gate may be committed (CLAUDE.md + design non-goals).
+- No compatibility adapter, dual writer, alias, or repair gate may be committed (CLAUDE.md + design non-goals). Transitional precision: at every commit, each dataset has exactly one request/normalization implementation and each domain row has exactly one writer. Existing archive-prefixed methods may remain as one-line delegates over the canonical implementation between their provider's slice and Task 11 (they are the pre-existing surface, not new scaffolding, and carry no duplicated logic); the staging schema may outlive its last writer (Task 9) until Task 10 removes it, but no commit leaves two live writers for the same rows.
 - Structural gates (design: Structural Acceptance Gates): after Task 11 the strings `ArchiveReader`, `validatingArchiveReader`, `ListArchive`, `GetArchive`, `PublishArchive`, `middleman_archive_dataset_pages`, `ArchiveDatasetPage`, `ArchiveDatasetStage` have no production matches.
 - Quantitative gates measured against `3e914c24` excluding the design doc and this plan: delete ≥2,000 net handwritten production lines and ≥4,000 net total lines; end ≤ ~+6,500 production / ~+18,000 total vs `origin/main`.
 - Tests: `go test ./... -shuffle=on`, testify (`require` for preconditions, `assert` otherwise), no `-v`, no `-count=1`, table-driven, `t.TempDir()`, `openTestDB(t)` for db tests.
@@ -312,6 +312,28 @@ type DatasetPageCommit struct {
 type StaleDatasetProgressError struct { /* repo/item/dataset, expected+got cursor/generation/revision */ }
 type ScanBlockedError struct { /* scope + reason */ }
 
+// ParentLookupCommit is the single-item mode of the canonical parent-observation
+// operation (design: One domain-ingestion implementation). It shares the parent
+// upsert + work-reconciliation tx core with CommitArchiveInventoryPage — there is
+// no third parent writer.
+type ParentLookupCommit struct {
+    RepoID       int64
+    ItemType     ArchiveItemType
+    ItemNumber   int
+    Outcome      platform.LookupOutcome // present | removed | moved | inaccessible
+    Issue        *Issue                 // present + issue
+    MergeRequest *MergeRequest          // present + merge_request
+    Destination  *RepoIdentity          // moved
+    ErrorCode    string                 // terminal outcomes
+    ErrorDetail  string
+    Now          time.Time
+}
+// Present: upsert parent snapshot, bind lookup progress to the new parent revision
+// (status complete), reopen child datasets whose bound revision was superseded.
+// Removed/inaccessible: item lifecycle terminal + lookup progress terminal.
+// Moved: as removed, plus queue destination prompt (QueueArchivePromptByIdentity).
+func (d *DB) CommitParentLookup(ctx context.Context, commit ParentLookupCommit) error
+
 func (d *DB) CommitDatasetPage(ctx context.Context, commit DatasetPageCommit) error
 func (d *DB) GetDatasetProgress(ctx context.Context, repoID int64, itemType ArchiveItemType, itemNumber int, dataset ArchiveDataset) (ArchiveDatasetProgress, error)
 func (d *DB) ReopenDatasetsForParent(ctx context.Context, tx *sql.Tx, parent DomainParentRef, repoID int64, itemNumber int, newRevision int64) error
@@ -322,7 +344,7 @@ func (d *DB) ResetDatasetProgress(ctx context.Context, key) error   // new gener
 **`CommitDatasetPage` semantics (design: One page commit API; Ordinary comments; Submitted reviews and review threads; Parent revision changes; No page replay after commit; Pagination bounds):**
 
 1. One transaction. Verify parent `snapshot_revision == ExpectedRevision`; stale → increment that dataset's generation, clear its cursor, mark `pending` for the new revision, return `*StaleDatasetProgressError` (additive rows and unreconciled comments retained).
-2. When `Progress != nil`: CAS — `InputCursor == next_cursor` advances (`page_count++`, bound `maxDatasetPages = 1000` → exceed marks `blocked` and returns `*ScanBlockedError`); `InputCursor == last_input_cursor` (same generation) is the idempotent replay → return `nil` writing nothing; anything else → `*StaleDatasetProgressError`.
+2. When `Progress != nil`: CAS — `InputCursor == next_cursor` advances (`page_count++`, bound `maxScanPages = 10_000` per generation → exceed marks `blocked` with `last_error_code = "page_bound"` and returns `*ScanBlockedError`); `InputCursor == last_input_cursor` (same generation) is the idempotent replay → return `nil` writing nothing; anything else → `*StaleDatasetProgressError`. Cursor-cycle and invalid-cursor blocks use `last_error_code = "invalid_cursor"` — the durable reason distinguishes oversized scans from cycles for the Task 12 reset modes.
 3. Upsert rows: ordinary comments stamped `ingest_generation = ScanGeneration`; reviews/threads plain upserts by stable provider identity (never delete absent history).
 4. `Final && Dataset == comments`: delete ordinary comments of that parent whose `ingest_generation` differs (NULL included) in the same transaction; mark progress `complete`, clear cursors.
 5. `Final` on additive datasets: mark complete only.
@@ -359,8 +381,9 @@ Deletes payload staging from the archive path (design: Archive Work and Scheduli
 
 **Interfaces:**
 - Consumes: Task 2 reader interfaces (via registry), Task 7 commit APIs.
-- Produces: `hydrateItem` per dataset loop: `admit(archiveAttemptCost(1))` → canonical page method with durable cursor → release → `CommitDatasetPage{Progress: &…}` → next page or yield. No `json.Marshal` of pages, no `GetArchiveDatasetStage`/`LoadArchiveDatasetPages` calls. Parent lookup is the `lookup` dataset (cost `archiveAttemptCost(2)`), outcomes recorded per design (removed/moved/inaccessible → item terminal; moved → `QueueArchivePromptByIdentity`).
+- Produces: `hydrateItem` per dataset loop: `admit(archiveAttemptCost(1))` → canonical page method with durable cursor → release → `CommitDatasetPage{Progress: &…}` → next page or yield. No `json.Marshal` of pages, no `GetArchiveDatasetStage`/`LoadArchiveDatasetPages` calls. Parent lookup is the `lookup` dataset (cost `archiveAttemptCost(2)`), persisted through `CommitParentLookup` (Task 7) — present upserts the parent and reopens superseded datasets; removed/moved/inaccessible mark the item terminal; moved queues the destination prompt.
 - Produces: inventory/maintenance pages commit through `CommitArchiveInventoryPage` with repo-scan CAS + page bounds; invalid-cursor provider errors mark the scan/dataset `blocked` (never silent page-one restart).
+- Produces: error scoping — page-level provider-contract violations (echoed cursor, malformed page, wrong-parent item, including those raised by the Task 6 validating wrapper) block only the affected scan or dataset; only repository-wide failures (identity mismatch, capability misdeclaration, auth) block the repository. Add coverage for an echoed-cursor page blocking one dataset while the repository's other work proceeds.
 
 **Steps:**
 
@@ -405,9 +428,9 @@ Load `kenn:db-migration-discipline`. Amend migration 39 to the **final** schema 
 Blocked scans must be recoverable (design: Provider Cursor Failure).
 
 **Files:**
-- Modify: `internal/archive/service.go` — `func (s *Service) ResetScan(ctx context.Context, ref platform.RepoRef, scope ResetScope) error` where `ResetScope{Scan *ArchiveScanKind; ItemType *ArchiveItemType; ItemNumber *int; Dataset *ArchiveDataset}` resets exactly one repo scan or one item dataset (new generation, cursor cleared, pending; domain content untouched).
-- Modify: `internal/server/archive_routes.go` — `POST /archive/reset` (huma op `reset-archive-scan`; body: repo + scope; 400 on non-blocked/missing target unless `force`).
-- Modify: `cmd/middleman/archive_cli.go` — `middleman archive reset --repo … [--scan …|--item TYPE/N --dataset …]`.
+- Modify: `internal/archive/service.go` — `func (s *Service) ResetScan(ctx context.Context, ref platform.RepoRef, scope ResetScope) error` where `ResetScope{Scan *ArchiveScanKind; ItemType *ArchiveItemType; ItemNumber *int; Dataset *ArchiveDataset; Mode ResetMode}` resets exactly one repo scan or one item dataset; domain content untouched. `ResetMode` is `restart` (new generation, cursor cleared — the only valid recovery for `invalid_cursor` blocks) or `continue` (page counter cleared, cursor and generation retained — for `page_bound` blocks on legitimately oversized scans; refused with a typed error for `invalid_cursor` blocks).
+- Modify: `internal/server/archive_routes.go` — `POST /archive/reset` (huma op `reset-archive-scan`; body: repo + scope + mode; 400 on non-blocked/missing target unless `force`).
+- Modify: `cmd/middleman/archive_cli.go` — `middleman archive reset --repo … [--scan …|--item TYPE/N --dataset …] [--continue]`.
 - Regenerate: `make api-generate` (openapi, Go client, TS schema).
 - Test: service + apitest + CLI test.
 
@@ -421,6 +444,7 @@ Blocked scans must be recoverable (design: Provider Cursor Failure).
 
 **Files:**
 - Modify: `internal/server/apitest/archive_test.go` — one workflow test through real HTTP + SQLite: start → several provider pages → service restart (reopen DB, new Syncer/Service) → resumes from committed cursors (fake provider asserts no page-one refetch) → pause → resume → status/completeness → partial report (coverage says incomplete) → completion → complete report (deterministic bytes).
+- Add to `internal/server/apitest/archive_test.go`: blocked-scan recovery through the real API — block a scan (cursor cycle from the fake provider), `POST /archive/reset` (restart mode), prove a stale pre-reset page commit is rejected by the new generation, prove unrelated scan/dataset state is untouched, and collection resumes; plus a `page_bound` block recovered with continue mode retaining the cursor.
 - Rewrite: `internal/server/e2etest/archive_snapshot_race_test.go` against the Task 7/8 commit APIs (live and archive writes racing on one parent; live never rejected by archive state).
 - Modify: `internal/archive/report_service_test.go` — partial dataset progress can never be reported complete (progress rows in every non-complete status).
 

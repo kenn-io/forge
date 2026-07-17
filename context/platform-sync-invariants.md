@@ -62,7 +62,11 @@ reads, owner PAT, platform token, public-host default, then GitHub CLI. GitLab
 `gitlab.com` has no implicit default env var. Forgejo `codeberg.org` uses
 `MIDDLEMAN_FORGEJO_TOKEN`, and Gitea `gitea.com` uses `MIDDLEMAN_GITEA_TOKEN`.
 Token files are read lazily so atomic replacement rotates credentials without
-rebuilding provider clients. Provider token caches and auth transports must stay keyed by their full route.
+rebuilding provider clients. Route descriptors and auth transports stay keyed
+by full route, while GitHub App installation-token caches are shared by
+canonical App credential across routes; reload probes must reuse that shared
+cache (`internal/tokenauth/source.go::githubAppTokenStore`,
+`internal/tokenauth/source.go::SourceSet.ProbeToken`).
 
 Managed Git authorization is selected by full `(platform, platform_host, owner,
 name)` identity. GitHub smart HTTP uses mutation/user candidates and never an

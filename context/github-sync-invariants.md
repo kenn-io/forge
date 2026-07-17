@@ -167,6 +167,19 @@ sync budgets, cadence, and snapshots are selected separately by `(host,
 authenticated identity)`. Different PATs resolving to the same GitHub user ID
 must share one runtime; App reads use their installation identity.
 
+- Startup PAT identity discovery must use a bounded per-request context
+  (`internal/github/identity.go::HTTPIdentityResolver.ResolvePAT`).
+- When required scoped routes cover configured repositories, do not resolve an
+  implicit ownerless fallback unless the host fallback is explicitly configured
+  (`cmd/middleman/provider_startup.go::buildGitHubIdentityRuntimes`).
+- A configured router with no exact, owner, or fallback route is a routing
+  failure; operation availability must fail closed instead of treating it as an
+  unrouted legacy host (`internal/github/auth_router.go::MissingRouteError`,
+  `internal/server/operation_availability.go::writeCredentialGateForRepo`).
+- Reload probes covered by the same App installation must share its token cache;
+  per-route probe caches multiply installation-token minting
+  (`internal/tokenauth/source.go::SourceSet.ProbeToken`).
+
 Repository `token_file` and `token_env` overrides are exact-only; reject them on
 name globs rather than creating a literal route that discovered repositories
 cannot select (`internal/config/config.go::Config.validate`).

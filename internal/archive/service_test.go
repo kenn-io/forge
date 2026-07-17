@@ -356,9 +356,11 @@ func TestArchiveServiceInventoriesThenCommitsCompleteHydration(t *testing.T) {
 	assert.Equal(7, admission.calls)
 	// Every admission declares 2x its logical request count so a
 	// 401-invalidate-retry can never overspend the admitted ceiling:
-	// inventory and dataset pages are 1 logical request (cost 2), and
-	// item lookups are 2 logical requests (cost 4).
-	assert.Equal([]int{2, 2, 4, 2, 2, 4, 2}, admission.costs)
+	// inventory and dataset pages are 1 logical request (cost 2), issue
+	// lookups are 2 logical requests (lookup + repository probe, cost 4),
+	// and merge-request lookups are 3 (lookup + probe + best-effort fork
+	// head clone-URL enrichment, cost 6).
+	assert.Equal([]int{2, 2, 4, 2, 2, 6, 2}, admission.costs)
 }
 
 func TestArchiveOpenMergeRequestResumesAcrossBudgetAndDatasetDeferrals(t *testing.T) {

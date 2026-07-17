@@ -972,3 +972,56 @@ func TestGitLabLookupEnrichesForkHeadCloneURLOnce(t *testing.T) {
 	assert.Equal(1, sourceProjectRequests,
 		"the fork head enrichment request is cached per source project")
 }
+
+// TestGitLabLookupMergeRequestEnrichmentFailureDegradesToPresent proves the
+// fork head clone-URL enrichment inside the canonical lookup is best-effort:
+// a transient source-project failure degrades the result to an empty
+// HeadRepoCloneURL and never fails the lookup, for the live require path and
+// the archive delegate alike.
+func TestGitLabLookupMergeRequestEnrichmentFailureDegradesToPresent(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	sourceProjectRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/merge_requests/7":
+			writeJSON(w, `{
+				"id": 1001,
+				"iid": 7,
+				"project_id": 42,
+				"source_project_id": 77,
+				"target_project_id": 42,
+				"title": "fork MR",
+				"state": "opened",
+				"created_at": "2026-01-01T00:00:00Z",
+				"updated_at": "2026-01-02T00:00:00Z"
+			}`)
+		case "/api/v4/projects/77":
+			sourceProjectRequests++
+			http.Error(w, `{"message":"internal error"}`, http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+
+	lookup, err := client.LookupMergeRequest(t.Context(), ref, 7)
+	require.NoError(err, "an enrichment failure must not fail the lookup")
+	assert.Equal(platform.LookupPresent, lookup.Outcome)
+	assert.Empty(lookup.Item.HeadRepoCloneURL,
+		"a failed enrichment degrades to an empty head clone URL")
+	assert.Equal("fork MR", lookup.Item.Title)
+
+	archive, err := client.GetArchiveMergeRequest(t.Context(), ref, 7)
+	require.NoError(err)
+	assert.Equal(platform.LookupPresent, archive.Outcome)
+	assert.Empty(archive.Item.HeadRepoCloneURL)
+
+	live, err := platform.RequireMergeRequest(t.Context(), client, ref, 7)
+	require.NoError(err)
+	assert.Empty(live.HeadRepoCloneURL)
+	assert.Equal(3, sourceProjectRequests,
+		"failed enrichment attempts are not cached and are retried per lookup")
+}

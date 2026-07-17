@@ -63,10 +63,16 @@ func setupGitLabCloneFixture(t *testing.T) (cloneURL, baseSHA, headSHA string) {
 	return cloneURL, baseSHA, headSHA
 }
 
-func TestGitLabSyncPRSurfacesTransientForkSourceProjectLookupAsUpstream(t *testing.T) {
+// TestGitLabSyncPRDegradesTransientForkSourceProjectLookup proves the fork
+// head clone-URL enrichment inside the canonical lookup is best-effort on the
+// single-MR sync path: a transient source-project failure no longer aborts
+// the detail sync; the MR persists with an empty head clone URL until a later
+// sync heals it.
+func TestGitLabSyncPRDegradesTransientForkSourceProjectLookup(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
+	cloneURL, _, _ := setupGitLabCloneFixture(t)
 	recorder := &gitlabAPIRecorder{}
 
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +91,10 @@ func TestGitLabSyncPRSurfacesTransientForkSourceProjectLookupAsUpstream(t *testi
 		case r.URL.EscapedPath() == "/api/v4/projects/404" && r.Method == http.MethodGet:
 			w.WriteHeader(http.StatusBadGateway)
 			writeGitLabJSON(w, `{"message": "temporary failure"}`)
+		case r.URL.EscapedPath() == "/api/v4/projects/4242/merge_requests/7/discussions" && r.Method == http.MethodGet:
+			writeGitLabJSON(w, `[]`)
+		case r.URL.EscapedPath() == "/api/v4/projects/4242/merge_requests/7/commits" && r.Method == http.MethodGet:
+			writeGitLabJSON(w, `[]`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -119,7 +129,7 @@ func TestGitLabSyncPRSurfacesTransientForkSourceProjectLookupAsUpstream(t *testi
 		RepoPath:           "acme/widget",
 		PlatformRepoID:     4242,
 		PlatformExternalID: "4242",
-		CloneURL:           "https://gitlab.com/acme/widget.git",
+		CloneURL:           cloneURL,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, gitclone.New(t.TempDir(), nil), []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -128,18 +138,7 @@ func TestGitLabSyncPRSurfacesTransientForkSourceProjectLookupAsUpstream(t *testi
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 
 	rr := doGitLabJSON(t, srv, http.MethodPost, "/api/v1/pulls/gitlab/acme/widget/7/sync", `{}`)
-	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
-
-	var problem struct {
-		Code    string         `json:"code"`
-		Detail  string         `json:"detail"`
-		Details map[string]any `json:"details"`
-	}
-	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal("upstreamError", problem.Code)
-	assert.Contains(problem.Detail, "temporary failure")
-	assert.Equal("gitlab", problem.Details["provider"])
-	assert.Equal("gitlab.com", problem.Details["platformHost"])
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	_, lookedUp := recorder.find(http.MethodGet, "/api/v4/projects/404")
 	assert.True(lookedUp, "sync should attempt the fork source project lookup")
@@ -153,7 +152,10 @@ func TestGitLabSyncPRSurfacesTransientForkSourceProjectLookupAsUpstream(t *testi
 	require.NotNil(repoRow)
 	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoRow.ID, 7)
 	require.NoError(err)
-	assert.Nil(mr, "failed detail sync must not persist a partial merge request row")
+	require.NotNil(mr, "best-effort enrichment must not abort the detail sync")
+	assert.Equal("Fork MR", mr.Title)
+	assert.Empty(mr.HeadRepoCloneURL,
+		"a failed enrichment degrades to an empty head clone URL")
 }
 
 func TestGitLabNormalSyncEnablesHeadBoundMutations(t *testing.T) {

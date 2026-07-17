@@ -246,7 +246,13 @@ func TestClientGetMergeRequestContinuesWhenForkHeadRepoLookupFails(t *testing.T)
 	assert.Empty(mr.HeadRepoCloneURL)
 }
 
-func TestClientGetMergeRequestPropagatesTransientForkHeadRepoLookupFailures(t *testing.T) {
+// The canonical merge-request lookup treats fork head enrichment as
+// best-effort: even a transient source-project failure (rate limit) degrades
+// to an empty head clone URL instead of failing the lookup, so a single-item
+// read never blocks on the enrichment. The open-list scan keeps propagating
+// transient enrichment failures (covered separately) because index sync can
+// retry the whole list cheaply.
+func TestClientLookupMergeRequestDegradesTransientForkHeadRepoLookupFailures(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -280,12 +286,10 @@ func TestClientGetMergeRequestPropagatesTransientForkHeadRepoLookupFailures(t *t
 		CloneURL:   "https://gitlab.example.com/group/project.git",
 	}
 
-	_, err := platform.RequireMergeRequest(context.Background(), client, ref, 7)
-	require.Error(err)
-	var platformErr *platform.Error
-	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeRateLimited, platformErr.Code)
-	assert.Equal("get_source_project", platformErr.Capability)
+	mr, err := platform.RequireMergeRequest(context.Background(), client, ref, 7)
+	require.NoError(err)
+	assert.Equal(7, mr.Number)
+	assert.Empty(mr.HeadRepoCloneURL)
 }
 
 func TestClientGetMergeRequestUsesMergedByFallback(t *testing.T) {

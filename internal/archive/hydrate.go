@@ -127,7 +127,12 @@ func (s *Service) hydrateIssue(ctx context.Context, repo resolvedRepository, ite
 }
 
 func (s *Service) hydrateMergeRequest(ctx context.Context, repo resolvedRepository, item *db.ArchiveItemState) error {
-	requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(2))
+	// A merge-request lookup may spend up to three logical requests: the
+	// item fetch, the repository probe on lookup classification, and the
+	// best-effort fork head clone-URL enrichment inside the canonical
+	// lookup (GitLab). The declared cost must cover the worst case so an
+	// admitted lookup can never overspend the protected live floor.
+	requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(3))
 	if err != nil {
 		return err
 	}

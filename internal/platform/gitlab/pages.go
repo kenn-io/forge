@@ -428,6 +428,9 @@ func (c *Client) LookupIssue(
 // present item includes the fork head clone-URL enrichment live sync depends
 // on; this is the one canonical lookup, so archive callers share the
 // enrichment (a cached extra request only when the source project differs).
+// The enrichment is best-effort: a failed source-project fetch degrades the
+// result to an empty HeadRepoCloneURL and never fails the lookup, so an
+// enrichment outage cannot block archive hydration or live detail sync.
 func (c *Client) LookupMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -445,10 +448,14 @@ func (c *Client) LookupMergeRequest(
 		return platform.ItemLookup[platform.MergeRequest]{Outcome: outcome}, classifyErr
 	}
 	item := NormalizeDetailedMergeRequest(normalizedRef, mr)
-	item.HeadRepoCloneURL, err = c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
-	if err != nil {
-		return platform.ItemLookup[platform.MergeRequest]{}, err
+	cloneURL, enrichErr := c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
+	if enrichErr != nil {
+		if ctx.Err() != nil {
+			return platform.ItemLookup[platform.MergeRequest]{}, enrichErr
+		}
+		cloneURL = ""
 	}
+	item.HeadRepoCloneURL = cloneURL
 	return platform.ItemLookup[platform.MergeRequest]{
 		Outcome: platform.LookupPresent,
 		Item:    item,

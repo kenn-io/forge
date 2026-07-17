@@ -205,26 +205,6 @@ func TestProviderPaginatesAndNormalizesReadMethods(t *testing.T) {
 	assert.Equal("success", checks[0].Conclusion)
 }
 
-func TestCollectPagesRejectsNonAdvancingPagination(t *testing.T) {
-	assert := assert.New(t)
-	require := Require.New(t)
-	_, err := collectPages(context.Background(), func(opts PageOptions) ([]int, Page, error) {
-		return []int{opts.Page}, Page{Next: opts.Page}, nil
-	})
-	require.Error(err)
-	assert.Contains(err.Error(), "did not advance")
-}
-
-func TestCollectPagesRejectsExcessivePagination(t *testing.T) {
-	assert := assert.New(t)
-	require := Require.New(t)
-	_, err := collectPages(context.Background(), func(opts PageOptions) ([]int, Page, error) {
-		return []int{opts.Page}, Page{Next: opts.Page + 1}, nil
-	})
-	require.Error(err)
-	assert.Contains(err.Error(), "exceeded")
-}
-
 func TestProviderMergesActionRunsWithStatusesWithoutDuplicates(t *testing.T) {
 	assert := assert.New(t)
 	require := Require.New(t)

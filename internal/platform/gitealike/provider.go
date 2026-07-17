@@ -9,8 +9,6 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 )
 
-const maxCollectedPages = 1000
-
 type Provider struct {
 	kind      platform.Kind
 	host      string
@@ -138,17 +136,13 @@ func (p *Provider) ListOpenMergeRequests(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) ([]platform.MergeRequest, error) {
-	items, err := collectPages(ctx, func(opts PageOptions) ([]PullRequestDTO, Page, error) {
-		return p.transport.ListOpenPullRequests(ctx, ref, opts)
+	page, err := p.ListMergeRequestsPage(ctx, ref, platform.ItemPageQuery{
+		State: platform.ItemStateOpen, Order: platform.ItemOrderCreated,
 	})
 	if err != nil {
-		return nil, p.mapError(err)
+		return nil, err
 	}
-	out := make([]platform.MergeRequest, 0, len(items))
-	for _, item := range items {
-		out = append(out, NormalizePullRequest(ref, item))
-	}
-	return out, nil
+	return page.Items, nil
 }
 
 func (p *Provider) GetMergeRequest(
@@ -163,30 +157,35 @@ func (p *Provider) GetMergeRequest(
 	return NormalizePullRequest(ref, pr), nil
 }
 
+// ListMergeRequestEvents is the live whole-dataset event read: it drains the
+// canonical comment and submitted-review pages, then appends the
+// provider-specific commit and timeline events (neither is a correction
+// dataset, so both stay provider-internal).
 func (p *Provider) ListMergeRequestEvents(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
 ) ([]platform.MergeRequestEvent, error) {
-	comments, err := collectPages(ctx, func(opts PageOptions) ([]CommentDTO, Page, error) {
-		return p.transport.ListPullRequestComments(ctx, ref, number, opts)
+	events, err := platform.CollectPages(ctx, "", func(ctx context.Context, cursor string) (platform.Page[platform.MergeRequestEvent], error) {
+		return p.ListMergeRequestCommentsPage(ctx, ref, number, cursor)
 	})
 	if err != nil {
-		return nil, p.mapError(err)
+		return nil, err
 	}
-	reviews, err := collectPages(ctx, func(opts PageOptions) ([]ReviewDTO, Page, error) {
-		return p.transport.ListPullRequestReviews(ctx, ref, number, opts)
+	reviews, err := platform.CollectPages(ctx, "", func(ctx context.Context, cursor string) (platform.Page[platform.MergeRequestEvent], error) {
+		return p.ListSubmittedReviewsPage(ctx, ref, number, cursor)
 	})
 	if err != nil {
-		return nil, p.mapError(err)
+		return nil, err
 	}
-	commits, err := collectPages(ctx, func(opts PageOptions) ([]CommitDTO, Page, error) {
+	events = append(events, reviews...)
+	commits, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]CommitDTO, Page, error) {
 		return p.transport.ListPullRequestCommits(ctx, ref, number, opts)
 	})
 	if err != nil {
 		return nil, p.mapError(err)
 	}
-	events := NormalizeMergeRequestEvents(p.kind, ref, number, comments, reviews, commits)
+	events = append(events, NormalizeMergeRequestEvents(p.kind, ref, number, nil, nil, commits)...)
 	timeline, err := p.listTimelineEvents(ctx, ref, number)
 	if err != nil {
 		return nil, err
@@ -195,30 +194,17 @@ func (p *Provider) ListMergeRequestEvents(
 	return events, nil
 }
 
-func (p *Provider) ListMergeRequestComments(ctx context.Context, ref platform.RepoRef, number int) ([]platform.MergeRequestEvent, error) {
-	return platform.CollectPages(ctx, "", func(ctx context.Context, cursor string) (platform.Page[platform.MergeRequestEvent], error) {
-		return p.ListArchiveMergeRequestComments(ctx, ref, number, cursor)
-	})
-}
-
 func (p *Provider) ListOpenIssues(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) ([]platform.Issue, error) {
-	items, err := collectPages(ctx, func(opts PageOptions) ([]IssueDTO, Page, error) {
-		return p.transport.ListOpenIssues(ctx, ref, opts)
+	page, err := p.ListIssuesPage(ctx, ref, platform.ItemPageQuery{
+		State: platform.ItemStateOpen, Order: platform.ItemOrderCreated,
 	})
 	if err != nil {
-		return nil, p.mapError(err)
+		return nil, err
 	}
-	out := make([]platform.Issue, 0, len(items))
-	for _, item := range items {
-		if item.IsPullRequest {
-			continue
-		}
-		out = append(out, NormalizeIssue(ref, item))
-	}
-	return out, nil
+	return page.Items, nil
 }
 
 func (p *Provider) GetIssue(
@@ -233,30 +219,26 @@ func (p *Provider) GetIssue(
 	return NormalizeIssue(ref, issue), nil
 }
 
+// ListIssueEvents is the live whole-dataset event read: it drains the
+// canonical issue-comment pages, then appends the provider-specific timeline
+// events.
 func (p *Provider) ListIssueEvents(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
 ) ([]platform.IssueEvent, error) {
-	comments, err := collectPages(ctx, func(opts PageOptions) ([]CommentDTO, Page, error) {
-		return p.transport.ListIssueComments(ctx, ref, number, opts)
+	events, err := platform.CollectPages(ctx, "", func(ctx context.Context, cursor string) (platform.Page[platform.IssueEvent], error) {
+		return p.ListIssueCommentsPage(ctx, ref, number, cursor)
 	})
 	if err != nil {
-		return nil, p.mapError(err)
+		return nil, err
 	}
-	events := NormalizeIssueComments(p.kind, ref, number, comments)
 	timeline, err := p.listTimelineEvents(ctx, ref, number)
 	if err != nil {
 		return nil, err
 	}
 	events = append(events, NormalizeIssueTimelineEvents(p.kind, ref, number, timeline)...)
 	return events, nil
-}
-
-func (p *Provider) ListIssueComments(ctx context.Context, ref platform.RepoRef, number int) ([]platform.IssueEvent, error) {
-	return platform.CollectPages(ctx, "", func(ctx context.Context, cursor string) (platform.Page[platform.IssueEvent], error) {
-		return p.ListArchiveIssueComments(ctx, ref, number, cursor)
-	})
 }
 
 func (p *Provider) listTimelineEvents(
@@ -268,7 +250,7 @@ func (p *Provider) listTimelineEvents(
 	if !ok {
 		return nil, nil
 	}
-	timeline, err := collectPages(ctx, func(opts PageOptions) ([]TimelineEventDTO, Page, error) {
+	timeline, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]TimelineEventDTO, Page, error) {
 		return timelineTransport.ListIssueTimeline(ctx, ref, number, opts)
 	})
 	if err != nil {
@@ -285,7 +267,7 @@ func (p *Provider) ListReleases(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) ([]platform.Release, error) {
-	items, err := collectPages(ctx, func(opts PageOptions) ([]ReleaseDTO, Page, error) {
+	items, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]ReleaseDTO, Page, error) {
 		return p.transport.ListReleases(ctx, ref, opts)
 	})
 	if err != nil {
@@ -299,7 +281,7 @@ func (p *Provider) ListReleases(
 }
 
 func (p *Provider) ListTags(ctx context.Context, ref platform.RepoRef) ([]platform.Tag, error) {
-	items, err := collectPages(ctx, func(opts PageOptions) ([]TagDTO, Page, error) {
+	items, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]TagDTO, Page, error) {
 		return p.transport.ListTags(ctx, ref, opts)
 	})
 	if err != nil {
@@ -317,7 +299,7 @@ func (p *Provider) ListCIChecks(
 	ref platform.RepoRef,
 	sha string,
 ) ([]platform.CICheck, error) {
-	statuses, err := collectPages(ctx, func(opts PageOptions) ([]StatusDTO, Page, error) {
+	statuses, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]StatusDTO, Page, error) {
 		return p.transport.ListStatuses(ctx, ref, sha, opts)
 	})
 	if err != nil {
@@ -326,7 +308,7 @@ func (p *Provider) ListCIChecks(
 	var actionRuns []ActionRunDTO
 	if p.options.ReadActions {
 		if actionsTransport, ok := p.transport.(ActionsTransport); ok {
-			actionRuns, err = collectPages(ctx, func(opts PageOptions) ([]ActionRunDTO, Page, error) {
+			actionRuns, err = collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]ActionRunDTO, Page, error) {
 				return actionsTransport.ListActionRuns(ctx, ref, sha, opts)
 			})
 			if err != nil {
@@ -345,7 +327,7 @@ func (p *Provider) ListLabels(
 	if !ok {
 		return platform.LabelCatalog{}, platform.UnsupportedCapability(p.kind, p.host, "read_labels")
 	}
-	items, err := collectPages(ctx, func(opts PageOptions) ([]LabelDTO, Page, error) {
+	items, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]LabelDTO, Page, error) {
 		return transport.ListRepoLabels(ctx, ref, opts)
 	})
 	if err != nil {
@@ -386,7 +368,7 @@ func (p *Provider) setIssueLikeLabels(
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := collectPages(ctx, func(opts PageOptions) ([]LabelDTO, Page, error) {
+	catalog, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]LabelDTO, Page, error) {
 		return transport.ListRepoLabels(ctx, ref, opts)
 	})
 	if err != nil {
@@ -808,7 +790,7 @@ func (p *Provider) currentRequestedReviewers(
 	if pr.RequestedReviewers != nil {
 		return userDTONames(pr.RequestedReviewers), nil
 	}
-	reviews, err := collectPages(ctx, func(opts PageOptions) ([]ReviewDTO, Page, error) {
+	reviews, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]ReviewDTO, Page, error) {
 		return p.transport.ListPullRequestReviews(ctx, ref, number, opts)
 	})
 	if err != nil {
@@ -845,7 +827,7 @@ func (p *Provider) listRepositories(
 	owner string,
 	list func(context.Context, string, PageOptions) ([]RepositoryDTO, Page, error),
 ) ([]platform.Repository, error) {
-	items, err := collectPages(ctx, func(opts PageOptions) ([]RepositoryDTO, Page, error) {
+	items, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]RepositoryDTO, Page, error) {
 		return list(ctx, owner, opts)
 	})
 	if err != nil {
@@ -907,42 +889,6 @@ func isHeadMismatchConflict(err error) bool {
 
 func (p *Provider) mapError(err error) error {
 	return mapTransportError(p.kind, p.host, err)
-}
-
-func collectPages[T any](
-	ctx context.Context,
-	fetch func(PageOptions) ([]T, Page, error),
-) ([]T, error) {
-	var out []T
-	page := 1
-	seen := make(map[int]bool)
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-		if seen[page] {
-			return nil, fmt.Errorf("gitealike pagination did not advance: page %d repeated", page)
-		}
-		if len(seen) >= maxCollectedPages {
-			return nil, fmt.Errorf("gitealike pagination exceeded %d pages", maxCollectedPages)
-		}
-		seen[page] = true
-		items, next, err := fetch(PageOptions{Page: page, PageSize: defaultPageSize})
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, items...)
-		nextPage := NextPage(next.Next)
-		if nextPage == 0 {
-			return out, nil
-		}
-		if nextPage <= page {
-			return nil, fmt.Errorf("gitealike pagination did not advance: next page %d after page %d", nextPage, page)
-		}
-		page = nextPage
-	}
 }
 
 func applyRepositoryListOptions(

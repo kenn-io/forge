@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitclone"
 	"go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
@@ -336,19 +338,41 @@ func TestBuildProviderStartupAllowsAppOnlyReadRouteButRequiresRestartForManagedG
 	assert := assert.New(t)
 	database := dbtest.Open(t)
 	t.Setenv("LATE_PAT", "")
+	var requestCount atomic.Int32
+	auth := make(chan string, 4)
+	gitServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		if username, password, ok := r.BasicAuth(); ok {
+			select {
+			case auth <- username + "\x00" + password:
+			default:
+			}
+		}
+		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer gitServer.Close()
+	host := gitServer.Listener.Addr().String()
 	cfg := &config.Config{
 		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
-		Activity:       config.Activity{ViewMode: "flat", TimeRange: "7d"},
-		GitHubTokenEnv: "LATE_PAT",
-		Repos:          []config.Repo{{Owner: "org-app", Name: "one"}},
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Platforms: []config.PlatformConfig{{
+			Type: "github", Host: host, TokenEnv: "LATE_PAT",
+		}},
+		Repos: []config.Repo{{
+			Platform: "github", PlatformHost: host, Owner: "org-app", Name: "one",
+		}},
 		GitHubApps: []config.GitHubAppConfig{{
-			Host: "github.com", AppID: 7, PrivateKeyPath: "/keys/app.pem",
+			Host: host, AppID: 7, PrivateKeyPath: "/keys/app.pem",
 			InstallationID: 789, InstallationAccount: "org-app",
 			RepositorySelection: "all",
 		}},
 	}
 	require.NoError(cfg.Validate())
 	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubCLI: func(context.Context, string) (string, error) {
+			return "", tokenauth.ErrMissingToken
+		},
 		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
 			return "app-token", time.Now().Add(time.Hour), nil
 		},
@@ -362,17 +386,55 @@ func TestBuildProviderStartupAllowsAppOnlyReadRouteButRequiresRestartForManagedG
 	)
 	require.NoError(err)
 	route := startup.githubRoutes[tokenauth.Key{
-		Platform: "github", Host: "github.com", Scope: "owner:org-app",
+		Platform: "github", Host: host, Scope: "owner:org-app",
 	}]
 	assert.Equal("installation:789", route.readIdentity.Principal)
 	assert.Empty(route.writeIdentity.Principal)
 
 	t.Setenv("LATE_PAT", "appeared-after-startup")
-	gitSource := startup.SourceForRepo("github", "github.com", "org-app", "one")
-	require.NotNil(gitSource)
-	_, err = gitSource.Token(t.Context())
-	assert.ErrorIs(err, github.ErrMissingWriteIdentity,
+	manager := gitclone.New(t.TempDir(), &startup)
+	_, err = manager.RunGitForRepo(
+		t.Context(), "github", host, "org-app", "one", "",
+		"ls-remote", gitServer.URL+"/org-app/one.git",
+	)
+	require.ErrorContains(err, github.ErrMissingWriteIdentity.Error(),
 		"managed Git must wait for restart to bind a newly available PAT identity")
+	assert.Zero(requestCount.Load(), "managed Git must not contact the remote before restart")
+
+	restartedSet := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubCLI: func(context.Context, string) (string, error) {
+			return "", tokenauth.ErrMissingToken
+		},
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			return "app-token", time.Now().Add(time.Hour), nil
+		},
+	})
+	restartedSources, err := collectProviderTokenSources(t.Context(), cfg, restartedSet)
+	require.NoError(err)
+	restarted, err := buildProviderStartup(
+		t.Context(), database, cfg, restartedSet, restartedSources,
+		defaultProviderFactories(), tokenGitHubIdentityResolver{
+			"appeared-after-startup": {
+				Key: github.IdentityKey{Host: host, Principal: "user:123"},
+			},
+		},
+	)
+	require.NoError(err)
+
+	restartedManager := gitclone.New(t.TempDir(), &restarted)
+	_, err = restartedManager.RunGitForRepo(
+		t.Context(), "github", host, "org-app", "one", "",
+		"ls-remote", gitServer.URL+"/org-app/one.git",
+	)
+	require.Error(err, "the controlled endpoint rejects the authenticated fetch")
+	assert.NotContains(err.Error(), github.ErrMissingWriteIdentity.Error())
+	assert.Positive(requestCount.Load())
+	select {
+	case got := <-auth:
+		assert.Equal("x-access-token\x00appeared-after-startup", got)
+	default:
+		require.Fail("managed Git did not send Basic authentication after restart")
+	}
 }
 
 func TestBuildProviderStartupReportsSafeGitHubIdentityResolutionFailure(t *testing.T) {

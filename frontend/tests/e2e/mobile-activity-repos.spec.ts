@@ -13,28 +13,28 @@ async function expectMobileRowRailLayout(page: Page, itemSelector: string): Prom
     const textStyle = titleText ? getComputedStyle(titleText) : null;
     const stripRect = strip?.getBoundingClientRect();
     const titleRect = title?.getBoundingClientRect();
-    const metaRect = node.querySelector<HTMLElement>(".meta-row")?.getBoundingClientRect();
+    const itemRect = node.getBoundingClientRect();
     return {
       stripIsDirectChild: strip?.parentElement === node,
       titleTextLineClamp: textStyle?.webkitLineClamp ?? "",
       stripWidth: stripRect?.width ?? 0,
       stripHeight: stripRect?.height ?? 0,
+      stripLeft: stripRect?.left ?? 0,
       stripRight: stripRect?.right ?? 0,
-      stripTop: stripRect?.top ?? 0,
-      stripBottom: stripRect?.bottom ?? 0,
-      titleTop: titleRect?.top ?? 0,
+      stripCenterY: stripRect ? stripRect.top + stripRect.height / 2 : 0,
+      itemLeft: itemRect.left,
+      itemCenterY: itemRect.top + itemRect.height / 2,
       titleLeft: titleRect?.left ?? 0,
-      metaBottom: metaRect?.bottom ?? 0,
     };
   });
 
   expect(metrics.stripIsDirectChild).toBe(true);
   expect(metrics.titleTextLineClamp).toBe("2");
   expect(metrics.stripWidth).toBe(3);
-  expect(metrics.stripHeight).toBeGreaterThan(18);
+  expect(metrics.stripHeight).toBe(18);
+  expect(metrics.stripLeft - metrics.itemLeft).toBe(6);
   expect(metrics.stripRight).toBeLessThanOrEqual(metrics.titleLeft);
-  expect(metrics.stripTop).toBeLessThanOrEqual(metrics.titleTop);
-  expect(metrics.stripBottom).toBeGreaterThanOrEqual(metrics.metaBottom);
+  expect(Math.abs(metrics.stripCenterY - metrics.itemCenterY)).toBeLessThanOrEqual(0.51);
 }
 
 async function mockMobileRepoSettings(page: Page): Promise<string[]> {
@@ -272,7 +272,7 @@ test.describe("mobile PR status grouping", () => {
     await expect(page.getByText("Needs Worktree")).toHaveCount(0);
   });
 
-  test("keeps pull and issue state rails spanning their row content", async ({ page }) => {
+  test("keeps pull and issue state rails compact in the row gutter", async ({ page }) => {
     await mockApi(page);
 
     await page.goto("/m/pulls");

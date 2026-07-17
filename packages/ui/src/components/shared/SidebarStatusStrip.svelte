@@ -19,12 +19,12 @@
 <style>
   .sidebar-status-strip {
     position: absolute;
-    inset-block: var(--sidebar-status-rail-inset, 10px);
-    left: var(--sidebar-status-rail-left, 6px);
+    top: 50%;
+    left: var(--sidebar-status-rail-left, 3px);
     display: block;
     width: 3px;
-    min-height: 18px;
-    flex: 0 0 3px;
+    height: 18px;
+    transform: translateY(-50%);
     border-radius: 2px;
     background: var(--text-muted);
   }

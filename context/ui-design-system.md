@@ -190,7 +190,7 @@ Use it inside left sidebar headers and collapsed strips. Pass a specific label s
 
 Use `GroupedSidebarSection` for collapsible groups in PR, issue, and workspace list rails. Keep group chrome and the `--sidebar-*` surface/row-state tokens shared; domain-specific row content stays with its owner. Wrap large always-visible vertical scroll panes (list rails, diff area, pull/issue detail, activity views) in `ScrollBox` for consistent flex sizing, native vertical scrolling, and a labelled focusable region; bind `viewport` when a host needs imperative scroll logic, and note the scrolling element is the viewport, not the host's content wrapper class. Give each scroll area a concise accessible label so keyboard users can identify and scroll the region. (`packages/ui/src/components/shared/GroupedSidebarSection.svelte`, `ScrollBox` from `@kenn-io/kit-ui` — see kit-ui's `docs/components/scroll-box.md`, `frontend/src/app.css:39`)
 
-Use `SidebarStatusStrip` for persistent domain state on PR, issue, and workspace list rows; keep `StatusDot` for transient activity. The row's edge border remains a separate selection cue. (`packages/ui/src/components/shared/SidebarStatusStrip.svelte`)
+Use `SidebarStatusStrip` for persistent domain state on PR, issue, and workspace list rows. Keep it fixed-height and vertically centered in the row gutter, never in title flow or stretched with row content; reserve `StatusDot` for transient activity and the edge border for selection. (`packages/ui/src/components/shared/SidebarStatusStrip.svelte`)
 
 ### SplitResizeHandle and BottomDock
 

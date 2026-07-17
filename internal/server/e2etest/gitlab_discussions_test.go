@@ -299,19 +299,46 @@ func (p *gitLabDiscussionProvider) ListRepositories(context.Context, string, pla
 	return nil, nil
 }
 
-func (p *gitLabDiscussionProvider) ListOpenMergeRequests(context.Context, platform.RepoRef) ([]platform.MergeRequest, error) {
-	return nil, nil
+func (p *gitLabDiscussionProvider) ListMergeRequestsPage(
+	_ context.Context,
+	_ platform.RepoRef,
+	query platform.ItemPageQuery,
+) (platform.Page[platform.MergeRequest], error) {
+	if err := platform.ValidateItemPageQuery(query); err != nil {
+		return platform.Page[platform.MergeRequest]{}, err
+	}
+	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
 }
 
-func (p *gitLabDiscussionProvider) GetMergeRequest(
+func (p *gitLabDiscussionProvider) LookupMergeRequest(
 	_ context.Context,
 	_ platform.RepoRef,
 	number int,
-) (platform.MergeRequest, error) {
-	if p.mergeRequests != nil {
-		return p.mergeRequests[number], nil
+) (platform.ItemLookup[platform.MergeRequest], error) {
+	if mr, ok := p.mergeRequests[number]; ok {
+		return platform.ItemLookup[platform.MergeRequest]{
+			Outcome: platform.LookupPresent, Item: mr,
+		}, nil
 	}
-	return platform.MergeRequest{}, nil
+	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupRemoved}, nil
+}
+
+func (p *gitLabDiscussionProvider) ListMergeRequestCommentsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestEvent], error) {
+	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
+}
+
+func (p *gitLabDiscussionProvider) ListSubmittedReviewsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestEvent], error) {
+	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
+}
+
+func (p *gitLabDiscussionProvider) ListReviewThreadsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestReviewThread], error) {
+	return platform.Page[platform.MergeRequestReviewThread]{Exhausted: true}, nil
 }
 
 func (p *gitLabDiscussionProvider) ListMergeRequestEvents(
@@ -325,19 +352,34 @@ func (p *gitLabDiscussionProvider) ListMergeRequestEvents(
 	return nil, nil
 }
 
-func (p *gitLabDiscussionProvider) ListOpenIssues(context.Context, platform.RepoRef) ([]platform.Issue, error) {
-	return nil, nil
+func (p *gitLabDiscussionProvider) ListIssuesPage(
+	_ context.Context,
+	_ platform.RepoRef,
+	query platform.ItemPageQuery,
+) (platform.Page[platform.Issue], error) {
+	if err := platform.ValidateItemPageQuery(query); err != nil {
+		return platform.Page[platform.Issue]{}, err
+	}
+	return platform.Page[platform.Issue]{Exhausted: true}, nil
 }
 
-func (p *gitLabDiscussionProvider) GetIssue(
+func (p *gitLabDiscussionProvider) LookupIssue(
 	_ context.Context,
 	_ platform.RepoRef,
 	number int,
-) (platform.Issue, error) {
-	if p.issues != nil {
-		return p.issues[number], nil
+) (platform.ItemLookup[platform.Issue], error) {
+	if issue, ok := p.issues[number]; ok {
+		return platform.ItemLookup[platform.Issue]{
+			Outcome: platform.LookupPresent, Item: issue,
+		}, nil
 	}
-	return platform.Issue{}, nil
+	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupRemoved}, nil
+}
+
+func (p *gitLabDiscussionProvider) ListIssueCommentsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.IssueEvent], error) {
+	return platform.Page[platform.IssueEvent]{Exhausted: true}, nil
 }
 
 func (p *gitLabDiscussionProvider) ListIssueEvents(

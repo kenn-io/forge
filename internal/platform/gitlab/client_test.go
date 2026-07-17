@@ -58,7 +58,7 @@ func TestClientLooksUpProjectByRawPathAndUsesNumericIDAfterLookup(t *testing.T) 
 	assert.Equal("group/subgroup", repo.Ref.Owner)
 	assert.Equal("project", repo.Ref.Name)
 
-	mrs, err := client.ListOpenMergeRequests(context.Background(), repo.Ref)
+	mrs, err := platform.ListOpenMergeRequests(context.Background(), client, repo.Ref)
 	require.NoError(t, err)
 	require.Len(t, mrs, 1)
 	assert.Equal(7, mrs[0].Number)
@@ -124,7 +124,7 @@ func TestClientListOpenMergeRequestsPopulatesForkHeadRepoCloneURL(t *testing.T) 
 		CloneURL:   "https://gitlab.example.com/group/project.git",
 	}
 
-	mrs, err := client.ListOpenMergeRequests(context.Background(), ref)
+	mrs, err := platform.ListOpenMergeRequests(context.Background(), client, ref)
 	require.NoError(err)
 	require.Len(mrs, 3)
 	assert.Equal("https://gitlab.example.com/fork/project.git", mrs[0].HeadRepoCloneURL)
@@ -164,7 +164,7 @@ func TestClientListOpenMergeRequestsContinuesWhenForkHeadRepoLookupFails(t *test
 				CloneURL:   "https://gitlab.example.com/group/project.git",
 			}
 
-			mrs, err := client.ListOpenMergeRequests(context.Background(), ref)
+			mrs, err := platform.ListOpenMergeRequests(context.Background(), client, ref)
 			require.NoError(err)
 			require.Len(mrs, 1)
 			assert.Equal(7, mrs[0].Number)
@@ -199,7 +199,7 @@ func TestClientListOpenMergeRequestsPropagatesTransientForkHeadRepoLookupFailure
 		CloneURL:   "https://gitlab.example.com/group/project.git",
 	}
 
-	_, err := client.ListOpenMergeRequests(context.Background(), ref)
+	_, err := platform.ListOpenMergeRequests(context.Background(), client, ref)
 	require.Error(err)
 	var platformErr *platform.Error
 	assert.NotErrorAs(err, &platformErr)
@@ -240,7 +240,7 @@ func TestClientGetMergeRequestContinuesWhenForkHeadRepoLookupFails(t *testing.T)
 		CloneURL:   "https://gitlab.example.com/group/project.git",
 	}
 
-	mr, err := client.GetMergeRequest(context.Background(), ref, 7)
+	mr, err := platform.RequireMergeRequest(context.Background(), client, ref, 7)
 	require.NoError(err)
 	assert.Equal(7, mr.Number)
 	assert.Empty(mr.HeadRepoCloneURL)
@@ -280,7 +280,7 @@ func TestClientGetMergeRequestPropagatesTransientForkHeadRepoLookupFailures(t *t
 		CloneURL:   "https://gitlab.example.com/group/project.git",
 	}
 
-	_, err := client.GetMergeRequest(context.Background(), ref, 7)
+	_, err := platform.RequireMergeRequest(context.Background(), client, ref, 7)
 	require.Error(err)
 	var platformErr *platform.Error
 	require.ErrorAs(err, &platformErr)
@@ -319,7 +319,7 @@ func TestClientGetMergeRequestUsesMergedByFallback(t *testing.T) {
 	client := newTestClient(t, server.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", PlatformID: 42}
 
-	mr, err := client.GetMergeRequest(context.Background(), ref, 7)
+	mr, err := platform.RequireMergeRequest(context.Background(), client, ref, 7)
 	require.NoError(err)
 	assert.Equal("legacy-admin", mr.MergedBy)
 }
@@ -735,13 +735,13 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 	client := newTestClient(t, server.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "middleman/project", PlatformID: 42}
 
-	mrs, err := client.ListOpenMergeRequests(context.Background(), ref)
+	mrs, err := platform.ListOpenMergeRequests(context.Background(), client, ref)
 	require.NoError(err)
 	require.Len(mrs, 1)
 	assert.Equal(7, mrs[0].Number)
 	assert.Empty(mrs[0].CIStatus)
 
-	mr, err := client.GetMergeRequest(context.Background(), ref, 7)
+	mr, err := platform.RequireMergeRequest(context.Background(), client, ref, 7)
 	require.NoError(err)
 	assert.Equal("MR detail", mr.Title)
 	assert.True(mr.IsDraft)
@@ -755,12 +755,12 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 	assert.Equal("maintainer", mrEvents[1].Author)
 	assert.Equal("commit", mrEvents[2].EventType)
 
-	issues, err := client.ListOpenIssues(context.Background(), ref)
+	issues, err := platform.ListOpenIssues(context.Background(), client, ref)
 	require.NoError(err)
 	require.Len(issues, 1)
 	assert.Equal(5, issues[0].Number)
 
-	issue, err := client.GetIssue(context.Background(), ref, 5)
+	issue, err := platform.RequireIssue(context.Background(), client, ref, 5)
 	require.NoError(err)
 	assert.Equal("Issue detail", issue.Title)
 

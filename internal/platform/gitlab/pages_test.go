@@ -191,7 +191,7 @@ func TestGitLabIssueInventoryLegacyMatchesCanonical(t *testing.T) {
 	})
 	require.NoError(err)
 	canonicalOpenReqs := recorder.take()
-	liveOpen, err := client.ListOpenIssues(t.Context(), ref)
+	liveOpen, err := platform.ListOpenIssues(t.Context(), client, ref)
 	require.NoError(err)
 	assert.Equal(canonicalOpenReqs, recorder.take())
 	assert.Equal(canonicalOpen.Items, liveOpen)
@@ -235,7 +235,7 @@ func TestGitLabMergeRequestInventoryLegacyMatchesCanonical(t *testing.T) {
 	})
 	require.NoError(err)
 	canonicalOpenReqs := recorder.take()
-	liveOpen, err := client.ListOpenMergeRequests(t.Context(), ref)
+	liveOpen, err := platform.ListOpenMergeRequests(t.Context(), client, ref)
 	require.NoError(err)
 	assert.Equal(canonicalOpenReqs, recorder.take())
 	assert.Equal(canonicalOpen.Items, liveOpen)
@@ -829,16 +829,16 @@ func TestGitLabLookupClassifiesRemovalAndAccessLoss(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(present, legacyPresent)
 
-	live, err := client.GetMergeRequest(t.Context(), ref, 9)
+	live, err := platform.RequireMergeRequest(t.Context(), client, ref, 9)
 	require.NoError(err)
 	assert.Equal(present.Item, live)
 
 	// Live gets require present: a non-present outcome surfaces the typed
 	// permission_denied error the raw transport produced before lookup
 	// classification existed.
-	_, liveErr := client.GetIssue(t.Context(), ref, 7)
+	_, liveErr := platform.RequireIssue(t.Context(), client, ref, 7)
 	require.ErrorIs(liveErr, platform.ErrPermissionDenied)
-	_, liveErr = client.GetIssue(t.Context(), ref, 8)
+	_, liveErr = platform.RequireIssue(t.Context(), client, ref, 8)
 	require.ErrorIs(liveErr, platform.ErrPermissionDenied)
 }
 
@@ -851,7 +851,7 @@ func TestGitLabLookupRetainsItemWhenRepositoryIsInaccessible(t *testing.T) {
 	client := newTestClient(t, server.URL)
 	_, err := client.LookupIssue(t.Context(), gitLabPagesTestRef(), 7)
 	require.ErrorIs(err, platform.ErrPermissionDenied)
-	_, err = client.GetIssue(t.Context(), gitLabPagesTestRef(), 7)
+	_, err = platform.RequireIssue(t.Context(), client, gitLabPagesTestRef(), 7)
 	require.ErrorIs(err, platform.ErrPermissionDenied)
 }
 
@@ -898,7 +898,7 @@ func TestGitLabCanonicalReadersHydratePathOnlyRefs(t *testing.T) {
 		Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "group/project",
 	}
 
-	mrs, err := client.ListOpenMergeRequests(t.Context(), pathOnly)
+	mrs, err := platform.ListOpenMergeRequests(t.Context(), client, pathOnly)
 	require.NoError(err)
 	require.Len(mrs, 1)
 	assert.Equal(int64(42), mrs[0].Repo.PlatformID)
@@ -923,12 +923,11 @@ func TestGitLabCanonicalReadersHydratePathOnlyRefs(t *testing.T) {
 	}, paths, "each canonical read hydrates the path-only ref once, then uses the numeric id")
 }
 
-// TestGitLabArchiveLookupSkipsCloneURLEnrichmentLiveGetKeepsIt proves the
-// enrichment split: the canonical/archive merge-request lookup is the core
-// fetch plus classification only and never spends a source-project request,
-// while the live GetMergeRequest wrapper still enriches the fork head clone
-// URL.
-func TestGitLabArchiveLookupSkipsCloneURLEnrichmentLiveGetKeepsIt(t *testing.T) {
+// TestGitLabLookupEnrichesForkHeadCloneURLOnce proves there is one canonical
+// merge-request lookup: a present fork item carries the head clone-URL
+// enrichment for every caller (live and archive alike), and the enrichment
+// request is cached per source project so repeated lookups spend it once.
+func TestGitLabLookupEnrichesForkHeadCloneURLOnce(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	sourceProjectRequests := 0
@@ -957,20 +956,19 @@ func TestGitLabArchiveLookupSkipsCloneURLEnrichmentLiveGetKeepsIt(t *testing.T) 
 	client := newTestClient(t, server.URL)
 	ref := gitLabPagesTestRef()
 
-	archive, err := client.GetArchiveMergeRequest(t.Context(), ref, 7)
-	require.NoError(err)
-	assert.Equal(platform.LookupPresent, archive.Outcome)
-	assert.Empty(archive.Item.HeadRepoCloneURL)
-	assert.Zero(sourceProjectRequests,
-		"the archive lookup must not spend an unadmitted enrichment request")
-
 	canonical, err := client.LookupMergeRequest(t.Context(), ref, 7)
 	require.NoError(err)
-	assert.Equal(archive, canonical)
-	assert.Zero(sourceProjectRequests)
+	assert.Equal(platform.LookupPresent, canonical.Outcome)
+	assert.Equal("https://gitlab.example.com/fork/project.git", canonical.Item.HeadRepoCloneURL)
+	assert.Equal(1, sourceProjectRequests)
 
-	live, err := client.GetMergeRequest(t.Context(), ref, 7)
+	archive, err := client.GetArchiveMergeRequest(t.Context(), ref, 7)
+	require.NoError(err)
+	assert.Equal(canonical, archive, "archive and live share the one canonical lookup")
+
+	live, err := platform.RequireMergeRequest(t.Context(), client, ref, 7)
 	require.NoError(err)
 	assert.Equal("https://gitlab.example.com/fork/project.git", live.HeadRepoCloneURL)
-	assert.Equal(1, sourceProjectRequests, "the live wrapper still enriches the fork head")
+	assert.Equal(1, sourceProjectRequests,
+		"the fork head enrichment request is cached per source project")
 }

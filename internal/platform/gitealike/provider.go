@@ -132,31 +132,6 @@ func (p *Provider) ListRepositories(
 	return applyRepositoryListOptions(repos, opts), nil
 }
 
-func (p *Provider) ListOpenMergeRequests(
-	ctx context.Context,
-	ref platform.RepoRef,
-) ([]platform.MergeRequest, error) {
-	page, err := p.ListMergeRequestsPage(ctx, ref, platform.ItemPageQuery{
-		State: platform.ItemStateOpen, Order: platform.ItemOrderCreated,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return page.Items, nil
-}
-
-func (p *Provider) GetMergeRequest(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-) (platform.MergeRequest, error) {
-	pr, err := p.transport.GetPullRequest(ctx, ref, number)
-	if err != nil {
-		return platform.MergeRequest{}, p.mapError(err)
-	}
-	return NormalizePullRequest(ref, pr), nil
-}
-
 // ListMergeRequestEvents is the live whole-dataset event read: it drains the
 // canonical comment and submitted-review pages, then appends the
 // provider-specific commit and timeline events (neither is a correction
@@ -192,31 +167,6 @@ func (p *Provider) ListMergeRequestEvents(
 	}
 	events = append(events, NormalizeMergeRequestTimelineEvents(p.kind, ref, number, timeline)...)
 	return events, nil
-}
-
-func (p *Provider) ListOpenIssues(
-	ctx context.Context,
-	ref platform.RepoRef,
-) ([]platform.Issue, error) {
-	page, err := p.ListIssuesPage(ctx, ref, platform.ItemPageQuery{
-		State: platform.ItemStateOpen, Order: platform.ItemOrderCreated,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return page.Items, nil
-}
-
-func (p *Provider) GetIssue(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-) (platform.Issue, error) {
-	issue, err := p.transport.GetIssue(ctx, ref, number)
-	if err != nil {
-		return platform.Issue{}, p.mapError(err)
-	}
-	return NormalizeIssue(ref, issue), nil
 }
 
 // ListIssueEvents is the live whole-dataset event read: it drains the

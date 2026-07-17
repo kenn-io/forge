@@ -424,44 +424,35 @@ func (c *Client) LookupIssue(
 	}, nil
 }
 
-// LookupMergeRequest is the merge-request counterpart to LookupIssue. It is
-// the core fetch plus classification only: source-project clone-URL
-// enrichment stays on the live GetMergeRequest wrapper, so archive lookups
-// never spend an unadmitted enrichment request and an enrichment failure can
-// never fail an archive lookup.
+// LookupMergeRequest is the merge-request counterpart to LookupIssue. A
+// present item includes the fork head clone-URL enrichment live sync depends
+// on; this is the one canonical lookup, so archive callers share the
+// enrichment (a cached extra request only when the source project differs).
 func (c *Client) LookupMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
 ) (platform.ItemLookup[platform.MergeRequest], error) {
-	lookup, _, _, err := c.lookupMergeRequestDetail(ctx, ref, number)
-	return lookup, err
-}
-
-// lookupMergeRequestDetail performs the canonical merge-request lookup and
-// additionally exposes the raw provider record and hydrated repository ref so
-// the live wrapper can enrich the present item without a second fetch.
-func (c *Client) lookupMergeRequestDetail(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-) (platform.ItemLookup[platform.MergeRequest], *gitlab.MergeRequest, platform.RepoRef, error) {
 	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
-		return platform.ItemLookup[platform.MergeRequest]{}, nil, platform.RepoRef{}, err
+		return platform.ItemLookup[platform.MergeRequest]{}, err
 	}
 	mr, _, err := c.api.MergeRequests.GetMergeRequest(pid, int64(number), nil, gitlab.WithContext(ctx))
 	if err != nil {
 		outcome, classifyErr := c.classifyLookupOutcome(
 			ctx, pid, string(platform.ArchiveCapabilityHistoricalMergeRequests), err,
 		)
-		return platform.ItemLookup[platform.MergeRequest]{Outcome: outcome}, nil, normalizedRef, classifyErr
+		return platform.ItemLookup[platform.MergeRequest]{Outcome: outcome}, classifyErr
 	}
-	lookup := platform.ItemLookup[platform.MergeRequest]{
+	item := NormalizeDetailedMergeRequest(normalizedRef, mr)
+	item.HeadRepoCloneURL, err = c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
+	if err != nil {
+		return platform.ItemLookup[platform.MergeRequest]{}, err
+	}
+	return platform.ItemLookup[platform.MergeRequest]{
 		Outcome: platform.LookupPresent,
-		Item:    NormalizeDetailedMergeRequest(normalizedRef, mr),
-	}
-	return lookup, mr, normalizedRef, nil
+		Item:    item,
+	}, nil
 }
 
 func (c *Client) classifyIssueLookup(
@@ -514,30 +505,6 @@ func gitLabAccessError(err error) bool {
 	var response *gitlab.ErrorResponse
 	return errors.As(err, &response) &&
 		(response.HasStatusCode(http.StatusUnauthorized) || response.HasStatusCode(http.StatusForbidden))
-}
-
-// lookupNotPresentError renders the typed error a live caller receives when a
-// single-item lookup resolves to a non-present outcome. Live callers require
-// present; archive callers inspect the outcome instead. Removed is not_found,
-// inaccessible is permission_denied, and moved is not_found carrying the
-// destination repository so callers can retarget the reference.
-func (c *Client) lookupNotPresentError(
-	ref platform.RepoRef,
-	number int,
-	outcome platform.LookupOutcome,
-	destination *platform.RepoRef,
-) error {
-	code := platform.ErrCodeNotFound
-	if outcome == platform.LookupInaccessible {
-		code = platform.ErrCodePermissionDenied
-	}
-	return &platform.Error{
-		Code:         code,
-		Provider:     platform.KindGitLab,
-		PlatformHost: c.host,
-		Destination:  destination,
-		Err:          fmt.Errorf("%s#%d is not present (%s)", ref.DisplayName(), number, outcome),
-	}
 }
 
 // ListIssueCommentsPage returns one page of normalized issue comment events.

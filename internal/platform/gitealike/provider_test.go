@@ -179,12 +179,12 @@ func TestProviderPaginatesAndNormalizesReadMethods(t *testing.T) {
 	assert.Equal([]string{"one", "two"}, []string{repos[0].Ref.Name, repos[1].Ref.Name})
 	assert.Equal([]int{1, 2}, transport.userRepoPages)
 
-	mrs, err := provider.ListOpenMergeRequests(context.Background(), ref)
+	mrs, err := platform.ListOpenMergeRequests(context.Background(), provider, ref)
 	require.NoError(err)
 	assert.Equal([]int{1, 2}, []int{mrs[0].Number, mrs[1].Number})
 	assert.Equal([]int{1, 2}, transport.pullPages)
 
-	issues, err := provider.ListOpenIssues(context.Background(), ref)
+	issues, err := platform.ListOpenIssues(context.Background(), provider, ref)
 	require.NoError(err)
 	require.Len(issues, 1)
 	assert.Equal(3, issues[0].Number)

@@ -1341,34 +1341,6 @@ func (p *gitHubClientProvider) ListRepositories(
 	return out, nil
 }
 
-func (p *gitHubClientProvider) ListOpenMergeRequests(
-	ctx context.Context,
-	ref platform.RepoRef,
-) ([]platform.MergeRequest, error) {
-	return platform.CollectPages(ctx, "", func(
-		ctx context.Context, cursor string,
-	) (platform.Page[platform.MergeRequest], error) {
-		return p.ListMergeRequestsPage(ctx, ref, platform.ItemPageQuery{
-			State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated, Cursor: cursor,
-		})
-	})
-}
-
-func (p *gitHubClientProvider) GetMergeRequest(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-) (platform.MergeRequest, error) {
-	lookup, err := p.LookupMergeRequest(ctx, ref, number)
-	if err != nil {
-		return platform.MergeRequest{}, err
-	}
-	if lookup.Outcome != platform.LookupPresent {
-		return platform.MergeRequest{}, p.lookupNotPresentError(ref, number, lookup.Outcome, lookup.Destination)
-	}
-	return lookup.Item, nil
-}
-
 func (p *gitHubClientProvider) GetGitHubPullRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -1456,19 +1428,6 @@ func (p *gitHubClientProvider) ListMergeRequestEvents(
 		}
 	}
 	return out, nil
-}
-
-func (p *gitHubClientProvider) ListOpenIssues(
-	ctx context.Context,
-	ref platform.RepoRef,
-) ([]platform.Issue, error) {
-	return platform.CollectPages(ctx, "", func(
-		ctx context.Context, cursor string,
-	) (platform.Page[platform.Issue], error) {
-		return p.ListIssuesPage(ctx, ref, platform.ItemPageQuery{
-			State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated, Cursor: cursor,
-		})
-	})
 }
 
 // lookupNotPresentError renders the typed error a live caller receives when a
@@ -1559,21 +1518,6 @@ func (p *gitHubClientProvider) ListLabels(
 		return platform.LabelCatalog{}, err
 	}
 	return platform.LabelCatalog{Labels: platformgithub.NormalizeLabels(ref, labels)}, nil
-}
-
-func (p *gitHubClientProvider) GetIssue(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-) (platform.Issue, error) {
-	lookup, err := p.LookupIssue(ctx, ref, number)
-	if err != nil {
-		return platform.Issue{}, err
-	}
-	if lookup.Outcome != platform.LookupPresent {
-		return platform.Issue{}, p.lookupNotPresentError(ref, number, lookup.Outcome, lookup.Destination)
-	}
-	return lookup.Item, nil
 }
 
 func (p *gitHubClientProvider) GetGitHubIssue(
@@ -2615,6 +2559,14 @@ func (s *Syncer) mergeRequestReaderFor(repo RepoRef) (platform.MergeRequestReade
 
 func (s *Syncer) issueReaderFor(repo RepoRef) (platform.IssueReader, error) {
 	return s.clients.IssueReader(repoPlatform(repo), repoHost(repo))
+}
+
+func (s *Syncer) mergeRequestPageReaderFor(repo RepoRef) (platform.MergeRequestPageReader, error) {
+	return s.clients.MergeRequestPageReader(repoPlatform(repo), repoHost(repo))
+}
+
+func (s *Syncer) issuePageReaderFor(repo RepoRef) (platform.IssuePageReader, error) {
+	return s.clients.IssuePageReader(repoPlatform(repo), repoHost(repo))
 }
 
 func (s *Syncer) labelReaderFor(repo RepoRef) (platform.LabelReader, error) {
@@ -4798,7 +4750,11 @@ func (s *Syncer) indexSyncRepo(
 		if err != nil {
 			return fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
 		}
-		openMRs, err := mrReader.ListOpenMergeRequests(ctx, platformRef)
+		mrPages, err := s.mergeRequestPageReaderFor(repo)
+		if err != nil {
+			return fmt.Errorf("resolve merge request page reader for %s/%s: %w", repo.Owner, repo.Name, err)
+		}
+		openMRs, err := platform.ListOpenMergeRequests(ctx, mrPages, platformRef)
 		if err != nil {
 			// 304 Not Modified means the open-PR list is byte-identical
 			// to the previous fetch. No PR opened, no PR closed, no
@@ -4888,8 +4844,10 @@ func (s *Syncer) indexSyncRepo(
 			ListOpenGitHubIssues(context.Context, platform.RepoRef) ([]*gh.Issue, error)
 		}); ok && hasGitHubClient {
 			ghIssues, issueListErr = rawIssueReader.ListOpenGitHubIssues(ctx, platformRef)
+		} else if issuePages, pagesErr := s.issuePageReaderFor(repo); pagesErr != nil {
+			issueListErr = pagesErr
 		} else {
-			openIssues, issueListErr = issueReader.ListOpenIssues(ctx, platformRef)
+			openIssues, issueListErr = platform.ListOpenIssues(ctx, issuePages, platformRef)
 		}
 		if issueListErr != nil {
 			if IsNotModified(issueListErr) {
@@ -6396,7 +6354,11 @@ func (s *Syncer) fetchProviderMRDetail(
 	number int,
 ) (int, error) {
 	calls := 0
-	mr, err := reader.GetMergeRequest(ctx, platformRepoRef(repo), number)
+	mrPages, err := s.mergeRequestPageReaderFor(repo)
+	if err != nil {
+		return calls, fmt.Errorf("resolve merge request page reader for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
+	mr, err := platform.RequireMergeRequest(ctx, mrPages, platformRepoRef(repo), number)
 	calls++
 	if err != nil {
 		return calls, fmt.Errorf("get full MR #%d: %w", number, err)
@@ -6773,7 +6735,11 @@ func (s *Syncer) fetchProviderIssueDetail(
 	number int,
 ) (int, error) {
 	calls := 0
-	issue, err := reader.GetIssue(ctx, platformRepoRef(repo), number)
+	issuePages, err := s.issuePageReaderFor(repo)
+	if err != nil {
+		return calls, fmt.Errorf("resolve issue page reader for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
+	issue, err := platform.RequireIssue(ctx, issuePages, platformRepoRef(repo), number)
 	calls++
 	if err != nil {
 		return calls, fmt.Errorf("get issue #%d: %w", number, err)
@@ -7526,7 +7492,7 @@ func (s *Syncer) syncPlatformIssuesFromList(
 	}
 	for _, number := range closedNumbers {
 		if err := s.fetchAndUpdateClosedPlatformIssue(
-			ctx, reader, repo, repoID, number,
+			ctx, repo, repoID, number,
 		); err != nil {
 			slog.Error("update closed issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -7909,12 +7875,15 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 
 func (s *Syncer) fetchAndUpdateClosedPlatformIssue(
 	ctx context.Context,
-	reader platform.IssueReader,
 	repo RepoRef,
 	repoID int64,
 	number int,
 ) error {
-	issue, err := reader.GetIssue(ctx, platformRepoRef(repo), number)
+	issuePages, err := s.issuePageReaderFor(repo)
+	if err != nil {
+		return fmt.Errorf("resolve issue page reader for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
+	issue, err := platform.RequireIssue(ctx, issuePages, platformRepoRef(repo), number)
 	if err != nil {
 		return fmt.Errorf("get closed issue #%d: %w", number, err)
 	}
@@ -8372,7 +8341,11 @@ func (s *Syncer) syncMRForRepo(
 			}
 		}
 	} else {
-		platformMR, err = mrReader.GetMergeRequest(ctx, platformRepoRef(repo), number)
+		var mrPages platform.MergeRequestPageReader
+		mrPages, err = s.mergeRequestPageReaderFor(repo)
+		if err == nil {
+			platformMR, err = platform.RequireMergeRequest(ctx, mrPages, platformRepoRef(repo), number)
+		}
 		if err == nil {
 			normalized = platform.DBMergeRequest(repoID, platformMR)
 		}
@@ -9176,7 +9149,11 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 		return s.fetchAndUpdateClosed(ctx, repo, repoID, number, cloneFetchOK)
 	}
 
-	mr, err := reader.GetMergeRequest(ctx, platformRepoRef(repo), number)
+	mrPages, err := s.mergeRequestPageReaderFor(repo)
+	if err != nil {
+		return fmt.Errorf("resolve merge request page reader for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
+	mr, err := platform.RequireMergeRequest(ctx, mrPages, platformRepoRef(repo), number)
 	if err != nil {
 		return fmt.Errorf("get closed MR #%d: %w", number, err)
 	}

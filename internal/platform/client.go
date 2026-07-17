@@ -40,9 +40,12 @@ type RepositoryReader interface {
 	) ([]Repository, error)
 }
 
+// MergeRequestReader is the live merge-request event aggregate: one
+// provider-shaped read of every event on a merge request (comments, reviews,
+// commits, timeline), built over the canonical pages plus provider-specific
+// datasets internally. Inventory scans and single-item reads live on
+// MergeRequestPageReader.
 type MergeRequestReader interface {
-	ListOpenMergeRequests(ctx context.Context, ref RepoRef) ([]MergeRequest, error)
-	GetMergeRequest(ctx context.Context, ref RepoRef, number int) (MergeRequest, error)
 	ListMergeRequestEvents(
 		ctx context.Context,
 		ref RepoRef,
@@ -54,9 +57,10 @@ type MergeRequestViewerResolver interface {
 	ViewerAuthoredMergeRequest(ctx context.Context, mr MergeRequest) (bool, error)
 }
 
+// IssueReader is the live issue event aggregate counterpart to
+// MergeRequestReader. Inventory scans and single-item reads live on
+// IssuePageReader.
 type IssueReader interface {
-	ListOpenIssues(ctx context.Context, ref RepoRef) ([]Issue, error)
-	GetIssue(ctx context.Context, ref RepoRef, number int) (Issue, error)
 	ListIssueEvents(ctx context.Context, ref RepoRef, number int) ([]IssueEvent, error)
 }
 

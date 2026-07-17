@@ -75,23 +75,47 @@ func (p *blockingPriorityProvider) wait(operation priorityWorkOperation) {
 	<-p.release
 }
 
-func (p *blockingPriorityProvider) ListOpenMergeRequests(
-	context.Context, platform.RepoRef,
-) ([]platform.MergeRequest, error) {
+func (p *blockingPriorityProvider) ListMergeRequestsPage(
+	_ context.Context, _ platform.RepoRef, query platform.ItemPageQuery,
+) (platform.Page[platform.MergeRequest], error) {
+	if err := platform.ValidateItemPageQuery(query); err != nil {
+		return platform.Page[platform.MergeRequest]{}, err
+	}
 	p.wait(priorityWorkIndex)
-	return nil, nil
+	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
 }
 
-func (p *blockingPriorityProvider) GetMergeRequest(
+func (p *blockingPriorityProvider) LookupMergeRequest(
 	context.Context, platform.RepoRef, int,
-) (platform.MergeRequest, error) {
+) (platform.ItemLookup[platform.MergeRequest], error) {
 	p.wait(priorityWorkMR)
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	return platform.MergeRequest{
-		Repo: p.ref, PlatformID: 7, PlatformExternalID: "mr-7", Number: 7,
-		Title: "Synthetic MR", State: "open", CreatedAt: now, UpdatedAt: now,
-		LastActivityAt: now,
+	return platform.ItemLookup[platform.MergeRequest]{
+		Outcome: platform.LookupPresent,
+		Item: platform.MergeRequest{
+			Repo: p.ref, PlatformID: 7, PlatformExternalID: "mr-7", Number: 7,
+			Title: "Synthetic MR", State: "open", CreatedAt: now, UpdatedAt: now,
+			LastActivityAt: now,
+		},
 	}, nil
+}
+
+func (*blockingPriorityProvider) ListMergeRequestCommentsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestEvent], error) {
+	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
+}
+
+func (*blockingPriorityProvider) ListSubmittedReviewsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestEvent], error) {
+	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
+}
+
+func (*blockingPriorityProvider) ListReviewThreadsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestReviewThread], error) {
+	return platform.Page[platform.MergeRequestReviewThread]{Exhausted: true}, nil
 }
 
 func (*blockingPriorityProvider) ListMergeRequestEvents(
@@ -100,22 +124,34 @@ func (*blockingPriorityProvider) ListMergeRequestEvents(
 	return nil, nil
 }
 
-func (p *blockingPriorityProvider) ListOpenIssues(
-	context.Context, platform.RepoRef,
-) ([]platform.Issue, error) {
-	return nil, nil
+func (p *blockingPriorityProvider) ListIssuesPage(
+	_ context.Context, _ platform.RepoRef, query platform.ItemPageQuery,
+) (platform.Page[platform.Issue], error) {
+	if err := platform.ValidateItemPageQuery(query); err != nil {
+		return platform.Page[platform.Issue]{}, err
+	}
+	return platform.Page[platform.Issue]{Exhausted: true}, nil
 }
 
-func (p *blockingPriorityProvider) GetIssue(
+func (p *blockingPriorityProvider) LookupIssue(
 	context.Context, platform.RepoRef, int,
-) (platform.Issue, error) {
+) (platform.ItemLookup[platform.Issue], error) {
 	p.wait(priorityWorkIssue)
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	return platform.Issue{
-		Repo: p.ref, PlatformID: 8, PlatformExternalID: "issue-8", Number: 8,
-		Title: "Synthetic issue", State: "open", CreatedAt: now, UpdatedAt: now,
-		LastActivityAt: now,
+	return platform.ItemLookup[platform.Issue]{
+		Outcome: platform.LookupPresent,
+		Item: platform.Issue{
+			Repo: p.ref, PlatformID: 8, PlatformExternalID: "issue-8", Number: 8,
+			Title: "Synthetic issue", State: "open", CreatedAt: now, UpdatedAt: now,
+			LastActivityAt: now,
+		},
 	}, nil
+}
+
+func (*blockingPriorityProvider) ListIssueCommentsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.IssueEvent], error) {
+	return platform.Page[platform.IssueEvent]{Exhausted: true}, nil
 }
 
 func (*blockingPriorityProvider) ListIssueEvents(

@@ -171,28 +171,48 @@ func (p e2eStaticProvider) ListRepositories(
 	return repos, nil
 }
 
-func (p e2eStaticProvider) ListOpenIssues(
+func (p e2eStaticProvider) ListIssuesPage(
 	_ context.Context,
 	ref platform.RepoRef,
-) ([]platform.Issue, error) {
-	if ref.RepoPath != p.issue.Repo.RepoPath {
-		return nil, nil
+	query platform.ItemPageQuery,
+) (platform.Page[platform.Issue], error) {
+	if err := platform.ValidateItemPageQuery(query); err != nil {
+		return platform.Page[platform.Issue]{}, err
 	}
-	if p.issue.State != "open" {
-		return nil, nil
+	if ref.RepoPath != p.issue.Repo.RepoPath ||
+		(query.State == platform.ItemStateOpen && p.issue.State != "open") {
+		return platform.Page[platform.Issue]{Exhausted: true}, nil
 	}
-	return []platform.Issue{p.issue}, nil
+	return platform.Page[platform.Issue]{
+		Items: []platform.Issue{p.issue}, Exhausted: true,
+	}, nil
 }
 
-func (p e2eStaticProvider) GetIssue(
+func (p e2eStaticProvider) LookupIssue(
 	_ context.Context,
 	ref platform.RepoRef,
 	number int,
-) (platform.Issue, error) {
+) (platform.ItemLookup[platform.Issue], error) {
 	if ref.RepoPath == p.issue.Repo.RepoPath && number == p.issue.Number {
-		return p.issue, nil
+		return platform.ItemLookup[platform.Issue]{
+			Outcome: platform.LookupPresent, Item: p.issue,
+		}, nil
 	}
-	return platform.Issue{}, fmt.Errorf("e2e static provider: issue %s#%d not found", ref.RepoPath, number)
+	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupRemoved}, nil
+}
+
+func (p e2eStaticProvider) ListIssueCommentsPage(
+	_ context.Context,
+	ref platform.RepoRef,
+	number int,
+	_ string,
+) (platform.Page[platform.IssueEvent], error) {
+	if ref.RepoPath != p.issue.Repo.RepoPath || number != p.issue.Number {
+		return platform.Page[platform.IssueEvent]{Exhausted: true}, nil
+	}
+	return platform.Page[platform.IssueEvent]{
+		Items: slices.Clone(p.issueEvents), Exhausted: true,
+	}, nil
 }
 
 func (p e2eStaticProvider) ListIssueEvents(

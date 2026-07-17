@@ -343,41 +343,6 @@ func (c *Client) PreviewNamespace(
 	return result.finish(), nil
 }
 
-func (c *Client) ListOpenMergeRequests(
-	ctx context.Context,
-	ref platform.RepoRef,
-) ([]platform.MergeRequest, error) {
-	return platform.CollectPages(ctx, "", func(
-		ctx context.Context, cursor string,
-	) (platform.Page[platform.MergeRequest], error) {
-		return c.ListMergeRequestsPage(ctx, ref, platform.ItemPageQuery{
-			State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated, Cursor: cursor,
-		})
-	})
-}
-
-func (c *Client) GetMergeRequest(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-) (platform.MergeRequest, error) {
-	lookup, mr, normalizedRef, err := c.lookupMergeRequestDetail(ctx, ref, number)
-	if err != nil {
-		return platform.MergeRequest{}, err
-	}
-	if lookup.Outcome != platform.LookupPresent {
-		return platform.MergeRequest{}, c.lookupNotPresentError(ref, number, lookup.Outcome, lookup.Destination)
-	}
-	// Source-project clone-URL enrichment is a live concern: archive lookups
-	// share the core fetch above but never spend this extra request.
-	item := lookup.Item
-	item.HeadRepoCloneURL, err = c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
-	if err != nil {
-		return platform.MergeRequest{}, err
-	}
-	return item, nil
-}
-
 func (c *Client) optionalHeadRepoCloneURL(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -491,27 +456,6 @@ func (c *Client) listMergeRequestDiscussionEvents(
 		return nil, err
 	}
 	return NormalizeMergeRequestDiscussions(normalizedRef, number, gitLabMergeRequestURL(normalizedRef, number), discussions), nil
-}
-
-func (c *Client) ListOpenIssues(ctx context.Context, ref platform.RepoRef) ([]platform.Issue, error) {
-	return platform.CollectPages(ctx, "", func(
-		ctx context.Context, cursor string,
-	) (platform.Page[platform.Issue], error) {
-		return c.ListIssuesPage(ctx, ref, platform.ItemPageQuery{
-			State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated, Cursor: cursor,
-		})
-	})
-}
-
-func (c *Client) GetIssue(ctx context.Context, ref platform.RepoRef, number int) (platform.Issue, error) {
-	lookup, err := c.LookupIssue(ctx, ref, number)
-	if err != nil {
-		return platform.Issue{}, err
-	}
-	if lookup.Outcome != platform.LookupPresent {
-		return platform.Issue{}, c.lookupNotPresentError(ref, number, lookup.Outcome, lookup.Destination)
-	}
-	return lookup.Item, nil
 }
 
 func (c *Client) ListIssueEvents(

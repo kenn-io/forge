@@ -156,7 +156,7 @@ func TestGitHubIssueInventoryLegacyMatchesCanonical(t *testing.T) {
 	})
 	require.NoError(err)
 	canonicalOpenReqs := recorder.take()
-	legacyOpen, err := provider.ListOpenIssues(t.Context(), ref)
+	legacyOpen, err := platform.ListOpenIssues(t.Context(), provider, ref)
 	require.NoError(err)
 	assert.Equal(canonicalOpenReqs, recorder.take())
 	assert.Equal(canonicalOpen.Items, legacyOpen)
@@ -233,7 +233,7 @@ func TestGitHubMergeRequestInventoryLegacyMatchesCanonical(t *testing.T) {
 	})
 	require.NoError(err)
 	canonicalOpenReqs := recorder.take()
-	legacyOpen, err := provider.ListOpenMergeRequests(t.Context(), ref)
+	legacyOpen, err := platform.ListOpenMergeRequests(t.Context(), provider, ref)
 	require.NoError(err)
 	assert.Equal(canonicalOpenReqs, recorder.take())
 	assert.Equal(canonicalOpen.Items, legacyOpen)
@@ -270,14 +270,14 @@ func TestGitHubLookupIssueMatchesLegacyAndDrivesLiveGet(t *testing.T) {
 	assert.Equal(canonical, legacy)
 	assert.Equal(platform.LookupPresent, canonical.Outcome)
 
-	live, err := provider.GetIssue(t.Context(), ref, 7)
+	live, err := platform.RequireIssue(t.Context(), provider, ref, 7)
 	require.NoError(err)
 	assert.Equal(canonical.Item, live)
 
 	removed, err := provider.LookupIssue(t.Context(), ref, 9)
 	require.NoError(err)
 	assert.Equal(platform.LookupRemoved, removed.Outcome)
-	_, liveErr := provider.GetIssue(t.Context(), ref, 9)
+	_, liveErr := platform.RequireIssue(t.Context(), provider, ref, 9)
 	require.ErrorIs(liveErr, platform.ErrNotFound)
 }
 
@@ -307,11 +307,11 @@ func TestGitHubLookupMergeRequestDrivesLiveGet(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(canonical, legacy)
 
-	live, err := provider.GetMergeRequest(t.Context(), ref, 7)
+	live, err := platform.RequireMergeRequest(t.Context(), provider, ref, 7)
 	require.NoError(err)
 	assert.Equal(canonical.Item, live)
 
-	_, liveErr := provider.GetMergeRequest(t.Context(), ref, 9)
+	_, liveErr := platform.RequireMergeRequest(t.Context(), provider, ref, 9)
 	require.ErrorIs(liveErr, platform.ErrNotFound)
 }
 
@@ -459,17 +459,17 @@ func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
 	ref := pagesTestRef()
 
-	_, removedIssueErr := provider.GetIssue(t.Context(), ref, 9)
+	_, removedIssueErr := platform.RequireIssue(t.Context(), provider, ref, 9)
 	require.ErrorIs(removedIssueErr, platform.ErrNotFound)
-	_, removedMRErr := provider.GetMergeRequest(t.Context(), ref, 9)
+	_, removedMRErr := platform.RequireMergeRequest(t.Context(), provider, ref, 9)
 	require.ErrorIs(removedMRErr, platform.ErrNotFound)
 
-	_, inaccessibleIssueErr := provider.GetIssue(t.Context(), ref, 8)
+	_, inaccessibleIssueErr := platform.RequireIssue(t.Context(), provider, ref, 8)
 	require.ErrorIs(inaccessibleIssueErr, platform.ErrPermissionDenied)
-	_, inaccessibleMRErr := provider.GetMergeRequest(t.Context(), ref, 8)
+	_, inaccessibleMRErr := platform.RequireMergeRequest(t.Context(), provider, ref, 8)
 	require.ErrorIs(inaccessibleMRErr, platform.ErrPermissionDenied)
 
-	_, movedIssueErr := provider.GetIssue(t.Context(), ref, 10)
+	_, movedIssueErr := platform.RequireIssue(t.Context(), provider, ref, 10)
 	require.ErrorIs(movedIssueErr, platform.ErrNotFound)
 	var typedIssueErr *platform.Error
 	require.ErrorAs(movedIssueErr, &typedIssueErr)
@@ -477,7 +477,7 @@ func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
 	assert.Equal("other", typedIssueErr.Destination.Owner)
 	assert.Equal("place", typedIssueErr.Destination.Name)
 
-	_, movedMRErr := provider.GetMergeRequest(t.Context(), ref, 10)
+	_, movedMRErr := platform.RequireMergeRequest(t.Context(), provider, ref, 10)
 	require.ErrorIs(movedMRErr, platform.ErrNotFound)
 	var typedMRErr *platform.Error
 	require.ErrorAs(movedMRErr, &typedMRErr)

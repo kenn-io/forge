@@ -906,20 +906,42 @@ func (p *syncTestMergeRequestOnlyProvider) Capabilities() platform.Capabilities 
 	return platform.Capabilities{ReadMergeRequests: true}
 }
 
-func (p *syncTestMergeRequestOnlyProvider) ListOpenMergeRequests(
-	context.Context,
-	platform.RepoRef,
-) ([]platform.MergeRequest, error) {
+func (p *syncTestMergeRequestOnlyProvider) ListMergeRequestsPage(
+	_ context.Context,
+	_ platform.RepoRef,
+	query platform.ItemPageQuery,
+) (platform.Page[platform.MergeRequest], error) {
+	if err := platform.ValidateItemPageQuery(query); err != nil {
+		return platform.Page[platform.MergeRequest]{}, err
+	}
 	p.listMRCalls.Add(1)
-	return p.mergeRequests, nil
+	return platform.Page[platform.MergeRequest]{Items: p.mergeRequests, Exhausted: true}, nil
 }
 
-func (p *syncTestMergeRequestOnlyProvider) GetMergeRequest(
+func (p *syncTestMergeRequestOnlyProvider) LookupMergeRequest(
 	context.Context,
 	platform.RepoRef,
 	int,
-) (platform.MergeRequest, error) {
-	return platform.MergeRequest{}, nil
+) (platform.ItemLookup[platform.MergeRequest], error) {
+	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupRemoved}, nil
+}
+
+func (p *syncTestMergeRequestOnlyProvider) ListMergeRequestCommentsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestEvent], error) {
+	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
+}
+
+func (p *syncTestMergeRequestOnlyProvider) ListSubmittedReviewsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestEvent], error) {
+	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
+}
+
+func (p *syncTestMergeRequestOnlyProvider) ListReviewThreadsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestReviewThread], error) {
+	return platform.Page[platform.MergeRequestReviewThread]{Exhausted: true}, nil
 }
 
 type syncTestIssueOnlyProvider struct {
@@ -932,25 +954,37 @@ func (p *syncTestIssueOnlyProvider) Capabilities() platform.Capabilities {
 	return platform.Capabilities{ReadIssues: true}
 }
 
-func (p *syncTestIssueOnlyProvider) ListOpenIssues(
-	context.Context,
-	platform.RepoRef,
-) ([]platform.Issue, error) {
+func (p *syncTestIssueOnlyProvider) ListIssuesPage(
+	_ context.Context,
+	_ platform.RepoRef,
+	query platform.ItemPageQuery,
+) (platform.Page[platform.Issue], error) {
+	if err := platform.ValidateItemPageQuery(query); err != nil {
+		return platform.Page[platform.Issue]{}, err
+	}
 	p.listIssueCalls.Add(1)
-	return p.issues, nil
+	return platform.Page[platform.Issue]{Items: p.issues, Exhausted: true}, nil
 }
 
-func (p *syncTestIssueOnlyProvider) GetIssue(
+func (p *syncTestIssueOnlyProvider) LookupIssue(
 	_ context.Context,
 	_ platform.RepoRef,
 	number int,
-) (platform.Issue, error) {
+) (platform.ItemLookup[platform.Issue], error) {
 	for _, issue := range p.issues {
 		if issue.Number == number {
-			return issue, nil
+			return platform.ItemLookup[platform.Issue]{
+				Outcome: platform.LookupPresent, Item: issue,
+			}, nil
 		}
 	}
-	return platform.Issue{}, errors.New("missing issue")
+	return platform.ItemLookup[platform.Issue]{}, errors.New("missing issue")
+}
+
+func (p *syncTestIssueOnlyProvider) ListIssueCommentsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.IssueEvent], error) {
+	return platform.Page[platform.IssueEvent]{Exhausted: true}, nil
 }
 
 func (p *syncTestIssueOnlyProvider) ListIssueEvents(
@@ -993,26 +1027,50 @@ func (p *syncTestRepositoryReadProvider) ListRepositories(
 	return nil, nil
 }
 
-func (p *syncTestReadProvider) ListOpenMergeRequests(
-	context.Context,
-	platform.RepoRef,
-) ([]platform.MergeRequest, error) {
+func (p *syncTestReadProvider) ListMergeRequestsPage(
+	_ context.Context,
+	_ platform.RepoRef,
+	query platform.ItemPageQuery,
+) (platform.Page[platform.MergeRequest], error) {
+	if err := platform.ValidateItemPageQuery(query); err != nil {
+		return platform.Page[platform.MergeRequest]{}, err
+	}
 	p.listMRCalls.Add(1)
-	return p.mergeRequests, nil
+	return platform.Page[platform.MergeRequest]{Items: p.mergeRequests, Exhausted: true}, nil
 }
 
-func (p *syncTestReadProvider) GetMergeRequest(
+func (p *syncTestReadProvider) LookupMergeRequest(
 	_ context.Context,
 	_ platform.RepoRef,
 	number int,
-) (platform.MergeRequest, error) {
+) (platform.ItemLookup[platform.MergeRequest], error) {
 	p.getMRCalls.Add(1)
 	for _, mr := range p.mergeRequests {
 		if mr.Number == number {
-			return mr, nil
+			return platform.ItemLookup[platform.MergeRequest]{
+				Outcome: platform.LookupPresent, Item: mr,
+			}, nil
 		}
 	}
-	return platform.MergeRequest{}, errors.New("missing merge request")
+	return platform.ItemLookup[platform.MergeRequest]{}, errors.New("missing merge request")
+}
+
+func (p *syncTestReadProvider) ListMergeRequestCommentsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestEvent], error) {
+	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
+}
+
+func (p *syncTestReadProvider) ListSubmittedReviewsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestEvent], error) {
+	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
+}
+
+func (p *syncTestReadProvider) ListReviewThreadsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestReviewThread], error) {
+	return platform.Page[platform.MergeRequestReviewThread]{Exhausted: true}, nil
 }
 
 func (p *syncTestReadProvider) ListMergeRequestEvents(
@@ -1032,26 +1090,38 @@ func (p *syncTestReadProvider) ListMergeRequestReviewThreads(
 	return p.reviewThreads, nil
 }
 
-func (p *syncTestReadProvider) ListOpenIssues(
-	context.Context,
-	platform.RepoRef,
-) ([]platform.Issue, error) {
+func (p *syncTestReadProvider) ListIssuesPage(
+	_ context.Context,
+	_ platform.RepoRef,
+	query platform.ItemPageQuery,
+) (platform.Page[platform.Issue], error) {
+	if err := platform.ValidateItemPageQuery(query); err != nil {
+		return platform.Page[platform.Issue]{}, err
+	}
 	p.listIssueCalls.Add(1)
-	return p.issues, nil
+	return platform.Page[platform.Issue]{Items: p.issues, Exhausted: true}, nil
 }
 
-func (p *syncTestReadProvider) GetIssue(
+func (p *syncTestReadProvider) LookupIssue(
 	_ context.Context,
 	_ platform.RepoRef,
 	number int,
-) (platform.Issue, error) {
+) (platform.ItemLookup[platform.Issue], error) {
 	p.getIssueCalls.Add(1)
 	for _, issue := range p.issues {
 		if issue.Number == number {
-			return issue, nil
+			return platform.ItemLookup[platform.Issue]{
+				Outcome: platform.LookupPresent, Item: issue,
+			}, nil
 		}
 	}
-	return platform.Issue{}, errors.New("missing issue")
+	return platform.ItemLookup[platform.Issue]{}, errors.New("missing issue")
+}
+
+func (p *syncTestReadProvider) ListIssueCommentsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.IssueEvent], error) {
+	return platform.Page[platform.IssueEvent]{Exhausted: true}, nil
 }
 
 func (p *syncTestReadProvider) ListIssueEvents(
@@ -6102,6 +6172,13 @@ func TestSyncMRUsesConfiguredProviderRegistry(t *testing.T) {
 			host: "gitlab.com",
 		},
 		mergeRequests: []platform.MergeRequest{{
+			Repo: platform.RepoRef{
+				Platform: platform.KindGitLab,
+				Host:     "gitlab.com",
+				Owner:    "acme",
+				Name:     "widget",
+				RepoPath: "acme/widget",
+			},
 			PlatformID: 42,
 			Number:     10,
 			Title:      "gitlab mr",

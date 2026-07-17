@@ -367,9 +367,9 @@ func TestClientReadsOpenPullRequestsIssuesAndCIChecks(t *testing.T) {
 	require.NoError(err)
 	ref := platform.RepoRef{Owner: "owner", Name: "repo"}
 
-	mrs, err := client.ListOpenMergeRequests(context.Background(), ref)
+	mrs, err := platform.ListOpenMergeRequests(context.Background(), client, ref)
 	require.NoError(err)
-	issues, err := client.ListOpenIssues(context.Background(), ref)
+	issues, err := platform.ListOpenIssues(context.Background(), client, ref)
 	require.NoError(err)
 	checks, err := client.ListCIChecks(context.Background(), ref, "abc")
 	require.NoError(err)
@@ -652,17 +652,29 @@ func TestClientMapsNotFoundResponsesToPlatformError(t *testing.T) {
 	require := Require.New(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal("/api/v1/repos/owner/repo/pulls/99", r.URL.Path)
-		w.WriteHeader(http.StatusNotFound)
-		assert.NoError(json.NewEncoder(w).Encode(map[string]string{"message": "not found"}))
+		switch r.URL.Path {
+		case "/api/v1/repos/owner/repo/pulls/99":
+			w.WriteHeader(http.StatusNotFound)
+			assert.NoError(json.NewEncoder(w).Encode(map[string]string{"message": "not found"}))
+		case "/api/v1/repos/owner/repo":
+			// The lookup classification probes the repository to tell item
+			// removal apart from repository-level access loss.
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"id": 1, "name": "repo", "full_name": "owner/repo",
+				"owner": map[string]any{"login": "owner"},
+			}))
+		default:
+			http.NotFound(w, r)
+		}
 	}))
 	defer server.Close()
 
 	client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURLForTesting(server.URL))
 	require.NoError(err)
 
-	_, err = client.GetMergeRequest(
+	_, err = platform.RequireMergeRequest(
 		context.Background(),
+		client,
 		platform.RepoRef{Owner: "owner", Name: "repo"},
 		99,
 	)

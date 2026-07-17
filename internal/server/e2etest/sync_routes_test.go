@@ -197,34 +197,62 @@ func (p gitHubIndexListProvider) Capabilities() platform.Capabilities {
 	}
 }
 
-func (p gitHubIndexListProvider) ListOpenMergeRequests(
+func (p gitHubIndexListProvider) ListMergeRequestsPage(
 	ctx context.Context,
 	ref platform.RepoRef,
-) ([]platform.MergeRequest, error) {
+	query platform.ItemPageQuery,
+) (platform.Page[platform.MergeRequest], error) {
+	if err := platform.ValidateItemPageQuery(query); err != nil {
+		return platform.Page[platform.MergeRequest]{}, err
+	}
 	pulls, err := p.client.ListOpenPullRequests(ctx, ref.Owner, ref.Name)
 	if err != nil {
-		return nil, err
+		return platform.Page[platform.MergeRequest]{}, err
 	}
 	out := make([]platform.MergeRequest, 0, len(pulls))
 	for _, pull := range pulls {
 		normalized, err := platformgithub.NormalizePullRequest(ref, pull)
 		if err != nil {
-			return nil, err
+			return platform.Page[platform.MergeRequest]{}, err
 		}
 		out = append(out, normalized)
 	}
-	return out, nil
+	return platform.Page[platform.MergeRequest]{Items: out, Exhausted: true}, nil
 }
 
-func (p gitHubIndexListProvider) GetMergeRequest(
+func (p gitHubIndexListProvider) LookupMergeRequest(
 	context.Context,
 	platform.RepoRef,
 	int,
-) (platform.MergeRequest, error) {
-	return platform.MergeRequest{}, platform.UnsupportedCapability(
+) (platform.ItemLookup[platform.MergeRequest], error) {
+	return platform.ItemLookup[platform.MergeRequest]{}, platform.UnsupportedCapability(
 		platform.KindGitHub,
 		p.host,
 		"read_merge_request_detail",
+	)
+}
+
+func (p gitHubIndexListProvider) ListMergeRequestCommentsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestEvent], error) {
+	return platform.Page[platform.MergeRequestEvent]{}, platform.UnsupportedCapability(
+		platform.KindGitHub, p.host, "read_merge_request_events",
+	)
+}
+
+func (p gitHubIndexListProvider) ListSubmittedReviewsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestEvent], error) {
+	return platform.Page[platform.MergeRequestEvent]{}, platform.UnsupportedCapability(
+		platform.KindGitHub, p.host, "read_merge_request_events",
+	)
+}
+
+func (p gitHubIndexListProvider) ListReviewThreadsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.MergeRequestReviewThread], error) {
+	return platform.Page[platform.MergeRequestReviewThread]{}, platform.UnsupportedCapability(
+		platform.KindGitHub, p.host, "read_merge_request_events",
 	)
 }
 
@@ -240,34 +268,46 @@ func (p gitHubIndexListProvider) ListMergeRequestEvents(
 	)
 }
 
-func (p gitHubIndexListProvider) ListOpenIssues(
+func (p gitHubIndexListProvider) ListIssuesPage(
 	ctx context.Context,
 	ref platform.RepoRef,
-) ([]platform.Issue, error) {
+	query platform.ItemPageQuery,
+) (platform.Page[platform.Issue], error) {
+	if err := platform.ValidateItemPageQuery(query); err != nil {
+		return platform.Page[platform.Issue]{}, err
+	}
 	issues, err := p.client.ListOpenIssues(ctx, ref.Owner, ref.Name)
 	if err != nil {
-		return nil, err
+		return platform.Page[platform.Issue]{}, err
 	}
 	out := make([]platform.Issue, 0, len(issues))
 	for _, issue := range issues {
 		normalized, err := platformgithub.NormalizeIssue(ref, issue)
 		if err != nil {
-			return nil, err
+			return platform.Page[platform.Issue]{}, err
 		}
 		out = append(out, normalized)
 	}
-	return out, nil
+	return platform.Page[platform.Issue]{Items: out, Exhausted: true}, nil
 }
 
-func (p gitHubIndexListProvider) GetIssue(
+func (p gitHubIndexListProvider) LookupIssue(
 	context.Context,
 	platform.RepoRef,
 	int,
-) (platform.Issue, error) {
-	return platform.Issue{}, platform.UnsupportedCapability(
+) (platform.ItemLookup[platform.Issue], error) {
+	return platform.ItemLookup[platform.Issue]{}, platform.UnsupportedCapability(
 		platform.KindGitHub,
 		p.host,
 		"read_issue_detail",
+	)
+}
+
+func (p gitHubIndexListProvider) ListIssueCommentsPage(
+	context.Context, platform.RepoRef, int, string,
+) (platform.Page[platform.IssueEvent], error) {
+	return platform.Page[platform.IssueEvent]{}, platform.UnsupportedCapability(
+		platform.KindGitHub, p.host, "read_issue_events",
 	)
 }
 

@@ -224,13 +224,15 @@ func TestCreateFlowEndToEnd(t *testing.T) {
 	assert.Equal(os.FileMode(0o600), info.Mode().Perm())
 
 	// The saved entry must put a mintable github_app candidate in the
-	// host's token chain — that is the whole point of the tool.
-	desc := cfg.TokenSourceForPlatformHost("github", "github.com", "", "")
+	// installed account's route without leaking it into ownerless fallback.
+	desc := cfg.ResolveGitHubRepoTokenSource(cfg.Repos[0])
 	require.NotEmpty(desc.Candidates)
 	first := desc.Candidates[0]
 	assert.Equal(tokenauth.SourceKindGitHubApp, first.Kind)
 	assert.Equal(app.AppID, first.AppID)
 	assert.Equal(app.InstallationID, first.InstallationID)
+	fallback := cfg.TokenSourceForPlatformHost("github", "github.com", "", "")
+	assert.False(fallback.HasActiveGitHubApp())
 
 	// The manifest GitHub received must keep webhooks off (middleman
 	// polls) and stay private.

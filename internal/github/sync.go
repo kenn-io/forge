@@ -2897,22 +2897,19 @@ type writeCredentialProber interface {
 	ProbeWriteCredential(context.Context) error
 }
 
-// ProbeWriteCredentialForRepo resolves the live mutation-bound credential for
-// repo. The route identity is fixed at startup, but the underlying token file,
-// environment, or gh CLI source can disappear or rotate afterwards.
-func (s *Syncer) ProbeWriteCredentialForRepo(
-	ctx context.Context, repo RepoRef,
-) error {
+func (s *Syncer) writeCredentialProberForRepo(
+	repo RepoRef,
+) (*Route, writeCredentialProber, error) {
 	if repoPlatform(repo) != platform.KindGitHub {
-		return nil
+		return nil, nil, nil
 	}
 	router := s.routers[repoHost(repo)]
 	if router == nil {
-		return nil
+		return nil, nil, nil
 	}
 	route, err := router.RouteForRepo(repo.Owner, repo.Name)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	client := route.Client
 	if route.WriteSnapshotClient != nil {
@@ -2920,6 +2917,36 @@ func (s *Syncer) ProbeWriteCredentialForRepo(
 	}
 	prober, ok := client.(writeCredentialProber)
 	if !ok {
+		return route, nil, nil
+	}
+	return route, prober, nil
+}
+
+// WriteCredentialProbeKeyForRepo identifies the routed mutation credential
+// whose live availability is probed. Owner routes share one key across their
+// repositories, while selected-installation routes remain repository-exact.
+func (s *Syncer) WriteCredentialProbeKeyForRepo(repo RepoRef) (string, error) {
+	route, prober, err := s.writeCredentialProberForRepo(repo)
+	if err != nil || prober == nil {
+		return "", err
+	}
+	return fmt.Sprintf(
+		"%s\x00%s\x00%s\x00%s",
+		route.Key.Host, route.Key.Owner, route.Key.Name, route.WriteIdentity.String(),
+	), nil
+}
+
+// ProbeWriteCredentialForRepo resolves the live mutation-bound credential for
+// repo. The route identity is fixed at startup, but the underlying token file,
+// environment, or gh CLI source can disappear or rotate afterwards.
+func (s *Syncer) ProbeWriteCredentialForRepo(
+	ctx context.Context, repo RepoRef,
+) error {
+	_, prober, err := s.writeCredentialProberForRepo(repo)
+	if err != nil {
+		return err
+	}
+	if prober == nil {
 		return nil
 	}
 	return prober.ProbeWriteCredential(ctx)

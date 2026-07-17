@@ -1433,6 +1433,9 @@ func TestConfigReloadFreezesGitHubChainOnSplitTopologyChange(t *testing.T) {
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "github-token")
 
 	githubKey := tokenauth.Key{Platform: "github", Host: "github.com"}
+	ownerKey := tokenauth.Key{
+		Platform: "github", Host: "github.com", Scope: "owner:acme",
+	}
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.pem"), []byte("pem"), 0o600))
 	withApp := validReloadConfig + `
@@ -1484,14 +1487,18 @@ repository_selection = "all"
 		assert.True(srv.bootCfgSnapshot.restartRequiredFor(newCfg),
 			"removing an app changes split topology and must flag a restart")
 		srv.updateTokenSourcesForReload(newCfg)
-		src, ok := set.Get(githubKey)
+		src, ok := set.Get(ownerKey)
 		require.True(t, ok)
 		assert.True(src.Descriptor().HasActiveGitHubApp(),
-			"a reload that removes an app must not drop the chain the write trackers were built for")
+			"a reload that removes an app must not drop the owner route the write trackers were built for")
+		fallbackSrc, ok := set.Get(githubKey)
+		require.True(t, ok)
+		assert.False(fallbackSrc.Descriptor().HasActiveGitHubApp(),
+			"the ownerless fallback must remain PAT-only")
 		cloneSrc, ok := set.Get(tokenauth.CloneKey("github.com"))
 		require.True(t, ok)
-		assert.True(cloneSrc.Descriptor().HasActiveGitHubApp(),
-			"clone auth must keep the boot app chain until restart")
+		assert.False(cloneSrc.Descriptor().HasActiveGitHubApp(),
+			"ownerless clone auth must remain PAT-only")
 	})
 
 	t.Run("non-topology token change still hot-applies", func(t *testing.T) {

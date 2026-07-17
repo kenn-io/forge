@@ -131,10 +131,11 @@ type GitHubAppConfig struct {
 	RepositorySelection string `toml:"repository_selection,omitempty" json:"repository_selection,omitempty"`
 	// SelectedRepos lists the full names (owner/name) an "Only select
 	// repositories" installation could reach when the CLI recorded it.
-	// This is a snapshot: middleman does not detect selection changes
-	// made on GitHub afterwards — an out-of-band narrowing surfaces as
-	// sync 404s until "middleman-github-app install" is re-run to
-	// refresh the recorded list.
+	// This is a startup routing snapshot: middleman does not detect selection
+	// changes made on GitHub afterwards. Narrowed access can surface as sync
+	// 404s, while newly granted repositories keep using PAT fallback. Re-run
+	// "middleman-github-app install" and restart middleman to load either
+	// change into the bounded route table.
 	SelectedRepos []string `toml:"selected_repos,omitempty" json:"selected_repos,omitempty"`
 }
 
@@ -2439,28 +2440,10 @@ func (c *Config) TokenSourceForPlatformHost(
 	}
 	desc := tokenauth.Descriptor{Key: tokenauth.Key{Platform: p, Host: h}}
 	appendTokenFileEnvCandidates(&desc, repoTokenFile, repoTokenEnv)
-	// A configured GitHub App outranks platform and default PAT
-	// candidates: installation tokens exist to take sync traffic off
-	// the PAT budget. Repo-level overrides are terminal with respect
-	// to the app: a repo that names its own credential must never fall
-	// through to the installation token, because installation coverage
-	// validation exempts overridden repos and a fall-through would
-	// reopen the cross-account 404 hole when the override is unset.
-	if p == defaultPlatform && repoTokenEnv == "" && repoTokenFile == "" {
-		for _, app := range c.GitHubAppsForHost(h) {
-			if app.AppID <= 0 || app.PrivateKeyPath == "" {
-				continue
-			}
-			desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
-				Kind:                tokenauth.SourceKindGitHubApp,
-				Host:                h,
-				FilePath:            app.PrivateKeyPath,
-				AppID:               app.AppID,
-				InstallationID:      app.InstallationID,
-				InstallationAccount: app.InstallationAccount,
-			})
-		}
-	}
+	// GitHub App installations are account-scoped and therefore belong only
+	// on repository or owner routes built by ResolveGitHubRepoTokenSource.
+	// An ownerless host fallback must remain PAT/gh-only so its authenticated
+	// credential and identity-scoped rate accounting cannot disagree.
 	c.appendPlatformTokenCandidates(&desc, p, h)
 	if defaultTokenEnv, ok := defaultTokenEnvForPlatformHost(p, h); ok {
 		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{

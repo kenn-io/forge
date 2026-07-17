@@ -59,6 +59,30 @@ func TestGitHubAppTokenMintAndCache(t *testing.T) {
 	assert.Equal(int64(2), mints.Load())
 }
 
+func TestGitHubAppTokenCacheIsSharedAcrossExactRoutes(t *testing.T) {
+	var mints atomic.Int64
+	set := NewSourceSet(Options{
+		GitHubApp: func(context.Context, Candidate) (string, time.Time, error) {
+			mints.Add(1)
+			return "ghs_shared", time.Now().Add(time.Hour), nil
+		},
+	})
+	first := githubAppDescriptor(42)
+	first.Key.Scope = "repo:kenn-io/one"
+	first.Candidates[0].InstallationAccount = "kenn-io"
+	second := githubAppDescriptor(42)
+	second.Key.Scope = "repo:kenn-io/two"
+	second.Candidates[0].InstallationAccount = "kenn-io"
+
+	ctx := WithGitHubOwner(context.Background(), "kenn-io")
+	_, err := set.Upsert(first).Token(ctx)
+	require.NoError(t, err)
+	_, err = set.Upsert(second).Token(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), mints.Load(),
+		"one installation token must be reused across repository-exact routes")
+}
+
 func TestGitHubAppTokenRemintsNearExpiry(t *testing.T) {
 	var mints atomic.Int64
 	src := NewManagedSource(githubAppDescriptor(42), Options{

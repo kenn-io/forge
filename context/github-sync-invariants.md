@@ -217,7 +217,14 @@ app owner/installation account or app id, and duplicate installation accounts on
 the same host are invalid. Selected-repository coverage applies only to repos
 owned by that row's `installation_account`, and the install CLI must not warn
 that an installation on one account "cannot reach" repos owned by another
-account. Re-running `install` after a coverage failure (or against a restored
+account. The recorded selected-repository list is a startup routing snapshot:
+expanded access remains on the PAT route and narrowed access may return 404
+until `middleman-github-app install` refreshes the snapshot and middleman is
+restarted. Do not retry PAT credentials after an App-backed repository 404;
+GitHub uses the same response for absent, private, and inaccessible repositories,
+so automatic fallback would hide stale or revoked App access.
+
+Re-running `install` after a coverage failure (or against a restored
 config) reconfigures the existing installation instead of minting a new
 installation id, so on a clean install-poll timeout the flow adopts an
 already-present installation rather than only ever waiting for a newly created

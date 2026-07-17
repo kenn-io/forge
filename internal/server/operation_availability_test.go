@@ -782,10 +782,12 @@ func TestAPIRepoResponseOperationsDistinguishWriteCredentialErrors(t *testing.T)
 
 type writeCredentialProbeClient struct {
 	*mockGH
-	err error
+	err   error
+	calls int
 }
 
 func (c *writeCredentialProbeClient) ProbeWriteCredential(context.Context) error {
+	c.calls++
 	return c.err
 }
 
@@ -822,6 +824,10 @@ func TestAPIRepoResponseProbesRestartBoundWriteCredential(t *testing.T) {
 	assert.False(merge.Available)
 	assert.Equal(availabilityCodeWriteCredentialError, merge.Code)
 	assert.Contains(merge.UnavailableReason, "restart")
+
+	rr = doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	assert.Equal(1, client.calls, "routed write credential probes must use the TTL cache")
 }
 
 // splitTestDescriptor builds the github.com chain of a split host:

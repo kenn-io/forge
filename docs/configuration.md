@@ -105,6 +105,13 @@ repository `token_env` or `token_file` wins; a covered GitHub App installation
 handles reads; the owner PAT handles uncovered reads and user-attributed writes;
 then the host fallback and GitHub CLI are tried.
 
+For an App installed on only selected repositories, `selected_repos` is a
+startup routing snapshot. After changing repository access on GitHub, rerun
+`middleman-github-app install` and restart middleman. Until then, newly granted
+repositories continue on their PAT route, while revoked App access can surface
+as a repository 404. Middleman does not retry a PAT after that 404 because the
+same response can also mean that the repository is absent or private.
+
 Rate limits and sync budgets are accounted by authenticated identity, not by
 configuration entry. PATs issued to the same GitHub user share that user's
 budget and rate state. Different users and App installations have separate

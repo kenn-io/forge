@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -10,7 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
@@ -38,6 +43,23 @@ func (r fakeGitHubIdentityResolver) ResolvePAT(
 	return github.GitHubIdentity{}, fmt.Errorf(
 		"no fake identity for %s on %s: %w",
 		desc.SafeString(), host, tokenauth.ErrMissingToken,
+	)
+}
+
+type tokenGitHubIdentityResolver map[string]github.GitHubIdentity
+
+func (r tokenGitHubIdentityResolver) ResolvePAT(
+	ctx context.Context, host string, source tokenauth.Source,
+) (github.GitHubIdentity, error) {
+	token, err := source.Token(tokenauth.WithMutationAuth(ctx))
+	if err != nil {
+		return github.GitHubIdentity{}, err
+	}
+	if identity, ok := r[token]; ok {
+		return identity, nil
+	}
+	return github.GitHubIdentity{}, fmt.Errorf(
+		"no fake identity for token on %s: %w", host, tokenauth.ErrMissingToken,
 	)
 }
 
@@ -155,22 +177,34 @@ func TestBuildProviderStartupRoutesUntrackedOwnerAndKeepsFallbackUnscoped(t *tes
 	assert := assert.New(t)
 	database := dbtest.Open(t)
 	t.Setenv("ORG_A_PAT", "org-a-token")
+	t.Setenv("DEFAULT_PAT", "fallback-token")
 	cfg := &config.Config{
 		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
-		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Activity:       config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		GitHubTokenEnv: "DEFAULT_PAT",
 		GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{{
 			Host: "github.com", Owner: "org-a", TokenEnv: "ORG_A_PAT",
 		}},
+		GitHubApps: []config.GitHubAppConfig{{
+			Host: "github.com", AppID: 7, PrivateKeyPath: "/keys/app.pem",
+			InstallationID: 789, InstallationAccount: "org-a",
+			RepositorySelection: "all",
+		}},
 	}
 	require.NoError(cfg.Validate())
-	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			return "app-token", time.Now().Add(time.Hour), nil
+		},
+	})
 	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
 	require.NoError(err)
 
 	startup, err := buildProviderStartup(
 		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
 		fakeGitHubIdentityResolver{byEnv: map[string]github.GitHubIdentity{
-			"ORG_A_PAT": {Key: github.IdentityKey{Host: "github.com", Principal: "user:123"}},
+			"ORG_A_PAT":   {Key: github.IdentityKey{Host: "github.com", Principal: "user:123"}},
+			"DEFAULT_PAT": {Key: github.IdentityKey{Host: "github.com", Principal: "user:999"}},
 		}},
 	)
 	require.NoError(err)
@@ -191,6 +225,110 @@ func TestBuildProviderStartupRoutesUntrackedOwnerAndKeepsFallbackUnscoped(t *tes
 	fallback := startup.FallbackSource("github.com")
 	require.NotNil(fallback)
 	assert.NotContains(fallback.Descriptor().CanonicalSourceString(), "ORG_A_PAT")
+	assert.NotContains(fallback.Descriptor().CanonicalSourceString(), "github_app")
+	fallbackToken, err := fallback.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("fallback-token", fallbackToken)
+
+	router := startup.githubRouters["github.com"]
+	require.NotNil(router)
+	fallbackRoute, err := router.RouteForRepo("unconfigured", "repo")
+	require.NoError(err)
+	assert.Equal("user:999", fallbackRoute.ReadIdentity.Principal)
+}
+
+func TestProductionStartupRoutesExposeRotatedPATThroughRepoAPI(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	t.Setenv("ACME_PAT", "writer-a")
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Repos: []config.Repo{
+			{Owner: "acme", Name: "covered"},
+			{Owner: "acme", Name: "uncovered"},
+		},
+		GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{{
+			Host: "github.com", Owner: "acme", TokenEnv: "ACME_PAT",
+		}},
+		GitHubApps: []config.GitHubAppConfig{{
+			Host: "github.com", AppID: 7, PrivateKeyPath: "/keys/app.pem",
+			InstallationID: 789, InstallationAccount: "acme",
+			RepositorySelection: "selected", SelectedRepos: []string{"acme/covered"},
+		}},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			return "app-token", time.Now().Add(time.Hour), nil
+		},
+	})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+	resolver := tokenGitHubIdentityResolver{
+		"writer-a": {Key: github.IdentityKey{Host: "github.com", Principal: "user:123"}},
+		"writer-b": {Key: github.IdentityKey{Host: "github.com", Principal: "user:456"}},
+	}
+	startup, err := buildProviderStartup(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(), resolver,
+	)
+	require.NoError(err)
+
+	coveredRoute := startup.githubRoutes[tokenauth.Key{
+		Platform: "github", Host: "github.com", Scope: "repo:acme/covered",
+	}]
+	uncoveredRoute := startup.githubRoutes[tokenauth.Key{
+		Platform: "github", Host: "github.com", Scope: "owner:acme",
+	}]
+	assert.Equal("installation:789", coveredRoute.readIdentity.Principal)
+	assert.Equal("user:123", coveredRoute.writeIdentity.Principal)
+	assert.Equal("user:123", uncoveredRoute.readIdentity.Principal)
+	assert.Equal("user:123", uncoveredRoute.writeIdentity.Principal)
+
+	repos := []github.RepoRef{
+		{Owner: "acme", Name: "covered", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "uncovered", PlatformHost: "github.com"},
+	}
+	for _, repo := range repos {
+		_, err := database.UpsertRepo(
+			t.Context(), db.GitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name),
+		)
+		require.NoError(err)
+	}
+	syncer := github.NewSyncerWithRegistry(
+		startup.registry, database, nil, repos, time.Minute,
+		startup.rateTrackers, startup.budgets,
+	)
+	t.Cleanup(syncer.Stop)
+	syncer.SetGitHubRouters(startup.githubRouters)
+	syncer.SetWriteRateTrackers(startup.writeRateTrackers)
+	syncer.SetWriteGQLRateTrackers(startup.writeGQLRateTrackers)
+	srv := server.New(database, syncer, nil, "/", cfg, server.ServerOptions{
+		TokenSources: set, HostCheckAllowLoopbackAnyPort: true,
+	})
+	httpServer := httptest.NewServer(srv)
+	t.Cleanup(httpServer.Close)
+
+	// The bounded routes keep user:123 until restart, so rotating the live PAT
+	// to user:456 must disable writes for both the App-covered exact route and
+	// the PAT-backed owner route through the real repository API.
+	t.Setenv("ACME_PAT", "writer-b")
+	for _, name := range []string{"covered", "uncovered"} {
+		resp, err := http.Get(httpServer.URL + "/api/v1/repo/github/acme/" + name)
+		require.NoError(err)
+		var body struct {
+			Operations struct {
+				AddComment struct {
+					Code string `json:"code"`
+				} `json:"add_comment"`
+			} `json:"operations"`
+		}
+		require.NoError(json.NewDecoder(resp.Body).Decode(&body))
+		require.NoError(resp.Body.Close())
+		assert.Equal(http.StatusOK, resp.StatusCode)
+		assert.Equal("write_credential_error", body.Operations.AddComment.Code)
+	}
 }
 
 func TestBuildProviderStartupAllowsAppOnlyReadRoute(t *testing.T) {

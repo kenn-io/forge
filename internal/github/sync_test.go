@@ -1945,6 +1945,72 @@ func TestSyncNotificationsContinuesAfterHostError(t *testing.T) {
 	check.Equal("thread-ok", items[0].PlatformNotificationID)
 }
 
+func TestSyncNotificationsContinuesAfterRepoErrorOnSameHost(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	for _, name := range []string{"broken", "widget"} {
+		_, err := database.UpsertRepo(
+			t.Context(), db.GitHubRepoIdentity("github.com", "acme", name),
+		)
+		require.NoError(err)
+	}
+	boom := errors.New("bad scoped credential")
+	number := 7
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	client := &mockClient{
+		listNotificationsFn: func(
+			_ context.Context, opts NotificationListOptions,
+		) ([]NotificationThread, bool, error) {
+			if opts.RepoName == "broken" {
+				return nil, false, boom
+			}
+			if opts.Participating {
+				return nil, false, nil
+			}
+			return []NotificationThread{{
+				ID: "thread-ok", RepoOwner: "acme", RepoName: "widget",
+				SubjectType: "PullRequest", SubjectTitle: "Review requested",
+				WebURL:     "https://github.com/acme/widget/pull/7",
+				ItemNumber: &number, ItemType: "pr", Reason: "mention",
+				Unread: true, UpdatedAt: now,
+			}}, false, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{
+			{Owner: "acme", Name: "broken", PlatformHost: "github.com"},
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		},
+		time.Minute, nil, nil,
+	)
+
+	err := syncer.SyncNotifications(t.Context())
+	require.ErrorIs(err, boom)
+	items, listErr := database.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all"},
+	)
+	require.NoError(listErr)
+	require.Len(items, 1)
+	assert.Equal("thread-ok", items[0].PlatformNotificationID)
+
+	tracked := map[string]RepoRef{
+		notificationRepoKey("github", "github.com", "acme", "broken"): {
+			Owner: "acme", Name: "broken", PlatformHost: "github.com",
+		},
+		notificationRepoKey("github", "github.com", "acme", "widget"): {
+			Owner: "acme", Name: "widget", PlatformHost: "github.com",
+		},
+	}
+	watermark, watermarkErr := database.GetNotificationSyncWatermark(
+		t.Context(), "github", "github.com",
+		notificationTrackedReposKey("github", "github.com", tracked),
+	)
+	require.NoError(watermarkErr)
+	assert.Nil(watermark, "partial host passes must not advance the watermark")
+}
+
 func TestSyncNotificationsIgnoresReadRateReserveWhenNotificationClientBypassesReserve(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

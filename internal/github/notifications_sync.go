@@ -247,11 +247,8 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 			ctx, host, client, []RepoRef{repo}, since,
 		)
 		if err != nil {
-			if strings.Contains(err.Error(), "notification sync paused") {
-				repoErrs = append(repoErrs, err)
-				continue
-			}
-			return err
+			repoErrs = append(repoErrs, err)
+			continue
 		}
 		for id := range repoParticipating {
 			participatingIDs[id] = true
@@ -269,10 +266,15 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 				RepoName:  repo.Name,
 			})
 			if err != nil {
-				return fmt.Errorf("list notifications for %s/%s on %s page %d: %w", repo.Owner, repo.Name, host, page, err)
+				repoErrs = append(repoErrs, fmt.Errorf(
+					"list notifications for %s/%s on %s page %d: %w",
+					repo.Owner, repo.Name, host, page, err,
+				))
+				break
 			}
 			notifications := make([]db.Notification, 0, len(threads))
 			now := time.Now().UTC()
+			repoFailed := false
 			for _, thread := range threads {
 				if thread.RepoOwner == "" {
 					thread.RepoOwner = repo.Owner
@@ -305,9 +307,17 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 				}
 				notification, err := s.notificationToDB(ctx, host, repo, thread, now)
 				if err != nil {
-					return fmt.Errorf("normalize notification %s for %s/%s on %s page %d: %w", thread.ID, repo.Owner, repo.Name, host, page, err)
+					repoErrs = append(repoErrs, fmt.Errorf(
+						"normalize notification %s for %s/%s on %s page %d: %w",
+						thread.ID, repo.Owner, repo.Name, host, page, err,
+					))
+					repoFailed = true
+					break
 				}
 				notifications = append(notifications, notification)
+			}
+			if repoFailed {
+				break
 			}
 			if err := s.db.UpsertNotifications(ctx, notifications); err != nil {
 				return fmt.Errorf("upsert notifications for %s/%s on %s page %d: %w", repo.Owner, repo.Name, host, page, err)

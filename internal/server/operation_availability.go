@@ -517,15 +517,29 @@ func (s *Server) writeCredentialGateForRepo(repo db.Repo) writeCredentialGate {
 					),
 				}
 			}
-			parent := s.bgCtx
-			if parent == nil {
-				parent = context.Background()
+			cacheKey, err := s.syncer.WriteCredentialProbeKeyForRepo(ref)
+			if err != nil {
+				return writeCredentialGateFromError(repoProviderHost(repo), err)
 			}
-			ctx, cancel := context.WithTimeout(parent, writeCredentialProbeTimeout)
-			defer cancel()
-			return writeCredentialGateFromError(
-				repoProviderHost(repo),
-				s.syncer.ProbeWriteCredentialForRepo(ctx, ref),
+			if cacheKey == "" {
+				return writeCredentialGate{}
+			}
+			return s.cachedWriteCredentialGate(
+				"routed\x00"+cacheKey,
+				func() writeCredentialGate {
+					parent := s.bgCtx
+					if parent == nil {
+						parent = context.Background()
+					}
+					ctx, cancel := context.WithTimeout(
+						parent, writeCredentialProbeTimeout,
+					)
+					defer cancel()
+					return writeCredentialGateFromError(
+						repoProviderHost(repo),
+						s.syncer.ProbeWriteCredentialForRepo(ctx, ref),
+					)
+				},
 			)
 		}
 	}
@@ -545,7 +559,15 @@ func (s *Server) writeCredentialGateForRepo(repo db.Repo) writeCredentialGate {
 		return writeCredentialGate{}
 	}
 	cacheKey := key.String() + "\x00" + desc.CanonicalSourceString()
+	return s.cachedWriteCredentialGate(cacheKey, func() writeCredentialGate {
+		return s.probeWriteCredential(src, key.Host)
+	})
+}
 
+func (s *Server) cachedWriteCredentialGate(
+	cacheKey string,
+	probe func() writeCredentialGate,
+) writeCredentialGate {
 	for {
 		s.writeCredProbeMu.Lock()
 		if probe, ok := s.writeCredProbes[cacheKey]; ok && probe.fresh(s.now()) {
@@ -572,7 +594,7 @@ func (s *Server) writeCredentialGateForRepo(repo db.Repo) writeCredentialGate {
 		close(done)
 	}()
 
-	gate := s.probeWriteCredential(src, key.Host)
+	gate := probe()
 
 	s.writeCredProbeMu.Lock()
 	if s.writeCredProbes == nil {

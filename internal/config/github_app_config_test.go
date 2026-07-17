@@ -480,7 +480,7 @@ private_key_path = "key.pem"
 	assert.Equal(t, "github.com", cfg.GitHubApps[0].Host)
 }
 
-func TestTokenSourceChainPrefersGitHubAppOverPATs(t *testing.T) {
+func TestRepoTokenSourceChainPrefersGitHubAppOverPATs(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 github_token_env = "MY_PAT"
 
@@ -498,7 +498,7 @@ repository_selection = "all"
 `))
 	require.NoError(t, err)
 
-	desc := cfg.TokenSourceForPlatformHost("github", "github.com", "", "")
+	desc := cfg.ResolveGitHubRepoTokenSource(cfg.Repos[0])
 	kinds := make([]tokenauth.SourceKind, 0, len(desc.Candidates))
 	for _, cand := range desc.Candidates {
 		kinds = append(kinds, cand.Kind)
@@ -520,7 +520,7 @@ repository_selection = "all"
 	assert.Equal("MY_PAT", desc.Candidates[1].EnvName)
 }
 
-func TestTokenSourceChainIncludesGitHubAppsForEachInstalledAccount(t *testing.T) {
+func TestFallbackTokenSourceExcludesAccountScopedGitHubApps(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 github_token_env = "MY_PAT"
 
@@ -552,13 +552,14 @@ repository_selection = "all"
 	require.NoError(t, err)
 
 	desc := cfg.TokenSourceForPlatformHost("github", "github.com", "", "")
-	var appAccounts []string
-	for _, cand := range desc.Candidates {
-		if cand.Kind == tokenauth.SourceKindGitHubApp {
-			appAccounts = append(appAccounts, cand.InstallationAccount)
-		}
+	kinds := make([]tokenauth.SourceKind, 0, len(desc.Candidates))
+	for _, candidate := range desc.Candidates {
+		kinds = append(kinds, candidate.Kind)
 	}
-	assert.Equal(t, []string{"kenn-io", "other-org"}, appAccounts)
+	assert.Equal(t, []tokenauth.SourceKind{
+		tokenauth.SourceKindEnv,
+		tokenauth.SourceKindGitHubCLI,
+	}, kinds)
 }
 
 func TestTokenSourceChainRepoOverrideExcludesGitHubApp(t *testing.T) {

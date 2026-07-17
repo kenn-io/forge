@@ -165,8 +165,10 @@ func TestGitHubIssueInventoryLegacyMatchesCanonical(t *testing.T) {
 // TestGitHubListMergeRequestsPageDispatchesByQuery proves one method owns all
 // three merge-request inventory request shapes and records the provider-side
 // sort fences: open ignores sort, historical is created-ascending, and
-// maintenance is updated-descending (a documented deviation from the ascending
-// ItemOrder contract that the watermark stop compensates for).
+// maintenance is updated-descending with a watermark stop (the ItemOrderUpdated
+// contract leaves the direction provider-chosen; GitHub's pulls API has no
+// since filter, so descending is the only shape that avoids re-paging the
+// whole repository every maintenance pass).
 func TestGitHubListMergeRequestsPageDispatchesByQuery(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -370,4 +372,194 @@ func TestGitHubDetailPagesLegacyMatchesCanonical(t *testing.T) {
 	assert.Equal(threads, legacyThreads)
 	require.Len(threads.Items, 1)
 	assert.Equal("T_1", threads.Items[0].ProviderThreadID)
+}
+
+// TestGitHubListPagesRejectInvalidQueries proves the canonical entry points
+// validate the query before spending any provider request: unknown states and
+// orders are typed invalid_argument errors instead of silently dispatching a
+// historical traversal, and open scans reject resumption state.
+func TestGitHubListPagesRejectInvalidQueries(t *testing.T) {
+	watermark := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+	provider := newArchiveTestGitHubProvider(t, srv.URL)
+	ref := pagesTestRef()
+
+	tests := []struct {
+		name  string
+		query platform.ItemPageQuery
+	}{
+		{
+			name:  "unknown order does not fall through to historical",
+			query: platform.ItemPageQuery{State: platform.ItemStateAll, Order: platform.ItemOrder("priority")},
+		},
+		{
+			name:  "unknown state",
+			query: platform.ItemPageQuery{State: platform.ItemStateFilter("closed"), Order: platform.ItemOrderCreated},
+		},
+		{
+			name:  "open scan rejects cursor",
+			query: platform.ItemPageQuery{State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated, Cursor: "c1"},
+		},
+		{
+			name: "open scan rejects watermark",
+			query: platform.ItemPageQuery{
+				State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated, UpdatedSince: &watermark,
+			},
+		},
+		{
+			name: "watermark requires updated order",
+			query: platform.ItemPageQuery{
+				State: platform.ItemStateAll, Order: platform.ItemOrderCreated, UpdatedSince: &watermark,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, issueErr := provider.ListIssuesPage(t.Context(), ref, tt.query)
+			require.ErrorIs(t, issueErr, platform.ErrInvalidArgument)
+			_, mrErr := provider.ListMergeRequestsPage(t.Context(), ref, tt.query)
+			require.ErrorIs(t, mrErr, platform.ErrInvalidArgument)
+			assert.Zero(t, requests)
+		})
+	}
+}
+
+// TestGitHubLiveGetMapsLookupOutcomes proves live require-present semantics
+// distinguish the non-present lookup outcomes: removed is not_found,
+// inaccessible is permission_denied (the pre-lookup transport behavior for a
+// 403), and moved is not_found carrying the destination repository so callers
+// can retarget the reference.
+func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v3/repos/acme/widget/issues/9", "/api/v3/repos/acme/widget/pulls/9":
+			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+		case "/api/v3/repos/acme/widget/issues/8", "/api/v3/repos/acme/widget/pulls/8":
+			http.Error(w, `{"message":"Forbidden"}`, http.StatusForbidden)
+		case "/api/v3/repos/acme/widget/issues/10":
+			_, _ = w.Write([]byte(`{"id":10,"node_id":"I_10","number":10,"repository_url":"https://api.github.com/repos/other/place","title":"moved","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}`))
+		case "/api/v3/repos/acme/widget/pulls/10":
+			_, _ = w.Write([]byte(`{"id":10,"number":10,"title":"moved","state":"open","base":{"repo":{"url":"https://api.github.com/repos/other/place"}},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}`))
+		case "/api/v3/repos/acme/widget":
+			_, _ = w.Write([]byte(`{"id":1,"name":"widget","owner":{"login":"acme"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	provider := newArchiveTestGitHubProvider(t, srv.URL)
+	ref := pagesTestRef()
+
+	_, removedIssueErr := provider.GetIssue(t.Context(), ref, 9)
+	require.ErrorIs(removedIssueErr, platform.ErrNotFound)
+	_, removedMRErr := provider.GetMergeRequest(t.Context(), ref, 9)
+	require.ErrorIs(removedMRErr, platform.ErrNotFound)
+
+	_, inaccessibleIssueErr := provider.GetIssue(t.Context(), ref, 8)
+	require.ErrorIs(inaccessibleIssueErr, platform.ErrPermissionDenied)
+	_, inaccessibleMRErr := provider.GetMergeRequest(t.Context(), ref, 8)
+	require.ErrorIs(inaccessibleMRErr, platform.ErrPermissionDenied)
+
+	_, movedIssueErr := provider.GetIssue(t.Context(), ref, 10)
+	require.ErrorIs(movedIssueErr, platform.ErrNotFound)
+	var typedIssueErr *platform.Error
+	require.ErrorAs(movedIssueErr, &typedIssueErr)
+	require.NotNil(typedIssueErr.Destination)
+	assert.Equal("other", typedIssueErr.Destination.Owner)
+	assert.Equal("place", typedIssueErr.Destination.Name)
+
+	_, movedMRErr := provider.GetMergeRequest(t.Context(), ref, 10)
+	require.ErrorIs(movedMRErr, platform.ErrNotFound)
+	var typedMRErr *platform.Error
+	require.ErrorAs(movedMRErr, &typedMRErr)
+	require.NotNil(typedMRErr.Destination)
+	assert.Equal("other", typedMRErr.Destination.Owner)
+	assert.Equal("place", typedMRErr.Destination.Name)
+
+	var typedRemovedErr *platform.Error
+	require.ErrorAs(removedIssueErr, &typedRemovedErr)
+	assert.Nil(typedRemovedErr.Destination)
+}
+
+// TestGitHubUpdatedMergeRequestsLegacyMatchesCanonicalAcrossPages proves the
+// legacy ListUpdatedMergeRequests delegate and the canonical
+// ListMergeRequestsPage maintenance query issue identical requests and rows
+// across cursor continuation, keep records updated exactly at the inclusive
+// watermark, and stop once the descending traversal crosses the overlapped
+// watermark.
+func TestGitHubUpdatedMergeRequestsLegacyMatchesCanonicalAcrossPages(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	watermark := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	recorder := &requestRecorder{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		recorder.record(r)
+		assert.Equal("/api/v3/repos/acme/widget/pulls", r.URL.Path)
+		assert.Equal("all", r.URL.Query().Get("state"))
+		assert.Equal("updated", r.URL.Query().Get("sort"))
+		assert.Equal("desc", r.URL.Query().Get("direction"))
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("page") {
+		case "1":
+			w.Header().Set("Link", fmt.Sprintf(`<%s%s?page=2>; rel="next"`, srvURL(r), r.URL.Path))
+			_, _ = w.Write([]byte(`[
+				{"id":201,"node_id":"PR_201","number":41,"title":"newest","state":"closed","html_url":"https://github.com/acme/widget/pull/41","user":{"login":"a"},"created_at":"2025-01-01T00:00:00Z","updated_at":"2026-07-02T00:00:00Z"},
+				{"id":202,"node_id":"PR_202","number":42,"title":"newer","state":"open","html_url":"https://github.com/acme/widget/pull/42","user":{"login":"a"},"created_at":"2025-01-02T00:00:00Z","updated_at":"2026-07-01T00:00:00Z"}
+			]`))
+		case "2":
+			w.Header().Set("Link", fmt.Sprintf(`<%s%s?page=3>; rel="next"`, srvURL(r), r.URL.Path))
+			_, _ = w.Write([]byte(`[
+				{"id":203,"node_id":"PR_203","number":43,"title":"at watermark","state":"closed","html_url":"https://github.com/acme/widget/pull/43","user":{"login":"a"},"created_at":"2025-01-03T00:00:00Z","updated_at":"2026-06-01T00:00:00Z"},
+				{"id":204,"node_id":"PR_204","number":44,"title":"before watermark","state":"closed","html_url":"https://github.com/acme/widget/pull/44","user":{"login":"a"},"created_at":"2025-01-04T00:00:00Z","updated_at":"2026-05-01T00:00:00Z"}
+			]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	provider := newArchiveTestGitHubProvider(t, srv.URL)
+	ref := pagesTestRef()
+
+	canonicalFirst, err := provider.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &watermark,
+	})
+	require.NoError(err)
+	require.NotEmpty(canonicalFirst.NextCursor)
+	canonicalSecond, err := provider.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
+		UpdatedSince: &watermark, Cursor: canonicalFirst.NextCursor,
+	})
+	require.NoError(err)
+	canonicalReqs := recorder.take()
+
+	legacyFirst, err := provider.ListUpdatedMergeRequests(t.Context(), ref, watermark, "")
+	require.NoError(err)
+	legacySecond, err := provider.ListUpdatedMergeRequests(t.Context(), ref, watermark, legacyFirst.NextCursor)
+	require.NoError(err)
+	assert.Equal(canonicalReqs, recorder.take())
+	assert.Equal(canonicalFirst, legacyFirst)
+	assert.Equal(canonicalSecond, legacySecond)
+
+	require.Len(canonicalFirst.Items, 2)
+	assert.Equal([]int{41, 42}, []int{canonicalFirst.Items[0].Number, canonicalFirst.Items[1].Number})
+	assert.False(canonicalFirst.Exhausted)
+	// The record updated exactly at the watermark is inside the inclusive
+	// boundary; the one before the overlapped watermark ends the scan.
+	require.Len(canonicalSecond.Items, 1)
+	assert.Equal(43, canonicalSecond.Items[0].Number)
+	assert.True(canonicalSecond.Exhausted)
+	assert.Empty(canonicalSecond.NextCursor)
+	assert.Equal([]string{
+		"GET /api/v3/repos/acme/widget/pulls?direction=desc&page=1&per_page=100&sort=updated&state=all",
+		"GET /api/v3/repos/acme/widget/pulls?direction=desc&page=2&per_page=100&sort=updated&state=all",
+	}, canonicalReqs)
 }

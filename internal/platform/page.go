@@ -31,15 +31,23 @@ const (
 //
 // The canonical contract every provider implementation must honor:
 //
-//   - ItemOrderCreated traverses ascending by provider creation time, so an
-//     interrupted historical scan resumes without missing older items.
-//   - ItemOrderUpdated traverses ascending by provider update time, so a
-//     maintenance scan reaches a stable watermark.
-//   - Ties break ascending by item number, giving every traversal a total,
-//     restart-stable order.
-//   - Items that change mid-traversal may be observed twice but must not be
-//     skipped; consumers dedupe by provider identity through idempotent
-//     upserts.
+//   - ItemOrderCreated traverses ascending by provider creation time, ties
+//     breaking ascending by item number, so every historical traversal has a
+//     total, restart-stable order and an interrupted scan resumes without
+//     missing older items.
+//   - ItemOrderUpdated promises provider-efficient traversal by update time
+//     with the direction unspecified: each provider uses whichever direction
+//     its API serves without re-paging the whole dataset (GitHub's pulls API,
+//     for example, has no since filter, so ascending-from-watermark would
+//     re-enumerate the entire repository every maintenance pass). What it
+//     does guarantee, combined with an inclusive UpdatedSince watermark taken
+//     at scan start, is no permanent skips: an item updated mid-scan must be
+//     returned either later in the same scan or by any subsequent scan whose
+//     watermark predates that update.
+//   - Consumers must not assume a traversal direction for ItemOrderUpdated,
+//     and under either order items that change mid-traversal may be observed
+//     more than once; consumers dedupe by provider identity through
+//     idempotent upserts.
 type ItemOrder string
 
 const (
@@ -61,6 +69,48 @@ type ItemPageQuery struct {
 	Order        ItemOrder
 	UpdatedSince *time.Time
 	Cursor       string
+}
+
+// invalidItemPageQuery builds the typed invalid_argument error
+// ValidateItemPageQuery returns. It carries no provider identity because the
+// query is rejected before any provider is consulted.
+func invalidItemPageQuery(field, format string, args ...any) error {
+	return &Error{
+		Code:  ErrCodeInvalidArgument,
+		Field: field,
+		Err:   fmt.Errorf(format, args...),
+	}
+}
+
+// ValidateItemPageQuery rejects query shapes the canonical page contract does
+// not define, so an unknown state or order can never silently dispatch some
+// default traversal. Provider implementations call it at the top of their
+// ListIssuesPage/ListMergeRequestsPage entry points. Open scans are
+// single-shot current-index reads, so they carry neither a resumption cursor
+// nor a watermark; UpdatedSince only has meaning for updated-order traversal.
+func ValidateItemPageQuery(q ItemPageQuery) error {
+	switch q.State {
+	case ItemStateOpen, ItemStateAll:
+	default:
+		return invalidItemPageQuery("state", "unknown item state filter %q", q.State)
+	}
+	switch q.Order {
+	case ItemOrderCreated, ItemOrderUpdated:
+	default:
+		return invalidItemPageQuery("order", "unknown item order %q", q.Order)
+	}
+	if q.State == ItemStateOpen {
+		if q.Cursor != "" {
+			return invalidItemPageQuery("cursor", "open scans are single-shot and do not accept a cursor")
+		}
+		if q.UpdatedSince != nil {
+			return invalidItemPageQuery("updated_since", "open scans do not accept an updated_since watermark")
+		}
+	}
+	if q.UpdatedSince != nil && q.Order != ItemOrderUpdated {
+		return invalidItemPageQuery("updated_since", "updated_since requires order %q", ItemOrderUpdated)
+	}
+	return nil
 }
 
 // MaxCollectPages bounds how many pages a single CollectPages drain may fetch

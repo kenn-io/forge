@@ -77,7 +77,12 @@ type Error struct {
 	// without parsing Hint prose. Keys must not collide with the
 	// reserved problem members (reason, provider, platformHost).
 	Details map[string]string
-	Err     error
+	// Destination identifies where an item now lives when a not_found error
+	// stems from a moved lookup outcome (repository transfer). Callers still
+	// branch on Code; the destination is structured, actionable detail for
+	// retargeting the reference instead of parsing prose.
+	Destination *RepoRef
+	Err         error
 }
 
 func (e *Error) Error() string {

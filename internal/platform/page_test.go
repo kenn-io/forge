@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -148,4 +149,90 @@ func TestCollectPagesHonorsCancellation(t *testing.T) {
 
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Zero(t, calls)
+}
+
+func TestValidateItemPageQuery(t *testing.T) {
+	watermark := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name      string
+		query     ItemPageQuery
+		wantField string
+	}{
+		{
+			name:  "open updated is valid",
+			query: ItemPageQuery{State: ItemStateOpen, Order: ItemOrderUpdated},
+		},
+		{
+			name:  "open created is valid",
+			query: ItemPageQuery{State: ItemStateOpen, Order: ItemOrderCreated},
+		},
+		{
+			name:  "all created with cursor is valid",
+			query: ItemPageQuery{State: ItemStateAll, Order: ItemOrderCreated, Cursor: "c1"},
+		},
+		{
+			name: "all updated with watermark and cursor is valid",
+			query: ItemPageQuery{
+				State: ItemStateAll, Order: ItemOrderUpdated,
+				UpdatedSince: &watermark, Cursor: "c1",
+			},
+		},
+		{
+			name:  "all updated without watermark is valid",
+			query: ItemPageQuery{State: ItemStateAll, Order: ItemOrderUpdated},
+		},
+		{
+			name:      "zero state is rejected",
+			query:     ItemPageQuery{Order: ItemOrderCreated},
+			wantField: "state",
+		},
+		{
+			name:      "unknown state is rejected",
+			query:     ItemPageQuery{State: ItemStateFilter("closed"), Order: ItemOrderCreated},
+			wantField: "state",
+		},
+		{
+			name:      "zero order is rejected",
+			query:     ItemPageQuery{State: ItemStateAll},
+			wantField: "order",
+		},
+		{
+			name:      "unknown order is rejected",
+			query:     ItemPageQuery{State: ItemStateAll, Order: ItemOrder("priority")},
+			wantField: "order",
+		},
+		{
+			name: "watermark without updated order is rejected",
+			query: ItemPageQuery{
+				State: ItemStateAll, Order: ItemOrderCreated, UpdatedSince: &watermark,
+			},
+			wantField: "updated_since",
+		},
+		{
+			name:      "open with cursor is rejected",
+			query:     ItemPageQuery{State: ItemStateOpen, Order: ItemOrderUpdated, Cursor: "c1"},
+			wantField: "cursor",
+		},
+		{
+			name: "open with watermark is rejected",
+			query: ItemPageQuery{
+				State: ItemStateOpen, Order: ItemOrderUpdated, UpdatedSince: &watermark,
+			},
+			wantField: "updated_since",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateItemPageQuery(tt.query)
+			if tt.wantField == "" {
+				require.NoError(t, err)
+				return
+			}
+			require := require.New(t)
+			require.ErrorIs(err, ErrInvalidArgument)
+			var typed *Error
+			require.ErrorAs(err, &typed)
+			assert.Equal(t, tt.wantField, typed.Field)
+		})
+	}
 }

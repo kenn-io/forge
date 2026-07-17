@@ -24,6 +24,9 @@ func (p *gitHubClientProvider) ListIssuesPage(
 	ref platform.RepoRef,
 	query platform.ItemPageQuery,
 ) (platform.Page[platform.Issue], error) {
+	if err := platform.ValidateItemPageQuery(query); err != nil {
+		return platform.Page[platform.Issue]{}, err
+	}
 	if query.State == platform.ItemStateOpen {
 		return p.listOpenIssuesPage(ctx, ref)
 	}
@@ -47,6 +50,9 @@ func (p *gitHubClientProvider) ListMergeRequestsPage(
 	ref platform.RepoRef,
 	query platform.ItemPageQuery,
 ) (platform.Page[platform.MergeRequest], error) {
+	if err := platform.ValidateItemPageQuery(query); err != nil {
+		return platform.Page[platform.MergeRequest]{}, err
+	}
 	if query.State == platform.ItemStateOpen {
 		return p.listOpenMergeRequestsPage(ctx, ref)
 	}

@@ -1324,7 +1324,7 @@ func (p *gitHubClientProvider) GetMergeRequest(
 		return platform.MergeRequest{}, err
 	}
 	if lookup.Outcome != platform.LookupPresent {
-		return platform.MergeRequest{}, p.lookupNotPresentError(ref, number, lookup.Outcome)
+		return platform.MergeRequest{}, p.lookupNotPresentError(ref, number, lookup.Outcome, lookup.Destination)
 	}
 	return lookup.Item, nil
 }
@@ -1429,18 +1429,27 @@ func (p *gitHubClientProvider) ListOpenIssues(
 }
 
 // lookupNotPresentError renders the typed error a live caller receives when a
-// single-item lookup resolves to a non-present outcome (removed, moved, or
-// inaccessible). Live callers require present; archive callers inspect the
-// outcome instead.
+// single-item lookup resolves to a non-present outcome. Live callers require
+// present; archive callers inspect the outcome instead. The outcomes must not
+// collapse: removed is not_found, inaccessible is permission_denied (the
+// behavior a raw 403 produced before lookup classification), and moved is
+// not_found carrying the destination repository so callers can retarget the
+// reference.
 func (p *gitHubClientProvider) lookupNotPresentError(
 	ref platform.RepoRef,
 	number int,
 	outcome platform.LookupOutcome,
+	destination *platform.RepoRef,
 ) error {
+	code := platform.ErrCodeNotFound
+	if outcome == platform.LookupInaccessible {
+		code = platform.ErrCodePermissionDenied
+	}
 	return &platform.Error{
-		Code:         platform.ErrCodeNotFound,
+		Code:         code,
 		Provider:     platform.KindGitHub,
 		PlatformHost: p.host,
+		Destination:  destination,
 		Err:          fmt.Errorf("%s#%d is not present (%s)", ref.DisplayName(), number, outcome),
 	}
 }
@@ -1477,7 +1486,7 @@ func (p *gitHubClientProvider) GetIssue(
 		return platform.Issue{}, err
 	}
 	if lookup.Outcome != platform.LookupPresent {
-		return platform.Issue{}, p.lookupNotPresentError(ref, number, lookup.Outcome)
+		return platform.Issue{}, p.lookupNotPresentError(ref, number, lookup.Outcome, lookup.Destination)
 	}
 	return lookup.Item, nil
 }

@@ -357,6 +357,28 @@ func TestOpenMigratesHistoricalActivityArchive(t *testing.T) {
 		assert.False(exists, column)
 	}
 
+	assert.True(tableExistsForTest(t, d.ReadDB(), "middleman_archive_repo_scans"))
+	assert.True(tableExistsForTest(t, d.ReadDB(), "middleman_archive_dataset_progress"))
+	for table, columns := range map[string][]string{
+		"middleman_archive_repo_scans": {
+			"scan", "scan_generation", "next_cursor", "last_input_cursor",
+			"page_count", "status", "last_error_code", "last_error_detail",
+		},
+		"middleman_archive_dataset_progress": {
+			"dataset", "parent_revision", "scan_generation", "next_cursor",
+			"last_input_cursor", "page_count", "status", "observed_count",
+			"attempt_count", "next_retry_at", "started_at", "completed_at",
+		},
+		"middleman_issue_events": {"ingest_generation"},
+		"middleman_mr_events":    {"ingest_generation"},
+	} {
+		for _, column := range columns {
+			exists, columnErr := hasColumn(d.ReadDB(), table, column)
+			require.NoError(columnErr)
+			assert.True(exists, "%s.%s", table, column)
+		}
+	}
+
 	var integrityCheck string
 	err = d.ReadDB().QueryRow(`PRAGMA integrity_check`).Scan(&integrityCheck)
 	require.NoError(err)

@@ -161,6 +161,49 @@ CREATE INDEX idx_archive_items_stable_order
         item_number
     );
 
+CREATE TABLE middleman_archive_repo_scans (
+    repo_id INTEGER NOT NULL REFERENCES middleman_repos(id) ON DELETE CASCADE,
+    scan TEXT NOT NULL CHECK (scan IN ('issue_inventory','merge_request_inventory','maintenance_issues','maintenance_merge_requests')),
+    scan_generation INTEGER NOT NULL DEFAULT 1,
+    next_cursor TEXT,
+    last_input_cursor TEXT,
+    page_count INTEGER NOT NULL DEFAULT 0 CHECK (page_count >= 0),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','complete','blocked','failed')),
+    last_error_code TEXT,
+    last_error_detail TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (repo_id, scan)
+);
+
+CREATE TABLE middleman_archive_dataset_progress (
+    repo_id INTEGER NOT NULL,
+    item_type TEXT NOT NULL CHECK (item_type IN ('issue','merge_request')),
+    item_number INTEGER NOT NULL CHECK (item_number > 0),
+    dataset TEXT NOT NULL CHECK (dataset IN ('lookup','comments','reviews','inline_comments')),
+    parent_revision INTEGER NOT NULL DEFAULT 0,
+    scan_generation INTEGER NOT NULL DEFAULT 1,
+    next_cursor TEXT,
+    last_input_cursor TEXT,
+    page_count INTEGER NOT NULL DEFAULT 0 CHECK (page_count >= 0),
+    status TEXT NOT NULL CHECK (status IN ('pending','running','complete','unsupported','blocked','failed','terminal')),
+    observed_count INTEGER NOT NULL DEFAULT 0 CHECK (observed_count >= 0),
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    next_retry_at TEXT,
+    last_error_code TEXT,
+    last_error_detail TEXT,
+    started_at TEXT,
+    completed_at TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (repo_id, item_type, item_number, dataset),
+    FOREIGN KEY (repo_id, item_type, item_number)
+        REFERENCES middleman_archive_items(repo_id, item_type, item_number) ON DELETE CASCADE
+);
+CREATE INDEX idx_archive_dataset_progress_due
+    ON middleman_archive_dataset_progress (repo_id, status, next_retry_at, item_type, item_number);
+
+ALTER TABLE middleman_issue_events ADD COLUMN ingest_generation INTEGER;
+ALTER TABLE middleman_mr_events ADD COLUMN ingest_generation INTEGER;
+
 CREATE TABLE middleman_archive_dataset_pages (
     repo_id             INTEGER NOT NULL,
     item_type           TEXT NOT NULL,

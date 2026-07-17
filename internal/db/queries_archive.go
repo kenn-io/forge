@@ -383,8 +383,21 @@ func (d *DB) QueueArchivePromptByIdentity(
 	identity RepoIdentity,
 	now time.Time,
 ) error {
+	return queueArchivePromptByIdentity(ctx, d.rw, identity, now)
+}
+
+type archiveExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+func queueArchivePromptByIdentity(
+	ctx context.Context,
+	execer archiveExecer,
+	identity RepoIdentity,
+	now time.Time,
+) error {
 	identity = canonicalRepoIdentity(identity)
-	_, err := d.rw.ExecContext(ctx, `
+	_, err := execer.ExecContext(ctx, `
 		UPDATE middleman_archive_repos
 		SET maintenance_watermark = COALESCE(maintenance_watermark, initial_completed_at, created_at),
 			maintenance_succeeded_at = NULL, updated_at = MAX(updated_at, ?)
@@ -722,39 +735,43 @@ func (d *DB) MarkArchiveItemTerminal(ctx context.Context, t ArchiveItemTerminal)
 		return fmt.Errorf("mark archive item terminal: unknown lifecycle state %q", t.Lifecycle)
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		result, err := tx.ExecContext(ctx, `
-			UPDATE middleman_archive_items
-			SET lifecycle_state = ?, next_retry_at = NULL,
-				last_error_code = ?, last_error_detail = ?, hydrated_at = ?
-			WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
-			t.Lifecycle, nullableArchiveError(t.ErrorCode),
-			nullableArchiveError(sanitizeArchiveErrorDetail(t.ErrorDetail)), t.At.UTC(),
+		return markArchiveItemTerminalTx(ctx, tx, t)
+	})
+}
+
+func markArchiveItemTerminalTx(ctx context.Context, tx *sql.Tx, t ArchiveItemTerminal) error {
+	result, err := tx.ExecContext(ctx, `
+		UPDATE middleman_archive_items
+		SET lifecycle_state = ?, next_retry_at = NULL,
+			last_error_code = ?, last_error_detail = ?, hydrated_at = ?
+		WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
+		t.Lifecycle, nullableArchiveError(t.ErrorCode),
+		nullableArchiveError(sanitizeArchiveErrorDetail(t.ErrorDetail)), t.At.UTC(),
+		t.RepoID, t.ItemType, t.ItemNumber,
+	)
+	if err != nil {
+		return fmt.Errorf("mark archive item terminal: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark archive item terminal rows affected: %w", err)
+	}
+	if changed == 0 {
+		return fmt.Errorf(
+			"mark archive item terminal: no archive item for repo %d %s %d",
 			t.RepoID, t.ItemType, t.ItemNumber,
 		)
-		if err != nil {
-			return fmt.Errorf("mark archive item terminal: %w", err)
-		}
-		changed, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("mark archive item terminal rows affected: %w", err)
-		}
-		if changed == 0 {
-			return fmt.Errorf(
-				"mark archive item terminal: no archive item for repo %d %s %d",
-				t.RepoID, t.ItemType, t.ItemNumber,
-			)
-		}
-		if _, err := tx.ExecContext(ctx, `
-			DELETE FROM middleman_archive_dataset_pages
-			WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
-			t.RepoID, t.ItemType, t.ItemNumber); err != nil {
-			return fmt.Errorf("clear terminal archive dataset stages: %w", err)
-		}
-		if err := clearArchiveRepositoryFailureTx(ctx, tx, t.RepoID, t.At); err != nil {
-			return err
-		}
-		return completeArchiveInitialIfReadyTx(ctx, tx, t.RepoID, t.At)
-	})
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM middleman_archive_dataset_pages
+		WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
+		t.RepoID, t.ItemType, t.ItemNumber); err != nil {
+		return fmt.Errorf("clear terminal archive dataset stages: %w", err)
+	}
+	if err := clearArchiveRepositoryFailureTx(ctx, tx, t.RepoID, t.At); err != nil {
+		return err
+	}
+	return completeArchiveInitialIfReadyTx(ctx, tx, t.RepoID, t.At)
 }
 
 func nullableArchiveError(value string) any {
@@ -1166,55 +1183,16 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 			return err
 		}
 		for i := range commit.Issues {
-			item := &commit.Issues[i]
-			issue := &item.Snapshot.Issue
-			issue.RepoID = commit.RepoID
-			issueID, _, accepted, err := upsertIssueParentTx(ctx, tx, issue)
-			if err != nil {
-				return err
-			}
-			if accepted {
-				if err := replaceIssueLabelsTx(ctx, tx, commit.RepoID, issueID, item.Snapshot.Labels); err != nil {
-					return err
-				}
-			}
-			if err := reactivateRemovedArchiveWorkTx(
-				ctx, tx, commit.RepoID, ArchiveItemTypeIssue, issue.Number,
+			if _, _, _, err := commitArchiveIssueParentTx(
+				ctx, tx, commit.RepoID, &commit.Issues[i], commit.RefreshReason,
 			); err != nil {
-				return err
-			}
-			if err := upsertArchiveIssueWorkTx(ctx, tx, commit.RepoID, *item, commit.RefreshReason); err != nil {
 				return err
 			}
 		}
 		for i := range commit.MergeRequests {
-			item := &commit.MergeRequests[i]
-			mr := &item.Snapshot.MergeRequest
-			mr.RepoID = commit.RepoID
-			diffChanged, err := preserveMergeRequestDetailTx(ctx, tx, mr, true)
-			if err != nil {
-				return err
-			}
-			mrID, _, accepted, err := upsertMergeRequestParentTx(ctx, tx, mr)
-			if err != nil {
-				return err
-			}
-			if accepted {
-				if diffChanged {
-					if err := clearArchiveMergeRequestDiffDetailTx(ctx, tx, mrID); err != nil {
-						return err
-					}
-				}
-				if err := replaceMergeRequestLabelsTx(ctx, tx, commit.RepoID, mrID, item.Snapshot.Labels); err != nil {
-					return err
-				}
-			}
-			if err := reactivateRemovedArchiveWorkTx(
-				ctx, tx, commit.RepoID, ArchiveItemTypeMergeRequest, mr.Number,
+			if _, _, _, err := commitArchiveMergeRequestParentTx(
+				ctx, tx, commit.RepoID, &commit.MergeRequests[i], commit.RefreshReason,
 			); err != nil {
-				return err
-			}
-			if err := upsertArchiveMergeRequestWorkTx(ctx, tx, commit.RepoID, *item, commit.RefreshReason); err != nil {
 				return err
 			}
 		}
@@ -1223,6 +1201,79 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 		}
 		return completeArchiveInitialIfReadyTx(ctx, tx, commit.RepoID, commit.Now)
 	})
+}
+
+// commitArchiveIssueParentTx is the issue mode of the single archive
+// parent-observation core: parent snapshot upsert with labels, removed-work
+// reactivation, and per-item archive work reconciliation. Inventory pages and
+// single-item lookups both flow through it.
+func commitArchiveIssueParentTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	item *ArchiveInventoryIssue,
+	refreshReason ArchiveRefreshReason,
+) (int64, int64, bool, error) {
+	issue := &item.Snapshot.Issue
+	issue.RepoID = repoID
+	issueID, revision, accepted, err := upsertIssueParentTx(ctx, tx, issue)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	if accepted {
+		if err := replaceIssueLabelsTx(ctx, tx, repoID, issueID, item.Snapshot.Labels); err != nil {
+			return 0, 0, false, err
+		}
+	}
+	if err := reactivateRemovedArchiveWorkTx(
+		ctx, tx, repoID, ArchiveItemTypeIssue, issue.Number,
+	); err != nil {
+		return 0, 0, false, err
+	}
+	if err := upsertArchiveIssueWorkTx(ctx, tx, repoID, *item, refreshReason); err != nil {
+		return 0, 0, false, err
+	}
+	return issueID, revision, accepted, nil
+}
+
+// commitArchiveMergeRequestParentTx is the merge-request mode of the archive
+// parent-observation core shared by inventory pages and single-item lookups.
+func commitArchiveMergeRequestParentTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	item *ArchiveInventoryMergeRequest,
+	refreshReason ArchiveRefreshReason,
+) (int64, int64, bool, error) {
+	mr := &item.Snapshot.MergeRequest
+	mr.RepoID = repoID
+	diffChanged, err := preserveMergeRequestDetailTx(ctx, tx, mr, true)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	mrID, revision, accepted, err := upsertMergeRequestParentTx(ctx, tx, mr)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	if accepted {
+		if diffChanged {
+			if err := clearArchiveMergeRequestDiffDetailTx(ctx, tx, mrID); err != nil {
+				return 0, 0, false, err
+			}
+		}
+		if err := replaceMergeRequestLabelsTx(ctx, tx, repoID, mrID, item.Snapshot.Labels); err != nil {
+			return 0, 0, false, err
+		}
+	}
+	if err := reactivateRemovedArchiveWorkTx(
+		ctx, tx, repoID, ArchiveItemTypeMergeRequest, mr.Number,
+	); err != nil {
+		return 0, 0, false, err
+	}
+	if err := upsertArchiveMergeRequestWorkTx(ctx, tx, repoID, *item, refreshReason); err != nil {
+		return 0, 0, false, err
+	}
+	return mrID, revision, accepted, nil
 }
 
 func preserveMergeRequestDetailTx(

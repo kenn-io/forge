@@ -121,10 +121,173 @@ const (
 type ArchiveDataset string
 
 const (
+	// ArchiveDatasetLookup is the parent hydration lookup modeled as its own
+	// dataset so item-scoped retries and terminal outcomes share the dataset
+	// progress machinery.
+	ArchiveDatasetLookup         ArchiveDataset = "lookup"
 	ArchiveDatasetComments       ArchiveDataset = "comments"
 	ArchiveDatasetReviews        ArchiveDataset = "reviews"
 	ArchiveDatasetInlineComments ArchiveDataset = "inline_comments"
 )
+
+// ArchiveScanKind names one repository-level scan with durable cursor state.
+type ArchiveScanKind string
+
+const (
+	ArchiveScanIssueInventory           ArchiveScanKind = "issue_inventory"
+	ArchiveScanMergeRequestInventory    ArchiveScanKind = "merge_request_inventory"
+	ArchiveScanMaintenanceIssues        ArchiveScanKind = "maintenance_issues"
+	ArchiveScanMaintenanceMergeRequests ArchiveScanKind = "maintenance_merge_requests"
+)
+
+// ArchiveDatasetProgressStatus is the lifecycle of one dataset progress row.
+type ArchiveDatasetProgressStatus string
+
+const (
+	ArchiveDatasetProgressPending     ArchiveDatasetProgressStatus = "pending"
+	ArchiveDatasetProgressRunning     ArchiveDatasetProgressStatus = "running"
+	ArchiveDatasetProgressComplete    ArchiveDatasetProgressStatus = "complete"
+	ArchiveDatasetProgressUnsupported ArchiveDatasetProgressStatus = "unsupported"
+	ArchiveDatasetProgressBlocked     ArchiveDatasetProgressStatus = "blocked"
+	ArchiveDatasetProgressFailed      ArchiveDatasetProgressStatus = "failed"
+	ArchiveDatasetProgressTerminal    ArchiveDatasetProgressStatus = "terminal"
+)
+
+// ArchiveLookupOutcome mirrors platform.ArchiveLookupOutcome values.
+// internal/db cannot import internal/platform (platform imports db), so the
+// outcome is re-declared here with identical string values.
+type ArchiveLookupOutcome string
+
+const (
+	ArchiveLookupPresent      ArchiveLookupOutcome = "present"
+	ArchiveLookupRemoved      ArchiveLookupOutcome = "removed"
+	ArchiveLookupMoved        ArchiveLookupOutcome = "moved"
+	ArchiveLookupInaccessible ArchiveLookupOutcome = "inaccessible"
+)
+
+// DomainParentRef identifies one domain parent row (issue or merge request)
+// by its table id.
+type DomainParentRef struct {
+	ItemType ArchiveItemType
+	ID       int64
+}
+
+// DatasetRows carries the normalized rows of one provider page for one
+// parent. Only the fields matching the commit's dataset and item type may be
+// populated.
+type DatasetRows struct {
+	IssueComments []IssueEvent
+	MRComments    []MREvent
+	Reviews       []MREvent
+	ReviewThreads []MRReviewThread
+	ThreadEvents  []MREvent
+}
+
+// DatasetProgressAdvance binds a page commit to durable dataset progress.
+// Nil progress means live-only ingestion.
+type DatasetProgressAdvance struct {
+	RepoID      int64
+	ItemNumber  int
+	InputCursor string
+	NextCursor  string
+}
+
+// DatasetPageCommit is the single child-dataset page commit shared by live
+// and archive ingestion.
+type DatasetPageCommit struct {
+	Parent           DomainParentRef
+	ExpectedRevision int64
+	Dataset          ArchiveDataset
+	ScanGeneration   int64
+	Rows             DatasetRows
+	Final            bool
+	Progress         *DatasetProgressAdvance
+}
+
+// ParentLookupCommit is the single-item mode of the canonical
+// parent-observation operation. It shares the parent upsert and
+// work-reconciliation transaction core with CommitArchiveInventoryPage —
+// there is no third parent writer.
+type ParentLookupCommit struct {
+	RepoID         int64
+	ItemType       ArchiveItemType
+	ItemNumber     int
+	ScanGeneration int64
+	Outcome        ArchiveLookupOutcome
+	Issue          *Issue
+	MergeRequest   *MergeRequest
+	Destination    *RepoIdentity
+	ErrorCode      string
+	ErrorDetail    string
+	Now            time.Time
+}
+
+// ArchiveDatasetProgressKey addresses one dataset progress row.
+type ArchiveDatasetProgressKey struct {
+	RepoID     int64
+	ItemType   ArchiveItemType
+	ItemNumber int
+	Dataset    ArchiveDataset
+}
+
+// ArchiveDatasetProgress is one durable dataset progress row. It carries
+// progress metadata only, never provider content.
+type ArchiveDatasetProgress struct {
+	RepoID          int64
+	ItemType        ArchiveItemType
+	ItemNumber      int
+	Dataset         ArchiveDataset
+	ParentRevision  int64
+	ScanGeneration  int64
+	NextCursor      *string
+	LastInputCursor *string
+	PageCount       int
+	Status          ArchiveDatasetProgressStatus
+	ObservedCount   int
+	AttemptCount    int
+	NextRetryAt     *time.Time
+	LastErrorCode   *string
+	LastErrorDetail *string
+	StartedAt       *time.Time
+	CompletedAt     *time.Time
+	UpdatedAt       time.Time
+}
+
+// StaleDatasetProgressError reports a page or lookup commit whose revision,
+// generation, or cursor no longer matches durable dataset progress.
+type StaleDatasetProgressError struct {
+	RepoID             int64
+	ItemType           ArchiveItemType
+	ItemNumber         int
+	Dataset            ArchiveDataset
+	ExpectedRevision   int64
+	GotRevision        int64
+	ExpectedGeneration int64
+	GotGeneration      int64
+	ExpectedCursor     string
+	GotCursor          string
+}
+
+func (e *StaleDatasetProgressError) Error() string {
+	return fmt.Sprintf(
+		"stale dataset progress for repo %d %s %d %s: revision %d/%d, generation %d/%d, cursor %q/%q",
+		e.RepoID, e.ItemType, e.ItemNumber, e.Dataset,
+		e.ExpectedRevision, e.GotRevision,
+		e.ExpectedGeneration, e.GotGeneration,
+		e.ExpectedCursor, e.GotCursor,
+	)
+}
+
+// ScanBlockedError reports a scan that stopped spending provider requests and
+// requires an explicit operator reset to continue.
+type ScanBlockedError struct {
+	Scope  string
+	Reason string
+}
+
+func (e *ScanBlockedError) Error() string {
+	return fmt.Sprintf("scan blocked for %s: %s", e.Scope, e.Reason)
+}
 
 type ArchiveErrorCode string
 

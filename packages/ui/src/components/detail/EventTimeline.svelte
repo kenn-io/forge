@@ -2119,6 +2119,25 @@
     order: 3;
   }
 
+  :global(.kit-comment-card:not(.event-card--commit) .kit-card__actions) {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+  }
+
+  :global(.kit-comment-card:not(.event-card--commit):hover .kit-card__actions),
+  :global(.kit-comment-card:not(.event-card--commit):focus-within .kit-card__actions) {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  @media (hover: none), (pointer: coarse) {
+    :global(.kit-comment-card:not(.event-card--commit) .kit-card__actions) {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
   .commit-title,
   .system-event-summary,
   .system-event-link {

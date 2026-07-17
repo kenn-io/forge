@@ -1509,7 +1509,7 @@ func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing
 		t, branch, prNumber,
 	)
 	clones := gitclone.New(cloneBaseDir, nil)
-	cloneDir, err := clones.ClonePath(host, owner, name)
+	cloneDir, err := clones.ClonePath("github", host, owner, name)
 	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(cloneDir), 0o755))
 	runWorkspaceTestGit(t, cloneBaseDir, "clone", "--bare", remote, cloneDir)
@@ -1928,7 +1928,7 @@ func TestCleanupFallsBackToManagedCloneWhenConfiguredBaseInvalid(t *testing.T) {
 	const branch = "middleman/pr-99"
 	cloneBaseDir := t.TempDir()
 	clones := gitclone.New(cloneBaseDir, nil)
-	cloneDir, err := clones.ClonePath("github.com", "acme", "widget")
+	cloneDir, err := clones.ClonePath("github", "github.com", "acme", "widget")
 	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(cloneDir), 0o755))
 	runWorkspaceTestGit(
@@ -4572,7 +4572,7 @@ func TestIssueRetryCleansLeakedUnknownBranchAndUsesIssueBranch(t *testing.T) {
 	mgr := NewManager(openTestDB(t), t.TempDir())
 	mgr.SetClones(gitclone.New(baseDir, nil))
 
-	cloneDir, err := mgr.clones.ClonePath(host, owner, name)
+	cloneDir, err := mgr.clones.ClonePath("github", host, owner, name)
 	require.NoError(err)
 	seedWorkspaceBareCloneAt(t, cloneDir)
 	configureOriginHeadForIssueWorkspace(t, cloneDir)

@@ -1314,15 +1314,19 @@ func (p *gitHubClientProvider) ViewerAuthoredMergeRequest(
 	if author == "" {
 		return false, nil
 	}
-	viewer, err := p.authenticatedViewerLogin(ctx)
+	viewer, err := p.authenticatedViewerLoginForRepo(
+		ctx, mr.Repo.Owner, mr.Repo.Name,
+	)
 	if err != nil {
 		return false, err
 	}
 	return strings.EqualFold(viewer, author), nil
 }
 
-func (p *gitHubClientProvider) authenticatedViewerLogin(ctx context.Context) (string, error) {
-	cacheKey := p.authenticatedViewerCacheKey()
+func (p *gitHubClientProvider) authenticatedViewerLoginForRepo(
+	ctx context.Context, owner, name string,
+) (string, error) {
+	cacheKey := p.authenticatedViewerCacheKeyForRepo(owner, name)
 	now := time.Now()
 	p.viewerMu.Lock()
 	defer p.viewerMu.Unlock()
@@ -1332,11 +1336,19 @@ func (p *gitHubClientProvider) authenticatedViewerLogin(ctx context.Context) (st
 		return p.viewerLogin, nil
 	}
 
-	client, ok := p.client.(authenticatedViewerLoginClient)
-	if !ok {
-		return "", fmt.Errorf("github client does not resolve authenticated viewer")
+	var login string
+	var err error
+	if routed, ok := p.client.(interface {
+		AuthenticatedViewerLoginForRepo(context.Context, string, string) (string, error)
+	}); ok {
+		login, err = routed.AuthenticatedViewerLoginForRepo(ctx, owner, name)
+	} else {
+		client, ok := p.client.(authenticatedViewerLoginClient)
+		if !ok {
+			return "", fmt.Errorf("github client does not resolve authenticated viewer")
+		}
+		login, err = client.AuthenticatedViewerLogin(ctx)
 	}
-	login, err := client.AuthenticatedViewerLogin(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -1350,7 +1362,12 @@ func (p *gitHubClientProvider) authenticatedViewerLogin(ctx context.Context) (st
 	return login, nil
 }
 
-func (p *gitHubClientProvider) authenticatedViewerCacheKey() string {
+func (p *gitHubClientProvider) authenticatedViewerCacheKeyForRepo(owner, name string) string {
+	if routed, ok := p.client.(interface {
+		AuthenticatedViewerCacheKeyForRepo(string, string) string
+	}); ok {
+		return routed.AuthenticatedViewerCacheKeyForRepo(owner, name)
+	}
 	client, ok := p.client.(authenticatedViewerCacheKeyClient)
 	if !ok {
 		return ""
@@ -4563,7 +4580,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 	if s.clones != nil {
-		if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+		if err := s.clones.EnsureClone(ctx, string(repo.Platform), host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
 			slog.Warn("bare clone fetch failed",
 				"repo", repo.Owner+"/"+repo.Name, "err", err,
 			)
@@ -4630,7 +4647,7 @@ func (s *Syncer) syncDefaultBranchActivity(
 	host := repoHost(repo)
 	branch, currentTip, err := s.clones.ResolveDefaultBranch(
 		ctx,
-		host,
+		string(repo.Platform), host,
 		repo.Owner,
 		repo.Name,
 		preferredBranch,
@@ -4674,7 +4691,7 @@ func (s *Syncer) syncDefaultBranchActivity(
 		if previousTip.TipSHA != currentTip {
 			ancestor, err := s.clones.IsAncestor(
 				ctx,
-				host,
+				string(repo.Platform), host,
 				repo.Owner,
 				repo.Name,
 				previousTip.TipSHA,
@@ -4694,7 +4711,7 @@ func (s *Syncer) syncDefaultBranchActivity(
 
 	gitCommits, err := s.clones.ListBranchCommitsSince(
 		ctx,
-		host,
+		string(repo.Platform), host,
 		repo.Owner,
 		repo.Name,
 		branch,
@@ -5118,7 +5135,7 @@ func (s *Syncer) addRepoOverviewTimeline(
 	}
 	latestTag := tags[0]
 	count, _, countErr := s.clones.CommitTimelineSinceTag(
-		ctx, host, repo.Owner, repo.Name, latestTag, 1,
+		ctx, string(repo.Platform), host, repo.Owner, repo.Name, latestTag, 1,
 	)
 	if countErr != nil {
 		slog.Warn("count commits since latest version failed",
@@ -5131,7 +5148,7 @@ func (s *Syncer) addRepoOverviewTimeline(
 
 	timelineTag := tags[len(tags)-1]
 	_, points, err := s.clones.CommitTimelineSinceTag(
-		ctx, host, repo.Owner, repo.Name,
+		ctx, string(repo.Platform), host, repo.Owner, repo.Name,
 		timelineTag, repoOverviewTimelineLimit,
 	)
 	if err != nil {
@@ -6560,7 +6577,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 		baseSHA := normalized.PlatformBaseSHA
 		if headSHA != "" && baseSHA != "" {
 			mb, mbErr := s.clones.MergeBase(
-				ctx, repoHost, repo.Owner,
+				ctx, string(repo.Platform), repoHost, repo.Owner,
 				repo.Name, baseSHA, headSHA,
 			)
 			if mbErr != nil {
@@ -6883,7 +6900,7 @@ func (s *Syncer) fetchMRDetail(
 		baseSHA := normalized.PlatformBaseSHA
 		if headSHA != "" && baseSHA != "" {
 			mb, mbErr := s.clones.MergeBase(
-				ctx, cloneRepoHost, repo.Owner,
+				ctx, string(repo.Platform), cloneRepoHost, repo.Owner,
 				repo.Name, baseSHA, headSHA,
 			)
 			if mbErr != nil {
@@ -8795,7 +8812,7 @@ func (s *Syncer) drainDetailQueue(
 		cloneFetchOK := false
 		if s.clones != nil {
 			if cloneErr := s.clones.EnsureClone(
-				ctx, host, qi.RepoOwner, qi.RepoName,
+				ctx, string(qi.Platform), host, qi.RepoOwner, qi.RepoName,
 				cloneRemoteURL(repo),
 			); cloneErr != nil {
 				slog.Warn("detail drain: bare clone failed",
@@ -9508,7 +9525,7 @@ func (s *Syncer) syncMRDiff(
 		return nil
 	}
 	host := repoHost(repo)
-	if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+	if err := s.clones.EnsureClone(ctx, string(repo.Platform), host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeCloneUnavailable,
 			Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
@@ -9528,7 +9545,7 @@ func (s *Syncer) syncMRDiff(
 	if normalized.PlatformHeadSHA == "" || normalized.PlatformBaseSHA == "" {
 		return nil
 	}
-	mb, err := s.clones.MergeBase(ctx, host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
+	mb, err := s.clones.MergeBase(ctx, string(repo.Platform), host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeMergeBaseFailed,
@@ -9578,14 +9595,14 @@ func (s *Syncer) syncProviderMRDiff(
 	// round-trips. Per-MR detail syncs have no prior fetch and pass
 	// ensureClone.
 	if ensureClone {
-		if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+		if err := s.clones.EnsureClone(ctx, string(repo.Platform), host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
 			return &DiffSyncError{
 				Code: DiffSyncCodeCloneUnavailable,
 				Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
 			}
 		}
 	}
-	mb, err := s.clones.MergeBase(ctx, host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
+	mb, err := s.clones.MergeBase(ctx, string(repo.Platform), host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeMergeBaseFailed,
@@ -9919,7 +9936,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 				)
 			}
 		} else if headSHA != "" && baseSHA != "" {
-			mb, err := s.clones.MergeBase(ctx, closedHost, repo.Owner, repo.Name, baseSHA, headSHA)
+			mb, err := s.clones.MergeBase(ctx, string(repo.Platform), closedHost, repo.Owner, repo.Name, baseSHA, headSHA)
 			if err != nil {
 				slog.Warn("merge-base for closed PR failed",
 					"repo", repo.Owner+"/"+repo.Name,
@@ -10120,7 +10137,7 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 		mergedHost = "github.com"
 	}
 	pullRef := fmt.Sprintf("refs/pull/%d/head", number)
-	prHead, err := s.clones.RevParse(ctx, mergedHost, repo.Owner, repo.Name, pullRef)
+	prHead, err := s.clones.RevParse(ctx, string(repo.Platform), mergedHost, repo.Owner, repo.Name, pullRef)
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeCommitUnreachable,
@@ -10131,7 +10148,7 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 	// Use the merge commit's first parent as the base for merge-base.
 	// This avoids the post-merge ancestor problem where prHead is reachable
 	// from the current base branch tip (making merge-base return prHead).
-	preMergeBase, err := s.clones.RevParse(ctx, mergedHost, repo.Owner, repo.Name, mergeCommitSHA+"^1")
+	preMergeBase, err := s.clones.RevParse(ctx, string(repo.Platform), mergedHost, repo.Owner, repo.Name, mergeCommitSHA+"^1")
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeCommitUnreachable,
@@ -10139,7 +10156,7 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 		}
 	}
 
-	mb, err := s.clones.MergeBase(ctx, mergedHost, repo.Owner, repo.Name, preMergeBase, prHead)
+	mb, err := s.clones.MergeBase(ctx, string(repo.Platform), mergedHost, repo.Owner, repo.Name, preMergeBase, prHead)
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeMergeBaseFailed,

@@ -141,6 +141,56 @@ func TestBuildProviderStartupDeduplicatesGitHubIdentityRuntimes(t *testing.T) {
 	routed, ok := startup.githubClients["github.com"].(*github.RoutedClient)
 	require.True(ok)
 	assert.NotNil(routed)
+
+	gitSource := startup.SourceForRepo("github", "github.com", "org-d", "four")
+	require.NotNil(gitSource)
+	gitToken, err := gitSource.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("APP_WRITE_PAT-secret", gitToken,
+		"managed Git must use the user PAT, never the App installation token")
+}
+
+func TestBuildProviderStartupRoutesUntrackedOwnerAndKeepsFallbackUnscoped(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	t.Setenv("ORG_A_PAT", "org-a-token")
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{{
+			Host: "github.com", Owner: "org-a", TokenEnv: "ORG_A_PAT",
+		}},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+
+	startup, err := buildProviderStartup(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+		fakeGitHubIdentityResolver{byEnv: map[string]github.GitHubIdentity{
+			"ORG_A_PAT": {Key: github.IdentityKey{Host: "github.com", Principal: "user:123"}},
+		}},
+	)
+	require.NoError(err)
+
+	source := startup.SourceForRepo(
+		"github", "github.com", "org-a", "first-repo",
+	)
+	require.NotNil(source)
+	token, err := source.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("org-a-token", token)
+
+	nonGitHub := startup.SourceForRepo(
+		"forgejo", "github.com", "org-a", "first-repo",
+	)
+	assert.NotContains(nonGitHub.Descriptor().CanonicalSourceString(), "ORG_A_PAT")
+
+	fallback := startup.FallbackSource("github.com")
+	require.NotNil(fallback)
+	assert.NotContains(fallback.Descriptor().CanonicalSourceString(), "ORG_A_PAT")
 }
 
 func TestBuildProviderStartupAllowsAppOnlyReadRoute(t *testing.T) {
@@ -176,6 +226,12 @@ func TestBuildProviderStartupAllowsAppOnlyReadRoute(t *testing.T) {
 	}]
 	assert.Equal("installation:789", route.readIdentity.Principal)
 	assert.Empty(route.writeIdentity.Principal)
+
+	gitSource := startup.SourceForRepo("github", "github.com", "org-app", "one")
+	require.NotNil(gitSource)
+	_, err = gitSource.Token(t.Context())
+	assert.ErrorIs(err, tokenauth.ErrMissingToken,
+		"App-only routes must not expose installation tokens to managed Git")
 }
 
 func TestBuildProviderStartupReportsSafeGitHubIdentityResolutionFailure(t *testing.T) {

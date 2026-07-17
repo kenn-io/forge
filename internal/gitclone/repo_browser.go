@@ -808,6 +808,7 @@ func (m *Manager) refreshRepoBrowserClone(
 		if err := m.ensureCloneNowInNamespace(
 			opCtx,
 			namespace,
+			repo.Provider,
 			repo.Host,
 			repo.Owner,
 			repo.Name,
@@ -819,7 +820,9 @@ func (m *Manager) refreshRepoBrowserClone(
 		if err != nil {
 			return nil, err
 		}
-		return nil, m.fetchRepoBrowserTags(opCtx, repo.Host, dir)
+		return nil, m.fetchRepoBrowserTags(
+			opCtx, repo.Provider, repo.Host, repo.Owner, repo.Name, dir,
+		)
 	})
 	select {
 	case res := <-ch:
@@ -916,12 +919,17 @@ func (m *Manager) repoBrowserReposSnapshot() []RepoBrowserRepoRef {
 	return repos
 }
 
-func (m *Manager) fetchRepoBrowserTags(ctx context.Context, host, clonePath string) error {
+func (m *Manager) fetchRepoBrowserTags(
+	ctx context.Context, platform, host, owner, name, clonePath string,
+) error {
 	// Repo browser refs need current tag targets, but general clone refreshes
 	// deliberately fetch with --no-tags so sync/diff hot paths are not coupled
 	// to tag namespace size or moved-tag failures.
 	_, err := retryTransient(ctx, "git fetch repo browser tags", func() ([]byte, error) {
-		return m.gitNetworked(ctx, host, clonePath, nil, "fetch", "origin", "+refs/tags/*:refs/tags/*")
+		return m.gitNetworked(
+			ctx, m.sourceForRepo(platform, host, owner, name), host, clonePath, nil,
+			"fetch", "origin", "+refs/tags/*:refs/tags/*",
+		)
 	})
 	if err != nil {
 		return fmt.Errorf("git fetch repo browser tags: %w", err)

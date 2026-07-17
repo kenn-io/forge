@@ -3,10 +3,12 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"go.kenn.io/middleman/internal/tokenauth"
 )
@@ -48,6 +50,82 @@ func (i GitHubIdentity) Label() string {
 type IdentityResolver interface {
 	ResolvePAT(context.Context, string, tokenauth.Source) (GitHubIdentity, error)
 }
+
+var ErrIdentityChanged = errors.New("GitHub credential identity changed; restart required")
+
+type identityBoundSource struct {
+	source   tokenauth.Source
+	host     string
+	expected IdentityKey
+	resolver IdentityResolver
+
+	mu            sync.Mutex
+	acceptedToken string
+}
+
+// BindSourceIdentity prevents a lazily reloaded PAT from moving a live route to
+// a different GitHub user while its trackers and budget remain bound to the
+// startup identity. App reads pass through; mutation/user token values are
+// re-resolved only when they change.
+func BindSourceIdentity(
+	source tokenauth.Source,
+	host string,
+	expected IdentityKey,
+	resolver IdentityResolver,
+) tokenauth.Source {
+	if source == nil || expected.Principal == "" || resolver == nil {
+		return source
+	}
+	return &identityBoundSource{
+		source: source, host: host, expected: expected, resolver: resolver,
+	}
+}
+
+func (s *identityBoundSource) Token(ctx context.Context) (string, error) {
+	token, err := s.source.Token(ctx)
+	if err != nil {
+		return token, err
+	}
+	if !tokenauth.IsMutationAuth(ctx) && s.source.Descriptor().HasActiveGitHubApp() {
+		return token, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if token == s.acceptedToken {
+		return token, nil
+	}
+	identity, err := s.resolver.ResolvePAT(
+		ctx, s.host, staticTokenSource{token: token, desc: s.source.Descriptor()},
+	)
+	if err != nil {
+		return "", err
+	}
+	if identity.Key != s.expected {
+		return "", ErrIdentityChanged
+	}
+	s.acceptedToken = token
+	return token, nil
+}
+
+func (s *identityBoundSource) Invalidate() {
+	s.source.Invalidate()
+	s.mu.Lock()
+	s.acceptedToken = ""
+	s.mu.Unlock()
+}
+
+func (s *identityBoundSource) Descriptor() tokenauth.Descriptor {
+	return s.source.Descriptor()
+}
+
+type staticTokenSource struct {
+	token string
+	desc  tokenauth.Descriptor
+}
+
+func (s staticTokenSource) Token(context.Context) (string, error) { return s.token, nil }
+func (s staticTokenSource) Invalidate()                           {}
+func (s staticTokenSource) Descriptor() tokenauth.Descriptor      { return s.desc }
 
 // HTTPIdentityResolver resolves PAT identity through GitHub's authenticated
 // user endpoint. Endpoint and NewHTTPClient are injectable for tests.

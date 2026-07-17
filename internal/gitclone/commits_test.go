@@ -68,7 +68,7 @@ func TestListCommits(t *testing.T) {
 	mgr := New(filepath.Dir(bare), nil)
 
 	// The bare repo is at dir/remote.git, so host="" owner="" name="remote".
-	commits, err := mgr.ListCommits(t.Context(), "", "", "remote", mergeBase, headSHA)
+	commits, err := mgr.ListCommits(t.Context(), "github", "", "", "remote", mergeBase, headSHA)
 	require.NoError(err)
 	assert.Len(commits, 5)
 
@@ -114,7 +114,7 @@ func TestListCommits_EmptyRange(t *testing.T) {
 	bare, mergeBase, _ := setupCommitTestRepo(t)
 	mgr := New(filepath.Dir(bare), nil)
 
-	commits, err := mgr.ListCommits(t.Context(), "", "", "remote", mergeBase, mergeBase)
+	commits, err := mgr.ListCommits(t.Context(), "github", "", "", "remote", mergeBase, mergeBase)
 	require.NoError(t, err)
 	assert.Empty(t, commits)
 }
@@ -127,7 +127,7 @@ func TestParentOfRejectsOptionLikeSHA(t *testing.T) {
 	before, err := os.ReadFile(filepath.Join(bare, "config"))
 	require.NoError(err)
 
-	_, err = mgr.ParentOf(t.Context(), "", "", "remote", "--output=config")
+	_, err = mgr.ParentOf(t.Context(), "github", "", "", "remote", "--output=config")
 	require.Error(err)
 
 	after, err := os.ReadFile(filepath.Join(bare, "config"))
@@ -162,10 +162,10 @@ func TestCommitTimelineSinceTag(t *testing.T) {
 	commitTestRun(t, work, "git", "push", "--tags", "origin", "main")
 
 	mgr := New(filepath.Join(dir, "clones"), nil)
-	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
 
 	count, points, err := mgr.CommitTimelineSinceTag(
-		t.Context(), "github.com", "acme", "widgets", "v1.0.0", 2,
+		t.Context(), "github", "github.com", "acme", "widgets", "v1.0.0", 2,
 	)
 	require.NoError(err)
 	assert.Equal(3, count)
@@ -198,9 +198,9 @@ func TestCommitTimelineSinceTagFetchesMovedTag(t *testing.T) {
 	commitTestRun(t, work, "git", "push", "--tags", "origin", "main")
 
 	mgr := New(filepath.Join(dir, "clones"), nil)
-	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
 	count, _, err := mgr.CommitTimelineSinceTag(
-		t.Context(), "github.com", "acme", "widgets", "v1.0.0", 2,
+		t.Context(), "github", "github.com", "acme", "widgets", "v1.0.0", 2,
 	)
 	require.NoError(err)
 	assert.Equal(1, count)
@@ -208,7 +208,7 @@ func TestCommitTimelineSinceTagFetchesMovedTag(t *testing.T) {
 	commitTestRun(t, work, "git", "tag", "-f", "v1.0.0", "HEAD")
 	commitTestRun(t, work, "git", "push", "--force", "origin", "refs/tags/v1.0.0")
 	count, points, err := mgr.CommitTimelineSinceTag(
-		t.Context(), "github.com", "acme", "widgets", "v1.0.0", 2,
+		t.Context(), "github", "github.com", "acme", "widgets", "v1.0.0", 2,
 	)
 	require.NoError(err)
 	assert.Equal(0, count)
@@ -238,13 +238,13 @@ func TestCommitTimelineSinceTagWithoutOriginHEAD(t *testing.T) {
 	commitTestRun(t, work, "git", "push", "--tags", "origin", "main")
 
 	mgr := New(filepath.Join(dir, "clones"), nil)
-	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
-	clonePath, err := mgr.ClonePath("github.com", "acme", "widgets")
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
+	clonePath, err := mgr.ClonePath("github", "github.com", "acme", "widgets")
 	require.NoError(err)
 	commitTestRun(t, clonePath, "git", "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
 
 	count, points, err := mgr.CommitTimelineSinceTag(
-		t.Context(), "github.com", "acme", "widgets", "v1.0.0", 2,
+		t.Context(), "github", "github.com", "acme", "widgets", "v1.0.0", 2,
 	)
 	require.NoError(err)
 	assert.Equal(1, count)
@@ -299,7 +299,7 @@ func TestListCommits_FirstParent(t *testing.T) {
 	headSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
-	commits, err := mgr.ListCommits(t.Context(), "", "", "remote", mergeBase, headSHA)
+	commits, err := mgr.ListCommits(t.Context(), "github", "", "", "remote", mergeBase, headSHA)
 	require.NoError(err)
 
 	// First-parent walk: pr commit 2, merge side branch, pr commit 1.
@@ -318,15 +318,21 @@ func TestParentOf(t *testing.T) {
 	mgr := New(filepath.Dir(bare), nil)
 	ctx := t.Context()
 
-	commits, err := mgr.ListCommits(ctx, "", "", "remote", mergeBase, headSHA)
+	commits, err := mgr.ListCommits(
+		ctx, "github", "", "", "remote", mergeBase, headSHA,
+	)
 	require.NoError(err)
 	require.Len(commits, 5)
 
-	parent, err := mgr.ParentOf(ctx, "", "", "remote", commits[0].SHA)
+	parent, err := mgr.ParentOf(
+		ctx, "github", "", "", "remote", commits[0].SHA,
+	)
 	require.NoError(err)
 	assert.Equal(commits[1].SHA, parent)
 
-	parent, err = mgr.ParentOf(ctx, "", "", "remote", commits[4].SHA)
+	parent, err = mgr.ParentOf(
+		ctx, "github", "", "", "remote", commits[4].SHA,
+	)
 	require.NoError(err)
 	assert.Equal(mergeBase, parent)
 }
@@ -347,7 +353,7 @@ func TestParentOf_RootCommit(t *testing.T) {
 	rootSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
-	parent, err := mgr.ParentOf(t.Context(), "", "", "remote", rootSHA)
+	parent, err := mgr.ParentOf(t.Context(), "github", "", "", "remote", rootSHA)
 	require.NoError(t, err)
 	assert.Equal(t, emptyTreeSHA, parent)
 }
@@ -356,7 +362,7 @@ func TestParentOf_ErrorPropagation(t *testing.T) {
 	bare, _, _ := setupCommitTestRepo(t)
 	mgr := New(filepath.Dir(bare), nil)
 
-	_, err := mgr.ParentOf(t.Context(), "", "", "remote", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+	_, err := mgr.ParentOf(t.Context(), "github", "", "", "remote", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 	require.Error(t, err)
 }
 
@@ -387,7 +393,7 @@ func TestListCommits_SingleCommit(t *testing.T) {
 	headSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
-	commits, err := mgr.ListCommits(t.Context(), "", "", "remote", mergeBase, headSHA)
+	commits, err := mgr.ListCommits(t.Context(), "github", "", "", "remote", mergeBase, headSHA)
 	require.NoError(err)
 	assert.Len(commits, 1)
 	assert.Equal("only commit", commits[0].Message)
@@ -419,7 +425,7 @@ func TestListCommits_EmptyTreeMergeBase(t *testing.T) {
 	headSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
-	commits, err := mgr.ListCommits(t.Context(), "", "", "remote", emptyTreeSHA, headSHA)
+	commits, err := mgr.ListCommits(t.Context(), "github", "", "", "remote", emptyTreeSHA, headSHA)
 	require.NoError(err)
 	assert.Len(commits, 2)
 	assert.Equal("second", commits[0].Message)
@@ -458,7 +464,7 @@ func TestParentOf_MergeCommit(t *testing.T) {
 	mergeSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
-	parent, err := mgr.ParentOf(t.Context(), "", "", "remote", mergeSHA)
+	parent, err := mgr.ParentOf(t.Context(), "github", "", "", "remote", mergeSHA)
 	require.NoError(err)
 	assert.Equal(firstParentSHA, parent)
 }
@@ -490,7 +496,7 @@ func TestListCommits_NulInMessage(t *testing.T) {
 	headSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
-	commits, err := mgr.ListCommits(t.Context(), "", "", "remote", mergeBase, headSHA)
+	commits, err := mgr.ListCommits(t.Context(), "github", "", "", "remote", mergeBase, headSHA)
 	require.NoError(err)
 	require.Len(commits, 1)
 	assert.Contains(commits[0].Message, `\x00`)

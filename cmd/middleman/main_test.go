@@ -419,6 +419,32 @@ func TestValidateProviderHostKeysRejectsMixedProviderSourcesOnSameHost(t *testin
 	assert.Contains(err.Error(), host)
 }
 
+func TestValidateProviderHostKeysIgnoresScopedGitHubRoutes(t *testing.T) {
+	host := "code.example.com"
+	err := validateProviderHostKeys(map[string]tokenauth.Source{
+		providerHostKey("github", host): tokenauth.NewManagedSource(
+			tokenauth.Descriptor{
+				Key: tokenauth.Key{
+					Platform: "github", Host: host, Scope: "owner:acme",
+				},
+				Candidates: []tokenauth.Candidate{{
+					Kind: tokenauth.SourceKindEnv, EnvName: "OWNER_PAT",
+				}},
+			}, tokenauth.Options{},
+		),
+		providerHostKey("forgejo", host): tokenauth.NewManagedSource(
+			tokenauth.Descriptor{
+				Key: tokenauth.Key{Platform: "forgejo", Host: host},
+				Candidates: []tokenauth.Candidate{{
+					Kind: tokenauth.SourceKindEnv, EnvName: "FORGEJO_PAT",
+				}},
+			}, tokenauth.Options{},
+		),
+	})
+
+	require.NoError(t, err)
+}
+
 func TestValidateProviderHostKeysAllowsMixedProviderSourcesOnSameHostWithSameDescriptor(t *testing.T) {
 	host := "code.example.com"
 	githubSource := tokenauth.NewManagedSource(

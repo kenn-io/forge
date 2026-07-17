@@ -85,18 +85,35 @@ func TestClonePathIncludesHost(t *testing.T) {
 	assert := assert.New(t)
 	mgr := New("/tmp/clones", nil)
 
-	path, err := mgr.ClonePath("github.com", "owner", "repo")
+	path, err := mgr.ClonePath("github", "github.com", "owner", "repo")
 	require.NoError(err)
 	assert.Equal(
 		filepath.Join("/tmp/clones", "github.com", "owner", "repo.git"),
 		path)
 
-	ghePath, err := mgr.ClonePath("github.example.com", "owner", "repo")
+	ghePath, err := mgr.ClonePath("github", "github.example.com", "owner", "repo")
 	require.NoError(err)
 	assert.Equal(
 		filepath.Join("/tmp/clones", "github.example.com", "owner", "repo.git"),
 		ghePath)
 	assert.NotEqual(path, ghePath)
+}
+
+func TestClonePathPartitionsProvidersOnSharedHost(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr := New(t.TempDir(), nil)
+	githubPath, err := mgr.ClonePath(
+		"github", "code.example.com", "acme", "widgets",
+	)
+	require.NoError(err)
+	forgejoPath, err := mgr.ClonePath(
+		"forgejo", "code.example.com", "acme", "widgets",
+	)
+	require.NoError(err)
+
+	assert.NotEqual(githubPath, forgejoPath)
+	assert.Contains(forgejoPath, filepath.Join("forgejo", "code.example.com"))
 }
 
 func TestClonePathRejectsUnsafeSegments(t *testing.T) {
@@ -120,7 +137,7 @@ func TestClonePathRejectsUnsafeSegments(t *testing.T) {
 			assert := assert.New(t)
 			mgr := New(t.TempDir(), nil)
 
-			_, err := mgr.ClonePath(tt.host, tt.owner, tt.repo)
+			_, err := mgr.ClonePath("github", tt.host, tt.owner, tt.repo)
 
 			require.Error(err)
 			assert.Contains(err.Error(), "unsafe clone path")
@@ -133,7 +150,7 @@ func TestEnsureCloneRejectsTraversal(t *testing.T) {
 	assert := assert.New(t)
 	mgr := New(t.TempDir(), nil)
 
-	err := mgr.EnsureClone(t.Context(), "gitlab.example.com", "group/../..", "project", "/tmp/repo.git")
+	err := mgr.EnsureClone(t.Context(), "gitlab", "gitlab.example.com", "group/../..", "project", "/tmp/repo.git")
 
 	require.Error(err)
 	assert.Contains(err.Error(), "unsafe clone path")
@@ -152,7 +169,7 @@ func TestEnsureCloneValidatesRemoteURLPerCaller(t *testing.T) {
 	mgr := New(t.TempDir(), nil)
 
 	err := mgr.EnsureClone(
-		t.Context(), "github.com", "acme", "widget",
+		t.Context(), "github", "github.com", "acme", "widget",
 		"https://evil.example.com/acme/widget.git",
 	)
 
@@ -167,7 +184,7 @@ func TestEnsureCloneValidatesRemoteURLRepoPerCaller(t *testing.T) {
 	mgr := New(t.TempDir(), nil)
 
 	err := mgr.EnsureClone(
-		t.Context(), "github.com", "acme", "widget",
+		t.Context(), "github", "github.com", "acme", "widget",
 		"https://github.com/other/widget.git",
 	)
 

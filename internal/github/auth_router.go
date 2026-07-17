@@ -258,6 +258,32 @@ func (c *RoutedClient) routeForOwner(owner string) (Client, error) {
 	return route.Client, nil
 }
 
+func (c *RoutedClient) AuthenticatedViewerLoginForRepo(
+	ctx context.Context, owner, name string,
+) (string, error) {
+	client, err := c.routeForRepo(owner, name)
+	if err != nil {
+		return "", err
+	}
+	viewer, ok := client.(authenticatedViewerLoginClient)
+	if !ok {
+		return "", fmt.Errorf("GitHub route for %s/%s does not resolve authenticated viewer", owner, name)
+	}
+	return viewer.AuthenticatedViewerLogin(ctx)
+}
+
+func (c *RoutedClient) AuthenticatedViewerCacheKeyForRepo(owner, name string) string {
+	client, err := c.routeForRepo(owner, name)
+	if err != nil {
+		return ""
+	}
+	viewer, ok := client.(authenticatedViewerCacheKeyClient)
+	if !ok {
+		return ""
+	}
+	return viewer.AuthenticatedViewerCacheKey()
+}
+
 func (c *RoutedClient) AuthenticatedViewerLogin(ctx context.Context) (string, error) {
 	client, err := c.fallbackClient()
 	if err != nil {
@@ -280,6 +306,20 @@ func (c *RoutedClient) AuthenticatedViewerCacheKey() string {
 		return ""
 	}
 	return viewer.AuthenticatedViewerCacheKey()
+}
+
+func (c *RoutedClient) GetNotificationThreadForRepo(
+	ctx context.Context, owner, name, threadID string,
+) (NotificationThread, error) {
+	client, err := c.routeForRepo(owner, name)
+	if err != nil {
+		return NotificationThread{}, err
+	}
+	getter, ok := client.(notificationThreadGetter)
+	if !ok {
+		return NotificationThread{}, fmt.Errorf("GitHub route for %s/%s does not fetch notification threads", owner, name)
+	}
+	return getter.GetNotificationThread(ctx, threadID)
 }
 
 func (c *RoutedClient) GetNotificationThread(ctx context.Context, threadID string) (NotificationThread, error) {
@@ -335,6 +375,16 @@ func (c *RoutedClient) ListNotifications(ctx context.Context, opts NotificationL
 		return nil, false, err
 	}
 	return client.ListNotifications(ctx, opts)
+}
+
+func (c *RoutedClient) MarkNotificationThreadReadForRepo(
+	ctx context.Context, owner, name, threadID string,
+) error {
+	client, err := c.routeForRepo(owner, name)
+	if err != nil {
+		return err
+	}
+	return client.MarkNotificationThreadRead(ctx, threadID)
 }
 
 func (c *RoutedClient) MarkNotificationThreadRead(ctx context.Context, threadID string) error {

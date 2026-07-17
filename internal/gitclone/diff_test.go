@@ -52,7 +52,7 @@ func TestIntegrationDiff(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 	require.NoError(mgr.EnsureClone(
-		t.Context(), "github.com", "test", "repo", remote))
+		t.Context(), "github", "github.com", "test", "repo", remote))
 
 	// Compute merge base.
 	mb, err := mgr.MergeBase(
@@ -116,7 +116,7 @@ func TestIntegrationDiffFiles(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 	require.NoError(mgr.EnsureClone(
-		t.Context(), "github.com", "test", "repo", remote))
+		t.Context(), "github", "github.com", "test", "repo", remote))
 
 	mb, err := mgr.MergeBase(
 		t.Context(), "github.com", "test", "repo",
@@ -166,7 +166,7 @@ func TestIntegrationDiffFilesEmpty(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 	require.NoError(t, mgr.EnsureClone(
-		t.Context(), "github.com", "test", "repo", remote))
+		t.Context(), "github", "github.com", "test", "repo", remote))
 
 	// DiffFiles returns non-nil empty slice.
 	files, err := mgr.DiffFiles(

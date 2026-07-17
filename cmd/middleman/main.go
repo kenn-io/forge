@@ -584,7 +584,7 @@ func run(opts serve.Options) error {
 	}
 
 	cloneMgr := gitclone.New(
-		filepath.Join(cfg.DataDir, "clones"), startup.cloneAuth,
+		filepath.Join(cfg.DataDir, "clones"), &startup,
 	)
 
 	syncer = ghclient.NewSyncerWithRegistry(
@@ -890,6 +890,12 @@ func validateProviderHostKeys[T any](providerTokens map[string]T) error {
 	byHost := make(map[string]hostToken, len(providerTokens))
 	for key, token := range providerTokens {
 		platformName, host := splitProviderHostKey(key)
+		if source, ok := any(token).(tokenauth.Source); ok {
+			desc := source.Descriptor()
+			if desc.Key.Platform == string(platform.KindGitHub) && desc.Key.Scope != "" {
+				continue
+			}
+		}
 		tokenID := providerHostTokenID(token)
 		if existing, ok := byHost[host]; ok {
 			if existing.token != tokenID {

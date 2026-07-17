@@ -2379,6 +2379,43 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 			out = append(out, plan)
 		}
 	}
+	for _, app := range c.GitHubApps {
+		if app.InstallationID <= 0 || strings.TrimSpace(app.InstallationAccount) == "" {
+			continue
+		}
+		repo := Repo{
+			Platform:     defaultPlatform,
+			PlatformHost: app.Host,
+			Owner:        app.InstallationAccount,
+		}
+		desc := c.ResolveGitHubRepoTokenSource(repo)
+		if _, ok := seen[desc.Key]; ok {
+			continue
+		}
+		seen[desc.Key] = struct{}{}
+		out = append(out, ProviderTokenSource{
+			Descriptor:  desc,
+			Required:    true,
+			GitHubOwner: app.InstallationAccount,
+		})
+	}
+	for _, ownerToken := range c.GitHubOwnerTokens {
+		repo := Repo{
+			Platform:     defaultPlatform,
+			PlatformHost: ownerToken.Host,
+			Owner:        ownerToken.Owner,
+		}
+		desc := c.ResolveGitHubRepoTokenSource(repo)
+		if _, ok := seen[desc.Key]; ok {
+			continue
+		}
+		seen[desc.Key] = struct{}{}
+		out = append(out, ProviderTokenSource{
+			Descriptor:  desc,
+			Required:    true,
+			GitHubOwner: ownerToken.Owner,
+		})
+	}
 	for _, p := range c.Platforms {
 		add(c.TokenSourceForPlatformHost(p.Type, p.Host, "", ""), false)
 	}

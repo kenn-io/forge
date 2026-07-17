@@ -31,6 +31,18 @@ type notificationThreadGetter interface {
 	GetNotificationThread(context.Context, string) (NotificationThread, error)
 }
 
+type routedNotificationThreadGetter interface {
+	GetNotificationThreadForRepo(
+		context.Context, string, string, string,
+	) (NotificationThread, error)
+}
+
+type routedNotificationReadMarker interface {
+	MarkNotificationThreadReadForRepo(
+		context.Context, string, string, string,
+	) error
+}
+
 type notificationReadRateReserveBypasser interface {
 	bypassNotificationReadRateReserve() bool
 }
@@ -228,14 +240,26 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 		value := watermark.LastSuccessfulSyncAt.Add(-notificationSyncSinceOverlap).UTC()
 		since = &value
 	}
-	participatingIDs, err := s.listParticipatingNotificationIDs(ctx, host, client, trackedRepos, since)
-	if err != nil {
-		return err
-	}
+	participatingIDs := map[string]bool{}
+	var repoErrs []error
 	for _, repo := range trackedRepos {
+		repoParticipating, err := s.listParticipatingNotificationIDs(
+			ctx, host, client, []RepoRef{repo}, since,
+		)
+		if err != nil {
+			if strings.Contains(err.Error(), "notification sync paused") {
+				repoErrs = append(repoErrs, err)
+				continue
+			}
+			return err
+		}
+		for id := range repoParticipating {
+			participatingIDs[id] = true
+		}
 		for page := 1; ; page++ {
 			if err := s.ensureNotificationPageBudget(repo, client); err != nil {
-				return err
+				repoErrs = append(repoErrs, err)
+				break
 			}
 			threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{
 				All:       true,
@@ -292,6 +316,9 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 				break
 			}
 		}
+	}
+	if len(repoErrs) > 0 {
+		return errors.Join(repoErrs...)
 	}
 	lastFullSyncAt := watermarkLastFullSyncAt(watermark, startedAt, fullSync)
 	if err := s.db.UpdateNotificationSyncWatermark(ctx, platformName, host, startedAt, lastFullSyncAt, "", trackedReposKey); err != nil {
@@ -521,7 +548,15 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 			}
 			continue
 		}
-		if err := client.MarkNotificationThreadRead(ctx, notification.PlatformNotificationID); err != nil {
+		markRead := client.MarkNotificationThreadRead
+		if routed, ok := client.(routedNotificationReadMarker); ok {
+			markRead = func(ctx context.Context, threadID string) error {
+				return routed.MarkNotificationThreadReadForRepo(
+					ctx, notification.RepoOwner, notification.RepoName, threadID,
+				)
+			}
+		}
+		if err := markRead(ctx, notification.PlatformNotificationID); err != nil {
 			if deferErr := s.deferQueuedNotificationAckOnError(ctx, kind, host, notification, err); deferErr != nil {
 				return deferErr
 			}
@@ -619,11 +654,22 @@ func (s *Syncer) fetchAdvancedNotificationThread(
 	client notificationClient,
 	notification db.Notification,
 ) (NotificationThread, bool, error) {
-	getter, ok := notificationThreadGetterFor(client)
-	if !ok {
-		return NotificationThread{}, false, nil
+	var remote NotificationThread
+	var err error
+	if routed, ok := client.(routedNotificationThreadGetter); ok {
+		remote, err = routed.GetNotificationThreadForRepo(
+			ctx, notification.RepoOwner, notification.RepoName,
+			notification.PlatformNotificationID,
+		)
+	} else {
+		getter, ok := notificationThreadGetterFor(client)
+		if !ok {
+			return NotificationThread{}, false, nil
+		}
+		remote, err = getter.GetNotificationThread(
+			ctx, notification.PlatformNotificationID,
+		)
 	}
-	remote, err := getter.GetNotificationThread(ctx, notification.PlatformNotificationID)
 	if err != nil {
 		return NotificationThread{}, false, fmt.Errorf("get notification thread %s for %s: %w", notification.PlatformNotificationID, host, err)
 	}

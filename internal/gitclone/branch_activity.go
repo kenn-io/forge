@@ -14,9 +14,9 @@ import (
 // If preferred is empty or stale, it falls back to the origin/HEAD symref.
 func (m *Manager) ResolveDefaultBranch(
 	ctx context.Context,
-	host, owner, name, preferred string,
+	platform, host, owner, name, preferred string,
 ) (branch string, ref string, err error) {
-	dir, err := m.ClonePath(host, owner, name)
+	dir, err := m.ClonePath(platform, host, owner, name)
 	if err != nil {
 		return "", "", err
 	}
@@ -63,9 +63,9 @@ func defaultBranchNameForResolvedCandidate(preferred, candidate string) string {
 // Plain branch names prefer origin's remote-tracking refs.
 func (m *Manager) ResolveRef(
 	ctx context.Context,
-	host, owner, name, ref string,
+	platform, host, owner, name, ref string,
 ) (string, error) {
-	dir, err := m.ClonePath(host, owner, name)
+	dir, err := m.ClonePath(platform, host, owner, name)
 	if err != nil {
 		return "", err
 	}
@@ -80,9 +80,9 @@ func (m *Manager) ResolveRef(
 // fallback.
 func (m *Manager) ResolveCommit(
 	ctx context.Context,
-	host, owner, name, objectID string,
+	platform, host, owner, name, objectID string,
 ) (string, error) {
-	dir, err := m.ClonePath(host, owner, name)
+	dir, err := m.ClonePath(platform, host, owner, name)
 	if err != nil {
 		return "", err
 	}
@@ -92,9 +92,9 @@ func (m *Manager) ResolveCommit(
 // IsAncestor reports whether ancestor is reachable from descendant.
 func (m *Manager) IsAncestor(
 	ctx context.Context,
-	host, owner, name, ancestor, descendant string,
+	platform, host, owner, name, ancestor, descendant string,
 ) (bool, error) {
-	dir, err := m.ClonePath(host, owner, name)
+	dir, err := m.ClonePath(platform, host, owner, name)
 	if err != nil {
 		return false, err
 	}
@@ -114,12 +114,12 @@ func (m *Manager) IsAncestor(
 // first. afterSHA takes precedence over since when both are provided.
 func (m *Manager) ListBranchCommitsSince(
 	ctx context.Context,
-	host, owner, name, ref string,
+	platform, host, owner, name, ref string,
 	since time.Time,
 	afterSHA string,
 	maxCount int,
 ) ([]Commit, error) {
-	dir, err := m.ClonePath(host, owner, name)
+	dir, err := m.ClonePath(platform, host, owner, name)
 	if err != nil {
 		return nil, err
 	}

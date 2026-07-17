@@ -73,6 +73,13 @@ func (c *routeRecordingClient) GetNotificationThread(
 	return NotificationThread{ID: threadID}, nil
 }
 
+func (c *routeRecordingClient) MarkNotificationThreadRead(
+	_ context.Context, threadID string,
+) error {
+	c.calls = append(c.calls, "mark-read:"+threadID)
+	return nil
+}
+
 func (c *routeRecordingClient) GetRateLimitSnapshot(context.Context) (*RateLimitSnapshot, error) {
 	c.calls = append(c.calls, "snapshot")
 	if c.snapshotErr != nil {
@@ -203,9 +210,28 @@ func TestRoutedClientDelegatesByRepositoryOwnerAndFallback(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("fallback", viewer)
 	assert.Equal("viewer:fallback", client.AuthenticatedViewerCacheKey())
+	routedViewer, err := client.AuthenticatedViewerLoginForRepo(
+		t.Context(), "acme", "other",
+	)
+	require.NoError(err)
+	assert.Equal("owner", routedViewer)
+	assert.Equal(
+		"viewer:owner",
+		client.AuthenticatedViewerCacheKeyForRepo("acme", "other"),
+	)
 	thread, err := client.GetNotificationThread(t.Context(), "123")
 	require.NoError(err)
 	assert.Equal("123", thread.ID)
+	routedThread, err := client.GetNotificationThreadForRepo(
+		t.Context(), "acme", "other", "456",
+	)
+	require.NoError(err)
+	assert.Equal("456", routedThread.ID)
+	require.NoError(client.MarkNotificationThreadReadForRepo(
+		t.Context(), "acme", "other", "456",
+	))
+	assert.Contains(ownerClient.calls, "thread:456")
+	assert.Contains(ownerClient.calls, "mark-read:456")
 	_, err = client.GetRateLimitSnapshot(t.Context())
 	require.NoError(err)
 	assert.True(client.bypassNotificationReadRateReserve())

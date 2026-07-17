@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1669,6 +1670,108 @@ name = "widget-*"
 	assert.False(resp.Repos[1].AlreadyConfigured)
 	assert.NotContains(rr.Body.String(), "widget-archive")
 	assert.NotContains(rr.Body.String(), "other")
+}
+
+func TestHandlePreviewReposRoutesGitHubByOwner(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ownerClient := func(expected, repoName string) *mockGH {
+		return &mockGH{listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
+			if !strings.EqualFold(owner, expected) {
+				return nil, fmt.Errorf("wrong owner route: %s", owner)
+			}
+			return []*gh.Repository{{
+				Name: new(repoName), Owner: &gh.User{Login: new(expected)},
+				Archived: new(false),
+			}}, nil
+		}}
+	}
+	router, err := ghclient.NewHostRouter(
+		"github.com",
+		&ghclient.Route{Key: ghclient.RouteKey{Host: "github.com"}, Client: &mockGH{}},
+		&ghclient.Route{Key: ghclient.RouteKey{Host: "github.com", Owner: "org-a"}, Client: ownerClient("org-a", "repo-a")},
+		&ghclient.Route{Key: ghclient.RouteKey{Host: "github.com", Owner: "org-b"}, Client: ownerClient("org-b", "repo-b")},
+	)
+	require.NoError(err)
+	routed, err := ghclient.NewRoutedClient(router)
+	require.NoError(err)
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+host = "127.0.0.1"
+port = 8091
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": routed}, database, nil,
+		nil, time.Minute, nil, nil,
+	)
+	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
+	t.Cleanup(syncer.Stop)
+	srv := NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
+		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
+
+	preview := func(owner string) repoPreviewResponse {
+		rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+			"provider": "github", "host": "github.com",
+			"owner": owner, "pattern": "*",
+		})
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+		var resp repoPreviewResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+		return resp
+	}
+
+	orgA := preview("org-a")
+	require.Len(orgA.Repos, 1)
+	assert.Equal("repo-a", orgA.Repos[0].Name)
+	orgB := preview("org-b")
+	require.Len(orgB.Repos, 1)
+	assert.Equal("repo-b", orgB.Repos[0].Name)
+}
+
+func TestHandlePreviewReposReportsMissingOwnerRoute(t *testing.T) {
+	require := require.New(t)
+	router, err := ghclient.NewHostRouter(
+		"github.com",
+		&ghclient.Route{
+			Key:    ghclient.RouteKey{Host: "github.com", Owner: "org-a"},
+			Client: &mockGH{},
+		},
+	)
+	require.NoError(err)
+	routed, err := ghclient.NewRoutedClient(router)
+	require.NoError(err)
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+host = "127.0.0.1"
+port = 8091
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": routed}, database, nil,
+		nil, time.Minute, nil, nil,
+	)
+	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
+	t.Cleanup(syncer.Stop)
+	srv := NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
+		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+		"provider": "github", "host": "github.com",
+		"owner": "org-b", "pattern": "*",
+	})
+	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "org-b")
+	assert.Contains(t, rr.Body.String(), "github.com")
+	assert.NotContains(t, rr.Body.String(), "org-a")
 }
 
 func TestHandlePreviewReposFallsBackToListWhenExactLookupFails(t *testing.T) {

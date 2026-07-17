@@ -659,7 +659,7 @@ esac
 		PlatformHost: "github.com",
 		CloneURL:     "https://github.com/acme/widgets.git",
 	}
-	clonePath, err := clones.ClonePath("github.com", repo.Owner, repo.Name)
+	clonePath, err := clones.ClonePath("github", "github.com", repo.Owner, repo.Name)
 	require.NoError(err)
 	require.NoError(os.MkdirAll(clonePath, 0o755))
 	require.NoError(os.WriteFile(
@@ -3417,16 +3417,16 @@ func TestSyncNotificationsClearsSinceWhenTrackedReposChange(t *testing.T) {
 	assert.Equal("new-repo", seen[0].RepoName)
 	assert.Nil(seen[0].Since)
 	assert.True(seen[1].All)
-	assert.True(seen[1].Participating)
+	assert.False(seen[1].Participating)
 	assert.Equal(1, seen[1].Page)
 	assert.Equal("acme", seen[1].RepoOwner)
-	assert.Equal("widget", seen[1].RepoName)
+	assert.Equal("new-repo", seen[1].RepoName)
 	assert.Nil(seen[1].Since)
 	assert.True(seen[2].All)
-	assert.False(seen[2].Participating)
+	assert.True(seen[2].Participating)
 	assert.Equal(1, seen[2].Page)
 	assert.Equal("acme", seen[2].RepoOwner)
-	assert.Equal("new-repo", seen[2].RepoName)
+	assert.Equal("widget", seen[2].RepoName)
 	assert.Nil(seen[2].Since)
 	assert.True(seen[3].All)
 	assert.False(seen[3].Participating)
@@ -6058,7 +6058,7 @@ func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, nil)
 
 	require.NoError(syncer.syncRepo(ctx, repo))
-	clonePath, err := clones.ClonePath("gitlab.example.com", "group/subgroup", "project")
+	clonePath, err := clones.ClonePath("gitlab", "gitlab.example.com", "group/subgroup", "project")
 	require.NoError(err)
 	require.FileExists(filepath.Join(clonePath, "HEAD"))
 }
@@ -6126,7 +6126,7 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true}, syncer.TrackedRepos())
 
 	assert.Equal(int32(1), provider.getMRCalls.Load())
-	clonePath, err := clones.ClonePath("gitlab.example.com", "group/subgroup", "project")
+	clonePath, err := clones.ClonePath("gitlab", "gitlab.example.com", "group/subgroup", "project")
 	require.NoError(err)
 	require.FileExists(filepath.Join(clonePath, "HEAD"))
 }

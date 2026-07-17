@@ -32,6 +32,138 @@ func (s *mutableTestTokenSource) Descriptor() tokenauth.Descriptor {
 	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "test", Host: "github.com"}}
 }
 
+type testRouteResolver struct {
+	repos    map[string]tokenauth.Source
+	fallback map[string]tokenauth.Source
+}
+
+func (r testRouteResolver) SourceForRepo(_, host, owner, name string) tokenauth.Source {
+	return r.repos[host+"/"+owner+"/"+name]
+}
+
+func (r testRouteResolver) FallbackSource(host string) tokenauth.Source {
+	return r.fallback[host]
+}
+
+func TestGitOwnerRoutesSelectAndInvalidateOnlyTheirSource(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	capturePath := filepath.Join(dir, "credentials.txt")
+	gitPath := filepath.Join(dir, "git")
+	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
+set -eu
+out="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
+tmp="$out.current"
+helper=""
+i=0
+count="${GIT_CONFIG_COUNT:-0}"
+while [ "$i" -lt "$count" ]; do
+	eval "key=\${GIT_CONFIG_KEY_$i:-}"
+	eval "value=\${GIT_CONFIG_VALUE_$i:-}"
+	if [ "$key" = "credential.helper" ]; then helper="$value"; fi
+	i=$((i + 1))
+done
+"$helper" get > "$tmp"
+password="$(sed -n 's/^password=//p' "$tmp")"
+echo "$password" >> "$out"
+if [ "$password" = "first-token" ]; then
+	echo "fatal: Authentication failed" >&2
+	exit 128
+fi
+`), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("MIDDLEMAN_TEST_GIT_CAPTURE", capturePath)
+
+	acme := &mutableTestTokenSource{token: "first-token"}
+	example := &mutableTestTokenSource{token: "token-b"}
+	fallback := &mutableTestTokenSource{token: "fallback-token"}
+	mgr := New(t.TempDir(), testRouteResolver{
+		repos: map[string]tokenauth.Source{
+			"github.com/acme/widgets":  acme,
+			"github.com/example/tools": example,
+		},
+		fallback: map[string]tokenauth.Source{"github.com": fallback},
+	})
+
+	_, err := mgr.RunGitForRepo(
+		t.Context(), "github", "github.com", "acme", "widgets", "", "fetch",
+	)
+	require.NoError(err)
+	_, err = mgr.RunGitForRepo(
+		t.Context(), "github", "github.com", "example", "tools", "", "fetch",
+	)
+	require.NoError(err)
+	_, err = mgr.RunGitForHost(t.Context(), "github.com", "", "fetch")
+	require.NoError(err)
+
+	data, err := os.ReadFile(capturePath)
+	require.NoError(err)
+	assert.Equal([]string{
+		"first-token", "second-token", "token-b", "fallback-token",
+	}, strings.Split(strings.TrimSpace(string(data)), "\n"))
+	assert.Equal(1, acme.invalidated)
+	assert.Zero(example.invalidated)
+	assert.Zero(fallback.invalidated)
+}
+
+func TestRunGitForRepoRejectsRewrittenOriginBeforeResolvingCredential(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	gitPath := filepath.Join(dir, "git")
+	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
+set -eu
+if [ "$1" = "config" ] && [ "$2" = "--local" ]; then exit 1; fi
+if [ "$1" = "config" ] && [ "$2" = "--get-all" ] && [ "$3" = "remote.origin.url" ]; then
+	echo "https://github.com/other/repo.git"
+	exit 0
+fi
+if [ "$1" = "config" ] && [ "$2" = "--get-all" ] && [ "$3" = "remote.origin.pushurl" ]; then
+	exit 1
+fi
+exit 0
+`), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	source := &mutableTestTokenSource{token: "secret-token"}
+	mgr := New(t.TempDir(), testRouteResolver{
+		repos: map[string]tokenauth.Source{"github.com/acme/widgets": source},
+	})
+
+	_, err := mgr.RunGitForRepo(
+		t.Context(), "github", "github.com", "acme", "widgets", dir, "fetch",
+	)
+	require.Error(err)
+	assert.Contains(t, err.Error(), "validate remote.origin.url")
+	assert.NotContains(t, err.Error(), "secret-token")
+	assert.Zero(t, source.invalidated)
+}
+
+func TestRunGitForRepoRejectsRepositoryLocalURLRewrite(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	gitPath := filepath.Join(dir, "git")
+	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
+set -eu
+if [ "$1" = "config" ] && [ "$2" = "--local" ]; then
+	echo "url.https://evil.example/.insteadOf https://github.com/"
+	exit 0
+fi
+exit 1
+`), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	mgr := New(t.TempDir(), testRouteResolver{
+		repos: map[string]tokenauth.Source{
+			"github.com/acme/widgets": &mutableTestTokenSource{token: "secret-token"},
+		},
+	})
+
+	_, err := mgr.RunGitForRepo(
+		t.Context(), "github", "github.com", "acme", "widgets", dir, "fetch",
+	)
+	require.Error(err)
+	assert.Contains(t, err.Error(), "repository-local URL rewrites")
+}
+
 func TestGitNetworkedResolvesTokenSourceForEachCall(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -58,12 +190,12 @@ done
 	t.Setenv("MIDDLEMAN_TEST_GIT_CAPTURE", capturePath)
 
 	source := &mutableTestTokenSource{token: "first-token"}
-	mgr := New(t.TempDir(), map[string]tokenauth.Source{"github.com": source})
+	mgr := New(t.TempDir(), HostSources{"github.com": source})
 
-	_, err := mgr.gitNetworked(t.Context(), "github.com", "", nil, "fetch")
+	_, err := mgr.gitNetworked(t.Context(), source, "github.com", "", nil, "fetch")
 	require.NoError(err)
 	source.token = "second-token"
-	_, err = mgr.gitNetworked(t.Context(), "github.com", "", nil, "fetch")
+	_, err = mgr.gitNetworked(t.Context(), source, "github.com", "", nil, "fetch")
 	require.NoError(err)
 
 	data, err := os.ReadFile(capturePath)
@@ -114,12 +246,12 @@ done
 			FilePath: tokenPath,
 		}},
 	}, tokenauth.Options{})
-	mgr := New(t.TempDir(), map[string]tokenauth.Source{"github.com": source})
+	mgr := New(t.TempDir(), HostSources{"github.com": source})
 
-	_, err := mgr.gitNetworked(t.Context(), "github.com", "", nil, "fetch")
+	_, err := mgr.gitNetworked(t.Context(), source, "github.com", "", nil, "fetch")
 	require.NoError(err)
 	require.NoError(os.WriteFile(tokenPath, []byte("second-token\n"), 0o600))
-	_, err = mgr.gitNetworked(t.Context(), "github.com", "", nil, "fetch")
+	_, err = mgr.gitNetworked(t.Context(), source, "github.com", "", nil, "fetch")
 	require.NoError(err)
 
 	data, err := os.ReadFile(capturePath)
@@ -171,9 +303,9 @@ fi
 	t.Setenv("MIDDLEMAN_TEST_GIT_CAPTURE", capturePath)
 
 	source := &mutableTestTokenSource{token: "first-token"}
-	mgr := New(t.TempDir(), map[string]tokenauth.Source{"github.com": source})
+	mgr := New(t.TempDir(), HostSources{"github.com": source})
 
-	_, err := mgr.gitNetworked(t.Context(), "github.com", "", nil, "fetch", "origin")
+	_, err := mgr.gitNetworked(t.Context(), source, "github.com", "", nil, "fetch", "origin")
 	require.NoError(err)
 
 	data, err := os.ReadFile(capturePath)
@@ -241,11 +373,11 @@ echo complete > "$dest/complete"
 	t.Setenv("MIDDLEMAN_TEST_GIT_CAPTURE", capturePath)
 
 	source := &mutableTestTokenSource{token: "first-token"}
-	mgr := New(t.TempDir(), map[string]tokenauth.Source{"github.com": source})
+	mgr := New(t.TempDir(), HostSources{"github.com": source})
 	clonePath := filepath.Join(dir, "widgets.git")
 
 	err := mgr.cloneBare(
-		t.Context(), "github.com", clonePath,
+		t.Context(), "github", "github.com", "acme", "widgets", clonePath,
 		"https://github.com/acme/widgets.git",
 	)
 	require.NoError(err)
@@ -280,9 +412,9 @@ exit 128
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	source := &mutableTestTokenSource{token: "first-token"}
-	mgr := New(t.TempDir(), map[string]tokenauth.Source{"github.com": source})
+	mgr := New(t.TempDir(), HostSources{"github.com": source})
 
-	_, err := mgr.gitNetworked(t.Context(), "github.com", "", nil, "fetch", "origin")
+	_, err := mgr.gitNetworked(t.Context(), source, "github.com", "", nil, "fetch", "origin")
 	require.Error(err)
 
 	assert.NotContains(err.Error(), "ghp_stderr_secret")
@@ -363,12 +495,12 @@ func TestLocalReadSkipsTokenSourceDuringRotation(t *testing.T) {
 
 	source := &failingTokenSource{}
 	clonesDir := t.TempDir()
-	mgr := New(clonesDir, map[string]tokenauth.Source{"github.com": source})
-	clonePath, err := mgr.ClonePath("github.com", "acme", "widgets")
+	mgr := New(clonesDir, HostSources{"github.com": source})
+	clonePath, err := mgr.ClonePath("github", "github.com", "acme", "widgets")
 	require.NoError(err)
 	require.NoError(os.MkdirAll(clonePath, 0o755))
 
-	sha, err := mgr.RevParse(t.Context(), "github.com", "acme", "widgets", "HEAD")
+	sha, err := mgr.RevParse(t.Context(), "github", "github.com", "acme", "widgets", "HEAD")
 	require.NoError(err)
 	assert.Equal("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", sha)
 	assert.Zero(source.calls, "local read must not resolve the token source")

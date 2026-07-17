@@ -51,7 +51,7 @@ func initTestRepo(t *testing.T, dir string) {
 func setupBareClone(t *testing.T, sourceDir, clonesDir, owner, name string) *gitclone.Manager {
 	t.Helper()
 	mgr := gitclone.New(clonesDir, nil)
-	barePath, err := mgr.ClonePath("github.com", owner, name)
+	barePath, err := mgr.ClonePath("github", "github.com", owner, name)
 	require.NoError(t, err)
 	gitRun(t, "", "clone", "--bare", sourceDir, barePath)
 	gitRun(t, barePath, "config", "--add", "remote.origin.fetch",
@@ -364,7 +364,7 @@ func TestIntegrationSyncOpenToMergedTransition(t *testing.T) {
 	postmergeBaseSHA := gitRun(t, sourceDir, "rev-parse", "main")
 
 	// Re-fetch the bare clone to pick up the merge commit.
-	barePath, err := mgr.ClonePath("github.com", "owner", "repo")
+	barePath, err := mgr.ClonePath("github", "github.com", "owner", "repo")
 	require.NoError(err)
 	gitRun(t, barePath, "fetch", "--prune", "origin")
 
@@ -552,7 +552,7 @@ func TestIntegrationSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	// `git fetch` succeeds but the merge commit never enters the clone.
 	emptyRemote := t.TempDir()
 	initTestRepo(t, emptyRemote)
-	barePath, err := mgr.ClonePath("github.com", "owner", "repo")
+	barePath, err := mgr.ClonePath("github", "github.com", "owner", "repo")
 	require.NoError(err)
 	gitRun(t, barePath, "remote", "set-url", "origin", emptyRemote)
 
@@ -659,7 +659,7 @@ func TestIntegrationSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
 	// reach it via fetch.
 	emptyRemote := t.TempDir()
 	initTestRepo(t, emptyRemote)
-	barePath, err := mgr.ClonePath("github.com", "owner", "repo")
+	barePath, err := mgr.ClonePath("github", "github.com", "owner", "repo")
 	require.NoError(err)
 	gitRun(t, barePath, "remote", "set-url", "origin", emptyRemote)
 

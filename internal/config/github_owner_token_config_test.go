@@ -94,6 +94,32 @@ token_env = "ACME_TOKEN"
 	assert.Equal("Acme", got.Owner)
 }
 
+func TestProviderTokenSourcesIncludeUntrackedGitHubOwnerRoutes(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	cfg, err := Load(writeConfig(t, `
+[[github_owner_tokens]]
+owner = "acme"
+token_env = "ACME_PAT"
+`))
+	require.NoError(err)
+
+	var ownerPlan *ProviderTokenSource
+	for _, plan := range cfg.ProviderTokenSources() {
+		if plan.Descriptor.Key.Scope == "owner:acme" {
+			planCopy := plan
+			ownerPlan = &planCopy
+			break
+		}
+	}
+	require.NotNil(ownerPlan)
+	assert.True(ownerPlan.Required)
+	assert.Equal("acme", ownerPlan.GitHubOwner)
+	assert.Equal([]string{
+		"env:ACME_PAT", "env:MIDDLEMAN_GITHUB_TOKEN", "github_cli:github.com",
+	}, candidateSafeStrings(ownerPlan.Descriptor))
+}
+
 func TestResolveGitHubRepoTokenSourcePrecedence(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 github_token_env = "DEFAULT_PAT"

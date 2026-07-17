@@ -913,10 +913,11 @@ func TestConfigReload_GitHubTokenEnvChangeUpdatesConfigSnapshot(t *testing.T) {
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	assert.True(ev.Valid)
-	assert.False(ev.RestartRequired)
+	assert.True(ev.RestartRequired,
+		"changing a bounded GitHub route descriptor requires identity re-resolution")
 	newToken, err := src.Token(t.Context())
 	require.NoError(err)
-	assert.Equal("new", newToken)
+	assert.Equal("old", newToken)
 
 	srv.cfgMu.Lock()
 	currentTokenEnv := srv.cfg.GitHubTokenEnv
@@ -1132,6 +1133,90 @@ func reloadTestTokenSources(
 	src, ok := sourceSet.Get(key)
 	require.True(t, ok, "no source registered for %v", key)
 	return sourceSet, src
+}
+
+func TestConfigReload_RemovingGitHubOwnerTokenClearsLiveRoute(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("OWNER_PAT", "owner-token")
+	withOwner := `
+sync_interval = "5m"
+host = "127.0.0.1"
+port = 8091
+
+[[github_owner_tokens]]
+owner = "acme"
+token_env = "OWNER_PAT"
+`
+	withoutOwner := `
+sync_interval = "5m"
+host = "127.0.0.1"
+port = 8091
+`
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, withOwner, &mockGH{})
+	key := tokenauth.Key{
+		Platform: "github", Host: "github.com", Scope: "owner:acme",
+	}
+	sourceSet, src := reloadTestTokenSources(t, cfgPath, key)
+	srv.tokenSources = sourceSet
+	bootCfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	srv.bootCfgSnapshot = snapshotStartupConfig(bootCfg)
+	token, err := src.Token(t.Context())
+	require.NoError(err)
+	require.Equal("owner-token", token)
+
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+	writeConfigToml(t, cfgPath, withoutOwner)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	assert.True(ev.Valid, "reload error: %s", ev.Error)
+	assert.True(ev.RestartRequired, "removing a bounded route requires restart")
+	token, err = src.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("owner-token", token,
+		"the live bounded router keeps its boot credential until restart")
+}
+
+func TestConfigReload_ChangingGitHubOwnerSourceFreezesBootRoute(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("OWNER_PAT", "owner-token")
+	t.Setenv("NEW_OWNER_PAT", "new-owner-token")
+	bootConfig := `
+sync_interval = "5m"
+host = "127.0.0.1"
+port = 8091
+
+[[github_owner_tokens]]
+owner = "acme"
+token_env = "OWNER_PAT"
+`
+	changedConfig := strings.ReplaceAll(bootConfig, "OWNER_PAT", "NEW_OWNER_PAT")
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, bootConfig, &mockGH{})
+	key := tokenauth.Key{
+		Platform: "github", Host: "github.com", Scope: "owner:acme",
+	}
+	sourceSet, src := reloadTestTokenSources(t, cfgPath, key)
+	srv.tokenSources = sourceSet
+	bootCfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	srv.bootCfgSnapshot = snapshotStartupConfig(bootCfg)
+
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+	writeConfigToml(t, cfgPath, changedConfig)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	assert.True(ev.Valid, "reload error: %s", ev.Error)
+	assert.True(ev.RestartRequired)
+	token, err := src.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("owner-token", token,
+		"identity-changing descriptors remain frozen until restart")
 }
 
 const reloadPlatformTokenConfig = `
@@ -1640,10 +1725,10 @@ command = ["/bin/echo"]
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	require.True(ev.Valid)
-	// Token env changes hot-reload through the token sources, so the
-	// rename alone must not demand a restart — but both the boot-bound
-	// and the reloaded env names must be stripped from future launches.
-	assert.False(ev.RestartRequired)
+	// A bounded GitHub route descriptor rename requires restart so the
+	// authenticated identity can be re-resolved. Both names are still stripped
+	// from future launches while the boot descriptor remains active.
+	assert.True(ev.RestartRequired)
 
 	_, err := srv.runtime.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
 	require.NoError(err)

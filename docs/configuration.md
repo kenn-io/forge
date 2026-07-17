@@ -85,6 +85,36 @@ token_file = "~/.config/middleman/tokens/private-repo"
 
 For GitHub, middleman can also fall back to `gh auth token`.
 
+### GitHub tokens by owner
+
+Fine-grained PATs can expand access across owners without giving one token every
+repository. This advanced feature is configured in TOML only:
+
+```toml
+[[github_owner_tokens]]
+owner = "org-a"
+token_env = "MIDDLEMAN_GITHUB_TOKEN_ORG_A"
+
+[[github_owner_tokens]]
+owner = "org-b"
+token_file = "~/.config/middleman/tokens/org-b"
+```
+
+Authorization is selected by GitHub host and repository owner. An exact
+repository `token_env` or `token_file` wins; a covered GitHub App installation
+handles reads; the owner PAT handles uncovered reads and user-attributed writes;
+then the host fallback and GitHub CLI are tried.
+
+Rate limits and sync budgets are accounted by authenticated identity, not by
+configuration entry. PATs issued to the same GitHub user share that user's
+budget and rate state. Different users and App installations have separate
+host-and-identity budgets. Owner mappings are not editable in the UI.
+
+Replacing a PAT with another token for the same GitHub user can be applied from
+a token file. Restart middleman after changing a route to a different GitHub
+user so identity-scoped budgets, mutation availability, and snapshots are
+rebuilt safely.
+
 Use read access for monitoring. Add write access only when you want middleman to
 comment, approve, close, reopen, edit, or merge.
 

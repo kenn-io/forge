@@ -4762,7 +4762,7 @@ func TestAPIGitHubSyncReadsCloneTokenFileAfterRotation(t *testing.T) {
 	database := dbtest.Open(t)
 	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	clones := gitclone.New(filepath.Join(dir, "clones"), map[string]tokenauth.Source{
+	clones := gitclone.New(filepath.Join(dir, "clones"), gitclone.HostSources{
 		"github.com": source,
 	})
 	syncer := ghclient.NewSyncer(
@@ -4905,7 +4905,7 @@ func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
 	require.NoError(err)
 
 	database := dbtest.Open(t)
-	clones := gitclone.New(filepath.Join(dir, "clones"), map[string]tokenauth.Source{
+	clones := gitclone.New(filepath.Join(dir, "clones"), gitclone.HostSources{
 		"code.example.com": cloneSrc,
 	})
 	syncer := ghclient.NewSyncerWithRegistry(
@@ -6076,7 +6076,7 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	runGit(t, work, "push", "--tags", "origin", "main")
 
 	clones := gitclone.New(filepath.Join(dir, "clones"), nil)
-	clonePath, err := clones.ClonePath("github.com", "acme", "widgets")
+	clonePath, err := clones.ClonePath("github", "github.com", "acme", "widgets")
 	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(clonePath), 0o755))
 	runGit(t, dir, "clone", "--bare", remote, clonePath)
@@ -20488,7 +20488,7 @@ func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
 		}, tokenauth.Options{}),
 	}
 
-	clones := gitclone.New(bareDir, map[string]tokenauth.Source{"github.com": source})
+	clones := gitclone.New(bareDir, gitclone.HostSources{"github.com": source})
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, nil, defaultTestRepos, time.Minute, nil, nil,
@@ -21502,7 +21502,7 @@ func TestAPIGetRepoCommitDiffRejectsOptionLikeSHA(t *testing.T) {
 	require := require.New(t)
 
 	_, _, _, _, _, srv := setupTestServerWithClonesAndServer(t)
-	clonePath, err := srv.clones.ClonePath("github.com", "acme", "widget")
+	clonePath, err := srv.clones.ClonePath("github", "github.com", "acme", "widget")
 	require.NoError(err)
 	configPath := filepath.Join(clonePath, "config")
 	before, err := os.ReadFile(configPath)

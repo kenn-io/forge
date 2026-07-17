@@ -55,9 +55,10 @@ type startupConfigSnapshot struct {
 	TrustReverseProxy               bool
 	ProviderHosts                   []tokenauth.Key
 	// GitHubCredentialRoutes records the scoped client routes built at startup.
-	// Adding or removing a route requires rebuilding the bounded client pool;
-	// changing candidates within an existing route can hot-update its source.
-	GitHubCredentialRoutes []tokenauth.Key
+	// Adding, removing, or changing a route descriptor requires rebuilding the
+	// bounded client pool and re-resolving authenticated identity. Token values
+	// may still rotate underneath an unchanged env/file descriptor.
+	GitHubCredentialRoutes []tokenauth.Descriptor
 	// GitHubAppSplitHosts lists hosts whose effective credential chain
 	// resolves sync reads through a GitHub App installation token.
 	// Split topology is startup-bound: write rate trackers and the
@@ -159,12 +160,12 @@ func startupProviderHosts(cfg *config.Config) []tokenauth.Key {
 	return out
 }
 
-func githubCredentialRoutes(cfg *config.Config) []tokenauth.Key {
+func githubCredentialRoutes(cfg *config.Config) []tokenauth.Descriptor {
 	if cfg == nil {
 		return nil
 	}
 	seen := make(map[tokenauth.Key]struct{})
-	var routes []tokenauth.Key
+	var routes []tokenauth.Descriptor
 	for _, plan := range cfg.ProviderTokenSources() {
 		key := plan.Descriptor.Key
 		if key.Platform != string(platform.KindGitHub) || key.Scope == "" {
@@ -174,13 +175,13 @@ func githubCredentialRoutes(cfg *config.Config) []tokenauth.Key {
 			continue
 		}
 		seen[key] = struct{}{}
-		routes = append(routes, key)
+		routes = append(routes, plan.Descriptor)
 	}
-	slices.SortFunc(routes, func(a, b tokenauth.Key) int {
-		if cmp := strings.Compare(a.Host, b.Host); cmp != 0 {
+	slices.SortFunc(routes, func(a, b tokenauth.Descriptor) int {
+		if cmp := strings.Compare(a.Key.Host, b.Key.Host); cmp != 0 {
 			return cmp
 		}
-		return strings.Compare(a.Scope, b.Scope)
+		return strings.Compare(a.Key.Scope, b.Key.Scope)
 	})
 	return routes
 }
@@ -525,8 +526,19 @@ func (s *Server) updateTokenSourcesForReload(cfg *config.Config) {
 		}
 		s.tokenSources.Upsert(desc)
 	}
+	bootRoutes := make(map[tokenauth.Key]tokenauth.Descriptor,
+		len(s.bootCfgSnapshot.GitHubCredentialRoutes))
+	for _, desc := range s.bootCfgSnapshot.GitHubCredentialRoutes {
+		bootRoutes[desc.Key] = desc
+	}
 	for _, plan := range cfg.ProviderTokenSources() {
-		updateIfKnown(plan.Descriptor)
+		desc := plan.Descriptor
+		if boot, bounded := bootRoutes[desc.Key]; bounded &&
+			desc.Key.Platform == string(platform.KindGitHub) &&
+			desc.Key.Scope != "" && !desc.EqualSource(boot) {
+			continue
+		}
+		updateIfKnown(desc)
 	}
 	// When a provider entry on a shared host loses or changes its token
 	// the clone source follows the host's surviving effective chain

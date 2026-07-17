@@ -473,7 +473,7 @@ func (s *Server) getRepoCommitDiff(
 		return nil, httpapi.Validation("path.sha", "commit SHA must be a full object ID")
 	}
 
-	sha, err := s.clones.ResolveCommit(ctx, host, repo.Owner, repo.Name, input.SHA)
+	sha, err := s.clones.ResolveCommit(ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name, input.SHA)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
@@ -482,7 +482,7 @@ func (s *Server) getRepoCommitDiff(
 		return nil, httpapi.Upstream("failed to compute diff", "", "")
 	}
 
-	parent, err := s.clones.ParentOf(ctx, host, repo.Owner, repo.Name, sha)
+	parent, err := s.clones.ParentOf(ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name, sha)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
@@ -492,7 +492,7 @@ func (s *Server) getRepoCommitDiff(
 	}
 
 	hideWhitespace := input.Whitespace == "hide"
-	result, err := s.clones.Diff(ctx, host, repo.Owner, repo.Name, parent, sha, hideWhitespace)
+	result, err := s.clones.Diff(ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name, parent, sha, hideWhitespace)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)

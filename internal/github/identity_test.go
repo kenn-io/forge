@@ -102,6 +102,44 @@ func TestHTTPIdentityResolverRejectsInvalidResponsesSafely(t *testing.T) {
 	}
 }
 
+func TestIdentityBoundSourceRejectsCrossUserRotation(t *testing.T) {
+	require := require.New(t)
+	source := &mutableIdentityTestSource{token: "same-user-token"}
+	resolver := identityResolverFunc(func(_ context.Context, _ string, source tokenauth.Source) (GitHubIdentity, error) {
+		token, err := source.Token(t.Context())
+		require.NoError(err)
+		principal := "user:123"
+		if token == "different-user-token" {
+			principal = "user:456"
+		}
+		return GitHubIdentity{Key: IdentityKey{Host: "github.com", Principal: principal}}, nil
+	})
+	bound := BindSourceIdentity(
+		source, "github.com", IdentityKey{Host: "github.com", Principal: "user:123"}, resolver,
+	)
+
+	_, err := bound.Token(tokenauth.WithMutationAuth(t.Context()))
+	require.NoError(err)
+	source.token = "different-user-token"
+	bound.Invalidate()
+	_, err = bound.Token(tokenauth.WithMutationAuth(t.Context()))
+	assert.ErrorIs(t, err, ErrIdentityChanged)
+}
+
+type identityResolverFunc func(context.Context, string, tokenauth.Source) (GitHubIdentity, error)
+
+func (f identityResolverFunc) ResolvePAT(ctx context.Context, host string, source tokenauth.Source) (GitHubIdentity, error) {
+	return f(ctx, host, source)
+}
+
+type mutableIdentityTestSource struct{ token string }
+
+func (s *mutableIdentityTestSource) Token(context.Context) (string, error) { return s.token, nil }
+func (s *mutableIdentityTestSource) Invalidate()                           {}
+func (s *mutableIdentityTestSource) Descriptor() tokenauth.Descriptor {
+	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "github", Host: "github.com"}}
+}
+
 func TestInstallationIdentity(t *testing.T) {
 	got := InstallationIdentity("GitHub.COM", 789)
 

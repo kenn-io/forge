@@ -159,6 +159,33 @@ fallback repository listing.
 - Archive requests use shared sync budgets above `archiveLiveFloor`: provider reset signals release quadratic surplus, while headerless Gitealike hosts use configured local hourly surplus. The transport attributes every attempt, and live work preempts the archive lease. (`internal/github/budget.go::LocalArchiveSpendAvailable`, `internal/github/sync.go::Admit`)
 - A GitHub issue without `updated_at` uses `created_at` as both its freshness and initial activity boundary; zero timestamps must not bypass monotonic snapshot acceptance. (`internal/platform/github/normalize.go::NormalizeIssue`)
 
+## Owner Routes And Identity Accounting
+
+GitHub authorization is selected by `(host, repository owner)`, with exact
+repository overrides ahead of owner mappings and the host fallback. Rate state,
+sync budgets, cadence, and snapshots are selected separately by `(host,
+authenticated identity)`. Different PATs resolving to the same GitHub user ID
+must share one runtime; App reads use their installation identity.
+
+Repository preview must select the entered owner's route even before that owner
+has a tracked repository. Ownerless APIs may use only the host fallback; never
+borrow an arbitrary owner PAT. Repository notifications use the user/write
+identity. App-only routes may read, but notifications and mutations remain
+disabled until restart establishes a stable user identity.
+
+Managed Git uses exact-repository or owner PAT routes with mutation context and
+must never expose an App installation token to smart HTTP. Thread full provider,
+host, owner, and repository identity through clone/fetch and local reads;
+partition non-GitHub clone storage by provider on shared hosts. Before injecting
+a PAT into workspace fetch or push, require the branch upstream to be `origin`,
+reject repository-local URL rewrites, and validate every origin fetch/push URL.
+
+Token-file rotation within the same GitHub user is hot-reloadable. Changing the
+authenticated user, adding a write identity to an App-only route, or adding or
+removing a bounded route requires restart. Added, removed, or descriptor-changed scoped routes require restart. The live
+bounded router keeps its boot descriptor until restart so it cannot lose auth or
+move to a different identity while retaining the old trackers and budget.
+
 ## GitHub App Manifest Flow
 
 `middleman-github-app create` uses GitHub's App Manifest flow so sync can read

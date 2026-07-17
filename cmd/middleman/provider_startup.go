@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 
 	"go.kenn.io/middleman/internal/config"
@@ -81,6 +79,46 @@ type providerStartup struct {
 	ratePrincipalLabels  map[string]string
 }
 
+func (s *providerStartup) SourceForRepo(
+	platformName, host, owner, name string,
+) tokenauth.Source {
+	if s == nil {
+		return nil
+	}
+	platformName = strings.ToLower(strings.TrimSpace(platformName))
+	host = strings.ToLower(strings.TrimSpace(host))
+	if platformName != string(platform.KindGitHub) {
+		return s.cloneAuth[host]
+	}
+	owner = strings.ToLower(strings.TrimSpace(owner))
+	name = strings.ToLower(strings.TrimSpace(name))
+	for _, scope := range []string{
+		"repo:" + owner + "/" + name,
+		"owner:" + owner,
+		"",
+	} {
+		if route, ok := s.githubRoutes[tokenauth.Key{
+			Platform: string(platform.KindGitHub), Host: host, Scope: scope,
+		}]; ok && route.source != nil {
+			return mutationTokenSource{Source: route.source}
+		}
+	}
+	return s.cloneAuth[host]
+}
+
+func (s *providerStartup) FallbackSource(host string) tokenauth.Source {
+	if s == nil {
+		return nil
+	}
+	host = strings.ToLower(strings.TrimSpace(host))
+	if route, ok := s.githubRoutes[tokenauth.Key{
+		Platform: string(platform.KindGitHub), Host: host,
+	}]; ok && route.source != nil {
+		return mutationTokenSource{Source: route.source}
+	}
+	return s.cloneAuth[host]
+}
+
 func defaultProviderFactories() map[string]providerFactory {
 	return map[string]providerFactory{
 		string(platform.KindGitHub): func(input providerFactoryInput) (providerFactoryOutput, error) {
@@ -139,10 +177,8 @@ func collectProviderTokenSources(
 	add := func(plan config.ProviderTokenSource) error {
 		desc := plan.Descriptor
 		key := providerHostKey(desc.Key.Platform, desc.Key.Host)
-		src, seen := providerSources[key]
-		if !seen {
-			src = set.Upsert(desc)
-		}
+		_, seen := providerSources[key]
+		src := set.Upsert(desc)
 		tokenCtx := ctx
 		if plan.GitHubOwner != "" {
 			tokenCtx = tokenauth.WithGitHubOwner(tokenCtx, plan.GitHubOwner)
@@ -263,25 +299,25 @@ func buildProviderStartup(
 		}
 		startup.cloneSources[tokenauth.Key{Platform: platformName, Host: host}] = tokenSource
 	}
-	// Clone auth is host-scoped: every provider sharing a host presents the
-	// same canonical credential chain (validated above), so each host gets a
-	// dedicated source keyed by tokenauth.CloneKey rather than borrowing
-	// whichever provider source map iteration yielded first. Registering it
-	// in the shared SourceSet lets config reload re-point clone/fetch at the
-	// host's current effective chain (config.CloneTokenDescriptors) even when
-	// the provider entry that supplied the credential changes. Hosts with no
-	// resolved provider source keep no entry, so git runs unauthenticated
-	// there — same as a credential-less host at startup today.
-	for _, key := range slices.Sorted(maps.Keys(providerSources)) {
-		_, host := splitProviderHostKey(key)
-		if _, ok := startup.cloneAuth[host]; ok {
-			continue
-		}
-		source := providerSources[key]
+	// Ownerless Git operations may use only the explicit host fallback chain.
+	// Never derive this map from the first provider source on a host because
+	// that source can be an owner-scoped GitHub PAT. Scoped repository Git
+	// operations select their own route through providerStartup.SourceForRepo.
+	for _, desc := range cfg.CloneTokenDescriptors() {
+		startup.cloneAuth[desc.Key.Host] = set.Upsert(desc)
+	}
+	for _, source := range providerSources {
 		if source == nil {
 			continue
 		}
 		desc := source.Descriptor()
+		host := desc.Key.Host
+		if startup.cloneAuth[host] != nil {
+			continue
+		}
+		if desc.Key.Platform == string(platform.KindGitHub) && desc.Key.Scope != "" {
+			continue
+		}
 		desc.Key = tokenauth.CloneKey(host)
 		startup.cloneAuth[host] = set.Upsert(desc)
 	}
@@ -352,7 +388,7 @@ func buildGitHubIdentityRuntimes(
 	resolvedPATs := make(map[string]github.GitHubIdentity, len(plans))
 	for _, plan := range plans {
 		desc := plan.Descriptor
-		source := set.Upsert(desc)
+		var source tokenauth.Source = set.Upsert(desc)
 		app, hasApp := activeGitHubAppCandidate(desc, plan.GitHubOwner)
 		writeIdentity, err := resolveGitHubPATIdentity(
 			ctx, resolver, desc.Key.Host, source, resolvedPATs,
@@ -387,6 +423,11 @@ func buildGitHubIdentityRuntimes(
 		if writeIdentity.Key.Principal != "" {
 			ensureGitHubIdentityRuntime(
 				database, budgetPerHour, writeIdentity, startup,
+			)
+		}
+		if writeIdentity.Key.Principal != "" {
+			source = github.BindSourceIdentity(
+				source, desc.Key.Host, writeIdentity.Key, resolver,
 			)
 		}
 		startup.githubRoutes[desc.Key] = githubCredentialRoute{

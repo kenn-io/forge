@@ -30,20 +30,26 @@ func TestArchiveIssueInventoryWalksOldestPagesAndExcludesPullRequests(t *testing
 	provider := NewProvider(platform.KindForgejo, "forge.example", transport)
 	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "forge.example", Owner: "owner", Name: "repo"}
 
-	discovery, err := provider.ListHistoricalIssues(context.Background(), ref, "")
+	discovery, err := provider.ListIssuesPage(context.Background(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+	})
 	require.NoError(err)
 	assert.True(discovery.ProgressOnly)
 	assert.NotEmpty(discovery.NextCursor)
 
-	oldest, err := provider.ListHistoricalIssues(context.Background(), ref, discovery.NextCursor)
+	oldest, err := provider.ListIssuesPage(context.Background(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: discovery.NextCursor,
+	})
 	require.NoError(err)
 	assert.Equal([]int{1}, []int{oldest.Items[0].Number})
 	assert.Equal([]int{1, 3}, transport.issueRequests)
 	assert.NotEmpty(oldest.NextCursor)
 
-	_, err = provider.ListHistoricalIssues(context.Background(), platform.RepoRef{
+	_, err = provider.ListIssuesPage(context.Background(), platform.RepoRef{
 		Platform: platform.KindForgejo, Host: "other.example", Owner: "owner", Name: "repo",
-	}, oldest.NextCursor)
+	}, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: oldest.NextCursor,
+	})
 	assert.Error(err)
 }
 
@@ -62,9 +68,13 @@ func TestArchiveUpdatedInventoryUsesInclusiveWatermarkAndProviderSort(t *testing
 	provider := NewProvider(platform.KindGitea, "git.example", transport)
 	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "git.example", Owner: "owner", Name: "repo"}
 
-	issues, err := provider.ListUpdatedIssues(context.Background(), ref, since, "")
+	issues, err := provider.ListIssuesPage(context.Background(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &since,
+	})
 	require.NoError(err)
-	pulls, err := provider.ListUpdatedMergeRequests(context.Background(), ref, since, "")
+	pulls, err := provider.ListMergeRequestsPage(context.Background(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &since,
+	})
 	require.NoError(err)
 
 	assert.Len(issues.Items, 2)
@@ -92,9 +102,14 @@ func TestArchiveUpdatedMergeRequestsStopAfterOverlappedWatermark(t *testing.T) {
 	provider := NewProvider(platform.KindForgejo, "forge.example", transport)
 	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "forge.example", Owner: "owner", Name: "repo"}
 
-	first, err := provider.ListUpdatedMergeRequests(t.Context(), ref, since, "")
+	first, err := provider.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &since,
+	})
 	require.NoError(err)
-	second, err := provider.ListUpdatedMergeRequests(t.Context(), ref, since, first.NextCursor)
+	second, err := provider.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
+		UpdatedSince: &since, Cursor: first.NextCursor,
+	})
 	require.NoError(err)
 
 	assert.Equal([]int{3}, []int{first.Items[0].Number})
@@ -122,13 +137,13 @@ func TestArchiveDetailsAndLookupOutcomes(t *testing.T) {
 	provider := NewProvider(platform.KindForgejo, "forge.example", transport)
 	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "forge.example", Owner: "owner", Name: "repo"}
 
-	comments, err := provider.ListArchiveMergeRequestComments(context.Background(), ref, 7, "")
+	comments, err := provider.ListMergeRequestCommentsPage(context.Background(), ref, 7, "")
 	require.NoError(err)
-	reviews, err := provider.ListArchiveSubmittedReviews(context.Background(), ref, 7, "")
+	reviews, err := provider.ListSubmittedReviewsPage(context.Background(), ref, 7, "")
 	require.NoError(err)
-	removed, err := provider.GetArchiveIssue(context.Background(), ref, 8)
+	removed, err := provider.LookupIssue(context.Background(), ref, 8)
 	require.NoError(err)
-	_, inlineErr := provider.ListArchiveReviewThreads(context.Background(), ref, 7, "")
+	_, inlineErr := provider.ListReviewThreadsPage(context.Background(), ref, 7, "")
 
 	assert.Equal("issue_comment", comments.Items[0].EventType)
 	assert.Equal("review", reviews.Items[0].EventType)
@@ -157,7 +172,7 @@ func TestArchiveSubmittedReviewsReturnProgressPageWhenDraftsAreFiltered(t *testi
 	provider := NewProvider(platform.KindGitea, "git.example", transport)
 	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "git.example", Owner: "owner", Name: "repo"}
 
-	page, err := provider.ListArchiveSubmittedReviews(t.Context(), ref, 7, "")
+	page, err := provider.ListSubmittedReviewsPage(t.Context(), ref, 7, "")
 	require.NoError(err)
 	assert.Empty(page.Items)
 	assert.True(page.ProgressOnly)
@@ -175,7 +190,7 @@ func TestArchiveLookupReturnsRepositoryAccessFailure(t *testing.T) {
 	provider := NewProvider(platform.KindForgejo, "forge.example", transport)
 	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "forge.example", Owner: "owner", Name: "repo"}
 
-	_, err := provider.GetArchiveIssue(t.Context(), ref, 7)
+	_, err := provider.LookupIssue(t.Context(), ref, 7)
 	require.ErrorIs(t, err, platform.ErrPermissionDenied)
 }
 
@@ -203,7 +218,7 @@ func TestArchiveLookupPreservesRepositoryProbeFailures(t *testing.T) {
 			provider := NewProvider(platform.KindForgejo, "forge.example", transport)
 			ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "forge.example", Owner: "owner", Name: "repo"}
 
-			_, err := provider.GetArchiveIssue(t.Context(), ref, 7)
+			_, err := provider.LookupIssue(t.Context(), ref, 7)
 			require.Error(t, err)
 			if tc.want != nil {
 				require.ErrorIs(t, err, tc.want)
@@ -240,14 +255,14 @@ type archiveFakeTransport struct {
 	issueErr             error
 }
 
-func (t *archiveFakeTransport) ListArchiveIssues(_ context.Context, _ platform.RepoRef, opts ArchiveListOptions) ([]IssueDTO, Page, error) {
+func (t *archiveFakeTransport) ListIssuesPage(_ context.Context, _ platform.RepoRef, opts ArchiveListOptions) ([]IssueDTO, Page, error) {
 	t.requests++
 	t.issueRequests = append(t.issueRequests, opts.Page)
 	t.issueOptions = append(t.issueOptions, opts)
 	return t.issuePages[opts.Page], Page{Last: t.issueLast}, nil
 }
 
-func (t *archiveFakeTransport) ListArchivePullRequests(_ context.Context, _ platform.RepoRef, opts ArchiveListOptions) ([]PullRequestDTO, Page, error) {
+func (t *archiveFakeTransport) ListPullRequestsPage(_ context.Context, _ platform.RepoRef, opts ArchiveListOptions) ([]PullRequestDTO, Page, error) {
 	t.requests++
 	t.pullOptions = append(t.pullOptions, opts)
 	return t.pullPages[opts.Page], t.pullPage[opts.Page], nil

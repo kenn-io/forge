@@ -34,11 +34,11 @@ type TimelineTransport interface {
 }
 
 // ArchiveTransport is the bounded, one-round-trip transport surface used by
-// historical archive enumeration. ListArchiveIssues exposes the API's
-// updated-time filters; ListArchivePullRequests exposes its stable sort modes.
+// historical archive enumeration. ListIssuesPage exposes the API's
+// updated-time filters; ListPullRequestsPage exposes its stable sort modes.
 type ArchiveTransport interface {
-	ListArchiveIssues(context.Context, platform.RepoRef, ArchiveListOptions) ([]IssueDTO, Page, error)
-	ListArchivePullRequests(context.Context, platform.RepoRef, ArchiveListOptions) ([]PullRequestDTO, Page, error)
+	ListIssuesPage(context.Context, platform.RepoRef, ArchiveListOptions) ([]IssueDTO, Page, error)
+	ListPullRequestsPage(context.Context, platform.RepoRef, ArchiveListOptions) ([]PullRequestDTO, Page, error)
 }
 
 type ArchiveListOptions struct {

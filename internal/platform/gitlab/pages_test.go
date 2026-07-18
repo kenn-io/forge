@@ -156,97 +156,6 @@ func TestGitLabListMergeRequestsPageDispatchesByQuery(t *testing.T) {
 	assert.Equal([]string{"true", "", ""}, rechecks)
 }
 
-// TestGitLabIssueInventoryLegacyMatchesCanonical proves the ArchiveReader and
-// live delegates issue the same requests and produce the same normalized rows
-// as the canonical ListIssuesPage for every query shape.
-func TestGitLabIssueInventoryLegacyMatchesCanonical(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	watermark := time.Date(2026, 7, 1, 2, 3, 4, 0, time.UTC)
-	recorder := &requestRecorder{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		recorder.record(r)
-		writeJSON(w, `[{"id":101,"iid":1,"title":"issue","state":"closed","web_url":"https://gitlab.example.com/group/project/-/issues/1","author":{"username":"ada"},"created_at":"2025-01-01T00:00:00Z","updated_at":"2026-07-01T02:03:04Z"}]`)
-	}))
-	defer server.Close()
-	client := newTestClient(t, server.URL)
-	ref := gitLabPagesTestRef()
-
-	canonicalHistorical, err := client.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
-	})
-	require.NoError(err)
-	canonicalHistoricalReqs := recorder.take()
-	legacyHistorical, err := client.ListHistoricalIssues(t.Context(), ref, "")
-	require.NoError(err)
-	assert.Equal(canonicalHistoricalReqs, recorder.take())
-	assert.Equal(canonicalHistorical, legacyHistorical)
-
-	canonicalUpdated, err := client.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &watermark,
-	})
-	require.NoError(err)
-	canonicalUpdatedReqs := recorder.take()
-	legacyUpdated, err := client.ListUpdatedIssues(t.Context(), ref, watermark, "")
-	require.NoError(err)
-	assert.Equal(canonicalUpdatedReqs, recorder.take())
-	assert.Equal(canonicalUpdated, legacyUpdated)
-
-	canonicalOpen, err := client.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated,
-	})
-	require.NoError(err)
-	canonicalOpenReqs := recorder.take()
-	liveOpen, err := platform.ListOpenIssues(t.Context(), client, ref)
-	require.NoError(err)
-	assert.Equal(canonicalOpenReqs, recorder.take())
-	assert.Equal(canonicalOpen.Items, liveOpen)
-}
-
-func TestGitLabMergeRequestInventoryLegacyMatchesCanonical(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	watermark := time.Date(2026, 7, 1, 2, 3, 4, 0, time.UTC)
-	recorder := &requestRecorder{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		recorder.record(r)
-		writeJSON(w, `[{"id":201,"iid":2,"project_id":42,"title":"mr","state":"merged","web_url":"https://gitlab.example.com/group/project/-/merge_requests/2","author":{"username":"lin"},"created_at":"2025-01-03T00:00:00Z","updated_at":"2026-07-01T02:03:04Z"}]`)
-	}))
-	defer server.Close()
-	client := newTestClient(t, server.URL)
-	ref := gitLabPagesTestRef()
-
-	canonicalHistorical, err := client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
-	})
-	require.NoError(err)
-	canonicalHistoricalReqs := recorder.take()
-	legacyHistorical, err := client.ListHistoricalMergeRequests(t.Context(), ref, "")
-	require.NoError(err)
-	assert.Equal(canonicalHistoricalReqs, recorder.take())
-	assert.Equal(canonicalHistorical, legacyHistorical)
-
-	canonicalUpdated, err := client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &watermark,
-	})
-	require.NoError(err)
-	canonicalUpdatedReqs := recorder.take()
-	legacyUpdated, err := client.ListUpdatedMergeRequests(t.Context(), ref, watermark, "")
-	require.NoError(err)
-	assert.Equal(canonicalUpdatedReqs, recorder.take())
-	assert.Equal(canonicalUpdated, legacyUpdated)
-
-	canonicalOpen, err := client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated,
-	})
-	require.NoError(err)
-	canonicalOpenReqs := recorder.take()
-	liveOpen, err := platform.ListOpenMergeRequests(t.Context(), client, ref)
-	require.NoError(err)
-	assert.Equal(canonicalOpenReqs, recorder.take())
-	assert.Equal(canonicalOpen.Items, liveOpen)
-}
-
 // TestGitLabInventoryUsesAllStatesOldestFirstAndBoundedPages proves historical
 // traversal enumerates every state oldest-first with a resumable bounded
 // cursor: issues follow the provider's keyset continuation link, merge
@@ -926,12 +835,10 @@ func TestGitLabListPagesRejectInvalidQueries(t *testing.T) {
 	}
 }
 
-// TestGitLabDetailPagesLegacyMatchesCanonical proves each canonical detail-page
-// method produces the same rows and requests as its ArchiveReader delegate,
-// that one discussions fetch feeds both the ordinary-comment filter and the
-// review-thread extraction, and that submitted reviews stay a typed
-// unsupported capability on both surfaces.
-func TestGitLabDetailPagesLegacyMatchesCanonical(t *testing.T) {
+// TestGitLabDetailPagesShareDiscussionReads proves one discussions fetch shape
+// feeds both the ordinary-comment filter and the review-thread extraction,
+// while submitted reviews stay a typed unsupported capability.
+func TestGitLabDetailPagesShareDiscussionReads(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	recorder := &requestRecorder{}
@@ -959,11 +866,7 @@ func TestGitLabDetailPagesLegacyMatchesCanonical(t *testing.T) {
 
 	issueComments, err := client.ListIssueCommentsPage(t.Context(), ref, 7, "")
 	require.NoError(err)
-	issueCommentsReqs := recorder.take()
-	legacyIssueComments, err := client.ListArchiveIssueComments(t.Context(), ref, 7, "")
-	require.NoError(err)
-	assert.Equal(issueCommentsReqs, recorder.take())
-	assert.Equal(issueComments, legacyIssueComments)
+	recorder.take()
 	require.Len(issueComments.Items, 1)
 	assert.Equal("issue comment", issueComments.Items[0].Body)
 	assert.True(issueComments.Exhausted)
@@ -971,10 +874,6 @@ func TestGitLabDetailPagesLegacyMatchesCanonical(t *testing.T) {
 	mrComments, err := client.ListMergeRequestCommentsPage(t.Context(), ref, 8, "")
 	require.NoError(err)
 	mrCommentsReqs := recorder.take()
-	legacyMRComments, err := client.ListArchiveMergeRequestComments(t.Context(), ref, 8, "")
-	require.NoError(err)
-	assert.Equal(mrCommentsReqs, recorder.take())
-	assert.Equal(mrComments, legacyMRComments)
 	require.Len(mrComments.Items, 1)
 	assert.Equal("ordinary comment", mrComments.Items[0].Body)
 	assert.Equal("issue_comment", mrComments.Items[0].EventType)
@@ -982,10 +881,6 @@ func TestGitLabDetailPagesLegacyMatchesCanonical(t *testing.T) {
 	threads, err := client.ListReviewThreadsPage(t.Context(), ref, 8, "")
 	require.NoError(err)
 	threadsReqs := recorder.take()
-	legacyThreads, err := client.ListArchiveReviewThreads(t.Context(), ref, 8, "")
-	require.NoError(err)
-	assert.Equal(threadsReqs, recorder.take())
-	assert.Equal(threads, legacyThreads)
 	require.Len(threads.Items, 2)
 	assert.Equal([]string{"402", "403"}, []string{threads.Items[0].ProviderCommentID, threads.Items[1].ProviderCommentID})
 	assert.Equal("inline", threads.Items[1].ProviderThreadID)
@@ -998,8 +893,6 @@ func TestGitLabDetailPagesLegacyMatchesCanonical(t *testing.T) {
 	assert.Equal(mrCommentsReqs, threadsReqs)
 
 	_, err = client.ListSubmittedReviewsPage(t.Context(), ref, 8, "")
-	require.ErrorIs(err, platform.ErrUnsupportedCapability)
-	_, err = client.ListArchiveSubmittedReviews(t.Context(), ref, 8, "")
 	require.ErrorIs(err, platform.ErrUnsupportedCapability)
 }
 
@@ -1125,9 +1018,8 @@ func TestGitLabLiveIssueEventsCollectCanonicalCommentPages(t *testing.T) {
 	assert.Equal([]string{"1", "2"}, pages)
 }
 
-// TestGitLabLookupClassifiesRemovalAndAccessLoss proves the single lookup
-// operation feeds both archive delegates (recording every outcome) and live
-// gets (requiring present), with GitLab's confidential-content ambiguity
+// TestGitLabLookupClassifiesRemovalAndAccessLoss proves the canonical lookup
+// records every outcome while live gets require present, with GitLab's confidential-content ambiguity
 // mapped to inaccessible rather than removed.
 func TestGitLabLookupClassifiesRemovalAndAccessLoss(t *testing.T) {
 	assert := assert.New(t)
@@ -1155,9 +1047,6 @@ func TestGitLabLookupClassifiesRemovalAndAccessLoss(t *testing.T) {
 	confidential, err := client.LookupIssue(t.Context(), ref, 7)
 	require.NoError(err)
 	assert.Equal(platform.LookupInaccessible, confidential.Outcome)
-	legacyConfidential, err := client.GetArchiveIssue(t.Context(), ref, 7)
-	require.NoError(err)
-	assert.Equal(confidential, legacyConfidential)
 
 	inaccessible, err := client.LookupIssue(t.Context(), ref, 8)
 	require.NoError(err)
@@ -1167,9 +1056,6 @@ func TestGitLabLookupClassifiesRemovalAndAccessLoss(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(platform.LookupPresent, present.Outcome)
 	assert.Equal(9, present.Item.Number)
-	legacyPresent, err := client.GetArchiveMergeRequest(t.Context(), ref, 9)
-	require.NoError(err)
-	assert.Equal(present, legacyPresent)
 
 	live, err := platform.RequireMergeRequest(t.Context(), client, ref, 9)
 	require.NoError(err)
@@ -1265,9 +1151,8 @@ func TestGitLabCanonicalReadersHydratePathOnlyRefs(t *testing.T) {
 	}, paths, "each canonical read hydrates the path-only ref once, then uses the numeric id")
 }
 
-// TestGitLabLookupEnrichesForkHeadCloneURLOnce proves there is one canonical
-// merge-request lookup: a present fork item carries the head clone-URL
-// enrichment for every caller (live and archive alike), and the enrichment
+// TestGitLabLookupEnrichesForkHeadCloneURLOnce proves a present fork item
+// carries the head clone-URL enrichment for the canonical and live readers, and the enrichment
 // request is cached per source project so repeated lookups spend it once.
 func TestGitLabLookupEnrichesForkHeadCloneURLOnce(t *testing.T) {
 	assert := assert.New(t)
@@ -1306,10 +1191,6 @@ func TestGitLabLookupEnrichesForkHeadCloneURLOnce(t *testing.T) {
 		"a successful enrichment is authoritative")
 	assert.Equal(1, sourceProjectRequests)
 
-	archive, err := client.GetArchiveMergeRequest(t.Context(), ref, 7)
-	require.NoError(err)
-	assert.Equal(canonical, archive, "archive and live share the one canonical lookup")
-
 	live, err := platform.RequireMergeRequest(t.Context(), client, ref, 7)
 	require.NoError(err)
 	assert.Equal("https://gitlab.example.com/fork/project.git", live.HeadRepoCloneURL)
@@ -1320,8 +1201,7 @@ func TestGitLabLookupEnrichesForkHeadCloneURLOnce(t *testing.T) {
 // TestGitLabLookupMergeRequestEnrichmentFailureDegradesToPresent proves the
 // fork head clone-URL enrichment inside the canonical lookup is best-effort:
 // a transient source-project failure degrades the result to an empty
-// HeadRepoCloneURL and never fails the lookup, for the live require path and
-// the archive delegate alike.
+// HeadRepoCloneURL and never fails the lookup or the live require path.
 func TestGitLabLookupMergeRequestEnrichmentFailureDegradesToPresent(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1360,15 +1240,9 @@ func TestGitLabLookupMergeRequestEnrichmentFailureDegradesToPresent(t *testing.T
 		"a failed enrichment marks the clone URL unknown so persistence preserves a previously stored value")
 	assert.Equal("fork MR", lookup.Item.Title)
 
-	archive, err := client.GetArchiveMergeRequest(t.Context(), ref, 7)
-	require.NoError(err)
-	assert.Equal(platform.LookupPresent, archive.Outcome)
-	assert.Empty(archive.Item.HeadRepoCloneURL)
-	assert.True(archive.Item.HeadRepoCloneURLUnknown)
-
 	live, err := platform.RequireMergeRequest(t.Context(), client, ref, 7)
 	require.NoError(err)
 	assert.Empty(live.HeadRepoCloneURL)
-	assert.Equal(3, sourceProjectRequests,
+	assert.Equal(2, sourceProjectRequests,
 		"failed enrichment attempts are not cached and are retried per lookup")
 }

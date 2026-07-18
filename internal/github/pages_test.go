@@ -107,61 +107,6 @@ func TestGitHubListIssuesPageDispatchesByQuery(t *testing.T) {
 	assert.Equal(watermark.Add(-time.Second).Format(time.RFC3339Nano), graphqlSince[1])
 }
 
-// TestGitHubIssueInventoryLegacyMatchesCanonical proves the ArchiveReader and
-// live delegates issue the same requests and produce the same normalized rows
-// as the canonical ListIssuesPage for every query shape.
-func TestGitHubIssueInventoryLegacyMatchesCanonical(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	watermark := time.Date(2026, 7, 1, 2, 3, 4, 0, time.UTC)
-	recorder := &requestRecorder{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		recorder.record(r)
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/graphql":
-			_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[{"id":"I_1","databaseId":1,"number":1,"title":"issue","state":"CLOSED","body":"","url":"https://github.com/acme/widget/issues/1","author":{"login":"a"},"createdAt":"2025-01-01T00:00:00Z","updatedAt":"2025-01-02T00:00:00Z","comments":{"totalCount":0},"labels":{"nodes":[]},"assignees":{"nodes":[]}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`))
-		case "/api/v3/repos/acme/widget/issues":
-			_, _ = w.Write([]byte(`[{"id":9,"node_id":"I_9","number":9,"title":"open issue","state":"open","html_url":"https://github.com/acme/widget/issues/9","user":{"login":"a"},"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-02T00:00:00Z"}]`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-	provider := newArchiveTestGitHubProvider(t, srv.URL)
-	ref := pagesTestRef()
-
-	canonicalHistorical, err := provider.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
-	})
-	require.NoError(err)
-	canonicalHistoricalReqs := recorder.take()
-	legacyHistorical, err := provider.ListHistoricalIssues(t.Context(), ref, "")
-	require.NoError(err)
-	assert.Equal(canonicalHistoricalReqs, recorder.take())
-	assert.Equal(canonicalHistorical, legacyHistorical)
-
-	canonicalUpdated, err := provider.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &watermark,
-	})
-	require.NoError(err)
-	canonicalUpdatedReqs := recorder.take()
-	legacyUpdated, err := provider.ListUpdatedIssues(t.Context(), ref, watermark, "")
-	require.NoError(err)
-	assert.Equal(canonicalUpdatedReqs, recorder.take())
-	assert.Equal(canonicalUpdated, legacyUpdated)
-
-	canonicalOpen, err := provider.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated,
-	})
-	require.NoError(err)
-	canonicalOpenReqs := recorder.take()
-	legacyOpen, err := platform.ListOpenIssues(t.Context(), provider, ref)
-	require.NoError(err)
-	assert.Equal(canonicalOpenReqs, recorder.take())
-	assert.Equal(canonicalOpen.Items, legacyOpen)
-}
-
 // TestGitHubListMergeRequestsPageDispatchesByQuery proves one method owns all
 // three merge-request inventory request shapes and records the provider-side
 // sort fences: open ignores sort, historical is created-ascending, and
@@ -204,46 +149,9 @@ func TestGitHubListMergeRequestsPageDispatchesByQuery(t *testing.T) {
 	assert.Equal([]string{"", "asc", "desc"}, directions)
 }
 
-func TestGitHubMergeRequestInventoryLegacyMatchesCanonical(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	watermark := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
-	recorder := &requestRecorder{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		recorder.record(r)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[{"id":201,"node_id":"PR_201","number":4,"title":"pull","state":"closed","html_url":"https://github.com/acme/widget/pull/4","user":{"login":"a"},"created_at":"2025-01-01T00:00:00Z","updated_at":"2026-07-01T00:00:00Z"}]`))
-	}))
-	defer srv.Close()
-	provider := newArchiveTestGitHubProvider(t, srv.URL)
-	ref := pagesTestRef()
-
-	canonicalHistorical, err := provider.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
-	})
-	require.NoError(err)
-	canonicalHistoricalReqs := recorder.take()
-	legacyHistorical, err := provider.ListHistoricalMergeRequests(t.Context(), ref, "")
-	require.NoError(err)
-	assert.Equal(canonicalHistoricalReqs, recorder.take())
-	assert.Equal(canonicalHistorical, legacyHistorical)
-
-	canonicalOpen, err := provider.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateOpen, Order: platform.ItemOrderUpdated,
-	})
-	require.NoError(err)
-	canonicalOpenReqs := recorder.take()
-	legacyOpen, err := platform.ListOpenMergeRequests(t.Context(), provider, ref)
-	require.NoError(err)
-	assert.Equal(canonicalOpenReqs, recorder.take())
-	assert.Equal(canonicalOpen.Items, legacyOpen)
-	_ = watermark
-}
-
-// TestGitHubLookupIssueMatchesLegacyAndDrivesLiveGet proves the single lookup
-// operation feeds both the archive delegate (records every outcome) and the
-// live delegate (requires present).
-func TestGitHubLookupIssueMatchesLegacyAndDrivesLiveGet(t *testing.T) {
+// TestGitHubLookupIssueDrivesLiveGet proves the canonical lookup records every
+// outcome while the live collector requires a present item.
+func TestGitHubLookupIssueDrivesLiveGet(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -265,9 +173,6 @@ func TestGitHubLookupIssueMatchesLegacyAndDrivesLiveGet(t *testing.T) {
 
 	canonical, err := provider.LookupIssue(t.Context(), ref, 7)
 	require.NoError(err)
-	legacy, err := provider.GetArchiveIssue(t.Context(), ref, 7)
-	require.NoError(err)
-	assert.Equal(canonical, legacy)
 	assert.Equal(platform.LookupPresent, canonical.Outcome)
 
 	live, err := platform.RequireIssue(t.Context(), provider, ref, 7)
@@ -303,9 +208,6 @@ func TestGitHubLookupMergeRequestDrivesLiveGet(t *testing.T) {
 
 	canonical, err := provider.LookupMergeRequest(t.Context(), ref, 7)
 	require.NoError(err)
-	legacy, err := provider.GetArchiveMergeRequest(t.Context(), ref, 7)
-	require.NoError(err)
-	assert.Equal(canonical, legacy)
 
 	live, err := platform.RequireMergeRequest(t.Context(), provider, ref, 7)
 	require.NoError(err)
@@ -313,65 +215,6 @@ func TestGitHubLookupMergeRequestDrivesLiveGet(t *testing.T) {
 
 	_, liveErr := platform.RequireMergeRequest(t.Context(), provider, ref, 9)
 	require.ErrorIs(liveErr, platform.ErrNotFound)
-}
-
-// TestGitHubDetailPagesLegacyMatchesCanonical proves each canonical detail-page
-// method produces the same rows and requests as its ArchiveReader delegate.
-func TestGitHubDetailPagesLegacyMatchesCanonical(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	recorder := &requestRecorder{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		recorder.record(r)
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/v3/repos/acme/widget/issues/7/comments":
-			_, _ = w.Write([]byte(`[{"id":1,"node_id":"C_1","body":"comment","html_url":"https://github.com/acme/widget/issues/7#issuecomment-1","user":{"login":"writer"},"created_at":"2026-07-01T00:00:00Z"}]`))
-		case "/api/v3/repos/acme/widget/pulls/7/reviews":
-			_, _ = w.Write([]byte(`[{"id":31,"node_id":"R_31","state":"APPROVED","body":"ship it","html_url":"https://github.com/acme/widget/pull/7#pullrequestreview-31","user":{"login":"reviewer"},"submitted_at":"2026-07-02T00:00:00Z"}]`))
-		case "/api/graphql":
-			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"reviewThreads":{"edges":[{"cursor":"edge-1","node":{"id":"T_1","isResolved":false,"path":"main.go","diffSide":"RIGHT","line":1,"comments":{"nodes":[{"id":"RC_1","databaseId":1,"fullDatabaseId":"9000000001","pullRequestReview":{"databaseId":1},"body":"thread comment","author":{"login":"reviewer"},"path":"main.go","line":1,"url":"https://github.com/acme/widget/pull/7#discussion_r1","createdAt":"2026-07-03T00:00:00Z","updatedAt":"2026-07-03T01:00:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-	provider := newArchiveTestGitHubProvider(t, srv.URL)
-	ref := pagesTestRef()
-
-	issueComments, err := provider.ListIssueCommentsPage(t.Context(), ref, 7, "")
-	require.NoError(err)
-	issueCommentsReqs := recorder.take()
-	legacyIssueComments, err := provider.ListArchiveIssueComments(t.Context(), ref, 7, "")
-	require.NoError(err)
-	assert.Equal(issueCommentsReqs, recorder.take())
-	assert.Equal(issueComments, legacyIssueComments)
-
-	mrComments, err := provider.ListMergeRequestCommentsPage(t.Context(), ref, 7, "")
-	require.NoError(err)
-	mrCommentsReqs := recorder.take()
-	legacyMRComments, err := provider.ListArchiveMergeRequestComments(t.Context(), ref, 7, "")
-	require.NoError(err)
-	assert.Equal(mrCommentsReqs, recorder.take())
-	assert.Equal(mrComments, legacyMRComments)
-
-	reviews, err := provider.ListSubmittedReviewsPage(t.Context(), ref, 7, "")
-	require.NoError(err)
-	reviewsReqs := recorder.take()
-	legacyReviews, err := provider.ListArchiveSubmittedReviews(t.Context(), ref, 7, "")
-	require.NoError(err)
-	assert.Equal(reviewsReqs, recorder.take())
-	assert.Equal(reviews, legacyReviews)
-
-	threads, err := provider.ListReviewThreadsPage(t.Context(), ref, 7, "")
-	require.NoError(err)
-	threadsReqs := recorder.take()
-	legacyThreads, err := provider.ListArchiveReviewThreads(t.Context(), ref, 7, "")
-	require.NoError(err)
-	assert.Equal(threadsReqs, recorder.take())
-	assert.Equal(threads, legacyThreads)
-	require.Len(threads.Items, 1)
-	assert.Equal("T_1", threads.Items[0].ProviderThreadID)
 }
 
 // TestGitHubListPagesRejectInvalidQueries proves the canonical entry points
@@ -490,13 +333,11 @@ func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
 	assert.Nil(typedRemovedErr.Destination)
 }
 
-// TestGitHubUpdatedMergeRequestsLegacyMatchesCanonicalAcrossPages proves the
-// legacy ListUpdatedMergeRequests delegate and the canonical
-// ListMergeRequestsPage maintenance query issue identical requests and rows
-// across cursor continuation, keep records updated exactly at the inclusive
+// TestGitHubUpdatedMergeRequestsAcrossPages proves the canonical maintenance
+// query keeps records updated exactly at the inclusive
 // watermark, and stop once the descending traversal crosses the overlapped
 // watermark.
-func TestGitHubUpdatedMergeRequestsLegacyMatchesCanonicalAcrossPages(t *testing.T) {
+func TestGitHubUpdatedMergeRequestsAcrossPages(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	watermark := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
@@ -540,14 +381,6 @@ func TestGitHubUpdatedMergeRequestsLegacyMatchesCanonicalAcrossPages(t *testing.
 	})
 	require.NoError(err)
 	canonicalReqs := recorder.take()
-
-	legacyFirst, err := provider.ListUpdatedMergeRequests(t.Context(), ref, watermark, "")
-	require.NoError(err)
-	legacySecond, err := provider.ListUpdatedMergeRequests(t.Context(), ref, watermark, legacyFirst.NextCursor)
-	require.NoError(err)
-	assert.Equal(canonicalReqs, recorder.take())
-	assert.Equal(canonicalFirst, legacyFirst)
-	assert.Equal(canonicalSecond, legacySecond)
 
 	require.Len(canonicalFirst.Items, 2)
 	assert.Equal([]int{41, 42}, []int{canonicalFirst.Items[0].Number, canonicalFirst.Items[1].Number})

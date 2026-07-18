@@ -2,7 +2,6 @@ package platform
 
 import (
 	"context"
-	"time"
 )
 
 type Provider interface {
@@ -62,22 +61,6 @@ type MergeRequestViewerResolver interface {
 // IssuePageReader.
 type IssueReader interface {
 	ListIssueEvents(ctx context.Context, ref RepoRef, number int) ([]IssueEvent, error)
-}
-
-// ArchiveReader exposes bounded provider reads for historical inventory,
-// maintenance, and complete detail datasets. Cursors are opaque to callers;
-// maintenance watermarks are UTC.
-type ArchiveReader interface {
-	ListHistoricalIssues(context.Context, RepoRef, string) (Page[Issue], error)
-	ListHistoricalMergeRequests(context.Context, RepoRef, string) (Page[MergeRequest], error)
-	ListUpdatedIssues(context.Context, RepoRef, time.Time, string) (Page[Issue], error)
-	ListUpdatedMergeRequests(context.Context, RepoRef, time.Time, string) (Page[MergeRequest], error)
-	GetArchiveIssue(context.Context, RepoRef, int) (ItemLookup[Issue], error)
-	GetArchiveMergeRequest(context.Context, RepoRef, int) (ItemLookup[MergeRequest], error)
-	ListArchiveIssueComments(context.Context, RepoRef, int, string) (Page[IssueEvent], error)
-	ListArchiveMergeRequestComments(context.Context, RepoRef, int, string) (Page[MergeRequestEvent], error)
-	ListArchiveSubmittedReviews(context.Context, RepoRef, int, string) (Page[MergeRequestEvent], error)
-	ListArchiveReviewThreads(context.Context, RepoRef, int, string) (Page[MergeRequestReviewThread], error)
 }
 
 // IssuePageReader is the canonical page-oriented provider read surface for

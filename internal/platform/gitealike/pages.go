@@ -161,7 +161,7 @@ func (p *Provider) listInventoryIssuesPage(
 	if err != nil {
 		return platform.Page[platform.Issue]{}, err
 	}
-	items, page, err := t.ListArchiveIssues(ctx, ref, ArchiveListOptions{
+	items, page, err := t.ListIssuesPage(ctx, ref, ArchiveListOptions{
 		PageOptions: PageOptions{Page: cursor.Page, PageSize: defaultPageSize},
 		Since:       inclusiveWatermark(since), Before: parseCursorTime(cursor.Before),
 	})
@@ -292,7 +292,7 @@ func (p *Provider) listInventoryMergeRequestsPage(
 	if order == platform.ItemOrderUpdated {
 		sortMode = "recentupdate"
 	}
-	items, page, err := t.ListArchivePullRequests(ctx, ref, ArchiveListOptions{
+	items, page, err := t.ListPullRequestsPage(ctx, ref, ArchiveListOptions{
 		PageOptions: PageOptions{Page: cursor.Page, PageSize: defaultPageSize}, Sort: sortMode,
 	})
 	if err != nil {

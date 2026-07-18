@@ -121,23 +121,6 @@ func (r *Registry) IssueReader(kind Kind, host string) (IssueReader, error) {
 	return reader, nil
 }
 
-func (r *Registry) ArchiveReader(kind Kind, host string) (ArchiveReader, error) {
-	provider, err := r.Provider(kind, host)
-	if err != nil {
-		return nil, err
-	}
-
-	reader, ok := provider.(ArchiveReader)
-	if !ok || !provider.Capabilities().Archive.HasHistoricalInventory() {
-		return nil, UnsupportedCapability(kind, host, "archive_reader")
-	}
-	return &validatingArchiveReader{
-		reader:   reader,
-		contract: readerContract{kind: kind, host: host},
-		caps:     provider.Capabilities().Archive,
-	}, nil
-}
-
 // IssuePageReader returns the provider's canonical issue read surface wrapped
 // in the provider-neutral contract validation, so every caller consumes
 // validated canonical pages and lookups.
@@ -148,13 +131,14 @@ func (r *Registry) IssuePageReader(kind Kind, host string) (IssuePageReader, err
 	}
 
 	reader, ok := provider.(IssuePageReader)
+	caps := provider.Capabilities()
 	if !ok {
 		return nil, UnsupportedCapability(kind, host, "read_issues")
 	}
 	return &validatingIssuePageReader{
 		reader:   reader,
 		contract: readerContract{kind: kind, host: host},
-		caps:     provider.Capabilities(),
+		caps:     caps,
 	}, nil
 }
 
@@ -169,13 +153,14 @@ func (r *Registry) MergeRequestPageReader(
 	}
 
 	reader, ok := provider.(MergeRequestPageReader)
+	caps := provider.Capabilities()
 	if !ok {
 		return nil, UnsupportedCapability(kind, host, "read_merge_requests")
 	}
 	return &validatingMergeRequestPageReader{
 		reader:   reader,
 		contract: readerContract{kind: kind, host: host},
-		caps:     provider.Capabilities(),
+		caps:     caps,
 	}, nil
 }
 

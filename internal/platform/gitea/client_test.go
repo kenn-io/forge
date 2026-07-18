@@ -18,20 +18,21 @@ import (
 )
 
 var (
-	_ gitealike.Transport         = (*transport)(nil)
-	_ gitealike.ActionsTransport  = (*transport)(nil)
-	_ platform.RepositoryReader   = (*Client)(nil)
-	_ platform.MergeRequestReader = (*Client)(nil)
-	_ platform.IssueReader        = (*Client)(nil)
-	_ platform.ReleaseReader      = (*Client)(nil)
-	_ platform.TagReader          = (*Client)(nil)
-	_ platform.CIReader           = (*Client)(nil)
-	_ platform.CommentMutator     = (*Client)(nil)
-	_ platform.StateMutator       = (*Client)(nil)
-	_ platform.MergeMutator       = (*Client)(nil)
-	_ platform.ReviewMutator      = (*Client)(nil)
-	_ platform.IssueMutator       = (*Client)(nil)
-	_ platform.ArchiveReader      = (*Client)(nil)
+	_ gitealike.Transport             = (*transport)(nil)
+	_ gitealike.ActionsTransport      = (*transport)(nil)
+	_ platform.RepositoryReader       = (*Client)(nil)
+	_ platform.MergeRequestReader     = (*Client)(nil)
+	_ platform.IssueReader            = (*Client)(nil)
+	_ platform.ReleaseReader          = (*Client)(nil)
+	_ platform.TagReader              = (*Client)(nil)
+	_ platform.CIReader               = (*Client)(nil)
+	_ platform.CommentMutator         = (*Client)(nil)
+	_ platform.StateMutator           = (*Client)(nil)
+	_ platform.MergeMutator           = (*Client)(nil)
+	_ platform.ReviewMutator          = (*Client)(nil)
+	_ platform.IssueMutator           = (*Client)(nil)
+	_ platform.IssuePageReader        = (*Client)(nil)
+	_ platform.MergeRequestPageReader = (*Client)(nil)
 )
 
 func TestArchiveInventoryUsesAllStateOrderingAndOneBudgetedRequestPerPage(t *testing.T) {
@@ -62,9 +63,13 @@ func TestArchiveInventoryUsesAllStateOrderingAndOneBudgetedRequestPerPage(t *tes
 	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "gitea.test", Owner: "owner", Name: "repo"}
 	ctx := ghsync.WithArchiveSyncBudget(context.Background())
 
-	issues, err := client.ListHistoricalIssues(ctx, ref, "")
+	issues, err := client.ListIssuesPage(ctx, ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+	})
 	require.NoError(err)
-	pulls, err := client.ListHistoricalMergeRequests(ctx, ref, "")
+	pulls, err := client.ListMergeRequestsPage(ctx, ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+	})
 	require.NoError(err)
 
 	assert.Len(issues.Items, 1)

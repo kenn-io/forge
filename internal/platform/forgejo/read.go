@@ -210,7 +210,7 @@ func (t *transport) ListOpenIssues(
 	return convertIssues(issues), forgejoPage(resp), nil
 }
 
-func (t *transport) ListArchiveIssues(ctx context.Context, ref platform.RepoRef, opts gitealike.ArchiveListOptions) ([]gitealike.IssueDTO, gitealike.Page, error) {
+func (t *transport) ListIssuesPage(ctx context.Context, ref platform.RepoRef, opts gitealike.ArchiveListOptions) ([]gitealike.IssueDTO, gitealike.Page, error) {
 	var issues []*forgejosdk.Issue
 	var resp *forgejosdk.Response
 	err := t.withRequestContext(ctx, func() error {
@@ -227,7 +227,7 @@ func (t *transport) ListArchiveIssues(ctx context.Context, ref platform.RepoRef,
 	return convertIssues(issues), forgejoPage(resp), nil
 }
 
-func (t *transport) ListArchivePullRequests(ctx context.Context, ref platform.RepoRef, opts gitealike.ArchiveListOptions) ([]gitealike.PullRequestDTO, gitealike.Page, error) {
+func (t *transport) ListPullRequestsPage(ctx context.Context, ref platform.RepoRef, opts gitealike.ArchiveListOptions) ([]gitealike.PullRequestDTO, gitealike.Page, error) {
 	var prs []*forgejosdk.PullRequest
 	var resp *forgejosdk.Response
 	err := t.withRequestContext(ctx, func() error {

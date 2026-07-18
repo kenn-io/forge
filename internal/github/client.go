@@ -1638,7 +1638,7 @@ func (c *liveClient) ListPullRequestReviewThreads(
 	var threads []PullRequestReviewThread
 	cursor := ""
 	for {
-		page, next, exhausted, err := c.ListArchiveReviewThreadsPage(
+		page, next, exhausted, err := c.ListInventoryReviewThreadsPage(
 			ctx, c.platformHost, owner, repo, number, cursor,
 		)
 		if err != nil {

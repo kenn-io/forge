@@ -16,32 +16,6 @@ func pagesTestRef() platform.RepoRef {
 	}
 }
 
-func newInventoryFakeTransport(base time.Time) *archiveFakeTransport {
-	return &archiveFakeTransport{
-		fakeTransport: &fakeTransport{},
-		issuePages: map[int][]IssueDTO{
-			1: {{ID: 3, Index: 3, Created: base.Add(2 * time.Hour), Updated: base.Add(2 * time.Hour)}},
-			3: {
-				{ID: 2, Index: 2, Created: base.Add(time.Hour), Updated: base.Add(time.Hour), IsPullRequest: true},
-				{ID: 1, Index: 1, Created: base, Updated: base},
-			},
-		},
-		issueLast: 3,
-		pullPages: map[int][]PullRequestDTO{
-			1: {{ID: 11, Index: 1, Created: base, Updated: base.Add(time.Hour)}},
-			2: {{ID: 12, Index: 2, Created: base.Add(time.Minute), Updated: base}},
-		},
-		pullPage: map[int]Page{1: {Next: 2}},
-	}
-}
-
-func drainPages[T any](t *testing.T, fetch func(context.Context, string) (platform.Page[T], error)) []T {
-	t.Helper()
-	items, err := platform.CollectPages(t.Context(), "", fetch)
-	require.NoError(t, err)
-	return items
-}
-
 func TestListPagesRejectInvalidQueries(t *testing.T) {
 	since := time.Date(2026, 4, 5, 6, 7, 8, 0, time.UTC)
 	queries := map[string]platform.ItemPageQuery{
@@ -148,132 +122,14 @@ func TestOpenScansMatchLegacyLists(t *testing.T) {
 	assert.Equal([]int{1, 2}, []int{mrPage.Items[0].Number, mrPage.Items[1].Number})
 }
 
-func TestIssueInventoryLegacyMatchesCanonical(t *testing.T) {
-	assert := assert.New(t)
-	base := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	since := base
-	ref := pagesTestRef()
-
-	historicalCanonical := NewProvider(platform.KindForgejo, "forge.example", newInventoryFakeTransport(base))
-	historicalLegacy := NewProvider(platform.KindForgejo, "forge.example", newInventoryFakeTransport(base))
-	canonical := drainPages(t, func(ctx context.Context, cursor string) (platform.Page[platform.Issue], error) {
-		return historicalCanonical.ListIssuesPage(ctx, ref, platform.ItemPageQuery{
-			State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: cursor,
-		})
-	})
-	legacy := drainPages(t, func(ctx context.Context, cursor string) (platform.Page[platform.Issue], error) {
-		return historicalLegacy.ListHistoricalIssues(ctx, ref, cursor)
-	})
-	assert.Equal(legacy, canonical)
-	assert.Equal([]int{1, 3}, []int{canonical[0].Number, canonical[1].Number},
-		"historical traversal is created-ascending and excludes pull requests")
-
-	updatedCanonicalTransport := newInventoryFakeTransport(base)
-	updatedCanonicalProvider := NewProvider(platform.KindForgejo, "forge.example", updatedCanonicalTransport)
-	updatedLegacyProvider := NewProvider(platform.KindForgejo, "forge.example", newInventoryFakeTransport(base))
-	updatedCanonical := drainPages(t, func(ctx context.Context, cursor string) (platform.Page[platform.Issue], error) {
-		return updatedCanonicalProvider.ListIssuesPage(ctx, ref, platform.ItemPageQuery{
-			State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
-			UpdatedSince: &since, Cursor: cursor,
-		})
-	})
-	updatedLegacy := drainPages(t, func(ctx context.Context, cursor string) (platform.Page[platform.Issue], error) {
-		return updatedLegacyProvider.ListUpdatedIssues(ctx, ref, since, cursor)
-	})
-	assert.Equal(updatedLegacy, updatedCanonical)
-	assert.Equal(since.Add(-time.Second), updatedCanonicalTransport.issueOptions[0].Since,
-		"maintenance scans pass the inclusive watermark overlap to the provider")
-}
-
-func TestMergeRequestInventoryLegacyMatchesCanonical(t *testing.T) {
-	assert := assert.New(t)
-	base := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	since := base
-	ref := pagesTestRef()
-
-	historicalCanonical := NewProvider(platform.KindForgejo, "forge.example", newInventoryFakeTransport(base))
-	historicalLegacy := NewProvider(platform.KindForgejo, "forge.example", newInventoryFakeTransport(base))
-	canonical := drainPages(t, func(ctx context.Context, cursor string) (platform.Page[platform.MergeRequest], error) {
-		return historicalCanonical.ListMergeRequestsPage(ctx, ref, platform.ItemPageQuery{
-			State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: cursor,
-		})
-	})
-	legacy := drainPages(t, func(ctx context.Context, cursor string) (platform.Page[platform.MergeRequest], error) {
-		return historicalLegacy.ListHistoricalMergeRequests(ctx, ref, cursor)
-	})
-	assert.Equal(legacy, canonical)
-	assert.Equal([]int{1, 2}, []int{canonical[0].Number, canonical[1].Number})
-
-	updatedCanonicalTransport := newInventoryFakeTransport(base)
-	updatedCanonicalProvider := NewProvider(platform.KindForgejo, "forge.example", updatedCanonicalTransport)
-	updatedLegacyProvider := NewProvider(platform.KindForgejo, "forge.example", newInventoryFakeTransport(base))
-	updatedCanonical := drainPages(t, func(ctx context.Context, cursor string) (platform.Page[platform.MergeRequest], error) {
-		return updatedCanonicalProvider.ListMergeRequestsPage(ctx, ref, platform.ItemPageQuery{
-			State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
-			UpdatedSince: &since, Cursor: cursor,
-		})
-	})
-	updatedLegacy := drainPages(t, func(ctx context.Context, cursor string) (platform.Page[platform.MergeRequest], error) {
-		return updatedLegacyProvider.ListUpdatedMergeRequests(ctx, ref, since, cursor)
-	})
-	assert.Equal(updatedLegacy, updatedCanonical)
-	assert.Equal("recentupdate", updatedCanonicalTransport.pullOptions[0].Sort)
-}
-
-func TestDetailPagesLegacyMatchesCanonical(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	now := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
-	transport := &archiveFakeTransport{
-		fakeTransport:     &fakeTransport{},
-		issueCommentPages: map[int][]CommentDTO{1: {{ID: 11, Body: "issue note", Created: now}}},
-		pullCommentPages:  map[int][]CommentDTO{1: {{ID: 21, Body: "pull note", Created: now}}},
-		commentPage:       map[int]Page{},
-		reviews: []ReviewDTO{
-			{ID: 31, Submitted: now, User: UserDTO{UserName: "bob"}, State: "APPROVED"},
-			{ID: 32, Submitted: now, User: UserDTO{UserName: "carol"}, State: "REQUEST_REVIEW"},
-			{ID: 33, User: UserDTO{UserName: "dan"}, State: "PENDING"},
-		},
-	}
-	provider := NewProvider(platform.KindForgejo, "forge.example", transport)
-	ref := pagesTestRef()
-
-	issueCanonical, err := provider.ListIssueCommentsPage(t.Context(), ref, 7, "")
-	require.NoError(err)
-	issueLegacy, err := provider.ListArchiveIssueComments(t.Context(), ref, 7, "")
-	require.NoError(err)
-	mrCanonical, err := provider.ListMergeRequestCommentsPage(t.Context(), ref, 8, "")
-	require.NoError(err)
-	mrLegacy, err := provider.ListArchiveMergeRequestComments(t.Context(), ref, 8, "")
-	require.NoError(err)
-	reviewCanonical, err := provider.ListSubmittedReviewsPage(t.Context(), ref, 8, "")
-	require.NoError(err)
-	reviewLegacy, err := provider.ListArchiveSubmittedReviews(t.Context(), ref, 8, "")
-	require.NoError(err)
-
-	assert.Equal(issueLegacy, issueCanonical)
-	assert.Equal(mrLegacy, mrCanonical)
-	assert.Equal(reviewLegacy, reviewCanonical)
-	assert.True(issueCanonical.Exhausted)
-	require.Len(issueCanonical.Items, 1)
-	assert.Equal("issue_comment", issueCanonical.Items[0].EventType)
-	require.Len(mrCanonical.Items, 1)
-	assert.Equal("issue_comment", mrCanonical.Items[0].EventType)
-	require.Len(reviewCanonical.Items, 1)
-	assert.Equal("31", reviewCanonical.Items[0].PlatformExternalID,
-		"only submitted review states survive the canonical filter")
-}
-
 func TestReviewThreadsPageIsTypedUnsupported(t *testing.T) {
 	transport := &archiveFakeTransport{fakeTransport: &fakeTransport{}}
 	provider := NewProvider(platform.KindGitea, "git.example", transport)
 	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "git.example", Owner: "owner", Name: "repo"}
 
 	_, canonicalErr := provider.ListReviewThreadsPage(t.Context(), ref, 7, "")
-	_, legacyErr := provider.ListArchiveReviewThreads(t.Context(), ref, 7, "")
 
 	require.ErrorIs(t, canonicalErr, platform.ErrUnsupportedCapability)
-	require.ErrorIs(t, legacyErr, platform.ErrUnsupportedCapability)
 }
 
 func TestLiveIssueEventsCollectCanonicalCommentPages(t *testing.T) {

@@ -196,7 +196,7 @@ provider identity so equal GitHub/GitLab ids do not collide.
 
 GitLab archive discussions normalize as ordinary or inline comments. Do not synthesize submitted reviews from notes or current approvals; without stable historical actions, that dataset stays unsupported and coverage stays partial. (`internal/platform/gitlab/client.go::Capabilities`)
 
-GitLab maintenance inventories walk mutable `updated_at` results newest-first. Updates then move toward the consumed prefix; rows that move ahead before consumption remain eligible under the next scan's inclusive watermark. (`internal/platform/gitlab/archive.go::listArchiveIssues`, `internal/platform/gitlab/archive.go::listArchiveMergeRequests`)
+GitLab maintenance inventories walk mutable `updated_at` results newest-first. Updates then move toward the consumed prefix; rows that move ahead before consumption remain eligible under the next scan's inclusive watermark. (`internal/platform/gitlab/pages.go::ListIssuesPage`, `internal/platform/gitlab/pages.go::ListMergeRequestsPage`)
 
 ## Forgejo And Gitea Shape
 
@@ -220,7 +220,7 @@ tests prove those exact operations.
 
 Archive access probes preserve transient and rate-limit failures for retry. Only
 authoritative repository permission or not-found responses may become permanent
-inaccessibility. (`internal/platform/gitealike/archive.go::classifyArchiveLookup`)
+inaccessibility. (`internal/platform/gitealike/pages.go::classifyLookupOutcome`)
 
 ## Import And Routes
 

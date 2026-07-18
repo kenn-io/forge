@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,54 @@ import (
 
 	"go.kenn.io/middleman/internal/platform"
 )
+
+func readHistoricalIssuePage(
+	provider *gitHubClientProvider,
+	ctx context.Context,
+	ref platform.RepoRef,
+	cursor string,
+) (platform.Page[platform.Issue], error) {
+	return provider.ListIssuesPage(ctx, ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: cursor,
+	})
+}
+
+func readUpdatedIssuePage(
+	provider *gitHubClientProvider,
+	ctx context.Context,
+	ref platform.RepoRef,
+	since time.Time,
+	cursor string,
+) (platform.Page[platform.Issue], error) {
+	return provider.ListIssuesPage(ctx, ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
+		UpdatedSince: &since, Cursor: cursor,
+	})
+}
+
+func readHistoricalMergeRequestPage(
+	provider *gitHubClientProvider,
+	ctx context.Context,
+	ref platform.RepoRef,
+	cursor string,
+) (platform.Page[platform.MergeRequest], error) {
+	return provider.ListMergeRequestsPage(ctx, ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: cursor,
+	})
+}
+
+func readUpdatedMergeRequestPage(
+	provider *gitHubClientProvider,
+	ctx context.Context,
+	ref platform.RepoRef,
+	since time.Time,
+	cursor string,
+) (platform.Page[platform.MergeRequest], error) {
+	return provider.ListMergeRequestsPage(ctx, ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
+		UpdatedSince: &since, Cursor: cursor,
+	})
+}
 
 func TestGitHubArchiveDiscoveryParityUsesOldestFirstIssueOnlyConnection(t *testing.T) {
 	assert := assert.New(t)
@@ -51,14 +100,14 @@ func TestGitHubArchiveDiscoveryParityUsesOldestFirstIssueOnlyConnection(t *testi
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	}
-	first, err := provider.ListHistoricalIssues(t.Context(), ref, "")
+	first, err := readHistoricalIssuePage(provider, t.Context(), ref, "")
 	require.NoError(err)
 	require.Len(first.Items, 1)
 	assert.Equal(1, first.Items[0].Number)
 	assert.NotEmpty(first.NextCursor)
 	assert.False(first.Exhausted)
 
-	second, err := provider.ListHistoricalIssues(t.Context(), ref, first.NextCursor)
+	second, err := readHistoricalIssuePage(provider, t.Context(), ref, first.NextCursor)
 	require.NoError(err)
 	require.Len(second.Items, 1)
 	assert.Equal(3, second.Items[0].Number)
@@ -97,15 +146,15 @@ func TestGitHubArchiveUpdatedIssuesUseInclusiveWatermarkAndStableContinuation(t 
 
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
-	first, err := provider.ListUpdatedIssues(t.Context(), ref, watermark, "")
+	first, err := readUpdatedIssuePage(provider, t.Context(), ref, watermark, "")
 	require.NoError(err)
-	_, err = provider.ListUpdatedIssues(t.Context(), ref, watermark.Add(time.Second), first.NextCursor)
+	_, err = readUpdatedIssuePage(provider, t.Context(), ref, watermark.Add(time.Second), first.NextCursor)
 	require.ErrorIs(err, platform.ErrProviderContract)
 	otherHost := ref
 	otherHost.Host = "github.example.com"
-	_, err = provider.ListUpdatedIssues(t.Context(), otherHost, watermark, first.NextCursor)
+	_, err = readUpdatedIssuePage(provider, t.Context(), otherHost, watermark, first.NextCursor)
 	require.ErrorIs(err, platform.ErrProviderContract)
-	second, err := provider.ListUpdatedIssues(t.Context(), ref, watermark, first.NextCursor)
+	second, err := readUpdatedIssuePage(provider, t.Context(), ref, watermark, first.NextCursor)
 	require.NoError(err)
 	assert.Equal([]int{1}, []int{first.Items[0].Number})
 	assert.Equal([]int{2}, []int{second.Items[0].Number})
@@ -130,9 +179,9 @@ func TestGitHubArchiveDiscoveryParityIncludesAllPullRequestStatesAndStableSorts(
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
 
-	historical, err := provider.ListHistoricalMergeRequests(t.Context(), ref, "")
+	historical, err := readHistoricalMergeRequestPage(provider, t.Context(), ref, "")
 	require.NoError(err)
-	updated, err := provider.ListUpdatedMergeRequests(
+	updated, err := readUpdatedMergeRequestPage(provider,
 		t.Context(), ref, time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), "",
 	)
 	require.NoError(err)
@@ -171,17 +220,17 @@ func TestGitHubArchiveDetailPagesStopAfterOneRequest(t *testing.T) {
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
 
-	first, err := provider.ListArchiveMergeRequestComments(t.Context(), ref, 7, "")
+	first, err := provider.ListMergeRequestCommentsPage(t.Context(), ref, 7, "")
 	require.NoError(err)
 	assert.Equal(1, commentCalls)
 	require.Len(first.Items, 1)
 	assert.Equal("comment 1", first.Items[0].Body)
-	second, err := provider.ListArchiveMergeRequestComments(t.Context(), ref, 7, first.NextCursor)
+	second, err := provider.ListMergeRequestCommentsPage(t.Context(), ref, 7, first.NextCursor)
 	require.NoError(err)
 	assert.Equal(2, commentCalls)
 	assert.True(second.Exhausted)
 
-	reviews, err := provider.ListArchiveSubmittedReviews(t.Context(), ref, 7, "")
+	reviews, err := provider.ListSubmittedReviewsPage(t.Context(), ref, 7, "")
 	require.NoError(err)
 	assert.Equal(1, reviewCalls)
 	require.Len(reviews.Items, 1)
@@ -218,13 +267,13 @@ func TestGitHubArchiveSubmittedReviewsExcludePendingAcrossPages(t *testing.T) {
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
 
-	first, err := provider.ListArchiveSubmittedReviews(t.Context(), ref, 7, "")
+	first, err := provider.ListSubmittedReviewsPage(t.Context(), ref, 7, "")
 	require.NoError(err)
 	assert.False(first.Exhausted)
 	require.Len(first.Items, 1)
 	assert.Equal("R_31", first.Items[0].PlatformExternalID)
 
-	second, err := provider.ListArchiveSubmittedReviews(t.Context(), ref, 7, first.NextCursor)
+	second, err := provider.ListSubmittedReviewsPage(t.Context(), ref, 7, first.NextCursor)
 	require.NoError(err)
 	assert.True(second.Exhausted)
 	require.Len(second.Items, 1)
@@ -253,17 +302,17 @@ func TestGitHubArchiveCursorsAreBoundToRepositoryAndItem(t *testing.T) {
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
 
-	issues, err := provider.ListHistoricalIssues(t.Context(), ref, "")
+	issues, err := readHistoricalIssuePage(provider, t.Context(), ref, "")
 	require.NoError(err)
 	otherRef := ref
 	otherRef.Name = "other"
 	otherRef.RepoPath = "acme/other"
-	_, err = provider.ListHistoricalIssues(t.Context(), otherRef, issues.NextCursor)
+	_, err = readHistoricalIssuePage(provider, t.Context(), otherRef, issues.NextCursor)
 	require.ErrorIs(err, platform.ErrProviderContract)
 
-	comments, err := provider.ListArchiveIssueComments(t.Context(), ref, 7, "")
+	comments, err := provider.ListIssueCommentsPage(t.Context(), ref, 7, "")
 	require.NoError(err)
-	_, err = provider.ListArchiveIssueComments(t.Context(), ref, 8, comments.NextCursor)
+	_, err = provider.ListIssueCommentsPage(t.Context(), ref, 8, comments.NextCursor)
 	require.ErrorIs(err, platform.ErrProviderContract)
 	assert.Equal(2, requests)
 }
@@ -287,7 +336,7 @@ func TestGitHubArchiveReviewThreadsStopBetweenGraphQLPages(t *testing.T) {
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
 
-	first, err := provider.ListArchiveReviewThreads(t.Context(), ref, 7, "")
+	first, err := provider.ListReviewThreadsPage(t.Context(), ref, 7, "")
 	require.NoError(err)
 	assert.Equal(1, calls)
 	require.Len(first.Items, 1)
@@ -297,15 +346,15 @@ func TestGitHubArchiveReviewThreadsStopBetweenGraphQLPages(t *testing.T) {
 	assert.Equal(1, first.Items[0].Range.Line)
 	assert.Equal("9000000001", first.Items[0].ProviderCommentID)
 	assert.NotEmpty(first.NextCursor)
-	_, err = provider.ListArchiveReviewThreads(t.Context(), ref, 8, first.NextCursor)
+	_, err = provider.ListReviewThreadsPage(t.Context(), ref, 8, first.NextCursor)
 	require.ErrorIs(err, platform.ErrProviderContract)
 	otherHost := ref
 	otherHost.Host = "github.example.com"
-	_, err = provider.ListArchiveReviewThreads(t.Context(), otherHost, 7, first.NextCursor)
+	_, err = provider.ListReviewThreadsPage(t.Context(), otherHost, 7, first.NextCursor)
 	require.ErrorIs(err, platform.ErrProviderContract)
 	assert.Equal(1, calls)
 
-	second, err := provider.ListArchiveReviewThreads(t.Context(), ref, 7, first.NextCursor)
+	second, err := provider.ListReviewThreadsPage(t.Context(), ref, 7, first.NextCursor)
 	require.NoError(err)
 	assert.Equal(2, calls)
 	require.Len(second.Items, 1)
@@ -332,7 +381,7 @@ func TestGitHubArchiveReviewThreadCommentsHaveBoundedContinuation(t *testing.T) 
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
 
-	first, err := provider.ListArchiveReviewThreads(t.Context(), ref, 7, "")
+	first, err := provider.ListReviewThreadsPage(t.Context(), ref, 7, "")
 	require.NoError(err)
 	assert.Equal(1, calls)
 	require.Len(first.Items, 1)
@@ -343,7 +392,7 @@ func TestGitHubArchiveReviewThreadCommentsHaveBoundedContinuation(t *testing.T) 
 	require.NoError(err)
 	assert.NotContains(string(rawCursor), "provider body")
 	assert.Less(len(first.NextCursor), 2048)
-	second, err := provider.ListArchiveReviewThreads(t.Context(), ref, 7, first.NextCursor)
+	second, err := provider.ListReviewThreadsPage(t.Context(), ref, 7, first.NextCursor)
 	require.NoError(err)
 	assert.Equal(2, calls)
 	require.Len(second.Items, 1)
@@ -461,18 +510,18 @@ func TestGitHubArchiveLookupOutcomes(t *testing.T) {
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
 
-	present, err := provider.GetArchiveIssue(t.Context(), ref, 7)
+	present, err := provider.LookupIssue(t.Context(), ref, 7)
 	require.NoError(err)
 	assert.Equal(platform.LookupPresent, present.Outcome)
-	moved, err := provider.GetArchiveIssue(t.Context(), ref, 8)
+	moved, err := provider.LookupIssue(t.Context(), ref, 8)
 	require.NoError(err)
 	assert.Equal(platform.LookupMoved, moved.Outcome)
 	require.NotNil(moved.Destination)
 	assert.Equal("acme/destination", moved.Destination.RepoPath)
-	removed, err := provider.GetArchiveIssue(t.Context(), ref, 9)
+	removed, err := provider.LookupIssue(t.Context(), ref, 9)
 	require.NoError(err)
 	assert.Equal(platform.LookupRemoved, removed.Outcome)
-	inaccessible, err := provider.GetArchiveIssue(t.Context(), ref, 10)
+	inaccessible, err := provider.LookupIssue(t.Context(), ref, 10)
 	require.NoError(err)
 	assert.Equal(platform.LookupInaccessible, inaccessible.Outcome)
 }
@@ -493,7 +542,7 @@ func TestGitHubArchiveMergeRequestLookupDetectsTransfer(t *testing.T) {
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
 
-	result, err := provider.GetArchiveMergeRequest(t.Context(), ref, 8)
+	result, err := provider.LookupMergeRequest(t.Context(), ref, 8)
 	require.NoError(err)
 	assert.Equal(platform.LookupMoved, result.Outcome)
 	require.NotNil(result.Destination)
@@ -509,9 +558,9 @@ func TestGitHubArchiveLookupDoesNotRemoveWhenRepositoryIsInaccessible(t *testing
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "hidden", Name: "repo", RepoPath: "hidden/repo"}
 
-	_, err := provider.GetArchiveIssue(t.Context(), ref, 7)
+	_, err := provider.LookupIssue(t.Context(), ref, 7)
 	require.ErrorIs(err, platform.ErrPermissionDenied)
-	_, err = provider.GetArchiveMergeRequest(t.Context(), ref, 8)
+	_, err = provider.LookupMergeRequest(t.Context(), ref, 8)
 	require.ErrorIs(err, platform.ErrPermissionDenied)
 }
 
@@ -528,7 +577,7 @@ func TestGitHubArchiveLookupPreservesTransientRepositoryProbeError(t *testing.T)
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
 
-	_, err := provider.GetArchiveIssue(t.Context(), ref, 7)
+	_, err := provider.LookupIssue(t.Context(), ref, 7)
 	require.Error(err)
 	require.NotErrorIs(err, platform.ErrPermissionDenied)
 }
@@ -552,7 +601,7 @@ func TestGitHubArchiveLookupPreservesRepositoryProbeRateLimit(t *testing.T) {
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
 
-	_, err := provider.GetArchiveIssue(t.Context(), ref, 7)
+	_, err := provider.LookupIssue(t.Context(), ref, 7)
 	require.ErrorIs(err, platform.ErrRateLimited)
 	var providerErr *platform.Error
 	require.ErrorAs(err, &providerErr)
@@ -593,7 +642,7 @@ func TestGitHubArchiveRESTErrorsCarryProviderClassification(t *testing.T) {
 			provider := newArchiveTestGitHubProvider(t, srv.URL)
 			ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
 
-			_, err := provider.ListHistoricalMergeRequests(t.Context(), ref, "")
+			_, err := readHistoricalMergeRequestPage(provider, t.Context(), ref, "")
 			require.ErrorIs(err, tc.want)
 			var providerErr *platform.Error
 			require.ErrorAs(err, &providerErr)
@@ -639,7 +688,7 @@ func TestGitHubArchiveGraphQLErrorsCarryProviderClassification(t *testing.T) {
 			provider := newArchiveTestGitHubProvider(t, srv.URL)
 			ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
 
-			_, err := provider.ListHistoricalIssues(t.Context(), ref, "")
+			_, err := readHistoricalIssuePage(provider, t.Context(), ref, "")
 			require.ErrorIs(err, tc.want)
 			var providerErr *platform.Error
 			require.ErrorAs(err, &providerErr)
@@ -663,10 +712,13 @@ func TestGitHubArchiveCapabilitiesRequireBoundedClient(t *testing.T) {
 	}).Capabilities().Archive)
 	registry, err := platform.NewRegistry(live)
 	require.NoError(err)
-	reader, err := registry.ArchiveReader(platform.KindGitHub, "github.com")
+	issueReader, err := registry.IssuePageReader(platform.KindGitHub, "github.com")
 	require.NoError(err)
-	assert.NotNil(reader)
-	_, err = registry.ArchiveReader(platform.KindGitHub, "github.example.com")
+	assert.NotNil(issueReader)
+	mergeRequestReader, err := registry.MergeRequestPageReader(platform.KindGitHub, "github.com")
+	require.NoError(err)
+	assert.NotNil(mergeRequestReader)
+	_, err = registry.IssuePageReader(platform.KindGitHub, "github.example.com")
 	require.Error(err)
 }
 

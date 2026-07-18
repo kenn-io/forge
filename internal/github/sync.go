@@ -1121,7 +1121,7 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 	_, labels := p.client.(githubLabelClient)
 	_, assignees := p.client.(githubAssigneeClient)
 	_, reviewers := p.client.(githubReviewerClient)
-	_, archivePages := p.client.(archivePageClient)
+	_, archivePages := p.client.(pageClient)
 	return platform.Capabilities{
 		ReadRepositories:            true,
 		ReadMergeRequests:           true,

@@ -30,7 +30,8 @@ var (
 	_ platform.MergeMutator                   = (*Client)(nil)
 	_ platform.ReviewMutator                  = (*Client)(nil)
 	_ platform.IssueMutator                   = (*Client)(nil)
-	_ platform.ArchiveReader                  = (*Client)(nil)
+	_ platform.IssuePageReader                = (*Client)(nil)
+	_ platform.MergeRequestPageReader         = (*Client)(nil)
 	_ platform.DiffReviewDraftMutator         = (*Client)(nil)
 	_ platform.MergeRequestReviewThreadReader = (*Client)(nil)
 )
@@ -63,9 +64,13 @@ func TestArchiveInventoryUsesAllStateOrderingAndOneBudgetedRequestPerPage(t *tes
 	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "forgejo.test", Owner: "owner", Name: "repo"}
 	ctx := ghsync.WithArchiveSyncBudget(context.Background())
 
-	issues, err := client.ListHistoricalIssues(ctx, ref, "")
+	issues, err := client.ListIssuesPage(ctx, ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+	})
 	require.NoError(err)
-	pulls, err := client.ListHistoricalMergeRequests(ctx, ref, "")
+	pulls, err := client.ListMergeRequestsPage(ctx, ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+	})
 	require.NoError(err)
 
 	assert.Len(issues.Items, 1)

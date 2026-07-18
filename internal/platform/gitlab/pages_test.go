@@ -423,7 +423,7 @@ func TestGitLabHistoricalMergeRequestWindowRedeliversEqualTimestampBoundary(t *t
 // in-memory set with real offset pagination semantics: created_after filters
 // strictly after, order is stable ascending by created_at, and page/per_page
 // slice the filtered set with X-Next-Page marking continuations. Tests mutate
-// the set mid-scan to model concurrent deletions.
+// the set mid-scan to model concurrent equal-timestamp reordering.
 type gitLabMRFixtureServer struct {
 	mu      sync.Mutex
 	mrs     []gitLabMRFixture
@@ -528,17 +528,158 @@ func TestGitLabHistoricalMergeRequestDenseWindowReplaysSwappedTie(t *testing.T) 
 	query.Cursor = second.NextCursor
 	resumed, err := client.ListMergeRequestsPage(t.Context(), ref, query)
 	require.NoError(err)
-	assert.True(resumed.Exhausted)
+	assert.False(resumed.Exhausted)
 	require.Len(resumed.Items, 102, "the resumed page must re-deliver the full window")
 	numbers := make([]int, 0, len(resumed.Items))
 	for _, item := range resumed.Items {
 		numbers = append(numbers, item.Number)
 	}
 	assert.Contains(numbers, 101, "the item swapped into the consumed prefix must be re-delivered")
+	confirm, err := client.decodePageCursor(
+		ref, 0, resumed.NextCursor, "historical_merge_requests", time.Time{}, gitLabCursorWindowedOffset,
+	)
+	require.NoError(err)
+	assert.Equal(int64(1), confirm.Page)
+	assert.True(confirm.Confirm)
 	queries := fixture.takeQueries()
 	require.Len(queries, 2)
 	assert.Equal("1", queries[0].Get("page"))
 	assert.Equal("2", queries[1].Get("page"))
+}
+
+func TestGitLabHistoricalMergeRequestReplayPageBound(t *testing.T) {
+	tie := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name         string
+		page         int64
+		fixtureCount int
+		wantRequests int
+		wantPageErr  bool
+	}{
+		{"rejects replay beyond cap", maxWindowReplayPages + 1, 500, 0, true},
+		{"allows replay at cap", maxWindowReplayPages, 400, maxWindowReplayPages, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			fixtures := make([]gitLabMRFixture, 0, tt.fixtureCount)
+			for i := 1; i <= tt.fixtureCount; i++ {
+				fixtures = append(fixtures, gitLabMRFixture{ID: i, IID: i, CreatedAt: tie})
+			}
+			fixture := &gitLabMRFixtureServer{mrs: fixtures}
+			server := httptest.NewServer(http.HandlerFunc(fixture.handle))
+			defer server.Close()
+			client := newTestClient(t, server.URL)
+			ref := gitLabPagesTestRef()
+			window := tie.Add(-time.Second).Format(time.RFC3339Nano)
+			cursor, err := encodeGitLabPageCursor(gitLabPageCursor{
+				Mode: "historical_merge_requests", Host: ref.Host, RepoPath: ref.RepoPath,
+				Page: tt.page, Window: window, Boundary: int64((tt.page - 1) * defaultPageSize),
+			})
+			require.NoError(err)
+
+			page, err := client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+				State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: cursor,
+			})
+			if tt.wantPageErr {
+				require.ErrorIs(err, platform.ErrPageLimit)
+				assert.Contains(err.Error(), window)
+				assert.Contains(err.Error(), strconv.FormatInt(tt.page, 10))
+			} else {
+				require.NoError(err)
+				assert.False(page.Exhausted)
+			}
+			queries := fixture.takeQueries()
+			assert.Len(queries, tt.wantRequests)
+			for i, query := range queries {
+				assert.Equal(strconv.Itoa(i+1), query.Get("page"))
+			}
+		})
+	}
+}
+
+func TestGitLabHistoricalMergeRequestExhaustionConfirmation(t *testing.T) {
+	tie := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name                    string
+		initialPage             int64
+		confirmHasContinuation  bool
+		wantInitialExhausted    bool
+		wantConfirmContinuation bool
+	}{
+		{"single page exhausts directly", 1, false, true, false},
+		{"replay requires confirming sweep", 2, false, false, false},
+		{"confirming sweep finds continuation", 2, true, false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			confirming := false
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				page := r.URL.Query().Get("page")
+				if !confirming && tt.initialPage > 1 && page == "1" {
+					w.Header().Set("X-Next-Page", "2")
+				}
+				if confirming && tt.confirmHasContinuation {
+					w.Header().Set("X-Next-Page", "2")
+				}
+				writeJSON(w, fmt.Sprintf(
+					`[{"id":201,"iid":1,"project_id":42,"title":"mr","state":"merged","created_at":%q,"updated_at":%q}]`,
+					tie.Format(time.RFC3339Nano), tie.Format(time.RFC3339Nano),
+				))
+			}))
+			defer server.Close()
+			client := newTestClient(t, server.URL)
+			ref := gitLabPagesTestRef()
+			window := tie.Add(-time.Second).Format(time.RFC3339Nano)
+			boundary := int64(0)
+			if tt.initialPage > 1 {
+				boundary = 100
+			}
+			cursor, err := encodeGitLabPageCursor(gitLabPageCursor{
+				Mode: "historical_merge_requests", Host: ref.Host, RepoPath: ref.RepoPath,
+				Page: tt.initialPage, Window: window, Boundary: boundary,
+			})
+			require.NoError(err)
+			query := platform.ItemPageQuery{
+				State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: cursor,
+			}
+
+			initial, err := client.ListMergeRequestsPage(t.Context(), ref, query)
+			require.NoError(err)
+			assert.Equal(tt.wantInitialExhausted, initial.Exhausted)
+			if tt.wantInitialExhausted {
+				assert.Empty(initial.NextCursor)
+				return
+			}
+			confirm, err := client.decodePageCursor(
+				ref, 0, initial.NextCursor, "historical_merge_requests", time.Time{}, gitLabCursorWindowedOffset,
+			)
+			require.NoError(err)
+			assert.Equal(window, confirm.Window)
+			assert.Equal(int64(1), confirm.Page)
+			assert.Zero(confirm.Boundary)
+			assert.True(confirm.Confirm)
+
+			confirming = true
+			query.Cursor = initial.NextCursor
+			confirmed, err := client.ListMergeRequestsPage(t.Context(), ref, query)
+			require.NoError(err)
+			assert.Equal(!tt.wantConfirmContinuation, confirmed.Exhausted)
+			if !tt.wantConfirmContinuation {
+				assert.Empty(confirmed.NextCursor)
+				return
+			}
+			continued, err := client.decodePageCursor(
+				ref, 0, confirmed.NextCursor, "historical_merge_requests", time.Time{}, gitLabCursorWindowedOffset,
+			)
+			require.NoError(err)
+			assert.Equal(int64(2), continued.Page)
+			assert.False(continued.Confirm)
+		})
+	}
 }
 
 func TestGitLabWindowedCursorRejectsContinuationWithoutBoundary(t *testing.T) {
@@ -560,10 +701,34 @@ func TestGitLabWindowedCursorPageExhaustsEmptyContinuation(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	page, err := gitLabWindowedCursorPage(nil, gitLabPageCursor{Page: 1}, 2)
+	page, err := gitLabWindowedCursorPage(nil, gitLabPageCursor{Page: 1}, 2, 1)
 	require.NoError(err)
 	assert.True(page.Exhausted)
 	assert.Empty(page.NextCursor)
+}
+
+func TestGitLabCursorShapeRestrictsConfirmation(t *testing.T) {
+	tests := []struct {
+		name   string
+		cursor gitLabPageCursor
+		shape  gitLabCursorShape
+		valid  bool
+	}{
+		{"windowed page one", gitLabPageCursor{Page: 1, Confirm: true}, gitLabCursorWindowedOffset, true},
+		{"windowed continuation", gitLabPageCursor{Page: 2, Boundary: 100, Confirm: true}, gitLabCursorWindowedOffset, false},
+		{"keyset", gitLabPageCursor{KeysetCursor: "next", Confirm: true}, gitLabCursorKeyset, false},
+		{"offset", gitLabPageCursor{Page: 1, Confirm: true}, gitLabCursorOffset, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateGitLabCursorShape(tt.cursor, tt.shape)
+			if tt.valid {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+		})
+	}
 }
 
 // TestGitLabIssueKeysetCursorReplaysOnlyContinuationToken proves the durable
@@ -1018,6 +1183,7 @@ func TestGitLabArchiveCapabilitiesAreHonestAboutSubmittedReviews(t *testing.T) {
 	assert.Equal(t, platform.ArchiveCapabilities{
 		HistoricalIssues: true, HistoricalMergeRequests: true,
 		OrdinaryComments: true, InlineReviewComments: true,
+		MergeRequestInventoryPageRequests: maxWindowReplayPages,
 	}, newTestClient(t, "http://127.0.0.1:1").Capabilities().Archive)
 }
 

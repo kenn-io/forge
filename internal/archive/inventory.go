@@ -143,9 +143,27 @@ func (s *Service) recordScanFailure(
 		}
 		return nil
 	}
-	return s.recordInventoryFailure(ctx, repo.ID, cause)
+	// Repository-level failures from a claimed scan read are fenced on that
+	// claim: a delayed provider response from a superseded, reset, completed,
+	// or blocked scan must not re-defer current repository work.
+	decision := s.retries.Classify(cause, 0, s.now())
+	if decision.Code == "" {
+		decision.Code = db.ArchiveErrorCodeTransient
+	}
+	if _, err := s.db.RecordArchiveRepositoryFailureForScan(
+		ctx, repo.ID, kind, claimedGeneration,
+		decision.Code, cause.Error(), decision.RetryAt, s.now(),
+	); err != nil {
+		return errors.Join(cause, err)
+	}
+	return cause
 }
 
+// recordInventoryFailure records a repository failure without a scan claim.
+// Its callers fail inline at admission time, before any provider I/O is
+// awaited, so the failure is always about current work — there is no delayed
+// response that could arrive after the claim moved on, and an unconditional
+// record is correct.
 func (s *Service) recordInventoryFailure(ctx context.Context, repoID int64, cause error) error {
 	decision := s.retries.Classify(cause, 0, s.now())
 	if decision.Code == "" {

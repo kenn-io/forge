@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -703,11 +704,27 @@ func (d *DB) FailDatasetProgress(
 	detail string,
 	retryAt *time.Time,
 ) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		_, err := failDatasetProgressTx(ctx, tx, key, claimedGeneration, claimedRevision, code, detail, retryAt)
+		return err
+	})
+}
+
+func failDatasetProgressTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	key ArchiveDatasetProgressKey,
+	claimedGeneration int64,
+	claimedRevision int64,
+	code ArchiveErrorCode,
+	detail string,
+	retryAt *time.Time,
+) (bool, error) {
 	var retry any
 	if retryAt != nil {
 		retry = formatDatasetProgressTime(*retryAt)
 	}
-	_, err := d.rw.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_dataset_progress
 		SET status = 'failed', attempt_count = attempt_count + 1,
 			next_retry_at = ?, last_error_code = ?, last_error_detail = ?, updated_at = ?
@@ -718,9 +735,44 @@ func (d *DB) FailDatasetProgress(
 		key.RepoID, key.ItemType, key.ItemNumber, key.Dataset,
 		claimedGeneration, claimedRevision)
 	if err != nil {
-		return fmt.Errorf("fail dataset progress: %w", err)
+		return false, fmt.Errorf("fail dataset progress: %w", err)
 	}
-	return nil
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("fail dataset progress rows affected: %w", err)
+	}
+	return rows == 1, nil
+}
+
+// FailDatasetProgressRecordingRepositoryFailure applies a repository-scoped
+// provider failure (authentication, identity, capability) and the failing
+// dataset's retry bookkeeping as one guarded mutation. The repository-level
+// error commits only when the dataset compare-and-swap on the claimed scan
+// generation and parent revision applies, so a delayed repository-scoped
+// response from superseded work is a complete stale no-op — it can never
+// re-block a repository whose work was since reset, completed, or rebound.
+func (d *DB) FailDatasetProgressRecordingRepositoryFailure(
+	ctx context.Context,
+	key ArchiveDatasetProgressKey,
+	claimedGeneration int64,
+	claimedRevision int64,
+	code ArchiveErrorCode,
+	detail string,
+	retryAt *time.Time,
+	now time.Time,
+) (bool, error) {
+	applied := false
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		var err error
+		applied, err = failDatasetProgressTx(
+			ctx, tx, key, claimedGeneration, claimedRevision, code, detail, retryAt,
+		)
+		if err != nil || !applied {
+			return err
+		}
+		return recordArchiveRepositoryFailureTx(ctx, tx, key.RepoID, code, detail, retryAt, now)
+	})
+	return applied, err
 }
 
 // GetDomainParent resolves the domain row ID and current snapshot revision of
@@ -778,7 +830,7 @@ func (d *DB) ReopenDatasetsForParent(
 	itemNumber int,
 	newRevision int64,
 ) error {
-	return reopenDatasetsForParentTx(ctx, tx, parent, repoID, itemNumber, newRevision)
+	return reopenDatasetsForParentTx(ctx, tx, parent, repoID, itemNumber, newRevision, newRevision)
 }
 
 // archiveReopenMode selects how the shared parent upsert core treats a
@@ -801,35 +853,50 @@ const (
 )
 
 // reopenDatasetsForParentModeTx applies reopenDatasetsForParentTx under the
-// caller's atomicity mode; see archiveReopenMode.
+// caller's atomicity mode; see archiveReopenMode. Best-effort failures are
+// discarded so archive bookkeeping never rejects a live parent write, but
+// they are logged: a discarded reopen leaves child progress bound to an older
+// revision until the mismatch-repair pass on a later parent observation.
 func reopenDatasetsForParentModeTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	parent DomainParentRef,
 	repoID int64,
 	itemNumber int,
+	boundaryRevision int64,
 	newRevision int64,
 	mode archiveReopenMode,
 ) error {
 	if mode == reopenDatasetsAtomic {
-		return reopenDatasetsForParentTx(ctx, tx, parent, repoID, itemNumber, newRevision)
+		return reopenDatasetsForParentTx(ctx, tx, parent, repoID, itemNumber, boundaryRevision, newRevision)
 	}
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT live_reopen"); err != nil {
+		slog.Warn("archive reopen savepoint failed; child progress repair deferred",
+			"repo_id", repoID, "item_type", parent.ItemType, "item_number", itemNumber, "error", err)
 		return nil
 	}
-	if err := reopenDatasetsForParentTx(ctx, tx, parent, repoID, itemNumber, newRevision); err != nil {
+	if err := reopenDatasetsForParentTx(ctx, tx, parent, repoID, itemNumber, boundaryRevision, newRevision); err != nil {
+		slog.Warn("archive reopen discarded on live parent write; child progress repair deferred",
+			"repo_id", repoID, "item_type", parent.ItemType, "item_number", itemNumber, "error", err)
 		_, _ = tx.ExecContext(ctx, "ROLLBACK TO live_reopen")
 	}
 	_, _ = tx.ExecContext(ctx, "RELEASE live_reopen")
 	return nil
 }
 
+// reopenDatasetsForParentTx rebinds child dataset progress still bound below
+// boundaryRevision onto newRevision as fresh pending work. Advancing
+// observations pass boundary == new; the mismatch-repair pass on
+// non-advancing observations passes the pre-write revision as the boundary so
+// only rows stranded by a previously discarded reopen match — the healthy
+// satisfied state (bound exactly to the pre-write revision) is untouched.
 func reopenDatasetsForParentTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	parent DomainParentRef,
 	repoID int64,
 	itemNumber int,
+	boundaryRevision int64,
 	newRevision int64,
 ) error {
 	_, err := tx.ExecContext(ctx, `
@@ -846,7 +913,7 @@ func reopenDatasetsForParentTx(
 		  AND parent_revision < ?
 		  AND status NOT IN ('unsupported', 'terminal', 'blocked')`,
 		newRevision, formatDatasetProgressTime(time.Now()),
-		repoID, parent.ItemType, itemNumber, newRevision)
+		repoID, parent.ItemType, itemNumber, boundaryRevision)
 	if err != nil {
 		return fmt.Errorf("reopen child datasets for parent revision %d: %w", newRevision, err)
 	}
@@ -1089,7 +1156,7 @@ func commitPresentParentLookupTx(
 	if err := reopenDatasetsForParentTx(
 		ctx, tx,
 		DomainParentRef{ItemType: commit.ItemType, ID: parentID},
-		commit.RepoID, commit.ItemNumber, revision,
+		commit.RepoID, commit.ItemNumber, revision, revision,
 	); err != nil {
 		return err
 	}

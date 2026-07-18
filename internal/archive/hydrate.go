@@ -334,16 +334,21 @@ func (s *Service) recordDatasetFailure(
 	if decision.Code == "" {
 		decision.Code = db.ArchiveErrorCodeTransient
 	}
-	if decision.Code == db.ArchiveErrorCodeAuthentication || decision.Code == db.ArchiveErrorCodeRepoBlocked {
-		if err := s.db.RecordArchiveRepositoryFailure(
-			ctx, repo.ID, decision.Code, cause.Error(), decision.RetryAt, s.now(),
-		); err != nil {
-			cause = errors.Join(cause, err)
-		}
-	}
 	key := db.ArchiveDatasetProgressKey{
 		RepoID: work.RepoID, ItemType: work.ItemType,
 		ItemNumber: work.ItemNumber, Dataset: dataset.Dataset,
+	}
+	if decision.Code == db.ArchiveErrorCodeAuthentication || decision.Code == db.ArchiveErrorCodeRepoBlocked {
+		// Repository-wide causes commit atomically with the dataset CAS: a
+		// delayed repository-scoped response from superseded work must not
+		// re-block a repository whose claim was since reset or completed.
+		if _, err := s.db.FailDatasetProgressRecordingRepositoryFailure(
+			ctx, key, dataset.ScanGeneration, dataset.ParentRevision,
+			decision.Code, cause.Error(), decision.RetryAt, s.now(),
+		); err != nil {
+			return errors.Join(cause, err)
+		}
+		return cause
 	}
 	if err := s.db.FailDatasetProgress(
 		ctx, key, dataset.ScanGeneration, dataset.ParentRevision,

@@ -1508,3 +1508,92 @@ func TestCommitDatasetPageRejectsFinalPageWithNextCursor(t *testing.T) {
 	})
 	require.ErrorContains(err, "final page must not carry a next cursor")
 }
+
+func TestRepositoryFailureFromSupersededDatasetClaimIsStaleNoOp(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, d, "acme", "repo-failure-fence")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	insertTestIssue(t, d, repoID, 7, "issue", now)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now)
+	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	insertDatasetProgressForTest(t, d, key, 1, 4, nil, ArchiveDatasetProgressRunning, 0)
+	retry := now.Add(time.Hour)
+
+	applied, err := d.FailDatasetProgressRecordingRepositoryFailure(
+		ctx, key, 2, 1, ArchiveErrorCodeAuthentication, "stale auth", &retry, now,
+	)
+	require.NoError(err)
+	assert.False(applied)
+	progress, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressRunning, progress.Status)
+	states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.Nil(states[0].LastErrorCode)
+
+	applied, err = d.FailDatasetProgressRecordingRepositoryFailure(
+		ctx, key, 4, 1, ArchiveErrorCodeAuthentication, "current auth", &retry, now,
+	)
+	require.NoError(err)
+	assert.True(applied)
+	progress, err = d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressFailed, progress.Status)
+	states, err = d.ListArchiveRepoStates(ctx, []int64{repoID})
+	require.NoError(err)
+	require.Len(states, 1)
+	require.NotNil(states[0].LastErrorCode)
+	assert.Equal(string(ArchiveErrorCodeAuthentication), *states[0].LastErrorCode)
+}
+
+func TestEqualTimestampParentObservationRepairsStrandedReopen(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, d, "acme", "stranded-reopen-repair")
+	mr := &MergeRequest{
+		RepoID: repoID, PlatformID: 9, Number: 9, Title: "mr",
+		State: MergeRequestStateOpen, CreatedAt: now.Add(-2 * time.Hour),
+		UpdatedAt: now, LastActivityAt: now,
+	}
+	_, err := d.UpsertMergeRequest(ctx, mr)
+	require.NoError(err)
+	parent, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 9)
+	require.NoError(err)
+	require.NotNil(parent)
+	preWriteRevision := parent.SnapshotRevision
+
+	// A previously discarded best-effort reopen left comments stranded below
+	// the pre-write revision while reviews sit in the healthy satisfied state
+	// bound exactly to it.
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 9, now)
+	stranded := datasetProgressKeyForTest(repoID, ArchiveItemTypeMergeRequest, 9, ArchiveDatasetComments)
+	insertDatasetProgressForTest(t, d, stranded, preWriteRevision-1, 4, nil, ArchiveDatasetProgressComplete, 1)
+	healthy := datasetProgressKeyForTest(repoID, ArchiveItemTypeMergeRequest, 9, ArchiveDatasetReviews)
+	insertDatasetProgressForTest(t, d, healthy, preWriteRevision, 6, nil, ArchiveDatasetProgressComplete, 1)
+
+	// Equal-timestamp accepted refresh: no strictly-newer content, so the old
+	// gate never retried the reopen and the stranded row persisted forever.
+	refresh := *mr
+	_, err = d.UpsertMergeRequest(ctx, &refresh)
+	require.NoError(err)
+	parent, err = d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 9)
+	require.NoError(err)
+	require.NotNil(parent)
+
+	repaired, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeMergeRequest, 9, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressPending, repaired.Status)
+	assert.Equal(parent.SnapshotRevision, repaired.ParentRevision)
+	untouched, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeMergeRequest, 9, ArchiveDatasetReviews)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressComplete, untouched.Status)
+	assert.Equal(preWriteRevision, untouched.ParentRevision)
+}

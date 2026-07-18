@@ -1481,3 +1481,59 @@ func archiveItemState(t *testing.T, database *DB, repoID int64, itemType Archive
 	))
 	return state
 }
+
+func TestScanScopedRepositoryFailureIsClaimFenced(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, d, "acme", "scan-failure-fence")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	_, err := d.WriteDB().ExecContext(ctx, `
+		UPDATE middleman_archive_repo_scans
+		SET scan_generation = 6, status = 'running'
+		WHERE repo_id = ? AND scan = 'issue_inventory'`, repoID)
+	require.NoError(err)
+	retry := now.Add(time.Hour)
+
+	repoErrorCode := func() *string {
+		states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
+		require.NoError(err)
+		require.Len(states, 1)
+		return states[0].LastErrorCode
+	}
+
+	applied, err := d.RecordArchiveRepositoryFailureForScan(
+		ctx, repoID, ArchiveScanIssueInventory, 4,
+		ArchiveErrorCodeAuthentication, "stale generation", &retry, now,
+	)
+	require.NoError(err)
+	assert.False(applied)
+	assert.Nil(repoErrorCode())
+
+	_, err = d.WriteDB().ExecContext(ctx, `
+		UPDATE middleman_archive_repo_scans SET status = 'complete'
+		WHERE repo_id = ? AND scan = 'issue_inventory'`, repoID)
+	require.NoError(err)
+	applied, err = d.RecordArchiveRepositoryFailureForScan(
+		ctx, repoID, ArchiveScanIssueInventory, 6,
+		ArchiveErrorCodeAuthentication, "completed scan", &retry, now,
+	)
+	require.NoError(err)
+	assert.False(applied)
+	assert.Nil(repoErrorCode())
+
+	_, err = d.WriteDB().ExecContext(ctx, `
+		UPDATE middleman_archive_repo_scans SET status = 'running'
+		WHERE repo_id = ? AND scan = 'issue_inventory'`, repoID)
+	require.NoError(err)
+	applied, err = d.RecordArchiveRepositoryFailureForScan(
+		ctx, repoID, ArchiveScanIssueInventory, 6,
+		ArchiveErrorCodeAuthentication, "current claim", &retry, now,
+	)
+	require.NoError(err)
+	assert.True(applied)
+	require.NotNil(repoErrorCode())
+	assert.Equal(string(ArchiveErrorCodeAuthentication), *repoErrorCode())
+}

@@ -296,6 +296,20 @@ func (d *DB) RecordArchiveRepositoryFailure(
 	retryAt *time.Time,
 	now time.Time,
 ) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		return recordArchiveRepositoryFailureTx(ctx, tx, repoID, code, detail, retryAt, now)
+	})
+}
+
+func recordArchiveRepositoryFailureTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	code ArchiveErrorCode,
+	detail string,
+	retryAt *time.Time,
+	now time.Time,
+) error {
 	if repoID <= 0 || code == "" {
 		return errors.New("record archive repository failure: repository and error code are required")
 	}
@@ -303,7 +317,7 @@ func (d *DB) RecordArchiveRepositoryFailure(
 	if retryAt != nil {
 		retry = retryAt.UTC()
 	}
-	result, err := d.rw.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_repos
 		SET last_error_code = ?, last_error_detail = ?, next_retry_at = ?, updated_at = MAX(updated_at, ?)
 		WHERE repo_id = ?`, code, sanitizeArchiveErrorDetail(detail), retry, now.UTC(), repoID)
@@ -318,6 +332,48 @@ func (d *DB) RecordArchiveRepositoryFailure(
 		return &ArchiveRepoStateNotFoundError{RepoIDs: []int64{repoID}}
 	}
 	return nil
+}
+
+// RecordArchiveRepositoryFailureForScan records a repository-level failure
+// only while the claimed scan is still the current, running traversal for
+// its kind. A delayed repository-scoped response from a superseded, reset,
+// completed, or blocked scan is a stale no-op, so it can never re-defer or
+// re-block repository work that has since moved on.
+func (d *DB) RecordArchiveRepositoryFailureForScan(
+	ctx context.Context,
+	repoID int64,
+	kind ArchiveScanKind,
+	claimedGeneration int64,
+	code ArchiveErrorCode,
+	detail string,
+	retryAt *time.Time,
+	now time.Time,
+) (bool, error) {
+	applied := false
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		var generation int64
+		var status ArchiveScanStatus
+		err := tx.QueryRowContext(ctx, `
+			SELECT scan_generation, status FROM middleman_archive_repo_scans
+			WHERE repo_id = ? AND scan = ?`, repoID, kind,
+		).Scan(&generation, &status)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read scan claim for repository failure: %w", err)
+		}
+		// Pending counts as claimable: the first page read of a fresh scan can
+		// fail before any commit moves the row to running. Completed, blocked,
+		// or generation-superseded scans make the delivery stale.
+		if generation != claimedGeneration ||
+			(status != ArchiveScanRunning && status != ArchiveScanPending) {
+			return nil
+		}
+		applied = true
+		return recordArchiveRepositoryFailureTx(ctx, tx, repoID, code, detail, retryAt, now)
+	})
+	return applied, err
 }
 
 // BeginArchivePromptMaintenance establishes a fixed scan boundary once and
@@ -1306,7 +1362,7 @@ func rebindArchiveDatasetProgressTx(
 	revision int64,
 	refreshReason ArchiveRefreshReason,
 ) error {
-	if err := reopenDatasetsForParentTx(ctx, tx, parent, repoID, itemNumber, revision); err != nil {
+	if err := reopenDatasetsForParentTx(ctx, tx, parent, repoID, itemNumber, revision, revision); err != nil {
 		return err
 	}
 	if err := reopenLookupForRevisionTx(ctx, tx, repoID, parent.ItemType, itemNumber, revision, false); err != nil {

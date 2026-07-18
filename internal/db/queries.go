@@ -2326,7 +2326,7 @@ func upsertMergeRequestParentTx(
 	reopen archiveReopenMode,
 ) (int64, int64, bool, error) {
 	canonicalizeMergeRequestTimestamps(mr)
-	priorUpdatedAt, hadRow, err := parentRowUpdatedAtTx(
+	priorUpdatedAt, priorRevision, hadRow, err := parentRowUpdatedAtTx(
 		ctx, tx, "middleman_merge_requests", mr.RepoID, mr.Number,
 	)
 	if err != nil {
@@ -2336,13 +2336,22 @@ func upsertMergeRequestParentTx(
 	if err != nil || !accepted {
 		return id, revision, accepted, err
 	}
+	parent := DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: id}
 	if !hadRow || mr.UpdatedAt.After(priorUpdatedAt) {
 		if err := reopenDatasetsForParentModeTx(
-			ctx, tx, DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: id},
-			mr.RepoID, mr.Number, revision, reopen,
+			ctx, tx, parent, mr.RepoID, mr.Number, revision, revision, reopen,
 		); err != nil {
 			return 0, 0, false, err
 		}
+	} else if err := reopenDatasetsForParentModeTx(
+		// Mismatch repair: a previously discarded best-effort reopen can leave
+		// progress stranded below the pre-write revision with no later
+		// strictly-newer observation to retry it. Bounding at the pre-write
+		// revision touches only stranded rows, never the healthy satisfied
+		// state bound exactly to it.
+		ctx, tx, parent, mr.RepoID, mr.Number, priorRevision, revision, reopen,
+	); err != nil {
+		return 0, 0, false, err
 	}
 	return id, revision, true, nil
 }
@@ -3370,7 +3379,7 @@ func upsertIssueParentTx(
 	reopen archiveReopenMode,
 ) (int64, int64, bool, error) {
 	canonicalizeIssueTimestamps(issue)
-	priorUpdatedAt, hadRow, err := parentRowUpdatedAtTx(
+	priorUpdatedAt, priorRevision, hadRow, err := parentRowUpdatedAtTx(
 		ctx, tx, "middleman_issues", issue.RepoID, issue.Number,
 	)
 	if err != nil {
@@ -3420,13 +3429,18 @@ func upsertIssueParentTx(
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("upsert issue parent: %w", err)
 	}
+	parent := DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID}
 	if !hadRow || issue.UpdatedAt.After(priorUpdatedAt) {
 		if err := reopenDatasetsForParentModeTx(
-			ctx, tx, DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID},
-			issue.RepoID, issue.Number, revision, reopen,
+			ctx, tx, parent, issue.RepoID, issue.Number, revision, revision, reopen,
 		); err != nil {
 			return 0, 0, false, err
 		}
+	} else if err := reopenDatasetsForParentModeTx(
+		// Mismatch repair; see upsertMergeRequestParentTx.
+		ctx, tx, parent, issue.RepoID, issue.Number, priorRevision, revision, reopen,
+	); err != nil {
+		return 0, 0, false, err
 	}
 	return issueID, revision, true, nil
 }
@@ -3443,19 +3457,20 @@ func parentRowUpdatedAtTx(
 	table string,
 	repoID int64,
 	number int,
-) (time.Time, bool, error) {
+) (time.Time, int64, bool, error) {
 	var updatedAt time.Time
+	var revision int64
 	err := tx.QueryRowContext(ctx, fmt.Sprintf(
-		`SELECT updated_at FROM %s WHERE repo_id = ? AND number = ?`, table),
+		`SELECT updated_at, snapshot_revision FROM %s WHERE repo_id = ? AND number = ?`, table),
 		repoID, number,
-	).Scan(&updatedAt)
+	).Scan(&updatedAt, &revision)
 	if errors.Is(err, sql.ErrNoRows) {
-		return time.Time{}, false, nil
+		return time.Time{}, 0, false, nil
 	}
 	if err != nil {
-		return time.Time{}, false, fmt.Errorf("read prior parent snapshot timestamp: %w", err)
+		return time.Time{}, 0, false, fmt.Errorf("read prior parent snapshot timestamp: %w", err)
 	}
-	return updatedAt, true, nil
+	return updatedAt, revision, true, nil
 }
 
 // GetIssue returns an issue by repository identity and issue number, or nil if not found.

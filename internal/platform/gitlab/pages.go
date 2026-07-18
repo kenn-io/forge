@@ -44,8 +44,8 @@ type gitLabPageCursor struct {
 	// offset of the current window. Its presence distinguishes a continuation
 	// into a partially consumed window from a cursor at a window boundary.
 	Boundary int64 `json:"boundary,omitempty"`
-	// Confirm marks a page-one sweep that must also observe the end of a
-	// replayed window before the traversal can declare exhaustion.
+	// Confirm marks a full-window sweep, starting at page one, that must also
+	// observe the end of the replayed window before declaring exhaustion.
 	Confirm bool `json:"confirm,omitempty"`
 }
 
@@ -377,8 +377,10 @@ func (c *Client) listInventoryMergeRequestsPage(
 // skips) at page one; otherwise ties denser than the window advance keep
 // offset-paging within the current window, recording the last consumed
 // item's record id to mark the cursor as a within-window continuation. An end
-// reached after a multi-request replay restarts once at page one for a
-// confirmation sweep; a confirming end or single-request end is exhausted.
+// reached after a multi-request replay restarts once at page one and replays
+// the whole window as a confirmation sweep. Same-window continuations retain
+// confirmation; only a window advance cancels it. A confirming end or
+// single-request end is exhausted.
 func gitLabWindowedCursorPage(
 	items []platform.MergeRequest,
 	cursor gitLabPageCursor,
@@ -401,7 +403,6 @@ func gitLabWindowedCursorPage(
 	if len(items) == 0 {
 		return platform.Page[platform.MergeRequest]{Items: items, Exhausted: true}, nil
 	}
-	cursor.Confirm = false
 	advanced := false
 	if len(items) > 0 {
 		newWindow := items[len(items)-1].CreatedAt.UTC().Add(-time.Second)
@@ -413,6 +414,7 @@ func gitLabWindowedCursorPage(
 			cursor.Window = newWindow.Format(time.RFC3339Nano)
 			cursor.Page = 1
 			cursor.Boundary = 0
+			cursor.Confirm = false
 			advanced = true
 		}
 	}
@@ -958,9 +960,6 @@ func validateGitLabCursorShape(cursor gitLabPageCursor, shape gitLabCursorShape)
 			return errors.New("cursor does not carry windowed offset continuation state")
 		}
 		if cursor.Page > 1 && cursor.Boundary == 0 {
-			return errors.New("cursor does not carry windowed offset continuation state")
-		}
-		if cursor.Confirm && cursor.Page != 1 {
 			return errors.New("cursor does not carry windowed offset continuation state")
 		}
 		if cursor.Window != "" {

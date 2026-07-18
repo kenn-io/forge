@@ -602,15 +602,28 @@ func TestGitLabHistoricalMergeRequestReplayPageBound(t *testing.T) {
 func TestGitLabHistoricalMergeRequestExhaustionConfirmation(t *testing.T) {
 	tie := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
-		name                    string
-		initialPage             int64
-		confirmHasContinuation  bool
-		wantInitialExhausted    bool
-		wantConfirmContinuation bool
+		name                     string
+		initialPage              int64
+		confirmHasContinuation   bool
+		confirmCreatedAt         time.Time
+		wantInitialExhausted     bool
+		wantConfirmContinuation  bool
+		wantConfirmRetained      bool
+		wantConfirmWindowAdvance bool
+		wantFinalExhausted       bool
 	}{
-		{"single page exhausts directly", 1, false, true, false},
-		{"replay requires confirming sweep", 2, false, false, false},
-		{"confirming sweep finds continuation", 2, true, false, true},
+		{name: "single page exhausts directly", initialPage: 1, wantInitialExhausted: true},
+		{name: "replay requires confirming sweep", initialPage: 2},
+		{
+			name: "static two-page window terminates after confirming sweep", initialPage: 2,
+			confirmHasContinuation: true, wantConfirmContinuation: true,
+			wantConfirmRetained: true, wantFinalExhausted: true,
+		},
+		{
+			name: "listing growth advances window and cancels confirmation", initialPage: 2,
+			confirmHasContinuation: true, confirmCreatedAt: tie.Add(2 * time.Second),
+			wantConfirmContinuation: true, wantConfirmWindowAdvance: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -622,12 +635,16 @@ func TestGitLabHistoricalMergeRequestExhaustionConfirmation(t *testing.T) {
 				if !confirming && tt.initialPage > 1 && page == "1" {
 					w.Header().Set("X-Next-Page", "2")
 				}
-				if confirming && tt.confirmHasContinuation {
+				if confirming && tt.confirmHasContinuation && page == "1" {
 					w.Header().Set("X-Next-Page", "2")
+				}
+				createdAt := tie
+				if confirming && !tt.confirmCreatedAt.IsZero() {
+					createdAt = tt.confirmCreatedAt
 				}
 				writeJSON(w, fmt.Sprintf(
 					`[{"id":201,"iid":1,"project_id":42,"title":"mr","state":"merged","created_at":%q,"updated_at":%q}]`,
-					tie.Format(time.RFC3339Nano), tie.Format(time.RFC3339Nano),
+					createdAt.Format(time.RFC3339Nano), createdAt.Format(time.RFC3339Nano),
 				))
 			}))
 			defer server.Close()
@@ -676,8 +693,21 @@ func TestGitLabHistoricalMergeRequestExhaustionConfirmation(t *testing.T) {
 				ref, 0, confirmed.NextCursor, "historical_merge_requests", time.Time{}, gitLabCursorWindowedOffset,
 			)
 			require.NoError(err)
+			assert.Equal(tt.wantConfirmRetained, continued.Confirm)
+			if tt.wantConfirmWindowAdvance {
+				assert.Equal(tt.confirmCreatedAt.Add(-time.Second).Format(time.RFC3339Nano), continued.Window)
+				assert.Equal(int64(1), continued.Page)
+				assert.Zero(continued.Boundary)
+				return
+			}
 			assert.Equal(int64(2), continued.Page)
-			assert.False(continued.Confirm)
+			assert.Equal(int64(201), continued.Boundary)
+
+			query.Cursor = confirmed.NextCursor
+			final, err := client.ListMergeRequestsPage(t.Context(), ref, query)
+			require.NoError(err)
+			assert.Equal(tt.wantFinalExhausted, final.Exhausted)
+			assert.Empty(final.NextCursor)
 		})
 	}
 }
@@ -715,7 +745,8 @@ func TestGitLabCursorShapeRestrictsConfirmation(t *testing.T) {
 		valid  bool
 	}{
 		{"windowed page one", gitLabPageCursor{Page: 1, Confirm: true}, gitLabCursorWindowedOffset, true},
-		{"windowed continuation", gitLabPageCursor{Page: 2, Boundary: 100, Confirm: true}, gitLabCursorWindowedOffset, false},
+		{"windowed continuation", gitLabPageCursor{Page: 2, Boundary: 100, Confirm: true}, gitLabCursorWindowedOffset, true},
+		{"windowed continuation without boundary", gitLabPageCursor{Page: 2, Confirm: true}, gitLabCursorWindowedOffset, false},
 		{"keyset", gitLabPageCursor{KeysetCursor: "next", Confirm: true}, gitLabCursorKeyset, false},
 		{"offset", gitLabPageCursor{Page: 1, Confirm: true}, gitLabCursorOffset, false},
 	}

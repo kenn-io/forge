@@ -21,12 +21,11 @@ function compiledStyle(source: string, selector: string): CSSStyleDeclaration {
 describe("DiffScopePicker", () => {
   it("keeps toolbar labels vertically centered", () => {
     const trigger = compiledStyle(pickerSource, ".diff-scope-picker__trigger");
-    const label = compiledStyle(pickerSource, ".diff-scope-picker__label");
+    const pickerScope = compiledStyle(pickerSource, ".diff-scope-picker__trigger .diff-scope-label");
     const scope = compiledStyle(labelSource, ".diff-scope-label");
 
     expect(trigger.getPropertyValue("line-height")).toBe("1");
-    expect(label.getPropertyValue("display")).toBe("inline-flex");
-    expect(label.getPropertyValue("line-height")).toBe("1");
+    expect(pickerScope.getPropertyValue("font-size")).toBe("var(--font-size-xs)");
     expect(scope.getPropertyValue("display")).toBe("inline-flex");
     expect(scope.getPropertyValue("line-height")).toBe("1");
   });

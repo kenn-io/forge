@@ -1654,6 +1654,9 @@ test.describe("diff view", () => {
     await expect(commitScope).toBeVisible();
     await expect(repository).toHaveClass(/\bkit-button\b/);
     await expect(commitScope).toHaveClass(/\bkit-button\b/);
+    await expect(commitScope).toHaveText("HEAD");
+    await expect(commitScope.locator(".diff-scope-picker__chevron")).toBeVisible();
+    await expect(commitScope.locator("svg")).toHaveCount(2);
 
     const metrics = await page.evaluate(() => {
       const inspect = (selector: string) => {

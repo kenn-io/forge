@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from "@kenn-io/kit-ui";
+  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import GitCommitHorizontalIcon from "@lucide/svelte/icons/git-commit-horizontal";
   import { getStores } from "../../context.js";
   import CommitListItem from "./CommitListItem.svelte";
@@ -85,13 +86,14 @@
     disabled={disabled}
     onclick={toggle}
   >
-    {#if compact}
-      <GitCommitHorizontalIcon size={16} strokeWidth={1.8} aria-hidden="true" />
-      <DiffScopeLabel {scope} />
-    {:else}
-      <span class="diff-scope-picker__label">Commits</span>
-      <DiffScopeLabel {scope} />
-    {/if}
+    <GitCommitHorizontalIcon size={14} strokeWidth={1.8} aria-hidden="true" />
+    <DiffScopeLabel {scope} />
+    <ChevronDownIcon
+      class="diff-scope-picker__chevron"
+      size={12}
+      strokeWidth={2}
+      aria-hidden="true"
+    />
   </Button>
 
   {#if open}
@@ -142,10 +144,19 @@
 
   :global(.diff-scope-picker__trigger.kit-button) {
     height: 26px;
-    gap: var(--space-4);
+    gap: var(--space-3);
     padding: 0 var(--space-3);
     font-size: inherit;
     line-height: 1;
+  }
+
+  :global(.diff-scope-picker__trigger .diff-scope-label) {
+    font-size: var(--font-size-xs);
+  }
+
+  :global(.diff-scope-picker__chevron) {
+    flex-shrink: 0;
+    opacity: 0.55;
   }
 
   .diff-scope-picker--compact :global(.diff-scope-picker__trigger.kit-button) {
@@ -154,15 +165,6 @@
     max-width: 130px;
     padding: 0 var(--space-4);
     overflow: hidden;
-  }
-
-  .diff-scope-picker__label {
-    display: inline-flex;
-    align-items: center;
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    line-height: 1;
-    white-space: nowrap;
   }
 
   .diff-scope-picker__menu {

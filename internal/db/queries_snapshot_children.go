@@ -154,6 +154,9 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 // consistency bug and fails the transaction instead of committing partial
 // state.
 func commitLiveDatasetTx(ctx context.Context, tx *sql.Tx, commit DatasetPageCommit) error {
+	if err := validateDatasetPageCommit(commit); err != nil {
+		return err
+	}
 	typedErr, err := commitDatasetPageTx(ctx, tx, commit, time.Now().UTC())
 	if err != nil {
 		return err

@@ -861,3 +861,41 @@ func archiveMaximumKeys(retained string) []string {
 	}
 	return keys
 }
+
+func TestCommitLiveDatasetTxRejectsMismatchedRowFamilies(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, database, "acme", "live-family-validation")
+	mrID, err := database.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID: repoID, PlatformID: 7, Number: 7, Title: "validate",
+		State: MergeRequestStateOpen, ReviewDecision: "current",
+		CreatedAt: now.Add(-time.Hour), UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	parent, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(parent)
+
+	err = database.Tx(ctx, func(tx *sql.Tx) error {
+		return commitLiveDatasetTx(ctx, tx, DatasetPageCommit{
+			Parent: DomainParentRef{
+				ItemType: ArchiveItemTypeMergeRequest,
+				ID:       mrID,
+			},
+			ExpectedRevision: parent.SnapshotRevision,
+			Dataset:          ArchiveDatasetComments,
+			Rows: DatasetRows{MRComments: []MREvent{{
+				MergeRequestID: mrID, EventType: "review",
+				DedupeKey: "wrong-family", CreatedAt: now,
+			}}},
+			Final: true,
+		})
+	})
+	require.ErrorContains(err, "commit dataset page: ordinary comment has event type")
+
+	events, err := database.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Empty(events)
+}

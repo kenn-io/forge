@@ -48,7 +48,7 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 				if preempted {
 					return errAdmissionDeferred
 				}
-				return s.recordScanFailure(ctx, repo, kind, fmt.Errorf(
+				return s.recordScanFailure(ctx, repo, kind, scan.Generation, fmt.Errorf(
 					"list historical issues for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
 				))
 			}
@@ -65,7 +65,7 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 				if preempted {
 					return errAdmissionDeferred
 				}
-				return s.recordScanFailure(ctx, repo, kind, fmt.Errorf(
+				return s.recordScanFailure(ctx, repo, kind, scan.Generation, fmt.Errorf(
 					"list historical merge requests for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
 				))
 			}
@@ -113,16 +113,19 @@ func archiveInventorySupported(repo resolvedRepository, itemType db.ArchiveItemT
 
 // recordScanFailure routes one scan read failure: page-scoped provider
 // contract violations durably block only the affected scan, everything else
-// records a repository-level failure with retry classification.
+// records a repository-level failure with retry classification. The block
+// carries the claimed scan generation, so a delayed violation from a
+// superseded traversal is a stale no-op.
 func (s *Service) recordScanFailure(
 	ctx context.Context,
 	repo resolvedRepository,
 	kind db.ArchiveScanKind,
+	claimedGeneration int64,
 	cause error,
 ) error {
 	if pageScopedProviderFailure(cause) {
 		if err := s.db.BlockArchiveRepoScan(
-			ctx, repo.ID, kind, scanBlockCode(cause), cause.Error(),
+			ctx, repo.ID, kind, claimedGeneration, scanBlockCode(cause), cause.Error(),
 		); err != nil {
 			return errors.Join(cause, err)
 		}

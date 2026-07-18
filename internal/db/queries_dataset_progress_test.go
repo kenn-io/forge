@@ -365,11 +365,13 @@ func TestCommitDatasetPageStaleParentRevisionReopensDataset(t *testing.T) {
 	assert.Equal(int64(2), stale.GotRevision)
 
 	// The dataset rebinds to the new revision without advancing its cursor,
-	// and already-ingested rows are retained.
+	// and already-ingested rows are retained. The reopened generation is the
+	// next even value: archive generations stay in the even namespace so they
+	// never collide with odd live ingest stamps.
 	progress, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
 	require.NoError(err)
 	assert.Equal(ArchiveDatasetProgressPending, progress.Status)
-	assert.Equal(int64(3), progress.ScanGeneration)
+	assert.Equal(int64(4), progress.ScanGeneration)
 	assert.Equal(int64(2), progress.ParentRevision)
 	assert.Zero(progress.PageCount)
 	assert.Nil(progress.NextCursor)
@@ -649,6 +651,144 @@ func TestCommitDatasetPageLiveCommitIsIndependentOfArchiveProgress(t *testing.T)
 	progress, err = d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 4, ArchiveDatasetComments)
 	require.NoError(err)
 	assert.Equal(ArchiveDatasetProgressPending, progress.Status)
+}
+
+func TestLiveParentUpsertSurvivesArchiveReopenFailure(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+
+	repoID := insertTestRepo(t, d, "acme", "reopen-injection")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
+	issueID := insertTestIssue(t, d, repoID, 7, "issue", now)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
+		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	insertDatasetProgressForTest(t, d, key, 1, 2, nil, ArchiveDatasetProgressPending, 0)
+
+	// Every archive-progress UPDATE now fails: an injected bookkeeping error
+	// in the dataset-reopen step of the shared parent upsert core.
+	_, err := d.WriteDB().ExecContext(ctx, `
+		CREATE TRIGGER fail_progress_updates BEFORE UPDATE ON middleman_archive_dataset_progress
+		BEGIN SELECT RAISE(ABORT, 'injected archive bookkeeping failure'); END`)
+	require.NoError(err)
+
+	// A live parent snapshot must still commit: archive bookkeeping is
+	// best-effort for live writers and must never roll back a valid live
+	// parent write.
+	id, revision, accepted, err := d.UpsertIssueSnapshotWithLabels(ctx, testIssue(repoID, 7,
+		withIssueTitle("live update"), withIssueActivity(now.Add(time.Hour))))
+	require.NoError(err, "an archive-progress failure must not reject the live parent write")
+	require.True(accepted)
+	assert.Equal(issueID, id)
+	assert.Equal(int64(2), revision)
+	issue, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal("live update", issue.Title)
+
+	// The reopen itself rolled back: the progress row stays bound to the old
+	// revision until a later pass rebinds it.
+	progress, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(int64(1), progress.ParentRevision)
+	assert.Equal(int64(2), progress.ScanGeneration)
+
+	// Archive parent commits stay atomic: the same bookkeeping failure
+	// rejects the whole inventory page instead of committing partial state.
+	err = d.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ScanGeneration: 1,
+		Exhausted: true, Now: now,
+		Issues: []ArchiveInventoryIssue{{
+			ProviderItemID: "issue-7",
+			CommentsStatus: ArchiveDatasetStatusPending,
+			Snapshot: IssueSnapshot{Issue: Issue{
+				RepoID: repoID, PlatformID: 7, Number: 7, State: "closed",
+				CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(2 * time.Hour),
+				LastActivityAt: now.Add(2 * time.Hour),
+			}},
+		}},
+	})
+	require.ErrorContains(err, "injected archive bookkeeping failure")
+	issue, err = d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal("live update", issue.Title, "the rejected archive commit must not keep partial parent state")
+}
+
+func TestArchiveCompletionReconcilesLiveStampedOmissions(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+
+	repoID := insertTestRepo(t, d, "acme", "generation-namespaces")
+	issueID := insertTestIssue(t, d, repoID, 7, "issue", now)
+
+	liveCommit := func(keys ...string) {
+		t.Helper()
+		revision := issueSnapshotRevisionForTest(t, d, issueID)
+		comments := make([]IssueEvent, 0, len(keys))
+		for _, key := range keys {
+			comments = append(comments, issueComment(key, key))
+		}
+		applied, err := d.CommitIssueChildSnapshot(ctx, IssueChildSnapshot{
+			IssueID: issueID, ExpectedRevision: revision, Comments: comments,
+		})
+		require.NoError(err)
+		require.True(applied)
+	}
+	// Two complete live passes stamp both comments with a live ingest
+	// generation before the repository is ever archived.
+	liveCommit("c-keep", "c-omitted")
+	liveCommit("c-keep", "c-omitted")
+
+	// Archiving the repository seeds and rebinds dataset progress for the
+	// already-live parent. The generation the archive scan claims must never
+	// equal a generation previously stamped by live ingestion, or the final
+	// reconciliation below cannot tell an omitted live row from its own.
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
+	var updatedAt time.Time
+	require.NoError(d.ReadDB().QueryRowContext(ctx,
+		`SELECT updated_at FROM middleman_issues WHERE id = ?`, issueID).Scan(&updatedAt))
+	snapshot := Issue{
+		RepoID: repoID, PlatformID: 7, Number: 7, State: "closed",
+		CreatedAt: now.Add(-time.Hour), UpdatedAt: updatedAt.Add(time.Hour),
+		LastActivityAt: updatedAt.Add(time.Hour),
+	}
+	require.NoError(d.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ScanGeneration: 1,
+		Exhausted: true, Now: now,
+		Issues: []ArchiveInventoryIssue{{
+			ProviderItemID: "issue-7",
+			CommentsStatus: ArchiveDatasetStatusPending,
+			Snapshot:       IssueSnapshot{Issue: snapshot},
+		}},
+	}))
+	progress, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	require.Equal(ArchiveDatasetProgressPending, progress.Status)
+
+	// The initial archive scan completes with a page set that omits one
+	// live-stamped comment. The omission must be reconciled away.
+	require.NoError(d.CommitDatasetPage(ctx, DatasetPageCommit{
+		Parent:           DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID},
+		ExpectedRevision: progress.ParentRevision,
+		Dataset:          ArchiveDatasetComments,
+		ScanGeneration:   progress.ScanGeneration,
+		Rows:             DatasetRows{IssueComments: []IssueEvent{issueComment("c-keep", "kept")}},
+		Final:            true,
+		Progress: &DatasetProgressAdvance{
+			RepoID: repoID, ItemNumber: 7, InputCursor: "",
+		},
+	}))
+	assert.Equal([]string{"c-keep"}, issueCommentKeysForTest(t, d, issueID),
+		"the omitted live-stamped comment must not survive archive reconciliation")
 }
 
 func TestCommitDatasetPageStatusGateMatrix(t *testing.T) {

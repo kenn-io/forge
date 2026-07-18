@@ -974,6 +974,72 @@ func TestArchiveInventoryPageCommitUsesScanCursorCompareAndSwap(t *testing.T) {
 	assert.True(states[0].IssueInventory.Complete())
 }
 
+func TestArchiveInventoryCompletedScanRejectsStaleDeliveries(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, d, "acme", "complete-cas")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
+
+	pageOne := ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
+		ScanGeneration: 1, InputCursor: "", NextCursor: "p2", Now: now,
+		Issues: []ArchiveInventoryIssue{archiveInventoryIssueForTest(repoID, 1, now)},
+	}
+	require.NoError(d.CommitArchiveInventoryPage(ctx, pageOne))
+	finalPage := ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
+		ScanGeneration: 1, InputCursor: "p2", Exhausted: true, Now: now,
+		Issues: []ArchiveInventoryIssue{archiveInventoryIssueForTest(repoID, 2, now)},
+	}
+	require.NoError(d.CommitArchiveInventoryPage(ctx, finalPage))
+	states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
+	require.NoError(err)
+	require.True(states[0].IssueInventory.Complete())
+
+	parentUpdatedAt := func(number int) time.Time {
+		t.Helper()
+		issue, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, number)
+		require.NoError(err)
+		require.NotNil(issue)
+		return issue.UpdatedAt
+	}
+	before := parentUpdatedAt(1)
+
+	// A stale-generation delivery against the completed scan must not apply
+	// its parent snapshots as a refresh: the generation and cursor validation
+	// runs before any completed-scan handling.
+	newer := archiveInventoryIssueForTest(repoID, 1, now.Add(time.Hour))
+	staleGeneration := ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
+		ScanGeneration: 99, InputCursor: "", NextCursor: "p2", Now: now.Add(time.Minute),
+		Issues: []ArchiveInventoryIssue{newer},
+	}
+	var stale *StaleArchiveScanError
+	require.ErrorAs(d.CommitArchiveInventoryPage(ctx, staleGeneration), &stale)
+	assert.Equal(before, parentUpdatedAt(1), "stale generation must not mutate parents")
+
+	// A same-generation delivery with an unrelated cursor is equally stale.
+	staleCursor := staleGeneration
+	staleCursor.ScanGeneration, staleCursor.InputCursor = 1, "bogus"
+	require.ErrorAs(d.CommitArchiveInventoryPage(ctx, staleCursor), &stale)
+	assert.Equal(before, parentUpdatedAt(1), "stale cursor must not mutate parents")
+
+	// The exact final page (same generation and input cursor) is the one
+	// permitted replay: an idempotent no-op that writes nothing.
+	replay := finalPage
+	replay.Issues = []ArchiveInventoryIssue{archiveInventoryIssueForTest(repoID, 2, now.Add(time.Hour))}
+	require.NoError(d.CommitArchiveInventoryPage(ctx, replay))
+	assert.Equal(before, parentUpdatedAt(2), "a final-page replay writes nothing")
+	states, err = d.ListArchiveRepoStates(ctx, []int64{repoID})
+	require.NoError(err)
+	assert.True(states[0].IssueInventory.Complete())
+	assert.Equal(2, states[0].IssueInventory.PageCount)
+}
+
 func TestArchiveInventoryPageBoundBlocksScan(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1001,6 +1067,60 @@ func TestArchiveInventoryPageBoundBlocksScan(t *testing.T) {
 	assert.True(states[0].IssueInventory.Blocked())
 	require.NotNil(states[0].IssueInventory.LastErrorCode)
 	assert.Equal("page_bound", *states[0].IssueInventory.LastErrorCode)
+}
+
+func TestBlockedDatasetHoldsInitialArchiveCompletion(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, d, "acme", "blocked-initial")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
+	issueID := insertTestIssue(t, d, repoID, 7, "issue", now)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
+		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	insertDatasetProgressForTest(t, d, key, 1, 2, nil, ArchiveDatasetProgressBlocked, 0)
+	for _, itemType := range []ArchiveItemType{ArchiveItemTypeIssue, ArchiveItemTypeMergeRequest} {
+		require.NoError(d.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+			RepoID: repoID, ItemType: itemType, Exhausted: true, Now: now,
+		}))
+	}
+
+	initialCompletedAt := func() *time.Time {
+		t.Helper()
+		states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
+		require.NoError(err)
+		require.Len(states, 1)
+		return states[0].InitialCompletedAt
+	}
+
+	// A blocked dataset is outstanding work awaiting an explicit reset, not a
+	// completed exception like unsupported or terminal: the repository must
+	// not report a complete initial archive and start maintenance around it.
+	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now.Add(time.Minute)))
+	assert.Nil(initialCompletedAt(), "a blocked dataset must hold initial completion")
+
+	// Unblocking and completing the dataset releases initial completion.
+	require.NoError(d.ResetDatasetProgress(ctx, key))
+	assert.Nil(initialCompletedAt())
+	progress, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	require.Equal(ArchiveDatasetProgressPending, progress.Status)
+	require.NoError(d.CommitDatasetPage(ctx, DatasetPageCommit{
+		Parent:           DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID},
+		ExpectedRevision: 1,
+		Dataset:          ArchiveDatasetComments,
+		ScanGeneration:   progress.ScanGeneration,
+		Rows:             DatasetRows{IssueComments: []IssueEvent{issueComment("c-1", "first")}},
+		Final:            true,
+		Progress: &DatasetProgressAdvance{
+			RepoID: repoID, ItemNumber: 7, InputCursor: "",
+		},
+	}))
+	assert.NotNil(initialCompletedAt(), "completing the unblocked dataset releases initial completion")
 }
 
 func TestArchiveEnsureDiscoveryRejectsMissingReposAtomically(t *testing.T) {
@@ -1294,7 +1414,7 @@ func TestFailDatasetProgressRecordsRetryBookkeepingOnFailableRowsOnly(t *testing
 		Dataset: ArchiveDatasetComments,
 	}
 	require.NoError(d.FailDatasetProgress(
-		ctx, key, ArchiveErrorCodeTransient, "  provider\nrequest\x00failed  ", &retryAt,
+		ctx, key, 1, 0, ArchiveErrorCodeTransient, "  provider\nrequest\x00failed  ", &retryAt,
 	))
 	failed, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeMergeRequest, 9, ArchiveDatasetComments)
 	require.NoError(err)
@@ -1311,19 +1431,155 @@ func TestFailDatasetProgressRecordsRetryBookkeepingOnFailableRowsOnly(t *testing
 	// reopens satisfied or capability-terminal datasets.
 	completeKey := key
 	completeKey.Dataset = ArchiveDatasetReviews
-	require.NoError(d.FailDatasetProgress(ctx, completeKey, ArchiveErrorCodeTransient, "late failure", &retryAt))
+	require.NoError(d.FailDatasetProgress(ctx, completeKey, 1, 0, ArchiveErrorCodeTransient, "late failure", &retryAt))
 	assert.Equal(ArchiveDatasetProgressComplete,
 		archiveProgressStatusForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 9, ArchiveDatasetReviews))
 	unsupportedKey := key
 	unsupportedKey.Dataset = ArchiveDatasetInlineComments
-	require.NoError(d.FailDatasetProgress(ctx, unsupportedKey, ArchiveErrorCodeTransient, "late failure", &retryAt))
+	require.NoError(d.FailDatasetProgress(ctx, unsupportedKey, 1, 0, ArchiveErrorCodeTransient, "late failure", &retryAt))
 	assert.Equal(ArchiveDatasetProgressUnsupported,
 		archiveProgressStatusForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 9, ArchiveDatasetInlineComments))
 
-	require.NoError(d.FailDatasetProgress(ctx, key, ArchiveErrorCodeTransient, "again", &retryAt))
+	require.NoError(d.FailDatasetProgress(ctx, key, 1, 0, ArchiveErrorCodeTransient, "again", &retryAt))
 	again, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeMergeRequest, 9, ArchiveDatasetComments)
 	require.NoError(err)
 	assert.Equal(2, again.AttemptCount)
+}
+
+func TestFailDatasetProgressIgnoresStaleClaims(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	retryAt := now.Add(15 * time.Minute)
+	repoID := insertTestRepo(t, d, "acme", "stale-fail-claims")
+	insertTestIssue(t, d, repoID, 7, "issue", now)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
+		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	insertDatasetProgressForTest(t, d, key, 1, 2, "cursor", ArchiveDatasetProgressRunning, 1)
+
+	// A delayed provider failure from work claimed before an explicit reset
+	// must not mark the fresh generation failed.
+	require.NoError(d.ResetDatasetProgress(ctx, key))
+	require.NoError(d.FailDatasetProgress(
+		ctx, key, 2, 1, ArchiveErrorCodeTransient, "late failure from superseded claim", &retryAt,
+	))
+	progress, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressPending, progress.Status)
+	assert.Zero(progress.AttemptCount)
+	assert.Nil(progress.LastErrorCode)
+	assert.Nil(progress.NextRetryAt)
+
+	// A failure claimed against a superseded parent revision is equally stale.
+	require.NoError(d.FailDatasetProgress(
+		ctx, key, progress.ScanGeneration, progress.ParentRevision+1,
+		ArchiveErrorCodeTransient, "late failure from superseded revision", &retryAt,
+	))
+	unchanged, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressPending, unchanged.Status)
+	assert.Zero(unchanged.AttemptCount)
+
+	// The matching claim records the failure.
+	require.NoError(d.FailDatasetProgress(
+		ctx, key, progress.ScanGeneration, progress.ParentRevision,
+		ArchiveErrorCodeTransient, "matching failure", &retryAt,
+	))
+	failed, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressFailed, failed.Status)
+	assert.Equal(1, failed.AttemptCount)
+}
+
+func TestBlockDatasetProgressIgnoresStaleClaims(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, d, "acme", "stale-block-claims")
+	insertTestIssue(t, d, repoID, 7, "issue", now)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
+		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	insertDatasetProgressForTest(t, d, key, 1, 2, nil, ArchiveDatasetProgressComplete, 3)
+
+	// A delayed page-scoped block from a scan that was superseded by
+	// completion must not block the completed dataset.
+	require.NoError(d.BlockDatasetProgress(ctx, key, 2, 1, "invalid_cursor", "late block after completion"))
+	progress, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressComplete, progress.Status)
+	assert.Nil(progress.LastErrorCode)
+
+	// A stale generation claim against a running row is equally a no-op.
+	_, err = d.WriteDB().ExecContext(ctx, `
+		UPDATE middleman_archive_dataset_progress
+		SET scan_generation = 4, status = 'running', next_cursor = 'cursor', page_count = 1
+		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = ?`,
+		key.RepoID, key.ItemType, key.ItemNumber, key.Dataset)
+	require.NoError(err)
+	require.NoError(d.BlockDatasetProgress(ctx, key, 2, 1, "invalid_cursor", "stale generation"))
+	progress, err = d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressRunning, progress.Status)
+
+	// The matching claim durably blocks.
+	require.NoError(d.BlockDatasetProgress(ctx, key, 4, 1, "invalid_cursor", "matching block"))
+	progress, err = d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressBlocked, progress.Status)
+	require.NotNil(progress.LastErrorCode)
+	assert.Equal("invalid_cursor", *progress.LastErrorCode)
+}
+
+func TestBlockArchiveRepoScanIgnoresStaleClaims(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, d, "acme", "stale-scan-block")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
+
+	scanState := func() ArchiveScanState {
+		t.Helper()
+		states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
+		require.NoError(err)
+		require.Len(states, 1)
+		return states[0].IssueInventory
+	}
+
+	// A delayed block from a generation superseded by an explicit reset must
+	// not stop the fresh traversal.
+	require.NoError(d.ResetArchiveRepoScan(ctx, repoID, ArchiveScanIssueInventory))
+	require.NoError(d.BlockArchiveRepoScan(
+		ctx, repoID, ArchiveScanIssueInventory, 1, "invalid_cursor", "late block after reset",
+	))
+	assert.Equal(ArchiveScanPending, scanState().Status)
+
+	// A delayed block against a completed scan is equally a stale no-op.
+	require.NoError(d.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
+		ScanGeneration: 2, InputCursor: "", Exhausted: true, Now: now,
+	}))
+	require.True(scanState().Complete())
+	require.NoError(d.BlockArchiveRepoScan(
+		ctx, repoID, ArchiveScanIssueInventory, 2, "invalid_cursor", "late block after completion",
+	))
+	assert.True(scanState().Complete())
+	assert.Nil(scanState().LastErrorCode)
+
+	// The matching claim on an advanceable scan durably blocks.
+	require.NoError(d.ResetArchiveRepoScan(ctx, repoID, ArchiveScanIssueInventory))
+	require.NoError(d.BlockArchiveRepoScan(
+		ctx, repoID, ArchiveScanIssueInventory, 3, "invalid_cursor", "matching block",
+	))
+	assert.True(scanState().Blocked())
 }
 
 func TestArchiveDeriveProgressStatusAndOrderedPhases(t *testing.T) {
@@ -1649,7 +1905,7 @@ func TestArchiveDBBoundariesNormalizeTimestampsToUTC(t *testing.T) {
 	require.NoError(d.FailDatasetProgress(ctx, ArchiveDatasetProgressKey{
 		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: 1,
 		Dataset: ArchiveDatasetComments,
-	}, ArchiveErrorCodeTransient, "retry later", &retryAt))
+	}, 1, 0, ArchiveErrorCodeTransient, "retry later", &retryAt))
 	failedProgress, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetComments)
 	require.NoError(err)
 	require.NotNil(failedProgress.NextRetryAt)

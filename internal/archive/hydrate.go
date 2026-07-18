@@ -120,7 +120,19 @@ func (s *Service) hydrateLookup(
 		if preempted {
 			return false, errAdmissionDeferred
 		}
-		return false, s.recordDatasetFailure(ctx, repo, work, db.ArchiveDatasetLookup, dataset.AttemptCount, lookupErr)
+		if pageScopedProviderFailure(lookupErr) {
+			// A malformed lookup outcome indicts only this lookup, exactly
+			// like a malformed page result in a child dataset scan: block the
+			// lookup dataset durably and let the item's other datasets and
+			// the repository proceed. Auth, identity, and capability failures
+			// keep repository scope below.
+			key := db.ArchiveDatasetProgressKey{
+				RepoID: work.RepoID, ItemType: work.ItemType,
+				ItemNumber: work.ItemNumber, Dataset: db.ArchiveDatasetLookup,
+			}
+			return true, s.blockDataset(ctx, key, dataset, lookupErr)
+		}
+		return false, s.recordDatasetFailure(ctx, repo, work, dataset, lookupErr)
 	}
 	err = s.db.CommitParentLookup(ctx, commit)
 	var stale *db.StaleDatasetProgressError
@@ -192,9 +204,9 @@ func (s *Service) scanDataset(
 				return errAdmissionDeferred
 			}
 			if pageScopedProviderFailure(readErr) {
-				return s.blockDataset(ctx, key, readErr)
+				return s.blockDataset(ctx, key, dataset, readErr)
 			}
-			return s.recordDatasetFailure(ctx, repo, work, dataset.Dataset, dataset.AttemptCount, readErr)
+			return s.recordDatasetFailure(ctx, repo, work, dataset, readErr)
 		}
 		err = s.db.CommitDatasetPage(ctx, db.DatasetPageCommit{
 			Parent:           db.DomainParentRef{ItemType: work.ItemType, ID: parentID},
@@ -288,23 +300,35 @@ func dbMergeRequestEvents(mrID int64, events []platform.MergeRequestEvent) []db.
 }
 
 // blockDataset durably blocks one dataset scan after a page-scoped provider
-// contract violation. Other datasets and repository work proceed.
-func (s *Service) blockDataset(ctx context.Context, key db.ArchiveDatasetProgressKey, cause error) error {
-	return s.db.BlockDatasetProgress(ctx, key, scanBlockCode(cause), cause.Error())
+// contract violation. Other datasets and repository work proceed. The block
+// carries the claimed generation and revision, so a delayed violation from
+// superseded work is a stale no-op.
+func (s *Service) blockDataset(
+	ctx context.Context,
+	key db.ArchiveDatasetProgressKey,
+	dataset db.ArchiveDatasetWork,
+	cause error,
+) error {
+	return s.db.BlockDatasetProgress(
+		ctx, key, dataset.ScanGeneration, dataset.ParentRevision,
+		scanBlockCode(cause), cause.Error(),
+	)
 }
 
 // recordDatasetFailure classifies a provider failure: repository-wide causes
 // (authentication, identity, capability) block the repository, and the
-// dataset row records retry bookkeeping either way.
+// dataset row records retry bookkeeping either way. The failure carries the
+// claimed generation and revision, so a delayed provider failure from
+// superseded work never marks reset, completed, or newer-generation progress
+// failed.
 func (s *Service) recordDatasetFailure(
 	ctx context.Context,
 	repo resolvedRepository,
 	work db.ArchiveItemWork,
-	dataset db.ArchiveDataset,
-	attemptCount int,
+	dataset db.ArchiveDatasetWork,
 	cause error,
 ) error {
-	decision := s.retries.Classify(cause, attemptCount, s.now())
+	decision := s.retries.Classify(cause, dataset.AttemptCount, s.now())
 	if decision.Code == "" {
 		decision.Code = db.ArchiveErrorCodeTransient
 	}
@@ -317,9 +341,12 @@ func (s *Service) recordDatasetFailure(
 	}
 	key := db.ArchiveDatasetProgressKey{
 		RepoID: work.RepoID, ItemType: work.ItemType,
-		ItemNumber: work.ItemNumber, Dataset: dataset,
+		ItemNumber: work.ItemNumber, Dataset: dataset.Dataset,
 	}
-	if err := s.db.FailDatasetProgress(ctx, key, decision.Code, cause.Error(), decision.RetryAt); err != nil {
+	if err := s.db.FailDatasetProgress(
+		ctx, key, dataset.ScanGeneration, dataset.ParentRevision,
+		decision.Code, cause.Error(), decision.RetryAt,
+	); err != nil {
 		return errors.Join(cause, err)
 	}
 	return cause

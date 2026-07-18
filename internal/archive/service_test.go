@@ -818,6 +818,93 @@ func TestArchiveInventoryInvalidCursorBlocksScanWithoutRestart(t *testing.T) {
 	assert.Equal(db.ArchiveStatusBlocked, status[0].Progress.Status)
 }
 
+func TestArchiveLookupContractViolationBlocksOnlyLookupDataset(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "malformed-lookup")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	provider.issueLookupErr = platform.ProviderContract(
+		ref.Platform, ref.Host, "archive_lookup_outcome",
+		errors.New("malformed lookup outcome"),
+	)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+	require.NoError(service.RunEligible(t.Context())) // issue inventory
+	require.NoError(service.RunEligible(t.Context())) // merge-request inventory
+
+	// A malformed lookup outcome is a page-scoped contract violation: it
+	// durably blocks only the lookup dataset, exactly like a malformed page
+	// result in a child dataset scan, and is not a hydration failure.
+	require.NoError(service.RunEligible(t.Context()))
+	lookup, err := database.GetDatasetProgress(
+		t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressBlocked, lookup.Status)
+	require.NotNil(lookup.LastErrorCode)
+	assert.Equal("invalid_cursor", *lookup.LastErrorCode)
+	assert.Zero(lookup.AttemptCount, "a durable block consumes no retries")
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	assert.Nil(states[0].LastErrorCode, "a lookup contract violation must not block the repository")
+
+	// The repository's other work still proceeds past the blocked lookup.
+	provider.mu.Lock()
+	provider.calls = nil
+	provider.mu.Unlock()
+	require.NoError(service.RunEligible(t.Context()))
+	require.NoError(service.RunEligible(t.Context()))
+	provider.mu.Lock()
+	calls := append([]string(nil), provider.calls...)
+	provider.mu.Unlock()
+	assert.Contains(calls, "get_mr", "unrelated item hydration must proceed")
+	assert.NotContains(calls, "get_issue", "a blocked lookup spends no further provider requests")
+}
+
+func TestArchiveLookupAuthFailureKeepsRepositoryScope(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "auth-lookup")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	provider.issueLookupErr = platform.PermissionDenied(
+		ref.Platform, ref.Host, errors.New("repository hidden"),
+	)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+	require.NoError(service.RunEligible(t.Context())) // issue inventory
+	require.NoError(service.RunEligible(t.Context())) // merge-request inventory
+
+	// An authentication failure on a lookup indicts the repository, not the
+	// page: the repository blocks and the lookup dataset records a retryable
+	// failure rather than a durable page-scoped block.
+	err = service.RunEligible(t.Context())
+	require.ErrorIs(err, platform.ErrPermissionDenied)
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	require.NotNil(states[0].LastErrorCode)
+	assert.Equal(string(db.ArchiveErrorCodeAuthentication), *states[0].LastErrorCode)
+	lookup, err := database.GetDatasetProgress(
+		t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressFailed, lookup.Status)
+	assert.Equal(1, lookup.AttemptCount)
+}
+
 func TestArchiveRepositoryAccessFailureIsBlockedAndNonDestructive(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

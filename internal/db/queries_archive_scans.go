@@ -54,19 +54,17 @@ func archiveScanScope(repoID int64, kind ArchiveScanKind) string {
 }
 
 type archiveScanAdvanceOutcome struct {
-	typedErr error
-	replay   bool
-	// refreshOnly marks an observation against an already-complete scan:
-	// parent snapshots still apply (prompt refreshes and boundary
-	// re-observations), but the finished traversal's cursor never moves.
-	refreshOnly  bool
+	typedErr     error
+	replay       bool
 	newPageCount int
 }
 
 // checkArchiveScanAdvanceTx applies the repository-scan cursor and generation
 // compare-and-swap, mirroring the dataset-progress CAS: replayed pages are
 // idempotent no-ops, stale generations or cursors are typed rejections, and
-// echoed cursors or page-bound exhaustion durably block the scan.
+// echoed cursors or page-bound exhaustion durably block the scan. Completed
+// scans accept only the exact final-page replay; every other delivery is
+// rejected before it can mutate parent rows.
 func checkArchiveScanAdvanceTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -100,9 +98,6 @@ func checkArchiveScanAdvanceTx(
 			Scope: archiveScanScope(commit.RepoID, kind), Reason: reason,
 		}}, nil
 	}
-	if status == ArchiveScanComplete {
-		return archiveScanAdvanceOutcome{refreshOnly: true}, nil
-	}
 	if generation != commit.ScanGeneration {
 		return archiveScanAdvanceOutcome{typedErr: &StaleArchiveScanError{
 			RepoID: commit.RepoID, Scan: kind,
@@ -110,8 +105,21 @@ func checkArchiveScanAdvanceTx(
 		}}, nil
 	}
 	if lastInputCursor.Valid && commit.InputCursor == lastInputCursor.String {
-		// The already-committed page: idempotent replay writes nothing.
+		// The already-committed page: idempotent replay writes nothing. On a
+		// completed scan this is the retained final input cursor, which makes
+		// an exact final-page replay the only accepted delivery after
+		// completion.
 		return archiveScanAdvanceOutcome{replay: true}, nil
+	}
+	if status == ArchiveScanComplete {
+		// A completed scan accepts no further page advances and no parent
+		// refreshes; only an explicit reset (new generation) restarts the
+		// traversal. Anything but the exact final replay above is stale.
+		return archiveScanAdvanceOutcome{typedErr: &StaleArchiveScanError{
+			RepoID: commit.RepoID, Scan: kind,
+			ExpectedGeneration: commit.ScanGeneration, GotGeneration: generation,
+			GotStatus: status,
+		}}, nil
 	}
 	if commit.InputCursor != nextCursor.String {
 		return archiveScanAdvanceOutcome{typedErr: &StaleArchiveScanError{
@@ -159,12 +167,15 @@ func advanceArchiveScanTx(
 	now time.Time,
 ) error {
 	status := ArchiveScanRunning
-	var cursor, lastInput any
+	var cursor any
+	// The input cursor is always retained — on the final page it is what
+	// distinguishes an exact final-page replay from stale delivery after
+	// completion.
+	lastInput := commit.InputCursor
 	if commit.Exhausted {
 		status = ArchiveScanComplete
 	} else {
 		cursor = commit.NextCursor
-		lastInput = commit.InputCursor
 	}
 	query := `
 		UPDATE middleman_archive_repo_scans
@@ -227,17 +238,30 @@ func blockArchiveScanTx(
 
 // BlockArchiveRepoScan durably stops one repository-level scan: progress is
 // retained for diagnostics, no further provider requests are spent
-// automatically, and recovery requires an explicit reset.
+// automatically, and recovery requires an explicit reset. The block is
+// compare-and-swapped on the claimed scan generation exactly like a page
+// commit: a delayed block from a superseded traversal (reset or completed)
+// is a stale no-op.
 func (d *DB) BlockArchiveRepoScan(
 	ctx context.Context,
 	repoID int64,
 	kind ArchiveScanKind,
+	claimedGeneration int64,
 	code string,
 	detail string,
 ) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return blockArchiveScanTx(ctx, tx, repoID, kind, code, detail, time.Now())
-	})
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_archive_repo_scans
+		SET status = 'blocked', last_error_code = ?, last_error_detail = ?, updated_at = ?
+		WHERE repo_id = ? AND scan = ?
+		  AND scan_generation = ?
+		  AND status IN ('pending', 'running', 'failed')`,
+		code, sanitizeArchiveErrorDetail(detail), formatDatasetProgressTime(time.Now()),
+		repoID, kind, claimedGeneration)
+	if err != nil {
+		return fmt.Errorf("block archive scan: %w", err)
+	}
+	return nil
 }
 
 // resetArchiveScanTx starts a fresh generation for one scan: cursor cleared,

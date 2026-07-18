@@ -231,10 +231,15 @@ func commitDatasetPageTx(
 // nextLiveIngestGenerationTx allocates the ingest-generation stamp for one
 // complete live dataset commit. The core's final-page reconciliation deletes
 // ordinary comments whose stamp differs from the committing generation, so a
-// live stamp must differ from every generation currently stamped on the same
-// parent's rows — including durable archive scan generations, which stamp the
-// same column. MAX+1 over the parent's rows is strictly monotonic because
-// SQLite serializes the writing transaction.
+// live stamp must never equal any generation an archive scan can complete
+// under: an equal generation would let an archive completion mistake an
+// omitted live-stamped comment for its own. The two allocators use provably
+// disjoint namespaces — live generations are always odd, archive
+// scan_generation values are always even (see nextEvenScanGenerationSQL) —
+// so cross-source equality is impossible regardless of interleaving.
+// MAX+1 over the parent's rows (bumped to odd) also stays strictly monotonic
+// against the parent's own stamps because SQLite serializes the writing
+// transaction.
 func nextLiveIngestGenerationTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -252,8 +257,21 @@ func nextLiveIngestGenerationTx(
 	if err := tx.QueryRowContext(ctx, query, parent.ID).Scan(&generation); err != nil {
 		return 0, fmt.Errorf("allocate live ingest generation: %w", err)
 	}
+	if generation%2 == 0 {
+		generation++
+	}
 	return generation, nil
 }
+
+// nextEvenScanGenerationSQL is the single SQL expression every archive
+// dataset-progress generation bump uses: the next even number strictly
+// greater than the current scan_generation. Archive generations stay even and
+// live ingest generations stay odd (nextLiveIngestGenerationTx), which keeps
+// the two allocation sources provably disjoint: a completing archive
+// generation can never equal a previously stamped live generation, so
+// final-page comment reconciliation always deletes omitted live rows and a
+// live completion always supersedes stale archive stamps.
+const nextEvenScanGenerationSQL = "scan_generation + 2 - (scan_generation % 2)"
 
 // satisfyDatasetProgressBestEffortTx runs live archive satisfaction inside a
 // savepoint: archive bookkeeping failures roll back only the satisfaction
@@ -570,7 +588,7 @@ func satisfyDatasetProgressFromLiveTx(
 	result, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_dataset_progress
 		SET status = 'complete',
-			scan_generation = scan_generation + 1,
+			scan_generation = `+nextEvenScanGenerationSQL+`,
 			parent_revision = ?,
 			next_cursor = NULL, last_input_cursor = NULL,
 			next_retry_at = NULL, last_error_code = NULL, last_error_detail = NULL,
@@ -614,7 +632,7 @@ func reopenDatasetForRevisionTx(
 ) error {
 	_, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_dataset_progress
-		SET scan_generation = scan_generation + 1,
+		SET scan_generation = `+nextEvenScanGenerationSQL+`,
 			parent_revision = ?,
 			next_cursor = NULL, last_input_cursor = NULL,
 			page_count = 0, observed_count = 0,
@@ -651,7 +669,7 @@ func reopenLookupForRevisionTx(
 	}
 	_, err := tx.ExecContext(ctx, fmt.Sprintf(`
 		UPDATE middleman_archive_dataset_progress
-		SET scan_generation = scan_generation + 1,
+		SET scan_generation = %s,
 			parent_revision = ?,
 			next_cursor = NULL, last_input_cursor = NULL,
 			page_count = 0, observed_count = 0,
@@ -660,7 +678,7 @@ func reopenLookupForRevisionTx(
 			started_at = NULL, completed_at = NULL, updated_at = ?
 		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = 'lookup'
 		  AND parent_revision %s ?
-		  AND status NOT IN ('unsupported', 'terminal', 'blocked')`, comparison),
+		  AND status NOT IN ('unsupported', 'terminal', 'blocked')`, nextEvenScanGenerationSQL, comparison),
 		revision, formatDatasetProgressTime(time.Now()),
 		repoID, itemType, itemNumber, revision)
 	if err != nil {
@@ -671,11 +689,16 @@ func reopenLookupForRevisionTx(
 
 // FailDatasetProgress records a transient or classified failure on one
 // dataset progress row: retry bookkeeping only, provider-owned content and
-// terminal statuses are untouched. A row that is no longer failable (satisfied
-// by live sync, terminal, blocked) is left alone.
+// terminal statuses are untouched. The failure is compare-and-swapped on the
+// claimed scan generation and parent revision exactly like a successful page
+// commit: a delayed failure from superseded work (reset, reopened, or
+// rebound progress) is a stale no-op. A row that is no longer failable
+// (satisfied by live sync, terminal, blocked) is equally left alone.
 func (d *DB) FailDatasetProgress(
 	ctx context.Context,
 	key ArchiveDatasetProgressKey,
+	claimedGeneration int64,
+	claimedRevision int64,
 	code ArchiveErrorCode,
 	detail string,
 	retryAt *time.Time,
@@ -689,9 +712,11 @@ func (d *DB) FailDatasetProgress(
 		SET status = 'failed', attempt_count = attempt_count + 1,
 			next_retry_at = ?, last_error_code = ?, last_error_detail = ?, updated_at = ?
 		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = ?
+		  AND scan_generation = ? AND parent_revision = ?
 		  AND status IN ('pending', 'running', 'failed')`,
 		retry, code, sanitizeArchiveErrorDetail(detail), formatDatasetProgressTime(time.Now()),
-		key.RepoID, key.ItemType, key.ItemNumber, key.Dataset)
+		key.RepoID, key.ItemType, key.ItemNumber, key.Dataset,
+		claimedGeneration, claimedRevision)
 	if err != nil {
 		return fmt.Errorf("fail dataset progress: %w", err)
 	}
@@ -756,6 +781,49 @@ func (d *DB) ReopenDatasetsForParent(
 	return reopenDatasetsForParentTx(ctx, tx, parent, repoID, itemNumber, newRevision)
 }
 
+// archiveReopenMode selects how the shared parent upsert core treats a
+// failure in the archive dataset-reopen bookkeeping that follows an accepted
+// parent snapshot.
+type archiveReopenMode int
+
+const (
+	// reopenDatasetsAtomic fails the surrounding transaction on a reopen
+	// error. Archive parent writers use it: their commit is itself archive
+	// bookkeeping, so partial state must never commit.
+	reopenDatasetsAtomic archiveReopenMode = iota
+	// reopenDatasetsBestEffort runs the reopen inside a savepoint and
+	// discards only the reopen on failure. Live parent writers use it: an
+	// archive bookkeeping error must never roll back a valid live parent
+	// snapshot. A skipped reopen self-heals — the next parent observation or
+	// the revision fence on the next archive page commit rebinds the stale
+	// progress row.
+	reopenDatasetsBestEffort
+)
+
+// reopenDatasetsForParentModeTx applies reopenDatasetsForParentTx under the
+// caller's atomicity mode; see archiveReopenMode.
+func reopenDatasetsForParentModeTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	parent DomainParentRef,
+	repoID int64,
+	itemNumber int,
+	newRevision int64,
+	mode archiveReopenMode,
+) error {
+	if mode == reopenDatasetsAtomic {
+		return reopenDatasetsForParentTx(ctx, tx, parent, repoID, itemNumber, newRevision)
+	}
+	if _, err := tx.ExecContext(ctx, "SAVEPOINT live_reopen"); err != nil {
+		return nil
+	}
+	if err := reopenDatasetsForParentTx(ctx, tx, parent, repoID, itemNumber, newRevision); err != nil {
+		_, _ = tx.ExecContext(ctx, "ROLLBACK TO live_reopen")
+	}
+	_, _ = tx.ExecContext(ctx, "RELEASE live_reopen")
+	return nil
+}
+
 func reopenDatasetsForParentTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -766,7 +834,7 @@ func reopenDatasetsForParentTx(
 ) error {
 	_, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_dataset_progress
-		SET scan_generation = scan_generation + 1,
+		SET scan_generation = `+nextEvenScanGenerationSQL+`,
 			parent_revision = ?,
 			next_cursor = NULL, last_input_cursor = NULL,
 			page_count = 0, observed_count = 0,
@@ -1141,16 +1209,30 @@ func (d *DB) GetDatasetProgress(
 
 // BlockDatasetProgress durably stops one dataset scan: progress is retained
 // for diagnostics, no further provider requests are spent automatically, and
-// recovery requires an explicit reset.
+// recovery requires an explicit reset. The block is compare-and-swapped on
+// the claimed scan generation and parent revision: a delayed block from
+// superseded work (completed, reset, or rebound progress) is a stale no-op.
 func (d *DB) BlockDatasetProgress(
 	ctx context.Context,
 	key ArchiveDatasetProgressKey,
+	claimedGeneration int64,
+	claimedRevision int64,
 	code string,
 	detail string,
 ) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return blockDatasetProgressTx(ctx, tx, key, code, detail, time.Now())
-	})
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_archive_dataset_progress
+		SET status = 'blocked', last_error_code = ?, last_error_detail = ?, updated_at = ?
+		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = ?
+		  AND scan_generation = ? AND parent_revision = ?
+		  AND status IN ('pending', 'running', 'failed')`,
+		code, sanitizeArchiveErrorDetail(detail), formatDatasetProgressTime(time.Now()),
+		key.RepoID, key.ItemType, key.ItemNumber, key.Dataset,
+		claimedGeneration, claimedRevision)
+	if err != nil {
+		return fmt.Errorf("block dataset progress: %w", err)
+	}
+	return nil
 }
 
 func blockDatasetProgressTx(
@@ -1186,7 +1268,7 @@ func blockDatasetProgressTx(
 func (d *DB) ResetDatasetProgress(ctx context.Context, key ArchiveDatasetProgressKey) error {
 	result, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_archive_dataset_progress
-		SET scan_generation = scan_generation + 1,
+		SET scan_generation = `+nextEvenScanGenerationSQL+`,
 			next_cursor = NULL, last_input_cursor = NULL,
 			page_count = 0, observed_count = 0,
 			status = 'pending', attempt_count = 0, next_retry_at = NULL,

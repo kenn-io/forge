@@ -104,11 +104,16 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 	// both inventory streams before newly observed equality-boundary work can
 	// enter hydration. Otherwise an overlapped item can consume the next
 	// admitted request and indefinitely delay a persisted inventory cursor.
+	// The boundary only holds priority while it can actually advance: a
+	// boundary whose streams are all blocked stays durable for reporting but
+	// must not consume every poll and starve hydration and other
+	// repositories on the same provider host.
 	for _, repo := range repos {
 		state := stateByID[repo.ID]
 		if state.CollectionMode == db.ArchiveCollectionModeFull &&
 			state.OperatorState == db.ArchiveOperatorStateActive &&
-			state.PromptScanStartedAt != nil && !archiveRepoDeferred(state, s.now()) {
+			state.PromptScanStartedAt != nil && !archiveRepoDeferred(state, s.now()) &&
+			maintenanceBoundaryActionable(state) {
 			return s.swallowAdmissionDeferred(s.promptMaintenance(ctx, repo, state))
 		}
 	}
@@ -139,7 +144,7 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 			state.OperatorState != db.ArchiveOperatorStateActive || archiveRepoDeferred(state, s.now()) {
 			continue
 		}
-		if promptMaintenanceDue(state, s.now(), s.maintenanceInterval) {
+		if promptMaintenanceDue(state, s.now(), s.maintenanceInterval) && maintenanceBoundaryActionable(state) {
 			return s.swallowAdmissionDeferred(s.promptMaintenance(ctx, repo, state))
 		}
 	}
@@ -166,6 +171,23 @@ func archiveScanNotStarted(scan db.ArchiveScanState) bool {
 // durably blocked.
 func archiveScanEligible(scan db.ArchiveScanState) bool {
 	return !scan.Complete() && !scan.Blocked()
+}
+
+// maintenanceBoundaryActionable reports whether a maintenance pass could make
+// progress right now. Before a boundary exists one can always be started.
+// With a durable boundary, progress requires at least one stream that can
+// still advance, or both streams complete (the watermark advance itself is
+// the remaining work). A boundary whose outstanding streams are all blocked
+// is not actionable: it stays durable for reporting, and only an explicit
+// reset revives it.
+func maintenanceBoundaryActionable(state db.ArchiveRepoState) bool {
+	if state.PromptScanStartedAt == nil {
+		return true
+	}
+	if archiveScanEligible(state.MaintenanceIssues) || archiveScanEligible(state.MaintenanceMergeRequests) {
+		return true
+	}
+	return state.MaintenanceIssues.Complete() && state.MaintenanceMergeRequests.Complete()
 }
 
 func nextInventoryWork(repos []resolvedRepository, states map[int64]db.ArchiveRepoState, mode db.ArchiveCollectionMode, now time.Time) (resolvedRepository, db.ArchiveRepoState, db.ArchiveItemType, bool) {

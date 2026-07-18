@@ -8,7 +8,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 func TestArchiveSchedulerDoesNotSerializeSameHostOutsideAdmission(t *testing.T) {
@@ -76,6 +78,72 @@ func TestArchiveSchedulerRunsIndependentHostsConcurrently(t *testing.T) {
 	release <- struct{}{}
 	require.NoError(<-done)
 	assert.Equal(int32(2), maximum.Load())
+}
+
+func TestBlockedMaintenanceBoundaryDoesNotStarveOtherRepositories(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	blockedRef := archiveServiceRef(platform.KindGitHub, "github.test", "alpha")
+	otherRef := archiveServiceRef(platform.KindGitHub, "github.test", "beta")
+	blockedID := archiveServiceSeedRepo(t, database, blockedRef)
+	otherID := archiveServiceSeedRepo(t, database, otherRef)
+	provider := newArchiveServiceProvider(blockedRef.Platform, blockedRef.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	refs := []platform.RepoRef{blockedRef, otherRef}
+	service := newArchiveTestService(t, database, registry, refs, nil, now)
+	require.NoError(service.EnsureConfigured(t.Context(), refs))
+	_, err = service.Start(t.Context(), refs)
+	require.NoError(err)
+	for range 20 {
+		statuses, statusErr := service.Status(t.Context(), refs)
+		require.NoError(statusErr)
+		if statuses[0].Progress.Status == db.ArchiveStatusCurrent &&
+			statuses[1].Progress.Status == db.ArchiveStatusCurrent {
+			break
+		}
+		require.NoError(service.RunEligible(t.Context()))
+	}
+
+	// The first repository holds a durable maintenance boundary whose streams
+	// are both durably blocked: nothing about that boundary can advance until
+	// an explicit reset.
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE middleman_archive_repos
+		SET prompt_scan_started_at = ?, prompt_since = ?, maintenance_succeeded_at = NULL
+		WHERE repo_id = ?`, now, now.Add(-time.Hour), blockedID)
+	require.NoError(err)
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE middleman_archive_repo_scans
+		SET status = 'blocked', last_error_code = 'invalid_cursor'
+		WHERE repo_id = ? AND scan IN ('maintenance_issues', 'maintenance_merge_requests')`, blockedID)
+	require.NoError(err)
+	// The second repository has due hydration work again.
+	require.NoError(database.ResetDatasetProgress(t.Context(), db.ArchiveDatasetProgressKey{
+		RepoID: otherID, ItemType: db.ArchiveItemTypeIssue, ItemNumber: 1,
+		Dataset: db.ArchiveDatasetComments,
+	}))
+	provider.mu.Lock()
+	provider.calls = nil
+	provider.mu.Unlock()
+
+	// One poll on the shared provider host must run the other repository's
+	// hydration instead of spinning on the unactionable blocked boundary.
+	require.NoError(service.RunEligible(t.Context()))
+	provider.mu.Lock()
+	calls := append([]string(nil), provider.calls...)
+	provider.mu.Unlock()
+	assert.Contains(calls, "issue_comments:", "the other repository's hydration must proceed")
+
+	// The unresolved boundary stays durable for reporting.
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{blockedID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.NotNil(states[0].PromptScanStartedAt)
+	assert.True(states[0].MaintenanceIssues.Blocked())
+	assert.True(states[0].MaintenanceMergeRequests.Blocked())
 }
 
 func TestArchiveWorkPrioritiesPreserveForegroundOrdering(t *testing.T) {

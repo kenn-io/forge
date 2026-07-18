@@ -126,7 +126,7 @@ func (d *DB) StartFullArchives(ctx context.Context, repoIDs []int64, now time.Ti
 		promoteArgs := append([]any{formatDatasetProgressTime(now)}, args...)
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
 			UPDATE middleman_archive_dataset_progress
-			SET scan_generation = scan_generation + (CASE WHEN status = 'complete' THEN 1 ELSE 0 END),
+			SET scan_generation = CASE WHEN status = 'complete' THEN %s ELSE scan_generation END,
 				next_cursor = CASE WHEN status = 'complete' THEN NULL ELSE next_cursor END,
 				last_input_cursor = CASE WHEN status = 'complete' THEN NULL ELSE last_input_cursor END,
 				page_count = CASE WHEN status = 'complete' THEN 0 ELSE page_count END,
@@ -146,7 +146,7 @@ func (d *DB) StartFullArchives(ctx context.Context, repoIDs []int64, now time.Ti
 				  AND ai.item_type = middleman_archive_dataset_progress.item_type
 				  AND ai.item_number = middleman_archive_dataset_progress.item_number
 				  AND ai.lifecycle_state = 'active'
-			  )`, sqlPlaceholders(len(repoIDs))), promoteArgs...); err != nil {
+			  )`, nextEvenScanGenerationSQL, sqlPlaceholders(len(repoIDs))), promoteArgs...); err != nil {
 			return fmt.Errorf("queue promoted archive dataset progress: %w", err)
 		}
 		updateArgs := append([]any{now, now}, args...)
@@ -1345,10 +1345,8 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 				return err
 			}
 		}
-		if !outcome.refreshOnly {
-			if err := advanceArchiveScanTx(ctx, tx, commit, kind, outcome.newPageCount, commit.Now); err != nil {
-				return err
-			}
+		if err := advanceArchiveScanTx(ctx, tx, commit, kind, outcome.newPageCount, commit.Now); err != nil {
+			return err
 		}
 		if err := clearArchiveRepositoryFailureTx(ctx, tx, commit.RepoID, commit.Now); err != nil {
 			return err
@@ -1375,7 +1373,7 @@ func commitArchiveIssueParentTx(
 	issue := &item.Snapshot.Issue
 	issue.RepoID = repoID
 	issueID, revision, accepted, err := commitIssueParentSnapshotTx(
-		ctx, tx, issue, item.Snapshot.Labels,
+		ctx, tx, issue, item.Snapshot.Labels, reopenDatasetsAtomic,
 	)
 	if err != nil {
 		return 0, 0, false, err
@@ -1430,7 +1428,7 @@ func commitArchiveMergeRequestParentTx(
 	mr := &item.Snapshot.MergeRequest
 	mr.RepoID = repoID
 	mrID, revision, accepted, err := commitMergeRequestParentSnapshotTx(
-		ctx, tx, mr, item.Snapshot.Labels, detail,
+		ctx, tx, mr, item.Snapshot.Labels, detail, reopenDatasetsAtomic,
 	)
 	if err != nil {
 		return 0, 0, false, err
@@ -1481,7 +1479,10 @@ func progressStatusForSeed(status ArchiveDatasetStatus) ArchiveDatasetProgressSt
 
 // seedArchiveDatasetProgressTx creates missing dataset progress rows for one
 // archive item. Existing rows are never modified here; rebinding to newer
-// parent revisions is a separate reopen step.
+// parent revisions is a separate reopen step. Rows seed at generation 2: the
+// archive namespace is even (nextEvenScanGenerationSQL) so a seeded
+// generation can never equal an odd live ingest stamp already present on the
+// parent's rows.
 func seedArchiveDatasetProgressTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -1501,8 +1502,8 @@ func seedArchiveDatasetProgressTx(
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO middleman_archive_dataset_progress (
-				repo_id, item_type, item_number, dataset, status, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?)
+				repo_id, item_type, item_number, dataset, scan_generation, status, updated_at
+			) VALUES (?, ?, ?, ?, 2, ?, ?)
 			ON CONFLICT(repo_id, item_type, item_number, dataset) DO NOTHING`,
 			repoID, itemType, itemNumber, dataset, status, nowText); err != nil {
 			return fmt.Errorf("seed archive dataset progress %s: %w", dataset, err)
@@ -1536,7 +1537,7 @@ func rebindArchiveDatasetProgressTx(
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_dataset_progress
-		SET scan_generation = scan_generation + 1,
+		SET scan_generation = `+nextEvenScanGenerationSQL+`,
 			parent_revision = ?,
 			next_cursor = NULL, last_input_cursor = NULL,
 			page_count = 0, observed_count = 0,
@@ -1677,7 +1678,7 @@ func (d *DB) UpsertArchiveIssueSnapshot(ctx context.Context, snapshot *Issue) (i
 			accepted = true
 			return nil
 		}
-		id, revision, accepted, err = commitIssueParentSnapshotTx(ctx, tx, snapshot, snapshot.Labels)
+		id, revision, accepted, err = commitIssueParentSnapshotTx(ctx, tx, snapshot, snapshot.Labels, reopenDatasetsAtomic)
 		if err != nil {
 			return err
 		}
@@ -1718,7 +1719,7 @@ func (d *DB) UpsertArchiveMergeRequestSnapshot(ctx context.Context, snapshot *Me
 			return nil
 		}
 		id, revision, accepted, err = commitMergeRequestParentSnapshotTx(
-			ctx, tx, snapshot, snapshot.Labels, mergeRequestDetailPreserveDerived,
+			ctx, tx, snapshot, snapshot.Labels, mergeRequestDetailPreserveDerived, reopenDatasetsAtomic,
 		)
 		if err != nil {
 			return err
@@ -1842,6 +1843,13 @@ func reconcileArchiveItemSnapshotTx(
 	return nil
 }
 
+// completeArchiveInitialIfReadyTx marks the initial archive complete once both
+// inventory scans finished and no active item carries outstanding dataset
+// work. The only statuses that count as completed exceptions are 'complete',
+// 'unsupported' (a declared capability gap), and 'terminal' (the item's
+// lookup settled the outcome). 'blocked' is outstanding: it awaits an
+// explicit operator reset, and completing around it would start maintenance
+// over an incomplete initial archive.
 func completeArchiveInitialIfReadyTx(ctx context.Context, tx *sql.Tx, repoID int64, now time.Time) error {
 	_, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_repos
@@ -1861,7 +1869,7 @@ func completeArchiveInitialIfReadyTx(ctx context.Context, tx *sql.Tx, repoID int
 			JOIN middleman_archive_items ai
 			  ON ai.repo_id = p.repo_id AND ai.item_type = p.item_type AND ai.item_number = p.item_number
 			WHERE p.repo_id = ? AND ai.lifecycle_state = 'active'
-			  AND p.status IN ('pending', 'running', 'failed')
+			  AND p.status IN ('pending', 'running', 'failed', 'blocked')
 		  )`, now.UTC(), now.UTC(), repoID, repoID, repoID, repoID)
 	if err != nil {
 		return fmt.Errorf("complete initial archive: %w", err)

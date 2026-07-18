@@ -189,6 +189,9 @@ type StaleArchiveScanError struct {
 	GotGeneration      int64
 	ExpectedCursor     string
 	GotCursor          string
+	// GotStatus is set when the scan's status alone rejected the commit (a
+	// completed scan accepts nothing but an exact final-page replay).
+	GotStatus ArchiveScanStatus
 }
 
 func (e *StaleArchiveScanError) Error() string {

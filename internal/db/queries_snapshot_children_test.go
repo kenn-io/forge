@@ -703,7 +703,9 @@ func TestLiveIngestGenerationIsMonotonicPerParent(t *testing.T) {
 	}
 
 	// A fresh parent starts at generation 1 and every complete live
-	// replacement advances by exactly one, regardless of wall time.
+	// replacement advances strictly, always landing on an odd value: live
+	// stamps own the odd namespace and archive scan generations the even one,
+	// so a completing archive generation can never equal a live stamp.
 	freshID := insertTestIssue(t, database, repoID, 1, "fresh", now)
 	applied, err := database.CommitIssueChildSnapshot(ctx, IssueChildSnapshot{
 		IssueID: freshID, ExpectedRevision: 1,
@@ -719,7 +721,7 @@ func TestLiveIngestGenerationIsMonotonicPerParent(t *testing.T) {
 	})
 	require.NoError(err)
 	require.True(applied)
-	assert.Equal(map[string]int64{"a": 2, "b": 2}, commentGenerations(freshID))
+	assert.Equal(map[string]int64{"a": 3, "b": 3}, commentGenerations(freshID))
 
 	// A parent whose rows already carry a durable archive scan generation
 	// allocates strictly above it, so a later archive reconciliation for that
@@ -732,7 +734,7 @@ func TestLiveIngestGenerationIsMonotonicPerParent(t *testing.T) {
 	})
 	require.NoError(err)
 	require.True(applied)
-	assert.Equal(map[string]int64{"archived": 42, "new": 42}, commentGenerations(stampedID))
+	assert.Equal(map[string]int64{"archived": 43, "new": 43}, commentGenerations(stampedID))
 }
 
 func TestSatisfactionFailureNeverRejectsLiveWrite(t *testing.T) {

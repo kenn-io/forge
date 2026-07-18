@@ -2195,7 +2195,7 @@ func (d *DB) UpsertMergeRequestSnapshotWithLabels(
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		var err error
 		id, revision, accepted, err = commitMergeRequestParentSnapshotTx(
-			ctx, tx, mr, mr.Labels, mergeRequestDetailFromSnapshot,
+			ctx, tx, mr, mr.Labels, mergeRequestDetailFromSnapshot, reopenDatasetsBestEffort,
 		)
 		return err
 	})
@@ -2213,7 +2213,7 @@ func (d *DB) UpsertMergeRequestSnapshot(
 	var accepted bool
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		var err error
-		id, _, accepted, err = upsertMergeRequestParentTx(ctx, tx, mr)
+		id, _, accepted, err = upsertMergeRequestParentTx(ctx, tx, mr, reopenDatasetsBestEffort)
 		return err
 	})
 	return id, accepted, err
@@ -2314,7 +2314,14 @@ func upsertMergeRequestSnapshot(
 // reopens superseded child dataset progress — every parent writer flows
 // through this core, so a revision advance observed through any path (live
 // sync included) leaves the outstanding work visible to archive scheduling.
-func upsertMergeRequestParentTx(ctx context.Context, tx *sql.Tx, mr *MergeRequest) (int64, int64, bool, error) {
+// The reopen mode decides whether an archive bookkeeping failure rejects the
+// parent write (archive callers) or is discarded best-effort (live callers).
+func upsertMergeRequestParentTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	mr *MergeRequest,
+	reopen archiveReopenMode,
+) (int64, int64, bool, error) {
 	canonicalizeMergeRequestTimestamps(mr)
 	priorUpdatedAt, hadRow, err := parentRowUpdatedAtTx(
 		ctx, tx, "middleman_merge_requests", mr.RepoID, mr.Number,
@@ -2327,9 +2334,9 @@ func upsertMergeRequestParentTx(ctx context.Context, tx *sql.Tx, mr *MergeReques
 		return id, revision, accepted, err
 	}
 	if !hadRow || mr.UpdatedAt.After(priorUpdatedAt) {
-		if err := reopenDatasetsForParentTx(
+		if err := reopenDatasetsForParentModeTx(
 			ctx, tx, DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: id},
-			mr.RepoID, mr.Number, revision,
+			mr.RepoID, mr.Number, revision, reopen,
 		); err != nil {
 			return 0, 0, false, err
 		}
@@ -2364,8 +2371,9 @@ func commitIssueParentSnapshotTx(
 	tx *sql.Tx,
 	issue *Issue,
 	labels []Label,
+	reopen archiveReopenMode,
 ) (int64, int64, bool, error) {
-	id, revision, accepted, err := upsertIssueParentTx(ctx, tx, issue)
+	id, revision, accepted, err := upsertIssueParentTx(ctx, tx, issue, reopen)
 	if err != nil || !accepted {
 		return id, revision, accepted, err
 	}
@@ -2384,6 +2392,7 @@ func commitMergeRequestParentSnapshotTx(
 	mr *MergeRequest,
 	labels []Label,
 	detail mergeRequestDetailMode,
+	reopen archiveReopenMode,
 ) (int64, int64, bool, error) {
 	diffChanged := false
 	if detail != mergeRequestDetailFromSnapshot {
@@ -2395,7 +2404,7 @@ func commitMergeRequestParentSnapshotTx(
 			return 0, 0, false, err
 		}
 	}
-	id, revision, accepted, err := upsertMergeRequestParentTx(ctx, tx, mr)
+	id, revision, accepted, err := upsertMergeRequestParentTx(ctx, tx, mr, reopen)
 	if err != nil || !accepted {
 		return id, revision, accepted, err
 	}
@@ -3326,7 +3335,7 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 	var id int64
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		var err error
-		id, _, _, err = upsertIssueParentTx(ctx, tx, issue)
+		id, _, _, err = upsertIssueParentTx(ctx, tx, issue, reopenDatasetsBestEffort)
 		return err
 	})
 	return id, err
@@ -3345,13 +3354,18 @@ func (d *DB) UpsertIssueSnapshotWithLabels(
 	var accepted bool
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		var err error
-		id, revision, accepted, err = commitIssueParentSnapshotTx(ctx, tx, issue, issue.Labels)
+		id, revision, accepted, err = commitIssueParentSnapshotTx(ctx, tx, issue, issue.Labels, reopenDatasetsBestEffort)
 		return err
 	})
 	return id, revision, accepted, err
 }
 
-func upsertIssueParentTx(ctx context.Context, tx *sql.Tx, issue *Issue) (int64, int64, bool, error) {
+func upsertIssueParentTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	issue *Issue,
+	reopen archiveReopenMode,
+) (int64, int64, bool, error) {
 	canonicalizeIssueTimestamps(issue)
 	priorUpdatedAt, hadRow, err := parentRowUpdatedAtTx(
 		ctx, tx, "middleman_issues", issue.RepoID, issue.Number,
@@ -3404,9 +3418,9 @@ func upsertIssueParentTx(ctx context.Context, tx *sql.Tx, issue *Issue) (int64, 
 		return 0, 0, false, fmt.Errorf("upsert issue parent: %w", err)
 	}
 	if !hadRow || issue.UpdatedAt.After(priorUpdatedAt) {
-		if err := reopenDatasetsForParentTx(
+		if err := reopenDatasetsForParentModeTx(
 			ctx, tx, DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID},
-			issue.RepoID, issue.Number, revision,
+			issue.RepoID, issue.Number, revision, reopen,
 		); err != nil {
 			return 0, 0, false, err
 		}

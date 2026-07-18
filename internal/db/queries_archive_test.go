@@ -1,7 +1,6 @@
 package db
 
 import (
-	"database/sql"
 	"fmt"
 	"testing"
 	"time"
@@ -1471,18 +1470,14 @@ func archiveItemState(t *testing.T, database *DB, repoID int64, itemType Archive
 	row := database.ReadDB().QueryRowContext(t.Context(), `
 		SELECT repo_id, item_type, item_number, provider_item_id,
 			provider_created_at, provider_updated_at, lifecycle_state,
-			refresh_reason, hydrated_at
+			refresh_reason
 		FROM middleman_archive_items
 		WHERE repo_id = ? AND item_type = ? AND item_number = ?`, repoID, itemType, number)
 	var state ArchiveItemState
-	var hydratedAt sql.NullTime
 	require.NoError(t, row.Scan(
 		&state.RepoID, &state.ItemType, &state.ItemNumber, &state.ProviderItemID,
 		&state.ProviderCreatedAt, &state.ProviderUpdatedAt, &state.LifecycleState,
-		&state.RefreshReason, &hydratedAt,
+		&state.RefreshReason,
 	))
-	if hydratedAt.Valid {
-		state.HydratedAt = &hydratedAt.Time
-	}
 	return state
 }

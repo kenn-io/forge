@@ -447,7 +447,6 @@ type ArchiveItemState struct {
 	ProviderUpdatedAt time.Time
 	LifecycleState    ArchiveLifecycleState
 	RefreshReason     ArchiveRefreshReason
-	HydratedAt        *time.Time
 }
 
 type ClaimArchiveItemOpts struct {

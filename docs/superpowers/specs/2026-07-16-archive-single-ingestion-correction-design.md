@@ -229,7 +229,6 @@ provider_created_at
 provider_updated_at
 lifecycle_state
 refresh_reason
-hydrated_at
 ```
 
 Dataset status, cursor, retry, and error fields move out of repeated item columns and into generic dataset progress rows. Parent item hydration (the lookup that fetches or refreshes the parent before any child dataset can be scanned) is itself modeled as the `lookup` dataset, so item-scoped transient failures, retries, backoff, and terminal outcomes use the same progress machinery as child datasets instead of dedicated item columns.

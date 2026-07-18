@@ -734,9 +734,9 @@ type ArchiveItemTerminal struct {
 func markArchiveItemTerminalTx(ctx context.Context, tx *sql.Tx, t ArchiveItemTerminal) error {
 	result, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_items
-		SET lifecycle_state = ?, hydrated_at = ?
+		SET lifecycle_state = ?
 		WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
-		t.Lifecycle, t.At.UTC(), t.RepoID, t.ItemType, t.ItemNumber,
+		t.Lifecycle, t.RepoID, t.ItemType, t.ItemNumber,
 	)
 	if err != nil {
 		return fmt.Errorf("mark archive item terminal: %w", err)
@@ -1569,7 +1569,7 @@ func reactivateTerminalArchiveWorkTx(
 ) error {
 	_, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_items
-		SET lifecycle_state = 'active', hydrated_at = NULL
+		SET lifecycle_state = 'active'
 		WHERE repo_id = ? AND item_type = ? AND item_number = ?
 		  AND lifecycle_state IN ('removed_upstream', 'inaccessible')`, repoID, itemType, itemNumber)
 	if err != nil {

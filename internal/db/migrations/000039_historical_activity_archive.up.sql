@@ -75,7 +75,6 @@ CREATE TABLE middleman_archive_items (
                                           'initial',
                                           'prompt'
                                       )),
-    hydrated_at                   DATETIME,
     PRIMARY KEY (repo_id, item_type, item_number),
     UNIQUE (repo_id, item_type, provider_item_id)
 );

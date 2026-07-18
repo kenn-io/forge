@@ -9,7 +9,7 @@ import (
 )
 
 func openRegularUntrackedFile(path string) (*os.File, os.FileInfo, error) {
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -23,4 +23,8 @@ func openRegularUntrackedFile(path string) (*os.File, os.FileInfo, error) {
 		return nil, nil, errors.New("untracked path is not a regular file")
 	}
 	return file, info, nil
+}
+
+func openWorktreeFile(root *os.Root, path string) (*os.File, error) {
+	return root.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 }

@@ -30,3 +30,7 @@ func openRegularUntrackedFile(path string) (*os.File, os.FileInfo, error) {
 	}
 	return file, info, nil
 }
+
+func openWorktreeFile(root *os.Root, path string) (*os.File, error) {
+	return root.Open(path)
+}

@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { createDiffStore } from "@middleman/ui/stores/diff";
+import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
 
 const mocks = vi.hoisted(() => ({
   getWorkspaceRuntime: vi.fn(),
@@ -14,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   showFlash: vi.fn(),
   stopWorkspaceSession: vi.fn(),
   terminalWrite: vi.fn(),
+  diffStore: null as unknown as ReturnType<typeof createDiffStore>,
 }));
 
 let sockets: MockWebSocket[] = [];
@@ -136,6 +139,7 @@ vi.mock("@middleman/ui", async (importOriginal) => {
         getTerminalFontLigatures: () => false,
         getTerminalRenderer: () => "ghostty-web",
       },
+      diff: mocks.diffStore,
     }),
   };
 });
@@ -328,6 +332,7 @@ describe("WorkspaceTerminalView", () => {
     localStorage.clear();
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
     sockets = [];
+    mocks.diffStore = createDiffStore();
     mocks.getWorkspaceRuntime.mockReset();
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
     mocks.launchWorkspaceSession.mockReset();
@@ -903,6 +908,209 @@ describe("WorkspaceTerminalView", () => {
 
     await rerender({ workspaceId: "ws-1", workspaceHostKey: "member" });
     await waitFor(() => expect(urls.at(-1)).toBe("/api/v1/events"));
+  });
+
+  it("prewarms a selected fleet diff and reloads it when the remote watch advances", async () => {
+    window.__BASE_PATH__ = window.location.origin;
+    localStorage.setItem("middleman-workspace-sidebar-open", "true");
+    localStorage.setItem("middleman-workspace-sidebar-tab", "diff");
+    const changed = deferred<Response>();
+    let watchCalls = 0;
+    const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {
+      const raw = input instanceof Request ? input.url : String(input);
+      const url = new URL(raw, "http://localhost");
+      if (url.pathname.endsWith("/fleet/hosts/member/workspaces/ws-1/diff/watch")) {
+        watchCalls += 1;
+        if (watchCalls === 1) {
+          return Promise.resolve(Response.json({ changed: true, version: "fleet:1" }));
+        }
+        if (watchCalls === 2) return changed.promise;
+        return new Promise<Response>(() => {});
+      }
+      if (url.pathname.endsWith("/fleet/hosts/member/workspaces/ws-1")) {
+        return Promise.resolve(Response.json({ ...workspaceResponse, fleet_host_key: "member" }));
+      }
+      if (url.pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [] }));
+      }
+      return Promise.resolve(Response.json({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const loadWorkspaceDiff = vi.spyOn(mocks.diffStore, "loadWorkspaceDiff").mockResolvedValue();
+
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", workspaceHostKey: "member" },
+      context: new Map([[STORES_KEY, { diff: mocks.diffStore }]]),
+    });
+
+    await waitFor(() => expect(watchCalls).toBe(2));
+    await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalled());
+    const beforeChange = loadWorkspaceDiff.mock.calls.length;
+
+    changed.resolve(Response.json({ changed: true, version: "fleet:2" }));
+
+    await waitFor(() => expect(loadWorkspaceDiff.mock.calls.length).toBeGreaterThan(beforeChange));
+    expect(loadWorkspaceDiff).toHaveBeenLastCalledWith(
+      "ws-1",
+      "head",
+      false,
+      expect.objectContaining({ workspaceHostKey: "member", preserveVisible: true }),
+    );
+  });
+
+  it("retries a fleet diff watch while the workspace transitions from creating to ready", async () => {
+    window.__BASE_PATH__ = window.location.origin;
+    localStorage.setItem("middleman-workspace-sidebar-open", "true");
+    localStorage.setItem("middleman-workspace-sidebar-tab", "diff");
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    let watchCalls = 0;
+    const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {
+      const raw = input instanceof Request ? input.url : String(input);
+      const url = new URL(raw, "http://localhost");
+      if (url.pathname.endsWith("/fleet/hosts/member/workspaces/ws-1/diff/watch")) {
+        watchCalls += 1;
+        if (watchCalls === 1) {
+          return Promise.resolve(Response.json({ detail: "workspace is not ready" }, { status: 409 }));
+        }
+        if (watchCalls === 2) {
+          return Promise.resolve(Response.json({ changed: true, version: "fleet:ready" }));
+        }
+        return new Promise<Response>(() => {});
+      }
+      if (url.pathname.endsWith("/fleet/hosts/member/workspaces/ws-1")) {
+        return Promise.resolve(Response.json({ ...workspaceResponse, fleet_host_key: "member" }));
+      }
+      if (url.pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [] }));
+      }
+      return Promise.resolve(Response.json({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const loadWorkspaceDiff = vi.spyOn(mocks.diffStore, "loadWorkspaceDiff").mockResolvedValue();
+
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", workspaceHostKey: "member" },
+      context: new Map([[STORES_KEY, { diff: mocks.diffStore }]]),
+    });
+
+    await waitFor(() => expect(watchCalls).toBe(3), { timeout: 2_000 });
+    expect(
+      fetchMock.mock.calls.some(([input]) => {
+        const raw = input instanceof Request ? input.url : String(input);
+        return new URL(raw, "http://localhost").searchParams.get("version") === "fleet:ready";
+      }),
+    ).toBe(true);
+    await waitFor(() => {
+      expect(loadWorkspaceDiff).toHaveBeenLastCalledWith(
+        "ws-1",
+        "head",
+        false,
+        expect.objectContaining({ workspaceHostKey: "member", preserveVisible: true }),
+      );
+    });
+  });
+
+  it("removes the old sidebar and waits for matching runtime before loading the new diff", async () => {
+    window.__BASE_PATH__ = window.location.origin;
+    localStorage.setItem("middleman-workspace-sidebar-open", "true");
+    localStorage.setItem("middleman-workspace-sidebar-tab", "diff");
+    const workspaceB = { ...workspaceResponse, id: "ws-2", git_head_ref: "feature/two" };
+    const workspaceBGate = deferred<typeof workspaceB>();
+    const runtimeBGate = deferred<ReturnType<typeof runtimeWithStaleSession>>();
+    const eventListeners: Array<Record<string, (event: MessageEvent) => void>> = [];
+    const loadWorkspaceDiff = vi.spyOn(mocks.diffStore, "loadWorkspaceDiff").mockResolvedValue();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const path = fetchPath(input);
+        if (path.endsWith("/workspaces/ws-1")) return Promise.resolve(Response.json(workspaceResponse));
+        if (path.endsWith("/workspaces/ws-2")) {
+          return workspaceBGate.promise.then((workspace) => Response.json(workspace));
+        }
+        if (path.endsWith("/api/v1/workspaces")) {
+          return Promise.resolve(Response.json({ workspaces: [workspaceResponse, workspaceB] }));
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        private listeners: Record<string, (event: MessageEvent) => void> = {};
+        constructor() {
+          eventListeners.push(this.listeners);
+        }
+        addEventListener(type: string, callback: (event: MessageEvent) => void): void {
+          this.listeners[type] = callback;
+        }
+        close(): void {}
+      },
+    );
+    mocks.getWorkspaceRuntime
+      .mockResolvedValueOnce(runtimeWithStaleSession())
+      .mockReturnValueOnce(runtimeBGate.promise);
+
+    const { rerender } = render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1" },
+      context: new Map([[STORES_KEY, { diff: mocks.diffStore }]]),
+    });
+    await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-1", "head", false, expect.anything()));
+
+    await rerender({ workspaceId: "ws-2" });
+
+    expect(await screen.findByText("Loading workspace details...")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Workspace Diff" })).toBeNull();
+    expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
+
+    eventListeners.at(-1)?.workspace_diff_ready?.(
+      new MessageEvent("workspace_diff_ready", {
+        data: JSON.stringify({ workspace_id: "ws-2", version: "generation:2" }),
+      }),
+    );
+    workspaceBGate.resolve(workspaceB);
+    await Promise.resolve();
+    expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
+
+    runtimeBGate.resolve(runtimeWithStaleSession());
+    await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-2", "head", false, expect.anything()));
+    expect(screen.queryByText("Loading workspace details...")).toBeNull();
+  });
+
+  it("renders matching workspace details when runtime loading fails", async () => {
+    window.__BASE_PATH__ = window.location.origin;
+    localStorage.setItem("middleman-workspace-sidebar-open", "true");
+    localStorage.setItem("middleman-workspace-sidebar-tab", "diff");
+    const loadWorkspaceDiff = vi.spyOn(mocks.diffStore, "loadWorkspaceDiff").mockResolvedValue();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const path = fetchPath(input);
+        if (path.endsWith("/workspaces/ws-1")) return Promise.resolve(Response.json(workspaceResponse));
+        if (path.endsWith("/api/v1/workspaces")) {
+          return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        addEventListener(): void {}
+        close(): void {}
+      },
+    );
+    mocks.getWorkspaceRuntime.mockRejectedValue(new Error("runtime unavailable"));
+
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1" },
+      context: new Map([[STORES_KEY, { diff: mocks.diffStore }]]),
+    });
+
+    expect(await screen.findByText("runtime unavailable")).toBeTruthy();
+    await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-1", "head", false, expect.anything()));
+    expect(screen.queryByText("Loading workspace details...")).toBeNull();
   });
 
   it("treats id-less workspace status events as global invalidation", async () => {

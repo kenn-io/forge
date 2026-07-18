@@ -75,6 +75,7 @@
     clearActiveTerminalDrag,
     readRuntimeSessionDrag,
   } from "./terminal-drag";
+  import { shouldRetryFleetDiffWatch } from "./fleet-diff-watch.js";
   import { Button, CollapsibleSidebar,
     SplitResizeHandle,
     WorkspaceRightSidebar,
@@ -364,13 +365,13 @@
   // workspace.id check, a runtime that lands first for the new
   // workspace can render its sessions/launch targets next to the
   // previous workspace's still-cached header/home data.
-  const runtimeLive = $derived(
-    runtime !== null &&
-      runtimeForId === workspaceId &&
-      runtimeForHostKey === workspaceHostKey &&
-      workspace?.id === workspaceId &&
-      selectedWorkspaceHostKey(workspace) === workspaceHostKey,
+  const workspaceLive = $derived(
+    workspace?.id === workspaceId && selectedWorkspaceHostKey(workspace) === workspaceHostKey,
   );
+  const runtimeLive = $derived(
+    runtime !== null && runtimeForId === workspaceId && runtimeForHostKey === workspaceHostKey && workspaceLive,
+  );
+  const workspaceDetailsReady = $derived(workspaceLive && (runtimeLive || runtimeError !== null));
 
   function hasAppliedRuntimeFor(
     id: string,
@@ -2392,6 +2393,67 @@
     forcePromptForId = null;
   }
 
+  async function watchFleetWorkspaceDiff(
+    id: string,
+    hostKey: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    let version = "";
+    let retryDelay = 1_000;
+    while (!signal.aborted && isCurrentWorkspace(id, hostKey)) {
+      try {
+        const { data, response } = await client.GET(
+          "/fleet/hosts/{host_key}/workspaces/{id}/diff/watch",
+          {
+            params: {
+              path: { host_key: hostKey, id },
+              query: version ? { version } : {},
+            },
+            signal,
+          },
+        );
+        if (signal.aborted || !isCurrentWorkspace(id, hostKey)) return;
+        const update = data as
+          | { changed?: boolean; version?: string }
+          | undefined;
+        if (!response.ok) {
+          if (!shouldRetryFleetDiffWatch(response.status)) return;
+          await waitForFleetDiffWatchRetry(signal, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 30_000);
+          continue;
+        }
+        // A successful but incompatible response will not become valid by
+        // retrying forever. Leave request-driven diff loading in place for
+        // older fleet members that do not implement the watch contract.
+        if (typeof update?.version !== "string" || update.version === "") return;
+        retryDelay = 1_000;
+        version = update.version;
+        if (update.changed && version !== lastDiffSnapshotVersion) {
+          lastDiffSnapshotVersion = version;
+          diffRefreshToken += 1;
+        }
+      } catch {
+        if (signal.aborted || !isCurrentWorkspace(id, hostKey)) return;
+        await waitForFleetDiffWatchRetry(signal, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, 30_000);
+      }
+    }
+  }
+
+  function waitForFleetDiffWatchRetry(signal: AbortSignal, delay: number): Promise<void> {
+    if (signal.aborted) return Promise.resolve();
+    const jitteredDelay = Math.round(delay * (0.8 + Math.random() * 0.4));
+    return new Promise((resolve) => {
+      const done = () => {
+        window.clearTimeout(timeout);
+        signal.removeEventListener("abort", done);
+        resolve();
+      };
+      const timeout = window.setTimeout(done, jitteredDelay);
+      signal.addEventListener("abort", done, { once: true });
+    });
+  }
+
   let previouslyFocusedEl: HTMLElement | null = null;
 
   $effect(() => {
@@ -2424,14 +2486,10 @@
   // App.svelte means the lifecycle is now driven entirely by this
   // effect.
   //
-  // Critically, this effect must NOT null out `workspace` or
-  // `runtime` between switches: the right sidebar and stage area
-  // both gate on those values being non-null, so clearing them
-  // would unmount the right sidebar and replace the stage with the
-  // "Setting up workspace…" spinner — the flash the user is trying
-  // to avoid. Instead we let the previous workspace's data stay on
-  // screen until the new fetchWorkspace() resolves and overwrites
-  // it in place.
+  // Keep the previous workspace and runtime available to the workflow
+  // stage until their replacements arrive. The right sidebar gates on
+  // runtimeLive separately, so it cannot mix those retained values with
+  // the newly selected route.
   $effect(() => {
     const id = workspaceId;
     const hostKey = workspaceHostKey;
@@ -2480,6 +2538,7 @@
     // leave these flags stuck true on the next workspace.
     retryingSetup = false;
     refreshingWorkspace = false;
+    lastDiffSnapshotVersion = "";
 
     // Errors/transient flags from the prior workspace should not
     // bleed across — clear them but don't touch workspace/runtime.
@@ -2513,6 +2572,11 @@
       runtimeForHostKey = undefined;
       stopRuntimePolling();
       return;
+    }
+
+    const fleetDiffWatchAbort = hostKey ? new AbortController() : null;
+    if (hostKey && fleetDiffWatchAbort) {
+      void watchFleetWorkspaceDiff(id, hostKey, fleetDiffWatchAbort.signal);
     }
 
     const evtUrl = new URL(`${basePath}/api/v1/events`, window.location.origin);
@@ -2572,28 +2636,27 @@
       void fetchRuntime();
       diffRefreshToken += 1;
     });
-    source.addEventListener(
-      "workspace_diff_changed",
-      (e: MessageEvent) => {
-        try {
-          const data = JSON.parse(e.data as string) as {
-            workspace_id?: string;
-            version?: string;
-          };
-          if (
-            data.workspace_id === id &&
-            typeof data.version === "string" &&
-            data.version !== "" &&
-            data.version !== lastDiffSnapshotVersion
-          ) {
-            lastDiffSnapshotVersion = data.version;
-            diffRefreshToken += 1;
-          }
-        } catch {
-          // Malformed SSE data; ignore.
+    const refreshPreparedDiff = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data as string) as {
+          workspace_id?: string;
+          version?: string;
+        };
+        if (
+          data.workspace_id === id &&
+          typeof data.version === "string" &&
+          data.version !== "" &&
+          data.version !== lastDiffSnapshotVersion
+        ) {
+          lastDiffSnapshotVersion = data.version;
+          diffRefreshToken += 1;
         }
-      },
-    );
+      } catch {
+        // Malformed SSE data; ignore.
+      }
+    };
+    source.addEventListener("workspace_diff_ready", refreshPreparedDiff);
+    source.addEventListener("workspace_diff_changed", refreshPreparedDiff);
 
     void workspaceRequest.then(() => {
       if (workspace?.status === "creating") {
@@ -2606,6 +2669,7 @@
     return () => {
       stopPolling();
       stopRuntimePolling();
+      fleetDiffWatchAbort?.abort();
       source.close();
       if (eventSource === source) {
         eventSource = null;
@@ -3058,7 +3122,7 @@
               {/if}
             </div>
           </div>
-          {#if sidebarOpen && workspace && !hideRightSidebar}
+          {#if sidebarOpen && !hideRightSidebar}
             <SplitResizeHandle
               class="sidebar-resize-handle"
               ariaLabel="Resize workspace details"
@@ -3073,36 +3137,43 @@
               class="right-sidebar"
               style="width: {sidebarWidth}px"
             >
-              {#snippet kataTaskPanel()}
-                {@const sidebarWorkspace = workspace}
-                {#if sidebarWorkspace?.kata}
-                  <KataWorkspaceSidebarPane
-                    kata={sidebarWorkspace.kata}
-                    disabled={actionsBlocked}
-                  />
-                {:else}
-                  <EmptyState title="No linked Kata task" />
-                {/if}
-              {/snippet}
-              <WorkspaceRightSidebar
-                activeTab={sidebarTab}
-                workspaceID={workspace.id}
-                workspaceHostKey={selectedWorkspaceHostKey(workspace)}
-                provider={workspace.repo.provider}
-                platformHost={workspace.repo.platform_host}
-                repoOwner={workspace.repo.owner}
-                repoName={workspace.repo.name}
-                repoPath={workspace.repo.repo_path}
-                ownerItemType={workspace.item_type}
-                ownerItemNumber={workspace.item_number}
-                associatedPRNumber={getWorkspacePRNumber(workspace)}
-                branch={workspace.git_head_ref}
-                roborevBaseUrl={basePath + "/api/roborev"}
-                refreshToken={sidebarRefreshToken}
-                {diffRefreshToken}
-                disabled={actionsBlocked}
-                {kataTaskPanel}
-              />
+              {#if workspaceDetailsReady && workspace}
+                {#snippet kataTaskPanel()}
+                  {@const sidebarWorkspace = workspace}
+                  {#if sidebarWorkspace?.kata}
+                    <KataWorkspaceSidebarPane
+                      kata={sidebarWorkspace.kata}
+                      disabled={actionsBlocked}
+                    />
+                  {:else}
+                    <EmptyState title="No linked Kata task" />
+                  {/if}
+                {/snippet}
+                <WorkspaceRightSidebar
+                  activeTab={sidebarTab}
+                  workspaceID={workspace.id}
+                  workspaceHostKey={selectedWorkspaceHostKey(workspace)}
+                  provider={workspace.repo.provider}
+                  platformHost={workspace.repo.platform_host}
+                  repoOwner={workspace.repo.owner}
+                  repoName={workspace.repo.name}
+                  repoPath={workspace.repo.repo_path}
+                  ownerItemType={workspace.item_type}
+                  ownerItemNumber={workspace.item_number}
+                  associatedPRNumber={getWorkspacePRNumber(workspace)}
+                  branch={workspace.git_head_ref}
+                  roborevBaseUrl={basePath + "/api/roborev"}
+                  refreshToken={sidebarRefreshToken}
+                  {diffRefreshToken}
+                  disabled={actionsBlocked}
+                  {kataTaskPanel}
+                />
+              {:else}
+                <div class="state-message">
+                  <Spinner size={18} />
+                  <span>Loading workspace details...</span>
+                </div>
+              {/if}
             </div>
           {/if}
         </div>

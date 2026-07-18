@@ -761,6 +761,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/fleet/hosts/{host_key}/workspaces/{id}/diff/watch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Watch selected workspace diff on fleet host */
+        get: operations["watch-fleet-workspace-diff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/fleet/hosts/{host_key}/workspaces/{id}/file-preview": {
         parameters: {
             query?: never;
@@ -4016,6 +4033,23 @@ export interface paths {
         };
         /** Get workspace diff */
         get: operations["get-workspace-diff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/diff/watch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Watch selected workspace diff */
+        get: operations["watch-workspace-diff"];
         put?: never;
         post?: never;
         delete?: never;
@@ -7321,6 +7355,18 @@ export interface components {
             updated_reason?: string;
             updated_source?: string;
         };
+        WorkspaceDiffWatchResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkspaceDiffWatchResponse.json
+             */
+            readonly $schema?: string;
+            /** @description True when the caller must reload the watched default-HEAD snapshot. */
+            changed: boolean;
+            /** @description Opaque version of the current default-HEAD snapshot; never a version from another diff scope. */
+            version: string;
+        };
         WorkspaceKataMetadata: {
             daemon_id: string;
             issue_uid: string;
@@ -9112,6 +9158,37 @@ export interface operations {
                 from?: string;
                 /** @description Newer range commit SHA. */
                 to?: string;
+                /** @description Pinned workspace snapshot version. */
+                revision?: string;
+            };
+            header?: never;
+            path: {
+                host_key: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response returned by the owning fleet host. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "watch-fleet-workspace-diff": {
+        parameters: {
+            query?: {
+                /** @description Last observed workspace diff snapshot version. */
+                version?: string;
             };
             header?: never;
             path: {
@@ -9149,6 +9226,8 @@ export interface operations {
                 from?: string;
                 /** @description Newer range commit SHA. */
                 to?: string;
+                /** @description Pinned workspace snapshot version. */
+                revision?: string;
                 /** @description Workspace file path to preview. */
                 path?: string;
                 /** @description Preview side. */
@@ -16709,6 +16788,40 @@ export interface operations {
             };
         };
     };
+    "watch-workspace-diff": {
+        parameters: {
+            query?: {
+                /** @description Last observed opaque workspace diff snapshot version */
+                version?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceDiffWatchResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "get-workspace-file-preview": {
         parameters: {
             query?: {
@@ -16726,6 +16839,8 @@ export interface operations {
                 from?: string;
                 /** @description End SHA for range diff (inclusive) */
                 to?: string;
+                /** @description Optional snapshot_version returned by the workspace files endpoint */
+                revision?: string;
             };
             header?: never;
             path: {

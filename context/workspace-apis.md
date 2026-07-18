@@ -189,19 +189,83 @@ server check exactly.
 
 ## Diff Snapshot Coherence
 
-- Files, patches, and previews must project from one immutable snapshot; clients
-  pin `/diff` to the `/files` revision and retry a revision conflict atomically
+- Files and patches project from one immutable snapshot. Preview membership is
+  revision-pinned too, but new-side bytes remain live and may move afterward
   (`internal/server/workspace_diff_cache.go::workspaceDiffCache`).
-- Cache entries are stale-while-revalidate with last-known-good fallback. Only
-  selected workspaces receive proactive refresh leases; ordinary entries validate
-  on demand so background Git work scales with active UI use
+- Cache entries are stale-while-revalidate with last-known-good fallback.
+  `jellydator/ttlcache/v3` owns entry storage, TTL expiration, and inactive-entry
+  cost pressure through separate protected and cost-limited pools; middleman's
+  wrapper owns snapshot coherence, bounded validation, selection leases, and
+  publication. Only selected workspaces
+  receive proactive refresh leases; ordinary entries validate on demand
   (`internal/server/server.go::streamEvents`).
+- A local workspace becomes selected through its scoped SSE stream. The server
+  subscribes that stream before acquiring the selection lease, then emits
+  `workspace_diff_ready` only when cold/coalesced default-HEAD preparation
+  completes; a warm cache hit needs no readiness event. This ordering prevents
+  fast preparation from racing ahead of the selecting browser.
+- Fleet selection uses `/workspaces/{id}/diff/watch` through the fleet proxy to
+  hold the remote lease, prewarm HEAD, and relay opaque versions. Switching
+  aborts and replaces the watch, so only the selected remote workspace refreshes
+  (`internal/server/huma_routes.go::watchWorkspaceDiff`). Empty or foreign
+  tokens return `changed=true`; matches wait 25 seconds and timeout unchanged.
+  A `409` while the workspace is still being created is transient and the client
+  retries it with the normal watch backoff; unsupported watch responses remain
+  terminal and fall back to request-driven diff loading.
+- Workspace switching keeps runtime and shell reads on their own critical path.
+  The previous sidebar is replaced immediately by a neutral placeholder. The
+  new diff panel mounts after matching workspace metadata and either matching
+  runtime state or a terminal runtime error, so a runtime API failure cannot
+  leave workspace details hidden forever. Panel cancellation uses a per-load
+  token in addition to workspace identity: cleanup from an older same-workspace
+  load must not abort its replacement.
+- Manual workspace refresh schedules asynchronous validation for every cached
+  key belonging to that workspace, whether or not the workspace currently has
+  a local selection lease, even when provider refresh later fails. Workspace
+  responses and runtime readiness never wait on Git. Failure preserves the last-known-good snapshot;
+  a later request or signal retries, and a changed fingerprint publishes through
+  `workspace_diff_changed` when ready. Watcher hints validate selected keys even
+  inside the freshness interval; periodic validation makes stale snapshots
+  eligible for refresh, while the bounded queue is not a hard completion deadline
+  (`internal/server/server.go::notifyWorktreeStatsChanged`). One background worker
+  serializes proactive validation; foreground cold reads bypass that queue.
+- The 128 MiB inactive-cache budget evicts least-recently-used inactive
+  entries, never active snapshots. A newly published snapshot has a one-minute
+  files/diff revision lease so an oversized `/files` response cannot evict
+  itself before its pinned `/diff` read. Selected keys stop being protected
+  after 10 minutes without access. Selected and pair-retained snapshots have
+  zero eviction cost and may temporarily put the total working set above the
+  inactive-cache budget
+  (`internal/server/workspace_diff_cache.go::maintainLocked`).
 - Publishing a dirty-worktree snapshot requires matching before/after resolved
-  refs and fingerprints; repository-local attributes are fingerprint inputs
-  (`internal/workspace/diff_snapshot.go::PrepareDiffSnapshot`).
+  refs and fingerprints; repository-local attributes are fingerprint inputs.
+  Commit/range generated-file checks use the resolved head commit as the Git
+  attribute source, while live worktree snapshots intentionally use worktree
+  attributes (`internal/workspace/diff_snapshot.go::PrepareDiffSnapshot`).
 - Whitespace-only classification is post-processing over aggregate Git output;
   raw mode/type changes remain substantive even when content differs only in
-  whitespace (`internal/workspace/diff_whitespace.go::classifyWhitespaceOnly`).
+  whitespace. Ambiguous multi-hunk files compare complete old/new record
+  sequences in Go. One batch Git process streams old blobs into ordered
+  whitespace-normalized record digests, keeping memory bounded without per-file
+  subprocesses (`internal/workspace/diff_whitespace.go::readWhitespaceBlobDigests`).
+- Untracked-file content is required for binary detection, line totals, and
+  synthetic patches, but snapshot preparation does not read an unbounded path
+  list serially. Tracked/untracked fingerprint hashing and untracked patch
+  construction share one file-read budget sized from the Go runtime's host
+  parallelism at process start, so cache validation cannot multiply I/O
+  concurrency. Results retain path order and cancellation propagates between
+  files and read chunks
+  (`internal/workspace/diff.go::untrackedReadPool.run`).
+- Snapshot versions are opaque equality tokens. Clients may compare only for
+  equality; ordering and replay position come from SSE event IDs, not from
+  parsing the version or revision fields. A typed `snapshot_changed` preview
+  conflict reloads the coherent files/diff pair once and retries the preview.
+- Live worktree reads use Go's `os.Root` containment. Final symlinks are read as
+  links, regular files are identity-checked across the open, and intermediate
+  symlinks may resolve only within the worktree. Untracked patch reads and
+  fingerprints use the same rooted opens, reject non-regular files, and remain
+  cancellable while hashing; cached diff membership never authorizes traversal
+  (`internal/workspace/diff_snapshot.go::fingerprintWorktreePath`).
 
 ## Branch Upstream
 

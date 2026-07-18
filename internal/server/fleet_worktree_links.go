@@ -282,7 +282,7 @@ func (s *Server) NotifyWorktreeLinksChanged() {
 // broadcasts a payload-free worktree_stats_changed refetch hint.
 func (s *Server) notifyWorktreeStatsChanged() {
 	if s.workspaceDiffCache != nil {
-		s.workspaceDiffCache.ValidateSelected()
+		s.workspaceDiffCache.RevalidateSelected()
 	}
 	if s.hub != nil {
 		s.hub.Broadcast(Event{

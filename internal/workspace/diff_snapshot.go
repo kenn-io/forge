@@ -42,6 +42,8 @@ type DiffFingerprint string
 
 const maxDiffContentDigestEntries = 4096
 
+var errWorktreePathNotRegular = errors.New("worktree path is not a regular file or symlink")
+
 var diffContentDigests = struct {
 	sync.Mutex
 	entries map[string]diffContentDigestEntry
@@ -155,6 +157,10 @@ func FingerprintDiffSnapshot(
 	} else {
 		writeDiffFingerprintField(h, []byte{0})
 	}
+	if err := fingerprintRepositoryAttributes(ctx, h, current.WorktreePath); err != nil {
+		span.RecordError(err)
+		return "", err
+	}
 	if !current.IncludeUntracked {
 		return DiffFingerprint(fmt.Sprintf("%x", h.Sum(nil))), nil
 	}
@@ -177,11 +183,6 @@ func FingerprintDiffSnapshot(
 	}
 	writeDiffFingerprintField(h, rawOut)
 	writeDiffFingerprintField(h, untrackedOut)
-	if err := fingerprintRepositoryAttributes(ctx, h, current.WorktreePath); err != nil {
-		span.RecordError(err)
-		return "", err
-	}
-
 	paths := make(map[string]struct{})
 	for _, file := range gitclone.ParseRawZ(rawOut) {
 		paths[file.Path] = struct{}{}
@@ -196,14 +197,31 @@ func FingerprintDiffSnapshot(
 		orderedPaths = append(orderedPaths, path)
 	}
 	sort.Strings(orderedPaths)
-	var bytesRead int64
-	for _, path := range orderedPaths {
-		read, err := fingerprintWorktreePath(h, current.WorktreePath, path)
-		if err != nil {
-			span.RecordError(err)
-			return "", err
+	type pathFingerprint struct {
+		encoded   []byte
+		bytesRead int64
+	}
+	pathFingerprints := make([]pathFingerprint, len(orderedPaths))
+	err = untrackedFileReads.run(ctx, orderedPaths, func(
+		readCtx context.Context, index int, path string,
+	) error {
+		encoded, read, readErr := fingerprintWorktreePath(
+			readCtx, current.WorktreePath, path,
+		)
+		if readErr != nil {
+			return readErr
 		}
-		bytesRead += read
+		pathFingerprints[index] = pathFingerprint{encoded: encoded, bytesRead: read}
+		return nil
+	})
+	if err != nil {
+		span.RecordError(err)
+		return "", err
+	}
+	var bytesRead int64
+	for _, fingerprint := range pathFingerprints {
+		_, _ = h.Write(fingerprint.encoded)
+		bytesRead += fingerprint.bytesRead
 	}
 	span.SetAttributes(
 		attribute.Int("workspace.diff.fingerprint_paths", len(orderedPaths)),
@@ -237,63 +255,72 @@ func fingerprintRepositoryAttributes(
 	return nil
 }
 
-func fingerprintWorktreePath(h hash.Hash, dir, path string) (int64, error) {
+func fingerprintWorktreePath(ctx context.Context, dir, path string) ([]byte, int64, error) {
 	clean, err := cleanWorktreeDiffPath(path)
 	if err != nil {
-		return 0, err
+		return nil, 0, err
 	}
-	writeDiffFingerprintField(h, []byte(clean))
+	var encoded bytes.Buffer
+	writeDiffFingerprintField(&encoded, []byte(clean))
 	fullPath := filepath.Join(dir, filepath.FromSlash(clean))
-	info, err := os.Lstat(fullPath)
+	opened, err := openWorktreePath(dir, clean)
 	if errors.Is(err, os.ErrNotExist) {
-		writeDiffFingerprintField(h, []byte("missing"))
-		return 0, nil
+		writeDiffFingerprintField(&encoded, []byte("missing"))
+		return encoded.Bytes(), 0, nil
+	}
+	if errors.Is(err, errWorktreePathNotRegular) {
+		writeDiffFingerprintField(&encoded, []byte("nonregular"))
+		return encoded.Bytes(), 0, nil
 	}
 	if err != nil {
-		return 0, err
+		return nil, 0, err
 	}
-	writeDiffFingerprintField(h, []byte(info.Mode().String()))
-	if info.Mode()&os.ModeSymlink != 0 {
-		target, err := os.Readlink(fullPath)
-		if err != nil {
-			return 0, err
-		}
-		writeDiffFingerprintField(h, []byte(target))
-		return 0, nil
+	if opened.file == nil {
+		writeDiffFingerprintField(&encoded, []byte("symlink"))
+		writeDiffFingerprintField(&encoded, []byte(opened.symlinkTarget))
+		return encoded.Bytes(), 0, nil
 	}
-	if !info.Mode().IsRegular() {
-		return 0, nil
-	}
-	digest, bytesRead, err := diffContentDigest(fullPath, info)
+	defer opened.file.Close()
+	writeDiffFingerprintField(&encoded, []byte(opened.info.Mode().String()))
+	digest, bytesRead, err := diffContentDigestFile(ctx, fullPath, opened.file, opened.info)
 	if err != nil {
-		return 0, err
+		return nil, 0, err
 	}
-	writeDiffFingerprintField(h, digest[:])
-	return bytesRead, nil
+	writeDiffFingerprintField(&encoded, digest[:])
+	return encoded.Bytes(), bytesRead, nil
 }
 
-func diffContentDigest(path string, info os.FileInfo) ([sha256.Size]byte, int64, error) {
+func diffContentDigest(ctx context.Context, path string) ([sha256.Size]byte, int64, error) {
+	file, info, err := openRegularUntrackedFile(path)
+	if err != nil {
+		return [sha256.Size]byte{}, 0, err
+	}
+	defer file.Close()
+	return diffContentDigestFile(ctx, path, file, info)
+}
+
+func diffContentDigestFile(
+	ctx context.Context,
+	cacheKey string,
+	file *os.File,
+	info os.FileInfo,
+) ([sha256.Size]byte, int64, error) {
 	identity := fmt.Sprintf(
 		"%d|%d|%s|%#v",
 		info.Size(), info.ModTime().UnixNano(), info.Mode(), info.Sys(),
 	)
 	now := time.Now()
 	diffContentDigests.Lock()
-	if cached, ok := diffContentDigests.entries[path]; ok && cached.identity == identity {
+	if cached, ok := diffContentDigests.entries[cacheKey]; ok && cached.identity == identity {
 		cached.usedAt = now
-		diffContentDigests.entries[path] = cached
+		diffContentDigests.entries[cacheKey] = cached
 		diffContentDigests.Unlock()
 		return cached.digest, 0, nil
 	}
 	diffContentDigests.Unlock()
 
-	file, err := os.Open(path)
-	if err != nil {
-		return [sha256.Size]byte{}, 0, err
-	}
-	defer file.Close()
 	digestHash := sha256.New()
-	bytesRead, err := io.Copy(digestHash, file)
+	bytesRead, err := hashDiffContent(ctx, digestHash, file)
 	if err != nil {
 		return [sha256.Size]byte{}, bytesRead, err
 	}
@@ -301,7 +328,7 @@ func diffContentDigest(path string, info os.FileInfo) ([sha256.Size]byte, int64,
 	copy(digest[:], digestHash.Sum(nil))
 
 	diffContentDigests.Lock()
-	diffContentDigests.entries[path] = diffContentDigestEntry{
+	diffContentDigests.entries[cacheKey] = diffContentDigestEntry{
 		identity: identity,
 		digest:   digest,
 		usedAt:   now,
@@ -321,11 +348,38 @@ func diffContentDigest(path string, info os.FileInfo) ([sha256.Size]byte, int64,
 	return digest, bytesRead, nil
 }
 
-func writeDiffFingerprintField(h hash.Hash, value []byte) {
+func hashDiffContent(ctx context.Context, destination hash.Hash, file *os.File) (int64, error) {
+	buffer := make([]byte, 128<<10)
+	var total int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return total, err
+		}
+		read, err := file.Read(buffer)
+		if read > 0 {
+			written, writeErr := destination.Write(buffer[:read])
+			total += int64(written)
+			if writeErr != nil {
+				return total, writeErr
+			}
+			if written != read {
+				return total, errors.New("short diff fingerprint hash write")
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return total, nil
+			}
+			return total, err
+		}
+	}
+}
+
+func writeDiffFingerprintField(w io.Writer, value []byte) {
 	var size [8]byte
 	binary.LittleEndian.PutUint64(size[:], uint64(len(value)))
-	_, _ = h.Write(size[:])
-	_, _ = h.Write(value)
+	_, _ = w.Write(size[:])
+	_, _ = w.Write(value)
 }
 
 func PrepareDiffSnapshot(

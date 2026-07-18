@@ -3232,6 +3232,18 @@ type WorkflowStateMetaResponse struct {
 // WorkflowStateMetaResponseStatus defines model for WorkflowStateMetaResponse.Status.
 type WorkflowStateMetaResponseStatus string
 
+// WorkspaceDiffWatchResponse defines model for WorkspaceDiffWatchResponse.
+type WorkspaceDiffWatchResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// Changed True when the caller must reload the watched default-HEAD snapshot.
+	Changed bool `json:"changed"`
+
+	// Version Opaque version of the current default-HEAD snapshot; never a version from another diff scope.
+	Version string `json:"version"`
+}
+
 // WorkspaceKataMetadata defines model for WorkspaceKataMetadata.
 type WorkspaceKataMetadata struct {
 	DaemonId    string  `json:"daemon_id"`
@@ -3518,6 +3530,15 @@ type GetFleetWorkspaceDiffParams struct {
 
 	// To Newer range commit SHA.
 	To *string `form:"to,omitempty" json:"to,omitempty"`
+
+	// Revision Pinned workspace snapshot version.
+	Revision *string `form:"revision,omitempty" json:"revision,omitempty"`
+}
+
+// WatchFleetWorkspaceDiffParams defines parameters for WatchFleetWorkspaceDiff.
+type WatchFleetWorkspaceDiffParams struct {
+	// Version Last observed workspace diff snapshot version.
+	Version *string `form:"version,omitempty" json:"version,omitempty"`
 }
 
 // GetFleetWorkspaceFilePreviewParams defines parameters for GetFleetWorkspaceFilePreview.
@@ -3536,6 +3557,9 @@ type GetFleetWorkspaceFilePreviewParams struct {
 
 	// To Newer range commit SHA.
 	To *string `form:"to,omitempty" json:"to,omitempty"`
+
+	// Revision Pinned workspace snapshot version.
+	Revision *string `form:"revision,omitempty" json:"revision,omitempty"`
 
 	// Path Workspace file path to preview.
 	Path *string `form:"path,omitempty" json:"path,omitempty"`
@@ -3940,6 +3964,12 @@ type GetWorkspaceDiffParams struct {
 	Revision *string `form:"revision,omitempty" json:"revision,omitempty"`
 }
 
+// WatchWorkspaceDiffParams defines parameters for WatchWorkspaceDiff.
+type WatchWorkspaceDiffParams struct {
+	// Version Last observed opaque workspace diff snapshot version
+	Version *string `form:"version,omitempty" json:"version,omitempty"`
+}
+
 // GetWorkspaceFilePreviewParams defines parameters for GetWorkspaceFilePreview.
 type GetWorkspaceFilePreviewParams struct {
 	// Base Diff base: head, pushed, or merge-target
@@ -3962,6 +3992,9 @@ type GetWorkspaceFilePreviewParams struct {
 
 	// To End SHA for range diff (inclusive)
 	To *string `form:"to,omitempty" json:"to,omitempty"`
+
+	// Revision Optional snapshot_version returned by the workspace files endpoint
+	Revision *string `form:"revision,omitempty" json:"revision,omitempty"`
 }
 
 // GetWorkspaceFilePreviewParamsBase defines parameters for GetWorkspaceFilePreview.
@@ -4570,6 +4603,9 @@ type ClientInterface interface {
 
 	// GetFleetWorkspaceDiff request
 	GetFleetWorkspaceDiff(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// WatchFleetWorkspaceDiff request
+	WatchFleetWorkspaceDiff(ctx context.Context, hostKey string, id string, params *WatchFleetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetFleetWorkspaceFilePreview request
 	GetFleetWorkspaceFilePreview(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -5387,6 +5423,9 @@ type ClientInterface interface {
 
 	// GetWorkspaceDiff request
 	GetWorkspaceDiff(ctx context.Context, id string, params *GetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// WatchWorkspaceDiff request
+	WatchWorkspaceDiff(ctx context.Context, id string, params *WatchWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetWorkspaceFilePreview request
 	GetWorkspaceFilePreview(ctx context.Context, id string, params *GetWorkspaceFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6276,6 +6315,18 @@ func (c *Client) GetFleetWorkspaceCommits(ctx context.Context, hostKey string, i
 
 func (c *Client) GetFleetWorkspaceDiff(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetFleetWorkspaceDiffRequest(c.Server, hostKey, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) WatchFleetWorkspaceDiff(ctx context.Context, hostKey string, id string, params *WatchFleetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewWatchFleetWorkspaceDiffRequest(c.Server, hostKey, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -9886,6 +9937,18 @@ func (c *Client) GetWorkspaceDiff(ctx context.Context, id string, params *GetWor
 	return c.Client.Do(req)
 }
 
+func (c *Client) WatchWorkspaceDiff(ctx context.Context, id string, params *WatchWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewWatchWorkspaceDiffRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetWorkspaceFilePreview(ctx context.Context, id string, params *GetWorkspaceFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspaceFilePreviewRequest(c.Server, id, params)
 	if err != nil {
@@ -12881,6 +12944,86 @@ func NewGetFleetWorkspaceDiffRequest(server string, hostKey string, id string, p
 
 		}
 
+		if params.Revision != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "revision", *params.Revision, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewWatchFleetWorkspaceDiffRequest generates requests for WatchFleetWorkspaceDiff
+func NewWatchFleetWorkspaceDiffRequest(server string, hostKey string, id string, params *WatchFleetWorkspaceDiffParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "host_key", hostKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fleet/hosts/%s/workspaces/%s/diff/watch", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Version != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "version", *params.Version, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -12988,6 +13131,18 @@ func NewGetFleetWorkspaceFilePreviewRequest(server string, hostKey string, id st
 		if params.To != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Revision != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "revision", *params.Revision, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -26685,6 +26840,67 @@ func NewGetWorkspaceDiffRequest(server string, id string, params *GetWorkspaceDi
 	return req, nil
 }
 
+// NewWatchWorkspaceDiffRequest generates requests for WatchWorkspaceDiff
+func NewWatchWorkspaceDiffRequest(server string, id string, params *WatchWorkspaceDiffParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/diff/watch", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Version != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "version", *params.Version, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetWorkspaceFilePreviewRequest generates requests for GetWorkspaceFilePreview
 func NewGetWorkspaceFilePreviewRequest(server string, id string, params *GetWorkspaceFilePreviewParams) (*http.Request, error) {
 	var err error
@@ -26795,6 +27011,18 @@ func NewGetWorkspaceFilePreviewRequest(server string, id string, params *GetWork
 		if params.To != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Revision != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "revision", *params.Revision, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -27588,6 +27816,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetFleetWorkspaceDiffWithResponse request
 	GetFleetWorkspaceDiffWithResponse(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceDiffResponse, error)
+
+	// WatchFleetWorkspaceDiffWithResponse request
+	WatchFleetWorkspaceDiffWithResponse(ctx context.Context, hostKey string, id string, params *WatchFleetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*WatchFleetWorkspaceDiffResponse, error)
 
 	// GetFleetWorkspaceFilePreviewWithResponse request
 	GetFleetWorkspaceFilePreviewWithResponse(ctx context.Context, hostKey string, id string, params *GetFleetWorkspaceFilePreviewParams, reqEditors ...RequestEditorFn) (*GetFleetWorkspaceFilePreviewResponse, error)
@@ -28405,6 +28636,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetWorkspaceDiffWithResponse request
 	GetWorkspaceDiffWithResponse(ctx context.Context, id string, params *GetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*GetWorkspaceDiffResponse, error)
+
+	// WatchWorkspaceDiffWithResponse request
+	WatchWorkspaceDiffWithResponse(ctx context.Context, id string, params *WatchWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*WatchWorkspaceDiffResponse, error)
 
 	// GetWorkspaceFilePreviewWithResponse request
 	GetWorkspaceFilePreviewWithResponse(ctx context.Context, id string, params *GetWorkspaceFilePreviewParams, reqEditors ...RequestEditorFn) (*GetWorkspaceFilePreviewResponse, error)
@@ -29639,6 +29873,29 @@ func (r GetFleetWorkspaceDiffResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetFleetWorkspaceDiffResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type WatchFleetWorkspaceDiffResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSONDefault                   *map[string]interface{}
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r WatchFleetWorkspaceDiffResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r WatchFleetWorkspaceDiffResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -34599,6 +34856,29 @@ func (r GetWorkspaceDiffResponse) StatusCode() int {
 	return 0
 }
 
+type WatchWorkspaceDiffResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkspaceDiffWatchResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r WatchWorkspaceDiffResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r WatchWorkspaceDiffResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetWorkspaceFilePreviewResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -35506,6 +35786,15 @@ func (c *ClientWithResponses) GetFleetWorkspaceDiffWithResponse(ctx context.Cont
 		return nil, err
 	}
 	return ParseGetFleetWorkspaceDiffResponse(rsp)
+}
+
+// WatchFleetWorkspaceDiffWithResponse request returning *WatchFleetWorkspaceDiffResponse
+func (c *ClientWithResponses) WatchFleetWorkspaceDiffWithResponse(ctx context.Context, hostKey string, id string, params *WatchFleetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*WatchFleetWorkspaceDiffResponse, error) {
+	rsp, err := c.WatchFleetWorkspaceDiff(ctx, hostKey, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWatchFleetWorkspaceDiffResponse(rsp)
 }
 
 // GetFleetWorkspaceFilePreviewWithResponse request returning *GetFleetWorkspaceFilePreviewResponse
@@ -38125,6 +38414,15 @@ func (c *ClientWithResponses) GetWorkspaceDiffWithResponse(ctx context.Context, 
 	return ParseGetWorkspaceDiffResponse(rsp)
 }
 
+// WatchWorkspaceDiffWithResponse request returning *WatchWorkspaceDiffResponse
+func (c *ClientWithResponses) WatchWorkspaceDiffWithResponse(ctx context.Context, id string, params *WatchWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*WatchWorkspaceDiffResponse, error) {
+	rsp, err := c.WatchWorkspaceDiff(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWatchWorkspaceDiffResponse(rsp)
+}
+
 // GetWorkspaceFilePreviewWithResponse request returning *GetWorkspaceFilePreviewResponse
 func (c *ClientWithResponses) GetWorkspaceFilePreviewWithResponse(ctx context.Context, id string, params *GetWorkspaceFilePreviewParams, reqEditors ...RequestEditorFn) (*GetWorkspaceFilePreviewResponse, error) {
 	rsp, err := c.GetWorkspaceFilePreview(ctx, id, params, reqEditors...)
@@ -39937,6 +40235,39 @@ func ParseGetFleetWorkspaceDiffResponse(rsp *http.Response) (*GetFleetWorkspaceD
 	}
 
 	response := &GetFleetWorkspaceDiffResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.Header.Get("Content-Type") == "application/json" && true:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	case rsp.Header.Get("Content-Type") == "application/problem+json" && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseWatchFleetWorkspaceDiffResponse parses an HTTP response from a WatchFleetWorkspaceDiffWithResponse call
+func ParseWatchFleetWorkspaceDiffResponse(rsp *http.Response) (*WatchFleetWorkspaceDiffResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &WatchFleetWorkspaceDiffResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -46846,6 +47177,39 @@ func ParseGetWorkspaceDiffResponse(rsp *http.Response) (*GetWorkspaceDiffRespons
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest DiffResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseWatchWorkspaceDiffResponse parses an HTTP response from a WatchWorkspaceDiffWithResponse call
+func ParseWatchWorkspaceDiffResponse(rsp *http.Response) (*WatchWorkspaceDiffResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &WatchWorkspaceDiffResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkspaceDiffWatchResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

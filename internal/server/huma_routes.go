@@ -567,6 +567,11 @@ type getWorkspaceFilesInput struct {
 	To         string `query:"to"     doc:"End SHA for range diff (inclusive)"`
 }
 
+type watchWorkspaceDiffInput struct {
+	ID      string `path:"id"`
+	Version string `query:"version" doc:"Last observed opaque workspace diff snapshot version"`
+}
+
 type getWorkspaceDiffInput struct {
 	ID         string `path:"id"`
 	Base       string `query:"base"      doc:"Diff base: head, pushed, or merge-target"`
@@ -587,6 +592,7 @@ type getWorkspaceFilePreviewInput struct {
 	Commit     string `query:"commit" doc:"Scope to a single commit SHA"`
 	From       string `query:"from"   doc:"Start SHA for range diff (inclusive)"`
 	To         string `query:"to"     doc:"End SHA for range diff (inclusive)"`
+	Revision   string `query:"revision" doc:"Optional snapshot_version returned by the workspace files endpoint"`
 }
 
 type getWorkspaceCommitsInput struct {
@@ -647,6 +653,7 @@ type getWorkspaceOutput = bodyOutput[workspaceResponse]
 type getWorkspaceDiffOutput = bodyOutput[diffResponse]
 type getWorkspaceFilePreviewOutput = bodyOutput[filePreviewResponse]
 type getWorkspaceFilesOutput = bodyOutput[filesResponse]
+type watchWorkspaceDiffOutput = bodyOutput[workspaceDiffWatchResponse]
 type getWorkspaceCommitsOutput = bodyOutput[commitsResponse]
 
 type getWorkspaceRuntimeOutput = bodyOutput[workspaceRuntimeResponse]
@@ -921,6 +928,8 @@ func (s *Server) registerAPI(api huma.API) {
 		documentOperation("get-workspace-file-preview", "Get workspace file preview", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/files", s.getWorkspaceFiles,
 		documentOperation("get-workspace-files", "Get workspace files", "Workspaces"))
+	huma.Get(api, "/workspaces/{id}/diff/watch", s.watchWorkspaceDiff,
+		documentOperation("watch-workspace-diff", "Watch selected workspace diff", "Workspaces"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "retry-workspace",
 		Method:        http.MethodPost,
@@ -5595,6 +5604,9 @@ func (s *Server) refreshWorkspace(
 			CodeWorkspaceNotFound, "workspace not found", nil,
 		)
 	}
+	if s.workspaceDiffCache != nil {
+		s.workspaceDiffCache.RevalidateWorkspace(input.ID)
+	}
 
 	provider := strings.TrimSpace(summary.Platform)
 	if provider == "" {
@@ -5847,6 +5859,82 @@ func (s *Server) getWorkspaceFiles(
 	}}, nil
 }
 
+const workspaceDiffWatchTimeout = 25 * time.Second
+
+func (s *Server) watchWorkspaceDiff(
+	ctx context.Context,
+	input *watchWorkspaceDiffInput,
+) (*watchWorkspaceDiffOutput, error) {
+	req, err := s.workspaceDiffRequest(ctx, input.ID, string(workspace.WorktreeDiffBaseHead))
+	if err != nil {
+		return nil, err
+	}
+	key := s.workspaceDiffCacheKey(req, false)
+	events, hubDone := s.hub.Subscribe(ctx, false)
+	releaseSelection := s.workspaceDiffCache.Select(
+		input.ID,
+		func(context.Context) (workspaceDiffLogicalKey, error) {
+			return key, nil
+		},
+	)
+	defer releaseSelection()
+
+	snapshot, _, err := s.workspaceDiffCache.Get(ctx, key)
+	if err != nil {
+		if errors.Is(err, errWorkspaceDiffBaseUnavailable) {
+			return nil, workspaceDiffBaseUnavailable(req.Base)
+		}
+		return nil, problemUpstream("failed to prepare selected workspace diff", "", "")
+	}
+	if input.Version == "" || input.Version != snapshot.Version {
+		return &watchWorkspaceDiffOutput{Body: workspaceDiffWatchResponse{
+			Changed: true,
+			Version: snapshot.Version,
+		}}, nil
+	}
+
+	timer := time.NewTimer(workspaceDiffWatchTimeout)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-hubDone:
+			return &watchWorkspaceDiffOutput{Body: workspaceDiffWatchResponse{
+				Version: snapshot.Version,
+			}}, nil
+		case <-timer.C:
+			return &watchWorkspaceDiffOutput{Body: workspaceDiffWatchResponse{
+				Version: snapshot.Version,
+			}}, nil
+		case event, ok := <-events:
+			if !ok {
+				return &watchWorkspaceDiffOutput{Body: workspaceDiffWatchResponse{
+					Version: snapshot.Version,
+				}}, nil
+			}
+			if event.Event.Type != "workspace_diff_ready" && event.Event.Type != "workspace_diff_changed" {
+				continue
+			}
+			data, ok := event.Event.Data.(workspaceDiffEventData)
+			if !ok || data.WorkspaceID != input.ID {
+				continue
+			}
+			current, _, getErr := s.workspaceDiffCache.Get(ctx, key)
+			if getErr != nil {
+				return nil, problemUpstream("failed to read selected workspace diff", "", "")
+			}
+			if current.Version == input.Version {
+				continue
+			}
+			return &watchWorkspaceDiffOutput{Body: workspaceDiffWatchResponse{
+				Changed: true,
+				Version: current.Version,
+			}}, nil
+		}
+	}
+}
+
 func (s *Server) getWorkspaceDiff(
 	ctx context.Context, input *getWorkspaceDiffInput,
 ) (*getWorkspaceDiffOutput, error) {
@@ -5880,7 +5968,7 @@ func (s *Server) getWorkspaceDiff(
 		return nil, problemConflict(
 			CodeConflict,
 			"workspace diff snapshot changed; reload the file list",
-			map[string]any{"snapshot_version": snapshot.Version},
+			map[string]any{"reason": "snapshot_changed", "snapshot_version": snapshot.Version},
 		)
 	}
 	files := snapshot.Diff.Files
@@ -5923,6 +6011,13 @@ func (s *Server) getWorkspaceFilePreview(
 	)
 	var content *gitclone.FileContent
 	if err == nil {
+		if input.Revision != "" && input.Revision != snapshot.Version {
+			return nil, problemConflict(
+				CodeConflict,
+				"workspace diff snapshot changed; reload the file list",
+				map[string]any{"reason": "snapshot_changed", "snapshot_version": snapshot.Version},
+			)
+		}
 		matching := filterWorkspaceDiffSnapshotPath(snapshot.Diff.Files, input.Path)
 		if len(matching) == 0 {
 			err = gitclone.ErrNotFound
@@ -5949,6 +6044,9 @@ func (s *Server) getWorkspaceFilePreview(
 			"path", input.Path,
 			"err", err,
 		)
+		return nil, problemUpstream("failed to read workspace file preview", "", "")
+	}
+	if content == nil {
 		return nil, problemUpstream("failed to read workspace file preview", "", "")
 	}
 	return &getWorkspaceFilePreviewOutput{Body: filePreviewResponse{

@@ -2,14 +2,146 @@ package workspace
 
 import (
 	"bytes"
+	"context"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRunUntrackedPathReadsDoesNotSerializeFiles(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name           string
+		limit          int
+		runCount       int
+		pathCount      int
+		wantConcurrent int
+	}{
+		{name: "paths below budget", limit: 4, runCount: 1, pathCount: 2, wantConcurrent: 2},
+		{name: "concurrent runs share budget", limit: 3, runCount: 2, pathCount: 5, wantConcurrent: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				pool := newUntrackedReadPool(tt.limit)
+				paths := make([]string, tt.pathCount)
+				for i := range paths {
+					paths[i] = fmt.Sprintf("file-%d", i)
+				}
+				started := make(chan struct{}, tt.runCount*tt.pathCount)
+				release := make(chan struct{})
+				done := make(chan error, tt.runCount)
+				for range tt.runCount {
+					go func() {
+						done <- pool.run(t.Context(), paths, func(_ context.Context, _ int, _ string) error {
+							started <- struct{}{}
+							<-release
+							return nil
+						})
+					}()
+				}
+
+				synctest.Wait()
+				assert.Len(t, started, tt.wantConcurrent)
+				close(release)
+				synctest.Wait()
+				for range tt.runCount {
+					require.NoError(t, <-done)
+				}
+			})
+		})
+	}
+}
+
+func TestUntrackedFileReadsRespectCancellation(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "file.txt"), []byte("content\n"), 0o600))
+
+	tests := []struct {
+		name string
+		read func(context.Context) error
+	}{
+		{
+			name: "path enumeration",
+			read: func(ctx context.Context) error {
+				_, err := worktreeUntrackedFilesFromPaths(ctx, root, []string{"file.txt"}, true, false)
+				return err
+			},
+		},
+		{
+			name: "file content",
+			read: func(ctx context.Context) error {
+				_, _, err := readUntrackedFileContent(ctx, root, "file.txt")
+				return err
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			require.ErrorIs(t, tt.read(ctx), context.Canceled)
+		})
+	}
+}
+
+func TestReadAllWithContextStopsBetweenReads(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	reader, writer := io.Pipe()
+	t.Cleanup(func() {
+		_ = reader.Close()
+		_ = writer.Close()
+	})
+	go func() {
+		_, _ = writer.Write([]byte("first"))
+		cancel()
+		_ = writer.Close()
+	}()
+
+	_, err := readAllWithContext(ctx, reader, 1024)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestReadUntrackedFileContentRejectsIntermediateSymlink(t *testing.T) {
+	t.Parallel()
+	requirements := require.New(t)
+	worktree := t.TempDir()
+	outside := t.TempDir()
+	requirements.NoError(os.Mkdir(filepath.Join(worktree, "safe"), 0o700))
+	requirements.NoError(os.WriteFile(filepath.Join(worktree, "safe", "file.txt"), []byte("safe\n"), 0o600))
+	requirements.NoError(os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret\n"), 0o600))
+	requirements.NoError(os.Symlink(outside, filepath.Join(worktree, "linked")))
+
+	tests := []struct {
+		name     string
+		path     string
+		wantOK   bool
+		wantData string
+	}{
+		{name: "nested regular file", path: "safe/file.txt", wantOK: true, wantData: "safe\n"},
+		{name: "intermediate symlink", path: "linked/secret.txt"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			content, ok, err := readUntrackedFileContent(t.Context(), worktree, tt.path)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantOK, ok)
+			assert.Equal(t, tt.wantData, string(content))
+		})
+	}
+}
 
 func TestWorktreeDiffFilesAgainstHead(t *testing.T) {
 	require := require.New(t)

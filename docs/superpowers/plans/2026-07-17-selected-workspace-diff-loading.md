@@ -6,11 +6,13 @@
 
 **Architecture:** Resolve each request into a logical key plus a Git/content fingerprint. The logical key carries workspace/path/base/scope/whitespace identity; the physical cache revision adds resolved base/head OIDs and the dirty-content digest, satisfying the resolved-base key invariant without forcing fresh validation on every warm read. A server-owned stale-while-revalidate cache stores the complete gitclone.DiffResult and a patch-free file projection, coalesces preparation, and validates only workspaces leased by the terminal SSE connection. Ordinary whitespace-only classification moves from one git diff -w subprocess per path to a Go implementation of Git xdiff record equivalence; explicit hide-whitespace patches remain aggregate Git -w output.
 
-**Tech Stack:** Go 1.26, Git CLI through go.kenn.io/kit/git/cmd, golang.org/x/sync/singleflight, OpenTelemetry, Huma/OpenAPI, Svelte 5 runes, Vite+ Vitest.
+**Tech Stack:** Go 1.26, Git CLI through go.kenn.io/kit/git/cmd, jellydator/ttlcache/v3, golang.org/x/sync/singleflight, OpenTelemetry, Huma/OpenAPI, Svelte 5 runes, Vite+ Vitest.
 
 ## Global Constraints
 
-- Proactively prepare and validate only a local workspace selected through the terminal view's scoped SSE connection; fleet workspaces remain request-driven.
+- Proactively prepare and validate only a terminal-selected workspace: local
+  selection uses scoped SSE and fleet selection holds a long-poll lease on the
+  owning member.
 - Preserve current /files, /diff, and /file-preview response shapes, base/scope semantics, rename/copy detection, --find-copies-harder, untracked files, generated attributes, path safety, and explicit Git -w hunk behavior.
 - Use Git xdiff's ASCII C-locale whitespace set: space, tab, newline, vertical tab, form feed, and carriage return.
 - Keep file previews as separate bounded reads; never store preview contents in the snapshot cache.
@@ -18,7 +20,9 @@
 - Treat 15 seconds as the validation max-age for every entry. Unselected entries validate on demand after that age; selected entries also validate proactively.
 - Replace a cached value only when fingerprints taken before and after preparation match. A failure never replaces the last-known-good snapshot.
 - Return an opaque cache-generation/revision token from both projections and let `/diff` require the `/files` token so replacements between requests cannot mix revisions.
-- Do not add go-git or another cache dependency; use the hardened Git wrapper, stdlib, and the existing x/sync/singleflight dependency.
+- Do not add go-git. Use the hardened Git wrapper for Git behavior,
+  `jellydator/ttlcache/v3` for TTL/LRU/cost lifecycle, and the existing
+  x/sync/singleflight dependency for cancellable error-returning preparation.
 - Apply kenn-test-scope-discipline:test-scope-discipline before tests. Test middleman-owned logic, not Git/Go/Svelte library behavior.
 - Apply svelte-code-writer and svelte-core-bestpractices before Svelte edits. Run vp exec svelte-mcp svelte-autofixer on every changed Svelte file.
 - Apply the mandatory commit-push-pr:commit skill before every commit. Never amend and never bypass hooks.
@@ -277,13 +281,17 @@ Expected: FAIL because workspaceDiffCache is undefined.
 
 - [ ] **Step 3: Implement storage and projections**
 
-Use a mutex-protected logical-entry map, physical fingerprint/revision per entry, monotonic revision counter, timestamps, and singleflight.Group. Approximate bytes by summing patch/path/status/hunk/line strings; never JSON-marshal on the request path.
+Use `jellydator/ttlcache/v3` for logical-entry storage and TTL expiration. Keep
+protected-entry cost pressure, physical fingerprint/revision state,
+selected/pair-retention protection, stable publication, and
+`singleflight.Group` in the workspace coordinator. Approximate bytes by summing
+patch/path/status/hunk/line strings; never JSON-marshal on the request path.
 
 Build Files by copying each DiffFile, clearing Patch, and replacing Hunks with an empty non-nil slice.
 
 - [ ] **Step 4: Implement hit/stale/miss and stable replacement**
 
-Fresh returns synchronously. Expired last-known-good returns a clone marked stale and schedules validation. A cold miss waits. Shared work runs under the cache root context and callers wait via singleflight.DoChan so one canceled request does not cancel other waiters.
+Fresh returns synchronously. Expired last-known-good returns a clone marked stale and schedules validation. A cold miss waits. Shared work runs under a cache-owned 30-second context and callers wait via singleflight.DoChan, so a five-second validator or canceled request does not cancel other waiters.
 
 Stable publication re-resolves the logical spec on both sides of preparation:
 
@@ -305,7 +313,12 @@ Preparation errors or movement never replace last-known-good or emit an event.
 
 Select refcounts workspace IDs. First lease resolves/prewarms default HEAD and starts one 15-second loop. MarkActive retains every recently requested base/scope/whitespace key for a selected workspace, so concurrent tabs cannot overwrite each other's validation target. Final release cancels the loop but retains entries.
 
-ValidateSelected debounces prompt validation for selected active keys and backs off repeated failures. After publish/access, evict entries idle for 10 minutes, then LRU inactive entries until at most 128 MiB. Actively leased keys are pinned and never eviction candidates.
+ValidateSelected debounces prompt validation for selected active keys and queues
+it through one background worker; that worker remains attached until
+cache-owned preparation completes. A failed initial prewarm retries every five
+seconds for the life of the selection. Preserve active scopes across watch
+reconnects, prune them after 10 idle minutes, then evict inactive entries by LRU
+toward 128 MiB while skipping active and one-minute pair-retained snapshots.
 
 - [ ] **Step 6: Add trace data**
 
@@ -381,7 +394,7 @@ notifyWorktreeStatsChanged calls workspaceDiffCache.ValidateSelected before broa
 
 - [ ] **Step 6: Broadcast only stable replacements**
 
-On a changed stable replacement broadcast workspace_diff_changed with WorkspaceID and Revision. Emit nothing for equal validation, initial cold population, failure, or concurrent movement.
+On a changed stable replacement broadcast workspace_diff_changed with WorkspaceID and Revision. This replacement callback emits nothing for equal validation, initial cold population, failure, or concurrent movement; Task 7 adds a separate selected-prewarm readiness event.
 
 - [ ] **Step 7: Regenerate and verify**
 
@@ -444,7 +457,7 @@ Do not add shared reactive pending payloads; one invocation and existing generat
 
 - [ ] **Step 4: Add failing terminal selection/event tests**
 
-Capture EventSource URLs/listeners. Assert local ws-1 opens events?workspace_id=ws-1; fleet member/ws-1 remains unscoped; another workspace event does nothing; a strictly newer matching revision triggers only diff refresh; replaying the same revision does not duplicate work.
+Capture EventSource URLs/listeners. Assert local ws-1 opens events?workspace_id=ws-1; fleet member/ws-1 remains unscoped; another workspace event does nothing; a different matching opaque version triggers only diff refresh; replaying the same version does not duplicate work. SSE event IDs, not revision values, own ordering.
 
 - [ ] **Step 5: Thread a diff-only revision**
 
@@ -548,6 +561,91 @@ The body explains why selected-only validation and last-known-good publication m
 
 ---
 
+### Task 7: Give workspace runtime priority over sidebar diff work
+
+**Files:**
+- Modify: `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`
+- Modify: `frontend/src/lib/components/terminal/WorkspaceTerminalView.test.ts`
+- Modify: `frontend/tests/e2e-full/00-workspace-tab-persistence.spec.ts`
+- Modify: `packages/ui/src/components/workspace/WorkspaceDiffPanel.svelte`
+- Modify: `packages/ui/src/stores/diff.svelte.ts`
+- Modify: `frontend/src/lib/stores/diff.svelte.test.ts`
+- Modify: `internal/server/workspace_diff_cache.go`
+- Modify: `internal/server/workspace_diff_cache_test.go`
+- Modify: `internal/server/server.go`
+- Modify: `internal/server/api_test.go`
+
+**Interfaces:**
+- Consumes: current route identity, `runtimeLive`, and the diff store's current workspace identity.
+- Produces: `cancelWorkspaceDiff(workspaceID, workspaceHostKey?, loadToken?)`, an identity- and invocation-scoped abort that cannot cancel a newer same-workspace load.
+- Produces: a monotonic workspace-load generation checked after every await, including commit refresh.
+- Produces: selected-prewarm `workspace_diff_ready` SSE payload `{workspace_id, revision, version}`.
+
+- [ ] **Step 1: Add failing transition and cancellation tests**
+
+In `WorkspaceTerminalView.test.ts`, keep workspace A unresolved after selecting B and assert A's PR/diff content is absent, a `Loading workspace details...` placeholder is visible, and the B diff request does not start until both B workspace and runtime responses apply. Also reject B's runtime request and assert matching B workspace details become usable instead of leaving the sidebar spinner forever. Deliver `workspace_diff_ready` before runtime resolves and assert it is retained without starting a browser diff request. In `diff.svelte.test.ts`, start A, start B, then call `cancelWorkspaceDiff("A")`; assert B is not aborted or cleared. Start two same-workspace loads and prove cleanup from the first token cannot abort the second. Also cancel A while its commit refresh is unresolved, resolve that request, and assert the stale invocation cannot start files/diff requests afterward.
+
+- [ ] **Step 2: Run focused tests to verify they fail**
+
+~~~bash
+./node_modules/.bin/vp test frontend/src/lib/components/terminal/WorkspaceTerminalView.test.ts frontend/src/lib/stores/diff.svelte.test.ts
+~~~
+
+Expected: FAIL because stale sidebar content remains mounted and no identity-scoped cancellation API exists.
+
+- [ ] **Step 3: Implement shell-first sidebar lifecycle**
+
+Render the right-sidebar frame whenever it is open, but render `WorkspaceRightSidebar` only when the loaded workspace identity matches the route and runtime loading has either produced matching state or settled with an error. Render a neutral spinner with `Loading workspace details...` during the transition. Do not clear the previous workspace/runtime objects because the workflow pane intentionally remains stable.
+
+Add a monotonic workspace-load generation and an invocation token to the diff store and capture them at the start of every load. `cancelWorkspaceDiff(workspaceID, workspaceHostKey?, loadToken?)` returns without mutation unless the supplied identity and, when present, token equal the current load; on a match it advances the generation, aborts both controllers, and clears only workspace diff loading state. Check identity and generation after every await and in every rejection path, including `loadCommits`, and before starting each request. Track the active invocation outside the reactive load key and cancel it explicitly on identity change, deactivation, or component destroy. Do not return cancellation directly from the load effect: that effect updates `loadedKey`, so its own rerun would abort the request it just started.
+
+- [ ] **Step 4: Emit readiness after selected server prewarm**
+
+Add a selected-prewarm callback distinct from ordinary cache replacement. Register the event-hub subscriber synchronously before acquiring the selection lease and starting prewarm; only then enter the SSE serve loop. In `workspaceDiffCache.Select`, when the first lease's `Get` publishes or coalesces a cold default-HEAD snapshot, invoke the callback with its revision/version. `Server` broadcasts `workspace_diff_ready`; cached hits, failures, unselected cold requests, and normal validation do not emit it. Keep `workspace_diff_changed` for replacement of an existing fingerprint. The client treats versions as opaque equality tokens; SSE event IDs, not version strings, own event ordering and replay.
+
+Add cache and wire-level SSE tests proving one ready event follows successful first-selection cold preparation, no event follows failure/hit, and the payload is scoped to the selected workspace. The wire test must let prewarm complete immediately and prove the first selecting client receives readiness, guarding subscriber-before-lease ordering.
+
+- [ ] **Step 5: Run Svelte analysis and focused tests**
+
+~~~bash
+./node_modules/.bin/vp exec svelte-mcp svelte-autofixer frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte --svelte-version 5
+./node_modules/.bin/vp exec svelte-mcp svelte-autofixer packages/ui/src/components/workspace/WorkspaceDiffPanel.svelte --svelte-version 5
+(cd frontend && ../node_modules/.bin/vp test src/lib/components/terminal/WorkspaceTerminalView.test.ts src/lib/stores/diff.svelte.test.ts)
+~~~
+
+Expected: no new actionable autofixer issue; tests PASS.
+
+- [ ] **Step 6: Run backend tests**
+
+~~~bash
+go test ./internal/server -run 'TestWorkspaceDiffCache|TestWorkspaceDiffSelectionLease' -shuffle=on
+~~~
+
+Expected: PASS.
+
+- [ ] **Step 7: Run the complete frontend suite and capture the transition**
+
+~~~bash
+(cd frontend && ../node_modules/.bin/vp test)
+make frontend-check
+make frontend
+(cd frontend && node ./scripts/run-e2e-to-file.ts 00-workspace-tab-persistence.spec.ts --project=chromium)
+~~~
+
+Add a seeded full-stack scenario that opens workspace A, switches to B while B's workspace/runtime responses are gated, and observes the real EventSource. Assert A's sidebar disappears immediately, early B readiness does not start a browser diff, and B's diff request starts only after matching workspace/runtime data apply. Expected: PASS. Capture the same neutral transition from this scenario without exposing a live workspace.
+
+- [ ] **Step 8: Commit and update the existing PR**
+
+~~~bash
+git add frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte frontend/src/lib/components/terminal/WorkspaceTerminalView.test.ts frontend/tests/e2e-full/00-workspace-tab-persistence.spec.ts packages/ui/src/components/workspace/WorkspaceDiffPanel.svelte packages/ui/src/stores/diff.svelte.ts frontend/src/lib/stores/diff.svelte.test.ts internal/server/workspace_diff_cache.go internal/server/workspace_diff_cache_test.go internal/server/server.go internal/server/api_test.go
+git commit -m "fix: prioritize workspace runtime during switches"
+git push
+~~~
+
+The body records that old diff response parsing must never compete with readiness of the newly selected workspace shell.
+
+---
+
 ## Final Acceptance Checklist
 
 - [ ] A 128-file merge-target cold load performs no per-file Git subprocess loop.
@@ -555,7 +653,9 @@ The body explains why selected-only validation and last-known-good publication m
 - [ ] Warm selected-workspace requests perform no Git diff work.
 - [ ] Unchanged validation performs no recomputation and emits no event.
 - [ ] Same-total content edits are detected; concurrent edits cannot publish a torn snapshot.
-- [ ] Only local terminal selections receive proactive work; inactive/fleet workspaces stay request-driven.
-- [ ] Cache is bounded by 10-minute inactivity and 128 MiB approximate bytes with last-known-good after failures.
+- [ ] Only terminal selections receive proactive work; fleet selection is leased on the owning member and inactive workspaces stay request-driven.
+- [ ] Cache prunes active keys after 10 minutes without access and evicts inactive entries toward a 128 MiB approximate-byte target while preserving last-known-good after failures.
 - [ ] Matching workspace_diff_changed refreshes only the diff panel without blanking.
+- [ ] Switching workspace identity removes the old sidebar immediately, aborts its diff load, and starts the new diff only after runtime readiness.
+- [ ] Selected default-HEAD preparation begins immediately and emits one readiness event without putting browser diff parsing on the shell critical path.
 - [ ] Focused, full affected, race, Svelte analysis, generated-contract, lint, build, and context-sync checks pass.

@@ -85,6 +85,18 @@ func TestSnapshotRoutesRegistered(t *testing.T) {
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/session-backend"].Put, "PUT fleet worktree session backend not registered")
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/linked-issues"].Put, "PUT fleet worktree linked issues not registered")
 	require.NotNil(spec.Paths["/fleet/hosts/{host_key}/projects/{project_id}/worktrees/{worktree_id}/refresh-stats"].Post, "POST fleet worktree stats refresh not registered")
+	for _, path := range []string{
+		"/fleet/hosts/{host_key}/workspaces/{id}/diff",
+		"/fleet/hosts/{host_key}/workspaces/{id}/file-preview",
+	} {
+		queryParams := make([]string, 0)
+		for _, param := range spec.Paths[path].Get.Parameters {
+			if param.In == "query" {
+				queryParams = append(queryParams, param.Name)
+			}
+		}
+		assert.Contains(queryParams, "revision", path)
+	}
 
 	gotProjectRegister := spec.Paths["/fleet/hosts/{host_key}/projects"].Post
 	assert.Equal("register-fleet-project", gotProjectRegister.OperationID)

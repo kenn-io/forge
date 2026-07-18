@@ -251,6 +251,12 @@ type Server struct {
 	connWG sync.WaitGroup
 }
 
+type workspaceDiffEventData struct {
+	WorkspaceID string `json:"workspace_id"`
+	Revision    uint64 `json:"revision"`
+	Version     string `json:"version"`
+}
+
 // trackHTTPConn is installed as http.Server.ConnState by Serve so
 // Shutdown can wait for per-connection goroutines to fully unwind.
 func (s *Server) trackHTTPConn(_ net.Conn, state http.ConnState) {
@@ -732,12 +738,19 @@ func newServer(
 	s.docsRegistry = docs.NewRegistry(docFolders)
 	warnDocFolderDaemonBindings(docFolders)
 	s.workspaceDiffCache = newWorkspaceDiffCache(s.bgCtx, workspaceDiffCacheDeps{
+		onReady: func(workspaceID string, revision uint64, version string) {
+			s.hub.Broadcast(Event{Type: "workspace_diff_ready", Data: workspaceDiffEventData{
+				WorkspaceID: workspaceID,
+				Revision:    revision,
+				Version:     version,
+			}})
+		},
 		onChanged: func(workspaceID string, revision uint64, version string) {
-			s.hub.Broadcast(Event{Type: "workspace_diff_changed", Data: struct {
-				WorkspaceID string `json:"workspace_id"`
-				Revision    uint64 `json:"revision"`
-				Version     string `json:"version"`
-			}{WorkspaceID: workspaceID, Revision: revision, Version: version}})
+			s.hub.Broadcast(Event{Type: "workspace_diff_changed", Data: workspaceDiffEventData{
+				WorkspaceID: workspaceID,
+				Revision:    revision,
+				Version:     version,
+			}})
 		},
 	})
 	s.runBackground(func(ctx context.Context) {
@@ -1497,6 +1510,10 @@ func (s *Server) streamEvents(
 			ctx.SetHeader("Connection", "keep-alive")
 
 			r, w := humago.Unwrap(ctx)
+			rc := http.NewResponseController(w)
+			_ = rc.SetWriteDeadline(time.Time{})
+			cursor, hasCursor := parseLastEventID(r)
+			ch, done := s.hub.Subscribe(ctx.Context(), !hasCursor)
 			releaseSelection := func() {}
 			if input.WorkspaceID != "" && s.workspaceDiffCache != nil {
 				releaseSelection = s.workspaceDiffCache.Select(
@@ -1513,10 +1530,7 @@ func (s *Server) streamEvents(
 				)
 			}
 			defer releaseSelection()
-			rc := http.NewResponseController(w)
-			_ = rc.SetWriteDeadline(time.Time{})
-			cursor, hasCursor := parseLastEventID(r)
-			s.serveSSE(ctx.Context(), w, rc, cursor, hasCursor)
+			s.serveSSESubscribed(ctx.Context(), w, rc, cursor, hasCursor, ch, done)
 		},
 	}, nil
 }
@@ -1566,6 +1580,18 @@ func (s *Server) serveSSE(
 	// supplied the handler replays the ring directly, so cached
 	// sync_status injection by Subscribe would duplicate; pass false.
 	ch, done := s.hub.Subscribe(ctx, !hasCursor)
+	s.serveSSESubscribed(ctx, w, rc, cursor, hasCursor, ch, done)
+}
+
+func (s *Server) serveSSESubscribed(
+	ctx context.Context,
+	w io.Writer,
+	rc sseController,
+	cursor uint64,
+	hasCursor bool,
+	ch <-chan RecordedEvent,
+	done <-chan struct{},
+) {
 
 	if err := rc.Flush(); err != nil {
 		return

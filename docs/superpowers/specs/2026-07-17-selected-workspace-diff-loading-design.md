@@ -27,9 +27,9 @@ handling, copy/rename detection, path safety, and explicit hide-whitespace
 behavior.
 
 Provider pull-request diffs and repository-browser diffs are not cache clients
-in this change. Fleet-proxied workspaces receive the cold-path improvement when
-the member computes their local diff; proactive selection refresh remains owned
-by the server that owns the worktree.
+in this change. A fleet long-poll holds the selection lease on the member that
+owns the worktree; the hub relays only opaque HEAD versions and never performs
+the member's Git work.
 
 ## Git and Go responsibilities
 
@@ -109,14 +109,19 @@ carries `workspace_id`. Its lifetime is the selection lease. The server
 reference-counts concurrent tabs, prepares the default HEAD snapshot on the
 first selection, and stops proactive work when the final selection disconnects.
 Previously prepared entries may remain available until eviction, but inactive
-entries are not refreshed. Fleet selections keep request-driven caching and the
-cold-path improvement; they do not create a proactive lease on the remote
-member in this change.
+entries are not refreshed. Fleet selections use a 25-second `/diff/watch`
+long-poll through HTTP or SSH proxying. Empty or foreign tokens return the
+current HEAD version with `changed=true`; matching tokens return that same
+version with `changed=false` on timeout. Events only trigger a reread of the
+watched HEAD key, so versions never cross diff scopes. Cancellation releases
+the remote lease, while recently active scopes survive immediate reconnects.
 
 Every base/scope/whitespace key requested by a currently selected workspace is
 active until its access lease ages out. This keeps concurrent tabs with different
 diff scopes independent. Active keys are pinned against eviction; older inactive
-keys remain read-only cache entries until eviction.
+keys remain read-only cache entries until eviction. Expired active-key records
+are pruned even while their workspace remains selected, so a scope that has not
+been read for 10 minutes cannot stay pinned forever.
 
 Validation is cheaper than recomputation. Each validation re-resolves the logical
 specification, then fingerprints the resolved Git refs and changed-path state.
@@ -124,7 +129,9 @@ Unchanged strong stat identities reuse per-file content digests; changed metadat
 is confirmed from file contents so same-size edits are not missed without
 re-reading unchanged large files every 15 seconds. The fingerprint also includes
 the repository-local attribute input (`.git/info/attributes`); the hardened Git
-runner already excludes user and system configuration. Preparation uses resolved
+runner already excludes user and system configuration. Commit/range generated
+file classification uses the resolved head commit as `git check-attr --source`;
+only live worktree snapshots consult worktree `.gitattributes`. Preparation uses resolved
 OIDs, then re-resolves and fingerprints again before publication. Equal boundary
 fingerprints are best-effort movement detection rather than a filesystem
 transaction: an A-to-B-to-A mutation can evade them. A mismatch leaves the
@@ -133,27 +140,54 @@ previous snapshot in place and schedules a throttled retry.
 The existing worktree-stats change signal requests prompt validation for the
 selected worktree. A bounded selected-workspace validation interval is the
 fallback for changes that do not alter aggregate stats. Concurrent validation
-or preparation for one key is single-flight.
+or preparation for one key is single-flight. One background validation worker
+serializes proactive Git preparation and remains occupied until the shared
+cache-owned preparation completes, with a 30-second ceiling so one caller cannot
+cancel another while its Git work continues. Foreground cold reads do not wait
+behind the background queue. If the first selected-workspace prewarm
+cannot resolve or prepare, it retries every five seconds while the selection
+lease remains open.
 
-All entries have a 15-second validation max-age. Selected entries validate
-proactively; an older unselected entry returns its last-known-good value as stale
-and schedules request-driven validation, so frequent fleet reads cannot keep a
-snapshot fresh indefinitely. When validation finds the same fingerprint, it performs no diff recomputation
-and emits no event. When a stable recomputation produces a changed snapshot,
+All entries become eligible for validation after 15 seconds. This is a freshness
+threshold, not a completion SLA when the bounded worker queue is backlogged.
+Selected entries validate proactively; an older unselected entry returns its
+last-known-good value as stale and schedules request-driven validation, so
+frequent fleet reads cannot keep a snapshot fresh indefinitely. A one-second
+scheduler begins validation during
+the final second of that window so timer phase cannot stretch the bound toward
+30 seconds. When validation finds the same fingerprint, it
+performs no diff recomputation, does not renew foreground access time, and emits
+no event. Manual workspace refresh schedules best-effort validation for every
+cached key for that workspace, including unselected and fleet-owned entries; it
+is queued before provider refresh and does not wait for preparation. Provider or
+preparation failures leave the last-known-good snapshot visible and retry on a
+later signal or read. When a stable recomputation produces
+a changed snapshot,
 the server atomically replaces the entry and broadcasts
 `workspace_diff_changed` with workspace/host identity and snapshot revision.
 The terminal filters that event to its selected workspace and reloads only the
 currently visible diff scope. The stale snapshot remains visible until the
-replacement request completes. Revision identity includes a per-process cache
-generation, and `reconnect.stale` always triggers a preserving diff refresh, so
-restart, eviction, and replay-ring loss cannot strand an old display.
+replacement request completes. Versions are opaque equality tokens; clients do
+not infer ordering from version or revision values because SSE event IDs own
+ordering and replay. Revision identity includes a per-process cache generation,
+and `reconnect.stale` always triggers a preserving diff refresh, so restart,
+eviction, and replay-ring loss cannot strand an old display.
 
 ## Cache bounds and failures
 
-Snapshots use an in-memory TTL cache bounded by both inactivity and approximate
-serialized bytes. Eviction removes least-recently-used inactive entries; actively
-leased entries are never eviction candidates. Cache loss or eviction is never an API failure; the next read
-uses the cold path.
+Snapshots use `jellydator/ttlcache/v3` for entry storage and TTL expiration.
+Middleman's coordinator applies the 128 MiB inactive-entry target so pressure
+cannot evict selected or pair-retained snapshots, and retains ownership of
+coherent projections, stable publication, and single-flight preparation.
+New snapshots receive a one-minute pair-retention lease so an oversized
+`/files` projection survives long enough for its revision-pinned `/diff` read.
+The target may therefore be exceeded temporarily by pair-retained snapshots or
+the active working set. Active protection expires after 10 minutes without
+foreground access, at which point normal cost eviction can recover memory.
+Cache loss or eviction is never an API failure; the next read uses the cold path.
+Mixed-version fleet members are not given a compatibility fallback for revision
+pinning: hub and member must run a version that supports snapshot versions and
+typed `snapshot_changed` conflicts.
 
 Preparation errors do not replace a last-known-good snapshot and do not emit a
 change event. A cold request with no usable snapshot preserves the current API
@@ -175,6 +209,32 @@ sidebar before the frontend starts its `/diff` request. The cold `/files`
 preparation completes the shared snapshot, so the following `/diff` is a cache
 projection and performs no Git work.
 
+Workspace switching gives the shell/runtime critical-path priority over diff
+work. As soon as route identity differs from the loaded workspace, the old
+right sidebar is unmounted, its identity-scoped files/diff requests are aborted,
+and a neutral sidebar placeholder replaces it. The new sidebar mounts after
+workspace metadata and either matching runtime state or a terminal runtime error
+belong to the selected route, so runtime failure cannot strand the placeholder.
+A monotonic load generation is checked after every await and rejection path.
+Each invocation also has a token, so cleanup from an older same-workspace load
+cannot abort its replacement. Same-workspace background snapshot replacement
+continues to preserve the visible diff. A typed `snapshot_changed` file-preview
+conflict reloads the coherent files/diff pair once and retries the preview.
+
+This browser-side deferral does not defer server preparation. The scoped SSE
+selection lease starts default-HEAD prewarming immediately alongside workspace
+and runtime reads. The event subscriber is registered before that lease starts,
+so even immediate prewarm completion reaches the selecting client. Initial selected prewarm publication emits
+`workspace_diff_ready` with the snapshot version; the client records it without
+mounting the diff panel, then uses it to request the already-prepared snapshot
+after runtime readiness. Preparation failure emits no ready event and never
+delays or fails the shell.
+
+Fleet selection starts its watch at route selection, independently of metadata,
+runtime, and sidebar mounting. The watch keeps its own HEAD token, aborts through
+the proxy on switch, and retries failures with capped exponential jitter; only a
+changed HEAD token triggers a preserving diff reload.
+
 ## Verification
 
 - Go unit tests pin the xdiff-compatible whitespace record comparison and
@@ -187,11 +247,19 @@ projection and performs no Git work.
   single-flight behavior, byte/TTL eviction, disconnect handling, and
   last-known-good behavior after failure.
 - Wire-level SSE tests prove selection registration and matching
-  `workspace_diff_changed` delivery.
+  `workspace_diff_ready`/`workspace_diff_changed` delivery.
 - Frontend tests prove workspace-qualified event filtering and stale-visible
-  refresh.
+  refresh, and prove a route switch aborts the previous diff before the new
+  sidebar mounts after runtime readiness.
+- A seeded full-stack browser test proves EventSource delivery and workspace,
+  runtime, and diff-request ordering across a real workspace switch.
 - Before/after live traces record cold and warm HEAD/merge-target loads for the
-  profiled workspace. The acceptance condition is that the cold path has no
-  per-file Git subprocess growth and warm requests perform no Git diff work;
-  any remaining multi-second cold phase is investigated rather than hidden by
-  the cache.
+  profiled workspace. The measured acceptance budgets are a default-HEAD cold
+  preparation below 500 ms and warm `/files` and `/diff` server spans below
+  5 ms each. Subprocess count must have zero slope as changed-file count grows
+  from 1 to 128, and an unchanged validation must perform no preparation. Any
+  regression beyond those budgets is investigated rather than hidden by cache
+  warmth.
+- The measured selected HEAD cache-hit server spans were 0.25 ms for `/files`
+  and 0.35 ms for `/diff`. A concurrent cold merge-target preparation left the
+  runtime endpoint at 0.675 ms server time, confirming Git work is off readiness.

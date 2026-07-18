@@ -63,6 +63,16 @@ func (f *fakeSSHExec) exec(
 func newSSHTestTransport(
 	t *testing.T, fake *fakeSSHExec, peers ...config.FleetSSHPeer,
 ) *sshFleetTransport {
+	return newSSHTestTransportWithExec(t, fake.exec, peers...)
+}
+
+func newSSHTestTransportWithExec(
+	t *testing.T,
+	exec func(
+		context.Context, []string, []byte,
+	) ([]byte, []byte, int, error),
+	peers ...config.FleetSSHPeer,
+) *sshFleetTransport {
 	t.Helper()
 	conns := sshfleet.NewConnectionManager(t.TempDir(), sshfleet.Config{
 		RunSSH: func(args []string) (int, error) {
@@ -79,7 +89,7 @@ func newSSHTestTransport(
 	})
 	return &sshFleetTransport{
 		conns:  conns,
-		runner: sshfleet.NewRunnerWithExec(conns, fake.exec),
+		runner: sshfleet.NewRunnerWithExec(conns, exec),
 		peers:  peers,
 	}
 }
@@ -228,9 +238,21 @@ func TestSSHFleetProxyRelaysWorkspaceDiffReads(t *testing.T) {
 	assert := assert.New(t)
 
 	fake := &fakeSSHExec{routes: map[string]string{
-		"GET /api/v1/workspaces/ws_1/diff?base=merge-target&whitespace=hide": framedJSON(
+		"GET /api/v1/workspaces/ws_1/diff/watch?version=snapshot-7": framedJSON(
+			http.StatusOK,
+			`{"changed":true,"version":"snapshot-8"}`,
+		),
+		"GET /api/v1/workspaces/ws_1/diff?base=merge-target&revision=snapshot-7&whitespace=hide": framedJSON(
 			http.StatusOK,
 			`{"stale":false,"files":[{"path":"remote.go","status":"modified"}]}`,
+		),
+		"GET /api/v1/workspaces/ws_1/file-preview?base=merge-target&path=remote.go&revision=snapshot-7": framedJSON(
+			http.StatusOK,
+			`{"path":"remote.go","content":"package remote"}`,
+		),
+		"GET /api/v1/workspaces/ws_1/diff?base=merge-target&revision=stale": framedJSON(
+			http.StatusConflict,
+			`{"code":"conflict","detail":"snapshot changed","details":{"reason":"snapshot_changed"}}`,
 		),
 	}}
 	srv, _ := setupTestServer(t)
@@ -244,7 +266,7 @@ func TestSSHFleetProxyRelaysWorkspaceDiffReads(t *testing.T) {
 	defer ts.Close()
 
 	resp := httpDo(t, ts, http.MethodGet,
-		"/api/v1/fleet/hosts/epyc/workspaces/ws_1/diff?base=merge-target&whitespace=hide", nil)
+		"/api/v1/fleet/hosts/epyc/workspaces/ws_1/diff?base=merge-target&revision=snapshot-7&whitespace=hide", nil)
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
 		require.Failf("unexpected relay status",
@@ -261,7 +283,90 @@ func TestSSHFleetProxyRelaysWorkspaceDiffReads(t *testing.T) {
 	require.Len(diff.Files, 1)
 	assert.Equal("remote.go", diff.Files[0].Path)
 	assert.Contains(fake.calls,
-		"GET /api/v1/workspaces/ws_1/diff?base=merge-target&whitespace=hide")
+		"GET /api/v1/workspaces/ws_1/diff?base=merge-target&revision=snapshot-7&whitespace=hide")
+
+	previewResp := httpDo(t, ts, http.MethodGet,
+		"/api/v1/fleet/hosts/epyc/workspaces/ws_1/file-preview?base=merge-target&path=remote.go&revision=snapshot-7", nil)
+	require.Equal(http.StatusOK, previewResp.StatusCode)
+	previewResp.Body.Close()
+	assert.Contains(fake.calls,
+		"GET /api/v1/workspaces/ws_1/file-preview?base=merge-target&path=remote.go&revision=snapshot-7")
+
+	staleResp := httpDo(t, ts, http.MethodGet,
+		"/api/v1/fleet/hosts/epyc/workspaces/ws_1/diff?base=merge-target&revision=stale", nil)
+	assert.Equal(http.StatusConflict, staleResp.StatusCode)
+	staleBody, err := io.ReadAll(staleResp.Body)
+	require.NoError(err)
+	staleResp.Body.Close()
+	assert.Contains(string(staleBody), `"reason":"snapshot_changed"`)
+
+	watchResp := httpDo(t, ts, http.MethodGet,
+		"/api/v1/fleet/hosts/epyc/workspaces/ws_1/diff/watch?version=snapshot-7", nil)
+	require.Equal(http.StatusOK, watchResp.StatusCode)
+	var watch struct {
+		Changed bool   `json:"changed"`
+		Version string `json:"version"`
+	}
+	require.NoError(json.NewDecoder(watchResp.Body).Decode(&watch))
+	require.NoError(watchResp.Body.Close())
+	assert.True(watch.Changed)
+	assert.Equal("snapshot-8", watch.Version)
+	assert.Contains(fake.calls,
+		"GET /api/v1/workspaces/ws_1/diff/watch?version=snapshot-7")
+}
+
+func TestSSHFleetDiffWatchCancellationReachesRemoteRelay(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	started := make(chan struct{})
+	canceled := make(chan struct{})
+	exec := func(
+		ctx context.Context, _ []string, _ []byte,
+	) ([]byte, []byte, int, error) {
+		close(started)
+		<-ctx.Done()
+		close(canceled)
+		return nil, nil, 0, ctx.Err()
+	}
+
+	srv, _ := setupTestServer(t)
+	setTestFleetConfig(srv, func(cfg *config.Config) {
+		cfg.Fleet.Enabled = true
+	})
+	srv.sshFleet = newSSHTestTransportWithExec(t, exec, config.FleetSSHPeer{
+		Key: "epyc", Destination: "wes@epyc.local",
+	})
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		ts.URL+"/api/v1/fleet/hosts/epyc/workspaces/ws_1/diff/watch",
+		nil,
+	)
+	require.NoError(err)
+	done := make(chan error, 1)
+	go func() {
+		response, requestErr := http.DefaultClient.Do(request)
+		if response != nil {
+			_ = response.Body.Close()
+		}
+		done <- requestErr
+	}()
+
+	<-started
+	cancel()
+	assert.Eventually(func() bool {
+		select {
+		case <-canceled:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, time.Millisecond)
+	require.ErrorIs(<-done, context.Canceled)
 }
 
 // TestSSHFleetAttachSpecWrapped pins the attach contract: a peer's

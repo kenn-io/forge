@@ -204,9 +204,22 @@ func (s *Server) registerFleetOperationRoutes(api huma.API) {
 			path:        "/fleet/hosts/{host_key}/workspaces/{id}/files",
 			summary:     "Get workspace files on fleet host",
 			pathParams:  []string{"host_key", "id"},
-			queryParams: fleetWorkspaceDiffQueryParams(),
+			queryParams: fleetWorkspaceDiffScopeQueryParams(),
 			targetPath: func(r *http.Request) string {
 				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/files"
+			},
+		},
+		{
+			operationID: "watch-fleet-workspace-diff",
+			method:      http.MethodGet,
+			path:        "/fleet/hosts/{host_key}/workspaces/{id}/diff/watch",
+			summary:     "Watch selected workspace diff on fleet host",
+			pathParams:  []string{"host_key", "id"},
+			queryParams: []*huma.Param{
+				fleetStringQueryParam("version", "Last observed workspace diff snapshot version."),
+			},
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/diff/watch"
 			},
 		},
 		{
@@ -617,6 +630,13 @@ func fleetForceQueryParam() *huma.Param {
 }
 
 func fleetWorkspaceDiffQueryParams() []*huma.Param {
+	return append(
+		fleetWorkspaceDiffScopeQueryParams(),
+		fleetStringQueryParam("revision", "Pinned workspace snapshot version."),
+	)
+}
+
+func fleetWorkspaceDiffScopeQueryParams() []*huma.Param {
 	return []*huma.Param{
 		fleetStringQueryParam("base", "Workspace diff base."),
 		fleetStringQueryParam("whitespace", "Whitespace filtering mode."),

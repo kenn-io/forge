@@ -361,6 +361,11 @@ type filesResponse struct {
 	SnapshotVersion     string              `json:"snapshot_version,omitempty" doc:"Opaque workspace diff snapshot version to pin on the following workspace diff request."`
 }
 
+type workspaceDiffWatchResponse struct {
+	Changed bool   `json:"changed" doc:"True when the caller must reload the watched default-HEAD snapshot."`
+	Version string `json:"version" doc:"Opaque version of the current default-HEAD snapshot; never a version from another diff scope."`
+}
+
 type diffReviewLineRange struct {
 	Path        string `json:"path"`
 	OldPath     string `json:"old_path,omitempty"`

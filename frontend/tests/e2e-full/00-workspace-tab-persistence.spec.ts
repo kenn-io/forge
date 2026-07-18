@@ -394,6 +394,123 @@ test.describe("workspace tab persistence", () => {
     }
   });
 
+  test("prepares the selected diff before workspace details finish switching", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      const workspaceA = await createIssueWorkspace(api, 10);
+      const workspaceB = await createIssueWorkspace(api, 11);
+      const [workspaceAResponse, workspaceBResponse] = await Promise.all([
+        api.get(`/api/v1/workspaces/${workspaceA.id}`),
+        api.get(`/api/v1/workspaces/${workspaceB.id}`),
+      ]);
+      expect(workspaceAResponse.ok()).toBe(true);
+      expect(workspaceBResponse.ok()).toBe(true);
+      const workspaceADetail = (await workspaceAResponse.json()) as WorkspaceStatusResponse;
+      const workspaceBDetail = (await workspaceBResponse.json()) as WorkspaceStatusResponse;
+      expect(workspaceADetail.worktree_path).toBeTruthy();
+      expect(workspaceBDetail.worktree_path).toBeTruthy();
+      await writeFile(join(workspaceADetail.worktree_path!, "workspace-a.txt"), "workspace a\n");
+      await writeFile(join(workspaceBDetail.worktree_path!, "workspace-b.txt"), "workspace b\n");
+
+      await page.addInitScript(() => {
+        const NativeEventSource = window.EventSource;
+        const readyWorkspaceIDs: string[] = [];
+        (
+          window as Window & {
+            __workspaceDiffReadyIDs?: string[];
+          }
+        ).__workspaceDiffReadyIDs = readyWorkspaceIDs;
+        window.EventSource = class extends NativeEventSource {
+          constructor(url: string | URL, eventSourceInitDict?: EventSourceInit) {
+            super(url, eventSourceInitDict);
+            this.addEventListener("workspace_diff_ready", (event) => {
+              const data = JSON.parse((event as MessageEvent).data as string) as {
+                workspace_id?: string;
+              };
+              if (data.workspace_id) readyWorkspaceIDs.push(data.workspace_id);
+            });
+          }
+        };
+      });
+
+      let releaseWorkspaceDetail!: () => void;
+      const workspaceDetailMayContinue = new Promise<void>((resolve) => {
+        releaseWorkspaceDetail = resolve;
+      });
+      let releaseRuntime!: () => void;
+      const runtimeMayContinue = new Promise<void>((resolve) => {
+        releaseRuntime = resolve;
+      });
+      await page.route(
+        (url) => url.pathname === `/api/v1/workspaces/${workspaceB.id}`,
+        async (route) => {
+          await workspaceDetailMayContinue;
+          await route.continue();
+        },
+      );
+      await page.route(
+        (url) => url.pathname === `/api/v1/workspaces/${workspaceB.id}/runtime`,
+        async (route) => {
+          await runtimeMayContinue;
+          await route.continue();
+        },
+      );
+
+      const workspaceBDiffRequests: string[] = [];
+      page.on("request", (request) => {
+        const path = new URL(request.url()).pathname;
+        if (
+          path === `/api/v1/workspaces/${workspaceB.id}/files` ||
+          path === `/api/v1/workspaces/${workspaceB.id}/diff`
+        ) {
+          workspaceBDiffRequests.push(path);
+        }
+      });
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspaceA.id}`);
+      await page.locator(".panel-toggle-group .panel-toggle-btn", { hasText: "Diff" }).click();
+      await expect(page.getByRole("region", { name: "Workspace Diff" })).toBeVisible();
+
+      await page.locator(".workspace-list-sidebar .ws-row", { hasText: "Add dark mode support" }).click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceB.id}$`));
+      await expect(page.getByText("Loading workspace details...")).toBeVisible();
+      await expect(page.getByRole("region", { name: "Workspace Diff" })).toHaveCount(0);
+
+      await page.waitForFunction(
+        (workspaceID) =>
+          (
+            window as Window & {
+              __workspaceDiffReadyIDs?: string[];
+            }
+          ).__workspaceDiffReadyIDs?.includes(workspaceID),
+        workspaceB.id,
+      );
+      expect(workspaceBDiffRequests).toEqual([]);
+
+      releaseWorkspaceDetail();
+      await expect(page.getByText("Loading workspace details...")).toBeVisible();
+      expect(workspaceBDiffRequests).toEqual([]);
+
+      releaseRuntime();
+      await expect(page.getByRole("region", { name: "Workspace Diff" })).toBeVisible();
+      await expect.poll(() => workspaceBDiffRequests).toContain(`/api/v1/workspaces/${workspaceB.id}/files`);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("workspace diff context expansion renders text from the real preview API", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),

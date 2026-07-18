@@ -35,7 +35,11 @@ func WorktreeDiffTotals(
 	if err != nil || !ok {
 		return 0, 0, ok, err
 	}
-	return added + worktreeUntrackedAdditions(ctx, dir), removed, true, nil
+	untracked, err := worktreeUntrackedAdditions(ctx, dir)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	return added + untracked, removed, true, nil
 }
 
 // worktreeTrackedDiffTotals sums the tracked-file diff against the first base
@@ -166,12 +170,16 @@ func worktreeNumstatAgainst(
 
 // worktreeUntrackedAdditions sums the line counts of untracked text files,
 // reusing the sidebar's untracked-file path so binary files contribute zero.
-func worktreeUntrackedAdditions(ctx context.Context, dir string) int {
+func worktreeUntrackedAdditions(ctx context.Context, dir string) (int, error) {
+	files, err := worktreeUntrackedFiles(ctx, dir, false, false)
+	if err != nil {
+		return 0, err
+	}
 	total := 0
-	for _, file := range worktreeUntrackedFiles(ctx, dir, false, false) {
+	for _, file := range files {
 		total += file.Additions
 	}
-	return total
+	return total, nil
 }
 
 // sumWorktreeNumstatZ totals the added/removed counts across all files in a

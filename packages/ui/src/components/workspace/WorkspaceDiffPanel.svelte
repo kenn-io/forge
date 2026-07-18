@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import DiffScopePicker from "../diff/DiffScopePicker.svelte";
   import DiffToolbar from "../diff/DiffToolbar.svelte";
   import DiffView from "../diff/DiffView.svelte";
@@ -45,13 +46,33 @@
   let loadedKey = "";
   let loadedIdentity = "";
   let loadedDiffRefreshToken = 0;
+  let activeLoad: {
+    workspaceID: string;
+    workspaceHostKey?: string | undefined;
+    token: object;
+  } | null = null;
+
+  function cancelActiveLoad(): void {
+    if (!activeLoad) return;
+    diff.cancelWorkspaceDiff(activeLoad.workspaceID, activeLoad.workspaceHostKey, activeLoad.token);
+    activeLoad = null;
+  }
+
+  onDestroy(cancelActiveLoad);
 
   $effect(() => {
-    if (!active) return;
+    if (!active) {
+      cancelActiveLoad();
+      loadedKey = "";
+      return;
+    }
     const identity = `${workspaceHostKey ?? "self"}:${workspaceID}:${base}`;
     const key = `${identity}:${refreshToken}:${diffRefreshToken}`;
     if (loadedKey === key) return;
     const preserveVisible = loadedIdentity === identity && diffRefreshToken !== loadedDiffRefreshToken;
+    cancelActiveLoad();
+    const loadToken = {};
+    activeLoad = { workspaceID, workspaceHostKey, token: loadToken };
     loadedKey = key;
     loadedIdentity = identity;
     loadedDiffRefreshToken = diffRefreshToken;
@@ -59,6 +80,7 @@
       refreshCommits: refreshToken > 0 && !preserveVisible,
       workspaceHostKey,
       preserveVisible,
+      loadToken,
     });
   });
 

@@ -6836,6 +6836,26 @@ components:
       required:
         - status
       type: object
+    WorkspaceDiffWatchResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkspaceDiffWatchResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        changed:
+          description: True when the caller must reload the watched default-HEAD snapshot.
+          type: boolean
+        version:
+          description: Opaque version of the current default-HEAD snapshot; never a version from another diff scope.
+          type: string
+      required:
+        - changed
+        - version
+      type: object
     WorkspaceKataMetadata:
       additionalProperties: false
       properties:
@@ -8908,6 +8928,11 @@ paths:
           name: to
           schema:
             type: string
+        - description: Pinned workspace snapshot version.
+          in: query
+          name: revision
+          schema:
+            type: string
       responses:
         default:
           content:
@@ -8920,6 +8945,39 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Response returned by the owning fleet host.
       summary: Get workspace diff on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/diff/watch:
+    get:
+      operationId: watch-fleet-workspace-diff
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: Last observed workspace diff snapshot version.
+          in: query
+          name: version
+          schema:
+            type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Watch selected workspace diff on fleet host
       tags:
         - Fleet
   /fleet/hosts/{host_key}/workspaces/{id}/file-preview:
@@ -8959,6 +9017,11 @@ paths:
         - description: Newer range commit SHA.
           in: query
           name: to
+          schema:
+            type: string
+        - description: Pinned workspace snapshot version.
+          in: query
+          name: revision
           schema:
             type: string
         - description: Workspace file path to preview.
@@ -17881,6 +17944,38 @@ paths:
       summary: Get workspace diff
       tags:
         - Workspaces
+  /workspaces/{id}/diff/watch:
+    get:
+      operationId: watch-workspace-diff
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: Last observed opaque workspace diff snapshot version
+          explode: false
+          in: query
+          name: version
+          schema:
+            description: Last observed opaque workspace diff snapshot version
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceDiffWatchResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Watch selected workspace diff
+      tags:
+        - Workspaces
   /workspaces/{id}/file-preview:
     get:
       operationId: get-workspace-file-preview
@@ -17947,6 +18042,13 @@ paths:
           name: to
           schema:
             description: End SHA for range diff (inclusive)
+            type: string
+        - description: Optional snapshot_version returned by the workspace files endpoint
+          explode: false
+          in: query
+          name: revision
+          schema:
+            description: Optional snapshot_version returned by the workspace files endpoint
             type: string
       responses:
         "200":

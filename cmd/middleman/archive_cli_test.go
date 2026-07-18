@@ -239,6 +239,68 @@ func TestArchiveCLISubcommandsUseGeneratedDaemonContract(t *testing.T) {
 	}
 }
 
+func TestArchiveCLIResetUsesScopedDaemonContract(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	requests := make(chan map[string]any, 2)
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(http.MethodPost, r.Method)
+		assert.Equal("/base/api/v1/archive/reset", r.URL.Path)
+		var body map[string]any
+		if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		requests <- body
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(api.Close)
+	cfgPath := archiveCLITestConfig(t, api.URL, "/base", "archive-token")
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "restart repository scan",
+			args: []string{
+				"reset", "--config", cfgPath,
+				"--repo", "github|github.example/owner/repo",
+				"--scan", "issue_inventory",
+			},
+			want: `{
+				"repository":{"provider":"github","platform_host":"github.example","owner":"owner","name":"repo","repo_path":"owner/repo"},
+				"scan":"issue_inventory","mode":"restart","force":false
+			}`,
+		},
+		{
+			name: "continue item dataset",
+			args: []string{
+				"reset", "--config", cfgPath,
+				"--repo", "github|github.example/owner/repo",
+				"--item", "merge_request/9", "--dataset", "reviews", "--continue", "--force",
+			},
+			want: `{
+				"repository":{"provider":"github","platform_host":"github.example","owner":"owner","name":"repo","repo_path":"owner/repo"},
+				"item_type":"merge_request","item_number":9,"dataset":"reviews","mode":"continue","force":true
+			}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			err := runArchiveCLIAt(tt.args, &stdout, time.Now)
+			require.NoError(err)
+			assert.Empty(stdout.String())
+			body := <-requests
+			encoded, err := json.Marshal(body)
+			require.NoError(err)
+			assert.JSONEq(tt.want, string(encoded))
+		})
+	}
+}
+
 func TestArchiveAPIProblemIncludesStableDetails(t *testing.T) {
 	t.Parallel()
 	details := map[string]any{
@@ -286,6 +348,15 @@ func TestArchiveCLIValidationAndAtomicOutput(t *testing.T) {
 	assert.Contains(err.Error(), "--all and --repo are mutually exclusive")
 	assert.Zero(calls)
 	assert.Empty(stdout.String())
+
+	err = runArchiveCLIAt([]string{
+		"reset", "--config", cfgPath,
+		"--repo", "github|github.example/owner/repo",
+		"--scan", "issue_inventory", "--item", "issue/1", "--dataset", "comments",
+	}, &stdout, func() time.Time { return now })
+	require.Error(err)
+	assert.Contains(err.Error(), "--scan and --item are mutually exclusive")
+	assert.Zero(calls)
 
 	output := filepath.Join(t.TempDir(), "report.md")
 	require.NoError(os.WriteFile(output, []byte("keep me\n"), 0o600))

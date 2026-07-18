@@ -7,8 +7,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,7 +20,7 @@ import (
 	"go.kenn.io/middleman/internal/config"
 )
 
-const archiveCLIUsage = "usage: middleman archive <start|pause|status|report> [flags]"
+const archiveCLIUsage = "usage: middleman archive <start|pause|reset|status|report> [flags]"
 
 type archiveStringList []string
 
@@ -53,11 +55,81 @@ func runArchiveCLIAt(args []string, stdout io.Writer, now func() time.Time) erro
 		return runArchiveMutation(args[0], args[1:], stdout)
 	case "status":
 		return runArchiveStatus(args[1:], stdout)
+	case "reset":
+		return runArchiveReset(args[1:])
 	case "report":
 		return runArchiveReport(args[1:], stdout, now)
 	default:
 		return fmt.Errorf("%s: unknown archive command %q", archiveCLIUsage, args[0])
 	}
+}
+
+func runArchiveReset(args []string) error {
+	fs := newArchiveFlagSet("middleman archive reset")
+	daemonFlags := addArchiveDaemonFlags(fs)
+	repository := fs.String("repo", "", "provider|host/repo_path")
+	scan := fs.String("scan", "", "repository scan to reset")
+	item := fs.String("item", "", "item scope as issue/N or merge_request/N")
+	dataset := fs.String("dataset", "", "item dataset to reset")
+	continueMode := fs.Bool("continue", false, "continue a page-bound scan from its cursor")
+	force := fs.Bool("force", false, "reset progress that is not blocked")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 || *repository == "" {
+		return errors.New("usage: middleman archive reset --repo provider|host/repo_path [--scan NAME | --item TYPE/N --dataset NAME] [--continue]")
+	}
+	if *scan != "" && *item != "" {
+		return errors.New("--scan and --item are mutually exclusive")
+	}
+	if (*scan == "") == (*item == "") || (*item == "") != (*dataset == "") {
+		return errors.New("select one --scan or one --item with --dataset")
+	}
+	ref, err := parseArchiveRepositoryRef(*repository)
+	if err != nil {
+		return fmt.Errorf("invalid --repo %q: %w", *repository, err)
+	}
+	body := generated.ArchiveResetBody{
+		Repository: ref, Mode: "restart", Force: force,
+	}
+	if *continueMode {
+		body.Mode = "continue"
+	}
+	if *scan != "" {
+		body.Scan = scan
+	} else {
+		itemType, itemNumber, parseErr := parseArchiveResetItem(*item)
+		if parseErr != nil {
+			return parseErr
+		}
+		body.ItemType, body.ItemNumber, body.Dataset = &itemType, &itemNumber, dataset
+	}
+	client, err := newArchiveDaemonClient(daemonFlags)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), daemonFlags.timeout)
+	defer cancel()
+	response, err := client.HTTP.ResetArchiveScanWithResponse(ctx, body)
+	if err != nil {
+		return fmt.Errorf("archive reset request: %w", err)
+	}
+	if response.StatusCode() != http.StatusNoContent {
+		return archiveAPIProblem("archive reset", response.StatusCode(), response.ApplicationproblemJSONDefault)
+	}
+	return nil
+}
+
+func parseArchiveResetItem(value string) (string, int64, error) {
+	itemType, numberText, ok := strings.Cut(value, "/")
+	if !ok || (itemType != "issue" && itemType != "merge_request") {
+		return "", 0, errors.New("--item must be issue/N or merge_request/N")
+	}
+	number, err := strconv.ParseInt(numberText, 10, 64)
+	if err != nil || number <= 0 {
+		return "", 0, errors.New("--item number must be positive")
+	}
+	return itemType, number, nil
 }
 
 func runArchiveMutation(command string, args []string, stdout io.Writer) error {

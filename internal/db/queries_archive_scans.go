@@ -303,6 +303,21 @@ func (d *DB) ResetArchiveRepoScan(ctx context.Context, repoID int64, kind Archiv
 	})
 }
 
+// ContinueArchiveRepoScan grants one further bounded page window without
+// discarding the durable cursor or starting a new generation.
+func (d *DB) ContinueArchiveRepoScan(ctx context.Context, repoID int64, kind ArchiveScanKind) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_archive_repo_scans
+		SET page_count = 0, status = 'pending',
+			last_error_code = NULL, last_error_detail = NULL, updated_at = ?
+		WHERE repo_id = ? AND scan = ?`,
+		formatDatasetProgressTime(time.Now()), repoID, kind)
+	if err != nil {
+		return fmt.Errorf("continue archive scan: %w", err)
+	}
+	return nil
+}
+
 // loadArchiveScanStates merges scan rows into the supplied states, keyed by
 // repository ID. Missing rows read as an untouched pending generation one.
 func loadArchiveScanStates(

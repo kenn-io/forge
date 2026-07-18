@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -219,6 +220,74 @@ func TestAPIArchiveValidationAndLimitProblemDetails(t *testing.T) {
 		"observedTextBytes": 33554433,
 		"maxTextBytes": 33554432
 	}`, string(encodedDetails))
+}
+
+func TestAPIArchiveResetScanScopesRecoveryAndReportsUnsafeContinuation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _, _, ref := setupArchiveTestServer(t, nil)
+	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(repo)
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE middleman_archive_repo_scans
+		SET scan_generation = 7, next_cursor = 'issue-p9', last_input_cursor = 'issue-p8',
+			page_count = 10000, status = 'blocked', last_error_code = 'page_bound'
+		WHERE repo_id = ? AND scan = 'issue_inventory'`, repo.ID)
+	require.NoError(err)
+
+	requestBody := func(mode string, force bool) string {
+		return fmt.Sprintf(`{
+			"repository": {
+				"provider": %q, "platform_host": %q, "owner": %q,
+				"name": %q, "repo_path": %q
+			},
+			"scan": "issue_inventory", "mode": %q, "force": %t
+		}`, ref.Platform, ref.Host, ref.Owner, ref.Name, ref.RepoPath, mode, force)
+	}
+	request := func(body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/archive/reset", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Host = "middleman.test"
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		return rr
+	}
+
+	rr := request(requestBody("continue", false))
+	assert.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repo.ID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.Equal(int64(7), states[0].IssueInventory.Generation)
+	assert.Equal("issue-p9", states[0].IssueInventory.Cursor())
+	assert.Zero(states[0].IssueInventory.PageCount)
+	assert.Equal(db.ArchiveScanPending, states[0].IssueInventory.Status)
+
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE middleman_archive_repo_scans
+		SET status = 'blocked', last_error_code = 'invalid_cursor'
+		WHERE repo_id = ? AND scan = 'issue_inventory'`, repo.ID)
+	require.NoError(err)
+	rr = request(requestBody("continue", false))
+	assert.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	var problem server.ProblemError
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &problem))
+	assert.Equal(server.CodeBadRequest, problem.Code)
+	assert.Equal("invalid_cursor_requires_restart", problem.Details["reason"])
+
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE middleman_archive_repo_scans
+		SET status = 'complete', last_error_code = NULL
+		WHERE repo_id = ? AND scan = 'issue_inventory'`, repo.ID)
+	require.NoError(err)
+	rr = request(requestBody("restart", false))
+	assert.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &problem))
+	assert.Equal("not_blocked", problem.Details["reason"])
+	rr = request(requestBody("restart", true))
+	assert.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
 }
 
 func TestAPIArchiveRoutesObeyHostAuthAndCSRFGuards(t *testing.T) {

@@ -27,6 +27,21 @@ type pageCursor struct {
 	Page   int    `json:"page"`
 	Since  string `json:"since,omitempty"`
 	Before string `json:"before,omitempty"`
+	// Boundary is the newest creation time a created-order traversal has
+	// covered, RFC3339Nano UTC. The list endpoints cannot enforce a
+	// page-spanning tie-break, so per the ItemOrderCreated contract the
+	// traversal resumes inclusively at this timestamp: equal-created items at
+	// a page seam are re-delivered instead of trusted to keep their page
+	// position, and consumers absorb the overlap through idempotent upserts.
+	Boundary string `json:"boundary,omitempty"`
+	// Sweep marks an in-progress boundary re-delivery pass and records the
+	// page that triggered it. The sweep steps into the already-consumed
+	// direction while pages still open on the boundary timestamp,
+	// re-delivering the boundary tie group, then returns to the trigger page.
+	Sweep int `json:"sweep,omitempty"`
+	// Swept records the page whose boundary sweep just completed so the
+	// trigger page's own delivery does not re-trigger the same sweep.
+	Swept int `json:"swept,omitempty"`
 }
 
 // ListIssuesPage is the single owner of Forgejo/Gitea issue inventory requests
@@ -51,9 +66,9 @@ func (p *Provider) ListIssuesPage(
 		if query.UpdatedSince != nil {
 			since = query.UpdatedSince.UTC()
 		}
-		return p.listInventoryIssuesPage(ctx, ref, since, query.Cursor, "updated_issues")
+		return p.listInventoryIssuesPage(ctx, ref, query.Order, since, query.Cursor, "updated_issues")
 	}
-	return p.listInventoryIssuesPage(ctx, ref, time.Time{}, query.Cursor, "historical_issues")
+	return p.listInventoryIssuesPage(ctx, ref, query.Order, time.Time{}, query.Cursor, "historical_issues")
 }
 
 // ListMergeRequestsPage is the merge-request counterpart to ListIssuesPage.
@@ -76,9 +91,9 @@ func (p *Provider) ListMergeRequestsPage(
 		if query.UpdatedSince != nil {
 			since = query.UpdatedSince.UTC()
 		}
-		return p.listInventoryMergeRequestsPage(ctx, ref, since, query.Cursor, "updated_merge_requests")
+		return p.listInventoryMergeRequestsPage(ctx, ref, query.Order, since, query.Cursor, "updated_merge_requests")
 	}
-	return p.listInventoryMergeRequestsPage(ctx, ref, time.Time{}, query.Cursor, "historical_merge_requests")
+	return p.listInventoryMergeRequestsPage(ctx, ref, query.Order, time.Time{}, query.Cursor, "historical_merge_requests")
 }
 
 // listOpenIssuesPage returns every open issue as a single exhausted page. Open
@@ -125,10 +140,15 @@ func (p *Provider) listOpenMergeRequestsPage(
 }
 
 // listInventoryIssuesPage owns the historical and maintenance issue request
-// shapes over the archive transport.
+// shapes over the archive transport. The requested order is threaded
+// explicitly: created-order runs the boundary-inclusive backward walk, while
+// updated-order keeps updated-time traversal semantics whether or not a
+// watermark is present, applying the inclusive watermark through the
+// endpoint's since filter only when one was requested.
 func (p *Provider) listInventoryIssuesPage(
 	ctx context.Context,
 	ref platform.RepoRef,
+	order platform.ItemOrder,
 	since time.Time,
 	encoded string,
 	mode string,
@@ -164,13 +184,10 @@ func (p *Provider) listInventoryIssuesPage(
 		}
 		return items[i].Created.Before(items[j].Created)
 	})
-	out := make([]platform.Issue, 0, len(items))
-	for _, item := range items {
-		if item.IsPullRequest {
-			continue
-		}
-		out = append(out, NormalizeIssue(ref, item))
+	if order == platform.ItemOrderCreated {
+		return createdOrderIssuesPage(ref, items, cursor)
 	}
+	out := normalizeIssuePage(ref, items, time.Time{})
 	if cursor.Page <= 1 {
 		return platform.Page[platform.Issue]{Items: out, Exhausted: true}, nil
 	}
@@ -178,14 +195,87 @@ func (p *Provider) listInventoryIssuesPage(
 	return nextCursorPage(out, cursor, len(out) == 0)
 }
 
+// createdOrderIssuesPage advances the created-order backward walk. The issue
+// endpoint has no stable tie-break across page boundaries, so the cursor
+// tracks the newest creation time the walk has covered and resumption is
+// inclusive at it: when the next page still opens on the boundary timestamp,
+// the walk sweeps back through the already-consumed pages that hold the tie
+// group and re-delivers it before continuing, so an interrupted scan never
+// permanently skips an equal-created item the provider re-ordered across the
+// seam. Consumers absorb the overlap through idempotent upserts.
+func createdOrderIssuesPage(
+	ref platform.RepoRef,
+	items []IssueDTO,
+	cursor pageCursor,
+) (platform.Page[platform.Issue], error) {
+	boundary := parseCursorTime(cursor.Boundary)
+	opensOnBoundary := len(items) > 0 && !boundary.IsZero() && items[0].Created.Equal(boundary)
+	if cursor.Sweep > 0 {
+		out := normalizeIssuePage(ref, items, boundary)
+		if opensOnBoundary {
+			// The whole page sits inside the boundary tie group, which may
+			// extend one page further into the consumed region.
+			cursor.Page++
+			return nextCursorPage(out, cursor, len(out) == 0)
+		}
+		cursor.Page = cursor.Sweep
+		cursor.Swept = cursor.Sweep
+		cursor.Sweep = 0
+		return nextCursorPage(out, cursor, len(out) == 0)
+	}
+	if opensOnBoundary && cursor.Page != cursor.Swept {
+		cursor.Sweep = cursor.Page
+		cursor.Swept = 0
+		cursor.Page++
+		return progressCursorPage[platform.Issue](cursor)
+	}
+	out := normalizeIssuePage(ref, items, boundary)
+	if len(items) > 0 {
+		if newest := items[len(items)-1].Created; newest.After(boundary) {
+			cursor.Boundary = newest.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	cursor.Swept = 0
+	if cursor.Page <= 1 {
+		return platform.Page[platform.Issue]{Items: out, Exhausted: true}, nil
+	}
+	cursor.Page--
+	return nextCursorPage(out, cursor, len(out) == 0)
+}
+
+// normalizeIssuePage filters interleaved pull requests out of an issue page
+// and, when a created-order boundary is set, drops items strictly before it:
+// those were delivered by earlier pages, while boundary-equal items are
+// re-delivered per the inclusive-resumption contract.
+func normalizeIssuePage(
+	ref platform.RepoRef,
+	items []IssueDTO,
+	boundary time.Time,
+) []platform.Issue {
+	out := make([]platform.Issue, 0, len(items))
+	for _, item := range items {
+		if item.IsPullRequest {
+			continue
+		}
+		if !boundary.IsZero() && item.Created.Before(boundary) {
+			continue
+		}
+		out = append(out, NormalizeIssue(ref, item))
+	}
+	return out
+}
+
 // listInventoryMergeRequestsPage owns the historical and maintenance
-// merge-request request shapes over the archive transport. A zero since runs
-// the created-order "oldest" traversal; a nonzero since runs the
-// "recentupdate" maintenance traversal, which stops once a page crosses the
-// overlapped inclusive watermark.
+// merge-request request shapes over the archive transport. The requested
+// order picks the traversal: created-order pages forward under the "oldest"
+// sort with boundary-inclusive resumption, while updated-order always pages
+// "recentupdate" descending — even without a watermark — bounding each item
+// by its update time against the scan-start pin and stopping once a page
+// crosses the overlapped inclusive watermark when one was requested.
 func (p *Provider) listInventoryMergeRequestsPage(
 	ctx context.Context,
 	ref platform.RepoRef,
+	order platform.ItemOrder,
 	since time.Time,
 	encoded string,
 	mode string,
@@ -199,7 +289,7 @@ func (p *Provider) listInventoryMergeRequestsPage(
 		return platform.Page[platform.MergeRequest]{}, err
 	}
 	sortMode := "oldest"
-	if !since.IsZero() {
+	if order == platform.ItemOrderUpdated {
 		sortMode = "recentupdate"
 	}
 	items, page, err := t.ListArchivePullRequests(ctx, ref, ArchiveListOptions{
@@ -208,15 +298,21 @@ func (p *Provider) listInventoryMergeRequestsPage(
 	if err != nil {
 		return platform.Page[platform.MergeRequest]{}, p.mapError(err)
 	}
+	if order == platform.ItemOrderCreated {
+		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].Created.Equal(items[j].Created) {
+				return items[i].Index < items[j].Index
+			}
+			return items[i].Created.Before(items[j].Created)
+		})
+		return createdOrderMergeRequestsPage(ref, items, cursor, page)
+	}
 	out := make([]platform.MergeRequest, 0, len(items))
 	crossedWatermark := false
 	overlap := inclusiveWatermark(since)
+	pin := parseCursorTime(cursor.Before)
 	for _, item := range items {
-		watermarkValue := item.Created
-		if !since.IsZero() {
-			watermarkValue = item.Updated
-		}
-		if watermarkValue.After(parseCursorTime(cursor.Before)) {
+		if item.Updated.After(pin) {
 			continue
 		}
 		if !since.IsZero() && item.Updated.Before(overlap) {
@@ -230,6 +326,84 @@ func (p *Provider) listInventoryMergeRequestsPage(
 	}
 	cursor.Page = page.Next
 	return nextCursorPage(out, cursor, len(out) == 0)
+}
+
+// createdOrderMergeRequestsPage advances the created-order "oldest" forward
+// walk. The pulls endpoint has no stable tie-break across page boundaries, so
+// the cursor tracks the newest creation time the walk has covered and
+// resumption is inclusive at it: when a page still opens on the boundary
+// timestamp, the walk sweeps back through the already-consumed pages that
+// hold the tie group and re-delivers it before continuing, so an interrupted
+// scan never permanently skips an equal-created item the provider re-ordered
+// across the seam. Consumers absorb the overlap through idempotent upserts.
+func createdOrderMergeRequestsPage(
+	ref platform.RepoRef,
+	items []PullRequestDTO,
+	cursor pageCursor,
+	page Page,
+) (platform.Page[platform.MergeRequest], error) {
+	boundary := parseCursorTime(cursor.Boundary)
+	pin := parseCursorTime(cursor.Before)
+	opensOnBoundary := len(items) > 0 && !boundary.IsZero() && items[0].Created.Equal(boundary)
+	if cursor.Sweep > 0 {
+		out := normalizeMergeRequestPage(ref, items, boundary, pin)
+		if opensOnBoundary && cursor.Page > 1 {
+			// The whole page sits inside the boundary tie group, which may
+			// extend one page further into the consumed region.
+			cursor.Page--
+			return nextCursorPage(out, cursor, len(out) == 0)
+		}
+		cursor.Page = cursor.Sweep
+		cursor.Swept = cursor.Sweep
+		cursor.Sweep = 0
+		return nextCursorPage(out, cursor, len(out) == 0)
+	}
+	if opensOnBoundary && cursor.Page > 1 && cursor.Page != cursor.Swept {
+		cursor.Sweep = cursor.Page
+		cursor.Swept = 0
+		cursor.Page--
+		return progressCursorPage[platform.MergeRequest](cursor)
+	}
+	out := normalizeMergeRequestPage(ref, items, boundary, pin)
+	for i := len(items) - 1; i >= 0; i-- {
+		created := items[i].Created
+		if created.After(pin) {
+			continue
+		}
+		if created.After(boundary) {
+			cursor.Boundary = created.UTC().Format(time.RFC3339Nano)
+		}
+		break
+	}
+	cursor.Swept = 0
+	if page.Next == 0 {
+		return platform.Page[platform.MergeRequest]{Items: out, Exhausted: true}, nil
+	}
+	cursor.Page = page.Next
+	return nextCursorPage(out, cursor, len(out) == 0)
+}
+
+// normalizeMergeRequestPage bounds a created-order merge-request page by the
+// scan-start pin and, when a boundary is set, drops items strictly before it:
+// those were delivered by earlier pages, while boundary-equal items are
+// re-delivered per the inclusive-resumption contract.
+func normalizeMergeRequestPage(
+	ref platform.RepoRef,
+	items []PullRequestDTO,
+	boundary time.Time,
+	pin time.Time,
+) []platform.MergeRequest {
+	out := make([]platform.MergeRequest, 0, len(items))
+	for _, item := range items {
+		if item.Created.After(pin) {
+			continue
+		}
+		if !boundary.IsZero() && item.Created.Before(boundary) {
+			continue
+		}
+		out = append(out, NormalizePullRequest(ref, item))
+	}
+	return out
 }
 
 // LookupIssue fetches a single issue and returns a typed outcome. Provider
@@ -465,6 +639,14 @@ func (p *Provider) decodePageCursor(ref platform.RepoRef, number int, mode strin
 	}
 	if cursor.Mode != expected.Mode || cursor.Repo != expected.Repo || cursor.Number != expected.Number || cursor.Since != expected.Since || cursor.Page < 1 || cursor.Before == "" {
 		return pageCursor{}, p.pageCursorError(errors.New("cursor does not match page enumeration"))
+	}
+	if cursor.Sweep < 0 || cursor.Swept < 0 {
+		return pageCursor{}, p.pageCursorError(errors.New("cursor does not match page enumeration"))
+	}
+	if cursor.Boundary != "" {
+		if _, err := time.Parse(time.RFC3339Nano, cursor.Boundary); err != nil {
+			return pageCursor{}, p.pageCursorError(err)
+		}
 	}
 	return cursor, nil
 }

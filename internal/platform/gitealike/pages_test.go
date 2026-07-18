@@ -340,6 +340,250 @@ func TestLiveMergeRequestEventsAggregateCanonicalPagesAndCommits(t *testing.T) {
 	assert.Equal([]int{1, 2}, transport.reviewRequests)
 }
 
+// liveLookupFakeTransport drives the live single-item getters: it counts
+// item-level transport calls and lets each outcome be staged independently.
+type liveLookupFakeTransport struct {
+	*fakeTransport
+	issueItem    IssueDTO
+	issueErr     error
+	prErr        error
+	itemRequests int
+}
+
+func (t *liveLookupFakeTransport) GetIssue(context.Context, platform.RepoRef, int) (IssueDTO, error) {
+	t.itemRequests++
+	return t.issueItem, t.issueErr
+}
+
+func (t *liveLookupFakeTransport) GetPullRequest(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) (PullRequestDTO, error) {
+	t.itemRequests++
+	if t.prErr != nil {
+		return PullRequestDTO{}, t.prErr
+	}
+	return t.fakeTransport.GetPullRequest(ctx, ref, number)
+}
+
+func TestLiveGettersResolveOutcomesThroughCanonicalLookup(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 6, 7, 8, 9, 10, 0, time.UTC)
+	tests := []struct {
+		name    string
+		itemErr error
+		wantErr error
+		notErr  error
+	}{
+		{name: "present"},
+		{
+			name:    "removed resolves to not found",
+			itemErr: &HTTPError{StatusCode: 404, Message: "gone"},
+			wantErr: platform.ErrNotFound,
+			notErr:  platform.ErrPermissionDenied,
+		},
+		{
+			name:    "inaccessible resolves to permission denied",
+			itemErr: &HTTPError{StatusCode: 403, Message: "hidden"},
+			wantErr: platform.ErrPermissionDenied,
+			notErr:  platform.ErrNotFound,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			require := require.New(t)
+			transport := &liveLookupFakeTransport{
+				fakeTransport: &fakeTransport{
+					repo: RepositoryDTO{Name: "repo"},
+					pr:   PullRequestDTO{ID: 6, Index: 7, Created: base, Updated: base},
+				},
+				issueItem: IssueDTO{ID: 5, Index: 7, Created: base, Updated: base},
+				issueErr:  tc.itemErr,
+				prErr:     tc.itemErr,
+			}
+			provider := NewProvider(platform.KindForgejo, "forge.example", transport)
+
+			issue, issueErr := platform.RequireIssue(t.Context(), provider, pagesTestRef(), 7)
+			mr, mrErr := platform.RequireMergeRequest(t.Context(), provider, pagesTestRef(), 7)
+
+			if tc.wantErr == nil {
+				require.NoError(issueErr)
+				require.NoError(mrErr)
+				assert.Equal(7, issue.Number)
+				assert.Equal(7, mr.Number)
+				return
+			}
+			require.ErrorIs(issueErr, tc.wantErr)
+			require.ErrorIs(mrErr, tc.wantErr)
+			require.NotErrorIs(issueErr, tc.notErr)
+			require.NotErrorIs(mrErr, tc.notErr)
+		})
+	}
+}
+
+func TestLiveGettersRejectNonpositiveNumbersBeforeTransport(t *testing.T) {
+	transport := &liveLookupFakeTransport{fakeTransport: &fakeTransport{}}
+	provider := NewProvider(platform.KindGitea, "git.example", transport)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitea, Host: "git.example", Owner: "owner", Name: "repo",
+	}
+
+	for _, number := range []int{0, -3} {
+		_, issueErr := platform.RequireIssue(t.Context(), provider, ref, number)
+		_, mrErr := platform.RequireMergeRequest(t.Context(), provider, ref, number)
+		require.ErrorIs(t, issueErr, platform.ErrInvalidArgument)
+		require.ErrorIs(t, mrErr, platform.ErrInvalidArgument)
+	}
+	assert.Zero(t, transport.itemRequests,
+		"the positive-number guard must reject before any transport call")
+}
+
+func TestUpdatedOrderWithoutWatermarkUsesUpdatedTraversal(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	base := time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
+	future := time.Now().UTC().Add(48 * time.Hour)
+	transport := &archiveFakeTransport{
+		fakeTransport: &fakeTransport{},
+		pullPages: map[int][]PullRequestDTO{1: {
+			{ID: 1, Index: 1, Created: base, Updated: future},
+			{ID: 2, Index: 2, Created: base, Updated: base.Add(time.Hour)},
+		}},
+		pullPage:   map[int]Page{},
+		issuePages: map[int][]IssueDTO{1: {{ID: 3, Index: 3, Created: base, Updated: base}}},
+		issueLast:  1,
+	}
+	provider := NewProvider(platform.KindForgejo, "forge.example", transport)
+	ref := pagesTestRef()
+
+	mrPage, err := provider.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
+	})
+	require.NoError(err)
+	issuePage, err := provider.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
+	})
+	require.NoError(err)
+
+	assert.Equal("recentupdate", transport.pullOptions[0].Sort,
+		"updated-order traversal must request update-time sort even without a watermark")
+	require.Len(mrPage.Items, 1,
+		"the scan-start pin must bound updated-order traversal by update time, not creation time")
+	assert.Equal(2, mrPage.Items[0].Number)
+	assert.True(mrPage.Exhausted)
+	assert.True(transport.issueOptions[0].Since.IsZero(),
+		"an updated-order query without a watermark carries no since filter")
+	require.Len(issuePage.Items, 1)
+	assert.Equal(3, issuePage.Items[0].Number)
+}
+
+func TestCreatedOrderResumeCoversBoundaryTimestampTies(t *testing.T) {
+	base := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
+	tie := base.Add(time.Hour)
+
+	t.Run("merge requests", func(t *testing.T) {
+		require := require.New(t)
+		a := PullRequestDTO{ID: 1, Index: 1, Created: base, Updated: base}
+		b := PullRequestDTO{ID: 2, Index: 2, Created: tie, Updated: tie}
+		c := PullRequestDTO{ID: 3, Index: 3, Created: tie, Updated: tie}
+		d := PullRequestDTO{ID: 4, Index: 4, Created: tie.Add(time.Hour), Updated: tie.Add(time.Hour)}
+		transport := &archiveFakeTransport{
+			fakeTransport: &fakeTransport{},
+			pullPages:     map[int][]PullRequestDTO{1: {a, b}, 2: {c, d}},
+			pullPage:      map[int]Page{1: {Next: 2}},
+		}
+		provider := NewProvider(platform.KindForgejo, "forge.example", transport)
+		query := func(cursor string) platform.ItemPageQuery {
+			return platform.ItemPageQuery{
+				State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: cursor,
+			}
+		}
+
+		first, err := provider.ListMergeRequestsPage(t.Context(), pagesTestRef(), query(""))
+		require.NoError(err)
+		require.NotEmpty(first.NextCursor)
+		delivered := make([]int, 0, 8)
+		for _, item := range first.Items {
+			delivered = append(delivered, item.Number)
+		}
+		// Interruption: the provider re-orders the equal-created items across
+		// the consumed page boundary while the scan is suspended.
+		transport.pullPages = map[int][]PullRequestDTO{1: {a, c}, 2: {b, d}}
+
+		cursor := first.NextCursor
+		for range 20 {
+			page, err := provider.ListMergeRequestsPage(t.Context(), pagesTestRef(), query(cursor))
+			require.NoError(err)
+			for _, item := range page.Items {
+				delivered = append(delivered, item.Number)
+			}
+			if page.Exhausted {
+				cursor = ""
+				break
+			}
+			require.NotEmpty(page.NextCursor)
+			cursor = page.NextCursor
+		}
+		require.Empty(cursor, "traversal must reach exhaustion")
+		assert.Subset(t, delivered, []int{1, 2, 3, 4},
+			"equal-created items across the resume boundary must survive an interrupted scan")
+	})
+
+	t.Run("issues", func(t *testing.T) {
+		require := require.New(t)
+		a := IssueDTO{ID: 1, Index: 1, Created: base, Updated: base}
+		b := IssueDTO{ID: 2, Index: 2, Created: tie, Updated: tie}
+		c := IssueDTO{ID: 3, Index: 3, Created: tie, Updated: tie}
+		d := IssueDTO{ID: 4, Index: 4, Created: tie.Add(time.Hour), Updated: tie.Add(time.Hour)}
+		transport := &archiveFakeTransport{
+			fakeTransport: &fakeTransport{},
+			issuePages:    map[int][]IssueDTO{1: {d, c}, 2: {b, a}},
+			issueLast:     2,
+		}
+		provider := NewProvider(platform.KindForgejo, "forge.example", transport)
+		query := func(cursor string) platform.ItemPageQuery {
+			return platform.ItemPageQuery{
+				State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: cursor,
+			}
+		}
+
+		discovery, err := provider.ListIssuesPage(t.Context(), pagesTestRef(), query(""))
+		require.NoError(err)
+		require.True(discovery.ProgressOnly)
+		oldest, err := provider.ListIssuesPage(t.Context(), pagesTestRef(), query(discovery.NextCursor))
+		require.NoError(err)
+		require.NotEmpty(oldest.NextCursor)
+		delivered := make([]int, 0, 8)
+		for _, item := range oldest.Items {
+			delivered = append(delivered, item.Number)
+		}
+		// Interruption: the provider re-orders the equal-created items across
+		// the consumed page boundary while the scan is suspended.
+		transport.issuePages = map[int][]IssueDTO{1: {d, b}, 2: {c, a}}
+
+		cursor := oldest.NextCursor
+		for range 20 {
+			page, err := provider.ListIssuesPage(t.Context(), pagesTestRef(), query(cursor))
+			require.NoError(err)
+			for _, item := range page.Items {
+				delivered = append(delivered, item.Number)
+			}
+			if page.Exhausted {
+				cursor = ""
+				break
+			}
+			require.NotEmpty(page.NextCursor)
+			cursor = page.NextCursor
+		}
+		require.Empty(cursor, "traversal must reach exhaustion")
+		assert.Subset(t, delivered, []int{1, 2, 3, 4},
+			"equal-created items across the resume boundary must survive an interrupted scan")
+	})
+}
+
 func TestCollectTransportPagesRejectsRepeatedPages(t *testing.T) {
 	_, err := collectTransportPages(t.Context(), func(_ context.Context, opts PageOptions) ([]int, Page, error) {
 		return []int{opts.Page}, Page{Next: opts.Page}, nil

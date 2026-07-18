@@ -4903,15 +4903,9 @@ func (s *Syncer) indexSyncRepo(
 		if rawIssueReader, ok := issueReader.(interface {
 			ListOpenGitHubIssues(context.Context, platform.RepoRef) ([]*gh.Issue, error)
 		}); ok && hasGitHubClient {
-			// Sanctioned optimized bulk observation (design doc
-			// 2026-07-16-archive-single-ingestion-correction, "Optimized
-			// bulk observations"): the GitHub index sync consumes the raw
-			// ETag-gated open-issue list instead of the validating
-			// canonical page reader so the per-item detail path keeps its
-			// GitHub-only fields. ListOpenGitHubIssues applies the
-			// wrapper-equivalent contract checks itself, so a malformed
-			// bulk result surfaces here as a typed contract error and is
-			// never persisted.
+			// Keep GitHub's ETag-gated bulk path so index sync retains the
+			// provider-only fields used by per-item detail refreshes. The raw
+			// reader performs the same contract checks before persistence.
 			ghIssues, issueListErr = rawIssueReader.ListOpenGitHubIssues(ctx, platformRef)
 		} else if issuePages, pagesErr := s.issuePageReaderFor(repo); pagesErr != nil {
 			issueListErr = pagesErr

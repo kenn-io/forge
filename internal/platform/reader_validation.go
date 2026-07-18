@@ -186,13 +186,45 @@ func requireLiveCapability(c readerContract, supported bool, capability string) 
 	return UnsupportedCapability(c.kind, c.host, capability)
 }
 
+type pageReaderValidation struct {
+	contract readerContract
+	caps     Capabilities
+}
+
+func (r pageReaderValidation) prepareItem(ref RepoRef, number int) error {
+	if err := r.contract.requireRequestedRef(ref); err != nil {
+		return err
+	}
+	return r.contract.requirePositiveItemNumber(number)
+}
+
+func (r pageReaderValidation) requireArchive(capabilities ...ArchiveCapability) error {
+	for _, capability := range capabilities {
+		if err := r.caps.Archive.Require(r.contract.kind, r.contract.host, capability); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r pageReaderValidation) requireScanCapability(
+	query ItemPageQuery,
+	liveSupported bool,
+	liveCapability string,
+	archiveCapability ArchiveCapability,
+) error {
+	if query.State == ItemStateAll {
+		return r.requireArchive(archiveCapability)
+	}
+	return requireLiveCapability(r.contract, liveSupported, liveCapability)
+}
+
 // validatingIssuePageReader wraps a provider's canonical issue reader with the
 // provider-neutral contract checks, so no caller ever consumes an unvalidated
 // canonical read.
 type validatingIssuePageReader struct {
-	reader   IssuePageReader
-	contract readerContract
-	caps     Capabilities
+	reader IssuePageReader
+	pageReaderValidation
 }
 
 func (r *validatingIssuePageReader) ListIssuesPage(
@@ -206,7 +238,9 @@ func (r *validatingIssuePageReader) ListIssuesPage(
 	if err := ValidateItemPageQuery(query); err != nil {
 		return Page[Issue]{}, err
 	}
-	if err := r.requireScanCapability(query); err != nil {
+	if err := r.requireScanCapability(
+		query, r.caps.ReadIssues, "read_issues", ArchiveCapabilityHistoricalIssues,
+	); err != nil {
 		return Page[Issue]{}, err
 	}
 	page, err := r.reader.ListIssuesPage(ctx, ref, query)
@@ -277,38 +311,11 @@ func (r *validatingIssuePageReader) ListIssueCommentsPage(
 	return page, nil
 }
 
-func (r *validatingIssuePageReader) prepareItem(ref RepoRef, number int) error {
-	if err := r.contract.requireRequestedRef(ref); err != nil {
-		return err
-	}
-	return r.contract.requirePositiveItemNumber(number)
-}
-
-// requireScanCapability gates an inventory scan: open scans are the live read
-// surface, all-state traversals belong to the archive capability
-// declarations.
-func (r *validatingIssuePageReader) requireScanCapability(query ItemPageQuery) error {
-	if query.State == ItemStateAll {
-		return r.requireArchive(ArchiveCapabilityHistoricalIssues)
-	}
-	return requireLiveCapability(r.contract, r.caps.ReadIssues, "read_issues")
-}
-
-func (r *validatingIssuePageReader) requireArchive(capabilities ...ArchiveCapability) error {
-	for _, capability := range capabilities {
-		if err := r.caps.Archive.Require(r.contract.kind, r.contract.host, capability); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // validatingMergeRequestPageReader is the merge-request counterpart to
 // validatingIssuePageReader.
 type validatingMergeRequestPageReader struct {
-	reader   MergeRequestPageReader
-	contract readerContract
-	caps     Capabilities
+	reader MergeRequestPageReader
+	pageReaderValidation
 }
 
 func (r *validatingMergeRequestPageReader) ListMergeRequestsPage(
@@ -322,7 +329,10 @@ func (r *validatingMergeRequestPageReader) ListMergeRequestsPage(
 	if err := ValidateItemPageQuery(query); err != nil {
 		return Page[MergeRequest]{}, err
 	}
-	if err := r.requireScanCapability(query); err != nil {
+	if err := r.requireScanCapability(
+		query, r.caps.ReadMergeRequests, "read_merge_requests",
+		ArchiveCapabilityHistoricalMergeRequests,
+	); err != nil {
 		return Page[MergeRequest]{}, err
 	}
 	page, err := r.reader.ListMergeRequestsPage(ctx, ref, query)
@@ -449,27 +459,4 @@ func (r *validatingMergeRequestPageReader) eventPage(
 		return page, err
 	}
 	return page, nil
-}
-
-func (r *validatingMergeRequestPageReader) prepareItem(ref RepoRef, number int) error {
-	if err := r.contract.requireRequestedRef(ref); err != nil {
-		return err
-	}
-	return r.contract.requirePositiveItemNumber(number)
-}
-
-func (r *validatingMergeRequestPageReader) requireScanCapability(query ItemPageQuery) error {
-	if query.State == ItemStateAll {
-		return r.requireArchive(ArchiveCapabilityHistoricalMergeRequests)
-	}
-	return requireLiveCapability(r.contract, r.caps.ReadMergeRequests, "read_merge_requests")
-}
-
-func (r *validatingMergeRequestPageReader) requireArchive(capabilities ...ArchiveCapability) error {
-	for _, capability := range capabilities {
-		if err := r.caps.Archive.Require(r.contract.kind, r.contract.host, capability); err != nil {
-			return err
-		}
-	}
-	return nil
 }

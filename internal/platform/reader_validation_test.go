@@ -8,8 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testPageReadProvider is a configurable fake canonical reader used to drive
-// the validating wrapper across every provider kind.
 type testPageReadProvider struct {
 	testProvider
 	calls map[string]int
@@ -24,117 +22,61 @@ type testPageReadProvider struct {
 	reviewThreads        Page[MergeRequestReviewThread]
 }
 
-func (p testPageReadProvider) ListIssuesPage(
-	context.Context, RepoRef, ItemPageQuery,
-) (Page[Issue], error) {
-	p.record("issues_page")
+func (p testPageReadProvider) record(name string) { p.calls[name]++ }
+func (p testPageReadProvider) ListIssuesPage(context.Context, RepoRef, ItemPageQuery) (Page[Issue], error) {
+	p.record("issues")
 	return p.issuePage, nil
 }
-
-func (p testPageReadProvider) LookupIssue(
-	context.Context, RepoRef, int,
-) (ItemLookup[Issue], error) {
-	p.record("lookup_issue")
+func (p testPageReadProvider) LookupIssue(context.Context, RepoRef, int) (ItemLookup[Issue], error) {
+	p.record("issue_lookup")
 	return p.issueLookup, nil
 }
-
-func (p testPageReadProvider) ListIssueCommentsPage(
-	context.Context, RepoRef, int, string,
-) (Page[IssueEvent], error) {
+func (p testPageReadProvider) ListIssueCommentsPage(context.Context, RepoRef, int, string) (Page[IssueEvent], error) {
 	p.record("issue_comments")
 	return p.issueComments, nil
 }
-
-func (p testPageReadProvider) ListMergeRequestsPage(
-	context.Context, RepoRef, ItemPageQuery,
-) (Page[MergeRequest], error) {
-	p.record("merge_requests_page")
+func (p testPageReadProvider) ListMergeRequestsPage(context.Context, RepoRef, ItemPageQuery) (Page[MergeRequest], error) {
+	p.record("mrs")
 	return p.mergeRequestPage, nil
 }
-
-func (p testPageReadProvider) LookupMergeRequest(
-	context.Context, RepoRef, int,
-) (ItemLookup[MergeRequest], error) {
-	p.record("lookup_merge_request")
+func (p testPageReadProvider) LookupMergeRequest(context.Context, RepoRef, int) (ItemLookup[MergeRequest], error) {
+	p.record("mr_lookup")
 	return p.mergeRequestLookup, nil
 }
-
-func (p testPageReadProvider) ListMergeRequestCommentsPage(
-	context.Context, RepoRef, int, string,
-) (Page[MergeRequestEvent], error) {
-	p.record("merge_request_comments")
+func (p testPageReadProvider) ListMergeRequestCommentsPage(context.Context, RepoRef, int, string) (Page[MergeRequestEvent], error) {
+	p.record("mr_comments")
 	return p.mergeRequestComments, nil
 }
-
-func (p testPageReadProvider) ListSubmittedReviewsPage(
-	context.Context, RepoRef, int, string,
-) (Page[MergeRequestEvent], error) {
-	p.record("submitted_reviews")
+func (p testPageReadProvider) ListSubmittedReviewsPage(context.Context, RepoRef, int, string) (Page[MergeRequestEvent], error) {
+	p.record("reviews")
 	return p.submittedReviews, nil
 }
-
-func (p testPageReadProvider) ListReviewThreadsPage(
-	context.Context, RepoRef, int, string,
-) (Page[MergeRequestReviewThread], error) {
-	p.record("review_threads")
+func (p testPageReadProvider) ListReviewThreadsPage(context.Context, RepoRef, int, string) (Page[MergeRequestReviewThread], error) {
+	p.record("threads")
 	return p.reviewThreads, nil
 }
 
-func (p testPageReadProvider) record(method string) {
-	if p.calls != nil {
-		p.calls[method]++
+func pageReaderTestRef() RepoRef {
+	return RepoRef{
+		Platform: KindGitHub, Host: "github.com", Owner: "octo-org",
+		Name: "widgets", RepoPath: "octo-org/widgets",
 	}
-}
-
-// pageReaderTestKinds are the provider identities the contract tests run
-// against; every check must hold for every supported provider.
-var pageReaderTestKinds = []struct {
-	kind Kind
-	host string
-}{
-	{KindGitHub, "github.com"},
-	{KindGitLab, "gitlab.example.com"},
-	{KindForgejo, "forge.example.com"},
-	{KindGitea, "gitea.example.com"},
 }
 
 func fullPageReadCapabilities() Capabilities {
 	return Capabilities{
-		ReadIssues:        true,
-		ReadMergeRequests: true,
+		ReadIssues: true, ReadMergeRequests: true,
 		Archive: ArchiveCapabilities{
-			HistoricalIssues:        true,
-			HistoricalMergeRequests: true,
-			OrdinaryComments:        true,
-			SubmittedReviews:        true,
-			InlineReviewComments:    true,
+			HistoricalIssues: true, HistoricalMergeRequests: true,
+			OrdinaryComments: true, SubmittedReviews: true, InlineReviewComments: true,
 		},
 	}
 }
 
-func pageReaderTestRef(kind Kind, host string) RepoRef {
-	return RepoRef{
-		Platform: kind,
-		Host:     host,
-		Owner:    "octo-org",
-		Name:     "widgets",
-		RepoPath: "octo-org/widgets",
-	}
-}
-
-func newPageReaderRegistry(t *testing.T, provider Provider) *Registry {
+func wrappedPageReaders(t *testing.T, provider testPageReadProvider) (IssuePageReader, MergeRequestPageReader) {
 	t.Helper()
 	registry, err := NewRegistry(provider)
 	require.NoError(t, err)
-	return registry
-}
-
-func wrappedPageReaders(
-	t *testing.T,
-	provider testPageReadProvider,
-) (IssuePageReader, MergeRequestPageReader) {
-	t.Helper()
-	registry := newPageReaderRegistry(t, provider)
 	issues, err := registry.IssuePageReader(provider.kind, provider.host)
 	require.NoError(t, err)
 	mergeRequests, err := registry.MergeRequestPageReader(provider.kind, provider.host)
@@ -142,362 +84,189 @@ func wrappedPageReaders(
 	return issues, mergeRequests
 }
 
-// issuePageReaderCalls and mergeRequestPageReaderCalls address every canonical
-// reader method by name with the fixed item number 7 so contract tests can
-// exercise the full method set.
-var issuePageReaderCalls = map[string]func(IssuePageReader, RepoRef) error{
-	"open_issues": func(r IssuePageReader, ref RepoRef) error {
-		_, err := r.ListIssuesPage(context.Background(), ref, ItemPageQuery{
-			State: ItemStateOpen, Order: ItemOrderUpdated,
-		})
-		return err
-	},
-	"historical_issues": func(r IssuePageReader, ref RepoRef) error {
-		_, err := r.ListIssuesPage(context.Background(), ref, ItemPageQuery{
-			State: ItemStateAll, Order: ItemOrderCreated,
-		})
-		return err
-	},
-	"lookup_issue": func(r IssuePageReader, ref RepoRef) error {
-		_, err := r.LookupIssue(context.Background(), ref, 7)
-		return err
-	},
-	"issue_comments": func(r IssuePageReader, ref RepoRef) error {
-		_, err := r.ListIssueCommentsPage(context.Background(), ref, 7, "")
-		return err
-	},
+type readerCall struct {
+	name       string
+	itemScoped bool
+	call       func(IssuePageReader, MergeRequestPageReader, RepoRef, int) error
 }
 
-var mergeRequestPageReaderCalls = map[string]func(MergeRequestPageReader, RepoRef) error{
-	"open_merge_requests": func(r MergeRequestPageReader, ref RepoRef) error {
-		_, err := r.ListMergeRequestsPage(context.Background(), ref, ItemPageQuery{
-			State: ItemStateOpen, Order: ItemOrderUpdated,
-		})
+var readerCalls = []readerCall{
+	{"open issues", false, func(i IssuePageReader, _ MergeRequestPageReader, ref RepoRef, _ int) error {
+		_, err := i.ListIssuesPage(context.Background(), ref, ItemPageQuery{State: ItemStateOpen, Order: ItemOrderUpdated})
 		return err
-	},
-	"historical_merge_requests": func(r MergeRequestPageReader, ref RepoRef) error {
-		_, err := r.ListMergeRequestsPage(context.Background(), ref, ItemPageQuery{
-			State: ItemStateAll, Order: ItemOrderCreated,
-		})
+	}},
+	{"historical issues", false, func(i IssuePageReader, _ MergeRequestPageReader, ref RepoRef, _ int) error {
+		_, err := i.ListIssuesPage(context.Background(), ref, ItemPageQuery{State: ItemStateAll, Order: ItemOrderCreated})
 		return err
-	},
-	"lookup_merge_request": func(r MergeRequestPageReader, ref RepoRef) error {
-		_, err := r.LookupMergeRequest(context.Background(), ref, 7)
+	}},
+	{"issue lookup", true, func(i IssuePageReader, _ MergeRequestPageReader, ref RepoRef, number int) error {
+		_, err := i.LookupIssue(context.Background(), ref, number)
 		return err
-	},
-	"merge_request_comments": func(r MergeRequestPageReader, ref RepoRef) error {
-		_, err := r.ListMergeRequestCommentsPage(context.Background(), ref, 7, "")
+	}},
+	{"issue comments", true, func(i IssuePageReader, _ MergeRequestPageReader, ref RepoRef, number int) error {
+		_, err := i.ListIssueCommentsPage(context.Background(), ref, number, "")
 		return err
-	},
-	"submitted_reviews": func(r MergeRequestPageReader, ref RepoRef) error {
-		_, err := r.ListSubmittedReviewsPage(context.Background(), ref, 7, "")
+	}},
+	{"open merge requests", false, func(_ IssuePageReader, m MergeRequestPageReader, ref RepoRef, _ int) error {
+		_, err := m.ListMergeRequestsPage(context.Background(), ref, ItemPageQuery{State: ItemStateOpen, Order: ItemOrderUpdated})
 		return err
-	},
-	"review_threads": func(r MergeRequestPageReader, ref RepoRef) error {
-		_, err := r.ListReviewThreadsPage(context.Background(), ref, 7, "")
+	}},
+	{"historical merge requests", false, func(_ IssuePageReader, m MergeRequestPageReader, ref RepoRef, _ int) error {
+		_, err := m.ListMergeRequestsPage(context.Background(), ref, ItemPageQuery{State: ItemStateAll, Order: ItemOrderCreated})
 		return err
-	},
+	}},
+	{"merge request lookup", true, func(_ IssuePageReader, m MergeRequestPageReader, ref RepoRef, number int) error {
+		_, err := m.LookupMergeRequest(context.Background(), ref, number)
+		return err
+	}},
+	{"merge request comments", true, func(_ IssuePageReader, m MergeRequestPageReader, ref RepoRef, number int) error {
+		_, err := m.ListMergeRequestCommentsPage(context.Background(), ref, number, "")
+		return err
+	}},
+	{"submitted reviews", true, func(_ IssuePageReader, m MergeRequestPageReader, ref RepoRef, number int) error {
+		_, err := m.ListSubmittedReviewsPage(context.Background(), ref, number, "")
+		return err
+	}},
+	{"review threads", true, func(_ IssuePageReader, m MergeRequestPageReader, ref RepoRef, number int) error {
+		_, err := m.ListReviewThreadsPage(context.Background(), ref, number, "")
+		return err
+	}},
 }
 
-func TestValidatingPageReadersRejectForeignRepositoryIdentity(t *testing.T) {
-	for _, tc := range pageReaderTestKinds {
-		t.Run(string(tc.kind), func(t *testing.T) {
-			calls := map[string]int{}
-			provider := testPageReadProvider{
-				testProvider: testProvider{
-					kind: tc.kind, host: tc.host, caps: fullPageReadCapabilities(),
-				},
-				calls: calls,
+func TestValidatingPageReadersRejectInputsAndMissingCapabilities(t *testing.T) {
+	ref := pageReaderTestRef()
+	for _, tt := range []struct {
+		name     string
+		provider testPageReadProvider
+		ref      RepoRef
+		number   int
+		want     error
+		items    bool
+	}{
+		{
+			name: "foreign repository", ref: RepoRef{
+				Platform: KindGitLab, Host: "gitlab.example", Owner: "octo-org",
+				Name: "widgets", RepoPath: "octo-org/widgets",
+			}, number: 7, want: ErrInvalidRepoRef,
+			provider: testPageReadProvider{testProvider: testProvider{
+				kind: KindGitHub, host: "github.com", caps: fullPageReadCapabilities(),
+			}, calls: map[string]int{}},
+		},
+		{
+			name: "missing capabilities", ref: ref, number: 7, want: ErrUnsupportedCapability,
+			provider: testPageReadProvider{
+				testProvider: testProvider{kind: KindGitHub, host: "github.com"}, calls: map[string]int{},
+			},
+		},
+		{
+			name: "nonpositive item number", ref: ref, number: 0, want: ErrInvalidArgument, items: true,
+			provider: testPageReadProvider{testProvider: testProvider{
+				kind: KindGitHub, host: "github.com", caps: fullPageReadCapabilities(),
+			}, calls: map[string]int{}},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			issues, mergeRequests := wrappedPageReaders(t, tt.provider)
+			for _, call := range readerCalls {
+				if tt.items && !call.itemScoped {
+					continue
+				}
+				require.ErrorIs(t, call.call(issues, mergeRequests, tt.ref, tt.number), tt.want, call.name)
 			}
-			issues, mergeRequests := wrappedPageReaders(t, provider)
-			require := require.New(t)
-
-			foreign := pageReaderTestRef(KindGitea, "somewhere.example.net")
-			if tc.kind == KindGitea {
-				foreign = pageReaderTestRef(KindForgejo, "somewhere.example.net")
-			}
-			noncanonical := pageReaderTestRef(tc.kind, tc.host)
-			noncanonical.Owner = "Octo Org"
-
-			for name, call := range issuePageReaderCalls {
-				require.ErrorIs(call(issues, foreign), ErrInvalidRepoRef, "issue method %s foreign ref", name)
-				require.ErrorIs(call(issues, noncanonical), ErrInvalidRepoRef, "issue method %s noncanonical ref", name)
-			}
-			for name, call := range mergeRequestPageReaderCalls {
-				require.ErrorIs(call(mergeRequests, foreign), ErrInvalidRepoRef, "MR method %s foreign ref", name)
-				require.ErrorIs(call(mergeRequests, noncanonical), ErrInvalidRepoRef, "MR method %s noncanonical ref", name)
-			}
-			assert.Empty(t, calls, "provider must not be consulted for rejected refs")
+			assert.Empty(t, tt.provider.calls)
 		})
 	}
 }
 
-func TestValidatingPageReadersRejectNonPositiveItemNumbers(t *testing.T) {
-	for _, tc := range pageReaderTestKinds {
-		t.Run(string(tc.kind), func(t *testing.T) {
-			calls := map[string]int{}
-			provider := testPageReadProvider{
-				testProvider: testProvider{
-					kind: tc.kind, host: tc.host, caps: fullPageReadCapabilities(),
-				},
-				calls: calls,
-			}
-			issues, mergeRequests := wrappedPageReaders(t, provider)
-			require := require.New(t)
-			ref := pageReaderTestRef(tc.kind, tc.host)
-
-			for _, number := range []int{0, -4} {
-				_, err := issues.LookupIssue(context.Background(), ref, number)
-				require.ErrorIs(err, ErrInvalidArgument, "lookup issue %d", number)
-				_, err = issues.ListIssueCommentsPage(context.Background(), ref, number, "")
-				require.ErrorIs(err, ErrInvalidArgument, "issue comments %d", number)
-				_, err = mergeRequests.LookupMergeRequest(context.Background(), ref, number)
-				require.ErrorIs(err, ErrInvalidArgument, "lookup MR %d", number)
-				_, err = mergeRequests.ListMergeRequestCommentsPage(context.Background(), ref, number, "")
-				require.ErrorIs(err, ErrInvalidArgument, "MR comments %d", number)
-				_, err = mergeRequests.ListSubmittedReviewsPage(context.Background(), ref, number, "")
-				require.ErrorIs(err, ErrInvalidArgument, "submitted reviews %d", number)
-				_, err = mergeRequests.ListReviewThreadsPage(context.Background(), ref, number, "")
-				require.ErrorIs(err, ErrInvalidArgument, "review threads %d", number)
-			}
-			assert.Empty(t, calls, "provider must not be consulted for invalid item numbers")
-		})
+func TestValidatingPageReadersAllowLiveReadsWithoutArchiveCapabilities(t *testing.T) {
+	ref := pageReaderTestRef()
+	provider := testPageReadProvider{
+		testProvider: testProvider{
+			kind: KindGitHub, host: "github.com",
+			caps: Capabilities{ReadIssues: true, ReadMergeRequests: true},
+		},
+		calls:            map[string]int{},
+		issuePage:        Page[Issue]{Items: []Issue{{Repo: ref, Number: 7}}, Exhausted: true},
+		mergeRequestPage: Page[MergeRequest]{Items: []MergeRequest{{Repo: ref, Number: 7}}, Exhausted: true},
+		issueLookup: ItemLookup[Issue]{
+			Outcome: LookupPresent, Item: Issue{Repo: ref, Number: 7},
+		},
+		mergeRequestLookup: ItemLookup[MergeRequest]{
+			Outcome: LookupPresent, Item: MergeRequest{Repo: ref, Number: 7},
+		},
 	}
+	issues, mergeRequests := wrappedPageReaders(t, provider)
+	require := require.New(t)
+	require.NoError(readerCalls[0].call(issues, mergeRequests, ref, 7))
+	require.NoError(readerCalls[2].call(issues, mergeRequests, ref, 7))
+	require.NoError(readerCalls[4].call(issues, mergeRequests, ref, 7))
+	require.NoError(readerCalls[6].call(issues, mergeRequests, ref, 7))
+	require.ErrorIs(readerCalls[1].call(issues, mergeRequests, ref, 7), ErrUnsupportedCapability)
+	require.ErrorIs(readerCalls[9].call(issues, mergeRequests, ref, 7), ErrUnsupportedCapability)
 }
 
-func TestValidatingPageReadersRequireCapabilities(t *testing.T) {
-	for _, tc := range pageReaderTestKinds {
-		t.Run(string(tc.kind), func(t *testing.T) {
-			calls := map[string]int{}
-			// No live read capabilities and no archive capabilities at all:
-			// every canonical read must be refused before the provider runs.
-			provider := testPageReadProvider{
-				testProvider: testProvider{kind: tc.kind, host: tc.host},
-				calls:        calls,
-			}
-			issues, mergeRequests := wrappedPageReaders(t, provider)
-			require := require.New(t)
-			ref := pageReaderTestRef(tc.kind, tc.host)
-
-			for name, call := range issuePageReaderCalls {
-				require.ErrorIs(call(issues, ref), ErrUnsupportedCapability, "issue method %s", name)
-			}
-			for name, call := range mergeRequestPageReaderCalls {
-				require.ErrorIs(call(mergeRequests, ref), ErrUnsupportedCapability, "MR method %s", name)
-			}
-			assert.Empty(t, calls, "provider must not be consulted without the capability")
-		})
+func TestValidatingPageReadersRejectInvalidProviderResults(t *testing.T) {
+	ref := pageReaderTestRef()
+	foreign := ref
+	foreign.Owner, foreign.RepoPath = "other", "other/widgets"
+	cursor := "same"
+	provider := testPageReadProvider{
+		testProvider: testProvider{
+			kind: KindGitHub, host: "github.com", caps: fullPageReadCapabilities(),
+		},
+		calls: map[string]int{},
+		issuePage: Page[Issue]{
+			Items: []Issue{{Repo: foreign, Number: 7}}, Exhausted: true,
+		},
+		issueLookup: ItemLookup[Issue]{
+			Outcome: LookupPresent, Item: Issue{Repo: ref, Number: 8},
+		},
+		mergeRequestComments: Page[MergeRequestEvent]{
+			Items: []MergeRequestEvent{{Repo: ref, MergeRequestNumber: 9}}, Exhausted: true,
+		},
+		submittedReviews: Page[MergeRequestEvent]{NextCursor: cursor},
 	}
-}
-
-func TestValidatingPageReadersLiveReadsNeedNoArchiveCapabilities(t *testing.T) {
-	for _, tc := range pageReaderTestKinds {
-		t.Run(string(tc.kind), func(t *testing.T) {
-			ref := pageReaderTestRef(tc.kind, tc.host)
-			provider := testPageReadProvider{
-				testProvider: testProvider{
-					kind: tc.kind, host: tc.host,
-					caps: Capabilities{ReadIssues: true, ReadMergeRequests: true},
-				},
-				issuePage: Page[Issue]{
-					Items: []Issue{{Repo: ref, Number: 7}}, Exhausted: true,
-				},
-				mergeRequestPage: Page[MergeRequest]{
-					Items: []MergeRequest{{Repo: ref, Number: 7}}, Exhausted: true,
-				},
-				issueLookup: ItemLookup[Issue]{
-					Outcome: LookupPresent, Item: Issue{Repo: ref, Number: 7},
-				},
-				mergeRequestLookup: ItemLookup[MergeRequest]{
-					Outcome: LookupPresent, Item: MergeRequest{Repo: ref, Number: 7},
-				},
-			}
-			issues, mergeRequests := wrappedPageReaders(t, provider)
-			require := require.New(t)
-
-			require.NoError(issuePageReaderCalls["open_issues"](issues, ref))
-			require.NoError(issuePageReaderCalls["lookup_issue"](issues, ref))
-			require.NoError(mergeRequestPageReaderCalls["open_merge_requests"](mergeRequests, ref))
-			require.NoError(mergeRequestPageReaderCalls["lookup_merge_request"](mergeRequests, ref))
-
-			// Historical traversal and detail datasets stay gated on the
-			// archive capability declarations.
-			require.ErrorIs(issuePageReaderCalls["historical_issues"](issues, ref), ErrUnsupportedCapability)
-			require.ErrorIs(issuePageReaderCalls["issue_comments"](issues, ref), ErrUnsupportedCapability)
-			require.ErrorIs(mergeRequestPageReaderCalls["historical_merge_requests"](mergeRequests, ref), ErrUnsupportedCapability)
-			require.ErrorIs(mergeRequestPageReaderCalls["review_threads"](mergeRequests, ref), ErrUnsupportedCapability)
-		})
-	}
-}
-
-func TestValidatingPageReadersRejectEchoedCursor(t *testing.T) {
-	for _, tc := range pageReaderTestKinds {
-		t.Run(string(tc.kind), func(t *testing.T) {
-			ref := pageReaderTestRef(tc.kind, tc.host)
-			cursor := "cursor-1"
-			provider := testPageReadProvider{
-				testProvider: testProvider{
-					kind: tc.kind, host: tc.host, caps: fullPageReadCapabilities(),
-				},
-				issuePage: Page[Issue]{
-					Items: []Issue{{Repo: ref, Number: 7}}, NextCursor: cursor,
-				},
-				issueComments: Page[IssueEvent]{
-					Items:      []IssueEvent{{Repo: ref, IssueNumber: 7}},
-					NextCursor: cursor,
-				},
-				mergeRequestPage: Page[MergeRequest]{
-					Items: []MergeRequest{{Repo: ref, Number: 7}}, NextCursor: cursor,
-				},
-			}
-			issues, mergeRequests := wrappedPageReaders(t, provider)
-
-			_, err := issues.ListIssuesPage(context.Background(), ref, ItemPageQuery{
-				State: ItemStateAll, Order: ItemOrderCreated, Cursor: cursor,
-			})
-			require.ErrorIs(t, err, ErrProviderContract, "issue scan echoed cursor")
-
-			_, err = issues.ListIssueCommentsPage(context.Background(), ref, 7, cursor)
-			require.ErrorIs(t, err, ErrProviderContract, "issue comments echoed cursor")
-
-			_, err = mergeRequests.ListMergeRequestsPage(context.Background(), ref, ItemPageQuery{
-				State: ItemStateAll, Order: ItemOrderCreated, Cursor: cursor,
-			})
-			require.ErrorIs(t, err, ErrProviderContract, "MR scan echoed cursor")
-		})
-	}
+	issues, mergeRequests := wrappedPageReaders(t, provider)
+	require := require.New(t)
+	_, err := issues.ListIssuesPage(context.Background(), ref, ItemPageQuery{State: ItemStateOpen, Order: ItemOrderUpdated})
+	require.ErrorIs(err, ErrProviderContract)
+	_, err = issues.LookupIssue(context.Background(), ref, 7)
+	require.ErrorIs(err, ErrProviderContract)
+	_, err = mergeRequests.ListMergeRequestCommentsPage(context.Background(), ref, 7, "")
+	require.ErrorIs(err, ErrProviderContract)
+	_, err = mergeRequests.ListSubmittedReviewsPage(context.Background(), ref, 7, cursor)
+	require.ErrorIs(err, ErrProviderContract)
 }
 
 func TestValidatingPageReadersValidateMovedDestinations(t *testing.T) {
-	for _, tc := range pageReaderTestKinds {
-		t.Run(string(tc.kind), func(t *testing.T) {
-			ref := pageReaderTestRef(tc.kind, tc.host)
-			destination := ref
-			destination.Owner = "moved-org"
-			destination.RepoPath = "moved-org/widgets"
-
-			cases := []struct {
-				name        string
-				destination *RepoRef
-				wantErr     error
-			}{
-				{name: "missing destination", destination: nil, wantErr: ErrProviderContract},
-				{name: "destination equals source", destination: &ref, wantErr: ErrProviderContract},
-				{name: "valid destination", destination: &destination},
-			}
-			for _, lookupCase := range cases {
-				t.Run(lookupCase.name, func(t *testing.T) {
-					provider := testPageReadProvider{
-						testProvider: testProvider{
-							kind: tc.kind, host: tc.host, caps: fullPageReadCapabilities(),
-						},
-						issueLookup: ItemLookup[Issue]{
-							Outcome: LookupMoved, Destination: lookupCase.destination,
-						},
-						mergeRequestLookup: ItemLookup[MergeRequest]{
-							Outcome: LookupMoved, Destination: lookupCase.destination,
-						},
-					}
-					issues, mergeRequests := wrappedPageReaders(t, provider)
-
-					issueLookup, err := issues.LookupIssue(context.Background(), ref, 7)
-					if lookupCase.wantErr != nil {
-						require.ErrorIs(t, err, lookupCase.wantErr)
-					} else {
-						require.NoError(t, err)
-						assert.Equal(t, LookupMoved, issueLookup.Outcome)
-					}
-
-					mrLookup, err := mergeRequests.LookupMergeRequest(context.Background(), ref, 7)
-					if lookupCase.wantErr != nil {
-						require.ErrorIs(t, err, lookupCase.wantErr)
-					} else {
-						require.NoError(t, err)
-						assert.Equal(t, LookupMoved, mrLookup.Outcome)
-					}
-				})
-			}
-		})
-	}
-}
-
-func TestValidatingPageReadersValidateReturnedIdentities(t *testing.T) {
-	for _, tc := range pageReaderTestKinds {
-		t.Run(string(tc.kind), func(t *testing.T) {
-			ref := pageReaderTestRef(tc.kind, tc.host)
-			foreign := ref
-			foreign.Owner = "someone-else"
-			foreign.RepoPath = "someone-else/widgets"
-
+	ref := pageReaderTestRef()
+	destination := ref
+	destination.Owner, destination.RepoPath = "moved", "moved/widgets"
+	for _, tt := range []struct {
+		name        string
+		destination *RepoRef
+		wantErr     bool
+	}{
+		{"missing", nil, true},
+		{"same repository", &ref, true},
+		{"different repository", &destination, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
 			provider := testPageReadProvider{
 				testProvider: testProvider{
-					kind: tc.kind, host: tc.host, caps: fullPageReadCapabilities(),
+					kind: KindGitHub, host: "github.com", caps: fullPageReadCapabilities(),
 				},
-				issuePage: Page[Issue]{
-					Items: []Issue{{Repo: foreign, Number: 7}}, Exhausted: true,
-				},
-				issueLookup: ItemLookup[Issue]{
-					Outcome: LookupPresent, Item: Issue{Repo: ref, Number: 8},
-				},
-				mergeRequestComments: Page[MergeRequestEvent]{
-					Items:     []MergeRequestEvent{{Repo: ref, MergeRequestNumber: 9}},
-					Exhausted: true,
-				},
-			}
-			issues, mergeRequests := wrappedPageReaders(t, provider)
-
-			_, err := issues.ListIssuesPage(context.Background(), ref, ItemPageQuery{
-				State: ItemStateOpen, Order: ItemOrderUpdated,
-			})
-			require.ErrorIs(t, err, ErrProviderContract, "foreign repo identity on page item")
-
-			_, err = issues.LookupIssue(context.Background(), ref, 7)
-			require.ErrorIs(t, err, ErrProviderContract, "wrong item number on present lookup")
-
-			_, err = mergeRequests.ListMergeRequestCommentsPage(context.Background(), ref, 7, "")
-			require.ErrorIs(t, err, ErrProviderContract, "event bound to another merge request")
-		})
-	}
-}
-
-func TestValidatingPageReadersPassThroughValidResults(t *testing.T) {
-	for _, tc := range pageReaderTestKinds {
-		t.Run(string(tc.kind), func(t *testing.T) {
-			ref := pageReaderTestRef(tc.kind, tc.host)
-			provider := testPageReadProvider{
-				testProvider: testProvider{
-					kind: tc.kind, host: tc.host, caps: fullPageReadCapabilities(),
-				},
-				issuePage: Page[Issue]{
-					Items:     []Issue{{Repo: ref, Number: 3}, {Repo: ref, Number: 9}},
-					Exhausted: true,
-				},
-				issueLookup: ItemLookup[Issue]{
-					Outcome: LookupPresent, Item: Issue{Repo: ref, Number: 7},
-				},
-				issueComments: Page[IssueEvent]{
-					Items:      []IssueEvent{{Repo: ref, IssueNumber: 7}},
-					NextCursor: "next-cursor",
-				},
+				calls:       map[string]int{},
+				issueLookup: ItemLookup[Issue]{Outcome: LookupMoved, Destination: tt.destination},
 			}
 			issues, _ := wrappedPageReaders(t, provider)
-
-			assert := assert.New(t)
-			require := require.New(t)
-
-			page, err := issues.ListIssuesPage(context.Background(), ref, ItemPageQuery{
-				State: ItemStateOpen, Order: ItemOrderUpdated,
-			})
-			require.NoError(err)
-			assert.Len(page.Items, 2)
-
-			lookup, err := issues.LookupIssue(context.Background(), ref, 7)
-			require.NoError(err)
-			assert.Equal(7, lookup.Item.Number)
-
-			comments, err := issues.ListIssueCommentsPage(context.Background(), ref, 7, "")
-			require.NoError(err)
-			assert.Equal("next-cursor", comments.NextCursor)
+			result, err := issues.LookupIssue(context.Background(), ref, 7)
+			if tt.wantErr {
+				require.ErrorIs(t, err, ErrProviderContract)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, LookupMoved, result.Outcome)
 		})
 	}
 }

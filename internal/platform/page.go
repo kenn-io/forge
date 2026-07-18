@@ -33,9 +33,11 @@ const (
 //
 //   - ItemOrderCreated traverses ascending by provider creation time with a
 //     restart-stable resumption guarantee. Equal creation times break by a
-//     documented provider-stable tie-breaker — item number where the provider
-//     API can honor it across page boundaries; otherwise the provider's own
-//     stable record ordering. A provider whose API cannot enforce a
+//     documented provider tie-breaker that must be monotonic with record
+//     creation (item number where the provider API can honor it across page
+//     boundaries): a merely stable ordering is not enough, because an
+//     equal-timestamp item inserted before the cursor position would be
+//     permanently skipped. A provider that cannot guarantee a monotonic
 //     page-spanning tie-break must instead resume inclusively at the boundary
 //     creation time, so an interrupted scan never permanently skips an item
 //     that shares its resume timestamp; consumers absorb the resulting

@@ -104,6 +104,21 @@ function safeSetItem(key: string, value: string): void {
 
 const VALID_TAB_WIDTHS = [1, 2, 4, 8];
 const VALID_DIFF_VIEW_MODES: DiffViewMode[] = ["unified", "split"];
+const workspaceDiffRetryInitialDelay = 1_000;
+const workspaceDiffRetryMaxDelay = 30_000;
+
+function waitForWorkspaceDiffRetry(signal: AbortSignal, delay: number): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timeout = setTimeout(done, delay);
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
 
 function loadTabWidth(): number {
   const raw = parseInt(safeGetItem("diff-tab-width") ?? "4", 10);
@@ -855,94 +870,107 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     if (!workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
     clearFilePreviewCache();
     const preserveVisible = options.preserveVisible === true && !workspaceScopeChanged;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const preserveAttempt = preserveVisible || attempt > 0;
-      const { diffAc, filesAc } = startDiffLoad(preserveAttempt);
-      let pendingFiles: FilesResponse | null = null;
+    let retryDelay = workspaceDiffRetryInitialDelay;
+    while (workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) {
+      let retrySignal: AbortSignal | null = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const preserveAttempt = preserveVisible || attempt > 0;
+        const { diffAc, filesAc } = startDiffLoad(preserveAttempt);
+        let pendingFiles: FilesResponse | null = null;
 
-      try {
-        if (!workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
-        const { data, error, response } = workspaceHostKey
-          ? await apiClient.GET("/fleet/hosts/{host_key}/workspaces/{id}/files", {
-              params: {
-                path: { host_key: workspaceHostKey, id: workspaceID },
-                query: workspaceDiffQuery(base),
-              },
-              signal: filesAc.signal,
-            })
-          : await apiClient.GET("/workspaces/{id}/files", {
-              params: {
-                path: { id: workspaceID },
-                query: workspaceDiffQuery(base),
-              },
-              signal: filesAc.signal,
-            });
-        if (!filesLoadIsCurrent(filesAc) || !workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base))
-          return;
-        if (!data) {
-          throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-        }
-        pendingFiles = data;
-        if (!preserveAttempt) {
-          applyFilesResult(data);
-        }
-      } catch (_err) {
-        if (
-          filesAc.signal.aborted ||
-          !filesLoadIsCurrent(filesAc) ||
-          !workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)
-        )
-          return;
-        failDiffLoad(_err, diffAc, filesAc, preserveAttempt);
-        return;
-      } finally {
-        finishFilesLoad(filesAc);
-      }
-
-      try {
-        if (!workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
-        const query = {
-          ...workspaceDiffQuery(base),
-          ...(pendingFiles?.snapshot_version && { revision: pendingFiles.snapshot_version }),
-        };
-        const { data, error, response } = workspaceHostKey
-          ? await apiClient.GET("/fleet/hosts/{host_key}/workspaces/{id}/diff", {
-              params: {
-                path: { host_key: workspaceHostKey, id: workspaceID },
-                query,
-              },
-              signal: diffAc.signal,
-            })
-          : await apiClient.GET("/workspaces/{id}/diff", {
-              params: {
-                path: { id: workspaceID },
-                query,
-              },
-              signal: diffAc.signal,
-            });
-        if (!diffLoadIsCurrent(diffAc) || !workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base))
-          return;
-        if (!data) {
-          if (isSnapshotChanged(error) && attempt === 0) {
-            continue;
+        try {
+          if (!workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
+          const { data, error, response } = workspaceHostKey
+            ? await apiClient.GET("/fleet/hosts/{host_key}/workspaces/{id}/files", {
+                params: {
+                  path: { host_key: workspaceHostKey, id: workspaceID },
+                  query: workspaceDiffQuery(base),
+                },
+                signal: filesAc.signal,
+              })
+            : await apiClient.GET("/workspaces/{id}/files", {
+                params: {
+                  path: { id: workspaceID },
+                  query: workspaceDiffQuery(base),
+                },
+                signal: filesAc.signal,
+              });
+          if (!filesLoadIsCurrent(filesAc) || !workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base))
+            return;
+          if (!data) {
+            throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
           }
-          throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
+          pendingFiles = data;
+          if (!preserveAttempt) {
+            applyFilesResult(data);
+          }
+        } catch (_err) {
+          if (
+            filesAc.signal.aborted ||
+            !filesLoadIsCurrent(filesAc) ||
+            !workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)
+          )
+            return;
+          failDiffLoad(_err, diffAc, filesAc, preserveVisible);
+          if (!preserveVisible) return;
+          retrySignal = diffAc.signal;
+          break;
+        } finally {
+          finishFilesLoad(filesAc);
         }
-        if (preserveAttempt && pendingFiles) {
-          fileList = normalizeFilesResult(pendingFiles);
-          diff = normalizeDiffResult(data);
-          setActiveIfNeeded(getVisibleDiffFiles());
-        } else {
-          applyDiffResult(data);
+
+        try {
+          if (!workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
+          const query = {
+            ...workspaceDiffQuery(base),
+            ...(pendingFiles?.snapshot_version && { revision: pendingFiles.snapshot_version }),
+          };
+          const { data, error, response } = workspaceHostKey
+            ? await apiClient.GET("/fleet/hosts/{host_key}/workspaces/{id}/diff", {
+                params: {
+                  path: { host_key: workspaceHostKey, id: workspaceID },
+                  query,
+                },
+                signal: diffAc.signal,
+              })
+            : await apiClient.GET("/workspaces/{id}/diff", {
+                params: {
+                  path: { id: workspaceID },
+                  query,
+                },
+                signal: diffAc.signal,
+              });
+          if (!diffLoadIsCurrent(diffAc) || !workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base))
+            return;
+          if (!data) {
+            if (isSnapshotChanged(error) && attempt === 0) {
+              continue;
+            }
+            throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
+          }
+          if (preserveAttempt && pendingFiles) {
+            fileList = normalizeFilesResult(pendingFiles);
+            diff = normalizeDiffResult(data);
+            setActiveIfNeeded(getVisibleDiffFiles());
+          } else {
+            applyDiffResult(data);
+          }
+          return;
+        } catch (_err) {
+          if (!workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
+          failDiffLoad(_err, diffAc, filesAc, preserveVisible);
+          if (!preserveVisible) return;
+          retrySignal = diffAc.signal;
+          break;
+        } finally {
+          finishDiffLoad(diffAc);
         }
-        return;
-      } catch (_err) {
-        if (!workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
-        failDiffLoad(_err, diffAc, filesAc, preserveAttempt);
-        return;
-      } finally {
-        finishDiffLoad(diffAc);
       }
+
+      if (!retrySignal) return;
+      await waitForWorkspaceDiffRetry(retrySignal, retryDelay);
+      if (retrySignal.aborted || !workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
+      retryDelay = Math.min(retryDelay * 2, workspaceDiffRetryMaxDelay);
     }
   }
 

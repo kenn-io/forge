@@ -120,6 +120,7 @@ function renderDiffView(
 
 describe("DiffView", () => {
   afterEach(() => {
+    vi.useRealTimers();
     cleanup();
   });
 
@@ -133,21 +134,29 @@ describe("DiffView", () => {
     expect(requestScrollToFile).toHaveBeenCalledWith("b.ts");
   });
 
-  it("keeps the previous diff rendered when a preserving refresh fails", async () => {
-    let refreshFails = false;
-    const file = makeFile("a.ts");
+  it("keeps the previous diff rendered while a preserving refresh retries", async () => {
+    vi.useFakeTimers();
+    const oldFile = makeFile("a.ts");
+    const newFile = makeFile("b.ts");
+    let filesCalls = 0;
+    let signalFailure: () => void = () => {};
+    const failureSeen = new Promise<void>((resolve) => {
+      signalFailure = resolve;
+    });
     const client = {
       GET: vi.fn(async (path: string) => {
-        if (refreshFails) {
-          const response = Response.json({ detail: "refresh failed" }, { status: 500 });
-          return { error: await response.clone().json(), response };
-        }
         const response = Response.json({});
         if (path.endsWith("/files")) {
-          return { data: { stale: false, files: [file] }, response };
+          filesCalls += 1;
+          if (filesCalls === 2) {
+            signalFailure();
+            const failed = Response.json({ detail: "refresh failed" }, { status: 500 });
+            return { error: await failed.clone().json(), response: failed };
+          }
+          return { data: { stale: false, files: [filesCalls === 1 ? oldFile : newFile] }, response };
         }
         return {
-          data: { stale: false, whitespace_only_count: 0, files: [file] },
+          data: { stale: false, whitespace_only_count: 0, files: [filesCalls === 1 ? oldFile : newFile] },
           response,
         };
       }),
@@ -157,11 +166,48 @@ describe("DiffView", () => {
     const { getByText, queryByText } = renderDiffView(diff);
     expect(getByText("a.ts")).toBeTruthy();
 
-    refreshFails = true;
-    await diff.loadWorkspaceDiff("ws-1", "head", false, { preserveVisible: true });
+    const refresh = diff.loadWorkspaceDiff("ws-1", "head", false, { preserveVisible: true });
+    await failureSeen;
 
     expect(getByText("a.ts")).toBeTruthy();
     expect(queryByText("refresh failed")).toBeNull();
+
+    await vi.runOnlyPendingTimersAsync();
+    await refresh;
+    expect(getByText("b.ts")).toBeTruthy();
+  });
+
+  it("shows an error when an initial snapshot retry fails", async () => {
+    let filesCalls = 0;
+    let diffCalls = 0;
+    const file = makeFile("a.ts");
+    const client = {
+      GET: vi.fn(async (path: string) => {
+        if (path.endsWith("/files")) {
+          filesCalls += 1;
+          if (filesCalls === 2) {
+            const response = Response.json({ detail: "refresh failed" }, { status: 500 });
+            return { error: await response.clone().json(), response };
+          }
+          const response = Response.json({});
+          return { data: { stale: false, files: [file], snapshot_version: "generation:1" }, response };
+        }
+        diffCalls += 1;
+        const response = Response.json(
+          { code: "conflict", detail: "snapshot changed", details: { reason: "snapshot_changed" } },
+          { status: 409 },
+        );
+        return { error: await response.clone().json(), response };
+      }),
+    } as unknown as NonNullable<DiffStoreOptions["client"]>;
+    const diff = createDiffStore({ client });
+
+    await diff.loadWorkspaceDiff("ws-1", "head");
+    const { getByText, queryByText } = renderDiffView(diff);
+
+    expect(getByText("refresh failed")).toBeTruthy();
+    expect(queryByText("a.ts")).toBeNull();
+    expect(diffCalls).toBe(1);
   });
 
   it("pages the diff area with PageDown even when focus is outside the diff pane", async () => {

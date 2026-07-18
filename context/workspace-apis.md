@@ -223,10 +223,12 @@ server check exactly.
   key belonging to that workspace, whether or not the workspace currently has
   a local selection lease, even when provider refresh later fails. Workspace
   responses and runtime readiness never wait on Git. Failure preserves the last-known-good snapshot;
-  a later request or signal retries, and a changed fingerprint publishes through
-  `workspace_diff_changed` when ready. Watcher hints validate selected keys even
-  inside the freshness interval; periodic validation makes stale snapshots
-  eligible for refresh, while the bounded queue is not a hard completion deadline
+  preserving browser refreshes retry with capped, cancelable backoff while initial
+  loads still expose blocking errors (`packages/ui/src/stores/diff.svelte.ts::loadWorkspaceDiff`).
+  A changed fingerprint publishes through `workspace_diff_changed` when ready.
+  Watcher hints validate selected keys even inside the freshness interval;
+  periodic validation makes stale snapshots eligible for refresh, while the
+  bounded queue is not a hard completion deadline
   (`internal/server/server.go::notifyWorktreeStatsChanged`). One background worker
   serializes proactive validation; foreground cold reads bypass that queue.
 - The 128 MiB inactive-cache budget evicts least-recently-used inactive

@@ -624,11 +624,22 @@ export function createDiffStore(opts?: DiffStoreOptions) {
         ) {
           throw new Error("Workspace changed while refreshing file preview");
         }
-        await loadWorkspaceDiff(workspaceID, workspaceBase, workspaceStacked, {
+        const recovery = loadWorkspaceDiff(workspaceID, workspaceBase, workspaceStacked, {
           workspaceHostKey,
           preserveVisible: true,
           loadToken: workspaceLoadToken,
         });
+        const recoveryGeneration = workspaceLoadGeneration;
+        await recovery;
+        if (
+          currentWorkspaceID !== workspaceID ||
+          currentWorkspaceHostKey !== workspaceHostKey ||
+          currentWorkspaceBase !== workspaceBase ||
+          currentWorkspaceLoadToken !== workspaceLoadToken ||
+          workspaceLoadGeneration !== recoveryGeneration
+        ) {
+          throw new Error("Workspace changed while refreshing file preview");
+        }
         if (!getVisibleFileList()?.files.some((file) => file.path === path)) {
           throw new Error("File is no longer present in the workspace diff");
         }

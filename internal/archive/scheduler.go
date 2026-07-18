@@ -92,10 +92,10 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 			state.CollectionMode != db.ArchiveCollectionModeFull || archiveRepoDeferred(state, s.now()) {
 			continue
 		}
-		if !state.IssueInventoryComplete && state.IssueCursor == nil {
+		if archiveScanNotStarted(state.IssueInventory) {
 			return s.swallowAdmissionDeferred(s.inventoryPage(ctx, repo, state, db.ArchiveItemTypeIssue))
 		}
-		if !state.MergeRequestInventoryComplete && state.MergeRequestCursor == nil {
+		if archiveScanNotStarted(state.MergeRequestInventory) {
 			return s.swallowAdmissionDeferred(s.inventoryPage(ctx, repo, state, db.ArchiveItemTypeMergeRequest))
 		}
 	}
@@ -127,8 +127,7 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 	}
 	if item != nil {
 		repo := resolvedRepoByID(repos, item.RepoID)
-		_, hydrateErr := s.hydrateItem(ctx, repo, *item)
-		return s.swallowAdmissionDeferred(hydrateErr)
+		return s.swallowAdmissionDeferred(s.hydrateItem(ctx, repo, *item))
 	}
 
 	if repo, state, itemType, ok := nextInventoryWork(repos, stateByID, db.ArchiveCollectionModeFull, s.now()); ok {
@@ -157,16 +156,28 @@ func (s *Service) swallowAdmissionDeferred(err error) error {
 	return err
 }
 
+// archiveScanNotStarted reports a scan generation that has not committed any
+// page yet: eligible for its bootstrap first page.
+func archiveScanNotStarted(scan db.ArchiveScanState) bool {
+	return scan.Status == db.ArchiveScanPending && scan.PageCount == 0
+}
+
+// archiveScanEligible reports a scan that still has pages to fetch and is not
+// durably blocked.
+func archiveScanEligible(scan db.ArchiveScanState) bool {
+	return !scan.Complete() && !scan.Blocked()
+}
+
 func nextInventoryWork(repos []resolvedRepository, states map[int64]db.ArchiveRepoState, mode db.ArchiveCollectionMode, now time.Time) (resolvedRepository, db.ArchiveRepoState, db.ArchiveItemType, bool) {
 	for _, repo := range repos {
 		state := states[repo.ID]
 		if state.CollectionMode != mode || state.OperatorState != db.ArchiveOperatorStateActive || archiveRepoDeferred(state, now) {
 			continue
 		}
-		if !state.IssueInventoryComplete {
+		if archiveScanEligible(state.IssueInventory) {
 			return repo, state, db.ArchiveItemTypeIssue, true
 		}
-		if !state.MergeRequestInventoryComplete {
+		if archiveScanEligible(state.MergeRequestInventory) {
 			return repo, state, db.ArchiveItemTypeMergeRequest, true
 		}
 	}

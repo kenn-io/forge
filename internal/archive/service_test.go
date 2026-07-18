@@ -154,8 +154,8 @@ func TestArchiveServicePauseRejectsInFlightInventoryCommit(t *testing.T) {
 	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
 	require.Len(states, 1)
-	assert.False(states[0].IssueInventoryComplete)
-	assert.Nil(states[0].IssueCursor)
+	assert.False(states[0].IssueInventory.Complete())
+	assert.Nil(states[0].IssueInventory.NextCursor)
 	var itemCount int
 	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
 		SELECT COUNT(*) FROM middleman_archive_items WHERE repo_id = ?`, repoID,
@@ -178,18 +178,22 @@ func TestArchiveServiceRetryAuthenticationPreservesProgress(t *testing.T) {
 	cursor := "issue-page-2"
 	watermark := now.Add(-time.Hour)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE middleman_archive_repo_scans
+		SET next_cursor = ?, status = 'running', page_count = 1
+		WHERE repo_id = ? AND scan = 'issue_inventory'`, cursor, repoID)
+	require.NoError(err)
+	_, err = database.WriteDB().ExecContext(t.Context(), `
 		UPDATE middleman_archive_repos
-		SET issue_cursor = ?,
-			maintenance_watermark = ?, last_error_code = 'authentication_failed',
+		SET maintenance_watermark = ?, last_error_code = 'authentication_failed',
 			last_error_detail = 'expired token', next_retry_at = ?
-		WHERE repo_id = ?`, cursor, watermark, now.Add(time.Hour), repoID)
+		WHERE repo_id = ?`, watermark, now.Add(time.Hour), repoID)
 	require.NoError(err)
 
 	require.NoError(service.RetryAuthentication(t.Context(), []platform.RepoRef{ref}))
 	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
 	require.Len(states, 1)
-	assert.Equal(&cursor, states[0].IssueCursor)
+	assert.Equal(&cursor, states[0].IssueInventory.NextCursor)
 	assert.Equal(&watermark, states[0].MaintenanceWatermark)
 	assert.Nil(states[0].LastErrorCode)
 	assert.Nil(states[0].LastErrorDetail)
@@ -271,7 +275,9 @@ func TestArchiveServiceRemovedRepositoryStopsWorkAndReaddResumesState(t *testing
 	require.NoError(err)
 	cursor := "durable-cursor"
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_repos SET issue_cursor = ? WHERE repo_id = ?`, cursor, repoID)
+		UPDATE middleman_archive_repo_scans
+		SET next_cursor = ?, status = 'running', page_count = 1
+		WHERE repo_id = ? AND scan = 'issue_inventory'`, cursor, repoID)
 	require.NoError(err)
 
 	source.refs = nil
@@ -284,7 +290,7 @@ func TestArchiveServiceRemovedRepositoryStopsWorkAndReaddResumesState(t *testing
 	assert.Equal(db.ArchiveOperatorStatePaused, states[0].OperatorState)
 	require.NotNil(states[0].LastErrorCode)
 	assert.Equal(string(db.ArchiveErrorCodeConfigurationRemoved), *states[0].LastErrorCode)
-	assert.Equal(&cursor, states[0].IssueCursor)
+	assert.Equal(&cursor, states[0].IssueInventory.NextCursor)
 
 	source.refs = []platform.RepoRef{ref}
 	require.NoError(service.EnsureConfigured(t.Context(), source.refs))
@@ -293,7 +299,7 @@ func TestArchiveServiceRemovedRepositoryStopsWorkAndReaddResumesState(t *testing
 	assert.Equal(db.ArchiveCollectionModeFull, states[0].CollectionMode)
 	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
 	assert.Nil(states[0].LastErrorCode)
-	assert.Equal(&cursor, states[0].IssueCursor)
+	assert.Equal(&cursor, states[0].IssueInventory.NextCursor)
 
 	require.NoError(database.PauseArchives(t.Context(), []int64{repoID}, now.Add(time.Minute)))
 	source.refs = nil
@@ -331,19 +337,19 @@ func TestArchiveServiceInventoriesThenCommitsCompleteHydration(t *testing.T) {
 
 	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
-	assert.True(states[0].IssueInventoryComplete)
-	assert.True(states[0].MergeRequestInventoryComplete)
-	var comments, reviews, inline string
-	var attempts int
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT comments_status, reviews_status, inline_comments_status, attempt_count
-		FROM middleman_archive_items
-		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 1`, repoID,
-	).Scan(&comments, &reviews, &inline, &attempts))
-	assert.Equal("complete", comments)
-	assert.Equal("not_applicable", reviews)
-	assert.Equal("not_applicable", inline)
-	assert.Zero(attempts)
+	assert.True(states[0].IssueInventory.Complete())
+	assert.True(states[0].MergeRequestInventory.Complete())
+	comments, err := database.GetDatasetProgress(
+		t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetComments,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressComplete, comments.Status)
+	assert.Zero(comments.AttemptCount)
+	mrReviews, err := database.GetDatasetProgress(
+		t.Context(), repoID, db.ArchiveItemTypeMergeRequest, 2, db.ArchiveDatasetReviews,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressUnsupported, mrReviews.Status)
 	var eventCount int
 	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
 		SELECT COUNT(*) FROM middleman_issue_events WHERE event_type = 'issue_comment'`,
@@ -426,51 +432,57 @@ func TestArchiveOpenMergeRequestResumesAcrossBudgetAndDatasetDeferrals(t *testin
 
 	require.NoError(service.RunEligible(t.Context()))
 	assert.Equal([]string{"get_mr", "mr_comments:"}, provider.calls)
-	var stagedCursor string
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT next_cursor FROM middleman_archive_dataset_pages
-		WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = ?
-		  AND dataset = 'comments'`, repoID, mr.Number,
-	).Scan(&stagedCursor))
-	assert.Equal("comments-page-2", stagedCursor)
-	_, _, accepted, err := database.UpsertMergeRequestSnapshotWithLabels(t.Context(), parent)
+	staged, err := database.GetDatasetProgress(
+		t.Context(), repoID, db.ArchiveItemTypeMergeRequest, mr.Number, db.ArchiveDatasetComments,
+	)
 	require.NoError(err)
-	require.True(accepted)
+	require.NotNil(staged.NextCursor)
+	assert.Equal("comments-page-2", *staged.NextCursor)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
 		UPDATE middleman_archive_repos SET next_retry_at = NULL WHERE repo_id = ?`, repoID)
 	require.NoError(err)
 	provider.calls = nil
 	admission.calls = 0
-	admission.denyAfter = 2
+	admission.denyAfter = 1
 
+	// A restarted pass resumes the interrupted comment dataset from its
+	// durable cursor: no page-one refetch and no repeated parent lookup.
 	require.NoError(service.RunEligible(t.Context()))
-	assert.Equal([]string{"get_mr", "mr_comments:comments-page-2"}, provider.calls)
+	assert.Equal([]string{"mr_comments:comments-page-2"}, provider.calls)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
 		UPDATE middleman_archive_repos SET next_retry_at = NULL WHERE repo_id = ?`, repoID)
 	require.NoError(err)
 	item, err := database.ClaimArchiveItem(t.Context(), db.ClaimArchiveItemOpts{RepoIDs: []int64{repoID}, Now: now})
 	require.NoError(err)
 	require.NotNil(item)
-	assert.Equal(db.ArchiveDatasetStatusComplete, item.CommentsStatus)
-	assert.Equal(db.ArchiveDatasetStatusPending, item.ReviewsStatus)
-	_, _, accepted, err = database.UpsertMergeRequestSnapshotWithLabels(t.Context(), parent)
+	require.NotEmpty(item.Datasets)
+	assert.Equal(db.ArchiveDatasetReviews, item.Datasets[0].Dataset)
+	completed, err := database.GetDatasetProgress(
+		t.Context(), repoID, db.ArchiveItemTypeMergeRequest, mr.Number, db.ArchiveDatasetComments,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressComplete, completed.Status)
+
+	// A live parent advance rebinds the remaining datasets to the fresh
+	// revision without a wasted provider read or another lookup.
+	_, _, accepted, err := database.UpsertMergeRequestSnapshotWithLabels(t.Context(), parent)
 	require.NoError(err)
 	require.True(accepted)
 	provider.calls = nil
 	admission.calls = 0
-	admission.denyAfter = 3
+	admission.denyAfter = 0
 
 	require.NoError(service.RunEligible(t.Context()))
-	assert.Equal([]string{"get_mr", "reviews:", "threads"}, provider.calls)
-	var commentsStatus, reviewsStatus, inlineStatus string
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT comments_status, reviews_status, inline_comments_status
-		FROM middleman_archive_items
-		WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = ?`, repoID, mr.Number,
-	).Scan(&commentsStatus, &reviewsStatus, &inlineStatus))
-	assert.Equal("complete", commentsStatus)
-	assert.Equal("complete", reviewsStatus)
-	assert.Equal("complete", inlineStatus)
+	assert.Equal([]string{"reviews:", "threads:"}, provider.calls)
+	for _, dataset := range []db.ArchiveDataset{
+		db.ArchiveDatasetComments, db.ArchiveDatasetReviews, db.ArchiveDatasetInlineComments,
+	} {
+		progress, err := database.GetDatasetProgress(
+			t.Context(), repoID, db.ArchiveItemTypeMergeRequest, mr.Number, dataset,
+		)
+		require.NoError(err)
+		assert.Equal(db.ArchiveDatasetProgressComplete, progress.Status, string(dataset))
+	}
 }
 
 func TestArchiveHydrationFailurePreservesPriorDatasetAndRecordsRetry(t *testing.T) {
@@ -493,43 +505,39 @@ func TestArchiveHydrationFailurePreservesPriorDatasetAndRecordsRetry(t *testing.
 
 	err = service.RunEligible(t.Context())
 	require.Error(err)
-	var status string
-	var attempts, eventCount int
+	progress, err := database.GetDatasetProgress(
+		t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetComments,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressFailed, progress.Status)
+	assert.Equal(1, progress.AttemptCount)
+	require.NotNil(progress.NextCursor)
+	assert.Equal("c2", *progress.NextCursor)
+	var eventCount int
 	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT comments_status, attempt_count FROM middleman_archive_items
-		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 1`, repoID,
-	).Scan(&status, &attempts))
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM middleman_issue_events`).Scan(&eventCount))
-	assert.Equal("failed", status)
-	assert.Equal(1, attempts)
-	assert.Zero(eventCount)
-	var stagedCursor string
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT next_cursor FROM middleman_archive_dataset_pages
-		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 1
-			AND dataset = 'comments'`, repoID).Scan(&stagedCursor))
-	assert.Equal("c2", stagedCursor)
+		SELECT COUNT(*) FROM middleman_issue_events WHERE event_type = 'issue_comment'`,
+	).Scan(&eventCount))
+	assert.Equal(1, eventCount, "the committed first page is durable domain content")
 
+	// A transient failure keeps the durable cursor: the retry resumes from
+	// the failed page, never from page one and never through another lookup.
 	provider.failSecondCommentPage = false
-	advanced := archiveTestIssue(ref)
-	advanced.UpdatedAt = advanced.UpdatedAt.Add(time.Hour)
-	advanced.LastActivityAt = advanced.UpdatedAt
-	provider.issueLookupItem = &advanced
-	provider.issueCommentPages = map[string]platform.Page[platform.IssueEvent]{
-		"": {Items: []platform.IssueEvent{archiveIssueComment(ref, 12, "new snapshot")}, Exhausted: true},
-	}
 	provider.calls = nil
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_items SET next_retry_at = NULL WHERE repo_id = ?`, repoID)
+		UPDATE middleman_archive_dataset_progress SET next_retry_at = NULL WHERE repo_id = ?`, repoID)
 	require.NoError(err)
 	require.NoError(service.RunEligible(t.Context()))
-	assert.Equal([]string{"get_issue", "issue_comments:"}, provider.calls)
+	assert.Equal([]string{"issue_comments:c2"}, provider.calls)
+	progress, err = database.GetDatasetProgress(
+		t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetComments,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressComplete, progress.Status)
+	assert.Zero(progress.AttemptCount)
 	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT COUNT(*), MAX(body) FROM middleman_issue_events
-		WHERE event_type = 'issue_comment'`,
-	).Scan(&eventCount, &status))
-	assert.Equal(1, eventCount)
-	assert.Equal("new snapshot", status)
+		SELECT COUNT(*) FROM middleman_issue_events WHERE event_type = 'issue_comment'`,
+	).Scan(&eventCount))
+	assert.Equal(2, eventCount)
 }
 
 func TestArchiveHydrationPreemptedByLiveWorkRecordsNoFailureAndStaysClaimable(t *testing.T) {
@@ -557,14 +565,13 @@ func TestArchiveHydrationPreemptedByLiveWorkRecordsNoFailureAndStaysClaimable(t 
 	service.admission = archivePreemptingAdmission{}
 	require.NoError(service.RunEligible(t.Context())) // issue hydration, preempted
 
-	var status string
-	var attempts int
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT comments_status, attempt_count FROM middleman_archive_items
-		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 1`, repoID,
-	).Scan(&status, &attempts))
-	assert.Equal("pending", status)
-	assert.Zero(attempts)
+	lookup, err := database.GetDatasetProgress(
+		t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressPending, lookup.Status)
+	assert.Zero(lookup.AttemptCount)
+	assert.Nil(lookup.NextRetryAt)
 
 	var lastErrorCode *string
 	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
@@ -578,42 +585,112 @@ func TestArchiveHydrationPreemptedByLiveWorkRecordsNoFailureAndStaysClaimable(t 
 	require.NoError(err)
 	require.NotNil(item)
 	assert.Equal(db.ArchiveItemTypeIssue, item.ItemType)
+	require.NotEmpty(item.Datasets)
+	assert.Equal(db.ArchiveDatasetLookup, item.Datasets[0].Dataset)
 }
 
-func TestArchiveDatasetLimitBlocksWithoutRetry(t *testing.T) {
+func TestArchiveDatasetCursorsSurviveServiceRestart(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := archiveTestTime()
-	ref := archiveServiceRef(platform.KindGitHub, "github.test", "bounded")
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "restart")
 	repoID := archiveServiceSeedRepo(t, database, ref)
+	mr := archiveTestMergeRequest(ref)
 	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	provider.historicalIssuePages = map[string]platform.Page[platform.Issue]{
+		"": {Exhausted: true},
+	}
+	mrEvent := func(id int64, key string) platform.MergeRequestEvent {
+		return platform.MergeRequestEvent{
+			Repo: ref, PlatformID: id, PlatformExternalID: key,
+			MergeRequestNumber: mr.Number, EventType: "issue_comment",
+			CreatedAt: now, DedupeKey: key,
+		}
+	}
+	review := func(id int64, key string) platform.MergeRequestEvent {
+		event := mrEvent(id, key)
+		event.EventType = "review"
+		return event
+	}
+	provider.mrCommentPages = map[string]platform.Page[platform.MergeRequestEvent]{
+		"":   {Items: []platform.MergeRequestEvent{mrEvent(20, "comment-20")}, NextCursor: "c2"},
+		"c2": {Items: []platform.MergeRequestEvent{mrEvent(21, "comment-21")}, Exhausted: true},
+	}
+	provider.reviewPages = map[string]platform.Page[platform.MergeRequestEvent]{
+		"":   {Items: []platform.MergeRequestEvent{review(30, "review-30")}, NextCursor: "r2"},
+		"r2": {Items: []platform.MergeRequestEvent{review(31, "review-31")}, Exhausted: true},
+	}
+	thread := func(id string) platform.MergeRequestReviewThread {
+		return platform.MergeRequestReviewThread{
+			Repo: ref, MergeRequestNumber: mr.Number, ProviderThreadID: id,
+			CreatedAt: now, UpdatedAt: now,
+		}
+	}
+	provider.threadPages = map[string]platform.Page[platform.MergeRequestReviewThread]{
+		"":   {Items: []platform.MergeRequestReviewThread{thread("thread-1")}, NextCursor: "t2"},
+		"t2": {Items: []platform.MergeRequestReviewThread{thread("thread-2")}, Exhausted: true},
+	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
-	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
-	require.NoError(err)
-	insert := db.ArchiveInventoryCommit{RepoID: repoID, ItemType: db.ArchiveItemTypeIssue, Exhausted: true, Now: now,
-		Issues: []db.ArchiveInventoryIssue{{ProviderItemID: "issue-1", CommentsStatus: db.ArchiveDatasetStatusPending,
-			Snapshot: db.IssueSnapshot{Issue: *platform.DBIssue(repoID, archiveTestIssue(ref))}}}}
-	require.NoError(database.CommitArchiveInventoryPage(t.Context(), insert))
-	item, err := database.ClaimArchiveItem(t.Context(), db.ClaimArchiveItemOpts{RepoIDs: []int64{repoID}, Now: now})
-	require.NoError(err)
-	require.NotNil(item)
 
-	err = service.recordHydrationFailure(t.Context(), *item, &db.ArchiveDatasetLimitError{
-		Dataset: db.ArchiveDatasetComments, Limit: "record", Value: 50_001, Max: 50_000,
-	})
-	require.Error(err)
-	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	clearRetry := func() {
+		_, err := database.WriteDB().ExecContext(t.Context(), `
+			UPDATE middleman_archive_repos SET next_retry_at = NULL WHERE repo_id = ?`, repoID)
+		require.NoError(err)
+	}
+	// Each stage runs a FRESH service instance whose admission budget expires
+	// mid-dataset, so every resume proves the committed durable cursor is the
+	// next request — never page one and never a repeated lookup.
+	runStage := func(denyAfter int, wantCalls []string) {
+		provider.mu.Lock()
+		provider.calls = nil
+		provider.mu.Unlock()
+		admission := &archiveTestAdmission{denyAfter: denyAfter, retryAt: now.Add(time.Hour)}
+		service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, admission, now)
+		require.NoError(service.RunEligible(t.Context()))
+		provider.mu.Lock()
+		calls := append([]string(nil), provider.calls...)
+		provider.mu.Unlock()
+		assert.Equal(wantCalls, calls)
+		clearRetry()
+	}
+
+	setupAdmission := &archiveTestAdmission{}
+	setupService := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, setupAdmission, now)
+	require.NoError(setupService.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	_, err = setupService.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
-	require.NotNil(states[0].LastErrorCode)
-	assert.Equal(string(db.ArchiveErrorCodeRepoBlocked), *states[0].LastErrorCode)
-	assert.Nil(states[0].NextRetryAt)
+	require.NoError(setupService.RunEligible(t.Context())) // issue inventory
+	require.NoError(setupService.RunEligible(t.Context())) // merge-request inventory
+
+	runStage(2, []string{"get_mr", "mr_comments:"})
+	runStage(2, []string{"mr_comments:c2", "reviews:"})
+	runStage(2, []string{"reviews:r2", "threads:"})
+	runStage(0, []string{"threads:t2"})
+
+	for _, dataset := range []db.ArchiveDataset{
+		db.ArchiveDatasetComments, db.ArchiveDatasetReviews, db.ArchiveDatasetInlineComments,
+	} {
+		progress, err := database.GetDatasetProgress(
+			t.Context(), repoID, db.ArchiveItemTypeMergeRequest, mr.Number, dataset,
+		)
+		require.NoError(err)
+		assert.Equal(db.ArchiveDatasetProgressComplete, progress.Status, string(dataset))
+	}
+	var commentCount, reviewCount, threadCount int
+	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+		SELECT COUNT(*) FROM middleman_mr_events WHERE event_type = 'issue_comment'`).Scan(&commentCount))
+	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+		SELECT COUNT(*) FROM middleman_mr_events WHERE event_type = 'review'`).Scan(&reviewCount))
+	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+		SELECT COUNT(*) FROM middleman_mr_review_threads`).Scan(&threadCount))
+	assert.Equal(2, commentCount)
+	assert.Equal(2, reviewCount)
+	assert.Equal(2, threadCount)
 }
 
-func TestArchivePageLimitBlocksWithoutRetry(t *testing.T) {
+func TestArchivePageLimitBlocksDatasetWithoutRetry(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -621,27 +698,121 @@ func TestArchivePageLimitBlocksWithoutRetry(t *testing.T) {
 	ref := archiveServiceRef(platform.KindGitHub, "github.test", "oversized")
 	repoID := archiveServiceSeedRepo(t, database, ref)
 	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	provider.issueCommentErrors = map[string]error{"": platform.ErrPageLimit}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
 	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
-	insert := db.ArchiveInventoryCommit{RepoID: repoID, ItemType: db.ArchiveItemTypeIssue, Exhausted: true, Now: now,
-		Issues: []db.ArchiveInventoryIssue{{ProviderItemID: "issue-1", CommentsStatus: db.ArchiveDatasetStatusPending,
-			Snapshot: db.IssueSnapshot{Issue: *platform.DBIssue(repoID, archiveTestIssue(ref))}}}}
-	require.NoError(database.CommitArchiveInventoryPage(t.Context(), insert))
-	item, err := database.ClaimArchiveItem(t.Context(), db.ClaimArchiveItemOpts{RepoIDs: []int64{repoID}, Now: now})
-	require.NoError(err)
-	require.NotNil(item)
+	require.NoError(service.RunEligible(t.Context())) // issue inventory
+	require.NoError(service.RunEligible(t.Context())) // merge-request inventory
 
-	err = service.recordHydrationFailure(t.Context(), *item, platform.ErrPageLimit)
-	require.ErrorIs(err, platform.ErrPageLimit)
+	// Page-bound exhaustion during a drain blocks only the affected dataset;
+	// it is not a hydration failure and consumes no retries.
+	require.NoError(service.RunEligible(t.Context()))
+	progress, err := database.GetDatasetProgress(
+		t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetComments,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressBlocked, progress.Status)
+	require.NotNil(progress.LastErrorCode)
+	assert.Equal("page_bound", *progress.LastErrorCode)
 	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
-	require.NotNil(states[0].LastErrorCode)
-	assert.Equal(string(db.ArchiveErrorCodeRepoBlocked), *states[0].LastErrorCode)
-	assert.Nil(states[0].NextRetryAt)
+	assert.Nil(states[0].LastErrorCode, "a dataset block must not block the repository")
+	status, err := service.Status(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+	assert.Equal(db.ArchiveStatusBlocked, status[0].Progress.Status)
+
+	// The repository's other work still proceeds: the merge request hydrates.
+	provider.calls = nil
+	require.NoError(service.RunEligible(t.Context()))
+	assert.Contains(provider.calls, "get_mr")
+}
+
+func TestArchiveEchoedCursorBlocksOneDatasetWhileOtherWorkProceeds(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "echoed")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	provider.issueCommentPages = map[string]platform.Page[platform.IssueEvent]{
+		"": {Items: []platform.IssueEvent{archiveIssueComment(ref, 10, "first page")}, NextCursor: "c2"},
+		"c2": {
+			Items:      []platform.IssueEvent{archiveIssueComment(ref, 11, "echoed page")},
+			NextCursor: "c2",
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+	require.NoError(service.RunEligible(t.Context())) // issue inventory
+	require.NoError(service.RunEligible(t.Context())) // merge-request inventory
+
+	// The echoed cursor is a page-scoped contract violation: the dataset
+	// blocks as an invalid cursor, with no automatic page-one restart.
+	require.NoError(service.RunEligible(t.Context()))
+	progress, err := database.GetDatasetProgress(
+		t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetComments,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressBlocked, progress.Status)
+	require.NotNil(progress.LastErrorCode)
+	assert.Equal("invalid_cursor", *progress.LastErrorCode)
+
+	// Unrelated repository work proceeds: the merge request hydrates fully.
+	provider.calls = nil
+	require.NoError(service.RunEligible(t.Context()))
+	assert.Contains(provider.calls, "get_mr")
+	assert.Contains(provider.calls, "mr_comments:")
+	assert.NotContains(provider.calls, "issue_comments:", "the blocked dataset must not restart from page one")
+	mrComments, err := database.GetDatasetProgress(
+		t.Context(), repoID, db.ArchiveItemTypeMergeRequest, 2, db.ArchiveDatasetComments,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressComplete, mrComments.Status)
+}
+
+func TestArchiveInventoryInvalidCursorBlocksScanWithoutRestart(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "cycling")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	provider.historicalIssuePages = map[string]platform.Page[platform.Issue]{
+		"":   {ProgressOnly: true, NextCursor: "p2"},
+		"p2": {ProgressOnly: true, NextCursor: "p2"},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+
+	for range 4 {
+		require.NoError(service.RunEligible(t.Context()))
+	}
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	assert.True(states[0].IssueInventory.Blocked())
+	require.NotNil(states[0].IssueInventory.LastErrorCode)
+	assert.Equal("invalid_cursor", *states[0].IssueInventory.LastErrorCode)
+	assert.True(states[0].MergeRequestInventory.Complete(), "the unaffected inventory stream still completes")
+	assert.Equal([]string{"", "p2"}, provider.issueInventoryCursors)
+
+	// A blocked scan spends no further provider requests automatically.
+	provider.issueInventoryCursors = nil
+	require.NoError(service.RunEligible(t.Context()))
+	assert.Empty(provider.issueInventoryCursors)
 	status, err := service.Status(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 	assert.Equal(db.ArchiveStatusBlocked, status[0].Progress.Status)
@@ -785,8 +956,8 @@ func TestArchiveResumesDiscoveryAppliesMaintenanceAndReportsDeterministically(t 
 	require.NoError(service.RunEligible(t.Context()))
 	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
-	require.NotNil(states[0].IssueCursor)
-	assert.Equal("issue-page-2", *states[0].IssueCursor)
+	require.NotNil(states[0].IssueInventory.NextCursor)
+	assert.Equal("issue-page-2", *states[0].IssueInventory.NextCursor)
 
 	service = newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
 	for range 10 {
@@ -926,8 +1097,8 @@ func TestArchiveDiscoverySkipsUnsupportedInventoryStream(t *testing.T) {
 
 	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
-	assert.True(states[0].IssueInventoryComplete)
-	assert.True(states[0].MergeRequestInventoryComplete)
+	assert.True(states[0].IssueInventory.Complete())
+	assert.True(states[0].MergeRequestInventory.Complete())
 	assert.Equal([]string{"issues"}, provider.calls)
 }
 
@@ -1074,8 +1245,10 @@ type archiveServiceProvider struct {
 	updatedIssueSince     []time.Time
 	updatedMRSince        []time.Time
 	issueCommentPages     map[string]platform.Page[platform.IssueEvent]
+	issueCommentErrors    map[string]error
 	mrCommentPages        map[string]platform.Page[platform.MergeRequestEvent]
 	reviewPages           map[string]platform.Page[platform.MergeRequestEvent]
+	threadPages           map[string]platform.Page[platform.MergeRequestReviewThread]
 	mrComments            []platform.MergeRequestEvent
 	reviews               []platform.MergeRequestEvent
 	threads               []platform.MergeRequestReviewThread
@@ -1084,10 +1257,13 @@ type archiveServiceProvider struct {
 func newArchiveServiceProvider(kind platform.Kind, host string) *archiveServiceProvider {
 	return &archiveServiceProvider{
 		kind: kind, host: host,
-		caps: platform.Capabilities{Archive: platform.ArchiveCapabilities{
-			HistoricalIssues: true, HistoricalMergeRequests: true,
-			OrdinaryComments: true, SubmittedReviews: true, InlineReviewComments: true,
-		}},
+		caps: platform.Capabilities{
+			ReadIssues: true, ReadMergeRequests: true,
+			Archive: platform.ArchiveCapabilities{
+				HistoricalIssues: true, HistoricalMergeRequests: true,
+				OrdinaryComments: true, SubmittedReviews: true, InlineReviewComments: true,
+			},
+		},
 	}
 }
 
@@ -1100,9 +1276,20 @@ func (p *archiveServiceProvider) record(call string) {
 	p.calls = append(p.calls, call)
 }
 
-func (p *archiveServiceProvider) ListHistoricalIssues(ctx context.Context, ref platform.RepoRef, cursor string) (platform.Page[platform.Issue], error) {
+func (p *archiveServiceProvider) ListIssuesPage(ctx context.Context, ref platform.RepoRef, query platform.ItemPageQuery) (platform.Page[platform.Issue], error) {
+	if query.UpdatedSince != nil {
+		p.record("updated_issues:" + query.Cursor)
+		p.updatedIssueSince = append(p.updatedIssueSince, *query.UpdatedSince)
+		if err := p.updatedIssueErrors[query.Cursor]; err != nil {
+			return platform.Page[platform.Issue]{}, err
+		}
+		if page, ok := p.updatedIssuePages[query.Cursor]; ok {
+			return page, nil
+		}
+		return platform.Page[platform.Issue]{Exhausted: true}, nil
+	}
 	p.record("issues")
-	p.issueInventoryCursors = append(p.issueInventoryCursors, cursor)
+	p.issueInventoryCursors = append(p.issueInventoryCursors, query.Cursor)
 	if p.issueInventoryStarted != nil {
 		select {
 		case <-p.issueInventoryStarted:
@@ -1118,38 +1305,27 @@ func (p *archiveServiceProvider) ListHistoricalIssues(ctx context.Context, ref p
 	if p.issueInventoryErr != nil {
 		return platform.Page[platform.Issue]{}, p.issueInventoryErr
 	}
-	if page, ok := p.historicalIssuePages[cursor]; ok {
+	if page, ok := p.historicalIssuePages[query.Cursor]; ok {
 		return page, nil
 	}
 	return platform.Page[platform.Issue]{Items: []platform.Issue{archiveTestIssue(ref)}, Exhausted: true}, nil
 }
-func (p *archiveServiceProvider) ListHistoricalMergeRequests(_ context.Context, ref platform.RepoRef, _ string) (platform.Page[platform.MergeRequest], error) {
+func (p *archiveServiceProvider) ListMergeRequestsPage(_ context.Context, ref platform.RepoRef, query platform.ItemPageQuery) (platform.Page[platform.MergeRequest], error) {
+	if query.UpdatedSince != nil {
+		p.record("updated_mrs:" + query.Cursor)
+		p.updatedMRSince = append(p.updatedMRSince, *query.UpdatedSince)
+		if err := p.updatedMRErrors[query.Cursor]; err != nil {
+			return platform.Page[platform.MergeRequest]{}, err
+		}
+		if page, ok := p.updatedMRPages[query.Cursor]; ok {
+			return page, nil
+		}
+		return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
+	}
 	p.record("merge_requests")
 	return platform.Page[platform.MergeRequest]{Items: []platform.MergeRequest{archiveTestMergeRequest(ref)}, Exhausted: true}, nil
 }
-func (p *archiveServiceProvider) ListUpdatedIssues(_ context.Context, _ platform.RepoRef, since time.Time, cursor string) (platform.Page[platform.Issue], error) {
-	p.record("updated_issues:" + cursor)
-	p.updatedIssueSince = append(p.updatedIssueSince, since)
-	if err := p.updatedIssueErrors[cursor]; err != nil {
-		return platform.Page[platform.Issue]{}, err
-	}
-	if page, ok := p.updatedIssuePages[cursor]; ok {
-		return page, nil
-	}
-	return platform.Page[platform.Issue]{Exhausted: true}, nil
-}
-func (p *archiveServiceProvider) ListUpdatedMergeRequests(_ context.Context, _ platform.RepoRef, since time.Time, cursor string) (platform.Page[platform.MergeRequest], error) {
-	p.record("updated_mrs:" + cursor)
-	p.updatedMRSince = append(p.updatedMRSince, since)
-	if err := p.updatedMRErrors[cursor]; err != nil {
-		return platform.Page[platform.MergeRequest]{}, err
-	}
-	if page, ok := p.updatedMRPages[cursor]; ok {
-		return page, nil
-	}
-	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
-}
-func (p *archiveServiceProvider) GetArchiveIssue(ctx context.Context, ref platform.RepoRef, _ int) (platform.ItemLookup[platform.Issue], error) {
+func (p *archiveServiceProvider) LookupIssue(ctx context.Context, ref platform.RepoRef, _ int) (platform.ItemLookup[platform.Issue], error) {
 	p.record("get_issue")
 	if err := ctx.Err(); err != nil {
 		return platform.ItemLookup[platform.Issue]{}, err
@@ -1167,7 +1343,7 @@ func (p *archiveServiceProvider) GetArchiveIssue(ctx context.Context, ref platfo
 	}
 	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupPresent, Item: archiveTestIssue(ref)}, nil
 }
-func (p *archiveServiceProvider) GetArchiveMergeRequest(_ context.Context, ref platform.RepoRef, _ int) (platform.ItemLookup[platform.MergeRequest], error) {
+func (p *archiveServiceProvider) LookupMergeRequest(_ context.Context, ref platform.RepoRef, _ int) (platform.ItemLookup[platform.MergeRequest], error) {
 	p.record("get_mr")
 	if p.mrLookupOutcome != "" && p.mrLookupOutcome != platform.LookupPresent {
 		return platform.ItemLookup[platform.MergeRequest]{Outcome: p.mrLookupOutcome}, nil
@@ -1177,8 +1353,11 @@ func (p *archiveServiceProvider) GetArchiveMergeRequest(_ context.Context, ref p
 	}
 	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupPresent, Item: archiveTestMergeRequest(ref)}, nil
 }
-func (p *archiveServiceProvider) ListArchiveIssueComments(_ context.Context, ref platform.RepoRef, _ int, cursor string) (platform.Page[platform.IssueEvent], error) {
+func (p *archiveServiceProvider) ListIssueCommentsPage(_ context.Context, ref platform.RepoRef, _ int, cursor string) (platform.Page[platform.IssueEvent], error) {
 	p.record("issue_comments:" + cursor)
+	if err := p.issueCommentErrors[cursor]; err != nil {
+		return platform.Page[platform.IssueEvent]{}, err
+	}
 	if page, ok := p.issueCommentPages[cursor]; ok {
 		return page, nil
 	}
@@ -1192,7 +1371,7 @@ func (p *archiveServiceProvider) ListArchiveIssueComments(_ context.Context, ref
 	event.PlatformID, event.PlatformExternalID, event.DedupeKey = 11, "comment-11", "comment:c2"
 	return platform.Page[platform.IssueEvent]{Items: []platform.IssueEvent{event}, Exhausted: true}, nil
 }
-func (p *archiveServiceProvider) ListArchiveMergeRequestComments(_ context.Context, ref platform.RepoRef, _ int, cursor string) (platform.Page[platform.MergeRequestEvent], error) {
+func (p *archiveServiceProvider) ListMergeRequestCommentsPage(_ context.Context, ref platform.RepoRef, number int, cursor string) (platform.Page[platform.MergeRequestEvent], error) {
 	p.record("mr_comments:" + cursor)
 	if page, ok := p.mrCommentPages[cursor]; ok {
 		return page, nil
@@ -1200,17 +1379,20 @@ func (p *archiveServiceProvider) ListArchiveMergeRequestComments(_ context.Conte
 	if p.mrComments != nil {
 		return platform.Page[platform.MergeRequestEvent]{Items: p.mrComments, Exhausted: true}, nil
 	}
-	return platform.Page[platform.MergeRequestEvent]{Items: []platform.MergeRequestEvent{{Repo: ref, PlatformID: 20, PlatformExternalID: "comment-20", MergeRequestNumber: 2, EventType: "issue_comment", CreatedAt: archiveTestTime(), DedupeKey: "mr-comment-20"}}, Exhausted: true}, nil
+	return platform.Page[platform.MergeRequestEvent]{Items: []platform.MergeRequestEvent{{Repo: ref, PlatformID: 20, PlatformExternalID: "comment-20", MergeRequestNumber: number, EventType: "issue_comment", CreatedAt: archiveTestTime(), DedupeKey: "mr-comment-20"}}, Exhausted: true}, nil
 }
-func (p *archiveServiceProvider) ListArchiveSubmittedReviews(_ context.Context, _ platform.RepoRef, _ int, cursor string) (platform.Page[platform.MergeRequestEvent], error) {
+func (p *archiveServiceProvider) ListSubmittedReviewsPage(_ context.Context, _ platform.RepoRef, _ int, cursor string) (platform.Page[platform.MergeRequestEvent], error) {
 	p.record("reviews:" + cursor)
 	if page, ok := p.reviewPages[cursor]; ok {
 		return page, nil
 	}
 	return platform.Page[platform.MergeRequestEvent]{Items: p.reviews, Exhausted: true}, nil
 }
-func (p *archiveServiceProvider) ListArchiveReviewThreads(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestReviewThread], error) {
-	p.record("threads")
+func (p *archiveServiceProvider) ListReviewThreadsPage(_ context.Context, _ platform.RepoRef, _ int, cursor string) (platform.Page[platform.MergeRequestReviewThread], error) {
+	p.record("threads:" + cursor)
+	if page, ok := p.threadPages[cursor]; ok {
+		return page, nil
+	}
 	return platform.Page[platform.MergeRequestReviewThread]{Items: p.threads, Exhausted: true}, nil
 }
 

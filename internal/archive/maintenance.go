@@ -7,8 +7,13 @@ import (
 	"time"
 
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/platform"
 )
 
+// promptMaintenance runs one maintenance scan: a fixed durable boundary, then
+// both updated-item streams page by page through the canonical readers with
+// StateAll ordered by update time, watermark advanced only after both streams
+// reach explicit end-of-pagination.
 func (s *Service) promptMaintenance(
 	ctx context.Context,
 	repo resolvedRepository,
@@ -28,26 +33,48 @@ func (s *Service) promptMaintenance(
 	if state.PromptSince == nil || state.PromptScanStartedAt == nil {
 		return errors.New("run archive prompt maintenance: durable scan boundary is missing")
 	}
-	if !state.PromptIssueComplete {
-		if err := s.promptIssuePages(ctx, repo, state.PromptSince.UTC(), archiveCursorValue(state.PromptIssueCursor)); err != nil {
+	issueScan := state.MaintenanceIssues
+	if !issueScan.Complete() && !issueScan.Blocked() {
+		if err := s.promptPages(ctx, repo, db.ArchiveItemTypeIssue, state.PromptSince.UTC(), issueScan); err != nil {
 			return err
 		}
 	}
-	if !state.PromptMergeRequestComplete {
-		if err := s.promptMergeRequestPages(ctx, repo, state.PromptSince.UTC(), archiveCursorValue(state.PromptMergeRequestCursor)); err != nil {
+	mrScan := state.MaintenanceMergeRequests
+	if !mrScan.Complete() && !mrScan.Blocked() {
+		if err := s.promptPages(ctx, repo, db.ArchiveItemTypeMergeRequest, state.PromptSince.UTC(), mrScan); err != nil {
 			return err
 		}
+	}
+	refreshed, err := s.db.ListArchiveRepoStates(ctx, []int64{repo.ID})
+	if err != nil {
+		return err
+	}
+	if len(refreshed) != 1 ||
+		!refreshed[0].MaintenanceIssues.Complete() ||
+		!refreshed[0].MaintenanceMergeRequests.Complete() {
+		// A blocked stream leaves the boundary in place: the watermark must
+		// not advance past pages that were never enumerated.
+		return nil
 	}
 	return s.db.CompleteArchivePromptMaintenance(ctx, repo.ID, state.PromptScanStartedAt.UTC(), s.now())
 }
 
-func (s *Service) promptIssuePages(
+// promptPages drains one updated-item stream from its durable cursor. Every
+// page re-acquires admission and commits through the same inventory commit as
+// historical pages, with prompt refresh semantics.
+func (s *Service) promptPages(
 	ctx context.Context,
 	repo resolvedRepository,
+	itemType db.ArchiveItemType,
 	since time.Time,
-	cursor string,
+	scan db.ArchiveScanState,
 ) error {
-	for range maxArchiveDatasetPages {
+	kind := db.ArchiveScanMaintenanceIssues
+	if itemType == db.ArchiveItemTypeMergeRequest {
+		kind = db.ArchiveScanMaintenanceMergeRequests
+	}
+	cursor := scan.Cursor()
+	for {
 		requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(1))
 		if err != nil {
 			if errors.Is(err, errAdmissionDeferred) {
@@ -55,80 +82,64 @@ func (s *Service) promptIssuePages(
 			}
 			return s.recordInventoryFailure(ctx, repo.ID, err)
 		}
-		page, err := repo.Reader.ListUpdatedIssues(requestCtx, repo.Ref, since, cursor)
-		preempted := archivePreempted(ctx, requestCtx)
-		release()
-		if err != nil {
-			if preempted {
-				return errAdmissionDeferred
-			}
-			return s.recordInventoryFailure(ctx, repo.ID, fmt.Errorf(
-				"list updated issues for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
-			))
+		query := platform.ItemPageQuery{
+			State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
+			UpdatedSince: &since, Cursor: cursor,
 		}
 		commit := db.ArchiveInventoryCommit{
-			RepoID: repo.ID, ItemType: db.ArchiveItemTypeIssue,
-			RefreshReason: db.ArchiveRefreshReasonPrompt,
-			NextCursor:    page.NextCursor, Exhausted: page.Exhausted, Now: s.now(),
-			Issues: make([]db.ArchiveInventoryIssue, 0, len(page.Items)),
+			RepoID: repo.ID, ItemType: itemType,
+			RefreshReason:  db.ArchiveRefreshReasonPrompt,
+			ScanGeneration: scan.Generation, InputCursor: cursor,
+			Now: s.now(),
 		}
-		for _, item := range page.Items {
-			commit.Issues = append(commit.Issues, archiveInventoryIssue(repo, item))
+		switch itemType {
+		case db.ArchiveItemTypeIssue:
+			page, err := repo.Issues.ListIssuesPage(requestCtx, repo.Ref, query)
+			preempted := archivePreempted(ctx, requestCtx)
+			release()
+			if err != nil {
+				if preempted {
+					return errAdmissionDeferred
+				}
+				return s.recordScanFailure(ctx, repo, kind, fmt.Errorf(
+					"list updated issues for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
+				))
+			}
+			commit.NextCursor, commit.Exhausted = page.NextCursor, page.Exhausted
+			commit.Issues = make([]db.ArchiveInventoryIssue, 0, len(page.Items))
+			for _, item := range page.Items {
+				commit.Issues = append(commit.Issues, archiveInventoryIssue(repo, item))
+			}
+		case db.ArchiveItemTypeMergeRequest:
+			page, err := repo.MergeRequests.ListMergeRequestsPage(requestCtx, repo.Ref, query)
+			preempted := archivePreempted(ctx, requestCtx)
+			release()
+			if err != nil {
+				if preempted {
+					return errAdmissionDeferred
+				}
+				return s.recordScanFailure(ctx, repo, kind, fmt.Errorf(
+					"list updated merge requests for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
+				))
+			}
+			commit.NextCursor, commit.Exhausted = page.NextCursor, page.Exhausted
+			commit.MergeRequests = make([]db.ArchiveInventoryMergeRequest, 0, len(page.Items))
+			for _, item := range page.Items {
+				commit.MergeRequests = append(commit.MergeRequests, archiveInventoryMergeRequest(repo, item))
+			}
+		default:
+			release()
+			return fmt.Errorf("archive maintenance: invalid item type %q", itemType)
 		}
-		if err := s.db.CommitArchiveInventoryPage(ctx, commit); err != nil {
+		halted, err := s.commitInventoryPage(ctx, commit)
+		if err != nil {
 			return err
 		}
-		if page.Exhausted {
+		if halted || commit.Exhausted {
 			return nil
 		}
-		cursor = page.NextCursor
+		cursor = commit.NextCursor
 	}
-	return errors.New("archive updated issue inventory exceeded page limit")
-}
-
-func (s *Service) promptMergeRequestPages(
-	ctx context.Context,
-	repo resolvedRepository,
-	since time.Time,
-	cursor string,
-) error {
-	for range maxArchiveDatasetPages {
-		requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(1))
-		if err != nil {
-			if errors.Is(err, errAdmissionDeferred) {
-				return err
-			}
-			return s.recordInventoryFailure(ctx, repo.ID, err)
-		}
-		page, err := repo.Reader.ListUpdatedMergeRequests(requestCtx, repo.Ref, since, cursor)
-		preempted := archivePreempted(ctx, requestCtx)
-		release()
-		if err != nil {
-			if preempted {
-				return errAdmissionDeferred
-			}
-			return s.recordInventoryFailure(ctx, repo.ID, fmt.Errorf(
-				"list updated merge requests for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
-			))
-		}
-		commit := db.ArchiveInventoryCommit{
-			RepoID: repo.ID, ItemType: db.ArchiveItemTypeMergeRequest,
-			RefreshReason: db.ArchiveRefreshReasonPrompt,
-			NextCursor:    page.NextCursor, Exhausted: page.Exhausted, Now: s.now(),
-			MergeRequests: make([]db.ArchiveInventoryMergeRequest, 0, len(page.Items)),
-		}
-		for _, item := range page.Items {
-			commit.MergeRequests = append(commit.MergeRequests, archiveInventoryMergeRequest(repo, item))
-		}
-		if err := s.db.CommitArchiveInventoryPage(ctx, commit); err != nil {
-			return err
-		}
-		if page.Exhausted {
-			return nil
-		}
-		cursor = page.NextCursor
-	}
-	return errors.New("archive updated merge-request inventory exceeded page limit")
 }
 
 func promptMaintenanceDue(state db.ArchiveRepoState, now time.Time, interval time.Duration) bool {

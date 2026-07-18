@@ -10,10 +10,20 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 )
 
+// inventoryPage advances one historical inventory scan by one canonical page:
+// StateAll ordered by creation for a stable traversal, cursor and generation
+// bound to the durable scan row.
 func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, state db.ArchiveRepoState, itemType db.ArchiveItemType) error {
+	kind := db.ArchiveScanIssueInventory
+	if itemType == db.ArchiveItemTypeMergeRequest {
+		kind = db.ArchiveScanMergeRequestInventory
+	}
+	scan := state.Scan(kind)
 	commit := db.ArchiveInventoryCommit{
 		RepoID: repo.ID, ItemType: itemType,
-		RefreshReason: db.ArchiveRefreshReasonInitial, Now: s.now(),
+		RefreshReason:  db.ArchiveRefreshReasonInitial,
+		ScanGeneration: scan.Generation, InputCursor: scan.Cursor(),
+		Now: s.now(),
 	}
 	if !archiveInventorySupported(repo, itemType) {
 		commit.Exhausted = true
@@ -25,17 +35,20 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 			}
 			return s.recordInventoryFailure(ctx, repo.ID, err)
 		}
+		query := platform.ItemPageQuery{
+			State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+			Cursor: scan.Cursor(),
+		}
 		switch itemType {
 		case db.ArchiveItemTypeIssue:
-			cursor := archiveCursorValue(state.IssueCursor)
-			page, err := repo.Reader.ListHistoricalIssues(requestCtx, repo.Ref, cursor)
+			page, err := repo.Issues.ListIssuesPage(requestCtx, repo.Ref, query)
 			preempted := archivePreempted(ctx, requestCtx)
 			release()
 			if err != nil {
 				if preempted {
 					return errAdmissionDeferred
 				}
-				return s.recordInventoryFailure(ctx, repo.ID, fmt.Errorf(
+				return s.recordScanFailure(ctx, repo, kind, fmt.Errorf(
 					"list historical issues for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
 				))
 			}
@@ -45,15 +58,14 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 				commit.Issues = append(commit.Issues, archiveInventoryIssue(repo, item))
 			}
 		case db.ArchiveItemTypeMergeRequest:
-			cursor := archiveCursorValue(state.MergeRequestCursor)
-			page, err := repo.Reader.ListHistoricalMergeRequests(requestCtx, repo.Ref, cursor)
+			page, err := repo.MergeRequests.ListMergeRequestsPage(requestCtx, repo.Ref, query)
 			preempted := archivePreempted(ctx, requestCtx)
 			release()
 			if err != nil {
 				if preempted {
 					return errAdmissionDeferred
 				}
-				return s.recordInventoryFailure(ctx, repo.ID, fmt.Errorf(
+				return s.recordScanFailure(ctx, repo, kind, fmt.Errorf(
 					"list historical merge requests for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
 				))
 			}
@@ -67,7 +79,25 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 			return fmt.Errorf("archive inventory: invalid item type %q", itemType)
 		}
 	}
-	return s.db.CommitArchiveInventoryPage(ctx, commit)
+	_, err := s.commitInventoryPage(ctx, commit)
+	return err
+}
+
+// commitInventoryPage absorbs the typed non-failure outcomes of an inventory
+// commit: stale generations mean another worker or a reset advanced the scan,
+// and blocked scans are already durably recorded. Both halt the current
+// traversal without failing it.
+func (s *Service) commitInventoryPage(ctx context.Context, commit db.ArchiveInventoryCommit) (bool, error) {
+	err := s.db.CommitArchiveInventoryPage(ctx, commit)
+	var stale *db.StaleArchiveScanError
+	if errors.As(err, &stale) {
+		return true, nil
+	}
+	var blocked *db.ScanBlockedError
+	if errors.As(err, &blocked) {
+		return true, nil
+	}
+	return err != nil, err
 }
 
 func archiveInventorySupported(repo resolvedRepository, itemType db.ArchiveItemType) bool {
@@ -79,6 +109,26 @@ func archiveInventorySupported(repo resolvedRepository, itemType db.ArchiveItemT
 	default:
 		return false
 	}
+}
+
+// recordScanFailure routes one scan read failure: page-scoped provider
+// contract violations durably block only the affected scan, everything else
+// records a repository-level failure with retry classification.
+func (s *Service) recordScanFailure(
+	ctx context.Context,
+	repo resolvedRepository,
+	kind db.ArchiveScanKind,
+	cause error,
+) error {
+	if pageScopedProviderFailure(cause) {
+		if err := s.db.BlockArchiveRepoScan(
+			ctx, repo.ID, kind, scanBlockCode(cause), cause.Error(),
+		); err != nil {
+			return errors.Join(cause, err)
+		}
+		return nil
+	}
+	return s.recordInventoryFailure(ctx, repo.ID, cause)
 }
 
 func (s *Service) recordInventoryFailure(ctx context.Context, repoID int64, cause error) error {
@@ -126,11 +176,4 @@ func providerItemID(external string, numeric int64) string {
 		return external
 	}
 	return strconv.FormatInt(numeric, 10)
-}
-
-func archiveCursorValue(cursor *string) string {
-	if cursor == nil {
-		return ""
-	}
-	return *cursor
 }

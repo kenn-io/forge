@@ -140,6 +140,66 @@ const (
 	ArchiveScanMaintenanceMergeRequests ArchiveScanKind = "maintenance_merge_requests"
 )
 
+// ArchiveScanStatus is the lifecycle of one repository-level scan row.
+type ArchiveScanStatus string
+
+const (
+	ArchiveScanPending  ArchiveScanStatus = "pending"
+	ArchiveScanRunning  ArchiveScanStatus = "running"
+	ArchiveScanComplete ArchiveScanStatus = "complete"
+	ArchiveScanBlocked  ArchiveScanStatus = "blocked"
+	ArchiveScanFailed   ArchiveScanStatus = "failed"
+)
+
+// ArchiveScanState is the durable progress of one repository-level scan:
+// historical inventory or maintenance, per item type. The scans table is the
+// single authority for repository cursors.
+type ArchiveScanState struct {
+	Generation      int64
+	NextCursor      *string
+	LastInputCursor *string
+	PageCount       int
+	Status          ArchiveScanStatus
+	LastErrorCode   *string
+	LastErrorDetail *string
+}
+
+// Complete reports whether the scan reached explicit end-of-pagination in its
+// current generation.
+func (s ArchiveScanState) Complete() bool { return s.Status == ArchiveScanComplete }
+
+// Blocked reports whether the scan durably stopped and requires an explicit
+// operator reset.
+func (s ArchiveScanState) Blocked() bool { return s.Status == ArchiveScanBlocked }
+
+// Cursor returns the durable next input cursor, empty for page one.
+func (s ArchiveScanState) Cursor() string {
+	if s.NextCursor == nil {
+		return ""
+	}
+	return *s.NextCursor
+}
+
+// StaleArchiveScanError reports an inventory or maintenance page commit whose
+// scan generation or input cursor no longer matches the durable scan row.
+type StaleArchiveScanError struct {
+	RepoID             int64
+	Scan               ArchiveScanKind
+	ExpectedGeneration int64
+	GotGeneration      int64
+	ExpectedCursor     string
+	GotCursor          string
+}
+
+func (e *StaleArchiveScanError) Error() string {
+	return fmt.Sprintf(
+		"stale archive scan for repo %d %s: generation %d/%d, cursor %q/%q",
+		e.RepoID, e.Scan,
+		e.ExpectedGeneration, e.GotGeneration,
+		e.ExpectedCursor, e.GotCursor,
+	)
+}
+
 // ArchiveDatasetProgressStatus is the lifecycle of one dataset progress row.
 type ArchiveDatasetProgressStatus string
 
@@ -321,31 +381,43 @@ const (
 )
 
 type ArchiveRepoState struct {
-	RepoID                        int64
-	CollectionMode                ArchiveCollectionMode
-	OperatorState                 ArchiveOperatorState
-	IssueCursor                   *string
-	IssueInventoryComplete        bool
-	MergeRequestCursor            *string
-	MergeRequestInventoryComplete bool
-	InitialStartedAt              *time.Time
-	InitialCompletedAt            *time.Time
-	MaintenanceWatermark          *time.Time
-	MaintenanceSucceededAt        *time.Time
-	PromptScanStartedAt           *time.Time
-	PromptSince                   *time.Time
-	PromptIssueCursor             *string
-	PromptIssueComplete           bool
-	PromptMergeRequestCursor      *string
-	PromptMergeRequestComplete    bool
-	CommentsCoverage              ArchiveCoverage
-	ReviewsCoverage               ArchiveCoverage
-	InlineCommentsCoverage        ArchiveCoverage
-	LastErrorCode                 *string
-	LastErrorDetail               *string
-	NextRetryAt                   *time.Time
-	CreatedAt                     time.Time
-	UpdatedAt                     time.Time
+	RepoID                   int64
+	CollectionMode           ArchiveCollectionMode
+	OperatorState            ArchiveOperatorState
+	IssueInventory           ArchiveScanState
+	MergeRequestInventory    ArchiveScanState
+	MaintenanceIssues        ArchiveScanState
+	MaintenanceMergeRequests ArchiveScanState
+	InitialStartedAt         *time.Time
+	InitialCompletedAt       *time.Time
+	MaintenanceWatermark     *time.Time
+	MaintenanceSucceededAt   *time.Time
+	PromptScanStartedAt      *time.Time
+	PromptSince              *time.Time
+	CommentsCoverage         ArchiveCoverage
+	ReviewsCoverage          ArchiveCoverage
+	InlineCommentsCoverage   ArchiveCoverage
+	LastErrorCode            *string
+	LastErrorDetail          *string
+	NextRetryAt              *time.Time
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
+}
+
+// Scan returns the durable state of one repository-level scan.
+func (s ArchiveRepoState) Scan(kind ArchiveScanKind) ArchiveScanState {
+	switch kind {
+	case ArchiveScanIssueInventory:
+		return s.IssueInventory
+	case ArchiveScanMergeRequestInventory:
+		return s.MergeRequestInventory
+	case ArchiveScanMaintenanceIssues:
+		return s.MaintenanceIssues
+	case ArchiveScanMaintenanceMergeRequests:
+		return s.MaintenanceMergeRequests
+	default:
+		return ArchiveScanState{}
+	}
 }
 
 // ArchiveRepoStateNotFoundError reports repository IDs that do not satisfy an
@@ -488,9 +560,44 @@ type ArchiveInventoryCommit struct {
 	RefreshReason ArchiveRefreshReason
 	Issues        []ArchiveInventoryIssue
 	MergeRequests []ArchiveInventoryMergeRequest
-	NextCursor    string
-	Exhausted     bool
-	Now           time.Time
+	// ScanGeneration and InputCursor bind the page to the durable scan row
+	// with compare-and-swap semantics: a response from before an explicit
+	// reset cannot advance the new generation, and a duplicate delivery of
+	// the already-committed page is an idempotent no-op.
+	ScanGeneration int64
+	InputCursor    string
+	NextCursor     string
+	Exhausted      bool
+	Now            time.Time
+}
+
+// ArchiveDatasetWork is one claimable dataset of an archive item, carrying
+// the durable cursor state a scan resumes from.
+type ArchiveDatasetWork struct {
+	Dataset        ArchiveDataset
+	ParentRevision int64
+	ScanGeneration int64
+	NextCursor     *string
+	Status         ArchiveDatasetProgressStatus
+	AttemptCount   int
+}
+
+// Cursor returns the durable next input cursor, empty for page one.
+func (w ArchiveDatasetWork) Cursor() string {
+	if w.NextCursor == nil {
+		return ""
+	}
+	return *w.NextCursor
+}
+
+// ArchiveItemWork is the claimable unit of archive hydration: one item and
+// its currently due dataset progress rows, lookup first.
+type ArchiveItemWork struct {
+	RepoID            int64
+	ItemType          ArchiveItemType
+	ItemNumber        int
+	ProviderCreatedAt time.Time
+	Datasets          []ArchiveDatasetWork
 }
 
 type ArchiveStatus string
@@ -527,6 +634,9 @@ type ArchiveProgressCounts struct {
 	UnsupportedItemCount  int
 	InaccessibleItemCount int
 	DueItemCount          int
+	// BlockedItemCount counts active items with at least one blocked dataset
+	// scan. Blocked datasets require an explicit operator reset.
+	BlockedItemCount int
 }
 
 // ArchiveRepoProgress is derived from durable repository and item state. It is

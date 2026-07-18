@@ -133,27 +133,38 @@ func TestNormalSyncCompletesMatchingArchiveDatasetAndRejectsLatePage(t *testing.
 	repoID := insertTestRepo(t, database, "acme", "normal-sync-archive-progress")
 	require.NoError(database.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
 	require.NoError(database.StartFullArchives(ctx, []int64{repoID}, now))
-	insertArchiveItemForTest(
-		t, database, repoID, ArchiveItemTypeMergeRequest, 7, now,
-		ArchiveDatasetStatusUnsupported, ArchiveDatasetStatusPending, ArchiveDatasetStatusUnsupported,
-	)
-	mrID, revision, accepted, err := database.UpsertArchiveMergeRequestSnapshot(ctx, &MergeRequest{
+	mr := MergeRequest{
 		RepoID: repoID, PlatformID: 7, Number: 7, Title: "open MR",
 		State: MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour),
 		UpdatedAt: now, LastActivityAt: now,
-	})
-	require.NoError(err)
-	require.True(accepted)
-	key := ArchiveDatasetKey{
-		RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest, ItemNumber: 7,
-		Dataset: ArchiveDatasetReviews, SnapshotUpdatedAt: now, DomainRevision: revision,
 	}
-	_, err = database.CommitArchiveDatasetPage(ctx, ArchiveDatasetPage{
-		ArchiveDatasetKey: key, NextCursor: "reviews-page-2",
-		RecordCount: 1, Payload: []byte(`[{"dedupe_key":"staged-review"}]`),
-		MaxPages: 10, MaxRecords: 10, MaxBytes: 1024, Now: now,
-	})
+	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest, Exhausted: true, Now: now,
+		MergeRequests: []ArchiveInventoryMergeRequest{{
+			ProviderItemID:       "mr-7",
+			Snapshot:             MergeRequestSnapshot{MergeRequest: mr},
+			CommentsStatus:       ArchiveDatasetStatusUnsupported,
+			ReviewsStatus:        ArchiveDatasetStatusPending,
+			InlineCommentsStatus: ArchiveDatasetStatusUnsupported,
+		}},
+	}))
+	mrID, revision, err := database.GetDomainParent(ctx, repoID, ArchiveItemTypeMergeRequest, 7)
 	require.NoError(err)
+	staged, err := database.GetDatasetProgress(ctx, repoID, ArchiveItemTypeMergeRequest, 7, ArchiveDatasetReviews)
+	require.NoError(err)
+	require.Equal(ArchiveDatasetProgressPending, staged.Status)
+	require.Equal(revision, staged.ParentRevision)
+	parent := DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: mrID}
+	require.NoError(database.CommitDatasetPage(ctx, DatasetPageCommit{
+		Parent: parent, ExpectedRevision: revision,
+		Dataset: ArchiveDatasetReviews, ScanGeneration: staged.ScanGeneration,
+		Rows: DatasetRows{Reviews: []MREvent{{
+			MergeRequestID: mrID, EventType: "review", DedupeKey: "staged-review", CreatedAt: now,
+		}}},
+		Progress: &DatasetProgressAdvance{
+			RepoID: repoID, ItemNumber: 7, InputCursor: "", NextCursor: "reviews-page-2",
+		},
+	}))
 
 	applied, err := database.CommitMergeRequestChildSnapshot(ctx, MergeRequestChildSnapshot{
 		MergeRequestID: mrID, ExpectedRevision: revision,
@@ -164,25 +175,34 @@ func TestNormalSyncCompletesMatchingArchiveDatasetAndRejectsLatePage(t *testing.
 	})
 	require.NoError(err)
 	require.True(applied)
-	item := archiveItemState(t, database, repoID, ArchiveItemTypeMergeRequest, 7)
-	assert.Equal(ArchiveDatasetStatusComplete, item.ReviewsStatus)
-	assert.NotNil(item.MirroredProviderUpdatedAt)
-	assert.NotNil(item.HydratedAt)
-	stage, err := database.GetArchiveDatasetStage(ctx, key)
+	satisfied, err := database.GetDatasetProgress(ctx, repoID, ArchiveItemTypeMergeRequest, 7, ArchiveDatasetReviews)
 	require.NoError(err)
-	assert.Zero(stage.PageCount)
+	assert.Equal(ArchiveDatasetProgressComplete, satisfied.Status)
+	assert.Nil(satisfied.NextCursor)
 
-	_, err = database.CommitArchiveDatasetPage(ctx, ArchiveDatasetPage{
-		ArchiveDatasetKey: key, InputCursor: "reviews-page-2", Exhausted: true,
-		RecordCount: 1, Payload: []byte(`[{"dedupe_key":"late-review"}]`),
-		MaxPages: 10, MaxRecords: 10, MaxBytes: 1024, Now: now.Add(time.Minute),
+	// The late page from the satisfied scan is stale: nothing is written and
+	// the cursor never advances.
+	lateErr := database.CommitDatasetPage(ctx, DatasetPageCommit{
+		Parent: parent, ExpectedRevision: revision,
+		Dataset: ArchiveDatasetReviews, ScanGeneration: staged.ScanGeneration,
+		Rows: DatasetRows{Reviews: []MREvent{{
+			MergeRequestID: mrID, EventType: "review", DedupeKey: "late-review", CreatedAt: now,
+		}}},
+		Final: true,
+		Progress: &DatasetProgressAdvance{
+			RepoID: repoID, ItemNumber: 7, InputCursor: "reviews-page-2",
+		},
 	})
-	require.Error(err)
-	assert.Contains(err.Error(), "already complete")
+	var stale *StaleDatasetProgressError
+	require.ErrorAs(lateErr, &stale)
 	events, err := database.ListMREvents(ctx, mrID)
 	require.NoError(err)
-	require.Len(events, 1)
-	assert.Equal("current-review", events[0].DedupeKey)
+	keys := make([]string, len(events))
+	for i := range events {
+		keys[i] = events[i].DedupeKey
+	}
+	assert.ElementsMatch([]string{"staged-review", "current-review"}, keys,
+		"incrementally ingested reviews are additive history; the late page writes nothing")
 }
 
 func TestNormalSyncDoesNotCompleteNewerArchiveDataset(t *testing.T) {

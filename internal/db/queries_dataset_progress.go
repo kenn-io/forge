@@ -445,6 +445,7 @@ func advanceDatasetProgressTx(
 			UPDATE middleman_archive_dataset_progress
 			SET next_cursor = NULL, last_input_cursor = NULL, page_count = ?,
 				status = 'complete', observed_count = observed_count + ?,
+				attempt_count = 0,
 				next_retry_at = NULL, last_error_code = NULL, last_error_detail = NULL,
 				started_at = COALESCE(started_at, ?), completed_at = ?, updated_at = ?
 			WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = ?`,
@@ -453,7 +454,7 @@ func advanceDatasetProgressTx(
 		if err != nil {
 			return fmt.Errorf("complete dataset progress: %w", err)
 		}
-		return nil
+		return completeArchiveInitialIfReadyTx(ctx, tx, key.RepoID, now)
 	}
 	_, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_dataset_progress
@@ -472,9 +473,13 @@ func advanceDatasetProgressTx(
 }
 
 // satisfyDatasetProgressFromLiveTx conditionally completes matching archive
-// progress after a complete live observation. Missing, paused, stale, blocked,
-// or terminal progress leaves the row untouched and never rejects the live
-// domain write.
+// progress after a complete live observation. Live sync advances the parent
+// revision before committing children, so a row still bound to a superseded
+// revision is rebound to the current one under a fresh generation — the live
+// replacement is authoritative for the whole dataset at that revision, and
+// the generation bump rejects any in-flight archive page from the old scan.
+// Missing, paused, blocked, or terminal progress leaves the row untouched and
+// never rejects the live domain write.
 func satisfyDatasetProgressFromLiveTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -483,23 +488,36 @@ func satisfyDatasetProgressFromLiveTx(
 	now time.Time,
 ) error {
 	nowText := formatDatasetProgressTime(now)
-	_, err := tx.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_dataset_progress
-		SET status = 'complete', next_cursor = NULL, last_input_cursor = NULL,
+		SET status = 'complete',
+			scan_generation = scan_generation + (CASE WHEN parent_revision = ? THEN 0 ELSE 1 END),
+			parent_revision = ?,
+			next_cursor = NULL, last_input_cursor = NULL,
 			next_retry_at = NULL, last_error_code = NULL, last_error_detail = NULL,
 			completed_at = ?, updated_at = ?
 		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = ?
-		  AND parent_revision = ?
+		  AND parent_revision <= ?
 		  AND status IN ('pending', 'running', 'failed')
 		  AND EXISTS (
 			SELECT 1 FROM middleman_archive_repos
 			WHERE repo_id = ? AND operator_state = 'active'
 		  )`,
-		nowText, nowText,
+		currentRevision, currentRevision, nowText, nowText,
 		key.RepoID, key.ItemType, key.ItemNumber, key.Dataset,
 		currentRevision, key.RepoID)
 	if err != nil {
 		return fmt.Errorf("satisfy dataset progress from live sync: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("satisfy dataset progress rows affected: %w", err)
+	}
+	if changed > 0 {
+		// The satisfied dataset may have been the last outstanding archive
+		// work; completing the initial archive here keeps live satisfaction a
+		// full substitute for the provider request it saved.
+		return completeArchiveInitialIfReadyTx(ctx, tx, key.RepoID, now)
 	}
 	return nil
 }
@@ -533,6 +551,115 @@ func reopenDatasetForRevisionTx(
 		return fmt.Errorf("reopen dataset progress for new parent revision: %w", err)
 	}
 	return nil
+}
+
+// reopenLookupForRevisionTx returns an item's lookup dataset to pending when a
+// parent observation superseded the revision it was bound to. With inclusive
+// set, an equal-revision complete lookup also reopens (prompt observations of
+// coarse provider timestamps).
+func reopenLookupForRevisionTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	itemType ArchiveItemType,
+	itemNumber int,
+	revision int64,
+	inclusive bool,
+) error {
+	comparison := "<"
+	if inclusive {
+		comparison = "<="
+	}
+	_, err := tx.ExecContext(ctx, fmt.Sprintf(`
+		UPDATE middleman_archive_dataset_progress
+		SET scan_generation = scan_generation + 1,
+			parent_revision = ?,
+			next_cursor = NULL, last_input_cursor = NULL,
+			page_count = 0, observed_count = 0,
+			status = 'pending', attempt_count = 0, next_retry_at = NULL,
+			last_error_code = NULL, last_error_detail = NULL,
+			started_at = NULL, completed_at = NULL, updated_at = ?
+		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = 'lookup'
+		  AND parent_revision %s ?
+		  AND status NOT IN ('unsupported', 'terminal', 'blocked')`, comparison),
+		revision, formatDatasetProgressTime(time.Now()),
+		repoID, itemType, itemNumber, revision)
+	if err != nil {
+		return fmt.Errorf("reopen lookup progress for parent revision %d: %w", revision, err)
+	}
+	return nil
+}
+
+// FailDatasetProgress records a transient or classified failure on one
+// dataset progress row: retry bookkeeping only, provider-owned content and
+// terminal statuses are untouched. A row that is no longer failable (satisfied
+// by live sync, terminal, blocked) is left alone.
+func (d *DB) FailDatasetProgress(
+	ctx context.Context,
+	key ArchiveDatasetProgressKey,
+	code ArchiveErrorCode,
+	detail string,
+	retryAt *time.Time,
+) error {
+	var retry any
+	if retryAt != nil {
+		retry = formatDatasetProgressTime(*retryAt)
+	}
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_archive_dataset_progress
+		SET status = 'failed', attempt_count = attempt_count + 1,
+			next_retry_at = ?, last_error_code = ?, last_error_detail = ?, updated_at = ?
+		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = ?
+		  AND status IN ('pending', 'running', 'failed')`,
+		retry, code, sanitizeArchiveErrorDetail(detail), formatDatasetProgressTime(time.Now()),
+		key.RepoID, key.ItemType, key.ItemNumber, key.Dataset)
+	if err != nil {
+		return fmt.Errorf("fail dataset progress: %w", err)
+	}
+	return nil
+}
+
+// GetDomainParent resolves the domain row ID and current snapshot revision of
+// one archive item's parent.
+func (d *DB) GetDomainParent(
+	ctx context.Context,
+	repoID int64,
+	itemType ArchiveItemType,
+	itemNumber int,
+) (int64, int64, error) {
+	table := ""
+	switch itemType {
+	case ArchiveItemTypeIssue:
+		table = "middleman_issues"
+	case ArchiveItemTypeMergeRequest:
+		table = "middleman_merge_requests"
+	default:
+		return 0, 0, fmt.Errorf("get domain parent: invalid item type %q", itemType)
+	}
+	var id, revision int64
+	err := d.ro.QueryRowContext(ctx, fmt.Sprintf(
+		`SELECT id, snapshot_revision FROM %s WHERE repo_id = ? AND number = ?`, table),
+		repoID, itemNumber,
+	).Scan(&id, &revision)
+	if err != nil {
+		return 0, 0, fmt.Errorf(
+			"get domain parent for repo %d %s %d: %w", repoID, itemType, itemNumber, err,
+		)
+	}
+	return id, revision, nil
+}
+
+// ReopenDatasetForRevision rebinds one dataset's progress to the current
+// parent revision without a wasted provider read: new generation, cleared
+// cursor, pending status. Already-ingested rows are retained.
+func (d *DB) ReopenDatasetForRevision(
+	ctx context.Context,
+	key ArchiveDatasetProgressKey,
+	revision int64,
+) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		return reopenDatasetForRevisionTx(ctx, tx, key, revision, time.Now())
+	})
 }
 
 // ReopenDatasetsForParent returns every superseded child dataset of one parent
@@ -699,6 +826,7 @@ func commitPresentParentLookupTx(
 		}
 		parentID, revision, _, err = commitArchiveMergeRequestParentTx(
 			ctx, tx, commit.RepoID, &item, ArchiveRefreshReasonInitial,
+			mergeRequestDetailPreserveDerived,
 		)
 	}
 	if err != nil {
@@ -722,11 +850,14 @@ func commitPresentParentLookupTx(
 	); err != nil {
 		return fmt.Errorf("bind lookup progress to parent revision: %w", err)
 	}
-	return reopenDatasetsForParentTx(
+	if err := reopenDatasetsForParentTx(
 		ctx, tx,
 		DomainParentRef{ItemType: commit.ItemType, ID: parentID},
 		commit.RepoID, commit.ItemNumber, revision,
-	)
+	); err != nil {
+		return err
+	}
+	return completeArchiveInitialIfReadyTx(ctx, tx, commit.RepoID, now)
 }
 
 func commitTerminalParentLookupTx(

@@ -68,6 +68,9 @@ func (d *DB) EnsureDiscoveryArchives(ctx context.Context, repoIDs []int64, now t
 			if err != nil {
 				return fmt.Errorf("ensure discovery archive for repo %d: %w", repoID, err)
 			}
+			if err := ensureArchiveRepoScansTx(ctx, tx, repoID, now); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -112,22 +115,39 @@ func (d *DB) StartFullArchives(ctx context.Context, repoIDs []int64, now time.Ti
 		args := archiveRepoIDArgs(repoIDs)
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
 			UPDATE middleman_archive_items
-			SET comments_status = CASE
-					WHEN comments_status IN ('pending', 'complete', 'failed') THEN 'pending'
-					ELSE comments_status END,
-				reviews_status = CASE
-					WHEN reviews_status IN ('pending', 'complete', 'failed') THEN 'pending'
-					ELSE reviews_status END,
-				inline_comments_status = CASE
-					WHEN inline_comments_status IN ('pending', 'complete', 'failed') THEN 'pending'
-					ELSE inline_comments_status END,
-				refresh_reason = 'initial'
+			SET refresh_reason = 'initial'
 			WHERE lifecycle_state = 'active'
 			  AND repo_id IN (%s)
 			  AND repo_id IN (
 				SELECT repo_id FROM middleman_archive_repos WHERE collection_mode = 'discovery'
 			  )`, sqlPlaceholders(len(repoIDs))), args...); err != nil {
 			return fmt.Errorf("queue promoted archive items: %w", err)
+		}
+		promoteArgs := append([]any{formatDatasetProgressTime(now)}, args...)
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
+			UPDATE middleman_archive_dataset_progress
+			SET scan_generation = scan_generation + (CASE WHEN status = 'complete' THEN 1 ELSE 0 END),
+				next_cursor = CASE WHEN status = 'complete' THEN NULL ELSE next_cursor END,
+				last_input_cursor = CASE WHEN status = 'complete' THEN NULL ELSE last_input_cursor END,
+				page_count = CASE WHEN status = 'complete' THEN 0 ELSE page_count END,
+				observed_count = CASE WHEN status = 'complete' THEN 0 ELSE observed_count END,
+				status = 'pending', attempt_count = 0, next_retry_at = NULL,
+				last_error_code = NULL, last_error_detail = NULL,
+				started_at = CASE WHEN status = 'complete' THEN NULL ELSE started_at END,
+				completed_at = NULL, updated_at = ?
+			WHERE status IN ('pending', 'complete', 'failed')
+			  AND repo_id IN (%s)
+			  AND repo_id IN (
+				SELECT repo_id FROM middleman_archive_repos WHERE collection_mode = 'discovery'
+			  )
+			  AND EXISTS (
+				SELECT 1 FROM middleman_archive_items ai
+				WHERE ai.repo_id = middleman_archive_dataset_progress.repo_id
+				  AND ai.item_type = middleman_archive_dataset_progress.item_type
+				  AND ai.item_number = middleman_archive_dataset_progress.item_number
+				  AND ai.lifecycle_state = 'active'
+			  )`, sqlPlaceholders(len(repoIDs))), promoteArgs...); err != nil {
+			return fmt.Errorf("queue promoted archive dataset progress: %w", err)
 		}
 		updateArgs := append([]any{now, now}, args...)
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
@@ -304,33 +324,46 @@ func (d *DB) RecordArchiveRepositoryFailure(
 }
 
 // BeginArchivePromptMaintenance establishes a fixed scan boundary once and
-// preserves it with both stream cursors across budget deferrals and restarts.
+// preserves it with both maintenance scan cursors across budget deferrals and
+// restarts. Starting a fresh boundary resets both maintenance scan rows to a
+// new generation.
 func (d *DB) BeginArchivePromptMaintenance(
 	ctx context.Context,
 	repoID int64,
 	since time.Time,
 	scanStart time.Time,
 ) (ArchiveRepoState, error) {
-	result, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_archive_repos
-		SET prompt_scan_started_at = COALESCE(prompt_scan_started_at, ?),
-			prompt_since = COALESCE(prompt_since, ?),
-			prompt_issue_cursor = CASE WHEN prompt_scan_started_at IS NULL THEN NULL ELSE prompt_issue_cursor END,
-			prompt_issue_complete = CASE WHEN prompt_scan_started_at IS NULL THEN 0 ELSE prompt_issue_complete END,
-			prompt_merge_request_cursor = CASE WHEN prompt_scan_started_at IS NULL THEN NULL ELSE prompt_merge_request_cursor END,
-			prompt_merge_request_complete = CASE WHEN prompt_scan_started_at IS NULL THEN 0 ELSE prompt_merge_request_complete END,
-			updated_at = MAX(updated_at, ?)
-		WHERE repo_id = ? AND collection_mode = 'full' AND operator_state = 'active'`,
-		scanStart.UTC(), since.UTC(), scanStart.UTC(), repoID)
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		var started sql.NullTime
+		err := tx.QueryRowContext(ctx, `
+			SELECT prompt_scan_started_at FROM middleman_archive_repos
+			WHERE repo_id = ? AND collection_mode = 'full' AND operator_state = 'active'`,
+			repoID).Scan(&started)
+		if errors.Is(err, sql.ErrNoRows) {
+			return &ArchiveRepoStateNotFoundError{RepoIDs: []int64{repoID}}
+		}
+		if err != nil {
+			return fmt.Errorf("begin archive prompt maintenance: %w", err)
+		}
+		if started.Valid {
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE middleman_archive_repos
+			SET prompt_scan_started_at = ?, prompt_since = ?, updated_at = MAX(updated_at, ?)
+			WHERE repo_id = ?`,
+			scanStart.UTC(), since.UTC(), scanStart.UTC(), repoID); err != nil {
+			return fmt.Errorf("begin archive prompt maintenance: %w", err)
+		}
+		for _, kind := range []ArchiveScanKind{ArchiveScanMaintenanceIssues, ArchiveScanMaintenanceMergeRequests} {
+			if err := resetArchiveScanTx(ctx, tx, repoID, kind, scanStart); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
-		return ArchiveRepoState{}, fmt.Errorf("begin archive prompt maintenance: %w", err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return ArchiveRepoState{}, fmt.Errorf("begin archive prompt maintenance rows affected: %w", err)
-	}
-	if rows != 1 {
-		return ArchiveRepoState{}, &ArchiveRepoStateNotFoundError{RepoIDs: []int64{repoID}}
+		return ArchiveRepoState{}, err
 	}
 	states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
 	if err != nil {
@@ -343,35 +376,48 @@ func (d *DB) BeginArchivePromptMaintenance(
 }
 
 // CompleteArchivePromptMaintenance advances the prompt watermark only after
-// both updated-item streams have reached explicit end-of-pagination.
+// both maintenance scans have reached explicit end-of-pagination, then resets
+// them for the next boundary.
 func (d *DB) CompleteArchivePromptMaintenance(
 	ctx context.Context,
 	repoID int64,
 	scanStart time.Time,
 	completedAt time.Time,
 ) error {
-	result, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_archive_repos
-		SET maintenance_watermark = ?, maintenance_succeeded_at = ?,
-			prompt_scan_started_at = NULL, prompt_since = NULL,
-			prompt_issue_cursor = NULL, prompt_issue_complete = 0,
-			prompt_merge_request_cursor = NULL, prompt_merge_request_complete = 0,
-			last_error_code = NULL, last_error_detail = NULL, next_retry_at = NULL,
-			updated_at = MAX(updated_at, ?)
-		WHERE repo_id = ? AND collection_mode = 'full' AND operator_state = 'active'
-		  AND prompt_issue_complete = 1 AND prompt_merge_request_complete = 1`,
-		scanStart.UTC(), completedAt.UTC(), completedAt.UTC(), repoID)
-	if err != nil {
-		return fmt.Errorf("complete archive prompt maintenance: %w", err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("complete archive prompt maintenance rows affected: %w", err)
-	}
-	if rows != 1 {
-		return &ArchiveRepoStateNotFoundError{RepoIDs: []int64{repoID}}
-	}
-	return nil
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `
+			UPDATE middleman_archive_repos
+			SET maintenance_watermark = ?, maintenance_succeeded_at = ?,
+				prompt_scan_started_at = NULL, prompt_since = NULL,
+				last_error_code = NULL, last_error_detail = NULL, next_retry_at = NULL,
+				updated_at = MAX(updated_at, ?)
+			WHERE repo_id = ? AND collection_mode = 'full' AND operator_state = 'active'
+			  AND (
+				SELECT status FROM middleman_archive_repo_scans
+				WHERE repo_id = ? AND scan = 'maintenance_issues'
+			  ) = 'complete'
+			  AND (
+				SELECT status FROM middleman_archive_repo_scans
+				WHERE repo_id = ? AND scan = 'maintenance_merge_requests'
+			  ) = 'complete'`,
+			scanStart.UTC(), completedAt.UTC(), completedAt.UTC(), repoID, repoID, repoID)
+		if err != nil {
+			return fmt.Errorf("complete archive prompt maintenance: %w", err)
+		}
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("complete archive prompt maintenance rows affected: %w", err)
+		}
+		if rows != 1 {
+			return &ArchiveRepoStateNotFoundError{RepoIDs: []int64{repoID}}
+		}
+		for _, kind := range []ArchiveScanKind{ArchiveScanMaintenanceIssues, ArchiveScanMaintenanceMergeRequests} {
+			if err := resetArchiveScanTx(ctx, tx, repoID, kind, completedAt); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // QueueArchivePromptByIdentity wakes prompt enumeration for a configured full
@@ -425,13 +471,9 @@ func listArchiveRepoStates(
 ) ([]ArchiveRepoState, error) {
 	query := `
 		SELECT repo_id, collection_mode, operator_state,
-			issue_cursor, issue_inventory_complete,
-			merge_request_cursor, merge_request_inventory_complete,
 			initial_started_at, initial_completed_at,
 			maintenance_watermark, maintenance_succeeded_at,
 			prompt_scan_started_at, prompt_since,
-			prompt_issue_cursor, prompt_issue_complete,
-			prompt_merge_request_cursor, prompt_merge_request_complete,
 			comments_coverage, reviews_coverage, inline_comments_coverage,
 			last_error_code, last_error_detail, next_retry_at,
 			created_at, updated_at
@@ -458,6 +500,9 @@ func listArchiveRepoStates(
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("list archive repo states: %w", err)
 	}
+	if err := loadArchiveScanStates(ctx, queryer, states); err != nil {
+		return nil, err
+	}
 	return states, nil
 }
 
@@ -473,30 +518,29 @@ type archiveQueryer interface {
 func scanArchiveRepoState(row archiveRowScanner, state *ArchiveRepoState) error {
 	return row.Scan(
 		&state.RepoID, &state.CollectionMode, &state.OperatorState,
-		&state.IssueCursor, &state.IssueInventoryComplete,
-		&state.MergeRequestCursor, &state.MergeRequestInventoryComplete,
 		&state.InitialStartedAt, &state.InitialCompletedAt,
 		&state.MaintenanceWatermark, &state.MaintenanceSucceededAt,
 		&state.PromptScanStartedAt, &state.PromptSince,
-		&state.PromptIssueCursor, &state.PromptIssueComplete,
-		&state.PromptMergeRequestCursor, &state.PromptMergeRequestComplete,
 		&state.CommentsCoverage, &state.ReviewsCoverage, &state.InlineCommentsCoverage,
 		&state.LastErrorCode, &state.LastErrorDetail, &state.NextRetryAt,
 		&state.CreatedAt, &state.UpdatedAt,
 	)
 }
 
-// ClaimArchiveItem returns the oldest due hydration item from the explicitly
-// eligible repositories. Claims are observational because the schema has no lease.
-func (d *DB) ClaimArchiveItem(ctx context.Context, opts ClaimArchiveItemOpts) (*ArchiveItemState, error) {
+// ClaimArchiveItem returns the oldest item with due dataset progress from the
+// explicitly eligible repositories, together with its due datasets in scan
+// order (lookup first). Claims are observational because the schema has no
+// lease; the compare-and-swap on every progress commit makes duplicate
+// scheduling safe.
+func (d *DB) ClaimArchiveItem(ctx context.Context, opts ClaimArchiveItemOpts) (*ArchiveItemWork, error) {
 	return d.claimArchiveItem(ctx, opts, nil)
 }
 
 func (d *DB) claimArchiveItem(
 	ctx context.Context,
 	opts ClaimArchiveItemOpts,
-	inspectCandidates func([]ArchiveItemState),
-) (*ArchiveItemState, error) {
+	inspectCandidates func([]ArchiveItemWork),
+) (*ArchiveItemWork, error) {
 	repoIDs := normalizedArchiveRepoIDs(opts.RepoIDs)
 	opts.Now = opts.Now.UTC()
 	if len(repoIDs) == 0 {
@@ -507,7 +551,7 @@ func (d *DB) claimArchiveItem(
 		return nil, fmt.Errorf("begin archive item claim snapshot: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	candidates := make([]ArchiveItemState, 0, len(repoIDs))
+	candidates := make([]ArchiveItemWork, 0, len(repoIDs))
 	for _, repoID := range repoIDs {
 		candidate, err := claimArchiveItemForRepo(ctx, tx, repoID, opts.Now)
 		if err != nil {
@@ -535,46 +579,79 @@ func (d *DB) claimArchiveItem(
 	return &oldest, nil
 }
 
+// dueArchiveDatasetsQuery selects claimable dataset progress rows in stable
+// item order: lookup before child datasets, children in scan order.
+const dueArchiveDatasetsQuery = `
+	SELECT ai.repo_id, ai.item_type, ai.item_number, ai.provider_created_at,
+		p.dataset, p.parent_revision, p.scan_generation, p.next_cursor,
+		p.status, p.attempt_count
+	FROM middleman_archive_dataset_progress p
+	JOIN middleman_archive_items ai
+	  ON ai.repo_id = p.repo_id AND ai.item_type = p.item_type AND ai.item_number = p.item_number
+	JOIN middleman_archive_repos ar ON ar.repo_id = p.repo_id
+	WHERE p.repo_id = ?
+	  AND ar.collection_mode = 'full'
+	  AND ar.operator_state = 'active'
+	  AND (ar.next_retry_at IS NULL OR ar.next_retry_at <= ?)
+	  AND ai.lifecycle_state = 'active'
+	  AND p.status IN ('pending', 'running', 'failed')
+	  AND (p.next_retry_at IS NULL OR p.next_retry_at <= ?)
+	ORDER BY ai.provider_created_at, ai.item_type, ai.item_number,
+	  CASE p.dataset
+		WHEN 'lookup' THEN 0
+		WHEN 'comments' THEN 1
+		WHEN 'reviews' THEN 2
+		ELSE 3
+	  END`
+
 func claimArchiveItemForRepo(
 	ctx context.Context,
 	queryer archiveQueryer,
 	repoID int64,
 	now time.Time,
-) (*ArchiveItemState, error) {
-	row := queryer.QueryRowContext(ctx, `
-		SELECT ai.repo_id, ai.item_type, ai.item_number, ai.provider_item_id,
-			ai.provider_created_at, ai.provider_updated_at,
-			ai.hydration_snapshot_updated_at, ai.lifecycle_state,
-			ai.refresh_reason,
-			ai.comments_status, ai.reviews_status, ai.inline_comments_status,
-			ai.mirrored_provider_updated_at, ai.attempt_count, ai.next_retry_at,
-			ai.last_error_code, ai.last_error_detail, ai.hydrated_at
-		FROM middleman_archive_items ai
-		JOIN middleman_archive_repos ar ON ar.repo_id = ai.repo_id
-		WHERE ai.repo_id = ?
-		  AND ar.collection_mode = 'full'
-		  AND ar.operator_state = 'active'
-		  AND (ar.next_retry_at IS NULL OR ar.next_retry_at <= ?)
-		  AND ai.lifecycle_state = 'active'
-		  AND (ai.next_retry_at IS NULL OR ai.next_retry_at <= ?)
-		  AND (
-			ai.comments_status IN ('pending', 'failed')
-			OR ai.reviews_status IN ('pending', 'failed')
-			OR ai.inline_comments_status IN ('pending', 'failed')
-		  )
-		ORDER BY ai.provider_created_at, ai.item_type, ai.item_number
-		LIMIT 1`, repoID, now, now)
-	var item ArchiveItemState
-	if err := scanArchiveItemState(row, &item); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
+) (*ArchiveItemWork, error) {
+	rows, err := queryer.QueryContext(
+		ctx, dueArchiveDatasetsQuery, repoID, now, formatDatasetProgressTime(now),
+	)
+	if err != nil {
 		return nil, fmt.Errorf("claim archive item: %w", err)
 	}
-	return &item, nil
+	defer rows.Close()
+	var work *ArchiveItemWork
+	for rows.Next() {
+		var repo int64
+		var itemType ArchiveItemType
+		var itemNumber int
+		var createdAt time.Time
+		var dataset ArchiveDatasetWork
+		var nextCursor sql.NullString
+		if err := rows.Scan(
+			&repo, &itemType, &itemNumber, &createdAt,
+			&dataset.Dataset, &dataset.ParentRevision, &dataset.ScanGeneration,
+			&nextCursor, &dataset.Status, &dataset.AttemptCount,
+		); err != nil {
+			return nil, fmt.Errorf("scan claimable archive dataset: %w", err)
+		}
+		if nextCursor.Valid {
+			dataset.NextCursor = &nextCursor.String
+		}
+		if work == nil {
+			work = &ArchiveItemWork{
+				RepoID: repo, ItemType: itemType, ItemNumber: itemNumber,
+				ProviderCreatedAt: createdAt.UTC(),
+			}
+		} else if work.ItemType != itemType || work.ItemNumber != itemNumber {
+			break
+		}
+		work.Datasets = append(work.Datasets, dataset)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("claim archive item: %w", err)
+	}
+	return work, nil
 }
 
-func archiveItemStableLess(left, right ArchiveItemState) bool {
+func archiveItemStableLess(left, right ArchiveItemWork) bool {
 	if !left.ProviderCreatedAt.Equal(right.ProviderCreatedAt) {
 		return left.ProviderCreatedAt.Before(right.ProviderCreatedAt)
 	}
@@ -585,6 +662,65 @@ func archiveItemStableLess(left, right ArchiveItemState) bool {
 		return left.ItemNumber < right.ItemNumber
 	}
 	return left.RepoID < right.RepoID
+}
+
+// GetDueDatasetWork returns the currently due datasets of one item in scan
+// order. Hydration re-derives due work after its lookup commits, because a
+// present lookup rebinds and reopens child datasets.
+func (d *DB) GetDueDatasetWork(
+	ctx context.Context,
+	repoID int64,
+	itemType ArchiveItemType,
+	itemNumber int,
+	now time.Time,
+) ([]ArchiveDatasetWork, error) {
+	return d.dueDatasetsForItem(ctx, repoID, itemType, itemNumber, now.UTC())
+}
+
+func (d *DB) dueDatasetsForItem(
+	ctx context.Context,
+	repoID int64,
+	itemType ArchiveItemType,
+	itemNumber int,
+	now time.Time,
+) ([]ArchiveDatasetWork, error) {
+	rows, err := d.ro.QueryContext(ctx, `
+		SELECT p.dataset, p.parent_revision, p.scan_generation, p.next_cursor,
+			p.status, p.attempt_count
+		FROM middleman_archive_dataset_progress p
+		WHERE p.repo_id = ? AND p.item_type = ? AND p.item_number = ?
+		  AND p.status IN ('pending', 'running', 'failed')
+		  AND (p.next_retry_at IS NULL OR p.next_retry_at <= ?)
+		ORDER BY CASE p.dataset
+			WHEN 'lookup' THEN 0
+			WHEN 'comments' THEN 1
+			WHEN 'reviews' THEN 2
+			ELSE 3
+		  END`,
+		repoID, itemType, itemNumber, formatDatasetProgressTime(now))
+	if err != nil {
+		return nil, fmt.Errorf("list due archive datasets: %w", err)
+	}
+	defer rows.Close()
+	var datasets []ArchiveDatasetWork
+	for rows.Next() {
+		var dataset ArchiveDatasetWork
+		var nextCursor sql.NullString
+		if err := rows.Scan(
+			&dataset.Dataset, &dataset.ParentRevision, &dataset.ScanGeneration,
+			&nextCursor, &dataset.Status, &dataset.AttemptCount,
+		); err != nil {
+			return nil, fmt.Errorf("scan due archive dataset: %w", err)
+		}
+		if nextCursor.Valid {
+			dataset.NextCursor = &nextCursor.String
+		}
+		datasets = append(datasets, dataset)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list due archive datasets: %w", err)
+	}
+	return datasets, nil
 }
 
 // ArchiveItemHydration marks every applicable dataset of one archive item
@@ -840,18 +976,6 @@ func (d *DB) FailArchiveItem(ctx context.Context, failure ArchiveItemFailure) er
 	return nil
 }
 
-func scanArchiveItemState(row archiveRowScanner, item *ArchiveItemState) error {
-	return row.Scan(
-		&item.RepoID, &item.ItemType, &item.ItemNumber, &item.ProviderItemID,
-		&item.ProviderCreatedAt, &item.ProviderUpdatedAt,
-		&item.HydrationSnapshotUpdatedAt, &item.LifecycleState,
-		&item.RefreshReason,
-		&item.CommentsStatus, &item.ReviewsStatus, &item.InlineCommentsStatus,
-		&item.MirroredProviderUpdatedAt, &item.AttemptCount, &item.NextRetryAt,
-		&item.LastErrorCode, &item.LastErrorDetail, &item.HydratedAt,
-	)
-}
-
 func normalizedArchiveDatasets(datasets []ArchiveDataset) (map[ArchiveDataset]bool, error) {
 	if len(datasets) == 0 {
 		return nil, fmt.Errorf("fail archive item: at least one dataset is required")
@@ -940,41 +1064,41 @@ func loadArchiveProgressCounts(
 	now time.Time,
 ) (map[int64]ArchiveProgressCounts, error) {
 	rows, err := queryer.QueryContext(ctx, fmt.Sprintf(`
-		SELECT repo_id,
+		SELECT ai.repo_id,
 			COUNT(*),
-			SUM(CASE WHEN lifecycle_state = 'removed_upstream'
+			SUM(CASE WHEN ai.lifecycle_state = 'removed_upstream'
 				OR (
-					lifecycle_state = 'active'
-					AND comments_status IN ('complete', 'not_applicable')
-					AND reviews_status IN ('complete', 'not_applicable')
-					AND inline_comments_status IN ('complete', 'not_applicable')
+					ai.lifecycle_state = 'active'
+					AND COALESCE(pp.open_count, 0) = 0
+					AND COALESCE(pp.blocked_count, 0) = 0
 				) THEN 1 ELSE 0 END),
-			SUM(CASE WHEN lifecycle_state = 'active' AND (
-				comments_status = 'pending' OR reviews_status = 'pending'
-				OR inline_comments_status = 'pending'
-			) THEN 1 ELSE 0 END),
-			SUM(CASE WHEN lifecycle_state = 'active' AND (
-				comments_status = 'failed' OR reviews_status = 'failed'
-				OR inline_comments_status = 'failed'
-			) THEN 1 ELSE 0 END),
-			SUM(CASE WHEN lifecycle_state = 'active' AND (
-				comments_status = 'unsupported'
-				OR reviews_status = 'unsupported'
-				OR inline_comments_status = 'unsupported'
-			)
-				THEN 1 ELSE 0 END),
-			SUM(CASE WHEN lifecycle_state = 'inaccessible' THEN 1 ELSE 0 END),
-			SUM(CASE WHEN lifecycle_state = 'active'
-				AND (next_retry_at IS NULL OR next_retry_at <= ?)
-				AND (
-					comments_status IN ('pending', 'failed')
-					OR reviews_status IN ('pending', 'failed')
-					OR inline_comments_status IN ('pending', 'failed')
-				) THEN 1 ELSE 0 END)
-		FROM middleman_archive_items
-		WHERE repo_id IN (%s)
-		GROUP BY repo_id`, sqlPlaceholders(len(repoIDs))),
-		append([]any{now}, archiveRepoIDArgs(repoIDs)...)...)
+			SUM(CASE WHEN ai.lifecycle_state = 'active'
+				AND COALESCE(pp.pending_count, 0) > 0 THEN 1 ELSE 0 END),
+			SUM(CASE WHEN ai.lifecycle_state = 'active'
+				AND COALESCE(pp.failed_count, 0) > 0 THEN 1 ELSE 0 END),
+			SUM(CASE WHEN ai.lifecycle_state = 'active'
+				AND COALESCE(pp.unsupported_count, 0) > 0 THEN 1 ELSE 0 END),
+			SUM(CASE WHEN ai.lifecycle_state = 'inaccessible' THEN 1 ELSE 0 END),
+			SUM(CASE WHEN ai.lifecycle_state = 'active'
+				AND COALESCE(pp.due_count, 0) > 0 THEN 1 ELSE 0 END),
+			SUM(CASE WHEN ai.lifecycle_state = 'active'
+				AND COALESCE(pp.blocked_count, 0) > 0 THEN 1 ELSE 0 END)
+		FROM middleman_archive_items ai
+		LEFT JOIN (
+			SELECT repo_id, item_type, item_number,
+				SUM(CASE WHEN status IN ('pending', 'running') THEN 1 ELSE 0 END) AS pending_count,
+				SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+				SUM(CASE WHEN status = 'unsupported' THEN 1 ELSE 0 END) AS unsupported_count,
+				SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) AS blocked_count,
+				SUM(CASE WHEN status IN ('pending', 'running', 'failed')
+					AND (next_retry_at IS NULL OR next_retry_at <= ?) THEN 1 ELSE 0 END) AS due_count,
+				SUM(CASE WHEN status IN ('pending', 'running', 'failed') THEN 1 ELSE 0 END) AS open_count
+			FROM middleman_archive_dataset_progress
+			GROUP BY repo_id, item_type, item_number
+		) pp ON pp.repo_id = ai.repo_id AND pp.item_type = ai.item_type AND pp.item_number = ai.item_number
+		WHERE ai.repo_id IN (%s)
+		GROUP BY ai.repo_id`, sqlPlaceholders(len(repoIDs))),
+		append([]any{formatDatasetProgressTime(now)}, archiveRepoIDArgs(repoIDs)...)...)
 	if err != nil {
 		return nil, fmt.Errorf("count archive progress: %w", err)
 	}
@@ -987,7 +1111,7 @@ func loadArchiveProgressCounts(
 			&repoID, &counts.ItemCount, &counts.CompleteItemCount,
 			&counts.PendingItemCount, &counts.FailedItemCount,
 			&counts.UnsupportedItemCount, &counts.InaccessibleItemCount,
-			&counts.DueItemCount,
+			&counts.DueItemCount, &counts.BlockedItemCount,
 		); err != nil {
 			return nil, fmt.Errorf("scan archive progress counts: %w", err)
 		}
@@ -1013,13 +1137,13 @@ func deriveArchiveProgress(
 		return progress
 	}
 
-	if !state.IssueInventoryComplete {
+	if !state.IssueInventory.Complete() && !state.IssueInventory.Blocked() {
 		progress.ActivePhases = append(progress.ActivePhases, ArchivePhaseIssueInventory)
 	}
-	if !state.MergeRequestInventoryComplete {
+	if !state.MergeRequestInventory.Complete() && !state.MergeRequestInventory.Blocked() {
 		progress.ActivePhases = append(progress.ActivePhases, ArchivePhaseMergeRequestInventory)
 	}
-	initialComplete := state.IssueInventoryComplete && state.MergeRequestInventoryComplete &&
+	initialComplete := state.IssueInventory.Complete() && state.MergeRequestInventory.Complete() &&
 		state.InitialCompletedAt != nil
 	promptActive := initialComplete && archiveMaintenanceOutstanding(state)
 	hasHydration := state.CollectionMode == ArchiveCollectionModeFull &&
@@ -1031,12 +1155,12 @@ func deriveArchiveProgress(
 		progress.ActivePhases = append(progress.ActivePhases, ArchivePhasePromptMaintenance)
 	}
 
-	if archiveRepoBlocked(state) {
+	if archiveRepoBlocked(state) || archiveScansBlocked(state) || counts.BlockedItemCount > 0 {
 		progress.Status = ArchiveStatusBlocked
 		return progress
 	}
 	budgetExhausted := archiveBudgetDeferred(state, now)
-	inventoryWork := !state.IssueInventoryComplete || !state.MergeRequestInventoryComplete
+	inventoryWork := !state.IssueInventory.Complete() || !state.MergeRequestInventory.Complete()
 	initialWork := !initialComplete || hasHydration
 	budgetBlockedWork := inventoryWork || promptActive ||
 		(hasHydration && counts.DueItemCount > 0)
@@ -1090,6 +1214,11 @@ func archiveHasPartialCoverage(state ArchiveRepoState, counts ArchiveProgressCou
 
 func archiveRepoHasError(state ArchiveRepoState, code ArchiveErrorCode) bool {
 	return state.LastErrorCode != nil && *state.LastErrorCode == string(code)
+}
+
+func archiveScansBlocked(state ArchiveRepoState) bool {
+	return state.IssueInventory.Blocked() || state.MergeRequestInventory.Blocked() ||
+		state.MaintenanceIssues.Blocked() || state.MaintenanceMergeRequests.Blocked()
 }
 
 func archiveRepoBlocked(state ArchiveRepoState) bool {
@@ -1168,19 +1297,38 @@ func requireArchiveRepoIDs(ctx context.Context, tx *sql.Tx, table string, repoID
 
 // CommitArchiveInventoryPage durably applies one inventory or prompt page in a
 // single transaction: parent snapshots with labels, archive work rows, and the
-// cursor advance, so a crash never splits a page.
+// scan-row cursor advance, so a crash never splits a page. The scan row is
+// compare-and-swapped on generation and input cursor; typed stale, replay, and
+// blocked outcomes never write parent rows.
 func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInventoryCommit) error {
 	if commit.RefreshReason == "" {
 		commit.RefreshReason = ArchiveRefreshReasonInitial
 	}
+	if commit.ScanGeneration == 0 {
+		commit.ScanGeneration = 1
+	}
 	if err := validateInventoryCommit(commit); err != nil {
 		return err
 	}
+	kind, err := archiveScanKindFor(commit.ItemType, commit.RefreshReason)
+	if err != nil {
+		return err
+	}
 	commit.Now = canonicalUTCTime(commit.Now)
-	return d.Tx(ctx, func(tx *sql.Tx) error {
+	var typedErr error
+	err = d.Tx(ctx, func(tx *sql.Tx) error {
+		typedErr = nil
 		active, err := archiveRepositoryActiveTx(ctx, tx, commit.RepoID)
 		if err != nil || !active {
 			return err
+		}
+		outcome, err := checkArchiveScanAdvanceTx(ctx, tx, commit, kind, commit.Now)
+		if err != nil {
+			return err
+		}
+		if outcome.typedErr != nil || outcome.replay {
+			typedErr = outcome.typedErr
+			return nil
 		}
 		for i := range commit.Issues {
 			if _, _, _, err := commitArchiveIssueParentTx(
@@ -1192,15 +1340,25 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 		for i := range commit.MergeRequests {
 			if _, _, _, err := commitArchiveMergeRequestParentTx(
 				ctx, tx, commit.RepoID, &commit.MergeRequests[i], commit.RefreshReason,
+				mergeRequestDetailPreserveProviderDetail,
 			); err != nil {
 				return err
 			}
 		}
-		if err := advanceArchiveInventoryTx(ctx, tx, commit); err != nil {
+		if !outcome.refreshOnly {
+			if err := advanceArchiveScanTx(ctx, tx, commit, kind, outcome.newPageCount, commit.Now); err != nil {
+				return err
+			}
+		}
+		if err := clearArchiveRepositoryFailureTx(ctx, tx, commit.RepoID, commit.Now); err != nil {
 			return err
 		}
 		return completeArchiveInitialIfReadyTx(ctx, tx, commit.RepoID, commit.Now)
 	})
+	if err != nil {
+		return err
+	}
+	return typedErr
 }
 
 // commitArchiveIssueParentTx is the issue mode of the single archive
@@ -1222,6 +1380,16 @@ func commitArchiveIssueParentTx(
 	if err != nil {
 		return 0, 0, false, err
 	}
+	if !accepted {
+		// The domain row holds a newer snapshot than this observation. The
+		// archive work row must track the winning provider timestamp so later
+		// maintenance passes do not treat already-superseded activity as new.
+		if err := tx.QueryRowContext(ctx, `
+			SELECT updated_at FROM middleman_issues WHERE id = ?`, issueID,
+		).Scan(&issue.UpdatedAt); err != nil {
+			return 0, 0, false, fmt.Errorf("read winning issue snapshot: %w", err)
+		}
+	}
 	if err := reactivateRemovedArchiveWorkTx(
 		ctx, tx, repoID, ArchiveItemTypeIssue, issue.Number,
 	); err != nil {
@@ -1230,25 +1398,51 @@ func commitArchiveIssueParentTx(
 	if err := upsertArchiveIssueWorkTx(ctx, tx, repoID, *item, refreshReason); err != nil {
 		return 0, 0, false, err
 	}
+	if err := seedArchiveDatasetProgressTx(ctx, tx, repoID, ArchiveItemTypeIssue, issue.Number,
+		map[ArchiveDataset]ArchiveDatasetProgressStatus{
+			ArchiveDatasetLookup:   ArchiveDatasetProgressPending,
+			ArchiveDatasetComments: progressStatusForSeed(item.CommentsStatus),
+		}); err != nil {
+		return 0, 0, false, err
+	}
+	if err := rebindArchiveDatasetProgressTx(
+		ctx, tx, DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID},
+		repoID, issue.Number, revision, refreshReason,
+	); err != nil {
+		return 0, 0, false, err
+	}
 	return issueID, revision, accepted, nil
 }
 
 // commitArchiveMergeRequestParentTx is the merge-request mode of the archive
 // parent-observation core shared by inventory pages and single-item lookups.
+// Inventory pages carry list-grade snapshots and preserve live-owned provider
+// detail; lookups carry detailed snapshots and apply provider diff detail
+// while keeping derived review/CI state.
 func commitArchiveMergeRequestParentTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	repoID int64,
 	item *ArchiveInventoryMergeRequest,
 	refreshReason ArchiveRefreshReason,
+	detail mergeRequestDetailMode,
 ) (int64, int64, bool, error) {
 	mr := &item.Snapshot.MergeRequest
 	mr.RepoID = repoID
 	mrID, revision, accepted, err := commitMergeRequestParentSnapshotTx(
-		ctx, tx, mr, item.Snapshot.Labels, mergeRequestDetailPreserveProviderDetail,
+		ctx, tx, mr, item.Snapshot.Labels, detail,
 	)
 	if err != nil {
 		return 0, 0, false, err
+	}
+	if !accepted {
+		// See commitArchiveIssueParentTx: rejected observations still bind the
+		// archive work row to the winning provider timestamp.
+		if err := tx.QueryRowContext(ctx, `
+			SELECT updated_at FROM middleman_merge_requests WHERE id = ?`, mrID,
+		).Scan(&mr.UpdatedAt); err != nil {
+			return 0, 0, false, fmt.Errorf("read winning merge-request snapshot: %w", err)
+		}
 	}
 	if err := reactivateRemovedArchiveWorkTx(
 		ctx, tx, repoID, ArchiveItemTypeMergeRequest, mr.Number,
@@ -1258,7 +1452,108 @@ func commitArchiveMergeRequestParentTx(
 	if err := upsertArchiveMergeRequestWorkTx(ctx, tx, repoID, *item, refreshReason); err != nil {
 		return 0, 0, false, err
 	}
+	if err := seedArchiveDatasetProgressTx(ctx, tx, repoID, ArchiveItemTypeMergeRequest, mr.Number,
+		map[ArchiveDataset]ArchiveDatasetProgressStatus{
+			ArchiveDatasetLookup:         ArchiveDatasetProgressPending,
+			ArchiveDatasetComments:       progressStatusForSeed(item.CommentsStatus),
+			ArchiveDatasetReviews:        progressStatusForSeed(item.ReviewsStatus),
+			ArchiveDatasetInlineComments: progressStatusForSeed(item.InlineCommentsStatus),
+		}); err != nil {
+		return 0, 0, false, err
+	}
+	if err := rebindArchiveDatasetProgressTx(
+		ctx, tx, DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: mrID},
+		repoID, mr.Number, revision, refreshReason,
+	); err != nil {
+		return 0, 0, false, err
+	}
 	return mrID, revision, accepted, nil
+}
+
+// progressStatusForSeed maps a capability-derived inventory dataset status to
+// the seeded progress-row status.
+func progressStatusForSeed(status ArchiveDatasetStatus) ArchiveDatasetProgressStatus {
+	if status == ArchiveDatasetStatusUnsupported {
+		return ArchiveDatasetProgressUnsupported
+	}
+	return ArchiveDatasetProgressPending
+}
+
+// seedArchiveDatasetProgressTx creates missing dataset progress rows for one
+// archive item. Existing rows are never modified here; rebinding to newer
+// parent revisions is a separate reopen step.
+func seedArchiveDatasetProgressTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	itemType ArchiveItemType,
+	itemNumber int,
+	datasets map[ArchiveDataset]ArchiveDatasetProgressStatus,
+) error {
+	nowText := formatDatasetProgressTime(time.Now())
+	for _, dataset := range []ArchiveDataset{
+		ArchiveDatasetLookup, ArchiveDatasetComments,
+		ArchiveDatasetReviews, ArchiveDatasetInlineComments,
+	} {
+		status, ok := datasets[dataset]
+		if !ok {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO middleman_archive_dataset_progress (
+				repo_id, item_type, item_number, dataset, status, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT(repo_id, item_type, item_number, dataset) DO NOTHING`,
+			repoID, itemType, itemNumber, dataset, status, nowText); err != nil {
+			return fmt.Errorf("seed archive dataset progress %s: %w", dataset, err)
+		}
+	}
+	return nil
+}
+
+// rebindArchiveDatasetProgressTx binds an item's dataset progress to the
+// current parent revision after a parent observation. Initial observations
+// reopen datasets superseded by a newer revision; prompt observations also
+// refresh equal-revision datasets once, because coarse provider timestamps
+// can hide activity behind an unchanged updated_at.
+func rebindArchiveDatasetProgressTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	parent DomainParentRef,
+	repoID int64,
+	itemNumber int,
+	revision int64,
+	refreshReason ArchiveRefreshReason,
+) error {
+	if err := reopenDatasetsForParentTx(ctx, tx, parent, repoID, itemNumber, revision); err != nil {
+		return err
+	}
+	if err := reopenLookupForRevisionTx(ctx, tx, repoID, parent.ItemType, itemNumber, revision, false); err != nil {
+		return err
+	}
+	if refreshReason != ArchiveRefreshReasonPrompt {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE middleman_archive_dataset_progress
+		SET scan_generation = scan_generation + 1,
+			parent_revision = ?,
+			next_cursor = NULL, last_input_cursor = NULL,
+			page_count = 0, observed_count = 0,
+			status = 'pending', attempt_count = 0, next_retry_at = NULL,
+			last_error_code = NULL, last_error_detail = NULL,
+			started_at = NULL, completed_at = NULL, updated_at = ?
+		WHERE repo_id = ? AND item_type = ? AND item_number = ?
+		  AND dataset IN ('comments', 'reviews', 'inline_comments')
+		  AND parent_revision = ? AND status = 'complete'`,
+		revision, formatDatasetProgressTime(time.Now()),
+		repoID, parent.ItemType, itemNumber, revision); err != nil {
+		return fmt.Errorf("refresh equal-revision datasets for prompt observation: %w", err)
+	}
+	if err := reopenLookupForRevisionTx(ctx, tx, repoID, parent.ItemType, itemNumber, revision, true); err != nil {
+		return err
+	}
+	return nil
 }
 
 func preserveMergeRequestDetailTx(
@@ -1553,17 +1848,21 @@ func completeArchiveInitialIfReadyTx(ctx context.Context, tx *sql.Tx, repoID int
 		SET initial_completed_at = COALESCE(initial_completed_at, ?), updated_at = MAX(updated_at, ?)
 		WHERE repo_id = ?
 		  AND collection_mode = 'full'
-		  AND issue_inventory_complete = 1
-		  AND merge_request_inventory_complete = 1
+		  AND (
+			SELECT status FROM middleman_archive_repo_scans
+			WHERE repo_id = ? AND scan = 'issue_inventory'
+		  ) = 'complete'
+		  AND (
+			SELECT status FROM middleman_archive_repo_scans
+			WHERE repo_id = ? AND scan = 'merge_request_inventory'
+		  ) = 'complete'
 		  AND NOT EXISTS (
-			SELECT 1 FROM middleman_archive_items
-			WHERE repo_id = ? AND lifecycle_state = 'active'
-			  AND (
-				comments_status IN ('pending', 'failed')
-				OR reviews_status IN ('pending', 'failed')
-				OR inline_comments_status IN ('pending', 'failed')
-			  )
-		  )`, now.UTC(), now.UTC(), repoID, repoID)
+			SELECT 1 FROM middleman_archive_dataset_progress p
+			JOIN middleman_archive_items ai
+			  ON ai.repo_id = p.repo_id AND ai.item_type = p.item_type AND ai.item_number = p.item_number
+			WHERE p.repo_id = ? AND ai.lifecycle_state = 'active'
+			  AND p.status IN ('pending', 'running', 'failed')
+		  )`, now.UTC(), now.UTC(), repoID, repoID, repoID, repoID)
 	if err != nil {
 		return fmt.Errorf("complete initial archive: %w", err)
 	}
@@ -2050,70 +2349,6 @@ func clearStagedArchiveDatasetsForNewSnapshotTx(
 		updatedAt.UTC(), updatedAt.UTC(), refreshReason)
 	if err != nil {
 		return fmt.Errorf("clear staged archive datasets for newer snapshot: %w", err)
-	}
-	return nil
-}
-
-func advanceArchiveInventoryTx(ctx context.Context, tx *sql.Tx, commit ArchiveInventoryCommit) error {
-	if commit.RefreshReason == ArchiveRefreshReasonPrompt {
-		return advanceArchivePromptInventoryTx(ctx, tx, commit)
-	}
-	var cursor any = commit.NextCursor
-	if commit.Exhausted {
-		cursor = nil
-	}
-	column := "issue"
-	if commit.ItemType == ArchiveItemTypeMergeRequest {
-		column = "merge_request"
-	}
-	result, err := tx.ExecContext(ctx, fmt.Sprintf(`
-		UPDATE middleman_archive_repos
-		SET %[1]s_cursor = CASE WHEN %[1]s_inventory_complete = 0 THEN ? ELSE %[1]s_cursor END,
-			%[1]s_inventory_complete = CASE
-				WHEN %[1]s_inventory_complete = 0 THEN ? ELSE %[1]s_inventory_complete END,
-			last_error_code = NULL, last_error_detail = NULL, next_retry_at = NULL,
-			updated_at = MAX(updated_at, ?)
-		WHERE repo_id = ?`, column),
-		cursor, commit.Exhausted, commit.Now, commit.RepoID)
-	if err != nil {
-		return fmt.Errorf("advance archive inventory: %w", err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("check archive inventory advance: %w", err)
-	}
-	if rows != 1 {
-		return fmt.Errorf("advance archive inventory: archive repository not found")
-	}
-	return nil
-}
-
-func advanceArchivePromptInventoryTx(ctx context.Context, tx *sql.Tx, commit ArchiveInventoryCommit) error {
-	var cursor any = commit.NextCursor
-	if commit.Exhausted {
-		cursor = nil
-	}
-	columnPrefix := "prompt_issue"
-	if commit.ItemType == ArchiveItemTypeMergeRequest {
-		columnPrefix = "prompt_merge_request"
-	}
-	result, err := tx.ExecContext(ctx, fmt.Sprintf(`
-		UPDATE middleman_archive_repos
-		SET %[1]s_cursor = ?, %[1]s_complete = ?,
-			last_error_code = NULL, last_error_detail = NULL, next_retry_at = NULL,
-			updated_at = MAX(updated_at, ?)
-		WHERE repo_id = ? AND collection_mode = 'full' AND operator_state = 'active'
-		  AND prompt_scan_started_at IS NOT NULL`, columnPrefix),
-		cursor, commit.Exhausted, commit.Now, commit.RepoID)
-	if err != nil {
-		return fmt.Errorf("advance archive prompt inventory: %w", err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("check archive prompt inventory advance: %w", err)
-	}
-	if rows != 1 {
-		return errors.New("advance archive prompt inventory: no active prompt scan")
 	}
 	return nil
 }

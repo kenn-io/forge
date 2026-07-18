@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -419,7 +418,7 @@ func TestAPIArchiveStartDrivesMovedMergeRequestDestinationScheduling(t *testing.
 	assert.Equal("removed_upstream", lifecycle)
 }
 
-func TestAPIArchiveHydrationResumesStagedPagesAfterServiceRestart(t *testing.T) {
+func TestAPIArchiveHydrationResumesDatasetCursorAfterServiceRestart(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -459,15 +458,16 @@ func TestAPIArchiveHydrationResumesStagedPagesAfterServiceRestart(t *testing.T) 
 	require.NotNil(repo)
 	var cursor string
 	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT next_cursor FROM middleman_archive_dataset_pages
-		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 7`, repo.ID).Scan(&cursor))
+		SELECT next_cursor FROM middleman_archive_dataset_progress
+		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 7
+			AND dataset = 'comments'`, repo.ID).Scan(&cursor))
 	assert.Equal("c2", cursor)
 
 	provider.mu.Lock()
 	provider.failSecondCommentPage = false
 	provider.mu.Unlock()
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_items SET next_retry_at = NULL WHERE repo_id = ?`, repo.ID)
+		UPDATE middleman_archive_dataset_progress SET next_retry_at = NULL WHERE repo_id = ?`, repo.ID)
 	require.NoError(err)
 	restarted, err := archive.NewService(database, registry, nil, archiveAPITestSource{refs: []platform.RepoRef{ref}}, nil, nil)
 	require.NoError(err)
@@ -527,26 +527,6 @@ func TestAPIArchiveRejectedHydrationKeepsNewerParentAndChildren(t *testing.T) {
 			repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
 			require.NoError(err)
 			require.NotNil(repo)
-			var revision int64
-			if itemType == db.ArchiveItemTypeIssue {
-				parent, parentErr := database.GetIssueByRepoIDAndNumber(t.Context(), repo.ID, 7)
-				require.NoError(parentErr)
-				require.NotNil(parent)
-				revision = parent.SnapshotRevision
-			} else {
-				parent, parentErr := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 7)
-				require.NoError(parentErr)
-				require.NotNil(parent)
-				revision = parent.SnapshotRevision
-			}
-			key := db.ArchiveDatasetKey{RepoID: repo.ID, ItemType: itemType, ItemNumber: 7,
-				Dataset: db.ArchiveDatasetComments, SnapshotUpdatedAt: stale, DomainRevision: revision}
-			_, err = database.CommitArchiveDatasetPage(t.Context(), db.ArchiveDatasetPage{
-				ArchiveDatasetKey: key, Exhausted: true, Payload: []byte(`[]`),
-				MaxPages: 1, MaxRecords: 1, MaxBytes: 16, Now: stale,
-			})
-			require.NoError(err)
-
 			var parentID int64
 			if itemType == db.ArchiveItemTypeIssue {
 				parentID, _, _, err = database.UpsertIssueSnapshotWithLabels(t.Context(), &db.Issue{
@@ -555,10 +535,18 @@ func TestAPIArchiveRejectedHydrationKeepsNewerParentAndChildren(t *testing.T) {
 					UpdatedAt: current, LastActivityAt: current,
 				})
 				require.NoError(err)
-				require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
-					IssueID: parentID, PlatformExternalID: "current-comment", EventType: "issue_comment",
-					Body: "keep current issue comment", CreatedAt: current, DedupeKey: "current-comment",
-				}}))
+				parent, parentErr := database.GetIssueByRepoIDAndNumber(t.Context(), repo.ID, 7)
+				require.NoError(parentErr)
+				require.NotNil(parent)
+				applied, commitErr := database.CommitIssueChildSnapshot(t.Context(), db.IssueChildSnapshot{
+					IssueID: parentID, ExpectedRevision: parent.SnapshotRevision,
+					Comments: []db.IssueEvent{{
+						IssueID: parentID, PlatformExternalID: "current-comment", EventType: "issue_comment",
+						Body: "keep current issue comment", CreatedAt: current, DedupeKey: "current-comment",
+					}},
+				})
+				require.NoError(commitErr)
+				require.True(applied)
 			} else {
 				parentID, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 					RepoID: repo.ID, PlatformID: 8, PlatformExternalID: "mr-7", Number: 7,
@@ -566,14 +554,23 @@ func TestAPIArchiveRejectedHydrationKeepsNewerParentAndChildren(t *testing.T) {
 					UpdatedAt: current, LastActivityAt: current,
 				})
 				require.NoError(err)
-				require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
-					MergeRequestID: parentID, PlatformExternalID: "current-comment", EventType: "issue_comment",
-					Body: "keep current mr comment", CreatedAt: current, DedupeKey: "current-comment",
-				}}))
+				parent, parentErr := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 7)
+				require.NoError(parentErr)
+				require.NotNil(parent)
+				applied, commitErr := database.CommitMergeRequestChildSnapshot(t.Context(), db.MergeRequestChildSnapshot{
+					MergeRequestID: parentID, ExpectedRevision: parent.SnapshotRevision,
+					Comments: []db.MREvent{{
+						MergeRequestID: parentID, PlatformExternalID: "current-comment", EventType: "issue_comment",
+						Body: "keep current mr comment", CreatedAt: current, DedupeKey: "current-comment",
+					}},
+					CommentsComplete: true, ReviewsComplete: true, InlineComplete: true,
+				})
+				require.NoError(commitErr)
+				require.True(applied)
 			}
 
 			require.NoError(service.RunEligible(t.Context()))
-			var title, body, status string
+			var title, body string
 			var providerUpdatedAt time.Time
 			parentTable, eventTable, foreignKey := "middleman_issues", "middleman_issue_events", "issue_id"
 			if itemType == db.ArchiveItemTypeMergeRequest {
@@ -584,16 +581,12 @@ func TestAPIArchiveRejectedHydrationKeepsNewerParentAndChildren(t *testing.T) {
 			require.NoError(database.ReadDB().QueryRowContext(t.Context(),
 				"SELECT body FROM "+eventTable+" WHERE "+foreignKey+" = ? AND dedupe_key = 'current-comment'", parentID).Scan(&body))
 			require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-				SELECT provider_updated_at, comments_status FROM middleman_archive_items
+				SELECT provider_updated_at FROM middleman_archive_items
 				WHERE repo_id = ? AND item_type = ? AND item_number = 7`, repo.ID, itemType,
-			).Scan(&providerUpdatedAt, &status))
+			).Scan(&providerUpdatedAt))
 			assert.Contains(title, "current")
 			assert.Contains(body, "keep current")
 			assert.Equal(current, providerUpdatedAt)
-			assert.Equal("pending", status)
-			stage, err := database.GetArchiveDatasetStage(t.Context(), key)
-			require.NoError(err)
-			assert.Zero(stage.PageCount)
 		})
 	}
 }
@@ -643,7 +636,9 @@ func TestAPIArchivePublicationRejectsParentAdvancedAfterAcceptance(t *testing.T)
 		Body: "keep post-acceptance comment", CreatedAt: current, DedupeKey: "current-comment",
 	}}))
 	close(provider.issueCommentRelease)
-	require.Error(<-runDone)
+	// The stale page commit loses the revision compare-and-swap and is
+	// discarded without an error; the dataset reopens for the new revision.
+	require.NoError(<-runDone)
 
 	verbose := true
 	reportResponse, err := client.HTTP.GetArchiveReportWithResponse(t.Context(), &generated.GetArchiveReportParams{
@@ -661,94 +656,6 @@ func TestAPIArchivePublicationRejectsParentAdvancedAfterAcceptance(t *testing.T)
 		}
 	}
 	assert.True(found)
-}
-
-func TestAPIArchiveFinalizationRejectsParentAdvancedAfterPublication(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := dbtest.Open(t)
-	ref := platform.RepoRef{
-		Platform: platform.KindGitHub, Host: "github.test", Owner: "owner",
-		Name: "finalize-race", RepoPath: "owner/finalize-race",
-	}
-	stagedAt := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
-	current := stagedAt
-	provider := &archiveAPITestProvider{issues: map[string]platform.Issue{
-		ref.RepoPath: {
-			Repo: ref, PlatformID: 12, PlatformExternalID: "issue-12", Number: 12,
-			Title: "archive parent", State: "closed", CreatedAt: stagedAt.Add(-time.Hour),
-			UpdatedAt: stagedAt, LastActivityAt: stagedAt,
-		},
-	}}
-	service, client := setupArchiveWorkflow(t, database, provider, ref)
-	repositories := []generated.ArchiveRepositoryRef{archiveGeneratedRef(ref)}
-	started, err := client.HTTP.StartArchivesWithResponse(t.Context(), generated.ArchiveMutationBody{
-		Repositories: &repositories,
-	})
-	require.NoError(err)
-	require.NotNil(started.JSON200)
-	require.NoError(service.RunEligible(t.Context()))
-	require.NoError(service.RunEligible(t.Context()))
-
-	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
-	require.NoError(err)
-	require.NotNil(repo)
-	_, err = database.WriteDB().ExecContext(t.Context(), `
-		CREATE TABLE archive_finalize_race (updated_at TIMESTAMP NOT NULL, title TEXT NOT NULL)`)
-	require.NoError(err)
-	_, err = database.WriteDB().ExecContext(t.Context(), `
-		INSERT INTO archive_finalize_race (updated_at, title) VALUES (?, ?)`, current, "newer normal parent")
-	require.NoError(err)
-	_, err = database.WriteDB().ExecContext(t.Context(), `
-		CREATE TRIGGER archive_finalize_race_trigger
-		AFTER UPDATE OF comments_status ON middleman_archive_items
-		WHEN NEW.repo_id = `+fmt.Sprint(repo.ID)+` AND NEW.item_type = 'issue'
-			AND NEW.item_number = 12 AND NEW.comments_status = 'complete'
-		BEGIN
-			UPDATE middleman_issues
-			SET updated_at = (SELECT updated_at FROM archive_finalize_race),
-				last_activity_at = (SELECT updated_at FROM archive_finalize_race),
-				title = (SELECT title FROM archive_finalize_race),
-				snapshot_revision = snapshot_revision + 1
-			WHERE repo_id = NEW.repo_id AND number = NEW.item_number;
-		END`)
-	require.NoError(err)
-
-	require.NoError(service.RunEligible(t.Context()))
-	status, err := client.HTTP.ListArchiveStatusWithResponse(
-		t.Context(), &generated.ListArchiveStatusParams{},
-	)
-	require.NoError(err)
-	require.NotNil(status.JSON200)
-	require.Len(*status.JSON200, 1)
-	assert.Equal(int64(1), (*status.JSON200)[0].Counts.PendingItems)
-	var title string
-	var mirroredAt *time.Time
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT i.title, a.mirrored_provider_updated_at
-		FROM middleman_issues i
-		JOIN middleman_archive_items a
-		  ON a.repo_id = i.repo_id AND a.item_number = i.number
-		WHERE i.repo_id = ? AND i.number = 12`, repo.ID,
-	).Scan(&title, &mirroredAt))
-	assert.Equal("newer normal parent", title)
-	assert.Nil(mirroredAt)
-	_, err = database.WriteDB().ExecContext(t.Context(), `DROP TRIGGER archive_finalize_race_trigger`)
-	require.NoError(err)
-
-	provider.issues[ref.RepoPath] = platform.Issue{
-		Repo: ref, PlatformID: 12, PlatformExternalID: "issue-12", Number: 12,
-		Title: "newer normal parent", State: "closed", CreatedAt: stagedAt.Add(-time.Hour),
-		UpdatedAt: current, LastActivityAt: current,
-	}
-	require.NoError(service.RunEligible(t.Context()))
-	status, err = client.HTTP.ListArchiveStatusWithResponse(
-		t.Context(), &generated.ListArchiveStatusParams{},
-	)
-	require.NoError(err)
-	require.NotNil(status.JSON200)
-	require.Len(*status.JSON200, 1)
-	assert.Zero((*status.JSON200)[0].Counts.PendingItems)
 }
 
 func TestAPIArchiveAuthenticationFailureDefersAllProviderWork(t *testing.T) {
@@ -1058,11 +965,10 @@ func TestAPIArchiveNewerMergeRequestRefreshesEverySupportedDataset(t *testing.T)
 		UpdatedAt: newer, LastActivityAt: newer,
 	}
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_items
-		SET provider_updated_at = ?, comments_status = 'complete',
-			reviews_status = 'pending', inline_comments_status = 'complete'
-		WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = 9`,
-		newer, repo.ID,
+		UPDATE middleman_archive_dataset_progress
+		SET status = 'pending', next_retry_at = NULL
+		WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = 9
+			AND dataset = 'lookup'`, repo.ID,
 	)
 	require.NoError(err)
 
@@ -1117,30 +1023,37 @@ func TestAPIArchiveAdvancedSnapshotFailureRetriesOnlyIncompleteDatasets(t *testi
 	}
 	provider.failMRReviewOnce.Store(true)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_items
-		SET provider_updated_at = ?, comments_status = 'pending',
-			reviews_status = 'complete', inline_comments_status = 'complete'
-		WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = 10`,
-		newer, repo.ID,
+		UPDATE middleman_archive_dataset_progress
+		SET status = 'pending', next_retry_at = NULL
+		WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = 10
+			AND dataset = 'lookup'`, repo.ID,
 	)
 	require.NoError(err)
 
 	require.Error(service.RunEligible(t.Context()))
 	var commentsStatus, reviewsStatus, inlineStatus string
-	var retryAt *time.Time
+	var retryAt *string
 	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT comments_status, reviews_status, inline_comments_status, next_retry_at
-		FROM middleman_archive_items
-		WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = 10`,
+		SELECT c.status, r.status, i.status, r.next_retry_at
+		FROM middleman_archive_dataset_progress c
+		JOIN middleman_archive_dataset_progress r
+			ON r.repo_id = c.repo_id AND r.item_type = c.item_type
+			AND r.item_number = c.item_number AND r.dataset = 'reviews'
+		JOIN middleman_archive_dataset_progress i
+			ON i.repo_id = c.repo_id AND i.item_type = c.item_type
+			AND i.item_number = c.item_number AND i.dataset = 'inline_comments'
+		WHERE c.repo_id = ? AND c.item_type = 'merge_request'
+			AND c.item_number = 10 AND c.dataset = 'comments'`,
 		repo.ID,
 	).Scan(&commentsStatus, &reviewsStatus, &inlineStatus, &retryAt))
 	assert.Equal("complete", commentsStatus)
 	assert.Equal("failed", reviewsStatus)
-	assert.Equal("failed", inlineStatus)
+	assert.Equal("pending", inlineStatus,
+		"a failed dataset must not fail siblings that never started")
 	require.NotNil(retryAt)
 
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_items SET next_retry_at = NULL
+		UPDATE middleman_archive_dataset_progress SET next_retry_at = NULL
 		WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = 10`, repo.ID)
 	require.NoError(err)
 	require.NoError(service.RunEligible(t.Context()))
@@ -1178,16 +1091,22 @@ type archiveAPITestProvider struct {
 func (p *archiveAPITestProvider) Platform() platform.Kind { return platform.KindGitHub }
 func (p *archiveAPITestProvider) Host() string            { return "github.test" }
 func (p *archiveAPITestProvider) Capabilities() platform.Capabilities {
-	return platform.Capabilities{Archive: platform.ArchiveCapabilities{
-		HistoricalIssues: true, HistoricalMergeRequests: true, OrdinaryComments: true,
-		SubmittedReviews: true, InlineReviewComments: true,
-	}}
+	return platform.Capabilities{
+		ReadIssues: true, ReadMergeRequests: true,
+		Archive: platform.ArchiveCapabilities{
+			HistoricalIssues: true, HistoricalMergeRequests: true, OrdinaryComments: true,
+			SubmittedReviews: true, InlineReviewComments: true,
+		},
+	}
 }
 func (p *archiveAPITestProvider) pageCall() {
 	p.calls.Add(1)
 }
-func (p *archiveAPITestProvider) ListHistoricalIssues(_ context.Context, ref platform.RepoRef, _ string) (platform.Page[platform.Issue], error) {
+func (p *archiveAPITestProvider) ListIssuesPage(_ context.Context, ref platform.RepoRef, query platform.ItemPageQuery) (platform.Page[platform.Issue], error) {
 	p.pageCall()
+	if query.UpdatedSince != nil {
+		return platform.Page[platform.Issue]{Exhausted: true}, nil
+	}
 	if p.issueInventoryErr != nil {
 		return platform.Page[platform.Issue]{}, p.issueInventoryErr
 	}
@@ -1196,22 +1115,17 @@ func (p *archiveAPITestProvider) ListHistoricalIssues(_ context.Context, ref pla
 	}
 	return platform.Page[platform.Issue]{Exhausted: true}, nil
 }
-func (p *archiveAPITestProvider) ListHistoricalMergeRequests(_ context.Context, ref platform.RepoRef, _ string) (platform.Page[platform.MergeRequest], error) {
+func (p *archiveAPITestProvider) ListMergeRequestsPage(_ context.Context, ref platform.RepoRef, query platform.ItemPageQuery) (platform.Page[platform.MergeRequest], error) {
 	p.pageCall()
+	if query.UpdatedSince != nil {
+		return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
+	}
 	if mr, ok := p.mergeRequests[ref.RepoPath]; ok {
 		return platform.Page[platform.MergeRequest]{Items: []platform.MergeRequest{mr}, Exhausted: true}, nil
 	}
 	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
 }
-func (p *archiveAPITestProvider) ListUpdatedIssues(context.Context, platform.RepoRef, time.Time, string) (platform.Page[platform.Issue], error) {
-	p.pageCall()
-	return platform.Page[platform.Issue]{Exhausted: true}, nil
-}
-func (p *archiveAPITestProvider) ListUpdatedMergeRequests(context.Context, platform.RepoRef, time.Time, string) (platform.Page[platform.MergeRequest], error) {
-	p.pageCall()
-	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
-}
-func (p *archiveAPITestProvider) GetArchiveIssue(_ context.Context, ref platform.RepoRef, _ int) (platform.ItemLookup[platform.Issue], error) {
+func (p *archiveAPITestProvider) LookupIssue(_ context.Context, ref platform.RepoRef, _ int) (platform.ItemLookup[platform.Issue], error) {
 	p.pageCall()
 	if destination, ok := p.movedDestinations[ref.RepoPath]; ok {
 		return platform.ItemLookup[platform.Issue]{
@@ -1223,7 +1137,7 @@ func (p *archiveAPITestProvider) GetArchiveIssue(_ context.Context, ref platform
 	}
 	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupRemoved}, nil
 }
-func (p *archiveAPITestProvider) GetArchiveMergeRequest(_ context.Context, ref platform.RepoRef, _ int) (platform.ItemLookup[platform.MergeRequest], error) {
+func (p *archiveAPITestProvider) LookupMergeRequest(_ context.Context, ref platform.RepoRef, _ int) (platform.ItemLookup[platform.MergeRequest], error) {
 	p.pageCall()
 	if destination, ok := p.movedMRDestinations[ref.RepoPath]; ok {
 		return platform.ItemLookup[platform.MergeRequest]{
@@ -1235,7 +1149,7 @@ func (p *archiveAPITestProvider) GetArchiveMergeRequest(_ context.Context, ref p
 	}
 	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupRemoved}, nil
 }
-func (p *archiveAPITestProvider) ListArchiveIssueComments(_ context.Context, ref platform.RepoRef, number int, cursor string) (platform.Page[platform.IssueEvent], error) {
+func (p *archiveAPITestProvider) ListIssueCommentsPage(_ context.Context, ref platform.RepoRef, number int, cursor string) (platform.Page[platform.IssueEvent], error) {
 	p.pageCall()
 	p.mu.Lock()
 	p.issueCommentCursors = append(p.issueCommentCursors, cursor)
@@ -1262,12 +1176,12 @@ func (p *archiveAPITestProvider) ListArchiveIssueComments(_ context.Context, ref
 	event.CreatedAt = event.CreatedAt.Add(time.Minute)
 	return platform.Page[platform.IssueEvent]{Items: []platform.IssueEvent{event}, Exhausted: true}, nil
 }
-func (p *archiveAPITestProvider) ListArchiveMergeRequestComments(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestEvent], error) {
+func (p *archiveAPITestProvider) ListMergeRequestCommentsPage(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestEvent], error) {
 	p.pageCall()
 	p.mrCommentCalls.Add(1)
 	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
 }
-func (p *archiveAPITestProvider) ListArchiveSubmittedReviews(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestEvent], error) {
+func (p *archiveAPITestProvider) ListSubmittedReviewsPage(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestEvent], error) {
 	p.pageCall()
 	p.mrReviewCalls.Add(1)
 	if p.failMRReviewOnce.CompareAndSwap(true, false) {
@@ -1275,7 +1189,7 @@ func (p *archiveAPITestProvider) ListArchiveSubmittedReviews(context.Context, pl
 	}
 	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
 }
-func (p *archiveAPITestProvider) ListArchiveReviewThreads(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestReviewThread], error) {
+func (p *archiveAPITestProvider) ListReviewThreadsPage(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestReviewThread], error) {
 	p.pageCall()
 	p.mrThreadCalls.Add(1)
 	return platform.Page[platform.MergeRequestReviewThread]{Exhausted: true}, nil

@@ -129,12 +129,15 @@ func insertArchiveReportRepo(t *testing.T, database *DB, identity RepoIdentity) 
 	require.NoError(t, database.EnsureDiscoveryArchives(t.Context(), []int64{repoID}, now))
 	_, err = database.WriteDB().ExecContext(t.Context(), `
 		UPDATE middleman_archive_repos
-		SET collection_mode = 'full', issue_inventory_complete = 1,
-			merge_request_inventory_complete = 1, initial_started_at = ?,
+		SET collection_mode = 'full', initial_started_at = ?,
 			initial_completed_at = ?, maintenance_watermark = ?,
 			maintenance_succeeded_at = ?, comments_coverage = 'supported',
 			reviews_coverage = 'supported', inline_comments_coverage = 'supported'
 		WHERE repo_id = ?`, now, now, now, now, repoID)
+	require.NoError(t, err)
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE middleman_archive_repo_scans SET status = 'complete'
+		WHERE repo_id = ? AND scan IN ('issue_inventory', 'merge_request_inventory')`, repoID)
 	require.NoError(t, err)
 	return repoID
 }

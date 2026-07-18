@@ -276,10 +276,11 @@ func (s *Service) statusResolved(ctx context.Context, repos []resolvedRepository
 }
 
 type resolvedRepository struct {
-	ID           int64
-	Ref          platform.RepoRef
-	Reader       platform.ArchiveReader
-	Capabilities platform.ArchiveCapabilities
+	ID            int64
+	Ref           platform.RepoRef
+	Issues        platform.IssuePageReader
+	MergeRequests platform.MergeRequestPageReader
+	Capabilities  platform.ArchiveCapabilities
 }
 
 func (s *Service) resolveRepositories(ctx context.Context, refs []platform.RepoRef, requireArchive bool) ([]resolvedRepository, error) {
@@ -301,7 +302,11 @@ func (s *Service) resolveRepositories(ctx context.Context, refs []platform.RepoR
 		if err != nil {
 			return nil, err
 		}
-		reader, err := s.registry.ArchiveReader(ref.Platform, ref.Host)
+		issues, err := s.registry.IssuePageReader(ref.Platform, ref.Host)
+		if err != nil && requireArchive {
+			return nil, err
+		}
+		mergeRequests, err := s.registry.MergeRequestPageReader(ref.Platform, ref.Host)
 		if err != nil && requireArchive {
 			return nil, err
 		}
@@ -317,7 +322,8 @@ func (s *Service) resolveRepositories(ctx context.Context, refs []platform.RepoR
 			}
 		}
 		resolved = append(resolved, resolvedRepository{
-			ID: repo.ID, Ref: ref, Reader: reader, Capabilities: provider.Capabilities().Archive,
+			ID: repo.ID, Ref: ref, Issues: issues, MergeRequests: mergeRequests,
+			Capabilities: provider.Capabilities().Archive,
 		})
 	}
 	sort.Slice(resolved, func(i, j int) bool {
@@ -365,6 +371,43 @@ func (s *Service) now() time.Time { return s.clock.Now().UTC() }
 type wallClock struct{}
 
 func (wallClock) Now() time.Time { return time.Now().UTC() }
+
+// pageScopedProviderFailure reports provider errors that indict only the
+// current scan or dataset rather than the repository: page-contract
+// violations from the validating wrapper (echoed cursor, malformed page,
+// wrong-parent item, malformed lookup outcome) and page-limit exhaustion.
+// Repository-wide contract failures — wrong repository identity, capability
+// misdeclaration, authentication — stay repository-scoped.
+func pageScopedProviderFailure(err error) bool {
+	if errors.Is(err, platform.ErrPageLimit) {
+		return true
+	}
+	var platformErr *platform.Error
+	if !errors.As(err, &platformErr) {
+		return false
+	}
+	if platformErr.Code != platform.ErrCodeProviderContract {
+		return false
+	}
+	switch platformErr.Field {
+	case "archive_page", "archive_page_cursor",
+		"item_number", "event_number", "thread_number",
+		"archive_lookup_outcome", "archive_lookup_destination", "lookup_destination":
+		return true
+	default:
+		return false
+	}
+}
+
+// scanBlockCode names the durable block reason for a page-scoped failure.
+// Page-limit exhaustion is the deliberately ambiguous page_bound; everything
+// else detected on the page itself is an invalid-cursor style contract break.
+func scanBlockCode(err error) string {
+	if errors.Is(err, platform.ErrPageLimit) {
+		return "page_bound"
+	}
+	return "invalid_cursor"
+}
 
 type defaultRetryClassifier struct{}
 

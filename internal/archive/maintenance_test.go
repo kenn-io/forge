@@ -52,19 +52,21 @@ func TestPromptMaintenanceCommitsPagesBeforeAdvancingScanWatermark(t *testing.T)
 	assert.Equal([]time.Time{now, now}, provider.updatedIssueSince)
 	assert.Equal([]time.Time{now}, provider.updatedMRSince)
 
-	var advancedStatus, boundaryComments, boundaryReviews, boundaryInline string
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT comments_status FROM middleman_archive_items
-		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 1`, repoID).Scan(&advancedStatus))
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT comments_status, reviews_status, inline_comments_status
-		FROM middleman_archive_items
-		WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = 2`, repoID).
-		Scan(&boundaryComments, &boundaryReviews, &boundaryInline))
-	assert.Equal("pending", advancedStatus)
-	assert.Equal("pending", boundaryComments, "inclusive boundary rows must refresh once for coarse provider timestamps")
-	assert.Equal("pending", boundaryReviews)
-	assert.Equal("pending", boundaryInline)
+	advanced2, err := database.GetDatasetProgress(
+		t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetComments,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressPending, advanced2.Status)
+	for _, dataset := range []db.ArchiveDataset{
+		db.ArchiveDatasetComments, db.ArchiveDatasetReviews, db.ArchiveDatasetInlineComments,
+	} {
+		boundary, err := database.GetDatasetProgress(
+			t.Context(), repoID, db.ArchiveItemTypeMergeRequest, 2, dataset,
+		)
+		require.NoError(err)
+		assert.Equal(db.ArchiveDatasetProgressPending, boundary.Status,
+			"inclusive boundary rows must refresh for coarse provider timestamps: %s", dataset)
+	}
 }
 
 func TestPromptMaintenanceFailureRetainsPriorWatermarkAndCommittedPages(t *testing.T) {
@@ -117,8 +119,8 @@ func TestPromptMaintenanceResumesDurableCursorAfterBudgetDeferral(t *testing.T) 
 	require.NoError(service.RunEligible(t.Context()))
 	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
-	require.NotNil(states[0].PromptIssueCursor)
-	assert.Equal("u2", *states[0].PromptIssueCursor)
+	require.NotNil(states[0].MaintenanceIssues.NextCursor)
+	assert.Equal("u2", *states[0].MaintenanceIssues.NextCursor)
 	require.NotNil(states[0].PromptScanStartedAt)
 	assert.Nil(states[0].MaintenanceSucceededAt)
 
@@ -130,7 +132,7 @@ func TestPromptMaintenanceResumesDurableCursorAfterBudgetDeferral(t *testing.T) 
 	states, err = database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
 	assert.Nil(states[0].PromptScanStartedAt)
-	assert.Nil(states[0].PromptIssueCursor)
+	assert.Nil(states[0].MaintenanceIssues.NextCursor)
 	require.NotNil(states[0].MaintenanceSucceededAt)
 }
 

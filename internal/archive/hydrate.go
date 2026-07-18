@@ -2,219 +2,263 @@ package archive
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/platform"
 )
 
-const (
-	maxArchiveDatasetPages   = 10_000
-	maxArchiveDatasetRecords = 50_000
-	maxArchiveDatasetBytes   = 16 << 20
-)
-
-func (s *Service) hydrateItem(ctx context.Context, repo resolvedRepository, item db.ArchiveItemState) (bool, error) {
-	var err error
-	switch item.ItemType {
-	case db.ArchiveItemTypeIssue:
-		err = s.hydrateIssue(ctx, repo, &item)
-	case db.ArchiveItemTypeMergeRequest:
-		err = s.hydrateMergeRequest(ctx, repo, &item)
-	default:
-		err = fmt.Errorf("hydrate archive item: invalid item type %q", item.ItemType)
-	}
-	if err != nil {
-		if errors.Is(err, errAdmissionDeferred) {
-			return false, err
+// hydrateItem drains one item's due datasets. The lookup dataset runs first:
+// a present lookup refreshes the parent and rebinds child dataset progress, a
+// terminal outcome ends the item's work. Child datasets then scan page by
+// page through the canonical provider readers, re-acquiring admission and
+// committing each normalized page with its durable cursor advance.
+func (s *Service) hydrateItem(ctx context.Context, repo resolvedRepository, work db.ArchiveItemWork) error {
+	if len(work.Datasets) > 0 && work.Datasets[0].Dataset == db.ArchiveDatasetLookup {
+		terminal, err := s.hydrateLookup(ctx, repo, work, work.Datasets[0])
+		if err != nil || terminal {
+			return err
 		}
-		var terminal *archiveTerminalLookup
-		if errors.As(err, &terminal) {
-			return s.commitTerminalLookup(ctx, item, terminal)
+		// A present lookup rebinds and reopens child datasets, so the claimed
+		// dataset list is stale by design. Re-derive due work for the item.
+		datasets, err := s.db.GetDueDatasetWork(ctx, work.RepoID, work.ItemType, work.ItemNumber, s.now())
+		if err != nil {
+			return err
 		}
-		return true, s.recordHydrationFailure(ctx, item, err)
+		work.Datasets = datasets
 	}
-	return true, nil
+	for _, dataset := range work.Datasets {
+		if dataset.Dataset == db.ArchiveDatasetLookup {
+			continue
+		}
+		if err := s.scanDataset(ctx, repo, work, dataset); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-type archiveTerminalLookup struct {
-	outcome     platform.LookupOutcome
-	destination *platform.RepoRef
+func archiveLookupCost(itemType db.ArchiveItemType) int {
+	// A merge-request lookup may spend up to three logical requests: the item
+	// fetch, the repository probe on lookup classification, and the
+	// best-effort fork head clone-URL enrichment inside the canonical lookup
+	// (GitLab). An issue lookup spends two: the fetch and the repository
+	// probe. The declared cost must cover the worst case so an admitted
+	// lookup can never overspend the protected live floor.
+	if itemType == db.ArchiveItemTypeMergeRequest {
+		return archiveAttemptCost(3)
+	}
+	return archiveAttemptCost(2)
 }
 
-func (e *archiveTerminalLookup) Error() string {
-	return fmt.Sprintf("archive item lookup returned %s", e.outcome)
-}
-
-// commitTerminalLookup records a removed, moved, or inaccessible provider
-// outcome on the archive work row. Archived domain content is retained: a
-// deletion upstream stops future refreshes but never erases local history.
-func (s *Service) commitTerminalLookup(
+// hydrateLookup runs the lookup dataset: one canonical provider lookup whose
+// outcome commits through the shared parent-observation core. A terminal
+// outcome (removed, moved, inaccessible) marks the item terminal — archived
+// domain content is retained — and a moved destination queues a prompt scan.
+func (s *Service) hydrateLookup(
 	ctx context.Context,
-	item db.ArchiveItemState,
-	terminal *archiveTerminalLookup,
+	repo resolvedRepository,
+	work db.ArchiveItemWork,
+	dataset db.ArchiveDatasetWork,
 ) (bool, error) {
-	lifecycle := db.ArchiveLifecycleStateInaccessible
-	if terminal.outcome == platform.LookupRemoved || terminal.outcome == platform.LookupMoved {
-		lifecycle = db.ArchiveLifecycleStateRemovedUpstream
-	}
-	if err := s.db.MarkArchiveItemTerminal(ctx, db.ArchiveItemTerminal{
-		RepoID: item.RepoID, ItemType: item.ItemType, ItemNumber: item.ItemNumber,
-		Lifecycle: lifecycle, At: s.now(),
-	}); err != nil {
-		return true, s.recordHydrationFailure(ctx, item, err)
-	}
-	if terminal.outcome == platform.LookupMoved && terminal.destination != nil {
-		destination := platform.DBRepoIdentity(*terminal.destination)
-		if err := s.db.QueueArchivePromptByIdentity(ctx, destination, s.now()); err != nil {
-			return true, err
-		}
-	}
-	return true, nil
-}
-
-func (s *Service) hydrateIssue(ctx context.Context, repo resolvedRepository, item *db.ArchiveItemState) error {
-	requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(2))
+	requestCtx, release, err := s.admit(ctx, repo, archiveLookupCost(work.ItemType))
 	if err != nil {
-		return err
+		return false, err
 	}
-	lookup, err := repo.Reader.GetArchiveIssue(requestCtx, repo.Ref, item.ItemNumber)
+	commit := db.ParentLookupCommit{
+		RepoID: work.RepoID, ItemType: work.ItemType, ItemNumber: work.ItemNumber,
+		ScanGeneration: dataset.ScanGeneration, Now: s.now(),
+	}
+	var lookupErr error
+	switch work.ItemType {
+	case db.ArchiveItemTypeIssue:
+		var lookup platform.ItemLookup[platform.Issue]
+		lookup, lookupErr = repo.Issues.LookupIssue(requestCtx, repo.Ref, work.ItemNumber)
+		if lookupErr == nil {
+			commit.Outcome = db.ArchiveLookupOutcome(lookup.Outcome)
+			if lookup.Outcome == platform.LookupPresent {
+				commit.Issue = platform.DBIssue(work.RepoID, lookup.Item)
+			}
+			if lookup.Destination != nil {
+				destination := platform.DBRepoIdentity(*lookup.Destination)
+				commit.Destination = &destination
+			}
+		}
+	case db.ArchiveItemTypeMergeRequest:
+		var lookup platform.ItemLookup[platform.MergeRequest]
+		lookup, lookupErr = repo.MergeRequests.LookupMergeRequest(requestCtx, repo.Ref, work.ItemNumber)
+		if lookupErr == nil {
+			commit.Outcome = db.ArchiveLookupOutcome(lookup.Outcome)
+			if lookup.Outcome == platform.LookupPresent {
+				commit.MergeRequest = platform.DBMergeRequest(work.RepoID, lookup.Item)
+			}
+			if lookup.Destination != nil {
+				destination := platform.DBRepoIdentity(*lookup.Destination)
+				commit.Destination = &destination
+			}
+		}
+	default:
+		release()
+		return false, fmt.Errorf("hydrate archive item: invalid item type %q", work.ItemType)
+	}
 	preempted := archivePreempted(ctx, requestCtx)
 	release()
-	if err != nil {
+	if lookupErr != nil {
 		if preempted {
-			return errAdmissionDeferred
+			return false, errAdmissionDeferred
 		}
-		return err
+		return false, s.recordDatasetFailure(ctx, repo, work, db.ArchiveDatasetLookup, dataset.AttemptCount, lookupErr)
 	}
-	if lookup.Outcome != platform.LookupPresent {
-		return &archiveTerminalLookup{
-			outcome: lookup.Outcome, destination: lookup.Destination,
-		}
+	err = s.db.CommitParentLookup(ctx, commit)
+	var stale *db.StaleDatasetProgressError
+	if errors.As(err, &stale) {
+		// A forced reset superseded this lookup between claim and commit.
+		// Nothing was written; the next claim rescans from durable state.
+		return true, nil
 	}
-	parent := platform.DBIssue(repo.ID, lookup.Item)
-	status := db.ArchiveDatasetStatusUnsupported
-	issueID, revision, accepted, err := s.db.UpsertArchiveIssueSnapshot(ctx, parent)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if !accepted {
-		return nil
-	}
-	if archiveSnapshotAdvanced(*item, parent.UpdatedAt) {
-		item.CommentsStatus = db.ArchiveDatasetStatusPending
-	}
-	item.ProviderUpdatedAt = parent.UpdatedAt
-	if repo.Capabilities.OrdinaryComments {
-		if archiveDatasetMutable(item.CommentsStatus) {
-			if err := s.fetchIssueComments(ctx, repo, *item, issueID, revision); err != nil {
-				return err
-			}
-		}
-		status = db.ArchiveDatasetStatusComplete
-	}
-	return s.db.MarkArchiveItemHydrated(ctx, db.ArchiveItemHydration{
-		RepoID: repo.ID, ItemType: item.ItemType, ItemNumber: item.ItemNumber,
-		DomainRevision:    revision,
-		CommentsStatus:    status,
-		ReviewsStatus:     db.ArchiveDatasetStatusNotApplicable,
-		InlineStatus:      db.ArchiveDatasetStatusNotApplicable,
-		MirroredUpdatedAt: parent.UpdatedAt, HydratedAt: s.now(),
-	})
+	return commit.Outcome != db.ArchiveLookupPresent, nil
 }
 
-func (s *Service) hydrateMergeRequest(ctx context.Context, repo resolvedRepository, item *db.ArchiveItemState) error {
-	// A merge-request lookup may spend up to three logical requests: the
-	// item fetch, the repository probe on lookup classification, and the
-	// best-effort fork head clone-URL enrichment inside the canonical
-	// lookup (GitLab). The declared cost must cover the worst case so an
-	// admitted lookup can never overspend the protected live floor.
-	requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(3))
+// scanDataset drains one child dataset page by page from its durable cursor.
+// Every page re-acquires admission, holds it only for the provider read, and
+// commits rows and cursor atomically.
+func (s *Service) scanDataset(
+	ctx context.Context,
+	repo resolvedRepository,
+	work db.ArchiveItemWork,
+	dataset db.ArchiveDatasetWork,
+) error {
+	parentID, currentRevision, err := s.db.GetDomainParent(ctx, work.RepoID, work.ItemType, work.ItemNumber)
 	if err != nil {
 		return err
 	}
-	lookup, err := repo.Reader.GetArchiveMergeRequest(requestCtx, repo.Ref, item.ItemNumber)
-	preempted := archivePreempted(ctx, requestCtx)
-	release()
-	if err != nil {
-		if preempted {
-			return errAdmissionDeferred
+	key := db.ArchiveDatasetProgressKey{
+		RepoID: work.RepoID, ItemType: work.ItemType,
+		ItemNumber: work.ItemNumber, Dataset: dataset.Dataset,
+	}
+	if currentRevision != dataset.ParentRevision {
+		// The parent advanced since this dataset was bound. Rebinding before
+		// the first read avoids spending a provider request on a page commit
+		// that would be rejected as stale.
+		if err := s.db.ReopenDatasetForRevision(ctx, key, currentRevision); err != nil {
+			return err
 		}
-		return err
-	}
-	if lookup.Outcome != platform.LookupPresent {
-		return &archiveTerminalLookup{
-			outcome: lookup.Outcome, destination: lookup.Destination,
+		progress, err := s.db.GetDatasetProgress(ctx, key.RepoID, key.ItemType, key.ItemNumber, key.Dataset)
+		if err != nil {
+			return err
 		}
-	}
-	parent := platform.DBMergeRequest(repo.ID, lookup.Item)
-	statuses := db.ArchiveDatasetStatuses{
-		Comments:       datasetTerminalStatus(repo.Capabilities.OrdinaryComments),
-		Reviews:        datasetTerminalStatus(repo.Capabilities.SubmittedReviews),
-		InlineComments: datasetTerminalStatus(repo.Capabilities.InlineReviewComments),
-	}
-	mrID, revision, accepted, err := s.db.UpsertArchiveMergeRequestSnapshot(ctx, parent)
-	if err != nil {
-		return err
-	}
-	if !accepted {
-		return nil
-	}
-	if archiveSnapshotAdvanced(*item, parent.UpdatedAt) {
-		if repo.Capabilities.OrdinaryComments {
-			item.CommentsStatus = db.ArchiveDatasetStatusPending
+		if progress.Status != db.ArchiveDatasetProgressPending &&
+			progress.Status != db.ArchiveDatasetProgressRunning &&
+			progress.Status != db.ArchiveDatasetProgressFailed {
+			return nil
 		}
-		if repo.Capabilities.SubmittedReviews {
-			item.ReviewsStatus = db.ArchiveDatasetStatusPending
-		}
-		if repo.Capabilities.InlineReviewComments {
-			item.InlineCommentsStatus = db.ArchiveDatasetStatusPending
-		}
+		dataset.ParentRevision = progress.ParentRevision
+		dataset.ScanGeneration = progress.ScanGeneration
+		dataset.NextCursor = progress.NextCursor
 	}
-	item.ProviderUpdatedAt = parent.UpdatedAt
-	if repo.Capabilities.OrdinaryComments {
-		if archiveDatasetMutable(item.CommentsStatus) {
-			if err := s.fetchMergeRequestEvents(ctx, repo, *item, mrID, revision, db.ArchiveDatasetComments, "issue_comment", repo.Reader.ListArchiveMergeRequestComments); err != nil {
-				return err
+	cursor := dataset.Cursor()
+	for {
+		requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(1))
+		if err != nil {
+			return err
+		}
+		rows, next, exhausted, readErr := s.readDatasetPage(requestCtx, repo, work, dataset.Dataset, parentID, cursor)
+		preempted := archivePreempted(ctx, requestCtx)
+		release()
+		if readErr != nil {
+			if preempted {
+				return errAdmissionDeferred
 			}
-		}
-	}
-	if repo.Capabilities.SubmittedReviews {
-		if archiveDatasetMutable(item.ReviewsStatus) {
-			if err := s.fetchMergeRequestEvents(ctx, repo, *item, mrID, revision, db.ArchiveDatasetReviews, "review", repo.Reader.ListArchiveSubmittedReviews); err != nil {
-				return err
+			if pageScopedProviderFailure(readErr) {
+				return s.blockDataset(ctx, key, readErr)
 			}
+			return s.recordDatasetFailure(ctx, repo, work, dataset.Dataset, dataset.AttemptCount, readErr)
 		}
-	}
-	if repo.Capabilities.InlineReviewComments {
-		if archiveDatasetMutable(item.InlineCommentsStatus) {
-			if err := s.fetchReviewThreads(ctx, repo, *item, mrID, revision); err != nil {
-				return err
-			}
+		err = s.db.CommitDatasetPage(ctx, db.DatasetPageCommit{
+			Parent:           db.DomainParentRef{ItemType: work.ItemType, ID: parentID},
+			ExpectedRevision: dataset.ParentRevision,
+			Dataset:          dataset.Dataset,
+			ScanGeneration:   dataset.ScanGeneration,
+			Rows:             rows,
+			Final:            exhausted,
+			Progress: &db.DatasetProgressAdvance{
+				RepoID: work.RepoID, ItemNumber: work.ItemNumber,
+				InputCursor: cursor, NextCursor: next,
+			},
+		})
+		var stale *db.StaleDatasetProgressError
+		if errors.As(err, &stale) {
+			// The parent advanced mid-scan; the commit reopened the dataset
+			// for the new revision. The next claim rescans from page one of
+			// the fresh generation.
+			return nil
 		}
+		var blocked *db.ScanBlockedError
+		if errors.As(err, &blocked) {
+			// Echoed cursor or page bound: durably recorded, no retry here.
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if exhausted {
+			return nil
+		}
+		cursor = next
 	}
-	return s.db.MarkArchiveItemHydrated(ctx, db.ArchiveItemHydration{
-		RepoID: repo.ID, ItemType: item.ItemType, ItemNumber: item.ItemNumber,
-		DomainRevision: revision,
-		CommentsStatus: statuses.Comments, ReviewsStatus: statuses.Reviews,
-		InlineStatus:      statuses.InlineComments,
-		MirroredUpdatedAt: parent.UpdatedAt, HydratedAt: s.now(),
-	})
 }
 
-func archiveSnapshotAdvanced(item db.ArchiveItemState, updatedAt time.Time) bool {
-	return item.HydrationSnapshotUpdatedAt == nil ||
-		updatedAt.After(*item.HydrationSnapshotUpdatedAt)
-}
-
-func datasetTerminalStatus(supported bool) db.ArchiveDatasetStatus {
-	if supported {
-		return db.ArchiveDatasetStatusComplete
+// readDatasetPage executes one canonical provider page read and converts the
+// normalized values into DB rows scoped to the parent.
+func (s *Service) readDatasetPage(
+	ctx context.Context,
+	repo resolvedRepository,
+	work db.ArchiveItemWork,
+	dataset db.ArchiveDataset,
+	parentID int64,
+	cursor string,
+) (db.DatasetRows, string, bool, error) {
+	switch dataset {
+	case db.ArchiveDatasetComments:
+		if work.ItemType == db.ArchiveItemTypeIssue {
+			page, err := repo.Issues.ListIssueCommentsPage(ctx, repo.Ref, work.ItemNumber, cursor)
+			if err != nil {
+				return db.DatasetRows{}, "", false, err
+			}
+			events := make([]db.IssueEvent, 0, len(page.Items))
+			for _, event := range page.Items {
+				events = append(events, platform.DBIssueEvent(parentID, event))
+			}
+			return db.DatasetRows{IssueComments: events}, page.NextCursor, page.Exhausted, nil
+		}
+		page, err := repo.MergeRequests.ListMergeRequestCommentsPage(ctx, repo.Ref, work.ItemNumber, cursor)
+		if err != nil {
+			return db.DatasetRows{}, "", false, err
+		}
+		return db.DatasetRows{MRComments: dbMergeRequestEvents(parentID, page.Items)}, page.NextCursor, page.Exhausted, nil
+	case db.ArchiveDatasetReviews:
+		page, err := repo.MergeRequests.ListSubmittedReviewsPage(ctx, repo.Ref, work.ItemNumber, cursor)
+		if err != nil {
+			return db.DatasetRows{}, "", false, err
+		}
+		return db.DatasetRows{Reviews: dbMergeRequestEvents(parentID, page.Items)}, page.NextCursor, page.Exhausted, nil
+	case db.ArchiveDatasetInlineComments:
+		page, err := repo.MergeRequests.ListReviewThreadsPage(ctx, repo.Ref, work.ItemNumber, cursor)
+		if err != nil {
+			return db.DatasetRows{}, "", false, err
+		}
+		events, threads := platform.DBReviewThreads(page.Items)
+		for i := range events {
+			events[i].MergeRequestID = parentID
+		}
+		return db.DatasetRows{ReviewThreads: threads, ThreadEvents: events}, page.NextCursor, page.Exhausted, nil
+	default:
+		return db.DatasetRows{}, "", false, fmt.Errorf("scan archive dataset: invalid dataset %q", dataset)
 	}
-	return db.ArchiveDatasetStatusUnsupported
 }
 
 func dbMergeRequestEvents(mrID int64, events []platform.MergeRequestEvent) []db.MREvent {
@@ -225,183 +269,40 @@ func dbMergeRequestEvents(mrID int64, events []platform.MergeRequestEvent) []db.
 	return out
 }
 
-func archiveDatasetMutable(status db.ArchiveDatasetStatus) bool {
-	return status == db.ArchiveDatasetStatusPending || status == db.ArchiveDatasetStatusFailed
+// blockDataset durably blocks one dataset scan after a page-scoped provider
+// contract violation. Other datasets and repository work proceed.
+func (s *Service) blockDataset(ctx context.Context, key db.ArchiveDatasetProgressKey, cause error) error {
+	return s.db.BlockDatasetProgress(ctx, key, scanBlockCode(cause), cause.Error())
 }
 
-func archiveDatasetKey(item db.ArchiveItemState, dataset db.ArchiveDataset, domainRevision int64) db.ArchiveDatasetKey {
-	return db.ArchiveDatasetKey{
-		RepoID: item.RepoID, ItemType: item.ItemType, ItemNumber: item.ItemNumber,
-		Dataset: dataset, SnapshotUpdatedAt: item.ProviderUpdatedAt,
-		DomainRevision: domainRevision,
-	}
-}
-
-type archiveDatasetPage[T any] func(
-	context.Context,
-	platform.RepoRef,
-	int,
-	string,
-) (platform.Page[T], error)
-
-func fetchArchiveDataset[T any](
-	s *Service,
+// recordDatasetFailure classifies a provider failure: repository-wide causes
+// (authentication, identity, capability) block the repository, and the
+// dataset row records retry bookkeeping either way.
+func (s *Service) recordDatasetFailure(
 	ctx context.Context,
 	repo resolvedRepository,
-	item db.ArchiveItemState,
+	work db.ArchiveItemWork,
 	dataset db.ArchiveDataset,
-	domainRevision int64,
-	read archiveDatasetPage[T],
-) (db.ArchiveDatasetKey, []T, error) {
-	key := archiveDatasetKey(item, dataset, domainRevision)
-	stage, err := s.db.GetArchiveDatasetStage(ctx, key)
-	if err != nil {
-		return key, nil, err
-	}
-	for !stage.Exhausted {
-		requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(1))
-		if err != nil {
-			return key, nil, err
-		}
-		page, err := read(requestCtx, repo.Ref, item.ItemNumber, stage.NextCursor)
-		preempted := archivePreempted(ctx, requestCtx)
-		release()
-		if err != nil {
-			if preempted {
-				return key, nil, errAdmissionDeferred
-			}
-			return key, nil, err
-		}
-		payload, err := json.Marshal(page.Items)
-		if err != nil {
-			return key, nil, err
-		}
-		stage, err = s.db.CommitArchiveDatasetPage(ctx, db.ArchiveDatasetPage{
-			ArchiveDatasetKey: key, InputCursor: stage.NextCursor, NextCursor: page.NextCursor,
-			Exhausted: page.Exhausted, RecordCount: len(page.Items), Payload: payload,
-			MaxPages: maxArchiveDatasetPages, MaxRecords: maxArchiveDatasetRecords,
-			MaxBytes: maxArchiveDatasetBytes, Now: s.now(),
-		})
-		if err != nil {
-			return key, nil, err
-		}
-	}
-	payloads, err := s.db.LoadArchiveDatasetPages(ctx, key)
-	if err != nil {
-		return key, nil, err
-	}
-	var values []T
-	for _, payload := range payloads {
-		var page []T
-		if err := json.Unmarshal(payload, &page); err != nil {
-			return key, nil, err
-		}
-		values = append(values, page...)
-	}
-	return key, values, nil
-}
-
-func (s *Service) fetchIssueComments(
-	ctx context.Context,
-	repo resolvedRepository,
-	item db.ArchiveItemState,
-	issueID int64,
-	domainRevision int64,
+	attemptCount int,
+	cause error,
 ) error {
-	key, comments, err := fetchArchiveDataset(
-		s, ctx, repo, item, db.ArchiveDatasetComments, domainRevision,
-		repo.Reader.ListArchiveIssueComments,
-	)
-	if err != nil {
-		return err
-	}
-	events := make([]db.IssueEvent, 0, len(comments))
-	for _, event := range comments {
-		events = append(events, platform.DBIssueEvent(issueID, event))
-	}
-	return s.db.PublishArchiveIssueComments(ctx, key, issueID, events)
-}
-
-func (s *Service) fetchMergeRequestEvents(
-	ctx context.Context,
-	repo resolvedRepository,
-	item db.ArchiveItemState,
-	mrID int64,
-	domainRevision int64,
-	dataset db.ArchiveDataset,
-	eventType string,
-	read archiveDatasetPage[platform.MergeRequestEvent],
-) error {
-	key, values, err := fetchArchiveDataset(s, ctx, repo, item, dataset, domainRevision, read)
-	if err != nil {
-		return err
-	}
-	return s.db.PublishArchiveMREvents(
-		ctx, key, mrID, eventType, dbMergeRequestEvents(mrID, values),
-	)
-}
-
-func (s *Service) fetchReviewThreads(
-	ctx context.Context,
-	repo resolvedRepository,
-	item db.ArchiveItemState,
-	mrID int64,
-	domainRevision int64,
-) error {
-	key, values, err := fetchArchiveDataset(
-		s, ctx, repo, item, db.ArchiveDatasetInlineComments, domainRevision,
-		repo.Reader.ListArchiveReviewThreads,
-	)
-	if err != nil {
-		return err
-	}
-	events, threads := platform.DBReviewThreads(values)
-	for i := range events {
-		events[i].MergeRequestID = mrID
-	}
-	return s.db.PublishArchiveReviewThreads(ctx, key, mrID, threads, events)
-}
-
-func (s *Service) recordHydrationFailure(ctx context.Context, item db.ArchiveItemState, cause error) error {
-	decision := s.retries.Classify(cause, item.AttemptCount, s.now())
-	var limit *db.ArchiveDatasetLimitError
-	if errors.As(cause, &limit) {
-		decision = RetryDecision{Code: db.ArchiveErrorCodeRepoBlocked}
-	}
+	decision := s.retries.Classify(cause, attemptCount, s.now())
 	if decision.Code == "" {
 		decision.Code = db.ArchiveErrorCodeTransient
 	}
 	if decision.Code == db.ArchiveErrorCodeAuthentication || decision.Code == db.ArchiveErrorCodeRepoBlocked {
 		if err := s.db.RecordArchiveRepositoryFailure(
-			ctx, item.RepoID, decision.Code, cause.Error(), decision.RetryAt, s.now(),
+			ctx, repo.ID, decision.Code, cause.Error(), decision.RetryAt, s.now(),
 		); err != nil {
 			cause = errors.Join(cause, err)
 		}
 	}
-	datasets := mutableArchiveDatasets(item)
-	if len(datasets) == 0 {
-		return cause
+	key := db.ArchiveDatasetProgressKey{
+		RepoID: work.RepoID, ItemType: work.ItemType,
+		ItemNumber: work.ItemNumber, Dataset: dataset,
 	}
-	if err := s.db.FailArchiveItem(ctx, db.ArchiveItemFailure{
-		RepoID: item.RepoID, ItemType: item.ItemType, ItemNumber: item.ItemNumber,
-		Datasets: datasets, NextRetryAt: decision.RetryAt, Code: decision.Code,
-		Detail: cause.Error(),
-	}); err != nil {
+	if err := s.db.FailDatasetProgress(ctx, key, decision.Code, cause.Error(), decision.RetryAt); err != nil {
 		return errors.Join(cause, err)
 	}
 	return cause
-}
-
-func mutableArchiveDatasets(item db.ArchiveItemState) []db.ArchiveDataset {
-	var datasets []db.ArchiveDataset
-	if item.CommentsStatus == db.ArchiveDatasetStatusPending || item.CommentsStatus == db.ArchiveDatasetStatusFailed {
-		datasets = append(datasets, db.ArchiveDatasetComments)
-	}
-	if item.ReviewsStatus == db.ArchiveDatasetStatusPending || item.ReviewsStatus == db.ArchiveDatasetStatusFailed {
-		datasets = append(datasets, db.ArchiveDatasetReviews)
-	}
-	if item.InlineCommentsStatus == db.ArchiveDatasetStatusPending || item.InlineCommentsStatus == db.ArchiveDatasetStatusFailed {
-		datasets = append(datasets, db.ArchiveDatasetInlineComments)
-	}
-	return datasets
 }

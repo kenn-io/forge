@@ -64,12 +64,6 @@ func (d *DB) CommitIssueChildSnapshot(ctx context.Context, snapshot IssueChildSn
 		if err := upsertIssueEventsTx(ctx, tx, snapshot.OtherEvents); err != nil {
 			return err
 		}
-		if err := satisfyLegacyArchiveItemStatusFromNormalSyncTx(
-			ctx, tx, ArchiveItemTypeIssue, snapshot.IssueID,
-			[]ArchiveDataset{ArchiveDatasetComments},
-		); err != nil {
-			return err
-		}
 		applied = true
 		return nil
 	})
@@ -153,21 +147,6 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 		if err := upsertMREventsTx(ctx, tx, snapshot.OtherEvents); err != nil {
 			return err
 		}
-		var completeDatasets []ArchiveDataset
-		if snapshot.CommentsComplete {
-			completeDatasets = append(completeDatasets, ArchiveDatasetComments)
-		}
-		if snapshot.ReviewsComplete {
-			completeDatasets = append(completeDatasets, ArchiveDatasetReviews)
-		}
-		if snapshot.InlineComplete {
-			completeDatasets = append(completeDatasets, ArchiveDatasetInlineComments)
-		}
-		if err := satisfyLegacyArchiveItemStatusFromNormalSyncTx(
-			ctx, tx, ArchiveItemTypeMergeRequest, snapshot.MergeRequestID, completeDatasets,
-		); err != nil {
-			return err
-		}
 		applied = true
 		return nil
 	})
@@ -229,95 +208,6 @@ func updateMRCommentCountTx(ctx context.Context, tx *sql.Tx, mrID int64) error {
 		)
 		WHERE id = ?`, mrID, mrID); err != nil {
 		return fmt.Errorf("update mr derived fields: %w", err)
-	}
-	return nil
-}
-
-// satisfyLegacyArchiveItemStatusFromNormalSyncTx is the transitional dual-write
-// leg of live satisfaction: the archive service still schedules from the
-// per-item status columns on middleman_archive_items, so a complete live
-// observation keeps them consistent in the same transaction that satisfies
-// durable dataset progress. This leg dies with those columns (Task 9/10).
-func satisfyLegacyArchiveItemStatusFromNormalSyncTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	itemType ArchiveItemType,
-	parentID int64,
-	datasets []ArchiveDataset,
-) error {
-	if len(datasets) == 0 {
-		return nil
-	}
-	parentTable := "middleman_issues"
-	if itemType == ArchiveItemTypeMergeRequest {
-		parentTable = "middleman_merge_requests"
-	}
-	var repoID int64
-	var itemNumber int
-	var updatedAt time.Time
-	var revision int64
-	if err := tx.QueryRowContext(ctx, fmt.Sprintf(`
-		SELECT repo_id, number, updated_at, snapshot_revision
-		FROM %s WHERE id = ?`, parentTable), parentID,
-	).Scan(&repoID, &itemNumber, &updatedAt, &revision); err != nil {
-		return fmt.Errorf("read normal-sync archive parent: %w", err)
-	}
-	if err := reconcileArchiveItemSnapshotTx(
-		ctx, tx, repoID, itemType, itemNumber, updatedAt, revision,
-	); err != nil {
-		return err
-	}
-	columns := map[ArchiveDataset]string{
-		ArchiveDatasetComments:       "comments_status",
-		ArchiveDatasetReviews:        "reviews_status",
-		ArchiveDatasetInlineComments: "inline_comments_status",
-	}
-	for _, dataset := range datasets {
-		column := columns[dataset]
-		if column == "" {
-			return fmt.Errorf("satisfy archive dataset from normal sync: invalid dataset %q", dataset)
-		}
-		if _, err := tx.ExecContext(ctx, `
-			DELETE FROM middleman_archive_dataset_pages
-			WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = ?
-			  AND snapshot_updated_at = ?`,
-			repoID, itemType, itemNumber, dataset, updatedAt,
-		); err != nil {
-			return fmt.Errorf("discard normal-sync-satisfied archive stage: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
-			UPDATE middleman_archive_items SET %s = 'complete'
-			WHERE repo_id = ? AND item_type = ? AND item_number = ?
-			  AND provider_updated_at = ? AND hydration_snapshot_updated_at = ?
-			  AND %s NOT IN ('unsupported', 'not_applicable')`, column, column),
-			repoID, itemType, itemNumber, updatedAt, updatedAt,
-		); err != nil {
-			return fmt.Errorf("complete normal-sync archive dataset: %w", err)
-		}
-	}
-	now := time.Now().UTC()
-	result, err := tx.ExecContext(ctx, `
-		UPDATE middleman_archive_items
-		SET mirrored_provider_updated_at = provider_updated_at,
-			hydrated_at = ?, attempt_count = 0, next_retry_at = NULL,
-			last_error_code = NULL, last_error_detail = NULL
-		WHERE repo_id = ? AND item_type = ? AND item_number = ?
-		  AND lifecycle_state = 'active'
-		  AND provider_updated_at = ? AND hydration_snapshot_updated_at = ?
-		  AND comments_status NOT IN ('pending', 'failed')
-		  AND reviews_status NOT IN ('pending', 'failed')
-		  AND inline_comments_status NOT IN ('pending', 'failed')`,
-		now, repoID, itemType, itemNumber, updatedAt, updatedAt,
-	)
-	if err != nil {
-		return fmt.Errorf("finalize normal-sync archive item: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("read normal-sync archive finalization result: %w", err)
-	}
-	if changed > 0 {
-		return completeArchiveInitialIfReadyTx(ctx, tx, repoID, now)
 	}
 	return nil
 }

@@ -132,11 +132,12 @@ func TestSyncerRejectsMalformedOpenIssueBulkListWithoutPersisting(t *testing.T) 
 	assert.True(flagged, "repo must be marked failed after a bulk contract violation")
 }
 
-// TestGitHubLiveOpenIssueListsPreserveNilEntriesForValidation drives the real
-// live-client HTTP decode path: a null entry in the provider's JSON array must
-// survive pull-request filtering so contract validation classifies it as a
-// typed provider error instead of the filter panicking on the dereference.
+// TestGitHubLiveOpenIssueListsPreserveNilEntriesForValidation proves the bulk
+// open-list decode path preserves null entries for typed contract validation,
+// while the raw paged REST list preserves them through pull-request filtering
+// for downstream canonical normalization to reject typed.
 func TestGitHubLiveOpenIssueListsPreserveNilEntriesForValidation(t *testing.T) {
+	assert := assert.New(t)
 	require := require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -153,8 +154,13 @@ func TestGitHubLiveOpenIssueListsPreserveNilEntriesForValidation(t *testing.T) {
 	_, bulkErr := provider.ListOpenGitHubIssues(t.Context(), ref)
 	require.ErrorIs(bulkErr, platform.ErrProviderContract)
 
-	_, pageErr := provider.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateOpen, Order: platform.ItemOrderCreated,
-	})
-	require.ErrorIs(pageErr, platform.ErrProviderContract)
+	issues, hasMore, pageErr := provider.client.ListIssuesPage(
+		t.Context(), "acme", "widget", "all", 1,
+	)
+	require.NoError(pageErr)
+	assert.False(hasMore)
+	require.Len(issues, 2)
+	require.NotNil(issues[0])
+	assert.Equal(1, issues[0].GetNumber())
+	assert.Nil(issues[1])
 }

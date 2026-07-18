@@ -2,8 +2,6 @@ package gitealike
 
 import (
 	"context"
-	"errors"
-	"net/http"
 	"testing"
 	"time"
 
@@ -31,14 +29,14 @@ func TestArchiveIssueInventoryWalksOldestPagesAndExcludesPullRequests(t *testing
 	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "forge.example", Owner: "owner", Name: "repo"}
 
 	discovery, err := provider.ListIssuesPage(context.Background(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+		Order: platform.ItemOrderCreated,
 	})
 	require.NoError(err)
 	assert.True(discovery.ProgressOnly)
 	assert.NotEmpty(discovery.NextCursor)
 
 	oldest, err := provider.ListIssuesPage(context.Background(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: discovery.NextCursor,
+		Order: platform.ItemOrderCreated, Cursor: discovery.NextCursor,
 	})
 	require.NoError(err)
 	assert.Equal([]int{1}, []int{oldest.Items[0].Number})
@@ -48,7 +46,7 @@ func TestArchiveIssueInventoryWalksOldestPagesAndExcludesPullRequests(t *testing
 	_, err = provider.ListIssuesPage(context.Background(), platform.RepoRef{
 		Platform: platform.KindForgejo, Host: "other.example", Owner: "owner", Name: "repo",
 	}, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: oldest.NextCursor,
+		Order: platform.ItemOrderCreated, Cursor: oldest.NextCursor,
 	})
 	assert.Error(err)
 }
@@ -69,11 +67,11 @@ func TestArchiveUpdatedInventoryUsesInclusiveWatermarkAndProviderSort(t *testing
 	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "git.example", Owner: "owner", Name: "repo"}
 
 	issues, err := provider.ListIssuesPage(context.Background(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &since,
+		Order: platform.ItemOrderUpdated, UpdatedSince: &since,
 	})
 	require.NoError(err)
 	pulls, err := provider.ListMergeRequestsPage(context.Background(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &since,
+		Order: platform.ItemOrderUpdated, UpdatedSince: &since,
 	})
 	require.NoError(err)
 
@@ -103,11 +101,11 @@ func TestArchiveUpdatedMergeRequestsStopAfterOverlappedWatermark(t *testing.T) {
 	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "forge.example", Owner: "owner", Name: "repo"}
 
 	first, err := provider.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &since,
+		Order: platform.ItemOrderUpdated, UpdatedSince: &since,
 	})
 	require.NoError(err)
 	second, err := provider.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
+		Order:        platform.ItemOrderUpdated,
 		UpdatedSince: &since, Cursor: first.NextCursor,
 	})
 	require.NoError(err)
@@ -117,117 +115,6 @@ func TestArchiveUpdatedMergeRequestsStopAfterOverlappedWatermark(t *testing.T) {
 	assert.Equal(2, second.Items[0].Number)
 	assert.True(second.Exhausted)
 	assert.Equal([]int{1, 2}, []int{transport.pullOptions[0].Page, transport.pullOptions[1].Page})
-}
-
-func TestArchiveDetailsAndLookupOutcomes(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	now := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
-	transport := &archiveFakeTransport{
-		fakeTransport: &fakeTransport{repo: RepositoryDTO{Name: "repo"}},
-		comments:      []CommentDTO{{ID: 11, Created: now, User: UserDTO{UserName: "alice"}}},
-		reviews: []ReviewDTO{
-			{ID: 12, Submitted: now, User: UserDTO{UserName: "bob"}, State: "APPROVED"},
-			{ID: 13, Submitted: now, User: UserDTO{UserName: "carol"}, State: "REQUEST_REVIEW"},
-			{ID: 14, User: UserDTO{UserName: "dan"}, State: "PENDING"},
-		},
-		reviewPage: Page{Next: 2},
-		issueErr:   &HTTPError{StatusCode: http.StatusNotFound, Err: errors.New("gone")},
-	}
-	provider := NewProvider(platform.KindForgejo, "forge.example", transport)
-	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "forge.example", Owner: "owner", Name: "repo"}
-
-	comments, err := provider.ListMergeRequestCommentsPage(context.Background(), ref, 7, "")
-	require.NoError(err)
-	reviews, err := provider.ListSubmittedReviewsPage(context.Background(), ref, 7, "")
-	require.NoError(err)
-	removed, err := provider.LookupIssue(context.Background(), ref, 8)
-	require.NoError(err)
-	_, inlineErr := provider.ListReviewThreadsPage(context.Background(), ref, 7, "")
-
-	assert.Equal("issue_comment", comments.Items[0].EventType)
-	assert.Equal("review", reviews.Items[0].EventType)
-	assert.Len(reviews.Items, 1)
-	assert.False(reviews.ProgressOnly)
-	assert.NotEmpty(reviews.NextCursor)
-	assert.Equal(platform.LookupRemoved, removed.Outcome)
-	require.ErrorIs(inlineErr, platform.ErrUnsupportedCapability)
-	assert.Equal(platform.ArchiveCapabilities{
-		HistoricalIssues: true, HistoricalMergeRequests: true,
-		OrdinaryComments: true, SubmittedReviews: true,
-	}, provider.Capabilities().Archive)
-}
-
-func TestArchiveSubmittedReviewsReturnProgressPageWhenDraftsAreFiltered(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	transport := &archiveFakeTransport{
-		fakeTransport: &fakeTransport{},
-		reviews: []ReviewDTO{
-			{ID: 1, Submitted: time.Now().UTC(), State: "REQUEST_REVIEW"},
-			{ID: 2, State: "PENDING"},
-		},
-		reviewPage: Page{Next: 2},
-	}
-	provider := NewProvider(platform.KindGitea, "git.example", transport)
-	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "git.example", Owner: "owner", Name: "repo"}
-
-	page, err := provider.ListSubmittedReviewsPage(t.Context(), ref, 7, "")
-	require.NoError(err)
-	assert.Empty(page.Items)
-	assert.True(page.ProgressOnly)
-	assert.NotEmpty(page.NextCursor)
-	assert.False(page.Exhausted)
-}
-
-func TestArchiveLookupReturnsRepositoryAccessFailure(t *testing.T) {
-	transport := &archiveFakeTransport{
-		fakeTransport: &fakeTransport{repoErr: &HTTPError{
-			StatusCode: http.StatusNotFound, Err: errors.New("repository hidden"),
-		}},
-		issueErr: &HTTPError{StatusCode: http.StatusNotFound, Err: errors.New("item hidden")},
-	}
-	provider := NewProvider(platform.KindForgejo, "forge.example", transport)
-	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "forge.example", Owner: "owner", Name: "repo"}
-
-	_, err := provider.LookupIssue(t.Context(), ref, 7)
-	require.ErrorIs(t, err, platform.ErrPermissionDenied)
-}
-
-func TestArchiveLookupPreservesRepositoryProbeFailures(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name         string
-		itemStatus   int
-		repoErr      error
-		want         error
-		notPermanent bool
-	}{
-		{name: "forbidden then server error", itemStatus: http.StatusForbidden, repoErr: &HTTPError{StatusCode: http.StatusInternalServerError, Err: errors.New("server unavailable")}, notPermanent: true},
-		{name: "missing then server error", itemStatus: http.StatusNotFound, repoErr: &HTTPError{StatusCode: http.StatusInternalServerError, Err: errors.New("server unavailable")}, notPermanent: true},
-		{name: "forbidden then rate limit", itemStatus: http.StatusForbidden, repoErr: &HTTPError{StatusCode: http.StatusTooManyRequests, Err: errors.New("slow down")}, want: platform.ErrRateLimited},
-		{name: "missing then rate limit", itemStatus: http.StatusNotFound, repoErr: &HTTPError{StatusCode: http.StatusTooManyRequests, Err: errors.New("slow down")}, want: platform.ErrRateLimited},
-		{name: "permission denied", itemStatus: http.StatusForbidden, repoErr: &HTTPError{StatusCode: http.StatusForbidden, Err: errors.New("hidden")}, want: platform.ErrPermissionDenied},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			transport := &archiveFakeTransport{
-				fakeTransport: &fakeTransport{repoErr: tc.repoErr},
-				issueErr:      &HTTPError{StatusCode: tc.itemStatus, Err: errors.New("item hidden")},
-			}
-			provider := NewProvider(platform.KindForgejo, "forge.example", transport)
-			ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "forge.example", Owner: "owner", Name: "repo"}
-
-			_, err := provider.LookupIssue(t.Context(), ref, 7)
-			require.Error(t, err)
-			if tc.want != nil {
-				require.ErrorIs(t, err, tc.want)
-			}
-			if tc.notPermanent {
-				require.NotErrorIs(t, err, platform.ErrPermissionDenied)
-			}
-		})
-	}
 }
 
 type archiveFakeTransport struct {

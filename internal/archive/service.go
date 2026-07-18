@@ -16,6 +16,14 @@ type ConfiguredRepositorySource interface {
 	ConfiguredRepositories(context.Context) ([]platform.RepoRef, error)
 }
 
+// ItemSyncer is the existing live item-ingestion path used by archive
+// hydration. Archive owns discovery, scheduling, and progress; it must not
+// grow a second provider read/normalize/persist pipeline.
+type ItemSyncer interface {
+	ArchiveItemSyncCost(platform.Kind, db.ArchiveItemType) int
+	SyncArchiveItem(context.Context, platform.RepoRef, db.ArchiveItemType, int) error
+}
+
 type AdmissionResult struct {
 	Allowed bool
 	RetryAt *time.Time
@@ -44,6 +52,7 @@ type Service struct {
 	registry            *platform.Registry
 	admission           Admission
 	configured          ConfiguredRepositorySource
+	items               ItemSyncer
 	retries             RetryClassifier
 	clock               Clock
 	scheduler           *Scheduler
@@ -75,12 +84,18 @@ func NewService(
 	if retries == nil {
 		retries = defaultRetryClassifier{}
 	}
-	return &Service{
+	service := &Service{
 		db: database, registry: registry,
 		admission: admission, configured: configured, retries: retries, clock: clock,
 		scheduler:           NewScheduler(),
 		maintenanceInterval: 5 * time.Minute,
-	}, nil
+	}
+	if items, ok := configured.(ItemSyncer); ok {
+		service.items = items
+	} else if items, ok := admission.(ItemSyncer); ok {
+		service.items = items
+	}
+	return service, nil
 }
 
 func (s *Service) SetMaintenanceInterval(interval time.Duration) {

@@ -83,7 +83,7 @@ func (s *Service) promptPages(
 			return s.recordInventoryFailure(ctx, repo.ID, err)
 		}
 		query := platform.ItemPageQuery{
-			State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
+			Order:        platform.ItemOrderUpdated,
 			UpdatedSince: &since, Cursor: cursor,
 		}
 		commit := db.ArchiveInventoryCommit{
@@ -106,9 +106,9 @@ func (s *Service) promptPages(
 				))
 			}
 			commit.NextCursor, commit.Exhausted = page.NextCursor, page.Exhausted
-			commit.Issues = make([]db.ArchiveInventoryIssue, 0, len(page.Items))
+			commit.Items = make([]db.ArchiveInventoryItem, 0, len(page.Items))
 			for _, item := range page.Items {
-				commit.Issues = append(commit.Issues, archiveInventoryIssue(repo, item))
+				commit.Items = append(commit.Items, archiveInventoryIssue(item))
 			}
 		case db.ArchiveItemTypeMergeRequest:
 			page, err := repo.MergeRequests.ListMergeRequestsPage(requestCtx, repo.Ref, query)
@@ -123,9 +123,9 @@ func (s *Service) promptPages(
 				))
 			}
 			commit.NextCursor, commit.Exhausted = page.NextCursor, page.Exhausted
-			commit.MergeRequests = make([]db.ArchiveInventoryMergeRequest, 0, len(page.Items))
+			commit.Items = make([]db.ArchiveInventoryItem, 0, len(page.Items))
 			for _, item := range page.Items {
-				commit.MergeRequests = append(commit.MergeRequests, archiveInventoryMergeRequest(repo, item))
+				commit.Items = append(commit.Items, archiveInventoryMergeRequest(item))
 			}
 		default:
 			release()

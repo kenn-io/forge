@@ -19,13 +19,7 @@ import (
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
-// ListIssuesPage is the single owner of GitHub issue inventory requests and
-// their normalization. It dispatches on the query: StateOpen drains the REST
-// open-list endpoint, StateAll with ItemOrderUpdated runs the GraphQL
-// maintenance scan bounded by the watermark, and StateAll with ItemOrderCreated
-// runs the GraphQL historical scan. Request construction and normalization for
-// all three shapes live here so live collectors and archive workers share one
-// implementation.
+// ListIssuesPage owns GitHub issue inventory requests and normalization.
 func (p *gitHubClientProvider) ListIssuesPage(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -33,9 +27,6 @@ func (p *gitHubClientProvider) ListIssuesPage(
 ) (platform.Page[platform.Issue], error) {
 	if err := platform.ValidateItemPageQuery(query); err != nil {
 		return platform.Page[platform.Issue]{}, err
-	}
-	if query.State == platform.ItemStateOpen {
-		return p.listOpenIssuesPage(ctx, ref)
 	}
 	if query.Order == platform.ItemOrderUpdated {
 		since := time.Time{}
@@ -47,11 +38,7 @@ func (p *gitHubClientProvider) ListIssuesPage(
 	return p.listInventoryIssuesPage(ctx, ref, query.Cursor, "historical_issues", "created", time.Time{})
 }
 
-// ListMergeRequestsPage is the single owner of GitHub merge-request inventory
-// requests and normalization, dispatching on the query the same way
-// ListIssuesPage does. GitHub serves both historical and maintenance
-// merge-request scans from the REST pull-request list with different sort
-// fences, which stay inside this method.
+// ListMergeRequestsPage owns GitHub merge-request inventory requests and normalization.
 func (p *gitHubClientProvider) ListMergeRequestsPage(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -59,9 +46,6 @@ func (p *gitHubClientProvider) ListMergeRequestsPage(
 ) (platform.Page[platform.MergeRequest], error) {
 	if err := platform.ValidateItemPageQuery(query); err != nil {
 		return platform.Page[platform.MergeRequest]{}, err
-	}
-	if query.State == platform.ItemStateOpen {
-		return p.listOpenMergeRequestsPage(ctx, ref)
 	}
 	if query.Order == platform.ItemOrderUpdated {
 		since := time.Time{}
@@ -77,102 +61,62 @@ func (p *gitHubClientProvider) ListMergeRequestsPage(
 	)
 }
 
-// LookupIssue fetches a single issue and returns a typed outcome: present,
-// moved (repository transfer detected from the returned repository URL),
-// removed, or inaccessible. Provider probing and error classification happen
-// once here so both live callers (which require present) and archive callers
-// (which record every outcome) share one lookup.
-func (p *gitHubClientProvider) LookupIssue(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-) (platform.ItemLookup[platform.Issue], error) {
-	issue, err := p.client.GetIssue(ctx, ref.Owner, ref.Name, number)
-	if err != nil {
-		return p.classifyIssueLookup(ctx, ref, err)
-	}
-	if destination := githubArchiveDestination(ref, issue.GetRepositoryURL()); destination != nil {
-		return platform.ItemLookup[platform.Issue]{
-			Outcome: platform.LookupMoved, Destination: destination,
-		}, nil
-	}
-	item, err := platformgithub.NormalizeIssue(ref, issue)
-	if err != nil {
-		return platform.ItemLookup[platform.Issue]{}, err
-	}
-	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupPresent, Item: item}, nil
-}
+type lookupOutcome string
 
-// LookupMergeRequest is the merge-request counterpart to LookupIssue.
-func (p *gitHubClientProvider) LookupMergeRequest(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-) (platform.ItemLookup[platform.MergeRequest], error) {
-	pr, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
-	if err != nil {
-		return p.classifyMergeRequestLookup(ctx, ref, err)
-	}
-	if destination := githubArchiveDestination(ref, pr.GetBase().GetRepo().GetURL()); destination != nil {
-		return platform.ItemLookup[platform.MergeRequest]{
-			Outcome: platform.LookupMoved, Destination: destination,
-		}, nil
-	}
-	item, err := platformgithub.NormalizePullRequest(ref, pr)
-	if err != nil {
-		return platform.ItemLookup[platform.MergeRequest]{}, err
-	}
-	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupPresent, Item: item}, nil
-}
+const (
+	lookupRemoved      lookupOutcome = "removed"
+	lookupMoved        lookupOutcome = "moved"
+	lookupInaccessible lookupOutcome = "inaccessible"
+)
 
 func (p *gitHubClientProvider) classifyIssueLookup(
 	ctx context.Context,
 	ref platform.RepoRef,
 	err error,
-) (platform.ItemLookup[platform.Issue], error) {
+) (lookupOutcome, *platform.RepoRef, error) {
 	mapped := p.archiveTransportError(platform.ArchiveCapabilityHistoricalIssues, err)
 	if errors.Is(mapped, platform.ErrRateLimited) {
-		return platform.ItemLookup[platform.Issue]{}, mapped
+		return "", nil, mapped
 	}
 	status := githubStatusCode(err)
 	if status != http.StatusNotFound {
 		if status == http.StatusForbidden || status == http.StatusUnauthorized {
 			if _, repoErr := p.client.GetRepository(ctx, ref.Owner, ref.Name); repoErr != nil {
-				return platform.ItemLookup[platform.Issue]{}, p.archiveRepositoryProbeError(repoErr)
+				return "", nil, p.archiveRepositoryProbeError(repoErr)
 			}
-			return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupInaccessible}, nil
+			return lookupInaccessible, nil, nil
 		}
-		return platform.ItemLookup[platform.Issue]{}, mapped
+		return "", nil, mapped
 	}
 	if _, repoErr := p.client.GetRepository(ctx, ref.Owner, ref.Name); repoErr != nil {
-		return platform.ItemLookup[platform.Issue]{}, p.archiveRepositoryProbeError(repoErr)
+		return "", nil, p.archiveRepositoryProbeError(repoErr)
 	}
-	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupRemoved}, nil
+	return lookupRemoved, nil, nil
 }
 
 func (p *gitHubClientProvider) classifyMergeRequestLookup(
 	ctx context.Context,
 	ref platform.RepoRef,
 	err error,
-) (platform.ItemLookup[platform.MergeRequest], error) {
+) (lookupOutcome, *platform.RepoRef, error) {
 	mapped := p.archiveTransportError(platform.ArchiveCapabilityHistoricalMergeRequests, err)
 	if errors.Is(mapped, platform.ErrRateLimited) {
-		return platform.ItemLookup[platform.MergeRequest]{}, mapped
+		return "", nil, mapped
 	}
 	status := githubStatusCode(err)
 	if status != http.StatusNotFound {
 		if status == http.StatusForbidden || status == http.StatusUnauthorized {
 			if _, repoErr := p.client.GetRepository(ctx, ref.Owner, ref.Name); repoErr != nil {
-				return platform.ItemLookup[platform.MergeRequest]{}, p.archiveRepositoryProbeError(repoErr)
+				return "", nil, p.archiveRepositoryProbeError(repoErr)
 			}
-			return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupInaccessible}, nil
+			return lookupInaccessible, nil, nil
 		}
-		return platform.ItemLookup[platform.MergeRequest]{}, mapped
+		return "", nil, mapped
 	}
 	if _, repoErr := p.client.GetRepository(ctx, ref.Owner, ref.Name); repoErr != nil {
-		return platform.ItemLookup[platform.MergeRequest]{}, p.archiveRepositoryProbeError(repoErr)
+		return "", nil, p.archiveRepositoryProbeError(repoErr)
 	}
-	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupRemoved}, nil
+	return lookupRemoved, nil, nil
 }
 
 // issueLookupOutcomeError maps a raw single-issue fetch result onto the
@@ -191,17 +135,17 @@ func (p *gitHubClientProvider) issueLookupOutcomeError(
 	err error,
 ) error {
 	if err != nil {
-		lookup, classifyErr := p.classifyIssueLookup(ctx, ref, err)
+		outcome, destination, classifyErr := p.classifyIssueLookup(ctx, ref, err)
 		if classifyErr != nil {
 			return classifyErr
 		}
-		return p.lookupNotPresentError(ref, number, lookup.Outcome, lookup.Destination)
+		return p.lookupNotPresentError(ref, number, outcome, destination)
 	}
 	if issue == nil {
 		return nil
 	}
 	if destination := githubArchiveDestination(ref, issue.GetRepositoryURL()); destination != nil {
-		return p.lookupNotPresentError(ref, number, platform.LookupMoved, destination)
+		return p.lookupNotPresentError(ref, number, lookupMoved, destination)
 	}
 	return nil
 }
@@ -216,181 +160,20 @@ func (p *gitHubClientProvider) mergeRequestLookupOutcomeError(
 	err error,
 ) error {
 	if err != nil {
-		lookup, classifyErr := p.classifyMergeRequestLookup(ctx, ref, err)
+		outcome, destination, classifyErr := p.classifyMergeRequestLookup(ctx, ref, err)
 		if classifyErr != nil {
 			return classifyErr
 		}
-		return p.lookupNotPresentError(ref, number, lookup.Outcome, lookup.Destination)
+		return p.lookupNotPresentError(ref, number, outcome, destination)
 	}
 	if pr == nil {
 		return nil
 	}
 	if destination := githubArchiveDestination(ref, pr.GetBase().GetRepo().GetURL()); destination != nil {
-		return p.lookupNotPresentError(ref, number, platform.LookupMoved, destination)
+		return p.lookupNotPresentError(ref, number, lookupMoved, destination)
 	}
 	return nil
 }
-
-// ListIssueCommentsPage returns one page of normalized issue comment events.
-func (p *gitHubClientProvider) ListIssueCommentsPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	cursor string,
-) (platform.Page[platform.IssueEvent], error) {
-	client, state, err := p.detailPageClient(ref, number, cursor, "issue_comments", time.Time{})
-	if err != nil {
-		return platform.Page[platform.IssueEvent]{}, err
-	}
-	comments, more, err := client.ListIssueCommentsPage(ctx, ref.Owner, ref.Name, number, state.Page)
-	if err != nil {
-		return platform.Page[platform.IssueEvent]{}, p.archiveTransportError(platform.ArchiveCapabilityOrdinaryComments, err)
-	}
-	items := make([]platform.IssueEvent, 0, len(comments))
-	for _, comment := range comments {
-		items = append(items, platformgithub.NormalizeIssueCommentEvent(ref, number, comment))
-	}
-	return pageWithNext(items, state, more)
-}
-
-// ListMergeRequestCommentsPage returns one page of normalized merge-request
-// comment events. Issue comments and merge-request comments share the same
-// underlying REST reader; only the normalization differs.
-func (p *gitHubClientProvider) ListMergeRequestCommentsPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	cursor string,
-) (platform.Page[platform.MergeRequestEvent], error) {
-	client, state, err := p.detailPageClient(ref, number, cursor, "merge_request_comments", time.Time{})
-	if err != nil {
-		return platform.Page[platform.MergeRequestEvent]{}, err
-	}
-	comments, more, err := client.ListIssueCommentsPage(ctx, ref.Owner, ref.Name, number, state.Page)
-	if err != nil {
-		return platform.Page[platform.MergeRequestEvent]{}, p.archiveTransportError(platform.ArchiveCapabilityOrdinaryComments, err)
-	}
-	items := make([]platform.MergeRequestEvent, 0, len(comments))
-	for _, comment := range comments {
-		items = append(items, platformgithub.NormalizeCommentEvent(ref, number, comment))
-	}
-	return pageWithNext(items, state, more)
-}
-
-// ListSubmittedReviewsPage returns one page of normalized submitted-review
-// events, skipping pending drafts and reviews without a submission time.
-func (p *gitHubClientProvider) ListSubmittedReviewsPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	cursor string,
-) (platform.Page[platform.MergeRequestEvent], error) {
-	client, state, err := p.detailPageClient(ref, number, cursor, "submitted_reviews", time.Time{})
-	if err != nil {
-		return platform.Page[platform.MergeRequestEvent]{}, err
-	}
-	reviews, more, err := client.ListReviewsPage(ctx, ref.Owner, ref.Name, number, state.Page)
-	if err != nil {
-		return platform.Page[platform.MergeRequestEvent]{}, p.archiveTransportError(platform.ArchiveCapabilitySubmittedReviews, err)
-	}
-	items := make([]platform.MergeRequestEvent, 0, len(reviews))
-	for _, review := range reviews {
-		if review == nil || review.SubmittedAt == nil || strings.EqualFold(review.GetState(), "PENDING") {
-			continue
-		}
-		items = append(items, platformgithub.NormalizeReviewEvent(ref, number, review))
-	}
-	return pageWithNext(items, state, more)
-}
-
-// ListReviewThreadsPage returns one page of normalized inline review-thread
-// comments. It uses a single GraphQL batch size (100 threads per page) shared
-// by live and archive callers; nested per-thread comment continuation stays
-// inside the opaque cursor.
-func (p *gitHubClientProvider) ListReviewThreadsPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	cursor string,
-) (platform.Page[platform.MergeRequestReviewThread], error) {
-	client, err := p.pageClient()
-	if err != nil {
-		return platform.Page[platform.MergeRequestReviewThread]{}, err
-	}
-	if _, err := decodeGitHubArchiveReviewCursor(cursor, ref.Host, ref.Owner, ref.Name, number); err != nil {
-		return platform.Page[platform.MergeRequestReviewThread]{}, platform.ProviderContract(
-			platform.KindGitHub, p.host, "archive_cursor", err,
-		)
-	}
-	threads, next, exhausted, err := client.ListInventoryReviewThreadsPage(
-		ctx, ref.Host, ref.Owner, ref.Name, number, cursor,
-	)
-	if err != nil {
-		return platform.Page[platform.MergeRequestReviewThread]{}, p.archiveTransportError(platform.ArchiveCapabilityInlineReviewComments, err)
-	}
-	items := make([]platform.MergeRequestReviewThread, 0)
-	for _, thread := range threads {
-		for _, comment := range thread.Comments {
-			normalized := githubReviewThreadComment(thread, comment)
-			if normalized.ProviderThreadID == "" || normalized.ProviderCommentID == "" {
-				continue
-			}
-			normalized.Repo = ref
-			normalized.MergeRequestNumber = number
-			items = append(items, normalized)
-		}
-	}
-	return platform.Page[platform.MergeRequestReviewThread]{
-		Items: items, NextCursor: next, Exhausted: exhausted,
-	}, nil
-}
-
-// listOpenIssuesPage returns every open issue as a single exhausted page. The
-// REST open-list endpoint drains all pages internally, so open enumeration is
-// not resumable through a cursor.
-func (p *gitHubClientProvider) listOpenIssuesPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-) (platform.Page[platform.Issue], error) {
-	issues, err := p.ListOpenGitHubIssues(ctx, ref)
-	if err != nil {
-		return platform.Page[platform.Issue]{}, err
-	}
-	out := make([]platform.Issue, 0, len(issues))
-	for _, issue := range issues {
-		normalized, err := platformgithub.NormalizeIssue(ref, issue)
-		if err != nil {
-			return platform.Page[platform.Issue]{}, err
-		}
-		out = append(out, normalized)
-	}
-	return platform.Page[platform.Issue]{Items: out, Exhausted: true}, nil
-}
-
-// listOpenMergeRequestsPage returns every open merge request as a single
-// exhausted page.
-func (p *gitHubClientProvider) listOpenMergeRequestsPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-) (platform.Page[platform.MergeRequest], error) {
-	prs, err := p.client.ListOpenPullRequests(ctx, ref.Owner, ref.Name)
-	if err != nil {
-		return platform.Page[platform.MergeRequest]{}, err
-	}
-	out := make([]platform.MergeRequest, 0, len(prs))
-	for _, pr := range prs {
-		mr, err := platformgithub.NormalizePullRequest(ref, pr)
-		if err != nil {
-			return platform.Page[platform.MergeRequest]{}, err
-		}
-		out = append(out, mr)
-	}
-	return platform.Page[platform.MergeRequest]{Items: out, Exhausted: true}, nil
-}
-
-// listInventoryIssuesPage owns the GraphQL historical and maintenance issue
-// request shapes. The mode string binds the opaque cursor to this enumeration;
-// sortBy selects the GraphQL order field; since bounds the maintenance scan.
 func (p *gitHubClientProvider) listInventoryIssuesPage(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -403,7 +186,7 @@ func (p *gitHubClientProvider) listInventoryIssuesPage(
 	if err != nil {
 		return platform.Page[platform.Issue]{}, err
 	}
-	state, err := decodeGitHubArchiveCursor(cursor, ref, 0, mode, since)
+	state, err := decodeGitHubArchiveCursor(cursor, ref, mode, since)
 	if err != nil {
 		return platform.Page[platform.Issue]{}, platform.ProviderContract(
 			platform.KindGitHub, p.host, "archive_cursor", err,
@@ -473,7 +256,7 @@ func (p *gitHubClientProvider) listInventoryMergeRequestsPage(
 	if err != nil {
 		return platform.Page[platform.MergeRequest]{}, err
 	}
-	state, err := decodeGitHubArchiveCursor(cursor, ref, 0, mode, since)
+	state, err := decodeGitHubArchiveCursor(cursor, ref, mode, since)
 	if err != nil {
 		return platform.Page[platform.MergeRequest]{}, platform.ProviderContract(
 			platform.KindGitHub, p.host, "archive_cursor", err,
@@ -519,26 +302,16 @@ type pageClient interface {
 	ListInventoryPullRequestsPage(
 		context.Context, string, string, string, int,
 	) ([]*gh.PullRequest, bool, error)
-	ListIssueCommentsPage(
-		context.Context, string, string, int, int,
-	) ([]*gh.IssueComment, bool, error)
-	ListReviewsPage(
-		context.Context, string, string, int, int,
-	) ([]*gh.PullRequestReview, bool, error)
-	ListInventoryReviewThreadsPage(
-		context.Context, string, string, string, int, string,
-	) ([]PullRequestReviewThread, string, bool, error)
 }
 
 type githubArchiveCursor struct {
-	Mode   string `json:"mode"`
-	Host   string `json:"host"`
-	Owner  string `json:"owner"`
-	Repo   string `json:"repo"`
-	Number int    `json:"number,omitempty"`
-	Page   int    `json:"page"`
-	After  string `json:"after,omitempty"`
-	Since  string `json:"since,omitempty"`
+	Mode  string `json:"mode"`
+	Host  string `json:"host"`
+	Owner string `json:"owner"`
+	Repo  string `json:"repo"`
+	Page  int    `json:"page"`
+	After string `json:"after,omitempty"`
+	Since string `json:"since,omitempty"`
 }
 
 type githubArchiveReviewCursor struct {
@@ -731,7 +504,6 @@ func githubArchiveIssueFromGraphQL(node *githubArchiveIssueNode) *gh.Issue {
 	}
 	return issue
 }
-
 func (c *liveClient) ListIssueCommentsPage(
 	ctx context.Context,
 	owner string,
@@ -1047,27 +819,6 @@ func githubArchiveErrorResponse(err error) *http.Response {
 	}
 	return nil
 }
-
-func (p *gitHubClientProvider) detailPageClient(
-	ref platform.RepoRef,
-	number int,
-	cursor string,
-	mode string,
-	since time.Time,
-) (pageClient, githubArchiveCursor, error) {
-	client, err := p.pageClient()
-	if err != nil {
-		return nil, githubArchiveCursor{}, err
-	}
-	state, err := decodeGitHubArchiveCursor(cursor, ref, number, mode, since)
-	if err != nil {
-		return nil, githubArchiveCursor{}, platform.ProviderContract(
-			platform.KindGitHub, p.host, "archive_cursor", err,
-		)
-	}
-	return client, state, nil
-}
-
 func (p *gitHubClientProvider) pageClient() (pageClient, error) {
 	client, ok := p.client.(pageClient)
 	if !ok {
@@ -1097,7 +848,6 @@ func pageWithNext[T any](
 func decodeGitHubArchiveCursor(
 	encoded string,
 	ref platform.RepoRef,
-	number int,
 	mode string,
 	since time.Time,
 ) (githubArchiveCursor, error) {
@@ -1107,7 +857,7 @@ func decodeGitHubArchiveCursor(
 	}
 	if encoded == "" {
 		return githubArchiveCursor{
-			Mode: mode, Host: ref.Host, Owner: ref.Owner, Repo: ref.Name, Number: number,
+			Mode: mode, Host: ref.Host, Owner: ref.Owner, Repo: ref.Name,
 			Page: 1, Since: expectedSince,
 		}, nil
 	}
@@ -1120,7 +870,7 @@ func decodeGitHubArchiveCursor(
 		return githubArchiveCursor{}, fmt.Errorf("parse cursor: %w", err)
 	}
 	if cursor.Mode != mode || cursor.Host != ref.Host || cursor.Owner != ref.Owner || cursor.Repo != ref.Name ||
-		cursor.Number != number || cursor.Since != expectedSince || cursor.Page <= 0 {
+		cursor.Since != expectedSince || cursor.Page <= 0 {
 		return githubArchiveCursor{}, errors.New("cursor does not match archive enumeration")
 	}
 	return cursor, nil

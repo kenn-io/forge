@@ -44,12 +44,7 @@ type pageCursor struct {
 	Swept int `json:"swept,omitempty"`
 }
 
-// ListIssuesPage is the single owner of Forgejo/Gitea issue inventory requests
-// and their normalization. It dispatches on the query: StateOpen drains the
-// open list into one exhausted page, StateAll ordered-by-created walks the
-// unsorted issue endpoint backward from its last page so items surface
-// created-ascending, and StateAll ordered-by-updated applies the inclusive
-// watermark through the endpoint's since filter.
+// ListIssuesPage handles archive inventory and maintenance scans.
 func (p *Provider) ListIssuesPage(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -57,9 +52,6 @@ func (p *Provider) ListIssuesPage(
 ) (platform.Page[platform.Issue], error) {
 	if err := platform.ValidateItemPageQuery(query); err != nil {
 		return platform.Page[platform.Issue]{}, err
-	}
-	if query.State == platform.ItemStateOpen {
-		return p.listOpenIssuesPage(ctx, ref)
 	}
 	if query.Order == platform.ItemOrderUpdated {
 		since := time.Time{}
@@ -83,9 +75,6 @@ func (p *Provider) ListMergeRequestsPage(
 	if err := platform.ValidateItemPageQuery(query); err != nil {
 		return platform.Page[platform.MergeRequest]{}, err
 	}
-	if query.State == platform.ItemStateOpen {
-		return p.listOpenMergeRequestsPage(ctx, ref)
-	}
 	if query.Order == platform.ItemOrderUpdated {
 		since := time.Time{}
 		if query.UpdatedSince != nil {
@@ -94,49 +83,6 @@ func (p *Provider) ListMergeRequestsPage(
 		return p.listInventoryMergeRequestsPage(ctx, ref, query.Order, since, query.Cursor, "updated_merge_requests")
 	}
 	return p.listInventoryMergeRequestsPage(ctx, ref, query.Order, time.Time{}, query.Cursor, "historical_merge_requests")
-}
-
-// listOpenIssuesPage returns every open issue as a single exhausted page. Open
-// scans are single-shot current-index reads, so the internal page drain is not
-// resumable through a caller cursor. The issues endpoint interleaves pull
-// requests, which are filtered here.
-func (p *Provider) listOpenIssuesPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-) (platform.Page[platform.Issue], error) {
-	items, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]IssueDTO, Page, error) {
-		return p.transport.ListOpenIssues(ctx, ref, opts)
-	})
-	if err != nil {
-		return platform.Page[platform.Issue]{}, p.mapError(err)
-	}
-	out := make([]platform.Issue, 0, len(items))
-	for _, item := range items {
-		if item.IsPullRequest {
-			continue
-		}
-		out = append(out, NormalizeIssue(ref, item))
-	}
-	return platform.Page[platform.Issue]{Items: out, Exhausted: true}, nil
-}
-
-// listOpenMergeRequestsPage returns every open merge request as a single
-// exhausted page.
-func (p *Provider) listOpenMergeRequestsPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-) (platform.Page[platform.MergeRequest], error) {
-	items, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]PullRequestDTO, Page, error) {
-		return p.transport.ListOpenPullRequests(ctx, ref, opts)
-	})
-	if err != nil {
-		return platform.Page[platform.MergeRequest]{}, p.mapError(err)
-	}
-	out := make([]platform.MergeRequest, 0, len(items))
-	for _, item := range items {
-		out = append(out, NormalizePullRequest(ref, item))
-	}
-	return platform.Page[platform.MergeRequest]{Items: out, Exhausted: true}, nil
 }
 
 // listInventoryIssuesPage owns the historical and maintenance issue request
@@ -176,7 +122,7 @@ func (p *Provider) listInventoryIssuesPage(
 	// or the walk would cycle 1 -> last forever.
 	if encoded == "" && cursor.Page == 1 && page.Last > 1 {
 		cursor.Page = page.Last
-		return progressCursorPage[platform.Issue](cursor)
+		return nextCursorPage([]platform.Issue(nil), cursor, true)
 	}
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].Created.Equal(items[j].Created) {
@@ -227,7 +173,7 @@ func createdOrderIssuesPage(
 		cursor.Sweep = cursor.Page
 		cursor.Swept = 0
 		cursor.Page++
-		return progressCursorPage[platform.Issue](cursor)
+		return nextCursorPage([]platform.Issue(nil), cursor, true)
 	}
 	out := normalizeIssuePage(ref, items, boundary)
 	if len(items) > 0 {
@@ -362,7 +308,7 @@ func createdOrderMergeRequestsPage(
 		cursor.Sweep = cursor.Page
 		cursor.Swept = 0
 		cursor.Page--
-		return progressCursorPage[platform.MergeRequest](cursor)
+		return nextCursorPage([]platform.MergeRequest(nil), cursor, true)
 	}
 	out := normalizeMergeRequestPage(ref, items, boundary, pin)
 	for i := len(items) - 1; i >= 0; i-- {
@@ -406,210 +352,12 @@ func normalizeMergeRequestPage(
 	return out
 }
 
-// LookupIssue fetches a single issue and returns a typed outcome. Provider
-// probing and error classification happen once here so both live callers
-// (which require present) and archive callers (which record every outcome)
-// share one lookup.
-func (p *Provider) LookupIssue(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-) (platform.ItemLookup[platform.Issue], error) {
-	if err := p.validItemNumber(number); err != nil {
-		return platform.ItemLookup[platform.Issue]{}, err
-	}
-	item, err := p.transport.GetIssue(ctx, ref, number)
-	if err != nil {
-		outcome, classifyErr := p.classifyLookupOutcome(ctx, ref, err)
-		return platform.ItemLookup[platform.Issue]{Outcome: outcome}, classifyErr
-	}
-	return platform.ItemLookup[platform.Issue]{
-		Outcome: platform.LookupPresent, Item: NormalizeIssue(ref, item),
-	}, nil
-}
-
-// LookupMergeRequest is the merge-request counterpart to LookupIssue.
-func (p *Provider) LookupMergeRequest(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-) (platform.ItemLookup[platform.MergeRequest], error) {
-	if err := p.validItemNumber(number); err != nil {
-		return platform.ItemLookup[platform.MergeRequest]{}, err
-	}
-	item, err := p.transport.GetPullRequest(ctx, ref, number)
-	if err != nil {
-		outcome, classifyErr := p.classifyLookupOutcome(ctx, ref, err)
-		return platform.ItemLookup[platform.MergeRequest]{Outcome: outcome}, classifyErr
-	}
-	return platform.ItemLookup[platform.MergeRequest]{
-		Outcome: platform.LookupPresent, Item: NormalizePullRequest(ref, item),
-	}, nil
-}
-
-// classifyLookupOutcome maps a failed single-item fetch onto the canonical
-// lookup outcomes, spending at most one repository probe to distinguish
-// item-level access loss from repository-level access loss.
-func (p *Provider) classifyLookupOutcome(
-	ctx context.Context,
-	ref platform.RepoRef,
-	err error,
-) (platform.LookupOutcome, error) {
-	mapped := p.mapError(err)
-	if errors.Is(mapped, platform.ErrPermissionDenied) {
-		_, repoErr := p.transport.GetRepository(ctx, ref.Owner, ref.Name)
-		if repoErr == nil {
-			return platform.LookupInaccessible, nil
-		}
-		mappedRepoErr := p.mapError(repoErr)
-		if errors.Is(mappedRepoErr, platform.ErrPermissionDenied) || errors.Is(mappedRepoErr, platform.ErrNotFound) {
-			return "", platform.PermissionDenied(p.kind, p.host, repoErr)
-		}
-		return "", mappedRepoErr
-	}
-	if !errors.Is(mapped, platform.ErrNotFound) {
-		return "", mapped
-	}
-	_, repoErr := p.transport.GetRepository(ctx, ref.Owner, ref.Name)
-	if repoErr == nil {
-		// Neither SDK exposes a transfer destination on item lookup. An item
-		// 404 in an accessible source repository is therefore terminal removal.
-		return platform.LookupRemoved, nil
-	}
-	mappedRepoErr := p.mapError(repoErr)
-	if errors.Is(mappedRepoErr, platform.ErrPermissionDenied) || errors.Is(mappedRepoErr, platform.ErrNotFound) {
-		return "", platform.PermissionDenied(p.kind, p.host, repoErr)
-	}
-	return "", mappedRepoErr
-}
-
-// ListIssueCommentsPage returns one page of normalized issue comment events.
-func (p *Provider) ListIssueCommentsPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	encoded string,
-) (platform.Page[platform.IssueEvent], error) {
-	if err := p.validItemNumber(number); err != nil {
-		return platform.Page[platform.IssueEvent]{}, err
-	}
-	cursor, err := p.decodePageCursor(ref, number, "issue_comments", time.Time{}, encoded)
-	if err != nil {
-		return platform.Page[platform.IssueEvent]{}, err
-	}
-	comments, page, err := p.transport.ListIssueComments(ctx, ref, number, PageOptions{Page: cursor.Page, PageSize: defaultPageSize})
-	if err != nil {
-		return platform.Page[platform.IssueEvent]{}, p.mapError(err)
-	}
-	return detailCursorPage(NormalizeIssueComments(p.kind, ref, number, comments), cursor, page)
-}
-
-// ListMergeRequestCommentsPage returns one page of normalized ordinary
-// merge-request comment events.
-func (p *Provider) ListMergeRequestCommentsPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	encoded string,
-) (platform.Page[platform.MergeRequestEvent], error) {
-	if err := p.validItemNumber(number); err != nil {
-		return platform.Page[platform.MergeRequestEvent]{}, err
-	}
-	cursor, err := p.decodePageCursor(ref, number, "merge_request_comments", time.Time{}, encoded)
-	if err != nil {
-		return platform.Page[platform.MergeRequestEvent]{}, err
-	}
-	comments, page, err := p.transport.ListPullRequestComments(ctx, ref, number, PageOptions{Page: cursor.Page, PageSize: defaultPageSize})
-	if err != nil {
-		return platform.Page[platform.MergeRequestEvent]{}, p.mapError(err)
-	}
-	return detailCursorPage(NormalizeMergeRequestEvents(p.kind, ref, number, comments, nil, nil), cursor, page)
-}
-
-// ListSubmittedReviewsPage returns one page of normalized submitted-review
-// events. Forgejo and Gitea model review requests and pending drafts as review
-// rows, so only genuinely submitted states survive the filter; a filtered-empty
-// page is marked as explicit progress.
-func (p *Provider) ListSubmittedReviewsPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	encoded string,
-) (platform.Page[platform.MergeRequestEvent], error) {
-	if err := p.validItemNumber(number); err != nil {
-		return platform.Page[platform.MergeRequestEvent]{}, err
-	}
-	cursor, err := p.decodePageCursor(ref, number, "submitted_reviews", time.Time{}, encoded)
-	if err != nil {
-		return platform.Page[platform.MergeRequestEvent]{}, err
-	}
-	reviews, page, err := p.transport.ListPullRequestReviews(ctx, ref, number, PageOptions{Page: cursor.Page, PageSize: defaultPageSize})
-	if err != nil {
-		return platform.Page[platform.MergeRequestEvent]{}, p.mapError(err)
-	}
-	submitted := make([]ReviewDTO, 0, len(reviews))
-	for _, review := range reviews {
-		if review.Submitted.IsZero() || !isSubmittedReviewState(review.State) {
-			continue
-		}
-		submitted = append(submitted, review)
-	}
-	return detailCursorPage(NormalizeMergeRequestEvents(p.kind, ref, number, nil, submitted, nil), cursor, page)
-}
-
-func isSubmittedReviewState(state string) bool {
-	switch strings.ToUpper(strings.TrimSpace(state)) {
-	case "APPROVED", "COMMENT", "REQUEST_CHANGES":
-		return true
-	default:
-		return false
-	}
-}
-
-// ListReviewThreadsPage is a typed unsupported capability: neither SDK exposes
-// a usable inline review-thread dataset.
-func (p *Provider) ListReviewThreadsPage(
-	context.Context,
-	platform.RepoRef,
-	int,
-	string,
-) (platform.Page[platform.MergeRequestReviewThread], error) {
-	return platform.Page[platform.MergeRequestReviewThread]{}, platform.UnsupportedCapability(
-		p.kind, p.host, string(platform.ArchiveCapabilityInlineReviewComments),
-	)
-}
-
-// validItemNumber rejects nonpositive item numbers before any provider call:
-// the issues and pulls endpoints route them onto unrelated collection URLs
-// instead of failing, so they must never reach the transport.
-func (p *Provider) validItemNumber(number int) error {
-	if number <= 0 {
-		return &platform.Error{
-			Code: platform.ErrCodeInvalidArgument, Provider: p.kind, PlatformHost: p.host,
-			Field: "item_number", Err: fmt.Errorf("item number must be positive: %d", number),
-		}
-	}
-	return nil
-}
-
-func detailCursorPage[T any](items []T, cursor pageCursor, page Page) (platform.Page[T], error) {
-	if page.Next == 0 {
-		return platform.Page[T]{Items: items, Exhausted: true}, nil
-	}
-	cursor.Page = page.Next
-	return nextCursorPage(items, cursor, len(items) == 0)
-}
-
 func nextCursorPage[T any](items []T, cursor pageCursor, progressOnly bool) (platform.Page[T], error) {
 	next, err := encodePageCursor(cursor)
 	if err != nil {
 		return platform.Page[T]{}, err
 	}
 	return platform.Page[T]{Items: items, NextCursor: next, ProgressOnly: progressOnly}, nil
-}
-
-func progressCursorPage[T any](cursor pageCursor) (platform.Page[T], error) {
-	return nextCursorPage([]T{}, cursor, true)
 }
 
 func (p *Provider) archiveTransport() (ArchiveTransport, error) {

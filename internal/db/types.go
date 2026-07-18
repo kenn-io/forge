@@ -108,23 +108,10 @@ const (
 	ArchiveLifecycleStateInaccessible    ArchiveLifecycleState = "inaccessible"
 )
 
-type ArchiveDatasetStatus string
-
-const (
-	ArchiveDatasetStatusPending     ArchiveDatasetStatus = "pending"
-	ArchiveDatasetStatusUnsupported ArchiveDatasetStatus = "unsupported"
-)
-
 type ArchiveDataset string
 
 const (
-	// ArchiveDatasetLookup is the parent hydration lookup modeled as its own
-	// dataset so item-scoped retries and terminal outcomes share the dataset
-	// progress machinery.
-	ArchiveDatasetLookup         ArchiveDataset = "lookup"
-	ArchiveDatasetComments       ArchiveDataset = "comments"
-	ArchiveDatasetReviews        ArchiveDataset = "reviews"
-	ArchiveDatasetInlineComments ArchiveDataset = "inline_comments"
+	ArchiveDatasetLookup ArchiveDataset = "lookup"
 )
 
 // ArchiveScanKind names one repository-level scan with durable cursor state.
@@ -224,66 +211,19 @@ const (
 	ArchiveLookupInaccessible ArchiveLookupOutcome = "inaccessible"
 )
 
-// DomainParentRef identifies one domain parent row (issue or merge request)
-// by its table id.
-type DomainParentRef struct {
-	ItemType ArchiveItemType
-	ID       int64
-}
-
-// DatasetRows carries the normalized rows of one provider page for one
-// parent. Only the fields matching the commit's dataset and item type may be
-// populated.
-type DatasetRows struct {
-	IssueComments []IssueEvent
-	MRComments    []MREvent
-	Reviews       []MREvent
-	ReviewThreads []MRReviewThread
-	ThreadEvents  []MREvent
-}
-
-// DatasetProgressAdvance binds a page commit to durable dataset progress.
-// Nil progress means live-only ingestion.
-type DatasetProgressAdvance struct {
-	RepoID      int64
-	ItemNumber  int
-	InputCursor string
-	NextCursor  string
-}
-
-// DatasetPageCommit is the single child-dataset page commit shared by live
-// and archive ingestion.
-type DatasetPageCommit struct {
-	Parent           DomainParentRef
-	ExpectedRevision int64
-	Dataset          ArchiveDataset
-	ScanGeneration   int64
-	Rows             DatasetRows
-	Final            bool
-	Progress         *DatasetProgressAdvance
-}
-
-// ParentLookupCommit is the single-item mode of the canonical
-// parent-observation operation. It shares the parent upsert and
-// work-reconciliation transaction core with CommitArchiveInventoryPage —
-// there is no third parent writer.
-type ParentLookupCommit struct {
+// ArchiveItemSyncCommit records the outcome of running the existing full item
+// sync for archive hydration. Provider content is already persisted by the
+// syncer; this commit advances only archive progress and terminal lifecycle.
+type ArchiveItemSyncCommit struct {
 	RepoID         int64
 	ItemType       ArchiveItemType
 	ItemNumber     int
 	ScanGeneration int64
-	// ExpectedRevision fences the commit on the domain parent revision the
-	// claimed lookup observed: a live observation that advances the parent
-	// between claim and commit supersedes the lookup's conclusion, so the
-	// commit is rejected and the lookup rescans at the new revision.
-	ExpectedRevision int64
-	Outcome          ArchiveLookupOutcome
-	Issue            *Issue
-	MergeRequest     *MergeRequest
-	Destination      *RepoIdentity
-	ErrorCode        string
-	ErrorDetail      string
-	Now              time.Time
+	Outcome        ArchiveLookupOutcome
+	Destination    *RepoIdentity
+	ErrorCode      string
+	ErrorDetail    string
+	Now            time.Time
 }
 
 // ArchiveDatasetProgressKey addresses one dataset progress row.
@@ -476,26 +416,18 @@ type MergeRequestSnapshot struct {
 	DerivedFields            *MRDerivedFields
 }
 
-type ArchiveInventoryIssue struct {
-	Snapshot       IssueSnapshot
-	ProviderItemID string
-	CommentsStatus ArchiveDatasetStatus
-}
-
-type ArchiveInventoryMergeRequest struct {
-	Snapshot             MergeRequestSnapshot
-	ProviderItemID       string
-	CommentsStatus       ArchiveDatasetStatus
-	ReviewsStatus        ArchiveDatasetStatus
-	InlineCommentsStatus ArchiveDatasetStatus
+type ArchiveInventoryItem struct {
+	Number            int
+	ProviderItemID    string
+	ProviderCreatedAt time.Time
+	ProviderUpdatedAt time.Time
 }
 
 type ArchiveInventoryCommit struct {
 	RepoID        int64
 	ItemType      ArchiveItemType
 	RefreshReason ArchiveRefreshReason
-	Issues        []ArchiveInventoryIssue
-	MergeRequests []ArchiveInventoryMergeRequest
+	Items         []ArchiveInventoryItem
 	// ScanGeneration and InputCursor bind the page to the durable scan row
 	// with compare-and-swap semantics: a response from before an explicit
 	// reset cannot advance the new generation, and a duplicate delivery of
@@ -507,33 +439,13 @@ type ArchiveInventoryCommit struct {
 	Now            time.Time
 }
 
-// ArchiveDatasetWork is one claimable dataset of an archive item, carrying
-// the durable cursor state a scan resumes from.
-type ArchiveDatasetWork struct {
-	Dataset        ArchiveDataset
-	ParentRevision int64
-	ScanGeneration int64
-	NextCursor     *string
-	Status         ArchiveDatasetProgressStatus
-	AttemptCount   int
-}
-
-// Cursor returns the durable next input cursor, empty for page one.
-func (w ArchiveDatasetWork) Cursor() string {
-	if w.NextCursor == nil {
-		return ""
-	}
-	return *w.NextCursor
-}
-
-// ArchiveItemWork is the claimable unit of archive hydration: one item and
-// its currently due dataset progress rows, lookup first.
+// ArchiveItemWork is one claimable archive hydration operation.
 type ArchiveItemWork struct {
 	RepoID            int64
 	ItemType          ArchiveItemType
 	ItemNumber        int
 	ProviderCreatedAt time.Time
-	Datasets          []ArchiveDatasetWork
+	ScanGeneration    int64
 }
 
 type ArchiveStatus string

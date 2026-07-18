@@ -39,12 +39,9 @@ type RepositoryReader interface {
 	) ([]Repository, error)
 }
 
-// MergeRequestReader is the live merge-request event aggregate: one
-// provider-shaped read of every event on a merge request (comments, reviews,
-// commits, timeline), built over the canonical pages plus provider-specific
-// datasets internally. Inventory scans and single-item reads live on
-// MergeRequestPageReader.
 type MergeRequestReader interface {
+	ListOpenMergeRequests(ctx context.Context, ref RepoRef) ([]MergeRequest, error)
+	GetMergeRequest(ctx context.Context, ref RepoRef, number int) (MergeRequest, error)
 	ListMergeRequestEvents(
 		ctx context.Context,
 		ref RepoRef,
@@ -56,31 +53,20 @@ type MergeRequestViewerResolver interface {
 	ViewerAuthoredMergeRequest(ctx context.Context, mr MergeRequest) (bool, error)
 }
 
-// IssueReader is the live issue event aggregate counterpart to
-// MergeRequestReader. Inventory scans and single-item reads live on
-// IssuePageReader.
 type IssueReader interface {
+	ListOpenIssues(ctx context.Context, ref RepoRef) ([]Issue, error)
+	GetIssue(ctx context.Context, ref RepoRef, number int) (Issue, error)
 	ListIssueEvents(ctx context.Context, ref RepoRef, number int) ([]IssueEvent, error)
 }
 
-// IssuePageReader is the canonical page-oriented provider read surface for
-// issues. Live whole-dataset helpers and archive workers both drive these
-// methods; cursors are opaque and query state/order come from ItemPageQuery.
+// IssuePageReader is the archive inventory surface for issues.
 type IssuePageReader interface {
 	ListIssuesPage(context.Context, RepoRef, ItemPageQuery) (Page[Issue], error)
-	LookupIssue(context.Context, RepoRef, int) (ItemLookup[Issue], error)
-	ListIssueCommentsPage(context.Context, RepoRef, int, string) (Page[IssueEvent], error)
 }
 
-// MergeRequestPageReader is the canonical page-oriented provider read surface
-// for merge requests, their comments, submitted reviews, and inline review
-// threads. Cursors are opaque; query state/order come from ItemPageQuery.
+// MergeRequestPageReader is the archive inventory surface for merge requests.
 type MergeRequestPageReader interface {
 	ListMergeRequestsPage(context.Context, RepoRef, ItemPageQuery) (Page[MergeRequest], error)
-	LookupMergeRequest(context.Context, RepoRef, int) (ItemLookup[MergeRequest], error)
-	ListMergeRequestCommentsPage(context.Context, RepoRef, int, string) (Page[MergeRequestEvent], error)
-	ListSubmittedReviewsPage(context.Context, RepoRef, int, string) (Page[MergeRequestEvent], error)
-	ListReviewThreadsPage(context.Context, RepoRef, int, string) (Page[MergeRequestReviewThread], error)
 }
 
 type LabelCatalog struct {

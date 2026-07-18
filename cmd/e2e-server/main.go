@@ -179,8 +179,7 @@ func (p e2eStaticProvider) ListIssuesPage(
 	if err := platform.ValidateItemPageQuery(query); err != nil {
 		return platform.Page[platform.Issue]{}, err
 	}
-	if ref.RepoPath != p.issue.Repo.RepoPath ||
-		(query.State == platform.ItemStateOpen && p.issue.State != "open") {
+	if ref.RepoPath != p.issue.Repo.RepoPath {
 		return platform.Page[platform.Issue]{Exhausted: true}, nil
 	}
 	return platform.Page[platform.Issue]{
@@ -188,31 +187,25 @@ func (p e2eStaticProvider) ListIssuesPage(
 	}, nil
 }
 
-func (p e2eStaticProvider) LookupIssue(
+func (p e2eStaticProvider) ListOpenIssues(
 	_ context.Context,
 	ref platform.RepoRef,
-	number int,
-) (platform.ItemLookup[platform.Issue], error) {
-	if ref.RepoPath == p.issue.Repo.RepoPath && number == p.issue.Number {
-		return platform.ItemLookup[platform.Issue]{
-			Outcome: platform.LookupPresent, Item: p.issue,
-		}, nil
+) ([]platform.Issue, error) {
+	if ref.RepoPath == p.issue.Repo.RepoPath && p.issue.State == "open" {
+		return []platform.Issue{p.issue}, nil
 	}
-	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupRemoved}, nil
+	return nil, nil
 }
 
-func (p e2eStaticProvider) ListIssueCommentsPage(
+func (p e2eStaticProvider) GetIssue(
 	_ context.Context,
 	ref platform.RepoRef,
 	number int,
-	_ string,
-) (platform.Page[platform.IssueEvent], error) {
-	if ref.RepoPath != p.issue.Repo.RepoPath || number != p.issue.Number {
-		return platform.Page[platform.IssueEvent]{Exhausted: true}, nil
+) (platform.Issue, error) {
+	if ref.RepoPath == p.issue.Repo.RepoPath && number == p.issue.Number {
+		return p.issue, nil
 	}
-	return platform.Page[platform.IssueEvent]{
-		Items: slices.Clone(p.issueEvents), Exhausted: true,
-	}, nil
+	return platform.Issue{}, platform.ErrNotFound
 }
 
 func (p e2eStaticProvider) ListIssueEvents(

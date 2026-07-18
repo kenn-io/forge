@@ -277,10 +277,9 @@ func (p *archiveAPITestProvider) Platform() platform.Kind { return platform.Kind
 func (p *archiveAPITestProvider) Host() string            { return "github.test" }
 func (p *archiveAPITestProvider) Capabilities() platform.Capabilities {
 	return platform.Capabilities{
-		ReadIssues: true, ReadMergeRequests: true,
 		Archive: platform.ArchiveCapabilities{
-			HistoricalIssues: true, HistoricalMergeRequests: true, OrdinaryComments: true,
-			SubmittedReviews: true, InlineReviewComments: true,
+			HistoricalIssues: true, HistoricalMergeRequests: true,
+			OrdinaryComments: true, SubmittedReviews: true, InlineReviewComments: true,
 		},
 	}
 }
@@ -292,30 +291,6 @@ func (p *archiveAPITestProvider) ListIssuesPage(context.Context, platform.RepoRe
 func (p *archiveAPITestProvider) ListMergeRequestsPage(context.Context, platform.RepoRef, platform.ItemPageQuery) (platform.Page[platform.MergeRequest], error) {
 	p.pageCall()
 	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
-}
-func (p *archiveAPITestProvider) LookupIssue(context.Context, platform.RepoRef, int) (platform.ItemLookup[platform.Issue], error) {
-	p.pageCall()
-	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupRemoved}, nil
-}
-func (p *archiveAPITestProvider) LookupMergeRequest(context.Context, platform.RepoRef, int) (platform.ItemLookup[platform.MergeRequest], error) {
-	p.pageCall()
-	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupRemoved}, nil
-}
-func (p *archiveAPITestProvider) ListIssueCommentsPage(context.Context, platform.RepoRef, int, string) (platform.Page[platform.IssueEvent], error) {
-	p.pageCall()
-	return platform.Page[platform.IssueEvent]{Exhausted: true}, nil
-}
-func (p *archiveAPITestProvider) ListMergeRequestCommentsPage(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestEvent], error) {
-	p.pageCall()
-	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
-}
-func (p *archiveAPITestProvider) ListSubmittedReviewsPage(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestEvent], error) {
-	p.pageCall()
-	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
-}
-func (p *archiveAPITestProvider) ListReviewThreadsPage(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestReviewThread], error) {
-	p.pageCall()
-	return platform.Page[platform.MergeRequestReviewThread]{Exhausted: true}, nil
 }
 
 type archiveAPITestSource struct{ refs []platform.RepoRef }

@@ -434,21 +434,6 @@ type Page[T any] struct {
 	ProgressOnly bool
 }
 
-type LookupOutcome string
-
-const (
-	LookupPresent      LookupOutcome = "present"
-	LookupRemoved      LookupOutcome = "removed"
-	LookupMoved        LookupOutcome = "moved"
-	LookupInaccessible LookupOutcome = "inaccessible"
-)
-
-type ItemLookup[T any] struct {
-	Outcome     LookupOutcome
-	Item        T
-	Destination *RepoRef
-}
-
 func ValidatePage[T any](kind Kind, host, inputCursor string, page Page[T]) error {
 	hasCursor := page.NextCursor != ""
 	if hasCursor == page.Exhausted {
@@ -486,42 +471,6 @@ func ValidatePage[T any](kind Kind, host, inputCursor string, page Page[T]) erro
 		)
 	}
 	return nil
-}
-
-func ValidateItemLookup[T any](kind Kind, host string, result ItemLookup[T]) error {
-	switch result.Outcome {
-	case LookupMoved:
-		if !validArchiveDestination(result.Destination) {
-			return archiveContractError(
-				kind,
-				host,
-				"archive_lookup_destination",
-				"moved archive item must include a complete destination repository identity",
-			)
-		}
-	case LookupPresent, LookupRemoved, LookupInaccessible:
-		if result.Destination != nil {
-			return archiveContractError(
-				kind,
-				host,
-				"archive_lookup_destination",
-				"non-moved archive item must not include a destination repository",
-			)
-		}
-	default:
-		return archiveContractError(
-			kind,
-			host,
-			"archive_lookup_outcome",
-			"archive item returned unknown lookup outcome %q",
-			result.Outcome,
-		)
-	}
-	return nil
-}
-
-func validArchiveDestination(ref *RepoRef) bool {
-	return ref != nil && ValidateCanonicalRepoRef(*ref) == nil
 }
 
 func archiveContractError(kind Kind, host, field, format string, args ...any) error {

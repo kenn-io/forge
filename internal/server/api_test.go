@@ -872,26 +872,20 @@ func (p *apiTestGitLabProvider) ListRepositories(
 	return []platform.Repository{repo}, nil
 }
 
-func (p *apiTestGitLabProvider) ListMergeRequestsPage(
-	_ context.Context,
-	_ platform.RepoRef,
-	query platform.ItemPageQuery,
-) (platform.Page[platform.MergeRequest], error) {
-	if err := platform.ValidateItemPageQuery(query); err != nil {
-		return platform.Page[platform.MergeRequest]{}, err
-	}
+func (p *apiTestGitLabProvider) ListOpenMergeRequests(
+	context.Context,
+	platform.RepoRef,
+) ([]platform.MergeRequest, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return platform.Page[platform.MergeRequest]{
-		Items: slices.Clone(p.mergeRequests), Exhausted: true,
-	}, nil
+	return slices.Clone(p.mergeRequests), nil
 }
 
-func (p *apiTestGitLabProvider) LookupMergeRequest(
+func (p *apiTestGitLabProvider) GetMergeRequest(
 	_ context.Context,
 	_ platform.RepoRef,
 	number int,
-) (platform.ItemLookup[platform.MergeRequest], error) {
+) (platform.MergeRequest, error) {
 	p.mu.Lock()
 	var found platform.MergeRequest
 	foundOK := false
@@ -920,29 +914,9 @@ func (p *apiTestGitLabProvider) LookupMergeRequest(
 				<-p.mrFetchRelease
 			}
 		}
-		return platform.ItemLookup[platform.MergeRequest]{
-			Outcome: platform.LookupPresent, Item: found,
-		}, nil
+		return found, nil
 	}
-	return platform.ItemLookup[platform.MergeRequest]{}, fmt.Errorf("missing merge request %d", number)
-}
-
-func (p *apiTestGitLabProvider) ListMergeRequestCommentsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.MergeRequestEvent], error) {
-	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
-}
-
-func (p *apiTestGitLabProvider) ListSubmittedReviewsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.MergeRequestEvent], error) {
-	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
-}
-
-func (p *apiTestGitLabProvider) ListReviewThreadsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.MergeRequestReviewThread], error) {
-	return platform.Page[platform.MergeRequestReviewThread]{Exhausted: true}, nil
+	return platform.MergeRequest{}, fmt.Errorf("missing merge request %d", number)
 }
 
 func (p *apiTestGitLabProvider) ListMergeRequestEvents(
@@ -953,36 +927,24 @@ func (p *apiTestGitLabProvider) ListMergeRequestEvents(
 	return p.mergeRequestEvents[number], nil
 }
 
-func (p *apiTestGitLabProvider) ListIssuesPage(
-	_ context.Context,
-	_ platform.RepoRef,
-	query platform.ItemPageQuery,
-) (platform.Page[platform.Issue], error) {
-	if err := platform.ValidateItemPageQuery(query); err != nil {
-		return platform.Page[platform.Issue]{}, err
-	}
-	return platform.Page[platform.Issue]{Items: p.issues, Exhausted: true}, nil
+func (p *apiTestGitLabProvider) ListOpenIssues(
+	context.Context,
+	platform.RepoRef,
+) ([]platform.Issue, error) {
+	return slices.Clone(p.issues), nil
 }
 
-func (p *apiTestGitLabProvider) LookupIssue(
+func (p *apiTestGitLabProvider) GetIssue(
 	_ context.Context,
 	_ platform.RepoRef,
 	number int,
-) (platform.ItemLookup[platform.Issue], error) {
+) (platform.Issue, error) {
 	for _, issue := range p.issues {
 		if issue.Number == number {
-			return platform.ItemLookup[platform.Issue]{
-				Outcome: platform.LookupPresent, Item: issue,
-			}, nil
+			return issue, nil
 		}
 	}
-	return platform.ItemLookup[platform.Issue]{}, fmt.Errorf("missing issue %d", number)
-}
-
-func (p *apiTestGitLabProvider) ListIssueCommentsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.IssueEvent], error) {
-	return platform.Page[platform.IssueEvent]{Exhausted: true}, nil
+	return platform.Issue{}, fmt.Errorf("missing issue %d", number)
 }
 
 func (p *apiTestGitLabProvider) ListIssueEvents(
@@ -14304,31 +14266,31 @@ func TestAPIResolveItemMapsLookupOutcomes(t *testing.T) {
 }
 
 // movedLookupGitLabProvider embeds apiTestGitLabProvider but reports every
-// single-item lookup as moved to another repository via the supplied
+// single-item read as moved to another repository via the supplied
 // platform.Error. Used by TestAPIMovedLookupProblemCarriesDestination.
 type movedLookupGitLabProvider struct {
 	apiTestGitLabProvider
 	lookupErr error
 }
 
-func (p *movedLookupGitLabProvider) LookupIssue(
+func (p *movedLookupGitLabProvider) GetIssue(
 	_ context.Context,
 	_ platform.RepoRef,
 	_ int,
-) (platform.ItemLookup[platform.Issue], error) {
-	return platform.ItemLookup[platform.Issue]{}, p.lookupErr
+) (platform.Issue, error) {
+	return platform.Issue{}, p.lookupErr
 }
 
-func (p *movedLookupGitLabProvider) LookupMergeRequest(
+func (p *movedLookupGitLabProvider) GetMergeRequest(
 	_ context.Context,
 	_ platform.RepoRef,
 	_ int,
-) (platform.ItemLookup[platform.MergeRequest], error) {
-	return platform.ItemLookup[platform.MergeRequest]{}, p.lookupErr
+) (platform.MergeRequest, error) {
+	return platform.MergeRequest{}, p.lookupErr
 }
 
 // TestAPIMovedLookupProblemCarriesDestination drives item sync through a
-// fake provider whose single-item lookup reports the item moved to another
+// fake provider whose single-item read reports the item moved to another
 // repository (a not_found platform.Error carrying Destination). The 404
 // problem body must carry the full provider-aware destination identity as
 // stable extension members so clients can retarget the reference.

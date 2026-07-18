@@ -75,47 +75,23 @@ func (p *blockingPriorityProvider) wait(operation priorityWorkOperation) {
 	<-p.release
 }
 
-func (p *blockingPriorityProvider) ListMergeRequestsPage(
-	_ context.Context, _ platform.RepoRef, query platform.ItemPageQuery,
-) (platform.Page[platform.MergeRequest], error) {
-	if err := platform.ValidateItemPageQuery(query); err != nil {
-		return platform.Page[platform.MergeRequest]{}, err
-	}
+func (p *blockingPriorityProvider) ListOpenMergeRequests(
+	context.Context, platform.RepoRef,
+) ([]platform.MergeRequest, error) {
 	p.wait(priorityWorkIndex)
-	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
+	return nil, nil
 }
 
-func (p *blockingPriorityProvider) LookupMergeRequest(
+func (p *blockingPriorityProvider) GetMergeRequest(
 	context.Context, platform.RepoRef, int,
-) (platform.ItemLookup[platform.MergeRequest], error) {
+) (platform.MergeRequest, error) {
 	p.wait(priorityWorkMR)
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	return platform.ItemLookup[platform.MergeRequest]{
-		Outcome: platform.LookupPresent,
-		Item: platform.MergeRequest{
-			Repo: p.ref, PlatformID: 7, PlatformExternalID: "mr-7", Number: 7,
-			Title: "Synthetic MR", State: "open", CreatedAt: now, UpdatedAt: now,
-			LastActivityAt: now,
-		},
+	return platform.MergeRequest{
+		Repo: p.ref, PlatformID: 7, PlatformExternalID: "mr-7", Number: 7,
+		Title: "Synthetic MR", State: "open", CreatedAt: now, UpdatedAt: now,
+		LastActivityAt: now,
 	}, nil
-}
-
-func (*blockingPriorityProvider) ListMergeRequestCommentsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.MergeRequestEvent], error) {
-	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
-}
-
-func (*blockingPriorityProvider) ListSubmittedReviewsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.MergeRequestEvent], error) {
-	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
-}
-
-func (*blockingPriorityProvider) ListReviewThreadsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.MergeRequestReviewThread], error) {
-	return platform.Page[platform.MergeRequestReviewThread]{Exhausted: true}, nil
 }
 
 func (*blockingPriorityProvider) ListMergeRequestEvents(
@@ -124,34 +100,22 @@ func (*blockingPriorityProvider) ListMergeRequestEvents(
 	return nil, nil
 }
 
-func (p *blockingPriorityProvider) ListIssuesPage(
-	_ context.Context, _ platform.RepoRef, query platform.ItemPageQuery,
-) (platform.Page[platform.Issue], error) {
-	if err := platform.ValidateItemPageQuery(query); err != nil {
-		return platform.Page[platform.Issue]{}, err
-	}
-	return platform.Page[platform.Issue]{Exhausted: true}, nil
+func (*blockingPriorityProvider) ListOpenIssues(
+	context.Context, platform.RepoRef,
+) ([]platform.Issue, error) {
+	return nil, nil
 }
 
-func (p *blockingPriorityProvider) LookupIssue(
+func (p *blockingPriorityProvider) GetIssue(
 	context.Context, platform.RepoRef, int,
-) (platform.ItemLookup[platform.Issue], error) {
+) (platform.Issue, error) {
 	p.wait(priorityWorkIssue)
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	return platform.ItemLookup[platform.Issue]{
-		Outcome: platform.LookupPresent,
-		Item: platform.Issue{
-			Repo: p.ref, PlatformID: 8, PlatformExternalID: "issue-8", Number: 8,
-			Title: "Synthetic issue", State: "open", CreatedAt: now, UpdatedAt: now,
-			LastActivityAt: now,
-		},
+	return platform.Issue{
+		Repo: p.ref, PlatformID: 8, PlatformExternalID: "issue-8", Number: 8,
+		Title: "Synthetic issue", State: "open", CreatedAt: now, UpdatedAt: now,
+		LastActivityAt: now,
 	}, nil
-}
-
-func (*blockingPriorityProvider) ListIssueCommentsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.IssueEvent], error) {
-	return platform.Page[platform.IssueEvent]{Exhausted: true}, nil
 }
 
 func (*blockingPriorityProvider) ListIssueEvents(
@@ -164,10 +128,9 @@ func (p *archiveWorkerProvider) Platform() platform.Kind { return p.ref.Platform
 func (p *archiveWorkerProvider) Host() string            { return p.ref.Host }
 func (*archiveWorkerProvider) Capabilities() platform.Capabilities {
 	return platform.Capabilities{
-		ReadIssues: true, ReadMergeRequests: true,
+		ReadIssues: true,
 		Archive: platform.ArchiveCapabilities{
 			HistoricalIssues: true, HistoricalMergeRequests: true,
-			OrdinaryComments: true,
 		},
 	}
 }
@@ -188,45 +151,40 @@ func (p *archiveWorkerProvider) ListIssuesPage(_ context.Context, _ platform.Rep
 func (*archiveWorkerProvider) ListMergeRequestsPage(context.Context, platform.RepoRef, platform.ItemPageQuery) (platform.Page[platform.MergeRequest], error) {
 	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
 }
-func (p *archiveWorkerProvider) LookupIssue(context.Context, platform.RepoRef, int) (platform.ItemLookup[platform.Issue], error) {
-	return platform.ItemLookup[platform.Issue]{Outcome: platform.LookupPresent, Item: p.archivedIssue()}, nil
+func (*archiveWorkerProvider) ListOpenIssues(context.Context, platform.RepoRef) ([]platform.Issue, error) {
+	return nil, nil
 }
-func (*archiveWorkerProvider) LookupMergeRequest(context.Context, platform.RepoRef, int) (platform.ItemLookup[platform.MergeRequest], error) {
-	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupRemoved}, nil
+func (p *archiveWorkerProvider) GetIssue(context.Context, platform.RepoRef, int) (platform.Issue, error) {
+	return p.archivedIssue(), nil
 }
-func (*archiveWorkerProvider) ListIssueCommentsPage(context.Context, platform.RepoRef, int, string) (platform.Page[platform.IssueEvent], error) {
-	return platform.Page[platform.IssueEvent]{Exhausted: true}, nil
-}
-func (*archiveWorkerProvider) ListMergeRequestCommentsPage(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestEvent], error) {
-	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
-}
-func (*archiveWorkerProvider) ListSubmittedReviewsPage(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestEvent], error) {
-	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
-}
-func (*archiveWorkerProvider) ListReviewThreadsPage(context.Context, platform.RepoRef, int, string) (platform.Page[platform.MergeRequestReviewThread], error) {
-	return platform.Page[platform.MergeRequestReviewThread]{Exhausted: true}, nil
+func (*archiveWorkerProvider) ListIssueEvents(
+	context.Context,
+	platform.RepoRef,
+	int,
+) ([]platform.IssueEvent, error) {
+	return nil, nil
 }
 
-// preemptibleArchiveProvider blocks its first archive issue lookup until the
+// preemptibleArchiveProvider blocks its first archive issue read until the
 // admitted request context is canceled, so a test can drive real live-work
-// preemption of an in-flight archive request. Subsequent lookups succeed.
+// preemption of an in-flight archive request. Subsequent reads succeed.
 type preemptibleArchiveProvider struct {
 	*archiveWorkerProvider
 	readStarted chan struct{}
 	blockOnce   sync.Once
 }
 
-func (p *preemptibleArchiveProvider) LookupIssue(
+func (p *preemptibleArchiveProvider) GetIssue(
 	ctx context.Context, ref platform.RepoRef, number int,
-) (platform.ItemLookup[platform.Issue], error) {
+) (platform.Issue, error) {
 	blocked := false
 	p.blockOnce.Do(func() { blocked = true })
 	if blocked {
 		close(p.readStarted)
 		<-ctx.Done()
-		return platform.ItemLookup[platform.Issue]{}, ctx.Err()
+		return platform.Issue{}, ctx.Err()
 	}
-	return p.archiveWorkerProvider.LookupIssue(ctx, ref, number)
+	return p.archiveWorkerProvider.GetIssue(ctx, ref, number)
 }
 
 func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T) {
@@ -271,14 +229,14 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	require.NoError(err)
 	require.NotNil(repo)
 
-	// The hydration pass claims the seeded issue item and blocks in the lookup
-	// until live work begins.
+	// The archive pass delegates to the existing issue sync, which blocks in
+	// its canonical lookup until live work begins.
 	hydrationDone := make(chan error, 1)
 	go func() { hydrationDone <- service.RunEligible(t.Context()) }()
 	select {
 	case <-provider.readStarted:
 	case <-time.After(2 * time.Second):
-		require.Fail("archive hydration lookup did not start")
+		require.Fail("archive item sync did not start")
 	}
 
 	// beginProviderWork cancels the in-flight archive lease and waits for it to
@@ -306,12 +264,12 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	releaseLive()
 	require.NoError(service.RunEligible(t.Context()))
 
-	comments, err := database.GetDatasetProgress(
-		t.Context(), repo.ID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetComments,
+	lookup, err = database.GetDatasetProgress(
+		t.Context(), repo.ID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
 	)
 	require.NoError(err)
-	assert.Equal(db.ArchiveDatasetProgressComplete, comments.Status)
-	assert.NotNil(comments.CompletedAt)
+	assert.Equal(db.ArchiveDatasetProgressComplete, lookup.Status)
+	assert.NotNil(lookup.CompletedAt)
 }
 
 func (*archiveLifecycleRecorder) RunEligible(context.Context) error { return nil }

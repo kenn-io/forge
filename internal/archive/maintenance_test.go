@@ -53,20 +53,16 @@ func TestPromptMaintenanceCommitsPagesBeforeAdvancingScanWatermark(t *testing.T)
 	assert.Equal([]time.Time{now}, provider.updatedMRSince)
 
 	advanced2, err := database.GetDatasetProgress(
-		t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetComments,
+		t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
 	)
 	require.NoError(err)
 	assert.Equal(db.ArchiveDatasetProgressPending, advanced2.Status)
-	for _, dataset := range []db.ArchiveDataset{
-		db.ArchiveDatasetComments, db.ArchiveDatasetReviews, db.ArchiveDatasetInlineComments,
-	} {
-		boundary, err := database.GetDatasetProgress(
-			t.Context(), repoID, db.ArchiveItemTypeMergeRequest, 2, dataset,
-		)
-		require.NoError(err)
-		assert.Equal(db.ArchiveDatasetProgressPending, boundary.Status,
-			"inclusive boundary rows must refresh for coarse provider timestamps: %s", dataset)
-	}
+	boundary, err := database.GetDatasetProgress(
+		t.Context(), repoID, db.ArchiveItemTypeMergeRequest, 2, db.ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressPending, boundary.Status,
+		"inclusive boundary items must refresh for coarse provider timestamps")
 }
 
 func TestPromptMaintenanceFailureRetainsPriorWatermarkAndCommittedPages(t *testing.T) {
@@ -157,13 +153,5 @@ func completeArchiveInitial(t *testing.T, service *Service) {
 	t.Helper()
 	for range 4 {
 		require.NoError(t, service.RunEligible(t.Context()))
-	}
-}
-
-func archiveIssueComment(ref platform.RepoRef, id int64, body string) platform.IssueEvent {
-	return platform.IssueEvent{
-		Repo: ref, PlatformID: id, PlatformExternalID: "issue-comment-" + body,
-		IssueNumber: 1, EventType: "issue_comment", Body: body,
-		CreatedAt: archiveTestTime(), DedupeKey: "issue-comment:" + body,
 	}
 }

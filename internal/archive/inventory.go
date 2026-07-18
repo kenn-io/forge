@@ -36,7 +36,7 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 			return s.recordInventoryFailure(ctx, repo.ID, err)
 		}
 		query := platform.ItemPageQuery{
-			State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+			Order:  platform.ItemOrderCreated,
 			Cursor: scan.Cursor(),
 		}
 		switch itemType {
@@ -53,9 +53,9 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 				))
 			}
 			commit.NextCursor, commit.Exhausted = page.NextCursor, page.Exhausted
-			commit.Issues = make([]db.ArchiveInventoryIssue, 0, len(page.Items))
+			commit.Items = make([]db.ArchiveInventoryItem, 0, len(page.Items))
 			for _, item := range page.Items {
-				commit.Issues = append(commit.Issues, archiveInventoryIssue(repo, item))
+				commit.Items = append(commit.Items, archiveInventoryIssue(item))
 			}
 		case db.ArchiveItemTypeMergeRequest:
 			page, err := repo.MergeRequests.ListMergeRequestsPage(requestCtx, repo.Ref, query)
@@ -70,9 +70,9 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 				))
 			}
 			commit.NextCursor, commit.Exhausted = page.NextCursor, page.Exhausted
-			commit.MergeRequests = make([]db.ArchiveInventoryMergeRequest, 0, len(page.Items))
+			commit.Items = make([]db.ArchiveInventoryItem, 0, len(page.Items))
 			for _, item := range page.Items {
-				commit.MergeRequests = append(commit.MergeRequests, archiveInventoryMergeRequest(repo, item))
+				commit.Items = append(commit.Items, archiveInventoryMergeRequest(item))
 			}
 		default:
 			release()
@@ -165,31 +165,18 @@ func (s *Service) recordInventoryFailure(ctx context.Context, repoID int64, caus
 	return cause
 }
 
-func archiveInventoryIssue(repo resolvedRepository, item platform.Issue) db.ArchiveInventoryIssue {
-	parent := platform.DBIssue(repo.ID, item)
-	return db.ArchiveInventoryIssue{
-		Snapshot:       db.IssueSnapshot{Issue: *parent, Labels: parent.Labels},
-		ProviderItemID: providerItemID(item.PlatformExternalID, item.PlatformID),
-		CommentsStatus: datasetStatus(repo.Capabilities.OrdinaryComments),
+func archiveInventoryIssue(item platform.Issue) db.ArchiveInventoryItem {
+	return db.ArchiveInventoryItem{
+		Number: item.Number, ProviderItemID: providerItemID(item.PlatformExternalID, item.PlatformID),
+		ProviderCreatedAt: item.CreatedAt, ProviderUpdatedAt: item.UpdatedAt,
 	}
 }
 
-func archiveInventoryMergeRequest(repo resolvedRepository, item platform.MergeRequest) db.ArchiveInventoryMergeRequest {
-	parent := platform.DBMergeRequest(repo.ID, item)
-	return db.ArchiveInventoryMergeRequest{
-		Snapshot:             db.MergeRequestSnapshot{MergeRequest: *parent, Labels: parent.Labels},
-		ProviderItemID:       providerItemID(item.PlatformExternalID, item.PlatformID),
-		CommentsStatus:       datasetStatus(repo.Capabilities.OrdinaryComments),
-		ReviewsStatus:        datasetStatus(repo.Capabilities.SubmittedReviews),
-		InlineCommentsStatus: datasetStatus(repo.Capabilities.InlineReviewComments),
+func archiveInventoryMergeRequest(item platform.MergeRequest) db.ArchiveInventoryItem {
+	return db.ArchiveInventoryItem{
+		Number: item.Number, ProviderItemID: providerItemID(item.PlatformExternalID, item.PlatformID),
+		ProviderCreatedAt: item.CreatedAt, ProviderUpdatedAt: item.UpdatedAt,
 	}
-}
-
-func datasetStatus(supported bool) db.ArchiveDatasetStatus {
-	if supported {
-		return db.ArchiveDatasetStatusPending
-	}
-	return db.ArchiveDatasetStatusUnsupported
 }
 
 func providerItemID(external string, numeric int64) string {

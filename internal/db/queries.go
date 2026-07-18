@@ -2182,9 +2182,9 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 }
 
 // UpsertMergeRequestSnapshotWithLabels atomically applies a provider merge
-// request snapshot and its labels through the shared parent upsert core in
-// its live (progress-optional) mode. Callers must skip dependent writes when
-// the monotonic updated_at guard rejects the parent.
+// request snapshot and its labels through the shared parent upsert core.
+// Callers must skip dependent writes when the monotonic updated_at guard
+// rejects the parent.
 func (d *DB) UpsertMergeRequestSnapshotWithLabels(
 	ctx context.Context,
 	mr *MergeRequest,
@@ -2194,9 +2194,7 @@ func (d *DB) UpsertMergeRequestSnapshotWithLabels(
 	var accepted bool
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		var err error
-		id, revision, accepted, err = commitMergeRequestParentSnapshotTx(
-			ctx, tx, mr, mr.Labels, mergeRequestDetailFromSnapshot, reopenDatasetsBestEffort,
-		)
+		id, revision, accepted, err = commitMergeRequestParentSnapshotTx(ctx, tx, mr, mr.Labels)
 		return err
 	})
 	return id, revision, accepted, err
@@ -2213,7 +2211,7 @@ func (d *DB) UpsertMergeRequestSnapshot(
 	var accepted bool
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		var err error
-		id, _, accepted, err = upsertMergeRequestParentTx(ctx, tx, mr, reopenDatasetsBestEffort)
+		id, _, accepted, err = upsertMergeRequestParentTx(ctx, tx, mr)
 		return err
 	})
 	return id, accepted, err
@@ -2311,81 +2309,26 @@ func upsertMergeRequestSnapshot(
 }
 
 // upsertMergeRequestParentTx applies a provider snapshot inside an existing
-// transaction. Archive inventory commits ignore acceptance: a stale page row
-// must not overwrite newer data, but the row id is still needed for work
-// tracking. An accepted snapshot whose provider timestamp strictly advanced
-// reopens superseded child dataset progress — every parent writer flows
-// through this core, so a revision advance observed through any path (live
-// sync included) leaves the outstanding work visible to archive scheduling.
-// The reopen mode decides whether an archive bookkeeping failure rejects the
-// parent write (archive callers) or is discarded best-effort (live callers).
+// transaction.
 func upsertMergeRequestParentTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	mr *MergeRequest,
-	reopen archiveReopenMode,
 ) (int64, int64, bool, error) {
 	canonicalizeMergeRequestTimestamps(mr)
-	priorUpdatedAt, priorRevision, hadRow, err := parentRowUpdatedAtTx(
-		ctx, tx, "middleman_merge_requests", mr.RepoID, mr.Number,
-	)
-	if err != nil {
-		return 0, 0, false, err
-	}
 	id, revision, accepted, err := upsertMergeRequestSnapshot(ctx, tx, mr)
-	if err != nil || !accepted {
-		return id, revision, accepted, err
-	}
-	parent := DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: id}
-	if !hadRow || mr.UpdatedAt.After(priorUpdatedAt) {
-		if err := reopenDatasetsForParentModeTx(
-			ctx, tx, parent, mr.RepoID, mr.Number, revision, revision, reopen,
-		); err != nil {
-			return 0, 0, false, err
-		}
-	} else if err := reopenDatasetsForParentModeTx(
-		// Mismatch repair: a previously discarded best-effort reopen can leave
-		// progress stranded below the pre-write revision with no later
-		// strictly-newer observation to retry it. Bounding at the pre-write
-		// revision touches only stranded rows, never the healthy satisfied
-		// state bound exactly to it.
-		ctx, tx, parent, mr.RepoID, mr.Number, priorRevision, revision, reopen,
-	); err != nil {
-		return 0, 0, false, err
-	}
-	return id, revision, true, nil
+	return id, revision, accepted, err
 }
 
-// mergeRequestDetailMode selects how an incoming parent snapshot treats
-// detail fields already stored on the merge-request row.
-type mergeRequestDetailMode int
-
-const (
-	// mergeRequestDetailFromSnapshot trusts the incoming snapshot's own
-	// detail fields; live sync snapshots carry current provider detail.
-	mergeRequestDetailFromSnapshot mergeRequestDetailMode = iota
-	// mergeRequestDetailPreserveProviderDetail keeps live-owned detail
-	// (counts, diff stats, CI, review decision) over an inventory-page
-	// snapshot that lacks them.
-	mergeRequestDetailPreserveProviderDetail
-	// mergeRequestDetailPreserveDerived keeps derived review/CI state but
-	// accepts the snapshot's own counts (single-item archive refresh).
-	mergeRequestDetailPreserveDerived
-)
-
-// commitIssueParentSnapshotTx is the single revision-advancing issue parent
-// upsert shared by live sync, archive inventory pages, and single-item
-// lookups: the parent row plus accepted-gated label replacement. Live sync is
-// the progress-optional mode of this core — it advances the parent revision
-// without touching archive state.
+// commitIssueParentSnapshotTx upserts the parent and replaces labels only when
+// the incoming snapshot wins the monotonic timestamp guard.
 func commitIssueParentSnapshotTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	issue *Issue,
 	labels []Label,
-	reopen archiveReopenMode,
 ) (int64, int64, bool, error) {
-	id, revision, accepted, err := upsertIssueParentTx(ctx, tx, issue, reopen)
+	id, revision, accepted, err := upsertIssueParentTx(ctx, tx, issue)
 	if err != nil || !accepted {
 		return id, revision, accepted, err
 	}
@@ -2395,35 +2338,16 @@ func commitIssueParentSnapshotTx(
 	return id, revision, true, nil
 }
 
-// commitMergeRequestParentSnapshotTx is the merge-request mode of the shared
-// revision-advancing parent upsert core used by live sync and every archive
-// parent observation.
+// commitMergeRequestParentSnapshotTx is the merge-request counterpart.
 func commitMergeRequestParentSnapshotTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	mr *MergeRequest,
 	labels []Label,
-	detail mergeRequestDetailMode,
-	reopen archiveReopenMode,
 ) (int64, int64, bool, error) {
-	diffChanged := false
-	if detail != mergeRequestDetailFromSnapshot {
-		var err error
-		diffChanged, err = preserveMergeRequestDetailTx(
-			ctx, tx, mr, detail == mergeRequestDetailPreserveProviderDetail,
-		)
-		if err != nil {
-			return 0, 0, false, err
-		}
-	}
-	id, revision, accepted, err := upsertMergeRequestParentTx(ctx, tx, mr, reopen)
+	id, revision, accepted, err := upsertMergeRequestParentTx(ctx, tx, mr)
 	if err != nil || !accepted {
 		return id, revision, accepted, err
-	}
-	if diffChanged {
-		if err := clearArchiveMergeRequestDiffDetailTx(ctx, tx, id); err != nil {
-			return 0, 0, false, err
-		}
 	}
 	if err := replaceMergeRequestLabelsTx(ctx, tx, mr.RepoID, id, labels); err != nil {
 		return 0, 0, false, err
@@ -2780,6 +2704,43 @@ func (d *DB) MRCommentEventExists(
 		return false, fmt.Errorf("check mr comment event exists: %w", err)
 	}
 	return exists, nil
+}
+
+// ReplaceMRCommentEvents atomically replaces provider issue-comment events and
+// their parent merge request's derived comment count.
+func (d *DB) ReplaceMRCommentEvents(
+	ctx context.Context,
+	mrID int64,
+	events []MREvent,
+	lastActivityAt *time.Time,
+) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		query := `DELETE FROM middleman_mr_events
+			WHERE merge_request_id = ? AND event_type = 'issue_comment'`
+		args := []any{mrID}
+		if len(events) > 0 {
+			query += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(events)) + `)`
+			for i := range events {
+				args = append(args, events[i].DedupeKey)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+			return fmt.Errorf("delete missing mr comment events: %w", err)
+		}
+		if err := upsertMREventsTx(ctx, tx, events); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE middleman_merge_requests
+			SET comment_count = (
+				SELECT COUNT(*) FROM middleman_mr_events
+				WHERE merge_request_id = ? AND event_type = 'issue_comment'
+			), last_activity_at = COALESCE(?, last_activity_at)
+			WHERE id = ?`, mrID, lastActivityAt, mrID); err != nil {
+			return fmt.Errorf("update mr derived fields: %w", err)
+		}
+		return nil
+	})
 }
 
 // GetMRLatestNonCommentEventTime returns the most recent created_at across
@@ -3347,7 +3308,7 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 	var id int64
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		var err error
-		id, _, _, err = upsertIssueParentTx(ctx, tx, issue, reopenDatasetsBestEffort)
+		id, _, _, err = upsertIssueParentTx(ctx, tx, issue)
 		return err
 	})
 	return id, err
@@ -3366,7 +3327,7 @@ func (d *DB) UpsertIssueSnapshotWithLabels(
 	var accepted bool
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		var err error
-		id, revision, accepted, err = commitIssueParentSnapshotTx(ctx, tx, issue, issue.Labels, reopenDatasetsBestEffort)
+		id, revision, accepted, err = commitIssueParentSnapshotTx(ctx, tx, issue, issue.Labels)
 		return err
 	})
 	return id, revision, accepted, err
@@ -3376,17 +3337,10 @@ func upsertIssueParentTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	issue *Issue,
-	reopen archiveReopenMode,
 ) (int64, int64, bool, error) {
 	canonicalizeIssueTimestamps(issue)
-	priorUpdatedAt, priorRevision, hadRow, err := parentRowUpdatedAtTx(
-		ctx, tx, "middleman_issues", issue.RepoID, issue.Number,
-	)
-	if err != nil {
-		return 0, 0, false, err
-	}
 	var issueID, revision int64
-	err = tx.QueryRowContext(ctx, `
+	err := tx.QueryRowContext(ctx, `
 		INSERT INTO middleman_issues
 		    (repo_id, platform_id, platform_external_id, number, url, title, author, state,
 		     body, comment_count, labels_json, assignees_json, detail_fetched_at,
@@ -3429,48 +3383,7 @@ func upsertIssueParentTx(
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("upsert issue parent: %w", err)
 	}
-	parent := DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID}
-	if !hadRow || issue.UpdatedAt.After(priorUpdatedAt) {
-		if err := reopenDatasetsForParentModeTx(
-			ctx, tx, parent, issue.RepoID, issue.Number, revision, revision, reopen,
-		); err != nil {
-			return 0, 0, false, err
-		}
-	} else if err := reopenDatasetsForParentModeTx(
-		// Mismatch repair; see upsertMergeRequestParentTx.
-		ctx, tx, parent, issue.RepoID, issue.Number, priorRevision, revision, reopen,
-	); err != nil {
-		return 0, 0, false, err
-	}
 	return issueID, revision, true, nil
-}
-
-// parentRowUpdatedAtTx reads the provider timestamp currently owning one
-// parent row. The shared parent upsert core reopens superseded child dataset
-// progress only when the incoming snapshot's provider timestamp strictly
-// advances past it: revision numbers also advance on equal-timestamp
-// refreshes, which observe no new provider activity and must not churn
-// archive rescans.
-func parentRowUpdatedAtTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	table string,
-	repoID int64,
-	number int,
-) (time.Time, int64, bool, error) {
-	var updatedAt time.Time
-	var revision int64
-	err := tx.QueryRowContext(ctx, fmt.Sprintf(
-		`SELECT updated_at, snapshot_revision FROM %s WHERE repo_id = ? AND number = ?`, table),
-		repoID, number,
-	).Scan(&updatedAt, &revision)
-	if errors.Is(err, sql.ErrNoRows) {
-		return time.Time{}, 0, false, nil
-	}
-	if err != nil {
-		return time.Time{}, 0, false, fmt.Errorf("read prior parent snapshot timestamp: %w", err)
-	}
-	return updatedAt, revision, true, nil
 }
 
 // GetIssue returns an issue by repository identity and issue number, or nil if not found.
@@ -4055,6 +3968,43 @@ func (d *DB) IssueCommentEventExists(
 		return false, fmt.Errorf("check issue comment event exists: %w", err)
 	}
 	return exists, nil
+}
+
+// ReplaceIssueCommentEvents atomically replaces provider issue-comment events
+// and their parent issue's derived comment count.
+func (d *DB) ReplaceIssueCommentEvents(
+	ctx context.Context,
+	issueID int64,
+	events []IssueEvent,
+	lastActivityAt *time.Time,
+) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		query := `DELETE FROM middleman_issue_events
+			WHERE issue_id = ? AND event_type = 'issue_comment'`
+		args := []any{issueID}
+		if len(events) > 0 {
+			query += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(events)) + `)`
+			for i := range events {
+				args = append(args, events[i].DedupeKey)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+			return fmt.Errorf("delete missing issue comment events: %w", err)
+		}
+		if err := upsertIssueEventsTx(ctx, tx, events); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE middleman_issues
+			SET comment_count = (
+				SELECT COUNT(*) FROM middleman_issue_events
+				WHERE issue_id = ? AND event_type = 'issue_comment'
+			), last_activity_at = COALESCE(?, last_activity_at)
+			WHERE id = ?`, issueID, lastActivityAt, issueID); err != nil {
+			return fmt.Errorf("update issue derived fields: %w", err)
+		}
+		return nil
+	})
 }
 
 // ListIssueEvents returns all events for an issue ordered by created_at DESC.

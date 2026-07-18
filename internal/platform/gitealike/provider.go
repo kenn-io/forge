@@ -132,35 +132,59 @@ func (p *Provider) ListRepositories(
 	return applyRepositoryListOptions(repos, opts), nil
 }
 
-// ListMergeRequestEvents is the live whole-dataset event read: it drains the
-// canonical comment and submitted-review pages, then appends the
-// provider-specific commit and timeline events (neither is a correction
-// dataset, so both stay provider-internal).
+func (p *Provider) ListOpenMergeRequests(
+	ctx context.Context,
+	ref platform.RepoRef,
+) ([]platform.MergeRequest, error) {
+	items, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]PullRequestDTO, Page, error) {
+		return p.transport.ListOpenPullRequests(ctx, ref, opts)
+	})
+	if err != nil {
+		return nil, p.mapError(err)
+	}
+	out := make([]platform.MergeRequest, 0, len(items))
+	for _, item := range items {
+		out = append(out, NormalizePullRequest(ref, item))
+	}
+	return out, nil
+}
+
+func (p *Provider) GetMergeRequest(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) (platform.MergeRequest, error) {
+	pr, err := p.transport.GetPullRequest(ctx, ref, number)
+	if err != nil {
+		return platform.MergeRequest{}, p.mapError(err)
+	}
+	return NormalizePullRequest(ref, pr), nil
+}
+
 func (p *Provider) ListMergeRequestEvents(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
 ) ([]platform.MergeRequestEvent, error) {
-	events, err := platform.CollectPages(ctx, "", func(ctx context.Context, cursor string) (platform.Page[platform.MergeRequestEvent], error) {
-		return p.ListMergeRequestCommentsPage(ctx, ref, number, cursor)
+	comments, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]CommentDTO, Page, error) {
+		return p.transport.ListPullRequestComments(ctx, ref, number, opts)
 	})
 	if err != nil {
-		return nil, err
+		return nil, p.mapError(err)
 	}
-	reviews, err := platform.CollectPages(ctx, "", func(ctx context.Context, cursor string) (platform.Page[platform.MergeRequestEvent], error) {
-		return p.ListSubmittedReviewsPage(ctx, ref, number, cursor)
+	reviews, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]ReviewDTO, Page, error) {
+		return p.transport.ListPullRequestReviews(ctx, ref, number, opts)
 	})
 	if err != nil {
-		return nil, err
+		return nil, p.mapError(err)
 	}
-	events = append(events, reviews...)
 	commits, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]CommitDTO, Page, error) {
 		return p.transport.ListPullRequestCommits(ctx, ref, number, opts)
 	})
 	if err != nil {
 		return nil, p.mapError(err)
 	}
-	events = append(events, NormalizeMergeRequestEvents(p.kind, ref, number, nil, nil, commits)...)
+	events := NormalizeMergeRequestEvents(p.kind, ref, number, comments, reviews, commits)
 	timeline, err := p.listTimelineEvents(ctx, ref, number)
 	if err != nil {
 		return nil, err
@@ -169,20 +193,49 @@ func (p *Provider) ListMergeRequestEvents(
 	return events, nil
 }
 
-// ListIssueEvents is the live whole-dataset event read: it drains the
-// canonical issue-comment pages, then appends the provider-specific timeline
-// events.
+func (p *Provider) ListOpenIssues(
+	ctx context.Context,
+	ref platform.RepoRef,
+) ([]platform.Issue, error) {
+	items, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]IssueDTO, Page, error) {
+		return p.transport.ListOpenIssues(ctx, ref, opts)
+	})
+	if err != nil {
+		return nil, p.mapError(err)
+	}
+	out := make([]platform.Issue, 0, len(items))
+	for _, item := range items {
+		if !item.IsPullRequest {
+			out = append(out, NormalizeIssue(ref, item))
+		}
+	}
+	return out, nil
+}
+
+func (p *Provider) GetIssue(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) (platform.Issue, error) {
+	issue, err := p.transport.GetIssue(ctx, ref, number)
+	if err != nil {
+		return platform.Issue{}, p.mapError(err)
+	}
+	return NormalizeIssue(ref, issue), nil
+}
+
 func (p *Provider) ListIssueEvents(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
 ) ([]platform.IssueEvent, error) {
-	events, err := platform.CollectPages(ctx, "", func(ctx context.Context, cursor string) (platform.Page[platform.IssueEvent], error) {
-		return p.ListIssueCommentsPage(ctx, ref, number, cursor)
+	comments, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]CommentDTO, Page, error) {
+		return p.transport.ListIssueComments(ctx, ref, number, opts)
 	})
 	if err != nil {
-		return nil, err
+		return nil, p.mapError(err)
 	}
+	events := NormalizeIssueComments(p.kind, ref, number, comments)
 	timeline, err := p.listTimelineEvents(ctx, ref, number)
 	if err != nil {
 		return nil, err

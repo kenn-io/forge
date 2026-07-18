@@ -3031,7 +3031,7 @@ func TestPREvents(t *testing.T) {
 	assert.Len(got2, 2)
 }
 
-func TestCommitChildSnapshotRollsBackWhenDerivedUpdateFails(t *testing.T) {
+func TestReplaceCommentEventsRollsBackWhenDerivedUpdateFails(t *testing.T) {
 	t.Run("merge request", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -3040,19 +3040,11 @@ func TestCommitChildSnapshotRollsBackWhenDerivedUpdateFails(t *testing.T) {
 		mrID := insertTestMR(t, database, repoID, 1, "pr", baseTime())
 		require.NoError(database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "old"}}))
 		require.NoError(database.UpdateMRDerivedFields(t.Context(), repoID, 1, MRDerivedFields{CommentCount: 1, LastActivityAt: baseTime()}))
-		parent, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
-		require.NoError(err)
-		require.NotNil(parent)
-		_, err = database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_mr_comment_count BEFORE UPDATE OF comment_count ON middleman_merge_requests BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
+		_, err := database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_mr_comment_count BEFORE UPDATE OF comment_count ON middleman_merge_requests BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
 		require.NoError(err)
 
-		applied, err := database.CommitMergeRequestChildSnapshot(t.Context(), MergeRequestChildSnapshot{
-			MergeRequestID: mrID, ExpectedRevision: parent.SnapshotRevision,
-			Comments:         []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "new"}},
-			CommentsComplete: true,
-		})
+		err = database.ReplaceMRCommentEvents(t.Context(), mrID, []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "new"}}, nil)
 		require.Error(err)
-		assert.False(applied)
 		events, err := database.ListMREvents(t.Context(), mrID)
 		require.NoError(err)
 		require.Len(events, 1)
@@ -3071,18 +3063,11 @@ func TestCommitChildSnapshotRollsBackWhenDerivedUpdateFails(t *testing.T) {
 		issueID := insertTestIssue(t, database, repoID, 1, "issue", baseTime())
 		require.NoError(database.UpsertIssueEvents(t.Context(), []IssueEvent{{IssueID: issueID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "old"}}))
 		require.NoError(database.UpdateIssueDerivedFields(t.Context(), repoID, 1, IssueDerivedFields{CommentCount: 1, LastActivityAt: baseTime()}))
-		parent, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 1)
-		require.NoError(err)
-		require.NotNil(parent)
-		_, err = database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_issue_comment_count BEFORE UPDATE OF comment_count ON middleman_issues BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
+		_, err := database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_issue_comment_count BEFORE UPDATE OF comment_count ON middleman_issues BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
 		require.NoError(err)
 
-		applied, err := database.CommitIssueChildSnapshot(t.Context(), IssueChildSnapshot{
-			IssueID: issueID, ExpectedRevision: parent.SnapshotRevision,
-			Comments: []IssueEvent{{IssueID: issueID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "new"}},
-		})
+		err = database.ReplaceIssueCommentEvents(t.Context(), issueID, []IssueEvent{{IssueID: issueID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "new"}}, nil)
 		require.Error(err)
-		assert.False(applied)
 		events, err := database.ListIssueEvents(t.Context(), issueID)
 		require.NoError(err)
 		require.Len(events, 1)
@@ -3094,7 +3079,7 @@ func TestCommitChildSnapshotRollsBackWhenDerivedUpdateFails(t *testing.T) {
 	})
 }
 
-func TestCommitChildSnapshotCountsPersistedUniqueRows(t *testing.T) {
+func TestReplaceCommentEventsCountsPersistedUniqueRows(t *testing.T) {
 	t.Run("merge request", func(t *testing.T) {
 		require := require.New(t)
 		database := openTestDB(t)
@@ -3102,20 +3087,12 @@ func TestCommitChildSnapshotCountsPersistedUniqueRows(t *testing.T) {
 		mrID := insertTestMR(t, database, repoID, 1, "pr", baseTime())
 		lastActivityAt := baseTime().Add(time.Hour)
 		require.NoError(database.UpdateMRDerivedFields(t.Context(), repoID, 1, MRDerivedFields{ReviewDecision: "approved", LastActivityAt: lastActivityAt}))
-		parent, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
-		require.NoError(err)
-		require.NotNil(parent)
 		events := []MREvent{
 			{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "same", Body: "old"},
 			{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "same", Body: "new"},
 		}
 
-		applied, err := database.CommitMergeRequestChildSnapshot(t.Context(), MergeRequestChildSnapshot{
-			MergeRequestID: mrID, ExpectedRevision: parent.SnapshotRevision,
-			Comments: events, CommentsComplete: true,
-		})
-		require.NoError(err)
-		require.True(applied)
+		require.NoError(database.ReplaceMRCommentEvents(t.Context(), mrID, events, nil))
 		newActivityAt := lastActivityAt.Add(time.Hour)
 		require.NoError(database.UpdateMRReviewActivity(t.Context(), mrID, "changes_requested", newActivityAt))
 		stored, err := database.ListMREvents(t.Context(), mrID)
@@ -3137,19 +3114,12 @@ func TestCommitChildSnapshotCountsPersistedUniqueRows(t *testing.T) {
 		issueID := insertTestIssue(t, database, repoID, 1, "issue", baseTime())
 		lastActivityAt := baseTime().Add(time.Hour)
 		require.NoError(database.UpdateIssueDerivedFields(t.Context(), repoID, 1, IssueDerivedFields{LastActivityAt: lastActivityAt}))
-		parent, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 1)
-		require.NoError(err)
-		require.NotNil(parent)
 		events := []IssueEvent{
 			{IssueID: issueID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "same", Body: "old"},
 			{IssueID: issueID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "same", Body: "new"},
 		}
 
-		applied, err := database.CommitIssueChildSnapshot(t.Context(), IssueChildSnapshot{
-			IssueID: issueID, ExpectedRevision: parent.SnapshotRevision, Comments: events,
-		})
-		require.NoError(err)
-		require.True(applied)
+		require.NoError(database.ReplaceIssueCommentEvents(t.Context(), issueID, events, nil))
 		newActivityAt := lastActivityAt.Add(time.Hour)
 		require.NoError(database.UpdateIssueActivity(t.Context(), issueID, newActivityAt))
 		stored, err := database.ListIssueEvents(t.Context(), issueID)

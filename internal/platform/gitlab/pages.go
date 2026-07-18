@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -61,9 +60,6 @@ func (c *Client) ListIssuesPage(
 	if err := platform.ValidateItemPageQuery(query); err != nil {
 		return platform.Page[platform.Issue]{}, err
 	}
-	if query.State == platform.ItemStateOpen {
-		return c.listOpenIssuesPage(ctx, ref)
-	}
 	if query.Order == platform.ItemOrderUpdated {
 		since := time.Time{}
 		if query.UpdatedSince != nil {
@@ -85,9 +81,6 @@ func (c *Client) ListMergeRequestsPage(
 	if err := platform.ValidateItemPageQuery(query); err != nil {
 		return platform.Page[platform.MergeRequest]{}, err
 	}
-	if query.State == platform.ItemStateOpen {
-		return c.listOpenMergeRequestsPage(ctx, ref)
-	}
 	if query.Order == platform.ItemOrderUpdated {
 		since := time.Time{}
 		if query.UpdatedSince != nil {
@@ -100,78 +93,6 @@ func (c *Client) ListMergeRequestsPage(
 	return platform.Page[platform.MergeRequest]{}, platform.UnsupportedCapability(
 		platform.KindGitLab, c.host, string(platform.ArchiveCapabilityHistoricalMergeRequests),
 	)
-}
-
-// listOpenIssuesPage returns every open issue as a single exhausted page. Open
-// scans are single-shot current-index reads, so the internal page drain is not
-// resumable through a caller cursor.
-func (c *Client) listOpenIssuesPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-) (platform.Page[platform.Issue], error) {
-	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
-	if err != nil {
-		return platform.Page[platform.Issue]{}, err
-	}
-	state := "opened"
-	items, err := collectGitLabPages(ctx, func(ctx context.Context, page int64) ([]platform.Issue, int64, error) {
-		issues, resp, err := c.api.Issues.ListProjectIssues(pid, &gitlab.ListProjectIssuesOptions{
-			State:       &state,
-			ListOptions: gitlab.ListOptions{Page: page, PerPage: defaultPageSize},
-		}, gitlab.WithContext(ctx))
-		if err != nil {
-			return nil, 0, c.mapGitLabError("list_issues", err)
-		}
-		out := make([]platform.Issue, 0, len(issues))
-		for _, issue := range issues {
-			out = append(out, NormalizeIssue(normalizedRef, issue))
-		}
-		return out, nextGitLabPage(resp), nil
-	})
-	if err != nil {
-		return platform.Page[platform.Issue]{}, err
-	}
-	return platform.Page[platform.Issue]{Items: items, Exhausted: true}, nil
-}
-
-// listOpenMergeRequestsPage returns every open merge request as a single
-// exhausted page, including the fork head clone URL enrichment live sync
-// depends on.
-func (c *Client) listOpenMergeRequestsPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-) (platform.Page[platform.MergeRequest], error) {
-	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
-	if err != nil {
-		return platform.Page[platform.MergeRequest]{}, err
-	}
-	state := "opened"
-	recheck := true
-	items, err := collectGitLabPages(ctx, func(ctx context.Context, page int64) ([]platform.MergeRequest, int64, error) {
-		mrs, resp, err := c.api.MergeRequests.ListProjectMergeRequests(pid, &gitlab.ListProjectMergeRequestsOptions{
-			State:                  &state,
-			WithMergeStatusRecheck: &recheck,
-			ListOptions:            gitlab.ListOptions{Page: page, PerPage: defaultPageSize},
-		}, gitlab.WithContext(ctx))
-		if err != nil {
-			return nil, 0, c.mapGitLabError("list_merge_requests", err)
-		}
-		out := make([]platform.MergeRequest, 0, len(mrs))
-		for _, mr := range mrs {
-			normalized := NormalizeMergeRequest(normalizedRef, mr, nil)
-			normalized.HeadRepoCloneURL, normalized.HeadRepoCloneURLUnknown, err =
-				c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
-			if err != nil {
-				return nil, 0, err
-			}
-			out = append(out, normalized)
-		}
-		return out, nextGitLabPage(resp), nil
-	})
-	if err != nil {
-		return platform.Page[platform.MergeRequest]{}, err
-	}
-	return platform.Page[platform.MergeRequest]{Items: items, Exhausted: true}, nil
 }
 
 // listInventoryIssuesPage owns the historical and maintenance issue request
@@ -282,7 +203,16 @@ func (c *Client) listInventoryMergeRequestsPage(
 		item.HeadRepoCloneURLUnknown = true
 		items = append(items, item)
 	}
-	return gitLabCursorPage(items, cursor, nextGitLabPage(resp), false)
+	nextPage := nextGitLabPage(resp)
+	if nextPage == 0 {
+		return platform.Page[platform.MergeRequest]{Items: items, Exhausted: true}, nil
+	}
+	cursor.Page = nextPage
+	next, err := encodeGitLabPageCursor(cursor)
+	if err != nil {
+		return platform.Page[platform.MergeRequest]{}, err
+	}
+	return platform.Page[platform.MergeRequest]{Items: items, NextCursor: next}, nil
 }
 
 func inclusiveGitLabWatermark(since time.Time) time.Time {
@@ -381,224 +311,6 @@ func collectGitLabPages[T any](
 	})
 }
 
-// LookupIssue fetches a single issue and returns a typed outcome. GitLab may
-// hide confidential issues behind an item 404 even while the source project
-// remains readable, so an ambiguous 404 classifies as inaccessible rather than
-// removed; both live callers (which require present) and archive callers
-// (which record every outcome) share this one classification.
-func (c *Client) LookupIssue(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-) (platform.ItemLookup[platform.Issue], error) {
-	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
-	if err != nil {
-		return platform.ItemLookup[platform.Issue]{}, err
-	}
-	issue, _, err := c.api.Issues.GetIssue(pid, int64(number), nil, gitlab.WithContext(ctx))
-	if err != nil {
-		return c.classifyIssueLookup(ctx, pid, err)
-	}
-	return platform.ItemLookup[platform.Issue]{
-		Outcome: platform.LookupPresent,
-		Item:    NormalizeIssue(normalizedRef, issue),
-	}, nil
-}
-
-// LookupMergeRequest is the merge-request counterpart to LookupIssue. A
-// present item includes the fork head clone-URL enrichment live sync depends
-// on; this is the one canonical lookup, so archive callers share the
-// enrichment (a cached extra request only when the source project differs).
-// The enrichment is best-effort: a failed source-project fetch degrades the
-// result to an empty HeadRepoCloneURL marked HeadRepoCloneURLUnknown — so
-// persistence preserves a previously known clone URL instead of clearing it —
-// and never fails the lookup, so an enrichment outage cannot block archive
-// hydration or live detail sync.
-func (c *Client) LookupMergeRequest(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-) (platform.ItemLookup[platform.MergeRequest], error) {
-	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
-	if err != nil {
-		return platform.ItemLookup[platform.MergeRequest]{}, err
-	}
-	mr, _, err := c.api.MergeRequests.GetMergeRequest(pid, int64(number), nil, gitlab.WithContext(ctx))
-	if err != nil {
-		outcome, classifyErr := c.classifyLookupOutcome(
-			ctx, pid, string(platform.ArchiveCapabilityHistoricalMergeRequests), err,
-		)
-		return platform.ItemLookup[platform.MergeRequest]{Outcome: outcome}, classifyErr
-	}
-	item := NormalizeDetailedMergeRequest(normalizedRef, mr)
-	cloneURL, cloneURLUnknown, enrichErr := c.optionalHeadRepoCloneURL(
-		ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID,
-	)
-	if enrichErr != nil {
-		if ctx.Err() != nil {
-			return platform.ItemLookup[platform.MergeRequest]{}, enrichErr
-		}
-		cloneURL = ""
-		cloneURLUnknown = true
-	}
-	item.HeadRepoCloneURL = cloneURL
-	item.HeadRepoCloneURLUnknown = cloneURLUnknown
-	return platform.ItemLookup[platform.MergeRequest]{
-		Outcome: platform.LookupPresent,
-		Item:    item,
-	}, nil
-}
-
-func (c *Client) classifyIssueLookup(
-	ctx context.Context,
-	pid any,
-	err error,
-) (platform.ItemLookup[platform.Issue], error) {
-	outcome, classifyErr := c.classifyLookupOutcome(
-		ctx, pid, string(platform.ArchiveCapabilityHistoricalIssues), err,
-	)
-	return platform.ItemLookup[platform.Issue]{Outcome: outcome}, classifyErr
-}
-
-// classifyLookupOutcome maps a failed single-item fetch onto the canonical
-// lookup outcomes, spending at most one repository probe to distinguish
-// item-level access loss from repository-level access loss.
-func (c *Client) classifyLookupOutcome(
-	ctx context.Context,
-	pid any,
-	capability string,
-	err error,
-) (platform.LookupOutcome, error) {
-	if gitLabAccessError(err) {
-		_, _, repoErr := c.api.Projects.GetProject(pid, nil, gitlab.WithContext(ctx))
-		if repoErr == nil {
-			return platform.LookupInaccessible, nil
-		}
-		if gitLabAccessError(repoErr) || isGitLabNotFound(repoErr) {
-			return "", platform.PermissionDenied(platform.KindGitLab, c.host, repoErr)
-		}
-		return "", c.mapGitLabError("probe_repository", repoErr)
-	}
-	if !isGitLabNotFound(err) {
-		return "", c.mapGitLabError(capability, err)
-	}
-	_, _, repoErr := c.api.Projects.GetProject(pid, nil, gitlab.WithContext(ctx))
-	if repoErr == nil {
-		// GitLab may hide confidential issues and merge requests behind an item
-		// 404 even while the source project remains readable. Without a stable
-		// deletion signal, retain the cached item as individually inaccessible.
-		return platform.LookupInaccessible, nil
-	}
-	if gitLabAccessError(repoErr) || isGitLabNotFound(repoErr) {
-		return "", platform.PermissionDenied(platform.KindGitLab, c.host, repoErr)
-	}
-	return "", c.mapGitLabError("probe_repository", repoErr)
-}
-
-func gitLabAccessError(err error) bool {
-	var response *gitlab.ErrorResponse
-	return errors.As(err, &response) &&
-		(response.HasStatusCode(http.StatusUnauthorized) || response.HasStatusCode(http.StatusForbidden))
-}
-
-// ListIssueCommentsPage returns one page of normalized issue comment events.
-func (c *Client) ListIssueCommentsPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	encodedCursor string,
-) (platform.Page[platform.IssueEvent], error) {
-	pid, normalizedRef, cursor, err := c.detailPageArgs(ctx, ref, number, encodedCursor, "issue_comments")
-	if err != nil {
-		return platform.Page[platform.IssueEvent]{}, err
-	}
-	discussions, nextPage, err := c.listIssueDiscussionsPage(ctx, pid, number, cursor.Page)
-	if err != nil {
-		return platform.Page[platform.IssueEvent]{}, c.mapGitLabError(
-			string(platform.ArchiveCapabilityOrdinaryComments), err,
-		)
-	}
-	items := NormalizeIssueDiscussions(
-		normalizedRef, number, gitLabIssueURL(normalizedRef, number), discussions,
-	)
-	return gitLabCursorPage(items, cursor, nextPage, true)
-}
-
-// ListMergeRequestCommentsPage returns one page of normalized ordinary
-// merge-request comment events: inline discussions belong to the review-thread
-// dataset and system notes are not comments, so both are filtered here. The
-// discussions request itself is shared with ListReviewThreadsPage.
-func (c *Client) ListMergeRequestCommentsPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	encodedCursor string,
-) (platform.Page[platform.MergeRequestEvent], error) {
-	pid, normalizedRef, cursor, err := c.detailPageArgs(ctx, ref, number, encodedCursor, "merge_request_comments")
-	if err != nil {
-		return platform.Page[platform.MergeRequestEvent]{}, err
-	}
-	discussions, nextPage, err := c.listMergeRequestDiscussionsPage(ctx, pid, number, cursor.Page)
-	if err != nil {
-		return platform.Page[platform.MergeRequestEvent]{}, c.mapGitLabError(
-			string(platform.ArchiveCapabilityOrdinaryComments), err,
-		)
-	}
-	ordinary := make([]*gitlab.Discussion, 0, len(discussions))
-	for _, discussion := range discussions {
-		if !gitLabInlineDiscussion(discussion) {
-			ordinary = append(ordinary, gitLabOrdinaryDiscussion(discussion))
-		}
-	}
-	items := NormalizeMergeRequestDiscussions(
-		normalizedRef, number, gitLabMergeRequestURL(normalizedRef, number), ordinary,
-	)
-	return gitLabCursorPage(items, cursor, nextPage, true)
-}
-
-// ListSubmittedReviewsPage is a typed unsupported capability: GitLab has no
-// submitted-reviews dataset.
-func (c *Client) ListSubmittedReviewsPage(
-	context.Context,
-	platform.RepoRef,
-	int,
-	string,
-) (platform.Page[platform.MergeRequestEvent], error) {
-	return platform.Page[platform.MergeRequestEvent]{}, platform.UnsupportedCapability(
-		platform.KindGitLab, c.host, string(platform.ArchiveCapabilitySubmittedReviews),
-	)
-}
-
-// ListReviewThreadsPage returns one page of normalized inline review-thread
-// comments extracted from the same discussions endpoint the comments page
-// consumes.
-func (c *Client) ListReviewThreadsPage(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	encodedCursor string,
-) (platform.Page[platform.MergeRequestReviewThread], error) {
-	pid, normalizedRef, cursor, err := c.detailPageArgs(ctx, ref, number, encodedCursor, "review_threads")
-	if err != nil {
-		return platform.Page[platform.MergeRequestReviewThread]{}, err
-	}
-	discussions, nextPage, err := c.listMergeRequestDiscussionsPage(ctx, pid, number, cursor.Page)
-	if err != nil {
-		return platform.Page[platform.MergeRequestReviewThread]{}, c.mapGitLabError(
-			string(platform.ArchiveCapabilityInlineReviewComments), err,
-		)
-	}
-	items := make([]platform.MergeRequestReviewThread, 0)
-	for _, discussion := range discussions {
-		for _, item := range gitLabDiscussionReviewThreads(gitLabMergeRequestURL(normalizedRef, number), discussion) {
-			item.Repo = normalizedRef
-			item.MergeRequestNumber = number
-			items = append(items, item)
-		}
-	}
-	return gitLabCursorPage(items, cursor, nextPage, true)
-}
-
 // listIssueDiscussionsPage is the single owner of the issue discussions
 // endpoint request shape. Callers map errors onto their dataset capability.
 func (c *Client) listIssueDiscussionsPage(
@@ -637,113 +349,6 @@ func (c *Client) listMergeRequestDiscussionsPage(
 		return nil, 0, err
 	}
 	return discussions, nextGitLabPage(resp), nil
-}
-
-// gitLabOrdinaryDiscussion strips system notes from a non-inline discussion so
-// the ordinary-comments dataset carries only human comments.
-func gitLabOrdinaryDiscussion(discussion *gitlab.Discussion) *gitlab.Discussion {
-	if discussion == nil {
-		return nil
-	}
-	copy := *discussion
-	copy.Notes = make([]*gitlab.Note, 0, len(discussion.Notes))
-	for _, note := range discussion.Notes {
-		if note != nil && !note.System {
-			copy.Notes = append(copy.Notes, note)
-		}
-	}
-	return &copy
-}
-
-func gitLabInlineDiscussion(discussion *gitlab.Discussion) bool {
-	if discussion == nil {
-		return false
-	}
-	for _, note := range discussion.Notes {
-		if note != nil && !note.System && note.Position != nil {
-			return true
-		}
-	}
-	return false
-}
-
-// gitLabDiscussionReviewThreads extracts the inline review-thread comments of
-// one discussion, anchoring position-less replies to the thread's first
-// positioned note.
-func gitLabDiscussionReviewThreads(
-	parentURL string,
-	discussion *gitlab.Discussion,
-) []platform.MergeRequestReviewThread {
-	if !gitLabInlineDiscussion(discussion) {
-		return nil
-	}
-	var anchor *gitlab.Note
-	for _, note := range discussion.Notes {
-		if note != nil && !note.System && note.Position != nil {
-			anchor = note
-			break
-		}
-	}
-	if anchor == nil {
-		return nil
-	}
-	items := make([]platform.MergeRequestReviewThread, 0, len(discussion.Notes))
-	for _, note := range discussion.Notes {
-		if note == nil || note.System {
-			continue
-		}
-		copy := *note
-		if copy.Position == nil {
-			copy.Position = anchor.Position
-		}
-		item := gitlabReviewThread(parentURL, discussion.ID, &copy)
-		item.Resolved = anchor.Resolved
-		if anchor.Resolved && anchor.UpdatedAt != nil {
-			resolvedAt := anchor.UpdatedAt.UTC()
-			item.ResolvedAt = &resolvedAt
-		} else {
-			item.ResolvedAt = nil
-		}
-		items = append(items, item)
-	}
-	return items
-}
-
-func (c *Client) detailPageArgs(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	encodedCursor string,
-	mode string,
-) (any, platform.RepoRef, gitLabPageCursor, error) {
-	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
-	if err != nil {
-		return nil, platform.RepoRef{}, gitLabPageCursor{}, err
-	}
-	cursor, err := c.decodePageCursor(normalizedRef, number, encodedCursor, mode, time.Time{}, gitLabCursorOffset)
-	return pid, normalizedRef, cursor, err
-}
-
-// gitLabCursorPage assembles a canonical page from one provider response:
-// exhaustion when the provider reports no further page, otherwise the encoded
-// resume cursor, with filtered empty pages marked as explicit progress.
-func gitLabCursorPage[T any](
-	items []T,
-	cursor gitLabPageCursor,
-	nextPage int64,
-	filtered bool,
-) (platform.Page[T], error) {
-	if nextPage == 0 {
-		return platform.Page[T]{Items: items, Exhausted: true}, nil
-	}
-	cursor.Page = nextPage
-	next, err := encodeGitLabPageCursor(cursor)
-	if err != nil {
-		return platform.Page[T]{}, err
-	}
-	return platform.Page[T]{
-		Items: items, NextCursor: next, ProgressOnly: filtered && len(items) == 0,
-	}, nil
 }
 
 func (c *Client) decodePageCursor(

@@ -64,11 +64,11 @@ func TestArchiveInventoryUsesAllStateOrderingAndOneBudgetedRequestPerPage(t *tes
 	ctx := ghsync.WithArchiveSyncBudget(context.Background())
 
 	issues, err := client.ListIssuesPage(ctx, ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+		Order: platform.ItemOrderCreated,
 	})
 	require.NoError(err)
 	pulls, err := client.ListMergeRequestsPage(ctx, ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+		Order: platform.ItemOrderCreated,
 	})
 	require.NoError(err)
 
@@ -372,9 +372,9 @@ func TestClientReadsOpenPullRequestsIssuesAndCIChecks(t *testing.T) {
 	require.NoError(err)
 	ref := platform.RepoRef{Owner: "owner", Name: "repo"}
 
-	mrs, err := platform.ListOpenMergeRequests(context.Background(), client, ref)
+	mrs, err := client.ListOpenMergeRequests(context.Background(), ref)
 	require.NoError(err)
-	issues, err := platform.ListOpenIssues(context.Background(), client, ref)
+	issues, err := client.ListOpenIssues(context.Background(), ref)
 	require.NoError(err)
 	checks, err := client.ListCIChecks(context.Background(), ref, "abc")
 	require.NoError(err)
@@ -677,9 +677,8 @@ func TestClientMapsNotFoundResponsesToPlatformError(t *testing.T) {
 	client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURLForTesting(server.URL))
 	require.NoError(err)
 
-	_, err = platform.RequireMergeRequest(
+	_, err = client.GetMergeRequest(
 		context.Background(),
-		client,
 		platform.RepoRef{Owner: "owner", Name: "repo"},
 		99,
 	)

@@ -158,77 +158,20 @@ func TestValidateItemPageQuery(t *testing.T) {
 		query     ItemPageQuery
 		wantField string
 	}{
-		{
-			name:  "open updated is valid",
-			query: ItemPageQuery{State: ItemStateOpen, Order: ItemOrderUpdated},
-		},
-		{
-			name:  "open created is valid",
-			query: ItemPageQuery{State: ItemStateOpen, Order: ItemOrderCreated},
-		},
-		{
-			name:  "all created with cursor is valid",
-			query: ItemPageQuery{State: ItemStateAll, Order: ItemOrderCreated, Cursor: "c1"},
-		},
-		{
-			name: "all updated with watermark and cursor is valid",
-			query: ItemPageQuery{
-				State: ItemStateAll, Order: ItemOrderUpdated,
-				UpdatedSince: &watermark, Cursor: "c1",
-			},
-		},
-		{
-			name:  "all updated without watermark is valid",
-			query: ItemPageQuery{State: ItemStateAll, Order: ItemOrderUpdated},
-		},
-		{
-			name:      "zero state is rejected",
-			query:     ItemPageQuery{Order: ItemOrderCreated},
-			wantField: "state",
-		},
-		{
-			name:      "unknown state is rejected",
-			query:     ItemPageQuery{State: ItemStateFilter("closed"), Order: ItemOrderCreated},
-			wantField: "state",
-		},
-		{
-			name:      "zero order is rejected",
-			query:     ItemPageQuery{State: ItemStateAll},
-			wantField: "order",
-		},
-		{
-			name:      "unknown order is rejected",
-			query:     ItemPageQuery{State: ItemStateAll, Order: ItemOrder("priority")},
-			wantField: "order",
-		},
-		{
-			name: "watermark without updated order is rejected",
-			query: ItemPageQuery{
-				State: ItemStateAll, Order: ItemOrderCreated, UpdatedSince: &watermark,
-			},
-			wantField: "updated_since",
-		},
-		{
-			name:      "open with cursor is rejected",
-			query:     ItemPageQuery{State: ItemStateOpen, Order: ItemOrderUpdated, Cursor: "c1"},
-			wantField: "cursor",
-		},
-		{
-			name: "open with watermark is rejected",
-			query: ItemPageQuery{
-				State: ItemStateOpen, Order: ItemOrderUpdated, UpdatedSince: &watermark,
-			},
-			wantField: "updated_since",
-		},
+		{name: "created is valid", query: ItemPageQuery{Order: ItemOrderCreated, Cursor: "c1"}},
+		{name: "updated is valid", query: ItemPageQuery{Order: ItemOrderUpdated, UpdatedSince: &watermark}},
+		{name: "zero order is rejected", query: ItemPageQuery{}, wantField: "order"},
+		{name: "unknown order is rejected", query: ItemPageQuery{Order: ItemOrder("priority")}, wantField: "order"},
+		{name: "watermark requires updated order", query: ItemPageQuery{Order: ItemOrderCreated, UpdatedSince: &watermark}, wantField: "updated_since"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
 			err := ValidateItemPageQuery(tt.query)
 			if tt.wantField == "" {
-				require.NoError(t, err)
+				require.NoError(err)
 				return
 			}
-			require := require.New(t)
 			require.ErrorIs(err, ErrInvalidArgument)
 			var typed *Error
 			require.ErrorAs(err, &typed)

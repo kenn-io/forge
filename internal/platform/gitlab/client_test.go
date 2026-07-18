@@ -58,7 +58,7 @@ func TestClientLooksUpProjectByRawPathAndUsesNumericIDAfterLookup(t *testing.T) 
 	assert.Equal("group/subgroup", repo.Ref.Owner)
 	assert.Equal("project", repo.Ref.Name)
 
-	mrs, err := platform.ListOpenMergeRequests(context.Background(), client, repo.Ref)
+	mrs, err := client.ListOpenMergeRequests(context.Background(), repo.Ref)
 	require.NoError(t, err)
 	require.Len(t, mrs, 1)
 	assert.Equal(7, mrs[0].Number)
@@ -125,7 +125,7 @@ func TestClientListOpenMergeRequestsPopulatesForkHeadRepoCloneURL(t *testing.T) 
 		CloneURL:   "https://gitlab.example.com/group/project.git",
 	}
 
-	mrs, err := platform.ListOpenMergeRequests(context.Background(), client, ref)
+	mrs, err := client.ListOpenMergeRequests(context.Background(), ref)
 	require.NoError(err)
 	require.Len(mrs, 4)
 	assert.Equal("https://gitlab.example.com/fork/project.git", mrs[0].HeadRepoCloneURL)
@@ -168,7 +168,7 @@ func TestClientListOpenMergeRequestsContinuesWhenForkHeadRepoLookupFails(t *test
 				CloneURL:   "https://gitlab.example.com/group/project.git",
 			}
 
-			mrs, err := platform.ListOpenMergeRequests(context.Background(), client, ref)
+			mrs, err := client.ListOpenMergeRequests(context.Background(), ref)
 			require.NoError(err)
 			require.Len(mrs, 1)
 			assert.Equal(7, mrs[0].Number)
@@ -220,7 +220,7 @@ func TestClientListOpenMergeRequestsPropagatesTransientForkHeadRepoLookupFailure
 		CloneURL:   "https://gitlab.example.com/group/project.git",
 	}
 
-	_, err := platform.ListOpenMergeRequests(context.Background(), client, ref)
+	_, err := client.ListOpenMergeRequests(context.Background(), ref)
 	require.Error(err)
 	var platformErr *platform.Error
 	assert.NotErrorAs(err, &platformErr)
@@ -261,58 +261,11 @@ func TestClientGetMergeRequestContinuesWhenForkHeadRepoLookupFails(t *testing.T)
 		CloneURL:   "https://gitlab.example.com/group/project.git",
 	}
 
-	mr, err := platform.RequireMergeRequest(context.Background(), client, ref, 7)
+	mr, err := client.GetMergeRequest(context.Background(), ref, 7)
 	require.NoError(err)
 	assert.Equal(7, mr.Number)
 	assert.Empty(mr.HeadRepoCloneURL)
 }
-
-// The canonical merge-request lookup treats fork head enrichment as
-// best-effort: even a transient source-project failure (rate limit) degrades
-// to an empty head clone URL instead of failing the lookup, so a single-item
-// read never blocks on the enrichment. The open-list scan keeps propagating
-// transient enrichment failures (covered separately) because index sync can
-// retry the whole list cheaply.
-func TestClientLookupMergeRequestDegradesTransientForkHeadRepoLookupFailures(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.EscapedPath() {
-		case "/api/v4/projects/42/merge_requests/7":
-			writeJSON(w, `{
-				"id": 1001,
-				"iid": 7,
-				"project_id": 42,
-				"source_project_id": 77,
-				"target_project_id": 42,
-				"source_branch": "feature/auth",
-				"target_branch": "main",
-				"title": "Fork base",
-				"state": "opened"
-			}`)
-		case "/api/v4/projects/77":
-			http.Error(w, "rate limited", http.StatusTooManyRequests)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	client := newTestClient(t, server.URL)
-	ref := platform.RepoRef{
-		Platform:   platform.KindGitLab,
-		Host:       "gitlab.example.com",
-		RepoPath:   "group/project",
-		PlatformID: 42,
-		CloneURL:   "https://gitlab.example.com/group/project.git",
-	}
-
-	mr, err := platform.RequireMergeRequest(context.Background(), client, ref, 7)
-	require.NoError(err)
-	assert.Equal(7, mr.Number)
-	assert.Empty(mr.HeadRepoCloneURL)
-}
-
 func TestClientGetMergeRequestUsesMergedByFallback(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -344,7 +297,7 @@ func TestClientGetMergeRequestUsesMergedByFallback(t *testing.T) {
 	client := newTestClient(t, server.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", PlatformID: 42}
 
-	mr, err := platform.RequireMergeRequest(context.Background(), client, ref, 7)
+	mr, err := client.GetMergeRequest(context.Background(), ref, 7)
 	require.NoError(err)
 	assert.Equal("legacy-admin", mr.MergedBy)
 }
@@ -760,13 +713,13 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 	client := newTestClient(t, server.URL)
 	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "middleman/project", PlatformID: 42}
 
-	mrs, err := platform.ListOpenMergeRequests(context.Background(), client, ref)
+	mrs, err := client.ListOpenMergeRequests(context.Background(), ref)
 	require.NoError(err)
 	require.Len(mrs, 1)
 	assert.Equal(7, mrs[0].Number)
 	assert.Empty(mrs[0].CIStatus)
 
-	mr, err := platform.RequireMergeRequest(context.Background(), client, ref, 7)
+	mr, err := client.GetMergeRequest(context.Background(), ref, 7)
 	require.NoError(err)
 	assert.Equal("MR detail", mr.Title)
 	assert.True(mr.IsDraft)
@@ -780,12 +733,12 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 	assert.Equal("maintainer", mrEvents[1].Author)
 	assert.Equal("commit", mrEvents[2].EventType)
 
-	issues, err := platform.ListOpenIssues(context.Background(), client, ref)
+	issues, err := client.ListOpenIssues(context.Background(), ref)
 	require.NoError(err)
 	require.Len(issues, 1)
 	assert.Equal(5, issues[0].Number)
 
-	issue, err := platform.RequireIssue(context.Background(), client, ref, 5)
+	issue, err := client.GetIssue(context.Background(), ref, 5)
 	require.NoError(err)
 	assert.Equal("Issue detail", issue.Title)
 

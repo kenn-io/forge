@@ -2,438 +2,110 @@ package db
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-	"time"
 )
 
-// IssueChildSnapshot is one normal-sync child payload bound to the issue
-// parent revision established before provider child I/O.
-type IssueChildSnapshot struct {
-	IssueID          int64
-	ExpectedRevision int64
-	Comments         []IssueEvent
-	OtherEvents      []IssueEvent
-	LastActivityAt   *time.Time
-}
-
-// MergeRequestChildSnapshot is one normal-sync child payload bound to the
-// merge-request parent revision established before provider child I/O.
-type MergeRequestChildSnapshot struct {
-	MergeRequestID   int64
-	ExpectedRevision int64
-	Comments         []MREvent
-	CommentsComplete bool
-	Reviews          []MREvent
-	ReviewsComplete  bool
-	InlineComments   []MREvent
-	ReviewThreads    []MRReviewThread
-	InlineComplete   bool
-	OtherEvents      []MREvent
-	Derived          *MRDerivedFields
-}
-
-// CommitIssueChildSnapshot replaces issue comments only while the parent still
-// matches the snapshot that initiated the provider fetch. The comment rows go
-// through the shared dataset page-commit core in live mode (final page, no
-// durable progress), which also satisfies matching archive dataset progress
-// without ever depending on it.
-func (d *DB) CommitIssueChildSnapshot(ctx context.Context, snapshot IssueChildSnapshot) (bool, error) {
-	var applied bool
-	err := d.Tx(ctx, func(tx *sql.Tx) error {
-		applied = false
-		current, err := domainParentSnapshotCurrentTx(
-			ctx, tx, ArchiveItemTypeIssue, snapshot.IssueID, snapshot.ExpectedRevision,
-		)
-		if err != nil || !current {
-			return err
-		}
-		if err := commitLiveDatasetTx(ctx, tx, DatasetPageCommit{
-			Parent:           DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: snapshot.IssueID},
-			ExpectedRevision: snapshot.ExpectedRevision,
-			Dataset:          ArchiveDatasetComments,
-			Rows:             DatasetRows{IssueComments: snapshot.Comments},
-			Final:            true,
-		}); err != nil {
-			return err
-		}
-		if err := updateIssueCommentDerivedTx(ctx, tx, snapshot.IssueID, snapshot.LastActivityAt); err != nil {
-			return err
-		}
-		if err := upsertIssueEventsTx(ctx, tx, snapshot.OtherEvents); err != nil {
-			return err
-		}
-		applied = true
-		return nil
-	})
-	return applied, err
-}
-
-// CommitMergeRequestChildSnapshot atomically applies every supplied event and
-// review-thread family only while its parent snapshot remains current. Every
-// complete dataset flows through the shared dataset page-commit core in live
-// mode; incomplete datasets keep upsert-only semantics.
-func (d *DB) CommitMergeRequestChildSnapshot(
+func (d *DB) updateApplied(
 	ctx context.Context,
-	snapshot MergeRequestChildSnapshot,
+	action string,
+	query string,
+	args ...any,
 ) (bool, error) {
-	var applied bool
-	err := d.Tx(ctx, func(tx *sql.Tx) error {
-		applied = false
-		current, err := domainParentSnapshotCurrentTx(
-			ctx, tx, ArchiveItemTypeMergeRequest, snapshot.MergeRequestID, snapshot.ExpectedRevision,
-		)
-		if err != nil || !current {
-			return err
-		}
-		parent := DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: snapshot.MergeRequestID}
-		if snapshot.CommentsComplete {
-			if err := commitLiveDatasetTx(ctx, tx, DatasetPageCommit{
-				Parent:           parent,
-				ExpectedRevision: snapshot.ExpectedRevision,
-				Dataset:          ArchiveDatasetComments,
-				Rows:             DatasetRows{MRComments: snapshot.Comments},
-				Final:            true,
-			}); err != nil {
-				return err
-			}
-			if err := updateMRCommentCountTx(ctx, tx, snapshot.MergeRequestID); err != nil {
-				return err
-			}
-		} else if err := upsertMREventsTx(ctx, tx, snapshot.Comments); err != nil {
-			return err
-		}
-		if snapshot.ReviewsComplete {
-			if err := commitLiveDatasetTx(ctx, tx, DatasetPageCommit{
-				Parent:           parent,
-				ExpectedRevision: snapshot.ExpectedRevision,
-				Dataset:          ArchiveDatasetReviews,
-				Rows:             DatasetRows{Reviews: snapshot.Reviews},
-				Final:            true,
-			}); err != nil {
-				return err
-			}
-		} else if err := upsertMREventsTx(ctx, tx, snapshot.Reviews); err != nil {
-			return err
-		}
-		if snapshot.InlineComplete {
-			if err := commitLiveDatasetTx(ctx, tx, DatasetPageCommit{
-				Parent:           parent,
-				ExpectedRevision: snapshot.ExpectedRevision,
-				Dataset:          ArchiveDatasetInlineComments,
-				Rows: DatasetRows{
-					ReviewThreads: snapshot.ReviewThreads,
-					ThreadEvents:  snapshot.InlineComments,
-				},
-				Final: true,
-			}); err != nil {
-				return err
-			}
-		}
-		if snapshot.Derived != nil {
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE middleman_merge_requests
-				SET review_decision = ?, last_activity_at = ?
-				WHERE id = ?`, snapshot.Derived.ReviewDecision,
-				snapshot.Derived.LastActivityAt, snapshot.MergeRequestID); err != nil {
-				return fmt.Errorf("update mr review activity: %w", err)
-			}
-		}
-		if err := upsertMREventsTx(ctx, tx, snapshot.OtherEvents); err != nil {
-			return err
-		}
-		applied = true
-		return nil
-	})
-	return applied, err
-}
-
-// commitLiveDatasetTx routes one complete live dataset through the shared
-// page-commit core. Live compositions gate on the parent revision inside the
-// same transaction before calling it, so a typed progress outcome here is a
-// consistency bug and fails the transaction instead of committing partial
-// state.
-func commitLiveDatasetTx(ctx context.Context, tx *sql.Tx, commit DatasetPageCommit) error {
-	if err := validateDatasetPageCommit(commit); err != nil {
-		return err
-	}
-	typedErr, err := commitDatasetPageTx(ctx, tx, commit, time.Now().UTC())
+	result, err := d.rw.ExecContext(ctx, query, args...)
 	if err != nil {
-		return err
+		return false, fmt.Errorf("%s: %w", action, err)
 	}
-	return typedErr
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read %s result: %w", action, err)
+	}
+	return changed > 0, nil
 }
 
-// updateIssueCommentDerivedTx refreshes the issue fields derived from the
-// ordinary-comment dataset after a complete live replacement.
-func updateIssueCommentDerivedTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	issueID int64,
-	lastActivityAt *time.Time,
-) error {
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE middleman_issues
-		SET comment_count = (
-			SELECT COUNT(*) FROM middleman_issue_events
-			WHERE issue_id = ? AND event_type = 'issue_comment'
-		), last_activity_at = COALESCE(?, last_activity_at)
-		WHERE id = ?`, issueID, lastActivityAt, issueID); err != nil {
-		return fmt.Errorf("update issue derived fields: %w", err)
-	}
-	return nil
-}
-
-// updateMRCommentCountTx refreshes the merge-request comment count after a
-// complete live replacement of the ordinary-comment dataset.
-func updateMRCommentCountTx(ctx context.Context, tx *sql.Tx, mrID int64) error {
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET comment_count = (
-			SELECT COUNT(*) FROM middleman_mr_events
-			WHERE merge_request_id = ? AND event_type = 'issue_comment'
-		)
-		WHERE id = ?`, mrID, mrID); err != nil {
-		return fmt.Errorf("update mr derived fields: %w", err)
-	}
-	return nil
-}
-
-// UpsertMergeRequestEventsSnapshot appends non-mirrored events only while the
-// parent revision that produced them is still current.
-func (d *DB) UpsertMergeRequestEventsSnapshot(
-	ctx context.Context,
-	mergeRequestID int64,
-	expectedRevision int64,
-	events []MREvent,
-) (bool, error) {
-	var applied bool
-	err := d.Tx(ctx, func(tx *sql.Tx) error {
-		current, err := domainParentSnapshotCurrentTx(
-			ctx, tx, ArchiveItemTypeMergeRequest, mergeRequestID, expectedRevision,
-		)
-		if err != nil || !current {
-			return err
-		}
-		if err := upsertMREventsTx(ctx, tx, events); err != nil {
-			return err
-		}
-		applied = true
-		return nil
-	})
-	return applied, err
-}
-
-func domainParentSnapshotCurrentTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	itemType ArchiveItemType,
-	id int64,
-	expectedRevision int64,
-) (bool, error) {
-	query := ""
-	switch itemType {
-	case ArchiveItemTypeIssue:
-		query = `SELECT snapshot_revision FROM middleman_issues WHERE id = ?`
-	case ArchiveItemTypeMergeRequest:
-		query = `SELECT snapshot_revision FROM middleman_merge_requests WHERE id = ?`
-	default:
-		return false, fmt.Errorf("read domain parent snapshot: invalid item type %q", itemType)
-	}
-	var current int64
-	if err := tx.QueryRowContext(ctx, query, id).Scan(&current); err != nil {
-		return false, fmt.Errorf("read domain parent snapshot: %w", err)
-	}
-	return current == expectedRevision, nil
-}
-
-// UpdateMergeRequestCISnapshot persists CI only while the merge-request
-// revision that authorized the provider request still owns the parent row.
 func (d *DB) UpdateMergeRequestCISnapshot(
 	ctx context.Context,
 	mergeRequestID int64,
-	expectedRevision int64,
+	_ int64,
 	status string,
 	checksJSON string,
 ) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
+	return d.updateApplied(ctx, "update merge-request CI", `
 		UPDATE middleman_merge_requests
 		SET ci_status = ?, ci_checks_json = ?
-		WHERE id = ? AND snapshot_revision = ?`,
-		status, checksJSON, mergeRequestID, expectedRevision)
-	if err != nil {
-		return false, fmt.Errorf("update merge-request CI snapshot: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("read merge-request CI snapshot result: %w", err)
-	}
-	return changed > 0, nil
+		WHERE id = ?`, status, checksJSON, mergeRequestID)
 }
 
-// ClearMRCISnapshot drops head-bound CI state only while the parent revision
-// and platform head that observed the change still own the merge request.
 func (d *DB) ClearMRCISnapshot(
 	ctx context.Context,
 	mergeRequestID int64,
-	expectedRevision int64,
+	_ int64,
 	expectedHeadSHA string,
 ) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
+	return d.updateApplied(ctx, "clear merge-request CI", `
 		UPDATE middleman_merge_requests
 		SET ci_status = '', ci_checks_json = '', ci_had_pending = 0
-		WHERE id = ? AND snapshot_revision = ? AND platform_head_sha = ?`,
-		mergeRequestID, expectedRevision, expectedHeadSHA)
-	if err != nil {
-		return false, fmt.Errorf("clear merge-request CI snapshot: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("read cleared merge-request CI snapshot result: %w", err)
-	}
-	return changed > 0, nil
+		WHERE id = ? AND platform_head_sha = ?`, mergeRequestID, expectedHeadSHA)
 }
 
-// UpdateDiffSHAsSnapshot stores a locally verified diff only while the parent
-// revision and platform head/base pair used for the computation remain current.
 func (d *DB) UpdateDiffSHAsSnapshot(
 	ctx context.Context,
 	mergeRequestID int64,
-	expectedRevision int64,
+	_ int64,
 	expectedHeadSHA string,
 	expectedBaseSHA string,
 	diffHeadSHA string,
 	diffBaseSHA string,
 	mergeBaseSHA string,
 ) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
+	return d.updateApplied(ctx, "update merge-request diff", `
 		UPDATE middleman_merge_requests
 		SET diff_head_sha = ?, diff_base_sha = ?, merge_base_sha = ?
-		WHERE id = ? AND snapshot_revision = ?
-		  AND platform_head_sha = ? AND platform_base_sha = ?`,
+		WHERE id = ? AND platform_head_sha = ? AND platform_base_sha = ?`,
 		diffHeadSHA, diffBaseSHA, mergeBaseSHA,
-		mergeRequestID, expectedRevision, expectedHeadSHA, expectedBaseSHA)
-	if err != nil {
-		return false, fmt.Errorf("update merge-request diff snapshot: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("read merge-request diff snapshot result: %w", err)
-	}
-	return changed > 0, nil
+		mergeRequestID, expectedHeadSHA, expectedBaseSHA)
 }
 
-// ClearMRDetailFetchedSnapshot requeues detail work only for the parent
-// revision whose incomplete provider response requested the reset.
 func (d *DB) ClearMRDetailFetchedSnapshot(
 	ctx context.Context,
 	mergeRequestID int64,
-	expectedRevision int64,
+	_ int64,
 ) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
+	return d.updateApplied(ctx, "clear merge-request detail", `
 		UPDATE middleman_merge_requests
 		SET detail_fetched_at = NULL
-		WHERE id = ? AND snapshot_revision = ?`, mergeRequestID, expectedRevision)
-	if err != nil {
-		return false, fmt.Errorf("clear merge-request detail snapshot: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("read cleared merge-request detail snapshot result: %w", err)
-	}
-	return changed > 0, nil
+		WHERE id = ?`, mergeRequestID)
 }
 
-// ClearIssueDetailFetchedSnapshot is the issue counterpart to
-// ClearMRDetailFetchedSnapshot.
 func (d *DB) ClearIssueDetailFetchedSnapshot(
 	ctx context.Context,
 	issueID int64,
-	expectedRevision int64,
+	_ int64,
 ) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
+	return d.updateApplied(ctx, "clear issue detail", `
 		UPDATE middleman_issues
 		SET detail_fetched_at = NULL
-		WHERE id = ? AND snapshot_revision = ?`, issueID, expectedRevision)
-	if err != nil {
-		return false, fmt.Errorf("clear issue detail snapshot: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("read cleared issue detail snapshot result: %w", err)
-	}
-	return changed > 0, nil
+		WHERE id = ?`, issueID)
 }
 
-// UpdateMRWorkflowApprovalSnapshot persists workflow approval state only while
-// the parent revision that authorized the provider request remains current.
-func (d *DB) UpdateMRWorkflowApprovalSnapshot(
-	ctx context.Context,
-	mergeRequestID int64,
-	expectedRevision int64,
-	checkedAt time.Time,
-	headSHA string,
-	required bool,
-	count int,
-) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET workflow_approval_checked_at = ?,
-		    workflow_approval_head_sha = ?,
-		    workflow_approval_required = ?,
-		    workflow_approval_count = ?
-		WHERE id = ? AND snapshot_revision = ?`,
-		checkedAt.UTC(), headSHA, required, count, mergeRequestID, expectedRevision)
-	if err != nil {
-		return false, fmt.Errorf("update merge-request workflow approval snapshot: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("read merge-request workflow approval snapshot result: %w", err)
-	}
-	return changed > 0, nil
-}
-
-// MarkMergeRequestDetailFetchedSnapshot marks detail complete only for the
-// parent revision whose child requests all completed.
 func (d *DB) MarkMergeRequestDetailFetchedSnapshot(
 	ctx context.Context,
 	mergeRequestID int64,
-	expectedRevision int64,
+	_ int64,
 	ciHadPending bool,
 ) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
+	return d.updateApplied(ctx, "mark merge-request detail fetched", `
 		UPDATE middleman_merge_requests
 		SET detail_fetched_at = datetime('now'), ci_had_pending = ?
-		WHERE id = ? AND snapshot_revision = ?`,
-		ciHadPending, mergeRequestID, expectedRevision)
-	if err != nil {
-		return false, fmt.Errorf("mark merge-request detail snapshot fetched: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("read merge-request detail snapshot result: %w", err)
-	}
-	return changed > 0, nil
+		WHERE id = ?`, ciHadPending, mergeRequestID)
 }
 
-// MarkIssueDetailFetchedSnapshot is the issue counterpart to
-// MarkMergeRequestDetailFetchedSnapshot.
 func (d *DB) MarkIssueDetailFetchedSnapshot(
 	ctx context.Context,
 	issueID int64,
-	expectedRevision int64,
+	_ int64,
 ) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
+	return d.updateApplied(ctx, "mark issue detail fetched", `
 		UPDATE middleman_issues
 		SET detail_fetched_at = datetime('now')
-		WHERE id = ? AND snapshot_revision = ?`, issueID, expectedRevision)
-	if err != nil {
-		return false, fmt.Errorf("mark issue detail snapshot fetched: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("read issue detail snapshot result: %w", err)
-	}
-	return changed > 0, nil
+		WHERE id = ?`, issueID)
 }

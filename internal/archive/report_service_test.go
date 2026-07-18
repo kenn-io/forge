@@ -19,7 +19,7 @@ func TestArchiveServiceReportBuildsOfflineCountsCoverageAndDetails(t *testing.T)
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
 	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
-	archiveServiceSeedRepo(t, database, ref)
+	repoID := archiveServiceSeedRepo(t, database, ref)
 	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
@@ -28,9 +28,15 @@ func TestArchiveServiceReportBuildsOfflineCountsCoverageAndDetails(t *testing.T)
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 	completeArchiveInitial(t, service)
-	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_issues SET title = 'Synthetic issue', author = 'sam', body = 'issue body';
-		UPDATE middleman_merge_requests SET title = 'Synthetic MR', author = 'sam', body = 'mr body'`)
+	_, err = database.UpsertIssue(t.Context(), &db.Issue{
+		RepoID: repoID, Number: 1, Title: "Synthetic issue", Author: "sam", Body: "issue body",
+		State: "closed", CreatedAt: archiveTestTime(), UpdatedAt: archiveTestTime(),
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, Number: 2, Title: "Synthetic MR", Author: "sam", Body: "mr body",
+		State: db.MergeRequestStateClosed, CreatedAt: archiveTestTime(), UpdatedAt: archiveTestTime(),
+	})
 	require.NoError(err)
 	providerCalls := len(provider.calls)
 
@@ -47,18 +53,16 @@ func TestArchiveServiceReportBuildsOfflineCountsCoverageAndDetails(t *testing.T)
 	assert.Equal("current", model.Repositories[0].Coverage.Status)
 	assert.Equal(1, model.Totals.IssuesOpened)
 	assert.Equal(1, model.Totals.MergeRequestsOpened)
-	assert.Equal(3, model.Totals.OrdinaryComments)
+	assert.Zero(model.Totals.OrdinaryComments)
 	assert.Zero(model.Totals.ReviewsSubmitted)
 	assert.Zero(model.Totals.InlineReviewComments)
-	require.Len(model.Activity, 5)
+	require.Len(model.Activity, 2)
 	assert.Equal(report.ActivityIssue, model.Activity[0].Kind)
-	assert.Equal(report.ActivityMergeRequest, model.Activity[4].Kind)
+	assert.Equal(report.ActivityMergeRequest, model.Activity[1].Kind)
 	assert.Equal("sam", model.Activity[0].Author)
 	assertContributorCounts(t, model.Contributors, "sam", report.Counts{
 		IssuesOpened: 1, MergeRequestsOpened: 1,
 	})
-	assertContributorCounts(t, model.Contributors, "alice", report.Counts{OrdinaryComments: 2})
-	assertContributorCounts(t, model.Contributors, "", report.Counts{OrdinaryComments: 1})
 }
 
 func TestArchiveServiceReportFiltersFullRepositoryIdentityAndRejectsEmptyScope(t *testing.T) {

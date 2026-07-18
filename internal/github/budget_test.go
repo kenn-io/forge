@@ -30,8 +30,8 @@ func TestSyncBudgetBasics(t *testing.T) {
 func TestSyncBudgetWorstCase(t *testing.T) {
 	b := NewSyncBudget(10)
 	b.Spend(5)
-	assert.Equal(t, 11, PRDetailWorstCase)
-	assert.False(t, b.CanSpend(PRDetailWorstCase))   // 11 > 5 remaining
+	assert.Equal(t, 10, PRDetailWorstCase)
+	assert.False(t, b.CanSpend(PRDetailWorstCase))   // 10 > 5 remaining
 	assert.True(t, b.CanSpend(IssueDetailWorstCase)) // 2 <= 5 remaining
 }
 

@@ -405,6 +405,61 @@ func (c *Client) projectCloneURL(ctx context.Context, projectID int64) (string, 
 	return cloneURL, nil
 }
 
+func (c *Client) ListOpenMergeRequests(
+	ctx context.Context,
+	ref platform.RepoRef,
+) ([]platform.MergeRequest, error) {
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	state := "opened"
+	recheck := true
+	opt := &gitlab.ListProjectMergeRequestsOptions{
+		State: &state, WithMergeStatusRecheck: &recheck,
+		ListOptions: gitlab.ListOptions{Page: 1, PerPage: defaultPageSize},
+	}
+	var out []platform.MergeRequest
+	for {
+		mrs, resp, err := c.api.MergeRequests.ListProjectMergeRequests(pid, opt, gitlab.WithContext(ctx))
+		if err != nil {
+			return nil, mapGitLabError("list_merge_requests", err)
+		}
+		for _, mr := range mrs {
+			normalized := NormalizeMergeRequest(normalizedRef, mr, nil)
+			normalized.HeadRepoCloneURL, normalized.HeadRepoCloneURLUnknown, err =
+				c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, normalized)
+		}
+		if resp == nil || resp.NextPage == 0 {
+			return out, nil
+		}
+		opt.Page = resp.NextPage
+	}
+}
+
+func (c *Client) GetMergeRequest(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) (platform.MergeRequest, error) {
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
+	if err != nil {
+		return platform.MergeRequest{}, err
+	}
+	mr, _, err := c.api.MergeRequests.GetMergeRequest(pid, int64(number), nil, gitlab.WithContext(ctx))
+	if err != nil {
+		return platform.MergeRequest{}, mapGitLabError("get_merge_request", err)
+	}
+	normalized := NormalizeDetailedMergeRequest(normalizedRef, mr)
+	normalized.HeadRepoCloneURL, normalized.HeadRepoCloneURLUnknown, err =
+		c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
+	return normalized, err
+}
+
 func (c *Client) ListMergeRequestEvents(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -468,11 +523,62 @@ func (c *Client) ListIssueEvents(
 	return c.ListIssueComments(ctx, ref, number)
 }
 
+func (c *Client) ListOpenIssues(ctx context.Context, ref platform.RepoRef) ([]platform.Issue, error) {
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	state := "opened"
+	opt := &gitlab.ListProjectIssuesOptions{
+		State: &state, ListOptions: gitlab.ListOptions{Page: 1, PerPage: defaultPageSize},
+	}
+	var out []platform.Issue
+	for {
+		issues, resp, err := c.api.Issues.ListProjectIssues(pid, opt, gitlab.WithContext(ctx))
+		if err != nil {
+			return nil, mapGitLabError("list_issues", err)
+		}
+		for _, issue := range issues {
+			out = append(out, NormalizeIssue(normalizedRef, issue))
+		}
+		if resp == nil || resp.NextPage == 0 {
+			return out, nil
+		}
+		opt.Page = resp.NextPage
+	}
+}
+
+func (c *Client) GetIssue(ctx context.Context, ref platform.RepoRef, number int) (platform.Issue, error) {
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
+	if err != nil {
+		return platform.Issue{}, err
+	}
+	issue, _, err := c.api.Issues.GetIssue(pid, int64(number), nil, gitlab.WithContext(ctx))
+	if err != nil {
+		return platform.Issue{}, mapGitLabError("get_issue", err)
+	}
+	return NormalizeIssue(normalizedRef, issue), nil
+}
+
 func (c *Client) ListIssueComments(ctx context.Context, ref platform.RepoRef, number int) ([]platform.IssueEvent, error) {
-	return platform.CollectPages(ctx, "", func(
-		ctx context.Context, cursor string,
-	) (platform.Page[platform.IssueEvent], error) {
-		return c.ListIssueCommentsPage(ctx, ref, number, cursor)
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	discussions, err := c.listIssueDiscussions(ctx, pid, number)
+	if err != nil {
+		return nil, err
+	}
+	return NormalizeIssueDiscussions(normalizedRef, number, gitLabIssueURL(normalizedRef, number), discussions), nil
+}
+
+func (c *Client) listIssueDiscussions(ctx context.Context, pid any, number int) ([]*gitlab.Discussion, error) {
+	return collectGitLabPages(ctx, func(ctx context.Context, page int64) ([]*gitlab.Discussion, int64, error) {
+		discussions, nextPage, err := c.listIssueDiscussionsPage(ctx, pid, number, page)
+		if err != nil {
+			return nil, 0, c.mapGitLabError("list_issue_discussions", err)
+		}
+		return discussions, nextPage, nil
 	})
 }
 

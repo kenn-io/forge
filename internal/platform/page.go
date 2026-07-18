@@ -18,15 +18,6 @@ func collectContractError(field, format string, args ...any) error {
 	}
 }
 
-// ItemStateFilter selects which lifecycle states a page query returns. Open
-// sync uses ItemStateOpen; historical and maintenance scans use ItemStateAll.
-type ItemStateFilter string
-
-const (
-	ItemStateOpen ItemStateFilter = "open"
-	ItemStateAll  ItemStateFilter = "all"
-)
-
 // ItemOrder selects the traversal order a page query requests.
 //
 // The canonical contract every provider implementation must honor:
@@ -55,10 +46,6 @@ const (
 //     and under either order items that change mid-traversal may be observed
 //     more than once; consumers dedupe by provider identity through
 //     idempotent upserts.
-//   - For ItemStateOpen queries, Order is accepted but the traversal order is
-//     contractually unspecified: an open scan is an exhaustive single-shot
-//     drain of the current open set, so ordering is immaterial and providers
-//     may serve their native default order.
 type ItemOrder string
 
 const (
@@ -68,15 +55,13 @@ const (
 
 // ItemPageQuery parameterizes a canonical inventory page read.
 //
-// Valid combinations: State and Order are required (no zero values).
-// UpdatedSince is a UTC watermark, valid only with ItemOrderUpdated, and
-// inclusive — items updated exactly at the watermark are returned, so
-// overlapped rescans are expected and consumers dedupe by identity. Cursor is
-// opaque to callers and bound to the repository and the other query fields
-// that produced it; reusing a cursor with different query parameters is a
-// contract violation a provider may reject.
+// Order is required. UpdatedSince is a UTC watermark, valid only with
+// ItemOrderUpdated, and inclusive — items updated exactly at the watermark are
+// returned, so overlapped rescans are expected and consumers dedupe by
+// identity. Cursor is opaque to callers and bound to the repository and the
+// other query fields that produced it; reusing a cursor with different query
+// parameters is a contract violation a provider may reject.
 type ItemPageQuery struct {
-	State        ItemStateFilter
 	Order        ItemOrder
 	UpdatedSince *time.Time
 	Cursor       string
@@ -94,29 +79,15 @@ func invalidItemPageQuery(field, format string, args ...any) error {
 }
 
 // ValidateItemPageQuery rejects query shapes the canonical page contract does
-// not define, so an unknown state or order can never silently dispatch some
-// default traversal. Provider implementations call it at the top of their
-// ListIssuesPage/ListMergeRequestsPage entry points. Open scans are
-// single-shot current-index reads, so they carry neither a resumption cursor
-// nor a watermark; UpdatedSince only has meaning for updated-order traversal.
+// not define, so an unknown order can never silently dispatch some default
+// traversal. Provider implementations call it at the top of their
+// ListIssuesPage/ListMergeRequestsPage entry points. UpdatedSince only has
+// meaning for updated-order traversal.
 func ValidateItemPageQuery(q ItemPageQuery) error {
-	switch q.State {
-	case ItemStateOpen, ItemStateAll:
-	default:
-		return invalidItemPageQuery("state", "unknown item state filter %q", q.State)
-	}
 	switch q.Order {
 	case ItemOrderCreated, ItemOrderUpdated:
 	default:
 		return invalidItemPageQuery("order", "unknown item order %q", q.Order)
-	}
-	if q.State == ItemStateOpen {
-		if q.Cursor != "" {
-			return invalidItemPageQuery("cursor", "open scans are single-shot and do not accept a cursor")
-		}
-		if q.UpdatedSince != nil {
-			return invalidItemPageQuery("updated_since", "open scans do not accept an updated_since watermark")
-		}
 	}
 	if q.UpdatedSince != nil && q.Order != ItemOrderUpdated {
 		return invalidItemPageQuery("updated_since", "updated_since requires order %q", ItemOrderUpdated)

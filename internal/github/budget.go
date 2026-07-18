@@ -9,9 +9,8 @@ import (
 // PRDetailWorstCase is the maximum API calls a PR detail
 // fetch can make (detail + GetUser + comments + reviews +
 // commits + force-push events + review threads + combined status +
-// check runs + up to two workflow-run reads when approval state loses
-// a parent race).
-const PRDetailWorstCase = 11
+// check runs + one workflow-run read).
+const PRDetailWorstCase = 10
 
 // IssueDetailWorstCase is the maximum API calls an issue
 // detail fetch can make (detail + comments).

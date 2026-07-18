@@ -580,11 +580,9 @@ func scanArchiveRepoState(row archiveRowScanner, state *ArchiveRepoState) error 
 	)
 }
 
-// ClaimArchiveItem returns the oldest item with due dataset progress from the
-// explicitly eligible repositories, together with its due datasets in scan
-// order (lookup first). Claims are observational because the schema has no
-// lease; the compare-and-swap on every progress commit makes duplicate
-// scheduling safe.
+// ClaimArchiveItem returns the oldest due item from the explicitly eligible
+// repositories. Claims are observational; the generation check on progress
+// commits makes duplicate scheduling safe.
 func (d *DB) ClaimArchiveItem(ctx context.Context, opts ClaimArchiveItemOpts) (*ArchiveItemWork, error) {
 	return d.claimArchiveItem(ctx, opts, nil)
 }
@@ -632,12 +630,9 @@ func (d *DB) claimArchiveItem(
 	return &oldest, nil
 }
 
-// dueArchiveDatasetsQuery selects claimable dataset progress rows in stable
-// item order: lookup before child datasets, children in scan order.
-const dueArchiveDatasetsQuery = `
+const dueArchiveItemsQuery = `
 	SELECT ai.repo_id, ai.item_type, ai.item_number, ai.provider_created_at,
-		p.dataset, p.parent_revision, p.scan_generation, p.next_cursor,
-		p.status, p.attempt_count
+		p.scan_generation
 	FROM middleman_archive_dataset_progress p
 	JOIN middleman_archive_items ai
 	  ON ai.repo_id = p.repo_id AND ai.item_type = p.item_type AND ai.item_number = p.item_number
@@ -647,15 +642,11 @@ const dueArchiveDatasetsQuery = `
 	  AND ar.operator_state = 'active'
 	  AND (ar.next_retry_at IS NULL OR ar.next_retry_at <= ?)
 	  AND ai.lifecycle_state = 'active'
+	  AND p.dataset = 'lookup'
 	  AND p.status IN ('pending', 'running', 'failed')
 	  AND (p.next_retry_at IS NULL OR p.next_retry_at <= ?)
-	ORDER BY ai.provider_created_at, ai.item_type, ai.item_number,
-	  CASE p.dataset
-		WHEN 'lookup' THEN 0
-		WHEN 'comments' THEN 1
-		WHEN 'reviews' THEN 2
-		ELSE 3
-	  END`
+	ORDER BY ai.provider_created_at, ai.item_type, ai.item_number
+	LIMIT 1`
 
 func claimArchiveItemForRepo(
 	ctx context.Context,
@@ -663,45 +654,21 @@ func claimArchiveItemForRepo(
 	repoID int64,
 	now time.Time,
 ) (*ArchiveItemWork, error) {
-	rows, err := queryer.QueryContext(
-		ctx, dueArchiveDatasetsQuery, repoID, now, formatDatasetProgressTime(now),
+	var work ArchiveItemWork
+	err := queryer.QueryRowContext(
+		ctx, dueArchiveItemsQuery, repoID, now, formatDatasetProgressTime(now),
+	).Scan(
+		&work.RepoID, &work.ItemType, &work.ItemNumber,
+		&work.ProviderCreatedAt, &work.ScanGeneration,
 	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("claim archive item: %w", err)
 	}
-	defer rows.Close()
-	var work *ArchiveItemWork
-	for rows.Next() {
-		var repo int64
-		var itemType ArchiveItemType
-		var itemNumber int
-		var createdAt time.Time
-		var dataset ArchiveDatasetWork
-		var nextCursor sql.NullString
-		if err := rows.Scan(
-			&repo, &itemType, &itemNumber, &createdAt,
-			&dataset.Dataset, &dataset.ParentRevision, &dataset.ScanGeneration,
-			&nextCursor, &dataset.Status, &dataset.AttemptCount,
-		); err != nil {
-			return nil, fmt.Errorf("scan claimable archive dataset: %w", err)
-		}
-		if nextCursor.Valid {
-			dataset.NextCursor = &nextCursor.String
-		}
-		if work == nil {
-			work = &ArchiveItemWork{
-				RepoID: repo, ItemType: itemType, ItemNumber: itemNumber,
-				ProviderCreatedAt: createdAt.UTC(),
-			}
-		} else if work.ItemType != itemType || work.ItemNumber != itemNumber {
-			break
-		}
-		work.Datasets = append(work.Datasets, dataset)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("claim archive item: %w", err)
-	}
-	return work, nil
+	work.ProviderCreatedAt = work.ProviderCreatedAt.UTC()
+	return &work, nil
 }
 
 func archiveItemStableLess(left, right ArchiveItemWork) bool {
@@ -715,65 +682,6 @@ func archiveItemStableLess(left, right ArchiveItemWork) bool {
 		return left.ItemNumber < right.ItemNumber
 	}
 	return left.RepoID < right.RepoID
-}
-
-// GetDueDatasetWork returns the currently due datasets of one item in scan
-// order. Hydration re-derives due work after its lookup commits, because a
-// present lookup rebinds and reopens child datasets.
-func (d *DB) GetDueDatasetWork(
-	ctx context.Context,
-	repoID int64,
-	itemType ArchiveItemType,
-	itemNumber int,
-	now time.Time,
-) ([]ArchiveDatasetWork, error) {
-	return d.dueDatasetsForItem(ctx, repoID, itemType, itemNumber, now.UTC())
-}
-
-func (d *DB) dueDatasetsForItem(
-	ctx context.Context,
-	repoID int64,
-	itemType ArchiveItemType,
-	itemNumber int,
-	now time.Time,
-) ([]ArchiveDatasetWork, error) {
-	rows, err := d.ro.QueryContext(ctx, `
-		SELECT p.dataset, p.parent_revision, p.scan_generation, p.next_cursor,
-			p.status, p.attempt_count
-		FROM middleman_archive_dataset_progress p
-		WHERE p.repo_id = ? AND p.item_type = ? AND p.item_number = ?
-		  AND p.status IN ('pending', 'running', 'failed')
-		  AND (p.next_retry_at IS NULL OR p.next_retry_at <= ?)
-		ORDER BY CASE p.dataset
-			WHEN 'lookup' THEN 0
-			WHEN 'comments' THEN 1
-			WHEN 'reviews' THEN 2
-			ELSE 3
-		  END`,
-		repoID, itemType, itemNumber, formatDatasetProgressTime(now))
-	if err != nil {
-		return nil, fmt.Errorf("list due archive datasets: %w", err)
-	}
-	defer rows.Close()
-	var datasets []ArchiveDatasetWork
-	for rows.Next() {
-		var dataset ArchiveDatasetWork
-		var nextCursor sql.NullString
-		if err := rows.Scan(
-			&dataset.Dataset, &dataset.ParentRevision, &dataset.ScanGeneration,
-			&nextCursor, &dataset.Status, &dataset.AttemptCount,
-		); err != nil {
-			return nil, fmt.Errorf("scan due archive dataset: %w", err)
-		}
-		if nextCursor.Valid {
-			dataset.NextCursor = &nextCursor.String
-		}
-		datasets = append(datasets, dataset)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list due archive datasets: %w", err)
-	}
-	return datasets, nil
 }
 
 // ArchiveItemTerminal marks an archive item's lifecycle as removed upstream or
@@ -1123,11 +1031,8 @@ func requireArchiveRepoIDs(ctx context.Context, tx *sql.Tx, table string, repoID
 	return nil
 }
 
-// CommitArchiveInventoryPage durably applies one inventory or prompt page in a
-// single transaction: parent snapshots with labels, archive work rows, and the
-// scan-row cursor advance, so a crash never splits a page. The scan row is
-// compare-and-swapped on generation and input cursor; typed stale, replay, and
-// blocked outcomes never write parent rows.
+// CommitArchiveInventoryPage records item identities and advances the scan in
+// one transaction. Provider content is populated later by the normal syncer.
 func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInventoryCommit) error {
 	if commit.RefreshReason == "" {
 		commit.RefreshReason = ArchiveRefreshReasonInitial
@@ -1158,17 +1063,9 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 			typedErr = outcome.typedErr
 			return nil
 		}
-		for i := range commit.Issues {
-			if _, _, _, err := commitArchiveIssueParentTx(
-				ctx, tx, commit.RepoID, &commit.Issues[i], commit.RefreshReason,
-			); err != nil {
-				return err
-			}
-		}
-		for i := range commit.MergeRequests {
-			if _, _, _, err := commitArchiveMergeRequestParentTx(
-				ctx, tx, commit.RepoID, &commit.MergeRequests[i], commit.RefreshReason,
-				mergeRequestDetailPreserveProviderDetail,
+		for _, item := range commit.Items {
+			if err := commitArchiveInventoryItemTx(
+				ctx, tx, commit.RepoID, commit.ItemType, item, commit.RefreshReason,
 			); err != nil {
 				return err
 			}
@@ -1187,274 +1084,51 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 	return typedErr
 }
 
-// commitArchiveIssueParentTx is the issue mode of the single archive
-// parent-observation core: parent snapshot upsert with labels, terminal-work
-// reactivation, and per-item archive work reconciliation. Inventory pages and
-// single-item lookups both flow through it.
-func commitArchiveIssueParentTx(
+func commitArchiveInventoryItemTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	repoID int64,
-	item *ArchiveInventoryIssue,
+	itemType ArchiveItemType,
+	item ArchiveInventoryItem,
 	refreshReason ArchiveRefreshReason,
-) (int64, int64, bool, error) {
-	issue := &item.Snapshot.Issue
-	issue.RepoID = repoID
-	issueID, revision, accepted, err := commitIssueParentSnapshotTx(
-		ctx, tx, issue, item.Snapshot.Labels, reopenDatasetsAtomic,
-	)
-	if err != nil {
-		return 0, 0, false, err
-	}
-	if !accepted {
-		// The domain row holds a newer snapshot than this observation. The
-		// archive work row must track the winning provider timestamp so later
-		// maintenance passes do not treat already-superseded activity as new.
-		if err := tx.QueryRowContext(ctx, `
-			SELECT updated_at FROM middleman_issues WHERE id = ?`, issueID,
-		).Scan(&issue.UpdatedAt); err != nil {
-			return 0, 0, false, fmt.Errorf("read winning issue snapshot: %w", err)
-		}
-	}
+) error {
 	if err := reactivateTerminalArchiveWorkTx(
-		ctx, tx, repoID, ArchiveItemTypeIssue, issue.Number,
+		ctx, tx, repoID, itemType, item.Number,
 	); err != nil {
-		return 0, 0, false, err
+		return err
 	}
 	if err := upsertArchiveItemWorkTx(
-		ctx, tx, repoID, ArchiveItemTypeIssue, issue.Number,
-		archiveProviderItemID(item.ProviderItemID, issue.PlatformExternalID, issue.PlatformID),
-		issue.CreatedAt, issue.UpdatedAt, refreshReason,
+		ctx, tx, repoID, itemType, item.Number, item.ProviderItemID,
+		item.ProviderCreatedAt, item.ProviderUpdatedAt, refreshReason,
 	); err != nil {
-		return 0, 0, false, err
+		return err
 	}
-	if err := seedArchiveDatasetProgressTx(ctx, tx, repoID, ArchiveItemTypeIssue, issue.Number,
-		map[ArchiveDataset]ArchiveDatasetProgressStatus{
-			ArchiveDatasetLookup:   ArchiveDatasetProgressPending,
-			ArchiveDatasetComments: progressStatusForSeed(item.CommentsStatus),
-		}); err != nil {
-		return 0, 0, false, err
+	if err := seedArchiveItemProgressTx(ctx, tx, repoID, itemType, item.Number); err != nil {
+		return err
 	}
-	if err := rebindArchiveDatasetProgressTx(
-		ctx, tx, DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID},
-		repoID, issue.Number, revision, refreshReason,
-	); err != nil {
-		return 0, 0, false, err
+	if refreshReason == ArchiveRefreshReasonPrompt {
+		return reopenArchiveItemProgressTx(ctx, tx, repoID, itemType, item.Number)
 	}
-	return issueID, revision, accepted, nil
+	return nil
 }
 
-// commitArchiveMergeRequestParentTx is the merge-request mode of the archive
-// parent-observation core shared by inventory pages and single-item lookups.
-// Inventory pages carry list-grade snapshots and preserve live-owned provider
-// detail; lookups carry detailed snapshots and apply provider diff detail
-// while keeping derived review/CI state.
-func commitArchiveMergeRequestParentTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	repoID int64,
-	item *ArchiveInventoryMergeRequest,
-	refreshReason ArchiveRefreshReason,
-	detail mergeRequestDetailMode,
-) (int64, int64, bool, error) {
-	mr := &item.Snapshot.MergeRequest
-	mr.RepoID = repoID
-	mrID, revision, accepted, err := commitMergeRequestParentSnapshotTx(
-		ctx, tx, mr, item.Snapshot.Labels, detail, reopenDatasetsAtomic,
-	)
-	if err != nil {
-		return 0, 0, false, err
-	}
-	if !accepted {
-		// See commitArchiveIssueParentTx: rejected observations still bind the
-		// archive work row to the winning provider timestamp.
-		if err := tx.QueryRowContext(ctx, `
-			SELECT updated_at FROM middleman_merge_requests WHERE id = ?`, mrID,
-		).Scan(&mr.UpdatedAt); err != nil {
-			return 0, 0, false, fmt.Errorf("read winning merge-request snapshot: %w", err)
-		}
-	}
-	if err := reactivateTerminalArchiveWorkTx(
-		ctx, tx, repoID, ArchiveItemTypeMergeRequest, mr.Number,
-	); err != nil {
-		return 0, 0, false, err
-	}
-	if err := upsertArchiveItemWorkTx(
-		ctx, tx, repoID, ArchiveItemTypeMergeRequest, mr.Number,
-		archiveProviderItemID(item.ProviderItemID, mr.PlatformExternalID, mr.PlatformID),
-		mr.CreatedAt, mr.UpdatedAt, refreshReason,
-	); err != nil {
-		return 0, 0, false, err
-	}
-	if err := seedArchiveDatasetProgressTx(ctx, tx, repoID, ArchiveItemTypeMergeRequest, mr.Number,
-		map[ArchiveDataset]ArchiveDatasetProgressStatus{
-			ArchiveDatasetLookup:         ArchiveDatasetProgressPending,
-			ArchiveDatasetComments:       progressStatusForSeed(item.CommentsStatus),
-			ArchiveDatasetReviews:        progressStatusForSeed(item.ReviewsStatus),
-			ArchiveDatasetInlineComments: progressStatusForSeed(item.InlineCommentsStatus),
-		}); err != nil {
-		return 0, 0, false, err
-	}
-	if err := rebindArchiveDatasetProgressTx(
-		ctx, tx, DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: mrID},
-		repoID, mr.Number, revision, refreshReason,
-	); err != nil {
-		return 0, 0, false, err
-	}
-	return mrID, revision, accepted, nil
-}
-
-// progressStatusForSeed maps a capability-derived inventory dataset status to
-// the seeded progress-row status.
-func progressStatusForSeed(status ArchiveDatasetStatus) ArchiveDatasetProgressStatus {
-	if status == ArchiveDatasetStatusUnsupported {
-		return ArchiveDatasetProgressUnsupported
-	}
-	return ArchiveDatasetProgressPending
-}
-
-// seedArchiveDatasetProgressTx creates missing dataset progress rows for one
-// archive item. Existing rows are never modified here; rebinding to newer
-// parent revisions is a separate reopen step. Rows seed at generation 2: the
-// archive namespace is even (nextEvenScanGenerationSQL) so a seeded
-// generation can never equal an odd live ingest stamp already present on the
-// parent's rows.
-func seedArchiveDatasetProgressTx(
+// seedArchiveItemProgressTx creates the one progress row for an archive item.
+// Existing rows are not modified; rebinding handles newer observations.
+func seedArchiveItemProgressTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	repoID int64,
 	itemType ArchiveItemType,
 	itemNumber int,
-	datasets map[ArchiveDataset]ArchiveDatasetProgressStatus,
 ) error {
-	nowText := formatDatasetProgressTime(time.Now())
-	for _, dataset := range []ArchiveDataset{
-		ArchiveDatasetLookup, ArchiveDatasetComments,
-		ArchiveDatasetReviews, ArchiveDatasetInlineComments,
-	} {
-		status, ok := datasets[dataset]
-		if !ok {
-			continue
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO middleman_archive_dataset_progress (
-				repo_id, item_type, item_number, dataset, scan_generation, status, updated_at
-			) VALUES (?, ?, ?, ?, 2, ?, ?)
-			ON CONFLICT(repo_id, item_type, item_number, dataset) DO NOTHING`,
-			repoID, itemType, itemNumber, dataset, status, nowText); err != nil {
-			return fmt.Errorf("seed archive dataset progress %s: %w", dataset, err)
-		}
-	}
-	return nil
-}
-
-// rebindArchiveDatasetProgressTx binds an item's dataset progress to the
-// current parent revision after a parent observation. Initial observations
-// reopen datasets superseded by a newer revision; prompt observations also
-// refresh equal-revision datasets once, because coarse provider timestamps
-// can hide activity behind an unchanged updated_at.
-func rebindArchiveDatasetProgressTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	parent DomainParentRef,
-	repoID int64,
-	itemNumber int,
-	revision int64,
-	refreshReason ArchiveRefreshReason,
-) error {
-	if err := reopenDatasetsForParentTx(ctx, tx, parent, repoID, itemNumber, revision, revision); err != nil {
-		return err
-	}
-	if err := reopenLookupForRevisionTx(ctx, tx, repoID, parent.ItemType, itemNumber, revision, false); err != nil {
-		return err
-	}
-	if refreshReason != ArchiveRefreshReasonPrompt {
-		return nil
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE middleman_archive_dataset_progress
-		SET scan_generation = `+nextEvenScanGenerationSQL+`,
-			parent_revision = ?,
-			next_cursor = NULL, last_input_cursor = NULL,
-			page_count = 0, observed_count = 0,
-			status = 'pending', attempt_count = 0, next_retry_at = NULL,
-			last_error_code = NULL, last_error_detail = NULL,
-			started_at = NULL, completed_at = NULL, updated_at = ?
-		WHERE repo_id = ? AND item_type = ? AND item_number = ?
-		  AND dataset IN ('comments', 'reviews', 'inline_comments')
-		  AND parent_revision = ? AND status = 'complete'`,
-		revision, formatDatasetProgressTime(time.Now()),
-		repoID, parent.ItemType, itemNumber, revision); err != nil {
-		return fmt.Errorf("refresh equal-revision datasets for prompt observation: %w", err)
-	}
-	if err := reopenLookupForRevisionTx(ctx, tx, repoID, parent.ItemType, itemNumber, revision, true); err != nil {
-		return err
-	}
-	return nil
-}
-
-func preserveMergeRequestDetailTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	mr *MergeRequest,
-	preserveProviderDetail bool,
-) (bool, error) {
-	var existing MergeRequest
-	err := tx.QueryRowContext(ctx, `
-		SELECT platform_head_sha, platform_base_sha, head_repo_clone_url,
-			additions, deletions, comment_count, review_decision, ci_status,
-			ci_checks_json, detail_fetched_at, ci_had_pending, mergeable_state
-		FROM middleman_merge_requests
-		WHERE repo_id = ? AND number = ?`, mr.RepoID, mr.Number,
-	).Scan(&existing.PlatformHeadSHA, &existing.PlatformBaseSHA, &existing.HeadRepoCloneURL,
-		&existing.Additions, &existing.Deletions, &existing.CommentCount,
-		&existing.ReviewDecision, &existing.CIStatus, &existing.CIChecksJSON,
-		&existing.DetailFetchedAt, &existing.CIHadPending, &existing.MergeableState)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO middleman_archive_dataset_progress (
+			repo_id, item_type, item_number, dataset, scan_generation, status, updated_at
+		) VALUES (?, ?, ?, 'lookup', 2, 'pending', ?)
+		ON CONFLICT(repo_id, item_type, item_number, dataset) DO NOTHING`,
+		repoID, itemType, itemNumber, formatDatasetProgressTime(time.Now()))
 	if err != nil {
-		return false, fmt.Errorf("preserve merge request detail before archive upsert: %w", err)
-	}
-	if mr.HeadRepoCloneURLUnknown {
-		mr.HeadRepoCloneURL = existing.HeadRepoCloneURL
-		mr.HeadRepoCloneURLUnknown = false
-	}
-	headChanged := mr.PlatformHeadSHA != "" && existing.PlatformHeadSHA != "" && mr.PlatformHeadSHA != existing.PlatformHeadSHA
-	baseChanged := mr.PlatformBaseSHA != "" && existing.PlatformBaseSHA != "" && mr.PlatformBaseSHA != existing.PlatformBaseSHA
-	if preserveProviderDetail {
-		mr.CommentCount = existing.CommentCount
-	}
-	if headChanged || baseChanged {
-		return true, nil
-	}
-	if mr.PlatformHeadSHA == "" {
-		mr.PlatformHeadSHA = existing.PlatformHeadSHA
-	}
-	if mr.PlatformBaseSHA == "" {
-		mr.PlatformBaseSHA = existing.PlatformBaseSHA
-	}
-	if preserveProviderDetail {
-		mr.Additions = existing.Additions
-		mr.Deletions = existing.Deletions
-		mr.MergeableState = existing.MergeableState
-	} else if mr.MergeableState == "" || (mr.MergeableState == "unknown" && existing.MergeableState != "") {
-		mr.MergeableState = existing.MergeableState
-	}
-	mr.ReviewDecision = existing.ReviewDecision
-	mr.CIStatus = existing.CIStatus
-	mr.CIChecksJSON = existing.CIChecksJSON
-	mr.DetailFetchedAt = existing.DetailFetchedAt
-	mr.CIHadPending = existing.CIHadPending
-	return false, nil
-}
-
-func clearArchiveMergeRequestDiffDetailTx(ctx context.Context, tx *sql.Tx, mrID int64) error {
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET detail_fetched_at = NULL, ci_had_pending = 0
-		WHERE id = ?`, mrID); err != nil {
-		return fmt.Errorf("clear diff-bound merge request detail after archive upsert: %w", err)
+		return fmt.Errorf("seed archive item progress: %w", err)
 	}
 	return nil
 }
@@ -1468,111 +1142,19 @@ func validateInventoryCommit(commit ArchiveInventoryCommit) error {
 	}
 	switch commit.ItemType {
 	case ArchiveItemTypeIssue:
-		if len(commit.MergeRequests) != 0 {
-			return errors.New("commit archive inventory: issue page contains merge requests")
-		}
-		for i := range commit.Issues {
-			if commit.Issues[i].Snapshot.Issue.Number <= 0 {
-				return fmt.Errorf("commit archive inventory: issue number must be positive")
-			}
-		}
 	case ArchiveItemTypeMergeRequest:
-		if len(commit.Issues) != 0 {
-			return errors.New("commit archive inventory: merge request page contains issues")
-		}
-		for i := range commit.MergeRequests {
-			if commit.MergeRequests[i].Snapshot.MergeRequest.Number <= 0 {
-				return fmt.Errorf("commit archive inventory: merge request number must be positive")
-			}
-		}
 	default:
 		return fmt.Errorf("commit archive inventory: invalid item type %q", commit.ItemType)
+	}
+	for _, item := range commit.Items {
+		if item.Number <= 0 {
+			return errors.New("commit archive inventory: item number must be positive")
+		}
 	}
 	switch commit.RefreshReason {
 	case ArchiveRefreshReasonInitial, ArchiveRefreshReasonPrompt:
 	default:
 		return fmt.Errorf("commit archive inventory: invalid refresh reason %q", commit.RefreshReason)
-	}
-	return nil
-}
-
-// UpsertArchiveIssueSnapshot applies a provider parent and its labels in one
-// transaction. Labels advance only when the monotonic parent snapshot wins.
-// The acceptance result must also gate every dependent archive dataset.
-func (d *DB) UpsertArchiveIssueSnapshot(ctx context.Context, snapshot *Issue) (int64, int64, bool, error) {
-	canonicalizeIssueTimestamps(snapshot)
-	var id int64
-	var revision int64
-	var accepted bool
-	err := d.Tx(ctx, func(tx *sql.Tx) error {
-		var err error
-		id, revision, accepted, err = commitIssueParentSnapshotTx(ctx, tx, snapshot, snapshot.Labels, reopenDatasetsAtomic)
-		if err != nil {
-			return err
-		}
-		winningUpdatedAt := snapshot.UpdatedAt
-		if !accepted {
-			if err := tx.QueryRowContext(ctx, `
-				SELECT updated_at FROM middleman_issues WHERE id = ?`, id,
-			).Scan(&winningUpdatedAt); err != nil {
-				return fmt.Errorf("read winning issue snapshot: %w", err)
-			}
-		}
-		return reconcileArchiveItemSnapshotTx(
-			ctx, tx, snapshot.RepoID, ArchiveItemTypeIssue, snapshot.Number, winningUpdatedAt,
-		)
-	})
-	return id, revision, accepted, err
-}
-
-// UpsertArchiveMergeRequestSnapshot is the merge-request counterpart to
-// UpsertArchiveIssueSnapshot.
-func (d *DB) UpsertArchiveMergeRequestSnapshot(ctx context.Context, snapshot *MergeRequest) (int64, int64, bool, error) {
-	canonicalizeMergeRequestTimestamps(snapshot)
-	var id int64
-	var revision int64
-	var accepted bool
-	err := d.Tx(ctx, func(tx *sql.Tx) error {
-		var err error
-		id, revision, accepted, err = commitMergeRequestParentSnapshotTx(
-			ctx, tx, snapshot, snapshot.Labels, mergeRequestDetailPreserveDerived, reopenDatasetsAtomic,
-		)
-		if err != nil {
-			return err
-		}
-		winningUpdatedAt := snapshot.UpdatedAt
-		if !accepted {
-			if err := tx.QueryRowContext(ctx, `
-				SELECT updated_at FROM middleman_merge_requests WHERE id = ?`, id,
-			).Scan(&winningUpdatedAt); err != nil {
-				return fmt.Errorf("read winning merge-request snapshot: %w", err)
-			}
-		}
-		return reconcileArchiveItemSnapshotTx(
-			ctx, tx, snapshot.RepoID, ArchiveItemTypeMergeRequest, snapshot.Number, winningUpdatedAt,
-		)
-	})
-	return id, revision, accepted, err
-}
-
-// reconcileArchiveItemSnapshotTx keeps the archive work row bound to the
-// winning provider timestamp after a parent observation. Dataset-level reopen
-// and retry state live entirely in middleman_archive_dataset_progress.
-func reconcileArchiveItemSnapshotTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	repoID int64,
-	itemType ArchiveItemType,
-	itemNumber int,
-	winningUpdatedAt time.Time,
-) error {
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE middleman_archive_items
-		SET provider_updated_at = MAX(provider_updated_at, ?)
-		WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
-		winningUpdatedAt.UTC(), repoID, itemType, itemNumber,
-	); err != nil {
-		return fmt.Errorf("reconcile archive item snapshot: %w", err)
 	}
 	return nil
 }
@@ -1697,14 +1279,4 @@ func archiveRepositoryActiveTx(ctx context.Context, tx *sql.Tx, repoID int64) (b
 		return false, fmt.Errorf("read archive repository operator state: %w", err)
 	}
 	return operator == ArchiveOperatorStateActive, nil
-}
-
-func archiveProviderItemID(explicit, external string, numeric int64) string {
-	if explicit != "" {
-		return explicit
-	}
-	if external != "" {
-		return external
-	}
-	return fmt.Sprintf("%d", numeric)
 }

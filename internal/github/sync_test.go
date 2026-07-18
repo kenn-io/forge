@@ -84,182 +84,6 @@ func TestCommitIssueParentSnapshotRejectsStaleLabels(t *testing.T) {
 	assert.Equal("newer", stored.Labels[0].Name)
 }
 
-func TestNormalSyncRejectsChildrenAfterArchivePublishesNewerSnapshot(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := openTestDB(t)
-	ctx := t.Context()
-	oldUpdatedAt := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	archiveUpdatedAt := oldUpdatedAt
-	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "widget"}
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
-	})
-	require.NoError(err)
-	issueID, err := database.UpsertIssue(ctx, &db.Issue{
-		RepoID: repoID, PlatformID: 1, PlatformExternalID: "issue-1", Number: 1,
-		Title: "old", State: "open", CreatedAt: oldUpdatedAt.Add(-time.Hour),
-		UpdatedAt: oldUpdatedAt, LastActivityAt: oldUpdatedAt,
-	})
-	require.NoError(err)
-	normalParent, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 1)
-	require.NoError(err)
-	require.NotNil(normalParent)
-	normalRevision := normalParent.SnapshotRevision
-	require.NoError(database.EnsureDiscoveryArchives(ctx, []int64{repoID}, oldUpdatedAt))
-	require.NoError(database.StartFullArchives(ctx, []int64{repoID}, oldUpdatedAt))
-	require.NoError(database.CommitArchiveInventoryPage(ctx, db.ArchiveInventoryCommit{
-		RepoID: repoID, ItemType: db.ArchiveItemTypeIssue, Exhausted: true, Now: archiveUpdatedAt,
-		Issues: []db.ArchiveInventoryIssue{{ProviderItemID: "issue-1", CommentsStatus: db.ArchiveDatasetStatusPending,
-			Snapshot: db.IssueSnapshot{Issue: db.Issue{RepoID: repoID, PlatformID: 1,
-				PlatformExternalID: "issue-1", Number: 1, Title: "archive", State: "open",
-				CreatedAt: oldUpdatedAt.Add(-time.Hour), UpdatedAt: archiveUpdatedAt,
-				LastActivityAt: archiveUpdatedAt}}}},
-	}))
-	archiveParent, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 1)
-	require.NoError(err)
-	require.NotNil(archiveParent)
-	progress, err := database.GetDatasetProgress(
-		ctx, repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetComments,
-	)
-	require.NoError(err)
-	require.NoError(database.CommitDatasetPage(ctx, db.DatasetPageCommit{
-		Parent:           db.DomainParentRef{ItemType: db.ArchiveItemTypeIssue, ID: issueID},
-		ExpectedRevision: archiveParent.SnapshotRevision,
-		Dataset:          db.ArchiveDatasetComments,
-		ScanGeneration:   progress.ScanGeneration,
-		Rows: db.DatasetRows{IssueComments: []db.IssueEvent{{
-			IssueID: issueID, EventType: "issue_comment", DedupeKey: "archive",
-			Body: "new archive content", CreatedAt: archiveUpdatedAt,
-		}}},
-		Final:    true,
-		Progress: &db.DatasetProgressAdvance{RepoID: repoID, ItemNumber: 1},
-	}))
-
-	applied, err := (&Syncer{db: database}).commitIssueCommentsSnapshot(
-		ctx, repo, 1, normalRevision, []db.IssueEvent{{IssueID: issueID,
-			EventType: "issue_comment", DedupeKey: "normal", Body: "stale normal content",
-			CreatedAt: oldUpdatedAt}}, nil, nil,
-	)
-	require.NoError(err)
-	assert.False(applied)
-	events, err := database.ListIssueEvents(ctx, issueID)
-	require.NoError(err)
-	require.Len(events, 1)
-	assert.Equal("archive", events[0].DedupeKey)
-}
-
-func TestNormalSyncRejectsAllMergeRequestChildrenAfterParentAdvances(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := openTestDB(t)
-	ctx := t.Context()
-	oldUpdatedAt := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	currentUpdatedAt := oldUpdatedAt.Add(time.Minute)
-	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "widget"}
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
-	})
-	require.NoError(err)
-	mrID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID: repoID, PlatformID: 1, PlatformExternalID: "mr-1", Number: 1,
-		Title: "old", State: db.MergeRequestStateOpen, CreatedAt: oldUpdatedAt.Add(-time.Hour),
-		UpdatedAt: oldUpdatedAt, LastActivityAt: oldUpdatedAt,
-	})
-	require.NoError(err)
-	staleParent, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
-	require.NoError(err)
-	require.NotNil(staleParent)
-	staleRevision := staleParent.SnapshotRevision
-	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID: repoID, PlatformID: 1, PlatformExternalID: "mr-1", Number: 1,
-		Title: "current", State: db.MergeRequestStateOpen, CreatedAt: oldUpdatedAt.Add(-time.Hour),
-		UpdatedAt: currentUpdatedAt, LastActivityAt: currentUpdatedAt,
-	})
-	require.NoError(err)
-	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{
-		{MergeRequestID: mrID, EventType: "issue_comment", DedupeKey: "current-comment", CreatedAt: currentUpdatedAt},
-		{MergeRequestID: mrID, EventType: "review", DedupeKey: "current-review", CreatedAt: currentUpdatedAt},
-		{MergeRequestID: mrID, EventType: "review_comment", DedupeKey: "current-inline", CreatedAt: currentUpdatedAt},
-	}))
-	require.NoError(database.UpsertMRReviewThreads(ctx, mrID, []db.MRReviewThread{{
-		ProviderThreadID: "current-thread", CreatedAt: currentUpdatedAt, UpdatedAt: currentUpdatedAt,
-	}}))
-
-	applied, err := (&Syncer{db: database}).commitMergeRequestDatasets(
-		ctx, repo, 1, staleRevision,
-		[]db.MREvent{{EventType: "issue_comment", DedupeKey: "stale-comment", CreatedAt: oldUpdatedAt}}, true,
-		[]db.MREvent{{EventType: "review", DedupeKey: "stale-review", CreatedAt: oldUpdatedAt}}, true,
-		[]db.MREvent{{EventType: "review_comment", DedupeKey: "stale-inline", CreatedAt: oldUpdatedAt}},
-		[]db.MRReviewThread{{ProviderThreadID: "stale-thread", CreatedAt: oldUpdatedAt, UpdatedAt: oldUpdatedAt}},
-		true, nil, nil,
-	)
-	require.NoError(err)
-	assert.False(applied)
-	events, err := database.ListMREvents(ctx, mrID)
-	require.NoError(err)
-	keys := make([]string, len(events))
-	for i := range events {
-		keys[i] = events[i].DedupeKey
-	}
-	assert.ElementsMatch([]string{"current-comment", "current-review", "current-inline"}, keys)
-	threads, err := database.ListMRReviewThreads(ctx, mrID)
-	require.NoError(err)
-	require.Len(threads, 1)
-	assert.Equal("current-thread", threads[0].ProviderThreadID)
-}
-
-func TestRefreshTimelineStopsAfterChildSnapshotIsRejected(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := openTestDB(t)
-	ctx := t.Context()
-	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "widget"}
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
-	require.NoError(err)
-	mrID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID: repoID, PlatformID: 1, PlatformExternalID: "mr-1", Number: 1,
-		Title: "normal parent", State: db.MergeRequestStateOpen,
-		CreatedAt: now.Add(-time.Hour), UpdatedAt: now, LastActivityAt: now,
-	})
-	require.NoError(err)
-	expectedRevision := mergeRequestSnapshotRevision(t, database, repoID, 1)
-	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
-		MergeRequestID: mrID, EventType: "commit", DedupeKey: "current-event",
-		Summary: "current", CreatedAt: now,
-	}}))
-
-	client := &mockClient{
-		listIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
-			_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
-				RepoID: repoID, PlatformID: 1, PlatformExternalID: "mr-1", Number: 1,
-				Title: "archive parent", State: db.MergeRequestStateOpen,
-				CreatedAt: now.Add(-time.Hour), UpdatedAt: now, LastActivityAt: now,
-			})
-			require.NoError(err)
-			return nil, nil
-		},
-		comments: nil,
-		reviews:  nil,
-		commits: []*gh.RepositoryCommit{{
-			SHA: new("stale-sha"),
-			Commit: &gh.Commit{Message: new("stale event"), Author: &gh.CommitAuthor{
-				Name: new("dev"), Date: makeTimestamp(now),
-			}},
-		}},
-	}
-	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil,
-		[]RepoRef{repo}, time.Minute, nil, testBudget(500))
-
-	err = syncer.refreshTimeline(ctx, repo, repoID, mrID, expectedRevision, buildOpenPR(1, now))
-	require.ErrorIs(err, errParentSnapshotAdvanced)
-	events, err := database.ListMREvents(ctx, mrID)
-	require.NoError(err)
-	require.Len(events, 1)
-	assert.Equal("current-event", events[0].DedupeKey)
-}
-
 func TestCommitMergeRequestParentSnapshotRollsBackParentWhenLabelsFail(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -908,42 +732,20 @@ func (p *syncTestMergeRequestOnlyProvider) Capabilities() platform.Capabilities 
 	return platform.Capabilities{ReadMergeRequests: true}
 }
 
-func (p *syncTestMergeRequestOnlyProvider) ListMergeRequestsPage(
-	_ context.Context,
-	_ platform.RepoRef,
-	query platform.ItemPageQuery,
-) (platform.Page[platform.MergeRequest], error) {
-	if err := platform.ValidateItemPageQuery(query); err != nil {
-		return platform.Page[platform.MergeRequest]{}, err
-	}
+func (p *syncTestMergeRequestOnlyProvider) ListOpenMergeRequests(
+	context.Context,
+	platform.RepoRef,
+) ([]platform.MergeRequest, error) {
 	p.listMRCalls.Add(1)
-	return platform.Page[platform.MergeRequest]{Items: p.mergeRequests, Exhausted: true}, nil
+	return p.mergeRequests, nil
 }
 
-func (p *syncTestMergeRequestOnlyProvider) LookupMergeRequest(
+func (p *syncTestMergeRequestOnlyProvider) GetMergeRequest(
 	context.Context,
 	platform.RepoRef,
 	int,
-) (platform.ItemLookup[platform.MergeRequest], error) {
-	return platform.ItemLookup[platform.MergeRequest]{Outcome: platform.LookupRemoved}, nil
-}
-
-func (p *syncTestMergeRequestOnlyProvider) ListMergeRequestCommentsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.MergeRequestEvent], error) {
-	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
-}
-
-func (p *syncTestMergeRequestOnlyProvider) ListSubmittedReviewsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.MergeRequestEvent], error) {
-	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
-}
-
-func (p *syncTestMergeRequestOnlyProvider) ListReviewThreadsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.MergeRequestReviewThread], error) {
-	return platform.Page[platform.MergeRequestReviewThread]{Exhausted: true}, nil
+) (platform.MergeRequest, error) {
+	return platform.MergeRequest{}, errors.New("missing merge request")
 }
 
 type syncTestIssueOnlyProvider struct {
@@ -956,37 +758,25 @@ func (p *syncTestIssueOnlyProvider) Capabilities() platform.Capabilities {
 	return platform.Capabilities{ReadIssues: true}
 }
 
-func (p *syncTestIssueOnlyProvider) ListIssuesPage(
-	_ context.Context,
-	_ platform.RepoRef,
-	query platform.ItemPageQuery,
-) (platform.Page[platform.Issue], error) {
-	if err := platform.ValidateItemPageQuery(query); err != nil {
-		return platform.Page[platform.Issue]{}, err
-	}
+func (p *syncTestIssueOnlyProvider) ListOpenIssues(
+	context.Context,
+	platform.RepoRef,
+) ([]platform.Issue, error) {
 	p.listIssueCalls.Add(1)
-	return platform.Page[platform.Issue]{Items: p.issues, Exhausted: true}, nil
+	return p.issues, nil
 }
 
-func (p *syncTestIssueOnlyProvider) LookupIssue(
+func (p *syncTestIssueOnlyProvider) GetIssue(
 	_ context.Context,
 	_ platform.RepoRef,
 	number int,
-) (platform.ItemLookup[platform.Issue], error) {
+) (platform.Issue, error) {
 	for _, issue := range p.issues {
 		if issue.Number == number {
-			return platform.ItemLookup[platform.Issue]{
-				Outcome: platform.LookupPresent, Item: issue,
-			}, nil
+			return issue, nil
 		}
 	}
-	return platform.ItemLookup[platform.Issue]{}, errors.New("missing issue")
-}
-
-func (p *syncTestIssueOnlyProvider) ListIssueCommentsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.IssueEvent], error) {
-	return platform.Page[platform.IssueEvent]{Exhausted: true}, nil
+	return platform.Issue{}, errors.New("missing issue")
 }
 
 func (p *syncTestIssueOnlyProvider) ListIssueEvents(
@@ -1029,50 +819,26 @@ func (p *syncTestRepositoryReadProvider) ListRepositories(
 	return nil, nil
 }
 
-func (p *syncTestReadProvider) ListMergeRequestsPage(
-	_ context.Context,
-	_ platform.RepoRef,
-	query platform.ItemPageQuery,
-) (platform.Page[platform.MergeRequest], error) {
-	if err := platform.ValidateItemPageQuery(query); err != nil {
-		return platform.Page[platform.MergeRequest]{}, err
-	}
+func (p *syncTestReadProvider) ListOpenMergeRequests(
+	context.Context,
+	platform.RepoRef,
+) ([]platform.MergeRequest, error) {
 	p.listMRCalls.Add(1)
-	return platform.Page[platform.MergeRequest]{Items: p.mergeRequests, Exhausted: true}, nil
+	return p.mergeRequests, nil
 }
 
-func (p *syncTestReadProvider) LookupMergeRequest(
+func (p *syncTestReadProvider) GetMergeRequest(
 	_ context.Context,
 	_ platform.RepoRef,
 	number int,
-) (platform.ItemLookup[platform.MergeRequest], error) {
+) (platform.MergeRequest, error) {
 	p.getMRCalls.Add(1)
 	for _, mr := range p.mergeRequests {
 		if mr.Number == number {
-			return platform.ItemLookup[platform.MergeRequest]{
-				Outcome: platform.LookupPresent, Item: mr,
-			}, nil
+			return mr, nil
 		}
 	}
-	return platform.ItemLookup[platform.MergeRequest]{}, errors.New("missing merge request")
-}
-
-func (p *syncTestReadProvider) ListMergeRequestCommentsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.MergeRequestEvent], error) {
-	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
-}
-
-func (p *syncTestReadProvider) ListSubmittedReviewsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.MergeRequestEvent], error) {
-	return platform.Page[platform.MergeRequestEvent]{Exhausted: true}, nil
-}
-
-func (p *syncTestReadProvider) ListReviewThreadsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.MergeRequestReviewThread], error) {
-	return platform.Page[platform.MergeRequestReviewThread]{Exhausted: true}, nil
+	return platform.MergeRequest{}, errors.New("missing merge request")
 }
 
 func (p *syncTestReadProvider) ListMergeRequestEvents(
@@ -1092,38 +858,26 @@ func (p *syncTestReadProvider) ListMergeRequestReviewThreads(
 	return p.reviewThreads, nil
 }
 
-func (p *syncTestReadProvider) ListIssuesPage(
-	_ context.Context,
-	_ platform.RepoRef,
-	query platform.ItemPageQuery,
-) (platform.Page[platform.Issue], error) {
-	if err := platform.ValidateItemPageQuery(query); err != nil {
-		return platform.Page[platform.Issue]{}, err
-	}
+func (p *syncTestReadProvider) ListOpenIssues(
+	context.Context,
+	platform.RepoRef,
+) ([]platform.Issue, error) {
 	p.listIssueCalls.Add(1)
-	return platform.Page[platform.Issue]{Items: p.issues, Exhausted: true}, nil
+	return p.issues, nil
 }
 
-func (p *syncTestReadProvider) LookupIssue(
+func (p *syncTestReadProvider) GetIssue(
 	_ context.Context,
 	_ platform.RepoRef,
 	number int,
-) (platform.ItemLookup[platform.Issue], error) {
+) (platform.Issue, error) {
 	p.getIssueCalls.Add(1)
 	for _, issue := range p.issues {
 		if issue.Number == number {
-			return platform.ItemLookup[platform.Issue]{
-				Outcome: platform.LookupPresent, Item: issue,
-			}, nil
+			return issue, nil
 		}
 	}
-	return platform.ItemLookup[platform.Issue]{}, errors.New("missing issue")
-}
-
-func (p *syncTestReadProvider) ListIssueCommentsPage(
-	context.Context, platform.RepoRef, int, string,
-) (platform.Page[platform.IssueEvent], error) {
-	return platform.Page[platform.IssueEvent]{Exhausted: true}, nil
+	return platform.Issue{}, errors.New("missing issue")
 }
 
 func (p *syncTestReadProvider) ListIssueEvents(
@@ -6544,71 +6298,6 @@ func TestFetchMRDetailPersistsWorkflowApproval(t *testing.T) {
 	assert.Equal(1, got.WorkflowApprovalCount)
 }
 
-func TestFetchMRDetailWorstCaseBudgetIncludesWorkflowApprovalRetry(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := openTestDB(t)
-	ctx := t.Context()
-	now := time.Date(2026, 7, 14, 22, 30, 0, 0, time.UTC)
-	repo := RepoRef{
-		Platform:     platform.KindGitHub,
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
-	}
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
-	require.NoError(err)
-
-	pr := buildOpenPR(7, now)
-	pr.User = &gh.User{Login: new("alice")}
-	headSHA := pr.GetHead().GetSHA()
-	require.NotEmpty(headSHA)
-	budget := NewSyncBudget(PRDetailWorstCase)
-	workflowCalls := 0
-	mc := &mockClient{
-		budget:        budget,
-		singlePR:      pr,
-		comments:      []*gh.IssueComment{},
-		reviews:       []*gh.PullRequestReview{},
-		reviewThreads: []PullRequestReviewThread{},
-		commits:       []*gh.RepositoryCommit{},
-		ciStatus:      &gh.CombinedStatus{State: new("success")},
-		listWorkflowRunsFn: func(
-			context.Context, string, string, string,
-		) ([]*gh.WorkflowRun, error) {
-			workflowCalls++
-			if workflowCalls == 1 {
-				current, loadErr := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
-				require.NoError(loadErr)
-				require.NotNil(current)
-				winner := *current
-				winner.Title = "newer parent"
-				_, _, accepted, upsertErr := database.UpsertArchiveMergeRequestSnapshot(ctx, &winner)
-				require.NoError(upsertErr)
-				require.True(accepted)
-			}
-			return []*gh.WorkflowRun{{
-				ID:           new(int64(4242)),
-				HeadSHA:      &headSHA,
-				Event:        new("pull_request"),
-				PullRequests: []*gh.PullRequest{{Number: new(7)}},
-			}}, nil
-		},
-	}
-	syncer := NewSyncer(
-		map[string]Client{"github.com": mc}, database, nil,
-		[]RepoRef{repo}, time.Minute, nil,
-		map[string]*SyncBudget{"github.com": budget},
-	)
-
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 7, false)
-	require.NoError(err)
-
-	assert.Equal(2, workflowCalls)
-	assert.Equal(PRDetailWorstCase, budget.Spent())
-	assert.Zero(budget.Remaining())
-}
-
 func TestFetchMRDetailPersistsMergedActorEventFromPullRequest(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -11835,105 +11524,6 @@ func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
 	assert.True(got.WorkflowApprovalRequired)
 	assert.Equal(1, got.WorkflowApprovalCount)
 	assert.Equal(1, budgets["github.com"].Spent())
-}
-
-func TestRefreshWorkflowApprovalRetriesWinningParentRevision(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
-	require.NoError(err)
-	now := time.Date(2026, 7, 14, 14, 0, 0, 0, time.UTC)
-	pr := buildOpenPR(1, now)
-	normalized, err := NormalizePR(repoID, pr)
-	require.NoError(err)
-	mrID, revision, accepted, err := database.UpsertMergeRequestSnapshotWithLabels(ctx, normalized)
-	require.NoError(err)
-	require.True(accepted)
-	applied, err := database.UpdateMRWorkflowApprovalSnapshot(
-		ctx, mrID, revision, now, normalized.PlatformHeadSHA, true, 1,
-	)
-	require.NoError(err)
-	require.True(applied)
-
-	var calls int
-	mock := &mockClient{listWorkflowRunsFn: func(
-		context.Context, string, string, string,
-	) ([]*gh.WorkflowRun, error) {
-		calls++
-		if calls == 1 {
-			winning := *normalized
-			winning.Title = "archive winner"
-			winning.HeadRepoCloneURL = "https://github.com/fork/widget.git"
-			winning.HeadBranch = "renamed"
-			_, _, archiveAccepted, upsertErr := database.UpsertArchiveMergeRequestSnapshot(ctx, &winning)
-			require.NoError(upsertErr)
-			require.True(archiveAccepted)
-			return []*gh.WorkflowRun{{
-				ID: new(int64(9001)), HeadSHA: new(normalized.PlatformHeadSHA),
-				Event: new("pull_request"), PullRequests: []*gh.PullRequest{{Number: new(1)}},
-			}}, nil
-		}
-		return []*gh.WorkflowRun{{
-			ID: new(int64(9002)), HeadSHA: new(normalized.PlatformHeadSHA),
-			Event: new("pull_request"), HeadBranch: new("renamed"),
-			HeadRepository: &gh.Repository{FullName: new("fork/widget")},
-		}}, nil
-	}}
-	syncer := NewSyncer(
-		map[string]Client{"github.com": mock}, database, nil,
-		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil, testBudget(10),
-	)
-	ref := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-	applied, providerCalls := syncer.refreshWorkflowApproval(
-		ctx, ref, repoID, mrID, revision, 1, normalized.PlatformHeadSHA, pr, normalized,
-	)
-	assert.True(applied)
-	assert.Equal(2, providerCalls)
-	assert.Equal(2, calls)
-
-	current, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
-	require.NoError(err)
-	require.NotNil(current)
-	assert.Equal("archive winner", current.Title)
-	assert.True(current.WorkflowApprovalRequired)
-	assert.Equal(1, current.WorkflowApprovalCount)
-	assert.NotNil(current.WorkflowApprovalCheckedAt)
-}
-
-func TestSyncOpenMRFromBulkReservesWorkflowApprovalRetryBudget(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
-	require.NoError(err)
-	now := time.Date(2026, 7, 14, 14, 30, 0, 0, time.UTC)
-	pr := buildOpenPR(1, now)
-	budget := NewSyncBudget(1)
-	mock := &mockClient{budget: budget, workflowRuns: []*gh.WorkflowRun{{
-		ID: new(int64(9001)), HeadSHA: pr.Head.SHA,
-		Event: new("pull_request"), PullRequests: []*gh.PullRequest{{Number: new(1)}},
-	}}}
-	syncer := NewSyncer(
-		map[string]Client{"github.com": mock}, database, nil,
-		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil, map[string]*SyncBudget{"github.com": budget},
-	)
-	err = syncer.syncOpenMRFromBulk(ctx, RepoRef{
-		Owner: "owner", Name: "repo", PlatformHost: "github.com",
-	}, repoID, &BulkPR{
-		PR: pr, Comments: []*gh.IssueComment{}, CommentsComplete: true,
-		ReviewsComplete: true, CommitsComplete: true, TimelineComplete: true, CIComplete: true,
-	}, false)
-	require.NoError(err)
-	assert.Zero(budget.Spent())
-	current, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
-	require.NoError(err)
-	require.NotNil(current)
-	assert.Nil(current.WorkflowApprovalCheckedAt)
 }
 
 func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenBudgetExhausted(t *testing.T) {

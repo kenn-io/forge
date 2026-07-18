@@ -965,7 +965,7 @@ func (s *Syncer) commitIssueCommentsSnapshot(
 	ctx context.Context,
 	repo RepoRef,
 	number int,
-	expectedRevision int64,
+	_ int64,
 	events []db.IssueEvent,
 	otherEvents []db.IssueEvent,
 	derived *db.IssueDerivedFields,
@@ -990,25 +990,23 @@ func (s *Syncer) commitIssueCommentsSnapshot(
 	for i := range otherEvents {
 		otherEvents[i].IssueID = parent.ID
 	}
-	applied, err := s.db.CommitIssueChildSnapshot(ctx, db.IssueChildSnapshot{
-		IssueID: parent.ID, ExpectedRevision: expectedRevision,
-		Comments: events, OtherEvents: otherEvents, LastActivityAt: lastActivityAt,
-	})
-	if err != nil {
+	if err := s.db.ReplaceIssueCommentEvents(ctx, parent.ID, events, lastActivityAt); err != nil {
 		return false, fmt.Errorf("replace comment events for issue #%d: %w", number, err)
 	}
-	return applied, nil
+	if err := s.db.UpsertIssueEvents(ctx, otherEvents); err != nil {
+		return false, fmt.Errorf("upsert non-comment events for issue #%d: %w", number, err)
+	}
+	return true, nil
 }
 
 func (s *Syncer) commitMergeRequestDatasets(
 	ctx context.Context,
 	repo RepoRef,
 	number int,
-	expectedRevision int64,
+	_ int64,
 	comments []db.MREvent,
 	commentsComplete bool,
 	reviews []db.MREvent,
-	reviewsComplete bool,
 	inline []db.MREvent,
 	threads []db.MRReviewThread,
 	inlineComplete bool,
@@ -1029,18 +1027,39 @@ func (s *Syncer) commitMergeRequestDatasets(
 			events[i].MergeRequestID = parent.ID
 		}
 	}
-	applied, err := s.db.CommitMergeRequestChildSnapshot(ctx, db.MergeRequestChildSnapshot{
-		MergeRequestID: parent.ID, ExpectedRevision: expectedRevision,
-		Comments: comments, CommentsComplete: commentsComplete,
-		Reviews: reviews, ReviewsComplete: reviewsComplete,
-		InlineComments: inline, ReviewThreads: threads, InlineComplete: inlineComplete,
-		OtherEvents: otherEvents,
-		Derived:     derived,
-	})
-	if err != nil {
-		return false, fmt.Errorf("commit child datasets for MR #%d: %w", number, err)
+	var lastActivityAt *time.Time
+	if derived != nil {
+		lastActivityAt = &derived.LastActivityAt
 	}
-	return applied, nil
+	if commentsComplete {
+		if err := s.db.ReplaceMRCommentEvents(ctx, parent.ID, comments, lastActivityAt); err != nil {
+			return false, fmt.Errorf("replace comments for MR #%d: %w", number, err)
+		}
+	} else if err := s.db.UpsertMREvents(ctx, comments); err != nil {
+		return false, fmt.Errorf("upsert comments for MR #%d: %w", number, err)
+	}
+	if err := s.db.UpsertMREvents(ctx, reviews); err != nil {
+		return false, fmt.Errorf("upsert reviews for MR #%d: %w", number, err)
+	}
+	if inlineComplete {
+		if err := s.db.UpsertMRReviewThreads(ctx, parent.ID, threads); err != nil {
+			return false, fmt.Errorf("upsert review threads for MR #%d: %w", number, err)
+		}
+		if err := s.db.UpsertMREvents(ctx, inline); err != nil {
+			return false, fmt.Errorf("upsert review comments for MR #%d: %w", number, err)
+		}
+	}
+	if derived != nil {
+		if err := s.db.UpdateMRReviewActivity(
+			ctx, parent.ID, derived.ReviewDecision, derived.LastActivityAt,
+		); err != nil {
+			return false, fmt.Errorf("update review activity for MR #%d: %w", number, err)
+		}
+	}
+	if err := s.db.UpsertMREvents(ctx, otherEvents); err != nil {
+		return false, fmt.Errorf("upsert events for MR #%d: %w", number, err)
+	}
+	return true, nil
 }
 
 type gitHubClientProvider struct {
@@ -1341,6 +1360,34 @@ func (p *gitHubClientProvider) ListRepositories(
 	return out, nil
 }
 
+func (p *gitHubClientProvider) ListOpenMergeRequests(
+	ctx context.Context,
+	ref platform.RepoRef,
+) ([]platform.MergeRequest, error) {
+	prs, err := p.client.ListOpenPullRequests(ctx, ref.Owner, ref.Name)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]platform.MergeRequest, 0, len(prs))
+	for _, pr := range prs {
+		mr, err := platformgithub.NormalizePullRequest(ref, pr)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, mr)
+	}
+	return out, nil
+}
+
+func (p *gitHubClientProvider) GetMergeRequest(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) (platform.MergeRequest, error) {
+	_, mr, err := p.GetGitHubPullRequest(ctx, ref, number)
+	return mr, err
+}
+
 func (p *gitHubClientProvider) GetGitHubPullRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -1440,11 +1487,11 @@ func (p *gitHubClientProvider) ListMergeRequestEvents(
 func (p *gitHubClientProvider) lookupNotPresentError(
 	ref platform.RepoRef,
 	number int,
-	outcome platform.LookupOutcome,
+	outcome lookupOutcome,
 	destination *platform.RepoRef,
 ) error {
 	code := platform.ErrCodeNotFound
-	if outcome == platform.LookupInaccessible {
+	if outcome == lookupInaccessible {
 		code = platform.ErrCodePermissionDenied
 	}
 	return &platform.Error{
@@ -1516,6 +1563,25 @@ func (p *gitHubClientProvider) ListOpenGitHubIssues(
 		return nil, err
 	}
 	return issues, nil
+}
+
+func (p *gitHubClientProvider) ListOpenIssues(
+	ctx context.Context,
+	ref platform.RepoRef,
+) ([]platform.Issue, error) {
+	issues, err := p.ListOpenGitHubIssues(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]platform.Issue, 0, len(issues))
+	for _, issue := range issues {
+		normalized, err := platformgithub.NormalizeIssue(ref, issue)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, normalized)
+	}
+	return out, nil
 }
 
 // validateOpenIssuesContract applies the contract checks the validating
@@ -1592,6 +1658,18 @@ func (p *gitHubClientProvider) GetGitHubIssue(
 		return nil, outcomeErr
 	}
 	return issue, nil
+}
+
+func (p *gitHubClientProvider) GetIssue(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) (platform.Issue, error) {
+	issue, err := p.GetGitHubIssue(ctx, ref, number)
+	if err != nil {
+		return platform.Issue{}, err
+	}
+	return platformgithub.NormalizeIssue(ref, issue)
 }
 
 func (p *gitHubClientProvider) ListIssueEvents(
@@ -2619,14 +2697,6 @@ func (s *Syncer) mergeRequestReaderFor(repo RepoRef) (platform.MergeRequestReade
 
 func (s *Syncer) issueReaderFor(repo RepoRef) (platform.IssueReader, error) {
 	return s.clients.IssueReader(repoPlatform(repo), repoHost(repo))
-}
-
-func (s *Syncer) mergeRequestPageReaderFor(repo RepoRef) (platform.MergeRequestPageReader, error) {
-	return s.clients.MergeRequestPageReader(repoPlatform(repo), repoHost(repo))
-}
-
-func (s *Syncer) issuePageReaderFor(repo RepoRef) (platform.IssuePageReader, error) {
-	return s.clients.IssuePageReader(repoPlatform(repo), repoHost(repo))
 }
 
 func (s *Syncer) labelReaderFor(repo RepoRef) (platform.LabelReader, error) {
@@ -4810,11 +4880,7 @@ func (s *Syncer) indexSyncRepo(
 		if err != nil {
 			return fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
 		}
-		mrPages, err := s.mergeRequestPageReaderFor(repo)
-		if err != nil {
-			return fmt.Errorf("resolve merge request page reader for %s/%s: %w", repo.Owner, repo.Name, err)
-		}
-		openMRs, err := platform.ListOpenMergeRequests(ctx, mrPages, platformRef)
+		openMRs, err := mrReader.ListOpenMergeRequests(ctx, platformRef)
 		if err != nil {
 			// 304 Not Modified means the open-PR list is byte-identical
 			// to the previous fetch. No PR opened, no PR closed, no
@@ -4907,10 +4973,8 @@ func (s *Syncer) indexSyncRepo(
 			// provider-only fields used by per-item detail refreshes. The raw
 			// reader performs the same contract checks before persistence.
 			ghIssues, issueListErr = rawIssueReader.ListOpenGitHubIssues(ctx, platformRef)
-		} else if issuePages, pagesErr := s.issuePageReaderFor(repo); pagesErr != nil {
-			issueListErr = pagesErr
 		} else {
-			openIssues, issueListErr = platform.ListOpenIssues(ctx, issuePages, platformRef)
+			openIssues, issueListErr = issueReader.ListOpenIssues(ctx, platformRef)
 		}
 		if issueListErr != nil {
 			if IsNotModified(issueListErr) {
@@ -5967,7 +6031,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 		applied, err := s.commitMergeRequestDatasets(
 			ctx, repo, number, revision,
 			comments, bulk.CommentsComplete,
-			reviews, bulk.ReviewsComplete,
+			reviews,
 			nil, nil, false, events, derived,
 		)
 		if err != nil {
@@ -6032,7 +6096,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 		// only the admission check.
 		if s.canSpendWorkflowApprovalRefresh(repo) {
 			approvalApplied, _ := s.refreshWorkflowApproval(
-				ctx, repo, repoID, mrID, revision, number,
+				ctx, repo, repoID, number,
 				normalized.PlatformHeadSHA, bulk.PR, normalized,
 			)
 			if !approvalApplied {
@@ -6268,7 +6332,7 @@ func (s *Syncer) fetchMRDetail(
 	// sync. Same path as syncMRForRepo, but the budgeted detail
 	// drain needs to count this call too.
 	approvalApplied, approvalCalls := s.refreshWorkflowApproval(
-		ctx, repo, repoID, mrID, revision, number, ciHeadSHA, fullPR, normalized,
+		ctx, repo, repoID, number, ciHeadSHA, fullPR, normalized,
 	)
 	calls += approvalCalls
 	if !approvalApplied {
@@ -6417,11 +6481,11 @@ func (s *Syncer) fetchProviderMRDetail(
 	number int,
 ) (int, error) {
 	calls := 0
-	mrPages, err := s.mergeRequestPageReaderFor(repo)
+	mrReader, err := s.mergeRequestReaderFor(repo)
 	if err != nil {
-		return calls, fmt.Errorf("resolve merge request page reader for %s/%s: %w", repo.Owner, repo.Name, err)
+		return calls, fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
-	mr, err := platform.RequireMergeRequest(ctx, mrPages, platformRepoRef(repo), number)
+	mr, err := mrReader.GetMergeRequest(ctx, platformRepoRef(repo), number)
 	calls++
 	if err != nil {
 		return calls, fmt.Errorf("get full MR #%d: %w", number, err)
@@ -6530,10 +6594,6 @@ func (s *Syncer) syncProviderMRDetailExtras(
 				dbEvents = append(dbEvents, dbEvent)
 			}
 		}
-		caps, capsErr := s.ProviderCapabilities(repoPlatform(repo), repoHost(repo))
-		if capsErr != nil {
-			return calls, false, capsErr
-		}
 		dbEvents, err = s.filterDuplicateMergedLifecycleEvents(ctx, mrID, dbEvents)
 		if err != nil {
 			return calls, false, fmt.Errorf("dedupe merged lifecycle events for MR #%d: %w", number, err)
@@ -6541,7 +6601,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 		applied, commitErr := s.commitMergeRequestDatasets(
 			ctx, repo, number, expectedRevision,
 			comments, true,
-			reviews, caps.Archive.SubmittedReviews,
+			reviews,
 			nil, nil, false, dbEvents, nil,
 		)
 		if commitErr != nil {
@@ -6630,7 +6690,7 @@ func (s *Syncer) syncProviderMRReviewThreads(
 	}
 	events, dbThreads := platform.DBReviewThreads(threads)
 	applied, err := s.commitMergeRequestDatasets(
-		ctx, repo, number, expectedRevision, nil, false, nil, false, events, dbThreads, true, nil, nil,
+		ctx, repo, number, expectedRevision, nil, false, nil, events, dbThreads, true, nil, nil,
 	)
 	if err != nil {
 		return calls, err
@@ -6798,11 +6858,11 @@ func (s *Syncer) fetchProviderIssueDetail(
 	number int,
 ) (int, error) {
 	calls := 0
-	issuePages, err := s.issuePageReaderFor(repo)
+	issueReader, err := s.issueReaderFor(repo)
 	if err != nil {
-		return calls, fmt.Errorf("resolve issue page reader for %s/%s: %w", repo.Owner, repo.Name, err)
+		return calls, fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
-	issue, err := platform.RequireIssue(ctx, issuePages, platformRepoRef(repo), number)
+	issue, err := issueReader.GetIssue(ctx, platformRepoRef(repo), number)
 	calls++
 	if err != nil {
 		return calls, fmt.Errorf("get issue #%d: %w", number, err)
@@ -6959,7 +7019,7 @@ func (s *Syncer) refreshTimeline(
 	applied, err := s.commitMergeRequestDatasets(
 		ctx, repo, number, expectedRevision,
 		commentEvents, true,
-		reviewEvents, true,
+		reviewEvents,
 		nil, nil, false, events, &derived,
 	)
 	if err != nil {
@@ -7151,8 +7211,6 @@ func (s *Syncer) refreshWorkflowApproval(
 	ctx context.Context,
 	repo RepoRef,
 	repoID int64,
-	mrID int64,
-	expectedRevision int64,
 	number int,
 	headSHA string,
 	ghPR *gh.PullRequest,
@@ -7194,56 +7252,34 @@ func (s *Syncer) refreshWorkflowApproval(
 		headRef = normalized.HeadBranch
 	}
 
-	for attempt := range 2 {
-		runs, err := client.ListWorkflowRunsForHeadSHA(ctx, repo.Owner, repo.Name, headSHA)
-		if err != nil {
-			slog.Warn("list workflow runs for approval refresh failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number,
-				"err", err,
-			)
-			return attempt == 0, attempt + 1
-		}
-		approval := WorkflowApprovalStateFromRuns(
-			FilterWorkflowRunsAwaitingApproval(runs, PRSource{
-				Number:           number,
-				HeadSHA:          headSHA,
-				HeadRepoFullName: headRepoFullName,
-				HeadRef:          headRef,
-			}),
+	runs, err := client.ListWorkflowRunsForHeadSHA(ctx, repo.Owner, repo.Name, headSHA)
+	if err != nil {
+		slog.Warn("list workflow runs for approval refresh failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
 		)
-		applied, err := s.db.UpdateMRWorkflowApprovalSnapshot(
-			ctx, mrID, expectedRevision, time.Now().UTC(), headSHA,
-			approval.Required, approval.Count,
-		)
-		if err != nil {
-			slog.Warn("persist workflow approval state failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number,
-				"err", err,
-			)
-			return attempt == 0, attempt + 1
-		}
-		if applied {
-			return true, attempt + 1
-		}
-		current, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
-		if err != nil {
-			slog.Warn("reload merge request after workflow approval race failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number,
-				"err", err,
-			)
-			return false, attempt + 1
-		}
-		if current == nil || current.State != db.MergeRequestStateOpen || current.PlatformHeadSHA != headSHA {
-			return false, attempt + 1
-		}
-		expectedRevision = current.SnapshotRevision
-		headRepoFullName = ParseHeadRepoFullName(current.HeadRepoCloneURL)
-		headRef = current.HeadBranch
+		return true, 1
 	}
-	return false, 2
+	approval := WorkflowApprovalStateFromRuns(
+		FilterWorkflowRunsAwaitingApproval(runs, PRSource{
+			Number:           number,
+			HeadSHA:          headSHA,
+			HeadRepoFullName: headRepoFullName,
+			HeadRef:          headRef,
+		}),
+	)
+	if err := s.db.UpdateMRWorkflowApproval(
+		ctx, repoID, number, time.Now().UTC(), headSHA,
+		approval.Required, approval.Count,
+	); err != nil {
+		slog.Warn("persist workflow approval state failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+	}
+	return true, 1
 }
 
 // ciHasPending parses the CI checks JSON and returns true if any
@@ -7379,7 +7415,7 @@ func (s *Syncer) replacePRCommentEvents(
 		events = append(events, event)
 	}
 	applied, err := s.commitMergeRequestDatasets(
-		ctx, repo, number, expectedRevision, events, true, nil, false, nil, nil, false, nil, derived,
+		ctx, repo, number, expectedRevision, events, true, nil, nil, nil, false, nil, derived,
 	)
 	return applied, err
 }
@@ -7841,7 +7877,7 @@ func (s *Syncer) canSpendCommentRefresh(repo RepoRef) bool {
 
 func (s *Syncer) canSpendWorkflowApprovalRefresh(repo RepoRef) bool {
 	budget := s.budgets[repoRateBucketKey(repo)]
-	return budget == nil || budget.CanSpend(2)
+	return budget == nil || budget.CanSpend(1)
 }
 
 func (s *Syncer) persistPRComments(
@@ -7942,11 +7978,11 @@ func (s *Syncer) fetchAndUpdateClosedPlatformIssue(
 	repoID int64,
 	number int,
 ) error {
-	issuePages, err := s.issuePageReaderFor(repo)
+	issueReader, err := s.issueReaderFor(repo)
 	if err != nil {
-		return fmt.Errorf("resolve issue page reader for %s/%s: %w", repo.Owner, repo.Name, err)
+		return fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
-	issue, err := platform.RequireIssue(ctx, issuePages, platformRepoRef(repo), number)
+	issue, err := issueReader.GetIssue(ctx, platformRepoRef(repo), number)
 	if err != nil {
 		return fmt.Errorf("get closed issue #%d: %w", number, err)
 	}
@@ -8337,10 +8373,12 @@ func (s *Syncer) syncMRForRepo(
 	number int,
 	useConditionalPRDetail bool,
 ) error {
-	releaseProviderWork := s.beginProviderWork(
-		repoRateBucketKey(repo), archive.PriorityActiveDetail,
-	)
-	defer releaseProviderWork()
+	if !IsArchiveSyncBudgetContext(ctx) {
+		releaseProviderWork := s.beginProviderWork(
+			repoRateBucketKey(repo), archive.PriorityActiveDetail,
+		)
+		defer releaseProviderWork()
+	}
 
 	owner := repo.Owner
 	name := repo.Name
@@ -8404,11 +8442,7 @@ func (s *Syncer) syncMRForRepo(
 			}
 		}
 	} else {
-		var mrPages platform.MergeRequestPageReader
-		mrPages, err = s.mergeRequestPageReaderFor(repo)
-		if err == nil {
-			platformMR, err = platform.RequireMergeRequest(ctx, mrPages, platformRepoRef(repo), number)
-		}
+		platformMR, err = mrReader.GetMergeRequest(ctx, platformRepoRef(repo), number)
 		if err == nil {
 			normalized = platform.DBMergeRequest(repoID, platformMR)
 		}
@@ -8527,7 +8561,7 @@ func (s *Syncer) syncMRForRepo(
 		// sync round-trip. The result is tied to syncMRHeadSHA so a
 		// later read can detect a stale snapshot after force-push.
 		approvalApplied, _ := s.refreshWorkflowApproval(
-			ctx, repo, repoID, mrID, revision, number, syncMRHeadSHA, ghPR, normalized,
+			ctx, repo, repoID, number, syncMRHeadSHA, ghPR, normalized,
 		)
 		if !approvalApplied {
 			return nil
@@ -8899,10 +8933,12 @@ func (s *Syncer) syncIssueForRepo(
 	repo RepoRef,
 	number int,
 ) error {
-	releaseProviderWork := s.beginProviderWork(
-		repoRateBucketKey(repo), archive.PriorityActiveDetail,
-	)
-	defer releaseProviderWork()
+	if !IsArchiveSyncBudgetContext(ctx) {
+		releaseProviderWork := s.beginProviderWork(
+			repoRateBucketKey(repo), archive.PriorityActiveDetail,
+		)
+		defer releaseProviderWork()
+	}
 
 	repoID, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
 	if err != nil {
@@ -8913,6 +8949,46 @@ func (s *Syncer) syncIssueForRepo(
 		return err
 	}
 	return s.markClosedLinkedNotificationsDone(ctx)
+}
+
+// ArchiveItemSyncCost returns the worst-case wire-attempt allowance for the
+// existing full item sync. One logical request may spend a second attempt
+// after authentication refresh.
+func (s *Syncer) ArchiveItemSyncCost(_ platform.Kind, itemType db.ArchiveItemType) int {
+	if itemType == db.ArchiveItemTypeMergeRequest {
+		return 2 * PRDetailWorstCase
+	}
+	return 2 * IssueDetailWorstCase
+}
+
+// SyncArchiveItem runs archive hydration through the canonical live item
+// sync. The caller has already acquired archive admission, so the archive
+// budget context also prevents the live entry point from taking a nested
+// provider-work lease.
+func (s *Syncer) SyncArchiveItem(
+	ctx context.Context,
+	ref platform.RepoRef,
+	itemType db.ArchiveItemType,
+	number int,
+) error {
+	repo, ok := s.trackedRepoByIdentity(ref.Platform, ref.Owner, ref.Name, ref.Host)
+	if !ok {
+		return fmt.Errorf(
+			"repo %s/%s on %s/%s is not tracked",
+			ref.Owner, ref.Name, ref.Platform, ref.Host,
+		)
+	}
+	repo.Owner = ref.Owner
+	repo.Name = ref.Name
+	repo.PlatformHost = repoHost(repo)
+	switch itemType {
+	case db.ArchiveItemTypeIssue:
+		return s.syncIssueForRepo(ctx, repo, number)
+	case db.ArchiveItemTypeMergeRequest:
+		return s.syncMRForRepo(ctx, repo, number, false)
+	default:
+		return fmt.Errorf("sync archive item: invalid item type %q", itemType)
+	}
 }
 
 // SyncItemByNumber fetches an item by number from GitHub, determines
@@ -9167,7 +9243,7 @@ func (s *Syncer) persistMergedTransitionEvent(
 func (s *Syncer) persistMergedActorEvent(
 	ctx context.Context,
 	mrID int64,
-	expectedRevision int64,
+	_ int64,
 	actor string,
 	mergedAt *time.Time,
 ) (bool, error) {
@@ -9193,9 +9269,10 @@ func (s *Syncer) persistMergedActorEvent(
 	if event == nil {
 		return false, nil
 	}
-	return s.db.UpsertMergeRequestEventsSnapshot(
-		ctx, mrID, expectedRevision, []db.MREvent{*event},
-	)
+	if err := s.db.UpsertMREvents(ctx, []db.MREvent{*event}); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *Syncer) fetchAndUpdateClosedMergeRequest(
@@ -9212,11 +9289,11 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 		return s.fetchAndUpdateClosed(ctx, repo, repoID, number, cloneFetchOK)
 	}
 
-	mrPages, err := s.mergeRequestPageReaderFor(repo)
+	mrReader, err := s.mergeRequestReaderFor(repo)
 	if err != nil {
-		return fmt.Errorf("resolve merge request page reader for %s/%s: %w", repo.Owner, repo.Name, err)
+		return fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
-	mr, err := platform.RequireMergeRequest(ctx, mrPages, platformRepoRef(repo), number)
+	mr, err := mrReader.GetMergeRequest(ctx, platformRepoRef(repo), number)
 	if err != nil {
 		return fmt.Errorf("get closed MR #%d: %w", number, err)
 	}

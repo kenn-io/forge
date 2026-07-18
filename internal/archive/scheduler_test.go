@@ -8,31 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/platform"
 )
-
-// TestArchiveRequestCostsAreProviderAware pins provider-specific lookup costs.
-func TestArchiveRequestCostsAreProviderAware(t *testing.T) {
-	tests := []struct {
-		name     string
-		kind     platform.Kind
-		itemType db.ArchiveItemType
-		lookup   int
-	}{
-		{"gitlab merge request", platform.KindGitLab, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(3)},
-		{"gitlab issue", platform.KindGitLab, db.ArchiveItemTypeIssue, archiveAttemptCost(2)},
-		{"github merge request", platform.KindGitHub, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(2)},
-		{"github issue", platform.KindGitHub, db.ArchiveItemTypeIssue, archiveAttemptCost(2)},
-		{"forgejo merge request", platform.KindForgejo, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(2)},
-		{"gitea merge request", platform.KindGitea, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(2)},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.lookup, archiveLookupCost(tt.kind, tt.itemType))
-		})
-	}
-}
 
 func TestArchiveSchedulerDoesNotSerializeSameHostOutsideAdmission(t *testing.T) {
 	assert := assert.New(t)

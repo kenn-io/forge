@@ -271,6 +271,13 @@ server check exactly.
   captured load token and generation still own the store; stale preview work
   fails without mutation
   (`packages/ui/src/stores/diff.svelte.ts::loadWorkspaceFilePreview`).
+- Preserving refreshes publish only a fresh coherent files/diff pair; stale
+  responses retain the visible pair and retry because same-fingerprint
+  validation emits no change event
+  (`packages/ui/src/stores/diff.svelte.ts::loadWorkspaceDiff`).
+- Workspace diff and preview paths identify the current path first. Old paths
+  are fallback aliases only, since a rename source can coexist with a new file
+  at that path (`internal/server/huma_routes.go::filterWorkspaceDiffSnapshotPath`).
 - Live worktree reads use Go's `os.Root` containment. Final symlinks are read as
   links, regular files are identity-checked across the open, and intermediate
   symlinks may resolve only within the worktree. Untracked patch reads and

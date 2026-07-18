@@ -232,6 +232,56 @@ describe("createDiffStore loadDiff", () => {
     expect(store.getDiff()?.files[0]?.path).toBe("b.ts");
   });
 
+  it("keeps retrying a preserving workspace refresh until both responses are fresh", async () => {
+    vi.useFakeTimers();
+    try {
+      let filesCalls = 0;
+      let diffCalls = 0;
+      let signalStalePair: () => void = () => {};
+      const stalePairSeen = new Promise<void>((resolve) => {
+        signalStalePair = resolve;
+      });
+
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes("/workspaces/ws-1/files")) {
+          filesCalls += 1;
+          return Response.json(
+            makeFilesResult(["a.ts"], {
+              stale: filesCalls === 2,
+              snapshot_version: "generation:1",
+            }),
+          );
+        }
+        if (url.includes("/workspaces/ws-1/diff")) {
+          diffCalls += 1;
+          if (diffCalls === 2) signalStalePair();
+          return Response.json({
+            ...makeDiffResult(["a.ts"]),
+            stale: diffCalls === 2,
+            snapshot_version: "generation:1",
+          });
+        }
+        return Response.json({}, { status: 404 });
+      });
+
+      const store = createDiffStore({ client: testClient() });
+      await store.loadWorkspaceDiff("ws-1", "head");
+      const refresh = store.loadWorkspaceDiff("ws-1", "head", false, { preserveVisible: true });
+      await stalePairSeen;
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(store.getDiff()?.stale).toBe(false);
+
+      await vi.runOnlyPendingTimersAsync();
+      await refresh;
+      expect(store.getDiff()?.stale).toBe(false);
+      expect(filesCalls).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("retries a workspace diff pair when its pinned revision changes", async () => {
     const calls: string[] = [];
     let filesCalls = 0;

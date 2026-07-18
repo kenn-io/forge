@@ -6135,7 +6135,12 @@ func filterWorkspaceDiffSnapshotPath(
 	path string,
 ) []gitclone.DiffFile {
 	for i := range files {
-		if files[i].Path == path || files[i].OldPath == path {
+		if files[i].Path == path {
+			return []gitclone.DiffFile{files[i]}
+		}
+	}
+	for i := range files {
+		if files[i].OldPath == path {
 			return []gitclone.DiffFile{files[i]}
 		}
 	}

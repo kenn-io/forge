@@ -967,6 +967,10 @@ export function createDiffStore(opts?: DiffStoreOptions) {
             }
             throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
           }
+          if (preserveVisible && (pendingFiles?.stale || data.stale)) {
+            retrySignal = diffAc.signal;
+            break;
+          }
           if (preserveAttempt && pendingFiles) {
             fileList = normalizeFilesResult(pendingFiles);
             diff = normalizeDiffResult(data);

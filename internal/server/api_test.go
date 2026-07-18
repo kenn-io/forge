@@ -26774,6 +26774,35 @@ func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
 	assert.NotContains(workspaceDiffPaths(*diff.Files), "second.go")
 }
 
+func TestWorkspaceDiffPathPrefersCurrentPathOverEarlierRenameE2E(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := assert.New(t)
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ws := createReadyWorkspace(t, context.Background(), client)
+	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "z.txt"), []byte("renamed content\n"), 0o644))
+	runGit(t, ws.WorktreePath, "add", "z.txt")
+	runGit(t, ws.WorktreePath, "commit", "-m", "add rename source")
+	require.NoError(os.Rename(filepath.Join(ws.WorktreePath, "z.txt"), filepath.Join(ws.WorktreePath, "a.txt")))
+	runGit(t, ws.WorktreePath, "add", "-A")
+	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "z.txt"), []byte("new current path\n"), 0o644))
+
+	diff := requestWorkspaceDiffForPath(t, srv, ws.Id, "head", "z.txt")
+	require.NotNil(diff.Files)
+	require.Len(*diff.Files, 1)
+	assert.Equal("z.txt", (*diff.Files)[0].Path)
+	assert.Equal("added", (*diff.Files)[0].Status)
+
+	preview := requestWorkspaceFilePreview(t, srv, ws.Id, "head", "z.txt", "new")
+	content, err := base64.StdEncoding.DecodeString(preview.Content)
+	require.NoError(err)
+	assert.Equal("z.txt", preview.Path)
+	assert.Equal("new current path\n", string(content))
+}
+
 func TestWorkspaceDiffEndpointKeepsModifiedSourcePatchSeparateFromCopyE2E(t *testing.T) {
 	t.Parallel()
 

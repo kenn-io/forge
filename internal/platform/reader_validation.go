@@ -8,7 +8,7 @@ import (
 // readerContract carries the registered provider identity every validating
 // reader wrapper enforces on requested references and provider-returned
 // values. Exactly one implementation of each contract check lives on it; the
-// canonical page-reader wrappers and the archive wrapper share these helpers.
+// canonical page-reader wrappers share these helpers.
 type readerContract struct {
 	kind Kind
 	host string

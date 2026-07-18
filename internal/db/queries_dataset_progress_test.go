@@ -1107,47 +1107,6 @@ func TestCommitParentLookupMovedQueuesDestinationPrompt(t *testing.T) {
 	assert.Nil(states[0].MaintenanceSucceededAt)
 }
 
-func TestCommitParentLookupStaleGenerationAfterResetWritesNothing(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-	now := archiveTestTime()
-
-	repoID := insertTestRepo(t, d, "acme", "lookup-stale")
-	issueID := insertTestIssue(t, d, repoID, 7, "before", now)
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now)
-	lookupKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup)
-	insertDatasetProgressForTest(t, d, lookupKey, 1, 1, nil, ArchiveDatasetProgressPending, 0)
-	require.NoError(d.ResetDatasetProgress(ctx, lookupKey))
-
-	err := d.CommitParentLookup(ctx, ParentLookupCommit{
-		RepoID:         repoID,
-		ItemType:       ArchiveItemTypeIssue,
-		ItemNumber:     7,
-		ScanGeneration: 1,
-		Outcome:        ArchiveLookupPresent,
-		Issue: testIssue(repoID, 7,
-			withIssueTitle("stale lookup"), withIssueActivity(now.Add(time.Hour))),
-		Now: now.Add(time.Hour),
-	})
-	var stale *StaleDatasetProgressError
-	require.ErrorAs(err, &stale)
-	assert.Equal(int64(1), stale.ExpectedGeneration)
-	assert.Equal(int64(2), stale.GotGeneration)
-
-	assert.Equal(int64(1), issueSnapshotRevisionForTest(t, d, issueID),
-		"a stale lookup must not upsert the parent")
-	var title string
-	require.NoError(d.ReadDB().QueryRowContext(ctx,
-		`SELECT title FROM middleman_issues WHERE id = ?`, issueID).Scan(&title))
-	assert.Equal("before", title)
-	lookup, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup)
-	require.NoError(err)
-	assert.Equal(ArchiveDatasetProgressPending, lookup.Status)
-	assert.Equal(int64(2), lookup.ScanGeneration)
-}
-
 func TestCommitParentLookupDuplicatePresentIsIdempotentReplay(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1352,64 +1311,6 @@ func TestCommitParentLookupRejectsSupersededDomainRevision(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(ArchiveDatasetProgressPending, lookup.Status,
 		"the rejected lookup stays claimable for a rescan at the new revision")
-}
-
-func TestPresentObservationReactivatesBothTerminalLifecycles(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-	now := archiveTestTime()
-
-	repoID := insertTestRepo(t, d, "acme", "terminal-recovery")
-	for i, tc := range []struct {
-		outcome   ArchiveLookupOutcome
-		lifecycle ArchiveLifecycleState
-		code      string
-	}{
-		{outcome: ArchiveLookupRemoved, lifecycle: ArchiveLifecycleStateRemovedUpstream, code: "removed_upstream"},
-		{outcome: ArchiveLookupInaccessible, lifecycle: ArchiveLifecycleStateInaccessible, code: "access_denied"},
-	} {
-		number := i + 1
-		insertTestIssue(t, d, repoID, number, "issue", now)
-		insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, number, now)
-		lookupKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, number, ArchiveDatasetLookup)
-		insertDatasetProgressForTest(t, d, lookupKey, 1, 1, nil, ArchiveDatasetProgressPending, 0)
-		require.NoError(d.CommitParentLookup(ctx, ParentLookupCommit{
-			RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: number,
-			ScanGeneration: 1, ExpectedRevision: 1,
-			Outcome: tc.outcome, ErrorCode: tc.code,
-			Now: now,
-		}))
-		var lifecycle ArchiveLifecycleState
-		require.NoError(d.ReadDB().QueryRowContext(ctx, `
-			SELECT lifecycle_state FROM middleman_archive_items
-			WHERE repo_id = ? AND item_type = 'issue' AND item_number = ?`,
-			repoID, number).Scan(&lifecycle))
-		require.Equal(tc.lifecycle, lifecycle)
-
-		// An operator reset returns the lookup to pending; the next present
-		// observation must recover the item regardless of which terminal
-		// lifecycle it was in and regardless of the provider timestamp — the
-		// recovered snapshot deliberately carries the same updated_at.
-		require.NoError(d.ResetDatasetProgress(ctx, lookupKey))
-		require.NoError(d.CommitParentLookup(ctx, ParentLookupCommit{
-			RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: number,
-			ScanGeneration: 2, ExpectedRevision: 1,
-			Outcome: ArchiveLookupPresent,
-			Issue: testIssue(repoID, number,
-				withIssueTitle("recovered"), withIssueActivity(now)),
-			Now: now.Add(time.Hour),
-		}), string(tc.lifecycle))
-		require.NoError(d.ReadDB().QueryRowContext(ctx, `
-			SELECT lifecycle_state FROM middleman_archive_items
-			WHERE repo_id = ? AND item_type = 'issue' AND item_number = ?`,
-			repoID, number).Scan(&lifecycle))
-		assert.Equal(ArchiveLifecycleStateActive, lifecycle, string(tc.lifecycle))
-		lookup, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, number, ArchiveDatasetLookup)
-		require.NoError(err)
-		assert.Equal(ArchiveDatasetProgressComplete, lookup.Status, string(tc.lifecycle))
-	}
 }
 
 func TestInventoryCommitSeedsDatasetProgressForPageCommits(t *testing.T) {

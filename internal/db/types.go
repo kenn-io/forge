@@ -165,8 +165,7 @@ type ArchiveScanState struct {
 // current generation.
 func (s ArchiveScanState) Complete() bool { return s.Status == ArchiveScanComplete }
 
-// Blocked reports whether the scan durably stopped and requires an explicit
-// operator reset.
+// Blocked reports whether the scan durably stopped.
 func (s ArchiveScanState) Blocked() bool { return s.Status == ArchiveScanBlocked }
 
 // Cursor returns the durable next input cursor, empty for page one.
@@ -346,8 +345,7 @@ func (e *StaleDatasetProgressError) Error() string {
 	)
 }
 
-// ScanBlockedError reports a scan that stopped spending provider requests and
-// requires an explicit operator reset to continue.
+// ScanBlockedError reports a scan that stopped spending provider requests.
 type ScanBlockedError struct {
 	Scope  string
 	Reason string
@@ -572,8 +570,7 @@ type ArchiveProgressCounts struct {
 	UnsupportedItemCount  int
 	InaccessibleItemCount int
 	DueItemCount          int
-	// BlockedItemCount counts active items with at least one blocked dataset
-	// scan. Blocked datasets require an explicit operator reset.
+	// BlockedItemCount counts active items with at least one blocked dataset scan.
 	BlockedItemCount int
 }
 

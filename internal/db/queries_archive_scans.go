@@ -113,8 +113,8 @@ func checkArchiveScanAdvanceTx(
 	}
 	if status == ArchiveScanComplete {
 		// A completed scan accepts no further page advances and no parent
-		// refreshes; only an explicit reset (new generation) restarts the
-		// traversal. Anything but the exact final replay above is stale.
+		// refreshes; only a new generation restarts the traversal. Anything
+		// but the exact final replay above is stale.
 		return archiveScanAdvanceOutcome{typedErr: &StaleArchiveScanError{
 			RepoID: commit.RepoID, Scan: kind,
 			ExpectedGeneration: commit.ScanGeneration, GotGeneration: generation,
@@ -238,10 +238,9 @@ func blockArchiveScanTx(
 
 // BlockArchiveRepoScan durably stops one repository-level scan: progress is
 // retained for diagnostics, no further provider requests are spent
-// automatically, and recovery requires an explicit reset. The block is
-// compare-and-swapped on the claimed scan generation exactly like a page
-// commit: a delayed block from a superseded traversal (reset or completed)
-// is a stale no-op.
+// automatically. The block is compare-and-swapped on the claimed scan
+// generation exactly like a page commit: a delayed block from a superseded
+// or completed traversal is a stale no-op.
 func (d *DB) BlockArchiveRepoScan(
 	ctx context.Context,
 	repoID int64,
@@ -292,15 +291,6 @@ func resetArchiveScanTx(
 		return fmt.Errorf("reset archive scan: no scan row for %s", archiveScanScope(repoID, kind))
 	}
 	return nil
-}
-
-// ResetArchiveRepoScan starts a fresh scan generation for one repository-level
-// scan. It is the restart mode of blocked-scan recovery: only the affected
-// scan restarts, domain content and unrelated cursors are untouched.
-func (d *DB) ResetArchiveRepoScan(ctx context.Context, repoID int64, kind ArchiveScanKind) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return resetArchiveScanTx(ctx, tx, repoID, kind, time.Now())
-	})
 }
 
 // loadArchiveScanStates merges scan rows into the supplied states, keyed by

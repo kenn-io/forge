@@ -1581,9 +1581,8 @@ func reconcileArchiveItemSnapshotTx(
 // inventory scans finished and no active item carries outstanding dataset
 // work. The only statuses that count as completed exceptions are 'complete',
 // 'unsupported' (a declared capability gap), and 'terminal' (the item's
-// lookup settled the outcome). 'blocked' is outstanding: it awaits an
-// explicit operator reset, and completing around it would start maintenance
-// over an incomplete initial archive.
+// lookup settled the outcome). 'blocked' is outstanding; completing around it
+// would start maintenance over an incomplete initial archive.
 func completeArchiveInitialIfReadyTx(ctx context.Context, tx *sql.Tx, repoID int64, now time.Time) error {
 	_, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_repos

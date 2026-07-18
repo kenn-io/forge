@@ -1273,10 +1273,9 @@ func (d *DB) GetDatasetProgress(
 }
 
 // BlockDatasetProgress durably stops one dataset scan: progress is retained
-// for diagnostics, no further provider requests are spent automatically, and
-// recovery requires an explicit reset. The block is compare-and-swapped on
-// the claimed scan generation and parent revision: a delayed block from
-// superseded work (completed, reset, or rebound progress) is a stale no-op.
+// for diagnostics and no further provider requests are spent automatically.
+// The block is compare-and-swapped on the claimed scan generation and parent
+// revision: a delayed block from completed or rebound work is a stale no-op.
 func (d *DB) BlockDatasetProgress(
 	ctx context.Context,
 	key ArchiveDatasetProgressKey,
@@ -1323,34 +1322,6 @@ func blockDatasetProgressTx(
 	}
 	if changed == 0 {
 		return fmt.Errorf("block dataset progress: no progress row for %s", datasetProgressScope(key))
-	}
-	return nil
-}
-
-// ResetDatasetProgress starts a fresh scan generation for one dataset:
-// cursor cleared, page count zeroed, status pending. Rows already ingested
-// are retained until the new generation completes and reconciles.
-func (d *DB) ResetDatasetProgress(ctx context.Context, key ArchiveDatasetProgressKey) error {
-	result, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_archive_dataset_progress
-		SET scan_generation = `+nextEvenScanGenerationSQL+`,
-			next_cursor = NULL, last_input_cursor = NULL,
-			page_count = 0, observed_count = 0,
-			status = 'pending', attempt_count = 0, next_retry_at = NULL,
-			last_error_code = NULL, last_error_detail = NULL,
-			started_at = NULL, completed_at = NULL, updated_at = ?
-		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = ?`,
-		formatDatasetProgressTime(time.Now()),
-		key.RepoID, key.ItemType, key.ItemNumber, key.Dataset)
-	if err != nil {
-		return fmt.Errorf("reset dataset progress: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("reset dataset progress rows affected: %w", err)
-	}
-	if changed == 0 {
-		return fmt.Errorf("reset dataset progress: no progress row for %s", datasetProgressScope(key))
 	}
 	return nil
 }

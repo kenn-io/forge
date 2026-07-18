@@ -322,6 +322,52 @@ func TestWorkspaceDiffCacheSelectionRetriesFailedPrewarm(t *testing.T) {
 	require.NotNil(cache.selectionCancel["ws-1"])
 }
 
+func TestWorkspaceDiffCacheSelectedColdFailureWaitsForPrewarmBackoff(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	retry := make(chan time.Time)
+	attempts := make(chan int64, 2)
+	var prepareCalls atomic.Int64
+	cache := newWorkspaceDiffCache(t.Context(), workspaceDiffCacheDeps{
+		after: func(time.Duration) <-chan time.Time { return retry },
+		resolve: func(context.Context, workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
+			return workspaceDiffTestResolved(), true, nil
+		},
+		fingerprint: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (workspace.DiffFingerprint, error) {
+			return "v1", nil
+		},
+		prepare: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (*gitclone.DiffResult, error) {
+			call := prepareCalls.Add(1)
+			attempts <- call
+			if call == 1 {
+				return nil, errors.New("temporarily unavailable")
+			}
+			return workspaceDiffTestResult("one.txt"), nil
+		},
+	})
+
+	release := cache.Select("ws-1", func(context.Context) (workspaceDiffLogicalKey, error) {
+		return workspaceDiffTestKey(), nil
+	})
+	t.Cleanup(release)
+	require.Equal(int64(1), <-attempts)
+
+	cache.ValidateSelected()
+	earlyAttempt := false
+	select {
+	case attempt := <-attempts:
+		earlyAttempt = true
+		assert.Fail("periodic validation bypassed cold retry backoff", "attempt=%d", attempt)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	retry <- time.Now()
+	if !earlyAttempt {
+		require.Equal(int64(2), <-attempts)
+	}
+	assert.Equal(int64(2), prepareCalls.Load())
+}
+
 func TestWorkspaceDiffCacheSelectedColdPrewarmSignalsReady(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

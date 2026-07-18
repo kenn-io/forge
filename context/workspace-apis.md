@@ -233,6 +233,10 @@ server check exactly.
   bounded queue is not a hard completion deadline
   (`internal/server/server.go::notifyWorktreeStatsChanged`). One background worker
   serializes proactive validation; foreground cold reads bypass that queue.
+  Entryless cold failures stay with selection prewarm's five-second retry;
+  periodic validation handles only published entries, so its one-second cadence
+  cannot bypass cold backoff
+  (`internal/server/workspace_diff_cache.go::validateSelected`).
 - The 128 MiB inactive-cache budget evicts least-recently-used inactive
   entries, never active snapshots. A newly published snapshot has a one-minute
   files/diff revision lease so an oversized `/files` response cannot evict

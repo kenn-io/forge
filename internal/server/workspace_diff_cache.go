@@ -603,11 +603,13 @@ func (c *workspaceDiffCache) validateSelected(force bool) {
 			continue
 		}
 		for key := range active {
-			if entry := c.peekEntryLocked(key); entry != nil {
-				if (!force && now.Sub(entry.validatedAt) < workspaceDiffCacheFreshFor-workspaceDiffValidationPoll) ||
-					now.Before(entry.retryAfter) {
-					continue
-				}
+			entry := c.peekEntryLocked(key)
+			if entry == nil {
+				continue
+			}
+			if (!force && now.Sub(entry.validatedAt) < workspaceDiffCacheFreshFor-workspaceDiffValidationPoll) ||
+				now.Before(entry.retryAfter) {
+				continue
 			}
 			keys = append(keys, key)
 		}

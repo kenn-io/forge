@@ -30,21 +30,6 @@ type archiveMutationBody struct {
 
 type archiveMutationInput struct{ Body archiveMutationBody }
 
-type archiveResetBody struct {
-	Repository archiveRepositoryRef `json:"repository"`
-	Scan       *string              `json:"scan,omitempty" doc:"Repository scan name."`
-	ItemType   *string              `json:"item_type,omitempty" doc:"Item type: issue or merge_request."`
-	ItemNumber *int                 `json:"item_number,omitempty" minimum:"1"`
-	Dataset    *string              `json:"dataset,omitempty" doc:"Dataset: lookup, comments, reviews, or inline_comments."`
-	Force      bool                 `json:"force,omitempty"`
-}
-
-type archiveResetInput struct{ Body archiveResetBody }
-
-type archiveResetOutput struct {
-	Status int `status:"204"`
-}
-
 type archiveStatusInput struct {
 	Repositories []string `query:"repo,explode" doc:"Repeated provider|platform_host/repo_path filters."`
 }
@@ -164,10 +149,6 @@ func (s *Server) registerArchiveAPI(api huma.API) {
 		DefaultStatus: http.StatusOK, Summary: "Pause historical archives", Tags: []string{"Archive"},
 	}, s.pauseArchives)
 	huma.Register(api, huma.Operation{
-		OperationID: "reset-archive-scan", Method: http.MethodPost, Path: "/archive/reset",
-		DefaultStatus: http.StatusNoContent, Summary: "Reset blocked archive progress", Tags: []string{"Archive"},
-	}, s.resetArchiveScan)
-	huma.Register(api, huma.Operation{
 		OperationID: "list-archive-status", Method: http.MethodGet, Path: "/archive/status",
 		DefaultStatus: http.StatusOK, Summary: "List historical archive status", Tags: []string{"Archive"},
 	}, s.listArchiveStatus)
@@ -221,59 +202,6 @@ func (s *Server) pauseArchives(
 		return nil, archiveOperationProblem(err)
 	}
 	return &archiveStatusesOutput{Body: archiveStatusResponses(statuses)}, nil
-}
-
-func (s *Server) resetArchiveScan(
-	ctx context.Context,
-	input *archiveResetInput,
-) (*archiveResetOutput, error) {
-	if s.archive == nil {
-		return nil, problemServiceUnavailable("archive service not configured")
-	}
-	ref := platform.RepoRef{
-		Platform: platform.Kind(input.Body.Repository.Provider),
-		Host:     input.Body.Repository.PlatformHost,
-		Owner:    input.Body.Repository.Owner,
-		Name:     input.Body.Repository.Name,
-		RepoPath: input.Body.Repository.RepoPath,
-	}
-	if err := platform.ValidateCanonicalRepoRef(ref); err != nil {
-		return nil, problemValidation(
-			"body.repository",
-			"repository must carry canonical provider, host, owner, name, and repo_path",
-		)
-	}
-	hasScan := input.Body.Scan != nil
-	hasAnyItem := input.Body.ItemType != nil || input.Body.ItemNumber != nil || input.Body.Dataset != nil
-	hasCompleteItem := input.Body.ItemType != nil && input.Body.ItemNumber != nil && input.Body.Dataset != nil
-	if hasScan == hasAnyItem || (hasAnyItem && !hasCompleteItem) {
-		return nil, problemValidation(
-			"body", "select exactly one scan or one complete item_type/item_number/dataset scope",
-		)
-	}
-	var scan *db.ArchiveScanKind
-	var itemType *db.ArchiveItemType
-	var dataset *db.ArchiveDataset
-	if input.Body.Scan != nil {
-		value := db.ArchiveScanKind(*input.Body.Scan)
-		scan = &value
-	} else {
-		itemValue := db.ArchiveItemType(*input.Body.ItemType)
-		datasetValue := db.ArchiveDataset(*input.Body.Dataset)
-		itemType, dataset = &itemValue, &datasetValue
-	}
-	err := s.archive.ResetScan(ctx, ref, archive.ResetScope{
-		Scan: scan, ItemType: itemType, ItemNumber: input.Body.ItemNumber,
-		Dataset: dataset, Force: input.Body.Force,
-	})
-	if err != nil {
-		var resetErr *archive.ResetError
-		if errors.As(err, &resetErr) && resetErr.Reason == archive.ResetErrorInvalidScope {
-			return nil, problemValidation("body", "reset scope contains an unsupported value")
-		}
-		return nil, archiveOperationProblem(err)
-	}
-	return &archiveResetOutput{Status: http.StatusNoContent}, nil
 }
 
 func (s *Server) listArchiveStatus(
@@ -436,13 +364,6 @@ func archiveOperationProblem(err error) error {
 	}
 	if errors.Is(err, archive.ErrEmptyReportScope) {
 		return problemBadRequest(CodeBadRequest, err.Error(), nil)
-	}
-	var resetErr *archive.ResetError
-	if errors.As(err, &resetErr) {
-		return problemBadRequest(
-			CodeBadRequest, "archive progress reset rejected",
-			map[string]any{"reason": resetErr.Reason, "scope": resetErr.Scope},
-		)
 	}
 	var platformErr *platform.Error
 	if errors.As(err, &platformErr) {

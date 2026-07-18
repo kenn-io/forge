@@ -376,9 +376,6 @@ type ArchiveCapabilities struct {
 	OrdinaryComments        bool
 	SubmittedReviews        bool
 	InlineReviewComments    bool
-	// MergeRequestInventoryPageRequests is the worst-case wire request count
-	// for one historical merge-request inventory page read. Zero means one.
-	MergeRequestInventoryPageRequests int
 }
 
 func (c ArchiveCapabilities) HasHistoricalInventory() bool {

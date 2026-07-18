@@ -10,18 +10,6 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 )
 
-// archiveInventoryPageCost declares the worst-case logical request count of
-// one historical inventory page. Providers that inclusively replay wire pages
-// 1..N on a windowed merge-request resume declare that maximum; every other
-// inventory read reserves the one-request default.
-func archiveInventoryPageCost(capabilities platform.ArchiveCapabilities, itemType db.ArchiveItemType) int {
-	requests := 1
-	if itemType == db.ArchiveItemTypeMergeRequest && capabilities.MergeRequestInventoryPageRequests > 0 {
-		requests = capabilities.MergeRequestInventoryPageRequests
-	}
-	return archiveAttemptCost(requests)
-}
-
 // inventoryPage advances one historical inventory scan by one canonical page:
 // StateAll ordered by creation for a stable traversal, cursor and generation
 // bound to the durable scan row.
@@ -40,7 +28,7 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 	if !archiveInventorySupported(repo, itemType) {
 		commit.Exhausted = true
 	} else {
-		requestCtx, release, err := s.admit(ctx, repo, archiveInventoryPageCost(repo.Capabilities, itemType))
+		requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(1))
 		if err != nil {
 			if errors.Is(err, errAdmissionDeferred) {
 				return err

@@ -239,41 +239,6 @@ func TestArchiveCLISubcommandsUseGeneratedDaemonContract(t *testing.T) {
 	}
 }
 
-func TestArchiveCLIResetUsesScopedDaemonContract(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	requests := make(chan map[string]any, 1)
-	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(http.MethodPost, r.Method)
-		assert.Equal("/base/api/v1/archive/reset", r.URL.Path)
-		var body map[string]any
-		if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		requests <- body
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	t.Cleanup(api.Close)
-	cfgPath := archiveCLITestConfig(t, api.URL, "/base", "archive-token")
-
-	var stdout bytes.Buffer
-	err := runArchiveCLIAt([]string{
-		"reset", "--config", cfgPath,
-		"--repo", "github|github.example/owner/repo",
-		"--scan", "issue_inventory",
-	}, &stdout, time.Now)
-	require.NoError(err)
-	assert.Empty(stdout.String())
-	body := <-requests
-	encoded, err := json.Marshal(body)
-	require.NoError(err)
-	assert.JSONEq(`{
-		"repository":{"provider":"github","platform_host":"github.example","owner":"owner","name":"repo","repo_path":"owner/repo"},
-		"scan":"issue_inventory","force":false
-	}`, string(encoded))
-}
-
 func TestArchiveAPIProblemIncludesStableDetails(t *testing.T) {
 	t.Parallel()
 	details := map[string]any{
@@ -321,15 +286,6 @@ func TestArchiveCLIValidationAndAtomicOutput(t *testing.T) {
 	assert.Contains(err.Error(), "--all and --repo are mutually exclusive")
 	assert.Zero(calls)
 	assert.Empty(stdout.String())
-
-	err = runArchiveCLIAt([]string{
-		"reset", "--config", cfgPath,
-		"--repo", "github|github.example/owner/repo",
-		"--scan", "issue_inventory", "--item", "issue/1", "--dataset", "comments",
-	}, &stdout, func() time.Time { return now })
-	require.Error(err)
-	assert.Contains(err.Error(), "--scan and --item are mutually exclusive")
-	assert.Zero(calls)
 
 	output := filepath.Join(t.TempDir(), "report.md")
 	require.NoError(os.WriteFile(output, []byte("keep me\n"), 0o600))

@@ -819,57 +819,6 @@ func TestArchiveInventoryInvalidCursorBlocksScanWithoutRestart(t *testing.T) {
 	assert.Equal(db.ArchiveStatusBlocked, status[0].Progress.Status)
 }
 
-func TestArchiveServiceResetScanRestartsOnlyBlockedRepositoryScan(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := dbtest.Open(t)
-	now := archiveTestTime()
-	ref := archiveServiceRef(platform.KindGitHub, "github.test", "reset-scan")
-	repoID := archiveServiceSeedRepo(t, database, ref)
-	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
-	registry, err := platform.NewRegistry(provider)
-	require.NoError(err)
-	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
-	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
-	require.NoError(err)
-	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_repo_scans
-		SET scan_generation = 5, next_cursor = 'issue-p9', last_input_cursor = 'issue-p8',
-			page_count = 42, status = 'blocked', last_error_code = 'invalid_cursor'
-		WHERE repo_id = ? AND scan = 'issue_inventory'`, repoID)
-	require.NoError(err)
-	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_repo_scans
-		SET scan_generation = 3, next_cursor = 'mr-p2', last_input_cursor = 'mr-p1',
-			page_count = 7, status = 'running'
-		WHERE repo_id = ? AND scan = 'merge_request_inventory'`, repoID)
-	require.NoError(err)
-	wakeCount := 0
-	service.SetWake(func() { wakeCount++ })
-	scan := db.ArchiveScanIssueInventory
-
-	require.NoError(service.ResetScan(t.Context(), ref, ResetScope{Scan: &scan}))
-	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
-	require.NoError(err)
-	require.Len(states, 1)
-	assert.Equal(int64(6), states[0].IssueInventory.Generation)
-	assert.Equal(db.ArchiveScanPending, states[0].IssueInventory.Status)
-	assert.Nil(states[0].IssueInventory.NextCursor)
-	assert.Nil(states[0].IssueInventory.LastInputCursor)
-	assert.Zero(states[0].IssueInventory.PageCount)
-	assert.Nil(states[0].IssueInventory.LastErrorCode)
-	assert.Equal(int64(3), states[0].MergeRequestInventory.Generation)
-	assert.Equal("mr-p2", states[0].MergeRequestInventory.Cursor())
-	assert.Equal(7, states[0].MergeRequestInventory.PageCount)
-	assert.Equal(1, wakeCount)
-
-	provider.issueInventoryCursors = nil
-	require.NoError(service.RunEligible(t.Context()))
-	assert.Equal([]string{""}, provider.issueInventoryCursors,
-		"restart must issue the next request from page one")
-}
-
 func TestArchiveLookupContractViolationBlocksOnlyLookupDataset(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1202,7 +1151,7 @@ func TestArchiveInventoryFailureIsDurableAndClearedBySuccessfulProgress(t *testi
 	assert.Nil(states[0].NextRetryAt)
 }
 
-func TestArchiveStartRejectsMissingRequiredInventoryCapability(t *testing.T) {
+func TestArchiveStartAllowsPartialHistoricalInventory(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -1217,10 +1166,10 @@ func TestArchiveStartRejectsMissingRequiredInventoryCapability(t *testing.T) {
 	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
 
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
-	require.ErrorIs(err, platform.ErrUnsupportedCapability)
+	require.NoError(err)
 	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
-	assert.Equal(db.ArchiveCollectionModeDiscovery, states[0].CollectionMode)
+	assert.Equal(db.ArchiveCollectionModeFull, states[0].CollectionMode)
 }
 
 func TestArchiveDiscoverySkipsUnsupportedInventoryStream(t *testing.T) {

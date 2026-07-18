@@ -129,14 +129,9 @@ func (s *Service) Start(ctx context.Context, refs []platform.RepoRef) ([]Status,
 		return nil, err
 	}
 	for _, repo := range resolved {
-		if !repo.Capabilities.HistoricalIssues {
+		if !repo.Capabilities.HasHistoricalInventory() {
 			return nil, platform.UnsupportedCapability(
-				repo.Ref.Platform, repo.Ref.Host, string(platform.ArchiveCapabilityHistoricalIssues),
-			)
-		}
-		if !repo.Capabilities.HistoricalMergeRequests {
-			return nil, platform.UnsupportedCapability(
-				repo.Ref.Platform, repo.Ref.Host, string(platform.ArchiveCapabilityHistoricalMergeRequests),
+				repo.Ref.Platform, repo.Ref.Host, "historical_inventory",
 			)
 		}
 	}

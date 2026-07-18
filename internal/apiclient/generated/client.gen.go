@@ -1081,24 +1081,6 @@ type ArchiveRepositoryRef struct {
 	RepoPath     string `json:"repo_path"`
 }
 
-// ArchiveResetBody defines model for ArchiveResetBody.
-type ArchiveResetBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-
-	// Dataset Dataset: lookup, comments, reviews, or inline_comments.
-	Dataset    *string `json:"dataset,omitempty"`
-	Force      *bool   `json:"force,omitempty"`
-	ItemNumber *int64  `json:"item_number,omitempty"`
-
-	// ItemType Item type: issue or merge_request.
-	ItemType   *string              `json:"item_type,omitempty"`
-	Repository ArchiveRepositoryRef `json:"repository"`
-
-	// Scan Repository scan name.
-	Scan *string `json:"scan,omitempty"`
-}
-
 // ArchiveStatusResponse defines model for ArchiveStatusResponse.
 type ArchiveStatusResponse struct {
 	ActivePhases           *[]ArchiveStatusResponseActivePhases `json:"active_phases"`
@@ -4532,9 +4514,6 @@ type GetWorkspaceFilesParams struct {
 // PauseArchivesJSONRequestBody defines body for PauseArchives for application/json ContentType.
 type PauseArchivesJSONRequestBody = ArchiveMutationBody
 
-// ResetArchiveScanJSONRequestBody defines body for ResetArchiveScan for application/json ContentType.
-type ResetArchiveScanJSONRequestBody = ArchiveResetBody
-
 // StartArchivesJSONRequestBody defines body for StartArchives for application/json ContentType.
 type StartArchivesJSONRequestBody = ArchiveMutationBody
 
@@ -4933,11 +4912,6 @@ type ClientInterface interface {
 
 	// GetArchiveReport request
 	GetArchiveReport(ctx context.Context, params *GetArchiveReportParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ResetArchiveScanWithBody request with any body
-	ResetArchiveScanWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	ResetArchiveScan(ctx context.Context, body ResetArchiveScanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// StartArchivesWithBody request with any body
 	StartArchivesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6046,30 +6020,6 @@ func (c *Client) PauseArchives(ctx context.Context, body PauseArchivesJSONReques
 
 func (c *Client) GetArchiveReport(ctx context.Context, params *GetArchiveReportParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetArchiveReportRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ResetArchiveScanWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewResetArchiveScanRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ResetArchiveScan(ctx context.Context, body ResetArchiveScanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewResetArchiveScanRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -10992,46 +10942,6 @@ func NewGetArchiveReportRequest(server string, params *GetArchiveReportParams) (
 	if err != nil {
 		return nil, err
 	}
-
-	return req, nil
-}
-
-// NewResetArchiveScanRequest calls the generic ResetArchiveScan builder with application/json body
-func NewResetArchiveScanRequest(server string, body ResetArchiveScanJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewResetArchiveScanRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewResetArchiveScanRequestWithBody generates requests for ResetArchiveScan with any type of body
-func NewResetArchiveScanRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/archive/reset")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -28523,11 +28433,6 @@ type ClientWithResponsesInterface interface {
 	// GetArchiveReportWithResponse request
 	GetArchiveReportWithResponse(ctx context.Context, params *GetArchiveReportParams, reqEditors ...RequestEditorFn) (*GetArchiveReportResponse, error)
 
-	// ResetArchiveScanWithBodyWithResponse request with any body
-	ResetArchiveScanWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResetArchiveScanResponse, error)
-
-	ResetArchiveScanWithResponse(ctx context.Context, body ResetArchiveScanJSONRequestBody, reqEditors ...RequestEditorFn) (*ResetArchiveScanResponse, error)
-
 	// StartArchivesWithBodyWithResponse request with any body
 	StartArchivesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StartArchivesResponse, error)
 
@@ -29657,28 +29562,6 @@ func (r GetArchiveReportResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetArchiveReportResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type ResetArchiveScanResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ProblemError
-}
-
-// Status returns HTTPResponse.Status
-func (r ResetArchiveScanResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ResetArchiveScanResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -36233,23 +36116,6 @@ func (c *ClientWithResponses) GetArchiveReportWithResponse(ctx context.Context, 
 	return ParseGetArchiveReportResponse(rsp)
 }
 
-// ResetArchiveScanWithBodyWithResponse request with arbitrary body returning *ResetArchiveScanResponse
-func (c *ClientWithResponses) ResetArchiveScanWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResetArchiveScanResponse, error) {
-	rsp, err := c.ResetArchiveScanWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseResetArchiveScanResponse(rsp)
-}
-
-func (c *ClientWithResponses) ResetArchiveScanWithResponse(ctx context.Context, body ResetArchiveScanJSONRequestBody, reqEditors ...RequestEditorFn) (*ResetArchiveScanResponse, error) {
-	rsp, err := c.ResetArchiveScan(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseResetArchiveScanResponse(rsp)
-}
-
 // StartArchivesWithBodyWithResponse request with arbitrary body returning *StartArchivesResponse
 func (c *ClientWithResponses) StartArchivesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StartArchivesResponse, error) {
 	rsp, err := c.StartArchivesWithBody(ctx, contentType, body, reqEditors...)
@@ -39742,32 +39608,6 @@ func ParseGetArchiveReportResponse(rsp *http.Response) (*GetArchiveReportRespons
 		}
 		response.JSON200 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ProblemError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseResetArchiveScanResponse parses an HTTP response from a ResetArchiveScanWithResponse call
-func ParseResetArchiveScanResponse(rsp *http.Response) (*ResetArchiveScanResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ResetArchiveScanResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

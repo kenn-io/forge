@@ -13,37 +13,24 @@ import (
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
-// TestArchiveRequestCostsAreProviderAware pins the worst-case admission cost
-// tables: lookup costs remain provider-specific, while inventory replay cost
-// comes from the provider's declared archive capabilities.
+// TestArchiveRequestCostsAreProviderAware pins provider-specific lookup costs.
 func TestArchiveRequestCostsAreProviderAware(t *testing.T) {
 	tests := []struct {
-		name         string
-		kind         platform.Kind
-		capabilities platform.ArchiveCapabilities
-		itemType     db.ArchiveItemType
-		lookup       int
-		inventory    int
+		name     string
+		kind     platform.Kind
+		itemType db.ArchiveItemType
+		lookup   int
 	}{
-		{
-			"gitlab merge request", platform.KindGitLab,
-			platform.ArchiveCapabilities{MergeRequestInventoryPageRequests: 4},
-			db.ArchiveItemTypeMergeRequest, archiveAttemptCost(3), archiveAttemptCost(4),
-		},
-		{
-			"gitlab issue", platform.KindGitLab,
-			platform.ArchiveCapabilities{MergeRequestInventoryPageRequests: 4},
-			db.ArchiveItemTypeIssue, archiveAttemptCost(2), archiveAttemptCost(1),
-		},
-		{"github merge request", platform.KindGitHub, platform.ArchiveCapabilities{}, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(2), archiveAttemptCost(1)},
-		{"github issue", platform.KindGitHub, platform.ArchiveCapabilities{}, db.ArchiveItemTypeIssue, archiveAttemptCost(2), archiveAttemptCost(1)},
-		{"forgejo merge request", platform.KindForgejo, platform.ArchiveCapabilities{}, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(2), archiveAttemptCost(1)},
-		{"gitea merge request", platform.KindGitea, platform.ArchiveCapabilities{}, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(2), archiveAttemptCost(1)},
+		{"gitlab merge request", platform.KindGitLab, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(3)},
+		{"gitlab issue", platform.KindGitLab, db.ArchiveItemTypeIssue, archiveAttemptCost(2)},
+		{"github merge request", platform.KindGitHub, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(2)},
+		{"github issue", platform.KindGitHub, db.ArchiveItemTypeIssue, archiveAttemptCost(2)},
+		{"forgejo merge request", platform.KindForgejo, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(2)},
+		{"gitea merge request", platform.KindGitea, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(2)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.lookup, archiveLookupCost(tt.kind, tt.itemType))
-			assert.Equal(t, tt.inventory, archiveInventoryPageCost(tt.capabilities, tt.itemType))
 		})
 	}
 }

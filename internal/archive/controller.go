@@ -12,7 +12,6 @@ type Controller interface {
 	StartAll(context.Context) ([]Status, error)
 	Pause(context.Context, []platform.RepoRef) ([]Status, error)
 	PauseAll(context.Context) ([]Status, error)
-	ResetScan(context.Context, platform.RepoRef, ResetScope) error
 	Status(context.Context, []platform.RepoRef) ([]Status, error)
 	Report(context.Context, ReportOptions) (report.Model, error)
 }

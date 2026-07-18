@@ -52,19 +52,6 @@ func readHistoricalMergeRequestPage(
 	})
 }
 
-func readUpdatedMergeRequestPage(
-	provider *gitHubClientProvider,
-	ctx context.Context,
-	ref platform.RepoRef,
-	since time.Time,
-	cursor string,
-) (platform.Page[platform.MergeRequest], error) {
-	return provider.ListMergeRequestsPage(ctx, ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated,
-		UpdatedSince: &since, Cursor: cursor,
-	})
-}
-
 func TestGitHubArchiveDiscoveryParityUsesOldestFirstIssueOnlyConnection(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -160,39 +147,6 @@ func TestGitHubArchiveUpdatedIssuesUseInclusiveWatermarkAndStableContinuation(t 
 	assert.Equal([]int{2}, []int{second.Items[0].Number})
 	assert.True(second.Exhausted)
 	assert.Equal(2, requests)
-}
-
-func TestGitHubArchiveDiscoveryParityIncludesAllPullRequestStatesAndStableSorts(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	var sorts []string
-	var directions []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal("/api/v3/repos/acme/widget/pulls", r.URL.Path)
-		assert.Equal("all", r.URL.Query().Get("state"))
-		sorts = append(sorts, r.URL.Query().Get("sort"))
-		directions = append(directions, r.URL.Query().Get("direction"))
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[{"id":201,"node_id":"PR_201","number":4,"title":"pull","state":"closed","html_url":"https://github.com/acme/widget/pull/4","user":{"login":"author"},"created_at":"2025-01-01T00:00:00Z","updated_at":"2026-07-01T00:00:00Z"}]`))
-	}))
-	defer srv.Close()
-	provider := newArchiveTestGitHubProvider(t, srv.URL)
-	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
-
-	historical, err := readHistoricalMergeRequestPage(provider, t.Context(), ref, "")
-	require.NoError(err)
-	updated, err := readUpdatedMergeRequestPage(provider,
-		t.Context(), ref, time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), "",
-	)
-	require.NoError(err)
-	assert.Equal([]string{"created", "updated"}, sorts)
-	assert.Equal([]string{"asc", "desc"}, directions)
-	require.Len(historical.Items, 1)
-	require.Len(updated.Items, 1)
-	assert.Equal("PR_201", historical.Items[0].PlatformExternalID)
-	assert.Equal("author", updated.Items[0].Author)
-	assert.True(historical.Exhausted)
-	assert.True(updated.Exhausted)
 }
 
 func TestGitHubArchiveDetailPagesStopAfterOneRequest(t *testing.T) {
@@ -484,46 +438,6 @@ func TestGitHubReviewThreadsResumeAcrossNonFinalEdgeCommentContinuation(t *testi
 		"comments T_2 after t2-c1",
 		"threads after edge-2",
 	}, requests)
-}
-
-func TestGitHubArchiveLookupOutcomes(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/v3/repos/acme/widget/issues/7":
-			_, _ = w.Write([]byte(`{"id":7,"node_id":"I_7","number":7,"repository_url":"https://api.github.com/repos/acme/widget","title":"present","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}`))
-		case "/api/v3/repos/acme/widget/issues/8":
-			_, _ = w.Write([]byte(`{"id":8,"node_id":"I_8","number":8,"repository_url":"https://api.github.com/repos/acme/destination","title":"moved","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}`))
-		case "/api/v3/repos/acme/widget/issues/9":
-			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
-		case "/api/v3/repos/acme/widget/issues/10":
-			http.Error(w, `{"message":"Forbidden"}`, http.StatusForbidden)
-		case "/api/v3/repos/acme/widget":
-			_, _ = w.Write([]byte(`{"id":1,"name":"widget","owner":{"login":"acme"}}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-	provider := newArchiveTestGitHubProvider(t, srv.URL)
-	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
-
-	present, err := provider.LookupIssue(t.Context(), ref, 7)
-	require.NoError(err)
-	assert.Equal(platform.LookupPresent, present.Outcome)
-	moved, err := provider.LookupIssue(t.Context(), ref, 8)
-	require.NoError(err)
-	assert.Equal(platform.LookupMoved, moved.Outcome)
-	require.NotNil(moved.Destination)
-	assert.Equal("acme/destination", moved.Destination.RepoPath)
-	removed, err := provider.LookupIssue(t.Context(), ref, 9)
-	require.NoError(err)
-	assert.Equal(platform.LookupRemoved, removed.Outcome)
-	inaccessible, err := provider.LookupIssue(t.Context(), ref, 10)
-	require.NoError(err)
-	assert.Equal(platform.LookupInaccessible, inaccessible.Outcome)
 }
 
 func TestGitHubArchiveMergeRequestLookupDetectsTransfer(t *testing.T) {

@@ -55,23 +55,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/archive/reset": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Reset blocked archive progress */
-        post: operations["reset-archive-scan"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/archive/start": {
         parameters: {
             query?: never;
@@ -4639,24 +4622,6 @@ export interface components {
             provider: string;
             repo_path: string;
         };
-        ArchiveResetBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/ArchiveResetBody.json
-             */
-            readonly $schema?: string;
-            /** @description Dataset: lookup, comments, reviews, or inline_comments. */
-            dataset?: string;
-            force?: boolean;
-            /** Format: int64 */
-            item_number?: number;
-            /** @description Item type: issue or merge_request. */
-            item_type?: string;
-            repository: components["schemas"]["ArchiveRepositoryRef"];
-            /** @description Repository scan name. */
-            scan?: string;
-        };
         ArchiveStatusResponse: {
             active_phases: ("issue_inventory" | "merge_request_inventory" | "hydration" | "prompt_maintenance")[] | null;
             /** Format: date-time */
@@ -7873,37 +7838,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ArchiveReportResponse"];
                 };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemError"];
-                };
-            };
-        };
-    };
-    "reset-archive-scan": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ArchiveResetBody"];
-            };
-        };
-        responses: {
-            /** @description No Content */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Error */
             default: {

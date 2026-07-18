@@ -213,7 +213,7 @@ func (r pageReaderValidation) requireScanCapability(
 	liveCapability string,
 	archiveCapability ArchiveCapability,
 ) error {
-	if query.State == ItemStateAll {
+	if query.Order == ItemOrderCreated {
 		return r.requireArchive(archiveCapability)
 	}
 	return requireLiveCapability(r.contract, liveSupported, liveCapability)

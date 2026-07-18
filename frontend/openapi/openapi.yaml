@@ -675,36 +675,6 @@ components:
         - name
         - repo_path
       type: object
-    ArchiveResetBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/ArchiveResetBody.json
-          format: uri
-          readOnly: true
-          type: string
-        dataset:
-          description: "Dataset: lookup, comments, reviews, or inline_comments."
-          type: string
-        force:
-          type: boolean
-        item_number:
-          format: int64
-          minimum: 1
-          type: integer
-        item_type:
-          description: "Item type: issue or merge_request."
-          type: string
-        repository:
-          $ref: "#/components/schemas/ArchiveRepositoryRef"
-        scan:
-          description: Repository scan name.
-          type: string
-      required:
-        - repository
-      type: object
     ArchiveStatusResponse:
       additionalProperties: false
       properties:
@@ -7759,27 +7729,6 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get historical archive activity report
-      tags:
-        - Archive
-  /archive/reset:
-    post:
-      operationId: reset-archive-scan
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ArchiveResetBody"
-        required: true
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemError"
-          description: Error
-      summary: Reset blocked archive progress
       tags:
         - Archive
   /archive/start:

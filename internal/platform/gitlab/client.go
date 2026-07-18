@@ -348,18 +348,21 @@ func (c *Client) optionalHeadRepoCloneURL(
 	ref platform.RepoRef,
 	targetProjectID int64,
 	sourceProjectID int64,
-) (string, error) {
+) (string, bool, error) {
+	if sourceProjectID == 0 {
+		return "", true, nil
+	}
 	cloneURL, err := c.headRepoCloneURL(ctx, ref, targetProjectID, sourceProjectID)
 	if err == nil {
-		return cloneURL, nil
+		return cloneURL, false, nil
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return "", ctxErr
+		return "", false, ctxErr
 	}
 	if isUnavailableSourceProjectError(err) {
-		return "", nil
+		return "", true, nil
 	}
-	return "", err
+	return "", false, err
 }
 
 func (c *Client) headRepoCloneURL(
@@ -368,7 +371,7 @@ func (c *Client) headRepoCloneURL(
 	targetProjectID int64,
 	sourceProjectID int64,
 ) (string, error) {
-	if sourceProjectID == 0 || sourceProjectID == targetProjectID || sourceProjectID == ref.PlatformID {
+	if sourceProjectID == targetProjectID {
 		return ref.CloneURL, nil
 	}
 	return c.projectCloneURL(ctx, sourceProjectID)

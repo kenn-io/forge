@@ -196,7 +196,9 @@ provider identity so equal GitHub/GitLab ids do not collide.
 
 GitLab archive discussions normalize as ordinary or inline comments. Do not synthesize submitted reviews from notes or current approvals; without stable historical actions, that dataset stays unsupported and coverage stays partial. (`internal/platform/gitlab/client.go::Capabilities`)
 
-GitLab maintenance inventories walk mutable `updated_at` results newest-first. Updates then move toward the consumed prefix; rows that move ahead before consumption remain eligible under the next scan's inclusive watermark. (`internal/platform/gitlab/pages.go::ListIssuesPage`, `internal/platform/gitlab/pages.go::ListMergeRequestsPage`)
+GitLab historical MR inventories cannot trust offset continuity within equal-`created_at` ties; a resume into a partially consumed window replays inclusively from the window start, and persistence absorbs duplicates. (`internal/platform/gitlab/pages.go::listInventoryMergeRequestsPage`)
+
+GitLab maintenance inventories walk mutable `updated_at` results newest-first. Updates then move toward the consumed prefix; rows that move ahead before consumption remain eligible under the next scan's inclusive watermark. (`internal/platform/gitlab/pages.go::listInventoryIssuesPage`, `internal/platform/gitlab/pages.go::listInventoryMergeRequestsPage`)
 
 ## Forgejo And Gitea Shape
 

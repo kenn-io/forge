@@ -41,10 +41,8 @@ type gitLabPageCursor struct {
 	// created-order traversal window (RFC3339Nano UTC).
 	Window string `json:"window,omitempty"`
 	// Boundary is the provider record id observed at the last consumed
-	// offset of the current window. Within-window continuation pages verify
-	// it with a one-item probe before trusting offset continuity, so a
-	// deletion that shifts the consumed prefix triggers a window rescan
-	// instead of a permanent skip.
+	// offset of the current window. Its presence distinguishes a continuation
+	// into a partially consumed window from a cursor at a window boundary.
 	Boundary int64 `json:"boundary,omitempty"`
 }
 
@@ -170,7 +168,8 @@ func (c *Client) listOpenMergeRequestsPage(
 		out := make([]platform.MergeRequest, 0, len(mrs))
 		for _, mr := range mrs {
 			normalized := NormalizeMergeRequest(normalizedRef, mr, nil)
-			normalized.HeadRepoCloneURL, err = c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
+			normalized.HeadRepoCloneURL, normalized.HeadRepoCloneURLUnknown, err =
+				c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
 			if err != nil {
 				return nil, 0, err
 			}
@@ -265,13 +264,12 @@ func (c *Client) listInventoryIssuesPage(
 //     shifts at a page boundary are re-delivered by the overlap rather than
 //     skipped (consumers dedupe by identity). Ties denser than one window
 //     page keep offset-paging within the window; each such continuation
-//     page verifies, with a one-item probe at the last consumed offset
-//     issued after the page fetch, that the consumed prefix did not shift,
-//     and rescans the window from page one when it did — so a deletion
-//     mid-window cannot silently shift an unseen item into the consumed
-//     prefix. Items created with backdated timestamps behind the traversal
-//     position (project imports) are outside the no-skip guarantee, exactly
-//     as they are for a keyset traversal.
+//     inclusively re-reads the window from page one through the requested
+//     page. An equal-timestamp record that moves from the unseen suffix into
+//     the consumed prefix is therefore re-delivered instead of skipped.
+//     Items created with backdated timestamps behind the traversal position
+//     (project imports) are outside the no-skip guarantee, exactly as they
+//     are for a keyset traversal.
 //   - The maintenance traversal pages offset-descending behind the inclusive
 //     updated_after watermark: mid-scan updates move rows into the consumed
 //     prefix, and anything shifted past the scan is covered by the next
@@ -313,71 +311,36 @@ func (c *Client) listInventoryMergeRequestsPage(
 		}
 		opts.CreatedAfter = &windowStart
 	}
-	mrs, resp, err := c.api.MergeRequests.ListProjectMergeRequests(pid, opts, gitlab.WithContext(ctx))
-	if err != nil {
-		return platform.Page[platform.MergeRequest]{}, c.mapGitLabError(
-			string(platform.ArchiveCapabilityHistoricalMergeRequests), err,
-		)
+	firstPage := cursor.Page
+	if shape == gitLabCursorWindowedOffset && cursor.Page > 1 {
+		firstPage = 1
 	}
-	items := make([]platform.MergeRequest, 0, len(mrs))
-	for _, mr := range mrs {
-		items = append(items, NormalizeMergeRequest(normalizedRef, mr, nil))
+	var resp *gitlab.Response
+	items := make([]platform.MergeRequest, 0)
+	for page := firstPage; page <= cursor.Page; page++ {
+		opts.Page = page
+		mrs, pageResp, listErr := c.api.MergeRequests.ListProjectMergeRequests(
+			pid, opts, gitlab.WithContext(ctx),
+		)
+		if listErr != nil {
+			return platform.Page[platform.MergeRequest]{}, c.mapGitLabError(
+				string(platform.ArchiveCapabilityHistoricalMergeRequests), listErr,
+			)
+		}
+		resp = pageResp
+		for _, mr := range mrs {
+			item := NormalizeMergeRequest(normalizedRef, mr, nil)
+			item.HeadRepoCloneURLUnknown = true
+			items = append(items, item)
+		}
+		if nextGitLabPage(pageResp) == 0 {
+			break
+		}
 	}
 	if shape == gitLabCursorWindowedOffset {
-		if cursor.Page > 1 && cursor.Boundary != 0 {
-			intact, probeErr := c.windowBoundaryIntact(ctx, pid, orderBy, cursor)
-			if probeErr != nil {
-				return platform.Page[platform.MergeRequest]{}, c.mapGitLabError(
-					string(platform.ArchiveCapabilityHistoricalMergeRequests), probeErr,
-				)
-			}
-			if !intact {
-				reset := cursor
-				reset.Page = 1
-				reset.Boundary = 0
-				next, encodeErr := encodeGitLabPageCursor(reset)
-				if encodeErr != nil {
-					return platform.Page[platform.MergeRequest]{}, encodeErr
-				}
-				// The fetched items are still valid rows of this repository,
-				// so they are delivered; the rescan re-serves anything the
-				// shift moved and consumers dedupe the overlap by identity.
-				return platform.Page[platform.MergeRequest]{Items: items, NextCursor: next}, nil
-			}
-		}
 		return gitLabWindowedCursorPage(items, cursor, nextGitLabPage(resp))
 	}
 	return gitLabCursorPage(items, cursor, nextGitLabPage(resp), false)
-}
-
-// windowBoundaryIntact re-reads the single item at the last consumed offset
-// of the current traversal window and reports whether it is still the item
-// the cursor recorded there. It runs after the continuation page was fetched,
-// so any prefix shift that happened before that fetch is caught: a mismatch
-// means offset continuity broke and the window must be rescanned.
-func (c *Client) windowBoundaryIntact(
-	ctx context.Context,
-	pid any,
-	orderBy string,
-	cursor gitLabPageCursor,
-) (bool, error) {
-	state, sortOrder := "all", "asc"
-	opts := &gitlab.ListProjectMergeRequestsOptions{
-		State: &state, OrderBy: &orderBy, Sort: &sortOrder,
-		ListOptions: gitlab.ListOptions{Page: (cursor.Page - 1) * defaultPageSize, PerPage: 1},
-	}
-	if cursor.Window != "" {
-		windowStart, err := time.Parse(time.RFC3339Nano, cursor.Window)
-		if err != nil {
-			return false, err
-		}
-		opts.CreatedAfter = &windowStart
-	}
-	mrs, _, err := c.api.MergeRequests.ListProjectMergeRequests(pid, opts, gitlab.WithContext(ctx))
-	if err != nil {
-		return false, err
-	}
-	return len(mrs) == 1 && mrs[0].ID == cursor.Boundary, nil
 }
 
 // gitLabWindowedCursorPage advances the windowed created-order traversal:
@@ -385,13 +348,13 @@ func (c *Client) windowBoundaryIntact(
 // re-anchors one second behind it (overlap re-delivery instead of boundary
 // skips) at page one; otherwise ties denser than the window advance keep
 // offset-paging within the current window, recording the last consumed
-// item's record id as the boundary the continuation page must verify.
+// item's record id to mark the cursor as a within-window continuation.
 func gitLabWindowedCursorPage(
 	items []platform.MergeRequest,
 	cursor gitLabPageCursor,
 	nextPage int64,
 ) (platform.Page[platform.MergeRequest], error) {
-	if nextPage == 0 {
+	if nextPage == 0 || len(items) == 0 {
 		return platform.Page[platform.MergeRequest]{Items: items, Exhausted: true}, nil
 	}
 	advanced := false
@@ -574,15 +537,18 @@ func (c *Client) LookupMergeRequest(
 		return platform.ItemLookup[platform.MergeRequest]{Outcome: outcome}, classifyErr
 	}
 	item := NormalizeDetailedMergeRequest(normalizedRef, mr)
-	cloneURL, enrichErr := c.optionalHeadRepoCloneURL(ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID)
+	cloneURL, cloneURLUnknown, enrichErr := c.optionalHeadRepoCloneURL(
+		ctx, normalizedRef, mr.ProjectID, mr.SourceProjectID,
+	)
 	if enrichErr != nil {
 		if ctx.Err() != nil {
 			return platform.ItemLookup[platform.MergeRequest]{}, enrichErr
 		}
 		cloneURL = ""
-		item.HeadRepoCloneURLUnknown = true
+		cloneURLUnknown = true
 	}
 	item.HeadRepoCloneURL = cloneURL
+	item.HeadRepoCloneURLUnknown = cloneURLUnknown
 	return platform.ItemLookup[platform.MergeRequest]{
 		Outcome: platform.LookupPresent,
 		Item:    item,
@@ -944,6 +910,9 @@ func validateGitLabCursorShape(cursor gitLabPageCursor, shape gitLabCursorShape)
 			return errors.New("cursor does not carry windowed offset continuation state")
 		}
 		if cursor.Page == 1 && cursor.Boundary != 0 {
+			return errors.New("cursor does not carry windowed offset continuation state")
+		}
+		if cursor.Page > 1 && cursor.Boundary == 0 {
 			return errors.New("cursor does not carry windowed offset continuation state")
 		}
 		if cursor.Window != "" {

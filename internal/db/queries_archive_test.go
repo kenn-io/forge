@@ -177,6 +177,7 @@ func TestArchiveInventoryMergeRequestPreservesFetchedDetailFields(t *testing.T) 
 		UpdatedAt: now, LastActivityAt: now, Additions: 17, Deletions: 9, CommentCount: 4,
 		ReviewDecision: "approved", CIStatus: "success", CIChecksJSON: `[{"name":"test"}]`,
 		MergeableState: "clean", DetailFetchedAt: &detailFetchedAt,
+		HeadRepoCloneURL: "https://gitlab.example.com/fork/project.git",
 	})
 	require.NoError(err)
 	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
@@ -195,15 +196,15 @@ func TestArchiveInventoryMergeRequestPreservesFetchedDetailFields(t *testing.T) 
 		}},
 	}))
 
-	var title, state, reviewDecision, ciStatus, ciChecks, mergeableState string
+	var title, state, reviewDecision, ciStatus, ciChecks, mergeableState, headRepoCloneURL string
 	var additions, deletions, commentCount int
 	var storedDetailFetchedAt time.Time
 	require.NoError(d.ReadDB().QueryRowContext(ctx, `
 		SELECT title, state, additions, deletions, comment_count, review_decision,
-			ci_status, ci_checks_json, mergeable_state, detail_fetched_at
+			ci_status, ci_checks_json, mergeable_state, detail_fetched_at, head_repo_clone_url
 		FROM middleman_merge_requests WHERE repo_id = ? AND number = 1`, repoID,
 	).Scan(&title, &state, &additions, &deletions, &commentCount, &reviewDecision,
-		&ciStatus, &ciChecks, &mergeableState, &storedDetailFetchedAt))
+		&ciStatus, &ciChecks, &mergeableState, &storedDetailFetchedAt, &headRepoCloneURL))
 	assert.Equal("inventory", title)
 	assert.Equal(string(MergeRequestStateClosed), state)
 	assert.Equal(17, additions)
@@ -214,6 +215,7 @@ func TestArchiveInventoryMergeRequestPreservesFetchedDetailFields(t *testing.T) 
 	assert.JSONEq(`[{"name":"test"}]`, ciChecks)
 	assert.Equal("clean", mergeableState)
 	assert.Equal(detailFetchedAt, storedDetailFetchedAt)
+	assert.Equal("https://gitlab.example.com/fork/project.git", headRepoCloneURL)
 }
 
 func TestArchiveInventoryDiffChangePreservesCommentCount(t *testing.T) {

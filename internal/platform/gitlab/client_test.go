@@ -100,7 +100,8 @@ func TestClientListOpenMergeRequestsPopulatesForkHeadRepoCloneURL(t *testing.T) 
 			writeJSON(w, `[
 				{"id": 1001, "iid": 7, "project_id": 42, "source_project_id": 77, "target_project_id": 42, "source_branch": "feature/auth", "target_branch": "main", "title": "Fork base", "state": "opened"},
 				{"id": 1002, "iid": 8, "project_id": 42, "source_project_id": 77, "target_project_id": 42, "source_branch": "feature/auth-ui", "target_branch": "feature/auth", "title": "Fork tip", "state": "opened"},
-				{"id": 1003, "iid": 9, "project_id": 42, "source_project_id": 42, "target_project_id": 42, "source_branch": "feature/local", "target_branch": "main", "title": "Local", "state": "opened"}
+				{"id": 1003, "iid": 9, "project_id": 42, "source_project_id": 42, "target_project_id": 42, "source_branch": "feature/local", "target_branch": "main", "title": "Local", "state": "opened"},
+				{"id": 1004, "iid": 10, "project_id": 42, "target_project_id": 42, "source_branch": "feature/deleted", "target_branch": "main", "title": "Deleted fork", "state": "opened"}
 			]`)
 		case "/api/v4/projects/77":
 			writeJSON(w, `{
@@ -126,10 +127,13 @@ func TestClientListOpenMergeRequestsPopulatesForkHeadRepoCloneURL(t *testing.T) 
 
 	mrs, err := platform.ListOpenMergeRequests(context.Background(), client, ref)
 	require.NoError(err)
-	require.Len(mrs, 3)
+	require.Len(mrs, 4)
 	assert.Equal("https://gitlab.example.com/fork/project.git", mrs[0].HeadRepoCloneURL)
 	assert.Equal("https://gitlab.example.com/fork/project.git", mrs[1].HeadRepoCloneURL)
 	assert.Equal("https://gitlab.example.com/group/project.git", mrs[2].HeadRepoCloneURL)
+	assert.False(mrs[2].HeadRepoCloneURLUnknown)
+	assert.Empty(mrs[3].HeadRepoCloneURL)
+	assert.True(mrs[3].HeadRepoCloneURLUnknown)
 	assert.Equal([]string{
 		"/api/v4/projects/42/merge_requests",
 		"/api/v4/projects/77",
@@ -169,6 +173,23 @@ func TestClientListOpenMergeRequestsContinuesWhenForkHeadRepoLookupFails(t *test
 			require.Len(mrs, 1)
 			assert.Equal(7, mrs[0].Number)
 			assert.Empty(mrs[0].HeadRepoCloneURL)
+			assert.True(mrs[0].HeadRepoCloneURLUnknown,
+				"an unavailable fork project must preserve any stored clone URL")
+
+			database := dbtest.Open(t)
+			repoID, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(ref))
+			require.NoError(err)
+			known := platform.DBMergeRequest(repoID, mrs[0])
+			known.HeadRepoCloneURL = "https://gitlab.example.com/fork/project.git"
+			known.HeadRepoCloneURLUnknown = false
+			_, err = database.UpsertMergeRequest(t.Context(), known)
+			require.NoError(err)
+			_, err = database.UpsertMergeRequest(t.Context(), platform.DBMergeRequest(repoID, mrs[0]))
+			require.NoError(err)
+			stored, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+			require.NoError(err)
+			require.NotNil(stored)
+			assert.Equal("https://gitlab.example.com/fork/project.git", stored.HeadRepoCloneURL)
 		})
 	}
 }

@@ -1345,12 +1345,12 @@ func preserveMergeRequestDetailTx(
 ) (bool, error) {
 	var existing MergeRequest
 	err := tx.QueryRowContext(ctx, `
-		SELECT platform_head_sha, platform_base_sha,
+		SELECT platform_head_sha, platform_base_sha, head_repo_clone_url,
 			additions, deletions, comment_count, review_decision, ci_status,
 			ci_checks_json, detail_fetched_at, ci_had_pending, mergeable_state
 		FROM middleman_merge_requests
 		WHERE repo_id = ? AND number = ?`, mr.RepoID, mr.Number,
-	).Scan(&existing.PlatformHeadSHA, &existing.PlatformBaseSHA,
+	).Scan(&existing.PlatformHeadSHA, &existing.PlatformBaseSHA, &existing.HeadRepoCloneURL,
 		&existing.Additions, &existing.Deletions, &existing.CommentCount,
 		&existing.ReviewDecision, &existing.CIStatus, &existing.CIChecksJSON,
 		&existing.DetailFetchedAt, &existing.CIHadPending, &existing.MergeableState)
@@ -1359,6 +1359,10 @@ func preserveMergeRequestDetailTx(
 	}
 	if err != nil {
 		return false, fmt.Errorf("preserve merge request detail before archive upsert: %w", err)
+	}
+	if mr.HeadRepoCloneURLUnknown || (preserveProviderDetail && mr.HeadRepoCloneURL == "") {
+		mr.HeadRepoCloneURL = existing.HeadRepoCloneURL
+		mr.HeadRepoCloneURLUnknown = false
 	}
 	headChanged := mr.PlatformHeadSHA != "" && existing.PlatformHeadSHA != "" && mr.PlatformHeadSHA != existing.PlatformHeadSHA
 	baseChanged := mr.PlatformBaseSHA != "" && existing.PlatformBaseSHA != "" && mr.PlatformBaseSHA != existing.PlatformBaseSHA

@@ -436,18 +436,6 @@ type gitLabMRFixture struct {
 	CreatedAt time.Time
 }
 
-func (s *gitLabMRFixtureServer) delete(id int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	kept := s.mrs[:0]
-	for _, mr := range s.mrs {
-		if mr.ID != id {
-			kept = append(kept, mr)
-		}
-	}
-	s.mrs = kept
-}
-
 func (s *gitLabMRFixtureServer) takeQueries() []url.Values {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -502,137 +490,80 @@ func (s *gitLabMRFixtureServer) handle(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, "["+strings.Join(rows, ",")+"]")
 }
 
-// denseGitLabMRFixtures returns one full page of equal-created_at merge
-// requests (ids and iids 1..100) plus two later items (ids 500 and 501), the
-// smallest set forcing within-window offset continuation.
-func denseGitLabMRFixtures(tie, later time.Time) []gitLabMRFixture {
+// TestGitLabHistoricalMergeRequestDenseWindowReplaysSwappedTie proves a
+// within-window resume re-reads the full consumed prefix. GitLab does not
+// define an order among equal-created_at records, so an unseen item can swap
+// into an earlier page while the last item of that page remains unchanged.
+func TestGitLabHistoricalMergeRequestDenseWindowReplaysSwappedTie(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	tie := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
 	fixtures := make([]gitLabMRFixture, 0, 102)
-	for i := 1; i <= 100; i++ {
+	for i := 1; i <= 102; i++ {
 		fixtures = append(fixtures, gitLabMRFixture{ID: i, IID: i, CreatedAt: tie})
 	}
-	return append(fixtures,
-		gitLabMRFixture{ID: 500, IID: 500, CreatedAt: later},
-		gitLabMRFixture{ID: 501, IID: 501, CreatedAt: later},
-	)
-}
-
-// TestGitLabHistoricalMergeRequestDenseWindowVerifiesOffsetContinuity proves
-// a created_at tie block denser than one page keeps offset-paging inside the
-// window and that every within-window continuation page verifies (with one
-// per_page=1 probe at the last consumed offset, issued after the page fetch)
-// that the consumed prefix did not shift, before the traversal trusts offset
-// continuity.
-func TestGitLabHistoricalMergeRequestDenseWindowVerifiesOffsetContinuity(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	tie := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
-	later := tie.Add(10 * time.Second)
-	fixture := &gitLabMRFixtureServer{mrs: denseGitLabMRFixtures(tie, later)}
+	fixture := &gitLabMRFixtureServer{mrs: fixtures}
 	server := httptest.NewServer(http.HandlerFunc(fixture.handle))
 	defer server.Close()
 	client := newTestClient(t, server.URL)
 	ref := gitLabPagesTestRef()
 
-	delivered := map[int]bool{}
-	query := platform.ItemPageQuery{State: platform.ItemStateAll, Order: platform.ItemOrderCreated}
-	pages := 0
-	for {
-		page, err := client.ListMergeRequestsPage(t.Context(), ref, query)
-		require.NoError(err)
-		for _, item := range page.Items {
-			delivered[item.Number] = true
-		}
-		if page.Exhausted {
-			break
-		}
-		query.Cursor = page.NextCursor
-		pages++
-		require.Less(pages, 10, "the stable traversal must terminate")
-	}
-	for i := 1; i <= 100; i++ {
-		assert.True(delivered[i], "tie item %d must be delivered", i)
-	}
-	assert.True(delivered[500])
-	assert.True(delivered[501])
-
-	var probes []url.Values
-	for _, q := range fixture.takeQueries() {
-		if q.Get("per_page") == "1" {
-			probes = append(probes, q)
-		}
-	}
-	require.NotEmpty(probes, "within-window continuation must verify the consumed prefix")
-	probe := probes[0]
-	assert.Equal("100", probe.Get("page"), "the probe re-reads the last consumed offset")
-	assert.Equal("created_at", probe.Get("order_by"))
-	assert.Equal("asc", probe.Get("sort"))
-	assert.Equal(tie.Add(-time.Second).Format(time.RFC3339Nano), probe.Get("created_after"),
-		"the probe runs inside the same traversal window")
-}
-
-// TestGitLabHistoricalMergeRequestDenseWindowRescansWhenSetShifts proves the
-// no-skip guarantee of the windowed traversal: when a deletion shifts a
-// still-present unseen item into the already-consumed offset prefix of a
-// dense window, the boundary probe detects the shift and the cursor rescans
-// the window from page one, so the shifted item is re-delivered by overlap
-// instead of being permanently skipped.
-func TestGitLabHistoricalMergeRequestDenseWindowRescansWhenSetShifts(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	tie := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
-	later := tie.Add(10 * time.Second)
-	fixture := &gitLabMRFixtureServer{mrs: denseGitLabMRFixtures(tie, later)}
-	server := httptest.NewServer(http.HandlerFunc(fixture.handle))
-	defer server.Close()
-	client := newTestClient(t, server.URL)
-	ref := gitLabPagesTestRef()
-
-	delivered := map[int]bool{}
-	consume := func(page platform.Page[platform.MergeRequest]) {
-		for _, item := range page.Items {
-			delivered[item.Number] = true
-		}
-	}
 	query := platform.ItemPageQuery{State: platform.ItemStateAll, Order: platform.ItemOrderCreated}
 	first, err := client.ListMergeRequestsPage(t.Context(), ref, query)
 	require.NoError(err)
-	consume(first)
 	require.False(first.Exhausted)
 	query.Cursor = first.NextCursor
 	second, err := client.ListMergeRequestsPage(t.Context(), ref, query)
 	require.NoError(err)
-	consume(second)
 	require.False(second.Exhausted,
 		"a full page of created_at ties keeps paging within the window")
 
-	// A deletion inside the consumed prefix shifts the still-unseen item 500
-	// from the unconsumed page two into the consumed page-one offsets: plain
-	// offset continuation would now permanently skip it.
-	fixture.delete(50)
-
+	// Swap unseen item 101 into the consumed first page without moving item
+	// 100 at its last offset. The former sentinel probe therefore passed even
+	// though a plain page-two resume would permanently skip item 101.
+	fixture.mu.Lock()
+	fixture.mrs[49], fixture.mrs[100] = fixture.mrs[100], fixture.mrs[49]
+	fixture.mu.Unlock()
+	fixture.takeQueries()
 	query.Cursor = second.NextCursor
-	pages := 0
-	for {
-		page, err := client.ListMergeRequestsPage(t.Context(), ref, query)
-		require.NoError(err)
-		consume(page)
-		if page.Exhausted {
-			break
-		}
-		query.Cursor = page.NextCursor
-		pages++
-		require.Less(pages, 10, "the rescan must converge once the set is stable")
+	resumed, err := client.ListMergeRequestsPage(t.Context(), ref, query)
+	require.NoError(err)
+	assert.True(resumed.Exhausted)
+	require.Len(resumed.Items, 102, "the resumed page must re-deliver the full window")
+	numbers := make([]int, 0, len(resumed.Items))
+	for _, item := range resumed.Items {
+		numbers = append(numbers, item.Number)
 	}
+	assert.Contains(numbers, 101, "the item swapped into the consumed prefix must be re-delivered")
+	queries := fixture.takeQueries()
+	require.Len(queries, 2)
+	assert.Equal("1", queries[0].Get("page"))
+	assert.Equal("2", queries[1].Get("page"))
+}
 
-	assert.True(delivered[500],
-		"the item shifted into the consumed prefix must be re-delivered, not skipped")
-	assert.True(delivered[501])
-	for i := 1; i <= 100; i++ {
-		if i == 50 {
-			continue
-		}
-		assert.True(delivered[i], "tie item %d must be delivered", i)
-	}
+func TestGitLabWindowedCursorRejectsContinuationWithoutBoundary(t *testing.T) {
+	require := require.New(t)
+	ref := gitLabPagesTestRef()
+	cursor, err := encodeGitLabPageCursor(gitLabPageCursor{
+		Mode: "historical_merge_requests", Host: ref.Host, RepoPath: ref.RepoPath, Page: 2,
+	})
+	require.NoError(err)
+	client := newTestClient(t, "http://127.0.0.1")
+
+	_, err = client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: cursor,
+	})
+	require.ErrorIs(err, platform.ErrProviderContract)
+}
+
+func TestGitLabWindowedCursorPageExhaustsEmptyContinuation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	page, err := gitLabWindowedCursorPage(nil, gitLabPageCursor{Page: 1}, 2)
+	require.NoError(err)
+	assert.True(page.Exhausted)
+	assert.Empty(page.NextCursor)
 }
 
 // TestGitLabIssueKeysetCursorReplaysOnlyContinuationToken proves the durable
@@ -1113,7 +1044,7 @@ func TestGitLabCanonicalReadersHydratePathOnlyRefs(t *testing.T) {
 				"http_url_to_repo": "https://gitlab.example.com/group/project.git"
 			}`)
 		case "/api/v4/projects/42/merge_requests":
-			writeJSON(w, `[{"id":1001,"iid":7,"project_id":42,"title":"local","state":"opened","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}]`)
+			writeJSON(w, `[{"id":1001,"iid":7,"project_id":42,"source_project_id":42,"target_project_id":42,"title":"local","state":"opened","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}]`)
 		case "/api/v4/projects/42/issues/5/discussions":
 			writeJSON(w, `[{"id":"thread","notes":[{"id":301,"body":"comment","author":{"username":"ivy"},"created_at":"2026-07-01T00:00:00Z"}]}]`)
 		default:

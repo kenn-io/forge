@@ -5,12 +5,10 @@ usage() {
   cat >&2 <<'USAGE'
 usage: scripts/context-sync --check
 
-Run the repo-local context-sync preflight used by Stop hooks. This command is
-only the first step: agents must still decide whether the current turn taught
-or changed durable context, then update/propose context docs or record why not.
-
-The automated preflight validates that routed context docs referenced by
-CLAUDE.md still exist and that AGENTS.md resolves to CLAUDE.md.
+Validate Middleman's routed context surface. This deterministic check confirms
+that required context files exist, CLAUDE.md references resolve, and AGENTS.md
+resolves to CLAUDE.md. Semantic context capture is performed by the
+repository-local context-sync skill, not this script.
 USAGE
 }
 
@@ -55,15 +53,9 @@ if [ -f "$root/CLAUDE.md" ]; then
 fi
 
 if [ "$status" -eq 0 ]; then
-  echo "context-sync: preflight passed"
-  cat <<'MESSAGE'
-context-sync: before marking, make a context decision:
-  - update or propose docs for new durable behavior, design decisions, invariants, or gotchas
-  - otherwise mark with a concrete no-update reason
-context-sync: do not mark solely because this preflight passed
-MESSAGE
+  echo "context-sync: structural check passed"
 else
-  echo "context-sync: preflight failed" >&2
+  echo "context-sync: structural check failed" >&2
 fi
 
 exit "$status"

@@ -1,191 +1,191 @@
 ---
 name: context-sync
-description: Scan middleman's context docs for staleness against the current Go/Svelte code, verify anchored claims, surface knowledge gaps, and draft reviewed updates. Use on demand when context/ docs, the root CLAUDE.md, or docs/ specs may have drifted from the code, after large refactors, or when an agent hits a gotcha context should have prevented.
-argument-hint: "[area] [--check | --audit-claims]"
+description: Use before every agent-created commit in middleman, when context docs may have drifted after a large refactor, when a maintainer states a durable decision, or when an agent hits a gotcha that context should have prevented.
 ---
 
 # Context Sync (middleman)
 
-Keep middleman's context system honest: scan the context docs, compare them against
-the current code, detect drift and knowledge gaps, ask the maintainer to fill them,
-and draft updates for review. Adapted for this repo's Go + Svelte stack and its
-single-surface context layout: root `CLAUDE.md` routes to flat `context/*.md` topic docs.
+Keep Middleman's context aligned with durable maintainer decisions and cross-cutting
+invariants. Commit capture is narrow; audits require explicit scope.
 
-**Arguments:**
-- No args: sync every area in the area map below and produce reviewed context-doc
-  updates or concrete improvement suggestions.
-- `$1 = area`: sync one area (see Area Map, e.g. `platform`, `github-sync`, `db`,
-  `server`, `frontend`, `errors`, `testing`, `mobile`, `kata`, `docs`, `messages`) and
-  produce reviewed updates or suggestions for that area.
-- `--check`: Stop-hook preflight only. Report structural staleness and obvious drift,
-  but do not propose or apply doc changes.
-- `--audit-claims`: run the four-tag claim verification (see `claim-verifier.md`) over
-  every anchored claim in the scanned docs.
+## Modes
 
-## Operating Mode
+- `--commit`: inspect only the intended commit, current conversation, and mapped context
+  areas. Use before every agent-created commit.
+- `<area>`: audit one Area Map entry.
+- `--changed [--base <ref>]`: audit only areas mapped from changes since the supplied
+  base, or the merge base with the repository default branch when omitted.
+- `--all`: run the repository-wide audit, including orphan discovery, recent decision
+  research, and cross-area invariant-guard review.
+- `--check`: run `scripts/context-sync --check` and stop after structural validation.
+- `--audit-claims`: verify anchored claims only within the selected area or changed
+  areas. Combine with `--all` only when a repository-wide claim audit was requested.
 
-Default to a full sync whenever the user asks to sync, update, improve, review, or fix
-context documentation. A full sync must end with one of these outcomes:
+With no mode or area, show this list and ask for explicit scope. Never infer `--all` from
+a general request to improve or review context.
 
-- proposed doc diffs ready for maintainer approval;
-- applied, approved doc updates;
-- a confidence-tagged list of concrete improvements/gaps when the code alone cannot
-  justify a diff;
-- a clear "no context changes suggested" result with the evidence checked.
+## Commit Mode
 
-Do not satisfy a user-initiated context-sync request by only running
-`scripts/context-sync --check`. That script is a cheap Stop-hook preflight, not the
-context-sync workflow.
+Use commit mode immediately before the repository's normal commit skill. Do not stage
+files, construct a commit message, or create the commit.
 
-## Stop Hook Completion
+1. Inspect `git status --short`, the intended diff against `HEAD`, relevant untracked
+   files, and the current conversation. Ignore unrelated user changes.
+2. Look only for durable signals introduced or clarified by this work:
+   - a maintainer correction or explicit design decision;
+   - a changed cross-cutting invariant, workflow, or policy;
+   - a gotcha that existing context should have prevented.
+3. Map each real signal to the smallest Area Map scope. Read only that area's topic docs,
+   the governing `CLAUDE.md` section, and `context-guide.md`.
+4. Apply the guide's grep test and per-addition budget.
+5. Choose one outcome:
+   - **Continue:** no durable signal exists, or existing context already captures it.
+     Proceed silently without a marker or no-update report.
+   - **Updated:** the required addition, correction, or removal is clear. Apply the
+     smallest context edit, then return control to the commit workflow.
+   - **Needs maintainer input:** materially different durable rules remain plausible
+     after inspecting the evidence. Stop and ask one focused question.
 
-This repo installs Claude Code and Codex `Stop` hooks to make agents remember context
-updates even when the maintainer did not ask for them. Treat the hook as a context
-decision gate, not as a script-only check.
+Do not dispatch subagents, scan history, validate unrelated anchors, or audit invariant
+guards in commit mode. Wording, routing, document placement, and clear factual deletions
+are agent-resolvable work, not reasons to block. Block only for missing maintainer
+knowledge that changes what future agents should do.
 
-When the Stop hook asks for context sync:
+## Area Map
 
-1. Run `scripts/context-sync --check`. If it reports drift, address the drift or report
-   the findings before marking.
-2. Inspect the current turn's diff and conversation. If code changed in an Area Map path,
-   a maintainer explained a design decision, an agent hit a gotcha, or an invariant/
-   workflow changed, open the matching context doc and decide whether the grep test says
-   to update it.
-3. Apply the context update when the right doc edit is clear, additive, and supported by
-   the diff/conversation. Compress it to the per-addition budget in
-   `context-guide.md` first — terse invariants, never implementation
-   walkthroughs. If the update would delete context, reinterpret a design
-   decision, or make a claim the code cannot verify, propose a concrete diff or
-   confidence-tagged suggestion in the final response instead.
-4. Only then mark the current worktree state with the decision:
-
-```bash
-scripts/hooks/context-sync-stop.sh mark "updated context/testing.md for the new API-test rule"
-scripts/hooks/context-sync-stop.sh mark "no context update: changed only a greppable helper name"
-```
-
-Do not mark first, and do not mark solely because `scripts/context-sync --check` passed.
-"No context update" is valid only after checking the diff/conversation against
-`context-guide.md`'s update rules. The marker is a loop guard proving this worktree
-fingerprint already passed the context decision gate.
-
-## Step 1: Load the Guide
-
-Read `context-guide.md` in this skill directory. It carries the full philosophy: the
-grep test, anchored-claim format, what belongs in the hub vs. a topic doc, size limits,
-and how invariant claims map to Go guard tests/analyzers rather than Python probes.
-Internalize it before proposing any change.
-
-## Step 2: Validate the Manifest
-
-middleman routes context from the root `CLAUDE.md` (Conventions, Provider Support, and
-Non-Provider Modes sections reference `context/*.md` and `docs/superpowers/specs/*`).
-Check that:
-
-- every `context/*.md` reference in `CLAUDE.md` points to a file that exists;
-- every `context/*.md` and `docs/**/*.md` that an agent would need is reachable from
-  `CLAUDE.md` or from another reachable doc (orphaned context is invisible);
-- `AGENTS.md` still resolves to `CLAUDE.md` (it is a symlink).
-
-Report broken links and orphaned docs. Unreachable context is a high-priority gap.
-
-## Step 3: Scan Areas
-
-For each area (or just `$1`):
-
-Dispatch a read-only subagent (Agent tool, `Explore` or `general-purpose`). Give it:
-
-- the relevant `context/*.md` topic doc(s) for the area, plus any section of the root
-  `CLAUDE.md` that governs it;
-- the code paths that area covers (see Area Map);
-- the anchored-claim and four-tag rules from `context-guide.md`.
-
-Collect from each subagent:
-
-- a proposed diff for the topic doc (and/or the relevant `CLAUDE.md` section);
-- a one-paragraph summary of what drifted and why;
-- knowledge-gap questions (things the code cannot answer on its own);
-- anchor verification results — per anchor: resolves / moved / gone;
-- any invariant claim that should be (but is not) backed by a Go guard test/analyzer.
-
-If `--check` was passed, report the summaries and stop here.
-
-If `--audit-claims` was passed, additionally dispatch a claim-verifier subagent per doc
-using `claim-verifier.md` as its instructions, and run the four-tag verification over
-every anchor.
-
-### Area Map
-
-| Area | Topic doc(s) | Code it must track |
-|------|--------------|--------------------|
-| `platform` | `context/provider-architecture.md`, `context/platform-sync-invariants.md` | `internal/platform/` (registry, types, metadata, persist), `internal/platform/<provider>/` |
-| `github-sync` | `context/github-sync-invariants.md` | `internal/github/` (sync, graphql, client, transports) |
+| Area | Topic doc(s) | Code it tracks |
+|------|--------------|----------------|
+| `platform` | `context/provider-architecture.md`, `context/platform-sync-invariants.md` | `internal/platform/` |
+| `github-sync` | `context/github-sync-invariants.md` | `internal/github/` |
 | `db` | `context/db-migrations.md`, `context/embeds.md` | `internal/db/`, `internal/db/migrations/` |
 | `server` | `context/workspace-apis.md`, `context/workspace-runtime-lifecycle.md` | `internal/server/`, `internal/apiclient/generated/` |
-| `errors` | `context/error-handling.md` | error envelopes across `internal/server/`, frontend error branching |
-| `retries` | `context/retries-and-backoffs.md` | retry/backoff/single-flight paths against upstreams |
-| `testing` | `context/testing.md` | `internal/server/apitest/`, `internal/server/e2etest/`, test helpers |
+| `errors` | `context/error-handling.md` | error envelopes and frontend error branching |
+| `retries` | `context/retries-and-backoffs.md` | retry, backoff, and single-flight paths |
+| `testing` | `context/testing.md` | server API/E2E packages and test helpers |
 | `frontend` | `context/ui-design-system.md`, `context/ui-interaction-contracts.md`, `context/vscode-workflow-panel-interaction-spec.md` | `frontend/src/` |
-| `mobile` | `context/mobile-ux.md` | `frontend/src/` `/m` routes and phone-first components |
+| `mobile` | `context/mobile-ux.md` | frontend `/m` routes and phone-first components |
 | `kata` | `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` | `internal/kata/` |
-| `docs` | same spec as `kata` | `internal/docs/` |
-| `messages` | same spec as `kata` | `internal/messages/msgvault/` |
+| `docs` | same modes spec | `internal/docs/` |
+| `messages` | same modes spec | `internal/messages/msgvault/` |
 
-When `internal/docs/`, `internal/kata/`, or `internal/messages/msgvault/` graduate from
-the shared modes design spec to their own `context/*.md` docs, add rows here and a
-routing reference in `CLAUDE.md`.
+When Kata, Docs, or Messages graduate to dedicated topic docs, update this map and route
+the new doc from `CLAUDE.md`.
 
-## Step 4: Check Design Decisions
+## Audit Workflow
 
-middleman records durable decisions in `docs/adr/` (for example
-`docs/adr/0001-utc-datetime-policy.md`). Scan recent conversation history and recent
-commits for design decisions or domain knowledge the maintainer stated that are not yet
-captured in an ADR or topic doc. Propose where each belongs (ADR vs. topic doc).
+Follow every step in order for `<area>`, `--changed`, and `--all`. Do not collapse the
+workflow into a structural check or a general code review.
 
-## Step 5: Research, Suggest, Then Ask
+### Step 0: Select the Scope
 
-For each knowledge gap, do not ask a bare question. Follow the research-then-suggest
-pattern in `context-guide.md`:
+- `<area>` selects exactly one Area Map row.
+- `--changed [--base <ref>]` resolves the merge base, maps changed files to candidate
+  areas, then drops candidates with no durable context signal.
+- `--all` selects every area and enables the explicitly broad work called out below.
 
-- general technical patterns: search for current best practice first, then propose;
-- middleman-specific domain knowledge: ask the maintainer directly.
+When `--base` is omitted, use the merge base with the repository default branch. If
+`--changed` leaves no selected area, report that no applicable audit scope remains and
+stop. Never add areas merely because their code is adjacent.
 
-Present confidence-tagged suggestions the maintainer can confirm or correct.
+### Step 1: Load the Guide
 
-## Step 6: Check Invariant Guards
+Read `context-guide.md` completely. Use its grep test, anchored-claim format, sorting
+test, size limits, invariant-guard rules, and context-poisoning safeguards throughout the
+audit. Do not propose or apply context changes before loading it.
 
-middleman encodes hard invariants as Go tests and custom analyzers under `tools/` and
-`internal/server/{apitest,e2etest}/`, not as Python probes. For each invariant a context
-doc asserts (provider identity tuple, capability gating, UTC datetimes, stable error
-codes, no-`net/http`-mux, testify-only assertions), confirm a guard exists. If an
-invariant is documented but unguarded, flag it as a gap and propose the smallest guard
-(a Go test or an analyzer like `tools/nohttpmux` / `tools/migrationhistorycheck`).
+### Step 2: Validate Routing
 
-When a guard and a doc disagree, that is a high-priority finding for Step 7.
+For `--all`, validate the full context manifest:
 
-## Step 7: Present Or Apply Diffs
+- every `context/*.md` and routed `docs/**/*.md` reference in `CLAUDE.md` exists;
+- every context document an agent needs is reachable from `CLAUDE.md` or another
+  reachable document;
+- `AGENTS.md` resolves to `CLAUDE.md`.
 
-Before presenting or applying any diff, compress each addition to the
-per-addition budget in `context-guide.md` — additions are terse invariants
-(a few lines), never implementation walkthroughs. If a draft needs a
-paragraph, it is either an ADR or it contains greppable material to cut.
+For `<area>` and `--changed`, validate only the selected topic docs and their routing
+references. Report broken or unreachable routing before continuing; unreachable context
+is a high-priority finding.
 
-For explicit full-sync/audit requests, show all proposed changes. Flag DELETIONS and
-MODIFICATIONS separately from additions — deletions are higher risk (removing context
-that was actually needed is harder to recover from than adding noise). Wait for
-maintainer approval before applying those broad audit changes.
+For `--check`, run `scripts/context-sync --check`, report its result, and stop. The script
+validates structure only; it is not a semantic audit or commit decision.
 
-For Stop-hook self-maintenance, do not wait for the maintainer to ask for context work:
-apply clear, scoped additions or factual corrections that follow directly from the
-current turn. Propose instead of applying when the change would remove context,
-reinterpret a durable decision, or needs maintainer-only domain knowledge.
+### Step 3: Scan the Selected Areas
 
-## Step 8: Apply, Route, Commit
+Dispatch one read-only subagent per selected area when subagents are available. Give each
+agent:
 
-Apply approved changes. If a new area/topic doc was created, add its routing reference
-to the root `CLAUDE.md`, and add symlinks for any new skill under both `.claude/skills/`
-and `.agents/skills/` (each pointing to `../../skills/<name>`). Then commit following the
-repo's git workflow: a conventional-commit subject that states the user-visible reason
-(for example `docs: realign platform-sync context with capability registry`), a body
-explaining what drifted, and the project's standard hook-enforced commit path. Do not
-amend; do not bypass hooks.
+- the selected topic docs and governing `CLAUDE.md` sections;
+- the mapped code paths from the Area Map;
+- the anchored-claim and four-tag rules from `context-guide.md`.
+
+Collect the same artifacts from every area:
+
+- a proposed diff for the topic doc or governing `CLAUDE.md` section;
+- one paragraph describing what drifted and why;
+- knowledge-gap questions the code cannot answer;
+- per-anchor results: resolves, moved, or gone;
+- documented invariants that lack an appropriate Go guard or analyzer.
+
+Do not dispatch area subagents in `--commit` mode. For focused audits, do not give agents
+unselected docs or code paths.
+
+### Step 4: Check Design Decisions
+
+Compare the selected code and current conversation with `docs/adr/` and the selected
+topic docs. Identify durable decisions or maintainer-owned domain knowledge that are not
+captured, and state whether each belongs in an ADR, a topic doc, or `CLAUDE.md`.
+
+Only `--all` may search broader recent conversation history and recent commits. Focused
+audits use the current conversation and selected change range only.
+
+### Step 5: Research, Suggest, Then Ask
+
+For every knowledge gap:
+
+- research current best practice first when the question is general and technical;
+- ask the maintainer directly when the answer is Middleman-specific domain knowledge;
+- present a confidence-tagged recommendation before asking for confirmation.
+
+Do not ask a bare question that safe local inspection or focused research can answer.
+
+### Step 6: Check Invariant Guards
+
+For each invariant asserted by a selected context doc, confirm an appropriate Go test or
+custom analyzer protects it. Examples include provider identity, capability gating, UTC
+datetimes, stable error codes, Huma-only routing, migration history, and testify-only
+assertions.
+
+Flag documented-but-unguarded invariants and propose the smallest useful guard. When a
+guard and a doc disagree, treat it as a high-priority finding. Only `--all` may review
+guards outside the selected areas.
+
+### Step 7: Present or Apply Diffs
+
+Compress every addition to the guide's per-addition budget before presenting or applying
+it. State the constraint future agents must respect, not the implementation walkthrough.
+
+For `<area>` and `--changed`, apply clear scoped additions, factual corrections, moved
+anchors, and removal of claims whose subjects are gone. Ask the maintainer only when the
+correct durable rule cannot be derived from evidence.
+
+For `--all`, present all proposed changes together. Separate deletions and modifications
+from additions, justify each removal, and wait for approval before broad changes that
+reinterpret policy.
+
+### Step 8: Route Changes and Return to the Commit Workflow
+
+When a new topic doc is created, route it from `CLAUDE.md` or another reachable context
+doc. Keep `AGENTS.md` resolving to `CLAUDE.md`, keep the canonical provider list in its
+single existing home, and add skill symlinks under both `.agents/skills/` and
+`.claude/skills/` only when a new repository skill is created.
+
+After context edits are ready, return to the repository's normal verification and commit
+workflow. Do not stage, commit, amend, or push from this skill.
+
+## Claim Audit
+
+When `--audit-claims` is requested, read `claim-verifier.md` completely and add the
+four-tag verification to Steps 3 and 7. Tag each anchored claim in the selected scope as
+VERIFIED, OUTDATED, GONE, or UNVERIFIABLE. Refresh moved anchors, describe behavioral
+deltas, and identify important unguarded invariants. Never widen claim auditing beyond
+the selected scope unless `--all` was requested.

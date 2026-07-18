@@ -190,6 +190,10 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 ## Git Workflow
 
 - **Commit every turn** — always commit your work at the end of each turn, no exceptions
+- **Capture context before committing** — before every agent-created Git commit, invoke
+  the repository-local `context-sync` skill with `--commit`. Apply clear scoped context
+  changes before invoking the normal external commit skill. Block only when an unclear
+  durable decision requires maintainer input.
 - **Never amend commits** — always create new commits for fixes, never use `--amend`
 - **Never change branches** — don't create, switch, or delete branches without explicit permission
 - **Never bypass pre-commit hooks** — all commits must go through a hook-enforced Git commit path. Do not use `jj` or any other workflow to create, rewrite, or finalize commits in a way that skips the repository's Git hooks

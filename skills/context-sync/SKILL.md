@@ -29,16 +29,19 @@ a general request to improve or review context.
 Use commit mode immediately before the repository's normal commit skill. Do not stage
 files, construct a commit message, or create the commit.
 
-1. Inspect `git status --short`, the intended diff against `HEAD`, relevant untracked
+1. Run `scripts/context-sync --check` before semantic inspection. Repair clear structural
+   drift and rerun the check; ask the maintainer only when the correct routing cannot be
+   derived from repository evidence.
+2. Inspect `git status --short`, the intended diff against `HEAD`, relevant untracked
    files, and the current conversation. Ignore unrelated user changes.
-2. Look only for durable signals introduced or clarified by this work:
+3. Look only for durable signals introduced or clarified by this work:
    - a maintainer correction or explicit design decision;
    - a changed cross-cutting invariant, workflow, or policy;
    - a gotcha that existing context should have prevented.
-3. Map each real signal to the smallest Area Map scope. Read only that area's topic docs,
+4. Map each real signal to the smallest Area Map scope. Read only that area's topic docs,
    the governing `CLAUDE.md` section, and `context-guide.md`.
-4. Apply the guide's grep test and per-addition budget.
-5. Choose one outcome:
+5. Apply the guide's grep test and per-addition budget.
+6. Choose one outcome:
    - **Continue:** no durable signal exists, or existing context already captures it.
      Proceed silently without a marker or no-update report.
    - **Updated:** the required addition, correction, or removal is clear. Apply the

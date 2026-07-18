@@ -273,13 +273,18 @@ type ParentLookupCommit struct {
 	ItemType       ArchiveItemType
 	ItemNumber     int
 	ScanGeneration int64
-	Outcome        ArchiveLookupOutcome
-	Issue          *Issue
-	MergeRequest   *MergeRequest
-	Destination    *RepoIdentity
-	ErrorCode      string
-	ErrorDetail    string
-	Now            time.Time
+	// ExpectedRevision fences the commit on the domain parent revision the
+	// claimed lookup observed: a live observation that advances the parent
+	// between claim and commit supersedes the lookup's conclusion, so the
+	// commit is rejected and the lookup rescans at the new revision.
+	ExpectedRevision int64
+	Outcome          ArchiveLookupOutcome
+	Issue            *Issue
+	MergeRequest     *MergeRequest
+	Destination      *RepoIdentity
+	ErrorCode        string
+	ErrorDetail      string
+	Now              time.Time
 }
 
 // ArchiveDatasetProgressKey addresses one dataset progress row.
@@ -326,6 +331,9 @@ type StaleDatasetProgressError struct {
 	GotGeneration      int64
 	ExpectedCursor     string
 	GotCursor          string
+	// GotStatus is set when the row's status alone rejected the commit (a
+	// completed, unsupported, or terminal dataset accepts no page advances).
+	GotStatus ArchiveDatasetProgressStatus
 }
 
 func (e *StaleDatasetProgressError) Error() string {

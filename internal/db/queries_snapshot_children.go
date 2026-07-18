@@ -52,7 +52,6 @@ func (d *DB) CommitIssueChildSnapshot(ctx context.Context, snapshot IssueChildSn
 			Parent:           DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: snapshot.IssueID},
 			ExpectedRevision: snapshot.ExpectedRevision,
 			Dataset:          ArchiveDatasetComments,
-			ScanGeneration:   liveIngestGeneration(),
 			Rows:             DatasetRows{IssueComments: snapshot.Comments},
 			Final:            true,
 		}); err != nil {
@@ -88,13 +87,11 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 			return err
 		}
 		parent := DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: snapshot.MergeRequestID}
-		generation := liveIngestGeneration()
 		if snapshot.CommentsComplete {
 			if err := commitLiveDatasetTx(ctx, tx, DatasetPageCommit{
 				Parent:           parent,
 				ExpectedRevision: snapshot.ExpectedRevision,
 				Dataset:          ArchiveDatasetComments,
-				ScanGeneration:   generation,
 				Rows:             DatasetRows{MRComments: snapshot.Comments},
 				Final:            true,
 			}); err != nil {
@@ -111,7 +108,6 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 				Parent:           parent,
 				ExpectedRevision: snapshot.ExpectedRevision,
 				Dataset:          ArchiveDatasetReviews,
-				ScanGeneration:   generation,
 				Rows:             DatasetRows{Reviews: snapshot.Reviews},
 				Final:            true,
 			}); err != nil {
@@ -125,7 +121,6 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 				Parent:           parent,
 				ExpectedRevision: snapshot.ExpectedRevision,
 				Dataset:          ArchiveDatasetInlineComments,
-				ScanGeneration:   generation,
 				Rows: DatasetRows{
 					ReviewThreads: snapshot.ReviewThreads,
 					ThreadEvents:  snapshot.InlineComments,
@@ -151,17 +146,6 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 		return nil
 	})
 	return applied, err
-}
-
-// liveIngestGeneration returns the ingest-generation stamp for one complete
-// live dataset commit. Live commits carry no durable scan generation, but the
-// core's final-page reconciliation deletes ordinary comments whose stamp
-// differs from the committing generation, so a live stamp must differ from
-// every generation currently stamped on the same parent's rows. Nanosecond
-// wall time is strictly greater than any small durable scan generation and
-// any earlier live stamp.
-func liveIngestGeneration() int64 {
-	return time.Now().UnixNano()
 }
 
 // commitLiveDatasetTx routes one complete live dataset through the shared

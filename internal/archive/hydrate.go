@@ -2,6 +2,7 @@ package archive
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 
@@ -62,13 +63,24 @@ func (s *Service) hydrateLookup(
 	work db.ArchiveItemWork,
 	dataset db.ArchiveDatasetWork,
 ) (bool, error) {
+	// The lookup commit is revision-fenced on the domain parent as observed
+	// before the provider read: a live observation that advances the parent
+	// mid-lookup supersedes this lookup's conclusion.
+	_, expectedRevision, err := s.db.GetDomainParent(ctx, work.RepoID, work.ItemType, work.ItemNumber)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return false, err
+		}
+		expectedRevision = 0
+	}
 	requestCtx, release, err := s.admit(ctx, repo, archiveLookupCost(work.ItemType))
 	if err != nil {
 		return false, err
 	}
 	commit := db.ParentLookupCommit{
 		RepoID: work.RepoID, ItemType: work.ItemType, ItemNumber: work.ItemNumber,
-		ScanGeneration: dataset.ScanGeneration, Now: s.now(),
+		ScanGeneration: dataset.ScanGeneration, ExpectedRevision: expectedRevision,
+		Now: s.now(),
 	}
 	var lookupErr error
 	switch work.ItemType {
@@ -113,8 +125,14 @@ func (s *Service) hydrateLookup(
 	err = s.db.CommitParentLookup(ctx, commit)
 	var stale *db.StaleDatasetProgressError
 	if errors.As(err, &stale) {
-		// A forced reset superseded this lookup between claim and commit.
-		// Nothing was written; the next claim rescans from durable state.
+		// A forced reset or a newer parent observation superseded this lookup
+		// between claim and commit. Nothing was written; the next claim
+		// rescans from durable state.
+		return true, nil
+	}
+	var blocked *db.ScanBlockedError
+	if errors.As(err, &blocked) {
+		// Durably blocked: no further automatic spend for this item.
 		return true, nil
 	}
 	if err != nil {

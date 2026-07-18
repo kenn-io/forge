@@ -614,6 +614,165 @@ func TestCommitChildSnapshotReplacesCommentsAcrossSuccessiveCommits(t *testing.T
 	assert.Equal(1, mr.CommentCount)
 }
 
+func TestLiveParentAdvanceReopensChildProgressForSatisfaction(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, database, "acme", "live-parent-advance")
+	require.NoError(database.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+
+	issue := func(title string, updatedAt time.Time) *Issue {
+		return &Issue{
+			RepoID: repoID, PlatformID: 7, Number: 7, Title: title, State: "open",
+			CreatedAt: now.Add(-time.Hour), UpdatedAt: updatedAt, LastActivityAt: updatedAt,
+		}
+	}
+	issueID, revision, accepted, err := database.UpsertIssueSnapshotWithLabels(ctx, issue("first", now))
+	require.NoError(err)
+	require.True(accepted)
+	require.Equal(int64(1), revision)
+	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeIssue, 7, now,
+		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	insertDatasetProgressForTest(t, database, key, 1, 1, nil, ArchiveDatasetProgressComplete, 1)
+
+	// A live parent upsert observing new provider activity supersedes the
+	// completed dataset: it reopens for the new revision so archive
+	// scheduling sees the outstanding work.
+	_, revision, accepted, err = database.UpsertIssueSnapshotWithLabels(ctx, issue("newer", now.Add(time.Hour)))
+	require.NoError(err)
+	require.True(accepted)
+	require.Equal(int64(2), revision)
+	progress, err := database.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressPending, progress.Status,
+		"a live revision advance must reopen superseded child progress")
+	assert.Equal(int64(2), progress.ScanGeneration)
+	assert.Equal(int64(2), progress.ParentRevision)
+
+	// An equal-timestamp refresh advances the revision without observing new
+	// provider activity: no reopen, no archive rescan churn.
+	_, revision, accepted, err = database.UpsertIssueSnapshotWithLabels(ctx, issue("newer", now.Add(time.Hour)))
+	require.NoError(err)
+	require.True(accepted)
+	require.Equal(int64(3), revision)
+	progress, err = database.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(int64(2), progress.ScanGeneration,
+		"an equal-timestamp refresh must not reopen child progress")
+
+	// The subsequent complete live child observation satisfies the reopened
+	// progress without any manual rebinding and without provider spend.
+	applied, err := database.CommitIssueChildSnapshot(ctx, IssueChildSnapshot{
+		IssueID: issueID, ExpectedRevision: revision,
+		Comments: []IssueEvent{issueComment("live-1", "live")},
+	})
+	require.NoError(err)
+	require.True(applied)
+	progress, err = database.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressComplete, progress.Status)
+	assert.Equal(revision, progress.ParentRevision)
+}
+
+func TestLiveIngestGenerationIsMonotonicPerParent(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, database, "acme", "monotonic-live-generation")
+
+	commentGenerations := func(issueID int64) map[string]int64 {
+		rows, err := database.ReadDB().QueryContext(ctx, `
+			SELECT dedupe_key, ingest_generation FROM middleman_issue_events
+			WHERE issue_id = ? AND event_type = 'issue_comment'`, issueID)
+		require.NoError(err)
+		defer rows.Close()
+		generations := make(map[string]int64)
+		for rows.Next() {
+			var key string
+			var generation int64
+			require.NoError(rows.Scan(&key, &generation))
+			generations[key] = generation
+		}
+		require.NoError(rows.Err())
+		return generations
+	}
+
+	// A fresh parent starts at generation 1 and every complete live
+	// replacement advances by exactly one, regardless of wall time.
+	freshID := insertTestIssue(t, database, repoID, 1, "fresh", now)
+	applied, err := database.CommitIssueChildSnapshot(ctx, IssueChildSnapshot{
+		IssueID: freshID, ExpectedRevision: 1,
+		Comments: []IssueEvent{issueComment("a", "a")},
+	})
+	require.NoError(err)
+	require.True(applied)
+	assert.Equal(map[string]int64{"a": 1}, commentGenerations(freshID))
+
+	applied, err = database.CommitIssueChildSnapshot(ctx, IssueChildSnapshot{
+		IssueID: freshID, ExpectedRevision: 1,
+		Comments: []IssueEvent{issueComment("a", "a"), issueComment("b", "b")},
+	})
+	require.NoError(err)
+	require.True(applied)
+	assert.Equal(map[string]int64{"a": 2, "b": 2}, commentGenerations(freshID))
+
+	// A parent whose rows already carry a durable archive scan generation
+	// allocates strictly above it, so a later archive reconciliation for that
+	// generation can never collide with the live stamp.
+	stampedID := insertTestIssue(t, database, repoID, 2, "stamped", now)
+	insertIssueCommentEventForTest(t, database, stampedID, "archived", "", 41)
+	applied, err = database.CommitIssueChildSnapshot(ctx, IssueChildSnapshot{
+		IssueID: stampedID, ExpectedRevision: 1,
+		Comments: []IssueEvent{issueComment("archived", "kept"), issueComment("new", "new")},
+	})
+	require.NoError(err)
+	require.True(applied)
+	assert.Equal(map[string]int64{"archived": 42, "new": 42}, commentGenerations(stampedID))
+}
+
+func TestSatisfactionFailureNeverRejectsLiveWrite(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, database, "acme", "satisfy-failure-injection")
+	issueID := insertTestIssue(t, database, repoID, 7, "issue", now)
+	mrID, err := database.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID: repoID, PlatformID: 8, Number: 8, Title: "mr",
+		State: MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour),
+		UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	// Break every archive progress statement: the live domain write must
+	// still commit because archive bookkeeping is strictly best-effort.
+	_, err = database.WriteDB().ExecContext(ctx, `DROP TABLE middleman_archive_dataset_progress`)
+	require.NoError(err)
+
+	applied, err := database.CommitIssueChildSnapshot(ctx, IssueChildSnapshot{
+		IssueID: issueID, ExpectedRevision: 1,
+		Comments: []IssueEvent{issueComment("live-1", "live")},
+	})
+	require.NoError(err)
+	require.True(applied)
+	assert.Equal([]string{"live-1"}, issueCommentKeysForTest(t, database, issueID))
+
+	applied, err = database.CommitMergeRequestChildSnapshot(ctx, MergeRequestChildSnapshot{
+		MergeRequestID: mrID, ExpectedRevision: 1,
+		Comments:         []MREvent{mrComment("live-mr", "live")},
+		CommentsComplete: true,
+	})
+	require.NoError(err)
+	require.True(applied)
+	assert.Equal([]string{"live-mr"}, mrEventKeysForTest(t, database, mrID, "issue_comment"))
+}
+
 func TestLiveAndArchiveParentUpsertsShareRevisionCore(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

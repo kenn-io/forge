@@ -197,6 +197,16 @@ func commitDatasetPageTx(
 			return outcome.typedErr, nil
 		}
 		pageCount = outcome.newPageCount
+	} else {
+		// Live commits carry no durable scan generation; allocate a strictly
+		// monotonic per-parent stamp inside the transaction so final-page
+		// reconciliation can never collide with an earlier live stamp or a
+		// durable archive generation already stamped on this parent's rows.
+		generation, err := nextLiveIngestGenerationTx(ctx, tx, commit.Parent)
+		if err != nil {
+			return nil, err
+		}
+		commit.ScanGeneration = generation
 	}
 	if err := upsertDatasetRowsTx(ctx, tx, commit); err != nil {
 		return nil, err
@@ -210,9 +220,55 @@ func commitDatasetPageTx(
 		return nil, advanceDatasetProgressTx(ctx, tx, key, commit, pageCount, now)
 	}
 	if commit.Final {
-		return nil, satisfyDatasetProgressFromLiveTx(ctx, tx, key, currentRevision, now)
+		satisfyDatasetProgressBestEffortTx(ctx, tx, key, currentRevision, now)
 	}
 	return nil, nil
+}
+
+// nextLiveIngestGenerationTx allocates the ingest-generation stamp for one
+// complete live dataset commit. The core's final-page reconciliation deletes
+// ordinary comments whose stamp differs from the committing generation, so a
+// live stamp must differ from every generation currently stamped on the same
+// parent's rows — including durable archive scan generations, which stamp the
+// same column. MAX+1 over the parent's rows is strictly monotonic because
+// SQLite serializes the writing transaction.
+func nextLiveIngestGenerationTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	parent DomainParentRef,
+) (int64, error) {
+	query := `
+		SELECT COALESCE(MAX(ingest_generation), 0) + 1 FROM middleman_issue_events
+		WHERE issue_id = ?`
+	if parent.ItemType == ArchiveItemTypeMergeRequest {
+		query = `
+			SELECT COALESCE(MAX(ingest_generation), 0) + 1 FROM middleman_mr_events
+			WHERE merge_request_id = ?`
+	}
+	var generation int64
+	if err := tx.QueryRowContext(ctx, query, parent.ID).Scan(&generation); err != nil {
+		return 0, fmt.Errorf("allocate live ingest generation: %w", err)
+	}
+	return generation, nil
+}
+
+// satisfyDatasetProgressBestEffortTx runs live archive satisfaction inside a
+// savepoint: archive bookkeeping failures roll back only the satisfaction
+// attempt and never reject the already-written live domain rows.
+func satisfyDatasetProgressBestEffortTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	key ArchiveDatasetProgressKey,
+	currentRevision int64,
+	now time.Time,
+) {
+	if _, err := tx.ExecContext(ctx, "SAVEPOINT live_satisfy"); err != nil {
+		return
+	}
+	if err := satisfyDatasetProgressFromLiveTx(ctx, tx, key, currentRevision, now); err != nil {
+		_, _ = tx.ExecContext(ctx, "ROLLBACK TO live_satisfy")
+	}
+	_, _ = tx.ExecContext(ctx, "RELEASE live_satisfy")
 }
 
 type datasetAdvanceOutcome struct {
@@ -271,8 +327,23 @@ func checkDatasetProgressAdvanceTx(
 		}}, nil
 	}
 	if lastInputCursor.Valid && commit.Progress.InputCursor == lastInputCursor.String {
-		// The already-committed page: idempotent replay writes nothing.
+		// The already-committed page: idempotent replay writes nothing. On a
+		// completed dataset this is the retained final input cursor, which is
+		// what distinguishes an exact final-page replay from stale delivery.
 		return datasetAdvanceOutcome{replay: true}, nil
+	}
+	if status != ArchiveDatasetProgressPending &&
+		status != ArchiveDatasetProgressRunning &&
+		status != ArchiveDatasetProgressFailed {
+		// Complete, unsupported, and terminal datasets accept no further page
+		// advances; only an explicit reopen (new generation) restarts them. In
+		// particular a delayed first page with an empty input cursor must not
+		// match the cleared cursor of a completed dataset.
+		return datasetAdvanceOutcome{typedErr: &StaleDatasetProgressError{
+			RepoID: key.RepoID, ItemType: key.ItemType, ItemNumber: key.ItemNumber, Dataset: key.Dataset,
+			ExpectedGeneration: commit.ScanGeneration, GotGeneration: generation,
+			GotStatus: status,
+		}}, nil
 	}
 	if commit.Progress.InputCursor != nextCursor.String {
 		return datasetAdvanceOutcome{typedErr: &StaleDatasetProgressError{
@@ -441,15 +512,18 @@ func advanceDatasetProgressTx(
 	observed := datasetRowCount(commit.Rows)
 	nowText := formatDatasetProgressTime(now)
 	if commit.Final {
+		// The final input cursor is retained: an exact replay of the final
+		// page (same generation and input cursor) must stay distinguishable
+		// from an unrelated stale page after completion.
 		_, err := tx.ExecContext(ctx, `
 			UPDATE middleman_archive_dataset_progress
-			SET next_cursor = NULL, last_input_cursor = NULL, page_count = ?,
+			SET next_cursor = NULL, last_input_cursor = ?, page_count = ?,
 				status = 'complete', observed_count = observed_count + ?,
 				attempt_count = 0,
 				next_retry_at = NULL, last_error_code = NULL, last_error_detail = NULL,
 				started_at = COALESCE(started_at, ?), completed_at = ?, updated_at = ?
 			WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = ?`,
-			newPageCount, observed, nowText, nowText, nowText,
+			commit.Progress.InputCursor, newPageCount, observed, nowText, nowText, nowText,
 			key.RepoID, key.ItemType, key.ItemNumber, key.Dataset)
 		if err != nil {
 			return fmt.Errorf("complete dataset progress: %w", err)
@@ -473,13 +547,15 @@ func advanceDatasetProgressTx(
 }
 
 // satisfyDatasetProgressFromLiveTx conditionally completes matching archive
-// progress after a complete live observation. Live sync advances the parent
-// revision before committing children, so a row still bound to a superseded
-// revision is rebound to the current one under a fresh generation — the live
-// replacement is authoritative for the whole dataset at that revision, and
-// the generation bump rejects any in-flight archive page from the old scan.
-// Missing, paused, blocked, or terminal progress leaves the row untouched and
-// never rejects the live domain write.
+// progress after a complete live observation. Completion always claims a
+// fresh scan generation: the live replacement is authoritative for the whole
+// dataset at the current revision, and the generation bump rejects any
+// in-flight archive page from the superseded scan — including a first page
+// whose empty input cursor would otherwise match the cleared cursor. Rows
+// bound to a superseded revision are rebound to the current one (live sync
+// advances the parent revision before committing children). Missing, paused,
+// blocked, or terminal progress leaves the row untouched and never rejects
+// the live domain write.
 func satisfyDatasetProgressFromLiveTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -491,7 +567,7 @@ func satisfyDatasetProgressFromLiveTx(
 	result, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_dataset_progress
 		SET status = 'complete',
-			scan_generation = scan_generation + (CASE WHEN parent_revision = ? THEN 0 ELSE 1 END),
+			scan_generation = scan_generation + 1,
 			parent_revision = ?,
 			next_cursor = NULL, last_input_cursor = NULL,
 			next_retry_at = NULL, last_error_code = NULL, last_error_detail = NULL,
@@ -503,7 +579,7 @@ func satisfyDatasetProgressFromLiveTx(
 			SELECT 1 FROM middleman_archive_repos
 			WHERE repo_id = ? AND operator_state = 'active'
 		  )`,
-		currentRevision, currentRevision, nowText, nowText,
+		currentRevision, nowText, nowText,
 		key.RepoID, key.ItemType, key.ItemNumber, key.Dataset,
 		currentRevision, key.RepoID)
 	if err != nil {
@@ -723,13 +799,16 @@ func (d *DB) CommitParentLookup(ctx context.Context, commit ParentLookupCommit) 
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		typedErr = nil
 		currentGeneration := int64(1)
+		status := ArchiveDatasetProgressPending
+		var lastErrorCode sql.NullString
 		err := tx.QueryRowContext(ctx, `
-			SELECT scan_generation FROM middleman_archive_dataset_progress
+			SELECT scan_generation, status, last_error_code
+			FROM middleman_archive_dataset_progress
 			WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = 'lookup'`,
 			commit.RepoID, commit.ItemType, commit.ItemNumber,
-		).Scan(&currentGeneration)
+		).Scan(&currentGeneration, &status, &lastErrorCode)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("read lookup progress generation: %w", err)
+			return fmt.Errorf("read lookup progress: %w", err)
 		}
 		if commit.ScanGeneration != currentGeneration {
 			// A lookup completed after a forced reset must not mark the reset
@@ -738,6 +817,55 @@ func (d *DB) CommitParentLookup(ctx context.Context, commit ParentLookupCommit) 
 				RepoID: commit.RepoID, ItemType: commit.ItemType,
 				ItemNumber: commit.ItemNumber, Dataset: ArchiveDatasetLookup,
 				ExpectedGeneration: commit.ScanGeneration, GotGeneration: currentGeneration,
+			}
+			return nil
+		}
+		if status == ArchiveDatasetProgressBlocked {
+			reason := "blocked"
+			if lastErrorCode.Valid && lastErrorCode.String != "" {
+				reason = lastErrorCode.String
+			}
+			typedErr = &ScanBlockedError{
+				Scope: datasetProgressScope(ArchiveDatasetProgressKey{
+					RepoID: commit.RepoID, ItemType: commit.ItemType,
+					ItemNumber: commit.ItemNumber, Dataset: ArchiveDatasetLookup,
+				}),
+				Reason: reason,
+			}
+			return nil
+		}
+		if status == ArchiveDatasetProgressComplete && commit.Outcome == ArchiveLookupPresent {
+			// This generation's lookup already committed present: a duplicate
+			// delivery is an idempotent replay — no parent re-upsert, no
+			// revision churn, no child reopen.
+			return nil
+		}
+		if status != ArchiveDatasetProgressPending &&
+			status != ArchiveDatasetProgressRunning &&
+			status != ArchiveDatasetProgressFailed {
+			// One generation records exactly one lookup outcome; a late
+			// conflicting outcome against a settled row is rejected.
+			typedErr = &StaleDatasetProgressError{
+				RepoID: commit.RepoID, ItemType: commit.ItemType,
+				ItemNumber: commit.ItemNumber, Dataset: ArchiveDatasetLookup,
+				ExpectedGeneration: commit.ScanGeneration, GotGeneration: currentGeneration,
+				GotStatus: status,
+			}
+			return nil
+		}
+		currentRevision, err := lookupDomainRevisionTx(ctx, tx, commit.RepoID, commit.ItemType, commit.ItemNumber)
+		if err != nil {
+			return err
+		}
+		if currentRevision != commit.ExpectedRevision {
+			// A parent observation (live sync included) advanced the domain
+			// row between the lookup claim and this commit: the newer
+			// observation supersedes the lookup's conclusion, whether present
+			// or terminal. The lookup stays claimable for the new revision.
+			typedErr = &StaleDatasetProgressError{
+				RepoID: commit.RepoID, ItemType: commit.ItemType,
+				ItemNumber: commit.ItemNumber, Dataset: ArchiveDatasetLookup,
+				ExpectedRevision: commit.ExpectedRevision, GotRevision: currentRevision,
 			}
 			return nil
 		}
@@ -750,6 +878,38 @@ func (d *DB) CommitParentLookup(ctx context.Context, commit ParentLookupCommit) 
 		return err
 	}
 	return typedErr
+}
+
+// lookupDomainRevisionTx reads the current domain parent revision of one
+// archive item; a missing domain row reads as revision zero.
+func lookupDomainRevisionTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	itemType ArchiveItemType,
+	itemNumber int,
+) (int64, error) {
+	table := ""
+	switch itemType {
+	case ArchiveItemTypeIssue:
+		table = "middleman_issues"
+	case ArchiveItemTypeMergeRequest:
+		table = "middleman_merge_requests"
+	default:
+		return 0, fmt.Errorf("read lookup domain revision: invalid item type %q", itemType)
+	}
+	var revision int64
+	err := tx.QueryRowContext(ctx, fmt.Sprintf(
+		`SELECT snapshot_revision FROM %s WHERE repo_id = ? AND number = ?`, table),
+		repoID, itemNumber,
+	).Scan(&revision)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("read lookup domain revision: %w", err)
+	}
+	return revision, nil
 }
 
 func validateParentLookupCommit(commit *ParentLookupCommit) error {
@@ -833,6 +993,10 @@ func commitPresentParentLookupTx(
 		return err
 	}
 	nowText := formatDatasetProgressTime(now)
+	// The bind pins the row to the committing scan generation: the parent
+	// observation above rebinds a superseded lookup row under a bumped
+	// generation, but this commit IS that generation's outcome, so a
+	// duplicate delivery must still read as an idempotent replay.
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO middleman_archive_dataset_progress (
 			repo_id, item_type, item_number, dataset,
@@ -840,6 +1004,7 @@ func commitPresentParentLookupTx(
 		) VALUES (?, ?, ?, 'lookup', ?, ?, 'complete', ?, ?)
 		ON CONFLICT(repo_id, item_type, item_number, dataset) DO UPDATE SET
 			parent_revision = excluded.parent_revision,
+			scan_generation = excluded.scan_generation,
 			status = 'complete',
 			next_cursor = NULL, last_input_cursor = NULL,
 			next_retry_at = NULL, last_error_code = NULL, last_error_detail = NULL,

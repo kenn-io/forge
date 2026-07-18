@@ -2209,8 +2209,13 @@ func (d *DB) UpsertMergeRequestSnapshot(
 	ctx context.Context,
 	mr *MergeRequest,
 ) (int64, bool, error) {
-	canonicalizeMergeRequestTimestamps(mr)
-	id, _, accepted, err := upsertMergeRequestSnapshot(ctx, d.rw, mr)
+	var id int64
+	var accepted bool
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		var err error
+		id, _, accepted, err = upsertMergeRequestParentTx(ctx, tx, mr)
+		return err
+	})
 	return id, accepted, err
 }
 
@@ -2305,10 +2310,31 @@ func upsertMergeRequestSnapshot(
 // upsertMergeRequestParentTx applies a provider snapshot inside an existing
 // transaction. Archive inventory commits ignore acceptance: a stale page row
 // must not overwrite newer data, but the row id is still needed for work
-// tracking.
+// tracking. An accepted snapshot whose provider timestamp strictly advanced
+// reopens superseded child dataset progress — every parent writer flows
+// through this core, so a revision advance observed through any path (live
+// sync included) leaves the outstanding work visible to archive scheduling.
 func upsertMergeRequestParentTx(ctx context.Context, tx *sql.Tx, mr *MergeRequest) (int64, int64, bool, error) {
 	canonicalizeMergeRequestTimestamps(mr)
-	return upsertMergeRequestSnapshot(ctx, tx, mr)
+	priorUpdatedAt, hadRow, err := parentRowUpdatedAtTx(
+		ctx, tx, "middleman_merge_requests", mr.RepoID, mr.Number,
+	)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	id, revision, accepted, err := upsertMergeRequestSnapshot(ctx, tx, mr)
+	if err != nil || !accepted {
+		return id, revision, accepted, err
+	}
+	if !hadRow || mr.UpdatedAt.After(priorUpdatedAt) {
+		if err := reopenDatasetsForParentTx(
+			ctx, tx, DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: id},
+			mr.RepoID, mr.Number, revision,
+		); err != nil {
+			return 0, 0, false, err
+		}
+	}
+	return id, revision, true, nil
 }
 
 // mergeRequestDetailMode selects how an incoming parent snapshot treats
@@ -3327,8 +3353,14 @@ func (d *DB) UpsertIssueSnapshotWithLabels(
 
 func upsertIssueParentTx(ctx context.Context, tx *sql.Tx, issue *Issue) (int64, int64, bool, error) {
 	canonicalizeIssueTimestamps(issue)
+	priorUpdatedAt, hadRow, err := parentRowUpdatedAtTx(
+		ctx, tx, "middleman_issues", issue.RepoID, issue.Number,
+	)
+	if err != nil {
+		return 0, 0, false, err
+	}
 	var issueID, revision int64
-	err := tx.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		INSERT INTO middleman_issues
 		    (repo_id, platform_id, platform_external_id, number, url, title, author, state,
 		     body, comment_count, labels_json, assignees_json, detail_fetched_at,
@@ -3371,7 +3403,42 @@ func upsertIssueParentTx(ctx context.Context, tx *sql.Tx, issue *Issue) (int64, 
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("upsert issue parent: %w", err)
 	}
+	if !hadRow || issue.UpdatedAt.After(priorUpdatedAt) {
+		if err := reopenDatasetsForParentTx(
+			ctx, tx, DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID},
+			issue.RepoID, issue.Number, revision,
+		); err != nil {
+			return 0, 0, false, err
+		}
+	}
 	return issueID, revision, true, nil
+}
+
+// parentRowUpdatedAtTx reads the provider timestamp currently owning one
+// parent row. The shared parent upsert core reopens superseded child dataset
+// progress only when the incoming snapshot's provider timestamp strictly
+// advances past it: revision numbers also advance on equal-timestamp
+// refreshes, which observe no new provider activity and must not churn
+// archive rescans.
+func parentRowUpdatedAtTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	table string,
+	repoID int64,
+	number int,
+) (time.Time, bool, error) {
+	var updatedAt time.Time
+	err := tx.QueryRowContext(ctx, fmt.Sprintf(
+		`SELECT updated_at FROM %s WHERE repo_id = ? AND number = ?`, table),
+		repoID, number,
+	).Scan(&updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("read prior parent snapshot timestamp: %w", err)
+	}
+	return updatedAt, true, nil
 }
 
 // GetIssue returns an issue by repository identity and issue number, or nil if not found.

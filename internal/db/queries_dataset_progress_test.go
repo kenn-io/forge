@@ -423,7 +423,9 @@ func TestCommitDatasetPageReconcilesCommentsOnlyAtExhaustion(t *testing.T) {
 	assert.Equal(ArchiveDatasetProgressComplete, progress.Status)
 	assert.Equal(2, progress.PageCount)
 	assert.Nil(progress.NextCursor)
-	assert.Nil(progress.LastInputCursor)
+	require.NotNil(progress.LastInputCursor,
+		"completion retains the final input cursor for replay detection")
+	assert.Equal("cursor-2", *progress.LastInputCursor)
 	assert.NotNil(progress.CompletedAt)
 }
 
@@ -649,6 +651,188 @@ func TestCommitDatasetPageLiveCommitIsIndependentOfArchiveProgress(t *testing.T)
 	assert.Equal(ArchiveDatasetProgressPending, progress.Status)
 }
 
+func TestCommitDatasetPageStatusGateMatrix(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID := insertTestRepo(t, d, "acme", "status-gate")
+	for i, tc := range []struct {
+		status  ArchiveDatasetProgressStatus
+		advance bool
+		blocked bool
+	}{
+		{status: ArchiveDatasetProgressPending, advance: true},
+		{status: ArchiveDatasetProgressRunning, advance: true},
+		{status: ArchiveDatasetProgressFailed, advance: true},
+		{status: ArchiveDatasetProgressComplete},
+		{status: ArchiveDatasetProgressUnsupported},
+		{status: ArchiveDatasetProgressTerminal},
+		{status: ArchiveDatasetProgressBlocked, blocked: true},
+	} {
+		number := i + 1
+		issueID := insertTestIssue(t, d, repoID, number, "issue", archiveTestTime())
+		insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, number, archiveTestTime(),
+			ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+		key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, number, ArchiveDatasetComments)
+		insertDatasetProgressForTest(t, d, key, 1, 1, nil, tc.status, 0)
+
+		err := d.CommitDatasetPage(ctx, DatasetPageCommit{
+			Parent:           DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID},
+			ExpectedRevision: 1,
+			Dataset:          ArchiveDatasetComments,
+			ScanGeneration:   1,
+			Rows:             DatasetRows{IssueComments: []IssueEvent{issueComment("c-1", "page")}},
+			Progress: &DatasetProgressAdvance{
+				RepoID: repoID, ItemNumber: number, InputCursor: "", NextCursor: "cursor-2",
+			},
+		})
+		switch {
+		case tc.advance:
+			require.NoError(err, string(tc.status))
+			require.Equal([]string{"c-1"}, issueCommentKeysForTest(t, d, issueID), string(tc.status))
+		case tc.blocked:
+			var blocked *ScanBlockedError
+			require.ErrorAs(err, &blocked, string(tc.status))
+			require.Empty(issueCommentKeysForTest(t, d, issueID), string(tc.status))
+		default:
+			var stale *StaleDatasetProgressError
+			require.ErrorAs(err, &stale, string(tc.status))
+			require.Empty(issueCommentKeysForTest(t, d, issueID), string(tc.status))
+			progress, progressErr := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, number, ArchiveDatasetComments)
+			require.NoError(progressErr, string(tc.status))
+			require.Equal(tc.status, progress.Status, "a rejected page must not change the status")
+		}
+	}
+}
+
+func TestCommitDatasetPageFinalReplayAndDelayedFirstPage(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID := insertTestRepo(t, d, "acme", "final-replay")
+	issueID := insertTestIssue(t, d, repoID, 7, "issue", archiveTestTime())
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime(),
+		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	insertDatasetProgressForTest(t, d, key, 1, 1, nil, ArchiveDatasetProgressPending, 0)
+
+	parent := DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID}
+	require.NoError(d.CommitDatasetPage(ctx, DatasetPageCommit{
+		Parent: parent, ExpectedRevision: 1,
+		Dataset: ArchiveDatasetComments, ScanGeneration: 1,
+		Rows: DatasetRows{IssueComments: []IssueEvent{issueComment("c-1", "page one")}},
+		Progress: &DatasetProgressAdvance{
+			RepoID: repoID, ItemNumber: 7, InputCursor: "", NextCursor: "cursor-2",
+		},
+	}))
+	final := DatasetPageCommit{
+		Parent: parent, ExpectedRevision: 1,
+		Dataset: ArchiveDatasetComments, ScanGeneration: 1,
+		Rows:  DatasetRows{IssueComments: []IssueEvent{issueComment("c-2", "final")}},
+		Final: true,
+		Progress: &DatasetProgressAdvance{
+			RepoID: repoID, ItemNumber: 7, InputCursor: "cursor-2",
+		},
+	}
+	require.NoError(d.CommitDatasetPage(ctx, final))
+
+	progress, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressComplete, progress.Status)
+	require.NotNil(progress.LastInputCursor,
+		"completion must retain the final input cursor so a replay is distinguishable")
+	assert.Equal("cursor-2", *progress.LastInputCursor)
+
+	// The exact final page delivered again is the already-committed page: an
+	// idempotent no-op that must not reconcile or advance anything.
+	replay := final
+	replay.Rows = DatasetRows{IssueComments: []IssueEvent{issueComment("c-2", "changed on replay")}}
+	require.NoError(d.CommitDatasetPage(ctx, replay))
+	assert.Equal([]string{"c-1", "c-2"}, issueCommentKeysForTest(t, d, issueID))
+	var body string
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `
+		SELECT body FROM middleman_issue_events
+		WHERE issue_id = ? AND dedupe_key = 'c-2'`, issueID).Scan(&body))
+	assert.Equal("final", body)
+	progress, err = d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(2, progress.PageCount)
+	assert.Equal(2, progress.ObservedCount)
+
+	// A delayed duplicate of the empty-cursor first page must not match the
+	// completed row: it is stale delivery, not a replay of the final page.
+	delayed := DatasetPageCommit{
+		Parent: parent, ExpectedRevision: 1,
+		Dataset: ArchiveDatasetComments, ScanGeneration: 1,
+		Rows: DatasetRows{IssueComments: []IssueEvent{issueComment("c-late", "late first page")}},
+		Progress: &DatasetProgressAdvance{
+			RepoID: repoID, ItemNumber: 7, InputCursor: "", NextCursor: "cursor-2",
+		},
+	}
+	err = d.CommitDatasetPage(ctx, delayed)
+	var stale *StaleDatasetProgressError
+	require.ErrorAs(err, &stale)
+	assert.Equal([]string{"c-1", "c-2"}, issueCommentKeysForTest(t, d, issueID))
+	progress, err = d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressComplete, progress.Status)
+}
+
+func TestLiveSatisfactionFencesInFlightArchiveScan(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+
+	repoID := insertTestRepo(t, d, "acme", "live-wins-race")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	issueID := insertTestIssue(t, d, repoID, 7, "issue", now)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
+		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	// The archive claimed this dataset (generation 1, first page in flight
+	// with an empty input cursor) before live sync completed the dataset.
+	insertDatasetProgressForTest(t, d, key, 1, 1, nil, ArchiveDatasetProgressRunning, 0)
+
+	parent := DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID}
+	require.NoError(d.CommitDatasetPage(ctx, DatasetPageCommit{
+		Parent: parent, ExpectedRevision: 1,
+		Dataset: ArchiveDatasetComments,
+		Rows:    DatasetRows{IssueComments: []IssueEvent{issueComment("live-1", "live")}},
+		Final:   true,
+	}))
+	progress, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	require.Equal(ArchiveDatasetProgressComplete, progress.Status)
+	assert.Equal(int64(2), progress.ScanGeneration,
+		"live satisfaction must claim the scan by incrementing the generation")
+
+	// The in-flight archive first page now loses the compare-and-swap: its
+	// generation is superseded even though its empty input cursor matches the
+	// cleared cursor of the satisfied row.
+	err = d.CommitDatasetPage(ctx, DatasetPageCommit{
+		Parent: parent, ExpectedRevision: 1,
+		Dataset: ArchiveDatasetComments, ScanGeneration: 1,
+		Rows:  DatasetRows{IssueComments: []IssueEvent{issueComment("archive-1", "stale scan")}},
+		Final: true,
+		Progress: &DatasetProgressAdvance{
+			RepoID: repoID, ItemNumber: 7, InputCursor: "",
+		},
+	})
+	var stale *StaleDatasetProgressError
+	require.ErrorAs(err, &stale)
+	assert.Equal([]string{"live-1"}, issueCommentKeysForTest(t, d, issueID),
+		"the stale archive page must neither write nor reconcile away live comments")
+	progress, err = d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressComplete, progress.Status)
+	assert.Equal(int64(2), progress.ScanGeneration)
+}
+
 func TestCommitParentLookupPresentBindsProgressAndReopensChildren(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -667,13 +851,14 @@ func TestCommitParentLookupPresentBindsProgressAndReopensChildren(t *testing.T) 
 	refreshed := testIssue(repoID, 7,
 		withIssueTitle("after"), withIssueActivity(now.Add(time.Hour)))
 	require.NoError(d.CommitParentLookup(ctx, ParentLookupCommit{
-		RepoID:         repoID,
-		ItemType:       ArchiveItemTypeIssue,
-		ItemNumber:     7,
-		ScanGeneration: 1,
-		Outcome:        ArchiveLookupPresent,
-		Issue:          refreshed,
-		Now:            now.Add(time.Hour),
+		RepoID:           repoID,
+		ItemType:         ArchiveItemTypeIssue,
+		ItemNumber:       7,
+		ScanGeneration:   1,
+		ExpectedRevision: 1,
+		Outcome:          ArchiveLookupPresent,
+		Issue:            refreshed,
+		Now:              now.Add(time.Hour),
 	}))
 
 	assert.Equal(int64(2), issueSnapshotRevisionForTest(t, d, issueID))
@@ -722,14 +907,15 @@ func TestCommitParentLookupTerminalOutcomes(t *testing.T) {
 		insertIssueCommentEventForTest(t, d, issueID, "kept", "", nil)
 
 		require.NoError(d.CommitParentLookup(ctx, ParentLookupCommit{
-			RepoID:         repoID,
-			ItemType:       ArchiveItemTypeIssue,
-			ItemNumber:     tc.number,
-			ScanGeneration: 1,
-			Outcome:        tc.outcome,
-			ErrorCode:      tc.code,
-			ErrorDetail:    "provider says no",
-			Now:            now,
+			RepoID:           repoID,
+			ItemType:         ArchiveItemTypeIssue,
+			ItemNumber:       tc.number,
+			ScanGeneration:   1,
+			ExpectedRevision: 1,
+			Outcome:          tc.outcome,
+			ErrorCode:        tc.code,
+			ErrorDetail:      "provider says no",
+			Now:              now,
 		}))
 
 		var lifecycle ArchiveLifecycleState
@@ -767,11 +953,12 @@ func TestCommitParentLookupMovedQueuesDestinationPrompt(t *testing.T) {
 		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
 
 	require.NoError(d.CommitParentLookup(ctx, ParentLookupCommit{
-		RepoID:         sourceRepoID,
-		ItemType:       ArchiveItemTypeIssue,
-		ItemNumber:     7,
-		ScanGeneration: 1,
-		Outcome:        ArchiveLookupMoved,
+		RepoID:           sourceRepoID,
+		ItemType:         ArchiveItemTypeIssue,
+		ItemNumber:       7,
+		ScanGeneration:   1,
+		ExpectedRevision: 1,
+		Outcome:          ArchiveLookupMoved,
 		Destination: &RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
 			Owner: "acme", Name: "moved-destination",
@@ -839,4 +1026,351 @@ func TestCommitParentLookupStaleGenerationAfterResetWritesNothing(t *testing.T) 
 	require.NoError(err)
 	assert.Equal(ArchiveDatasetProgressPending, lookup.Status)
 	assert.Equal(int64(2), lookup.ScanGeneration)
+}
+
+func TestCommitParentLookupDuplicatePresentIsIdempotentReplay(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+
+	repoID := insertTestRepo(t, d, "acme", "lookup-duplicate")
+	issueID := insertTestIssue(t, d, repoID, 7, "before", now)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
+		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	lookupKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup)
+	insertDatasetProgressForTest(t, d, lookupKey, 1, 1, nil, ArchiveDatasetProgressPending, 0)
+
+	commit := ParentLookupCommit{
+		RepoID:           repoID,
+		ItemType:         ArchiveItemTypeIssue,
+		ItemNumber:       7,
+		ScanGeneration:   1,
+		ExpectedRevision: 1,
+		Outcome:          ArchiveLookupPresent,
+		Issue: testIssue(repoID, 7,
+			withIssueTitle("after"), withIssueActivity(now.Add(time.Hour))),
+		Now: now.Add(time.Hour),
+	}
+	require.NoError(d.CommitParentLookup(ctx, commit))
+	require.Equal(int64(2), issueSnapshotRevisionForTest(t, d, issueID))
+	comments, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	firstGeneration := comments.ScanGeneration
+
+	// The same completed lookup delivered again is an idempotent replay: no
+	// parent re-upsert, no revision churn, no child reopen.
+	require.NoError(d.CommitParentLookup(ctx, commit))
+	assert.Equal(int64(2), issueSnapshotRevisionForTest(t, d, issueID),
+		"a duplicate lookup must not advance the parent revision again")
+	comments, err = d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(firstGeneration, comments.ScanGeneration,
+		"a duplicate lookup must not reopen child datasets again")
+	lookup, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressComplete, lookup.Status)
+	assert.Equal(int64(2), lookup.ParentRevision)
+}
+
+func TestCommitParentLookupLateConflictingOutcomeRejected(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+
+	repoID := insertTestRepo(t, d, "acme", "lookup-conflict")
+
+	// A terminal outcome delivered after the same generation already
+	// completed present must not bury the item.
+	insertTestIssue(t, d, repoID, 1, "present", now)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 1, now,
+		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertDatasetProgressForTest(t, d,
+		datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup),
+		1, 1, nil, ArchiveDatasetProgressPending, 0)
+	require.NoError(d.CommitParentLookup(ctx, ParentLookupCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: 1,
+		ScanGeneration: 1, ExpectedRevision: 1,
+		Outcome: ArchiveLookupPresent,
+		Issue: testIssue(repoID, 1,
+			withIssueTitle("refreshed"), withIssueActivity(now.Add(time.Hour))),
+		Now: now.Add(time.Hour),
+	}))
+	err := d.CommitParentLookup(ctx, ParentLookupCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: 1,
+		ScanGeneration: 1, ExpectedRevision: 2,
+		Outcome: ArchiveLookupRemoved, ErrorCode: "removed_upstream",
+		Now: now.Add(2 * time.Hour),
+	})
+	var stale *StaleDatasetProgressError
+	require.ErrorAs(err, &stale)
+	var lifecycle ArchiveLifecycleState
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `
+		SELECT lifecycle_state FROM middleman_archive_items
+		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 1`,
+		repoID).Scan(&lifecycle))
+	assert.Equal(ArchiveLifecycleStateActive, lifecycle)
+	lookup, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressComplete, lookup.Status)
+
+	// A present outcome delivered after the same generation already recorded
+	// terminal is equally conflicting.
+	terminalID := insertTestIssue(t, d, repoID, 2, "terminal", now)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 2, now,
+		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertDatasetProgressForTest(t, d,
+		datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 2, ArchiveDatasetLookup),
+		1, 1, nil, ArchiveDatasetProgressPending, 0)
+	require.NoError(d.CommitParentLookup(ctx, ParentLookupCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: 2,
+		ScanGeneration: 1, ExpectedRevision: 1,
+		Outcome: ArchiveLookupRemoved, ErrorCode: "removed_upstream",
+		Now: now,
+	}))
+	err = d.CommitParentLookup(ctx, ParentLookupCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: 2,
+		ScanGeneration: 1, ExpectedRevision: 1,
+		Outcome: ArchiveLookupPresent,
+		Issue: testIssue(repoID, 2,
+			withIssueTitle("conflicting present"), withIssueActivity(now.Add(time.Hour))),
+		Now: now.Add(time.Hour),
+	})
+	require.ErrorAs(err, &stale)
+	assert.Equal(int64(1), issueSnapshotRevisionForTest(t, d, terminalID),
+		"a conflicting present outcome must not upsert the parent")
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `
+		SELECT lifecycle_state FROM middleman_archive_items
+		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 2`,
+		repoID).Scan(&lifecycle))
+	assert.Equal(ArchiveLifecycleStateRemovedUpstream, lifecycle)
+}
+
+func TestCommitParentLookupBlockedRowRejects(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+
+	repoID := insertTestRepo(t, d, "acme", "lookup-blocked")
+	issueID := insertTestIssue(t, d, repoID, 7, "before", now)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
+		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	lookupKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup)
+	insertDatasetProgressForTest(t, d, lookupKey, 1, 1, nil, ArchiveDatasetProgressBlocked, 0)
+
+	err := d.CommitParentLookup(ctx, ParentLookupCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: 7,
+		ScanGeneration: 1, ExpectedRevision: 1,
+		Outcome: ArchiveLookupPresent,
+		Issue: testIssue(repoID, 7,
+			withIssueTitle("after"), withIssueActivity(now.Add(time.Hour))),
+		Now: now.Add(time.Hour),
+	})
+	var blocked *ScanBlockedError
+	require.ErrorAs(err, &blocked)
+	assert.Equal(int64(1), issueSnapshotRevisionForTest(t, d, issueID),
+		"a blocked lookup must not upsert the parent")
+	lookup, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressBlocked, lookup.Status)
+}
+
+func TestCommitParentLookupRejectsSupersededDomainRevision(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+
+	repoID := insertTestRepo(t, d, "acme", "lookup-revision-fence")
+	issueID := insertTestIssue(t, d, repoID, 7, "before", now)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
+		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	lookupKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup)
+	insertDatasetProgressForTest(t, d, lookupKey, 1, 1, nil, ArchiveDatasetProgressPending, 0)
+
+	// Live sync advances the parent between the lookup claim and its commit.
+	_, err := d.UpsertIssue(ctx, testIssue(repoID, 7,
+		withIssueTitle("live wins"), withIssueActivity(now.Add(2*time.Hour))))
+	require.NoError(err)
+	require.Equal(int64(2), issueSnapshotRevisionForTest(t, d, issueID))
+
+	err = d.CommitParentLookup(ctx, ParentLookupCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: 7,
+		ScanGeneration: 1, ExpectedRevision: 1,
+		Outcome: ArchiveLookupPresent,
+		Issue: testIssue(repoID, 7,
+			withIssueTitle("stale lookup snapshot"), withIssueActivity(now.Add(time.Hour))),
+		Now: now.Add(time.Hour),
+	})
+	var stale *StaleDatasetProgressError
+	require.ErrorAs(err, &stale)
+	assert.Equal(int64(1), stale.ExpectedRevision)
+	assert.Equal(int64(2), stale.GotRevision)
+	var title string
+	require.NoError(d.ReadDB().QueryRowContext(ctx,
+		`SELECT title FROM middleman_issues WHERE id = ?`, issueID).Scan(&title))
+	assert.Equal("live wins", title)
+	assert.Equal(int64(2), issueSnapshotRevisionForTest(t, d, issueID))
+
+	// A terminal conclusion drawn before the live observation is equally
+	// superseded: the item observably exists.
+	err = d.CommitParentLookup(ctx, ParentLookupCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: 7,
+		ScanGeneration: 1, ExpectedRevision: 1,
+		Outcome: ArchiveLookupRemoved, ErrorCode: "removed_upstream",
+		Now: now.Add(time.Hour),
+	})
+	require.ErrorAs(err, &stale)
+	var lifecycle ArchiveLifecycleState
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `
+		SELECT lifecycle_state FROM middleman_archive_items
+		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 7`,
+		repoID).Scan(&lifecycle))
+	assert.Equal(ArchiveLifecycleStateActive, lifecycle)
+	lookup, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressPending, lookup.Status,
+		"the rejected lookup stays claimable for a rescan at the new revision")
+}
+
+func TestPresentObservationReactivatesBothTerminalLifecycles(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+
+	repoID := insertTestRepo(t, d, "acme", "terminal-recovery")
+	for i, tc := range []struct {
+		outcome   ArchiveLookupOutcome
+		lifecycle ArchiveLifecycleState
+		code      string
+	}{
+		{outcome: ArchiveLookupRemoved, lifecycle: ArchiveLifecycleStateRemovedUpstream, code: "removed_upstream"},
+		{outcome: ArchiveLookupInaccessible, lifecycle: ArchiveLifecycleStateInaccessible, code: "access_denied"},
+	} {
+		number := i + 1
+		insertTestIssue(t, d, repoID, number, "issue", now)
+		insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, number, now,
+			ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+		lookupKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, number, ArchiveDatasetLookup)
+		insertDatasetProgressForTest(t, d, lookupKey, 1, 1, nil, ArchiveDatasetProgressPending, 0)
+		require.NoError(d.CommitParentLookup(ctx, ParentLookupCommit{
+			RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: number,
+			ScanGeneration: 1, ExpectedRevision: 1,
+			Outcome: tc.outcome, ErrorCode: tc.code,
+			Now: now,
+		}))
+		var lifecycle ArchiveLifecycleState
+		require.NoError(d.ReadDB().QueryRowContext(ctx, `
+			SELECT lifecycle_state FROM middleman_archive_items
+			WHERE repo_id = ? AND item_type = 'issue' AND item_number = ?`,
+			repoID, number).Scan(&lifecycle))
+		require.Equal(tc.lifecycle, lifecycle)
+
+		// An operator reset returns the lookup to pending; the next present
+		// observation must recover the item regardless of which terminal
+		// lifecycle it was in and regardless of the provider timestamp — the
+		// recovered snapshot deliberately carries the same updated_at.
+		require.NoError(d.ResetDatasetProgress(ctx, lookupKey))
+		require.NoError(d.CommitParentLookup(ctx, ParentLookupCommit{
+			RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: number,
+			ScanGeneration: 2, ExpectedRevision: 1,
+			Outcome: ArchiveLookupPresent,
+			Issue: testIssue(repoID, number,
+				withIssueTitle("recovered"), withIssueActivity(now)),
+			Now: now.Add(time.Hour),
+		}), string(tc.lifecycle))
+		require.NoError(d.ReadDB().QueryRowContext(ctx, `
+			SELECT lifecycle_state FROM middleman_archive_items
+			WHERE repo_id = ? AND item_type = 'issue' AND item_number = ?`,
+			repoID, number).Scan(&lifecycle))
+		assert.Equal(ArchiveLifecycleStateActive, lifecycle, string(tc.lifecycle))
+		lookup, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, number, ArchiveDatasetLookup)
+		require.NoError(err)
+		assert.Equal(ArchiveDatasetProgressComplete, lookup.Status, string(tc.lifecycle))
+	}
+}
+
+func TestInventoryCommitSeedsDatasetProgressForPageCommits(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+
+	repoID := insertTestRepo(t, d, "acme", "inventory-seeds")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
+
+	issue := *testIssue(repoID, 7, withIssueTitle("issue"), withIssueActivity(now))
+	require.NoError(d.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue, Exhausted: true, Now: now,
+		Issues: []ArchiveInventoryIssue{{
+			ProviderItemID: "issue-7",
+			Snapshot:       IssueSnapshot{Issue: issue},
+			CommentsStatus: ArchiveDatasetStatusPending,
+		}},
+	}))
+	require.NoError(d.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest, Exhausted: true, Now: now,
+		MergeRequests: []ArchiveInventoryMergeRequest{{
+			ProviderItemID: "mr-9",
+			Snapshot: MergeRequestSnapshot{MergeRequest: MergeRequest{
+				RepoID: repoID, PlatformID: 9, Number: 9, Title: "mr",
+				State: MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour),
+				UpdatedAt: now, LastActivityAt: now,
+			}},
+			CommentsStatus:       ArchiveDatasetStatusPending,
+			ReviewsStatus:        ArchiveDatasetStatusPending,
+			InlineCommentsStatus: ArchiveDatasetStatusUnsupported,
+		}},
+	}))
+
+	// Every applicable dataset progress row exists after the parent
+	// observation, without any manual progress inserts.
+	for _, tc := range []struct {
+		itemType ArchiveItemType
+		number   int
+		dataset  ArchiveDataset
+		status   ArchiveDatasetProgressStatus
+	}{
+		{ArchiveItemTypeIssue, 7, ArchiveDatasetLookup, ArchiveDatasetProgressPending},
+		{ArchiveItemTypeIssue, 7, ArchiveDatasetComments, ArchiveDatasetProgressPending},
+		{ArchiveItemTypeMergeRequest, 9, ArchiveDatasetLookup, ArchiveDatasetProgressPending},
+		{ArchiveItemTypeMergeRequest, 9, ArchiveDatasetComments, ArchiveDatasetProgressPending},
+		{ArchiveItemTypeMergeRequest, 9, ArchiveDatasetReviews, ArchiveDatasetProgressPending},
+		{ArchiveItemTypeMergeRequest, 9, ArchiveDatasetInlineComments, ArchiveDatasetProgressUnsupported},
+	} {
+		progress, err := d.GetDatasetProgress(ctx, repoID, tc.itemType, tc.number, tc.dataset)
+		require.NoError(err, "%s %d %s", tc.itemType, tc.number, tc.dataset)
+		assert.Equal(tc.status, progress.Status, "%s %d %s", tc.itemType, tc.number, tc.dataset)
+	}
+
+	// The seeded rows accept an archive page commit directly.
+	issueID, revision, err := d.GetDomainParent(ctx, repoID, ArchiveItemTypeIssue, 7)
+	require.NoError(err)
+	seeded, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	require.NoError(d.CommitDatasetPage(ctx, DatasetPageCommit{
+		Parent:           DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID},
+		ExpectedRevision: revision,
+		Dataset:          ArchiveDatasetComments,
+		ScanGeneration:   seeded.ScanGeneration,
+		Rows:             DatasetRows{IssueComments: []IssueEvent{issueComment("c-1", "archive page")}},
+		Final:            true,
+		Progress: &DatasetProgressAdvance{
+			RepoID: repoID, ItemNumber: 7, InputCursor: "",
+		},
+	}))
+	progress, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressComplete, progress.Status)
+	assert.Equal([]string{"c-1"}, issueCommentKeysForTest(t, d, issueID))
 }

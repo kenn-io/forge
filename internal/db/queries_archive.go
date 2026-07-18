@@ -1362,7 +1362,7 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 }
 
 // commitArchiveIssueParentTx is the issue mode of the single archive
-// parent-observation core: parent snapshot upsert with labels, removed-work
+// parent-observation core: parent snapshot upsert with labels, terminal-work
 // reactivation, and per-item archive work reconciliation. Inventory pages and
 // single-item lookups both flow through it.
 func commitArchiveIssueParentTx(
@@ -1390,7 +1390,7 @@ func commitArchiveIssueParentTx(
 			return 0, 0, false, fmt.Errorf("read winning issue snapshot: %w", err)
 		}
 	}
-	if err := reactivateRemovedArchiveWorkTx(
+	if err := reactivateTerminalArchiveWorkTx(
 		ctx, tx, repoID, ArchiveItemTypeIssue, issue.Number,
 	); err != nil {
 		return 0, 0, false, err
@@ -1444,7 +1444,7 @@ func commitArchiveMergeRequestParentTx(
 			return 0, 0, false, fmt.Errorf("read winning merge-request snapshot: %w", err)
 		}
 	}
-	if err := reactivateRemovedArchiveWorkTx(
+	if err := reactivateTerminalArchiveWorkTx(
 		ctx, tx, repoID, ArchiveItemTypeMergeRequest, mr.Number,
 	); err != nil {
 		return 0, 0, false, err
@@ -2066,7 +2066,6 @@ func (d *DB) PublishArchiveIssueComments(ctx context.Context, key ArchiveDataset
 			Parent:           DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID},
 			ExpectedRevision: key.DomainRevision,
 			Dataset:          ArchiveDatasetComments,
-			ScanGeneration:   liveIngestGeneration(),
 			Rows:             DatasetRows{IssueComments: events},
 			Final:            true,
 		}); err != nil {
@@ -2094,7 +2093,6 @@ func (d *DB) PublishArchiveMREvents(ctx context.Context, key ArchiveDatasetKey, 
 		commit := DatasetPageCommit{
 			Parent:           DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: mrID},
 			ExpectedRevision: key.DomainRevision,
-			ScanGeneration:   liveIngestGeneration(),
 			Final:            true,
 		}
 		switch eventType {
@@ -2133,7 +2131,6 @@ func (d *DB) PublishArchiveReviewThreads(ctx context.Context, key ArchiveDataset
 			Parent:           DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: mrID},
 			ExpectedRevision: key.DomainRevision,
 			Dataset:          ArchiveDatasetInlineComments,
-			ScanGeneration:   liveIngestGeneration(),
 			Rows:             DatasetRows{ReviewThreads: threads, ThreadEvents: events},
 			Final:            true,
 		}); err != nil {
@@ -2200,7 +2197,12 @@ func completeArchiveDatasetTx(ctx context.Context, tx *sql.Tx, key ArchiveDatase
 	return err
 }
 
-func reactivateRemovedArchiveWorkTx(
+// reactivateTerminalArchiveWorkTx returns a terminal archive item to active
+// after a present parent observation. Both terminal lifecycles recover —
+// removed upstream and inaccessible — and recovery is unconditional on the
+// provider timestamp: the observation itself is the proof of existence and
+// access, even when coarse provider timestamps did not advance.
+func reactivateTerminalArchiveWorkTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	repoID int64,
@@ -2225,9 +2227,9 @@ func reactivateRemovedArchiveWorkTx(
 			attempt_count = 0, next_retry_at = NULL,
 			last_error_code = NULL, last_error_detail = NULL, hydrated_at = NULL
 		WHERE repo_id = ? AND item_type = ? AND item_number = ?
-		  AND lifecycle_state = 'removed_upstream'`, repoID, itemType, itemNumber)
+		  AND lifecycle_state IN ('removed_upstream', 'inaccessible')`, repoID, itemType, itemNumber)
 	if err != nil {
-		return fmt.Errorf("reactivate removed archive work: %w", err)
+		return fmt.Errorf("reactivate terminal archive work: %w", err)
 	}
 	return nil
 }

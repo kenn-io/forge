@@ -2200,6 +2200,62 @@ func TestUpsertMergeRequestPreservesNewerLastActivity(t *testing.T) {
 	assert.True(got.LastActivityAt.Equal(newerActivity))
 }
 
+// TestUpsertMergeRequestCloneURLUnknownPreservesStoredValue proves an
+// observation whose head clone URL could not be determined (a failed
+// best-effort fork enrichment) never overwrites a previously known clone URL
+// with an authoritative empty, while an authoritative empty without the
+// unknown marker still clears the stored value.
+func TestUpsertMergeRequestCloneURLUnknownPreservesStoredValue(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+	mr := &MergeRequest{
+		RepoID:           repoID,
+		PlatformID:       42,
+		Number:           7,
+		Title:            "fork MR",
+		Author:           "alice",
+		State:            "open",
+		HeadRepoCloneURL: "https://gitlab.example.com/fork/project.git",
+		CreatedAt:        base,
+		UpdatedAt:        base,
+		LastActivityAt:   base,
+	}
+	_, err := d.UpsertMergeRequest(ctx, mr)
+	require.NoError(err)
+
+	unknown := *mr
+	unknown.HeadRepoCloneURL = ""
+	unknown.HeadRepoCloneURLUnknown = true
+	unknown.UpdatedAt = base.Add(time.Hour)
+	unknown.LastActivityAt = base.Add(time.Hour)
+	_, err = d.UpsertMergeRequest(ctx, &unknown)
+	require.NoError(err)
+
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("https://gitlab.example.com/fork/project.git", got.HeadRepoCloneURL,
+		"an unknown clone URL must preserve the stored value")
+
+	cleared := *mr
+	cleared.HeadRepoCloneURL = ""
+	cleared.UpdatedAt = base.Add(2 * time.Hour)
+	cleared.LastActivityAt = base.Add(2 * time.Hour)
+	_, err = d.UpsertMergeRequest(ctx, &cleared)
+	require.NoError(err)
+
+	got, err = d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Empty(got.HeadRepoCloneURL,
+		"an authoritative empty clone URL must still clear the stored value")
+}
+
 func TestUpsertMergeRequestSnapshotReportsTimestampRejection(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

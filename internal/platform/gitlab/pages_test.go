@@ -2,8 +2,14 @@ package gitlab
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -504,6 +510,342 @@ func TestGitLabHistoricalMergeRequestWindowRedeliversEqualTimestampBoundary(t *t
 		"the next window must re-anchor one second behind the newest consumed created_at")
 }
 
+// gitLabMRFixtureServer serves /projects/42/merge_requests from a mutable
+// in-memory set with real offset pagination semantics: created_after filters
+// strictly after, order is stable ascending by created_at, and page/per_page
+// slice the filtered set with X-Next-Page marking continuations. Tests mutate
+// the set mid-scan to model concurrent deletions.
+type gitLabMRFixtureServer struct {
+	mu      sync.Mutex
+	mrs     []gitLabMRFixture
+	queries []url.Values
+}
+
+type gitLabMRFixture struct {
+	ID        int
+	IID       int
+	CreatedAt time.Time
+}
+
+func (s *gitLabMRFixtureServer) delete(id int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.mrs[:0]
+	for _, mr := range s.mrs {
+		if mr.ID != id {
+			kept = append(kept, mr)
+		}
+	}
+	s.mrs = kept
+}
+
+func (s *gitLabMRFixtureServer) takeQueries() []url.Values {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.queries
+	s.queries = nil
+	return out
+}
+
+func (s *gitLabMRFixtureServer) handle(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	query := r.URL.Query()
+	s.queries = append(s.queries, query)
+	filtered := make([]gitLabMRFixture, 0, len(s.mrs))
+	var createdAfter time.Time
+	if raw := query.Get("created_after"); raw != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			http.Error(w, "bad created_after", http.StatusBadRequest)
+			return
+		}
+		createdAfter = parsed
+	}
+	for _, mr := range s.mrs {
+		if createdAfter.IsZero() || mr.CreatedAt.After(createdAfter) {
+			filtered = append(filtered, mr)
+		}
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].CreatedAt.Before(filtered[j].CreatedAt)
+	})
+	page, perPage := int64(1), int64(20)
+	if raw := query.Get("page"); raw != "" {
+		page, _ = strconv.ParseInt(raw, 10, 64)
+	}
+	if raw := query.Get("per_page"); raw != "" {
+		perPage, _ = strconv.ParseInt(raw, 10, 64)
+	}
+	start := min((page-1)*perPage, int64(len(filtered)))
+	end := min(start+perPage, int64(len(filtered)))
+	if end < int64(len(filtered)) {
+		w.Header().Set("X-Next-Page", strconv.FormatInt(page+1, 10))
+	}
+	rows := make([]string, 0, end-start)
+	for _, mr := range filtered[start:end] {
+		rows = append(rows, fmt.Sprintf(
+			`{"id":%d,"iid":%d,"project_id":42,"title":"mr","state":"merged","created_at":%q,"updated_at":%q}`,
+			mr.ID, mr.IID,
+			mr.CreatedAt.Format(time.RFC3339Nano), mr.CreatedAt.Format(time.RFC3339Nano),
+		))
+	}
+	writeJSON(w, "["+strings.Join(rows, ",")+"]")
+}
+
+// denseGitLabMRFixtures returns one full page of equal-created_at merge
+// requests (ids and iids 1..100) plus two later items (ids 500 and 501), the
+// smallest set forcing within-window offset continuation.
+func denseGitLabMRFixtures(tie, later time.Time) []gitLabMRFixture {
+	fixtures := make([]gitLabMRFixture, 0, 102)
+	for i := 1; i <= 100; i++ {
+		fixtures = append(fixtures, gitLabMRFixture{ID: i, IID: i, CreatedAt: tie})
+	}
+	return append(fixtures,
+		gitLabMRFixture{ID: 500, IID: 500, CreatedAt: later},
+		gitLabMRFixture{ID: 501, IID: 501, CreatedAt: later},
+	)
+}
+
+// TestGitLabHistoricalMergeRequestDenseWindowVerifiesOffsetContinuity proves
+// a created_at tie block denser than one page keeps offset-paging inside the
+// window and that every within-window continuation page verifies (with one
+// per_page=1 probe at the last consumed offset, issued after the page fetch)
+// that the consumed prefix did not shift, before the traversal trusts offset
+// continuity.
+func TestGitLabHistoricalMergeRequestDenseWindowVerifiesOffsetContinuity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	tie := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
+	later := tie.Add(10 * time.Second)
+	fixture := &gitLabMRFixtureServer{mrs: denseGitLabMRFixtures(tie, later)}
+	server := httptest.NewServer(http.HandlerFunc(fixture.handle))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+
+	delivered := map[int]bool{}
+	query := platform.ItemPageQuery{State: platform.ItemStateAll, Order: platform.ItemOrderCreated}
+	pages := 0
+	for {
+		page, err := client.ListMergeRequestsPage(t.Context(), ref, query)
+		require.NoError(err)
+		for _, item := range page.Items {
+			delivered[item.Number] = true
+		}
+		if page.Exhausted {
+			break
+		}
+		query.Cursor = page.NextCursor
+		pages++
+		require.Less(pages, 10, "the stable traversal must terminate")
+	}
+	for i := 1; i <= 100; i++ {
+		assert.True(delivered[i], "tie item %d must be delivered", i)
+	}
+	assert.True(delivered[500])
+	assert.True(delivered[501])
+
+	var probes []url.Values
+	for _, q := range fixture.takeQueries() {
+		if q.Get("per_page") == "1" {
+			probes = append(probes, q)
+		}
+	}
+	require.NotEmpty(probes, "within-window continuation must verify the consumed prefix")
+	probe := probes[0]
+	assert.Equal("100", probe.Get("page"), "the probe re-reads the last consumed offset")
+	assert.Equal("created_at", probe.Get("order_by"))
+	assert.Equal("asc", probe.Get("sort"))
+	assert.Equal(tie.Add(-time.Second).Format(time.RFC3339Nano), probe.Get("created_after"),
+		"the probe runs inside the same traversal window")
+}
+
+// TestGitLabHistoricalMergeRequestDenseWindowRescansWhenSetShifts proves the
+// no-skip guarantee of the windowed traversal: when a deletion shifts a
+// still-present unseen item into the already-consumed offset prefix of a
+// dense window, the boundary probe detects the shift and the cursor rescans
+// the window from page one, so the shifted item is re-delivered by overlap
+// instead of being permanently skipped.
+func TestGitLabHistoricalMergeRequestDenseWindowRescansWhenSetShifts(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	tie := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
+	later := tie.Add(10 * time.Second)
+	fixture := &gitLabMRFixtureServer{mrs: denseGitLabMRFixtures(tie, later)}
+	server := httptest.NewServer(http.HandlerFunc(fixture.handle))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+
+	delivered := map[int]bool{}
+	consume := func(page platform.Page[platform.MergeRequest]) {
+		for _, item := range page.Items {
+			delivered[item.Number] = true
+		}
+	}
+	query := platform.ItemPageQuery{State: platform.ItemStateAll, Order: platform.ItemOrderCreated}
+	first, err := client.ListMergeRequestsPage(t.Context(), ref, query)
+	require.NoError(err)
+	consume(first)
+	require.False(first.Exhausted)
+	query.Cursor = first.NextCursor
+	second, err := client.ListMergeRequestsPage(t.Context(), ref, query)
+	require.NoError(err)
+	consume(second)
+	require.False(second.Exhausted,
+		"a full page of created_at ties keeps paging within the window")
+
+	// A deletion inside the consumed prefix shifts the still-unseen item 500
+	// from the unconsumed page two into the consumed page-one offsets: plain
+	// offset continuation would now permanently skip it.
+	fixture.delete(50)
+
+	query.Cursor = second.NextCursor
+	pages := 0
+	for {
+		page, err := client.ListMergeRequestsPage(t.Context(), ref, query)
+		require.NoError(err)
+		consume(page)
+		if page.Exhausted {
+			break
+		}
+		query.Cursor = page.NextCursor
+		pages++
+		require.Less(pages, 10, "the rescan must converge once the set is stable")
+	}
+
+	assert.True(delivered[500],
+		"the item shifted into the consumed prefix must be re-delivered, not skipped")
+	assert.True(delivered[501])
+	for i := 1; i <= 100; i++ {
+		if i == 50 {
+			continue
+		}
+		assert.True(delivered[i], "tie item %d must be delivered", i)
+	}
+}
+
+// TestGitLabIssueKeysetCursorReplaysOnlyContinuationToken proves the durable
+// keyset cursor binds only the provider's continuation token: every other
+// query parameter of the follow-up request is rebuilt from the validated
+// cursor fields, so a next-link (or a tampered cursor) smuggling different
+// order, state, page-size, or watermark parameters cannot override the
+// enumeration shape.
+func TestGitLabIssueKeysetCursorReplaysOnlyContinuationToken(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var resumeQueries []url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("cursor") == "" {
+			w.Header().Set("Link",
+				`<https://evil.example.com/api/v4/projects/999/issues?cursor=tok-1&order_by=updated_at&sort=desc&per_page=1&state=opened&updated_after=2030-01-01T00:00:00Z&pagination=offset>; rel="next"`)
+		} else {
+			resumeQueries = append(resumeQueries, r.URL.Query())
+		}
+		writeJSON(w, `[{"id":101,"iid":1,"title":"issue","state":"closed","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-02T00:00:00Z"}]`)
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+	historical := platform.ItemPageQuery{State: platform.ItemStateAll, Order: platform.ItemOrderCreated}
+
+	first, err := client.ListIssuesPage(t.Context(), ref, historical)
+	require.NoError(err)
+	require.NotEmpty(first.NextCursor)
+	resumed := historical
+	resumed.Cursor = first.NextCursor
+	_, err = client.ListIssuesPage(t.Context(), ref, resumed)
+	require.NoError(err)
+
+	require.Len(resumeQueries, 1)
+	query := resumeQueries[0]
+	assert.Equal("tok-1", query.Get("cursor"), "the continuation token is replayed")
+	assert.Equal("created_at", query.Get("order_by"), "order comes from the validated cursor, not the link")
+	assert.Equal("asc", query.Get("sort"))
+	assert.Equal("100", query.Get("per_page"))
+	assert.Equal("all", query.Get("state"))
+	assert.Equal("keyset", query.Get("pagination"))
+	assert.Empty(query.Get("updated_after"), "a smuggled watermark must not survive")
+
+	// A tampered token stays one opaque cursor parameter: it cannot be split
+	// into extra query parameters that reshape the request.
+	tampered, err := encodeGitLabPageCursor(gitLabPageCursor{
+		Mode: "historical_issues", Host: ref.Host, RepoPath: "group/project",
+		KeysetCursor: "evil&sort=desc",
+	})
+	require.NoError(err)
+	resumed.Cursor = tampered
+	_, err = client.ListIssuesPage(t.Context(), ref, resumed)
+	require.NoError(err)
+	require.Len(resumeQueries, 2)
+	query = resumeQueries[1]
+	assert.Equal("evil&sort=desc", query.Get("cursor"))
+	assert.Equal("asc", query.Get("sort"))
+
+	// A cursor carrying a full provider link (the previous cursor schema, or
+	// a hand-crafted URL) does not carry keyset continuation state.
+	legacy := base64.RawURLEncoding.EncodeToString([]byte(
+		`{"mode":"historical_issues","host":"gitlab.example.com","repo_path":"group/project",` +
+			`"link":"https://evil.example.com/api/v4/projects/999/issues?cursor=tok-1&sort=desc"}`,
+	))
+	resumed.Cursor = legacy
+	_, err = client.ListIssuesPage(t.Context(), ref, resumed)
+	require.ErrorIs(err, platform.ErrProviderContract)
+}
+
+// TestGitLabIssueKeysetUnsupportedServerReturnsTypedError proves a server
+// that ignores the keyset request (GitLab before 18.3 for project issues)
+// and answers with offset pagination is detected by its response shape and
+// rejected with a typed unsupported_capability error instead of silently
+// degrading to a skippable offset traversal. A single complete page is
+// accepted: with no continuation needed, both pagination modes serve the
+// identical full result.
+func TestGitLabIssueKeysetUnsupportedServerReturnsTypedError(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	watermark := time.Date(2026, 7, 1, 2, 3, 4, 0, time.UTC)
+	multiPage := true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The oldest supported response shape: offset headers and a
+		// page-numbered next link, no keyset cursor parameter.
+		w.Header().Set("X-Page", "1")
+		w.Header().Set("X-Per-Page", "100")
+		if multiPage {
+			w.Header().Set("X-Total", "250")
+			w.Header().Set("X-Total-Pages", "3")
+			w.Header().Set("X-Next-Page", "2")
+			w.Header().Set("Link",
+				`<https://gitlab.example.com/api/v4/projects/42/issues?page=2&per_page=100&order_by=created_at&sort=asc>; rel="next"`)
+		} else {
+			w.Header().Set("X-Total", "1")
+			w.Header().Set("X-Total-Pages", "1")
+		}
+		writeJSON(w, `[{"id":101,"iid":1,"title":"issue","state":"closed","created_at":"2025-01-01T00:00:00Z","updated_at":"2026-07-01T02:03:04Z"}]`)
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := gitLabPagesTestRef()
+
+	_, err := client.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+	})
+	require.ErrorIs(err, platform.ErrUnsupportedCapability)
+	_, err = client.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &watermark,
+	})
+	require.ErrorIs(err, platform.ErrUnsupportedCapability,
+		"the maintenance traversal shares the keyset requirement")
+
+	multiPage = false
+	single, err := client.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
+	})
+	require.NoError(err, "a complete single page needs no continuation and is accepted")
+	assert.True(single.Exhausted)
+	require.Len(single.Items, 1)
+}
+
 func TestGitLabPaginationChargesEveryMarkedPage(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -960,6 +1302,8 @@ func TestGitLabLookupEnrichesForkHeadCloneURLOnce(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(platform.LookupPresent, canonical.Outcome)
 	assert.Equal("https://gitlab.example.com/fork/project.git", canonical.Item.HeadRepoCloneURL)
+	assert.False(canonical.Item.HeadRepoCloneURLUnknown,
+		"a successful enrichment is authoritative")
 	assert.Equal(1, sourceProjectRequests)
 
 	archive, err := client.GetArchiveMergeRequest(t.Context(), ref, 7)
@@ -1012,12 +1356,15 @@ func TestGitLabLookupMergeRequestEnrichmentFailureDegradesToPresent(t *testing.T
 	assert.Equal(platform.LookupPresent, lookup.Outcome)
 	assert.Empty(lookup.Item.HeadRepoCloneURL,
 		"a failed enrichment degrades to an empty head clone URL")
+	assert.True(lookup.Item.HeadRepoCloneURLUnknown,
+		"a failed enrichment marks the clone URL unknown so persistence preserves a previously stored value")
 	assert.Equal("fork MR", lookup.Item.Title)
 
 	archive, err := client.GetArchiveMergeRequest(t.Context(), ref, 7)
 	require.NoError(err)
 	assert.Equal(platform.LookupPresent, archive.Outcome)
 	assert.Empty(archive.Item.HeadRepoCloneURL)
+	assert.True(archive.Item.HeadRepoCloneURLUnknown)
 
 	live, err := platform.RequireMergeRequest(t.Context(), client, ref, 7)
 	require.NoError(err)

@@ -10,6 +10,18 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 )
 
+// archiveInventoryPageCost declares the worst-case logical request count of
+// one historical inventory page. A GitLab merge-request inventory page may
+// spend a second request: inside a dense created_at window the windowed
+// traversal verifies offset continuity with a one-item boundary probe. Every
+// other inventory page is a single request and reserves no more.
+func archiveInventoryPageCost(kind platform.Kind, itemType db.ArchiveItemType) int {
+	if itemType == db.ArchiveItemTypeMergeRequest && kind == platform.KindGitLab {
+		return archiveAttemptCost(2)
+	}
+	return archiveAttemptCost(1)
+}
+
 // inventoryPage advances one historical inventory scan by one canonical page:
 // StateAll ordered by creation for a stable traversal, cursor and generation
 // bound to the durable scan row.
@@ -28,7 +40,7 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 	if !archiveInventorySupported(repo, itemType) {
 		commit.Exhausted = true
 	} else {
-		requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(1))
+		requestCtx, release, err := s.admit(ctx, repo, archiveInventoryPageCost(repo.Ref.Platform, itemType))
 		if err != nil {
 			if errors.Is(err, errAdmissionDeferred) {
 				return err

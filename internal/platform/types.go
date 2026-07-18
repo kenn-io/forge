@@ -86,20 +86,27 @@ type MergeRequest struct {
 	BaseBranch         string
 	HeadSHA            string
 	BaseSHA            string
-	HeadRepoCloneURL   string
-	Additions          int
-	Deletions          int
-	CommentCount       int
-	ReviewDecision     string
-	CIStatus           string
-	MergeableState     string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	LastActivityAt     time.Time
-	MergedAt           *time.Time
-	MergedBy           string
-	ClosedAt           *time.Time
-	Labels             []Label
+	// HeadRepoCloneURL is the clone URL of the head (source) repository. An
+	// empty value with HeadRepoCloneURLUnknown unset is authoritative (the
+	// provider confirmed there is no reachable head repository); setting
+	// HeadRepoCloneURLUnknown marks this observation as undetermined (for
+	// example a failed best-effort fork enrichment), and persistence then
+	// preserves the previously stored value instead of clearing it.
+	HeadRepoCloneURL        string
+	HeadRepoCloneURLUnknown bool
+	Additions               int
+	Deletions               int
+	CommentCount            int
+	ReviewDecision          string
+	CIStatus                string
+	MergeableState          string
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+	LastActivityAt          time.Time
+	MergedAt                *time.Time
+	MergedBy                string
+	ClosedAt                *time.Time
+	Labels                  []Label
 	// Assignees and RequestedReviewers carry usernames. nil means the
 	// provider response did not include the field (unknown), while an
 	// empty non-nil slice means the provider reported none. Persistence

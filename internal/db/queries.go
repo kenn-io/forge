@@ -2256,7 +2256,9 @@ func upsertMergeRequestSnapshot(
 		    base_branch          = excluded.base_branch,
 		    platform_head_sha    = excluded.platform_head_sha,
 		    platform_base_sha    = excluded.platform_base_sha,
-		    head_repo_clone_url  = excluded.head_repo_clone_url,
+		    head_repo_clone_url  = CASE WHEN ?
+		                                THEN middleman_merge_requests.head_repo_clone_url
+		                                ELSE excluded.head_repo_clone_url END,
 		    additions            = excluded.additions,
 		    deletions            = excluded.deletions,
 		    comment_count        = excluded.comment_count,
@@ -2288,6 +2290,7 @@ func upsertMergeRequestSnapshot(
 		mr.CreatedAt, mr.UpdatedAt,
 		mr.LastActivityAt, mr.MergedAt, mr.ClosedAt, mr.MergeableState,
 		mr.AssigneesJSON, mr.ReviewersJSON,
+		mr.HeadRepoCloneURLUnknown,
 	)
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("upsert merge request: %w", err)

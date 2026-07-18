@@ -40,14 +40,16 @@ func (s *Service) hydrateItem(ctx context.Context, repo resolvedRepository, work
 	return nil
 }
 
-func archiveLookupCost(itemType db.ArchiveItemType) int {
-	// A merge-request lookup may spend up to three logical requests: the item
-	// fetch, the repository probe on lookup classification, and the
-	// best-effort fork head clone-URL enrichment inside the canonical lookup
-	// (GitLab). An issue lookup spends two: the fetch and the repository
-	// probe. The declared cost must cover the worst case so an admitted
-	// lookup can never overspend the protected live floor.
-	if itemType == db.ArchiveItemTypeMergeRequest {
+// archiveLookupCost declares the worst-case logical request count of one
+// canonical item lookup. Every provider spends the item fetch plus at most
+// one repository probe on lookup classification. Only a GitLab merge-request
+// lookup adds a third request: the best-effort fork head clone-URL
+// enrichment inside the canonical lookup. The declared cost must cover the
+// provider's worst case so an admitted lookup can never overspend the
+// protected live floor — and no other provider reserves requests it never
+// issues.
+func archiveLookupCost(kind platform.Kind, itemType db.ArchiveItemType) int {
+	if itemType == db.ArchiveItemTypeMergeRequest && kind == platform.KindGitLab {
 		return archiveAttemptCost(3)
 	}
 	return archiveAttemptCost(2)
@@ -73,7 +75,7 @@ func (s *Service) hydrateLookup(
 		}
 		expectedRevision = 0
 	}
-	requestCtx, release, err := s.admit(ctx, repo, archiveLookupCost(work.ItemType))
+	requestCtx, release, err := s.admit(ctx, repo, archiveLookupCost(repo.Ref.Platform, work.ItemType))
 	if err != nil {
 		return false, err
 	}

@@ -40,3 +40,15 @@ func TestDBMergeRequestCarriesProviderMergeableState(t *testing.T) {
 
 	assert.Equal(t, "dirty", mr.MergeableState)
 }
+
+// TestDBMergeRequestCarriesCloneURLUnknownMarker proves the persistence
+// conversion threads the unknown-clone-URL marker through, so a degraded
+// provider observation reaches the upsert with its preserve semantics intact.
+func TestDBMergeRequestCarriesCloneURLUnknownMarker(t *testing.T) {
+	mr := DBMergeRequest(42, MergeRequest{
+		Number:                  7,
+		HeadRepoCloneURLUnknown: true,
+	})
+
+	assert.True(t, mr.HeadRepoCloneURLUnknown)
+}

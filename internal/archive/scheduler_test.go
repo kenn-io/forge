@@ -13,6 +13,34 @@ import (
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
+// TestArchiveRequestCostsAreProviderAware pins the worst-case admission cost
+// tables: only GitLab spends the extra merge-request lookup enrichment
+// request and the dense-window inventory boundary probe, so only GitLab
+// reserves them; every other provider's lookups and pages keep the shared
+// baseline.
+func TestArchiveRequestCostsAreProviderAware(t *testing.T) {
+	tests := []struct {
+		name      string
+		kind      platform.Kind
+		itemType  db.ArchiveItemType
+		lookup    int
+		inventory int
+	}{
+		{"gitlab merge request", platform.KindGitLab, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(3), archiveAttemptCost(2)},
+		{"gitlab issue", platform.KindGitLab, db.ArchiveItemTypeIssue, archiveAttemptCost(2), archiveAttemptCost(1)},
+		{"github merge request", platform.KindGitHub, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(2), archiveAttemptCost(1)},
+		{"github issue", platform.KindGitHub, db.ArchiveItemTypeIssue, archiveAttemptCost(2), archiveAttemptCost(1)},
+		{"forgejo merge request", platform.KindForgejo, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(2), archiveAttemptCost(1)},
+		{"gitea merge request", platform.KindGitea, db.ArchiveItemTypeMergeRequest, archiveAttemptCost(2), archiveAttemptCost(1)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.lookup, archiveLookupCost(tt.kind, tt.itemType))
+			assert.Equal(t, tt.inventory, archiveInventoryPageCost(tt.kind, tt.itemType))
+		})
+	}
+}
+
 func TestArchiveSchedulerDoesNotSerializeSameHostOutsideAdmission(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

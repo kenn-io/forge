@@ -698,20 +698,25 @@ type MergeRequest struct {
 	DiffBaseSHA      string `json:"-"`
 	MergeBaseSHA     string `json:"-"`
 	HeadRepoCloneURL string
-	Additions        int
-	Deletions        int
-	CommentCount     int
-	ReviewDecision   string
-	CIStatus         string
-	CIChecksJSON     string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	LastActivityAt   time.Time
-	MergedAt         *time.Time
-	ClosedAt         *time.Time
-	MergeableState   string
-	DetailFetchedAt  *time.Time
-	CIHadPending     bool
+	// HeadRepoCloneURLUnknown is not a column: it marks HeadRepoCloneURL as
+	// undetermined for this snapshot (a failed best-effort enrichment), so
+	// the upsert preserves the previously stored value instead of clearing
+	// it. An authoritative empty HeadRepoCloneURL leaves it false.
+	HeadRepoCloneURLUnknown bool `json:"-"`
+	Additions               int
+	Deletions               int
+	CommentCount            int
+	ReviewDecision          string
+	CIStatus                string
+	CIChecksJSON            string
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+	LastActivityAt          time.Time
+	MergedAt                *time.Time
+	ClosedAt                *time.Time
+	MergeableState          string
+	DetailFetchedAt         *time.Time
+	CIHadPending            bool
 	// WorkflowApprovalCheckedAt is when middleman last reconciled the
 	// workflow-approval state for this merge request. Nil means never
 	// checked; the GET path treats persisted state as authoritative

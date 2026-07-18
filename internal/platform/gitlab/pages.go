@@ -31,12 +31,21 @@ type gitLabPageCursor struct {
 	Number   int    `json:"number,omitempty"`
 	Page     int64  `json:"page,omitempty"`
 	Since    string `json:"since,omitempty"`
-	// Link is the provider-issued keyset next-page link; only its query
-	// parameters are ever applied, against this client's own base URL.
-	Link string `json:"link,omitempty"`
+	// KeysetCursor is the provider-issued keyset continuation token (the
+	// cursor query parameter of the response's next link). Only this one
+	// token is ever replayed on resumption; order, state, page size, and
+	// watermark are rebuilt from the validated cursor fields, so a tampered
+	// cursor cannot override the query shape.
+	KeysetCursor string `json:"keyset,omitempty"`
 	// Window is the created_after lower bound of the current windowed
 	// created-order traversal window (RFC3339Nano UTC).
 	Window string `json:"window,omitempty"`
+	// Boundary is the provider record id observed at the last consumed
+	// offset of the current window. Within-window continuation pages verify
+	// it with a one-item probe before trusting offset continuity, so a
+	// deletion that shifts the consumed prefix triggers a window rescan
+	// instead of a permanent skip.
+	Boundary int64 `json:"boundary,omitempty"`
 }
 
 // gitLabCursorShape names the continuation form a traversal mode expects, so a
@@ -184,9 +193,11 @@ func (c *Client) listOpenMergeRequestsPage(
 // tie-break column), not by item number; both are monotone with insertion, so
 // restart stability holds. The maintenance traversal runs ascending — under a
 // keyset cursor an item whose updated_at moves mid-scan only moves forward
-// past the cursor, so it is re-served rather than skipped. On servers without
-// issue keyset support the pagination parameter is ignored and the returned
-// offset next-link degrades this to offset traversal.
+// past the cursor, so it is re-served rather than skipped. Servers without
+// issue keyset support (GitLab before 18.3) ignore the pagination parameter
+// and answer with offset pagination; that response shape is detected and
+// rejected with a typed unsupported_capability error instead of silently
+// degrading to a skippable offset traversal.
 func (c *Client) listInventoryIssuesPage(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -215,8 +226,12 @@ func (c *Client) listInventoryIssuesPage(
 		opts.UpdatedAfter = &overlap
 	}
 	requestOptions := []gitlab.RequestOptionFunc{gitlab.WithContext(ctx)}
-	if cursor.Link != "" {
-		requestOptions = append(requestOptions, gitlab.WithKeysetPaginationParameters(cursor.Link))
+	if cursor.KeysetCursor != "" {
+		// Replay only the continuation token: the link a provider (or a
+		// tampered cursor) issued never contributes any other parameter.
+		requestOptions = append(requestOptions, gitlab.WithKeysetPaginationParameters(
+			"?"+url.Values{"cursor": {cursor.KeysetCursor}}.Encode(),
+		))
 	}
 	issues, resp, err := c.api.Issues.ListProjectIssues(pid, opts, requestOptions...)
 	if err != nil {
@@ -224,25 +239,39 @@ func (c *Client) listInventoryIssuesPage(
 			string(platform.ArchiveCapabilityHistoricalIssues), err,
 		)
 	}
+	token, err := c.keysetContinuationToken(resp)
+	if err != nil {
+		return platform.Page[platform.Issue]{}, err
+	}
 	items := make([]platform.Issue, 0, len(issues))
 	for _, issue := range issues {
 		items = append(items, NormalizeIssue(normalizedRef, issue))
 	}
-	return gitLabKeysetPage(items, cursor, resp)
+	return gitLabKeysetPage(items, cursor, token)
 }
 
 // listInventoryMergeRequestsPage owns the historical and maintenance
 // merge-request request shapes. GitLab does not support keyset pagination for
 // project merge requests, so both traversals deviate from cursor-stable
-// ordering and guarantee no-skip via overlap instead:
+// ordering and guarantee no-skip via overlap and verification instead:
 //
 //   - The historical created-order traversal pages offset-ascending inside a
-//     created_after window. Each time a page's newest created_at advances the
-//     window, the cursor re-anchors one second behind it and resets to page
-//     one, so equal-created_at ties and offset shifts at a page boundary are
-//     re-delivered by the overlap rather than skipped (consumers dedupe by
-//     identity). Ties denser than one window page keep paging within the
-//     window. Ordering ties within a timestamp are server-unspecified.
+//     created_after window. GitLab serves equal-created_at ties in
+//     server-unspecified order, so no page-spanning tie-break exists; per
+//     the ItemOrderCreated contract this traversal therefore resumes
+//     inclusively at the boundary creation time: each time a page's newest
+//     created_at advances the window, the cursor re-anchors one second
+//     behind it and resets to page one, so equal-created_at ties and offset
+//     shifts at a page boundary are re-delivered by the overlap rather than
+//     skipped (consumers dedupe by identity). Ties denser than one window
+//     page keep offset-paging within the window; each such continuation
+//     page verifies, with a one-item probe at the last consumed offset
+//     issued after the page fetch, that the consumed prefix did not shift,
+//     and rescans the window from page one when it did — so a deletion
+//     mid-window cannot silently shift an unseen item into the consumed
+//     prefix. Items created with backdated timestamps behind the traversal
+//     position (project imports) are outside the no-skip guarantee, exactly
+//     as they are for a keyset traversal.
 //   - The maintenance traversal pages offset-descending behind the inclusive
 //     updated_after watermark: mid-scan updates move rows into the consumed
 //     prefix, and anything shifted past the scan is covered by the next
@@ -295,16 +324,68 @@ func (c *Client) listInventoryMergeRequestsPage(
 		items = append(items, NormalizeMergeRequest(normalizedRef, mr, nil))
 	}
 	if shape == gitLabCursorWindowedOffset {
+		if cursor.Page > 1 && cursor.Boundary != 0 {
+			intact, probeErr := c.windowBoundaryIntact(ctx, pid, orderBy, cursor)
+			if probeErr != nil {
+				return platform.Page[platform.MergeRequest]{}, c.mapGitLabError(
+					string(platform.ArchiveCapabilityHistoricalMergeRequests), probeErr,
+				)
+			}
+			if !intact {
+				reset := cursor
+				reset.Page = 1
+				reset.Boundary = 0
+				next, encodeErr := encodeGitLabPageCursor(reset)
+				if encodeErr != nil {
+					return platform.Page[platform.MergeRequest]{}, encodeErr
+				}
+				// The fetched items are still valid rows of this repository,
+				// so they are delivered; the rescan re-serves anything the
+				// shift moved and consumers dedupe the overlap by identity.
+				return platform.Page[platform.MergeRequest]{Items: items, NextCursor: next}, nil
+			}
+		}
 		return gitLabWindowedCursorPage(items, cursor, nextGitLabPage(resp))
 	}
 	return gitLabCursorPage(items, cursor, nextGitLabPage(resp), false)
+}
+
+// windowBoundaryIntact re-reads the single item at the last consumed offset
+// of the current traversal window and reports whether it is still the item
+// the cursor recorded there. It runs after the continuation page was fetched,
+// so any prefix shift that happened before that fetch is caught: a mismatch
+// means offset continuity broke and the window must be rescanned.
+func (c *Client) windowBoundaryIntact(
+	ctx context.Context,
+	pid any,
+	orderBy string,
+	cursor gitLabPageCursor,
+) (bool, error) {
+	state, sortOrder := "all", "asc"
+	opts := &gitlab.ListProjectMergeRequestsOptions{
+		State: &state, OrderBy: &orderBy, Sort: &sortOrder,
+		ListOptions: gitlab.ListOptions{Page: (cursor.Page - 1) * defaultPageSize, PerPage: 1},
+	}
+	if cursor.Window != "" {
+		windowStart, err := time.Parse(time.RFC3339Nano, cursor.Window)
+		if err != nil {
+			return false, err
+		}
+		opts.CreatedAfter = &windowStart
+	}
+	mrs, _, err := c.api.MergeRequests.ListProjectMergeRequests(pid, opts, gitlab.WithContext(ctx))
+	if err != nil {
+		return false, err
+	}
+	return len(mrs) == 1 && mrs[0].ID == cursor.Boundary, nil
 }
 
 // gitLabWindowedCursorPage advances the windowed created-order traversal:
 // when the consumed page moved the newest created_at forward, the next window
 // re-anchors one second behind it (overlap re-delivery instead of boundary
 // skips) at page one; otherwise ties denser than the window advance keep
-// offset-paging within the current window.
+// offset-paging within the current window, recording the last consumed
+// item's record id as the boundary the continuation page must verify.
 func gitLabWindowedCursorPage(
 	items []platform.MergeRequest,
 	cursor gitLabPageCursor,
@@ -323,11 +404,15 @@ func gitLabWindowedCursorPage(
 		if cursor.Window == "" || newWindow.After(windowStart) {
 			cursor.Window = newWindow.Format(time.RFC3339Nano)
 			cursor.Page = 1
+			cursor.Boundary = 0
 			advanced = true
 		}
 	}
 	if !advanced {
 		cursor.Page = nextPage
+		if len(items) > 0 {
+			cursor.Boundary = items[len(items)-1].PlatformID
+		}
 	}
 	next, err := encodeGitLabPageCursor(cursor)
 	if err != nil {
@@ -347,22 +432,61 @@ func inclusiveGitLabWatermark(since time.Time) time.Time {
 	return since.UTC().Add(-time.Nanosecond)
 }
 
+// keysetContinuationToken extracts the continuation token from a keyset
+// response and detects servers that ignored the keyset request: GitLab
+// releases before 18.3 do not support keyset pagination for project issues
+// and answer offset-shaped (an X-Next-Page header and a page-numbered next
+// link without a cursor token). Silently following that shape would degrade
+// the traversal to offset pagination without its no-skip guarantees, so any
+// offset-shaped continuation is rejected with a typed unsupported_capability
+// error. A response needing no continuation is accepted regardless of shape:
+// a complete single page is identical under either pagination mode.
+func (c *Client) keysetContinuationToken(resp *gitlab.Response) (string, error) {
+	if resp == nil {
+		return "", nil
+	}
+	if resp.NextPage > 0 {
+		return "", c.keysetUnsupportedError()
+	}
+	if resp.NextLink == "" {
+		return "", nil
+	}
+	nextURL, err := url.Parse(resp.NextLink)
+	if err != nil {
+		return "", platform.ProviderContract(platform.KindGitLab, c.host, "keyset_next_link", err)
+	}
+	token := nextURL.Query().Get("cursor")
+	if token == "" {
+		return "", c.keysetUnsupportedError()
+	}
+	return token, nil
+}
+
+func (c *Client) keysetUnsupportedError() error {
+	return &platform.Error{
+		Code:         platform.ErrCodeUnsupportedCapability,
+		Provider:     platform.KindGitLab,
+		PlatformHost: c.host,
+		Capability:   string(platform.ArchiveCapabilityHistoricalIssues),
+		Err: errors.New(
+			"server answered a keyset pagination request with offset pagination; " +
+				"issue inventory traversal requires GitLab 18.3 or later",
+		),
+	}
+}
+
 // gitLabKeysetPage assembles a canonical page from one keyset response:
-// exhaustion when the provider issued no next link, otherwise a cursor
-// carrying the provider's keyset continuation link.
+// exhaustion when the provider issued no continuation, otherwise a cursor
+// carrying only the provider's keyset continuation token.
 func gitLabKeysetPage[T any](
 	items []T,
 	cursor gitLabPageCursor,
-	resp *gitlab.Response,
+	token string,
 ) (platform.Page[T], error) {
-	nextLink := ""
-	if resp != nil {
-		nextLink = resp.NextLink
-	}
-	if nextLink == "" {
+	if token == "" {
 		return platform.Page[T]{Items: items, Exhausted: true}, nil
 	}
-	cursor.Link = nextLink
+	cursor.KeysetCursor = token
 	next, err := encodeGitLabPageCursor(cursor)
 	if err != nil {
 		return platform.Page[T]{}, err
@@ -429,8 +553,10 @@ func (c *Client) LookupIssue(
 // on; this is the one canonical lookup, so archive callers share the
 // enrichment (a cached extra request only when the source project differs).
 // The enrichment is best-effort: a failed source-project fetch degrades the
-// result to an empty HeadRepoCloneURL and never fails the lookup, so an
-// enrichment outage cannot block archive hydration or live detail sync.
+// result to an empty HeadRepoCloneURL marked HeadRepoCloneURLUnknown — so
+// persistence preserves a previously known clone URL instead of clearing it —
+// and never fails the lookup, so an enrichment outage cannot block archive
+// hydration or live detail sync.
 func (c *Client) LookupMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -454,6 +580,7 @@ func (c *Client) LookupMergeRequest(
 			return platform.ItemLookup[platform.MergeRequest]{}, enrichErr
 		}
 		cloneURL = ""
+		item.HeadRepoCloneURLUnknown = true
 	}
 	item.HeadRepoCloneURL = cloneURL
 	return platform.ItemLookup[platform.MergeRequest]{
@@ -805,18 +932,18 @@ func (c *Client) decodePageCursor(
 
 // validateGitLabCursorShape rejects a resumption cursor whose continuation
 // state does not belong to the traversal kind decoding it, so an offset page
-// number can never be replayed as a keyset link or vice versa.
+// number can never be replayed as a keyset token or vice versa.
 func validateGitLabCursorShape(cursor gitLabPageCursor, shape gitLabCursorShape) error {
 	switch shape {
 	case gitLabCursorKeyset:
-		if cursor.Link == "" || cursor.Page != 0 || cursor.Window != "" {
+		if cursor.KeysetCursor == "" || cursor.Page != 0 || cursor.Window != "" || cursor.Boundary != 0 {
 			return errors.New("cursor does not carry keyset continuation state")
 		}
-		if _, err := url.Parse(cursor.Link); err != nil {
-			return fmt.Errorf("invalid keyset continuation link: %w", err)
-		}
 	case gitLabCursorWindowedOffset:
-		if cursor.Page <= 0 || cursor.Link != "" {
+		if cursor.Page <= 0 || cursor.KeysetCursor != "" {
+			return errors.New("cursor does not carry windowed offset continuation state")
+		}
+		if cursor.Page == 1 && cursor.Boundary != 0 {
 			return errors.New("cursor does not carry windowed offset continuation state")
 		}
 		if cursor.Window != "" {
@@ -825,7 +952,7 @@ func validateGitLabCursorShape(cursor gitLabPageCursor, shape gitLabCursorShape)
 			}
 		}
 	default:
-		if cursor.Page <= 0 || cursor.Link != "" || cursor.Window != "" {
+		if cursor.Page <= 0 || cursor.KeysetCursor != "" || cursor.Window != "" || cursor.Boundary != 0 {
 			return errors.New("cursor does not carry offset continuation state")
 		}
 	}

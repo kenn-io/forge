@@ -1498,11 +1498,71 @@ func (s *Syncer) mergeRequestFetchOutcomeError(
 	return provider.mergeRequestLookupOutcomeError(ctx, platformRepoRef(repo), number, pr, err)
 }
 
+// ListOpenGitHubIssues is the raw ETag-gated open-issue bulk read backing both
+// the canonical listOpenIssuesPage normalization and the optimized GitHub
+// index sync consumer. Because the raw slice is consumed without passing
+// through the validating canonical reader wrapper, this method applies the
+// equivalent contract checks itself, so no caller ever observes an unvalidated
+// bulk observation.
 func (p *gitHubClientProvider) ListOpenGitHubIssues(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) ([]*gh.Issue, error) {
-	return p.client.ListOpenIssues(ctx, ref.Owner, ref.Name)
+	issues, err := p.client.ListOpenIssues(ctx, ref.Owner, ref.Name)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.validateOpenIssuesContract(ref, issues); err != nil {
+		return nil, err
+	}
+	return issues, nil
+}
+
+// validateOpenIssuesContract applies the contract checks the validating
+// canonical reader wrapper would run on a normalized open-issue page to the
+// raw bulk result: items must be non-nil, item numbers positive and unique
+// within the single exhausted open list, and every item bound to the
+// requested repository. Monotonic-order checks do not apply because the open
+// scan leaves traversal order contractually unspecified. Violations are typed
+// provider contract errors so consumers reject the whole list instead of
+// persisting from it.
+func (p *gitHubClientProvider) validateOpenIssuesContract(
+	ref platform.RepoRef,
+	issues []*gh.Issue,
+) error {
+	seen := make(map[int]bool, len(issues))
+	for _, issue := range issues {
+		if issue == nil {
+			return platform.ProviderContract(
+				platform.KindGitHub, p.host, "item",
+				fmt.Errorf("provider returned a nil issue in the open list for %s", ref.DisplayName()),
+			)
+		}
+		number := issue.GetNumber()
+		if number <= 0 {
+			return platform.ProviderContract(
+				platform.KindGitHub, p.host, "item_number",
+				fmt.Errorf("provider returned nonpositive issue number %d", number),
+			)
+		}
+		if seen[number] {
+			return platform.ProviderContract(
+				platform.KindGitHub, p.host, "item_number",
+				fmt.Errorf("provider returned duplicate issue number %d in one open list", number),
+			)
+		}
+		seen[number] = true
+		if destination := githubArchiveDestination(ref, issue.GetRepositoryURL()); destination != nil {
+			return platform.ProviderContract(
+				platform.KindGitHub, p.host, "item_repo",
+				fmt.Errorf(
+					"provider returned issue %d bound to repository %s for requested %s",
+					number, destination.RepoPath, ref.RepoPath,
+				),
+			)
+		}
+	}
+	return nil
 }
 
 func (p *gitHubClientProvider) ListLabels(
@@ -4843,6 +4903,15 @@ func (s *Syncer) indexSyncRepo(
 		if rawIssueReader, ok := issueReader.(interface {
 			ListOpenGitHubIssues(context.Context, platform.RepoRef) ([]*gh.Issue, error)
 		}); ok && hasGitHubClient {
+			// Sanctioned optimized bulk observation (design doc
+			// 2026-07-16-archive-single-ingestion-correction, "Optimized
+			// bulk observations"): the GitHub index sync consumes the raw
+			// ETag-gated open-issue list instead of the validating
+			// canonical page reader so the per-item detail path keeps its
+			// GitHub-only fields. ListOpenGitHubIssues applies the
+			// wrapper-equivalent contract checks itself, so a malformed
+			// bulk result surfaces here as a typed contract error and is
+			// never persisted.
 			ghIssues, issueListErr = rawIssueReader.ListOpenGitHubIssues(ctx, platformRef)
 		} else if issuePages, pagesErr := s.issuePageReaderFor(repo); pagesErr != nil {
 			issueListErr = pagesErr

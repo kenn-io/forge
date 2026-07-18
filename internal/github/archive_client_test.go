@@ -351,6 +351,92 @@ func TestGitHubArchiveReviewThreadCommentsHaveBoundedContinuation(t *testing.T) 
 	assert.True(second.Exhausted)
 }
 
+// TestGitHubReviewThreadsResumeAcrossNonFinalEdgeCommentContinuation drives
+// the canonical review-thread reader through a GraphQL page carrying several
+// thread edges where a NON-final edge needs a comment follow-up page. The
+// provider must suspend at that edge, drain the pending comments through the
+// continuation cursor, then resume the thread traversal after the suspended
+// edge so every thread and every comment is returned exactly once.
+func TestGitHubReviewThreadsResumeAcrossNonFinalEdgeCommentContinuation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var requests []string
+	threadComment := func(id int) string {
+		return fmt.Sprintf(
+			`{"id":"RC_%d","databaseId":%d,"body":"comment %d","author":{"login":"reviewer"},"path":"main.go","line":%d,"createdAt":"2026-07-03T00:00:00Z","updatedAt":"2026-07-03T00:00:00Z"}`,
+			id, id, id, id,
+		)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Variables map[string]any `json:"variables"`
+		}
+		assert.NoError(json.NewDecoder(r.Body).Decode(&request))
+		w.Header().Set("Content-Type", "application/json")
+		if threadID, ok := request.Variables["threadID"]; ok {
+			requests = append(requests, fmt.Sprintf("comments %v after %v", threadID, request.Variables["cursor"]))
+			assert.Equal("T_2", threadID)
+			assert.Equal("t2-c1", request.Variables["cursor"])
+			_, _ = fmt.Fprintf(w, `{"data":{"node":{"comments":{"nodes":[%s],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`, threadComment(3))
+			return
+		}
+		requests = append(requests, fmt.Sprintf("threads after %v", request.Variables["cursor"]))
+		if request.Variables["cursor"] == nil {
+			// One page with three edges; the middle (non-final) edge T_2
+			// has a pending comment continuation.
+			_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequest":{"reviewThreads":{"edges":[
+				{"cursor":"edge-1","node":{"id":"T_1","isResolved":false,"path":"main.go","diffSide":"RIGHT","line":1,"comments":{"nodes":[%s],"pageInfo":{"hasNextPage":false,"endCursor":null}}}},
+				{"cursor":"edge-2","node":{"id":"T_2","isResolved":false,"path":"main.go","diffSide":"RIGHT","line":2,"comments":{"nodes":[%s],"pageInfo":{"hasNextPage":true,"endCursor":"t2-c1"}}}},
+				{"cursor":"edge-3","node":{"id":"T_3","isResolved":true,"path":"main.go","diffSide":"RIGHT","line":3,"comments":{"nodes":[%s],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}
+			],"pageInfo":{"hasNextPage":false,"endCursor":"edge-3"}}}}}}`, threadComment(1), threadComment(2), threadComment(4))
+			return
+		}
+		assert.Equal("edge-2", request.Variables["cursor"])
+		_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequest":{"reviewThreads":{"edges":[
+			{"cursor":"edge-3","node":{"id":"T_3","isResolved":true,"path":"main.go","diffSide":"RIGHT","line":3,"comments":{"nodes":[%s],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}
+		],"pageInfo":{"hasNextPage":false,"endCursor":"edge-3"}}}}}}`, threadComment(4))
+	}))
+	defer srv.Close()
+
+	provider := newArchiveTestGitHubProvider(t, srv.URL)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	reader, err := registry.MergeRequestPageReader(platform.KindGitHub, "github.com")
+	require.NoError(err)
+	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
+
+	var pages int
+	var got []string
+	cursor := ""
+	for {
+		page, err := reader.ListReviewThreadsPage(t.Context(), ref, 7, cursor)
+		require.NoError(err)
+		pages++
+		for _, item := range page.Items {
+			assert.Equal(ref.RepoPath, item.Repo.RepoPath)
+			assert.Equal(7, item.MergeRequestNumber)
+			got = append(got, item.ProviderThreadID+"/"+item.ProviderCommentID)
+		}
+		if page.Exhausted {
+			break
+		}
+		require.NotEmpty(page.NextCursor)
+		require.Less(pages, 10, "resume loop must terminate")
+		cursor = page.NextCursor
+	}
+
+	// Every thread and every comment appears exactly once across the
+	// resumed pages, including the suspended edge's continuation comment
+	// and the threads after the suspended edge.
+	assert.Equal([]string{"T_1/1", "T_2/2", "T_2/3", "T_3/4"}, got)
+	assert.Equal(3, pages)
+	assert.Equal([]string{
+		"threads after <nil>",
+		"comments T_2 after t2-c1",
+		"threads after edge-2",
+	}, requests)
+}
+
 func TestGitHubArchiveLookupOutcomes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -327,9 +327,13 @@ func TestWorkspaceDiffCacheSelectedColdFailureWaitsForPrewarmBackoff(t *testing.
 	assert := assert.New(t)
 	retry := make(chan time.Time)
 	attempts := make(chan int64, 2)
+	backoffStarted := make(chan struct{})
 	var prepareCalls atomic.Int64
 	cache := newWorkspaceDiffCache(t.Context(), workspaceDiffCacheDeps{
-		after: func(time.Duration) <-chan time.Time { return retry },
+		after: func(time.Duration) <-chan time.Time {
+			close(backoffStarted)
+			return retry
+		},
 		resolve: func(context.Context, workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
 			return workspaceDiffTestResolved(), true, nil
 		},
@@ -351,6 +355,7 @@ func TestWorkspaceDiffCacheSelectedColdFailureWaitsForPrewarmBackoff(t *testing.
 	})
 	t.Cleanup(release)
 	require.Equal(int64(1), <-attempts)
+	<-backoffStarted
 
 	cache.ValidateSelected()
 	earlyAttempt := false

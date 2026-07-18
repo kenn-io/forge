@@ -1327,9 +1327,11 @@ func (c *liveClient) ListOpenIssues(
 	progress.done()
 
 	var all []*gh.Issue
-	// GitHub's Issues API returns PRs too — filter them out.
+	// GitHub's Issues API returns PRs too — filter them out. Nil entries
+	// pass through so contract validation can reject them typed instead of
+	// the filter panicking on the dereference.
 	for _, issue := range issues {
-		if issue.PullRequestLinks == nil {
+		if issue == nil || issue.PullRequestLinks == nil {
 			all = append(all, issue)
 		}
 	}
@@ -3245,10 +3247,12 @@ func (c *liveClient) ListIssuesPage(
 			state, page, owner, repo, err,
 		)
 	}
-	// Filter out PRs (GitHub Issues API returns them).
+	// Filter out PRs (GitHub Issues API returns them). Nil entries pass
+	// through so the canonical normalization rejects them typed instead of
+	// the filter panicking on the dereference.
 	var filtered []*gh.Issue
 	for _, issue := range issues {
-		if issue.PullRequestLinks == nil {
+		if issue == nil || issue.PullRequestLinks == nil {
 			filtered = append(filtered, issue)
 		}
 	}

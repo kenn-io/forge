@@ -1,6 +1,8 @@
 package github
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -128,4 +130,31 @@ func TestSyncerRejectsMalformedOpenIssueBulkListWithoutPersisting(t *testing.T) 
 	}
 	_, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
 	assert.True(flagged, "repo must be marked failed after a bulk contract violation")
+}
+
+// TestGitHubLiveOpenIssueListsPreserveNilEntriesForValidation drives the real
+// live-client HTTP decode path: a null entry in the provider's JSON array must
+// survive pull-request filtering so contract validation classifies it as a
+// typed provider error instead of the filter panicking on the dereference.
+func TestGitHubLiveOpenIssueListsPreserveNilEntriesForValidation(t *testing.T) {
+	require := require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"id":1001,"number":1,"title":"issue","state":"open",` +
+			`"created_at":"2026-07-01T00:00:00Z","updated_at":"2026-07-02T00:00:00Z"}, null]`))
+	}))
+	t.Cleanup(server.Close)
+	provider := newArchiveTestGitHubProvider(t, server.URL)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}
+
+	_, bulkErr := provider.ListOpenGitHubIssues(t.Context(), ref)
+	require.ErrorIs(bulkErr, platform.ErrProviderContract)
+
+	_, pageErr := provider.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
+		State: platform.ItemStateOpen, Order: platform.ItemOrderCreated,
+	})
+	require.ErrorIs(pageErr, platform.ErrProviderContract)
 }

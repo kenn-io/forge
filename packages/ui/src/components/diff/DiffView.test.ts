@@ -153,10 +153,22 @@ describe("DiffView", () => {
             const failed = Response.json({ detail: "refresh failed" }, { status: 500 });
             return { error: await failed.clone().json(), response: failed };
           }
-          return { data: { stale: false, files: [filesCalls === 1 ? oldFile : newFile] }, response };
+          return {
+            data: {
+              stale: false,
+              files: [filesCalls === 1 ? oldFile : newFile],
+              snapshot_version: `generation:${filesCalls}`,
+            },
+            response,
+          };
         }
         return {
-          data: { stale: false, whitespace_only_count: 0, files: [filesCalls === 1 ? oldFile : newFile] },
+          data: {
+            stale: false,
+            whitespace_only_count: 0,
+            files: [filesCalls === 1 ? oldFile : newFile],
+            snapshot_version: `generation:${filesCalls}`,
+          },
           response,
         };
       }),
@@ -175,6 +187,63 @@ describe("DiffView", () => {
     await vi.runOnlyPendingTimersAsync();
     await refresh;
     expect(getByText("b.ts")).toBeTruthy();
+  });
+
+  it("surfaces refresh errors when the initial workspace snapshot is not yet visible", async () => {
+    const file = makeFile("a.ts");
+    let filesCalls = 0;
+    let releaseInitial: () => void = () => {};
+    let signalInitialStarted: () => void = () => {};
+    let signalFailure: () => void = () => {};
+    const initialStarted = new Promise<void>((resolve) => {
+      signalInitialStarted = resolve;
+    });
+    const initialGate = new Promise<void>((resolve) => {
+      releaseInitial = resolve;
+    });
+    const failureSeen = new Promise<void>((resolve) => {
+      signalFailure = resolve;
+    });
+    const client = {
+      GET: vi.fn(async (path: string) => {
+        if (path.endsWith("/files")) {
+          filesCalls += 1;
+          if (filesCalls === 1) {
+            signalInitialStarted();
+            await initialGate;
+            const response = Response.json({});
+            return {
+              data: { stale: false, files: [file], snapshot_version: "generation:1" },
+              response,
+            };
+          }
+          signalFailure();
+          const response = Response.json({ detail: "cold refresh failed" }, { status: 500 });
+          return { error: await response.clone().json(), response };
+        }
+        const response = Response.json({});
+        return {
+          data: {
+            stale: false,
+            whitespace_only_count: 0,
+            files: [file],
+            snapshot_version: "generation:1",
+          },
+          response,
+        };
+      }),
+    } as unknown as NonNullable<DiffStoreOptions["client"]>;
+    const diff = createDiffStore({ client });
+    const { getByText, queryByText } = renderDiffView(diff);
+    const initialLoad = diff.loadWorkspaceDiff("ws-1", "head");
+    await initialStarted;
+    const refresh = diff.loadWorkspaceDiff("ws-1", "head", false, { preserveVisible: true });
+    await failureSeen;
+    releaseInitial();
+    await Promise.all([initialLoad, refresh]);
+
+    await waitFor(() => expect(getByText("cold refresh failed")).toBeTruthy());
+    expect(queryByText("a.ts")).toBeNull();
   });
 
   it("shows an error when an initial snapshot retry fails", async () => {

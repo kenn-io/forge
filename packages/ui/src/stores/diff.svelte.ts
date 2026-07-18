@@ -579,6 +579,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const workspaceBase = currentWorkspaceBase;
     const workspaceStacked = currentWorkspaceStacked;
     const workspaceLoadToken = currentWorkspaceLoadToken;
+    const workspaceGeneration = workspaceLoadGeneration;
     const revision = fileList?.snapshot_version ?? diff?.snapshot_version;
     const key =
       `workspace:${workspaceHostKey ?? "self"}:${workspaceID}:` +
@@ -617,7 +618,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
         if (
           currentWorkspaceID !== workspaceID ||
           currentWorkspaceHostKey !== workspaceHostKey ||
-          currentWorkspaceBase !== workspaceBase
+          currentWorkspaceBase !== workspaceBase ||
+          currentWorkspaceLoadToken !== workspaceLoadToken ||
+          workspaceLoadGeneration !== workspaceGeneration
         ) {
           throw new Error("Workspace changed while refreshing file preview");
         }
@@ -869,7 +872,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
     if (!workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) return;
     clearFilePreviewCache();
-    const preserveVisible = options.preserveVisible === true && !workspaceScopeChanged;
+    const visibleSnapshotVersion = diff?.snapshot_version;
+    const preserveVisible =
+      options.preserveVisible === true &&
+      !workspaceScopeChanged &&
+      visibleSnapshotVersion !== undefined &&
+      fileList?.snapshot_version === visibleSnapshotVersion;
     let retryDelay = workspaceDiffRetryInitialDelay;
     while (workspaceLoadIsCurrent(generation, workspaceID, workspaceHostKey, base)) {
       let retrySignal: AbortSignal | null = null;

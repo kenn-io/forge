@@ -222,9 +222,11 @@ server check exactly.
 - Manual workspace refresh schedules asynchronous validation for every cached
   key belonging to that workspace, whether or not the workspace currently has
   a local selection lease, even when provider refresh later fails. Workspace
-  responses and runtime readiness never wait on Git. Failure preserves the last-known-good snapshot;
-  preserving browser refreshes retry with capped, cancelable backoff while initial
-  loads still expose blocking errors (`packages/ui/src/stores/diff.svelte.ts::loadWorkspaceDiff`).
+  responses and runtime readiness never wait on Git. Failure preserves the
+  last-known-good snapshot; preserving browser refreshes retry with capped,
+  cancelable backoff only when retained files and diff share a snapshot version,
+  while cold loads expose blocking errors
+  (`packages/ui/src/stores/diff.svelte.ts::loadWorkspaceDiff`).
   A changed fingerprint publishes through `workspace_diff_changed` when ready.
   Watcher hints validate selected keys even inside the freshness interval;
   periodic validation makes stale snapshots eligible for refresh, while the
@@ -261,7 +263,10 @@ server check exactly.
 - Snapshot versions are opaque equality tokens. Clients may compare only for
   equality; ordering and replay position come from SSE event IDs, not from
   parsing the version or revision fields. A typed `snapshot_changed` preview
-  conflict reloads the coherent files/diff pair once and retries the preview.
+  conflict reloads the coherent files/diff pair once only while the preview's
+  captured load token and generation still own the store; stale preview work
+  fails without mutation
+  (`packages/ui/src/stores/diff.svelte.ts::loadWorkspaceFilePreview`).
 - Live worktree reads use Go's `os.Root` containment. Final symlinks are read as
   links, regular files are identity-checked across the open, and intermediate
   symlinks may resolve only within the worktree. Untracked patch reads and

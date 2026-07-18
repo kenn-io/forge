@@ -362,6 +362,54 @@ describe("createDiffStore loadDiff", () => {
     );
   });
 
+  it("rejects stale preview recovery after a newer same-workspace load takes ownership", async () => {
+    let filesCalls = 0;
+    let releasePreview: () => void = () => {};
+    let signalPreviewStarted: () => void = () => {};
+    const previewStarted = new Promise<void>((resolve) => {
+      signalPreviewStarted = resolve;
+    });
+    const previewGate = new Promise<void>((resolve) => {
+      releasePreview = resolve;
+    });
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/workspaces/ws-1/files")) {
+        filesCalls += 1;
+        const path = filesCalls === 1 ? "original.ts" : filesCalls === 2 ? "replacement.ts" : "stale.ts";
+        return Response.json(makeFilesResult([path], { snapshot_version: `generation:${filesCalls}` }));
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        const path = filesCalls === 1 ? "original.ts" : filesCalls === 2 ? "replacement.ts" : "stale.ts";
+        return Response.json({ ...makeDiffResult([path]), snapshot_version: `generation:${filesCalls}` });
+      }
+      if (url.includes("/workspaces/ws-1/file-preview")) {
+        signalPreviewStarted();
+        await previewGate;
+        return Response.json(
+          { code: "conflict", detail: "snapshot changed", details: { reason: "snapshot_changed" } },
+          { status: 409 },
+        );
+      }
+      return Response.json({}, { status: 404 });
+    });
+
+    const store = createDiffStore({ client: testClient() });
+    const initialToken = {};
+    const replacementToken = {};
+    await store.loadWorkspaceDiff("ws-1", "head", false, { loadToken: initialToken });
+    const preview = store.loadFilePreview("owner", "repo", 1, "original.ts", "new");
+    await previewStarted;
+
+    await store.loadWorkspaceDiff("ws-1", "head", false, { loadToken: replacementToken });
+    releasePreview();
+
+    await expect(preview).rejects.toThrow("Workspace changed while refreshing file preview");
+    expect(store.getDiff()?.files[0]?.path).toBe("replacement.ts");
+    expect(filesCalls).toBe(2);
+  });
+
   it("loads workspace diffs against the merge target", async () => {
     const calls: string[] = [];
     const files = makeFilesResult(["src/app.go"]);

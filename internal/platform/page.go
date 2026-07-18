@@ -31,10 +31,15 @@ const (
 //
 // The canonical contract every provider implementation must honor:
 //
-//   - ItemOrderCreated traverses ascending by provider creation time, ties
-//     breaking ascending by item number, so every historical traversal has a
-//     total, restart-stable order and an interrupted scan resumes without
-//     missing older items.
+//   - ItemOrderCreated traverses ascending by provider creation time with a
+//     restart-stable resumption guarantee. Equal creation times break by a
+//     documented provider-stable tie-breaker — item number where the provider
+//     API can honor it across page boundaries; otherwise the provider's own
+//     stable record ordering. A provider whose API cannot enforce a
+//     page-spanning tie-break must instead resume inclusively at the boundary
+//     creation time, so an interrupted scan never permanently skips an item
+//     that shares its resume timestamp; consumers absorb the resulting
+//     overlap through idempotent upserts.
 //   - ItemOrderUpdated promises provider-efficient traversal by update time
 //     with the direction unspecified: each provider uses whichever direction
 //     its API serves without re-paging the whole dataset (GitHub's pulls API,

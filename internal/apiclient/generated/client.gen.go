@@ -1092,10 +1092,7 @@ type ArchiveResetBody struct {
 	ItemNumber *int64  `json:"item_number,omitempty"`
 
 	// ItemType Item type: issue or merge_request.
-	ItemType *string `json:"item_type,omitempty"`
-
-	// Mode Recovery mode: restart or continue.
-	Mode       string               `json:"mode"`
+	ItemType   *string              `json:"item_type,omitempty"`
 	Repository ArchiveRepositoryRef `json:"repository"`
 
 	// Scan Repository scan name.

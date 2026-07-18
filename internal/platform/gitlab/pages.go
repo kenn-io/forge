@@ -21,9 +21,8 @@ import (
 // produced it: the query mode, the repository identity, the item number for
 // detail datasets, and the maintenance watermark. Reusing a cursor with a
 // different shape is a provider-contract violation. Exactly one continuation
-// form is populated per traversal kind: Page for offset traversals, Link for
-// keyset traversals, and Page plus an optional Window and confirmation marker
-// for the windowed created-order merge-request traversal.
+// form is populated per traversal kind: Page for offset traversals and Link
+// for keyset traversals.
 type gitLabPageCursor struct {
 	Mode     string `json:"mode"`
 	Host     string `json:"host"`
@@ -37,16 +36,6 @@ type gitLabPageCursor struct {
 	// watermark are rebuilt from the validated cursor fields, so a tampered
 	// cursor cannot override the query shape.
 	KeysetCursor string `json:"keyset,omitempty"`
-	// Window is the created_after lower bound of the current windowed
-	// created-order traversal window (RFC3339Nano UTC).
-	Window string `json:"window,omitempty"`
-	// Boundary is the provider record id observed at the last consumed
-	// offset of the current window. Its presence distinguishes a continuation
-	// into a partially consumed window from a cursor at a window boundary.
-	Boundary int64 `json:"boundary,omitempty"`
-	// Confirm marks a full-window sweep, starting at page one, that must also
-	// observe the end of the replayed window before declaring exhaustion.
-	Confirm bool `json:"confirm,omitempty"`
 }
 
 // gitLabCursorShape names the continuation form a traversal mode expects, so a
@@ -56,10 +45,7 @@ type gitLabCursorShape int
 const (
 	gitLabCursorOffset gitLabCursorShape = iota
 	gitLabCursorKeyset
-	gitLabCursorWindowedOffset
 )
-
-const maxWindowReplayPages = 4
 
 // ListIssuesPage is the single owner of GitLab issue inventory requests and
 // their normalization. It dispatches on the query: StateOpen drains the open
@@ -111,8 +97,8 @@ func (c *Client) ListMergeRequestsPage(
 			ctx, ref, since, query.Cursor, "updated_merge_requests", "updated_at",
 		)
 	}
-	return c.listInventoryMergeRequestsPage(
-		ctx, ref, time.Time{}, query.Cursor, "historical_merge_requests", "created_at",
+	return platform.Page[platform.MergeRequest]{}, platform.UnsupportedCapability(
+		platform.KindGitLab, c.host, string(platform.ArchiveCapabilityHistoricalMergeRequests),
 	)
 }
 
@@ -254,36 +240,11 @@ func (c *Client) listInventoryIssuesPage(
 	return gitLabKeysetPage(items, cursor, token)
 }
 
-// listInventoryMergeRequestsPage owns the historical and maintenance
-// merge-request request shapes. GitLab does not support keyset pagination for
-// project merge requests, so both traversals deviate from cursor-stable
-// ordering and guarantee no-skip via overlap and verification instead:
-//
-//   - The historical created-order traversal pages offset-ascending inside a
-//     created_after window. GitLab serves equal-created_at ties in
-//     server-unspecified order, so no page-spanning tie-break exists; per
-//     the ItemOrderCreated contract this traversal therefore resumes
-//     inclusively at the boundary creation time: each time a page's newest
-//     created_at advances the window, the cursor re-anchors one second
-//     behind it and resets to page one, so equal-created_at ties and offset
-//     shifts at a page boundary are re-delivered by the overlap rather than
-//     skipped (consumers dedupe by identity). Ties denser than one window
-//     page keep offset-paging within the window; each such continuation
-//     inclusively re-reads the window from page one through the requested
-//     page. An equal-timestamp record that moves from the unseen suffix into
-//     the consumed prefix is therefore re-delivered instead of skipped. The
-//     replay is bounded at maxWindowReplayPages; deeper tie groups return a
-//     page-limit error that the archive layer durably records for that scan.
-//     A replay that reaches the end starts a confirming sweep at page one,
-//     and only an end observed by that sweep declares exhaustion. A read that
-//     fetched one wire page has no mid-call replay race and exhausts directly.
-//     Items created with backdated timestamps behind the traversal position
-//     (project imports) are outside the no-skip guarantee, exactly as they
-//     are for a keyset traversal.
-//   - The maintenance traversal pages offset-descending behind the inclusive
-//     updated_after watermark: mid-scan updates move rows into the consumed
-//     prefix, and anything shifted past the scan is covered by the next
-//     scan's watermark overlap.
+// listInventoryMergeRequestsPage owns the maintenance merge-request request
+// shape. GitLab project merge requests do not support keyset pagination, so
+// maintenance uses bounded offset-descending pages behind an inclusive
+// updated_after watermark. Historical inventory is not advertised because
+// offset ordering cannot safely enumerate equal-created_at ties.
 func (c *Client) listInventoryMergeRequestsPage(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -296,146 +257,32 @@ func (c *Client) listInventoryMergeRequestsPage(
 	if err != nil {
 		return platform.Page[platform.MergeRequest]{}, err
 	}
-	shape := gitLabCursorWindowedOffset
-	state, sortOrder := "all", "asc"
-	if !since.IsZero() {
-		shape = gitLabCursorOffset
-		sortOrder = "desc"
-	}
-	cursor, err := c.decodePageCursor(normalizedRef, 0, encodedCursor, mode, since, shape)
+	cursor, err := c.decodePageCursor(
+		normalizedRef, 0, encodedCursor, mode, since, gitLabCursorOffset,
+	)
 	if err != nil {
 		return platform.Page[platform.MergeRequest]{}, err
 	}
-	if shape == gitLabCursorWindowedOffset && cursor.Page > maxWindowReplayPages {
-		// Archive persists ErrPageLimit as a page_bound scan block, so an
-		// over-dense timestamp window stops durably instead of retrying past
-		// the admitted wire-attempt allowance.
-		return platform.Page[platform.MergeRequest]{}, &platform.Error{
-			Code:         platform.ErrCodePageLimit,
-			Provider:     platform.KindGitLab,
-			PlatformHost: c.host,
-			Capability:   string(platform.ArchiveCapabilityHistoricalMergeRequests),
-			Field:        "merge_request_inventory_window",
-			Err: fmt.Errorf(
-				"merge-request inventory window %q requires replay through page %d, exceeding the maximum depth of %d",
-				cursor.Window, cursor.Page, maxWindowReplayPages,
-			),
-		}
+	state, sortOrder := "all", "desc"
+	overlap := inclusiveGitLabWatermark(since)
+	mrs, resp, err := c.api.MergeRequests.ListProjectMergeRequests(
+		pid,
+		&gitlab.ListProjectMergeRequestsOptions{
+			State: &state, OrderBy: &orderBy, Sort: &sortOrder, UpdatedAfter: &overlap,
+			ListOptions: gitlab.ListOptions{Page: cursor.Page, PerPage: defaultPageSize},
+		},
+		gitlab.WithContext(ctx),
+	)
+	if err != nil {
+		return platform.Page[platform.MergeRequest]{}, c.mapGitLabError("read_merge_requests", err)
 	}
-	opts := &gitlab.ListProjectMergeRequestsOptions{
-		State: &state, OrderBy: &orderBy, Sort: &sortOrder,
-		ListOptions: gitlab.ListOptions{Page: cursor.Page, PerPage: defaultPageSize},
-	}
-	if !since.IsZero() {
-		overlap := inclusiveGitLabWatermark(since)
-		opts.UpdatedAfter = &overlap
-	}
-	if cursor.Window != "" {
-		windowStart, parseErr := time.Parse(time.RFC3339Nano, cursor.Window)
-		if parseErr != nil {
-			return platform.Page[platform.MergeRequest]{}, c.pageCursorError(parseErr)
-		}
-		opts.CreatedAfter = &windowStart
-	}
-	firstPage := cursor.Page
-	if shape == gitLabCursorWindowedOffset && cursor.Page > 1 {
-		firstPage = 1
-	}
-	var resp *gitlab.Response
-	items := make([]platform.MergeRequest, 0)
-	wirePages := 0
-	for page := firstPage; page <= cursor.Page; page++ {
-		opts.Page = page
-		mrs, pageResp, listErr := c.api.MergeRequests.ListProjectMergeRequests(
-			pid, opts, gitlab.WithContext(ctx),
-		)
-		if listErr != nil {
-			return platform.Page[platform.MergeRequest]{}, c.mapGitLabError(
-				string(platform.ArchiveCapabilityHistoricalMergeRequests), listErr,
-			)
-		}
-		wirePages++
-		resp = pageResp
-		for _, mr := range mrs {
-			item := NormalizeMergeRequest(normalizedRef, mr, nil)
-			item.HeadRepoCloneURLUnknown = true
-			items = append(items, item)
-		}
-		if nextGitLabPage(pageResp) == 0 {
-			break
-		}
-	}
-	if shape == gitLabCursorWindowedOffset {
-		return gitLabWindowedCursorPage(items, cursor, nextGitLabPage(resp), wirePages)
+	items := make([]platform.MergeRequest, 0, len(mrs))
+	for _, mr := range mrs {
+		item := NormalizeMergeRequest(normalizedRef, mr, nil)
+		item.HeadRepoCloneURLUnknown = true
+		items = append(items, item)
 	}
 	return gitLabCursorPage(items, cursor, nextGitLabPage(resp), false)
-}
-
-// gitLabWindowedCursorPage advances the windowed created-order traversal:
-// when the consumed page moved the newest created_at forward, the next window
-// re-anchors one second behind it (overlap re-delivery instead of boundary
-// skips) at page one; otherwise ties denser than the window advance keep
-// offset-paging within the current window, recording the last consumed
-// item's record id to mark the cursor as a within-window continuation. An end
-// reached after a multi-request replay restarts once at page one and replays
-// the whole window as a confirmation sweep. Same-window continuations retain
-// confirmation; only a window advance cancels it. A confirming end or
-// single-request end is exhausted.
-func gitLabWindowedCursorPage(
-	items []platform.MergeRequest,
-	cursor gitLabPageCursor,
-	nextPage int64,
-	wirePages int,
-) (platform.Page[platform.MergeRequest], error) {
-	if nextPage == 0 {
-		if cursor.Confirm || wirePages <= 1 {
-			return platform.Page[platform.MergeRequest]{Items: items, Exhausted: true}, nil
-		}
-		cursor.Page = 1
-		cursor.Boundary = 0
-		cursor.Confirm = true
-		next, err := encodeGitLabPageCursor(cursor)
-		if err != nil {
-			return platform.Page[platform.MergeRequest]{}, err
-		}
-		return platform.Page[platform.MergeRequest]{Items: items, NextCursor: next}, nil
-	}
-	if len(items) == 0 {
-		return platform.Page[platform.MergeRequest]{Items: items, Exhausted: true}, nil
-	}
-	advanced := false
-	if len(items) > 0 {
-		newWindow := items[len(items)-1].CreatedAt.UTC().Add(-time.Second)
-		windowStart, err := currentWindowStart(cursor.Window)
-		if err != nil {
-			return platform.Page[platform.MergeRequest]{}, err
-		}
-		if cursor.Window == "" || newWindow.After(windowStart) {
-			cursor.Window = newWindow.Format(time.RFC3339Nano)
-			cursor.Page = 1
-			cursor.Boundary = 0
-			cursor.Confirm = false
-			advanced = true
-		}
-	}
-	if !advanced {
-		cursor.Page = nextPage
-		if len(items) > 0 {
-			cursor.Boundary = items[len(items)-1].PlatformID
-		}
-	}
-	next, err := encodeGitLabPageCursor(cursor)
-	if err != nil {
-		return platform.Page[platform.MergeRequest]{}, err
-	}
-	return platform.Page[platform.MergeRequest]{Items: items, NextCursor: next}, nil
-}
-
-func currentWindowStart(window string) (time.Time, error) {
-	if window == "" {
-		return time.Time{}, nil
-	}
-	return time.Parse(time.RFC3339Nano, window)
 }
 
 func inclusiveGitLabWatermark(since time.Time) time.Time {
@@ -949,26 +796,11 @@ func (c *Client) decodePageCursor(
 func validateGitLabCursorShape(cursor gitLabPageCursor, shape gitLabCursorShape) error {
 	switch shape {
 	case gitLabCursorKeyset:
-		if cursor.KeysetCursor == "" || cursor.Page != 0 || cursor.Window != "" || cursor.Boundary != 0 || cursor.Confirm {
+		if cursor.KeysetCursor == "" || cursor.Page != 0 {
 			return errors.New("cursor does not carry keyset continuation state")
 		}
-	case gitLabCursorWindowedOffset:
-		if cursor.Page <= 0 || cursor.KeysetCursor != "" {
-			return errors.New("cursor does not carry windowed offset continuation state")
-		}
-		if cursor.Page == 1 && cursor.Boundary != 0 {
-			return errors.New("cursor does not carry windowed offset continuation state")
-		}
-		if cursor.Page > 1 && cursor.Boundary == 0 {
-			return errors.New("cursor does not carry windowed offset continuation state")
-		}
-		if cursor.Window != "" {
-			if _, err := time.Parse(time.RFC3339Nano, cursor.Window); err != nil {
-				return fmt.Errorf("invalid traversal window: %w", err)
-			}
-		}
 	default:
-		if cursor.Page <= 0 || cursor.KeysetCursor != "" || cursor.Window != "" || cursor.Boundary != 0 || cursor.Confirm {
+		if cursor.Page <= 0 || cursor.KeysetCursor != "" {
 			return errors.New("cursor does not carry offset continuation state")
 		}
 	}

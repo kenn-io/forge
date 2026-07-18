@@ -273,11 +273,9 @@ func (c *Client) Capabilities() platform.Capabilities {
 		NativeMultilineRanges:  false,
 		MutationHeadBinding:    true,
 		Archive: platform.ArchiveCapabilities{
-			HistoricalIssues:                  true,
-			HistoricalMergeRequests:           true,
-			OrdinaryComments:                  true,
-			InlineReviewComments:              true,
-			MergeRequestInventoryPageRequests: maxWindowReplayPages,
+			HistoricalIssues:     true,
+			OrdinaryComments:     true,
+			InlineReviewComments: true,
 		},
 		// GitLab has no native "request changes" review state, so
 		// request_changes is intentionally absent.

@@ -3,13 +3,9 @@ package gitlab
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -144,22 +140,21 @@ func TestGitLabListMergeRequestsPageDispatchesByQuery(t *testing.T) {
 	_, err = client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
 		State: platform.ItemStateAll, Order: platform.ItemOrderCreated,
 	})
-	require.NoError(err)
+	require.ErrorIs(err, platform.ErrUnsupportedCapability)
 	_, err = client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
 		State: platform.ItemStateAll, Order: platform.ItemOrderUpdated, UpdatedSince: &watermark,
 	})
 	require.NoError(err)
 
-	assert.Equal([]string{"opened", "all", "all"}, states)
-	assert.Equal([]string{"", "created_at", "updated_at"}, orders)
-	assert.Equal([]string{"", "asc", "desc"}, sorts)
-	assert.Equal([]string{"true", "", ""}, rechecks)
+	assert.Equal([]string{"opened", "all"}, states)
+	assert.Equal([]string{"", "updated_at"}, orders)
+	assert.Equal([]string{"", "desc"}, sorts)
+	assert.Equal([]string{"true", ""}, rechecks)
 }
 
 // TestGitLabInventoryUsesAllStatesOldestFirstAndBoundedPages proves historical
-// traversal enumerates every state oldest-first with a resumable bounded
-// cursor: issues follow the provider's keyset continuation link, merge
-// requests page offset inside the created_after window.
+// issue traversal enumerates every state oldest-first with a resumable keyset
+// cursor.
 func TestGitLabInventoryUsesAllStatesOldestFirstAndBoundedPages(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -179,8 +174,6 @@ func TestGitLabInventoryUsesAllStatesOldestFirstAndBoundedPages(t *testing.T) {
 				w.Header().Set("Link", `<https://gitlab.example.com/api/v4/projects/42/issues?pagination=keyset&order_by=created_at&sort=asc&cursor=tie-break-1>; rel="next"`)
 			}
 			writeJSON(w, `[{"id":101,"iid":1,"title":"issue","state":"closed","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-02T00:00:00Z"}]`)
-		case "/api/v4/projects/42/merge_requests":
-			writeJSON(w, `[{"id":201,"iid":2,"title":"merge request","state":"merged","created_at":"2025-01-03T00:00:00Z","updated_at":"2025-01-04T00:00:00Z"}]`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -204,12 +197,7 @@ func TestGitLabInventoryUsesAllStatesOldestFirstAndBoundedPages(t *testing.T) {
 	assert.Equal([]string{"", "tie-break-1"}, issueKeysetCursors,
 		"resumption must replay the provider's keyset continuation parameters")
 
-	mrs, err := client.ListMergeRequestsPage(t.Context(), ref, historical)
-	require.NoError(err)
-	require.Len(mrs.Items, 1)
-	assert.Equal(2, mrs.Items[0].Number)
-	assert.True(mrs.Exhausted)
-	assert.Equal(3, requests)
+	assert.Equal(2, requests)
 }
 
 // TestGitLabUpdatedInventoryBindsCursorToQueryShape proves a maintenance cursor
@@ -357,417 +345,6 @@ func TestGitLabUpdatedIssuesReserveMidScanMovesThroughKeysetCursor(t *testing.T)
 	assert.Equal(2, requests)
 }
 
-// TestGitLabHistoricalMergeRequestWindowRedeliversEqualTimestampBoundary
-// proves the windowed created-order merge-request traversal re-anchors behind
-// the newest consumed created_at: an item sharing the boundary timestamp —
-// which plain offset pagination could skip when equal-timestamp order shifts
-// between requests — is re-delivered by the created_after overlap window, and
-// duplicate re-delivery of the boundary item is tolerated (consumers dedupe
-// by identity).
-func TestGitLabHistoricalMergeRequestWindowRedeliversEqualTimestampBoundary(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	boundary := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
-	var createdAfters []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal("/api/v4/projects/42/merge_requests", r.URL.EscapedPath())
-		assert.Equal("created_at", r.URL.Query().Get("order_by"))
-		assert.Equal("asc", r.URL.Query().Get("sort"))
-		createdAfters = append(createdAfters, r.URL.Query().Get("created_after"))
-		if r.URL.Query().Get("created_after") == "" {
-			w.Header().Set("X-Next-Page", "2")
-			writeJSON(w, `[
-				{"id":201,"iid":1,"title":"first","state":"merged","created_at":"2025-03-01T11:00:00Z","updated_at":"2025-03-02T00:00:00Z"},
-				{"id":202,"iid":2,"title":"boundary","state":"merged","created_at":"2025-03-01T12:00:00Z","updated_at":"2025-03-02T00:00:00Z"}
-			]`)
-			return
-		}
-		// The overlap window re-serves the boundary tie plus the equal-
-		// timestamp item a plain page-two offset fetch could have missed had
-		// the server flipped the tie order between requests.
-		writeJSON(w, `[
-			{"id":202,"iid":2,"title":"boundary","state":"merged","created_at":"2025-03-01T12:00:00Z","updated_at":"2025-03-02T00:00:00Z"},
-			{"id":203,"iid":3,"title":"boundary tie","state":"merged","created_at":"2025-03-01T12:00:00Z","updated_at":"2025-03-02T00:00:00Z"}
-		]`)
-	}))
-	defer server.Close()
-	client := newTestClient(t, server.URL)
-	ref := gitLabPagesTestRef()
-	historical := platform.ItemPageQuery{State: platform.ItemStateAll, Order: platform.ItemOrderCreated}
-
-	first, err := client.ListMergeRequestsPage(t.Context(), ref, historical)
-	require.NoError(err)
-	require.Len(first.Items, 2)
-	assert.False(first.Exhausted)
-	resumed := historical
-	resumed.Cursor = first.NextCursor
-	second, err := client.ListMergeRequestsPage(t.Context(), ref, resumed)
-	require.NoError(err)
-	assert.True(second.Exhausted)
-
-	numbers := make([]int, 0, len(second.Items))
-	for _, item := range second.Items {
-		numbers = append(numbers, item.Number)
-	}
-	assert.Contains(numbers, 3, "equal-timestamp boundary tie must not be skipped")
-	assert.Contains(numbers, 2, "overlap re-delivery of the boundary item is expected")
-	require.Len(createdAfters, 2)
-	assert.Empty(createdAfters[0])
-	windowStart, err := time.Parse(time.RFC3339Nano, createdAfters[1])
-	require.NoError(err)
-	assert.Equal(boundary.Add(-time.Second), windowStart.UTC(),
-		"the next window must re-anchor one second behind the newest consumed created_at")
-}
-
-// gitLabMRFixtureServer serves /projects/42/merge_requests from a mutable
-// in-memory set with real offset pagination semantics: created_after filters
-// strictly after, order is stable ascending by created_at, and page/per_page
-// slice the filtered set with X-Next-Page marking continuations. Tests mutate
-// the set mid-scan to model concurrent equal-timestamp reordering.
-type gitLabMRFixtureServer struct {
-	mu      sync.Mutex
-	mrs     []gitLabMRFixture
-	queries []url.Values
-}
-
-type gitLabMRFixture struct {
-	ID        int
-	IID       int
-	CreatedAt time.Time
-}
-
-func (s *gitLabMRFixtureServer) takeQueries() []url.Values {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := s.queries
-	s.queries = nil
-	return out
-}
-
-func (s *gitLabMRFixtureServer) handle(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	query := r.URL.Query()
-	s.queries = append(s.queries, query)
-	filtered := make([]gitLabMRFixture, 0, len(s.mrs))
-	var createdAfter time.Time
-	if raw := query.Get("created_after"); raw != "" {
-		parsed, err := time.Parse(time.RFC3339Nano, raw)
-		if err != nil {
-			http.Error(w, "bad created_after", http.StatusBadRequest)
-			return
-		}
-		createdAfter = parsed
-	}
-	for _, mr := range s.mrs {
-		if createdAfter.IsZero() || mr.CreatedAt.After(createdAfter) {
-			filtered = append(filtered, mr)
-		}
-	}
-	sort.SliceStable(filtered, func(i, j int) bool {
-		return filtered[i].CreatedAt.Before(filtered[j].CreatedAt)
-	})
-	page, perPage := int64(1), int64(20)
-	if raw := query.Get("page"); raw != "" {
-		page, _ = strconv.ParseInt(raw, 10, 64)
-	}
-	if raw := query.Get("per_page"); raw != "" {
-		perPage, _ = strconv.ParseInt(raw, 10, 64)
-	}
-	start := min((page-1)*perPage, int64(len(filtered)))
-	end := min(start+perPage, int64(len(filtered)))
-	if end < int64(len(filtered)) {
-		w.Header().Set("X-Next-Page", strconv.FormatInt(page+1, 10))
-	}
-	rows := make([]string, 0, end-start)
-	for _, mr := range filtered[start:end] {
-		rows = append(rows, fmt.Sprintf(
-			`{"id":%d,"iid":%d,"project_id":42,"title":"mr","state":"merged","created_at":%q,"updated_at":%q}`,
-			mr.ID, mr.IID,
-			mr.CreatedAt.Format(time.RFC3339Nano), mr.CreatedAt.Format(time.RFC3339Nano),
-		))
-	}
-	writeJSON(w, "["+strings.Join(rows, ",")+"]")
-}
-
-// TestGitLabHistoricalMergeRequestDenseWindowReplaysSwappedTie proves a
-// within-window resume re-reads the full consumed prefix. GitLab does not
-// define an order among equal-created_at records, so an unseen item can swap
-// into an earlier page while the last item of that page remains unchanged.
-func TestGitLabHistoricalMergeRequestDenseWindowReplaysSwappedTie(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	tie := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
-	fixtures := make([]gitLabMRFixture, 0, 102)
-	for i := 1; i <= 102; i++ {
-		fixtures = append(fixtures, gitLabMRFixture{ID: i, IID: i, CreatedAt: tie})
-	}
-	fixture := &gitLabMRFixtureServer{mrs: fixtures}
-	server := httptest.NewServer(http.HandlerFunc(fixture.handle))
-	defer server.Close()
-	client := newTestClient(t, server.URL)
-	ref := gitLabPagesTestRef()
-
-	query := platform.ItemPageQuery{State: platform.ItemStateAll, Order: platform.ItemOrderCreated}
-	first, err := client.ListMergeRequestsPage(t.Context(), ref, query)
-	require.NoError(err)
-	require.False(first.Exhausted)
-	query.Cursor = first.NextCursor
-	second, err := client.ListMergeRequestsPage(t.Context(), ref, query)
-	require.NoError(err)
-	require.False(second.Exhausted,
-		"a full page of created_at ties keeps paging within the window")
-
-	// Swap unseen item 101 into the consumed first page without moving item
-	// 100 at its last offset. The former sentinel probe therefore passed even
-	// though a plain page-two resume would permanently skip item 101.
-	fixture.mu.Lock()
-	fixture.mrs[49], fixture.mrs[100] = fixture.mrs[100], fixture.mrs[49]
-	fixture.mu.Unlock()
-	fixture.takeQueries()
-	query.Cursor = second.NextCursor
-	resumed, err := client.ListMergeRequestsPage(t.Context(), ref, query)
-	require.NoError(err)
-	assert.False(resumed.Exhausted)
-	require.Len(resumed.Items, 102, "the resumed page must re-deliver the full window")
-	numbers := make([]int, 0, len(resumed.Items))
-	for _, item := range resumed.Items {
-		numbers = append(numbers, item.Number)
-	}
-	assert.Contains(numbers, 101, "the item swapped into the consumed prefix must be re-delivered")
-	confirm, err := client.decodePageCursor(
-		ref, 0, resumed.NextCursor, "historical_merge_requests", time.Time{}, gitLabCursorWindowedOffset,
-	)
-	require.NoError(err)
-	assert.Equal(int64(1), confirm.Page)
-	assert.True(confirm.Confirm)
-	queries := fixture.takeQueries()
-	require.Len(queries, 2)
-	assert.Equal("1", queries[0].Get("page"))
-	assert.Equal("2", queries[1].Get("page"))
-}
-
-func TestGitLabHistoricalMergeRequestReplayPageBound(t *testing.T) {
-	tie := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
-	tests := []struct {
-		name         string
-		page         int64
-		fixtureCount int
-		wantRequests int
-		wantPageErr  bool
-	}{
-		{"rejects replay beyond cap", maxWindowReplayPages + 1, 500, 0, true},
-		{"allows replay at cap", maxWindowReplayPages, 400, maxWindowReplayPages, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert := assert.New(t)
-			require := require.New(t)
-			fixtures := make([]gitLabMRFixture, 0, tt.fixtureCount)
-			for i := 1; i <= tt.fixtureCount; i++ {
-				fixtures = append(fixtures, gitLabMRFixture{ID: i, IID: i, CreatedAt: tie})
-			}
-			fixture := &gitLabMRFixtureServer{mrs: fixtures}
-			server := httptest.NewServer(http.HandlerFunc(fixture.handle))
-			defer server.Close()
-			client := newTestClient(t, server.URL)
-			ref := gitLabPagesTestRef()
-			window := tie.Add(-time.Second).Format(time.RFC3339Nano)
-			cursor, err := encodeGitLabPageCursor(gitLabPageCursor{
-				Mode: "historical_merge_requests", Host: ref.Host, RepoPath: ref.RepoPath,
-				Page: tt.page, Window: window, Boundary: int64((tt.page - 1) * defaultPageSize),
-			})
-			require.NoError(err)
-
-			page, err := client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
-				State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: cursor,
-			})
-			if tt.wantPageErr {
-				require.ErrorIs(err, platform.ErrPageLimit)
-				assert.Contains(err.Error(), window)
-				assert.Contains(err.Error(), strconv.FormatInt(tt.page, 10))
-			} else {
-				require.NoError(err)
-				assert.False(page.Exhausted)
-			}
-			queries := fixture.takeQueries()
-			assert.Len(queries, tt.wantRequests)
-			for i, query := range queries {
-				assert.Equal(strconv.Itoa(i+1), query.Get("page"))
-			}
-		})
-	}
-}
-
-func TestGitLabHistoricalMergeRequestExhaustionConfirmation(t *testing.T) {
-	tie := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
-	tests := []struct {
-		name                     string
-		initialPage              int64
-		confirmHasContinuation   bool
-		confirmCreatedAt         time.Time
-		wantInitialExhausted     bool
-		wantConfirmContinuation  bool
-		wantConfirmRetained      bool
-		wantConfirmWindowAdvance bool
-		wantFinalExhausted       bool
-	}{
-		{name: "single page exhausts directly", initialPage: 1, wantInitialExhausted: true},
-		{name: "replay requires confirming sweep", initialPage: 2},
-		{
-			name: "static two-page window terminates after confirming sweep", initialPage: 2,
-			confirmHasContinuation: true, wantConfirmContinuation: true,
-			wantConfirmRetained: true, wantFinalExhausted: true,
-		},
-		{
-			name: "listing growth advances window and cancels confirmation", initialPage: 2,
-			confirmHasContinuation: true, confirmCreatedAt: tie.Add(2 * time.Second),
-			wantConfirmContinuation: true, wantConfirmWindowAdvance: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert := assert.New(t)
-			require := require.New(t)
-			confirming := false
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				page := r.URL.Query().Get("page")
-				if !confirming && tt.initialPage > 1 && page == "1" {
-					w.Header().Set("X-Next-Page", "2")
-				}
-				if confirming && tt.confirmHasContinuation && page == "1" {
-					w.Header().Set("X-Next-Page", "2")
-				}
-				createdAt := tie
-				if confirming && !tt.confirmCreatedAt.IsZero() {
-					createdAt = tt.confirmCreatedAt
-				}
-				writeJSON(w, fmt.Sprintf(
-					`[{"id":201,"iid":1,"project_id":42,"title":"mr","state":"merged","created_at":%q,"updated_at":%q}]`,
-					createdAt.Format(time.RFC3339Nano), createdAt.Format(time.RFC3339Nano),
-				))
-			}))
-			defer server.Close()
-			client := newTestClient(t, server.URL)
-			ref := gitLabPagesTestRef()
-			window := tie.Add(-time.Second).Format(time.RFC3339Nano)
-			boundary := int64(0)
-			if tt.initialPage > 1 {
-				boundary = 100
-			}
-			cursor, err := encodeGitLabPageCursor(gitLabPageCursor{
-				Mode: "historical_merge_requests", Host: ref.Host, RepoPath: ref.RepoPath,
-				Page: tt.initialPage, Window: window, Boundary: boundary,
-			})
-			require.NoError(err)
-			query := platform.ItemPageQuery{
-				State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: cursor,
-			}
-
-			initial, err := client.ListMergeRequestsPage(t.Context(), ref, query)
-			require.NoError(err)
-			assert.Equal(tt.wantInitialExhausted, initial.Exhausted)
-			if tt.wantInitialExhausted {
-				assert.Empty(initial.NextCursor)
-				return
-			}
-			confirm, err := client.decodePageCursor(
-				ref, 0, initial.NextCursor, "historical_merge_requests", time.Time{}, gitLabCursorWindowedOffset,
-			)
-			require.NoError(err)
-			assert.Equal(window, confirm.Window)
-			assert.Equal(int64(1), confirm.Page)
-			assert.Zero(confirm.Boundary)
-			assert.True(confirm.Confirm)
-
-			confirming = true
-			query.Cursor = initial.NextCursor
-			confirmed, err := client.ListMergeRequestsPage(t.Context(), ref, query)
-			require.NoError(err)
-			assert.Equal(!tt.wantConfirmContinuation, confirmed.Exhausted)
-			if !tt.wantConfirmContinuation {
-				assert.Empty(confirmed.NextCursor)
-				return
-			}
-			continued, err := client.decodePageCursor(
-				ref, 0, confirmed.NextCursor, "historical_merge_requests", time.Time{}, gitLabCursorWindowedOffset,
-			)
-			require.NoError(err)
-			assert.Equal(tt.wantConfirmRetained, continued.Confirm)
-			if tt.wantConfirmWindowAdvance {
-				assert.Equal(tt.confirmCreatedAt.Add(-time.Second).Format(time.RFC3339Nano), continued.Window)
-				assert.Equal(int64(1), continued.Page)
-				assert.Zero(continued.Boundary)
-				return
-			}
-			assert.Equal(int64(2), continued.Page)
-			assert.Equal(int64(201), continued.Boundary)
-
-			query.Cursor = confirmed.NextCursor
-			final, err := client.ListMergeRequestsPage(t.Context(), ref, query)
-			require.NoError(err)
-			assert.Equal(tt.wantFinalExhausted, final.Exhausted)
-			assert.Empty(final.NextCursor)
-		})
-	}
-}
-
-func TestGitLabWindowedCursorRejectsContinuationWithoutBoundary(t *testing.T) {
-	require := require.New(t)
-	ref := gitLabPagesTestRef()
-	cursor, err := encodeGitLabPageCursor(gitLabPageCursor{
-		Mode: "historical_merge_requests", Host: ref.Host, RepoPath: ref.RepoPath, Page: 2,
-	})
-	require.NoError(err)
-	client := newTestClient(t, "http://127.0.0.1")
-
-	_, err = client.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
-		State: platform.ItemStateAll, Order: platform.ItemOrderCreated, Cursor: cursor,
-	})
-	require.ErrorIs(err, platform.ErrProviderContract)
-}
-
-func TestGitLabWindowedCursorPageExhaustsEmptyContinuation(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	page, err := gitLabWindowedCursorPage(nil, gitLabPageCursor{Page: 1}, 2, 1)
-	require.NoError(err)
-	assert.True(page.Exhausted)
-	assert.Empty(page.NextCursor)
-}
-
-func TestGitLabCursorShapeRestrictsConfirmation(t *testing.T) {
-	tests := []struct {
-		name   string
-		cursor gitLabPageCursor
-		shape  gitLabCursorShape
-		valid  bool
-	}{
-		{"windowed page one", gitLabPageCursor{Page: 1, Confirm: true}, gitLabCursorWindowedOffset, true},
-		{"windowed continuation", gitLabPageCursor{Page: 2, Boundary: 100, Confirm: true}, gitLabCursorWindowedOffset, true},
-		{"windowed continuation without boundary", gitLabPageCursor{Page: 2, Confirm: true}, gitLabCursorWindowedOffset, false},
-		{"keyset", gitLabPageCursor{KeysetCursor: "next", Confirm: true}, gitLabCursorKeyset, false},
-		{"offset", gitLabPageCursor{Page: 1, Confirm: true}, gitLabCursorOffset, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateGitLabCursorShape(tt.cursor, tt.shape)
-			if tt.valid {
-				require.NoError(t, err)
-				return
-			}
-			require.Error(t, err)
-		})
-	}
-}
-
-// TestGitLabIssueKeysetCursorReplaysOnlyContinuationToken proves the durable
-// keyset cursor binds only the provider's continuation token: every other
-// query parameter of the follow-up request is rebuilt from the validated
-// cursor fields, so a next-link (or a tampered cursor) smuggling different
-// order, state, page-size, or watermark parameters cannot override the
-// enumeration shape.
 func TestGitLabIssueKeysetCursorReplaysOnlyContinuationToken(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1210,11 +787,10 @@ func TestGitLabLookupRetainsItemWhenRepositoryIsInaccessible(t *testing.T) {
 	require.ErrorIs(err, platform.ErrPermissionDenied)
 }
 
-func TestGitLabArchiveCapabilitiesAreHonestAboutSubmittedReviews(t *testing.T) {
+func TestGitLabArchiveCapabilities(t *testing.T) {
 	assert.Equal(t, platform.ArchiveCapabilities{
-		HistoricalIssues: true, HistoricalMergeRequests: true,
+		HistoricalIssues: true,
 		OrdinaryComments: true, InlineReviewComments: true,
-		MergeRequestInventoryPageRequests: maxWindowReplayPages,
 	}, newTestClient(t, "http://127.0.0.1:1").Capabilities().Archive)
 }
 

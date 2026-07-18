@@ -1354,20 +1354,3 @@ func (d *DB) ResetDatasetProgress(ctx context.Context, key ArchiveDatasetProgres
 	}
 	return nil
 }
-
-// ContinueDatasetProgress grants one further bounded page window without
-// discarding the durable cursor or starting a new generation.
-func (d *DB) ContinueDatasetProgress(ctx context.Context, key ArchiveDatasetProgressKey) error {
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_archive_dataset_progress
-		SET page_count = 0, status = 'pending', next_retry_at = NULL,
-			last_error_code = NULL, last_error_detail = NULL,
-			completed_at = NULL, updated_at = ?
-		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = ?`,
-		formatDatasetProgressTime(time.Now()),
-		key.RepoID, key.ItemType, key.ItemNumber, key.Dataset)
-	if err != nil {
-		return fmt.Errorf("continue dataset progress: %w", err)
-	}
-	return nil
-}

@@ -697,9 +697,6 @@ components:
         item_type:
           description: "Item type: issue or merge_request."
           type: string
-        mode:
-          description: "Recovery mode: restart or continue."
-          type: string
         repository:
           $ref: "#/components/schemas/ArchiveRepositoryRef"
         scan:
@@ -707,7 +704,6 @@ components:
           type: string
       required:
         - repository
-        - mode
       type: object
     ArchiveStatusResponse:
       additionalProperties: false

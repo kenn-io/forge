@@ -36,7 +36,6 @@ type archiveResetBody struct {
 	ItemType   *string              `json:"item_type,omitempty" doc:"Item type: issue or merge_request."`
 	ItemNumber *int                 `json:"item_number,omitempty" minimum:"1"`
 	Dataset    *string              `json:"dataset,omitempty" doc:"Dataset: lookup, comments, reviews, or inline_comments."`
-	Mode       string               `json:"mode" doc:"Recovery mode: restart or continue."`
 	Force      bool                 `json:"force,omitempty"`
 }
 
@@ -244,10 +243,6 @@ func (s *Server) resetArchiveScan(
 			"repository must carry canonical provider, host, owner, name, and repo_path",
 		)
 	}
-	mode := archive.ResetMode(input.Body.Mode)
-	if mode != archive.ResetModeRestart && mode != archive.ResetModeContinue {
-		return nil, problemValidation("body.mode", "mode must be restart or continue")
-	}
 	hasScan := input.Body.Scan != nil
 	hasAnyItem := input.Body.ItemType != nil || input.Body.ItemNumber != nil || input.Body.Dataset != nil
 	hasCompleteItem := input.Body.ItemType != nil && input.Body.ItemNumber != nil && input.Body.Dataset != nil
@@ -269,7 +264,7 @@ func (s *Server) resetArchiveScan(
 	}
 	err := s.archive.ResetScan(ctx, ref, archive.ResetScope{
 		Scan: scan, ItemType: itemType, ItemNumber: input.Body.ItemNumber,
-		Dataset: dataset, Mode: mode, Force: input.Body.Force,
+		Dataset: dataset, Force: input.Body.Force,
 	})
 	if err != nil {
 		var resetErr *archive.ResetError

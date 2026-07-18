@@ -10,30 +10,20 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 )
 
-type ResetMode string
-
-const (
-	ResetModeRestart  ResetMode = "restart"
-	ResetModeContinue ResetMode = "continue"
-)
-
 type ResetScope struct {
 	Scan       *db.ArchiveScanKind
 	ItemType   *db.ArchiveItemType
 	ItemNumber *int
 	Dataset    *db.ArchiveDataset
-	Mode       ResetMode
 	Force      bool
 }
 
 type ResetErrorReason string
 
 const (
-	ResetErrorInvalidScope                 ResetErrorReason = "invalid_scope"
-	ResetErrorMissingTarget                ResetErrorReason = "missing_target"
-	ResetErrorNotBlocked                   ResetErrorReason = "not_blocked"
-	ResetErrorInvalidCursorRequiresRestart ResetErrorReason = "invalid_cursor_requires_restart"
-	ResetErrorRestartRequired              ResetErrorReason = "restart_required"
+	ResetErrorInvalidScope  ResetErrorReason = "invalid_scope"
+	ResetErrorMissingTarget ResetErrorReason = "missing_target"
+	ResetErrorNotBlocked    ResetErrorReason = "not_blocked"
 )
 
 type ResetError struct {
@@ -51,8 +41,7 @@ func (s *Service) ResetScan(ctx context.Context, ref platform.RepoRef, scope Res
 	if len(resolved) != 1 {
 		return &ResetError{Scope: "archive progress", Reason: ResetErrorMissingTarget}
 	}
-	continueMode, err := validateResetScope(scope)
-	if err != nil {
+	if err := validateResetScope(scope); err != nil {
 		return err
 	}
 	repoID := resolved[0].ID
@@ -66,16 +55,11 @@ func (s *Service) ResetScan(ctx context.Context, ref platform.RepoRef, scope Res
 		}
 		state := states[0].Scan(*scope.Scan)
 		if err := validateResetTarget(
-			state.Blocked(), pointerValue(state.LastErrorCode), continueMode, scope.Force,
-			fmt.Sprintf("repository scan %s", *scope.Scan),
+			state.Blocked(), scope.Force, fmt.Sprintf("repository scan %s", *scope.Scan),
 		); err != nil {
 			return err
 		}
-		if continueMode {
-			err = s.db.ContinueArchiveRepoScan(ctx, repoID, *scope.Scan)
-		} else {
-			err = s.db.ResetArchiveRepoScan(ctx, repoID, *scope.Scan)
-		}
+		err = s.db.ResetArchiveRepoScan(ctx, repoID, *scope.Scan)
 	} else {
 		key := db.ArchiveDatasetProgressKey{
 			RepoID: repoID, ItemType: *scope.ItemType,
@@ -91,17 +75,12 @@ func (s *Service) ResetScan(ctx context.Context, ref platform.RepoRef, scope Res
 			return progressErr
 		}
 		if err := validateResetTarget(
-			progress.Status == db.ArchiveDatasetProgressBlocked,
-			pointerValue(progress.LastErrorCode), continueMode, scope.Force,
+			progress.Status == db.ArchiveDatasetProgressBlocked, scope.Force,
 			fmt.Sprintf("%s %d dataset %s", key.ItemType, key.ItemNumber, key.Dataset),
 		); err != nil {
 			return err
 		}
-		if continueMode {
-			err = s.db.ContinueDatasetProgress(ctx, key)
-		} else {
-			err = s.db.ResetDatasetProgress(ctx, key)
-		}
+		err = s.db.ResetDatasetProgress(ctx, key)
 	}
 	if err != nil {
 		return err
@@ -112,45 +91,19 @@ func (s *Service) ResetScan(ctx context.Context, ref platform.RepoRef, scope Res
 	return nil
 }
 
-func validateResetTarget(blocked bool, code string, continueMode, force bool, scope string) error {
-	if continueMode && blocked {
-		switch code {
-		case "page_bound":
-		case "invalid_cursor":
-			return &ResetError{Scope: scope, Reason: ResetErrorInvalidCursorRequiresRestart}
-		default:
-			return &ResetError{Scope: scope, Reason: ResetErrorRestartRequired}
-		}
-	}
+func validateResetTarget(blocked, force bool, scope string) error {
 	if !force && !blocked {
 		return &ResetError{Scope: scope, Reason: ResetErrorNotBlocked}
 	}
 	return nil
 }
 
-func pointerValue(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
-}
-
-func validateResetScope(scope ResetScope) (bool, error) {
-	continueMode := false
-	switch scope.Mode {
-	case ResetModeRestart:
-	case ResetModeContinue:
-		continueMode = true
-	default:
-		return false, &ResetError{
-			Scope: "archive progress", Reason: ResetErrorInvalidScope,
-		}
-	}
+func validateResetScope(scope ResetScope) error {
 	hasScan := scope.Scan != nil
 	hasAnyItem := scope.ItemType != nil || scope.ItemNumber != nil || scope.Dataset != nil
 	hasCompleteItem := scope.ItemType != nil && scope.ItemNumber != nil && scope.Dataset != nil
 	if hasScan == hasAnyItem || (hasAnyItem && !hasCompleteItem) {
-		return false, &ResetError{
+		return &ResetError{
 			Scope: "archive progress", Reason: ResetErrorInvalidScope,
 		}
 	}
@@ -159,24 +112,24 @@ func validateResetScope(scope ResetScope) (bool, error) {
 		case db.ArchiveScanIssueInventory, db.ArchiveScanMergeRequestInventory,
 			db.ArchiveScanMaintenanceIssues, db.ArchiveScanMaintenanceMergeRequests:
 		default:
-			return false, &ResetError{Scope: "repository scan", Reason: ResetErrorInvalidScope}
+			return &ResetError{Scope: "repository scan", Reason: ResetErrorInvalidScope}
 		}
 	}
 	if hasCompleteItem && *scope.ItemNumber <= 0 {
-		return false, &ResetError{
+		return &ResetError{
 			Scope: fmt.Sprintf("%s item", *scope.ItemType), Reason: ResetErrorInvalidScope,
 		}
 	}
 	if hasCompleteItem {
 		if *scope.ItemType != db.ArchiveItemTypeIssue && *scope.ItemType != db.ArchiveItemTypeMergeRequest {
-			return false, &ResetError{Scope: "item dataset", Reason: ResetErrorInvalidScope}
+			return &ResetError{Scope: "item dataset", Reason: ResetErrorInvalidScope}
 		}
 		switch *scope.Dataset {
 		case db.ArchiveDatasetLookup, db.ArchiveDatasetComments,
 			db.ArchiveDatasetReviews, db.ArchiveDatasetInlineComments:
 		default:
-			return false, &ResetError{Scope: "item dataset", Reason: ResetErrorInvalidScope}
+			return &ResetError{Scope: "item dataset", Reason: ResetErrorInvalidScope}
 		}
 	}
-	return continueMode, nil
+	return nil
 }

@@ -71,13 +71,12 @@ func runArchiveReset(args []string) error {
 	scan := fs.String("scan", "", "repository scan to reset")
 	item := fs.String("item", "", "item scope as issue/N or merge_request/N")
 	dataset := fs.String("dataset", "", "item dataset to reset")
-	continueMode := fs.Bool("continue", false, "continue a page-bound scan from its cursor")
 	force := fs.Bool("force", false, "reset progress that is not blocked")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 || *repository == "" {
-		return errors.New("usage: middleman archive reset --repo provider|host/repo_path [--scan NAME | --item TYPE/N --dataset NAME] [--continue]")
+		return errors.New("usage: middleman archive reset --repo provider|host/repo_path [--scan NAME | --item TYPE/N --dataset NAME]")
 	}
 	if *scan != "" && *item != "" {
 		return errors.New("--scan and --item are mutually exclusive")
@@ -89,12 +88,7 @@ func runArchiveReset(args []string) error {
 	if err != nil {
 		return fmt.Errorf("invalid --repo %q: %w", *repository, err)
 	}
-	body := generated.ArchiveResetBody{
-		Repository: ref, Mode: "restart", Force: force,
-	}
-	if *continueMode {
-		body.Mode = "continue"
-	}
+	body := generated.ArchiveResetBody{Repository: ref, Force: force}
 	if *scan != "" {
 		body.Scan = scan
 	} else {

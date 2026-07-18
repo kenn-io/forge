@@ -849,9 +849,7 @@ func TestArchiveServiceResetScanRestartsOnlyBlockedRepositoryScan(t *testing.T) 
 	service.SetWake(func() { wakeCount++ })
 	scan := db.ArchiveScanIssueInventory
 
-	require.NoError(service.ResetScan(t.Context(), ref, ResetScope{
-		Scan: &scan, Mode: ResetModeRestart,
-	}))
+	require.NoError(service.ResetScan(t.Context(), ref, ResetScope{Scan: &scan}))
 	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
 	require.Len(states, 1)
@@ -870,89 +868,6 @@ func TestArchiveServiceResetScanRestartsOnlyBlockedRepositoryScan(t *testing.T) 
 	require.NoError(service.RunEligible(t.Context()))
 	assert.Equal([]string{""}, provider.issueInventoryCursors,
 		"restart must issue the next request from page one")
-}
-
-func TestArchiveServiceResetScanContinuesOnlyPageBoundDataset(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := dbtest.Open(t)
-	now := archiveTestTime()
-	ref := archiveServiceRef(platform.KindGitHub, "github.test", "continue-dataset")
-	repoID := archiveServiceSeedRepo(t, database, ref)
-	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
-	registry, err := platform.NewRegistry(provider)
-	require.NoError(err)
-	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
-	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
-	require.NoError(err)
-	require.NoError(service.RunEligible(t.Context()))
-	require.NoError(service.RunEligible(t.Context()))
-	commentsKey := db.ArchiveDatasetProgressKey{
-		RepoID: repoID, ItemType: db.ArchiveItemTypeIssue,
-		ItemNumber: 1, Dataset: db.ArchiveDatasetComments,
-	}
-	lookupBefore, err := database.GetDatasetProgress(
-		t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
-	)
-	require.NoError(err)
-	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_dataset_progress
-		SET scan_generation = 4, next_cursor = 'comments-c9', last_input_cursor = 'comments-c8',
-			page_count = 10000, status = 'blocked', last_error_code = 'page_bound'
-		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = ?`,
-		commentsKey.RepoID, commentsKey.ItemType, commentsKey.ItemNumber, commentsKey.Dataset)
-	require.NoError(err)
-	itemType, itemNumber, dataset := commentsKey.ItemType, commentsKey.ItemNumber, commentsKey.Dataset
-
-	require.NoError(service.ResetScan(t.Context(), ref, ResetScope{
-		ItemType: &itemType, ItemNumber: &itemNumber, Dataset: &dataset,
-		Mode: ResetModeContinue,
-	}))
-	continued, err := database.GetDatasetProgress(
-		t.Context(), repoID, itemType, itemNumber, dataset,
-	)
-	require.NoError(err)
-	assert.Equal(int64(4), continued.ScanGeneration)
-	require.NotNil(continued.NextCursor)
-	assert.Equal("comments-c9", *continued.NextCursor)
-	require.NotNil(continued.LastInputCursor)
-	assert.Equal("comments-c8", *continued.LastInputCursor)
-	assert.Zero(continued.PageCount)
-	assert.Equal(db.ArchiveDatasetProgressPending, continued.Status)
-	assert.Nil(continued.LastErrorCode)
-	lookupAfter, err := database.GetDatasetProgress(
-		t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
-	)
-	require.NoError(err)
-	assert.Equal(lookupBefore, lookupAfter, "unrelated dataset progress must remain untouched")
-
-	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_dataset_progress
-		SET status = 'blocked', last_error_code = 'invalid_cursor'
-		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = ?`,
-		commentsKey.RepoID, commentsKey.ItemType, commentsKey.ItemNumber, commentsKey.Dataset)
-	require.NoError(err)
-	err = service.ResetScan(t.Context(), ref, ResetScope{
-		ItemType: &itemType, ItemNumber: &itemNumber, Dataset: &dataset,
-		Mode: ResetModeContinue,
-	})
-	var resetErr *ResetError
-	require.ErrorAs(err, &resetErr)
-	assert.Equal(ResetErrorInvalidCursorRequiresRestart, resetErr.Reason)
-
-	err = service.ResetScan(t.Context(), ref, ResetScope{
-		ItemType: &itemType, ItemNumber: &itemNumber, Dataset: &dataset,
-		Mode: ResetModeRestart, Force: true,
-	})
-	require.NoError(err)
-	restarted, err := database.GetDatasetProgress(
-		t.Context(), repoID, itemType, itemNumber, dataset,
-	)
-	require.NoError(err)
-	assert.Greater(restarted.ScanGeneration, continued.ScanGeneration)
-	assert.Nil(restarted.NextCursor)
-	assert.Equal(db.ArchiveDatasetProgressPending, restarted.Status)
 }
 
 func TestArchiveLookupContractViolationBlocksOnlyLookupDataset(t *testing.T) {

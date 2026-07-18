@@ -4653,8 +4653,6 @@ export interface components {
             item_number?: number;
             /** @description Item type: issue or merge_request. */
             item_type?: string;
-            /** @description Recovery mode: restart or continue. */
-            mode: string;
             repository: components["schemas"]["ArchiveRepositoryRef"];
             /** @description Repository scan name. */
             scan?: string;

@@ -120,6 +120,9 @@ func validateDatasetPageCommit(commit DatasetPageCommit) error {
 	if commit.Progress != nil && !commit.Final && commit.Progress.NextCursor == "" {
 		return errors.New("commit dataset page: next cursor or explicit final page is required")
 	}
+	if commit.Progress != nil && commit.Final && commit.Progress.NextCursor != "" {
+		return errors.New("commit dataset page: final page must not carry a next cursor")
+	}
 	return nil
 }
 

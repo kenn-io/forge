@@ -1374,3 +1374,23 @@ func TestInventoryCommitSeedsDatasetProgressForPageCommits(t *testing.T) {
 	assert.Equal(ArchiveDatasetProgressComplete, progress.Status)
 	assert.Equal([]string{"c-1"}, issueCommentKeysForTest(t, d, issueID))
 }
+
+func TestCommitDatasetPageRejectsFinalPageWithNextCursor(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+
+	err := database.CommitDatasetPage(ctx, DatasetPageCommit{
+		Parent: DomainParentRef{
+			ItemType: ArchiveItemTypeIssue,
+			ID:       1,
+		},
+		Dataset:        ArchiveDatasetComments,
+		ScanGeneration: 1,
+		Final:          true,
+		Progress: &DatasetProgressAdvance{
+			NextCursor: "page-2",
+		},
+	})
+	require.ErrorContains(err, "final page must not carry a next cursor")
+}

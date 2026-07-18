@@ -1292,7 +1292,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const requestSelectionGeneration = selectionGeneration;
     const expectedHeadSHA = detail?.platform_head_sha ?? "";
     try {
-      const { data: applyResult, error: requestError } = await apiClient.POST(
+      const { error: requestError } = await apiClient.POST(
         providerItemPath("pulls", ref, "/review-suggestions/apply"),
         {
           params: {

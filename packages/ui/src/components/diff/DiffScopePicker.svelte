@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from "@kenn-io/kit-ui";
   import GitCommitHorizontalIcon from "@lucide/svelte/icons/git-commit-horizontal";
   import { getStores } from "../../context.js";
   import CommitListItem from "./CommitListItem.svelte";
@@ -75,25 +76,23 @@
   class={["diff-scope-picker", compact && "diff-scope-picker--compact"]}
   bind:this={pickerRef}
 >
-  <div class="diff-scope-picker__control">
-    <button
-      class="diff-scope-picker__trigger"
-      type="button"
-      aria-label={`Select commit range: ${scopeLabel}`}
-      aria-expanded={open}
-      title="Commits"
-      disabled={disabled}
-      onclick={toggle}
-    >
-      {#if compact}
-        <GitCommitHorizontalIcon size={16} strokeWidth={1.8} aria-hidden="true" />
-        <DiffScopeLabel {scope} />
-      {:else}
-        <span class="diff-scope-picker__label">Commits</span>
-        <DiffScopeLabel {scope} />
-      {/if}
-    </button>
-  </div>
+  <Button
+    class="diff-scope-picker__trigger"
+    size="sm"
+    ariaLabel={`Select commit range: ${scopeLabel}`}
+    ariaExpanded={open}
+    title="Commits"
+    disabled={disabled}
+    onclick={toggle}
+  >
+    {#if compact}
+      <GitCommitHorizontalIcon size={16} strokeWidth={1.8} aria-hidden="true" />
+      <DiffScopeLabel {scope} />
+    {:else}
+      <span class="diff-scope-picker__label">Commits</span>
+      <DiffScopeLabel {scope} />
+    {/if}
+  </Button>
 
   {#if open}
     <div class="diff-scope-picker__menu">
@@ -141,49 +140,20 @@
     flex-shrink: 0;
   }
 
-  .diff-scope-picker__control {
-    display: inline-flex;
-    align-items: center;
-    box-sizing: border-box;
-    gap: 6px;
+  :global(.diff-scope-picker__trigger.kit-button) {
     height: 26px;
-    padding: 2px 6px;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    color: var(--text-secondary);
-  }
-
-  .diff-scope-picker__control:hover {
-    border-color: var(--accent-blue);
-    color: var(--text-primary);
-  }
-
-  .diff-scope-picker__trigger {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font: inherit;
+    gap: var(--space-4);
+    padding: 0 var(--space-3);
+    font-size: inherit;
     line-height: 1;
   }
 
-  .diff-scope-picker--compact .diff-scope-picker__control {
-    gap: 0;
-    padding: 0;
+  .diff-scope-picker--compact :global(.diff-scope-picker__trigger.kit-button) {
+    gap: var(--space-3);
+    min-width: 80px;
+    max-width: 130px;
+    padding: 0 var(--space-4);
     overflow: hidden;
-  }
-
-  .diff-scope-picker--compact .diff-scope-picker__trigger {
-    gap: 6px;
-    min-width: 78px;
-    max-width: 128px;
-    height: 24px;
-    padding: 0 8px;
   }
 
   .diff-scope-picker__label {

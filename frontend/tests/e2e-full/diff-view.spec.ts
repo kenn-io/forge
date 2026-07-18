@@ -1645,6 +1645,39 @@ test.describe("diff view", () => {
     await expect(page.locator(".diff-file")).toHaveCount(4);
   });
 
+  test("keeps repository and commit scope controls in the compact button family", async ({ page }) => {
+    await navigateToDiff(page);
+
+    const repository = page.getByRole("button", { name: /^Select repository:/ });
+    const commitScope = page.getByRole("button", { name: /^Select commit range:/ });
+    await expect(repository).toBeVisible();
+    await expect(commitScope).toBeVisible();
+    await expect(repository).toHaveClass(/\bkit-button\b/);
+    await expect(commitScope).toHaveClass(/\bkit-button\b/);
+
+    const metrics = await page.evaluate(() => {
+      const inspect = (selector: string) => {
+        const element = document.querySelector<HTMLElement>(selector);
+        const style = element ? getComputedStyle(element) : null;
+        const rect = element?.getBoundingClientRect();
+        return {
+          height: rect?.height ?? 0,
+          background: style?.backgroundColor ?? "",
+          border: style?.border ?? "",
+          radius: style?.borderRadius ?? "",
+        };
+      };
+
+      return {
+        repository: inspect(".typeahead-trigger"),
+        commitScope: inspect(".diff-scope-picker__trigger"),
+      };
+    });
+
+    expect(metrics.repository).toEqual(metrics.commitScope);
+    expect(metrics.repository.height).toBe(26);
+  });
+
   test("resizes and remembers the changed-file tree width", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
@@ -3663,7 +3696,7 @@ test.describe("diff view", () => {
     await commitItems.first().click();
 
     await expect(page.locator(".diff-scope-picker .diff-scope-label")).toHaveText("abc1234");
-    await expect(page.locator(".diff-scope-picker__control .scope-pill")).toHaveCount(0);
+    await expect(page.locator(".diff-scope-picker__trigger .scope-pill")).toHaveCount(0);
     await expect(page.locator(".diff-file")).toHaveCount(1);
     await expect(page.locator(".diff-file").first()).toHaveAttribute("data-file-path", "frontend/src/scoped.ts");
 

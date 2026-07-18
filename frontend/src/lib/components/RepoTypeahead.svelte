@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Card } from "@kenn-io/kit-ui";
+  import { Button } from "@kenn-io/kit-ui";
   import { onMount, tick } from "svelte";
   import {
     canonicalRepoFilterValue,
@@ -379,10 +379,9 @@
       {/each}
     </ul>
   {:else}
-    <Card
+    <Button
       class="typeahead-trigger"
-      level="inset"
-      padding="none"
+      size="sm"
       ariaLabel={`Select repository: ${displayValue}`}
       onclick={openDropdown}
     >
@@ -393,7 +392,7 @@
         strokeWidth="2"
         aria-hidden="true"
       />
-    </Card>
+    </Button>
   {/if}
 </div>
 
@@ -404,20 +403,13 @@
     max-width: 260px;
   }
 
-  :global(.typeahead-trigger.kit-card) {
+  :global(.typeahead-trigger.kit-button) {
     height: 26px;
     width: 100%;
-    gap: 4px;
-    padding: 0 8px;
+    justify-content: flex-start;
+    gap: var(--space-2);
+    padding: 0 var(--space-4);
     font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-  }
-
-  :global(.typeahead-trigger .kit-card__body) {
-    display: flex;
-    width: 100%;
-    align-items: center;
-    gap: 4px;
   }
 
   .typeahead-value {

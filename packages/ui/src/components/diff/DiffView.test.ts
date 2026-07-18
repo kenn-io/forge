@@ -2,7 +2,12 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffFile, DiffResult, FilesResult } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
-import type { DiffScrollTarget, DiffStore } from "../../stores/diff.svelte.js";
+import {
+  createDiffStore,
+  type DiffScrollTarget,
+  type DiffStore,
+  type DiffStoreOptions,
+} from "../../stores/diff.svelte.js";
 
 vi.mock("./DiffFile.svelte", async () => ({
   default: (await import("./DiffViewTestFile.svelte")).default,
@@ -126,6 +131,37 @@ describe("DiffView", () => {
     await fireEvent.keyDown(window, { key: "j" });
 
     expect(requestScrollToFile).toHaveBeenCalledWith("b.ts");
+  });
+
+  it("keeps the previous diff rendered when a preserving refresh fails", async () => {
+    let refreshFails = false;
+    const file = makeFile("a.ts");
+    const client = {
+      GET: vi.fn(async (path: string) => {
+        if (refreshFails) {
+          const response = Response.json({ detail: "refresh failed" }, { status: 500 });
+          return { error: await response.clone().json(), response };
+        }
+        const response = Response.json({});
+        if (path.endsWith("/files")) {
+          return { data: { stale: false, files: [file] }, response };
+        }
+        return {
+          data: { stale: false, whitespace_only_count: 0, files: [file] },
+          response,
+        };
+      }),
+    } as unknown as NonNullable<DiffStoreOptions["client"]>;
+    const diff = createDiffStore({ client });
+    await diff.loadWorkspaceDiff("ws-1", "head");
+    const { getByText, queryByText } = renderDiffView(diff);
+    expect(getByText("a.ts")).toBeTruthy();
+
+    refreshFails = true;
+    await diff.loadWorkspaceDiff("ws-1", "head", false, { preserveVisible: true });
+
+    expect(getByText("a.ts")).toBeTruthy();
+    expect(queryByText("refresh failed")).toBeNull();
   });
 
   it("pages the diff area with PageDown even when focus is outside the diff pane", async () => {

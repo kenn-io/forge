@@ -744,8 +744,8 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   ): void {
     if (diffAc.signal.aborted || !diffLoadIsCurrent(diffAc)) return;
 
-    storeError = err instanceof Error ? err.message : String(err);
     if (!preserveVisible) {
+      storeError = err instanceof Error ? err.message : String(err);
       diff = null;
       fileList = null;
     }

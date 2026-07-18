@@ -191,6 +191,7 @@ func TestArchiveInventoryMergeRequestPreservesFetchedDetailFields(t *testing.T) 
 				RepoID: repoID, PlatformID: 1, PlatformExternalID: "mr-1", Number: 1,
 				Title: "inventory", State: MergeRequestStateClosed, CreatedAt: now.Add(-time.Hour),
 				UpdatedAt: now.Add(time.Minute), LastActivityAt: now.Add(time.Minute),
+				HeadRepoCloneURLUnknown: true,
 			}},
 		}},
 	}))
@@ -215,6 +216,83 @@ func TestArchiveInventoryMergeRequestPreservesFetchedDetailFields(t *testing.T) 
 	assert.Equal("clean", mergeableState)
 	assert.Equal(detailFetchedAt, storedDetailFetchedAt)
 	assert.Equal("https://gitlab.example.com/fork/project.git", headRepoCloneURL)
+}
+
+func TestArchiveMergeRequestHeadRepoCloneURLObservation(t *testing.T) {
+	tests := []struct {
+		name                   string
+		preserveProviderDetail bool
+		unknown                bool
+		want                   string
+	}{
+		{
+			name:                   "inventory unknown preserves stored URL",
+			preserveProviderDetail: true,
+			unknown:                true,
+			want:                   "https://git.example.com/fork/project.git",
+		},
+		{
+			name:                   "inventory authoritative empty clears stored URL",
+			preserveProviderDetail: true,
+			want:                   "",
+		},
+		{
+			name:    "single item unknown preserves stored URL",
+			unknown: true,
+			want:    "https://git.example.com/fork/project.git",
+		},
+		{
+			name: "single item authoritative empty clears stored URL",
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			d := openTestDB(t)
+			ctx := t.Context()
+			now := archiveTestTime()
+			repoID := insertTestRepo(t, d, "acme", "clone-url")
+			_, err := d.UpsertMergeRequest(ctx, &MergeRequest{
+				RepoID: repoID, PlatformID: 1, PlatformExternalID: "mr-1", Number: 1,
+				Title: "stored", State: MergeRequestStateOpen,
+				HeadRepoCloneURL: "https://git.example.com/fork/project.git",
+				CreatedAt:        now.Add(-time.Hour), UpdatedAt: now, LastActivityAt: now,
+			})
+			require.NoError(err)
+
+			incoming := MergeRequest{
+				RepoID: repoID, PlatformID: 1, PlatformExternalID: "mr-1", Number: 1,
+				Title: "observed", State: MergeRequestStateOpen,
+				HeadRepoCloneURLUnknown: tt.unknown,
+				CreatedAt:               now.Add(-time.Hour), UpdatedAt: now.Add(time.Minute),
+				LastActivityAt: now.Add(time.Minute),
+			}
+			if tt.preserveProviderDetail {
+				require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+				require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
+				require.NoError(d.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+					RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest, Exhausted: true,
+					Now: now.Add(time.Minute),
+					MergeRequests: []ArchiveInventoryMergeRequest{{
+						ProviderItemID: "mr-1",
+						Snapshot:       MergeRequestSnapshot{MergeRequest: incoming},
+					}},
+				}))
+			} else {
+				_, _, accepted, err := d.UpsertArchiveMergeRequestSnapshot(ctx, &incoming)
+				require.NoError(err)
+				require.True(accepted)
+			}
+
+			stored, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+			require.NoError(err)
+			require.NotNil(stored)
+			assert.Equal(tt.want, stored.HeadRepoCloneURL)
+		})
+	}
 }
 
 func TestArchiveInventoryDiffChangePreservesCommentCount(t *testing.T) {

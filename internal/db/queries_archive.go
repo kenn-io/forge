@@ -1416,7 +1416,7 @@ func preserveMergeRequestDetailTx(
 	if err != nil {
 		return false, fmt.Errorf("preserve merge request detail before archive upsert: %w", err)
 	}
-	if mr.HeadRepoCloneURLUnknown || (preserveProviderDetail && mr.HeadRepoCloneURL == "") {
+	if mr.HeadRepoCloneURLUnknown {
 		mr.HeadRepoCloneURL = existing.HeadRepoCloneURL
 		mr.HeadRepoCloneURLUnknown = false
 	}

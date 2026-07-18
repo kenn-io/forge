@@ -111,11 +111,8 @@ const (
 type ArchiveDatasetStatus string
 
 const (
-	ArchiveDatasetStatusPending       ArchiveDatasetStatus = "pending"
-	ArchiveDatasetStatusComplete      ArchiveDatasetStatus = "complete"
-	ArchiveDatasetStatusUnsupported   ArchiveDatasetStatus = "unsupported"
-	ArchiveDatasetStatusFailed        ArchiveDatasetStatus = "failed"
-	ArchiveDatasetStatusNotApplicable ArchiveDatasetStatus = "not_applicable"
+	ArchiveDatasetStatusPending     ArchiveDatasetStatus = "pending"
+	ArchiveDatasetStatusUnsupported ArchiveDatasetStatus = "unsupported"
 )
 
 type ArchiveDataset string
@@ -442,89 +439,20 @@ func (e *ArchiveRepoStateNotFoundError) Error() string {
 }
 
 type ArchiveItemState struct {
-	RepoID                     int64
-	ItemType                   ArchiveItemType
-	ItemNumber                 int
-	ProviderItemID             string
-	ProviderCreatedAt          time.Time
-	ProviderUpdatedAt          time.Time
-	HydrationSnapshotUpdatedAt *time.Time
-	LifecycleState             ArchiveLifecycleState
-	RefreshReason              ArchiveRefreshReason
-	CommentsStatus             ArchiveDatasetStatus
-	ReviewsStatus              ArchiveDatasetStatus
-	InlineCommentsStatus       ArchiveDatasetStatus
-	MirroredProviderUpdatedAt  *time.Time
-	AttemptCount               int
-	NextRetryAt                *time.Time
-	LastErrorCode              *string
-	LastErrorDetail            *string
-	HydratedAt                 *time.Time
+	RepoID            int64
+	ItemType          ArchiveItemType
+	ItemNumber        int
+	ProviderItemID    string
+	ProviderCreatedAt time.Time
+	ProviderUpdatedAt time.Time
+	LifecycleState    ArchiveLifecycleState
+	RefreshReason     ArchiveRefreshReason
+	HydratedAt        *time.Time
 }
 
 type ClaimArchiveItemOpts struct {
 	RepoIDs []int64
 	Now     time.Time
-}
-
-type ArchiveItemFailure struct {
-	RepoID      int64
-	ItemType    ArchiveItemType
-	ItemNumber  int
-	Datasets    []ArchiveDataset
-	NextRetryAt *time.Time
-	Code        ArchiveErrorCode
-	Detail      string
-}
-
-// ArchiveDatasetStatuses is the indivisible final coverage state written with
-// a successful item hydration.
-type ArchiveDatasetStatuses struct {
-	Comments       ArchiveDatasetStatus
-	Reviews        ArchiveDatasetStatus
-	InlineComments ArchiveDatasetStatus
-}
-
-type ArchiveDatasetKey struct {
-	RepoID            int64
-	ItemType          ArchiveItemType
-	ItemNumber        int
-	Dataset           ArchiveDataset
-	SnapshotUpdatedAt time.Time
-	DomainRevision    int64
-}
-
-type ArchiveDatasetStage struct {
-	SnapshotUpdatedAt *time.Time
-	NextCursor        string
-	Exhausted         bool
-	PageCount         int
-	Records           int
-	Bytes             int64
-}
-
-type ArchiveDatasetPage struct {
-	ArchiveDatasetKey
-	InputCursor string
-	NextCursor  string
-	Exhausted   bool
-	RecordCount int
-	Payload     []byte
-	MaxPages    int
-	MaxRecords  int
-	MaxBytes    int64
-	Now         time.Time
-}
-
-type ArchiveDatasetLimitError struct {
-	Dataset ArchiveDataset
-	Limit   string
-	Value   int64
-	Max     int64
-}
-
-func (e *ArchiveDatasetLimitError) Error() string {
-	return fmt.Sprintf("archive %s dataset exceeds %s limit: %d > %d", e.Dataset, e.Limit, e.Value, e.Max)
 }
 
 // IssueSnapshot and MergeRequestSnapshot contain provider-owned content from

@@ -144,8 +144,7 @@ func TestCommitDatasetPageAppliesRowsAndCursorAtomically(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "acme", "atomic-page")
 	issueID := insertTestIssue(t, d, repoID, 7, "issue", archiveTestTime())
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime(),
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime())
 	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, d, key, 1, 1, nil, ArchiveDatasetProgressPending, 0)
 
@@ -192,8 +191,7 @@ func TestCommitDatasetPageFailedTransactionCommitsNeitherRowsNorCursor(t *testin
 
 	repoID := insertTestRepo(t, d, "acme", "atomic-failure")
 	issueID := insertTestIssue(t, d, repoID, 7, "issue", archiveTestTime())
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime(),
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime())
 	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, d, key, 1, 1, nil, ArchiveDatasetProgressPending, 0)
 	// A stored comment already owns this provider external ID under another
@@ -235,8 +233,7 @@ func TestCommitDatasetPageIdempotentReplayWritesNothing(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "acme", "replay")
 	issueID := insertTestIssue(t, d, repoID, 7, "issue", archiveTestTime())
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime(),
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime())
 	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, d, key, 1, 1, nil, ArchiveDatasetProgressPending, 0)
 
@@ -276,8 +273,7 @@ func TestCommitDatasetPageRejectsStaleCursorAndGeneration(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "acme", "stale-cas")
 	issueID := insertTestIssue(t, d, repoID, 7, "issue", archiveTestTime())
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime(),
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime())
 	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, d, key, 1, 3, "cursor-5", ArchiveDatasetProgressRunning, 4)
 	bareIssueID := insertTestIssue(t, d, repoID, 8, "no progress", archiveTestTime())
@@ -337,8 +333,7 @@ func TestCommitDatasetPageStaleParentRevisionReopensDataset(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "acme", "stale-revision")
 	issueID := insertTestIssue(t, d, repoID, 7, "issue", archiveTestTime())
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime(),
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime())
 	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, d, key, 1, 2, "cursor-3", ArchiveDatasetProgressRunning, 2)
 	insertIssueCommentEventForTest(t, d, issueID, "kept", "", 2)
@@ -387,8 +382,7 @@ func TestCommitDatasetPageReconcilesCommentsOnlyAtExhaustion(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "acme", "reconcile")
 	issueID := insertTestIssue(t, d, repoID, 7, "issue", archiveTestTime())
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime(),
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime())
 	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, d, key, 1, 2, nil, ArchiveDatasetProgressPending, 0)
 	insertIssueCommentEventForTest(t, d, issueID, "old-null", "", nil)
@@ -439,8 +433,7 @@ func TestCommitDatasetPageRetainsAdditiveHistory(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "acme", "additive")
 	mrID := insertTestMR(t, d, repoID, 9, "pull request", archiveTestTime())
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 9, archiveTestTime(),
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusPending, ArchiveDatasetStatusPending)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 9, archiveTestTime())
 	reviewKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeMergeRequest, 9, ArchiveDatasetReviews)
 	insertDatasetProgressForTest(t, d, reviewKey, 1, 1, nil, ArchiveDatasetProgressPending, 0)
 	inlineKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeMergeRequest, 9, ArchiveDatasetInlineComments)
@@ -505,8 +498,7 @@ func TestCommitDatasetPageBlocksScanAtPageBoundAndEchoedCursor(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "acme", "page-bound")
 	issueID := insertTestIssue(t, d, repoID, 7, "issue", archiveTestTime())
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime(),
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime())
 	boundKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, d, boundKey, 1, 1, "cursor-max", ArchiveDatasetProgressRunning, maxScanPages)
 
@@ -546,8 +538,7 @@ func TestCommitDatasetPageBlocksScanAtPageBoundAndEchoedCursor(t *testing.T) {
 	assert.Empty(issueCommentKeysForTest(t, d, issueID))
 
 	mrID := insertTestMR(t, d, repoID, 9, "pull request", archiveTestTime())
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 9, archiveTestTime(),
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusPending, ArchiveDatasetStatusPending)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 9, archiveTestTime())
 	echoKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeMergeRequest, 9, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, d, echoKey, 1, 1, "cursor-1", ArchiveDatasetProgressRunning, 1)
 
@@ -595,8 +586,7 @@ func TestCommitDatasetPageLiveCommitIsIndependentOfArchiveProgress(t *testing.T)
 
 	// Blocked progress: the live write still lands, the block is untouched.
 	blockedID := insertTestIssue(t, d, repoID, 2, "blocked", now)
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 2, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 2, now)
 	blockedKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 2, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, d, blockedKey, 1, 1, "cursor", ArchiveDatasetProgressBlocked, 3)
 	require.NoError(d.CommitDatasetPage(ctx, DatasetPageCommit{
@@ -614,8 +604,7 @@ func TestCommitDatasetPageLiveCommitIsIndependentOfArchiveProgress(t *testing.T)
 
 	// Matching pending progress on an active repository is satisfied.
 	satisfiedID := insertTestIssue(t, d, repoID, 3, "satisfied", now)
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 3, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 3, now)
 	satisfiedKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 3, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, d, satisfiedKey, 1, 1, nil, ArchiveDatasetProgressPending, 0)
 	require.NoError(d.CommitDatasetPage(ctx, DatasetPageCommit{
@@ -635,8 +624,7 @@ func TestCommitDatasetPageLiveCommitIsIndependentOfArchiveProgress(t *testing.T)
 	// sync, but the live domain write still lands.
 	require.NoError(d.PauseArchives(ctx, []int64{repoID}, now))
 	pausedID := insertTestIssue(t, d, repoID, 4, "paused", now)
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 4, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 4, now)
 	pausedKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 4, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, d, pausedKey, 1, 1, nil, ArchiveDatasetProgressPending, 0)
 	require.NoError(d.CommitDatasetPage(ctx, DatasetPageCommit{
@@ -664,8 +652,7 @@ func TestLiveParentUpsertSurvivesArchiveReopenFailure(t *testing.T) {
 	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
 	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
 	issueID := insertTestIssue(t, d, repoID, 7, "issue", now)
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now)
 	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, d, key, 1, 2, nil, ArchiveDatasetProgressPending, 0)
 
@@ -812,8 +799,7 @@ func TestCommitDatasetPageStatusGateMatrix(t *testing.T) {
 	} {
 		number := i + 1
 		issueID := insertTestIssue(t, d, repoID, number, "issue", archiveTestTime())
-		insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, number, archiveTestTime(),
-			ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+		insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, number, archiveTestTime())
 		key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, number, ArchiveDatasetComments)
 		insertDatasetProgressForTest(t, d, key, 1, 1, nil, tc.status, 0)
 
@@ -854,8 +840,7 @@ func TestCommitDatasetPageFinalReplayAndDelayedFirstPage(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "acme", "final-replay")
 	issueID := insertTestIssue(t, d, repoID, 7, "issue", archiveTestTime())
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime(),
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, archiveTestTime())
 	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, d, key, 1, 1, nil, ArchiveDatasetProgressPending, 0)
 
@@ -931,8 +916,7 @@ func TestLiveSatisfactionFencesInFlightArchiveScan(t *testing.T) {
 	repoID := insertTestRepo(t, d, "acme", "live-wins-race")
 	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
 	issueID := insertTestIssue(t, d, repoID, 7, "issue", now)
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now)
 	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
 	// The archive claimed this dataset (generation 1, first page in flight
 	// with an empty input cursor) before live sync completed the dataset.
@@ -982,8 +966,7 @@ func TestCommitParentLookupPresentBindsProgressAndReopensChildren(t *testing.T) 
 
 	repoID := insertTestRepo(t, d, "acme", "lookup-present")
 	issueID := insertTestIssue(t, d, repoID, 7, "before", now)
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
-		ArchiveDatasetStatusComplete, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now)
 	commentsKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, d, commentsKey, 1, 1, nil, ArchiveDatasetProgressComplete, 3)
 	insertIssueCommentEventForTest(t, d, issueID, "kept", "", 1)
@@ -1042,8 +1025,7 @@ func TestCommitParentLookupTerminalOutcomes(t *testing.T) {
 		{number: 2, outcome: ArchiveLookupInaccessible, lifecycle: ArchiveLifecycleStateInaccessible, code: "access_denied"},
 	} {
 		issueID := insertTestIssue(t, d, repoID, tc.number, "issue", now)
-		insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, tc.number, now,
-			ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+		insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, tc.number, now)
 		insertIssueCommentEventForTest(t, d, issueID, "kept", "", nil)
 
 		require.NoError(d.CommitParentLookup(ctx, ParentLookupCommit{
@@ -1089,8 +1071,7 @@ func TestCommitParentLookupMovedQueuesDestinationPrompt(t *testing.T) {
 	require.NoError(d.StartFullArchives(ctx, []int64{destinationRepoID}, now))
 
 	insertTestIssue(t, d, sourceRepoID, 7, "moved away", now)
-	insertArchiveItemForTest(t, d, sourceRepoID, ArchiveItemTypeIssue, 7, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, sourceRepoID, ArchiveItemTypeIssue, 7, now)
 
 	require.NoError(d.CommitParentLookup(ctx, ParentLookupCommit{
 		RepoID:           sourceRepoID,
@@ -1135,8 +1116,7 @@ func TestCommitParentLookupStaleGenerationAfterResetWritesNothing(t *testing.T) 
 
 	repoID := insertTestRepo(t, d, "acme", "lookup-stale")
 	issueID := insertTestIssue(t, d, repoID, 7, "before", now)
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now)
 	lookupKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup)
 	insertDatasetProgressForTest(t, d, lookupKey, 1, 1, nil, ArchiveDatasetProgressPending, 0)
 	require.NoError(d.ResetDatasetProgress(ctx, lookupKey))
@@ -1177,8 +1157,7 @@ func TestCommitParentLookupDuplicatePresentIsIdempotentReplay(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "acme", "lookup-duplicate")
 	issueID := insertTestIssue(t, d, repoID, 7, "before", now)
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now)
 	lookupKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup)
 	insertDatasetProgressForTest(t, d, lookupKey, 1, 1, nil, ArchiveDatasetProgressPending, 0)
 
@@ -1226,8 +1205,7 @@ func TestCommitParentLookupLateConflictingOutcomeRejected(t *testing.T) {
 	// A terminal outcome delivered after the same generation already
 	// completed present must not bury the item.
 	insertTestIssue(t, d, repoID, 1, "present", now)
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 1, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 1, now)
 	insertDatasetProgressForTest(t, d,
 		datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup),
 		1, 1, nil, ArchiveDatasetProgressPending, 0)
@@ -1260,8 +1238,7 @@ func TestCommitParentLookupLateConflictingOutcomeRejected(t *testing.T) {
 	// A present outcome delivered after the same generation already recorded
 	// terminal is equally conflicting.
 	terminalID := insertTestIssue(t, d, repoID, 2, "terminal", now)
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 2, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 2, now)
 	insertDatasetProgressForTest(t, d,
 		datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 2, ArchiveDatasetLookup),
 		1, 1, nil, ArchiveDatasetProgressPending, 0)
@@ -1298,8 +1275,7 @@ func TestCommitParentLookupBlockedRowRejects(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "acme", "lookup-blocked")
 	issueID := insertTestIssue(t, d, repoID, 7, "before", now)
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now)
 	lookupKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup)
 	insertDatasetProgressForTest(t, d, lookupKey, 1, 1, nil, ArchiveDatasetProgressBlocked, 0)
 
@@ -1329,8 +1305,7 @@ func TestCommitParentLookupRejectsSupersededDomainRevision(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "acme", "lookup-revision-fence")
 	issueID := insertTestIssue(t, d, repoID, 7, "before", now)
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 7, now)
 	lookupKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup)
 	insertDatasetProgressForTest(t, d, lookupKey, 1, 1, nil, ArchiveDatasetProgressPending, 0)
 
@@ -1397,8 +1372,7 @@ func TestPresentObservationReactivatesBothTerminalLifecycles(t *testing.T) {
 	} {
 		number := i + 1
 		insertTestIssue(t, d, repoID, number, "issue", now)
-		insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, number, now,
-			ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+		insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, number, now)
 		lookupKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, number, ArchiveDatasetLookup)
 		insertDatasetProgressForTest(t, d, lookupKey, 1, 1, nil, ArchiveDatasetProgressPending, 0)
 		require.NoError(d.CommitParentLookup(ctx, ParentLookupCommit{

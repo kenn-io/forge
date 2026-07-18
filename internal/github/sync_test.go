@@ -119,17 +119,22 @@ func TestNormalSyncRejectsChildrenAfterArchivePublishesNewerSnapshot(t *testing.
 	archiveParent, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 1)
 	require.NoError(err)
 	require.NotNil(archiveParent)
-	key := db.ArchiveDatasetKey{RepoID: repoID, ItemType: db.ArchiveItemTypeIssue,
-		ItemNumber: 1, Dataset: db.ArchiveDatasetComments, SnapshotUpdatedAt: archiveUpdatedAt,
-		DomainRevision: archiveParent.SnapshotRevision}
-	_, err = database.CommitArchiveDatasetPage(ctx, db.ArchiveDatasetPage{ArchiveDatasetKey: key,
-		Exhausted: true, RecordCount: 1, Payload: []byte(`[]`), MaxPages: 1,
-		MaxRecords: 1, MaxBytes: 16, Now: archiveUpdatedAt})
+	progress, err := database.GetDatasetProgress(
+		ctx, repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetComments,
+	)
 	require.NoError(err)
-	require.NoError(database.PublishArchiveIssueComments(ctx, key, issueID, []db.IssueEvent{{
-		IssueID: issueID, EventType: "issue_comment", DedupeKey: "archive",
-		Body: "new archive content", CreatedAt: archiveUpdatedAt,
-	}}))
+	require.NoError(database.CommitDatasetPage(ctx, db.DatasetPageCommit{
+		Parent:           db.DomainParentRef{ItemType: db.ArchiveItemTypeIssue, ID: issueID},
+		ExpectedRevision: archiveParent.SnapshotRevision,
+		Dataset:          db.ArchiveDatasetComments,
+		ScanGeneration:   progress.ScanGeneration,
+		Rows: db.DatasetRows{IssueComments: []db.IssueEvent{{
+			IssueID: issueID, EventType: "issue_comment", DedupeKey: "archive",
+			Body: "new archive content", CreatedAt: archiveUpdatedAt,
+		}}},
+		Final:    true,
+		Progress: &db.DatasetProgressAdvance{RepoID: repoID, ItemNumber: 1},
+	}))
 
 	applied, err := (&Syncer{db: database}).commitIssueCommentsSnapshot(
 		ctx, repo, 1, normalRevision, []db.IssueEvent{{IssueID: issueID,

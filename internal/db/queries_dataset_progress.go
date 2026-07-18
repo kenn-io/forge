@@ -1107,13 +1107,11 @@ func commitTerminalParentLookupTx(
 		lifecycle = ArchiveLifecycleStateInaccessible
 	}
 	if err := markArchiveItemTerminalTx(ctx, tx, ArchiveItemTerminal{
-		RepoID:      commit.RepoID,
-		ItemType:    commit.ItemType,
-		ItemNumber:  commit.ItemNumber,
-		Lifecycle:   lifecycle,
-		ErrorCode:   commit.ErrorCode,
-		ErrorDetail: commit.ErrorDetail,
-		At:          now,
+		RepoID:     commit.RepoID,
+		ItemType:   commit.ItemType,
+		ItemNumber: commit.ItemNumber,
+		Lifecycle:  lifecycle,
+		At:         now,
 	}); err != nil {
 		return err
 	}

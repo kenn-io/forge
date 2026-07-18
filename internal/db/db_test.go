@@ -122,7 +122,7 @@ func TestOpenAndSchema(t *testing.T) {
 		"operator_state", "next_retry_at", "updated_at", "repo_id",
 	}, false)
 	assertIndexForTest(t, d.ReadDB(), "middleman_archive_items", "idx_archive_items_due_work", []string{
-		"repo_id", "next_retry_at", "provider_created_at", "item_type", "item_number",
+		"repo_id", "provider_created_at", "item_type", "item_number",
 	}, true)
 	assertIndexForTest(t, d.ReadDB(), "middleman_archive_items", "idx_archive_items_stable_order", []string{
 		"repo_id", "provider_created_at", "item_type", "item_number",
@@ -154,12 +154,6 @@ func TestOpenAndSchema(t *testing.T) {
 			 ) VALUES (1, 'discovery', 'invalid', datetime('now'), datetime('now'))`,
 		},
 		{
-			name: "issue_inventory_complete",
-			statement: `INSERT INTO middleman_archive_repos (
-				repo_id, collection_mode, operator_state, issue_inventory_complete, created_at, updated_at
-			 ) VALUES (1, 'discovery', 'active', 2, datetime('now'), datetime('now'))`,
-		},
-		{
 			name: "comments_coverage",
 			statement: `INSERT INTO middleman_archive_repos (
 				repo_id, collection_mode, operator_state, comments_coverage, created_at, updated_at
@@ -180,94 +174,26 @@ func TestOpenAndSchema(t *testing.T) {
 		statement string
 	}{
 		{
-			name: "item_type",
-			statement: archiveItemInsertForTest(
-				"invalid", 10, "invalid-type", "active",
-				"pending", "not_applicable", "not_applicable", 0,
-			),
+			name:      "item_type",
+			statement: archiveItemInsertForTest("invalid", 10, "invalid-type", "active"),
 		},
 		{
-			name: "lifecycle_state",
-			statement: archiveItemInsertForTest(
-				"issue", 11, "invalid-lifecycle", "invalid",
-				"pending", "not_applicable", "not_applicable", 0,
-			),
-		},
-		{
-			name: "comments_status",
-			statement: archiveItemInsertForTest(
-				"issue", 12, "invalid-comments", "active",
-				"invalid", "not_applicable", "not_applicable", 0,
-			),
-		},
-		{
-			name: "attempt_count",
-			statement: archiveItemInsertForTest(
-				"issue", 15, "negative-attempt-count", "active",
-				"pending", "not_applicable", "not_applicable", -1,
-			),
-		},
-		{
-			name: "issue_comments_not_applicable",
-			statement: archiveItemInsertForTest(
-				"issue", 16, "issue-comments-na", "active",
-				"not_applicable", "not_applicable", "not_applicable", 0,
-			),
-		},
-		{
-			name: "merge_request_comments_not_applicable",
-			statement: archiveItemInsertForTest(
-				"merge_request", 19, "mr-comments-na", "active",
-				"not_applicable", "pending", "pending", 0,
-			),
+			name:      "lifecycle_state",
+			statement: archiveItemInsertForTest("issue", 11, "invalid-lifecycle", "invalid"),
 		},
 	} {
 		_, err := d.ReadDB().Exec(tc.statement)
 		require.Error(err, tc.name)
 	}
 
-	_, err = d.ReadDB().Exec(archiveItemInsertForTest(
-		"issue", 100, "valid-issue", "active",
-		"pending", "not_applicable", "not_applicable", 0,
-	))
+	_, err = d.ReadDB().Exec(archiveItemInsertForTest("issue", 100, "valid-issue", "active"))
+	require.NoError(err)
+	_, err = d.ReadDB().Exec(archiveItemInsertForTest("merge_request", 1, "item-1", "active"))
 	require.NoError(err)
 
-	for i, status := range []string{
-		"pending",
-		"complete",
-		"unsupported",
-		"failed",
-	} {
-		_, err = d.ReadDB().Exec(`INSERT INTO middleman_archive_items (
-			repo_id, item_type, item_number, provider_item_id,
-			provider_created_at, provider_updated_at, hydration_snapshot_updated_at,
-			lifecycle_state,
-			comments_status, reviews_status, inline_comments_status
-		) VALUES (1, 'merge_request', ?, ?, datetime('now'), datetime('now'), datetime('now'), 'active', ?, ?, ?)`,
-			i+1, fmt.Sprintf("item-%d", i+1), status, status, status,
-		)
-		require.NoError(err)
-	}
-
-	_, err = d.ReadDB().Exec(`INSERT INTO middleman_archive_items (
-		repo_id, item_type, item_number, provider_item_id,
-		provider_created_at, provider_updated_at, hydration_snapshot_updated_at,
-		lifecycle_state,
-		comments_status, reviews_status, inline_comments_status
-	) VALUES (
-		1, 'merge_request', 1, 'different-provider-id', datetime('now'), datetime('now'), datetime('now'), 'active',
-		'pending', 'pending', 'pending'
-	)`)
+	_, err = d.ReadDB().Exec(archiveItemInsertForTest("merge_request", 1, "different-provider-id", "active"))
 	require.Error(err)
-	_, err = d.ReadDB().Exec(`INSERT INTO middleman_archive_items (
-		repo_id, item_type, item_number, provider_item_id,
-		provider_created_at, provider_updated_at, hydration_snapshot_updated_at,
-		lifecycle_state,
-		comments_status, reviews_status, inline_comments_status
-	) VALUES (
-		1, 'merge_request', 99, 'item-1', datetime('now'), datetime('now'), datetime('now'), 'active',
-		'pending', 'pending', 'pending'
-	)`)
+	_, err = d.ReadDB().Exec(archiveItemInsertForTest("merge_request", 99, "item-1", "active"))
 	require.Error(err)
 }
 
@@ -1333,28 +1259,17 @@ func archiveItemInsertForTest(
 	itemNumber int,
 	providerItemID string,
 	lifecycleState string,
-	commentsStatus string,
-	reviewsStatus string,
-	inlineCommentsStatus string,
-	attemptCount int,
 ) string {
 	return fmt.Sprintf(`INSERT INTO middleman_archive_items (
 		repo_id, item_type, item_number, provider_item_id,
-		provider_created_at, provider_updated_at, hydration_snapshot_updated_at,
-		lifecycle_state,
-		comments_status, reviews_status, inline_comments_status, attempt_count
+		provider_created_at, provider_updated_at, lifecycle_state
 	) VALUES (
-		1, '%s', %d, '%s', datetime('now'), datetime('now'), datetime('now'), '%s',
-		'%s', '%s', '%s', %d
+		1, '%s', %d, '%s', datetime('now'), datetime('now'), '%s'
 	)`,
 		itemType,
 		itemNumber,
 		providerItemID,
 		lifecycleState,
-		commentsStatus,
-		reviewsStatus,
-		inlineCommentsStatus,
-		attemptCount,
 	)
 }
 

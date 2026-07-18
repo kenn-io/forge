@@ -222,10 +222,11 @@ func TestNormalSyncDoesNotCompleteNewerArchiveDataset(t *testing.T) {
 	require.NoError(err)
 	require.True(accepted)
 	newer := now.Add(time.Hour)
-	insertArchiveItemForTest(
-		t, database, repoID, ArchiveItemTypeMergeRequest, 8, newer,
-		ArchiveDatasetStatusUnsupported, ArchiveDatasetStatusPending, ArchiveDatasetStatusUnsupported,
-	)
+	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeMergeRequest, 8, newer)
+	// The archive dataset is already bound to a newer parent revision than the
+	// live observation that is about to commit.
+	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeMergeRequest, 8, ArchiveDatasetReviews)
+	insertDatasetProgressForTest(t, database, key, revision+1, 1, nil, ArchiveDatasetProgressPending, 0)
 
 	applied, err := database.CommitMergeRequestChildSnapshot(ctx, MergeRequestChildSnapshot{
 		MergeRequestID: mrID, ExpectedRevision: revision,
@@ -236,10 +237,12 @@ func TestNormalSyncDoesNotCompleteNewerArchiveDataset(t *testing.T) {
 	})
 	require.NoError(err)
 	require.True(applied)
-	item := archiveItemState(t, database, repoID, ArchiveItemTypeMergeRequest, 8)
-	assert.Equal(ArchiveDatasetStatusPending, item.ReviewsStatus)
-	assert.Nil(item.MirroredProviderUpdatedAt)
-	assert.Nil(item.HydratedAt)
+	progress, err := database.GetDatasetProgress(ctx, repoID, ArchiveItemTypeMergeRequest, 8, ArchiveDatasetReviews)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressPending, progress.Status,
+		"an older live observation must not complete a dataset bound to a newer parent revision")
+	assert.Equal(revision+1, progress.ParentRevision)
+	assert.Nil(progress.CompletedAt)
 }
 
 func TestUpdateMRWorkflowApprovalSnapshotRejectsAdvancedRevision(t *testing.T) {
@@ -401,8 +404,7 @@ func TestCommitIssueChildSnapshotSatisfiesMatchingArchiveProgress(t *testing.T) 
 	repoID := insertTestRepo(t, database, "acme", "live-satisfy-issue")
 	require.NoError(database.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
 	issueID := insertTestIssue(t, database, repoID, 7, "issue", now)
-	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeIssue, 7, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeIssue, 7, now)
 	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, database, key, 1, 2, "cursor-3", ArchiveDatasetProgressRunning, 2)
 
@@ -437,8 +439,7 @@ func TestCommitMergeRequestChildSnapshotSatisfiesAllMatchingDatasets(t *testing.
 		UpdatedAt: now, LastActivityAt: now,
 	})
 	require.NoError(err)
-	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeMergeRequest, 7, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusPending, ArchiveDatasetStatusPending)
+	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeMergeRequest, 7, now)
 	insertDatasetProgressForTest(t, database,
 		datasetProgressKeyForTest(repoID, ArchiveItemTypeMergeRequest, 7, ArchiveDatasetComments),
 		1, 1, nil, ArchiveDatasetProgressPending, 0)
@@ -505,8 +506,7 @@ func TestCommitChildSnapshotLiveWriteIndependentOfArchiveProgress(t *testing.T) 
 
 	// Blocked progress: the live write lands and the block is untouched.
 	blockedID := insertTestIssue(t, database, repoID, 2, "blocked", now)
-	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeIssue, 2, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeIssue, 2, now)
 	blockedKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 2, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, database, blockedKey, 1, 1, "cursor", ArchiveDatasetProgressBlocked, 3)
 	commitLive(blockedID)
@@ -517,8 +517,7 @@ func TestCommitChildSnapshotLiveWriteIndependentOfArchiveProgress(t *testing.T) 
 
 	// Progress bound to a different parent revision stays pending untouched.
 	staleID := insertTestIssue(t, database, repoID, 3, "stale", now)
-	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeIssue, 3, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeIssue, 3, now)
 	staleKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 3, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, database, staleKey, 5, 2, nil, ArchiveDatasetProgressPending, 0)
 	commitLive(staleID)
@@ -532,8 +531,7 @@ func TestCommitChildSnapshotLiveWriteIndependentOfArchiveProgress(t *testing.T) 
 	// write still lands.
 	require.NoError(database.PauseArchives(ctx, []int64{repoID}, now))
 	pausedID := insertTestIssue(t, database, repoID, 4, "paused", now)
-	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeIssue, 4, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeIssue, 4, now)
 	pausedKey := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 4, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, database, pausedKey, 1, 1, nil, ArchiveDatasetProgressPending, 0)
 	commitLive(pausedID)
@@ -633,8 +631,7 @@ func TestLiveParentAdvanceReopensChildProgressForSatisfaction(t *testing.T) {
 	require.NoError(err)
 	require.True(accepted)
 	require.Equal(int64(1), revision)
-	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeIssue, 7, now,
-		ArchiveDatasetStatusPending, ArchiveDatasetStatusNotApplicable, ArchiveDatasetStatusNotApplicable)
+	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeIssue, 7, now)
 	key := datasetProgressKeyForTest(repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetComments)
 	insertDatasetProgressForTest(t, database, key, 1, 1, nil, ArchiveDatasetProgressComplete, 1)
 

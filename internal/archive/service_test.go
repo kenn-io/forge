@@ -962,9 +962,14 @@ func TestArchiveHydrationCommitsTerminalLookupOutcomesWithoutFetchingDatasets(t 
 				require.NoError(database.EnsureDiscoveryArchives(t.Context(), []int64{destinationRepoID}, now))
 				require.NoError(database.StartFullArchives(t.Context(), []int64{destinationRepoID}, now))
 				_, err := database.WriteDB().ExecContext(t.Context(), `
+					UPDATE middleman_archive_repo_scans
+					SET status = 'complete'
+					WHERE repo_id = ? AND scan IN ('issue_inventory', 'merge_request_inventory')`,
+					destinationRepoID)
+				require.NoError(err)
+				_, err = database.WriteDB().ExecContext(t.Context(), `
 					UPDATE middleman_archive_repos
-					SET issue_inventory_complete = 1, merge_request_inventory_complete = 1,
-						initial_completed_at = ?, maintenance_watermark = ?, maintenance_succeeded_at = ?
+					SET initial_completed_at = ?, maintenance_watermark = ?, maintenance_succeeded_at = ?
 					WHERE repo_id = ?`, now.Add(-2*time.Hour), now.Add(-time.Hour), now.Add(-time.Minute), destinationRepoID)
 				require.NoError(err)
 			}

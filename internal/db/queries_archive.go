@@ -35,8 +35,6 @@ func (d *DB) EnsureDiscoveryArchives(ctx context.Context, repoIDs []int64, now t
 			_, err := tx.ExecContext(ctx, `
 				INSERT INTO middleman_archive_repos (
 					repo_id, collection_mode, operator_state,
-					issue_cursor, issue_inventory_complete,
-					merge_request_cursor, merge_request_inventory_complete,
 					initial_started_at, initial_completed_at,
 					maintenance_watermark, maintenance_succeeded_at,
 					comments_coverage, reviews_coverage, inline_comments_coverage,
@@ -44,7 +42,6 @@ func (d *DB) EnsureDiscoveryArchives(ctx context.Context, repoIDs []int64, now t
 					created_at, updated_at
 				) VALUES (
 					?, 'discovery', 'active',
-					NULL, 0, NULL, 0,
 					NULL, NULL, NULL, NULL,
 					'unknown', 'unknown', 'unknown',
 					NULL, NULL, NULL, ?, ?
@@ -723,167 +720,23 @@ func (d *DB) dueDatasetsForItem(
 	return datasets, nil
 }
 
-// ArchiveItemHydration marks every applicable dataset of one archive item
-// after its provider data has been completely persisted.
-type ArchiveItemHydration struct {
-	RepoID            int64
-	ItemType          ArchiveItemType
-	ItemNumber        int
-	DomainRevision    int64
-	CommentsStatus    ArchiveDatasetStatus
-	ReviewsStatus     ArchiveDatasetStatus
-	InlineStatus      ArchiveDatasetStatus
-	MirroredUpdatedAt time.Time
-	HydratedAt        time.Time
-}
-
-// MarkArchiveItemHydrated records a completed hydration, clears retry state,
-// and completes the repository's initial archive when it was the last pending
-// item. It never touches domain content rows.
-func (d *DB) MarkArchiveItemHydrated(ctx context.Context, h ArchiveItemHydration) error {
-	if h.RepoID <= 0 || h.ItemNumber <= 0 || h.DomainRevision <= 0 {
-		return fmt.Errorf("mark archive item hydrated: repo ID, item number, and domain revision are required")
-	}
-	parentTable := ""
-	switch h.ItemType {
-	case ArchiveItemTypeIssue:
-		parentTable = "middleman_issues"
-	case ArchiveItemTypeMergeRequest:
-		parentTable = "middleman_merge_requests"
-	default:
-		return fmt.Errorf("mark archive item hydrated: invalid item type %q", h.ItemType)
-	}
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		result, err := tx.ExecContext(ctx, fmt.Sprintf(`
-			UPDATE middleman_archive_items
-			SET comments_status = ?, reviews_status = ?, inline_comments_status = ?,
-				mirrored_provider_updated_at = ?, hydrated_at = ?,
-				attempt_count = 0, next_retry_at = NULL,
-				last_error_code = NULL, last_error_detail = NULL
-			WHERE repo_id = ? AND item_type = ? AND item_number = ?
-			  AND lifecycle_state = 'active' AND provider_updated_at = ?
-			  AND EXISTS (
-				SELECT 1 FROM %s
-				WHERE repo_id = ? AND number = ? AND updated_at = ?
-				  AND snapshot_revision = ?
-			  )`, parentTable),
-			h.CommentsStatus, h.ReviewsStatus, h.InlineStatus,
-			h.MirroredUpdatedAt.UTC(), h.HydratedAt.UTC(),
-			h.RepoID, h.ItemType, h.ItemNumber, h.MirroredUpdatedAt.UTC(),
-			h.RepoID, h.ItemNumber, h.MirroredUpdatedAt.UTC(), h.DomainRevision,
-		)
-		if err != nil {
-			return fmt.Errorf("mark archive item hydrated: %w", err)
-		}
-		changed, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("mark archive item hydrated rows affected: %w", err)
-		}
-		if changed == 0 {
-			var workUpdatedAt, parentUpdatedAt time.Time
-			var parentRevision int64
-			var lifecycle ArchiveLifecycleState
-			if err := tx.QueryRowContext(ctx, fmt.Sprintf(`
-				SELECT a.provider_updated_at, a.lifecycle_state, p.updated_at, p.snapshot_revision
-				FROM middleman_archive_items a
-				JOIN %s p ON p.repo_id = a.repo_id AND p.number = a.item_number
-				WHERE a.repo_id = ? AND a.item_type = ? AND a.item_number = ?`, parentTable),
-				h.RepoID, h.ItemType, h.ItemNumber,
-			).Scan(&workUpdatedAt, &lifecycle, &parentUpdatedAt, &parentRevision); err != nil {
-				return fmt.Errorf("read archive item after rejected hydration finalization: %w", err)
-			}
-			if lifecycle != ArchiveLifecycleStateActive {
-				return nil
-			}
-			if parentRevision != h.DomainRevision {
-				if err := requeueArchiveItemDatasetsTx(
-					ctx, tx, h.RepoID, h.ItemType, h.ItemNumber,
-				); err != nil {
-					return err
-				}
-			}
-			winningUpdatedAt := workUpdatedAt
-			if parentUpdatedAt.After(winningUpdatedAt) {
-				winningUpdatedAt = parentUpdatedAt
-			}
-			return reconcileArchiveItemSnapshotTx(
-				ctx, tx, h.RepoID, h.ItemType, h.ItemNumber, winningUpdatedAt, parentRevision,
-			)
-		}
-		if err := clearArchiveRepositoryFailureTx(ctx, tx, h.RepoID, h.HydratedAt); err != nil {
-			return err
-		}
-		return completeArchiveInitialIfReadyTx(ctx, tx, h.RepoID, h.HydratedAt)
-	})
-}
-
-func requeueArchiveItemDatasetsTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	repoID int64,
-	itemType ArchiveItemType,
-	itemNumber int,
-) error {
-	_, err := tx.ExecContext(ctx, `
-		UPDATE middleman_archive_items
-		SET comments_status = CASE
-				WHEN comments_status IN ('unsupported', 'not_applicable') THEN comments_status
-				ELSE 'pending' END,
-			reviews_status = CASE
-				WHEN reviews_status IN ('unsupported', 'not_applicable') THEN reviews_status
-				ELSE 'pending' END,
-			inline_comments_status = CASE
-				WHEN inline_comments_status IN ('unsupported', 'not_applicable') THEN inline_comments_status
-				ELSE 'pending' END,
-			hydrated_at = NULL, attempt_count = 0, next_retry_at = NULL,
-			last_error_code = NULL, last_error_detail = NULL
-		WHERE repo_id = ? AND item_type = ? AND item_number = ?
-		  AND lifecycle_state = 'active'`, repoID, itemType, itemNumber)
-	if err != nil {
-		return fmt.Errorf("requeue archive datasets after parent revision changed: %w", err)
-	}
-	return nil
-}
-
 // ArchiveItemTerminal marks an archive item's lifecycle as removed upstream or
-// inaccessible. Domain issue/merge-request content is deliberately retained.
+// inaccessible. Domain issue/merge-request content is deliberately retained;
+// terminal error detail lives on the item's lookup dataset progress row.
 type ArchiveItemTerminal struct {
-	RepoID      int64
-	ItemType    ArchiveItemType
-	ItemNumber  int
-	Lifecycle   ArchiveLifecycleState
-	ErrorCode   string
-	ErrorDetail string
-	At          time.Time
-}
-
-// MarkArchiveItemTerminal records a terminal provider lookup outcome on the
-// archive work row only; archived content stays in place.
-func (d *DB) MarkArchiveItemTerminal(ctx context.Context, t ArchiveItemTerminal) error {
-	if t.RepoID <= 0 || t.ItemNumber <= 0 {
-		return fmt.Errorf("mark archive item terminal: repo ID and item number are required")
-	}
-	switch t.Lifecycle {
-	case ArchiveLifecycleStateRemovedUpstream, ArchiveLifecycleStateInaccessible:
-	case ArchiveLifecycleStateActive:
-		return fmt.Errorf("mark archive item terminal: %q is not a terminal lifecycle state", t.Lifecycle)
-	default:
-		return fmt.Errorf("mark archive item terminal: unknown lifecycle state %q", t.Lifecycle)
-	}
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return markArchiveItemTerminalTx(ctx, tx, t)
-	})
+	RepoID     int64
+	ItemType   ArchiveItemType
+	ItemNumber int
+	Lifecycle  ArchiveLifecycleState
+	At         time.Time
 }
 
 func markArchiveItemTerminalTx(ctx context.Context, tx *sql.Tx, t ArchiveItemTerminal) error {
 	result, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_items
-		SET lifecycle_state = ?, next_retry_at = NULL,
-			last_error_code = ?, last_error_detail = ?, hydrated_at = ?
+		SET lifecycle_state = ?, hydrated_at = ?
 		WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
-		t.Lifecycle, nullableArchiveError(t.ErrorCode),
-		nullableArchiveError(sanitizeArchiveErrorDetail(t.ErrorDetail)), t.At.UTC(),
-		t.RepoID, t.ItemType, t.ItemNumber,
+		t.Lifecycle, t.At.UTC(), t.RepoID, t.ItemType, t.ItemNumber,
 	)
 	if err != nil {
 		return fmt.Errorf("mark archive item terminal: %w", err)
@@ -898,12 +751,6 @@ func markArchiveItemTerminalTx(ctx context.Context, tx *sql.Tx, t ArchiveItemTer
 			t.RepoID, t.ItemType, t.ItemNumber,
 		)
 	}
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM middleman_archive_dataset_pages
-		WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
-		t.RepoID, t.ItemType, t.ItemNumber); err != nil {
-		return fmt.Errorf("clear terminal archive dataset stages: %w", err)
-	}
 	if err := clearArchiveRepositoryFailureTx(ctx, tx, t.RepoID, t.At); err != nil {
 		return err
 	}
@@ -915,81 +762,6 @@ func nullableArchiveError(value string) any {
 		return nil
 	}
 	return value
-}
-
-// FailArchiveItem records retry state without replacing provider-owned content
-// or changing already terminal dataset statuses.
-func (d *DB) FailArchiveItem(ctx context.Context, failure ArchiveItemFailure) error {
-	if failure.RepoID <= 0 || failure.ItemNumber <= 0 || failure.Code == "" {
-		return fmt.Errorf("fail archive item: repo ID, item number, and error code are required")
-	}
-	datasets, err := normalizedArchiveDatasets(failure.Datasets)
-	if err != nil {
-		return err
-	}
-	comments := datasets[ArchiveDatasetComments]
-	reviews := datasets[ArchiveDatasetReviews]
-	inlineComments := datasets[ArchiveDatasetInlineComments]
-	nextRetryAt := failure.NextRetryAt
-	if nextRetryAt != nil {
-		normalized := nextRetryAt.UTC()
-		nextRetryAt = &normalized
-	}
-	result, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_archive_items
-		SET comments_status = CASE
-				WHEN ? AND comments_status IN ('pending', 'failed') THEN 'failed'
-				ELSE comments_status END,
-			reviews_status = CASE
-				WHEN ? AND reviews_status IN ('pending', 'failed') THEN 'failed'
-				ELSE reviews_status END,
-			inline_comments_status = CASE
-				WHEN ? AND inline_comments_status IN ('pending', 'failed') THEN 'failed'
-				ELSE inline_comments_status END,
-			attempt_count = attempt_count + 1,
-			next_retry_at = ?, last_error_code = ?, last_error_detail = ?
-		WHERE repo_id = ? AND item_type = ? AND item_number = ?
-		  AND lifecycle_state = 'active'
-		  AND (
-			(? AND comments_status IN ('pending', 'failed'))
-			OR (? AND reviews_status IN ('pending', 'failed'))
-			OR (? AND inline_comments_status IN ('pending', 'failed'))
-		  )`,
-		comments, reviews, inlineComments,
-		nextRetryAt, failure.Code, sanitizeArchiveErrorDetail(failure.Detail),
-		failure.RepoID, failure.ItemType, failure.ItemNumber,
-		comments, reviews, inlineComments,
-	)
-	if err != nil {
-		return fmt.Errorf("fail archive item: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("fail archive item rows affected: %w", err)
-	}
-	if changed == 0 {
-		return fmt.Errorf(
-			"fail archive item: no mutable dataset for repo %d %s %d",
-			failure.RepoID, failure.ItemType, failure.ItemNumber,
-		)
-	}
-	return nil
-}
-
-func normalizedArchiveDatasets(datasets []ArchiveDataset) (map[ArchiveDataset]bool, error) {
-	if len(datasets) == 0 {
-		return nil, fmt.Errorf("fail archive item: at least one dataset is required")
-	}
-	result := make(map[ArchiveDataset]bool, len(datasets))
-	for _, dataset := range datasets {
-		switch dataset {
-		case ArchiveDatasetComments, ArchiveDatasetReviews, ArchiveDatasetInlineComments:
-			result[dataset] = true
-		default:
-			return nil, fmt.Errorf("fail archive item: unknown dataset %q", dataset)
-		}
-	}
-	return result, nil
 }
 
 func sanitizeArchiveErrorDetail(detail string) string {
@@ -1393,7 +1165,11 @@ func commitArchiveIssueParentTx(
 	); err != nil {
 		return 0, 0, false, err
 	}
-	if err := upsertArchiveIssueWorkTx(ctx, tx, repoID, *item, refreshReason); err != nil {
+	if err := upsertArchiveItemWorkTx(
+		ctx, tx, repoID, ArchiveItemTypeIssue, issue.Number,
+		archiveProviderItemID(item.ProviderItemID, issue.PlatformExternalID, issue.PlatformID),
+		issue.CreatedAt, issue.UpdatedAt, refreshReason,
+	); err != nil {
 		return 0, 0, false, err
 	}
 	if err := seedArchiveDatasetProgressTx(ctx, tx, repoID, ArchiveItemTypeIssue, issue.Number,
@@ -1447,7 +1223,11 @@ func commitArchiveMergeRequestParentTx(
 	); err != nil {
 		return 0, 0, false, err
 	}
-	if err := upsertArchiveMergeRequestWorkTx(ctx, tx, repoID, *item, refreshReason); err != nil {
+	if err := upsertArchiveItemWorkTx(
+		ctx, tx, repoID, ArchiveItemTypeMergeRequest, mr.Number,
+		archiveProviderItemID(item.ProviderItemID, mr.PlatformExternalID, mr.PlatformID),
+		mr.CreatedAt, mr.UpdatedAt, refreshReason,
+	); err != nil {
 		return 0, 0, false, err
 	}
 	if err := seedArchiveDatasetProgressTx(ctx, tx, repoID, ArchiveItemTypeMergeRequest, mr.Number,
@@ -1665,19 +1445,7 @@ func (d *DB) UpsertArchiveIssueSnapshot(ctx context.Context, snapshot *Issue) (i
 	var revision int64
 	var accepted bool
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
-		var resume bool
 		var err error
-		id, revision, resume, err = resumableArchiveParentTx(
-			ctx, tx, snapshot.RepoID, ArchiveItemTypeIssue,
-			snapshot.Number, snapshot.UpdatedAt,
-		)
-		if err != nil {
-			return err
-		}
-		if resume {
-			accepted = true
-			return nil
-		}
 		id, revision, accepted, err = commitIssueParentSnapshotTx(ctx, tx, snapshot, snapshot.Labels, reopenDatasetsAtomic)
 		if err != nil {
 			return err
@@ -1691,7 +1459,7 @@ func (d *DB) UpsertArchiveIssueSnapshot(ctx context.Context, snapshot *Issue) (i
 			}
 		}
 		return reconcileArchiveItemSnapshotTx(
-			ctx, tx, snapshot.RepoID, ArchiveItemTypeIssue, snapshot.Number, winningUpdatedAt, revision,
+			ctx, tx, snapshot.RepoID, ArchiveItemTypeIssue, snapshot.Number, winningUpdatedAt,
 		)
 	})
 	return id, revision, accepted, err
@@ -1705,19 +1473,7 @@ func (d *DB) UpsertArchiveMergeRequestSnapshot(ctx context.Context, snapshot *Me
 	var revision int64
 	var accepted bool
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
-		var resume bool
 		var err error
-		id, revision, resume, err = resumableArchiveParentTx(
-			ctx, tx, snapshot.RepoID, ArchiveItemTypeMergeRequest,
-			snapshot.Number, snapshot.UpdatedAt,
-		)
-		if err != nil {
-			return err
-		}
-		if resume {
-			accepted = true
-			return nil
-		}
 		id, revision, accepted, err = commitMergeRequestParentSnapshotTx(
 			ctx, tx, snapshot, snapshot.Labels, mergeRequestDetailPreserveDerived, reopenDatasetsAtomic,
 		)
@@ -1733,51 +1489,15 @@ func (d *DB) UpsertArchiveMergeRequestSnapshot(ctx context.Context, snapshot *Me
 			}
 		}
 		return reconcileArchiveItemSnapshotTx(
-			ctx, tx, snapshot.RepoID, ArchiveItemTypeMergeRequest, snapshot.Number, winningUpdatedAt, revision,
+			ctx, tx, snapshot.RepoID, ArchiveItemTypeMergeRequest, snapshot.Number, winningUpdatedAt,
 		)
 	})
 	return id, revision, accepted, err
 }
 
-// resumableArchiveParentTx returns the parent revision that already owns a
-// staged page for the same provider timestamp. Archive retries must keep that
-// revision so they resume its cursor; a normal-sync parent advance makes the
-// stage ineligible and the next archive snapshot starts a fresh revision.
-func resumableArchiveParentTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	repoID int64,
-	itemType ArchiveItemType,
-	itemNumber int,
-	updatedAt time.Time,
-) (int64, int64, bool, error) {
-	table := "middleman_issues"
-	if itemType == ArchiveItemTypeMergeRequest {
-		table = "middleman_merge_requests"
-	}
-	var id, revision int64
-	err := tx.QueryRowContext(ctx, fmt.Sprintf(`
-		SELECT p.id, p.snapshot_revision
-		FROM %s p
-		WHERE p.repo_id = ? AND p.number = ? AND p.updated_at = ?
-		  AND EXISTS (
-			SELECT 1 FROM middleman_archive_dataset_pages pages
-			WHERE pages.repo_id = p.repo_id
-			  AND pages.item_type = ?
-			  AND pages.item_number = p.number
-			  AND pages.snapshot_updated_at = p.updated_at
-			  AND pages.domain_revision = p.snapshot_revision
-		  )`, table), repoID, itemNumber, updatedAt.UTC(), itemType,
-	).Scan(&id, &revision)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, 0, false, nil
-	}
-	if err != nil {
-		return 0, 0, false, fmt.Errorf("find resumable archive parent: %w", err)
-	}
-	return id, revision, true, nil
-}
-
+// reconcileArchiveItemSnapshotTx keeps the archive work row bound to the
+// winning provider timestamp after a parent observation. Dataset-level reopen
+// and retry state live entirely in middleman_archive_dataset_progress.
 func reconcileArchiveItemSnapshotTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -1785,60 +1505,14 @@ func reconcileArchiveItemSnapshotTx(
 	itemType ArchiveItemType,
 	itemNumber int,
 	winningUpdatedAt time.Time,
-	winningRevision int64,
 ) error {
-	winningUpdatedAt = winningUpdatedAt.UTC()
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_items
-		SET provider_updated_at = MAX(provider_updated_at, ?),
-			hydration_snapshot_updated_at = CASE
-				WHEN ? > hydration_snapshot_updated_at THEN ?
-				ELSE hydration_snapshot_updated_at END,
-			comments_status = CASE
-				WHEN ? > hydration_snapshot_updated_at
-					AND comments_status NOT IN ('unsupported', 'not_applicable') THEN 'pending'
-				ELSE comments_status END,
-			reviews_status = CASE
-				WHEN ? > hydration_snapshot_updated_at
-					AND reviews_status NOT IN ('unsupported', 'not_applicable') THEN 'pending'
-				ELSE reviews_status END,
-			inline_comments_status = CASE
-				WHEN ? > hydration_snapshot_updated_at
-					AND inline_comments_status NOT IN ('unsupported', 'not_applicable') THEN 'pending'
-				ELSE inline_comments_status END,
-			next_retry_at = CASE
-				WHEN ? > hydration_snapshot_updated_at THEN NULL
-				ELSE next_retry_at END,
-			last_error_code = CASE
-				WHEN ? > hydration_snapshot_updated_at THEN NULL
-				ELSE last_error_code END,
-			last_error_detail = CASE
-				WHEN ? > hydration_snapshot_updated_at THEN NULL
-				ELSE last_error_detail END
+		SET provider_updated_at = MAX(provider_updated_at, ?)
 		WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
-		winningUpdatedAt, winningUpdatedAt, winningUpdatedAt,
-		winningUpdatedAt, winningUpdatedAt, winningUpdatedAt,
-		winningUpdatedAt, winningUpdatedAt, winningUpdatedAt,
-		repoID, itemType, itemNumber,
+		winningUpdatedAt.UTC(), repoID, itemType, itemNumber,
 	); err != nil {
 		return fmt.Errorf("reconcile archive item snapshot: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE middleman_archive_dataset_pages
-		SET domain_revision = ?
-		WHERE repo_id = ? AND item_type = ? AND item_number = ?
-		  AND snapshot_updated_at = ? AND domain_revision <> ?`,
-		winningRevision, repoID, itemType, itemNumber, winningUpdatedAt, winningRevision,
-	); err != nil {
-		return fmt.Errorf("rebind resumable archive dataset stages: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM middleman_archive_dataset_pages
-		WHERE repo_id = ? AND item_type = ? AND item_number = ?
-		  AND snapshot_updated_at <> ?`,
-		repoID, itemType, itemNumber, winningUpdatedAt,
-	); err != nil {
-		return fmt.Errorf("discard rejected archive dataset stages: %w", err)
 	}
 	return nil
 }
@@ -1877,334 +1551,6 @@ func completeArchiveInitialIfReadyTx(ctx context.Context, tx *sql.Tx, repoID int
 	return nil
 }
 
-func (d *DB) GetArchiveDatasetStage(ctx context.Context, key ArchiveDatasetKey) (ArchiveDatasetStage, error) {
-	var stage ArchiveDatasetStage
-	var exhausted sql.NullBool
-	var snapshotUpdatedAt sql.NullTime
-	err := d.ro.QueryRowContext(ctx, `
-		WITH pages AS (
-			SELECT * FROM middleman_archive_dataset_pages
-			WHERE repo_id = ? AND item_type = ? AND item_number = ?
-			  AND dataset = ? AND domain_revision = ?
-		)
-		SELECT (SELECT snapshot_updated_at FROM pages ORDER BY page_number DESC LIMIT 1),
-			COALESCE((SELECT next_cursor FROM pages ORDER BY page_number DESC LIMIT 1), ''),
-			(SELECT exhausted FROM pages ORDER BY page_number DESC LIMIT 1),
-			COUNT(*), COALESCE(SUM(record_count), 0),
-			COALESCE(SUM(length(payload) + length(input_cursor) + length(next_cursor)), 0)
-		FROM pages`,
-		key.RepoID, key.ItemType, key.ItemNumber, key.Dataset, key.DomainRevision,
-	).Scan(&snapshotUpdatedAt, &stage.NextCursor, &exhausted, &stage.PageCount, &stage.Records, &stage.Bytes)
-	if err != nil {
-		return ArchiveDatasetStage{}, fmt.Errorf("get archive dataset stage: %w", err)
-	}
-	stage.Exhausted = exhausted.Valid && exhausted.Bool
-	if snapshotUpdatedAt.Valid {
-		snapshot := snapshotUpdatedAt.Time.UTC()
-		stage.SnapshotUpdatedAt = &snapshot
-	}
-	return stage, nil
-}
-
-func (d *DB) CommitArchiveDatasetPage(ctx context.Context, page ArchiveDatasetPage) (ArchiveDatasetStage, error) {
-	if page.RepoID <= 0 || page.ItemNumber <= 0 || page.Dataset == "" || page.SnapshotUpdatedAt.IsZero() || page.MaxPages <= 0 || page.MaxRecords <= 0 || page.MaxBytes <= 0 {
-		return ArchiveDatasetStage{}, errors.New("commit archive dataset page: invalid page or limits")
-	}
-	var result ArchiveDatasetStage
-	err := d.Tx(ctx, func(tx *sql.Tx) error {
-		if err := requireArchiveDatasetSnapshotTx(ctx, tx, page.ArchiveDatasetKey); err != nil {
-			return err
-		}
-		if page.DomainRevision <= 0 {
-			return errors.New("commit archive dataset page: domain revision is required")
-		}
-		if err := requireArchiveDomainSnapshotTx(ctx, tx, page.ArchiveDatasetKey); err != nil {
-			return err
-		}
-		stage, err := getArchiveDatasetStageTx(ctx, tx, page.ArchiveDatasetKey)
-		if err != nil {
-			return err
-		}
-		if stage.Exhausted {
-			return errors.New("commit archive dataset page: dataset is already exhausted")
-		}
-		if stage.SnapshotUpdatedAt != nil && !stage.SnapshotUpdatedAt.Equal(page.SnapshotUpdatedAt) {
-			return errors.New("commit archive dataset page: staged snapshot changed")
-		}
-		if stage.NextCursor != page.InputCursor {
-			return fmt.Errorf("commit archive dataset page: cursor mismatch: expected %q, got %q", stage.NextCursor, page.InputCursor)
-		}
-		if !page.Exhausted && page.NextCursor == "" {
-			return errors.New("commit archive dataset page: next cursor or explicit exhaustion is required")
-		}
-		pageBytes := int64(len(page.Payload) + len(page.InputCursor) + len(page.NextCursor))
-		limits := []struct {
-			name       string
-			value, max int64
-		}{
-			{"page", int64(stage.PageCount + 1), int64(page.MaxPages)},
-			{"record", int64(stage.Records + page.RecordCount), int64(page.MaxRecords)},
-			{"byte", stage.Bytes + pageBytes, page.MaxBytes},
-		}
-		for _, limit := range limits {
-			if limit.value > limit.max {
-				return &ArchiveDatasetLimitError{Dataset: page.Dataset, Limit: limit.name, Value: limit.value, Max: limit.max}
-			}
-		}
-		_, err = tx.ExecContext(ctx, `
-			INSERT INTO middleman_archive_dataset_pages (
-				repo_id, item_type, item_number, dataset, snapshot_updated_at, domain_revision, page_number,
-				input_cursor, next_cursor, exhausted, record_count, payload, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			page.RepoID, page.ItemType, page.ItemNumber, page.Dataset, page.SnapshotUpdatedAt.UTC(), page.DomainRevision, stage.PageCount,
-			page.InputCursor, page.NextCursor, page.Exhausted, page.RecordCount, page.Payload, page.Now.UTC())
-		if err != nil {
-			return fmt.Errorf("commit archive dataset page: %w", err)
-		}
-		snapshot := page.SnapshotUpdatedAt.UTC()
-		result = ArchiveDatasetStage{SnapshotUpdatedAt: &snapshot, NextCursor: page.NextCursor, Exhausted: page.Exhausted,
-			PageCount: stage.PageCount + 1, Records: stage.Records + page.RecordCount,
-			Bytes: stage.Bytes + pageBytes}
-		return nil
-	})
-	return result, err
-}
-
-func getArchiveDatasetStageTx(ctx context.Context, tx *sql.Tx, key ArchiveDatasetKey) (ArchiveDatasetStage, error) {
-	var stage ArchiveDatasetStage
-	var exhausted sql.NullBool
-	var snapshotUpdatedAt sql.NullTime
-	err := tx.QueryRowContext(ctx, `
-		WITH pages AS (
-			SELECT * FROM middleman_archive_dataset_pages
-			WHERE repo_id = ? AND item_type = ? AND item_number = ?
-			  AND dataset = ? AND domain_revision = ?
-		)
-		SELECT (SELECT snapshot_updated_at FROM pages ORDER BY page_number DESC LIMIT 1),
-			COALESCE((SELECT next_cursor FROM pages ORDER BY page_number DESC LIMIT 1), ''),
-			(SELECT exhausted FROM pages ORDER BY page_number DESC LIMIT 1),
-			COUNT(*), COALESCE(SUM(record_count), 0),
-			COALESCE(SUM(length(payload) + length(input_cursor) + length(next_cursor)), 0)
-		FROM pages`,
-		key.RepoID, key.ItemType, key.ItemNumber, key.Dataset, key.DomainRevision,
-	).Scan(&snapshotUpdatedAt, &stage.NextCursor, &exhausted, &stage.PageCount, &stage.Records, &stage.Bytes)
-	if err != nil {
-		return stage, err
-	}
-	stage.Exhausted = exhausted.Valid && exhausted.Bool
-	if snapshotUpdatedAt.Valid {
-		snapshot := snapshotUpdatedAt.Time.UTC()
-		stage.SnapshotUpdatedAt = &snapshot
-	}
-	return stage, nil
-}
-
-func requireArchiveDatasetSnapshotTx(ctx context.Context, tx *sql.Tx, key ArchiveDatasetKey) error {
-	column := map[ArchiveDataset]string{
-		ArchiveDatasetComments:       "comments_status",
-		ArchiveDatasetReviews:        "reviews_status",
-		ArchiveDatasetInlineComments: "inline_comments_status",
-	}[key.Dataset]
-	if column == "" {
-		return fmt.Errorf("read archive dataset snapshot: invalid dataset %q", key.Dataset)
-	}
-	var current time.Time
-	var status ArchiveDatasetStatus
-	if err := tx.QueryRowContext(ctx, fmt.Sprintf(`
-		SELECT provider_updated_at, %s FROM middleman_archive_items
-		WHERE repo_id = ? AND item_type = ? AND item_number = ?`, column),
-		key.RepoID, key.ItemType, key.ItemNumber).Scan(&current, &status); err != nil {
-		return fmt.Errorf("read archive dataset snapshot: %w", err)
-	}
-	if !current.UTC().Equal(key.SnapshotUpdatedAt.UTC()) {
-		return fmt.Errorf("archive dataset snapshot changed from %s to %s",
-			key.SnapshotUpdatedAt.UTC().Format(time.RFC3339Nano), current.UTC().Format(time.RFC3339Nano))
-	}
-	if status == ArchiveDatasetStatusComplete {
-		return fmt.Errorf("archive dataset %s is already complete", key.Dataset)
-	}
-	return nil
-}
-
-func (d *DB) LoadArchiveDatasetPages(ctx context.Context, key ArchiveDatasetKey) ([][]byte, error) {
-	stage, err := d.GetArchiveDatasetStage(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	if !stage.Exhausted {
-		return nil, errors.New("load archive dataset pages: dataset is not exhausted")
-	}
-	rows, err := d.ro.QueryContext(ctx, `
-		SELECT payload FROM middleman_archive_dataset_pages
-		WHERE repo_id = ? AND item_type = ? AND item_number = ?
-		  AND dataset = ? AND domain_revision = ?
-		ORDER BY page_number`,
-		key.RepoID, key.ItemType, key.ItemNumber, key.Dataset, key.DomainRevision)
-	if err != nil {
-		return nil, fmt.Errorf("load archive dataset pages: %w", err)
-	}
-	defer rows.Close()
-	var payloads [][]byte
-	for rows.Next() {
-		var payload []byte
-		if err := rows.Scan(&payload); err != nil {
-			return nil, err
-		}
-		payloads = append(payloads, payload)
-	}
-	return payloads, rows.Err()
-}
-
-func (d *DB) PublishArchiveIssueComments(ctx context.Context, key ArchiveDatasetKey, issueID int64, events []IssueEvent) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		if err := requireArchiveDatasetSnapshotTx(ctx, tx, key); err != nil {
-			return err
-		}
-		if err := requireArchiveDomainSnapshotTx(ctx, tx, key); err != nil {
-			return err
-		}
-		stage, err := getArchiveDatasetStageTx(ctx, tx, key)
-		if err != nil {
-			return err
-		}
-		if err := requireArchiveDatasetStageReady(stage, key, "publish archive issue comments"); err != nil {
-			return err
-		}
-		if err := commitLiveDatasetTx(ctx, tx, DatasetPageCommit{
-			Parent:           DomainParentRef{ItemType: ArchiveItemTypeIssue, ID: issueID},
-			ExpectedRevision: key.DomainRevision,
-			Dataset:          ArchiveDatasetComments,
-			Rows:             DatasetRows{IssueComments: events},
-			Final:            true,
-		}); err != nil {
-			return err
-		}
-		return completeArchiveDatasetTx(ctx, tx, key)
-	})
-}
-
-func (d *DB) PublishArchiveMREvents(ctx context.Context, key ArchiveDatasetKey, mrID int64, eventType string, events []MREvent) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		if err := requireArchiveDatasetSnapshotTx(ctx, tx, key); err != nil {
-			return err
-		}
-		if err := requireArchiveDomainSnapshotTx(ctx, tx, key); err != nil {
-			return err
-		}
-		stage, err := getArchiveDatasetStageTx(ctx, tx, key)
-		if err != nil {
-			return err
-		}
-		if err := requireArchiveDatasetStageReady(stage, key, "publish archive merge-request events"); err != nil {
-			return err
-		}
-		commit := DatasetPageCommit{
-			Parent:           DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: mrID},
-			ExpectedRevision: key.DomainRevision,
-			Final:            true,
-		}
-		switch eventType {
-		case "issue_comment":
-			commit.Dataset = ArchiveDatasetComments
-			commit.Rows = DatasetRows{MRComments: events}
-		case "review":
-			commit.Dataset = ArchiveDatasetReviews
-			commit.Rows = DatasetRows{Reviews: events}
-		default:
-			return fmt.Errorf("publish archive merge-request events: invalid event type %q", eventType)
-		}
-		if err := commitLiveDatasetTx(ctx, tx, commit); err != nil {
-			return err
-		}
-		return completeArchiveDatasetTx(ctx, tx, key)
-	})
-}
-
-func (d *DB) PublishArchiveReviewThreads(ctx context.Context, key ArchiveDatasetKey, mrID int64, threads []MRReviewThread, events []MREvent) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		if err := requireArchiveDatasetSnapshotTx(ctx, tx, key); err != nil {
-			return err
-		}
-		if err := requireArchiveDomainSnapshotTx(ctx, tx, key); err != nil {
-			return err
-		}
-		stage, err := getArchiveDatasetStageTx(ctx, tx, key)
-		if err != nil {
-			return err
-		}
-		if err := requireArchiveDatasetStageReady(stage, key, "publish archive review threads"); err != nil {
-			return err
-		}
-		if err := commitLiveDatasetTx(ctx, tx, DatasetPageCommit{
-			Parent:           DomainParentRef{ItemType: ArchiveItemTypeMergeRequest, ID: mrID},
-			ExpectedRevision: key.DomainRevision,
-			Dataset:          ArchiveDatasetInlineComments,
-			Rows:             DatasetRows{ReviewThreads: threads, ThreadEvents: events},
-			Final:            true,
-		}); err != nil {
-			return err
-		}
-		return completeArchiveDatasetTx(ctx, tx, key)
-	})
-}
-
-func requireArchiveDomainSnapshotTx(ctx context.Context, tx *sql.Tx, key ArchiveDatasetKey) error {
-	if key.DomainRevision <= 0 {
-		return errors.New("archive domain revision is required")
-	}
-	var current time.Time
-	var currentRevision int64
-	var err error
-	switch key.ItemType {
-	case ArchiveItemTypeIssue:
-		err = tx.QueryRowContext(ctx, `
-			SELECT updated_at, snapshot_revision FROM middleman_issues
-			WHERE repo_id = ? AND number = ?`, key.RepoID, key.ItemNumber,
-		).Scan(&current, &currentRevision)
-	case ArchiveItemTypeMergeRequest:
-		err = tx.QueryRowContext(ctx, `
-			SELECT updated_at, snapshot_revision FROM middleman_merge_requests
-			WHERE repo_id = ? AND number = ?`, key.RepoID, key.ItemNumber,
-		).Scan(&current, &currentRevision)
-	default:
-		return fmt.Errorf("read archive domain snapshot: invalid item type %q", key.ItemType)
-	}
-	if err != nil {
-		return fmt.Errorf("read archive domain snapshot: %w", err)
-	}
-	if !current.UTC().Equal(key.SnapshotUpdatedAt.UTC()) {
-		return fmt.Errorf("archive domain parent snapshot changed from %s to %s",
-			key.SnapshotUpdatedAt.UTC().Format(time.RFC3339Nano), current.UTC().Format(time.RFC3339Nano))
-	}
-	if currentRevision != key.DomainRevision {
-		return fmt.Errorf("archive domain parent revision changed from %d to %d",
-			key.DomainRevision, currentRevision)
-	}
-	return nil
-}
-
-func requireArchiveDatasetStageReady(stage ArchiveDatasetStage, key ArchiveDatasetKey, operation string) error {
-	if !stage.Exhausted {
-		return fmt.Errorf("%s: dataset is not exhausted", operation)
-	}
-	if stage.SnapshotUpdatedAt == nil || !stage.SnapshotUpdatedAt.Equal(key.SnapshotUpdatedAt) {
-		return fmt.Errorf("%s: staged snapshot changed", operation)
-	}
-	return nil
-}
-
-func completeArchiveDatasetTx(ctx context.Context, tx *sql.Tx, key ArchiveDatasetKey) error {
-	column := map[ArchiveDataset]string{ArchiveDatasetComments: "comments_status", ArchiveDatasetReviews: "reviews_status", ArchiveDatasetInlineComments: "inline_comments_status"}[key.Dataset]
-	if column == "" {
-		return fmt.Errorf("complete archive dataset: invalid dataset %q", key.Dataset)
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM middleman_archive_dataset_pages WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = ?`, key.RepoID, key.ItemType, key.ItemNumber, key.Dataset); err != nil {
-		return err
-	}
-	_, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE middleman_archive_items SET %s = 'complete' WHERE repo_id = ? AND item_type = ? AND item_number = ?`, column), key.RepoID, key.ItemType, key.ItemNumber)
-	return err
-}
-
 // reactivateTerminalArchiveWorkTx returns a terminal archive item to active
 // after a present parent observation. Both terminal lifecycles recover —
 // removed upstream and inaccessible — and recovery is unconditional on the
@@ -2219,21 +1565,7 @@ func reactivateTerminalArchiveWorkTx(
 ) error {
 	_, err := tx.ExecContext(ctx, `
 		UPDATE middleman_archive_items
-		SET lifecycle_state = 'active',
-			comments_status = CASE
-				WHEN comments_status IN ('unsupported', 'not_applicable') THEN comments_status
-				ELSE 'pending'
-			END,
-			reviews_status = CASE
-				WHEN reviews_status IN ('unsupported', 'not_applicable') THEN reviews_status
-				ELSE 'pending'
-			END,
-			inline_comments_status = CASE
-				WHEN inline_comments_status IN ('unsupported', 'not_applicable') THEN inline_comments_status
-				ELSE 'pending'
-			END,
-			attempt_count = 0, next_retry_at = NULL,
-			last_error_code = NULL, last_error_detail = NULL, hydrated_at = NULL
+		SET lifecycle_state = 'active', hydrated_at = NULL
 		WHERE repo_id = ? AND item_type = ? AND item_number = ?
 		  AND lifecycle_state IN ('removed_upstream', 'inaccessible')`, repoID, itemType, itemNumber)
 	if err != nil {
@@ -2259,106 +1591,37 @@ func clearArchiveRepositoryFailureTx(
 	return nil
 }
 
-func upsertArchiveIssueWorkTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	repoID int64,
-	item ArchiveInventoryIssue,
-	refreshReason ArchiveRefreshReason,
-) error {
-	issue := item.Snapshot.Issue
-	if err := clearStagedArchiveDatasetsForNewSnapshotTx(ctx, tx, repoID, ArchiveItemTypeIssue, issue.Number, issue.UpdatedAt, refreshReason); err != nil {
-		return err
-	}
-	providerID := archiveProviderItemID(item.ProviderItemID, issue.PlatformExternalID, issue.PlatformID)
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO middleman_archive_items (
-			repo_id, item_type, item_number, provider_item_id,
-			provider_created_at, provider_updated_at, hydration_snapshot_updated_at,
-			lifecycle_state, refresh_reason,
-			comments_status, reviews_status, inline_comments_status
-		) VALUES (?, 'issue', ?, ?, ?, ?, ?, 'active', ?, ?, 'not_applicable', 'not_applicable')
-		ON CONFLICT(repo_id, item_type, item_number) DO UPDATE SET
-			provider_item_id = CASE WHEN excluded.provider_updated_at >= provider_updated_at THEN excluded.provider_item_id ELSE provider_item_id END,
-			provider_created_at = CASE WHEN excluded.provider_updated_at >= provider_updated_at THEN excluded.provider_created_at ELSE provider_created_at END,
-			provider_updated_at = MAX(provider_updated_at, excluded.provider_updated_at),
-			hydration_snapshot_updated_at = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN excluded.provider_updated_at ELSE hydration_snapshot_updated_at END,
-			lifecycle_state = CASE WHEN excluded.provider_updated_at > provider_updated_at THEN 'active' ELSE lifecycle_state END,
-			refresh_reason = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN excluded.refresh_reason ELSE refresh_reason END,
-			comments_status = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN excluded.comments_status ELSE comments_status END,
-			next_retry_at = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN NULL ELSE next_retry_at END,
-			last_error_code = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN NULL ELSE last_error_code END,
-			last_error_detail = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN NULL ELSE last_error_detail END`,
-		repoID, issue.Number, providerID, issue.CreatedAt, issue.UpdatedAt, issue.UpdatedAt,
-		refreshReason, item.CommentsStatus,
-	)
-	if err != nil {
-		return fmt.Errorf("upsert archive issue inventory work: %w", err)
-	}
-	return nil
-}
-
-func upsertArchiveMergeRequestWorkTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	repoID int64,
-	item ArchiveInventoryMergeRequest,
-	refreshReason ArchiveRefreshReason,
-) error {
-	mr := item.Snapshot.MergeRequest
-	if err := clearStagedArchiveDatasetsForNewSnapshotTx(ctx, tx, repoID, ArchiveItemTypeMergeRequest, mr.Number, mr.UpdatedAt, refreshReason); err != nil {
-		return err
-	}
-	providerID := archiveProviderItemID(item.ProviderItemID, mr.PlatformExternalID, mr.PlatformID)
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO middleman_archive_items (
-			repo_id, item_type, item_number, provider_item_id,
-			provider_created_at, provider_updated_at, hydration_snapshot_updated_at,
-			lifecycle_state, refresh_reason,
-			comments_status, reviews_status, inline_comments_status
-		) VALUES (?, 'merge_request', ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
-		ON CONFLICT(repo_id, item_type, item_number) DO UPDATE SET
-			provider_item_id = CASE WHEN excluded.provider_updated_at >= provider_updated_at THEN excluded.provider_item_id ELSE provider_item_id END,
-			provider_created_at = CASE WHEN excluded.provider_updated_at >= provider_updated_at THEN excluded.provider_created_at ELSE provider_created_at END,
-			provider_updated_at = MAX(provider_updated_at, excluded.provider_updated_at),
-			hydration_snapshot_updated_at = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN excluded.provider_updated_at ELSE hydration_snapshot_updated_at END,
-			lifecycle_state = CASE WHEN excluded.provider_updated_at > provider_updated_at THEN 'active' ELSE lifecycle_state END,
-			refresh_reason = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN excluded.refresh_reason ELSE refresh_reason END,
-			comments_status = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN excluded.comments_status ELSE comments_status END,
-			reviews_status = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN excluded.reviews_status ELSE reviews_status END,
-			inline_comments_status = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN excluded.inline_comments_status ELSE inline_comments_status END,
-			next_retry_at = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN NULL ELSE next_retry_at END,
-			last_error_code = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN NULL ELSE last_error_code END,
-			last_error_detail = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN NULL ELSE last_error_detail END`,
-		repoID, mr.Number, providerID, mr.CreatedAt, mr.UpdatedAt, mr.UpdatedAt, refreshReason,
-		item.CommentsStatus, item.ReviewsStatus, item.InlineCommentsStatus,
-	)
-	if err != nil {
-		return fmt.Errorf("upsert archive merge request inventory work: %w", err)
-	}
-	return nil
-}
-
-func clearStagedArchiveDatasetsForNewSnapshotTx(
+// upsertArchiveItemWorkTx records the item-level work row for one parent
+// observation. Dataset state lives in middleman_archive_dataset_progress; the
+// work row only tracks provider identity, timestamps, lifecycle, and the
+// refresh reason of the winning observation.
+func upsertArchiveItemWorkTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	repoID int64,
 	itemType ArchiveItemType,
 	itemNumber int,
+	providerItemID string,
+	createdAt time.Time,
 	updatedAt time.Time,
 	refreshReason ArchiveRefreshReason,
 ) error {
 	_, err := tx.ExecContext(ctx, `
-		DELETE FROM middleman_archive_dataset_pages
-		WHERE repo_id = ? AND item_type = ? AND item_number = ?
-		  AND EXISTS (
-			SELECT 1 FROM middleman_archive_items
-			WHERE repo_id = ? AND item_type = ? AND item_number = ?
-			  AND (provider_updated_at < ? OR (provider_updated_at = ? AND ? = 'prompt'))
-		  )`, repoID, itemType, itemNumber, repoID, itemType, itemNumber,
-		updatedAt.UTC(), updatedAt.UTC(), refreshReason)
+		INSERT INTO middleman_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at,
+			lifecycle_state, refresh_reason
+		) VALUES (?, ?, ?, ?, ?, ?, 'active', ?)
+		ON CONFLICT(repo_id, item_type, item_number) DO UPDATE SET
+			provider_item_id = CASE WHEN excluded.provider_updated_at >= provider_updated_at THEN excluded.provider_item_id ELSE provider_item_id END,
+			provider_created_at = CASE WHEN excluded.provider_updated_at >= provider_updated_at THEN excluded.provider_created_at ELSE provider_created_at END,
+			provider_updated_at = MAX(provider_updated_at, excluded.provider_updated_at),
+			lifecycle_state = CASE WHEN excluded.provider_updated_at > provider_updated_at THEN 'active' ELSE lifecycle_state END,
+			refresh_reason = CASE WHEN excluded.provider_updated_at > provider_updated_at OR (excluded.provider_updated_at = provider_updated_at AND excluded.refresh_reason = 'prompt') THEN excluded.refresh_reason ELSE refresh_reason END`,
+		repoID, itemType, itemNumber, providerItemID, createdAt, updatedAt, refreshReason,
+	)
 	if err != nil {
-		return fmt.Errorf("clear staged archive datasets for newer snapshot: %w", err)
+		return fmt.Errorf("upsert archive %s inventory work: %w", itemType, err)
 	}
 	return nil
 }

@@ -109,6 +109,7 @@ describe("FleetSettings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "SSH peer epyc platform: linux" }));
     const platformInput = screen.getByRole("combobox", { name: "SSH peer epyc platform" });
     await fireEvent.input(platformInput, { target: { value: "mac" } });
+    await fireEvent.keyDown(platformInput, { key: "ArrowUp" });
     await fireEvent.keyDown(platformInput, { key: "Enter" });
     await fireEvent.click(screen.getByRole("button", { name: "Save fleet federation" }));
 

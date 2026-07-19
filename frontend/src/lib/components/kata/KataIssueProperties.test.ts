@@ -246,6 +246,7 @@ describe("KataIssueProperties", () => {
     const ownerInput = screen.getByRole("combobox", { name: "Owner" });
     expect(ownerInput).toBe(document.activeElement);
     await fireEvent.input(ownerInput, { target: { value: "planner" } });
+    await fireEvent.keyDown(ownerInput, { key: "ArrowUp" });
     await fireEvent.keyDown(ownerInput, { key: "Enter" });
 
     expect(onAssignOwner).toHaveBeenCalledWith("issue-1", "agent:planner");

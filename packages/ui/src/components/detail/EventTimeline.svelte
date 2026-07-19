@@ -2365,7 +2365,7 @@
   .event-body {
     font-size: var(--font-size-sm);
     color: var(--text-primary);
-    padding: var(--focus-detail-space-sm, 8px) calc(var(--focus-detail-hit-target, 26px) + var(--focus-detail-space-sm, 8px)) var(--focus-detail-space-sm, 8px) var(--focus-detail-space-sm, 10px);
+    padding: 0 calc(var(--focus-detail-hit-target, 26px) + var(--focus-detail-space-sm, 8px)) var(--focus-detail-space-sm, 8px) var(--focus-detail-space-sm, 10px);
     white-space: pre-wrap;
     word-break: break-word;
     line-height: 1.6;
@@ -2382,6 +2382,10 @@
 
   .event-body.markdown-body {
     white-space: normal;
+  }
+
+  .event-body.markdown-body > :global(:first-child) {
+    margin-top: 0;
   }
 
   .event-body--nested {

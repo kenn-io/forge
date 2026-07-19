@@ -88,7 +88,10 @@ function ev(mrID: number, eventType: string, fields: Record<string, unknown>) {
 function widgetsOneEvents() {
   const id = 1001;
   return [
-    ev(id, "issue_comment", { Author: "bob", Body: "Looks like a solid approach. Minor nit on naming." }),
+    ev(id, "issue_comment", {
+      Author: "review-bot[bot]",
+      Body: "## Automated review summary\n\nFollow-up findings belong close to the comment header.",
+    }),
     ev(id, "issue_comment", { Author: "carol", Body: "I agree, caching here will help a lot." }),
     ev(id, "review", { Author: "bob", Summary: "APPROVED", Body: "LGTM after addressing the naming nit." }),
     ev(id, "commit", {
@@ -333,6 +336,18 @@ describe("PR timeline filters", () => {
     expect(detailText(".kit-timeline")).toContain('"Add widget cache" -> "Add widget caching layer"');
     expect(detailText(".kit-timeline")).toContain("Base changed");
     expect(detailText(".kit-timeline")).toContain("develop -> main");
+  });
+
+  it("keeps heading-first comment content one spacing step below its header", async () => {
+    await mountTimeline("/pulls/github/acme/widgets/1");
+    await vi.waitFor(() => expect(document.querySelector(".pull-detail .event-body h2")).not.toBeNull(), WAIT);
+
+    const heading = document.querySelector<HTMLElement>(".pull-detail .event-body h2")!;
+    const card = heading.closest<HTMLElement>(".kit-comment-card")!;
+    const header = card.querySelector<HTMLElement>(".kit-card__header")!;
+    const contentGap = heading.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
+
+    expect(contentGap).toBeCloseTo(8, 2);
   });
 
   it("renders merged lifecycle transitions as one purple row", async () => {

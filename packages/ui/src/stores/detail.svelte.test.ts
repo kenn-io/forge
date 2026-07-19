@@ -138,6 +138,28 @@ describe("createDetailStore", () => {
     expect(store.getDetail()?.platform_head_sha).toBe("head-b");
   });
 
+  it("rejects an initial load that resolves after a newer refresh for the same selection", async () => {
+    const initialLoad = deferred<{ data: PullDetail }>();
+    const newerRefresh = deferred<{ data: PullDetail }>();
+    const get = vi.fn().mockReturnValueOnce(initialLoad.promise).mockReturnValueOnce(newerRefresh.promise);
+    const store = createDetailStore({ client: mockClient({ GET: get }) });
+    const identity = {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false as const,
+    };
+
+    const loading = store.loadDetail("acme", "widget", 7, identity);
+    const refreshing = store.refreshDetailOnly("acme", "widget", 7, identity);
+    newerRefresh.resolve({ data: pullDetail("newer-head") });
+    await refreshing;
+    initialLoad.resolve({ data: pullDetail("older-head") });
+    await loading;
+
+    expect(store.getDetail()?.platform_head_sha).toBe("newer-head");
+  });
+
   it.each([
     {
       loaded: { provider: "gh", platformHost: undefined },

@@ -123,23 +123,23 @@
     "typecheck": "cd ../.. && node node_modules/vite-plus/bin/vp run ui-package-typecheck"
   },
   "dependencies": {
-    "@kenn-io/kit-ui": "github:kenn-io/kit-ui#4d90fdf8a81424f53e92d45dc38fc24340894ee0",
-    "@lucide/svelte": "1.23.0",
+    "@kenn-io/kit-ui": "github:kenn-io/kit-ui#695cbf4bdb2927fbc6a39d105b3b1f76463ced9b",
+    "@lucide/svelte": "1.24.0",
     "@pierre/diffs": "1.2.12",
     "@pierre/trees": "1.0.0-beta.5",
-    "@tiptap/core": "3.27.1",
-    "@tiptap/extension-document": "3.27.1",
-    "@tiptap/extension-hard-break": "3.27.1",
-    "@tiptap/extension-paragraph": "3.27.1",
-    "@tiptap/extension-placeholder": "3.27.1",
-    "@tiptap/extension-text": "3.27.1",
-    "@tiptap/pm": "3.27.1",
-    "@tiptap/suggestion": "3.27.1",
-    "dompurify": "3.4.11",
-    "marked": "18.0.5",
+    "@tiptap/core": "3.27.3",
+    "@tiptap/extension-document": "3.27.3",
+    "@tiptap/extension-hard-break": "3.27.3",
+    "@tiptap/extension-paragraph": "3.27.3",
+    "@tiptap/extension-placeholder": "3.27.3",
+    "@tiptap/extension-text": "3.27.3",
+    "@tiptap/pm": "3.27.3",
+    "@tiptap/suggestion": "3.27.3",
+    "dompurify": "3.4.12",
+    "marked": "18.0.6",
     "openapi-fetch": "^0.17.0",
     "prosemirror-state": "^1.4.4",
-    "shiki": "4.3.0",
+    "shiki": "4.3.1",
     "svelte-tiptap": "3.0.1"
   },
   "devDependencies": {
@@ -148,7 +148,7 @@
     "@types/node": "^26.0.0",
     "openapi-fetch": "^0.17.0",
     "svelte": "^5.55.7",
-    "vite-plus": "0.2.3"
+    "vite-plus": "0.2.4"
   },
   "peerDependencies": {
     "svelte": "^5.55.7"

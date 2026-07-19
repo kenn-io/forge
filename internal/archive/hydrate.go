@@ -58,13 +58,14 @@ func (s *Service) hydrateItem(
 func archiveTerminalSyncOutcome(
 	err error,
 ) (db.ArchiveLookupOutcome, *platform.RepoRef, bool) {
+	if errors.Is(err, platform.ErrLookupInaccessible) {
+		return db.ArchiveLookupInaccessible, nil, true
+	}
 	var platformErr *platform.Error
 	if !errors.As(err, &platformErr) {
 		return "", nil, false
 	}
 	switch platformErr.Code {
-	case platform.ErrCodePermissionDenied:
-		return db.ArchiveLookupInaccessible, nil, true
 	case platform.ErrCodeNotFound:
 		if platformErr.Destination != nil {
 			return db.ArchiveLookupMoved, platformErr.Destination, true

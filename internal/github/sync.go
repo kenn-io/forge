@@ -824,7 +824,11 @@ func (s *Syncer) Admit(
 	}
 	budget := s.budgets[key]
 	resetAt := archiveBudgetResetAt(tracker)
-	if budget == nil || !budget.CanSpendArchive(cost, now, resetAt, archiveLiveFloor(ref.Platform)) {
+	available := 0
+	if budget != nil {
+		available = budget.ArchiveSpendAvailable(now, resetAt, archiveLiveFloor(ref.Platform))
+	}
+	if available < cost {
 		retryAt := now.Add(time.Minute)
 		if resetAt != nil && resetAt.After(now) && resetAt.Before(retryAt) {
 			retryAt = resetAt.UTC()
@@ -836,13 +840,12 @@ func (s *Syncer) Admit(
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
 	}
-	// Attach the admitted cost as a per-attempt allowance so the ceiling
-	// enforced here is also enforced atomically at every budget-counting
-	// transport: provider-SDK retries and authentication retries for this one
-	// admitted request cannot exceed the admitted cost and cross the live floor.
+	// The declared cost is the admission minimum. Once admitted, the request may
+	// use the archive surplus currently available without crossing the live
+	// floor; provider-SDK and authentication retries share this allowance.
 	return archive.AdmissionResult{
 		Allowed: true,
-		Context: WithArchiveAttemptAllowance(WithArchiveSyncBudget(requestCtx), cost),
+		Context: WithArchiveAttemptAllowance(WithArchiveSyncBudget(requestCtx), available),
 		Release: release,
 	}, nil
 }
@@ -965,7 +968,7 @@ func (s *Syncer) commitIssueCommentsSnapshot(
 	ctx context.Context,
 	repo RepoRef,
 	number int,
-	_ int64,
+	expectedRevision int64,
 	events []db.IssueEvent,
 	otherEvents []db.IssueEvent,
 	derived *db.IssueDerivedFields,
@@ -979,31 +982,27 @@ func (s *Syncer) commitIssueCommentsSnapshot(
 		}
 		return false, fmt.Errorf("issue #%d is missing before comment replacement", number)
 	}
-	var lastActivityAt *time.Time
-	if derived != nil {
-		activity := derived.LastActivityAt
-		lastActivityAt = &activity
-	}
 	for i := range events {
 		events[i].IssueID = parent.ID
 	}
 	for i := range otherEvents {
 		otherEvents[i].IssueID = parent.ID
 	}
-	if err := s.db.ReplaceIssueCommentEvents(ctx, parent.ID, events, lastActivityAt); err != nil {
-		return false, fmt.Errorf("replace comment events for issue #%d: %w", number, err)
+	applied, err := s.db.CommitIssueChildSnapshot(ctx, db.IssueChildSnapshot{
+		IssueID: parent.ID, ExpectedRevision: expectedRevision,
+		Comments: events, OtherEvents: otherEvents, DerivedFields: derived,
+	})
+	if err != nil {
+		return false, fmt.Errorf("commit child snapshot for issue #%d: %w", number, err)
 	}
-	if err := s.db.UpsertIssueEvents(ctx, otherEvents); err != nil {
-		return false, fmt.Errorf("upsert non-comment events for issue #%d: %w", number, err)
-	}
-	return true, nil
+	return applied, nil
 }
 
 func (s *Syncer) commitMergeRequestDatasets(
 	ctx context.Context,
 	repo RepoRef,
 	number int,
-	_ int64,
+	expectedRevision int64,
 	comments []db.MREvent,
 	commentsComplete bool,
 	reviews []db.MREvent,
@@ -1027,39 +1026,16 @@ func (s *Syncer) commitMergeRequestDatasets(
 			events[i].MergeRequestID = parent.ID
 		}
 	}
-	var lastActivityAt *time.Time
-	if derived != nil {
-		lastActivityAt = &derived.LastActivityAt
+	applied, err := s.db.CommitMergeRequestChildSnapshot(ctx, db.MergeRequestChildSnapshot{
+		MergeRequestID: parent.ID, ExpectedRevision: expectedRevision,
+		Comments: comments, CommentsComplete: commentsComplete, Reviews: reviews,
+		InlineComments: inline, ReviewThreads: threads, InlineCommentsComplete: inlineComplete,
+		OtherEvents: otherEvents, DerivedFields: derived,
+	})
+	if err != nil {
+		return false, fmt.Errorf("commit child snapshot for MR #%d: %w", number, err)
 	}
-	if commentsComplete {
-		if err := s.db.ReplaceMRCommentEvents(ctx, parent.ID, comments, lastActivityAt); err != nil {
-			return false, fmt.Errorf("replace comments for MR #%d: %w", number, err)
-		}
-	} else if err := s.db.UpsertMREvents(ctx, comments); err != nil {
-		return false, fmt.Errorf("upsert comments for MR #%d: %w", number, err)
-	}
-	if err := s.db.UpsertMREvents(ctx, reviews); err != nil {
-		return false, fmt.Errorf("upsert reviews for MR #%d: %w", number, err)
-	}
-	if inlineComplete {
-		if err := s.db.UpsertMRReviewThreads(ctx, parent.ID, threads); err != nil {
-			return false, fmt.Errorf("upsert review threads for MR #%d: %w", number, err)
-		}
-		if err := s.db.UpsertMREvents(ctx, inline); err != nil {
-			return false, fmt.Errorf("upsert review comments for MR #%d: %w", number, err)
-		}
-	}
-	if derived != nil {
-		if err := s.db.UpdateMRReviewActivity(
-			ctx, parent.ID, derived.ReviewDecision, derived.LastActivityAt,
-		); err != nil {
-			return false, fmt.Errorf("update review activity for MR #%d: %w", number, err)
-		}
-	}
-	if err := s.db.UpsertMREvents(ctx, otherEvents); err != nil {
-		return false, fmt.Errorf("upsert events for MR #%d: %w", number, err)
-	}
-	return true, nil
+	return applied, nil
 }
 
 type gitHubClientProvider struct {
@@ -1491,15 +1467,17 @@ func (p *gitHubClientProvider) lookupNotPresentError(
 	destination *platform.RepoRef,
 ) error {
 	code := platform.ErrCodeNotFound
+	cause := fmt.Errorf("%s#%d is not present (%s)", ref.DisplayName(), number, outcome)
 	if outcome == lookupInaccessible {
 		code = platform.ErrCodePermissionDenied
+		cause = errors.Join(platform.ErrLookupInaccessible, cause)
 	}
 	return &platform.Error{
 		Code:         code,
 		Provider:     platform.KindGitHub,
 		PlatformHost: p.host,
 		Destination:  destination,
-		Err:          fmt.Errorf("%s#%d is not present (%s)", ref.DisplayName(), number, outcome),
+		Err:          cause,
 	}
 }
 

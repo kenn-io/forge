@@ -87,6 +87,9 @@ func (r pageReaderValidation) prepare(
 	if err := ValidateItemPageQuery(query); err != nil {
 		return err
 	}
+	if query.Order != ItemOrderCreated {
+		return nil
+	}
 	return r.caps.Archive.Require(r.contract.kind, r.contract.host, capability)
 }
 

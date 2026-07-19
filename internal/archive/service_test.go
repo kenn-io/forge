@@ -40,6 +40,32 @@ func TestArchiveRetryClassifierTreatsAttemptBudgetRefusalAsTransient(t *testing.
 	}
 }
 
+func TestArchiveTerminalSyncOutcomeRetriesGenericPermissionDenied(t *testing.T) {
+	assert := assert.New(t)
+	outcome, destination, terminal := archiveTerminalSyncOutcome(
+		platform.PermissionDenied(platform.KindGitLab, "gitlab.example.com", errors.New("expired token")),
+	)
+
+	assert.False(terminal)
+	assert.Empty(outcome)
+	assert.Nil(destination)
+}
+
+func TestArchiveTerminalSyncOutcomeAcceptsExplicitInaccessibleLookup(t *testing.T) {
+	assert := assert.New(t)
+	outcome, destination, terminal := archiveTerminalSyncOutcome(
+		platform.PermissionDenied(
+			platform.KindGitHub,
+			"github.com",
+			errors.Join(platform.ErrLookupInaccessible, errors.New("lookup denied")),
+		),
+	)
+
+	assert.True(terminal)
+	assert.Equal(db.ArchiveLookupInaccessible, outcome)
+	assert.Nil(destination)
+}
+
 func TestArchiveServiceStartValidatesAllRepositoriesBeforePromotion(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -73,8 +73,10 @@ func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
 
 	_, inaccessibleIssueErr := provider.GetIssue(t.Context(), ref, 8)
 	require.ErrorIs(inaccessibleIssueErr, platform.ErrPermissionDenied)
+	require.ErrorIs(inaccessibleIssueErr, platform.ErrLookupInaccessible)
 	_, inaccessibleMRErr := provider.GetMergeRequest(t.Context(), ref, 8)
 	require.ErrorIs(inaccessibleMRErr, platform.ErrPermissionDenied)
+	require.ErrorIs(inaccessibleMRErr, platform.ErrLookupInaccessible)
 
 	_, movedIssueErr := provider.GetIssue(t.Context(), ref, 10)
 	require.ErrorIs(movedIssueErr, platform.ErrNotFound)

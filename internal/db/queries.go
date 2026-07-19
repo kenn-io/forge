@@ -2715,32 +2715,42 @@ func (d *DB) ReplaceMRCommentEvents(
 	lastActivityAt *time.Time,
 ) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		query := `DELETE FROM middleman_mr_events
+		return replaceMRCommentEventsTx(ctx, tx, mrID, events, lastActivityAt)
+	})
+}
+
+func replaceMRCommentEventsTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	mrID int64,
+	events []MREvent,
+	lastActivityAt *time.Time,
+) error {
+	query := `DELETE FROM middleman_mr_events
 			WHERE merge_request_id = ? AND event_type = 'issue_comment'`
-		args := []any{mrID}
-		if len(events) > 0 {
-			query += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(events)) + `)`
-			for i := range events {
-				args = append(args, events[i].DedupeKey)
-			}
+	args := []any{mrID}
+	if len(events) > 0 {
+		query += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(events)) + `)`
+		for i := range events {
+			args = append(args, events[i].DedupeKey)
 		}
-		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
-			return fmt.Errorf("delete missing mr comment events: %w", err)
-		}
-		if err := upsertMREventsTx(ctx, tx, events); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `
+	}
+	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("delete missing mr comment events: %w", err)
+	}
+	if err := upsertMREventsTx(ctx, tx, events); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
 			UPDATE middleman_merge_requests
 			SET comment_count = (
 				SELECT COUNT(*) FROM middleman_mr_events
 				WHERE merge_request_id = ? AND event_type = 'issue_comment'
 			), last_activity_at = COALESCE(?, last_activity_at)
 			WHERE id = ?`, mrID, lastActivityAt, mrID); err != nil {
-			return fmt.Errorf("update mr derived fields: %w", err)
-		}
-		return nil
-	})
+		return fmt.Errorf("update mr derived fields: %w", err)
+	}
+	return nil
 }
 
 // GetMRLatestNonCommentEventTime returns the most recent created_at across
@@ -3979,32 +3989,42 @@ func (d *DB) ReplaceIssueCommentEvents(
 	lastActivityAt *time.Time,
 ) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		query := `DELETE FROM middleman_issue_events
+		return replaceIssueCommentEventsTx(ctx, tx, issueID, events, lastActivityAt)
+	})
+}
+
+func replaceIssueCommentEventsTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	issueID int64,
+	events []IssueEvent,
+	lastActivityAt *time.Time,
+) error {
+	query := `DELETE FROM middleman_issue_events
 			WHERE issue_id = ? AND event_type = 'issue_comment'`
-		args := []any{issueID}
-		if len(events) > 0 {
-			query += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(events)) + `)`
-			for i := range events {
-				args = append(args, events[i].DedupeKey)
-			}
+	args := []any{issueID}
+	if len(events) > 0 {
+		query += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(events)) + `)`
+		for i := range events {
+			args = append(args, events[i].DedupeKey)
 		}
-		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
-			return fmt.Errorf("delete missing issue comment events: %w", err)
-		}
-		if err := upsertIssueEventsTx(ctx, tx, events); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `
+	}
+	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("delete missing issue comment events: %w", err)
+	}
+	if err := upsertIssueEventsTx(ctx, tx, events); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
 			UPDATE middleman_issues
 			SET comment_count = (
 				SELECT COUNT(*) FROM middleman_issue_events
 				WHERE issue_id = ? AND event_type = 'issue_comment'
 			), last_activity_at = COALESCE(?, last_activity_at)
 			WHERE id = ?`, issueID, lastActivityAt, issueID); err != nil {
-			return fmt.Errorf("update issue derived fields: %w", err)
-		}
-		return nil
-	})
+		return fmt.Errorf("update issue derived fields: %w", err)
+	}
+	return nil
 }
 
 // ListIssueEvents returns all events for an issue ordered by created_at DESC.

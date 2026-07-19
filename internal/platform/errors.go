@@ -57,6 +57,11 @@ var (
 // repository-blocking contract error.
 var ErrArchiveAttemptBudget = errors.New("archive per-attempt allowance exhausted")
 
+// ErrLookupInaccessible marks a single-item lookup that the provider has
+// explicitly classified as inaccessible rather than a generic authentication
+// or permission failure.
+var ErrLookupInaccessible = errors.New("lookup explicitly classified as inaccessible")
+
 type Error struct {
 	Code         PlatformErrorCode
 	Provider     Kind

@@ -84,6 +84,109 @@ func TestCommitIssueParentSnapshotRejectsStaleLabels(t *testing.T) {
 	assert.Equal("newer", stored.Labels[0].Name)
 }
 
+func TestNormalSyncRejectsIssueCommentsAfterParentAdvances(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	oldUpdatedAt := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	currentUpdatedAt := oldUpdatedAt.Add(time.Minute)
+	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "widget"}
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
+	})
+	require.NoError(err)
+	issueID, err := database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: 1, PlatformExternalID: "issue-1", Number: 1,
+		Title: "old", State: "open", CreatedAt: oldUpdatedAt.Add(-time.Hour),
+		UpdatedAt: oldUpdatedAt, LastActivityAt: oldUpdatedAt,
+	})
+	require.NoError(err)
+	stale, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(stale)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: 1, PlatformExternalID: "issue-1", Number: 1,
+		Title: "current", State: "open", CreatedAt: oldUpdatedAt.Add(-time.Hour),
+		UpdatedAt: currentUpdatedAt, LastActivityAt: currentUpdatedAt,
+	})
+	require.NoError(err)
+	require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{{
+		IssueID: issueID, EventType: "issue_comment", DedupeKey: "current-comment",
+		CreatedAt: currentUpdatedAt,
+	}}))
+
+	applied, err := (&Syncer{db: database}).commitIssueCommentsSnapshot(
+		ctx, repo, 1, stale.SnapshotRevision, []db.IssueEvent{{
+			IssueID: issueID, EventType: "issue_comment", DedupeKey: "stale-comment",
+			CreatedAt: oldUpdatedAt,
+		}}, nil, nil,
+	)
+	require.NoError(err)
+	assert.False(applied)
+	events, err := database.ListIssueEvents(ctx, issueID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("current-comment", events[0].DedupeKey)
+}
+
+func TestNormalSyncRejectsAllMergeRequestChildrenAfterParentAdvances(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	oldUpdatedAt := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	currentUpdatedAt := oldUpdatedAt.Add(time.Minute)
+	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "widget"}
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
+	})
+	require.NoError(err)
+	mrID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1, PlatformExternalID: "mr-1", Number: 1,
+		Title: "old", State: db.MergeRequestStateOpen, CreatedAt: oldUpdatedAt.Add(-time.Hour),
+		UpdatedAt: oldUpdatedAt, LastActivityAt: oldUpdatedAt,
+	})
+	require.NoError(err)
+	staleRevision := mergeRequestSnapshotRevision(t, database, repoID, 1)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1, PlatformExternalID: "mr-1", Number: 1,
+		Title: "current", State: db.MergeRequestStateOpen, CreatedAt: oldUpdatedAt.Add(-time.Hour),
+		UpdatedAt: currentUpdatedAt, LastActivityAt: currentUpdatedAt,
+	})
+	require.NoError(err)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{
+		{MergeRequestID: mrID, EventType: "issue_comment", DedupeKey: "current-comment", CreatedAt: currentUpdatedAt},
+		{MergeRequestID: mrID, EventType: "review", DedupeKey: "current-review", CreatedAt: currentUpdatedAt},
+		{MergeRequestID: mrID, EventType: "review_comment", DedupeKey: "current-inline", CreatedAt: currentUpdatedAt},
+	}))
+	require.NoError(database.UpsertMRReviewThreads(ctx, mrID, []db.MRReviewThread{{
+		ProviderThreadID: "current-thread", CreatedAt: currentUpdatedAt, UpdatedAt: currentUpdatedAt,
+	}}))
+
+	applied, err := (&Syncer{db: database}).commitMergeRequestDatasets(
+		ctx, repo, 1, staleRevision,
+		[]db.MREvent{{EventType: "issue_comment", DedupeKey: "stale-comment", CreatedAt: oldUpdatedAt}}, true,
+		[]db.MREvent{{EventType: "review", DedupeKey: "stale-review", CreatedAt: oldUpdatedAt}},
+		[]db.MREvent{{EventType: "review_comment", DedupeKey: "stale-inline", CreatedAt: oldUpdatedAt}},
+		[]db.MRReviewThread{{ProviderThreadID: "stale-thread", CreatedAt: oldUpdatedAt, UpdatedAt: oldUpdatedAt}},
+		true, nil, nil,
+	)
+	require.NoError(err)
+	assert.False(applied)
+	events, err := database.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	keys := make([]string, len(events))
+	for i := range events {
+		keys[i] = events[i].DedupeKey
+	}
+	assert.ElementsMatch([]string{"current-comment", "current-review", "current-inline"}, keys)
+	threads, err := database.ListMRReviewThreads(ctx, mrID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	assert.Equal("current-thread", threads[0].ProviderThreadID)
+}
+
 func TestCommitMergeRequestParentSnapshotRollsBackParentWhenLabelsFail(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -6973,12 +7076,10 @@ func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 
 	threads, err = d.ListMRReviewThreads(ctx, mr.ID)
 	require.NoError(err)
-	require.Len(threads, 1)
-	assert.Equal("thread-42", threads[0].ProviderThreadID)
+	assert.Empty(threads)
 	events, err = d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
-	require.Len(events, 1)
-	assert.Equal("comment-42", events[0].PlatformExternalID)
+	assert.Empty(events)
 }
 
 func TestFetchGitHubMRDetailSyncsReviewThreads(t *testing.T) {

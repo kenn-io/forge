@@ -95,11 +95,13 @@ func (b *SyncBudget) ArchiveSpendCeiling(now time.Time, resetAt *time.Time, live
 func (b *SyncBudget) CanSpendArchive(n int, now time.Time, resetAt *time.Time, liveFloor int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if n <= 0 {
-		return false
-	}
-	ceiling := b.archiveSpendCeiling(now, resetAt, liveFloor)
-	return b.archiveSpent+n <= ceiling && b.spent+n <= b.limit-liveFloor
+	return n > 0 && n <= b.archiveSpendAvailable(now, resetAt, liveFloor)
+}
+
+func (b *SyncBudget) ArchiveSpendAvailable(now time.Time, resetAt *time.Time, liveFloor int) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.archiveSpendAvailable(now, resetAt, liveFloor)
 }
 
 func (b *SyncBudget) SpendArchive(n int) {
@@ -126,4 +128,10 @@ func (b *SyncBudget) archiveSpendCeiling(now time.Time, resetAt *time.Time, live
 	elapsedFraction := 1 - float64(remaining)/float64(time.Hour)
 	surplus := b.limit - max(liveFloor, 0)
 	return int(math.Floor(float64(surplus) * elapsedFraction * elapsedFraction))
+}
+
+func (b *SyncBudget) archiveSpendAvailable(now time.Time, resetAt *time.Time, liveFloor int) int {
+	ceilingRemaining := b.archiveSpendCeiling(now, resetAt, liveFloor) - b.archiveSpent
+	liveRemaining := b.limit - max(liveFloor, 0) - b.spent
+	return max(min(ceilingRemaining, liveRemaining), 0)
 }

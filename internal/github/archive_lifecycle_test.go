@@ -442,6 +442,31 @@ func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 	assert.Contains(denied.Detail, "normal sync")
 }
 
+func TestArchiveAdmissionAttemptAllowanceUsesAvailableSurplus(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	key := RateBucketKey("github", "github.test")
+	budget := NewSyncBudget(100)
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	now := time.Now().UTC()
+	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
+	syncer := NewSyncerWithRegistry(
+		nil, database, nil, nil, time.Hour,
+		map[string]*RateTracker{key: tracker}, map[string]*SyncBudget{key: budget},
+	)
+	syncer.now = func() time.Time { return now }
+	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.test", Owner: "acme", Name: "widget"}
+
+	admission, err := syncer.Admit(t.Context(), ref, 1)
+	require.NoError(err)
+	require.True(admission.Allowed)
+	t.Cleanup(admission.Release)
+	for range PRDetailWorstCase {
+		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
+	}
+}
+
 func TestArchiveAdmissionPreservesProviderReserveForDeclaredCost(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -284,6 +284,21 @@
         case "activity":
         case "mobile-activity":
           void activityStore.loadActivity();
+          {
+            const detail = detailStore.getDetail();
+            if (detail?.repo && detail.merge_request) {
+              void detailStore.refreshDetailOnly(
+                detail.repo_owner,
+                detail.repo_name,
+                detail.merge_request.Number,
+                {
+                  provider: detail.repo.provider,
+                  platformHost: detail.repo.platform_host,
+                  repoPath: detail.repo.repo_path,
+                },
+              );
+            }
+          }
           break;
         case "focus":
           void pullsStore.loadPulls();

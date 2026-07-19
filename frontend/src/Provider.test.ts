@@ -175,6 +175,32 @@ describe("Provider events store wiring", () => {
     expect(loadActivity).toHaveBeenCalledTimes(activity);
   });
 
+  it("refreshes the selected PR detail with the Activity feed when data changes", () => {
+    currentDetail = {
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widget",
+      },
+      repo_owner: "acme",
+      repo_name: "widget",
+      merge_request: { Number: 42 },
+    };
+    render(Provider, {
+      props: { client: stubClient, getPage: () => "activity" },
+    });
+
+    captured.store?.options.onDataChanged?.();
+
+    expect(loadActivity).toHaveBeenCalledTimes(1);
+    expect(refreshDetailOnly).toHaveBeenCalledTimes(1);
+    expect(refreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 42, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+  });
+
   it("passes onSyncStatus that pushes the received status into sync store", () => {
     render(Provider, { props: { client: stubClient } });
 

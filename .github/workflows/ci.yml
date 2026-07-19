@@ -113,7 +113,7 @@ jobs:
     name: Go tests
     runs-on: kenn-linux-x64
     # Bound package fan-out on high-core runners so concurrent test binaries
-    # stay within the job's memory budget.
+    # and in-package parallel tests stay within the job's memory budget.
     env:
       GOFLAGS: "-p=4"
     needs: detect_changes
@@ -136,7 +136,7 @@ jobs:
       - name: Run tests
         run: |
           mkdir -p tmp
-          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-output.json -- ./... -shuffle=on
+          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-output.json -- ./... -shuffle=on -parallel=2
 
       - name: Publish unit test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
@@ -168,7 +168,7 @@ jobs:
       - name: Run integration tests (git-dependent)
         run: |
           mkdir -p tmp
-          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-integration-output.json -- -tags integration ./... -shuffle=on
+          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-integration-output.json -- -tags integration ./... -shuffle=on -parallel=2
 
       - name: Publish integration test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}

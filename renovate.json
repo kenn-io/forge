@@ -29,6 +29,10 @@
       "groupSlug": "javascript-dependencies"
     },
     {
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "!/^(7\\.0\\.)/"
+    },
+    {
       "matchManagers": ["github-actions"],
       "groupName": "GitHub Actions",
       "groupSlug": "github-actions"

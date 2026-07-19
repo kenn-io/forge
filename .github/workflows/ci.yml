@@ -112,6 +112,10 @@ jobs:
   test_go:
     name: Go tests
     runs-on: kenn-linux-x64
+    # Bound package fan-out on high-core runners so concurrent test binaries
+    # stay within the job's memory budget.
+    env:
+      GOFLAGS: "-p=4"
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
@@ -230,6 +234,9 @@ jobs:
   race:
     name: go test -race
     runs-on: kenn-linux-x64
+    # Race-instrumented packages are especially memory-intensive.
+    env:
+      GOFLAGS: "-p=4"
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:

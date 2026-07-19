@@ -439,6 +439,7 @@ describe("EventTimeline", () => {
     expect(wrapper).toBeInstanceOf(HTMLElement);
     expect(body).toBeInstanceOf(HTMLElement);
     expect(bodyWrap).toBeInstanceOf(HTMLElement);
+    expect(wrapper!.classList.contains("kit-comment-card--body-gap-none")).toBe(true);
 
     expect(wrapper!.contains(bodyWrap)).toBe(true);
     expect(bodyWrap!.contains(body)).toBe(true);

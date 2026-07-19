@@ -1847,6 +1847,7 @@
             tone={eventTimelineTone(event.EventType)}
             author={event.Author || undefined}
             time={formatRelativeTime(event.CreatedAt)}
+            bodyGap="none"
           >
             {#snippet actions()}
               {@render eventActions(event, undefined)}

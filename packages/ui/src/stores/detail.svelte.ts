@@ -367,7 +367,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       // Re-check the generation after the awaited request: if the
       // selected PR changed mid-flight, dropping the assignment keeps
       // the new selection's data from being clobbered.
-      if (expectedGen !== syncGeneration) return { ok: false };
+      if (expectedGen !== syncGeneration || activeSelectionKey !== prKey(ref)) return { ok: false };
       if (requestError) {
         return { ok: false, error: apiErrorMessage(requestError, "failed to refresh pull request") };
       }

@@ -85,6 +85,7 @@
     Settings,
     TerminalSettings,
   } from "./api/types.js";
+  import type { RoutedItemRef } from "./routes.js";
 
   interface Props {
     client: MiddlemanClient;
@@ -97,6 +98,7 @@
     config?: UIConfig;
     sidebar?: SidebarAccessors;
     getPage?: () => string;
+    getActivitySelection?: () => RoutedItemRef | null;
     roborevBaseUrl?: string;
     onError?: (msg: string) => void;
     onNotification?: (msg: string) => void;
@@ -119,6 +121,7 @@
       toggleSidebar: () => {},
     },
     getPage = () => "",
+    getActivitySelection = () => null,
     roborevBaseUrl = undefined,
     onError = undefined,
     onNotification = undefined,
@@ -140,6 +143,7 @@
     workspaceCmd: WorkspaceCommandCallback | undefined,
     sb: SidebarAccessors,
     gp: () => string,
+    getSelectedActivity: () => RoutedItemRef | null,
     roborevBase: string | undefined,
     errorCb: ((msg: string) => void) | undefined,
     notificationCb: ((msg: string) => void) | undefined,
@@ -285,16 +289,16 @@
         case "mobile-activity":
           void activityStore.loadActivity();
           {
-            const detail = detailStore.getDetail();
-            if (detail?.repo && detail.merge_request) {
+            const selection = getSelectedActivity();
+            if (selection?.itemType === "pr") {
               void detailStore.refreshDetailOnly(
-                detail.repo_owner,
-                detail.repo_name,
-                detail.merge_request.Number,
+                selection.owner,
+                selection.name,
+                selection.number,
                 {
-                  provider: detail.repo.provider,
-                  platformHost: detail.repo.platform_host,
-                  repoPath: detail.repo.repo_path,
+                  provider: selection.provider,
+                  platformHost: selection.platformHost,
+                  repoPath: selection.repoPath,
                 },
               );
             }
@@ -486,7 +490,8 @@
     client, hostState, config, actions,
     onNavigate, onEvent, prepareRoute,
     onWorkspaceCommand,
-    sidebar, getPage, roborevBaseUrl, onError, onNotification,
+    sidebar, getPage, getActivitySelection,
+    roborevBaseUrl, onError, onNotification,
   );
 
   onDestroy(() => {

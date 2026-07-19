@@ -977,6 +977,7 @@
       getView,
       getActiveWorktreeKey,
     }}
+    getActivitySelection={() => drawerItem}
     config={{
       hideStar: getUIConfig().hideStar,
       basePath: getBasePath(),

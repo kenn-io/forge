@@ -1440,6 +1440,35 @@ func buildAppState(
 	})
 	var failNextRepoBrowserTree atomic.Bool
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/activity/pr-comment" {
+			if srv.SubscriberCount() == 0 {
+				http.Error(w, "event stream not connected", http.StatusConflict)
+				return
+			}
+			mr, err := database.GetMergeRequest(
+				r.Context(), "github", "github.com", "acme", "widgets", 1,
+			)
+			if err != nil || mr == nil {
+				http.Error(w, "pull request not found", http.StatusNotFound)
+				return
+			}
+			comment, err := fc.CreateIssueComment(
+				r.Context(), "acme", "widgets", 1, "Persisted live Activity comment",
+			)
+			if err != nil {
+				http.Error(w, "create fixture pull request comment", http.StatusInternalServerError)
+				return
+			}
+			if err := database.UpsertMREvents(r.Context(), []db.MREvent{
+				ghclient.NormalizeCommentEvent(mr.ID, comment),
+			}); err != nil {
+				http.Error(w, "persist pull request event", http.StatusInternalServerError)
+				return
+			}
+			srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/repo-browser/tree/fail-next" {
 			failNextRepoBrowserTree.Store(true)
 			w.WriteHeader(http.StatusNoContent)

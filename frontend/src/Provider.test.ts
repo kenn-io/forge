@@ -175,29 +175,41 @@ describe("Provider events store wiring", () => {
     expect(loadActivity).toHaveBeenCalledTimes(activity);
   });
 
-  it("refreshes the selected PR detail with the Activity feed when data changes", () => {
+  it("refreshes the Activity drawer selection instead of stale displayed detail", () => {
     currentDetail = {
       repo: {
         provider: "github",
         platform_host: "github.com",
-        repo_path: "acme/widget",
+        repo_path: "acme/old-widget",
       },
       repo_owner: "acme",
-      repo_name: "widget",
-      merge_request: { Number: 42 },
+      repo_name: "old-widget",
+      merge_request: { Number: 41 },
     };
     render(Provider, {
-      props: { client: stubClient, getPage: () => "activity" },
+      props: {
+        client: stubClient,
+        getPage: () => "activity",
+        getActivitySelection: () => ({
+          itemType: "pr",
+          provider: "gitlab",
+          platformHost: "gitlab.example.com",
+          repoPath: "group/widget",
+          owner: "group",
+          name: "widget",
+          number: 42,
+        }),
+      },
     });
 
     captured.store?.options.onDataChanged?.();
 
     expect(loadActivity).toHaveBeenCalledTimes(1);
     expect(refreshDetailOnly).toHaveBeenCalledTimes(1);
-    expect(refreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 42, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
+    expect(refreshDetailOnly).toHaveBeenCalledWith("group", "widget", 42, {
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      repoPath: "group/widget",
     });
   });
 

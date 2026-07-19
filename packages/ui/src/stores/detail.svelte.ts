@@ -8,6 +8,7 @@ import {
   type ProblemBody,
 } from "../api/problems.js";
 import {
+  canonicalProvider,
   providerDefaultHost,
   providerItemPath,
   providerRouteParams,
@@ -192,7 +193,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // --- internal helpers ---
 
   function prKey(ref: DetailRequestRef): string {
-    return `${ref.provider}:${ref.platformHost ?? ""}:${ref.repoPath}/${ref.number}`;
+    const provider = canonicalProvider(ref.provider);
+    const platformHost = ref.platformHost?.trim() || providerDefaultHost(provider) || "";
+    return `${provider}:${platformHost}:${ref.repoPath}/${ref.number}`;
   }
 
   function detailRequestRef(

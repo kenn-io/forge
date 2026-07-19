@@ -213,6 +213,36 @@ describe("Provider events store wiring", () => {
     });
   });
 
+  it("refreshes the selected Activity PR after a stale reconnect", () => {
+    render(Provider, {
+      props: {
+        client: stubClient,
+        getPage: () => "activity",
+        getActivitySelection: () => ({
+          itemType: "pr",
+          provider: "github",
+          platformHost: "github.com",
+          repoPath: "acme/widget",
+          owner: "acme",
+          name: "widget",
+          number: 42,
+        }),
+      },
+    });
+
+    captured.store?.options.onReconnectStale?.();
+
+    expect(loadPulls).toHaveBeenCalledTimes(1);
+    expect(loadIssues).toHaveBeenCalledTimes(1);
+    expect(loadActivity).toHaveBeenCalledTimes(1);
+    expect(refreshDetailOnly).toHaveBeenCalledTimes(1);
+    expect(refreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 42, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+  });
+
   it("passes onSyncStatus that pushes the received status into sync store", () => {
     render(Provider, { props: { client: stubClient } });
 

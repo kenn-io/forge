@@ -275,6 +275,22 @@
       ]);
     }
 
+    function refreshSelectedActivityDetail(): void {
+      if (gp() !== "activity" && gp() !== "mobile-activity") return;
+      const selection = getSelectedActivity();
+      if (selection?.itemType !== "pr") return;
+      void detailStore.refreshDetailOnly(
+        selection.owner,
+        selection.name,
+        selection.number,
+        {
+          provider: selection.provider,
+          platformHost: selection.platformHost,
+          repoPath: selection.repoPath,
+        },
+      );
+    }
+
     function refreshVisibleData(): void {
       switch (gp()) {
         case "pulls":
@@ -288,21 +304,7 @@
         case "activity":
         case "mobile-activity":
           void activityStore.loadActivity();
-          {
-            const selection = getSelectedActivity();
-            if (selection?.itemType === "pr") {
-              void detailStore.refreshDetailOnly(
-                selection.owner,
-                selection.name,
-                selection.number,
-                {
-                  provider: selection.provider,
-                  platformHost: selection.platformHost,
-                  repoPath: selection.repoPath,
-                },
-              );
-            }
-          }
+          refreshSelectedActivityDetail();
           break;
         case "focus":
           void pullsStore.loadPulls();
@@ -406,6 +408,7 @@
         void pullsStore.loadPulls();
         void issuesStore.loadIssues();
         void activityStore.loadActivity();
+        refreshSelectedActivityDetail();
         void syncStore.refreshSyncStatus();
       },
     });

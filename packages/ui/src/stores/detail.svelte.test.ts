@@ -138,6 +138,32 @@ describe("createDetailStore", () => {
     expect(store.getDetail()?.platform_head_sha).toBe("head-b");
   });
 
+  it.each([
+    {
+      loaded: { provider: "gh", platformHost: undefined },
+      refreshed: { provider: "github", platformHost: "github.com" },
+    },
+    {
+      loaded: { provider: "github", platformHost: "github.com" },
+      refreshed: { provider: "gh", platformHost: undefined },
+    },
+  ])("treats provider aliases and omitted default hosts as the same selection", async ({ loaded, refreshed }) => {
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: pullDetail("head") })
+      .mockResolvedValueOnce({ data: pullDetail("refreshed-head") });
+    const store = createDetailStore({ client: mockClient({ GET: get }) });
+    const identity = { repoPath: "acme/widget", sync: false as const };
+    await store.loadDetail("acme", "widget", 7, { ...identity, ...loaded });
+
+    await store.refreshDetailOnly("acme", "widget", 7, {
+      repoPath: identity.repoPath,
+      ...refreshed,
+    });
+
+    expect(store.getDetail()?.platform_head_sha).toBe("refreshed-head");
+  });
+
   it("applies a warnings-only change since the panel renders warnings", async () => {
     const routeIdentity = {
       provider: "github",

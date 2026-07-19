@@ -139,6 +139,10 @@ export function webSocketDebugEnabled(env: Record<string, string | undefined> = 
   }
 }
 
+export function resolveBrowserTestWorkers(env: Record<string, string | undefined> = process.env): number | undefined {
+  return env.CI ? 2 : undefined;
+}
+
 function terminalWebSocketProxy(url: string): ProxyOptions {
   const proxy: ProxyOptions = {
     target: url,
@@ -188,6 +192,7 @@ const unitTestProject = {
 // keeps the standard "module"/"development|production" placeholders intact.
 const browserTestProject = defineProject(async () => {
   const { playwright } = await import("vite-plus/test/browser-playwright");
+  const maxWorkers = resolveBrowserTestWorkers();
   return {
     extends: true,
     resolve: {
@@ -196,6 +201,7 @@ const browserTestProject = defineProject(async () => {
     test: {
       name: "browser",
       include: ["src/**/*.browser.svelte.ts"],
+      ...(maxWorkers ? { maxWorkers } : {}),
       browser: {
         enabled: true,
         provider: playwright() as never,

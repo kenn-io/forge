@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 import config, {
+  resolveBrowserTestWorkers,
   resolveViteAllowedHosts,
   resolveViteHmr,
   resolveViteServerPort,
@@ -8,6 +9,11 @@ import config, {
 } from "../../../vite.config";
 
 describe("vite config", () => {
+  it("bounds browser test concurrency in CI", () => {
+    expect(resolveBrowserTestWorkers({})).toBeUndefined();
+    expect(resolveBrowserTestWorkers({ CI: "1" })).toBe(2);
+  });
+
   it("aliases @middleman/ui to the workspace source tree", () => {
     const aliases = Array.isArray(config.resolve?.alias) ? config.resolve.alias : [];
 

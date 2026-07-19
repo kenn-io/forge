@@ -68,8 +68,10 @@ func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
 
 	_, removedIssueErr := provider.GetIssue(t.Context(), ref, 9)
 	require.ErrorIs(removedIssueErr, platform.ErrNotFound)
+	require.ErrorIs(removedIssueErr, platform.ErrLookupNotPresent)
 	_, removedMRErr := provider.GetMergeRequest(t.Context(), ref, 9)
 	require.ErrorIs(removedMRErr, platform.ErrNotFound)
+	require.ErrorIs(removedMRErr, platform.ErrLookupNotPresent)
 
 	_, inaccessibleIssueErr := provider.GetIssue(t.Context(), ref, 8)
 	require.ErrorIs(inaccessibleIssueErr, platform.ErrPermissionDenied)
@@ -80,6 +82,7 @@ func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
 
 	_, movedIssueErr := provider.GetIssue(t.Context(), ref, 10)
 	require.ErrorIs(movedIssueErr, platform.ErrNotFound)
+	require.ErrorIs(movedIssueErr, platform.ErrLookupNotPresent)
 	var typedIssueErr *platform.Error
 	require.ErrorAs(movedIssueErr, &typedIssueErr)
 	require.NotNil(typedIssueErr.Destination)
@@ -88,6 +91,7 @@ func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
 
 	_, movedMRErr := provider.GetMergeRequest(t.Context(), ref, 10)
 	require.ErrorIs(movedMRErr, platform.ErrNotFound)
+	require.ErrorIs(movedMRErr, platform.ErrLookupNotPresent)
 	var typedMRErr *platform.Error
 	require.ErrorAs(movedMRErr, &typedMRErr)
 	require.NotNil(typedMRErr.Destination)

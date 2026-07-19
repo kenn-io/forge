@@ -17,6 +17,7 @@ import (
 	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 // gitRun runs a git command in the given dir and returns trimmed stdout.
@@ -615,6 +616,11 @@ func TestSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(shas)
 	assert.Empty(shas.DiffHeadSHA, "diff SHAs should remain unset when computation failed")
+
+	archiveErr := syncer.SyncArchiveItem(ctx, platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.com", Owner: "owner", Name: "repo",
+	}, db.ArchiveItemTypeMergeRequest, number)
+	require.NoError(archiveErr, "archive hydration should accept fresh activity when only diff sync failed")
 }
 
 // TestSyncItemByNumberReturnsTypeOnDiffSyncError verifies that when SyncMR

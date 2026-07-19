@@ -529,6 +529,61 @@ func TestArchiveClaimItemUsesEligibleDueWorkAndStableOrder(t *testing.T) {
 	assert.Nil(claim)
 }
 
+func TestArchivePromptRediscoveryMakesTerminalItemClaimable(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, database, "acme", "restored")
+	require.NoError(database.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(database.StartFullArchives(ctx, []int64{repoID}, now))
+	item := archiveInventoryItemForTest(7, now)
+	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
+		RefreshReason: ArchiveRefreshReasonInitial, ScanGeneration: 1,
+		Exhausted: true, Items: []ArchiveInventoryItem{item}, Now: now,
+	}))
+	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest,
+		RefreshReason: ArchiveRefreshReasonInitial, ScanGeneration: 1,
+		Exhausted: true, Now: now,
+	}))
+	progress, err := database.GetDatasetProgress(
+		ctx, repoID, ArchiveItemTypeIssue, item.Number, ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	require.NoError(database.CommitArchiveItemSync(ctx, ArchiveItemSyncCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: item.Number,
+		ScanGeneration: progress.ScanGeneration, Outcome: ArchiveLookupRemoved, Now: now.Add(time.Minute),
+	}))
+	claim, err := database.ClaimArchiveItem(ctx, ClaimArchiveItemOpts{RepoIDs: []int64{repoID}, Now: now.Add(2 * time.Minute)})
+	require.NoError(err)
+	assert.Nil(claim)
+	state, err := database.BeginArchivePromptMaintenance(
+		ctx, repoID, now, now.Add(3*time.Minute),
+	)
+	require.NoError(err)
+
+	require.NoError(database.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
+		RefreshReason: ArchiveRefreshReasonPrompt, ScanGeneration: state.MaintenanceIssues.Generation,
+		Exhausted: true, Items: []ArchiveInventoryItem{item}, Now: now.Add(3 * time.Minute),
+	}))
+	refreshed, err := database.GetDatasetProgress(
+		ctx, repoID, ArchiveItemTypeIssue, item.Number, ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressPending, refreshed.Status)
+	assert.Greater(refreshed.ScanGeneration, progress.ScanGeneration)
+	claim, err = database.ClaimArchiveItem(ctx, ClaimArchiveItemOpts{
+		RepoIDs: []int64{repoID}, Now: now.Add(4 * time.Minute),
+	})
+	require.NoError(err)
+	require.NotNil(claim)
+	assert.Equal(item.Number, claim.ItemNumber)
+}
+
 func TestArchiveClaimItemExcludesDiscoveryAndEmptyEligibility(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

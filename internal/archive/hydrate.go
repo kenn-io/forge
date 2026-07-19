@@ -61,6 +61,9 @@ func archiveTerminalSyncOutcome(
 	if errors.Is(err, platform.ErrLookupInaccessible) {
 		return db.ArchiveLookupInaccessible, nil, true
 	}
+	if !errors.Is(err, platform.ErrLookupNotPresent) {
+		return "", nil, false
+	}
 	var platformErr *platform.Error
 	if !errors.As(err, &platformErr) {
 		return "", nil, false

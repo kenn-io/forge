@@ -1471,6 +1471,8 @@ func (p *gitHubClientProvider) lookupNotPresentError(
 	if outcome == lookupInaccessible {
 		code = platform.ErrCodePermissionDenied
 		cause = errors.Join(platform.ErrLookupInaccessible, cause)
+	} else {
+		cause = errors.Join(platform.ErrLookupNotPresent, cause)
 	}
 	return &platform.Error{
 		Code:         code,
@@ -6466,7 +6468,10 @@ func (s *Syncer) fetchProviderMRDetail(
 	mr, err := mrReader.GetMergeRequest(ctx, platformRepoRef(repo), number)
 	calls++
 	if err != nil {
-		return calls, fmt.Errorf("get full MR #%d: %w", number, err)
+		return calls, fmt.Errorf(
+			"get full MR #%d: %w", number,
+			s.classifyProviderItemLookupError(ctx, repo, err),
+		)
 	}
 
 	normalized := platform.DBMergeRequest(repoID, mr)
@@ -6843,7 +6848,10 @@ func (s *Syncer) fetchProviderIssueDetail(
 	issue, err := issueReader.GetIssue(ctx, platformRepoRef(repo), number)
 	calls++
 	if err != nil {
-		return calls, fmt.Errorf("get issue #%d: %w", number, err)
+		return calls, fmt.Errorf(
+			"get issue #%d: %w", number,
+			s.classifyProviderItemLookupError(ctx, repo, err),
+		)
 	}
 
 	normalized := platform.DBIssue(repoID, issue)
@@ -6899,6 +6907,24 @@ func (s *Syncer) fetchProviderIssueDetail(
 	}
 
 	return calls, nil
+}
+
+func (s *Syncer) classifyProviderItemLookupError(
+	ctx context.Context,
+	repo RepoRef,
+	err error,
+) error {
+	if !errors.Is(err, platform.ErrNotFound) {
+		return err
+	}
+	repositoryReader, readerErr := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
+	if readerErr != nil {
+		return err
+	}
+	if _, probeErr := repositoryReader.GetRepository(ctx, platformRepoRef(repo)); probeErr != nil {
+		return errors.Join(err, fmt.Errorf("probe repository after item not found: %w", probeErr))
+	}
+	return errors.Join(platform.ErrLookupNotPresent, err)
 }
 
 // refreshTimeline fetches comments, reviews, and commits for a PR and
@@ -8963,7 +8989,11 @@ func (s *Syncer) SyncArchiveItem(
 	case db.ArchiveItemTypeIssue:
 		return s.syncIssueForRepo(ctx, repo, number)
 	case db.ArchiveItemTypeMergeRequest:
-		return s.syncMRForRepo(ctx, repo, number, false)
+		err := s.syncMRForRepo(ctx, repo, number, false)
+		if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must propagate
+			return nil
+		}
+		return err
 	default:
 		return fmt.Errorf("sync archive item: invalid item type %q", itemType)
 	}

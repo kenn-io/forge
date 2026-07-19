@@ -51,6 +51,15 @@ func TestArchiveTerminalSyncOutcomeRetriesGenericPermissionDenied(t *testing.T) 
 	assert.Nil(destination)
 }
 
+func TestArchiveTerminalSyncOutcomeRetriesGenericNotFound(t *testing.T) {
+	assert := assert.New(t)
+	outcome, destination, terminal := archiveTerminalSyncOutcome(platform.ErrNotFound)
+
+	assert.False(terminal)
+	assert.Empty(outcome)
+	assert.Nil(destination)
+}
+
 func TestArchiveTerminalSyncOutcomeAcceptsExplicitInaccessibleLookup(t *testing.T) {
 	assert := assert.New(t)
 	outcome, destination, terminal := archiveTerminalSyncOutcome(

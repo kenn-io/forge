@@ -51,7 +51,7 @@ func reopenArchiveItemProgressTx(
 			last_error_code = NULL, last_error_detail = NULL,
 			started_at = NULL, completed_at = NULL, updated_at = ?
 		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = 'lookup'
-		  AND status NOT IN ('unsupported', 'terminal', 'blocked')`, nextEvenScanGenerationSQL),
+		  AND status NOT IN ('unsupported', 'blocked')`, nextEvenScanGenerationSQL),
 		formatDatasetProgressTime(time.Now()), repoID, itemType, itemNumber)
 	if err != nil {
 		return fmt.Errorf("reopen archive item progress: %w", err)

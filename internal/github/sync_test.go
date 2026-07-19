@@ -187,6 +187,68 @@ func TestNormalSyncRejectsAllMergeRequestChildrenAfterParentAdvances(t *testing.
 	assert.Equal("current-thread", threads[0].ProviderThreadID)
 }
 
+func TestSyncArchiveItemClassifiesOnlyConfirmedParentNotFound(t *testing.T) {
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitLab, Host: "gitlab.example.com",
+		Owner: "group", Name: "project", RepoPath: "group/project",
+	}
+	issue := platform.Issue{
+		Repo: ref, PlatformID: 7, PlatformExternalID: "issue-7", Number: 7,
+		Title: "issue", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	}
+	tests := []struct {
+		name            string
+		issues          []platform.Issue
+		getIssueErr     error
+		listEventsErr   error
+		repositoryErr   error
+		wantNotPresent  bool
+		wantRepoQueries int32
+	}{
+		{
+			name: "accessible repository confirms missing parent", getIssueErr: platform.ErrNotFound,
+			wantNotPresent: true, wantRepoQueries: 1,
+		},
+		{
+			name: "child event not found stays retryable", issues: []platform.Issue{issue},
+			listEventsErr: platform.ErrNotFound,
+		},
+		{
+			name: "missing repository does not prove missing parent", getIssueErr: platform.ErrNotFound,
+			repositoryErr: platform.ErrNotFound, wantRepoQueries: 1,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			database := openTestDB(t)
+			_, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(ref))
+			require.NoError(err)
+			provider := &syncTestRepositoryReadProvider{
+				syncTestReadProvider: &syncTestReadProvider{
+					syncTestProvider: syncTestProvider{kind: ref.Platform, host: ref.Host},
+					issues:           test.issues, getIssueErr: test.getIssueErr,
+					listIssueEventsErr: test.listEventsErr,
+				},
+				repository: platform.Repository{Ref: ref}, repositoryErr: test.repositoryErr,
+			}
+			registry, err := platform.NewRegistry(provider)
+			require.NoError(err)
+			syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{{
+				Platform: ref.Platform, PlatformHost: ref.Host,
+				Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+			}}, time.Minute, nil, nil)
+
+			err = syncer.SyncArchiveItem(t.Context(), ref, db.ArchiveItemTypeIssue, issue.Number)
+			require.Error(err)
+			assert.Equal(test.wantNotPresent, errors.Is(err, platform.ErrLookupNotPresent))
+			assert.Equal(test.wantRepoQueries, provider.getRepositoryCalls.Load())
+		})
+	}
+}
+
 func TestCommitMergeRequestParentSnapshotRollsBackParentWhenLabelsFail(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -808,6 +870,8 @@ type syncTestReadProvider struct {
 	syncTestProvider
 	mergeRequests       []platform.MergeRequest
 	issues              []platform.Issue
+	getIssueErr         error
+	listIssueEventsErr  error
 	listMRCalls         atomic.Int32
 	listIssueCalls      atomic.Int32
 	getMRCalls          atomic.Int32
@@ -822,6 +886,7 @@ type syncTestReadProvider struct {
 type syncTestRepositoryReadProvider struct {
 	*syncTestReadProvider
 	repository         platform.Repository
+	repositoryErr      error
 	getRepositoryCalls atomic.Int32
 }
 
@@ -911,7 +976,7 @@ func (p *syncTestRepositoryReadProvider) GetRepository(
 	platform.RepoRef,
 ) (platform.Repository, error) {
 	p.getRepositoryCalls.Add(1)
-	return p.repository, nil
+	return p.repository, p.repositoryErr
 }
 
 func (p *syncTestRepositoryReadProvider) ListRepositories(
@@ -975,6 +1040,9 @@ func (p *syncTestReadProvider) GetIssue(
 	number int,
 ) (platform.Issue, error) {
 	p.getIssueCalls.Add(1)
+	if p.getIssueErr != nil {
+		return platform.Issue{}, p.getIssueErr
+	}
 	for _, issue := range p.issues {
 		if issue.Number == number {
 			return issue, nil
@@ -988,7 +1056,7 @@ func (p *syncTestReadProvider) ListIssueEvents(
 	platform.RepoRef,
 	int,
 ) ([]platform.IssueEvent, error) {
-	return p.listIssueReadEvents, nil
+	return p.listIssueReadEvents, p.listIssueEventsErr
 }
 
 func (m *mockClient) trackCall() {

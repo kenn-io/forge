@@ -62,6 +62,10 @@ var ErrArchiveAttemptBudget = errors.New("archive per-attempt allowance exhauste
 // or permission failure.
 var ErrLookupInaccessible = errors.New("lookup explicitly classified as inaccessible")
 
+// ErrLookupNotPresent marks a parent item lookup that the provider has
+// explicitly classified as removed or moved.
+var ErrLookupNotPresent = errors.New("parent item lookup explicitly classified as not present")
+
 type Error struct {
 	Code         PlatformErrorCode
 	Provider     Kind

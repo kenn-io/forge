@@ -116,7 +116,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   let syncGeneration = 0;
   let selectionGeneration = 0;
   let detailRequestSequence = 0;
-  const latestDetailRequestSequenceBySelection = new Map<string, number>();
+  const latestSuccessfulDetailRequestSequenceBySelection = new Map<string, number>();
   let activeSelectionKey: string | null = null;
   // Tracks the PR (if any) whose local body has been edited since
   // the last server confirmation. While set, background sync paths
@@ -365,7 +365,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const ref = detailRequestRef(owner, name, number, identity);
     const key = prKey(ref);
     const requestSequence = ++detailRequestSequence;
-    latestDetailRequestSequenceBySelection.set(key, requestSequence);
     try {
       const { data, error: requestError } = await apiClient.GET(providerItemPath("pulls", ref, ""), {
         params: {
@@ -378,7 +377,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       if (
         expectedGen !== syncGeneration ||
         activeSelectionKey !== key ||
-        requestSequence !== latestDetailRequestSequenceBySelection.get(key)
+        requestSequence < (latestSuccessfulDetailRequestSequenceBySelection.get(key) ?? 0)
       ) {
         return { ok: false };
       }
@@ -386,6 +385,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         return { ok: false, error: apiErrorMessage(requestError, "failed to refresh pull request") };
       }
       if (data !== undefined) {
+        latestSuccessfulDetailRequestSequenceBySelection.set(key, requestSequence);
         applyRefreshedDetail(
           withPreservedLocalBody({
             ...data,
@@ -473,7 +473,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     ++selectionGeneration;
     activeSelectionKey = null;
     activeLoad = null;
-    latestDetailRequestSequenceBySelection.clear();
+    latestSuccessfulDetailRequestSequenceBySelection.clear();
     detail = null;
     loading = false;
     syncing = false;
@@ -529,7 +529,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
     storeError = null;
     detailLoaded = false;
     const requestSequence = ++detailRequestSequence;
-    latestDetailRequestSequenceBySelection.set(key, requestSequence);
     const promise = (async () => {
       try {
         const { data, error: requestError } = await apiClient.GET(providerItemPath("pulls", requestRef, ""), {
@@ -540,10 +539,16 @@ export function createDetailStore(opts: DetailStoreOptions) {
             },
           },
         });
-        if (gen !== syncGeneration || requestSequence !== latestDetailRequestSequenceBySelection.get(key)) return;
+        if (
+          gen !== syncGeneration ||
+          requestSequence < (latestSuccessfulDetailRequestSequenceBySelection.get(key) ?? 0)
+        ) {
+          return;
+        }
         if (requestError) {
           throw new Error(requestError.detail ?? requestError.title ?? "failed to load pull request");
         }
+        latestSuccessfulDetailRequestSequenceBySelection.set(key, requestSequence);
         detail = data
           ? withPreservedLocalBody({
               ...data,
@@ -553,7 +558,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
         noteObservedFetchedAt(data?.detail_fetched_at);
         detailLoaded = data?.detail_loaded ?? false;
       } catch (err) {
-        if (gen !== syncGeneration || requestSequence !== latestDetailRequestSequenceBySelection.get(key)) return;
+        if (
+          gen !== syncGeneration ||
+          requestSequence < (latestSuccessfulDetailRequestSequenceBySelection.get(key) ?? 0)
+        ) {
+          return;
+        }
         storeError = err instanceof Error ? err.message : String(err);
       } finally {
         if (gen === syncGeneration) loading = false;

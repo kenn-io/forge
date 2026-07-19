@@ -160,6 +160,28 @@ describe("createDetailStore", () => {
     expect(store.getDetail()?.platform_head_sha).toBe("newer-head");
   });
 
+  it("applies a pending initial load when a newer refresh fails for the same selection", async () => {
+    const initialLoad = deferred<{ data?: PullDetail; error?: ProblemBody }>();
+    const newerRefresh = deferred<{ data?: PullDetail; error?: ProblemBody }>();
+    const get = vi.fn().mockReturnValueOnce(initialLoad.promise).mockReturnValueOnce(newerRefresh.promise);
+    const store = createDetailStore({ client: mockClient({ GET: get }) });
+    const identity = {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false as const,
+    };
+
+    const loading = store.loadDetail("acme", "widget", 7, identity);
+    const refreshing = store.refreshDetailOnly("acme", "widget", 7, identity);
+    newerRefresh.resolve({ error: conflictProblem("detail_refresh_failed") });
+    await refreshing;
+    initialLoad.resolve({ data: pullDetail("loaded-head") });
+    await loading;
+
+    expect(store.getDetail()?.platform_head_sha).toBe("loaded-head");
+  });
+
   it.each([
     {
       loaded: { provider: "gh", platformHost: undefined },

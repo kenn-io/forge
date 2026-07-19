@@ -9,6 +9,7 @@ const baseURL = `http://${host}:${port}`;
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
+  ...(process.env.CI ? { workers: 2 } : {}),
   timeout: 30_000,
   retries: process.env.CI ? 2 : 0,
   expect: {

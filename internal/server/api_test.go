@@ -1657,6 +1657,29 @@ func TestAPIClientConstruction(t *testing.T) {
 	require.NotNil(t, client.HTTP)
 }
 
+func TestAPIGetVersionReturnsBuildMetadata(t *testing.T) {
+	srv, _ := setupTestServer(t)
+	srv.SetBuildInfo(BuildInfo{
+		Name:      "middleman",
+		Version:   "1.2.3",
+		Commit:    "abc1234",
+		BuildDate: "2026-07-12T12:00:00Z",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/version", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var body map[string]any
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
+	assert := assert.New(t)
+	assert.Equal("middleman", body["name"])
+	assert.Equal("1.2.3", body["version"])
+	assert.Equal("abc1234", body["commit"])
+	assert.Equal("2026-07-12T12:00:00Z", body["buildDate"])
+}
+
 func TestAPIListPulls(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)

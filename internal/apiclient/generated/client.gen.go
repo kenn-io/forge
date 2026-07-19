@@ -3209,8 +3209,11 @@ type UserRepository struct {
 // VersionOutputBody defines model for VersionOutputBody.
 type VersionOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema  *string `json:"$schema,omitempty"`
-	Version string  `json:"version"`
+	Schema    *string `json:"$schema,omitempty"`
+	BuildDate string  `json:"buildDate"`
+	Commit    string  `json:"commit"`
+	Name      string  `json:"name"`
+	Version   string  `json:"version"`
 }
 
 // WorkflowApprovalResponse defines model for WorkflowApprovalResponse.

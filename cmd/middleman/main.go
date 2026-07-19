@@ -689,11 +689,12 @@ func run(opts serve.Options) error {
 		)
 	}
 
-	displayVersion := version
-	if version == "dev" && commit != "unknown" {
-		displayVersion = "dev-" + commit
-	}
-	srv.SetVersion(displayVersion)
+	srv.SetBuildInfo(server.BuildInfo{
+		Name:      "middleman",
+		Version:   version,
+		Commit:    commit,
+		BuildDate: buildDate,
+	})
 	switcher.Swap(srv)
 
 	select {

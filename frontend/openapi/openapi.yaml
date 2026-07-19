@@ -6794,10 +6794,19 @@ components:
           format: uri
           readOnly: true
           type: string
+        buildDate:
+          type: string
+        commit:
+          type: string
+        name:
+          type: string
         version:
           type: string
       required:
+        - name
         - version
+        - commit
+        - buildDate
       type: object
     WorkflowApprovalResponse:
       additionalProperties: false

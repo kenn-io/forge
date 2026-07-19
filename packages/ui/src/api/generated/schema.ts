@@ -7338,6 +7338,9 @@ export interface components {
              * @example /api/v1/schemas/VersionOutputBody.json
              */
             readonly $schema?: string;
+            buildDate: string;
+            commit: string;
+            name: string;
             version: string;
         };
         WorkflowApprovalResponse: {

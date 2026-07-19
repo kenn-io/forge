@@ -30,7 +30,7 @@ func (s *Server) buildLocalRaw(ctx context.Context) (fleet.RawSnapshot, error) {
 		Host: fleet.RawHost{
 			Hostname: hostnameOrEmpty(),
 			Platform: platformString(),
-			Version:  s.version,
+			Version:  s.buildInfo.Version,
 		},
 	}
 	if s.hub != nil {

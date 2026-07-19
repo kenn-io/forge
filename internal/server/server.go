@@ -38,10 +38,14 @@ import (
 
 const middlemanCSRFHeaderName = "X-Middleman-Csrf"
 
-type versionOutputBody struct {
-	Version string `json:"version"`
+type BuildInfo struct {
+	Name      string `json:"name"`
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	BuildDate string `json:"buildDate"`
 }
 
+type versionOutputBody BuildInfo
 type versionOutput = bodyOutput[versionOutputBody]
 
 type ServerOptions struct {
@@ -168,7 +172,7 @@ type Server struct {
 	// at the kernel-assigned port while requests may already be
 	// reading the options.
 	hostOpts                       atomic.Pointer[HostCheckOptions]
-	version                        string
+	buildInfo                      BuildInfo
 	now                            func() time.Time
 	handler                        http.Handler
 	hub                            *EventHub
@@ -278,8 +282,8 @@ func (s *Server) Hub() *EventHub { return s.hub }
 // race against the handler's Subscribe call).
 func (s *Server) SubscriberCount() int { return s.hub.SubscriberCount() }
 
-// SetVersion sets the version string returned by GET /api/v1/version.
-func (s *Server) SetVersion(v string) { s.version = v }
+// SetBuildInfo sets the metadata returned by GET /api/v1/version.
+func (s *Server) SetBuildInfo(info BuildInfo) { s.buildInfo = info }
 
 // runBackground launches fn as a tracked goroutine. fn receives a
 // context cancelled by Shutdown. If Shutdown has already started,
@@ -1701,7 +1705,7 @@ func (s *Server) getVersion(
 	_ context.Context, _ *struct{},
 ) (*versionOutput, error) {
 	resp := &versionOutput{}
-	resp.Body.Version = s.version
+	resp.Body = versionOutputBody(s.buildInfo)
 	return resp, nil
 }
 

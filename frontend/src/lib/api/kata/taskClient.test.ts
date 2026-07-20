@@ -956,6 +956,7 @@ describe("kata task HTTP client", () => {
   test("reads global ready tasks from the daemon and narrows them with search controls", async () => {
     const matching = {
       ...issue("issue-ready", "Ship ready filter", "project-work"),
+      status: "closed" as const,
       owner: "agent:planner",
       labels: ["urgent"],
     };
@@ -980,6 +981,23 @@ describe("kata task HTTP client", () => {
     expect(results.ready_issue_uids).toEqual(["issue-ready", "issue-other"]);
     expect(proxyPath(calls[0]!.url)).toBe("/api/v1/ready");
     expect(calls[0]!.headers.get(KATA_DAEMON_HEADER)).toBe("work");
+  });
+
+  test("rejects a malformed ready response instead of treating it as empty authority", async () => {
+    const { fetchImpl } = createFetchStub({
+      "/api/v1/ready": { body: { fetched_at: "2026-05-17T00:00:00Z" } },
+    });
+    const api = createKataTaskAPI({ fetchImpl });
+
+    await expect(
+      api.search({
+        scope: { kind: "all" },
+        status: "ready",
+        owner: "",
+        label: "",
+        query: "",
+      }),
+    ).rejects.toMatchObject({ code: "invalid_ready_response" });
   });
 
   test("preserves raw project ready membership while applying search controls locally", async () => {

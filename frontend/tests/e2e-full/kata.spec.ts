@@ -5558,6 +5558,27 @@ test("kata Ready filters through authoritative global and project daemon endpoin
     await expect(page).toHaveURL(/issue=issue-ready-child/);
     await expect(detail.getByRole("heading", { name: "Ready follow-up" })).toBeVisible();
 
+    backend.state.failNextReadyStatus = 503;
+    await detail.getByRole("button", { name: "Add label" }).click();
+    await detail.getByLabel("New label").fill("refresh-fails");
+    await detail.getByLabel("New label").press("Enter");
+    const retry = page.getByRole("button", { name: "Retry" });
+    await expect(page.getByRole("alert").filter({ hasText: "ready tasks unavailable" })).toBeVisible();
+    await expect(retry).toBeVisible();
+    await expect(page).not.toHaveURL(/issue=/);
+    await expect(page.getByRole("button", { name: /Ship the ready change/ })).toHaveCount(0);
+    await expect(detail).toContainText("Select a task");
+    const mutationCountBeforeRetry = backend.state.seenPaths.filter(
+      (path) => path === "POST /api/v1/projects/2/issues/issue-ready-child/labels",
+    ).length;
+    expect(mutationCountBeforeRetry).toBe(2);
+    await retry.click();
+    await expect(page.getByRole("button", { name: /Ship the ready change/ })).toBeVisible();
+    await expect(page).not.toHaveURL(/issue=/);
+    expect(
+      backend.state.seenPaths.filter((path) => path === "POST /api/v1/projects/2/issues/issue-ready-child/labels"),
+    ).toHaveLength(mutationCountBeforeRetry);
+
     const navigation = page.getByRole("complementary", { name: "Kata navigation" });
     await navigation.getByRole("button", { name: /^Kata\s+\d+$/ }).click();
     await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/projects/2/ready");
@@ -5586,6 +5607,45 @@ test("kata Ready failure keeps the authoritative view empty through the real pro
     await expect(page.getByRole("combobox", { name: "Status: Ready" })).toBeVisible();
     await expect(page.getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
     await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/ready");
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
+test("kata retries a failed persisted Ready restoration through the real proxy", async ({ page }) => {
+  const backend = await startKataBackend({ failNextReadyStatus: 503 });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+  const persisted = {
+    version: 1,
+    daemons: {
+      e2e: {
+        view: "all",
+        filters: { scope: { kind: "all" }, status: "ready", owner: "", label: "", query: "" },
+        selectedIssueUID: "issue-rent",
+      },
+    },
+  };
+
+  try {
+    await page.addInitScript((state) => {
+      localStorage.setItem("middleman:kata:workspace-state/v1", JSON.stringify(state));
+    }, persisted);
+    await page.goto(`${server.info.base_url}/kata`);
+
+    const retry = page.getByRole("button", { name: "Retry" });
+    await expect(page.getByRole("alert")).toContainText("ready tasks unavailable");
+    await expect(page.getByRole("combobox", { name: "Status: Ready" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
+    await expect(page).not.toHaveURL(/issue=/);
+    await expect(retry).toBeVisible();
+
+    await retry.click();
+    await expect(page.getByRole("button", { name: /Pay rent/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+    await expect(page).toHaveURL(/issue=issue-rent/);
   } finally {
     await server.stop();
     kataHome.restore();

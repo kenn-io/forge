@@ -50,6 +50,11 @@ interface RequestResult<T> {
   headers: Headers;
 }
 
+interface KataSearchResult {
+  issues: KataTaskSummary[];
+  readyIssueUIDs: string[];
+}
+
 // The explicit `| undefined` unions are required by
 // exactOptionalPropertyTypes: call sites pass values that may be
 // undefined (e.g. daemonHeaders() or an optional caller signal).
@@ -254,6 +259,25 @@ export class KataTaskRevisionConflictError extends KataTaskAPIError {
   }
 }
 
+function normalizeReadyIssues(raw: unknown, headers: Headers, project?: KataProjectSummary): KataTaskSummary[] {
+  const source = isObject(raw) && isObject(raw.body) ? raw.body : raw;
+  if (
+    !isObject(source) ||
+    !Array.isArray(source.issues) ||
+    source.issues.some((issue) => !isObject(issue) || typeof issue.uid !== "string" || issue.uid.length === 0)
+  ) {
+    throw new KataTaskAPIError({
+      status: 502,
+      code: "invalid_ready_response",
+      message: "ready response did not include a valid issues array",
+      headers,
+    });
+  }
+  return source.issues
+    .map((issue) => normalizeKataTaskSummary(issue))
+    .map((issue) => withProjectIdentity(issue, project));
+}
+
 export function getLastKataTaskResponseHeaders(api: KataTaskAPI): Headers | undefined {
   return responseHeaders.get(api);
 }
@@ -417,9 +441,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
       headers: pinned ? pinnedDaemonHeaders(daemonId) : daemonHeaders(daemonId),
       signal,
     });
-    return normalizeKataTaskList(result.body)
-      .groups.flatMap((group) => group.issues)
-      .map((issue) => withProjectIdentity(issue, project));
+    return normalizeReadyIssues(result.body, result.headers, project);
   }
 
   async function fetchIssue(
@@ -456,7 +478,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     daemonId?: string,
     pinned = false,
     signal?: AbortSignal,
-  ): Promise<{ issues: KataTaskSummary[]; readyIssueUIDs?: string[] }> {
+  ): Promise<KataSearchResult> {
     if (filters.status === "ready") {
       const readyIssues = await fetchReadyIssues(daemonId, undefined, pinned, signal);
       return {
@@ -469,13 +491,14 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
         fetchIssuesByStatus("open", daemonId, undefined, pinned, signal),
         fetchIssuesByStatus("closed", daemonId, undefined, pinned, signal),
       ]);
-      return { issues: filterSearchIssues([...open, ...closed], filters) };
+      return { issues: filterSearchIssues([...open, ...closed], filters), readyIssueUIDs: [] };
     }
     return {
       issues: filterSearchIssues(
         await fetchIssuesByStatus(filters.status, daemonId, undefined, pinned, signal),
         filters,
       ),
+      readyIssueUIDs: [],
     };
   }
 
@@ -531,13 +554,13 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     daemonId?: string,
     pinned = false,
     signal?: AbortSignal,
-  ) {
+  ): Promise<KataSearchResult> {
     const projects = await fetchProjects(daemonId, pinned, signal);
     const project = projects.projects.find((item) => item.uid === filters.scope.project_uid);
     if (!project) {
       return {
         issues: filterSearchIssues([], filters),
-        ...(filters.status === "ready" ? { readyIssueUIDs: [] } : {}),
+        readyIssueUIDs: [],
       };
     }
     if (filters.status === "ready") {
@@ -548,7 +571,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
       };
     }
     if (filters.query.trim() === "") {
-      return { issues: await searchProjectIssueList(filters, project, daemonId, pinned, signal) };
+      return { issues: await searchProjectIssueList(filters, project, daemonId, pinned, signal), readyIssueUIDs: [] };
     }
     const params = new URLSearchParams();
     params.set("q", filters.query);
@@ -564,7 +587,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
       pinned,
       signal,
     );
-    return { issues: filterSearchIssues(issues, filters, { applyQuery: false }) };
+    return { issues: filterSearchIssues(issues, filters, { applyQuery: false }), readyIssueUIDs: [] };
   }
 
   api = {
@@ -714,7 +737,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
       const response = {
         filters,
         issues: searchResult.issues,
-        ready_issue_uids: searchResult.readyIssueUIDs ?? [],
+        ready_issue_uids: searchResult.readyIssueUIDs,
         fetched_at: new Date().toISOString(),
         daemon_id: daemonId,
       };

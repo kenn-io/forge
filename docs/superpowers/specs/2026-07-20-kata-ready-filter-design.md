@@ -24,7 +24,8 @@ Kata proxy.
 
 Extend `KataTaskStatusFilter` from `"open" | "closed" | "all"` to include
 `"ready"`. Ready is a list-filter mode, not a task status: returned tasks keep
-their daemon-provided `status`, normally `"open"`.
+their daemon-provided `status`, and UID membership alone determines whether a
+row is Ready.
 
 The existing `KataTaskSearchFilters` object remains the single filter contract
 for UI state, persistence, store loading, and task API calls.
@@ -80,13 +81,14 @@ Ready hierarchy follows these acceptance rules:
 | Child is ready and parent is not | Promote the child to a root; do not show the parent. |
 | A routed ready target has any non-ready ancestor | Temporarily promote the target to a root; never reconnect ready nodes across an omitted ancestor. |
 
-The latest completed Ready request is one authoritative snapshot. Starting any
-Ready refresh clears the previous membership before the request runs, including
-refreshes caused by mutations or events. Duplicate UIDs collapse naturally in
-the membership set, and a missing parent uses the child-as-root rule. Owner,
-label, status, and accepted text-query changes continue to use the existing
-search refresh and text-query debounce behavior rather than adding a second
-cache or refresh policy.
+The latest non-superseded accepted Ready request is one authoritative snapshot;
+an older request that finishes later is inert. Starting any Ready refresh clears
+the previous membership before the request runs, including refreshes caused by
+mutations or events. Duplicate UIDs collapse naturally in the membership set,
+and a missing parent uses the child-as-root rule. Each accepted owner, label, or
+status change downloads the complete Ready set; text input keeps the existing
+debounce. No snapshot cache is added because cached membership would weaken
+daemon freshness.
 
 ## Error Handling
 
@@ -96,8 +98,26 @@ locally computed readiness or to the Open list. Interactive and persisted-entry
 failures retain the attempted Ready filter, expose retry, and render an empty
 membership until a later authoritative response succeeds.
 
+A successful task mutation remains committed if its following Ready refresh
+fails. Authority loss clears list rows, selected detail, disclosure state, and
+the selected issue URL; Retry refreshes membership and the list without
+repeating the mutation or automatically restoring the cleared selection. A
+failed persisted restoration also renders no selection, but keeps the stored
+selection as retry input so a successful restoration Retry can revalidate it.
+
+A successful Ready response must contain an `issues` array whose entries carry
+non-empty UIDs. Missing or malformed membership fails with
+`invalid_ready_response`; it is never normalized to an authoritative empty set.
+
 An unknown project UID returns an empty ready result, matching current
 project-scoped search behavior.
+
+## Implementation Order
+
+1. Define strict Ready response normalization and mandatory UID membership.
+2. Apply membership lifecycle rules in search, mutation, event, and restore flows.
+3. Enforce membership in hierarchy, Logbook, selection, and route presentation.
+4. Cover response validation and failure recovery in component and full-stack tests.
 
 ## Testing
 

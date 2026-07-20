@@ -6,6 +6,6 @@ export function kataTaskStatusMatchesFilter(
   readyIssueUIDs?: ReadonlySet<string>,
 ): boolean {
   if (filter === "all") return true;
-  if (filter === "ready") return issue.status === "open" && readyIssueUIDs?.has(issue.uid) === true;
+  if (filter === "ready") return readyIssueUIDs?.has(issue.uid) === true;
   return issue.status === filter;
 }

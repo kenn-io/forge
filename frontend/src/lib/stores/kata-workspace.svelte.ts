@@ -1313,6 +1313,7 @@ export class KataWorkspaceStore {
         results = await this.searchIssues(this.searchFilters, signal);
       } catch (error) {
         if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return false;
+        if (this.searchFilters.status === "ready") this.clearSelection();
         this.duplicateCandidates = duplicateCandidatesFromError(error);
         if (this.duplicateCandidates.length === 0) throw error;
         return false;

@@ -950,9 +950,11 @@ describe("kata workspace store", () => {
     await refreshPending;
     expect([...store.readyIssueUIDs]).toEqual([issues[1]!.uid]);
 
+    await store.selectIssue(issues[1]!.uid);
     api.mocks.search.mockRejectedValueOnce(new Error("ready refresh failed"));
     await expect(store.addLabel(issues[1]!.uid, "middleman", "urgent")).rejects.toThrow("ready refresh failed");
     expect([...store.readyIssueUIDs]).toEqual([]);
+    expect(store.selectedIssue).toBeNull();
 
     await store.updateSearchFilters({ status: "open" }, { selectFirst: false });
     expect([...store.readyIssueUIDs]).toEqual([]);

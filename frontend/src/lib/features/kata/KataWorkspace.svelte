@@ -143,6 +143,8 @@
   let viewWorkCount = $state(0);
   let error = $state<string | null>(null);
   let viewError = $state<string | null>(null);
+  let readyRefreshRetry = $state<(() => Promise<void>) | null>(null);
+  let readyRefreshRetrying = $state(false);
   let cursorCatchupError = $state<string | null>(null);
   let cursorCatchupRetry = $state<(() => Promise<void>) | null>(null);
   let cursorCatchupRetrying = $state(false);
@@ -247,6 +249,7 @@
     workspaceOwnershipPending ||
       switchingDaemon ||
       workspaceReadOnly ||
+      readyRefreshRetry !== null ||
       restoreRetrying ||
       terminalRecovering ||
       routedDaemonError !== null ||
@@ -365,6 +368,7 @@
     const loadingGeneration = beginViewLoading();
     clearTaskErrors(failureSurface);
     const expansionSignature = currentExpansionSignature();
+    const selectedUIDBeforeTask = store.pendingSelectionUID ?? store.selectedIssue?.issue.uid ?? null;
     try {
       const ok = (await task()) ?? true;
       if (ok && currentExpansionSignature() !== expansionSignature) {
@@ -373,11 +377,42 @@
       return ok;
     } catch (err) {
       if (shouldSurfaceFailure()) {
-        surfaceTaskError(kataRequestErrorMessage(err), failureSurface);
+        const message = kataRequestErrorMessage(err);
+        surfaceTaskError(message, failureSurface);
+        if (store.searchFilters.status === "ready" && store.readyIssueUIDs.size === 0) {
+          handleReadyAuthorityLoss(message, selectedUIDBeforeTask);
+        }
       }
       return false;
     } finally {
       endViewLoading(loadingGeneration);
+    }
+  }
+
+  function handleReadyAuthorityLoss(message: string, selectedUID: string | null): void {
+    resetDetailDrafts();
+    closeReachableGraph();
+    resetIssueExpansion();
+    store.clearSelection();
+    restoredSelectionUID = null;
+    canonicalizeClearedSelection();
+    if (selectedUID && activeKataDaemonId) clearKataWorkspaceSelection(activeKataDaemonId);
+    viewError = message;
+    readyRefreshRetry = retryReadyRefresh;
+  }
+
+  async function retryReadyRefresh(): Promise<void> {
+    if (readyRefreshRetrying) return;
+    readyRefreshRetrying = true;
+    try {
+      const ok = await runViewTask(() => store.updateSearchFilters({}, { selectFirst: false }), "view");
+      if (!ok) return;
+      readyRefreshRetry = null;
+      viewError = null;
+      emitRouteSelectionSync();
+      persistActiveWorkspaceState();
+    } finally {
+      readyRefreshRetrying = false;
     }
   }
 
@@ -720,7 +755,7 @@
     const rawIssues = workspaceStore.currentView.groups.flatMap((group) => group.issues);
     const routedSelection = sources.selection === "url" ? issueUID : null;
     const persistedSelection = sources.selection === "persisted" ? issueUID : null;
-    const effectiveStatus = view === "logbook" ? "all" : filters.status;
+    const effectiveStatus = view === "logbook" && filters.status === "open" ? "all" : filters.status;
     if (
       persistedSelection &&
       !rawIssues.some(
@@ -1309,6 +1344,7 @@
       routedFallbackRecovering ||
       terminalDaemonFailure ||
       restoreRetry !== null ||
+      readyRefreshRetry !== null ||
       restoreRetrying ||
       routeEmissionWork > 0
     );
@@ -1327,6 +1363,7 @@
       provisionalRoutedDaemon !== null ||
       routedFallbackRecovering ||
       restoreRetry !== null ||
+      readyRefreshRetry !== null ||
       terminalDaemonFailure ||
       store.hasPendingMutations ||
       workspaceActionBusy
@@ -1691,7 +1728,14 @@
 
   function persistActiveWorkspaceState(): void {
     const daemonID = activeKataDaemonId;
-    if (!daemonID || switchingDaemon || restoreRetry !== null || provisionalRoutedDaemon !== null || terminalDaemonFailure) return;
+    if (
+      !daemonID ||
+      switchingDaemon ||
+      restoreRetry !== null ||
+      readyRefreshRetry !== null ||
+      provisionalRoutedDaemon !== null ||
+      terminalDaemonFailure
+    ) return;
     saveKataWorkspaceState(daemonID, {
       view: store.currentView.name,
       filters: store.searchFilters,
@@ -2687,7 +2731,17 @@
 
     <main class="kata-main" aria-label="Kata tasks">
       {#if viewError}
-        <p class="kata-view-error" role="alert">{viewError}</p>
+        <p class="kata-view-error" role="alert">
+          {viewError}
+          {#if readyRefreshRetry}
+            <button
+              type="button"
+              disabled={readyRefreshRetrying}
+              aria-busy={readyRefreshRetrying}
+              onclick={() => { void readyRefreshRetry?.(); }}
+            >{readyRefreshRetrying ? "Retrying…" : "Retry"}</button>
+          {/if}
+        </p>
       {/if}
       <KataResizableSash
         orientation={splitOrientation}

@@ -14,6 +14,15 @@ The root-level middleman package (middleman.go) is the embedding API.
 It does not have a stable API and can be changed arbitrarily until it
 stabilizes. Do not flag breaking changes to its exported surface.
 
+Dated design, specification, and implementation-plan documents are historical
+artifacts once the PR that introduced them has landed. Outside the PR that
+creates a specific document, do not recommend editing it to reflect later
+implementation decisions, review findings, or current behavior. Preserve the
+original record and put superseding decisions in a new dated design document,
+ADR, or the appropriate living context document instead. Flag later PRs that
+rewrite these historical artifacts unless the change is explicitly correcting
+the record itself.
+
 End-to-end tests are non-negotiable in this repository. Major features,
 bug fixes, refactors, and user-visible changes affecting API behavior,
 data flow, or maintainer workflows require e2e coverage that exercises

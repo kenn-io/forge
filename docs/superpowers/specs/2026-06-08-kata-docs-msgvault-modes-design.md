@@ -326,18 +326,41 @@ Kata frontend adaptation:
   (`frontend/src/lib/components/kata/KataIssueList.svelte::topLevelIssues`,
   `frontend/src/lib/components/kata/KataIssueList.svelte::row`,
   `frontend/src/lib/stores/kata-workspace.svelte.ts::selectableViewIssues`).
-- Task-list expansion and restored nested selection are pure projections over
-  the accepted snapshot entity set. Components do not fetch or cache child
-  detail. Ready never admits a non-member; a selected member whose ancestor is
-  outside membership renders as a root without synthesizing authority. Full UID
-  is the only hierarchy identity (detailed snapshot design:
+- Task-list header controls should expand every visible task tree recursively
+  through the task-detail API, and collapse should hide cached descendants
+  without reintroducing them as top-level flat rows.
+- Restored nested-task ancestor reconstruction is presentation-only. Temporary
+  ancestors and each contextual successor bypass only the active status filter
+  for the selected path, except that Ready never admits a non-member: a routed
+  ready target with any non-ready ancestor is promoted to a temporary root.
+  Unrelated children still obey that filter and all other active filters.
+  Context rows do not affect task counts, membership
+  checks, or persisted workspace state. Their synthetic edges and reveal-owned
+  expansion disappear when the reveal is cleared or superseded. Clicking a
+  contextual row's disclosure control or invoking the task-list Expand all
+  control promotes that row to user-owned expansion; ordinary selection does
+  not. User-owned expansion survives reveal cleanup. An authoritative
+  child response replaces cached edges and a transient refresh failure retains
+  the seeded path for that reveal. A task
+  admitted by raw filtered membership remains selected if resolution finds a
+  cycle, missing parent, depth limit, missing ancestor detail, ancestor 404, or
+  a transient ancestor request failure; only the temporary reveal chain is
+  omitted, and transient failure remains retryable. Definitive absence of the
+  selected task itself still clears persisted selection. Ancestor reconstruction
+  walks serially to a maximum depth of 32 with one active walk per workspace.
+  Route change, selection change, switch, or unmount aborts the walk where
+  supported and prevents subsequent ancestor requests. At most one stale
+  non-abortable request may drain; further changes coalesce to the latest
+  selected UID. Retry starts a new walk only for the current UID and generation.
+  Candidate ancestor data remains transaction-local and is published only after
+  the candidate workspace is accepted (detailed Ready design:
   `docs/superpowers/specs/2026-07-20-kata-ready-filter-design.md`).
-- Project-scoped authority is resolved server-side from project UID. The atomic
-  snapshot also includes the complete project catalog so empty projects,
-  metadata ordering, and navigation do not depend on a second browser read.
-- Kata workspace owns a dedicated frontend-service client; accepted provenance
-  pins its selector, row actions, snapshot intent, workspace identity, and
-  invalidation stream while other surfaces follow their own selection.
+- Project-scoped task filters must resolve the Kata project UID and read the
+  daemon's project issue list instead of filtering the all-project issue list
+  locally (`frontend/src/lib/api/kata/taskClient.ts::searchProject`).
+- Kata workspace owns a dedicated task client; accepted provenance pins its
+  selector, row actions, reloads, workspace identity, events, and stream while
+  other surfaces follow their own selection (`frontend/src/App.svelte::kataWorkspaceAPI`).
 - Kata workspace reads use Middleman's minimal frontend service, not browser
   composition of passthrough daemon responses. Middleman calls Kata through
   `go.kenn.io/kata/pkg/client`, returns atomic snapshots, and caches accepted
@@ -346,11 +369,8 @@ Kata frontend adaptation:
   forward-only: replaced direct-read, raw-event, and compatibility fallback
   paths are deleted (`docs/superpowers/specs/2026-07-20-kata-ready-filter-design.md`).
 - The frontend service exposes an atomic snapshot read plus invalidation-only
-  SSE. Authority caching excludes selected detail/history/graph enrichment;
-  those attach only after membership validation. Raw Kata events never patch
-  browser task state; they advance a daemon epoch, fence in-flight loads,
-  invalidate the cache, and cause the browser to request its current snapshot
-  intent.
+  SSE. Raw Kata events never patch browser task state; they invalidate the
+  daemon cache and cause the browser to request its current snapshot intent.
 - Removed accepted daemons remain selected and visibly unavailable until the
   user chooses a configured daemon (`frontend/src/lib/features/kata/KataDaemonSwitcher.svelte::displayId`).
 - Daemon switching is disabled during initial bootstrap, writes, view work

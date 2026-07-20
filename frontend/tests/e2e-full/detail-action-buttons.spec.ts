@@ -752,7 +752,7 @@ test.describe("detail action buttons", () => {
       await page.goto(`${baseURL}/pulls/github/acme/widgets/2`);
       await expect(page.locator(".pull-detail")).toBeVisible();
       await expect(page.locator(".detail-title")).toContainText("Fix race condition in event loop");
-      await expect(page.getByText("This branch has conflicts")).toBeVisible();
+      await expect(page.getByTestId("merge-warnings-chip")).toContainText("Conflicts");
 
       const merge = page.locator(".btn--merge").first();
       await expect(merge).toBeDisabled();

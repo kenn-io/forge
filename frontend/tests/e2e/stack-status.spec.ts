@@ -509,7 +509,7 @@ test("stack status surfaces inherited downstack merge conflicts", async ({ page 
 
   await page.goto("/pulls/github/acme/widgets/102");
 
-  await expect(page.getByText("This branch has conflicts")).toBeVisible();
+  await expect(page.getByTestId("merge-warnings-chip")).toContainText("Conflicts");
   await expect(
     page.getByRole("button", {
       name: /Stacked: 2\/7, 1 downstack merge conflict/i,

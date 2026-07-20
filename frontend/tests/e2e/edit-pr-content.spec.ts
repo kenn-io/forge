@@ -133,13 +133,30 @@ test("markdown mermaid fences render as diagrams", async ({ page }) => {
   await page.goto("/pulls/github/acme/widgets/42");
   await page.locator(".edit-body-btn").click();
 
-  await page.locator(".body-edit-textarea").fill("```mermaid\ngraph TD\n  A --> B\n```");
+  await page
+    .locator(".body-edit-textarea")
+    .fill(
+      [
+        "```mermaid",
+        "sequenceDiagram",
+        "  participant Client",
+        "  participant Server",
+        "  Client->>Server: Send request",
+        "  Server-->>Client: Return response",
+        "```",
+        "",
+        "```ts",
+        'const ordinary = "code";',
+        "```",
+      ].join("\n"),
+    );
   await page.locator(".body-edit .title-edit-save").click();
 
   await expect(page.locator(".markdown-body code.language-mermaid")).toHaveCount(0);
   await expect(
     page.locator(".markdown-body pre.mermaid.kit-mermaid-viewer .kit-mermaid-viewer__pan svg"),
   ).toBeVisible();
+  await expect(page.locator(".markdown-body pre.shiki")).toContainText('const ordinary = "code";');
   await expect(page.getByRole("button", { name: "Zoom in diagram" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Zoom out diagram" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy Mermaid source" })).toBeVisible();

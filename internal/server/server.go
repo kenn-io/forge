@@ -214,6 +214,7 @@ type Server struct {
 	kataProxyCache              map[kataProxyCacheKey]kataProxyCacheEntry
 	kataProxyIdleCloseOnce      sync.Once
 	kataSnapshots               *kataSnapshotCoordinator
+	kataEvents                  *kataFrontendEventRegistry
 	docsRegistry                *docs.Registry
 	docsPublishLocks            *docsPublishLockSet
 	msgvault                    *msgvaultHandler
@@ -768,6 +769,15 @@ func newServer(
 	})
 	s.kataSnapshots = newKataSnapshotCoordinator(s.bgCtx, kataSnapshotCoordinatorDeps{})
 	s.runBackground(s.kataSnapshots.run)
+	s.kataEvents = newKataFrontendEventRegistry(s.bgCtx, kataFrontendEventRegistryDeps{
+		invalidate:       s.kataSnapshots.invalidateDaemon,
+		daemonEpoch:      s.kataSnapshots.daemonEpoch,
+		serverInstanceID: s.kataSnapshots.serverInstanceID,
+	})
+	s.runBackground(func(ctx context.Context) {
+		<-ctx.Done()
+		s.kataEvents.Close()
+	})
 
 	s.hostOpts.Store(&hostOpts)
 	if hostOpts.TrustReverseProxy && len(hostOpts.Allowed) == 0 {
@@ -1603,6 +1613,32 @@ func (s *Server) serveSSESubscribed(
 	ch <-chan RecordedEvent,
 	done <-chan struct{},
 ) {
+	serveSSESubscribedFromHub(
+		ctx,
+		w,
+		rc,
+		s.hub,
+		cursor,
+		hasCursor,
+		ch,
+		done,
+		func(id uint64) Event {
+			return Event{Type: "reconnect.stale", Data: struct{}{}}
+		},
+	)
+}
+
+func serveSSESubscribedFromHub(
+	ctx context.Context,
+	w io.Writer,
+	rc sseController,
+	hub *EventHub,
+	cursor uint64,
+	hasCursor bool,
+	ch <-chan RecordedEvent,
+	done <-chan struct{},
+	staleEvent func(uint64) Event,
+) {
 
 	if err := rc.Flush(); err != nil {
 		return
@@ -1613,9 +1649,9 @@ func (s *Server) serveSSESubscribed(
 	// live broadcasts and never out of order with them.
 	deliveredThrough := cursor
 	if hasCursor {
-		replay, synID, stale := s.hub.ReplaySnapshotSince(cursor)
+		replay, synID, stale := hub.ReplaySnapshotSince(cursor)
 		if stale {
-			if !writeSSEFrame(w, rc, synID, "reconnect.stale", []byte("{}")) {
+			if !writeSSERecorded(w, rc, RecordedEvent{ID: synID, Event: staleEvent(synID)}) {
 				return
 			}
 			deliveredThrough = synID

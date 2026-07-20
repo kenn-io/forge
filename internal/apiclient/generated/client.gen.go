@@ -4222,6 +4222,12 @@ type GetKataProjectMappingsParams struct {
 	XMiddlemanKataDaemon *string `json:"X-Middleman-Kata-Daemon,omitempty"`
 }
 
+// StreamKataTaskEventsParams defines parameters for StreamKataTaskEvents.
+type StreamKataTaskEventsParams struct {
+	// XMiddlemanKataDaemon Kata daemon id; the effective default daemon when empty
+	XMiddlemanKataDaemon *string `json:"X-Middleman-Kata-Daemon,omitempty"`
+}
+
 // GetKataTaskDetailParams defines parameters for GetKataTaskDetail.
 type GetKataTaskDetailParams struct {
 	// XMiddlemanKataDaemon Kata daemon id; the effective default daemon when empty
@@ -5472,6 +5478,9 @@ type ClientInterface interface {
 
 	// GetKataProjectMappings request
 	GetKataProjectMappings(ctx context.Context, params *GetKataProjectMappingsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StreamKataTaskEvents request
+	StreamKataTaskEvents(ctx context.Context, params *StreamKataTaskEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetKataTaskDetail request
 	GetKataTaskDetail(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -8445,6 +8454,18 @@ func (c *Client) ListKataDaemons(ctx context.Context, reqEditors ...RequestEdito
 
 func (c *Client) GetKataProjectMappings(ctx context.Context, params *GetKataProjectMappingsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetKataProjectMappingsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StreamKataTaskEvents(ctx context.Context, params *StreamKataTaskEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStreamKataTaskEventsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -20488,6 +20509,48 @@ func NewGetKataProjectMappingsRequest(server string, params *GetKataProjectMappi
 	return req, nil
 }
 
+// NewStreamKataTaskEventsRequest generates requests for StreamKataTaskEvents
+func NewStreamKataTaskEventsRequest(server string, params *StreamKataTaskEventsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/kata/tasks/events")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.XMiddlemanKataDaemon != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Kata-Daemon", *params.XMiddlemanKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Middleman-Kata-Daemon", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
 // NewGetKataTaskDetailRequest generates requests for GetKataTaskDetail
 func NewGetKataTaskDetailRequest(server string, issueUid string, params *GetKataTaskDetailParams) (*http.Request, error) {
 	var err error
@@ -29002,6 +29065,9 @@ type ClientWithResponsesInterface interface {
 	// GetKataProjectMappingsWithResponse request
 	GetKataProjectMappingsWithResponse(ctx context.Context, params *GetKataProjectMappingsParams, reqEditors ...RequestEditorFn) (*GetKataProjectMappingsResponse, error)
 
+	// StreamKataTaskEventsWithResponse request
+	StreamKataTaskEventsWithResponse(ctx context.Context, params *StreamKataTaskEventsParams, reqEditors ...RequestEditorFn) (*StreamKataTaskEventsResponse, error)
+
 	// GetKataTaskDetailWithResponse request
 	GetKataTaskDetailWithResponse(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*GetKataTaskDetailResponse, error)
 
@@ -32882,6 +32948,28 @@ func (r GetKataProjectMappingsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetKataProjectMappingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StreamKataTaskEventsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r StreamKataTaskEventsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StreamKataTaskEventsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -37883,6 +37971,15 @@ func (c *ClientWithResponses) GetKataProjectMappingsWithResponse(ctx context.Con
 		return nil, err
 	}
 	return ParseGetKataProjectMappingsResponse(rsp)
+}
+
+// StreamKataTaskEventsWithResponse request returning *StreamKataTaskEventsResponse
+func (c *ClientWithResponses) StreamKataTaskEventsWithResponse(ctx context.Context, params *StreamKataTaskEventsParams, reqEditors ...RequestEditorFn) (*StreamKataTaskEventsResponse, error) {
+	rsp, err := c.StreamKataTaskEvents(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStreamKataTaskEventsResponse(rsp)
 }
 
 // GetKataTaskDetailWithResponse request returning *GetKataTaskDetailResponse
@@ -44266,6 +44363,32 @@ func ParseGetKataProjectMappingsResponse(rsp *http.Response) (*GetKataProjectMap
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStreamKataTaskEventsResponse parses an HTTP response from a StreamKataTaskEventsWithResponse call
+func ParseStreamKataTaskEventsResponse(rsp *http.Response) (*StreamKataTaskEventsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StreamKataTaskEventsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

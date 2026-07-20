@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"go.kenn.io/middleman/internal/kata"
 )
@@ -38,6 +39,10 @@ type kataDaemonRosterResponse struct {
 
 type listKataDaemonsOutput = bodyOutput[kataDaemonRosterResponse]
 
+type streamKataTaskEventsInput struct {
+	DaemonID string `header:"X-Middleman-Kata-Daemon" doc:"Kata daemon id; the effective default daemon when empty"`
+}
+
 type kataDaemonHealthCacheEntry struct {
 	state   string
 	expires time.Time
@@ -52,7 +57,49 @@ func (s *Server) registerKataAPI(api huma.API) {
 	huma.Get(api, "/kata/daemons", s.listKataDaemons,
 		documentOperation("list-kata-daemons", "List Kata daemons", "Kata"))
 	registerKataWorkspaceAPI(api, s)
+	huma.Register(api, huma.Operation{
+		OperationID: "stream-kata-task-events",
+		Method:      http.MethodGet,
+		Path:        "/kata/tasks/events",
+		Summary:     "Stream Kata task invalidations",
+		Tags:        []string{"Kata"},
+		Responses: map[string]*huma.Response{
+			"200": {
+				Description: "Server-sent Kata task invalidation stream",
+				Content: map[string]*huma.MediaType{
+					"text/event-stream": {},
+				},
+			},
+		},
+	}, s.streamKataTaskEvents)
 	s.registerKataProxyAPI(api)
+}
+
+func (s *Server) streamKataTaskEvents(
+	_ context.Context,
+	input *streamKataTaskEventsInput,
+) (*huma.StreamResponse, error) {
+	daemon, problem := selectKataDaemonForID(input.DaemonID)
+	if problem != nil {
+		return nil, huma.ErrorWithHeaders(problem, http.Header{
+			"Vary": []string{kataDaemonHeaderName},
+		})
+	}
+	target := s.kataEvents.Ensure(daemon).(*kataFrontendEventTarget)
+	return &huma.StreamResponse{
+		Body: func(ctx huma.Context) {
+			ctx.SetHeader("Content-Type", "text/event-stream")
+			ctx.SetHeader("Cache-Control", "no-cache")
+			ctx.SetHeader("Connection", "keep-alive")
+			ctx.AppendHeader("Vary", kataDaemonHeaderName)
+
+			r, w := humago.Unwrap(ctx)
+			rc := http.NewResponseController(w)
+			_ = rc.SetWriteDeadline(time.Time{})
+			cursor, hasCursor := parseLastEventID(r)
+			target.serve(ctx.Context(), w, rc, cursor, hasCursor)
+		},
+	}, nil
 }
 
 func (s *Server) listKataDaemons(context.Context, *struct{}) (*listKataDaemonsOutput, error) {

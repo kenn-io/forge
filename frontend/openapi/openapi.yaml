@@ -13860,6 +13860,30 @@ paths:
       summary: Inspect effective Kata project repository mappings
       tags:
         - Kata
+  /kata/tasks/events:
+    get:
+      operationId: stream-kata-task-events
+      parameters:
+        - description: Kata daemon id; the effective default daemon when empty
+          in: header
+          name: X-Middleman-Kata-Daemon
+          schema:
+            description: Kata daemon id; the effective default daemon when empty
+            type: string
+      responses:
+        "200":
+          content:
+            text/event-stream: {}
+          description: Server-sent Kata task invalidation stream
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Stream Kata task invalidations
+      tags:
+        - Kata
   /kata/tasks/{issue_uid}:
     get:
       operationId: get-kata-task-detail

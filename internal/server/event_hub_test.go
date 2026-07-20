@@ -296,6 +296,35 @@ func TestEventHub_BroadcastIDStartsAtOne(t *testing.T) {
 	assert.Equal(t, uint64(1), hub.Broadcast(Event{Type: "data_changed", Data: nil}))
 }
 
+func TestEventHubBroadcastBuildUsesAssignedIDInPayload(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	hub := NewEventHub()
+	defer hub.Close()
+
+	id := hub.BroadcastBuild(func(id uint64) Event {
+		return Event{Type: "kata.tasks.invalidated", Data: map[string]uint64{"cursor": id}}
+	})
+
+	replay, stale := hub.RingSnapshotSince(0)
+	require.False(stale)
+	require.Len(replay, 1)
+	assert.Equal(id, replay[0].ID)
+	assert.Equal(map[string]uint64{"cursor": id}, replay[0].Event.Data)
+}
+
+func TestEventHubAcceptsSyntheticStaleIDAsCurrentHead(t *testing.T) {
+	hub := NewEventHub()
+	defer hub.Close()
+
+	_, staleID, stale := hub.ReplaySnapshotSince(99)
+	require.True(t, stale)
+
+	replay, stale := hub.RingSnapshotSince(staleID)
+	assert.False(t, stale)
+	assert.Empty(t, replay)
+}
+
 func TestEventHub_RingSnapshotSince_ReplaysNewer(t *testing.T) {
 	assert := assert.New(t)
 	hub := NewEventHubWithCapacity(8)

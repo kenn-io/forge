@@ -145,10 +145,18 @@ func (h *EventHub) unsubscribe(id uint64) {
 // which is useful for tests and for callers that need to correlate the
 // broadcast with downstream state.
 func (h *EventHub) Broadcast(event Event) uint64 {
+	return h.BroadcastBuild(func(uint64) Event { return event })
+}
+
+// BroadcastBuild assigns the next event ID while holding the hub lock, then
+// builds and publishes the event with that ID available to its payload. This
+// keeps cursor-bearing JSON data identical to the SSE id on the wire.
+func (h *EventHub) BroadcastBuild(build func(uint64) Event) uint64 {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	h.nextEventID++
+	event := build(h.nextEventID)
 	rec := RecordedEvent{ID: h.nextEventID, Event: event}
 
 	switch event.Type {
@@ -239,7 +247,7 @@ func (h *EventHub) ringSnapshotSinceLocked(
 	cursor uint64,
 ) (events []RecordedEvent, stale bool) {
 	if h.ringCount == 0 {
-		if cursor > 0 {
+		if cursor > h.nextEventID {
 			return nil, true
 		}
 		return nil, false

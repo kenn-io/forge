@@ -102,6 +102,14 @@ func (c *kataSnapshotCoordinator) close() {
 	c.cache.close()
 }
 
+func (c *kataSnapshotCoordinator) invalidateDaemon(daemonID string) uint64 {
+	return c.cache.invalidateDaemon(daemonID)
+}
+
+func (c *kataSnapshotCoordinator) daemonEpoch(daemonID string) uint64 {
+	return c.cache.daemonEpoch(daemonID)
+}
+
 func (c *kataSnapshotCoordinator) loadAuthority(
 	ctx context.Context,
 	daemonID string,

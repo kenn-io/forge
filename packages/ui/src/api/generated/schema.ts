@@ -2219,6 +2219,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kata/tasks/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream Kata task invalidations */
+        get: operations["stream-kata-task-events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kata/tasks/{issue_uid}": {
         parameters: {
             query?: never;
@@ -12804,6 +12821,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KataProjectMappingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "stream-kata-task-events": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Kata daemon id; the effective default daemon when empty */
+                "X-Middleman-Kata-Daemon"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-sent Kata task invalidation stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
                 };
             };
             /** @description Error */

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/middleman/internal/testutil/gitfake"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
@@ -143,6 +144,7 @@ func TestPushWorktreeBranchUsesAuthenticatedRunnerAndMutationAuth(t *testing.T) 
 	capturePath := filepath.Join(fakeDir, "credentials.txt")
 	require.NoError(os.WriteFile(filepath.Join(fakeDir, "git"), []byte(`#!/bin/sh
 set -eu
+`+gitfake.CredentialHelperRunner+`
 real="${MIDDLEMAN_TEST_REAL_GIT:?}"
 capture="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
 op="${1:-}"
@@ -163,7 +165,7 @@ push|fetch)
 		echo "fatal: Authentication failed: no credential helper" >&2
 		exit 128
 	fi
-	password="$("$helper" get | sed -n 's/^password=//p')"
+	password="$(run_credential_helper "$helper" get | sed -n 's/^password=//p')"
 	if [ -z "$password" ]; then
 		echo "fatal: Authentication failed: empty credential" >&2
 		exit 128

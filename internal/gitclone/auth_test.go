@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/testutil/gitfake"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
@@ -39,6 +40,7 @@ func TestGitNetworkedResolvesTokenSourceForEachCall(t *testing.T) {
 	gitPath := filepath.Join(dir, "git")
 	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
 set -eu
+`+gitfake.CredentialHelperRunner+`
 out="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
 i=0
 count="${GIT_CONFIG_COUNT:-0}"
@@ -46,7 +48,7 @@ while [ "$i" -lt "$count" ]; do
 	eval "key=\${GIT_CONFIG_KEY_$i:-}"
 	eval "value=\${GIT_CONFIG_VALUE_$i:-}"
 	if [ "$key" = "credential.helper" ]; then
-		"$value" get >> "$out"
+		run_credential_helper "$value" get >> "$out"
 		echo "---" >> "$out"
 	fi
 	i=$((i + 1))
@@ -87,6 +89,7 @@ func TestGitNetworkedResolvesTokenFileSourceForEachCall(t *testing.T) {
 	gitPath := filepath.Join(dir, "git")
 	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
 set -eu
+`+gitfake.CredentialHelperRunner+`
 out="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
 i=0
 count="${GIT_CONFIG_COUNT:-0}"
@@ -94,7 +97,7 @@ while [ "$i" -lt "$count" ]; do
 	eval "key=\${GIT_CONFIG_KEY_$i:-}"
 	eval "value=\${GIT_CONFIG_VALUE_$i:-}"
 	if [ "$key" = "credential.helper" ]; then
-		"$value" get >> "$out"
+		run_credential_helper "$value" get >> "$out"
 		echo "---" >> "$out"
 	fi
 	i=$((i + 1))
@@ -141,6 +144,7 @@ func TestGitRetriesAuthFailureAfterInvalidatingTokenSource(t *testing.T) {
 	gitPath := filepath.Join(dir, "git")
 	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
 set -eu
+`+gitfake.CredentialHelperRunner+`
 out="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
 tmp="$out.current"
 helper=""
@@ -154,7 +158,7 @@ while [ "$i" -lt "$count" ]; do
 	fi
 	i=$((i + 1))
 done
-"$helper" get > "$tmp"
+run_credential_helper "$helper" get > "$tmp"
 cat "$tmp" >> "$out"
 echo "---" >> "$out"
 password="$(sed -n 's/^password=//p' "$tmp")"
@@ -195,6 +199,7 @@ func TestCloneBareRetriesAuthFailureAfterCleaningPartialClone(t *testing.T) {
 	gitPath := filepath.Join(dir, "git")
 	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
 set -eu
+`+gitfake.CredentialHelperRunner+`
 if [ "${1:-}" != "clone" ]; then
 	exit 0
 fi
@@ -219,7 +224,7 @@ while [ "$i" -lt "$count" ]; do
 done
 
 tmp="$out.current"
-"$helper" get > "$tmp"
+run_credential_helper "$helper" get > "$tmp"
 cat "$tmp" >> "$out"
 echo "---" >> "$out"
 password="$(sed -n 's/^password=//p' "$tmp")"

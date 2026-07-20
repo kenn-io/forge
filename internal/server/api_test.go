@@ -55,6 +55,7 @@ import (
 	"go.kenn.io/middleman/internal/stacks"
 	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/gitfake"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
@@ -4979,6 +4980,7 @@ func installCredentialCapturingGit(t *testing.T, dir string) string {
 	require.NoError(t, os.MkdirAll(gitWrapperDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(gitWrapperDir, "git"), []byte(`#!/bin/sh
 set -eu
+`+gitfake.CredentialHelperRunner+`
 out="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
 helper=""
 i=0
@@ -4992,7 +4994,7 @@ while [ "$i" -lt "$count" ]; do
 	i=$((i + 1))
 done
 if [ -n "$helper" ]; then
-	"$helper" get >> "$out"
+	run_credential_helper "$helper" get >> "$out"
 	echo "---" >> "$out"
 fi
 exec "$MIDDLEMAN_TEST_REAL_GIT" "$@"

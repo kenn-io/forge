@@ -237,6 +237,53 @@ func TestKataSnapshotEnricherRejectsInvalidHistoryPagination(t *testing.T) {
 	}
 }
 
+func TestKataSnapshotEnricherRejectsHistoryCursorMismatch(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		pollEvents func(*katagenerated.PollEventsRequestOptions) *katagenerated.PollEventsResp
+	}{
+		{
+			name: "nonempty page cursor skips past last event",
+			pollEvents: func(options *katagenerated.PollEventsRequestOptions) *katagenerated.PollEventsResp {
+				if *options.Query.AfterID == 0 {
+					return testKataPollEventsResponse(2, testKataEvent(1, nil, time.Now().UTC()))
+				}
+				return testKataPollEventsResponse(*options.Query.AfterID)
+			},
+		},
+		{
+			name: "empty page cursor advances",
+			pollEvents: func(*katagenerated.PollEventsRequestOptions) *katagenerated.PollEventsResp {
+				return testKataPollEventsResponse(1)
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			client := &fakeKataSnapshotAPIClient{
+				showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+					return testKataShowIssueResponse("issue-member"), nil
+				},
+				pollEvents: func(_ context.Context, options *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+					return test.pollEvents(options), nil
+				},
+			}
+			enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+			result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: "issue-member"})
+
+			require.NoError(t, err)
+			assert.NotNil(result.SelectedDetail)
+			assert.Empty(result.SelectedHistory)
+			assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task history."}, result.Errors[kataSnapshotEnrichmentStageHistory])
+		})
+	}
+}
+
 func TestKataSnapshotEnricherKeepsDetailAndHistoryFailuresIndependent(t *testing.T) {
 	t.Parallel()
 	selectedUID := "issue-member"

@@ -312,6 +312,9 @@ func (e *kataSnapshotEnricher) loadHistory(ctx context.Context, selectedUID stri
 			return nil, fmt.Errorf("events response requires cursor reset")
 		}
 		if len(body.Events) == 0 {
+			if body.NextAfterID != afterID {
+				return nil, fmt.Errorf("events response cursor does not match empty page")
+			}
 			return history, nil
 		}
 
@@ -322,8 +325,8 @@ func (e *kataSnapshotEnricher) loadHistory(ctx context.Context, selectedUID stri
 			}
 			lastEventID = event.EventID
 		}
-		if body.NextAfterID <= afterID || body.NextAfterID < lastEventID {
-			return nil, fmt.Errorf("events response cursor made no progress")
+		if body.NextAfterID != lastEventID {
+			return nil, fmt.Errorf("events response cursor does not match last event")
 		}
 
 		for _, event := range body.Events {

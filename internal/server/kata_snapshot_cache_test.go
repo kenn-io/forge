@@ -137,28 +137,33 @@ func TestKataSnapshotCacheOwnsImmutableSnapshotCopies(t *testing.T) {
 	cache := newKataSnapshotCache()
 	t.Cleanup(cache.close)
 	key := kataSnapshotKey{DaemonID: "work", DaemonFingerprint: "target", Scope: "global", Authority: "open"}
+	lastEventAt := time.Unix(123, 0)
 	snapshot := kataAuthoritySnapshot{
-		Projects:        []kataProjectSummary{{ID: 7, UID: "project-a", Name: "A"}},
+		Projects:        []kataProjectSummary{{ID: 7, UID: "project-a", Name: "A", LastEventAt: &lastEventAt}},
 		MemberIssueUIDs: []string{"issue-a"},
 		Issues:          []kataTaskSummary{{UID: "issue-a"}},
 	}
 	cache.set(key, snapshot)
 	snapshot.Projects[0].Name = "mutated input"
+	*snapshot.Projects[0].LastEventAt = time.Unix(456, 0)
 	snapshot.MemberIssueUIDs[0] = "mutated-input"
 	snapshot.Issues[0].UID = "mutated-input"
 
 	first, ok := cache.get(key)
 	require.True(ok)
 	require.Equal("A", first.Projects[0].Name)
+	require.Equal(time.Unix(123, 0), *first.Projects[0].LastEventAt)
 	require.Equal("issue-a", first.MemberIssueUIDs[0])
 	require.Equal("issue-a", first.Issues[0].UID)
 	first.Projects[0].Name = "mutated output"
+	*first.Projects[0].LastEventAt = time.Unix(789, 0)
 	first.MemberIssueUIDs[0] = "mutated-output"
 	first.Issues[0].UID = "mutated-output"
 
 	second, ok := cache.get(key)
 	require.True(ok)
 	require.Equal("A", second.Projects[0].Name)
+	require.Equal(time.Unix(123, 0), *second.Projects[0].LastEventAt)
 	require.Equal("issue-a", second.MemberIssueUIDs[0])
 	require.Equal("issue-a", second.Issues[0].UID)
 }

@@ -33,6 +33,7 @@ type kataProjectSummary struct {
 	DeletedAt   *time.Time
 	OpenCount   int64
 	ClosedCount int64
+	LastEventAt *time.Time
 }
 
 type kataLinkPeer struct {
@@ -89,6 +90,7 @@ type kataSnapshotCache struct {
 	entries        *ttlcache.Cache[kataSnapshotKey, kataAuthoritySnapshot]
 	keysByDaemon   map[string]map[kataSnapshotKey]struct{}
 	daemonEpochs   map[string]uint64
+	daemonTargets  map[string]string
 	cleanupEvery   time.Duration
 	stopOnEviction func()
 }
@@ -104,10 +106,11 @@ func newKataSnapshotCacheWithConfig(ttl time.Duration, capacity uint64) *kataSna
 		ttlcache.WithDisableTouchOnHit[kataSnapshotKey, kataAuthoritySnapshot](),
 	)
 	cache := &kataSnapshotCache{
-		entries:      entries,
-		keysByDaemon: make(map[string]map[kataSnapshotKey]struct{}),
-		daemonEpochs: make(map[string]uint64),
-		cleanupEvery: ttl,
+		entries:       entries,
+		keysByDaemon:  make(map[string]map[kataSnapshotKey]struct{}),
+		daemonEpochs:  make(map[string]uint64),
+		daemonTargets: make(map[string]string),
+		cleanupEvery:  ttl,
 	}
 	cache.stopOnEviction = entries.OnEviction(func(_ context.Context, _ ttlcache.EvictionReason, item *ttlcache.Item[kataSnapshotKey, kataAuthoritySnapshot]) {
 		cache.removeEvictedKey(item.Key())
@@ -192,6 +195,24 @@ func (c *kataSnapshotCache) daemonEpoch(daemonID string) uint64 {
 	return c.daemonEpochs[daemonID]
 }
 
+func (c *kataSnapshotCache) observeDaemonFingerprint(daemonID, fingerprint string) uint64 {
+	if c == nil {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	observed, ok := c.daemonTargets[daemonID]
+	if !ok {
+		c.daemonTargets[daemonID] = fingerprint
+		return c.daemonEpochs[daemonID]
+	}
+	if observed == fingerprint {
+		return c.daemonEpochs[daemonID]
+	}
+	c.daemonTargets[daemonID] = fingerprint
+	return c.invalidateDaemonLocked(daemonID)
+}
+
 func (c *kataSnapshotCache) invalidateDaemon(daemonID string) uint64 {
 	if c == nil {
 		return 0
@@ -250,6 +271,7 @@ func cloneKataAuthoritySnapshot(snapshot kataAuthoritySnapshot) kataAuthoritySna
 	for i := range snapshot.Projects {
 		snapshot.Projects[i].Metadata = cloneKataMetadata(snapshot.Projects[i].Metadata)
 		snapshot.Projects[i].DeletedAt = cloneKataPointer(snapshot.Projects[i].DeletedAt)
+		snapshot.Projects[i].LastEventAt = cloneKataPointer(snapshot.Projects[i].LastEventAt)
 	}
 	snapshot.MemberIssueUIDs = slices.Clone(snapshot.MemberIssueUIDs)
 	snapshot.Issues = slices.Clone(snapshot.Issues)

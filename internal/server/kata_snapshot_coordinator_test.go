@@ -187,6 +187,46 @@ func TestKataSnapshotCoordinatorRetriesWhenDaemonTargetRotates(t *testing.T) {
 	require.Equal(kataDaemonTargetFingerprint(kata.Daemon{ID: "work", URL: "http://target-2.example"}), result.Key.DaemonFingerprint)
 }
 
+func TestKataSnapshotCoordinatorDoesNotResurrectCachedTargetAfterRoundTripRotation(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	root, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	currentURL := "http://target-a.example"
+	var loads atomic.Int64
+	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
+		cache: newKataSnapshotCache(),
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+			return kata.Daemon{ID: "work", URL: currentURL}, nil
+		},
+		newLoader: func(_ context.Context, daemon kata.Daemon) (kataAuthoritySnapshotLoader, error) {
+			return kataAuthoritySnapshotLoaderFunc(func(context.Context, kataAuthorityRequest) (kataAuthoritySnapshot, error) {
+				load := loads.Add(1)
+				return kataAuthoritySnapshot{Issues: []kataTaskSummary{{UID: daemon.URL + "-" + string(rune('0'+load))}}}, nil
+			}), nil
+		},
+		newServerInstanceID: func() string { return "server-a" },
+	})
+	t.Cleanup(coordinator.close)
+	request := kataAuthorityRequest{Scope: "global", Authority: "open"}
+
+	first, err := coordinator.loadAuthority(t.Context(), "work", request)
+	require.NoError(err)
+	currentURL = "http://target-b.example"
+	second, err := coordinator.loadAuthority(t.Context(), "work", request)
+	require.NoError(err)
+	currentURL = "http://target-a.example"
+	third, err := coordinator.loadAuthority(t.Context(), "work", request)
+	require.NoError(err)
+
+	require.Equal(int64(3), loads.Load())
+	require.Equal(uint64(1), first.Generation)
+	require.Equal(uint64(2), second.Generation)
+	require.Equal(uint64(3), third.Generation)
+	require.Equal("http://target-a.example-3", third.Snapshot.Issues[0].UID)
+}
+
 type kataAuthoritySnapshotLoaderFunc func(context.Context, kataAuthorityRequest) (kataAuthoritySnapshot, error)
 
 func (f kataAuthoritySnapshotLoaderFunc) Load(ctx context.Context, request kataAuthorityRequest) (kataAuthoritySnapshot, error) {

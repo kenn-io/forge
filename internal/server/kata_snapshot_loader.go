@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
@@ -41,6 +42,13 @@ func (l *kataSnapshotLoader) Load(ctx context.Context, request kataAuthorityRequ
 	if err != nil {
 		return kataAuthoritySnapshot{}, err
 	}
+	confirmedProjects, _, err := l.loadProjectCatalog(ctx)
+	if err != nil {
+		return kataAuthoritySnapshot{}, err
+	}
+	if err := validateKataProjectCatalogStable(projects, confirmedProjects); err != nil {
+		return kataAuthoritySnapshot{}, err
+	}
 	if err := validateKataAuthorityCounts(request, projects, issues); err != nil {
 		return kataAuthoritySnapshot{}, err
 	}
@@ -65,26 +73,12 @@ func (l *kataSnapshotLoader) loadProjects(
 	ctx context.Context,
 	request kataAuthorityRequest,
 ) ([]kataProjectSummary, map[int64]kataProjectSummary, *int64, error) {
-	include := "stats"
-	response, err := l.client.ListProjectsWithResponse(ctx, &katagenerated.ListProjectsRequestOptions{
-		Query: &katagenerated.ListProjectsQuery{Include: &include},
-	})
+	projects, projectsByID, err := l.loadProjectCatalog(ctx)
 	if err != nil {
-		return nil, nil, nil, kataSnapshotUpstreamError("list projects", err)
+		return nil, nil, nil, err
 	}
-	if response == nil || response.StatusCode != http.StatusOK || response.JSON200 == nil {
-		return nil, nil, nil, kataSnapshotUpstreamError("list projects", fmt.Errorf("missing 200 response body"))
-	}
-	if err := validateKataProjectsResponse(response.JSON200); err != nil {
-		return nil, nil, nil, kataSnapshotUpstreamError("validate projects", err)
-	}
-
-	projects := make([]kataProjectSummary, len(response.JSON200.Projects))
-	projectsByID := make(map[int64]kataProjectSummary, len(projects))
 	var projectID *int64
-	for i, project := range response.JSON200.Projects {
-		projects[i] = kataProjectSummaryFromGenerated(project)
-		projectsByID[project.ID] = projects[i]
+	for _, project := range projects {
 		if request.Scope == "project" && project.UID == request.ProjectUID {
 			projectID = new(project.ID)
 		}
@@ -99,6 +93,32 @@ func (l *kataSnapshotLoader) loadProjects(
 		return nil, nil, nil, problemNotFound(CodeProjectNotFound, "Kata project not found", map[string]any{"projectUid": request.ProjectUID})
 	}
 	return projects, projectsByID, projectID, nil
+}
+
+func (l *kataSnapshotLoader) loadProjectCatalog(
+	ctx context.Context,
+) ([]kataProjectSummary, map[int64]kataProjectSummary, error) {
+	include := "stats"
+	response, err := l.client.ListProjectsWithResponse(ctx, &katagenerated.ListProjectsRequestOptions{
+		Query: &katagenerated.ListProjectsQuery{Include: &include},
+	})
+	if err != nil {
+		return nil, nil, kataSnapshotUpstreamError("list projects", err)
+	}
+	if response == nil || response.StatusCode != http.StatusOK || response.JSON200 == nil {
+		return nil, nil, kataSnapshotUpstreamError("list projects", fmt.Errorf("missing 200 response body"))
+	}
+	if err := validateKataProjectsResponse(response.JSON200); err != nil {
+		return nil, nil, kataSnapshotUpstreamError("validate projects", err)
+	}
+
+	projects := make([]kataProjectSummary, len(response.JSON200.Projects))
+	projectsByID := make(map[int64]kataProjectSummary, len(projects))
+	for i, project := range response.JSON200.Projects {
+		projects[i] = kataProjectSummaryFromGenerated(project)
+		projectsByID[project.ID] = projects[i]
+	}
+	return projects, projectsByID, nil
 }
 
 func (l *kataSnapshotLoader) loadReady(
@@ -212,7 +232,50 @@ func kataProjectSummaryFromGenerated(project katagenerated.ProjectOut) kataProje
 		DeletedAt:   kataTimePointerUTC(project.DeletedAt),
 		OpenCount:   project.Stats.Open,
 		ClosedCount: project.Stats.Closed,
+		LastEventAt: kataTimePointerUTC(project.Stats.LastEventAt),
 	}
+}
+
+func validateKataProjectCatalogStable(before, after []kataProjectSummary) error {
+	if len(before) != len(after) {
+		return kataAuthorityInconsistency("project catalog size changed from %d to %d between reads", len(before), len(after))
+	}
+	afterByID := make(map[int64]kataProjectSummary, len(after))
+	for _, project := range after {
+		afterByID[project.ID] = project
+	}
+	for _, first := range before {
+		second, ok := afterByID[first.ID]
+		if !ok {
+			return kataAuthorityInconsistency("project %q changed numeric identity between reads", first.UID)
+		}
+		if first.UID != second.UID {
+			return kataAuthorityInconsistency("project ID %d changed UID from %q to %q between reads", first.ID, first.UID, second.UID)
+		}
+		if first.Name != second.Name {
+			return kataAuthorityInconsistency("project %q changed name between reads", first.UID)
+		}
+		if !reflect.DeepEqual(first.Metadata, second.Metadata) {
+			return kataAuthorityInconsistency("project %q changed metadata between reads", first.UID)
+		}
+		if first.Revision != second.Revision {
+			return kataAuthorityInconsistency("project %q changed revision from %d to %d between reads", first.UID, first.Revision, second.Revision)
+		}
+		if first.OpenCount != second.OpenCount || first.ClosedCount != second.ClosedCount {
+			return kataAuthorityInconsistency("project %q changed issue counts between reads", first.UID)
+		}
+		if !kataTimePointersEqual(first.LastEventAt, second.LastEventAt) {
+			return kataAuthorityInconsistency("project %q changed last event time between reads", first.UID)
+		}
+	}
+	return nil
+}
+
+func kataTimePointersEqual(first, second *time.Time) bool {
+	if first == nil || second == nil {
+		return first == nil && second == nil
+	}
+	return first.Equal(*second)
 }
 
 func validateKataAuthorityCounts(

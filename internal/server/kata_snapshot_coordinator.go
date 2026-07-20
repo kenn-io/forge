@@ -119,14 +119,15 @@ func (c *kataSnapshotCoordinator) loadAuthority(
 		if problem != nil {
 			return kataCoordinatedAuthority{}, problem
 		}
+		fingerprint := kataDaemonTargetFingerprint(daemon)
+		epoch := c.cache.observeDaemonFingerprint(daemon.ID, fingerprint)
 		key := kataSnapshotKey{
 			DaemonID:          daemon.ID,
-			DaemonFingerprint: kataDaemonTargetFingerprint(daemon),
+			DaemonFingerprint: fingerprint,
 			Scope:             request.Scope,
 			ProjectUID:        request.ProjectUID,
 			Authority:         request.Authority,
 		}
-		epoch := c.cache.daemonEpoch(daemon.ID)
 		if snapshot, ok := c.cache.get(key); ok && c.cache.daemonEpoch(daemon.ID) == epoch {
 			matches, err := c.targetMatches(key)
 			if err != nil {
@@ -167,8 +168,9 @@ func (c *kataSnapshotCoordinator) loadAuthority(
 				if currentProblem != nil {
 					return nil, currentProblem
 				}
-				if kataDaemonTargetFingerprint(currentDaemon) != key.DaemonFingerprint {
-					c.cache.invalidateDaemonIfEpoch(daemon.ID, epoch)
+				currentFingerprint := kataDaemonTargetFingerprint(currentDaemon)
+				currentEpoch := c.cache.observeDaemonFingerprint(daemon.ID, currentFingerprint)
+				if currentFingerprint != key.DaemonFingerprint || currentEpoch != epoch {
 					return nil, errKataAuthorityStale
 				}
 
@@ -235,7 +237,9 @@ func (c *kataSnapshotCoordinator) targetMatches(key kataSnapshotKey) (bool, erro
 	if problem != nil {
 		return false, problem
 	}
-	return kataDaemonTargetFingerprint(daemon) == key.DaemonFingerprint, nil
+	fingerprint := kataDaemonTargetFingerprint(daemon)
+	c.cache.observeDaemonFingerprint(daemon.ID, fingerprint)
+	return fingerprint == key.DaemonFingerprint, nil
 }
 
 func (c *kataSnapshotCoordinator) coordinated(

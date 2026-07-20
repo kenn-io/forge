@@ -18,6 +18,7 @@ func TestKataSnapshotLoaderLoadsGlobalReadyAuthority(t *testing.T) {
 	require := require.New(t)
 
 	createdAt := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	lastEventAt := createdAt.Add(-time.Minute)
 	projectUID := "project-a"
 	owner := "marius"
 	priority := int64(1)
@@ -30,7 +31,7 @@ func TestKataSnapshotLoaderLoadsGlobalReadyAuthority(t *testing.T) {
 				return &katagenerated.ListProjectsResp{
 					StatusCode: http.StatusOK,
 					JSON200: &katagenerated.ListProjectsResponse{Projects: []katagenerated.ProjectOut{
-						{ID: 7, UID: projectUID, Name: "Project A", Metadata: map[string]any{"role": "inbox"}, Revision: 3, CreatedAt: createdAt, Stats: &katagenerated.ProjectStatsOut{Open: 1}},
+						{ID: 7, UID: projectUID, Name: "Project A", Metadata: map[string]any{"role": "inbox"}, Revision: 3, CreatedAt: createdAt, Stats: &katagenerated.ProjectStatsOut{Open: 1, LastEventAt: &lastEventAt}},
 						{ID: 8, UID: "empty-project", Name: "Empty", Metadata: map[string]any{"area": "later"}, Revision: 1, CreatedAt: createdAt, Stats: &katagenerated.ProjectStatsOut{Open: 0}},
 					}},
 				}, nil
@@ -61,6 +62,8 @@ func TestKataSnapshotLoaderLoadsGlobalReadyAuthority(t *testing.T) {
 	require.Equal([]string{"issue-a"}, snapshot.MemberIssueUIDs)
 	require.Len(snapshot.Projects, 2, "empty projects remain in the atomic catalog")
 	require.Equal(int64(1), snapshot.Projects[0].OpenCount)
+	require.NotNil(snapshot.Projects[0].LastEventAt)
+	require.Equal(lastEventAt, *snapshot.Projects[0].LastEventAt)
 	require.Equal(map[string]any{"role": "inbox"}, snapshot.Projects[0].Metadata)
 	require.Equal(int64(0), snapshot.Projects[1].OpenCount)
 	require.Len(snapshot.Issues, 1)
@@ -177,6 +180,131 @@ func TestKataSnapshotLoaderRejectsAuthorityCountInconsistency(t *testing.T) {
 			)}
 
 			_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "global", Authority: test.authority})
+			require.ErrorIs(t, err, errKataAuthorityInconsistent)
+		})
+	}
+}
+
+func TestKataSnapshotLoaderSandwichesEveryAuthorityWithProjectCatalogReads(t *testing.T) {
+	t.Parallel()
+
+	for _, authority := range []string{"open", "ready", "closed", "all"} {
+		t.Run(authority, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			var projectReads atomic.Int64
+			loader := kataSnapshotLoader{client: &fakeKataSnapshotAPIClient{
+				listProjects: func(context.Context, *katagenerated.ListProjectsRequestOptions) (*katagenerated.ListProjectsResp, error) {
+					projectReads.Add(1)
+					return &katagenerated.ListProjectsResp{
+						StatusCode: http.StatusOK,
+						JSON200:    &katagenerated.ListProjectsResponse{},
+					}, nil
+				},
+				listIssues: func(context.Context, *katagenerated.ListAllIssuesRequestOptions) (*katagenerated.ListAllIssuesResp, error) {
+					return &katagenerated.ListAllIssuesResp{
+						StatusCode: http.StatusOK,
+						JSON200:    &katagenerated.ListAllIssuesResponse{},
+					}, nil
+				},
+				readyGlobal: func(context.Context, *katagenerated.ReadyIssuesGlobalRequestOptions) (*katagenerated.ReadyIssuesGlobalResp, error) {
+					return &katagenerated.ReadyIssuesGlobalResp{
+						StatusCode: http.StatusOK,
+						JSON200:    &katagenerated.ReadyIssuesGlobalResponse{},
+					}, nil
+				},
+			}}
+
+			_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "global", Authority: authority})
+			require.NoError(err)
+			require.Equal(int64(2), projectReads.Load())
+		})
+	}
+}
+
+func TestKataSnapshotLoaderRejectsProjectCatalogChangesAcrossAuthorityRead(t *testing.T) {
+	t.Parallel()
+
+	createdAt := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	firstEventAt := createdAt.Add(time.Minute)
+	secondEventAt := firstEventAt.Add(time.Minute)
+	baseProject := func() katagenerated.ProjectOut {
+		return katagenerated.ProjectOut{
+			ID:        7,
+			UID:       "project-a",
+			Name:      "Project A",
+			Metadata:  map[string]any{"role": "inbox"},
+			Revision:  3,
+			CreatedAt: createdAt,
+			Stats: &katagenerated.ProjectStatsOut{
+				Open:        1,
+				Closed:      2,
+				LastEventAt: &firstEventAt,
+			},
+		}
+	}
+	tests := []struct {
+		name   string
+		mutate func([]katagenerated.ProjectOut) []katagenerated.ProjectOut
+	}{
+		{name: "project removed", mutate: func([]katagenerated.ProjectOut) []katagenerated.ProjectOut { return nil }},
+		{name: "numeric identity", mutate: func(projects []katagenerated.ProjectOut) []katagenerated.ProjectOut {
+			projects[0].ID = 8
+			return projects
+		}},
+		{name: "stable identity", mutate: func(projects []katagenerated.ProjectOut) []katagenerated.ProjectOut {
+			projects[0].UID = "project-b"
+			return projects
+		}},
+		{name: "name", mutate: func(projects []katagenerated.ProjectOut) []katagenerated.ProjectOut {
+			projects[0].Name = "Renamed"
+			return projects
+		}},
+		{name: "metadata", mutate: func(projects []katagenerated.ProjectOut) []katagenerated.ProjectOut {
+			projects[0].Metadata["role"] = "archive"
+			return projects
+		}},
+		{name: "revision", mutate: func(projects []katagenerated.ProjectOut) []katagenerated.ProjectOut {
+			projects[0].Revision++
+			return projects
+		}},
+		{name: "open count", mutate: func(projects []katagenerated.ProjectOut) []katagenerated.ProjectOut {
+			projects[0].Stats.Open++
+			return projects
+		}},
+		{name: "closed count", mutate: func(projects []katagenerated.ProjectOut) []katagenerated.ProjectOut {
+			projects[0].Stats.Closed++
+			return projects
+		}},
+		{name: "last event", mutate: func(projects []katagenerated.ProjectOut) []katagenerated.ProjectOut {
+			projects[0].Stats.LastEventAt = &secondEventAt
+			return projects
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			var projectReads atomic.Int64
+			loader := kataSnapshotLoader{client: &fakeKataSnapshotAPIClient{
+				listProjects: func(context.Context, *katagenerated.ListProjectsRequestOptions) (*katagenerated.ListProjectsResp, error) {
+					projects := []katagenerated.ProjectOut{baseProject()}
+					if projectReads.Add(1) == 2 {
+						projects = test.mutate(projects)
+					}
+					return &katagenerated.ListProjectsResp{
+						StatusCode: http.StatusOK,
+						JSON200:    &katagenerated.ListProjectsResponse{Projects: projects},
+					}, nil
+				},
+				readyGlobal: func(context.Context, *katagenerated.ReadyIssuesGlobalRequestOptions) (*katagenerated.ReadyIssuesGlobalResp, error) {
+					return &katagenerated.ReadyIssuesGlobalResp{
+						StatusCode: http.StatusOK,
+						JSON200:    &katagenerated.ReadyIssuesGlobalResponse{},
+					}, nil
+				},
+			}}
+
+			_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "global", Authority: "ready"})
 			require.ErrorIs(t, err, errKataAuthorityInconsistent)
 		})
 	}

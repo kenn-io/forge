@@ -94,6 +94,7 @@ func setupWorkspaceServerFixture(
 		Clones:                             clones,
 		WorktreeDir:                        worktreeDir,
 		DisableWorkspaceBackgroundMonitors: true,
+		PtyOwnerInProcess:                  true,
 		HostCheck: server.HostCheckOptions{
 			Bind:    config.HostKey{Host: "127.0.0.1", Port: "8091"},
 			Allowed: []config.HostKey{{Host: "middleman.test", Port: ""}},

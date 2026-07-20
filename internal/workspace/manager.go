@@ -3632,7 +3632,12 @@ func isGitWorktreeAbsent(err error) bool {
 		// reports "is not a .git file". Treat both as absent so
 		// cleanup skips the dead worktree instead of failing.
 		strings.Contains(msg, "invalid gitfile format") ||
-		strings.Contains(msg, "is not a .git file")
+		strings.Contains(msg, "is not a .git file") ||
+		// A linked worktree can disappear between Git opening its
+		// metadata directory and reading commondir. Git reports this
+		// race with a misleading "Success" suffix.
+		(strings.Contains(msg, "failed to read worktrees/") &&
+			strings.Contains(msg, "/commondir: success"))
 }
 
 func isGitBranchAbsent(err error) bool {

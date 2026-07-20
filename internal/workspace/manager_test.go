@@ -5144,6 +5144,14 @@ func TestIsGitWorktreeAbsentClassifiesCorruptGitfile(t *testing.T) {
 			errors.New("fatal: '/tmp/wt' is not a working tree"),
 			true,
 		},
+		{
+			"missing linked-worktree metadata",
+			fmt.Errorf(
+				"%w: %s", errors.New("exit status 128"),
+				"fatal: failed to read worktrees/pr-1/commondir: Success",
+			),
+			true,
+		},
 		{"nil error", nil, false},
 		{
 			"unrelated git failure",

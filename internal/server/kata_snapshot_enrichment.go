@@ -386,11 +386,6 @@ func (e *kataSnapshotEnricher) loadHistory(ctx context.Context, selectedUID stri
 			}
 			return history, nil
 		}
-		if len(body.Events) > kataSnapshotHistoryScanEventLimit-scannedEvents {
-			return nil, errKataSnapshotHistoryScanLimit
-		}
-		scannedEvents += len(body.Events)
-
 		lastEventID := afterID
 		for _, event := range body.Events {
 			if event.EventID <= 0 || event.EventID <= lastEventID {
@@ -402,7 +397,14 @@ func (e *kataSnapshotEnricher) loadHistory(ctx context.Context, selectedUID stri
 			return nil, fmt.Errorf("events response cursor does not match last event")
 		}
 
-		for _, event := range body.Events {
+		remainingEvents := kataSnapshotHistoryScanEventLimit - scannedEvents
+		events := body.Events
+		scanLimitReached := len(events) > remainingEvents
+		if scanLimitReached {
+			events = events[:remainingEvents]
+		}
+		scannedEvents += len(events)
+		for _, event := range events {
 			if event.IssueUID == nil || *event.IssueUID != selectedUID {
 				continue
 			}
@@ -411,6 +413,9 @@ func (e *kataSnapshotEnricher) loadHistory(ctx context.Context, selectedUID stri
 			if len(history) == kataSnapshotHistoryResultLimit {
 				return history, nil
 			}
+		}
+		if scanLimitReached {
+			return nil, errKataSnapshotHistoryScanLimit
 		}
 		afterID = body.NextAfterID
 	}

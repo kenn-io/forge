@@ -206,6 +206,76 @@ func TestKataSnapshotEnricherReturnsHistoryCapAtExactScanBoundary(t *testing.T) 
 	assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
 }
 
+func TestKataSnapshotEnricherScansOnlyRemainingBudgetFromOversizedPage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		finalMatchIndex  int
+		wantHistory      bool
+		wantFinalEventID int64
+	}{
+		{
+			name:             "result cap reached at end of allowed prefix",
+			finalMatchIndex:  int(kataSnapshotHistoryPageLimit) - 1,
+			wantHistory:      true,
+			wantFinalEventID: kataSnapshotHistoryScanEventLimit,
+		},
+		{
+			name:            "result cap would be reached after allowed prefix",
+			finalMatchIndex: int(kataSnapshotHistoryPageLimit),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			selectedUID := "issue-member"
+			otherUID := "issue-other"
+			pollCalls := 0
+			client := &fakeKataSnapshotAPIClient{
+				showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+					return testKataShowIssueResponse(selectedUID), nil
+				},
+				pollEvents: func(_ context.Context, options *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+					pollCalls++
+					count := int(kataSnapshotHistoryPageLimit)
+					if pollCalls == kataSnapshotHistoryScanPageLimit {
+						count++
+					}
+					events := testKataEventPage(*options.Query.AfterID+1, count, &otherUID)
+					if pollCalls == 1 {
+						for i := range kataSnapshotHistoryResultLimit - 1 {
+							events[i].IssueUID = &selectedUID
+						}
+					}
+					if pollCalls == kataSnapshotHistoryScanPageLimit {
+						events[test.finalMatchIndex].IssueUID = &selectedUID
+					}
+					return testKataPollEventsResponse(events[len(events)-1].EventID, events...), nil
+				},
+			}
+			enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+			result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: selectedUID})
+
+			require.NoError(t, err)
+			assert.Equal(kataSnapshotHistoryScanPageLimit, pollCalls)
+			if test.wantHistory {
+				require.Len(t, result.SelectedHistory, kataSnapshotHistoryResultLimit)
+				assert.Equal(test.wantFinalEventID, result.SelectedHistory[kataSnapshotHistoryResultLimit-1].EventID)
+				assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
+			} else {
+				assert.Empty(result.SelectedHistory)
+				assert.Equal(kataSnapshotEnrichmentError{
+					Code:    CodeUpstreamError,
+					Message: "Selected task history exceeded the bounded scan limit.",
+				}, result.Errors[kataSnapshotEnrichmentStageHistory])
+			}
+		})
+	}
+}
+
 func TestKataSnapshotEnricherBoundsSelectedHistoryScanning(t *testing.T) {
 	t.Parallel()
 

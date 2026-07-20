@@ -151,7 +151,7 @@ func generatedContextIgnorePattern(rel string) (cleanPath, pattern string, err e
 	}
 	clean := filepath.ToSlash(filepath.Clean(rel))
 	switch clean {
-	case "AGENTS.local.md", "CLAUDE.local.md":
+	case "AGENTS.override.md", "CLAUDE.local.md":
 		return clean, "/" + clean, nil
 	default:
 		return "", "", fmt.Errorf("unknown generated context path: %s", clean)

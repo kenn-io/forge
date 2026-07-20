@@ -207,21 +207,39 @@ func (m *Manager) PrepareAgentLaunchContext(
 	if err := EnsureGeneratedContextFilesIgnored(ctx, summary.WorktreePath, []string{relPath}); err != nil {
 		return err
 	}
-	return writeGeneratedFileAtomic(
-		summary.WorktreePath, relPath,
-		[]byte(RenderAgentContext(BuildAgentContext(*summary))),
+	content := renderAgentInstructionFile(
+		summary.WorktreePath, relPath, BuildAgentContext(*summary),
 	)
+	return writeGeneratedFileAtomic(summary.WorktreePath, relPath, content)
 }
 
 func agentContextRelPath(targetKey string) string {
-	switch strings.TrimSpace(targetKey) {
-	case "codex":
-		return "AGENTS.local.md"
-	case "claude":
+	targetKey = strings.TrimSpace(targetKey)
+	switch {
+	case hasCaseFoldedPrefix(targetKey, "codex"):
+		return "AGENTS.override.md"
+	case hasCaseFoldedPrefix(targetKey, "claude"):
 		return "CLAUDE.local.md"
 	default:
 		return ""
 	}
+}
+
+func hasCaseFoldedPrefix(value, prefix string) bool {
+	return len(value) >= len(prefix) && strings.EqualFold(value[:len(prefix)], prefix)
+}
+
+func renderAgentInstructionFile(worktreePath, relPath string, ctx AgentContext) []byte {
+	content := []byte(RenderAgentContext(ctx))
+	if relPath != "AGENTS.override.md" {
+		return content
+	}
+	repositoryInstructions, err := os.ReadFile(filepath.Join(worktreePath, "AGENTS.md"))
+	if err != nil || len(repositoryInstructions) == 0 {
+		return content
+	}
+	content = append(content, '\n')
+	return append(content, repositoryInstructions...)
 }
 
 // generatedFileWritable reports whether the target path is free for

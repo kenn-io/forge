@@ -18,19 +18,19 @@ func TestEnsureGeneratedContextFilesIgnoredAppendsMissingEntriesToGitExclude(t *
 	worktree := initWorkspaceGitRepo(t)
 
 	require.NoError(EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{
-		"AGENTS.local.md",
+		"AGENTS.override.md",
 		"CLAUDE.local.md",
 	}))
 
 	excludeText := readGitExclude(t, worktree)
 	assert.Contains(excludeText, "# middleman generated agent context")
-	assert.Contains(excludeText, "/AGENTS.local.md")
+	assert.Contains(excludeText, "/AGENTS.override.md")
 	assert.Contains(excludeText, "/CLAUDE.local.md")
 	assert.Contains(excludeText, "/.tmp-agent-context-*")
 	assertGitIgnored(t, worktree, ".tmp-agent-context-x")
 	assert.NotContains(excludeText, "/CLAUDE.md")
 	assert.NotContains(excludeText, "/AGENTS.md")
-	assertGitIgnored(t, worktree, "AGENTS.local.md")
+	assertGitIgnored(t, worktree, "AGENTS.override.md")
 	assertGitIgnored(t, worktree, "CLAUDE.local.md")
 }
 
@@ -38,11 +38,11 @@ func TestEnsureGeneratedContextFilesIgnoredLeavesExistingIgnoresAlone(t *testing
 	t.Parallel()
 	require := require.New(t)
 	worktree := initWorkspaceGitRepo(t)
-	initial := "dist/\n/AGENTS.local.md\n/CLAUDE.local.md\n/.tmp-agent-context-*\n"
+	initial := "dist/\n/AGENTS.override.md\n/CLAUDE.local.md\n/.tmp-agent-context-*\n"
 	writeGitExclude(t, worktree, initial)
 
 	require.NoError(EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{
-		"AGENTS.local.md",
+		"AGENTS.override.md",
 		"CLAUDE.local.md",
 	}))
 
@@ -55,9 +55,9 @@ func TestGeneratedContextFilesDoNotDirtyGitStatus(t *testing.T) {
 	worktree := initWorkspaceGitRepo(t)
 
 	require.NoError(EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{
-		"AGENTS.local.md",
+		"AGENTS.override.md",
 	}))
-	require.NoError(os.WriteFile(filepath.Join(worktree, "AGENTS.local.md"), []byte("context\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(worktree, "AGENTS.override.md"), []byte("context\n"), 0o644))
 
 	status := strings.TrimSpace(string(runWorkspaceTestGit(t, worktree, "status", "--porcelain")))
 	assert.Empty(t, status)
@@ -70,13 +70,13 @@ func TestEnsureGeneratedContextFilesIgnoredOnlyIgnoresRequestedPaths(t *testing.
 	worktree := initWorkspaceGitRepo(t)
 
 	require.NoError(EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{
-		"AGENTS.local.md",
+		"AGENTS.override.md",
 	}))
 
 	excludeText := readGitExclude(t, worktree)
-	assert.Contains(excludeText, "/AGENTS.local.md")
+	assert.Contains(excludeText, "/AGENTS.override.md")
 	assert.NotContains(excludeText, "/CLAUDE.local.md")
-	assertGitIgnored(t, worktree, "AGENTS.local.md")
+	assertGitIgnored(t, worktree, "AGENTS.override.md")
 	assertGitNotIgnored(t, worktree, "CLAUDE.local.md")
 }
 
@@ -86,12 +86,12 @@ func TestEnsureGeneratedContextFilesIgnoredFailsWhenNegationKeepsPathVisible(t *
 	worktree := initWorkspaceGitRepo(t)
 	require.NoError(os.WriteFile(
 		filepath.Join(worktree, ".gitignore"),
-		[]byte("!AGENTS.local.md\n"), 0o644,
+		[]byte("!AGENTS.override.md\n"), 0o644,
 	))
 	runWorkspaceTestGit(t, worktree, "add", ".gitignore")
 	runWorkspaceTestGit(t, worktree, "commit", "-m", "add negation")
 
-	err := EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{"AGENTS.local.md"})
+	err := EnsureGeneratedContextFilesIgnored(context.Background(), worktree, []string{"AGENTS.override.md"})
 	require.Error(err)
 	assert.Contains(t, err.Error(), "still not ignored")
 }
@@ -101,7 +101,7 @@ func TestEnsureGeneratedContextFilesIgnoredFailsOnFatalGitError(t *testing.T) {
 	require := require.New(t)
 	notARepo := t.TempDir()
 
-	err := EnsureGeneratedContextFilesIgnored(context.Background(), notARepo, []string{"AGENTS.local.md"})
+	err := EnsureGeneratedContextFilesIgnored(context.Background(), notARepo, []string{"AGENTS.override.md"})
 	require.Error(err)
 	assert.Contains(t, err.Error(), "check-ignore")
 	assert.NoFileExists(t, filepath.Join(notARepo, ".git", "info", "exclude"))

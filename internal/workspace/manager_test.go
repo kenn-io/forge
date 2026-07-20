@@ -756,7 +756,7 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 	assert.Equal(sourceSHA, headSHA)
 
 	// Agent context is launch-scoped: setup must not create agent files.
-	assert.NoFileExists(filepath.Join(ws.WorktreePath, "AGENTS.local.md"))
+	assert.NoFileExists(filepath.Join(ws.WorktreePath, "AGENTS.override.md"))
 	assert.NoFileExists(filepath.Join(ws.WorktreePath, "CLAUDE.local.md"))
 	status := strings.TrimSpace(string(runWorkspaceTestGit(t, ws.WorktreePath, "status", "--porcelain")))
 	assert.Empty(status)

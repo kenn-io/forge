@@ -145,6 +145,56 @@ func TestWorkspaceRuntimeLaunchWritesAgentContextE2E(t *testing.T) {
 	assert.Empty(status)
 }
 
+func TestWorkspaceRuntimeLaunchRejectsUnsafeRepositoryAgentInstructionsE2E(t *testing.T) {
+	tests := []struct {
+		name      string
+		entry     string
+		forbidden string
+	}{
+		{name: "symlink", entry: "symlink", forbidden: "host secret"},
+		{name: "oversized file", entry: "oversized", forbidden: strings.Repeat("x", 128)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			dir := t.TempDir()
+			tmuxPath := writeRuntimeTmuxLifecycleRecorder(t, dir, filepath.Join(dir, "tmux-record"))
+			agentPath := filepath.Join(dir, "helper-agent")
+			require.NoError(os.WriteFile(agentPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+			cfg := &config.Config{
+				Agents: []config.Agent{{Key: "codex", Label: "Codex", Command: []string{agentPath}}},
+				Tmux:   config.Tmux{Command: []string{tmuxPath}},
+			}
+			client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+			ctx := context.Background()
+			ws := createReadyWorkspace(t, ctx, client)
+			agentsPath := filepath.Join(ws.WorktreePath, "AGENTS.md")
+			switch tt.entry {
+			case "symlink":
+				target := filepath.Join(t.TempDir(), "AGENTS.md")
+				require.NoError(os.WriteFile(target, []byte(tt.forbidden), 0o644))
+				require.NoError(os.Symlink(target, agentsPath))
+			case "oversized":
+				require.NoError(os.WriteFile(agentsPath, []byte(strings.Repeat("x", (1<<20)+1)), 0o644))
+			}
+
+			resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+				ctx, ws.Id,
+				generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "codex"},
+			)
+			require.NoError(err)
+			require.Equal(http.StatusOK, resp.StatusCode())
+
+			override, err := os.ReadFile(filepath.Join(ws.WorktreePath, "AGENTS.override.md"))
+			require.NoError(err)
+			content := string(override)
+			assert.Contains(content, "Source kind: pull request")
+			assert.NotContains(content, tt.forbidden)
+		})
+	}
+}
+
 func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

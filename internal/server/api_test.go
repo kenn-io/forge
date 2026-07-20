@@ -7604,7 +7604,7 @@ func TestAPITriggerSyncOnlyRepoRestrictsRun(t *testing.T) {
 		t,
 		srv,
 		http.MethodPost,
-		"/api/v1/sync?only_repo=github|github.com/acme/second",
+		"/api/v1/sync?only_repo=gh|github.com/acme/second",
 		nil,
 	)
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())

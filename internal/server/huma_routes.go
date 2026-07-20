@@ -4117,11 +4117,15 @@ func matchPriorityRepo(
 		if provider == "" || len(parts) < 3 {
 			return ghclient.RepoRef{}, false
 		}
+		kind, err := platform.NormalizeKind(provider)
+		if err != nil {
+			return ghclient.RepoRef{}, false
+		}
 
 		host := parts[0]
 		path := strings.Join(parts[1:], "/")
 		for _, repo := range tracked {
-			if strings.EqualFold(string(repoPlatformForPriority(repo)), provider) &&
+			if repoPlatformForPriority(repo) == kind &&
 				strings.EqualFold(repoHostForPriority(repo), host) &&
 				strings.EqualFold(repoPathForPriority(repo), path) {
 				return repo, true

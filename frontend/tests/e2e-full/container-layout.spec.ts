@@ -8,6 +8,29 @@ test.setTimeout(60_000);
 // either side of where the full tab row fits so they assert the collapse
 // behavior rather than a magic pixel value.
 test.describe("container-aware layout", () => {
+  for (const viewport of [
+    { label: "narrow", width: 390, height: 700 },
+    { label: "medium", width: 1024, height: 768 },
+  ]) {
+    test(`sync options stay inside the ${viewport.label} viewport`, async ({ page }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await page.goto("/pulls/github/acme/widgets/1?desktop=1");
+      await page.locator(".app-top-bar").waitFor({ state: "visible", timeout: 10_000 });
+
+      await page.getByRole("button", { name: "Sync options" }).click();
+      const menu = page.getByRole("menu", { name: "Sync options" });
+      await expect(menu).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: "Sync current repo" })).toBeVisible();
+
+      const box = await menu.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.y).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+    });
+  }
+
   test("narrow viewport shows dropdown and collapses sidebar", async ({ page }) => {
     await page.setViewportSize({ width: 400, height: 600 });
     await page.goto("/pulls?desktop=1");

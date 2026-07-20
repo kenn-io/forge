@@ -27,6 +27,8 @@ const (
 	kataFrontendEventCatchUpTimeout  = 2 * time.Second
 )
 
+var errKataFrontendEventsClosed = errors.New("kata frontend events registry is closed")
+
 type kataFrontendEventRegistryDeps struct {
 	newClient        func(context.Context, kata.Daemon) (kataAPIClient, error)
 	invalidate       func(string) uint64
@@ -64,6 +66,7 @@ type kataFrontendEventBinding struct {
 	fingerprint string
 	target      *kataFrontendEventTarget
 	hub         *EventHub
+	activation  uint64
 	epoch       atomic.Uint64
 	done        chan struct{}
 	closeOnce   sync.Once
@@ -122,13 +125,18 @@ func newKataFrontendEventRegistry(
 	}
 }
 
-func (r *kataFrontendEventRegistry) Ensure(daemon kata.Daemon) *kataFrontendEventBinding {
+func (r *kataFrontendEventRegistry) Ensure(
+	daemon kata.Daemon,
+) (*kataFrontendEventBinding, error) {
 	fingerprint := kataDaemonTargetFingerprint(daemon)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return nil, errKataFrontendEventsClosed
+	}
 	if current := r.bindings[daemon.ID]; current != nil && current.fingerprint == fingerprint {
-		return current
+		return current, nil
 	}
 
 	var cursorFloor uint64
@@ -188,12 +196,14 @@ func (r *kataFrontendEventRegistry) Ensure(daemon kata.Daemon) *kataFrontendEven
 	target.publishMu.Lock()
 	target.bindings[daemon.ID] = binding
 	if replacing {
-		target.broadcastResetAtLeastLocked(cursorFloor)
+		binding.activation = target.broadcastResetAtLeastLocked(cursorFloor)
+	} else {
+		binding.activation = target.hub.Generation() + 1
 	}
 	target.publishMu.Unlock()
 	r.bindings[daemon.ID] = binding
 
-	if createdTarget && !r.closed {
+	if createdTarget {
 		r.wg.Add(2)
 		go func() {
 			defer r.wg.Done()
@@ -204,7 +214,7 @@ func (r *kataFrontendEventRegistry) Ensure(daemon kata.Daemon) *kataFrontendEven
 			target.runSupervisor(targetCtx, r.deps.newClient)
 		}()
 	}
-	return binding
+	return binding, nil
 }
 
 func (b *kataFrontendEventBinding) DaemonFingerprint() string {
@@ -260,11 +270,17 @@ func (b *kataFrontendEventBinding) serve(
 	)
 }
 
-func (b *kataFrontendEventBinding) transform(rec RecordedEvent) RecordedEvent {
-	internal, _ := rec.Event.Data.(kataFrontendEventRecord)
-	epoch := b.epoch.Load()
-	if value, ok := internal.epochs[b.daemonID]; ok {
-		epoch = value
+func (b *kataFrontendEventBinding) transform(rec RecordedEvent) (RecordedEvent, bool) {
+	if rec.ID < b.activation {
+		return RecordedEvent{}, false
+	}
+	internal, ok := rec.Event.Data.(kataFrontendEventRecord)
+	if !ok {
+		return RecordedEvent{}, false
+	}
+	epoch, ok := internal.epochs[b.daemonID]
+	if !ok {
+		return RecordedEvent{}, false
 	}
 	return RecordedEvent{
 		ID: rec.ID,
@@ -277,7 +293,7 @@ func (b *kataFrontendEventBinding) transform(rec RecordedEvent) RecordedEvent {
 				Cursor:           rec.ID,
 			},
 		},
-	}
+	}, true
 }
 
 func (t *kataFrontendEventTarget) queueInvalidation() {
@@ -336,12 +352,12 @@ func (t *kataFrontendEventTarget) invalidateAndBroadcast() {
 	})
 }
 
-func (t *kataFrontendEventTarget) broadcastResetAtLeastLocked(cursorFloor uint64) {
+func (t *kataFrontendEventTarget) broadcastResetAtLeastLocked(cursorFloor uint64) uint64 {
 	epochs := make(map[string]uint64, len(t.bindings))
 	for daemonID, binding := range t.bindings {
 		epochs[daemonID] = binding.epoch.Load()
 	}
-	t.hub.BroadcastBuildAtLeast(cursorFloor, func(uint64) Event {
+	return t.hub.BroadcastBuildAtLeast(cursorFloor, func(uint64) Event {
 		return Event{
 			Type: "kata.tasks.reset",
 			Data: kataFrontendEventRecord{epochs: epochs},

@@ -44,14 +44,21 @@ func TestKataFrontendEventRegistryEnsureDoesNotWaitForCatchUp(t *testing.T) {
 	})
 	defer registry.Close()
 
-	returned := make(chan *kataFrontendEventBinding, 1)
+	type ensureResult struct {
+		binding *kataFrontendEventBinding
+		err     error
+	}
+	returned := make(chan ensureResult, 1)
 	go func() {
-		returned <- registry.Ensure(kata.Daemon{ID: "primary", URL: "http://kata.test"})
+		binding, err := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://kata.test"})
+		returned <- ensureResult{binding: binding, err: err}
 	}()
 
 	var handle *kataFrontendEventBinding
 	select {
-	case handle = <-returned:
+	case result := <-returned:
+		require.NoError(result.err)
+		handle = result.binding
 	case <-time.After(time.Second):
 		require.FailNow("Ensure waited for asynchronous catch-up")
 	}
@@ -64,6 +71,21 @@ func TestKataFrontendEventRegistryEnsureDoesNotWaitForCatchUp(t *testing.T) {
 		require.FailNow("supervisor did not start asynchronously")
 	}
 	close(releaseCatchUp)
+}
+
+func TestKataFrontendEventRegistryEnsureRejectsAfterClose(t *testing.T) {
+	assert := assert.New(t)
+	registry := newKataFrontendEventRegistry(t.Context(), kataFrontendEventRegistryDeps{})
+	registry.Close()
+
+	binding, err := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://kata.test"})
+	require.ErrorIs(t, err, errKataFrontendEventsClosed)
+	assert.Nil(binding)
+
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	assert.Empty(registry.bindings)
+	assert.Empty(registry.targets)
 }
 
 func TestKataFrontendEventSupervisorInvalidatesBeforeBroadcastAndHidesRawPayload(t *testing.T) {
@@ -96,7 +118,9 @@ func TestKataFrontendEventSupervisorInvalidatesBeforeBroadcastAndHidesRawPayload
 	})
 	defer registry.Close()
 
-	handle := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://kata.test"})
+	handle := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://kata.test"},
+	)
 	events, _ := handle.hub.Subscribe(t.Context(), false)
 	select {
 	case <-streamOpened:
@@ -115,7 +139,9 @@ func TestKataFrontendEventSupervisorInvalidatesBeforeBroadcastAndHidesRawPayload
 	}
 	assert.True(invalidated.Load(), "cache invalidation must be visible before broadcast delivery")
 	assert.Equal("kata.tasks.invalidated", recorded.Event.Type)
-	frame, ok := handle.transform(recorded).Event.Data.(kataFrontendEventFrame)
+	transformed, include := handle.transform(recorded)
+	require.True(include)
+	frame, ok := transformed.Event.Data.(kataFrontendEventFrame)
 	require.True(ok)
 	assert.Equal("server-1", frame.ServerInstanceID)
 	assert.Equal("primary", frame.DaemonID)
@@ -138,7 +164,9 @@ func TestKataFrontendEventHandleCursorReplaysNextInvalidation(t *testing.T) {
 	})
 	defer registry.Close()
 
-	binding := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://kata.test"})
+	binding := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://kata.test"},
+	)
 	cursor := binding.Cursor()
 	binding.target.invalidateAndBroadcast()
 
@@ -162,14 +190,19 @@ func TestKataFrontendEventRotationRejectsOldCursorWithCompactReset(t *testing.T)
 	})
 	defer registry.Close()
 
-	oldBinding := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://old.test"})
+	oldBinding := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://old.test"},
+	)
 	oldBinding.target.invalidateAndBroadcast()
 	oldCursor := oldBinding.Cursor()
-	newBinding := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://new.test"})
+	newBinding := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://new.test"},
+	)
 	require.NotEqual(t, oldBinding.DaemonFingerprint(), newBinding.DaemonFingerprint())
 
 	ctx, cancel := context.WithCancel(t.Context())
-	controller := &cancelOnSecondFlushController{cancel: cancel}
+	defer cancel()
+	controller := &stopOnFlushController{at: 2}
 	var wire bytes.Buffer
 	done := make(chan struct{})
 	go func() {
@@ -205,10 +238,14 @@ func TestKataFrontendEventRotationPublishesResetFromZeroCursor(t *testing.T) {
 	})
 	defer registry.Close()
 
-	oldBinding := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://old.test"})
+	oldBinding := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://old.test"},
+	)
 	require.Zero(oldBinding.Cursor())
 
-	newBinding := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://new.test"})
+	newBinding := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://new.test"},
+	)
 	replay, stale := newBinding.hub.RingSnapshotSince(0)
 	require.False(stale)
 	require.Len(replay, 1)
@@ -228,12 +265,16 @@ func TestKataFrontendEventRotationKeepsCursorMonotonicAcrossEqualNumericHeads(t 
 	})
 	defer registry.Close()
 
-	oldBinding := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://old.test"})
+	oldBinding := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://old.test"},
+	)
 	oldBinding.target.invalidateAndBroadcast()
 	oldCursor := oldBinding.Cursor()
 	require.Equal(uint64(1), oldCursor)
 
-	newBinding := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://new.test"})
+	newBinding := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://new.test"},
+	)
 	replay, stale := newBinding.hub.RingSnapshotSince(oldCursor)
 	require.False(stale)
 	require.Len(replay, 1)
@@ -243,6 +284,45 @@ func TestKataFrontendEventRotationKeepsCursorMonotonicAcrossEqualNumericHeads(t 
 	replayAtResetHead, stale := newBinding.hub.RingSnapshotSince(newBinding.Cursor())
 	assert.False(stale)
 	assert.Empty(replayAtResetHead, "reconnecting at the reset head must not replay a duplicate reset")
+}
+
+func TestKataFrontendEventRotationIntoSharedTargetStartsAtReset(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	registry := newKataFrontendEventRegistry(t.Context(), kataFrontendEventRegistryDeps{
+		newClient: func(ctx context.Context, _ kata.Daemon) (kataAPIClient, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+		invalidate:       func(string) uint64 { return 1 },
+		serverInstanceID: "server-1",
+	})
+	defer registry.Close()
+
+	alias := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "alias", URL: "http://new.test"},
+	)
+	alias.target.invalidateAndBroadcast()
+
+	oldBinding := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://old.test"},
+	)
+	require.Zero(oldBinding.Cursor())
+	newBinding := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://new.test"},
+	)
+	newBinding.target.invalidateAndBroadcast()
+
+	var wire bytes.Buffer
+	newBinding.serve(t.Context(), &wire, &stopOnFlushController{at: 3}, 0, true)
+
+	frames := strings.Split(strings.TrimSpace(wire.String()), "\n\n")
+	require.Len(frames, 2)
+	assert.Contains(frames[0], "id: 2")
+	assert.Contains(frames[0], "event: kata.tasks.reset")
+	assert.Contains(frames[1], "id: 3")
+	assert.Contains(frames[1], "event: kata.tasks.invalidated")
+	assert.NotContains(wire.String(), "id: 1\n")
 }
 
 func TestKataFrontendEventRegistryDeduplicatesResolvedTargetAliases(t *testing.T) {
@@ -267,8 +347,12 @@ func TestKataFrontendEventRegistryDeduplicatesResolvedTargetAliases(t *testing.T
 	})
 	defer registry.Close()
 
-	primary := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://kata.test"})
-	alias := registry.Ensure(kata.Daemon{ID: "alias", URL: "http://kata.test"})
+	primary := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://kata.test"},
+	)
+	alias := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "alias", URL: "http://kata.test"},
+	)
 	require.Same(primary.target, alias.target)
 	require.Same(primary.hub, alias.hub)
 	require.Eventually(func() bool { return clients.Load() == 1 }, time.Second, time.Millisecond)
@@ -279,8 +363,12 @@ func TestKataFrontendEventRegistryDeduplicatesResolvedTargetAliases(t *testing.T
 
 	primaryEvent := <-primaryEvents
 	aliasEvent := <-aliasEvents
-	primaryFrame := primary.transform(primaryEvent).Event.Data.(kataFrontendEventFrame)
-	aliasFrame := alias.transform(aliasEvent).Event.Data.(kataFrontendEventFrame)
+	primaryRecord, include := primary.transform(primaryEvent)
+	require.True(include)
+	aliasRecord, include := alias.transform(aliasEvent)
+	require.True(include)
+	primaryFrame := primaryRecord.Event.Data.(kataFrontendEventFrame)
+	aliasFrame := aliasRecord.Event.Data.(kataFrontendEventFrame)
 	assert.Equal("primary", primaryFrame.DaemonID)
 	assert.Equal("alias", aliasFrame.DaemonID)
 	invalidatedMu.Lock()
@@ -310,7 +398,9 @@ func TestKataFrontendEventRetiredPublisherCannotInvalidateReplacement(t *testing
 	})
 	defer registry.Close()
 
-	oldBinding := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://old.test"})
+	oldBinding := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://old.test"},
+	)
 	publicationDone := make(chan struct{})
 	go func() {
 		oldBinding.target.invalidateAndBroadcast()
@@ -320,7 +410,12 @@ func TestKataFrontendEventRetiredPublisherCannotInvalidateReplacement(t *testing
 
 	replacementDone := make(chan *kataFrontendEventBinding, 1)
 	go func() {
-		replacementDone <- registry.Ensure(kata.Daemon{ID: "primary", URL: "http://new.test"})
+		binding, err := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://new.test"})
+		if err != nil {
+			replacementDone <- nil
+			return
+		}
+		replacementDone <- binding
 	}()
 	select {
 	case <-replacementDone:
@@ -330,6 +425,7 @@ func TestKataFrontendEventRetiredPublisherCannotInvalidateReplacement(t *testing
 	close(release)
 	<-publicationDone
 	newBinding := <-replacementDone
+	require.NotNil(newBinding)
 	require.NotSame(oldBinding.target, newBinding.target)
 	require.Equal(int64(2), invalidations.Load(), "old publication plus rotation invalidation")
 
@@ -458,7 +554,9 @@ func TestKataFrontendEventPublisherCoalescesBurst(t *testing.T) {
 	})
 	defer registry.Close()
 
-	binding := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://kata.test"})
+	binding := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://kata.test"},
+	)
 	events, _ := binding.hub.Subscribe(t.Context(), false)
 	for range 20 {
 		binding.target.queueInvalidation()
@@ -529,16 +627,27 @@ url = "`+upstream.URL+`"
 	assert.NotContains(frame.Data, "raw-upstream")
 }
 
-type cancelOnSecondFlushController struct {
-	cancel context.CancelFunc
-	count  atomic.Int64
+func requireKataFrontendEventBinding(
+	t *testing.T,
+	registry *kataFrontendEventRegistry,
+	daemon kata.Daemon,
+) *kataFrontendEventBinding {
+	t.Helper()
+	binding, err := registry.Ensure(daemon)
+	require.NoError(t, err)
+	return binding
 }
 
-func (c *cancelOnSecondFlushController) SetWriteDeadline(time.Time) error { return nil }
+type stopOnFlushController struct {
+	at    int64
+	count atomic.Int64
+}
 
-func (c *cancelOnSecondFlushController) Flush() error {
-	if c.count.Add(1) == 2 {
-		c.cancel()
+func (c *stopOnFlushController) SetWriteDeadline(time.Time) error { return nil }
+
+func (c *stopOnFlushController) Flush() error {
+	if c.count.Add(1) == c.at {
+		return io.EOF
 	}
 	return nil
 }

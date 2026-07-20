@@ -85,7 +85,13 @@ func (s *Server) streamKataTaskEvents(
 			"Vary": []string{kataDaemonHeaderName},
 		})
 	}
-	binding := s.kataEvents.Ensure(daemon)
+	binding, err := s.kataEvents.Ensure(daemon)
+	if err != nil {
+		return nil, huma.ErrorWithHeaders(
+			problemServiceUnavailable("Kata task events are unavailable while the server is shutting down"),
+			http.Header{"Vary": []string{kataDaemonHeaderName}},
+		)
+	}
 	return &huma.StreamResponse{
 		Body: func(ctx huma.Context) {
 			ctx.SetHeader("Content-Type", "text/event-stream")

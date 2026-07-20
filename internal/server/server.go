@@ -1644,7 +1644,7 @@ func serveSSESubscribedFromHub(
 ) {
 	serveSSESubscribedFromHubTransformed(
 		ctx, w, rc, hub, cursor, hasCursor, ch, done, staleEvent,
-		func(rec RecordedEvent) RecordedEvent { return rec },
+		func(rec RecordedEvent) (RecordedEvent, bool) { return rec, true },
 	)
 }
 
@@ -1658,7 +1658,7 @@ func serveSSESubscribedFromHubTransformed(
 	ch <-chan RecordedEvent,
 	done <-chan struct{},
 	staleEvent func(uint64) Event,
-	transform func(RecordedEvent) RecordedEvent,
+	transform func(RecordedEvent) (RecordedEvent, bool),
 ) {
 
 	if err := rc.Flush(); err != nil {
@@ -1678,10 +1678,14 @@ func serveSSESubscribedFromHubTransformed(
 			deliveredThrough = synID
 		} else {
 			for _, rec := range replay {
-				if !writeSSERecorded(w, rc, transform(rec)) {
+				deliveredThrough = rec.ID
+				transformed, ok := transform(rec)
+				if !ok {
+					continue
+				}
+				if !writeSSERecorded(w, rc, transformed) {
 					return
 				}
-				deliveredThrough = rec.ID
 			}
 		}
 	}
@@ -1710,7 +1714,12 @@ func serveSSESubscribedFromHubTransformed(
 				// the snapshot read and a fresh broadcast.
 				continue
 			}
-			if !writeSSERecorded(w, rc, transform(ev)) {
+			deliveredThrough = ev.ID
+			transformed, include := transform(ev)
+			if !include {
+				continue
+			}
+			if !writeSSERecorded(w, rc, transformed) {
 				return
 			}
 		case <-ticker.C:

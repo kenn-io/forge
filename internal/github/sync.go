@@ -2573,6 +2573,20 @@ func (s *Syncer) TriggerRunWithPriority(
 	ctx context.Context,
 	priorityRepos []RepoRef,
 ) {
+	s.triggerRun(ctx, slices.Clone(priorityRepos), nil)
+}
+
+// TriggerRunForRepos kicks off a non-blocking ad-hoc sync restricted to the
+// matching configured repositories.
+func (s *Syncer) TriggerRunForRepos(ctx context.Context, repos []RepoRef) {
+	s.triggerRun(ctx, nil, slices.Clone(repos))
+}
+
+func (s *Syncer) triggerRun(
+	ctx context.Context,
+	priorityRepos []RepoRef,
+	onlyRepos []RepoRef,
+) {
 	s.lifecycleMu.Lock()
 	if s.stopped {
 		s.lifecycleMu.Unlock()
@@ -2585,7 +2599,7 @@ func (s *Syncer) TriggerRunWithPriority(
 	go func() {
 		defer s.wg.Done()
 		defer cancel()
-		s.runOnce(merged, true, priorityRepos)
+		s.runOnce(merged, true, priorityRepos, onlyRepos)
 	}()
 }
 
@@ -3805,13 +3819,14 @@ func (s *Syncer) publishMonotonicProgress(
 // per-host GitHub rate limit and abuse-detection thresholds happy
 // while still capturing most of the wall-clock win on network I/O.
 func (s *Syncer) RunOnce(ctx context.Context) {
-	s.runOnce(ctx, false, nil)
+	s.runOnce(ctx, false, nil, nil)
 }
 
 func (s *Syncer) runOnce(
 	ctx context.Context,
 	bypassNextSyncAfter bool,
 	priorityRepos []RepoRef,
+	onlyRepos []RepoRef,
 ) {
 	if !s.running.CompareAndSwap(false, true) {
 		return
@@ -3828,6 +3843,9 @@ func (s *Syncer) runOnce(
 	s.reposMu.Lock()
 	repos := slices.Clone(s.repos)
 	s.reposMu.Unlock()
+	if onlyRepos != nil {
+		repos = selectRepos(repos, onlyRepos)
+	}
 	repos = prioritizeRepos(repos, priorityRepos)
 
 	total := len(repos)
@@ -4010,6 +4028,23 @@ func prioritizeRepos(repos, priorityRepos []RepoRef) []RepoRef {
 			return 0
 		}
 	})
+	return out
+}
+
+func selectRepos(repos, selectedRepos []RepoRef) []RepoRef {
+	selectedKeys := make(map[string]struct{}, len(selectedRepos))
+	for _, repo := range selectedRepos {
+		if key := repoPriorityKey(repo); key != "" {
+			selectedKeys[key] = struct{}{}
+		}
+	}
+
+	out := make([]RepoRef, 0, len(selectedKeys))
+	for _, repo := range repos {
+		if _, ok := selectedKeys[repoPriorityKey(repo)]; ok {
+			out = append(out, repo)
+		}
+	}
 	return out
 }
 

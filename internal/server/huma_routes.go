@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -684,6 +685,7 @@ type listActivityInput struct {
 
 type triggerSyncInput struct {
 	PriorityRepos []string `query:"priority_repo" doc:"Optional repository filters to sync first. Accepts repeated provider|platform_host/repo_path values or comma-separated values."`
+	OnlyRepos     []string `query:"only_repo" doc:"Optional repository filters to sync exclusively. Accepts repeated provider|platform_host/repo_path values or comma-separated values."`
 }
 
 type listActivityOutput = bodyOutput[activityResponse]
@@ -4023,6 +4025,14 @@ func (s *Server) triggerSync(
 	if s.syncer == nil {
 		return nil, problemServiceUnavailable("syncer not configured")
 	}
+	if len(input.OnlyRepos) > 0 {
+		repos, err := s.onlyReposFromFilter(input.OnlyRepos)
+		if err != nil {
+			return nil, problemValidation("query.only_repo", err.Error())
+		}
+		s.syncer.TriggerRunForRepos(context.WithoutCancel(ctx), repos)
+		return &acceptedOutput{Status: http.StatusAccepted}, nil
+	}
 	s.syncer.TriggerRunWithPriority(
 		context.WithoutCancel(ctx),
 		s.priorityReposFromFilter(input.PriorityRepos),
@@ -4035,6 +4045,30 @@ func (s *Server) triggerSync(
 		})
 	}
 	return &acceptedOutput{Status: http.StatusAccepted}, nil
+}
+
+func (s *Server) onlyReposFromFilter(filters []string) ([]ghclient.RepoRef, error) {
+	values := splitRepoFilterValues(filters)
+	if len(values) == 0 {
+		return nil, fmt.Errorf("repository must match a configured provider|platform_host/repo_path")
+	}
+
+	tracked := s.syncer.TrackedRepos()
+	out := make([]ghclient.RepoRef, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		repo, ok := matchPriorityRepo(value, tracked)
+		if !ok {
+			return nil, fmt.Errorf("repository %q must match a configured provider|platform_host/repo_path", value)
+		}
+		key := priorityRepoIdentity(repo)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, repo)
+	}
+	return out, nil
 }
 
 func (s *Server) priorityReposFromFilter(filters []string) []ghclient.RepoRef {

@@ -82,6 +82,9 @@ registry helpers return typed errors for missing providers or capabilities.
 
 - Missing optional capabilities should degrade that feature with a typed
   platform error, not break unrelated sync work.
+- `priority_repo` reorders a full run; `only_repo` restricts its repo set. Resolve
+  both by full provider/host/path identity, and reject invalid exclusive scope
+  instead of falling back to full sync. (`internal/server/huma_routes.go::triggerSync`)
 - Mutation routes must check provider capabilities before posting comments,
   changing state, merging, requesting review, or approving workflows.
   Server handlers translate these typed platform errors into the stable problem

@@ -7558,6 +7558,88 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	assert.Equal(t, "widget", repos[0].Name)
 }
 
+func TestAPITriggerSyncOnlyRepoRestrictsRun(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	database := dbtest.Open(t)
+	var mu sync.Mutex
+	var calls []string
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(
+			_ context.Context, owner, repo string,
+		) ([]*gh.PullRequest, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, owner+"/"+repo)
+			return nil, nil
+		},
+	}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		[]ghclient.RepoRef{
+			{Platform: platform.KindGitHub, Owner: "acme", Name: "first", PlatformHost: "github.com"},
+			{Platform: platform.KindGitHub, Owner: "acme", Name: "second", PlatformHost: "github.com"},
+		},
+		time.Minute,
+		nil,
+		nil,
+	)
+	done := make(chan struct{}, 1)
+	syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
+		if !status.Running {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/sync?only_repo=github|github.com/acme/second",
+		nil,
+	)
+	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		require.Fail("expected repository-only sync to complete")
+	}
+
+	mu.Lock()
+	got := slices.Clone(calls)
+	mu.Unlock()
+	assert.Equal([]string{"acme/second"}, got)
+}
+
+func TestAPITriggerSyncRejectsUnknownOnlyRepo(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	srv, _ := setupTestServer(t)
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/sync?only_repo=github|github.com/acme/missing",
+		nil,
+	)
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+
+	var problem ProblemError
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal(CodeValidationError, problem.Code)
+	assert.Equal("query.only_repo", problem.Details["field"])
+}
+
 func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	require := require.New(t)
 
@@ -7662,6 +7744,12 @@ func TestMatchPriorityRepoRequiresProviderQualifiedRepoPaths(t *testing.T) {
 	assert.Equal(platform.KindGitHub, repo.Platform)
 	assert.Equal("github.com", repo.PlatformHost)
 	assert.Equal("acme/widget", repo.RepoPath)
+
+	repo, ok = matchPriorityRepo("gitlab|gitlab.com/group/subgroup/project", tracked)
+	assert.True(ok)
+	assert.Equal(platform.KindGitLab, repo.Platform)
+	assert.Equal("gitlab.com", repo.PlatformHost)
+	assert.Equal("group/subgroup/project", repo.RepoPath)
 }
 
 func TestAPIReadyForReview(t *testing.T) {

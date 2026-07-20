@@ -4423,6 +4423,9 @@ type ListStacksParams struct {
 type TriggerSyncParams struct {
 	// PriorityRepo Optional repository filters to sync first. Accepts repeated provider|platform_host/repo_path values or comma-separated values.
 	PriorityRepo *[]string `form:"priority_repo,omitempty" json:"priority_repo,omitempty"`
+
+	// OnlyRepo Optional repository filters to sync exclusively. Accepts repeated provider|platform_host/repo_path values or comma-separated values.
+	OnlyRepo *[]string `form:"only_repo,omitempty" json:"only_repo,omitempty"`
 }
 
 // DeleteWorkspaceParams defines parameters for DeleteWorkspace.
@@ -27127,6 +27130,18 @@ func NewTriggerSyncRequest(server string, params *TriggerSyncParams) (*http.Requ
 		if params.PriorityRepo != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "priority_repo", *params.PriorityRepo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.OnlyRepo != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "only_repo", *params.OnlyRepo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

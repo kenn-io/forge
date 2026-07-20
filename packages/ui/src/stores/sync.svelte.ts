@@ -95,7 +95,11 @@ export function createSyncStore(opts: SyncStoreOptions) {
     applySyncStatus(next);
   }
 
-  async function triggerSync(): Promise<void> {
+  type SyncRequest = () => Promise<{
+    error?: { detail?: string | undefined; title?: string | undefined } | undefined;
+  }>;
+
+  async function runTriggeredSync(request: SyncRequest): Promise<void> {
     const previous = status;
 
     status = {
@@ -107,9 +111,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     adjustPollingSpeed(true);
 
     try {
-      const priorityRepos = parsePriorityRepos(getPriorityRepos());
-      const syncOptions = priorityRepos.length > 0 ? { params: { query: { priority_repo: priorityRepos } } } : {};
-      const { error } = await apiClient.POST("/sync", syncOptions);
+      const { error } = await request();
       if (error) {
         throw new Error(error.detail ?? error.title ?? "failed to trigger sync");
       }
@@ -124,6 +126,20 @@ export function createSyncStore(opts: SyncStoreOptions) {
       adjustPollingSpeed(false);
       throw err;
     }
+  }
+
+  async function triggerSync(): Promise<void> {
+    const priorityRepos = parsePriorityRepos(getPriorityRepos());
+    const syncOptions = priorityRepos.length > 0 ? { params: { query: { priority_repo: priorityRepos } } } : {};
+    await runTriggeredSync(() => apiClient.POST("/sync", syncOptions));
+  }
+
+  async function triggerRepoSync(repo: string): Promise<void> {
+    await runTriggeredSync(() =>
+      apiClient.POST("/sync", {
+        params: { query: { only_repo: [repo] } },
+      }),
+    );
   }
 
   function parsePriorityRepos(value: string | undefined): string[] {
@@ -168,6 +184,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     refreshSyncStatus,
     setSyncStatus,
     triggerSync,
+    triggerRepoSync,
     startPolling,
     stopPolling,
   };

@@ -31,4 +31,32 @@ describe("sync store", () => {
       },
     });
   });
+
+  it("passes one provider-qualified repository as the only sync scope", async () => {
+    const post = vi.fn(async () => ({ error: undefined }));
+    const get = vi.fn(async (path: string) => {
+      if (path === "/sync/status") {
+        return {
+          data: { running: false, last_run_at: "", last_error: "" },
+        };
+      }
+      return { data: { hosts: {} } };
+    });
+    const store = createSyncStore({
+      client: {
+        GET: get,
+        POST: post,
+      } as unknown as MiddlemanClient,
+    });
+
+    await store.triggerRepoSync("gitlab|gitlab.example.com/group/subgroup/project");
+
+    expect(post).toHaveBeenCalledWith("/sync", {
+      params: {
+        query: {
+          only_repo: ["gitlab|gitlab.example.com/group/subgroup/project"],
+        },
+      },
+    });
+  });
 });

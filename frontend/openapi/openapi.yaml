@@ -18152,6 +18152,17 @@ paths:
             type:
               - array
               - "null"
+        - description: Optional repository filters to sync exclusively. Accepts repeated provider|platform_host/repo_path values or comma-separated values.
+          explode: false
+          in: query
+          name: only_repo
+          schema:
+            description: Optional repository filters to sync exclusively. Accepts repeated provider|platform_host/repo_path values or comma-separated values.
+            items:
+              type: string
+            type:
+              - array
+              - "null"
       responses:
         "202":
           description: Accepted

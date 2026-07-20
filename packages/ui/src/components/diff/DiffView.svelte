@@ -649,6 +649,7 @@
 
 <style>
   .diff-view {
+    position: relative;
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -657,12 +658,15 @@
   }
 
   .stale-banner {
+    position: absolute;
+    inset: 0 0 auto;
+    z-index: 3;
+    pointer-events: none;
     padding: 6px 16px;
     background: var(--diff-stale-bg);
     color: var(--diff-stale-text);
     border-bottom: 1px solid var(--diff-stale-border);
     font-size: var(--font-size-sm);
-    flex-shrink: 0;
   }
 
   .review-warning {

@@ -1386,20 +1386,24 @@ function diffResponseFromFixture(fixture: DiffResult | DiffFixture): DiffResult 
   };
 }
 
-async function mockDiffApi(page: Page, fixture: DiffResult | DiffFixture): Promise<void> {
-  const responseFixture = diffResponseFromFixture(fixture);
+async function mockDiffApi(
+  page: Page,
+  fixture: DiffResult | DiffFixture | (() => DiffResult | DiffFixture),
+): Promise<void> {
+  const currentFixture = (): DiffResult => diffResponseFromFixture(typeof fixture === "function" ? fixture() : fixture);
+
   await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(filesFromDiff(responseFixture)),
+      body: JSON.stringify(filesFromDiff(currentFixture())),
     });
   });
   await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(responseFixture),
+      body: JSON.stringify(currentFixture()),
     });
   });
 }
@@ -2903,13 +2907,59 @@ test.describe("diff view", () => {
     await expect.poll(() => renderedDiffFilePaths(page)).toEqual(expectedFileOrder);
   });
 
-  test("stale diff banner is shown when diff is stale", async ({ page }) => {
-    await mockDiffApi(page, staleDiff);
+  test("stale diff banner overlays without shifting diff content", async ({ page }) => {
+    let fixture = staleDiff;
+    await mockDiffApi(page, () => fixture);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
-    await expect(page.locator(".stale-banner")).toBeVisible();
-    await expect(page.locator(".stale-banner")).toContainText("outdated");
+    const banner = page.locator(".stale-banner");
+    const diffBody = page.locator(".diff-body");
+    const firstFile = page.locator(".diff-file").first();
+    const firstHeader = firstFile.locator(".file-header");
+    const firstContent = firstFile.locator(".file-content");
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText("outdated");
+    await expect(banner).toHaveCSS("pointer-events", "none");
+    const staleBounds = await diffBody.boundingBox();
+    expect(staleBounds).not.toBeNull();
+
+    const bannerBounds = await visibleBoundingBox(banner);
+    const headerBounds = await visibleBoundingBox(firstHeader);
+    const overlapLeft = Math.max(bannerBounds.x, headerBounds.x);
+    const overlapTop = Math.max(bannerBounds.y, headerBounds.y);
+    const overlapRight = Math.min(bannerBounds.x + bannerBounds.width, headerBounds.x + headerBounds.width);
+    const overlapBottom = Math.min(bannerBounds.y + bannerBounds.height, headerBounds.y + headerBounds.height);
+    expect(overlapRight).toBeGreaterThan(overlapLeft);
+    expect(overlapBottom).toBeGreaterThan(overlapTop);
+
+    const overlapCenter = {
+      x: (overlapLeft + overlapRight) / 2,
+      y: (overlapTop + overlapBottom) / 2,
+    };
+    const bannerPaintsOnTop = await banner.evaluate((node, point) => {
+      const previousPointerEvents = node.style.pointerEvents;
+      try {
+        node.style.pointerEvents = "auto";
+        const topElement = document.elementFromPoint(point.x, point.y);
+        return topElement !== null && node.contains(topElement);
+      } finally {
+        node.style.pointerEvents = previousPointerEvents;
+      }
+    }, overlapCenter);
+    expect(bannerPaintsOnTop).toBe(true);
+    await expect(banner).toHaveCSS("pointer-events", "none");
+
+    await expect(firstContent).toBeAttached();
+    await page.mouse.click(overlapCenter.x, overlapCenter.y);
+    await expect(firstContent).not.toBeAttached();
+
+    fixture = smallDiff;
+    await openDiffFilterMenu(page);
+    await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
+    await expect(banner).not.toBeAttached();
+
+    expect(await diffBody.boundingBox()).toEqual(staleBounds);
   });
 
   test("error state shown when diff API fails", async ({ page }) => {

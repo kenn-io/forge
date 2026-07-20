@@ -4,6 +4,8 @@ import type { components } from "@middleman/ui/api/roborev/schema";
 
 type ReviewJob = components["schemas"]["ReviewJob"];
 
+const originalFetch = globalThis.fetch;
+
 function makeJob(id: number, startedAt?: string, finishedAt?: string): ReviewJob {
   return {
     id,
@@ -111,6 +113,106 @@ describe("createJobsStore elapsed sorting", () => {
 
     expect(store.getSortDirection()).toBe("desc");
     expect(store.getJobs().map((job) => job.id)).toEqual([8, 2, 6, 5]);
+  });
+});
+
+describe("createJobsStore event stream", () => {
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("aborts a connection that is still waiting for response headers", async () => {
+    let signal: AbortSignal | undefined;
+    const fetchMock = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          signal = init?.signal ?? undefined;
+          signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        }),
+    );
+    globalThis.fetch = fetchMock;
+    const store = createJobsStore({ client: {} as never, navigate: vi.fn() });
+
+    store.connectEventStream("/api/roborev");
+    await vi.waitFor(() => expect(signal).toBeDefined());
+
+    store.disconnectEventStream();
+
+    expect(signal?.aborted).toBe(true);
+    await vi.waitFor(() => expect(store.isEventStreamConnected()).toBe(false));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("parses split NDJSON events and cancels an active response body", async () => {
+    const encoder = new TextEncoder();
+    let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    let bodyCancelled = false;
+    let signal: AbortSignal | undefined;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        bodyController = controller;
+      },
+      cancel() {
+        bodyCancelled = true;
+      },
+    });
+    globalThis.fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return new Response(body, {
+        status: 200,
+        headers: { "Content-Type": "application/x-ndjson" },
+      });
+    });
+    const client = {
+      GET: vi.fn().mockResolvedValue({
+        data: { jobs: [], has_more: false, stats: { done: 0, closed: 0, open: 0 } },
+        error: undefined,
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+
+    store.connectEventStream("/api/roborev");
+    await vi.waitFor(() => expect(store.isEventStreamConnected()).toBe(true));
+    bodyController?.enqueue(encoder.encode('{"type":"review.com'));
+    bodyController?.enqueue(encoder.encode('pleted","job_id":42}\n'));
+
+    await vi.waitFor(() => expect(client.GET).toHaveBeenCalledTimes(1));
+    store.disconnectEventStream();
+
+    await vi.waitFor(() => expect(bodyCancelled).toBe(true));
+    expect(signal?.aborted).toBe(true);
+    expect(store.isEventStreamConnected()).toBe(false);
+  });
+
+  it("reconnects with backoff and stops retrying after disconnect", async () => {
+    vi.useFakeTimers();
+    const bodies: ReadableStreamDefaultController<Uint8Array>[] = [];
+    globalThis.fetch = vi.fn(async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          bodies.push(controller);
+        },
+      });
+      return new Response(body, { status: 200 });
+    });
+    const store = createJobsStore({ client: {} as never, navigate: vi.fn() });
+
+    store.connectEventStream("/api/roborev");
+    await vi.waitFor(() => expect(bodies).toHaveLength(1));
+    bodies[0]?.close();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(2));
+    store.disconnectEventStream();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 });
 

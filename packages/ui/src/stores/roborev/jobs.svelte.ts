@@ -15,6 +15,14 @@ export interface JobsStoreOptions {
 type SortColumn = "id" | "status" | "verdict" | "agent" | "elapsed" | "cost" | "job_type" | "enqueued_at";
 type SortDirection = "asc" | "desc";
 
+interface EventStreamSession {
+  controller: AbortController;
+  reader: ReadableStreamDefaultReader<Uint8Array> | null;
+}
+
+const initialReconnectDelayMs = 1_000;
+const maxReconnectDelayMs = 30_000;
+
 export function createJobsStore(opts: JobsStoreOptions) {
   const client = opts.client;
 
@@ -52,9 +60,12 @@ export function createJobsStore(opts: JobsStoreOptions) {
   let pendingPanelRefreshes: Record<string, boolean> = {};
   let interestedPanelRun: string | undefined = undefined;
 
-  // SSE
-  let sseConnected = $state(false);
-  let eventSource: EventSource | null = null;
+  // Roborev streams newline-delimited JSON, not server-sent events.
+  let eventStreamConnected = $state(false);
+  let eventStreamUrl: string | null = null;
+  let eventStreamSession: EventStreamSession | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectDelayMs = initialReconnectDelayMs;
 
   // Version tracking for race conditions
   let requestVersion = 0;
@@ -389,35 +400,93 @@ export function createJobsStore(opts: JobsStoreOptions) {
     opts.navigate("/reviews");
   }
 
-  // SSE for real-time updates
-  function connectSSE(baseUrl: string): void {
-    disconnectSSE();
-    const url = `${baseUrl}/api/stream/events`;
-    eventSource = new EventSource(url);
-    eventSource.onopen = () => {
-      sseConnected = true;
-    };
-    eventSource.onerror = () => {
-      sseConnected = false;
-    };
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === "job.status_changed" || data.type === "review.completed") {
-          void loadJobs();
-        }
-      } catch {
-        // Ignore parse errors from malformed SSE data
+  function handleEventLine(line: string): void {
+    if (line.trim() === "") return;
+    try {
+      const event = JSON.parse(line) as { type?: unknown };
+      reconnectDelayMs = initialReconnectDelayMs;
+      if (event.type === "job.status_changed" || event.type === "review.completed") {
+        void loadJobs();
       }
-    };
+    } catch {
+      // Ignore one malformed event without dropping the stream.
+    }
   }
 
-  function disconnectSSE(): void {
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-      sseConnected = false;
+  async function readEventStream(url: string, session: EventStreamSession): Promise<void> {
+    const response = await fetch(url, {
+      headers: { Accept: "application/x-ndjson" },
+      signal: session.controller.signal,
+    });
+    if (!response.ok) throw new Error(`Roborev event stream returned ${response.status}`);
+    if (!response.body) throw new Error("Roborev event stream returned no response body");
+    if (eventStreamSession !== session) return;
+
+    eventStreamConnected = true;
+    const reader = response.body.getReader();
+    session.reader = reader;
+    const decoder = new TextDecoder();
+    let pending = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        pending += decoder.decode(value, { stream: true });
+        const lines = pending.split("\n");
+        pending = lines.pop() ?? "";
+        for (const line of lines) handleEventLine(line);
+      }
+      pending += decoder.decode();
+      handleEventLine(pending);
+    } finally {
+      if (session.reader === reader) session.reader = null;
+      reader.releaseLock();
     }
+  }
+
+  function openEventStream(url: string): void {
+    const session: EventStreamSession = {
+      controller: new AbortController(),
+      reader: null,
+    };
+    eventStreamSession = session;
+    void readEventStream(url, session)
+      .catch(() => {
+        // Connection failures and malformed responses reconnect below.
+      })
+      .finally(() => {
+        if (eventStreamSession !== session) return;
+        eventStreamSession = null;
+        eventStreamConnected = false;
+        if (eventStreamUrl !== url) return;
+
+        const delay = reconnectDelayMs;
+        reconnectDelayMs = Math.min(reconnectDelayMs * 2, maxReconnectDelayMs);
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          if (eventStreamUrl === url) openEventStream(url);
+        }, delay);
+      });
+  }
+
+  function connectEventStream(baseUrl: string): void {
+    disconnectEventStream();
+    eventStreamUrl = `${baseUrl.replace(/\/$/, "")}/api/stream/events`;
+    reconnectDelayMs = initialReconnectDelayMs;
+    openEventStream(eventStreamUrl);
+  }
+
+  function disconnectEventStream(): void {
+    eventStreamUrl = null;
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    const session = eventStreamSession;
+    eventStreamSession = null;
+    session?.controller.abort();
+    if (session?.reader) void session.reader.cancel().catch(() => undefined);
+    eventStreamConnected = false;
   }
 
   // Selection helpers for keyboard nav
@@ -539,8 +608,8 @@ export function createJobsStore(opts: JobsStoreOptions) {
   function getSortDirection(): SortDirection {
     return sortDirection;
   }
-  function isSSEConnected(): boolean {
-    return sseConnected;
+  function isEventStreamConnected(): boolean {
+    return eventStreamConnected;
   }
 
   return {
@@ -561,7 +630,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
     getFilterShowAutoDesign,
     getSortColumn,
     getSortDirection,
-    isSSEConnected,
+    isEventStreamConnected,
     togglePanel,
     ensurePanelMembers,
     setPanelMemberInterest,
@@ -584,8 +653,8 @@ export function createJobsStore(opts: JobsStoreOptions) {
     highlightJob,
     highlightNextJob,
     highlightPrevJob,
-    connectSSE,
-    disconnectSSE,
+    connectEventStream,
+    disconnectEventStream,
   };
 }
 

@@ -263,12 +263,12 @@
       /\/$/,
       "",
     );
-    const sseBase = bp + "/api/roborev";
-    stores.roborevJobs.connectSSE(sseBase);
+    const eventStreamBase = bp + "/api/roborev";
+    stores.roborevJobs.connectEventStream(eventStreamBase);
   });
 
   onDestroy(() => {
-    stores.roborevJobs?.disconnectSSE();
+    stores.roborevJobs?.disconnectEventStream();
   });
 </script>
 

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -223,7 +225,7 @@ func TestRoborevHealthProbeUnavailable(t *testing.T) {
 	assert.Empty(resp.Version)
 }
 
-func TestRoborevSSEPassThrough(t *testing.T) {
+func TestRoborevNDJSONPassThrough(t *testing.T) {
 	lines := []string{
 		`{"event":"start","id":1}`,
 		`{"event":"progress","pct":50}`,
@@ -280,4 +282,72 @@ func TestRoborevSSEPassThrough(t *testing.T) {
 	}
 	r.NoError(scanner.Err())
 	r.Equal(lines, received)
+}
+
+func TestRoborevProxyCancelsIdleUpstreamBeforeReconnect(t *testing.T) {
+	require := require.New(t)
+
+	var started atomic.Int64
+	var canceled atomic.Int64
+	daemon := httptest.NewServer(http.HandlerFunc(
+		func(_ http.ResponseWriter, r *http.Request) {
+			requestNumber := started.Add(1)
+			<-r.Context().Done()
+			canceled.Store(requestNumber)
+		},
+	))
+	defer daemon.Close()
+
+	srv := setupTestServerWithRoborev(t, daemon.URL)
+	middleman := httptest.NewServer(srv)
+	defer middleman.Close()
+
+	startRequest := func() (context.CancelFunc, <-chan error) {
+		ctx, cancel := context.WithCancel(context.Background())
+		req, err := http.NewRequestWithContext(
+			ctx,
+			http.MethodGet,
+			middleman.URL+"/api/roborev/api/stream/events",
+			nil,
+		)
+		require.NoError(err)
+		done := make(chan error, 1)
+		go func() {
+			resp, requestErr := http.DefaultClient.Do(req)
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
+			done <- requestErr
+		}()
+		return cancel, done
+	}
+
+	cancelFirst, firstDone := startRequest()
+	require.Eventually(
+		func() bool { return started.Load() == 1 },
+		time.Second,
+		10*time.Millisecond,
+	)
+	cancelFirst()
+	require.Error(<-firstDone)
+	require.Eventually(
+		func() bool { return canceled.Load() == 1 },
+		time.Second,
+		10*time.Millisecond,
+	)
+
+	// Open the replacement only after the idle upstream request has closed.
+	cancelSecond, secondDone := startRequest()
+	require.Eventually(
+		func() bool { return started.Load() == 2 },
+		time.Second,
+		10*time.Millisecond,
+	)
+	cancelSecond()
+	require.Error(<-secondDone)
+	require.Eventually(
+		func() bool { return canceled.Load() == 2 },
+		time.Second,
+		10*time.Millisecond,
+	)
 }

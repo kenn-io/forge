@@ -272,23 +272,23 @@
       : hasPR
   );
 
-  // Connect/disconnect SSE based on daemon availability
-  let sseConnected = $state(false);
+  // Connect/disconnect the NDJSON event stream based on daemon availability.
+  let eventStreamStarted = false;
   $effect(() => {
     const available =
       parentStores.roborevDaemon?.isAvailable() ??
       false;
-    if (available && !sseConnected) {
-      sidebarJobs.connectSSE(baseUrl);
-      sseConnected = true;
-    } else if (!available && sseConnected) {
-      sidebarJobs.disconnectSSE();
-      sseConnected = false;
+    if (available && !eventStreamStarted) {
+      sidebarJobs.connectEventStream(baseUrl);
+      eventStreamStarted = true;
+    } else if (!available && eventStreamStarted) {
+      sidebarJobs.disconnectEventStream();
+      eventStreamStarted = false;
     }
   });
 
   onDestroy(() => {
-    sidebarJobs.disconnectSSE();
+    sidebarJobs.disconnectEventStream();
     sidebarLog.stopStreaming();
   });
 </script>

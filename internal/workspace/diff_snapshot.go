@@ -55,6 +55,22 @@ type diffContentDigestEntry struct {
 	usedAt   time.Time
 }
 
+// ResolveDiffSnapshotHeadOID resolves only the head ref needed to compare a cached snapshot.
+func ResolveDiffSnapshotHeadOID(
+	ctx context.Context,
+	spec DiffSnapshotSpec,
+) (string, error) {
+	absPath, err := filepath.Abs(spec.WorktreePath)
+	if err != nil {
+		return "", err
+	}
+	headRef := spec.ToSHA
+	if headRef == "" {
+		headRef = "HEAD"
+	}
+	return resolveDiffOID(ctx, filepath.Clean(absPath), headRef, "commit")
+}
+
 func ResolveDiffSnapshotSpec(
 	ctx context.Context,
 	spec DiffSnapshotSpec,

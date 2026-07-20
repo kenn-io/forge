@@ -24,6 +24,7 @@ const (
 	workspaceDiffCacheIdleTTL       = 10 * time.Minute
 	workspaceDiffCacheRetryWait     = 5 * time.Second
 	workspaceDiffPreparationTimeout = 30 * time.Second
+	workspaceDiffHeadProbeTimeout   = 50 * time.Millisecond
 	workspaceDiffValidationPoll     = time.Second
 	workspaceDiffCacheMaxBytes      = int64(128 << 20)
 	workspaceDiffCachePairRetention = time.Minute
@@ -62,6 +63,7 @@ type workspaceDiffCacheDeps struct {
 	now         func() time.Time
 	after       func(time.Duration) <-chan time.Time
 	resolve     func(context.Context, workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error)
+	resolveHead func(context.Context, workspace.DiffSnapshotSpec) (string, error)
 	fingerprint func(context.Context, workspace.ResolvedDiffSnapshotSpec) (workspace.DiffFingerprint, error)
 	prepare     func(context.Context, workspace.ResolvedDiffSnapshotSpec) (*gitclone.DiffResult, error)
 	onChanged   func(workspaceID string, revision uint64, version string)
@@ -93,6 +95,7 @@ type workspaceDiffCache struct {
 	selectionCancel  map[string]context.CancelFunc
 	nextRev          uint64
 	group            singleflight.Group
+	headGroup        singleflight.Group
 	wg               sync.WaitGroup
 
 	validationMu      sync.Mutex
@@ -114,6 +117,9 @@ func newWorkspaceDiffCache(
 	}
 	if deps.resolve == nil {
 		deps.resolve = workspace.ResolveDiffSnapshotSpec
+	}
+	if deps.resolveHead == nil {
+		deps.resolveHead = workspace.ResolveDiffSnapshotHeadOID
 	}
 	if deps.fingerprint == nil {
 		deps.fingerprint = workspace.FingerprintDiffSnapshot
@@ -185,8 +191,7 @@ func (c *workspaceDiffCache) Get(
 		retryAllowed := !now.Before(updated.retryAfter)
 		cached := updated.snapshot
 		c.mu.Unlock()
-		resolved, ok, resolveErr := c.deps.resolve(ctx, key.Spec)
-		headMoved := resolveErr == nil && ok && cached.Resolved.HeadOID != resolved.HeadOID
+		headMoved := c.cachedHeadMoved(ctx, key, cached)
 		snapshot := cloneWorkspaceDiffSnapshot(cached, headMoved)
 		state := workspaceDiffCacheHit
 		if !fresh {
@@ -234,6 +239,28 @@ func (c *workspaceDiffCache) Get(
 		}
 		c.setSpanAttributes(ctx, key, snapshot, state)
 		return snapshot, state, nil
+	}
+}
+
+func (c *workspaceDiffCache) cachedHeadMoved(
+	ctx context.Context,
+	key workspaceDiffLogicalKey,
+	cached *workspaceDiffSnapshot,
+) bool {
+	resultCh := c.headGroup.DoChan(c.singleflightKey(key), func() (any, error) {
+		probeCtx, cancel := context.WithTimeout(c.root, workspaceDiffHeadProbeTimeout)
+		defer cancel()
+		return c.deps.resolveHead(probeCtx, key.Spec)
+	})
+	select {
+	case <-ctx.Done():
+		return false
+	case result := <-resultCh:
+		if result.Err != nil {
+			return false
+		}
+		headOID, ok := result.Val.(string)
+		return ok && headOID != "" && cached.Resolved.HeadOID != headOID
 	}
 }
 

@@ -25909,6 +25909,34 @@ func TestWorkspaceDiffEndpointWarnsAndRefreshesOnlyAfterGitHeadMovesE2E(t *testi
 	assert.Contains(workspaceDiffPaths(*refreshed.Files), "head-moved.txt")
 }
 
+func TestWorkspaceDiffCacheHitReturnsWhileGitCapacityIsHeldE2E(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	restoreLimiter := procutil.SetDefaultLimiterForTest(
+		procutil.NewLimiterWithAcquireTimeout(1, 500*time.Millisecond),
+	)
+	t.Cleanup(restoreLimiter)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ws := createReadyWorkspace(t, context.Background(), client)
+	initial := requestWorkspaceDiff(t, srv, ws.Id, "head")
+	assert.False(initial.Stale)
+
+	releaseHeld, err := procutil.TryAcquire(
+		context.Background(), "test-held workspace diff capacity",
+	)
+	require.NoError(err)
+	defer releaseHeld()
+
+	started := time.Now()
+	cached := requestWorkspaceDiff(t, srv, ws.Id, "head")
+	elapsed := time.Since(started)
+	releaseHeld()
+
+	assert.False(cached.Stale)
+	assert.Less(elapsed, 200*time.Millisecond)
+}
+
 func TestWorkspaceFilePreviewEndpointReturnsRequestedDiffSideContentE2E(t *testing.T) {
 	t.Parallel()
 

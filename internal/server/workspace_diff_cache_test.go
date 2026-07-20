@@ -55,14 +55,13 @@ func TestWorkspaceDiffCacheWarningRequiresHeadMismatch(t *testing.T) {
 	tests := []struct {
 		name        string
 		currentHead string
-		resolveOK   bool
-		resolveErr  error
+		headErr     error
 		wantStale   bool
 	}{
-		{name: "matching head", currentHead: "head", resolveOK: true},
-		{name: "changed head", currentHead: "new-head", resolveOK: true, wantStale: true},
-		{name: "head unavailable"},
-		{name: "head resolution failed", resolveErr: errors.New("resolve head")},
+		{name: "matching head", currentHead: "head"},
+		{name: "changed head", currentHead: "new-head", wantStale: true},
+		{name: "head unavailable", headErr: errors.New("head unavailable")},
+		{name: "head resolution failed", headErr: errors.New("resolve head")},
 	}
 
 	for _, tt := range tests {
@@ -71,13 +70,13 @@ func TestWorkspaceDiffCacheWarningRequiresHeadMismatch(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 			now := time.Unix(100, 0)
-			resolved := workspaceDiffTestResolved()
-			resolveOK := true
-			var resolveErr error
 			cache := newWorkspaceDiffCache(t.Context(), workspaceDiffCacheDeps{
 				now: func() time.Time { return now },
 				resolve: func(context.Context, workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
-					return resolved, resolveOK, resolveErr
+					return workspaceDiffTestResolved(), true, nil
+				},
+				resolveHead: func(context.Context, workspace.DiffSnapshotSpec) (string, error) {
+					return tt.currentHead, tt.headErr
 				},
 				fingerprint: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (workspace.DiffFingerprint, error) {
 					return "v1", nil
@@ -93,10 +92,6 @@ func TestWorkspaceDiffCacheWarningRequiresHeadMismatch(t *testing.T) {
 			cache.mu.Lock()
 			cache.peekEntryLocked(workspaceDiffTestKey()).retryAfter = now.Add(time.Hour)
 			cache.mu.Unlock()
-			resolved.HeadOID = tt.currentHead
-			resolveOK = tt.resolveOK
-			resolveErr = tt.resolveErr
-
 			got, state, err := cache.Get(t.Context(), workspaceDiffTestKey())
 			require.NoError(err)
 			require.NotNil(got)
@@ -104,6 +99,36 @@ func TestWorkspaceDiffCacheWarningRequiresHeadMismatch(t *testing.T) {
 			assert.Equal(tt.wantStale, got.Diff.Stale)
 		})
 	}
+}
+
+func TestWorkspaceDiffCacheHitDoesNotRepeatFullSnapshotResolution(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	resolveCalls := 0
+	cache := newWorkspaceDiffCache(t.Context(), workspaceDiffCacheDeps{
+		resolve: func(context.Context, workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
+			resolveCalls++
+			return workspaceDiffTestResolved(), true, nil
+		},
+		resolveHead: func(context.Context, workspace.DiffSnapshotSpec) (string, error) {
+			return "head", nil
+		},
+		fingerprint: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (workspace.DiffFingerprint, error) {
+			return "v1", nil
+		},
+		prepare: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (*gitclone.DiffResult, error) {
+			return workspaceDiffTestResult("one.txt"), nil
+		},
+	})
+
+	_, _, err := cache.Get(t.Context(), workspaceDiffTestKey())
+	require.NoError(err)
+	_, state, err := cache.Get(t.Context(), workspaceDiffTestKey())
+	require.NoError(err)
+
+	assert.Equal(workspaceDiffCacheHit, state)
+	assert.Equal(2, resolveCalls)
 }
 
 func TestWorkspaceDiffCacheHeadMismatchQueuesImmediateValidation(t *testing.T) {
@@ -120,6 +145,9 @@ func TestWorkspaceDiffCacheHeadMismatchQueuesImmediateValidation(t *testing.T) {
 		},
 		resolve: func(context.Context, workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
 			return resolved, true, nil
+		},
+		resolveHead: func(context.Context, workspace.DiffSnapshotSpec) (string, error) {
+			return resolved.HeadOID, nil
 		},
 		fingerprint: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (workspace.DiffFingerprint, error) {
 			return workspace.DiffFingerprint(resolved.HeadOID), nil

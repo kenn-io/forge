@@ -116,6 +116,7 @@ jobs:
     # and in-package parallel tests stay within the job's memory budget.
     env:
       GOMAXPROCS: "4"
+      GOMEMLIMIT: "4GiB"
       GOFLAGS: "-p=1"
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
@@ -239,6 +240,7 @@ jobs:
     # Race-instrumented packages are especially memory-intensive.
     env:
       GOMAXPROCS: "4"
+      GOMEMLIMIT: "4GiB"
       GOFLAGS: "-p=1"
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'

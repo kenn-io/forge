@@ -1,12 +1,20 @@
 <script lang="ts">
-  import { TopBar, type TopBarTab } from "@kenn-io/kit-ui";
+  import {
+    autoReposition,
+    dismissable,
+    floatingPopoverStyle,
+    TopBar,
+    type TopBarTab,
+  } from "@kenn-io/kit-ui";
   import { getStores, KbdBadge } from "@middleman/ui";
   import type { ModeVisibility } from "@middleman/ui/api/types";
+  import { tick } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {
     getBasePath,
     getLastActivityRoute,
     getPage,
+    getRoute,
     getView,
     navigate,
   } from "../../stores/router.svelte.ts";
@@ -18,13 +26,18 @@
   import HeaderIconButton from "./HeaderIconButton.svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
   import {
+    ChevronDownIcon,
     SearchIcon,
     SettingsIcon,
     SidebarToggleIcon,
     SpinnerIcon,
     SyncIcon,
   } from "../../icons.ts";
-  import { getGlobalRepo, setGlobalRepo } from "../../stores/filter.svelte.js";
+  import {
+    getGlobalRepo,
+    parseRepoFilterValue,
+    setGlobalRepo,
+  } from "../../stores/filter.svelte.js";
   import { isEmbedded, getUIConfig } from "../../stores/embed-config.svelte.js";
   import { isThemeToggleVisible } from "../../stores/theme.svelte.js";
   import {
@@ -33,6 +46,7 @@
     isSidebarToggleEnabled,
   } from "../../stores/sidebar.svelte.js";
   import { openPalette } from "../../stores/keyboard/palette-state.svelte.js";
+  import { syncRepoForRoute } from "../../utils/repoSelectionSync.js";
 
   interface Props {
     onheightchange?: ((height: number) => void) | undefined;
@@ -101,6 +115,81 @@
   }
 
   const syncing = $derived(sync.getSyncState()?.running ?? false);
+  const currentSyncRepo = $derived.by(() => {
+    const routeRepo = syncRepoForRoute(getRoute());
+    if (routeRepo) return routeRepo;
+
+    const selectedRepos = parseRepoFilterValue(getGlobalRepo());
+    return selectedRepos.length === 1 ? selectedRepos[0] : undefined;
+  });
+  let syncMenuOpen = $state(false);
+  let syncControlEl = $state<HTMLDivElement>();
+  let syncMenuTriggerEl = $state<HTMLButtonElement>();
+  let syncMenuEl = $state<HTMLUListElement>();
+  let syncMenuItemEl = $state<HTMLButtonElement>();
+  let syncMenuStyle = $state("");
+
+  $effect(() => {
+    if (!syncMenuOpen) return;
+    const cleanups = [
+      dismissable({
+        owners: () => [syncControlEl],
+        dismiss: () => (syncMenuOpen = false),
+        escapeFocus: () => syncMenuTriggerEl,
+      }),
+      autoReposition(() => syncMenuEl, positionSyncMenu),
+    ];
+    return () => cleanups.forEach((cleanup) => cleanup());
+  });
+
+  function positionSyncMenu(): void {
+    if (!syncMenuTriggerEl || !syncMenuEl) return;
+    syncMenuStyle = floatingPopoverStyle({
+      trigger: syncMenuTriggerEl.getBoundingClientRect(),
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      popoverWidth: syncMenuEl.offsetWidth,
+      popoverHeight: syncMenuEl.offsetHeight,
+      align: "end",
+      triggerGap: 2,
+    });
+  }
+
+  async function openSyncMenu(): Promise<void> {
+    if (syncing) return;
+    syncMenuOpen = true;
+    await tick();
+    positionSyncMenu();
+    if (currentSyncRepo) syncMenuItemEl?.focus();
+  }
+
+  async function toggleSyncMenu(): Promise<void> {
+    if (syncMenuOpen) {
+      syncMenuOpen = false;
+      return;
+    }
+    await openSyncMenu();
+  }
+
+  function handleSyncMenuTriggerKeydown(event: KeyboardEvent): void {
+    if (event.key !== "ArrowDown") return;
+    event.preventDefault();
+    void openSyncMenu();
+  }
+
+  function handleSyncMenuItemKeydown(event: KeyboardEvent): void {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    syncMenuItemEl?.focus();
+  }
+
+  async function handleCurrentRepoSync(): Promise<void> {
+    const repo = currentSyncRepo;
+    if (!repo || syncing) return;
+    syncMenuOpen = false;
+    await sync.triggerRepoSync(repo);
+  }
+
   const hideProviderRepoSelector = $derived(getUIConfig().hideRepoSelector);
   const isProviderRepoSelectorPage = $derived(
     getPage() === "activity" ||
@@ -296,32 +385,72 @@
       <KbdBadge binding={{ key: "K", ctrlOrMeta: true }} />
     </HeaderIconButton>
     {#if !getUIConfig().hideSync}
-      <button
-        class="action-btn sync-btn"
-        aria-label={syncing ? "Syncing" : "Sync"}
-        title={syncing ? "Syncing" : "Sync"}
-        onclick={handleSync}
-        disabled={syncing}
-      >
-        {#if syncing}
-          <span class="sync-icon sync-icon--spinning" aria-hidden="true">
-            <SpinnerIcon
-              size="14"
-              strokeWidth="2"
-            />
-          </span>
-        {:else}
-          <span class="sync-icon" aria-hidden="true">
-            <SyncIcon
-              size="14"
-              strokeWidth="1.75"
-            />
-          </span>
+      <div class="sync-split" bind:this={syncControlEl}>
+        <button
+          type="button"
+          class="action-btn sync-btn sync-primary"
+          aria-label={syncing ? "Syncing" : "Sync"}
+          title={syncing ? "Syncing" : "Sync"}
+          onclick={handleSync}
+          disabled={syncing}
+        >
+          {#if syncing}
+            <span class="sync-icon sync-icon--spinning" aria-hidden="true">
+              <SpinnerIcon
+                size="14"
+                strokeWidth="2"
+              />
+            </span>
+          {:else}
+            <span class="sync-icon" aria-hidden="true">
+              <SyncIcon
+                size="14"
+                strokeWidth="1.75"
+              />
+            </span>
+          {/if}
+          {#if !tabsCollapsed}
+            <span class="sync-label">{syncing ? "Syncing..." : "Sync"}</span>
+          {/if}
+        </button>
+        <button
+          bind:this={syncMenuTriggerEl}
+          type="button"
+          class="action-btn sync-menu-trigger"
+          aria-label="Sync options"
+          title="Sync options"
+          aria-haspopup="menu"
+          aria-expanded={syncMenuOpen}
+          onclick={toggleSyncMenu}
+          onkeydown={handleSyncMenuTriggerKeydown}
+          disabled={syncing}
+        >
+          <ChevronDownIcon size="12" strokeWidth="1.75" aria-hidden="true" />
+        </button>
+        {#if syncMenuOpen}
+          <ul
+            bind:this={syncMenuEl}
+            class="sync-menu kit-popover-card"
+            role="menu"
+            aria-label="Sync options"
+            style={syncMenuStyle}
+          >
+            <li>
+              <button
+                bind:this={syncMenuItemEl}
+                type="button"
+                role="menuitem"
+                title={currentSyncRepo ? "Sync current repo" : "Select one repository to sync"}
+                disabled={!currentSyncRepo || syncing}
+                onclick={handleCurrentRepoSync}
+                onkeydown={handleSyncMenuItemKeydown}
+              >
+                Sync current repo
+              </button>
+            </li>
+          </ul>
         {/if}
-        {#if !tabsCollapsed}
-          <span class="sync-label">{syncing ? "Syncing..." : "Sync"}</span>
-        {/if}
-      </button>
+      </div>
     {/if}
     {#if isThemeToggleVisible()}
       <ThemeToggle />
@@ -386,6 +515,58 @@
     min-width: 34px;
     min-height: 28px;
     line-height: 0;
+  }
+
+  .sync-split {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+
+  .sync-primary {
+    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  }
+
+  .sync-menu-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    margin-left: -1px;
+    padding-inline: 6px;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    line-height: 0;
+  }
+
+  .sync-menu {
+    position: fixed;
+    z-index: var(--z-popover);
+    min-width: 168px;
+    margin: 0;
+    padding: var(--space-1);
+    list-style: none;
+  }
+
+  .sync-menu button {
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    background: transparent;
+    font: inherit;
+    font-size: var(--font-size-md);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .sync-menu button:hover:not(:disabled) {
+    background: var(--bg-surface-hover);
+  }
+
+  .sync-menu button:disabled {
+    color: var(--text-muted);
+    cursor: not-allowed;
   }
 
   .sync-icon {

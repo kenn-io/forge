@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { globalRepoForSelectedRoute } from "./repoSelectionSync.js";
+import { globalRepoForSelectedRoute, syncRepoForRoute } from "./repoSelectionSync.js";
 import type { Route } from "../stores/router.svelte.ts";
 
 const prSelected = {
@@ -175,5 +175,34 @@ describe("globalRepoForSelectedRoute", () => {
       },
     } as unknown as Route;
     expect(() => globalRepoForSelectedRoute(route)).toThrow("selected route is missing provider");
+  });
+});
+
+describe("syncRepoForRoute", () => {
+  it("returns the selected item repository", () => {
+    const route: Route = {
+      page: "pulls",
+      view: "list",
+      selected: prSelected,
+    };
+
+    expect(syncRepoForRoute(route)).toBe("github|github.com/acme/tools");
+  });
+
+  it("returns the repository browser repository", () => {
+    const route: Route = {
+      page: "repo-browser",
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      repoPath: "Group/SubGroup/Project.Special",
+      owner: "Group/SubGroup",
+      name: "Project.Special",
+    };
+
+    expect(syncRepoForRoute(route)).toBe("gitlab|gitlab.example.com/Group/SubGroup/Project.Special");
+  });
+
+  it("returns undefined when the route does not identify one repository", () => {
+    expect(syncRepoForRoute({ page: "activity" })).toBeUndefined();
   });
 });

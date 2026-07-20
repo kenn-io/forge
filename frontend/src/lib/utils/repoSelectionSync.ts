@@ -13,6 +13,16 @@ function requireSelectedRouteRepoValue(value: string | undefined, field: string)
   return value;
 }
 
+function repoFilterValue(repo: SelectedRouteRepo, routeLabel = "selected route"): string {
+  const provider = requireSelectedRouteRepoValue(repo.provider, "provider");
+  const platformHost = repo.platformHost;
+  if (!platformHost) {
+    throw new Error(`${routeLabel} is missing platformHost`);
+  }
+  const repoPath = requireSelectedRouteRepoValue(repo.repoPath, "repoPath");
+  return `${provider}|${platformHost}/${repoPath}`;
+}
+
 // When the URL points at a specific PR or issue, returns the repo key
 // (`provider|platformHost/repoPath`) that the global repo filter and dropdown
 // should follow. Returns undefined for routes that don't nail down a single
@@ -29,8 +39,14 @@ export function globalRepoForSelectedRoute(route: Route): string | undefined {
   }
   if (!selected) return undefined;
 
-  const provider = requireSelectedRouteRepoValue(selected.provider, "provider");
-  const platformHost = requireSelectedRouteRepoValue(selected.platformHost, "platformHost");
-  const repoPath = requireSelectedRouteRepoValue(selected.repoPath, "repoPath");
-  return `${provider}|${platformHost}/${repoPath}`;
+  return repoFilterValue(selected);
+}
+
+// A scoped sync may also use the repository browser route, which identifies a
+// repository without selecting a pull request or issue.
+export function syncRepoForRoute(route: Route): string | undefined {
+  const selectedRepo = globalRepoForSelectedRoute(route);
+  if (selectedRepo || route.page !== "repo-browser") return selectedRepo;
+
+  return repoFilterValue(route, "repository browser route");
 }

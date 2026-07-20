@@ -21,6 +21,12 @@ type ModeKey =
 
 const mockedReviewsDaemonAvailable = vi.hoisted(() => ({ value: true }));
 
+const mockedSync = vi.hoisted(() => ({
+  running: false,
+  triggerSync: vi.fn(() => Promise.resolve()),
+  triggerRepoSync: vi.fn((_repo: string) => Promise.resolve()),
+}));
+
 const mockedModeVisibility = vi.hoisted(() => ({
   value: {
     activity: true,
@@ -56,8 +62,9 @@ vi.mock("@middleman/ui", async (importOriginal) => {
     ...actual,
     getStores: () => ({
       sync: {
-        getSyncState: () => null,
-        triggerSync: () => Promise.resolve(),
+        getSyncState: () => (mockedSync.running ? { running: true } : null),
+        triggerSync: mockedSync.triggerSync,
+        triggerRepoSync: mockedSync.triggerRepoSync,
       },
       settings: {
         isModeVisible: (mode: ModeKey) => mockedModeVisibility.value[mode],
@@ -71,6 +78,7 @@ vi.mock("@middleman/ui", async (importOriginal) => {
 
 import AppHeader from "./AppHeader.svelte";
 import { initTheme, cleanupTheme } from "../../stores/theme.svelte.js";
+import { setGlobalRepo } from "../../stores/filter.svelte.js";
 import { setSidebarCollapsed } from "../../stores/sidebar.svelte.ts";
 import { navigate } from "../../stores/router.svelte.ts";
 import { isPaletteOpen, resetPaletteState } from "../../stores/keyboard/palette-state.svelte.js";
@@ -135,6 +143,10 @@ describe("AppHeader", () => {
     setSidebarCollapsed(false);
     mockedContainerSize.value = "wide";
     mockedReviewsDaemonAvailable.value = true;
+    mockedSync.running = false;
+    mockedSync.triggerSync.mockClear();
+    mockedSync.triggerRepoSync.mockClear();
+    setGlobalRepo(undefined);
     delete window.__middleman_config;
     window.__middleman_notify_config_changed?.();
     mockedModeVisibility.value = {
@@ -161,6 +173,8 @@ describe("AppHeader", () => {
     setSidebarCollapsed(false);
     mockedContainerSize.value = "wide";
     mockedReviewsDaemonAvailable.value = true;
+    mockedSync.running = false;
+    setGlobalRepo(undefined);
     delete window.__middleman_config;
     window.__middleman_notify_config_changed?.();
     mockedModeVisibility.value = {
@@ -176,6 +190,83 @@ describe("AppHeader", () => {
       workspaces: true,
     };
     resetPaletteState();
+  });
+
+  it("keeps the primary segment wired to the existing full sync", async () => {
+    initTheme();
+    render(AppHeader);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+
+    expect(mockedSync.triggerSync).toHaveBeenCalledOnce();
+    expect(mockedSync.triggerRepoSync).not.toHaveBeenCalled();
+  });
+
+  it("syncs the route repository before the global selector repository", async () => {
+    initTheme();
+    setGlobalRepo("gitlab|gitlab.com/other/project");
+    navigate("/pulls/github/acme/widgets/7");
+    render(AppHeader);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Sync options" }));
+    const repoSyncAction = screen.getByRole("menuitem", { name: "Sync current repo" });
+    expect(document.activeElement).toBe(repoSyncAction);
+    await fireEvent.click(repoSyncAction);
+
+    expect(mockedSync.triggerRepoSync).toHaveBeenCalledWith("github|github.com/acme/widgets");
+    expect(mockedSync.triggerSync).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu", { name: "Sync options" })).toBeNull();
+  });
+
+  it("uses one globally selected repository when the route has no repository", async () => {
+    initTheme();
+    setGlobalRepo("gitlab|gitlab.example.com/team/infra");
+    navigate("/");
+    render(AppHeader);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Sync options" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Sync current repo" }));
+
+    expect(mockedSync.triggerRepoSync).toHaveBeenCalledWith("gitlab|gitlab.example.com/team/infra");
+  });
+
+  it.each([
+    ["all repositories", undefined],
+    ["multiple repositories", "github|github.com/acme/widgets,gitlab|gitlab.com/team/infra"],
+  ])("disables repository sync for %s", async (_label, selection) => {
+    initTheme();
+    setGlobalRepo(selection);
+    navigate("/");
+    render(AppHeader);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Sync options" }));
+
+    expect((screen.getByRole("menuitem", { name: "Sync current repo" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("dismisses sync options outside and restores trigger focus after Escape", async () => {
+    initTheme();
+    setGlobalRepo("github|github.com/acme/widgets");
+    render(AppHeader);
+    const trigger = screen.getByRole("button", { name: "Sync options" });
+
+    await fireEvent.click(trigger);
+    await fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("menu", { name: "Sync options" })).toBeNull();
+
+    await fireEvent.click(trigger);
+    await fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Sync options" })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("disables both sync segments while a sync is running", () => {
+    initTheme();
+    mockedSync.running = true;
+    render(AppHeader);
+
+    expect((screen.getByRole("button", { name: "Syncing" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Sync options" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("toggles the root dark class when the theme button is clicked", async () => {

@@ -25825,7 +25825,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	assert.Equal(int64(1), pushedDiff.WhitespaceOnlyCount)
 }
 
-func TestWorkspaceDiffEndpointWarnsOnlyAfterGitHeadMovesE2E(t *testing.T) {
+func TestWorkspaceDiffEndpointWarnsAndRefreshesOnlyAfterGitHeadMovesE2E(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
@@ -25838,6 +25838,8 @@ func TestWorkspaceDiffEndpointWarnsOnlyAfterGitHeadMovesE2E(t *testing.T) {
 
 	initial := requestWorkspaceDiff(t, srv, ws.Id, "head")
 	assert.False(initial.Stale)
+	require.NotNil(initial.SnapshotVersion)
+	initialVersion := *initial.SnapshotVersion
 	key := workspaceDiffLogicalKey{
 		WorkspaceID: ws.Id,
 		Spec: workspace.DiffSnapshotSpec{
@@ -25856,16 +25858,55 @@ func TestWorkspaceDiffEndpointWarnsOnlyAfterGitHeadMovesE2E(t *testing.T) {
 
 	unchanged := requestWorkspaceDiff(t, srv, ws.Id, "head")
 	assert.False(unchanged.Stale)
+	srv.workspaceDiffCache.mu.Lock()
+	entry = srv.workspaceDiffCache.peekEntryLocked(key)
+	if entry != nil {
+		entry.retryAfter = time.Time{}
+	}
+	srv.workspaceDiffCache.mu.Unlock()
+	require.NotNil(entry)
+	require.NoError(srv.workspaceDiffCache.validate(t.Context(), key))
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "head-moved.txt"),
-		[]byte("head moved\n"),
+		[]byte("committed\n"),
 		0o644,
 	))
 	runGit(t, ws.WorktreePath, "add", "head-moved.txt")
 	runGit(t, ws.WorktreePath, "commit", "-m", "move workspace head")
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "head-moved.txt"),
+		[]byte("worktree change\n"),
+		0o644,
+	))
 
 	moved := requestWorkspaceDiff(t, srv, ws.Id, "head")
 	assert.True(moved.Stale)
+	require.NotNil(moved.SnapshotVersion)
+	assert.Equal(initialVersion, *moved.SnapshotVersion)
+
+	var refreshed generated.DiffResponse
+	assert.Eventually(func() bool {
+		req := newWorkspaceFixtureRequest(
+			http.MethodGet,
+			"/api/v1/workspaces/"+ws.Id+"/diff?base=head",
+			nil,
+		)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			return false
+		}
+		var candidate generated.DiffResponse
+		if err := json.Unmarshal(rr.Body.Bytes(), &candidate); err != nil ||
+			candidate.Stale || candidate.SnapshotVersion == nil ||
+			*candidate.SnapshotVersion == initialVersion {
+			return false
+		}
+		refreshed = candidate
+		return true
+	}, 2*time.Second, 10*time.Millisecond)
+	require.NotNil(refreshed.Files)
+	assert.Contains(workspaceDiffPaths(*refreshed.Files), "head-moved.txt")
 }
 
 func TestWorkspaceFilePreviewEndpointReturnsRequestedDiffSideContentE2E(t *testing.T) {

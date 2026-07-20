@@ -138,7 +138,7 @@ func TestKataSnapshotEnricherLoadsExactSelectedHistoryAcrossPages(t *testing.T) 
 	assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
 }
 
-func TestKataSnapshotEnricherCapsSelectedHistoryAtOneHundred(t *testing.T) {
+func TestKataSnapshotEnricherRejectsSelectedHistoryBeyondOneHundredResults(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
@@ -163,9 +163,70 @@ func TestKataSnapshotEnricherCapsSelectedHistoryAtOneHundred(t *testing.T) {
 	result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: selectedUID})
 
 	require.NoError(err)
-	require.Len(result.SelectedHistory, 100)
-	assert.Equal(int64(100), result.SelectedHistory[99].EventID)
+	assert.Empty(result.SelectedHistory)
 	assert.Equal(1, pollCalls)
+	assert.Equal(kataSnapshotEnrichmentError{
+		Code:    CodeUpstreamError,
+		Message: "Selected task history exceeded the bounded scan limit.",
+	}, result.Errors[kataSnapshotEnrichmentStageHistory])
+}
+
+func TestKataSnapshotEnricherBoundsSelectedHistoryScanning(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		pollEvents func(*katagenerated.PollEventsRequestOptions, int) *katagenerated.PollEventsResp
+		wantCalls  int
+	}{
+		{
+			name: "page budget",
+			pollEvents: func(options *katagenerated.PollEventsRequestOptions, call int) *katagenerated.PollEventsResp {
+				if call > 5 {
+					return testKataPollEventsResponse(*options.Query.AfterID)
+				}
+				events := testKataEventPage(*options.Query.AfterID+1, int(kataSnapshotHistoryPageLimit), nil)
+				return testKataPollEventsResponse(events[len(events)-1].EventID, events...)
+			},
+			wantCalls: 4,
+		},
+		{
+			name: "event budget",
+			pollEvents: func(_ *katagenerated.PollEventsRequestOptions, call int) *katagenerated.PollEventsResp {
+				events := testKataEventPage(1, 4001, nil)
+				return testKataPollEventsResponse(events[len(events)-1].EventID, events...)
+			},
+			wantCalls: 1,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			pollCalls := 0
+			client := &fakeKataSnapshotAPIClient{
+				showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+					return testKataShowIssueResponse("issue-member"), nil
+				},
+				pollEvents: func(_ context.Context, options *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+					pollCalls++
+					return test.pollEvents(options, pollCalls), nil
+				},
+			}
+			enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+			result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: "issue-member"})
+
+			require.NoError(t, err)
+			assert.NotNil(result.SelectedDetail)
+			assert.Empty(result.SelectedHistory)
+			assert.Equal(test.wantCalls, pollCalls)
+			assert.Equal(kataSnapshotEnrichmentError{
+				Code:    CodeUpstreamError,
+				Message: "Selected task history exceeded the bounded scan limit.",
+			}, result.Errors[kataSnapshotEnrichmentStageHistory])
+		})
+	}
 }
 
 func TestKataSnapshotEnricherRejectsInvalidHistoryPagination(t *testing.T) {
@@ -430,6 +491,103 @@ func TestKataSnapshotEnricherGraphNodeAuthorizesSelectionWithoutRerooting(t *tes
 	assert.Empty(result.Errors)
 }
 
+func TestKataSnapshotEnricherDoesNotAuthorizeDisconnectedGraphNode(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	detailCalls := 0
+	historyCalls := 0
+	workspaceCalls := 0
+	client := &fakeKataSnapshotAPIClient{
+		reachableGraph: func(context.Context, *katagenerated.ReachableIssueGraphRequestOptions) (*katagenerated.ReachableIssueGraphResp, error) {
+			response := testKataGraphResponse("issue-source", "issue-linked")
+			response.JSON200.Edges = nil
+			return response, nil
+		},
+		showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			detailCalls++
+			return testKataShowIssueResponse("issue-linked"), nil
+		},
+		pollEvents: func(context.Context, *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+			historyCalls++
+			return testKataPollEventsResponse(0), nil
+		},
+	}
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
+		client: client,
+		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
+			workspaceCalls++
+			return kataWorkspaceTargetResponse{}, nil
+		},
+	})
+
+	result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{
+		SelectedIssueUID: "issue-linked",
+		GraphSourceUID:   "issue-source",
+	})
+
+	require.NoError(t, err)
+	assert.NotNil(result.Graph)
+	assert.Empty(result.SelectedIssueUID)
+	assert.Nil(result.SelectedDetail)
+	assert.Zero(detailCalls)
+	assert.Zero(historyCalls)
+	assert.Zero(workspaceCalls)
+	assert.Empty(result.Errors)
+}
+
+func TestKataSnapshotEnricherRejectsGraphEdgesOutsideNodeSet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(*katagenerated.ReachableGraphEdge)
+	}{
+		{
+			name: "unknown from endpoint",
+			mutate: func(edge *katagenerated.ReachableGraphEdge) {
+				edge.FromUID = "issue-missing"
+			},
+		},
+		{
+			name: "unknown to endpoint",
+			mutate: func(edge *katagenerated.ReachableGraphEdge) {
+				edge.ToUID = "issue-missing"
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			detailCalls := 0
+			client := &fakeKataSnapshotAPIClient{
+				reachableGraph: func(context.Context, *katagenerated.ReachableIssueGraphRequestOptions) (*katagenerated.ReachableIssueGraphResp, error) {
+					response := testKataGraphResponse("issue-source", "issue-linked")
+					test.mutate(&response.JSON200.Edges[0])
+					return response, nil
+				},
+				showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+					detailCalls++
+					return testKataShowIssueResponse("issue-linked"), nil
+				},
+			}
+			enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+			result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{
+				SelectedIssueUID: "issue-linked",
+				GraphSourceUID:   "issue-source",
+			})
+
+			require.NoError(t, err)
+			assert.Nil(result.Graph)
+			assert.Empty(result.SelectedIssueUID)
+			assert.Zero(detailCalls)
+			assert.Contains(result.Errors, kataSnapshotEnrichmentStageGraph)
+		})
+	}
+}
+
 func TestKataSnapshotEnricherAllowsCatalogedCrossProjectGraphSelection(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
@@ -573,6 +731,36 @@ func TestKataSnapshotEnricherRejectsMalformedGeneratedDetail(t *testing.T) {
 	assert.Contains(result.Errors, kataSnapshotEnrichmentStageDetail)
 }
 
+func TestKataSnapshotEnricherRejectsDetailShortIDMismatch(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	workspaceCalls := 0
+	client := &fakeKataSnapshotAPIClient{
+		showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			response := testKataShowIssueResponse("issue-member")
+			response.JSON200.Issue.ShortID = "renamed"
+			return response, nil
+		},
+	}
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
+		client: client,
+		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
+			workspaceCalls++
+			return kataWorkspaceTargetResponse{}, nil
+		},
+	})
+
+	result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{
+		SelectedIssueUID: "issue-member",
+	})
+
+	require.NoError(t, err)
+	assert.Nil(result.SelectedDetail)
+	assert.Zero(workspaceCalls)
+	assert.Contains(result.Errors, kataSnapshotEnrichmentStageDetail)
+}
+
 func TestKataSnapshotEnricherSkipsNonmemberGraphSource(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
@@ -664,6 +852,65 @@ func TestKataSnapshotEnricherKeepsFailuresLocalToTheirStage(t *testing.T) {
 	assert.Equal(kataSnapshotEnrichmentError{Code: CodeInternalError, Message: "Could not resolve workspace target."}, result.Errors[kataSnapshotEnrichmentStageWorkspaceTarget])
 }
 
+func TestKataSnapshotEnricherPreservesMemberEnrichmentWhenOptionalGraphTimesOut(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	selectedUID := "issue-member"
+	historyCalls := 0
+	client := &fakeKataSnapshotAPIClient{
+		reachableGraph: func(context.Context, *katagenerated.ReachableIssueGraphRequestOptions) (*katagenerated.ReachableIssueGraphResp, error) {
+			return nil, context.DeadlineExceeded
+		},
+		showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			return testKataShowIssueResponse(selectedUID), nil
+		},
+		pollEvents: func(_ context.Context, options *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+			historyCalls++
+			if historyCalls == 1 {
+				return testKataPollEventsResponse(1, testKataEvent(1, &selectedUID, time.Now().UTC())), nil
+			}
+			return testKataPollEventsResponse(*options.Query.AfterID), nil
+		},
+	}
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+	result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{
+		SelectedIssueUID: selectedUID,
+		GraphSourceUID:   "issue-source",
+	})
+
+	require.NoError(t, err)
+	assert.NotNil(result.SelectedDetail)
+	assert.Len(result.SelectedHistory, 1)
+	assert.Nil(result.Graph)
+	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load reachable graph."}, result.Errors[kataSnapshotEnrichmentStageGraph])
+}
+
+func TestKataSnapshotEnricherPropagatesRequestCancellationFromOptionalGraph(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	client := &fakeKataSnapshotAPIClient{
+		reachableGraph: func(context.Context, *katagenerated.ReachableIssueGraphRequestOptions) (*katagenerated.ReachableIssueGraphResp, error) {
+			cancel()
+			return nil, context.Canceled
+		},
+		showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			return testKataShowIssueResponse("issue-member"), nil
+		},
+		pollEvents: func(_ context.Context, options *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+			return testKataPollEventsResponse(*options.Query.AfterID), nil
+		},
+	}
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+	_, err := enricher.Enrich(ctx, testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{
+		SelectedIssueUID: "issue-member",
+		GraphSourceUID:   "issue-source",
+	})
+
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 func TestKataSnapshotEnricherPropagatesContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -728,6 +975,9 @@ func testKataGraphResponse(sourceUID, linkedUID string) *katagenerated.Reachable
 			SourceUID: sourceUID,
 			Depth:     "full",
 			HideDone:  false,
+			Edges: []katagenerated.ReachableGraphEdge{
+				{FromUID: linkedUID, ToUID: sourceUID, Kind: katagenerated.ReachableGraphEdgeKindRelated},
+			},
 			Nodes: []katagenerated.ReachableGraphNode{
 				{ID: 1, UID: sourceUID, ProjectID: 7, ProjectUID: &projectUID, ShortID: "source", QualifiedID: "Project A#source", Title: "Source task", Author: "actor", Body: "body", Status: "open", CreatedAt: now, UpdatedAt: now},
 				{ID: 3, UID: linkedUID, ProjectID: 7, ProjectUID: &projectUID, ShortID: "linked", QualifiedID: "Project A#linked", Title: "Linked task", Author: "actor", Body: "body", Status: "open", CreatedAt: now, UpdatedAt: now},
@@ -740,8 +990,12 @@ func testKataShowIssueResponse(uid string) *katagenerated.ShowIssueByUIDResp {
 	projectUID := "project-a"
 	now := time.Date(2026, 7, 20, 16, 0, 0, 0, time.UTC)
 	issueID := int64(3)
+	shortID := "linked"
+	title := "Linked task"
 	if uid == "issue-member" {
 		issueID = 2
+		shortID = "member"
+		title = "Member task"
 	}
 	header := make(http.Header)
 	header.Set("ETag", "detail-etag")
@@ -753,8 +1007,8 @@ func testKataShowIssueResponse(uid string) *katagenerated.ShowIssueByUIDResp {
 			UID:        uid,
 			ProjectID:  7,
 			ProjectUID: &projectUID,
-			ShortID:    "linked",
-			Title:      "Linked task",
+			ShortID:    shortID,
+			Title:      title,
 			Author:     "actor",
 			Body:       "body",
 			Status:     "open",
@@ -762,6 +1016,15 @@ func testKataShowIssueResponse(uid string) *katagenerated.ShowIssueByUIDResp {
 			UpdatedAt:  now,
 		}},
 	}
+}
+
+func testKataEventPage(firstEventID int64, count int, issueUID *string) []katagenerated.EventEnvelope {
+	events := make([]katagenerated.EventEnvelope, count)
+	for i := range events {
+		eventID := firstEventID + int64(i)
+		events[i] = testKataEvent(eventID, issueUID, time.Unix(eventID, 0).UTC())
+	}
+	return events
 }
 
 func testKataPollEventsResponse(nextAfterID int64, events ...katagenerated.EventEnvelope) *katagenerated.PollEventsResp {

@@ -19,8 +19,12 @@ const (
 	kataSnapshotEnrichmentStageHistory         = "history"
 	kataSnapshotEnrichmentStageWorkspaceTarget = "workspace_target"
 	kataSnapshotHistoryPageLimit               = int64(1000)
+	kataSnapshotHistoryScanPageLimit           = 4
+	kataSnapshotHistoryScanEventLimit          = 4000
 	kataSnapshotHistoryResultLimit             = 100
 )
+
+var errKataSnapshotHistoryScanLimit = errors.New("selected task history scan limit exceeded")
 
 type kataSnapshotEnrichmentRequest struct {
 	SelectedIssueUID string
@@ -115,6 +119,29 @@ func (e *kataSnapshotEnricher) Enrich(
 
 	selected, selectedIsMember := members[request.SelectedIssueUID]
 	graphSource, graphSourceIsMember := members[request.GraphSourceUID]
+	if request.SelectedIssueUID != "" && selectedIsMember {
+		result.SelectedIssueUID = request.SelectedIssueUID
+		if err := e.enrichSelected(ctx, authority, selected, &result); err != nil {
+			return kataSnapshotEnrichment{}, err
+		}
+		if request.GraphSourceUID == "" || !graphSourceIsMember {
+			return result, nil
+		}
+
+		graph, _, err := e.loadGraph(ctx, graphSource, projectsByID)
+		if err != nil {
+			if contextErr := ctx.Err(); contextErr != nil {
+				return kataSnapshotEnrichment{}, contextErr
+			}
+			result.addError(kataSnapshotEnrichmentStageGraph, CodeUpstreamError, "Could not load reachable graph.")
+			return result, nil
+		}
+		result.Graph = graph
+		fetchedAt := e.now().UTC()
+		result.GraphFetchedAt = &fetchedAt
+		return result, nil
+	}
+
 	if request.GraphSourceUID != "" && graphSourceIsMember {
 		graph, graphNodes, err := e.loadGraph(ctx, graphSource, projectsByID)
 		if err != nil {
@@ -136,10 +163,22 @@ func (e *kataSnapshotEnricher) Enrich(
 		return result, nil
 	}
 	result.SelectedIssueUID = request.SelectedIssueUID
+	if err := e.enrichSelected(ctx, authority, selected, &result); err != nil {
+		return kataSnapshotEnrichment{}, err
+	}
+	return result, nil
+}
+
+func (e *kataSnapshotEnricher) enrichSelected(
+	ctx context.Context,
+	authority kataCoordinatedAuthority,
+	selected kataSnapshotEnrichmentIssue,
+	result *kataSnapshotEnrichment,
+) error {
 	detail, issue, err := e.loadDetail(ctx, selected)
 	if err != nil {
 		if contextErr := kataEnrichmentContextError(ctx, err); contextErr != nil {
-			return kataSnapshotEnrichment{}, contextErr
+			return contextErr
 		}
 		result.addError(kataSnapshotEnrichmentStageDetail, CodeUpstreamError, "Could not load selected task detail.")
 	} else {
@@ -156,12 +195,12 @@ func (e *kataSnapshotEnricher) Enrich(
 		})
 		if targetErr != nil {
 			if contextErr := kataEnrichmentContextError(ctx, targetErr); contextErr != nil {
-				return kataSnapshotEnrichment{}, contextErr
+				return contextErr
 			}
 			result.addError(kataSnapshotEnrichmentStageWorkspaceTarget, CodeInternalError, "Could not resolve workspace target.")
 		} else {
 			if err := ctx.Err(); err != nil {
-				return kataSnapshotEnrichment{}, err
+				return err
 			}
 			result.SelectedDetail.WorkspaceTarget = target
 		}
@@ -170,13 +209,17 @@ func (e *kataSnapshotEnricher) Enrich(
 	history, err := e.loadHistory(ctx, selected.UID)
 	if err != nil {
 		if contextErr := kataEnrichmentContextError(ctx, err); contextErr != nil {
-			return kataSnapshotEnrichment{}, contextErr
+			return contextErr
+		}
+		if errors.Is(err, errKataSnapshotHistoryScanLimit) {
+			result.addError(kataSnapshotEnrichmentStageHistory, CodeUpstreamError, "Selected task history exceeded the bounded scan limit.")
+			return nil
 		}
 		result.addError(kataSnapshotEnrichmentStageHistory, CodeUpstreamError, "Could not load selected task history.")
 	} else {
 		result.SelectedHistory = history
 	}
-	return result, nil
+	return nil
 }
 
 func (e *kataSnapshotEnricher) loadGraph(
@@ -241,7 +284,32 @@ func (e *kataSnapshotEnricher) loadGraph(
 	if sourceNode.ID != source.ID || sourceNode.ProjectID != source.ProjectID || sourceNode.ProjectUID != source.ProjectUID {
 		return nil, nil, fmt.Errorf("graph source identity does not match authority")
 	}
-	return graph, nodes, nil
+	adjacent := make(map[string][]string, len(nodes))
+	for _, edge := range graph.Edges {
+		if _, ok := nodes[edge.FromUID]; !ok {
+			return nil, nil, fmt.Errorf("graph edge source is not in node set")
+		}
+		if _, ok := nodes[edge.ToUID]; !ok {
+			return nil, nil, fmt.Errorf("graph edge target is not in node set")
+		}
+		adjacent[edge.FromUID] = append(adjacent[edge.FromUID], edge.ToUID)
+		adjacent[edge.ToUID] = append(adjacent[edge.ToUID], edge.FromUID)
+	}
+	reachable := make(map[string]kataSnapshotEnrichmentIssue, len(nodes))
+	reachable[source.UID] = sourceNode
+	queue := []string{source.UID}
+	for len(queue) > 0 {
+		uid := queue[0]
+		queue = queue[1:]
+		for _, adjacentUID := range adjacent[uid] {
+			if _, seen := reachable[adjacentUID]; seen {
+				continue
+			}
+			reachable[adjacentUID] = nodes[adjacentUID]
+			queue = append(queue, adjacentUID)
+		}
+	}
+	return graph, reachable, nil
 }
 
 type kataGeneratedIssueDetail struct {
@@ -274,7 +342,7 @@ func (e *kataSnapshotEnricher) loadDetail(
 		return nil, kataGeneratedIssueDetail{}, fmt.Errorf("validate detail response: %w", err)
 	}
 	issue := response.JSON200.Issue
-	if issue.ID <= 0 || issue.ProjectID <= 0 || issue.ID != selected.ID || issue.UID != selected.UID || issue.ProjectID != selected.ProjectID || issue.ProjectUID == nil || *issue.ProjectUID != selected.ProjectUID || issue.DeletedAt != nil {
+	if issue.ID <= 0 || issue.ProjectID <= 0 || issue.ID != selected.ID || issue.UID != selected.UID || issue.ProjectID != selected.ProjectID || issue.ProjectUID == nil || *issue.ProjectUID != selected.ProjectUID || issue.ShortID != selected.ShortID || issue.DeletedAt != nil {
 		return nil, kataGeneratedIssueDetail{}, fmt.Errorf("detail response identity does not match selection")
 	}
 	etag := ""
@@ -287,7 +355,8 @@ func (e *kataSnapshotEnricher) loadDetail(
 func (e *kataSnapshotEnricher) loadHistory(ctx context.Context, selectedUID string) ([]katagenerated.EventEnvelope, error) {
 	history := make([]katagenerated.EventEnvelope, 0, kataSnapshotHistoryResultLimit)
 	afterID := int64(0)
-	for {
+	scannedEvents := 0
+	for range kataSnapshotHistoryScanPageLimit {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -317,6 +386,10 @@ func (e *kataSnapshotEnricher) loadHistory(ctx context.Context, selectedUID stri
 			}
 			return history, nil
 		}
+		if len(body.Events) > kataSnapshotHistoryScanEventLimit-scannedEvents {
+			return nil, errKataSnapshotHistoryScanLimit
+		}
+		scannedEvents += len(body.Events)
 
 		lastEventID := afterID
 		for _, event := range body.Events {
@@ -333,14 +406,15 @@ func (e *kataSnapshotEnricher) loadHistory(ctx context.Context, selectedUID stri
 			if event.IssueUID == nil || *event.IssueUID != selectedUID {
 				continue
 			}
+			if len(history) == kataSnapshotHistoryResultLimit {
+				return nil, errKataSnapshotHistoryScanLimit
+			}
 			event.CreatedAt = event.CreatedAt.UTC()
 			history = append(history, event)
-			if len(history) == kataSnapshotHistoryResultLimit {
-				return history, nil
-			}
 		}
 		afterID = body.NextAfterID
 	}
+	return nil, errKataSnapshotHistoryScanLimit
 }
 
 func (r *kataSnapshotEnrichment) addError(stage string, code ProblemCode, message string) {

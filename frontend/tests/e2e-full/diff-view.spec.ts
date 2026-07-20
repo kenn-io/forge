@@ -2940,6 +2940,33 @@ test.describe("diff view", () => {
     expect(await diffBody.boundingBox()).toEqual(staleBounds);
   });
 
+  test("stale diff warning does not shift content when the initial diff loads", async ({ page }) => {
+    let releaseDiffResponse: () => void = () => {};
+    const diffResponseReleased = new Promise<void>((resolve) => {
+      releaseDiffResponse = resolve;
+    });
+    await mockDiffApi(page, staleDiff);
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
+      await diffResponseReleased;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(diffResponseFromFixture(staleDiff)),
+      });
+    });
+    await navigateToDiff(page);
+
+    const diffBody = page.locator(".diff-body");
+    await expect(page.locator(".diff-state-msg")).toHaveText("Loading diff");
+    const loadingBounds = await diffBody.boundingBox();
+    expect(loadingBounds).not.toBeNull();
+
+    releaseDiffResponse();
+    await waitForDiffLoaded(page);
+    await expect(page.locator(".stale-banner")).toBeVisible();
+    expect(await diffBody.boundingBox()).toEqual(loadingBounds);
+  });
+
   test("error state shown when diff API fails", async ({ page }) => {
     await mockDiffApiError(page, 404, "diff not available for this pull request");
     await navigateToDiff(page);

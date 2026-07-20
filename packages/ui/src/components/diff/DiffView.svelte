@@ -581,11 +581,9 @@
 </script>
 
 <div class="diff-view">
-  {#if diff}
-    <div class={["stale-banner", { "stale-banner--hidden": !diff.stale }]} aria-hidden={!diff.stale}>
-      Diff may be outdated -- showing changes as of an earlier version of this PR.
-    </div>
-  {/if}
+  <div class={["stale-banner", { "stale-banner--hidden": !diff?.stale }]} aria-hidden={!diff?.stale}>
+    Diff may be outdated -- showing changes as of an earlier version of this PR.
+  </div>
 
   <div class="diff-body">
     {#if loading && !diff}

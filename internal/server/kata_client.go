@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
@@ -15,6 +16,11 @@ type kataAPIClient interface {
 		ctx context.Context,
 		reqEditors ...runtime.RequestEditorFn,
 	) (*katagenerated.InstanceResp, error)
+	StreamEventsRaw(
+		ctx context.Context,
+		options *katagenerated.StreamEventsRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*http.Response, error)
 }
 
 func newKataAPIClient(ctx context.Context, daemon kata.Daemon) (kataAPIClient, error) {
@@ -35,7 +41,50 @@ func newKataAPIClient(ctx context.Context, daemon kata.Daemon) (kataAPIClient, e
 	if err != nil {
 		return nil, err
 	}
-	return katagenerated.NewClient(katagenerated.NewPathEscapingAPIClient(apiClient)), nil
+	return &kataGeneratedClient{
+		Client:     katagenerated.NewClient(apiClient),
+		apiClient:  apiClient,
+		httpClient: httpClient,
+	}, nil
+}
+
+type kataGeneratedClient struct {
+	*katagenerated.Client
+
+	apiClient  runtime.APIClient
+	httpClient *http.Client
+}
+
+func (c *kataGeneratedClient) StreamEventsRaw(
+	ctx context.Context,
+	options *katagenerated.StreamEventsRequestOptions,
+	reqEditors ...runtime.RequestEditorFn,
+) (*http.Response, error) {
+	if options == nil {
+		options = &katagenerated.StreamEventsRequestOptions{}
+	}
+	req, err := c.apiClient.CreateRequest(ctx, runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/api/v1/events/stream",
+		Method:     http.MethodGet,
+		Options:    options,
+	}, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("create Kata event stream request: %w", err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+
+	response, err := c.httpClient.Do(req.WithContext(ctx)) //nolint:gosec // generated client builds the URL from the selected daemon base
+	if err != nil {
+		return nil, fmt.Errorf("open Kata event stream: %w", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		_ = response.Body.Close()
+		return nil, runtime.NewClientAPIError(
+			fmt.Errorf("kata event stream returned status %d", response.StatusCode),
+			runtime.WithStatusCode(response.StatusCode),
+		)
+	}
+	return response, nil
 }
 
 type kataGeneratedHTTPDoer struct {

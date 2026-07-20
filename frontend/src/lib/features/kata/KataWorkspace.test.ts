@@ -1823,6 +1823,57 @@ describe("KataWorkspace", () => {
     },
   );
 
+  it("keeps an expanded Ready child selected after a mutation refresh", async () => {
+    acceptHomeDaemon();
+    const parent = {
+      ...issue("issue-ready-parent", "Ready parent", "project-kata"),
+      child_counts: { open: 1, total: 1 },
+    };
+    const child = {
+      ...issue("issue-ready-child", "Ready child", "project-kata"),
+      parent: { uid: parent.uid, short_id: parent.short_id },
+      parent_short_id: parent.short_id,
+    };
+    const { api, search, issue: issueDetail, addLabel } = createWorkspaceAPI([parent, child]);
+    search.mockImplementation(
+      async (filters: KataTaskSearchFilters): Promise<KataTaskSearchResponse> => ({
+        filters,
+        issues: [parent],
+        ready_issue_uids: [parent.uid, child.uid],
+        fetched_at: fetchedAt,
+      }),
+    );
+    issueDetail.mockImplementation(async (uid: string) => ({
+      ...detail(uid, [parent, child]),
+      children: uid === parent.uid ? [child] : [],
+    }));
+    saveKataWorkspaceState("home", {
+      view: "all",
+      filters: { scope: { kind: "all" }, status: "ready", owner: "", label: "", query: "parent" },
+      selectedIssueUID: parent.uid,
+    });
+
+    const { component } = render(KataWorkspaceRouteHost, { props: { api } });
+    const parentRow = await screen.findByRole("button", { name: /Ready parent/ });
+    await fireEvent.keyDown(parentRow, { key: "ArrowRight" });
+    const childRow = await screen.findByRole("button", { name: /Ready child/ });
+    await fireEvent.click(childRow);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Ready child" })).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole("button", { name: "Add label" }));
+    const label = screen.getByRole("textbox", { name: "New label" });
+    await fireEvent.input(label, { target: { value: "urgent" } });
+    await fireEvent.keyDown(label, { key: "Enter" });
+
+    await waitFor(() => expect(addLabel).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(search.mock.calls.length).toBeGreaterThan(1));
+    await tick();
+    await tick();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Ready child" })).toBeTruthy());
+    expect(component.route().issue).toBe(child.uid);
+    expect(loadKataWorkspaceState("home")?.selectedIssueUID).toBe(child.uid);
+  });
+
   it("persists quick capture after Inbox opens and the new task is selected", async () => {
     acceptHomeDaemon();
     const { api } = createWorkspaceAPI();

@@ -1699,6 +1699,7 @@
 
   function selectedIssueHasRawResultMembership(selectedUID: string | null | undefined = store.selectedIssue?.issue.uid): boolean {
     if (!selectedUID) return true;
+    if (listStatusFilter === "ready") return store.readyIssueUIDs.has(selectedUID);
     return store.currentView.groups
       .flatMap((group) => group.issues)
       .some((issue) => issue.uid === selectedUID && statusMatches(issue, listStatusFilter));

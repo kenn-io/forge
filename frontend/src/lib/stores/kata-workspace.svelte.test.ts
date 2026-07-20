@@ -918,7 +918,7 @@ describe("kata workspace store", () => {
     );
   });
 
-  test("clears stale Ready membership until the authoritative search completes", async () => {
+  test("clears stale Ready membership until each authoritative search completes", async () => {
     const api = createFakeKataTaskAPI();
     const readySearch = deferred<KataTaskSearchResponse>();
     api.mocks.search.mockReturnValueOnce(readySearch.promise);
@@ -936,6 +936,19 @@ describe("kata workspace store", () => {
     });
     await pending;
     expect([...store.readyIssueUIDs]).toEqual([issues[0]!.uid]);
+
+    const refreshedReadySearch = deferred<KataTaskSearchResponse>();
+    api.mocks.search.mockReturnValueOnce(refreshedReadySearch.promise);
+    const refreshPending = store.updateSearchFilters({ query: "refine" }, { selectFirst: false });
+    expect([...store.readyIssueUIDs]).toEqual([]);
+    refreshedReadySearch.resolve({
+      filters: { ...store.searchFilters, query: "refine" },
+      issues: [issues[1]!],
+      ready_issue_uids: [issues[1]!.uid],
+      fetched_at: fetchedAt,
+    });
+    await refreshPending;
+    expect([...store.readyIssueUIDs]).toEqual([issues[1]!.uid]);
 
     await store.updateSearchFilters({ status: "open" }, { selectFirst: false });
     expect([...store.readyIssueUIDs]).toEqual([]);

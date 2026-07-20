@@ -857,7 +857,7 @@ export class KataWorkspaceStore {
     previousFilters: KataTaskSearchFilters,
     nextFilters: KataTaskSearchFilters,
   ): void {
-    if (nextFilters.status !== "ready" || previousFilters.status !== "ready") {
+    if (nextFilters.status === "ready" || previousFilters.status === "ready") {
       this.readyIssueUIDs = new Set();
     }
   }

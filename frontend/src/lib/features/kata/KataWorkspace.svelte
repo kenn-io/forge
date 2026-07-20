@@ -1916,7 +1916,7 @@
       }
       const ok = await runViewTask(() => store.updateSearchFilters(filters), "view");
       if (!ok) {
-        if (isCurrentNavigation(generation)) restoreWorkspaceMemory(memory);
+        if (isCurrentNavigation(generation) && nextStatus !== "ready") restoreWorkspaceMemory(memory);
         return;
       }
       if (!isCurrentNavigation(generation)) return;

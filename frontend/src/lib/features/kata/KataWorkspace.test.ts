@@ -1895,6 +1895,22 @@ describe("KataWorkspace", () => {
     expect(loadKataWorkspaceState("home")).toEqual(persisted);
   });
 
+  it("keeps Ready selected with empty membership when its request fails", async () => {
+    acceptHomeDaemon();
+    const { api, search } = createWorkspaceAPI();
+    search.mockRejectedValueOnce(new Error("ready search failed"));
+
+    render(KataWorkspace, { props: { api } });
+    await waitFor(() => expect(screen.getByRole("heading", { name: "All Open" })).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole("combobox", { name: "Status: Open" }));
+    await fireEvent.click(screen.getByRole("option", { name: "Ready" }));
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("ready search failed"));
+    expect(screen.getByRole("combobox", { name: "Status: Ready" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Pay rent/ })).toBeNull();
+  });
+
   it("does not persist external URL selection", async () => {
     acceptHomeDaemon();
     const persisted = {

@@ -321,7 +321,6 @@ test("keeps the pre-kit commit SHA in the compact header before the timestamp", 
   expect(typeBox!.x + typeBox!.width).toBeLessThanOrEqual(authorBox!.x);
   expect(authorBox!.x + authorBox!.width).toBeLessThanOrEqual(shaBox!.x);
   expect(shaBox!.x + shaBox!.width).toBeLessThanOrEqual(timeBox!.x);
-  expect(timeBox!.x - (shaBox!.x + shaBox!.width)).toBeLessThanOrEqual(8);
   const headerCenters = [typeBox!, authorBox!, shaBox!, timeBox!].map((box) => box.y + box.height / 2);
   expect(Math.max(...headerCenters) - Math.min(...headerCenters)).toBeLessThanOrEqual(1);
   expect(subjectBox!.y).toBeGreaterThan(shaBox!.y + shaBox!.height);

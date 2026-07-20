@@ -76,6 +76,8 @@
   } from "../diff/review-thread-context.js";
   import CIStatus from "./CIStatus.svelte";
   import StackStatus from "./StackStatus.svelte";
+  import MergeWarningsChip, { type MergeWarningEntry } from "./MergeWarningsChip.svelte";
+  import { providerDisplayLabel } from "../../api/provider-labels.js";
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import { DiffSummaryFilesResult } from "./diff-summary.js";
@@ -192,7 +194,7 @@
   });
 
   let activeTab = $state<"conversation" | "files">("conversation");
-  let expandedPanel = $state<"ci" | "stack" | null>(null);
+  let expandedPanel = $state<"ci" | "stack" | "merge" | null>(null);
   let pullDetailScroller: HTMLDivElement | undefined = $state();
   let pullDetailScrollRestoreRaf = 0;
   let keepStackExpandedOnRouteChange = false;
@@ -260,24 +262,42 @@
     }
   }
 
-  function hasWarningLines(
-    prState: string,
-    mergeableState: string,
-    checksJSON: string,
+  function mergeWarningEntries(
+    pr: Pick<PullRequest, "State" | "MergeableState" | "CIChecksJSON">,
     warnings: readonly string[] | null | undefined,
-  ): boolean {
-    return (
-      (
-        prState === "open" &&
-        (
-          mergeableState === "dirty" ||
-          mergeableState === "blocked" ||
-          mergeableState === "behind" ||
-          requiredStatusChecksHaveNotPassed(checksJSON)
-        )
-      ) ||
-      (warnings?.length ?? 0) > 0
-    );
+    stale: boolean,
+  ): MergeWarningEntry[] {
+    const entries: MergeWarningEntry[] = [];
+    if (!stale && pr.State === "open") {
+      if (pr.MergeableState === "dirty") {
+        entries.push({
+          kind: "conflict",
+          text: "This branch has conflicts that must be resolved before merging.",
+        });
+      }
+      if (pr.MergeableState === "blocked") {
+        entries.push({
+          kind: "blocked",
+          text: "Branch protection rules may prevent this merge.",
+        });
+      }
+      if (pr.MergeableState === "behind") {
+        entries.push({
+          kind: "behind",
+          text: "This branch is behind the base branch and may need to be updated.",
+        });
+      }
+      if (requiredStatusChecksHaveNotPassed(pr.CIChecksJSON)) {
+        entries.push({
+          kind: "required-checks",
+          text: "Required status checks have not passed.",
+        });
+      }
+    }
+    for (const warning of warnings ?? []) {
+      entries.push({ kind: "server", text: warning });
+    }
+    return entries;
   }
   async function editTimelineComment(
     event: { PlatformID: number | null },
@@ -1829,6 +1849,13 @@
           ontoggle={(next) => { expandedPanel = next ? "ci" : null; }}
           showPanel={false}
         />
+        <MergeWarningsChip
+          warnings={mergeWarningEntries(pr, detail.warnings, stalePR)}
+          pullURL={pr.URL}
+          providerLabel={providerDisplayLabel(detail.repo?.provider ?? provider)}
+          expanded={expandedPanel === "merge"}
+          ontoggle={(next) => { expandedPanel = next ? "merge" : null; }}
+        />
         <StackStatus
           {owner}
           {name}
@@ -1952,48 +1979,6 @@
         />
       {/if}
 
-
-      <!-- Pull request warnings -->
-      {#if !stalePR && hasWarningLines(pr.State, pr.MergeableState, pr.CIChecksJSON, detail.warnings)}
-        <div class="merge-warnings" aria-label="Pull request warnings">
-          {#if pr.State === "open" && pr.MergeableState === "dirty"}
-            <div class="merge-warning-line merge-warning-line--conflict">
-              <span>This branch has conflicts that must be resolved before merging.</span>
-              <a href={pr.URL} target="_blank" rel="noopener noreferrer">View on GitHub</a>
-            </div>
-          {/if}
-          {#if pr.State === "open" && pr.MergeableState === "blocked"}
-            <div class="merge-warning-line">
-              <span>Branch protection rules may prevent this merge.</span>
-            </div>
-          {/if}
-          {#if pr.State === "open" && pr.MergeableState === "behind"}
-            <div class="merge-warning-line">
-              <span>This branch is behind the base branch and may need to be updated.</span>
-            </div>
-          {/if}
-          {#if pr.State === "open" && requiredStatusChecksHaveNotPassed(pr.CIChecksJSON)}
-            <div class="merge-warning-line">
-              <span>Required status checks have not passed.</span>
-            </div>
-          {/if}
-          {#if detail.warnings && detail.warnings.length > 0}
-            {#each detail.warnings as warning (warning)}
-              <div class="merge-warning-line">
-                <span>{warning}</span>
-              </div>
-            {/each}
-          {/if}
-        </div>
-      {:else if stalePR && detail.warnings && detail.warnings.length > 0}
-        <div class="merge-warnings" aria-label="Pull request warnings">
-          {#each detail.warnings as warning (warning)}
-            <div class="merge-warning-line">
-              <span>{warning}</span>
-            </div>
-          {/each}
-        </div>
-      {/if}
 
       {#snippet primaryActionButtons()}
         {#if pr.State === "open"}
@@ -3198,35 +3183,6 @@
     line-height: 1.6;
   }
 
-  .merge-warnings {
-    font-size: var(--font-size-sm);
-    padding: 8px 12px;
-    border-radius: var(--radius-sm);
-    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
-    color: var(--text-secondary);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .merge-warning-line {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .merge-warning-line a {
-    color: inherit;
-    text-decoration: underline;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .merge-warning-line--conflict {
-    color: var(--accent-amber);
-  }
-
   .files-stat {
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
@@ -3410,7 +3366,6 @@
     .section-title,
     .section-title-inline,
     .files-stat,
-    .merge-warnings,
     .action-error,
     .loading-placeholder,
     .detail-tab {

@@ -512,6 +512,7 @@ describe("PullDetail approvals", () => {
   it("uses one shared expanded slot for CI and stack status", async () => {
     const detail = pullDetail();
     detail.merge_request.Number = 2;
+    detail.merge_request.MergeableState = "dirty";
     detail.stack = {
       stack_id: 1,
       stack_name: "session-recovery",
@@ -611,6 +612,11 @@ describe("PullDetail approvals", () => {
     );
     expect(stackLinks).toEqual(["#3 UI polish", "#2 session storage", "#1 base schema"]);
     expect(document.querySelector(".stack-base-name")?.textContent?.trim()).toBe("main");
+
+    await fireEvent.click(screen.getByTestId("merge-warnings-chip"));
+
+    expect(screen.queryByText("3 PRs · current 2/3 · downstack CI failure")).toBeNull();
+    expect(screen.getByText("This branch has conflicts that must be resolved before merging.")).toBeTruthy();
   });
 
   it("does not probe stack context for unstacked pull details", () => {
@@ -758,65 +764,84 @@ describe("PullDetail approvals", () => {
     expect(container.textContent).toContain("Compact activity preview");
   });
 
-  const warningCases = [
-    {
-      name: "does not describe GitHub unstable mergeability as required checks",
-      mergeableState: "unstable",
-      checks: [
-        {
-          name: "e2e",
-          status: "completed",
-          conclusion: "failure",
-          url: "https://example.com/e2e",
-          app: "GitHub Actions",
-        },
-      ],
-      requiredWarning: false,
-      behindWarning: false,
-    },
-    {
-      name: "shows required CI and branch freshness warnings independently",
-      mergeableState: "behind",
-      checks: [
-        {
-          name: "build",
-          status: "completed",
-          conclusion: "failure",
-          url: "https://example.com/build",
-          app: "GitHub Actions",
-          required: true,
-        },
-      ],
-      requiredWarning: true,
-      behindWarning: true,
-    },
-  ];
+  it("does not describe GitHub unstable mergeability as required checks", () => {
+    const detail = pullDetail();
+    detail.merge_request.MergeableState = "unstable";
+    detail.merge_request.CIStatus = "failure";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      {
+        name: "e2e",
+        status: "completed",
+        conclusion: "failure",
+        url: "https://example.com/e2e",
+        app: "GitHub Actions",
+      },
+    ]);
 
-  for (const { name, mergeableState, checks, requiredWarning, behindWarning } of warningCases) {
-    it(name, () => {
-      const detail = pullDetail();
-      detail.merge_request.MergeableState = mergeableState;
-      detail.merge_request.CIStatus = "failure";
-      detail.merge_request.CIChecksJSON = JSON.stringify(checks);
+    renderPullDetail(detail);
 
-      renderPullDetail(detail);
+    expect(screen.queryByTestId("merge-warnings-chip")).toBeNull();
+  });
 
-      const requiredStatusWarning = screen.queryByText("Required status checks have not passed.");
-      const behindBranchWarning = screen.queryByText(
-        "This branch is behind the base branch and may need to be updated.",
-      );
-      if (requiredWarning) {
-        expect(requiredStatusWarning).not.toBeNull();
-      } else {
-        expect(requiredStatusWarning).toBeNull();
-      }
-      if (behindWarning) {
-        expect(behindBranchWarning).not.toBeNull();
-      } else {
-        expect(behindBranchWarning).toBeNull();
-      }
-    });
-  }
+  it("shows required CI and branch freshness warnings behind the merge warnings chip", async () => {
+    const detail = pullDetail();
+    detail.merge_request.MergeableState = "behind";
+    detail.merge_request.CIStatus = "failure";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      {
+        name: "build",
+        status: "completed",
+        conclusion: "failure",
+        url: "https://example.com/build",
+        app: "GitHub Actions",
+        required: true,
+      },
+    ]);
+
+    renderPullDetail(detail);
+
+    const chip = screen.getByTestId("merge-warnings-chip");
+    expect(chip.textContent).toContain("2 merge warnings");
+    expect(screen.queryByText("Required status checks have not passed.")).toBeNull();
+
+    await fireEvent.click(chip);
+
+    expect(screen.getByText("Required status checks have not passed.")).toBeTruthy();
+    expect(screen.getByText("This branch is behind the base branch and may need to be updated.")).toBeTruthy();
+  });
+
+  it("labels the chip Conflicts and links to the provider when the branch is dirty", async () => {
+    const detail = pullDetail();
+    detail.merge_request.MergeableState = "dirty";
+
+    renderPullDetail(detail);
+
+    const chip = screen.getByTestId("merge-warnings-chip");
+    expect(chip.textContent).toContain("Conflicts");
+
+    await fireEvent.click(chip);
+
+    expect(screen.getByText("This branch has conflicts that must be resolved before merging.")).toBeTruthy();
+    const link = screen.getByRole("link", { name: "View on GitHub" });
+    expect(link.getAttribute("href")).toBe(detail.merge_request.URL);
+  });
+
+  it("shows only server warnings on the chip when the detail is stale", async () => {
+    const detail = pullDetail();
+    detail.repo_owner = "someone-else";
+    detail.merge_request.MergeableState = "dirty";
+    detail.warnings = ["Example sync warning"];
+
+    renderPullDetail(detail);
+
+    const chip = screen.getByTestId("merge-warnings-chip");
+    expect(chip.textContent).toContain("1 merge warning");
+
+    await fireEvent.click(chip);
+
+    expect(screen.getByText("Example sync warning")).toBeTruthy();
+    expect(screen.queryByText("This branch has conflicts that must be resolved before merging.")).toBeNull();
+  });
 
   it("does not render the merge button when repo permissions disallow merging", async () => {
     const detail = pullDetail();

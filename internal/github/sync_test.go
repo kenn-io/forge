@@ -9893,6 +9893,68 @@ func TestScopedRunDoesNotDelayNextFullRunOnSameHost(t *testing.T) {
 	assert.Equal(t, []string{"selected", "selected", "unrelated"}, got)
 }
 
+func TestScheduledFullRunRetriesAfterOverlappingScopedRun(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repos := []RepoRef{
+		{Owner: "owner", Name: "selected", PlatformHost: "github.com"},
+		{Owner: "owner", Name: "unrelated", PlatformHost: "github.com"},
+	}
+	selectedEntered := make(chan struct{}, 1)
+	releaseSelected := make(chan struct{})
+	unrelatedSynced := make(chan struct{}, 1)
+	mc := &mockClient{
+		listOpenPRsFn: func(ctx context.Context, _, repo string) ([]*gh.PullRequest, error) {
+			switch repo {
+			case "selected":
+				select {
+				case selectedEntered <- struct{}{}:
+					select {
+					case <-releaseSelected:
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					}
+				default:
+				}
+			case "unrelated":
+				select {
+				case unrelatedSynced <- struct{}{}:
+				default:
+				}
+			}
+			return []*gh.PullRequest{}, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, repos,
+		time.Hour, nil, nil,
+	)
+	syncer.SetParallelism(1)
+	t.Cleanup(syncer.Stop)
+
+	scopedDone := make(chan struct{})
+	go func() {
+		defer close(scopedDone)
+		syncer.runOnce(ctx, true, nil, repos[:1])
+	}()
+
+	select {
+	case <-selectedEntered:
+	case <-time.After(time.Second):
+		require.FailNow("scoped run did not start within 1s")
+	}
+	syncer.RunOnce(ctx)
+	close(releaseSelected)
+
+	select {
+	case <-unrelatedSynced:
+	case <-time.After(time.Second):
+		require.FailNow("scheduled full run was not retried after scoped run")
+	}
+	<-scopedDone
+}
+
 func TestBudgetResetOnRateWindowReset(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)

@@ -476,7 +476,10 @@ type Syncer struct {
 	branchActivityRetention  time.Duration
 	branchActivityMaxCommits int
 	parallelism              atomic.Int32
+	runMu                    sync.Mutex
 	running                  atomic.Bool
+	exclusiveRun             bool // guarded by runMu
+	scheduledFullPending     bool // guarded by runMu
 	providerWorkMu           sync.Mutex
 	providerWork             map[string]map[archive.WorkPriority]int
 	archiveProviderRequests  map[string]archiveProviderRequest
@@ -3828,10 +3831,31 @@ func (s *Syncer) runOnce(
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
 ) {
-	if !s.running.CompareAndSwap(false, true) {
+	s.runMu.Lock()
+	if s.running.Load() {
+		if !bypassNextSyncAfter && onlyRepos == nil && s.exclusiveRun {
+			s.scheduledFullPending = true
+		}
+		s.runMu.Unlock()
 		return
 	}
-	defer s.running.Store(false)
+	s.running.Store(true)
+	exclusive := onlyRepos != nil
+	s.exclusiveRun = exclusive
+	s.runMu.Unlock()
+	defer func() {
+		s.runMu.Lock()
+		s.running.Store(false)
+		s.exclusiveRun = false
+		retryScheduledFull := exclusive && s.scheduledFullPending
+		if retryScheduledFull {
+			s.scheduledFullPending = false
+		}
+		s.runMu.Unlock()
+		if retryScheduledFull {
+			s.TriggerRun(context.Background())
+		}
+	}()
 
 	rateLimitSnapshotCtx := ctx
 

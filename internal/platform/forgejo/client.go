@@ -146,6 +146,7 @@ func (c *Client) Capabilities() platform.Capabilities {
 	caps := c.provider.Capabilities()
 	caps.ReviewDraftMutation = true
 	caps.ReadReviewThreads = true
+	caps.Archive.InlineReviewComments = true
 	caps.NativeMultilineRanges = false
 	return caps
 }

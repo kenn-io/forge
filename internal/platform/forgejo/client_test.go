@@ -358,7 +358,7 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 		},
 		Archive: platform.ArchiveCapabilities{
 			HistoricalIssues: true, HistoricalMergeRequests: true,
-			OrdinaryComments: true, SubmittedReviews: true,
+			OrdinaryComments: true, SubmittedReviews: true, InlineReviewComments: true,
 		},
 	}, client.Capabilities())
 }

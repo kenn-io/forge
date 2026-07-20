@@ -108,7 +108,9 @@ Event-driven refresh failures use the same authority-loss cleanup and Retry
 path, including failures that happen before the Ready request itself and
 clearing the persisted selection before route reconciliation. If automatic
 stream replay later completes a current-scope Ready refresh, the recovered
-membership clears the obsolete error and Retry without restoring selection.
+membership clears the obsolete error and Retry without restoring selection. An
+already-consumed duplicate event performs no refresh and cannot clear the
+authority-loss state.
 
 A successful Ready response must contain an `issues` array whose entries carry
 non-empty UIDs. Missing or malformed membership fails with

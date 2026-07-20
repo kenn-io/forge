@@ -1005,7 +1005,7 @@ export class KataWorkspaceStore {
 
   private async applyRemoteEventNow(event: KataTaskEvent, options: KataEventDeliveryOptions): Promise<boolean> {
     if (!this.shouldApplyEventDelivery(options)) return false;
-    if (event.event_id <= this.eventCursor) return true;
+    if (event.event_id <= this.eventCursor) return false;
     const refreshed = await this.refreshForRemoteEvents([event], options);
     if (!this.shouldApplyEventDelivery(options) || !refreshed) return false;
     this.eventCursor = Math.max(this.eventCursor, event.event_id);
@@ -1018,7 +1018,7 @@ export class KataWorkspaceStore {
   ): Promise<boolean> {
     if (!this.shouldApplyEventDelivery(options)) return false;
     if (message.kind === "reset") {
-      if (message.reset_after_id <= this.eventCursor) return true;
+      if (message.reset_after_id <= this.eventCursor) return false;
       const refreshed = await this.refreshCurrentView(
         this.pendingSelectionUID ?? this.selectedIssue?.issue.uid ?? null,
         { eventDriven: true, shouldApply: options.shouldApply },

@@ -5716,6 +5716,14 @@ test("kata project event failure invalidates Ready authority and clears after au
     await expect
       .poll(() => backend.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/events/stream")).length)
       .toBeGreaterThan(streamCountBeforeFailure);
+    emitKataEvent(backend.state, {
+      ...projectEvent,
+      event_id: 0,
+      event_uid: "event-kata-project-duplicate",
+    });
+    await expect(retry).toBeVisible();
+    await expect(payRentRow).toHaveCount(0);
+
     emitKataEvent(backend.state, projectEvent);
 
     await expect(page.getByRole("button", { name: /Pay rent/ })).toBeVisible();

@@ -18,7 +18,6 @@ const (
 type kataSnapshotKey struct {
 	DaemonID          string
 	DaemonFingerprint string
-	View              string
 	Scope             string
 	ProjectUID        string
 	Authority         string
@@ -77,6 +76,7 @@ type kataTaskSummary struct {
 }
 
 type kataAuthoritySnapshot struct {
+	Generation      uint64
 	FetchedAt       time.Time
 	Projects        []kataProjectSummary
 	MemberIssueUIDs []string

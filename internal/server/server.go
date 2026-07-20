@@ -213,6 +213,7 @@ type Server struct {
 	kataProxyMu                 sync.Mutex
 	kataProxyCache              map[kataProxyCacheKey]kataProxyCacheEntry
 	kataProxyIdleCloseOnce      sync.Once
+	kataSnapshots               *kataSnapshotCoordinator
 	docsRegistry                *docs.Registry
 	docsPublishLocks            *docsPublishLockSet
 	msgvault                    *msgvaultHandler
@@ -765,6 +766,8 @@ func newServer(
 		<-ctx.Done()
 		s.workspaceDiffCache.Wait()
 	})
+	s.kataSnapshots = newKataSnapshotCoordinator(s.bgCtx, kataSnapshotCoordinatorDeps{})
+	s.runBackground(s.kataSnapshots.run)
 
 	s.hostOpts.Store(&hostOpts)
 	if hostOpts.TrustReverseProxy && len(hostOpts.Allowed) == 0 {

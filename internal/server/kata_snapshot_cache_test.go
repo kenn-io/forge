@@ -18,7 +18,6 @@ func TestKataSnapshotCacheUsesExactKeyWithoutExtendingTTL(t *testing.T) {
 	key := kataSnapshotKey{
 		DaemonID:          "work",
 		DaemonFingerprint: "target-a",
-		View:              "tasks",
 		Scope:             "project",
 		ProjectUID:        "project-a",
 		Authority:         "ready",
@@ -34,7 +33,7 @@ func TestKataSnapshotCacheUsesExactKeyWithoutExtendingTTL(t *testing.T) {
 	got, ok := cache.get(key)
 	require.True(ok)
 	require.Equal(want, got)
-	_, ok = cache.get(kataSnapshotKey{DaemonID: "work", View: "tasks", Scope: "global", Authority: "ready"})
+	_, ok = cache.get(kataSnapshotKey{DaemonID: "work", Scope: "global", Authority: "ready"})
 	require.False(ok)
 	rotated := key
 	rotated.DaemonFingerprint = "target-b"
@@ -60,8 +59,8 @@ func TestKataSnapshotCacheCleansDaemonIndexAfterCapacityEviction(t *testing.T) {
 
 	cache := newKataSnapshotCacheWithConfig(time.Minute, 1)
 	t.Cleanup(cache.close)
-	first := kataSnapshotKey{DaemonID: "first", View: "tasks", Scope: "global", Authority: "open"}
-	second := kataSnapshotKey{DaemonID: "second", View: "tasks", Scope: "global", Authority: "open"}
+	first := kataSnapshotKey{DaemonID: "first", Scope: "global", Authority: "open"}
+	second := kataSnapshotKey{DaemonID: "second", Scope: "global", Authority: "open"}
 	cache.set(first, kataAuthoritySnapshot{Issues: []kataTaskSummary{{UID: "issue-first"}}})
 	cache.set(second, kataAuthoritySnapshot{Issues: []kataTaskSummary{{UID: "issue-second"}}})
 
@@ -82,10 +81,10 @@ func TestKataSnapshotCacheInvalidatesOneDaemonAndAdvancesEpoch(t *testing.T) {
 
 	cache := newKataSnapshotCache()
 	t.Cleanup(cache.close)
-	first := kataSnapshotKey{DaemonID: "work", View: "tasks", Scope: "global", Authority: "open"}
-	second := kataSnapshotKey{DaemonID: "work", View: "logbook", Scope: "global", Authority: "closed"}
+	first := kataSnapshotKey{DaemonID: "work", Scope: "global", Authority: "open"}
+	second := kataSnapshotKey{DaemonID: "work", Scope: "global", Authority: "closed"}
 	second.DaemonFingerprint = "rotated-target"
-	other := kataSnapshotKey{DaemonID: "home", View: "tasks", Scope: "global", Authority: "open"}
+	other := kataSnapshotKey{DaemonID: "home", Scope: "global", Authority: "open"}
 	cache.set(first, kataAuthoritySnapshot{Issues: []kataTaskSummary{{UID: "issue-first"}}})
 	cache.set(second, kataAuthoritySnapshot{Issues: []kataTaskSummary{{UID: "issue-second"}}})
 	cache.set(other, kataAuthoritySnapshot{Issues: []kataTaskSummary{{UID: "issue-other"}}})
@@ -115,7 +114,7 @@ func TestKataSnapshotCacheRunsExpiryCleanupUntilContextCanceled(t *testing.T) {
 		cache.run(ctx)
 		close(done)
 	}()
-	key := kataSnapshotKey{DaemonID: "work", DaemonFingerprint: "target", View: "tasks", Scope: "global", Authority: "open"}
+	key := kataSnapshotKey{DaemonID: "work", DaemonFingerprint: "target", Scope: "global", Authority: "open"}
 	cache.set(key, kataAuthoritySnapshot{Issues: []kataTaskSummary{{UID: "issue-a"}}})
 
 	require.Eventually(func() bool {
@@ -137,7 +136,7 @@ func TestKataSnapshotCacheOwnsImmutableSnapshotCopies(t *testing.T) {
 
 	cache := newKataSnapshotCache()
 	t.Cleanup(cache.close)
-	key := kataSnapshotKey{DaemonID: "work", DaemonFingerprint: "target", View: "tasks", Scope: "global", Authority: "open"}
+	key := kataSnapshotKey{DaemonID: "work", DaemonFingerprint: "target", Scope: "global", Authority: "open"}
 	snapshot := kataAuthoritySnapshot{
 		Projects:        []kataProjectSummary{{ID: 7, UID: "project-a", Name: "A"}},
 		MemberIssueUIDs: []string{"issue-a"},
@@ -174,7 +173,6 @@ func TestKataSnapshotCacheDefaultsToCapacity128(t *testing.T) {
 		key := kataSnapshotKey{
 			DaemonID:          "work",
 			DaemonFingerprint: "target",
-			View:              "tasks",
 			Scope:             "project",
 			ProjectUID:        fmt.Sprintf("project-%03d", i),
 			Authority:         "open",
@@ -186,7 +184,6 @@ func TestKataSnapshotCacheDefaultsToCapacity128(t *testing.T) {
 	_, ok := cache.get(kataSnapshotKey{
 		DaemonID:          "work",
 		DaemonFingerprint: "target",
-		View:              "tasks",
 		Scope:             "project",
 		ProjectUID:        "project-000",
 		Authority:         "open",
@@ -200,7 +197,7 @@ func TestKataSnapshotCacheRejectsInsertionFromInvalidatedEpoch(t *testing.T) {
 
 	cache := newKataSnapshotCache()
 	t.Cleanup(cache.close)
-	key := kataSnapshotKey{DaemonID: "work", DaemonFingerprint: "target", View: "tasks", Scope: "global", Authority: "open"}
+	key := kataSnapshotKey{DaemonID: "work", DaemonFingerprint: "target", Scope: "global", Authority: "open"}
 	staleEpoch := cache.daemonEpoch("work")
 	require.Equal(uint64(1), cache.invalidateDaemon("work"))
 

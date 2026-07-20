@@ -5,7 +5,7 @@ import App from "./App.svelte";
 import "./app.css";
 import { initMarkdownImageExpansion } from "./lib/utils/markdownImages.js";
 
-const viteReloadKeyPrefix = "middleman:vite-reload:";
+const viteReloadKey = "middleman:vite-reload";
 const currentFrontendEntrypoint = new URL(import.meta.url);
 
 function frontendEntrypoints(document: Document, baseUrl: string): URL[] {
@@ -29,14 +29,21 @@ async function reloadIfFrontendChanged(): Promise<void> {
     const latestEntrypoint = latestEntrypoints.at(-1);
     if (!latestEntrypoint) return;
 
-    const reloadKey = `${viteReloadKeyPrefix}${currentFrontendEntrypoint.pathname}:${latestEntrypoint.pathname}`;
-    if (window.sessionStorage.getItem(reloadKey)) return;
+    if (window.sessionStorage.getItem(viteReloadKey) === latestEntrypoint.pathname) return;
 
-    window.sessionStorage.setItem(reloadKey, "1");
+    window.sessionStorage.setItem(viteReloadKey, latestEntrypoint.pathname);
     window.location.reload();
   } catch (error) {
     console.warn("Could not check for a frontend update", error);
   }
+}
+
+try {
+  if (window.sessionStorage.getItem(viteReloadKey) === currentFrontendEntrypoint.pathname) {
+    window.sessionStorage.removeItem(viteReloadKey);
+  }
+} catch (error) {
+  console.warn("Could not clear completed frontend reload", error);
 }
 
 // A browser tab can outlive a server update and request a content-hashed lazy

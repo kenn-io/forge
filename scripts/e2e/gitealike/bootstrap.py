@@ -61,6 +61,7 @@ class Fixture:
         branch = self.get_branch(token, self.branch)
         self.ensure_status(token, branch["commit"]["id"])
         pr = self.ensure_pull_request(token, label["id"])
+        review, review_comment = self.ensure_inline_review(token, pr, branch["commit"]["id"])
         issue = self.ensure_issue(token, label["id"])
         self.ensure_comment(token, pr["number"], f"PR note from {self.title_prefix} container")
         self.ensure_comment(token, issue["number"], f"Issue note from {self.title_prefix} container")
@@ -85,6 +86,13 @@ class Fixture:
             "label": label["name"],
             "release_tag": release["tag_name"],
             "status_context": self.status_context,
+            "review_id": review["id"],
+            "review_comment_id": review_comment["id"],
+            "review_comment_body": review_comment["body"],
+            "review_comment_author": review_comment["user"]["login"],
+            "review_comment_path": review_comment["path"],
+            "review_comment_commit_sha": review_comment["commit_id"],
+            "review_comment_url": review_comment["html_url"],
         }
 
     def wait_ready(self):
@@ -309,6 +317,51 @@ class Fixture:
             },
             expected=(201,),
         )
+
+    def ensure_inline_review(self, token, pull, commit_sha):
+        body = f"Inline review note from {self.title_prefix} container"
+        reviews = self.request(
+            "GET",
+            self.repo_path(f"/pulls/{pull['number']}/reviews?limit=100"),
+            token=token,
+        )
+        for review in reviews:
+            comments = self.request(
+                "GET",
+                self.repo_path(f"/pulls/{pull['number']}/reviews/{review['id']}/comments"),
+                token=token,
+            )
+            for comment in comments:
+                if comment.get("body") == body:
+                    return review, comment
+
+        review = self.request(
+            "POST",
+            self.repo_path(f"/pulls/{pull['number']}/reviews"),
+            token=token,
+            data={
+                "event": "COMMENT",
+                "body": f"Review seeded by {self.title_prefix} container",
+                "commit_id": commit_sha,
+                "comments": [
+                    {
+                        "path": "src/gitealike-fixture.txt",
+                        "body": body,
+                        "new_position": 1,
+                    }
+                ],
+            },
+            expected=(200, 201),
+        )
+        comments = self.request(
+            "GET",
+            self.repo_path(f"/pulls/{pull['number']}/reviews/{review['id']}/comments"),
+            token=token,
+        )
+        for comment in comments:
+            if comment.get("body") == body:
+                return review, comment
+        raise RuntimeError(f"created review {review['id']} did not contain the inline fixture comment")
 
     def ensure_labels(self, token, number, label_ids):
         self.request(

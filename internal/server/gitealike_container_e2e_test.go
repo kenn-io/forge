@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"go.kenn.io/middleman/internal/archive"
+	archivereport "go.kenn.io/middleman/internal/archive/report"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
@@ -30,6 +33,7 @@ type giteaLikeContainerClient interface {
 	platform.ReleaseReader
 	platform.TagReader
 	platform.CIReader
+	platform.MergeRequestReviewThreadReader
 }
 
 type giteaLikeFixtureConfig struct {
@@ -45,23 +49,30 @@ type giteaLikeFixtureConfig struct {
 }
 
 type giteaLikeContainerManifest struct {
-	BaseURL            string `json:"base_url"`
-	APIURL             string `json:"api_url"`
-	Host               string `json:"host"`
-	Token              string `json:"token"`
-	Owner              string `json:"owner"`
-	Name               string `json:"name"`
-	RepoPath           string `json:"repo_path"`
-	WebURL             string `json:"web_url"`
-	CloneURL           string `json:"clone_url"`
-	DefaultBranch      string `json:"default_branch"`
-	RepositoryID       int64  `json:"repository_id"`
-	RepositoryIDString string `json:"repository_id_string"`
-	PullRequestIndex   int    `json:"pull_request_index"`
-	IssueIndex         int    `json:"issue_index"`
-	Label              string `json:"label"`
-	ReleaseTag         string `json:"release_tag"`
-	StatusContext      string `json:"status_context"`
+	BaseURL                string `json:"base_url"`
+	APIURL                 string `json:"api_url"`
+	Host                   string `json:"host"`
+	Token                  string `json:"token"`
+	Owner                  string `json:"owner"`
+	Name                   string `json:"name"`
+	RepoPath               string `json:"repo_path"`
+	WebURL                 string `json:"web_url"`
+	CloneURL               string `json:"clone_url"`
+	DefaultBranch          string `json:"default_branch"`
+	RepositoryID           int64  `json:"repository_id"`
+	RepositoryIDString     string `json:"repository_id_string"`
+	PullRequestIndex       int    `json:"pull_request_index"`
+	IssueIndex             int    `json:"issue_index"`
+	Label                  string `json:"label"`
+	ReleaseTag             string `json:"release_tag"`
+	StatusContext          string `json:"status_context"`
+	ReviewID               int64  `json:"review_id"`
+	ReviewCommentID        int64  `json:"review_comment_id"`
+	ReviewCommentBody      string `json:"review_comment_body"`
+	ReviewCommentAuthor    string `json:"review_comment_author"`
+	ReviewCommentPath      string `json:"review_comment_path"`
+	ReviewCommentCommitSHA string `json:"review_comment_commit_sha"`
+	ReviewCommentURL       string `json:"review_comment_url"`
 }
 
 func TestForgejoContainerSync(t *testing.T) {
@@ -83,14 +94,16 @@ func TestForgejoContainerSync(t *testing.T) {
 		TitlePrefix: "Forgejo",
 	})
 
+	budget := ghclient.NewSyncBudget(5000)
 	client, err := platformforgejo.NewClient(
 		manifest.Host,
 		testTokenSource(manifest.Token),
 		platformforgejo.WithBaseURLForTesting(manifest.BaseURL),
 		platformforgejo.WithForegroundTimeoutForTesting(time.Minute),
+		platformforgejo.WithSyncBudget(budget),
 	)
 	require.NoError(t, err)
-	assertGiteaLikeContainerSync(t, ctx, platform.KindForgejo, manifest, client)
+	assertGiteaLikeContainerSync(t, ctx, platform.KindForgejo, manifest, client, budget)
 }
 
 func TestGiteaContainerSync(t *testing.T) {
@@ -112,14 +125,16 @@ func TestGiteaContainerSync(t *testing.T) {
 		TitlePrefix: "Gitea",
 	})
 
+	budget := ghclient.NewSyncBudget(5000)
 	client, err := platformgitea.NewClient(
 		manifest.Host,
 		testTokenSource(manifest.Token),
 		platformgitea.WithBaseURLForTesting(manifest.BaseURL),
 		platformgitea.WithForegroundTimeoutForTesting(time.Minute),
+		platformgitea.WithSyncBudget(budget),
 	)
 	require.NoError(t, err)
-	assertGiteaLikeContainerSync(t, ctx, platform.KindGitea, manifest, client)
+	assertGiteaLikeContainerSync(t, ctx, platform.KindGitea, manifest, client, budget)
 }
 
 func assertGiteaLikeContainerSync(
@@ -128,6 +143,7 @@ func assertGiteaLikeContainerSync(
 	kind platform.Kind,
 	manifest giteaLikeContainerManifest,
 	client giteaLikeContainerClient,
+	budget *ghclient.SyncBudget,
 ) {
 	t.Helper()
 	assert := assert.New(t)
@@ -148,10 +164,23 @@ func assertGiteaLikeContainerSync(
 		CloneURL:           manifest.CloneURL,
 		DefaultBranch:      manifest.DefaultBranch,
 	}
+	rateKey := ghclient.RateBucketKey(string(kind), manifest.Host)
+	tracker := ghclient.NewPlatformRateTracker(database, string(kind), manifest.Host, "rest")
+	tracker.UpdateFromRate(ghclient.Rate{
+		Limit: 5000, Remaining: 4999, Reset: time.Now().UTC().Add(time.Minute),
+	})
 	syncer := ghclient.NewSyncerWithRegistry(
-		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute,
+		map[string]*ghclient.RateTracker{rateKey: tracker},
+		map[string]*ghclient.SyncBudget{rateKey: budget},
 	)
 	t.Cleanup(syncer.Stop)
+	providerThreads, err := client.ListMergeRequestReviewThreads(ctx, platform.RepoRef{
+		Platform: kind, Host: manifest.Host, Owner: manifest.Owner, Name: manifest.Name,
+	}, manifest.PullRequestIndex)
+	require.NoError(err)
+	require.Len(providerThreads, 1)
+	assert.Equal(manifest.ReviewCommentURL, providerThreads[0].DirectURL)
 
 	syncer.RunOnce(ctx)
 	require.NoError(syncer.SyncMROnProvider(ctx, kind, manifest.Host, manifest.Owner, manifest.Name, manifest.PullRequestIndex))
@@ -180,6 +209,7 @@ func assertGiteaLikeContainerSync(
 	mrEvents, err := database.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
 	assert.NotEmpty(mrEvents)
+	assertGiteaLikePersistedReviewThread(t, database, ctx, mr.ID, manifest)
 
 	issue, err := database.GetIssueByRepoIDAndNumber(ctx, repoRow.ID, manifest.IssueIndex)
 	require.NoError(err)
@@ -195,6 +225,57 @@ func assertGiteaLikeContainerSync(
 	require.NotNil(summaries[0].Overview.LatestRelease)
 	assert.Equal(manifest.ReleaseTag, summaries[0].Overview.LatestRelease.TagName)
 	assert.NotEmpty(summaries[0].Overview.Releases)
+
+	require.NoError(database.DeleteMissingMRReviewThreads(ctx, mr.ID, nil, nil))
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	assert.Empty(threads)
+
+	archiveService, err := archive.NewService(database, registry, syncer, syncer, nil, nil)
+	require.NoError(err)
+	archiveRef := platform.RepoRef{
+		Platform: kind, Host: manifest.Host, Owner: manifest.Owner,
+		Name: manifest.Name, RepoPath: manifest.RepoPath,
+	}
+	require.NoError(archiveService.EnsureConfigured(ctx, []platform.RepoRef{archiveRef}))
+	_, err = archiveService.Start(ctx, []platform.RepoRef{archiveRef})
+	require.NoError(err)
+	var archiveStatus []archive.Status
+	for range 20 {
+		require.NoError(archiveService.RunEligible(ctx))
+		archiveStatus, err = archiveService.Status(ctx, []platform.RepoRef{archiveRef})
+		require.NoError(err)
+		if len(archiveStatus) == 1 && archiveStatus[0].Progress.Status == db.ArchiveStatusCurrent {
+			break
+		}
+	}
+	require.Len(archiveStatus, 1)
+	require.Equal(db.ArchiveStatusCurrent, archiveStatus[0].Progress.Status)
+	assert.Equal(db.ArchiveCoverageSupported, archiveStatus[0].State.InlineCommentsCoverage)
+	assertGiteaLikePersistedReviewThread(t, database, ctx, mr.ID, manifest)
+
+	now := time.Now().UTC()
+	reportModel, err := archiveService.Report(ctx, archive.ReportOptions{
+		Start: now.Add(-time.Hour), End: now.Add(time.Hour),
+		Repositories: []platform.RepoRef{archiveRef}, Detailed: true,
+	})
+	require.NoError(err)
+	require.Len(reportModel.Repositories, 1)
+	assert.Equal(string(db.ArchiveCoverageSupported), reportModel.Repositories[0].Coverage.InlineComments)
+	assert.Equal(1, reportModel.Totals.InlineReviewComments)
+	var inlineActivity *archivereport.Activity
+	for i := range reportModel.Activity {
+		activity := &reportModel.Activity[i]
+		if activity.Kind == archivereport.ActivityInlineReviewComment &&
+			activity.ProviderExternalID == strconv.FormatInt(manifest.ReviewCommentID, 10) {
+			inlineActivity = activity
+			break
+		}
+	}
+	require.NotNil(inlineActivity)
+	assert.Equal(manifest.ReviewCommentAuthor, inlineActivity.Author)
+	assert.Equal(manifest.ReviewCommentBody, inlineActivity.Body)
+	assert.Equal(manifest.ReviewCommentURL, inlineActivity.URL)
 
 	// Live validation of the pinned-merge rejection contract:
 	// isHeadMismatchConflict matches the provider's "head target does
@@ -218,6 +299,29 @@ func assertGiteaLikeContainerSync(
 	require.NotNil(mrAfterProbe)
 	assert.Equal(db.MergeRequestStateOpen, mrAfterProbe.State,
 		"the rejected probe must leave the fixture PR open")
+}
+
+func assertGiteaLikePersistedReviewThread(
+	t *testing.T,
+	database *db.DB,
+	ctx context.Context,
+	mrID int64,
+	manifest giteaLikeContainerManifest,
+) {
+	t.Helper()
+	assert := assert.New(t)
+	require := require.New(t)
+	threads, err := database.ListMRReviewThreads(ctx, mrID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	thread := threads[0]
+	assert.Equal(strconv.FormatInt(manifest.ReviewID, 10), thread.ProviderReviewID)
+	assert.Equal(strconv.FormatInt(manifest.ReviewCommentID, 10), thread.ProviderThreadID)
+	assert.Equal(strconv.FormatInt(manifest.ReviewCommentID, 10), thread.ProviderCommentID)
+	assert.Equal(manifest.ReviewCommentBody, thread.Body)
+	assert.Equal(manifest.ReviewCommentAuthor, thread.AuthorLogin)
+	assert.Equal(manifest.ReviewCommentPath, thread.Range.Path)
+	assert.Equal(manifest.ReviewCommentCommitSHA, thread.Range.CommitSHA)
 }
 
 func runGiteaLikeContainerFixture(

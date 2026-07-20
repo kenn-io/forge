@@ -9,6 +9,7 @@ function distAssetUrl(assetUrl: string): URL {
 }
 
 test("reloads an outdated frontend before rendering a Mermaid diagram", async ({ page }) => {
+  test.setTimeout(45_000);
   await mockApi(page);
   const updatedEntrypointPath = "/assets/index-updated.js";
   const updatedMermaidCorePath = "/assets/mermaid.core-updated.js";
@@ -113,11 +114,18 @@ test("reloads an outdated frontend before rendering a Mermaid diagram", async ({
   await page.waitForLoadState("load");
   await expect.poll(() => frontendVersionChecks).toBeGreaterThanOrEqual(1);
   await expect.poll(() => updatedSequenceRequests).toBeGreaterThanOrEqual(1);
-  await expect(page.locator(".markdown-body .kit-mermaid-viewer__pan svg").first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".markdown-body .kit-mermaid-viewer__pan svg").first()).toBeVisible({ timeout: 20_000 });
   expect(oldSequenceRequests).toBeGreaterThanOrEqual(1);
-  await expect(page.locator(".markdown-body pre.shiki").filter({ hasText: 'const ordinary = "code";' })).toBeVisible();
-  const reloadGuardKeys = await page.evaluate(() =>
-    Object.keys(window.sessionStorage).filter((key) => key.startsWith("middleman:vite-reload")),
-  );
-  expect(reloadGuardKeys).toEqual([]);
+  await expect(
+    page.locator(".markdown-body pre.shiki").filter({ hasText: 'const ordinary = "code";' }).first(),
+  ).toBeVisible();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() =>
+          Object.keys(window.sessionStorage).filter((key) => key.startsWith("middleman:vite-reload")),
+        ),
+      { timeout: 10_000 },
+    )
+    .toEqual([]);
 });

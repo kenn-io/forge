@@ -183,8 +183,11 @@ func (c *workspaceDiffCache) Get(
 		c.storeEntryLocked(key, &updated, now)
 		fresh := now.Sub(updated.validatedAt) <= workspaceDiffCacheFreshFor
 		retryAllowed := !now.Before(updated.retryAfter)
-		snapshot := cloneWorkspaceDiffSnapshot(updated.snapshot, !fresh)
+		cached := updated.snapshot
 		c.mu.Unlock()
+		resolved, ok, resolveErr := c.deps.resolve(ctx, key.Spec)
+		headMoved := resolveErr == nil && ok && cached.Resolved.HeadOID != resolved.HeadOID
+		snapshot := cloneWorkspaceDiffSnapshot(cached, headMoved)
 		state := workspaceDiffCacheHit
 		if !fresh {
 			state = workspaceDiffCacheStale

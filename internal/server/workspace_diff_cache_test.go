@@ -50,6 +50,62 @@ func TestWorkspaceDiffCacheMissThenHitPreparesOnce(t *testing.T) {
 	assert.Empty(second.Files[0].Hunks)
 }
 
+func TestWorkspaceDiffCacheWarningRequiresHeadMismatch(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		currentHead string
+		resolveOK   bool
+		resolveErr  error
+		wantStale   bool
+	}{
+		{name: "matching head", currentHead: "head", resolveOK: true},
+		{name: "changed head", currentHead: "new-head", resolveOK: true, wantStale: true},
+		{name: "head unavailable"},
+		{name: "head resolution failed", resolveErr: errors.New("resolve head")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			assert := assert.New(t)
+			now := time.Unix(100, 0)
+			resolved := workspaceDiffTestResolved()
+			resolveOK := true
+			var resolveErr error
+			cache := newWorkspaceDiffCache(t.Context(), workspaceDiffCacheDeps{
+				now: func() time.Time { return now },
+				resolve: func(context.Context, workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
+					return resolved, resolveOK, resolveErr
+				},
+				fingerprint: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (workspace.DiffFingerprint, error) {
+					return "v1", nil
+				},
+				prepare: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (*gitclone.DiffResult, error) {
+					return workspaceDiffTestResult("one.txt"), nil
+				},
+			})
+
+			_, _, err := cache.Get(t.Context(), workspaceDiffTestKey())
+			require.NoError(err)
+			now = now.Add(workspaceDiffCacheFreshFor + time.Second)
+			cache.mu.Lock()
+			cache.peekEntryLocked(workspaceDiffTestKey()).retryAfter = now.Add(time.Hour)
+			cache.mu.Unlock()
+			resolved.HeadOID = tt.currentHead
+			resolveOK = tt.resolveOK
+			resolveErr = tt.resolveErr
+
+			got, state, err := cache.Get(t.Context(), workspaceDiffTestKey())
+			require.NoError(err)
+			require.NotNil(got)
+			assert.Equal(workspaceDiffCacheStale, state)
+			assert.Equal(tt.wantStale, got.Diff.Stale)
+		})
+	}
+}
+
 func TestWorkspaceDiffCacheProtectedEntriesDoNotConsumeCostBudget(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

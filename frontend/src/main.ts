@@ -3,9 +3,9 @@ import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
 import { mount } from "svelte";
 import App from "./App.svelte";
 import "./app.css";
+import { prepareFrontendReload, retireFrontendReload } from "./lib/utils/frontendReloadGuard.js";
 import { initMarkdownImageExpansion } from "./lib/utils/markdownImages.js";
 
-const viteReloadKey = "middleman:vite-reload";
 const currentFrontendEntrypoint = new URL(import.meta.url);
 
 function frontendEntrypoints(document: Document, baseUrl: string): URL[] {
@@ -29,9 +29,9 @@ async function reloadIfFrontendChanged(): Promise<void> {
     const latestEntrypoint = latestEntrypoints.at(-1);
     if (!latestEntrypoint) return;
 
-    if (window.sessionStorage.getItem(viteReloadKey) === latestEntrypoint.pathname) return;
+    if (!prepareFrontendReload(window.sessionStorage, currentFrontendEntrypoint.pathname, latestEntrypoint.pathname))
+      return;
 
-    window.sessionStorage.setItem(viteReloadKey, latestEntrypoint.pathname);
     window.location.reload();
   } catch (error) {
     console.warn("Could not check for a frontend update", error);
@@ -39,9 +39,7 @@ async function reloadIfFrontendChanged(): Promise<void> {
 }
 
 try {
-  if (window.sessionStorage.getItem(viteReloadKey) === currentFrontendEntrypoint.pathname) {
-    window.sessionStorage.removeItem(viteReloadKey);
-  }
+  retireFrontendReload(window.sessionStorage, currentFrontendEntrypoint.pathname);
 } catch (error) {
   console.warn("Could not clear completed frontend reload", error);
 }

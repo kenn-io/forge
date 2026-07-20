@@ -204,9 +204,7 @@ describe("stack status panel", () => {
       overrides: [toolsStackRoutes()],
     });
 
-    await expect
-      .element(page.getByText("This branch has conflicts that must be resolved before merging."))
-      .toBeVisible();
+    await expect.element(page.getByTestId("merge-warnings-chip")).toBeVisible();
 
     await page.getByTestId("stack-chip").click();
 

@@ -1,143 +1,224 @@
-# Kata Ready Task Filter
+# Kata Workspace Snapshot Coordinator
 
 ## Goal
 
-Add `Ready` to the Kata task list's status dropdown so maintainers can view
-tasks that the selected Kata daemon considers ready to work.
+Replace the browser-owned Kata authority, refresh, and recovery paths with one
+Middleman-owned snapshot coordinator. Middleman reads Kata through the published
+generated Go client, caches snapshots briefly in memory with `ttlcache`, and
+returns one atomic workspace snapshot to the UI.
 
-## Scope
+The immediate user-visible deliverable remains the Ready task filter, but Ready
+must use the same snapshot contract as Open, Closed, and All rather than adding
+another special membership path.
 
-- Add `Ready` alongside `Open`, `Closed`, and `All` in the existing status
-  control.
-- Treat readiness as an authoritative Kata daemon result. Middleman must not
-  derive readiness from task relationship fields.
-- Support Ready in both all-project and project-scoped task lists.
-- Continue applying the existing owner, label, and text-query controls to the
-  authoritative ready result set.
-- Persist and restore Ready through the existing Kata workspace filter state.
+## Forward-Only Boundary
 
-This change does not add a Ready sidebar system view, change Kata's readiness
-rules, or add a Middleman backend API. Requests continue through the existing
-Kata proxy.
+This is a forward-only migration.
 
-## Data Model
+- Delete the frontend's direct Kata list, Ready, project, detail, and event
+  composition paths as their replacements land.
+- Do not keep a legacy proxy fallback, dual read path, compatibility adapter,
+  deprecated response shape, or migration gate.
+- The generic Kata passthrough proxy may remain for unrelated mutation routes,
+  but workspace reads must not fall back to it.
+- Middleman persists no Kata task, membership, snapshot, or cursor data to its
+  database or filesystem.
 
-Extend `KataTaskStatusFilter` from `"open" | "closed" | "all"` to include
-`"ready"`. Ready is a list-filter mode, not a task status: returned tasks keep
-their daemon-provided `status`, and UID membership alone determines whether a
-row is Ready.
+## Upstream Client
 
-The existing `KataTaskSearchFilters` object remains the single filter contract
-for UI state, persistence, store loading, and task API calls.
+Middleman imports `go.kenn.io/kata/pkg/client` and its generated types. Each
+configured daemon gets a typed client built with `client.NewForTarget`, the
+resolved daemon URL, `kataDaemonForwardToken`, and the daemon's
+`AllowInsecure` setting.
 
-Every normalized search response carries `ready_issue_uids`. It contains the
-complete daemon-returned UID set for Ready searches and is an empty array for
-other statuses. The field is required rather than optional so a missing or
-malformed membership cannot be mistaken for a valid empty Ready result.
+The snapshot path uses generated methods for:
 
-## Data Flow
+- global and project Ready results;
+- global and project issue lists;
+- project discovery;
+- issue detail by UID;
+- event polling and the live event stream.
 
-When `filters.status` is `"ready"`:
+Middleman maps generated Kata DTOs into its own stable snapshot response. The
+frontend does not consume generated Kata types directly.
 
-1. The search panel emits the updated filter object through its existing
-   `onChange` callback.
-2. The Kata workspace store performs a search load using the selected daemon.
-3. For all-project scope, the task client requests `GET /api/v1/ready`.
-4. For project scope, the client resolves the project UID to its numeric ID and
-   requests `GET /api/v1/projects/{project_id}/ready`.
-5. The client normalizes the response and captures its complete UID membership
-   before applying presentation filters.
-6. The client narrows returned rows by project, owner, label, and text query
-   without narrowing the authoritative UID membership.
-7. The workspace renders and persists the result through its existing search
-   and filter flows.
+## Cache Model
 
-Ready endpoint requests are not narrowed by owner, label, or text query because
-the raw response remains authoritative for expandable descendant membership.
-Client-side filtering narrows only the root result rows.
+`KataSnapshotCoordinator` owns one `ttlcache.Cache` keyed by an immutable query
+key:
 
-## UI Behavior
+```go
+type kataSnapshotKey struct {
+    DaemonID  string
+    View      string
+    ProjectUID string
+    Authority string
+}
+```
 
-The status dropdown order is `Open`, `Ready`, `Closed`, `All`. Selecting Ready
-updates the accessible control name to `Status: Ready` and otherwise preserves
-the current search-toolbar layout.
+The cache stores only accepted, immutable snapshots. It does not store request
+errors, retries, provisional state, selected routes, or browser persistence.
 
-Changing from Ready to another status immediately hides rows that do not match
-the newly selected filter while the replacement request is pending, following
-the existing status-change behavior. Selecting a ready task uses the ordinary
-detail, relationship, graph, and mutation flows because readiness does not
-change the task's underlying status or identity.
+- Default TTL: five seconds.
+- Capacity: bounded by `ttlcache` cost/entry limits configured for the expected
+  number of daemons and active query keys.
+- A cache hit returns the accepted snapshot immediately.
+- A cache miss is singleflight-coalesced by query key so concurrent browser
+  requests perform one daemon read.
+- An accepted mutation or Kata event invalidates that daemon's cached snapshot
+  keys. The next read repopulates them.
+- TTL expiration is a freshness bound, not long-term storage. Restarting
+  Middleman starts with an empty cache.
 
-While Ready is active, every displayed or selectable root and expanded child
-must belong to the latest daemon-returned Ready UID set; open status alone never
-qualifies, and entering Ready clears stale membership until its request lands.
+Presentation filters are deliberately absent from the cache key. Owner, label,
+query, sorting, and hierarchy projection run against the accepted authority
+snapshot without invalidating or refetching it.
 
-Ready hierarchy follows these acceptance rules:
+## Minimal Kata Frontend Service API
 
-| Daemon membership and relationship               | List result                                                                                       |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| Parent and child are ready                       | Preserve their parent-child hierarchy.                                                            |
-| Parent is ready and child is not                 | Show the parent; omit the child when expanded.                                                    |
-| Child is ready and parent is not                 | Promote the child to a root; do not show the parent.                                              |
-| A routed ready target has any non-ready ancestor | Temporarily promote the target to a root; never reconnect ready nodes across an omitted ancestor. |
+Middleman exposes a deliberately small frontend-oriented API. It is not a
+generated-client re-export and does not mirror the complete Kata daemon API.
 
-The latest non-superseded accepted Ready request is one authoritative snapshot;
-an older request that finishes later is inert. Starting any Ready refresh clears
-the previous membership before the request runs, including refreshes caused by
-mutations or events. Duplicate UIDs collapse naturally in the membership set,
-and a missing parent uses the child-as-root rule. Each accepted owner, label, or
-status change downloads the complete Ready set; text input keeps the existing
-debounce. No snapshot cache is added because cached membership would weaken
-daemon freshness.
+The initial surface has two endpoints:
 
-## Error Handling
+```text
+GET /api/v1/kata/tasks/snapshot
+X-Middleman-Kata-Daemon: <daemon id>
 
-Ready endpoint failures use the existing `KataTaskAPIError` parsing and Kata
-workspace view-error presentation. A failed Ready request does not fall back to
-locally computed readiness or to the Open list. Interactive and persisted-entry
-failures retain the attempted Ready filter, expose retry, and render an empty
-membership until a later authoritative response succeeds.
+GET /api/v1/kata/tasks/events
+X-Middleman-Kata-Daemon: <daemon id>
+Accept: text/event-stream
+```
 
-A successful task mutation remains committed if its following Ready refresh
-fails. Authority loss clears list rows, selected detail, disclosure state, and
-the selected issue URL; Retry refreshes membership and the list without
-repeating the mutation or automatically restoring the cleared selection. A
-failed persisted restoration also renders no selection, but keeps the stored
-selection as retry input so a successful restoration Retry can revalidate it.
-Event-driven refresh failures use the same authority-loss cleanup and Retry
-path, including failures that happen before the Ready request itself and
-clearing the persisted selection before route reconciliation. If automatic
-stream replay later completes a current-scope Ready refresh, the recovered
-membership clears the obsolete error and Retry without restoring selection. An
-already-consumed duplicate event performs no refresh and cannot clear the
-authority-loss state.
+The snapshot query parameters select `view`, `project_uid`, `status`, and an optional
+`selected_issue_uid`. The response is:
 
-A successful Ready response must contain an `issues` array whose entries carry
-non-empty UIDs. Missing or malformed membership fails with
-`invalid_ready_response`; it is never normalized to an authoritative empty set.
+```ts
+interface KataWorkspaceSnapshotResponse {
+  daemon_id: string;
+  key: {
+    view: KataTaskViewName;
+    scope: KataTaskSearchScope;
+    authority: "open" | "ready" | "closed" | "all";
+  };
+  generation: number;
+  event_cursor: number;
+  fetched_at: string;
+  member_issue_uids: string[];
+  issues: KataTaskSummary[];
+  selected_detail?: KataTaskDetail;
+}
+```
 
-An unknown project UID returns an empty ready result, matching current
-project-scoped search behavior.
+The frontend event stream emits only invalidation frames containing daemon ID
+and the coordinator generation/high-water cursor. It does not forward raw Kata
+event payloads and the browser never patches task state from an event. On an
+invalidation frame, the browser requests the current snapshot intent; TTL and
+singleflight prevent duplicate daemon work.
 
-## Implementation Order
+Existing mutation endpoints remain outside this frontend read service. They
+invalidate the affected daemon's snapshot cache after an accepted mutation.
 
-1. Define strict Ready response normalization and mandatory UID membership.
-2. Apply membership lifecycle rules in search, mutation, event, and restore flows.
-3. Enforce membership in hierarchy, Logbook, selection, and route presentation.
-4. Cover response validation and failure recovery in component and full-stack tests.
+`member_issue_uids` is authoritative membership before owner, label, or text
+projection. It exists for every authority mode. Selection validity is checked
+against this set, never against the currently projected root rows.
+
+The snapshot generation is process-local and monotonically increases whenever
+the coordinator accepts a newly fetched snapshot for a key. It prevents late
+responses from replacing newer browser state; it is not persisted.
+
+## Middleman Coordinator
+
+`KataSnapshotCoordinator` is the sole writer for workspace read state.
+
+1. Resolve the requested daemon and obtain its generated client.
+2. Build the authority key from daemon, view, scope, and status.
+3. Serve an unexpired cached snapshot when present.
+4. Coalesce a cache miss with other requests for the same key.
+5. Read the complete authority set through the generated client.
+6. Normalize all tasks by full UID and preserve generated relationship fields.
+7. Optionally read selected detail only when its UID belongs to membership.
+8. Read or advance the daemon event cursor as part of the same serialized
+   coordinator operation.
+9. Publish one immutable snapshot to the TTL cache and return it.
+
+Events are invalidation signals. `KataSnapshotCoordinator` consumes the
+generated Kata event stream, batches events, invalidates the affected daemon
+once, and broadcasts one frontend invalidation frame. A batch of events causes
+one subsequent snapshot refresh regardless of event count.
+
+## Browser State
+
+The frontend replaces independent `currentView`, `readyIssueUIDs`, retry
+closures, and event-refresh booleans with one discriminated state:
+
+```ts
+type KataWorkspaceState =
+  | { phase: "accepted"; snapshot: KataWorkspaceSnapshot }
+  | { phase: "loading"; previous: KataWorkspaceSnapshot | null; intent: KataSnapshotIntent }
+  | { phase: "degraded"; snapshot: KataWorkspaceSnapshot | null; intent: KataSnapshotIntent; error: string }
+  | { phase: "switching"; previous: KataWorkspaceSnapshot; daemonID: string }
+  | { phase: "terminal"; snapshot: KataWorkspaceSnapshot | null; error: string };
+```
+
+Routes and local workspace preferences remain browser concerns, but they are
+written only after an accepted snapshot transition. Retry is derived from the
+failed intent in `degraded`; it is not stored as a closure.
+
+Owner, label, text query, sorting, and hierarchy are pure projections over the
+accepted snapshot. Changing them does not clear membership, refetch Ready, or
+block unrelated actions.
+
+## List, Detail, and Graph Ownership
+
+`KataIssueList` becomes a pure renderer:
+
+- no direct `api.issue` calls;
+- no component-local authoritative child cache;
+- no temporary membership exceptions;
+- children and reveal paths are projected from the accepted snapshot entity
+  set and membership.
+
+Detail and graph enrichment go through the same Middleman coordinator. Full UID
+is the only identity key. A sparse payload cannot overwrite fields present in a
+newer or richer generated payload.
+
+## Error Semantics
+
+Starting a request does not mutate the accepted snapshot.
+
+- Success atomically commits key, membership, issues, detail, cursor, and
+  generation.
+- Failure while changing authority enters `degraded` for the attempted key.
+- Failure after event invalidation does not display invalidated membership.
+- A projection-only change cannot produce an authority failure because it
+  performs no network request.
+- Retry repeats the recorded snapshot intent and is automatically removed by
+  the next accepted transition.
+- A routed UID absent from `member_issue_uids` is canonicalized out before any
+  detail request.
 
 ## Testing
 
-- Search-panel component coverage verifies the Ready option and emitted filter.
-- Task-client tests verify global and project Ready endpoint selection,
-  normalization, daemon pinning, and narrowing by owner, label, query, and
-  project scope.
-- Store and workspace tests verify Ready triggers the search path, persists and
-  restores correctly, invalidates membership before failed refreshes, and does
-  not confuse ready-list membership with task `status`.
-- List tests cover ready targets absent from the current flat result, including
-  omitted immediate and intermediate ancestors, so route restoration cannot
-  manufacture false hierarchy.
-- Full-stack Kata tests cover authoritative endpoint failure and expanded-child
-  selection across mutation refresh and persisted reload.
-- The full frontend Vitest suite and Svelte checks run after the final edit.
+- Go unit tests cover query-key construction, five-second TTL reuse,
+  singleflight coalescing, daemon invalidation, generated-client error mapping,
+  and membership-gated detail reads.
+- Go HTTP tests exercise the snapshot endpoint against a real fake Kata HTTP
+  server through the generated client.
+- Frontend store tests cover atomic snapshot acceptance, stale-generation
+  rejection, projection-only filters, routed selection membership, and derived
+  retry state.
+- Full-stack Playwright coverage verifies global/project Ready, valid hidden
+  Ready child restoration, invalid routed selection removal, event
+  invalidation, and recovery through ordinary navigation.
+- Tests assert Middleman's logic and integration seams, not generated-client or
+  `ttlcache` library behavior.
+
+## Non-Goals
+
+- Persisting Kata state in Middleman's database or filesystem.
+- Supporting old and new workspace read paths simultaneously.
+- Adding a TTL configuration UI or cache administration endpoint.
+- Mirroring the generated Kata API as a large Middleman frontend API.
+- Reimplementing Kata readiness or relationship semantics.
+- Adding compatibility fallbacks for older code introduced within this PR.

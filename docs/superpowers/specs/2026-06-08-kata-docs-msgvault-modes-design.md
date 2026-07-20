@@ -361,6 +361,16 @@ Kata frontend adaptation:
 - Kata workspace owns a dedicated task client; accepted provenance pins its
   selector, row actions, reloads, workspace identity, events, and stream while
   other surfaces follow their own selection (`frontend/src/App.svelte::kataWorkspaceAPI`).
+- Kata workspace reads use Middleman's minimal frontend service, not browser
+  composition of passthrough daemon responses. Middleman calls Kata through
+  `go.kenn.io/kata/pkg/client`, returns atomic snapshots, and caches accepted
+  snapshots in bounded process memory with a five-second TTL. It persists no
+  Kata task, membership, cursor, or snapshot state. The migration is
+  forward-only: replaced direct-read, raw-event, and compatibility fallback
+  paths are deleted (`docs/superpowers/specs/2026-07-20-kata-ready-filter-design.md`).
+- The frontend service exposes an atomic snapshot read plus invalidation-only
+  SSE. Raw Kata events never patch browser task state; they invalidate the
+  daemon cache and cause the browser to request its current snapshot intent.
 - Removed accepted daemons remain selected and visibly unavailable until the
   user chooses a configured daemon (`frontend/src/lib/features/kata/KataDaemonSwitcher.svelte::displayId`).
 - Daemon switching is disabled during initial bootstrap, writes, view work

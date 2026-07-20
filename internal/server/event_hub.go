@@ -18,8 +18,8 @@ type Event struct {
 }
 
 // RecordedEvent is an Event stamped with its monotonically-increasing
-// ID. The hub assigns the ID at broadcast time, scoped to its lifetime
-// (so daemon restart resets the sequence). Subscribers receive
+// ID. The hub assigns the ID at broadcast time, scoped to its lifetime.
+// Subscribers receive
 // RecordedEvent values so the SSE handler can write the id back out on
 // the wire and clients can carry it on reconnect.
 type RecordedEvent struct {

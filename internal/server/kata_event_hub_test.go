@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -63,7 +64,7 @@ func TestKataFrontendEventRegistryEnsureDoesNotWaitForCatchUp(t *testing.T) {
 		require.FailNow("Ensure waited for asynchronous catch-up")
 	}
 	require.Equal(kataDaemonTargetFingerprint(kata.Daemon{ID: "primary", URL: "http://kata.test"}), handle.DaemonFingerprint())
-	assert.Zero(handle.Cursor())
+	assert.Equal(uint64(1), handle.Cursor())
 
 	select {
 	case <-catchUpStarted:
@@ -86,6 +87,64 @@ func TestKataFrontendEventRegistryEnsureRejectsAfterClose(t *testing.T) {
 	defer registry.mu.Unlock()
 	assert.Empty(registry.bindings)
 	assert.Empty(registry.targets)
+}
+
+func TestKataFrontendEventRegistrySeedsRestartCursorLineage(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	newClient := func(ctx context.Context, _ kata.Daemon) (kataAPIClient, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	oldRegistry := newKataFrontendEventRegistry(t.Context(), kataFrontendEventRegistryDeps{
+		newClient:        newClient,
+		serverInstanceID: "server-old",
+		generationSeed: func(serverInstanceID string) uint64 {
+			require.Equal("server-old", serverInstanceID)
+			return 100
+		},
+	})
+	oldBinding := requireKataFrontendEventBinding(
+		t, oldRegistry, kata.Daemon{ID: "primary", URL: "http://kata.test"},
+	)
+	oldCursor := oldBinding.Cursor()
+	require.Equal(uint64(101), oldCursor)
+	oldReplay, stale := oldBinding.hub.RingSnapshotSince(100)
+	require.False(stale)
+	require.Len(oldReplay, 1)
+	assert.Equal("kata.tasks.reset", oldReplay[0].Event.Type)
+	oldRegistry.Close()
+
+	newRegistry := newKataFrontendEventRegistry(t.Context(), kataFrontendEventRegistryDeps{
+		newClient:        newClient,
+		serverInstanceID: "server-new",
+		generationSeed: func(serverInstanceID string) uint64 {
+			require.Equal("server-new", serverInstanceID)
+			return 200
+		},
+	})
+	defer newRegistry.Close()
+	newBinding := requireKataFrontendEventBinding(
+		t, newRegistry, kata.Daemon{ID: "primary", URL: "http://kata.test"},
+	)
+	require.Equal(uint64(201), newBinding.Cursor())
+
+	var wire bytes.Buffer
+	newBinding.serve(t.Context(), &wire, &stopOnFlushController{at: 2}, oldCursor, true)
+	frame := strings.TrimSpace(wire.String())
+	assert.Contains(frame, "id: 202")
+	assert.Contains(frame, "event: kata.tasks.reset")
+	assert.Contains(frame, `"server_instance_id":"server-new"`)
+	assert.Contains(frame, `"cursor":202`)
+}
+
+func TestKataFrontendEventGenerationSeedLeavesSequenceHeadroom(t *testing.T) {
+	assert := assert.New(t)
+	seed := kataFrontendEventGenerationSeed("server-range")
+
+	assert.NotZero(seed)
+	assert.Equal(seed, kataFrontendEventGenerationSeed("server-range"))
+	assert.Less(seed, uint64(1<<48))
 }
 
 func TestKataFrontendEventSupervisorInvalidatesBeforeBroadcastAndHidesRawPayload(t *testing.T) {
@@ -218,15 +277,15 @@ func TestKataFrontendEventRotationRejectsOldCursorWithCompactReset(t *testing.T)
 	frames := strings.Split(strings.TrimSpace(wire.String()), "\n\n")
 	require.Len(t, frames, 1)
 	assert.Contains(frames[0], "event: kata.tasks.reset")
-	assert.Contains(frames[0], "id: 2")
+	assert.Contains(frames[0], "id: "+strconv.FormatUint(oldCursor+1, 10))
 	assert.Contains(frames[0], `"server_instance_id":"server-1"`)
 	assert.Contains(frames[0], `"daemon_id":"primary"`)
 	assert.Contains(frames[0], `"epoch":2`)
-	assert.Contains(frames[0], `"cursor":2`)
+	assert.Contains(frames[0], `"cursor":`+strconv.FormatUint(oldCursor+1, 10))
 	assert.NotContains(frames[0], "old.test")
 }
 
-func TestKataFrontendEventRotationPublishesResetFromZeroCursor(t *testing.T) {
+func TestKataFrontendEventRotationPublishesResetFromInitialCursor(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	registry := newKataFrontendEventRegistry(t.Context(), kataFrontendEventRegistryDeps{
@@ -241,16 +300,17 @@ func TestKataFrontendEventRotationPublishesResetFromZeroCursor(t *testing.T) {
 	oldBinding := requireKataFrontendEventBinding(
 		t, registry, kata.Daemon{ID: "primary", URL: "http://old.test"},
 	)
-	require.Zero(oldBinding.Cursor())
+	oldCursor := oldBinding.Cursor()
+	require.Equal(uint64(1), oldCursor)
 
 	newBinding := requireKataFrontendEventBinding(
 		t, registry, kata.Daemon{ID: "primary", URL: "http://new.test"},
 	)
-	replay, stale := newBinding.hub.RingSnapshotSince(0)
+	replay, stale := newBinding.hub.RingSnapshotSince(oldCursor)
 	require.False(stale)
 	require.Len(replay, 1)
 	assert.Equal("kata.tasks.reset", replay[0].Event.Type)
-	assert.Equal(uint64(1), replay[0].ID)
+	assert.Equal(oldCursor+1, replay[0].ID)
 }
 
 func TestKataFrontendEventRotationKeepsCursorMonotonicAcrossEqualNumericHeads(t *testing.T) {
@@ -270,7 +330,7 @@ func TestKataFrontendEventRotationKeepsCursorMonotonicAcrossEqualNumericHeads(t 
 	)
 	oldBinding.target.invalidateAndBroadcast()
 	oldCursor := oldBinding.Cursor()
-	require.Equal(uint64(1), oldCursor)
+	require.Equal(uint64(2), oldCursor)
 
 	newBinding := requireKataFrontendEventBinding(
 		t, registry, kata.Daemon{ID: "primary", URL: "http://new.test"},
@@ -303,26 +363,70 @@ func TestKataFrontendEventRotationIntoSharedTargetStartsAtReset(t *testing.T) {
 		t, registry, kata.Daemon{ID: "alias", URL: "http://new.test"},
 	)
 	alias.target.invalidateAndBroadcast()
+	historicalCursor := alias.Cursor()
 
 	oldBinding := requireKataFrontendEventBinding(
 		t, registry, kata.Daemon{ID: "primary", URL: "http://old.test"},
 	)
-	require.Zero(oldBinding.Cursor())
+	oldCursor := oldBinding.Cursor()
 	newBinding := requireKataFrontendEventBinding(
 		t, registry, kata.Daemon{ID: "primary", URL: "http://new.test"},
 	)
+	resetCursor := newBinding.Cursor()
+	require.Greater(resetCursor, historicalCursor)
+	require.Greater(resetCursor, oldCursor)
 	newBinding.target.invalidateAndBroadcast()
+	invalidationCursor := newBinding.Cursor()
 
 	var wire bytes.Buffer
-	newBinding.serve(t.Context(), &wire, &stopOnFlushController{at: 3}, 0, true)
+	newBinding.serve(t.Context(), &wire, &stopOnFlushController{at: 3}, oldCursor, true)
 
 	frames := strings.Split(strings.TrimSpace(wire.String()), "\n\n")
 	require.Len(frames, 2)
-	assert.Contains(frames[0], "id: 2")
+	assert.Contains(frames[0], "id: "+strconv.FormatUint(resetCursor, 10))
 	assert.Contains(frames[0], "event: kata.tasks.reset")
-	assert.Contains(frames[1], "id: 3")
+	assert.Contains(frames[1], "id: "+strconv.FormatUint(invalidationCursor, 10))
 	assert.Contains(frames[1], "event: kata.tasks.invalidated")
-	assert.NotContains(wire.String(), "id: 1\n")
+	assert.NotContains(wire.String(), "id: "+strconv.FormatUint(historicalCursor, 10)+"\n")
+}
+
+func TestKataFrontendEventFreshAliasStartsWithOwnReset(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	invalidated := make(map[string]int)
+	registry := newKataFrontendEventRegistry(t.Context(), kataFrontendEventRegistryDeps{
+		newClient: func(ctx context.Context, _ kata.Daemon) (kataAPIClient, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+		invalidate: func(daemonID string) uint64 {
+			invalidated[daemonID]++
+			return uint64(invalidated[daemonID])
+		},
+		serverInstanceID: "server-1",
+	})
+	defer registry.Close()
+
+	primary := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://kata.test"},
+	)
+	primary.target.invalidateAndBroadcast()
+	historicalCursor := primary.Cursor()
+	alias := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "alias", URL: "http://kata.test"},
+	)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	var wire bytes.Buffer
+	alias.serve(ctx, &wire, &stopOnFlushController{at: 2}, registry.generationSeed, true)
+
+	frames := strings.Split(strings.TrimSpace(wire.String()), "\n\n")
+	require.Len(frames, 1)
+	assert.Contains(frames[0], "event: kata.tasks.reset")
+	assert.Contains(frames[0], `"daemon_id":"alias"`)
+	assert.Greater(alias.Cursor(), historicalCursor)
+	assert.Equal(map[string]int{"alias": 1, "primary": 1}, invalidated)
 }
 
 func TestKataFrontendEventRegistryDeduplicatesResolvedTargetAliases(t *testing.T) {
@@ -372,7 +476,7 @@ func TestKataFrontendEventRegistryDeduplicatesResolvedTargetAliases(t *testing.T
 	assert.Equal("primary", primaryFrame.DaemonID)
 	assert.Equal("alias", aliasFrame.DaemonID)
 	invalidatedMu.Lock()
-	assert.Equal(map[string]int{"primary": 1, "alias": 1}, invalidated)
+	assert.Equal(map[string]int{"primary": 1, "alias": 2}, invalidated)
 	invalidatedMu.Unlock()
 }
 
@@ -424,16 +528,24 @@ func TestKataFrontendEventRetiredPublisherCannotInvalidateReplacement(t *testing
 	}
 	close(release)
 	<-publicationDone
+	finalOldCursor := oldBinding.Cursor()
 	newBinding := <-replacementDone
 	require.NotNil(newBinding)
 	require.NotSame(oldBinding.target, newBinding.target)
 	require.Equal(int64(2), invalidations.Load(), "old publication plus rotation invalidation")
+	replay, stale := newBinding.hub.RingSnapshotSince(finalOldCursor)
+	require.False(stale)
+	require.Len(replay, 1)
+	assert.Equal("kata.tasks.reset", replay[0].Event.Type)
+	assert.Greater(replay[0].ID, finalOldCursor)
 
 	oldBinding.target.invalidateAndBroadcast()
 	assert.Equal(int64(2), invalidations.Load(), "retired target must not invalidate shared authority")
 }
 
 func TestKataFrontendEventCatchUpQueuesInvalidationAfterPartialFailure(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	call := 0
 	target := &kataFrontendEventTarget{
 		invalidated:      make(chan struct{}, 1),
@@ -456,13 +568,14 @@ func TestKataFrontendEventCatchUpQueuesInvalidationAfterPartialFailure(t *testin
 		},
 	}
 
-	cursor, err := target.catchUp(t.Context(), client, 0)
-	require.EqualError(t, err, "second page failed")
-	assert.Equal(t, int64(1), cursor)
+	cursor, liveOnly, err := target.catchUp(t.Context(), client, 0)
+	require.EqualError(err, "second page failed")
+	assert.Equal(int64(1), cursor)
+	assert.False(liveOnly)
 	select {
 	case <-target.invalidated:
 	default:
-		require.FailNow(t, "dirty catch-up returned without queuing invalidation")
+		require.FailNow("dirty catch-up returned without queuing invalidation")
 	}
 }
 
@@ -495,10 +608,11 @@ func TestKataFrontendEventCatchUpUsesHundredEventPagesAndStopsAtThousand(t *test
 		},
 	}
 
-	cursor, err := target.catchUp(t.Context(), client, 0)
+	cursor, liveOnly, err := target.catchUp(t.Context(), client, 0)
 	require.NoError(err)
 	assert.Equal(10, calls)
 	assert.Equal(int64(1000), cursor)
+	assert.True(liveOnly)
 	select {
 	case <-target.invalidated:
 	default:
@@ -532,14 +646,109 @@ func TestKataFrontendEventCatchUpStopsAtPrivateTimeBudget(t *testing.T) {
 		},
 	}
 
-	cursor, err := target.catchUp(t.Context(), client, 0)
+	cursor, liveOnly, err := target.catchUp(t.Context(), client, 0)
 	require.NoError(err)
 	assert.Equal(int64(1), cursor)
 	assert.Equal(2, call)
+	assert.True(liveOnly)
 	select {
 	case <-target.invalidated:
 	default:
 		require.FailNow("time-bounded dirty catch-up did not queue invalidation")
+	}
+}
+
+func TestKataFrontendEventSupervisorUsesLiveOnlyModeAfterCatchUpExhaustion(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var operationsMu sync.Mutex
+	var operations []string
+	secondPoll := make(chan struct{})
+	pollCalls := 0
+	streamCalls := 0
+	client := &fakeKataFrontendEventClient{
+		poll: func(ctx context.Context, options *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+			pollCalls++
+			afterID := int64(0)
+			if options.Query.AfterID != nil {
+				afterID = *options.Query.AfterID
+			}
+			operationsMu.Lock()
+			operations = append(operations, "poll:"+strconv.FormatInt(afterID, 10))
+			operationsMu.Unlock()
+			if pollCalls == 1 {
+				return &katagenerated.PollEventsResp{
+					StatusCode: http.StatusOK,
+					JSON200: &katagenerated.PollEventsBody{
+						Events: []katagenerated.EventEnvelope{
+							testKataEventEnvelope(1),
+							testKataEventEnvelope(2),
+						},
+						NextAfterID: 2,
+					},
+				}, nil
+			}
+			close(secondPoll)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+		stream: func(_ context.Context, options *katagenerated.StreamEventsRequestOptions) (*http.Response, error) {
+			streamCalls++
+			afterID := "none"
+			if options.Query.AfterID != nil {
+				afterID = strconv.FormatInt(*options.Query.AfterID, 10)
+			}
+			operationsMu.Lock()
+			operations = append(operations, "stream:"+afterID)
+			operationsMu.Unlock()
+			body := ""
+			if streamCalls == 2 {
+				body = "id: 77\nevent: issue.updated\n\n"
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+	target := &kataFrontendEventTarget{
+		daemon:           kata.Daemon{ID: "primary", URL: "http://kata.test"},
+		invalidated:      make(chan struct{}, 1),
+		retryDelay:       time.Millisecond,
+		catchUpMaxEvents: 2,
+		catchUpTimeout:   time.Second,
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		target.runSupervisor(ctx, func(context.Context, kata.Daemon) (kataAPIClient, error) {
+			return client, nil
+		})
+	}()
+
+	select {
+	case <-secondPoll:
+	case <-time.After(time.Second):
+		require.FailNow("supervisor did not resume catch-up after a live cursor")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		require.FailNow("supervisor did not stop")
+	}
+
+	operationsMu.Lock()
+	assert.Equal([]string{"poll:0", "stream:none", "stream:none", "poll:77"}, operations)
+	operationsMu.Unlock()
+	assert.Equal(2, pollCalls)
+	assert.Equal(2, streamCalls)
+	select {
+	case <-target.invalidated:
+	default:
+		require.FailNow("catch-up exhaustion did not queue invalidation")
 	}
 }
 
@@ -574,7 +783,7 @@ func TestKataFrontendEventPublisherCoalescesBurst(t *testing.T) {
 	}
 }
 
-func TestKataTaskEventsEndpointEmitsOnlyMiddlemanInvalidationFrame(t *testing.T) {
+func TestKataTaskEventsEndpointEmitsResetThenMiddlemanInvalidationFrame(t *testing.T) {
 	assert := assert.New(t)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -616,12 +825,16 @@ url = "`+upstream.URL+`"
 	response, err := middleman.Client().Do(req)
 	require.NoError(t, err)
 	defer func() { _ = response.Body.Close() }()
-	frame := readSSEFrameWithin(t, bufio.NewScanner(response.Body), time.Second, cancel)
+	scanner := bufio.NewScanner(response.Body)
+	reset := readSSEFrameWithin(t, scanner, time.Second, cancel)
+	frame := readSSEFrameWithin(t, scanner, time.Second, cancel)
 	cancel()
 
 	assert.Equal(http.StatusOK, response.StatusCode)
 	assert.Equal("text/event-stream", response.Header.Get("Content-Type"))
 	assert.Contains(response.Header.Values("Vary"), kataDaemonHeaderName)
+	assert.Equal("kata.tasks.reset", reset.Event)
+	assert.Contains(reset.Data, `"daemon_id":"primary"`)
 	assert.Equal("kata.tasks.invalidated", frame.Event)
 	assert.Contains(frame.Data, `"daemon_id":"primary"`)
 	assert.NotContains(frame.Data, "raw-upstream")

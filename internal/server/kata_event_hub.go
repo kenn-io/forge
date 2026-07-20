@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"io"
 	"net/http"
@@ -38,16 +40,18 @@ type kataFrontendEventRegistryDeps struct {
 	retryDelay       time.Duration
 	catchUpMaxEvents int
 	catchUpTimeout   time.Duration
+	generationSeed   func(string) uint64
 }
 
 type kataFrontendEventRegistry struct {
-	root     context.Context
-	deps     kataFrontendEventRegistryDeps
-	mu       sync.Mutex
-	bindings map[string]*kataFrontendEventBinding
-	targets  map[string]*kataFrontendEventTarget
-	closed   bool
-	wg       sync.WaitGroup
+	root           context.Context
+	deps           kataFrontendEventRegistryDeps
+	mu             sync.Mutex
+	bindings       map[string]*kataFrontendEventBinding
+	targets        map[string]*kataFrontendEventTarget
+	closed         bool
+	generationSeed uint64
+	wg             sync.WaitGroup
 }
 
 type kataFrontendEventFrame struct {
@@ -117,12 +121,29 @@ func newKataFrontendEventRegistry(
 	if deps.catchUpTimeout <= 0 {
 		deps.catchUpTimeout = kataFrontendEventCatchUpTimeout
 	}
-	return &kataFrontendEventRegistry{
-		root:     root,
-		deps:     deps,
-		bindings: make(map[string]*kataFrontendEventBinding),
-		targets:  make(map[string]*kataFrontendEventTarget),
+	if deps.generationSeed == nil {
+		deps.generationSeed = kataFrontendEventGenerationSeed
 	}
+	return &kataFrontendEventRegistry{
+		root:           root,
+		deps:           deps,
+		bindings:       make(map[string]*kataFrontendEventBinding),
+		targets:        make(map[string]*kataFrontendEventTarget),
+		generationSeed: deps.generationSeed(deps.serverInstanceID),
+	}
+}
+
+func kataFrontendEventGenerationSeed(serverInstanceID string) uint64 {
+	if serverInstanceID == "" {
+		return 0
+	}
+	digest := sha256.Sum256([]byte(serverInstanceID))
+	const generationMask = uint64(1<<48 - 1)
+	seed := binary.BigEndian.Uint64(digest[:8]) & generationMask
+	if seed == 0 {
+		return 1
+	}
+	return seed
 }
 
 func (r *kataFrontendEventRegistry) Ensure(
@@ -143,9 +164,9 @@ func (r *kataFrontendEventRegistry) Ensure(
 	replacing := false
 	if current := r.bindings[daemon.ID]; current != nil {
 		replacing = true
-		cursorFloor = current.Cursor()
 		oldTarget := current.target
 		oldTarget.publishMu.Lock()
+		cursorFloor = current.Cursor()
 		delete(oldTarget.bindings, daemon.ID)
 		current.close()
 		if len(oldTarget.bindings) == 0 {
@@ -167,7 +188,7 @@ func (r *kataFrontendEventRegistry) Ensure(
 		target = &kataFrontendEventTarget{
 			daemon:           daemon,
 			fingerprint:      fingerprint,
-			hub:              NewEventHubWithCapacity(kataFrontendEventBufferSize),
+			hub:              newEventHubWithCapacityAndGeneration(kataFrontendEventBufferSize, r.generationSeed),
 			cancel:           cancel,
 			invalidate:       r.deps.invalidate,
 			serverID:         r.deps.serverInstanceID,
@@ -194,11 +215,14 @@ func (r *kataFrontendEventRegistry) Ensure(
 	}
 	binding.epoch.Store(epoch)
 	target.publishMu.Lock()
+	if !createdTarget && !replacing {
+		binding.epoch.Store(r.deps.invalidate(daemon.ID))
+	}
 	target.bindings[daemon.ID] = binding
-	if replacing {
+	if replacing || !createdTarget {
 		binding.activation = target.broadcastResetAtLeastLocked(cursorFloor)
 	} else {
-		binding.activation = target.hub.Generation() + 1
+		binding.activation = target.broadcastResetAtLeastLocked(0)
 	}
 	target.publishMu.Unlock()
 	r.bindings[daemon.ID] = binding
@@ -370,13 +394,14 @@ func (t *kataFrontendEventTarget) runSupervisor(
 	newClient func(context.Context, kata.Daemon) (kataAPIClient, error),
 ) {
 	var upstreamCursor int64
+	liveOnly := false
 	for ctx.Err() == nil {
 		client, err := newClient(ctx, t.daemon)
-		if err == nil {
-			upstreamCursor, err = t.catchUp(ctx, client, upstreamCursor)
+		if err == nil && !liveOnly {
+			upstreamCursor, liveOnly, err = t.catchUp(ctx, client, upstreamCursor)
 		}
 		if err == nil {
-			_ = t.stream(ctx, client, &upstreamCursor)
+			_ = t.stream(ctx, client, &upstreamCursor, &liveOnly)
 		}
 		if ctx.Err() != nil {
 			return
@@ -397,7 +422,7 @@ func (t *kataFrontendEventTarget) catchUp(
 	ctx context.Context,
 	client kataAPIClient,
 	afterID int64,
-) (int64, error) {
+) (int64, bool, error) {
 	dirty := false
 	defer func() {
 		if dirty {
@@ -413,13 +438,14 @@ func (t *kataFrontendEventTarget) catchUp(
 			Query: &katagenerated.PollEventsQuery{AfterID: &afterID, Limit: &limit},
 		})
 		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-				return afterID, nil
+			if catchUpCtx.Err() != nil && ctx.Err() == nil {
+				dirty = true
+				return afterID, true, nil
 			}
-			return afterID, err
+			return afterID, false, err
 		}
 		if response == nil || response.StatusCode != http.StatusOK || response.JSON200 == nil {
-			return afterID, errors.New("kata event catch-up returned an invalid response")
+			return afterID, false, errors.New("kata event catch-up returned an invalid response")
 		}
 		body := response.JSON200
 		if body.ResetRequired {
@@ -430,19 +456,19 @@ func (t *kataFrontendEventTarget) catchUp(
 		}
 		if len(body.Events) == 0 {
 			if body.NextAfterID != afterID {
-				return afterID, errors.New("kata event catch-up cursor did not match the empty page request")
+				return afterID, false, errors.New("kata event catch-up cursor did not match the empty page request")
 			}
-			return afterID, nil
+			return afterID, false, nil
 		}
 		dirty = true
 		lastID := body.Events[len(body.Events)-1].EventID
 		if body.NextAfterID != lastID || lastID <= afterID {
-			return afterID, errors.New("kata event catch-up cursor did not advance to the last event")
+			return afterID, false, errors.New("kata event catch-up cursor did not advance to the last event")
 		}
 		afterID = lastID
 		eventCount += len(body.Events)
 		if eventCount >= t.catchUpMaxEvents {
-			return afterID, nil
+			return afterID, true, nil
 		}
 	}
 }
@@ -451,9 +477,14 @@ func (t *kataFrontendEventTarget) stream(
 	ctx context.Context,
 	client kataAPIClient,
 	upstreamCursor *int64,
+	liveOnly *bool,
 ) error {
+	query := &katagenerated.StreamEventsQuery{}
+	if !*liveOnly {
+		query.AfterID = upstreamCursor
+	}
 	response, err := client.StreamEventsRaw(ctx, &katagenerated.StreamEventsRequestOptions{
-		Query: &katagenerated.StreamEventsQuery{AfterID: upstreamCursor},
+		Query: query,
 	})
 	if err != nil {
 		return err
@@ -484,8 +515,9 @@ func (t *kataFrontendEventTarget) stream(
 			case bytes.HasPrefix(line, []byte("event:")):
 				eventType = strings.TrimSpace(string(line[6:]))
 			}
-		} else if readErr == nil && eventType != "" && eventID > *upstreamCursor {
+		} else if readErr == nil && eventType != "" && eventID > 0 && (*liveOnly || eventID > *upstreamCursor) {
 			*upstreamCursor = eventID
+			*liveOnly = false
 			t.queueInvalidation()
 			eventID = 0
 			eventType = ""

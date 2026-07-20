@@ -14,6 +14,8 @@ import (
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
+const minimumReviewThreadVersion = ">= 1.24.6"
+
 type ClientOption func(*clientOptions)
 
 type clientOptions struct {
@@ -21,7 +23,7 @@ type clientOptions struct {
 	foregroundTimeout time.Duration
 	rateTracker       *ratelimit.RateTracker
 	budget            *ghsync.SyncBudget
-	skipVersionProbe  bool
+	serverVersion     string
 }
 
 type provider = gitealike.Provider
@@ -33,12 +35,13 @@ type Client struct {
 	*provider
 	api               *giteasdk.Client
 	foregroundTimeout time.Duration
+	readReviewThreads bool
 }
 
 func WithBaseURLForTesting(baseURL string) ClientOption {
 	return func(opts *clientOptions) {
 		opts.baseURL = strings.TrimRight(baseURL, "/")
-		opts.skipVersionProbe = true
+		opts.serverVersion = "1.26.0"
 	}
 }
 
@@ -72,8 +75,8 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 	clientOptions := []giteasdk.ClientOption{
 		giteasdk.SetUserAgent("middleman"),
 	}
-	if opts.skipVersionProbe {
-		clientOptions = append(clientOptions, giteasdk.SetGiteaVersion("1.26.0"))
+	if opts.serverVersion != "" {
+		clientOptions = append(clientOptions, giteasdk.SetGiteaVersion(opts.serverVersion))
 	}
 	httpTransport := http.DefaultTransport
 	if opts.rateTracker != nil {
@@ -109,6 +112,7 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 	if err != nil {
 		return nil, err
 	}
+	readReviewThreads := api.CheckServerVersionConstraint(minimumReviewThreadVersion) == nil
 	transport := &transport{
 		api:                api,
 		mergeability:       mergeability,
@@ -122,6 +126,7 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 		transport:         transport,
 		provider:          gitealike.NewProvider(platform.KindGitea, host, transport, gitealike.WithReadActions(), gitealike.WithMutations()),
 		foregroundTimeout: opts.foregroundTimeout,
+		readReviewThreads: readReviewThreads,
 	}, nil
 }
 
@@ -131,6 +136,15 @@ func (c *Client) Platform() platform.Kind {
 
 func (c *Client) Host() string {
 	return c.host
+}
+
+func (c *Client) Capabilities() platform.Capabilities {
+	caps := c.provider.Capabilities()
+	if c.readReviewThreads {
+		caps.ReadReviewThreads = true
+		caps.Archive.InlineReviewComments = true
+	}
+	return caps
 }
 
 type transport struct {

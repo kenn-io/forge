@@ -18,21 +18,22 @@ import (
 )
 
 var (
-	_ gitealike.Transport             = (*transport)(nil)
-	_ gitealike.ActionsTransport      = (*transport)(nil)
-	_ platform.RepositoryReader       = (*Client)(nil)
-	_ platform.MergeRequestReader     = (*Client)(nil)
-	_ platform.IssueReader            = (*Client)(nil)
-	_ platform.ReleaseReader          = (*Client)(nil)
-	_ platform.TagReader              = (*Client)(nil)
-	_ platform.CIReader               = (*Client)(nil)
-	_ platform.CommentMutator         = (*Client)(nil)
-	_ platform.StateMutator           = (*Client)(nil)
-	_ platform.MergeMutator           = (*Client)(nil)
-	_ platform.ReviewMutator          = (*Client)(nil)
-	_ platform.IssueMutator           = (*Client)(nil)
-	_ platform.IssuePageReader        = (*Client)(nil)
-	_ platform.MergeRequestPageReader = (*Client)(nil)
+	_ gitealike.Transport                     = (*transport)(nil)
+	_ gitealike.ActionsTransport              = (*transport)(nil)
+	_ platform.RepositoryReader               = (*Client)(nil)
+	_ platform.MergeRequestReader             = (*Client)(nil)
+	_ platform.IssueReader                    = (*Client)(nil)
+	_ platform.ReleaseReader                  = (*Client)(nil)
+	_ platform.TagReader                      = (*Client)(nil)
+	_ platform.CIReader                       = (*Client)(nil)
+	_ platform.CommentMutator                 = (*Client)(nil)
+	_ platform.StateMutator                   = (*Client)(nil)
+	_ platform.MergeMutator                   = (*Client)(nil)
+	_ platform.ReviewMutator                  = (*Client)(nil)
+	_ platform.IssueMutator                   = (*Client)(nil)
+	_ platform.IssuePageReader                = (*Client)(nil)
+	_ platform.MergeRequestPageReader         = (*Client)(nil)
+	_ platform.MergeRequestReviewThreadReader = (*Client)(nil)
 )
 
 func TestClientClassifiesDisabledIssuesFromRepositoryMetadata(t *testing.T) {
@@ -347,6 +348,7 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 		AssigneeMutation:    true,
 		ReviewerMutation:    true,
 		MutationHeadBinding: true,
+		ReadReviewThreads:   true,
 		SupportedReviewActions: []platform.ReviewAction{
 			platform.ReviewActionComment,
 			platform.ReviewActionApprove,
@@ -354,9 +356,46 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 		},
 		Archive: platform.ArchiveCapabilities{
 			HistoricalIssues: true, HistoricalMergeRequests: true,
-			OrdinaryComments: true, SubmittedReviews: true,
+			OrdinaryComments: true, SubmittedReviews: true, InlineReviewComments: true,
 		},
 	}, client.Capabilities())
+}
+
+func TestClientReviewThreadCapabilitiesUseValidatedVersionFloor(t *testing.T) {
+	tests := []struct {
+		name      string
+		version   string
+		supported bool
+	}{
+		{name: "below floor", version: "1.24.5", supported: false},
+		{name: "at floor", version: "1.24.6", supported: true},
+		{name: "newer", version: "1.26.0", supported: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := Require.New(t)
+			server := httptest.NewServer(http.NotFoundHandler())
+			defer server.Close()
+			client, err := NewClient(
+				"gitea.test",
+				testTokenSource("token"),
+				WithBaseURLForTesting(server.URL),
+				func(opts *clientOptions) { opts.serverVersion = tt.version },
+			)
+			require.NoError(err)
+
+			caps := client.Capabilities()
+			assert.Equal(tt.supported, caps.ReadReviewThreads)
+			assert.Equal(tt.supported, caps.Archive.InlineReviewComments)
+			if !tt.supported {
+				_, err = client.ListMergeRequestReviewThreads(
+					t.Context(), platform.RepoRef{Owner: "owner", Name: "repo"}, 42,
+				)
+				assert.ErrorIs(err, platform.ErrUnsupportedCapability)
+			}
+		})
+	}
 }
 
 func TestClientReadsOpenPullRequestsIssuesAndCIChecks(t *testing.T) {

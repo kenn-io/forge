@@ -25895,6 +25895,51 @@ func TestWorkspaceForceDeleteToleratesCorruptWorktreeGitfileE2E(t *testing.T) {
 	assert.Nil(got)
 }
 
+func TestWorkspaceForceDeleteToleratesMissingWorktreeCommonDirE2E(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	client, database, _, _ := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+	installGitCommonDirReadFailure(t)
+
+	force := true
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(
+		http.StatusNoContent, delResp.StatusCode(), string(delResp.Body),
+	)
+
+	got, err := database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	assert.Nil(got)
+}
+
+func installGitCommonDirReadFailure(t *testing.T) {
+	t.Helper()
+
+	realGit, err := exec.LookPath("git")
+	require.NoError(t, err)
+	wrapperDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(wrapperDir, "git"), []byte(`#!/bin/sh
+set -eu
+case " $* " in
+	*" rev-parse --path-format=absolute --git-common-dir "*)
+		echo "fatal: failed to read worktrees/pr-1/commondir: Success" >&2
+		exit 128
+		;;
+esac
+exec "$MIDDLEMAN_TEST_REAL_GIT" "$@"
+`), 0o755))
+	t.Setenv("PATH", wrapperDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("MIDDLEMAN_TEST_REAL_GIT", realGit)
+}
+
 // TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E covers the case where the
 // workspace is dirty and delete is rejected with 409. Runtime sessions must
 // survive — killing them on a delete that didn't actually happen would leave

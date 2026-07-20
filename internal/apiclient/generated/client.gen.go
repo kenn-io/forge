@@ -29065,9 +29065,6 @@ type ClientWithResponsesInterface interface {
 	// GetKataProjectMappingsWithResponse request
 	GetKataProjectMappingsWithResponse(ctx context.Context, params *GetKataProjectMappingsParams, reqEditors ...RequestEditorFn) (*GetKataProjectMappingsResponse, error)
 
-	// StreamKataTaskEventsWithResponse request
-	StreamKataTaskEventsWithResponse(ctx context.Context, params *StreamKataTaskEventsParams, reqEditors ...RequestEditorFn) (*StreamKataTaskEventsResponse, error)
-
 	// GetKataTaskDetailWithResponse request
 	GetKataTaskDetailWithResponse(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*GetKataTaskDetailResponse, error)
 
@@ -32948,28 +32945,6 @@ func (r GetKataProjectMappingsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetKataProjectMappingsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type StreamKataTaskEventsResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ProblemError
-}
-
-// Status returns HTTPResponse.Status
-func (r StreamKataTaskEventsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r StreamKataTaskEventsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -37971,15 +37946,6 @@ func (c *ClientWithResponses) GetKataProjectMappingsWithResponse(ctx context.Con
 		return nil, err
 	}
 	return ParseGetKataProjectMappingsResponse(rsp)
-}
-
-// StreamKataTaskEventsWithResponse request returning *StreamKataTaskEventsResponse
-func (c *ClientWithResponses) StreamKataTaskEventsWithResponse(ctx context.Context, params *StreamKataTaskEventsParams, reqEditors ...RequestEditorFn) (*StreamKataTaskEventsResponse, error) {
-	rsp, err := c.StreamKataTaskEvents(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseStreamKataTaskEventsResponse(rsp)
 }
 
 // GetKataTaskDetailWithResponse request returning *GetKataTaskDetailResponse
@@ -44363,32 +44329,6 @@ func ParseGetKataProjectMappingsResponse(rsp *http.Response) (*GetKataProjectMap
 		}
 		response.JSON200 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ProblemError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseStreamKataTaskEventsResponse parses an HTTP response from a StreamKataTaskEventsWithResponse call
-func ParseStreamKataTaskEventsResponse(rsp *http.Response) (*StreamKataTaskEventsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &StreamKataTaskEventsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

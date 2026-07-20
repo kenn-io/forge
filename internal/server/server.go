@@ -454,6 +454,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if first && s.hub != nil {
 		s.hub.Close()
 	}
+	if first && s.kataEvents != nil {
+		s.kataEvents.Close()
+	}
 	if first && s.runtime != nil {
 		s.runtime.Shutdown()
 	}
@@ -1639,6 +1642,24 @@ func serveSSESubscribedFromHub(
 	done <-chan struct{},
 	staleEvent func(uint64) Event,
 ) {
+	serveSSESubscribedFromHubTransformed(
+		ctx, w, rc, hub, cursor, hasCursor, ch, done, staleEvent,
+		func(rec RecordedEvent) RecordedEvent { return rec },
+	)
+}
+
+func serveSSESubscribedFromHubTransformed(
+	ctx context.Context,
+	w io.Writer,
+	rc sseController,
+	hub *EventHub,
+	cursor uint64,
+	hasCursor bool,
+	ch <-chan RecordedEvent,
+	done <-chan struct{},
+	staleEvent func(uint64) Event,
+	transform func(RecordedEvent) RecordedEvent,
+) {
 
 	if err := rc.Flush(); err != nil {
 		return
@@ -1657,7 +1678,7 @@ func serveSSESubscribedFromHub(
 			deliveredThrough = synID
 		} else {
 			for _, rec := range replay {
-				if !writeSSERecorded(w, rc, rec) {
+				if !writeSSERecorded(w, rc, transform(rec)) {
 					return
 				}
 				deliveredThrough = rec.ID
@@ -1689,7 +1710,7 @@ func serveSSESubscribedFromHub(
 				// the snapshot read and a fresh broadcast.
 				continue
 			}
-			if !writeSSERecorded(w, rc, ev) {
+			if !writeSSERecorded(w, rc, transform(ev)) {
 				return
 			}
 		case <-ticker.C:

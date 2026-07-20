@@ -19,15 +19,13 @@ import (
 )
 
 const (
-	kataFrontendEventBufferSize     = 64
-	kataFrontendEventCoalesceWindow = 25 * time.Millisecond
-	kataFrontendEventRetryDelay     = time.Second
+	kataFrontendEventBufferSize      = 64
+	kataFrontendEventCoalesceWindow  = 25 * time.Millisecond
+	kataFrontendEventRetryDelay      = time.Second
+	kataFrontendEventCatchUpPageSize = 100
+	kataFrontendEventCatchUpMax      = 1000
+	kataFrontendEventCatchUpTimeout  = 2 * time.Second
 )
-
-type kataFrontendEventHandle interface {
-	DaemonFingerprint() string
-	Cursor() uint64
-}
 
 type kataFrontendEventRegistryDeps struct {
 	newClient        func(context.Context, kata.Daemon) (kataAPIClient, error)
@@ -36,15 +34,18 @@ type kataFrontendEventRegistryDeps struct {
 	serverInstanceID string
 	coalesceWindow   time.Duration
 	retryDelay       time.Duration
+	catchUpMaxEvents int
+	catchUpTimeout   time.Duration
 }
 
 type kataFrontendEventRegistry struct {
-	root    context.Context
-	deps    kataFrontendEventRegistryDeps
-	mu      sync.Mutex
-	targets map[string]*kataFrontendEventTarget
-	closed  bool
-	wg      sync.WaitGroup
+	root     context.Context
+	deps     kataFrontendEventRegistryDeps
+	mu       sync.Mutex
+	bindings map[string]*kataFrontendEventBinding
+	targets  map[string]*kataFrontendEventTarget
+	closed   bool
+	wg       sync.WaitGroup
 }
 
 type kataFrontendEventFrame struct {
@@ -54,17 +55,35 @@ type kataFrontendEventFrame struct {
 	Cursor           uint64 `json:"cursor"`
 }
 
-type kataFrontendEventTarget struct {
-	daemon      kata.Daemon
+type kataFrontendEventRecord struct {
+	epochs map[string]uint64
+}
+
+type kataFrontendEventBinding struct {
+	daemonID    string
 	fingerprint string
+	target      *kataFrontendEventTarget
 	hub         *EventHub
-	cancel      context.CancelFunc
-	invalidate  func(string) uint64
-	serverID    string
-	coalesce    time.Duration
-	retryDelay  time.Duration
 	epoch       atomic.Uint64
-	invalidated chan struct{}
+	done        chan struct{}
+	closeOnce   sync.Once
+}
+
+type kataFrontendEventTarget struct {
+	daemon           kata.Daemon
+	fingerprint      string
+	hub              *EventHub
+	cancel           context.CancelFunc
+	invalidate       func(string) uint64
+	serverID         string
+	coalesce         time.Duration
+	retryDelay       time.Duration
+	catchUpMaxEvents int
+	catchUpTimeout   time.Duration
+	invalidated      chan struct{}
+	publishMu        sync.Mutex
+	bindings         map[string]*kataFrontendEventBinding
+	retired          bool
 }
 
 func newKataFrontendEventRegistry(
@@ -89,77 +108,139 @@ func newKataFrontendEventRegistry(
 	if deps.retryDelay <= 0 {
 		deps.retryDelay = kataFrontendEventRetryDelay
 	}
+	if deps.catchUpMaxEvents <= 0 {
+		deps.catchUpMaxEvents = kataFrontendEventCatchUpMax
+	}
+	if deps.catchUpTimeout <= 0 {
+		deps.catchUpTimeout = kataFrontendEventCatchUpTimeout
+	}
 	return &kataFrontendEventRegistry{
-		root:    root,
-		deps:    deps,
-		targets: make(map[string]*kataFrontendEventTarget),
+		root:     root,
+		deps:     deps,
+		bindings: make(map[string]*kataFrontendEventBinding),
+		targets:  make(map[string]*kataFrontendEventTarget),
 	}
 }
 
-func (r *kataFrontendEventRegistry) Ensure(daemon kata.Daemon) kataFrontendEventHandle {
+func (r *kataFrontendEventRegistry) Ensure(daemon kata.Daemon) *kataFrontendEventBinding {
 	fingerprint := kataDaemonTargetFingerprint(daemon)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if current := r.targets[daemon.ID]; current != nil && current.fingerprint == fingerprint {
+	if current := r.bindings[daemon.ID]; current != nil && current.fingerprint == fingerprint {
 		return current
 	}
-	epoch := r.deps.daemonEpoch(daemon.ID)
-	if current := r.targets[daemon.ID]; current != nil {
-		current.cancel()
-		current.hub.Close()
-		epoch = r.deps.invalidate(daemon.ID)
+
+	var cursorFloor uint64
+	replacing := false
+	if current := r.bindings[daemon.ID]; current != nil {
+		replacing = true
+		cursorFloor = current.Cursor()
+		oldTarget := current.target
+		oldTarget.publishMu.Lock()
+		delete(oldTarget.bindings, daemon.ID)
+		current.close()
+		if len(oldTarget.bindings) == 0 {
+			oldTarget.retired = true
+			oldTarget.cancel()
+			oldTarget.hub.Close()
+			delete(r.targets, oldTarget.fingerprint)
+		}
+		oldTarget.publishMu.Unlock()
+		delete(r.bindings, daemon.ID)
 	}
 
-	ctx, cancel := context.WithCancel(r.root)
-	target := &kataFrontendEventTarget{
-		daemon:      daemon,
-		fingerprint: fingerprint,
-		hub:         NewEventHubWithCapacity(kataFrontendEventBufferSize),
-		cancel:      cancel,
-		invalidate:  r.deps.invalidate,
-		serverID:    r.deps.serverInstanceID,
-		coalesce:    r.deps.coalesceWindow,
-		retryDelay:  r.deps.retryDelay,
-		invalidated: make(chan struct{}, 1),
+	target := r.targets[fingerprint]
+	createdTarget := target == nil
+	var targetCtx context.Context
+	if createdTarget {
+		var cancel context.CancelFunc
+		targetCtx, cancel = context.WithCancel(r.root)
+		target = &kataFrontendEventTarget{
+			daemon:           daemon,
+			fingerprint:      fingerprint,
+			hub:              NewEventHubWithCapacity(kataFrontendEventBufferSize),
+			cancel:           cancel,
+			invalidate:       r.deps.invalidate,
+			serverID:         r.deps.serverInstanceID,
+			coalesce:         r.deps.coalesceWindow,
+			retryDelay:       r.deps.retryDelay,
+			catchUpMaxEvents: r.deps.catchUpMaxEvents,
+			catchUpTimeout:   r.deps.catchUpTimeout,
+			invalidated:      make(chan struct{}, 1),
+			bindings:         make(map[string]*kataFrontendEventBinding),
+		}
+		r.targets[fingerprint] = target
 	}
-	target.epoch.Store(epoch)
-	r.targets[daemon.ID] = target
-	if !r.closed {
+
+	epoch := r.deps.daemonEpoch(daemon.ID)
+	if replacing {
+		epoch = r.deps.invalidate(daemon.ID)
+	}
+	binding := &kataFrontendEventBinding{
+		daemonID:    daemon.ID,
+		fingerprint: fingerprint,
+		target:      target,
+		hub:         target.hub,
+		done:        make(chan struct{}),
+	}
+	binding.epoch.Store(epoch)
+	target.publishMu.Lock()
+	target.bindings[daemon.ID] = binding
+	if replacing {
+		target.broadcastResetAtLeastLocked(cursorFloor)
+	}
+	target.publishMu.Unlock()
+	r.bindings[daemon.ID] = binding
+
+	if createdTarget && !r.closed {
 		r.wg.Add(2)
 		go func() {
 			defer r.wg.Done()
-			target.runPublisher(ctx)
+			target.runPublisher(targetCtx)
 		}()
 		go func() {
 			defer r.wg.Done()
-			target.runSupervisor(ctx, r.deps.newClient)
+			target.runSupervisor(targetCtx, r.deps.newClient)
 		}()
 	}
-	return target
+	return binding
 }
 
-func (t *kataFrontendEventTarget) DaemonFingerprint() string {
-	return t.fingerprint
+func (b *kataFrontendEventBinding) DaemonFingerprint() string {
+	return b.fingerprint
 }
 
-func (t *kataFrontendEventTarget) Cursor() uint64 {
-	return t.hub.Generation()
+func (b *kataFrontendEventBinding) Cursor() uint64 {
+	return b.hub.Generation()
 }
 
-func (t *kataFrontendEventTarget) serve(
+func (b *kataFrontendEventBinding) close() {
+	b.closeOnce.Do(func() { close(b.done) })
+}
+
+func (b *kataFrontendEventBinding) serve(
 	ctx context.Context,
 	w io.Writer,
 	rc sseController,
 	cursor uint64,
 	hasCursor bool,
 ) {
-	ch, done := t.hub.Subscribe(ctx, false)
-	serveSSESubscribedFromHub(
-		ctx,
+	serveCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		select {
+		case <-b.done:
+			cancel()
+		case <-serveCtx.Done():
+		}
+	}()
+	ch, done := b.hub.Subscribe(serveCtx, false)
+	serveSSESubscribedFromHubTransformed(
+		serveCtx,
 		w,
 		rc,
-		t.hub,
+		b.hub,
 		cursor,
 		hasCursor,
 		ch,
@@ -168,14 +249,35 @@ func (t *kataFrontendEventTarget) serve(
 			return Event{
 				Type: "kata.tasks.reset",
 				Data: kataFrontendEventFrame{
-					ServerInstanceID: t.serverID,
-					DaemonID:         t.daemon.ID,
-					Epoch:            t.epoch.Load(),
+					ServerInstanceID: b.target.serverID,
+					DaemonID:         b.daemonID,
+					Epoch:            b.epoch.Load(),
 					Cursor:           id,
 				},
 			}
 		},
+		b.transform,
 	)
+}
+
+func (b *kataFrontendEventBinding) transform(rec RecordedEvent) RecordedEvent {
+	internal, _ := rec.Event.Data.(kataFrontendEventRecord)
+	epoch := b.epoch.Load()
+	if value, ok := internal.epochs[b.daemonID]; ok {
+		epoch = value
+	}
+	return RecordedEvent{
+		ID: rec.ID,
+		Event: Event{
+			Type: rec.Event.Type,
+			Data: kataFrontendEventFrame{
+				ServerInstanceID: b.target.serverID,
+				DaemonID:         b.daemonID,
+				Epoch:            epoch,
+				Cursor:           rec.ID,
+			},
+		},
+	}
 }
 
 func (t *kataFrontendEventTarget) queueInvalidation() {
@@ -215,17 +317,34 @@ func (t *kataFrontendEventTarget) runPublisher(ctx context.Context) {
 }
 
 func (t *kataFrontendEventTarget) invalidateAndBroadcast() {
-	epoch := t.invalidate(t.daemon.ID)
-	t.epoch.Store(epoch)
-	t.hub.BroadcastBuild(func(cursor uint64) Event {
+	t.publishMu.Lock()
+	defer t.publishMu.Unlock()
+	if t.retired || len(t.bindings) == 0 {
+		return
+	}
+	epochs := make(map[string]uint64, len(t.bindings))
+	for daemonID, binding := range t.bindings {
+		epoch := t.invalidate(daemonID)
+		binding.epoch.Store(epoch)
+		epochs[daemonID] = epoch
+	}
+	t.hub.BroadcastBuild(func(uint64) Event {
 		return Event{
 			Type: "kata.tasks.invalidated",
-			Data: kataFrontendEventFrame{
-				ServerInstanceID: t.serverID,
-				DaemonID:         t.daemon.ID,
-				Epoch:            epoch,
-				Cursor:           cursor,
-			},
+			Data: kataFrontendEventRecord{epochs: epochs},
+		}
+	})
+}
+
+func (t *kataFrontendEventTarget) broadcastResetAtLeastLocked(cursorFloor uint64) {
+	epochs := make(map[string]uint64, len(t.bindings))
+	for daemonID, binding := range t.bindings {
+		epochs[daemonID] = binding.epoch.Load()
+	}
+	t.hub.BroadcastBuildAtLeast(cursorFloor, func(uint64) Event {
+		return Event{
+			Type: "kata.tasks.reset",
+			Data: kataFrontendEventRecord{epochs: epochs},
 		}
 	})
 }
@@ -264,12 +383,23 @@ func (t *kataFrontendEventTarget) catchUp(
 	afterID int64,
 ) (int64, error) {
 	dirty := false
+	defer func() {
+		if dirty {
+			t.queueInvalidation()
+		}
+	}()
+	catchUpCtx, cancel := context.WithTimeout(ctx, t.catchUpTimeout)
+	defer cancel()
+	eventCount := 0
 	for {
-		limit := int64(100)
-		response, err := client.PollEventsWithResponse(ctx, &katagenerated.PollEventsRequestOptions{
+		limit := int64(kataFrontendEventCatchUpPageSize)
+		response, err := client.PollEventsWithResponse(catchUpCtx, &katagenerated.PollEventsRequestOptions{
 			Query: &katagenerated.PollEventsQuery{AfterID: &afterID, Limit: &limit},
 		})
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+				return afterID, nil
+			}
 			return afterID, err
 		}
 		if response == nil || response.StatusCode != http.StatusOK || response.JSON200 == nil {
@@ -286,9 +416,6 @@ func (t *kataFrontendEventTarget) catchUp(
 			if body.NextAfterID != afterID {
 				return afterID, errors.New("kata event catch-up cursor did not match the empty page request")
 			}
-			if dirty {
-				t.queueInvalidation()
-			}
 			return afterID, nil
 		}
 		dirty = true
@@ -297,6 +424,10 @@ func (t *kataFrontendEventTarget) catchUp(
 			return afterID, errors.New("kata event catch-up cursor did not advance to the last event")
 		}
 		afterID = lastID
+		eventCount += len(body.Events)
+		if eventCount >= t.catchUpMaxEvents {
+			return afterID, nil
+		}
 	}
 }
 
@@ -371,8 +502,15 @@ func (r *kataFrontendEventRegistry) Close() {
 	}
 	r.closed = true
 	for _, target := range r.targets {
+		target.publishMu.Lock()
+		target.retired = true
+		for _, binding := range target.bindings {
+			binding.close()
+		}
+		target.bindings = nil
 		target.cancel()
 		target.hub.Close()
+		target.publishMu.Unlock()
 	}
 	r.mu.Unlock()
 	r.wg.Wait()

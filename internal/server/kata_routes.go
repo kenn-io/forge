@@ -85,7 +85,7 @@ func (s *Server) streamKataTaskEvents(
 			"Vary": []string{kataDaemonHeaderName},
 		})
 	}
-	target := s.kataEvents.Ensure(daemon).(*kataFrontendEventTarget)
+	binding := s.kataEvents.Ensure(daemon)
 	return &huma.StreamResponse{
 		Body: func(ctx huma.Context) {
 			ctx.SetHeader("Content-Type", "text/event-stream")
@@ -97,7 +97,7 @@ func (s *Server) streamKataTaskEvents(
 			rc := http.NewResponseController(w)
 			_ = rc.SetWriteDeadline(time.Time{})
 			cursor, hasCursor := parseLastEventID(r)
-			target.serve(ctx.Context(), w, rc, cursor, hasCursor)
+			binding.serve(ctx.Context(), w, rc, cursor, hasCursor)
 		},
 	}, nil
 }

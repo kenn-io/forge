@@ -33,8 +33,8 @@ type ClientWithResponsesInterface interface {
 {{$hasParams := .RequiresParamObject -}}
 {{$pathParams := .PathParams -}}
 {{$opid := .OperationId -}}
-{{/* StreamEvents is a long-lived SSE endpoint; keep only the raw client method so callers can read the live body. */ -}}
-{{if ne $opid "StreamEvents" -}}
+{{/* SSE endpoints are long-lived; keep only raw client methods so callers can read live bodies. */ -}}
+{{if and (ne $opid "StreamEvents") (ne $opid "StreamKataTaskEvents") -}}
     // {{$opid}}{{if .HasBody}}WithBody{{end}}WithResponse request{{if .HasBody}} with any body{{end}}
     {{$opid}}{{if .HasBody}}WithBody{{end}}WithResponse(ctx context.Context{{genParamArgs .PathParams}}{{if .RequiresParamObject}}, params *{{$opid}}Params{{end}}{{if .HasBody}}, contentType string, body io.Reader{{end}}, reqEditors... RequestEditorFn) (*{{genResponseTypeName $opid}}, error)
 {{range .Bodies}}
@@ -47,7 +47,7 @@ type ClientWithResponsesInterface interface {
 }
 
 {{range .}}{{$opid := .OperationId}}{{$op := .}}
-{{if ne $opid "StreamEvents" -}}
+{{if and (ne $opid "StreamEvents") (ne $opid "StreamKataTaskEvents") -}}
 {{$responseTypeDefinitions := getResponseTypeDefinitions .}}
 type {{genResponseTypeName $opid | ucFirst}} struct {
     Body         []byte
@@ -91,7 +91,7 @@ func (r {{genResponseTypeName $opid | ucFirst}}) Bytes() []byte {
 
 {{range .}}
 {{$opid := .OperationId -}}
-{{if ne $opid "StreamEvents" -}}
+{{if and (ne $opid "StreamEvents") (ne $opid "StreamKataTaskEvents") -}}
 {{/* Generate client methods (with responses)*/}}
 
 // {{$opid}}{{if .HasBody}}WithBody{{end}}WithResponse request{{if .HasBody}} with arbitrary body{{end}} returning *{{genResponseTypeName $opid}}
@@ -123,7 +123,7 @@ func (c *ClientWithResponses) {{$opid}}{{.Suffix}}WithResponse(ctx context.Conte
 
 {{/* Generate parse functions for responses*/}}
 {{range .}}{{$opid := .OperationId}}
-{{if ne $opid "StreamEvents" -}}
+{{if and (ne $opid "StreamEvents") (ne $opid "StreamKataTaskEvents") -}}
 
 // Parse{{genResponseTypeName $opid | ucFirst}} parses an HTTP response from a {{$opid}}WithResponse call
 func Parse{{genResponseTypeName $opid | ucFirst}}(rsp *http.Response) (*{{genResponseTypeName $opid}}, error) {

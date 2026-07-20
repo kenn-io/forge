@@ -54,11 +54,16 @@ func NewEventHub() *EventHub {
 // would mean the hub cannot replay anything and break the stale-cursor
 // detection logic that needs at least one event to compare against.
 func NewEventHubWithCapacity(capacity int) *EventHub {
+	return newEventHubWithCapacityAndGeneration(capacity, 0)
+}
+
+func newEventHubWithCapacityAndGeneration(capacity int, generation uint64) *EventHub {
 	if capacity < 1 {
 		panic("server: NewEventHubWithCapacity requires capacity >= 1")
 	}
 	return &EventHub{
 		subscribers: make(map[uint64]chan RecordedEvent),
+		nextEventID: generation,
 		ring:        make([]RecordedEvent, capacity),
 		done:        make(chan struct{}),
 	}
@@ -152,9 +157,19 @@ func (h *EventHub) Broadcast(event Event) uint64 {
 // builds and publishes the event with that ID available to its payload. This
 // keeps cursor-bearing JSON data identical to the SSE id on the wire.
 func (h *EventHub) BroadcastBuild(build func(uint64) Event) uint64 {
+	return h.BroadcastBuildAtLeast(0, build)
+}
+
+// BroadcastBuildAtLeast publishes one event whose ID is strictly greater than
+// floor. It is used when an authority moves to a replacement hub but browser
+// cursors must remain monotonic across the handoff.
+func (h *EventHub) BroadcastBuildAtLeast(floor uint64, build func(uint64) Event) uint64 {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	if h.nextEventID < floor {
+		h.nextEventID = floor
+	}
 	h.nextEventID++
 	event := build(h.nextEventID)
 	rec := RecordedEvent{ID: h.nextEventID, Event: event}

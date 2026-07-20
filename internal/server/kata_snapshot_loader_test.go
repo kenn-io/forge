@@ -564,12 +564,24 @@ func (f *fakeKataSnapshotAPIClient) ListProjectsWithResponse(ctx context.Context
 	return f.listProjects(ctx, options)
 }
 
+func (f *fakeKataSnapshotAPIClient) PollEventsWithResponse(context.Context, *katagenerated.PollEventsRequestOptions, ...runtime.RequestEditorFn) (*katagenerated.PollEventsResp, error) {
+	panic("unexpected PollEventsWithResponse call")
+}
+
 func (f *fakeKataSnapshotAPIClient) ReadyIssuesWithResponse(ctx context.Context, options *katagenerated.ReadyIssuesRequestOptions, _ ...runtime.RequestEditorFn) (*katagenerated.ReadyIssuesResp, error) {
 	return f.readyProject(ctx, options)
 }
 
 func (f *fakeKataSnapshotAPIClient) ReadyIssuesGlobalWithResponse(ctx context.Context, options *katagenerated.ReadyIssuesGlobalRequestOptions, _ ...runtime.RequestEditorFn) (*katagenerated.ReadyIssuesGlobalResp, error) {
 	return f.readyGlobal(ctx, options)
+}
+
+func (f *fakeKataSnapshotAPIClient) ReachableIssueGraphWithResponse(context.Context, *katagenerated.ReachableIssueGraphRequestOptions, ...runtime.RequestEditorFn) (*katagenerated.ReachableIssueGraphResp, error) {
+	panic("unexpected ReachableIssueGraphWithResponse call")
+}
+
+func (f *fakeKataSnapshotAPIClient) ShowIssueByUIDWithResponse(context.Context, *katagenerated.ShowIssueByUIDRequestOptions, ...runtime.RequestEditorFn) (*katagenerated.ShowIssueByUIDResp, error) {
+	panic("unexpected ShowIssueByUIDWithResponse call")
 }
 
 func (f *fakeKataSnapshotAPIClient) StreamEventsRaw(context.Context, *katagenerated.StreamEventsRequestOptions, ...runtime.RequestEditorFn) (*http.Response, error) {

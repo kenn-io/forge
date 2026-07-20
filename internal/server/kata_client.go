@@ -26,6 +26,11 @@ type kataAPIClient interface {
 		options *katagenerated.ListProjectsRequestOptions,
 		reqEditors ...runtime.RequestEditorFn,
 	) (*katagenerated.ListProjectsResp, error)
+	PollEventsWithResponse(
+		ctx context.Context,
+		options *katagenerated.PollEventsRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.PollEventsResp, error)
 	ReadyIssuesWithResponse(
 		ctx context.Context,
 		options *katagenerated.ReadyIssuesRequestOptions,
@@ -36,6 +41,16 @@ type kataAPIClient interface {
 		options *katagenerated.ReadyIssuesGlobalRequestOptions,
 		reqEditors ...runtime.RequestEditorFn,
 	) (*katagenerated.ReadyIssuesGlobalResp, error)
+	ReachableIssueGraphWithResponse(
+		ctx context.Context,
+		options *katagenerated.ReachableIssueGraphRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.ReachableIssueGraphResp, error)
+	ShowIssueByUIDWithResponse(
+		ctx context.Context,
+		options *katagenerated.ShowIssueByUIDRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.ShowIssueByUIDResp, error)
 	StreamEventsRaw(
 		ctx context.Context,
 		options *katagenerated.StreamEventsRequestOptions,

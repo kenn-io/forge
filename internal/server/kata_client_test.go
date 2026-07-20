@@ -13,6 +13,14 @@ import (
 	"go.kenn.io/middleman/internal/kata"
 )
 
+func TestKataAPIClientExposesSnapshotEnrichmentMethods(t *testing.T) {
+	t.Parallel()
+
+	_ = kataAPIClient.ShowIssueByUIDWithResponse
+	_ = kataAPIClient.PollEventsWithResponse
+	_ = kataAPIClient.ReachableIssueGraphWithResponse
+}
+
 func TestNewKataAPIClientUsesResolvedTargetAuth(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

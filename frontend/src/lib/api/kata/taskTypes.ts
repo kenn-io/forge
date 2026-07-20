@@ -111,6 +111,7 @@ export interface KataTaskSearchFilters {
 export interface KataTaskSearchResponse {
   filters: KataTaskSearchFilters;
   issues: KataTaskSummary[];
+  ready_issue_uids?: string[] | undefined;
   fetched_at: string;
   daemon_id?: string | undefined;
 }

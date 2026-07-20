@@ -381,6 +381,7 @@ function createWorkspaceAPI(
       issues: rows.filter((item) =>
         filters.scope.kind === "project" ? item.project_uid === filters.scope.project_uid : true,
       ),
+      ...(filters.status === "ready" ? { ready_issue_uids: rows.map((item) => item.uid) } : {}),
       fetched_at: fetchedAt,
     }),
   );

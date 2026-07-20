@@ -5470,10 +5470,25 @@ test("kata Ready filters through authoritative global and project daemon endpoin
     body: "This task is approved by Kata's dependency graph.",
     owner: "Susan",
     labels: ["work"],
-    child_counts: { open: 1, total: 1 },
+    child_counts: { open: 2, total: 2 },
+  });
+  const readyChild = issueSummary({
+    id: 42,
+    uid: "issue-ready-child",
+    project_id: 2,
+    project_uid: "project-kata",
+    project_name: "Kata",
+    short_id: "kat-ready-child",
+    qualified_id: "Kata#kat-ready-child",
+    title: "Ready follow-up",
+    body: "This child is also approved by Kata's dependency graph.",
+    owner: "Susan",
+    labels: ["work"],
+    parent: { uid: readyParent.uid, short_id: readyParent.short_id },
+    parent_short_id: readyParent.short_id,
   });
   const blockedChild = issueSummary({
-    id: 42,
+    id: 43,
     uid: "issue-blocked-child",
     project_id: 2,
     project_uid: "project-kata",
@@ -5488,8 +5503,8 @@ test("kata Ready filters through authoritative global and project daemon endpoin
     parent_short_id: readyParent.short_id,
   });
   const backend = await startKataBackend({
-    issues: [...issues, readyParent, blockedChild],
-    readyIssueUIDs: [readyParent.uid],
+    issues: [...issues, readyParent, readyChild, blockedChild],
+    readyIssueUIDs: [readyParent.uid, readyChild.uid],
   });
   const kataHome = await configureKataHome(backend.url);
   const server = await startIsolatedE2EServer();
@@ -5500,6 +5515,7 @@ test("kata Ready filters through authoritative global and project daemon endpoin
 
     await page.getByRole("combobox", { name: "Status: Open" }).click();
     await page.getByRole("option", { name: "Ready" }).click();
+    await page.getByLabel("Search tasks").fill("Ship the ready change");
 
     const readyRow = page.getByRole("button", { name: /Ship the ready change/ });
     await expect(readyRow).toBeVisible();
@@ -5507,7 +5523,7 @@ test("kata Ready filters through authoritative global and project daemon endpoin
     await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/ready");
     await readyRow.press("ArrowRight");
     await expect(readyRow).toHaveAttribute("aria-expanded", "true");
-    await expect(page.getByText("No subtasks.")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Ready follow-up/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /Blocked follow-up/ })).toHaveCount(0);
     await readyRow.click();
     await expect(page.getByRole("heading", { name: "Ship the ready change" })).toBeVisible();

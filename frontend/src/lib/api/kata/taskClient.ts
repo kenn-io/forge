@@ -407,18 +407,13 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
   }
 
   async function fetchReadyIssues(
-    filters: KataTaskSearchFilters,
     daemonId?: string,
     project?: KataProjectSummary,
     pinned = false,
     signal?: AbortSignal,
   ): Promise<KataTaskSummary[]> {
-    const params = new URLSearchParams();
-    if (project && filters.owner.trim()) params.set("owner", filters.owner.trim());
-    if (project && filters.label.trim()) params.append("label", filters.label.trim());
-    const suffix = params.size > 0 ? `?${params.toString()}` : "";
     const basePath = project ? `/projects/${project.id}/ready` : "/ready";
-    const result = await request<unknown>(taskPath(`${basePath}${suffix}`), {
+    const result = await request<unknown>(taskPath(basePath), {
       headers: pinned ? pinnedDaemonHeaders(daemonId) : daemonHeaders(daemonId),
       signal,
     });
@@ -461,18 +456,27 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     daemonId?: string,
     pinned = false,
     signal?: AbortSignal,
-  ): Promise<KataTaskSummary[]> {
+  ): Promise<{ issues: KataTaskSummary[]; readyIssueUIDs?: string[] }> {
     if (filters.status === "ready") {
-      return filterSearchIssues(await fetchReadyIssues(filters, daemonId, undefined, pinned, signal), filters);
+      const readyIssues = await fetchReadyIssues(daemonId, undefined, pinned, signal);
+      return {
+        issues: filterSearchIssues(readyIssues, filters),
+        readyIssueUIDs: readyIssues.map((issue) => issue.uid),
+      };
     }
     if (filters.status === "all") {
       const [open, closed] = await Promise.all([
         fetchIssuesByStatus("open", daemonId, undefined, pinned, signal),
         fetchIssuesByStatus("closed", daemonId, undefined, pinned, signal),
       ]);
-      return filterSearchIssues([...open, ...closed], filters);
+      return { issues: filterSearchIssues([...open, ...closed], filters) };
     }
-    return filterSearchIssues(await fetchIssuesByStatus(filters.status, daemonId, undefined, pinned, signal), filters);
+    return {
+      issues: filterSearchIssues(
+        await fetchIssuesByStatus(filters.status, daemonId, undefined, pinned, signal),
+        filters,
+      ),
+    };
   }
 
   async function searchProjectIssueList(
@@ -483,7 +487,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     signal?: AbortSignal,
   ): Promise<KataTaskSummary[]> {
     if (filters.status === "ready") {
-      return filterSearchIssues(await fetchReadyIssues(filters, daemonId, project, pinned, signal), filters);
+      return filterSearchIssues(await fetchReadyIssues(daemonId, project, pinned, signal), filters);
     }
     if (filters.status === "all") {
       const [open, closed] = await Promise.all([
@@ -531,10 +535,20 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     const projects = await fetchProjects(daemonId, pinned, signal);
     const project = projects.projects.find((item) => item.uid === filters.scope.project_uid);
     if (!project) {
-      return filterSearchIssues([], filters);
+      return {
+        issues: filterSearchIssues([], filters),
+        ...(filters.status === "ready" ? { readyIssueUIDs: [] } : {}),
+      };
     }
-    if (filters.query.trim() === "" || filters.status === "ready") {
-      return searchProjectIssueList(filters, project, daemonId, pinned, signal);
+    if (filters.status === "ready") {
+      const readyIssues = await fetchReadyIssues(daemonId, project, pinned, signal);
+      return {
+        issues: filterSearchIssues(readyIssues, filters),
+        readyIssueUIDs: readyIssues.map((issue) => issue.uid),
+      };
+    }
+    if (filters.query.trim() === "") {
+      return { issues: await searchProjectIssueList(filters, project, daemonId, pinned, signal) };
     }
     const params = new URLSearchParams();
     params.set("q", filters.query);
@@ -550,7 +564,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
       pinned,
       signal,
     );
-    return filterSearchIssues(issues, filters, { applyQuery: false });
+    return { issues: filterSearchIssues(issues, filters, { applyQuery: false }) };
   }
 
   api = {
@@ -688,7 +702,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
 
     async search(filters, opts): Promise<KataTaskSearchResponse> {
       const daemonId = await resolveOperationDaemonId(opts?.daemonId);
-      const issues =
+      const searchResult =
         filters.scope.kind === "project"
           ? await searchProject(
               filters as KataTaskSearchFilters & { scope: { kind: "project"; project_uid: string } },
@@ -699,7 +713,8 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
           : await searchAllProjects(filters, daemonId, true, opts?.signal);
       const response = {
         filters,
-        issues,
+        issues: searchResult.issues,
+        ...(searchResult.readyIssueUIDs ? { ready_issue_uids: searchResult.readyIssueUIDs } : {}),
         fetched_at: new Date().toISOString(),
         daemon_id: daemonId,
       };

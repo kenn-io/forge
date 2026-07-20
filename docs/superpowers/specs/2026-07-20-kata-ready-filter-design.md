@@ -39,16 +39,16 @@ When `filters.status` is `"ready"`:
 3. For all-project scope, the task client requests `GET /api/v1/ready`.
 4. For project scope, the client resolves the project UID to its numeric ID and
    requests `GET /api/v1/projects/{project_id}/ready`.
-5. The client normalizes the response into `KataTaskSummary[]` using the same
-   normalization path as other task lists.
-6. The client narrows the authoritative result by project, owner, label, and
-   text query before returning the search response.
+5. The client normalizes the response and captures its complete UID membership
+   before applying presentation filters.
+6. The client narrows returned rows by project, owner, label, and text query
+   without narrowing the authoritative UID membership.
 7. The workspace renders and persists the result through its existing search
    and filter flows.
 
-The project endpoint's supported owner and label parameters may be sent to Kata
-to reduce response size, but client-side filtering remains the final consistent
-presentation rule across global and project endpoints.
+Ready endpoint requests are not narrowed by owner, label, or text query because
+the raw response remains authoritative for expandable descendant membership.
+Client-side filtering narrows only the root result rows.
 
 ## UI Behavior
 

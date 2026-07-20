@@ -578,7 +578,7 @@ export class KataWorkspaceStore {
       if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
       this.acceptWorkflowResult(results);
       this.duplicateCandidates = [];
-      this.acceptReadyIssueMembership(this.searchFilters, results.issues);
+      this.acceptReadyIssueMembership(this.searchFilters, results.ready_issue_uids);
       this.cacheTasks(results.issues);
       const groups = groupSearchIssues(results.issues);
       this.currentView = {
@@ -644,7 +644,7 @@ export class KataWorkspaceStore {
       }
       this.searchFilters = nextFilters;
       this.duplicateCandidates = [];
-      this.acceptReadyIssueMembership(nextFilters, results.issues);
+      this.acceptReadyIssueMembership(nextFilters, results.ready_issue_uids);
       this.cacheTasks(results.issues);
       const groups = groupSearchIssues(results.issues);
       this.currentView = {
@@ -862,8 +862,8 @@ export class KataWorkspaceStore {
     }
   }
 
-  private acceptReadyIssueMembership(filters: KataTaskSearchFilters, issues: readonly KataTaskSummary[]): void {
-    this.readyIssueUIDs = filters.status === "ready" ? new Set(issues.map((issue) => issue.uid)) : new Set();
+  private acceptReadyIssueMembership(filters: KataTaskSearchFilters, issueUIDs: readonly string[] | undefined): void {
+    this.readyIssueUIDs = filters.status === "ready" ? new Set(issueUIDs ?? []) : new Set();
   }
 
   rememberTasks(issues: readonly KataTaskSummary[]): void {
@@ -1315,7 +1315,7 @@ export class KataWorkspaceStore {
       if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return false;
       this.acceptWorkflowResult(results);
       this.duplicateCandidates = [];
-      this.acceptReadyIssueMembership(this.searchFilters, results.issues);
+      this.acceptReadyIssueMembership(this.searchFilters, results.ready_issue_uids);
       this.cacheTasks(results.issues);
       const groups = groupSearchIssues(results.issues);
       nextView = {

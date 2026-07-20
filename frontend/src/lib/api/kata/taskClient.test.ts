@@ -977,11 +977,12 @@ describe("kata task HTTP client", () => {
     });
 
     expect(results.issues.map((item) => item.uid)).toEqual(["issue-ready"]);
+    expect(results.ready_issue_uids).toEqual(["issue-ready", "issue-other"]);
     expect(proxyPath(calls[0]!.url)).toBe("/api/v1/ready");
     expect(calls[0]!.headers.get(KATA_DAEMON_HEADER)).toBe("work");
   });
 
-  test("reads project ready tasks with supported daemon filters and applies text search locally", async () => {
+  test("preserves raw project ready membership while applying search controls locally", async () => {
     const ready = {
       ...issue("issue-ready", "Ship ready filter", "project-work"),
       owner: "agent:planner",
@@ -991,8 +992,8 @@ describe("kata task HTTP client", () => {
       "/api/v1/projects?include=stats": {
         body: { projects: [project("project-work", "Work")] },
       },
-      "/api/v1/projects/1/ready?owner=agent%3Aplanner&label=urgent": {
-        body: { issues: [ready, issue("issue-no-match", "Refine backlog", "project-work")] },
+      "/api/v1/projects/1/ready": {
+        body: { issues: [ready, issue("issue-ready-child", "Refine backlog", "project-work")] },
       },
     });
     const api = createKataTaskAPI({ fetchImpl });
@@ -1006,9 +1007,10 @@ describe("kata task HTTP client", () => {
     });
 
     expect(results.issues.map((item) => item.uid)).toEqual(["issue-ready"]);
+    expect(results.ready_issue_uids).toEqual(["issue-ready", "issue-ready-child"]);
     expect(calls.map((call) => proxyPath(call.url))).toEqual([
       "/api/v1/projects?include=stats",
-      "/api/v1/projects/1/ready?owner=agent%3Aplanner&label=urgent",
+      "/api/v1/projects/1/ready",
     ]);
   });
 

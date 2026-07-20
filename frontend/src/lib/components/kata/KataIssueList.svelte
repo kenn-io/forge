@@ -202,13 +202,14 @@
     if (shouldFlatten) return globalSortedIssues;
     return visibleGroups.flatMap((group) => sortKataTasks(group.issues, sort));
   });
-  let hasTemporaryReveal = $derived(temporaryRevealChain.length > 0);
+  let visibleTemporaryRevealChain = $derived(revealChainForStatus(temporaryRevealChain));
+  let hasTemporaryReveal = $derived(visibleTemporaryRevealChain.length > 0);
   let visibleRootIssues = $derived.by(() => {
-    const chainUIDs = new Set(temporaryRevealChain.map((issue) => issue.uid));
+    const chainUIDs = new Set(visibleTemporaryRevealChain.map((issue) => issue.uid));
     const ordinary = ordinaryRootIssues.filter(
-      (issue) => !chainUIDs.has(issue.uid) || issue.uid === temporaryRevealChain[0]?.uid,
+      (issue) => !chainUIDs.has(issue.uid) || issue.uid === visibleTemporaryRevealChain[0]?.uid,
     );
-    const root = temporaryRevealChain[0];
+    const root = visibleTemporaryRevealChain[0];
     return root && !ordinary.some((issue) => issue.uid === root.uid) ? [root, ...ordinary] : ordinary;
   });
   let knownExpandableIssues = $derived.by(() => collectKnownExpandableIssues(visibleRootIssues));
@@ -298,8 +299,8 @@
   }
 
   function revealSuccessor(issue: KataTaskSummary): KataTaskSummary | undefined {
-    const index = temporaryRevealChain.findIndex((candidate) => candidate.uid === issue.uid);
-    return index >= 0 ? temporaryRevealChain[index + 1] : undefined;
+    const index = visibleTemporaryRevealChain.findIndex((candidate) => candidate.uid === issue.uid);
+    return index >= 0 ? visibleTemporaryRevealChain[index + 1] : undefined;
   }
 
   function hasChildren(issue: KataTaskSummary): boolean {
@@ -334,6 +335,10 @@
 
   function issueMatchesStatusFilter(issue: KataTaskSummary): boolean {
     return kataTaskStatusMatchesFilter(issue, statusFilter, readyIssueUIDs);
+  }
+
+  function revealChainForStatus(chain: readonly KataTaskSummary[]): readonly KataTaskSummary[] {
+    return statusFilter === "ready" ? chain.filter(issueMatchesStatusFilter) : chain;
   }
 
   function filterGroupsByStatus(
@@ -679,11 +684,12 @@
     if (revealRequest.generation === lastRevealGeneration) return;
     clearTemporaryReveal();
     lastRevealGeneration = revealRequest.generation;
-    temporaryRevealChain = revealRequest.chain.length > 1 ? revealRequest.chain : [];
+    const revealChain = revealChainForStatus(revealRequest.chain);
+    temporaryRevealChain = revealChain.length > 1 ? revealChain : [];
     const generation = childLoadGeneration;
     void (async () => {
       const request = revealRequest;
-      for (const issue of request.chain.slice(0, -1)) {
+      for (const issue of revealChain.slice(0, -1)) {
         if (generation !== childLoadGeneration || revealRequest?.generation !== request.generation) return;
         if (expanded[issue.uid] !== true) {
           expanded = { ...expanded, [issue.uid]: true };

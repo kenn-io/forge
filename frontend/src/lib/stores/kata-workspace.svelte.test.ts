@@ -931,6 +931,7 @@ describe("kata workspace store", () => {
     readySearch.resolve({
       filters: { ...store.searchFilters, status: "ready" },
       issues: [issues[0]!],
+      ready_issue_uids: [issues[0]!.uid],
       fetched_at: fetchedAt,
     });
     await pending;

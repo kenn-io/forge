@@ -1349,6 +1349,41 @@ describe("KataIssueList", () => {
     expect(screen.getByRole("heading", { level: 3, name: /^Today\s+1$/ })).toBeTruthy();
   });
 
+  it("does not reveal a non-ready ancestor for a ready task", async () => {
+    const parent = task({
+      uid: "issue-blocked-parent",
+      short_id: "blocked-parent",
+      qualified_id: "Finances#blocked-parent",
+      title: "Blocked parent",
+      child_counts: { open: 1, total: 1 },
+    });
+    const child = task({
+      uid: "issue-ready-child",
+      short_id: "ready-child",
+      qualified_id: "Finances#ready-child",
+      title: "Ready child",
+      parent_short_id: parent.short_id,
+    });
+    const api = apiWithDetail(parent, [child]);
+
+    render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([child]),
+        selectedIssueUID: child.uid,
+        loading: false,
+        statusFilter: "ready",
+        readyIssueUIDs: new Set([child.uid]),
+        revealRequest: { uid: child.uid, chain: [parent, child], generation: 1 },
+        api,
+        onSelect: () => {},
+      },
+    });
+
+    expect(await screen.findByRole("button", { name: /Ready child/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Blocked parent/ })).toBeNull();
+    expect(api.issue).not.toHaveBeenCalled();
+  });
+
   it("clears reveal-owned expansion after ordinary row selection", async () => {
     const parent = task({
       uid: "issue-reveal-parent",

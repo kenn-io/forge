@@ -680,6 +680,7 @@ type fakeKataSnapshotAPIClient struct {
 	readyGlobal    func(context.Context, *katagenerated.ReadyIssuesGlobalRequestOptions) (*katagenerated.ReadyIssuesGlobalResp, error)
 	reachableGraph func(context.Context, *katagenerated.ReachableIssueGraphRequestOptions) (*katagenerated.ReachableIssueGraphResp, error)
 	showIssue      func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error)
+	pollEvents     func(context.Context, *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error)
 }
 
 func (f *fakeKataSnapshotAPIClient) InstanceWithResponse(context.Context, ...runtime.RequestEditorFn) (*katagenerated.InstanceResp, error) {
@@ -694,8 +695,14 @@ func (f *fakeKataSnapshotAPIClient) ListProjectsWithResponse(ctx context.Context
 	return f.listProjects(ctx, options)
 }
 
-func (f *fakeKataSnapshotAPIClient) PollEventsWithResponse(context.Context, *katagenerated.PollEventsRequestOptions, ...runtime.RequestEditorFn) (*katagenerated.PollEventsResp, error) {
-	panic("unexpected PollEventsWithResponse call")
+func (f *fakeKataSnapshotAPIClient) PollEventsWithResponse(ctx context.Context, options *katagenerated.PollEventsRequestOptions, _ ...runtime.RequestEditorFn) (*katagenerated.PollEventsResp, error) {
+	if f.pollEvents == nil {
+		return &katagenerated.PollEventsResp{
+			StatusCode: http.StatusOK,
+			JSON200:    &katagenerated.PollEventsBody{NextAfterID: 0},
+		}, nil
+	}
+	return f.pollEvents(ctx, options)
 }
 
 func (f *fakeKataSnapshotAPIClient) ReadyIssuesWithResponse(ctx context.Context, options *katagenerated.ReadyIssuesRequestOptions, _ ...runtime.RequestEditorFn) (*katagenerated.ReadyIssuesResp, error) {

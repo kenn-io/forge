@@ -44,6 +44,283 @@ func TestKataSnapshotEnricherSkipsDirectNonmemberSelection(t *testing.T) {
 	assert.Zero(workspaceCalls)
 }
 
+func TestKataSnapshotEnricherSkipsHistoryWithoutAuthorizedSelection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		selection string
+	}{
+		{name: "no selection"},
+		{name: "direct nonmember", selection: "issue-outside"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			pollCalls := 0
+			authority := testKataCoordinatedAuthority()
+			authority.Snapshot.Issues = append(authority.Snapshot.Issues, kataTaskSummary{
+				UID: "issue-outside", ProjectID: 7, ProjectUID: "project-a", ProjectName: "Project A",
+			})
+			enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: &fakeKataSnapshotAPIClient{
+				pollEvents: func(context.Context, *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+					pollCalls++
+					return testKataPollEventsResponse(0), nil
+				},
+			}})
+
+			result, err := enricher.Enrich(t.Context(), authority, kataSnapshotEnrichmentRequest{SelectedIssueUID: test.selection})
+
+			require.NoError(t, err)
+			assert.Empty(result.SelectedHistory)
+			assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
+			assert.Zero(pollCalls)
+		})
+	}
+}
+
+func TestKataSnapshotEnricherLoadsExactSelectedHistoryAcrossPages(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	createdAt1, err := time.Parse(time.RFC3339, "2026-07-20T09:00:00-05:00")
+	require.NoError(err)
+	createdAt2, err := time.Parse(time.RFC3339, "2026-07-20T10:00:00-05:00")
+	require.NoError(err)
+	createdAt3, err := time.Parse(time.RFC3339, "2026-07-20T11:00:00-05:00")
+	require.NoError(err)
+	createdAt4, err := time.Parse(time.RFC3339, "2026-07-20T12:00:00-05:00")
+	require.NoError(err)
+	selectedUID := "issue-member"
+	otherUID := "issue-other"
+	calls := 0
+	client := &fakeKataSnapshotAPIClient{
+		showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			return testKataShowIssueResponse(selectedUID), nil
+		},
+		pollEvents: func(_ context.Context, options *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+			require.NotNil(options.Query)
+			require.NotNil(options.Query.AfterID)
+			require.NotNil(options.Query.Limit)
+			assert.Equal(int64(1000), *options.Query.Limit)
+			calls++
+			switch calls {
+			case 1:
+				assert.Equal(int64(0), *options.Query.AfterID)
+				return testKataPollEventsResponse(2,
+					testKataEvent(1, &otherUID, createdAt1),
+					testKataEvent(2, &selectedUID, createdAt2),
+				), nil
+			case 2:
+				assert.Equal(int64(2), *options.Query.AfterID)
+				return testKataPollEventsResponse(4,
+					testKataEvent(3, nil, createdAt3),
+					testKataEvent(4, &selectedUID, createdAt4),
+				), nil
+			default:
+				assert.Equal(int64(4), *options.Query.AfterID)
+				return testKataPollEventsResponse(4), nil
+			}
+		},
+	}
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+	result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: selectedUID})
+
+	require.NoError(err)
+	require.Len(result.SelectedHistory, 2)
+	assert.Equal([]int64{2, 4}, []int64{result.SelectedHistory[0].EventID, result.SelectedHistory[1].EventID})
+	assert.Equal(time.UTC, result.SelectedHistory[0].CreatedAt.Location())
+	assert.Equal(time.Date(2026, 7, 20, 15, 0, 0, 0, time.UTC), result.SelectedHistory[0].CreatedAt)
+	assert.Equal(3, calls)
+	assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
+}
+
+func TestKataSnapshotEnricherCapsSelectedHistoryAtOneHundred(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	selectedUID := "issue-member"
+	events := make([]katagenerated.EventEnvelope, 101)
+	for i := range events {
+		events[i] = testKataEvent(int64(i+1), &selectedUID, time.Date(2026, 7, 20, 16, i, 0, 0, time.UTC))
+	}
+	pollCalls := 0
+	client := &fakeKataSnapshotAPIClient{
+		showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			return testKataShowIssueResponse(selectedUID), nil
+		},
+		pollEvents: func(context.Context, *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+			pollCalls++
+			return testKataPollEventsResponse(101, events...), nil
+		},
+	}
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+	result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: selectedUID})
+
+	require.NoError(err)
+	require.Len(result.SelectedHistory, 100)
+	assert.Equal(int64(100), result.SelectedHistory[99].EventID)
+	assert.Equal(1, pollCalls)
+}
+
+func TestKataSnapshotEnricherRejectsInvalidHistoryPagination(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		response *katagenerated.PollEventsResp
+	}{
+		{
+			name: "missing response body",
+			response: &katagenerated.PollEventsResp{
+				StatusCode: http.StatusOK,
+			},
+		},
+		{
+			name: "generated event validation failure",
+			response: func() *katagenerated.PollEventsResp {
+				event := testKataEvent(1, nil, time.Now().UTC())
+				event.Actor = ""
+				return testKataPollEventsResponse(1, event)
+			}(),
+		},
+		{
+			name:     "non-positive event id",
+			response: testKataPollEventsResponse(1, testKataEvent(0, nil, time.Now().UTC())),
+		},
+		{
+			name: "non-monotonic event ids",
+			response: testKataPollEventsResponse(2,
+				testKataEvent(2, nil, time.Now().UTC()),
+				testKataEvent(1, nil, time.Now().UTC()),
+			),
+		},
+		{
+			name: "reset required",
+			response: func() *katagenerated.PollEventsResp {
+				resetAfterID := int64(9)
+				response := testKataPollEventsResponse(9)
+				response.JSON200.ResetRequired = true
+				response.JSON200.ResetAfterID = &resetAfterID
+				return response
+			}(),
+		},
+		{
+			name:     "nonempty page makes no cursor progress",
+			response: testKataPollEventsResponse(0, testKataEvent(1, nil, time.Now().UTC())),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			client := &fakeKataSnapshotAPIClient{
+				showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+					return testKataShowIssueResponse("issue-member"), nil
+				},
+				pollEvents: func(context.Context, *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+					return test.response, nil
+				},
+			}
+			enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+			result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: "issue-member"})
+
+			require.NoError(t, err)
+			assert.Empty(t, result.SelectedHistory)
+			assert.Equal(t, kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task history."}, result.Errors[kataSnapshotEnrichmentStageHistory])
+		})
+	}
+}
+
+func TestKataSnapshotEnricherKeepsDetailAndHistoryFailuresIndependent(t *testing.T) {
+	t.Parallel()
+	selectedUID := "issue-member"
+
+	tests := []struct {
+		name           string
+		detailResponse *katagenerated.ShowIssueByUIDResp
+		detailErr      error
+		historyResp    *katagenerated.PollEventsResp
+		historyErr     error
+		wantDetail     bool
+		wantHistory    bool
+		wantErrorStage string
+	}{
+		{
+			name:           "detail failure preserves history",
+			detailErr:      errors.New("detail unavailable"),
+			historyResp:    testKataPollEventsResponse(1, testKataEvent(1, &selectedUID, time.Now().UTC())),
+			wantHistory:    true,
+			wantErrorStage: kataSnapshotEnrichmentStageDetail,
+		},
+		{
+			name:           "history failure preserves detail",
+			detailResponse: testKataShowIssueResponse("issue-member"),
+			historyErr:     errors.New("history unavailable"),
+			wantDetail:     true,
+			wantErrorStage: kataSnapshotEnrichmentStageHistory,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			historyCalls := 0
+			client := &fakeKataSnapshotAPIClient{
+				showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+					return test.detailResponse, test.detailErr
+				},
+				pollEvents: func(_ context.Context, options *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+					historyCalls++
+					if test.historyErr == nil && historyCalls > 1 {
+						return testKataPollEventsResponse(*options.Query.AfterID), nil
+					}
+					return test.historyResp, test.historyErr
+				},
+			}
+			enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+			result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: "issue-member"})
+
+			require.NoError(t, err)
+			if test.wantDetail {
+				assert.NotNil(result.SelectedDetail)
+			} else {
+				assert.Nil(result.SelectedDetail)
+			}
+			if test.wantHistory {
+				assert.Len(result.SelectedHistory, 1)
+			} else {
+				assert.Empty(result.SelectedHistory)
+			}
+			assert.Contains(result.Errors, test.wantErrorStage)
+		})
+	}
+}
+
+func TestKataSnapshotEnricherPropagatesHistoryCancellation(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeKataSnapshotAPIClient{
+		showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			return testKataShowIssueResponse("issue-member"), nil
+		},
+		pollEvents: func(context.Context, *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+			return nil, context.DeadlineExceeded
+		},
+	}
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+	_, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: "issue-member"})
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
 func TestKataSnapshotEnricherGraphNodeAuthorizesSelectionWithoutRerooting(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
@@ -437,5 +714,32 @@ func testKataShowIssueResponse(uid string) *katagenerated.ShowIssueByUIDResp {
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}},
+	}
+}
+
+func testKataPollEventsResponse(nextAfterID int64, events ...katagenerated.EventEnvelope) *katagenerated.PollEventsResp {
+	return &katagenerated.PollEventsResp{
+		StatusCode: http.StatusOK,
+		JSON200: &katagenerated.PollEventsBody{
+			Events:        events,
+			NextAfterID:   nextAfterID,
+			ResetRequired: false,
+		},
+	}
+}
+
+func testKataEvent(eventID int64, issueUID *string, createdAt time.Time) katagenerated.EventEnvelope {
+	return katagenerated.EventEnvelope{
+		Actor:             "actor",
+		ContentHash:       "content-hash",
+		CreatedAt:         createdAt,
+		EventID:           eventID,
+		EventUID:          "event-uid-" + time.Unix(eventID, 0).UTC().Format(time.RFC3339),
+		IssueUID:          issueUID,
+		OriginInstanceUID: "instance-a",
+		ProjectID:         7,
+		ProjectName:       "Project A",
+		ProjectUID:        "project-a",
+		Type:              "issue.updated",
 	}
 }

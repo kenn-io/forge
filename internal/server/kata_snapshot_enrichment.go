@@ -16,7 +16,10 @@ import (
 const (
 	kataSnapshotEnrichmentStageDetail          = "detail"
 	kataSnapshotEnrichmentStageGraph           = "graph"
+	kataSnapshotEnrichmentStageHistory         = "history"
 	kataSnapshotEnrichmentStageWorkspaceTarget = "workspace_target"
+	kataSnapshotHistoryPageLimit               = int64(1000)
+	kataSnapshotHistoryResultLimit             = 100
 )
 
 type kataSnapshotEnrichmentRequest struct {
@@ -32,6 +35,7 @@ type kataSnapshotEnrichmentError struct {
 type kataSnapshotEnrichment struct {
 	SelectedIssueUID string                                    `json:"selected_issue_uid,omitempty"`
 	SelectedDetail   *kataTaskDetailResponse                   `json:"selected_detail,omitempty"`
+	SelectedHistory  []katagenerated.EventEnvelope             `json:"selected_history,omitempty"`
 	Graph            *katagenerated.ReachableGraphResponseBody `json:"graph,omitempty"`
 	GraphFetchedAt   *time.Time                                `json:"graph_fetched_at,omitempty"`
 	Errors           map[string]kataSnapshotEnrichmentError    `json:"errors,omitempty"`
@@ -138,30 +142,40 @@ func (e *kataSnapshotEnricher) Enrich(
 			return kataSnapshotEnrichment{}, contextErr
 		}
 		result.addError(kataSnapshotEnrichmentStageDetail, CodeUpstreamError, "Could not load selected task detail.")
-		return result, nil
-	}
-	result.SelectedDetail = &kataTaskDetailResponse{Detail: detail, ETag: issue.etag}
+	} else {
+		result.SelectedDetail = &kataTaskDetailResponse{Detail: detail, ETag: issue.etag}
 
-	target, err := e.resolveWorkspaceTarget(ctx, db.WorkspaceKataMetadata{
-		DaemonID:    authority.DaemonID,
-		ProjectUID:  selected.ProjectUID,
-		ProjectName: selected.ProjectName,
-		IssueUID:    issue.value.UID,
-		ShortID:     issue.value.ShortID,
-		QualifiedID: selected.QualifiedID,
-		Title:       issue.value.Title,
-	})
+		target, targetErr := e.resolveWorkspaceTarget(ctx, db.WorkspaceKataMetadata{
+			DaemonID:    authority.DaemonID,
+			ProjectUID:  selected.ProjectUID,
+			ProjectName: selected.ProjectName,
+			IssueUID:    issue.value.UID,
+			ShortID:     issue.value.ShortID,
+			QualifiedID: selected.QualifiedID,
+			Title:       issue.value.Title,
+		})
+		if targetErr != nil {
+			if contextErr := kataEnrichmentContextError(ctx, targetErr); contextErr != nil {
+				return kataSnapshotEnrichment{}, contextErr
+			}
+			result.addError(kataSnapshotEnrichmentStageWorkspaceTarget, CodeInternalError, "Could not resolve workspace target.")
+		} else {
+			if err := ctx.Err(); err != nil {
+				return kataSnapshotEnrichment{}, err
+			}
+			result.SelectedDetail.WorkspaceTarget = target
+		}
+	}
+
+	history, err := e.loadHistory(ctx, selected.UID)
 	if err != nil {
 		if contextErr := kataEnrichmentContextError(ctx, err); contextErr != nil {
 			return kataSnapshotEnrichment{}, contextErr
 		}
-		result.addError(kataSnapshotEnrichmentStageWorkspaceTarget, CodeInternalError, "Could not resolve workspace target.")
-		return result, nil
+		result.addError(kataSnapshotEnrichmentStageHistory, CodeUpstreamError, "Could not load selected task history.")
+	} else {
+		result.SelectedHistory = history
 	}
-	if err := ctx.Err(); err != nil {
-		return kataSnapshotEnrichment{}, err
-	}
-	result.SelectedDetail.WorkspaceTarget = target
 	return result, nil
 }
 
@@ -268,6 +282,62 @@ func (e *kataSnapshotEnricher) loadDetail(
 		etag = response.HTTPResponse.Header.Get("ETag")
 	}
 	return response.JSON200, kataGeneratedIssueDetail{value: issue, etag: etag}, nil
+}
+
+func (e *kataSnapshotEnricher) loadHistory(ctx context.Context, selectedUID string) ([]katagenerated.EventEnvelope, error) {
+	history := make([]katagenerated.EventEnvelope, 0, kataSnapshotHistoryResultLimit)
+	afterID := int64(0)
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		limit := kataSnapshotHistoryPageLimit
+		response, err := e.client.PollEventsWithResponse(ctx, &katagenerated.PollEventsRequestOptions{
+			Query: &katagenerated.PollEventsQuery{AfterID: &afterID, Limit: &limit},
+		})
+		if err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if response == nil || response.StatusCode != http.StatusOK || response.JSON200 == nil {
+			return nil, fmt.Errorf("missing events 200 response body")
+		}
+		body := response.JSON200
+		if err := body.Validate(); err != nil {
+			return nil, fmt.Errorf("validate events response: %w", err)
+		}
+		if body.ResetRequired || body.ResetAfterID != nil {
+			return nil, fmt.Errorf("events response requires cursor reset")
+		}
+		if len(body.Events) == 0 {
+			return history, nil
+		}
+
+		lastEventID := afterID
+		for _, event := range body.Events {
+			if event.EventID <= 0 || event.EventID <= lastEventID {
+				return nil, fmt.Errorf("events response contains non-monotonic event ids")
+			}
+			lastEventID = event.EventID
+		}
+		if body.NextAfterID <= afterID || body.NextAfterID < lastEventID {
+			return nil, fmt.Errorf("events response cursor made no progress")
+		}
+
+		for _, event := range body.Events {
+			if event.IssueUID == nil || *event.IssueUID != selectedUID {
+				continue
+			}
+			event.CreatedAt = event.CreatedAt.UTC()
+			history = append(history, event)
+			if len(history) == kataSnapshotHistoryResultLimit {
+				return history, nil
+			}
+		}
+		afterID = body.NextAfterID
+	}
 }
 
 func (r *kataSnapshotEnrichment) addError(stage string, code ProblemCode, message string) {

@@ -105,7 +105,7 @@ describe("KataIssueList", () => {
     expect(within(row).getByText("fixture-user")).toBeTruthy();
   });
 
-  it("renders authoritative ready rows as open tasks", () => {
+  it("renders only authoritative ready rows even though other tasks are open", () => {
     const closed = task({
       ...baseIssues[1]!,
       id: 103,
@@ -119,16 +119,18 @@ describe("KataIssueList", () => {
       props: {
         currentView: {
           ...currentView,
-          groups: [{ id: "ready", title: "Ready", issues: [baseIssues[0]!, closed] }],
+          groups: [{ id: "ready", title: "Ready", issues: [...baseIssues, closed] }],
         },
         selectedIssueUID: null,
         loading: false,
         statusFilter: "ready",
+        readyIssueUIDs: new Set([baseIssues[0]!.uid]),
         onSelect: () => {},
       },
     });
 
     expect(screen.getByRole("button", { name: /Pay rent/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Email Susan re: Q3/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Closed task/ })).toBeNull();
   });
 

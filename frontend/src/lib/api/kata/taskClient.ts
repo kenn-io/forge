@@ -220,9 +220,10 @@ function filterSearchIssues(
   const owner = filters.owner.trim().toLowerCase();
   const label = filters.label.trim().toLowerCase();
   const applyQuery = options.applyQuery ?? true;
+  const readyIssueUIDs = filters.status === "ready" ? new Set(issues.map((issue) => issue.uid)) : undefined;
   return issues.filter((issue) => {
     if (filters.scope.kind === "project" && issue.project_uid !== filters.scope.project_uid) return false;
-    if (!kataTaskStatusMatchesFilter(issue, filters.status)) return false;
+    if (!kataTaskStatusMatchesFilter(issue, filters.status, readyIssueUIDs)) return false;
     if (owner && issue.owner?.toLowerCase() !== owner) return false;
     if (label && !(issue.labels ?? []).some((item) => item.toLowerCase() === label)) return false;
     if (applyQuery && query && !issueSearchText(issue).includes(query)) return false;

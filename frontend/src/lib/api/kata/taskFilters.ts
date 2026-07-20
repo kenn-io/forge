@@ -1,9 +1,11 @@
 import type { KataTaskStatusFilter, KataTaskSummary } from "./taskTypes.js";
 
 export function kataTaskStatusMatchesFilter(
-  issue: Pick<KataTaskSummary, "status">,
+  issue: Pick<KataTaskSummary, "uid" | "status">,
   filter: KataTaskStatusFilter,
+  readyIssueUIDs?: ReadonlySet<string>,
 ): boolean {
   if (filter === "all") return true;
-  return issue.status === (filter === "ready" ? "open" : filter);
+  if (filter === "ready") return issue.status === "open" && readyIssueUIDs?.has(issue.uid) === true;
+  return issue.status === filter;
 }

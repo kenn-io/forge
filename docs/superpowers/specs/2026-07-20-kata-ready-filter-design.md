@@ -62,6 +62,10 @@ the existing status-change behavior. Selecting a ready task uses the ordinary
 detail, relationship, graph, and mutation flows because readiness does not
 change the task's underlying status or identity.
 
+While Ready is active, every displayed or selectable root and expanded child
+must belong to the latest daemon-returned Ready UID set; open status alone never
+qualifies, and entering Ready clears stale membership until its request lands.
+
 ## Error Handling
 
 Ready endpoint failures use the existing `KataTaskAPIError` parsing and Kata

@@ -40,6 +40,7 @@
     selectedIssueUID?: string | null;
     loading?: boolean;
     statusFilter?: KataTaskSearchFilters["status"];
+    readyIssueUIDs?: ReadonlySet<string>;
     resetGeneration?: number;
     navigationGeneration?: number;
     revealRequest?: KataIssueRevealRequest | null;
@@ -49,6 +50,8 @@
     onRememberTasks?: ((issues: readonly KataTaskSummary[]) => void) | undefined;
   }
 
+  const EMPTY_READY_ISSUE_UIDS: ReadonlySet<string> = new Set();
+
   let {
     currentView,
     scopeLabel = undefined,
@@ -56,6 +59,7 @@
     selectedIssueUID = null,
     loading = false,
     statusFilter = "all",
+    readyIssueUIDs = EMPTY_READY_ISSUE_UIDS,
     resetGeneration = 0,
     navigationGeneration = 0,
     revealRequest = null,
@@ -329,7 +333,7 @@
   }
 
   function issueMatchesStatusFilter(issue: KataTaskSummary): boolean {
-    return kataTaskStatusMatchesFilter(issue, statusFilter);
+    return kataTaskStatusMatchesFilter(issue, statusFilter, readyIssueUIDs);
   }
 
   function filterGroupsByStatus(
@@ -339,7 +343,7 @@
     return groups
       .map((group) => ({
         ...group,
-        issues: group.issues.filter((issue) => kataTaskStatusMatchesFilter(issue, status)),
+        issues: group.issues.filter((issue) => kataTaskStatusMatchesFilter(issue, status, readyIssueUIDs)),
       }))
       .filter((group) => group.issues.length > 0);
   }

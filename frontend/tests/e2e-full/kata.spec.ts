@@ -157,6 +157,7 @@ type BackendState = {
   nextRecurrenceID: number;
   recurrences: RecurrenceRow[];
   projects: ProjectRow[];
+  readyIssueUIDs: Set<string>;
   seenIfMatches: string[];
   seenStreamLastEventIDs: Array<string | undefined>;
   seenPaths: string[];
@@ -296,6 +297,7 @@ type KataBackendOptions = {
   genericIssues?: IssueSummary[] | undefined;
   projects?: ProjectRow[] | undefined;
   issues?: IssueSummary[] | undefined;
+  readyIssueUIDs?: string[] | undefined;
   links?: LinkRow[] | undefined;
   recurrences?: RecurrenceRow[] | undefined;
   duplicateProjectSearches?: DuplicateProjectSearchResponse[] | undefined;
@@ -572,6 +574,9 @@ async function startKataBackend(options: KataBackendOptions = {}): Promise<Backe
     nextRecurrenceID: 1,
     recurrences: [...(options.recurrences ?? [])],
     projects: options.projects ?? projects,
+    readyIssueUIDs: new Set(
+      options.readyIssueUIDs ?? rows.filter((issue) => issue.status === "open").map((issue) => issue.uid),
+    ),
     seenIfMatches: [],
     seenStreamLastEventIDs: [],
     seenPaths: [],
@@ -656,6 +661,16 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
   const projectRoute = /^\/api\/v1\/projects\/(\d+)$/.exec(url.pathname);
   if (projectRoute) {
     await handleProjectRename(state, req, res, Number(projectRoute[1]));
+    return;
+  }
+
+  const projectReadyRoute = /^\/api\/v1\/projects\/(\d+)\/ready$/.exec(url.pathname);
+  if (projectReadyRoute) {
+    const projectID = Number(projectReadyRoute[1]);
+    writeJSON(res, 200, {
+      issues: readyIssues(state, projectID),
+      fetched_at: now,
+    });
     return;
   }
 
@@ -836,6 +851,12 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
         fetched_at: now,
       });
       return;
+    case "/api/v1/ready":
+      writeJSON(res, 200, {
+        issues: readyIssues(state),
+        fetched_at: now,
+      });
+      return;
     case "/api/v1/events":
       {
         if (url.searchParams.has("after_id") && state.failNextCursorStatus !== undefined) {
@@ -903,6 +924,15 @@ function issuesForStatus(rows: IssueSummary[], status: string | null): IssueSumm
   if (status === "closed") return rows.filter((issue) => issue.status === "closed");
   if (status === "open") return rows.filter((issue) => issue.status === "open");
   return rows;
+}
+
+function readyIssues(state: BackendState, projectID?: number): IssueSummary[] {
+  return state.issues.filter(
+    (issue) =>
+      issue.status === "open" &&
+      state.readyIssueUIDs.has(issue.uid) &&
+      (projectID === undefined || issue.project_id === projectID),
+  );
 }
 
 type GraphEdgeRow = { from_uid: string; to_uid: string; kind: "parent" | "blocks" | "related"; layout: boolean };
@@ -5420,6 +5450,73 @@ test("kata search filters tasks through the configured external daemon", async (
     await page.getByRole("button", { name: /Project scope: Kata/ }).click();
     await page.getByRole("option", { name: "All projects" }).click();
     await expect(page).not.toHaveURL(/scope=/);
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
+test("kata Ready filters through authoritative global and project daemon endpoints", async ({ page }) => {
+  const readyParent = issueSummary({
+    id: 41,
+    uid: "issue-ready-parent",
+    project_id: 2,
+    project_uid: "project-kata",
+    project_name: "Kata",
+    short_id: "kat-ready",
+    qualified_id: "Kata#kat-ready",
+    title: "Ship the ready change",
+    body: "This task is approved by Kata's dependency graph.",
+    owner: "Susan",
+    labels: ["work"],
+    child_counts: { open: 1, total: 1 },
+  });
+  const blockedChild = issueSummary({
+    id: 42,
+    uid: "issue-blocked-child",
+    project_id: 2,
+    project_uid: "project-kata",
+    project_name: "Kata",
+    short_id: "kat-blocked",
+    qualified_id: "Kata#kat-blocked",
+    title: "Blocked follow-up",
+    body: "This child is open but not ready.",
+    owner: "Susan",
+    labels: ["work"],
+    parent: { uid: readyParent.uid, short_id: readyParent.short_id },
+    parent_short_id: readyParent.short_id,
+  });
+  const backend = await startKataBackend({
+    issues: [...issues, readyParent, blockedChild],
+    readyIssueUIDs: [readyParent.uid],
+  });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata`);
+    await expect(page.getByRole("button", { name: /Pay rent/ })).toBeVisible();
+
+    await page.getByRole("combobox", { name: "Status: Open" }).click();
+    await page.getByRole("option", { name: "Ready" }).click();
+
+    const readyRow = page.getByRole("button", { name: /Ship the ready change/ });
+    await expect(readyRow).toBeVisible();
+    await expect(page.getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/ready");
+    await readyRow.press("ArrowRight");
+    await expect(readyRow).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByText("No subtasks.")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Blocked follow-up/ })).toHaveCount(0);
+    await readyRow.click();
+    await expect(page.getByRole("heading", { name: "Ship the ready change" })).toBeVisible();
+
+    const navigation = page.getByRole("complementary", { name: "Kata navigation" });
+    await navigation.getByRole("button", { name: /^Kata\s+\d+$/ }).click();
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/projects/2/ready");
+    await expect(page.getByRole("button", { name: /Ship the ready change/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Blocked follow-up/ })).toHaveCount(0);
   } finally {
     await server.stop();
     kataHome.restore();

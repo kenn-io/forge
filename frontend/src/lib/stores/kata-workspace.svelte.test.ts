@@ -918,6 +918,28 @@ describe("kata workspace store", () => {
     );
   });
 
+  test("clears stale Ready membership until the authoritative search completes", async () => {
+    const api = createFakeKataTaskAPI();
+    const readySearch = deferred<KataTaskSearchResponse>();
+    api.mocks.search.mockReturnValueOnce(readySearch.promise);
+    const store = createKataWorkspaceStore({ api });
+    await store.bootstrap("today", null, { selectFirst: false });
+
+    const pending = store.updateSearchFilters({ status: "ready" }, { selectFirst: false });
+
+    expect([...store.readyIssueUIDs]).toEqual([]);
+    readySearch.resolve({
+      filters: { ...store.searchFilters, status: "ready" },
+      issues: [issues[0]!],
+      fetched_at: fetchedAt,
+    });
+    await pending;
+    expect([...store.readyIssueUIDs]).toEqual([issues[0]!.uid]);
+
+    await store.updateSearchFilters({ status: "open" }, { selectFirst: false });
+    expect([...store.readyIssueUIDs]).toEqual([]);
+  });
+
   test("surfaces auth failures with a stable connection message", async () => {
     const api = createFakeKataTaskAPI();
     api.mocks.instance.mockRejectedValueOnce(

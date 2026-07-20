@@ -302,6 +302,7 @@ export interface KataWorkspaceStoreSnapshot {
   selectedRecurrences: KataRecurrence[];
   searchFilters: KataTaskSearchFilters;
   duplicateCandidates: KataDuplicateCandidateDisplay[];
+  readyIssueUIDs: ReadonlySet<string>;
   cachedTasks: KataTaskSummary[];
   eventCursor: number;
   unscopedViewName: KataTaskViewName;
@@ -330,6 +331,7 @@ export class KataWorkspaceStore {
   daemonId = $state<string | undefined>(undefined);
   searchFilters = $state.raw<KataTaskSearchFilters>(defaultKataTaskSearchFilters());
   duplicateCandidates = $state.raw<KataDuplicateCandidateDisplay[]>([]);
+  readyIssueUIDs = $state.raw<ReadonlySet<string>>(new Set());
   pendingSelectionUID = $state<string | null>(null);
   pendingMutationCount = $state(0);
   hasPendingMutations = $derived(this.pendingMutationCount > 0);
@@ -401,6 +403,7 @@ export class KataWorkspaceStore {
     this.currentView = emptyView("all");
     this.searchFilters = defaultKataTaskSearchFilters();
     this.duplicateCandidates = [];
+    this.readyIssueUIDs = new Set();
     this.selectedIssue = null;
     this.selectedEvents = [];
     this.selectedRecurrences = [];
@@ -420,6 +423,7 @@ export class KataWorkspaceStore {
       selectedRecurrences: this.selectedRecurrences,
       searchFilters: this.searchFilters,
       duplicateCandidates: this.duplicateCandidates,
+      readyIssueUIDs: this.readyIssueUIDs,
       cachedTasks: this.cachedTasks,
       eventCursor: this.eventCursor,
       unscopedViewName: this.unscopedViewName,
@@ -437,6 +441,7 @@ export class KataWorkspaceStore {
     this.selectedRecurrences = snapshot.selectedRecurrences;
     this.searchFilters = snapshot.searchFilters;
     this.duplicateCandidates = snapshot.duplicateCandidates;
+    this.readyIssueUIDs = snapshot.readyIssueUIDs;
     this.cacheTasks(snapshot.cachedTasks);
     this.eventCursor = snapshot.eventCursor;
     this.unscopedViewName = snapshot.unscopedViewName;
@@ -501,6 +506,7 @@ export class KataWorkspaceStore {
     const expectedRequestID = () => this.viewRequestID + 1;
     let rollbackRequestID = expectedRequestID();
     try {
+      this.prepareReadyIssueMembership(this.searchFilters, filters);
       this.searchFilters = filters;
       this.duplicateCandidates = [];
       await this.openView(viewName, { ...options, selectFirst: false });
@@ -557,6 +563,7 @@ export class KataWorkspaceStore {
     if (previousFilters.scope.kind === "all" && nextFilters.scope.kind === "project") {
       this.unscopedViewName = this.currentView.name;
     }
+    this.prepareReadyIssueMembership(previousFilters, nextFilters);
     this.searchFilters = nextFilters;
 
     if (!hasActiveSearchFilters(this.searchFilters)) {
@@ -571,6 +578,7 @@ export class KataWorkspaceStore {
       if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return;
       this.acceptWorkflowResult(results);
       this.duplicateCandidates = [];
+      this.acceptReadyIssueMembership(this.searchFilters, results.issues);
       this.cacheTasks(results.issues);
       const groups = groupSearchIssues(results.issues);
       this.currentView = {
@@ -592,6 +600,7 @@ export class KataWorkspaceStore {
     nextFilters: KataTaskSearchFilters,
     options: KataLoadOptions,
   ): Promise<void> {
+    this.prepareReadyIssueMembership(previousFilters, nextFilters);
     const nextUnscopedViewName =
       previousFilters.scope.kind === "all" && nextFilters.scope.kind === "project"
         ? this.currentView.name
@@ -610,6 +619,7 @@ export class KataWorkspaceStore {
       this.acceptWorkflowResult(view);
       this.searchFilters = nextFilters;
       this.duplicateCandidates = [];
+      this.acceptReadyIssueMembership(nextFilters, []);
       this.cacheView(view);
       this.currentView = {
         name: view.view,
@@ -634,6 +644,7 @@ export class KataWorkspaceStore {
       }
       this.searchFilters = nextFilters;
       this.duplicateCandidates = [];
+      this.acceptReadyIssueMembership(nextFilters, results.issues);
       this.cacheTasks(results.issues);
       const groups = groupSearchIssues(results.issues);
       this.currentView = {
@@ -673,6 +684,7 @@ export class KataWorkspaceStore {
       const { requestID, signal } = this.beginViewRequest();
       this.searchFilters = defaultKataTaskSearchFilters();
       this.duplicateCandidates = [];
+      this.readyIssueUIDs = new Set();
       const view = await this.loadIssues({ view: "inbox" }, signal);
       if (requestID !== this.viewRequestID) return;
       this.acceptWorkflowResult(view);
@@ -838,6 +850,20 @@ export class KataWorkspaceStore {
   resetSearchFilters(): void {
     this.searchFilters = defaultKataTaskSearchFilters();
     this.duplicateCandidates = [];
+    this.readyIssueUIDs = new Set();
+  }
+
+  private prepareReadyIssueMembership(
+    previousFilters: KataTaskSearchFilters,
+    nextFilters: KataTaskSearchFilters,
+  ): void {
+    if (nextFilters.status !== "ready" || previousFilters.status !== "ready") {
+      this.readyIssueUIDs = new Set();
+    }
+  }
+
+  private acceptReadyIssueMembership(filters: KataTaskSearchFilters, issues: readonly KataTaskSummary[]): void {
+    this.readyIssueUIDs = filters.status === "ready" ? new Set(issues.map((issue) => issue.uid)) : new Set();
   }
 
   rememberTasks(issues: readonly KataTaskSummary[]): void {
@@ -1289,6 +1315,7 @@ export class KataWorkspaceStore {
       if (requestID !== this.viewRequestID || !shouldApplyLoad(options)) return false;
       this.acceptWorkflowResult(results);
       this.duplicateCandidates = [];
+      this.acceptReadyIssueMembership(this.searchFilters, results.issues);
       this.cacheTasks(results.issues);
       const groups = groupSearchIssues(results.issues);
       nextView = {

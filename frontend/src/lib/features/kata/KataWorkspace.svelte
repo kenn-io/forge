@@ -416,8 +416,12 @@
     };
   }
 
-  function statusMatches(issue: KataTaskSummary, status: KataTaskSearchFilters["status"]): boolean {
-    return kataTaskStatusMatchesFilter(issue, status);
+  function statusMatches(
+    issue: KataTaskSummary,
+    status: KataTaskSearchFilters["status"],
+    readyIssueUIDs: ReadonlySet<string> = store.readyIssueUIDs,
+  ): boolean {
+    return kataTaskStatusMatchesFilter(issue, status, readyIssueUIDs);
   }
 
   function isDefinitiveRestoreFailure(error: unknown): boolean {
@@ -715,7 +719,13 @@
     const routedSelection = sources.selection === "url" ? issueUID : null;
     const persistedSelection = sources.selection === "persisted" ? issueUID : null;
     const effectiveStatus = view === "logbook" ? "all" : filters.status;
-    if (persistedSelection && !rawIssues.some((issue) => issue.uid === persistedSelection && statusMatches(issue, effectiveStatus))) {
+    if (
+      persistedSelection &&
+      !rawIssues.some(
+        (issue) =>
+          issue.uid === persistedSelection && statusMatches(issue, effectiveStatus, workspaceStore.readyIssueUIDs),
+      )
+    ) {
       if (mutatePersistence && shouldApply()) clearKataWorkspaceSelection(daemonID);
       else persistenceDelta = mergeRestorePersistenceDelta(persistenceDelta, { clearSelection: true });
       if (!shouldApply()) {
@@ -1746,7 +1756,7 @@
 
   function selectedIssueMatchesStatusFilter(status: KataTaskSearchFilters["status"]): boolean {
     const selected = store.selectedIssue?.issue;
-    return !selected || kataTaskStatusMatchesFilter(selected, status);
+    return !selected || kataTaskStatusMatchesFilter(selected, status, store.readyIssueUIDs);
   }
 
   function loadLayoutPrefs(): void {
@@ -2719,6 +2729,7 @@
           selectedIssueUID={store.pendingSelectionUID ?? store.selectedIssue?.issue.uid ?? null}
           loading={viewLoading}
           statusFilter={listStatusFilter}
+          readyIssueUIDs={store.readyIssueUIDs}
           resetGeneration={listResetGeneration}
           navigationGeneration={navigationEpoch}
           {revealRequest}

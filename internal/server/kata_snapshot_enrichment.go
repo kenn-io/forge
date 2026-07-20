@@ -84,6 +84,10 @@ func (e *kataSnapshotEnricher) Enrich(
 	request kataSnapshotEnrichmentRequest,
 ) (kataSnapshotEnrichment, error) {
 	result := kataSnapshotEnrichment{}
+	projectsByID := make(map[int64]kataProjectSummary, len(authority.Snapshot.Projects))
+	for _, project := range authority.Snapshot.Projects {
+		projectsByID[project.ID] = project
+	}
 	memberUIDs := make(map[string]struct{}, len(authority.Snapshot.MemberIssueUIDs))
 	for _, uid := range authority.Snapshot.MemberIssueUIDs {
 		memberUIDs[uid] = struct{}{}
@@ -108,7 +112,7 @@ func (e *kataSnapshotEnricher) Enrich(
 	selected, selectedIsMember := members[request.SelectedIssueUID]
 	graphSource, graphSourceIsMember := members[request.GraphSourceUID]
 	if request.GraphSourceUID != "" && graphSourceIsMember {
-		graph, graphNodes, err := e.loadGraph(ctx, graphSource)
+		graph, graphNodes, err := e.loadGraph(ctx, graphSource, projectsByID)
 		if err != nil {
 			if contextErr := kataEnrichmentContextError(ctx, err); contextErr != nil {
 				return kataSnapshotEnrichment{}, contextErr
@@ -164,6 +168,7 @@ func (e *kataSnapshotEnricher) Enrich(
 func (e *kataSnapshotEnricher) loadGraph(
 	ctx context.Context,
 	source kataSnapshotEnrichmentIssue,
+	projectsByID map[int64]kataProjectSummary,
 ) (*katagenerated.ReachableGraphResponseBody, map[string]kataSnapshotEnrichmentIssue, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
@@ -184,30 +189,43 @@ func (e *kataSnapshotEnricher) loadGraph(
 		return nil, nil, fmt.Errorf("missing graph 200 response body")
 	}
 	graph := response.JSON200
+	if err := graph.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("validate graph response: %w", err)
+	}
 	if graph.SourceUID != source.UID || graph.Depth != depth || graph.HideDone != hideDone {
 		return nil, nil, fmt.Errorf("graph response does not match request")
 	}
 	nodes := make(map[string]kataSnapshotEnrichmentIssue, len(graph.Nodes))
+	nodeIDs := make(map[int64]struct{}, len(graph.Nodes))
 	for _, node := range graph.Nodes {
-		if strings.TrimSpace(node.UID) == "" || node.ProjectID != source.ProjectID || node.ProjectUID == nil || *node.ProjectUID != source.ProjectUID {
-			return nil, nil, fmt.Errorf("graph node identity does not match source project")
+		project, projectExists := projectsByID[node.ProjectID]
+		if node.ID <= 0 || node.ProjectID <= 0 || strings.TrimSpace(node.UID) == "" || node.ProjectUID == nil || !projectExists || *node.ProjectUID != project.UID {
+			return nil, nil, fmt.Errorf("graph node identity does not match project catalog")
 		}
 		if _, duplicate := nodes[node.UID]; duplicate {
 			return nil, nil, fmt.Errorf("duplicate graph node UID")
 		}
+		if _, duplicate := nodeIDs[node.ID]; duplicate {
+			return nil, nil, fmt.Errorf("duplicate graph node ID")
+		}
+		nodeIDs[node.ID] = struct{}{}
 		nodes[node.UID] = kataSnapshotEnrichmentIssue{
 			ID:          node.ID,
 			UID:         node.UID,
 			ProjectID:   node.ProjectID,
 			ProjectUID:  *node.ProjectUID,
-			ProjectName: source.ProjectName,
+			ProjectName: project.Name,
 			ShortID:     node.ShortID,
 			QualifiedID: node.QualifiedID,
 			Title:       node.Title,
 		}
 	}
-	if _, ok := nodes[source.UID]; !ok {
+	sourceNode, ok := nodes[source.UID]
+	if !ok {
 		return nil, nil, fmt.Errorf("graph response omits source node")
+	}
+	if sourceNode.ID != source.ID || sourceNode.ProjectID != source.ProjectID || sourceNode.ProjectUID != source.ProjectUID {
+		return nil, nil, fmt.Errorf("graph source identity does not match authority")
 	}
 	return graph, nodes, nil
 }
@@ -238,8 +256,11 @@ func (e *kataSnapshotEnricher) loadDetail(
 	if response == nil || response.StatusCode != http.StatusOK || response.JSON200 == nil {
 		return nil, kataGeneratedIssueDetail{}, fmt.Errorf("missing detail 200 response body")
 	}
+	if err := response.JSON200.Validate(); err != nil {
+		return nil, kataGeneratedIssueDetail{}, fmt.Errorf("validate detail response: %w", err)
+	}
 	issue := response.JSON200.Issue
-	if issue.ID != selected.ID || issue.UID != selected.UID || issue.ProjectID != selected.ProjectID || issue.ProjectUID == nil || *issue.ProjectUID != selected.ProjectUID || issue.DeletedAt != nil {
+	if issue.ID <= 0 || issue.ProjectID <= 0 || issue.ID != selected.ID || issue.UID != selected.UID || issue.ProjectID != selected.ProjectID || issue.ProjectUID == nil || *issue.ProjectUID != selected.ProjectUID || issue.DeletedAt != nil {
 		return nil, kataGeneratedIssueDetail{}, fmt.Errorf("detail response identity does not match selection")
 	}
 	etag := ""

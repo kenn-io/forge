@@ -106,6 +106,149 @@ func TestKataSnapshotEnricherGraphNodeAuthorizesSelectionWithoutRerooting(t *tes
 	assert.Empty(result.Errors)
 }
 
+func TestKataSnapshotEnricherAllowsCatalogedCrossProjectGraphSelection(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	projectBUID := "project-b"
+	client := &fakeKataSnapshotAPIClient{}
+	client.reachableGraph = func(context.Context, *katagenerated.ReachableIssueGraphRequestOptions) (*katagenerated.ReachableIssueGraphResp, error) {
+		response := testKataGraphResponse("issue-source", "issue-linked")
+		response.JSON200.Nodes[1].ProjectID = 8
+		response.JSON200.Nodes[1].ProjectUID = &projectBUID
+		response.JSON200.Nodes[1].QualifiedID = "Project B#linked"
+		return response, nil
+	}
+	client.showIssue = func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+		response := testKataShowIssueResponse("issue-linked")
+		response.JSON200.Issue.ProjectID = 8
+		response.JSON200.Issue.ProjectUID = &projectBUID
+		return response, nil
+	}
+	var workspaceMetadata db.WorkspaceKataMetadata
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
+		client: client,
+		resolveWorkspaceTarget: func(_ context.Context, metadata db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
+			workspaceMetadata = metadata
+			return kataWorkspaceTargetResponse{Available: false}, nil
+		},
+	})
+	authority := testKataCoordinatedAuthority()
+	authority.Snapshot.Projects = append(authority.Snapshot.Projects, kataProjectSummary{ID: 8, UID: projectBUID, Name: "Project B"})
+
+	result, err := enricher.Enrich(t.Context(), authority, kataSnapshotEnrichmentRequest{
+		SelectedIssueUID: "issue-linked",
+		GraphSourceUID:   "issue-source",
+	})
+
+	require.NoError(err)
+	require.NotNil(result.Graph)
+	require.NotNil(result.SelectedDetail)
+	assert.Equal("issue-source", result.Graph.SourceUID)
+	assert.Equal("project-b", workspaceMetadata.ProjectUID)
+	assert.Equal("Project B", workspaceMetadata.ProjectName)
+	assert.Equal("Project B#linked", workspaceMetadata.QualifiedID)
+}
+
+func TestKataSnapshotEnricherDoesNotAuthorizeMalformedGraphNodes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(*katagenerated.ReachableGraphResponseBody)
+	}{
+		{
+			name: "missing required field",
+			mutate: func(graph *katagenerated.ReachableGraphResponseBody) {
+				graph.Nodes[1].Author = ""
+			},
+		},
+		{
+			name: "non-positive node id",
+			mutate: func(graph *katagenerated.ReachableGraphResponseBody) {
+				graph.Nodes[1].ID = 0
+			},
+		},
+		{
+			name: "wrong authoritative source id",
+			mutate: func(graph *katagenerated.ReachableGraphResponseBody) {
+				graph.Nodes[0].ID = 99
+			},
+		},
+		{
+			name: "uncataloged project identity",
+			mutate: func(graph *katagenerated.ReachableGraphResponseBody) {
+				unknownProjectUID := "project-unknown"
+				graph.Nodes[1].ProjectID = 99
+				graph.Nodes[1].ProjectUID = &unknownProjectUID
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			require := require.New(t)
+
+			detailCalls := 0
+			client := &fakeKataSnapshotAPIClient{}
+			client.reachableGraph = func(context.Context, *katagenerated.ReachableIssueGraphRequestOptions) (*katagenerated.ReachableIssueGraphResp, error) {
+				response := testKataGraphResponse("issue-source", "issue-linked")
+				test.mutate(response.JSON200)
+				return response, nil
+			}
+			client.showIssue = func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+				detailCalls++
+				return testKataShowIssueResponse("issue-linked"), nil
+			}
+			enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+			result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{
+				SelectedIssueUID: "issue-linked",
+				GraphSourceUID:   "issue-source",
+			})
+
+			require.NoError(err)
+			assert.Nil(result.Graph)
+			assert.Empty(result.SelectedIssueUID)
+			assert.Nil(result.SelectedDetail)
+			assert.Zero(detailCalls)
+			assert.Contains(result.Errors, kataSnapshotEnrichmentStageGraph)
+		})
+	}
+}
+
+func TestKataSnapshotEnricherRejectsMalformedGeneratedDetail(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	workspaceCalls := 0
+	client := &fakeKataSnapshotAPIClient{}
+	client.showIssue = func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+		response := testKataShowIssueResponse("issue-member")
+		response.JSON200.Issue.Author = ""
+		return response, nil
+	}
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
+		client: client,
+		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
+			workspaceCalls++
+			return kataWorkspaceTargetResponse{}, nil
+		},
+	})
+
+	result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{
+		SelectedIssueUID: "issue-member",
+	})
+
+	require.NoError(err)
+	assert.Nil(result.SelectedDetail)
+	assert.Zero(workspaceCalls)
+	assert.Contains(result.Errors, kataSnapshotEnrichmentStageDetail)
+}
+
 func TestKataSnapshotEnricherSkipsNonmemberGraphSource(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
@@ -254,6 +397,7 @@ func testKataCoordinatedAuthority() kataCoordinatedAuthority {
 
 func testKataGraphResponse(sourceUID, linkedUID string) *katagenerated.ReachableIssueGraphResp {
 	projectUID := "project-a"
+	now := time.Date(2026, 7, 20, 16, 0, 0, 0, time.UTC)
 	return &katagenerated.ReachableIssueGraphResp{
 		StatusCode: http.StatusOK,
 		JSON200: &katagenerated.ReachableGraphResponseBody{
@@ -261,8 +405,8 @@ func testKataGraphResponse(sourceUID, linkedUID string) *katagenerated.Reachable
 			Depth:     "full",
 			HideDone:  false,
 			Nodes: []katagenerated.ReachableGraphNode{
-				{ID: 1, UID: sourceUID, ProjectID: 7, ProjectUID: &projectUID, ShortID: "source", QualifiedID: "Project A#source", Title: "Source task"},
-				{ID: 3, UID: linkedUID, ProjectID: 7, ProjectUID: &projectUID, ShortID: "linked", QualifiedID: "Project A#linked", Title: "Linked task"},
+				{ID: 1, UID: sourceUID, ProjectID: 7, ProjectUID: &projectUID, ShortID: "source", QualifiedID: "Project A#source", Title: "Source task", Author: "actor", Body: "body", Status: "open", CreatedAt: now, UpdatedAt: now},
+				{ID: 3, UID: linkedUID, ProjectID: 7, ProjectUID: &projectUID, ShortID: "linked", QualifiedID: "Project A#linked", Title: "Linked task", Author: "actor", Body: "body", Status: "open", CreatedAt: now, UpdatedAt: now},
 			},
 		},
 	}
@@ -270,6 +414,7 @@ func testKataGraphResponse(sourceUID, linkedUID string) *katagenerated.Reachable
 
 func testKataShowIssueResponse(uid string) *katagenerated.ShowIssueByUIDResp {
 	projectUID := "project-a"
+	now := time.Date(2026, 7, 20, 16, 0, 0, 0, time.UTC)
 	issueID := int64(3)
 	if uid == "issue-member" {
 		issueID = 2
@@ -286,6 +431,11 @@ func testKataShowIssueResponse(uid string) *katagenerated.ShowIssueByUIDResp {
 			ProjectUID: &projectUID,
 			ShortID:    "linked",
 			Title:      "Linked task",
+			Author:     "actor",
+			Body:       "body",
+			Status:     "open",
+			CreatedAt:  now,
+			UpdatedAt:  now,
 		}},
 	}
 }

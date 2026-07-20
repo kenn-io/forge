@@ -857,6 +857,10 @@ export class KataWorkspaceStore {
     this.readyIssueUIDs = new Set();
   }
 
+  invalidateReadyIssueMembership(): void {
+    this.readyIssueUIDs = new Set();
+  }
+
   private prepareReadyIssueMembership(
     previousFilters: KataTaskSearchFilters,
     nextFilters: KataTaskSearchFilters,

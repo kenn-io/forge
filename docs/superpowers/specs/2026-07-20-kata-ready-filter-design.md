@@ -105,7 +105,10 @@ repeating the mutation or automatically restoring the cleared selection. A
 failed persisted restoration also renders no selection, but keeps the stored
 selection as retry input so a successful restoration Retry can revalidate it.
 Event-driven refresh failures use the same authority-loss cleanup and Retry
-path, including clearing the persisted selection before route reconciliation.
+path, including failures that happen before the Ready request itself and
+clearing the persisted selection before route reconciliation. If automatic
+stream replay later completes a current-scope Ready refresh, the recovered
+membership clears the obsolete error and Retry without restoring selection.
 
 A successful Ready response must contain an `issues` array whose entries carry
 non-empty UIDs. Missing or malformed membership fails with

@@ -286,13 +286,14 @@
           });
           if (refreshed && isCursorCatchupScopeCurrent(scope)) {
             reconcilePersistedSelection(false, selectedUID);
+            if (store.searchFilters.status === "ready" && readyRefreshRetry !== null) {
+              readyRefreshRetry = null;
+              readyRefreshRetrying = false;
+              viewError = null;
+            }
           }
         } catch (error) {
-          if (
-            isCursorCatchupScopeCurrent(scope) &&
-            store.searchFilters.status === "ready" &&
-            store.readyIssueUIDs.size === 0
-          ) {
+          if (isCursorCatchupScopeCurrent(scope) && store.searchFilters.status === "ready") {
             handleReadyAuthorityLoss(kataRequestErrorMessage(error), selectedUID);
           }
           throw error;
@@ -404,6 +405,7 @@
     resetDetailDrafts();
     closeReachableGraph();
     resetIssueExpansion();
+    store.invalidateReadyIssueMembership();
     store.clearSelection();
     restoredSelectionUID = null;
     canonicalizeClearedSelection();

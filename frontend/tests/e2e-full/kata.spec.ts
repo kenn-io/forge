@@ -5675,6 +5675,61 @@ test("kata event refresh failure clears unverified Ready selection through the r
   }
 });
 
+test("kata project event failure invalidates Ready authority and clears after automatic recovery", async ({ page }) => {
+  const backend = await startKataBackend();
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata`);
+    await page.getByRole("combobox", { name: "Status: Open" }).click();
+    await page.getByRole("option", { name: "Ready" }).click();
+
+    const payRentRow = page.getByRole("button", { name: /Pay rent/ });
+    await expect(payRentRow).toBeVisible();
+    await payRentRow.click();
+    const detail = page.getByRole("region", { name: "Task detail" });
+    await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+    await expect.poll(() => backend.state.streams.size).toBeGreaterThan(0);
+    const streamCountBeforeFailure = backend.state.seenPaths.filter((path) =>
+      path.startsWith("GET /api/v1/events/stream"),
+    ).length;
+    const projectEvent = eventRow({
+      event_id: 701,
+      event_uid: "event-kata-project-updated",
+      type: "project.updated",
+      project_id: projects[1]!.id,
+      project_uid: projects[1]!.uid,
+      project_name: projects[1]!.name,
+    });
+
+    backend.state.failNextProjectsStatus = 503;
+    emitKataEvent(backend.state, projectEvent);
+
+    const retry = page.getByRole("button", { name: "Retry" });
+    await expect(page.getByRole("alert").filter({ hasText: "project catalog failed" })).toBeVisible();
+    await expect(retry).toBeVisible();
+    await expect(payRentRow).toHaveCount(0);
+    await expect(detail).toContainText("Select a task");
+    await expect(page).not.toHaveURL(/issue=/);
+
+    await expect
+      .poll(() => backend.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/events/stream")).length)
+      .toBeGreaterThan(streamCountBeforeFailure);
+    emitKataEvent(backend.state, projectEvent);
+
+    await expect(page.getByRole("button", { name: /Pay rent/ })).toBeVisible();
+    await expect(retry).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: "project catalog failed" })).toHaveCount(0);
+    await expect(detail).toContainText("Select a task");
+    await expect(page).not.toHaveURL(/issue=/);
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata retries a failed persisted Ready restoration through the real proxy", async ({ page }) => {
   const backend = await startKataBackend({ failNextReadyStatus: 503 });
   const kataHome = await configureKataHome(backend.url);

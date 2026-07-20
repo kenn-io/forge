@@ -1100,48 +1100,48 @@ test.describe("messages HTML viewer", () => {
   });
 });
 
-test("messages header tab stays available across setup and health states", async ({ page }) => {
-  {
-    const savedSearches = await configureIsolatedSavedSearches("header-unconfigured");
-    const server = await startIsolatedE2EServer();
-    try {
-      await page.goto(server.info.base_url);
-      await expectMessagesTabOpens(page);
-      await expect(page.getByRole("button", { name: "Set up Messages" })).toBeVisible();
-      await expectMessagesWorkspaceUnavailable(page);
-    } finally {
-      await server.stop();
-      savedSearches.restore();
-    }
+test("messages header tab stays available while unconfigured", async ({ page }) => {
+  const savedSearches = await configureIsolatedSavedSearches("header-unconfigured");
+  const server = await startIsolatedE2EServer();
+  try {
+    await page.goto(server.info.base_url);
+    await expectMessagesTabOpens(page);
+    await expect(page.getByRole("button", { name: "Set up Messages" })).toBeVisible();
+    await expectMessagesWorkspaceUnavailable(page);
+  } finally {
+    await server.stop();
+    savedSearches.restore();
   }
+});
 
-  for (const scenario of [
-    {
-      name: "misconfigured",
-      envValue: undefined,
-      configureBackend: (backend: BackendHandle) => {
-        backend.state.authorized = true;
-      },
-      banner: "Messages are misconfigured",
+for (const scenario of [
+  {
+    name: "misconfigured",
+    envValue: undefined,
+    configureBackend: (backend: BackendHandle) => {
+      backend.state.authorized = true;
     },
-    {
-      name: "down",
-      envValue: "secret-key",
-      configureBackend: (backend: BackendHandle) => {
-        backend.state.authorized = true;
-        backend.state.available = false;
-      },
-      banner: "Messages unavailable - retrying on next refresh.",
+    banner: "Messages are misconfigured",
+  },
+  {
+    name: "down",
+    envValue: "secret-key",
+    configureBackend: (backend: BackendHandle) => {
+      backend.state.authorized = true;
+      backend.state.available = false;
     },
-    {
-      name: "unauthorized",
-      envValue: "secret-key",
-      configureBackend: (backend: BackendHandle) => {
-        backend.state.authorized = false;
-      },
-      banner: "Messages key rejected - check `api_key_env`.",
+    banner: "Messages unavailable - retrying on next refresh.",
+  },
+  {
+    name: "unauthorized",
+    envValue: "secret-key",
+    configureBackend: (backend: BackendHandle) => {
+      backend.state.authorized = false;
     },
-  ]) {
+    banner: "Messages key rejected - check `api_key_env`.",
+  },
+]) {
+  test(`messages header tab stays available when ${scenario.name}`, async ({ page }) => {
     const backend = await startMsgvaultBackend();
     scenario.configureBackend(backend);
     const savedSearches = await configureIsolatedSavedSearches(`header-${scenario.name}`);
@@ -1173,18 +1173,18 @@ test("messages header tab stays available across setup and health states", async
       }
       savedSearches.restore();
     }
-  }
+  });
+}
 
-  {
-    const fixture = await startConfiguredMessagesFixture(page, "headerok");
-    try {
-      await page.goto(fixture.server.info.base_url);
-      await expectMessagesTabOpens(page);
-      await expect(page.getByPlaceholder("Search messages...")).toBeVisible();
-      await expect(page.getByRole("navigation", { name: "Messages facets" })).toBeVisible();
-    } finally {
-      await fixture.stop();
-    }
+test("messages header tab stays available when configured", async ({ page }) => {
+  const fixture = await startConfiguredMessagesFixture(page, "headerok");
+  try {
+    await page.goto(fixture.server.info.base_url);
+    await expectMessagesTabOpens(page);
+    await expect(page.getByPlaceholder("Search messages...")).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Messages facets" })).toBeVisible();
+  } finally {
+    await fixture.stop();
   }
 });
 

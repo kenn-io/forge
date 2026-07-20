@@ -97,7 +97,7 @@ export interface KataTaskViewResponse {
   daemon_id?: string | undefined;
 }
 
-export type KataTaskStatusFilter = "open" | "closed" | "all";
+export type KataTaskStatusFilter = "open" | "ready" | "closed" | "all";
 export type KataTaskSearchScope = { kind: "all" } | { kind: "project"; project_uid: string };
 
 export interface KataTaskSearchFilters {

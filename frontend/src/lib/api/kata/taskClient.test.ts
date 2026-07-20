@@ -953,6 +953,65 @@ describe("kata task HTTP client", () => {
     ]);
   });
 
+  test("reads global ready tasks from the daemon and narrows them with search controls", async () => {
+    const matching = {
+      ...issue("issue-ready", "Ship ready filter", "project-work"),
+      owner: "agent:planner",
+      labels: ["urgent"],
+    };
+    const wrongOwner = {
+      ...issue("issue-other", "Ship other filter", "project-work"),
+      owner: "agent:other",
+    };
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/ready": { body: { issues: [matching, wrongOwner] } },
+    });
+    const api = createKataTaskAPI({ fetchImpl, getDaemonId: () => "work" });
+
+    const results = await api.search({
+      scope: { kind: "all" },
+      status: "ready",
+      owner: "agent:planner",
+      label: "urgent",
+      query: "ship ready",
+    });
+
+    expect(results.issues.map((item) => item.uid)).toEqual(["issue-ready"]);
+    expect(proxyPath(calls[0]!.url)).toBe("/api/v1/ready");
+    expect(calls[0]!.headers.get(KATA_DAEMON_HEADER)).toBe("work");
+  });
+
+  test("reads project ready tasks with supported daemon filters and applies text search locally", async () => {
+    const ready = {
+      ...issue("issue-ready", "Ship ready filter", "project-work"),
+      owner: "agent:planner",
+      labels: ["urgent"],
+    };
+    const { calls, fetchImpl } = createFetchStub({
+      "/api/v1/projects?include=stats": {
+        body: { projects: [project("project-work", "Work")] },
+      },
+      "/api/v1/projects/1/ready?owner=agent%3Aplanner&label=urgent": {
+        body: { issues: [ready, issue("issue-no-match", "Refine backlog", "project-work")] },
+      },
+    });
+    const api = createKataTaskAPI({ fetchImpl });
+
+    const results = await api.search({
+      scope: { kind: "project", project_uid: "project-work" },
+      status: "ready",
+      owner: "agent:planner",
+      label: "urgent",
+      query: "ship ready",
+    });
+
+    expect(results.issues.map((item) => item.uid)).toEqual(["issue-ready"]);
+    expect(calls.map((call) => proxyPath(call.url))).toEqual([
+      "/api/v1/projects?include=stats",
+      "/api/v1/projects/1/ready?owner=agent%3Aplanner&label=urgent",
+    ]);
+  });
+
   test("reads the combined task detail and exposes etags and the workspace target", async () => {
     const { calls, fetchImpl } = createFetchStub({
       "/api/v1/kata/tasks/issue-1": {

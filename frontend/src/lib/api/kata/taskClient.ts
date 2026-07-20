@@ -36,6 +36,7 @@ import type {
   KataWorkspaceTarget,
 } from "./taskTypes.js";
 import { buildKataTaskView } from "./taskViewBuilder.js";
+import { kataTaskStatusMatchesFilter } from "./taskFilters.js";
 import { localDateString } from "../dates.js";
 
 export interface CreateKataTaskAPIOptions {
@@ -221,7 +222,7 @@ function filterSearchIssues(
   const applyQuery = options.applyQuery ?? true;
   return issues.filter((issue) => {
     if (filters.scope.kind === "project" && issue.project_uid !== filters.scope.project_uid) return false;
-    if (filters.status !== "all" && issue.status !== filters.status) return false;
+    if (!kataTaskStatusMatchesFilter(issue, filters.status)) return false;
     if (owner && issue.owner?.toLowerCase() !== owner) return false;
     if (label && !(issue.labels ?? []).some((item) => item.toLowerCase() === label)) return false;
     if (applyQuery && query && !issueSearchText(issue).includes(query)) return false;
@@ -404,6 +405,27 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
       .map((issue) => withProjectIdentity(issue, project));
   }
 
+  async function fetchReadyIssues(
+    filters: KataTaskSearchFilters,
+    daemonId?: string,
+    project?: KataProjectSummary,
+    pinned = false,
+    signal?: AbortSignal,
+  ): Promise<KataTaskSummary[]> {
+    const params = new URLSearchParams();
+    if (project && filters.owner.trim()) params.set("owner", filters.owner.trim());
+    if (project && filters.label.trim()) params.append("label", filters.label.trim());
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
+    const basePath = project ? `/projects/${project.id}/ready` : "/ready";
+    const result = await request<unknown>(taskPath(`${basePath}${suffix}`), {
+      headers: pinned ? pinnedDaemonHeaders(daemonId) : daemonHeaders(daemonId),
+      signal,
+    });
+    return normalizeKataTaskList(result.body)
+      .groups.flatMap((group) => group.issues)
+      .map((issue) => withProjectIdentity(issue, project));
+  }
+
   async function fetchIssue(
     uid: string,
     daemonId?: string,
@@ -439,6 +461,9 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     pinned = false,
     signal?: AbortSignal,
   ): Promise<KataTaskSummary[]> {
+    if (filters.status === "ready") {
+      return filterSearchIssues(await fetchReadyIssues(filters, daemonId, undefined, pinned, signal), filters);
+    }
     if (filters.status === "all") {
       const [open, closed] = await Promise.all([
         fetchIssuesByStatus("open", daemonId, undefined, pinned, signal),
@@ -456,6 +481,9 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     pinned = false,
     signal?: AbortSignal,
   ): Promise<KataTaskSummary[]> {
+    if (filters.status === "ready") {
+      return filterSearchIssues(await fetchReadyIssues(filters, daemonId, project, pinned, signal), filters);
+    }
     if (filters.status === "all") {
       const [open, closed] = await Promise.all([
         fetchIssuesByStatus("open", daemonId, project, pinned, signal),
@@ -504,7 +532,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     if (!project) {
       return filterSearchIssues([], filters);
     }
-    if (filters.query.trim() === "") {
+    if (filters.query.trim() === "" || filters.status === "ready") {
       return searchProjectIssueList(filters, project, daemonId, pinned, signal);
     }
     const params = new URLSearchParams();

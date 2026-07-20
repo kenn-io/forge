@@ -16,7 +16,7 @@ export interface IssueSummary {
   updated_at?: string | undefined;
 }
 
-export type IssueStatusFilter = "open" | "closed" | "all";
+export type IssueStatusFilter = "open" | "ready" | "closed" | "all";
 
 export type SearchScope = { kind: "all" } | { kind: "project"; project_uid: string };
 

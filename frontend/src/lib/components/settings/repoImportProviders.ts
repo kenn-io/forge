@@ -1,3 +1,5 @@
+import { providerDisplayLabel } from "@middleman/ui/api/provider-labels";
+
 export interface RepoImportProvider {
   id: string;
   label: string;
@@ -8,7 +10,7 @@ export interface RepoImportProvider {
 
 export const defaultRepoImportProvider: RepoImportProvider = {
   id: "github",
-  label: "GitHub",
+  label: providerDisplayLabel("github"),
   defaultHost: "github.com",
   allowNestedOwner: false,
   ownerPatternPlaceholder: "owner/pattern",
@@ -18,21 +20,21 @@ export const repoImportProviders: RepoImportProvider[] = [
   defaultRepoImportProvider,
   {
     id: "gitlab",
-    label: "GitLab",
+    label: providerDisplayLabel("gitlab"),
     defaultHost: "gitlab.com",
     allowNestedOwner: true,
     ownerPatternPlaceholder: "group/subgroup/pattern",
   },
   {
     id: "forgejo",
-    label: "Forgejo",
+    label: providerDisplayLabel("forgejo"),
     defaultHost: "codeberg.org",
     allowNestedOwner: false,
     ownerPatternPlaceholder: "owner/pattern",
   },
   {
     id: "gitea",
-    label: "Gitea",
+    label: providerDisplayLabel("gitea"),
     defaultHost: "gitea.com",
     allowNestedOwner: false,
     ownerPatternPlaceholder: "owner/pattern",

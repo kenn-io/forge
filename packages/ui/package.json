@@ -29,6 +29,9 @@
     "./api/provider-routes": {
       "default": "./src/api/provider-routes.ts"
     },
+    "./api/provider-labels": {
+      "default": "./src/api/provider-labels.ts"
+    },
     "./utils/time": {
       "default": "./src/utils/time.ts"
     },

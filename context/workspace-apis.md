@@ -199,6 +199,9 @@ server check exactly.
   publication. Only selected workspaces
   receive proactive refresh leases; ordinary entries validate on demand
   (`internal/server/server.go::streamEvents`).
+- A workspace response is user-visibly stale only for a confirmed mismatch
+  between its cached head and current Git HEAD; cache age and failed head
+  resolution do not raise the warning (`internal/server/workspace_diff_cache.go::workspaceDiffCache.Get`).
 - A local workspace becomes selected through its scoped SSE stream. The server
   subscribes that stream before acquiring the selection lease, then emits
   `workspace_diff_ready` only when cold/coalesced default-HEAD preparation

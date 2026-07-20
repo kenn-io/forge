@@ -362,7 +362,7 @@ describe("PR timeline filters", () => {
     const commitRow = inDetail(".event-card--commit").find((card) => (card.textContent ?? "").includes("abc1111"))!;
     const commitTime = commitRow.querySelector<HTMLElement>(".event-time")!;
 
-    expect(commentActions.getBoundingClientRect().right).toBeLessThanOrEqual(commentTime.getBoundingClientRect().left);
+    expect(commentTime.getBoundingClientRect().left - commentActions.getBoundingClientRect().right).toBeCloseTo(6, 2);
     expect(commentTime.getBoundingClientRect().right).toBeCloseTo(commitTime.getBoundingClientRect().right, 2);
   });
 

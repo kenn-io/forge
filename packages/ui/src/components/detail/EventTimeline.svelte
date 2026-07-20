@@ -2122,6 +2122,7 @@
 
   .event-timeline :global(.kit-comment-card:not(.event-card--commit) .kit-card__actions) {
     order: 1;
+    margin-left: auto;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.15s;
@@ -2129,6 +2130,7 @@
 
   .event-timeline :global(.kit-comment-card:not(.event-card--commit) .kit-card__meta) {
     order: 2;
+    margin-left: 0;
   }
 
   .event-timeline :global(.kit-comment-card:not(.event-card--commit):hover .kit-card__actions),

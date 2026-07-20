@@ -56,7 +56,7 @@ func TestRateTrackerMissingResetStaysUnknown(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
 	host := "gitlab.example.com"
-	rt := NewPlatformRateTracker(d, "gitlab", host, "rest")
+	rt := NewPlatformRateTracker(d, "gitlab", host, "host", "rest")
 
 	// A provider response with an exhausted quota but no reset time must leave
 	// the reset unknown (nil), not a non-nil zero timestamp.
@@ -72,7 +72,7 @@ func TestRateTrackerMissingResetStaysUnknown(t *testing.T) {
 
 	// The unknown reset is persisted as SQL NULL, so a reopened tracker still
 	// reports nil rather than a fabricated timestamp.
-	reopened := NewPlatformRateTracker(d, "gitlab", host, "rest")
+	reopened := NewPlatformRateTracker(d, "gitlab", host, "host", "rest")
 	assert.Nil(reopened.ResetAt())
 }
 

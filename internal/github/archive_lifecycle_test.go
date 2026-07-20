@@ -244,8 +244,8 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	require.NoError(err)
 
 	now := time.Now().UTC()
-	key := RateBucketKey("github", ref.Host)
-	tracker := NewPlatformRateTracker(database, "github", ref.Host, "rest")
+	key := RateBucketKey("github", ref.Host, "host")
+	tracker := NewPlatformRateTracker(database, "github", ref.Host, "host", "rest")
 	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
 	budget := NewSyncBudget(5000)
 	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{{
@@ -663,9 +663,9 @@ func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	budget := NewSyncBudget(100)
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	now := time.Now().UTC()
 	reset := now.Add(time.Minute)
 	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: reset})
@@ -690,12 +690,12 @@ func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 	assert.Equal(reset, *denied.RetryAt)
 
 	budget.Reset()
-	reserveTracker := NewPlatformRateTracker(database, "github", "reserve.test", "rest")
+	reserveTracker := NewPlatformRateTracker(database, "github", "reserve.test", "host", "rest")
 	reserveTracker.UpdateFromRate(Rate{Limit: 5000, Remaining: RateReserveBuffer, Reset: reset})
 	reserveRef := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "reserve.test", Owner: "acme", Name: "widget",
 	}
-	reserveKey := RateBucketKey("github", reserveRef.Host)
+	reserveKey := RateBucketKey("github", reserveRef.Host, "host")
 	syncer.rateTrackers[reserveKey] = reserveTracker
 	syncer.budgets[reserveKey] = NewSyncBudget(100)
 	denied, err = syncer.Admit(t.Context(), reserveRef, db.ArchiveItemTypeIssue, 1)
@@ -714,9 +714,9 @@ func TestArchiveAdmissionAttemptAllowanceUsesAvailableSurplus(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	budget := NewSyncBudget(100)
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	now := time.Now().UTC()
 	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
 	syncer := NewSyncerWithRegistry(
@@ -784,10 +784,10 @@ func TestArchiveAdmissionPreservesProviderReserveForDeclaredCost(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	now := time.Now().UTC()
 	reset := now.Add(time.Minute)
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	// Every wire attempt, including an authentication retry, is counted
 	// against admission, so archive.archiveAttemptCost declares twice the
 	// logical request count. Remaining sits exactly at the reserve margin
@@ -820,10 +820,10 @@ func TestArchiveRampDenialRetriesWithinCurrentWindow(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	now := time.Now().UTC()
 	reset := now.Add(59 * time.Minute)
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: reset})
 	syncer := NewSyncerWithRegistry(
 		nil, database, nil, nil, time.Hour,
@@ -845,9 +845,9 @@ func TestArchiveAdmissionDefersToNotificationAndActiveDetailWork(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	now := time.Now().UTC()
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
 	syncer := NewSyncerWithRegistry(
 		nil, database, nil, nil, time.Hour,
@@ -973,9 +973,9 @@ func TestArchiveAdmissionLeaseSerializesProviderRequests(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	now := time.Now().UTC()
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
 	syncer := NewSyncerWithRegistry(
 		nil, database, nil, nil, time.Hour,
@@ -1009,7 +1009,7 @@ func TestArchiveAdmissionLeaseSerializesProviderRequests(t *testing.T) {
 func TestLiveProviderWorkCancelsAndWaitsForArchiveRequest(t *testing.T) {
 	require := require.New(t)
 	syncer := NewSyncerWithRegistry(nil, dbtest.Open(t), nil, nil, time.Hour, nil, nil)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	archiveCtx, releaseArchive, allowed := syncer.tryBeginArchiveProviderRequest(t.Context(), key)
 	require.True(allowed)
 
@@ -1081,7 +1081,7 @@ func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
 			}
 			registry, err := platform.NewRegistry(provider)
 			require.NoError(err)
-			key := RateBucketKey(string(ref.Platform), ref.Host)
+			key := RateBucketKey(string(ref.Platform), ref.Host, "host")
 			syncer := NewSyncerWithRegistry(
 				registry, database, nil, []RepoRef{{
 					Platform: ref.Platform, PlatformHost: ref.Host,

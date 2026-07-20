@@ -347,6 +347,9 @@ func TestProductionStartupRoutesTwoOwnersThroughSyncAndMutationAPI(t *testing.T)
 	repoIDs := map[string]int64{"org-a/one": 101, "org-b/two": 202}
 	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Remaining", "4999")
+		w.Header().Set("X-RateLimit-Reset", "2000000000")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/user":
 			record("identity:"+r.Header.Get("Authorization"), r)

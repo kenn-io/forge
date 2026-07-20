@@ -888,7 +888,17 @@ func (s *Syncer) Admit(
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "normal sync is active"}, nil
 	}
-	key := rateBucketKeyFor(ref.Platform, ref.Host)
+	key, err := s.bucketKeyForRepo(RepoRef{
+		Platform:       ref.Platform,
+		PlatformHost:   ref.Host,
+		Owner:          ref.Owner,
+		Name:           ref.Name,
+		RepoPath:       ref.RepoPath,
+		PlatformRepoID: ref.PlatformID,
+	}, false)
+	if err != nil {
+		return archive.AdmissionResult{}, err
+	}
 	if s.higherPriorityProviderWorkActive(key, archive.PriorityFullArchive) {
 		probe.abandon()
 		retryAt := now.Add(time.Second)
@@ -4646,9 +4656,11 @@ func (s *Syncer) markClosedLinkedNotificationsDone(ctx context.Context) error {
 }
 
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
-	releaseProviderWork := s.beginProviderWork(
-		repoRateBucketKey(repo), archive.PriorityNormalIndex,
-	)
+	bucket, err := s.bucketKeyForRepo(repo, false)
+	if err != nil {
+		return fmt.Errorf("resolve sync credential route for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
+	releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityNormalIndex)
 	defer releaseProviderWork()
 
 	repoIdentity, resolvedRepo, err := s.syncRepoIdentity(ctx, repo)
@@ -9238,9 +9250,11 @@ func (s *Syncer) syncMRForRepo(
 	providerAttempted *bool,
 ) error {
 	if !IsArchiveSyncBudgetContext(ctx) {
-		releaseProviderWork := s.beginProviderWork(
-			repoRateBucketKey(repo), archive.PriorityActiveDetail,
-		)
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil {
+			return fmt.Errorf("resolve detail credential route for %s/%s: %w", repo.Owner, repo.Name, err)
+		}
+		releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityActiveDetail)
 		defer releaseProviderWork()
 	}
 
@@ -9808,9 +9822,11 @@ func (s *Syncer) syncIssueForRepo(
 	providerAttempted *bool,
 ) error {
 	if !IsArchiveSyncBudgetContext(ctx) {
-		releaseProviderWork := s.beginProviderWork(
-			repoRateBucketKey(repo), archive.PriorityActiveDetail,
-		)
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil {
+			return fmt.Errorf("resolve issue credential route for %s/%s: %w", repo.Owner, repo.Name, err)
+		}
+		releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityActiveDetail)
 		defer releaseProviderWork()
 	}
 
@@ -9893,9 +9909,11 @@ func (s *Syncer) SyncItemByNumber(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	releaseProviderWork := s.beginProviderWork(
-		repoRateBucketKey(repo), archive.PriorityActiveDetail,
-	)
+	bucket, err := s.bucketKeyForRepo(repo, false)
+	if err != nil {
+		return "", fmt.Errorf("resolve item credential route for %s/%s: %w", owner, name, err)
+	}
+	releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityActiveDetail)
 	defer releaseProviderWork()
 
 	if repoPlatform(repo) != platform.KindGitHub {

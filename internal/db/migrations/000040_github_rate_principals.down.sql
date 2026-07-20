@@ -1,4 +1,4 @@
-CREATE TABLE middleman_rate_limits_v38 (
+CREATE TABLE middleman_rate_limits_v39 (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     platform       TEXT NOT NULL DEFAULT 'github',
     platform_host  TEXT NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE middleman_rate_limits_v38 (
 
 -- Downgrade is lossy: multiple identity rows collapse to the most recently
 -- updated row for the old provider/host/API key.
-INSERT INTO middleman_rate_limits_v38
+INSERT INTO middleman_rate_limits_v39
     (platform, platform_host, api_type, requests_hour, hour_start,
      rate_remaining, rate_limit, rate_reset_at, updated_at)
 SELECT r.platform, r.platform_host, r.api_type, r.requests_hour, r.hour_start,
@@ -31,4 +31,4 @@ WHERE r.id = (
 );
 
 DROP TABLE middleman_rate_limits;
-ALTER TABLE middleman_rate_limits_v38 RENAME TO middleman_rate_limits;
+ALTER TABLE middleman_rate_limits_v39 RENAME TO middleman_rate_limits;

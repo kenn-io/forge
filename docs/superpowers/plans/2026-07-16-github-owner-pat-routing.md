@@ -34,8 +34,8 @@
 - `internal/github/auth_router.go` — route keys, route selection, routed REST client, and route-specific GraphQL lookup.
 - `internal/github/auth_router_test.go` — exact-repo/owner/fallback routing and shared-identity behavior.
 - `cmd/middleman/provider_startup_identity_test.go` — startup construction of routes and identity runtimes.
-- `internal/db/migrations/000039_github_rate_principals.up.sql` — principal-aware rate table.
-- `internal/db/migrations/000039_github_rate_principals.down.sql` — lossy collapse to the previous schema.
+- `internal/db/migrations/000040_github_rate_principals.up.sql` — principal-aware rate table.
+- `internal/db/migrations/000040_github_rate_principals.down.sql` — lossy collapse to the previous schema.
 
 ### Modified files
 
@@ -383,8 +383,8 @@ git commit -m "feat: resolve GitHub credentials to stable identities" \
 ### Task 3: Persist and hydrate rate state by principal
 
 **Files:**
-- Create: `internal/db/migrations/000039_github_rate_principals.up.sql`
-- Create: `internal/db/migrations/000039_github_rate_principals.down.sql`
+- Create: `internal/db/migrations/000040_github_rate_principals.up.sql`
+- Create: `internal/db/migrations/000040_github_rate_principals.down.sql`
 - Modify: `internal/db/types.go`
 - Modify: `internal/db/queries.go`
 - Modify: `internal/db/db_test.go`
@@ -510,7 +510,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit principal persistence**
 
 ```bash
-git add internal/db/migrations/000039_github_rate_principals.up.sql internal/db/migrations/000039_github_rate_principals.down.sql internal/db/types.go internal/db/queries.go internal/db/db_test.go internal/ratelimit/rate.go internal/ratelimit/rate_test.go internal/github/rate.go
+git add internal/db/migrations/000040_github_rate_principals.up.sql internal/db/migrations/000040_github_rate_principals.down.sql internal/db/types.go internal/db/queries.go internal/db/db_test.go internal/ratelimit/rate.go internal/ratelimit/rate_test.go internal/github/rate.go
 git commit -m "fix: scope GitHub rate state to authenticated identities" \
   -m "Host-only persistence merges unrelated GitHub users and installations, while separate rows per PAT would overstate capacity for one user. Persist the principal explicitly and discard legacy GitHub rows that cannot be attributed safely."
 ```

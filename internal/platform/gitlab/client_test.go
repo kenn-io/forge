@@ -377,7 +377,7 @@ func TestClientDoesNotSynthesizeRateLimitResetWhenHeaderMissing(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rt := ratelimit.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "rest")
+	rt := ratelimit.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "host", "rest")
 	client := newTestClient(t, server.URL, WithRateTracker(rt))
 	_, err := client.GetRepository(context.Background(), platform.RepoRef{
 		Platform: platform.KindGitLab,

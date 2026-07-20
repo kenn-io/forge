@@ -372,7 +372,9 @@ func NewClient(
 	}
 	et := &etagTransport{base: authRT}
 	httpClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(et)}
-	var mutationBase http.RoundTripper = mutationAuthTransport{base: authRT}
+	mutationAuthRT := authRT
+	mutationAuthRT.Base = http.DefaultTransport
+	var mutationBase http.RoundTripper = mutationAuthTransport{base: mutationAuthRT}
 	if options.mutationsDisabled {
 		mutationBase = errorTransport{err: ErrMissingWriteIdentity}
 	}
@@ -386,16 +388,19 @@ func NewClient(
 	writeHTTPClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(
 		mutationBase,
 	)}
-	var notificationRoundTripper = mutationBase
 	notificationBudget := budget
 	if options.notificationBudget != nil {
 		notificationBudget = options.notificationBudget
 	}
-	if notificationBudget != nil {
-		notificationRoundTripper = &budgetTransport{
-			base:   notificationRoundTripper,
-			budget: notificationBudget,
-		}
+	notificationAuthRT := authRT
+	notificationAuthRT.Base = WrapSyncBudgetTransport(
+		http.DefaultTransport, notificationBudget,
+	)
+	var notificationRoundTripper http.RoundTripper = mutationAuthTransport{
+		base: notificationAuthRT,
+	}
+	if options.mutationsDisabled {
+		notificationRoundTripper = errorTransport{err: ErrMissingWriteIdentity}
 	}
 	notificationHTTPClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(
 		notificationRoundTripper,

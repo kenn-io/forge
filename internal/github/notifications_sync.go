@@ -153,9 +153,14 @@ func (s *Syncer) SyncNotifications(ctx context.Context) error {
 	clients := s.notificationClients()
 	var errs []error
 	for _, entry := range clients {
-		key := rateBucketKeyFor(entry.platform, entry.host)
-		releaseProviderWork := s.beginProviderWork(key, archive.PriorityNotificationRefresh)
-		err := s.syncNotificationsForHost(ctx, entry.platform, entry.host, entry.client, tracked)
+		releaseProviderWork, err := s.beginNotificationProviderWork(
+			entry.platform, entry.host, tracked,
+		)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		err = s.syncNotificationsForHost(ctx, entry.platform, entry.host, entry.client, tracked)
 		releaseProviderWork()
 		if err != nil {
 			errs = append(errs, err)
@@ -165,6 +170,36 @@ func (s *Syncer) SyncNotifications(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("mark closed linked notifications done: %w", err))
 	}
 	return errors.Join(errs...)
+}
+
+func (s *Syncer) beginNotificationProviderWork(
+	kind platform.Kind,
+	host string,
+	tracked map[string]RepoRef,
+) (func(), error) {
+	seen := make(map[string]struct{})
+	releases := make([]func(), 0)
+	releaseAll := func() {
+		for i := len(releases) - 1; i >= 0; i-- {
+			releases[i]()
+		}
+	}
+	for _, repo := range notificationTrackedRepos(string(kind), host, tracked) {
+		useWriteIdentity := repoPlatform(repo) == platform.KindGitHub
+		bucket, err := s.bucketKeyForRepo(repo, useWriteIdentity)
+		if err != nil {
+			releaseAll()
+			return nil, err
+		}
+		if _, ok := seen[bucket]; ok {
+			continue
+		}
+		seen[bucket] = struct{}{}
+		releases = append(releases, s.beginProviderWork(
+			bucket, archive.PriorityNotificationRefresh,
+		))
+	}
+	return releaseAll, nil
 }
 
 // notificationClient is the provider surface the notification sync

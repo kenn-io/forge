@@ -1,4 +1,4 @@
-CREATE TABLE middleman_rate_limits_v39 (
+CREATE TABLE middleman_rate_limits_v40 (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     platform       TEXT NOT NULL DEFAULT 'github',
     platform_host  TEXT NOT NULL,
@@ -17,7 +17,7 @@ CREATE TABLE middleman_rate_limits_v39 (
 -- explicit compatibility principal "host". Existing GitHub rows cannot be
 -- attributed safely to a user or installation and are intentionally dropped;
 -- the next authenticated response repopulates identity-scoped state.
-INSERT INTO middleman_rate_limits_v39
+INSERT INTO middleman_rate_limits_v40
     (id, platform, platform_host, rate_principal, api_type, requests_hour,
      hour_start, rate_remaining, rate_limit, rate_reset_at, updated_at)
 SELECT id, platform, platform_host, 'host', api_type, requests_hour,
@@ -26,4 +26,4 @@ FROM middleman_rate_limits
 WHERE platform != 'github';
 
 DROP TABLE middleman_rate_limits;
-ALTER TABLE middleman_rate_limits_v39 RENAME TO middleman_rate_limits;
+ALTER TABLE middleman_rate_limits_v40 RENAME TO middleman_rate_limits;

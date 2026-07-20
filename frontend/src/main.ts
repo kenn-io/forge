@@ -5,43 +5,45 @@ import App from "./App.svelte";
 import "./app.css";
 import { initMarkdownImageExpansion } from "./lib/utils/markdownImages.js";
 
-const viteProbeParam = "_middleman_vite_probe";
 const viteReloadKeyPrefix = "middleman:vite-reload:";
+const currentFrontendEntrypoint = new URL(import.meta.url);
 
-function viteAssetUrl(payload: unknown): URL | null {
-  if (!(payload instanceof Error)) return null;
-  const match = payload.message.match(/https?:\/\/[^\s'")]+/);
-  if (!match) return null;
-
-  const url = new URL(match[0]);
-  if (url.origin !== window.location.origin || !url.pathname.startsWith("/assets/")) return null;
-  return url;
+function frontendEntrypoints(document: Document, baseUrl: string): URL[] {
+  return Array.from(document.querySelectorAll<HTMLScriptElement>('script[type="module"][src]'), (script) => {
+    return new URL(script.src, baseUrl);
+  });
 }
 
-async function reloadIfViteAssetIsMissing(payload: unknown): Promise<void> {
-  const assetUrl = viteAssetUrl(payload);
-  if (!assetUrl) return;
-
-  const reloadKey = `${viteReloadKeyPrefix}${assetUrl.pathname}`;
+async function reloadIfFrontendChanged(): Promise<void> {
   try {
-    if (window.sessionStorage.getItem(reloadKey)) return;
+    const response = await window.fetch(window.location.href, {
+      cache: "no-store",
+      headers: { Accept: "text/html" },
+    });
+    if (!response.ok) return;
 
-    assetUrl.searchParams.set(viteProbeParam, Date.now().toString());
-    const response = await window.fetch(assetUrl, { method: "HEAD", cache: "no-store" });
-    if (response.status !== 404 && response.status !== 410) return;
+    const latestDocument = new DOMParser().parseFromString(await response.text(), "text/html");
+    const latestEntrypoints = frontendEntrypoints(latestDocument, response.url);
+    if (latestEntrypoints.some((entrypoint) => entrypoint.pathname === currentFrontendEntrypoint.pathname)) return;
+
+    const latestEntrypoint = latestEntrypoints.at(-1);
+    if (!latestEntrypoint) return;
+
+    const reloadKey = `${viteReloadKeyPrefix}${currentFrontendEntrypoint.pathname}:${latestEntrypoint.pathname}`;
+    if (window.sessionStorage.getItem(reloadKey)) return;
 
     window.sessionStorage.setItem(reloadKey, "1");
     window.location.reload();
   } catch (error) {
-    console.warn("Could not verify failed frontend asset", error);
+    console.warn("Could not check for a frontend update", error);
   }
 }
 
 // A browser tab can outlive a server update and request a content-hashed lazy
-// chunk that the new binary no longer embeds. Vite emits the same event for
-// transient failures, so confirm that the asset is gone before reloading.
-window.addEventListener("vite:preloadError", (event) => {
-  void reloadIfViteAssetIsMissing((event as Event & { payload?: unknown }).payload);
+// chunk that the new binary no longer embeds. Reload only when the server's
+// current HTML points to a different frontend, preserving transient retries.
+window.addEventListener("vite:preloadError", () => {
+  void reloadIfFrontendChanged();
 });
 
 const target = document.getElementById("app");

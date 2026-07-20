@@ -581,8 +581,8 @@
 </script>
 
 <div class="diff-view">
-  {#if diff?.stale}
-    <div class="stale-banner">
+  {#if diff}
+    <div class={["stale-banner", { "stale-banner--hidden": !diff.stale }]} aria-hidden={!diff.stale}>
       Diff may be outdated -- showing changes as of an earlier version of this PR.
     </div>
   {/if}
@@ -649,7 +649,6 @@
 
 <style>
   .diff-view {
-    position: relative;
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -658,15 +657,16 @@
   }
 
   .stale-banner {
-    position: absolute;
-    inset: 0 0 auto;
-    z-index: 3;
-    pointer-events: none;
+    flex-shrink: 0;
     padding: 6px 16px;
     background: var(--diff-stale-bg);
     color: var(--diff-stale-text);
     border-bottom: 1px solid var(--diff-stale-border);
     font-size: var(--font-size-sm);
+  }
+
+  .stale-banner--hidden {
+    visibility: hidden;
   }
 
   .review-warning {

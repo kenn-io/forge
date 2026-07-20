@@ -2907,7 +2907,7 @@ test.describe("diff view", () => {
     await expect.poll(() => renderedDiffFilePaths(page)).toEqual(expectedFileOrder);
   });
 
-  test("stale diff banner overlays without shifting diff content", async ({ page }) => {
+  test("stale diff warning stays clear of file controls without shifting diff content", async ({ page }) => {
     let fixture = staleDiff;
     await mockDiffApi(page, () => fixture);
     await navigateToDiff(page);
@@ -2920,44 +2920,22 @@ test.describe("diff view", () => {
     const firstContent = firstFile.locator(".file-content");
     await expect(banner).toBeVisible();
     await expect(banner).toContainText("outdated");
-    await expect(banner).toHaveCSS("pointer-events", "none");
     const staleBounds = await diffBody.boundingBox();
     expect(staleBounds).not.toBeNull();
 
     const bannerBounds = await visibleBoundingBox(banner);
     const headerBounds = await visibleBoundingBox(firstHeader);
-    const overlapLeft = Math.max(bannerBounds.x, headerBounds.x);
-    const overlapTop = Math.max(bannerBounds.y, headerBounds.y);
-    const overlapRight = Math.min(bannerBounds.x + bannerBounds.width, headerBounds.x + headerBounds.width);
-    const overlapBottom = Math.min(bannerBounds.y + bannerBounds.height, headerBounds.y + headerBounds.height);
-    expect(overlapRight).toBeGreaterThan(overlapLeft);
-    expect(overlapBottom).toBeGreaterThan(overlapTop);
-
-    const overlapCenter = {
-      x: (overlapLeft + overlapRight) / 2,
-      y: (overlapTop + overlapBottom) / 2,
-    };
-    const bannerPaintsOnTop = await banner.evaluate((node, point) => {
-      const previousPointerEvents = node.style.pointerEvents;
-      try {
-        node.style.pointerEvents = "auto";
-        const topElement = document.elementFromPoint(point.x, point.y);
-        return topElement !== null && node.contains(topElement);
-      } finally {
-        node.style.pointerEvents = previousPointerEvents;
-      }
-    }, overlapCenter);
-    expect(bannerPaintsOnTop).toBe(true);
-    await expect(banner).toHaveCSS("pointer-events", "none");
+    expect(headerBounds.y).toBeGreaterThanOrEqual(bannerBounds.y + bannerBounds.height);
 
     await expect(firstContent).toBeAttached();
-    await page.mouse.click(overlapCenter.x, overlapCenter.y);
+    await firstHeader.click();
     await expect(firstContent).not.toBeAttached();
 
     fixture = smallDiff;
     await openDiffFilterMenu(page);
     await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
-    await expect(banner).not.toBeAttached();
+    await expect(banner).not.toBeVisible();
+    await expect(banner).toHaveAttribute("aria-hidden", "true");
 
     expect(await diffBody.boundingBox()).toEqual(staleBounds);
   });
@@ -4025,7 +4003,9 @@ test.describe("diff view (git-backed)", () => {
     await page.goto("/pulls/github/acme/widgets/1/files");
     await page.locator(".diff-file").first().waitFor({ state: "visible", timeout: 10_000 });
 
-    await expect(page.locator(".stale-banner")).not.toBeAttached();
+    const banner = page.locator(".stale-banner");
+    await expect(banner).not.toBeVisible();
+    await expect(banner).toHaveAttribute("aria-hidden", "true");
   });
 
   test("real diff loads and renders all changed files", async ({ page }) => {

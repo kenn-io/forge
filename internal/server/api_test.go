@@ -25825,6 +25825,49 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	assert.Equal(int64(1), pushedDiff.WhitespaceOnlyCount)
 }
 
+func TestWorkspaceDiffEndpointWarnsOnlyAfterGitHeadMovesE2E(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := assert.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ws := createReadyWorkspace(t, context.Background(), client)
+	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+
+	initial := requestWorkspaceDiff(t, srv, ws.Id, "head")
+	assert.False(initial.Stale)
+	key := workspaceDiffLogicalKey{
+		WorkspaceID: ws.Id,
+		Spec: workspace.DiffSnapshotSpec{
+			WorktreePath: ws.WorktreePath,
+			Base:         workspace.WorktreeDiffBaseHead,
+		},
+	}
+	srv.workspaceDiffCache.mu.Lock()
+	entry := srv.workspaceDiffCache.peekEntryLocked(key)
+	if entry != nil {
+		entry.validatedAt = time.Now().Add(-workspaceDiffCacheFreshFor - time.Second)
+		entry.retryAfter = time.Now().Add(time.Hour)
+	}
+	srv.workspaceDiffCache.mu.Unlock()
+	require.NotNil(entry)
+
+	unchanged := requestWorkspaceDiff(t, srv, ws.Id, "head")
+	assert.False(unchanged.Stale)
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "head-moved.txt"),
+		[]byte("head moved\n"),
+		0o644,
+	))
+	runGit(t, ws.WorktreePath, "add", "head-moved.txt")
+	runGit(t, ws.WorktreePath, "commit", "-m", "move workspace head")
+
+	moved := requestWorkspaceDiff(t, srv, ws.Id, "head")
+	assert.True(moved.Stale)
+}
+
 func TestWorkspaceFilePreviewEndpointReturnsRequestedDiffSideContentE2E(t *testing.T) {
 	t.Parallel()
 

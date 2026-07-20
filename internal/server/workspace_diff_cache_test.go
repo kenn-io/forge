@@ -106,6 +106,44 @@ func TestWorkspaceDiffCacheWarningRequiresHeadMismatch(t *testing.T) {
 	}
 }
 
+func TestWorkspaceDiffCacheHeadMismatchQueuesImmediateValidation(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Unix(100, 0)
+	resolved := workspaceDiffTestResolved()
+	key := workspaceDiffTestKey()
+	cache := newWorkspaceDiffCache(t.Context(), workspaceDiffCacheDeps{
+		now: func() time.Time { return now },
+		after: func(time.Duration) <-chan time.Time {
+			return make(chan time.Time)
+		},
+		resolve: func(context.Context, workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
+			return resolved, true, nil
+		},
+		fingerprint: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (workspace.DiffFingerprint, error) {
+			return workspace.DiffFingerprint(resolved.HeadOID), nil
+		},
+		prepare: func(context.Context, workspace.ResolvedDiffSnapshotSpec) (*gitclone.DiffResult, error) {
+			return workspaceDiffTestResult(resolved.HeadOID + ".txt"), nil
+		},
+	})
+
+	_, _, err := cache.Get(t.Context(), key)
+	require.NoError(err)
+	resolved.HeadOID = "new-head"
+
+	got, state, err := cache.Get(t.Context(), key)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(workspaceDiffCacheHit, state)
+	assert.True(got.Diff.Stale)
+	assert.Eventually(func() bool {
+		entry := cache.peekEntry(key)
+		return entry != nil && entry.snapshot.Resolved.HeadOID == "new-head"
+	}, time.Second, time.Millisecond)
+}
+
 func TestWorkspaceDiffCacheProtectedEntriesDoNotConsumeCostBudget(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

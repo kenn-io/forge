@@ -191,9 +191,9 @@ func (c *workspaceDiffCache) Get(
 		state := workspaceDiffCacheHit
 		if !fresh {
 			state = workspaceDiffCacheStale
-			if retryAllowed {
-				c.validateAsync(key)
-			}
+		}
+		if retryAllowed && (!fresh || headMoved) {
+			c.validateAsync(key)
 		}
 		c.setSpanAttributes(ctx, key, snapshot, state)
 		return snapshot, state, nil

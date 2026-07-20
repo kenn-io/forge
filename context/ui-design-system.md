@@ -15,6 +15,9 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 - Layouts should feel compact, deliberate, and information-rich.
 - Visual emphasis should come from hierarchy and semantic color, not oversized controls or decorative effects.
 - Light and dark themes should express the same UI language through shared tokens.
+- PR detail background refresh has one progress surface: the metadata-row
+  `Syncing` indicator; do not add a second stale-data banner or spinner
+  (`packages/ui/src/components/detail/PullDetail.svelte`).
 
 ## Sources of truth
 

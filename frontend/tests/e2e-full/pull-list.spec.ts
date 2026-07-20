@@ -218,7 +218,7 @@ test.describe("PR list view", () => {
     }
   });
 
-  test("PR detail refresh notification does not shift content", async ({ page }) => {
+  test("PR detail stale refresh uses the standard syncing indicator", async ({ page }) => {
     await page.route("**/api/v1/pulls/github/acme/widgets/1", async (route) => {
       const response = await route.fetch();
       const detail = (await response.json()) as {
@@ -232,23 +232,9 @@ test.describe("PR list view", () => {
 
     await page.goto("/pulls/github/acme/widgets/1");
 
-    const banner = page.locator(".pull-detail .refresh-banner");
-    const header = page.locator(".pull-detail .detail-header");
-    await expect(banner).toBeVisible();
-    await expect(header).toBeVisible();
-    const bannerBounds = await banner.boundingBox();
-    const refreshingBounds = await header.boundingBox();
-    expect(bannerBounds).not.toBeNull();
-    expect(refreshingBounds).not.toBeNull();
-    if (bannerBounds !== null && refreshingBounds !== null) {
-      expect(bannerBounds.y + bannerBounds.height).toBeLessThanOrEqual(refreshingBounds.y);
-    }
-
-    await banner.evaluate((node) => {
-      node.style.display = "none";
-    });
-
-    expect(await header.boundingBox()).toEqual(refreshingBounds);
+    await expect(page.locator(".pull-detail .sync-indicator")).toBeVisible();
+    await expect(page.locator(".pull-detail .refresh-banner")).toHaveCount(0);
+    await expect(page.getByText("Refreshing...", { exact: true })).toHaveCount(0);
   });
 });
 

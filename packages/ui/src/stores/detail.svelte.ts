@@ -182,16 +182,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
     return detailLoaded;
   }
 
-  function isStaleRefreshing(): boolean {
-    if (!detail || !syncing) return false;
-    const fetchedAt = detail.detail_fetched_at;
-    if (!fetchedAt) return false;
-    const fetchedMs = new Date(fetchedAt).getTime();
-    const updatedMs = new Date(detail.merge_request.UpdatedAt).getTime();
-    const hourAgo = Date.now() - 3_600_000;
-    return fetchedMs < hourAgo && updatedMs > fetchedMs;
-  }
-
   // --- internal helpers ---
 
   function prKey(ref: DetailRequestRef): string {
@@ -1387,7 +1377,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
     isDetailSyncing,
     getDetailError,
     getDetailLoaded,
-    isStaleRefreshing,
     clearDetail,
     loadDetail,
     refreshDetailOnly,

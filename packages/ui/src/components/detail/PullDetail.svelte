@@ -29,7 +29,6 @@
     CopyButton,
     copyToClipboard,
     formatRelativeTime,
-    StatusDot,
   } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
@@ -1653,12 +1652,6 @@
               </Button>
             {/snippet}
 
-      {#if detailStore.isStaleRefreshing()}
-        <div class="refresh-banner">
-          <StatusDot status="working" label="Refreshing pull request details" size={5} />
-          <span aria-hidden="true">Refreshing...</span>
-        </div>
-      {/if}
       <!-- Header -->
       <div class="detail-header">
         {#if editingTitle}
@@ -2608,7 +2601,6 @@
 
   .pull-detail-content {
     container: pull-detail / inline-size;
-    position: relative;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -3247,24 +3239,6 @@
     color: var(--accent-red);
   }
 
-  .refresh-banner {
-    position: absolute;
-    top: 0;
-    right: 0;
-    z-index: 2;
-    transform: translateY(-100%);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    pointer-events: none;
-    padding: 1px 8px;
-    background: var(--bg-inset);
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-  }
-
-
   .loading-placeholder {
     display: flex;
     align-items: center;
@@ -3387,10 +3361,6 @@
       max-width: 100%;
     }
 
-    .refresh-banner span {
-      display: none;
-    }
-
     .detail-header,
     .title-line {
       gap: var(--detail-mobile-space-sm);
@@ -3440,7 +3410,6 @@
     .files-stat,
     .merge-warnings,
     .action-error,
-    .refresh-banner,
     .loading-placeholder,
     .detail-tab {
       font-size: var(--font-size-sm);

@@ -177,7 +177,7 @@ function renderPullDetail(
   options: {
     hideWorkspaceAction?: boolean;
     actions?: { pull: unknown[] };
-    staleRefreshing?: boolean;
+    detailSyncing?: boolean;
   } = {},
 ) {
   const actions = options.actions ?? { pull: [] };
@@ -188,8 +188,7 @@ function renderPullDetail(
     getDetail: () => detail,
     isDetailLoading: () => false,
     getDetailError: () => null,
-    isStaleRefreshing: () => options.staleRefreshing ?? false,
-    isDetailSyncing: () => false,
+    isDetailSyncing: () => options.detailSyncing ?? false,
     getDetailLoaded: () => true,
     updateKanbanState: vi.fn(),
     toggleDetailPRStar: vi.fn(),
@@ -377,11 +376,14 @@ describe("PullDetail approvals", () => {
     expect(document.querySelector(".approval-popup")).toBeNull();
   });
 
-  it("labels an active stale-detail refresh", () => {
-    renderPullDetail(pullDetail(), undefined, undefined, { staleRefreshing: true });
+  it("uses the standard syncing indicator without duplicate progress UI", () => {
+    renderPullDetail(pullDetail(), undefined, undefined, {
+      detailSyncing: true,
+    });
 
-    expect(screen.getByLabelText("Refreshing pull request details")).toBeTruthy();
-    expect(screen.getByText("Refreshing...")).toBeTruthy();
+    expect(document.querySelector(".sync-indicator")?.textContent).toContain("Syncing");
+    expect(document.querySelector(".refresh-banner")).toBeNull();
+    expect(screen.queryByText("Refreshing...")).toBeNull();
   });
 
   it("keeps task checkboxes disabled while highlighted markdown is pending", () => {

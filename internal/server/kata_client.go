@@ -16,6 +16,26 @@ type kataAPIClient interface {
 		ctx context.Context,
 		reqEditors ...runtime.RequestEditorFn,
 	) (*katagenerated.InstanceResp, error)
+	ListAllIssuesWithResponse(
+		ctx context.Context,
+		options *katagenerated.ListAllIssuesRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.ListAllIssuesResp, error)
+	ListProjectsWithResponse(
+		ctx context.Context,
+		options *katagenerated.ListProjectsRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.ListProjectsResp, error)
+	ReadyIssuesWithResponse(
+		ctx context.Context,
+		options *katagenerated.ReadyIssuesRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.ReadyIssuesResp, error)
+	ReadyIssuesGlobalWithResponse(
+		ctx context.Context,
+		options *katagenerated.ReadyIssuesGlobalRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.ReadyIssuesGlobalResp, error)
 	StreamEventsRaw(
 		ctx context.Context,
 		options *katagenerated.StreamEventsRequestOptions,

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -27,11 +28,52 @@ type kataProjectSummary struct {
 	ID        int64
 	UID       string
 	Name      string
+	Metadata  map[string]any
+	Revision  int64
+	CreatedAt time.Time
+	DeletedAt *time.Time
 	OpenCount int64
 }
 
+type kataLinkPeer struct {
+	UID     string
+	ShortID string
+}
+
+type kataChildCounts struct {
+	Open  int64
+	Total int64
+}
+
 type kataTaskSummary struct {
-	UID string
+	ID            int64
+	UID           string
+	ProjectID     int64
+	ShortID       string
+	QualifiedID   string
+	Title         string
+	Body          string
+	Status        string
+	ProjectUID    string
+	ProjectName   string
+	Metadata      map[string]any
+	Revision      int64
+	Owner         *string
+	Author        string
+	Priority      *int64
+	Labels        []string
+	Parent        *kataLinkPeer
+	Blocks        []kataLinkPeer
+	BlockedBy     []kataLinkPeer
+	Related       []kataLinkPeer
+	ChildCounts   *kataChildCounts
+	RecurrenceID  *int64
+	OccurrenceKey *string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	ClosedReason  *string
+	ClosedAt      *time.Time
+	DeletedAt     *time.Time
 }
 
 type kataAuthoritySnapshot struct {
@@ -189,7 +231,59 @@ func (c *kataSnapshotCache) close() {
 
 func cloneKataAuthoritySnapshot(snapshot kataAuthoritySnapshot) kataAuthoritySnapshot {
 	snapshot.Projects = slices.Clone(snapshot.Projects)
+	for i := range snapshot.Projects {
+		snapshot.Projects[i].Metadata = cloneKataMetadata(snapshot.Projects[i].Metadata)
+		snapshot.Projects[i].DeletedAt = cloneKataPointer(snapshot.Projects[i].DeletedAt)
+	}
 	snapshot.MemberIssueUIDs = slices.Clone(snapshot.MemberIssueUIDs)
 	snapshot.Issues = slices.Clone(snapshot.Issues)
+	for i := range snapshot.Issues {
+		issue := &snapshot.Issues[i]
+		issue.Metadata = cloneKataMetadata(issue.Metadata)
+		issue.Owner = cloneKataPointer(issue.Owner)
+		issue.Priority = cloneKataPointer(issue.Priority)
+		issue.Labels = slices.Clone(issue.Labels)
+		issue.Parent = cloneKataPointer(issue.Parent)
+		issue.Blocks = slices.Clone(issue.Blocks)
+		issue.BlockedBy = slices.Clone(issue.BlockedBy)
+		issue.Related = slices.Clone(issue.Related)
+		issue.ChildCounts = cloneKataPointer(issue.ChildCounts)
+		issue.RecurrenceID = cloneKataPointer(issue.RecurrenceID)
+		issue.OccurrenceKey = cloneKataPointer(issue.OccurrenceKey)
+		issue.ClosedReason = cloneKataPointer(issue.ClosedReason)
+		issue.ClosedAt = cloneKataPointer(issue.ClosedAt)
+		issue.DeletedAt = cloneKataPointer(issue.DeletedAt)
+	}
 	return snapshot
+}
+
+func cloneKataMetadata(metadata map[string]any) map[string]any {
+	cloned := maps.Clone(metadata)
+	for key, value := range cloned {
+		cloned[key] = cloneKataMetadataValue(value)
+	}
+	return cloned
+}
+
+func cloneKataMetadataValue(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		return cloneKataMetadata(value)
+	case []any:
+		cloned := slices.Clone(value)
+		for i := range cloned {
+			cloned[i] = cloneKataMetadataValue(cloned[i])
+		}
+		return cloned
+	default:
+		return value
+	}
+}
+
+func cloneKataPointer[T any](value *T) *T {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }

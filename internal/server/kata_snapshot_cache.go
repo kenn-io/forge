@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -14,11 +15,12 @@ const (
 )
 
 type kataSnapshotKey struct {
-	DaemonID   string
-	View       string
-	Scope      string
-	ProjectUID string
-	Authority  string
+	DaemonID          string
+	DaemonFingerprint string
+	View              string
+	Scope             string
+	ProjectUID        string
+	Authority         string
 }
 
 type kataProjectSummary struct {
@@ -44,6 +46,7 @@ type kataSnapshotCache struct {
 	entries        *ttlcache.Cache[kataSnapshotKey, kataAuthoritySnapshot]
 	keysByDaemon   map[string]map[kataSnapshotKey]struct{}
 	daemonEpochs   map[string]uint64
+	cleanupEvery   time.Duration
 	stopOnEviction func()
 }
 
@@ -61,6 +64,7 @@ func newKataSnapshotCacheWithConfig(ttl time.Duration, capacity uint64) *kataSna
 		entries:      entries,
 		keysByDaemon: make(map[string]map[kataSnapshotKey]struct{}),
 		daemonEpochs: make(map[string]uint64),
+		cleanupEvery: ttl,
 	}
 	cache.stopOnEviction = entries.OnEviction(func(_ context.Context, _ ttlcache.EvictionReason, item *ttlcache.Item[kataSnapshotKey, kataAuthoritySnapshot]) {
 		cache.removeEvictedKey(item.Key())
@@ -77,7 +81,7 @@ func (c *kataSnapshotCache) get(key kataSnapshotKey) (kataAuthoritySnapshot, boo
 		c.entries.DeleteExpired()
 		return kataAuthoritySnapshot{}, false
 	}
-	return item.Value(), true
+	return cloneKataAuthoritySnapshot(item.Value()), true
 }
 
 func (c *kataSnapshotCache) set(key kataSnapshotKey, snapshot kataAuthoritySnapshot) {
@@ -86,14 +90,54 @@ func (c *kataSnapshotCache) set(key kataSnapshotKey, snapshot kataAuthoritySnaps
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.setLocked(key, snapshot)
+}
 
+func (c *kataSnapshotCache) setIfDaemonEpoch(
+	key kataSnapshotKey,
+	snapshot kataAuthoritySnapshot,
+	expectedEpoch uint64,
+) bool {
+	if c == nil || c.entries == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.daemonEpochs[key.DaemonID] != expectedEpoch {
+		return false
+	}
+	c.setLocked(key, snapshot)
+	return true
+}
+
+func (c *kataSnapshotCache) setLocked(key kataSnapshotKey, snapshot kataAuthoritySnapshot) {
 	keys := c.keysByDaemon[key.DaemonID]
 	if keys == nil {
 		keys = make(map[kataSnapshotKey]struct{})
 		c.keysByDaemon[key.DaemonID] = keys
 	}
 	keys[key] = struct{}{}
-	c.entries.Set(key, snapshot, ttlcache.DefaultTTL)
+	c.entries.Set(key, cloneKataAuthoritySnapshot(snapshot), ttlcache.DefaultTTL)
+}
+
+func (c *kataSnapshotCache) run(ctx context.Context) {
+	if c == nil || c.entries == nil {
+		return
+	}
+	cleanupEvery := c.cleanupEvery
+	if cleanupEvery <= 0 {
+		cleanupEvery = kataSnapshotCacheTTL
+	}
+	ticker := time.NewTicker(cleanupEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.entries.DeleteExpired()
+		}
+	}
 }
 
 func (c *kataSnapshotCache) daemonEpoch(daemonID string) uint64 {
@@ -141,4 +185,11 @@ func (c *kataSnapshotCache) close() {
 		return
 	}
 	c.stopOnEviction()
+}
+
+func cloneKataAuthoritySnapshot(snapshot kataAuthoritySnapshot) kataAuthoritySnapshot {
+	snapshot.Projects = slices.Clone(snapshot.Projects)
+	snapshot.MemberIssueUIDs = slices.Clone(snapshot.MemberIssueUIDs)
+	snapshot.Issues = slices.Clone(snapshot.Issues)
+	return snapshot
 }

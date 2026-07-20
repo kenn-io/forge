@@ -256,7 +256,7 @@ func (e *kataSnapshotEnricher) loadGraph(
 	nodeIDs := make(map[int64]struct{}, len(graph.Nodes))
 	for _, node := range graph.Nodes {
 		project, projectExists := projectsByID[node.ProjectID]
-		if node.ID <= 0 || node.ProjectID <= 0 || strings.TrimSpace(node.UID) == "" || node.ProjectUID == nil || !projectExists || *node.ProjectUID != project.UID {
+		if node.ID <= 0 || node.ProjectID <= 0 || strings.TrimSpace(node.UID) == "" || node.ProjectUID == nil || !projectExists || *node.ProjectUID != project.UID || node.QualifiedID != project.Name+"#"+node.ShortID {
 			return nil, nil, fmt.Errorf("graph node identity does not match project catalog")
 		}
 		if _, duplicate := nodes[node.UID]; duplicate {
@@ -406,11 +406,11 @@ func (e *kataSnapshotEnricher) loadHistory(ctx context.Context, selectedUID stri
 			if event.IssueUID == nil || *event.IssueUID != selectedUID {
 				continue
 			}
-			if len(history) == kataSnapshotHistoryResultLimit {
-				return nil, errKataSnapshotHistoryScanLimit
-			}
 			event.CreatedAt = event.CreatedAt.UTC()
 			history = append(history, event)
+			if len(history) == kataSnapshotHistoryResultLimit {
+				return history, nil
+			}
 		}
 		afterID = body.NextAfterID
 	}

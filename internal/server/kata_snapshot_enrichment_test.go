@@ -138,7 +138,7 @@ func TestKataSnapshotEnricherLoadsExactSelectedHistoryAcrossPages(t *testing.T) 
 	assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
 }
 
-func TestKataSnapshotEnricherRejectsSelectedHistoryBeyondOneHundredResults(t *testing.T) {
+func TestKataSnapshotEnricherCapsSelectedHistoryAtOneHundredResults(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
@@ -163,12 +163,47 @@ func TestKataSnapshotEnricherRejectsSelectedHistoryBeyondOneHundredResults(t *te
 	result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: selectedUID})
 
 	require.NoError(err)
-	assert.Empty(result.SelectedHistory)
+	require.Len(result.SelectedHistory, kataSnapshotHistoryResultLimit)
+	assert.Equal(int64(kataSnapshotHistoryResultLimit), result.SelectedHistory[kataSnapshotHistoryResultLimit-1].EventID)
 	assert.Equal(1, pollCalls)
-	assert.Equal(kataSnapshotEnrichmentError{
-		Code:    CodeUpstreamError,
-		Message: "Selected task history exceeded the bounded scan limit.",
-	}, result.Errors[kataSnapshotEnrichmentStageHistory])
+	assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
+}
+
+func TestKataSnapshotEnricherReturnsHistoryCapAtExactScanBoundary(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	selectedUID := "issue-member"
+	otherUID := "issue-other"
+	pollCalls := 0
+	client := &fakeKataSnapshotAPIClient{
+		showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			return testKataShowIssueResponse(selectedUID), nil
+		},
+		pollEvents: func(_ context.Context, options *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+			pollCalls++
+			events := testKataEventPage(*options.Query.AfterID+1, int(kataSnapshotHistoryPageLimit), &otherUID)
+			if pollCalls == 1 {
+				for i := range kataSnapshotHistoryResultLimit - 1 {
+					events[i].IssueUID = &selectedUID
+				}
+			}
+			if pollCalls == kataSnapshotHistoryScanPageLimit {
+				events[len(events)-1].IssueUID = &selectedUID
+			}
+			return testKataPollEventsResponse(events[len(events)-1].EventID, events...), nil
+		},
+	}
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+	result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: selectedUID})
+
+	require.NoError(err)
+	require.Len(result.SelectedHistory, kataSnapshotHistoryResultLimit)
+	assert.Equal(int64(kataSnapshotHistoryScanEventLimit), result.SelectedHistory[kataSnapshotHistoryResultLimit-1].EventID)
+	assert.Equal(kataSnapshotHistoryScanPageLimit, pollCalls)
+	assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
 }
 
 func TestKataSnapshotEnricherBoundsSelectedHistoryScanning(t *testing.T) {
@@ -664,6 +699,12 @@ func TestKataSnapshotEnricherDoesNotAuthorizeMalformedGraphNodes(t *testing.T) {
 				unknownProjectUID := "project-unknown"
 				graph.Nodes[1].ProjectID = 99
 				graph.Nodes[1].ProjectUID = &unknownProjectUID
+			},
+		},
+		{
+			name: "qualified id does not match accepted project and short id",
+			mutate: func(graph *katagenerated.ReachableGraphResponseBody) {
+				graph.Nodes[1].QualifiedID = "Project A#different"
 			},
 		},
 	}

@@ -5614,6 +5614,67 @@ test("kata Ready failure keeps the authoritative view empty through the real pro
   }
 });
 
+test("kata event refresh failure clears unverified Ready selection through the real proxy", async ({ page }) => {
+  const backend = await startKataBackend();
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata`);
+    await page.getByRole("combobox", { name: "Status: Open" }).click();
+    await page.getByRole("option", { name: "Ready" }).click();
+
+    const payRentRow = page.getByRole("button", { name: /Pay rent/ });
+    await expect(payRentRow).toBeVisible();
+    await payRentRow.click();
+    const detail = page.getByRole("region", { name: "Task detail" });
+    await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+    await expect(page).toHaveURL(/issue=issue-rent/);
+    await expect.poll(() => backend.state.streams.size).toBeGreaterThan(0);
+
+    backend.state.failNextReadyStatus = 503;
+    emitKataEvent(
+      backend.state,
+      eventRow({
+        event_id: 700,
+        event_uid: "event-rent-ready-refresh",
+        type: "issue.metadata_updated",
+        project_id: issues[0]!.project_id,
+        project_uid: issues[0]!.project_uid,
+        project_name: issues[0]!.project_name,
+        issue: issues[0]!,
+      }),
+    );
+
+    const retry = page.getByRole("button", { name: "Retry" });
+    await expect(page.getByRole("alert").filter({ hasText: "ready tasks unavailable" })).toBeVisible();
+    await expect(retry).toBeVisible();
+    await expect(payRentRow).toHaveCount(0);
+    await expect(detail).toContainText("Select a task");
+    await expect(page).not.toHaveURL(/issue=/);
+    await expect
+      .poll(async () =>
+        page.evaluate(() => JSON.parse(window.localStorage.getItem("middleman:kata:workspace-state/v1") ?? "{}")),
+      )
+      .toMatchObject({
+        daemons: {
+          e2e: {
+            filters: { status: "ready" },
+            selectedIssueUID: null,
+          },
+        },
+      });
+
+    await retry.click();
+    await expect(page.getByRole("button", { name: /Pay rent/ })).toBeVisible();
+    await expect(page).not.toHaveURL(/issue=/);
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata retries a failed persisted Ready restoration through the real proxy", async ({ page }) => {
   const backend = await startKataBackend({ failNextReadyStatus: 503 });
   const kataHome = await configureKataHome(backend.url);

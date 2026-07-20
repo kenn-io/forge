@@ -74,11 +74,11 @@ qualifies, and entering Ready clears stale membership until its request lands.
 
 Ready hierarchy follows these acceptance rules:
 
-| Daemon membership and relationship | List result |
-| --- | --- |
-| Parent and child are ready | Preserve their parent-child hierarchy. |
-| Parent is ready and child is not | Show the parent; omit the child when expanded. |
-| Child is ready and parent is not | Promote the child to a root; do not show the parent. |
+| Daemon membership and relationship               | List result                                                                                       |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| Parent and child are ready                       | Preserve their parent-child hierarchy.                                                            |
+| Parent is ready and child is not                 | Show the parent; omit the child when expanded.                                                    |
+| Child is ready and parent is not                 | Promote the child to a root; do not show the parent.                                              |
 | A routed ready target has any non-ready ancestor | Temporarily promote the target to a root; never reconnect ready nodes across an omitted ancestor. |
 
 The latest non-superseded accepted Ready request is one authoritative snapshot;
@@ -104,6 +104,8 @@ the selected issue URL; Retry refreshes membership and the list without
 repeating the mutation or automatically restoring the cleared selection. A
 failed persisted restoration also renders no selection, but keeps the stored
 selection as retry input so a successful restoration Retry can revalidate it.
+Event-driven refresh failures use the same authority-loss cleanup and Retry
+path, including clearing the persisted selection before route reconciliation.
 
 A successful Ready response must contain an `issues` array whose entries carry
 non-empty UIDs. Missing or malformed membership fails with

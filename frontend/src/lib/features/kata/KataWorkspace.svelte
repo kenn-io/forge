@@ -280,11 +280,22 @@
       await trackViewWork(async () => {
         const scope = captureCursorCatchupScope();
         const selectedUID = store.selectedIssue?.issue.uid ?? null;
-        const refreshed = await store.applyEventStreamMessage(message, {
-          shouldApply: () => isCursorCatchupScopeCurrent(scope),
-        });
-        if (refreshed && isCursorCatchupScopeCurrent(scope)) {
-          reconcilePersistedSelection(false, selectedUID);
+        try {
+          const refreshed = await store.applyEventStreamMessage(message, {
+            shouldApply: () => isCursorCatchupScopeCurrent(scope),
+          });
+          if (refreshed && isCursorCatchupScopeCurrent(scope)) {
+            reconcilePersistedSelection(false, selectedUID);
+          }
+        } catch (error) {
+          if (
+            isCursorCatchupScopeCurrent(scope) &&
+            store.searchFilters.status === "ready" &&
+            store.readyIssueUIDs.size === 0
+          ) {
+            handleReadyAuthorityLoss(kataRequestErrorMessage(error), selectedUID);
+          }
+          throw error;
         }
       });
     },

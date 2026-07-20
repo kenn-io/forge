@@ -30,7 +30,7 @@ test.describe("container-aware layout", () => {
     await header.waitFor({ state: "visible", timeout: 10_000 });
 
     await expect(page.locator(".kit-top-bar__nav-select")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sync" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sync", exact: true })).toBeVisible();
 
     const metrics = await page.evaluate(() => {
       const headerRect = document.querySelector(".app-top-bar")?.getBoundingClientRect();
@@ -56,7 +56,7 @@ test.describe("container-aware layout", () => {
       timeout: 20_000,
     });
     await expect(page.locator(".kit-top-bar__tabs")).not.toBeAttached();
-    await expect(page.getByRole("button", { name: "Sync" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sync", exact: true })).toBeVisible();
     await expect(page.locator(".sync-btn .sync-label")).not.toBeVisible();
 
     await page.locator(".typeahead-trigger").click();

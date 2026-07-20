@@ -3944,7 +3944,7 @@ dispatch:
 	// Detail drain: fetch full details for highest-priority items
 	// within the per-host budget. Runs after index scan completes.
 	if !canceled.Load() && ctx.Err() == nil {
-		s.drainDetailQueue(ctx, eligibleBuckets)
+		s.drainDetailQueue(ctx, eligibleBuckets, repos)
 	}
 
 	if !canceled.Load() && ctx.Err() == nil {
@@ -3977,9 +3977,11 @@ dispatch:
 	if rateLimitSnapshotCtx.Err() == nil {
 		s.RefreshRateLimitSnapshots(rateLimitSnapshotCtx)
 	}
-	s.advanceNextSync(
-		eligibleBuckets, s.nextSyncAfter, s.interval,
-	)
+	if onlyRepos == nil {
+		s.advanceNextSync(
+			eligibleBuckets, s.nextSyncAfter, s.interval,
+		)
+	}
 
 	slog.Info("sync complete", "repos", total)
 
@@ -8043,12 +8045,13 @@ func (s *Syncer) fetchAndUpdateClosedPlatformIssue(
 func (s *Syncer) drainDetailQueue(
 	ctx context.Context,
 	eligibleBuckets map[string]bool,
+	repos []RepoRef,
 ) {
 	if len(s.budgets) == 0 {
 		return
 	}
 
-	items := s.buildDetailQueueItems(ctx)
+	items := s.buildDetailQueueItems(ctx, repos)
 	if len(items) == 0 {
 		return
 	}
@@ -8157,15 +8160,15 @@ func (s *Syncer) drainDetailQueue(
 // state to build queue items for scoring.
 func (s *Syncer) buildDetailQueueItems(
 	ctx context.Context,
+	repos []RepoRef,
 ) []QueueItem {
-	// Build set of tracked repos to filter out stale DB rows
-	// from removed repos.
-	s.reposMu.Lock()
-	trackedRepos := make(map[string]bool, len(s.repos))
-	for _, r := range s.repos {
+	// Build the set of repos selected for this run. In addition to filtering
+	// stale DB rows from removed repos, this keeps repository-scoped runs from
+	// spending their detail budget on unrelated repositories on the same host.
+	trackedRepos := make(map[string]bool, len(repos))
+	for _, r := range repos {
 		trackedRepos[detailRepoKey(repoPlatform(r), repoHost(r), r.Owner, r.Name)] = true
 	}
-	s.reposMu.Unlock()
 
 	// Gather watched MR numbers for matching.
 	s.watchMu.Lock()

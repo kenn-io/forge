@@ -1986,10 +1986,6 @@
     flex-wrap: nowrap;
   }
 
-  .event-header--compact .event-time {
-    margin-left: 0;
-  }
-
   .event-card--compact-row {
     overflow: hidden;
   }
@@ -2125,9 +2121,14 @@
   }
 
   .event-timeline :global(.kit-comment-card:not(.event-card--commit) .kit-card__actions) {
+    order: 1;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.15s;
+  }
+
+  .event-timeline :global(.kit-comment-card:not(.event-card--commit) .kit-card__meta) {
+    order: 2;
   }
 
   .event-timeline :global(.kit-comment-card:not(.event-card--commit):hover .kit-card__actions),

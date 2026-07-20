@@ -350,6 +350,22 @@ describe("PR timeline filters", () => {
     expect(contentGap).toBeCloseTo(8, 2);
   });
 
+  it("keeps detail timestamps right aligned with comment actions immediately before them", async () => {
+    await mountTimeline("/pulls/github/acme/widgets/1");
+    await vi.waitFor(() => expect(document.querySelector(".pull-detail .kit-comment-card")).not.toBeNull(), WAIT);
+
+    const commentCard = inDetail(".kit-comment-card").find((card) =>
+      (card.textContent ?? "").includes("Automated review summary"),
+    )!;
+    const commentActions = commentCard.querySelector<HTMLElement>(".kit-card__actions")!;
+    const commentTime = commentCard.querySelector<HTMLElement>(".kit-card__meta")!;
+    const commitRow = inDetail(".event-card--commit").find((card) => (card.textContent ?? "").includes("abc1111"))!;
+    const commitTime = commitRow.querySelector<HTMLElement>(".event-time")!;
+
+    expect(commentActions.getBoundingClientRect().right).toBeLessThanOrEqual(commentTime.getBoundingClientRect().left);
+    expect(commentTime.getBoundingClientRect().right).toBeCloseTo(commitTime.getBoundingClientRect().right, 2);
+  });
+
   it("renders merged lifecycle transitions as one purple row", async () => {
     await mountTimeline("/pulls/github/acme/tools/2");
     await vi.waitFor(() => expect(inDetail(".event--compact").length).toBeGreaterThan(0), WAIT);

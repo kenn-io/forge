@@ -2608,6 +2608,7 @@
 
   .pull-detail-content {
     container: pull-detail / inline-size;
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -3247,15 +3248,20 @@
   }
 
   .refresh-banner {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 2;
+    transform: translateY(-100%);
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 4px 12px;
+    pointer-events: none;
+    padding: 1px 8px;
     background: var(--bg-inset);
     border-radius: var(--radius-sm);
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    margin-bottom: 8px;
   }
 
 
@@ -3379,6 +3385,10 @@
     .pull-detail-content {
       gap: var(--detail-mobile-space-md);
       max-width: 100%;
+    }
+
+    .refresh-banner span {
+      display: none;
     }
 
     .detail-header,

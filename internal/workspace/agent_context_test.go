@@ -299,25 +299,25 @@ func TestGeneratedFileWritable(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 
-	writable, err := generatedFileWritable(filepath.Join(dir, "absent.md"))
+	writable, err := generatedFileWritable(dir, "absent.md")
 	require.NoError(err)
 	assert.True(writable, "absent file is writable")
 
 	marked := filepath.Join(dir, "marked.md")
 	require.NoError(os.WriteFile(marked, []byte(generatedAgentContextMarker+"\nold\n"), 0o644))
-	writable, err = generatedFileWritable(marked)
+	writable, err = generatedFileWritable(dir, "marked.md")
 	require.NoError(err)
 	assert.True(writable, "middleman-marked file is refreshable")
 
 	user := filepath.Join(dir, "user.md")
 	require.NoError(os.WriteFile(user, []byte("# Mine\n"), 0o644))
-	writable, err = generatedFileWritable(user)
+	writable, err = generatedFileWritable(dir, "user.md")
 	require.NoError(err)
 	assert.False(writable, "unmarked user file is preserved")
 
 	legacy := filepath.Join(dir, "legacy.md")
 	require.NoError(os.WriteFile(legacy, []byte(legacyGeneratedAgentContextMarkers[0]+"\nold pointer\n"), 0o644))
-	writable, err = generatedFileWritable(legacy)
+	writable, err = generatedFileWritable(dir, "legacy.md")
 	require.NoError(err)
 	assert.True(writable, "files with the previous marker stay middleman-owned")
 
@@ -325,9 +325,22 @@ func TestGeneratedFileWritable(t *testing.T) {
 	require.NoError(os.WriteFile(linkTarget, []byte(generatedAgentContextMarker+"\n"), 0o644))
 	link := filepath.Join(dir, "link.md")
 	require.NoError(os.Symlink(linkTarget, link))
-	writable, err = generatedFileWritable(link)
+	writable, err = generatedFileWritable(dir, "link.md")
 	require.NoError(err)
 	assert.False(writable, "symlink is preserved even when its target carries the marker")
+
+	outside := t.TempDir()
+	require.NoError(os.WriteFile(filepath.Join(outside, "marked.md"), []byte(generatedAgentContextMarker+"\n"), 0o644))
+	require.NoError(os.Symlink(outside, filepath.Join(dir, "escape")))
+	writable, err = generatedFileWritable(dir, filepath.Join("escape", "marked.md"))
+	require.Error(err)
+	assert.False(writable, "intermediate symlink cannot escape the worktree")
+
+	oversized := filepath.Join(dir, "oversized.md")
+	require.NoError(os.WriteFile(oversized, []byte(generatedAgentContextMarker+strings.Repeat("x", (1<<20)+1)), 0o644))
+	writable, err = generatedFileWritable(dir, "oversized.md")
+	require.NoError(err)
+	assert.True(writable, "large middleman-owned files are recognized from a bounded prefix")
 }
 
 func TestWriteGeneratedFileAtomicRefusesSymlinkedTarget(t *testing.T) {

@@ -156,7 +156,8 @@ Claude receives context-only `CLAUDE.local.md` because its local file is additiv
 (`internal/workspace/agent_context.go::agentContextRelPath`).
 No instruction file is written during setup.
 
-The first-line marker owns refreshes: middleman updates only marked files.
+The first-line marker owns refreshes; ownership detection is root-confined and
+reads only the bounded marker prefix. Middleman updates only marked files.
 Unmarked `AGENTS.override.md`/`CLAUDE.local.md` files, symlinks, and root
 `AGENTS.md`/`CLAUDE.md` stay untouched. The content carries source identity
 (kind, repo, item number, URL) and PR push target facts agents cannot read from

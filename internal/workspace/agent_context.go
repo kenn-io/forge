@@ -198,7 +198,7 @@ func (m *Manager) PrepareAgentLaunchContext(
 		return fmt.Errorf("refresh workspace head repository: %w", err)
 	}
 
-	writable, err := generatedFileWritable(filepath.Join(summary.WorktreePath, relPath))
+	writable, err := generatedFileWritable(summary.WorktreePath, relPath)
 	if err != nil {
 		return err
 	}
@@ -264,18 +264,23 @@ func readRepositoryAgentInstructions(worktreePath string) []byte {
 // middleman to write: absent, or a regular file middleman generated
 // (identified by the marker first line). Symlinks, directories, and files
 // without the marker are user-owned and must not be touched.
-func generatedFileWritable(path string) (bool, error) {
-	info, err := os.Lstat(path)
+func generatedFileWritable(worktreePath, relPath string) (bool, error) {
+	path := filepath.Join(worktreePath, relPath)
+	opened, err := openWorktreePath(worktreePath, relPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return true, nil
+	}
+	if errors.Is(err, errWorktreePathNotRegular) {
+		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("inspect generated context file %s: %w", path, err)
 	}
-	if !info.Mode().IsRegular() {
+	if opened.file == nil {
 		return false, nil
 	}
-	content, err := os.ReadFile(path)
+	defer opened.file.Close()
+	content, err := io.ReadAll(io.LimitReader(opened.file, generatedAgentContextMarkerReadLimit()))
 	if err != nil {
 		return false, fmt.Errorf("read generated context file %s: %w", path, err)
 	}
@@ -288,6 +293,14 @@ func generatedFileWritable(path string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func generatedAgentContextMarkerReadLimit() int64 {
+	limit := len(generatedAgentContextMarker)
+	for _, marker := range legacyGeneratedAgentContextMarkers {
+		limit = max(limit, len(marker))
+	}
+	return int64(limit)
 }
 
 func writeGeneratedFileAtomic(worktreePath, relPath string, content []byte) error {

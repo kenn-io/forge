@@ -143,6 +143,10 @@ export function resolveBrowserTestWorkers(env: Record<string, string | undefined
   return env.CI ? 2 : undefined;
 }
 
+export function resolveUnitTestWorkers(env: Record<string, string | undefined> = process.env): number | undefined {
+  return env.CI ? 2 : undefined;
+}
+
 function terminalWebSocketProxy(url: string): ProxyOptions {
   const proxy: ProxyOptions = {
     target: url,
@@ -158,10 +162,12 @@ function terminalWebSocketProxy(url: string): ProxyOptions {
 // The "unit" project preserves the prior flat test config: jsdom plus the
 // localStorage/elementFromPoint shims in setup.ts. The browser glob exclude
 // keeps *.browser.svelte.ts files off this project so they never double-run.
+const unitTestMaxWorkers = resolveUnitTestWorkers();
 const unitTestProject = {
   extends: true,
   test: {
     name: "unit",
+    ...(unitTestMaxWorkers ? { maxWorkers: unitTestMaxWorkers } : {}),
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)", "../packages/ui/src/**/*.{test,spec}.?(c|m)[jt]s?(x)"],

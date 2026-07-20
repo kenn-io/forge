@@ -153,6 +153,12 @@ also reloads activity and removes the notification row, turning the rollback
 assertion into a timing race (`cmd/e2e-server/main.go`,
 `frontend/tests/e2e-full/mobile-activity-notifications.spec.ts`).
 
+An absence assertion against a disclosure's inner text is vacuous once the
+disclosure is collapsed by default: the text is gone from the DOM whether or
+not the underlying data actually cleared. Assert on the disclosure's own
+`data-testid` instead, since that wrapper is gated on the data
+(`packages/ui/src/components/detail/MergeWarningsChip.svelte`).
+
 ## Huma API Contract
 
 Every public operation in `/api/v1/openapi.json` must have explicit OpenAPI

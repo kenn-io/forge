@@ -655,11 +655,11 @@ test.describe("PR detail stale-action gating", () => {
     );
 
     await expect(page.locator(".detail-title")).toContainText(conflictedPR.Title);
-    await expect(page.getByText("This branch has conflicts")).toHaveCount(0);
+    await expect(page.getByTestId("merge-warnings-chip")).toHaveCount(0);
 
     release();
     await expect(page.locator(".detail-title")).toContainText(cleanPR.Title);
-    await expect(page.getByText("This branch has conflicts")).toHaveCount(0);
+    await expect(page.getByTestId("merge-warnings-chip")).toHaveCount(0);
   });
 
   test("close, comment, and create-workspace are inert while the new PR is loading", async ({ page }) => {

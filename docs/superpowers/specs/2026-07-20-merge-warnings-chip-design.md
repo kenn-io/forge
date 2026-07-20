@@ -44,13 +44,28 @@ merge-readiness signals).
   The conflicts line renders first, in amber.
 - Includes a provider-aware "View on {provider label}" link to the PR URL.
   The current banner hardcodes "View on GitHub", which violates the
-  provider-neutral rule; the chip uses platform metadata for the label.
+  provider-neutral rule.
+
+### Provider label source
+
+No display label exists in TypeScript today: `RepoRefResponse` exposes only
+the `provider` key string, Go labels live in `internal/platform/metadata.go`,
+and the frontend's `repoImportProviders.ts` table is not importable from
+`@middleman/ui`. Add a shared label helper in `packages/ui` (e.g.
+`providerDisplayLabel(provider: string): string` beside
+`provider-routes.ts`) mapping known provider keys to display labels, falling
+back to the raw key for unknown providers. `repoImportProviders.ts` reads its
+labels from this helper so the two tables cannot drift.
 
 ### Data flow
 
 `PullDetail` computes a typed list of warning entries (it already owns
-`hasWarningLines` and `requiredStatusChecksHaveNotPassed`) and passes it to
-the chip as a prop. The component is presentation-only.
+`hasWarningLines` and `requiredStatusChecksHaveNotPassed`) and passes props
+to the chip: `warnings`, `pullURL`, and `providerLabel`. The component is
+presentation-only. `providerLabel` derives from `detail.repo?.provider ??
+provider` — the rendered detail can temporarily belong to the previous route
+during navigation, so the route's `provider` prop alone is wrong (same
+fallback pattern PullDetail already uses for `supportsLocked`).
 
 Warning entries, in order:
 
@@ -76,7 +91,9 @@ state. Absent or empty warning data means the chip does not render.
 
 ## Testing
 
-Vitest jsdom component tests:
+Vitest jsdom tests, split by responsibility:
+
+`MergeWarningsChip.test.ts` (component, presentation-only):
 
 - Chip hidden when there are no warnings.
 - Conflicts state: warning tone, "Conflicts" label.
@@ -84,10 +101,27 @@ Vitest jsdom component tests:
 - Panel toggle via click and `ontoggle` callback.
 - Panel lists entries in order; conflicts line first.
 - Provider link href and label (non-GitHub provider label case included).
-- Stale-PR case shows only detail warnings.
 
-No Playwright coverage: no layout, geometry, or navigation behavior beyond
-what jsdom covers.
+`PullDetail.test.ts` (integration behavior PullDetail retains):
+
+- Warning-entry derivation from PR state, mergeable state, and checks.
+- Stale-PR filtering: only `detail.warnings` entries reach the chip.
+- Single-open mutual exclusion across the merge, CI, and stack panels
+  (extending the existing CI/stack shared-slot test).
+
+### Existing tests that must change
+
+Two tests currently assert warning text visible without expanding anything
+and will fail once the banner becomes a collapsed chip:
+
+- `frontend/tests/e2e/detail-stale-actions.spec.ts` (warning-line cases):
+  rewrite the visibility assertions against the chip, or drop cases that
+  duplicate the jsdom coverage above per the repo's no-duplicate-e2e rule.
+- `frontend/src/App.stack-status.browser.svelte.ts`: its readiness signal
+  awaits the conflicts banner text; switch it to await the conflicts chip.
+
+No new Playwright coverage beyond migrating those assertions: no layout,
+geometry, or navigation behavior beyond what jsdom covers.
 
 ## Known tradeoff
 

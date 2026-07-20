@@ -24,14 +24,15 @@ type kataSnapshotKey struct {
 }
 
 type kataProjectSummary struct {
-	ID        int64
-	UID       string
-	Name      string
-	Metadata  map[string]any
-	Revision  int64
-	CreatedAt time.Time
-	DeletedAt *time.Time
-	OpenCount int64
+	ID          int64
+	UID         string
+	Name        string
+	Metadata    map[string]any
+	Revision    int64
+	CreatedAt   time.Time
+	DeletedAt   *time.Time
+	OpenCount   int64
+	ClosedCount int64
 }
 
 type kataLinkPeer struct {
@@ -197,7 +198,22 @@ func (c *kataSnapshotCache) invalidateDaemon(daemonID string) uint64 {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.invalidateDaemonLocked(daemonID)
+}
 
+func (c *kataSnapshotCache) invalidateDaemonIfEpoch(daemonID string, expectedEpoch uint64) (uint64, bool) {
+	if c == nil {
+		return 0, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.daemonEpochs[daemonID] != expectedEpoch {
+		return c.daemonEpochs[daemonID], false
+	}
+	return c.invalidateDaemonLocked(daemonID), true
+}
+
+func (c *kataSnapshotCache) invalidateDaemonLocked(daemonID string) uint64 {
 	c.daemonEpochs[daemonID]++
 	for key := range c.keysByDaemon[daemonID] {
 		c.entries.Delete(key)

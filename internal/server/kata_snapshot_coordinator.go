@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,7 +18,12 @@ import (
 	"go.kenn.io/middleman/internal/kata"
 )
 
-var errKataAuthorityStale = errors.New("kata authority invalidated while loading")
+var (
+	errKataAuthorityStale        = errors.New("kata authority invalidated while loading")
+	errKataAuthorityInconsistent = errors.New("kata authority responses are inconsistent")
+)
+
+const kataAuthorityConsistencyRetries = 1
 
 type kataAuthoritySnapshotLoader interface {
 	Load(context.Context, kataAuthorityRequest) (kataAuthoritySnapshot, error)
@@ -38,6 +44,9 @@ type kataSnapshotCoordinator struct {
 	serverInstanceID string
 	generation       atomic.Uint64
 	group            singleflight.Group
+	loadsMu          sync.Mutex
+	loadsStopping    bool
+	loads            sync.WaitGroup
 }
 
 type kataCoordinatedAuthority struct {
@@ -86,6 +95,10 @@ func (c *kataSnapshotCoordinator) run(ctx context.Context) {
 }
 
 func (c *kataSnapshotCoordinator) close() {
+	c.loadsMu.Lock()
+	c.loadsStopping = true
+	c.loadsMu.Unlock()
+	c.loads.Wait()
 	c.cache.close()
 }
 
@@ -97,6 +110,7 @@ func (c *kataSnapshotCoordinator) loadAuthority(
 	if err := validateKataAuthorityRequest(request); err != nil {
 		return kataCoordinatedAuthority{}, err
 	}
+	consistencyRetries := 0
 	for {
 		if err := ctx.Err(); err != nil {
 			return kataCoordinatedAuthority{}, err
@@ -119,46 +133,58 @@ func (c *kataSnapshotCoordinator) loadAuthority(
 				return kataCoordinatedAuthority{}, err
 			}
 			if !matches {
-				c.cache.invalidateDaemon(daemon.ID)
+				c.cache.invalidateDaemonIfEpoch(daemon.ID, epoch)
+				continue
+			}
+			if c.cache.daemonEpoch(daemon.ID) != epoch {
 				continue
 			}
 			return c.coordinated(key, epoch, snapshot), nil
 		}
 
-		result := c.group.DoChan(kataAuthoritySingleflightKey(key, epoch), func() (any, error) {
-			if snapshot, ok := c.cache.get(key); ok && c.cache.daemonEpoch(daemon.ID) == epoch {
+		result := make(chan singleflight.Result, 1)
+		if !c.runTrackedLoad(func() {
+			value, err, shared := c.group.Do(kataAuthoritySingleflightKey(key, epoch), func() (any, error) {
+				if snapshot, ok := c.cache.get(key); ok && c.cache.daemonEpoch(daemon.ID) == epoch {
+					return snapshot, nil
+				}
+				if c.cache.daemonEpoch(daemon.ID) != epoch {
+					return nil, errKataAuthorityStale
+				}
+
+				loadCtx, cancel := context.WithTimeout(c.root, kataDaemonReadTimeout)
+				defer cancel()
+				loader, err := c.newLoader(loadCtx, daemon)
+				if err != nil {
+					return nil, kataSnapshotUpstreamError("create client", err)
+				}
+				snapshot, err := loader.Load(loadCtx, request)
+				if err != nil {
+					return nil, err
+				}
+
+				currentDaemon, currentProblem := c.resolveDaemon(daemon.ID)
+				if currentProblem != nil {
+					return nil, currentProblem
+				}
+				if kataDaemonTargetFingerprint(currentDaemon) != key.DaemonFingerprint {
+					c.cache.invalidateDaemonIfEpoch(daemon.ID, epoch)
+					return nil, errKataAuthorityStale
+				}
+
+				snapshot.Generation = c.generation.Add(1)
+				if !c.cache.setIfDaemonEpoch(key, snapshot, epoch) {
+					return nil, errKataAuthorityStale
+				}
 				return snapshot, nil
+			})
+			result <- singleflight.Result{Val: value, Err: err, Shared: shared}
+		}) {
+			if err := c.root.Err(); err != nil {
+				return kataCoordinatedAuthority{}, err
 			}
-			if c.cache.daemonEpoch(daemon.ID) != epoch {
-				return nil, errKataAuthorityStale
-			}
-
-			loadCtx, cancel := context.WithTimeout(c.root, kataDaemonReadTimeout)
-			defer cancel()
-			loader, err := c.newLoader(loadCtx, daemon)
-			if err != nil {
-				return nil, kataSnapshotUpstreamError("create client", err)
-			}
-			snapshot, err := loader.Load(loadCtx, request)
-			if err != nil {
-				return nil, err
-			}
-
-			currentDaemon, currentProblem := c.resolveDaemon(daemon.ID)
-			if currentProblem != nil {
-				return nil, currentProblem
-			}
-			if kataDaemonTargetFingerprint(currentDaemon) != key.DaemonFingerprint {
-				c.cache.invalidateDaemon(daemon.ID)
-				return nil, errKataAuthorityStale
-			}
-
-			snapshot.Generation = c.generation.Add(1)
-			if !c.cache.setIfDaemonEpoch(key, snapshot, epoch) {
-				return nil, errKataAuthorityStale
-			}
-			return snapshot, nil
-		})
+			return kataCoordinatedAuthority{}, context.Canceled
+		}
 
 		select {
 		case <-ctx.Done():
@@ -166,6 +192,13 @@ func (c *kataSnapshotCoordinator) loadAuthority(
 		case completed := <-result:
 			if errors.Is(completed.Err, errKataAuthorityStale) {
 				continue
+			}
+			if errors.Is(completed.Err, errKataAuthorityInconsistent) {
+				if consistencyRetries < kataAuthorityConsistencyRetries {
+					consistencyRetries++
+					continue
+				}
+				return kataCoordinatedAuthority{}, kataSnapshotUpstreamError("load consistent authority snapshot", completed.Err)
 			}
 			if completed.Err != nil {
 				return kataCoordinatedAuthority{}, completed.Err
@@ -175,7 +208,7 @@ func (c *kataSnapshotCoordinator) loadAuthority(
 				return kataCoordinatedAuthority{}, err
 			}
 			if !matches {
-				c.cache.invalidateDaemon(daemon.ID)
+				c.cache.invalidateDaemonIfEpoch(daemon.ID, epoch)
 				continue
 			}
 			if c.cache.daemonEpoch(daemon.ID) != epoch {
@@ -185,6 +218,16 @@ func (c *kataSnapshotCoordinator) loadAuthority(
 			return c.coordinated(key, epoch, snapshot), nil
 		}
 	}
+}
+
+func (c *kataSnapshotCoordinator) runTrackedLoad(load func()) bool {
+	c.loadsMu.Lock()
+	defer c.loadsMu.Unlock()
+	if c.loadsStopping {
+		return false
+	}
+	c.loads.Go(load)
+	return true
 }
 
 func (c *kataSnapshotCoordinator) targetMatches(key kataSnapshotKey) (bool, error) {
@@ -217,8 +260,12 @@ func validateKataAuthorityRequest(request kataAuthorityRequest) error {
 			return problemValidation("project_uid", "project_uid is only valid for project scope")
 		}
 	case "project":
-		if strings.TrimSpace(request.ProjectUID) == "" {
+		trimmedProjectUID := strings.TrimSpace(request.ProjectUID)
+		if trimmedProjectUID == "" {
 			return problemValidation("project_uid", "project_uid is required for project scope")
+		}
+		if trimmedProjectUID != request.ProjectUID {
+			return problemValidation("project_uid", "project_uid must not contain leading or trailing whitespace")
 		}
 	default:
 		return problemValidation("scope", "unsupported Kata scope", "global", "project")

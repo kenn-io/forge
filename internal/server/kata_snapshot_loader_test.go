@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -123,9 +124,15 @@ func TestKataSnapshotLoaderLoadsListAuthorities(t *testing.T) {
 			if issueStatus == "all" {
 				issueStatus = "open"
 			}
+			stats := &katagenerated.ProjectStatsOut{}
+			if issueStatus == "open" {
+				stats.Open = 1
+			} else {
+				stats.Closed = 1
+			}
 			loader := kataSnapshotLoader{client: &fakeKataSnapshotAPIClient{
 				listProjects: func(context.Context, *katagenerated.ListProjectsRequestOptions) (*katagenerated.ListProjectsResp, error) {
-					return &katagenerated.ListProjectsResp{StatusCode: http.StatusOK, JSON200: &katagenerated.ListProjectsResponse{Projects: []katagenerated.ProjectOut{{ID: 7, UID: projectUID, Name: "Project A", Metadata: map[string]any{}, CreatedAt: createdAt, Stats: &katagenerated.ProjectStatsOut{}}}}}, nil
+					return &katagenerated.ListProjectsResp{StatusCode: http.StatusOK, JSON200: &katagenerated.ListProjectsResponse{Projects: []katagenerated.ProjectOut{{ID: 7, UID: projectUID, Name: "Project A", Metadata: map[string]any{}, CreatedAt: createdAt, Stats: stats}}}}, nil
 				},
 				listIssues: func(_ context.Context, options *katagenerated.ListAllIssuesRequestOptions) (*katagenerated.ListAllIssuesResp, error) {
 					require.NotNil(options)
@@ -144,6 +151,76 @@ func TestKataSnapshotLoaderLoadsListAuthorities(t *testing.T) {
 	}
 }
 
+func TestKataSnapshotLoaderRejectsAuthorityCountInconsistency(t *testing.T) {
+	t.Parallel()
+	createdAt := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	projectUID := "project-a"
+
+	tests := []struct {
+		name      string
+		authority string
+		status    string
+		stats     katagenerated.ProjectStatsOut
+	}{
+		{name: "open", authority: "open", status: "open"},
+		{name: "closed", authority: "closed", status: "closed"},
+		{name: "all", authority: "all", status: "open", stats: katagenerated.ProjectStatsOut{Closed: 1}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			loader := kataSnapshotLoader{client: fakeKataListLoader(
+				[]katagenerated.ProjectOut{{ID: 7, UID: projectUID, Name: "A", Metadata: map[string]any{}, CreatedAt: createdAt, Stats: &test.stats}},
+				[]katagenerated.IssueOut{{
+					ID: 11, UID: "issue-a", ProjectID: 7, ProjectUID: &projectUID, ShortID: "abc1", QualifiedID: "A#abc1", Title: "Ship it", Status: test.status, Metadata: map[string]any{}, Author: "marius", CreatedAt: createdAt, UpdatedAt: createdAt,
+				}},
+			)}
+
+			_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "global", Authority: test.authority})
+			require.ErrorIs(t, err, errKataAuthorityInconsistent)
+		})
+	}
+}
+
+func TestKataSnapshotLoaderRetriesProjectDisappearanceBetweenReads(t *testing.T) {
+	t.Parallel()
+	createdAt := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	projectUID := "project-a"
+	projectResponse := func() (*katagenerated.ListProjectsResp, error) {
+		return &katagenerated.ListProjectsResp{StatusCode: http.StatusOK, JSON200: &katagenerated.ListProjectsResponse{Projects: []katagenerated.ProjectOut{{
+			ID: 7, UID: projectUID, Name: "A", Metadata: map[string]any{}, CreatedAt: createdAt, Stats: &katagenerated.ProjectStatsOut{},
+		}}}}, nil
+	}
+
+	t.Run("ready", func(t *testing.T) {
+		t.Parallel()
+		loader := kataSnapshotLoader{client: &fakeKataSnapshotAPIClient{
+			listProjects: func(context.Context, *katagenerated.ListProjectsRequestOptions) (*katagenerated.ListProjectsResp, error) {
+				return projectResponse()
+			},
+			readyProject: func(context.Context, *katagenerated.ReadyIssuesRequestOptions) (*katagenerated.ReadyIssuesResp, error) {
+				return &katagenerated.ReadyIssuesResp{StatusCode: http.StatusNotFound}, nil
+			},
+		}}
+		_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "project", ProjectUID: projectUID, Authority: "ready"})
+		require.ErrorIs(t, err, errKataAuthorityInconsistent)
+	})
+
+	t.Run("list", func(t *testing.T) {
+		t.Parallel()
+		loader := kataSnapshotLoader{client: &fakeKataSnapshotAPIClient{
+			listProjects: func(context.Context, *katagenerated.ListProjectsRequestOptions) (*katagenerated.ListProjectsResp, error) {
+				return projectResponse()
+			},
+			listIssues: func(context.Context, *katagenerated.ListAllIssuesRequestOptions) (*katagenerated.ListAllIssuesResp, error) {
+				return &katagenerated.ListAllIssuesResp{StatusCode: http.StatusNotFound}, nil
+			},
+		}}
+		_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "project", ProjectUID: projectUID, Authority: "open"})
+		require.ErrorIs(t, err, errKataAuthorityInconsistent)
+	})
+}
+
 func TestKataSnapshotLoaderMapsGeneratedFailuresToUpstreamProblem(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
@@ -158,8 +235,70 @@ func TestKataSnapshotLoaderMapsGeneratedFailuresToUpstreamProblem(t *testing.T) 
 	require.Error(err)
 	problem, ok := err.(*ProblemError)
 	require.True(ok, "want *ProblemError, got %T", err)
-	require.Equal(http.StatusBadGateway, problem.Status)
 	require.Equal(CodeUpstreamError, problem.Code)
+}
+
+func TestKataSnapshotLoaderPreservesCancellation(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	loader := kataSnapshotLoader{client: &fakeKataSnapshotAPIClient{
+		listProjects: func(context.Context, *katagenerated.ListProjectsRequestOptions) (*katagenerated.ListProjectsResp, error) {
+			return nil, context.Canceled
+		},
+	}}
+
+	_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "global", Authority: "open"})
+	require.ErrorIs(err, context.Canceled)
+}
+
+func TestKataSnapshotLoaderValidatesRequestBeforeUpstreamCalls(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	var called atomic.Bool
+	loader := kataSnapshotLoader{client: &fakeKataSnapshotAPIClient{
+		listProjects: func(context.Context, *katagenerated.ListProjectsRequestOptions) (*katagenerated.ListProjectsResp, error) {
+			called.Store(true)
+			return nil, errors.New("unexpected upstream call")
+		},
+	}}
+
+	_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "global", ProjectUID: "invalid", Authority: "open"})
+	require.Error(err)
+	require.False(called.Load())
+	problem, ok := err.(*ProblemError)
+	require.True(ok, "want *ProblemError, got %T", err)
+	require.Equal(http.StatusBadRequest, problem.Status)
+}
+
+func TestKataSnapshotLoaderNormalizesImportedTimestampsToUTC(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	createdAt, err := time.Parse(time.RFC3339, "2026-07-20T12:00:00+02:00")
+	require.NoError(err)
+	closedAt := createdAt.Add(time.Hour)
+	projectUID := "project-a"
+	loader := kataSnapshotLoader{client: &fakeKataSnapshotAPIClient{
+		listProjects: func(context.Context, *katagenerated.ListProjectsRequestOptions) (*katagenerated.ListProjectsResp, error) {
+			return &katagenerated.ListProjectsResp{StatusCode: http.StatusOK, JSON200: &katagenerated.ListProjectsResponse{Projects: []katagenerated.ProjectOut{{
+				ID: 7, UID: projectUID, Name: "A", Metadata: map[string]any{}, CreatedAt: createdAt, Stats: &katagenerated.ProjectStatsOut{Closed: 1},
+			}}}}, nil
+		},
+		listIssues: func(context.Context, *katagenerated.ListAllIssuesRequestOptions) (*katagenerated.ListAllIssuesResp, error) {
+			return &katagenerated.ListAllIssuesResp{StatusCode: http.StatusOK, JSON200: &katagenerated.ListAllIssuesResponse{Issues: []katagenerated.IssueOut{{
+				ID: 11, UID: "issue-a", ProjectID: 7, ProjectUID: &projectUID, ShortID: "abc1", QualifiedID: "A#abc1", Title: "Done", Body: "", Status: "closed", Metadata: map[string]any{}, Author: "marius", CreatedAt: createdAt, UpdatedAt: closedAt, ClosedAt: &closedAt,
+			}}}}, nil
+		},
+	}}
+
+	snapshot, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "global", Authority: "closed"})
+	require.NoError(err)
+	require.Equal(time.UTC, snapshot.Projects[0].CreatedAt.Location())
+	require.Equal(time.UTC, snapshot.Issues[0].CreatedAt.Location())
+	require.Equal(time.UTC, snapshot.Issues[0].UpdatedAt.Location())
+	require.Equal(time.UTC, snapshot.Issues[0].ClosedAt.Location())
 }
 
 func TestKataSnapshotLoaderRejectsNonOKGeneratedResponse(t *testing.T) {
@@ -187,7 +326,6 @@ func TestKataSnapshotLoaderRejectsNonOKGeneratedResponse(t *testing.T) {
 
 func TestKataSnapshotLoaderRejectsIssueOutsideProjectCatalog(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
 	createdAt := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
 
 	loader := kataSnapshotLoader{client: &fakeKataSnapshotAPIClient{
@@ -202,10 +340,7 @@ func TestKataSnapshotLoaderRejectsIssueOutsideProjectCatalog(t *testing.T) {
 	}}
 
 	_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "global", Authority: "open"})
-	require.Error(err)
-	problem, ok := err.(*ProblemError)
-	require.True(ok, "want *ProblemError, got %T", err)
-	require.Equal(http.StatusBadGateway, problem.Status)
+	require.ErrorIs(t, err, errKataAuthorityInconsistent)
 }
 
 func TestKataSnapshotLoaderValidatesGeneratedBodies(t *testing.T) {
@@ -285,7 +420,7 @@ func TestKataSnapshotLoaderRejectsInconsistentIssueProjectIdentity(t *testing.T)
 		issue.ProjectUID = &otherProjectUID
 		loader := kataSnapshotLoader{client: fakeKataListLoader(projects, []katagenerated.IssueOut{issue})}
 		_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "global", Authority: "open"})
-		requireKataSnapshotUpstreamProblem(t, err)
+		require.ErrorIs(t, err, errKataAuthorityInconsistent)
 	})
 
 	t.Run("project response contains another project", func(t *testing.T) {
@@ -295,7 +430,7 @@ func TestKataSnapshotLoaderRejectsInconsistentIssueProjectIdentity(t *testing.T)
 		issue.ProjectUID = &otherProjectUID
 		loader := kataSnapshotLoader{client: fakeKataListLoader(projects, []katagenerated.IssueOut{issue})}
 		_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "project", ProjectUID: projectUID, Authority: "open"})
-		requireKataSnapshotUpstreamProblem(t, err)
+		require.ErrorIs(t, err, errKataAuthorityInconsistent)
 	})
 
 	t.Run("global ready project name mismatch", func(t *testing.T) {
@@ -314,7 +449,7 @@ func TestKataSnapshotLoaderRejectsInconsistentIssueProjectIdentity(t *testing.T)
 			},
 		}}
 		_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "global", Authority: "ready"})
-		requireKataSnapshotUpstreamProblem(t, err)
+		require.ErrorIs(t, err, errKataAuthorityInconsistent)
 	})
 
 	t.Run("duplicate numeric issue ID", func(t *testing.T) {

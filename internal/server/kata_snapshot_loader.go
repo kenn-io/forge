@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -21,11 +22,13 @@ type kataSnapshotLoader struct {
 }
 
 func (l *kataSnapshotLoader) Load(ctx context.Context, request kataAuthorityRequest) (kataAuthoritySnapshot, error) {
+	if err := validateKataAuthorityRequest(request); err != nil {
+		return kataAuthoritySnapshot{}, err
+	}
 	projects, projectsByID, projectID, err := l.loadProjects(ctx, request)
 	if err != nil {
 		return kataAuthoritySnapshot{}, err
 	}
-
 	var issues []kataTaskSummary
 	switch request.Authority {
 	case "ready":
@@ -36,6 +39,9 @@ func (l *kataSnapshotLoader) Load(ctx context.Context, request kataAuthorityRequ
 		return kataAuthoritySnapshot{}, problemValidation("authority", "unsupported Kata authority", "open", "ready", "closed", "all")
 	}
 	if err != nil {
+		return kataAuthoritySnapshot{}, err
+	}
+	if err := validateKataAuthorityCounts(request, projects, issues); err != nil {
 		return kataAuthoritySnapshot{}, err
 	}
 
@@ -121,9 +127,8 @@ func (l *kataSnapshotLoader) loadReady(
 		for i, issue := range response.JSON200.Issues {
 			project, ok := projectsByID[issue.ProjectID]
 			if !ok || issue.ProjectName != project.Name {
-				return nil, kataSnapshotUpstreamError(
-					"normalize global ready issues",
-					fmt.Errorf("issue %q has inconsistent project name %q", issue.UID, issue.ProjectName),
+				return nil, kataAuthorityInconsistency(
+					"issue %q has inconsistent project name %q", issue.UID, issue.ProjectName,
 				)
 			}
 			issues[i], err = kataTaskSummaryFromGenerated(kataIssueOutFromGlobalReady(issue), projectsByID, nil)
@@ -139,6 +144,9 @@ func (l *kataSnapshotLoader) loadReady(
 	})
 	if err != nil {
 		return nil, kataSnapshotUpstreamError("list project ready issues", err)
+	}
+	if response != nil && response.StatusCode == http.StatusNotFound {
+		return nil, kataAuthorityInconsistency("project disappeared before ready issues were read")
 	}
 	if response == nil || response.StatusCode != http.StatusOK || response.JSON200 == nil {
 		return nil, kataSnapshotUpstreamError("list project ready issues", fmt.Errorf("missing 200 response body"))
@@ -169,6 +177,9 @@ func (l *kataSnapshotLoader) loadIssues(
 	if err != nil {
 		return nil, kataSnapshotUpstreamError("list issues", err)
 	}
+	if projectID != nil && response != nil && response.StatusCode == http.StatusNotFound {
+		return nil, kataAuthorityInconsistency("project disappeared before issues were read")
+	}
 	if response == nil || response.StatusCode != http.StatusOK || response.JSON200 == nil {
 		return nil, kataSnapshotUpstreamError("list issues", fmt.Errorf("missing 200 response body"))
 	}
@@ -184,20 +195,65 @@ func (l *kataSnapshotLoader) loadIssues(
 }
 
 func kataSnapshotUpstreamError(operation string, err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
 	return problemUpstream(fmt.Sprintf("Kata %s failed: %v", operation, err), "", "")
 }
 
 func kataProjectSummaryFromGenerated(project katagenerated.ProjectOut) kataProjectSummary {
 	return kataProjectSummary{
-		ID:        project.ID,
-		UID:       project.UID,
-		Name:      project.Name,
-		Metadata:  cloneKataMetadata(project.Metadata),
-		Revision:  project.Revision,
-		CreatedAt: project.CreatedAt,
-		DeletedAt: cloneKataPointer(project.DeletedAt),
-		OpenCount: project.Stats.Open,
+		ID:          project.ID,
+		UID:         project.UID,
+		Name:        project.Name,
+		Metadata:    cloneKataMetadata(project.Metadata),
+		Revision:    project.Revision,
+		CreatedAt:   project.CreatedAt.UTC(),
+		DeletedAt:   kataTimePointerUTC(project.DeletedAt),
+		OpenCount:   project.Stats.Open,
+		ClosedCount: project.Stats.Closed,
 	}
+}
+
+func validateKataAuthorityCounts(
+	request kataAuthorityRequest,
+	projects []kataProjectSummary,
+	issues []kataTaskSummary,
+) error {
+	if request.Authority == "ready" {
+		return nil
+	}
+	type issueCounts struct {
+		open   int64
+		closed int64
+	}
+	countsByProject := make(map[int64]issueCounts, len(projects))
+	for _, issue := range issues {
+		counts := countsByProject[issue.ProjectID]
+		if issue.Status == "open" {
+			counts.open++
+		} else {
+			counts.closed++
+		}
+		countsByProject[issue.ProjectID] = counts
+	}
+	for _, project := range projects {
+		if request.Scope == "project" && project.UID != request.ProjectUID {
+			continue
+		}
+		counts := countsByProject[project.ID]
+		if (request.Authority == "open" || request.Authority == "all") && counts.open != project.OpenCount {
+			return kataAuthorityInconsistency(
+				"project %q open count changed from %d to %d between reads", project.UID, project.OpenCount, counts.open,
+			)
+		}
+		if (request.Authority == "closed" || request.Authority == "all") && counts.closed != project.ClosedCount {
+			return kataAuthorityInconsistency(
+				"project %q closed count changed from %d to %d between reads", project.UID, project.ClosedCount, counts.closed,
+			)
+		}
+	}
+	return nil
 }
 
 func kataTaskSummariesFromGenerated(
@@ -222,22 +278,19 @@ func kataTaskSummaryFromGenerated(
 	expectedProjectID *int64,
 ) (kataTaskSummary, error) {
 	if expectedProjectID != nil && issue.ProjectID != *expectedProjectID {
-		return kataTaskSummary{}, kataSnapshotUpstreamError(
-			"normalize issues",
-			fmt.Errorf("issue %q belongs to project ID %d, expected %d", issue.UID, issue.ProjectID, *expectedProjectID),
+		return kataTaskSummary{}, kataAuthorityInconsistency(
+			"issue %q belongs to project ID %d, expected %d", issue.UID, issue.ProjectID, *expectedProjectID,
 		)
 	}
 	project, ok := projectsByID[issue.ProjectID]
 	if !ok {
-		return kataTaskSummary{}, kataSnapshotUpstreamError(
-			"normalize issues",
-			fmt.Errorf("issue %q references unknown project ID %d", issue.UID, issue.ProjectID),
+		return kataTaskSummary{}, kataAuthorityInconsistency(
+			"issue %q references unknown project ID %d", issue.UID, issue.ProjectID,
 		)
 	}
 	if issue.ProjectUID != nil && *issue.ProjectUID != project.UID {
-		return kataTaskSummary{}, kataSnapshotUpstreamError(
-			"normalize issues",
-			fmt.Errorf("issue %q has project UID %q, expected %q", issue.UID, *issue.ProjectUID, project.UID),
+		return kataTaskSummary{}, kataAuthorityInconsistency(
+			"issue %q has project UID %q, expected %q", issue.UID, *issue.ProjectUID, project.UID,
 		)
 	}
 	projectUID := project.UID
@@ -271,12 +324,24 @@ func kataTaskSummaryFromGenerated(
 		ChildCounts:   kataChildCountsFromGenerated(issue.ChildCounts),
 		RecurrenceID:  cloneKataPointer(issue.RecurrenceID),
 		OccurrenceKey: cloneKataPointer(issue.OccurrenceKey),
-		CreatedAt:     issue.CreatedAt,
-		UpdatedAt:     issue.UpdatedAt,
+		CreatedAt:     issue.CreatedAt.UTC(),
+		UpdatedAt:     issue.UpdatedAt.UTC(),
 		ClosedReason:  cloneKataPointer(issue.ClosedReason),
-		ClosedAt:      cloneKataPointer(issue.ClosedAt),
-		DeletedAt:     cloneKataPointer(issue.DeletedAt),
+		ClosedAt:      kataTimePointerUTC(issue.ClosedAt),
+		DeletedAt:     kataTimePointerUTC(issue.DeletedAt),
 	}, nil
+}
+
+func kataTimePointerUTC(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	utc := value.UTC()
+	return &utc
+}
+
+func kataAuthorityInconsistency(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", errKataAuthorityInconsistent, fmt.Sprintf(format, args...))
 }
 
 func validateKataProjectsResponse(response *katagenerated.ListProjectsResponse) error {

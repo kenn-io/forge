@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"net/http"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -119,6 +120,40 @@ func TestKataSnapshotCoordinatorRetriesLoadInvalidatedInFlight(t *testing.T) {
 	require.Equal(uint64(1), result.InvalidationEpoch)
 }
 
+func TestKataSnapshotCoordinatorDoesNotDeliverCacheHitInvalidatedDuringTargetCheck(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	root, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	cache := newKataSnapshotCache()
+	key := kataSnapshotKey{
+		DaemonID:          "work",
+		DaemonFingerprint: kataDaemonTargetFingerprint(kata.Daemon{ID: "work", URL: "http://work.example"}),
+		Scope:             "global",
+		Authority:         "open",
+	}
+	cache.set(key, kataAuthoritySnapshot{Generation: 1, Issues: []kataTaskSummary{{UID: "old"}}})
+	var resolves atomic.Int64
+	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
+		cache: cache,
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+			if resolves.Add(1) == 2 {
+				epoch := cache.invalidateDaemon("work")
+				require.True(cache.setIfDaemonEpoch(key, kataAuthoritySnapshot{Generation: 2, Issues: []kataTaskSummary{{UID: "new"}}}, epoch))
+			}
+			return kata.Daemon{ID: "work", URL: "http://work.example"}, nil
+		},
+		newServerInstanceID: func() string { return "server-a" },
+	})
+	t.Cleanup(coordinator.close)
+
+	result, err := coordinator.loadAuthority(t.Context(), "work", kataAuthorityRequest{Scope: "global", Authority: "open"})
+	require.NoError(err)
+	require.Equal(uint64(1), result.InvalidationEpoch)
+	require.Equal("new", result.Snapshot.Issues[0].UID)
+}
+
 func TestKataSnapshotCoordinatorRetriesWhenDaemonTargetRotates(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
@@ -212,4 +247,130 @@ func TestKataSnapshotCoordinatorCallerCancellationDoesNotCancelSharedLoad(t *tes
 	case <-root.Done():
 		require.Fail("shared root context was canceled by a caller")
 	}
+}
+
+func TestKataSnapshotCoordinatorRunWaitsForDetachedSharedLoad(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	root, cancelRoot := context.WithCancel(t.Context())
+	started := make(chan struct{})
+	release := make(chan struct{})
+	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
+		cache: newKataSnapshotCache(),
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+			return kata.Daemon{ID: "work", URL: "http://work.example"}, nil
+		},
+		newLoader: func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error) {
+			return kataAuthoritySnapshotLoaderFunc(func(context.Context, kataAuthorityRequest) (kataAuthoritySnapshot, error) {
+				close(started)
+				<-release
+				return kataAuthoritySnapshot{}, context.Canceled
+			}), nil
+		},
+		newServerInstanceID: func() string { return "server-a" },
+	})
+
+	runDone := make(chan struct{})
+	go func() {
+		coordinator.run(root)
+		close(runDone)
+	}()
+	callerCtx, cancelCaller := context.WithCancel(t.Context())
+	loadDone := make(chan error, 1)
+	go func() {
+		_, err := coordinator.loadAuthority(callerCtx, "work", kataAuthorityRequest{Scope: "global", Authority: "open"})
+		loadDone <- err
+	}()
+	<-started
+	cancelCaller()
+	require.ErrorIs(<-loadDone, context.Canceled)
+	cancelRoot()
+
+	select {
+	case <-runDone:
+		require.Fail("coordinator run returned before detached shared load completed")
+	case <-time.After(10 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-runDone:
+	case <-time.After(time.Second):
+		require.Fail("coordinator run did not wait for detached shared load")
+	}
+}
+
+func TestKataSnapshotCoordinatorRetriesCrossResponseInconsistency(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	root, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	var loads atomic.Int64
+	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
+		cache: newKataSnapshotCache(),
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+			return kata.Daemon{ID: "work", URL: "http://work.example"}, nil
+		},
+		newLoader: func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error) {
+			return kataAuthoritySnapshotLoaderFunc(func(context.Context, kataAuthorityRequest) (kataAuthoritySnapshot, error) {
+				if loads.Add(1) == 1 {
+					return kataAuthoritySnapshot{}, errKataAuthorityInconsistent
+				}
+				return kataAuthoritySnapshot{Issues: []kataTaskSummary{{UID: "issue-a"}}}, nil
+			}), nil
+		},
+		newServerInstanceID: func() string { return "server-a" },
+	})
+	t.Cleanup(coordinator.close)
+
+	result, err := coordinator.loadAuthority(t.Context(), "work", kataAuthorityRequest{Scope: "global", Authority: "open"})
+	require.NoError(err)
+	require.Equal(int64(2), loads.Load())
+	require.Equal("issue-a", result.Snapshot.Issues[0].UID)
+}
+
+func TestKataSnapshotCoordinatorBoundsPersistentCrossResponseInconsistency(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	root, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	var loads atomic.Int64
+	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
+		cache: newKataSnapshotCache(),
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+			return kata.Daemon{ID: "work", URL: "http://work.example"}, nil
+		},
+		newLoader: func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error) {
+			return kataAuthoritySnapshotLoaderFunc(func(context.Context, kataAuthorityRequest) (kataAuthoritySnapshot, error) {
+				loads.Add(1)
+				return kataAuthoritySnapshot{}, errKataAuthorityInconsistent
+			}), nil
+		},
+		newServerInstanceID: func() string { return "server-a" },
+	})
+	t.Cleanup(coordinator.close)
+
+	_, err := coordinator.loadAuthority(t.Context(), "work", kataAuthorityRequest{Scope: "global", Authority: "open"})
+	require.Error(err)
+	require.Equal(int64(2), loads.Load())
+	problem, ok := err.(*ProblemError)
+	require.True(ok, "want *ProblemError, got %T", err)
+	require.Equal(502, problem.Status)
+}
+
+func TestValidateKataAuthorityRequestRejectsPaddedProjectUID(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	err := validateKataAuthorityRequest(kataAuthorityRequest{
+		Scope:      "project",
+		ProjectUID: " project-a ",
+		Authority:  "open",
+	})
+	require.Error(err)
+	problem, ok := err.(*ProblemError)
+	require.True(ok, "want *ProblemError, got %T", err)
+	require.Equal(http.StatusBadRequest, problem.Status)
 }

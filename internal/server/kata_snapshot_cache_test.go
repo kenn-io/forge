@@ -211,3 +211,27 @@ func TestKataSnapshotCacheRejectsInsertionFromInvalidatedEpoch(t *testing.T) {
 	require.True(ok)
 	require.Equal("current", got.Issues[0].UID)
 }
+
+func TestKataSnapshotCacheInvalidatesObservedDaemonEpochOnlyOnce(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	cache := newKataSnapshotCache()
+	t.Cleanup(cache.close)
+	firstKey := kataSnapshotKey{DaemonID: "work", DaemonFingerprint: "first", Scope: "global", Authority: "open"}
+	cache.set(firstKey, kataAuthoritySnapshot{Issues: []kataTaskSummary{{UID: "old"}}})
+
+	newEpoch, invalidated := cache.invalidateDaemonIfEpoch("work", 0)
+	require.True(invalidated)
+	require.Equal(uint64(1), newEpoch)
+
+	secondKey := kataSnapshotKey{DaemonID: "work", DaemonFingerprint: "second", Scope: "global", Authority: "open"}
+	require.True(cache.setIfDaemonEpoch(secondKey, kataAuthoritySnapshot{Issues: []kataTaskSummary{{UID: "new"}}}, newEpoch))
+
+	currentEpoch, invalidated := cache.invalidateDaemonIfEpoch("work", 0)
+	require.False(invalidated)
+	require.Equal(newEpoch, currentEpoch)
+	snapshot, ok := cache.get(secondKey)
+	require.True(ok)
+	require.Equal("new", snapshot.Issues[0].UID)
+}

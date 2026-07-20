@@ -4223,6 +4223,31 @@ describe("KataWorkspace", () => {
     });
   });
 
+  it("loads and keeps an authoritative Ready result selected", async () => {
+    const readyIssue = issue("issue-ready", "Ready work", "project-kata");
+    const { api, search } = createWorkspaceAPI([readyIssue]);
+
+    render(KataWorkspace, { props: { api, routeScopeUID: "project-kata" } });
+    await screen.findByRole("button", { name: /Ready work/ });
+    await fireEvent.click(await screen.findByRole("combobox", { name: "Status: Open" }));
+    await fireEvent.click(screen.getByRole("option", { name: "Ready" }));
+
+    await waitFor(() =>
+      expect(search).toHaveBeenLastCalledWith(
+        {
+          scope: { kind: "project", project_uid: "project-kata" },
+          status: "ready",
+          owner: "",
+          label: "",
+          query: "",
+        },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+    expect(screen.getByRole("button", { name: /Ready work/ })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Ready work" })).toBeTruthy();
+  });
+
   it("keeps the loading announcement active until the newest overlapping search finishes", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({

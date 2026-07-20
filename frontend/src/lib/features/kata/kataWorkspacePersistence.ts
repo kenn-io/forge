@@ -16,7 +16,7 @@ interface StoredKataWorkspaceState {
 type StorageReadResult = { kind: "state"; state: StoredKataWorkspaceState } | { kind: "reset" } | { kind: "failed" };
 
 const viewNames = new Set<KataTaskViewName>(["inbox", "today", "upcoming", "deadlines", "all", "logbook"]);
-const statusFilters = new Set<KataTaskSearchFilters["status"]>(["open", "closed", "all"]);
+const statusFilters = new Set<KataTaskSearchFilters["status"]>(["open", "ready", "closed", "all"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

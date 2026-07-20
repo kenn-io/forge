@@ -29,6 +29,7 @@
 
   const statusOptions = [
     { value: "open", label: "Open" },
+    { value: "ready", label: "Ready" },
     { value: "closed", label: "Closed" },
     { value: "all", label: "All" },
   ];

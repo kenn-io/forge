@@ -7,6 +7,7 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
 
   import { fetchKataDaemons, type KataDaemonInfo } from "../../api/kata/daemons.js";
+  import { kataTaskStatusMatchesFilter } from "../../api/kata/taskFilters.js";
   import { createKataWorkspaceForTask, kataWorkspaceIdentityFromIssue } from "../../api/kata/workspaces.js";
   import type {
     KataCreateRecurrenceInput,
@@ -416,7 +417,7 @@
   }
 
   function statusMatches(issue: KataTaskSummary, status: KataTaskSearchFilters["status"]): boolean {
-    return status === "all" || issue.status === status;
+    return kataTaskStatusMatchesFilter(issue, status);
   }
 
   function isDefinitiveRestoreFailure(error: unknown): boolean {
@@ -1745,7 +1746,7 @@
 
   function selectedIssueMatchesStatusFilter(status: KataTaskSearchFilters["status"]): boolean {
     const selected = store.selectedIssue?.issue;
-    return !selected || status === "all" || selected.status === status;
+    return !selected || kataTaskStatusMatchesFilter(selected, status);
   }
 
   function loadLayoutPrefs(): void {

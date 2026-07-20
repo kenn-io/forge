@@ -36,6 +36,14 @@ describe("Kata workspace persistence", () => {
     expect(loadKataWorkspaceState("work")?.selectedIssueUID).toBe("work-issue");
   });
 
+  it("round-trips the Ready filter", () => {
+    const ready = { ...home, filters: { ...home.filters, status: "ready" as const } };
+
+    saveKataWorkspaceState("home", ready);
+
+    expect(loadKataWorkspaceState("home")).toEqual(ready);
+  });
+
   it("round-trips daemon IDs that collide with object prototypes", () => {
     saveKataWorkspaceState("__proto__", home);
     saveKataWorkspaceState("constructor", { ...home, selectedIssueUID: "constructor-issue" });

@@ -57,6 +57,16 @@ describe("KataSearchPanel", () => {
     });
   });
 
+  test("emits the Ready status filter", async () => {
+    const onChange = vi.fn();
+    render(KataSearchPanel, { props: { filters, projects, onChange } });
+
+    await fireEvent.click(screen.getByRole("combobox", { name: "Status: Open" }));
+    await fireEvent.click(screen.getByRole("option", { name: "Ready" }));
+
+    expect(onChange).toHaveBeenCalledWith({ ...filters, status: "ready" });
+  });
+
   test("displays duplicate candidate details", () => {
     render(KataSearchPanel, {
       props: {

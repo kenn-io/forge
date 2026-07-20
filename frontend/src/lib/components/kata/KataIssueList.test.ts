@@ -105,6 +105,33 @@ describe("KataIssueList", () => {
     expect(within(row).getByText("fixture-user")).toBeTruthy();
   });
 
+  it("renders authoritative ready rows as open tasks", () => {
+    const closed = task({
+      ...baseIssues[1]!,
+      id: 103,
+      uid: "issue-closed",
+      short_id: "closed",
+      qualified_id: "Work#closed",
+      title: "Closed task",
+      status: "closed",
+    });
+    render(KataIssueList, {
+      props: {
+        currentView: {
+          ...currentView,
+          groups: [{ id: "ready", title: "Ready", issues: [baseIssues[0]!, closed] }],
+        },
+        selectedIssueUID: null,
+        loading: false,
+        statusFilter: "ready",
+        onSelect: () => {},
+      },
+    });
+
+    expect(screen.getByRole("button", { name: /Pay rent/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Closed task/ })).toBeNull();
+  });
+
   it("opens a graph from a row action without selecting the task", async () => {
     const onSelect = vi.fn();
     const onOpenGraph = vi.fn();

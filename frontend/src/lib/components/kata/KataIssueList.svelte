@@ -7,6 +7,7 @@
   import ListChevronsUpDownIcon from "@lucide/svelte/icons/list-chevrons-up-down";
   import NetworkIcon from "@lucide/svelte/icons/network";
   import { relativeTime, shortDate } from "../../api/dates.js";
+  import { kataTaskStatusMatchesFilter } from "../../api/kata/taskFilters.js";
   import type { KataTaskAPI, KataTaskSearchFilters, KataTaskSummary } from "../../api/kata/taskTypes.js";
   import type { KataCurrentView } from "../../stores/kata-workspace.svelte.js";
   import {
@@ -328,7 +329,7 @@
   }
 
   function issueMatchesStatusFilter(issue: KataTaskSummary): boolean {
-    return statusFilter === "all" || issue.status === statusFilter;
+    return kataTaskStatusMatchesFilter(issue, statusFilter);
   }
 
   function filterGroupsByStatus(
@@ -338,7 +339,7 @@
     return groups
       .map((group) => ({
         ...group,
-        issues: group.issues.filter((issue) => status === "all" || issue.status === status),
+        issues: group.issues.filter((issue) => kataTaskStatusMatchesFilter(issue, status)),
       }))
       .filter((group) => group.issues.length > 0);
   }

@@ -150,9 +150,10 @@ where needed.
 
 Agent launch selects Codex and Claude families by case-folded target-name prefix.
 Codex receives generated workspace context followed by root `AGENTS.md` verbatim
-in `AGENTS.override.md`; missing or unreadable root instructions yield a
-context-only override. Claude receives context-only `CLAUDE.local.md` because its
-local file is additive (`internal/workspace/agent_context.go::agentContextRelPath`).
+in `AGENTS.override.md`; only a non-symlink regular file up to 1 MiB is appended,
+otherwise the override is context-only (`internal/workspace/agent_context.go::readRepositoryAgentInstructions`).
+Claude receives context-only `CLAUDE.local.md` because its local file is additive
+(`internal/workspace/agent_context.go::agentContextRelPath`).
 No instruction file is written during setup.
 
 The first-line marker owns refreshes: middleman updates only marked files.

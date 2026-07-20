@@ -269,17 +269,24 @@ func TestRenderAgentInstructionFile(t *testing.T) {
 		},
 		{name: "codex missing instructions", relPath: "AGENTS.override.md", want: wantContext},
 		{name: "codex unreadable instructions", relPath: "AGENTS.override.md", agentsEntry: "directory", want: wantContext},
+		{name: "codex rejects symlinked instructions", relPath: "AGENTS.override.md", agentsEntry: "symlink", agentsContent: "host secret", want: wantContext},
+		{name: "codex rejects oversized instructions", relPath: "AGENTS.override.md", agentsEntry: "file", agentsContent: strings.Repeat("x", (1<<20)+1), want: wantContext},
 		{name: "claude remains context only", relPath: "CLAUDE.local.md", agentsEntry: "file", agentsContent: "# Repository Rules\n", want: wantContext},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			require := require.New(t)
 			dir := t.TempDir()
 			switch tt.agentsEntry {
 			case "file":
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(tt.agentsContent), 0o644))
+				require.NoError(os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(tt.agentsContent), 0o644))
 			case "directory":
-				require.NoError(t, os.Mkdir(filepath.Join(dir, "AGENTS.md"), 0o755))
+				require.NoError(os.Mkdir(filepath.Join(dir, "AGENTS.md"), 0o755))
+			case "symlink":
+				target := filepath.Join(t.TempDir(), "AGENTS.md")
+				require.NoError(os.WriteFile(target, []byte(tt.agentsContent), 0o644))
+				require.NoError(os.Symlink(target, filepath.Join(dir, "AGENTS.md")))
 			}
 			assert.Equal(t, tt.want, string(renderAgentInstructionFile(dir, tt.relPath, ctx)))
 		})

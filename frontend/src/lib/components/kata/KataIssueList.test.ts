@@ -1368,7 +1368,7 @@ describe("KataIssueList", () => {
 
     render(KataIssueList, {
       props: {
-        currentView: viewWithIssues([child]),
+        currentView: viewWithIssues([]),
         selectedIssueUID: child.uid,
         loading: false,
         statusFilter: "ready",
@@ -1382,6 +1382,45 @@ describe("KataIssueList", () => {
     expect(await screen.findByRole("button", { name: /Ready child/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Blocked parent/ })).toBeNull();
     expect(api.issue).not.toHaveBeenCalled();
+  });
+
+  it("promotes a ready target instead of reconnecting it across a non-ready ancestor", async () => {
+    const grandparent = task({
+      uid: "issue-ready-grandparent",
+      short_id: "ready-grandparent",
+      qualified_id: "Finances#ready-grandparent",
+      title: "Ready grandparent",
+    });
+    const parent = task({
+      uid: "issue-blocked-middle",
+      short_id: "blocked-middle",
+      qualified_id: "Finances#blocked-middle",
+      title: "Blocked middle",
+      parent_short_id: grandparent.short_id,
+    });
+    const child = task({
+      uid: "issue-ready-target",
+      short_id: "ready-target",
+      qualified_id: "Finances#ready-target",
+      title: "Ready target",
+      parent_short_id: parent.short_id,
+    });
+
+    render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([]),
+        selectedIssueUID: child.uid,
+        loading: false,
+        statusFilter: "ready",
+        readyIssueUIDs: new Set([grandparent.uid, child.uid]),
+        revealRequest: { uid: child.uid, chain: [grandparent, parent, child], generation: 1 },
+        onSelect: () => {},
+      },
+    });
+
+    expect(await screen.findByRole("button", { name: /Ready target/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Ready grandparent/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Blocked middle/ })).toBeNull();
   });
 
   it("clears reveal-owned expansion after ordinary row selection", async () => {

@@ -214,6 +214,7 @@ describe("KataWorkspace", () => {
             (requestedFilters.label === "" || issue.labels?.includes(requestedFilters.label)) &&
             (requestedFilters.query === "" || issue.title.includes(requestedFilters.query)),
         ),
+        ready_issue_uids: [],
         fetched_at: fetchedAt,
       }));
       saveKataWorkspaceState("home", { view: "all", filters, selectedIssueUID: "issue-pay-rent" });

@@ -253,7 +253,9 @@
       workspaceActionBusy,
   );
   const listStatusFilter = $derived<KataTaskSearchFilters["status"]>(
-    store.currentView.name === "logbook" ? "all" : store.searchFilters.status,
+    store.currentView.name === "logbook" && store.searchFilters.status === "open"
+      ? "all"
+      : store.searchFilters.status,
   );
   $effect(() => {
     const daemonID = activeKataDaemonId;

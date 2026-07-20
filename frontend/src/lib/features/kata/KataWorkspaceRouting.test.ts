@@ -85,6 +85,7 @@ describe("KataWorkspace", () => {
         query: "",
       },
       issues: [initialIssues[1]!],
+      ready_issue_uids: [],
       fetched_at: fetchedAt,
     });
     await Promise.resolve();

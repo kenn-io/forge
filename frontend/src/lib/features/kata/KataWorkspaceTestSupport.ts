@@ -315,6 +315,7 @@ function createDaemonWorkspaceAPI(
         issues: rows(opts?.daemonId).filter((item) =>
           filters.scope.kind === "project" ? item.project_uid === filters.scope.project_uid : true,
         ),
+        ready_issue_uids: filters.status === "ready" ? rows(opts?.daemonId).map((item) => item.uid) : [],
         fetched_at: fetchedAt,
         daemon_id: daemonID(opts?.daemonId),
       }),
@@ -381,7 +382,7 @@ function createWorkspaceAPI(
       issues: rows.filter((item) =>
         filters.scope.kind === "project" ? item.project_uid === filters.scope.project_uid : true,
       ),
-      ...(filters.status === "ready" ? { ready_issue_uids: rows.map((item) => item.uid) } : {}),
+      ready_issue_uids: filters.status === "ready" ? rows.map((item) => item.uid) : [],
       fetched_at: fetchedAt,
     }),
   );

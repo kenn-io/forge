@@ -30,6 +30,7 @@ function kata(overrides: Partial<Pick<KataTaskAPI, "search">> = {}): Pick<KataTa
     search: async (): Promise<KataTaskSearchResponse> => ({
       filters: { scope: { kind: "all" }, status: "all", owner: "", label: "", query: "" },
       issues: [],
+      ready_issue_uids: [],
       fetched_at: "2026-05-17T00:00:00Z",
     }),
     ...overrides,
@@ -73,6 +74,7 @@ describe("searchModePalette", () => {
     resolveKata({
       filters: { scope: { kind: "all" }, status: "all", owner: "", label: "", query: "budget" },
       issues: [],
+      ready_issue_uids: [],
       fetched_at: "2026-05-17T00:00:00Z",
     });
     resolveDocs({ query: "budget", hits: [], truncated: false });
@@ -86,6 +88,7 @@ describe("searchModePalette", () => {
           async (): Promise<KataTaskSearchResponse> => ({
             filters: { scope: { kind: "all" }, status: "all", owner: "", label: "", query: "budget" },
             issues: [task()],
+            ready_issue_uids: [],
             fetched_at: "2026-05-17T00:00:00Z",
             daemon_id: "daemon-work",
           }),

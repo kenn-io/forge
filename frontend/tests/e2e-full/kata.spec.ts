@@ -165,6 +165,7 @@ type BackendState = {
   failNextAssignOwner?: string | undefined;
   failNextCursorStatus?: number | undefined;
   failNextIssuesStatus?: number | undefined;
+  failNextReadyStatus?: number | undefined;
   failNextProjectsStatus?: number | undefined;
   failNextMetadataMessage?: string | undefined;
   closeBarrier?: Promise<void> | undefined;
@@ -310,6 +311,7 @@ type KataBackendOptions = {
   onEventsRequest?: ((state: BackendState, url: URL) => void) | undefined;
   failNextCursorStatus?: number | undefined;
   failNextProjectsStatus?: number | undefined;
+  failNextReadyStatus?: number | undefined;
   projectsBarrier?: Promise<void> | undefined;
   closeBarrier?: Promise<void> | undefined;
 };
@@ -583,6 +585,7 @@ async function startKataBackend(options: KataBackendOptions = {}): Promise<Backe
     streams: new Set(),
     failNextCursorStatus: options.failNextCursorStatus,
     failNextProjectsStatus: options.failNextProjectsStatus,
+    failNextReadyStatus: options.failNextReadyStatus,
     closeBarrier: options.closeBarrier,
     failEventCursorAfterID: options.failEventCursorAfterID,
     eventsBarrier: options.eventsBarrier,
@@ -666,6 +669,12 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
 
   const projectReadyRoute = /^\/api\/v1\/projects\/(\d+)\/ready$/.exec(url.pathname);
   if (projectReadyRoute) {
+    if (state.failNextReadyStatus !== undefined) {
+      const status = state.failNextReadyStatus;
+      state.failNextReadyStatus = undefined;
+      writeJSON(res, status, { error: { code: "internal", message: "ready tasks unavailable" } });
+      return;
+    }
     const projectID = Number(projectReadyRoute[1]);
     writeJSON(res, 200, {
       issues: readyIssues(state, projectID),
@@ -852,6 +861,12 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
       });
       return;
     case "/api/v1/ready":
+      if (state.failNextReadyStatus !== undefined) {
+        const status = state.failNextReadyStatus;
+        state.failNextReadyStatus = undefined;
+        writeJSON(res, status, { error: { code: "internal", message: "ready tasks unavailable" } });
+        return;
+      }
       writeJSON(res, 200, {
         issues: readyIssues(state),
         fetched_at: now,
@@ -5523,16 +5538,54 @@ test("kata Ready filters through authoritative global and project daemon endpoin
     await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/ready");
     await readyRow.press("ArrowRight");
     await expect(readyRow).toHaveAttribute("aria-expanded", "true");
-    await expect(page.getByRole("button", { name: /Ready follow-up/ })).toBeVisible();
+    const readyChildRow = page.getByRole("button", { name: /Ready follow-up/ });
+    await expect(readyChildRow).toBeVisible();
     await expect(page.getByRole("button", { name: /Blocked follow-up/ })).toHaveCount(0);
-    await readyRow.click();
-    await expect(page.getByRole("heading", { name: "Ship the ready change" })).toBeVisible();
+    await readyChildRow.click();
+    const detail = page.getByRole("region", { name: "Task detail" });
+    await expect(detail.getByRole("heading", { name: "Ready follow-up" })).toBeVisible();
+    await detail.getByRole("button", { name: "Add label" }).click();
+    await detail.getByLabel("New label").fill("urgent");
+    await detail.getByLabel("New label").press("Enter");
+    await expect
+      .poll(() => backend.state.seenPaths)
+      .toContain("POST /api/v1/projects/2/issues/issue-ready-child/labels");
+    await expect(page).toHaveURL(/issue=issue-ready-child/);
+    await expect(detail.getByRole("heading", { name: "Ready follow-up" })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("combobox", { name: "Status: Ready" })).toBeVisible();
+    await expect(page.getByLabel("Search tasks")).toHaveValue("Ship the ready change");
+    await expect(page).toHaveURL(/issue=issue-ready-child/);
+    await expect(detail.getByRole("heading", { name: "Ready follow-up" })).toBeVisible();
 
     const navigation = page.getByRole("complementary", { name: "Kata navigation" });
     await navigation.getByRole("button", { name: /^Kata\s+\d+$/ }).click();
     await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/projects/2/ready");
     await expect(page.getByRole("button", { name: /Ship the ready change/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /Blocked follow-up/ })).toHaveCount(0);
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
+test("kata Ready failure keeps the authoritative view empty through the real proxy", async ({ page }) => {
+  const backend = await startKataBackend({ failNextReadyStatus: 503 });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata`);
+    await expect(page.getByRole("button", { name: /Pay rent/ })).toBeVisible();
+
+    await page.getByRole("combobox", { name: "Status: Open" }).click();
+    await page.getByRole("option", { name: "Ready" }).click();
+
+    await expect(page.getByRole("alert")).toContainText("ready tasks unavailable");
+    await expect(page.getByRole("combobox", { name: "Status: Ready" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/ready");
   } finally {
     await server.stop();
     kataHome.restore();

@@ -338,7 +338,10 @@
   }
 
   function revealChainForStatus(chain: readonly KataTaskSummary[]): readonly KataTaskSummary[] {
-    return statusFilter === "ready" ? chain.filter(issueMatchesStatusFilter) : chain;
+    if (statusFilter !== "ready") return chain;
+    const target = chain[chain.length - 1];
+    if (!target || !issueMatchesStatusFilter(target)) return [];
+    return chain.every(issueMatchesStatusFilter) ? chain : [target];
   }
 
   function filterGroupsByStatus(
@@ -685,7 +688,7 @@
     clearTemporaryReveal();
     lastRevealGeneration = revealRequest.generation;
     const revealChain = revealChainForStatus(revealRequest.chain);
-    temporaryRevealChain = revealChain.length > 1 ? revealChain : [];
+    temporaryRevealChain = statusFilter === "ready" || revealChain.length > 1 ? revealChain : [];
     const generation = childLoadGeneration;
     void (async () => {
       const request = revealRequest;

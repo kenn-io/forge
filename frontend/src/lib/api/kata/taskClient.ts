@@ -714,7 +714,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
       const response = {
         filters,
         issues: searchResult.issues,
-        ...(searchResult.readyIssueUIDs ? { ready_issue_uids: searchResult.readyIssueUIDs } : {}),
+        ready_issue_uids: searchResult.readyIssueUIDs ?? [],
         fetched_at: new Date().toISOString(),
         daemon_id: daemonId,
       };

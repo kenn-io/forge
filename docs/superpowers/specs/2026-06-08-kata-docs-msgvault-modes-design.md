@@ -331,8 +331,10 @@ Kata frontend adaptation:
   without reintroducing them as top-level flat rows.
 - Restored nested-task ancestor reconstruction is presentation-only. Temporary
   ancestors and each contextual successor bypass only the active status filter
-  for the selected path; unrelated children still obey that filter and all
-  other active filters. Context rows do not affect task counts, membership
+  for the selected path, except that Ready never admits a non-member: a routed
+  ready target with any non-ready ancestor is promoted to a temporary root.
+  Unrelated children still obey that filter and all other active filters.
+  Context rows do not affect task counts, membership
   checks, or persisted workspace state. Their synthetic edges and reveal-owned
   expansion disappear when the reveal is cleared or superseded. Clicking a
   contextual row's disclosure control or invoking the task-list Expand all
@@ -351,7 +353,8 @@ Kata frontend adaptation:
   non-abortable request may drain; further changes coalesce to the latest
   selected UID. Retry starts a new walk only for the current UID and generation.
   Candidate ancestor data remains transaction-local and is published only after
-  the candidate workspace is accepted.
+  the candidate workspace is accepted (detailed Ready design:
+  `docs/superpowers/specs/2026-07-20-kata-ready-filter-design.md`).
 - Project-scoped task filters must resolve the Kata project UID and read the
   daemon's project issue list instead of filtering the all-project issue list
   locally (`frontend/src/lib/api/kata/taskClient.ts::searchProject`).

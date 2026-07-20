@@ -519,6 +519,10 @@ export class KataWorkspaceStore {
       // succeeds. Do not roll back over a newer navigation that superseded it.
       if (this.viewRequestID === rollbackRequestID) {
         this.restoreSnapshot(snapshot);
+        if (filters.status === "ready") {
+          this.searchFilters = filters;
+          this.readyIssueUIDs = new Set();
+        }
       }
       throw error;
     }
@@ -862,8 +866,8 @@ export class KataWorkspaceStore {
     }
   }
 
-  private acceptReadyIssueMembership(filters: KataTaskSearchFilters, issueUIDs: readonly string[] | undefined): void {
-    this.readyIssueUIDs = filters.status === "ready" ? new Set(issueUIDs ?? []) : new Set();
+  private acceptReadyIssueMembership(filters: KataTaskSearchFilters, issueUIDs: readonly string[]): void {
+    this.readyIssueUIDs = filters.status === "ready" ? new Set(issueUIDs) : new Set();
   }
 
   rememberTasks(issues: readonly KataTaskSummary[]): void {
@@ -1303,6 +1307,7 @@ export class KataWorkspaceStore {
     let nextView: KataCurrentView;
     let issues: KataTaskSummary[];
     if (shouldRefreshViaSearch(this.searchFilters, this.currentView.name)) {
+      if (this.searchFilters.status === "ready") this.readyIssueUIDs = new Set();
       let results: KataTaskSearchResponse;
       try {
         results = await this.searchIssues(this.searchFilters, signal);

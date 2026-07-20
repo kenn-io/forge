@@ -327,7 +327,7 @@ function createFakeKataTaskAPI(): FakeKataTaskAPI {
       }
       return true;
     });
-    return { filters, issues: rows, fetched_at: fetchedAt, daemon_id: "home" };
+    return { filters, issues: rows, ready_issue_uids: [], fetched_at: fetchedAt, daemon_id: "home" };
   });
   const issueMock = vi.fn(async (uid: string) => detailFor(uid));
   const reachableGraph = vi.fn(
@@ -949,6 +949,10 @@ describe("kata workspace store", () => {
     });
     await refreshPending;
     expect([...store.readyIssueUIDs]).toEqual([issues[1]!.uid]);
+
+    api.mocks.search.mockRejectedValueOnce(new Error("ready refresh failed"));
+    await expect(store.addLabel(issues[1]!.uid, "middleman", "urgent")).rejects.toThrow("ready refresh failed");
+    expect([...store.readyIssueUIDs]).toEqual([]);
 
     await store.updateSearchFilters({ status: "open" }, { selectFirst: false });
     expect([...store.readyIssueUIDs]).toEqual([]);
@@ -1623,7 +1627,7 @@ describe("kata workspace store", () => {
     api.mocks.search.mockImplementation((filters: KataTaskSearchFilters) => {
       if (filters.query === "old") return oldSearch.promise;
       if (filters.query === "new") return newSearch.promise;
-      return Promise.resolve({ filters, issues: [], fetched_at: fetchedAt });
+      return Promise.resolve({ filters, issues: [], ready_issue_uids: [], fetched_at: fetchedAt });
     });
     const store = createKataWorkspaceStore({ api });
     await store.bootstrap("inbox");
@@ -1634,6 +1638,7 @@ describe("kata workspace store", () => {
     newSearch.resolve({
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "new" },
       issues: [issues[1]!],
+      ready_issue_uids: [],
       fetched_at: "new",
       daemon_id: "work",
     });
@@ -1642,6 +1647,7 @@ describe("kata workspace store", () => {
     oldSearch.resolve({
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "old" },
       issues: [issues[0]!],
+      ready_issue_uids: [],
       fetched_at: "old",
       daemon_id: "home",
     });

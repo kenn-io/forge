@@ -1962,6 +1962,24 @@ describe("KataWorkspace", () => {
     expect(screen.queryByRole("button", { name: /Pay rent/ })).toBeNull();
   });
 
+  it("retains a persisted Ready filter with empty membership when restoration fails", async () => {
+    acceptHomeDaemon();
+    const { api, search } = createWorkspaceAPI();
+    search.mockRejectedValueOnce(new Error("persisted ready failed"));
+    saveKataWorkspaceState("home", {
+      view: "all",
+      filters: { scope: { kind: "all" }, status: "ready", owner: "", label: "", query: "" },
+      selectedIssueUID: null,
+    });
+
+    render(KataWorkspace, { props: { api } });
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("persisted ready failed"));
+    expect(screen.getByRole("combobox", { name: "Status: Ready" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Pay rent/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
   it("does not persist external URL selection", async () => {
     acceptHomeDaemon();
     const persisted = {
@@ -4286,6 +4304,7 @@ describe("KataWorkspace", () => {
         query: "",
       },
       issues: [openIssue],
+      ready_issue_uids: [],
       fetched_at: fetchedAt,
     });
   });
@@ -4313,6 +4332,43 @@ describe("KataWorkspace", () => {
     );
     expect(screen.getByRole("button", { name: /Ready work/ })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Ready work" })).toBeTruthy();
+  });
+
+  it("keeps Logbook children constrained to authoritative Ready membership", async () => {
+    const parent = {
+      ...issue("issue-ready-logbook-parent", "Ready Logbook parent", "project-kata"),
+      child_counts: { open: 1, total: 1 },
+    };
+    const blockedChild = {
+      ...issue("issue-blocked-logbook-child", "Blocked Logbook child", "project-kata"),
+      parent: { uid: parent.uid, short_id: parent.short_id },
+      parent_short_id: parent.short_id,
+    };
+    const { api, search, issue: issueDetail } = createWorkspaceAPI([parent, blockedChild]);
+    search.mockImplementation(
+      async (filters: KataTaskSearchFilters): Promise<KataTaskSearchResponse> => ({
+        filters,
+        issues: [parent],
+        ready_issue_uids: [parent.uid],
+        fetched_at: fetchedAt,
+      }),
+    );
+    issueDetail.mockImplementation(async (uid: string) => ({
+      ...detail(uid, [parent, blockedChild]),
+      children: uid === parent.uid ? [blockedChild] : [],
+    }));
+    saveKataWorkspaceState("home", {
+      view: "logbook",
+      filters: { scope: { kind: "all" }, status: "ready", owner: "", label: "", query: "" },
+      selectedIssueUID: parent.uid,
+    });
+
+    render(KataWorkspace, { props: { api } });
+    const parentRow = await screen.findByRole("button", { name: /Ready Logbook parent/ });
+    await fireEvent.keyDown(parentRow, { key: "ArrowRight" });
+
+    await waitFor(() => expect(parentRow.getAttribute("aria-expanded")).toBe("true"));
+    expect(screen.queryByRole("button", { name: /Blocked Logbook child/ })).toBeNull();
   });
 
   it("keeps the loading announcement active until the newest overlapping search finishes", async () => {
@@ -4366,6 +4422,7 @@ describe("KataWorkspace", () => {
     oldSearch.resolve({
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "old" },
       issues: [initialIssues[0]!],
+      ready_issue_uids: [],
       fetched_at: fetchedAt,
     });
     await waitFor(() => expect(oldSearchSettled).toBe(true));
@@ -4378,6 +4435,7 @@ describe("KataWorkspace", () => {
     newSearch.resolve({
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "new" },
       issues: [initialIssues[1]!],
+      ready_issue_uids: [],
       fetched_at: fetchedAt,
     });
     await waitFor(() => {
@@ -4412,7 +4470,7 @@ describe("KataWorkspace", () => {
         return result;
       }
       if (filters.query === "new") return newSearch.promise;
-      return Promise.resolve({ filters, issues: initialIssues, fetched_at: fetchedAt });
+      return Promise.resolve({ filters, issues: initialIssues, ready_issue_uids: [], fetched_at: fetchedAt });
     });
 
     render(KataWorkspace, { props: { api } });
@@ -4438,6 +4496,7 @@ describe("KataWorkspace", () => {
     newSearch.resolve({
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "new" },
       issues: [initialIssues[1]!],
+      ready_issue_uids: [],
       fetched_at: fetchedAt,
     });
 
@@ -4452,6 +4511,7 @@ describe("KataWorkspace", () => {
     oldSearch.resolve({
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "old" },
       issues: [initialIssues[0]!],
+      ready_issue_uids: [],
       fetched_at: fetchedAt,
     });
     await waitFor(() => expect(oldSearchSettled).toBe(true));

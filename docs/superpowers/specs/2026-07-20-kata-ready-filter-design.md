@@ -29,6 +29,11 @@ their daemon-provided `status`, normally `"open"`.
 The existing `KataTaskSearchFilters` object remains the single filter contract
 for UI state, persistence, store loading, and task API calls.
 
+Every normalized search response carries `ready_issue_uids`. It contains the
+complete daemon-returned UID set for Ready searches and is an empty array for
+other statuses. The field is required rather than optional so a missing or
+malformed membership cannot be mistaken for a valid empty Ready result.
+
 ## Data Flow
 
 When `filters.status` is `"ready"`:
@@ -66,11 +71,30 @@ While Ready is active, every displayed or selectable root and expanded child
 must belong to the latest daemon-returned Ready UID set; open status alone never
 qualifies, and entering Ready clears stale membership until its request lands.
 
+Ready hierarchy follows these acceptance rules:
+
+| Daemon membership and relationship | List result |
+| --- | --- |
+| Parent and child are ready | Preserve their parent-child hierarchy. |
+| Parent is ready and child is not | Show the parent; omit the child when expanded. |
+| Child is ready and parent is not | Promote the child to a root; do not show the parent. |
+| A routed ready target has any non-ready ancestor | Temporarily promote the target to a root; never reconnect ready nodes across an omitted ancestor. |
+
+The latest completed Ready request is one authoritative snapshot. Starting any
+Ready refresh clears the previous membership before the request runs, including
+refreshes caused by mutations or events. Duplicate UIDs collapse naturally in
+the membership set, and a missing parent uses the child-as-root rule. Owner,
+label, status, and accepted text-query changes continue to use the existing
+search refresh and text-query debounce behavior rather than adding a second
+cache or refresh policy.
+
 ## Error Handling
 
 Ready endpoint failures use the existing `KataTaskAPIError` parsing and Kata
 workspace view-error presentation. A failed Ready request does not fall back to
-locally computed readiness or to the Open list.
+locally computed readiness or to the Open list. Interactive and persisted-entry
+failures retain the attempted Ready filter, expose retry, and render an empty
+membership until a later authoritative response succeeds.
 
 An unknown project UID returns an empty ready result, matching current
 project-scoped search behavior.
@@ -82,6 +106,11 @@ project-scoped search behavior.
   normalization, daemon pinning, and narrowing by owner, label, query, and
   project scope.
 - Store and workspace tests verify Ready triggers the search path, persists and
-  restores correctly, and does not confuse ready-list membership with task
-  `status`.
+  restores correctly, invalidates membership before failed refreshes, and does
+  not confuse ready-list membership with task `status`.
+- List tests cover ready targets absent from the current flat result, including
+  omitted immediate and intermediate ancestors, so route restoration cannot
+  manufacture false hierarchy.
+- Full-stack Kata tests cover authoritative endpoint failure and expanded-child
+  selection across mutation refresh and persisted reload.
 - The full frontend Vitest suite and Svelte checks run after the final edit.

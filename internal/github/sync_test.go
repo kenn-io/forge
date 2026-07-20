@@ -9894,65 +9894,93 @@ func TestScopedRunDoesNotDelayNextFullRunOnSameHost(t *testing.T) {
 }
 
 func TestScheduledFullRunRetriesAfterOverlappingScopedRun(t *testing.T) {
-	require := require.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-	repos := []RepoRef{
-		{Owner: "owner", Name: "selected", PlatformHost: "github.com"},
-		{Owner: "owner", Name: "unrelated", PlatformHost: "github.com"},
+	tests := []struct {
+		name                string
+		cadenceGated        bool
+		wantUnrelatedSynced bool
+	}{
+		{name: "runs when host is due", wantUnrelatedSynced: true},
+		{name: "honors a future host cadence gate", cadenceGated: true},
 	}
-	selectedEntered := make(chan struct{}, 1)
-	releaseSelected := make(chan struct{})
-	unrelatedSynced := make(chan struct{}, 1)
-	mc := &mockClient{
-		listOpenPRsFn: func(ctx context.Context, _, repo string) ([]*gh.PullRequest, error) {
-			switch repo {
-			case "selected":
-				select {
-				case selectedEntered <- struct{}{}:
-					select {
-					case <-releaseSelected:
-					case <-ctx.Done():
-						return nil, ctx.Err()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			ctx := t.Context()
+			d := openTestDB(t)
+			repos := []RepoRef{
+				{Owner: "owner", Name: "selected", PlatformHost: "github.com"},
+				{Owner: "owner", Name: "unrelated", PlatformHost: "github.com"},
+			}
+			selectedEntered := make(chan struct{}, 1)
+			releaseSelected := make(chan struct{})
+			var unrelatedSynced atomic.Bool
+			mc := &mockClient{
+				listOpenPRsFn: func(ctx context.Context, _, repo string) ([]*gh.PullRequest, error) {
+					switch repo {
+					case "selected":
+						select {
+						case selectedEntered <- struct{}{}:
+							select {
+							case <-releaseSelected:
+							case <-ctx.Done():
+								return nil, ctx.Err()
+							}
+						default:
+						}
+					case "unrelated":
+						unrelatedSynced.Store(true)
 					}
-				default:
-				}
-			case "unrelated":
-				select {
-				case unrelatedSynced <- struct{}{}:
-				default:
+					return []*gh.PullRequest{}, nil
+				},
+			}
+			var rateTrackers map[string]*RateTracker
+			if tt.cadenceGated {
+				rateTrackers = map[string]*RateTracker{
+					"github.com": NewRateTracker(d, "github.com", "rest"),
 				}
 			}
-			return []*gh.PullRequest{}, nil
-		},
-	}
-	syncer := NewSyncer(
-		map[string]Client{"github.com": mc}, d, nil, repos,
-		time.Hour, nil, nil,
-	)
-	syncer.SetParallelism(1)
-	t.Cleanup(syncer.Stop)
+			syncer := NewSyncer(
+				map[string]Client{"github.com": mc}, d, nil, repos,
+				time.Hour, rateTrackers, nil,
+			)
+			if tt.cadenceGated {
+				syncer.nextSyncAfter["github.com"] = time.Now().Add(time.Hour)
+			}
+			syncer.SetParallelism(1)
+			t.Cleanup(syncer.Stop)
+			fullRunCompleted := make(chan struct{}, 1)
+			syncer.SetOnSyncCompleted(func(results []RepoSyncResult) {
+				if len(results) == len(repos) {
+					select {
+					case fullRunCompleted <- struct{}{}:
+					default:
+					}
+				}
+			})
 
-	scopedDone := make(chan struct{})
-	go func() {
-		defer close(scopedDone)
-		syncer.runOnce(ctx, true, nil, repos[:1])
-	}()
+			scopedDone := make(chan struct{})
+			go func() {
+				defer close(scopedDone)
+				syncer.runOnce(ctx, true, nil, repos[:1])
+			}()
 
-	select {
-	case <-selectedEntered:
-	case <-time.After(time.Second):
-		require.FailNow("scoped run did not start within 1s")
-	}
-	syncer.RunOnce(ctx)
-	close(releaseSelected)
+			select {
+			case <-selectedEntered:
+			case <-time.After(time.Second):
+				require.FailNow("scoped run did not start within 1s")
+			}
+			syncer.RunOnce(ctx)
+			close(releaseSelected)
 
-	select {
-	case <-unrelatedSynced:
-	case <-time.After(time.Second):
-		require.FailNow("scheduled full run was not retried after scoped run")
+			select {
+			case <-fullRunCompleted:
+			case <-time.After(time.Second):
+				require.FailNow("scheduled full run was not retried after scoped run")
+			}
+			assert.Equal(t, tt.wantUnrelatedSynced, unrelatedSynced.Load())
+			<-scopedDone
+		})
 	}
-	<-scopedDone
 }
 
 func TestBudgetResetOnRateWindowReset(t *testing.T) {

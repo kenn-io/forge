@@ -2590,6 +2590,15 @@ func (s *Syncer) triggerRun(
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
 ) {
+	s.triggerRunWithCadence(ctx, true, priorityRepos, onlyRepos)
+}
+
+func (s *Syncer) triggerRunWithCadence(
+	ctx context.Context,
+	bypassNextSyncAfter bool,
+	priorityRepos []RepoRef,
+	onlyRepos []RepoRef,
+) {
 	s.lifecycleMu.Lock()
 	if s.stopped {
 		s.lifecycleMu.Unlock()
@@ -2602,7 +2611,7 @@ func (s *Syncer) triggerRun(
 	go func() {
 		defer s.wg.Done()
 		defer cancel()
-		s.runOnce(merged, true, priorityRepos, onlyRepos)
+		s.runOnce(merged, bypassNextSyncAfter, priorityRepos, onlyRepos)
 	}()
 }
 
@@ -3853,7 +3862,7 @@ func (s *Syncer) runOnce(
 		}
 		s.runMu.Unlock()
 		if retryScheduledFull {
-			s.TriggerRun(context.Background())
+			s.triggerRunWithCadence(context.Background(), false, nil, nil)
 		}
 	}()
 

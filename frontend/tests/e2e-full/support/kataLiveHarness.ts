@@ -95,7 +95,7 @@ interface RunningDaemon {
   stderr: string[];
 }
 
-const defaultRequiredBranch = "feat/server-extensions";
+const defaultRequiredBranch = "main";
 
 export async function createLiveKataHarness(options: LiveKataHarnessOptions = {}): Promise<LiveKataHarness> {
   const kataRepo = resolveKataRepo();
@@ -235,7 +235,6 @@ async function seedIssue(harness: LiveKataHarness, input: SeedIssueInput): Promi
     alias: {
       identity: `local://${projectRoot}`,
       kind: "local",
-      root_path: projectRoot,
     },
   });
 
@@ -325,7 +324,7 @@ async function freePort(): Promise<number> {
 }
 
 function startDaemon(binary: string, port: number, env: NodeJS.ProcessEnv): RunningDaemon {
-  const proc = spawn(binary, ["daemon", "start", "--listen", `127.0.0.1:${port}`], {
+  const proc = spawn(binary, ["daemon", "start", "--foreground", "--listen", `127.0.0.1:${port}`], {
     env,
     stdio: ["ignore", "ignore", "pipe"],
   });

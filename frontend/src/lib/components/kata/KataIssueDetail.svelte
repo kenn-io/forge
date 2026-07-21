@@ -49,6 +49,7 @@
     selectedRecurrences: KataRecurrence[];
     checklistRevealed: boolean;
     actionsDisabled?: boolean | undefined;
+    authorityBlocked?: boolean | undefined;
     draftResetGeneration?: number | undefined;
     movePending?: boolean | undefined;
     onMoveIssue: (toProjectUID: string) => boolean | Promise<boolean>;
@@ -92,6 +93,7 @@
     selectedRecurrences,
     checklistRevealed,
     actionsDisabled = false,
+    authorityBlocked = undefined,
     draftResetGeneration = 0,
     movePending = false,
     onMoveIssue,
@@ -128,8 +130,13 @@
   let cancelingTitle = $state(false);
   let lastIssueUID = $state<string | null>(null);
   let lastDraftResetGeneration = $state<number | null>(null);
+  let pendingTitleResetUID = $state<string | null>(null);
+  let pendingTitleResetGeneration = $state<number | null>(null);
+  let pendingBodyResetUID = $state<string | null>(null);
+  let pendingBodyResetGeneration = $state<number | null>(null);
 
   const canCreateRecurrence = $derived(issue.issue.recurrence_id === undefined);
+  const detailInert = $derived(authorityBlocked ?? actionsDisabled);
   const visibleRecurrences = $derived.by(() => {
     const attachedID = issue.issue.recurrence_id;
     if (attachedID !== undefined) {
@@ -148,6 +155,10 @@
     savingTitle = false;
     savingBody = false;
     cancelingTitle = false;
+    pendingTitleResetUID = null;
+    pendingTitleResetGeneration = null;
+    pendingBodyResetUID = null;
+    pendingBodyResetGeneration = null;
   });
 
   $effect(() => {
@@ -158,12 +169,29 @@
     }
     if (nextGeneration === lastDraftResetGeneration) return;
     lastDraftResetGeneration = nextGeneration;
+    const uid = issue.issue.uid;
+    if (pendingTitleResetUID === uid && pendingTitleResetGeneration !== nextGeneration) {
+      resetTitleDraft();
+    }
+    if (pendingBodyResetUID === uid && pendingBodyResetGeneration !== nextGeneration) {
+      resetBodyDraft();
+    }
+  });
+
+  function resetTitleDraft(): void {
     editingTitle = false;
-    editingBody = false;
     cancelingTitle = false;
     titleDraft = "";
+    pendingTitleResetUID = null;
+    pendingTitleResetGeneration = null;
+  }
+
+  function resetBodyDraft(): void {
+    editingBody = false;
     bodyDraft = "";
-  });
+    pendingBodyResetUID = null;
+    pendingBodyResetGeneration = null;
+  }
 
   function checklistItems() {
     return issue.issue.metadata.checklist ?? [];
@@ -201,10 +229,18 @@
       editingTitle = false;
       return;
     }
+    const mutationUID = issue.issue.uid;
+    const resetGeneration = draftResetGeneration;
     savingTitle = true;
     try {
-      if (await onEditIssue(issue.issue.uid, { title: next })) {
-        editingTitle = false;
+      if (await onEditIssue(mutationUID, { title: next })) {
+        if (issue.issue.uid !== mutationUID) return;
+        if (draftResetGeneration !== resetGeneration) {
+          resetTitleDraft();
+        } else {
+          pendingTitleResetUID = mutationUID;
+          pendingTitleResetGeneration = resetGeneration;
+        }
       }
     } finally {
       savingTitle = false;
@@ -236,10 +272,18 @@
       editingBody = false;
       return;
     }
+    const mutationUID = issue.issue.uid;
+    const resetGeneration = draftResetGeneration;
     savingBody = true;
     try {
-      if (await onEditIssue(issue.issue.uid, { body: next })) {
-        editingBody = false;
+      if (await onEditIssue(mutationUID, { body: next })) {
+        if (issue.issue.uid !== mutationUID) return;
+        if (draftResetGeneration !== resetGeneration) {
+          resetBodyDraft();
+        } else {
+          pendingBodyResetUID = mutationUID;
+          pendingBodyResetGeneration = resetGeneration;
+        }
       }
     } finally {
       savingBody = false;
@@ -257,8 +301,8 @@
   }
 </script>
 
-{#key `${issue.issue.uid}:${draftResetGeneration}`}
-<section class="kata-detail" aria-label="Task detail" aria-busy={actionsDisabled} inert={actionsDisabled}>
+<section class="kata-detail" aria-label="Task detail" aria-busy={actionsDisabled || detailInert} inert={detailInert}>
+  <fieldset class="mutation-controls" disabled={actionsDisabled || detailInert}>
   <div class="detail-heading">
     <div class="detail-heading-main">
       <div class="detail-kicker">
@@ -371,10 +415,13 @@
       <p class="detail-body-empty">No description.</p>
     {/if}
   </section>
+  </fieldset>
 
   <KataIssueProperties
     {issue}
     {ownerOptions}
+    {actionsDisabled}
+    {draftResetGeneration}
     onPatchMetadata={onPatchMetadata}
     onAssignOwner={onAssignOwner}
     onUnassignOwner={onUnassignOwner}
@@ -383,6 +430,7 @@
     onRemoveLabel={onRemoveLabel}
   />
 
+  <fieldset class="mutation-controls" disabled={actionsDisabled || detailInert}>
   <IssueMessageLinks
     links={messageLinks}
     busyIds={unlinkBusyIds}
@@ -396,6 +444,7 @@
     {issue}
     revealed={checklistRevealed}
     disabled={actionsDisabled}
+    {draftResetGeneration}
     onPatchMetadata={onPatchMetadata}
     onReveal={onRevealChecklist}
   />
@@ -410,6 +459,7 @@
       />
     </section>
   {/if}
+  </fieldset>
 
   {#key issue.issue.uid}
     <KataIssueDiscussion
@@ -420,13 +470,14 @@
       {activeDaemonId}
       {linkFilters}
       {onLinkFiltersChange}
+      {actionsDisabled}
+      {draftResetGeneration}
       onAddComment={onAddComment}
       onEditIssue={onEditIssue}
       onSelectIssue={onSelectIssue}
     />
   {/key}
 </section>
-{/key}
 
 <style>
   .kata-detail {
@@ -436,6 +487,10 @@
     overflow: auto;
     background: var(--bg-primary);
     padding: 18px 22px;
+  }
+
+  .mutation-controls {
+    display: contents;
   }
 
   .detail-heading {

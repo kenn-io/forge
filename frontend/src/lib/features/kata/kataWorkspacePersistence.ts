@@ -1,6 +1,6 @@
 import type { KataTaskSearchFilters, KataTaskViewName } from "../../api/kata/taskTypes.js";
 
-export const KATA_WORKSPACE_STATE_STORAGE_KEY = "middleman:kata:workspace-state/v1";
+export const KATA_WORKSPACE_STATE_STORAGE_KEY = "middleman:kata:workspace-state/v2";
 
 export interface KataPersistedWorkspaceState {
   view: KataTaskViewName;
@@ -9,7 +9,7 @@ export interface KataPersistedWorkspaceState {
 }
 
 interface StoredKataWorkspaceState {
-  version: 1;
+  version: 2;
   daemons: Record<string, KataPersistedWorkspaceState>;
 }
 
@@ -85,7 +85,7 @@ function parseState(value: unknown): KataPersistedWorkspaceState | null {
 }
 
 function parseStorage(value: unknown): StoredKataWorkspaceState | null {
-  if (!isRecord(value) || value.version !== 1 || !isRecord(value.daemons)) {
+  if (!isRecord(value) || value.version !== 2 || !isRecord(value.daemons)) {
     return null;
   }
 
@@ -97,7 +97,7 @@ function parseStorage(value: unknown): StoredKataWorkspaceState | null {
     }
   }
 
-  return { version: 1, daemons };
+  return { version: 2, daemons };
 }
 
 function readStorage(): StorageReadResult {
@@ -113,7 +113,7 @@ function readStorage(): StorageReadResult {
   }
 
   if (raw === null) {
-    return { kind: "state", state: { version: 1, daemons: createDaemonMap() } };
+    return { kind: "state", state: { version: 2, daemons: createDaemonMap() } };
   }
 
   try {
@@ -175,7 +175,7 @@ export function saveKataWorkspaceState(daemonID: string, state: KataPersistedWor
   // Whole-map writes are intentionally last-writer-wins; a valid save resets corrupt or unsupported top-level data.
   const daemons = result.kind === "state" ? copyDaemons(result.state.daemons) : createDaemonMap();
   daemons[daemonID] = cloneState(parsed);
-  writeStorage({ version: 1, daemons });
+  writeStorage({ version: 2, daemons });
 }
 
 export function clearKataWorkspaceSelection(daemonID: string): void {
@@ -195,7 +195,7 @@ export function clearKataWorkspaceSelection(daemonID: string): void {
     return;
   }
   daemons[daemonID] = { ...state, selectedIssueUID: null };
-  writeStorage({ version: 1, daemons });
+  writeStorage({ version: 2, daemons });
 }
 
 export function clearKataWorkspaceState(daemonID: string): void {
@@ -213,5 +213,5 @@ export function clearKataWorkspaceState(daemonID: string): void {
     delete daemons[daemonID];
   }
   // Whole-map writes are intentionally last-writer-wins; orphan IDs persist until explicitly cleared.
-  writeStorage({ version: 1, daemons });
+  writeStorage({ version: 2, daemons });
 }

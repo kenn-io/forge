@@ -12,6 +12,8 @@
   interface Props {
     issue: KataTaskDetail;
     ownerOptions: TypeaheadOption[];
+    actionsDisabled?: boolean | undefined;
+    draftResetGeneration?: number | undefined;
     onPatchMetadata: (uid: string, patch: Record<string, unknown>) => boolean | Promise<boolean>;
     onAssignOwner: (uid: string, owner: string) => boolean | Promise<boolean>;
     onUnassignOwner: (uid: string) => boolean | Promise<boolean>;
@@ -23,6 +25,8 @@
   let {
     issue,
     ownerOptions,
+    actionsDisabled = false,
+    draftResetGeneration = 0,
     onPatchMetadata,
     onAssignOwner,
     onUnassignOwner,
@@ -32,6 +36,14 @@
   }: Props = $props();
 
   type PropertyKey = "scheduled" | "due" | "priority";
+  type PropertyDraftKey = PropertyKey | "owner" | "label";
+
+  interface PendingDraftReset {
+    key: PropertyDraftKey;
+    uid: string;
+    generation: number;
+    ownerEditVersion?: number;
+  }
 
   const priorityOptions = [
     { value: "", label: "No priority" },
@@ -45,10 +57,17 @@
   let activeProperty = $state<PropertyKey | null>(null);
   let scheduledDraft = $state("");
   let dueDraft = $state("");
+  let priorityDraft = $state("");
   let addingLabel = $state(false);
   let editingLabels = $state(false);
   let labelDraft = $state("");
+  let ownerEditVersion = $state(0);
+  let ownerDraft = $state("");
+  let ownerEditorOpen = $state(false);
+  let ownerEditorGeneration = $state(0);
   let trackedUID = $state<string | null>(null);
+  let lastDraftResetGeneration = $state<number | null>(null);
+  let pendingDraftReset = $state.raw<PendingDraftReset | null>(null);
 
   $effect(() => {
     if (issue.issue.uid === trackedUID) return;
@@ -56,10 +75,77 @@
     activeProperty = null;
     scheduledDraft = "";
     dueDraft = "";
+    priorityDraft = "";
     addingLabel = false;
     editingLabels = false;
     labelDraft = "";
+    ownerEditVersion = 0;
+    ownerDraft = "";
+    ownerEditorOpen = false;
+    ownerEditorGeneration += 1;
+    pendingDraftReset = null;
+    lastDraftResetGeneration = draftResetGeneration;
   });
+
+  $effect(() => {
+    const nextGeneration = draftResetGeneration;
+    if (lastDraftResetGeneration === null) {
+      lastDraftResetGeneration = nextGeneration;
+      return;
+    }
+    if (nextGeneration === lastDraftResetGeneration) return;
+    lastDraftResetGeneration = nextGeneration;
+    const pending = pendingDraftReset;
+    pendingDraftReset = null;
+    if (
+      !pending ||
+      pending.uid !== issue.issue.uid ||
+      pending.generation === nextGeneration ||
+      (pending.key === "owner" && pending.ownerEditVersion !== ownerEditVersion)
+    ) return;
+    resetDraft(pending.key);
+  });
+
+  function resetDraft(key: PropertyDraftKey): void {
+    if (key === "scheduled") {
+      if (activeProperty === key) activeProperty = null;
+      scheduledDraft = "";
+    } else if (key === "due") {
+      if (activeProperty === key) activeProperty = null;
+      dueDraft = "";
+    } else if (key === "priority") {
+      if (activeProperty === key) activeProperty = null;
+      priorityDraft = "";
+    } else if (key === "owner") {
+      ownerDraft = "";
+      ownerEditorOpen = false;
+      ownerEditorGeneration += 1;
+    } else {
+      labelDraft = "";
+      addingLabel = false;
+    }
+  }
+
+  function scheduleAcceptedReset(
+    key: PropertyDraftKey,
+    mutationUID: string,
+    generation: number,
+    ownerVersion?: number,
+  ): boolean {
+    if (issue.issue.uid !== mutationUID) return false;
+    if (draftResetGeneration !== generation) {
+      if (key === "owner" && ownerVersion !== ownerEditVersion) return false;
+      resetDraft(key);
+      return true;
+    }
+    pendingDraftReset = {
+      key,
+      uid: mutationUID,
+      generation,
+      ...(ownerVersion === undefined ? {} : { ownerEditVersion: ownerVersion }),
+    };
+    return false;
+  }
 
   function uid(): string {
     return issue.issue.uid;
@@ -94,66 +180,78 @@
   }
 
   function openProperty(property: PropertyKey): void {
+    if (actionsDisabled) return;
     activeProperty = property;
     if (property === "scheduled") {
       scheduledDraft = issue.issue.metadata.scheduled_on ?? "";
     } else if (property === "due") {
       dueDraft = issue.issue.metadata.deadline_on ?? "";
+    } else {
+      priorityDraft = issue.issue.priority === undefined || issue.issue.priority === null
+        ? ""
+        : String(issue.issue.priority);
     }
   }
 
   async function patchScheduled(value: string): Promise<void> {
+    if (actionsDisabled) return;
     const property = "scheduled";
     scheduledDraft = value;
-    const ok = await onPatchMetadata(uid(), { scheduled_on: value === "" ? null : value });
-    if (ok && activeProperty === property) {
-      activeProperty = null;
-    }
+    const mutationUID = uid();
+    const generation = draftResetGeneration;
+    const ok = await onPatchMetadata(mutationUID, { scheduled_on: value === "" ? null : value });
+    if (ok) scheduleAcceptedReset(property, mutationUID, generation);
   }
 
   async function patchDue(value: string): Promise<void> {
+    if (actionsDisabled) return;
     const property = "due";
     dueDraft = value;
-    const ok = await onPatchMetadata(uid(), { deadline_on: value === "" ? null : value });
-    if (ok && activeProperty === property) {
-      activeProperty = null;
-    }
+    const mutationUID = uid();
+    const generation = draftResetGeneration;
+    const ok = await onPatchMetadata(mutationUID, { deadline_on: value === "" ? null : value });
+    if (ok) scheduleAcceptedReset(property, mutationUID, generation);
   }
 
   async function updateOwner(value: string): Promise<boolean> {
+    if (actionsDisabled) return false;
     const owner = value.trim();
+    const mutationUID = uid();
+    const generation = draftResetGeneration;
+    const editVersion = ownerEditVersion;
     const ok = owner
-      ? await onAssignOwner(uid(), owner)
-      : await onUnassignOwner(uid());
-    if (ok) {
-      activeProperty = null;
-    }
-    return ok;
+      ? await onAssignOwner(mutationUID, owner)
+      : await onUnassignOwner(mutationUID);
+    if (!ok) return false;
+    return scheduleAcceptedReset("owner", mutationUID, generation, editVersion);
   }
 
   async function updatePriority(value: string): Promise<void> {
+    if (actionsDisabled) return;
     const property = "priority";
     const priority = value === "" ? null : Number(value);
-    const ok = await onSetPriority(uid(), priority);
-    if (ok && activeProperty === property) {
-      activeProperty = null;
-    }
+    priorityDraft = value;
+    const mutationUID = uid();
+    const generation = draftResetGeneration;
+    const ok = await onSetPriority(mutationUID, priority);
+    if (ok) scheduleAcceptedReset(property, mutationUID, generation);
   }
 
   async function submitLabel(): Promise<void> {
+    if (actionsDisabled) return;
     const label = labelDraft.trim();
     if (!label) {
       addingLabel = false;
       return;
     }
-    const ok = await onAddLabel(uid(), label);
-    if (ok) {
-      labelDraft = "";
-      addingLabel = false;
-    }
+    const mutationUID = uid();
+    const generation = draftResetGeneration;
+    const ok = await onAddLabel(mutationUID, label);
+    if (ok) scheduleAcceptedReset("label", mutationUID, generation);
   }
 
   function toggleLabelEditing(): void {
+    if (actionsDisabled) return;
     editingLabels = !editingLabels;
     if (!editingLabels) {
       labelDraft = "";
@@ -171,6 +269,25 @@
       addingLabel = false;
     }
   }
+
+  function trackOwnerQuery(query: string): void {
+    if (query === ownerDraft) return;
+    ownerDraft = query;
+    ownerEditVersion += 1;
+  }
+
+  function handleOwnerFocusIn(event: FocusEvent): void {
+    ownerEditorOpen = event.target instanceof HTMLInputElement && event.target.getAttribute("role") === "combobox";
+  }
+
+  function handleOwnerFocusOutCapture(event: FocusEvent): void {
+    if (actionsDisabled && ownerEditorOpen) {
+      event.stopPropagation();
+      return;
+    }
+    const related = event.relatedTarget as Node | null;
+    if (!(event.currentTarget as HTMLElement).contains(related)) ownerEditorOpen = false;
+  }
 </script>
 
 <section class="property-pills" aria-label="Properties">
@@ -182,6 +299,7 @@
         class="property-date-picker"
         ariaLabel="Scheduled"
         value={scheduledDraft}
+        disabled={actionsDisabled}
         clearable
         onEscape={() => {
           activeProperty = null;
@@ -192,7 +310,7 @@
       />
     </div>
   {:else}
-    <button type="button" class="property-pill" aria-label="Edit scheduled" onclick={() => openProperty("scheduled")}>
+    <button type="button" class="property-pill" aria-label="Edit scheduled" disabled={actionsDisabled} onclick={() => openProperty("scheduled")}>
       <CalendarIcon size={13} strokeWidth={1.8} />
       <span>Scheduled</span>
       <strong>{scheduledLabel()}</strong>
@@ -208,6 +326,7 @@
         ariaLabel="Due"
         clearLabel="Clear due date"
         value={dueDraft}
+        disabled={actionsDisabled}
         clearable
         onEscape={() => {
           activeProperty = null;
@@ -218,15 +337,20 @@
       />
     </div>
   {:else}
-    <button type="button" class="property-pill" aria-label="Edit due date" onclick={() => openProperty("due")}>
+    <button type="button" class="property-pill" aria-label="Edit due date" disabled={actionsDisabled} onclick={() => openProperty("due")}>
       <ClockIcon size={13} strokeWidth={1.8} />
       <span>Due</span>
       <strong>{dueLabel()}</strong>
     </button>
   {/if}
 
-  <div class="property-pill property-pill--typeahead">
+  <div
+    class="property-pill property-pill--typeahead"
+    onfocusin={handleOwnerFocusIn}
+    onfocusoutcapture={handleOwnerFocusOutCapture}
+  >
     <UserIcon size={13} strokeWidth={1.8} />
+    {#key ownerEditorGeneration}
     <Typeahead
       options={ownerOptions}
       value={issue.issue.owner ?? ""}
@@ -237,8 +361,11 @@
       clearLabel="Unassigned"
       triggerPrefix="Owner:"
       emptyLabel="Enter an owner"
+      disabled={actionsDisabled && !ownerEditorOpen}
+      onquery={trackOwnerQuery}
       onselect={updateOwner}
     />
+    {/key}
   </div>
 
   {#if activeProperty === "priority"}
@@ -247,17 +374,16 @@
       <span>Priority</span>
       <SelectDropdown
         title="Priority"
-        value={issue.issue.priority === undefined || issue.issue.priority === null
-          ? ""
-          : String(issue.issue.priority)}
+        value={priorityDraft}
         options={priorityOptions}
+        disabled={actionsDisabled}
         onchange={(value) => {
           void updatePriority(value);
         }}
       />
     </div>
   {:else}
-    <button type="button" class="property-pill" aria-label="Edit priority" onclick={() => openProperty("priority")}>
+    <button type="button" class="property-pill" aria-label="Edit priority" disabled={actionsDisabled} onclick={() => openProperty("priority")}>
       <FlagIcon size={13} strokeWidth={1.8} />
       <span>Priority</span>
       <strong>{priorityLabel()}</strong>
@@ -286,8 +412,9 @@
                   class="kata-label-chip"
                   ariaLabel={`Remove label ${label.label}`}
                   title={`Remove label ${label.label}`}
+                  disabled={actionsDisabled}
                   onclick={() => {
-                    void onRemoveLabel(uid(), label.label);
+                    if (!actionsDisabled) void onRemoveLabel(uid(), label.label);
                   }}
                 >
                   {label.label}
@@ -311,7 +438,11 @@
     <input
       aria-label="New label"
       class="label-input"
-      bind:value={labelDraft}
+      value={labelDraft}
+      disabled={actionsDisabled}
+      oninput={(event) => {
+        labelDraft = event.currentTarget.value;
+      }}
       onkeydown={handleLabelKeydown}
       onblur={() => {
         void submitLabel();
@@ -319,13 +450,14 @@
     />
   {:else}
     <div class="label-actions">
-      <Button size="sm" surface="outline" label="Add label" onclick={() => { addingLabel = true; }} />
+      <Button size="sm" surface="outline" label="Add label" disabled={actionsDisabled} onclick={() => { addingLabel = true; }} />
       {#if issue.labels.length > 0}
         <Button
           size="sm"
           surface="outline"
           label={editingLabels ? "Done" : "Edit labels"}
           ariaLabel={editingLabels ? "Done editing labels" : undefined}
+          disabled={actionsDisabled}
           onclick={toggleLabelEditing}
         />
       {/if}

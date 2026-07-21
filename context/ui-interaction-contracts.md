@@ -424,7 +424,7 @@ full provider route identity before opening transient UI or applying mutation
 responses, and discard stale responses instead of patching another item.
 
 - Separate Kata mutation transport from post-acknowledgement authority recovery:
-  transport failure preserves drafts, while acknowledged writes stay fenced through the newest snapshot and required recurrence refresh; Retry never repeats the mutation
+  transport failure preserves drafts; acknowledgement fences mutation actions without clearing editors; only the matching unchanged draft resets after accepted snapshot and required recurrence replacement; Retry never repeats the mutation
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::runAuthorityMutation`).
 
 ## Testing Expectations

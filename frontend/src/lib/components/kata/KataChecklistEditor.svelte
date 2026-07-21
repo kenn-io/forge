@@ -10,16 +10,27 @@
     issue: KataTaskDetail;
     revealed: boolean;
     disabled?: boolean;
+    draftResetGeneration?: number;
     onPatchMetadata: (uid: string, patch: Record<string, unknown>) => boolean | Promise<boolean>;
     onReveal: () => void;
   }
 
-  let { issue, revealed, disabled = false, onPatchMetadata, onReveal }: Props = $props();
+  let {
+    issue,
+    revealed,
+    disabled = false,
+    draftResetGeneration = 0,
+    onPatchMetadata,
+    onReveal,
+  }: Props = $props();
 
   let checklistPending = $state(false);
   let checklistDraft = $state("");
   let checklistInput: HTMLInputElement | null = $state(null);
   let trackedUID = $state<string | null>(null);
+  let lastDraftResetGeneration = $state<number | null>(null);
+  let pendingDraftResetUID = $state<string | null>(null);
+  let pendingDraftResetGeneration = $state<number | null>(null);
 
   const visible = $derived(checklistItems().length > 0 || revealed);
 
@@ -33,47 +44,79 @@
     trackedUID = uid;
     checklistDraft = "";
     checklistPending = false;
+    pendingDraftResetUID = null;
+    pendingDraftResetGeneration = null;
+  });
+
+  $effect(() => {
+    const nextGeneration = draftResetGeneration;
+    if (lastDraftResetGeneration === null) {
+      lastDraftResetGeneration = nextGeneration;
+      return;
+    }
+    if (nextGeneration === lastDraftResetGeneration) return;
+    lastDraftResetGeneration = nextGeneration;
+    if (pendingDraftResetUID === issue.issue.uid && pendingDraftResetGeneration !== nextGeneration) {
+      resetChecklistDraft();
+    }
   });
 
   function checklistItems(): KataTaskChecklistItem[] {
     return issue.issue.metadata.checklist ?? [];
   }
 
-  async function replaceChecklist(next: KataTaskChecklistItem[]): Promise<void> {
-    await onPatchMetadata(issue.issue.uid, { checklist: next });
-    if (next.length === 0) {
-      onReveal();
-    }
+  function resetChecklistDraft(): void {
+    checklistDraft = "";
+    pendingDraftResetUID = null;
+    pendingDraftResetGeneration = null;
+    queueMicrotask(() => checklistInput?.focus());
   }
 
-  async function guarded(work: () => Promise<void>): Promise<void> {
-    if (disabled || checklistPending) return;
+  async function replaceChecklist(uid: string, next: KataTaskChecklistItem[]): Promise<boolean> {
+    const changed = await onPatchMetadata(uid, { checklist: next });
+    if (changed && next.length === 0) {
+      onReveal();
+    }
+    return changed;
+  }
+
+  async function guarded(work: () => Promise<boolean>): Promise<boolean> {
+    if (disabled || checklistPending) return false;
     checklistPending = true;
     try {
-      await work();
+      return await work();
     } finally {
       checklistPending = false;
     }
   }
 
   async function toggleChecklistItem(id: string, done: boolean): Promise<void> {
+    const uid = issue.issue.uid;
     await guarded(() =>
-      replaceChecklist(checklistItems().map((item) => (item.id === id ? { ...item, done } : item))),
+      replaceChecklist(uid, checklistItems().map((item) => (item.id === id ? { ...item, done } : item))),
     );
   }
 
   async function removeChecklistItem(id: string): Promise<void> {
-    await guarded(() => replaceChecklist(checklistItems().filter((item) => item.id !== id)));
+    const uid = issue.issue.uid;
+    await guarded(() => replaceChecklist(uid, checklistItems().filter((item) => item.id !== id)));
   }
 
   async function addChecklistItem(): Promise<void> {
     const text = checklistDraft.trim();
     if (!text) return;
-    await guarded(async () => {
-      await replaceChecklist([...checklistItems(), { id: createULID(), text, done: false }]);
-      checklistDraft = "";
-      queueMicrotask(() => checklistInput?.focus());
-    });
+    const mutationUID = issue.issue.uid;
+    const resetGeneration = draftResetGeneration;
+    const changed = await guarded(() =>
+      replaceChecklist(mutationUID, [...checklistItems(), { id: createULID(), text, done: false }]),
+    );
+    if (!changed || issue.issue.uid !== mutationUID) return;
+    if (draftResetGeneration !== resetGeneration) {
+      resetChecklistDraft();
+    } else {
+      pendingDraftResetUID = mutationUID;
+      pendingDraftResetGeneration = resetGeneration;
+    }
   }
 
   function handleChecklistKeydown(event: KeyboardEvent): void {

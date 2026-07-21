@@ -84,6 +84,7 @@ describe("KataChecklistEditor", () => {
         { id: expect.any(String), text: "Confirm", done: false },
       ],
     });
+    expect((screen.getByLabelText("New checklist item") as HTMLInputElement).value).toBe("Confirm");
 
     await rerender({
       issue: makeIssue([
@@ -91,9 +92,11 @@ describe("KataChecklistEditor", () => {
         { id: "item-2", text: "Confirm", done: false },
       ]),
       revealed: false,
+      draftResetGeneration: 1,
       onPatchMetadata,
       onReveal,
     });
+    expect((screen.getByLabelText("New checklist item") as HTMLInputElement).value).toBe("");
     await fireEvent.click(screen.getByLabelText("Send"));
 
     expect(onPatchMetadata).toHaveBeenLastCalledWith("issue-1", {
@@ -138,6 +141,26 @@ describe("KataChecklistEditor", () => {
     });
 
     expect((screen.getByLabelText("New checklist item") as HTMLInputElement).value).toBe("");
+  });
+
+  it("preserves the add-item draft when the mutation transport fails", async () => {
+    const onPatchMetadata = vi.fn(async () => false);
+    render(KataChecklistEditor, {
+      props: {
+        issue: makeIssue(),
+        revealed: true,
+        onPatchMetadata,
+        onReveal: vi.fn(),
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText("New checklist item"), {
+      target: { value: "Keep this draft" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(onPatchMetadata).toHaveBeenCalledOnce());
+    expect((screen.getByLabelText("New checklist item") as HTMLInputElement).value).toBe("Keep this draft");
   });
 
   it("keeps checklist mutations disabled while the owning snapshot is stale", async () => {

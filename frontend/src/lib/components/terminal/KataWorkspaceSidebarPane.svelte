@@ -500,7 +500,8 @@
       unlinkBusyIds={unlinkBusyIds}
       {selectedRecurrences}
       {checklistRevealed}
-      actionsDisabled={detailAuthorityBlocked}
+      actionsDisabled={mutationActionsBlocked}
+      authorityBlocked={detailAuthorityBlocked}
       draftResetGeneration={mutationDraftResetGeneration}
       movePending={pendingMoveIssueUIDs.has(selectedIssue.issue.uid)}
       onMoveIssue={moveSelectedIssue}

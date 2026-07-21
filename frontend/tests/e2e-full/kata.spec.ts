@@ -3061,7 +3061,7 @@ test("kata workspace restores filtered expanded child selection after leaving Ka
   try {
     await seedRestoredKataWorkspace(page, server.info.base_url);
     await expect
-      .poll(() => page.evaluate(() => window.localStorage.getItem("middleman:kata:workspace-state/v1")))
+      .poll(() => page.evaluate(() => window.localStorage.getItem("middleman:kata:workspace-state/v2")))
       .toContain(fixture.child.uid);
     const focusUIDBeforeLeave = await page.evaluate(() => document.activeElement?.getAttribute("data-uid"));
     expect(focusUIDBeforeLeave).toBe(fixture.child.uid);
@@ -3099,7 +3099,7 @@ test("kata explicit URL view uses fresh defaults instead of unrelated persisted 
   try {
     await seedRestoredKataWorkspace(page, server.info.base_url, { projectScoped: false });
     await expect
-      .poll(() => page.evaluate(() => window.localStorage.getItem("middleman:kata:workspace-state/v1")))
+      .poll(() => page.evaluate(() => window.localStorage.getItem("middleman:kata:workspace-state/v2")))
       .toContain(fixture.child.uid);
 
     await appHeaderTab(page, "PRs").click();
@@ -5530,7 +5530,8 @@ test("kata metadata mutation uses the accepted snapshot ETag and waits for repla
     expect(backend.state.seenIfMatches).toContain('"rev-73"');
     await expect(detail.getByRole("heading", { name: "Mutation response impostor" })).toHaveCount(0);
     await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
-    await expect(detail.getByRole("button", { name: "Edit scheduled" })).toContainText("Scheduled");
+    await expect(detail.getByRole("group", { name: "Edit scheduled" })).toBeVisible();
+    await expect(detail.getByRole("button", { name: "Scheduled: Pick date" })).toBeDisabled();
 
     emitDaemonChange(
       backend.state,
@@ -5546,7 +5547,8 @@ test("kata metadata mutation uses the accepted snapshot ETag and waits for repla
     );
     await expect.poll(() => selectedSnapshotRequests.length).toBeGreaterThan(snapshotsBeforeMutation);
     await expect(detail.getByRole("heading", { name: "Mutation response impostor" })).toHaveCount(0);
-    await expect(detail.getByRole("button", { name: "Edit scheduled" })).toContainText("Scheduled");
+    await expect(detail.getByRole("group", { name: "Edit scheduled" })).toBeVisible();
+    await expect(detail.getByRole("button", { name: "Scheduled: Pick date" })).toBeDisabled();
 
     releaseReplacement();
     await expect(detail.getByRole("button", { name: "Edit scheduled" })).toContainText("When");

@@ -35,10 +35,22 @@ const ownerOptions = [
   { name: "agent:planner", label: "agent:planner" },
 ];
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 function renderProperties(
   props: Partial<{
     issue: KataTaskDetail;
     ownerOptions: typeof ownerOptions;
+    actionsDisabled: boolean;
+    draftResetGeneration: number;
     onPatchMetadata: (uid: string, patch: Record<string, unknown>) => boolean | Promise<boolean>;
     onAssignOwner: (uid: string, owner: string) => boolean | Promise<boolean>;
     onUnassignOwner: (uid: string) => boolean | Promise<boolean>;
@@ -74,7 +86,7 @@ describe("KataIssueProperties", () => {
     const onAddLabel = vi.fn(async () => true);
     const onRemoveLabel = vi.fn();
 
-    render(KataIssueProperties, {
+    const view = render(KataIssueProperties, {
       props: {
         issue: makeIssue({ metadata: { deadline_on: "2026-06-05" } }),
         ownerOptions: [],
@@ -94,6 +106,7 @@ describe("KataIssueProperties", () => {
     await fireEvent.keyDown(screen.getByLabelText("New label"), { key: "Enter" });
 
     expect(onAddLabel).toHaveBeenCalledWith("issue-1", "blocked");
+    await view.rerender({ draftResetGeneration: 1 });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit labels" }));
     await fireEvent.click(screen.getByRole("button", { name: "Remove label review" }));
@@ -167,27 +180,39 @@ describe("KataIssueProperties", () => {
     expect(onSetPriority).toHaveBeenCalledWith("issue-1", 1);
   });
 
-  it("patches scheduled and due dates and closes editors on success", async () => {
+  it("patches scheduled and due dates and closes editors on accepted replacement", async () => {
     const onPatchMetadata = vi.fn(async () => true);
-    renderProperties({ onPatchMetadata });
+    const view = renderProperties({ onPatchMetadata, draftResetGeneration: 0 });
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit scheduled" }));
     await fireEvent.click(screen.getByRole("button", { name: /Scheduled:/ }));
     await fireEvent.click(screen.getByRole("button", { name: /Jun 10, 2026/ }));
 
     expect(onPatchMetadata).toHaveBeenCalledWith("issue-1", { scheduled_on: "2026-06-10" });
-    await waitFor(() => {
-      expect(screen.queryByRole("button", { name: /Scheduled:/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Scheduled: Jun 10/ })).toBeTruthy();
+    await view.rerender({
+      draftResetGeneration: 1,
+      issue: makeIssue({
+        owner: "fixture-user",
+        metadata: { scheduled_on: "2026-06-10", deadline_on: "2026-06-05" },
+      }),
     });
+    expect(screen.queryByRole("button", { name: /Scheduled:/ })).toBeNull();
 
     await fireEvent.click(screen.getByRole("button", { name: "Edit due date" }));
     await fireEvent.click(screen.getByRole("button", { name: /Due:/ }));
     await fireEvent.click(screen.getByRole("button", { name: /Jun 8, 2026/ }));
 
     expect(onPatchMetadata).toHaveBeenCalledWith("issue-1", { deadline_on: "2026-06-08" });
-    await waitFor(() => {
-      expect(screen.queryByRole("button", { name: /Due:/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Due: Jun 8/ })).toBeTruthy();
+    await view.rerender({
+      draftResetGeneration: 2,
+      issue: makeIssue({
+        owner: "fixture-user",
+        metadata: { scheduled_on: "2026-06-10", deadline_on: "2026-06-08" },
+      }),
     });
+    expect(screen.queryByRole("button", { name: /Due:/ })).toBeNull();
   });
 
   it("clears date properties and closes date editors on Escape", async () => {
@@ -240,7 +265,7 @@ describe("KataIssueProperties", () => {
   it("assigns highlighted, custom, and unassigned owners", async () => {
     const onAssignOwner = vi.fn(async () => true);
     const onUnassignOwner = vi.fn(async () => true);
-    renderProperties({ onAssignOwner, onUnassignOwner });
+    const view = renderProperties({ onAssignOwner, onUnassignOwner, draftResetGeneration: 0 });
 
     await fireEvent.click(screen.getByRole("button", { name: "Owner: fixture-user" }));
     const ownerInput = screen.getByRole("combobox", { name: "Owner" });
@@ -250,14 +275,22 @@ describe("KataIssueProperties", () => {
     await fireEvent.keyDown(ownerInput, { key: "Enter" });
 
     expect(onAssignOwner).toHaveBeenCalledWith("issue-1", "agent:planner");
+    await view.rerender({
+      draftResetGeneration: 1,
+      issue: makeIssue({ owner: "agent:planner" }),
+    });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Owner: fixture-user" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Owner: agent:planner" }));
     await fireEvent.input(screen.getByRole("combobox", { name: "Owner" }), { target: { value: "agent:new" } });
     await fireEvent.keyDown(screen.getByRole("combobox", { name: "Owner" }), { key: "Enter" });
 
     expect(onAssignOwner).toHaveBeenCalledWith("issue-1", "agent:new");
+    await view.rerender({
+      draftResetGeneration: 2,
+      issue: makeIssue({ owner: "agent:new" }),
+    });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Owner: fixture-user" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Owner: agent:new" }));
     await fireEvent.mouseDown(screen.getByRole("option", { name: "Unassigned" }));
 
     expect(onUnassignOwner).toHaveBeenCalledWith("issue-1");
@@ -275,6 +308,120 @@ describe("KataIssueProperties", () => {
 
     expect(screen.getByRole("combobox", { name: "Owner" })).toBeTruthy();
     expect((screen.getByRole("combobox", { name: "Owner" }) as HTMLInputElement).value).toBe("agent:new");
+  });
+
+  it("fences closed and active property controls without disabling an already-open owner editor", async () => {
+    const onRemoveLabel = vi.fn();
+    const view = renderProperties({ onRemoveLabel });
+
+    await view.rerender({ actionsDisabled: true });
+    expect((screen.getByRole("button", { name: "Owner: fixture-user" }) as HTMLButtonElement).disabled).toBe(true);
+
+    await view.rerender({ actionsDisabled: false });
+    await fireEvent.click(screen.getByRole("button", { name: "Owner: fixture-user" }));
+    const ownerInput = screen.getByRole("combobox", { name: "Owner" }) as HTMLInputElement;
+    await fireEvent.input(ownerInput, { target: { value: "agent:new" } });
+    await view.rerender({ actionsDisabled: true });
+    expect(ownerInput.disabled).toBe(false);
+    expect(ownerInput.value).toBe("agent:new");
+
+    await view.rerender({ actionsDisabled: false });
+    await fireEvent.keyDown(ownerInput, { key: "Escape" });
+    await fireEvent.click(screen.getByRole("button", { name: "Edit scheduled" }));
+    await view.rerender({ actionsDisabled: true });
+    expect((screen.getByRole("button", { name: /Scheduled:/ }) as HTMLButtonElement).disabled).toBe(true);
+
+    await view.rerender({ actionsDisabled: false });
+    await fireEvent.keyDown(screen.getByRole("button", { name: /Scheduled:/ }), { key: "Escape" });
+    await fireEvent.click(screen.getByRole("button", { name: "Edit priority" }));
+    await view.rerender({ actionsDisabled: true });
+    expect((screen.getByRole("combobox", { name: /Priority/ }) as HTMLButtonElement).disabled).toBe(true);
+
+    await view.rerender({ actionsDisabled: false });
+    await fireEvent.click(screen.getByRole("button", { name: "Edit labels" }));
+    await view.rerender({ actionsDisabled: true });
+    const removeLabel = screen.getByRole("button", { name: "Remove label review" }) as HTMLButtonElement;
+    expect(removeLabel.disabled).toBe(true);
+    await fireEvent.click(removeLabel);
+    expect(onRemoveLabel).not.toHaveBeenCalled();
+  });
+
+  it("keeps a successful owner draft open until accepted replacement and preserves newer input", async () => {
+    const assignment = deferred<boolean>();
+    const onAssignOwner = vi.fn(() => assignment.promise);
+    const view = renderProperties({ draftResetGeneration: 0, onAssignOwner });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Owner: fixture-user" }));
+    const ownerInput = screen.getByRole("combobox", { name: "Owner" }) as HTMLInputElement;
+    await fireEvent.input(ownerInput, { target: { value: "agent:first" } });
+    await fireEvent.keyDown(ownerInput, { key: "Enter" });
+    await view.rerender({ actionsDisabled: true });
+    await fireEvent.input(ownerInput, { target: { value: "agent:newer" } });
+    assignment.resolve(true);
+
+    await waitFor(() => expect(onAssignOwner).toHaveBeenCalledWith("issue-1", "agent:first"));
+    await view.rerender({
+      actionsDisabled: false,
+      draftResetGeneration: 1,
+      issue: makeIssue({ owner: "agent:first" }),
+    });
+
+    expect((screen.getByRole("combobox", { name: "Owner" }) as HTMLInputElement).value).toBe("agent:newer");
+  });
+
+  it("preserves an owner query cleared during a slow acknowledgement", async () => {
+    const assignment = deferred<boolean>();
+    const view = renderProperties({
+      draftResetGeneration: 0,
+      onAssignOwner: vi.fn(() => assignment.promise),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Owner: fixture-user" }));
+    const ownerInput = screen.getByRole("combobox", { name: "Owner" }) as HTMLInputElement;
+    await fireEvent.input(ownerInput, { target: { value: "agent:first" } });
+    await fireEvent.keyDown(ownerInput, { key: "Enter" });
+    await view.rerender({ actionsDisabled: true });
+    await fireEvent.input(ownerInput, { target: { value: "" } });
+    assignment.resolve(true);
+
+    await view.rerender({
+      actionsDisabled: false,
+      draftResetGeneration: 1,
+      issue: makeIssue({ owner: "agent:first" }),
+    });
+
+    expect((screen.getByRole("combobox", { name: "Owner" }) as HTMLInputElement).value).toBe("");
+  });
+
+  it("resets successful date, priority, and label drafts only after accepted replacement", async () => {
+    const view = renderProperties({ draftResetGeneration: 0 });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit scheduled" }));
+    await fireEvent.click(screen.getByRole("button", { name: /Scheduled:/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Jun 10, 2026/ }));
+    expect(screen.getByRole("button", { name: /Scheduled: Jun 10/ })).toBeTruthy();
+
+    await view.rerender({
+      draftResetGeneration: 1,
+      issue: makeIssue({ owner: "fixture-user", metadata: { scheduled_on: "2026-06-10", deadline_on: "2026-06-05" } }),
+    });
+    expect(screen.queryByRole("button", { name: /Scheduled:/ })).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit priority" }));
+    await fireEvent.click(screen.getByRole("combobox", { name: /Priority/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "P1" }));
+    expect(screen.getByRole("combobox", { name: /Priority: P1/ })).toBeTruthy();
+
+    await view.rerender({ draftResetGeneration: 2, issue: makeIssue({ owner: "fixture-user", priority: 1 }) });
+    expect(screen.queryByRole("combobox", { name: /Priority/ })).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Add label" }));
+    await fireEvent.input(screen.getByLabelText("New label"), { target: { value: "urgent" } });
+    await fireEvent.keyDown(screen.getByLabelText("New label"), { key: "Enter" });
+    expect((screen.getByLabelText("New label") as HTMLInputElement).value).toBe("urgent");
+
+    await view.rerender({ draftResetGeneration: 3 });
+    expect(screen.queryByLabelText("New label")).toBeNull();
   });
 
   it("clears the priority through the detail property control", async () => {

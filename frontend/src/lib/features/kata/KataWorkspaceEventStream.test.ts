@@ -476,6 +476,12 @@ describe("KataWorkspace compact snapshot stream", () => {
     });
     await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
     await waitFor(() => expect(api.addComment).toHaveBeenCalledOnce());
+    expect((screen.getByRole("region", { name: "Task detail" }) as HTMLElement & { inert: boolean }).inert).toBe(false);
+    expect((screen.getByRole("button", { name: "Add comment" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "More actions" }) as HTMLButtonElement).matches(":disabled")).toBe(true);
+    expect((screen.getByRole("textbox", { name: "Comment" }) as HTMLTextAreaElement).value).toBe(
+      "Persist before navigating",
+    );
 
     await fireEvent.click(screen.getByRole("button", { name: new RegExp(target.title) }));
     await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));

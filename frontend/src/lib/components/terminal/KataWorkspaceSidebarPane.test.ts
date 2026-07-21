@@ -270,6 +270,8 @@ describe("KataWorkspaceSidebarPane", () => {
     await fireEvent.input(screen.getByRole("textbox", { name: "Comment" }), {
       target: { value: "Must stay fenced on B" },
     });
+    expect((screen.getByRole("button", { name: "Add comment" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "More actions" }).matches(":disabled")).toBe(true);
     await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
     expect(commentAttempts).toBe(1);
 
@@ -283,6 +285,9 @@ describe("KataWorkspaceSidebarPane", () => {
 
     expect(commentAttempts).toBe(1);
     expect(screen.getByRole("heading", { name: issueB.title })).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Comment" }) as HTMLTextAreaElement).value).toBe(
+      "Must stay fenced on B",
+    );
   });
 
   it("keeps recurrence mutations fenced until snapshot and recurrence replacement both succeed", async () => {

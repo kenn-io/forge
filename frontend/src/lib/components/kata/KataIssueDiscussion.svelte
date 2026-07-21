@@ -20,6 +20,8 @@
     issueCatalog: readonly KataTaskSummary[];
     searchReferences: KataTaskReferenceSearch;
     activeDaemonId?: string | undefined;
+    actionsDisabled?: boolean | undefined;
+    draftResetGeneration?: number | undefined;
     onAddComment: (uid: string, body: string) => boolean | Promise<boolean>;
     onEditIssue: (uid: string, patch: KataTaskEditPatch) => boolean | Promise<boolean>;
     onSelectIssue: (uid: string) => void | Promise<void>;
@@ -31,6 +33,8 @@
     issueCatalog,
     searchReferences,
     activeDaemonId = undefined,
+    actionsDisabled = false,
+    draftResetGeneration = 0,
     onAddComment,
     onEditIssue,
     onSelectIssue,
@@ -38,6 +42,9 @@
 
   let commentDraft = $state("");
   let relatedDraft = $state("");
+  let lastDraftResetGeneration = $state<number | null>(null);
+  let pendingCommentReset = $state<{ uid: string; generation: number; value: string } | null>(null);
+  let pendingRelatedReset = $state<{ uid: string; generation: number; value: string } | null>(null);
 
   const sortedComments = $derived.by(() => {
     const comments = issue.comments ?? [];
@@ -49,12 +56,40 @@
     });
   });
 
+  $effect(() => {
+    const nextGeneration = draftResetGeneration;
+    if (lastDraftResetGeneration === null) {
+      lastDraftResetGeneration = nextGeneration;
+      return;
+    }
+    if (nextGeneration === lastDraftResetGeneration) return;
+    lastDraftResetGeneration = nextGeneration;
+    const uid = issue.issue.uid;
+    if (pendingCommentReset?.uid === uid && pendingCommentReset.generation !== nextGeneration) {
+      if (commentDraft === pendingCommentReset.value) commentDraft = "";
+    }
+    if (pendingRelatedReset?.uid === uid && pendingRelatedReset.generation !== nextGeneration) {
+      if (relatedDraft === pendingRelatedReset.value) relatedDraft = "";
+    }
+    pendingCommentReset = null;
+    pendingRelatedReset = null;
+  });
+
   async function submitComment(): Promise<void> {
-    const body = commentDraft.trim();
+    if (actionsDisabled) return;
+    const draft = commentDraft;
+    const body = draft.trim();
     if (!body) return;
-    const ok = await onAddComment(issue.issue.uid, body);
+    const mutationUID = issue.issue.uid;
+    const resetGeneration = draftResetGeneration;
+    const ok = await onAddComment(mutationUID, body);
     if (ok) {
-      commentDraft = "";
+      if (issue.issue.uid !== mutationUID) return;
+      if (draftResetGeneration !== resetGeneration) {
+        if (commentDraft === draft) commentDraft = "";
+      } else {
+        pendingCommentReset = { uid: mutationUID, generation: resetGeneration, value: draft };
+      }
     }
   }
 
@@ -86,13 +121,22 @@
   }
 
   async function submitRelatedLink(): Promise<void> {
-    const ref = relatedDraft.trim();
+    if (actionsDisabled) return;
+    const draft = relatedDraft;
+    const ref = draft.trim();
     if (ref === "") return;
-    const ok = await onEditIssue(issue.issue.uid, {
+    const mutationUID = issue.issue.uid;
+    const resetGeneration = draftResetGeneration;
+    const ok = await onEditIssue(mutationUID, {
       links_delta: { add_related: [ref] },
     });
     if (ok) {
-      relatedDraft = "";
+      if (issue.issue.uid !== mutationUID) return;
+      if (draftResetGeneration !== resetGeneration) {
+        if (relatedDraft === draft) relatedDraft = "";
+      } else {
+        pendingRelatedReset = { uid: mutationUID, generation: resetGeneration, value: draft };
+      }
     }
   }
 
@@ -164,7 +208,7 @@
       surface="outline"
       size="sm"
       label="Link"
-      disabled={relatedDraft.trim() === ""}
+      disabled={actionsDisabled || relatedDraft.trim() === ""}
     />
   </form>
 </section>
@@ -193,7 +237,7 @@
       size="sm"
       class="comment-submit"
       label="Add comment"
-      disabled={commentDraft.trim() === ""}
+      disabled={actionsDisabled || commentDraft.trim() === ""}
     />
   </form>
   {#if sortedComments.length === 0}

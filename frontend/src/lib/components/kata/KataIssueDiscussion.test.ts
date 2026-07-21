@@ -236,6 +236,98 @@ describe("KataIssueDiscussion", () => {
     expect((screen.getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("Keep this reply");
   });
 
+  it("resets an acknowledged comment only after accepted replacement authority", async () => {
+    const view = render(KataIssueDiscussion, {
+      props: {
+        issue: makeIssue(),
+        events: [],
+        issueCatalog: makeView().groups.flatMap((group) => group.issues),
+        searchReferences: makeSearch(),
+        activeDaemonId: "home",
+        draftResetGeneration: 0,
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Related issue"), {
+      target: { value: "I-9" },
+    });
+    await fireEvent.input(screen.getByLabelText("Comment"), {
+      target: { value: "Accepted reply" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+
+    expect((screen.getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("Accepted reply");
+    expect((screen.getByLabelText("Related issue") as HTMLInputElement).value).toBe("I-9");
+
+    await view.rerender({ draftResetGeneration: 1 });
+
+    expect((screen.getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("");
+    expect((screen.getByLabelText("Related issue") as HTMLInputElement).value).toBe("I-9");
+  });
+
+  it("resets an acknowledged related link only after accepted replacement authority", async () => {
+    const view = render(KataIssueDiscussion, {
+      props: {
+        issue: makeIssue(),
+        events: [],
+        issueCatalog: makeView().groups.flatMap((group) => group.issues),
+        searchReferences: makeSearch(),
+        activeDaemonId: "home",
+        draftResetGeneration: 0,
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Comment"), {
+      target: { value: "Keep this unrelated reply" },
+    });
+    await fireEvent.input(screen.getByLabelText("Related issue"), {
+      target: { value: "I-9" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Link" }));
+
+    expect((screen.getByLabelText("Related issue") as HTMLInputElement).value).toBe("I-9");
+    expect((screen.getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("Keep this unrelated reply");
+
+    await view.rerender({ draftResetGeneration: 1 });
+
+    expect((screen.getByLabelText("Related issue") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("Keep this unrelated reply");
+  });
+
+  it("preserves a newer comment draft when the acknowledged comment reset arrives", async () => {
+    const view = render(KataIssueDiscussion, {
+      props: {
+        issue: makeIssue(),
+        events: [],
+        issueCatalog: makeView().groups.flatMap((group) => group.issues),
+        searchReferences: makeSearch(),
+        activeDaemonId: "home",
+        draftResetGeneration: 0,
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Comment"), {
+      target: { value: "Accepted reply" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    await fireEvent.input(screen.getByLabelText("Comment"), {
+      target: { value: "Newer reply" },
+    });
+
+    await view.rerender({ draftResetGeneration: 1 });
+
+    expect((screen.getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("Newer reply");
+  });
+
   it("inserts task references from the comment composer", async () => {
     const searchReferences = makeSearch([
       searchTask({ short_id: "pay-rent", reference: "pay-rent", title: "Pay rent" }),

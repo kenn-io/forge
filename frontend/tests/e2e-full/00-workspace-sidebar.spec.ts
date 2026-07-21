@@ -3,7 +3,18 @@
 // that start near the end of the run stretch the suite tail.
 
 import { expect, request as playwrightRequest, test, type APIRequestContext, type Locator } from "@playwright/test";
-import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import {
+  startIsolatedWorkspaceE2EServer,
+  startIsolatedWorkspaceE2EServerWithOptions,
+  type IsolatedE2EServer,
+} from "./support/e2eServer";
+import {
+  configureMiddlemanKataHome,
+  createLiveKataHarness,
+  type KataIssueSummary,
+  type LiveKataHarness,
+  type MiddlemanKataHome,
+} from "./support/kataLiveHarness";
 
 type WorkspaceStatusResponse = {
   id: string;
@@ -718,6 +729,132 @@ test.describe("workspace sidebar full-stack", () => {
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
+    }
+  });
+});
+
+test.describe("workspace Kata sidebar live integration", () => {
+  test.skip(process.env.MIDDLEMAN_LIVE_KATA_TESTS !== "1", "Set MIDDLEMAN_LIVE_KATA_TESTS=1 to run live Kata e2e.");
+  test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
+
+  test("preserves the newer task draft while an older mutation acknowledgement is delayed", async ({ page }) => {
+    let harness: LiveKataHarness | null = null;
+    let kataHome: MiddlemanKataHome | null = null;
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    let releaseAcknowledgement = (): void => {};
+    let acknowledgementReleased = false;
+
+    try {
+      harness = await createLiveKataHarness();
+      kataHome = await configureMiddlemanKataHome(harness.baseURL);
+      isolatedServer = await startIsolatedWorkspaceE2EServerWithOptions({ freshProcess: true });
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+
+      const source = await harness.seedIssue({
+        projectName: "widgets",
+        issueTitle: "Persist the source comment",
+        issueBody: "Source task for a delayed acknowledgement.",
+      });
+      const target = await harness.post<{ issue: KataIssueSummary; changed: boolean }>(
+        `/api/v1/projects/${source.project.id}/issues`,
+        {
+          actor: "middleman-e2e",
+          title: "Preserve the newer draft",
+          body: "Target task selected while the source mutation is pending.",
+          force_new: true,
+        },
+        { "Idempotency-Key": "workspace-sidebar-newer-draft" },
+      );
+
+      const linkResponse = await fetch(
+        `${harness.baseURL}/api/v1/projects/${source.project.id}/issues/${source.issue.uid}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            actor: "middleman-e2e",
+            links_delta: { add_related: [target.issue.short_id] },
+          }),
+        },
+      );
+      expect(linkResponse.status, `link source to target failed: ${await linkResponse.text()}`).toBe(200);
+
+      const createResponse = await api.post("/api/v1/kata/workspaces", {
+        data: {
+          daemon_id: "live",
+          project_uid: source.issue.project_uid,
+          project_name: source.project.name,
+          issue_uid: source.issue.uid,
+          short_id: source.issue.short_id,
+          qualified_id: source.issue.qualified_id,
+          title: source.issue.title,
+        },
+      });
+      const createBody = await createResponse.text();
+      expect(createResponse.status(), `POST /api/v1/kata/workspaces failed: ${createBody}`).toBe(202);
+      const sourceWorkspace = JSON.parse(createBody) as WorkspaceStatusResponse;
+      await waitForWorkspaceReady(api, sourceWorkspace.id);
+
+      let mutationRequests = 0;
+      let markMutationPersisted!: () => void;
+      const mutationPersisted = new Promise<void>((resolve) => {
+        markMutationPersisted = resolve;
+      });
+      const acknowledgementMayReturn = new Promise<void>((resolve) => {
+        releaseAcknowledgement = resolve;
+      });
+      await page.route(
+        `**/api/v1/kata/proxy/api/v1/projects/${source.project.id}/issues/${source.issue.uid}/comments`,
+        async (route) => {
+          if (route.request().method() !== "POST") {
+            await route.continue();
+            return;
+          }
+          mutationRequests += 1;
+          const response = await route.fetch();
+          markMutationPersisted();
+          await acknowledgementMayReturn;
+          await route.fulfill({ response });
+        },
+      );
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${sourceWorkspace.id}`);
+      await page.getByRole("button", { name: "Kata task" }).click();
+
+      const pane = page.locator(".kata-workspace-sidebar");
+      await expect(pane.getByRole("heading", { name: source.issue.title })).toBeVisible();
+      await pane.getByRole("textbox", { name: "Comment" }).fill("Persist exactly once on the source task");
+      await pane.getByRole("button", { name: "Add comment" }).click();
+      await mutationPersisted;
+
+      await pane.getByRole("button", { name: new RegExp(target.issue.title) }).click();
+      await expect(pane.getByRole("heading", { name: target.issue.title })).toBeVisible();
+
+      const targetDraft = pane.getByRole("textbox", { name: "Comment" });
+      await targetDraft.fill("Keep this newer task draft");
+      await expect(pane.getByRole("button", { name: "Add comment" })).toBeDisabled();
+      await expect(pane.getByRole("button", { name: "More actions" })).toBeDisabled();
+
+      releaseAcknowledgement();
+      acknowledgementReleased = true;
+
+      await expect(pane.getByRole("button", { name: "Add comment" })).toBeEnabled();
+      await expect(targetDraft).toHaveValue("Keep this newer task draft");
+      expect(mutationRequests).toBe(1);
+
+      const sourceDetail = await harness.getIssue(source.issue.uid);
+      expect(
+        (sourceDetail.comments as Array<{ body?: string }> | undefined)?.filter(
+          (comment) => comment.body === "Persist exactly once on the source task",
+        ),
+      ).toHaveLength(1);
+    } finally {
+      if (!acknowledgementReleased) releaseAcknowledgement();
+      await api?.dispose();
+      await isolatedServer?.stop();
+      await kataHome?.stop();
+      await harness?.stop();
     }
   });
 });

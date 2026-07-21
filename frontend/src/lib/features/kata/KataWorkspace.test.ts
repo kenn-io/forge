@@ -5,6 +5,7 @@ import KataWorkspace from "./KataWorkspace.svelte";
 import { KATA_WORKSPACE_STATE_STORAGE_KEY } from "./kataWorkspacePersistence.js";
 import {
   createWorkspaceAPI,
+  deferred,
   detail,
   fetchedAt,
   initialIssues,
@@ -229,7 +230,7 @@ describe("KataWorkspace snapshot authority", () => {
     localStorage.setItem(
       KATA_WORKSPACE_STATE_STORAGE_KEY,
       JSON.stringify({
-        version: 1,
+        version: 2,
         daemons: {
           home: {
             view: "all",
@@ -333,6 +334,39 @@ describe("KataWorkspace snapshot authority", () => {
     expect(snapshotRequests).toBe(2);
     expect(screen.getByRole("heading", { name: "Accepted snapshot title" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Unaccepted mutation response title" })).toBeNull();
+  });
+
+  it("fences mutation controls without closing an owner draft when assignment transport fails", async () => {
+    acceptHomeDaemon();
+    const selected = initialIssues[0]!;
+    const { api } = createWorkspaceAPI(initialIssues);
+    const assignment = deferred<{ changed: boolean }>();
+    const assignOwner = vi.fn(() => assignment.promise);
+    api.assignOwner = assignOwner;
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
+
+    await screen.findByRole("heading", { name: selected.title });
+    await waitForWorkspaceWritable();
+    await fireEvent.click(screen.getByRole("button", { name: "Owner: fixture-user" }));
+    const ownerInput = screen.getByRole("combobox", { name: "Owner" }) as HTMLInputElement;
+    await fireEvent.input(ownerInput, { target: { value: "agent:new" } });
+    await fireEvent.keyDown(ownerInput, { key: "Enter" });
+
+    await waitFor(() => expect(assignOwner).toHaveBeenCalledOnce());
+    expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((document.querySelector(".kata-detail") as HTMLElement & { inert: boolean }).inert).toBe(false);
+    expect(screen.getByRole("button", { name: "More actions" }).matches(":disabled")).toBe(true);
+    expect(ownerInput.disabled).toBe(false);
+    await fireEvent.keyDown(ownerInput, { key: "Enter" });
+    expect(assignOwner).toHaveBeenCalledOnce();
+    assignment.reject(new Error("owner unavailable"));
+
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect((screen.getByRole("combobox", { name: "Owner" }) as HTMLInputElement).value).toBe("agent:new");
+    expect((screen.getByRole("region", { name: "Task detail" }) as HTMLElement & { inert: boolean }).inert).toBe(false);
   });
 
   it("keeps the graph source fixed while selecting another snapshot graph node", async () => {

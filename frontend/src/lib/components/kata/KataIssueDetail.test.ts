@@ -173,28 +173,54 @@ describe("KataIssueDetail", () => {
     expect(onEditIssue).toHaveBeenCalledWith("issue-1", { body: "Updated body" });
   });
 
-  it("makes the detail inert and discards same-task drafts while authority replacement is pending", async () => {
+  it("resets only the draft owned by the accepted mutation", async () => {
     const onEditIssue = vi.fn(async () => true);
     const view = renderDetail({ onEditIssue });
 
+    await fireEvent.click(screen.getByRole("button", { name: "Edit description" }));
+    await fireEvent.input(screen.getByLabelText("Edit description"), {
+      target: { value: "Keep this unrelated body draft" },
+    });
     await fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
     await fireEvent.input(screen.getByLabelText("Edit title"), {
-      target: { value: "Stale title draft" },
+      target: { value: "Accepted title" },
     });
+    await fireEvent.keyDown(screen.getByLabelText("Edit title"), { key: "Enter" });
 
     await view.rerender({ actionsDisabled: true });
 
     expect((screen.getByRole("region", { name: "Task detail" }) as HTMLElement & { inert: boolean }).inert).toBe(true);
-    expect((screen.getByRole("textbox", { name: "Edit title" }) as HTMLInputElement).value).toBe("Stale title draft");
+    expect((screen.getByRole("textbox", { name: "Edit title" }) as HTMLInputElement).value).toBe("Accepted title");
+    expect((screen.getByRole("textbox", { name: "Edit description" }) as HTMLTextAreaElement).value).toBe(
+      "Keep this unrelated body draft",
+    );
 
     await view.rerender({ actionsDisabled: true, draftResetGeneration: 1 });
-
     await view.rerender({ actionsDisabled: false });
 
     expect(screen.queryByRole("textbox", { name: "Edit title" })).toBeNull();
-    await fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
-    expect((screen.getByLabelText("Edit title") as HTMLInputElement).value).toBe("Ship the thing");
-    expect(onEditIssue).not.toHaveBeenCalled();
+    expect((screen.getByRole("textbox", { name: "Edit description" }) as HTMLTextAreaElement).value).toBe(
+      "Keep this unrelated body draft",
+    );
+    expect(onEditIssue).toHaveBeenCalledWith("issue-1", { title: "Accepted title" });
+  });
+
+  it("preserves a newer selection draft when an older mutation reset arrives", async () => {
+    const view = renderDetail({
+      issue: makeIssue({ uid: "issue-2", short_id: "I-2", qualified_id: "INBOX-2" }),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit description" }));
+    await fireEvent.input(screen.getByLabelText("Edit description"), {
+      target: { value: "Draft on the newer task" },
+    });
+
+    await view.rerender({ actionsDisabled: true, draftResetGeneration: 1 });
+    await view.rerender({ actionsDisabled: false });
+
+    expect((screen.getByRole("textbox", { name: "Edit description" }) as HTMLTextAreaElement).value).toBe(
+      "Draft on the newer task",
+    );
   });
 
   it("moves the issue from the task actions menu", async () => {

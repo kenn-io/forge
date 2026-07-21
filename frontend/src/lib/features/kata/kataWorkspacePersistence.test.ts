@@ -20,10 +20,41 @@ const home = {
   selectedIssueUID: "issue-child",
 };
 
+const LEGACY_KATA_WORKSPACE_STATE_STORAGE_KEY = "middleman:kata:workspace-state/v1";
+
 beforeEach(() => window.localStorage.clear());
 afterEach(() => vi.restoreAllMocks());
 
 describe("Kata workspace persistence", () => {
+  it("ignores legacy v1 workspace state instead of reinterpreting it", () => {
+    const legacyRaw = JSON.stringify({
+      version: 1,
+      daemons: {
+        home: { ...home, view: "logbook", filters: { ...home.filters, status: "open" } },
+      },
+    });
+    window.localStorage.setItem(LEGACY_KATA_WORKSPACE_STATE_STORAGE_KEY, legacyRaw);
+
+    expect(loadKataWorkspaceState("home")).toBeNull();
+    expect(window.localStorage.getItem(LEGACY_KATA_WORKSPACE_STATE_STORAGE_KEY)).toBe(legacyRaw);
+  });
+
+  it("persists new workspace state without rewriting the legacy namespace", () => {
+    const legacyRaw = JSON.stringify({ version: 1, daemons: { home } });
+    window.localStorage.setItem(LEGACY_KATA_WORKSPACE_STATE_STORAGE_KEY, legacyRaw);
+
+    saveKataWorkspaceState("home", { ...home, filters: { ...home.filters, status: "closed" } });
+
+    expect(loadKataWorkspaceState("home")?.filters.status).toBe("closed");
+    expect(window.localStorage.getItem(LEGACY_KATA_WORKSPACE_STATE_STORAGE_KEY)).toBe(legacyRaw);
+  });
+
+  it("rejects a legacy v1 envelope copied into the current namespace", () => {
+    window.localStorage.setItem(KATA_WORKSPACE_STATE_STORAGE_KEY, JSON.stringify({ version: 1, daemons: { home } }));
+
+    expect(loadKataWorkspaceState("home")).toBeNull();
+  });
+
   it("round-trips independent daemon snapshots", () => {
     saveKataWorkspaceState("home", home);
     saveKataWorkspaceState("work", {
@@ -59,16 +90,16 @@ describe("Kata workspace persistence", () => {
 
   it.each([
     "not json",
-    JSON.stringify({ version: 2, daemons: {} }),
-    JSON.stringify({ version: 1, daemons: { home: { view: "invalid" } } }),
-    JSON.stringify({ version: 1, daemons: { home: { ...home, filters: { ...home.filters, status: "later" } } } }),
+    JSON.stringify({ version: 3, daemons: {} }),
+    JSON.stringify({ version: 2, daemons: { home: { view: "invalid" } } }),
+    JSON.stringify({ version: 2, daemons: { home: { ...home, filters: { ...home.filters, status: "later" } } } }),
   ])("ignores malformed or incompatible data: %s", (raw) => {
     window.localStorage.setItem(KATA_WORKSPACE_STATE_STORAGE_KEY, raw);
 
     expect(loadKataWorkspaceState("home")).toBeNull();
   });
 
-  it.each(["not json", JSON.stringify({ version: 2, daemons: { work: home } })])(
+  it.each(["not json", JSON.stringify({ version: 3, daemons: { work: home } })])(
     "replaces corrupt or incompatible top-level data only on a valid save: %s",
     (raw) => {
       window.localStorage.setItem(KATA_WORKSPACE_STATE_STORAGE_KEY, raw);
@@ -78,7 +109,7 @@ describe("Kata workspace persistence", () => {
       saveKataWorkspaceState("home", home);
 
       expect(JSON.parse(window.localStorage.getItem(KATA_WORKSPACE_STATE_STORAGE_KEY)!)).toEqual({
-        version: 1,
+        version: 2,
         daemons: { home },
       });
     },
@@ -96,7 +127,7 @@ describe("Kata workspace persistence", () => {
     window.localStorage.setItem(
       KATA_WORKSPACE_STATE_STORAGE_KEY,
       JSON.stringify({
-        version: 1,
+        version: 2,
         daemons: { home: { ...home, view: "invalid" }, work: { ...home, selectedIssueUID: "work-issue" } },
       }),
     );
@@ -118,13 +149,13 @@ describe("Kata workspace persistence", () => {
   it("removes invalid entries when clearing an absent daemon", () => {
     window.localStorage.setItem(
       KATA_WORKSPACE_STATE_STORAGE_KEY,
-      JSON.stringify({ version: 1, daemons: { home, stale: { view: "invalid" } } }),
+      JSON.stringify({ version: 2, daemons: { home, stale: { view: "invalid" } } }),
     );
 
     clearKataWorkspaceState("stale");
 
     expect(JSON.parse(window.localStorage.getItem(KATA_WORKSPACE_STATE_STORAGE_KEY)!)).toEqual({
-      version: 1,
+      version: 2,
       daemons: { home },
     });
   });

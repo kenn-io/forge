@@ -1699,7 +1699,8 @@
       unlinkBusyIds={unlinkBusyIds}
       {selectedRecurrences}
       {checklistRevealed}
-      actionsDisabled={detailAuthorityBlocked}
+      actionsDisabled={mutationActionsBlocked}
+      authorityBlocked={detailAuthorityBlocked}
       draftResetGeneration={mutationDraftResetGeneration}
       movePending={pendingMoveIssueUIDs.has(acceptedSelectedIssue.issue.uid)}
       onMoveIssue={moveSelectedIssue}

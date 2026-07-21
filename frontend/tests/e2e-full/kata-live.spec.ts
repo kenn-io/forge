@@ -247,6 +247,104 @@ test.describe("kata live daemon integration", () => {
     }
   });
 
+  test("retries a failed recurrence refresh without repeating the acknowledged mutation", async ({ page }) => {
+    const harness = await createLiveKataHarness();
+    const kataHome = await configureMiddlemanKataHome(harness.baseURL);
+    const server = await startIsolatedE2EServer();
+    let blockRecurrenceReads = false;
+    let recurrenceDeleteRequests = 0;
+    let recurrenceReadRequests = 0;
+
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      if (
+        request.method() === "DELETE" &&
+        /^\/api\/v1\/kata\/proxy\/api\/v1\/projects\/\d+\/recurrences\/[^/]+$/.test(path)
+      ) {
+        recurrenceDeleteRequests += 1;
+      }
+    });
+    await page.route("**/api/v1/kata/proxy/api/v1/projects/*/recurrences*", async (route) => {
+      const request = route.request();
+      if (request.method() === "GET") {
+        recurrenceReadRequests += 1;
+        if (blockRecurrenceReads) {
+          await route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({
+              error: {
+                code: "recurrence_refresh_unavailable",
+                message: "recurrence refresh unavailable",
+              },
+            }),
+          });
+          return;
+        }
+      }
+      await route.continue();
+    });
+
+    try {
+      const seeded = await harness.seedIssue({
+        projectName: "Middleman Recurrence Recovery",
+        issueTitle: "Verify recurrence recovery",
+        issueBody: "Created to verify recurrence refresh fencing against a live Kata database.",
+      });
+      const created = await harness.rawPost(`/api/v1/projects/${seeded.project.id}/recurrences`, {
+        actor: "middleman-e2e",
+        rrule: "FREQ=WEEKLY;COUNT=2",
+        dtstart: "2026-07-21",
+        timezone: "America/New_York",
+        template: {
+          title: "Weekly recovery check",
+          body: "Exercise recurrence refresh recovery.",
+          labels: ["routine"],
+          metadata: { checklist: [] },
+        },
+      });
+      expect(created.status, `Recurrence create failed: ${created.text}`).toBe(201);
+
+      await page.goto(`${server.info.base_url}/kata?issue=${encodeURIComponent(seeded.issue.uid)}`);
+
+      const detail = page.getByRole("region", { name: "Task detail" });
+      const recurrence = detail.getByRole("region", { name: "Recurrence" });
+      await expect(recurrence.getByRole("button", { name: "Weekly recovery check" })).toBeVisible();
+
+      blockRecurrenceReads = true;
+      await recurrence.getByRole("button", { name: "Delete recurrence" }).click();
+      await page.getByRole("dialog", { name: "Delete recurrence" }).getByRole("button", { name: "Delete" }).click();
+
+      await expect.poll(() => recurrenceDeleteRequests).toBe(1);
+      await expect
+        .poll(async () => {
+          const response = await harness.rawGet(`/api/v1/projects/${seeded.project.id}/recurrences`);
+          const rows = (response.body as { recurrences?: Array<{ uid?: string }> }).recurrences ?? [];
+          return rows.length;
+        })
+        .toBe(0);
+      await expect(page.getByRole("alert")).toContainText(
+        "Change saved, but Kata snapshot refresh failed: recurrence refresh unavailable",
+      );
+      await expect(page.getByRole("button", { name: "New task" })).toBeDisabled();
+      await expect(detail).toHaveJSProperty("inert", true);
+
+      const readsBeforeRetry = recurrenceReadRequests;
+      blockRecurrenceReads = false;
+      await page.getByRole("button", { name: "Retry Kata snapshot" }).click();
+
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "New task" })).toBeEnabled();
+      await expect(detail).toHaveJSProperty("inert", false);
+      await expect.poll(() => recurrenceReadRequests).toBeGreaterThan(readsBeforeRetry);
+      expect(recurrenceDeleteRequests).toBe(1);
+    } finally {
+      await server.stop();
+      await kataHome.stop();
+      await harness.stop();
+    }
+  });
+
   test("uses catalog token for authenticated daemon proxy mutations", async ({ page }) => {
     const token = "middleman-live-kata-token";
     const harness = await createLiveKataHarness({ authToken: token });
@@ -271,7 +369,6 @@ test.describe("kata live daemon integration", () => {
           alias: {
             identity: `local://${harness.workspaceRoot}/auth`,
             kind: "local",
-            root_path: `${harness.workspaceRoot}/auth`,
           },
         },
         authHeaders,

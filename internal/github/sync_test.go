@@ -10914,6 +10914,7 @@ type partialFailureMock struct {
 	mockClient
 	issuesCached         bool
 	prsCached            bool
+	listOpenIssuesFn     func(context.Context, string, string) ([]*gh.Issue, error)
 	listOpenPRsErr       error // injected error for ListOpenPullRequests
 	listIssueCommentsErr error // injected error for ListIssueComments
 	listReviewsErr       error // injected error for ListReviews (MR timeline)
@@ -10931,7 +10932,10 @@ func (m *partialFailureMock) ListOpenPullRequests(_ context.Context, _, _ string
 	return m.openPRs, nil
 }
 
-func (m *partialFailureMock) ListOpenIssues(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+func (m *partialFailureMock) ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error) {
+	if m.listOpenIssuesFn != nil {
+		return m.listOpenIssuesFn(ctx, owner, repo)
+	}
 	if m.listOpenIssuesErr != nil {
 		return nil, m.listOpenIssuesErr
 	}
@@ -11212,6 +11216,62 @@ func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
 
 	_, flagged = syncer.failedRepos.Load(repoFailKey(repos[0]))
 	assert.False(flagged, "failedRepos must be cleared after successful retry")
+}
+
+func TestDisabledIssuesStopClosureDetectionAfterFirstLookup(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "owner", Name: "repo",
+	}
+
+	seedClient := &mockClient{
+		openPRs:    []*gh.PullRequest{buildOpenPR(1, now)},
+		openIssues: []*gh.Issue{buildOpenIssue(7, now), buildOpenIssue(8, now)},
+		comments:   []*gh.IssueComment{},
+		reviews:    []*gh.PullRequestReview{},
+		commits:    []*gh.RepositoryCommit{},
+	}
+	NewSyncer(
+		map[string]Client{"github.com": seedClient}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	).RunOnce(ctx)
+	for _, number := range []int{7, 8} {
+		issue, err := database.GetIssue(
+			ctx, "github", "github.com", "owner", "repo", number,
+		)
+		require.NoError(err)
+		require.NotNil(issue)
+	}
+
+	var getIssueCalls atomic.Int32
+	client := &partialFailureMock{}
+	client.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
+	client.openIssues = []*gh.Issue{}
+	client.comments = []*gh.IssueComment{}
+	client.reviews = []*gh.PullRequestReview{}
+	client.commits = []*gh.RepositoryCommit{}
+	client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+		getIssueCalls.Add(1)
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusGone},
+			Message:  "Issues are disabled for this repo",
+		}
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	syncer.RunOnce(ctx)
+
+	assert.Equal(int32(1), getIssueCalls.Load())
+	_, failed := syncer.failedRepos.Load(repoFailKey(repo))
+	assert.False(failed)
 }
 
 // TestSyncerMRListFailureMarksRepoFailed verifies that when the

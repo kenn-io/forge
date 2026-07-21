@@ -489,7 +489,7 @@ function normalizePayload(raw: unknown): Record<string, unknown> | undefined {
   return parseObject(raw);
 }
 
-function normalizeEvent(raw: unknown): KataTaskEvent {
+export function normalizeKataEventEnvelope(raw: unknown): KataTaskEvent {
   const event = isObject(raw) ? raw : {};
   return {
     event_id: numberValue(event.event_id),
@@ -517,7 +517,7 @@ export function normalizeKataEvents(raw: unknown): KataTaskEventsResponse {
   return {
     reset_required: source.reset_required === true,
     reset_after_id: optionalNumber(source.reset_after_id),
-    events: arrayValue(source.events).map(normalizeEvent),
+    events: arrayValue(source.events).map(normalizeKataEventEnvelope),
     next_after_id: numberValue(source.next_after_id),
   };
 }

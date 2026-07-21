@@ -1,0 +1,205 @@
+import type { KataWorkspaceSnapshotResponse } from "./snapshot.js";
+import {
+  normalizeKataEventEnvelope,
+  normalizeKataProject,
+  normalizeKataReachableGraph,
+  normalizeKataTaskDetail,
+  normalizeKataTaskSummary,
+} from "./taskNormalizers.js";
+import type {
+  KataProjectSummary,
+  KataReachableGraphResponse,
+  KataTaskDetail,
+  KataTaskEvent,
+  KataTaskSummary,
+} from "./taskTypes.js";
+
+type JsonObject = Record<string, unknown>;
+
+export type Immutable<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends ReadonlyArray<infer Item>
+    ? readonly Immutable<Item>[]
+    : T extends object
+      ? { readonly [Key in keyof T]: Immutable<T[Key]> }
+      : T;
+
+export interface KataSnapshotEnrichmentErrorProjection {
+  readonly code: string;
+  readonly message: string;
+}
+
+export interface KataWorkspaceSnapshotProjection {
+  readonly server_instance_id: string;
+  readonly daemon_id: string;
+  readonly intent: Immutable<KataWorkspaceSnapshotResponse["intent"]>;
+  readonly generation: number;
+  readonly invalidation_epoch: number;
+  readonly event_cursor: number;
+  readonly fetched_at: string;
+  readonly projects: readonly Immutable<KataProjectSummary>[];
+  readonly member_issue_uids: readonly string[];
+  readonly member_issue_uid_set: ReadonlySet<string>;
+  readonly issues: readonly Immutable<KataTaskSummary>[];
+  readonly selected_issue_uid?: string | undefined;
+  readonly selected_detail?: Immutable<KataTaskDetail> | undefined;
+  readonly selected_history: readonly Immutable<KataTaskEvent>[];
+  readonly graph_source_uid?: string | undefined;
+  readonly graph?: Immutable<KataReachableGraphResponse> | undefined;
+  readonly graph_fetched_at?: string | undefined;
+  readonly enrichment_errors: Readonly<Record<string, KataSnapshotEnrichmentErrorProjection>>;
+}
+
+function isObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function bodyOf(raw: unknown): unknown {
+  return isObject(raw) && "body" in raw ? raw.body : raw;
+}
+
+function assertAllowedString(value: unknown, allowed: readonly string[], field: string): void {
+  if (typeof value !== "string" || !allowed.includes(value)) {
+    throw new Error(`Invalid Kata snapshot ${field}: ${String(value)}`);
+  }
+}
+
+function validateTaskSummary(raw: unknown, field: string): void {
+  const issue = isObject(raw) ? raw : {};
+  assertAllowedString(issue.status, ["open", "closed"], `${field} status`);
+}
+
+function validateSelectedDetail(raw: unknown): void {
+  const detail = bodyOf(raw);
+  if (!isObject(detail)) return;
+
+  if (isObject(detail.issue)) validateTaskSummary(detail.issue, "selected detail issue");
+  for (const child of arrayValue(detail.children)) validateTaskSummary(child, "selected detail child");
+  if (isObject(detail.parent)) validateTaskSummary(detail.parent, "selected detail parent");
+  for (const rawLink of arrayValue(detail.links)) {
+    const link = isObject(rawLink) ? rawLink : {};
+    assertAllowedString(link.type, ["parent", "blocks", "related"], "selected detail relation");
+  }
+}
+
+function validateGraph(raw: unknown): void {
+  const graph = isObject(raw) ? raw : {};
+  assertAllowedString(graph.depth, ["full", "1", "2", "3"], "graph depth");
+  for (const node of arrayValue(graph.nodes)) validateTaskSummary(node, "graph node");
+  for (const rawEdge of arrayValue(graph.edges)) {
+    const edge = isObject(rawEdge) ? rawEdge : {};
+    assertAllowedString(edge.kind, ["parent", "blocks", "related"], "graph edge kind");
+  }
+  for (const rawRef of arrayValue(graph.unresolved_refs)) {
+    const ref = isObject(rawRef) ? rawRef : {};
+    assertAllowedString(ref.side, ["from", "to"], "graph unresolved side");
+    assertAllowedString(ref.kind, ["parent", "blocks", "related"], "graph unresolved kind");
+  }
+}
+
+function immutableCopy<T>(value: T): Immutable<T> {
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map((item) => immutableCopy(item))) as Immutable<T>;
+  }
+  if (isObject(value)) {
+    const entries = Object.entries(value).map(([key, item]) => [key, immutableCopy(item)]);
+    return Object.freeze(Object.fromEntries(entries)) as Immutable<T>;
+  }
+  return value as Immutable<T>;
+}
+
+function immutableSet<T>(values: readonly T[]): ReadonlySet<T> {
+  const source = new Set(values);
+  const projection = new Proxy(source, {
+    get(target, property): unknown {
+      if (property === "add" || property === "delete" || property === "clear") {
+        return (): never => {
+          throw new TypeError("Kata snapshot membership is immutable");
+        };
+      }
+      const value: unknown = Reflect.get(target, property, target);
+      if (typeof value === "function") return value.bind(target);
+      return value;
+    },
+  });
+  return Object.freeze(projection) as ReadonlySet<T>;
+}
+
+function normalizeSelectedDetail(
+  selected: NonNullable<KataWorkspaceSnapshotResponse["enrichment"]["selected_detail"]>,
+): Immutable<KataTaskDetail> {
+  validateSelectedDetail(selected.detail);
+  const detail: KataTaskDetail = {
+    ...normalizeKataTaskDetail(selected.detail),
+    ...(selected.etag === undefined ? {} : { etag: selected.etag }),
+    workspace_target: selected.workspace_target,
+  };
+  return immutableCopy(detail);
+}
+
+function normalizeGraph(
+  raw: NonNullable<KataWorkspaceSnapshotResponse["enrichment"]["graph"]>,
+  graphFetchedAt: string | undefined,
+  projects: readonly Immutable<KataProjectSummary>[],
+): Immutable<KataReachableGraphResponse> {
+  validateGraph(raw);
+  const projectsByID = new Map(projects.map((project) => [project.id, project]));
+  const graph = normalizeKataReachableGraph({
+    ...raw,
+    nodes: (raw.nodes ?? []).map((node) => {
+      const project = projectsByID.get(node.project_id);
+      return {
+        ...node,
+        project_uid: node.project_uid || project?.uid,
+        project_name: project?.name,
+      };
+    }),
+    edges: raw.edges ?? [],
+    unresolved_refs: raw.unresolved_refs ?? [],
+    fetched_at: graphFetchedAt ?? "",
+  });
+  return immutableCopy(graph);
+}
+
+export function normalizeKataWorkspaceSnapshot(
+  response: KataWorkspaceSnapshotResponse,
+): KataWorkspaceSnapshotProjection {
+  for (const issue of response.issues ?? []) validateTaskSummary(issue, "authority issue");
+
+  const projects = immutableCopy((response.projects ?? []).map((project) => normalizeKataProject(project)));
+  const issues = immutableCopy((response.issues ?? []).map((issue) => normalizeKataTaskSummary(issue)));
+  const memberIssueUIDs = Object.freeze([...(response.member_issue_uids ?? [])]);
+  const selectedDetail = response.enrichment.selected_detail
+    ? normalizeSelectedDetail(response.enrichment.selected_detail)
+    : undefined;
+  const selectedHistory = immutableCopy(
+    (response.enrichment.selected_history ?? []).map((event) => normalizeKataEventEnvelope(event)),
+  );
+  const graph = response.enrichment.graph
+    ? normalizeGraph(response.enrichment.graph, response.enrichment.graph_fetched_at, projects)
+    : undefined;
+
+  return Object.freeze({
+    server_instance_id: response.server_instance_id,
+    daemon_id: response.daemon_id,
+    intent: immutableCopy(response.intent),
+    generation: response.generation,
+    invalidation_epoch: response.invalidation_epoch,
+    event_cursor: response.event_cursor,
+    fetched_at: response.fetched_at,
+    projects,
+    member_issue_uids: memberIssueUIDs,
+    member_issue_uid_set: immutableSet(memberIssueUIDs),
+    issues,
+    ...(response.enrichment.selected_issue_uid ? { selected_issue_uid: response.enrichment.selected_issue_uid } : {}),
+    ...(selectedDetail ? { selected_detail: selectedDetail } : {}),
+    selected_history: selectedHistory,
+    ...(graph ? { graph_source_uid: graph.source_uid, graph } : {}),
+    ...(response.enrichment.graph_fetched_at ? { graph_fetched_at: response.enrichment.graph_fetched_at } : {}),
+    enrichment_errors: immutableCopy(response.enrichment.errors ?? {}),
+  });
+}

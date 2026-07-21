@@ -51,8 +51,8 @@ only routes to them.
 | Workflow or terminal panel interaction models | `context/vscode-workflow-panel-interaction-spec.md` |
 | Workspace APIs, creation, or item identity | `context/workspace-apis.md` |
 | Workspace deletion, runtime sessions, tmux, or terminal UI | `context/workspace-runtime-lifecycle.md` |
-| Inline diff review comments | `context/inline-diff-review-comments-plan.md` |
-| Kata daemon integration, task UI, or Kata workspaces | `context/kata-mode.md`, `context/workspace-apis.md` |
+| Inline diff review comments | `context/inline-review-comments.md` |
+| Kata task authority, daemon integration, task UI, or Kata workspaces | `context/kata-mode.md`, `context/workspace-apis.md` |
 | Markdown folders, Docs APIs, or git publishing | `context/docs-mode.md` |
 
 ## Conventions

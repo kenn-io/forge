@@ -66,6 +66,7 @@ knowledge that changes what future agents should do.
 | `retries` | `context/retries-and-backoffs.md` | retry, backoff, and single-flight paths |
 | `testing` | `context/testing-basics.md`, `context/testing.md` | server API/E2E packages and test helpers |
 | `frontend` | `context/ui-design-system.md`, `context/ui-interaction-contracts.md`, `context/vscode-workflow-panel-interaction-spec.md` | `frontend/src/` |
+| `inline-review` | `context/inline-review-comments.md` | review draft/thread paths in `internal/platform/`, `internal/server/`, and `packages/ui/` |
 | `mobile` | `context/mobile-ux.md` | frontend `/m` routes and phone-first components |
 | `kata` | `context/kata-mode.md`, `context/workspace-apis.md` | `internal/kata/`, `internal/server/kataapi/` |
 | `docs` | `context/docs-mode.md` | `internal/docs/`, `internal/server/docsapi/` |

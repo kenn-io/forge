@@ -113,6 +113,18 @@ function orderingKey(response: KataWorkspaceSnapshotProjection): string {
   return JSON.stringify([response.server_instance_id, key.daemon_id, key.scope, key.project_uid ?? "", key.authority]);
 }
 
+function intentsEqual(left: KataSnapshotIntent | null, right: KataSnapshotIntent): boolean {
+  if (!left) return false;
+  return (
+    left.daemon_id === right.daemon_id &&
+    left.scope === right.scope &&
+    left.project_uid === right.project_uid &&
+    left.authority === right.authority &&
+    left.selected_issue_uid === right.selected_issue_uid &&
+    left.graph_source_uid === right.graph_source_uid
+  );
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -206,7 +218,7 @@ export class KataAuthorityStore {
     const key = orderingKey(snapshot);
     const acceptedGeneration = this.acceptedGenerations[key];
     if (acceptedGeneration !== undefined && snapshot.generation < acceptedGeneration) {
-      if (previousSnapshot && orderingKey(previousSnapshot) !== key) {
+      if (previousSnapshot && !intentsEqual(this.acceptedIntent, intent)) {
         this.state = {
           phase: "degraded",
           snapshot: previousSnapshot,

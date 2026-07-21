@@ -71,6 +71,36 @@ func TestKataTaskSnapshotProjectReadyAuthorityE2E(t *testing.T) {
 	assert.Positive(snapshot.EventCursor)
 }
 
+func TestKataTaskSnapshotPreservesGraphSourceWhenEnrichmentFailsE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newKataSnapshotE2EFixture(t, "Ready task")
+
+	scope := apigenerated.Project
+	authority := apigenerated.Ready
+	projectUID := "project-a"
+	graphSourceUID := "issue-member"
+	response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+		GraphSourceUid: &graphSourceUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+	})
+
+	require.NoError(err)
+	require.Equal(http.StatusOK, response.StatusCode(), string(response.Body))
+	require.NotNil(response.JSON200)
+	snapshot := response.JSON200
+	require.NotNil(snapshot.GraphSourceUid)
+	assert.Equal(graphSourceUID, *snapshot.GraphSourceUid)
+	require.NotNil(snapshot.Issues)
+	require.Len(*snapshot.Issues, 1)
+	assert.Equal("Ready task", (*snapshot.Issues)[0].Title)
+	assert.Nil(snapshot.Enrichment.Graph)
+	require.NotNil(snapshot.Enrichment.Errors)
+	assert.Equal(apigenerated.KataSnapshotEnrichmentError{
+		Code: string(apigenerated.UpstreamError), Message: "Could not load reachable graph.",
+	}, (*snapshot.Enrichment.Errors)["graph"])
+}
+
 func TestKataTaskSnapshotEventInvalidationRefreshesAuthorityE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -368,6 +398,8 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 		}
 		w.Header().Set("ETag", `"issue-revision"`)
 		s.writeJSON(w, katagenerated.ShowIssueResponseBody{Issue: s.issue()})
+	case "/api/v1/projects/7/issues/issue-member/graph":
+		http.Error(w, "forced graph failure", http.StatusBadGateway)
 	case "/api/v1/issues":
 		s.issueListCalls.Add(1)
 		s.writeJSON(w, katagenerated.ListIssuesResponseBody{Issues: []katagenerated.IssueOut{s.issueOut()}})

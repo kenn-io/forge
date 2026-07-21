@@ -155,7 +155,16 @@ describe("normalizeKataWorkspaceSnapshot", () => {
     });
 
     expect(callbackSet).toBe(projection.member_issue_uid_set);
-    expect(() => (callbackSet as Set<string>).clear()).toThrow("Kata snapshot membership is immutable");
+    expect(() => (callbackSet as Set<string>).clear()).toThrow();
+    expect(projection.member_issue_uid_set.has("issue-authority")).toBe(true);
+  });
+
+  it("does not expose the mutable membership backing set through valueOf", () => {
+    const projection = normalizeKataWorkspaceSnapshot(snapshot());
+    const value = projection.member_issue_uid_set.valueOf();
+
+    expect(value).toBe(projection.member_issue_uid_set);
+    expect(() => (value as Set<string>).clear()).toThrow();
     expect(projection.member_issue_uid_set.has("issue-authority")).toBe(true);
   });
 
@@ -332,6 +341,7 @@ describe("normalizeKataWorkspaceSnapshot", () => {
     ["scope", { scope: "workspace", authority: "open" }],
     ["authority", { scope: "global", authority: "active" }],
     ["project scope without project UID", { scope: "project", authority: "open" }],
+    ["project scope with padded project UID", { scope: "project", project_uid: " project-a ", authority: "open" }],
     ["global scope with project UID", { scope: "global", project_uid: "project-a", authority: "open" }],
     ["global scope with empty project UID", { scope: "global", project_uid: "", authority: "open" }],
   ])("rejects malformed authority intent: %s", (_label, intent) => {

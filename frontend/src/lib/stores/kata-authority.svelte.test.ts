@@ -224,6 +224,64 @@ describe("Kata authority store", () => {
     expect(store.authorityKey?.authority).toBe("open");
   });
 
+  it("retries the desired enrichment targets after a stale same-authority response", async () => {
+    const acceptedIntent = {
+      daemon_id: "home",
+      scope: "global",
+      authority: "open",
+      selected_issue_uid: "issue-a",
+      graph_source_uid: "issue-a",
+    } as const;
+    const desiredIntent = {
+      ...acceptedIntent,
+      selected_issue_uid: "issue-b",
+      graph_source_uid: "issue-b",
+    } as const;
+    const loadSnapshot = vi
+      .fn<(intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>>()
+      .mockResolvedValueOnce(
+        snapshot({
+          generation: 9,
+          graph_source_uid: "issue-a",
+          enrichment: { selected_issue_uid: "issue-a" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        snapshot({
+          generation: 8,
+          graph_source_uid: "issue-b",
+          enrichment: { selected_issue_uid: "issue-b" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        snapshot({
+          generation: 10,
+          graph_source_uid: "issue-b",
+          enrichment: { selected_issue_uid: "issue-b" },
+        }),
+      );
+    const store = createKataAuthorityStore({ loadSnapshot });
+
+    await expect(store.loadSnapshot(acceptedIntent)).resolves.toBe(true);
+    await expect(store.loadSnapshot(desiredIntent)).resolves.toBe(false);
+
+    expect(store.state.phase).toBe("degraded");
+    expect(store.state.intent).toEqual(desiredIntent);
+    expect(store.snapshot).toMatchObject({
+      generation: 9,
+      selected_issue_uid: "issue-a",
+      graph_source_uid: "issue-a",
+    });
+
+    await expect(store.retry()).resolves.toBe(true);
+    expect(loadSnapshot.mock.calls[2]?.[0]).toEqual(desiredIntent);
+    expect(store.snapshot).toMatchObject({
+      generation: 10,
+      selected_issue_uid: "issue-b",
+      graph_source_uid: "issue-b",
+    });
+  });
+
   it("accepts a lower generation after the Middleman server instance changes", async () => {
     const loadSnapshot = vi
       .fn<(intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>>()

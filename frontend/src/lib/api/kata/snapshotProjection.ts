@@ -86,8 +86,10 @@ function normalizeAuthorityIntent(raw: KataWorkspaceSnapshotResponse["intent"]):
   );
   const authority = raw.authority as KataAuthority;
   if (raw.scope === "project") {
-    const projectUID = raw.project_uid?.trim();
-    if (!projectUID) throw new Error("Invalid Kata snapshot intent: project scope requires project_uid");
+    const projectUID = raw.project_uid;
+    if (!projectUID || projectUID !== projectUID.trim()) {
+      throw new Error("Invalid Kata snapshot intent: project scope requires an unpadded project_uid");
+    }
     return Object.freeze({ scope: "project", project_uid: projectUID, authority });
   }
   if (raw.project_uid !== undefined) throw new Error("Invalid Kata snapshot intent: global scope forbids project_uid");
@@ -136,23 +138,50 @@ function immutableCopy<T>(value: T): Immutable<T> {
 function immutableSet<T>(values: readonly T[]): ReadonlySet<T> {
   const source = new Set(values);
   let projection: ReadonlySet<T>;
-  const proxy = new Proxy(source, {
-    get(target, property): unknown {
-      if (property === "add" || property === "delete" || property === "clear") {
-        return (): never => {
-          throw new TypeError("Kata snapshot membership is immutable");
-        };
-      }
-      if (property === "forEach") {
-        return (callback: (value: T, key: T, set: ReadonlySet<T>) => void, thisArg?: unknown): void =>
-          target.forEach((value) => callback.call(thisArg, value, value, projection));
-      }
-      const value: unknown = Reflect.get(target, property, target);
-      if (typeof value === "function") return value.bind(target);
-      return value;
+  projection = Object.freeze({
+    get size(): number {
+      return source.size;
+    },
+    has(value: T): boolean {
+      return source.has(value);
+    },
+    entries(): SetIterator<[T, T]> {
+      return source.entries();
+    },
+    keys(): SetIterator<T> {
+      return source.keys();
+    },
+    values(): SetIterator<T> {
+      return source.values();
+    },
+    union<U>(other: ReadonlySetLike<U>): Set<T | U> {
+      return source.union(other);
+    },
+    intersection<U>(other: ReadonlySetLike<U>): Set<T & U> {
+      return source.intersection(other);
+    },
+    difference<U>(other: ReadonlySetLike<U>): Set<T> {
+      return source.difference(other);
+    },
+    symmetricDifference<U>(other: ReadonlySetLike<U>): Set<T | U> {
+      return source.symmetricDifference(other);
+    },
+    isSubsetOf(other: ReadonlySetLike<unknown>): boolean {
+      return source.isSubsetOf(other);
+    },
+    isSupersetOf(other: ReadonlySetLike<unknown>): boolean {
+      return source.isSupersetOf(other);
+    },
+    isDisjointFrom(other: ReadonlySetLike<unknown>): boolean {
+      return source.isDisjointFrom(other);
+    },
+    [Symbol.iterator](): SetIterator<T> {
+      return source[Symbol.iterator]();
+    },
+    forEach(callback: (value: T, key: T, set: ReadonlySet<T>) => void, thisArg?: unknown): void {
+      source.forEach((value, key) => callback.call(thisArg, value, key, projection));
     },
   });
-  projection = Object.freeze(proxy) as ReadonlySet<T>;
   return projection;
 }
 

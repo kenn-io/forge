@@ -61,6 +61,19 @@ function waitForDaemonHealthy(): void {
   throw new Error("Daemon not healthy after 30 attempts");
 }
 
+export async function countRoborevDaemonEventStreams(): Promise<number> {
+  const env = readEnvFile();
+  const port = env["ROBOREV_PORT"] ?? "17373";
+  const response = await fetch(`http://127.0.0.1:${port}/debug/pprof/goroutine?debug=2`, {
+    signal: AbortSignal.timeout(3_000),
+  });
+  if (!response.ok) {
+    throw new Error(`roborev goroutine profile returned HTTP ${response.status}`);
+  }
+  const profile = await response.text();
+  return profile.split("\n").filter((line) => line.includes("humaStreamEvents")).length;
+}
+
 // Probe the daemon backing the e2e server and assert it matches the
 // shape of the script-seeded test daemon. If the e2e server proxies
 // to an unmanaged daemon (e.g. someone passes -roborev pointing at a

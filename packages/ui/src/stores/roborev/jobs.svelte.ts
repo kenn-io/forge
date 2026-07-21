@@ -405,7 +405,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
     try {
       const event = JSON.parse(line) as { type?: unknown };
       reconnectDelayMs = initialReconnectDelayMs;
-      if (event.type === "job.status_changed" || event.type === "review.completed") {
+      if (typeof event.type === "string" && (event.type.startsWith("job.") || event.type.startsWith("review."))) {
         void loadJobs();
       }
     } catch {
@@ -413,14 +413,28 @@ export function createJobsStore(opts: JobsStoreOptions) {
     }
   }
 
+  async function cancelUnusedEventStreamResponse(response: Response, session: EventStreamSession): Promise<void> {
+    session.controller.abort();
+    await response.body?.cancel().catch(() => undefined);
+  }
+
   async function readEventStream(url: string, session: EventStreamSession): Promise<void> {
     const response = await fetch(url, {
       headers: { Accept: "application/x-ndjson" },
       signal: session.controller.signal,
     });
-    if (!response.ok) throw new Error(`Roborev event stream returned ${response.status}`);
-    if (!response.body) throw new Error("Roborev event stream returned no response body");
-    if (eventStreamSession !== session) return;
+    if (!response.ok) {
+      await cancelUnusedEventStreamResponse(response, session);
+      throw new Error(`Roborev event stream returned ${response.status}`);
+    }
+    if (!response.body) {
+      session.controller.abort();
+      throw new Error("Roborev event stream returned no response body");
+    }
+    if (eventStreamSession !== session) {
+      await cancelUnusedEventStreamResponse(response, session);
+      return;
+    }
 
     eventStreamConnected = true;
     const reader = response.body.getReader();

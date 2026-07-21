@@ -188,6 +188,30 @@ describe("createJobsStore event stream", () => {
     expect(store.isEventStreamConnected()).toBe(false);
   });
 
+  it("cancels an open response body when the stream returns an error status", async () => {
+    let bodyCancelled = false;
+    let signal: AbortSignal | undefined;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        bodyCancelled = true;
+      },
+    });
+    globalThis.fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return new Response(body, { status: 503 });
+    });
+    const store = createJobsStore({ client: {} as never, navigate: vi.fn() });
+
+    store.connectEventStream("/api/roborev");
+
+    try {
+      await vi.waitFor(() => expect(bodyCancelled).toBe(true));
+    } finally {
+      store.disconnectEventStream();
+    }
+    expect(signal?.aborted).toBe(true);
+  });
+
   it("reconnects with backoff and stops retrying after disconnect", async () => {
     vi.useFakeTimers();
     const bodies: ReadableStreamDefaultController<Uint8Array>[] = [];

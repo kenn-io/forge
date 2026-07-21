@@ -7,6 +7,7 @@ import {
   waitForReviewsReady,
   waitForJobRows,
   openDrawer,
+  countRoborevDaemonEventStreams,
 } from "./support/roborev-helpers.js";
 
 function parseElapsed(text: string): number {
@@ -573,6 +574,41 @@ test.describe.serial("Roborev", () => {
         const afterCount = await page.locator(".job-row").count();
         expect(afterCount).toBeLessThanOrEqual(beforeCount);
       }).toPass({ timeout: 5_000 });
+    });
+
+    test("daemon events refresh reviews and navigation tears down the upstream stream", async ({ page }) => {
+      const baselineStreams = await countRoborevDaemonEventStreams();
+      const row = jobRowById(page, 72);
+
+      try {
+        await waitForReviewsReady(page);
+        await page.getByLabel("Hide closed").check();
+        await expect(row).toBeVisible();
+        await expect.poll(countRoborevDaemonEventStreams).toBe(baselineStreams + 1);
+
+        const closeResponse = await page.request.post("/api/roborev/api/review/close", {
+          data: { job_id: 72, closed: true },
+        });
+        expect(closeResponse.ok()).toBe(true);
+        await expect(row).toHaveCount(0);
+
+        await page.locator(".app-top-bar").getByRole("button", { name: "PRs", exact: true }).click();
+        await expect(page).toHaveURL(/\/pulls$/);
+        await expect.poll(countRoborevDaemonEventStreams).toBe(baselineStreams);
+
+        await page.locator(".app-top-bar").getByRole("button", { name: "Reviews", exact: true }).click();
+        await expect(page).toHaveURL(/\/reviews$/);
+        await expect(page.locator(".job-table")).toBeVisible();
+        await expect.poll(countRoborevDaemonEventStreams).toBe(baselineStreams + 1);
+
+        await page.locator(".app-top-bar").getByRole("button", { name: "PRs", exact: true }).click();
+        await expect.poll(countRoborevDaemonEventStreams).toBe(baselineStreams);
+      } finally {
+        const reopenResponse = await page.request.post("/api/roborev/api/review/close", {
+          data: { job_id: 72, closed: false },
+        });
+        expect(reopenResponse.ok()).toBe(true);
+      }
     });
 
     test("show auto-design reveals skipped router byproducts", async ({ page }) => {

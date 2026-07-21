@@ -40,8 +40,8 @@ by inline label dots (see below). Title `margin-bottom` shrinks from 4px to
 
 - Left (shrinkable): repo chip first (only when `showRepo`), then
   `#number · author`. The repo chip keeps the existing hash-colored `Chip`
-  (size `xs`) but is capped at `max-width: 45%` of the row so it truncates
-  before the number/author does.
+  (size `xs`) but is capped at `max-width: 45%` of the meta row's left
+  section so it truncates before the number/author does.
 - Right (fixed): the existing indicator cluster unchanged — import button,
   workspace indicator, review indicator, worktree name/badge, CI tokens,
   conflict icon, star, status/state chip, relative time.

@@ -42,8 +42,12 @@
   // Bare X/Check/Minus glyphs render visually smaller than their CircleX
   // siblings did, so bump the size up slightly to preserve visual weight.
   const iconSize = $derived(size === "compact" ? 12 : 14);
-  // DotIcon's rendered dot is tiny relative to the box, so it needs to
-  // be drawn larger than the rest to read at the same visual weight.
+  // DotIcon's rendered dot is tiny relative to the box, so it's drawn
+  // slightly larger than the glyph icons to read at the same visual
+  // weight. In compact mode it's capped at 14 (not scaled up like the
+  // default size) because anything taller than the sidebar row's text
+  // line-height becomes the row's tallest element and breaks the
+  // uniform two-line row height (see context/ui-design-system.md).
   const dotSize = $derived(size === "compact" ? 14 : 20);
 </script>
 

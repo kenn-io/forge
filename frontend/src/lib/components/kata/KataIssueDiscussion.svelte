@@ -27,6 +27,13 @@
     onSelectIssue: (uid: string) => void | Promise<void>;
   }
 
+  interface PendingDraftReset {
+    uid: string;
+    generation: number;
+    value: string;
+    revision: number;
+  }
+
   let {
     issue,
     events,
@@ -42,9 +49,11 @@
 
   let commentDraft = $state("");
   let relatedDraft = $state("");
+  let commentDraftRevision = 0;
+  let relatedDraftRevision = 0;
   let lastDraftResetGeneration = $state<number | null>(null);
-  let pendingCommentReset = $state<{ uid: string; generation: number; value: string } | null>(null);
-  let pendingRelatedReset = $state<{ uid: string; generation: number; value: string } | null>(null);
+  let pendingCommentReset = $state<PendingDraftReset | null>(null);
+  let pendingRelatedReset = $state<PendingDraftReset | null>(null);
 
   const sortedComments = $derived.by(() => {
     const comments = issue.comments ?? [];
@@ -66,14 +75,28 @@
     lastDraftResetGeneration = nextGeneration;
     const uid = issue.issue.uid;
     if (pendingCommentReset?.uid === uid && pendingCommentReset.generation !== nextGeneration) {
-      if (commentDraft === pendingCommentReset.value) commentDraft = "";
+      if (commentDraftRevision === pendingCommentReset.revision && commentDraft === pendingCommentReset.value) {
+        commentDraft = "";
+      }
     }
     if (pendingRelatedReset?.uid === uid && pendingRelatedReset.generation !== nextGeneration) {
-      if (relatedDraft === pendingRelatedReset.value) relatedDraft = "";
+      if (relatedDraftRevision === pendingRelatedReset.revision && relatedDraft === pendingRelatedReset.value) {
+        relatedDraft = "";
+      }
     }
     pendingCommentReset = null;
     pendingRelatedReset = null;
   });
+
+  function updateCommentDraft(value: string): void {
+    commentDraft = value;
+    commentDraftRevision += 1;
+  }
+
+  function updateRelatedDraft(value: string): void {
+    relatedDraft = value;
+    relatedDraftRevision += 1;
+  }
 
   async function submitComment(): Promise<void> {
     if (actionsDisabled) return;
@@ -82,13 +105,19 @@
     if (!body) return;
     const mutationUID = issue.issue.uid;
     const resetGeneration = draftResetGeneration;
+    const draftRevision = commentDraftRevision;
     const ok = await onAddComment(mutationUID, body);
     if (ok) {
       if (issue.issue.uid !== mutationUID) return;
       if (draftResetGeneration !== resetGeneration) {
-        if (commentDraft === draft) commentDraft = "";
+        if (commentDraftRevision === draftRevision && commentDraft === draft) commentDraft = "";
       } else {
-        pendingCommentReset = { uid: mutationUID, generation: resetGeneration, value: draft };
+        pendingCommentReset = {
+          uid: mutationUID,
+          generation: resetGeneration,
+          value: draft,
+          revision: draftRevision,
+        };
       }
     }
   }
@@ -127,15 +156,21 @@
     if (ref === "") return;
     const mutationUID = issue.issue.uid;
     const resetGeneration = draftResetGeneration;
+    const draftRevision = relatedDraftRevision;
     const ok = await onEditIssue(mutationUID, {
       links_delta: { add_related: [ref] },
     });
     if (ok) {
       if (issue.issue.uid !== mutationUID) return;
       if (draftResetGeneration !== resetGeneration) {
-        if (relatedDraft === draft) relatedDraft = "";
+        if (relatedDraftRevision === draftRevision && relatedDraft === draft) relatedDraft = "";
       } else {
-        pendingRelatedReset = { uid: mutationUID, generation: resetGeneration, value: draft };
+        pendingRelatedReset = {
+          uid: mutationUID,
+          generation: resetGeneration,
+          value: draft,
+          revision: draftRevision,
+        };
       }
     }
   }
@@ -199,7 +234,7 @@
       <input
         aria-label="Related issue"
         placeholder="Short id"
-        bind:value={relatedDraft}
+        bind:value={() => relatedDraft, updateRelatedDraft}
         onkeydown={handleRelatedKeydown}
       />
     </label>
@@ -225,7 +260,7 @@
     <MentionTextarea
       ariaLabel="Comment"
       rows={3}
-      bind:value={commentDraft}
+      bind:value={() => commentDraft, updateCommentDraft}
       search={searchTaskReferences}
       emptyLabel="No matching tasks"
       placeholder="Add a comment..."

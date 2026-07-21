@@ -328,6 +328,58 @@ describe("KataIssueDiscussion", () => {
     expect((screen.getByLabelText("Comment") as HTMLTextAreaElement).value).toBe("Newer reply");
   });
 
+  it("preserves a comment edited away and back before accepted replacement authority", async () => {
+    const view = render(KataIssueDiscussion, {
+      props: {
+        issue: makeIssue(),
+        events: [],
+        issueCatalog: makeView().groups.flatMap((group) => group.issues),
+        searchReferences: makeSearch(),
+        activeDaemonId: "home",
+        draftResetGeneration: 0,
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    const composer = screen.getByLabelText("Comment");
+    await fireEvent.input(composer, { target: { value: "Accepted reply" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    await fireEvent.input(composer, { target: { value: "Interim reply" } });
+    await fireEvent.input(composer, { target: { value: "Accepted reply" } });
+
+    await view.rerender({ draftResetGeneration: 1 });
+
+    expect((composer as HTMLTextAreaElement).value).toBe("Accepted reply");
+  });
+
+  it("preserves a related link edited away and back before accepted replacement authority", async () => {
+    const view = render(KataIssueDiscussion, {
+      props: {
+        issue: makeIssue(),
+        events: [],
+        issueCatalog: makeView().groups.flatMap((group) => group.issues),
+        searchReferences: makeSearch(),
+        activeDaemonId: "home",
+        draftResetGeneration: 0,
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    const related = screen.getByLabelText("Related issue");
+    await fireEvent.input(related, { target: { value: "I-9" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Link" }));
+    await fireEvent.input(related, { target: { value: "I-10" } });
+    await fireEvent.input(related, { target: { value: "I-9" } });
+
+    await view.rerender({ draftResetGeneration: 1 });
+
+    expect((related as HTMLInputElement).value).toBe("I-9");
+  });
+
   it("inserts task references from the comment composer", async () => {
     const searchReferences = makeSearch([
       searchTask({ short_id: "pay-rent", reference: "pay-rent", title: "Pay rent" }),

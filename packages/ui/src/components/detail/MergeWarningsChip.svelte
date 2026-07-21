@@ -7,7 +7,12 @@
 
 <script lang="ts">
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+  import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
   import GitMergeIcon from "@lucide/svelte/icons/git-merge";
+  import HistoryIcon from "@lucide/svelte/icons/history";
+  import InfoIcon from "@lucide/svelte/icons/info";
+  import ListChecksIcon from "@lucide/svelte/icons/list-checks";
+  import ShieldAlertIcon from "@lucide/svelte/icons/shield-alert";
   import { Chip } from "@kenn-io/kit-ui";
 
   interface Props {
@@ -17,6 +22,14 @@
     expanded?: boolean;
     ontoggle?: ((expanded: boolean) => void) | undefined;
   }
+
+  const rowIcons = {
+    conflict: { icon: GitMergeIcon, tone: "row-icon-amber" },
+    blocked: { icon: ShieldAlertIcon, tone: "row-icon-amber" },
+    behind: { icon: HistoryIcon, tone: "row-icon-muted" },
+    "required-checks": { icon: ListChecksIcon, tone: "row-icon-red" },
+    server: { icon: InfoIcon, tone: "row-icon-muted" },
+  } as const;
 
   let {
     warnings,
@@ -69,13 +82,14 @@
 
     {#if expanded}
       <div class="merge-warnings-collapse">
-        <div class="merge-warnings-panel" aria-label="Merge warnings">
+        <div class="merge-warnings-panel" role="region" aria-label="Merge warnings">
           {#each warnings as warning, index (`${index}-${warning.kind}`)}
-            <div
-              class="merge-warning-line"
-              class:merge-warning-line--conflict={warning.kind === "conflict"}
-            >
-              <span>{warning.text}</span>
+            {@const row = rowIcons[warning.kind]}
+            <div class="merge-warning-line">
+              <span class={`merge-warning-icon ${row.tone}`} aria-hidden="true">
+                <row.icon size={14} strokeWidth={2.2} />
+              </span>
+              <span class="merge-warning-text">{warning.text}</span>
             </div>
           {/each}
           <a
@@ -83,7 +97,12 @@
             href={pullURL}
             target="_blank"
             rel="noopener noreferrer"
-          >View on {providerLabel}</a>
+          >
+            <span class="merge-warning-icon" aria-hidden="true">
+              <ExternalLinkIcon size={14} strokeWidth={2.2} />
+            </span>
+            <span class="merge-warning-text">View on {providerLabel}</span>
+          </a>
         </div>
       </div>
     {/if}
@@ -115,24 +134,67 @@
     margin-top: 4px;
   }
 
+  /* Same panel language as .ci-checks / .stack-panel: inset card with
+   * separated icon rows; tone lives in the icon, not the text. */
   .merge-warnings-panel {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 8px 12px;
-    border-radius: var(--radius-sm);
-    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
+    width: 100%;
+    background: var(--bg-inset);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-md);
+    overflow: auto;
+    flex-shrink: 0;
+    max-height: min(340px, 50vh);
   }
 
-  .merge-warning-line--conflict {
+  .merge-warning-line,
+  .merge-warnings-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+  }
+
+  .merge-warning-line + .merge-warning-line,
+  .merge-warning-line + .merge-warnings-link {
+    border-top: 1px solid var(--border-muted);
+  }
+
+  .merge-warning-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 16px;
+  }
+
+  .merge-warning-icon.row-icon-amber {
     color: var(--accent-amber);
   }
 
+  .merge-warning-icon.row-icon-red {
+    color: var(--accent-red);
+  }
+
+  .merge-warning-icon.row-icon-muted {
+    color: var(--text-muted);
+  }
+
+  .merge-warning-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
   .merge-warnings-link {
-    color: inherit;
-    text-decoration: underline;
-    align-self: flex-start;
+    color: var(--text-secondary);
+    text-decoration: none;
+  }
+
+  .merge-warnings-link:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
   }
 </style>

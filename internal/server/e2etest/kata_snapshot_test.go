@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
 	"go.kenn.io/middleman/internal/apiclient"
 	apigenerated "go.kenn.io/middleman/internal/apiclient/generated"
+	"go.kenn.io/middleman/internal/db"
 )
 
 const kataSnapshotE2EDaemonID = "primary"
@@ -56,8 +58,15 @@ func TestKataTaskSnapshotProjectReadyAuthorityE2E(t *testing.T) {
 	require.NotNil(snapshot.Enrichment.SelectedIssueUid)
 	assert.Equal(selectedIssueUID, *snapshot.Enrichment.SelectedIssueUid)
 	require.NotNil(snapshot.Enrichment.SelectedDetail)
-	assert.False(snapshot.Enrichment.SelectedDetail.WorkspaceTarget.Available,
-		"the empty temporary SQLite database has no workspace mapping")
+	workspaceTarget := snapshot.Enrichment.SelectedDetail.WorkspaceTarget
+	assert.True(workspaceTarget.Available)
+	require.NotNil(workspaceTarget.Repo)
+	assert.Equal("github.com", workspaceTarget.Repo.PlatformHost)
+	assert.Equal("acme", workspaceTarget.Repo.Owner)
+	assert.Equal("widget", workspaceTarget.Repo.Name)
+	require.NotNil(workspaceTarget.ExistingWorkspace)
+	assert.Equal("ws-kata-e2e", workspaceTarget.ExistingWorkspace.Id)
+	assert.Equal("ready", workspaceTarget.ExistingWorkspace.Status)
 	assert.Positive(snapshot.Generation)
 	assert.Positive(snapshot.EventCursor)
 }
@@ -134,7 +143,7 @@ func TestKataTaskSnapshotDaemonRotationRejectsInflightAuthorityE2E(t *testing.T)
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
 	writeKataSnapshotE2ECatalog(t, home, oldDaemon.server.URL)
-	client := startKataSnapshotE2EMiddleman(t)
+	_, client := startKataSnapshotE2EMiddleman(t)
 
 	type result struct {
 		response *apigenerated.GetKataTaskSnapshotResponse
@@ -155,7 +164,12 @@ func TestKataTaskSnapshotDaemonRotationRejectsInflightAuthorityE2E(t *testing.T)
 	oldDaemon.waitForFirstProjects(t)
 	writeKataSnapshotE2ECatalog(t, home, newDaemon.server.URL)
 	close(releaseOld)
-	got := <-resultCh
+	var got result
+	select {
+	case got = <-resultCh:
+	case <-time.After(3 * time.Second):
+		require.FailNow("snapshot request did not complete after daemon rotation")
+	}
 
 	require.NoError(got.err)
 	require.NotNil(got.response)
@@ -169,9 +183,39 @@ func TestKataTaskSnapshotDaemonRotationRejectsInflightAuthorityE2E(t *testing.T)
 	assert.Positive(got.response.JSON200.InvalidationEpoch)
 }
 
+func TestKataProxySuccessfulMutationInvalidatesSnapshotBeforeResponseE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newKataSnapshotE2EFixture(t, "Before mutation")
+
+	first := fixture.snapshot(t, apigenerated.Project, apigenerated.Ready)
+	require.Zero(first.InvalidationEpoch)
+	req, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		fixture.middleman.URL+"/api/v1/kata/proxy/api/v1/issues/issue-member",
+		strings.NewReader(`{"title":"After mutation"}`),
+	)
+	require.NoError(err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	response, err := fixture.middleman.Client().Do(req)
+	require.NoError(err)
+	defer response.Body.Close()
+	require.Equal(http.StatusNoContent, response.StatusCode)
+
+	refreshed := fixture.snapshot(t, apigenerated.Project, apigenerated.Ready)
+	require.NotNil(refreshed.Issues)
+	require.Len(*refreshed.Issues, 1)
+	assert.Equal("After mutation", (*refreshed.Issues)[0].Title)
+	assert.Greater(refreshed.InvalidationEpoch, first.InvalidationEpoch)
+	assert.Greater(refreshed.Generation, first.Generation)
+}
+
 type kataSnapshotE2EFixture struct {
-	daemon *kataSnapshotDaemonStub
-	client *apiclient.Client
+	daemon    *kataSnapshotDaemonStub
+	middleman *httptest.Server
+	client    *apiclient.Client
 }
 
 func newKataSnapshotE2EFixture(t *testing.T, title string) *kataSnapshotE2EFixture {
@@ -180,8 +224,41 @@ func newKataSnapshotE2EFixture(t *testing.T, title string) *kataSnapshotE2EFixtu
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
 	writeKataSnapshotE2ECatalog(t, home, daemon.server.URL)
-	client := startKataSnapshotE2EMiddleman(t)
-	return &kataSnapshotE2EFixture{daemon: daemon, client: client}
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[kata_projects]]
+daemon_id = "primary"
+project_uid = "project-a"
+provider = "github"
+platform_host = "github.com"
+repo_path = "acme/widget"
+`, &mockGH{})
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(t, err)
+	metadata := db.WorkspaceKataMetadata{
+		DaemonID: "primary", ProjectUID: "project-a", ProjectName: "Project A",
+		IssueUID: "issue-member", ShortID: "task-1", QualifiedID: "Project A#task-1", Title: title,
+	}
+	require.NoError(t, database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID: "ws-kata-e2e", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeKataTask,
+		ItemKey: db.KataWorkspaceItemKey(metadata), GitHeadRef: "middleman/kata/task-1",
+		WorkspaceBranch: "middleman/kata/task-1", WorktreePath: "/tmp/ws-kata-e2e",
+		TmuxSession: "middleman-ws-kata-e2e", Status: "ready", KataMetadata: &metadata,
+	}))
+	middleman := httptest.NewServer(srv)
+	t.Cleanup(middleman.Close)
+	client, err := apiclient.NewWithHTTPClient(middleman.URL, middleman.Client())
+	require.NoError(t, err)
+	return &kataSnapshotE2EFixture{daemon: daemon, middleman: middleman, client: client}
 }
 
 func (f *kataSnapshotE2EFixture) snapshot(
@@ -212,14 +289,14 @@ func (f *kataSnapshotE2EFixture) references(t *testing.T) *apigenerated.KataTask
 	return response.JSON200
 }
 
-func startKataSnapshotE2EMiddleman(t *testing.T) *apiclient.Client {
+func startKataSnapshotE2EMiddleman(t *testing.T) (*httptest.Server, *apiclient.Client) {
 	t.Helper()
 	srv, _ := setupTestServer(t)
 	middleman := httptest.NewServer(srv)
 	t.Cleanup(middleman.Close)
 	client, err := apiclient.NewWithHTTPClient(middleman.URL, middleman.Client())
 	require.NoError(t, err)
-	return client
+	return middleman, client
 }
 
 func writeKataSnapshotE2ECatalog(t *testing.T, home, daemonURL string) {
@@ -277,6 +354,18 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 		s.readyCalls.Add(1)
 		s.writeJSON(w, katagenerated.ReadyResponseBody{Issues: []katagenerated.IssueOut{s.issueOut()}})
 	case "/api/v1/issues/issue-member":
+		if r.Method == http.MethodPost {
+			var input struct {
+				Title string `json:"title"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			s.setTitle(input.Title)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		w.Header().Set("ETag", `"issue-revision"`)
 		s.writeJSON(w, katagenerated.ShowIssueResponseBody{Issue: s.issue()})
 	case "/api/v1/issues":

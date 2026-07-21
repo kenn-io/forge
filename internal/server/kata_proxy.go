@@ -85,7 +85,9 @@ func (s *Server) kataProxyForDaemon(d kata.Daemon) (kataProxyCacheEntry, error) 
 	}
 	s.kataProxyMu.Unlock()
 
-	entry, err := newKataDaemonProxyEntry(d)
+	entry, err := newKataDaemonProxyEntry(d, func() {
+		s.kataSnapshots.invalidateDaemon(d.ID)
+	})
 	if err != nil {
 		return kataProxyCacheEntry{}, err
 	}
@@ -205,11 +207,15 @@ func selectKataDaemonForID(headerID string) (kata.Daemon, *ProblemError) {
 	return selected, nil
 }
 
-func newKataDaemonProxyEntry(d kata.Daemon) (kataProxyCacheEntry, error) {
-	return newKataDaemonProxyEntryWithTimeout(d, kataDaemonProxyRequestTimeout)
+func newKataDaemonProxyEntry(d kata.Daemon, invalidate func()) (kataProxyCacheEntry, error) {
+	return newKataDaemonProxyEntryWithTimeout(d, kataDaemonProxyRequestTimeout, invalidate)
 }
 
-func newKataDaemonProxyEntryWithTimeout(d kata.Daemon, requestTimeout time.Duration) (kataProxyCacheEntry, error) {
+func newKataDaemonProxyEntryWithTimeout(
+	d kata.Daemon,
+	requestTimeout time.Duration,
+	invalidate func(),
+) (kataProxyCacheEntry, error) {
 	target, transport, err := kataDaemonProxyTarget(d.URL)
 	if err != nil {
 		return kataProxyCacheEntry{}, err
@@ -237,6 +243,9 @@ func newKataDaemonProxyEntryWithTimeout(d kata.Daemon, requestTimeout time.Durat
 			}
 		},
 		ModifyResponse: func(resp *http.Response) error {
+			if isKataMutationMethod(resp.Request.Method) && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				invalidate()
+			}
 			if !isKataLocalDaemonChallenge(d, resp.StatusCode) {
 				return nil
 			}
@@ -294,6 +303,15 @@ func newKataDaemonProxyEntryWithTimeout(d kata.Daemon, requestTimeout time.Durat
 		handler = &kataProxyDeadlineHandler{proxy: proxy, requestTimeout: requestTimeout}
 	}
 	return kataProxyCacheEntry{handler: handler, closeIdle: closeIdle}, nil
+}
+
+func isKataMutationMethod(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
 }
 
 func kataDaemonProxyTarget(target string) (*url.URL, http.RoundTripper, error) {

@@ -131,6 +131,11 @@ owner:
   regressions; the delayed case must retain terminal DOM focus so `focusout` cannot mask a
   broken outside-pointerdown handler (`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts`).
 
+Mock the API only when the behavior is owned by the frontend or the seeded
+server cannot produce the state. Use `frontend/src/test/mockApiFetch.ts` rather
+than forking the Playwright fixture, and do not assert backend-computed values
+through hand-written frontend data.
+
 A UI regression can be sufficiently covered by a backend/server test for the
 real runtime path plus a component or Vitest browser test for presentation. Do
 not require a duplicate full-stack browser test when it would only replay data

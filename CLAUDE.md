@@ -40,7 +40,8 @@ only routes to them.
 | Embed routes or host bridges | `context/embeds.md` |
 | API failures or frontend error branching | `context/error-handling.md` |
 | Retries, rate limits, scheduling, or single-flight work | `context/retries-and-backoffs.md` |
-| Test design, test placement, or test helpers | `context/testing.md` |
+| Go test commands, assertions, fixtures, or shell tests | `context/testing-basics.md` |
+| Test lanes, provider tests, API contracts, or HTTP tests | `context/testing.md` |
 | Agent hooks, session bootstrap, or dependency installation | `context/agent-bootstrap.md` |
 | User documentation, screenshots, or the Zensical site | `context/docs-authoring.md` |
 | Pushing, opening a pull request, or changing PR metadata | `context/pull-request-workflow.md` |
@@ -53,47 +54,6 @@ only routes to them.
 | Inline diff review comments | `context/inline-diff-review-comments-plan.md` |
 | Kata daemon integration, task UI, or Kata workspaces | `context/kata-mode.md`, `context/workspace-apis.md` |
 | Markdown folders, Docs APIs, or git publishing | `context/docs-mode.md` |
-
-## Testing
-
-```bash
-make test       # All Go tests
-make test-short # Fast tests only
-make lint       # golangci-lint
-make vet        # go vet
-```
-
-### End-to-End Tests
-
-Coverage of real behavior is non-negotiable; the lane is chosen by the behavior under test, not by a blanket "must have e2e" rule. Avoid the expensive lanes unless they add distinct confidence. Four independent axes:
-
-- **Component or app harness first.** UI-owned behavior such as filtering, sorting, hidden/disabled states, menu contents, route-derived view state, and store/component data flow should usually be covered in Vitest. Use **Vitest + jsdom** (`vp test`) when layout/browser primitives are not material; mount the real `App.svelte` via `frontend/src/test/appHarness.ts` when routing matters.
-- **Vitest browser before Playwright for real DOM needs.** Use `*.browser.svelte.ts` / `vitest-browser-svelte` (`vp test --project browser`) when the behavior needs a real browser DOM, native focus/keyboard semantics, localStorage/matchMedia, computed styles, or layout, but does not need an external HTTP server or multi-page Playwright workflow.
-- **Playwright/full-stack only for boundaries they uniquely prove.** Reserve Playwright for screenshots/video, `getBoundingClientRect`, scroll/sticky/overflow geometry, container queries, pointer drag, viewport emulation, canvas/xterm, computed CSS pixels, or workflows that must exercise browser navigation against a running app. Use `frontend/tests/e2e-full/` or `internal/server/` Go tests when the behavior depends on backend persistence, sync, capabilities, normalization, wire shape, or middleware. If a real-backend API/server test already proves the runtime path and a component/browser test proves the UI presentation, do not require duplicate full-stack e2e just to click through the same data.
-- **Mocking is the exception.** Do not assert backend-computed values through a hand-written fixture. Mock the API (`frontend/src/test/mockApiFetch.ts`, never fork the Playwright copy) only when the behavior is owned by the frontend or the seeded server cannot produce the state.
-
-### Test Guidelines
-
-- Always pass `-shuffle=on` when invoking `go test` directly (e.g. `go test ./internal/db -run TestFoo -shuffle=on`). The `make test` and `make test-short` targets already set it. Shuffled ordering catches hidden test-to-test coupling
-- Do not pass `-count=1` to `go test`. `-count=1` is the default and specifying it wastes tokens and disables the build cache unnecessarily. Omit the flag. If a genuine need to bypass cache arises, confirm with the user first
-- Only pass `-count=N` when `N > 1` (e.g. `-count=10` for flake hunting)
-- Table-driven tests for Go code
-- Use `testify` consistently in Go tests; prefer `require` for setup/preconditions and `assert` for non-blocking checks
-- When a test function has more than 3 assertions, create a local helper with `assert := assert.New(t)` and use the helper methods for the rest of the checks. Import `github.com/stretchr/testify/assert` without an alias; aliased assert imports are rejected by golangci-lint.
-- Do not use `t.Fatal`, `t.Fatalf`, `t.Error`, `t.Errorf`, `t.Fail`, or `t.FailNow` in tests; use testify assertions instead
-- Prefer the generated Go API client in `internal/apiclient` for integration-style API tests
-- For HTTP tests of user-visible behavior, follow the wire-level discipline in `context/testing.md`: route through `srv.ServeHTTP`, assert on what a client observes, and pick `internal/server/apitest/` or `internal/server/e2etest/` per the rules there.
-- Use `openTestDB(t)` helper for database tests
-- All tests use `t.TempDir()` for temp directories
-- Tests should be fast and isolated
-- Shell script tests must exercise observable behavior by running the script
-  against controlled inputs and asserting outputs, side effects, or exit
-  codes. Do not add bash tests that grep shell scripts, workflows, config
-  files, or docs for expected implementation text; those checks are usually
-  tautological and should be replaced with real execution, parser/tool-native
-  validation, or a documented manual release check.
-- Do not run tests with `-v` (especially `go test`) — default output has enough signal to debug failures, and verbose output wastes tokens. Only use `-v` if the user asks for it or a failure genuinely needs the extra detail
-- For provider-specific live or container test fixtures used when fake transports can't catch endpoint or auth drift, follow `context/testing.md` and `context/platform-sync-invariants.md`. The GitHub GraphQL gate is `MIDDLEMAN_LIVE_GITHUB_TESTS=1`.
 
 ## Conventions
 
@@ -113,7 +73,6 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 - Zensical resolves `docs_dir`/`site_dir` relative to the config file's directory, so `uvx zensical build` cannot run in place against the checked-in `docs/zensical.toml`; stage a scratch project root containing a copy of the config beside a copy of `docs/`, then build there.
 - Tests, docs, fixtures, commit messages, and PR text should use generic synthetic examples unless the user explicitly asks to preserve exact private project names, paths, prose, or domain details.
 - **Never use npm** — use `bun install` for frontend dependencies and invoke Vite+ directly via `./node_modules/.bin/vp ...` (or `../node_modules/.bin/vp ...` from `frontend/`). Never run `npm install` or `npm run` — this creates `package-lock.json` which conflicts with the bun lockfile
-- Tests should be fast and isolated
 - No emojis in code or output
 - For database schema changes, follow `context/db-migrations.md`; `internal/db/migrations/` is the source of truth for schema evolution.
 - For HTTP API error envelopes and frontend error branching, follow `context/error-handling.md`; branch on stable codes/details rather than prose.

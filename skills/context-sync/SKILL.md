@@ -64,8 +64,8 @@ knowledge that changes what future agents should do.
 | `server` | `context/server-runtime.md`, `context/workspace-apis.md`, `context/workspace-runtime-lifecycle.md` | `cmd/kenn-forge/`, `internal/daemonruntime/`, `internal/runtimelock/`, `internal/server/`, `internal/apiclient/generated/` |
 | `errors` | `context/error-handling.md` | error envelopes and frontend error branching |
 | `retries` | `context/retries-and-backoffs.md` | retry, backoff, and single-flight paths |
-| `testing` | `context/testing.md` | server API/E2E packages and test helpers |
-| `frontend` | `context/ui-design-system.md`, `context/ui-interaction-contracts.md` | `frontend/src/` |
+| `testing` | `context/testing-basics.md`, `context/testing.md` | server API/E2E packages and test helpers |
+| `frontend` | `context/ui-design-system.md`, `context/ui-interaction-contracts.md`, `context/vscode-workflow-panel-interaction-spec.md` | `frontend/src/` |
 | `mobile` | `context/mobile-ux.md` | frontend `/m` routes and phone-first components |
 | `kata` | `context/kata-mode.md`, `context/workspace-apis.md` | `internal/kata/`, `internal/server/kataapi/` |
 | `docs` | `context/docs-mode.md` | `internal/docs/`, `internal/server/docsapi/` |

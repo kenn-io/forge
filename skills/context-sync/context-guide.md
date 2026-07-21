@@ -141,7 +141,8 @@ Silencing a failing guard without recording the decision is forbidden.
 | Daemon startup, Host validation, SSE replay | `context/server-runtime.md` | Root server lifecycle and request boundary |
 | API error envelopes + frontend branching | `context/error-handling.md` | Stable contract |
 | Retry/backoff/single-flight | `context/retries-and-backoffs.md` | Upstream flakiness |
-| HTTP test discipline (apitest vs e2etest) | `context/testing.md` | Wire-level testing |
+| Test commands and common Go conventions | `context/testing-basics.md` | Everyday test construction |
+| Test lanes and HTTP discipline | `context/testing.md` | Boundary and integration testing |
 | UI/TS/Svelte conventions, interaction contracts | `context/ui-design-system.md`, `context/ui-interaction-contracts.md` | Frontend consistency |
 | Phone-first mobile workflow | `context/mobile-ux.md` | `/m` is its own UX |
 | Kata daemon integration | `context/kata-mode.md`, `context/workspace-apis.md` | External authority and workspace contracts |

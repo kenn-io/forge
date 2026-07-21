@@ -53,6 +53,7 @@ func TestGitOwnerRoutesSelectAndInvalidateOnlyTheirSource(t *testing.T) {
 	gitPath := filepath.Join(dir, "git")
 	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
 set -eu
+`+gitfake.CredentialHelperRunner+`
 out="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
 tmp="$out.current"
 helper=""
@@ -64,7 +65,7 @@ while [ "$i" -lt "$count" ]; do
 	if [ "$key" = "credential.helper" ]; then helper="$value"; fi
 	i=$((i + 1))
 done
-"$helper" get > "$tmp"
+run_credential_helper "$helper" get > "$tmp"
 password="$(sed -n 's/^password=//p' "$tmp")"
 echo "$password" >> "$out"
 if [ "$password" = "first-token" ]; then

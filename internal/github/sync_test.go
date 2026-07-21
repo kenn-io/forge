@@ -10063,6 +10063,7 @@ func TestScopedRunDrainsDetailsOnlyForSelectedRepos(t *testing.T) {
 func TestScopedRunDoesNotDelayNextFullRunOnSameHost(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
+	bucket := RateBucketKey("github", "github.com", "host")
 	repos := []RepoRef{
 		{Owner: "owner", Name: "selected", PlatformHost: "github.com"},
 		{Owner: "owner", Name: "unrelated", PlatformHost: "github.com"},
@@ -10080,7 +10081,7 @@ func TestScopedRunDoesNotDelayNextFullRunOnSameHost(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil, repos,
 		time.Hour,
-		map[string]*RateTracker{"github.com": NewRateTracker(d, "github.com", "rest")},
+		map[string]*RateTracker{bucket: NewRateTracker(d, "github.com", "host", "rest")},
 		nil,
 	)
 	syncer.SetParallelism(1)
@@ -10108,6 +10109,7 @@ func TestScheduledFullRunRetriesAfterOverlappingScopedRun(t *testing.T) {
 			require := require.New(t)
 			ctx := t.Context()
 			d := openTestDB(t)
+			bucket := RateBucketKey("github", "github.com", "host")
 			repos := []RepoRef{
 				{Owner: "owner", Name: "selected", PlatformHost: "github.com"},
 				{Owner: "owner", Name: "unrelated", PlatformHost: "github.com"},
@@ -10137,7 +10139,7 @@ func TestScheduledFullRunRetriesAfterOverlappingScopedRun(t *testing.T) {
 			var rateTrackers map[string]*RateTracker
 			if tt.cadenceGated {
 				rateTrackers = map[string]*RateTracker{
-					"github.com": NewRateTracker(d, "github.com", "rest"),
+					bucket: NewRateTracker(d, "github.com", "host", "rest"),
 				}
 			}
 			syncer := NewSyncer(
@@ -10145,7 +10147,7 @@ func TestScheduledFullRunRetriesAfterOverlappingScopedRun(t *testing.T) {
 				time.Hour, rateTrackers, nil,
 			)
 			if tt.cadenceGated {
-				syncer.nextSyncAfter["github.com"] = time.Now().Add(time.Hour)
+				syncer.nextSyncAfter[bucket] = time.Now().Add(time.Hour)
 			}
 			syncer.SetParallelism(1)
 			t.Cleanup(syncer.Stop)

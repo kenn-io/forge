@@ -19,11 +19,9 @@ owner/name remains a mutable route. The routing table below owns the detailed ru
 
 ## Non-Provider Modes
 
-Kata and Docs are first-class kenn-forge modes, but they are not platform providers and do not use provider-neutral repository identity. Do not force them through `internal/platform` or provider capability abstractions.
-
-- Kata mode talks to external Kata daemons. Kenn Forge reads the Kata daemon catalog from `$KATA_HOME/config.toml` (default `~/.kata/config.toml`) and resolves `local = true` daemon entries from Kata runtime records. Kenn Forge config must not become the source of truth for Kata daemon definitions.
-- Docs mode operates on explicitly configured local markdown folders. Treat folder reads, writes, deletes, browse, and git publish as local filesystem surfaces requiring explicit path safety, CSRF, and loopback-access decisions.
-- These modes may link to each other, but their data ownership remains separate: provider PR/MR data lives in kenn-forge's SQLite DB, Kata task data stays in external Kata daemons, and docs files stay on disk.
+Kata and Docs are first-class modes, not platform providers. Do not force them
+through `internal/platform`: their data remains owned respectively by Kata
+daemons and configured filesystem folders.
 
 ## Context Routing
 

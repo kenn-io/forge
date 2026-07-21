@@ -107,7 +107,9 @@ func TestDisabledIssueCooldownSkipsDetailDrain(t *testing.T) {
 		),
 	))
 
-	syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true})
+	syncer.drainDetailQueue(
+		ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos(),
+	)
 
 	assert.Zero(int(client.conditionalCalls.Load()))
 }

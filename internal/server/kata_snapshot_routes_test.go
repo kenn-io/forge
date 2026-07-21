@@ -150,6 +150,7 @@ func TestKataTaskSnapshotSerializesLocalEnrichmentErrorsAndIndependentGraphSourc
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var response kataTaskSnapshotResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &response))
+	assert.Equal("issue-source", response.GraphSourceUID)
 	assert.Equal("issue-member", response.Enrichment.SelectedIssueUID)
 	assert.Nil(response.Enrichment.SelectedDetail)
 	assert.Nil(response.Enrichment.Graph)
@@ -386,6 +387,7 @@ func TestKataTaskSnapshotDoesNotAuthorizeDisconnectedGraphNodeOverHTTP(t *testin
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var response kataTaskSnapshotResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &response))
+	assert.Equal("issue-source", response.GraphSourceUID)
 	assert.NotNil(response.Enrichment.Graph)
 	assert.Empty(response.Enrichment.SelectedIssueUID)
 	assert.Nil(response.Enrichment.SelectedDetail)

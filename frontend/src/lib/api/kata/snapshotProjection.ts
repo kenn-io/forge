@@ -1,4 +1,4 @@
-import type { KataWorkspaceSnapshotResponse } from "./snapshot.js";
+import type { KataAuthority, KataAuthorityScope, KataWorkspaceSnapshotResponse } from "./snapshot.js";
 import {
   normalizeKataEventEnvelope,
   normalizeKataProject,
@@ -29,10 +29,14 @@ export interface KataSnapshotEnrichmentErrorProjection {
   readonly message: string;
 }
 
+export type KataAuthorityIntentProjection =
+  | { readonly scope: "global"; readonly authority: KataAuthority }
+  | { readonly scope: "project"; readonly project_uid: string; readonly authority: KataAuthority };
+
 export interface KataWorkspaceSnapshotProjection {
   readonly server_instance_id: string;
   readonly daemon_id: string;
-  readonly intent: Immutable<KataWorkspaceSnapshotResponse["intent"]>;
+  readonly intent: KataAuthorityIntentProjection;
   readonly generation: number;
   readonly invalidation_epoch: number;
   readonly event_cursor: number;
@@ -71,6 +75,23 @@ function assertAllowedString(value: unknown, allowed: readonly string[], field: 
 function validateTaskSummary(raw: unknown, field: string): void {
   const issue = isObject(raw) ? raw : {};
   assertAllowedString(issue.status, ["open", "closed"], `${field} status`);
+}
+
+function normalizeAuthorityIntent(raw: KataWorkspaceSnapshotResponse["intent"]): KataAuthorityIntentProjection {
+  assertAllowedString(raw.scope, ["global", "project"] satisfies readonly KataAuthorityScope[], "intent scope");
+  assertAllowedString(
+    raw.authority,
+    ["open", "ready", "closed", "all"] satisfies readonly KataAuthority[],
+    "intent authority",
+  );
+  const authority = raw.authority as KataAuthority;
+  if (raw.scope === "project") {
+    const projectUID = raw.project_uid?.trim();
+    if (!projectUID) throw new Error("Invalid Kata snapshot intent: project scope requires project_uid");
+    return Object.freeze({ scope: "project", project_uid: projectUID, authority });
+  }
+  if (raw.project_uid !== undefined) throw new Error("Invalid Kata snapshot intent: global scope forbids project_uid");
+  return Object.freeze({ scope: "global", authority });
 }
 
 function validateSelectedDetail(raw: unknown): void {
@@ -114,19 +135,25 @@ function immutableCopy<T>(value: T): Immutable<T> {
 
 function immutableSet<T>(values: readonly T[]): ReadonlySet<T> {
   const source = new Set(values);
-  const projection = new Proxy(source, {
+  let projection: ReadonlySet<T>;
+  const proxy = new Proxy(source, {
     get(target, property): unknown {
       if (property === "add" || property === "delete" || property === "clear") {
         return (): never => {
           throw new TypeError("Kata snapshot membership is immutable");
         };
       }
+      if (property === "forEach") {
+        return (callback: (value: T, key: T, set: ReadonlySet<T>) => void, thisArg?: unknown): void =>
+          target.forEach((value) => callback.call(thisArg, value, value, projection));
+      }
       const value: unknown = Reflect.get(target, property, target);
       if (typeof value === "function") return value.bind(target);
       return value;
     },
   });
-  return Object.freeze(projection) as ReadonlySet<T>;
+  projection = Object.freeze(proxy) as ReadonlySet<T>;
+  return projection;
 }
 
 function normalizeSelectedDetail(
@@ -168,25 +195,45 @@ function normalizeGraph(
 export function normalizeKataWorkspaceSnapshot(
   response: KataWorkspaceSnapshotResponse,
 ): KataWorkspaceSnapshotProjection {
+  const intent = normalizeAuthorityIntent(response.intent);
   for (const issue of response.issues ?? []) validateTaskSummary(issue, "authority issue");
 
   const projects = immutableCopy((response.projects ?? []).map((project) => normalizeKataProject(project)));
   const issues = immutableCopy((response.issues ?? []).map((issue) => normalizeKataTaskSummary(issue)));
   const memberIssueUIDs = Object.freeze([...(response.member_issue_uids ?? [])]);
-  const selectedDetail = response.enrichment.selected_detail
-    ? normalizeSelectedDetail(response.enrichment.selected_detail)
-    : undefined;
+  const enrichmentErrors: Record<string, KataSnapshotEnrichmentErrorProjection> = {
+    ...(response.enrichment.errors ?? {}),
+  };
+  let selectedDetail: Immutable<KataTaskDetail> | undefined;
+  if (response.enrichment.selected_detail) {
+    try {
+      selectedDetail = normalizeSelectedDetail(response.enrichment.selected_detail);
+    } catch {
+      enrichmentErrors.detail = {
+        code: "invalid_snapshot_enrichment",
+        message: "Could not normalize selected task detail.",
+      };
+    }
+  }
   const selectedHistory = immutableCopy(
     (response.enrichment.selected_history ?? []).map((event) => normalizeKataEventEnvelope(event)),
   );
-  const graph = response.enrichment.graph
-    ? normalizeGraph(response.enrichment.graph, response.enrichment.graph_fetched_at, projects)
-    : undefined;
+  let graph: Immutable<KataReachableGraphResponse> | undefined;
+  if (response.enrichment.graph) {
+    try {
+      graph = normalizeGraph(response.enrichment.graph, response.enrichment.graph_fetched_at, projects);
+    } catch {
+      enrichmentErrors.graph = {
+        code: "invalid_snapshot_enrichment",
+        message: "Could not normalize reachable graph.",
+      };
+    }
+  }
 
   return Object.freeze({
     server_instance_id: response.server_instance_id,
     daemon_id: response.daemon_id,
-    intent: immutableCopy(response.intent),
+    intent,
     generation: response.generation,
     invalidation_epoch: response.invalidation_epoch,
     event_cursor: response.event_cursor,
@@ -198,8 +245,11 @@ export function normalizeKataWorkspaceSnapshot(
     ...(response.enrichment.selected_issue_uid ? { selected_issue_uid: response.enrichment.selected_issue_uid } : {}),
     ...(selectedDetail ? { selected_detail: selectedDetail } : {}),
     selected_history: selectedHistory,
-    ...(graph ? { graph_source_uid: graph.source_uid, graph } : {}),
-    ...(response.enrichment.graph_fetched_at ? { graph_fetched_at: response.enrichment.graph_fetched_at } : {}),
-    enrichment_errors: immutableCopy(response.enrichment.errors ?? {}),
+    ...(response.graph_source_uid ? { graph_source_uid: response.graph_source_uid } : {}),
+    ...(graph ? { graph } : {}),
+    ...(graph && response.enrichment.graph_fetched_at
+      ? { graph_fetched_at: response.enrichment.graph_fetched_at }
+      : {}),
+    enrichment_errors: immutableCopy(enrichmentErrors),
   });
 }

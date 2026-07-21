@@ -5864,6 +5864,7 @@ export interface components {
             fetched_at: string;
             /** Format: int64 */
             generation: number;
+            graph_source_uid?: string;
             intent: components["schemas"]["KataAuthorityRequest"];
             /** Format: int64 */
             invalidation_epoch: number;

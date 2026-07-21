@@ -5,7 +5,10 @@ import {
   type KataSnapshotIntent,
   type KataWorkspaceSnapshotResponse,
 } from "../api/kata/snapshot.js";
-import type { KataTaskViewName } from "../api/kata/taskTypes.js";
+import {
+  normalizeKataWorkspaceSnapshot,
+  type KataWorkspaceSnapshotProjection,
+} from "../api/kata/snapshotProjection.js";
 
 export interface KataAuthorityKey {
   daemon_id: string;
@@ -15,33 +18,31 @@ export interface KataAuthorityKey {
 }
 
 export interface KataAuthorityPresentation {
-  view: KataTaskViewName;
   text: string;
   owner: string;
   label: string;
   graph_selected_uid?: string | undefined;
 }
 
-type KataSnapshotIssue = NonNullable<KataWorkspaceSnapshotResponse["issues"]>[number];
+type KataSnapshotIssue = KataWorkspaceSnapshotProjection["issues"][number];
 
 export interface KataAuthorityProjection {
-  view: KataTaskViewName;
-  issues: KataSnapshotIssue[];
+  issues: readonly KataSnapshotIssue[];
   graph_selected_uid?: string | undefined;
 }
 
 export type KataAuthorityState =
   | { phase: "idle"; snapshot: null; intent: null; error: null }
-  | { phase: "loading"; snapshot: KataWorkspaceSnapshotResponse | null; intent: KataSnapshotIntent; error: null }
+  | { phase: "loading"; snapshot: KataWorkspaceSnapshotProjection | null; intent: KataSnapshotIntent; error: null }
   | {
       phase: "accepted";
-      snapshot: KataWorkspaceSnapshotResponse;
+      snapshot: KataWorkspaceSnapshotProjection;
       intent: KataSnapshotIntent;
       error: null;
     }
   | {
       phase: "degraded";
-      snapshot: KataWorkspaceSnapshotResponse | null;
+      snapshot: KataWorkspaceSnapshotProjection | null;
       intent: KataSnapshotIntent;
       error: string;
     };
@@ -52,7 +53,6 @@ export interface CreateKataAuthorityStoreOptions {
 
 const initialState: KataAuthorityState = { phase: "idle", snapshot: null, intent: null, error: null };
 const initialPresentation: KataAuthorityPresentation = {
-  view: "all",
   text: "",
   owner: "",
   label: "",
@@ -84,32 +84,31 @@ function normalizeIntent(intent: KataSnapshotIntent): KataSnapshotIntent {
   };
 }
 
-function responseIdentityMatches(response: KataWorkspaceSnapshotResponse, intent: KataSnapshotIntent): boolean {
+function responseIdentityMatches(response: KataWorkspaceSnapshotProjection, intent: KataSnapshotIntent): boolean {
   if (intent.daemon_id && response.daemon_id !== intent.daemon_id) return false;
   if (response.intent.scope !== intent.scope) return false;
-  if ((response.intent.project_uid ?? undefined) !== intent.project_uid) return false;
+  const responseProjectUID = response.intent.scope === "project" ? response.intent.project_uid : undefined;
+  if (responseProjectUID !== intent.project_uid) return false;
   if (response.intent.authority !== intent.authority) return false;
 
-  const selectedIssueUID = response.enrichment.selected_issue_uid;
+  const selectedIssueUID = response.selected_issue_uid;
   if (selectedIssueUID && selectedIssueUID !== intent.selected_issue_uid) return false;
   if (!intent.selected_issue_uid && selectedIssueUID) return false;
 
-  const graphSourceUID = response.enrichment.graph?.source_uid;
-  if (graphSourceUID && graphSourceUID !== intent.graph_source_uid) return false;
-  if (!intent.graph_source_uid && graphSourceUID) return false;
+  if (response.graph_source_uid !== intent.graph_source_uid) return false;
   return true;
 }
 
-function authorityKey(response: KataWorkspaceSnapshotResponse): KataAuthorityKey {
+function authorityKey(response: KataWorkspaceSnapshotProjection): KataAuthorityKey {
   return {
     daemon_id: response.daemon_id,
-    scope: response.intent.scope as KataAuthorityScope,
-    ...(response.intent.project_uid ? { project_uid: response.intent.project_uid } : {}),
-    authority: response.intent.authority as KataAuthority,
+    scope: response.intent.scope,
+    ...(response.intent.scope === "project" ? { project_uid: response.intent.project_uid } : {}),
+    authority: response.intent.authority,
   };
 }
 
-function orderingKey(response: KataWorkspaceSnapshotResponse): string {
+function orderingKey(response: KataWorkspaceSnapshotProjection): string {
   const key = authorityKey(response);
   return JSON.stringify([response.server_instance_id, key.daemon_id, key.scope, key.project_uid ?? "", key.authority]);
 }
@@ -119,7 +118,7 @@ function errorMessage(error: unknown): string {
 }
 
 function projectSnapshot(
-  snapshot: KataWorkspaceSnapshotResponse | null,
+  snapshot: KataWorkspaceSnapshotProjection | null,
   presentation: KataAuthorityPresentation,
 ): KataAuthorityProjection {
   const text = presentation.text.trim().toLocaleLowerCase();
@@ -129,12 +128,11 @@ function projectSnapshot(
     if (owner && issue.owner?.toLocaleLowerCase() !== owner) return false;
     if (label && !issue.labels?.some((item) => item.toLocaleLowerCase() === label)) return false;
     if (!text) return true;
-    return [issue.title, issue.body, issue.qualified_id, issue.project_name].some((value) =>
-      value.toLocaleLowerCase().includes(text),
+    return [issue.title, issue.body, issue.qualified_id, issue.project_name, issue.owner, ...(issue.labels ?? [])].some(
+      (value) => value?.toLocaleLowerCase().includes(text),
     );
   });
   return {
-    view: presentation.view,
     issues,
     ...(presentation.graph_selected_uid ? { graph_selected_uid: presentation.graph_selected_uid } : {}),
   };
@@ -154,7 +152,7 @@ export class KataAuthorityStore {
     this.load = options.loadSnapshot ?? fetchKataWorkspaceSnapshot;
   }
 
-  get snapshot(): KataWorkspaceSnapshotResponse | null {
+  get snapshot(): KataWorkspaceSnapshotProjection | null {
     return this.state.snapshot;
   }
 
@@ -187,22 +185,43 @@ export class KataAuthorityStore {
     }
 
     if (sequence !== this.requestSequence) return false;
-    if (!responseIdentityMatches(response, intent)) {
+    let snapshot: KataWorkspaceSnapshotProjection;
+    try {
+      snapshot = normalizeKataWorkspaceSnapshot(response);
+    } catch (error) {
+      this.state = {
+        phase: "degraded",
+        snapshot: previousSnapshot,
+        intent,
+        error: errorMessage(error),
+      };
+      throw error;
+    }
+    if (!responseIdentityMatches(snapshot, intent)) {
       const error = new Error("Kata snapshot response does not match the current request intent");
       this.state = { phase: "degraded", snapshot: previousSnapshot, intent, error: error.message };
       throw error;
     }
 
-    const key = orderingKey(response);
+    const key = orderingKey(snapshot);
     const acceptedGeneration = this.acceptedGenerations[key];
-    if (acceptedGeneration !== undefined && response.generation < acceptedGeneration) {
+    if (acceptedGeneration !== undefined && snapshot.generation < acceptedGeneration) {
+      if (previousSnapshot && orderingKey(previousSnapshot) !== key) {
+        this.state = {
+          phase: "degraded",
+          snapshot: previousSnapshot,
+          intent,
+          error: "Kata snapshot generation moved backwards for the requested authority",
+        };
+        return false;
+      }
       this.restoreAcceptedState(previousSnapshot);
       return false;
     }
 
-    this.acceptedGenerations[key] = response.generation;
+    this.acceptedGenerations[key] = snapshot.generation;
     this.acceptedIntent = intent;
-    this.state = { phase: "accepted", snapshot: response, intent, error: null };
+    this.state = { phase: "accepted", snapshot, intent, error: null };
     return true;
   }
 
@@ -211,7 +230,7 @@ export class KataAuthorityStore {
     return this.loadSnapshot(this.state.intent);
   }
 
-  private restoreAcceptedState(snapshot: KataWorkspaceSnapshotResponse | null): void {
+  private restoreAcceptedState(snapshot: KataWorkspaceSnapshotProjection | null): void {
     if (snapshot && this.acceptedIntent) {
       this.state = { phase: "accepted", snapshot, intent: this.acceptedIntent, error: null };
       return;

@@ -137,6 +137,28 @@ describe("normalizeKataWorkspaceSnapshot", () => {
     expect(projection.member_issue_uid_set.has("issue-authority")).toBe(true);
   });
 
+  it("narrows and freezes a valid project authority intent", () => {
+    const projection = normalizeKataWorkspaceSnapshot(
+      snapshot({ intent: { scope: "project", project_uid: "project-a", authority: "ready" } }),
+    );
+
+    expect(projection.intent).toEqual({ scope: "project", project_uid: "project-a", authority: "ready" });
+    expect(Object.isFrozen(projection.intent)).toBe(true);
+  });
+
+  it("never exposes the mutable membership backing set to forEach callbacks", () => {
+    const projection = normalizeKataWorkspaceSnapshot(snapshot());
+    let callbackSet: ReadonlySet<string> | undefined;
+
+    projection.member_issue_uid_set.forEach((_value, _key, set) => {
+      callbackSet = set;
+    });
+
+    expect(callbackSet).toBe(projection.member_issue_uid_set);
+    expect(() => (callbackSet as Set<string>).clear()).toThrow("Kata snapshot membership is immutable");
+    expect(projection.member_issue_uid_set.has("issue-authority")).toBe(true);
+  });
+
   it("combines selected detail with its generated ETag and workspace target", () => {
     const workspaceTarget = { available: false };
     const projection = normalizeKataWorkspaceSnapshot(
@@ -222,6 +244,7 @@ describe("normalizeKataWorkspaceSnapshot", () => {
   it("keeps graph enrichment separate from authority membership and selection", () => {
     const projection = normalizeKataWorkspaceSnapshot(
       snapshot({
+        graph_source_uid: "issue-root",
         enrichment: {
           selected_issue_uid: "issue-selected",
           graph_fetched_at: "2026-07-20T11:45:00Z",
@@ -268,6 +291,24 @@ describe("normalizeKataWorkspaceSnapshot", () => {
     expect(projection.member_issue_uid_set.has("issue-graph-only")).toBe(false);
   });
 
+  it("preserves the explicit graph root when graph enrichment is unavailable", () => {
+    const projection = normalizeKataWorkspaceSnapshot(
+      snapshot({
+        graph_source_uid: "issue-root",
+        enrichment: {
+          errors: { graph: { code: "upstream_error", message: "Could not load reachable graph." } },
+        },
+      }),
+    );
+
+    expect(projection.graph_source_uid).toBe("issue-root");
+    expect(projection.graph).toBeUndefined();
+    expect(projection.enrichment_errors.graph).toEqual({
+      code: "upstream_error",
+      message: "Could not load reachable graph.",
+    });
+  });
+
   it("exposes enrichment errors as local data without rejecting authority", () => {
     const projection = normalizeKataWorkspaceSnapshot(
       snapshot({
@@ -288,33 +329,81 @@ describe("normalizeKataWorkspaceSnapshot", () => {
   });
 
   it.each([
-    ["authority status", snapshot({ issues: [issue({ status: "paused" })] })],
-    [
-      "selected-detail relation",
+    ["scope", { scope: "workspace", authority: "open" }],
+    ["authority", { scope: "global", authority: "active" }],
+    ["project scope without project UID", { scope: "project", authority: "open" }],
+    ["global scope with project UID", { scope: "global", project_uid: "project-a", authority: "open" }],
+    ["global scope with empty project UID", { scope: "global", project_uid: "", authority: "open" }],
+  ])("rejects malformed authority intent: %s", (_label, intent) => {
+    const raw = snapshot({ intent: intent as KataWorkspaceSnapshotResponse["intent"] });
+
+    expect(() => normalizeKataWorkspaceSnapshot(raw)).toThrow(/invalid/i);
+  });
+
+  it("rejects a malformed authority issue status", () => {
+    expect(() => normalizeKataWorkspaceSnapshot(snapshot({ issues: [issue({ status: "paused" })] }))).toThrow(
+      /invalid/i,
+    );
+  });
+
+  it("keeps authority data when selected detail normalization fails", () => {
+    const projection = normalizeKataWorkspaceSnapshot(
       snapshot({
         enrichment: {
+          selected_issue_uid: "issue-authority",
           selected_detail: {
             workspace_target: { available: false },
             detail: { issue: issue(), links: [{ type: "depends_on" }] },
           },
         },
       }),
+    );
+
+    expect(projection.issues).toHaveLength(1);
+    expect(projection.selected_issue_uid).toBe("issue-authority");
+    expect(projection.selected_detail).toBeUndefined();
+    expect(projection.enrichment_errors.detail).toEqual({
+      code: "invalid_snapshot_enrichment",
+      message: "Could not normalize selected task detail.",
+    });
+  });
+
+  it.each([
+    ["depth", { source_uid: "issue-root", depth: "wide", hide_done: false, nodes: [], edges: [] }],
+    [
+      "edge",
+      {
+        source_uid: "issue-root",
+        depth: "full",
+        hide_done: false,
+        nodes: [],
+        edges: [{ from_uid: "issue-root", to_uid: "issue-authority", kind: "depends_on", layout: true }],
+      },
     ],
     [
-      "graph edge kind",
-      snapshot({
-        enrichment: {
-          graph: {
-            source_uid: "issue-root",
-            depth: "full",
-            hide_done: false,
-            nodes: [],
-            edges: [{ from_uid: "issue-root", to_uid: "issue-authority", kind: "depends_on", layout: true }],
-          },
-        },
-      }),
+      "node",
+      {
+        source_uid: "issue-root",
+        depth: "full",
+        hide_done: false,
+        nodes: [issue({ status: "paused" })],
+        edges: [],
+      },
     ],
-  ])("rejects malformed %s input", (_label, raw) => {
-    expect(() => normalizeKataWorkspaceSnapshot(raw)).toThrow(/invalid/i);
+  ])("keeps authority data when graph %s normalization fails", (_label, graph) => {
+    const projection = normalizeKataWorkspaceSnapshot(
+      snapshot({
+        graph_source_uid: "issue-root",
+        enrichment: { graph: graph as NonNullable<KataWorkspaceSnapshotResponse["enrichment"]["graph"]> },
+      }),
+    );
+
+    expect(projection.issues).toHaveLength(1);
+    expect(projection.graph_source_uid).toBe("issue-root");
+    expect(projection.graph).toBeUndefined();
+    expect(projection.enrichment_errors.graph).toEqual({
+      code: "invalid_snapshot_enrichment",
+      message: "Could not normalize reachable graph.",
+    });
   });
 });

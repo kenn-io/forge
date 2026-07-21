@@ -72,11 +72,12 @@ function snapshot(
 }
 
 describe("Kata authority store", () => {
-  it("installs the complete accepted response in one raw snapshot assignment", async () => {
+  it("normalizes and immutably installs a complete accepted snapshot", async () => {
     const accepted = snapshot({
       generation: 7,
       invalidation_epoch: 3,
       event_cursor: 42,
+      graph_source_uid: "issue-b",
       enrichment: {
         selected_issue_uid: "issue-a",
         selected_detail: {
@@ -118,21 +119,27 @@ describe("Kata authority store", () => {
     ).resolves.toBe(true);
 
     expect(store.state.phase).toBe("accepted");
-    expect(store.snapshot).toBe(accepted);
+    expect(store.snapshot).not.toBe(accepted);
     expect(store.snapshot).toMatchObject({
-      projects: accepted.projects,
+      projects: [{ uid: "project-a", name: "Project A", open_count: 2 }],
       member_issue_uids: accepted.member_issue_uids,
       issues: accepted.issues,
       generation: 7,
       invalidation_epoch: 3,
       event_cursor: 42,
-      enrichment: accepted.enrichment,
+      selected_issue_uid: "issue-a",
+      graph_source_uid: "issue-b",
     });
+    expect(Object.isFrozen(store.snapshot)).toBe(true);
+    expect(Object.isFrozen(store.snapshot?.issues)).toBe(true);
+    accepted.issues![0]!.title = "Mutated after acceptance";
+    expect(store.snapshot?.issues[0]?.title).toBe("Needle task");
   });
 
   it("accepts authority data even when request-local enrichment contains errors", async () => {
     const accepted = snapshot({
       generation: 2,
+      graph_source_uid: "issue-b",
       enrichment: {
         selected_issue_uid: "issue-a",
         errors: {
@@ -153,7 +160,7 @@ describe("Kata authority store", () => {
 
     expect(store.state.phase).toBe("accepted");
     expect(store.snapshot?.issues).toEqual(accepted.issues);
-    expect(store.snapshot?.enrichment.errors).toEqual(accepted.enrichment.errors);
+    expect(store.snapshot?.enrichment_errors).toEqual(accepted.enrichment.errors);
   });
 
   it("requests a new authority for Ready and ignores the superseded Open response", async () => {
@@ -194,12 +201,13 @@ describe("Kata authority store", () => {
     expect(store.state.phase).toBe("accepted");
   });
 
-  it("keeps the prior accepted key and intent paired when another authority returns stale data", async () => {
+  it("retains the prior authority while keeping a stale cross-authority request pending for retry", async () => {
     const loadSnapshot = vi
       .fn<(intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>>()
       .mockResolvedValueOnce(snapshot({ generation: 9, intent: { scope: "global", authority: "open" } }))
       .mockResolvedValueOnce(snapshot({ generation: 10, intent: { scope: "global", authority: "ready" } }))
-      .mockResolvedValueOnce(snapshot({ generation: 8, intent: { scope: "global", authority: "open" } }));
+      .mockResolvedValueOnce(snapshot({ generation: 8, intent: { scope: "global", authority: "open" } }))
+      .mockResolvedValueOnce(snapshot({ generation: 11, intent: { scope: "global", authority: "open" } }));
     const store = createKataAuthorityStore({ loadSnapshot });
 
     await store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" });
@@ -207,8 +215,13 @@ describe("Kata authority store", () => {
     await expect(store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" })).resolves.toBe(false);
 
     expect(store.authorityKey?.authority).toBe("ready");
-    expect(store.state.intent?.authority).toBe("ready");
+    expect(store.state.phase).toBe("degraded");
+    expect(store.state.intent?.authority).toBe("open");
     expect(store.snapshot?.generation).toBe(10);
+
+    await expect(store.retry()).resolves.toBe(true);
+    expect(loadSnapshot.mock.calls[3]?.[0].authority).toBe("open");
+    expect(store.authorityKey?.authority).toBe("open");
   });
 
   it("accepts a lower generation after the Middleman server instance changes", async () => {
@@ -229,6 +242,7 @@ describe("Kata authority store", () => {
     const loadSnapshot = vi.fn(async (intent: KataSnapshotIntent) =>
       snapshot({
         generation: 4,
+        ...(intent.graph_source_uid ? { graph_source_uid: intent.graph_source_uid } : {}),
         enrichment: {
           ...(intent.selected_issue_uid ? { selected_issue_uid: intent.selected_issue_uid } : {}),
           selected_detail: { detail: {}, workspace_target: { available: false } },
@@ -257,20 +271,43 @@ describe("Kata authority store", () => {
     expect(loadSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ selected_issue_uid: "issue-a", graph_source_uid: "issue-b" }),
     );
-    expect(store.snapshot?.enrichment.graph?.source_uid).toBe("issue-b");
+    expect(store.snapshot?.graph?.source_uid).toBe("issue-b");
     expect(store.presentation.graph_selected_uid).toBe("issue-a");
   });
 
-  it("projects view, text, owner, and label locally without loading another snapshot", async () => {
+  it("projects text, owner, and label locally without loading another snapshot", async () => {
     const loadSnapshot = vi.fn(async () => snapshot({ generation: 3 }));
     const store = createKataAuthorityStore({ loadSnapshot });
     await store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" });
 
-    store.updatePresentation({ view: "today", text: "needle", owner: "alice", label: "urgent" });
+    store.updatePresentation({ text: "needle", owner: "alice", label: "urgent" });
 
     expect(loadSnapshot).toHaveBeenCalledTimes(1);
-    expect(store.projection.view).toBe("today");
     expect(store.projection.issues.map((issue) => issue.uid)).toEqual(["issue-a"]);
+  });
+
+  it("includes owner and labels in free-text projection matching", async () => {
+    const store = createKataAuthorityStore({ loadSnapshot: vi.fn(async () => snapshot({ generation: 3 })) });
+    await store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" });
+
+    store.updatePresentation({ text: "alice" });
+    expect(store.projection.issues.map((issue) => issue.uid)).toEqual(["issue-a"]);
+
+    store.updatePresentation({ text: "later" });
+    expect(store.projection.issues.map((issue) => issue.uid)).toEqual(["issue-b"]);
+  });
+
+  it("rejects malformed authority responses before storing them", async () => {
+    const malformed = snapshot({ generation: 3 });
+    malformed.issues![0]!.status = "paused";
+    const store = createKataAuthorityStore({ loadSnapshot: vi.fn(async () => malformed) });
+
+    await expect(store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" })).rejects.toThrow(
+      /invalid/i,
+    );
+
+    expect(store.snapshot).toBeNull();
+    expect(store.state.phase).toBe("degraded");
   });
 
   it("retries the explicit current intent instead of patching accepted authority", async () => {

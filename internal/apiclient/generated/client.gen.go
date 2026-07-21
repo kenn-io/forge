@@ -2199,6 +2199,7 @@ type KataTaskSnapshotResponse struct {
 	EventCursor       int64                  `json:"event_cursor"`
 	FetchedAt         time.Time              `json:"fetched_at"`
 	Generation        int64                  `json:"generation"`
+	GraphSourceUid    *string                `json:"graph_source_uid,omitempty"`
 	Intent            KataAuthorityRequest   `json:"intent"`
 	InvalidationEpoch int64                  `json:"invalidation_epoch"`
 	Issues            *[]KataTaskSummary     `json:"issues"`

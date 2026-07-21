@@ -46,6 +46,7 @@ type kataTaskSnapshotResponse struct {
 	Projects          []kataProjectSummary   `json:"projects"`
 	MemberIssueUIDs   []string               `json:"member_issue_uids"`
 	Issues            []kataTaskSummary      `json:"issues"`
+	GraphSourceUID    string                 `json:"graph_source_uid,omitempty"`
 	Enrichment        kataSnapshotEnrichment `json:"enrichment"`
 }
 
@@ -226,7 +227,7 @@ func (f *kataSnapshotFrontend) Snapshot(
 			Generation: authority.Generation, InvalidationEpoch: authority.InvalidationEpoch,
 			EventCursor: cursor, FetchedAt: authority.Snapshot.FetchedAt,
 			Projects: authority.Snapshot.Projects, MemberIssueUIDs: authority.Snapshot.MemberIssueUIDs,
-			Issues: authority.Snapshot.Issues, Enrichment: enrichment,
+			Issues: authority.Snapshot.Issues, GraphSourceUID: enrichmentRequest.GraphSourceUID, Enrichment: enrichment,
 		}, nil
 	}
 	if err := ctx.Err(); err != nil {

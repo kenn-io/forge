@@ -11,20 +11,11 @@ development commands.
 
 ## Provider Support
 
-kenn-forge supports GitHub, GitLab, Forgejo, and Gitea. The `gitealike` package is the shared Forgejo/Gitea adapter.
-
-This paragraph is the single place CLAUDE.md enumerates supported providers. Do not duplicate the list elsewhere in this file: not in the architecture diagram, env-var lists, project structure, key files, or test guidance. Adding or removing a provider updates this paragraph only. Mentioning a specific provider in context (for example, GitHub-only optimizations in `internal/github/`) is fine when it describes real artifacts, not when it restates the supported set.
-
-New features must work across every supported provider to the extent each provider's API allows. Concrete rules:
-
-- Provider-specific capability differences go behind the capability model in `internal/platform`. Declare capabilities in `Capabilities()`, check them before mutations, and return typed `unsupported_capability` errors when a provider can't satisfy an operation. Do not silently fall back to GitHub-only behavior for other providers.
-- A provider-verified repository is canonically identified by `(provider, platform_host, provider_repo_id)`; owner/repo is a mutable route. Route-only references still require provider and host, and must not be promoted or combined without a verified stable ID.
-- Never identify, route, cache, dedupe, query, persist, or compare repositories, pull requests, merge requests, issues, comments, checks, releases, workspaces, activity, or events by owner/repo/number alone. Every repo-scoped path and data structure must carry provider and host as well as owner and repo.
-- Repo-scoped routes use provider-aware paths like `/pulls/{provider}/{owner}/{name}/{number}`, with `/host/{platform_host}/...` for non-default or self-hosted instances.
-- GitHub-only optimizations (GraphQL bulk fetch, ETag recovery, detailed diff behavior) stay in `internal/github/` and remain optional around the neutral persistence path.
-- Frontend stores and components must thread the full provider ref (`provider`, `platformHost`, `owner`, `name`, `repoPath`) through the shared route helpers in `packages/ui/src/api/provider-routes.ts`. Do not hand-build `/api/v1` URLs or assume GitHub defaults inside components.
-
-For package layout and the new-provider checklist, see `context/provider-architecture.md`. For identity, tokens, freshness, and route shape, see `context/platform-sync-invariants.md`. For GitHub-only sync behavior, see `context/github-sync-invariants.md`.
+kenn-forge supports GitHub, GitLab, Forgejo, and Gitea. This is the single
+canonical provider list; `gitealike` is the shared Forgejo/Gitea adapter.
+Provider-backed features must work across every supported provider within its
+declared capabilities and preserve provider-verified stable repository identity;
+owner/name remains a mutable route. The routing table below owns the detailed rules.
 
 ## Non-Provider Modes
 

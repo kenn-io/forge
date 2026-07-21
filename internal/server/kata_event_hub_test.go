@@ -427,6 +427,12 @@ func TestKataFrontendEventFreshAliasStartsWithOwnReset(t *testing.T) {
 	assert.Contains(frames[0], `"daemon_id":"alias"`)
 	assert.Greater(alias.Cursor(), historicalCursor)
 	assert.Equal(map[string]int{"alias": 1, "primary": 1}, invalidated)
+
+	primaryCtx, cancelPrimary := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancelPrimary()
+	var primaryWire bytes.Buffer
+	primary.serve(primaryCtx, &primaryWire, &stopOnFlushController{at: 2}, historicalCursor, true)
+	assert.Empty(primaryWire.String(), "existing binding must skip another alias's activation reset")
 }
 
 func TestKataFrontendEventRegistryDeduplicatesResolvedTargetAliases(t *testing.T) {
@@ -541,6 +547,101 @@ func TestKataFrontendEventRetiredPublisherCannotInvalidateReplacement(t *testing
 
 	oldBinding.target.invalidateAndBroadcast()
 	assert.Equal(int64(2), invalidations.Load(), "retired target must not invalidate shared authority")
+}
+
+func TestKataFrontendEventRotationFencesSyntheticReplayCursor(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	registry := newKataFrontendEventRegistry(t.Context(), kataFrontendEventRegistryDeps{
+		newClient: func(ctx context.Context, _ kata.Daemon) (kataAPIClient, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+		generationSeed: func(string) uint64 { return 0 },
+	})
+
+	oldBinding := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://old.test"},
+	)
+	oldBinding.hub.mu.Lock()
+	ctx, cancel := context.WithCancel(t.Context())
+	var wire bytes.Buffer
+	serveDone := make(chan struct{})
+	go func() {
+		defer close(serveDone)
+		oldBinding.serve(ctx, &wire, &stopOnFlushController{at: 2}, 99, true)
+	}()
+
+	replayFenced := false
+	deadline := time.Now().Add(100 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if oldBinding.target.publishMu.TryLock() {
+			oldBinding.target.publishMu.Unlock()
+			time.Sleep(time.Millisecond)
+			continue
+		}
+		replayFenced = true
+		break
+	}
+	if !replayFenced {
+		oldBinding.hub.mu.Unlock()
+		cancel()
+		<-serveDone
+		registry.Close()
+		require.True(replayFenced, "synthetic replay did not acquire the target publication fence")
+		return
+	}
+
+	replacementDone := make(chan *kataFrontendEventBinding, 1)
+	go func() {
+		binding, err := registry.Ensure(kata.Daemon{ID: "primary", URL: "http://new.test"})
+		if err != nil {
+			replacementDone <- nil
+			return
+		}
+		replacementDone <- binding
+	}()
+	select {
+	case <-replacementDone:
+		require.FailNow("rotation completed before synthetic replay allocated its cursor")
+	case <-time.After(20 * time.Millisecond):
+	}
+	oldBinding.hub.mu.Unlock()
+	<-serveDone
+	finalOldCursor := oldBinding.Cursor()
+	newBinding := <-replacementDone
+	require.NotNil(newBinding)
+	defer registry.Close()
+	cancel()
+
+	replay, stale := newBinding.hub.RingSnapshotSince(finalOldCursor)
+	require.False(stale)
+	require.Len(replay, 1)
+	assert.Equal("kata.tasks.reset", replay[0].Event.Type)
+	assert.Greater(replay[0].ID, finalOldCursor)
+}
+
+func TestKataFrontendEventRetiredBindingDoesNotReplay(t *testing.T) {
+	registry := newKataFrontendEventRegistry(t.Context(), kataFrontendEventRegistryDeps{
+		newClient: func(ctx context.Context, _ kata.Daemon) (kataAPIClient, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	})
+	defer registry.Close()
+
+	oldBinding := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://old.test"},
+	)
+	_ = requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://new.test"},
+	)
+	controller := &stopOnFlushController{at: 2}
+	var wire bytes.Buffer
+	oldBinding.serve(t.Context(), &wire, controller, 99, true)
+
+	assert.Empty(t, wire.String())
+	assert.Zero(t, controller.count.Load(), "retired binding must abort before opening the stream")
 }
 
 func TestKataFrontendEventCatchUpQueuesInvalidationAfterPartialFailure(t *testing.T) {

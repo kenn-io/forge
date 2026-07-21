@@ -1645,7 +1645,14 @@ func serveSSESubscribedFromHub(
 	serveSSESubscribedFromHubTransformed(
 		ctx, w, rc, hub, cursor, hasCursor, ch, done, staleEvent,
 		func(rec RecordedEvent) (RecordedEvent, bool) { return rec, true },
+		nil,
 	)
+}
+
+type sseReplaySnapshot struct {
+	records []RecordedEvent
+	staleID uint64
+	stale   bool
 }
 
 func serveSSESubscribedFromHubTransformed(
@@ -1659,6 +1666,7 @@ func serveSSESubscribedFromHubTransformed(
 	done <-chan struct{},
 	staleEvent func(uint64) Event,
 	transform func(RecordedEvent) (RecordedEvent, bool),
+	preparedReplay *sseReplaySnapshot,
 ) {
 
 	if err := rc.Flush(); err != nil {
@@ -1670,7 +1678,14 @@ func serveSSESubscribedFromHubTransformed(
 	// live broadcasts and never out of order with them.
 	deliveredThrough := cursor
 	if hasCursor {
-		replay, synID, stale := hub.ReplaySnapshotSince(cursor)
+		replay, synID, stale := []RecordedEvent(nil), uint64(0), false
+		if preparedReplay == nil {
+			replay, synID, stale = hub.ReplaySnapshotSince(cursor)
+		} else {
+			replay = preparedReplay.records
+			synID = preparedReplay.staleID
+			stale = preparedReplay.stale
+		}
 		if stale {
 			if !writeSSERecorded(w, rc, RecordedEvent{ID: synID, Event: staleEvent(synID)}) {
 				return

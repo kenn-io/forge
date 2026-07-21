@@ -220,9 +220,9 @@ func (r *kataFrontendEventRegistry) Ensure(
 	}
 	target.bindings[daemon.ID] = binding
 	if replacing || !createdTarget {
-		binding.activation = target.broadcastResetAtLeastLocked(cursorFloor)
+		binding.activation = target.broadcastResetAtLeastLocked(cursorFloor, binding)
 	} else {
-		binding.activation = target.broadcastResetAtLeastLocked(0)
+		binding.activation = target.broadcastResetAtLeastLocked(0, binding)
 	}
 	target.publishMu.Unlock()
 	r.bindings[daemon.ID] = binding
@@ -269,7 +269,18 @@ func (b *kataFrontendEventBinding) serve(
 		case <-serveCtx.Done():
 		}
 	}()
+	b.target.publishMu.Lock()
+	if b.target.retired || b.target.bindings[b.daemonID] != b {
+		b.target.publishMu.Unlock()
+		return
+	}
 	ch, done := b.hub.Subscribe(serveCtx, false)
+	var replay *sseReplaySnapshot
+	if hasCursor {
+		records, staleID, stale := b.hub.ReplaySnapshotSince(cursor)
+		replay = &sseReplaySnapshot{records: records, staleID: staleID, stale: stale}
+	}
+	b.target.publishMu.Unlock()
 	serveSSESubscribedFromHubTransformed(
 		serveCtx,
 		w,
@@ -291,6 +302,7 @@ func (b *kataFrontendEventBinding) serve(
 			}
 		},
 		b.transform,
+		replay,
 	)
 }
 
@@ -376,11 +388,11 @@ func (t *kataFrontendEventTarget) invalidateAndBroadcast() {
 	})
 }
 
-func (t *kataFrontendEventTarget) broadcastResetAtLeastLocked(cursorFloor uint64) uint64 {
-	epochs := make(map[string]uint64, len(t.bindings))
-	for daemonID, binding := range t.bindings {
-		epochs[daemonID] = binding.epoch.Load()
-	}
+func (t *kataFrontendEventTarget) broadcastResetAtLeastLocked(
+	cursorFloor uint64,
+	binding *kataFrontendEventBinding,
+) uint64 {
+	epochs := map[string]uint64{binding.daemonID: binding.epoch.Load()}
 	return t.hub.BroadcastBuildAtLeast(cursorFloor, func(uint64) Event {
 		return Event{
 			Type: "kata.tasks.reset",

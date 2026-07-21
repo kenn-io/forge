@@ -139,4 +139,25 @@ describe("KataChecklistEditor", () => {
 
     expect((screen.getByLabelText("New checklist item") as HTMLInputElement).value).toBe("");
   });
+
+  it("keeps checklist mutations disabled while the owning snapshot is stale", async () => {
+    const onPatchMetadata = vi.fn(async () => true);
+    render(KataChecklistEditor, {
+      props: {
+        issue: makeIssue([{ id: "item-1", text: "Send", done: false }]),
+        revealed: false,
+        disabled: true,
+        onPatchMetadata,
+        onReveal: vi.fn(),
+      },
+    });
+
+    expect((screen.getByLabelText("Send") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Remove Send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText("New checklist item") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
+
+    await fireEvent.click(screen.getByLabelText("Send"));
+    expect(onPatchMetadata).not.toHaveBeenCalled();
+  });
 });

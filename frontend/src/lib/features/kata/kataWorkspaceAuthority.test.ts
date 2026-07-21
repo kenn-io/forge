@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { KataTaskEventStreamFrame } from "../../api/kata/eventStream.js";
 import type { KataProjectSummary, KataTaskSearchFilters, KataTaskSummary } from "../../api/kata/taskTypes.js";
 import {
+  defaultKataTaskSearchFilters,
   kataWorkspaceAuthorityRequest,
   projectKataWorkspaceView,
   shouldReloadKataWorkspaceForFrame,
@@ -69,7 +70,9 @@ describe("kata workspace authority request", () => {
     ["all", "open"],
     ["logbook", "closed"],
   ] as const)("maps the default %s system view to global %s authority", (view, authority) => {
-    expect(kataWorkspaceAuthorityRequest({ daemonID: "home", view, filters: defaultFilters }).intent).toEqual({
+    expect(
+      kataWorkspaceAuthorityRequest({ daemonID: "home", view, filters: defaultKataTaskSearchFilters(view) }).intent,
+    ).toEqual({
       daemon_id: "home",
       scope: "global",
       authority,
@@ -117,7 +120,7 @@ describe("kata workspace authority request", () => {
       daemonID: "home",
       view: "logbook",
       filters: {
-        ...defaultFilters,
+        ...defaultKataTaskSearchFilters("logbook"),
         owner: "Alice",
         label: "Urgent",
         query: "Needle",
@@ -175,7 +178,7 @@ describe("kata workspace view projection", () => {
   it("projects default Logbook from closed authority rows", () => {
     const view = projectKataWorkspaceView({
       view: "logbook",
-      filters: defaultFilters,
+      filters: defaultKataTaskSearchFilters("logbook"),
       snapshot,
       issues: [issue("done", "Completed", "project-work", "closed")],
       today: "2026-07-20",

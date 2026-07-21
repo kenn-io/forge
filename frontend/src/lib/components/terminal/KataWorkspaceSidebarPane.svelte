@@ -26,6 +26,7 @@
   import type { MessageLinkRef } from "../../messages/types";
   import KataRecurrenceDialogs from "../../features/kata/KataRecurrenceDialogs.svelte";
   import { createKataLinkFilters, type KataLinkFilters } from "../../features/kata/kataLinkFilters.js";
+  import { acknowledgeKataMutationThenRevalidate } from "../../features/kata/kataMutationRevalidation.js";
   import { createKataAuthorityStore } from "../../stores/kata-authority.svelte.js";
 
   interface Props {
@@ -41,6 +42,11 @@
 
   let loading = $state(true);
   let loadError = $state<string | null>(null);
+  let mutationRefreshPending = $state(false);
+  let mutationAcknowledged = $state(false);
+  let mutationRefreshError = $state<string | null>(null);
+  let mutationRefreshRetrying = $state(false);
+  let mutationRefreshGeneration = 0;
   let checklistRevealed = $state(false);
   let linkFilters = $state<KataLinkFilters>(createKataLinkFilters("all"));
   let pendingMoveIssueUIDs = $state.raw<ReadonlySet<string>>(new Set());
@@ -92,19 +98,26 @@
   }
 
   async function loadSelectedSnapshot(uid: string, requestID = ++loadRequestID): Promise<boolean> {
-    loading = true;
+    loading = selectedIssue?.issue.uid !== uid;
     loadError = null;
-    const accepted = await authorityStore.loadSnapshot(selectedSnapshotIntent(uid));
-    if (requestID !== loadRequestID) return false;
-    const snapshot = authorityStore.snapshot;
-    const detail = snapshot?.selected_detail;
-    if (!accepted || snapshot?.selected_issue_uid !== uid || !detail) {
-      throw new Error(`Kata snapshot did not include selected task ${uid}`);
+    try {
+      const accepted = await authorityStore.loadSnapshot(selectedSnapshotIntent(uid));
+      if (requestID !== loadRequestID) return false;
+      const snapshot = authorityStore.snapshot;
+      const detail = snapshot?.selected_detail;
+      if (!accepted || snapshot?.selected_issue_uid !== uid || !detail) {
+        throw new Error(`Kata snapshot did not include selected task ${uid}`);
+      }
+      selectedRecurrences = [];
+      mutationRefreshPending = false;
+      mutationAcknowledged = false;
+      mutationRefreshError = null;
+      mutationRefreshGeneration += 1;
+      void loadSelectedRecurrences(structuredClone(detail) as KataTaskDetail, snapshot.daemon_id, requestID);
+      return true;
+    } finally {
+      if (requestID === loadRequestID) loading = false;
     }
-    selectedRecurrences = [];
-    void loadSelectedRecurrences(structuredClone(detail) as KataTaskDetail, snapshot.daemon_id, requestID);
-    loading = false;
-    return true;
   }
 
   $effect(() => {
@@ -169,22 +182,62 @@
     const kataIssueUID = kata.issue_uid;
     const kataDaemonID = kata.daemon_id;
     const generation = issueContextGeneration;
-    await task();
-    if (
-      authorityStore.snapshot?.daemon_id !== daemonID ||
-      authorityStore.snapshot?.selected_issue_uid !== uid ||
-      selectedIssueUID !== uid ||
-      kata.issue_uid !== kataIssueUID ||
-      kata.daemon_id !== kataDaemonID ||
-      issueContextGeneration !== generation
-    ) return;
-    await loadSelectedSnapshot(uid);
+    const refreshGeneration = ++mutationRefreshGeneration;
+    mutationRefreshPending = true;
+    mutationAcknowledged = false;
+    mutationRefreshError = null;
+    try {
+      const result = await acknowledgeKataMutationThenRevalidate(
+        task,
+        async () => {
+          const contextChanged =
+            selectedIssueUID !== uid ||
+            kata.issue_uid !== kataIssueUID ||
+            kata.daemon_id !== kataDaemonID ||
+            issueContextGeneration !== generation;
+          if (contextChanged) {
+            const current = authorityStore.snapshot;
+            if (current?.daemon_id === kata.daemon_id && current.selected_issue_uid === kata.issue_uid) {
+              mutationRefreshPending = false;
+              mutationAcknowledged = false;
+              mutationRefreshError = null;
+              return true;
+            }
+            return false;
+          }
+          if (
+            authorityStore.snapshot?.daemon_id !== daemonID ||
+            authorityStore.snapshot?.selected_issue_uid !== uid
+          ) return false;
+          return loadSelectedSnapshot(uid);
+        },
+        () => {
+          mutationRefreshPending = true;
+          mutationAcknowledged = true;
+        },
+      );
+      void result.replacement.then((replacement) => {
+        if (refreshGeneration !== mutationRefreshGeneration || replacement.replacementAccepted) return;
+        mutationRefreshPending = true;
+        mutationRefreshError = replacement.replacementError ?? "Kata snapshot replacement was not accepted.";
+        showFlash("Change saved, but Kata could not refresh. Retry the snapshot before making more changes.", {
+          tone: "warning",
+        });
+      });
+    } catch (mutationError) {
+      mutationRefreshGeneration += 1;
+      mutationRefreshPending = false;
+      mutationAcknowledged = false;
+      mutationRefreshError = null;
+      throw mutationError;
+    }
   }
 
   async function runTask(
     task: () => Promise<void | boolean>,
     shouldSurfaceFailure: () => boolean = () => true,
   ): Promise<boolean> {
+    if (mutationRefreshPending) return false;
     try {
       return (await task()) ?? true;
     } catch (err) {
@@ -196,6 +249,7 @@
   }
 
   async function runTaskOrThrow(task: () => Promise<void>): Promise<void> {
+    if (mutationRefreshPending) return;
     await task();
   }
 
@@ -292,7 +346,7 @@
   }
 
   async function deleteRecurrence(recurrence: KataRecurrence): Promise<boolean> {
-    return runTask(async () => {
+    return runTask(() => mutateSelected(async () => {
       const options = acceptedMutationOptions();
       await api.deleteRecurrence(
         recurrence.project_id,
@@ -301,26 +355,19 @@
         options,
         `"rev-${recurrence.revision}"`,
       );
-      if (selectedIssue) await loadSelectedRecurrences(selectedIssue, options.daemonId, loadRequestID);
-    });
+    }));
   }
 
   async function createRecurrence(projectID: number, input: KataCreateRecurrenceInput): Promise<void> {
-    await runTaskOrThrow(async () => {
-      const options = acceptedMutationOptions();
-      await api.createRecurrence(projectID, input, options);
-      if (selectedIssue) await loadSelectedRecurrences(selectedIssue, options.daemonId, loadRequestID);
-    });
+    await runTaskOrThrow(() => mutateSelected(() => api.createRecurrence(projectID, input, acceptedMutationOptions())));
   }
 
   async function patchRecurrence(id: number, input: KataPatchRecurrenceInput, etag: string): Promise<void> {
-    await runTaskOrThrow(async () => {
+    await runTaskOrThrow(() => mutateSelected(async () => {
       const recurrence = selectedRecurrences.find((item) => item.id === id);
       if (!recurrence) throw new Error(`recurrence not loaded: id=${id}`);
-      const options = acceptedMutationOptions();
-      await api.patchRecurrence(recurrence.project_id, recurrence.uid, input, etag, options);
-      if (selectedIssue) await loadSelectedRecurrences(selectedIssue, options.daemonId, loadRequestID);
-    });
+      await api.patchRecurrence(recurrence.project_id, recurrence.uid, input, etag, acceptedMutationOptions());
+    }));
   }
 
   function closeSelectedIssue(
@@ -378,18 +425,43 @@
     selectedIssueUID = uid;
     await runLoadTask(() => loadSelectedSnapshot(uid));
   }
+
+  async function retryMutationSnapshot(): Promise<void> {
+    if (mutationRefreshRetrying || !mutationRefreshPending) return;
+    mutationRefreshRetrying = true;
+    mutationRefreshError = null;
+    try {
+      const accepted = await loadSelectedSnapshot(selectedIssueUID);
+      if (!accepted) throw new Error("Kata snapshot replacement was not accepted.");
+    } catch (retryError) {
+      mutationRefreshError = retryError instanceof Error ? retryError.message : "Could not refresh Kata task.";
+    } finally {
+      mutationRefreshRetrying = false;
+    }
+  }
 </script>
 
 <div class="kata-workspace-sidebar" inert={disabled}>
-  {#if loading}
-    <div class="state">Loading task</div>
-  {:else if loadError && !selectedIssue}
-    <div class="state error" role="alert">{loadError}</div>
-  {:else if selectedIssue}
-    {#if loadError}
-      <p class="inline-error" role="alert">{loadError}</p>
-    {/if}
-    <KataIssueDetail
+  {#if mutationRefreshPending && mutationAcknowledged && !mutationRefreshError}
+    <div class="authority-recovery" role="status">Change saved. Refreshing Kata snapshot…</div>
+  {:else if mutationRefreshError}
+    <div class="authority-recovery" role="alert">
+      <span>Change saved, but Kata snapshot refresh failed: {mutationRefreshError}</span>
+      <button type="button" disabled={mutationRefreshRetrying} onclick={() => void retryMutationSnapshot()}>
+        {mutationRefreshRetrying ? "Retrying…" : "Retry Kata snapshot"}
+      </button>
+    </div>
+  {/if}
+  <div class="kata-workspace-sidebar__content" inert={mutationRefreshPending}>
+    {#if loading}
+      <div class="state">Loading task</div>
+    {:else if loadError && !selectedIssue}
+      <div class="state error" role="alert">{loadError}</div>
+    {:else if selectedIssue}
+      {#if loadError}
+        <p class="inline-error" role="alert">{loadError}</p>
+      {/if}
+      <KataIssueDetail
       issue={selectedIssue}
       events={selectedEvents}
       {issueCatalog}
@@ -426,10 +498,11 @@
       onSelectIssue={(uid) => {
         void selectIssue(uid);
       }}
-    />
-  {:else}
-    <div class="state">Task not found</div>
-  {/if}
+      />
+    {:else}
+      <div class="state">Task not found</div>
+    {/if}
+  </div>
 </div>
 
 <KataRecurrenceDialogs
@@ -449,6 +522,27 @@
     display: flex;
     flex-direction: column;
     background: var(--bg-primary);
+  }
+
+  .kata-workspace-sidebar__content {
+    min-height: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .authority-recovery {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    border-bottom: 1px solid var(--border-muted);
+    background: color-mix(in srgb, var(--accent-amber) 10%, transparent);
+    padding: 8px 12px;
+    color: var(--text-primary);
+    font-size: var(--font-size-xs);
   }
 
   .kata-workspace-sidebar :global(.kata-detail) {

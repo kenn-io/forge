@@ -77,6 +77,10 @@ interface FetchHarness {
 
 function installFetchHarness(
   initialSnapshots: Array<KataWorkspaceSnapshotResponse | Response | Promise<Response>>,
+  daemons = [
+    { id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
+    { id: "work", url: "http://127.0.0.1:8888", default: false, auth: "none", health: "connected" },
+  ],
 ): FetchHarness {
   let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
   let streamCancelCount = 0;
@@ -90,12 +94,7 @@ function installFetchHarness(
         : new Request(new URL(String(input), window.location.origin), init);
     const url = new URL(request.url, window.location.origin);
     if (url.pathname === "/api/v1/kata/daemons") {
-      return Response.json({
-        daemons: [
-          { id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
-          { id: "work", url: "http://127.0.0.1:8888", default: false, auth: "none", health: "connected" },
-        ],
-      });
+      return Response.json({ daemons });
     }
     if (url.pathname === "/api/v1/kata/tasks/snapshot") {
       snapshotRequests.push(request);
@@ -181,6 +180,32 @@ describe("KataWorkspace compact snapshot stream", () => {
       { scope: "global", authority: "open", selected_issue_uid: initialIssues[0]!.uid },
       { scope: "global", authority: "open", selected_issue_uid: initialIssues[0]!.uid },
     ]);
+  });
+
+  it("fences mutations while event-driven replacement authority is loading", async () => {
+    const replacement = { ...initialIssues[0]!, title: "Replacement detail" };
+    const pendingReplacement = deferred<Response>();
+    const { api } = createWorkspaceAPI();
+    const harness = installFetchHarness([snapshot(initialIssues[0]!), pendingReplacement.promise]);
+
+    try {
+      render(KataWorkspace, { props: { api } });
+      await waitFor(() => expect(harness.stream()).toBeTruthy());
+      harness.stream()?.enqueue(compactFrame(6));
+
+      await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
+      expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(true);
+
+      pendingReplacement.resolve(
+        Response.json(snapshot(replacement, { generation: 2, invalidation_epoch: 2, event_cursor: 6 })),
+      );
+      await screen.findByRole("button", { name: new RegExp(replacement.title) });
+      expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(false);
+    } finally {
+      pendingReplacement.resolve(
+        Response.json(snapshot(replacement, { generation: 2, invalidation_epoch: 2, event_cursor: 6 })),
+      );
+    }
   });
 
   it("clears a selected member when replacement authority drops its membership", async () => {
@@ -270,6 +295,443 @@ describe("KataWorkspace compact snapshot stream", () => {
 
     await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
     expect(screen.getByRole("button", { name: /Pay rent/ })).toBeTruthy();
+  });
+
+  it("recovers an initial snapshot failure through an in-app snapshot retry", async () => {
+    const { api } = createWorkspaceAPI();
+    const harness = installFetchHarness([
+      new Response(JSON.stringify({ error: "snapshot unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+      snapshot(initialIssues[0]!),
+    ]);
+
+    render(KataWorkspace, { props: { api } });
+
+    const retry = await screen.findByRole("button", { name: "Retry Kata snapshot" });
+    expect((await screen.findByRole("alert")).textContent).toContain("Could not load Kata task snapshot (503)");
+    await fireEvent.click(retry);
+
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
+    await screen.findByRole("button", { name: /Pay rent/ });
+    expect(screen.queryByRole("button", { name: "Retry Kata snapshot" })).toBeNull();
+  });
+
+  it("treats mutation acknowledgement as success while fencing actions until snapshot recovery", async () => {
+    const selected = initialIssues[0]!;
+    const replacement = { ...selected, title: "Comment accepted by snapshot" };
+    const { api } = createWorkspaceAPI();
+    api.addComment = vi.fn(async () => ({ changed: true }));
+    const harness = installFetchHarness([
+      snapshot(selected, {}, true),
+      new Response(JSON.stringify({ error: "refresh unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+      snapshot(replacement, { generation: 2, invalidation_epoch: 2, event_cursor: 6 }, true),
+    ]);
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
+    await screen.findByRole("heading", { name: selected.title });
+    await fireEvent.input(screen.getByRole("textbox", { name: "Comment" }), {
+      target: { value: "Persist this once" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+
+    await waitFor(() => expect(api.addComment).toHaveBeenCalledOnce());
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
+    expect((await screen.findByRole("alert")).textContent).toContain("saved");
+    expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(true);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    expect(api.addComment).toHaveBeenCalledOnce();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Retry Kata snapshot" }));
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(3));
+    await screen.findByRole("heading", { name: replacement.title });
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect(harness.snapshotRequests.map((request) => Object.fromEntries(new URL(request.url).searchParams))).toEqual([
+      { scope: "global", authority: "open", selected_issue_uid: selected.uid },
+      { scope: "global", authority: "open", selected_issue_uid: selected.uid },
+      { scope: "global", authority: "open", selected_issue_uid: selected.uid },
+    ]);
+  });
+
+  it("retries a newer failed selection instead of the superseded mutation refresh intent", async () => {
+    const source = initialIssues[0]!;
+    const target = initialIssues[1]!;
+    const catalog = [source, target] as SnapshotIssue[];
+    const { api } = createWorkspaceAPI();
+    api.addComment = vi.fn(async () => ({ changed: true }));
+    const onSelectedIssueChange = vi.fn();
+    const harness = installFetchHarness([
+      snapshot(
+        source,
+        {
+          generation: 9,
+          member_issue_uids: catalog.map((issue) => issue.uid),
+          issues: catalog,
+        },
+        true,
+      ),
+      new Response(JSON.stringify({ error: "mutation refresh unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+      new Response(JSON.stringify({ error: "selection unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+      snapshot(
+        target,
+        {
+          generation: 10,
+          member_issue_uids: catalog.map((issue) => issue.uid),
+          issues: catalog,
+        },
+        true,
+      ),
+    ]);
+
+    render(KataWorkspace, {
+      props: { api, selectedIssueUID: source.uid, onSelectedIssueChange },
+    });
+    await screen.findByRole("heading", { name: source.title });
+    await fireEvent.input(screen.getByRole("textbox", { name: "Comment" }), {
+      target: { value: "Persist before navigating" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
+    await screen.findByRole("alert");
+    await fireEvent.click(screen.getByRole("button", { name: new RegExp(target.title) }));
+
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(3));
+    await waitFor(() => expect(screen.queryByText("Loading snapshot")).toBeNull());
+    await fireEvent.click(screen.getByRole("button", { name: "Retry Kata snapshot" }));
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(4));
+
+    expect(Object.fromEntries(new URL(harness.snapshotRequests[3]!.url).searchParams)).toEqual({
+      scope: "global",
+      authority: "open",
+      selected_issue_uid: target.uid,
+    });
+    await screen.findByRole("heading", { name: target.title });
+    expect(onSelectedIssueChange).toHaveBeenCalledWith(target.uid);
+  });
+
+  it("revalidates the newest selection when an older mutation acknowledges late", async () => {
+    const source = initialIssues[0]!;
+    const target = initialIssues[1]!;
+    const catalog = [source, target] as SnapshotIssue[];
+    const mutation = deferred<{ changed: boolean }>();
+    const { api } = createWorkspaceAPI();
+    api.addComment = vi.fn(() => mutation.promise);
+    const onSelectedIssueChange = vi.fn();
+    const onRouteStateChange = vi.fn();
+    const harness = installFetchHarness([
+      snapshot(
+        source,
+        {
+          generation: 9,
+          member_issue_uids: catalog.map((issue) => issue.uid),
+          issues: catalog,
+        },
+        true,
+      ),
+      snapshot(
+        target,
+        {
+          generation: 10,
+          member_issue_uids: catalog.map((issue) => issue.uid),
+          issues: catalog,
+        },
+        true,
+      ),
+      snapshot(
+        target,
+        {
+          generation: 11,
+          member_issue_uids: catalog.map((issue) => issue.uid),
+          issues: catalog,
+        },
+        true,
+      ),
+    ]);
+
+    const { rerender } = render(KataWorkspace, {
+      props: {
+        api,
+        selectedIssueUID: source.uid,
+        onSelectedIssueChange,
+        onRouteStateChange,
+      },
+    });
+    await screen.findByRole("heading", { name: source.title });
+    await fireEvent.input(screen.getByRole("textbox", { name: "Comment" }), {
+      target: { value: "Persist before navigating" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    await waitFor(() => expect(api.addComment).toHaveBeenCalledOnce());
+
+    await fireEvent.click(screen.getByRole("button", { name: new RegExp(target.title) }));
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
+    await screen.findByRole("heading", { name: target.title });
+    await waitFor(() => expect(onSelectedIssueChange).toHaveBeenCalledWith(target.uid));
+    await rerender({
+      api,
+      selectedIssueUID: target.uid,
+      onSelectedIssueChange,
+      onRouteStateChange,
+    });
+
+    mutation.resolve({ changed: true });
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(3));
+    await screen.findByRole("heading", { name: target.title });
+
+    expect(api.addComment).toHaveBeenCalledOnce();
+    expect(
+      harness.snapshotRequests.slice(1).map((request) => Object.fromEntries(new URL(request.url).searchParams)),
+    ).toEqual([
+      { scope: "global", authority: "open", selected_issue_uid: target.uid },
+      { scope: "global", authority: "open", selected_issue_uid: target.uid },
+    ]);
+    expect(onSelectedIssueChange).toHaveBeenCalledWith(target.uid);
+    expect(onRouteStateChange).not.toHaveBeenCalledWith({ issue: null }, { replace: true });
+  });
+
+  it("transfers an in-flight selection notification to post-acknowledgement revalidation", async () => {
+    const source = initialIssues[0]!;
+    const target = initialIssues[1]!;
+    const catalog = [source, target] as SnapshotIssue[];
+    const mutation = deferred<{ changed: boolean }>();
+    const pendingSelection = deferred<Response>();
+    const { api } = createWorkspaceAPI();
+    api.addComment = vi.fn(() => mutation.promise);
+    const onSelectedIssueChange = vi.fn();
+    const onRouteStateChange = vi.fn();
+    const harness = installFetchHarness([
+      snapshot(
+        source,
+        {
+          generation: 9,
+          member_issue_uids: catalog.map((issue) => issue.uid),
+          issues: catalog,
+        },
+        true,
+      ),
+      pendingSelection.promise,
+      snapshot(
+        target,
+        {
+          generation: 11,
+          member_issue_uids: catalog.map((issue) => issue.uid),
+          issues: catalog,
+        },
+        true,
+      ),
+    ]);
+
+    try {
+      render(KataWorkspace, {
+        props: {
+          api,
+          selectedIssueUID: source.uid,
+          onSelectedIssueChange,
+          onRouteStateChange,
+        },
+      });
+      await screen.findByRole("heading", { name: source.title });
+      await fireEvent.input(screen.getByRole("textbox", { name: "Comment" }), {
+        target: { value: "Persist during selection" },
+      });
+      await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+      await waitFor(() => expect(api.addComment).toHaveBeenCalledOnce());
+
+      await fireEvent.click(screen.getByRole("button", { name: new RegExp(target.title) }));
+      await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
+
+      mutation.resolve({ changed: true });
+      await waitFor(() => expect(harness.snapshotRequests).toHaveLength(3));
+      await screen.findByRole("heading", { name: target.title });
+
+      expect(api.addComment).toHaveBeenCalledOnce();
+      expect(
+        harness.snapshotRequests.slice(1).map((request) => Object.fromEntries(new URL(request.url).searchParams)),
+      ).toEqual([
+        { scope: "global", authority: "open", selected_issue_uid: target.uid },
+        { scope: "global", authority: "open", selected_issue_uid: target.uid },
+      ]);
+      expect(onSelectedIssueChange).toHaveBeenCalledTimes(1);
+      expect(onSelectedIssueChange).toHaveBeenCalledWith(target.uid);
+      expect(onRouteStateChange).not.toHaveBeenCalledWith({ issue: null }, { replace: true });
+    } finally {
+      mutation.resolve({ changed: true });
+      pendingSelection.resolve(
+        Response.json(
+          snapshot(
+            target,
+            {
+              generation: 10,
+              member_issue_uids: catalog.map((issue) => issue.uid),
+              issues: catalog,
+            },
+            true,
+          ),
+        ),
+      );
+    }
+  });
+
+  it("recovers the nominal daemon after a failed daemon switch without restoring stale authority", async () => {
+    const home = snapshot(initialIssues[0]!);
+    const { api } = createWorkspaceAPI();
+    const harness = installFetchHarness([
+      home,
+      new Response(JSON.stringify({ error: "work unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+      snapshot(initialIssues[0]!, { generation: 2, invalidation_epoch: 2, event_cursor: 6 }),
+    ]);
+
+    render(KataWorkspace, { props: { api } });
+    await screen.findByRole("button", { name: /Pay rent/ });
+    await fireEvent.click(screen.getByRole("button", { name: /Switch Kata daemon: home/ }));
+    await fireEvent.click(await screen.findByRole("menuitemradio", { name: /work/ }));
+
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
+    expect(screen.queryByRole("button", { name: /Pay rent/ })).toBeNull();
+    expect((await screen.findByRole("alert")).textContent).toContain("Could not load Kata task snapshot (503)");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Retry Kata snapshot" }));
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(3));
+    expect(harness.snapshotRequests[1]!.headers.get("X-Middleman-Kata-Daemon")).toBe("work");
+    expect(harness.snapshotRequests[2]!.headers.get("X-Middleman-Kata-Daemon")).toBe("home");
+    await screen.findByRole("button", { name: /Pay rent/ });
+  });
+
+  it("retries changed selection and graph intent after a stale generation response", async () => {
+    const source = initialIssues[0]!;
+    const target = initialIssues[1]!;
+    const catalog = [source, target] as SnapshotIssue[];
+    const graph = {
+      source_uid: target.uid,
+      depth: "full" as const,
+      hide_done: false,
+      nodes: catalog,
+      edges: [],
+      unresolved_refs: [],
+    };
+    const { api } = createWorkspaceAPI();
+    const harness = installFetchHarness([
+      snapshot(
+        source,
+        {
+          generation: 9,
+          member_issue_uids: catalog.map((issue) => issue.uid),
+          issues: catalog,
+        },
+        true,
+      ),
+      snapshot(
+        source,
+        {
+          generation: 10,
+          member_issue_uids: catalog.map((issue) => issue.uid),
+          issues: catalog,
+          graph_source_uid: target.uid,
+          enrichment: {
+            selected_issue_uid: source.uid,
+            selected_detail: {
+              etag: '"revision-1"',
+              workspace_target: { available: false },
+              detail: detail(source.uid, [source, target]),
+            },
+            selected_history: [],
+            graph,
+            graph_fetched_at: fetchedAt,
+          },
+        },
+        true,
+      ),
+      snapshot(
+        target,
+        {
+          generation: 9,
+          member_issue_uids: catalog.map((issue) => issue.uid),
+          issues: catalog,
+          graph_source_uid: target.uid,
+          enrichment: {
+            selected_issue_uid: target.uid,
+            selected_detail: {
+              etag: '"revision-1"',
+              workspace_target: { available: false },
+              detail: detail(target.uid, [source, target]),
+            },
+            selected_history: [],
+            graph,
+            graph_fetched_at: fetchedAt,
+          },
+        },
+        true,
+      ),
+      snapshot(
+        target,
+        {
+          generation: 11,
+          member_issue_uids: catalog.map((issue) => issue.uid),
+          issues: catalog,
+          graph_source_uid: target.uid,
+          enrichment: {
+            selected_issue_uid: target.uid,
+            selected_detail: {
+              etag: '"revision-1"',
+              workspace_target: { available: false },
+              detail: detail(target.uid, [source, target]),
+            },
+            selected_history: [],
+            graph,
+            graph_fetched_at: fetchedAt,
+          },
+        },
+        true,
+      ),
+    ]);
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: source.uid } });
+    await screen.findByRole("heading", { name: source.title });
+    const targetRow = screen.getByRole("button", { name: new RegExp(target.title) });
+    await fireEvent.click(targetRow.parentElement!.querySelector('button[aria-label="Open reachable graph"]')!);
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
+
+    await fireEvent.click(await screen.findByRole("button", { name: new RegExp(target.title) }));
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(3));
+    expect((await screen.findByRole("alert")).textContent).toContain("generation moved backwards");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Retry Kata snapshot" }));
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(4));
+    await screen.findByRole("heading", { name: target.title });
+    expect(screen.getByRole("button", { name: "Back to task list" })).toBeTruthy();
+    expect(
+      harness.snapshotRequests.slice(2).map((request) => Object.fromEntries(new URL(request.url).searchParams)),
+    ).toEqual([
+      {
+        scope: "global",
+        authority: "open",
+        selected_issue_uid: target.uid,
+        graph_source_uid: target.uid,
+      },
+      {
+        scope: "global",
+        authority: "open",
+        selected_issue_uid: target.uid,
+        graph_source_uid: target.uid,
+      },
+    ]);
   });
 
   it("does not render prior Open authority when a Ready authority load fails", async () => {
@@ -403,7 +865,7 @@ describe("KataWorkspace compact snapshot stream", () => {
     expect(onRouteStateChange).toHaveBeenCalledWith({ issue: null }, { replace: true });
   });
 
-  it("opens a created project only after replacement snapshot authority reveals its UID", async () => {
+  it("opens a created project after explicit replacement snapshot authority reveals its UID", async () => {
     const createdProject: SnapshotProject = {
       id: 99,
       uid: "project-snapshot",
@@ -436,11 +898,6 @@ describe("KataWorkspace compact snapshot stream", () => {
     await fireEvent.submit(screen.getByRole("textbox", { name: "New project name" }).closest("form")!);
 
     await waitFor(() => expect(api.createProject).toHaveBeenCalledWith("Snapshot Project", { daemonId: "home" }));
-    expect(onRouteStateChange).not.toHaveBeenCalledWith(expect.objectContaining({ scope: expect.any(String) }));
-    expect(harness.snapshotRequests).toHaveLength(1);
-
-    harness.stream()?.enqueue(compactFrame(6));
-
     await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
     await waitFor(() =>
       expect(onRouteStateChange).toHaveBeenCalledWith({
@@ -471,6 +928,7 @@ describe("KataWorkspace compact snapshot stream", () => {
     expect(screen.getByRole("status", { name: "Connection: error" }).textContent).toContain(
       "Kata daemon missing is not configured.",
     );
+    expect(screen.queryByRole("button", { name: "Retry Kata snapshot" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Pay rent/ })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Pay rent" })).toBeNull();
     expect(harness.snapshotRequests).toHaveLength(1);
@@ -489,6 +947,17 @@ describe("KataWorkspace compact snapshot stream", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /Email Susan re: Q3/ })).toBeTruthy());
     await waitFor(() => expect(document.querySelector(".kata-layout")?.getAttribute("aria-busy")).toBe("false"));
     expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("does not offer snapshot retry when an empty daemon roster rejects the requested daemon", async () => {
+    const { api } = createWorkspaceAPI();
+    const harness = installFetchHarness([], []);
+
+    render(KataWorkspace, { props: { api, requestedDaemonId: "missing" } });
+
+    await screen.findAllByText("Kata daemon missing is not configured.");
+    expect(screen.queryByRole("button", { name: "Retry Kata snapshot" })).toBeNull();
+    expect(harness.snapshotRequests).toHaveLength(0);
   });
 
   it("reconciles graph source identity through the same authority path", async () => {

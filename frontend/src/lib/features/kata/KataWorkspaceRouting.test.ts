@@ -45,6 +45,34 @@ describe("KataWorkspace snapshot routing", () => {
     await screen.findByRole("heading", { name: initialIssues[1]!.title });
   });
 
+  it("clears an initially routed task that accepted snapshot authority cannot select", async () => {
+    acceptHomeDaemon();
+    const { api } = createWorkspaceAPI();
+    const onRouteStateChange = vi.fn();
+
+    render(KataWorkspace, {
+      props: { api, selectedIssueUID: "issue-missing", onRouteStateChange },
+    });
+
+    await screen.findByText("Select a task");
+    await waitFor(() => expect(onRouteStateChange).toHaveBeenCalledWith({ issue: null }, { replace: true }));
+  });
+
+  it("clears a newly routed task that accepted snapshot authority cannot select", async () => {
+    acceptHomeDaemon();
+    const { api } = createWorkspaceAPI();
+    const onRouteStateChange = vi.fn();
+    const { rerender } = render(KataWorkspace, {
+      props: { api, selectedIssueUID: initialIssues[0]!.uid, onRouteStateChange },
+    });
+
+    await screen.findByRole("heading", { name: initialIssues[0]!.title });
+    await rerender({ api, selectedIssueUID: "issue-missing", onRouteStateChange });
+
+    await screen.findByText("Select a task");
+    await waitFor(() => expect(onRouteStateChange).toHaveBeenCalledWith({ issue: null }, { replace: true }));
+  });
+
   it("updates and clears selected enrichment when route identity changes", async () => {
     acceptHomeDaemon();
     const requests: Array<string | undefined> = [];
@@ -111,6 +139,28 @@ describe("KataWorkspace snapshot routing", () => {
 
     await screen.findByRole("heading", { name: initialIssues[1]!.title });
     await waitFor(() => expect(onSelectedIssueChange).toHaveBeenCalledWith(initialIssues[1]!.uid));
+  });
+
+  it("does not clear the prior route while a newly selected row is being accepted", async () => {
+    acceptHomeDaemon();
+    const { api } = createWorkspaceAPI();
+    const onSelectedIssueChange = vi.fn();
+    const onRouteStateChange = vi.fn();
+
+    render(KataWorkspace, {
+      props: {
+        api,
+        selectedIssueUID: initialIssues[0]!.uid,
+        onSelectedIssueChange,
+        onRouteStateChange,
+      },
+    });
+
+    await screen.findByRole("heading", { name: initialIssues[0]!.title });
+    await fireEvent.click(screen.getByRole("button", { name: new RegExp(initialIssues[1]!.title) }));
+
+    await waitFor(() => expect(onSelectedIssueChange).toHaveBeenCalledWith(initialIssues[1]!.uid));
+    expect(onRouteStateChange).not.toHaveBeenCalledWith({ issue: null }, { replace: true });
   });
 
   it("replaces the cleared project-scope entry with its first accepted row selection", async () => {

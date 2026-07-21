@@ -100,11 +100,13 @@ describe("KataWorkspace", () => {
     });
     await fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(patchRecurrence).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit recurrence" })).toBeNull());
 
     await fireEvent.click(screen.getByRole("button", { name: "Delete recurrence" }));
     const deleteDialog = screen.getByRole("dialog", { name: "Delete recurrence" });
     await fireEvent.click(within(deleteDialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(deleteRecurrence).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Delete recurrence" })).toBeNull());
 
     await fireEvent.click(screen.getByRole("button", { name: "+ New recurrence" }));
     const createDialog = screen.getByRole("dialog", { name: "New recurrence" });

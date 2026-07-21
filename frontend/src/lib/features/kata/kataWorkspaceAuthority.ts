@@ -63,19 +63,23 @@ function optionalValue(value: string | null | undefined): string | undefined {
   return value?.trim() || undefined;
 }
 
-function hasActiveFilters(filters: KataTaskSearchFilters): boolean {
+function defaultStatusForView(view: KataTaskViewName): KataTaskSearchFilters["status"] {
+  return view === "logbook" ? "closed" : "open";
+}
+
+function hasActiveFilters(view: KataTaskViewName, filters: KataTaskSearchFilters): boolean {
   return (
-    filters.status !== "open" ||
+    filters.status !== defaultStatusForView(view) ||
     filters.owner.trim() !== "" ||
     filters.label.trim() !== "" ||
     filters.query.trim() !== ""
   );
 }
 
-export function defaultKataTaskSearchFilters(): KataTaskSearchFilters {
+export function defaultKataTaskSearchFilters(view: KataTaskViewName = "all"): KataTaskSearchFilters {
   return {
     scope: { kind: "all" },
-    status: "open",
+    status: defaultStatusForView(view),
     owner: "",
     label: "",
     query: "",
@@ -131,8 +135,7 @@ export function kataWorkspaceAuthorityRequest(
     ...(daemonID ? { daemon_id: daemonID } : {}),
     scope: options.filters.scope.kind === "project" ? "project" : "global",
     ...(options.filters.scope.kind === "project" ? { project_uid: options.filters.scope.project_uid } : {}),
-    authority:
-      options.filters.status !== "open" ? options.filters.status : options.view === "logbook" ? "closed" : "open",
+    authority: options.filters.status,
     ...(selectedIssueUID ? { selected_issue_uid: selectedIssueUID } : {}),
     ...(graphSourceUID ? { graph_source_uid: graphSourceUID } : {}),
   };
@@ -148,7 +151,7 @@ export function kataWorkspaceAuthorityRequest(
 
 export function projectKataWorkspaceView(options: ProjectKataWorkspaceViewOptions): KataTaskViewResponse {
   const issues = options.issues.map((issue) => ({ ...issue }) as KataTaskSummary);
-  if (hasActiveFilters(options.filters)) {
+  if (hasActiveFilters(options.view, options.filters)) {
     return {
       view: options.view,
       groups: issues.length > 0 ? [{ id: "search-results", title: "Results", issues }] : [],

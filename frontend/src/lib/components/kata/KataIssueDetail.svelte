@@ -48,6 +48,7 @@
     unlinkBusyIds: ReadonlySet<number>;
     selectedRecurrences: KataRecurrence[];
     checklistRevealed: boolean;
+    actionsDisabled?: boolean | undefined;
     movePending?: boolean | undefined;
     onMoveIssue: (toProjectUID: string) => boolean | Promise<boolean>;
     onPatchMetadata: (uid: string, patch: Record<string, unknown>) => boolean | Promise<boolean>;
@@ -89,6 +90,7 @@
     unlinkBusyIds,
     selectedRecurrences,
     checklistRevealed,
+    actionsDisabled = false,
     movePending = false,
     onMoveIssue,
     onPatchMetadata,
@@ -369,7 +371,13 @@
     }}
   />
 
-  <KataChecklistEditor {issue} revealed={checklistRevealed} onPatchMetadata={onPatchMetadata} onReveal={onRevealChecklist} />
+  <KataChecklistEditor
+    {issue}
+    revealed={checklistRevealed}
+    disabled={actionsDisabled}
+    onPatchMetadata={onPatchMetadata}
+    onReveal={onRevealChecklist}
+  />
 
   {#if visibleRecurrences.length > 0}
     <section class="recurrence-section" aria-label="Recurrence">

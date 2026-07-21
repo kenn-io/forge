@@ -285,7 +285,7 @@ describe("KataWorkspace snapshot authority", () => {
     await waitFor(() => expect((document.activeElement as HTMLElement | null)?.dataset.uid).toBe(child.uid));
   });
 
-  it("does not install mutation response task state before an accepted snapshot replacement", async () => {
+  it("does not install mutation response task state while explicitly revalidating snapshot authority", async () => {
     acceptHomeDaemon();
     const selected = initialIssues[0]!;
     let snapshotRequests = 0;
@@ -330,7 +330,7 @@ describe("KataWorkspace snapshot authority", () => {
     await waitFor(() => expect(addComment).toHaveBeenCalledOnce());
     await Promise.resolve();
 
-    expect(snapshotRequests).toBe(1);
+    expect(snapshotRequests).toBe(2);
     expect(screen.getByRole("heading", { name: "Accepted snapshot title" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Unaccepted mutation response title" })).toBeNull();
   });

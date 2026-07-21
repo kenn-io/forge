@@ -267,4 +267,77 @@ describe("KataWorkspaceSidebarPane", () => {
       expect(screen.queryByRole("dialog", { name: "Move to another project" })).toBeNull();
     });
   });
+
+  it("keeps a successful comment acknowledged and retries only its failed snapshot replacement", async () => {
+    let snapshotAttempts = 0;
+    let commentAttempts = 0;
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(
+        typeof input === "string" ? input : input instanceof URL ? input : input.url,
+        window.location.origin,
+      );
+      if (url.pathname === "/api/v1/kata/tasks/snapshot") {
+        snapshotAttempts += 1;
+        if (snapshotAttempts === 2) {
+          return response({ error: { code: "refresh_failed", message: "Snapshot refresh failed." } }, 503);
+        }
+        return response({
+          server_instance_id: "server-1",
+          daemon_id: "home",
+          intent: { scope: "global", authority: "all" },
+          generation: snapshotAttempts,
+          invalidation_epoch: snapshotAttempts,
+          event_cursor: 0,
+          fetched_at: fetchedAt,
+          projects,
+          member_issue_uids: ["issue-1"],
+          issues: [{ ...issue(), title: snapshotAttempts === 3 ? "Refreshed task" : issue().title }],
+          enrichment: {
+            selected_issue_uid: "issue-1",
+            selected_detail: {
+              detail: {
+                ...detail(),
+                issue: {
+                  ...detail().issue,
+                  title: snapshotAttempts === 3 ? "Refreshed task" : issue().title,
+                },
+              },
+              etag: `"rev-${snapshotAttempts}"`,
+              workspace_target: { available: false },
+            },
+            selected_history: [],
+          },
+        });
+      }
+      if (url.pathname.endsWith("/recurrences")) {
+        return response({ recurrences: [], fetched_at: fetchedAt });
+      }
+      if (url.pathname.endsWith("/comments") && init?.method === "POST") {
+        commentAttempts += 1;
+        return response({ changed: true });
+      }
+      return response({ error: { code: "not_found", message: `Unhandled ${url.pathname}` } }, 404);
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+
+    render(KataWorkspaceSidebarPane, { props: { kata } });
+    await screen.findByRole("heading", { name: issue().title });
+    await fireEvent.input(screen.getByRole("textbox", { name: "Comment" }), {
+      target: { value: "Submit once" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+
+    await waitFor(() => expect(commentAttempts).toBe(1));
+    await waitFor(() => expect(snapshotAttempts).toBe(2));
+    expect(showFlash).not.toHaveBeenCalledWith("Snapshot refresh failed.", { tone: "danger" });
+    expect((await screen.findByRole("alert")).textContent).toContain("saved");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    expect(commentAttempts).toBe(1);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Retry Kata snapshot" }));
+    await waitFor(() => expect(snapshotAttempts).toBe(3));
+    await screen.findByRole("heading", { name: "Refreshed task" });
+    expect(commentAttempts).toBe(1);
+  });
 });

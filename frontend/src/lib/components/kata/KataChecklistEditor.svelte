@@ -9,11 +9,12 @@
   interface Props {
     issue: KataTaskDetail;
     revealed: boolean;
+    disabled?: boolean;
     onPatchMetadata: (uid: string, patch: Record<string, unknown>) => boolean | Promise<boolean>;
     onReveal: () => void;
   }
 
-  let { issue, revealed, onPatchMetadata, onReveal }: Props = $props();
+  let { issue, revealed, disabled = false, onPatchMetadata, onReveal }: Props = $props();
 
   let checklistPending = $state(false);
   let checklistDraft = $state("");
@@ -46,7 +47,7 @@
   }
 
   async function guarded(work: () => Promise<void>): Promise<void> {
-    if (checklistPending) return;
+    if (disabled || checklistPending) return;
     checklistPending = true;
     try {
       await work();
@@ -95,7 +96,7 @@
             <Checkbox
               class="checklist-item"
               checked={item.done}
-              disabled={checklistPending}
+              disabled={disabled || checklistPending}
               label={item.text}
               onchange={(done) => {
                 void toggleChecklistItem(item.id, done);
@@ -106,7 +107,7 @@
               tone="danger"
               class="row-remove"
               ariaLabel={`Remove ${item.text}`}
-              disabled={checklistPending}
+              disabled={disabled || checklistPending}
               onclick={() => {
                 void removeChecklistItem(item.id);
               }}
@@ -124,13 +125,13 @@
         aria-label="New checklist item"
         placeholder="Add subtask..."
         bind:value={checklistDraft}
-        disabled={checklistPending}
+        disabled={disabled || checklistPending}
         onkeydown={handleChecklistKeydown}
       />
       <button
         type="button"
         class="add-checklist-button"
-        disabled={checklistPending || checklistDraft.trim() === ""}
+        disabled={disabled || checklistPending || checklistDraft.trim() === ""}
         onclick={() => {
           void addChecklistItem();
         }}

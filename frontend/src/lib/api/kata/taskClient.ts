@@ -874,8 +874,8 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
       return mutate(issuePath(target), { actor, ...patch }, "PATCH");
     },
 
-    patchIssueMetadata(target, actor, patch, ifMatch) {
-      return patchMetadata(`${issuePath(target)}/metadata`, actor, patch, ifMatch);
+    patchIssueMetadata(target, actor, patch, ifMatch, options) {
+      return patchMetadata(`${issuePath(target)}/metadata`, actor, patch, ifMatch, undefined, options.daemonId, true);
     },
 
     async moveIssue(target, actor, toProjectUID, ifMatch) {

@@ -27,7 +27,7 @@ export function buildIssueCompletionSource(options: IssueCompletionOptions) {
       return {
         from: qualified.from,
         options: references
-          .filter((reference) => reference.project_name === project)
+          .filter((reference) => qualifiedProjectIdentity(reference.qualified_id) === project.toLocaleLowerCase())
           .map((reference) => completion(reference, true)),
         filter: false,
       };
@@ -77,7 +77,7 @@ function completion(reference: KataTaskReference, explicitlyQualified: boolean):
   const serverQualified = reference.reference !== reference.short_id;
   const apply =
     explicitlyQualified || serverQualified
-      ? `${reference.project_name}/#${reference.short_id}`
+      ? markdownQualifiedReference(explicitlyQualified ? reference.qualified_id : reference.reference)
       : `#${reference.reference}`;
   return {
     label: apply,
@@ -85,4 +85,13 @@ function completion(reference: KataTaskReference, explicitlyQualified: boolean):
     type: "variable",
     apply,
   };
+}
+
+function markdownQualifiedReference(reference: string): string {
+  const delimiter = reference.lastIndexOf("#");
+  return `${reference.slice(0, delimiter)}/#${reference.slice(delimiter + 1)}`;
+}
+
+function qualifiedProjectIdentity(qualifiedID: string): string {
+  return qualifiedID.slice(0, qualifiedID.lastIndexOf("#")).toLocaleLowerCase();
 }

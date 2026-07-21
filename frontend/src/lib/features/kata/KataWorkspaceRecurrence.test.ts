@@ -8,7 +8,7 @@ import {
   projects,
   recurrence,
   resetKataWorkspaceTestState,
-} from "./KataWorkspaceTestSupport.js";
+} from "./test/KataWorkspaceSupport.js";
 
 async function waitForWorkspaceWritable(): Promise<void> {
   await waitFor(() =>
@@ -25,6 +25,37 @@ describe("KataWorkspace", () => {
     cleanup();
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("loads recurrences separately after selected snapshot acceptance", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          {
+            id: "home",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      }),
+    );
+    const selected = { ...initialIssues[0]!, recurrence_id: 41 };
+    const recurrenceRow = recurrence({
+      id: 41,
+      uid: "recurrence-selected",
+      project_id: selected.project_id,
+      template_title: "Snapshot recurrence",
+    });
+    const { api } = createWorkspaceAPI([selected], { recurrences: [recurrenceRow] });
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
+
+    await screen.findByRole("heading", { name: selected.title });
+    expect(api.recurrences).toHaveBeenCalledWith(selected.project_id, expect.objectContaining({ daemonId: "home" }));
+    expect(screen.getByRole("region", { name: "Recurrence" })).toBeTruthy();
+    expect(screen.getByText("Snapshot recurrence")).toBeTruthy();
   });
 
   it("opens the recurrence editor from the task action menu", async () => {

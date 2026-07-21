@@ -1,12 +1,31 @@
 import { describe, expect, test, vi } from "vite-plus/test";
 
 import { KATA_DAEMON_HEADER } from "./daemons.js";
-import { KataEventStreamError, KataEventStreamParser, readKataEventStream } from "./eventStream.js";
+import {
+  KataEventStreamError,
+  KataEventStreamParser,
+  readKataEventStream,
+  type KataTaskEventStreamFrame,
+} from "./eventStream.js";
 
-const origin = "instance-1";
-
-function eventFrame(id: number, type: string, data: Record<string, unknown>): string {
-  return `id: ${id}\nevent: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+function compactFrame(
+  id: number,
+  event: "kata.tasks.reset" | "kata.tasks.invalidated",
+  overrides: Record<string, unknown> = {},
+): string {
+  return [
+    `id: ${id}`,
+    `event: ${event}`,
+    `data: ${JSON.stringify({
+      server_instance_id: "server-a",
+      daemon_id: "work",
+      epoch: 3,
+      cursor: id,
+      ...overrides,
+    })}`,
+    "",
+    "",
+  ].join("\n");
 }
 
 function streamFromText(text: string): ReadableStream<Uint8Array> {
@@ -19,314 +38,175 @@ function streamFromText(text: string): ReadableStream<Uint8Array> {
 }
 
 describe("KataEventStreamParser", () => {
-  test("parses event frames with the stream cursor", () => {
+  test("parses compact reset frames", () => {
     const parser = new KataEventStreamParser();
 
-    expect(parser.push(": connected\n\n")).toEqual([]);
-    const messages = parser.push(
-      eventFrame(7, "issue.created", {
-        event_id: 7,
-        event_uid: "event-7",
-        origin_instance_uid: origin,
-        type: "issue.created",
-        project_id: 2,
-        project_uid: "project-inbox",
-        project_name: "Inbox",
-        issue_id: 9,
-        issue_uid: "issue-created",
-        issue_short_id: "created",
-        actor: "middleman-test",
-        created_at: "2026-05-15T12:00:00Z",
-      }),
-    );
-
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({
-      kind: "event",
-      lastEventID: 7,
-      event: {
-        event_id: 7,
-        origin_instance_uid: origin,
-        type: "issue.created",
-        issue_uid: "issue-created",
-      },
-    });
-  });
-
-  test("buffers partial chunks until a complete frame arrives", () => {
-    const parser = new KataEventStreamParser();
-    expect(parser.push("id: 8\nevent: issue.updated\n")).toEqual([]);
-
-    const messages = parser.push(
-      `data: ${JSON.stringify({
-        event_id: 8,
-        event_uid: "event-8",
-        origin_instance_uid: origin,
-        type: "issue.updated",
-        project_id: 2,
-        project_uid: "project-inbox",
-        project_name: "Inbox",
-        actor: "middleman-test",
-        created_at: "2026-05-15T12:00:01Z",
-      })}\n\n`,
-    );
-
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({
-      kind: "event",
-      lastEventID: 8,
-      event: { type: "issue.updated" },
-    });
-  });
-
-  test("parses reset frames without treating them as task events", () => {
-    const parser = new KataEventStreamParser();
-    const messages = parser.push(
-      eventFrame(42, "sync.reset_required", {
-        event_id: 42,
-        reset_after_id: 42,
-      }),
-    );
-
-    expect(messages).toEqual([
+    expect(parser.push(compactFrame(41, "kata.tasks.reset"))).toEqual([
       {
         kind: "reset",
-        event_id: 42,
-        reset_after_id: 42,
-        lastEventID: 42,
+        server_instance_id: "server-a",
+        daemon_id: "work",
+        epoch: 3,
+        cursor: 41,
       },
-    ]);
+    ] satisfies KataTaskEventStreamFrame[]);
   });
 
-  test("ignores comments, invalid JSON, and non-object data frames", () => {
+  test("parses compact invalidation frames across partial CRLF chunks", () => {
     const parser = new KataEventStreamParser();
+    const frame = compactFrame(42, "kata.tasks.invalidated").replaceAll("\n", "\r\n");
 
-    expect(parser.push(": connected\r\n\r\n")).toEqual([]);
-    expect(parser.push("event: issue.created\r\ndata: not-json\r\n\r\n")).toEqual([]);
-    expect(parser.push('event: issue.created\r\ndata: ["not", "an", "object"]\r\n\r\n')).toEqual([]);
+    expect(parser.push(frame.slice(0, 35))).toEqual([]);
+    expect(parser.push(frame.slice(35))).toEqual([
+      {
+        kind: "invalidation",
+        server_instance_id: "server-a",
+        daemon_id: "work",
+        epoch: 3,
+        cursor: 42,
+      },
+    ] satisfies KataTaskEventStreamFrame[]);
   });
 
-  test("handles CRLF and multi-line data frames", () => {
+  test("rejects frames whose JSON cursor differs from the SSE id", () => {
     const parser = new KataEventStreamParser();
 
-    const messages = parser.push(
-      [
-        "id: 12\r\n",
-        "event: issue.updated\r\n",
-        'data: {"event_uid":"event-12",\r\n',
-        `data: "origin_instance_uid":"${origin}",\r\n`,
-        'data: "type":"issue.updated",\r\n',
-        'data: "project_id":2,\r\n',
-        'data: "project_uid":"project-inbox",\r\n',
-        'data: "project_name":"Inbox",\r\n',
-        'data: "actor":"middleman-test",\r\n',
-        'data: "created_at":"2026-05-15T12:00:03Z"}\r\n',
-        "\r\n",
-      ].join(""),
-    );
+    expect(parser.push(compactFrame(42, "kata.tasks.invalidated", { cursor: 41 }))).toEqual([]);
+  });
 
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({
-      kind: "event",
-      lastEventID: 12,
-      event: {
-        event_id: 12,
+  test("ignores unknown event names and raw Kata event payloads", () => {
+    const parser = new KataEventStreamParser();
+    const rawFrame = [
+      "id: 43",
+      "event: issue.updated",
+      'data: {"event_id":43,"type":"issue.updated","payload":{"secret":"raw-upstream"}}',
+      "",
+      "",
+    ].join("\n");
+    const rawPayloadUnderMiddlemanName = [
+      "id: 44",
+      "event: kata.tasks.invalidated",
+      'data: {"event_id":44,"type":"issue.updated","payload":{"secret":"raw-upstream"}}',
+      "",
+      "",
+    ].join("\n");
+
+    expect(parser.push(rawFrame)).toEqual([]);
+    expect(parser.push(rawPayloadUnderMiddlemanName)).toEqual([]);
+  });
+
+  test("exposes no upstream fields from an accepted compact frame", () => {
+    const parser = new KataEventStreamParser();
+
+    const [message] = parser.push(
+      compactFrame(45, "kata.tasks.invalidated", {
+        event_id: 900,
+        after_id: 899,
+        payload: { secret: "raw-upstream" },
         type: "issue.updated",
-      },
-    });
-  });
-
-  test("uses the SSE id before body event ids for stream cursor position", () => {
-    const parser = new KataEventStreamParser();
-
-    const messages = parser.push(
-      eventFrame(10, "sync.reset_required", {
-        event_id: 11,
-        reset_after_id: 12,
       }),
     );
 
-    expect(messages).toEqual([
-      {
-        kind: "reset",
-        event_id: 10,
-        reset_after_id: 12,
-        lastEventID: 10,
-      },
-    ]);
+    expect(message).toEqual({
+      kind: "invalidation",
+      server_instance_id: "server-a",
+      daemon_id: "work",
+      epoch: 3,
+      cursor: 45,
+    });
+  });
+
+  test("ignores invalid JSON and incomplete compact identities", () => {
+    const parser = new KataEventStreamParser();
+
+    expect(parser.push("event: kata.tasks.reset\ndata: not-json\n\n")).toEqual([]);
+    expect(parser.push('id: 46\nevent: kata.tasks.reset\ndata: {"cursor":46}\n\n')).toEqual([]);
   });
 });
 
 describe("readKataEventStream", () => {
-  test("marks transient stream setup failures as retryable", async () => {
-    const fetchImpl = vi.fn(async () => new Response("bad gateway", { status: 502 }));
-
-    await expect(
-      readKataEventStream({
-        fetchImpl,
-        onMessage: vi.fn(),
-      }),
-    ).rejects.toMatchObject({
-      name: "KataEventStreamError",
-      message: "Kata event stream failed: HTTP 502",
-      retryable: true,
-    } satisfies Partial<KataEventStreamError>);
-  });
-
-  test("sets SSE headers and emits parsed messages through the proxy", async () => {
+  test("opens the Middleman stream with daemon selection and snapshot cursor replay", async () => {
     let requestURL = "";
-    let headers: Headers | undefined;
+    let requestHeaders = new Headers();
+    const onOpen = vi.fn();
     const onMessage = vi.fn();
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      requestURL = input instanceof URL ? input.toString() : String(input);
-      headers = new Headers(init?.headers);
-      return new Response(
-        streamFromText(
-          eventFrame(9, "issue.created", {
-            event_id: 9,
-            event_uid: "event-9",
-            origin_instance_uid: origin,
-            type: "issue.created",
-            project_id: 2,
-            project_uid: "project-inbox",
-            project_name: "Inbox",
-            actor: "middleman-test",
-            created_at: "2026-05-15T12:00:02Z",
-          }),
-        ),
-        {
-          status: 200,
-          headers: { "Content-Type": "text/event-stream" },
-        },
-      );
+      requestURL = String(input);
+      requestHeaders = new Headers(init?.headers);
+      return new Response(streamFromText(compactFrame(52, "kata.tasks.invalidated")), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
     });
 
     await expect(
       readKataEventStream({
         daemonId: "work",
         fetchImpl,
-        lastEventID: 8,
-        onMessage,
-      }),
-    ).rejects.toThrow("Live updates disconnected");
-
-    expect(new URL(requestURL, "http://localhost").pathname).toBe("/api/v1/kata/proxy/api/v1/events/stream");
-    expect(headers?.get("Accept")).toBe("text/event-stream");
-    expect(headers?.get(KATA_DAEMON_HEADER)).toBe("work");
-    expect(headers?.get("Last-Event-ID")).toBe("8");
-    expect(onMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "event",
-        lastEventID: 9,
-        event: expect.objectContaining({ type: "issue.created" }),
-      }),
-    );
-  });
-
-  test("adds project scope and calls onOpen after a stream is established", async () => {
-    let requestURL = "";
-    const onOpen = vi.fn();
-    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-      requestURL = input instanceof URL ? input.toString() : String(input);
-      return new Response(streamFromText(": connected\n\n"), {
-        status: 200,
-        headers: { "Content-Type": "text/event-stream" },
-      });
-    });
-
-    await expect(
-      readKataEventStream({
-        fetchImpl,
-        projectID: 7,
+        lastEventID: 51,
         onOpen,
-        onMessage: vi.fn(),
-      }),
-    ).rejects.toThrow("Live updates disconnected");
-
-    const url = new URL(requestURL, "http://localhost");
-    expect(url.pathname).toBe("/api/v1/kata/proxy/api/v1/events/stream");
-    expect(url.searchParams.get("project_id")).toBe("7");
-    expect(onOpen).toHaveBeenCalledTimes(1);
-  });
-
-  test("emits a final event frame when the stream closes without a trailing blank line", async () => {
-    const onMessage = vi.fn();
-    const fetchImpl = vi.fn(
-      async () =>
-        new Response(
-          streamFromText(
-            `id: 13\nevent: issue.updated\ndata: ${JSON.stringify({
-              event_id: 13,
-              event_uid: "event-13",
-              origin_instance_uid: origin,
-              type: "issue.updated",
-              project_id: 2,
-              project_uid: "project-inbox",
-              project_name: "Inbox",
-              actor: "middleman-test",
-              created_at: "2026-05-15T12:00:04Z",
-            })}`,
-          ),
-          {
-            status: 200,
-            headers: { "Content-Type": "text/event-stream" },
-          },
-        ),
-    );
-
-    await expect(
-      readKataEventStream({
-        fetchImpl,
         onMessage,
-      }),
-    ).rejects.toThrow("Live updates disconnected");
-
-    expect(onMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "event",
-        lastEventID: 13,
-        event: expect.objectContaining({ type: "issue.updated" }),
-      }),
-    );
-  });
-
-  test("does not send Last-Event-ID for an empty cursor", async () => {
-    let headers: Headers | undefined;
-    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      headers = new Headers(init?.headers);
-      return new Response(streamFromText(": connected\n\n"), {
-        status: 200,
-        headers: { "Content-Type": "text/event-stream" },
-      });
-    });
-
-    await expect(
-      readKataEventStream({
-        fetchImpl,
-        lastEventID: 0,
-        onMessage: vi.fn(),
-      }),
-    ).rejects.toThrow("Live updates disconnected");
-
-    expect(headers?.has("Last-Event-ID")).toBe(false);
-  });
-
-  test("treats a successful response without a body as a nonretryable stream error", async () => {
-    const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
-
-    await expect(
-      readKataEventStream({
-        fetchImpl,
-        onMessage: vi.fn(),
       }),
     ).rejects.toMatchObject({
+      name: "KataEventStreamError",
+      message: "Live updates disconnected",
+      retryable: true,
+    } satisfies Partial<KataEventStreamError>);
+
+    expect(requestURL).toBe("/api/v1/kata/tasks/events");
+    expect(requestHeaders.get("Accept")).toBe("text/event-stream");
+    expect(requestHeaders.get(KATA_DAEMON_HEADER)).toBe("work");
+    expect(requestHeaders.get("Last-Event-ID")).toBe("51");
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(onMessage).toHaveBeenCalledWith({
+      kind: "invalidation",
+      server_instance_id: "server-a",
+      daemon_id: "work",
+      epoch: 3,
+      cursor: 52,
+    });
+  });
+
+  test.each([
+    [408, true],
+    [429, true],
+    [502, true],
+    [400, false],
+    [404, false],
+  ])("classifies HTTP %i stream setup failures", async (status, retryable) => {
+    const fetchImpl = vi.fn(async () => new Response("setup failed", { status }));
+
+    await expect(readKataEventStream({ fetchImpl, onMessage: vi.fn() })).rejects.toMatchObject({
+      name: "KataEventStreamError",
+      retryable,
+    } satisfies Partial<KataEventStreamError>);
+  });
+
+  test("treats a successful response without a body as nonretryable", async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
+
+    await expect(readKataEventStream({ fetchImpl, onMessage: vi.fn() })).rejects.toMatchObject({
       name: "KataEventStreamError",
       message: "Kata event stream response has no body",
       retryable: false,
     } satisfies Partial<KataEventStreamError>);
   });
 
-  test("returns without surfacing an error when the stream is aborted", async () => {
+  test("omits an empty Last-Event-ID", async () => {
+    let requestHeaders = new Headers();
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestHeaders = new Headers(init?.headers);
+      return new Response(streamFromText(": connected\n\n"), { status: 200 });
+    });
+
+    await expect(readKataEventStream({ fetchImpl, lastEventID: 0, onMessage: vi.fn() })).rejects.toThrow(
+      "Live updates disconnected",
+    );
+
+    expect(requestHeaders.has("Last-Event-ID")).toBe(false);
+  });
+
+  test("returns without surfacing an error when aborted", async () => {
     let cancelCalled = false;
     const controller = new AbortController();
     const fetchImpl = vi.fn(async () => {
@@ -339,10 +219,7 @@ describe("readKataEventStream", () => {
             cancelCalled = true;
           },
         }),
-        {
-          status: 200,
-          headers: { "Content-Type": "text/event-stream" },
-        },
+        { status: 200 },
       );
     });
 
@@ -351,10 +228,7 @@ describe("readKataEventStream", () => {
       signal: controller.signal,
       onMessage: vi.fn(),
     });
-
-    await vi.waitFor(() => {
-      expect(fetchImpl).toHaveBeenCalledTimes(1);
-    });
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledOnce());
     controller.abort();
 
     await expect(stream).resolves.toBeUndefined();

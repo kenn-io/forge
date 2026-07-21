@@ -163,6 +163,24 @@ describe("Kata authority store", () => {
     expect(store.snapshot?.enrichment_errors).toEqual(accepted.enrichment.errors);
   });
 
+  it("rejects a response that omits the requested selected issue identity", async () => {
+    const store = createKataAuthorityStore({
+      loadSnapshot: vi.fn(async () => snapshot({ generation: 2 })),
+    });
+
+    await expect(
+      store.loadSnapshot({
+        daemon_id: "home",
+        scope: "global",
+        authority: "open",
+        selected_issue_uid: "issue-a",
+      }),
+    ).rejects.toThrow("does not match the current request intent");
+
+    expect(store.snapshot).toBeNull();
+    expect(store.state.phase).toBe("degraded");
+  });
+
   it("requests a new authority for Ready and ignores the superseded Open response", async () => {
     const open = deferred<KataWorkspaceSnapshotResponse>();
     const ready = deferred<KataWorkspaceSnapshotResponse>();
@@ -296,7 +314,32 @@ describe("Kata authority store", () => {
     expect(store.snapshot).toMatchObject({ server_instance_id: "server-b", generation: 1 });
   });
 
-  it("keeps graph source independent from selected detail and local graph-node selection", async () => {
+  it("abandons accepted authority and fences a pending response", async () => {
+    const pending = deferred<KataWorkspaceSnapshotResponse>();
+    const loadSnapshot = vi
+      .fn<(intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>>()
+      .mockResolvedValueOnce(snapshot({ generation: 4 }))
+      .mockImplementationOnce(() => pending.promise);
+    const store = createKataAuthorityStore({ loadSnapshot });
+
+    await store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" });
+    const pendingLoad = store.loadSnapshot({ daemon_id: "work", scope: "global", authority: "open" });
+
+    store.abandon("Kata daemon missing is not configured.");
+    pending.resolve(snapshot({ daemon_id: "work", generation: 1 }));
+
+    await expect(pendingLoad).resolves.toBe(false);
+    expect(store.state).toMatchObject({
+      phase: "abandoned",
+      intent: null,
+      error: "Kata daemon missing is not configured.",
+      snapshot: { daemon_id: "home", generation: 4 },
+    });
+    expect(store.authorityKey).toBeNull();
+    await expect(store.retry()).resolves.toBe(false);
+  });
+
+  it("keeps graph source independent from selected detail", async () => {
     const loadSnapshot = vi.fn(async (intent: KataSnapshotIntent) =>
       snapshot({
         generation: 4,
@@ -323,14 +366,11 @@ describe("Kata authority store", () => {
       selected_issue_uid: "issue-a",
       graph_source_uid: "issue-b",
     });
-    store.updatePresentation({ graph_selected_uid: "issue-a" });
-
     expect(loadSnapshot).toHaveBeenCalledTimes(1);
     expect(loadSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ selected_issue_uid: "issue-a", graph_source_uid: "issue-b" }),
     );
     expect(store.snapshot?.graph?.source_uid).toBe("issue-b");
-    expect(store.presentation.graph_selected_uid).toBe("issue-a");
   });
 
   it("projects text, owner, and label locally without loading another snapshot", async () => {

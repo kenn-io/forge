@@ -1,6 +1,10 @@
 import type { DocsAPI } from "../../api/docs/api.js";
 import type { BodySnippet } from "../../api/docs/types.js";
-import type { KataTaskAPI, KataTaskSummary } from "../../api/kata/taskTypes.js";
+import type { KataTaskSummary } from "../../api/kata/taskTypes.js";
+import type {
+  KataAuxiliaryAuthoritySource,
+  KataAuxiliaryIssue,
+} from "../../features/kata/kataAuxiliaryAuthority.svelte.js";
 
 export const MODE_SEARCH_DISPLAY_LIMIT = 10;
 
@@ -42,7 +46,7 @@ export interface ModePaletteResults {
 }
 
 export interface ModePaletteSearchDeps {
-  kata: Pick<KataTaskAPI, "search">;
+  kata: Pick<KataAuxiliaryAuthoritySource, "issues" | "daemonID">;
   docs: Pick<DocsAPI, "searchAll">;
 }
 
@@ -57,11 +61,13 @@ export async function searchModePalette(query: string, deps: ModePaletteSearchDe
   }
 
   const limit = MODE_SEARCH_DISPLAY_LIMIT + 1;
-  const [tasks, docs] = await Promise.all([searchTasks(trimmed, deps.kata), searchDocs(trimmed, deps.docs, limit)]);
+  const docsPromise = searchDocs(trimmed, deps.docs, limit);
+  const tasks = searchTasks(trimmed, deps.kata);
+  const docs = await docsPromise;
   return { query: trimmed, tasks, docs };
 }
 
-function taskRowFromIssue(issue: KataTaskSummary, daemonId: string | undefined): ModeTaskResult {
+function taskRowFromIssue(issue: KataAuxiliaryIssue, daemonId: string | undefined): ModeTaskResult {
   return {
     kind: "kata-task",
     uid: issue.uid,
@@ -74,28 +80,34 @@ function taskRowFromIssue(issue: KataTaskSummary, daemonId: string | undefined):
   };
 }
 
-async function searchTasks(
+function searchTasks(
   query: string,
-  kata: Pick<KataTaskAPI, "search">,
-): Promise<ModeSectionResult<ModeTaskResult>> {
-  try {
-    const response = await kata.search({
-      scope: { kind: "all" },
-      status: "all",
-      owner: "",
-      label: "",
-      query,
-    });
-    const rows = response.issues.map((issue) => taskRowFromIssue(issue, response.daemon_id));
-    const truncated = rows.length > MODE_SEARCH_DISPLAY_LIMIT;
-    return {
-      ok: true,
-      rows: truncated ? rows.slice(0, MODE_SEARCH_DISPLAY_LIMIT) : rows,
-      truncated,
-    };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
+  kata: Pick<KataAuxiliaryAuthoritySource, "issues" | "daemonID">,
+): ModeSectionResult<ModeTaskResult> {
+  const needle = query.toLocaleLowerCase();
+  const rows = kata.issues
+    .map((issue) => ({ issue, rank: taskSearchRank(issue, needle) }))
+    .filter((candidate) => candidate.rank !== null)
+    .sort((left, right) => left.rank! - right.rank! || left.issue.qualified_id.localeCompare(right.issue.qualified_id))
+    .map(({ issue }) => taskRowFromIssue(issue, kata.daemonID));
+  const truncated = rows.length > MODE_SEARCH_DISPLAY_LIMIT;
+  return {
+    ok: true,
+    rows: truncated ? rows.slice(0, MODE_SEARCH_DISPLAY_LIMIT) : rows,
+    truncated,
+  };
+}
+
+function taskSearchRank(issue: KataAuxiliaryIssue, needle: string): number | null {
+  const shortID = issue.short_id.toLocaleLowerCase();
+  const qualifiedID = issue.qualified_id.toLocaleLowerCase();
+  const title = issue.title.toLocaleLowerCase();
+  if (shortID === needle || qualifiedID === needle) return 0;
+  if (title.startsWith(needle)) return 1;
+  if (title.includes(needle)) return 2;
+  if (shortID.includes(needle) || qualifiedID.includes(needle)) return 3;
+  const searchable = [issue.body, issue.project_name, issue.owner, ...(issue.labels ?? [])];
+  return searchable.some((value) => value?.toLocaleLowerCase().includes(needle)) ? 4 : null;
 }
 
 async function searchDocs(

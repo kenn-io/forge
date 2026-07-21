@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type {
   KataProjectSummary,
   KataRecurrence,
-  KataTaskAPI,
   KataTaskDetail,
   KataTaskViewResponse,
 } from "../../api/kata/taskTypes.js";
@@ -93,24 +92,12 @@ function makeView(): KataTaskViewResponse {
   };
 }
 
-function makeAPI(): KataTaskAPI {
-  return {
-    search: vi.fn(async () => ({
-      filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "" },
-      issues: [],
-      fetched_at: "2026-06-01T12:00:00Z",
-    })),
-    issue: vi.fn(async () => makeIssue()),
-  } as unknown as KataTaskAPI;
-}
-
 function renderDetail(props: Partial<KataIssueDetailProps> = {}) {
   return render(KataIssueDetail, {
     props: {
       issue: makeIssue({ recurrence_id: 9 }),
       events: [],
-      currentView: makeView(),
-      api: makeAPI(),
+      issueCatalog: makeView().groups.flatMap((group) => group.issues),
       activeDaemonId: "home",
       linkFilters: createKataLinkFilters("open"),
       onLinkFiltersChange: vi.fn(),

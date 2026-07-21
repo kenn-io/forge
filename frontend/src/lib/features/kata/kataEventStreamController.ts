@@ -1,5 +1,8 @@
-import { KataEventStreamError, readKataEventStream } from "../../api/kata/eventStream.js";
-import type { KataTaskEventStreamMessage } from "../../api/kata/taskTypes.js";
+import {
+  KataEventStreamError,
+  readKataEventStream,
+  type KataTaskEventStreamFrame,
+} from "../../api/kata/eventStream.js";
 
 type ReadKataEventStream = typeof readKataEventStream;
 
@@ -7,7 +10,7 @@ interface KataEventStreamControllerOptions {
   getDaemonId: () => string | undefined;
   getLastEventID: () => number;
   onOpen: () => void;
-  onMessage: (message: KataTaskEventStreamMessage) => Promise<void>;
+  onMessage: (message: KataTaskEventStreamFrame) => Promise<void>;
   onReset?: (() => void) | undefined;
   onError: (message: string) => void;
   readEventStream?: ReadKataEventStream | undefined;

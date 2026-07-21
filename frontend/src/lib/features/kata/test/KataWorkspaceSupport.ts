@@ -1,5 +1,11 @@
 import { vi } from "vite-plus/test";
 
+import {
+  KATA_DAEMON_HEADER,
+  type KataAuthority,
+  type KataAuthorityScope,
+  type KataWorkspaceSnapshotResponse,
+} from "../../../api/kata/snapshot.js";
 import type {
   KataInstanceResponse,
   KataProjectSummary,
@@ -13,15 +19,15 @@ import type {
   KataTaskSearchFilters,
   KataTaskSearchResponse,
   KataTaskSummary,
-} from "../../api/kata/taskTypes.js";
-import { buildKataTaskView } from "../../api/kata/taskViewBuilder.js";
-import type { MessageLinkRef } from "../../messages/types";
+} from "../../../api/kata/taskTypes.js";
+import { buildKataTaskView } from "../../../api/kata/taskViewBuilder.js";
+import type { MessageLinkRef } from "../../../messages/types";
 import {
   getActiveKataDaemon,
   getDefaultKataDaemon,
   setActiveKataDaemon,
   setKataDaemonRoster,
-} from "../../stores/active-kata-daemon.svelte.js";
+} from "../../../stores/active-kata-daemon.svelte.js";
 
 export class TestResizeObserver implements ResizeObserver {
   observe(): void {}
@@ -29,7 +35,175 @@ export class TestResizeObserver implements ResizeObserver {
   disconnect(): void {}
 }
 
+type SnapshotProject = NonNullable<KataWorkspaceSnapshotResponse["projects"]>[number];
+type SnapshotIssue = NonNullable<KataWorkspaceSnapshotResponse["issues"]>[number];
+type SnapshotEnrichment = KataWorkspaceSnapshotResponse["enrichment"];
+type SnapshotGraph = NonNullable<SnapshotEnrichment["graph"]>;
+type SnapshotHistoryEvent = NonNullable<SnapshotEnrichment["selected_history"]>[number];
+
+interface KataWorkspaceSnapshotFixtureRequest {
+  daemonID: string;
+  scope: KataAuthorityScope;
+  projectUID?: string | undefined;
+  authority: KataAuthority;
+  selectedIssueUID?: string | undefined;
+  graphSourceUID?: string | undefined;
+}
+
+type KataWorkspaceSnapshotFixtureOverride = (
+  request: KataWorkspaceSnapshotFixtureRequest,
+  snapshot: KataWorkspaceSnapshotResponse,
+) => KataWorkspaceSnapshotResponse | Promise<KataWorkspaceSnapshotResponse>;
+
+interface KataWorkspaceSnapshotFixtureSource {
+  rows(daemonID: string): readonly KataTaskSummary[];
+  projects(daemonID: string): readonly KataProjectSummary[];
+  detail(uid: string, daemonID: string): KataTaskDetail | undefined;
+  events(uid: string, daemonID: string): readonly KataTaskEvent[];
+  eventCursor(daemonID: string): number;
+  graph(uid: string, daemonID: string): KataReachableGraphResponse | undefined;
+  override?: KataWorkspaceSnapshotFixtureOverride | undefined;
+}
+
+let activeSnapshotFixture: KataWorkspaceSnapshotFixtureSource | null = null;
+let snapshotFetchInstalled = false;
+let snapshotGeneration = 0;
+const defaultFetch = globalThis.fetch.bind(globalThis);
+
+function requestURL(input: RequestInfo | URL): URL {
+  if (input instanceof Request) return new URL(input.url);
+  return input instanceof URL ? input : new URL(String(input), window.location.origin);
+}
+
+function requestHeaders(input: RequestInfo | URL, init?: RequestInit): Headers {
+  return new Headers(input instanceof Request ? input.headers : init?.headers);
+}
+
+function snapshotProject(project: KataProjectSummary): SnapshotProject {
+  return {
+    id: project.id,
+    uid: project.uid,
+    name: project.name,
+    metadata: project.metadata,
+    revision: project.revision ?? 1,
+    created_at: project.created_at ?? fetchedAt,
+    open_count: project.open_count,
+    closed_count: 0,
+    ...(project.deleted_at ? { deleted_at: project.deleted_at } : {}),
+  };
+}
+
+function snapshotIssue(issue: KataTaskSummary): SnapshotIssue {
+  return { ...issue } as SnapshotIssue;
+}
+
+function matchesAuthority(issue: KataTaskSummary, authority: KataAuthority): boolean {
+  if (authority === "all") return true;
+  if (authority === "closed") return issue.status === "closed";
+  return issue.status === "open";
+}
+
+async function snapshotResponse(
+  source: KataWorkspaceSnapshotFixtureSource,
+  request: KataWorkspaceSnapshotFixtureRequest,
+): Promise<KataWorkspaceSnapshotResponse> {
+  const daemonRows = source.rows(request.daemonID);
+  const memberRows = daemonRows.filter(
+    (item) =>
+      matchesAuthority(item, request.authority) &&
+      (request.scope !== "project" || item.project_uid === request.projectUID),
+  );
+  const selectedDetail = request.selectedIssueUID
+    ? source.detail(request.selectedIssueUID, request.daemonID)
+    : undefined;
+  const selectedHistory = request.selectedIssueUID ? source.events(request.selectedIssueUID, request.daemonID) : [];
+  const graph = request.graphSourceUID ? source.graph(request.graphSourceUID, request.daemonID) : undefined;
+  const generation = ++snapshotGeneration;
+  const snapshot: KataWorkspaceSnapshotResponse = {
+    server_instance_id: "test-server",
+    daemon_id: request.daemonID,
+    intent: {
+      scope: request.scope,
+      ...(request.scope === "project" ? { project_uid: request.projectUID! } : {}),
+      authority: request.authority,
+    },
+    generation,
+    invalidation_epoch: generation,
+    event_cursor: source.eventCursor(request.daemonID),
+    fetched_at: fetchedAt,
+    projects: source.projects(request.daemonID).map(snapshotProject),
+    member_issue_uids: memberRows.map((item) => item.uid),
+    issues: memberRows.map(snapshotIssue),
+    enrichment: {
+      ...(request.selectedIssueUID && selectedDetail
+        ? {
+            selected_issue_uid: request.selectedIssueUID,
+            selected_detail: {
+              detail: selectedDetail,
+              ...(selectedDetail.etag ? { etag: selectedDetail.etag } : {}),
+              workspace_target: selectedDetail.workspace_target ?? { available: false },
+            },
+            selected_history: selectedHistory.map((event) => ({ ...event }) as SnapshotHistoryEvent),
+          }
+        : {}),
+      ...(graph
+        ? {
+            graph: graph as SnapshotGraph,
+            graph_fetched_at: graph.fetched_at,
+          }
+        : {}),
+    },
+    ...(request.graphSourceUID ? { graph_source_uid: request.graphSourceUID } : {}),
+  };
+  return source.override ? source.override(request, snapshot) : snapshot;
+}
+
+function installKataWorkspaceSnapshotFixture(source: KataWorkspaceSnapshotFixtureSource): void {
+  activeSnapshotFixture = source;
+  if (snapshotFetchInstalled) return;
+
+  const currentFetch = globalThis.fetch;
+  const delegate =
+    (vi.isMockFunction(currentFetch) ? vi.mocked(currentFetch).getMockImplementation() : undefined) ??
+    (vi.isMockFunction(currentFetch) ? defaultFetch : currentFetch.bind(globalThis));
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const url = requestURL(input);
+    if (url.pathname !== "/api/v1/kata/tasks/snapshot") {
+      return delegate(input, init);
+    }
+    const fixture = activeSnapshotFixture;
+    if (!fixture) return new Response("No Kata workspace snapshot fixture is installed.", { status: 500 });
+
+    const scope = url.searchParams.get("scope");
+    const authority = url.searchParams.get("authority");
+    const projectUID = url.searchParams.get("project_uid") ?? undefined;
+    if (
+      (scope !== "global" && scope !== "project") ||
+      (scope === "project" && !projectUID) ||
+      !["open", "ready", "closed", "all"].includes(authority ?? "")
+    ) {
+      return new Response("Invalid Kata workspace snapshot request.", { status: 400 });
+    }
+    const daemonID =
+      requestHeaders(input, init).get(KATA_DAEMON_HEADER) ?? getActiveKataDaemon() ?? getDefaultKataDaemon() ?? "home";
+    return Response.json(
+      await snapshotResponse(fixture, {
+        daemonID,
+        scope,
+        ...(projectUID ? { projectUID } : {}),
+        authority: authority as KataAuthority,
+        selectedIssueUID: url.searchParams.get("selected_issue_uid") ?? undefined,
+        graphSourceUID: url.searchParams.get("graph_source_uid") ?? undefined,
+      }),
+    );
+  });
+  snapshotFetchInstalled = true;
+}
+
 export function resetKataWorkspaceTestState(): void {
+  activeSnapshotFixture = null;
+  snapshotFetchInstalled = false;
+  snapshotGeneration = 0;
   if (!("ResizeObserver" in globalThis)) {
     Object.defineProperty(globalThis, "ResizeObserver", {
       configurable: true,
@@ -239,6 +413,10 @@ function reachableGraph(
 function createDaemonWorkspaceAPI(
   rowsByDaemon: Record<string, KataTaskSummary[]>,
   projectsByDaemon: Record<string, KataProjectSummary[]> = {},
+  options: {
+    eventsByDaemon?: Record<string, KataTaskEvent[]> | undefined;
+    snapshot?: KataWorkspaceSnapshotFixtureOverride | undefined;
+  } = {},
 ): KataTaskAPI {
   let workflowDaemonID: string | undefined;
 
@@ -254,7 +432,7 @@ function createDaemonWorkspaceAPI(
     return projectsByDaemon[daemonID(explicitDaemonID)] ?? projects;
   }
 
-  return {
+  const api: KataTaskAPI = {
     bindWorkflowDaemon: vi.fn((daemonID?: string) => {
       workflowDaemonID = daemonID;
     }),
@@ -348,11 +526,33 @@ function createDaemonWorkspaceAPI(
     patchRecurrence: vi.fn(async () => ({ changed: true, recurrence: recurrence(), etag: '"rev-2"' })),
     deleteRecurrence: vi.fn(async () => undefined),
   };
+  installKataWorkspaceSnapshotFixture({
+    rows: (requestedDaemonID) => rowsByDaemon[requestedDaemonID] ?? [],
+    projects: (requestedDaemonID) => projectsByDaemon[requestedDaemonID] ?? projects,
+    detail: (uid, requestedDaemonID) => {
+      const daemonRows = rowsByDaemon[requestedDaemonID] ?? [];
+      return daemonRows.some((item) => item.uid === uid) ? detail(uid, daemonRows) : undefined;
+    },
+    events: (uid, requestedDaemonID) =>
+      (options.eventsByDaemon?.[requestedDaemonID] ?? []).filter((event) => event.issue_uid === uid),
+    eventCursor: (requestedDaemonID) =>
+      Math.max(0, ...(options.eventsByDaemon?.[requestedDaemonID] ?? []).map((event) => event.event_id)),
+    graph: (uid, requestedDaemonID) => {
+      const daemonRows = rowsByDaemon[requestedDaemonID] ?? [];
+      return daemonRows.some((item) => item.uid === uid) ? reachableGraph(uid, daemonRows) : undefined;
+    },
+    override: options.snapshot,
+  });
+  return api;
 }
 
 function createWorkspaceAPI(
   initialRows = initialIssues,
-  options: { recurrences?: KataRecurrence[] | undefined; events?: KataTaskEvent[] | undefined } = {},
+  options: {
+    recurrences?: KataRecurrence[] | undefined;
+    events?: KataTaskEvent[] | undefined;
+    snapshot?: KataWorkspaceSnapshotFixtureOverride | undefined;
+  } = {},
 ): {
   api: KataTaskAPI;
   instance: ReturnType<typeof vi.fn>;
@@ -462,66 +662,76 @@ function createWorkspaceAPI(
     }),
   );
   const issueDetail = vi.fn(async (uid: string) => detail(uid, rows, commentsByUID));
-  return {
-    api: {
-      instance,
-      projects: projectCatalog,
-      createProject: vi.fn(async (name: string) => ({
-        id: 90,
-        uid: `project-${name.toLowerCase()}`,
-        name,
-        metadata: {},
-        open_count: 0,
-      })),
-      renameProject: vi.fn(async (_projectID: number, name: string) => ({
-        id: 1,
-        uid: `project-${name.toLowerCase()}`,
-        name,
-        metadata: {},
-        open_count: 0,
-      })),
-      patchProjectMetadata: vi.fn(async (projectID: number, _actor: string, patch: Record<string, unknown>) => {
-        const base = projects.find((item) => item.id === projectID) ?? projects[0]!;
-        return {
-          changed: true,
-          project: { ...base, metadata: { ...base.metadata, ...patch } },
-          etag: '"rev-2"',
-        };
+  const api: KataTaskAPI = {
+    instance,
+    projects: projectCatalog,
+    createProject: vi.fn(async (name: string) => ({
+      id: 90,
+      uid: `project-${name.toLowerCase()}`,
+      name,
+      metadata: {},
+      open_count: 0,
+    })),
+    renameProject: vi.fn(async (_projectID: number, name: string) => ({
+      id: 1,
+      uid: `project-${name.toLowerCase()}`,
+      name,
+      metadata: {},
+      open_count: 0,
+    })),
+    patchProjectMetadata: vi.fn(async (projectID: number, _actor: string, patch: Record<string, unknown>) => {
+      const base = projects.find((item) => item.id === projectID) ?? projects[0]!;
+      return {
+        changed: true,
+        project: { ...base, metadata: { ...base.metadata, ...patch } },
+        etag: '"rev-2"',
+      };
+    }),
+    createIssue,
+    issues,
+    search,
+    issue: issueDetail,
+    reachableGraph: vi.fn(async (_projectID: number, ref: string, query = {}) =>
+      reachableGraph(ref, rows, query.depth ?? "full", query.hide_done === true),
+    ),
+    events: vi.fn(
+      async (): Promise<KataTaskEventsResponse> => ({
+        reset_required: false,
+        events: options.events ?? [],
+        next_after_id: 0,
       }),
-      createIssue,
-      issues,
-      search,
-      issue: issueDetail,
-      reachableGraph: vi.fn(async (_projectID: number, ref: string, query = {}) =>
-        reachableGraph(ref, rows, query.depth ?? "full", query.hide_done === true),
-      ),
-      events: vi.fn(
-        async (): Promise<KataTaskEventsResponse> => ({
-          reset_required: false,
-          events: options.events ?? [],
-          next_after_id: 0,
-        }),
-      ),
-      addComment,
-      addLabel,
-      removeLabel,
-      assignOwner,
-      unassignOwner,
-      setPriority,
-      closeIssue: vi.fn(async () => ({ changed: true })),
-      reopenIssue: vi.fn(async () => ({ changed: true })),
-      editIssue: vi.fn(async () => ({ changed: true })),
-      patchIssueMetadata,
-      moveIssue,
-      recurrences: vi.fn(async () => ({ recurrences: options.recurrences ?? [], fetched_at: fetchedAt })),
-      createRecurrence,
-      showRecurrence: vi.fn(async () => ({
-        recurrence: recurrence(),
-        etag: '"rev-1"',
-      })),
-      patchRecurrence,
-      deleteRecurrence: vi.fn(async () => undefined),
-    },
+    ),
+    addComment,
+    addLabel,
+    removeLabel,
+    assignOwner,
+    unassignOwner,
+    setPriority,
+    closeIssue: vi.fn(async () => ({ changed: true })),
+    reopenIssue: vi.fn(async () => ({ changed: true })),
+    editIssue: vi.fn(async () => ({ changed: true })),
+    patchIssueMetadata,
+    moveIssue,
+    recurrences: vi.fn(async () => ({ recurrences: options.recurrences ?? [], fetched_at: fetchedAt })),
+    createRecurrence,
+    showRecurrence: vi.fn(async () => ({
+      recurrence: recurrence(),
+      etag: '"rev-1"',
+    })),
+    patchRecurrence,
+    deleteRecurrence: vi.fn(async () => undefined),
+  };
+  installKataWorkspaceSnapshotFixture({
+    rows: () => rows,
+    projects: () => projects,
+    detail: (uid) => (rows.some((item) => item.uid === uid) ? detail(uid, rows, commentsByUID) : undefined),
+    events: (uid) => (options.events ?? []).filter((event) => event.issue_uid === uid),
+    eventCursor: () => Math.max(0, ...(options.events ?? []).map((event) => event.event_id)),
+    graph: (uid) => (rows.some((item) => item.uid === uid) ? reachableGraph(uid, rows) : undefined),
+    override: options.snapshot,
+  });
+  return {
+    api,
     instance,
     projects: projectCatalog,
     issues,

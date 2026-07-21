@@ -8,7 +8,7 @@
   import NetworkIcon from "@lucide/svelte/icons/network";
   import { relativeTime, shortDate } from "../../api/dates.js";
   import { kataTaskStatusMatchesFilter } from "../../api/kata/taskFilters.js";
-  import type { KataTaskAPI, KataTaskSearchFilters, KataTaskSummary } from "../../api/kata/taskTypes.js";
+  import type { KataTaskSearchFilters, KataTaskSummary } from "../../api/kata/taskTypes.js";
   import type { KataCurrentView } from "../../stores/kata-workspace.svelte.js";
   import {
     DEFAULT_KATA_TASK_SORT,
@@ -35,6 +35,7 @@
 
   interface Props {
     currentView: KataCurrentView;
+    issueCatalog: readonly KataTaskSummary[];
     scopeLabel?: string;
     scopedProjectName?: string | null;
     selectedIssueUID?: string | null;
@@ -44,16 +45,15 @@
     resetGeneration?: number;
     navigationGeneration?: number;
     revealRequest?: KataIssueRevealRequest | null;
-    api?: KataTaskAPI;
     onSelect: (issue: KataTaskSummary) => void;
     onOpenGraph?: ((issue: KataTaskSummary) => void) | undefined;
-    onRememberTasks?: ((issues: readonly KataTaskSummary[]) => void) | undefined;
   }
 
   const EMPTY_READY_ISSUE_UIDS: ReadonlySet<string> = new Set();
 
   let {
     currentView,
+    issueCatalog,
     scopeLabel = undefined,
     scopedProjectName = null,
     selectedIssueUID = null,
@@ -63,10 +63,8 @@
     resetGeneration = 0,
     navigationGeneration = 0,
     revealRequest = null,
-    api = undefined,
     onSelect,
     onOpenGraph = undefined,
-    onRememberTasks = undefined,
   }: Props = $props();
 
   const SORT_STORAGE_KEY = "middleman:kata:issue-sort/v1";
@@ -143,15 +141,25 @@
   let narrowGridColumns = $derived(taskGridColumns("narrow"));
 
   let expanded: Record<string, boolean> = $state({});
-  let childrenByUID: Record<string, KataTaskSummary[]> = $state({});
-  let loadingChildren: Record<string, boolean> = $state({});
-  let bulkExpanding = $state(false);
   let tableBody: HTMLDivElement | null = $state(null);
-  let childLoadGeneration = 0;
   let lastResetGeneration = $state<number | null>(null);
   let temporaryRevealChain = $state<readonly KataTaskSummary[]>([]);
   let revealOwnedExpansionUIDs = $state<ReadonlySet<string>>(new Set());
   let lastRevealGeneration: number | null = null;
+  let catalogByUID = $derived(new Map(issueCatalog.map((issue) => [issue.uid, issue])));
+  let childrenByParentUID = $derived.by(() => {
+    const byHierarchyKey = new Map(issueCatalog.map((issue) => [issueHierarchyKey(issue), issue]));
+    const children = new Map<string, KataTaskSummary[]>();
+    for (const issue of issueCatalog) {
+      const parentUID = issue.parent?.uid ??
+        (issue.parent_short_id
+          ? byHierarchyKey.get(`${issue.project_uid}:${issue.parent_short_id}`)?.uid
+          : undefined);
+      if (!parentUID) continue;
+      children.set(parentUID, [...(children.get(parentUID) ?? []), issue]);
+    }
+    return children;
+  });
 
   // When the user is scoped to a single project, server-side groupings
   // like "Today / This Evening" feel like noise — they're a kata
@@ -304,7 +312,7 @@
   }
 
   function hasChildren(issue: KataTaskSummary): boolean {
-    return revealSuccessor(issue) !== undefined || (issue.child_counts?.total ?? 0) > 0;
+    return revealSuccessor(issue) !== undefined || visibleChildren(issue).length > 0;
   }
 
   function priorityLabel(priority: number | undefined): string | null {
@@ -325,11 +333,8 @@
 
   function parentHierarchyKey(issue: KataTaskSummary): string | null {
     if (issue.parent_short_id) return `${issue.project_uid}:${issue.parent_short_id}`;
-    for (const [parentUID, children] of Object.entries(childrenByUID)) {
-      if (!children.some((child) => child.uid === issue.uid)) continue;
-      const parent = findIssueByUID(parentUID);
-      if (parent) return issueHierarchyKey(parent);
-    }
+    const parent = issue.parent?.uid ? catalogByUID.get(issue.parent.uid) : undefined;
+    if (parent) return issueHierarchyKey(parent);
     return null;
   }
 
@@ -387,35 +392,11 @@
     return expandable;
   }
 
-  async function loadChildren(issue: KataTaskSummary, generation: number): Promise<KataTaskSummary[]> {
-    if (!hasChildren(issue)) return [];
-    const successor = revealSuccessor(issue);
-    if (childrenByUID[issue.uid] && !successor) return visibleChildren(issue);
-    if (!api) return visibleChildren(issue);
-
-    loadingChildren = { ...loadingChildren, [issue.uid]: true };
-    try {
-      const detail = await api.issue(issue.uid);
-      if (generation !== childLoadGeneration || !findIssueByUID(issue.uid)) return [];
-      const children = detail.children ?? [];
-      onRememberTasks?.([detail.issue, ...children]);
-      childrenByUID = { ...childrenByUID, [issue.uid]: children };
-      return visibleChildren(issue);
-    } catch {
-      return visibleChildren(issue);
-    } finally {
-      if (generation === childLoadGeneration) {
-        loadingChildren = { ...loadingChildren, [issue.uid]: false };
-      }
-    }
-  }
-
-  async function expandIssueTree(
+  function expandIssueTree(
     issue: KataTaskSummary,
-    generation: number,
     nextExpanded: Record<string, boolean>,
     seen: Set<string>,
-  ) {
+  ): void {
     if (!hasChildren(issue) || seen.has(issue.uid)) return;
     seen.add(issue.uid);
     revealOwnedExpansionUIDs = new Set(
@@ -424,40 +405,24 @@
     nextExpanded[issue.uid] = true;
     expanded = { ...expanded, ...nextExpanded };
 
-    const children = await loadChildren(issue, generation);
-    if (generation !== childLoadGeneration) return;
-    for (const child of children) {
-      await expandIssueTree(child, generation, nextExpanded, seen);
-    }
+    for (const child of visibleChildren(issue)) expandIssueTree(child, nextExpanded, seen);
   }
 
-  async function expandAllVisible() {
-    if (bulkExpanding || allKnownExpandableRowsExpanded) return;
-    const generation = childLoadGeneration;
-    bulkExpanding = true;
+  function expandAllVisible(): void {
+    if (allKnownExpandableRowsExpanded) return;
     const nextExpanded = { ...expanded };
     const seen = new Set<string>();
-    try {
-      for (const issue of visibleRootIssues) {
-        if (generation !== childLoadGeneration) return;
-        await expandIssueTree(issue, generation, nextExpanded, seen);
-      }
-    } finally {
-      if (generation === childLoadGeneration) bulkExpanding = false;
-    }
+    for (const issue of visibleRootIssues) expandIssueTree(issue, nextExpanded, seen);
   }
 
   function collapseAllVisible() {
-    if (!hasAnyExpandedRows && !bulkExpanding) return;
-    childLoadGeneration += 1;
+    if (!hasAnyExpandedRows) return;
     expanded = {};
     revealOwnedExpansionUIDs = new Set();
-    loadingChildren = {};
-    bulkExpanding = false;
     cancelPendingKeyboardSelect();
   }
 
-  async function toggleExpand(issue: KataTaskSummary, event: MouseEvent | KeyboardEvent) {
+  function toggleExpand(issue: KataTaskSummary, event: MouseEvent | KeyboardEvent): void {
     event.stopPropagation();
     const uid = issue.uid;
     const currentlyExpanded = expanded[uid] === true;
@@ -465,20 +430,6 @@
       [...revealOwnedExpansionUIDs].filter((ownedUID) => ownedUID !== uid),
     );
     expanded = { ...expanded, [uid]: !currentlyExpanded };
-    if (!currentlyExpanded && !childrenByUID[uid] && api) {
-      const generation = childLoadGeneration;
-      loadingChildren = { ...loadingChildren, [uid]: true };
-      try {
-        const detail = await api.issue(uid);
-        if (generation !== childLoadGeneration || !findIssueByUID(uid)) return;
-        onRememberTasks?.([detail.issue, ...(detail.children ?? [])]);
-        childrenByUID = { ...childrenByUID, [uid]: detail.children ?? [] };
-      } finally {
-        if (generation === childLoadGeneration) {
-          loadingChildren = { ...loadingChildren, [uid]: false };
-        }
-      }
-    }
   }
 
   function sortIndicator(key: KataTaskSortKey): "asc" | "desc" | null {
@@ -659,15 +610,12 @@
       const match = group.issues.find((issue) => issue.uid === uid);
       if (match) return match;
     }
-    for (const children of Object.values(childrenByUID)) {
-      const match = children.find((issue) => issue.uid === uid && issueMatchesStatusFilter(issue));
-      if (match) return match;
-    }
-    return undefined;
+    const catalogIssue = catalogByUID.get(uid);
+    return catalogIssue && issueMatchesStatusFilter(catalogIssue) ? catalogIssue : undefined;
   }
 
   function visibleChildren(issue: KataTaskSummary): KataTaskSummary[] {
-    const children = childrenByUID[issue.uid] ?? [];
+    const children = childrenByParentUID.get(issue.uid) ?? [];
     const successor = revealSuccessor(issue);
     const visible = children.filter(
       (child) => issueMatchesStatusFilter(child) || child.uid === successor?.uid,
@@ -689,20 +637,17 @@
     lastRevealGeneration = revealRequest.generation;
     const revealChain = revealChainForStatus(revealRequest.chain);
     temporaryRevealChain = statusFilter === "ready" || revealChain.length > 1 ? revealChain : [];
-    const generation = childLoadGeneration;
     void (async () => {
       const request = revealRequest;
       for (const issue of revealChain.slice(0, -1)) {
-        if (generation !== childLoadGeneration || revealRequest?.generation !== request.generation) return;
+        if (revealRequest?.generation !== request.generation) return;
         if (expanded[issue.uid] !== true) {
           expanded = { ...expanded, [issue.uid]: true };
           revealOwnedExpansionUIDs = new Set([...revealOwnedExpansionUIDs, issue.uid]);
         }
-        await loadChildren(issue, generation);
-        if (generation !== childLoadGeneration || revealRequest?.generation !== request.generation) return;
       }
       await tick();
-      if (generation !== childLoadGeneration || revealRequest?.generation !== request.generation) return;
+      if (revealRequest?.generation !== request.generation) return;
       tableBody?.querySelector<HTMLElement>(`button.row[data-uid="${request.uid}"]`)?.scrollIntoView({
         block: "nearest",
       });
@@ -716,12 +661,8 @@
     }
     if (resetGeneration === lastResetGeneration) return;
     lastResetGeneration = resetGeneration;
-    childLoadGeneration += 1;
     clearTemporaryReveal();
     expanded = {};
-    childrenByUID = {};
-    loadingChildren = {};
-    bulkExpanding = false;
   });
 
   // A pending keyboard selection dies the moment the workspace starts
@@ -732,7 +673,6 @@
   let lastNavigationGeneration: number | null = null;
   $effect(() => {
     if (lastNavigationGeneration !== null && navigationGeneration !== lastNavigationGeneration) {
-      childLoadGeneration += 1;
       clearTemporaryReveal();
       cancelPendingKeyboardSelect();
     }
@@ -755,19 +695,18 @@
           onchange={setColumnVisibility}
           onShowAll={showAllColumns}
         />
-        {#if hasExpandableVisibleRows || hasAnyExpandedRows || bulkExpanding}
+        {#if hasExpandableVisibleRows || hasAnyExpandedRows}
           <div class="tree-actions" aria-label="Task tree controls">
             <button
               class="tree-action"
               type="button"
-              aria-label={bulkExpanding ? "Expanding tasks" : "Expand all tasks"}
-              title={bulkExpanding ? "Expanding tasks" : "Expand all tasks"}
-              disabled={bulkExpanding || allKnownExpandableRowsExpanded}
-              aria-busy={bulkExpanding ? "true" : undefined}
-              onclick={() => void expandAllVisible()}
+              aria-label="Expand all tasks"
+              title="Expand all tasks"
+              disabled={allKnownExpandableRowsExpanded}
+              onclick={expandAllVisible}
             >
               <ListChevronsUpDownIcon size={13} strokeWidth={2} />
-              <span class="action-label">{bulkExpanding ? "Expanding" : "Expand all"}</span>
+              <span class="action-label">Expand all</span>
             </button>
             <button
               class="tree-action"
@@ -1001,9 +940,7 @@
   </div>
 
   {#if isExpanded}
-    {#if loadingChildren[issue.uid]}
-      <div class="children-status" style:--task-depth={String(depth + 1)}>Loading subtasks…</div>
-    {:else if visibleChildren(issue).length === 0}
+    {#if visibleChildren(issue).length === 0}
       <div class="children-status" style:--task-depth={String(depth + 1)}>No subtasks.</div>
     {:else}
       {#each visibleChildren(issue) as child (child.uid)}

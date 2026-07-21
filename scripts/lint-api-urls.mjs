@@ -53,7 +53,7 @@ function contextFor(lines, index, radius = 5) {
 }
 
 function isAllowedStreamingTransport(line, context) {
-  if (line.includes("/api/v1/events")) {
+  if (line.includes("/api/v1/events") || line.includes("/api/v1/kata/tasks/events")) {
     return true;
   }
 

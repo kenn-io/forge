@@ -426,9 +426,17 @@ async function seedRestoredKataWorkspace(
   await expect(page.getByRole("heading", { name: "Child child workflow" })).toBeVisible();
 }
 
-function commentRow(input: { id: number; issue_id: number; author: string; body: string; created_at?: string }) {
+function commentRow(input: {
+  id: number;
+  uid?: string;
+  issue_id: number;
+  author: string;
+  body: string;
+  created_at?: string;
+}) {
   return {
     id: input.id,
+    uid: input.uid ?? `comment-${input.id}`,
     issue_id: input.issue_id,
     author: input.author,
     body: input.body,
@@ -824,7 +832,20 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
         return;
       }
       writeJSON(res, 200, {
-        projects: state.projects,
+        projects: state.projects.map((project) => {
+          const projectIssues = (state.genericIssues ?? state.issues).filter(
+            (issue) => issue.project_id === project.id,
+          );
+          return {
+            ...project,
+            revision: 1,
+            created_at: now,
+            stats: {
+              open: projectIssues.filter((issue) => issue.status === "open").length,
+              closed: projectIssues.filter((issue) => issue.status === "closed").length,
+            },
+          };
+        }),
         fetched_at: now,
       });
       return;
@@ -6587,14 +6608,21 @@ test("docs issue autocomplete searches the folder-bound external daemon", async 
     const editor = await openDocsEditor(page, server.info.base_url, "/docs?folder=work-notes&doc=README.md");
     await clearEditor(page, editor);
 
+    const referencesResponsePromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/kata/tasks/references" && url.searchParams.get("q") === "shared";
+    });
     await page.keyboard.type("see #shared");
+
+    const referencesResponse = await referencesResponsePromise;
+    expect(referencesResponse.status()).toBe(200);
+    expect(new URL(referencesResponse.url()).searchParams.get("limit")).toBe("50");
+    expect(referencesResponse.request().headers()["x-middleman-kata-daemon"]).toBe("work");
 
     const tooltip = autocompleteTooltip(page);
     await expect(tooltip).toBeVisible();
     await expect(tooltip).toContainText("Bound daemon completion");
     await expect(tooltip).not.toContainText("Default daemon completion");
-    await expect.poll(() => work.state.seenPaths).toContain("GET /api/v1/issues?status=open");
-    expect(home.state.seenPaths).not.toContain("GET /api/v1/issues?status=open");
   } finally {
     await server.stop();
     kataHome.restore();
@@ -6607,14 +6635,14 @@ test("docs issue autocomplete scopes qualified suggestions and preserves no-matc
   const householdProject = {
     id: 301,
     uid: "project-household",
-    name: "household",
+    name: "Household display name",
     metadata: { area: "Personal", sidebar_order: 1 },
     open_count: 1,
   };
   const personalProject = {
     id: 302,
     uid: "project-personal",
-    name: "personal",
+    name: "Personal display name",
     metadata: { area: "Personal", sidebar_order: 2 },
     open_count: 1,
   };
@@ -6628,22 +6656,22 @@ test("docs issue autocomplete scopes qualified suggestions and preserves no-matc
         project_uid: householdProject.uid,
         project_name: householdProject.name,
         short_id: "rent",
-        qualified_id: "household#rent",
+        qualified_id: "household-identity#rent",
         title: "Pay rent",
         body: "Send rent from checking.",
         labels: ["home"],
       }),
       issueSummary({
         id: 3021,
-        uid: "issue-yoga",
+        uid: "issue-personal-rent",
         project_id: personalProject.id,
         project_uid: personalProject.uid,
         project_name: personalProject.name,
-        short_id: "yoga",
-        qualified_id: "personal#yoga",
-        title: "Morning yoga",
-        body: "Stretch before work.",
-        labels: ["health"],
+        short_id: "rent",
+        qualified_id: "personal-identity#rent",
+        title: "Review personal rent budget",
+        body: "Confirm the personal rent allocation.",
+        labels: ["finance"],
       }),
     ],
   });
@@ -6664,23 +6692,52 @@ test("docs issue autocomplete scopes qualified suggestions and preserves no-matc
     const editor = await openDocsEditor(page, server.info.base_url, "/docs?folder=notes&doc=README.md");
     await clearEditor(page, editor);
 
-    await page.keyboard.type("see household/#r");
+    const ambiguousResponsePromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/kata/tasks/references" && url.searchParams.get("q") === "r";
+    });
+    await page.keyboard.type("see #r");
+    const ambiguousResponse = await ambiguousResponsePromise;
+    expect(ambiguousResponse.status()).toBe(200);
+    expect(new URL(ambiguousResponse.url()).searchParams.get("limit")).toBe("50");
+    expect(
+      (await ambiguousResponse.json()).references.map((reference: { reference: string }) => reference.reference),
+    ).toEqual(expect.arrayContaining(["household-identity#rent", "personal-identity#rent"]));
+
     const tooltip = autocompleteTooltip(page);
     await expect(tooltip).toBeVisible();
-    await expect(tooltip).toContainText("household/#rent");
-    await expect(tooltip).not.toContainText("personal/#yoga");
+    await expect(tooltip).toContainText("household-identity/#rent");
+    await expect(tooltip).toContainText("personal-identity/#rent");
 
-    await tooltip.getByRole("option", { name: /household\/#rent/ }).click();
-    await expect(editor).toContainText("see household/#rent");
+    await tooltip.getByRole("option", { name: /household-identity\/#rent/ }).click();
+    await expect(editor).toContainText("see household-identity/#rent");
+
+    const saveResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PUT" &&
+        response.url().includes("/api/v1/docs/folders/notes/file") &&
+        response.ok(),
+    );
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await saveResponsePromise;
+    await page.getByRole("link", { name: "household-identity/#rent" }).click();
+    await expect(page).toHaveURL(/\/kata\?issue=issue-rent/);
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Send rent from checking.");
+
+    await page.goto(`${server.info.base_url}/docs?folder=notes&doc=README.md`);
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await expect(editor).toBeVisible();
+    await editor.click();
 
     await clearEditor(page, editor);
-    const issueRequestsBeforeNoMatch = backend.state.seenPaths.filter((seenPath) =>
-      seenPath.startsWith("GET /api/v1/issues?"),
-    ).length;
+    const noMatchResponsePromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/kata/tasks/references" && url.searchParams.get("q") === "zzzzzz";
+    });
     await page.keyboard.type("nothing #zzzzzz");
-    await expect
-      .poll(() => backend.state.seenPaths.filter((seenPath) => seenPath.startsWith("GET /api/v1/issues?")).length)
-      .toBeGreaterThan(issueRequestsBeforeNoMatch);
+    const noMatchResponse = await noMatchResponsePromise;
+    expect(noMatchResponse.status()).toBe(200);
+    expect((await noMatchResponse.json()).references).toEqual([]);
     await expect(editor).toContainText("nothing #zzzzzz");
     await expect(autocompleteTooltip(page).getByRole("option", { name: /zzzzzz/ })).toHaveCount(0);
   } finally {

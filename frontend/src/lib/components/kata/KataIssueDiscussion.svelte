@@ -9,15 +9,15 @@
     KataTaskDetail,
     KataTaskEditPatch,
     KataTaskEvent,
-    KataTaskGroup,
     KataTaskLink,
+    KataTaskSummary,
   } from "../../api/kata/taskTypes.js";
   import { describeKataEvent } from "../../features/kata/eventFormatter";
 
   interface Props {
     issue: KataTaskDetail;
     events: KataTaskEvent[];
-    currentView: { groups: KataTaskGroup[] };
+    issueCatalog: readonly KataTaskSummary[];
     searchReferences: KataTaskReferenceSearch;
     activeDaemonId?: string | undefined;
     onAddComment: (uid: string, body: string) => boolean | Promise<boolean>;
@@ -28,7 +28,7 @@
   let {
     issue,
     events,
-    currentView,
+    issueCatalog,
     searchReferences,
     activeDaemonId = undefined,
     onAddComment,
@@ -60,11 +60,7 @@
 
   function currentIssueTitle(uid: string): string {
     if (issue.issue.uid === uid) return issue.issue.title;
-    for (const group of currentView.groups) {
-      const found = group.issues.find((item) => item.uid === uid);
-      if (found) return found.title;
-    }
-    return "";
+    return issueCatalog.find((item) => item.uid === uid)?.title ?? "";
   }
 
   function linkPeerUIDFor(link: KataTaskLink, selectedUID: string | undefined): string {

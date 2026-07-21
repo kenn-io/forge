@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import { MODE_SEARCH_DISPLAY_LIMIT, searchModePalette } from "./mode-palette-search.js";
 import type { DocsAPI } from "../../api/docs/api.js";
-import type { KataTaskAPI, KataTaskSearchResponse, KataTaskSummary } from "../../api/kata/taskTypes.js";
+import type { KataTaskSummary } from "../../api/kata/taskTypes.js";
 
 function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
   return {
@@ -25,16 +25,8 @@ function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
   };
 }
 
-function kata(overrides: Partial<Pick<KataTaskAPI, "search">> = {}): Pick<KataTaskAPI, "search"> {
-  return {
-    search: async (): Promise<KataTaskSearchResponse> => ({
-      filters: { scope: { kind: "all" }, status: "all", owner: "", label: "", query: "" },
-      issues: [],
-      ready_issue_uids: [],
-      fetched_at: "2026-05-17T00:00:00Z",
-    }),
-    ...overrides,
-  };
+function kata(issues: readonly KataTaskSummary[] = [], daemonID = "daemon-work") {
+  return { issues, daemonID };
 }
 
 function docs(overrides: Partial<Pick<DocsAPI, "searchAll">> = {}): Pick<DocsAPI, "searchAll"> {
@@ -45,55 +37,20 @@ function docs(overrides: Partial<Pick<DocsAPI, "searchAll">> = {}): Pick<DocsAPI
 }
 
 describe("searchModePalette", () => {
-  it("fires task and docs search in parallel", async () => {
-    const order: string[] = [];
-    let resolveKata: (value: KataTaskSearchResponse) => void = () => {};
-    let resolveDocs: (value: Awaited<ReturnType<DocsAPI["searchAll"]>>) => void = () => {};
-
-    const promise = searchModePalette("budget", {
-      kata: kata({
-        search: () => {
-          order.push("task-start");
-          return new Promise((resolve) => {
-            resolveKata = resolve;
-          });
-        },
-      }),
-      docs: docs({
-        searchAll: () => {
-          order.push("docs-start");
-          return new Promise((resolve) => {
-            resolveDocs = resolve;
-          });
-        },
-      }),
-    });
-
-    await Promise.resolve();
-    expect(order).toEqual(["task-start", "docs-start"]);
-    resolveKata({
-      filters: { scope: { kind: "all" }, status: "all", owner: "", label: "", query: "budget" },
-      issues: [],
-      ready_issue_uids: [],
-      fetched_at: "2026-05-17T00:00:00Z",
-    });
-    resolveDocs({ query: "budget", hits: [], truncated: false });
-    await promise;
-  });
-
-  it("normalizes task and docs rows", async () => {
+  it("filters open and closed task rows from the accepted global-all snapshot", async () => {
     const result = await searchModePalette("budget", {
-      kata: kata({
-        search: vi.fn(
-          async (): Promise<KataTaskSearchResponse> => ({
-            filters: { scope: { kind: "all" }, status: "all", owner: "", label: "", query: "budget" },
-            issues: [task()],
-            ready_issue_uids: [],
-            fetched_at: "2026-05-17T00:00:00Z",
-            daemon_id: "daemon-work",
-          }),
-        ),
-      }),
+      kata: kata([
+        task(),
+        task({
+          id: 2,
+          uid: "issue-budget-closed",
+          short_id: "budget-closed",
+          qualified_id: "Finances#budget-closed",
+          title: "Archive annual budget",
+          status: "closed",
+        }),
+        task({ id: 3, uid: "issue-other", short_id: "other", qualified_id: "Finances#other", title: "Unrelated" }),
+      ]),
       docs: docs({
         searchAll: vi.fn(
           async (): Promise<Awaited<ReturnType<DocsAPI["searchAll"]>>> => ({
@@ -116,22 +73,12 @@ describe("searchModePalette", () => {
       }),
     });
 
-    expect(result.tasks).toEqual({
-      ok: true,
-      truncated: false,
-      rows: [
-        {
-          kind: "kata-task",
-          uid: "issue-budget",
-          short_id: "budget",
-          qualified_id: "Finances#budget",
-          title: "Set monthly budget",
-          project_name: "Finances",
-          status: "open",
-          daemon_id: "daemon-work",
-        },
-      ],
-    });
+    expect(
+      result.tasks.ok && result.tasks.rows.map((row) => ({ uid: row.uid, status: row.status, daemon: row.daemon_id })),
+    ).toEqual([
+      { uid: "issue-budget", status: "open", daemon: "daemon-work" },
+      { uid: "issue-budget-closed", status: "closed", daemon: "daemon-work" },
+    ]);
     expect(result.docs).toEqual({
       ok: true,
       truncated: false,
@@ -149,13 +96,9 @@ describe("searchModePalette", () => {
     });
   });
 
-  it("returns per-section errors without throwing", async () => {
+  it("returns docs errors without losing snapshot task matches", async () => {
     const result = await searchModePalette("budget", {
-      kata: kata({
-        search: async () => {
-          throw new Error("task search failed");
-        },
-      }),
+      kata: kata([task()]),
       docs: docs({
         searchAll: async () => {
           throw new Error("docs search failed");
@@ -163,7 +106,7 @@ describe("searchModePalette", () => {
       }),
     });
 
-    expect(result.tasks).toEqual({ ok: false, error: "task search failed" });
+    expect(result.tasks).toMatchObject({ ok: true, truncated: false });
     expect(result.docs).toEqual({ ok: false, error: "docs search failed" });
   });
 

@@ -70,6 +70,9 @@ test("allows scoped streaming transports", async () => {
     [
       '<script lang="ts">',
       "  const events = new EventSource(`${basePath}/api/v1/events`);",
+      '  await fetch("/api/v1/kata/tasks/events", {',
+      '    headers: { Accept: "text/event-stream" },',
+      "  });",
       "  const socketUrl =",
       "    `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` +",
       "    `/terminal?cols=${cols}&rows=${rows}`;",

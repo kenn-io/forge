@@ -1,13 +1,22 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { showFlash } from "@middleman/ui/stores/flash";
 
   import { createKataTaskAPI } from "../../api/kata/taskClient.js";
-  import { searchKataTaskReferences } from "../../api/kata/snapshot.js";
+  import {
+    searchKataTaskReferences,
+    type KataSnapshotIntent,
+  } from "../../api/kata/snapshot.js";
   import type {
     KataCreateRecurrenceInput,
     KataPatchRecurrenceInput,
+    KataProjectSummary,
     KataRecurrence,
+    KataTaskDetail,
     KataTaskEditPatch,
+    KataTaskEvent,
+    KataTaskMutationTarget,
+    KataTaskSummary,
   } from "../../api/kata/taskTypes.js";
   import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
   import KataIssueDetail from "../../components/kata/KataIssueDetail.svelte";
@@ -16,7 +25,7 @@
   import type { MessageLinkRef } from "../../messages/types";
   import KataRecurrenceDialogs from "../../features/kata/KataRecurrenceDialogs.svelte";
   import { createKataLinkFilters, type KataLinkFilters } from "../../features/kata/kataLinkFilters.js";
-  import { createKataWorkspaceStore } from "../../stores/kata-workspace.svelte.js";
+  import { createKataAuthorityStore } from "../../stores/kata-authority.svelte.js";
 
   interface Props {
     kata: KataWorkspaceMetadata;
@@ -27,7 +36,7 @@
 
   const actor = "middleman";
   const api = createKataTaskAPI({ getDaemonId: () => kata.daemon_id });
-  const store = createKataWorkspaceStore({ api });
+  const authorityStore = createKataAuthorityStore();
 
   let loading = $state(true);
   let loadError = $state<string | null>(null);
@@ -37,23 +46,75 @@
   let unlinkBusyIds = $state<ReadonlySet<number>>(new Set());
   let loadRequestID = 0;
   let issueContextGeneration = 0;
+  let selectedIssueUID = $state("");
+  let selectedRecurrences = $state.raw<KataRecurrence[]>([]);
   let recurrenceDialogs = $state<{
     openCreateRecurrence: () => void;
     openEditRecurrence: (recurrence: KataRecurrence) => void;
     openDeleteRecurrence: (recurrence: KataRecurrence) => void;
     closeAll: () => void;
   } | null>(null);
+  const acceptedSnapshot = $derived(authorityStore.snapshot);
+  const selectedIssue = $derived(
+    acceptedSnapshot?.selected_detail
+      ? structuredClone(acceptedSnapshot.selected_detail) as KataTaskDetail
+      : null,
+  );
+  const selectedEvents = $derived(
+    acceptedSnapshot ? structuredClone(acceptedSnapshot.selected_history) as KataTaskEvent[] : [],
+  );
+  const projects = $derived(
+    acceptedSnapshot ? structuredClone(acceptedSnapshot.projects) as KataProjectSummary[] : [],
+  );
+  const issueCatalog = $derived(
+    acceptedSnapshot ? structuredClone(acceptedSnapshot.issues) as KataTaskSummary[] : [],
+  );
+
+  function selectedSnapshotIntent(uid = selectedIssueUID): KataSnapshotIntent {
+    return {
+      daemon_id: kata.daemon_id,
+      scope: "global",
+      authority: "all",
+      selected_issue_uid: uid,
+    };
+  }
+
+  async function loadSelectedRecurrences(detail: KataTaskDetail, requestID: number): Promise<void> {
+    try {
+      const response = await api.recurrences(detail.issue.project_id, { daemonId: kata.daemon_id });
+      if (requestID !== loadRequestID || selectedIssue?.issue.uid !== detail.issue.uid) return;
+      selectedRecurrences = response.recurrences;
+    } catch {
+      if (requestID !== loadRequestID || selectedIssue?.issue.uid !== detail.issue.uid) return;
+      selectedRecurrences = [];
+    }
+  }
+
+  async function loadSelectedSnapshot(uid: string, requestID = ++loadRequestID): Promise<boolean> {
+    loading = true;
+    loadError = null;
+    const accepted = await authorityStore.loadSnapshot(selectedSnapshotIntent(uid));
+    if (requestID !== loadRequestID) return false;
+    const detail = authorityStore.snapshot?.selected_detail;
+    if (!accepted || authorityStore.snapshot?.selected_issue_uid !== uid || !detail) {
+      throw new Error(`Kata snapshot did not include selected task ${uid}`);
+    }
+    selectedRecurrences = [];
+    void loadSelectedRecurrences(structuredClone(detail) as KataTaskDetail, requestID);
+    loading = false;
+    return true;
+  }
 
   $effect(() => {
     const issueUID = kata.issue_uid;
+    selectedIssueUID = issueUID;
     issueContextGeneration += 1;
     const requestID = ++loadRequestID;
     loading = true;
     loadError = null;
     checklistRevealed = false;
     linkFilters = createKataLinkFilters("all");
-    void store
-      .bootstrap("all", issueUID, { selectFirst: false })
+    void untrack(() => loadSelectedSnapshot(issueUID, requestID))
       .catch((err) => {
         if (requestID !== loadRequestID) return;
         loadError = err instanceof Error ? err.message : "Could not load Kata task.";
@@ -66,8 +127,8 @@
   });
 
   function ownerOptions(): TypeaheadOption[] {
-    const selected = store.selectedIssue?.issue;
-    return [selected?.owner, ...store.currentView.groups.flatMap((group) => group.issues.map((issue) => issue.owner))]
+    const selected = selectedIssue?.issue;
+    return [selected?.owner, ...issueCatalog.map((issue) => issue.owner)]
       .filter((owner): owner is string => typeof owner === "string" && owner.trim().length > 0)
       .filter((owner, index, owners) => owners.indexOf(owner) === index)
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
@@ -75,7 +136,43 @@
   }
 
   function selectedMessageLinks(): MessageLinkRef[] {
-    return store.selectedIssue ? readMessageLinks(store.selectedIssue.issue.metadata) : [];
+    return selectedIssue ? readMessageLinks(selectedIssue.issue.metadata) : [];
+  }
+
+  function selectedMutationTarget(uid: string): KataTaskMutationTarget {
+    if (!selectedIssue || selectedIssue.issue.uid !== uid) throw new Error(`issue not selected: ${uid}`);
+    return { project_id: selectedIssue.issue.project_id, ref: uid };
+  }
+
+  function selectedMutationETag(uid: string): string {
+    if (!selectedIssue || selectedIssue.issue.uid !== uid) throw new Error(`issue not selected: ${uid}`);
+    if (!selectedIssue.etag) throw new Error(`selected snapshot is missing an ETag for ${uid}`);
+    return selectedIssue.etag;
+  }
+
+  function acceptedDaemonIDForMutation(): string {
+    const daemonID = acceptedSnapshot?.daemon_id;
+    if (!daemonID) throw new Error("No accepted Kata snapshot daemon is available.");
+    return daemonID;
+  }
+
+  async function mutateSelected(task: () => Promise<unknown>): Promise<void> {
+    const uid = selectedIssue?.issue.uid;
+    if (!uid) throw new Error("No Kata task is selected.");
+    const daemonID = acceptedDaemonIDForMutation();
+    const kataIssueUID = kata.issue_uid;
+    const kataDaemonID = kata.daemon_id;
+    const generation = issueContextGeneration;
+    await task();
+    if (
+      authorityStore.snapshot?.daemon_id !== daemonID ||
+      authorityStore.snapshot?.selected_issue_uid !== uid ||
+      selectedIssueUID !== uid ||
+      kata.issue_uid !== kataIssueUID ||
+      kata.daemon_id !== kataDaemonID ||
+      issueContextGeneration !== generation
+    ) return;
+    await loadSelectedSnapshot(uid);
   }
 
   async function runTask(
@@ -107,14 +204,19 @@
   }
 
   async function moveSelectedIssue(toProjectUID: string): Promise<boolean> {
-    const selected = store.selectedIssue?.issue;
+    const selected = selectedIssue?.issue;
     if (!selected || pendingMoveIssueUIDs.has(selected.uid)) return false;
     const sourceIssueUID = selected.uid;
     const generation = issueContextGeneration;
     pendingMoveIssueUIDs = new Set(pendingMoveIssueUIDs).add(sourceIssueUID);
     try {
       return await runTask(
-        () => store.moveIssue(sourceIssueUID, actor, toProjectUID),
+        () => mutateSelected(() => api.moveIssue(
+          selectedMutationTarget(sourceIssueUID),
+          actor,
+          toProjectUID,
+          selectedMutationETag(sourceIssueUID),
+        )),
         () => generation === issueContextGeneration,
       );
     } finally {
@@ -125,35 +227,43 @@
   }
 
   function patchSelectedMetadata(uid: string, patch: Record<string, unknown>): Promise<boolean> {
-    return runTask(() => store.patchMetadata(uid, actor, patch));
+    return runTask(() => mutateSelected(() =>
+      api.patchIssueMetadata(
+        selectedMutationTarget(uid),
+        actor,
+        patch,
+        selectedMutationETag(uid),
+        { daemonId: acceptedDaemonIDForMutation() },
+      ),
+    ));
   }
 
   function addSelectedComment(uid: string, body: string): Promise<boolean> {
-    return runTask(() => store.addComment(uid, actor, body));
+    return runTask(() => mutateSelected(() => api.addComment(selectedMutationTarget(uid), actor, body)));
   }
 
   function editSelectedIssue(uid: string, patch: KataTaskEditPatch): Promise<boolean> {
-    return runTask(() => store.editIssue(uid, actor, patch));
+    return runTask(() => mutateSelected(() => api.editIssue(selectedMutationTarget(uid), actor, patch)));
   }
 
   function assignSelectedOwner(uid: string, owner: string): Promise<boolean> {
-    return runTask(() => store.assignOwner(uid, actor, owner));
+    return runTask(() => mutateSelected(() => api.assignOwner(selectedMutationTarget(uid), actor, owner)));
   }
 
   function unassignSelectedOwner(uid: string): Promise<boolean> {
-    return runTask(() => store.unassignOwner(uid, actor));
+    return runTask(() => mutateSelected(() => api.unassignOwner(selectedMutationTarget(uid), actor)));
   }
 
   function setSelectedPriority(uid: string, priority: number | null): Promise<boolean> {
-    return runTask(() => store.setPriority(uid, actor, priority));
+    return runTask(() => mutateSelected(() => api.setPriority(selectedMutationTarget(uid), actor, priority)));
   }
 
   function addSelectedLabel(uid: string, label: string): Promise<boolean> {
-    return runTask(() => store.addLabel(uid, actor, label));
+    return runTask(() => mutateSelected(() => api.addLabel(selectedMutationTarget(uid), actor, label)));
   }
 
   async function removeSelectedLabel(uid: string, label: string): Promise<void> {
-    await runTask(() => store.removeLabel(uid, actor, label));
+    await runTask(() => mutateSelected(() => api.removeLabel(selectedMutationTarget(uid), actor, label)));
   }
 
   function revealChecklist(): void {
@@ -161,18 +271,25 @@
   }
 
   async function deleteRecurrence(recurrence: KataRecurrence): Promise<boolean> {
-    return runTask(() => store.deleteRecurrence(recurrence.id, actor));
+    return runTask(async () => {
+      await api.deleteRecurrence(recurrence.project_id, recurrence.uid, actor, `"rev-${recurrence.revision}"`);
+      if (selectedIssue) await loadSelectedRecurrences(selectedIssue, loadRequestID);
+    });
   }
 
   async function createRecurrence(projectID: number, input: KataCreateRecurrenceInput): Promise<void> {
     await runTaskOrThrow(async () => {
-      await store.createRecurrence(projectID, input);
+      await api.createRecurrence(projectID, input);
+      if (selectedIssue) await loadSelectedRecurrences(selectedIssue, loadRequestID);
     });
   }
 
   async function patchRecurrence(id: number, input: KataPatchRecurrenceInput, etag: string): Promise<void> {
     await runTaskOrThrow(async () => {
-      await store.patchRecurrence(id, input, etag);
+      const recurrence = selectedRecurrences.find((item) => item.id === id);
+      if (!recurrence) throw new Error(`recurrence not loaded: id=${id}`);
+      await api.patchRecurrence(recurrence.project_id, recurrence.uid, input, etag);
+      if (selectedIssue) await loadSelectedRecurrences(selectedIssue, loadRequestID);
     });
   }
 
@@ -180,15 +297,17 @@
     reason: "done" | "wontfix" | "duplicate" | "superseded",
     message: string,
   ): Promise<boolean> {
-    const selected = store.selectedIssue;
+    const selected = selectedIssue;
     if (!selected) return Promise.resolve(false);
-    return runTask(() => store.closeIssue(selected.issue.uid, actor, { reason, message }));
+    return runTask(() => mutateSelected(() =>
+      api.closeIssue(selectedMutationTarget(selected.issue.uid), actor, { reason, message }),
+    ));
   }
 
   async function reopenSelectedIssue(): Promise<void> {
-    const selected = store.selectedIssue;
+    const selected = selectedIssue;
     if (!selected) return;
-    await runTask(() => store.reopenIssue(selected.issue.uid, actor));
+    await runTask(() => mutateSelected(() => api.reopenIssue(selectedMutationTarget(selected.issue.uid), actor)));
   }
 
   function deleteSelectedIssue(): Promise<boolean> {
@@ -197,53 +316,57 @@
 
   async function unlinkMessageLink(link: MessageLinkRef): Promise<void> {
     if (unlinkBusyIds.size > 0) return;
-    const selected = store.selectedIssue;
+    const selected = selectedIssue;
     if (!selected) return;
     const links = selectedMessageLinks();
     const patch = computeRemoveMessageLinkPatch(links, link.message_id);
     if (patch === null) return;
     unlinkBusyIds = new Set([link.message_id]);
     await runTask(() =>
-      store.patchMetadata(selected.issue.uid, actor, {
-        mail_links: patch.mail_links,
-      }),
+      mutateSelected(() => api.patchIssueMetadata(
+        selectedMutationTarget(selected.issue.uid),
+        actor,
+        { mail_links: patch.mail_links },
+        selectedMutationETag(selected.issue.uid),
+        { daemonId: acceptedDaemonIDForMutation() },
+      )),
     );
     unlinkBusyIds = new Set();
   }
 
   async function selectIssue(uid: string): Promise<void> {
     issueContextGeneration += 1;
-    await runLoadTask(() => store.selectIssue(uid));
+    selectedIssueUID = uid;
+    await runLoadTask(() => loadSelectedSnapshot(uid));
   }
 </script>
 
 <div class="kata-workspace-sidebar" inert={disabled}>
   {#if loading}
     <div class="state">Loading task</div>
-  {:else if loadError && !store.selectedIssue}
+  {:else if loadError && !selectedIssue}
     <div class="state error" role="alert">{loadError}</div>
-  {:else if store.selectedIssue}
+  {:else if selectedIssue}
     {#if loadError}
       <p class="inline-error" role="alert">{loadError}</p>
     {/if}
     <KataIssueDetail
-      issue={store.selectedIssue}
-      events={store.selectedEvents}
-      currentView={store.currentView}
-      api={store.api}
+      issue={selectedIssue}
+      events={selectedEvents}
+      {issueCatalog}
       searchReferences={searchKataTaskReferences}
       activeDaemonId={kata.daemon_id}
       {linkFilters}
       onLinkFiltersChange={(next) => {
         linkFilters = next;
       }}
-      projects={store.projects}
+      {projects}
       ownerOptions={ownerOptions()}
       messageLinks={selectedMessageLinks()}
       unlinkBusyIds={unlinkBusyIds}
-      selectedRecurrences={store.selectedRecurrences}
+      {selectedRecurrences}
       {checklistRevealed}
-      movePending={pendingMoveIssueUIDs.has(store.selectedIssue.issue.uid)}
+      movePending={pendingMoveIssueUIDs.has(selectedIssue.issue.uid)}
       onMoveIssue={moveSelectedIssue}
       onPatchMetadata={patchSelectedMetadata}
       onAddComment={addSelectedComment}
@@ -272,7 +395,7 @@
 
 <KataRecurrenceDialogs
   bind:this={recurrenceDialogs}
-  selectedIssue={store.selectedIssue}
+  {selectedIssue}
   {actor}
   onCreate={createRecurrence}
   onPatch={patchRecurrence}

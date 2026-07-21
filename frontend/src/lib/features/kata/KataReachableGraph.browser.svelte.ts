@@ -5,13 +5,7 @@ import { render } from "vitest-browser-svelte";
 import "../../../app.css";
 
 import { pressKey } from "../../../test/browserAppHarness.js";
-import type {
-  KataReachableGraphEdge,
-  KataReachableGraphQuery,
-  KataReachableGraphResponse,
-  KataTaskAPI,
-  KataTaskSummary,
-} from "../../api/kata/taskTypes.js";
+import type { KataReachableGraphEdge, KataReachableGraphResponse, KataTaskSummary } from "../../api/kata/taskTypes.js";
 import KataReachableGraph from "./KataReachableGraph.svelte";
 
 const graphPreferencesStorageKey = "middleman:kata:reachableGraphPreferences/v1";
@@ -39,46 +33,20 @@ function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
   };
 }
 
-function graphAPI(
+function graphSnapshot(
   source: KataTaskSummary,
   nodes: KataTaskSummary[],
   edges: KataReachableGraphEdge[] = [],
-): KataTaskAPI {
+): KataReachableGraphResponse {
   return {
-    reachableGraph: vi.fn(async (_projectID: number, _ref: string, query: KataReachableGraphQuery = {}) => {
-      const depthLimit =
-        query.depth === undefined || query.depth === "full" ? Number.POSITIVE_INFINITY : Number(query.depth);
-      const distanceByUID = new Map<string, number>([[source.uid, 0]]);
-      const queue = [source.uid];
-      while (queue.length > 0) {
-        const uid = queue.shift()!;
-        const distance = distanceByUID.get(uid) ?? 0;
-        if (distance >= depthLimit) continue;
-        for (const edge of edges) {
-          const nextUID = edge.from_uid === uid ? edge.to_uid : edge.to_uid === uid ? edge.from_uid : null;
-          if (!nextUID || distanceByUID.has(nextUID)) continue;
-          distanceByUID.set(nextUID, distance + 1);
-          queue.push(nextUID);
-        }
-      }
-      const visibleNodes =
-        query.hide_done === true
-          ? nodes.filter(
-              (node) => distanceByUID.has(node.uid) && (node.uid === source.uid || node.closed_reason !== "done"),
-            )
-          : nodes.filter((node) => distanceByUID.has(node.uid));
-      const visible = new Set(visibleNodes.map((node) => node.uid));
-      return {
-        source_uid: source.uid,
-        depth: query.depth ?? "full",
-        hide_done: query.hide_done === true,
-        nodes: visibleNodes,
-        edges: edges.filter((edge) => visible.has(edge.from_uid) && visible.has(edge.to_uid)),
-        unresolved_refs: [],
-        fetched_at: "2026-06-29T12:00:00Z",
-      } satisfies KataReachableGraphResponse;
-    }),
-  } as unknown as KataTaskAPI;
+    source_uid: source.uid,
+    depth: "full",
+    hide_done: false,
+    nodes,
+    edges,
+    unresolved_refs: [],
+    fetched_at: "2026-06-29T12:00:00Z",
+  };
 }
 
 function graphEdge(
@@ -231,7 +199,7 @@ describe("KataReachableGraph (browser)", () => {
     const onSelectIssue = vi.fn();
     const { container } = render(KataReachableGraph, {
       props: {
-        api: graphAPI(root, [root, linked], [graphEdge(root, linked)]),
+        graph: graphSnapshot(root, [root, linked], [graphEdge(root, linked)]),
         sourceIssue: root,
         selectedUID: root.uid,
         onBack: () => {},
@@ -339,7 +307,7 @@ describe("KataReachableGraph (browser)", () => {
     });
     const { container } = render(KataReachableGraph, {
       props: {
-        api: graphAPI(root, [root, one, two], [graphEdge(root, one), graphEdge(one, two)]),
+        graph: graphSnapshot(root, [root, one, two], [graphEdge(root, one), graphEdge(one, two)]),
         sourceIssue: root,
         selectedUID: root.uid,
         onBack: () => {},
@@ -374,7 +342,7 @@ describe("KataReachableGraph (browser)", () => {
     });
     const { container, rerender } = render(KataReachableGraph, {
       props: {
-        api: graphAPI(root, [root, linked], [graphEdge(root, linked)]),
+        graph: graphSnapshot(root, [root, linked], [graphEdge(root, linked)]),
         sourceIssue: root,
         selectedUID: root.uid,
         layoutDirection: "TB",
@@ -419,7 +387,7 @@ describe("KataReachableGraph (browser)", () => {
       .toBeNull();
 
     await rerender({
-      api: graphAPI(root, [root, linked], [graphEdge(root, linked)]),
+      graph: graphSnapshot(root, [root, linked], [graphEdge(root, linked)]),
       sourceIssue: root,
       selectedUID: root.uid,
       layoutDirection: "LR",
@@ -456,7 +424,7 @@ describe("KataReachableGraph (browser)", () => {
     });
     const { container } = render(KataReachableGraph, {
       props: {
-        api: graphAPI(root, [root, linked], [graphEdge(root, linked)]),
+        graph: graphSnapshot(root, [root, linked], [graphEdge(root, linked)]),
         sourceIssue: root,
         selectedUID: root.uid,
         onBack: () => {},
@@ -503,7 +471,7 @@ describe("KataReachableGraph (browser)", () => {
     });
     const { container, rerender } = render(KataReachableGraph, {
       props: {
-        api: graphAPI(root, [root, linked], [graphEdge(root, linked)]),
+        graph: graphSnapshot(root, [root, linked], [graphEdge(root, linked)]),
         sourceIssue: root,
         selectedUID: root.uid,
         onBack: () => {},
@@ -523,7 +491,7 @@ describe("KataReachableGraph (browser)", () => {
     const updatedRoot = { ...root, title: "Root title after refresh" };
     const updatedLinked = { ...linked, title: "Linked title after refresh" };
     await rerender({
-      api: graphAPI(updatedRoot, [updatedRoot, updatedLinked], [graphEdge(updatedRoot, updatedLinked)]),
+      graph: graphSnapshot(updatedRoot, [updatedRoot, updatedLinked], [graphEdge(updatedRoot, updatedLinked)]),
       sourceIssue: updatedRoot,
       selectedUID: linked.uid,
       onBack: () => {},
@@ -557,7 +525,7 @@ describe("KataReachableGraph (browser)", () => {
     });
     const { container } = render(KataReachableGraph, {
       props: {
-        api: graphAPI(root, [root, one, two], [graphEdge(root, one), graphEdge(one, two)]),
+        graph: graphSnapshot(root, [root, one, two], [graphEdge(root, one), graphEdge(one, two)]),
         sourceIssue: root,
         selectedUID: root.uid,
         onBack: () => {},
@@ -612,7 +580,7 @@ describe("KataReachableGraph (browser)", () => {
     });
     const { container, rerender } = render(KataReachableGraph, {
       props: {
-        api: graphAPI(
+        graph: graphSnapshot(
           root,
           [root, one, two, three],
           [graphEdge(root, one), graphEdge(one, two), graphEdge(two, three)],
@@ -631,7 +599,11 @@ describe("KataReachableGraph (browser)", () => {
     expectRenderedNodeBoxesStable(await waitForStableRenderedNodeBoxes(container, 4), initialBoxes);
 
     await rerender({
-      api: graphAPI(root, [root, one, two, three], [graphEdge(root, one), graphEdge(one, two), graphEdge(two, three)]),
+      graph: graphSnapshot(
+        root,
+        [root, one, two, three],
+        [graphEdge(root, one), graphEdge(one, two), graphEdge(two, three)],
+      ),
       sourceIssue: root,
       selectedUID: two.uid,
       onBack: () => {},
@@ -664,7 +636,7 @@ describe("KataReachableGraph (browser)", () => {
     });
     const { container } = render(KataReachableGraph, {
       props: {
-        api: graphAPI(root, [root, linked], [graphEdge(root, linked)]),
+        graph: graphSnapshot(root, [root, linked], [graphEdge(root, linked)]),
         sourceIssue: root,
         selectedUID: root.uid,
         onBack: () => {},

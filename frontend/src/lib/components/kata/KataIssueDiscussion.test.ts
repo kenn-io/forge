@@ -132,6 +132,24 @@ describe("KataIssueDiscussion", () => {
     vi.useRealTimers();
   });
 
+  it("renders linked peer titles from the accepted snapshot catalog", () => {
+    const linkedPeer = makeView().groups[0]!.issues[0]!;
+    render(KataIssueDiscussion, {
+      props: {
+        issue: makeIssue(),
+        events: [],
+        issueCatalog: [makeIssue().issue, linkedPeer],
+        searchReferences: makeSearch(),
+        activeDaemonId: "home",
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    expect(screen.getByRole("button", { name: /Linked task/ })).toBeTruthy();
+  });
+
   it("submits comments and related links for the selected issue", async () => {
     const onAddComment = vi.fn(async () => true);
     const onEditIssue = vi.fn(async () => true);
@@ -140,7 +158,7 @@ describe("KataIssueDiscussion", () => {
       props: {
         issue: makeIssue(),
         events: [makeEvent()],
-        currentView: makeView(),
+        issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch(),
         activeDaemonId: "home",
         onAddComment,
@@ -173,7 +191,7 @@ describe("KataIssueDiscussion", () => {
       props: {
         issue: makeIssue(),
         events: [makeEvent()],
-        currentView: makeView(),
+        issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch(),
         activeDaemonId: "home",
         onAddComment: vi.fn(async () => true),
@@ -201,7 +219,7 @@ describe("KataIssueDiscussion", () => {
       props: {
         issue: makeIssue(),
         events: [],
-        currentView: makeView(),
+        issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch(),
         activeDaemonId: "home",
         onAddComment: vi.fn(async () => false),
@@ -226,7 +244,7 @@ describe("KataIssueDiscussion", () => {
       props: {
         issue: makeIssue(),
         events: [],
-        currentView: makeView(),
+        issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences,
         activeDaemonId: "home",
         onAddComment: vi.fn(async () => true),
@@ -278,7 +296,7 @@ describe("KataIssueDiscussion", () => {
       props: {
         issue: makeIssue(),
         events: [],
-        currentView: makeView(),
+        issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch([sharedHome, ...filler, sharedWork]),
         activeDaemonId: "home",
         onAddComment: vi.fn(async () => true),
@@ -307,7 +325,7 @@ describe("KataIssueDiscussion", () => {
       props: {
         issue: makeIssue(),
         events: [],
-        currentView: makeView(),
+        issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch([searchTask({ short_id: "rent", reference: "rent", title: "Rent" })]),
         activeDaemonId: "home",
         onAddComment: vi.fn(async () => true),
@@ -343,7 +361,7 @@ describe("KataIssueDiscussion", () => {
             },
           },
         ],
-        currentView: makeView(),
+        issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch(),
         activeDaemonId: "home",
         onAddComment: vi.fn(async () => true),
@@ -377,7 +395,7 @@ describe("KataIssueDiscussion", () => {
       props: {
         issue,
         events: [],
-        currentView: { groups: [] },
+        issueCatalog: [],
         searchReferences,
         activeDaemonId: "home",
         onAddComment: vi.fn(async () => true),

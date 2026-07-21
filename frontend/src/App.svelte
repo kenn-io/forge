@@ -44,6 +44,7 @@
   import type { KataTaskViewName } from "./lib/api/kata/taskTypes.js";
   import { createDocsAPI } from "./lib/api/docs/api.js";
   import { createMessageIssueLinker } from "./lib/messages/kataMessageLinker.js";
+  import { createKataAuxiliaryAuthority } from "./lib/features/kata/kataAuxiliaryAuthority.svelte.js";
   import { FlashBanner, Spinner } from "@kenn-io/kit-ui";
   import { MonitorIcon } from "./lib/icons.ts";
   import { showFlash } from "@middleman/ui/stores/flash";
@@ -68,6 +69,7 @@
   import {
     getActiveKataDaemon,
     getKataDaemonRoster,
+    getKataDaemonRosterLoaded,
     setActiveKataDaemon,
     setKataDaemonRoster,
   } from "./lib/stores/active-kata-daemon.svelte.js";
@@ -178,6 +180,7 @@
   const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
   const kataAPI = createKataTaskAPI();
   const kataWorkspaceAPI = createKataTaskAPI();
+  const kataAuxiliaryAuthority = createKataAuxiliaryAuthority();
 
   const trackMobileHeaderHeight: Attachment<HTMLElement> = (node) => {
     const update = () => {
@@ -192,7 +195,7 @@
     };
   };
   const docsAPI = createDocsAPI();
-  const messageIssueLinker = createMessageIssueLinker(kataAPI);
+  const messageIssueLinker = createMessageIssueLinker(kataAuxiliaryAuthority, kataAPI);
 
   function stopFullAppShell() {
     fullShellStores?.events.disconnect();
@@ -349,7 +352,7 @@
   }
 
   async function runModePaletteSearch(query: string) {
-    return searchModePalette(query, { kata: kataAPI, docs: docsAPI });
+    return searchModePalette(query, { kata: kataAuxiliaryAuthority, docs: docsAPI });
   }
 
   async function loadKataDaemonRoster(): Promise<{
@@ -466,6 +469,13 @@
       doc: route.doc,
     };
     void loadDocsFeature();
+  });
+
+  $effect(() => {
+    if (!appReady || !getKataDaemonRosterLoaded()) return;
+    const daemonID = getActiveKataDaemon() ?? kataDefaultDaemonId;
+    const load = untrack(() => kataAuxiliaryAuthority.load(daemonID));
+    void load.catch(() => {});
   });
 
   $effect(() => {
@@ -607,6 +617,7 @@
   }
 
   onDestroy(() => {
+    kataAuxiliaryAuthority.stop();
     stopFullAppShell();
     stores?.events.disconnect();
   });
@@ -1306,7 +1317,7 @@
           <MessagesFeature
             route={messagesRoute}
             onRouteChange={(next) => navigate(messagesHref(next))}
-            kata={kataLinkingEnabled ? kataAPI : undefined}
+            kataAuthority={kataLinkingEnabled ? kataAuxiliaryAuthority : undefined}
             searchReferences={kataLinkingEnabled ? searchKataTaskReferences : undefined}
             onLinkMessage={kataLinkingEnabled ? messageIssueLinker.linkMessage : undefined}
             onOpenIssue={kataLinkingEnabled ? openKataIssue : undefined}

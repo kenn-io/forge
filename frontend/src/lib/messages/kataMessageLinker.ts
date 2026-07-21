@@ -1,4 +1,8 @@
-import type { KataTaskAPI, KataTaskDetail, KataTaskMetadataPatch, KataTaskMutationTarget } from "../api/kata/taskTypes";
+import type { KataTaskAPI, KataTaskMetadataPatch, KataTaskMutationTarget } from "../api/kata/taskTypes";
+import type {
+  KataSelectedIssueAuthority,
+  KataSelectedIssueDetail,
+} from "../features/kata/kataAuxiliaryAuthority.svelte";
 import type { MessageLinkInput } from "./messageLinks";
 import { computeAddMessageLinkPatch, readMessageLinks } from "./messageLinks";
 
@@ -7,7 +11,8 @@ export interface MessageIssueLinker {
 }
 
 export function createMessageIssueLinker(
-  api: Pick<KataTaskAPI, "issue" | "patchIssueMetadata">,
+  authority: KataSelectedIssueAuthority,
+  api: Pick<KataTaskAPI, "patchIssueMetadata">,
   actor = "middleman",
 ): MessageIssueLinker {
   const queues = new Map<string, Promise<void>>();
@@ -18,8 +23,8 @@ export function createMessageIssueLinker(
     const next = previous
       .catch(() => {})
       .then(async () => {
-        const fresh = await api.issue(issueUid);
-        result = await patchFreshDetail(api, actor, fresh, input);
+        const selected = await authority.selectIssue(issueUid);
+        result = await patchFreshDetail(api, actor, selected.detail, selected.daemonID, input);
       });
     queues.set(issueUid, next);
     try {
@@ -39,7 +44,8 @@ export function createMessageIssueLinker(
 async function patchFreshDetail(
   api: Pick<KataTaskAPI, "patchIssueMetadata">,
   actor: string,
-  fresh: KataTaskDetail,
+  fresh: KataSelectedIssueDetail,
+  daemonID: string,
   input: MessageLinkInput,
 ): Promise<{ qualified_id: string }> {
   const patch = computeAddMessageLinkPatch(readMessageLinks(fresh.issue.metadata), input);
@@ -47,16 +53,12 @@ async function patchFreshDetail(
     return { qualified_id: fresh.issue.qualified_id };
   }
   const metadataPatch: KataTaskMetadataPatch = { mail_links: patch.mail_links };
-  const response = await api.patchIssueMetadata(
-    mutationTarget(fresh),
-    actor,
-    metadataPatch,
-    fresh.etag ?? `"rev-${fresh.issue.revision}"`,
-  );
-  return { qualified_id: response.issue?.qualified_id ?? fresh.issue.qualified_id };
+  if (!fresh.etag) throw new Error(`Kata snapshot did not include an ETag for ${fresh.issue.qualified_id}`);
+  await api.patchIssueMetadata(mutationTarget(fresh), actor, metadataPatch, fresh.etag, { daemonId: daemonID });
+  return { qualified_id: fresh.issue.qualified_id };
 }
 
-function mutationTarget(detail: KataTaskDetail): KataTaskMutationTarget {
+function mutationTarget(detail: KataSelectedIssueDetail): KataTaskMutationTarget {
   return {
     project_id: detail.issue.project_id,
     ref: detail.issue.uid,

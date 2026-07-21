@@ -25,6 +25,41 @@ const kataReferences = vi.hoisted(() => ({
   search: vi.fn(),
 }));
 
+const kataDaemons = vi.hoisted(() => ({
+  rows: [] as Array<{ id: string; url: string; default: boolean; auth: "none"; health: "connected" }>,
+}));
+
+const kataAuxiliary = vi.hoisted(() => {
+  const instance = {
+    issues: [],
+    daemonID: "home",
+    phase: "accepted" as const,
+    error: null,
+    load: vi.fn(async () => true),
+    retry: vi.fn(async () => true),
+    selectIssue: vi.fn(),
+    stop: vi.fn(),
+  };
+  return { instance, create: vi.fn(() => instance) };
+});
+
+const kataLinker = vi.hoisted(() => ({
+  create: vi.fn(() => ({ linkMessage: vi.fn() })),
+}));
+
+const modePalette = vi.hoisted(() => ({
+  search: vi.fn(async (query: string) => ({
+    query,
+    tasks: { ok: true as const, rows: [], truncated: false },
+    docs: { ok: true as const, rows: [], truncated: false },
+  })),
+}));
+
+const appSurfaceProps = vi.hoisted(() => ({
+  palette: null as Record<string, unknown> | null,
+  messages: null as Record<string, unknown> | null,
+}));
+
 vi.mock("@middleman/ui", async () => {
   const Provider = (await import("./lib/testing/AppProviderMock.svelte")).default;
   const Stub = (await import("./lib/testing/AppViewStub.svelte")).default;
@@ -47,9 +82,15 @@ vi.mock("./lib/components/layout/AppHeader.svelte", async () => ({
 vi.mock("./lib/components/layout/StatusBar.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
 }));
-vi.mock("./lib/components/keyboard/Palette.svelte", async () => ({
-  default: (await import("./lib/testing/AppViewStub.svelte")).default,
-}));
+vi.mock("./lib/components/keyboard/Palette.svelte", async () => {
+  const Stub = (await import("./lib/testing/AppViewStub.svelte")).default;
+  return {
+    default: (anchor: Parameters<typeof Stub>[0], props: Parameters<typeof Stub>[1]) => {
+      appSurfaceProps.palette = props;
+      return Stub(anchor, props);
+    },
+  };
+});
 vi.mock("./lib/components/keyboard/Cheatsheet.svelte", async () => ({
   default: (await import("./lib/testing/AppViewStub.svelte")).default,
 }));
@@ -99,8 +140,12 @@ vi.mock("./lib/features/messages/MessagesFeature.svelte", async () => {
     featureImports.failMessagesOnce = false;
     throw new Error("messages chunk unavailable");
   }
+  const Feature = (await import("./lib/testing/AppMessagesFeatureMock.svelte")).default;
   return {
-    default: (await import("./lib/testing/AppMessagesFeatureMock.svelte")).default,
+    default: (anchor: Parameters<typeof Feature>[0], props: Parameters<typeof Feature>[1]) => {
+      appSurfaceProps.messages = props as Record<string, unknown>;
+      return Feature(anchor, props);
+    },
   };
 });
 vi.mock("./lib/features/messages/MessagesFeature.svelte?retry", async () => {
@@ -116,13 +161,16 @@ vi.mock("./lib/features/messages/MessagesFeature.svelte?retry2", async () => {
   };
 });
 vi.mock("./lib/api/kata/daemons.js", () => ({
-  fetchKataDaemons: vi.fn(async () => []),
+  fetchKataDaemons: vi.fn(async () => kataDaemons.rows),
 }));
 vi.mock("./lib/api/kata/taskClient.js", () => ({
   createKataTaskAPI: kataClients.create,
 }));
 vi.mock("./lib/api/kata/snapshot.js", () => ({
   searchKataTaskReferences: kataReferences.search,
+}));
+vi.mock("./lib/features/kata/kataAuxiliaryAuthority.svelte.js", () => ({
+  createKataAuxiliaryAuthority: kataAuxiliary.create,
 }));
 vi.mock("./lib/api/docs/api.js", () => ({
   createDocsAPI: () => ({}),
@@ -145,9 +193,10 @@ vi.mock("./lib/api/messages/visibility.js", () => ({
   shouldShowMessagesMode: () => true,
 }));
 vi.mock("./lib/messages/kataMessageLinker.js", () => ({
-  createMessageIssueLinker: () => ({
-    linkMessage: vi.fn(),
-  }),
+  createMessageIssueLinker: kataLinker.create,
+}));
+vi.mock("./lib/stores/keyboard/mode-palette-search.js", () => ({
+  searchModePalette: modePalette.search,
 }));
 vi.mock("./lib/utils/appStartup.js", () => ({
   runAppStartup: ({
@@ -209,6 +258,9 @@ describe("App feature routes", () => {
     startup.autoReady = true;
     startup.readyCallbacks = [];
     messagesHealth.pendingCapabilities = false;
+    kataDaemons.rows = [];
+    appSurfaceProps.palette = null;
+    appSurfaceProps.messages = null;
     kataReferences.search.mockResolvedValue({
       server_instance_id: "server-a",
       daemon_id: "home",
@@ -220,6 +272,9 @@ describe("App feature routes", () => {
     installBrowserGlobals();
     window.history.replaceState(null, "", "/pulls");
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
+    const { resetKataDaemonRoster, setActiveKataDaemon } = await import("./lib/stores/active-kata-daemon.svelte.js");
+    resetKataDaemonRoster();
+    setActiveKataDaemon(undefined, false);
     replaceUrl("/pulls");
   });
 
@@ -338,6 +393,52 @@ describe("App feature routes", () => {
     await waitFor(() => expect(screen.queryByText("Loading")).toBeNull());
 
     expect(kataClients.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("shares one auxiliary Kata authority across palette and Messages", async () => {
+    kataDaemons.rows = [
+      { id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
+      { id: "work", url: "http://127.0.0.1:7778", default: false, auth: "none", health: "connected" },
+    ];
+    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
+    replaceUrl("/messages?view=linked");
+    const { default: App } = await import("./App.svelte");
+
+    const { unmount } = render(App, { target: createAppTarget() });
+    await waitFor(() => expect(appSurfaceProps.messages).not.toBeNull());
+    await waitFor(() => expect(kataAuxiliary.instance.load).toHaveBeenCalledWith("home"));
+
+    const modeSearch = appSurfaceProps.palette?.modeSearch as ((query: string) => Promise<unknown>) | undefined;
+    expect(modeSearch).toBeTypeOf("function");
+    await modeSearch?.("linked task");
+
+    expect(kataAuxiliary.create).toHaveBeenCalledOnce();
+    expect(modePalette.search).toHaveBeenCalledWith("linked task", {
+      kata: kataAuxiliary.instance,
+      docs: expect.any(Object),
+    });
+    expect(appSurfaceProps.messages?.kataAuthority).toBe(kataAuxiliary.instance);
+    expect(kataLinker.create).toHaveBeenCalledWith(kataAuxiliary.instance, expect.any(Object));
+
+    const { setActiveKataDaemon } = await import("./lib/stores/active-kata-daemon.svelte.js");
+    setActiveKataDaemon("work", false);
+    await waitFor(() => expect(kataAuxiliary.instance.load).toHaveBeenCalledWith("work"));
+
+    unmount();
+    expect(kataAuxiliary.instance.stop).toHaveBeenCalledOnce();
+  });
+
+  it("handles an initial auxiliary authority load rejection at the app lifecycle boundary", async () => {
+    kataDaemons.rows = [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }];
+    const catchRejection = vi.fn(() => Promise.resolve(false));
+    const handled = { catch: catchRejection } as unknown as Promise<boolean>;
+    kataAuxiliary.instance.load.mockReturnValueOnce(handled);
+    const { default: App } = await import("./App.svelte");
+
+    render(App, { target: createAppTarget() });
+
+    await waitFor(() => expect(kataAuxiliary.instance.load).toHaveBeenCalledWith("home"));
+    expect(catchRejection).toHaveBeenCalledOnce();
   });
 
   it("routes open textual Kata references through the generated reference search", async () => {

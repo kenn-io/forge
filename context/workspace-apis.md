@@ -18,6 +18,12 @@ state.
 - `POST /repos/{owner}/{name}/issues/{number}/workspace`: create or reuse an
   issue-backed workspace; these start from the repo's current `origin/HEAD`,
   not from a PR head branch.
+- `GET /kata/tasks/snapshot`: the browser's sole Kata task authority. Daemon,
+  scope, project, status authority, selected task, and graph source form request
+  identity; query, owner, and label remain local presentation state.
+- `GET /kata/tasks/events`: compact reset/invalidation transport only. Replay
+  starts at the accepted snapshot cursor; raw daemon events never enter browser
+  authority (`frontend/src/lib/features/kata/kataWorkspaceAuthorityController.svelte.ts::KataWorkspaceAuthorityController`).
 - `GET /kata/tasks/{issue_uid}`: middleman's combined Kata task read. It
   fetches the daemon's issue detail server-side and returns it together with
   the resolved workspace target, so the detail pane and its workspace action
@@ -35,20 +41,17 @@ state.
   redirected issue read surfaces as a `502 upstream_error`, and a redirected
   `/projects` read is just a failed best-effort read that falls back to the
   payload name. All outcomes, including problem responses, depend on the
-  daemon selection and must declare `Vary: X-Middleman-Kata-Daemon`. The
-  frontend mirrors the critical-path rule for direct user selections only: a
-  direct selection resolves (and syncs the route) as soon as the detail
-  applies, with the event-log read finishing in a guarded background
-  continuation whose failure silently leaves the event list empty rather
-  than failing the selection. View/bootstrap loads intentionally stay
-  atomic; do not move them to the background-events behavior, or the
-  route-sync effect can stomp a fresh selection
-  (`frontend/src/lib/stores/kata-workspace.svelte.ts::loadSelectedIssue`).
+  daemon selection and must declare `Vary: X-Middleman-Kata-Daemon`. Snapshot
+  consumers do not use this route as authority: selected detail, bounded
+  history, and workspace target arrive in accepted snapshot enrichment.
 - `GET /kata/tasks/references`: middleman's global/open Kata reference service.
   Rank exact short, qualified, or UID matches before substring matches and only
-  then apply the response limit. Consumers must use the returned `reference`
-  verbatim: it is bare only when the short ID is unique in the full authority;
-  consumers needing status, metadata, or closed tasks must use a snapshot.
+  then apply the response limit. The returned `reference` decides whether a
+  short ID is globally unique; syntax-specific consumers may wrap that identity
+  but must not reconstruct it from display fields. Consumers needing status,
+  metadata, or closed tasks must use a snapshot. Link rows outside the accepted
+  authority intentionally render stable identifiers instead of issuing detail
+  reads solely to hydrate titles.
 - `POST /kata/workspaces`: create or reuse a Kata-task-backed workspace. Kata
   tasks are not provider issues, so this path never resolves or syncs a
   provider issue row.

@@ -1461,7 +1461,7 @@ describe("kata task HTTP client", () => {
         headers: { etag: '"rev-2"' },
       },
     });
-    const api = createKataTaskAPI({ fetchImpl });
+    const api = createKataTaskAPI({ fetchImpl, getDaemonId: () => "daemon-b" });
     const target = { project_id: 7, ref: "issue-1" };
 
     await expect(
@@ -1470,6 +1470,7 @@ describe("kata task HTTP client", () => {
         "fixture-user",
         { scheduled_on: "2026-05-20", deadline_on: "2026-05-21" },
         '"rev-1"',
+        { daemonId: "daemon-a" },
       ),
     ).resolves.toMatchObject({
       changed: true,
@@ -1481,6 +1482,7 @@ describe("kata task HTTP client", () => {
 
     expect(calls.map((call) => proxyPath(call.url))).toEqual(["/api/v1/projects/7/issues/issue-1/metadata"]);
     expect(calls[0]!.headers.get("If-Match")).toBe('"rev-1"');
+    expect(calls[0]!.headers.get("X-Middleman-Kata-Daemon")).toBe("daemon-a");
     expect(await calls[0]!.requestJSON()).toEqual({
       actor: "fixture-user",
       patch: { scheduled_on: "2026-05-20", deadline_on: "2026-05-21" },

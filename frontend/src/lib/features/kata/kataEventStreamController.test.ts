@@ -1,14 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { KataEventStreamError, type ReadKataEventStreamOptions } from "../../api/kata/eventStream.js";
-import type { KataTaskEventStreamMessage } from "../../api/kata/taskTypes.js";
+import {
+  KataEventStreamError,
+  type KataTaskEventStreamFrame,
+  type ReadKataEventStreamOptions,
+} from "../../api/kata/eventStream.js";
 import { createKataEventStreamController } from "./kataEventStreamController.js";
 
-const resetMessage: KataTaskEventStreamMessage = {
+const resetFrame: KataTaskEventStreamFrame = {
   kind: "reset",
-  event_id: 12,
-  reset_after_id: 12,
-  lastEventID: 12,
+  server_instance_id: "server-a",
+  daemon_id: "work",
+  epoch: 4,
+  cursor: 52,
 };
 
 function requireStreamOptions(options: ReadKataEventStreamOptions | null): ReadKataEventStreamOptions {
@@ -21,80 +25,110 @@ describe("kata event stream controller", () => {
     vi.useRealTimers();
   });
 
-  it("passes stream options and reports resets after applying messages", async () => {
+  it("consumes each compact frame before reporting a reset", async () => {
     let streamOptions: ReadKataEventStreamOptions | null = null;
-    const onOpen = vi.fn();
-    const onMessage = vi.fn(async () => undefined);
-    const onReset = vi.fn();
+    let releaseConsumer!: () => void;
+    const consumerPending = new Promise<void>((resolve) => {
+      releaseConsumer = resolve;
+    });
+    const calls: string[] = [];
     const readEventStream = vi.fn(async (options: ReadKataEventStreamOptions) => {
       streamOptions = options;
     });
-
     const controller = createKataEventStreamController({
-      getDaemonId: () => "daemon-a",
-      getLastEventID: () => 41,
-      onOpen,
-      onMessage,
-      onReset,
+      getDaemonId: () => "work",
+      getLastEventID: () => 51,
+      onOpen: vi.fn(),
+      onMessage: vi.fn(async () => {
+        calls.push("consume:start");
+        await consumerPending;
+        calls.push("consume:end");
+      }),
+      onReset: () => calls.push("reset"),
       onError: vi.fn(),
       readEventStream,
     });
 
     controller.start();
-
-    expect(readEventStream).toHaveBeenCalledOnce();
     const options = requireStreamOptions(streamOptions);
-    expect(options.daemonId).toBe("daemon-a");
-    expect(options.lastEventID).toBe(41);
+    expect(options.daemonId).toBe("work");
+    expect(options.lastEventID).toBe(51);
 
-    options.onOpen?.();
-    await options.onMessage(resetMessage);
+    const delivery = options.onMessage(resetFrame);
+    await vi.waitFor(() => expect(calls).toEqual(["consume:start"]));
+    releaseConsumer();
+    await delivery;
 
-    expect(onOpen).toHaveBeenCalledOnce();
-    expect(onMessage).toHaveBeenCalledWith(resetMessage);
-    expect(onReset).toHaveBeenCalledOnce();
+    expect(calls).toEqual(["consume:start", "consume:end", "reset"]);
   });
 
-  it("ignores reset side effects after the stream is stopped mid-message", async () => {
+  it("suppresses reset notification when stopped mid-message", async () => {
     let streamOptions: ReadKataEventStreamOptions | null = null;
-    let releaseMessage!: () => void;
-    const messageApplied = new Promise<void>((resolve) => {
-      releaseMessage = resolve;
+    let releaseConsumer!: () => void;
+    const consumerPending = new Promise<void>((resolve) => {
+      releaseConsumer = resolve;
     });
     const onReset = vi.fn();
-    const readEventStream = vi.fn(async (options: ReadKataEventStreamOptions) => {
-      streamOptions = options;
-    });
-
     const controller = createKataEventStreamController({
       getDaemonId: () => undefined,
       getLastEventID: () => 0,
       onOpen: vi.fn(),
-      onMessage: vi.fn(async () => messageApplied),
+      onMessage: vi.fn(async () => consumerPending),
       onReset,
       onError: vi.fn(),
-      readEventStream,
+      readEventStream: vi.fn(async (options: ReadKataEventStreamOptions) => {
+        streamOptions = options;
+      }),
     });
 
     controller.start();
-    const pendingMessage = requireStreamOptions(streamOptions).onMessage(resetMessage);
+    const delivery = requireStreamOptions(streamOptions).onMessage(resetFrame);
     controller.stop();
-    releaseMessage();
-    await pendingMessage;
+    releaseConsumer();
+    await delivery;
 
     expect(onReset).not.toHaveBeenCalled();
   });
 
-  it("reconnects retryable stream failures with backoff", async () => {
+  it("fences callbacks from superseded stream generations", async () => {
+    const streams: ReadKataEventStreamOptions[] = [];
+    const onOpen = vi.fn();
+    const onMessage = vi.fn(async () => undefined);
+    const controller = createKataEventStreamController({
+      getDaemonId: () => "work",
+      getLastEventID: () => 0,
+      onOpen,
+      onMessage,
+      onError: vi.fn(),
+      readEventStream: vi.fn(async (options: ReadKataEventStreamOptions) => {
+        streams.push(options);
+      }),
+    });
+
+    controller.start();
+    controller.start();
+    streams[0]?.onOpen?.();
+    await streams[0]?.onMessage(resetFrame);
+    streams[1]?.onOpen?.();
+    await streams[1]?.onMessage({ ...resetFrame, kind: "invalidation" });
+
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(onMessage).toHaveBeenCalledOnce();
+    expect(onMessage).toHaveBeenCalledWith({ ...resetFrame, kind: "invalidation" });
+  });
+
+  it("reconnects retryable failures with a fresh accepted snapshot cursor", async () => {
     vi.useFakeTimers();
-    const readEventStream = vi.fn(async () => {
+    let cursor = 51;
+    const seenCursors: number[] = [];
+    const readEventStream = vi.fn(async (options: ReadKataEventStreamOptions) => {
+      seenCursors.push(options.lastEventID ?? 0);
       throw new KataEventStreamError("temporary stream failure", { retryable: true });
     });
     const onError = vi.fn();
-
     const controller = createKataEventStreamController({
-      getDaemonId: () => undefined,
-      getLastEventID: () => 0,
+      getDaemonId: () => "work",
+      getLastEventID: () => cursor,
       onOpen: vi.fn(),
       onMessage: vi.fn(),
       onError,
@@ -104,14 +138,54 @@ describe("kata event stream controller", () => {
     });
 
     controller.start();
-    await vi.waitFor(() => {
-      expect(onError).toHaveBeenCalledWith("temporary stream failure");
-    });
-
-    expect(readEventStream).toHaveBeenCalledOnce();
-
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith("temporary stream failure"));
+    cursor = 52;
     await vi.advanceTimersByTimeAsync(100);
 
-    expect(readEventStream).toHaveBeenCalledTimes(2);
+    expect(seenCursors).toEqual([51, 52]);
+  });
+
+  it("does not reconnect nonretryable setup failures", async () => {
+    vi.useFakeTimers();
+    const readEventStream = vi.fn(async () => {
+      throw new KataEventStreamError("invalid stream request", { retryable: false });
+    });
+    const controller = createKataEventStreamController({
+      getDaemonId: () => undefined,
+      getLastEventID: () => 0,
+      onOpen: vi.fn(),
+      onMessage: vi.fn(),
+      onError: vi.fn(),
+      readEventStream,
+      reconnectDelayMS: 100,
+    });
+
+    controller.start();
+    await vi.runAllTimersAsync();
+
+    expect(readEventStream).toHaveBeenCalledOnce();
+  });
+
+  it("stop cancels a scheduled reconnect", async () => {
+    vi.useFakeTimers();
+    const readEventStream = vi.fn(async () => {
+      throw new KataEventStreamError("temporary stream failure", { retryable: true });
+    });
+    const controller = createKataEventStreamController({
+      getDaemonId: () => undefined,
+      getLastEventID: () => 0,
+      onOpen: vi.fn(),
+      onMessage: vi.fn(),
+      onError: vi.fn(),
+      readEventStream,
+      reconnectDelayMS: 100,
+    });
+
+    controller.start();
+    await vi.waitFor(() => expect(readEventStream).toHaveBeenCalledOnce());
+    controller.stop();
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(readEventStream).toHaveBeenCalledOnce();
   });
 });

@@ -12,7 +12,6 @@ import type {
   KataTaskDetail,
   KataTaskEditPatch,
   KataTaskEvent,
-  KataTaskEventStreamMessage,
   KataTaskEventsResponse,
   KataTaskIssuesQuery,
   KataTaskMetadataPatch,
@@ -59,18 +58,6 @@ interface KataLoadOptions {
 }
 
 interface KataBootstrapOptions extends KataLoadOptions {}
-
-interface KataRefreshOptions extends KataLoadOptions {
-  refreshSelectedDetail?: boolean | undefined;
-  eventDriven?: boolean | undefined;
-}
-
-export interface KataEventDeliveryOptions {
-  // The workspace owns daemon identity, while the store owns cursor mutation.
-  // This guard lets an abandoned daemon generation finish its request without
-  // applying its response to the active daemon's shared store.
-  shouldApply?: (() => boolean) | undefined;
-}
 
 function emptyView(name: KataTaskViewName = "today"): KataCurrentView {
   return { name, groups: [] };
@@ -304,18 +291,7 @@ export interface KataWorkspaceStoreSnapshot {
   duplicateCandidates: KataDuplicateCandidateDisplay[];
   readyIssueUIDs: ReadonlySet<string>;
   cachedTasks: KataTaskSummary[];
-  eventCursor: number;
   unscopedViewName: KataTaskViewName;
-}
-
-export class KataEventCursorSyncError extends Error {
-  readonly cursorSyncCause: unknown;
-
-  constructor(cursorSyncCause: unknown) {
-    super(cursorSyncCause instanceof Error ? cursorSyncCause.message : "Kata event cursor sync failed.");
-    this.name = "KataEventCursorSyncError";
-    this.cursorSyncCause = cursorSyncCause;
-  }
 }
 
 export class KataWorkspaceStore {
@@ -327,7 +303,6 @@ export class KataWorkspaceStore {
   selectedIssue = $state.raw<KataTaskDetail | null>(null);
   selectedEvents = $state.raw<KataTaskEvent[]>([]);
   selectedRecurrences = $state.raw<KataRecurrence[]>([]);
-  eventCursor = $state(0);
   daemonId = $state<string | undefined>(undefined);
   searchFilters = $state.raw<KataTaskSearchFilters>(defaultKataTaskSearchFilters());
   duplicateCandidates = $state.raw<KataDuplicateCandidateDisplay[]>([]);
@@ -347,13 +322,6 @@ export class KataWorkspaceStore {
   private unscopedViewName: KataTaskViewName = "today";
   private issueETags = new Map<string, string>();
   private metadataQueues = new Map<string, Promise<void>>();
-  // Cursor delivery is one ordered lane shared by paginated catch-up and SSE.
-  // A task starts only after its predecessor settles, so an event observed by
-  // both transports is deduplicated against the cursor before it can refresh
-  // the visible workspace a second time.
-  private eventDeliveryGeneration = 0;
-  private activeEventDeliveryGenerations = new Set<number>();
-  private pendingEventDeliveries = new Map<number, Array<() => void>>();
 
   constructor(options: CreateKataWorkspaceStoreOptions = {}) {
     this.api = options.api ?? createKataTaskAPI();
@@ -376,7 +344,6 @@ export class KataWorkspaceStore {
   }
 
   clearDaemonState(viewName: KataTaskViewName = this.currentView.name): void {
-    this.eventDeliveryGeneration += 1;
     this.clearSelection();
     this.daemonId = undefined;
     this.clearDaemonBinding();
@@ -386,7 +353,6 @@ export class KataWorkspaceStore {
     this.resetSearchFilters();
     this.clearTaskCache();
     this.issueETags.clear();
-    this.resetEventCursor();
   }
 
   async loadProjectCatalog(shouldApply: () => boolean = () => true): Promise<void> {
@@ -425,7 +391,6 @@ export class KataWorkspaceStore {
       duplicateCandidates: this.duplicateCandidates,
       readyIssueUIDs: this.readyIssueUIDs,
       cachedTasks: this.cachedTasks,
-      eventCursor: this.eventCursor,
       unscopedViewName: this.unscopedViewName,
     };
   }
@@ -443,7 +408,6 @@ export class KataWorkspaceStore {
     this.duplicateCandidates = snapshot.duplicateCandidates;
     this.readyIssueUIDs = snapshot.readyIssueUIDs;
     this.cacheTasks(snapshot.cachedTasks);
-    this.eventCursor = snapshot.eventCursor;
     this.unscopedViewName = snapshot.unscopedViewName;
   }
 
@@ -900,168 +864,11 @@ export class KataWorkspaceStore {
     this.detailAbort = null;
   }
 
-  resetEventCursor(): void {
-    this.eventCursor = 0;
-  }
-
-  async syncEventCursor(options: KataEventDeliveryOptions = {}): Promise<boolean> {
-    return this.enqueueEventDelivery(() => this.syncEventCursorNow(options));
-  }
-
-  async applyRemoteEvent(event: KataTaskEvent, options: KataEventDeliveryOptions = {}): Promise<boolean> {
-    return this.enqueueEventDelivery(() => this.applyRemoteEventNow(event, options));
-  }
-
-  async applyEventStreamMessage(
-    message: KataTaskEventStreamMessage,
-    options: KataEventDeliveryOptions = {},
-  ): Promise<boolean> {
-    return this.enqueueEventDelivery(() => this.applyEventStreamMessageNow(message, options));
-  }
-
-  private enqueueEventDelivery<T>(operation: () => Promise<T>): Promise<T> {
-    const generation = this.eventDeliveryGeneration;
-    return new Promise<T>((resolve, reject) => {
-      const run = () => {
-        void operation()
-          .then(resolve, reject)
-          .finally(() => {
-            const queue = this.pendingEventDeliveries.get(generation);
-            const next = queue?.shift();
-            if (next) {
-              next();
-            } else {
-              this.pendingEventDeliveries.delete(generation);
-              this.activeEventDeliveryGenerations.delete(generation);
-            }
-          });
-      };
-      if (this.activeEventDeliveryGenerations.has(generation)) {
-        const queue = this.pendingEventDeliveries.get(generation) ?? [];
-        queue.push(run);
-        this.pendingEventDeliveries.set(generation, queue);
-      } else {
-        this.activeEventDeliveryGenerations.add(generation);
-        run();
-      }
-    });
-  }
-
-  private shouldApplyEventDelivery(options: KataEventDeliveryOptions): boolean {
-    return options.shouldApply?.() ?? true;
-  }
-
-  private async syncEventCursorNow(options: KataEventDeliveryOptions): Promise<boolean> {
-    if (!this.shouldApplyEventDelivery(options)) return false;
-
-    let afterID = this.eventCursor;
-    const pendingEvents: KataTaskEvent[] = [];
-    let pageError: unknown;
-
-    for (;;) {
-      let response: KataTaskEventsResponse;
-      try {
-        response = await this.loadEvents({ after_id: afterID, limit: 100 });
-      } catch (error) {
-        pageError = error;
-        break;
-      }
-      if (!this.shouldApplyEventDelivery(options)) return false;
-
-      const nextAfterID = Math.max(afterID, response.next_after_id, ...response.events.map((event) => event.event_id));
-      if (response.reset_required) {
-        return this.applyEventStreamMessageNow(
-          {
-            kind: "reset",
-            event_id: nextAfterID,
-            reset_after_id: response.reset_after_id ?? nextAfterID,
-            lastEventID: nextAfterID,
-          },
-          options,
-        );
-      }
-
-      pendingEvents.push(...response.events.filter((event) => event.event_id > this.eventCursor));
-      const reachedEnd = response.events.length === 0 || nextAfterID === afterID;
-      afterID = nextAfterID;
-      if (reachedEnd) break;
-    }
-
-    let membershipRefreshed = false;
-    if (pendingEvents.length > 0) {
-      membershipRefreshed = await this.refreshForRemoteEvents(pendingEvents, options);
-      if (!this.shouldApplyEventDelivery(options)) return false;
-      if (membershipRefreshed) this.eventCursor = Math.max(this.eventCursor, afterID);
-    } else if (pageError === undefined) {
-      this.eventCursor = Math.max(this.eventCursor, afterID);
-    }
-
-    if (pageError !== undefined) {
-      if (membershipRefreshed) throw new KataEventCursorSyncError(pageError);
-      throw pageError;
-    }
-    return membershipRefreshed;
-  }
-
-  private async applyRemoteEventNow(event: KataTaskEvent, options: KataEventDeliveryOptions): Promise<boolean> {
-    if (!this.shouldApplyEventDelivery(options)) return false;
-    if (event.event_id <= this.eventCursor) return false;
-    const refreshed = await this.refreshForRemoteEvents([event], options);
-    if (!this.shouldApplyEventDelivery(options) || !refreshed) return false;
-    this.eventCursor = Math.max(this.eventCursor, event.event_id);
-    return true;
-  }
-
-  private async applyEventStreamMessageNow(
-    message: KataTaskEventStreamMessage,
-    options: KataEventDeliveryOptions,
-  ): Promise<boolean> {
-    if (!this.shouldApplyEventDelivery(options)) return false;
-    if (message.kind === "reset") {
-      if (message.reset_after_id <= this.eventCursor) return false;
-      const refreshed = await this.refreshCurrentView(
-        this.pendingSelectionUID ?? this.selectedIssue?.issue.uid ?? null,
-        { eventDriven: true, shouldApply: options.shouldApply },
-      );
-      if (refreshed && this.shouldApplyEventDelivery(options)) {
-        this.eventCursor = Math.max(this.eventCursor, message.reset_after_id);
-      }
-      return refreshed && this.shouldApplyEventDelivery(options);
-    }
-    return this.applyRemoteEventNow(message.event, options);
-  }
-
   private async reloadProjects(shouldApply?: () => boolean): Promise<void> {
     const projects = await this.loadProjects();
     if (shouldApply?.() === false) return;
     this.projects = projects.projects;
     this.areas = deriveKataAreas(projects.projects);
-  }
-
-  private async refreshForRemoteEvents(
-    events: readonly KataTaskEvent[],
-    options: KataEventDeliveryOptions = {},
-  ): Promise<boolean> {
-    if (events.some((event) => event.type.startsWith("project."))) {
-      await this.reloadProjects(options.shouldApply);
-      if (!this.shouldApplyEventDelivery(options)) return false;
-    }
-    const preferredUID = this.pendingSelectionUID ?? this.selectedIssue?.issue.uid ?? null;
-    const selectedProjectID = this.selectedIssue?.issue.project_id;
-    const refreshSelectedDetail = events.some(
-      (event) =>
-        event.issue_uid === preferredUID ||
-        event.related_issue_uid === preferredUID ||
-        (event.type.startsWith("project.") && event.project_id === selectedProjectID),
-    );
-    const refreshed = await this.refreshCurrentView(preferredUID, {
-      refreshSelectedDetail,
-      eventDriven: true,
-      shouldApply: options.shouldApply,
-    });
-    if (!this.shouldApplyEventDelivery(options) || !refreshed) return false;
-    for (const event of events) this.applyTrivialMetadataEvent(event);
-    return true;
   }
 
   private clearTaskCache(): void {
@@ -1158,65 +965,6 @@ export class KataWorkspaceStore {
     recordKataGraphDebugEvent(kind, detail);
   }
 
-  private applyTrivialMetadataEvent(event: KataTaskEvent): void {
-    if (event.type !== "issue.metadata_updated") return;
-    if (!event.issue_uid) return;
-
-    const diff = isObject(event.payload) && isObject(event.payload.diff) ? event.payload.diff : undefined;
-    if (!diff) return;
-
-    const revisionNew =
-      isObject(event.payload) && typeof event.payload.revision_new === "number"
-        ? event.payload.revision_new
-        : undefined;
-
-    const patchMetadata = (metadata: Record<string, unknown>) => {
-      const next = { ...metadata };
-      for (const [key, rawChange] of Object.entries(diff)) {
-        if (!isObject(rawChange) || !("to" in rawChange)) continue;
-        if (rawChange.to === null || rawChange.to === undefined) {
-          delete next[key];
-        } else {
-          next[key] = rawChange.to;
-        }
-      }
-      return next;
-    };
-    const canApplyToRevision = (revision: number) => revisionNew === undefined || revision <= revisionNew;
-
-    this.currentView = {
-      ...this.currentView,
-      groups: this.currentView.groups.map((group) => ({
-        ...group,
-        issues: group.issues.map((issue) =>
-          issue.uid === event.issue_uid && canApplyToRevision(issue.revision)
-            ? {
-                ...issue,
-                metadata: patchMetadata(issue.metadata),
-                revision: revisionNew ?? issue.revision,
-              }
-            : issue,
-        ),
-      })),
-    };
-    this.cacheView(this.currentView);
-
-    if (this.selectedIssue?.issue.uid !== event.issue_uid) return;
-    if (!canApplyToRevision(this.selectedIssue.issue.revision)) return;
-    this.selectedIssue = {
-      ...this.selectedIssue,
-      issue: {
-        ...this.selectedIssue.issue,
-        metadata: patchMetadata(this.selectedIssue.issue.metadata),
-        revision: revisionNew ?? this.selectedIssue.issue.revision,
-      },
-    };
-    this.cacheDetail(this.selectedIssue);
-    if (revisionNew !== undefined) {
-      this.issueETags.set(event.issue_uid, `"rev-${revisionNew}"`);
-    }
-  }
-
   private recurrenceTarget(id: number): { projectID: number; uid: string; ifMatch: string } {
     const recurrence = this.selectedRecurrences.find((item) => item.id === id);
     if (!recurrence) {
@@ -1238,10 +986,12 @@ export class KataWorkspaceStore {
   }
 
   private async patchMetadataNow(uid: string, actor: string, patch: KataTaskMetadataPatch): Promise<void> {
+    const daemonId = this.daemonId;
+    if (!daemonId) throw new Error("Kata daemon is not selected");
     const issue = this.issueForMutation(uid);
     const selectedETag = this.selectedIssue?.issue.uid === uid ? this.selectedIssue.etag : undefined;
     const ifMatch = this.issueETags.get(uid) ?? selectedETag ?? `"rev-${issue.revision}"`;
-    await this.mutateIssue(uid, (target) => this.api.patchIssueMetadata(target, actor, patch, ifMatch));
+    await this.mutateIssue(uid, (target) => this.api.patchIssueMetadata(target, actor, patch, ifMatch, { daemonId }));
   }
 
   private async withMutation<T>(task: () => Promise<T>): Promise<T> {
@@ -1301,7 +1051,7 @@ export class KataWorkspaceStore {
     }
   }
 
-  private async refreshCurrentView(preferredUID?: string | null, options: KataRefreshOptions = {}): Promise<boolean> {
+  private async refreshCurrentView(preferredUID?: string | null, options: KataLoadOptions = {}): Promise<boolean> {
     if (!shouldApplyLoad(options)) return false;
     const { requestID, signal } = this.beginViewRequest();
     // Selection epoch at refresh start: any selection or clear that lands
@@ -1356,7 +1106,6 @@ export class KataWorkspaceStore {
       issues = selectableViewIssues(view.groups);
     }
     this.currentView = nextView;
-    if (options.refreshSelectedDetail === false) return true;
     let resolvedUID = preferredUID;
     if (this.detailRequestID !== selectionEpoch) {
       // The selection changed while the view fetch was in flight, so the
@@ -1375,16 +1124,7 @@ export class KataWorkspaceStore {
       resolvedUID = this.pendingSelectionUID ?? this.selectedIssue?.issue.uid ?? null;
     }
     const nextSelectedUID = resolvedUID === undefined ? (issues[0]?.uid ?? null) : resolvedUID;
-    try {
-      return await this.loadSelectedIssue(nextSelectedUID, requestID, ++this.detailRequestID, options);
-    } catch (error) {
-      if (!shouldApplyLoad(options)) return false;
-      // Event delivery can accept authoritative list membership even if a
-      // selected detail cannot be refreshed. Interactive callers must retain
-      // the failure so their action is not reported as fully refreshed.
-      if (options.eventDriven) return true;
-      throw error;
-    }
+    return this.loadSelectedIssue(nextSelectedUID, requestID, ++this.detailRequestID, options);
   }
 
   private async loadSelectedIssue(

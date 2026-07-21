@@ -12,11 +12,10 @@
   import type {
     KataProjectSummary,
     KataRecurrence,
-    KataTaskAPI,
     KataTaskDetail,
     KataTaskEditPatch,
     KataTaskEvent,
-    KataTaskGroup,
+    KataTaskSummary,
   } from "../../api/kata/taskTypes.js";
   import type { KataLinkFilters } from "../../features/kata/kataLinkFilters.js";
   import type { MessageLinkRef } from "../../messages/types";
@@ -38,8 +37,7 @@
   interface Props {
     issue: KataTaskDetail;
     events: KataTaskEvent[];
-    currentView: { groups: KataTaskGroup[] };
-    api: KataTaskAPI;
+    issueCatalog: readonly KataTaskSummary[];
     searchReferences?: KataTaskReferenceSearch | undefined;
     activeDaemonId?: string | undefined;
     linkFilters: KataLinkFilters;
@@ -80,8 +78,7 @@
   let {
     issue,
     events,
-    currentView,
-    api,
+    issueCatalog,
     searchReferences = searchKataTaskReferences,
     activeDaemonId = undefined,
     linkFilters,
@@ -389,7 +386,7 @@
     <KataIssueDiscussion
       {issue}
       {events}
-      {currentView}
+      {issueCatalog}
       {searchReferences}
       {activeDaemonId}
       {linkFilters}

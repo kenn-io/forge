@@ -65,12 +65,18 @@ describe("buildIssueCompletionSource", () => {
   });
 
   test("uses the server-provided qualified reference for ambiguous short ids", async () => {
-    const { source } = makeSource([reference({ reference: "household#rent" })]);
+    const { source } = makeSource([
+      reference({
+        project_name: "Household display name",
+        qualified_id: "household-identity#rent",
+        reference: "household-identity#rent",
+      }),
+    ]);
 
     const result = await complete(source, "draft #re");
 
-    expect(result?.options.map((option) => option.label)).toEqual(["household/#rent"]);
-    expect(result?.options[0]?.apply).toBe("household/#rent");
+    expect(result?.options.map((option) => option.label)).toEqual(["household-identity/#rent"]);
+    expect(result?.options[0]?.apply).toBe("household-identity/#rent");
   });
 
   test("filters qualified completion results to the requested project", async () => {
@@ -92,6 +98,20 @@ describe("buildIssueCompletionSource", () => {
 
     expect(result?.options.map((option) => option.label)).toEqual(["household/#rent"]);
     expect(searchReferences).toHaveBeenCalledWith("household#", { limit: 50 });
+  });
+
+  test("scopes qualified completion by canonical identity instead of project display name", async () => {
+    const { source, searchReferences } = makeSource([
+      reference({
+        project_name: "Household display name",
+        qualified_id: "household-identity#rent",
+      }),
+    ]);
+
+    const result = await complete(source, "done in household-identity/#r");
+
+    expect(result?.options.map((option) => option.label)).toEqual(["household-identity/#rent"]);
+    expect(searchReferences).toHaveBeenCalledWith("household-identity#r", { limit: 50 });
   });
 
   test("returns no completion for a formerly closed task omitted by the open reference service", async () => {

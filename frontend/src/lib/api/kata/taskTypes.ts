@@ -247,10 +247,6 @@ export interface KataTaskEventsResponse {
   next_after_id: number;
 }
 
-export type KataTaskEventStreamMessage =
-  | { kind: "event"; event: KataTaskEvent; lastEventID: number }
-  | { kind: "reset"; event_id: number; reset_after_id: number; lastEventID: number };
-
 export interface KataRecurrence {
   id: number;
   uid: string;
@@ -387,6 +383,10 @@ export interface KataTaskRequestOptions {
   signal?: AbortSignal | undefined;
 }
 
+export interface KataPinnedDaemonOptions {
+  daemonId: string;
+}
+
 export interface KataTaskAPI {
   bindWorkflowDaemon?(daemonId?: string): void;
   instance(opts?: KataTaskRequestOptions): Promise<KataInstanceResponse>;
@@ -440,6 +440,7 @@ export interface KataTaskAPI {
     actor: string,
     patch: KataTaskMetadataPatch,
     ifMatch: string,
+    options: KataPinnedDaemonOptions,
   ): Promise<KataTaskMutationResponse>;
   moveIssue(
     target: KataTaskMutationTarget,

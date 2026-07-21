@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { MessagesCapabilities, MessageDetailData, MessagesSearchResult } from "../../api/messages/types";
 import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
-import type { SearchResponse } from "../../messages/types";
+import type { KataAuxiliaryAuthoritySource } from "../kata/kataAuxiliaryAuthority.svelte";
 import MessagesFeature from "./MessagesFeature.svelte";
 
 afterEach(() => {
@@ -333,10 +333,15 @@ describe("MessagesFeature", () => {
     expect((screen.getByLabelText(/API key env var name/i) as HTMLInputElement).value).toBe("ALT_MSGVAULT_KEY");
   });
 
-  it("threads distinct Kata reference and authority searches into the workspace", async () => {
+  it("threads distinct Kata references and shared snapshot authority into the workspace", async () => {
     installFetch();
-    const kata = {
-      search: vi.fn(async (): Promise<SearchResponse> => ({ issues: [], fetched_at: "2026-05-18T00:00:00Z" })),
+    const retry = vi.fn(async () => true);
+    const kataAuthority: KataAuxiliaryAuthoritySource = {
+      issues: [],
+      daemonID: "home",
+      phase: "accepted",
+      error: null,
+      retry,
     };
     const onLinkMessage = vi.fn(async () => ({ qualified_id: "Kata#100" }));
     const searchReferences: KataTaskReferenceSearch = vi.fn(async () => ({
@@ -352,7 +357,7 @@ describe("MessagesFeature", () => {
       props: {
         route: { mode: "messages", q: null, message: "1001" },
         onRouteChange: vi.fn(),
-        kata,
+        kataAuthority,
         searchReferences,
         onLinkMessage,
         onOpenIssue: vi.fn(),
@@ -364,12 +369,6 @@ describe("MessagesFeature", () => {
     });
 
     expect(screen.getByRole("button", { name: /Link to task/i })).toBeTruthy();
-    expect(kata.search).toHaveBeenCalledWith({
-      scope: { kind: "all" },
-      status: "all",
-      owner: "",
-      label: "",
-      query: "",
-    });
+    expect(retry).not.toHaveBeenCalled();
   });
 });

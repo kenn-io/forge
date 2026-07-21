@@ -13,7 +13,11 @@
   } from "@xyflow/svelte";
   import "@xyflow/svelte/dist/style.css";
 
-  import type { KataReachableGraphResponse, KataTaskAPI, KataTaskSummary } from "../../api/kata/taskTypes.js";
+  import type {
+    KataReachableGraphEdge,
+    KataReachableGraphResponse,
+    KataTaskSummary,
+  } from "../../api/kata/taskTypes.js";
   import {
     recordKataGraphDebugEvent,
     resetKataGraphDebug,
@@ -51,23 +55,21 @@
   }
 
   interface Props {
-    api: KataTaskAPI;
+    graph: KataReachableGraphResponse;
     sourceIssue: KataTaskSummary;
     selectedUID: string | null;
     layoutDirection?: KataGraphLayoutDirection | undefined;
     onBack: () => void;
     onSelectIssue: (uid: string) => void;
-    onGraphTasksLoaded?: ((tasks: readonly KataTaskSummary[]) => void) | undefined;
   }
 
   let {
-    api,
+    graph: snapshotGraph,
     sourceIssue,
     selectedUID,
     layoutDirection = "LR",
     onBack,
     onSelectIssue,
-    onGraphTasksLoaded = undefined,
   }: Props = $props();
 
   const graphPreferencesStorageKey = "middleman:kata:reachableGraphPreferences/v1";
@@ -84,13 +86,10 @@
   let depthLimit = $state<KataGraphDepthLimit>(initialGraphPreferences.depthLimit);
   let layoutMode = $state<KataGraphLayoutMode>(initialGraphPreferences.layoutMode);
   let graphDirectionOverride = $state<KataGraphLayoutDirection | null>(initialGraphPreferences.layoutDirection);
-  let graphResponse = $state.raw<KataReachableGraphResponse | null>(null);
-  let graphLoading = $state(false);
-  let graphError = $state<string | null>(null);
   let effectiveLayoutDirection = $derived(graphDirectionOverride ?? layoutDirection);
   let layoutedPositions = $state.raw<ReadonlyMap<string, LayoutPosition>>(new Map());
   let layoutedKey = $state("");
-  let activeGraphSourceUID: string | null = null;
+  let graphResponse = $derived(filterSnapshotGraph(snapshotGraph, sourceIssue.uid, depthLimit, hideDone));
   let graph = $derived(
     buildKataReachableGraph({
       sourceUID: sourceIssue.uid,
@@ -116,7 +115,6 @@
       || graphDirectionOverride !== defaultGraphPreferences.layoutDirection,
   );
   let layoutRun = 0;
-  let graphRequestRun = 0;
   const elkDefaultLayoutOptions = {
     "elk.algorithm": "layered",
     "elk.edgeRouting": "ORTHOGONAL",
@@ -307,8 +305,49 @@
     return `${ref.side}:${ref.kind}:${ref.uid}:${ref.otherUID}`;
   }
 
-  function graphRequestErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : "Could not load reachable graph.";
+  function graphDistanceByUID(
+    sourceUID: string,
+    edges: readonly KataReachableGraphEdge[],
+  ): ReadonlyMap<string, number> {
+    const distanceByUID = new Map<string, number>([[sourceUID, 0]]);
+    const queue = [sourceUID];
+    while (queue.length > 0) {
+      const uid = queue.shift()!;
+      const distance = distanceByUID.get(uid) ?? 0;
+      for (const edge of edges) {
+        const adjacentUID = edge.from_uid === uid ? edge.to_uid : edge.to_uid === uid ? edge.from_uid : null;
+        if (!adjacentUID || distanceByUID.has(adjacentUID)) continue;
+        distanceByUID.set(adjacentUID, distance + 1);
+        queue.push(adjacentUID);
+      }
+    }
+    return distanceByUID;
+  }
+
+  function filterSnapshotGraph(
+    snapshot: KataReachableGraphResponse,
+    sourceUID: string,
+    depth: KataGraphDepthLimit,
+    shouldHideDone: boolean,
+  ): KataReachableGraphResponse {
+    const maxDepth = depth === "full" ? Number.POSITIVE_INFINITY : Number(depth);
+    const distanceByUID = graphDistanceByUID(sourceUID, snapshot.edges);
+    const nodes = snapshot.nodes.filter((node) => {
+      const distance = distanceByUID.get(node.uid);
+      if (depth !== "full" && (distance === undefined || distance > maxDepth)) return false;
+      return !shouldHideDone || node.uid === sourceUID || node.closed_reason !== "done";
+    });
+    const visibleUIDs = new Set(nodes.map((node) => node.uid));
+    return {
+      ...snapshot,
+      depth,
+      hide_done: shouldHideDone,
+      nodes,
+      edges: snapshot.edges.filter(
+        (edge) => visibleUIDs.has(edge.from_uid) && visibleUIDs.has(edge.to_uid),
+      ),
+      unresolved_refs: snapshot.unresolved_refs.filter((ref) => visibleUIDs.has(ref.other_uid)),
+    };
   }
 
   function selectNodeID(uid: string): void {
@@ -442,59 +481,6 @@
   });
 
   $effect(() => {
-    const requestSource = sourceIssue;
-    const requestDepth = depthLimit;
-    const requestHideDone = hideDone;
-    const abort = new AbortController();
-    const run = ++graphRequestRun;
-    graphLoading = true;
-    graphError = null;
-    if (activeGraphSourceUID !== requestSource.uid) {
-      graphResponse = null;
-    }
-    activeGraphSourceUID = requestSource.uid;
-    recordKataGraphDebugEvent("graph-load-start", {
-      sourceUID: requestSource.uid,
-      depth: requestDepth,
-      hideDone: requestHideDone,
-    });
-    api
-      .reachableGraph(
-        requestSource.project_id,
-        requestSource.uid,
-        { depth: requestDepth, hide_done: requestHideDone },
-        { signal: abort.signal },
-      )
-      .then((response) => {
-        if (run !== graphRequestRun || abort.signal.aborted) return;
-        graphResponse = response;
-        onGraphTasksLoaded?.(response.nodes);
-        recordKataGraphDebugEvent("graph-load-complete", {
-          sourceUID: response.source_uid,
-          nodeCount: response.nodes.length,
-          edgeCount: response.edges.length,
-          unresolvedCount: response.unresolved_refs.length,
-        });
-      })
-      .catch((error: unknown) => {
-        if (run !== graphRequestRun || abort.signal.aborted) return;
-        graphError = graphRequestErrorMessage(error);
-        recordKataGraphDebugEvent("graph-load-error", {
-          sourceUID: requestSource.uid,
-          message: graphError,
-        });
-      })
-      .finally(() => {
-        if (run !== graphRequestRun) return;
-        graphLoading = false;
-      });
-
-    return () => {
-      abort.abort();
-    };
-  });
-
-  $effect(() => {
     const key = activeLayoutKey;
     const nodes = graph.nodes;
     const edges = graph.layoutEdges;
@@ -543,8 +529,6 @@
       sourceUID: sourceIssue.uid,
       selectedUID,
       hideDone,
-      graphLoading,
-      graphError,
       contextDepth,
       depthLimit,
       layoutMode,
@@ -601,15 +585,10 @@
     </div>
   </header>
 
-  {#if graphError && graph.nodes.length === 0}
-    <p class="graph-empty" role="alert">{graphError}</p>
-  {:else if graph.nodes.length === 0}
-    <p class="graph-empty">{graphLoading ? "Loading graph..." : "No task data is available for this graph."}</p>
+  {#if graph.nodes.length === 0}
+    <p class="graph-empty">No task data is available for this graph.</p>
   {:else}
     <div class="graph-canvas">
-      {#if graphError}
-        <p class="graph-canvas-alert" role="alert">{graphError}</p>
-      {/if}
       <SvelteFlow
         nodes={interactiveNodes}
         edges={graph.edges}
@@ -889,19 +868,4 @@
     font-size: var(--font-size-sm);
   }
 
-  .graph-canvas-alert {
-    position: absolute;
-    z-index: 3;
-    top: 10px;
-    left: 12px;
-    right: 12px;
-    margin: 0;
-    padding: 6px 8px;
-    border: 1px solid var(--color-danger-border, var(--border-default));
-    border-radius: 6px;
-    background: var(--color-danger-bg, var(--bg-surface));
-    color: var(--color-danger-text, var(--text-primary));
-    font-size: var(--font-size-xs);
-    pointer-events: none;
-  }
 </style>

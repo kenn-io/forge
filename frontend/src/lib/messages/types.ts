@@ -30,25 +30,3 @@ export interface IssueSummary extends IssueRef {
     [key: string]: unknown;
   };
 }
-
-export type IssueStatusFilter = "open" | "ready" | "closed" | "all";
-
-export type SearchScope = { kind: "all" } | { kind: "project"; project_uid: string };
-
-export interface IssueFilters {
-  scope: SearchScope;
-  status: IssueStatusFilter;
-  owner: string;
-  label: string;
-  query: string;
-}
-
-export interface SearchResponse {
-  filters?: IssueFilters;
-  issues: IssueSummary[];
-  fetched_at?: string;
-}
-
-export interface KataAPI {
-  search(filters: IssueFilters): Promise<SearchResponse>;
-}

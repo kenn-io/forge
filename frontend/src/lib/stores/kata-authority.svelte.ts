@@ -21,14 +21,12 @@ export interface KataAuthorityPresentation {
   text: string;
   owner: string;
   label: string;
-  graph_selected_uid?: string | undefined;
 }
 
 type KataSnapshotIssue = KataWorkspaceSnapshotProjection["issues"][number];
 
 export interface KataAuthorityProjection {
   issues: readonly KataSnapshotIssue[];
-  graph_selected_uid?: string | undefined;
 }
 
 export type KataAuthorityState =
@@ -44,6 +42,12 @@ export type KataAuthorityState =
       phase: "degraded";
       snapshot: KataWorkspaceSnapshotProjection | null;
       intent: KataSnapshotIntent;
+      error: string;
+    }
+  | {
+      phase: "abandoned";
+      snapshot: KataWorkspaceSnapshotProjection | null;
+      intent: null;
       error: string;
     };
 
@@ -91,10 +95,7 @@ function responseIdentityMatches(response: KataWorkspaceSnapshotProjection, inte
   if (responseProjectUID !== intent.project_uid) return false;
   if (response.intent.authority !== intent.authority) return false;
 
-  const selectedIssueUID = response.selected_issue_uid;
-  if (selectedIssueUID && selectedIssueUID !== intent.selected_issue_uid) return false;
-  if (!intent.selected_issue_uid && selectedIssueUID) return false;
-
+  if (response.selected_issue_uid !== intent.selected_issue_uid) return false;
   if (response.graph_source_uid !== intent.graph_source_uid) return false;
   return true;
 }
@@ -144,10 +145,7 @@ function projectSnapshot(
       (value) => value?.toLocaleLowerCase().includes(text),
     );
   });
-  return {
-    issues,
-    ...(presentation.graph_selected_uid ? { graph_selected_uid: presentation.graph_selected_uid } : {}),
-  };
+  return { issues };
 }
 
 export class KataAuthorityStore {
@@ -169,11 +167,22 @@ export class KataAuthorityStore {
   }
 
   get authorityKey(): KataAuthorityKey | null {
-    return this.state.snapshot ? authorityKey(this.state.snapshot) : null;
+    return this.state.phase !== "abandoned" && this.state.snapshot ? authorityKey(this.state.snapshot) : null;
   }
 
   updatePresentation(next: Partial<KataAuthorityPresentation>): void {
     this.presentation = { ...this.presentation, ...next };
+  }
+
+  abandon(message: string): void {
+    this.requestSequence += 1;
+    this.acceptedIntent = null;
+    this.state = {
+      phase: "abandoned",
+      snapshot: this.state.snapshot,
+      intent: null,
+      error: message,
+    };
   }
 
   async loadSnapshot(requestedIntent: KataSnapshotIntent): Promise<boolean> {

@@ -21,6 +21,7 @@ type settingsResponse struct {
 	Repos         []ghclient.ConfiguredRepoStatus `json:"repos" nullable:"false"`
 	Activity      config.Activity                 `json:"activity"`
 	PullRequests  config.PullRequests             `json:"pull_requests"`
+	Issues        config.Issues                   `json:"issues"`
 	Notifications notificationsSettingsResponse   `json:"notifications"`
 	Terminal      config.Terminal                 `json:"terminal"`
 	Modes         config.ModeVisibility           `json:"modes,omitzero"`
@@ -37,6 +38,7 @@ type notificationsSettingsResponse struct {
 type updateSettingsRequest struct {
 	Activity     *config.Activity                 `json:"activity,omitempty"`
 	PullRequests *config.PullRequests             `json:"pull_requests,omitempty"`
+	Issues       *config.Issues                   `json:"issues,omitempty"`
 	Terminal     *config.Terminal                 `json:"terminal,omitempty"`
 	Modes        *config.ModeVisibility           `json:"modes,omitempty"`
 	Agents       *[]config.Agent                  `json:"agents,omitempty"`
@@ -68,6 +70,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	repos := slices.Clone(s.cfg.Repos)
 	activity := s.cfg.Activity
 	pullRequests := s.cfg.PullRequests
+	issues := s.cfg.Issues
 	terminal := s.cfg.Terminal
 	modes := cloneModeVisibility(s.cfg.Modes).WithDefaults()
 	agents := cloneConfigAgents(s.cfg.Agents)
@@ -106,6 +109,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 		Repos:        configured,
 		Activity:     activity,
 		PullRequests: pullRequests,
+		Issues:       issues,
 		// Notifications are a built-in capability with no enable/disable
 		// setting; report them as always available.
 		Notifications: notificationsSettingsResponse{Enabled: true},
@@ -437,6 +441,7 @@ func (s *Server) updateSettings(
 	s.cfgMu.Lock()
 	prevActivity := s.cfg.Activity
 	prevPullRequests := s.cfg.PullRequests
+	prevIssues := s.cfg.Issues
 	prevTerminal := s.cfg.Terminal
 	prevModes := cloneModeVisibility(s.cfg.Modes)
 	prevAgents := cloneConfigAgents(s.cfg.Agents)
@@ -454,6 +459,9 @@ func (s *Server) updateSettings(
 	if input.Body.PullRequests != nil {
 		s.cfg.PullRequests = *input.Body.PullRequests
 	}
+	if input.Body.Issues != nil {
+		s.cfg.Issues = *input.Body.Issues
+	}
 	if input.Body.Terminal != nil {
 		s.cfg.Terminal = *input.Body.Terminal
 	}
@@ -469,6 +477,7 @@ func (s *Server) updateSettings(
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Activity = prevActivity
 		s.cfg.PullRequests = prevPullRequests
+		s.cfg.Issues = prevIssues
 		s.cfg.Terminal = prevTerminal
 		s.cfg.Modes = prevModes
 		s.cfg.Agents = prevAgents
@@ -479,6 +488,7 @@ func (s *Server) updateSettings(
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Activity = prevActivity
 		s.cfg.PullRequests = prevPullRequests
+		s.cfg.Issues = prevIssues
 		s.cfg.Terminal = prevTerminal
 		s.cfg.Modes = prevModes
 		s.cfg.Agents = prevAgents

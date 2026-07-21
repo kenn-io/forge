@@ -273,6 +273,9 @@ export const mockSettings = {
     hide_closed: false,
     hide_bots: false,
   },
+  issues: {
+    hide_bots: false,
+  },
   pull_requests: {
     allow_mid_stack_merges: false,
   },

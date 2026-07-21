@@ -1961,6 +1961,11 @@ type IssueResponse struct {
 // IssueResponseWorkflowStatus defines model for IssueResponse.WorkflowStatus.
 type IssueResponseWorkflowStatus string
 
+// Issues defines model for Issues.
+type Issues struct {
+	HideBots bool `json:"hide_bots"`
+}
+
 // ItemAssigneesResponse defines model for ItemAssigneesResponse.
 type ItemAssigneesResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -3467,6 +3472,7 @@ type SettingsResponse struct {
 	Activity      Activity                      `json:"activity"`
 	Agents        []Agent                       `json:"agents"`
 	Fleet         FleetSettingsResponse         `json:"fleet"`
+	Issues        Issues                        `json:"issues"`
 	KataProjects  []KataProjectRepoMapping      `json:"kata_projects"`
 	LaunchTargets *[]LaunchTarget               `json:"launch_targets,omitempty"`
 	Modes         *ModeVisibility               `json:"modes,omitempty"`
@@ -3661,6 +3667,7 @@ type UpdateSettingsRequest struct {
 	Schema       *string                   `json:"$schema,omitempty"`
 	Activity     *Activity                 `json:"activity,omitempty"`
 	Agents       *[]Agent                  `json:"agents,omitempty"`
+	Issues       *Issues                   `json:"issues,omitempty"`
 	KataProjects *[]KataProjectRepoMapping `json:"kata_projects,omitempty"`
 	Modes        *ModeVisibility           `json:"modes,omitempty"`
 	PullRequests *PullRequests             `json:"pull_requests,omitempty"`

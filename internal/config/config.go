@@ -557,6 +557,11 @@ type PullRequests struct {
 	AllowMidStackMerges bool `toml:"allow_mid_stack_merges,omitempty" json:"allow_mid_stack_merges"`
 }
 
+// Issues configures issue-list presentation preferences.
+type Issues struct {
+	HideBots bool `toml:"hide_bots,omitempty" json:"hide_bots"`
+}
+
 const (
 	TerminalRendererXterm   = "xterm"
 	TerminalRendererGhostty = "ghostty-web"
@@ -788,6 +793,7 @@ type Config struct {
 	GitHubApps        []GitHubAppConfig        `toml:"github_apps"`
 	Activity          Activity                 `toml:"activity"`
 	PullRequests      PullRequests             `toml:"pull_requests"`
+	Issues            Issues                   `toml:"issues"`
 	Notifications     Notifications            `toml:"notifications"`
 	Terminal          Terminal                 `toml:"terminal"`
 	Modes             ModeVisibility           `toml:"modes"`
@@ -2640,6 +2646,7 @@ type configFile struct {
 	DocFolders                []DocFolder              `toml:"doc_folders,omitempty"`
 	Roborev                   Roborev                  `toml:"roborev,omitempty"`
 	PullRequests              PullRequests             `toml:"pull_requests,omitempty"`
+	Issues                    Issues                   `toml:"issues,omitempty"`
 	Msgvault                  *Msgvault                `toml:"msgvault,omitempty"`
 	Tmux                      Tmux                     `toml:"tmux,omitempty"`
 	Shell                     Shell                    `toml:"shell,omitempty"`
@@ -2675,6 +2682,7 @@ func (c *Config) Save(path string) error {
 		DocFolders:              cfg.DocFolders,
 		Roborev:                 cfg.Roborev,
 		PullRequests:            cfg.PullRequests,
+		Issues:                  cfg.Issues,
 		Msgvault:                cfg.Msgvault,
 		Tmux:                    cfg.Tmux,
 		Shell:                   cfg.Shell,

@@ -126,6 +126,7 @@ describe("RepoImportModal", () => {
       repos: [],
       kata_projects: [],
       pull_requests: { allow_mid_stack_merges: false },
+      issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
         time_range: "7d",
@@ -204,6 +205,7 @@ describe("RepoImportModal", () => {
       repos: [],
       kata_projects: [],
       pull_requests: { allow_mid_stack_merges: false },
+      issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
         time_range: "7d",

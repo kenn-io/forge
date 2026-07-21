@@ -65,6 +65,7 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
         stores.settings.setTerminalSettings(settings.terminal);
         stores.settings.setPullRequestSettings(settings.pull_requests);
         stores.activity.hydrateDefaults(settings.activity);
+        stores.issues.hydrateDefaults(settings.issues);
       }
     } catch (err) {
       if (cancelled) return;

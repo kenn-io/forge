@@ -5600,6 +5600,9 @@ export interface components {
             repo_owner: string;
             workspace?: components["schemas"]["WorkspaceRef"];
         };
+        Issues: {
+            hide_bots: boolean;
+        };
         ItemAssigneesResponse: {
             /**
              * Format: uri
@@ -7305,6 +7308,7 @@ export interface components {
             activity: components["schemas"]["Activity"];
             agents: components["schemas"]["Agent"][];
             fleet: components["schemas"]["FleetSettingsResponse"];
+            issues: components["schemas"]["Issues"];
             kata_projects: components["schemas"]["KataProjectRepoMapping"][];
             launch_targets?: components["schemas"]["LaunchTarget"][] | null;
             modes?: components["schemas"]["ModeVisibility"];
@@ -7526,6 +7530,7 @@ export interface components {
             readonly $schema?: string;
             activity?: components["schemas"]["Activity"];
             agents?: components["schemas"]["Agent"][];
+            issues?: components["schemas"]["Issues"];
             kata_projects?: components["schemas"]["KataProjectRepoMapping"][];
             modes?: components["schemas"]["ModeVisibility"];
             pull_requests?: components["schemas"]["PullRequests"];

@@ -2757,6 +2757,14 @@ components:
         - Starred
         - WorkflowStatus
       type: object
+    Issues:
+      additionalProperties: false
+      properties:
+        hide_bots:
+          type: boolean
+      required:
+        - hide_bots
+      type: object
     ItemAssigneesResponse:
       additionalProperties: false
       properties:
@@ -6619,6 +6627,8 @@ components:
           type: array
         fleet:
           $ref: "#/components/schemas/FleetSettingsResponse"
+        issues:
+          $ref: "#/components/schemas/Issues"
         kata_projects:
           items:
             $ref: "#/components/schemas/KataProjectRepoMapping"
@@ -6645,6 +6655,7 @@ components:
         - repos
         - activity
         - pull_requests
+        - issues
         - notifications
         - terminal
         - agents
@@ -7122,6 +7133,8 @@ components:
           items:
             $ref: "#/components/schemas/Agent"
           type: array
+        issues:
+          $ref: "#/components/schemas/Issues"
         kata_projects:
           items:
             $ref: "#/components/schemas/KataProjectRepoMapping"

@@ -93,6 +93,12 @@
     if (issues.getIssueFilterState() !== "open") setIssueState("open");
     grouping.setGroupByRepo(true);
     grouping.setHideOrgName(false);
+    if (issues.getHideBots()) void issues.setHideBots(false);
+  }
+
+  function resetVisibility(): void {
+    grouping.setHideOrgName(false);
+    if (issues.getHideBots()) void issues.setHideBots(false);
   }
 
   const visibilityFilterSection = $derived({
@@ -103,6 +109,12 @@
         label: "Hide org name",
         active: grouping.getHideOrgName(),
         onSelect: () => grouping.setHideOrgName(!grouping.getHideOrgName()),
+      },
+      {
+        id: "hide-bot-authored-issues",
+        label: "Hide bot-authored issues",
+        active: issues.getHideBots(),
+        onSelect: () => void issues.setHideBots(!issues.getHideBots()),
       },
     ],
   });
@@ -132,7 +144,8 @@
   const hasCompactFilterChanges = $derived(
     issues.getIssueFilterState() !== "open"
       || !grouping.getGroupByRepo()
-      || grouping.getHideOrgName(),
+      || grouping.getHideOrgName()
+      || issues.getHideBots(),
   );
   const useCompactFilters = $derived(
     sidebarWidth <= COMPACT_FILTER_MAX_WIDTH,
@@ -212,11 +225,11 @@
       <FilterDropdown
         label="Visibility"
         title="Issue visibility"
-        active={grouping.getHideOrgName()}
+        active={grouping.getHideOrgName() || issues.getHideBots()}
         showBadge={false}
         sections={[visibilityFilterSection]}
         resetLabel="Reset visibility"
-        onReset={() => grouping.setHideOrgName(false)}
+        onReset={resetVisibility}
         minWidth="180px"
       />
     </div>

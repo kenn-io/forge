@@ -73,7 +73,7 @@ function pull(owner: string, name: string, number: number, title: string, author
   };
 }
 
-function issueRow(owner: string, name: string, number: number, title: string) {
+function issueRow(owner: string, name: string, number: number, title: string, author = "alice") {
   return {
     ID: 7000 + (name === "tools" ? 100 : 0) + number,
     RepoID: name === "tools" ? 2 : 1,
@@ -81,7 +81,7 @@ function issueRow(owner: string, name: string, number: number, title: string) {
     Number: number,
     URL: `https://github.com/${owner}/${name}/issues/${number}`,
     Title: title,
-    Author: "alice",
+    Author: author,
     State: "open",
     Body: "",
     CommentCount: 0,
@@ -115,7 +115,10 @@ const issues = [
   issueRow("acme", "widgets", 11, "Add dark mode support"),
   issueRow("acme", "widgets", 13, "Security advisory"),
   issueRow("acme", "tools", 5, "Support config file loading"),
+  issueRow("acme", "tools", 6, "Dependency Dashboard", "renovate[bot]"),
 ];
+
+let hideBotIssues = false;
 
 function activityItem(owner: string, name: string, number: number, title: string, author: string) {
   return {
@@ -147,7 +150,13 @@ const activityItems = [
 
 function settingsResponse(): MockRouteOverride {
   return (req) => {
-    if (req.method !== "GET" || req.url.pathname !== "/api/v1/settings") return null;
+    if (req.url.pathname !== "/api/v1/settings") return null;
+    if (req.method === "PUT") {
+      const body = JSON.parse(req.bodyText) as { issues?: { hide_bots?: boolean } };
+      hideBotIssues = body.issues?.hide_bots ?? hideBotIssues;
+    } else if (req.method !== "GET") {
+      return null;
+    }
     return jsonResponse({
       repos: [
         {
@@ -170,6 +179,7 @@ function settingsResponse(): MockRouteOverride {
         },
       ],
       activity: { view_mode: "flat", time_range: "7d", hide_closed: false, hide_bots: false, collapse_threads: false },
+      issues: { hide_bots: hideBotIssues },
       terminal: {
         font_family: "",
         font_size: 14,
@@ -288,6 +298,7 @@ describe("grouping toggle", () => {
 
   beforeEach(async () => {
     await page.viewport(1280, 900);
+    hideBotIssues = false;
     localStorage.removeItem("middleman:groupingMode");
     localStorage.removeItem("middleman:groupByRepo");
     localStorage.removeItem("middleman:hideOrgName");
@@ -348,6 +359,24 @@ describe("grouping toggle", () => {
     await vi.waitFor(() => expect(document.querySelector(".issue-item")).not.toBeNull(), WAIT);
     expect(count(".sidebar-group-header")).toBe(0);
     expect(document.querySelector(".repo-chip")).not.toBeNull();
+  });
+
+  it("hides bot-authored issues and restores the saved preference after reload", async () => {
+    mounted = await mountBrowserApp("/issues", { overrides: overrides() });
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Dependency Dashboard"), WAIT);
+
+    await selectCompactFilterItem("Hide bot-authored issues");
+
+    await vi.waitFor(() => expect(document.body.textContent).not.toContain("Dependency Dashboard"), WAIT);
+    const settingsUpdate = mounted.api.requests.find(
+      (request) => request.method === "PUT" && request.url.pathname === "/api/v1/settings",
+    );
+    expect(JSON.parse(settingsUpdate?.bodyText ?? "null")).toEqual({ issues: { hide_bots: true } });
+
+    mounted.unmount();
+    mounted = await mountBrowserApp("/issues", { overrides: overrides() });
+    await vi.waitFor(() => expect(document.querySelector(".issue-item")).not.toBeNull(), WAIT);
+    expect(document.body.textContent).not.toContain("Dependency Dashboard");
   });
 
   it("PR and issue filters share the hide org name preference", async () => {

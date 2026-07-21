@@ -240,6 +240,7 @@
     function hydrateSettings(
       repos: ConfigRepo[],
       activity: ActivitySettings,
+      issues: Settings["issues"],
       terminal: TerminalSettings,
       modes: Settings["modes"],
       pullRequests: Settings["pull_requests"],
@@ -249,6 +250,7 @@
       settingsStore.setModeVisibility(modes);
       settingsStore.setPullRequestSettings(pullRequests);
       activityStore.hydrateDefaults(activity);
+      issuesStore.hydrateDefaults(issues);
     }
 
     async function reloadSettingsAfterConfigChange(): Promise<void> {
@@ -257,6 +259,7 @@
       hydrateSettings(
         data.repos,
         data.activity,
+        data.issues,
         data.terminal,
         data.modes,
         data.pull_requests,

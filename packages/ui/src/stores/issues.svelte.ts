@@ -1,4 +1,4 @@
-import type { Issue, IssueDetail, IssuesParams, Label } from "../api/types.js";
+import type { Issue, IssueDetail, IssuesParams, IssueSettings, Label } from "../api/types.js";
 import {
   providerDefaultHost,
   providerItemPath,
@@ -63,6 +63,13 @@ function strongerSyncMode(a: IssueDetailSyncMode, b: IssueDetailSyncMode): Issue
   return syncIntentRank(b) > syncIntentRank(a) ? b : a;
 }
 
+const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
+
+function isBotAuthor(author: string): boolean {
+  const lower = author.toLowerCase();
+  return BOT_SUFFIXES.some((suffix) => lower.endsWith(suffix));
+}
+
 export function createIssuesStore(opts: IssuesStoreOptions) {
   const apiClient = opts.client;
   const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
@@ -79,6 +86,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   // --- list state ---
 
   let issues = $state<Issue[]>([]);
+  let hideBots = $state(false);
   let loading = $state(false);
   let storeError = $state<string | null>(null);
   let filterStarred = $state(false);
@@ -120,7 +128,12 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   // --- list reads ---
 
   function getIssues(): Issue[] {
-    return issues;
+    if (!hideBots) return issues;
+    return issues.filter((issue) => !isBotAuthor(issue.Author));
+  }
+
+  function getHideBots(): boolean {
+    return hideBots;
   }
   function isIssuesLoading(): boolean {
     return loading;
@@ -140,7 +153,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   function issuesByRepo(): Map<string, Issue[]> {
     const map = new Map<string, Issue[]>();
-    for (const issue of issues) {
+    for (const issue of getIssues()) {
       const key = issueIdentityKey(issueRef(issue));
       const existing = map.get(key);
       if (existing) existing.push(issue);
@@ -222,6 +235,27 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
   function setIssueFilterState(s: string): void {
     filterState = s;
+  }
+
+  function hydrateDefaults(settings: IssueSettings): void {
+    hideBots = settings.hide_bots;
+  }
+
+  async function setHideBots(value: boolean): Promise<void> {
+    const previous = hideBots;
+    hideBots = value;
+    try {
+      const { data, error: requestError } = await apiClient.PUT("/settings", {
+        body: { issues: { hide_bots: value } },
+      });
+      if (!data) {
+        throw new Error(apiErrorMessage(requestError ?? {}, "failed to save issue visibility"));
+      }
+      hideBots = data.issues.hide_bots;
+    } catch (err) {
+      hideBots = previous;
+      showFlash(err instanceof Error ? err.message : "failed to save issue visibility", { tone: "danger" });
+    }
   }
 
   function selectIssue(
@@ -977,7 +1011,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       }
       return ordered;
     }
-    return issues;
+    return getIssues();
   }
 
   function selectNextIssue(): void {
@@ -1048,6 +1082,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   return {
     getIssues,
+    getHideBots,
     isIssuesLoading,
     getIssuesError,
     getSelectedIssue,
@@ -1057,6 +1092,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     setIssueSearchQuery,
     getIssueFilterState,
     setIssueFilterState,
+    hydrateDefaults,
+    setHideBots,
     issuesByRepo,
     selectIssue,
     clearIssueSelection,

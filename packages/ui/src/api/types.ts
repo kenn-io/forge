@@ -62,6 +62,7 @@ export interface CICheck {
 }
 
 export type ActivitySettings = components["schemas"]["Activity"];
+export type IssueSettings = components["schemas"]["Issues"];
 export type PullRequestSettings = components["schemas"]["PullRequests"];
 export type TerminalSettings = components["schemas"]["Terminal"];
 export type TerminalRenderer = TerminalSettings["renderer"];

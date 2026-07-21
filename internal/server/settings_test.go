@@ -484,6 +484,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 		HideClosed: true,
 		HideBots:   true,
 	}
+	issues := config.Issues{HideBots: true}
 	terminal := config.Terminal{
 		FontFamily:     "\"Fira Code\", monospace",
 		FontSize:       16,
@@ -496,6 +497,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 	}
 	body := updateSettingsRequest{
 		Activity: &activity,
+		Issues:   &issues,
 		Terminal: &terminal,
 	}
 	rr := doJSON(
@@ -508,6 +510,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal("threaded", cfg2.Activity.ViewMode)
 	assert.Equal("30d", cfg2.Activity.TimeRange)
+	assert.True(cfg2.Issues.HideBots)
 	assert.Equal("\"Fira Code\", monospace", cfg2.Terminal.FontFamily)
 	assert.Equal(16, cfg2.Terminal.FontSize)
 	assert.Equal(5000, cfg2.Terminal.Scrollback)

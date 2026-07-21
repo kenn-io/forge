@@ -24,6 +24,7 @@ function makeStores(): StoreInstances {
       loadPulls: vi.fn().mockResolvedValue(undefined),
     },
     issues: {
+      hydrateDefaults: vi.fn(),
       loadIssues: vi.fn().mockResolvedValue(undefined),
     },
     events: {
@@ -39,6 +40,7 @@ function makeSettings(): Settings {
   return {
     repos: [],
     pull_requests: { allow_mid_stack_merges: false },
+    issues: { hide_bots: true },
     kata_projects: [],
     fleet: {
       enabled: false,
@@ -121,6 +123,7 @@ describe("runAppStartup", () => {
     expect(stores.settings.setModeVisibility).toHaveBeenCalledWith(settings.modes);
     expect(stores.settings.setTerminalSettings).toHaveBeenCalledWith(settings.terminal);
     expect(stores.activity.hydrateDefaults).toHaveBeenCalledWith(settings.activity);
+    expect(stores.issues.hydrateDefaults).toHaveBeenCalledWith(settings.issues);
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(stores.sync.startPolling).toHaveBeenCalledTimes(1);
     expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);

@@ -68,6 +68,7 @@ only routes to them.
 | Retries, rate limits, scheduling, or single-flight work | `context/retries-and-backoffs.md` |
 | Test design, test placement, or test helpers | `context/testing.md` |
 | User documentation, screenshots, or the Zensical site | `context/docs-authoring.md` |
+| Pushing, opening a pull request, or changing PR metadata | `context/pull-request-workflow.md` |
 | Frontend visual design or component conventions | `context/ui-design-system.md` |
 | Frontend interaction, route state, persistence, or input semantics | `context/ui-interaction-contracts.md` |
 | Phone routes, narrow layouts, or touch UX | `context/mobile-ux.md` |
@@ -234,16 +235,3 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 - Run tests before committing when applicable
 - Before pushing any frontend change, you must have run the full affected suite locally after the final frontend/test edit — the full `vp test` Vitest run, plus the full affected Playwright e2e suite whenever the change touches Playwright specs or the shared mock fixtures they rely on; type checks and CI-only verification are not enough.
 - Never push new workstreams unless explicitly asked. When addressing review feedback or CI failures on an existing PR, an agent may push after the fix is implemented and relevant local validation has run.
-
-## Pull Requests
-
-- Treat this as a public repository: before pushing or opening a PR, run the scrub-private-data skill and remove unnecessary internal project names, hostnames, credentials, runner topology, and infrastructure details from the diff, commit messages, and PR metadata.
-- Do not watch or poll pull-request GitHub Actions checks unless the user explicitly asks, or the work is being performed through the `$kenn:refine-pr` skill.
-- This public repository runs same-repository pull requests through main-branch reusable workflows on organization-managed ephemeral self-hosted runners. Fork pull requests use GitHub-hosted runners, even when the author is an organization member; trust is determined by the head repository, not author association. Every external fork workflow run also requires explicit approval.
-- Never delete, minimize, hide, resolve, or otherwise remove PR comments, review comments, review threads, or CI/review bot comments unless the user explicitly asks for that exact action. If a comment is stale, false-positive, superseded, or contradicted by current evidence, leave it in place and explain the evidence in a reply or final report instead.
-- PR descriptions should be concise: summarize what changed, not how or why in detail
-- When a PR adds or changes visible UI, use the `capture-playwright` skill to capture a Playwright screenshot or short video and attach it with `gh image`
-- Do this before opening the PR so the description can include the visual artifact links
-- No test plans, implementation details, or checklists in PR descriptions
-- No marketing language (critical, robust, comprehensive, etc.)
-- A bulleted summary of user-visible changes is sufficient

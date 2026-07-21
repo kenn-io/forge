@@ -49,6 +49,33 @@ Kata and Docs are first-class kenn-forge modes, but they are not platform provid
 - Docs mode operates on explicitly configured local markdown folders. Treat folder reads, writes, deletes, browse, and git publish as local filesystem surfaces requiring explicit path safety, CSRF, and loopback-access decisions.
 - These modes may link to each other, but their data ownership remains separate: provider PR/MR data lives in kenn-forge's SQLite DB, Kata task data stays in external Kata daemons, and docs files stay on disk.
 
+## Context Routing
+
+Read the smallest relevant set of topic documents before changing or reviewing
+the corresponding area. These documents own the detailed invariants; this file
+only routes to them.
+
+| When working on | Read |
+| --- | --- |
+| Provider interfaces or package boundaries | `context/provider-architecture.md` |
+| Provider identity, sync, import, routes, or settings | `context/platform-sync-invariants.md` |
+| GitHub-specific sync or notifications | `context/github-sync-invariants.md`, `context/notifications-in-activity.md` |
+| Config fields that persist to TOML | `context/config-persistence.md` |
+| Database schema migrations | `context/db-migrations.md` |
+| Deferred merge behavior | `context/deferred-merge.md` |
+| Embed routes or host bridges | `context/embeds.md` |
+| API failures or frontend error branching | `context/error-handling.md` |
+| Retries, rate limits, scheduling, or single-flight work | `context/retries-and-backoffs.md` |
+| Test design, test placement, or test helpers | `context/testing.md` |
+| Frontend visual design or component conventions | `context/ui-design-system.md` |
+| Frontend interaction, route state, persistence, or input semantics | `context/ui-interaction-contracts.md` |
+| Phone routes, narrow layouts, or touch UX | `context/mobile-ux.md` |
+| Workflow or terminal panel interaction models | `context/vscode-workflow-panel-interaction-spec.md` |
+| Workspace APIs, creation, or item identity | `context/workspace-apis.md` |
+| Workspace deletion, runtime sessions, tmux, or terminal UI | `context/workspace-runtime-lifecycle.md` |
+| Inline diff review comments | `context/inline-diff-review-comments-plan.md` |
+| Kata, Docs, or Messages/msgvault modes | `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` |
+
 ## Project Structure
 
 - `cmd/kenn-forge/` - Go server entrypoint

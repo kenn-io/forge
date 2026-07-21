@@ -174,23 +174,21 @@
 >
   <p class="title">
     <span class="state-dot" style="background: {stateColors[prState]}"></span>
-    {pr.Title}
+    <span class="title-text">{pr.Title}</span>
+    <LabelRow {labels} dots />
   </p>
-  <LabelRow {labels} compact />
-  {#if showRepo}
-    <div class="repo-row">
-      <Chip
-        size="xs"
-        uppercase={false}
-        title={repoLabel}
-        tone="muted" class="repo-chip"
-        style={`color: ${hashColor(repoColorKey)}; background: color-mix(in srgb, ${hashColor(repoColorKey)} 15%, transparent);`}
-      >{repoLabel}</Chip>
-    </div>
-  {/if}
   <div class="meta-row">
     <span class="meta-left">
-      #{pr.Number} · {pr.Author}
+      {#if showRepo}
+        <Chip
+          size="xs"
+          uppercase={false}
+          title={repoLabel}
+          tone="muted" class="repo-chip"
+          style={`color: ${hashColor(repoColorKey)}; background: color-mix(in srgb, ${hashColor(repoColorKey)} 15%, transparent);`}
+        >{repoLabel}</Chip>
+      {/if}
+      <span class="meta-text">#{pr.Number} · {pr.Author}</span>
     </span>
     <span class="meta-right">
       {#if showImport}
@@ -291,7 +289,7 @@
     display: block;
     width: 100%;
     text-align: left;
-    padding: var(--sidebar-row-padding, 10px 12px);
+    padding: 6px 10px;
     border-bottom: 1px solid var(--sidebar-list-border-muted, var(--border-muted));
     background: var(--sidebar-row-bg, var(--bg-surface));
     cursor: pointer;
@@ -332,10 +330,16 @@
     font-size: var(--font-size-md);
     font-weight: 500;
     color: var(--text-primary);
+    overflow: hidden;
+    margin-bottom: 2px;
+  }
+
+  .title-text {
+    flex: 0 1 auto;
+    min-width: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-bottom: 4px;
   }
 
   .state-dot {
@@ -353,6 +357,13 @@
   }
 
   .meta-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .meta-text {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
     white-space: nowrap;
@@ -361,17 +372,11 @@
     min-width: 0;
   }
 
-  .repo-row {
-    display: flex;
-    min-width: 0;
-    margin-bottom: 4px;
-  }
-
   :global(.kit-chip.repo-chip) {
-    flex: 0 1 auto;
+    flex: 0 4 auto;
     justify-content: flex-start;
     min-width: 0;
-    max-width: 100%;
+    max-width: 45%;
     overflow: hidden;
   }
 
@@ -524,7 +529,7 @@
   }
 
   :global(.mobile-main) .pull-item {
-    min-height: calc(var(--focus-mobile-hit-target, 37px) * 1.65);
+    min-height: calc(var(--focus-mobile-hit-target, 37px) * 1.95);
     font-size: var(--font-size-md);
     padding: var(--focus-mobile-space-sm, 10px) var(--focus-mobile-space-md, 13px);
     border-bottom: thin solid var(--border-muted);
@@ -536,6 +541,9 @@
     margin-bottom: var(--focus-mobile-space-xs, 6.5px);
     font-size: var(--font-size-xl);
     line-height: 1.3;
+  }
+
+  :global(.mobile-main) .title-text {
     white-space: normal;
     display: -webkit-box;
     -webkit-box-orient: vertical;
@@ -548,15 +556,11 @@
     height: 10px;
   }
 
-  :global(.mobile-main) .repo-row {
-    margin-bottom: var(--focus-mobile-space-xs, 6.5px);
-  }
-
   :global(.mobile-main) .meta-row {
     gap: var(--focus-mobile-space-sm, 8px);
   }
 
-  :global(.mobile-main) .meta-left,
+  :global(.mobile-main) .meta-text,
   :global(.mobile-main) .time,
   :global(.mobile-main) .worktree-name {
     font-size: var(--font-size-sm);

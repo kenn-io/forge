@@ -341,3 +341,53 @@ describe("PullItem kanban status", () => {
     expect(screen.queryByText("Ready")).toBeNull();
   });
 });
+
+describe("PullItem compact layout", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("renders the repo chip inside the meta row with no separate repo row", () => {
+    render(PullItem, {
+      props: {
+        pr: mkPR({}),
+        selected: false,
+        showRepo: true,
+        repoLabel: "o/n",
+        onclick: () => {},
+      },
+      context: new Map<symbol, unknown>([
+        [STORES_KEY, { pulls: { togglePRStar: vi.fn() } }],
+        [HOST_STATE_KEY, {}],
+      ]),
+    });
+
+    expect(document.querySelector(".meta-row .meta-left .kit-chip.repo-chip")).not.toBeNull();
+    expect(document.querySelector(".repo-row")).toBeNull();
+  });
+
+  it("renders label dots on the title line instead of a label pill row", () => {
+    renderItem(
+      mkPR({
+        labels: [
+          { name: "bug", color: "d73a4a" },
+          { name: "sync", color: "0075ca" },
+        ],
+      }),
+    );
+
+    expect(document.querySelectorAll(".title .label-dot")).toHaveLength(2);
+    expect(document.querySelector(".title .label-dots")?.getAttribute("title")).toBe("bug, sync");
+    expect(screen.getByText("Labels: bug, sync")).toBeTruthy();
+    expect(document.querySelector(".label-row")).toBeNull();
+    expect(screen.queryByText("bug")).toBeNull();
+  });
+
+  it("keeps title text and meta number/author in the two-line structure", () => {
+    renderItem(mkPR({ Title: "Cache widget details", Author: "alice", Number: 7 }));
+
+    expect(document.querySelector(".title .title-text")?.textContent).toBe("Cache widget details");
+    expect(document.querySelector(".meta-left .meta-text")?.textContent).toContain("#7 · alice");
+  });
+});

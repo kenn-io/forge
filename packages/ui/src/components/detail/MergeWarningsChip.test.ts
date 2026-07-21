@@ -11,7 +11,7 @@ const behindEntry: MergeWarningEntry = {
   text: "This branch is behind the base branch and may need to be updated.",
 };
 
-function renderChip(warnings: MergeWarningEntry[], ontoggle = vi.fn()) {
+function renderChip(warnings: MergeWarningEntry[], ontoggle?: (expanded: boolean) => void) {
   render(MergeWarningsChip, {
     props: {
       warnings,
@@ -20,7 +20,6 @@ function renderChip(warnings: MergeWarningEntry[], ontoggle = vi.fn()) {
       ontoggle,
     },
   });
-  return ontoggle;
 }
 
 describe("MergeWarningsChip", () => {
@@ -52,17 +51,27 @@ describe("MergeWarningsChip", () => {
     expect(screen.getByTestId("merge-warnings-chip").textContent).toContain("2 merge warnings");
   });
 
-  it("toggles the panel and reports through ontoggle", async () => {
-    const ontoggle = renderChip([conflictEntry]);
+  it("toggles the panel open and closed when uncontrolled", async () => {
+    renderChip([conflictEntry]);
+    expect(screen.queryByText(conflictEntry.text)).toBeNull();
+
+    await fireEvent.click(screen.getByTestId("merge-warnings-chip"));
+    expect(screen.getByText(conflictEntry.text)).toBeTruthy();
+
+    await fireEvent.click(screen.getByTestId("merge-warnings-chip"));
+    expect(screen.queryByText(conflictEntry.text)).toBeNull();
+  });
+
+  it("reports toggle callback values and leaves expansion to the parent", async () => {
+    const ontoggle = vi.fn();
+    renderChip([conflictEntry], ontoggle);
+
+    await fireEvent.click(screen.getByTestId("merge-warnings-chip"));
+    expect(ontoggle).toHaveBeenLastCalledWith(true);
     expect(screen.queryByText(conflictEntry.text)).toBeNull();
 
     await fireEvent.click(screen.getByTestId("merge-warnings-chip"));
     expect(ontoggle).toHaveBeenLastCalledWith(true);
-    expect(screen.getByText(conflictEntry.text)).toBeTruthy();
-
-    await fireEvent.click(screen.getByTestId("merge-warnings-chip"));
-    expect(ontoggle).toHaveBeenLastCalledWith(false);
-    expect(screen.queryByText(conflictEntry.text)).toBeNull();
   });
 
   it("lists entries in the given order with a provider link", async () => {

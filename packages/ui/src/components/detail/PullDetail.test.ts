@@ -826,6 +826,20 @@ describe("PullDetail approvals", () => {
     expect(link.getAttribute("href")).toBe(detail.merge_request.URL);
   });
 
+  it("surfaces branch protection warnings through the merge warnings chip", async () => {
+    const detail = pullDetail();
+    detail.merge_request.MergeableState = "blocked";
+
+    renderPullDetail(detail);
+
+    const chip = screen.getByTestId("merge-warnings-chip");
+    expect(chip.textContent).toContain("1 merge warning");
+
+    await fireEvent.click(chip);
+
+    expect(screen.getByText("Branch protection rules may prevent this merge.")).toBeTruthy();
+  });
+
   it("shows only server warnings on the chip when the detail is stale", async () => {
     const detail = pullDetail();
     detail.repo_owner = "someone-else";

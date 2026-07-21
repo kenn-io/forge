@@ -35,8 +35,11 @@
 
   function toggleExpanded(): void {
     const next = !expanded;
+    if (ontoggle) {
+      ontoggle(next);
+      return;
+    }
     expanded = next;
-    ontoggle?.(next);
   }
 </script>
 

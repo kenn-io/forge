@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
 	"go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/tokenauth"
@@ -274,7 +275,7 @@ func TestBuildProviderStartupRoutesUntrackedOwnerAndKeepsFallbackUnscoped(t *tes
 	nonGitHub := startup.SourceForRepo(
 		"forgejo", "github.com", "org-a", "first-repo",
 	)
-	assert.NotContains(nonGitHub.Descriptor().CanonicalSourceString(), "ORG_A_PAT")
+	assert.Nil(nonGitHub, "an unconfigured provider must not borrow another provider's credential")
 
 	fallback := startup.FallbackSource("github.com")
 	require.NotNil(fallback)
@@ -289,6 +290,47 @@ func TestBuildProviderStartupRoutesUntrackedOwnerAndKeepsFallbackUnscoped(t *tes
 	fallbackRoute, err := router.RouteForRepo("unconfigured", "repo")
 	require.NoError(err)
 	assert.Equal("user:999", fallbackRoute.ReadIdentity.Principal)
+}
+
+func TestProviderStartupKeepsSameHostGitCredentialsProviderScoped(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	const host = "code.example.com"
+	t.Setenv("GITHUB_PAT", "github-secret")
+	t.Setenv("FORGEJO_PAT", "forgejo-secret")
+
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	githubSource := set.Upsert(tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: string(platform.KindGitHub), Host: host},
+		Candidates: []tokenauth.Candidate{{
+			Kind: tokenauth.SourceKindEnv, EnvName: "GITHUB_PAT",
+		}},
+	})
+	forgejoSource := set.Upsert(tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: string(platform.KindForgejo), Host: host},
+		Candidates: []tokenauth.Candidate{{
+			Kind: tokenauth.SourceKindEnv, EnvName: "FORGEJO_PAT",
+		}},
+	})
+	router, err := github.NewHostRouter(host)
+	require.NoError(err)
+	startup := providerStartup{
+		cloneSources: map[tokenauth.Key]tokenauth.Source{
+			{Platform: string(platform.KindGitHub), Host: host}:  githubSource,
+			{Platform: string(platform.KindForgejo), Host: host}: forgejoSource,
+		},
+		cloneAuth:     map[string]tokenauth.Source{host: githubSource},
+		githubRoutes:  map[tokenauth.Key]githubCredentialRoute{},
+		githubRouters: map[string]*github.HostRouter{host: router},
+	}
+
+	selected := startup.SourceForRepo("forgejo", host, "acme", "widget")
+	require.NotNil(selected)
+	token, err := selected.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("forgejo-secret", token)
+	assert.Nil(startup.SourceForRepo("github", host, "unmatched", "repo"),
+		"a routed GitHub host without a matching route must fail closed")
 }
 
 func TestBuildProviderStartupSkipsImplicitOptionalFallbackIdentityLookup(t *testing.T) {

@@ -99,8 +99,12 @@ func (s *providerStartup) SourceForRepo(
 	}
 	platformName = strings.ToLower(strings.TrimSpace(platformName))
 	host = strings.ToLower(strings.TrimSpace(host))
+	providerSource := s.cloneSources[tokenauth.Key{
+		Platform: platformName,
+		Host:     host,
+	}]
 	if platformName != string(platform.KindGitHub) {
-		return s.cloneAuth[host]
+		return providerSource
 	}
 	owner = strings.ToLower(strings.TrimSpace(owner))
 	name = strings.ToLower(strings.TrimSpace(name))
@@ -117,7 +121,10 @@ func (s *providerStartup) SourceForRepo(
 			}
 		}
 	}
-	return s.cloneAuth[host]
+	if s.githubRouters[host] != nil {
+		return nil
+	}
+	return providerSource
 }
 
 func (s *providerStartup) FallbackSource(host string) tokenauth.Source {

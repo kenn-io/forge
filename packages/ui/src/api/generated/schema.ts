@@ -2236,6 +2236,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kata/tasks/references": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search open Kata task references */
+        get: operations["search-kata-task-references"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kata/tasks/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get authoritative Kata task snapshot */
+        get: operations["get-kata-task-snapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kata/tasks/{issue_uid}": {
         parameters: {
             query?: never;
@@ -5258,6 +5292,34 @@ export interface components {
             /** @description The value at the given location */
             value?: unknown;
         };
+        EventEnvelope: {
+            actor: string;
+            content_hash: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            event_id: number;
+            event_uid: string;
+            /** Format: int64 */
+            hlc_counter: number;
+            /** Format: int64 */
+            hlc_physical_ms: number;
+            /** Format: int64 */
+            issue_id?: number;
+            issue_short_id?: string;
+            issue_uid?: string;
+            origin_instance_uid: string;
+            payload?: unknown;
+            /** Format: int64 */
+            project_id: number;
+            project_name: string;
+            project_uid: string;
+            /** Format: int64 */
+            related_issue_id?: number;
+            related_issue_short_id?: string;
+            related_issue_uid?: string;
+            type: string;
+        };
         FeatureCapabilities: {
             moshAttach: boolean;
             resourceMetrics: boolean;
@@ -5647,6 +5709,17 @@ export interface components {
             readonly $schema?: string;
             reviewers: string[] | null;
         };
+        KataAuthorityRequest: {
+            authority: string;
+            project_uid?: string;
+            scope: string;
+        };
+        KataChildCounts: {
+            /** Format: int64 */
+            open: number;
+            /** Format: int64 */
+            total: number;
+        };
         KataDaemonResponse: {
             auth: string;
             default: boolean;
@@ -5664,6 +5737,10 @@ export interface components {
             readonly $schema?: string;
             daemons: components["schemas"]["KataDaemonResponse"][] | null;
             source?: string;
+        };
+        KataLinkPeer: {
+            short_id: string;
+            uid: string;
         };
         KataMappingTargetResponse: {
             display_name: string;
@@ -5695,6 +5772,42 @@ export interface components {
             provider: string;
             repo_path: string;
         };
+        KataProjectSummary: {
+            /** Format: int64 */
+            closed_count: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            deleted_at?: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: date-time */
+            last_event_at?: string;
+            metadata: {
+                [key: string]: unknown;
+            };
+            name: string;
+            /** Format: int64 */
+            open_count: number;
+            /** Format: int64 */
+            revision: number;
+            uid: string;
+        };
+        KataSnapshotEnrichment: {
+            errors?: {
+                [key: string]: components["schemas"]["KataSnapshotEnrichmentError"];
+            };
+            graph?: components["schemas"]["ReachableGraphResponseBody"];
+            /** Format: date-time */
+            graph_fetched_at?: string;
+            selected_detail?: components["schemas"]["KataTaskDetailResponse"];
+            selected_history?: components["schemas"]["EventEnvelope"][] | null;
+            selected_issue_uid?: string;
+        };
+        KataSnapshotEnrichmentError: {
+            code: string;
+            message: string;
+        };
         KataTaskDetailResponse: {
             /**
              * Format: uri
@@ -5707,6 +5820,98 @@ export interface components {
             /** @description Daemon issue detail ETag, when the daemon provided one */
             etag?: string;
             workspace_target: components["schemas"]["KataWorkspaceTargetResponse"];
+        };
+        KataTaskReference: {
+            /** Format: int64 */
+            project_id: number;
+            project_name: string;
+            project_uid: string;
+            qualified_id: string;
+            reference: string;
+            short_id: string;
+            title: string;
+            uid: string;
+        };
+        KataTaskReferenceResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/KataTaskReferenceResponse.json
+             */
+            readonly $schema?: string;
+            daemon_id: string;
+            /** Format: date-time */
+            fetched_at: string;
+            /** Format: int64 */
+            generation: number;
+            /** Format: int64 */
+            invalidation_epoch: number;
+            references: components["schemas"]["KataTaskReference"][] | null;
+            server_instance_id: string;
+        };
+        KataTaskSnapshotResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/KataTaskSnapshotResponse.json
+             */
+            readonly $schema?: string;
+            daemon_id: string;
+            enrichment: components["schemas"]["KataSnapshotEnrichment"];
+            /** Format: int64 */
+            event_cursor: number;
+            /** Format: date-time */
+            fetched_at: string;
+            /** Format: int64 */
+            generation: number;
+            intent: components["schemas"]["KataAuthorityRequest"];
+            /** Format: int64 */
+            invalidation_epoch: number;
+            issues: components["schemas"]["KataTaskSummary"][] | null;
+            member_issue_uids: string[] | null;
+            projects: components["schemas"]["KataProjectSummary"][] | null;
+            server_instance_id: string;
+        };
+        KataTaskSummary: {
+            author: string;
+            blocked_by: components["schemas"]["KataLinkPeer"][] | null;
+            blocks: components["schemas"]["KataLinkPeer"][] | null;
+            body: string;
+            child_counts?: components["schemas"]["KataChildCounts"];
+            /** Format: date-time */
+            closed_at?: string;
+            closed_reason?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            deleted_at?: string;
+            /** Format: int64 */
+            id: number;
+            labels: string[] | null;
+            metadata: {
+                [key: string]: unknown;
+            };
+            occurrence_key?: string;
+            owner?: string;
+            parent?: components["schemas"]["KataLinkPeer"];
+            /** Format: int64 */
+            priority?: number;
+            /** Format: int64 */
+            project_id: number;
+            project_name: string;
+            project_uid: string;
+            qualified_id: string;
+            /** Format: int64 */
+            recurrence_id?: number;
+            related: components["schemas"]["KataLinkPeer"][] | null;
+            /** Format: int64 */
+            revision: number;
+            short_id: string;
+            status: string;
+            title: string;
+            uid: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         KataWorkspaceTargetResponse: {
             available: boolean;
@@ -6717,6 +6922,60 @@ export interface components {
             syncAhead?: number;
             /** Format: int64 */
             syncBehind?: number;
+        };
+        ReachableGraphEdge: {
+            from_uid: string;
+            kind: string;
+            layout: boolean;
+            to_uid: string;
+        };
+        ReachableGraphNode: {
+            author: string;
+            body: string;
+            /** Format: date-time */
+            closed_at?: string;
+            closed_reason?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            deleted_at?: string;
+            /** Format: int64 */
+            id: number;
+            metadata: {
+                [key: string]: unknown;
+            };
+            occurrence_key?: string;
+            owner?: string;
+            /** Format: int64 */
+            priority?: number;
+            /** Format: int64 */
+            project_id: number;
+            project_uid?: string;
+            qualified_id: string;
+            /** Format: int64 */
+            recurrence_id?: number;
+            /** Format: int64 */
+            revision: number;
+            short_id: string;
+            status: string;
+            title: string;
+            uid: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ReachableGraphResponseBody: {
+            depth: string;
+            edges?: components["schemas"]["ReachableGraphEdge"][] | null;
+            hide_done: boolean;
+            nodes?: components["schemas"]["ReachableGraphNode"][] | null;
+            source_uid: string;
+            unresolved_refs?: components["schemas"]["ReachableGraphUnresolvedRef"][] | null;
+        };
+        ReachableGraphUnresolvedRef: {
+            kind: string;
+            other_uid: string;
+            side: string;
+            uid: string;
         };
         RefreshFleetStatsOutputBody: {
             /**
@@ -12866,6 +13125,81 @@ export interface operations {
             };
         };
     };
+    "search-kata-task-references": {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+            };
+            header?: {
+                /** @description Kata daemon id; the effective default daemon when empty */
+                "X-Middleman-Kata-Daemon"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    Vary?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataTaskReferenceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-kata-task-snapshot": {
+        parameters: {
+            query?: {
+                scope?: "global" | "project";
+                project_uid?: string;
+                authority?: "open" | "ready" | "closed" | "all";
+                selected_issue_uid?: string;
+                graph_source_uid?: string;
+            };
+            header?: {
+                /** @description Kata daemon id; the effective default daemon when empty */
+                "X-Middleman-Kata-Daemon"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    Vary?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataTaskSnapshotResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "get-kata-task-detail": {
         parameters: {
             query?: never;
@@ -17672,6 +18006,8 @@ type ReadonlyArray<T> = [
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const pathsHostPlatform_hostPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const pathsHostPlatform_hostRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
+export const pathsKataTasksSnapshotGetParametersQueryScopeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/kata/tasks/snapshot"]["get"]["parameters"]["query"]["scope"]> = ["global", "project"];
+export const pathsKataTasksSnapshotGetParametersQueryAuthorityValues: ReadonlyArray<FlattenedDeepRequired<paths>["/kata/tasks/snapshot"]["get"]["parameters"]["query"]["authority"]> = ["open", "ready", "closed", "all"];
 export const pathsPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const pathsRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
 export const pathsWorkspacesIdFilePreviewGetParametersQueryBaseValues: ReadonlyArray<FlattenedDeepRequired<paths>["/workspaces/{id}/file-preview"]["get"]["parameters"]["query"]["base"]> = ["head", "pushed", "merge-target"];

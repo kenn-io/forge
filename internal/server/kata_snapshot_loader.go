@@ -12,9 +12,9 @@ import (
 )
 
 type kataAuthorityRequest struct {
-	Scope      string
-	ProjectUID string
-	Authority  string
+	Scope      string `json:"scope"`
+	ProjectUID string `json:"project_uid,omitempty"`
+	Authority  string `json:"authority"`
 }
 
 type kataSnapshotLoader struct {

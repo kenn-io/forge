@@ -24,57 +24,57 @@ type kataSnapshotKey struct {
 }
 
 type kataProjectSummary struct {
-	ID          int64
-	UID         string
-	Name        string
-	Metadata    map[string]any
-	Revision    int64
-	CreatedAt   time.Time
-	DeletedAt   *time.Time
-	OpenCount   int64
-	ClosedCount int64
-	LastEventAt *time.Time
+	ID          int64          `json:"id"`
+	UID         string         `json:"uid"`
+	Name        string         `json:"name"`
+	Metadata    map[string]any `json:"metadata"`
+	Revision    int64          `json:"revision"`
+	CreatedAt   time.Time      `json:"created_at"`
+	DeletedAt   *time.Time     `json:"deleted_at,omitempty"`
+	OpenCount   int64          `json:"open_count"`
+	ClosedCount int64          `json:"closed_count"`
+	LastEventAt *time.Time     `json:"last_event_at,omitempty"`
 }
 
 type kataLinkPeer struct {
-	UID     string
-	ShortID string
+	UID     string `json:"uid"`
+	ShortID string `json:"short_id"`
 }
 
 type kataChildCounts struct {
-	Open  int64
-	Total int64
+	Open  int64 `json:"open"`
+	Total int64 `json:"total"`
 }
 
 type kataTaskSummary struct {
-	ID            int64
-	UID           string
-	ProjectID     int64
-	ShortID       string
-	QualifiedID   string
-	Title         string
-	Body          string
-	Status        string
-	ProjectUID    string
-	ProjectName   string
-	Metadata      map[string]any
-	Revision      int64
-	Owner         *string
-	Author        string
-	Priority      *int64
-	Labels        []string
-	Parent        *kataLinkPeer
-	Blocks        []kataLinkPeer
-	BlockedBy     []kataLinkPeer
-	Related       []kataLinkPeer
-	ChildCounts   *kataChildCounts
-	RecurrenceID  *int64
-	OccurrenceKey *string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	ClosedReason  *string
-	ClosedAt      *time.Time
-	DeletedAt     *time.Time
+	ID            int64            `json:"id"`
+	UID           string           `json:"uid"`
+	ProjectID     int64            `json:"project_id"`
+	ShortID       string           `json:"short_id"`
+	QualifiedID   string           `json:"qualified_id"`
+	Title         string           `json:"title"`
+	Body          string           `json:"body"`
+	Status        string           `json:"status"`
+	ProjectUID    string           `json:"project_uid"`
+	ProjectName   string           `json:"project_name"`
+	Metadata      map[string]any   `json:"metadata"`
+	Revision      int64            `json:"revision"`
+	Owner         *string          `json:"owner,omitempty"`
+	Author        string           `json:"author"`
+	Priority      *int64           `json:"priority,omitempty"`
+	Labels        []string         `json:"labels"`
+	Parent        *kataLinkPeer    `json:"parent,omitempty"`
+	Blocks        []kataLinkPeer   `json:"blocks"`
+	BlockedBy     []kataLinkPeer   `json:"blocked_by"`
+	Related       []kataLinkPeer   `json:"related"`
+	ChildCounts   *kataChildCounts `json:"child_counts,omitempty"`
+	RecurrenceID  *int64           `json:"recurrence_id,omitempty"`
+	OccurrenceKey *string          `json:"occurrence_key,omitempty"`
+	CreatedAt     time.Time        `json:"created_at"`
+	UpdatedAt     time.Time        `json:"updated_at"`
+	ClosedReason  *string          `json:"closed_reason,omitempty"`
+	ClosedAt      *time.Time       `json:"closed_at,omitempty"`
+	DeletedAt     *time.Time       `json:"deleted_at,omitempty"`
 }
 
 type kataAuthoritySnapshot struct {

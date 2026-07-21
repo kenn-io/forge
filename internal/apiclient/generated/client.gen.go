@@ -704,6 +704,48 @@ func (e ResolveRepoItemOnHostParamsItemType) Valid() bool {
 	}
 }
 
+// Defines values for GetKataTaskSnapshotParamsScope.
+const (
+	Global  GetKataTaskSnapshotParamsScope = "global"
+	Project GetKataTaskSnapshotParamsScope = "project"
+)
+
+// Valid indicates whether the value is a known member of the GetKataTaskSnapshotParamsScope enum.
+func (e GetKataTaskSnapshotParamsScope) Valid() bool {
+	switch e {
+	case Global:
+		return true
+	case Project:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetKataTaskSnapshotParamsAuthority.
+const (
+	All    GetKataTaskSnapshotParamsAuthority = "all"
+	Closed GetKataTaskSnapshotParamsAuthority = "closed"
+	Open   GetKataTaskSnapshotParamsAuthority = "open"
+	Ready  GetKataTaskSnapshotParamsAuthority = "ready"
+)
+
+// Valid indicates whether the value is a known member of the GetKataTaskSnapshotParamsAuthority enum.
+func (e GetKataTaskSnapshotParamsAuthority) Valid() bool {
+	switch e {
+	case All:
+		return true
+	case Closed:
+		return true
+	case Open:
+		return true
+	case Ready:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetPullFilePreviewParamsSide.
 const (
 	GetPullFilePreviewParamsSideNew GetPullFilePreviewParamsSide = "new"
@@ -1645,6 +1687,29 @@ type ErrorDetail struct {
 	Value interface{} `json:"value,omitempty"`
 }
 
+// EventEnvelope defines model for EventEnvelope.
+type EventEnvelope struct {
+	Actor               string      `json:"actor"`
+	ContentHash         string      `json:"content_hash"`
+	CreatedAt           time.Time   `json:"created_at"`
+	EventId             int64       `json:"event_id"`
+	EventUid            string      `json:"event_uid"`
+	HlcCounter          int64       `json:"hlc_counter"`
+	HlcPhysicalMs       int64       `json:"hlc_physical_ms"`
+	IssueId             *int64      `json:"issue_id,omitempty"`
+	IssueShortId        *string     `json:"issue_short_id,omitempty"`
+	IssueUid            *string     `json:"issue_uid,omitempty"`
+	OriginInstanceUid   string      `json:"origin_instance_uid"`
+	Payload             interface{} `json:"payload,omitempty"`
+	ProjectId           int64       `json:"project_id"`
+	ProjectName         string      `json:"project_name"`
+	ProjectUid          string      `json:"project_uid"`
+	RelatedIssueId      *int64      `json:"related_issue_id,omitempty"`
+	RelatedIssueShortId *string     `json:"related_issue_short_id,omitempty"`
+	RelatedIssueUid     *string     `json:"related_issue_uid,omitempty"`
+	Type                string      `json:"type"`
+}
+
 // FeatureCapabilities defines model for FeatureCapabilities.
 type FeatureCapabilities struct {
 	MoshAttach      bool    `json:"moshAttach"`
@@ -1987,6 +2052,19 @@ type ItemReviewersResponse struct {
 	Reviewers *[]string `json:"reviewers"`
 }
 
+// KataAuthorityRequest defines model for KataAuthorityRequest.
+type KataAuthorityRequest struct {
+	Authority  string  `json:"authority"`
+	ProjectUid *string `json:"project_uid,omitempty"`
+	Scope      string  `json:"scope"`
+}
+
+// KataChildCounts defines model for KataChildCounts.
+type KataChildCounts struct {
+	Open  int64 `json:"open"`
+	Total int64 `json:"total"`
+}
+
 // KataDaemonResponse defines model for KataDaemonResponse.
 type KataDaemonResponse struct {
 	Auth    string  `json:"auth"`
@@ -2003,6 +2081,12 @@ type KataDaemonRosterResponse struct {
 	Schema  *string               `json:"$schema,omitempty"`
 	Daemons *[]KataDaemonResponse `json:"daemons"`
 	Source  *string               `json:"source,omitempty"`
+}
+
+// KataLinkPeer defines model for KataLinkPeer.
+type KataLinkPeer struct {
+	ShortId string `json:"short_id"`
+	Uid     string `json:"uid"`
 }
 
 // KataMappingTargetResponse defines model for KataMappingTargetResponse.
@@ -2039,6 +2123,36 @@ type KataProjectRepoMapping struct {
 	RepoPath     string  `json:"repo_path"`
 }
 
+// KataProjectSummary defines model for KataProjectSummary.
+type KataProjectSummary struct {
+	ClosedCount int64                  `json:"closed_count"`
+	CreatedAt   time.Time              `json:"created_at"`
+	DeletedAt   *time.Time             `json:"deleted_at,omitempty"`
+	Id          int64                  `json:"id"`
+	LastEventAt *time.Time             `json:"last_event_at,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata"`
+	Name        string                 `json:"name"`
+	OpenCount   int64                  `json:"open_count"`
+	Revision    int64                  `json:"revision"`
+	Uid         string                 `json:"uid"`
+}
+
+// KataSnapshotEnrichment defines model for KataSnapshotEnrichment.
+type KataSnapshotEnrichment struct {
+	Errors           *map[string]KataSnapshotEnrichmentError `json:"errors,omitempty"`
+	Graph            *ReachableGraphResponseBody             `json:"graph,omitempty"`
+	GraphFetchedAt   *time.Time                              `json:"graph_fetched_at,omitempty"`
+	SelectedDetail   *KataTaskDetailResponse                 `json:"selected_detail,omitempty"`
+	SelectedHistory  *[]EventEnvelope                        `json:"selected_history,omitempty"`
+	SelectedIssueUid *string                                 `json:"selected_issue_uid,omitempty"`
+}
+
+// KataSnapshotEnrichmentError defines model for KataSnapshotEnrichmentError.
+type KataSnapshotEnrichmentError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 // KataTaskDetailResponse defines model for KataTaskDetailResponse.
 type KataTaskDetailResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -2050,6 +2164,79 @@ type KataTaskDetailResponse struct {
 	// Etag Daemon issue detail ETag, when the daemon provided one
 	Etag            *string                     `json:"etag,omitempty"`
 	WorkspaceTarget KataWorkspaceTargetResponse `json:"workspace_target"`
+}
+
+// KataTaskReference defines model for KataTaskReference.
+type KataTaskReference struct {
+	ProjectId   int64  `json:"project_id"`
+	ProjectName string `json:"project_name"`
+	ProjectUid  string `json:"project_uid"`
+	QualifiedId string `json:"qualified_id"`
+	Reference   string `json:"reference"`
+	ShortId     string `json:"short_id"`
+	Title       string `json:"title"`
+	Uid         string `json:"uid"`
+}
+
+// KataTaskReferenceResponse defines model for KataTaskReferenceResponse.
+type KataTaskReferenceResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema            *string              `json:"$schema,omitempty"`
+	DaemonId          string               `json:"daemon_id"`
+	FetchedAt         time.Time            `json:"fetched_at"`
+	Generation        int64                `json:"generation"`
+	InvalidationEpoch int64                `json:"invalidation_epoch"`
+	References        *[]KataTaskReference `json:"references"`
+	ServerInstanceId  string               `json:"server_instance_id"`
+}
+
+// KataTaskSnapshotResponse defines model for KataTaskSnapshotResponse.
+type KataTaskSnapshotResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema            *string                `json:"$schema,omitempty"`
+	DaemonId          string                 `json:"daemon_id"`
+	Enrichment        KataSnapshotEnrichment `json:"enrichment"`
+	EventCursor       int64                  `json:"event_cursor"`
+	FetchedAt         time.Time              `json:"fetched_at"`
+	Generation        int64                  `json:"generation"`
+	Intent            KataAuthorityRequest   `json:"intent"`
+	InvalidationEpoch int64                  `json:"invalidation_epoch"`
+	Issues            *[]KataTaskSummary     `json:"issues"`
+	MemberIssueUids   *[]string              `json:"member_issue_uids"`
+	Projects          *[]KataProjectSummary  `json:"projects"`
+	ServerInstanceId  string                 `json:"server_instance_id"`
+}
+
+// KataTaskSummary defines model for KataTaskSummary.
+type KataTaskSummary struct {
+	Author        string                 `json:"author"`
+	BlockedBy     *[]KataLinkPeer        `json:"blocked_by"`
+	Blocks        *[]KataLinkPeer        `json:"blocks"`
+	Body          string                 `json:"body"`
+	ChildCounts   *KataChildCounts       `json:"child_counts,omitempty"`
+	ClosedAt      *time.Time             `json:"closed_at,omitempty"`
+	ClosedReason  *string                `json:"closed_reason,omitempty"`
+	CreatedAt     time.Time              `json:"created_at"`
+	DeletedAt     *time.Time             `json:"deleted_at,omitempty"`
+	Id            int64                  `json:"id"`
+	Labels        *[]string              `json:"labels"`
+	Metadata      map[string]interface{} `json:"metadata"`
+	OccurrenceKey *string                `json:"occurrence_key,omitempty"`
+	Owner         *string                `json:"owner,omitempty"`
+	Parent        *KataLinkPeer          `json:"parent,omitempty"`
+	Priority      *int64                 `json:"priority,omitempty"`
+	ProjectId     int64                  `json:"project_id"`
+	ProjectName   string                 `json:"project_name"`
+	ProjectUid    string                 `json:"project_uid"`
+	QualifiedId   string                 `json:"qualified_id"`
+	RecurrenceId  *int64                 `json:"recurrence_id,omitempty"`
+	Related       *[]KataLinkPeer        `json:"related"`
+	Revision      int64                  `json:"revision"`
+	ShortId       string                 `json:"short_id"`
+	Status        string                 `json:"status"`
+	Title         string                 `json:"title"`
+	Uid           string                 `json:"uid"`
+	UpdatedAt     time.Time              `json:"updated_at"`
 }
 
 // KataWorkspaceTargetResponse defines model for KataWorkspaceTargetResponse.
@@ -2933,6 +3120,57 @@ type RawWorktree struct {
 	SessionBackend     *string        `json:"sessionBackend,omitempty"`
 	SyncAhead          *int64         `json:"syncAhead,omitempty"`
 	SyncBehind         *int64         `json:"syncBehind,omitempty"`
+}
+
+// ReachableGraphEdge defines model for ReachableGraphEdge.
+type ReachableGraphEdge struct {
+	FromUid string `json:"from_uid"`
+	Kind    string `json:"kind"`
+	Layout  bool   `json:"layout"`
+	ToUid   string `json:"to_uid"`
+}
+
+// ReachableGraphNode defines model for ReachableGraphNode.
+type ReachableGraphNode struct {
+	Author        string                 `json:"author"`
+	Body          string                 `json:"body"`
+	ClosedAt      *time.Time             `json:"closed_at,omitempty"`
+	ClosedReason  *string                `json:"closed_reason,omitempty"`
+	CreatedAt     time.Time              `json:"created_at"`
+	DeletedAt     *time.Time             `json:"deleted_at,omitempty"`
+	Id            int64                  `json:"id"`
+	Metadata      map[string]interface{} `json:"metadata"`
+	OccurrenceKey *string                `json:"occurrence_key,omitempty"`
+	Owner         *string                `json:"owner,omitempty"`
+	Priority      *int64                 `json:"priority,omitempty"`
+	ProjectId     int64                  `json:"project_id"`
+	ProjectUid    *string                `json:"project_uid,omitempty"`
+	QualifiedId   string                 `json:"qualified_id"`
+	RecurrenceId  *int64                 `json:"recurrence_id,omitempty"`
+	Revision      int64                  `json:"revision"`
+	ShortId       string                 `json:"short_id"`
+	Status        string                 `json:"status"`
+	Title         string                 `json:"title"`
+	Uid           string                 `json:"uid"`
+	UpdatedAt     time.Time              `json:"updated_at"`
+}
+
+// ReachableGraphResponseBody defines model for ReachableGraphResponseBody.
+type ReachableGraphResponseBody struct {
+	Depth          string                         `json:"depth"`
+	Edges          *[]ReachableGraphEdge          `json:"edges,omitempty"`
+	HideDone       bool                           `json:"hide_done"`
+	Nodes          *[]ReachableGraphNode          `json:"nodes,omitempty"`
+	SourceUid      string                         `json:"source_uid"`
+	UnresolvedRefs *[]ReachableGraphUnresolvedRef `json:"unresolved_refs,omitempty"`
+}
+
+// ReachableGraphUnresolvedRef defines model for ReachableGraphUnresolvedRef.
+type ReachableGraphUnresolvedRef struct {
+	Kind     string `json:"kind"`
+	OtherUid string `json:"other_uid"`
+	Side     string `json:"side"`
+	Uid      string `json:"uid"`
 }
 
 // RefreshFleetStatsOutputBody defines model for RefreshFleetStatsOutputBody.
@@ -4228,6 +4466,33 @@ type StreamKataTaskEventsParams struct {
 	XMiddlemanKataDaemon *string `json:"X-Middleman-Kata-Daemon,omitempty"`
 }
 
+// SearchKataTaskReferencesParams defines parameters for SearchKataTaskReferences.
+type SearchKataTaskReferencesParams struct {
+	Q     *string `form:"q,omitempty" json:"q,omitempty"`
+	Limit *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// XMiddlemanKataDaemon Kata daemon id; the effective default daemon when empty
+	XMiddlemanKataDaemon *string `json:"X-Middleman-Kata-Daemon,omitempty"`
+}
+
+// GetKataTaskSnapshotParams defines parameters for GetKataTaskSnapshot.
+type GetKataTaskSnapshotParams struct {
+	Scope            *GetKataTaskSnapshotParamsScope     `form:"scope,omitempty" json:"scope,omitempty"`
+	ProjectUid       *string                             `form:"project_uid,omitempty" json:"project_uid,omitempty"`
+	Authority        *GetKataTaskSnapshotParamsAuthority `form:"authority,omitempty" json:"authority,omitempty"`
+	SelectedIssueUid *string                             `form:"selected_issue_uid,omitempty" json:"selected_issue_uid,omitempty"`
+	GraphSourceUid   *string                             `form:"graph_source_uid,omitempty" json:"graph_source_uid,omitempty"`
+
+	// XMiddlemanKataDaemon Kata daemon id; the effective default daemon when empty
+	XMiddlemanKataDaemon *string `json:"X-Middleman-Kata-Daemon,omitempty"`
+}
+
+// GetKataTaskSnapshotParamsScope defines parameters for GetKataTaskSnapshot.
+type GetKataTaskSnapshotParamsScope string
+
+// GetKataTaskSnapshotParamsAuthority defines parameters for GetKataTaskSnapshot.
+type GetKataTaskSnapshotParamsAuthority string
+
 // GetKataTaskDetailParams defines parameters for GetKataTaskDetail.
 type GetKataTaskDetailParams struct {
 	// XMiddlemanKataDaemon Kata daemon id; the effective default daemon when empty
@@ -5481,6 +5746,12 @@ type ClientInterface interface {
 
 	// StreamKataTaskEvents request
 	StreamKataTaskEvents(ctx context.Context, params *StreamKataTaskEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SearchKataTaskReferences request
+	SearchKataTaskReferences(ctx context.Context, params *SearchKataTaskReferencesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetKataTaskSnapshot request
+	GetKataTaskSnapshot(ctx context.Context, params *GetKataTaskSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetKataTaskDetail request
 	GetKataTaskDetail(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -8466,6 +8737,30 @@ func (c *Client) GetKataProjectMappings(ctx context.Context, params *GetKataProj
 
 func (c *Client) StreamKataTaskEvents(ctx context.Context, params *StreamKataTaskEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewStreamKataTaskEventsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SearchKataTaskReferences(ctx context.Context, params *SearchKataTaskReferencesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSearchKataTaskReferencesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetKataTaskSnapshot(ctx context.Context, params *GetKataTaskSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetKataTaskSnapshotRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -20551,6 +20846,204 @@ func NewStreamKataTaskEventsRequest(server string, params *StreamKataTaskEventsP
 	return req, nil
 }
 
+// NewSearchKataTaskReferencesRequest generates requests for SearchKataTaskReferences
+func NewSearchKataTaskReferencesRequest(server string, params *SearchKataTaskReferencesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/kata/tasks/references")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.XMiddlemanKataDaemon != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Kata-Daemon", *params.XMiddlemanKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Middleman-Kata-Daemon", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewGetKataTaskSnapshotRequest generates requests for GetKataTaskSnapshot
+func NewGetKataTaskSnapshotRequest(server string, params *GetKataTaskSnapshotParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/kata/tasks/snapshot")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Scope != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "scope", *params.Scope, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ProjectUid != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "project_uid", *params.ProjectUid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Authority != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "authority", *params.Authority, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SelectedIssueUid != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "selected_issue_uid", *params.SelectedIssueUid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.GraphSourceUid != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "graph_source_uid", *params.GraphSourceUid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.XMiddlemanKataDaemon != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Kata-Daemon", *params.XMiddlemanKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Middleman-Kata-Daemon", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
 // NewGetKataTaskDetailRequest generates requests for GetKataTaskDetail
 func NewGetKataTaskDetailRequest(server string, issueUid string, params *GetKataTaskDetailParams) (*http.Request, error) {
 	var err error
@@ -29065,6 +29558,12 @@ type ClientWithResponsesInterface interface {
 	// GetKataProjectMappingsWithResponse request
 	GetKataProjectMappingsWithResponse(ctx context.Context, params *GetKataProjectMappingsParams, reqEditors ...RequestEditorFn) (*GetKataProjectMappingsResponse, error)
 
+	// SearchKataTaskReferencesWithResponse request
+	SearchKataTaskReferencesWithResponse(ctx context.Context, params *SearchKataTaskReferencesParams, reqEditors ...RequestEditorFn) (*SearchKataTaskReferencesResponse, error)
+
+	// GetKataTaskSnapshotWithResponse request
+	GetKataTaskSnapshotWithResponse(ctx context.Context, params *GetKataTaskSnapshotParams, reqEditors ...RequestEditorFn) (*GetKataTaskSnapshotResponse, error)
+
 	// GetKataTaskDetailWithResponse request
 	GetKataTaskDetailWithResponse(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*GetKataTaskDetailResponse, error)
 
@@ -32945,6 +33444,52 @@ func (r GetKataProjectMappingsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetKataProjectMappingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SearchKataTaskReferencesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataTaskReferenceResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SearchKataTaskReferencesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SearchKataTaskReferencesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetKataTaskSnapshotResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataTaskSnapshotResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetKataTaskSnapshotResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetKataTaskSnapshotResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -37946,6 +38491,24 @@ func (c *ClientWithResponses) GetKataProjectMappingsWithResponse(ctx context.Con
 		return nil, err
 	}
 	return ParseGetKataProjectMappingsResponse(rsp)
+}
+
+// SearchKataTaskReferencesWithResponse request returning *SearchKataTaskReferencesResponse
+func (c *ClientWithResponses) SearchKataTaskReferencesWithResponse(ctx context.Context, params *SearchKataTaskReferencesParams, reqEditors ...RequestEditorFn) (*SearchKataTaskReferencesResponse, error) {
+	rsp, err := c.SearchKataTaskReferences(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSearchKataTaskReferencesResponse(rsp)
+}
+
+// GetKataTaskSnapshotWithResponse request returning *GetKataTaskSnapshotResponse
+func (c *ClientWithResponses) GetKataTaskSnapshotWithResponse(ctx context.Context, params *GetKataTaskSnapshotParams, reqEditors ...RequestEditorFn) (*GetKataTaskSnapshotResponse, error) {
+	rsp, err := c.GetKataTaskSnapshot(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetKataTaskSnapshotResponse(rsp)
 }
 
 // GetKataTaskDetailWithResponse request returning *GetKataTaskDetailResponse
@@ -44324,6 +44887,72 @@ func ParseGetKataProjectMappingsResponse(rsp *http.Response) (*GetKataProjectMap
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest KataProjectMappingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSearchKataTaskReferencesResponse parses an HTTP response from a SearchKataTaskReferencesWithResponse call
+func ParseSearchKataTaskReferencesResponse(rsp *http.Response) (*SearchKataTaskReferencesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SearchKataTaskReferencesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataTaskReferenceResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetKataTaskSnapshotResponse parses an HTTP response from a GetKataTaskSnapshotWithResponse call
+func ParseGetKataTaskSnapshotResponse(rsp *http.Response) (*GetKataTaskSnapshotResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetKataTaskSnapshotResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataTaskSnapshotResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

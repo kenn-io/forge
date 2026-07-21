@@ -63,7 +63,7 @@ function strongerSyncMode(a: IssueDetailSyncMode, b: IssueDetailSyncMode): Issue
   return syncIntentRank(b) > syncIntentRank(a) ? b : a;
 }
 
-const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
+const BOT_SUFFIXES = ["[bot]", "-bot"];
 
 function isBotAuthor(author: string): boolean {
   const lower = author.toLowerCase();

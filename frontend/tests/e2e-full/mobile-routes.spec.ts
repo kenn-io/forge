@@ -474,6 +474,35 @@ test.describe("phone routes", () => {
     await expectReadableFocusList(page, ".issue-item");
   });
 
+  test("mobile issue bot visibility persists through the real settings API", async ({ page }) => {
+    const server = await startIsolatedE2EServerWithOptions();
+    const botIssue = page.locator(".issue-item", { hasText: "Security advisory: prototype pollution" });
+    const humanIssue = page.locator(".issue-item", { hasText: "Widget rendering broken on Safari" });
+    try {
+      await page.goto(`${server.info.base_url}/m/issues`);
+      await expect(page.locator(".mobile-shell")).toBeVisible();
+      await expect(botIssue).toBeVisible();
+      await expect(humanIssue).toBeVisible();
+
+      const settingsUpdate = await page.request.put(`${server.info.base_url}/api/v1/settings`, {
+        data: { issues: { hide_bots: true } },
+      });
+      expect(settingsUpdate.ok()).toBe(true);
+
+      const settingsResponse = await page.request.get(`${server.info.base_url}/api/v1/settings`);
+      expect(settingsResponse.ok()).toBe(true);
+      const settings = (await settingsResponse.json()) as { issues: { hide_bots: boolean } };
+      expect(settings.issues.hide_bots).toBe(true);
+
+      await page.reload();
+      await expect(page.locator(".issue-item").first()).toBeVisible();
+      await expect(botIssue).toHaveCount(0);
+      await expect(humanIssue).toBeVisible();
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("mobile PR and issue lists respect hide-org while preserving provider collisions", async ({ browser }) => {
     const server = await startIsolatedE2EServerWithOptions({ providerCollision: true });
     const page = await browser.newPage();

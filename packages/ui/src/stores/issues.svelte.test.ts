@@ -32,7 +32,13 @@ describe("issues store bot visibility", () => {
   it("hydrates the persisted preference and hides bot-authored issues", async () => {
     const client = {
       GET: vi.fn(async () => ({
-        data: [issue(1, "alice"), issue(2, "renovate[bot]"), issue(3, "release-bot")],
+        data: [
+          issue(1, "alice"),
+          issue(2, "renovate[bot]"),
+          issue(3, "release-bot"),
+          issue(4, "Talbot"),
+          issue(5, "Abbot"),
+        ],
         error: undefined,
       })),
     } as unknown as MiddlemanClient;
@@ -42,7 +48,7 @@ describe("issues store bot visibility", () => {
     store.hydrateDefaults({ hide_bots: true });
 
     expect(store.getHideBots()).toBe(true);
-    expect(store.getIssues().map((item) => item.Author)).toEqual(["alice"]);
+    expect(store.getIssues().map((item) => item.Author)).toEqual(["alice", "Talbot", "Abbot"]);
   });
 
   it("persists visibility changes and adopts the saved response", async () => {

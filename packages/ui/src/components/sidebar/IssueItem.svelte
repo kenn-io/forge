@@ -61,19 +61,15 @@
   <p class="title">
     <span class="title-text">{issue.Title}</span>
     <LabelRow {labels} dots />
+    <span class="item-number">#{issue.Number}</span>
   </p>
   <div class="meta-row">
     <span class="meta-left">
       {#if showRepo}
-        <Chip
-          size="xs"
-          uppercase={false}
-          title={repoLabel}
-          tone="muted" class="repo-chip"
-          style={`color: ${hashColor(repoColorKey)}; background: color-mix(in srgb, ${hashColor(repoColorKey)} 15%, transparent);`}
-        >{repoLabel}</Chip>
+        <span class="repo-name" style={`color: ${hashColor(repoColorKey)}`} title={repoLabel}>{repoLabel}</span>
+        <span class="meta-sep">·</span>
       {/if}
-      <span class="meta-text">#{issue.Number} · {issue.Author}</span>
+      <span class="meta-text">{issue.Author}</span>
     </span>
     <span class="meta-right">
       {#if issue.workspace}
@@ -97,7 +93,9 @@
           </svg>
         {/if}
       </span>
-      <Chip size="xs" tone={issue.State === "open" ? "success" : "merged"} class="state-chip">{stateLabel}</Chip>
+      {#if issue.State !== "open"}
+        <Chip size="xs" tone="merged" class="state-chip">{stateLabel}</Chip>
+      {/if}
       <span class="time">{ago}</span>
     </span>
   </div>
@@ -153,6 +151,13 @@
     text-overflow: ellipsis;
   }
 
+  .item-number {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+  }
+
   .meta-row {
     display: flex;
     align-items: center;
@@ -173,15 +178,24 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    flex: 0 4 auto;
     min-width: 0;
   }
 
-  :global(.kit-chip.repo-chip) {
-    flex: 0 4 auto;
-    justify-content: flex-start;
-    min-width: 0;
-    max-width: 45%;
+  .repo-name {
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 60%;
+  }
+
+  .meta-sep {
+    color: var(--text-muted);
+    flex-shrink: 0;
   }
 
   .meta-right {
@@ -262,7 +276,9 @@
   }
 
   :global(.mobile-main) .meta-text,
-  :global(.mobile-main) .time {
+  :global(.mobile-main) .time,
+  :global(.mobile-main) .item-number,
+  :global(.mobile-main) .repo-name {
     font-size: var(--font-size-sm);
     line-height: 1.35;
   }

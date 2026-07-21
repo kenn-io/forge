@@ -81,45 +81,54 @@ async function mockLongPullRepoSlug(page: Page): Promise<void> {
   );
 }
 
-async function expectRepoChipToClipSafely(
+async function expectRepoNameToClipSafely(
   item: ReturnType<Page["locator"]>,
-  repoChip: ReturnType<Page["locator"]>,
+  repoName: ReturnType<Page["locator"]>,
   expectedRepoPath: string,
 ): Promise<void> {
   await item.evaluate((node) => {
     (node as HTMLElement).style.width = "180px";
   });
 
-  await expect(repoChip.locator(".kit-chip__label")).toHaveText(expectedRepoPath);
-  await expect(repoChip.locator(".kit-chip__label")).toHaveCSS("overflow", "hidden");
-  await expect(repoChip.locator(".kit-chip__label")).toHaveCSS("text-overflow", "ellipsis");
-  await expect(repoChip).toHaveAttribute("title", expectedRepoPath);
-  await expect(repoChip).toHaveCSS("justify-content", "flex-start");
+  await expect(repoName).toHaveText(expectedRepoPath);
+  await expect(repoName).toHaveCSS("overflow", "hidden");
+  await expect(repoName).toHaveCSS("text-overflow", "ellipsis");
+  await expect(repoName).toHaveAttribute("title", expectedRepoPath);
 
-  const chipBox = await repoChip.boundingBox();
+  const nameBox = await repoName.boundingBox();
   const itemBox = await item.boundingBox();
-  expect(chipBox).not.toBeNull();
+  expect(nameBox).not.toBeNull();
   expect(itemBox).not.toBeNull();
-  if (chipBox !== null && itemBox !== null) {
-    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(itemBox.x + itemBox.width + 1);
+  if (nameBox !== null && itemBox !== null) {
+    expect(nameBox.x + nameBox.width).toBeLessThanOrEqual(itemBox.x + itemBox.width + 1);
   }
 
-  const labelOverflow = await repoChip.locator(".kit-chip__label").evaluate((node) => ({
+  const labelOverflow = await repoName.evaluate((node) => ({
     clientWidth: (node as HTMLElement).clientWidth,
     scrollWidth: (node as HTMLElement).scrollWidth,
   }));
   expect(labelOverflow.scrollWidth).toBeGreaterThanOrEqual(labelOverflow.clientWidth);
 }
 
+// Moves acme/widgets#2 ("Fix race condition in event loop") to the
+// "reviewing" kanban status so the sidebar status pill test below has a
+// real non-default row to assert against. widgets#1 ("Add widget caching
+// layer") is left at the default "new" status deliberately: that row is
+// also the one mocked to a long repo path for the clip-safety assertion,
+// and its meta-right already carries a CI cluster and review indicator,
+// so it needs the status chip's width back to leave room for the repo
+// name at the narrowed 180px item width.
 async function primeKanbanStateRows(browser: Browser, baseURL: string): Promise<void> {
-  const page = await browser.newPage({ baseURL });
+  const context = await browser.newContext({ baseURL });
   try {
-    await page.goto("/pulls");
-    await waitForPullList(page);
-    await page.locator(".pull-item").first().click();
-    await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 5_000 });
+    const response = await context.request.put("/api/v1/pulls/github/acme/widgets/2/state", {
+      data: { status: "reviewing" },
+    });
+    if (!response.ok()) {
+      throw new Error(`failed to prime kanban state: ${response.status()}`);
+    }
   } finally {
-    await page.close();
+    await context.close();
   }
 }
 
@@ -264,14 +273,23 @@ test.describe("PR list sidebar", () => {
     await expectPullReviewIndicator(page, "Fix race condition in event loop", "Changes requested");
 
     const firstItem = page.locator(".pull-item").first();
-    const repoChip = firstItem.locator(".repo-chip");
-    await expect(repoChip).toBeVisible();
-    await expectRepoChipToClipSafely(firstItem, repoChip, longRepoPath);
-    await expect(firstItem.locator(".status-chip")).toBeVisible();
+    const repoName = firstItem.locator(".repo-name");
+    await expect(repoName).toBeVisible();
+    await expectRepoNameToClipSafely(firstItem, repoName, longRepoPath);
 
-    // Compact layout: repo chip lives in the meta row, no standalone repo
+    // primeKanbanStateRows moved "Fix race condition in event loop" to
+    // "reviewing", so its status chip renders.
+    const reviewingItem = page.locator(".pull-item", { hasText: "Fix race condition in event loop" });
+    await expect(reviewingItem.locator(".status-chip")).toBeVisible();
+
+    // "Add widget caching layer" was never primed and stays in the default
+    // "new" status, which renders no status chip: the chip is signal, not
+    // decoration.
+    await expect(firstItem.locator(".status-chip")).toHaveCount(0);
+
+    // Compact layout: repo name lives in the meta row, no standalone repo
     // row, and rows keep a uniform two-line height regardless of labels.
-    await expect(firstItem.locator(".meta-row .repo-chip")).toBeVisible();
+    await expect(firstItem.locator(".meta-row .repo-name")).toBeVisible();
     await expect(page.locator(".pull-item .repo-row")).toHaveCount(0);
     await expect(page.locator(".pull-item:has(.label-dot)").first()).toBeVisible();
     const rowHeights = await page

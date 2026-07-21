@@ -350,7 +350,7 @@ test.describe("collapsible sidebar", () => {
     await expect(page.locator(".sidebar-group-header")).toHaveCount(0, {
       timeout: 5_000,
     });
-    await expect(page.locator(".repo-chip").first()).toBeVisible();
+    await expect(page.locator(".repo-name").first()).toBeVisible();
   });
 
   test("pull compact filter badge counts org-name visibility", async ({ page }) => {
@@ -440,6 +440,6 @@ test.describe("collapsible sidebar", () => {
     await expect(page.locator(".sidebar-group-header")).toHaveCount(0, {
       timeout: 5_000,
     });
-    await expect(page.locator(".repo-chip").first()).toBeVisible();
+    await expect(page.locator(".repo-name").first()).toBeVisible();
   });
 });

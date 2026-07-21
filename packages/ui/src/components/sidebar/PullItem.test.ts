@@ -215,7 +215,7 @@ describe("PullItem CI cluster", () => {
 });
 
 describe("PullItem repository label", () => {
-  it("keeps chip color tied to repository identity when the display label changes", () => {
+  it("keeps repo name color tied to repository identity when the display label changes", () => {
     const pr = mkPR({
       repo: {
         provider: "github",
@@ -239,7 +239,7 @@ describe("PullItem repository label", () => {
       ]),
     });
 
-    expect(document.querySelector(".kit-chip.repo-chip")?.getAttribute("style")).toContain(
+    expect(document.querySelector(".meta-left .repo-name")?.getAttribute("style")).toContain(
       hashColor("github|github.com|acme/widgets"),
     );
   });
@@ -310,6 +310,21 @@ describe("PullItem kanban status", () => {
     expect(screen.getByText("Reviewing")).toBeTruthy();
   });
 
+  it("hides the kanban status for open PRs still in the default new state", () => {
+    renderItem(
+      mkPR({
+        Title: "Cache widget details",
+        Author: "alice",
+        KanbanStatus: "new",
+        LastActivityAt: "2026-05-01T12:00:00Z",
+        repo_owner: "acme",
+        repo_name: "widgets",
+      }),
+    );
+
+    expect(screen.queryByText("New")).toBeNull();
+  });
+
   it("hides the kanban status for closed and merged PRs", () => {
     renderItem(
       mkPR({
@@ -348,7 +363,7 @@ describe("PullItem compact layout", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the repo chip inside the meta row with no separate repo row", () => {
+  it("renders the repo name inside the meta row with no separate repo row", () => {
     render(PullItem, {
       props: {
         pr: mkPR({}),
@@ -363,7 +378,8 @@ describe("PullItem compact layout", () => {
       ]),
     });
 
-    expect(document.querySelector(".meta-row .meta-left .kit-chip.repo-chip")).not.toBeNull();
+    expect(document.querySelector(".meta-row .meta-left .repo-name")).not.toBeNull();
+    expect(document.querySelector(".kit-chip.repo-chip")).toBeNull();
     expect(document.querySelector(".repo-row")).toBeNull();
   });
 
@@ -384,10 +400,11 @@ describe("PullItem compact layout", () => {
     expect(screen.queryByText("bug")).toBeNull();
   });
 
-  it("keeps title text and meta number/author in the two-line structure", () => {
+  it("keeps title text, top-right number, and plain author in the two-line structure", () => {
     renderItem(mkPR({ Title: "Cache widget details", Author: "alice", Number: 7 }));
 
     expect(document.querySelector(".title .title-text")?.textContent).toBe("Cache widget details");
-    expect(document.querySelector(".meta-left .meta-text")?.textContent).toContain("#7 · alice");
+    expect(document.querySelector(".title .item-number")?.textContent).toBe("#7");
+    expect(document.querySelector(".meta-left .meta-text")?.textContent).toBe("alice");
   });
 });

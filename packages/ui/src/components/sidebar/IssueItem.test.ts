@@ -54,7 +54,7 @@ describe("IssueItem", () => {
     expect(screen.getByLabelText("Workspace attached (ready)")).toBeTruthy();
   });
 
-  it("renders the repo chip inside the meta row with no separate repo row", () => {
+  it("renders the repo name inside the meta row with no separate repo row", () => {
     render(IssueItem, {
       props: {
         issue: mkIssue({}),
@@ -66,7 +66,8 @@ describe("IssueItem", () => {
       context: new Map<symbol, unknown>([[STORES_KEY, { issues: { toggleIssueStar: vi.fn() } }]]),
     });
 
-    expect(document.querySelector(".meta-row .meta-left .kit-chip.repo-chip")).not.toBeNull();
+    expect(document.querySelector(".meta-row .meta-left .repo-name")).not.toBeNull();
+    expect(document.querySelector(".kit-chip.repo-chip")).toBeNull();
     expect(document.querySelector(".repo-row")).toBeNull();
   });
 
@@ -86,10 +87,23 @@ describe("IssueItem", () => {
     expect(document.querySelector(".label-row")).toBeNull();
   });
 
-  it("keeps title text and meta number/author in the two-line structure", () => {
+  it("keeps title text, top-right number, and plain author in the two-line structure", () => {
     renderItem(mkIssue({}));
 
     expect(document.querySelector(".title .title-text")?.textContent).toBe("Track workspace setup");
-    expect(document.querySelector(".meta-left .meta-text")?.textContent).toContain("#2 · alice");
+    expect(document.querySelector(".title .item-number")?.textContent).toBe("#2");
+    expect(document.querySelector(".meta-left .meta-text")?.textContent).toBe("alice");
+  });
+
+  it("renders no state chip for open issues", () => {
+    renderItem(mkIssue({ State: "open" }));
+
+    expect(screen.queryByText("Open")).toBeNull();
+  });
+
+  it("renders a Closed state chip for closed issues", () => {
+    renderItem(mkIssue({ State: "closed" }));
+
+    expect(screen.getByText("Closed")).toBeTruthy();
   });
 });

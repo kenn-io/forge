@@ -481,16 +481,16 @@ test.describe("phone routes", () => {
       await page.addInitScript(() => localStorage.setItem("middleman:hideOrgName", "1"));
 
       await page.goto(`${server.info.base_url}/m/pulls`);
-      await expect(page.locator(".pull-item .repo-chip", { hasText: "github/github.com/acme/widgets" })).toHaveCount(4);
-      await expect(page.locator(".pull-item .repo-chip", { hasText: "gitea/github.com/acme/widgets" })).toHaveCount(1);
-      await expect(page.locator(".pull-item .repo-chip", { hasText: /^tools$/ }).first()).toHaveText("tools");
+      await expect(page.locator(".pull-item .repo-name", { hasText: "github/github.com/acme/widgets" })).toHaveCount(4);
+      await expect(page.locator(".pull-item .repo-name", { hasText: "gitea/github.com/acme/widgets" })).toHaveCount(1);
+      await expect(page.locator(".pull-item .repo-name", { hasText: /^tools$/ }).first()).toHaveText("tools");
 
       await page.getByRole("link", { name: "Issues" }).click();
-      await expect(page.locator(".issue-item .repo-chip", { hasText: "github/github.com/acme/widgets" })).toHaveCount(
+      await expect(page.locator(".issue-item .repo-name", { hasText: "github/github.com/acme/widgets" })).toHaveCount(
         3,
       );
-      await expect(page.locator(".issue-item .repo-chip", { hasText: "gitea/github.com/acme/widgets" })).toHaveCount(1);
-      await expect(page.locator(".issue-item .repo-chip", { hasText: /^tools$/ }).first()).toHaveText("tools");
+      await expect(page.locator(".issue-item .repo-name", { hasText: "gitea/github.com/acme/widgets" })).toHaveCount(1);
+      await expect(page.locator(".issue-item .repo-name", { hasText: /^tools$/ }).first()).toHaveText("tools");
     } finally {
       await page.close();
       await server.stop();

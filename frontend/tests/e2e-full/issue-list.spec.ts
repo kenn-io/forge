@@ -62,30 +62,29 @@ async function mockLongIssueRepoSlug(page: Page): Promise<void> {
   );
 }
 
-async function expectRepoChipToClipSafely(
+async function expectRepoNameToClipSafely(
   item: ReturnType<Page["locator"]>,
-  repoChip: ReturnType<Page["locator"]>,
+  repoName: ReturnType<Page["locator"]>,
   expectedRepoPath: string,
 ): Promise<void> {
   await item.evaluate((node) => {
     (node as HTMLElement).style.width = "180px";
   });
 
-  await expect(repoChip.locator(".kit-chip__label")).toHaveText(expectedRepoPath);
-  await expect(repoChip.locator(".kit-chip__label")).toHaveCSS("overflow", "hidden");
-  await expect(repoChip.locator(".kit-chip__label")).toHaveCSS("text-overflow", "ellipsis");
-  await expect(repoChip).toHaveAttribute("title", expectedRepoPath);
-  await expect(repoChip).toHaveCSS("justify-content", "flex-start");
+  await expect(repoName).toHaveText(expectedRepoPath);
+  await expect(repoName).toHaveCSS("overflow", "hidden");
+  await expect(repoName).toHaveCSS("text-overflow", "ellipsis");
+  await expect(repoName).toHaveAttribute("title", expectedRepoPath);
 
-  const chipBox = await repoChip.boundingBox();
+  const nameBox = await repoName.boundingBox();
   const itemBox = await item.boundingBox();
-  expect(chipBox).not.toBeNull();
+  expect(nameBox).not.toBeNull();
   expect(itemBox).not.toBeNull();
-  if (chipBox !== null && itemBox !== null) {
-    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(itemBox.x + itemBox.width + 1);
+  if (nameBox !== null && itemBox !== null) {
+    expect(nameBox.x + nameBox.width).toBeLessThanOrEqual(itemBox.x + itemBox.width + 1);
   }
 
-  const labelOverflow = await repoChip.locator(".kit-chip__label").evaluate((node) => ({
+  const labelOverflow = await repoName.evaluate((node) => ({
     clientWidth: (node as HTMLElement).clientWidth,
     scrollWidth: (node as HTMLElement).scrollWidth,
   }));
@@ -108,12 +107,14 @@ test.describe("issue list view", () => {
 
       await selectIssueGrouping(page, "All");
       const firstItem = page.locator(".issue-item").first();
-      const repoChip = firstItem.locator(".repo-chip");
-      await expect(repoChip).toBeVisible();
-      await expectRepoChipToClipSafely(firstItem, repoChip, longRepoPath);
-      await expect(firstItem.locator(".state-chip")).toBeVisible();
+      const repoName = firstItem.locator(".repo-name");
+      await expect(repoName).toBeVisible();
+      await expectRepoNameToClipSafely(firstItem, repoName, longRepoPath);
+      // The default list view shows open issues, whose state chip is
+      // silent by design; only non-default (closed) rows show a chip.
+      await expect(firstItem.locator(".state-chip")).toHaveCount(0);
 
-      await expect(firstItem.locator(".meta-row .repo-chip")).toBeVisible();
+      await expect(firstItem.locator(".meta-row .repo-name")).toBeVisible();
       await expect(page.locator(".issue-item .repo-row")).toHaveCount(0);
       await expect(page.locator(".issue-item:has(.label-dot)").first()).toBeVisible();
       const rowHeights = await page
@@ -133,6 +134,10 @@ test.describe("issue list view", () => {
     await selectIssueState(page, "Closed");
 
     await expect(page.locator(".state-note")).toBeVisible();
+    // Closed is the non-default state, so its chip stays visible (open
+    // rows render no chip at all; see "sidebar issue pills...").
+    await waitForIssueList(page);
+    await expect(page.locator(".issue-item .state-chip").first()).toHaveText("Closed");
   });
 
   test("search filters by title", async ({ page }) => {

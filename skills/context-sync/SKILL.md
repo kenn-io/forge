@@ -58,13 +58,19 @@ knowledge that changes what future agents should do.
 
 | Area | Topic doc(s) | Code it tracks |
 |------|--------------|----------------|
+| `agent-bootstrap` | `context/agent-bootstrap.md` | repository-controlled agent hooks and dependency bootstrap |
+| `config` | `context/config-persistence.md` | `internal/config/` save paths |
 | `platform` | `context/provider-architecture.md`, `context/platform-sync-invariants.md` | `internal/platform/` |
 | `github-sync` | `context/github-sync-invariants.md` | `internal/github/` |
-| `db` | `context/db-migrations.md`, `context/embeds.md` | `internal/db/`, `internal/db/migrations/` |
+| `db` | `context/db-migrations.md` | `internal/db/`, `internal/db/migrations/` |
+| `deferred-merge` | `context/deferred-merge.md` | deferred merge paths in `internal/server/` |
+| `embeds` | `context/embeds.md` | embed routes, shell, and host bridge paths |
 | `server` | `context/server-runtime.md`, `context/workspace-apis.md`, `context/workspace-runtime-lifecycle.md` | `cmd/kenn-forge/`, `internal/daemonruntime/`, `internal/runtimelock/`, `internal/server/`, `internal/apiclient/generated/` |
 | `errors` | `context/error-handling.md` | error envelopes and frontend error branching |
 | `retries` | `context/retries-and-backoffs.md` | retry, backoff, and single-flight paths |
 | `testing` | `context/testing-basics.md`, `context/testing.md` | server API/E2E packages and test helpers |
+| `docs-authoring` | `context/docs-authoring.md` | user docs, screenshots, and Zensical configuration |
+| `pull-requests` | `context/pull-request-workflow.md` | push and pull-request delivery workflow |
 | `frontend` | `context/ui-design-system.md`, `context/ui-interaction-contracts.md`, `context/vscode-workflow-panel-interaction-spec.md` | `frontend/src/` |
 | `inline-review` | `context/inline-review-comments.md` | review draft/thread paths in `internal/platform/`, `internal/server/`, and `packages/ui/` |
 | `mobile` | `context/mobile-ux.md` | frontend `/m` routes and phone-first components |

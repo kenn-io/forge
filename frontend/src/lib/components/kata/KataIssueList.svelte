@@ -9,7 +9,7 @@
   import { relativeTime, shortDate } from "../../api/dates.js";
   import { kataTaskStatusMatchesFilter } from "../../api/kata/taskFilters.js";
   import type { KataTaskSearchFilters, KataTaskSummary } from "../../api/kata/taskTypes.js";
-  import type { KataCurrentView } from "../../stores/kata-workspace.svelte.js";
+  import type { KataCurrentView } from "../../features/kata/kataWorkspaceAuthority.js";
   import {
     DEFAULT_KATA_TASK_SORT,
     sortKataTasks,
@@ -636,6 +636,10 @@
     clearTemporaryReveal();
     lastRevealGeneration = revealRequest.generation;
     const revealChain = revealChainForStatus(revealRequest.chain);
+    const restoreFocusedTarget =
+      typeof document !== "undefined" &&
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement.dataset.uid === revealRequest.uid;
     temporaryRevealChain = statusFilter === "ready" || revealChain.length > 1 ? revealChain : [];
     void (async () => {
       const request = revealRequest;
@@ -648,9 +652,9 @@
       }
       await tick();
       if (revealRequest?.generation !== request.generation) return;
-      tableBody?.querySelector<HTMLElement>(`button.row[data-uid="${request.uid}"]`)?.scrollIntoView({
-        block: "nearest",
-      });
+      const targetRow = tableBody?.querySelector<HTMLElement>(`button.row[data-uid="${request.uid}"]`);
+      if (restoreFocusedTarget) targetRow?.focus({ preventScroll: true });
+      targetRow?.scrollIntoView({ block: "nearest" });
     })();
   });
 

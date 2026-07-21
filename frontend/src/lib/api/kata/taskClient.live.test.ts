@@ -27,66 +27,66 @@ describe.skipIf(process.env.MIDDLEMAN_LIVE_KATA_TESTS !== "1")("createKataTaskAP
       });
       const api = createKataTaskAPI({
         fetchImpl: createMiddlemanFetch(server),
-        getDaemonId: () => undefined,
       });
+      const options = { daemonId: "live" };
 
-      const created = await api.createIssue(
-        seeded.project.id,
-        "middleman-e2e",
-        {
-          title: "Exercise client mutations",
-          body: "Original body",
-          force_new: true,
-        },
-        "01MIDDLEMANCLIENTMUT000001",
-      );
-      expect(created).toMatchObject({
-        changed: true,
-        issue: {
-          title: "Exercise client mutations",
-          status: "open",
-        },
-      });
-      expect(created.issue?.short_id).toEqual(expect.any(String));
-
-      const peer = await api.createIssue(
-        seeded.project.id,
-        "middleman-e2e",
-        { title: "Related client peer", force_new: true },
-        "01MIDDLEMANCLIENTMUT000002",
-      );
-      const target = { project_id: seeded.project.id, ref: created.issue!.short_id };
-
-      await expect(api.addComment(target, "middleman-e2e", "Client mutation comment")).resolves.toMatchObject({
-        changed: true,
-      });
-      await expect(api.addLabel(target, "middleman-e2e", "ui")).resolves.toMatchObject({ changed: true });
-      await expect(api.removeLabel(target, "middleman-e2e", "ui")).resolves.toMatchObject({ changed: true });
       await expect(
-        api.editIssue(target, "middleman-e2e", {
-          title: "Exercise client mutations updated",
-          body: "Updated body",
-          links_delta: { add_related: [peer.issue!.short_id] },
-        }),
-      ).resolves.toMatchObject({ changed: true });
-      await expect(
-        api.closeIssue(target, "middleman-e2e", {
-          reason: "done",
-          message: "Finished through the middleman client mutation coverage.",
-          source: "ui",
-        }),
-      ).resolves.toMatchObject({
+        api.createIssue(
+          seeded.project.id,
+          "middleman-e2e",
+          {
+            title: "Exercise client mutations",
+            body: "Original body",
+            force_new: true,
+          },
+          options,
+          "01MIDDLEMANCLIENTMUT000001",
+        ),
+      ).resolves.toEqual({
         changed: true,
-        issue: { status: "closed" },
-      });
-      await expect(api.reopenIssue(target, "middleman-e2e")).resolves.toMatchObject({
-        changed: true,
-        issue: { status: "open" },
       });
 
-      const detail = await harness.getIssue(created.issue!.uid);
+      const peer = await harness.seedIssue({
+        projectName: "Middleman Client Mutations",
+        issueTitle: "Related client peer",
+        issueBody: "Related through the mutation-only client.",
+      });
+      const target = { project_id: seeded.project.id, ref: seeded.issue.short_id };
+
+      await expect(api.addComment(target, "middleman-e2e", "Client mutation comment", options)).resolves.toEqual({
+        changed: true,
+      });
+      await expect(api.addLabel(target, "middleman-e2e", "ui", options)).resolves.toEqual({ changed: true });
+      await expect(api.removeLabel(target, "middleman-e2e", "ui", options)).resolves.toEqual({ changed: true });
+      await expect(
+        api.editIssue(
+          target,
+          "middleman-e2e",
+          {
+            title: "Exercise client mutations updated",
+            body: "Updated body",
+            links_delta: { add_related: [peer.issue.short_id] },
+          },
+          options,
+        ),
+      ).resolves.toEqual({ changed: true });
+      await expect(
+        api.closeIssue(
+          target,
+          "middleman-e2e",
+          {
+            reason: "done",
+            message: "Finished through the middleman client mutation coverage.",
+            source: "ui",
+          },
+          options,
+        ),
+      ).resolves.toEqual({ changed: true });
+      await expect(api.reopenIssue(target, "middleman-e2e", options)).resolves.toEqual({ changed: true });
+
+      const detail = await harness.getIssue(seeded.issue.uid);
       expect(detail.issue).toMatchObject({
-        uid: created.issue!.uid,
+        uid: seeded.issue.uid,
         title: "Exercise client mutations updated",
         body: "Updated body",
         status: "open",
@@ -99,7 +99,7 @@ describe.skipIf(process.env.MIDDLEMAN_LIVE_KATA_TESTS !== "1")("createKataTaskAP
         expect.arrayContaining([
           expect.objectContaining({
             type: "related",
-            to: expect.objectContaining({ short_id: peer.issue!.short_id }),
+            to: expect.objectContaining({ short_id: peer.issue.short_id }),
           }),
         ]),
       );

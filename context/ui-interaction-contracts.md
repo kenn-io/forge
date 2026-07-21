@@ -120,13 +120,10 @@ Interactive surfaces must agree on which item is selected.
   successful load that produced the alias; path/anchor changes reuse that load,
   while repository, ref, or resolved-SHA changes invalidate it
   (`frontend/src/lib/features/repo-browser/RepoBrowserFeature.svelte::loadRoute`).
-- When a background refresh replaces the selected item's backing object but
-  the stable item identity is unchanged, preserve already-resolved action
-  affordances instead of treating the refresh as item A -> B. Key invalidation
-  on stable route/domain identity, not object reference; the Kata workspace
-  action target is the reference case
-  (`frontend/src/lib/features/kata/KataWorkspace.svelte:158`,
-  `frontend/src/lib/features/kata/KataWorkspace.test.ts:473`).
+- Render Kata selected detail, bounded history, mutation ETag, and workspace
+  action atomically from accepted snapshot enrichment; do not merge a prior
+  action target or mutation response into a newly accepted snapshot
+  (`frontend/src/lib/features/kata/KataWorkspace.svelte::acceptedSnapshot`).
 
 Responsive layout changes must not change route identity.
 
@@ -272,7 +269,7 @@ shortcuts while it is open.
   cleanup so stale frames, listeners, and highlighted rows are not left behind.
 - Custom focus traps must cycle controls in rendered DOM order. If the trap
   builds the focusable list from a mixed selector list (`button, input, select,
-  ...`), normalize the result by document position before wrapping Tab /
+...`), normalize the result by document position before wrapping Tab /
   Shift+Tab so selector-engine grouping cannot change keyboard order.
 
 ## Palette Persistence
@@ -319,16 +316,17 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   inspect; native-disabled triggers swallow clicks and make pending work look
   like broken UI (`frontend/src/lib/features/kata/KataDaemonSwitcher.svelte::choose`).
 - Keep navigation and context switches available during supersedable reads.
-  Start those reads with an `AbortSignal`, abort them when a newer navigation
-  begins, and retain stale-response generation checks as the application-state
-  backstop (`frontend/src/lib/stores/kata-workspace.svelte.ts::beginViewRequest`).
+  Kata snapshot loads are sequence- and intent-fenced; cross-authority changes
+  clear prior authority instead of painting it under the new route
+  (`frontend/src/lib/stores/kata-authority.svelte.ts::KataAuthorityStore.loadSnapshot`).
 - Reserve disabled navigation choices for exclusive transactions such as
   writes, initial ownership setup, or a context switch already in progress;
   background refresh counters are presentation state, not transaction locks
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::daemonSwitchLocked`).
-- Treat event streams as cache invalidation, not render replay: batch cursor
-  catch-up into one view revalidation, and hydrate selected-item history off
-  the blocking view-load path (`frontend/src/lib/stores/kata-workspace.svelte.ts::syncEventCursor`).
+- Treat Kata event streams as invalidation, not render replay. A matching newer
+  compact frame reloads the exact current snapshot intent; task, detail,
+  history, and graph authority remain in the accepted snapshot
+  (`frontend/src/lib/features/kata/kataWorkspaceAuthorityController.svelte.ts::createKataWorkspaceAuthorityController`).
 
 ## Controlled Form Controls
 

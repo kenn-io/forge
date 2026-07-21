@@ -38,11 +38,17 @@ type kataSnapshotEnrichmentError struct {
 
 type kataSnapshotEnrichment struct {
 	SelectedIssueUID string                                    `json:"selected_issue_uid,omitempty"`
-	SelectedDetail   *kataTaskDetailResponse                   `json:"selected_detail,omitempty"`
+	SelectedDetail   *kataSnapshotSelectedDetail               `json:"selected_detail,omitempty"`
 	SelectedHistory  []katagenerated.EventEnvelope             `json:"selected_history,omitempty"`
 	Graph            *katagenerated.ReachableGraphResponseBody `json:"graph,omitempty"`
 	GraphFetchedAt   *time.Time                                `json:"graph_fetched_at,omitempty"`
 	Errors           map[string]kataSnapshotEnrichmentError    `json:"errors,omitempty"`
+}
+
+type kataSnapshotSelectedDetail struct {
+	Detail          any                         `json:"detail" doc:"Verbatim Kata daemon issue detail payload"`
+	ETag            string                      `json:"etag,omitempty" doc:"Daemon issue detail ETag, when the daemon provided one"`
+	WorkspaceTarget kataWorkspaceTargetResponse `json:"workspace_target"`
 }
 
 type kataSnapshotEnricherDeps struct {
@@ -182,7 +188,7 @@ func (e *kataSnapshotEnricher) enrichSelected(
 		}
 		result.addError(kataSnapshotEnrichmentStageDetail, CodeUpstreamError, "Could not load selected task detail.")
 	} else {
-		result.SelectedDetail = &kataTaskDetailResponse{Detail: detail, ETag: issue.etag}
+		result.SelectedDetail = &kataSnapshotSelectedDetail{Detail: detail, ETag: issue.etag}
 
 		target, targetErr := e.resolveWorkspaceTarget(ctx, db.WorkspaceKataMetadata{
 			DaemonID:    authority.DaemonID,

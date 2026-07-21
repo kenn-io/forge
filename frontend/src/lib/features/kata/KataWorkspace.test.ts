@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import KataWorkspace from "./KataWorkspace.svelte";
+import { KATA_WORKSPACE_STATE_STORAGE_KEY } from "./kataWorkspacePersistence.js";
 import {
   createWorkspaceAPI,
   detail,
@@ -107,20 +108,12 @@ describe("KataWorkspace snapshot authority", () => {
         },
       }),
     });
-    api.issue = vi.fn(async () => {
-      throw new Error("legacy detail read");
-    });
-    api.events = vi.fn(async () => {
-      throw new Error("legacy history read");
-    });
-    api.projects = vi.fn(async () => {
-      throw new Error("legacy project read");
-    });
-    api.patchIssueMetadata = vi.fn(async () => ({
+    const patchIssueMetadata = vi.fn(async () => ({
       changed: true,
       issue: { ...selected, title: "Mutation response title" },
       etag: '"response-etag"',
     }));
+    api.patchIssueMetadata = patchIssueMetadata;
 
     render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
 
@@ -139,7 +132,7 @@ describe("KataWorkspace snapshot authority", () => {
     await fireEvent.keyDown(screen.getByRole("textbox", { name: "New checklist item" }), { key: "Enter" });
 
     await waitFor(() =>
-      expect(api.patchIssueMetadata).toHaveBeenCalledWith(
+      expect(patchIssueMetadata).toHaveBeenCalledWith(
         { project_id: selected.project_id, ref: selected.uid },
         "middleman",
         expect.objectContaining({ checklist: expect.any(Array) }),
@@ -148,9 +141,198 @@ describe("KataWorkspace snapshot authority", () => {
       ),
     );
     expect(screen.queryByRole("heading", { name: "Mutation response title" })).toBeNull();
-    expect(api.issue).not.toHaveBeenCalled();
-    expect(api.events).not.toHaveBeenCalled();
-    expect(api.projects).not.toHaveBeenCalled();
+  });
+
+  it("renders canonical catalog identity when selected detail protocol omits summary-only fields", async () => {
+    acceptHomeDaemon();
+    const selected = initialIssues[0]!;
+    const selectedDetail = detail(selected.uid, initialIssues);
+    const {
+      project_uid: _projectUID,
+      project_name: _projectName,
+      qualified_id: _qualifiedID,
+      ...protocolIssue
+    } = selectedDetail.issue;
+    const { api } = createWorkspaceAPI(initialIssues, {
+      snapshot: (_request, snapshot) => ({
+        ...snapshot,
+        enrichment: {
+          ...snapshot.enrichment,
+          selected_detail: {
+            workspace_target: { available: false },
+            detail: { ...selectedDetail, issue: protocolIssue },
+          },
+        },
+      }),
+    });
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
+
+    await screen.findByRole("heading", { name: selected.title });
+    await fireEvent.click(screen.getByRole("button", { name: "Complete" }));
+
+    expect(within(screen.getByRole("dialog", { name: "Complete task" })).getByText(selected.qualified_id)).toBeTruthy();
+  });
+
+  it("reveals a routed selected member child through its accepted catalog ancestor chain", async () => {
+    acceptHomeDaemon();
+    const parent = {
+      ...initialIssues[0]!,
+      uid: "issue-parent",
+      short_id: "parent",
+      qualified_id: "Finances#parent",
+      title: "Parent task",
+      child_counts: { open: 1, total: 1 },
+    };
+    const child = {
+      ...initialIssues[0]!,
+      uid: "issue-child",
+      short_id: "child",
+      qualified_id: "Finances#child",
+      title: "Child task",
+      parent: { uid: parent.uid, short_id: parent.short_id },
+      parent_short_id: parent.short_id,
+      child_counts: undefined,
+    };
+    const { api } = createWorkspaceAPI([parent, child]);
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: child.uid } });
+
+    await screen.findByRole("button", { name: /Parent task/ });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Parent task/ }).getAttribute("aria-expanded")).toBe("true"),
+    );
+    const childRow = screen.getByRole("button", { name: /Child task/ });
+    expect(childRow.getAttribute("aria-current")).toBe("true");
+  });
+
+  it("reveals a persisted selected member child from the accepted snapshot", async () => {
+    acceptHomeDaemon();
+    const parent = {
+      ...initialIssues[0]!,
+      uid: "issue-persisted-parent",
+      short_id: "persisted-parent",
+      qualified_id: "Finances#persisted-parent",
+      title: "Persisted parent task",
+      child_counts: { open: 1, total: 1 },
+    };
+    const child = {
+      ...initialIssues[0]!,
+      uid: "issue-persisted-child",
+      short_id: "persisted-child",
+      qualified_id: "Finances#persisted-child",
+      title: "Persisted child task",
+      parent: { uid: parent.uid, short_id: parent.short_id },
+      parent_short_id: parent.short_id,
+      child_counts: undefined,
+    };
+    localStorage.setItem(
+      KATA_WORKSPACE_STATE_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        daemons: {
+          home: {
+            view: "all",
+            filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "" },
+            selectedIssueUID: child.uid,
+          },
+        },
+      }),
+    );
+    const { api } = createWorkspaceAPI([parent, child]);
+
+    render(KataWorkspace, { props: { api } });
+
+    await screen.findByRole("button", { name: /Persisted parent task/ });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Persisted parent task/ }).getAttribute("aria-expanded")).toBe("true"),
+    );
+    expect(screen.getByRole("button", { name: /Persisted child task/ }).getAttribute("aria-current")).toBe("true");
+  });
+
+  it("preserves focused child selection without replacing the visible hierarchy branch", async () => {
+    acceptHomeDaemon();
+    const parent = {
+      ...initialIssues[0]!,
+      uid: "issue-focus-parent",
+      short_id: "focus-parent",
+      qualified_id: "Finances#focus-parent",
+      title: "Focus parent task",
+      child_counts: { open: 1, total: 1 },
+    };
+    const child = {
+      ...initialIssues[0]!,
+      uid: "issue-focus-child",
+      short_id: "focus-child",
+      qualified_id: "Finances#focus-child",
+      title: "Focus child task",
+      parent: { uid: parent.uid, short_id: parent.short_id },
+      parent_short_id: parent.short_id,
+      child_counts: undefined,
+    };
+    const { api } = createWorkspaceAPI([parent, child]);
+
+    render(KataWorkspace, { props: { api } });
+
+    const parentRow = await screen.findByRole("button", { name: /Focus parent task/ });
+    parentRow.focus();
+    await fireEvent.keyDown(parentRow, { key: "ArrowRight" });
+    const childRow = await screen.findByRole("button", { name: /Focus child task/ });
+
+    childRow.focus();
+    await fireEvent.click(childRow);
+    await screen.findByRole("heading", { name: child.title });
+    await waitFor(() => expect((document.activeElement as HTMLElement | null)?.dataset.uid).toBe(child.uid));
+  });
+
+  it("does not install mutation response task state before an accepted snapshot replacement", async () => {
+    acceptHomeDaemon();
+    const selected = initialIssues[0]!;
+    let snapshotRequests = 0;
+    const { api } = createWorkspaceAPI(initialIssues, {
+      snapshot: (_request, snapshot) => {
+        snapshotRequests += 1;
+        return {
+          ...snapshot,
+          enrichment: {
+            ...snapshot.enrichment,
+            selected_detail: {
+              detail: {
+                ...detail(selected.uid, initialIssues),
+                issue: {
+                  ...detail(selected.uid, initialIssues).issue,
+                  title: "Accepted snapshot title",
+                },
+              },
+              etag: '"snapshot-etag"',
+              workspace_target: { available: false },
+            },
+          },
+        };
+      },
+    });
+    const addComment = vi.fn(async () => ({
+      changed: true,
+      issue: { ...selected, title: "Unaccepted mutation response title", revision: selected.revision + 1 },
+      etag: '"mutation-response-etag"',
+    }));
+    api.addComment = addComment;
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
+
+    await screen.findByRole("heading", { name: "Accepted snapshot title" });
+    await waitForWorkspaceWritable();
+    await fireEvent.input(screen.getByRole("textbox", { name: "Comment" }), {
+      target: { value: "Wait for compact invalidation" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+
+    await waitFor(() => expect(addComment).toHaveBeenCalledOnce());
+    await Promise.resolve();
+
+    expect(snapshotRequests).toBe(1);
+    expect(screen.getByRole("heading", { name: "Accepted snapshot title" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Unaccepted mutation response title" })).toBeNull();
   });
 
   it("keeps the graph source fixed while selecting another snapshot graph node", async () => {
@@ -318,17 +500,12 @@ describe("KataWorkspace snapshot authority", () => {
         },
       }),
     });
-    api.issue = vi.fn(async () => {
-      throw new Error("legacy peer detail read");
-    });
-
     render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
 
     await screen.findByRole("heading", { name: selected.title });
     expect(
       within(screen.getByRole("region", { name: "Links" })).getByRole("button", { name: new RegExp(linked.title) }),
     ).toBeTruthy();
-    expect(api.issue).not.toHaveBeenCalled();
   });
 
   it("keeps relationship filters across task navigation and resets state filters with the workspace scope", async () => {

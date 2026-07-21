@@ -20,30 +20,21 @@ state.
   not from a PR head branch.
 - `GET /kata/tasks/snapshot`: the browser's sole Kata task authority. Daemon,
   scope, project, status authority, selected task, and graph source form request
-  identity; query, owner, and label remain local presentation state.
+  identity; selected detail, history, graph, and workspace target belong to the
+  same accepted snapshot, while query, owner, and label remain local presentation
+  state (`internal/server/kata_snapshot_frontend.go::kataTaskSnapshot`).
+- Middleman persists no Kata task, snapshot, or cursor state. Its only Kata
+  authority storage is a bounded, non-touching in-memory TTL cache
+  (`internal/server/kata_snapshot_cache.go::newKataSnapshotCacheWithConfig`).
 - `GET /kata/tasks/events`: compact reset/invalidation transport only. Replay
   starts at the accepted snapshot cursor; raw daemon events never enter browser
   authority (`frontend/src/lib/features/kata/kataWorkspaceAuthorityController.svelte.ts::KataWorkspaceAuthorityController`).
-- `GET /kata/tasks/{issue_uid}`: middleman's combined Kata task read. It
-  fetches the daemon's issue detail server-side and returns it together with
-  the resolved workspace target, so the detail pane and its workspace action
-  render from one response. There is no separate workspace-target endpoint;
-  do not reintroduce one. The UI hides the workspace action when the embedded
-  target has `available:false`. The issue read is the critical path and the
-  `/projects` read is best-effort enrichment that must never fail the detail
-  response. The exact latency contract: when the issue payload carries
-  `project_name`, the handler never waits on `/projects` (it takes the
-  result only if already available); when the payload has no name, it may
-  wait only up to the short `/projects`-specific budget
-  (`internal/server/kata_task_detail.go::kataDaemonProjectsReadTimeout`)
-  before falling back to the (empty) payload name. Server-side daemon reads
-  never follow redirects, matching the passthrough proxy and health probe: a
-  redirected issue read surfaces as a `502 upstream_error`, and a redirected
-  `/projects` read is just a failed best-effort read that falls back to the
-  payload name. All outcomes, including problem responses, depend on the
-  daemon selection and must declare `Vary: X-Middleman-Kata-Daemon`. Snapshot
-  consumers do not use this route as authority: selected detail, bounded
-  history, and workspace target arrive in accepted snapshot enrichment.
+- Every frontend Kata mutation and recurrence request is explicitly pinned to
+  the accepted snapshot daemon; ambient active/default daemon fallback is
+  forbidden (`frontend/src/lib/api/kata/taskClient.ts::pinnedDaemonHeaders`).
+- Frontend mutation results are acknowledgement-only `{ changed }`; canonical
+  project/task identity and rendered state come from a newly accepted snapshot,
+  never mutation response payloads (`frontend/src/lib/api/kata/taskTypes.ts::KataTaskMutationResponse`).
 - `GET /kata/tasks/references`: middleman's global/open Kata reference service.
   Rank exact short, qualified, or UID matches before substring matches and only
   then apply the response limit. The returned `reference` decides whether a

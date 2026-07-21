@@ -9,8 +9,13 @@
   import { GroupedSidebarSection, ScrollBox } from "@middleman/ui";
   import { showFlash } from "@middleman/ui/stores/flash";
 
-  import type { KataProjectSummary, KataTaskSearchFilters, KataTaskViewName } from "../../api/kata/taskTypes.js";
-  import type { KataAreaSummary, KataCurrentView } from "../../stores/kata-workspace.svelte.js";
+  import type {
+    KataProjectSummary,
+    KataTaskMutationResponse,
+    KataTaskSearchFilters,
+    KataTaskViewName,
+  } from "../../api/kata/taskTypes.js";
+  import type { KataAreaSummary, KataCurrentView } from "../../features/kata/kataWorkspaceAuthority.js";
 
   interface Props {
     areas: KataAreaSummary[];
@@ -19,7 +24,7 @@
     searchFilters: KataTaskSearchFilters;
     onOpenView: (name: KataTaskViewName) => void | Promise<void>;
     onOpenProject: (projectUID: string) => void | Promise<void>;
-    onCreateProject: (name: string) => Promise<KataProjectSummary>;
+    onCreateProject: (name: string) => Promise<KataTaskMutationResponse>;
   }
 
   let {
@@ -86,10 +91,9 @@
     if (!name || createSaving) return;
     createSaving = true;
     try {
-      const project = await onCreateProject(name);
+      await onCreateProject(name);
       creatingProject = false;
       createDraft = "";
-      await onOpenProject(project.uid);
     } catch (err) {
       showFlash(err instanceof Error ? err.message : "Could not create project.", { tone: "danger" });
     } finally {

@@ -828,13 +828,6 @@ func registerKataWorkspaceAPI(api huma.API, s *Server) {
 		Tags:        []string{"Kata"},
 	}, s.getKataProjectMappings)
 	huma.Register(api, huma.Operation{
-		OperationID: "get-kata-task-detail",
-		Method:      "GET",
-		Path:        "/kata/tasks/{issue_uid}",
-		Summary:     "Get Kata task detail with workspace target",
-		Tags:        []string{"Kata"},
-	}, s.kataTaskDetail)
-	huma.Register(api, huma.Operation{
 		OperationID:   "create-kata-workspace",
 		Method:        "POST",
 		Path:          "/kata/workspaces",

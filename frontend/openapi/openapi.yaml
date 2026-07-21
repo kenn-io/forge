@@ -3093,7 +3093,7 @@ components:
           format: date-time
           type: string
         selected_detail:
-          $ref: "#/components/schemas/KataTaskDetailResponse"
+          $ref: "#/components/schemas/KataSnapshotSelectedDetail"
         selected_history:
           items:
             $ref: "#/components/schemas/EventEnvelope"
@@ -3114,16 +3114,9 @@ components:
         - code
         - message
       type: object
-    KataTaskDetailResponse:
+    KataSnapshotSelectedDetail:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/KataTaskDetailResponse.json
-          format: uri
-          readOnly: true
-          type: string
         detail:
           description: Verbatim Kata daemon issue detail payload
         etag:
@@ -14541,43 +14534,6 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get authoritative Kata task snapshot
-      tags:
-        - Kata
-  /kata/tasks/{issue_uid}:
-    get:
-      operationId: get-kata-task-detail
-      parameters:
-        - description: Kata issue UID
-          in: path
-          name: issue_uid
-          required: true
-          schema:
-            description: Kata issue UID
-            type: string
-        - description: Kata daemon id; the effective default daemon when empty
-          in: header
-          name: X-Middleman-Kata-Daemon
-          schema:
-            description: Kata daemon id; the effective default daemon when empty
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/KataTaskDetailResponse"
-          description: OK
-          headers:
-            Vary:
-              schema:
-                type: string
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemError"
-          description: Error
-      summary: Get Kata task detail with workspace target
       tags:
         - Kata
   /kata/workspaces:

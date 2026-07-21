@@ -187,10 +187,26 @@ function immutableSet<T>(values: readonly T[]): ReadonlySet<T> {
 
 function normalizeSelectedDetail(
   selected: NonNullable<KataWorkspaceSnapshotResponse["enrichment"]["selected_detail"]>,
+  selectedIssueUID: string | undefined,
+  catalogIssue: Immutable<KataTaskSummary> | undefined,
 ): Immutable<KataTaskDetail> {
   validateSelectedDetail(selected.detail);
+  const normalized = normalizeKataTaskDetail(selected.detail);
+  if (normalized.issue.uid !== selectedIssueUID) {
+    throw new Error("Selected Kata detail does not match the declared selected issue");
+  }
+  const selectedIssue =
+    catalogIssue && catalogIssue.uid === normalized.issue.uid
+      ? {
+          ...normalized.issue,
+          project_uid: catalogIssue.project_uid,
+          project_name: catalogIssue.project_name,
+          qualified_id: catalogIssue.qualified_id,
+        }
+      : normalized.issue;
   const detail: KataTaskDetail = {
-    ...normalizeKataTaskDetail(selected.detail),
+    ...normalized,
+    issue: selectedIssue,
     ...(selected.etag === undefined ? {} : { etag: selected.etag }),
     workspace_target: selected.workspace_target,
   };
@@ -236,7 +252,14 @@ export function normalizeKataWorkspaceSnapshot(
   let selectedDetail: Immutable<KataTaskDetail> | undefined;
   if (response.enrichment.selected_detail) {
     try {
-      selectedDetail = normalizeSelectedDetail(response.enrichment.selected_detail);
+      const selectedCatalogIssue = response.enrichment.selected_issue_uid
+        ? issues.find((issue) => issue.uid === response.enrichment.selected_issue_uid)
+        : undefined;
+      selectedDetail = normalizeSelectedDetail(
+        response.enrichment.selected_detail,
+        response.enrichment.selected_issue_uid,
+        selectedCatalogIssue,
+      );
     } catch {
       enrichmentErrors.detail = {
         code: "invalid_snapshot_enrichment",

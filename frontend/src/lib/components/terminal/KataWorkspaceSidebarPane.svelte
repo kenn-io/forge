@@ -10,6 +10,7 @@
   import type {
     KataCreateRecurrenceInput,
     KataPatchRecurrenceInput,
+    KataPinnedDaemonOptions,
     KataProjectSummary,
     KataRecurrence,
     KataTaskDetail,
@@ -35,7 +36,7 @@
   let { kata, disabled = false }: Props = $props();
 
   const actor = "middleman";
-  const api = createKataTaskAPI({ getDaemonId: () => kata.daemon_id });
+  const api = createKataTaskAPI();
   const authorityStore = createKataAuthorityStore();
 
   let loading = $state(true);
@@ -79,9 +80,9 @@
     };
   }
 
-  async function loadSelectedRecurrences(detail: KataTaskDetail, requestID: number): Promise<void> {
+  async function loadSelectedRecurrences(detail: KataTaskDetail, daemonID: string, requestID: number): Promise<void> {
     try {
-      const response = await api.recurrences(detail.issue.project_id, { daemonId: kata.daemon_id });
+      const response = await api.recurrences(detail.issue.project_id, { daemonId: daemonID });
       if (requestID !== loadRequestID || selectedIssue?.issue.uid !== detail.issue.uid) return;
       selectedRecurrences = response.recurrences;
     } catch {
@@ -95,12 +96,13 @@
     loadError = null;
     const accepted = await authorityStore.loadSnapshot(selectedSnapshotIntent(uid));
     if (requestID !== loadRequestID) return false;
-    const detail = authorityStore.snapshot?.selected_detail;
-    if (!accepted || authorityStore.snapshot?.selected_issue_uid !== uid || !detail) {
+    const snapshot = authorityStore.snapshot;
+    const detail = snapshot?.selected_detail;
+    if (!accepted || snapshot?.selected_issue_uid !== uid || !detail) {
       throw new Error(`Kata snapshot did not include selected task ${uid}`);
     }
     selectedRecurrences = [];
-    void loadSelectedRecurrences(structuredClone(detail) as KataTaskDetail, requestID);
+    void loadSelectedRecurrences(structuredClone(detail) as KataTaskDetail, snapshot.daemon_id, requestID);
     loading = false;
     return true;
   }
@@ -154,6 +156,10 @@
     const daemonID = acceptedSnapshot?.daemon_id;
     if (!daemonID) throw new Error("No accepted Kata snapshot daemon is available.");
     return daemonID;
+  }
+
+  function acceptedMutationOptions(): KataPinnedDaemonOptions {
+    return { daemonId: acceptedDaemonIDForMutation() };
   }
 
   async function mutateSelected(task: () => Promise<unknown>): Promise<void> {
@@ -216,6 +222,7 @@
           actor,
           toProjectUID,
           selectedMutationETag(sourceIssueUID),
+          acceptedMutationOptions(),
         )),
         () => generation === issueContextGeneration,
       );
@@ -233,37 +240,51 @@
         actor,
         patch,
         selectedMutationETag(uid),
-        { daemonId: acceptedDaemonIDForMutation() },
+        acceptedMutationOptions(),
       ),
     ));
   }
 
   function addSelectedComment(uid: string, body: string): Promise<boolean> {
-    return runTask(() => mutateSelected(() => api.addComment(selectedMutationTarget(uid), actor, body)));
+    return runTask(() =>
+      mutateSelected(() => api.addComment(selectedMutationTarget(uid), actor, body, acceptedMutationOptions())),
+    );
   }
 
   function editSelectedIssue(uid: string, patch: KataTaskEditPatch): Promise<boolean> {
-    return runTask(() => mutateSelected(() => api.editIssue(selectedMutationTarget(uid), actor, patch)));
+    return runTask(() =>
+      mutateSelected(() => api.editIssue(selectedMutationTarget(uid), actor, patch, acceptedMutationOptions())),
+    );
   }
 
   function assignSelectedOwner(uid: string, owner: string): Promise<boolean> {
-    return runTask(() => mutateSelected(() => api.assignOwner(selectedMutationTarget(uid), actor, owner)));
+    return runTask(() =>
+      mutateSelected(() => api.assignOwner(selectedMutationTarget(uid), actor, owner, acceptedMutationOptions())),
+    );
   }
 
   function unassignSelectedOwner(uid: string): Promise<boolean> {
-    return runTask(() => mutateSelected(() => api.unassignOwner(selectedMutationTarget(uid), actor)));
+    return runTask(() =>
+      mutateSelected(() => api.unassignOwner(selectedMutationTarget(uid), actor, acceptedMutationOptions())),
+    );
   }
 
   function setSelectedPriority(uid: string, priority: number | null): Promise<boolean> {
-    return runTask(() => mutateSelected(() => api.setPriority(selectedMutationTarget(uid), actor, priority)));
+    return runTask(() =>
+      mutateSelected(() => api.setPriority(selectedMutationTarget(uid), actor, priority, acceptedMutationOptions())),
+    );
   }
 
   function addSelectedLabel(uid: string, label: string): Promise<boolean> {
-    return runTask(() => mutateSelected(() => api.addLabel(selectedMutationTarget(uid), actor, label)));
+    return runTask(() =>
+      mutateSelected(() => api.addLabel(selectedMutationTarget(uid), actor, label, acceptedMutationOptions())),
+    );
   }
 
   async function removeSelectedLabel(uid: string, label: string): Promise<void> {
-    await runTask(() => mutateSelected(() => api.removeLabel(selectedMutationTarget(uid), actor, label)));
+    await runTask(() =>
+      mutateSelected(() => api.removeLabel(selectedMutationTarget(uid), actor, label, acceptedMutationOptions())),
+    );
   }
 
   function revealChecklist(): void {
@@ -272,15 +293,23 @@
 
   async function deleteRecurrence(recurrence: KataRecurrence): Promise<boolean> {
     return runTask(async () => {
-      await api.deleteRecurrence(recurrence.project_id, recurrence.uid, actor, `"rev-${recurrence.revision}"`);
-      if (selectedIssue) await loadSelectedRecurrences(selectedIssue, loadRequestID);
+      const options = acceptedMutationOptions();
+      await api.deleteRecurrence(
+        recurrence.project_id,
+        recurrence.uid,
+        actor,
+        options,
+        `"rev-${recurrence.revision}"`,
+      );
+      if (selectedIssue) await loadSelectedRecurrences(selectedIssue, options.daemonId, loadRequestID);
     });
   }
 
   async function createRecurrence(projectID: number, input: KataCreateRecurrenceInput): Promise<void> {
     await runTaskOrThrow(async () => {
-      await api.createRecurrence(projectID, input);
-      if (selectedIssue) await loadSelectedRecurrences(selectedIssue, loadRequestID);
+      const options = acceptedMutationOptions();
+      await api.createRecurrence(projectID, input, options);
+      if (selectedIssue) await loadSelectedRecurrences(selectedIssue, options.daemonId, loadRequestID);
     });
   }
 
@@ -288,8 +317,9 @@
     await runTaskOrThrow(async () => {
       const recurrence = selectedRecurrences.find((item) => item.id === id);
       if (!recurrence) throw new Error(`recurrence not loaded: id=${id}`);
-      await api.patchRecurrence(recurrence.project_id, recurrence.uid, input, etag);
-      if (selectedIssue) await loadSelectedRecurrences(selectedIssue, loadRequestID);
+      const options = acceptedMutationOptions();
+      await api.patchRecurrence(recurrence.project_id, recurrence.uid, input, etag, options);
+      if (selectedIssue) await loadSelectedRecurrences(selectedIssue, options.daemonId, loadRequestID);
     });
   }
 
@@ -300,14 +330,23 @@
     const selected = selectedIssue;
     if (!selected) return Promise.resolve(false);
     return runTask(() => mutateSelected(() =>
-      api.closeIssue(selectedMutationTarget(selected.issue.uid), actor, { reason, message }),
+      api.closeIssue(
+        selectedMutationTarget(selected.issue.uid),
+        actor,
+        { reason, message },
+        acceptedMutationOptions(),
+      ),
     ));
   }
 
   async function reopenSelectedIssue(): Promise<void> {
     const selected = selectedIssue;
     if (!selected) return;
-    await runTask(() => mutateSelected(() => api.reopenIssue(selectedMutationTarget(selected.issue.uid), actor)));
+    await runTask(() =>
+      mutateSelected(() =>
+        api.reopenIssue(selectedMutationTarget(selected.issue.uid), actor, acceptedMutationOptions()),
+      ),
+    );
   }
 
   function deleteSelectedIssue(): Promise<boolean> {
@@ -328,7 +367,7 @@
         actor,
         { mail_links: patch.mail_links },
         selectedMutationETag(selected.issue.uid),
-        { daemonId: acceptedDaemonIDForMutation() },
+        acceptedMutationOptions(),
       )),
     );
     unlinkBusyIds = new Set();

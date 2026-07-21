@@ -1,16 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { KATA_DAEMON_HEADER, fetchKataDaemons, kataProxyPath, withKataDaemon } from "./daemons.js";
-
-function recordRequest(input: RequestInfo | URL, init?: RequestInit): Request {
-  if (typeof Request !== "undefined" && input instanceof Request) {
-    return new Request(input, init);
-  }
-  if (input instanceof URL) {
-    return new Request(input, init);
-  }
-  return new Request(new URL(String(input), window.location.origin), init);
-}
+import { fetchKataDaemons, kataProxyPath } from "./daemons.js";
 
 function requestURL(input: RequestInfo | URL): URL {
   if (typeof Request !== "undefined" && input instanceof Request) {
@@ -148,50 +138,5 @@ describe("kata api helpers", () => {
     const fetchMock = vi.fn(async () => new Response("not found", { status: 404 }));
 
     await expect(fetchKataDaemons(fetchMock)).resolves.toEqual([]);
-  });
-
-  it("adds the selected daemon header only for same-origin proxy requests", async () => {
-    const seen: Array<Request> = [];
-    const inner = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      seen.push(recordRequest(input, init));
-      return Response.json({});
-    });
-    const fetch = withKataDaemon(inner, () => "work");
-
-    await fetch("/api/v1/kata/proxy/api/v1/projects");
-    await fetch("https://daemon.example/api/v1/projects", {
-      headers: { [KATA_DAEMON_HEADER]: "work" },
-    });
-
-    expect(seen[0]?.headers.get(KATA_DAEMON_HEADER)).toBe("work");
-    expect(seen[1]?.headers.has(KATA_DAEMON_HEADER)).toBe(false);
-  });
-
-  it("omits the daemon header when no daemon is active", async () => {
-    const seen: Array<Request> = [];
-    const inner = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      seen.push(recordRequest(input, init));
-      return Response.json({});
-    });
-    const fetch = withKataDaemon(inner, () => undefined);
-
-    await fetch("/api/v1/kata/proxy/api/v1/projects");
-
-    expect(seen[0]?.headers.has(KATA_DAEMON_HEADER)).toBe(false);
-  });
-
-  it("honors an explicit daemon header on proxy requests", async () => {
-    const seen: Array<Request> = [];
-    const inner = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      seen.push(recordRequest(input, init));
-      return Response.json({});
-    });
-    const fetch = withKataDaemon(inner, () => "work");
-
-    await fetch("/api/v1/kata/proxy/api/v1/projects", {
-      headers: { [KATA_DAEMON_HEADER]: "home" },
-    });
-
-    expect(seen[0]?.headers.get(KATA_DAEMON_HEADER)).toBe("home");
   });
 });

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,15 +43,16 @@ worktree_base_path = %q
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-kata",
-		"project_name": "Kata",
-		"issue_uid":    "issue-kata-1",
-		"short_id":     "task-123",
-		"qualified_id": "Kata#task-123",
-		"title":        "Fix widget",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata",
+		ProjectName: "Kata",
+		IssueUID:    "issue-kata-1",
+		ShortID:     "task-123",
+		QualifiedID: "Kata#task-123",
+		Title:       "Fix widget",
 	})
+	require.NoError(err)
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("github", resp.Repo.Provider)
@@ -91,14 +93,15 @@ worktree_base_path = %q
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "github.com/acme/widget",
-		"project_name": "widget",
-		"issue_uid":    "issue-kata-1",
-		"short_id":     "task-123",
-		"title":        "Fix widget",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "github.com/acme/widget",
+		ProjectName: "widget",
+		IssueUID:    "issue-kata-1",
+		ShortID:     "task-123",
+		Title:       "Fix widget",
 	})
+	require.NoError(err)
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("acme", resp.Repo.Owner)
@@ -130,12 +133,13 @@ worktree_base_path = %q
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-kata",
-		"project_name": "widget",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata",
+		ProjectName: "widget",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("acme", resp.Repo.Owner)
@@ -167,12 +171,13 @@ worktree_base_path = %q
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-kata-opaque",
-		"project_name": "widget",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata-opaque",
+		ProjectName: "widget",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("acme", resp.Repo.Owner)
@@ -209,12 +214,13 @@ worktree_base_path = %q
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-kata",
-		"project_name": "Widget",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata",
+		ProjectName: "Widget",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
@@ -257,12 +263,13 @@ worktree_base_path = %q
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "other"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-kata-opaque",
-		"project_name": "Widget",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata-opaque",
+		ProjectName: "Widget",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("acme", resp.Repo.Owner)
@@ -286,14 +293,15 @@ name = "middleman"
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-middleman",
-		"project_name": "middleman",
-		"issue_uid":    "issue-kata-1",
-		"short_id":     "task-123",
-		"title":        "Fix workspace affordance",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-middleman",
+		ProjectName: "middleman",
+		IssueUID:    "issue-kata-1",
+		ShortID:     "task-123",
+		Title:       "Fix workspace affordance",
 	})
+	require.NoError(err)
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("github", resp.Repo.Provider)
@@ -328,12 +336,13 @@ port = 8091
 	})
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-kata",
-		"project_name": "Kata",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata",
+		ProjectName: "Kata",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
@@ -368,12 +377,13 @@ port = 8091
 		require.NoError(err)
 	}
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-kata",
-		"project_name": "Kata",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata",
+		ProjectName: "Kata",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
@@ -489,10 +499,18 @@ func TestKataProjectMappingsReportsManualRegisteredProjectTarget(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	daemon := startKataTaskDetailDaemon(t, `{}`, `{"projects":[
-		{"id":7,"uid":"project-kata","name":"Kata"},
-		{"id":8,"uid":"project-unmapped","name":"Unmapped"}
-	]}`)
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/v1/projects" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"projects":[
+			{"id":7,"uid":"project-kata","name":"Kata"},
+			{"id":8,"uid":"project-unmapped","name":"Unmapped"}
+		]}`))
+	}))
+	t.Cleanup(daemon.Close)
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
 	writeKataProxyCatalog(t, home, `
@@ -561,18 +579,20 @@ name = "middleman"
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "middleman"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-middleman",
-		"project_name": "middleman",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-middleman",
+		ProjectName: "middleman",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
 
 func TestKataWorkspaceTargetTrackedRepoNameFallbackRequiresTrackedRepo(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
 
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
@@ -585,12 +605,13 @@ owner = "acme"
 name = "middleman"
 `, &mockGH{})
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-middleman",
-		"project_name": "middleman",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-middleman",
+		ProjectName: "middleman",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
@@ -614,12 +635,13 @@ name = "middle*"
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middle-earth"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-middleman",
-		"project_name": "middleman",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-middleman",
+		ProjectName: "middleman",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("github", resp.Repo.Provider)
@@ -652,12 +674,13 @@ name = "middle*"
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "middleman"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-middleman",
-		"project_name": "middleman",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-middleman",
+		ProjectName: "middleman",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
@@ -685,12 +708,13 @@ name = "middle*"
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "middleman"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-middleman",
-		"project_name": "middleman",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-middleman",
+		ProjectName: "middleman",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
@@ -720,12 +744,13 @@ worktree_base_path = %q
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-kata",
-		"project_name": "widget",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata",
+		ProjectName: "widget",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 	assert.True(resp.Available)
 	require.NotNil(resp.Repo)
 	assert.Equal("acme", resp.Repo.Owner)
@@ -818,12 +843,13 @@ worktree_base_path = %q
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "other"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-kata",
-		"project_name": "Widget",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata",
+		ProjectName: "Widget",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
@@ -872,12 +898,13 @@ name = "middleman"
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-kata",
-		"project_name": "middleman",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata",
+		ProjectName: "middleman",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
@@ -917,28 +944,31 @@ worktree_base_path = %q
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "other"))
 	require.NoError(err)
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-kata-opaque",
-		"project_name": "Widget",
-		"issue_uid":    "issue-kata-1",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata-opaque",
+		ProjectName: "Widget",
+		IssueUID:    "issue-kata-1",
 	})
+	require.NoError(err)
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 }
 
 func TestKataWorkspaceTargetUnavailableWhenMappingMissing(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
 
 	srv, _, _ := setupTestServerWithConfig(t)
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-kata",
-		"project_name": "Kata",
-		"issue_uid":    "issue-kata-1",
-		"short_id":     "task-123",
-		"title":        "Fix widget",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata",
+		ProjectName: "Kata",
+		IssueUID:    "issue-kata-1",
+		ShortID:     "task-123",
+		Title:       "Fix widget",
 	})
+	require.NoError(err)
 	assert.False(resp.Available)
 	assert.Nil(resp.Repo)
 	assert.Nil(resp.ExistingWorkspace)
@@ -995,14 +1025,15 @@ repo_path = "acme/widget"
 		},
 	}))
 
-	resp := kataWorkspaceTargetViaTaskDetail(t, srv, map[string]string{
-		"daemon_id":    "desktop",
-		"project_uid":  "project-kata",
-		"project_name": "Kata",
-		"issue_uid":    "issue-kata-1",
-		"short_id":     "task-123",
-		"title":        "Fix widget",
+	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID:    "desktop",
+		ProjectUID:  "project-kata",
+		ProjectName: "Kata",
+		IssueUID:    "issue-kata-1",
+		ShortID:     "task-123",
+		Title:       "Fix widget",
 	})
+	require.NoError(err)
 	assert.True(resp.Available)
 	require.NotNil(resp.ExistingWorkspace)
 	assert.Equal("ws-kata-existing", resp.ExistingWorkspace.ID)

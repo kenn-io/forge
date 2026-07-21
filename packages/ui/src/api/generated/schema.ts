@@ -2270,23 +2270,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/kata/tasks/{issue_uid}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Kata task detail with workspace target */
-        get: operations["get-kata-task-detail"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/kata/workspaces": {
         parameters: {
             query?: never;
@@ -5800,7 +5783,7 @@ export interface components {
             graph?: components["schemas"]["ReachableGraphResponseBody"];
             /** Format: date-time */
             graph_fetched_at?: string;
-            selected_detail?: components["schemas"]["KataTaskDetailResponse"];
+            selected_detail?: components["schemas"]["KataSnapshotSelectedDetail"];
             selected_history?: components["schemas"]["EventEnvelope"][] | null;
             selected_issue_uid?: string;
         };
@@ -5808,13 +5791,7 @@ export interface components {
             code: string;
             message: string;
         };
-        KataTaskDetailResponse: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/KataTaskDetailResponse.json
-             */
-            readonly $schema?: string;
+        KataSnapshotSelectedDetail: {
             /** @description Verbatim Kata daemon issue detail payload */
             detail: unknown;
             /** @description Daemon issue detail ETag, when the daemon provided one */
@@ -13188,42 +13165,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KataTaskSnapshotResponse"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemError"];
-                };
-            };
-        };
-    };
-    "get-kata-task-detail": {
-        parameters: {
-            query?: never;
-            header?: {
-                /** @description Kata daemon id; the effective default daemon when empty */
-                "X-Middleman-Kata-Daemon"?: string;
-            };
-            path: {
-                /** @description Kata issue UID */
-                issue_uid: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    Vary?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KataTaskDetailResponse"];
                 };
             };
             /** @description Error */

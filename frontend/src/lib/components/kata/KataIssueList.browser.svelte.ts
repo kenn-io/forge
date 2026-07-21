@@ -5,7 +5,7 @@ import { render } from "vitest-browser-svelte";
 import "../../../app.css";
 
 import type { KataTaskSummary } from "../../api/kata/taskTypes.js";
-import type { KataCurrentView } from "../../stores/kata-workspace.svelte.js";
+import type { KataCurrentView } from "../../features/kata/kataWorkspaceAuthority.js";
 import KataIssueList from "./KataIssueList.svelte";
 
 function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {

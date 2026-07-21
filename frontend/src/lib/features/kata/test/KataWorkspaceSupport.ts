@@ -7,20 +7,14 @@ import {
   type KataWorkspaceSnapshotResponse,
 } from "../../../api/kata/snapshot.js";
 import type {
-  KataInstanceResponse,
   KataProjectSummary,
   KataReachableGraphResponse,
   KataRecurrence,
   KataTaskAPI,
   KataTaskDetail,
   KataTaskEvent,
-  KataTaskEventsResponse,
-  KataTaskIssuesQuery,
-  KataTaskSearchFilters,
-  KataTaskSearchResponse,
   KataTaskSummary,
 } from "../../../api/kata/taskTypes.js";
-import { buildKataTaskView } from "../../../api/kata/taskViewBuilder.js";
 import type { MessageLinkRef } from "../../../messages/types";
 import {
   getActiveKataDaemon,
@@ -418,97 +412,11 @@ function createDaemonWorkspaceAPI(
     snapshot?: KataWorkspaceSnapshotFixtureOverride | undefined;
   } = {},
 ): KataTaskAPI {
-  let workflowDaemonID: string | undefined;
-
-  function daemonID(explicitDaemonID?: string): string {
-    return explicitDaemonID ?? workflowDaemonID ?? getActiveKataDaemon() ?? getDefaultKataDaemon() ?? "home";
-  }
-
-  function rows(explicitDaemonID?: string): KataTaskSummary[] {
-    return rowsByDaemon[daemonID(explicitDaemonID)] ?? [];
-  }
-
-  function projectCatalog(explicitDaemonID?: string): KataProjectSummary[] {
-    return projectsByDaemon[daemonID(explicitDaemonID)] ?? projects;
-  }
-
   const api: KataTaskAPI = {
-    bindWorkflowDaemon: vi.fn((daemonID?: string) => {
-      workflowDaemonID = daemonID;
-    }),
-    instance: vi.fn(
-      async (): Promise<KataInstanceResponse> => ({
-        instance_uid: "instance-1",
-        version: "dev",
-        schema_version: 1,
-      }),
-    ),
-    projects: vi.fn(async (opts) => ({ projects: projectCatalog(opts?.daemonId), fetched_at: fetchedAt })),
-    createProject: vi.fn(async (name: string) => ({
-      id: 90,
-      uid: `project-${name.toLowerCase()}`,
-      name,
-      metadata: {},
-      open_count: 0,
-    })),
-    renameProject: vi.fn(async (_projectID: number, name: string) => ({
-      id: 1,
-      uid: `project-${name.toLowerCase()}`,
-      name,
-      metadata: {},
-      open_count: 0,
-    })),
-    patchProjectMetadata: vi.fn(async (projectID: number, _actor: string, patch: Record<string, unknown>) => {
-      const base = projects.find((item) => item.id === projectID) ?? projects[0]!;
-      return {
-        changed: true,
-        project: { ...base, metadata: { ...base.metadata, ...patch } },
-        etag: '"rev-2"',
-      };
-    }),
-    createIssue: vi.fn(async (projectID: number, actor: string, draft: { title: string }) => ({
+    createProject: vi.fn(async () => ({ changed: true })),
+    createIssue: vi.fn(async (_projectID: number, _actor: string, _draft: { title: string }) => ({
       changed: true,
-      issue: {
-        ...issue("issue-capture", draft.title, "project-inbox"),
-        project_id: projectID,
-        author: actor,
-      },
-      etag: '"rev-1"',
     })),
-    issues: vi.fn(async (query: KataTaskIssuesQuery, opts) => ({
-      ...buildKataTaskView({
-        view: query.view,
-        issues: rows(opts?.daemonId).filter((item) =>
-          query.project_uid ? item.project_uid === query.project_uid : true,
-        ),
-        projects: projectCatalog(opts?.daemonId),
-        today: "2026-05-15",
-        fetched_at: fetchedAt,
-      }),
-      daemon_id: daemonID(opts?.daemonId),
-    })),
-    search: vi.fn(
-      async (filters: KataTaskSearchFilters, opts): Promise<KataTaskSearchResponse> => ({
-        filters,
-        issues: rows(opts?.daemonId).filter((item) =>
-          filters.scope.kind === "project" ? item.project_uid === filters.scope.project_uid : true,
-        ),
-        ready_issue_uids: filters.status === "ready" ? rows(opts?.daemonId).map((item) => item.uid) : [],
-        fetched_at: fetchedAt,
-        daemon_id: daemonID(opts?.daemonId),
-      }),
-    ),
-    issue: vi.fn(async (uid: string, opts) => detail(uid, rows(opts?.daemonId))),
-    reachableGraph: vi.fn(async (_projectID: number, ref: string, query = {}) =>
-      reachableGraph(ref, rows(), query.depth ?? "full", query.hide_done === true),
-    ),
-    events: vi.fn(
-      async (_query, _opts): Promise<KataTaskEventsResponse> => ({
-        reset_required: false,
-        events: [],
-        next_after_id: 0,
-      }),
-    ),
     addComment: vi.fn(async () => ({ changed: true })),
     addLabel: vi.fn(async () => ({ changed: true })),
     removeLabel: vi.fn(async () => ({ changed: true })),
@@ -518,8 +426,8 @@ function createDaemonWorkspaceAPI(
     closeIssue: vi.fn(async () => ({ changed: true })),
     reopenIssue: vi.fn(async () => ({ changed: true })),
     editIssue: vi.fn(async () => ({ changed: true })),
-    patchIssueMetadata: vi.fn(async () => ({ changed: true, etag: '"rev-2"' })),
-    moveIssue: vi.fn(async () => ({ changed: true, new_short_id: "moved" })),
+    patchIssueMetadata: vi.fn(async () => ({ changed: true })),
+    moveIssue: vi.fn(async () => ({ changed: true })),
     recurrences: vi.fn(async () => ({ recurrences: [], fetched_at: fetchedAt })),
     createRecurrence: vi.fn(async () => ({ recurrence: recurrence() })),
     showRecurrence: vi.fn(async () => ({ recurrence: recurrence(), etag: '"rev-1"' })),
@@ -555,11 +463,6 @@ function createWorkspaceAPI(
   } = {},
 ): {
   api: KataTaskAPI;
-  instance: ReturnType<typeof vi.fn>;
-  projects: ReturnType<typeof vi.fn>;
-  issues: ReturnType<typeof vi.fn>;
-  issue: ReturnType<typeof vi.fn>;
-  search: ReturnType<typeof vi.fn>;
   addComment: ReturnType<typeof vi.fn>;
   addLabel: ReturnType<typeof vi.fn>;
   removeLabel: ReturnType<typeof vi.fn>;
@@ -568,35 +471,27 @@ function createWorkspaceAPI(
   setPriority: ReturnType<typeof vi.fn>;
   patchIssueMetadata: ReturnType<typeof vi.fn>;
   moveIssue: ReturnType<typeof vi.fn>;
+  recurrences: ReturnType<typeof vi.fn>;
   createRecurrence: ReturnType<typeof vi.fn>;
   patchRecurrence: ReturnType<typeof vi.fn>;
+  deleteRecurrence: ReturnType<typeof vi.fn>;
   createIssue: ReturnType<typeof vi.fn>;
 } {
   let rows: KataTaskSummary[] = initialRows.map((item) => ({ ...item, labels: [...(item.labels ?? [])] }));
   const commentsByUID = new Map<string, ReturnType<typeof makeComment>[]>([
     ["issue-pay-rent", [makeComment(1, rows[0]!.id, "Verify amount against the lease.")]],
   ]);
-  const search = vi.fn(
-    async (filters: KataTaskSearchFilters): Promise<KataTaskSearchResponse> => ({
-      filters,
-      issues: rows.filter((item) =>
-        filters.scope.kind === "project" ? item.project_uid === filters.scope.project_uid : true,
-      ),
-      ready_issue_uids: filters.status === "ready" ? rows.map((item) => item.uid) : [],
-      fetched_at: fetchedAt,
-    }),
-  );
   const addComment = vi.fn(async (target: { ref: string }, _actor: string, body: string) => {
     const found = rows.find((item) => item.uid === target.ref) ?? rows[0]!;
     const next = [makeComment(Date.now(), found.id, body), ...(commentsByUID.get(found.uid) ?? [])];
     commentsByUID.set(found.uid, next);
-    return { changed: true, issue: found };
+    return { changed: true };
   });
   const addLabel = vi.fn(async (target: { ref: string }, _actor: string, label: string) => {
     rows = rows.map((item) =>
       item.uid === target.ref ? { ...item, labels: [...new Set([...(item.labels ?? []), label])] } : item,
     );
-    return { changed: true, issue: rows.find((item) => item.uid === target.ref) };
+    return { changed: true };
   });
   const removeLabel = vi.fn(async (target: { ref: string }, _actor: string, label: string) => {
     rows = rows.map((item) =>
@@ -604,19 +499,19 @@ function createWorkspaceAPI(
         ? { ...item, labels: (item.labels ?? []).filter((candidate) => candidate !== label) }
         : item,
     );
-    return { changed: true, issue: rows.find((item) => item.uid === target.ref) };
+    return { changed: true };
   });
   const assignOwner = vi.fn(async (target: { ref: string }, _actor: string, owner: string) => {
     rows = rows.map((item) => (item.uid === target.ref ? { ...item, owner } : item));
-    return { changed: true, issue: rows.find((item) => item.uid === target.ref) };
+    return { changed: true };
   });
   const unassignOwner = vi.fn(async (target: { ref: string }) => {
     rows = rows.map((item) => (item.uid === target.ref ? { ...item, owner: undefined } : item));
-    return { changed: true, issue: rows.find((item) => item.uid === target.ref) };
+    return { changed: true };
   });
   const setPriority = vi.fn(async (target: { ref: string }, _actor: string, priority: number | null) => {
     rows = rows.map((item) => (item.uid === target.ref ? { ...item, priority: priority ?? undefined } : item));
-    return { changed: true, issue: rows.find((item) => item.uid === target.ref) };
+    return { changed: true };
   });
   const patchIssueMetadata = vi.fn(async (target: { ref: string }, _actor: string, patch: Record<string, unknown>) => {
     rows = rows.map((item) =>
@@ -624,9 +519,10 @@ function createWorkspaceAPI(
         ? { ...item, metadata: { ...item.metadata, ...patch }, revision: item.revision + 1 }
         : item,
     );
-    return { changed: true, issue: rows.find((item) => item.uid === target.ref), etag: '"rev-2"' };
+    return { changed: true };
   });
-  const moveIssue = vi.fn(async () => ({ changed: true, new_short_id: "moved" }));
+  const moveIssue = vi.fn(async () => ({ changed: true }));
+  const recurrences = vi.fn(async () => ({ recurrences: options.recurrences ?? [], fetched_at: fetchedAt }));
   const createRecurrence = vi.fn(async () => ({
     recurrence: recurrence(),
   }));
@@ -635,6 +531,7 @@ function createWorkspaceAPI(
     recurrence: recurrence({ revision: 2 }),
     etag: '"rev-2"',
   }));
+  const deleteRecurrence = vi.fn(async () => undefined);
   const createIssue = vi.fn(async (projectID: number, actor: string, draft: { title: string }) => {
     const created: KataTaskSummary = {
       ...issue("issue-capture", draft.title, "project-inbox"),
@@ -642,65 +539,11 @@ function createWorkspaceAPI(
       author: actor,
     };
     rows = [created, ...rows];
-    return { changed: true, issue: created, etag: '"rev-1"' };
+    return { changed: true };
   });
-  const instance = vi.fn(
-    async (): Promise<KataInstanceResponse> => ({
-      instance_uid: "instance-1",
-      version: "dev",
-      schema_version: 1,
-    }),
-  );
-  const projectCatalog = vi.fn(async () => ({ projects, fetched_at: fetchedAt }));
-  const issues = vi.fn(async (query: KataTaskIssuesQuery) =>
-    buildKataTaskView({
-      view: query.view,
-      issues: rows.filter((item) => (query.project_uid ? item.project_uid === query.project_uid : true)),
-      projects,
-      today: "2026-05-15",
-      fetched_at: fetchedAt,
-    }),
-  );
-  const issueDetail = vi.fn(async (uid: string) => detail(uid, rows, commentsByUID));
   const api: KataTaskAPI = {
-    instance,
-    projects: projectCatalog,
-    createProject: vi.fn(async (name: string) => ({
-      id: 90,
-      uid: `project-${name.toLowerCase()}`,
-      name,
-      metadata: {},
-      open_count: 0,
-    })),
-    renameProject: vi.fn(async (_projectID: number, name: string) => ({
-      id: 1,
-      uid: `project-${name.toLowerCase()}`,
-      name,
-      metadata: {},
-      open_count: 0,
-    })),
-    patchProjectMetadata: vi.fn(async (projectID: number, _actor: string, patch: Record<string, unknown>) => {
-      const base = projects.find((item) => item.id === projectID) ?? projects[0]!;
-      return {
-        changed: true,
-        project: { ...base, metadata: { ...base.metadata, ...patch } },
-        etag: '"rev-2"',
-      };
-    }),
+    createProject: vi.fn(async () => ({ changed: true })),
     createIssue,
-    issues,
-    search,
-    issue: issueDetail,
-    reachableGraph: vi.fn(async (_projectID: number, ref: string, query = {}) =>
-      reachableGraph(ref, rows, query.depth ?? "full", query.hide_done === true),
-    ),
-    events: vi.fn(
-      async (): Promise<KataTaskEventsResponse> => ({
-        reset_required: false,
-        events: options.events ?? [],
-        next_after_id: 0,
-      }),
-    ),
     addComment,
     addLabel,
     removeLabel,
@@ -712,14 +555,14 @@ function createWorkspaceAPI(
     editIssue: vi.fn(async () => ({ changed: true })),
     patchIssueMetadata,
     moveIssue,
-    recurrences: vi.fn(async () => ({ recurrences: options.recurrences ?? [], fetched_at: fetchedAt })),
+    recurrences,
     createRecurrence,
     showRecurrence: vi.fn(async () => ({
       recurrence: recurrence(),
       etag: '"rev-1"',
     })),
     patchRecurrence,
-    deleteRecurrence: vi.fn(async () => undefined),
+    deleteRecurrence,
   };
   installKataWorkspaceSnapshotFixture({
     rows: () => rows,
@@ -732,11 +575,6 @@ function createWorkspaceAPI(
   });
   return {
     api,
-    instance,
-    projects: projectCatalog,
-    issues,
-    issue: issueDetail,
-    search,
     addComment,
     addLabel,
     removeLabel,
@@ -745,8 +583,10 @@ function createWorkspaceAPI(
     setPriority,
     patchIssueMetadata,
     moveIssue,
+    recurrences,
     createRecurrence,
     patchRecurrence,
+    deleteRecurrence,
     createIssue,
   };
 }

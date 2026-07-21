@@ -202,18 +202,21 @@ describe("kata workspace view projection", () => {
     });
   });
 
-  it("uses All as the presentation view for project-only backlog scope", () => {
-    const projectIssue = issue("project", "Project result", "project-work");
+  it("combines project scope with the selected system view", () => {
+    const due = issue("due", "Project deadline", "project-work", "open", { deadline_on: "2026-07-20" });
+    const backlog = issue("backlog", "Project backlog", "project-work");
     const view = projectKataWorkspaceView({
-      view: "today",
+      view: "deadlines",
       filters: { ...defaultFilters, scope: { kind: "project", project_uid: "project-work" } },
       snapshot,
-      issues: [projectIssue],
+      issues: [due, backlog],
+      today: "2026-07-20",
     });
 
-    expect(view).toMatchObject({
-      view: "all",
-      groups: [{ id: "search-results", issues: [projectIssue] }],
+    expect(view).toEqual({
+      view: "deadlines",
+      fetched_at: snapshot.fetched_at,
+      groups: [{ id: "today", title: "Today", issues: [due] }],
     });
   });
 });

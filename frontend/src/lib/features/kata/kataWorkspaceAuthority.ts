@@ -32,6 +32,17 @@ export interface KataWorkspaceAuthorityRequest {
   presentation: KataWorkspaceAuthorityPresentation;
 }
 
+export interface KataAreaSummary {
+  name: string;
+  projects: KataProjectSummary[];
+}
+
+export interface KataCurrentView {
+  name: KataTaskViewName;
+  groups: KataTaskViewResponse["groups"];
+  fetched_at?: string | undefined;
+}
+
 export interface ProjectKataWorkspaceViewOptions {
   view: KataTaskViewName;
   filters: KataTaskSearchFilters;
@@ -54,12 +65,60 @@ function optionalValue(value: string | null | undefined): string | undefined {
 
 function hasActiveFilters(filters: KataTaskSearchFilters): boolean {
   return (
-    filters.scope.kind === "project" ||
     filters.status !== "open" ||
     filters.owner.trim() !== "" ||
     filters.label.trim() !== "" ||
     filters.query.trim() !== ""
   );
+}
+
+export function defaultKataTaskSearchFilters(): KataTaskSearchFilters {
+  return {
+    scope: { kind: "all" },
+    status: "open",
+    owner: "",
+    label: "",
+    query: "",
+  };
+}
+
+function projectArea(project: KataProjectSummary): string {
+  const area = project.metadata.area?.trim();
+  return area && area !== "Unfiled" ? area : "Unfiled";
+}
+
+function compareProjectOrder(a: KataProjectSummary, b: KataProjectSummary): number {
+  const leftOrder = a.metadata.sidebar_order ?? Number.MAX_SAFE_INTEGER;
+  const rightOrder = b.metadata.sidebar_order ?? Number.MAX_SAFE_INTEGER;
+  if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+  return a.name.localeCompare(b.name);
+}
+
+export function deriveKataAreas(projects: readonly KataProjectSummary[]): KataAreaSummary[] {
+  const groups = new Map<string, KataProjectSummary[]>();
+  for (const project of projects) {
+    if (project.metadata.role === "inbox") continue;
+    const area = projectArea(project);
+    groups.set(area, [...(groups.get(area) ?? []), project]);
+  }
+
+  const preferred = ["Personal", "Work", "Unfiled"];
+  return [...groups.entries()]
+    .sort(([left], [right]) => {
+      const leftIndex = preferred.indexOf(left);
+      const rightIndex = preferred.indexOf(right);
+      if (leftIndex !== -1 || rightIndex !== -1) {
+        return (
+          (leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex) -
+          (rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex)
+        );
+      }
+      return left.localeCompare(right);
+    })
+    .map(([name, areaProjects]) => ({
+      name,
+      projects: [...areaProjects].sort(compareProjectOrder),
+    }));
 }
 
 export function kataWorkspaceAuthorityRequest(
@@ -91,7 +150,7 @@ export function projectKataWorkspaceView(options: ProjectKataWorkspaceViewOption
   const issues = options.issues.map((issue) => ({ ...issue }) as KataTaskSummary);
   if (hasActiveFilters(options.filters)) {
     return {
-      view: options.filters.scope.kind === "project" ? "all" : options.view,
+      view: options.view,
       groups: issues.length > 0 ? [{ id: "search-results", title: "Results", issues }] : [],
       fetched_at: options.snapshot.fetched_at,
     };

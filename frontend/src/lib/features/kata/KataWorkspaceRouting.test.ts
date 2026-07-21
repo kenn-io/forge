@@ -36,17 +36,13 @@ describe("KataWorkspace snapshot routing", () => {
     vi.restoreAllMocks();
   });
 
-  it("selects the routed task through snapshot enrichment without a direct detail read", async () => {
+  it("selects the routed task through snapshot enrichment", async () => {
     acceptHomeDaemon();
     const { api } = createWorkspaceAPI();
-    api.issue = vi.fn(async () => {
-      throw new Error("legacy detail read");
-    });
 
     render(KataWorkspace, { props: { api, selectedIssueUID: initialIssues[1]!.uid } });
 
     await screen.findByRole("heading", { name: initialIssues[1]!.title });
-    expect(api.issue).not.toHaveBeenCalled();
   });
 
   it("updates and clears selected enrichment when route identity changes", async () => {
@@ -69,6 +65,40 @@ describe("KataWorkspace snapshot routing", () => {
     expect(requests).toEqual([initialIssues[0]!.uid, initialIssues[1]!.uid, undefined]);
   });
 
+  it("combines a routed project scope with its routed system view", async () => {
+    acceptHomeDaemon();
+    const onRouteStateChange = vi.fn();
+    const deadline = {
+      ...initialIssues[1]!,
+      uid: "issue-project-deadline",
+      short_id: "project-deadline",
+      qualified_id: "Kata#project-deadline",
+      title: "Project deadline",
+      metadata: { deadline_on: "9999-12-31" },
+    };
+    const { api } = createWorkspaceAPI([...initialIssues, deadline]);
+
+    render(KataWorkspace, {
+      props: {
+        api,
+        routeViewName: "deadlines",
+        routeScopeUID: "project-kata",
+        onRouteStateChange,
+      },
+    });
+
+    await screen.findByRole("button", { name: /Project deadline/ });
+    expect(screen.queryByRole("button", { name: /Email Susan re: Q3/ })).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: /Project scope: Kata/ }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "All projects" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /Project scope: All projects/ })).toBeTruthy());
+    await waitFor(() =>
+      expect(onRouteStateChange).toHaveBeenCalledWith({ view: "deadlines", scope: null, issue: null }),
+    );
+  });
+
   it("notifies after a row-selected snapshot is accepted", async () => {
     acceptHomeDaemon();
     const { api } = createWorkspaceAPI();
@@ -81,6 +111,36 @@ describe("KataWorkspace snapshot routing", () => {
 
     await screen.findByRole("heading", { name: initialIssues[1]!.title });
     await waitFor(() => expect(onSelectedIssueChange).toHaveBeenCalledWith(initialIssues[1]!.uid));
+  });
+
+  it("replaces the cleared project-scope entry with its first accepted row selection", async () => {
+    acceptHomeDaemon();
+    const { api } = createWorkspaceAPI();
+    const onSelectedIssueChange = vi.fn();
+    const onRouteStateChange = vi.fn();
+
+    render(KataWorkspace, {
+      props: {
+        api,
+        selectedIssueUID: initialIssues[1]!.uid,
+        routeViewName: "deadlines",
+        routeScopeUID: "project-kata",
+        onSelectedIssueChange,
+        onRouteStateChange,
+      },
+    });
+
+    await screen.findByRole("heading", { name: initialIssues[1]!.title });
+    await fireEvent.click(screen.getByRole("button", { name: /^Finances\s+1$/ }));
+    await waitFor(() =>
+      expect(onRouteStateChange).toHaveBeenCalledWith({ view: null, scope: "project-finances", issue: null }),
+    );
+
+    await fireEvent.click(screen.getByRole("button", { name: new RegExp(initialIssues[0]!.title) }));
+    await waitFor(() =>
+      expect(onRouteStateChange).toHaveBeenCalledWith({ issue: initialIssues[0]!.uid }, { replace: true }),
+    );
+    expect(onSelectedIssueChange).not.toHaveBeenCalledWith(initialIssues[0]!.uid);
   });
 
   it("does not publish a superseded row selection", async () => {

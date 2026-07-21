@@ -46,7 +46,7 @@ export type KataAuthorityState =
     }
   | {
       phase: "abandoned";
-      snapshot: KataWorkspaceSnapshotProjection | null;
+      snapshot: null;
       intent: null;
       error: string;
     };
@@ -88,14 +88,20 @@ function normalizeIntent(intent: KataSnapshotIntent): KataSnapshotIntent {
   };
 }
 
-function responseIdentityMatches(response: KataWorkspaceSnapshotProjection, intent: KataSnapshotIntent): boolean {
+function authorityIdentityMatches(response: KataWorkspaceSnapshotProjection, intent: KataSnapshotIntent): boolean {
   if (intent.daemon_id && response.daemon_id !== intent.daemon_id) return false;
   if (response.intent.scope !== intent.scope) return false;
   const responseProjectUID = response.intent.scope === "project" ? response.intent.project_uid : undefined;
   if (responseProjectUID !== intent.project_uid) return false;
   if (response.intent.authority !== intent.authority) return false;
 
-  if (response.selected_issue_uid !== intent.selected_issue_uid) return false;
+  return true;
+}
+
+function responseIdentityMatches(response: KataWorkspaceSnapshotProjection, intent: KataSnapshotIntent): boolean {
+  if (!authorityIdentityMatches(response, intent)) return false;
+
+  if (response.selected_issue_uid && response.selected_issue_uid !== intent.selected_issue_uid) return false;
   if (response.graph_source_uid !== intent.graph_source_uid) return false;
   return true;
 }
@@ -138,6 +144,7 @@ function projectSnapshot(
   const owner = presentation.owner.trim().toLocaleLowerCase();
   const label = presentation.label.trim().toLocaleLowerCase();
   const issues = (snapshot?.issues ?? []).filter((issue) => {
+    if (!snapshot?.member_issue_uid_set.has(issue.uid)) return false;
     if (owner && issue.owner?.toLocaleLowerCase() !== owner) return false;
     if (label && !issue.labels?.some((item) => item.toLocaleLowerCase() === label)) return false;
     if (!text) return true;
@@ -179,7 +186,7 @@ export class KataAuthorityStore {
     this.acceptedIntent = null;
     this.state = {
       phase: "abandoned",
-      snapshot: this.state.snapshot,
+      snapshot: null,
       intent: null,
       error: message,
     };
@@ -188,7 +195,9 @@ export class KataAuthorityStore {
   async loadSnapshot(requestedIntent: KataSnapshotIntent): Promise<boolean> {
     const intent = normalizeIntent(requestedIntent);
     const sequence = ++this.requestSequence;
-    const previousSnapshot = this.state.snapshot;
+    const currentSnapshot = this.state.snapshot;
+    const previousSnapshot =
+      currentSnapshot && authorityIdentityMatches(currentSnapshot, intent) ? currentSnapshot : null;
     this.state = { phase: "loading", snapshot: previousSnapshot, intent, error: null };
 
     let response: KataWorkspaceSnapshotResponse;
@@ -227,7 +236,7 @@ export class KataAuthorityStore {
     const key = orderingKey(snapshot);
     const acceptedGeneration = this.acceptedGenerations[key];
     if (acceptedGeneration !== undefined && snapshot.generation < acceptedGeneration) {
-      if (previousSnapshot && !intentsEqual(this.acceptedIntent, intent)) {
+      if (!intentsEqual(this.acceptedIntent, intent)) {
         this.state = {
           phase: "degraded",
           snapshot: previousSnapshot,

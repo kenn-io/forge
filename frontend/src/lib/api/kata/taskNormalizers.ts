@@ -1,10 +1,8 @@
 import type {
   KataComment,
-  KataInstanceResponse,
   KataLinkPeer,
   KataProjectMetadata,
   KataProjectSummary,
-  KataProjectsResponse,
   KataReachableGraphDepth,
   KataReachableGraphEdge,
   KataReachableGraphEdgeKind,
@@ -16,25 +14,13 @@ import type {
   KataTaskChecklistItem,
   KataTaskDetail,
   KataTaskEvent,
-  KataTaskEventsResponse,
   KataTaskLabel,
   KataTaskLink,
   KataTaskRef,
   KataTaskSummary,
-  KataTaskViewName,
-  KataTaskViewResponse,
 } from "./taskTypes.js";
 
 type JsonObject = Record<string, unknown>;
-
-const viewTitles: Record<KataTaskViewName, string> = {
-  inbox: "Inbox",
-  today: "Today",
-  upcoming: "Upcoming",
-  deadlines: "Deadlines",
-  all: "All Open",
-  logbook: "Logbook",
-};
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -171,20 +157,6 @@ function normalizeReachableGraphDepth(value: unknown): KataReachableGraphDepth {
 
 function normalizeReachableGraphEdgeKind(value: unknown): KataReachableGraphEdgeKind {
   return value === "parent" || value === "related" ? value : "blocks";
-}
-
-function normalizeViewName(value: unknown, fallback: KataTaskViewName = "today"): KataTaskViewName {
-  if (
-    value === "inbox" ||
-    value === "today" ||
-    value === "upcoming" ||
-    value === "deadlines" ||
-    value === "all" ||
-    value === "logbook"
-  ) {
-    return value;
-  }
-  return fallback;
 }
 
 function normalizeLinkPeer(raw: unknown): KataLinkPeer {
@@ -368,58 +340,6 @@ export function normalizeKataProject(raw: unknown): KataProjectSummary {
   };
 }
 
-export function normalizeKataProjectList(raw: unknown): KataProjectsResponse {
-  const body = bodyOf(raw);
-  const source = isObject(body) ? body : {};
-  return {
-    projects: arrayValue(source.projects).map(normalizeKataProject),
-    fetched_at: stringValue(source.fetched_at),
-  };
-}
-
-export function normalizeKataInstance(raw: unknown): KataInstanceResponse {
-  const body = bodyOf(raw);
-  const source = isObject(body) ? body : {};
-  return {
-    instance_uid: stringValue(source.instance_uid),
-    version: stringValue(source.version),
-    schema_version: numberValue(source.schema_version),
-  };
-}
-
-export function normalizeKataTaskList(raw: unknown, options: { view?: KataTaskViewName } = {}): KataTaskViewResponse {
-  const body = bodyOf(raw);
-  const source = isObject(body) ? body : {};
-  const view = normalizeViewName(source.view, options.view ?? "today");
-
-  if (Array.isArray(source.groups)) {
-    return {
-      view,
-      fetched_at: stringValue(source.fetched_at),
-      groups: source.groups.map((rawGroup) => {
-        const group = isObject(rawGroup) ? rawGroup : {};
-        return {
-          id: stringValue(group.id),
-          title: stringValue(group.title),
-          issues: arrayValue(group.issues).map((issue) => normalizeKataTaskSummary(issue)),
-        };
-      }),
-    };
-  }
-
-  return {
-    view,
-    fetched_at: stringValue(source.fetched_at),
-    groups: [
-      {
-        id: view,
-        title: viewTitles[view],
-        issues: arrayValue(source.issues).map((issue) => normalizeKataTaskSummary(issue)),
-      },
-    ],
-  };
-}
-
 export function normalizeKataTaskDetail(raw: unknown): KataTaskDetail {
   const body = bodyOf(raw);
   const source = isObject(body) ? body : {};
@@ -508,16 +428,5 @@ export function normalizeKataEventEnvelope(raw: unknown): KataTaskEvent {
     actor: stringValue(event.actor),
     payload: normalizePayload(event.payload),
     created_at: stringValue(event.created_at),
-  };
-}
-
-export function normalizeKataEvents(raw: unknown): KataTaskEventsResponse {
-  const body = bodyOf(raw);
-  const source = isObject(body) ? body : {};
-  return {
-    reset_required: source.reset_required === true,
-    reset_after_id: optionalNumber(source.reset_after_id),
-    events: arrayValue(source.events).map(normalizeKataEventEnvelope),
-    next_after_id: numberValue(source.next_after_id),
   };
 }

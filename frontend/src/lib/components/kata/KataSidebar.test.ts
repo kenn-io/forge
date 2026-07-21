@@ -3,7 +3,7 @@ import type { ComponentProps } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { KataProjectSummary, KataTaskSearchFilters } from "../../api/kata/taskTypes.js";
-import type { KataAreaSummary, KataCurrentView } from "../../stores/kata-workspace.svelte.js";
+import type { KataAreaSummary, KataCurrentView } from "../../features/kata/kataWorkspaceAuthority.js";
 import KataSidebar from "./KataSidebar.svelte";
 
 const projects: KataProjectSummary[] = [
@@ -118,9 +118,8 @@ describe("KataSidebar", () => {
     expect(onOpenProject).toHaveBeenCalledWith("project-finances");
   });
 
-  it("creates a project and opens the created scope", async () => {
-    const created = project({ id: 9, uid: "project-new", name: "New Project", open_count: 0 });
-    const onCreateProject = vi.fn(async () => created);
+  it("submits project creation without deriving navigation from the mutation result", async () => {
+    const onCreateProject = vi.fn(async () => ({ changed: true }));
     const onOpenProject = vi.fn();
 
     renderSidebar({ onCreateProject, onOpenProject });
@@ -133,8 +132,9 @@ describe("KataSidebar", () => {
 
     await waitFor(() => {
       expect(onCreateProject).toHaveBeenCalledWith("New Project");
-      expect(onOpenProject).toHaveBeenCalledWith("project-new");
     });
+    expect(onOpenProject).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox", { name: "New project name" })).toBeNull();
   });
 });
 

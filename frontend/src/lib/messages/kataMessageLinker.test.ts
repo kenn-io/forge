@@ -72,7 +72,7 @@ function makeAPI() {
         metadata: { ...current.metadata, ...patch },
         revision: current.revision + 1,
       };
-      return { changed: true, etag: `"rev-${current.revision}"` };
+      return { changed: true };
     },
   );
   const api = {

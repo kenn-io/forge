@@ -48,14 +48,71 @@ describe("KataWorkspace", () => {
       project_id: selected.project_id,
       template_title: "Snapshot recurrence",
     });
-    const { api } = createWorkspaceAPI([selected], { recurrences: [recurrenceRow] });
+    const { api, recurrences: recurrenceReads } = createWorkspaceAPI([selected], { recurrences: [recurrenceRow] });
 
     render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
 
     await screen.findByRole("heading", { name: selected.title });
-    expect(api.recurrences).toHaveBeenCalledWith(selected.project_id, expect.objectContaining({ daemonId: "home" }));
+    expect(recurrenceReads).toHaveBeenCalledWith(selected.project_id, expect.objectContaining({ daemonId: "home" }));
     expect(screen.getByRole("region", { name: "Recurrence" })).toBeTruthy();
     expect(screen.getByText("Snapshot recurrence")).toBeTruthy();
+  });
+
+  it("keeps recurrence reads and CRUD operational without the legacy workspace authority store", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          {
+            id: "home",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      }),
+    );
+    const selected = initialIssues[0]!;
+    const recurrenceRow = recurrence({
+      id: 41,
+      uid: "recurrence-selected",
+      project_id: selected.project_id,
+      template_title: "Snapshot recurrence",
+    });
+    const {
+      api,
+      recurrences: recurrenceReads,
+      createRecurrence,
+      patchRecurrence,
+      deleteRecurrence,
+    } = createWorkspaceAPI([selected], {
+      recurrences: [recurrenceRow],
+    });
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
+
+    await screen.findByRole("heading", { name: selected.title });
+    await waitFor(() => expect(recurrenceReads).toHaveBeenCalledOnce());
+
+    await fireEvent.click(screen.getByRole("button", { name: "Snapshot recurrence" }));
+    const editDialog = screen.getByRole("dialog", { name: "Edit recurrence" });
+    await fireEvent.input(within(editDialog).getByLabelText("Title"), {
+      target: { value: "Edited recurrence" },
+    });
+    await fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(patchRecurrence).toHaveBeenCalledOnce());
+
+    await fireEvent.click(screen.getByRole("button", { name: "Delete recurrence" }));
+    const deleteDialog = screen.getByRole("dialog", { name: "Delete recurrence" });
+    await fireEvent.click(within(deleteDialog).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(deleteRecurrence).toHaveBeenCalledOnce());
+
+    await fireEvent.click(screen.getByRole("button", { name: "+ New recurrence" }));
+    const createDialog = screen.getByRole("dialog", { name: "New recurrence" });
+    await fireEvent.input(within(createDialog).getByLabelText("Title"), {
+      target: { value: "Created recurrence" },
+    });
+    await fireEvent.click(within(createDialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(createRecurrence).toHaveBeenCalledOnce());
   });
 
   it("opens the recurrence editor from the task action menu", async () => {

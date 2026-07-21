@@ -183,6 +183,33 @@ describe("KataWorkspace compact snapshot stream", () => {
     ]);
   });
 
+  it("clears a selected member when replacement authority drops its membership", async () => {
+    const selected = initialIssues[0]!;
+    const onRouteStateChange = vi.fn();
+    const { api } = createWorkspaceAPI();
+    const harness = installFetchHarness([
+      snapshot(selected, {}, true),
+      snapshot(selected, {
+        generation: 2,
+        invalidation_epoch: 2,
+        event_cursor: 6,
+        member_issue_uids: [],
+        enrichment: {},
+      }),
+    ]);
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid, onRouteStateChange } });
+    await waitFor(() => expect(screen.getByRole("heading", { name: selected.title })).toBeTruthy());
+    await waitFor(() => expect(harness.stream()).toBeTruthy());
+    harness.stream()?.enqueue(compactFrame(6));
+
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
+    await waitFor(() => expect(onRouteStateChange).toHaveBeenCalledWith({ issue: null }, { replace: true }));
+    expect(screen.queryByRole("button", { name: new RegExp(selected.title) })).toBeNull();
+    expect(screen.queryByRole("heading", { name: selected.title })).toBeNull();
+    expect(screen.getByText("Select a task")).toBeTruthy();
+  });
+
   it.each([
     ["stale", compactFrame(5, { epoch: 1 })],
     ["foreign daemon", compactFrame(6, { daemon_id: "work" })],
@@ -243,6 +270,27 @@ describe("KataWorkspace compact snapshot stream", () => {
 
     await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
     expect(screen.getByRole("button", { name: /Pay rent/ })).toBeTruthy();
+  });
+
+  it("does not render prior Open authority when a Ready authority load fails", async () => {
+    const { api } = createWorkspaceAPI();
+    const harness = installFetchHarness([
+      snapshot(initialIssues[0]!),
+      new Response(JSON.stringify({ error: "ready unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ]);
+
+    render(KataWorkspace, { props: { api } });
+    await waitFor(() => expect(screen.getByRole("button", { name: /Pay rent/ })).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole("combobox", { name: "Status: Open" }));
+    await fireEvent.click(screen.getByRole("option", { name: "Ready" }));
+
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: /Pay rent/ })).toBeNull();
   });
 
   it("fences a pending old-daemon snapshot after a new daemon intent starts", async () => {
@@ -325,17 +373,97 @@ describe("KataWorkspace compact snapshot stream", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: "Email Susan re: Q3" })).toBeTruthy());
   });
 
+  it("clears an unchanged routed selection when a daemon switch has no matching member", async () => {
+    const selected = initialIssues[0]!;
+    const onRouteStateChange = vi.fn();
+    const { api } = createWorkspaceAPI();
+    const harness = installFetchHarness([
+      snapshot(selected, {}, true),
+      snapshot(selected, {
+        daemon_id: "work",
+        generation: 1,
+        event_cursor: 7,
+        member_issue_uids: [],
+        issues: [],
+        enrichment: {},
+      }),
+    ]);
+
+    render(KataWorkspace, {
+      props: { api, selectedIssueUID: selected.uid, onRouteStateChange },
+    });
+    await waitFor(() => expect(screen.getByRole("heading", { name: selected.title })).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole("button", { name: /Switch Kata daemon: home/ }));
+    await fireEvent.click(await screen.findByRole("menuitemradio", { name: /work/ }));
+
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
+    await waitFor(() => expect(screen.getByText("Select a task")).toBeTruthy());
+    await waitFor(() => expect(onRouteStateChange).toHaveBeenCalledWith({ daemon: null }, { replace: true }));
+    expect(onRouteStateChange).toHaveBeenCalledWith({ issue: null }, { replace: true });
+  });
+
+  it("opens a created project only after replacement snapshot authority reveals its UID", async () => {
+    const createdProject: SnapshotProject = {
+      id: 99,
+      uid: "project-snapshot",
+      name: "Snapshot Project",
+      metadata: { area: "Work" },
+      revision: 1,
+      created_at: fetchedAt,
+      open_count: 0,
+      closed_count: 0,
+    };
+    const { api } = createWorkspaceAPI();
+    api.createProject = vi.fn(async () => ({ changed: true }));
+    const onRouteStateChange = vi.fn();
+    const harness = installFetchHarness([
+      snapshot(initialIssues[0]!),
+      snapshot(initialIssues[0]!, {
+        generation: 2,
+        invalidation_epoch: 2,
+        event_cursor: 6,
+        projects: [...(projects as SnapshotProject[]), createdProject],
+      }),
+    ]);
+
+    render(KataWorkspace, { props: { api, onRouteStateChange } });
+    await waitFor(() => expect(harness.stream()).toBeTruthy());
+    await fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    await fireEvent.input(screen.getByRole("textbox", { name: "New project name" }), {
+      target: { value: "Snapshot Project" },
+    });
+    await fireEvent.submit(screen.getByRole("textbox", { name: "New project name" }).closest("form")!);
+
+    await waitFor(() => expect(api.createProject).toHaveBeenCalledWith("Snapshot Project", { daemonId: "home" }));
+    expect(onRouteStateChange).not.toHaveBeenCalledWith(expect.objectContaining({ scope: expect.any(String) }));
+    expect(harness.snapshotRequests).toHaveLength(1);
+
+    harness.stream()?.enqueue(compactFrame(6));
+
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
+    await waitFor(() =>
+      expect(onRouteStateChange).toHaveBeenCalledWith({
+        view: null,
+        scope: "project-snapshot",
+        issue: null,
+      }),
+    );
+  });
+
   it("abandons a valid daemon authority when the route changes to an unknown daemon", async () => {
     const { api } = createWorkspaceAPI();
+    const home = snapshot(initialIssues[0]!, {}, true);
     const work = snapshot(initialIssues[1]!, { daemon_id: "work", generation: 1, event_cursor: 7 });
-    const harness = installFetchHarness([snapshot(initialIssues[0]!), work]);
-    const { rerender } = render(KataWorkspace, { props: { api } });
+    const harness = installFetchHarness([home, work]);
+    const { rerender } = render(KataWorkspace, { props: { api, selectedIssueUID: initialIssues[0]!.uid } });
 
     await waitFor(() => expect(screen.getByRole("button", { name: /Pay rent/ })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy());
     await waitFor(() => expect(harness.stream()).toBeTruthy());
     const oldHomeStream = harness.stream()!;
 
-    await rerender({ api, requestedDaemonId: "missing" });
+    await rerender({ api, requestedDaemonId: "missing", selectedIssueUID: initialIssues[0]!.uid });
 
     await waitFor(() => expect(harness.streamCancelCount()).toBe(1));
     await waitFor(() => expect(document.querySelector(".kata-layout")?.getAttribute("aria-busy")).toBe("true"));
@@ -343,6 +471,8 @@ describe("KataWorkspace compact snapshot stream", () => {
     expect(screen.getByRole("status", { name: "Connection: error" }).textContent).toContain(
       "Kata daemon missing is not configured.",
     );
+    expect(screen.queryByRole("button", { name: /Pay rent/ })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Pay rent" })).toBeNull();
     expect(harness.snapshotRequests).toHaveLength(1);
 
     try {
@@ -354,7 +484,7 @@ describe("KataWorkspace compact snapshot stream", () => {
     expect(harness.snapshotRequests).toHaveLength(1);
     expect(document.querySelector(".kata-layout")?.getAttribute("aria-busy")).toBe("true");
 
-    await rerender({ api, requestedDaemonId: "work" });
+    await rerender({ api, requestedDaemonId: "work", selectedIssueUID: initialIssues[0]!.uid });
     await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
     await waitFor(() => expect(screen.getByRole("button", { name: /Email Susan re: Q3/ })).toBeTruthy());
     await waitFor(() => expect(document.querySelector(".kata-layout")?.getAttribute("aria-busy")).toBe("false"));

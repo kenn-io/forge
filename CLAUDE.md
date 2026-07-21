@@ -70,33 +70,33 @@ Kata, Docs, and Messages are first-class middleman modes, but they are not platf
 
 ## Key Files
 
-| Path | Purpose |
-|------|---------|
-| `cmd/middleman/main.go` | CLI entry point, server startup, signal handling |
-| `internal/config/config.go` | TOML config, validation, defaults |
-| `internal/db/migrations/` | Numbered SQL migrations for schema changes |
-| `internal/db/db.go` | Database open, WAL, migration init |
-| `internal/db/queries.go` | All CRUD operations |
-| `internal/db/types.go` | DB model types |
-| `internal/kata/` | External Kata daemon discovery, selection, health, and passthrough transport |
-| `internal/docs/` | Planned on this branch: markdown folder registry, safe file operations, search, and git publish |
-| `internal/messages/msgvault/` | Msgvault server integration, health/configure flow, sanitization, image proxying |
-| `internal/platform/types.go` | Provider-neutral domain types (Repository, MergeRequest, Issue, events, labels, releases, checks) |
-| `internal/platform/registry.go` | `(platform, platform_host)` provider lookup and capability error types |
-| `internal/platform/metadata.go` | Provider metadata (kind, label, default host, owner casing/nesting behavior) |
-| `internal/platform/persist.go` | Conversion between neutral platform types and DB rows |
-| `internal/platform/<provider>/` | Per-provider client, normalization, and capability implementations |
-| `internal/github/client.go` | GitHub SDK transport used by `internal/platform/github` |
-| `internal/github/sync.go` | Periodic sync engine (dispatches per-provider work through the platform registry) |
-| `internal/github/graphql.go` | GitHub-only GraphQL bulk-fetch optimization |
-| `internal/server/server.go` | HTTP router, SPA serving |
-| `internal/server/huma_routes.go` | Huma API registrations and handlers |
-| `internal/server/api_types.go` | Shared API response types used by Huma |
-| `internal/apiclient/generated/client.gen.go` | Generated Go API client from the checked-in OpenAPI spec |
-| `frontend/src/App.svelte` | Root component, view routing |
-| `frontend/src/app.css` | Design tokens, theme, global styles |
-| `frontend/src/lib/stores/` | Svelte 5 rune-based stores |
-| `frontend/src/lib/components/` | UI components (sidebar, detail, kanban) |
+| Path                                         | Purpose                                                                                           |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `cmd/middleman/main.go`                      | CLI entry point, server startup, signal handling                                                  |
+| `internal/config/config.go`                  | TOML config, validation, defaults                                                                 |
+| `internal/db/migrations/`                    | Numbered SQL migrations for schema changes                                                        |
+| `internal/db/db.go`                          | Database open, WAL, migration init                                                                |
+| `internal/db/queries.go`                     | All CRUD operations                                                                               |
+| `internal/db/types.go`                       | DB model types                                                                                    |
+| `internal/kata/`                             | External Kata daemon discovery, selection, health, and passthrough transport                      |
+| `internal/docs/`                             | Planned on this branch: markdown folder registry, safe file operations, search, and git publish   |
+| `internal/messages/msgvault/`                | Msgvault server integration, health/configure flow, sanitization, image proxying                  |
+| `internal/platform/types.go`                 | Provider-neutral domain types (Repository, MergeRequest, Issue, events, labels, releases, checks) |
+| `internal/platform/registry.go`              | `(platform, platform_host)` provider lookup and capability error types                            |
+| `internal/platform/metadata.go`              | Provider metadata (kind, label, default host, owner casing/nesting behavior)                      |
+| `internal/platform/persist.go`               | Conversion between neutral platform types and DB rows                                             |
+| `internal/platform/<provider>/`              | Per-provider client, normalization, and capability implementations                                |
+| `internal/github/client.go`                  | GitHub SDK transport used by `internal/platform/github`                                           |
+| `internal/github/sync.go`                    | Periodic sync engine (dispatches per-provider work through the platform registry)                 |
+| `internal/github/graphql.go`                 | GitHub-only GraphQL bulk-fetch optimization                                                       |
+| `internal/server/server.go`                  | HTTP router, SPA serving                                                                          |
+| `internal/server/huma_routes.go`             | Huma API registrations and handlers                                                               |
+| `internal/server/api_types.go`               | Shared API response types used by Huma                                                            |
+| `internal/apiclient/generated/client.gen.go` | Generated Go API client from the checked-in OpenAPI spec                                          |
+| `frontend/src/App.svelte`                    | Root component, view routing                                                                      |
+| `frontend/src/app.css`                       | Design tokens, theme, global styles                                                               |
+| `frontend/src/lib/stores/`                   | Svelte 5 rune-based stores                                                                        |
+| `frontend/src/lib/components/`               | UI components (sidebar, detail, kanban)                                                           |
 
 ## Development
 
@@ -177,7 +177,8 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 - For retries, backoff, and single-flight dedup against flaky upstreams, follow `context/retries-and-backoffs.md`.
 - For frontend UI and TypeScript/Svelte conventions, follow `context/ui-design-system.md`; prefer extending shared UI primitives over adding one-off local badge/chip/button styling, and name reused domain object shapes instead of repeating anonymous inline types.
 - For mobile, phone, narrow-viewport, touch, or `/m` route work, follow `context/mobile-ux.md`; mobile UX is a phone-first workflow, not desktop UI resized under mobile routes.
-- For Kata, Docs, and Messages/msgvault mode integration, follow `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` until dedicated context docs exist.
+- For Kata task authority, daemon integration, and workspace behavior, follow `context/workspace-apis.md`.
+- For Docs and Messages/msgvault mode integration, follow `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` until dedicated context docs exist.
 - Datetimes are UTC across storage and API boundaries. Store timestamps in UTC, emit API timestamps as UTC RFC3339, and only convert to local time in the Svelte UI presentation layer.
 
 ## Roborev

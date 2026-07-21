@@ -3,7 +3,7 @@ import type { ComponentProps } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { KataTaskSummary } from "../../api/kata/taskTypes.js";
-import type { KataCurrentView } from "../../stores/kata-workspace.svelte.js";
+import type { KataCurrentView } from "../../features/kata/kataWorkspaceAuthority.js";
 import KataIssueList from "./KataIssueList.svelte";
 import { KATA_TASK_COLUMNS_STORAGE_KEY } from "./kataTaskColumns.js";
 

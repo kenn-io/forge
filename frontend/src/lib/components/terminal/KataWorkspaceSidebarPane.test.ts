@@ -142,11 +142,7 @@ describe("KataWorkspaceSidebarPane", () => {
       if (url.pathname.endsWith("/api/v1/projects/1/recurrences")) {
         return response({ recurrences: [], fetched_at: fetchedAt });
       }
-      if (
-        url.pathname.includes("/kata/proxy/") ||
-        url.pathname === "/api/v1/kata/tasks/issue-1" ||
-        url.pathname.endsWith("/events")
-      ) {
+      if (url.pathname.includes("/kata/proxy/") || url.pathname.endsWith("/events")) {
         throw new Error(`legacy read: ${url.pathname}`);
       }
       return response({ error: { code: "not_found", message: `Unhandled ${url.pathname}` } }, 404);

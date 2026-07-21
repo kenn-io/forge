@@ -163,7 +163,20 @@ describe("Kata authority store", () => {
     expect(store.snapshot?.enrichment_errors).toEqual(accepted.enrichment.errors);
   });
 
-  it("rejects a response that omits the requested selected issue identity", async () => {
+  it("projects only issues that belong to the accepted authority membership", async () => {
+    const accepted = snapshot({
+      generation: 2,
+      member_issue_uids: ["issue-a"],
+    });
+    const store = createKataAuthorityStore({ loadSnapshot: vi.fn(async () => accepted) });
+
+    await store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" });
+
+    expect(store.snapshot?.issues.map((issue) => issue.uid)).toEqual(["issue-a", "issue-b"]);
+    expect(store.projection.issues.map((issue) => issue.uid)).toEqual(["issue-a"]);
+  });
+
+  it("accepts authority when requested selection is not an enrichment outcome", async () => {
     const store = createKataAuthorityStore({
       loadSnapshot: vi.fn(async () => snapshot({ generation: 2 })),
     });
@@ -174,6 +187,32 @@ describe("Kata authority store", () => {
         scope: "global",
         authority: "open",
         selected_issue_uid: "issue-a",
+      }),
+    ).resolves.toBe(true);
+
+    expect(store.snapshot?.selected_issue_uid).toBeUndefined();
+    expect(store.state.phase).toBe("accepted");
+  });
+
+  it.each([
+    ["a different requested selection", { selected_issue_uid: "issue-a" }, "issue-b"],
+    ["an unrequested selection", {}, "issue-a"],
+  ])("rejects %s returned as a non-empty enrichment outcome", async (_name, intentOverrides, selectedIssueUID) => {
+    const store = createKataAuthorityStore({
+      loadSnapshot: vi.fn(async () =>
+        snapshot({
+          generation: 2,
+          enrichment: { selected_issue_uid: selectedIssueUID },
+        }),
+      ),
+    });
+
+    await expect(
+      store.loadSnapshot({
+        daemon_id: "home",
+        scope: "global",
+        authority: "open",
+        ...intentOverrides,
       }),
     ).rejects.toThrow("does not match the current request intent");
 
@@ -219,7 +258,7 @@ describe("Kata authority store", () => {
     expect(store.state.phase).toBe("accepted");
   });
 
-  it("retains the prior authority while keeping a stale cross-authority request pending for retry", async () => {
+  it("clears prior authority while keeping a stale cross-authority request pending for retry", async () => {
     const loadSnapshot = vi
       .fn<(intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>>()
       .mockResolvedValueOnce(snapshot({ generation: 9, intent: { scope: "global", authority: "open" } }))
@@ -232,10 +271,10 @@ describe("Kata authority store", () => {
     await store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "ready" });
     await expect(store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" })).resolves.toBe(false);
 
-    expect(store.authorityKey?.authority).toBe("ready");
+    expect(store.authorityKey).toBeNull();
     expect(store.state.phase).toBe("degraded");
     expect(store.state.intent?.authority).toBe("open");
-    expect(store.snapshot?.generation).toBe(10);
+    expect(store.snapshot).toBeNull();
 
     await expect(store.retry()).resolves.toBe(true);
     expect(loadSnapshot.mock.calls[3]?.[0].authority).toBe("open");
@@ -314,6 +353,20 @@ describe("Kata authority store", () => {
     expect(store.snapshot).toMatchObject({ server_instance_id: "server-b", generation: 1 });
   });
 
+  it("clears accepted authority when the routed daemon is abandoned", async () => {
+    const store = createKataAuthorityStore({ loadSnapshot: vi.fn(async () => snapshot({ generation: 4 })) });
+
+    await store.loadSnapshot({ daemon_id: "home", scope: "global", authority: "open" });
+    store.abandon("Kata daemon missing is not configured.");
+
+    expect(store.state).toMatchObject({
+      phase: "abandoned",
+      snapshot: null,
+      intent: null,
+      error: "Kata daemon missing is not configured.",
+    });
+  });
+
   it("abandons accepted authority and fences a pending response", async () => {
     const pending = deferred<KataWorkspaceSnapshotResponse>();
     const loadSnapshot = vi
@@ -333,7 +386,7 @@ describe("Kata authority store", () => {
       phase: "abandoned",
       intent: null,
       error: "Kata daemon missing is not configured.",
-      snapshot: { daemon_id: "home", generation: 4 },
+      snapshot: null,
     });
     expect(store.authorityKey).toBeNull();
     await expect(store.retry()).resolves.toBe(false);

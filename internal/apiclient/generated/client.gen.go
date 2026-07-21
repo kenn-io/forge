@@ -2142,7 +2142,7 @@ type KataSnapshotEnrichment struct {
 	Errors           *map[string]KataSnapshotEnrichmentError `json:"errors,omitempty"`
 	Graph            *ReachableGraphResponseBody             `json:"graph,omitempty"`
 	GraphFetchedAt   *time.Time                              `json:"graph_fetched_at,omitempty"`
-	SelectedDetail   *KataTaskDetailResponse                 `json:"selected_detail,omitempty"`
+	SelectedDetail   *KataSnapshotSelectedDetail             `json:"selected_detail,omitempty"`
 	SelectedHistory  *[]EventEnvelope                        `json:"selected_history,omitempty"`
 	SelectedIssueUid *string                                 `json:"selected_issue_uid,omitempty"`
 }
@@ -2153,11 +2153,8 @@ type KataSnapshotEnrichmentError struct {
 	Message string `json:"message"`
 }
 
-// KataTaskDetailResponse defines model for KataTaskDetailResponse.
-type KataTaskDetailResponse struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-
+// KataSnapshotSelectedDetail defines model for KataSnapshotSelectedDetail.
+type KataSnapshotSelectedDetail struct {
 	// Detail Verbatim Kata daemon issue detail payload
 	Detail interface{} `json:"detail"`
 
@@ -4494,12 +4491,6 @@ type GetKataTaskSnapshotParamsScope string
 // GetKataTaskSnapshotParamsAuthority defines parameters for GetKataTaskSnapshot.
 type GetKataTaskSnapshotParamsAuthority string
 
-// GetKataTaskDetailParams defines parameters for GetKataTaskDetail.
-type GetKataTaskDetailParams struct {
-	// XMiddlemanKataDaemon Kata daemon id; the effective default daemon when empty
-	XMiddlemanKataDaemon *string `json:"X-Middleman-Kata-Daemon,omitempty"`
-}
-
 // ReplaceMessagesSavedSearchesParams defines parameters for ReplaceMessagesSavedSearches.
 type ReplaceMessagesSavedSearchesParams struct {
 	IfMatch        *string `json:"If-Match,omitempty"`
@@ -5753,9 +5744,6 @@ type ClientInterface interface {
 
 	// GetKataTaskSnapshot request
 	GetKataTaskSnapshot(ctx context.Context, params *GetKataTaskSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetKataTaskDetail request
-	GetKataTaskDetail(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateKataWorkspaceWithBody request with any body
 	CreateKataWorkspaceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -8762,18 +8750,6 @@ func (c *Client) SearchKataTaskReferences(ctx context.Context, params *SearchKat
 
 func (c *Client) GetKataTaskSnapshot(ctx context.Context, params *GetKataTaskSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetKataTaskSnapshotRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetKataTaskDetail(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetKataTaskDetailRequest(c.Server, issueUid, params)
 	if err != nil {
 		return nil, err
 	}
@@ -21045,55 +21021,6 @@ func NewGetKataTaskSnapshotRequest(server string, params *GetKataTaskSnapshotPar
 	return req, nil
 }
 
-// NewGetKataTaskDetailRequest generates requests for GetKataTaskDetail
-func NewGetKataTaskDetailRequest(server string, issueUid string, params *GetKataTaskDetailParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "issue_uid", issueUid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/kata/tasks/%s", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-
-		if params.XMiddlemanKataDaemon != nil {
-			var headerParam0 string
-
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Kata-Daemon", *params.XMiddlemanKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("X-Middleman-Kata-Daemon", headerParam0)
-		}
-
-	}
-
-	return req, nil
-}
-
 // NewCreateKataWorkspaceRequest calls the generic CreateKataWorkspace builder with application/json body
 func NewCreateKataWorkspaceRequest(server string, body CreateKataWorkspaceJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -29565,9 +29492,6 @@ type ClientWithResponsesInterface interface {
 	// GetKataTaskSnapshotWithResponse request
 	GetKataTaskSnapshotWithResponse(ctx context.Context, params *GetKataTaskSnapshotParams, reqEditors ...RequestEditorFn) (*GetKataTaskSnapshotResponse, error)
 
-	// GetKataTaskDetailWithResponse request
-	GetKataTaskDetailWithResponse(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*GetKataTaskDetailResponse, error)
-
 	// CreateKataWorkspaceWithBodyWithResponse request with any body
 	CreateKataWorkspaceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateKataWorkspaceResponse, error)
 
@@ -33491,29 +33415,6 @@ func (r GetKataTaskSnapshotResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetKataTaskSnapshotResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetKataTaskDetailResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *KataTaskDetailResponse
-	ApplicationproblemJSONDefault *ProblemError
-}
-
-// Status returns HTTPResponse.Status
-func (r GetKataTaskDetailResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetKataTaskDetailResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -38510,15 +38411,6 @@ func (c *ClientWithResponses) GetKataTaskSnapshotWithResponse(ctx context.Contex
 		return nil, err
 	}
 	return ParseGetKataTaskSnapshotResponse(rsp)
-}
-
-// GetKataTaskDetailWithResponse request returning *GetKataTaskDetailResponse
-func (c *ClientWithResponses) GetKataTaskDetailWithResponse(ctx context.Context, issueUid string, params *GetKataTaskDetailParams, reqEditors ...RequestEditorFn) (*GetKataTaskDetailResponse, error) {
-	rsp, err := c.GetKataTaskDetail(ctx, issueUid, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetKataTaskDetailResponse(rsp)
 }
 
 // CreateKataWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateKataWorkspaceResponse
@@ -44954,39 +44846,6 @@ func ParseGetKataTaskSnapshotResponse(rsp *http.Response) (*GetKataTaskSnapshotR
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest KataTaskSnapshotResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ProblemError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetKataTaskDetailResponse parses an HTTP response from a GetKataTaskDetailWithResponse call
-func ParseGetKataTaskDetailResponse(rsp *http.Response) (*GetKataTaskDetailResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetKataTaskDetailResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest KataTaskDetailResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -4,7 +4,6 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -60,49 +59,6 @@ func (s *trackedKataUnixServer) requireConnectionsDrained(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return s.liveConnections.Load() == 0
 	}, time.Second, 10*time.Millisecond, "Unix connections remained open: %d", s.liveConnections.Load())
-}
-
-func TestKataTaskDetailClosesUnixConnections(t *testing.T) {
-	require := require.New(t)
-
-	var started atomic.Int32
-	release := make(chan struct{})
-	var releaseOnce sync.Once
-	upstream := startTrackedKataUnixServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if started.Add(1) == 2 {
-			releaseOnce.Do(func() { close(release) })
-		}
-		select {
-		case <-release:
-		case <-r.Context().Done():
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/v1/issues/issue-example-1":
-			_, _ = w.Write([]byte(`{"issue":{"uid":"issue-example-1","project_uid":"project-example","project_name":"Example Project","short_id":"task-1","title":"Example task"},"comments":[],"labels":[],"links":[]}`))
-		case "/api/v1/projects":
-			_, _ = w.Write([]byte(`{"projects":[{"uid":"project-example","name":"Example Project"}]}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-
-	home := t.TempDir()
-	t.Setenv("KATA_HOME", home)
-	writeKataProxyCatalog(t, home, `
-[[daemon]]
-name = "desktop"
-url = "`+upstream.target+`"
-`)
-	srv, _ := setupTestServer(t)
-
-	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/tasks/issue-example-1", nil)
-
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	require.GreaterOrEqual(upstream.maxConnections.Load(), int64(2))
-	upstream.requireConnectionsDrained(t)
 }
 
 func TestKataProjectMappingsClosesUnixConnections(t *testing.T) {

@@ -198,6 +198,74 @@ describe("normalizeKataWorkspaceSnapshot", () => {
     expect(Object.isFrozen(projection.selected_detail?.workspace_target)).toBe(true);
   });
 
+  it("merges canonical selected identity from the accepted catalog row", () => {
+    const catalogIssue = issue({
+      project_uid: "project-canonical",
+      project_name: "Canonical Project",
+      qualified_id: "Canonical Project#a1",
+    });
+    const {
+      project_uid: _projectUID,
+      project_name: _projectName,
+      qualified_id: _qualifiedID,
+      ...protocolIssue
+    } = issue({ body: "Full selected body" });
+    const projection = normalizeKataWorkspaceSnapshot(
+      snapshot({
+        member_issue_uids: [catalogIssue.uid],
+        issues: [catalogIssue],
+        enrichment: {
+          selected_issue_uid: catalogIssue.uid,
+          selected_detail: {
+            workspace_target: { available: false },
+            detail: {
+              issue: protocolIssue,
+              comments: [],
+              labels: [],
+              links: [],
+              children: [],
+            },
+          },
+        },
+      }),
+    );
+
+    expect(projection.selected_detail?.issue).toMatchObject({
+      uid: catalogIssue.uid,
+      body: "Full selected body",
+      project_uid: "project-canonical",
+      project_name: "Canonical Project",
+      qualified_id: "Canonical Project#a1",
+    });
+  });
+
+  it("drops selected detail whose issue UID differs from the declared selected UID", () => {
+    const projection = normalizeKataWorkspaceSnapshot(
+      snapshot({
+        enrichment: {
+          selected_issue_uid: "issue-authority",
+          selected_detail: {
+            workspace_target: { available: false },
+            detail: {
+              issue: issue({ uid: "issue-other" }),
+              comments: [],
+              labels: [],
+              links: [],
+              children: [],
+            },
+          },
+        },
+      }),
+    );
+
+    expect(projection.selected_issue_uid).toBe("issue-authority");
+    expect(projection.selected_detail).toBeUndefined();
+    expect(projection.enrichment_errors.detail).toEqual({
+      code: "invalid_snapshot_enrichment",
+      message: "Could not normalize selected task detail.",
+    });
+  });
+
   it("normalizes bounded selected history envelopes without legacy cursor fields", () => {
     const projection = normalizeKataWorkspaceSnapshot(
       snapshot({

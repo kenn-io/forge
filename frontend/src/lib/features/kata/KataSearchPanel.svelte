@@ -2,20 +2,15 @@
   import { SearchInput, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { SelectDropdown } from "@middleman/ui";
 
-  import type {
-    KataDuplicateCandidateDisplay,
-    KataProjectSummary,
-    KataTaskSearchFilters,
-  } from "../../api/kata/taskTypes.js";
+  import type { KataProjectSummary, KataTaskSearchFilters } from "../../api/kata/taskTypes.js";
 
   interface Props {
     filters: KataTaskSearchFilters;
     projects: KataProjectSummary[];
-    duplicateCandidates?: KataDuplicateCandidateDisplay[] | undefined;
     onChange: (filters: KataTaskSearchFilters) => void | Promise<void>;
   }
 
-  let { filters, projects, duplicateCandidates = [], onChange }: Props = $props();
+  let { filters, projects, onChange }: Props = $props();
   let draftOverride = $state<KataTaskSearchFilters | null>(null);
   let draft = $derived(draftOverride ?? filters);
   let lastFilters: KataTaskSearchFilters | null = null;
@@ -123,19 +118,6 @@
     </label>
   </div>
 
-  {#if duplicateCandidates.length > 0}
-    <ul class="duplicate-list" aria-label="Duplicate candidates">
-      {#each duplicateCandidates as candidate (`${candidate.qualified_id}:${candidate.title}`)}
-        <li>
-          <strong>{candidate.title}</strong>
-          <span>{candidate.qualified_id}</span>
-          {#if candidate.reason}
-            <em>{candidate.reason}</em>
-          {/if}
-        </li>
-      {/each}
-    </ul>
-  {/if}
 </section>
 
 <style>
@@ -204,48 +186,6 @@
     width: 92px;
   }
 
-  .duplicate-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin: 8px 0 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .duplicate-list li {
-    display: grid;
-    grid-template-columns: minmax(120px, 1fr) auto minmax(80px, 0.8fr);
-    gap: 8px;
-    align-items: center;
-    min-height: 28px;
-    padding: 4px 8px;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    background: var(--bg-primary);
-    color: var(--text-secondary);
-    font-size: var(--font-size-xs);
-  }
-
-  .duplicate-list strong {
-    color: var(--text-primary);
-    font-weight: 600;
-    min-width: 0;
-  }
-
-  .duplicate-list span,
-  .duplicate-list em {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .duplicate-list em {
-    color: var(--text-muted);
-    font-style: normal;
-  }
-
   @media (max-width: 900px) {
     .kata-search-toolbar {
       flex-wrap: wrap;
@@ -255,9 +195,5 @@
       flex: 1 0 100%;
     }
 
-    .duplicate-list li {
-      grid-template-columns: 1fr;
-      align-items: start;
-    }
   }
 </style>

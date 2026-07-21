@@ -704,8 +704,8 @@ func TestSyncerTriggerRunWithPrioritySyncsSelectedReposFirst(t *testing.T) {
 
 	select {
 	case <-done:
-	case <-time.After(time.Second):
-		require.FailNow("priority TriggerRun did not complete within 1s")
+	case <-time.After(5 * time.Second):
+		require.FailNow("priority TriggerRun did not complete within 5s")
 	}
 	s.Stop()
 

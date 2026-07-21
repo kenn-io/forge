@@ -67,6 +67,7 @@ only routes to them.
 | API failures or frontend error branching | `context/error-handling.md` |
 | Retries, rate limits, scheduling, or single-flight work | `context/retries-and-backoffs.md` |
 | Test design, test placement, or test helpers | `context/testing.md` |
+| User documentation, screenshots, or the Zensical site | `context/docs-authoring.md` |
 | Frontend visual design or component conventions | `context/ui-design-system.md` |
 | Frontend interaction, route state, persistence, or input semantics | `context/ui-interaction-contracts.md` |
 | Phone routes, narrow layouts, or touch UX | `context/mobile-ux.md` |

@@ -941,6 +941,64 @@ url = "`+upstream.URL+`"
 	assert.NotContains(frame.Data, "raw-upstream")
 }
 
+func TestKataTaskEventsEndpointWithoutCursorStartsAtBindingReset(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/events":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"events":[],"next_after_id":0,"reset_required":false}`)
+		case "/api/v1/events/stream":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_ = http.NewResponseController(w).Flush()
+			_, _ = io.WriteString(w, "id: 1\nevent: issue.updated\ndata: {\"secret\":\"raw-upstream\"}\n\n")
+			_ = http.NewResponseController(w).Flush()
+			<-r.Context().Done()
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeKataServerCatalog(t, home, `
+[[daemon]]
+name = "primary"
+url = "`+upstream.URL+`"
+	`)
+	srv, _ := setupTestServer(t)
+	middleman := httptest.NewServer(srv)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(func() {
+		cancel()
+		srv.kataEvents.Close()
+		middleman.Close()
+		upstream.Close()
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, middleman.URL+"/api/v1/kata/tasks/events", nil)
+	require.NoError(err)
+	req.Header.Set(kataDaemonHeaderName, "primary")
+	response, err := middleman.Client().Do(req)
+	require.NoError(err)
+	defer func() { _ = response.Body.Close() }()
+	frame := readSSEFrameWithin(t, bufio.NewScanner(response.Body), time.Second, cancel)
+	cancel()
+
+	require.Equal(http.StatusOK, response.StatusCode)
+	assert.Equal("kata.tasks.reset", frame.Event)
+	assert.NotContains(frame.Data, "raw-upstream")
+	cursor, err := strconv.ParseUint(frame.ID, 10, 64)
+	require.NoError(err)
+	var data kataFrontendEventFrame
+	require.NoError(json.Unmarshal([]byte(frame.Data), &data))
+	assert.NotEmpty(data.ServerInstanceID)
+	assert.Equal("primary", data.DaemonID)
+	assert.Zero(data.Epoch)
+	assert.Equal(cursor, data.Cursor)
+}
+
 func requireKataFrontendEventBinding(
 	t *testing.T,
 	registry *kataFrontendEventRegistry,

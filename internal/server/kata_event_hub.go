@@ -275,19 +275,20 @@ func (b *kataFrontendEventBinding) serve(
 		return
 	}
 	ch, done := b.hub.Subscribe(serveCtx, false)
-	var replay *sseReplaySnapshot
-	if hasCursor {
-		records, staleID, stale := b.hub.ReplaySnapshotSince(cursor)
-		replay = &sseReplaySnapshot{records: records, staleID: staleID, stale: stale}
+	replayCursor := cursor
+	if !hasCursor {
+		replayCursor = b.activation - 1
 	}
+	records, staleID, stale := b.hub.ReplaySnapshotSince(replayCursor)
+	replay := &sseReplaySnapshot{records: records, staleID: staleID, stale: stale}
 	b.target.publishMu.Unlock()
 	serveSSESubscribedFromHubTransformed(
 		serveCtx,
 		w,
 		rc,
 		b.hub,
-		cursor,
-		hasCursor,
+		replayCursor,
+		true,
 		ch,
 		done,
 		func(id uint64) Event {

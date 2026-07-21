@@ -1,5 +1,10 @@
 # Testing
 
+Use this document when choosing test boundaries or lanes, changing provider or
+HTTP contract tests, or working on race and integration-test architecture. For
+everyday Go test construction and commands, also read
+[`context/testing-basics.md`](./testing-basics.md).
+
 ## Go assertion style
 
 Go tests use `testify` consistently. Import

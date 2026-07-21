@@ -1,5 +1,8 @@
 # Workspace APIs
 
+Use this document for changes to workspace creation, reuse, identity, routes,
+or item-to-workspace association.
+
 These APIs manage **kenn-forge-owned workspaces**: durable local execution
 contexts for tracked PRs, provider issues, mapped Kata tasks, and ad-hoc work in
 a tracked repository. They are not a generic Git worktree browser and not an

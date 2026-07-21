@@ -1,5 +1,8 @@
 # Database Migrations
 
+Use this document before creating, editing, reviewing, or validating database
+schema migrations.
+
 - **Shipped migrations are immutable.** A migration has shipped when it exists on `origin/main`, a tag or release branch, or a production database; correct it with a new forward migration.
 - **Each PR introduces at most one migration.** Amend a PR-local migration in place instead of stacking fix-ups.
 

@@ -1,6 +1,9 @@
 # VS Code Workflow Panel Interaction Spec
 
-Primary source: local VS Code checkout at `/Users/mariusvniekerk/src/microsoft/vscode`, revision `6b1e5513a8b`.
+Use this document when changing Middleman's workflow groups, workflow tabs,
+terminal groups, terminal splits, or related panel interaction semantics.
+
+Primary source: `microsoft/vscode` revision `6b1e5513a8b`.
 
 This spec describes the VS Code interaction model to mirror for kenn-forge's workflow and terminal panel work. It intentionally focuses on editor groups/tabs and integrated terminal tabs/splits, not VS Code implementation internals that do not map to kenn-forge.
 

@@ -1,5 +1,8 @@
 # Deferred ("merge after CI") merge invariants
 
+Use this document for changes to deferred merge queueing, cancellation,
+supersession, completion events, or pending-state presentation.
+
 - Queued deferred merges live only in the server process (`deferredMergeInFlight`
   in `internal/server/pullapi/deferred_merge.go`); a restart drops them. Detail responses
   expose the state as `deferred_merge_pending`.

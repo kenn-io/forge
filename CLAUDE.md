@@ -74,13 +74,6 @@ only routes to them.
 - Tests, docs, fixtures, commit messages, and PR text should use generic synthetic examples unless the user explicitly asks to preserve exact private project names, paths, prose, or domain details.
 - **Never use npm** — use `bun install` for frontend dependencies and invoke Vite+ directly via `./node_modules/.bin/vp ...` (or `../node_modules/.bin/vp ...` from `frontend/`). Never run `npm install` or `npm run` — this creates `package-lock.json` which conflicts with the bun lockfile
 - No emojis in code or output
-- For database schema changes, follow `context/db-migrations.md`; `internal/db/migrations/` is the source of truth for schema evolution.
-- For HTTP API error envelopes and frontend error branching, follow `context/error-handling.md`; branch on stable codes/details rather than prose.
-- For retries, backoff, and single-flight dedup against flaky upstreams, follow `context/retries-and-backoffs.md`.
-- For frontend UI and TypeScript/Svelte conventions, follow `context/ui-design-system.md`; prefer extending shared UI primitives over adding one-off local badge/chip/button styling, and name reused domain object shapes instead of repeating anonymous inline types.
-- For mobile, phone, narrow-viewport, touch, or `/m` route work, follow `context/mobile-ux.md`; mobile UX is a phone-first workflow, not desktop UI resized under mobile routes.
-- For Kata task authority, daemon integration, and workspace behavior, follow `context/workspace-apis.md`.
-- For Docs mode integration, follow `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` until dedicated context docs exist; its Messages/msgvault sections are historical (that mode was removed).
 - Datetimes are UTC across storage and API boundaries. Store timestamps in UTC, emit API timestamps as UTC RFC3339, and only convert to local time in the Svelte UI presentation layer.
 
 ## Roborev

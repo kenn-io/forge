@@ -2,6 +2,7 @@
   import { showFlash } from "@middleman/ui/stores/flash";
 
   import { createKataTaskAPI } from "../../api/kata/taskClient.js";
+  import { searchKataTaskReferences } from "../../api/kata/snapshot.js";
   import type {
     KataCreateRecurrenceInput,
     KataPatchRecurrenceInput,
@@ -230,6 +231,7 @@
       events={store.selectedEvents}
       currentView={store.currentView}
       api={store.api}
+      searchReferences={searchKataTaskReferences}
       activeDaemonId={kata.daemon_id}
       {linkFilters}
       onLinkFiltersChange={(next) => {

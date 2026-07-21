@@ -1,55 +1,49 @@
 <script lang="ts">
-  import type { IssueSummary, KataAPI, IssueFilters, SearchScope } from "../../messages/types";
   import { Button, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
+  import type { KataTaskReference, KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
   import Modal from "./Modal.svelte";
 
   interface Props {
     open: boolean;
-    kata: Pick<KataAPI, "search">;
-    scope?: SearchScope | undefined;
-    excludeIds?: ReadonlySet<number> | undefined;
+    searchReferences: KataTaskReferenceSearch;
+    daemonId?: string | undefined;
+    excludeUIDs?: ReadonlySet<string> | undefined;
     onClose: () => void;
-    onPick: (issue: {
-      id: number;
-      uid: string;
-      qualified_id: string;
-      title: string;
-    }) => void;
+    onPick: (issue: KataTaskReference) => void;
   }
-
-  type PickableIssue = IssueSummary & { id: number };
 
   let {
     open,
-    kata,
-    scope = undefined,
-    excludeIds = undefined,
+    searchReferences,
+    daemonId = undefined,
+    excludeUIDs = undefined,
     onClose,
     onPick,
   }: Props = $props();
 
   const SEARCH_DEBOUNCE_MS = 200;
   const MAX_RESULTS = 20;
+  const REFERENCE_FETCH_LIMIT = 50;
 
   let query = $state("");
-  let results = $state<PickableIssue[]>([]);
-  let selected = $state<PickableIssue | null>(null);
+  let results = $state.raw<KataTaskReference[]>([]);
+  let selected = $state.raw<KataTaskReference | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);
   let searchGen = 0;
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   const visible = $derived(
-    excludeIds === undefined
+    excludeUIDs === undefined
       ? results
-      : results.filter((r) => !excludeIds.has(r.id)),
+      : results.filter((result) => !excludeUIDs.has(result.uid)),
   );
   const options = $derived<TypeaheadOption[]>(
-    visible.map((issue) => ({
-      name: issue.uid,
-      label: issue.qualified_id,
-      displayLabel: `${issue.qualified_id} ${issue.title}`,
-      meta: issue.title,
+    visible.map((reference) => ({
+      name: reference.uid,
+      label: reference.reference,
+      displayLabel: `${reference.reference} ${reference.title}`,
+      meta: reference.title,
     })),
   );
 
@@ -84,19 +78,15 @@
       loading = true;
       error = null;
       try {
-        const filters: IssueFilters = {
-          scope: scope ?? { kind: "all" },
-          status: "open",
-          owner: "",
-          label: "",
-          query: q,
-        };
-        const res = await kata.search(filters);
+        const res = await searchReferences(q, {
+          ...(daemonId ? { daemon_id: daemonId } : {}),
+          limit: REFERENCE_FETCH_LIMIT,
+        });
         if (gen !== searchGen) return;
-        const found = res.issues.filter(hasIssueID);
-        const filtered = excludeIds === undefined
+        const found = res.references ?? [];
+        const filtered = excludeUIDs === undefined
           ? found
-          : found.filter((issue) => !excludeIds.has(issue.id));
+          : found.filter((reference) => !excludeUIDs.has(reference.uid));
         results = filtered.slice(0, MAX_RESULTS);
       } catch (err) {
         if (gen !== searchGen) return;
@@ -107,10 +97,6 @@
       }
     }, SEARCH_DEBOUNCE_MS);
   });
-
-  function hasIssueID(issue: IssueSummary): issue is PickableIssue {
-    return typeof issue.id === "number";
-  }
 
   function updateQuery(nextQuery: string): void {
     if (nextQuery === "" && selected !== null) return;
@@ -123,12 +109,7 @@
 
   function handlePick(): void {
     if (!selected) return;
-    onPick({
-      id: selected.id,
-      uid: selected.uid,
-      qualified_id: selected.qualified_id,
-      title: selected.title,
-    });
+    onPick(selected);
   }
 </script>
 

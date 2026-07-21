@@ -10,6 +10,7 @@ import type {
   MessageSummary,
   MessagesSearchResult,
 } from "../../api/messages/types";
+import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
 import type { SavedSearchesAPI, SavedSearchesAPIError } from "../../api/messages/savedSearchesClient";
 import type { SavedSearch } from "../../messages/savedSearches";
 import { defaultMessagesRoute, type MessagesRoute } from "../../messages/route";
@@ -154,6 +155,7 @@ function renderWorkspace(
     savedSearchesApi?: SavedSearchesAPI;
     messagesConfigVersion?: number;
     kata?: Pick<KataAPI, "search">;
+    searchReferences?: KataTaskReferenceSearch;
     onLinkMessage?: (issueUid: string, input: MessageLinkInput) => Promise<{ qualified_id: string }>;
     onOpenIssue?: (uid: string) => void;
   } = {},
@@ -167,6 +169,7 @@ function renderWorkspace(
       onRouteChange: options.onRouteChange ?? (() => {}),
       messagesConfigVersion: options.messagesConfigVersion ?? 0,
       kata: options.kata,
+      searchReferences: options.searchReferences,
       onLinkMessage: options.onLinkMessage,
       onOpenIssue: options.onOpenIssue,
     },
@@ -1059,12 +1062,30 @@ describe("MessagesWorkspace linked messages", () => {
     const firstRefreshPending = new Promise<SearchResponse>((resolve) => {
       resolveFirstRefresh = resolve;
     });
-    const kataSearch = vi.fn(async (filters: IssueFilters) => {
-      if (filters.query !== "") return linkedSearchResponse([baseIssue], filters.query);
+    const kataSearch = vi.fn(async (_filters: IssueFilters) => {
       refreshCalls++;
       if (refreshCalls === 1) return firstRefreshPending;
       return linkedSearchResponse([issueWithLink]);
     });
+    const searchReferences: KataTaskReferenceSearch = vi.fn(async () => ({
+      server_instance_id: "server-a",
+      daemon_id: "home",
+      generation: 7,
+      invalidation_epoch: 2,
+      fetched_at: "2026-05-15T10:00:00Z",
+      references: [
+        {
+          uid: baseIssue.uid,
+          project_id: 7,
+          project_uid: "project-kata",
+          project_name: "Kata",
+          short_id: baseIssue.short_id,
+          qualified_id: baseIssue.qualified_id,
+          reference: baseIssue.qualified_id,
+          title: baseIssue.title,
+        },
+      ],
+    }));
     const onLinkMessage = vi.fn().mockResolvedValue({ qualified_id: "Kata#42" });
 
     renderWorkspace({
@@ -1082,6 +1103,7 @@ describe("MessagesWorkspace linked messages", () => {
         message: async () => makeDetail(1001, { body: "hello" }),
       }),
       kata: { search: kataSearch },
+      searchReferences,
       onLinkMessage,
       onOpenIssue: vi.fn(),
     });

@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { MessagesCapabilities, MessageDetailData, MessagesSearchResult } from "../../api/messages/types";
+import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
 import type { SearchResponse } from "../../messages/types";
 import MessagesFeature from "./MessagesFeature.svelte";
 
@@ -332,18 +333,27 @@ describe("MessagesFeature", () => {
     expect((screen.getByLabelText(/API key env var name/i) as HTMLInputElement).value).toBe("ALT_MSGVAULT_KEY");
   });
 
-  it("threads Kata search and link callbacks into the workspace", async () => {
+  it("threads distinct Kata reference and authority searches into the workspace", async () => {
     installFetch();
     const kata = {
       search: vi.fn(async (): Promise<SearchResponse> => ({ issues: [], fetched_at: "2026-05-18T00:00:00Z" })),
     };
     const onLinkMessage = vi.fn(async () => ({ qualified_id: "Kata#100" }));
+    const searchReferences: KataTaskReferenceSearch = vi.fn(async () => ({
+      server_instance_id: "server-a",
+      daemon_id: "home",
+      generation: 7,
+      invalidation_epoch: 2,
+      fetched_at: "2026-05-18T00:00:00Z",
+      references: [],
+    }));
 
     render(MessagesFeature, {
       props: {
         route: { mode: "messages", q: null, message: "1001" },
         onRouteChange: vi.fn(),
         kata,
+        searchReferences,
         onLinkMessage,
         onOpenIssue: vi.fn(),
       },

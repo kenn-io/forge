@@ -1,14 +1,15 @@
 <script lang="ts">
   import type { DocsRoute } from "../../api/docs/route.js";
   import type { DocsAPI } from "../../api/docs/api.js";
-  import type { IssueSummary, KataAPI } from "../../components/docs/docsIssueTypes.js";
+  import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
+  import type { IssueSummary } from "../../components/docs/docsIssueTypes.js";
   import DocsWorkspace from "../../components/docs/DocsWorkspace.svelte";
 
   interface Props {
     route: DocsRoute;
     onRouteChange: (next: DocsRoute, options?: { replace?: boolean }) => void;
     api?: DocsAPI;
-    kataAPI?: KataAPI;
+    searchReferences?: KataTaskReferenceSearch;
     kataIssues?: readonly IssueSummary[];
     onOpenIssue?: (uid: string) => void;
     onOpenKataShortId?: (shortId: string, project?: string, daemonId?: string) => void;
@@ -18,7 +19,7 @@
     route,
     onRouteChange,
     api = undefined,
-    kataAPI = undefined,
+    searchReferences = undefined,
     kataIssues = [],
     onOpenIssue = undefined,
     onOpenKataShortId = undefined,
@@ -29,7 +30,7 @@
   {route}
   {onRouteChange}
   {api}
-  {kataAPI}
+  {searchReferences}
   {kataIssues}
   {onOpenIssue}
   {onOpenKataShortId}

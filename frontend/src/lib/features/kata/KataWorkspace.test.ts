@@ -4655,7 +4655,7 @@ describe("KataWorkspace", () => {
     expect(flash.getFlashes()).toEqual([]);
   });
 
-  it("rehydrates linked task titles when switching daemons with matching peer uids", async () => {
+  it("keeps linked rows on stable identifiers without peer detail reads", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({
         daemons: [
@@ -4682,18 +4682,11 @@ describe("KataWorkspace", () => {
       short_id: "linked",
       qualified_id: "Finances#linked",
     };
-    const linkedWork = {
-      ...linkedHome,
-      title: "Work linked task",
-    };
     const api = createDaemonWorkspaceAPI({
       home: [payRent],
       work: [payRent],
     });
     const issueMock = vi.fn(async (uid: string): Promise<KataTaskDetail> => {
-      const binding = vi.mocked(api.bindWorkflowDaemon!).mock.calls.at(-1)?.[0];
-      const active = (binding ?? getActiveKataDaemon()) === "work" ? "work" : "home";
-      const linked = active === "work" ? linkedWork : linkedHome;
       if (uid === payRent.uid) {
         return {
           ...detail(payRent.uid, [payRent]),
@@ -4702,7 +4695,7 @@ describe("KataWorkspace", () => {
               id: 1,
               project_id: payRent.project_id,
               from: { uid: payRent.uid, short_id: payRent.short_id },
-              to: { uid: linked.uid, short_id: linked.short_id },
+              to: { uid: linkedHome.uid, short_id: linkedHome.short_id },
               type: "related",
               author: "fixture-user",
               created_at: fetchedAt,
@@ -4710,13 +4703,7 @@ describe("KataWorkspace", () => {
           ],
         };
       }
-      if (uid === linked.uid) {
-        return {
-          ...detail(linked.uid, [linked]),
-          issue: { ...linked, body: `${linked.title} body` },
-        };
-      }
-      return detail(uid, [payRent, linked]);
+      throw new Error(`unexpected detail read for ${uid}`);
     });
 
     render(KataWorkspace, { props: { api: { ...api, issue: issueMock }, selectedIssueUID: payRent.uid } });
@@ -4726,9 +4713,8 @@ describe("KataWorkspace", () => {
     });
     const detailRegion = await screen.findByRole("region", { name: "Task detail" });
     const links = within(detailRegion).getByRole("region", { name: "Links" });
-    await waitFor(() => {
-      expect(within(links).getByText("Home linked task")).toBeTruthy();
-    });
+    expect(within(links).getByText("linked")).toBeTruthy();
+    expect(issueMock).not.toHaveBeenCalledWith(linkedHome.uid);
 
     await fireEvent.click(screen.getByTestId("daemon-chip"));
     const workDaemonRow = (await screen.findByTestId("daemon-row-work")) as HTMLButtonElement;
@@ -4739,11 +4725,9 @@ describe("KataWorkspace", () => {
       expect(getActiveKataDaemon()).toBe("work");
       const currentDetail = screen.getByRole("region", { name: "Task detail" });
       const currentLinks = within(currentDetail).getByRole("region", { name: "Links" });
-      expect(within(currentLinks).getByText("Work linked task")).toBeTruthy();
+      expect(within(currentLinks).getByText("linked")).toBeTruthy();
     });
-    const currentDetail = screen.getByRole("region", { name: "Task detail" });
-    const currentLinks = within(currentDetail).getByRole("region", { name: "Links" });
-    expect(within(currentLinks).queryByText("Home linked task")).toBeNull();
+    expect(issueMock).not.toHaveBeenCalledWith(linkedHome.uid);
   });
 
   it("resets detail drafts when switching selected tasks", async () => {

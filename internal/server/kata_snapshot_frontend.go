@@ -297,19 +297,25 @@ func kataTaskReferencesFromAuthority(
 	}
 	query := strings.ToLower(strings.TrimSpace(queryInput))
 	references := make([]kataTaskReference, 0, min(limit, len(authority.Snapshot.Issues)))
-	for _, issue := range authority.Snapshot.Issues {
-		if _, member := memberUIDs[issue.UID]; !member || !kataReferenceMatches(issue, query) {
-			continue
+	for _, exactOnly := range []bool{true, false} {
+		for _, issue := range authority.Snapshot.Issues {
+			if _, member := memberUIDs[issue.UID]; !member || !kataReferenceMatches(issue, query) ||
+				kataReferenceIdentifierMatches(issue, query) != exactOnly {
+				continue
+			}
+			reference := issue.QualifiedID
+			if shortIDCounts[issue.ShortID] == 1 {
+				reference = issue.ShortID
+			}
+			references = append(references, kataTaskReference{
+				UID: issue.UID, ProjectID: issue.ProjectID, ProjectUID: issue.ProjectUID,
+				ProjectName: issue.ProjectName, ShortID: issue.ShortID, QualifiedID: issue.QualifiedID,
+				Title: issue.Title, Reference: reference,
+			})
+			if len(references) == limit {
+				break
+			}
 		}
-		reference := issue.QualifiedID
-		if shortIDCounts[issue.ShortID] == 1 {
-			reference = issue.ShortID
-		}
-		references = append(references, kataTaskReference{
-			UID: issue.UID, ProjectID: issue.ProjectID, ProjectUID: issue.ProjectUID,
-			ProjectName: issue.ProjectName, ShortID: issue.ShortID, QualifiedID: issue.QualifiedID,
-			Title: issue.Title, Reference: reference,
-		})
 		if len(references) == limit {
 			break
 		}
@@ -319,6 +325,18 @@ func kataTaskReferencesFromAuthority(
 		Generation: authority.Generation, InvalidationEpoch: authority.InvalidationEpoch,
 		FetchedAt: authority.Snapshot.FetchedAt, References: references,
 	}
+}
+
+func kataReferenceIdentifierMatches(issue kataTaskSummary, query string) bool {
+	if query == "" {
+		return false
+	}
+	for _, candidate := range []string{issue.ShortID, issue.QualifiedID, issue.UID} {
+		if strings.ToLower(candidate) == query {
+			return true
+		}
+	}
+	return false
 }
 
 func kataReferenceMatches(issue kataTaskSummary, query string) bool {

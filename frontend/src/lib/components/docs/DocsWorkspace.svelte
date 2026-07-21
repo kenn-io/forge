@@ -11,6 +11,10 @@
   import { showFlash } from "@middleman/ui/stores/flash";
   import type { DocsRoute } from "../../api/docs/route.js";
   import { createDocsAPI, type DocsAPI } from "../../api/docs/api";
+  import {
+    searchKataTaskReferences,
+    type KataTaskReferenceSearch,
+  } from "../../api/kata/snapshot.js";
   import type { DocsAPIError, GitPublishResponse, GitStatusEntry, TreeNode, Folder } from "../../api/docs/types";
   import PublishDocsDialog from "./PublishDocsDialog.svelte";
   import { buildFolderIndex, type FolderIndex } from "../../api/docs/folderLinks";
@@ -32,7 +36,7 @@
   import { effectiveDocsFolderDaemon } from "./folderDaemon";
   import { buildMentionCompletionSource, collectMentionNames } from "./mentionCompletion";
   import { buildWikilinkCompletionSource } from "./wikilinkCompletion";
-  import type { IssueSummary, KataAPI } from "./docsIssueTypes";
+  import type { IssueSummary } from "./docsIssueTypes";
   import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
   import { IconButton } from "@kenn-io/kit-ui";
 
@@ -46,9 +50,7 @@
     // the immediate `#` autocomplete results before the daemon search
     // returns. May be empty.
     kataIssues?: readonly IssueSummary[] | undefined;
-    // Kata daemon API. When supplied, `#` completion merges in matches
-    // from api.search so suggestions reach beyond the loaded view.
-    kataAPI?: KataAPI | undefined;
+    searchReferences?: KataTaskReferenceSearch | undefined;
   }
 
   let {
@@ -58,27 +60,16 @@
     onOpenIssue,
     onOpenKataShortId,
     kataIssues = [],
-    kataAPI,
+    searchReferences = searchKataTaskReferences,
   }: Props = $props();
 
-  // Always pass a search wrapper so the closure can read the live
-  // `kataAPI` prop on each call (capturing it once at script-init time
-  // would freeze it to `undefined`). The wrapper short-circuits when
-  // no api is available so the completion source falls back to the
-  // local snapshot without waiting on daemon search. A folder daemon
-  // binding scopes async search and its cache key when it still exists
-  // in the live roster; otherwise search follows the active daemon.
   const issueCompletionSource = buildIssueCompletionSource(
     buildDocsIssueCompletionOptions({
       folders: () => folders,
       folderId: () => route.folder,
       daemonRoster: getKataDaemonRoster,
       activeDaemon: getActiveKataDaemon,
-      kataIssues: () => kataIssues,
-      kataSearch: (filters, opts) => {
-        if (!kataAPI) throw new Error("kata api not yet wired");
-        return kataAPI.search(filters, opts);
-      },
+      searchReferences: (query, options) => searchReferences(query, options),
     }),
   );
   // Distinct authors/owners across loaded issues. Recomputed on read so

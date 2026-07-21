@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
 
   import { createMessagesAPI } from "../../api/messages/api.js";
+  import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
   import type { MessagesCapabilities } from "../../api/messages/types";
   import type { MessagesRoute } from "../../messages/route";
   import { createSavedSearchesAPI } from "../../api/messages/savedSearchesClient.js";
@@ -14,6 +15,7 @@
     route: MessagesRoute;
     onRouteChange: (next: MessagesRoute) => void;
     kata?: Pick<KataAPI, "search"> | undefined;
+    searchReferences?: KataTaskReferenceSearch | undefined;
     onLinkMessage?: ((
       issueUid: string,
       input: MessageLinkInput,
@@ -26,6 +28,7 @@
     route,
     onRouteChange,
     kata = undefined,
+    searchReferences = undefined,
     onLinkMessage = undefined,
     onOpenIssue = undefined,
     onCapabilitiesChange = undefined,
@@ -103,6 +106,7 @@
       {route}
       {onRouteChange}
       {kata}
+      {searchReferences}
       {onLinkMessage}
       {onOpenIssue}
       onConfigure={() => (setupOpen = true)}

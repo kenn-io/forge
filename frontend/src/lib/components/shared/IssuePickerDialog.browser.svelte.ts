@@ -3,40 +3,36 @@ import { page } from "vite-plus/test/browser";
 import { render } from "vitest-browser-svelte";
 
 import "../../../app.css";
-import type { KataAPI } from "../../messages/types";
+import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
 import IssuePickerDialog from "./IssuePickerDialog.svelte";
 
 describe("IssuePickerDialog (browser)", () => {
   it("keeps the selected task enabled after Typeahead closes", async () => {
     const onPick = vi.fn();
-    const kata: Pick<KataAPI, "search"> = {
-      search: vi.fn(async () => ({
-        filters: {
-          scope: { kind: "all" as const },
-          status: "open" as const,
-          owner: "",
-          label: "",
-          query: "q3",
+    const searchReferences: KataTaskReferenceSearch = vi.fn(async () => ({
+      server_instance_id: "server-a",
+      daemon_id: "home",
+      generation: 7,
+      invalidation_epoch: 2,
+      references: [
+        {
+          uid: "issue-q3",
+          short_id: "kat-7",
+          qualified_id: "Kata#kat-7",
+          reference: "kat-7",
+          title: "Email Susan re: Q3",
+          project_id: 7,
+          project_uid: "project-kata",
+          project_name: "Kata",
         },
-        issues: [
-          {
-            id: 7,
-            uid: "issue-q3",
-            short_id: "kat-7",
-            qualified_id: "Kata#kat-7",
-            title: "Email Susan re: Q3",
-            status: "open",
-            metadata: {},
-          },
-        ],
-        fetched_at: "2026-07-15T12:00:00Z",
-      })),
-    };
+      ],
+      fetched_at: "2026-07-15T12:00:00Z",
+    }));
 
     render(IssuePickerDialog, {
       props: {
         open: true,
-        kata,
+        searchReferences,
         onClose: vi.fn(),
         onPick,
       },
@@ -46,7 +42,7 @@ describe("IssuePickerDialog (browser)", () => {
     await dialog.getByRole("button", { name: "Title or qualified ID..." }).click();
     await dialog.getByRole("combobox", { name: "Title or qualified ID..." }).fill("q3");
 
-    const option = dialog.getByRole("option", { name: /Kata#kat-7.*Email Susan re: Q3/ });
+    const option = dialog.getByRole("option", { name: /kat-7.*Email Susan re: Q3/ });
     await expect.element(option).toBeVisible();
     await option.click();
 
@@ -55,10 +51,14 @@ describe("IssuePickerDialog (browser)", () => {
     await link.click();
 
     expect(onPick).toHaveBeenCalledWith({
-      id: 7,
       uid: "issue-q3",
+      short_id: "kat-7",
       qualified_id: "Kata#kat-7",
+      reference: "kat-7",
       title: "Email Susan re: Q3",
+      project_id: 7,
+      project_uid: "project-kata",
+      project_name: "Kata",
     });
   });
 });

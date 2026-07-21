@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { IssueSummary, KataAPI, SearchResponse } from "../../messages/types";
+import type { KataTaskReference, KataTaskReferenceResponse, KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
 import IssuePickerDialog from "./IssuePickerDialog.svelte";
 
 afterEach(() => {
@@ -9,65 +9,61 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function fakeIssue(overrides: Partial<IssueSummary> = {}): IssueSummary {
+function fakeReference(overrides: Partial<KataTaskReference> = {}): KataTaskReference {
   return {
-    id: overrides.id ?? 100,
     uid: overrides.uid ?? "uid-100",
     short_id: overrides.short_id ?? "100",
     qualified_id: overrides.qualified_id ?? "Kata#100",
+    reference: overrides.reference ?? "100",
     title: overrides.title ?? "Issue one hundred",
-    status: overrides.status ?? "open",
-    metadata: overrides.metadata ?? {},
+    project_id: overrides.project_id ?? 10,
+    project_uid: overrides.project_uid ?? "project-kata",
+    project_name: overrides.project_name ?? "Kata",
   };
 }
 
-function searchResponse(issues: IssueSummary[]): SearchResponse {
+function searchResponse(references: KataTaskReference[]): KataTaskReferenceResponse {
   return {
-    filters: {
-      scope: { kind: "all" },
-      status: "open",
-      owner: "",
-      label: "",
-      query: "",
-    },
-    issues,
+    server_instance_id: "server-a",
+    daemon_id: "home",
+    generation: 7,
+    invalidation_epoch: 2,
     fetched_at: "2026-05-18T00:00:00Z",
+    references,
   };
 }
 
-type KataSearchOnly = Pick<KataAPI, "search">;
-
-function makeKata(search?: KataAPI["search"]): {
-  kata: KataSearchOnly;
+function makeSearch(search?: KataTaskReferenceSearch): {
+  searchReferences: KataTaskReferenceSearch;
   spy: ReturnType<typeof vi.fn>;
 } {
-  const fallback: KataAPI["search"] = async () => searchResponse([]);
+  const fallback: KataTaskReferenceSearch = async () => searchResponse([]);
   const spy = vi.fn(search ?? fallback);
-  return { kata: { search: spy }, spy };
+  return { searchReferences: spy, spy };
 }
 
 interface RenderOpts {
   open?: boolean;
-  kata?: KataSearchOnly;
-  excludeIds?: ReadonlySet<number>;
-  onPick?: (issue: { id: number; uid: string; qualified_id: string; title: string }) => void;
+  searchReferences?: KataTaskReferenceSearch;
+  excludeUIDs?: ReadonlySet<string>;
+  onPick?: (issue: KataTaskReference) => void;
   onClose?: () => void;
 }
 
 function renderDialog(opts: RenderOpts = {}) {
   const onPick = opts.onPick ?? vi.fn();
   const onClose = opts.onClose ?? vi.fn();
-  const kata = opts.kata ?? makeKata().kata;
+  const searchReferences = opts.searchReferences ?? makeSearch().searchReferences;
   const result = render(IssuePickerDialog, {
     props: {
       open: opts.open ?? true,
-      kata,
+      searchReferences,
       onPick,
       onClose,
-      ...(opts.excludeIds !== undefined ? { excludeIds: opts.excludeIds } : {}),
+      ...(opts.excludeUIDs !== undefined ? { excludeUIDs: opts.excludeUIDs } : {}),
     },
   });
-  return { ...result, onPick, onClose, kata };
+  return { ...result, onPick, onClose, searchReferences };
 }
 
 async function getSearchInput(): Promise<HTMLInputElement> {
@@ -97,8 +93,8 @@ describe("IssuePickerDialog structure", () => {
 describe("IssuePickerDialog debounce", () => {
   it("coalesces rapid keystrokes into one search with the latest query", async () => {
     vi.useFakeTimers();
-    const { kata, spy } = makeKata(async () => searchResponse([fakeIssue()]));
-    renderDialog({ kata });
+    const { searchReferences, spy } = makeSearch(async () => searchResponse([fakeReference()]));
+    renderDialog({ searchReferences });
 
     const input = await getSearchInput();
     await fireEvent.input(input, { target: { value: "a" } });
@@ -109,11 +105,7 @@ describe("IssuePickerDialog debounce", () => {
 
     await vi.advanceTimersByTimeAsync(250);
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy.mock.calls[0]?.[0]).toMatchObject({
-      query: "abc",
-      status: "open",
-      scope: { kind: "all" },
-    });
+    expect(spy).toHaveBeenCalledWith("abc", { limit: 50 });
   });
 });
 
@@ -121,12 +113,12 @@ describe("IssuePickerDialog results", () => {
   it("renders search results", async () => {
     vi.useFakeTimers();
     const issues = [
-      fakeIssue({ id: 100, uid: "u100", qualified_id: "Kata#100", title: "First" }),
-      fakeIssue({ id: 101, uid: "u101", qualified_id: "Kata#101", title: "Second" }),
-      fakeIssue({ id: 102, uid: "u102", qualified_id: "Kata#102", title: "Third" }),
+      fakeReference({ uid: "u100", reference: "100", qualified_id: "Kata#100", title: "First" }),
+      fakeReference({ uid: "u101", short_id: "101", reference: "Kata#101", qualified_id: "Kata#101", title: "Second" }),
+      fakeReference({ uid: "u102", reference: "102", qualified_id: "Kata#102", title: "Third" }),
     ];
-    const { kata } = makeKata(async () => searchResponse(issues));
-    renderDialog({ kata });
+    const { searchReferences } = makeSearch(async (_query, options) => searchResponse(issues.slice(0, options?.limit)));
+    renderDialog({ searchReferences });
 
     await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
     await vi.advanceTimersByTimeAsync(250);
@@ -135,19 +127,19 @@ describe("IssuePickerDialog results", () => {
       expect(screen.getAllByRole("option")).toHaveLength(3);
     });
     expect(screen.getByRole("listbox", { name: /Title or qualified ID/i })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "Kata#100 First" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "100 First" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "Kata#101 Second" })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "Kata#102 Third" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "102 Third" })).toBeTruthy();
   });
 
   it("hides excluded results", async () => {
     vi.useFakeTimers();
     const issues = [
-      fakeIssue({ id: 100, uid: "u100", qualified_id: "Kata#100", title: "Keep me" }),
-      fakeIssue({ id: 101, uid: "u101", qualified_id: "Kata#101", title: "Hide me" }),
+      fakeReference({ uid: "u100", reference: "100", title: "Keep me" }),
+      fakeReference({ uid: "u101", reference: "101", title: "Hide me" }),
     ];
-    const { kata } = makeKata(async () => searchResponse(issues));
-    renderDialog({ kata, excludeIds: new Set([101]) });
+    const { searchReferences } = makeSearch(async () => searchResponse(issues));
+    renderDialog({ searchReferences, excludeUIDs: new Set(["u101"]) });
 
     await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
     await vi.advanceTimersByTimeAsync(250);
@@ -155,18 +147,15 @@ describe("IssuePickerDialog results", () => {
     await waitFor(() => {
       expect(screen.getAllByRole("option")).toHaveLength(1);
     });
-    expect(screen.getByRole("option", { name: "Kata#100 Keep me" })).toBeTruthy();
-    expect(screen.queryByRole("option", { name: /Kata#101/ })).toBeNull();
+    expect(screen.getByRole("option", { name: "100 Keep me" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /101 Hide me/ })).toBeNull();
   });
 
   it("shows no matches when every result is excluded", async () => {
     vi.useFakeTimers();
-    const issues = [
-      fakeIssue({ id: 100, uid: "u100", qualified_id: "Kata#100", title: "First" }),
-      fakeIssue({ id: 101, uid: "u101", qualified_id: "Kata#101", title: "Second" }),
-    ];
-    const { kata } = makeKata(async () => searchResponse(issues));
-    renderDialog({ kata, excludeIds: new Set([100, 101]) });
+    const issues = [fakeReference({ uid: "u100", title: "First" }), fakeReference({ uid: "u101", title: "Second" })];
+    const { searchReferences } = makeSearch(async () => searchResponse(issues));
+    renderDialog({ searchReferences, excludeUIDs: new Set(["u100", "u101"]) });
 
     await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
     await vi.advanceTimersByTimeAsync(250);
@@ -180,20 +169,19 @@ describe("IssuePickerDialog results", () => {
 
   it("discards stale slow results after a faster search wins", async () => {
     vi.useFakeTimers();
-    let resolveFirst!: (value: SearchResponse) => void;
-    const firstPending = new Promise<SearchResponse>((resolve) => {
+    let resolveFirst!: (value: KataTaskReferenceResponse) => void;
+    const firstPending = new Promise<KataTaskReferenceResponse>((resolve) => {
       resolveFirst = resolve;
     });
-    const firstIssues = [fakeIssue({ id: 200, uid: "u200", qualified_id: "Kata#200", title: "Stale" })];
-    const secondIssues = [fakeIssue({ id: 300, uid: "u300", qualified_id: "Kata#300", title: "Fresh" })];
+    const firstIssues = [fakeReference({ uid: "u200", reference: "200", title: "Stale" })];
+    const secondIssues = [fakeReference({ uid: "u300", reference: "300", title: "Fresh" })];
     let call = 0;
-    const spy = vi.fn(async (): Promise<SearchResponse> => {
+    const spy = vi.fn(async (): Promise<KataTaskReferenceResponse> => {
       call++;
       if (call === 1) return firstPending;
       return searchResponse(secondIssues);
     });
-    const kata: KataSearchOnly = { search: spy };
-    renderDialog({ kata });
+    renderDialog({ searchReferences: spy });
 
     await fireEvent.input(await getSearchInput(), { target: { value: "stale" } });
     await vi.advanceTimersByTimeAsync(250);
@@ -214,8 +202,7 @@ describe("IssuePickerDialog results", () => {
   it("renders search errors as an alert and clears them with an empty query", async () => {
     vi.useFakeTimers();
     const spy = vi.fn().mockRejectedValueOnce(new Error("upstream down"));
-    const kata: KataSearchOnly = { search: spy };
-    renderDialog({ kata });
+    renderDialog({ searchReferences: spy });
 
     const input = await getSearchInput();
     await fireEvent.input(input, { target: { value: "anything" } });
@@ -234,12 +221,12 @@ describe("IssuePickerDialog selection", () => {
   it("picks the selected issue", async () => {
     vi.useFakeTimers();
     const issues = [
-      fakeIssue({ id: 100, uid: "u100", qualified_id: "Kata#100", title: "First" }),
-      fakeIssue({ id: 101, uid: "u101", qualified_id: "Kata#101", title: "Second" }),
+      fakeReference({ uid: "u100", reference: "100", qualified_id: "Kata#100", title: "First" }),
+      fakeReference({ uid: "u101", short_id: "101", reference: "Kata#101", qualified_id: "Kata#101", title: "Second" }),
     ];
-    const { kata } = makeKata(async () => searchResponse(issues));
+    const { searchReferences } = makeSearch(async () => searchResponse(issues));
     const onPick = vi.fn();
-    renderDialog({ kata, onPick });
+    renderDialog({ searchReferences, onPick });
 
     await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
     await vi.advanceTimersByTimeAsync(250);
@@ -252,17 +239,21 @@ describe("IssuePickerDialog selection", () => {
     await fireEvent.click(linkBtn);
 
     expect(onPick).toHaveBeenCalledWith({
-      id: 101,
       uid: "u101",
+      short_id: "101",
       qualified_id: "Kata#101",
+      reference: "Kata#101",
       title: "Second",
+      project_id: 10,
+      project_uid: "project-kata",
+      project_name: "Kata",
     });
   });
 
   it("keeps Link disabled until a row is selected", async () => {
     vi.useFakeTimers();
-    const { kata } = makeKata(async () => searchResponse([fakeIssue()]));
-    renderDialog({ kata });
+    const { searchReferences } = makeSearch(async () => searchResponse([fakeReference()]));
+    renderDialog({ searchReferences });
 
     await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
     await vi.advanceTimersByTimeAsync(250);
@@ -278,15 +269,14 @@ describe("IssuePickerDialog selection", () => {
     const spy = vi.fn(async () => {
       call++;
       return call === 1
-        ? searchResponse([fakeIssue({ id: 100, uid: "u100", qualified_id: "Kata#100", title: "First" })])
-        : searchResponse([fakeIssue({ id: 200, uid: "u200", qualified_id: "Kata#200", title: "Different" })]);
+        ? searchResponse([fakeReference({ uid: "u100", reference: "100", title: "First" })])
+        : searchResponse([fakeReference({ uid: "u200", reference: "200", title: "Different" })]);
     });
-    const kata: KataSearchOnly = { search: spy };
-    renderDialog({ kata });
+    renderDialog({ searchReferences: spy });
 
     await fireEvent.input(await getSearchInput(), { target: { value: "first" } });
     await vi.advanceTimersByTimeAsync(250);
-    await fireEvent.mouseDown(await waitFor(() => screen.getByRole("option", { name: /Kata#100.*First/i })));
+    await fireEvent.mouseDown(await waitFor(() => screen.getByRole("option", { name: /100.*First/i })));
 
     const linkBtn = screen.getByRole("button", { name: /^Link$/ }) as HTMLButtonElement;
     expect(linkBtn.disabled).toBe(false);
@@ -294,19 +284,18 @@ describe("IssuePickerDialog selection", () => {
     await fireEvent.input(await getSearchInput(), { target: { value: "diff" } });
     expect(linkBtn.disabled).toBe(true);
     await vi.advanceTimersByTimeAsync(250);
-    await waitFor(() => screen.getByText("Kata#200"));
+    await waitFor(() => screen.getByText("200"));
     expect(linkBtn.disabled).toBe(true);
   });
 
   it("discards in-flight results when the query is cleared", async () => {
     vi.useFakeTimers();
-    let resolvePending!: (value: SearchResponse) => void;
-    const pending = new Promise<SearchResponse>((resolve) => {
+    let resolvePending!: (value: KataTaskReferenceResponse) => void;
+    const pending = new Promise<KataTaskReferenceResponse>((resolve) => {
       resolvePending = resolve;
     });
     const spy = vi.fn(async () => pending);
-    const kata: KataSearchOnly = { search: spy };
-    renderDialog({ kata });
+    renderDialog({ searchReferences: spy });
 
     const input = await getSearchInput();
     await fireEvent.input(input, { target: { value: "slow" } });
@@ -316,7 +305,7 @@ describe("IssuePickerDialog selection", () => {
     await fireEvent.input(input, { target: { value: "" } });
     expect(screen.getByText(/Type to search open tasks/i)).toBeTruthy();
 
-    resolvePending(searchResponse([fakeIssue({ id: 999, uid: "u999", qualified_id: "Kata#999", title: "Stale" })]));
+    resolvePending(searchResponse([fakeReference({ uid: "u999", reference: "999", title: "Stale" })]));
     await vi.advanceTimersByTimeAsync(0);
     await Promise.resolve();
     expect(screen.queryByText("Stale")).toBeNull();
@@ -325,21 +314,21 @@ describe("IssuePickerDialog selection", () => {
 
   it("filters excluded issues before applying the result cap", async () => {
     vi.useFakeTimers();
-    const issues: IssueSummary[] = [];
+    const issues: KataTaskReference[] = [];
     for (let i = 1; i <= 25; i++) {
-      issues.push(fakeIssue({ id: i, uid: `u${i}`, qualified_id: `Kata#${i}`, title: `Excluded ${i}` }));
+      issues.push(fakeReference({ uid: `u${i}`, reference: `${i}`, title: `Excluded ${i}` }));
     }
-    issues.push(fakeIssue({ id: 999, uid: "u999", qualified_id: "Kata#999", title: "Visible" }));
-    const excludeIds = new Set<number>();
-    for (let i = 1; i <= 25; i++) excludeIds.add(i);
+    issues.push(fakeReference({ uid: "u999", reference: "999", title: "Visible" }));
+    const excludeUIDs = new Set<string>();
+    for (let i = 1; i <= 25; i++) excludeUIDs.add(`u${i}`);
 
-    const { kata } = makeKata(async () => searchResponse(issues));
-    renderDialog({ kata, excludeIds });
+    const { searchReferences } = makeSearch(async (_query, options) => searchResponse(issues.slice(0, options?.limit)));
+    renderDialog({ searchReferences, excludeUIDs });
 
     await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });
     await vi.advanceTimersByTimeAsync(250);
 
-    await waitFor(() => expect(screen.getByRole("option", { name: "Kata#999 Visible" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("option", { name: "999 Visible" })).toBeTruthy());
   });
 });
 
@@ -357,11 +346,11 @@ describe("IssuePickerDialog close and reset paths", () => {
 
   it("clears query and results after closing and reopening", async () => {
     vi.useFakeTimers();
-    const issues = [fakeIssue({ id: 100, uid: "u100", qualified_id: "Kata#100", title: "First" })];
-    const { kata } = makeKata(async () => searchResponse(issues));
+    const issues = [fakeReference({ uid: "u100", reference: "100", title: "First" })];
+    const { searchReferences } = makeSearch(async () => searchResponse(issues));
     const onPick = vi.fn();
     const onClose = vi.fn();
-    const baseProps = { open: true, kata, onPick, onClose };
+    const baseProps = { open: true, searchReferences, onPick, onClose };
     const { rerender } = render(IssuePickerDialog, { props: baseProps });
 
     await fireEvent.input(await getSearchInput(), { target: { value: "kata" } });

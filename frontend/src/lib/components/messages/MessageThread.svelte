@@ -3,7 +3,8 @@
     MessageDetailData,
     MessageSummary,
   } from "../../api/messages/types";
-  import type { IssueRef, KataAPI } from "../../messages/types";
+  import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
+  import type { IssueRef } from "../../messages/types";
   import type { MessageLinkInput } from "../../messages/messageLinks";
   import { selectInclusiveWindow } from "../../messages/threadWindow";
   import MessageDetail from "./MessageDetail.svelte";
@@ -20,7 +21,7 @@
     // Forwarded to MessageDetail in every mode.
     permalinkOf: (id: number) => string;
     remoteImageURL: (id: number, token: string, index: string) => string;
-    kata?: Pick<KataAPI, "search"> | undefined;
+    searchReferences?: KataTaskReferenceSearch | undefined;
     onLinkMessage?: ((
       issueUid: string,
       input: MessageLinkInput,
@@ -48,7 +49,7 @@
     threadError,
     permalinkOf,
     remoteImageURL,
-    kata,
+    searchReferences,
     onLinkMessage,
     reverseLinks,
     onOpenIssue,
@@ -155,7 +156,7 @@
               error={detailError}
               {permalinkOf}
               {remoteImageURL}
-              {kata}
+              {searchReferences}
               {onLinkMessage}
               {reverseLinks}
               {onOpenIssue}
@@ -193,7 +194,7 @@
       error={detailError}
       {permalinkOf}
       {remoteImageURL}
-      {kata}
+      {searchReferences}
       {onLinkMessage}
       {reverseLinks}
       {onOpenIssue}

@@ -44,6 +44,11 @@ state.
   atomic; do not move them to the background-events behavior, or the
   route-sync effect can stomp a fresh selection
   (`frontend/src/lib/stores/kata-workspace.svelte.ts::loadSelectedIssue`).
+- `GET /kata/tasks/references`: middleman's global/open Kata reference service.
+  Rank exact short, qualified, or UID matches before substring matches and only
+  then apply the response limit. Consumers must use the returned `reference`
+  verbatim: it is bare only when the short ID is unique in the full authority;
+  consumers needing status, metadata, or closed tasks must use a snapshot.
 - `POST /kata/workspaces`: create or reuse a Kata-task-backed workspace. Kata
   tasks are not provider issues, so this path never resolves or syncs a
   provider issue row.

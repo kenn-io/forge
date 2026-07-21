@@ -5,6 +5,10 @@
   import { renderMarkdown, renderMarkdownSync } from "@middleman/ui/utils/markdown";
   import { localDateTimeLabel, timeAgo } from "@middleman/ui/utils/time";
 
+  import {
+    searchKataTaskReferences,
+    type KataTaskReferenceSearch,
+  } from "../../api/kata/snapshot.js";
   import type {
     KataProjectSummary,
     KataRecurrence,
@@ -36,6 +40,7 @@
     events: KataTaskEvent[];
     currentView: { groups: KataTaskGroup[] };
     api: KataTaskAPI;
+    searchReferences?: KataTaskReferenceSearch | undefined;
     activeDaemonId?: string | undefined;
     linkFilters: KataLinkFilters;
     onLinkFiltersChange: (next: KataLinkFilters) => void;
@@ -77,6 +82,7 @@
     events,
     currentView,
     api,
+    searchReferences = searchKataTaskReferences,
     activeDaemonId = undefined,
     linkFilters,
     onLinkFiltersChange,
@@ -384,7 +390,7 @@
       {issue}
       {events}
       {currentView}
-      {api}
+      {searchReferences}
       {activeDaemonId}
       {linkFilters}
       {onLinkFiltersChange}

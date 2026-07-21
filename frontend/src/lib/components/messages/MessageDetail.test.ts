@@ -3,8 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import * as flash from "@middleman/ui/stores/flash";
 
 import type { MessageDetailData } from "../../api/messages/types";
+import type { KataTaskReference, KataTaskReferenceResponse, KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
 import type { MessageLinkInput } from "../../messages/messageLinks";
-import type { IssueRef, IssueSummary, KataAPI, SearchResponse } from "../../messages/types";
+import type { IssueRef } from "../../messages/types";
 import MessageDetail from "./MessageDetail.svelte";
 
 afterEach(() => {
@@ -58,7 +59,7 @@ function renderDetail(
     onLoadImages?: (id: number, token: string) => void;
     reverseLinks?: IssueRef[];
     onOpenIssue?: (uid: string) => void;
-    kata?: Pick<KataAPI, "search">;
+    searchReferences?: KataTaskReferenceSearch;
     onLinkMessage?: (issueUid: string, input: MessageLinkInput) => Promise<{ qualified_id: string }>;
   } = {},
 ) {
@@ -79,7 +80,7 @@ function renderDetail(
       ...(opts.onLoadImages !== undefined ? { onLoadImages: opts.onLoadImages } : {}),
       ...(opts.reverseLinks !== undefined ? { reverseLinks: opts.reverseLinks } : {}),
       ...(opts.onOpenIssue !== undefined ? { onOpenIssue: opts.onOpenIssue } : {}),
-      ...(opts.kata !== undefined ? { kata: opts.kata } : {}),
+      ...(opts.searchReferences !== undefined ? { searchReferences: opts.searchReferences } : {}),
       ...(opts.onLinkMessage !== undefined ? { onLinkMessage: opts.onLinkMessage } : {}),
     },
   });
@@ -406,34 +407,32 @@ describe("MessageDetail reverse links", () => {
   });
 });
 
-function fakeIssue(overrides: Partial<IssueSummary> = {}): IssueSummary {
+function fakeReference(overrides: Partial<KataTaskReference> = {}): KataTaskReference {
   return {
-    id: overrides.id ?? 42,
     uid: overrides.uid ?? "uid-42",
     short_id: overrides.short_id ?? "42",
     qualified_id: overrides.qualified_id ?? "Kata#42",
+    reference: overrides.reference ?? "42",
     title: overrides.title ?? "Pick me",
-    status: overrides.status ?? "open",
-    metadata: overrides.metadata ?? {},
+    project_id: overrides.project_id ?? 7,
+    project_uid: overrides.project_uid ?? "project-kata",
+    project_name: overrides.project_name ?? "Kata",
   };
 }
 
-function searchResponse(issues: IssueSummary[]): SearchResponse {
+function searchResponse(references: KataTaskReference[]): KataTaskReferenceResponse {
   return {
-    filters: {
-      scope: { kind: "all" },
-      status: "open",
-      owner: "",
-      label: "",
-      query: "",
-    },
-    issues,
+    server_instance_id: "server-a",
+    daemon_id: "home",
+    generation: 7,
+    invalidation_epoch: 2,
     fetched_at: "2026-05-18T00:00:00Z",
+    references,
   };
 }
 
-function makeKata(search: KataAPI["search"] = async () => searchResponse([])): Pick<KataAPI, "search"> {
-  return { search };
+function makeSearch(search: KataTaskReferenceSearch = async () => searchResponse([])): KataTaskReferenceSearch {
+  return vi.fn(search);
 }
 
 async function openTaskPickerSearch(): Promise<HTMLInputElement> {
@@ -445,7 +444,7 @@ async function openTaskPickerSearch(): Promise<HTMLInputElement> {
 
 describe("MessageDetail link to task", () => {
   it("hides the link button unless search and link callbacks are supplied with a detail", () => {
-    renderDetail(makeDetail(), { kata: makeKata() });
+    renderDetail(makeDetail(), { searchReferences: makeSearch() });
     expect(screen.queryByRole("button", { name: /Link to task/i })).toBeNull();
 
     cleanup();
@@ -453,13 +452,13 @@ describe("MessageDetail link to task", () => {
     expect(screen.queryByRole("button", { name: /Link to task/i })).toBeNull();
 
     cleanup();
-    renderDetail(null, { kata: makeKata(), onLinkMessage: vi.fn() });
+    renderDetail(null, { searchReferences: makeSearch(), onLinkMessage: vi.fn() });
     expect(screen.queryByRole("button", { name: /Link to task/i })).toBeNull();
   });
 
   it("opens the task picker when the link button is clicked", async () => {
     renderDetail(makeDetail(), {
-      kata: makeKata(),
+      searchReferences: makeSearch(),
       onLinkMessage: vi.fn(),
     });
 
@@ -470,8 +469,8 @@ describe("MessageDetail link to task", () => {
 
   it("links the selected task with a snapshot of the current message", async () => {
     vi.useFakeTimers();
-    const kata = makeKata(async () =>
-      searchResponse([fakeIssue({ id: 42, uid: "uid-42", qualified_id: "Kata#42", title: "Pick me" })]),
+    const searchReferences = makeSearch(async () =>
+      searchResponse([fakeReference({ uid: "uid-42", reference: "Kata#42", title: "Pick me" })]),
     );
     const onLinkMessage = vi.fn().mockResolvedValue({ qualified_id: "Kata#42" });
     const detail = makeDetail({
@@ -481,7 +480,7 @@ describe("MessageDetail link to task", () => {
       from: "alice@example.com",
       sent_at: "2026-05-15T09:00:00Z",
     });
-    renderDetail(detail, { kata, onLinkMessage });
+    renderDetail(detail, { searchReferences, onLinkMessage });
 
     await fireEvent.click(screen.getByRole("button", { name: /Link to task/i }));
     await fireEvent.input(await openTaskPickerSearch(), { target: { value: "test" } });
@@ -503,11 +502,11 @@ describe("MessageDetail link to task", () => {
 
   it("shows a success toast after linking", async () => {
     vi.useFakeTimers();
-    const kata = makeKata(async () =>
-      searchResponse([fakeIssue({ id: 42, uid: "uid-42", qualified_id: "Kata#42", title: "Pick me" })]),
+    const searchReferences = makeSearch(async () =>
+      searchResponse([fakeReference({ uid: "uid-42", reference: "Kata#42", title: "Pick me" })]),
     );
     const onLinkMessage = vi.fn().mockResolvedValue({ qualified_id: "Kata#42" });
-    renderDetail(makeDetail({ id: 1001, conversation_id: 2001 }), { kata, onLinkMessage });
+    renderDetail(makeDetail({ id: 1001, conversation_id: 2001 }), { searchReferences, onLinkMessage });
 
     await fireEvent.click(screen.getByRole("button", { name: /Link to task/i }));
     await fireEvent.input(await openTaskPickerSearch(), { target: { value: "test" } });
@@ -521,11 +520,11 @@ describe("MessageDetail link to task", () => {
 
   it("shows link failures as a danger flash", async () => {
     vi.useFakeTimers();
-    const kata = makeKata(async () =>
-      searchResponse([fakeIssue({ id: 42, uid: "uid-42", qualified_id: "Kata#42", title: "Pick me" })]),
+    const searchReferences = makeSearch(async () =>
+      searchResponse([fakeReference({ uid: "uid-42", reference: "Kata#42", title: "Pick me" })]),
     );
     const onLinkMessage = vi.fn().mockRejectedValueOnce(new Error("oops"));
-    renderDetail(makeDetail({ id: 1001, conversation_id: 2001 }), { kata, onLinkMessage });
+    renderDetail(makeDetail({ id: 1001, conversation_id: 2001 }), { searchReferences, onLinkMessage });
 
     await fireEvent.click(screen.getByRole("button", { name: /Link to task/i }));
     await fireEvent.input(await openTaskPickerSearch(), { target: { value: "test" } });

@@ -2,9 +2,10 @@
   import { copyToClipboard } from "@kenn-io/kit-ui";
   import { showFlash } from "@middleman/ui/stores/flash";
   import { onDestroy } from "svelte";
+  import type { KataTaskReference, KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
   import type { MessageDetailData } from "../../api/messages/types";
   import type { MessageLinkInput } from "../../messages/messageLinks";
-  import type { IssueRef, KataAPI } from "../../messages/types";
+  import type { IssueRef } from "../../messages/types";
   import IssuePickerDialog from "../shared/IssuePickerDialog.svelte";
   import { linkify } from "./linkify";
 
@@ -14,7 +15,7 @@
     error: string | null;
     permalinkOf: (id: number) => string;
     remoteImageURL: (id: number, token: string, index: string) => string;
-    kata?: Pick<KataAPI, "search"> | undefined;
+    searchReferences?: KataTaskReferenceSearch | undefined;
     onLinkMessage?: ((
       issueUid: string,
       input: {
@@ -48,7 +49,7 @@
     error,
     permalinkOf,
     remoteImageURL,
-    kata,
+    searchReferences,
     onLinkMessage,
     reverseLinks,
     onOpenIssue,
@@ -70,6 +71,7 @@
   let linkedToast = $state<string | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let destroyed = false;
+  const excludedIssueUIDs = $derived(new Set((reverseLinks ?? []).map((reference) => reference.uid)));
 
   // Clear the pending copy-permalink timer when the component is destroyed
   // so stale callbacks cannot fire against unmounted state.
@@ -93,12 +95,7 @@
     });
   }
 
-  async function handlePickIssue(picked: {
-    id: number;
-    uid: string;
-    qualified_id: string;
-    title: string;
-  }): Promise<void> {
+  async function handlePickIssue(picked: KataTaskReference): Promise<void> {
     if (!onLinkMessage || !detail) return;
     pickerOpen = false;
     saving = true;
@@ -392,7 +389,7 @@
         >
           {copied ? "Copied" : "Copy permalink"}
         </button>
-        {#if onLinkMessage && kata}
+        {#if onLinkMessage && searchReferences}
           <button
             type="button"
             class="link-issue-btn"
@@ -428,10 +425,11 @@
       {/if}
     </div>
   {/if}
-  {#if kata && onLinkMessage}
+  {#if searchReferences && onLinkMessage}
     <IssuePickerDialog
       open={pickerOpen}
-      {kata}
+      {searchReferences}
+      excludeUIDs={excludedIssueUIDs}
       onClose={() => (pickerOpen = false)}
       onPick={handlePickIssue}
     />

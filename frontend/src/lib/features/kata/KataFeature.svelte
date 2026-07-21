@@ -1,9 +1,11 @@
 <script lang="ts">
+  import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
   import type { KataTaskAPI, KataTaskViewName } from "../../api/kata/taskTypes.js";
   import KataWorkspace from "./KataWorkspace.svelte";
 
   interface Props {
     api?: KataTaskAPI | undefined;
+    searchReferences?: KataTaskReferenceSearch | undefined;
     selectedIssueUID?: string | null | undefined;
     routeViewName?: KataTaskViewName | null | undefined;
     routeScopeUID?: string | null | undefined;
@@ -22,6 +24,7 @@
 
   let {
     api = undefined,
+    searchReferences = undefined,
     selectedIssueUID = null,
     routeViewName = null,
     routeScopeUID = null,
@@ -34,6 +37,7 @@
 
 <KataWorkspace
   {api}
+  {searchReferences}
   {selectedIssueUID}
   {routeViewName}
   {routeScopeUID}

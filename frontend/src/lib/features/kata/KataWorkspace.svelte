@@ -7,6 +7,10 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
 
   import { fetchKataDaemons, type KataDaemonInfo } from "../../api/kata/daemons.js";
+  import {
+    searchKataTaskReferences,
+    type KataTaskReferenceSearch,
+  } from "../../api/kata/snapshot.js";
   import { kataTaskStatusMatchesFilter } from "../../api/kata/taskFilters.js";
   import { createKataWorkspaceForTask, kataWorkspaceIdentityFromIssue } from "../../api/kata/workspaces.js";
   import type {
@@ -65,6 +69,7 @@
 
   interface Props {
     api?: KataTaskAPI | undefined;
+    searchReferences?: KataTaskReferenceSearch | undefined;
     selectedIssueUID?: string | null | undefined;
     routeViewName?: KataTaskViewName | null | undefined;
     routeScopeUID?: string | null | undefined;
@@ -128,6 +133,7 @@
 
   let {
     api = undefined,
+    searchReferences = searchKataTaskReferences,
     selectedIssueUID = null,
     routeViewName = null,
     routeScopeUID = null,
@@ -2828,6 +2834,7 @@
       events={store.selectedEvents}
       currentView={store.currentView}
       api={store.api}
+      {searchReferences}
       activeDaemonId={activeKataDaemonId}
       {linkFilters}
       onLinkFiltersChange={(next) => {

@@ -105,6 +105,21 @@ func TestKataSnapshotFrontendEnsuresEventsBeforeBlockedAuthorityLoad(t *testing.
 	assert.Equal("issue-member", got.response.Enrichment.SelectedIssueUID)
 }
 
+func TestKataTaskReferencesPrioritizeExactIdentifiersBeforeCappedSubstringMatches(t *testing.T) {
+	t.Parallel()
+	authority := testKataCoordinatedAuthority()
+	authority.Snapshot.MemberIssueUIDs = []string{"issue-partial", "issue-exact"}
+	authority.Snapshot.Issues = []kataTaskSummary{
+		{UID: "issue-partial", ProjectID: 7, ProjectUID: "project-a", ProjectName: "Project A", ShortID: "other", QualifiedID: "Project A#other", Title: "Needle appears in this title"},
+		{UID: "issue-exact", ProjectID: 7, ProjectUID: "project-a", ProjectName: "Project A", ShortID: "needle", QualifiedID: "Project A#needle", Title: "Exact task"},
+	}
+
+	response := kataTaskReferencesFromAuthority(authority, "needle", 1)
+
+	require.Len(t, response.References, 1)
+	assert.Equal(t, "issue-exact", response.References[0].UID)
+}
+
 func TestKataSnapshotFrontendRetriesInvalidationBeforePublish(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

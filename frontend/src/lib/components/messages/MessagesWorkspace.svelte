@@ -11,6 +11,7 @@
     MessagesSearchMode,
     MessagesSearchResult,
   } from "../../api/messages/types";
+  import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
   import type { IssueSummary, IssueRef, KataAPI } from "../../messages/types";
   import type {
     SavedSearchesAPI,
@@ -54,6 +55,7 @@
      * deployments do not have Kata issue context.
      */
     kata?: Pick<KataAPI, "search"> | undefined;
+    searchReferences?: KataTaskReferenceSearch | undefined;
     /**
      * App-owned callback that resolves the chosen issue, applies the
      * computed metadata patch, and returns the qualified id for the
@@ -83,6 +85,7 @@
     onRouteChange,
     onConfigure,
     kata,
+    searchReferences,
     onLinkMessage,
     onOpenIssue,
     messagesConfigVersion,
@@ -841,7 +844,7 @@
               {threadError}
               permalinkOf={(id) => `messages:msgvault:${id}`}
               remoteImageURL={messagesApi.remoteImageURL}
-              {kata}
+              {searchReferences}
               onLinkMessage={onLinkMessage ? handleLinkMessage : undefined}
               reverseLinks={reverseLinksForCurrent}
               {onOpenIssue}
@@ -860,7 +863,7 @@
               error={detailError}
               permalinkOf={(id) => `messages:msgvault:${id}`}
               remoteImageURL={messagesApi.remoteImageURL}
-              {kata}
+              {searchReferences}
               onLinkMessage={onLinkMessage ? handleLinkMessage : undefined}
               reverseLinks={reverseLinksForCurrent}
               {onOpenIssue}

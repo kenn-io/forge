@@ -36,6 +36,13 @@ export interface SearchKataTaskReferencesOptions extends KataClientOptions {
   limit?: number | undefined;
 }
 
+export type KataTaskReferenceSearchOptions = Pick<SearchKataTaskReferencesOptions, "daemon_id" | "limit" | "signal">;
+
+export type KataTaskReferenceSearch = (
+  query: string,
+  options?: KataTaskReferenceSearchOptions,
+) => Promise<KataTaskReferenceResponse>;
+
 function effectiveDaemonID(requested: string | undefined, options: KataClientOptions): string | undefined {
   const explicit = requested?.trim();
   if (explicit) return explicit;

@@ -1,19 +1,8 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { Folder } from "../../api/docs/types";
-import type { IssueSummary, SearchFilters } from "./docsIssueTypes";
+import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
 import { buildDocsIssueCompletionOptions } from "./docsIssueCompletionOptions";
-
-function issue(shortId: string): IssueSummary {
-  return {
-    uid: `issue-${shortId}`,
-    short_id: shortId,
-    qualified_id: `tasks#${shortId}`,
-    title: `Task ${shortId}`,
-    status: "open",
-    project_name: "tasks",
-  };
-}
 
 const folders: Folder[] = [
   { id: "notes", name: "Notes", path: "/notes", daemon: "work" },
@@ -21,67 +10,50 @@ const folders: Folder[] = [
   { id: "inbox", name: "Inbox", path: "/inbox" },
 ];
 
-const filters: SearchFilters = {
-  scope: { kind: "all" },
-  status: "all",
-  owner: "",
-  label: "",
-  query: "ren",
-};
+const searchReferences: KataTaskReferenceSearch = vi.fn(async () => ({
+  server_instance_id: "server-a",
+  daemon_id: "home",
+  generation: 7,
+  invalidation_epoch: 2,
+  fetched_at: "2026-07-20T12:00:00Z",
+  references: [],
+}));
 
 describe("buildDocsIssueCompletionOptions", () => {
-  it("routes a live bound folder through its daemon and hides active-daemon local issues in multi-daemon mode", async () => {
-    const local = [issue("rent")];
-    const search = vi.fn(async () => ({ issues: [issue("renew")] }));
+  it("uses a live folder binding as the reference-search daemon", () => {
     const options = buildDocsIssueCompletionOptions({
       folders: () => folders,
       folderId: () => "notes",
       daemonRoster: () => ["home", "work"],
       activeDaemon: () => "home",
-      kataIssues: () => local,
-      kataSearch: search,
+      searchReferences,
     });
 
-    expect(options.getIssues()).toEqual([]);
-    expect(options.cacheKeyPrefix?.()).toBe("work");
-
-    await options.search?.(filters, options.cacheKeyPrefix?.() ?? "");
-
-    expect(search).toHaveBeenCalledWith(filters, { daemonId: "work" });
+    expect(options.daemonId?.()).toBe("work");
+    expect(options.searchReferences).toBe(searchReferences);
   });
 
-  it("falls back to the active daemon when a folder binding is stale", async () => {
-    const local = [issue("rent")];
-    const search = vi.fn(async () => ({ issues: [issue("renew")] }));
+  it("uses the active daemon when a folder binding is stale", () => {
     const options = buildDocsIssueCompletionOptions({
       folders: () => folders,
       folderId: () => "archive",
       daemonRoster: () => ["home", "work"],
       activeDaemon: () => "home",
-      kataIssues: () => local,
-      kataSearch: search,
+      searchReferences,
     });
 
-    expect(options.getIssues()).toBe(local);
-    expect(options.cacheKeyPrefix?.()).toBe("home");
-
-    await options.search?.(filters, options.cacheKeyPrefix?.() ?? "");
-
-    expect(search).toHaveBeenCalledWith(filters, { daemonId: "home" });
+    expect(options.daemonId?.()).toBe("home");
   });
 
-  it("keeps local issues for single-daemon mode even when the folder has a binding", () => {
-    const local = [issue("rent")];
+  it("uses the bound daemon in single-daemon mode", () => {
     const options = buildDocsIssueCompletionOptions({
       folders: () => folders,
       folderId: () => "notes",
       daemonRoster: () => ["work"],
       activeDaemon: () => "work",
-      kataIssues: () => local,
-      kataSearch: async () => ({ issues: [] }),
+      searchReferences,
     });
 
-    expect(options.getIssues()).toBe(local);
-    expect(options.cacheKeyPrefix?.()).toBe("work");
+    expect(options.daemonId?.()).toBe("work");
   });
 });

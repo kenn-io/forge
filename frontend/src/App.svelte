@@ -39,6 +39,7 @@
   import RepoBrowserFeature from "./lib/features/repo-browser/RepoBrowserFeature.svelte";
   import { fetchKataDaemons } from "./lib/api/kata/daemons.js";
   import { kataLinkingEnabledForEffectiveDaemon } from "./lib/api/kata/daemonSelection.js";
+  import { searchKataTaskReferences } from "./lib/api/kata/snapshot.js";
   import { createKataTaskAPI } from "./lib/api/kata/taskClient.js";
   import type { KataTaskViewName } from "./lib/api/kata/taskTypes.js";
   import { createDocsAPI } from "./lib/api/docs/api.js";
@@ -387,15 +388,17 @@
 
   async function openKataShortId(shortId: string, project?: string, daemonId?: string): Promise<void> {
     try {
-      const results = await kataAPI.search({
-        scope: { kind: "all" },
-        status: "all",
-        owner: "",
-        label: "",
-        query: shortId,
-      }, daemonId ? { daemonId } : undefined);
-      const match = results.issues.find(
-        (issue) => issue.short_id === shortId && (!project || issue.project_name === project),
+      const requestedReference = project ? `${project}#${shortId}` : shortId;
+      const results = await searchKataTaskReferences(
+        requestedReference,
+        daemonId ? { daemon_id: daemonId } : {},
+      );
+      const match = (results.references ?? []).find((reference) =>
+        reference.reference === requestedReference
+        || reference.qualified_id === requestedReference
+        || (project !== undefined
+          && reference.short_id === shortId
+          && (reference.project_name === project || reference.project_uid === project)),
       );
       if (match) {
         openKataIssue(match.uid, daemonId);
@@ -1181,6 +1184,7 @@
         {#if route.page === "kata"}
           <KataFeature
             api={kataWorkspaceAPI}
+            searchReferences={searchKataTaskReferences}
             selectedIssueUID={route.issue ?? null}
             routeViewName={route.view ?? null}
             routeScopeUID={route.scope ?? null}
@@ -1284,7 +1288,7 @@
               if (options?.replace) replaceUrl(docsHref(next));
               else navigate(docsHref(next));
             }}
-            {kataAPI}
+            searchReferences={searchKataTaskReferences}
             onOpenIssue={openKataIssue}
             onOpenKataShortId={(shortId, project, daemonId) => {
               void openKataShortId(shortId, project, daemonId);
@@ -1303,6 +1307,7 @@
             route={messagesRoute}
             onRouteChange={(next) => navigate(messagesHref(next))}
             kata={kataLinkingEnabled ? kataAPI : undefined}
+            searchReferences={kataLinkingEnabled ? searchKataTaskReferences : undefined}
             onLinkMessage={kataLinkingEnabled ? messageIssueLinker.linkMessage : undefined}
             onOpenIssue={kataLinkingEnabled ? openKataIssue : undefined}
           />

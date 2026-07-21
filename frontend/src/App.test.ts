@@ -21,6 +21,10 @@ const kataClients = vi.hoisted(() => ({
   create: vi.fn(() => ({})),
 }));
 
+const kataReferences = vi.hoisted(() => ({
+  search: vi.fn(),
+}));
+
 vi.mock("@middleman/ui", async () => {
   const Provider = (await import("./lib/testing/AppProviderMock.svelte")).default;
   const Stub = (await import("./lib/testing/AppViewStub.svelte")).default;
@@ -117,6 +121,9 @@ vi.mock("./lib/api/kata/daemons.js", () => ({
 vi.mock("./lib/api/kata/taskClient.js", () => ({
   createKataTaskAPI: kataClients.create,
 }));
+vi.mock("./lib/api/kata/snapshot.js", () => ({
+  searchKataTaskReferences: kataReferences.search,
+}));
 vi.mock("./lib/api/docs/api.js", () => ({
   createDocsAPI: () => ({}),
 }));
@@ -202,6 +209,14 @@ describe("App feature routes", () => {
     startup.autoReady = true;
     startup.readyCallbacks = [];
     messagesHealth.pendingCapabilities = false;
+    kataReferences.search.mockResolvedValue({
+      server_instance_id: "server-a",
+      daemon_id: "home",
+      generation: 7,
+      invalidation_epoch: 2,
+      fetched_at: "2026-07-20T12:00:00Z",
+      references: [],
+    });
     installBrowserGlobals();
     window.history.replaceState(null, "", "/pulls");
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
@@ -323,5 +338,82 @@ describe("App feature routes", () => {
     await waitFor(() => expect(screen.queryByText("Loading")).toBeNull());
 
     expect(kataClients.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("routes open textual Kata references through the generated reference search", async () => {
+    kataReferences.search.mockResolvedValueOnce({
+      server_instance_id: "server-a",
+      daemon_id: "home",
+      generation: 7,
+      invalidation_epoch: 2,
+      fetched_at: "2026-07-20T12:00:00Z",
+      references: [
+        {
+          uid: "issue-solo",
+          project_id: 7,
+          project_uid: "project-a",
+          project_name: "Project A",
+          short_id: "solo",
+          qualified_id: "Project A#solo",
+          reference: "solo",
+          title: "Open task",
+        },
+      ],
+    });
+    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
+    replaceUrl("/docs?folder=notes&doc=README.md");
+    const { default: App } = await import("./App.svelte");
+
+    render(App, { target: createAppTarget() });
+    await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
+    await fireEvent.click(screen.getByRole("button", { name: "Open Kata reference" }));
+
+    await waitFor(() => expect(window.location.pathname + window.location.search).toBe("/kata?issue=issue-solo"));
+    expect(kataReferences.search).toHaveBeenCalledWith("solo", {});
+  });
+
+  it("does not route a closed task omitted by the open reference service", async () => {
+    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
+    replaceUrl("/docs?folder=notes&doc=README.md");
+    const { default: App } = await import("./App.svelte");
+
+    render(App, { target: createAppTarget() });
+    await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
+    await fireEvent.click(screen.getByRole("button", { name: "Open closed Kata reference" }));
+
+    await waitFor(() => expect(kataReferences.search).toHaveBeenCalledWith("closed-task", {}));
+    expect(window.location.pathname + window.location.search).toBe("/docs?folder=notes&doc=README.md");
+  });
+
+  it("does not route an ambiguous bare reference from a qualified server result", async () => {
+    kataReferences.search.mockResolvedValueOnce({
+      server_instance_id: "server-a",
+      daemon_id: "home",
+      generation: 7,
+      invalidation_epoch: 2,
+      fetched_at: "2026-07-20T12:00:00Z",
+      references: [
+        {
+          uid: "issue-ambiguous",
+          project_id: 7,
+          project_uid: "project-a",
+          project_name: "Project A",
+          short_id: "solo",
+          qualified_id: "Project A#solo",
+          reference: "Project A#solo",
+          title: "Ambiguous task",
+        },
+      ],
+    });
+    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
+    replaceUrl("/docs?folder=notes&doc=README.md");
+    const { default: App } = await import("./App.svelte");
+
+    render(App, { target: createAppTarget() });
+    await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
+    await fireEvent.click(screen.getByRole("button", { name: "Open Kata reference" }));
+
+    await waitFor(() => expect(kataReferences.search).toHaveBeenCalledWith("solo", {}));
+    expect(window.location.pathname + window.location.search).toBe("/docs?folder=notes&doc=README.md");
   });
 });

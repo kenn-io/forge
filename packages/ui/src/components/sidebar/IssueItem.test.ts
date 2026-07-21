@@ -53,4 +53,43 @@ describe("IssueItem", () => {
 
     expect(screen.getByLabelText("Workspace attached (ready)")).toBeTruthy();
   });
+
+  it("renders the repo chip inside the meta row with no separate repo row", () => {
+    render(IssueItem, {
+      props: {
+        issue: mkIssue({}),
+        selected: false,
+        showRepo: true,
+        repoLabel: "acme/widgets",
+        onclick: () => {},
+      },
+      context: new Map<symbol, unknown>([[STORES_KEY, { issues: { toggleIssueStar: vi.fn() } }]]),
+    });
+
+    expect(document.querySelector(".meta-row .meta-left .kit-chip.repo-chip")).not.toBeNull();
+    expect(document.querySelector(".repo-row")).toBeNull();
+  });
+
+  it("renders label dots on the title line instead of a label pill row", () => {
+    renderItem(
+      mkIssue({
+        labels: [
+          { name: "bug", color: "d73a4a" },
+          { name: "docs", color: "0075ca" },
+        ],
+      }),
+    );
+
+    expect(document.querySelectorAll(".title .label-dot")).toHaveLength(2);
+    expect(document.querySelector(".title .label-dots")?.getAttribute("title")).toBe("bug, docs");
+    expect(screen.getByText("Labels: bug, docs")).toBeTruthy();
+    expect(document.querySelector(".label-row")).toBeNull();
+  });
+
+  it("keeps title text and meta number/author in the two-line structure", () => {
+    renderItem(mkIssue({}));
+
+    expect(document.querySelector(".title .title-text")?.textContent).toBe("Track workspace setup");
+    expect(document.querySelector(".meta-left .meta-text")?.textContent).toContain("#2 · alice");
+  });
 });

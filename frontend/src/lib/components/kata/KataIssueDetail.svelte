@@ -49,6 +49,7 @@
     selectedRecurrences: KataRecurrence[];
     checklistRevealed: boolean;
     actionsDisabled?: boolean | undefined;
+    draftResetGeneration?: number | undefined;
     movePending?: boolean | undefined;
     onMoveIssue: (toProjectUID: string) => boolean | Promise<boolean>;
     onPatchMetadata: (uid: string, patch: Record<string, unknown>) => boolean | Promise<boolean>;
@@ -91,6 +92,7 @@
     selectedRecurrences,
     checklistRevealed,
     actionsDisabled = false,
+    draftResetGeneration = 0,
     movePending = false,
     onMoveIssue,
     onPatchMetadata,
@@ -125,6 +127,7 @@
   let bodyTextarea: HTMLTextAreaElement | null = $state(null);
   let cancelingTitle = $state(false);
   let lastIssueUID = $state<string | null>(null);
+  let lastDraftResetGeneration = $state<number | null>(null);
 
   const canCreateRecurrence = $derived(issue.issue.recurrence_id === undefined);
   const visibleRecurrences = $derived.by(() => {
@@ -147,6 +150,21 @@
     cancelingTitle = false;
   });
 
+  $effect(() => {
+    const nextGeneration = draftResetGeneration;
+    if (lastDraftResetGeneration === null) {
+      lastDraftResetGeneration = nextGeneration;
+      return;
+    }
+    if (nextGeneration === lastDraftResetGeneration) return;
+    lastDraftResetGeneration = nextGeneration;
+    editingTitle = false;
+    editingBody = false;
+    cancelingTitle = false;
+    titleDraft = "";
+    bodyDraft = "";
+  });
+
   function checklistItems() {
     return issue.issue.metadata.checklist ?? [];
   }
@@ -161,6 +179,7 @@
   }
 
   function startEditingTitle(): void {
+    if (actionsDisabled) return;
     cancelingTitle = false;
     titleDraft = issue.issue.title;
     editingTitle = true;
@@ -171,7 +190,7 @@
   }
 
   async function commitTitle(): Promise<void> {
-    if (savingTitle) return;
+    if (actionsDisabled || savingTitle) return;
     if (cancelingTitle) {
       cancelingTitle = false;
       editingTitle = false;
@@ -204,13 +223,14 @@
   }
 
   function startEditingBody(): void {
+    if (actionsDisabled) return;
     bodyDraft = issue.issue.body;
     editingBody = true;
     queueMicrotask(() => bodyTextarea?.focus());
   }
 
   async function commitBody(): Promise<void> {
-    if (savingBody) return;
+    if (actionsDisabled || savingBody) return;
     const next = bodyDraft;
     if (next === issue.issue.body) {
       editingBody = false;
@@ -237,7 +257,8 @@
   }
 </script>
 
-<section class="kata-detail" aria-label="Task detail">
+{#key `${issue.issue.uid}:${draftResetGeneration}`}
+<section class="kata-detail" aria-label="Task detail" aria-busy={actionsDisabled} inert={actionsDisabled}>
   <div class="detail-heading">
     <div class="detail-heading-main">
       <div class="detail-kicker">
@@ -405,6 +426,7 @@
     />
   {/key}
 </section>
+{/key}
 
 <style>
   .kata-detail {

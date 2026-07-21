@@ -173,6 +173,30 @@ describe("KataIssueDetail", () => {
     expect(onEditIssue).toHaveBeenCalledWith("issue-1", { body: "Updated body" });
   });
 
+  it("makes the detail inert and discards same-task drafts while authority replacement is pending", async () => {
+    const onEditIssue = vi.fn(async () => true);
+    const view = renderDetail({ onEditIssue });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
+    await fireEvent.input(screen.getByLabelText("Edit title"), {
+      target: { value: "Stale title draft" },
+    });
+
+    await view.rerender({ actionsDisabled: true });
+
+    expect((screen.getByRole("region", { name: "Task detail" }) as HTMLElement & { inert: boolean }).inert).toBe(true);
+    expect((screen.getByRole("textbox", { name: "Edit title" }) as HTMLInputElement).value).toBe("Stale title draft");
+
+    await view.rerender({ actionsDisabled: true, draftResetGeneration: 1 });
+
+    await view.rerender({ actionsDisabled: false });
+
+    expect(screen.queryByRole("textbox", { name: "Edit title" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
+    expect((screen.getByLabelText("Edit title") as HTMLInputElement).value).toBe("Ship the thing");
+    expect(onEditIssue).not.toHaveBeenCalled();
+  });
+
   it("moves the issue from the task actions menu", async () => {
     const onMoveIssue = vi.fn(async () => true);
     renderDetail({ onMoveIssue });

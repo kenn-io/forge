@@ -1,7 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { KataProjectSummary, KataTaskDetail, KataTaskSummary } from "../../api/kata/taskTypes.js";
+import type { KataProjectSummary, KataRecurrence, KataTaskDetail, KataTaskSummary } from "../../api/kata/taskTypes.js";
 import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
 import KataWorkspaceSidebarPane from "./KataWorkspaceSidebarPane.svelte";
 
@@ -46,6 +46,34 @@ function response(body: unknown, status = 200): Response {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function recurrence(): KataRecurrence {
+  return {
+    id: 41,
+    uid: "recurrence-41",
+    project_id: 1,
+    rrule: "FREQ=WEEKLY",
+    dtstart: "2026-06-01T09:00:00Z",
+    timezone: "UTC",
+    template_title: "Weekly ship review",
+    template_body: "",
+    template_labels: [],
+    template_metadata: {},
+    next_occurrence_key: "2026-06-08T09:00:00Z",
+    author: "fixture-user",
+    revision: 1,
+    created_at: fetchedAt,
+    updated_at: fetchedAt,
+  };
 }
 
 function createFetchStub() {
@@ -155,7 +183,7 @@ describe("KataWorkspaceSidebarPane", () => {
     expect(fetchImpl).toHaveBeenCalled();
   });
 
-  it("does not reload a stale selection after a mutation acknowledges against superseded props", async () => {
+  it("keeps the newest task fenced and revalidates it once after an older mutation acknowledges", async () => {
     const issueA = issue();
     const issueB: KataTaskSummary = {
       ...issue(),
@@ -174,10 +202,9 @@ describe("KataWorkspaceSidebarPane", () => {
       project_uid: issueB.project_uid,
     };
     const snapshotRequests: string[] = [];
-    let resolveMove!: (value: Response) => void;
-    const moveResponse = new Promise<Response>((resolve) => {
-      resolveMove = resolve;
-    });
+    let commentAttempts = 0;
+    const mutationResponse = deferred<Response>();
+    const replacementB = deferred<Response>();
     const snapshotBody = (daemonID: string, selected: KataTaskSummary, generation: number) => ({
       server_instance_id: "server-1",
       daemon_id: daemonID,
@@ -213,17 +240,17 @@ describe("KataWorkspaceSidebarPane", () => {
       if (url.pathname === "/api/v1/kata/tasks/snapshot") {
         const selectedUID = url.searchParams.get("selected_issue_uid") ?? "";
         snapshotRequests.push(selectedUID);
-        if (selectedUID === issueB.uid) return response(snapshotBody("work", issueB, 2));
-        return response(snapshotBody(snapshotRequests.length === 1 ? "home" : "work", issueA, snapshotRequests.length));
+        if (snapshotRequests.length === 1) return response(snapshotBody("home", issueA, 1));
+        if (snapshotRequests.length === 2) return response(snapshotBody("work", issueB, 2));
+        if (snapshotRequests.length === 3) return replacementB.promise;
+        throw new Error(`unexpected snapshot request ${selectedUID}`);
       }
       if (url.pathname.endsWith("/recurrences")) {
         return response({ recurrences: [], fetched_at: fetchedAt });
       }
-      if (
-        path.endsWith("/api/v1/kata/proxy/api/v1/projects/1/issues/issue-1/actions/move") &&
-        init?.method === "POST"
-      ) {
-        return moveResponse;
+      if (url.pathname.endsWith("/comments") && init?.method === "POST") {
+        commentAttempts += 1;
+        return commentAttempts === 1 ? mutationResponse.promise : response({ changed: true });
       }
       return response({ error: { code: "not_found", message: `Unhandled ${path}` } }, 404);
     });
@@ -231,18 +258,114 @@ describe("KataWorkspaceSidebarPane", () => {
 
     const { rerender } = render(KataWorkspaceSidebarPane, { props: { kata } });
     await screen.findByRole("heading", { name: issueA.title });
-    await fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    await fireEvent.click(screen.getByRole("menuitem", { name: "Move to another project" }));
-    await fireEvent.click(screen.getByRole("button", { name: /Roadmap/ }));
+    await fireEvent.input(screen.getByRole("textbox", { name: "Comment" }), {
+      target: { value: "Persist on A" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    await waitFor(() => expect(commentAttempts).toBe(1));
 
     await rerender({ kata: kataB });
     await screen.findByRole("heading", { name: issueB.title });
 
-    resolveMove(response({ changed: true }));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await fireEvent.input(screen.getByRole("textbox", { name: "Comment" }), {
+      target: { value: "Must stay fenced on B" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    expect(commentAttempts).toBe(1);
 
-    expect(snapshotRequests).toEqual([issueA.uid, issueB.uid]);
+    mutationResponse.resolve(response({ changed: true }));
+    await waitFor(() => expect(snapshotRequests).toEqual([issueA.uid, issueB.uid, issueB.uid]));
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    expect(commentAttempts).toBe(1);
+
+    replacementB.resolve(response(snapshotBody("work", issueB, 3)));
+    await waitFor(() => expect(screen.queryByText("Change saved. Refreshing Kata snapshot…")).toBeNull());
+
+    expect(commentAttempts).toBe(1);
     expect(screen.getByRole("heading", { name: issueB.title })).toBeTruthy();
+  });
+
+  it("keeps recurrence mutations fenced until snapshot and recurrence replacement both succeed", async () => {
+    let snapshotAttempts = 0;
+    let recurrenceReads = 0;
+    let deleteAttempts = 0;
+    let commentAttempts = 0;
+    const successfulRecurrenceRefresh = deferred<Response>();
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(
+        typeof input === "string" ? input : input instanceof URL ? input : input.url,
+        window.location.origin,
+      );
+      if (url.pathname === "/api/v1/kata/tasks/snapshot") {
+        snapshotAttempts += 1;
+        return response({
+          server_instance_id: "server-1",
+          daemon_id: "home",
+          intent: { scope: "global", authority: "all" },
+          generation: snapshotAttempts,
+          invalidation_epoch: snapshotAttempts,
+          event_cursor: 0,
+          fetched_at: fetchedAt,
+          projects,
+          member_issue_uids: [issue().uid],
+          issues: [issue()],
+          enrichment: {
+            selected_issue_uid: issue().uid,
+            selected_detail: {
+              detail: detail(),
+              etag: `"rev-${snapshotAttempts}"`,
+              workspace_target: { available: false },
+            },
+            selected_history: [],
+          },
+        });
+      }
+      if (url.pathname.endsWith("/recurrences") && init?.method !== "DELETE") {
+        recurrenceReads += 1;
+        if (recurrenceReads === 1) return response({ recurrences: [recurrence()], fetched_at: fetchedAt });
+        if (recurrenceReads === 2) {
+          return response({ error: { code: "recurrence_refresh_failed", message: "Refresh failed." } }, 503);
+        }
+        return successfulRecurrenceRefresh.promise;
+      }
+      if (url.pathname.endsWith(`/recurrences/${recurrence().uid}`) && init?.method === "DELETE") {
+        deleteAttempts += 1;
+        return new Response(null, { status: 204 });
+      }
+      if (url.pathname.endsWith("/comments") && init?.method === "POST") {
+        commentAttempts += 1;
+        return response({ changed: true });
+      }
+      return response({ error: { code: "not_found", message: `Unhandled ${url.pathname}` } }, 404);
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+
+    render(KataWorkspaceSidebarPane, { props: { kata } });
+    await screen.findByRole("button", { name: recurrence().template_title });
+    await fireEvent.click(screen.getByRole("button", { name: "Delete recurrence" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Delete recurrence" })).getByRole("button", { name: "Delete" }),
+    );
+
+    await waitFor(() => expect(deleteAttempts).toBe(1));
+    await waitFor(() => expect(snapshotAttempts).toBe(2));
+    await waitFor(() => expect(recurrenceReads).toBe(2));
+    expect((await screen.findByRole("alert")).textContent).toContain("saved");
+    await fireEvent.input(screen.getByRole("textbox", { name: "Comment" }), {
+      target: { value: "Must wait for recurrence refresh" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    expect(commentAttempts).toBe(0);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Retry Kata snapshot" }));
+    await waitFor(() => expect(snapshotAttempts).toBe(3));
+    await waitFor(() => expect(recurrenceReads).toBe(3));
+    await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    expect(commentAttempts).toBe(0);
+
+    successfulRecurrenceRefresh.resolve(response({ recurrences: [], fetched_at: fetchedAt }));
+    await waitFor(() => expect(screen.queryByText("Change saved. Refreshing Kata snapshot…")).toBeNull());
+    expect(deleteAttempts).toBe(1);
   });
 
   it("keeps a failed project move retryable through the embedded workspace", async () => {

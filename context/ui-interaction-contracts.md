@@ -423,6 +423,10 @@ Async detail mutations must be scoped to the currently visible item. Compare the
 full provider route identity before opening transient UI or applying mutation
 responses, and discard stale responses instead of patching another item.
 
+- Separate Kata mutation transport from post-acknowledgement authority recovery:
+  transport failure preserves drafts, while acknowledged writes stay fenced through the newest snapshot and required recurrence refresh; Retry never repeats the mutation
+  (`frontend/src/lib/features/kata/KataWorkspace.svelte::runAuthorityMutation`).
+
 ## Testing Expectations
 
 Behavior contracts should usually be tested where the user would notice the

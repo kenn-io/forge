@@ -283,6 +283,37 @@ describe("RecurrenceEditor (via dialog) — submit create", () => {
     expect(onCreate).not.toHaveBeenCalled();
   });
 
+  test("authority fencing disables Save without closing or discarding the recurrence draft", async () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+    const view = render(RecurrenceEditorDialog, {
+      props: {
+        open: true,
+        mode: createMode,
+        actor: "fixture-user",
+        onClose,
+        onCreate,
+        onPatch: vi.fn(),
+      },
+    });
+    await fireEvent.input(screen.getByLabelText(/Title/i), { target: { value: "Preserve this draft" } });
+    await view.rerender({ disabled: true });
+
+    const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    await fireEvent.click(save);
+
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect((screen.getByLabelText(/Title/i) as HTMLInputElement).value).toBe("Preserve this draft");
+
+    await view.rerender({ disabled: false });
+    expect(save.disabled).toBe(false);
+    await fireEvent.click(save);
+    expect(onCreate).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   test("WEEKLY with no weekdays selected: Save is disabled", async () => {
     const onCreate = vi.fn();
     render(RecurrenceEditorDialog, {

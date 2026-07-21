@@ -586,6 +586,119 @@ describe("KataWorkspace compact snapshot stream", () => {
     }
   });
 
+  it("keeps recovery on a newer selection that supersedes mutation replacement", async () => {
+    const source = initialIssues[0]!;
+    const target = initialIssues[1]!;
+    const catalog = [source, target] as SnapshotIssue[];
+    const pendingMutationReplacement = deferred<Response>();
+    const pendingSelection = deferred<Response>();
+    const { api } = createWorkspaceAPI();
+    api.addComment = vi.fn(async () => ({ changed: true }));
+    const onSelectedIssueChange = vi.fn();
+    const onRouteStateChange = vi.fn();
+    const harness = installFetchHarness([
+      snapshot(
+        source,
+        {
+          generation: 9,
+          member_issue_uids: catalog.map((issue) => issue.uid),
+          issues: catalog,
+        },
+        true,
+      ),
+      pendingMutationReplacement.promise,
+      pendingSelection.promise,
+      snapshot(
+        target,
+        {
+          generation: 11,
+          member_issue_uids: catalog.map((issue) => issue.uid),
+          issues: catalog,
+        },
+        true,
+      ),
+    ]);
+
+    try {
+      render(KataWorkspace, {
+        props: {
+          api,
+          selectedIssueUID: source.uid,
+          onSelectedIssueChange,
+          onRouteStateChange,
+        },
+      });
+      await screen.findByRole("heading", { name: source.title });
+      await fireEvent.input(screen.getByRole("textbox", { name: "Comment" }), {
+        target: { value: "Persist before selecting" },
+      });
+      await fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+      await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
+
+      await fireEvent.click(screen.getByRole("button", { name: new RegExp(target.title) }));
+      await waitFor(() => expect(harness.snapshotRequests).toHaveLength(3));
+      pendingMutationReplacement.resolve(
+        Response.json(
+          snapshot(
+            source,
+            {
+              generation: 10,
+              member_issue_uids: catalog.map((issue) => issue.uid),
+              issues: catalog,
+            },
+            true,
+          ),
+        ),
+      );
+
+      const retry = await screen.findByRole("button", { name: "Retry Kata snapshot" });
+      await fireEvent.click(retry);
+      await waitFor(() => expect(harness.snapshotRequests).toHaveLength(4));
+      await screen.findByRole("heading", { name: target.title });
+      pendingSelection.resolve(
+        Response.json(
+          snapshot(
+            target,
+            {
+              generation: 10,
+              member_issue_uids: catalog.map((issue) => issue.uid),
+              issues: catalog,
+            },
+            true,
+          ),
+        ),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(api.addComment).toHaveBeenCalledOnce();
+      expect(
+        harness.snapshotRequests.slice(1).map((request) => Object.fromEntries(new URL(request.url).searchParams)),
+      ).toEqual([
+        { scope: "global", authority: "open", selected_issue_uid: source.uid },
+        { scope: "global", authority: "open", selected_issue_uid: target.uid },
+        { scope: "global", authority: "open", selected_issue_uid: target.uid },
+      ]);
+      expect(onSelectedIssueChange).toHaveBeenCalledTimes(1);
+      expect(onSelectedIssueChange).toHaveBeenCalledWith(target.uid);
+      expect(onRouteStateChange).not.toHaveBeenCalledWith({ issue: null }, { replace: true });
+    } finally {
+      pendingMutationReplacement.resolve(Response.json(snapshot(source, { generation: 10 }, true)));
+      pendingSelection.resolve(
+        Response.json(
+          snapshot(
+            target,
+            {
+              generation: 10,
+              member_issue_uids: catalog.map((issue) => issue.uid),
+              issues: catalog,
+            },
+            true,
+          ),
+        ),
+      );
+    }
+  });
+
   it("recovers the nominal daemon after a failed daemon switch without restoring stale authority", async () => {
     const home = snapshot(initialIssues[0]!);
     const { api } = createWorkspaceAPI();

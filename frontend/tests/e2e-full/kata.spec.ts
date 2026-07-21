@@ -3090,7 +3090,7 @@ test("kata workspace restores filtered expanded child selection after leaving Ka
   }
 });
 
-test("kata explicit URL wins over persisted selection without clearing filters", async ({ page }) => {
+test("kata explicit URL view uses fresh defaults instead of unrelated persisted filters", async ({ page }) => {
   const fixture = workspaceStateFixture();
   const backend = await startKataBackend({ issues: fixture.issues, projects: fixture.projects });
   const kataHome = await configureKataHome(backend.url);
@@ -3107,9 +3107,9 @@ test("kata explicit URL wins over persisted selection without clearing filters",
 
     await expect(page.getByRole("heading", { name: "Inbox", level: 2, exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Pay rent" })).toBeVisible();
-    await expect(page.getByRole("textbox", { name: "Owner" })).toHaveValue("Susan");
-    await expect(page.getByRole("textbox", { name: "Label" })).toHaveValue("work");
-    await expect(page.getByLabel("Search tasks")).toHaveValue("child");
+    await expect(page.getByRole("textbox", { name: "Owner" })).toHaveValue("");
+    await expect(page.getByRole("textbox", { name: "Label" })).toHaveValue("");
+    await expect(page.getByLabel("Search tasks")).toHaveValue("");
     await expect(page.locator(".kata-list").getByRole("button", { name: /Pay rent/ })).toHaveCount(0);
   } finally {
     await server.stop();
@@ -5430,10 +5430,12 @@ test("kata checklist edits through the configured external daemon", async ({ pag
     const refreshStatus = page.getByRole("status").filter({ hasText: "Change saved. Refreshing Kata snapshot" });
     await expect(refreshStatus).toBeVisible();
     await expect(checklistInput).toBeDisabled();
+    await expect(detail).toHaveJSProperty("inert", true);
 
     releaseReplacement();
     await expect(refreshStatus).toHaveCount(0);
     await expect(checklistInput).toBeEnabled();
+    await expect(detail).toHaveJSProperty("inert", false);
 
     await checklistInput.fill("Archive receipt");
     await checklistInput.press("Enter");

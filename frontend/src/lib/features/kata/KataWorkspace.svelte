@@ -162,6 +162,8 @@
   let pendingMutationCount = $state(0);
   let mutationRefreshPending = $state(false);
   let mutationAcknowledged = $state(false);
+  let mutationDraftResetGeneration = $state(0);
+  let mutationRecurrenceRefreshRequired = false;
   let mutationRefreshError = $state<string | null>(null);
   let mutationRefreshRequest: KataWorkspaceAuthorityRequest | null = null;
   let mutationRefreshGeneration = 0;
@@ -259,11 +261,9 @@
         }
         if (recoveredSelection.direct) persistActiveWorkspaceState();
       }
-      mutationRefreshPending = false;
-      mutationAcknowledged = false;
-      mutationRefreshError = null;
-      mutationRefreshRequest = null;
-      mutationRefreshGeneration += 1;
+      const awaitRecurrenceRefresh =
+        mutationRefreshPending && mutationAcknowledged && mutationRecurrenceRefreshRequired;
+      if (!awaitRecurrenceRefresh) finishAcceptedMutationRefresh();
       authorityRetrying = false;
       const pendingProject = pendingCreatedProjectScope;
       if (pendingProject) {
@@ -298,7 +298,7 @@
       error = null;
       viewError = null;
       persistActiveWorkspaceState();
-      scheduleSelectedRecurrenceLoad(snapshot);
+      scheduleSelectedRecurrenceLoad(snapshot, awaitRecurrenceRefresh);
     },
     onStreamOpen: () => {
       connection = { status: "online" };
@@ -317,6 +317,9 @@
   );
   const mutationActionsBlocked = $derived(
     workspaceActionsBlocked || authorityStore.state.phase !== "accepted",
+  );
+  const detailAuthorityBlocked = $derived(
+    (mutationRefreshPending && mutationAcknowledged) || authorityStore.state.phase !== "accepted",
   );
   const authorityRecoveryMessage = $derived(
     switchingDaemon || routedDaemonError
@@ -600,7 +603,8 @@
           "home";
         const persisted = loadKataWorkspaceState(daemonID);
         const restoredView = routeViewName ?? persisted?.view ?? "all";
-        const restoredFilters = persisted?.filters ?? defaultKataTaskSearchFilters(restoredView);
+        const restoredFilters =
+          persisted?.view === restoredView ? persisted.filters : defaultKataTaskSearchFilters(restoredView);
         currentViewName = restoredView;
         searchFilters = routeScopeUID
           ? { ...restoredFilters, scope: { kind: "project", project_uid: routeScopeUID } }
@@ -652,11 +656,27 @@
     return loading || switchingDaemon || workspaceActionsBlocked;
   }
 
-  function scheduleSelectedRecurrenceLoad(snapshot: KataWorkspaceSnapshotProjection): void {
+  function finishAcceptedMutationRefresh(): void {
+    if (mutationRefreshPending && mutationAcknowledged) mutationDraftResetGeneration += 1;
+    mutationRefreshPending = false;
+    mutationAcknowledged = false;
+    mutationRefreshError = null;
+    mutationRefreshRequest = null;
+    mutationRecurrenceRefreshRequired = false;
+    mutationRefreshGeneration += 1;
+  }
+
+  function scheduleSelectedRecurrenceLoad(
+    snapshot: KataWorkspaceSnapshotProjection,
+    requiredForMutation = false,
+  ): void {
     const generation = ++recurrenceLoadGeneration;
     selectedRecurrences = [];
     const detail = snapshot.selected_detail;
-    if (!detail) return;
+    if (!detail) {
+      if (requiredForMutation) finishAcceptedMutationRefresh();
+      return;
+    }
     void taskAPI
       .recurrences(detail.issue.project_id, { daemonId: snapshot.daemon_id })
       .then((response) => {
@@ -670,9 +690,18 @@
           return;
         }
         selectedRecurrences = response.recurrences;
+        if (requiredForMutation) finishAcceptedMutationRefresh();
       })
-      .catch(() => {
-        if (generation === recurrenceLoadGeneration) selectedRecurrences = [];
+      .catch((recurrenceError) => {
+        if (generation !== recurrenceLoadGeneration) return;
+        selectedRecurrences = [];
+        if (!requiredForMutation) return;
+        mutationRefreshPending = true;
+        mutationRefreshError =
+          recurrenceError instanceof Error ? recurrenceError.message : "Could not refresh Kata recurrences.";
+        showFlash("Change saved, but Kata recurrences could not refresh. Retry before making more changes.", {
+          tone: "warning",
+        });
       });
   }
 
@@ -701,12 +730,16 @@
     return acceptedSelectedIssue.etag;
   }
 
-  async function runAuthorityMutation<T>(task: () => Promise<T>): Promise<T> {
+  async function runAuthorityMutation<T>(
+    task: () => Promise<T>,
+    options: { refreshRecurrences?: boolean } = {},
+  ): Promise<T> {
     const capturedRequest = acceptedAuthorityRequest();
     let replacementRequest: KataWorkspaceAuthorityRequest | null = capturedRequest;
     let replacementGeneration = ++mutationRefreshGeneration;
     mutationRefreshPending = true;
     mutationAcknowledged = false;
+    mutationRecurrenceRefreshRequired = options.refreshRecurrences === true;
     mutationRefreshError = null;
     mutationRefreshRequest = capturedRequest;
     try {
@@ -726,6 +759,8 @@
           replacementGeneration = ++mutationRefreshGeneration;
           mutationRefreshPending = replacementRequest !== null;
           mutationAcknowledged = replacementRequest !== null;
+          mutationRecurrenceRefreshRequired =
+            replacementRequest !== null && options.refreshRecurrences === true;
           mutationRefreshError = null;
           mutationRefreshRequest = replacementRequest;
         },
@@ -734,7 +769,7 @@
         if (replacementGeneration !== mutationRefreshGeneration || replacement.replacementAccepted) return;
         mutationRefreshPending = true;
         mutationRefreshError = replacement.replacementError ?? "Kata snapshot replacement was not accepted.";
-        mutationRefreshRequest = replacementRequest;
+        mutationRefreshRequest = currentMutationReplacementRequest(capturedRequest) ?? replacementRequest;
         showFlash("Change saved, but Kata could not refresh. Retry the snapshot before making more changes.", {
           tone: "warning",
         });
@@ -744,6 +779,7 @@
       mutationRefreshGeneration += 1;
       mutationRefreshPending = false;
       mutationAcknowledged = false;
+      mutationRecurrenceRefreshRequired = false;
       mutationRefreshError = null;
       mutationRefreshRequest = null;
       throw mutationError;
@@ -811,6 +847,7 @@
     mutationRefreshError = null;
     error = null;
     const request = recoveryAuthorityRequest();
+    transferLoadingRowSelectionToReplacement(request);
     if (!acceptedSnapshot) workspaceOwnershipPending = true;
     try {
       const accepted = await authorityController.load(request);
@@ -1395,7 +1432,10 @@
   async function createRecurrence(projectID: number, input: KataCreateRecurrenceInput): Promise<void> {
     if (mutationActionsBlocked) return;
     await runViewTaskOrThrow(async () => {
-      await runAuthorityMutation(() => taskAPI.createRecurrence(projectID, input, acceptedMutationOptions()));
+      await runAuthorityMutation(
+        () => taskAPI.createRecurrence(projectID, input, acceptedMutationOptions()),
+        { refreshRecurrences: true },
+      );
     }, "none");
   }
 
@@ -1404,20 +1444,24 @@
     await runViewTaskOrThrow(async () => {
       const recurrence = selectedRecurrences.find((item) => item.id === id);
       if (!recurrence) throw new Error(`recurrence not loaded: id=${id}`);
-      await runAuthorityMutation(() => taskAPI.patchRecurrence(
-        recurrence.project_id,
-        recurrence.uid,
-        input,
-        etag,
-        acceptedMutationOptions(),
-      ));
+      await runAuthorityMutation(
+        () => taskAPI.patchRecurrence(
+          recurrence.project_id,
+          recurrence.uid,
+          input,
+          etag,
+          acceptedMutationOptions(),
+        ),
+        { refreshRecurrences: true },
+      );
     }, "none");
   }
 
   async function deleteRecurrence(recurrence: KataRecurrence): Promise<boolean> {
     if (mutationActionsBlocked) return false;
-    return runViewTask(() => runAuthorityMutation(() =>
-      taskAPI.deleteRecurrence(recurrence.project_id, recurrence.uid, actor, acceptedMutationOptions())
+    return runViewTask(() => runAuthorityMutation(
+      () => taskAPI.deleteRecurrence(recurrence.project_id, recurrence.uid, actor, acceptedMutationOptions()),
+      { refreshRecurrences: true },
     ), "flash");
   }
 
@@ -1655,7 +1699,8 @@
       unlinkBusyIds={unlinkBusyIds}
       {selectedRecurrences}
       {checklistRevealed}
-      actionsDisabled={mutationActionsBlocked}
+      actionsDisabled={detailAuthorityBlocked}
+      draftResetGeneration={mutationDraftResetGeneration}
       movePending={pendingMoveIssueUIDs.has(acceptedSelectedIssue.issue.uid)}
       onMoveIssue={moveSelectedIssue}
       onPatchMetadata={patchSelectedMetadata}
@@ -1707,6 +1752,7 @@
   bind:this={recurrenceDialogs}
   selectedIssue={acceptedSelectedIssue}
   {actor}
+  disabled={mutationActionsBlocked}
   onCreate={createRecurrence}
   onPatch={patchRecurrence}
   onDelete={deleteRecurrence}

@@ -44,15 +44,19 @@
   let loadError = $state<string | null>(null);
   let mutationRefreshPending = $state(false);
   let mutationAcknowledged = $state(false);
+  let mutationDraftResetGeneration = $state(0);
   let mutationRefreshError = $state<string | null>(null);
   let mutationRefreshRetrying = $state(false);
   let mutationRefreshGeneration = 0;
+  let mutationTransportPending = false;
+  let mutationRecurrenceRefreshRequired = false;
   let checklistRevealed = $state(false);
   let linkFilters = $state<KataLinkFilters>(createKataLinkFilters("all"));
   let pendingMoveIssueUIDs = $state.raw<ReadonlySet<string>>(new Set());
   let unlinkBusyIds = $state<ReadonlySet<number>>(new Set());
   let loadRequestID = 0;
   let issueContextGeneration = 0;
+  let lastPropIssueUID = "";
   let selectedIssueUID = $state("");
   let selectedRecurrences = $state.raw<KataRecurrence[]>([]);
   let recurrenceDialogs = $state<{
@@ -76,6 +80,14 @@
   const issueCatalog = $derived(
     acceptedSnapshot ? structuredClone(acceptedSnapshot.issues) as KataTaskSummary[] : [],
   );
+  const mutationActionsBlocked = $derived(
+    disabled || mutationRefreshPending || authorityStore.state.phase !== "accepted",
+  );
+  const detailAuthorityBlocked = $derived(
+    disabled ||
+      (mutationRefreshPending && mutationAcknowledged) ||
+      authorityStore.state.phase !== "accepted",
+  );
 
   function selectedSnapshotIntent(uid = selectedIssueUID): KataSnapshotIntent {
     return {
@@ -86,15 +98,26 @@
     };
   }
 
-  async function loadSelectedRecurrences(detail: KataTaskDetail, daemonID: string, requestID: number): Promise<void> {
+  async function loadSelectedRecurrences(detail: KataTaskDetail, daemonID: string, requestID: number): Promise<boolean> {
     try {
       const response = await api.recurrences(detail.issue.project_id, { daemonId: daemonID });
-      if (requestID !== loadRequestID || selectedIssue?.issue.uid !== detail.issue.uid) return;
+      if (requestID !== loadRequestID || selectedIssue?.issue.uid !== detail.issue.uid) return false;
       selectedRecurrences = response.recurrences;
+      return true;
     } catch {
-      if (requestID !== loadRequestID || selectedIssue?.issue.uid !== detail.issue.uid) return;
+      if (requestID !== loadRequestID || selectedIssue?.issue.uid !== detail.issue.uid) return false;
       selectedRecurrences = [];
+      return false;
     }
+  }
+
+  function clearMutationRefresh(): void {
+    if (mutationAcknowledged) mutationDraftResetGeneration += 1;
+    mutationRefreshPending = false;
+    mutationAcknowledged = false;
+    mutationRefreshError = null;
+    mutationRecurrenceRefreshRequired = false;
+    mutationRefreshGeneration += 1;
   }
 
   async function loadSelectedSnapshot(uid: string, requestID = ++loadRequestID): Promise<boolean> {
@@ -109,11 +132,16 @@
         throw new Error(`Kata snapshot did not include selected task ${uid}`);
       }
       selectedRecurrences = [];
-      mutationRefreshPending = false;
-      mutationAcknowledged = false;
-      mutationRefreshError = null;
-      mutationRefreshGeneration += 1;
-      void loadSelectedRecurrences(structuredClone(detail) as KataTaskDetail, snapshot.daemon_id, requestID);
+      const selectedDetail = structuredClone(detail) as KataTaskDetail;
+      const awaitRecurrences =
+        mutationRefreshPending && !mutationTransportPending && mutationRecurrenceRefreshRequired;
+      if (awaitRecurrences) {
+        const refreshed = await loadSelectedRecurrences(selectedDetail, snapshot.daemon_id, requestID);
+        if (!refreshed) throw new Error("Could not refresh Kata recurrences.");
+      } else {
+        void loadSelectedRecurrences(selectedDetail, snapshot.daemon_id, requestID);
+      }
+      if (!mutationTransportPending) clearMutationRefresh();
       return true;
     } finally {
       if (requestID === loadRequestID) loading = false;
@@ -122,6 +150,10 @@
 
   $effect(() => {
     const issueUID = kata.issue_uid;
+    if (lastPropIssueUID && lastPropIssueUID !== issueUID) {
+      untrack(() => recurrenceDialogs?.closeAll());
+    }
+    lastPropIssueUID = issueUID;
     selectedIssueUID = issueUID;
     issueContextGeneration += 1;
     const requestID = ++loadRequestID;
@@ -175,45 +207,30 @@
     return { daemonId: acceptedDaemonIDForMutation() };
   }
 
-  async function mutateSelected(task: () => Promise<unknown>): Promise<void> {
+  async function mutateSelected(
+    task: () => Promise<unknown>,
+    options: { refreshRecurrences?: boolean } = {},
+  ): Promise<void> {
     const uid = selectedIssue?.issue.uid;
     if (!uid) throw new Error("No Kata task is selected.");
-    const daemonID = acceptedDaemonIDForMutation();
-    const kataIssueUID = kata.issue_uid;
-    const kataDaemonID = kata.daemon_id;
-    const generation = issueContextGeneration;
-    const refreshGeneration = ++mutationRefreshGeneration;
+    let replacementUID = uid;
+    let refreshGeneration = ++mutationRefreshGeneration;
+    mutationTransportPending = true;
+    mutationRecurrenceRefreshRequired = options.refreshRecurrences === true;
     mutationRefreshPending = true;
     mutationAcknowledged = false;
     mutationRefreshError = null;
     try {
       const result = await acknowledgeKataMutationThenRevalidate(
         task,
-        async () => {
-          const contextChanged =
-            selectedIssueUID !== uid ||
-            kata.issue_uid !== kataIssueUID ||
-            kata.daemon_id !== kataDaemonID ||
-            issueContextGeneration !== generation;
-          if (contextChanged) {
-            const current = authorityStore.snapshot;
-            if (current?.daemon_id === kata.daemon_id && current.selected_issue_uid === kata.issue_uid) {
-              mutationRefreshPending = false;
-              mutationAcknowledged = false;
-              mutationRefreshError = null;
-              return true;
-            }
-            return false;
-          }
-          if (
-            authorityStore.snapshot?.daemon_id !== daemonID ||
-            authorityStore.snapshot?.selected_issue_uid !== uid
-          ) return false;
-          return loadSelectedSnapshot(uid);
-        },
+        () => loadSelectedSnapshot(replacementUID),
         () => {
+          mutationTransportPending = false;
+          replacementUID = selectedIssueUID;
+          refreshGeneration = ++mutationRefreshGeneration;
           mutationRefreshPending = true;
           mutationAcknowledged = true;
+          mutationRefreshError = null;
         },
       );
       void result.replacement.then((replacement) => {
@@ -225,6 +242,8 @@
         });
       });
     } catch (mutationError) {
+      mutationTransportPending = false;
+      mutationRecurrenceRefreshRequired = false;
       mutationRefreshGeneration += 1;
       mutationRefreshPending = false;
       mutationAcknowledged = false;
@@ -237,7 +256,7 @@
     task: () => Promise<void | boolean>,
     shouldSurfaceFailure: () => boolean = () => true,
   ): Promise<boolean> {
-    if (mutationRefreshPending) return false;
+    if (mutationActionsBlocked) return false;
     try {
       return (await task()) ?? true;
     } catch (err) {
@@ -249,7 +268,7 @@
   }
 
   async function runTaskOrThrow(task: () => Promise<void>): Promise<void> {
-    if (mutationRefreshPending) return;
+    if (mutationActionsBlocked) return;
     await task();
   }
 
@@ -355,11 +374,14 @@
         options,
         `"rev-${recurrence.revision}"`,
       );
-    }));
+    }, { refreshRecurrences: true }));
   }
 
   async function createRecurrence(projectID: number, input: KataCreateRecurrenceInput): Promise<void> {
-    await runTaskOrThrow(() => mutateSelected(() => api.createRecurrence(projectID, input, acceptedMutationOptions())));
+    await runTaskOrThrow(() => mutateSelected(
+      () => api.createRecurrence(projectID, input, acceptedMutationOptions()),
+      { refreshRecurrences: true },
+    ));
   }
 
   async function patchRecurrence(id: number, input: KataPatchRecurrenceInput, etag: string): Promise<void> {
@@ -367,7 +389,7 @@
       const recurrence = selectedRecurrences.find((item) => item.id === id);
       if (!recurrence) throw new Error(`recurrence not loaded: id=${id}`);
       await api.patchRecurrence(recurrence.project_id, recurrence.uid, input, etag, acceptedMutationOptions());
-    }));
+    }, { refreshRecurrences: true }));
   }
 
   function closeSelectedIssue(
@@ -421,6 +443,7 @@
   }
 
   async function selectIssue(uid: string): Promise<void> {
+    recurrenceDialogs?.closeAll();
     issueContextGeneration += 1;
     selectedIssueUID = uid;
     await runLoadTask(() => loadSelectedSnapshot(uid));
@@ -452,7 +475,7 @@
       </button>
     </div>
   {/if}
-  <div class="kata-workspace-sidebar__content" inert={mutationRefreshPending}>
+  <div class="kata-workspace-sidebar__content" inert={detailAuthorityBlocked}>
     {#if loading}
       <div class="state">Loading task</div>
     {:else if loadError && !selectedIssue}
@@ -477,6 +500,8 @@
       unlinkBusyIds={unlinkBusyIds}
       {selectedRecurrences}
       {checklistRevealed}
+      actionsDisabled={detailAuthorityBlocked}
+      draftResetGeneration={mutationDraftResetGeneration}
       movePending={pendingMoveIssueUIDs.has(selectedIssue.issue.uid)}
       onMoveIssue={moveSelectedIssue}
       onPatchMetadata={patchSelectedMetadata}
@@ -509,6 +534,7 @@
   bind:this={recurrenceDialogs}
   {selectedIssue}
   {actor}
+  disabled={mutationActionsBlocked}
   onCreate={createRecurrence}
   onPatch={patchRecurrence}
   onDelete={deleteRecurrence}

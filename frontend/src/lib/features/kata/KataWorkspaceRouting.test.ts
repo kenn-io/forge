@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import type { KataWorkspaceSnapshotResponse } from "../../api/kata/snapshot.js";
 import KataWorkspace from "./KataWorkspace.svelte";
+import { saveKataWorkspaceState } from "./kataWorkspacePersistence.js";
 import {
   createWorkspaceAPI,
   deferred,
@@ -125,6 +126,43 @@ describe("KataWorkspace snapshot routing", () => {
     await waitFor(() =>
       expect(onRouteStateChange).toHaveBeenCalledWith({ view: "deadlines", scope: null, issue: null }),
     );
+  });
+
+  it("uses fresh view defaults when the routed view differs from persisted state", async () => {
+    acceptHomeDaemon();
+    saveKataWorkspaceState("home", {
+      view: "today",
+      filters: {
+        scope: { kind: "project", project_uid: "project-kata" },
+        status: "ready",
+        owner: "agent:planner",
+        label: "finance",
+        query: "rent",
+      },
+      selectedIssueUID: null,
+    });
+    const requests: Array<{
+      scope: string;
+      authority: string;
+      projectUID?: string | undefined;
+    }> = [];
+    const { api } = createWorkspaceAPI(initialIssues, {
+      snapshot: (request, snapshot) => {
+        requests.push(request);
+        return snapshot;
+      },
+    });
+
+    render(KataWorkspace, { props: { api, routeViewName: "deadlines" } });
+
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]).toMatchObject({ scope: "global", authority: "open" });
+    expect(requests[0]).not.toHaveProperty("projectUID");
+    expect(screen.getByRole("combobox", { name: "Status: Open" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Project scope: All projects/ })).toBeTruthy();
+    expect((screen.getByRole("searchbox", { name: "Search tasks" }) as HTMLInputElement).value).toBe("");
+    expect((screen.getByRole("textbox", { name: "Owner" }) as HTMLInputElement).value).toBe("");
+    expect((screen.getByRole("textbox", { name: "Label" }) as HTMLInputElement).value).toBe("");
   });
 
   it("notifies after a row-selected snapshot is accepted", async () => {

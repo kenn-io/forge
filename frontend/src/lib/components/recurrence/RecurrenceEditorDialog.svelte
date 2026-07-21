@@ -15,18 +15,19 @@
     open: boolean;
     mode: Mode;
     actor: string;
+    disabled?: boolean | undefined;
     onClose: () => void;
     onCreate: (projectID: number, input: KataCreateRecurrenceInput) => Promise<void>;
     onPatch: (id: number, input: KataPatchRecurrenceInput, etag: string) => Promise<void>;
   }
 
-  let { open, mode, actor, onClose, onCreate, onPatch }: Props = $props();
+  let { open, mode, actor, disabled = false, onClose, onCreate, onPatch }: Props = $props();
 
   let busy = $state(false);
   let editorRef: { trySave: () => Promise<void>; canSave: () => boolean } | null = $state(null);
 
   async function handleSave() {
-    if (!editorRef) return;
+    if (disabled || !editorRef) return;
     if (!editorRef.canSave()) return;
     busy = true;
     try {
@@ -61,7 +62,7 @@
     <button
       type="button"
       class="btn-primary"
-      disabled={busy || !editorRef?.canSave()}
+      disabled={disabled || busy || !editorRef?.canSave()}
       onclick={handleSave}
     >{busy ? "Saving..." : "Save"}</button>
   {/snippet}

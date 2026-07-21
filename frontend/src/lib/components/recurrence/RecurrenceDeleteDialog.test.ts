@@ -53,6 +53,28 @@ describe("RecurrenceDeleteDialog", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
+  test("authority fencing disables Delete without dismissing the dialog", async () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    const view = render(RecurrenceDeleteDialog, {
+      props: { open: true, recurrence: sample, onConfirm, onCancel },
+    });
+    await view.rerender({ disabled: true });
+
+    const deleteButton = screen.getByRole("button", { name: "Delete" }) as HTMLButtonElement;
+    expect(deleteButton.disabled).toBe(true);
+    await fireEvent.click(deleteButton);
+
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Delete recurrence" })).toBeTruthy();
+
+    await view.rerender({ disabled: false });
+    expect(deleteButton.disabled).toBe(false);
+    await fireEvent.click(deleteButton);
+    expect(onConfirm).toHaveBeenCalledOnce();
+  });
+
   test("does not render when open=false", () => {
     render(RecurrenceDeleteDialog, {
       props: { open: false, recurrence: sample, onConfirm: () => {}, onCancel: () => {} },

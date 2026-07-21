@@ -857,4 +857,164 @@ test.describe("workspace Kata sidebar live integration", () => {
       await harness?.stop();
     }
   });
+
+  test("preserves comment and related-task drafts edited away and back before replacement", async ({ page }) => {
+    let harness: LiveKataHarness | null = null;
+    let kataHome: MiddlemanKataHome | null = null;
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    let releaseCommentAcknowledgement = (): void => {};
+    let commentAcknowledgementReleased = false;
+    let releaseRelatedAcknowledgement = (): void => {};
+    let relatedAcknowledgementReleased = false;
+
+    try {
+      harness = await createLiveKataHarness();
+      kataHome = await configureMiddlemanKataHome(harness.baseURL);
+      isolatedServer = await startIsolatedWorkspaceE2EServerWithOptions({ freshProcess: true });
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+
+      const source = await harness.seedIssue({
+        projectName: "widgets",
+        issueTitle: "Preserve reverted drafts",
+        issueBody: "Source task for comment and related-task ABA drafts.",
+      });
+      const relatedA = await harness.post<{ issue: KataIssueSummary; changed: boolean }>(
+        `/api/v1/projects/${source.project.id}/issues`,
+        {
+          actor: "middleman-e2e",
+          title: "Related task A",
+          body: "First valid related-task draft.",
+          force_new: true,
+        },
+        { "Idempotency-Key": "workspace-sidebar-related-a" },
+      );
+      const relatedB = await harness.post<{ issue: KataIssueSummary; changed: boolean }>(
+        `/api/v1/projects/${source.project.id}/issues`,
+        {
+          actor: "middleman-e2e",
+          title: "Related task B",
+          body: "Interim related-task draft.",
+          force_new: true,
+        },
+        { "Idempotency-Key": "workspace-sidebar-related-b" },
+      );
+
+      const createResponse = await api.post("/api/v1/kata/workspaces", {
+        data: {
+          daemon_id: "live",
+          project_uid: source.issue.project_uid,
+          project_name: source.project.name,
+          issue_uid: source.issue.uid,
+          short_id: source.issue.short_id,
+          qualified_id: source.issue.qualified_id,
+          title: source.issue.title,
+        },
+      });
+      const createBody = await createResponse.text();
+      expect(createResponse.status(), `POST /api/v1/kata/workspaces failed: ${createBody}`).toBe(202);
+      const sourceWorkspace = JSON.parse(createBody) as WorkspaceStatusResponse;
+      await waitForWorkspaceReady(api, sourceWorkspace.id);
+
+      let commentMutationRequests = 0;
+      let markCommentPersisted!: () => void;
+      const commentPersisted = new Promise<void>((resolve) => {
+        markCommentPersisted = resolve;
+      });
+      const commentAcknowledgementMayReturn = new Promise<void>((resolve) => {
+        releaseCommentAcknowledgement = resolve;
+      });
+      await page.route(
+        `**/api/v1/kata/proxy/api/v1/projects/${source.project.id}/issues/${source.issue.uid}/comments`,
+        async (route) => {
+          if (route.request().method() !== "POST") {
+            await route.continue();
+            return;
+          }
+          commentMutationRequests += 1;
+          const response = await route.fetch();
+          markCommentPersisted();
+          await commentAcknowledgementMayReturn;
+          await route.fulfill({ response });
+        },
+      );
+
+      let relatedMutationRequests = 0;
+      let markRelatedPersisted!: () => void;
+      const relatedPersisted = new Promise<void>((resolve) => {
+        markRelatedPersisted = resolve;
+      });
+      const relatedAcknowledgementMayReturn = new Promise<void>((resolve) => {
+        releaseRelatedAcknowledgement = resolve;
+      });
+      await page.route(
+        `**/api/v1/kata/proxy/api/v1/projects/${source.project.id}/issues/${source.issue.uid}`,
+        async (route) => {
+          if (route.request().method() !== "PATCH") {
+            await route.continue();
+            return;
+          }
+          relatedMutationRequests += 1;
+          const response = await route.fetch();
+          markRelatedPersisted();
+          await relatedAcknowledgementMayReturn;
+          await route.fulfill({ response });
+        },
+      );
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${sourceWorkspace.id}`);
+      await page.getByRole("button", { name: "Kata task" }).click();
+
+      const pane = page.locator(".kata-workspace-sidebar");
+      await expect(pane.getByRole("heading", { name: source.issue.title })).toBeVisible();
+
+      const commentDraft = pane.getByRole("textbox", { name: "Comment" });
+      const submittedComment = "Comment draft A";
+      await commentDraft.fill(submittedComment);
+      await pane.getByRole("button", { name: "Add comment" }).click();
+      await commentPersisted;
+      await commentDraft.fill("Comment draft B");
+      await commentDraft.fill(submittedComment);
+
+      releaseCommentAcknowledgement();
+      commentAcknowledgementReleased = true;
+
+      await expect(pane.getByRole("button", { name: "Add comment" })).toBeEnabled();
+      await expect(commentDraft).toHaveValue(submittedComment);
+      expect(commentMutationRequests).toBe(1);
+
+      const relatedDraft = pane.getByRole("textbox", { name: "Related issue" });
+      await relatedDraft.fill(relatedA.issue.short_id);
+      await pane.getByRole("button", { name: "Link" }).click();
+      await relatedPersisted;
+      await relatedDraft.fill(relatedB.issue.short_id);
+      await relatedDraft.fill(relatedA.issue.short_id);
+
+      releaseRelatedAcknowledgement();
+      relatedAcknowledgementReleased = true;
+
+      await expect(pane.getByRole("button", { name: "Link" })).toBeEnabled();
+      await expect(relatedDraft).toHaveValue(relatedA.issue.short_id);
+      expect(relatedMutationRequests).toBe(1);
+
+      const sourceDetail = await harness.getIssue(source.issue.uid);
+      expect(
+        (sourceDetail.comments as Array<{ body?: string }> | undefined)?.filter(
+          (comment) => comment.body === submittedComment,
+        ),
+      ).toHaveLength(1);
+      expect(
+        (sourceDetail.links as Array<{ from?: { uid?: string }; to?: { uid?: string } }> | undefined)?.filter(
+          (link) => link.from?.uid === relatedA.issue.uid || link.to?.uid === relatedA.issue.uid,
+        ),
+      ).toHaveLength(1);
+    } finally {
+      if (!commentAcknowledgementReleased) releaseCommentAcknowledgement();
+      if (!relatedAcknowledgementReleased) releaseRelatedAcknowledgement();
+      await api?.dispose();
+      await isolatedServer?.stop();
+      await kataHome?.stop();
+      await harness?.stop();
+    }
+  });
 });

@@ -180,9 +180,10 @@ func (r *kataFrontendEventRegistry) Ensure(
 	}
 
 	target := r.targets[fingerprint]
-	createdTarget := target == nil
+	createdTarget := false
 	var targetCtx context.Context
-	if createdTarget {
+	if target == nil {
+		createdTarget = true
 		var cancel context.CancelFunc
 		targetCtx, cancel = context.WithCancel(r.root)
 		target = &kataFrontendEventTarget{
@@ -280,7 +281,7 @@ func (b *kataFrontendEventBinding) serve(
 		replayCursor = b.activation - 1
 	}
 	records, staleID, stale := b.hub.ReplaySnapshotSince(replayCursor)
-	if !hasCursor && !stale {
+	if !hasCursor && !stale && len(records) > 1 {
 		records = records[:1]
 	}
 	replay := &sseReplaySnapshot{records: records, staleID: staleID, stale: stale}

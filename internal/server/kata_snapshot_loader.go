@@ -158,6 +158,9 @@ func (l *kataSnapshotLoader) loadReady(
 		}
 		return issues, nil
 	}
+	if projectID == nil {
+		return nil, kataAuthorityInconsistency("project ready authority has no project ID")
+	}
 
 	response, err := l.client.ReadyIssuesWithResponse(ctx, &katagenerated.ReadyIssuesRequestOptions{
 		PathParams: &katagenerated.ReadyIssuesPath{ProjectID: *projectID},

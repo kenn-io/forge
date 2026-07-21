@@ -25,7 +25,7 @@ test.describe("label editing", () => {
         }),
       ).toBeVisible();
 
-      await page.getByRole("button", { name: "Labels" }).click();
+      await page.locator(".pull-detail .chips-row").getByRole("button", { name: "Labels", exact: true }).click();
       await expect(page.getByRole("dialog", { name: "Edit labels" })).toBeVisible();
       await expect(page.getByLabel("Filter labels")).toBeFocused();
       await expect(page.getByRole("menuitemcheckbox", { name: /bug/i })).toHaveAttribute("aria-checked", "true");
@@ -88,7 +88,7 @@ test.describe("label editing", () => {
 
       await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
       await expect(page.locator(".pull-detail")).toBeVisible();
-      await page.getByRole("button", { name: "Labels" }).click();
+      await page.locator(".pull-detail .chips-row").getByRole("button", { name: "Labels", exact: true }).click();
       await expect(page.getByRole("dialog", { name: "Edit labels" })).toBeVisible();
 
       const updateResponse = page.waitForResponse(
@@ -123,7 +123,7 @@ test.describe("label editing", () => {
         }),
       ).toBeVisible();
 
-      await page.getByRole("button", { name: "Labels" }).click();
+      await page.locator(".issue-detail .meta-row").getByRole("button", { name: "Labels", exact: true }).click();
       await expect(page.getByRole("dialog", { name: "Edit labels" })).toBeVisible();
       await expect(page.getByLabel("Filter labels")).toBeFocused();
 

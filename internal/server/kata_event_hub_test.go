@@ -235,6 +235,65 @@ func TestKataFrontendEventHandleCursorReplaysNextInvalidation(t *testing.T) {
 	assert.Equal(t, binding.Cursor(), replay[0].ID)
 }
 
+func TestKataFrontendEventFreshSubscriberReplaysOnlyActivationThenLive(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var epoch atomic.Uint64
+	registry := newKataFrontendEventRegistry(t.Context(), kataFrontendEventRegistryDeps{
+		newClient: func(ctx context.Context, _ kata.Daemon) (kataAPIClient, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+		invalidate:     func(string) uint64 { return epoch.Add(1) },
+		generationSeed: func(string) uint64 { return 0 },
+	})
+	defer registry.Close()
+	binding := requireKataFrontendEventBinding(
+		t, registry, kata.Daemon{ID: "primary", URL: "http://kata.test"},
+	)
+	binding.target.invalidateAndBroadcast()
+	firstRetainedTail := binding.Cursor()
+	binding.target.invalidateAndBroadcast()
+	secondRetainedTail := binding.Cursor()
+
+	paused := make(chan struct{})
+	release := make(chan struct{})
+	controller := &stopOnFlushController{
+		at:      3,
+		pauseAt: 2,
+		paused:  paused,
+		release: release,
+	}
+	var wire bytes.Buffer
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		binding.serve(t.Context(), &wire, controller, 0, false)
+	}()
+	select {
+	case <-paused:
+	case <-time.After(time.Second):
+		require.FailNow("fresh subscriber did not emit activation reset")
+	}
+	binding.target.invalidateAndBroadcast()
+	liveCursor := binding.Cursor()
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		require.FailNow("fresh subscriber did not deliver live invalidation")
+	}
+
+	frames := strings.Split(strings.TrimSpace(wire.String()), "\n\n")
+	require.Len(frames, 2)
+	assert.Contains(frames[0], "id: "+strconv.FormatUint(binding.activation, 10))
+	assert.Contains(frames[0], "event: kata.tasks.reset")
+	assert.Contains(frames[1], "id: "+strconv.FormatUint(liveCursor, 10))
+	assert.Contains(frames[1], "event: kata.tasks.invalidated")
+	assert.NotContains(wire.String(), "id: "+strconv.FormatUint(firstRetainedTail, 10)+"\n")
+	assert.NotContains(wire.String(), "id: "+strconv.FormatUint(secondRetainedTail, 10)+"\n")
+}
+
 func TestKataFrontendEventRotationRejectsOldCursorWithCompactReset(t *testing.T) {
 	assert := assert.New(t)
 	var epoch atomic.Uint64
@@ -952,8 +1011,6 @@ func TestKataTaskEventsEndpointWithoutCursorStartsAtBindingReset(t *testing.T) {
 		case "/api/v1/events/stream":
 			w.Header().Set("Content-Type", "text/event-stream")
 			_ = http.NewResponseController(w).Flush()
-			_, _ = io.WriteString(w, "id: 1\nevent: issue.updated\ndata: {\"secret\":\"raw-upstream\"}\n\n")
-			_ = http.NewResponseController(w).Flush()
 			<-r.Context().Done()
 		default:
 			http.NotFound(w, r)
@@ -969,6 +1026,13 @@ url = "`+upstream.URL+`"
 	`)
 	srv, _ := setupTestServer(t)
 	middleman := httptest.NewServer(srv)
+	daemon, problem := selectKataDaemonForID("primary")
+	require.Nil(problem)
+	binding := requireKataFrontendEventBinding(t, srv.kataEvents, daemon)
+	binding.target.invalidateAndBroadcast()
+	firstRetainedTail := binding.Cursor()
+	binding.target.invalidateAndBroadcast()
+	secondRetainedTail := binding.Cursor()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(func() {
@@ -983,7 +1047,11 @@ url = "`+upstream.URL+`"
 	response, err := middleman.Client().Do(req)
 	require.NoError(err)
 	defer func() { _ = response.Body.Close() }()
-	frame := readSSEFrameWithin(t, bufio.NewScanner(response.Body), time.Second, cancel)
+	scanner := bufio.NewScanner(response.Body)
+	frame := readSSEFrameWithin(t, scanner, time.Second, cancel)
+	binding.target.invalidateAndBroadcast()
+	liveCursor := binding.Cursor()
+	liveFrame := readSSEFrameWithin(t, scanner, time.Second, cancel)
 	cancel()
 
 	require.Equal(http.StatusOK, response.StatusCode)
@@ -997,6 +1065,11 @@ url = "`+upstream.URL+`"
 	assert.Equal("primary", data.DaemonID)
 	assert.Zero(data.Epoch)
 	assert.Equal(cursor, data.Cursor)
+	assert.Equal(strconv.FormatUint(binding.activation, 10), frame.ID)
+	assert.Equal("kata.tasks.invalidated", liveFrame.Event)
+	assert.Equal(strconv.FormatUint(liveCursor, 10), liveFrame.ID)
+	assert.NotEqual(strconv.FormatUint(firstRetainedTail, 10), liveFrame.ID)
+	assert.NotEqual(strconv.FormatUint(secondRetainedTail, 10), liveFrame.ID)
 }
 
 func requireKataFrontendEventBinding(
@@ -1011,14 +1084,23 @@ func requireKataFrontendEventBinding(
 }
 
 type stopOnFlushController struct {
-	at    int64
-	count atomic.Int64
+	at        int64
+	pauseAt   int64
+	paused    chan<- struct{}
+	release   <-chan struct{}
+	pauseOnce sync.Once
+	count     atomic.Int64
 }
 
 func (c *stopOnFlushController) SetWriteDeadline(time.Time) error { return nil }
 
 func (c *stopOnFlushController) Flush() error {
-	if c.count.Add(1) == c.at {
+	count := c.count.Add(1)
+	if count == c.pauseAt {
+		c.pauseOnce.Do(func() { close(c.paused) })
+		<-c.release
+	}
+	if count == c.at {
 		return io.EOF
 	}
 	return nil

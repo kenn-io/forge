@@ -27,21 +27,6 @@ describe("LabelRow", () => {
     }
     expect(screen.queryByText("+2")).toBeNull();
   });
-
-  it("compact rows show the first two labels plus a passive overflow count", () => {
-    render(LabelRow, { props: { labels, compact: true } });
-    expect(screen.getByText("bug")).toBeTruthy();
-    expect(screen.getByText("enhancement")).toBeTruthy();
-    expect(screen.queryByText("docs")).toBeNull();
-    expect(screen.getByText("+2")).toBeTruthy();
-  });
-
-  it("compact rows with two labels have no overflow count", () => {
-    render(LabelRow, { props: { labels: labels.slice(0, 2), compact: true } });
-    expect(screen.getByText("bug")).toBeTruthy();
-    expect(screen.getByText("enhancement")).toBeTruthy();
-    expect(screen.queryByText(/^\+\d+$/)).toBeNull();
-  });
 });
 
 describe("LabelRow dots variant", () => {

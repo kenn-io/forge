@@ -30,18 +30,14 @@
 
   interface Props {
     labels: Pick<Label, "name" | "color">[];
-    /** Compact rows (sidebar list items) show the first two labels plus a
-     * passive +N overflow and cap pill width; the default row wraps. */
-    compact?: boolean;
     /** Dots render one small color circle per label (max 4) with names in
-     * the tooltip and screen-reader text — used inline on title lines. */
+     * the tooltip and screen-reader text — used inline on title lines and
+     * sidebar list items. */
     dots?: boolean;
   }
 
-  let { labels, compact = false, dots = false }: Props = $props();
+  let { labels, dots = false }: Props = $props();
 
-  const visible = $derived(compact ? labels.slice(0, 2) : labels);
-  const overflow = $derived(labels.length - visible.length);
   const dotLabels = $derived(labels.slice(0, 4));
   const labelNames = $derived(labels.map((l) => l.name).join(", "));
 </script>
@@ -55,17 +51,10 @@
     </span>
     <span class="kit-sr-only">Labels: {labelNames}</span>
   {:else}
-    <span class={["label-row", compact && "label-row--compact"]}>
-      {#each visible as label (label.name)}
-        {#if compact}
-          <ColorLabel size="sm" name={label.name} color={label.color} />
-        {:else}
-          <ColorLabel name={label.name} color={label.color} />
-        {/if}
+    <span class="label-row">
+      {#each labels as label (label.name)}
+        <ColorLabel name={label.name} color={label.color} />
       {/each}
-      {#if overflow > 0}
-        <span class="label-more">+{overflow}</span>
-      {/if}
     </span>
   {/if}
 {/if}
@@ -77,21 +66,6 @@
     align-items: center;
     gap: var(--space-3);
     min-width: 0;
-  }
-
-  .label-row--compact {
-    flex-wrap: nowrap;
-    overflow: hidden;
-  }
-
-  .label-row--compact :global(.kit-color-label) {
-    max-width: 120px;
-  }
-
-  .label-more {
-    flex-shrink: 0;
-    color: var(--text-muted);
-    font-size: var(--font-size-2xs);
   }
 
   .label-dots {

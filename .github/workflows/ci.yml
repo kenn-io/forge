@@ -411,7 +411,10 @@ jobs:
         uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version-file: package.json
-          cache: true
+          # The Playwright container must install its own dependency tree.
+          # Restoring the host cache can leave Vite's CSS pipeline with stale
+          # virtual modules, producing intermittent invalid-selector builds.
+          cache: false
           run-install: true
 
       - name: Install tmux for workspace PTY sessions

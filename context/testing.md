@@ -105,6 +105,12 @@ Vitest owns unhandled errors in the root runner, so `onUnhandledError` belongs
 in the root `test` config rather than a browser project; keep any ignored error
 exact by message and framework stack frame (`frontend/vite.config.ts:495`).
 
+Playwright-container CI jobs that build the frontend must install dependencies
+without the Vite+ host cache; restored host trees can leave stale virtual CSS
+modules (`.github/workflows/ci.yml::e2e`). Keep CI unit tests serialized on
+memory-bounded self-hosted runners; assertions can finish before a pooled worker
+dies during teardown (`frontend/vite.config.ts::resolveUnitTestWorkers`).
+
 Full-stack e2e serves the frontend embedded in the e2e-server binary
 (`internal/web/dist`), not live sources: run `make frontend` before building
 `cmd/e2e-server` locally, or the suite silently validates a stale bundle and

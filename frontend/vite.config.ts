@@ -144,7 +144,7 @@ export function resolveBrowserTestWorkers(env: Record<string, string | undefined
 }
 
 export function resolveUnitTestWorkers(env: Record<string, string | undefined> = process.env): number | undefined {
-  return env.CI ? 2 : undefined;
+  return env.CI ? 1 : undefined;
 }
 
 function terminalWebSocketProxy(url: string): ProxyOptions {

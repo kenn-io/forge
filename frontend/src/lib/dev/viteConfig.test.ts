@@ -15,9 +15,9 @@ describe("vite config", () => {
     expect(resolveBrowserTestWorkers({ CI: "1" })).toBe(2);
   });
 
-  it("bounds unit test concurrency in CI", () => {
+  it("serializes unit test execution in CI", () => {
     expect(resolveUnitTestWorkers({})).toBeUndefined();
-    expect(resolveUnitTestWorkers({ CI: "1" })).toBe(2);
+    expect(resolveUnitTestWorkers({ CI: "1" })).toBe(1);
   });
 
   it("aliases @middleman/ui to the workspace source tree", () => {

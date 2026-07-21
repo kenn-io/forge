@@ -246,10 +246,44 @@ func (f *kataSnapshotFrontend) References(
 	if limit < 1 || limit > kataReferenceMaxLimit {
 		return kataTaskReferenceResponse{}, problemValidation("limit", "limit must be between 1 and 50")
 	}
-	authority, err := f.deps.loadAuthority(ctx, input.DaemonID, kataAuthorityRequest{Scope: "global", Authority: "open"})
-	if err != nil {
+	for range kataSnapshotDeliveryAttempts {
+		if err := ctx.Err(); err != nil {
+			return kataTaskReferenceResponse{}, err
+		}
+		daemon, problem := f.deps.resolveDaemon(input.DaemonID)
+		if problem != nil {
+			return kataTaskReferenceResponse{}, problem
+		}
+		binding, err := f.deps.ensureEvents(daemon)
+		if err != nil {
+			return kataTaskReferenceResponse{}, problemServiceUnavailable("Kata task events are unavailable while the server is shutting down")
+		}
+		authority, err := f.deps.loadAuthority(ctx, daemon.ID, kataAuthorityRequest{Scope: "global", Authority: "open"})
+		if err != nil {
+			return kataTaskReferenceResponse{}, err
+		}
+		if err := ctx.Err(); err != nil {
+			return kataTaskReferenceResponse{}, err
+		}
+		configuredDaemon, problem := f.deps.resolveDaemon(authority.DaemonID)
+		if problem != nil || binding.DaemonFingerprint() != authority.Key.DaemonFingerprint ||
+			kataDaemonTargetFingerprint(configuredDaemon) != authority.Key.DaemonFingerprint ||
+			f.deps.daemonEpoch(authority.DaemonID) != authority.InvalidationEpoch {
+			continue
+		}
+		return kataTaskReferencesFromAuthority(authority, input.Query, limit), nil
+	}
+	if err := ctx.Err(); err != nil {
 		return kataTaskReferenceResponse{}, err
 	}
+	return kataTaskReferenceResponse{}, kataSnapshotUpstreamError("deliver consistent snapshot", errKataSnapshotDeliveryStale)
+}
+
+func kataTaskReferencesFromAuthority(
+	authority kataCoordinatedAuthority,
+	queryInput string,
+	limit int,
+) kataTaskReferenceResponse {
 	memberUIDs := make(map[string]struct{}, len(authority.Snapshot.MemberIssueUIDs))
 	for _, uid := range authority.Snapshot.MemberIssueUIDs {
 		memberUIDs[uid] = struct{}{}
@@ -260,7 +294,7 @@ func (f *kataSnapshotFrontend) References(
 			shortIDCounts[issue.ShortID]++
 		}
 	}
-	query := strings.ToLower(strings.TrimSpace(input.Query))
+	query := strings.ToLower(strings.TrimSpace(queryInput))
 	references := make([]kataTaskReference, 0, min(limit, len(authority.Snapshot.Issues)))
 	for _, issue := range authority.Snapshot.Issues {
 		if _, member := memberUIDs[issue.UID]; !member || !kataReferenceMatches(issue, query) {
@@ -283,7 +317,7 @@ func (f *kataSnapshotFrontend) References(
 		ServerInstanceID: authority.ServerInstanceID, DaemonID: authority.DaemonID,
 		Generation: authority.Generation, InvalidationEpoch: authority.InvalidationEpoch,
 		FetchedAt: authority.Snapshot.FetchedAt, References: references,
-	}, nil
+	}
 }
 
 func kataReferenceMatches(issue kataTaskSummary, query string) bool {

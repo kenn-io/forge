@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	katagenerated "go.kenn.io/kata/pkg/client/generated"
 
 	"go.kenn.io/middleman/internal/kata"
 )
@@ -38,6 +40,38 @@ url = "`+upstream.URL+`"
 	srv.kataEvents.Close()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/snapshot?scope=global&authority=open", nil)
+	req.Header.Set(kataDaemonHeaderName, "primary")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusServiceUnavailable, rr.Code, rr.Body.String())
+	assert.Contains(rr.Header().Values("Vary"), kataDaemonHeaderName)
+	problem := decodeMsgvaultProblem(t, rr)
+	assert.Equal(CodeServiceUnavailable, problem.Code)
+}
+
+func TestKataTaskReferencesReturnsServiceUnavailableWhenEventRegistryIsClosed(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		assert.Fail("closed event registry contacted Kata")
+		http.Error(w, "unexpected request", http.StatusInternalServerError)
+	}))
+	defer upstream.Close()
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeKataServerCatalog(t, home, `
+active_daemon = "primary"
+
+[[daemon]]
+name = "primary"
+url = "`+upstream.URL+`"
+`)
+	srv, _ := setupTestServer(t)
+	srv.kataEvents.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/references", nil)
 	req.Header.Set(kataDaemonHeaderName, "primary")
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -151,6 +185,9 @@ func TestKataTaskReferencesReuseCachedGlobalOpenAuthority(t *testing.T) {
 		assert.Contains(rr.Header().Values("Vary"), kataDaemonHeaderName)
 		var response kataTaskReferenceResponse
 		require.NoError(json.Unmarshal(rr.Body.Bytes(), &response))
+		var wire map[string]json.RawMessage
+		require.NoError(json.Unmarshal(rr.Body.Bytes(), &wire))
+		assert.NotContains(wire, "event_cursor")
 		return response
 	}
 	first := request("matching")
@@ -162,6 +199,102 @@ func TestKataTaskReferencesReuseCachedGlobalOpenAuthority(t *testing.T) {
 	require.Len(second.References, 1)
 	assert.Equal("solo", second.References[0].Reference)
 	assert.Equal(first.Generation, second.Generation)
+}
+
+func TestKataTaskReferencesFirstRequestStartsSupervisorAndInvalidatesCache(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	daemon := kata.Daemon{ID: "primary", URL: "https://kata.example.test"}
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeKataServerCatalog(t, home, `
+active_daemon = "primary"
+
+[[daemon]]
+name = "primary"
+url = "`+daemon.URL+`"
+`)
+	srv, _ := setupTestServer(t)
+	snapshot := testKataCoordinatedAuthority().Snapshot
+	var loads atomic.Int64
+	srv.kataSnapshots = newKataSnapshotCoordinator(t.Context(), kataSnapshotCoordinatorDeps{
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		newLoader: func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error) {
+			return kataAuthoritySnapshotLoaderFunc(func(context.Context, kataAuthorityRequest) (kataAuthoritySnapshot, error) {
+				loads.Add(1)
+				return snapshot, nil
+			}), nil
+		},
+		newServerInstanceID: func() string { return "server-a" },
+	})
+	pollStarted := make(chan struct{})
+	releaseEvent := make(chan struct{})
+	var releaseOnce sync.Once
+	t.Cleanup(func() { releaseOnce.Do(func() { close(releaseEvent) }) })
+	var pollCalls atomic.Int64
+	srv.kataEvents = newKataFrontendEventRegistry(t.Context(), kataFrontendEventRegistryDeps{
+		newClient: func(context.Context, kata.Daemon) (kataAPIClient, error) {
+			return &fakeKataFrontendEventClient{
+				poll: func(ctx context.Context, options *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+					call := pollCalls.Add(1)
+					afterID := *options.Query.AfterID
+					if call == 1 {
+						close(pollStarted)
+						select {
+						case <-releaseEvent:
+						case <-ctx.Done():
+							return nil, ctx.Err()
+						}
+						event := testKataEventEnvelope(1)
+						return &katagenerated.PollEventsResp{StatusCode: http.StatusOK, JSON200: &katagenerated.PollEventsBody{
+							Events: []katagenerated.EventEnvelope{event}, NextAfterID: 1,
+						}}, nil
+					}
+					return &katagenerated.PollEventsResp{StatusCode: http.StatusOK, JSON200: &katagenerated.PollEventsBody{
+						NextAfterID: afterID,
+					}}, nil
+				},
+				stream: func(ctx context.Context, _ *katagenerated.StreamEventsRequestOptions) (*http.Response, error) {
+					<-ctx.Done()
+					return nil, ctx.Err()
+				},
+			}, nil
+		},
+		invalidate:       srv.kataSnapshots.invalidateDaemon,
+		daemonEpoch:      srv.kataSnapshots.daemonEpoch,
+		serverInstanceID: "server-a",
+		coalesceWindow:   time.Millisecond,
+		retryDelay:       time.Hour,
+	})
+
+	request := func() kataTaskReferenceResponse {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/references", nil)
+		req.Header.Set(kataDaemonHeaderName, "primary")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+		var response kataTaskReferenceResponse
+		require.NoError(json.Unmarshal(rr.Body.Bytes(), &response))
+		return response
+	}
+
+	first := request()
+	select {
+	case <-pollStarted:
+	case <-time.After(time.Second):
+		require.FailNow("first reference request did not start the Kata event supervisor")
+	}
+	assert.Zero(first.InvalidationEpoch)
+	releaseOnce.Do(func() { close(releaseEvent) })
+	require.Eventually(func() bool {
+		return srv.kataSnapshots.daemonEpoch("primary") == 1
+	}, time.Second, time.Millisecond)
+	second := request()
+
+	assert.Equal(int64(2), loads.Load(), "the upstream event must invalidate the first cached authority")
+	assert.Equal(uint64(1), second.InvalidationEpoch)
+	assert.GreaterOrEqual(pollCalls.Load(), int64(2))
 }
 
 func TestKataTaskSnapshotKeepsHistoryCursorAndBoundFailuresLocalOverHTTP(t *testing.T) {

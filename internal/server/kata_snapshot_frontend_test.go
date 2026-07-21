@@ -254,7 +254,8 @@ func TestKataSnapshotFrontendReferencesUseGlobalOpenAuthorityAndFullSetUniquenes
 	assert := assert.New(t)
 	require := require.New(t)
 
-	authority := testKataSnapshotFrontendAuthority(kata.Daemon{ID: "primary", URL: "https://kata.example.test"}, 4, 8)
+	daemon := kata.Daemon{ID: "primary", URL: "https://kata.example.test"}
+	authority := testKataSnapshotFrontendAuthority(daemon, 4, 8)
 	authority.Snapshot.MemberIssueUIDs = []string{"issue-a", "issue-b", "issue-unique"}
 	authority.Snapshot.Issues = []kataTaskSummary{
 		{ID: 1, UID: "issue-a", ProjectID: 7, ProjectUID: "project-a", ProjectName: "Project A", ShortID: "dup", QualifiedID: "Project A#dup", Title: "Matching task"},
@@ -264,12 +265,17 @@ func TestKataSnapshotFrontendReferencesUseGlobalOpenAuthorityAndFullSetUniquenes
 	}
 	var loads atomic.Int64
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
+			return fakeKataFrontendEventHandle{fingerprint: kataDaemonTargetFingerprint(daemon)}, nil
+		},
 		loadAuthority: func(_ context.Context, daemonID string, intent kataAuthorityRequest) (kataCoordinatedAuthority, error) {
 			loads.Add(1)
 			assert.Equal("primary", daemonID)
 			assert.Equal(kataAuthorityRequest{Scope: "global", Authority: "open"}, intent)
 			return authority, nil
 		},
+		daemonEpoch: func(string) uint64 { return 4 },
 	})
 
 	response, err := frontend.References(t.Context(), &kataTaskReferenceInput{DaemonID: "primary", Query: " matching ", Limit: 1})
@@ -286,6 +292,168 @@ func TestKataSnapshotFrontendReferencesUseGlobalOpenAuthorityAndFullSetUniquenes
 		UID: "issue-a", ProjectID: 7, ProjectUID: "project-a", ProjectName: "Project A",
 		ShortID: "dup", QualifiedID: "Project A#dup", Title: "Matching task", Reference: "Project A#dup",
 	}, response.References[0])
+}
+
+func TestKataSnapshotFrontendReferencesEnsuresEventsBeforeBlockedAuthorityLoad(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	daemon := kata.Daemon{ID: "primary", URL: "https://kata.example.test"}
+	var ensured atomic.Bool
+	loadStarted := make(chan struct{})
+	releaseLoad := make(chan struct{})
+	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		ensureEvents: func(got kata.Daemon) (kataFrontendEventHandle, error) {
+			assert.Equal(daemon, got)
+			ensured.Store(true)
+			return fakeKataFrontendEventHandle{fingerprint: kataDaemonTargetFingerprint(daemon)}, nil
+		},
+		loadAuthority: func(_ context.Context, daemonID string, intent kataAuthorityRequest) (kataCoordinatedAuthority, error) {
+			assert.True(ensured.Load(), "event binding must exist before authority loading starts")
+			assert.Equal("primary", daemonID)
+			assert.Equal(kataAuthorityRequest{Scope: "global", Authority: "open"}, intent)
+			close(loadStarted)
+			<-releaseLoad
+			return testKataSnapshotFrontendAuthority(daemon, 3, 7), nil
+		},
+		daemonEpoch: func(string) uint64 { return 3 },
+	})
+
+	type result struct {
+		response kataTaskReferenceResponse
+		err      error
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		response, err := frontend.References(t.Context(), &kataTaskReferenceInput{DaemonID: "primary"})
+		resultCh <- result{response: response, err: err}
+	}()
+	select {
+	case early := <-resultCh:
+		require.FailNow("references returned before authority load", "error: %v", early.err)
+	case <-loadStarted:
+	}
+	assert.True(ensured.Load())
+	close(releaseLoad)
+	got := <-resultCh
+
+	require.NoError(got.err)
+	assert.Equal("primary", got.response.DaemonID)
+	assert.Equal(uint64(3), got.response.InvalidationEpoch)
+}
+
+func TestKataSnapshotFrontendReferencesRetriesInvalidationBeforeReturn(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	daemon := kata.Daemon{ID: "primary", URL: "https://kata.example.test"}
+	fingerprint := kataDaemonTargetFingerprint(daemon)
+	var loads atomic.Int64
+	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
+			return fakeKataFrontendEventHandle{fingerprint: fingerprint}, nil
+		},
+		loadAuthority: func(context.Context, string, kataAuthorityRequest) (kataCoordinatedAuthority, error) {
+			load := loads.Add(1)
+			return testKataSnapshotFrontendAuthority(daemon, uint64(load-1), uint64(load)), nil
+		},
+		daemonEpoch: func(string) uint64 { return 1 },
+	})
+
+	response, err := frontend.References(t.Context(), &kataTaskReferenceInput{DaemonID: "primary"})
+
+	require.NoError(t, err)
+	assert.Equal(int64(2), loads.Load())
+	assert.Equal(uint64(1), response.InvalidationEpoch)
+}
+
+func TestKataSnapshotFrontendReferencesRetriesTargetRotationBeforeReturn(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	first := kata.Daemon{ID: "primary", URL: "https://first.example.test"}
+	second := kata.Daemon{ID: "primary", URL: "https://second.example.test"}
+	current := first
+	var loads int
+	var ensuredURLs []string
+	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return current, nil },
+		ensureEvents: func(daemon kata.Daemon) (kataFrontendEventHandle, error) {
+			ensuredURLs = append(ensuredURLs, daemon.URL)
+			return fakeKataFrontendEventHandle{fingerprint: kataDaemonTargetFingerprint(daemon)}, nil
+		},
+		loadAuthority: func(context.Context, string, kataAuthorityRequest) (kataCoordinatedAuthority, error) {
+			loads++
+			authority := testKataSnapshotFrontendAuthority(current, 0, uint64(loads))
+			if loads == 1 {
+				current = second
+			}
+			return authority, nil
+		},
+		daemonEpoch: func(string) uint64 { return 0 },
+	})
+
+	response, err := frontend.References(t.Context(), &kataTaskReferenceInput{DaemonID: "primary"})
+
+	require.NoError(t, err)
+	assert.Equal(2, loads)
+	assert.Equal([]string{first.URL, second.URL}, ensuredURLs)
+	assert.Equal(uint64(2), response.Generation)
+}
+
+func TestKataSnapshotFrontendReferencesStopsAfterTwoDeliveryAttempts(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	daemon := kata.Daemon{ID: "primary", URL: "https://kata.example.test"}
+	fingerprint := kataDaemonTargetFingerprint(daemon)
+	var loads atomic.Int64
+	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
+			return fakeKataFrontendEventHandle{fingerprint: fingerprint}, nil
+		},
+		loadAuthority: func(context.Context, string, kataAuthorityRequest) (kataCoordinatedAuthority, error) {
+			loads.Add(1)
+			return testKataSnapshotFrontendAuthority(daemon, 0, 1), nil
+		},
+		daemonEpoch: func(string) uint64 { return 1 },
+	})
+
+	_, err := frontend.References(t.Context(), &kataTaskReferenceInput{DaemonID: "primary"})
+
+	require.Error(err)
+	problem, ok := err.(*ProblemError)
+	require.True(ok, "want *ProblemError, got %T", err)
+	assert.Equal(CodeUpstreamError, problem.Code)
+	assert.Contains(problem.Detail, "deliver consistent snapshot")
+	assert.Equal(int64(kataSnapshotDeliveryAttempts), loads.Load())
+}
+
+func TestKataSnapshotFrontendReferencesPreservesCancellationAfterAuthorityLoad(t *testing.T) {
+	t.Parallel()
+
+	daemon := kata.Daemon{ID: "primary", URL: "https://kata.example.test"}
+	ctx, cancel := context.WithCancel(t.Context())
+	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
+			return fakeKataFrontendEventHandle{fingerprint: kataDaemonTargetFingerprint(daemon)}, nil
+		},
+		loadAuthority: func(context.Context, string, kataAuthorityRequest) (kataCoordinatedAuthority, error) {
+			cancel()
+			return testKataSnapshotFrontendAuthority(daemon, 0, 1), nil
+		},
+		daemonEpoch: func(string) uint64 { return 0 },
+	})
+
+	_, err := frontend.References(ctx, &kataTaskReferenceInput{DaemonID: "primary"})
+
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 var testKataSnapshotFrontendFetchedAt = time.Date(2026, 7, 20, 20, 0, 0, 0, time.UTC)

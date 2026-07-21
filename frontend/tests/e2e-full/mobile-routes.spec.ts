@@ -24,7 +24,7 @@ async function expectReadableFocusList(page: Page, itemSelector: string): Promis
     };
     const item = document.querySelector(selector);
     const title = item?.querySelector(".title") ?? null;
-    const meta = item?.querySelector(".meta-left") ?? null;
+    const meta = item?.querySelector(".meta-text") ?? null;
     const search = document.querySelector(".focus-list .kit-search-input");
     const stateButton = document.querySelector(".focus-list .state-btn");
     const focusList = document.querySelector(".focus-list");

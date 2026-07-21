@@ -113,6 +113,10 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
 - Commit timeline rows keep type, author, SHA, and relative time together in the
   compact header; the SHA is metadata, not card action content
   (`packages/ui/src/components/detail/EventTimeline.svelte`).
+- `PullItem`/`IssueItem` sidebar rows have a Playwright-enforced uniform two-line
+  height; any icon rendered inside the row (e.g. `CITokenCluster`'s compact
+  `dotSize`) must fit the row's line-height or it silently grows that one row
+  (`packages/ui/src/components/shared/CITokenCluster.svelte`).
 
 `kit-ui-check` gates at zero findings in both `make frontend-check` and the
 Vite+ `frontend-check` task behind CI's `vp run -w check`. If a rule mistakes

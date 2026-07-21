@@ -44,7 +44,7 @@
   const iconSize = $derived(size === "compact" ? 12 : 14);
   // DotIcon's rendered dot is tiny relative to the box, so it needs to
   // be drawn larger than the rest to read at the same visual weight.
-  const dotSize = $derived(size === "compact" ? 18 : 20);
+  const dotSize = $derived(size === "compact" ? 14 : 20);
 </script>
 
 {#if bucketed.failed.length > 0}

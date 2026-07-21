@@ -112,6 +112,17 @@ test.describe("issue list view", () => {
       await expect(repoChip).toBeVisible();
       await expectRepoChipToClipSafely(firstItem, repoChip, longRepoPath);
       await expect(firstItem.locator(".state-chip")).toBeVisible();
+
+      await expect(firstItem.locator(".meta-row .repo-chip")).toBeVisible();
+      await expect(page.locator(".issue-item .repo-row")).toHaveCount(0);
+      const rowHeights = await page
+        .locator(".issue-item")
+        .evaluateAll((nodes) => nodes.slice(0, 6).map((node) => node.getBoundingClientRect().height));
+      expect(rowHeights.length).toBeGreaterThan(1);
+      for (const height of rowHeights) {
+        expect(height).toBeLessThanOrEqual(60);
+        expect(Math.abs(height - (rowHeights[0] ?? 0))).toBeLessThanOrEqual(1);
+      }
     } finally {
       await page.unrouteAll({ behavior: "ignoreErrors" });
     }

@@ -268,5 +268,18 @@ test.describe("PR list sidebar", () => {
     await expect(repoChip).toBeVisible();
     await expectRepoChipToClipSafely(firstItem, repoChip, longRepoPath);
     await expect(firstItem.locator(".status-chip")).toBeVisible();
+
+    // Compact layout: repo chip lives in the meta row, no standalone repo
+    // row, and rows keep a uniform two-line height regardless of labels.
+    await expect(firstItem.locator(".meta-row .repo-chip")).toBeVisible();
+    await expect(page.locator(".pull-item .repo-row")).toHaveCount(0);
+    const rowHeights = await page
+      .locator(".pull-item")
+      .evaluateAll((nodes) => nodes.slice(0, 6).map((node) => node.getBoundingClientRect().height));
+    expect(rowHeights.length).toBeGreaterThan(1);
+    for (const height of rowHeights) {
+      expect(height).toBeLessThanOrEqual(60);
+      expect(Math.abs(height - (rowHeights[0] ?? 0))).toBeLessThanOrEqual(1);
+    }
   });
 });

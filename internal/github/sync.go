@@ -3320,6 +3320,23 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
 		bucket := watchedMRRateBucketKey(mr)
+		repo := RepoRef{
+			Platform:     watchedMRPlatform(mr),
+			PlatformHost: host,
+			Owner:        mr.Owner,
+			Name:         mr.Name,
+		}
+		if !s.repositoryFeatureDue(
+			ctx, repo, platform.RepositoryFeatureMergeRequests,
+		) {
+			slog.Debug("skipping fast-sync for disabled repository feature",
+				"platform", repoPlatform(repo),
+				"host", repoHost(repo),
+				"repo", platformRepoRef(repo).RepoPath,
+				"feature", platform.RepositoryFeatureMergeRequests,
+			)
+			continue
+		}
 		if !eligibleBuckets[bucket] {
 			slog.Debug("skipping fast-sync for throttled host",
 				"host", host,
@@ -3340,6 +3357,11 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 		}
 		err := s.syncMRWithWatchedRef(ctx, mr)
 		if err != nil {
+			if s.recordRepositoryFeatureDisabled(
+				repo, platform.RepositoryFeatureMergeRequests, err,
+			) {
+				continue
+			}
 			slog.Warn("fast-sync watched MR failed",
 				"owner", mr.Owner,
 				"name", mr.Name,
@@ -5227,11 +5249,13 @@ func (s *Syncer) indexSyncRepo(
 	}
 
 	if caps.ReadMergeRequests && prListUnchanged &&
-		failedScope&failMR == 0 && disabledScope&failMR == 0 {
+		failedScope&failMR == 0 && disabledScope&failMR == 0 &&
+		s.repositoryFeatureDue(ctx, repo, platform.RepositoryFeatureMergeRequests) {
 		s.refreshRepoPRComments(ctx, repo)
 	}
 	if caps.ReadIssues && issueListUnchanged &&
-		failedScope&failIssues == 0 && disabledScope&failIssues == 0 {
+		failedScope&failIssues == 0 && disabledScope&failIssues == 0 &&
+		s.repositoryFeatureDue(ctx, repo, platform.RepositoryFeatureIssues) {
 		s.refreshRepoIssueComments(ctx, repo)
 	}
 
@@ -5703,6 +5727,11 @@ func (s *Syncer) drainPendingCommentSyncs(
 		if !eligibleHosts[bucket] {
 			continue
 		}
+		if !s.repositoryFeatureDue(
+			ctx, item.repo, platform.RepositoryFeatureMergeRequests,
+		) {
+			continue
+		}
 		client, err := s.clientFor(item.repo)
 		if err != nil {
 			slog.Warn("comment refresh: resolve client failed",
@@ -5743,6 +5772,11 @@ func (s *Syncer) drainPendingCommentSyncs(
 		}
 		bucket := repoRateBucketKey(item.repo)
 		if !eligibleHosts[bucket] {
+			continue
+		}
+		if !s.repositoryFeatureDue(
+			ctx, item.repo, platform.RepositoryFeatureIssues,
+		) {
 			continue
 		}
 		client, err := s.clientFor(item.repo)
@@ -8304,6 +8338,13 @@ func (s *Syncer) drainDetailQueue(
 			repo.Name = qi.RepoName
 			repo.PlatformHost = host
 		}
+		feature := platform.RepositoryFeatureIssues
+		if qi.Type == QueueItemPR {
+			feature = platform.RepositoryFeatureMergeRequests
+		}
+		if !s.repositoryFeatureDue(ctx, repo, feature) {
+			continue
+		}
 		repoID, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
 		if err != nil {
 			slog.Warn("detail drain: upsert repo failed",
@@ -8340,6 +8381,9 @@ func (s *Syncer) drainDetailQueue(
 		}
 
 		if err != nil {
+			if s.recordRepositoryFeatureDisabled(repo, feature, err) {
+				continue
+			}
 			slog.Warn("detail drain: fetch failed",
 				"repo", qi.RepoOwner+"/"+qi.RepoName,
 				"number", qi.Number,

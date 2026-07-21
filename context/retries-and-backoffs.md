@@ -72,6 +72,10 @@ cadence.
 Do not migrate cadence loops into `backoff/v5`; they are scheduling policy, not
 failure recovery.
 
+Repository-disabled issue and merge-request scopes use a 24-hour in-memory
+background probe gate. Explicit sync bypasses it; this is cadence policy, not a
+retry or rate-limit backoff. (`internal/github/feature_cooldown.go::repositoryFeatureProbeInterval`)
+
 ## Single-flight: `Manager.EnsureClone`
 
 [`clone.go`](../internal/gitclone/clone.go). `EnsureClone` opens a

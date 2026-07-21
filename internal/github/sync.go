@@ -1345,6 +1345,11 @@ func (p *gitHubClientProvider) ListOpenMergeRequests(
 ) ([]platform.MergeRequest, error) {
 	prs, err := p.client.ListOpenPullRequests(ctx, ref.Owner, ref.Name)
 	if err != nil {
+		if disabledErr := githubRepositoryFeatureDisabled(
+			p.host, platform.RepositoryFeatureMergeRequests, err,
+		); disabledErr != nil {
+			return nil, disabledErr
+		}
 		return nil, err
 	}
 	out := make([]platform.MergeRequest, 0, len(prs))
@@ -1540,6 +1545,11 @@ func (p *gitHubClientProvider) ListOpenGitHubIssues(
 ) ([]*gh.Issue, error) {
 	issues, err := p.client.ListOpenIssues(ctx, ref.Owner, ref.Name)
 	if err != nil {
+		if disabledErr := githubRepositoryFeatureDisabled(
+			p.host, platform.RepositoryFeatureIssues, err,
+		); disabledErr != nil {
+			return nil, disabledErr
+		}
 		return nil, err
 	}
 	if err := p.validateOpenIssuesContract(ref, issues); err != nil {

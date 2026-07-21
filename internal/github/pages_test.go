@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v88/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -18,6 +19,43 @@ func pagesTestRef() platform.RepoRef {
 	return platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}
+}
+
+func TestGitHubRepositoryFeatureDisabled(t *testing.T) {
+	tests := []struct {
+		name       string
+		capability string
+		status     int
+		message    string
+		want       bool
+	}{
+		{"issues disabled", platform.RepositoryFeatureIssues, http.StatusGone, "Issues are disabled for this repo", true},
+		{"pull requests disabled", platform.RepositoryFeatureMergeRequests, http.StatusGone, "Pull Requests are disabled for this repo", true},
+		{"unrelated gone", platform.RepositoryFeatureIssues, http.StatusGone, "Resource is gone", false},
+		{"ambiguous forbidden", platform.RepositoryFeatureIssues, http.StatusForbidden, "Issues are disabled for this repo", false},
+		{"ambiguous not found", platform.RepositoryFeatureIssues, http.StatusNotFound, "Issues are disabled for this repo", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			err := &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: tt.status},
+				Message:  tt.message,
+			}
+			classified := githubRepositoryFeatureDisabled("github.example.com", tt.capability, err)
+			if !tt.want {
+				assert.NoError(classified)
+				return
+			}
+			require.ErrorIs(classified, platform.ErrRepositoryFeatureDisabled)
+			var platformErr *platform.Error
+			require.ErrorAs(classified, &platformErr)
+			assert.Equal(tt.capability, platformErr.Capability)
+			assert.Equal("github.example.com", platformErr.PlatformHost)
+		})
 	}
 }
 

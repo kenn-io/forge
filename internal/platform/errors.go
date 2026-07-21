@@ -9,15 +9,21 @@ import (
 type PlatformErrorCode string
 
 const (
-	ErrCodeUnsupportedCapability PlatformErrorCode = "unsupported_capability"
-	ErrCodeProviderContract      PlatformErrorCode = "provider_contract"
-	ErrCodeProviderNotConfigured PlatformErrorCode = "provider_not_configured"
-	ErrCodeMissingToken          PlatformErrorCode = "missing_token"
-	ErrCodeInvalidRepoRef        PlatformErrorCode = "invalid_repo_ref"
-	ErrCodeInvalidArgument       PlatformErrorCode = "invalid_argument"
-	ErrCodePermissionDenied      PlatformErrorCode = "permission_denied"
-	ErrCodeNotFound              PlatformErrorCode = "not_found"
-	ErrCodeRateLimited           PlatformErrorCode = "rate_limited"
+	RepositoryFeatureIssues        = "issues"
+	RepositoryFeatureMergeRequests = "merge_requests"
+)
+
+const (
+	ErrCodeUnsupportedCapability     PlatformErrorCode = "unsupported_capability"
+	ErrCodeRepositoryFeatureDisabled PlatformErrorCode = "repository_feature_disabled"
+	ErrCodeProviderContract          PlatformErrorCode = "provider_contract"
+	ErrCodeProviderNotConfigured     PlatformErrorCode = "provider_not_configured"
+	ErrCodeMissingToken              PlatformErrorCode = "missing_token"
+	ErrCodeInvalidRepoRef            PlatformErrorCode = "invalid_repo_ref"
+	ErrCodeInvalidArgument           PlatformErrorCode = "invalid_argument"
+	ErrCodePermissionDenied          PlatformErrorCode = "permission_denied"
+	ErrCodeNotFound                  PlatformErrorCode = "not_found"
+	ErrCodeRateLimited               PlatformErrorCode = "rate_limited"
 	// ErrCodeStaleState marks mutations rejected because the target moved
 	// past the state the caller acted on (for example an MR head SHA that
 	// advanced after review).
@@ -34,18 +40,19 @@ const (
 )
 
 var (
-	ErrUnsupportedCapability = &Error{Code: ErrCodeUnsupportedCapability}
-	ErrProviderContract      = &Error{Code: ErrCodeProviderContract}
-	ErrProviderNotConfigured = &Error{Code: ErrCodeProviderNotConfigured}
-	ErrMissingToken          = &Error{Code: ErrCodeMissingToken}
-	ErrInvalidRepoRef        = &Error{Code: ErrCodeInvalidRepoRef}
-	ErrInvalidArgument       = &Error{Code: ErrCodeInvalidArgument}
-	ErrPermissionDenied      = &Error{Code: ErrCodePermissionDenied}
-	ErrNotFound              = &Error{Code: ErrCodeNotFound}
-	ErrRateLimited           = &Error{Code: ErrCodeRateLimited}
-	ErrStaleState            = &Error{Code: ErrCodeStaleState}
-	ErrConflict              = &Error{Code: ErrCodeConflict}
-	ErrPageLimit             = &Error{Code: ErrCodePageLimit}
+	ErrUnsupportedCapability     = &Error{Code: ErrCodeUnsupportedCapability}
+	ErrRepositoryFeatureDisabled = &Error{Code: ErrCodeRepositoryFeatureDisabled}
+	ErrProviderContract          = &Error{Code: ErrCodeProviderContract}
+	ErrProviderNotConfigured     = &Error{Code: ErrCodeProviderNotConfigured}
+	ErrMissingToken              = &Error{Code: ErrCodeMissingToken}
+	ErrInvalidRepoRef            = &Error{Code: ErrCodeInvalidRepoRef}
+	ErrInvalidArgument           = &Error{Code: ErrCodeInvalidArgument}
+	ErrPermissionDenied          = &Error{Code: ErrCodePermissionDenied}
+	ErrNotFound                  = &Error{Code: ErrCodeNotFound}
+	ErrRateLimited               = &Error{Code: ErrCodeRateLimited}
+	ErrStaleState                = &Error{Code: ErrCodeStaleState}
+	ErrConflict                  = &Error{Code: ErrCodeConflict}
+	ErrPageLimit                 = &Error{Code: ErrCodePageLimit}
 )
 
 // ErrArchiveAttemptBudget is returned by budget-counting transports when an
@@ -141,6 +148,16 @@ func UnsupportedCapability(kind Kind, host, capability string) error {
 		Provider:     kind,
 		PlatformHost: host,
 		Capability:   capability,
+	}
+}
+
+func RepositoryFeatureDisabled(kind Kind, host, capability string, err error) error {
+	return &Error{
+		Code:         ErrCodeRepositoryFeatureDisabled,
+		Provider:     kind,
+		PlatformHost: host,
+		Capability:   capability,
+		Err:          err,
 	}
 }
 

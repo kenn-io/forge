@@ -131,6 +131,73 @@ func TestKataTaskSnapshotLoadsCompleteRetainedProjectHistoryE2E(t *testing.T) {
 	fixture.daemon.mu.RUnlock()
 }
 
+func TestKataTaskSnapshotDiscardsPreResetHistoryAtRetainedBaselineE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newKataSnapshotE2EFixture(t, "Ready task")
+	selectedIssueUID := "issue-member"
+	otherIssueUID := "issue-other"
+	resetAfterID := int64(41)
+	fixture.daemon.mu.Lock()
+	fixture.daemon.projectEventPages = []katagenerated.PollEventsBody{
+		{
+			Events: []katagenerated.EventEnvelope{
+				{
+					Actor: "acceptance", ContentHash: "content-1", CreatedAt: kataSnapshotE2ETime.Add(time.Second),
+					EventID: 1, EventUID: "event-1", IssueUID: &selectedIssueUID, OriginInstanceUID: "kata-e2e",
+					ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+				},
+				{
+					Actor: "acceptance", ContentHash: "content-2", CreatedAt: kataSnapshotE2ETime.Add(2 * time.Second),
+					EventID: 2, EventUID: "event-2", IssueUID: &otherIssueUID, OriginInstanceUID: "kata-e2e",
+					ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+				},
+			},
+			NextAfterID: 2,
+		},
+		{Events: []katagenerated.EventEnvelope{}, NextAfterID: resetAfterID, ResetAfterID: &resetAfterID, ResetRequired: true},
+		{
+			Events: []katagenerated.EventEnvelope{
+				{
+					Actor: "acceptance", ContentHash: "content-42", CreatedAt: kataSnapshotE2ETime.Add(42 * time.Second),
+					EventID: 42, EventUID: "event-42", IssueUID: &selectedIssueUID, OriginInstanceUID: "kata-e2e",
+					ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+				},
+				{
+					Actor: "acceptance", ContentHash: "content-43", CreatedAt: kataSnapshotE2ETime.Add(43 * time.Second),
+					EventID: 43, EventUID: "event-43", IssueUID: &selectedIssueUID, OriginInstanceUID: "kata-e2e",
+					ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+				},
+			},
+			NextAfterID: 43,
+		},
+		{Events: []katagenerated.EventEnvelope{}, NextAfterID: 43},
+	}
+	fixture.daemon.mu.Unlock()
+
+	scope := apigenerated.Project
+	authority := apigenerated.Ready
+	projectUID := "project-a"
+	response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+		SelectedIssueUid: &selectedIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+	})
+
+	require.NoError(err)
+	require.Equal(http.StatusOK, response.StatusCode(), string(response.Body))
+	require.NotNil(response.JSON200)
+	require.NotNil(response.JSON200.Enrichment.SelectedHistory)
+	require.Len(*response.JSON200.Enrichment.SelectedHistory, 2)
+	assert.Equal([]int64{42, 43}, []int64{
+		(*response.JSON200.Enrichment.SelectedHistory)[0].EventId,
+		(*response.JSON200.Enrichment.SelectedHistory)[1].EventId,
+	})
+	assert.Nil(response.JSON200.Enrichment.Errors)
+	fixture.daemon.mu.RLock()
+	assert.Equal([]int64{0, 2, 41, 43}, fixture.daemon.projectEventCursors)
+	fixture.daemon.mu.RUnlock()
+}
+
 func TestKataTaskSnapshotPreservesGraphSourceWhenEnrichmentFailsE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -413,6 +480,7 @@ type kataSnapshotDaemonStub struct {
 	readyCalls           atomic.Int64
 	issueListCalls       atomic.Int64
 	projectEvents        []katagenerated.EventEnvelope
+	projectEventPages    []katagenerated.PollEventsBody
 	projectEventPageSize int
 	projectEventCursors  []int64
 }
@@ -474,6 +542,13 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 		requestedLimit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 		s.mu.Lock()
 		s.projectEventCursors = append(s.projectEventCursors, afterID)
+		if len(s.projectEventPages) > 0 {
+			page := s.projectEventPages[0]
+			s.projectEventPages = s.projectEventPages[1:]
+			s.mu.Unlock()
+			s.writeJSON(w, page)
+			return
+		}
 		configuredPageSize := s.projectEventPageSize
 		projectEvents := append([]katagenerated.EventEnvelope(nil), s.projectEvents...)
 		s.mu.Unlock()

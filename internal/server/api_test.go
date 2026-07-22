@@ -7702,6 +7702,87 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	}
 }
 
+func TestAPIRepositorySyncRecoversDisabledIssueScopeThroughSQLite(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	disabledErr := platform.RepositoryFeatureDisabled(
+		platform.KindGitHub, "github.com", platform.RepositoryFeatureIssues,
+		errors.New("repository issues disabled"),
+	)
+
+	var issueListCalls atomic.Int32
+	var issuesDisabled atomic.Bool
+	issuesDisabled.Store(true)
+	mock := &mockGH{
+		listOpenIssuesFn: func(context.Context, string, string) ([]*gh.Issue, error) {
+			issueListCalls.Add(1)
+			if issuesDisabled.Load() {
+				return nil, disabledErr
+			}
+			return []*gh.Issue{{
+				ID:        new(int64(7001)),
+				Number:    new(7),
+				Title:     new("issues are enabled again"),
+				State:     new("open"),
+				HTMLURL:   new("https://github.com/acme/widget/issues/7"),
+				User:      &gh.User{Login: new("ada")},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+			}}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+
+	srv.syncer.RunOnce(ctx)
+	srv.syncer.RunOnce(ctx)
+	assert.Equal(int32(1), issueListCalls.Load(),
+		"background sync must suppress the disabled issue scope")
+	repo, err := database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	assert.Empty(repo.LastSyncError,
+		"a disabled repository feature is not a transient sync failure")
+
+	issuesDisabled.Store(false)
+	done := make(chan struct{}, 1)
+	srv.syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
+		if !status.Running {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/sync?only_repo=gh|github.com/acme/widget",
+		nil,
+	)
+	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		require.Fail("expected explicit repository sync to complete")
+	}
+
+	assert.Equal(int32(2), issueListCalls.Load(),
+		"explicit repository sync must bypass the feature cooldown")
+	issue, err := database.GetIssue(
+		ctx, "github", "github.com", "acme", "widget", 7,
+	)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal("issues are enabled again", issue.Title)
+}
+
 func TestMatchPriorityRepoRequiresProviderQualifiedRepoPaths(t *testing.T) {
 	assert := assert.New(t)
 

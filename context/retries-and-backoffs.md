@@ -73,8 +73,9 @@ Do not migrate cadence loops into `backoff/v5`; they are scheduling policy, not
 failure recovery.
 
 Repository-disabled issue and merge-request scopes use a 24-hour in-memory
-background probe gate. Explicit sync bypasses it; this is cadence policy, not a
-retry or rate-limit backoff. (`internal/github/feature_cooldown.go::repositoryFeatureProbeInterval`)
+background probe gate. Expiry admits one reserved background probe across all
+lanes; a disabled result renews the deadline, while any other result releases it.
+Explicit sync bypasses the reservation. (`internal/github/feature_cooldown.go::beginRepositoryFeatureProbe`)
 
 ## Single-flight: `Manager.EnsureClone`
 

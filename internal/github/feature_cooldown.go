@@ -20,8 +20,20 @@ type repositoryFeatureCooldownKey struct {
 }
 
 type repositoryFeatureCooldowns struct {
-	mu        sync.Mutex
-	nextProbe map[repositoryFeatureCooldownKey]time.Time
+	mu              sync.Mutex
+	states          map[repositoryFeatureCooldownKey]repositoryFeatureCooldownState
+	nextReservation uint64
+}
+
+type repositoryFeatureCooldownState struct {
+	nextProbe   time.Time
+	reservation uint64
+}
+
+type repositoryFeatureProbe struct {
+	cooldowns   *repositoryFeatureCooldowns
+	key         repositoryFeatureCooldownKey
+	reservation uint64
 }
 
 type repositoryFeatureCooldownBypassKey struct{}
@@ -45,33 +57,69 @@ func repositoryFeatureKey(repo RepoRef, feature string) repositoryFeatureCooldow
 	}
 }
 
-func (c *repositoryFeatureCooldowns) due(repo RepoRef, feature string, now time.Time) bool {
+func (c *repositoryFeatureCooldowns) beginProbe(
+	repo RepoRef,
+	feature string,
+	now time.Time,
+) (repositoryFeatureProbe, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	nextProbe, ok := c.nextProbe[repositoryFeatureKey(repo, feature)]
-	return !ok || !nextProbe.After(now)
+	key := repositoryFeatureKey(repo, feature)
+	state, ok := c.states[key]
+	if !ok {
+		return repositoryFeatureProbe{}, true
+	}
+	if state.reservation != 0 || state.nextProbe.After(now) {
+		return repositoryFeatureProbe{}, false
+	}
+	c.nextReservation++
+	state.reservation = c.nextReservation
+	c.states[key] = state
+	return repositoryFeatureProbe{
+		cooldowns:   c,
+		key:         key,
+		reservation: state.reservation,
+	}, true
 }
 
 func (c *repositoryFeatureCooldowns) deferUntil(repo RepoRef, feature string, nextProbe time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.nextProbe == nil {
-		c.nextProbe = make(map[repositoryFeatureCooldownKey]time.Time)
+	if c.states == nil {
+		c.states = make(map[repositoryFeatureCooldownKey]repositoryFeatureCooldownState)
 	}
-	c.nextProbe[repositoryFeatureKey(repo, feature)] = nextProbe
+	c.states[repositoryFeatureKey(repo, feature)] = repositoryFeatureCooldownState{
+		nextProbe: nextProbe,
+	}
 }
 
 func (c *repositoryFeatureCooldowns) clear(repo RepoRef, feature string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	delete(c.nextProbe, repositoryFeatureKey(repo, feature))
+	delete(c.states, repositoryFeatureKey(repo, feature))
 }
 
-func (s *Syncer) repositoryFeatureDue(ctx context.Context, repo RepoRef, feature string) bool {
-	if repositoryFeatureCooldownBypassed(ctx) {
-		return true
+func (probe repositoryFeatureProbe) release() {
+	if probe.cooldowns == nil {
+		return
 	}
-	return s.featureCooldowns.due(repo, feature, s.now().UTC())
+	probe.cooldowns.mu.Lock()
+	defer probe.cooldowns.mu.Unlock()
+	state, ok := probe.cooldowns.states[probe.key]
+	if ok && state.reservation == probe.reservation {
+		delete(probe.cooldowns.states, probe.key)
+	}
+}
+
+func (s *Syncer) beginRepositoryFeatureProbe(
+	ctx context.Context,
+	repo RepoRef,
+	feature string,
+) (repositoryFeatureProbe, bool) {
+	if repositoryFeatureCooldownBypassed(ctx) {
+		return repositoryFeatureProbe{}, true
+	}
+	return s.featureCooldowns.beginProbe(repo, feature, s.now().UTC())
 }
 
 func (s *Syncer) recordRepositoryFeatureDisabled(repo RepoRef, feature string, err error) bool {

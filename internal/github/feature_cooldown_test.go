@@ -74,6 +74,62 @@ func TestDisabledIssueScopeUsesDailyBackgroundProbeAndManualBypass(t *testing.T)
 	assert.Equal(int32(5), issueListCalls.Load(), "successful manual probe must clear the cooldown")
 }
 
+func TestExpiredMergeRequestCooldownAllowsOneConcurrentBackgroundProbe(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	disabledErr := platform.RepositoryFeatureDisabled(
+		platform.KindGitHub, "github.com", platform.RepositoryFeatureMergeRequests,
+		errors.New("repository pull requests disabled"),
+	)
+	indexProbeStarted := make(chan struct{})
+	releaseIndexProbe := make(chan struct{})
+	var providerCalls atomic.Int32
+	client := &detailTrackingClient{}
+	client.listOpenPRsFn = func(context.Context, string, string) ([]*gh.PullRequest, error) {
+		providerCalls.Add(1)
+		close(indexProbeStarted)
+		<-releaseIndexProbe
+		return nil, disabledErr
+	}
+	client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
+		providerCalls.Add(1)
+		return nil, disabledErr
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	syncer.now = func() time.Time { return now }
+	syncer.SetWatchedMRs([]WatchedMR{{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", Number: 7,
+	}})
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		repo, platform.RepositoryFeatureMergeRequests, disabledErr,
+	))
+	now = now.Add(repositoryFeatureProbeInterval)
+
+	indexDone := make(chan struct{})
+	go func() {
+		defer close(indexDone)
+		syncer.RunOnce(t.Context())
+	}()
+	<-indexProbeStarted
+
+	syncer.syncWatchedMRs(t.Context())
+	close(releaseIndexProbe)
+	<-indexDone
+
+	assert.Equal(int32(1), providerCalls.Load())
+}
+
 func TestDisabledIssueCooldownSkipsDetailDrain(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -197,6 +253,56 @@ func TestDisabledIssueCooldownSkipsQueuedComments(t *testing.T) {
 	assert.Zero(int(commentCalls.Load()))
 }
 
+func TestExpiredIssueCommentProbeRenewsDisabledCooldown(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: 1001, Number: 1,
+		URL: "https://github.com/acme/widget/issues/1", Title: "needs comments",
+		Author: "ada", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		DetailFetchedAt: &now,
+	})
+	require.NoError(err)
+	disabledErr := platform.RepositoryFeatureDisabled(
+		platform.KindGitHub, "github.com", platform.RepositoryFeatureIssues,
+		errors.New("repository issues disabled"),
+	)
+
+	var commentCalls atomic.Int32
+	client := &mockClient{
+		comments: []*gh.IssueComment{},
+		listIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+			commentCalls.Add(1)
+			return nil, disabledErr
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	syncer.now = func() time.Time { return now }
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		repo, platform.RepositoryFeatureIssues, disabledErr,
+	))
+	now = now.Add(repositoryFeatureProbeInterval)
+
+	syncer.queueIssueCommentSync(repo, 1)
+	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
+	syncer.queueIssueCommentSync(repo, 1)
+	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
+
+	assert.Equal(int32(1), commentCalls.Load())
+}
+
 func TestDisabledIssueCooldownDoesNotCrossProviderHostOrScope(t *testing.T) {
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
@@ -213,18 +319,27 @@ func TestDisabledIssueCooldownDoesNotCrossProviderHostOrScope(t *testing.T) {
 		),
 	))
 
-	assert.False(syncer.repositoryFeatureDue(t.Context(), disabled, platform.RepositoryFeatureIssues))
-	assert.True(syncer.repositoryFeatureDue(t.Context(), disabled, platform.RepositoryFeatureMergeRequests))
-	assert.True(syncer.repositoryFeatureDue(t.Context(), RepoRef{
+	_, due := syncer.beginRepositoryFeatureProbe(
+		t.Context(), disabled, platform.RepositoryFeatureIssues,
+	)
+	assert.False(due)
+	_, due = syncer.beginRepositoryFeatureProbe(
+		t.Context(), disabled, platform.RepositoryFeatureMergeRequests,
+	)
+	assert.True(due)
+	_, due = syncer.beginRepositoryFeatureProbe(t.Context(), RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "ghe.example.com",
 		Owner: "acme", Name: "widget",
-	}, platform.RepositoryFeatureIssues))
-	assert.True(syncer.repositoryFeatureDue(t.Context(), RepoRef{
+	}, platform.RepositoryFeatureIssues)
+	assert.True(due)
+	_, due = syncer.beginRepositoryFeatureProbe(t.Context(), RepoRef{
 		Platform: platform.KindGitLab, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
-	}, platform.RepositoryFeatureIssues))
-	assert.True(syncer.repositoryFeatureDue(t.Context(), RepoRef{
+	}, platform.RepositoryFeatureIssues)
+	assert.True(due)
+	_, due = syncer.beginRepositoryFeatureProbe(t.Context(), RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "other-widget",
-	}, platform.RepositoryFeatureIssues))
+	}, platform.RepositoryFeatureIssues)
+	assert.True(due)
 }

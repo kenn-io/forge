@@ -3326,17 +3326,6 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			Owner:        mr.Owner,
 			Name:         mr.Name,
 		}
-		if !s.repositoryFeatureDue(
-			ctx, repo, platform.RepositoryFeatureMergeRequests,
-		) {
-			slog.Debug("skipping fast-sync for disabled repository feature",
-				"platform", repoPlatform(repo),
-				"host", repoHost(repo),
-				"repo", platformRepoRef(repo).RepoPath,
-				"feature", platform.RepositoryFeatureMergeRequests,
-			)
-			continue
-		}
 		if !eligibleBuckets[bucket] {
 			slog.Debug("skipping fast-sync for throttled host",
 				"host", host,
@@ -3355,11 +3344,25 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 			continue
 		}
+		probe, due := s.beginRepositoryFeatureProbe(
+			ctx, repo, platform.RepositoryFeatureMergeRequests,
+		)
+		if !due {
+			slog.Debug("skipping fast-sync for disabled repository feature",
+				"platform", repoPlatform(repo),
+				"host", repoHost(repo),
+				"repo", platformRepoRef(repo).RepoPath,
+				"feature", platform.RepositoryFeatureMergeRequests,
+			)
+			continue
+		}
 		err := s.syncMRWithWatchedRef(ctx, mr)
 		if err != nil {
-			if s.recordRepositoryFeatureDisabled(
+			disabled := s.recordRepositoryFeatureDisabled(
 				repo, platform.RepositoryFeatureMergeRequests, err,
-			) {
+			)
+			probe.release()
+			if disabled {
 				continue
 			}
 			slog.Warn("fast-sync watched MR failed",
@@ -3374,6 +3377,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			}
 			continue
 		}
+		probe.release()
 		syncedAny = true
 	}
 
@@ -4994,9 +4998,15 @@ func (s *Syncer) indexSyncRepo(
 	var partialCause error
 
 	prListUnchanged := false
-	if caps.ReadMergeRequests && s.repositoryFeatureDue(
-		ctx, repo, platform.RepositoryFeatureMergeRequests,
-	) {
+	var mrProbe repositoryFeatureProbe
+	mrProbeDue := false
+	if caps.ReadMergeRequests {
+		mrProbe, mrProbeDue = s.beginRepositoryFeatureProbe(
+			ctx, repo, platform.RepositoryFeatureMergeRequests,
+		)
+	}
+	if caps.ReadMergeRequests && mrProbeDue {
+		defer mrProbe.release()
 		attemptedScope |= failMR
 		mrReader, err := s.mergeRequestReaderFor(repo)
 		if err != nil {
@@ -5102,9 +5112,15 @@ func (s *Syncer) indexSyncRepo(
 	// Same structure as PR sync: REST list first (ETag gate),
 	// then GraphQL if available, REST fallback if not.
 	issueListUnchanged := false
-	if caps.ReadIssues && s.repositoryFeatureDue(
-		ctx, repo, platform.RepositoryFeatureIssues,
-	) {
+	var issueProbe repositoryFeatureProbe
+	issueProbeDue := false
+	if caps.ReadIssues {
+		issueProbe, issueProbeDue = s.beginRepositoryFeatureProbe(
+			ctx, repo, platform.RepositoryFeatureIssues,
+		)
+	}
+	if caps.ReadIssues && issueProbeDue {
+		defer issueProbe.release()
 		attemptedScope |= failIssues
 		issueReader, err := s.issueReaderFor(repo)
 		if err != nil {
@@ -5249,13 +5265,11 @@ func (s *Syncer) indexSyncRepo(
 	}
 
 	if caps.ReadMergeRequests && prListUnchanged &&
-		failedScope&failMR == 0 && disabledScope&failMR == 0 &&
-		s.repositoryFeatureDue(ctx, repo, platform.RepositoryFeatureMergeRequests) {
+		failedScope&failMR == 0 && disabledScope&failMR == 0 {
 		s.refreshRepoPRComments(ctx, repo)
 	}
 	if caps.ReadIssues && issueListUnchanged &&
-		failedScope&failIssues == 0 && disabledScope&failIssues == 0 &&
-		s.repositoryFeatureDue(ctx, repo, platform.RepositoryFeatureIssues) {
+		failedScope&failIssues == 0 && disabledScope&failIssues == 0 {
 		s.refreshRepoIssueComments(ctx, repo)
 	}
 
@@ -5616,26 +5630,31 @@ func (s *Syncer) refreshPRCommentsForItem(
 	client Client,
 	repo RepoRef,
 	pr *db.MergeRequest,
-) {
+) bool {
 	if pr == nil || pr.DetailFetchedAt == nil {
-		return
+		return false
 	}
 	if !s.canSpendCommentRefresh(repo) {
-		return
+		return false
 	}
 	comments, err := s.listCommentsForRefresh(
 		ctx, client, repo, pr.Number, pr.CommentCount,
 	)
 	if err != nil {
 		if IsNotModified(err) {
-			return
+			return false
+		}
+		if s.recordRepositoryFeatureDisabled(
+			repo, platform.RepositoryFeatureMergeRequests, err,
+		) {
+			return true
 		}
 		slog.Warn("comment refresh: list PR comments failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", pr.Number,
 			"err", err,
 		)
-		return
+		return false
 	}
 	if err := s.persistPRComments(ctx, repo, pr, comments); err != nil {
 		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
@@ -5645,6 +5664,7 @@ func (s *Syncer) refreshPRCommentsForItem(
 			"err", err,
 		)
 	}
+	return false
 }
 
 func (s *Syncer) refreshIssueCommentsForItem(
@@ -5652,26 +5672,31 @@ func (s *Syncer) refreshIssueCommentsForItem(
 	client Client,
 	repo RepoRef,
 	issue *db.Issue,
-) {
+) bool {
 	if issue == nil || issue.DetailFetchedAt == nil {
-		return
+		return false
 	}
 	if !s.canSpendCommentRefresh(repo) {
-		return
+		return false
 	}
 	comments, err := s.listCommentsForRefresh(
 		ctx, client, repo, issue.Number, issue.CommentCount,
 	)
 	if err != nil {
 		if IsNotModified(err) {
-			return
+			return false
+		}
+		if s.recordRepositoryFeatureDisabled(
+			repo, platform.RepositoryFeatureIssues, err,
+		) {
+			return true
 		}
 		slog.Warn("comment refresh: list issue comments failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", issue.Number,
 			"err", err,
 		)
-		return
+		return false
 	}
 	if err := s.persistIssueComments(ctx, repo, issue, comments); err != nil {
 		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
@@ -5681,6 +5706,7 @@ func (s *Syncer) refreshIssueCommentsForItem(
 			"err", err,
 		)
 	}
+	return false
 }
 
 func (s *Syncer) resetPendingCommentSyncs() {
@@ -5727,11 +5753,6 @@ func (s *Syncer) drainPendingCommentSyncs(
 		if !eligibleHosts[bucket] {
 			continue
 		}
-		if !s.repositoryFeatureDue(
-			ctx, item.repo, platform.RepositoryFeatureMergeRequests,
-		) {
-			continue
-		}
 		client, err := s.clientFor(item.repo)
 		if err != nil {
 			slog.Warn("comment refresh: resolve client failed",
@@ -5763,7 +5784,14 @@ func (s *Syncer) drainPendingCommentSyncs(
 			)
 			continue
 		}
+		probe, due := s.beginRepositoryFeatureProbe(
+			ctx, item.repo, platform.RepositoryFeatureMergeRequests,
+		)
+		if !due {
+			continue
+		}
 		s.refreshPRCommentsForItem(ctx, client, item.repo, pr)
+		probe.release()
 	}
 
 	for _, item := range issues {
@@ -5772,11 +5800,6 @@ func (s *Syncer) drainPendingCommentSyncs(
 		}
 		bucket := repoRateBucketKey(item.repo)
 		if !eligibleHosts[bucket] {
-			continue
-		}
-		if !s.repositoryFeatureDue(
-			ctx, item.repo, platform.RepositoryFeatureIssues,
-		) {
 			continue
 		}
 		client, err := s.clientFor(item.repo)
@@ -5810,7 +5833,14 @@ func (s *Syncer) drainPendingCommentSyncs(
 			)
 			continue
 		}
+		probe, due := s.beginRepositoryFeatureProbe(
+			ctx, item.repo, platform.RepositoryFeatureIssues,
+		)
+		if !due {
+			continue
+		}
 		s.refreshIssueCommentsForItem(ctx, client, item.repo, issue)
+		probe.release()
 	}
 }
 
@@ -8101,7 +8131,9 @@ func (s *Syncer) refreshRepoPRComments(
 		if ctx.Err() != nil {
 			return
 		}
-		s.refreshPRCommentsForItem(ctx, client, repo, &prs[i])
+		if s.refreshPRCommentsForItem(ctx, client, repo, &prs[i]) {
+			return
+		}
 	}
 }
 
@@ -8136,7 +8168,9 @@ func (s *Syncer) refreshRepoIssueComments(
 		if ctx.Err() != nil {
 			return
 		}
-		s.refreshIssueCommentsForItem(ctx, client, repo, &issues[i])
+		if s.refreshIssueCommentsForItem(ctx, client, repo, &issues[i]) {
+			return
+		}
 	}
 }
 
@@ -8342,11 +8376,13 @@ func (s *Syncer) drainDetailQueue(
 		if qi.Type == QueueItemPR {
 			feature = platform.RepositoryFeatureMergeRequests
 		}
-		if !s.repositoryFeatureDue(ctx, repo, feature) {
+		probe, due := s.beginRepositoryFeatureProbe(ctx, repo, feature)
+		if !due {
 			continue
 		}
 		repoID, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
 		if err != nil {
+			probe.release()
 			slog.Warn("detail drain: upsert repo failed",
 				"repo", qi.RepoOwner+"/"+qi.RepoName,
 				"err", err,
@@ -8381,7 +8417,9 @@ func (s *Syncer) drainDetailQueue(
 		}
 
 		if err != nil {
-			if s.recordRepositoryFeatureDisabled(repo, feature, err) {
+			disabled := s.recordRepositoryFeatureDisabled(repo, feature, err)
+			probe.release()
+			if disabled {
 				continue
 			}
 			slog.Warn("detail drain: fetch failed",
@@ -8390,7 +8428,9 @@ func (s *Syncer) drainDetailQueue(
 				"type", qi.Type,
 				"err", err,
 			)
+			continue
 		}
+		probe.release()
 	}
 }
 

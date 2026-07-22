@@ -8,6 +8,7 @@ import type {
 } from "@middleman/ui";
 import { canonicalItemType } from "@middleman/ui";
 import { canonicalProvider, resolvedPlatformHost } from "@middleman/ui/api/provider-routes";
+import { clearCreatedWorkspaceById } from "@middleman/ui/stores/workspace-create-pending";
 import { getStackDepth } from "@middleman/ui/stores/keyboard/modal-stack";
 import { forgetWorkspaceRoute, getRoute, navigate } from "./router.svelte.ts";
 
@@ -202,6 +203,9 @@ export function notifyWorkspaceDeleted(workspaceId: string, hostKey?: string, id
       for (const listener of invalidationListeners) listener(identity);
     }
     workspaceIdentityById.delete(workspaceId);
+    // The shared created-record (which detail instances without an inline
+    // controller consult) must not keep advertising a deleted workspace.
+    clearCreatedWorkspaceById(workspaceId);
   }
   if (lastInlineKey.workspaceId === workspaceId && lastInlineKey.hostKey === hostKey) {
     lastInlineKey = { workspaceId: "", hostKey: undefined };

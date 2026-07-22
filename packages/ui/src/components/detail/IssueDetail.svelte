@@ -47,8 +47,11 @@
   import { identityEquals, type InlineWorkspaceController, type WorkspaceItemIdentity } from "../../workspace-inline.js";
   import {
     beginWorkspaceCreate,
+    createdWorkspaceRef,
     endWorkspaceCreate,
     isWorkspaceCreatePending,
+    reconcileWorkspaceCreated,
+    recordWorkspaceCreated,
   } from "../../stores/workspace-create-pending.svelte.js";
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
@@ -563,7 +566,12 @@
   const workspace = $derived(
     inlineWorkspace
       ? inlineWorkspace.effectiveWorkspaceRef(itemIdentity, issues.getIssueDetail()?.workspace ?? null)
-      : (issues.getIssueDetail()?.workspace ?? null),
+      : // Without a controller there is no override store: a confirmed
+        // creation whose response landed after unmount or a selection
+        // change is only visible through the shared created-record, or
+        // the replacement view re-offers "Create Workspace" against a
+        // pre-create envelope.
+        (issues.getIssueDetail()?.workspace ?? createdWorkspaceRef(itemIdentity)),
   );
 
   // Once a detail load lands for the identity this component is currently
@@ -573,11 +581,14 @@
   // let a slow response for issue A clear an override this component
   // just recorded for issue B.
   $effect(() => {
-    if (!inlineWorkspace) return;
     const detail = issues.getIssueDetail();
     if (!detail) return;
     if (!detailMatchesIdentity(detail, itemIdentity)) return;
-    inlineWorkspace.reconcile(itemIdentity, detail.workspace ?? null);
+    // The shared created-record reconciles the same way, controller or
+    // not: an identity-matched envelope that carries the workspace is
+    // authoritative.
+    reconcileWorkspaceCreated(itemIdentity, detail.workspace ?? null);
+    if (inlineWorkspace) inlineWorkspace.reconcile(itemIdentity, detail.workspace ?? null);
   });
 
   function issueWorkspaceBranch(): string {
@@ -735,20 +746,24 @@
           message,
         );
       }
-      if (data?.id && inlineWorkspace) {
-        // Publish the confirmed creation to the identity-scoped store
+      if (data?.id) {
+        // Publish the confirmed creation to identity-scoped shared state
         // BEFORE any liveness guard: the workspace exists server-side
         // even when the selection moved on (an A→B→A round-trip bumps
         // the request generation) or a layout change replaced this
         // component, and dropping the response leaves the replacement
         // UI offering "Create Workspace" for a duplicate submission.
-        // recordCreated is claim-guarded, so a late publication only
-        // parks the ref under its identity — it can't activate an
-        // inactive surface.
-        inlineWorkspace.recordCreated(requestIdentity, {
+        // The created-record covers every consumer — focus/mobile views
+        // and DetailDrawer run without an inline controller; the
+        // controller's recordCreated is claim-guarded, so a late
+        // publication only parks the ref under its identity — it can't
+        // activate an inactive surface.
+        const createdRef = {
           id: data.id,
           status: data.status ?? "provisioning",
-        });
+        };
+        recordWorkspaceCreated(requestIdentity, createdRef);
+        inlineWorkspace?.recordCreated(requestIdentity, createdRef);
       }
       // Everything below is presentation owned by this live component
       // and its current selection. A destroyed component must not

@@ -84,6 +84,10 @@
       "svelte": "./src/stores/workflow.svelte.ts",
       "default": "./src/stores/workflow.svelte.ts"
     },
+    "./stores/workspace-create-pending": {
+      "svelte": "./src/stores/workspace-create-pending.svelte.ts",
+      "default": "./src/stores/workspace-create-pending.svelte.ts"
+    },
     "./stores/collapsedRepos": {
       "svelte": "./src/stores/collapsedRepos.svelte.ts",
       "default": "./src/stores/collapsedRepos.svelte.ts"

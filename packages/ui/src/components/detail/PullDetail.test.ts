@@ -1613,6 +1613,30 @@ describe("PullDetail inline workspace handoff", () => {
     expect(second.apiClient.POST).not.toHaveBeenCalled();
   });
 
+  it("a confirmed creation without a controller survives a selection round-trip", async () => {
+    // Focus/mobile views and DetailDrawer mount PullDetail without an
+    // inline controller, so there is no override store: the shared
+    // created-record is the only way a replacement view learns the
+    // workspace exists when the response lands after a round-trip, and
+    // without it the button re-offers a duplicate create.
+    const { apiClient, resolvePost } = deferredWorkspaceApiClient();
+    const { navigate, rerender } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+    });
+
+    await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
+    await rerender({ number: 2 });
+    await rerender({ number: 1 });
+    resolvePost({ data: { id: "ws-new", status: "provisioning" } });
+
+    await vi.waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Open Workspace" }).length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByRole("button", { name: "Create Workspace" })).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(apiClient.POST).toHaveBeenCalledTimes(1);
+  });
+
   it("publishes a confirmed creation across a selection round-trip", async () => {
     // A→B→A: returning to the original PR restores an identity that
     // matches the request, but the round-trip bumped the request

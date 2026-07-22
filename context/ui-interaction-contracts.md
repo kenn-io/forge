@@ -51,7 +51,11 @@ Interactive surfaces must agree on which item is selected.
   The pending request is identity-scoped shared state too: component-local
   creating flags reset on route changes and remounts while the request is
   still in flight, re-enabling the action for a duplicate submission
-  (`packages/ui/src/stores/workspace-create-pending.svelte.ts`).
+  (`packages/ui/src/stores/workspace-create-pending.svelte.ts`). The same
+  store records confirmed creations for detail instances WITHOUT an inline
+  controller (focus/mobile views, DetailDrawer), which otherwise only see
+  the detail envelope; records reconcile away when an identity-matched
+  envelope carries a workspace and clear on deletion by workspace ID.
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and

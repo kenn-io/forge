@@ -52,6 +52,12 @@ func repositoryFeatureCooldownBypassed(ctx context.Context) bool {
 }
 
 func repositoryFeatureKey(repo RepoRef, feature string) repositoryFeatureCooldownKey {
+	if repoPlatform(repo) == platform.KindGitHub {
+		repo = canonicalRepoRef(repo)
+		if repo.Owner != "" && repo.Name != "" {
+			repo.RepoPath = repo.Owner + "/" + repo.Name
+		}
+	}
 	ref := platformRepoRef(repo)
 	return repositoryFeatureCooldownKey{
 		platform: ref.Platform,

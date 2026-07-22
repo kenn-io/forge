@@ -76,8 +76,12 @@ Repository-disabled issue and merge-request scopes use a 24-hour in-memory
 background probe gate. Expiry admits one reserved background probe across all
 lanes; a disabled result renews the deadline, while any other result releases it.
 Explicit sync bypasses the reservation. (`internal/github/feature_cooldown.go::beginRepositoryFeatureProbe`)
+Cooldown keys use provider-canonical repository identity; GitHub host, owner/name case,
+and derived-path aliases must converge. (`internal/github/feature_cooldown.go::repositoryFeatureKey`)
 Completion clears only the observed generation, so a concurrent disabled renewal wins.
 (`internal/github/feature_cooldown.go::repositoryFeatureProbe.clear`)
+Follow-on lanes after index completion must acquire a fresh probe; clearing the index
+generation does not authorize an unchanged-list comment refresh. (`internal/github/sync.go::refreshRepoPRComments`)
 Classify wrapped GitHub disabled responses before generic fallback or detail error handling;
 every lane must renew the same cooldown and stop further work for that scope.
 (`internal/github/feature_cooldown.go::repositoryFeatureDisabledError`)

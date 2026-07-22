@@ -377,6 +377,94 @@ func TestDisabledMergeRequestCooldownSkipsWatchedSync(t *testing.T) {
 	assert.Zero(int(client.getPRCalls.Load()))
 }
 
+func TestGitHubCooldownCanonicalizesIndexAndWatchedRepositoryIdentity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	indexRepo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "GitHub.COM",
+		Owner: "Acme", Name: "Widget", RepoPath: "Acme/Widget",
+	}
+	client := &detailTrackingClient{}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{indexRepo}, time.Minute, nil, nil,
+	)
+	syncer.now = func() time.Time { return now }
+	syncer.SetWatchedMRs([]WatchedMR{{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", Number: 7,
+	}})
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		indexRepo, platform.RepositoryFeatureMergeRequests,
+		platform.RepositoryFeatureDisabled(
+			platform.KindGitHub, "github.com", platform.RepositoryFeatureMergeRequests,
+			errors.New("repository pull requests disabled"),
+		),
+	))
+
+	syncer.syncWatchedMRs(t.Context())
+
+	assert.Zero(int(client.getPRCalls.Load()))
+}
+
+func TestConcurrentDisabledRenewalAfterNotModifiedListSkipsPRCommentRefresh(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1001, Number: 7,
+		URL: "https://github.com/acme/widget/pull/7", Title: "unchanged PR",
+		Author: "ada", State: "open", HeadBranch: "feature", BaseBranch: "main",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now, DetailFetchedAt: &now,
+	})
+	require.NoError(err)
+
+	listStarted := make(chan struct{})
+	releaseList := make(chan struct{})
+	client := &mockClient{}
+	client.listOpenPRsFn = func(context.Context, string, string) ([]*gh.PullRequest, error) {
+		close(listStarted)
+		<-releaseList
+		return nil, notModifiedErr()
+	}
+	client.listIssueCommentsIfChangedFn = func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+		return []*gh.IssueComment{}, nil
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	syncer.now = func() time.Time { return now }
+
+	runDone := make(chan struct{})
+	go func() {
+		defer close(runDone)
+		syncer.RunOnce(ctx)
+	}()
+	<-listStarted
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		repo, platform.RepositoryFeatureMergeRequests,
+		platform.RepositoryFeatureDisabled(
+			platform.KindGitHub, "github.com", platform.RepositoryFeatureMergeRequests,
+			errors.New("repository pull requests disabled"),
+		),
+	))
+	close(releaseList)
+	<-runDone
+
+	assert.Zero(int(client.listIssueCommentsIfChangedCalls.Load()))
+}
+
 func TestDisabledIssueCooldownSkipsQueuedComments(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

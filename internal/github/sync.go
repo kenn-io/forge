@@ -8105,6 +8105,14 @@ func (s *Syncer) refreshRepoPRComments(
 	ctx context.Context,
 	repo RepoRef,
 ) {
+	probe, due := s.beginRepositoryFeatureProbe(
+		ctx, repo, platform.RepositoryFeatureMergeRequests,
+	)
+	if !due {
+		return
+	}
+	defer probe.release()
+
 	prs, err := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
 		PlatformHost: repoHost(repo),
 		RepoOwner:    repo.Owner,
@@ -8142,6 +8150,14 @@ func (s *Syncer) refreshRepoIssueComments(
 	ctx context.Context,
 	repo RepoRef,
 ) {
+	probe, due := s.beginRepositoryFeatureProbe(
+		ctx, repo, platform.RepositoryFeatureIssues,
+	)
+	if !due {
+		return
+	}
+	defer probe.release()
+
 	issues, err := s.db.ListIssues(ctx, db.ListIssuesOpts{
 		PlatformHost: repoHost(repo),
 		RepoOwner:    repo.Owner,

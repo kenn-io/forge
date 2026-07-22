@@ -140,8 +140,10 @@ describe("KataIssueList table geometry (browser)", () => {
     tableBody.scrollTop += selectedRow.getBoundingClientRect().top - tableRect.top - 72;
     tableRect = tableBody.getBoundingClientRect();
     const selectedTop = selectedRow.getBoundingClientRect().top;
+    selectedRow.focus();
     expect(selectedTop).toBeGreaterThanOrEqual(tableRect.top);
     expect(selectedRow.getBoundingClientRect().bottom).toBeLessThanOrEqual(tableRect.bottom);
+    expect(document.activeElement).toBe(selectedRow);
 
     const inserted = task({
       id: 100,
@@ -162,5 +164,6 @@ describe("KataIssueList table geometry (browser)", () => {
 
     const refreshedSelectedRow = container.querySelector<HTMLElement>(`button.row[data-uid="${selected.uid}"]`)!;
     expect(Math.round(refreshedSelectedRow.getBoundingClientRect().top)).toBe(Math.round(selectedTop));
+    expect(document.activeElement).toBe(refreshedSelectedRow);
   });
 });

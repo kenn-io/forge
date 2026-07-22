@@ -34,7 +34,7 @@
     KataTaskViewName,
   } from "../../api/kata/taskTypes.js";
   import KataIssueDetail from "../../components/kata/KataIssueDetail.svelte";
-  import KataIssueList from "../../components/kata/KataIssueList.svelte";
+  import KataIssueList, { type KataIssueRevealRequest } from "../../components/kata/KataIssueList.svelte";
   import KataResizableSash from "../../components/kata/KataResizableSash.svelte";
   import KataSidebar from "../../components/kata/KataSidebar.svelte";
   import QuickCapture from "../../components/shared/QuickCapture.svelte";
@@ -201,7 +201,7 @@
   // the list only remounts after the new view's data arrives, which is
   // too late for a selection released mid-transition.
   let navigationEpoch = $state(0);
-  let revealRequest = $state<{ uid: string; chain: readonly KataTaskSummary[]; generation: number } | null>(null);
+  let revealRequest = $state<KataIssueRevealRequest | null>(null);
   let revealGeneration = 0;
   const layoutStorageKey = "middleman:kata:task-layout/v1";
   const defaultSplitSizes: Record<SplitOrientation, number> = {
@@ -1001,6 +1001,22 @@
   }
 
   function resetIssueExpansion(): void {
+    if (!revealRequest && acceptedSnapshot) {
+      const revealChain = selectedMemberRevealChain(acceptedSnapshot);
+      if (revealChain) {
+        const selectedUID = revealChain.at(-1)!.uid;
+        const restoreFocus =
+          typeof document !== "undefined" &&
+          document.activeElement instanceof HTMLElement &&
+          document.activeElement.dataset.uid === selectedUID;
+        revealRequest = {
+          uid: selectedUID,
+          chain: revealChain,
+          generation: ++revealGeneration,
+          ...(restoreFocus ? { restoreFocus: true } : {}),
+        };
+      }
+    }
     listResetGeneration += 1;
   }
 

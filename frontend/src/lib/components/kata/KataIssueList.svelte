@@ -31,6 +31,7 @@
     uid: string;
     chain: readonly KataTaskSummary[];
     generation: number;
+    restoreFocus?: boolean;
   }
 
   interface Props {
@@ -696,10 +697,10 @@
     clearTemporaryReveal();
     lastRevealGeneration = revealRequest.generation;
     const revealChain = revealChainForStatus(revealRequest.chain);
-    const restoreFocusedTarget =
-      typeof document !== "undefined" &&
-      document.activeElement instanceof HTMLElement &&
-      document.activeElement.dataset.uid === revealRequest.uid;
+    const restoreFocusedTarget = revealRequest.restoreFocus === true ||
+      (typeof document !== "undefined" &&
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement.dataset.uid === revealRequest.uid);
     temporaryRevealChain = statusFilter === "ready" || revealChain.length > 1 ? revealChain : [];
     void (async () => {
       const request = revealRequest;

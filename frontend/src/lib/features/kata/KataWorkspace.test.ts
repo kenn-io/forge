@@ -287,6 +287,67 @@ describe("KataWorkspace snapshot authority", () => {
     await waitFor(() => expect((document.activeElement as HTMLElement | null)?.dataset.uid).toBe(child.uid));
   });
 
+  it("re-reveals a focused selected child when an accepted snapshot resets its expanded hierarchy", async () => {
+    acceptHomeDaemon();
+    const parent = {
+      ...initialIssues[0]!,
+      uid: "issue-reset-focused-parent",
+      short_id: "reset-focused-parent",
+      qualified_id: "Finances#reset-focused-parent",
+      title: "Reset focused parent",
+      child_counts: { open: 1, total: 1 },
+    };
+    const child = {
+      ...initialIssues[0]!,
+      uid: "issue-reset-focused-child",
+      short_id: "reset-focused-child",
+      qualified_id: "Finances#reset-focused-child",
+      title: "Reset focused child",
+      parent: { uid: parent.uid, short_id: parent.short_id },
+      parent_short_id: parent.short_id,
+      child_counts: undefined,
+    };
+    let selectedSnapshots = 0;
+    const { api } = createWorkspaceAPI([parent, child], {
+      snapshot: (request, snapshot) => {
+        if (request.selectedIssueUID !== child.uid || ++selectedSnapshots < 2) return snapshot;
+        if (!snapshot.issues) throw new Error("expected selected snapshot issues");
+        return {
+          ...snapshot,
+          issues: snapshot.issues.map((issue) =>
+            issue.uid === parent.uid ? { ...issue, revision: issue.revision + 1 } : issue,
+          ),
+        };
+      },
+    });
+    const onSelectedIssueChange = vi.fn();
+    const scrollIntoView = vi.fn();
+    vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(scrollIntoView);
+
+    render(KataWorkspace, { props: { api, onSelectedIssueChange } });
+
+    const parentRow = await screen.findByRole("button", { name: /Reset focused parent/ });
+    await fireEvent.keyDown(parentRow, { key: "ArrowRight" });
+    let childRow = await screen.findByRole("button", { name: /Reset focused child/ });
+    childRow.focus();
+    await fireEvent.click(childRow);
+    await screen.findByRole("heading", { name: child.title });
+    await waitFor(() => expect(onSelectedIssueChange).toHaveBeenCalledTimes(1));
+
+    childRow = screen.getByRole("button", { name: /Reset focused child/ });
+    childRow.focus();
+    scrollIntoView.mockClear();
+    await fireEvent.click(childRow);
+    await waitFor(() => expect(onSelectedIssueChange).toHaveBeenCalledTimes(2));
+    await tick();
+
+    const refreshedChildRow = screen.getByRole("button", { name: /Reset focused child/ });
+    expect(refreshedChildRow.getAttribute("aria-current")).toBe("true");
+    expect(screen.getByRole("button", { name: /Reset focused parent/ }).getAttribute("aria-expanded")).toBe("true");
+    expect((document.activeElement as HTMLElement | null)?.dataset.uid).toBe(child.uid);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+  });
+
   it("keeps the existing scrolled task list when accepting a visible row selection", async () => {
     acceptHomeDaemon();
     const selected = initialIssues[1]!;

@@ -59,6 +59,7 @@ function makeAPI() {
     daemonID: "daemon-home",
     detail: detail({ ...current, metadata: { ...current.metadata } }),
   }));
+  const refreshIssues = vi.fn(async () => true);
   const patchIssueMetadata = vi.fn(
     async (
       _target: KataTaskMutationTarget,
@@ -79,7 +80,7 @@ function makeAPI() {
     patchIssueMetadata,
   } as Pick<KataTaskAPI, "patchIssueMetadata">;
   return {
-    authority: { selectIssue },
+    authority: { selectIssue, refreshIssues },
     api,
     selectIssue,
     patchIssueMetadata,
@@ -103,7 +104,11 @@ describe("createMessageIssueLinker", () => {
       }),
       '"rev-7"',
     );
-    const authority = { selectIssue: vi.fn(async () => ({ daemonID: "daemon-a", detail: fresh })) };
+    const refreshIssues = vi.fn(async () => true);
+    const authority = {
+      selectIssue: vi.fn(async () => ({ daemonID: "daemon-a", detail: fresh })),
+      refreshIssues,
+    };
     const patchIssueMetadata = vi.fn(async (): Promise<KataTaskMutationResponse> => ({ changed: true }));
     const linker = createMessageIssueLinker(authority, { patchIssueMetadata });
 
@@ -113,6 +118,7 @@ describe("createMessageIssueLinker", () => {
 
     expect(authority.selectIssue).toHaveBeenNthCalledWith(1, "issue-pay-rent");
     expect(authority.selectIssue).toHaveBeenNthCalledWith(2, "issue-pay-rent");
+    expect(refreshIssues).toHaveBeenCalledWith("daemon-a");
     expect(patchIssueMetadata).toHaveBeenCalledWith(
       { project_id: 7, ref: "issue-pay-rent" },
       "middleman",
@@ -169,6 +175,7 @@ describe("createMessageIssueLinker", () => {
         activeDaemon = "daemon-b";
         return selection;
       }),
+      refreshIssues: vi.fn(async () => false),
     };
     const patchIssueMetadata = vi.fn(async (): Promise<KataTaskMutationResponse> => ({ changed: true }));
     const linker = createMessageIssueLinker(authority, { patchIssueMetadata });
@@ -179,5 +186,23 @@ describe("createMessageIssueLinker", () => {
     expect(patchIssueMetadata).toHaveBeenCalledWith(expect.any(Object), "middleman", expect.any(Object), '"rev-7"', {
       daemonId: "daemon-a",
     });
+  });
+
+  it("does not report an acknowledged link as failed when the shared catalog refresh fails", async () => {
+    const selected = detail(issue(), '"rev-7"');
+    const refreshIssues = vi.fn(async () => {
+      throw new Error("catalog unavailable");
+    });
+    const authority = {
+      selectIssue: vi.fn(async () => ({ daemonID: "daemon-a", detail: selected })),
+      refreshIssues,
+    };
+    const patchIssueMetadata = vi.fn(async (): Promise<KataTaskMutationResponse> => ({ changed: true }));
+    const linker = createMessageIssueLinker(authority, { patchIssueMetadata });
+
+    await expect(linker.linkMessage("issue-pay-rent", input(5001))).resolves.toEqual({
+      qualified_id: "Kata#rent",
+    });
+    expect(refreshIssues).toHaveBeenCalledWith("daemon-a");
   });
 });

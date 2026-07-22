@@ -66,6 +66,12 @@ async function patchFreshDetail(
   if (!replacement.replacementAccepted) {
     throw new Error(replacement.replacementError ?? "Kata snapshot replacement was not accepted.");
   }
+  try {
+    await authority.refreshIssues(daemonID);
+  } catch {
+    // The mutation and exact selected-detail replacement already succeeded.
+    // A shared catalog refresh must not turn that acknowledged write into an error.
+  }
   return { qualified_id: fresh.issue.qualified_id };
 }
 

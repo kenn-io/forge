@@ -45,6 +45,7 @@ export interface KataSelectedIssueSelection {
 
 export interface KataSelectedIssueAuthority {
   selectIssue(issueUID: string): Promise<KataSelectedIssueSelection>;
+  refreshIssues(daemonID: string): Promise<boolean>;
 }
 
 export interface CreateKataAuxiliaryAuthorityOptions {
@@ -65,6 +66,7 @@ export class KataAuxiliaryAuthority implements KataAuxiliaryAuthoritySource, Kat
   private readonly controller;
   private readonly loadSnapshot: (intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>;
   private desiredDaemonID: string | undefined;
+  private refreshTail: Promise<void> = Promise.resolve();
 
   constructor(options: CreateKataAuxiliaryAuthorityOptions = {}) {
     this.loadSnapshot = options.loadSnapshot ?? fetchKataWorkspaceSnapshot;
@@ -114,6 +116,25 @@ export class KataAuxiliaryAuthority implements KataAuxiliaryAuthoritySource, Kat
       throw new Error(`Kata snapshot did not include selected task ${selectedIssueUID}`);
     }
     return { daemonID: snapshot.daemon_id, detail: snapshot.selected_detail };
+  }
+
+  async refreshIssues(daemonID: string): Promise<boolean> {
+    const requestedDaemonID = daemonID.trim();
+    if (!requestedDaemonID) return false;
+
+    let accepted = false;
+    const refresh = this.refreshTail
+      .catch(() => {})
+      .then(async () => {
+        if (this.desiredDaemonID !== requestedDaemonID) return;
+        accepted = await this.controller.retry();
+      });
+    this.refreshTail = refresh.then(
+      () => {},
+      () => {},
+    );
+    await refresh;
+    return accepted;
   }
 
   retry(): Promise<boolean> {

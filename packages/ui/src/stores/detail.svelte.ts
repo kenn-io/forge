@@ -4,6 +4,7 @@ import {
   isProblem,
   problemConflictContext,
   problemConflictReason,
+  problemRetryAfter,
   type ConflictReason,
   type ProblemBody,
 } from "../api/problems.js";
@@ -59,7 +60,18 @@ export interface ApplySuggestionConflict {
 }
 
 function apiErrorMessage(error: { detail?: string; title?: string }, fallback: string): string {
-  return error.detail ?? error.title ?? fallback;
+  const message = error.detail ?? error.title ?? fallback;
+  if (!isProblem(error)) return message;
+
+  const retryAt = problemRetryAfter(error);
+  if (!retryAt) return message;
+
+  const localRetryTime = retryAt.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  return `${message}; retry at ${localRetryTime}`;
 }
 
 function applySuggestionRefreshReason(problem: ProblemBody): Exclude<ConflictReason, "conflict"> | undefined {

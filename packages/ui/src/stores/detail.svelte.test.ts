@@ -76,6 +76,7 @@ describe("createDetailStore", () => {
   afterEach(() => {
     for (const item of getFlashes()) dismissFlash(item.id);
     localStorage.clear();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -406,6 +407,47 @@ describe("createDetailStore", () => {
         }),
       }),
     );
+  });
+
+  it("shows rate-limit retry timing in local time when applying a suggestion", async () => {
+    const toLocaleTimeString = vi.spyOn(Date.prototype, "toLocaleTimeString").mockReturnValue("09:35");
+    const get = vi.fn().mockResolvedValue({ data: pullDetail("reviewed-head") });
+    const post = vi.fn(async (path: string) => {
+      if (path.endsWith("/review-suggestions/apply")) {
+        return {
+          error: {
+            code: ProblemCodes.rateLimited,
+            type: "about:blank",
+            title: "Too Many Requests",
+            detail: "github.com rate-limited",
+            details: { retryAfter: "2026-05-19T14:35:00Z" },
+          },
+        };
+      }
+      return { error: undefined };
+    });
+    const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
+    await store.loadDetail("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+
+    const ok = await store.applyReviewSuggestions("acme", "widget", 7, {
+      suggestions: [{ threadID: "thread-1", replacement: "return publish();" }],
+    });
+
+    expect(ok).toBe(false);
+    expect(getFlash()).toMatchObject({
+      message: "github.com rate-limited; retry at 09:35",
+      tone: "danger",
+    });
+    expect(toLocaleTimeString).toHaveBeenCalledWith(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
   });
 
   it("syncs detail before returning false for apply-suggestion state conflicts", async () => {

@@ -35,6 +35,9 @@ state.
   daemon (`internal/server/kata_snapshot_cache.go::kataSnapshotCache`).
 - Oversized project history must keep paginating selected history uncapped
   without retaining the complete project stream (`internal/server/kata_snapshot_enrichment.go::loadProjectEvents`).
+- Initial project-event miss coalescing is daemon + exact epoch + project;
+  selected UID belongs only to oversized selected-history fallback flights
+  (`internal/server/kata_snapshot_enrichment_cache.go::projectEvents`).
 - `GraphFetchedAt` identifies the daemon read that produced the graph and stays
   stable across cache hits (`internal/server/kata_snapshot_enrichment.go::loadGraph`).
 - `GET /kata/tasks/events`: compact reset/invalidation transport only. Replay

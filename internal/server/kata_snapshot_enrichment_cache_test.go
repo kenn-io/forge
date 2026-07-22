@@ -45,6 +45,70 @@ func TestKataSnapshotEnrichmentCacheSharesProjectEventsAcrossIssues(t *testing.T
 	assert.Equal(int64(2), loads.Load())
 }
 
+func TestKataSnapshotEnrichmentCacheCoalescesConcurrentProjectEventsAcrossIssues(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8, func(string) uint64 { return 0 })
+	t.Cleanup(cache.close)
+	key := kataProjectEventsCacheKey{DaemonID: "local", ProjectID: 7}
+	issueA := "issue-a"
+	issueB := "issue-b"
+	loadStarted := make(chan string, 2)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseLoad := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseLoad)
+	loadFor := func(selectedUID string) func(context.Context, uint64) (kataProjectEventsLoadResult, error) {
+		return func(ctx context.Context, maxBytes uint64) (kataProjectEventsLoadResult, error) {
+			loadStarted <- selectedUID
+			select {
+			case <-release:
+				return testKataProjectEventsLoadResult(
+					maxBytes,
+					selectedUID,
+					testKataEvent(1, &issueA, time.Unix(1, 0)),
+					testKataEvent(2, &issueB, time.Unix(2, 0)),
+				), nil
+			case <-ctx.Done():
+				return kataProjectEventsLoadResult{}, ctx.Err()
+			}
+		}
+	}
+	type callResult struct {
+		value kataProjectEventsResult
+		err   error
+	}
+	resultA := make(chan callResult, 1)
+	resultB := make(chan callResult, 1)
+	go func() {
+		value, err := cache.projectEvents(t.Context(), key, issueA, loadFor(issueA))
+		resultA <- callResult{value: value, err: err}
+	}()
+	require.Equal(issueA, <-loadStarted)
+	go func() {
+		value, err := cache.projectEvents(t.Context(), key, issueB, loadFor(issueB))
+		resultB <- callResult{value: value, err: err}
+	}()
+	select {
+	case selectedUID := <-loadStarted:
+		releaseLoad()
+		require.Failf("duplicate concurrent load", "loader for %q started before the shared project load completed", selectedUID)
+	case <-time.After(100 * time.Millisecond):
+	}
+	releaseLoad()
+
+	first := <-resultA
+	second := <-resultB
+	require.NoError(first.err)
+	require.NoError(second.err)
+	assert.True(first.value.CompleteProject)
+	assert.True(second.value.CompleteProject)
+	assert.Equal([]katagenerated.EventEnvelope{testKataEvent(1, &issueA, time.Unix(1, 0))}, filterKataProjectEvents(first.value.Events, issueA))
+	assert.Equal([]katagenerated.EventEnvelope{testKataEvent(2, &issueB, time.Unix(2, 0))}, filterKataProjectEvents(second.value.Events, issueB))
+	assert.Empty(loadStarted)
+}
+
 func TestKataSnapshotEnrichmentCacheDoesNotTouchTTLOnHit(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
@@ -126,6 +190,81 @@ func TestKataSnapshotEnrichmentCacheReturnsOversizedProjectEventsWithoutCaching(
 	assert.Equal(issueUID, *first.Events[0].IssueUID)
 	assert.Equal(issueUID, *second.Events[0].IssueUID)
 	assert.Equal(int64(2), loads.Load())
+}
+
+func TestKataSnapshotEnrichmentCacheRetriesConcurrentOversizedProjectEventsPerIssue(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	cache := newKataSnapshotEnrichmentCacheWithLimits(t.Context(), time.Minute, 8, 64, func(string) uint64 { return 0 })
+	t.Cleanup(cache.close)
+	key := kataProjectEventsCacheKey{DaemonID: "local", ProjectID: 7}
+	issueA := strings.Repeat("issue-a", 40)
+	issueB := strings.Repeat("issue-b", 40)
+	loadStarted := make(chan string, 2)
+	releaseA := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseFirstLoad := func() { releaseOnce.Do(func() { close(releaseA) }) }
+	t.Cleanup(releaseFirstLoad)
+	loadFor := func(selectedUID string) func(context.Context, uint64) (kataProjectEventsLoadResult, error) {
+		return func(ctx context.Context, maxBytes uint64) (kataProjectEventsLoadResult, error) {
+			loadStarted <- selectedUID
+			if selectedUID == issueA {
+				select {
+				case <-releaseA:
+				case <-ctx.Done():
+					return kataProjectEventsLoadResult{}, ctx.Err()
+				}
+			}
+			return testKataProjectEventsLoadResult(
+				maxBytes,
+				selectedUID,
+				testKataEvent(1, &selectedUID, time.Unix(1, 0)),
+			), nil
+		}
+	}
+	type callResult struct {
+		value kataProjectEventsResult
+		err   error
+	}
+	resultA := make(chan callResult, 1)
+	resultB := make(chan callResult, 1)
+	go func() {
+		value, err := cache.projectEvents(t.Context(), key, issueA, loadFor(issueA))
+		resultA <- callResult{value: value, err: err}
+	}()
+	require.Equal(issueA, <-loadStarted)
+	go func() {
+		value, err := cache.projectEvents(t.Context(), key, issueB, loadFor(issueB))
+		resultB <- callResult{value: value, err: err}
+	}()
+	select {
+	case selectedUID := <-loadStarted:
+		releaseFirstLoad()
+		require.Failf("premature selected load", "loader for %q started before the shared project load completed", selectedUID)
+	case <-time.After(100 * time.Millisecond):
+	}
+	releaseFirstLoad()
+
+	first := <-resultA
+	second := <-resultB
+	require.NoError(first.err)
+	require.NoError(second.err)
+	require.Len(first.value.Events, 1)
+	require.Len(second.value.Events, 1)
+	assert.False(first.value.CompleteProject)
+	assert.False(second.value.CompleteProject)
+	assert.Equal(issueA, first.value.SelectedUID)
+	assert.Equal(issueB, second.value.SelectedUID)
+	assert.Equal(issueA, *first.value.Events[0].IssueUID)
+	assert.Equal(issueB, *second.value.Events[0].IssueUID)
+	select {
+	case selectedUID := <-loadStarted:
+		assert.Equal(issueB, selectedUID)
+	case <-time.After(time.Second):
+		require.Fail("selected fallback did not load")
+	}
+	assert.Empty(loadStarted)
 }
 
 func TestKataSnapshotEnrichmentCacheSeparatesDetailAndGraphKeys(t *testing.T) {

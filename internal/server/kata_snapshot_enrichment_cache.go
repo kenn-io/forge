@@ -70,6 +70,7 @@ type kataProjectEventsLoadResult struct {
 type kataProjectEventsResult struct {
 	Events          []katagenerated.EventEnvelope
 	CompleteProject bool
+	SelectedUID     string
 }
 
 type kataSnapshotEnrichmentCache struct {
@@ -255,35 +256,60 @@ func (c *kataSnapshotEnrichmentCache) projectEvents(
 	if item := c.events.Get(key); item != nil {
 		return kataProjectEventsResult{Events: slices.Clone(item.Value().Events), CompleteProject: true}, nil
 	}
-	resultCh := c.eventGroup.DoChan(kataProjectEventsSingleflightKey(key, selectedUID), func() (any, error) {
-		if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
-			return nil, errKataSnapshotEnrichmentStale
+	result, err := awaitKataProjectEvents(ctx, c.eventGroup.DoChan(kataProjectEventsSingleflightKey(key), func() (any, error) {
+		return c.loadProjectEvents(key, selectedUID, load)
+	}))
+	if err != nil {
+		return kataProjectEventsResult{}, err
+	}
+	if result.CompleteProject || result.SelectedUID == selectedUID {
+		return result, nil
+	}
+	return awaitKataProjectEvents(ctx, c.eventGroup.DoChan(kataSelectedProjectEventsSingleflightKey(key, selectedUID), func() (any, error) {
+		return c.loadProjectEvents(key, selectedUID, load)
+	}))
+}
+
+func (c *kataSnapshotEnrichmentCache) loadProjectEvents(
+	key kataProjectEventsCacheKey,
+	selectedUID string,
+	load func(context.Context, uint64) (kataProjectEventsLoadResult, error),
+) (kataProjectEventsResult, error) {
+	if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
+		return kataProjectEventsResult{}, errKataSnapshotEnrichmentStale
+	}
+	if item := c.events.Get(key); item != nil {
+		return kataProjectEventsResult{Events: slices.Clone(item.Value().Events), CompleteProject: true}, nil
+	}
+	if !c.beginLoad() {
+		return kataProjectEventsResult{}, context.Canceled
+	}
+	defer c.loads.Done()
+	loadCtx, cancel := context.WithTimeout(c.root, kataDaemonReadTimeout)
+	defer cancel()
+	loaded, err := load(loadCtx, c.maxBytes)
+	if err != nil {
+		return kataProjectEventsResult{}, err
+	}
+	if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
+		return kataProjectEventsResult{}, errKataSnapshotEnrichmentStale
+	}
+	if loaded.Cacheable {
+		value := kataCachedProjectEvents{
+			Events: slices.Clone(loaded.ProjectEvents), SerializedCost: loaded.SerializedCost,
 		}
-		if item := c.events.Get(key); item != nil {
-			return kataProjectEventsResult{Events: slices.Clone(item.Value().Events), CompleteProject: true}, nil
-		}
-		if !c.beginLoad() {
-			return nil, context.Canceled
-		}
-		defer c.loads.Done()
-		loadCtx, cancel := context.WithTimeout(c.root, kataDaemonReadTimeout)
-		defer cancel()
-		loaded, err := load(loadCtx, c.maxBytes)
-		if err != nil {
-			return nil, err
-		}
-		if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
-			return nil, errKataSnapshotEnrichmentStale
-		}
-		if loaded.Cacheable {
-			value := kataCachedProjectEvents{
-				Events: slices.Clone(loaded.ProjectEvents), SerializedCost: loaded.SerializedCost,
-			}
-			c.storeEvents(key, value)
-			return kataProjectEventsResult{Events: value.Events, CompleteProject: true}, nil
-		}
-		return kataProjectEventsResult{Events: slices.Clone(loaded.SelectedHistory)}, nil
-	})
+		c.storeEvents(key, value)
+		return kataProjectEventsResult{Events: value.Events, CompleteProject: true}, nil
+	}
+	return kataProjectEventsResult{
+		Events: slices.Clone(loaded.SelectedHistory), SelectedUID: selectedUID,
+	}, nil
+}
+
+func awaitKataProjectEvents(
+	ctx context.Context,
+	resultCh <-chan singleflight.Result,
+) (kataProjectEventsResult, error) {
 	select {
 	case <-ctx.Done():
 		return kataProjectEventsResult{}, ctx.Err()
@@ -543,8 +569,12 @@ func kataIssueDetailSingleflightKey(key kataIssueDetailCacheKey) string {
 	return fmt.Sprintf("%s\x00%d\x00%s", key.DaemonID, key.DaemonEpoch, key.IssueUID)
 }
 
-func kataProjectEventsSingleflightKey(key kataProjectEventsCacheKey, selectedUID string) string {
-	return fmt.Sprintf("%s\x00%d\x00%d\x00%s", key.DaemonID, key.DaemonEpoch, key.ProjectID, selectedUID)
+func kataProjectEventsSingleflightKey(key kataProjectEventsCacheKey) string {
+	return fmt.Sprintf("project\x00%s\x00%d\x00%d", key.DaemonID, key.DaemonEpoch, key.ProjectID)
+}
+
+func kataSelectedProjectEventsSingleflightKey(key kataProjectEventsCacheKey, selectedUID string) string {
+	return fmt.Sprintf("selected\x00%s\x00%d\x00%d\x00%s", key.DaemonID, key.DaemonEpoch, key.ProjectID, selectedUID)
 }
 
 func kataGraphSingleflightKey(key kataGraphCacheKey) string {

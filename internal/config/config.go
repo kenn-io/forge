@@ -2125,6 +2125,20 @@ func (c *Config) ResolveRepoTokenSource(r Repo) tokenauth.Descriptor {
 	)
 }
 
+// HasExplicitGitHubTokenEnv reports whether github_token_env names a
+// deliberately configured github.com fallback credential rather than
+// middleman's built-in default. Load defaults the field, and Save and the
+// sample config both materialize the default name into the file, so the
+// value itself is the only durable signal: only a non-default name is an
+// explicit fallback choice.
+func (c *Config) HasExplicitGitHubTokenEnv() bool {
+	if c == nil {
+		return false
+	}
+	env := strings.TrimSpace(c.GitHubTokenEnv)
+	return env != "" && env != defaultGitHubTokenEnv
+}
+
 // GitHubOwnerTokenFor returns the exact owner PAT mapping for host and owner.
 func (c *Config) GitHubOwnerTokenFor(
 	host, owner string,
@@ -2421,6 +2435,34 @@ func (c *Config) CloneTokenDescriptors() []tokenauth.Descriptor {
 func (c *Config) ValidateSharedHostCloneTokenSources() error {
 	if c == nil {
 		return nil
+	}
+	// Non-GitHub providers resolve API and clone credentials by host, so two
+	// repositories on one (platform, host) must not declare conflicting
+	// effective token chains. This check must use each repository's own
+	// descriptor: ProviderTokenSources deduplicates by key and keeps only the
+	// first same-host plan, which would hide the conflict.
+	repoSources := make(map[tokenauth.Key]tokenauth.Descriptor, len(c.Repos))
+	for _, r := range c.Repos {
+		if r.PlatformOrDefault() == defaultPlatform {
+			continue
+		}
+		effective := c.ResolveRepoTokenSource(r)
+		if effective.Key.Host == "" {
+			continue
+		}
+		prev, ok := repoSources[effective.Key]
+		if !ok {
+			repoSources[effective.Key] = effective
+			continue
+		}
+		if prev.EqualSource(effective) {
+			continue
+		}
+		return fmt.Errorf(
+			"conflicting token source for %s host %q (conflicting token_env): %s vs %s",
+			r.PlatformOrDefault(), r.PlatformHostOrDefault(),
+			prev.SafeString(), effective.SafeString(),
+		)
 	}
 	type hostSource struct {
 		platform string

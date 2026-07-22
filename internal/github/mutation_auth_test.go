@@ -315,6 +315,73 @@ func TestNotificationAPIsUseUserAuthAndBackgroundBudget(t *testing.T) {
 	assert.Equal(3, writeBudget.Spent())
 }
 
+// TestViewerPermissionOverlayChargesWriteBudget pins background split-auth
+// accounting: the GetRepository viewer overlay runs on the write credential
+// during sync, so it must spend the write identity's sync budget, while
+// foreground mutations on the same transport stay uncharged.
+func TestViewerPermissionOverlayChargesWriteBudget(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("TEST_OVERLAY_BUDGET_PAT", "user-pat")
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v3/repos/acme/widgets",
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if r.Header.Get("Authorization") == "Bearer user-pat" {
+				_, _ = w.Write([]byte(`{"id":1,"name":"widgets","permissions":{"push":true}}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":1,"name":"widgets","permissions":{"push":false}}`))
+		})
+	mux.HandleFunc("POST /api/v3/repos/acme/widgets/issues/5/comments",
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":1}`))
+		})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: "github", Host: "github.example.com"},
+		Candidates: []tokenauth.Candidate{
+			{
+				Kind:           tokenauth.SourceKindGitHubApp,
+				Host:           "github.example.com",
+				FilePath:       "/keys/app.pem",
+				AppID:          7,
+				InstallationID: 11,
+			},
+			{Kind: tokenauth.SourceKindEnv, EnvName: "TEST_OVERLAY_BUDGET_PAT"},
+		},
+	}, tokenauth.Options{
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			return "ghs_app_token", time.Now().Add(time.Hour), nil
+		},
+	})
+	readBudget := NewSyncBudget(100)
+	writeBudget := NewSyncBudget(100)
+	client, err := NewClient(
+		source, "github.example.com", nil, readBudget,
+		WithBaseURLForTesting(srv.URL),
+		WithNotificationAccounting(nil, writeBudget),
+	)
+	require.NoError(err)
+
+	repo, err := client.GetRepository(WithSyncBudget(t.Context()), "acme", "widgets")
+	require.NoError(err)
+	assert.True(repo.GetPermissions().GetPush())
+	assert.Equal(1, readBudget.Spent())
+	assert.Equal(1, writeBudget.Spent(),
+		"the background viewer overlay must spend the write identity's budget")
+
+	_, err = client.CreateIssueComment(t.Context(), "acme", "widgets", 5, "lgtm")
+	require.NoError(err)
+	assert.Equal(1, writeBudget.Spent(), "foreground mutations stay uncharged")
+	assert.Equal(1, readBudget.Spent())
+}
+
 // TestMutationAuthFallsBackToReadClientWhenUnsplit pins the hand-built
 // client shape used across this package's tests: without a dedicated
 // write client, mutations flow through the read client unchanged.

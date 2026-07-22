@@ -329,18 +329,32 @@ func (s *SourceSet) Get(key Key) (*ManagedSource, bool) {
 	return src, ok
 }
 
-// ProbeToken resolves desc with this set's options without mutating live
-// sources. Probe sources share the set's installation-token cache so multiple
-// scoped routes covered by one GitHub App installation do not mint duplicates.
-func (s *SourceSet) ProbeToken(ctx context.Context, desc Descriptor) (string, error) {
-	if s == nil {
-		return NewManagedSource(desc, Options{}).Token(ctx)
+// ProbeBatch resolves descriptors with a SourceSet's options but a fresh
+// installation-token cache scoped to one validation pass. Probes within the
+// batch share mints, so multiple scoped routes covered by one GitHub App
+// installation do not mint duplicates, while the first probe of each
+// installation always re-mints: validation must observe a revoked
+// installation or replaced private key instead of accepting a still-unexpired
+// token from the live cache.
+type ProbeBatch struct {
+	options   Options
+	appTokens *githubAppTokenStore
+}
+
+func (s *SourceSet) NewProbeBatch() *ProbeBatch {
+	batch := &ProbeBatch{appTokens: newGitHubAppTokenStore()}
+	if s != nil {
+		s.mu.Lock()
+		batch.options = s.options
+		s.mu.Unlock()
 	}
-	s.mu.Lock()
-	options := s.options
-	appTokens := s.appTokens
-	s.mu.Unlock()
-	return newManagedSource(desc, options, appTokens).Token(ctx)
+	return batch
+}
+
+// ProbeToken resolves desc without mutating live sources or the live
+// installation-token cache.
+func (b *ProbeBatch) ProbeToken(ctx context.Context, desc Descriptor) (string, error) {
+	return newManagedSource(desc, b.options, b.appTokens).Token(ctx)
 }
 
 func (s *SourceSet) Keys() []Key {

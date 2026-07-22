@@ -1392,6 +1392,25 @@ token_file = "/tokens/b"
 	require.NoError(t, err)
 }
 
+func TestValidateRejectsConflictingRepoTokenSourcesOnSharedHost(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+[[repos]]
+platform = "gitlab"
+owner = "group"
+name = "one"
+token_env = "GITLAB_TOKEN_A"
+
+[[repos]]
+platform = "gitlab"
+owner = "group"
+name = "two"
+token_env = "GITLAB_TOKEN_B"
+`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `conflicting token source for gitlab host "gitlab.com"`)
+}
+
 func TestValidateAllowsRepoTokenEnvMatchingPlatformFallback(t *testing.T) {
 	path := writeConfig(t, `
 [[platforms]]

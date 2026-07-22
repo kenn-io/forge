@@ -372,8 +372,16 @@ func NewClient(
 	}
 	et := &etagTransport{base: authRT}
 	httpClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(et)}
+	writeBudget := budget
+	if options.notificationBudget != nil {
+		writeBudget = options.notificationBudget
+	}
 	mutationAuthRT := authRT
-	mutationAuthRT.Base = http.DefaultTransport
+	// The write path also serves background reads (the viewer-permission
+	// overlay in GetRepository), so it charges the write identity's sync
+	// budget. The budget transport is context-gated: foreground mutations
+	// stay uncharged.
+	mutationAuthRT.Base = WrapSyncBudgetTransport(http.DefaultTransport, writeBudget)
 	var mutationBase http.RoundTripper = mutationAuthTransport{base: mutationAuthRT}
 	if options.mutationsDisabled {
 		mutationBase = errorTransport{err: ErrMissingWriteIdentity}
@@ -384,17 +392,13 @@ func NewClient(
 	// go-github caches rate limits per client instance: sharing one
 	// client would let an exhausted PAT (reported by a write response)
 	// preemptively block app-token reads until the PAT window resets.
-	// No etag or sync-budget transports: those exist for sync reads.
+	// No etag transport: etags exist for sync reads.
 	writeHTTPClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(
 		mutationBase,
 	)}
-	notificationBudget := budget
-	if options.notificationBudget != nil {
-		notificationBudget = options.notificationBudget
-	}
 	notificationAuthRT := authRT
 	notificationAuthRT.Base = WrapSyncBudgetTransport(
-		http.DefaultTransport, notificationBudget,
+		http.DefaultTransport, writeBudget,
 	)
 	var notificationRoundTripper http.RoundTripper = mutationAuthTransport{
 		base: notificationAuthRT,

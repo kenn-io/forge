@@ -563,6 +563,28 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 	if err != nil {
 		return err
 	}
+	// Read propagation makes refetch and mark-read wire requests, so it holds
+	// notification-priority provider work for each queued repository's
+	// effective identity; otherwise an admitted archive on the same principal
+	// could overlap these requests. Rows whose repository no longer resolves
+	// to a route register nothing: their wire calls fail closed at routing
+	// without upstream I/O.
+	seenBuckets := make(map[string]struct{}, len(queued))
+	for _, notification := range queued {
+		repo := RepoRef{
+			Platform: kind, PlatformHost: host,
+			Owner: notification.RepoOwner, Name: notification.RepoName,
+		}
+		bucket, bucketErr := s.bucketKeyForRepo(repo, kind == platform.KindGitHub)
+		if bucketErr != nil {
+			continue
+		}
+		if _, ok := seenBuckets[bucket]; ok {
+			continue
+		}
+		seenBuckets[bucket] = struct{}{}
+		defer s.beginProviderWork(bucket, archive.PriorityNotificationRefresh)()
+	}
 	for _, notification := range queued {
 		current, err := s.db.NotificationAckPropagationCurrent(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt)
 		if err != nil {

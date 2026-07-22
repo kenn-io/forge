@@ -40,6 +40,9 @@ Each configured provider-host pair may have its own fallback token source.
 Across providers sharing one hostname, unscoped fallback chains must be
 canonically equivalent because ownerless host operations cannot select a provider
 safely (`internal/config/config.go::Config.ValidateSharedHostCloneTokenSources`).
+Non-GitHub repositories on one (provider, host) must also declare equivalent
+effective chains, checked against each repository's own descriptor —
+`ProviderTokenSources` deduplicates by key and would hide the conflict.
 GitHub may additionally define exact-repository and owner authorization routes.
 
 - Legacy GitHub config still defaults to `github` on `github.com`.

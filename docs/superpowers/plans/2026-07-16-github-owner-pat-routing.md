@@ -19,7 +19,7 @@
 - Preserve existing single-token, per-repository token, GitHub CLI, and GitHub App behavior when no owner mapping is configured.
 - Ownerless user APIs use the host fallback user credential; never choose an arbitrary owner PAT.
 - A PAT rotated to a different GitHub user requires restart; do not move an active route between identities in-process.
-- Add migration `000039`; never edit existing migrations.
+- Add migration `000040`; never edit existing migrations (`000039` is the historical activity archive).
 - Run direct Go tests with `-shuffle=on`, without `-v` or `-count=1`.
 
 ---
@@ -261,7 +261,12 @@ git commit -m "feat: configure GitHub PATs by repository owner" \
   }
 
   type IdentityResolver interface {
-      ResolvePAT(context.Context, string, tokenauth.Source) (GitHubIdentity, error)
+      // ResolvePAT returns the identity and the exact token it verified.
+      // Startup binds routes to that verified token (BindSourceIdentity):
+      // a later reload may rotate to a token for the same principal, but a
+      // token resolving to a different user is rejected until restart, so a
+      // live route can never silently move between identities in-process.
+      ResolvePAT(context.Context, string, tokenauth.Source) (GitHubIdentity, string, error)
   }
 
   func InstallationIdentity(host string, installationID int64) GitHubIdentity
@@ -427,12 +432,12 @@ go test ./internal/db ./internal/ratelimit -run 'Test.*(RatePrincipal|PrincipalI
 
 Expected: FAIL because the schema and query signatures are host-only.
 
-- [ ] **Step 3: Add migration `000039`**
+- [ ] **Step 3: Add migration `000040`**
 
 Use a SQLite table rebuild:
 
 ```sql
-CREATE TABLE middleman_rate_limits_v39 (
+CREATE TABLE middleman_rate_limits_v40 (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     platform       TEXT NOT NULL DEFAULT 'github',
     platform_host  TEXT NOT NULL,
@@ -447,7 +452,7 @@ CREATE TABLE middleman_rate_limits_v39 (
     UNIQUE(platform, platform_host, rate_principal, api_type)
 );
 
-INSERT INTO middleman_rate_limits_v39 (
+INSERT INTO middleman_rate_limits_v40 (
     id, platform, platform_host, rate_principal, api_type,
     requests_hour, hour_start, rate_remaining, rate_limit,
     rate_reset_at, updated_at
@@ -646,11 +651,18 @@ git commit -m "feat: allocate GitHub sync budgets per identity" \
   }
 
   type Route struct {
-      Key           RouteKey
-      Client        Client
-      Fetcher       *GraphQLFetcher
-      ReadIdentity  IdentityKey
-      WriteIdentity IdentityKey
+      Key    RouteKey
+      Client Client
+      // DiscoveryClient narrowly serves owner repository enumeration for
+      // selected-installation App routes when no PAT route covers the owner.
+      DiscoveryClient Client
+      // WriteSnapshotClient snapshots the write identity's rate state on
+      // App-read/PAT-write routes; querying with the route's read client
+      // would attribute the PAT's capacity to the App principal.
+      WriteSnapshotClient Client
+      Fetcher             *GraphQLFetcher
+      ReadIdentity        IdentityKey
+      WriteIdentity       IdentityKey
   }
 
   type HostRouter struct { /* fallback, owner routes, exact repo routes */ }
@@ -1137,5 +1149,5 @@ git commit -m "docs: explain GitHub owner PAT identity accounting" \
 - **Spec coverage:** Configuration, precedence, identity resolution, route clients, App/PAT split, principal persistence, identity budgets, GraphQL, preview, managed Git, status, errors, documentation, and tests each have an implementation task.
 - **Scope:** The plan remains configuration-only and does not add UI token management or automatic rotation.
 - **Type consistency:** `IdentityKey`, `RouteKey`, `HostRouter`, principal-bearing `RateBucketKey`, and repository-aware sync lookup methods are introduced before their consumers.
-- **Migration discipline:** Schema work is isolated in new migration `000039`; existing migration history remains untouched.
+- **Migration discipline:** Schema work is isolated in new migration `000040`; existing migration history remains untouched.
 - **No compatibility shim:** Internal host-only GitHub methods are directly migrated where repository identity is required. Provider-neutral host behavior remains only where it is still the correct model.

@@ -4662,6 +4662,18 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	}
 	releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityNormalIndex)
 	defer releaseProviderWork()
+	// Split-auth repository sync also issues a viewer-permission request on
+	// the write identity; register that principal too so an archive sharing
+	// the write PAT is preempted rather than running concurrently.
+	if writeIdentity, idErr := s.identityForRepo(repo, true); idErr == nil &&
+		writeIdentity.Principal != "" {
+		writeBucket := RateBucketKey(
+			string(repoPlatform(repo)), writeIdentity.Host, writeIdentity.Principal,
+		)
+		if writeBucket != bucket {
+			defer s.beginProviderWork(writeBucket, archive.PriorityNormalIndex)()
+		}
+	}
 
 	repoIdentity, resolvedRepo, err := s.syncRepoIdentity(ctx, repo)
 	if err != nil {

@@ -491,7 +491,10 @@ func hasExplicitGitHubFallback(cfg *config.Config, host string) bool {
 		return false
 	}
 	host = strings.ToLower(strings.TrimSpace(host))
-	if host == platform.DefaultGitHubHost && strings.TrimSpace(cfg.GitHubTokenEnv) != "" {
+	// Loaded configs always carry a github_token_env value because Load
+	// defaults it and Save writes it back; only a non-default name marks a
+	// deliberate github.com fallback that may hold startup hostage.
+	if host == platform.DefaultGitHubHost && cfg.HasExplicitGitHubTokenEnv() {
 		return true
 	}
 	for _, configured := range cfg.Platforms {

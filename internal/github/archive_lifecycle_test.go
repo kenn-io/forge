@@ -1109,6 +1109,127 @@ func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
 	}
 }
 
+func TestSyncRepoRegistersReadAndWriteIdentityProviderWork(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	mc := &mockClient{getRepositoryFn: func(context.Context, string, string) (*gh.Repository, error) {
+		once.Do(func() { close(started) })
+		<-release
+		return nil, errors.New("stop after identity resolution")
+	}}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, nil, time.Hour, nil, nil)
+	t.Cleanup(syncer.Stop)
+	router, err := NewHostRouter("github.com", &Route{
+		Key:           RouteKey{Host: "github.com", Owner: "acme"},
+		Client:        mc,
+		ReadIdentity:  IdentityKey{Host: "github.com", Principal: "installation:11"},
+		WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:9"},
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- syncer.syncRepo(t.Context(), repo) }()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		require.Fail("repository sync did not reach the provider")
+	}
+	readBucket := RateBucketKey("github", "github.com", "installation:11")
+	writeBucket := RateBucketKey("github", "github.com", "user:9")
+	assert.True(
+		syncer.higherPriorityProviderWorkActive(readBucket, archive.PriorityFullArchive),
+		"read identity work must preempt archives during repository sync",
+	)
+	assert.True(
+		syncer.higherPriorityProviderWorkActive(writeBucket, archive.PriorityFullArchive),
+		"write identity work must preempt archives while the viewer permission overlay can run",
+	)
+	close(release)
+	require.Error(<-done)
+	assert.False(syncer.higherPriorityProviderWorkActive(readBucket, archive.PriorityFullArchive))
+	assert.False(syncer.higherPriorityProviderWorkActive(writeBucket, archive.PriorityFullArchive))
+}
+
+func TestProcessQueuedNotificationReadsHoldsWriteIdentityProviderWork(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	repoID, err := database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	queuedAt := now.Add(time.Minute)
+	number := 7
+	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{{
+		Platform:                 "github",
+		PlatformHost:             "github.com",
+		PlatformNotificationID:   "thread-1",
+		RepoID:                   &repoID,
+		RepoOwner:                "acme",
+		RepoName:                 "widget",
+		SubjectType:              "PullRequest",
+		SubjectTitle:             "Please review",
+		WebURL:                   "https://github.com/acme/widget/pull/7",
+		ItemNumber:               &number,
+		ItemType:                 "pr",
+		Reason:                   "mention",
+		SourceUpdatedAt:          now,
+		SyncedAt:                 now,
+		SourceAckQueuedAt:        &queuedAt,
+		SourceLastAcknowledgedAt: &queuedAt,
+	}}))
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	mc := &mockClient{
+		getNotificationThreadFn: func(context.Context, string) (NotificationThread, error) {
+			once.Do(func() { close(started) })
+			<-release
+			return NotificationThread{}, errors.New("refetch failed")
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, nil, time.Hour, nil, nil)
+	t.Cleanup(syncer.Stop)
+	router, err := NewHostRouter("github.com", &Route{
+		Key:           RouteKey{Host: "github.com", Owner: "acme"},
+		Client:        mc,
+		ReadIdentity:  IdentityKey{Host: "github.com", Principal: "installation:11"},
+		WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:9"},
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- syncer.ProcessQueuedNotificationReads(
+			t.Context(), platform.KindGitHub, "github.com", 10,
+		)
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		require.Fail("queued read propagation did not reach the provider")
+	}
+	writeBucket := RateBucketKey("github", "github.com", "user:9")
+	assert.True(
+		syncer.higherPriorityProviderWorkActive(writeBucket, archive.PriorityFullArchive),
+		"queued acknowledgment propagation must preempt archives on the write identity",
+	)
+	close(release)
+	require.NoError(<-done)
+	assert.False(syncer.higherPriorityProviderWorkActive(writeBucket, archive.PriorityFullArchive))
+}
+
 func TestSyncerConfiguredRepositoriesCarryFullProviderIdentity(t *testing.T) {
 	database := dbtest.Open(t)
 	syncer := NewSyncerWithRegistry(nil, database, nil, []RepoRef{{

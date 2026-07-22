@@ -583,6 +583,7 @@ func (s *Server) validateReloadProviderTokenSources(
 	if s.tokenSources == nil || cfg == nil {
 		return nil
 	}
+	probes := s.tokenSources.NewProbeBatch()
 	for _, plan := range cfg.ProviderTokenSources() {
 		if !plan.Required {
 			continue
@@ -595,7 +596,7 @@ func (s *Server) validateReloadProviderTokenSources(
 		if plan.GitHubOwner != "" {
 			tokenCtx = tokenauth.WithGitHubOwner(tokenCtx, plan.GitHubOwner)
 		}
-		if _, err := s.tokenSources.ProbeToken(tokenCtx, desc); err != nil {
+		if _, err := probes.ProbeToken(tokenCtx, desc); err != nil {
 			label := fmt.Sprintf("%s host %s", desc.Key.Platform, desc.Key.Host)
 			if plan.GitHubOwner != "" {
 				label = fmt.Sprintf("%s owner %s", label, plan.GitHubOwner)

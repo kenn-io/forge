@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -292,44 +295,91 @@ func TestBuildProviderStartupRoutesUntrackedOwnerAndKeepsFallbackUnscoped(t *tes
 	assert.Equal("user:999", fallbackRoute.ReadIdentity.Principal)
 }
 
+// TestProviderStartupKeepsSameHostGitCredentialsProviderScoped drives the
+// reachable shared-host configuration — scoped GitHub owner routes plus
+// another provider on the same hostname — through config.Load and
+// buildProviderStartup, then asserts managed Git credential selection through
+// the gitclone.RouteResolver interface that gitclone.Manager consults for
+// every networked operation.
 func TestProviderStartupKeepsSameHostGitCredentialsProviderScoped(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	const host = "code.example.com"
-	t.Setenv("GITHUB_PAT", "github-secret")
+	t.Setenv("ORG_A_PAT", "org-a-token")
 	t.Setenv("FORGEJO_PAT", "forgejo-secret")
+	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/version" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"version":"9.0.0"}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(api.Close)
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = api.Client().Transport
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+	host := strings.TrimPrefix(api.URL, "https://")
+	path := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(os.WriteFile(path, fmt.Appendf(nil, `
+[[platforms]]
+type = "forgejo"
+host = %[1]q
+token_env = "FORGEJO_PAT"
 
-	set := tokenauth.NewSourceSet(tokenauth.Options{})
-	githubSource := set.Upsert(tokenauth.Descriptor{
-		Key: tokenauth.Key{Platform: string(platform.KindGitHub), Host: host},
-		Candidates: []tokenauth.Candidate{{
-			Kind: tokenauth.SourceKindEnv, EnvName: "GITHUB_PAT",
-		}},
-	})
-	forgejoSource := set.Upsert(tokenauth.Descriptor{
-		Key: tokenauth.Key{Platform: string(platform.KindForgejo), Host: host},
-		Candidates: []tokenauth.Candidate{{
-			Kind: tokenauth.SourceKindEnv, EnvName: "FORGEJO_PAT",
-		}},
-	})
-	router, err := github.NewHostRouter(host)
+[[repos]]
+platform = "forgejo"
+platform_host = %[1]q
+owner = "acme"
+name = "widget"
+
+[[repos]]
+platform = "github"
+platform_host = %[1]q
+owner = "org-a"
+name = "one"
+
+[[github_owner_tokens]]
+host = %[1]q
+owner = "org-a"
+token_env = "ORG_A_PAT"
+`, host), 0o600))
+	cfg, err := config.Load(path)
 	require.NoError(err)
-	startup := providerStartup{
-		cloneSources: map[tokenauth.Key]tokenauth.Source{
-			{Platform: string(platform.KindGitHub), Host: host}:  githubSource,
-			{Platform: string(platform.KindForgejo), Host: host}: forgejoSource,
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubCLI: func(context.Context, string) (string, error) {
+			return "", tokenauth.ErrMissingToken
 		},
-		cloneAuth:     map[string]tokenauth.Source{host: githubSource},
-		githubRoutes:  map[tokenauth.Key]githubCredentialRoute{},
-		githubRouters: map[string]*github.HostRouter{host: router},
-	}
-
-	selected := startup.SourceForRepo("forgejo", host, "acme", "widget")
-	require.NotNil(selected)
-	token, err := selected.Token(t.Context())
+	})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
 	require.NoError(err)
-	assert.Equal("forgejo-secret", token)
-	assert.Nil(startup.SourceForRepo("github", host, "unmatched", "repo"),
+	database := dbtest.Open(t)
+	startup, err := buildProviderStartup(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+		fakeGitHubIdentityResolver{
+			byEnv: map[string]github.GitHubIdentity{
+				"ORG_A_PAT": {
+					Key: github.IdentityKey{Host: host, Principal: "user:123"},
+				},
+			},
+		},
+	)
+	require.NoError(err)
+
+	var routes gitclone.RouteResolver = &startup
+	forgejoSource := routes.SourceForRepo("forgejo", host, "acme", "widget")
+	require.NotNil(forgejoSource)
+	forgejoToken, err := forgejoSource.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("forgejo-secret", forgejoToken)
+
+	githubSource := routes.SourceForRepo("github", host, "org-a", "one")
+	require.NotNil(githubSource)
+	githubToken, err := githubSource.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("org-a-token", githubToken,
+		"the scoped GitHub route must not borrow the forgejo host token")
+
+	assert.Nil(routes.SourceForRepo("github", host, "unmatched", "repo"),
 		"a routed GitHub host without a matching route must fail closed")
 }
 
@@ -422,17 +472,28 @@ func TestBuildProviderStartupSkipsImplicitOptionalFallbackIdentityLookup(t *test
 	assert := assert.New(t)
 	database := dbtest.Open(t)
 	t.Setenv("ORG_A_PAT", "org-a-token")
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "implicit-fallback-token")
-	cfg := &config.Config{
-		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
-		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
-		Repos:    []config.Repo{{Owner: "org-a", Name: "one"}},
-		GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{{
-			Host: "github.com", Owner: "org-a", TokenEnv: "ORG_A_PAT",
-		}},
-	}
-	require.NoError(cfg.Validate())
-	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "invalid-implicit-fallback-token")
+	// Load from disk: Load defaults github_token_env to the built-in env
+	// name, so a config that never mentions it must still be treated as an
+	// implicit fallback whose invalid token cannot fail startup.
+	path := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(os.WriteFile(path, []byte(`
+[[repos]]
+owner = "org-a"
+name = "one"
+
+[[github_owner_tokens]]
+host = "github.com"
+owner = "org-a"
+token_env = "ORG_A_PAT"
+`), 0o600))
+	cfg, err := config.Load(path)
+	require.NoError(err)
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubCLI: func(context.Context, string) (string, error) {
+			return "", tokenauth.ErrMissingToken
+		},
+	})
 	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
 	require.NoError(err)
 	var identityLookups atomic.Int32
@@ -444,6 +505,9 @@ func TestBuildProviderStartupSkipsImplicitOptionalFallbackIdentityLookup(t *test
 				"ORG_A_PAT": {
 					Key: github.IdentityKey{Host: "github.com", Principal: "user:123"},
 				},
+			},
+			err: map[string]error{
+				"MIDDLEMAN_GITHUB_TOKEN": errors.New("401 bad credentials"),
 			},
 			calls: &identityLookups,
 		},
@@ -581,6 +645,16 @@ func TestProductionStartupRoutesTwoOwnersThroughSyncAndMutationAPI(t *testing.T)
 		github.HTTPIdentityResolver{},
 	)
 	require.NoError(err)
+
+	// Credential routing must not narrow archive support: the registry
+	// provider wraps the routed client, and wrapping once silently dropped
+	// inventory pagination and with it every archive capability.
+	caps, err := startup.registry.Capabilities(platform.KindGitHub, host)
+	require.NoError(err)
+	assert.Equal(platform.ArchiveCapabilities{
+		HistoricalIssues: true, HistoricalMergeRequests: true,
+		OrdinaryComments: true, SubmittedReviews: true, InlineReviewComments: true,
+	}, caps.Archive)
 
 	repos := []github.RepoRef{
 		{Platform: "github", PlatformHost: host, Owner: "org-a", Name: "one"},

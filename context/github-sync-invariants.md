@@ -170,15 +170,25 @@ must share one runtime; App reads use their installation identity.
 - Startup PAT identity discovery must use a bounded per-request context
   (`internal/github/identity.go::HTTPIdentityResolver.ResolvePAT`).
 - When required scoped routes cover configured repositories, do not resolve an
-  implicit ownerless fallback unless the host fallback is explicitly configured
-  (`cmd/middleman/provider_startup.go::buildGitHubIdentityRuntimes`).
+  implicit ownerless fallback unless the host fallback is explicitly configured;
+  a `github_token_env` equal to the built-in default does not count because
+  Load, Save, and the sample config all materialize that name
+  (`internal/config/config.go::Config.HasExplicitGitHubTokenEnv`).
 - A configured router with no exact, owner, or fallback route is a routing
   failure; operation availability must fail closed instead of treating it as an
   unrouted legacy host (`internal/github/auth_router.go::MissingRouteError`,
   `internal/server/operation_availability.go::writeCredentialGateForRepo`).
-- Reload probes covered by the same App installation must share its token cache;
-  per-route probe caches multiply installation-token minting
-  (`internal/tokenauth/source.go::SourceSet.ProbeToken`).
+- Background requests on the write credential (viewer-permission overlay,
+  notifications, queued read propagation) charge the write identity's sync
+  budget — the transport's context gate keeps foreground mutations uncharged —
+  and live work registers provider work for every principal it will touch,
+  read and write, so a shared-PAT archive is preempted
+  (`internal/github/client.go::NewClient`, `internal/github/sync.go::syncRepo`,
+  `internal/github/notifications_sync.go::ProcessQueuedNotificationReads`).
+- Reload probes share one fresh installation-token cache per validation batch:
+  per-route caches would multiply minting, while reusing the live cache lets a
+  revoked installation or replaced private key pass validation until the cached
+  token expires (`internal/tokenauth/source.go::SourceSet.NewProbeBatch`).
 
 Repository `token_file` and `token_env` overrides are exact-only; reject them on
 name globs rather than creating a literal route that discovered repositories
@@ -192,7 +202,10 @@ disabled until restart establishes a stable user identity.
 
 Selected-repository App routes may expose installation-repository listing as an
 owner-scoped discovery route, but that route must never become a fallback for
-other repository operations (`internal/github/auth_router.go::RoutedClient.ListRepositoriesByOwner`).
+other repository operations, and it applies only when no owner or fallback PAT
+route serves the owner — a PAT lists everything it can access, while the App
+client lists only its selection
+(`internal/github/auth_router.go::RoutedClient.discoveryClientForOwner`).
 
 Managed Git uses exact-repository or owner PAT routes with mutation context and
 must never expose an App installation token to smart HTTP. Thread full provider,

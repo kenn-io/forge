@@ -335,6 +335,62 @@ func TestRoutedClientDelegatesByRepositoryOwnerAndFallback(t *testing.T) {
 	assert.True(client.bypassNotificationReadRateReserve())
 }
 
+func TestRoutedClientDiscoveryPrefersOwnerAndFallbackRoutes(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	newAppRoute := func(discovery Client) *Route {
+		return &Route{
+			Key:             RouteKey{Host: "github.com", Owner: "acme", Name: "covered"},
+			Client:          &routeRecordingClient{marker: "app"},
+			DiscoveryClient: discovery,
+		}
+	}
+
+	// An owner PAT lists every repository it can access; the
+	// selected-installation discovery client must not shadow it.
+	ownerClient := &routeRecordingClient{marker: "owner-pat"}
+	router, err := NewHostRouter("github.com",
+		newAppRoute(&routeRecordingClient{marker: "app-discovery"}),
+		&Route{Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: ownerClient},
+	)
+	require.NoError(err)
+	client, err := NewRoutedClient(router)
+	require.NoError(err)
+	repos, err := client.ListRepositoriesByOwner(t.Context(), "Acme")
+	require.NoError(err)
+	assert.Equal("owner-pat", repos[0].GetName())
+
+	// The same holds for a host fallback PAT.
+	fallbackClient := &routeRecordingClient{marker: "fallback-pat"}
+	router, err = NewHostRouter("github.com",
+		newAppRoute(&routeRecordingClient{marker: "app-discovery"}),
+		&Route{Key: RouteKey{Host: "github.com"}, Client: fallbackClient},
+	)
+	require.NoError(err)
+	client, err = NewRoutedClient(router)
+	require.NoError(err)
+	repos, err = client.ListRepositoriesByOwner(t.Context(), "acme")
+	require.NoError(err)
+	assert.Equal("fallback-pat", repos[0].GetName())
+
+	// Only when no other route serves the owner does the selected-App
+	// discovery client apply.
+	router, err = NewHostRouter("github.com",
+		newAppRoute(&routeRecordingClient{marker: "app-discovery"}),
+	)
+	require.NoError(err)
+	client, err = NewRoutedClient(router)
+	require.NoError(err)
+	repos, err = client.ListRepositoriesByOwner(t.Context(), "acme")
+	require.NoError(err)
+	assert.Equal("app-discovery", repos[0].GetName())
+
+	// Owners with no route and no discovery client still fail closed.
+	_, err = client.ListRepositoriesByOwner(t.Context(), "other")
+	var missing *MissingRouteError
+	require.ErrorAs(err, &missing)
+}
+
 func TestRoutedClientPreservesAndRoutesArchiveInventory(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -395,7 +451,12 @@ func TestRoutedClientPreservesAndRoutesArchiveInventory(t *testing.T) {
 	_, _, _, err = unsupportedPaged.ListInventoryIssuesPage(
 		t.Context(), "acme", "widget", "created", "", "",
 	)
-	require.ErrorContains(err, "does not support archive inventory pages")
+	require.ErrorIs(err, platform.ErrUnsupportedCapability)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(
+		string(platform.ArchiveCapabilityHistoricalIssues), platformErr.Capability,
+	)
 }
 
 func TestRoutedClientWithoutFallbackRejectsOwnerlessAPIs(t *testing.T) {

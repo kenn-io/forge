@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -253,16 +254,17 @@ func (c *RoutedClient) routeForRepo(owner, repo string) (Client, error) {
 	return route.Client, nil
 }
 
-func (c *RoutedClient) pageClientForRepo(owner, repo string) (pageClient, error) {
+func (c *RoutedClient) pageClientForRepo(
+	owner, repo string, capability platform.ArchiveCapability,
+) (pageClient, error) {
 	client, err := c.routeForRepo(owner, repo)
 	if err != nil {
 		return nil, err
 	}
 	paged, ok := client.(pageClient)
 	if !ok {
-		return nil, fmt.Errorf(
-			"GitHub route for %s/%s does not support archive inventory pages",
-			owner, repo,
+		return nil, platform.UnsupportedCapability(
+			platform.KindGitHub, c.routes.host, string(capability),
 		)
 	}
 	return paged, nil
@@ -276,7 +278,9 @@ func (c *RoutedClient) ListInventoryIssuesPage(
 	cursor string,
 	since string,
 ) ([]*gh.Issue, string, bool, error) {
-	paged, err := c.pageClientForRepo(owner, repo)
+	paged, err := c.pageClientForRepo(
+		owner, repo, platform.ArchiveCapabilityHistoricalIssues,
+	)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -290,7 +294,9 @@ func (c *RoutedClient) ListInventoryPullRequestsPage(
 	sortBy string,
 	page int,
 ) ([]*gh.PullRequest, bool, error) {
-	paged, err := c.pageClientForRepo(owner, repo)
+	paged, err := c.pageClientForRepo(
+		owner, repo, platform.ArchiveCapabilityHistoricalMergeRequests,
+	)
 	if err != nil {
 		return nil, false, err
 	}
@@ -319,13 +325,24 @@ func (c *RoutedClient) routeForOwner(owner string) (Client, error) {
 	return route.Client, nil
 }
 
+// discoveryClientForOwner selects the credential used to enumerate an owner's
+// repositories. Owner and fallback PAT routes win: a PAT lists every
+// repository it can access, while a selected-installation App client lists
+// only its selection, so preferring it would silently drop PAT-accessible
+// repositories from discovery. The App discovery client applies only when no
+// other route can serve the owner.
 func (c *RoutedClient) discoveryClientForOwner(owner string) (Client, error) {
-	if c != nil && c.routes != nil {
-		if client := c.routes.discoveryOwners[ownerRouteMapKey(owner)]; client != nil {
-			return client, nil
+	client, err := c.routeForOwner(owner)
+	if err == nil {
+		return client, nil
+	}
+	var missing *MissingRouteError
+	if errors.As(err, &missing) && c != nil && c.routes != nil {
+		if discovery := c.routes.discoveryOwners[ownerRouteMapKey(owner)]; discovery != nil {
+			return discovery, nil
 		}
 	}
-	return c.routeForOwner(owner)
+	return nil, err
 }
 
 func (c *RoutedClient) AuthenticatedViewerLoginForRepo(

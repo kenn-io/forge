@@ -228,6 +228,58 @@ func TestDisabledIssueCooldownSkipsDetailDrain(t *testing.T) {
 	assert.Zero(int(client.conditionalCalls.Load()))
 }
 
+func TestWrappedRawDisabledIssueResponseStopsDetailDrainAndStartsCooldown(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	for _, number := range []int{1, 2} {
+		_, err = database.UpsertIssue(ctx, &db.Issue{
+			RepoID: repoID, PlatformID: int64(1000 + number), Number: number,
+			URL:   fmt.Sprintf("https://github.com/acme/widget/issues/%d", number),
+			Title: fmt.Sprintf("needs detail %d", number), Author: "ada", State: "open",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
+
+	rawDisabledErr := fmt.Errorf("list issue comments: %w", &gh.ErrorResponse{
+		Response: &http.Response{StatusCode: http.StatusGone},
+		Message:  "Issues are disabled for this repo",
+	})
+	client := &mockClient{
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			issue := buildOpenIssue(number, now)
+			platformID := int64(1000 + number)
+			issue.ID = &platformID
+			return issue, nil
+		},
+		listIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+			return nil, rawDisabledErr
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
+	)
+	syncer.now = func() time.Time { return now }
+
+	syncer.drainDetailQueue(
+		ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos(),
+	)
+
+	assert.Equal(int32(1), client.listIssueCommentsCalled.Load())
+	_, due := syncer.beginRepositoryFeatureProbe(ctx, repo, platform.RepositoryFeatureIssues)
+	assert.False(due)
+}
+
 func TestDisabledPRCooldownDoesNotExhaustIssueDetailBudget(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

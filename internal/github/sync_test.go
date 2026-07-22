@@ -12925,6 +12925,42 @@ func TestSyncRepoGraphQLIssuesCommentsIncomplete(t *testing.T) {
 	assert.Equal("REST comment", events[0].Body)
 }
 
+func TestSyncRepoGraphQLIssuesStopsAfterWrappedRawDisabledFallback(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "owner", Name: "repo",
+	}
+	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	rawDisabledErr := fmt.Errorf("list issue comments: %w", &gh.ErrorResponse{
+		Response: &http.Response{StatusCode: http.StatusGone},
+		Message:  "Issues are disabled for this repo",
+	})
+	client := &mockClient{
+		listIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+			return nil, rawDisabledErr
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	result := &RepoBulkResult{Issues: []BulkIssue{
+		{Issue: buildOpenIssue(1, now), CommentsComplete: false},
+		{Issue: buildOpenIssue(2, now), CommentsComplete: false},
+	}}
+
+	err = syncer.doSyncRepoGraphQLIssues(ctx, repo, repoID, result)
+
+	require.ErrorIs(err, platform.ErrRepositoryFeatureDisabled)
+	assert.Equal(int32(1), client.listIssueCommentsCalled.Load())
+}
+
 func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

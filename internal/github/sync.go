@@ -5919,8 +5919,10 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 		if err := s.syncOpenIssueFromBulk(
 			ctx, repo, repoID, bulk,
 		); err != nil {
-			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
-				return err
+			if disabledErr := repositoryFeatureDisabledError(
+				repo, platform.RepositoryFeatureIssues, err,
+			); disabledErr != nil {
+				return disabledErr
 			}
 			slog.Error("GraphQL sync issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -5943,8 +5945,10 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 		if err := s.fetchAndUpdateClosedIssue(
 			ctx, repo, repoID, number,
 		); err != nil {
-			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
-				return err
+			if disabledErr := repositoryFeatureDisabledError(
+				repo, platform.RepositoryFeatureIssues, err,
+			); disabledErr != nil {
+				return disabledErr
 			}
 			slog.Error("update closed issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -8416,7 +8420,9 @@ func (s *Syncer) drainDetailQueue(
 		}
 
 		if err != nil {
-			disabled := s.recordRepositoryFeatureDisabled(repo, feature, err)
+			disabledErr := repositoryFeatureDisabledError(repo, feature, err)
+			disabled := disabledErr != nil &&
+				s.recordRepositoryFeatureDisabled(repo, feature, disabledErr)
 			probe.release()
 			if disabled {
 				continue

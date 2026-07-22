@@ -287,7 +287,7 @@ test.describe("missing write credential gates non-merge mutations", () => {
     // gating: when only update_content is rate-limited, content edits
     // disable with the retry reason while unrelated mutations (close)
     // stay available.
-    const rateLimitedReason = "github.com rate-limited; retry at 14:35";
+    const rateLimitedReason = "github.com rate-limited";
     await mockApi(page);
     const rateLimitedOps = {
       ...Object.fromEntries(Object.keys(operations).map((k) => [k, { available: true }])),
@@ -317,7 +317,7 @@ test.describe("missing write credential gates non-merge mutations", () => {
 
     const editTitle = page.locator(".edit-title-btn");
     await expect(editTitle).toBeDisabled();
-    await expect(editTitle).toHaveAttribute("title", rateLimitedReason);
+    await expect(editTitle).toHaveAttribute("title", /github\.com rate-limited; retry at \d{2}:\d{2}/);
 
     const closeButton = page.locator(".btn--close").first();
     await expect(closeButton).toBeEnabled();

@@ -876,6 +876,12 @@ describe("PullDetail approvals", () => {
   it("renders the merge button as disabled with reason when operations.merge_pr.available is false", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;
+    const retryAt = "2026-05-19T14:35:00Z";
+    const localRetryTime = new Date(retryAt).toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
 
     renderPullDetail(detail, {
       AllowSquashMerge: true,
@@ -886,8 +892,8 @@ describe("PullDetail approvals", () => {
         merge_pr: {
           available: false,
           code: "rate_limited",
-          unavailable_reason: "github.com rate-limited; retry at 14:35",
-          retry_at: "2026-05-19T14:35:00Z",
+          unavailable_reason: "github.com rate-limited",
+          retry_at: retryAt,
         },
       },
     });
@@ -898,7 +904,7 @@ describe("PullDetail approvals", () => {
       return found as HTMLButtonElement;
     });
     expect(button.disabled).toBe(true);
-    expect(button.title).toBe("github.com rate-limited; retry at 14:35");
+    expect(button.title).toBe(`github.com rate-limited; retry at ${localRetryTime}`);
   });
 
   it("disables ready-for-review with reason when its operation is unavailable", async () => {

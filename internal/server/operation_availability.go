@@ -619,15 +619,12 @@ func (s *Server) probeWriteCredential(
 }
 
 func formatRateLimit(host string, resetAt *time.Time) rateLimitAvailability {
-	res := rateLimitAvailability{limited: true}
+	res := rateLimitAvailability{
+		limited: true,
+		reason:  fmt.Sprintf("%s rate-limited", host),
+	}
 	if resetAt != nil {
 		res.retryAt = formatUTCRFC3339(*resetAt)
-		res.reason = fmt.Sprintf(
-			"%s rate-limited; retry at %s",
-			host, resetAt.UTC().Format("15:04"),
-		)
-		return res
 	}
-	res.reason = fmt.Sprintf("%s rate-limited", host)
 	return res
 }

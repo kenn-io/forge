@@ -57,7 +57,7 @@ func TestDeriveOperationAvailability(t *testing.T) {
 	resetAt := time.Date(2026, 5, 19, 14, 35, 0, 0, time.UTC)
 	limitedRate := rateLimitAvailability{
 		limited: true,
-		reason:  "github.com rate-limited; retry at 14:35",
+		reason:  "github.com rate-limited",
 		retryAt: resetAt.UTC().Format(time.RFC3339),
 	}
 	repoCanMerge := db.Repo{ViewerCanMerge: true}
@@ -182,7 +182,7 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			rate: limitedRate,
 			expected: OperationAvailability{
 				Code:              availabilityCodeRateLimited,
-				UnavailableReason: "github.com rate-limited; retry at 14:35",
+				UnavailableReason: "github.com rate-limited",
 				RetryAt:           resetAt.UTC().Format(time.RFC3339),
 			},
 		},
@@ -276,7 +276,7 @@ func TestFormatRateLimit(t *testing.T) {
 	resetAt := time.Date(2026, 5, 19, 14, 35, 0, 0, time.UTC)
 	got := formatRateLimit("github.com", &resetAt)
 	assert.True(got.limited)
-	assert.Equal("github.com rate-limited; retry at 14:35", got.reason)
+	assert.Equal("github.com rate-limited", got.reason)
 	assert.Equal(resetAt.UTC().Format(time.RFC3339), got.retryAt)
 
 	unknown := formatRateLimit("ghe.example.com", nil)

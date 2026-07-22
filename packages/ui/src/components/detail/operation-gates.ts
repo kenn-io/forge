@@ -11,6 +11,21 @@ export type OperationGate = { unavailable: boolean; reason: string };
 
 const availableGate: OperationGate = { unavailable: false, reason: "" };
 
+function unavailableReason(op: OperationAvailability): string {
+  const reason = op.unavailable_reason ?? "";
+  if (op.code !== "rate_limited" || !op.retry_at) return reason;
+
+  const retryAt = new Date(op.retry_at);
+  if (Number.isNaN(retryAt.getTime())) return reason;
+
+  const localRetryTime = retryAt.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  return reason ? `${reason}; retry at ${localRetryTime}` : `Retry at ${localRetryTime}`;
+}
+
 /**
  * Gate for one operation.
  *
@@ -27,7 +42,7 @@ export function operationGate(op: OperationAvailability | undefined): OperationG
   if (op === undefined || op.available) {
     return availableGate;
   }
-  return { unavailable: true, reason: op.unavailable_reason ?? "" };
+  return { unavailable: true, reason: unavailableReason(op) };
 }
 
 /**

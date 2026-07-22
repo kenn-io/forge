@@ -662,7 +662,7 @@ test("a loaded draft becomes unpublishable when review_draft flips unavailable",
   // draft view clearing while gated is the store's designed behavior;
   // the draft itself persists server-side, so flipping back must
   // restore it.
-  const rateLimitedReason = "github.com rate-limited; retry at 14:35";
+  const rateLimitedReason = "github.com rate-limited";
   const publishCalls: string[] = [];
   page.on("request", (request) => {
     if (request.method() === "GET") return;
@@ -720,7 +720,7 @@ test("a loaded draft becomes unpublishable when review_draft flips unavailable",
   await page.clock.fastForward(61_000);
   await expect.poll(() => detailGets).toBeGreaterThan(getsBefore);
   await expect(page.getByRole("button", { name: "Publish review" })).toHaveCount(0);
-  await expect(page.locator(".review-warning")).toContainText(rateLimitedReason);
+  await expect(page.locator(".review-warning")).toContainText(/github\.com rate-limited; retry at \d{2}:\d{2}/);
 
   // Flip back: the server-side draft survived the gated window and
   // the view restores it, publishable again.

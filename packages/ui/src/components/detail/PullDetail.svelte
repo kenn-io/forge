@@ -2034,7 +2034,8 @@
             />
           {/if}
           {@const mergeOp = repoOperations?.merge_pr}
-          {@const mergeOpUnavailable = mergeOp !== undefined && !mergeOp.available}
+          {@const mergeGate = operationGate(mergeOp)}
+          {@const mergeOpUnavailable = mergeGate.unavailable}
           {#if repoSettings && (mergeOp !== undefined
               || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}
             {@const mergeSettings = repoSettings}
@@ -2048,7 +2049,7 @@
                 : headPinMissing
                 ? "The reviewed head commit has not been synced yet; merging is disabled until the next sync records it"
                 : mergeOpUnavailable
-                  ? mergeOp?.unavailable_reason ?? ""
+                  ? mergeGate.reason
                   : deferredMergePending
                     ? "A background merge is queued to run if its pending CI checks pass. Click to merge immediately; close the pull request to cancel."
                     : ""}

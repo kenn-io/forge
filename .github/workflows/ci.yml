@@ -99,7 +99,7 @@ jobs:
           set -euo pipefail
 
           dockerfile=.github/docker/playwright/Dockerfile
-          image_export=zstd-3-oci
+          image_export=zstd-3-oci-force
           playwright_base_image="$(sed -n 's/^ARG PLAYWRIGHT_BASE_IMAGE=//p' "$dockerfile" | head -n 1)"
           base_digest="${playwright_base_image##*@sha256:}"
           if [[ ! "$base_digest" =~ ^[0-9a-f]{64}$ ]]; then
@@ -127,7 +127,7 @@ jobs:
             docker buildx build \
               --build-arg "PLAYWRIGHT_BASE_IMAGE=$playwright_base_image" \
               --file "$dockerfile" \
-              --output "type=registry,compression=zstd,compression-level=3,oci-mediatypes=true" \
+              --output "type=registry,compression=zstd,compression-level=3,force-compression=true,oci-mediatypes=true" \
               --platform linux/amd64 \
               --provenance=false \
               --tag "$image_tag" \

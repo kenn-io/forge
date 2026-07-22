@@ -2781,6 +2781,19 @@
 </script>
 
 <div class="terminal-view" inert={modalOpen}>
+  {#snippet inlineCollapseControl()}
+    <!-- Collapsing the inline dock is pure local UI and must stay
+         reachable in every workspace state: the toolbar that carries the
+         dock controls only renders once the workspace is ready, so slow
+         setup, a fetch failure, or a setup error would otherwise leave
+         the dock permanently open short of deleting the workspace or
+         navigating away. -->
+    {#if inlineDock && inlineDockMode !== null}
+      <button class="retry-btn" onclick={() => inlineDock?.setMode("collapsed")}>
+        Collapse Terminal
+      </button>
+    {/if}
+  {/snippet}
   {#snippet terminalMainContent()}
     <div class="terminal-main">
       {#if !workspaceId}
@@ -2881,11 +2894,13 @@
           >
             Retry
           </button>
+          {@render inlineCollapseControl()}
         </div>
       {:else if !workspace || workspace.status === "creating"}
         <div class="state-message">
           <Spinner size={18} />
           <span>Setting up workspace...</span>
+          {@render inlineCollapseControl()}
         </div>
       {:else if workspace.status === "error"}
         <div class="state-message error">
@@ -2920,6 +2935,7 @@
           >
             Delete
           </button>
+          {@render inlineCollapseControl()}
         </div>
       {:else}
         <div class="header-bar">

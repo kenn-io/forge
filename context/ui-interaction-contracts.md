@@ -172,6 +172,12 @@ Keyboard handlers must have one clear owner for each key press.
   directly replaced by a different identity — the panel never observes an
   inactive gap in that case
   (`frontend/src/lib/stores/workspace-host.svelte.ts::setClaim`).
+- A collapse control must be reachable in every inline workspace state, not
+  only from the ready toolbar: WorkspaceDockPanel's BottomDock is not
+  closable, so the creating, fetch-failure, and setup-error branches render
+  their own collapse button or the dock cannot be closed short of deleting
+  the workspace
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::inlineCollapseControl`).
 
 ## Modal Ownership
 

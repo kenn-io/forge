@@ -1,7 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { KataTaskReference, KataTaskReferenceResponse, KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
-import type { KataTaskDetail, KataTaskEvent, KataTaskViewResponse } from "../../api/kata/taskTypes.js";
+import type {
+  KataTaskDetail,
+  KataTaskEvent,
+  KataTaskLink,
+  KataTaskSummary,
+  KataTaskViewResponse,
+} from "../../api/kata/taskTypes.js";
+import { createKataLinkFilters } from "../../features/kata/kataLinkFilters.js";
 
 import KataIssueDiscussion from "./KataIssueDiscussion.svelte";
 
@@ -126,6 +133,25 @@ function searchTask(overrides: Partial<KataTaskReference> = {}): KataTaskReferen
   };
 }
 
+function linkedTask(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
+  return {
+    ...makeView().groups[0]!.issues[0]!,
+    ...overrides,
+  };
+}
+
+function taskLink(id: number, peer: KataTaskSummary, type: KataTaskLink["type"]): KataTaskLink {
+  return {
+    id,
+    project_id: 1,
+    from: { uid: "issue-1", short_id: "I-1" },
+    to: { uid: peer.uid, short_id: peer.short_id },
+    type,
+    author: "wes",
+    created_at: "2026-06-01T12:20:00Z",
+  };
+}
+
 describe("KataIssueDiscussion", () => {
   afterEach(() => {
     cleanup();
@@ -141,6 +167,8 @@ describe("KataIssueDiscussion", () => {
         issueCatalog: [makeIssue().issue, linkedPeer],
         searchReferences: makeSearch(),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue: vi.fn(),
@@ -148,6 +176,34 @@ describe("KataIssueDiscussion", () => {
     });
 
     expect(screen.getByRole("button", { name: /Linked task/ })).toBeTruthy();
+  });
+
+  it("filters linked tasks by snapshot-catalog state", () => {
+    const openPeer = linkedTask({ uid: "issue-open", short_id: "open", title: "Open peer", status: "open" });
+    const closedPeer = linkedTask({ uid: "issue-closed", short_id: "closed", title: "Closed peer", status: "closed" });
+    const issue = makeIssue();
+    issue.links = [taskLink(1, openPeer, "related"), taskLink(2, closedPeer, "blocks")];
+
+    render(KataIssueDiscussion, {
+      props: {
+        issue,
+        events: [],
+        issueCatalog: [openPeer, closedPeer],
+        searchReferences: makeSearch(),
+        activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("open"),
+        onLinkFiltersChange: vi.fn(),
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    const links = screen.getByRole("region", { name: "Links" });
+    expect(within(links).getByRole("button", { name: /Open peer/ })).toBeTruthy();
+    expect(within(links).queryByRole("button", { name: /Closed peer/ })).toBeNull();
+    expect(within(links).getByText("1 / 2")).toBeTruthy();
+    expect(within(links).getByRole("button", { name: "Filter links" })).toBeTruthy();
   });
 
   it("submits comments and related links for the selected issue", async () => {
@@ -161,6 +217,8 @@ describe("KataIssueDiscussion", () => {
         issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch(),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment,
         onEditIssue,
         onSelectIssue: vi.fn(),
@@ -194,6 +252,8 @@ describe("KataIssueDiscussion", () => {
         issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch(),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue,
@@ -222,6 +282,8 @@ describe("KataIssueDiscussion", () => {
         issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch(),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => false),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue: vi.fn(),
@@ -244,6 +306,8 @@ describe("KataIssueDiscussion", () => {
         issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch(),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
         draftResetGeneration: 0,
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
@@ -276,6 +340,8 @@ describe("KataIssueDiscussion", () => {
         issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch(),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
         draftResetGeneration: 0,
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
@@ -308,6 +374,8 @@ describe("KataIssueDiscussion", () => {
         issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch(),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
         draftResetGeneration: 0,
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
@@ -336,6 +404,8 @@ describe("KataIssueDiscussion", () => {
         issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch(),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
         draftResetGeneration: 0,
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
@@ -362,6 +432,8 @@ describe("KataIssueDiscussion", () => {
         issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch(),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
         draftResetGeneration: 0,
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
@@ -391,6 +463,8 @@ describe("KataIssueDiscussion", () => {
         issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences,
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue: vi.fn(),
@@ -443,6 +517,8 @@ describe("KataIssueDiscussion", () => {
         issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch([sharedHome, ...filler, sharedWork]),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue: vi.fn(),
@@ -472,6 +548,8 @@ describe("KataIssueDiscussion", () => {
         issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch([searchTask({ short_id: "rent", reference: "rent", title: "Rent" })]),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue: vi.fn(),
@@ -508,6 +586,8 @@ describe("KataIssueDiscussion", () => {
         issueCatalog: makeView().groups.flatMap((group) => group.issues),
         searchReferences: makeSearch(),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue: vi.fn(),
@@ -518,7 +598,7 @@ describe("KataIssueDiscussion", () => {
     expect(screen.queryByText("issue.links_changed")).toBeNull();
   });
 
-  it("does not issue detail reads for link rows outside the current view", () => {
+  it("keeps a catalog-missing link discoverable without starting a reference search", () => {
     const issue = makeIssue({
       uid: "issue-1",
       short_id: "I-1",
@@ -542,6 +622,8 @@ describe("KataIssueDiscussion", () => {
         issueCatalog: [],
         searchReferences,
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue: vi.fn(),
@@ -549,7 +631,7 @@ describe("KataIssueDiscussion", () => {
     });
 
     const links = screen.getByRole("region", { name: "Links" });
-    expect(within(links).getByText("P-1")).toBeTruthy();
+    expect(within(links).getByRole("button", { name: /P-1 state unavailable/ })).toBeTruthy();
     expect(within(links).queryByText("Hydrated peer task")).toBeNull();
     expect(searchReferences).not.toHaveBeenCalled();
   });

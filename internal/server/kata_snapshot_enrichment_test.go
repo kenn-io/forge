@@ -189,6 +189,80 @@ func TestKataSnapshotEnricherRejectsSelectedDetailAtDifferentRevision(t *testing
 	require.ErrorIs(t, err, errKataSnapshotEnrichmentStale)
 }
 
+func TestKataSnapshotEnricherLoadsLinkedPeerOutsideAuthorityIntoCatalog(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	client := &fakeKataSnapshotAPIClient{
+		showIssue: func(_ context.Context, options *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			response := testKataShowIssueResponse(options.PathParams.UID)
+			if options.PathParams.UID == "issue-member" {
+				response.JSON200.Links = []katagenerated.LinkOut{{
+					ID: 1, Type: "related", Author: "actor", CreatedAt: time.Date(2026, 7, 20, 16, 0, 0, 0, time.UTC),
+					From: katagenerated.LinkPeer{UID: "issue-member", ShortID: "member", QualifiedID: "Project A#member", Project: "Project A", Status: "open"},
+					To:   katagenerated.LinkPeer{UID: "issue-closed", ShortID: "closed", QualifiedID: "Project A#closed", Project: "Project A", Status: "closed"},
+				}}
+				return response, nil
+			}
+			response.JSON200.Issue.ID = 4
+			response.JSON200.Issue.ShortID = "closed"
+			response.JSON200.Issue.Title = "Closed linked task"
+			response.JSON200.Issue.Status = "closed"
+			response.JSON200.Issue.Revision = 9
+			return response, nil
+		},
+	}
+
+	result, err := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client}).Enrich(
+		t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: "issue-member"},
+	)
+
+	require.NoError(err)
+	require.Len(result.CatalogIssues, 1)
+	assert.Equal(t, "issue-closed", result.CatalogIssues[0].UID)
+	assert.Equal(t, "closed", result.CatalogIssues[0].Status)
+	assert.Equal(t, "Closed linked task", result.CatalogIssues[0].Title)
+}
+
+func TestKataSnapshotEnricherReusesCachedLinkedPeerLookupWithinEpoch(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	var calls atomic.Int64
+	client := &fakeKataSnapshotAPIClient{
+		showIssue: func(_ context.Context, options *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			calls.Add(1)
+			response := testKataShowIssueResponse(options.PathParams.UID)
+			if options.PathParams.UID == "issue-member" {
+				response.JSON200.Links = []katagenerated.LinkOut{{
+					ID: 1, Type: "related", Author: "actor", CreatedAt: time.Date(2026, 7, 20, 16, 0, 0, 0, time.UTC),
+					From: katagenerated.LinkPeer{UID: "issue-member", ShortID: "member", QualifiedID: "Project A#member", Project: "Project A", Status: "open"},
+					To:   katagenerated.LinkPeer{UID: "issue-closed", ShortID: "closed", QualifiedID: "Project A#closed", Project: "Project A", Status: "closed"},
+				}}
+				return response, nil
+			}
+			response.JSON200.Issue.ID = 4
+			response.JSON200.Issue.ShortID = "closed"
+			response.JSON200.Issue.Title = "Closed linked task"
+			response.JSON200.Issue.Status = "closed"
+			return response, nil
+		},
+	}
+	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8, func(string) uint64 { return 0 })
+	t.Cleanup(cache.close)
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client, cache: cache})
+	authority := testKataCoordinatedAuthority()
+
+	first, err := enricher.Enrich(t.Context(), authority, kataSnapshotEnrichmentRequest{SelectedIssueUID: "issue-member"})
+	require.NoError(err)
+	second, err := enricher.Enrich(t.Context(), authority, kataSnapshotEnrichmentRequest{SelectedIssueUID: "issue-member"})
+	require.NoError(err)
+
+	require.Len(first.CatalogIssues, 1)
+	require.Len(second.CatalogIssues, 1)
+	assert.Equal(t, int64(2), calls.Load(), "selected detail and linked peer should each load once")
+}
+
 func TestKataSnapshotEnricherLoadsCompleteRetainedSelectedHistoryFromProjectEvents(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

@@ -2,14 +2,17 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import type { KataTaskLink } from "../../api/kata/taskTypes.js";
 import KataWorkspace from "./KataWorkspace.svelte";
 import { KATA_WORKSPACE_STATE_STORAGE_KEY } from "./kataWorkspacePersistence.js";
 import {
   createWorkspaceAPI,
+  createDaemonWorkspaceAPI,
   deferred,
   detail,
   fetchedAt,
   initialIssues,
+  issue,
   resetKataWorkspaceTestState,
 } from "./test/KataWorkspaceSupport.js";
 
@@ -631,12 +634,14 @@ describe("KataWorkspace snapshot authority", () => {
   });
 
   it("keeps relationship filters across task navigation and resets state filters with the workspace scope", async () => {
-    const root = issue("issue-root", "Root task", "project-kata");
-    const next = issue("issue-next", "Next task", "project-kata");
-    const related = issue("issue-related", "Related task", "project-kata");
-    const blocked = issue("issue-blocked", "Blocked task", "project-kata");
+    acceptHomeDaemon();
+    const root = { ...issue("issue-root", "Root task", "project-kata"), id: 101 };
+    const next = { ...issue("issue-next", "Next task", "project-kata"), id: 102 };
+    const related = { ...issue("issue-related", "Related task", "project-kata"), id: 103 };
+    const blocked = { ...issue("issue-blocked", "Blocked task", "project-kata"), id: 104 };
     const closed = {
       ...issue("issue-closed", "Closed task", "project-kata"),
+      id: 105,
       status: "closed" as const,
       closed_reason: "done" as const,
       closed_at: fetchedAt,
@@ -662,13 +667,26 @@ describe("KataWorkspace snapshot authority", () => {
         created_at: fetchedAt,
       },
     ];
-    const { api } = createWorkspaceAPI(rows);
-    vi.mocked(api.issue).mockImplementation(async (uid: string) => {
-      const taskDetail = detail(uid, rows);
-      return uid === root.uid ? { ...taskDetail, links } : taskDetail;
+    const { api } = createWorkspaceAPI(rows, {
+      snapshot: (request, snapshot) => {
+        if (!request.selectedIssueUID || !snapshot.enrichment.selected_detail) return snapshot;
+        return {
+          ...snapshot,
+          enrichment: {
+            ...snapshot.enrichment,
+            selected_detail: {
+              ...snapshot.enrichment.selected_detail,
+              detail: {
+                ...detail(request.selectedIssueUID, rows),
+                links: request.selectedIssueUID === root.uid ? links : [],
+              },
+            },
+          },
+        };
+      },
     });
 
-    render(KataWorkspaceRouteHost, { props: { api, initialIssue: root.uid } });
+    const { rerender } = render(KataWorkspace, { props: { api, selectedIssueUID: root.uid } });
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Root task" })).toBeTruthy());
     await fireEvent.click(screen.getByRole("button", { name: "Filter links" }));
@@ -677,20 +695,23 @@ describe("KataWorkspace snapshot authority", () => {
     const issues = screen.getByRole("main", { name: "Issues" });
     await fireEvent.click(within(issues).getByRole("button", { name: /Next task/ }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "Next task" })).toBeTruthy());
+    await rerender({ api, selectedIssueUID: next.uid });
     await fireEvent.click(within(issues).getByRole("button", { name: /Root task/ }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "Root task" })).toBeTruthy());
+    await rerender({ api, selectedIssueUID: root.uid });
 
     await fireEvent.click(screen.getByRole("button", { name: "Filter links" }));
     expect((screen.getByRole("checkbox", { name: "Related" }) as HTMLInputElement).checked).toBe(false);
     await fireEvent.keyDown(document, { key: "Escape" });
 
     await fireEvent.click(screen.getByRole("combobox", { name: "Status: Open" }));
-    await fireEvent.click(screen.getByRole("option", { name: "All" }));
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "Status: All" })).toBeTruthy());
-    expect(screen.getByRole("heading", { name: "Root task" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("option", { name: "Closed" }));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Status: Closed" })).toBeTruthy());
+    await fireEvent.click(await within(issues).findByRole("button", { name: /Closed task/ }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Closed task" })).toBeTruthy());
 
     await fireEvent.click(screen.getByRole("button", { name: "Filter links" }));
-    expect((screen.getByRole("checkbox", { name: "Open" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "Open" }) as HTMLInputElement).checked).toBe(false);
     expect((screen.getByRole("checkbox", { name: "Closed" }) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByRole("checkbox", { name: "Related" }) as HTMLInputElement).checked).toBe(false);
   });
@@ -704,41 +725,52 @@ describe("KataWorkspace snapshot authority", () => {
         ],
       }),
     );
-    setActiveKataDaemon("home");
     const homeRoot = issue("issue-home-root", "Home root", "project-kata");
     const homePeer = issue("issue-home-peer", "Home peer", "project-kata");
     const workRoot = issue("issue-work-root", "Work root", "project-kata");
-    const api = createDaemonWorkspaceAPI({ home: [homeRoot, homePeer], work: [workRoot] });
-    vi.mocked(api.issue).mockImplementation(async (uid: string) => {
-      const rows = [homeRoot, homePeer, workRoot];
-      const taskDetail = detail(uid, rows);
-      if (uid !== homeRoot.uid) return taskDetail;
-      return {
-        ...taskDetail,
-        links: [
-          {
-            id: 1,
-            project_id: homeRoot.project_id,
-            from: { uid: homeRoot.uid, short_id: homeRoot.short_id },
-            to: { uid: homePeer.uid, short_id: homePeer.short_id },
-            type: "related",
-            author: "fixture-user",
-            created_at: fetchedAt,
-          },
-        ],
-      };
-    });
+    const homeLinks: KataTaskLink[] = [
+      {
+        id: 1,
+        project_id: homeRoot.project_id,
+        from: { uid: homeRoot.uid, short_id: homeRoot.short_id },
+        to: { uid: homePeer.uid, short_id: homePeer.short_id },
+        type: "related",
+        author: "fixture-user",
+        created_at: fetchedAt,
+      },
+    ];
+    const api = createDaemonWorkspaceAPI(
+      { home: [homeRoot, homePeer], work: [workRoot] },
+      {},
+      {
+        snapshot: (request, snapshot) => {
+          if (!request.selectedIssueUID || !snapshot.enrichment.selected_detail) return snapshot;
+          return {
+            ...snapshot,
+            enrichment: {
+              ...snapshot.enrichment,
+              selected_detail: {
+                ...snapshot.enrichment.selected_detail,
+                detail: {
+                  ...detail(request.selectedIssueUID, request.daemonID === "home" ? [homeRoot, homePeer] : [workRoot]),
+                  links: request.daemonID === "home" && request.selectedIssueUID === homeRoot.uid ? homeLinks : [],
+                },
+              },
+            },
+          };
+        },
+      },
+    );
 
-    render(KataWorkspaceRouteHost, { props: { api, initialIssue: homeRoot.uid } });
+    const { rerender } = render(KataWorkspace, {
+      props: { api, requestedDaemonId: "home", selectedIssueUID: homeRoot.uid },
+    });
     await waitFor(() => expect(screen.getByRole("heading", { name: "Home root" })).toBeTruthy());
     await fireEvent.click(screen.getByRole("button", { name: "Filter links" }));
     await fireEvent.click(screen.getByRole("checkbox", { name: "Related" }));
     await fireEvent.keyDown(document, { key: "Escape" });
 
-    await fireEvent.click(screen.getByTestId("daemon-chip"));
-    const workDaemonRow = await screen.findByTestId("daemon-row-work");
-    await waitFor(() => expect((workDaemonRow as HTMLButtonElement).disabled).toBe(false));
-    await fireEvent.click(workDaemonRow);
+    await rerender({ api, requestedDaemonId: "work", selectedIssueUID: workRoot.uid });
     await waitFor(() => expect(screen.getByRole("heading", { name: "Work root" })).toBeTruthy());
 
     await fireEvent.click(screen.getByRole("button", { name: "Filter links" }));

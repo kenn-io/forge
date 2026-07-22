@@ -234,13 +234,31 @@ func (f *kataSnapshotFrontend) Snapshot(
 			Generation: authority.Generation, InvalidationEpoch: authority.InvalidationEpoch,
 			EventCursor: cursor, FetchedAt: authority.Snapshot.FetchedAt,
 			Projects: authority.Snapshot.Projects, MemberIssueUIDs: authority.Snapshot.MemberIssueUIDs,
-			Issues: authority.Snapshot.Issues, GraphSourceUID: enrichmentRequest.GraphSourceUID, Enrichment: enrichment,
+			Issues:         mergeKataCatalogIssues(authority.Snapshot.Issues, enrichment.CatalogIssues),
+			GraphSourceUID: enrichmentRequest.GraphSourceUID, Enrichment: enrichment,
 		}, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return kataTaskSnapshotResponse{}, err
 	}
 	return kataTaskSnapshotResponse{}, kataSnapshotUpstreamError("deliver consistent snapshot", errKataSnapshotDeliveryStale)
+}
+
+func mergeKataCatalogIssues(authorityIssues, enrichmentIssues []kataTaskSummary) []kataTaskSummary {
+	issues := make([]kataTaskSummary, 0, len(authorityIssues)+len(enrichmentIssues))
+	issues = append(issues, authorityIssues...)
+	seen := make(map[string]struct{}, len(issues))
+	for _, issue := range issues {
+		seen[issue.UID] = struct{}{}
+	}
+	for _, issue := range enrichmentIssues {
+		if _, exists := seen[issue.UID]; exists {
+			continue
+		}
+		seen[issue.UID] = struct{}{}
+		issues = append(issues, issue)
+	}
+	return issues
 }
 
 func (f *kataSnapshotFrontend) References(

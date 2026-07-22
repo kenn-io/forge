@@ -106,6 +106,43 @@ func TestKataSnapshotFrontendEnsuresEventsBeforeBlockedAuthorityLoad(t *testing.
 	assert.Equal("issue-member", got.response.Enrichment.SelectedIssueUID)
 }
 
+func TestKataSnapshotFrontendPublishesLinkedCatalogPeersWithoutAuthorityMembership(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	daemon := kata.Daemon{ID: "primary", URL: "https://kata.example.test"}
+	authority := testKataSnapshotFrontendAuthority(daemon, 3, 7)
+	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
+			return fakeKataFrontendEventHandle{fingerprint: kataDaemonTargetFingerprint(daemon)}, nil
+		},
+		loadAuthority: func(context.Context, string, kataAuthorityRequest) (kataCoordinatedAuthority, error) {
+			return authority, nil
+		},
+		daemonEpoch: func(string) uint64 { return authority.InvalidationEpoch },
+		newClient: func(context.Context, kata.Daemon) (kataAPIClient, error) {
+			return &fakeKataSnapshotAPIClient{}, nil
+		},
+		enrich: func(context.Context, kataAPIClient, kataCoordinatedAuthority, kataSnapshotEnrichmentRequest) (kataSnapshotEnrichment, error) {
+			return kataSnapshotEnrichment{CatalogIssues: []kataTaskSummary{{
+				ID: 4, UID: "issue-closed", ProjectID: 7, ProjectUID: "project-a", ProjectName: "Project A",
+				ShortID: "closed", QualifiedID: "Project A#closed", Title: "Closed linked task", Status: "closed",
+			}}}, nil
+		},
+	})
+
+	response, err := frontend.Snapshot(t.Context(), &kataTaskSnapshotInput{
+		DaemonID: daemon.ID, SelectedIssueUID: "issue-member",
+	})
+
+	require.NoError(err)
+	assert.Equal(t, []string{"issue-source", "issue-member"}, response.MemberIssueUIDs)
+	require.Len(response.Issues, 3)
+	assert.Equal(t, "issue-closed", response.Issues[2].UID)
+	assert.Equal(t, "closed", response.Issues[2].Status)
+}
+
 func TestKataSnapshotFrontendReusesSelectedEnrichmentWithinDaemonEpoch(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

@@ -61,9 +61,10 @@ state.
   then apply the response limit. The returned `reference` decides whether a
   short ID is globally unique; syntax-specific consumers may wrap that identity
   but must not reconstruct it from display fields. Consumers needing status,
-  metadata, or closed tasks must use a snapshot. Link rows outside the accepted
-  authority intentionally render stable identifiers instead of issuing detail
-  reads solely to hydrate titles.
+  metadata, or closed tasks must use a snapshot. Selected link peers may be
+  best-effort enriched into the snapshot catalog without joining
+  `member_issue_uids`; browsers never issue detail reads to hydrate link rows
+  (`internal/server/kata_snapshot_enrichment.go::loadLinkedPeerCatalog`).
 - `POST /kata/workspaces`: create or reuse a Kata-task-backed workspace. Kata
   tasks are not provider issues, so this path never resolves or syncs a
   provider issue row.

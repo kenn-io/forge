@@ -5149,7 +5149,7 @@ test("kata task links render, navigate, and add related links through the config
     await filterPanel.getByRole("checkbox", { name: "Related" }).click();
     await page.keyboard.press("Escape");
     const relatedIssue = links.getByLabel("Related issue", { exact: true });
-    const linkButton = links.getByRole("button", { name: "Link" });
+    const linkButton = links.getByRole("button", { name: "Link", exact: true });
     await expect(relatedIssue).toBeEnabled();
     await relatedIssue.fill("kat-7");
     await expect(linkButton).toBeEnabled();

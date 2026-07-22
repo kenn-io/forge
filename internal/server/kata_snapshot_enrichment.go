@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
@@ -19,6 +20,7 @@ const (
 	kataSnapshotEnrichmentStageHistory         = "history"
 	kataSnapshotEnrichmentStageWorkspaceTarget = "workspace_target"
 	kataSnapshotHistoryPageLimit               = int64(1000)
+	kataLinkedPeerLoadConcurrency              = 8
 )
 
 type kataSnapshotEnrichmentRequest struct {
@@ -38,6 +40,7 @@ type kataSnapshotEnrichment struct {
 	Graph            *katagenerated.ReachableGraphResponseBody `json:"graph,omitempty"`
 	GraphFetchedAt   *time.Time                                `json:"graph_fetched_at,omitempty"`
 	Errors           map[string]kataSnapshotEnrichmentError    `json:"errors,omitempty"`
+	CatalogIssues    []kataTaskSummary                         `json:"-"`
 }
 
 type kataSnapshotSelectedDetail struct {
@@ -127,7 +130,7 @@ func (e *kataSnapshotEnricher) Enrich(
 	graphSource, graphSourceIsMember := members[request.GraphSourceUID]
 	if request.SelectedIssueUID != "" && selectedIsMember {
 		result.SelectedIssueUID = request.SelectedIssueUID
-		if err := e.enrichSelected(ctx, authority, selected, &result); err != nil {
+		if err := e.enrichSelected(ctx, authority, selected, projectsByID, &result); err != nil {
 			return kataSnapshotEnrichment{}, err
 		}
 		if request.GraphSourceUID == "" || !graphSourceIsMember {
@@ -167,7 +170,7 @@ func (e *kataSnapshotEnricher) Enrich(
 		return result, nil
 	}
 	result.SelectedIssueUID = request.SelectedIssueUID
-	if err := e.enrichSelected(ctx, authority, selected, &result); err != nil {
+	if err := e.enrichSelected(ctx, authority, selected, projectsByID, &result); err != nil {
 		return kataSnapshotEnrichment{}, err
 	}
 	return result, nil
@@ -177,6 +180,7 @@ func (e *kataSnapshotEnricher) enrichSelected(
 	ctx context.Context,
 	authority kataCoordinatedAuthority,
 	selected kataSnapshotEnrichmentIssue,
+	projectsByID map[int64]kataProjectSummary,
 	result *kataSnapshotEnrichment,
 ) error {
 	detail, issue, err := e.loadDetail(ctx, authority, selected)
@@ -190,6 +194,11 @@ func (e *kataSnapshotEnricher) enrichSelected(
 		result.addError(kataSnapshotEnrichmentStageDetail, CodeUpstreamError, "Could not load selected task detail.")
 	} else {
 		result.SelectedDetail = &kataSnapshotSelectedDetail{Detail: detail, ETag: issue.ETag}
+		catalogIssues, catalogErr := e.loadLinkedPeerCatalog(ctx, authority, detail, projectsByID)
+		if contextErr := kataEnrichmentContextError(ctx, catalogErr); contextErr != nil {
+			return contextErr
+		}
+		result.CatalogIssues = catalogIssues
 
 		target, targetErr := e.resolveWorkspaceTarget(ctx, db.WorkspaceKataMetadata{
 			DaemonID:    authority.DaemonID,
@@ -389,12 +398,33 @@ func (e *kataSnapshotEnricher) loadDetailResponse(
 	ctx context.Context,
 	selected kataSnapshotEnrichmentIssue,
 ) (kataCachedIssueDetail, error) {
+	detail, err := e.loadIssueDetailResponse(ctx, selected.UID)
+	if err != nil {
+		return kataCachedIssueDetail{}, err
+	}
+	issue := detail.Issue
+	if issue.ID != selected.ID || issue.ProjectID != selected.ProjectID || issue.ProjectUID == nil || *issue.ProjectUID != selected.ProjectUID || issue.ShortID != selected.ShortID {
+		return kataCachedIssueDetail{}, fmt.Errorf("detail response identity does not match selection")
+	}
+	if issue.Revision != selected.Revision {
+		return kataCachedIssueDetail{}, fmt.Errorf(
+			"%w: selected issue %q changed from revision %d to %d",
+			errKataSnapshotEnrichmentStale, selected.UID, selected.Revision, issue.Revision,
+		)
+	}
+	return detail, nil
+}
+
+func (e *kataSnapshotEnricher) loadIssueDetailResponse(
+	ctx context.Context,
+	issueUID string,
+) (kataCachedIssueDetail, error) {
 	if err := ctx.Err(); err != nil {
 		return kataCachedIssueDetail{}, err
 	}
 	includeDeleted := false
 	response, err := e.client.ShowIssueByUIDWithResponse(ctx, &katagenerated.ShowIssueByUIDRequestOptions{
-		PathParams: &katagenerated.ShowIssueByUIDPath{UID: selected.UID},
+		PathParams: &katagenerated.ShowIssueByUIDPath{UID: issueUID},
 		Query:      &katagenerated.ShowIssueByUIDQuery{IncludeDeleted: &includeDeleted},
 	})
 	if err != nil {
@@ -410,20 +440,149 @@ func (e *kataSnapshotEnricher) loadDetailResponse(
 		return kataCachedIssueDetail{}, fmt.Errorf("validate detail response: %w", err)
 	}
 	issue := response.JSON200.Issue
-	if issue.ID <= 0 || issue.ProjectID <= 0 || issue.ID != selected.ID || issue.UID != selected.UID || issue.ProjectID != selected.ProjectID || issue.ProjectUID == nil || *issue.ProjectUID != selected.ProjectUID || issue.ShortID != selected.ShortID || issue.DeletedAt != nil {
-		return kataCachedIssueDetail{}, fmt.Errorf("detail response identity does not match selection")
-	}
-	if issue.Revision != selected.Revision {
-		return kataCachedIssueDetail{}, fmt.Errorf(
-			"%w: selected issue %q changed from revision %d to %d",
-			errKataSnapshotEnrichmentStale, selected.UID, selected.Revision, issue.Revision,
-		)
+	if issue.ID <= 0 || issue.ProjectID <= 0 || issue.UID != issueUID || issue.ProjectUID == nil || issue.DeletedAt != nil {
+		return kataCachedIssueDetail{}, fmt.Errorf("detail response identity does not match request")
 	}
 	etag := ""
 	if response.HTTPResponse != nil {
 		etag = response.HTTPResponse.Header.Get("ETag")
 	}
 	return kataCachedIssueDetail{Body: response.JSON200, Issue: issue, ETag: etag}, nil
+}
+
+func (e *kataSnapshotEnricher) loadLinkedPeerCatalog(
+	ctx context.Context,
+	authority kataCoordinatedAuthority,
+	detail *katagenerated.ShowIssueResponseBody,
+	projectsByID map[int64]kataProjectSummary,
+) ([]kataTaskSummary, error) {
+	existing := make(map[string]struct{}, len(authority.Snapshot.Issues))
+	for _, issue := range authority.Snapshot.Issues {
+		existing[issue.UID] = struct{}{}
+	}
+	peerUIDs := linkedPeerUIDs(detail.Links, detail.Issue.UID, existing)
+	if len(peerUIDs) == 0 {
+		return nil, nil
+	}
+
+	results := make([]*kataTaskSummary, len(peerUIDs))
+	jobs := make(chan int)
+	var workers sync.WaitGroup
+	for range min(kataLinkedPeerLoadConcurrency, len(peerUIDs)) {
+		workers.Go(func() {
+			for index := range jobs {
+				summary, err := e.loadLinkedPeerSummary(ctx, authority, peerUIDs[index], projectsByID)
+				if err == nil {
+					results[index] = &summary
+				}
+			}
+		})
+	}
+	for index := range peerUIDs {
+		select {
+		case jobs <- index:
+		case <-ctx.Done():
+			close(jobs)
+			workers.Wait()
+			return nil, ctx.Err()
+		}
+	}
+	close(jobs)
+	workers.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	catalog := make([]kataTaskSummary, 0, len(results))
+	for _, result := range results {
+		if result != nil {
+			catalog = append(catalog, *result)
+		}
+	}
+	return catalog, nil
+}
+
+func linkedPeerUIDs(links []katagenerated.LinkOut, selectedUID string, existing map[string]struct{}) []string {
+	seen := make(map[string]struct{}, len(links))
+	peerUIDs := make([]string, 0, len(links))
+	for _, link := range links {
+		peerUID := ""
+		switch {
+		case link.From.UID == selectedUID:
+			peerUID = link.To.UID
+		case link.To.UID == selectedUID:
+			peerUID = link.From.UID
+		}
+		if peerUID == "" {
+			continue
+		}
+		if _, ok := existing[peerUID]; ok {
+			continue
+		}
+		if _, ok := seen[peerUID]; ok {
+			continue
+		}
+		seen[peerUID] = struct{}{}
+		peerUIDs = append(peerUIDs, peerUID)
+	}
+	return peerUIDs
+}
+
+func (e *kataSnapshotEnricher) loadLinkedPeerSummary(
+	ctx context.Context,
+	authority kataCoordinatedAuthority,
+	issueUID string,
+	projectsByID map[int64]kataProjectSummary,
+) (kataTaskSummary, error) {
+	load := func(loadCtx context.Context) (kataCachedIssueDetail, error) {
+		return e.loadIssueDetailResponse(loadCtx, issueUID)
+	}
+	var detail kataCachedIssueDetail
+	var err error
+	if e.cache == nil {
+		detail, err = load(ctx)
+	} else {
+		detail, err = e.cache.issueDetail(ctx, kataIssueDetailCacheKey{
+			DaemonID: authority.DaemonID, DaemonEpoch: authority.InvalidationEpoch,
+			IssueUID: issueUID, Kind: kataLinkedPeerDetailCache,
+		}, load)
+	}
+	if err != nil {
+		return kataTaskSummary{}, err
+	}
+	return kataTaskSummaryFromDetail(detail.Body, projectsByID)
+}
+
+func kataTaskSummaryFromDetail(
+	detail *katagenerated.ShowIssueResponseBody,
+	projectsByID map[int64]kataProjectSummary,
+) (kataTaskSummary, error) {
+	issue := detail.Issue
+	project, ok := projectsByID[issue.ProjectID]
+	if !ok || issue.ProjectUID == nil || *issue.ProjectUID != project.UID {
+		return kataTaskSummary{}, fmt.Errorf("linked issue %q references an unknown project", issue.UID)
+	}
+	if issue.Status != "open" && issue.Status != "closed" {
+		return kataTaskSummary{}, fmt.Errorf("linked issue %q has unsupported status %q", issue.UID, issue.Status)
+	}
+	labels := make([]string, 0, len(detail.Labels))
+	for _, label := range detail.Labels {
+		if label.IssueID == issue.ID {
+			labels = append(labels, label.Label)
+		}
+	}
+	return kataTaskSummary{
+		ID: issue.ID, UID: issue.UID, ProjectID: issue.ProjectID,
+		ShortID: issue.ShortID, QualifiedID: project.Name + "#" + issue.ShortID,
+		Title: issue.Title, Body: issue.Body, Status: issue.Status,
+		ProjectUID: project.UID, ProjectName: project.Name, Metadata: cloneKataMetadata(issue.Metadata),
+		Revision: issue.Revision, Owner: cloneKataPointer(issue.Owner), Author: issue.Author,
+		Priority: cloneKataPointer(issue.Priority), Labels: labels,
+		RecurrenceID: cloneKataPointer(issue.RecurrenceID), OccurrenceKey: cloneKataPointer(issue.OccurrenceKey),
+		CreatedAt: issue.CreatedAt.UTC(), UpdatedAt: issue.UpdatedAt.UTC(),
+		ClosedReason: cloneKataPointer(issue.ClosedReason), ClosedAt: kataTimePointerUTC(issue.ClosedAt),
+		DeletedAt: kataTimePointerUTC(issue.DeletedAt),
+	}, nil
 }
 
 func (e *kataSnapshotEnricher) loadHistory(

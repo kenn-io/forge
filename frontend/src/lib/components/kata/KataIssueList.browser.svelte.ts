@@ -45,7 +45,8 @@ describe("KataIssueList table geometry (browser)", () => {
     const issue = task();
     render(KataIssueList, {
       props: {
-        currentView: currentView(issue),
+        currentView: currentView([issue]),
+        issueCatalog: [issue],
         selectedIssueUID: issue.uid,
         loading: false,
         onSelect: () => {},

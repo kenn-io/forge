@@ -29,7 +29,15 @@ type kataIssueDetailCacheKey struct {
 	DaemonEpoch   uint64
 	IssueUID      string
 	IssueRevision int64
+	Kind          kataIssueDetailCacheKind
 }
+
+type kataIssueDetailCacheKind uint8
+
+const (
+	kataSelectedIssueDetailCache kataIssueDetailCacheKind = iota
+	kataLinkedPeerDetailCache
+)
 
 type kataProjectEventsCacheKey struct {
 	DaemonID    string
@@ -567,7 +575,7 @@ func kataSerializedCost(value any) uint64 {
 }
 
 func kataIssueDetailSingleflightKey(key kataIssueDetailCacheKey) string {
-	return fmt.Sprintf("%s\x00%d\x00%s\x00%d", key.DaemonID, key.DaemonEpoch, key.IssueUID, key.IssueRevision)
+	return fmt.Sprintf("%s\x00%d\x00%s\x00%d\x00%d", key.DaemonID, key.DaemonEpoch, key.IssueUID, key.IssueRevision, key.Kind)
 }
 
 func kataProjectEventsSingleflightKey(key kataProjectEventsCacheKey) string {

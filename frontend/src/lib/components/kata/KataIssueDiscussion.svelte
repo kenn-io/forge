@@ -1,6 +1,6 @@
 <script lang="ts">
   import { MentionTextarea, type MentionOption } from "@kenn-io/kit-ui";
-  import { Button } from "@middleman/ui";
+  import { Button, ItemStateChip } from "@middleman/ui";
   import { renderMarkdown, renderMarkdownSync } from "@middleman/ui/utils/markdown";
   import { localDateTimeLabel, timeAgo } from "@middleman/ui/utils/time";
 
@@ -13,6 +13,14 @@
     KataTaskSummary,
   } from "../../api/kata/taskTypes.js";
   import { describeKataEvent } from "../../features/kata/eventFormatter";
+  import {
+    kataLinkMatchesFilters,
+    relationForKataLink,
+    type KataLinkFilters,
+    type KataLinkPeerResolution,
+    type KataLinkRelation,
+  } from "../../features/kata/kataLinkFilters.js";
+  import KataLinkFilterMenu from "./KataLinkFilterMenu.svelte";
 
   interface Props {
     issue: KataTaskDetail;
@@ -20,6 +28,8 @@
     issueCatalog: readonly KataTaskSummary[];
     searchReferences: KataTaskReferenceSearch;
     activeDaemonId?: string | undefined;
+    linkFilters: KataLinkFilters;
+    onLinkFiltersChange: (next: KataLinkFilters) => void;
     actionsDisabled?: boolean | undefined;
     draftResetGeneration?: number | undefined;
     onAddComment: (uid: string, body: string) => boolean | Promise<boolean>;
@@ -40,6 +50,8 @@
     issueCatalog,
     searchReferences,
     activeDaemonId = undefined,
+    linkFilters,
+    onLinkFiltersChange,
     actionsDisabled = false,
     draftResetGeneration = 0,
     onAddComment,
@@ -64,6 +76,13 @@
       return tb - ta;
     });
   });
+
+  const visibleLinks = $derived(
+    issue.links.filter((link) =>
+      kataLinkMatchesFilters(link, issue.issue.uid, peerResolution(link), linkFilters),
+    ),
+  );
+  const showStateChips = $derived(linkFilters.statuses.open && linkFilters.statuses.closed);
 
   $effect(() => {
     const nextGeneration = draftResetGeneration;
@@ -122,11 +141,6 @@
     }
   }
 
-  function currentIssueTitle(uid: string): string {
-    if (issue.issue.uid === uid) return issue.issue.title;
-    return issueCatalog.find((item) => item.uid === uid)?.title ?? "";
-  }
-
   function linkPeerUIDFor(link: KataTaskLink, selectedUID: string | undefined): string {
     return link.from.uid === selectedUID ? link.to.uid : link.from.uid;
   }
@@ -139,14 +153,21 @@
     return link.from.uid === issue.issue.uid ? link.to.short_id : link.from.short_id;
   }
 
-  function linkPeerTitle(link: KataTaskLink): string {
-    return currentIssueTitle(linkPeerUID(link));
+  function peerResolution(link: KataTaskLink): KataLinkPeerResolution {
+    const peer = issueCatalog.find((candidate) => candidate.uid === linkPeerUID(link));
+    return peer ? { kind: "resolved", peer } : { kind: "failed" };
   }
 
+  const relationLabels: Record<KataLinkRelation, string> = {
+    parent: "parent",
+    child: "child",
+    blocks: "blocks",
+    blocked_by: "blocked_by",
+    related: "related",
+  };
+
   function linkLabel(link: KataTaskLink): string {
-    if (link.type === "blocks" && link.to.uid === issue.issue.uid) return "blocked_by";
-    if (link.type === "parent") return link.to.uid === issue.issue.uid ? "parent" : "child";
-    return link.type;
+    return relationLabels[relationForKataLink(link, issue.issue.uid)];
   }
 
   async function submitRelatedLink(): Promise<void> {
@@ -197,26 +218,41 @@
 </script>
 
 <section class="task-links" aria-label="Links">
-  <div class="section-header">
+  <div class="section-header link-section-header">
     <h3>Links</h3>
-    <span>{issue.links.length}</span>
+    <div class="link-header-actions">
+      <span>
+        {visibleLinks.length === issue.links.length
+          ? issue.links.length
+          : `${visibleLinks.length} / ${issue.links.length}`}
+      </span>
+      <KataLinkFilterMenu filters={linkFilters} onChange={onLinkFiltersChange} />
+    </div>
   </div>
   {#if issue.links.length === 0}
     <p class="link-empty">No links.</p>
+  {:else if visibleLinks.length === 0}
+    <p class="link-empty">No links match these filters.</p>
   {:else}
     <div class="link-list">
-      {#each issue.links as link (link.id)}
+      {#each visibleLinks as link (link.id)}
+        {@const resolution = peerResolution(link)}
+        {@const peer = resolution.kind === "resolved" ? resolution.peer : undefined}
         <button
           type="button"
-          class="link-row"
+          class={["link-row", (showStateChips || resolution.kind === "failed") && "link-row--with-state"]}
+          aria-label={`${linkLabel(link)} ${linkPeerShortID(link)} ${peer?.title ?? ""}${showStateChips && peer ? ` ${peer.status}` : ""}${resolution.kind === "failed" ? " state unavailable" : ""}`.trim()}
           onclick={() => {
             void onSelectIssue(linkPeerUID(link));
           }}
         >
           <span class="link-kind">{linkLabel(link)}</span>
           <span class="link-peer">{linkPeerShortID(link)}</span>
-          {#if linkPeerTitle(link)}
-            <span class="link-title">{linkPeerTitle(link)}</span>
+          {#if peer?.title}<span class="link-title">{peer.title}</span>{/if}
+          {#if showStateChips && peer}
+            <ItemStateChip state={peer.status} size="xs" />
+          {:else if resolution.kind === "failed"}
+            <ItemStateChip state="unknown" size="xs" title="Task state unavailable" />
           {/if}
         </button>
       {/each}
@@ -349,7 +385,13 @@
     margin: 0;
   }
 
-  .section-header > span {
+  .link-header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .link-header-actions > span {
     color: var(--text-muted);
     font-size: var(--font-size-xs);
   }
@@ -374,7 +416,7 @@
     background: transparent;
     color: var(--text-primary);
     display: grid;
-    grid-template-columns: minmax(72px, max-content) minmax(54px, max-content) minmax(0, 1fr);
+    grid-template-columns: max-content max-content minmax(0, 1fr);
     align-items: center;
     gap: 8px;
     padding: 4px 6px;
@@ -382,6 +424,10 @@
     font-size: var(--font-size-sm);
     text-align: left;
     cursor: pointer;
+  }
+
+  .link-row--with-state {
+    grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
   }
 
   .link-row:hover {

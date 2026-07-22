@@ -1351,26 +1351,8 @@ func (c *Config) validate() error {
 		return err
 	}
 
-	// Non-GitHub providers still resolve clone/API credentials by host, so
-	// same-host repo overrides must remain identical. GitHub routes can differ
-	// by exact repository or owner and are validated by their scoped keys.
-	hostToken := make(map[string]tokenauth.Descriptor, len(c.Repos))
-	for _, r := range c.Repos {
-		if r.PlatformOrDefault() == defaultPlatform {
-			continue
-		}
-		key := r.PlatformOrDefault() + "\x00" + r.PlatformHostOrDefault()
-		effective := c.ResolveRepoTokenSource(r)
-		if prev, ok := hostToken[key]; ok {
-			if !prev.EqualSource(effective) {
-				return fmt.Errorf(
-					"config: conflicting token source for %s host %q (conflicting token_env): %s vs %s",
-					r.PlatformOrDefault(), r.PlatformHostOrDefault(), prev.SafeString(), effective.SafeString(),
-				)
-			}
-		} else {
-			hostToken[key] = effective
-		}
+	if err := c.ValidateSharedHostCloneTokenSources(); err != nil {
+		return fmt.Errorf("config: %w", err)
 	}
 
 	if _, err := time.ParseDuration(c.SyncInterval); err != nil {
@@ -2429,6 +2411,46 @@ func (c *Config) CloneTokenDescriptors() []tokenauth.Descriptor {
 		}
 	}
 	return out
+}
+
+// ValidateSharedHostCloneTokenSources requires every unscoped credential on
+// one hostname to identify the same source chain. Repository- and owner-scoped
+// GitHub routes are excluded because managed Git selects them by repository
+// identity; ownerless host operations cannot safely choose between different
+// provider fallbacks on the same host.
+func (c *Config) ValidateSharedHostCloneTokenSources() error {
+	if c == nil {
+		return nil
+	}
+	type hostSource struct {
+		platform string
+		sourceID string
+	}
+	plans := c.ProviderTokenSources()
+	byHost := make(map[string]hostSource, len(plans))
+	for _, plan := range plans {
+		desc := plan.Descriptor
+		if desc.Key.Host == "" || len(desc.Candidates) == 0 {
+			continue
+		}
+		if desc.Key.Scope != "" {
+			continue
+		}
+		existing, ok := byHost[desc.Key.Host]
+		sourceID := desc.CanonicalSourceString()
+		if !ok {
+			byHost[desc.Key.Host] = hostSource{platform: desc.Key.Platform, sourceID: sourceID}
+			continue
+		}
+		if existing.sourceID == sourceID {
+			continue
+		}
+		return fmt.Errorf(
+			"host %s has different clone token sources for %s and %s; use identical tokens or separate hosts",
+			desc.Key.Host, existing.platform, desc.Key.Platform,
+		)
+	}
+	return nil
 }
 
 func (c *Config) TokenSourceForPlatformHost(

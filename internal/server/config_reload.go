@@ -609,36 +609,7 @@ func (s *Server) validateReloadProviderTokenSources(
 }
 
 func validateReloadCloneTokenSources(cfg *config.Config) error {
-	if cfg == nil {
-		return nil
-	}
-	plans := cfg.ProviderTokenSources()
-	byHost := make(map[string]string, len(plans))
-	for _, plan := range plans {
-		desc := plan.Descriptor
-		if desc.Key.Host == "" || len(desc.Candidates) == 0 {
-			continue
-		}
-		// GitHub repository and owner routes are intentionally allowed to
-		// carry different PAT chains. Managed Git routing selects among them
-		// by repository identity; only host fallback chains participate in
-		// the cross-provider same-host validation.
-		if desc.Key.Platform == string(platform.KindGitHub) && desc.Key.Scope != "" {
-			continue
-		}
-		sourceID := desc.CanonicalSourceString()
-		if existing, ok := byHost[desc.Key.Host]; ok {
-			if existing != sourceID {
-				return fmt.Errorf(
-					"host %s is configured with different clone token sources; use identical tokens or separate hosts",
-					desc.Key.Host,
-				)
-			}
-			continue
-		}
-		byHost[desc.Key.Host] = sourceID
-	}
-	return nil
+	return cfg.ValidateSharedHostCloneTokenSources()
 }
 
 func cloneReloadedConfig(in *config.Config) config.Config {

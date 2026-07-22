@@ -190,6 +190,10 @@ borrow an arbitrary owner PAT. Repository notifications use the user/write
 identity. App-only routes may read, but notifications and mutations remain
 disabled until restart establishes a stable user identity.
 
+Selected-repository App routes may expose installation-repository listing as an
+owner-scoped discovery route, but that route must never become a fallback for
+other repository operations (`internal/github/auth_router.go::RoutedClient.ListRepositoriesByOwner`).
+
 Managed Git uses exact-repository or owner PAT routes with mutation context and
 must never expose an App installation token to smart HTTP. Thread full provider,
 host, owner, and repository identity through clone/fetch and local reads;

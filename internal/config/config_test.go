@@ -1729,6 +1729,25 @@ token_env = "GITLAB_TOKEN_B"
 	assert.Contains(t, err.Error(), "conflicting token_env")
 }
 
+func TestLoadRejectsDifferentProviderFallbacksOnSharedHost(t *testing.T) {
+	path := writeConfig(t, `
+[[platforms]]
+type = "github"
+host = "code.example.com"
+token_env = "GITHUB_PAT"
+
+[[platforms]]
+type = "forgejo"
+host = "code.example.com"
+token_env = "FORGEJO_PAT"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "code.example.com")
+	assert.Contains(t, err.Error(), "different clone token sources")
+}
+
 func TestLoadGitLabNestedNamespaceURL(t *testing.T) {
 	assert := assert.New(t)
 	path := writeConfig(t, `

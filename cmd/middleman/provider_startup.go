@@ -67,12 +67,13 @@ func (s identityBoundMutationTokenSource) Token(ctx context.Context) (string, er
 }
 
 type githubCredentialRoute struct {
-	key           tokenauth.Key
-	source        tokenauth.Source
-	client        github.Client
-	fetcher       *github.GraphQLFetcher
-	readIdentity  github.IdentityKey
-	writeIdentity github.IdentityKey
+	key            tokenauth.Key
+	source         tokenauth.Source
+	client         github.Client
+	fetcher        *github.GraphQLFetcher
+	discoveryOwner string
+	readIdentity   github.IdentityKey
+	writeIdentity  github.IdentityKey
 }
 
 type providerStartup struct {
@@ -196,6 +197,9 @@ func collectProviderTokenSources(
 	cfg *config.Config,
 	set *tokenauth.SourceSet,
 ) (map[string]tokenauth.Source, error) {
+	if err := cfg.ValidateSharedHostCloneTokenSources(); err != nil {
+		return nil, err
+	}
 	providerSources := make(map[string]tokenauth.Source, len(cfg.Repos)+len(cfg.Platforms)+1)
 	add := func(plan config.ProviderTokenSource) error {
 		desc := plan.Descriptor
@@ -232,9 +236,6 @@ func collectProviderTokenSources(
 			return nil, err
 		}
 	}
-	if err := validateProviderHostKeys(providerSources); err != nil {
-		return nil, err
-	}
 	return providerSources, nil
 }
 
@@ -247,7 +248,7 @@ func buildProviderStartup(
 	factories map[string]providerFactory,
 	resolver github.IdentityResolver,
 ) (providerStartup, error) {
-	if err := validateProviderHostKeys(providerSources); err != nil {
+	if err := cfg.ValidateSharedHostCloneTokenSources(); err != nil {
 		return providerStartup{}, err
 	}
 	budgetPerHour := cfg.BudgetPerHour()
@@ -470,11 +471,16 @@ func buildGitHubIdentityRuntimes(
 				source, desc.Key.Host, writeIdentity.Key, resolvedWrite.token, resolver,
 			)
 		}
+		discoveryOwner := ""
+		if hasApp && strings.HasPrefix(desc.Key.Scope, "repo:") {
+			discoveryOwner = app.InstallationAccount
+		}
 		startup.githubRoutes[desc.Key] = githubCredentialRoute{
-			key:           desc.Key,
-			source:        source,
-			readIdentity:  readIdentity.Key,
-			writeIdentity: writeIdentity.Key,
+			key:            desc.Key,
+			source:         source,
+			discoveryOwner: discoveryOwner,
+			readIdentity:   readIdentity.Key,
+			writeIdentity:  writeIdentity.Key,
 		}
 	}
 	return nil
@@ -503,6 +509,7 @@ func buildGitHubRouteClients(startup *providerStartup) error {
 		return nil
 	}
 	byHost := make(map[string][]*github.Route)
+	discoveryRoutes := make(map[string]struct{})
 	for key, configured := range startup.githubRoutes {
 		readRuntime := startup.githubIdentities[configured.readIdentity.String()]
 		var writeRuntime *githubIdentityRuntime
@@ -562,10 +569,19 @@ func buildGitHubRouteClients(startup *providerStartup) error {
 		configured.fetcher = fetcher
 		startup.githubRoutes[key] = configured
 		owner, name := githubRouteOwnerAndName(key.Scope)
+		var discoveryClient github.Client
+		if configured.discoveryOwner != "" {
+			discoveryKey := key.Host + "\x00" + strings.ToLower(configured.discoveryOwner)
+			if _, exists := discoveryRoutes[discoveryKey]; !exists {
+				discoveryRoutes[discoveryKey] = struct{}{}
+				discoveryClient = client
+			}
+		}
 		byHost[key.Host] = append(byHost[key.Host], &github.Route{
 			Key:    github.RouteKey{Host: key.Host, Owner: owner, Name: name},
-			Client: client, WriteSnapshotClient: writeSnapshotClient,
-			Fetcher: fetcher, ReadIdentity: configured.readIdentity,
+			Client: client, DiscoveryClient: discoveryClient,
+			WriteSnapshotClient: writeSnapshotClient,
+			Fetcher:             fetcher, ReadIdentity: configured.readIdentity,
 			WriteIdentity: configured.writeIdentity,
 		})
 	}

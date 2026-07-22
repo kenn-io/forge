@@ -22,6 +22,7 @@ type RouteKey struct {
 type Route struct {
 	Key                 RouteKey
 	Client              Client
+	DiscoveryClient     Client
 	WriteSnapshotClient Client
 	Fetcher             *GraphQLFetcher
 	ReadIdentity        IdentityKey
@@ -51,17 +52,19 @@ func (e *MissingRouteError) Error() string {
 // HostRouter selects exact-repository, owner, or fallback credential routes on
 // one GitHub host.
 type HostRouter struct {
-	host     string
-	fallback *Route
-	owners   map[string]*Route
-	repos    map[string]*Route
+	host            string
+	fallback        *Route
+	owners          map[string]*Route
+	repos           map[string]*Route
+	discoveryOwners map[string]Client
 }
 
 func NewHostRouter(host string, routes ...*Route) (*HostRouter, error) {
 	router := &HostRouter{
-		host:   normalizedPlatformHost(host),
-		owners: make(map[string]*Route),
-		repos:  make(map[string]*Route),
+		host:            normalizedPlatformHost(host),
+		owners:          make(map[string]*Route),
+		repos:           make(map[string]*Route),
+		discoveryOwners: make(map[string]Client),
 	}
 	for _, route := range routes {
 		if route == nil {
@@ -78,6 +81,19 @@ func NewHostRouter(host string, routes ...*Route) (*HostRouter, error) {
 				"GitHub route host %s does not match router host %s",
 				routeHost, router.host,
 			)
+		}
+		if route.DiscoveryClient != nil {
+			if strings.TrimSpace(route.Key.Owner) == "" {
+				return nil, fmt.Errorf("GitHub discovery route on %s requires an owner", router.host)
+			}
+			key := ownerRouteMapKey(route.Key.Owner)
+			if router.discoveryOwners[key] != nil {
+				return nil, fmt.Errorf(
+					"duplicate GitHub discovery route for %s on %s",
+					route.Key.Owner, router.host,
+				)
+			}
+			router.discoveryOwners[key] = route.DiscoveryClient
 		}
 		switch {
 		case strings.TrimSpace(route.Key.Owner) == "":
@@ -303,6 +319,15 @@ func (c *RoutedClient) routeForOwner(owner string) (Client, error) {
 	return route.Client, nil
 }
 
+func (c *RoutedClient) discoveryClientForOwner(owner string) (Client, error) {
+	if c != nil && c.routes != nil {
+		if client := c.routes.discoveryOwners[ownerRouteMapKey(owner)]; client != nil {
+			return client, nil
+		}
+	}
+	return c.routeForOwner(owner)
+}
+
 func (c *RoutedClient) AuthenticatedViewerLoginForRepo(
 	ctx context.Context, owner, name string,
 ) (string, error) {
@@ -455,7 +480,7 @@ func (c *RoutedClient) GetPullRequest(ctx context.Context, owner, repo string, n
 	return client.GetPullRequest(ctx, owner, repo, number)
 }
 func (c *RoutedClient) ListRepositoriesByOwner(ctx context.Context, owner string) ([]*gh.Repository, error) {
-	client, err := c.routeForOwner(owner)
+	client, err := c.discoveryClientForOwner(owner)
 	if err != nil {
 		return nil, err
 	}

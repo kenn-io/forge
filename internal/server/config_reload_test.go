@@ -1051,6 +1051,18 @@ token_env = "REPO_TOKEN"
 	require.NoError(t, validateReloadCloneTokenSources(cfg))
 }
 
+func TestValidateReloadCloneTokenSourcesRejectsDifferentProviderFallbacksOnSharedHost(t *testing.T) {
+	cfg := &config.Config{Platforms: []config.PlatformConfig{
+		{Type: "github", Host: "code.example.com", TokenEnv: "GITHUB_PAT"},
+		{Type: "forgejo", Host: "code.example.com", TokenEnv: "FORGEJO_PAT"},
+	}}
+
+	err := validateReloadCloneTokenSources(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "code.example.com")
+	assert.Contains(t, err.Error(), "different clone token sources")
+}
+
 func TestValidateReloadCloneTokenSourcesAllowsEquivalentChainsOnSameHost(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
 	// Two providers share a self-hosted host. The forgejo repo's token_env

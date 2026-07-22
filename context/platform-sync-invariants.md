@@ -36,8 +36,11 @@ events must be scoped by persisted repo ID or full provider identity.
 
 ## Provider Hosts And Tokens
 
-Each configured provider host may have its own fallback token source. GitHub
-may additionally define exact-repository and owner authorization routes.
+Each configured provider-host pair may have its own fallback token source.
+Across providers sharing one hostname, unscoped fallback chains must be
+canonically equivalent because ownerless host operations cannot select a provider
+safely (`internal/config/config.go::Config.ValidateSharedHostCloneTokenSources`).
+GitHub may additionally define exact-repository and owner authorization routes.
 
 - Legacy GitHub config still defaults to `github` on `github.com`.
 - GitLab public config defaults to `gitlab.com`.

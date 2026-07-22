@@ -333,6 +333,90 @@ func TestProviderStartupKeepsSameHostGitCredentialsProviderScoped(t *testing.T) 
 		"a routed GitHub host without a matching route must fail closed")
 }
 
+func TestSelectedGitHubAppSupportsOwnerPreviewWithoutPATFallback(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var installationAuth string
+	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v3/installation/repositories" {
+			installationAuth = r.Header.Get("Authorization")
+			_, _ = io.WriteString(w, `{"repositories":[{
+				"id":101,"name":"covered","full_name":"acme/covered",
+				"owner":{"login":"acme"},"private":true,"archived":false,"fork":false
+			}]}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(api.Close)
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = api.Client().Transport
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+	host := strings.TrimPrefix(api.URL, "https://")
+
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		GitHubApps: []config.GitHubAppConfig{{
+			Host: host, AppID: 7, PrivateKeyPath: "/keys/app.pem",
+			InstallationID: 789, InstallationAccount: "acme",
+			RepositorySelection: "selected", SelectedRepos: []string{"acme/covered"},
+		}},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubCLI: func(context.Context, string) (string, error) {
+			return "", tokenauth.ErrMissingToken
+		},
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			return "app-token", time.Now().Add(time.Hour), nil
+		},
+	})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	startup, err := buildProviderStartup(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+		fakeGitHubIdentityResolver{},
+	)
+	require.NoError(err)
+	_, err = startup.githubRouters[host].RouteForRepo("acme", "uncovered")
+	require.Error(err, "the discovery client must not become a repository fallback")
+	syncer := github.NewSyncerWithRegistry(
+		startup.registry, database, nil, nil, time.Minute,
+		startup.rateTrackers, startup.budgets,
+	)
+	t.Cleanup(syncer.Stop)
+	syncer.SetGitHubRouters(startup.githubRouters)
+	srv := server.NewWithConfig(database, syncer, nil, nil, cfg, t.TempDir()+"/config.toml", server.ServerOptions{
+		TokenSources: set, HostCheckAllowLoopbackAnyPort: true,
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost, "/api/v1/repos/preview",
+		strings.NewReader(fmt.Sprintf(
+			`{"provider":"github","host":%q,"owner":"acme","pattern":"*"}`,
+			host,
+		)),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Host = "127.0.0.1:8091"
+	req.RemoteAddr = "127.0.0.1:1234"
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var response struct {
+		Repos []struct {
+			Name string `json:"name"`
+		} `json:"repos"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
+	require.Len(response.Repos, 1)
+	assert.Equal("covered", response.Repos[0].Name)
+	assert.Equal("Bearer app-token", installationAuth)
+}
+
 func TestBuildProviderStartupSkipsImplicitOptionalFallbackIdentityLookup(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

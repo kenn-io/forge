@@ -45,6 +45,11 @@
   import UsersIcon from "@lucide/svelte/icons/users";
   import XIcon from "@lucide/svelte/icons/x";
   import { identityEquals, type InlineWorkspaceController, type WorkspaceItemIdentity } from "../../workspace-inline.js";
+  import {
+    beginWorkspaceCreate,
+    endWorkspaceCreate,
+    isWorkspaceCreatePending,
+  } from "../../stores/workspace-create-pending.svelte.js";
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
@@ -504,6 +509,11 @@
   }
 
   let workspaceCreating = $state(false);
+  // The shared pending store outlives this component and its local flag:
+  // route resets and remounts clear workspaceCreating while the POST is
+  // still in flight, and a round-trip back to this issue must keep the
+  // button disabled or a second click sends a duplicate create.
+  const workspaceCreateBlocked = $derived(workspaceCreating || isWorkspaceCreatePending(itemIdentity));
   // Bumped per create request and on identity change (route-reset
   // effect): a workspace-create response whose generation no longer
   // matches arrived for an item this component stopped showing and must
@@ -661,6 +671,11 @@
       return;
     }
 
+    // A create for this item is already in flight somewhere (this
+    // instance before a round-trip, or a predecessor before a remount).
+    // Checked after the conflict-dialog handling above: a conflict
+    // response settles the first request before the dialog can resubmit.
+    if (isWorkspaceCreatePending(requestIdentity)) return;
     const requestGen = ++workspaceRequestGen;
     // The identity comparison also covers the microtask gap where props
     // already moved to a new item but the route-reset effect (which bumps
@@ -671,6 +686,7 @@
     const responseIsStale = () => componentDestroyed || identityLeft();
 
     workspaceCreating = true;
+    beginWorkspaceCreate(requestIdentity);
     if (branchConflict) {
       branchConflict.error = null;
     }
@@ -753,6 +769,9 @@
       if (responseIsStale()) return;
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
+      // The request settled either way: release the identity-scoped
+      // pending entry so the button re-enables everywhere at once.
+      endWorkspaceCreate(requestIdentity);
       // A stale request must not clobber the creating flag a newer
       // request (or a fresh selection) owns.
       if (!responseIsStale()) {
@@ -1260,7 +1279,7 @@
         {:else}
           <Button
             class="btn--workspace"
-            disabled={workspaceCreating || staleIssue}
+            disabled={workspaceCreateBlocked || staleIssue}
             onclick={() => void createWorkspace()}
             tone="info"
             surface="soft"
@@ -1269,8 +1288,8 @@
               ? "Refresh details before creating a workspace."
               : createWorkspaceTitle}
             ariaDescribedby={createWorkspaceDescriptionId}
-            label={workspaceCreating ? "Creating..." : "Create Workspace"}
-            shortLabel={workspaceCreating ? "Creating..." : "Create Workspace"}
+            label={workspaceCreateBlocked ? "Creating..." : "Create Workspace"}
+            shortLabel={workspaceCreateBlocked ? "Creating..." : "Create Workspace"}
           >
             <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </Button>

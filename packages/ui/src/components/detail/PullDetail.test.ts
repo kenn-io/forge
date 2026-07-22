@@ -5,10 +5,16 @@ import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } 
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import { createDetailStore } from "../../stores/detail.svelte.js";
 import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
+import { resetWorkspaceCreatePendingForTest } from "../../stores/workspace-create-pending.svelte.js";
 import type { MiddlemanClient } from "../../types.js";
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
 import { createTestController } from "../workspace/WorkspaceDockPanelTestController.svelte.js";
+
+// The pending-create store is module-scoped so it can survive component
+// remounts; tests that leave a deferred create unresolved must not leak
+// that pending identity into later tests.
+afterEach(resetWorkspaceCreatePendingForTest);
 
 const markdownMockState = vi.hoisted(() => ({
   pending: false,
@@ -1554,6 +1560,57 @@ describe("PullDetail inline workspace handoff", () => {
     expect(controller.recordCreated).toHaveBeenCalledWith(identity, { id: "ws-new", status: "provisioning" });
     expect(detailStore.refreshDetailOnly).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("keeps Create Workspace disabled across a selection round-trip while a create is pending", async () => {
+    // The local creating flag is cleared by the route-reset effect on
+    // A→B and again on B→A; only the shared identity-keyed pending
+    // store can keep the button disabled, or the second click sends a
+    // duplicate create and earns a misleading "already exists" conflict.
+    const controller = createTestController("split");
+    const { apiClient, resolvePost } = deferredWorkspaceApiClient();
+    const { rerender } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+    });
+
+    await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
+    await rerender({ number: 2 });
+    await rerender({ number: 1 });
+
+    const button = screen.getAllByRole("button", { name: "Creating..." })[0]!;
+    expect(button.hasAttribute("disabled")).toBe(true);
+    await fireEvent.click(button);
+    expect(apiClient.POST).toHaveBeenCalledTimes(1);
+
+    resolvePost({ data: { id: "ws-new", status: "provisioning" } });
+    await vi.waitFor(() => {
+      expect(controller.recordCreated).toHaveBeenCalledWith(identity, { id: "ws-new", status: "provisioning" });
+    });
+    expect(controller.recordCreated).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Create Workspace disabled across a remount while a create is pending", async () => {
+    const controller = createTestController("split");
+    const { apiClient } = deferredWorkspaceApiClient();
+    renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+    });
+
+    await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
+    cleanup();
+
+    const second = deferredWorkspaceApiClient();
+    renderPullDetail(pullDetail(), undefined, second.apiClient, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: createTestController("split"),
+    });
+
+    const button = screen.getAllByRole("button", { name: "Creating..." })[0]!;
+    expect(button.hasAttribute("disabled")).toBe(true);
+    await fireEvent.click(button);
+    expect(second.apiClient.POST).not.toHaveBeenCalled();
   });
 
   it("publishes a confirmed creation across a selection round-trip", async () => {

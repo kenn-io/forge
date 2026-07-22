@@ -48,6 +48,10 @@ Interactive surfaces must agree on which item is selected.
   navigation — on the live component and current selection
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::handleDelete`,
   `packages/ui/src/components/detail/PullDetail.svelte::createWorkspace`).
+  The pending request is identity-scoped shared state too: component-local
+  creating flags reset on route changes and remounts while the request is
+  still in flight, re-enabling the action for a duplicate submission
+  (`packages/ui/src/stores/workspace-create-pending.svelte.ts`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and

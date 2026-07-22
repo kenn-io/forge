@@ -167,6 +167,12 @@ const unitTestProject = {
   extends: true,
   test: {
     name: "unit",
+    // A single thread avoids both fork teardown failures and the memory
+    // pressure seen with concurrent workers on the current CI runner. Revisit
+    // process isolation after the runner memory upgrade. Node's global Web
+    // Storage must stay disabled in workers so jsdom owns localStorage.
+    pool: "threads",
+    execArgv: ["--no-experimental-webstorage"],
     ...(unitTestMaxWorkers ? { maxWorkers: unitTestMaxWorkers } : {}),
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],

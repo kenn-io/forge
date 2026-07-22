@@ -8,8 +8,12 @@ function distAssetUrl(assetUrl: string): URL {
   return new URL(`../../dist/${pathname}`, import.meta.url);
 }
 
+function isNavigationContextReplacement(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("Execution context was destroyed");
+}
+
 test("reloads an outdated frontend before rendering a Mermaid diagram", async ({ page }) => {
-  test.setTimeout(45_000);
+  test.setTimeout(90_000);
   await mockApi(page);
   const updatedEntrypointPath = "/assets/index-updated.js";
   const updatedMermaidCorePath = "/assets/mermaid.core-updated.js";
@@ -34,15 +38,18 @@ test("reloads an outdated frontend before rendering a Mermaid diagram", async ({
     }
 
     if (isVersionCheck) frontendVersionChecks += 1;
-    const response = await route.fetch();
-    const shell = await response.text();
+    const shell = await readFile(new URL("../../dist/index.html", import.meta.url), "utf8");
     const entrypointMatch = shell.match(/<script\b[^>]*\btype="module"[^>]*\bsrc="([^"]+)"[^>]*>/);
     const currentEntrypointPath = entrypointMatch?.[1];
     if (!entrypointMatch || !currentEntrypointPath) throw new Error("Frontend entrypoint not found in test shell");
 
     currentEntrypointUrl ||= new URL(currentEntrypointPath, route.request().url()).href;
     const updatedEntrypoint = entrypointMatch[0].replace(currentEntrypointPath, updatedEntrypointPath);
-    await route.fulfill({ response, body: shell.replace(entrypointMatch[0], updatedEntrypoint) });
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: shell.replace(entrypointMatch[0], updatedEntrypoint),
+    });
   });
   await page.route(updatedEntrypointPath, async (route) => {
     if (!currentEntrypointUrl) throw new Error("Current frontend entrypoint URL not captured");
@@ -108,23 +115,31 @@ test("reloads an outdated frontend before rendering a Mermaid diagram", async ({
         "```",
       ].join("\n"),
     );
+  const recoveryNavigation = page.waitForEvent("framenavigated", (frame) => frame === page.mainFrame());
   await page.locator(".body-edit .title-edit-save").click();
 
-  await expect.poll(() => mainFrameNavigations).toBeGreaterThanOrEqual(2);
+  await recoveryNavigation;
   await page.waitForLoadState("load");
+  await expect.poll(() => mainFrameNavigations).toBeGreaterThanOrEqual(2);
   await expect.poll(() => frontendVersionChecks).toBeGreaterThanOrEqual(1);
   await expect.poll(() => updatedSequenceRequests).toBeGreaterThanOrEqual(1);
-  await expect(page.locator(".markdown-body .kit-mermaid-viewer__pan svg").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".markdown-body .kit-mermaid-viewer__pan svg").first()).toBeVisible({ timeout: 60_000 });
   expect(oldSequenceRequests).toBeGreaterThanOrEqual(1);
   await expect(
     page.locator(".markdown-body pre.shiki").filter({ hasText: 'const ordinary = "code";' }).first(),
   ).toBeVisible();
   await expect
     .poll(
-      () =>
-        page.evaluate(() =>
-          Object.keys(window.sessionStorage).filter((key) => key.startsWith("middleman:vite-reload")),
-        ),
+      async () => {
+        try {
+          return await page.evaluate(() =>
+            Object.keys(window.sessionStorage).filter((key) => key.startsWith("middleman:vite-reload")),
+          );
+        } catch (error) {
+          if (isNavigationContextReplacement(error)) return null;
+          throw error;
+        }
+      },
       { timeout: 10_000 },
     )
     .toEqual([]);

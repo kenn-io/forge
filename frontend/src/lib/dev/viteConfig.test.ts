@@ -20,6 +20,14 @@ describe("vite config", () => {
     expect(resolveUnitTestWorkers({ CI: "1" })).toBe(1);
   });
 
+  it("runs unit tests in worker threads", () => {
+    expect(config.test.projects?.[0]).toMatchObject({
+      test: {
+        pool: "threads",
+      },
+    });
+  });
+
   it("aliases @middleman/ui to the workspace source tree", () => {
     const aliases = Array.isArray(config.resolve?.alias) ? config.resolve.alias : [];
 

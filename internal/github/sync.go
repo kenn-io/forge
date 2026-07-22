@@ -4995,7 +4995,6 @@ func (s *Syncer) indexSyncRepo(
 	var attemptedScope failScope
 	var failedScope failScope
 	var disabledScope failScope
-	var partialCause error
 
 	prListUnchanged := false
 	var mrProbe repositoryFeatureProbe
@@ -5029,13 +5028,8 @@ func (s *Syncer) indexSyncRepo(
 				s.clearRepoFailedScope(repo, failMR)
 				mrListBlocked = true
 			} else {
-				slog.Error("list open PRs failed",
-					"repo", repo.Owner+"/"+repo.Name,
-					"err", err,
-				)
-				failedScope |= failMR
-				partialCause = fmt.Errorf("list open PRs: %w", err)
-				mrListBlocked = true
+				s.markRepoFailed(repo, failMR)
+				return fmt.Errorf("list open PRs: %w", err)
 			}
 		}
 
@@ -5283,7 +5277,6 @@ func (s *Syncer) indexSyncRepo(
 		return &PartialSyncError{
 			MergeRequests: failedScope&failMR != 0,
 			Issues:        failedScope&failIssues != 0,
-			Cause:         partialCause,
 		}
 	}
 
@@ -5644,7 +5637,7 @@ func (s *Syncer) refreshPRCommentsForItem(
 		if IsNotModified(err) {
 			return false
 		}
-		if s.recordRepositoryFeatureDisabled(
+		if s.recordGitHubRepositoryFeatureDisabled(
 			repo, platform.RepositoryFeatureMergeRequests, err,
 		) {
 			return true
@@ -5686,7 +5679,7 @@ func (s *Syncer) refreshIssueCommentsForItem(
 		if IsNotModified(err) {
 			return false
 		}
-		if s.recordRepositoryFeatureDisabled(
+		if s.recordGitHubRepositoryFeatureDisabled(
 			repo, platform.RepositoryFeatureIssues, err,
 		) {
 			return true
@@ -8341,25 +8334,6 @@ func (s *Syncer) drainDetailQueue(
 		if !eligibleBuckets[bucket] {
 			continue
 		}
-		if exhausted[bucket] {
-			continue
-		}
-
-		budget := s.budgets[bucket]
-		if budget == nil {
-			continue
-		}
-
-		// Soft admission gate: check if the budget has nominal
-		// capacity for this item. The transport layer handles
-		// actual per-RoundTrip accounting; this prevents starting
-		// work we almost certainly can't afford.
-		worstCase := qi.WorstCaseCost()
-		if !budget.CanSpend(worstCase) {
-			exhausted[bucket] = true
-			continue
-		}
-
 		repo := RepoRef{
 			Platform:     qi.Platform,
 			Owner:        qi.RepoOwner,
@@ -8378,6 +8352,27 @@ func (s *Syncer) drainDetailQueue(
 		}
 		probe, due := s.beginRepositoryFeatureProbe(ctx, repo, feature)
 		if !due {
+			continue
+		}
+		if exhausted[bucket] {
+			probe.release()
+			continue
+		}
+
+		budget := s.budgets[bucket]
+		if budget == nil {
+			probe.release()
+			continue
+		}
+
+		// Soft admission gate: check if the budget has nominal
+		// capacity for this item. The transport layer handles
+		// actual per-RoundTrip accounting; this prevents starting
+		// work we almost certainly can't afford.
+		worstCase := qi.WorstCaseCost()
+		if !budget.CanSpend(worstCase) {
+			probe.release()
+			exhausted[bucket] = true
 			continue
 		}
 		repoID, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))

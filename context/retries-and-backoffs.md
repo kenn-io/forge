@@ -76,6 +76,8 @@ Repository-disabled issue and merge-request scopes use a 24-hour in-memory
 background probe gate. Expiry admits one reserved background probe across all
 lanes; a disabled result renews the deadline, while any other result releases it.
 Explicit sync bypasses the reservation. (`internal/github/feature_cooldown.go::beginRepositoryFeatureProbe`)
+Apply the gate before shared budget exhaustion so suppressed work cannot starve
+unaffected scopes. (`internal/github/sync.go::drainDetailQueue`)
 
 ## Single-flight: `Manager.EnsureClone`
 

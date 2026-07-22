@@ -11295,6 +11295,11 @@ func TestSyncerMRListFailureMarksRepoFailed(t *testing.T) {
 	mc.commits = []*gh.RepositoryCommit{}
 	// PR list fails on first call.
 	mc.listOpenPRsErr = fmt.Errorf("transient PR list failure")
+	var issueListCalls atomic.Int32
+	mc.listOpenIssuesFn = func(context.Context, string, string) ([]*gh.Issue, error) {
+		issueListCalls.Add(1)
+		return nil, nil
+	}
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc},
@@ -11303,6 +11308,8 @@ func TestSyncerMRListFailureMarksRepoFailed(t *testing.T) {
 
 	// Cycle 1: PR list fails → failMR set, issues unaffected.
 	syncer.RunOnce(ctx)
+	assert.Zero(int(issueListCalls.Load()),
+		"a non-disabled PR list failure must abort before issue sync")
 
 	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)

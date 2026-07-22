@@ -3,6 +3,8 @@ package github
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -170,6 +172,67 @@ func TestDisabledIssueCooldownSkipsDetailDrain(t *testing.T) {
 	assert.Zero(int(client.conditionalCalls.Load()))
 }
 
+func TestDisabledPRCooldownDoesNotExhaustIssueDetailBudget(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1001, Number: 7,
+		URL: "https://github.com/acme/widget/pull/7", Title: "cooled PR",
+		Author: "ada", State: "open", HeadBranch: "feature", BaseBranch: "main",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: 2001, Number: 8,
+		URL: "https://github.com/acme/widget/issues/8", Title: "eligible issue",
+		Author: "ada", State: "open", CreatedAt: now.Add(-time.Hour),
+		UpdatedAt: now.Add(-time.Hour), LastActivityAt: now.Add(-time.Hour),
+	})
+	require.NoError(err)
+
+	var issueCalls atomic.Int32
+	client := &detailTrackingClient{}
+	client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+		issueCalls.Add(1)
+		return &gh.Issue{
+			ID: new(int64(2001)), Number: new(8), Title: new("eligible issue"),
+			State: new("open"), HTMLURL: new("https://github.com/acme/widget/issues/8"),
+			User: &gh.User{Login: new("ada")}, CreatedAt: &gh.Timestamp{Time: now},
+			UpdatedAt: &gh.Timestamp{Time: now},
+		}, nil
+	}
+	budget := testBudget(IssueDetailWorstCase)
+	client.budget = budget["github.com"]
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, budget,
+	)
+	syncer.now = func() time.Time { return now }
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		repo, platform.RepositoryFeatureMergeRequests,
+		platform.RepositoryFeatureDisabled(
+			platform.KindGitHub, "github.com", platform.RepositoryFeatureMergeRequests,
+			errors.New("repository pull requests disabled"),
+		),
+	))
+
+	syncer.drainDetailQueue(
+		ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos(),
+	)
+
+	assert.Zero(int(client.getPRCalls.Load()))
+	assert.Equal(int32(1), issueCalls.Load())
+}
+
 func TestDisabledMergeRequestCooldownSkipsWatchedSync(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -276,13 +339,17 @@ func TestExpiredIssueCommentProbeRenewsDisabledCooldown(t *testing.T) {
 		platform.KindGitHub, "github.com", platform.RepositoryFeatureIssues,
 		errors.New("repository issues disabled"),
 	)
+	rawDisabledErr := fmt.Errorf("list issue comments: %w", &gh.ErrorResponse{
+		Response: &http.Response{StatusCode: http.StatusGone},
+		Message:  "Issues are disabled for this repo",
+	})
 
 	var commentCalls atomic.Int32
 	client := &mockClient{
 		comments: []*gh.IssueComment{},
 		listIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
 			commentCalls.Add(1)
-			return nil, disabledErr
+			return nil, rawDisabledErr
 		},
 	}
 	syncer := NewSyncer(

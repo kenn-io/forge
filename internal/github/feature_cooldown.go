@@ -140,3 +140,14 @@ func (s *Syncer) recordRepositoryFeatureDisabled(repo RepoRef, feature string, e
 	)
 	return true
 }
+
+func (s *Syncer) recordGitHubRepositoryFeatureDisabled(
+	repo RepoRef,
+	feature string,
+	err error,
+) bool {
+	if classified := githubRepositoryFeatureDisabled(repoHost(repo), feature, err); classified != nil {
+		err = classified
+	}
+	return s.recordRepositoryFeatureDisabled(repo, feature, err)
+}

@@ -2155,6 +2155,135 @@ test("kata workspace replaces its accepted snapshot after compact invalidation",
   }
 });
 
+test("kata visible selection stays anchored when its accepted snapshot inserts a row above", async ({ page }) => {
+  const initialIssues = Array.from({ length: 20 }, (_, index) => ({
+    ...issueSummary({
+      id: 300 + index,
+      uid: `issue-visible-anchor-${index + 1}`,
+      project_id: 2,
+      project_uid: "project-kata",
+      project_name: "Kata",
+      short_id: `visible-anchor-${index + 1}`,
+      qualified_id: `Kata#visible-anchor-${index + 1}`,
+      title: `Visible anchor task ${index + 1}`,
+      body: `Visible anchor task ${index + 1} body.`,
+      labels: ["work"],
+    }),
+    updated_at: `2026-05-${String(30 - index).padStart(2, "0")}T08:00:00Z`,
+  }));
+  const selected = initialIssues[8]!;
+  const inserted = {
+    ...issueSummary({
+      id: 399,
+      uid: "issue-visible-anchor-inserted",
+      project_id: 2,
+      project_uid: "project-kata",
+      project_name: "Kata",
+      short_id: "visible-anchor-inserted",
+      qualified_id: "Kata#visible-anchor-inserted",
+      title: "Inserted above visible selection",
+      body: "This task arrives with the accepted selected snapshot.",
+      labels: ["work"],
+    }),
+    updated_at: "2026-05-31T08:00:00Z",
+  };
+  const backend = await startKataBackend({ issues: initialIssues });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+  let holdUnselectedReplacement = false;
+  let heldUnselectedReplacement = false;
+  let releaseUnselectedReplacement!: () => void;
+  let markUnselectedReplacementStarted!: () => void;
+  let markUnselectedReplacementFinished!: () => void;
+  const unselectedReplacementBarrier = new Promise<void>((resolve) => {
+    releaseUnselectedReplacement = resolve;
+  });
+  const unselectedReplacementStarted = new Promise<void>((resolve) => {
+    markUnselectedReplacementStarted = resolve;
+  });
+  const unselectedReplacementFinished = new Promise<void>((resolve) => {
+    markUnselectedReplacementFinished = resolve;
+  });
+  await page.route("**/api/v1/kata/tasks/snapshot*", async (route) => {
+    const url = new URL(route.request().url());
+    if (holdUnselectedReplacement && !heldUnselectedReplacement && !url.searchParams.get("selected_issue_uid")) {
+      heldUnselectedReplacement = true;
+      markUnselectedReplacementStarted();
+      await unselectedReplacementBarrier;
+      await route.abort("aborted");
+      markUnselectedReplacementFinished();
+      return;
+    }
+    await route.continue();
+  });
+
+  try {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(`${server.info.base_url}/kata`);
+    await expectKataDaemonSwitcherReady(page);
+
+    const tableBody = page.locator(".issue-list .table-body");
+    const selectedRow = page.getByRole("button", { name: new RegExp(selected.title) });
+    await expect(selectedRow).toBeVisible();
+    await expect.poll(() => tableBody.evaluate((body) => body.scrollHeight > body.clientHeight)).toBe(true);
+    await tableBody.evaluate((body) => {
+      body.style.overflowAnchor = "none";
+      body.dataset.e2eListInstance = "visible-selection-anchor";
+    });
+    const bodyBox = await tableBody.boundingBox();
+    const selectedBox = await selectedRow.boundingBox();
+    expect(bodyBox).not.toBeNull();
+    expect(selectedBox).not.toBeNull();
+    await tableBody.evaluate(
+      (body, delta) => {
+        body.scrollTop += delta;
+      },
+      selectedBox!.y - bodyBox!.y - 72,
+    );
+    const selectedTop = (await selectedRow.boundingBox())!.y;
+    await expect(selectedRow).toBeInViewport();
+
+    backend.state.issues = [inserted, ...backend.state.issues];
+    holdUnselectedReplacement = true;
+    emitDaemonChange(
+      backend.state,
+      eventRow({
+        event_id: 601,
+        event_uid: "event-visible-anchor-inserted",
+        type: "issue.created",
+        project_id: inserted.project_id,
+        project_uid: inserted.project_uid,
+        project_name: inserted.project_name,
+        issue: inserted,
+      }),
+    );
+    await unselectedReplacementStarted;
+    const acceptedSelection = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === "/api/v1/kata/tasks/snapshot" &&
+        url.searchParams.get("selected_issue_uid") === selected.uid &&
+        response.ok()
+      );
+    });
+    await selectedRow.click();
+    await acceptedSelection;
+
+    await expect(page.getByRole("heading", { name: selected.title })).toBeVisible();
+    await expect(selectedRow).toHaveAttribute("aria-current", "true");
+    await expect(page.getByRole("button", { name: /Inserted above visible selection/ })).toHaveCount(1);
+    await expect(tableBody).toHaveAttribute("data-e2e-list-instance", "visible-selection-anchor");
+    expect(Math.round((await selectedRow.boundingBox())!.y)).toBe(Math.round(selectedTop));
+    releaseUnselectedReplacement();
+    await unselectedReplacementFinished;
+  } finally {
+    releaseUnselectedReplacement();
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata daemon switch fences a late old-daemon compact frame delivered on the active stream", async ({ page }) => {
   await page.addInitScript(() => {
     type PendingFrame = { seq: number; bytes: Uint8Array };
@@ -3047,6 +3176,92 @@ test("kata parent row expands children from the accepted snapshot catalog", asyn
 
     await expect(parentRow).toHaveAttribute("aria-expanded", "false");
     await expect(list.getByRole("button", { name: /Child task/ })).toHaveCount(0);
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
+test("kata focused nested selection survives a structural snapshot reset", async ({ page }) => {
+  const parent = issueSummary({
+    id: 401,
+    uid: "issue-reset-focus-parent",
+    project_id: 1,
+    project_uid: "project-finance",
+    project_name: "Finances",
+    short_id: "reset-focus-parent",
+    qualified_id: "Finances#reset-focus-parent",
+    title: "Reset focus parent",
+    body: "Parent task for reset focus coverage.",
+    labels: ["home"],
+    child_counts: { open: 1, total: 1 },
+    metadata: { scheduled_on: today },
+  });
+  const child = issueSummary({
+    id: 402,
+    uid: "issue-reset-focus-child",
+    project_id: 1,
+    project_uid: "project-finance",
+    project_name: "Finances",
+    short_id: "reset-focus-child",
+    qualified_id: "Finances#reset-focus-child",
+    title: "Reset focus child",
+    body: "Child task for reset focus coverage.",
+    labels: ["home"],
+    parent: issueLinkPeer(parent),
+    parent_short_id: parent.short_id,
+    metadata: { scheduled_on: today },
+  });
+  const backend = await startKataBackend({ issues: [parent, child] });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata`);
+    await expectKataDaemonSwitcherReady(page);
+    const list = page.locator(".kata-list");
+    const parentRow = list.getByRole("button", { name: /Reset focus parent/ });
+    await parentRow.press("ArrowRight");
+    await expect(parentRow).toHaveAttribute("aria-expanded", "true");
+
+    const childRow = list.getByRole("button", { name: /Reset focus child/ });
+    await childRow.click();
+    await expect(page.getByRole("heading", { name: child.title })).toBeVisible();
+    await childRow.focus();
+    await expect(childRow).toBeFocused();
+    await expect.poll(() => backend.state.streams.size).toBeGreaterThan(0);
+
+    const updatedParent = { ...parent, revision: parent.revision + 1 };
+    backend.state.issues = backend.state.issues.map((issue) => (issue.uid === parent.uid ? updatedParent : issue));
+    const acceptedReset = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === "/api/v1/kata/tasks/snapshot" &&
+        url.searchParams.get("selected_issue_uid") === child.uid &&
+        response.ok()
+      );
+    });
+    emitDaemonChange(
+      backend.state,
+      eventRow({
+        event_id: 501,
+        event_uid: "event-reset-focused-parent",
+        type: "issue.updated",
+        project_id: parent.project_id,
+        project_uid: parent.project_uid,
+        project_name: parent.project_name,
+        issue: updatedParent,
+      }),
+    );
+    await acceptedReset;
+
+    await expect(parentRow).toHaveAttribute("aria-expanded", "true");
+    await expect(childRow).toBeVisible();
+    await expect(childRow).toBeInViewport();
+    await expect(childRow).toHaveAttribute("aria-current", "true");
+    await expect(childRow).toBeFocused();
+    await expect(page.getByRole("heading", { name: child.title })).toBeVisible();
   } finally {
     await server.stop();
     kataHome.restore();

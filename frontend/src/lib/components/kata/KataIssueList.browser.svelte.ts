@@ -166,4 +166,74 @@ describe("KataIssueList table geometry (browser)", () => {
     expect(Math.round(refreshedSelectedRow.getBoundingClientRect().top)).toBe(Math.round(selectedTop));
     expect(document.activeElement).toBe(refreshedSelectedRow);
   });
+
+  it("keeps a newly selected visible row fixed when its accepted snapshot inserts a row above it", async () => {
+    await page.viewport(980, 620);
+
+    const issues = Array.from({ length: 20 }, (_, index) =>
+      task({
+        id: index + 1,
+        uid: `issue-${index + 1}`,
+        short_id: `task-${index + 1}`,
+        qualified_id: `General#task-${index + 1}`,
+        title: `Task ${index + 1}`,
+        updated_at: `2026-05-${String(30 - index).padStart(2, "0")}T08:00:00Z`,
+      }),
+    );
+    const previouslySelected = issues[7]!;
+    const nextSelected = issues[8]!;
+    const { container, rerender } = render(KataIssueList, {
+      props: {
+        currentView: currentView(issues),
+        issueCatalog: issues,
+        selectedIssueUID: previouslySelected.uid,
+        loading: false,
+        onSelect: () => {},
+      },
+    });
+
+    const list = container.querySelector(".issue-list") as HTMLElement;
+    list.style.width = "840px";
+    list.style.height = "240px";
+
+    const tableBody = container.querySelector(".table-body") as HTMLDivElement;
+    tableBody.style.overflowAnchor = "none";
+    await expect.poll(() => tableBody.scrollHeight > tableBody.clientHeight).toBe(true);
+
+    const previouslySelectedRow = container.querySelector<HTMLElement>(
+      `button.row[data-uid="${previouslySelected.uid}"]`,
+    )!;
+    const nextSelectedRow = container.querySelector<HTMLElement>(`button.row[data-uid="${nextSelected.uid}"]`)!;
+    let tableRect = tableBody.getBoundingClientRect();
+    tableBody.scrollTop += nextSelectedRow.getBoundingClientRect().top - tableRect.top - 72;
+    tableRect = tableBody.getBoundingClientRect();
+    const nextSelectedTop = nextSelectedRow.getBoundingClientRect().top;
+    previouslySelectedRow.focus();
+    expect(nextSelectedTop).toBeGreaterThanOrEqual(tableRect.top);
+    expect(nextSelectedRow.getBoundingClientRect().bottom).toBeLessThanOrEqual(tableRect.bottom);
+    expect(document.activeElement).toBe(previouslySelectedRow);
+
+    const inserted = task({
+      id: 100,
+      uid: "issue-new-selection-inserted",
+      short_id: "new-selection-inserted",
+      qualified_id: "General#new-selection-inserted",
+      title: "New selection inserted task",
+      updated_at: "2026-05-31T08:00:00Z",
+    });
+    const refreshedIssues = [inserted, ...issues];
+    await rerender({
+      currentView: currentView(refreshedIssues),
+      issueCatalog: refreshedIssues,
+      selectedIssueUID: nextSelected.uid,
+      loading: false,
+      onSelect: () => {},
+    });
+
+    const refreshedNextSelectedRow = container.querySelector<HTMLElement>(
+      `button.row[data-uid="${nextSelected.uid}"]`,
+    )!;
+    expect(Math.round(refreshedNextSelectedRow.getBoundingClientRect().top)).toBe(Math.round(nextSelectedTop));
+    expect(document.activeElement).toBe(previouslySelectedRow);
+  });
 });

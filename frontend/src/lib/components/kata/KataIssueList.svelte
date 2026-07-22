@@ -147,7 +147,6 @@
   let temporaryRevealChain = $state<readonly KataTaskSummary[]>([]);
   let revealOwnedExpansionUIDs = $state<ReadonlySet<string>>(new Set());
   let lastRevealGeneration: number | null = null;
-  let lastAnchorSelectedIssueUID: string | null | undefined;
   let anchorMeasurementGeneration = 0;
   let catalogByUID = $derived(new Map(issueCatalog.map((issue) => [issue.uid, issue])));
   let childrenByParentUID = $derived.by(() => {
@@ -645,11 +644,8 @@
     const generation = ++anchorMeasurementGeneration;
     const body = tableBody;
     const nextSelectedIssueUID = selectedIssueUID;
-    const selectionChanged =
-      lastAnchorSelectedIssueUID !== undefined && nextSelectedIssueUID !== lastAnchorSelectedIssueUID;
-    lastAnchorSelectedIssueUID = nextSelectedIssueUID;
 
-    if (!body || !nextSelectedIssueUID || selectionChanged) return;
+    if (!body || !nextSelectedIssueUID) return;
     const selectedRow = rowElement(body, nextSelectedIssueUID);
     if (!selectedRow) return;
 

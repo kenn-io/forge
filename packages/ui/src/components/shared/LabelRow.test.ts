@@ -1,7 +1,13 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import LabelRow from "./LabelRow.svelte";
+
+function getTooltipTrigger(container: HTMLElement): HTMLElement {
+  const trigger = container.querySelector<HTMLElement>(".kit-tooltip-trigger");
+  if (!trigger) throw new Error("expected a .kit-tooltip-trigger element");
+  return trigger;
+}
 
 const labels = [
   { name: "bug", color: "d73a4a" },
@@ -39,23 +45,33 @@ describe("LabelRow dots variant", () => {
     expect(container.querySelector(".label-dots")).toBeNull();
   });
 
-  it("renders one dot per label with names in tooltip and sr-only text", () => {
+  it("renders one dot per label with a keyboard-reachable tooltip and sr-only text", async () => {
     const { container } = render(LabelRow, { props: { labels: labels.slice(0, 2), dots: true } });
     expect(container.querySelectorAll(".label-dot")).toHaveLength(2);
-    expect(container.querySelector(".label-dots")?.getAttribute("title")).toBe("bug, enhancement");
     expect(container.querySelector(".label-dots")?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.getByText("Labels: bug, enhancement")).toBeTruthy();
     expect(screen.queryByText("bug")).toBeNull();
+
+    const trigger = getTooltipTrigger(container);
+    expect(trigger.getAttribute("tabindex")).toBe("0");
+    expect(screen.queryByRole("tooltip")).toBeNull();
+
+    await fireEvent.focusIn(trigger);
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip.textContent).toBe("bug, enhancement");
+
+    await fireEvent.focusOut(trigger);
+    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
-  it("caps dots at four with no overflow indicator, tooltip still lists all names", () => {
+  it("caps dots at four with no overflow indicator, tooltip still lists all names", async () => {
     const five = [...labels, { name: "extra", color: "ffffff" }];
     const { container } = render(LabelRow, { props: { labels: five, dots: true } });
     expect(container.querySelectorAll(".label-dot")).toHaveLength(4);
     expect(screen.queryByText(/^\+\d+$/)).toBeNull();
-    expect(container.querySelector(".label-dots")?.getAttribute("title")).toBe(
-      "bug, enhancement, docs, help wanted, extra",
-    );
+
+    await fireEvent.focusIn(getTooltipTrigger(container));
+    expect(screen.getByRole("tooltip").textContent).toBe("bug, enhancement, docs, help wanted, extra");
   });
 
   it("normalizes bare, prefixed, 3-digit, and invalid hex colors", () => {

@@ -358,7 +358,7 @@ describe("PullItem compact layout", () => {
     );
 
     expect(document.querySelectorAll(".title .label-dot")).toHaveLength(2);
-    expect(document.querySelector(".title .label-dots")?.getAttribute("title")).toBe("bug, sync");
+    expect(document.querySelector(".title .kit-tooltip-trigger")?.getAttribute("tabindex")).toBe("0");
     expect(screen.getByText("Labels: bug, sync")).toBeTruthy();
     expect(document.querySelector(".label-row")).toBeNull();
     expect(screen.queryByText("bug")).toBeNull();

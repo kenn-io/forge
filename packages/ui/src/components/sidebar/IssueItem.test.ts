@@ -82,7 +82,7 @@ describe("IssueItem", () => {
     );
 
     expect(document.querySelectorAll(".title .label-dot")).toHaveLength(2);
-    expect(document.querySelector(".title .label-dots")?.getAttribute("title")).toBe("bug, docs");
+    expect(document.querySelector(".title .kit-tooltip-trigger")?.getAttribute("tabindex")).toBe("0");
     expect(screen.getByText("Labels: bug, docs")).toBeTruthy();
     expect(document.querySelector(".label-row")).toBeNull();
   });

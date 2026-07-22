@@ -1,5 +1,9 @@
 import type { ReadKataEventStreamOptions } from "../../api/kata/eventStream.js";
-import type { KataSnapshotIntent, KataWorkspaceSnapshotResponse } from "../../api/kata/snapshot.js";
+import {
+  fetchKataWorkspaceSnapshot,
+  type KataSnapshotIntent,
+  type KataWorkspaceSnapshotResponse,
+} from "../../api/kata/snapshot.js";
 import type { Immutable, KataWorkspaceSnapshotProjection } from "../../api/kata/snapshotProjection.js";
 import type { KataTaskDetail, KataTaskSummary } from "../../api/kata/taskTypes.js";
 import { createKataAuthorityStore } from "../../stores/kata-authority.svelte.js";
@@ -10,7 +14,17 @@ type SnapshotIssue = KataWorkspaceSnapshotProjection["issues"][number];
 export type KataAuxiliaryIssue = Immutable<
   Pick<
     KataTaskSummary,
-    "uid" | "short_id" | "qualified_id" | "title" | "body" | "project_name" | "status" | "owner" | "labels" | "metadata"
+    | "uid"
+    | "short_id"
+    | "qualified_id"
+    | "title"
+    | "body"
+    | "project_uid"
+    | "project_name"
+    | "status"
+    | "owner"
+    | "labels"
+    | "metadata"
   >
 >;
 
@@ -49,10 +63,12 @@ function intent(daemonID?: string, selectedIssueUID?: string): KataSnapshotInten
 
 export class KataAuxiliaryAuthority implements KataAuxiliaryAuthoritySource, KataSelectedIssueAuthority {
   private readonly controller;
+  private readonly loadSnapshot: (intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>;
   private desiredDaemonID: string | undefined;
 
   constructor(options: CreateKataAuxiliaryAuthorityOptions = {}) {
-    const authorityStore = createKataAuthorityStore({ loadSnapshot: options.loadSnapshot });
+    this.loadSnapshot = options.loadSnapshot ?? fetchKataWorkspaceSnapshot;
+    const authorityStore = createKataAuthorityStore({ loadSnapshot: this.loadSnapshot });
     this.controller = createKataWorkspaceAuthorityController({
       authorityStore,
       ...(options.readEventStream ? { readEventStream: options.readEventStream } : {}),
@@ -91,11 +107,9 @@ export class KataAuxiliaryAuthority implements KataAuxiliaryAuthoritySource, Kat
   async selectIssue(issueUID: string): Promise<KataSelectedIssueSelection> {
     const selectedIssueUID = issueUID.trim();
     if (!selectedIssueUID) throw new Error("Kata issue UID is required");
-    const accepted = await this.controller.load({
-      intent: intent(this.desiredDaemonID, selectedIssueUID),
-      presentation: { text: "", owner: "", label: "" },
-    });
-    const snapshot = this.controller.authorityStore.snapshot;
+    const selectionStore = createKataAuthorityStore({ loadSnapshot: this.loadSnapshot });
+    const accepted = await selectionStore.loadSnapshot(intent(this.desiredDaemonID, selectedIssueUID));
+    const snapshot = selectionStore.snapshot;
     if (!accepted || snapshot?.selected_issue_uid !== selectedIssueUID || !snapshot.selected_detail) {
       throw new Error(`Kata snapshot did not include selected task ${selectedIssueUID}`);
     }

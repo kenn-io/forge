@@ -14,6 +14,7 @@ export interface ModeTaskResult {
   short_id: string;
   qualified_id: string;
   title: string;
+  project_uid: string;
   project_name: string;
   status: KataTaskSummary["status"];
   // The daemon that served this search hit. Task UIDs are only unique
@@ -74,6 +75,7 @@ function taskRowFromIssue(issue: KataAuxiliaryIssue, daemonId: string | undefine
     short_id: issue.short_id,
     qualified_id: issue.qualified_id,
     title: issue.title,
+    project_uid: issue.project_uid,
     project_name: issue.project_name,
     status: issue.status,
     daemon_id: daemonId,

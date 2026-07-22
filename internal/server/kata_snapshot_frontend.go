@@ -87,12 +87,13 @@ type kataTaskReferenceOutput struct {
 }
 
 type kataSnapshotFrontendDeps struct {
-	resolveDaemon func(string) (kata.Daemon, *ProblemError)
-	ensureEvents  func(kata.Daemon) (kataFrontendEventHandle, error)
-	loadAuthority func(context.Context, string, kataAuthorityRequest) (kataCoordinatedAuthority, error)
-	daemonEpoch   func(string) uint64
-	newClient     func(context.Context, kata.Daemon) (kataAPIClient, error)
-	enrich        func(context.Context, kataAPIClient, kataCoordinatedAuthority, kataSnapshotEnrichmentRequest) (kataSnapshotEnrichment, error)
+	resolveDaemon           func(string) (kata.Daemon, *ProblemError)
+	ensureEvents            func(kata.Daemon) (kataFrontendEventHandle, error)
+	loadAuthority           func(context.Context, string, kataAuthorityRequest) (kataCoordinatedAuthority, error)
+	daemonEpoch             func(string) uint64
+	invalidateDaemonIfEpoch func(string, uint64) (uint64, bool)
+	newClient               func(context.Context, kata.Daemon) (kataAPIClient, error)
+	enrich                  func(context.Context, kataAPIClient, kataCoordinatedAuthority, kataSnapshotEnrichmentRequest) (kataSnapshotEnrichment, error)
 }
 
 type kataSnapshotFrontend struct {
@@ -109,9 +110,10 @@ func (s *Server) kataSnapshotFrontend() *kataSnapshotFrontend {
 		ensureEvents: func(daemon kata.Daemon) (kataFrontendEventHandle, error) {
 			return s.kataEvents.Ensure(daemon)
 		},
-		loadAuthority: s.kataSnapshots.loadAuthority,
-		daemonEpoch:   s.kataSnapshots.daemonEpoch,
-		newClient:     newKataAPIClient,
+		loadAuthority:           s.kataSnapshots.loadAuthority,
+		daemonEpoch:             s.kataSnapshots.daemonEpoch,
+		invalidateDaemonIfEpoch: s.kataSnapshots.invalidateDaemonIfEpoch,
+		newClient:               newKataAPIClient,
 		enrich: func(
 			ctx context.Context,
 			client kataAPIClient,
@@ -211,6 +213,10 @@ func (f *kataSnapshotFrontend) Snapshot(
 		}
 		enrichment, err := f.deps.enrich(ctx, client, authority, enrichmentRequest)
 		if err != nil {
+			if errors.Is(err, errKataSnapshotEnrichmentStale) {
+				f.deps.invalidateDaemonIfEpoch(authority.DaemonID, authority.InvalidationEpoch)
+				continue
+			}
 			return kataTaskSnapshotResponse{}, err
 		}
 		if err := ctx.Err(); err != nil {

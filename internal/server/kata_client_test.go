@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,4 +94,44 @@ func TestKataAPIClientStreamEventsRawDoesNotBuffer(t *testing.T) {
 	headers := <-requestHeaders
 	require.Equal("text/event-stream", headers.Get("Accept"))
 	require.Equal("Bearer secret-token", headers.Get("Authorization"))
+}
+
+func TestKataGeneratedHTTPDoerRejectsResponseBeyondEndpointBudget(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.Copy(w, strings.NewReader("123456789"))
+	}))
+	t.Cleanup(daemon.Close)
+
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, daemon.URL+"/api/v1/issues", nil)
+	require.NoError(err)
+	doer := kataGeneratedHTTPDoer{
+		client: daemon.Client(),
+		limitForRequest: func(*http.Request) int64 {
+			return 8
+		},
+	}
+	response, err := doer.Do(t.Context(), request)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(response.Body.Close()) })
+
+	_, err = io.ReadAll(response.Body)
+	var tooLarge *kataDaemonResponseTooLargeError
+	require.ErrorAs(err, &tooLarge)
+	require.Equal(int64(8), tooLarge.Limit)
+	require.Equal("/api/v1/issues", tooLarge.Path)
+}
+
+func TestKataGeneratedResponseLimitLeavesRoomForCompleteAuthorities(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	require.Equal(int64(128<<20), kataGeneratedResponseLimit("/api/v1/issues"))
+	require.Equal(int64(128<<20), kataGeneratedResponseLimit("/api/v1/ready"))
+	require.Equal(int64(128<<20), kataGeneratedResponseLimit("/api/v1/projects/7/ready"))
+	require.Equal(int64(32<<20), kataGeneratedResponseLimit("/api/v1/projects"))
+	require.Equal(int64(32<<20), kataGeneratedResponseLimit("/api/v1/projects/7/events"))
 }

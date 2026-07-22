@@ -129,7 +129,7 @@ describe("Kata auxiliary authority", () => {
     authority.stop();
   });
 
-  it("reloads the same global-all authority with selected enrichment", async () => {
+  it("loads selected enrichment without replacing the shared global-all authority", async () => {
     let generation = 0;
     const loadSnapshot = vi.fn(async (intent: KataSnapshotIntent) =>
       snapshot(intent, {
@@ -155,7 +155,9 @@ describe("Kata auxiliary authority", () => {
       detail: { issue: { uid: "issue-selected" }, etag: '"rev-2"' },
     });
 
-    await stream.streams[1]!.onMessage({
+    expect(stream.streams).toHaveLength(1);
+
+    await stream.streams[0]!.onMessage({
       kind: "invalidation",
       server_instance_id: "server-a",
       daemon_id: "home",
@@ -167,8 +169,42 @@ describe("Kata auxiliary authority", () => {
       daemon_id: "home",
       scope: "global",
       authority: "all",
-      selected_issue_uid: "issue-selected",
     });
+    authority.stop();
+  });
+
+  it("returns each concurrently requested selected issue without superseding either request", async () => {
+    const pendingFirst = deferred<KataWorkspaceSnapshotResponse>();
+    const pendingSecond = deferred<KataWorkspaceSnapshotResponse>();
+    const loadSnapshot = vi.fn(async (requestedIntent: KataSnapshotIntent) => {
+      if (requestedIntent.selected_issue_uid === "issue-first") return pendingFirst.promise;
+      if (requestedIntent.selected_issue_uid === "issue-second") return pendingSecond.promise;
+      return snapshot(requestedIntent);
+    });
+    const stream = streamHarness();
+    const authority = createKataAuxiliaryAuthority({ loadSnapshot, readEventStream: stream.readEventStream });
+    await authority.load("home");
+
+    const firstSelection = authority.selectIssue("issue-first");
+    const secondSelection = authority.selectIssue("issue-second");
+
+    await vi.waitFor(() => expect(loadSnapshot).toHaveBeenCalledTimes(3));
+
+    pendingSecond.resolve(
+      snapshot(
+        { daemon_id: "home", scope: "global", authority: "all", selected_issue_uid: "issue-second" },
+        { generation: 3 },
+      ),
+    );
+    await expect(secondSelection).resolves.toMatchObject({ detail: { issue: { uid: "issue-second" } } });
+
+    pendingFirst.resolve(
+      snapshot(
+        { daemon_id: "home", scope: "global", authority: "all", selected_issue_uid: "issue-first" },
+        { generation: 2 },
+      ),
+    );
+    await expect(firstSelection).resolves.toMatchObject({ detail: { issue: { uid: "issue-first" } } });
     authority.stop();
   });
 
@@ -192,7 +228,7 @@ describe("Kata auxiliary authority", () => {
     });
     expect(selected.daemonID).toBe("work");
     pendingWork.resolve(snapshot({ scope: "global", authority: "all", daemon_id: "work" }, { generation: 2 }));
-    await expect(switching).resolves.toBe(false);
+    await expect(switching).resolves.toBe(true);
     authority.stop();
   });
 

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -73,6 +74,32 @@ func TestKataSnapshotCacheCleansDaemonIndexAfterCapacityEviction(t *testing.T) {
 		defer cache.mu.Unlock()
 		return len(cache.keysByDaemon["first"]) == 0 && len(cache.keysByDaemon["second"]) == 1
 	}, time.Second, 10*time.Millisecond)
+}
+
+func TestKataSnapshotCacheEvictsBySerializedByteBudget(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	firstSnapshot := kataAuthoritySnapshot{Issues: []kataTaskSummary{{UID: "issue-first", Body: "first authority payload"}}}
+	secondSnapshot := kataAuthoritySnapshot{Issues: []kataTaskSummary{{UID: "issue-second", Body: "second authority payload"}}}
+	firstEncoded, err := json.Marshal(firstSnapshot)
+	require.NoError(err)
+	secondEncoded, err := json.Marshal(secondSnapshot)
+	require.NoError(err)
+	maxBytes := max(uint64(len(firstEncoded)), uint64(len(secondEncoded)))
+	cache := newKataSnapshotCacheWithLimits(time.Minute, 128, maxBytes)
+	t.Cleanup(cache.close)
+	first := kataSnapshotKey{DaemonID: "first", Scope: "global", Authority: "open"}
+	second := kataSnapshotKey{DaemonID: "second", Scope: "global", Authority: "open"}
+	cache.set(first, firstSnapshot)
+	_, ok := cache.get(first)
+	require.True(ok)
+
+	cache.set(second, secondSnapshot)
+	_, ok = cache.get(first)
+	require.False(ok)
+	_, ok = cache.get(second)
+	require.True(ok)
 }
 
 func TestKataSnapshotCacheInvalidatesOneDaemonAndAdvancesEpoch(t *testing.T) {

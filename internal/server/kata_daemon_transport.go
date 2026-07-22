@@ -14,9 +14,10 @@ import (
 // hung remote daemon cannot pin the API handler.
 const kataDaemonReadTimeout = 20 * time.Second
 
-// maxKataDaemonReadBytes caps how much of a daemon response middleman buffers
-// for a server-side raw read.
-const maxKataDaemonReadBytes = 8 << 20
+// maxKataDaemonReadBytes caps the remaining raw project-list read. Keep it in
+// line with generated detail and paginated responses; the former 8 MiB ceiling
+// was too close to normal federated authority sizes.
+const maxKataDaemonReadBytes = kataGeneratedResponseMaxBytes
 
 type kataDaemonReadResult struct {
 	status int
@@ -37,7 +38,12 @@ func kataDaemonGet(ctx context.Context, client *http.Client, d kata.Daemon, targ
 		return kataDaemonReadResult{err: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxKataDaemonReadBytes))
+	body, err := io.ReadAll(&kataLimitedDaemonResponseBody{
+		body:      resp.Body,
+		remaining: maxKataDaemonReadBytes,
+		limit:     maxKataDaemonReadBytes,
+		path:      req.URL.Path,
+	})
 	if err != nil {
 		return kataDaemonReadResult{err: err}
 	}

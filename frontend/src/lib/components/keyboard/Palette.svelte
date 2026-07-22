@@ -34,6 +34,7 @@
     ModePaletteResults,
     ModeTaskResult,
   } from "../../stores/keyboard/mode-palette-search.js";
+  import type { OpenKataIssue } from "../../api/kata/navigation.js";
   import { navigate } from "../../stores/router.svelte.js";
   import type { Action, RecentsState } from "../../stores/keyboard/types.js";
 
@@ -42,7 +43,7 @@
 
   interface Props {
     modeSearch?: ((query: string) => Promise<ModePaletteResults>) | undefined;
-    onOpenKataIssue?: ((uid: string, daemonId?: string) => void) | undefined;
+    onOpenKataIssue?: OpenKataIssue | undefined;
     onOpenDoc?: ((folder: string, relPath: string) => void) | undefined;
   }
 
@@ -349,7 +350,14 @@
     if (result.kind === "kata-task") {
       closePalette();
       const daemonSuffix = result.item.daemon_id ? `&daemon=${encodeURIComponent(result.item.daemon_id)}` : "";
-      if (onOpenKataIssue) onOpenKataIssue(result.item.uid, result.item.daemon_id);
+      if (onOpenKataIssue) {
+        onOpenKataIssue({
+          uid: result.item.uid,
+          status: result.item.status,
+          project_uid: result.item.project_uid,
+          ...(result.item.daemon_id ? { daemon_id: result.item.daemon_id } : {}),
+        });
+      }
       else navigate(`/kata?issue=${encodeURIComponent(result.item.uid)}${daemonSuffix}`);
       return;
     }

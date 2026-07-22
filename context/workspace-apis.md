@@ -43,6 +43,9 @@ state.
 - `GET /kata/tasks/events`: compact reset/invalidation transport only. Replay
   starts at the accepted snapshot cursor; raw daemon events never enter browser
   authority (`frontend/src/lib/features/kata/kataWorkspaceAuthorityController.svelte.ts::KataWorkspaceAuthorityController`).
+- Auxiliary selected-detail reads must remain independent from shared global/all
+  authority refresh so background invalidation cannot cancel link or navigation work
+  (`frontend/src/lib/features/kata/kataAuxiliaryAuthority.svelte.ts::KataAuxiliaryAuthority.selectIssue`).
 - Every frontend Kata mutation and recurrence request is explicitly pinned to
   the accepted snapshot daemon; ambient active/default daemon fallback is
   forbidden (`frontend/src/lib/api/kata/taskClient.ts::pinnedDaemonHeaders`).

@@ -428,6 +428,53 @@ describe("App feature routes", () => {
     expect(kataAuxiliary.instance.stop).toHaveBeenCalledOnce();
   });
 
+  it("opens a cross-surface Kata task in an authority that contains it", async () => {
+    kataDaemons.rows = [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }];
+    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
+    replaceUrl("/messages");
+    const { default: App } = await import("./App.svelte");
+
+    render(App, { target: createAppTarget() });
+    await waitFor(() => expect(appSurfaceProps.palette).not.toBeNull());
+
+    const openKataIssue = appSurfaceProps.palette?.onOpenKataIssue as
+      | ((target: { uid: string; status: "open" | "closed"; project_uid: string }) => void)
+      | undefined;
+    openKataIssue?.({
+      uid: "issue-closed",
+      status: "closed",
+      project_uid: "project-target",
+    });
+
+    expect(window.location.pathname + window.location.search).toBe(
+      "/kata?view=logbook&scope=project-target&issue=issue-closed",
+    );
+  });
+
+  it("resolves missing auxiliary task metadata before cross-surface navigation", async () => {
+    kataDaemons.rows = [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }];
+    kataAuxiliary.instance.selectIssue.mockResolvedValue({
+      daemonID: "home",
+      detail: { issue: { uid: "issue-closed", status: "closed", project_uid: "project-target" } },
+    });
+    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
+    replaceUrl("/messages");
+    const { default: App } = await import("./App.svelte");
+
+    render(App, { target: createAppTarget() });
+    await waitFor(() => expect(appSurfaceProps.messages).not.toBeNull());
+
+    const openIssue = appSurfaceProps.messages?.onOpenIssue as ((uid: string) => void) | undefined;
+    openIssue?.("issue-closed");
+
+    await waitFor(() =>
+      expect(window.location.pathname + window.location.search).toBe(
+        "/kata?view=logbook&scope=project-target&issue=issue-closed&daemon=home",
+      ),
+    );
+    expect(kataAuxiliary.instance.selectIssue).toHaveBeenCalledWith("issue-closed");
+  });
+
   it("handles an initial auxiliary authority load rejection at the app lifecycle boundary", async () => {
     kataDaemons.rows = [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }];
     const catchRejection = vi.fn(() => Promise.resolve(false));
@@ -469,7 +516,9 @@ describe("App feature routes", () => {
     await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
     await fireEvent.click(screen.getByRole("button", { name: "Open Kata reference" }));
 
-    await waitFor(() => expect(window.location.pathname + window.location.search).toBe("/kata?issue=issue-solo"));
+    await waitFor(() =>
+      expect(window.location.pathname + window.location.search).toBe("/kata?view=all&scope=project-a&issue=issue-solo"),
+    );
     expect(kataReferences.search).toHaveBeenCalledWith("solo", {});
   });
 

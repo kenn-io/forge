@@ -974,6 +974,7 @@ describe("MessagesWorkspace linked messages", () => {
       short_id: "1",
       qualified_id: "PROJECT-1",
       title: "Issue with message link",
+      project_uid: "project-uid",
       project_name: "Project",
       status: "open",
       metadata: {

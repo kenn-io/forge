@@ -138,6 +138,57 @@ func TestKataSnapshotEnricherLoadsExactSelectedHistoryAcrossPages(t *testing.T) 
 	assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
 }
 
+func TestKataSnapshotEnricherCachesSelectedDetailByAuthorityRevision(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	var calls atomic.Int64
+	client := &fakeKataSnapshotAPIClient{
+		showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			revision := calls.Add(1)
+			response := testKataShowIssueResponse("issue-member")
+			response.JSON200.Issue.Revision = revision
+			return response, nil
+		},
+	}
+	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8, func(string) uint64 { return 0 })
+	t.Cleanup(cache.close)
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client, cache: cache})
+	authority := testKataCoordinatedAuthority()
+	authority.Snapshot.Issues[1].Revision = 1
+
+	first, err := enricher.Enrich(t.Context(), authority, kataSnapshotEnrichmentRequest{SelectedIssueUID: "issue-member"})
+	require.NoError(err)
+	authority.Snapshot.Issues[1].Revision = 2
+	second, err := enricher.Enrich(t.Context(), authority, kataSnapshotEnrichmentRequest{SelectedIssueUID: "issue-member"})
+	require.NoError(err)
+
+	assert.Equal(int64(2), calls.Load())
+	require.NotNil(first.SelectedDetail)
+	require.NotNil(second.SelectedDetail)
+	assert.Equal(int64(1), first.SelectedDetail.Detail.(*katagenerated.ShowIssueResponseBody).Issue.Revision)
+	assert.Equal(int64(2), second.SelectedDetail.Detail.(*katagenerated.ShowIssueResponseBody).Issue.Revision)
+}
+
+func TestKataSnapshotEnricherRejectsSelectedDetailAtDifferentRevision(t *testing.T) {
+	t.Parallel()
+
+	response := testKataShowIssueResponse("issue-member")
+	response.JSON200.Issue.Revision = 8
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: &fakeKataSnapshotAPIClient{
+		showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			return response, nil
+		},
+	}})
+
+	authority := testKataCoordinatedAuthority()
+	authority.Snapshot.Issues[1].Revision = 7
+	_, err := enricher.Enrich(t.Context(), authority, kataSnapshotEnrichmentRequest{SelectedIssueUID: "issue-member"})
+
+	require.ErrorIs(t, err, errKataSnapshotEnrichmentStale)
+}
+
 func TestKataSnapshotEnricherLoadsCompleteRetainedSelectedHistoryFromProjectEvents(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

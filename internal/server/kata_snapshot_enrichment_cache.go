@@ -25,9 +25,10 @@ const (
 var errKataSnapshotEnrichmentStale = errors.New("kata enrichment invalidated while loading")
 
 type kataIssueDetailCacheKey struct {
-	DaemonID    string
-	DaemonEpoch uint64
-	IssueUID    string
+	DaemonID      string
+	DaemonEpoch   uint64
+	IssueUID      string
+	IssueRevision int64
 }
 
 type kataProjectEventsCacheKey struct {
@@ -566,7 +567,7 @@ func kataSerializedCost(value any) uint64 {
 }
 
 func kataIssueDetailSingleflightKey(key kataIssueDetailCacheKey) string {
-	return fmt.Sprintf("%s\x00%d\x00%s", key.DaemonID, key.DaemonEpoch, key.IssueUID)
+	return fmt.Sprintf("%s\x00%d\x00%s\x00%d", key.DaemonID, key.DaemonEpoch, key.IssueUID, key.IssueRevision)
 }
 
 func kataProjectEventsSingleflightKey(key kataProjectEventsCacheKey) string {

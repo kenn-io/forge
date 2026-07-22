@@ -3,12 +3,27 @@ package server
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
 
 	"go.kenn.io/middleman/internal/kata"
+)
+
+const (
+	// Generated responses are decoded from a complete byte slice by the
+	// generated runtime. Keep a generous default ceiling while still bounding
+	// the memory a configured daemon can make Middleman retain per request.
+	kataGeneratedResponseMaxBytes = int64(32 << 20)
+
+	// Authority and graph endpoints legitimately return substantially more
+	// data than detail and paginated endpoints. This is intentionally far above
+	// the former 8 MiB raw-read limit so complete federated authorities are not
+	// mistaken for oversized responses.
+	kataGeneratedAuthorityResponseMaxBytes = int64(128 << 20)
 )
 
 type kataAPIClient interface {
@@ -128,9 +143,77 @@ func (c *kataGeneratedClient) StreamEventsRaw(
 }
 
 type kataGeneratedHTTPDoer struct {
-	client *http.Client
+	client          *http.Client
+	limitForRequest func(*http.Request) int64
 }
 
 func (d kataGeneratedHTTPDoer) Do(ctx context.Context, req *http.Request) (*http.Response, error) {
-	return d.client.Do(req.WithContext(ctx)) //nolint:gosec // generated client builds the URL from the selected daemon base
+	response, err := d.client.Do(req.WithContext(ctx)) //nolint:gosec // generated client builds the URL from the selected daemon base
+	if err != nil {
+		return nil, err
+	}
+	limitForRequest := d.limitForRequest
+	if limitForRequest == nil {
+		limitForRequest = func(request *http.Request) int64 {
+			return kataGeneratedResponseLimit(request.URL.Path)
+		}
+	}
+	limit := limitForRequest(req)
+	response.Body = &kataLimitedDaemonResponseBody{
+		body:      response.Body,
+		remaining: limit,
+		limit:     limit,
+		path:      req.URL.Path,
+	}
+	return response, nil
+}
+
+func kataGeneratedResponseLimit(path string) int64 {
+	if path == "/api/v1/issues" || path == "/api/v1/ready" ||
+		strings.HasSuffix(path, "/ready") || strings.HasSuffix(path, "/graph") {
+		return kataGeneratedAuthorityResponseMaxBytes
+	}
+	return kataGeneratedResponseMaxBytes
+}
+
+type kataDaemonResponseTooLargeError struct {
+	Path  string
+	Limit int64
+}
+
+func (e *kataDaemonResponseTooLargeError) Error() string {
+	return fmt.Sprintf("Kata daemon response for %s exceeded %d bytes", e.Path, e.Limit)
+}
+
+type kataLimitedDaemonResponseBody struct {
+	body      io.ReadCloser
+	remaining int64
+	limit     int64
+	path      string
+	tooLarge  bool
+}
+
+func (b *kataLimitedDaemonResponseBody) Read(buffer []byte) (int, error) {
+	if b.tooLarge {
+		return 0, &kataDaemonResponseTooLargeError{Path: b.path, Limit: b.limit}
+	}
+	if len(buffer) == 0 {
+		return b.body.Read(buffer)
+	}
+	if int64(len(buffer)) > b.remaining+1 {
+		buffer = buffer[:b.remaining+1]
+	}
+	read, err := b.body.Read(buffer)
+	if int64(read) <= b.remaining {
+		b.remaining -= int64(read)
+		return read, err
+	}
+	read = int(b.remaining)
+	b.remaining = 0
+	b.tooLarge = true
+	return read, &kataDaemonResponseTooLargeError{Path: b.path, Limit: b.limit}
+}
+
+func (b *kataLimitedDaemonResponseBody) Close() error {
+	return b.body.Close()
 }

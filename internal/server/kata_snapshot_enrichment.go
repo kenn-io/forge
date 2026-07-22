@@ -69,6 +69,7 @@ type kataSnapshotEnrichmentIssue struct {
 	ShortID     string
 	QualifiedID string
 	Title       string
+	Revision    int64
 }
 
 func newKataSnapshotEnricher(deps kataSnapshotEnricherDeps) *kataSnapshotEnricher {
@@ -118,6 +119,7 @@ func (e *kataSnapshotEnricher) Enrich(
 			ShortID:     issue.ShortID,
 			QualifiedID: issue.QualifiedID,
 			Title:       issue.Title,
+			Revision:    issue.Revision,
 		}
 	}
 
@@ -181,6 +183,9 @@ func (e *kataSnapshotEnricher) enrichSelected(
 	if err != nil {
 		if contextErr := kataEnrichmentContextError(ctx, err); contextErr != nil {
 			return contextErr
+		}
+		if errors.Is(err, errKataSnapshotEnrichmentStale) {
+			return err
 		}
 		result.addError(kataSnapshotEnrichmentStageDetail, CodeUpstreamError, "Could not load selected task detail.")
 	} else {
@@ -318,6 +323,7 @@ func validateKataGraph(
 			ShortID:     node.ShortID,
 			QualifiedID: node.QualifiedID,
 			Title:       node.Title,
+			Revision:    node.Revision,
 		}
 	}
 	sourceNode, ok := nodes[source.UID]
@@ -369,7 +375,8 @@ func (e *kataSnapshotEnricher) loadDetail(
 		detail, err = load(ctx)
 	} else {
 		detail, err = e.cache.issueDetail(ctx, kataIssueDetailCacheKey{
-			DaemonID: authority.DaemonID, DaemonEpoch: authority.InvalidationEpoch, IssueUID: selected.UID,
+			DaemonID: authority.DaemonID, DaemonEpoch: authority.InvalidationEpoch,
+			IssueUID: selected.UID, IssueRevision: selected.Revision,
 		}, load)
 	}
 	if err != nil {
@@ -405,6 +412,12 @@ func (e *kataSnapshotEnricher) loadDetailResponse(
 	issue := response.JSON200.Issue
 	if issue.ID <= 0 || issue.ProjectID <= 0 || issue.ID != selected.ID || issue.UID != selected.UID || issue.ProjectID != selected.ProjectID || issue.ProjectUID == nil || *issue.ProjectUID != selected.ProjectUID || issue.ShortID != selected.ShortID || issue.DeletedAt != nil {
 		return kataCachedIssueDetail{}, fmt.Errorf("detail response identity does not match selection")
+	}
+	if issue.Revision != selected.Revision {
+		return kataCachedIssueDetail{}, fmt.Errorf(
+			"%w: selected issue %q changed from revision %d to %d",
+			errKataSnapshotEnrichmentStale, selected.UID, selected.Revision, issue.Revision,
+		)
 	}
 	etag := ""
 	if response.HTTPResponse != nil {

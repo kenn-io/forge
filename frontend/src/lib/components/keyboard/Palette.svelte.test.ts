@@ -325,6 +325,7 @@ describe("Palette", () => {
               short_id: "budget",
               qualified_id: "Finances#budget",
               title: "Set monthly budget",
+              project_uid: "project-finances",
               project_name: "Finances",
               status: "open",
             },
@@ -382,6 +383,7 @@ describe("Palette", () => {
               short_id: "budget",
               qualified_id: "Finances#budget",
               title: "Set monthly budget",
+              project_uid: "project-finances",
               project_name: "Finances",
               status: "open",
               daemon_id: "daemon-work",
@@ -415,7 +417,12 @@ describe("Palette", () => {
     expect(list).not.toBeNull();
     await waitFor(() => expect(within(list!).getByText("Set monthly budget")).toBeTruthy());
     await fireEvent.click(within(list!).getByText("Set monthly budget"));
-    expect(onOpenKataIssue).toHaveBeenCalledWith("issue-budget", "daemon-work");
+    expect(onOpenKataIssue).toHaveBeenCalledWith({
+      uid: "issue-budget",
+      status: "open",
+      project_uid: "project-finances",
+      daemon_id: "daemon-work",
+    });
 
     openPalette();
     await rerender(props);

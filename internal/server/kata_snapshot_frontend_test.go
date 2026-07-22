@@ -229,6 +229,61 @@ func TestKataSnapshotFrontendRetriesInvalidationBeforePublish(t *testing.T) {
 	assert.Equal(uint64(91), response.EventCursor)
 }
 
+func TestKataSnapshotFrontendRetriesAuthorityDetailRevisionMismatch(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	daemon := kata.Daemon{ID: "primary", URL: "https://kata.example.test"}
+	fingerprint := kataDaemonTargetFingerprint(daemon)
+	var epoch atomic.Uint64
+	var loads atomic.Int64
+	var enrichments atomic.Int64
+	var invalidations atomic.Int64
+	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
+			return fakeKataFrontendEventHandle{fingerprint: fingerprint}, nil
+		},
+		loadAuthority: func(context.Context, string, kataAuthorityRequest) (kataCoordinatedAuthority, error) {
+			authority := testKataSnapshotFrontendAuthority(daemon, epoch.Load(), uint64(loads.Add(1)))
+			authority.Snapshot.Issues[1].Revision = int64(epoch.Load() + 1)
+			return authority, nil
+		},
+		daemonEpoch: func(string) uint64 { return epoch.Load() },
+		invalidateDaemonIfEpoch: func(daemonID string, expectedEpoch uint64) (uint64, bool) {
+			assert.Equal(daemon.ID, daemonID)
+			assert.True(epoch.CompareAndSwap(expectedEpoch, expectedEpoch+1))
+			invalidations.Add(1)
+			return expectedEpoch + 1, true
+		},
+		newClient: func(context.Context, kata.Daemon) (kataAPIClient, error) {
+			return &fakeKataSnapshotAPIClient{}, nil
+		},
+		enrich: func(_ context.Context, _ kataAPIClient, authority kataCoordinatedAuthority, _ kataSnapshotEnrichmentRequest) (kataSnapshotEnrichment, error) {
+			if enrichments.Add(1) == 1 {
+				assert.Equal(uint64(0), authority.InvalidationEpoch)
+				assert.Equal(int64(1), authority.Snapshot.Issues[1].Revision)
+				return kataSnapshotEnrichment{}, errKataSnapshotEnrichmentStale
+			}
+			assert.Equal(uint64(1), authority.InvalidationEpoch)
+			assert.Equal(int64(2), authority.Snapshot.Issues[1].Revision)
+			return kataSnapshotEnrichment{SelectedIssueUID: "issue-member"}, nil
+		},
+	})
+
+	response, err := frontend.Snapshot(t.Context(), &kataTaskSnapshotInput{
+		DaemonID: daemon.ID, SelectedIssueUID: "issue-member",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(int64(2), loads.Load())
+	assert.Equal(int64(2), enrichments.Load())
+	assert.Equal(int64(1), invalidations.Load())
+	assert.Equal(uint64(2), response.Generation)
+	assert.Equal(uint64(1), response.InvalidationEpoch)
+	assert.Equal("issue-member", response.Enrichment.SelectedIssueUID)
+}
+
 func TestKataSnapshotFrontendRetriesTargetRotationDuringEnrichment(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

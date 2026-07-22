@@ -4137,7 +4137,7 @@ test("docs task links resolve through the configured external daemon", async ({ 
 
     await page.getByRole("link", { name: "#kat-7" }).click();
 
-    await expect(page).toHaveURL(/\/kata\?issue=issue-q3/);
+    await expect(page).toHaveURL(/\/kata\?view=all&scope=project-kata&issue=issue-q3/);
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText(
       "Confirm the Q3 project review agenda.",
     );
@@ -4182,7 +4182,7 @@ test("command palette opens task and docs search results", async ({ page }) => {
     await expect(docRow).toBeVisible();
 
     await taskRow.click();
-    await expect(page).toHaveURL(/\/kata\?issue=issue-q3/);
+    await expect(page).toHaveURL(/\/kata\?view=all&scope=project-kata&issue=issue-q3&daemon=e2e/);
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText(
       "Confirm the Q3 project review agenda.",
     );
@@ -4377,7 +4377,7 @@ test("docs task links switch an accepted workspace to the folder-bound external 
 
     await page.getByRole("link", { name: "#shared-1" }).click();
 
-    await expect(page).toHaveURL(/\/kata\?issue=issue-shared/);
+    await expect(page).toHaveURL(/\/kata\?view=all&scope=project-work&issue=issue-shared&daemon=work/);
     await expect(page.getByTestId("daemon-chip")).toContainText("work");
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText(
       "Opened through the folder daemon binding.",
@@ -4471,7 +4471,7 @@ test("docs task links resolve distinct task IDs through the folder-bound externa
 
     await page.getByRole("link", { name: "#shared-1" }).click();
 
-    await expect(page).toHaveURL(/\/kata\?issue=issue-work/);
+    await expect(page).toHaveURL(/\/kata\?view=all&scope=project-work&issue=issue-work&daemon=work/);
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText(
       "Opened through the folder daemon binding.",
     );
@@ -4548,7 +4548,7 @@ test("message linking follows the daemon activated by a folder-bound docs link",
 
     await page.goto(`${server.info.base_url}/docs?folder=work-notes&doc=bound-link.md`);
     await page.getByRole("link", { name: "#shared-1" }).click();
-    await expect(page).toHaveURL(/\/kata\?issue=issue-work/);
+    await expect(page).toHaveURL(/\/kata\?view=all&scope=project-work&issue=issue-work&daemon=work/);
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText(
       "Opened through the folder daemon binding.",
     );
@@ -4768,7 +4768,7 @@ test("docs issue autocomplete scopes qualified suggestions and preserves no-matc
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await saveResponsePromise;
     await page.getByRole("link", { name: "household-identity/#rent" }).click();
-    await expect(page).toHaveURL(/\/kata\?issue=issue-rent/);
+    await expect(page).toHaveURL(/\/kata\?view=all&scope=project-household&issue=issue-rent/);
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Send rent from checking.");
 
     await page.goto(`${server.info.base_url}/docs?folder=notes&doc=README.md`);

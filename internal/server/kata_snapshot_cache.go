@@ -13,6 +13,7 @@ import (
 const (
 	kataSnapshotCacheTTL      = 5 * time.Second
 	kataSnapshotCacheCapacity = 128
+	kataSnapshotCacheMaxBytes = uint64(128 << 20)
 )
 
 type kataSnapshotKey struct {
@@ -100,10 +101,15 @@ func newKataSnapshotCache() *kataSnapshotCache {
 }
 
 func newKataSnapshotCacheWithConfig(ttl time.Duration, capacity uint64) *kataSnapshotCache {
+	return newKataSnapshotCacheWithLimits(ttl, capacity, kataSnapshotCacheMaxBytes)
+}
+
+func newKataSnapshotCacheWithLimits(ttl time.Duration, capacity, maxBytes uint64) *kataSnapshotCache {
 	entries := ttlcache.New(
 		ttlcache.WithTTL[kataSnapshotKey, kataAuthoritySnapshot](ttl),
 		ttlcache.WithCapacity[kataSnapshotKey, kataAuthoritySnapshot](capacity),
 		ttlcache.WithDisableTouchOnHit[kataSnapshotKey, kataAuthoritySnapshot](),
+		ttlcache.WithMaxCost[kataSnapshotKey, kataAuthoritySnapshot](maxBytes, kataAuthoritySnapshotCacheCost),
 	)
 	cache := &kataSnapshotCache{
 		entries:       entries,
@@ -116,6 +122,10 @@ func newKataSnapshotCacheWithConfig(ttl time.Duration, capacity uint64) *kataSna
 		cache.removeEvictedKey(item.Key())
 	})
 	return cache
+}
+
+func kataAuthoritySnapshotCacheCost(item ttlcache.CostItem[kataSnapshotKey, kataAuthoritySnapshot]) uint64 {
+	return kataSerializedCost(item.Value)
 }
 
 func (c *kataSnapshotCache) get(key kataSnapshotKey) (kataAuthoritySnapshot, bool) {

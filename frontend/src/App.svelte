@@ -41,6 +41,7 @@
   import { kataLinkingEnabledForEffectiveDaemon } from "./lib/api/kata/daemonSelection.js";
   import { searchKataTaskReferences } from "./lib/api/kata/snapshot.js";
   import { createKataTaskAPI } from "./lib/api/kata/taskClient.js";
+  import type { KataIssueNavigationTarget } from "./lib/api/kata/navigation.js";
   import type { KataTaskViewName } from "./lib/api/kata/taskTypes.js";
   import { createDocsAPI } from "./lib/api/docs/api.js";
   import { createMessageIssueLinker } from "./lib/messages/kataMessageLinker.js";
@@ -253,17 +254,49 @@
     return query ? `/kata?${query}` : "/kata";
   }
 
-  function kataIssueHref(uid: string, daemon?: string): string {
-    return kataHref({ ...currentKataRouteUpdate(), issue: uid, daemon: daemon ?? null });
+  function kataIssueHref(target: KataIssueNavigationTarget, daemon?: string): string {
+    return kataHref({
+      view: target.status === "closed" ? "logbook" : "all",
+      scope: target.project_uid ?? null,
+      issue: target.uid,
+      daemon: daemon ?? null,
+    });
   }
 
-  function openKataIssue(uid: string | null, daemonId?: string): void {
+  function selectKataIssue(uid: string | null): void {
     if (uid === null) {
       navigate("/kata");
       return;
     }
-    const targetDaemon = daemonId && getKataDaemonRoster().includes(daemonId) ? daemonId : undefined;
-    navigate(kataIssueHref(uid, targetDaemon));
+    navigate(kataHref({ ...currentKataRouteUpdate(), issue: uid }));
+  }
+
+  function openKataIssue(target: KataIssueNavigationTarget): void {
+    const targetDaemon = target.daemon_id && getKataDaemonRoster().includes(target.daemon_id)
+      ? target.daemon_id
+      : undefined;
+    navigate(kataIssueHref(target, targetDaemon));
+  }
+
+  async function openAuxiliaryKataIssue(uid: string): Promise<void> {
+    let issue = kataAuxiliaryAuthority.issues.find((candidate) => candidate.uid === uid);
+    let daemonID = kataAuxiliaryAuthority.daemonID;
+    if (!issue) {
+      try {
+        const selection = await kataAuxiliaryAuthority.selectIssue(uid);
+        issue = selection.detail.issue;
+        daemonID = selection.daemonID;
+      } catch {
+        showFlash("Could not open linked task", { tone: "danger" });
+        return;
+      }
+    }
+    openKataIssue({
+      uid,
+      status: issue.status,
+      project_uid: issue.project_uid,
+      ...(daemonID ? { daemon_id: daemonID } : {}),
+    });
   }
 
   function updateKataRoute(update: KataRouteUpdate, options?: { replace?: boolean }): void {
@@ -404,7 +437,12 @@
           && (reference.project_name === project || reference.project_uid === project)),
       );
       if (match) {
-        openKataIssue(match.uid, daemonId);
+        openKataIssue({
+          uid: match.uid,
+          status: "open",
+          project_uid: match.project_uid,
+          ...(daemonId ? { daemon_id: daemonId } : {}),
+        });
       }
     } catch {
       showFlash("Could not open linked task", { tone: "danger" });
@@ -1200,7 +1238,7 @@
             routeViewName={route.view ?? null}
             routeScopeUID={route.scope ?? null}
             requestedDaemonId={route.daemon ?? null}
-            onSelectedIssueChange={openKataIssue}
+            onSelectedIssueChange={selectKataIssue}
             onRouteStateChange={updateKataRoute}
             onOpenMessage={isModeVisible("messages") ? openMessage : undefined}
           />
@@ -1300,7 +1338,7 @@
               else navigate(docsHref(next));
             }}
             searchReferences={searchKataTaskReferences}
-            onOpenIssue={openKataIssue}
+            onOpenIssue={openAuxiliaryKataIssue}
             onOpenKataShortId={(shortId, project, daemonId) => {
               void openKataShortId(shortId, project, daemonId);
             }}
@@ -1320,7 +1358,7 @@
             kataAuthority={kataLinkingEnabled ? kataAuxiliaryAuthority : undefined}
             searchReferences={kataLinkingEnabled ? searchKataTaskReferences : undefined}
             onLinkMessage={kataLinkingEnabled ? messageIssueLinker.linkMessage : undefined}
-            onOpenIssue={kataLinkingEnabled ? openKataIssue : undefined}
+            onOpenIssue={kataLinkingEnabled ? openAuxiliaryKataIssue : undefined}
           />
         </section>
       {/if}

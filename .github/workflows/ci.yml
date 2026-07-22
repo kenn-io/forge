@@ -65,7 +65,79 @@ jobs:
               - tests/integration/**
             ci:
               - .github/workflows/ci.yml
+              - .github/docker/**
               - Makefile
+
+  ensure_playwright_image:
+    name: Ensure Playwright CI image
+    runs-on: kenn-linux-x64
+    needs: detect_changes
+    if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.resolve.outputs.image }}
+    env:
+      PLAYWRIGHT_CI_IMAGE: ghcr.io/kenn-io/middleman-playwright
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      - name: Resolve Playwright CI image
+        id: resolve
+        shell: bash
+        env:
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+
+          dockerfile=.github/docker/playwright/Dockerfile
+          playwright_base_image="$(sed -n 's/^ARG PLAYWRIGHT_BASE_IMAGE=//p' "$dockerfile" | head -n 1)"
+          base_digest="${playwright_base_image##*@sha256:}"
+          if [[ ! "$base_digest" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::$dockerfile must define PLAYWRIGHT_BASE_IMAGE with a sha256 digest"
+            exit 1
+          fi
+
+          recipe_digest="$(sha256sum "$dockerfile" | cut -d' ' -f1)"
+          image_tag="${PLAYWRIGHT_CI_IMAGE}:playwright-${base_digest}-recipe-${recipe_digest:0:16}"
+
+          inspect_output=""
+          if inspect_output="$(docker buildx imagetools inspect "$image_tag" 2>&1)"; then
+            echo "Reusing $image_tag"
+          elif grep -Eqi 'manifest unknown|not found|no such manifest' <<<"$inspect_output"; then
+            if [[ "$GITHUB_EVENT_NAME" == "pull_request" && "$PR_HEAD_REPOSITORY" != "$GITHUB_REPOSITORY" ]]; then
+              echo "::error::The Playwright CI image is missing and fork pull requests cannot publish private packages. Run this workflow from a trusted branch first."
+              exit 1
+            fi
+
+            docker buildx build \
+              --build-arg "PLAYWRIGHT_BASE_IMAGE=$playwright_base_image" \
+              --file "$dockerfile" \
+              --platform linux/amd64 \
+              --provenance=false \
+              --push \
+              --tag "$image_tag" \
+              .github/docker/playwright
+          else
+            echo "$inspect_output" >&2
+            exit 1
+          fi
+
+          manifest_digest="$(docker buildx imagetools inspect "$image_tag" --format '{{.Manifest.Digest}}')"
+          if [[ ! "$manifest_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Unable to resolve an immutable digest for $image_tag"
+            exit 1
+          fi
+
+          echo "image=${PLAYWRIGHT_CI_IMAGE}@${manifest_digest}" >> "$GITHUB_OUTPUT"
 
   lint:
     runs-on: kenn-linux-x64
@@ -346,9 +418,16 @@ jobs:
 
   e2e-mock:
     runs-on: kenn-linux-x64
-    needs: detect_changes
+    needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
-    container: mcr.microsoft.com/playwright@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48 # v1.61.1-noble
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.ensure_playwright_image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
     strategy:
       fail-fast: false
       matrix:
@@ -383,15 +462,18 @@ jobs:
 
   e2e:
     runs-on: kenn-linux-x64
-    needs: detect_changes
+    needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
-    # Run inside the official Playwright image: browsers and their OS deps are
-    # pre-baked at $PLAYWRIGHT_BROWSERS_PATH, so there is no apt download to
-    # time out on (the firefox `--with-deps` install repeatedly flirted with the
-    # old 10m cap off a slow mirror). Pinned by digest like the actions above so
-    # a bot can bump it; the trailing comment records the version, which
-    # `make playwright-version-check` keeps locked to the @playwright/test pin.
-    container: mcr.microsoft.com/playwright@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48 # v1.61.1-noble
+    permissions:
+      contents: read
+      packages: read
+    # The prerequisite job resolves a private, digest-pinned Playwright image
+    # with tmux preinstalled, so browser jobs never depend on Ubuntu mirrors.
+    container:
+      image: ${{ needs.ensure_playwright_image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
     strategy:
       fail-fast: false
       matrix:
@@ -416,16 +498,6 @@ jobs:
           # virtual modules, producing intermittent invalid-selector builds.
           cache: false
           run-install: true
-
-      - name: Install tmux for workspace PTY sessions
-        # The minimal Playwright image ships browsers but not tmux, which the
-        # full-stack workspace e2e specs need to start real PTY sessions
-        # (ubuntu-latest had it pre-installed). This is one small package, not
-        # the 48MB firefox browser-deps download the container already removed.
-        timeout-minutes: 5
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends tmux
 
       - name: Make $HOME owned by the current user for Firefox
         # GitHub mounts the container $HOME (/github/home) owned by the runner
@@ -525,12 +597,19 @@ jobs:
     name: frontend browser tests
     runs-on: kenn-linux-x64
     timeout-minutes: 15
-    needs: detect_changes
+    needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: read
     # Keep browser-component tests on the same Playwright image as the full e2e
     # suite so Chromium and its OS dependencies are preinstalled instead of
     # depending on apt during the workflow.
-    container: mcr.microsoft.com/playwright@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48 # v1.61.1-noble
+    container:
+      image: ${{ needs.ensure_playwright_image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:

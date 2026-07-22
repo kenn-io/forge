@@ -13,6 +13,7 @@
   import {
     getBasePath,
     getLastActivityRoute,
+    getLastWorkspaceRoute,
     getPage,
     getRoute,
     getView,
@@ -315,7 +316,11 @@
       navigate(routeForTab(destination));
     } else if (destination === "board") navigate("/pulls/board");
     else if (destination === "reviews") navigate("/reviews");
-    else if (destination === "workspaces") navigate("/workspaces");
+    else if (destination === "workspaces") {
+      if (getPage() !== "workspaces" && getPage() !== "terminal") {
+        navigate(getLastWorkspaceRoute());
+      }
+    }
     else if (destination === "settings") navigate("/settings");
     else if (destination === "design-system") navigate("/design-system");
   }

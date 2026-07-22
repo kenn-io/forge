@@ -8,6 +8,8 @@ import {
   getSelectedPRFromRoute,
   getPage,
   getLastActivityRoute,
+  getLastWorkspaceRoute,
+  forgetWorkspaceRoute,
 } from "./router.svelte.js";
 
 const prRoute = "/pulls/github/acme/widgets/42";
@@ -932,5 +934,88 @@ describe("router last activity route", () => {
     window.dispatchEvent(new Event("popstate"));
     expect(getPage()).toBe("pulls");
     expect(getLastActivityRoute()).toBe("/?selected=pr:2&provider=github&repo_path=acme%2Fwidgets");
+  });
+});
+
+describe("workspace route memory", () => {
+  beforeEach(() => {
+    navigate("/workspaces");
+  });
+
+  it("remembers a local terminal route left via navigate()", () => {
+    navigate("/terminal/ws-1");
+    navigate("/pulls");
+    expect(getLastWorkspaceRoute()).toBe("/terminal/ws-1");
+  });
+
+  it("remembers a fleet terminal route", () => {
+    navigate("/terminal/fleet/build-host/ws-9");
+    navigate("/pulls");
+    expect(getLastWorkspaceRoute()).toBe("/terminal/fleet/build-host/ws-9");
+  });
+
+  it("remembers the bare list when the user left from /workspaces", () => {
+    navigate("/terminal/ws-1");
+    navigate("/workspaces");
+    navigate("/pulls");
+    expect(getLastWorkspaceRoute()).toBe("/workspaces");
+  });
+
+  it("captures direct replaceState writes before leaving via Back/Forward", () => {
+    navigate("/terminal/ws-1");
+    history.replaceState(null, "", "/terminal/ws-2");
+    history.replaceState(null, "", "/pulls");
+    window.dispatchEvent(new Event("popstate"));
+    expect(getPage()).toBe("pulls");
+    expect(getLastWorkspaceRoute()).toBe("/terminal/ws-2");
+  });
+
+  it("captures the workspace URL when Back/Forward lands on a terminal route", () => {
+    navigate("/pulls");
+    history.replaceState(null, "", "/terminal/ws-3");
+    window.dispatchEvent(new Event("popstate"));
+    expect(getLastWorkspaceRoute()).toBe("/terminal/ws-3");
+  });
+
+  it("remembers a terminal route entered via navigate() and left via Back", () => {
+    navigate("/pulls");
+    navigate("/terminal/ws-back-1");
+    // Browser Back skips navigate(): popstate lands on the previous route
+    // and only remembers the route it lands on, so the terminal visit must
+    // already be in route memory from the navigate() that entered it.
+    history.replaceState(null, "", "/pulls");
+    window.dispatchEvent(new Event("popstate"));
+    expect(getPage()).toBe("pulls");
+    expect(getLastWorkspaceRoute()).toBe("/terminal/ws-back-1");
+  });
+
+  it("forgets a deleted workspace's terminal route", () => {
+    navigate("/terminal/ws-del-1");
+    navigate("/pulls");
+    forgetWorkspaceRoute("ws-del-1");
+    expect(getLastWorkspaceRoute()).toBe("/workspaces");
+  });
+
+  it("requires a matching host key to forget a fleet terminal route", () => {
+    navigate("/terminal/fleet/build-host/ws-del-2");
+    navigate("/pulls");
+    forgetWorkspaceRoute("ws-del-2"); // local identity: a different workspace
+    expect(getLastWorkspaceRoute()).toBe("/terminal/fleet/build-host/ws-del-2");
+    forgetWorkspaceRoute("ws-del-2", "build-host");
+    expect(getLastWorkspaceRoute()).toBe("/workspaces");
+  });
+
+  it("never re-remembers a forgotten route", () => {
+    // Deleting from the terminal page: forget fires first, then the app
+    // navigates to /workspaces, which re-captures the dying URL and must
+    // refuse it.
+    navigate("/terminal/ws-del-3");
+    forgetWorkspaceRoute("ws-del-3");
+    navigate("/workspaces");
+    expect(getLastWorkspaceRoute()).toBe("/workspaces");
+    // Other workspaces are still remembered normally afterwards.
+    navigate("/terminal/ws-del-4");
+    navigate("/pulls");
+    expect(getLastWorkspaceRoute()).toBe("/terminal/ws-del-4");
   });
 });

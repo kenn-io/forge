@@ -13,6 +13,7 @@ import {
   providerDefaultHost,
   providerItemPath,
   providerRouteParams,
+  resolvedPlatformHost,
   type ProviderRouteRef,
 } from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
@@ -229,8 +230,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
     if (!unsavedLocalBody) return next;
     if (!detail) return next;
     if (
-      unsavedLocalBody.provider !== next.repo?.provider ||
-      unsavedLocalBody.platformHost !== next.repo?.platform_host ||
+      !sameBodyTarget(
+        unsavedLocalBody.provider,
+        unsavedLocalBody.platformHost,
+        next.repo?.provider,
+        next.repo?.platform_host,
+      ) ||
       unsavedLocalBody.owner !== next.repo_owner ||
       unsavedLocalBody.name !== next.repo_name ||
       unsavedLocalBody.number !== next.merge_request?.Number
@@ -293,14 +298,28 @@ export function createDetailStore(opts: DetailStoreOptions) {
     return unsavedLocalBody !== null;
   }
 
+  // Callers pass route vocabulary (gh, omitted default host) while
+  // payloads carry canonical values; every provider/host comparison
+  // between the two must normalize both sides or a mutation on an
+  // aliased route silently no-ops against its own current detail.
+  function sameBodyTarget(
+    aProvider: string | undefined,
+    aHost: string | undefined,
+    bProvider: string | undefined,
+    bHost: string | undefined,
+  ): boolean {
+    const a = canonicalProvider(aProvider ?? "");
+    const b = canonicalProvider(bProvider ?? "");
+    return a === b && resolvedPlatformHost(a, aHost) === resolvedPlatformHost(b, bHost);
+  }
+
   function isDetailShowingRef(ref: DetailRequestRef): boolean {
     return (
       detail !== null &&
       detail.repo_owner === ref.owner &&
       detail.repo_name === ref.name &&
       detail.merge_request.Number === ref.number &&
-      detail.repo?.provider === ref.provider &&
-      detail.repo?.platform_host === ref.platformHost &&
+      sameBodyTarget(detail.repo?.provider, detail.repo?.platform_host, ref.provider, ref.platformHost) &&
       detail.repo?.repo_path === ref.repoPath
     );
   }
@@ -904,8 +923,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         detail = data as PullDetail;
         if (
           unsavedLocalBody &&
-          unsavedLocalBody.provider === ref.provider &&
-          unsavedLocalBody.platformHost === ref.platformHost &&
+          sameBodyTarget(unsavedLocalBody.provider, unsavedLocalBody.platformHost, ref.provider, ref.platformHost) &&
           unsavedLocalBody.owner === owner &&
           unsavedLocalBody.name === name &&
           unsavedLocalBody.number === number
@@ -949,8 +967,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   ): void {
     if (
       !detail ||
-      detail.repo?.provider !== provider ||
-      detail.repo?.platform_host !== platformHost ||
+      !sameBodyTarget(detail.repo?.provider, detail.repo?.platform_host, provider, platformHost) ||
       detail.repo_owner !== owner ||
       detail.repo_name !== name ||
       detail.merge_request.Number !== number
@@ -992,8 +1009,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // an owner or name that contains a delimiter character can't
     // forge a collision with a different target. provider and
     // platformHost are part of the key so the same owner/name/number
-    // on different hosts or providers can't share a queue slot.
-    return JSON.stringify([provider, platformHost ?? "", owner, name, number]);
+    // on different hosts or providers can't share a queue slot —
+    // canonicalized, so an aliased route re-expression of the same PR
+    // can't hold two queue slots with out-of-order saves.
+    const canonical = canonicalProvider(provider);
+    return JSON.stringify([canonical, resolvedPlatformHost(canonical, platformHost), owner, name, number]);
   }
 
   async function runPRBodyPatch(
@@ -1030,8 +1050,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         detail.repo_owner === owner &&
         detail.repo_name === name &&
         detail.merge_request.Number === number &&
-        detail.repo?.provider === routeRef.provider &&
-        detail.repo?.platform_host === routeRef.platformHost &&
+        sameBodyTarget(detail.repo?.provider, detail.repo?.platform_host, routeRef.provider, routeRef.platformHost) &&
         detail.merge_request.Body === body;
       if (data && localBodyMatchesSent) {
         detail = data as PullDetail;
@@ -1048,8 +1067,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
       succeeded &&
       localBodyMatchesSent &&
       unsavedLocalBody &&
-      unsavedLocalBody.provider === routeRef.provider &&
-      unsavedLocalBody.platformHost === routeRef.platformHost &&
+      sameBodyTarget(
+        unsavedLocalBody.provider,
+        unsavedLocalBody.platformHost,
+        routeRef.provider,
+        routeRef.platformHost,
+      ) &&
       unsavedLocalBody.owner === owner &&
       unsavedLocalBody.name === name &&
       unsavedLocalBody.number === number

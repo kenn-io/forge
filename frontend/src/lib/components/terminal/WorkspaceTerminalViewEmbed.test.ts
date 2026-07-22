@@ -10,8 +10,9 @@
 // props themselves. Mocking the api/runtime module here avoids the
 // captured-fetch problem entirely.
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { pushModalFrame, resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
 
 const mocks = vi.hoisted(() => ({
   runtimeClient: {
@@ -293,6 +294,107 @@ describe("WorkspaceTerminalView embed props", () => {
       expect(mocks.showFlash).toHaveBeenCalledWith("Refresh failed (503)", {
         tone: "danger",
       });
+    });
+  });
+
+  describe("inlineDock toolbar controls", () => {
+    afterEach(() => {
+      resetModalStack();
+    });
+
+    it("renders no inline dock buttons without an inlineDock prop", async () => {
+      render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1", hideWorkspaceList: true },
+      });
+
+      await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+
+      expect(screen.queryByRole("button", { name: "Expand Terminal" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Collapse Terminal" })).toBeNull();
+    });
+
+    it("renders the toggle and collapse buttons in the same toolbar container as Delete", async () => {
+      const inlineDock = { getMode: () => "split" as const, setMode: vi.fn() };
+      render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1", hideWorkspaceList: true, inlineDock },
+      });
+
+      await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+
+      const deleteButton = screen.getByRole("button", { name: "Delete" });
+      const container = deleteButton.closest(".header-end");
+      expect(container).toBeTruthy();
+      const scoped = within(container as HTMLElement);
+      expect(scoped.getByRole("button", { name: "Expand Terminal" })).toBeTruthy();
+      expect(scoped.getByRole("button", { name: "Collapse Terminal" })).toBeTruthy();
+    });
+
+    it("flips the toggle label with mode and drives setMode through it", async () => {
+      const setMode = vi.fn();
+      const { rerender } = render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          hideWorkspaceList: true,
+          inlineDock: { getMode: () => "split" as const, setMode },
+        },
+      });
+
+      await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+
+      await fireEvent.click(screen.getByRole("button", { name: "Expand Terminal" }));
+      expect(setMode).toHaveBeenCalledWith("expanded");
+
+      await rerender({
+        workspaceId: "ws-1",
+        hideWorkspaceList: true,
+        inlineDock: { getMode: () => "expanded" as const, setMode },
+      });
+
+      expect(screen.queryByRole("button", { name: "Expand Terminal" })).toBeNull();
+      await fireEvent.click(screen.getByRole("button", { name: "Show Details" }));
+      expect(setMode).toHaveBeenCalledWith("split");
+    });
+
+    it("collapses via the inline dock collapse button", async () => {
+      const setMode = vi.fn();
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          hideWorkspaceList: true,
+          inlineDock: { getMode: () => "split" as const, setMode },
+        },
+      });
+
+      await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+
+      await fireEvent.click(screen.getByRole("button", { name: "Collapse Terminal" }));
+      expect(setMode).toHaveBeenCalledWith("collapsed");
+    });
+
+    it("disables the expand direction while a modal frame is open", async () => {
+      const setMode = vi.fn();
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          hideWorkspaceList: true,
+          inlineDock: { getMode: () => "split" as const, setMode },
+        },
+      });
+
+      await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+
+      const expandButton = screen.getByRole("button", { name: "Expand Terminal" });
+      expect(expandButton.hasAttribute("disabled")).toBe(false);
+
+      const pop = pushModalFrame("test-modal", []);
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Expand Terminal" }).hasAttribute("disabled")).toBe(true),
+      );
+
+      pop();
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Expand Terminal" }).hasAttribute("disabled")).toBe(false),
+      );
     });
   });
 });

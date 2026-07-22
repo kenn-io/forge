@@ -79,7 +79,13 @@
   import { Button, CollapsibleSidebar,
     SplitResizeHandle,
     WorkspaceRightSidebar,
-    type SplitResizeEvent, } from "@middleman/ui";
+    type InlineDockMode,
+    type SplitResizeEvent,
+    type WorkspaceItemIdentity, } from "@middleman/ui";
+  import { getStackDepth } from "@middleman/ui/stores/keyboard/modal-stack";
+  import ChevronsDownIcon from "@lucide/svelte/icons/chevrons-down";
+  import ChevronsUpIcon from "@lucide/svelte/icons/chevrons-up";
+  import PanelBottomCloseIcon from "@lucide/svelte/icons/panel-bottom-close";
   import {
     AlertIcon,
     RefreshIcon,
@@ -134,12 +140,27 @@
     workspaceId: string;
     workspaceHostKey?: string | undefined;
     isSidebarCollapsed?: boolean;
-    sidebarWidth?: number;
-    onSidebarResize?: (width: number) => void;
+    sidebarWidth?: number | undefined;
+    onSidebarResize?: ((width: number) => void) | undefined;
     isSidebarToggleEnabled?: boolean;
-    onToggleSidebar?: () => void;
+    onToggleSidebar?: (() => void) | undefined;
     hideWorkspaceList?: boolean;
     hideRightSidebar?: boolean;
+    // False while this instance is parked in a hidden host (Plan 2b):
+    // every dialog unmounts (its state persists for reopen) and every
+    // TerminalPane deactivates. Defaults to true so standalone/embedded
+    // usage is unaffected.
+    hostVisible?: boolean;
+    // Reports a successful delete (normal or forced) of the given
+    // workspace ID, regardless of whether this instance was on a
+    // terminal route at the time. Lets a hosting shell (e.g. an inline
+    // claimant) react even when the delete doesn't trigger navigation.
+    onWorkspaceDeleted?: (workspaceId: string, hostKey?: string, identity?: WorkspaceItemIdentity) => void;
+    // Set only when this instance is embedded in an inline dock slot
+    // (activity/prs/issues), not the Workspaces tab or standalone route.
+    // Backs the toolbar's expand/show-details/collapse controls, which
+    // replace the inline dock's own removed header bar.
+    inlineDock?: { getMode(): InlineDockMode; setMode(mode: InlineDockMode): void } | null;
   }
 
   const {
@@ -152,6 +173,9 @@
     onToggleSidebar = undefined,
     hideWorkspaceList = false,
     hideRightSidebar = false,
+    hostVisible = true,
+    onWorkspaceDeleted = undefined,
+    inlineDock = null,
   }: Props = $props();
 
   const basePath = (
@@ -195,6 +219,11 @@
   let lastDiffSnapshotVersion = "";
   let forcePromptMessage = $state<string | null>(null);
   let forcePromptForId = $state<string | null>(null);
+  // Identity snapshot captured when the 409 arrived, while the loaded
+  // envelope still described the delete target: the user can switch
+  // workspaces before confirming the force delete, after which the live
+  // envelope belongs to someone else.
+  let forcePromptIdentity: WorkspaceItemIdentity | undefined;
   let forceDeleting = $state(false);
   let stopPromptSession = $state<RuntimeSession | null>(null);
   let stopSessionStopping = $state(false);
@@ -509,6 +538,8 @@
     ),
   );
   const actionsBlocked = $derived(transitioning || deletingSelectedWorkspace || forceDeleting);
+  const inlineDockMode = $derived(inlineDock?.getMode() ?? null);
+  const inlineDockExpandBlocked = $derived(getStackDepth() > 0);
   const modalOpen = $derived(
     forcePromptMessage !== null ||
       stopPromptSession !== null ||
@@ -639,13 +670,19 @@
   // Keep the terminal usable when the main layout
   // shrinks, including when the left workspace list
   // is resized after the right sidebar is already open.
+  // Gated on hostVisible: a parked host sits in a display:none parking
+  // node where clientWidth is 0, and clamping against that zero would
+  // collapse (and persist) the sidebar width. hostVisible flipping back
+  // on reruns the clamp against real geometry.
   $effect(() => {
+    if (!hostVisible || hideRightSidebar) return;
     if (!containerEl || !sidebarOpen) return;
 
     clampRightSidebarWidth(containerEl.clientWidth);
   });
 
   $effect(() => {
+    if (!hostVisible || hideRightSidebar) return;
     if (!sidebarOpen) return;
 
     function onResize(): void {
@@ -685,7 +722,11 @@
     );
   }
 
+  // Window-level shortcut, so it must not stay registered while this view
+  // is parked in a hidden host (it would swallow Cmd/Ctrl+] on unrelated
+  // pages) or while the right sidebar isn't rendered at all.
   $effect(() => {
+    if (!hostVisible || hideRightSidebar) return;
     function onKeydown(e: KeyboardEvent): void {
       if (
         e.key === "]" &&
@@ -2240,6 +2281,26 @@
     }
   }
 
+  // Provider-aware identity of the loaded envelope, but only while it still
+  // describes the given workspace: deletion must tombstone the inline
+  // claim/override slot even for workspaces that were never claimed inline,
+  // and the store has no identity metadata of its own for those.
+  function workspaceIdentitySnapshot(targetId: string): WorkspaceItemIdentity | undefined {
+    const ws = workspace;
+    if (!ws || ws.id !== targetId) return undefined;
+    return {
+      provider: ws.repo.provider,
+      platformHost: ws.repo.platform_host,
+      owner: ws.repo.owner,
+      name: ws.repo.name,
+      repoPath: ws.repo.repo_path,
+      number: ws.item_number,
+      // Envelope vocabulary ("pull_request"/"issue"/"kata_task");
+      // canonicalItemType maps it for identity comparison.
+      itemType: ws.item_type,
+    };
+  }
+
   async function handleDelete(
     triggerEl: HTMLElement | null = null,
   ): Promise<void> {
@@ -2247,6 +2308,7 @@
     const targetId = workspaceId;
     const targetHostKey = workspaceHostKey;
     const targetGen = workspaceGen;
+    const targetIdentity = workspaceIdentitySnapshot(targetId);
     // Capture the trigger synchronously: the click handler runs
     // before `inert` is applied to .terminal-view, so this is the
     // last point we can read the originating focused element. By
@@ -2269,12 +2331,21 @@
         response.status === 409 ||
         (!response.ok && response.status !== 204);
       if (responseFailed && targetGen !== workspaceGen) return;
+      // Successful delete: report it before any current-selection guard.
+      // The workspace is gone on the server regardless of what the user
+      // is looking at now, and inline claimants, tombstones, and route
+      // memory must hear about it even after switching workspaces
+      // mid-delete. Prompts, flashes, and navigation below stay gated.
+      if (!responseFailed) {
+        onWorkspaceDeleted?.(targetId, targetHostKey, targetIdentity);
+      }
       // Different workspace now: the user has moved on and nothing
-      // about this response applies.
+      // else about this response applies.
       if (!isCurrentWorkspace(targetId, targetHostKey)) return;
       if (response.status === 409) {
         previouslyFocusedEl = triggerEl;
         forcePromptForId = targetId;
+        forcePromptIdentity = targetIdentity;
         forcePromptMessage = apiErrorMessage(
           error,
           "Workspace has uncommitted changes.",
@@ -2288,10 +2359,9 @@
         );
         return;
       }
-      // Successful delete: the server destroyed this workspace and
-      // the user is still looking at it. Navigate away even after
-      // an A→B→A round trip — otherwise they'd be staring at a
-      // workspace that no longer exists.
+      // Navigate away if the user is still looking at the deleted
+      // workspace, even after an A→B→A round trip — otherwise they'd be
+      // staring at a workspace that no longer exists.
       if (!isCurrentTerminalRoute(targetId)) return;
       navigate("/workspaces");
     } finally {
@@ -2340,6 +2410,9 @@
     if (targetId === null) return;
     const targetHostKey = workspaceHostKey;
     const targetGen = workspaceGen;
+    // Prefer the snapshot taken at 409 time; the live envelope may belong
+    // to a different workspace after an A -> B switch.
+    const targetIdentity = forcePromptIdentity ?? workspaceIdentitySnapshot(targetId);
     forceDeleting = true;
     addDeletingWorkspaceTarget(targetId, targetHostKey);
     try {
@@ -2359,10 +2432,16 @@
       const responseFailed =
         !response.ok && response.status !== 204;
       if (responseFailed && targetGen !== workspaceGen) return;
-      // The force-delete on the server is destructive and runs to
-      // completion either way; once the user has moved to a
-      // different workspace we just drop the response on the
-      // floor so navigate() doesn't pull them away.
+      // Successful force-delete: report it before the current-selection
+      // guard — the server destroyed the workspace either way, and
+      // inline claimants, tombstones, and route memory must hear about
+      // it even after switching workspaces mid-delete.
+      if (!responseFailed) {
+        onWorkspaceDeleted?.(targetId, targetHostKey, targetIdentity);
+      }
+      // Once the user has moved to a different workspace we drop the
+      // rest of the response on the floor so prompt state stays put and
+      // navigate() doesn't pull them away.
       if (!isCurrentWorkspace(targetId, targetHostKey)) return;
       if (!response.ok && response.status !== 204) {
         showFlash(
@@ -2371,14 +2450,14 @@
         );
         forcePromptMessage = null;
         forcePromptForId = null;
+        forcePromptIdentity = undefined;
         return;
       }
-      // Successful force-delete on the workspace the user is
-      // viewing — navigate away even after an A→B→A round trip
-      // so we don't leave them on a workspace the server just
-      // destroyed.
+      // Navigate away if the user is still viewing the workspace the
+      // server just destroyed, even after an A→B→A round trip.
       forcePromptMessage = null;
       forcePromptForId = null;
+      forcePromptIdentity = undefined;
       if (!isCurrentTerminalRoute(targetId)) return;
       navigate("/workspaces");
     } finally {
@@ -2391,6 +2470,7 @@
     if (forceDeleting) return;
     forcePromptMessage = null;
     forcePromptForId = null;
+    forcePromptIdentity = undefined;
   }
 
   async function watchFleetWorkspaceDiff(
@@ -2552,6 +2632,7 @@
     // the previous value.
     forcePromptMessage = null;
     forcePromptForId = null;
+    forcePromptIdentity = undefined;
     stopPromptSession = null;
     stopSessionStopping = false;
     renamePrompt = null;
@@ -2921,6 +3002,35 @@
                 {/if}
               </IconButton>
             {/if}
+            {#if inlineDock && inlineDockMode !== null}
+              <button
+                class="header-btn"
+                disabled={actionsBlocked || (inlineDockMode !== "expanded" && inlineDockExpandBlocked)}
+                title={
+                  inlineDockMode !== "expanded" && inlineDockExpandBlocked
+                    ? "Close the open dialog first."
+                    : undefined
+                }
+                onclick={() =>
+                  inlineDock?.setMode(inlineDockMode === "expanded" ? "split" : "expanded")}
+              >
+                {#if inlineDockMode === "expanded"}
+                  <ChevronsDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                  Show Details
+                {:else}
+                  <ChevronsUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                  Expand Terminal
+                {/if}
+              </button>
+              <button
+                class="header-btn"
+                disabled={actionsBlocked}
+                onclick={() => inlineDock?.setMode("collapsed")}
+              >
+                <PanelBottomCloseIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                Collapse Terminal
+              </button>
+            {/if}
             <button
               class="header-btn danger"
               disabled={actionsBlocked}
@@ -2950,12 +3060,14 @@
                     onApply={(presetId) => void applyWorkflowPreset(presetId)}
                     onDelete={deleteWorkflowPreset}
                     disabled={actionsBlocked}
+                    {hostVisible}
                   />
-                  <TerminalOptionsMenu disabled={actionsBlocked} />
+                  <TerminalOptionsMenu disabled={actionsBlocked} {hostVisible} />
                   <LaunchMenu
                     launchTargets={launchTargets}
                     {launchingKey}
                     disabled={actionsBlocked}
+                    {hostVisible}
                     onLaunch={(key) => void handleLaunch(key)}
                   />
                 </div>
@@ -3035,6 +3147,7 @@
                             height={terminalLayout.height}
                             loading={terminalLaunching}
                             disabled={actionsBlocked}
+                            {hostVisible}
                             onToggle={() => void toggleTerminalPanel()}
                             onNewTerminal={() => void launchTerminalSession()}
                             onSplit={(direction) => void splitTerminal(direction)}
@@ -3072,7 +3185,7 @@
                                 )}
                                 reconnectOnExit={false}
                                 disabled={actionsBlocked}
-                                {active}
+                                active={active && hostVisible}
                                 onExit={() => handleSessionExit(session)}
                                 initialStatus={session.status}
                               />
@@ -3097,6 +3210,7 @@
                   height={terminalLayout.height}
                   loading={terminalLaunching}
                   disabled={actionsBlocked}
+                  {hostVisible}
                   onToggle={() => void toggleTerminalPanel()}
                   onNewTerminal={() => void launchTerminalSession()}
                   onSplit={(direction) => void splitTerminal(direction)}
@@ -3181,49 +3295,48 @@
     </div>
   {/snippet}
 
-  {#if hideWorkspaceList}
+  <CollapsibleSidebar
+    isCollapsed={isSidebarCollapsed}
+    hideSidebar={hideWorkspaceList}
+    sidebarWidth={currentWorkspaceListWidth}
+    minSidebarWidth={MIN_WORKSPACE_LIST_WIDTH}
+    maxSidebarWidth={MAX_WORKSPACE_LIST_WIDTH}
+    onSidebarResize={handleWorkspaceListResize}
+    overlay={isNarrow()}
+    showCollapsedStrip={isSidebarToggleEnabled}
+    onExpand={onToggleSidebar}
+    mainOverflow="hidden"
+  >
+    {#snippet sidebar()}
+      <WorkspaceListSidebar
+        selectedId={workspaceId}
+        selectedHostKey={workspaceHostKey}
+        {isSidebarToggleEnabled}
+        {hostVisible}
+        onCollapseSidebar={onToggleSidebar}
+        onOpenItemSidebar={openItemSidebar}
+        onWorkspaceListStateChange={updateWorkspaceListState}
+        isWorkspaceActionDisabled={(id, hostKey) =>
+          deletingWorkspaceTargets.some((target) =>
+            isDeletingWorkspaceTarget(target, id, hostKey),
+          )}
+        onWorkspaceDeletePendingChange={(id, hostKey, pending) => {
+          if (pending) {
+            addDeletingWorkspaceTarget(id, hostKey);
+          } else {
+            removeDeletingWorkspaceTarget(id, hostKey);
+          }
+        }}
+        {onWorkspaceDeleted}
+      />
+    {/snippet}
     {@render terminalMainContent()}
-  {:else}
-    <CollapsibleSidebar
-      isCollapsed={isSidebarCollapsed}
-      sidebarWidth={currentWorkspaceListWidth}
-      minSidebarWidth={MIN_WORKSPACE_LIST_WIDTH}
-      maxSidebarWidth={MAX_WORKSPACE_LIST_WIDTH}
-      onSidebarResize={handleWorkspaceListResize}
-      overlay={isNarrow()}
-      showCollapsedStrip={isSidebarToggleEnabled}
-      onExpand={onToggleSidebar}
-      mainOverflow="hidden"
-    >
-      {#snippet sidebar()}
-        <WorkspaceListSidebar
-          selectedId={workspaceId}
-          selectedHostKey={workspaceHostKey}
-          {isSidebarToggleEnabled}
-          onCollapseSidebar={onToggleSidebar}
-          onOpenItemSidebar={openItemSidebar}
-          onWorkspaceListStateChange={updateWorkspaceListState}
-          isWorkspaceActionDisabled={(id, hostKey) =>
-            deletingWorkspaceTargets.some((target) =>
-              isDeletingWorkspaceTarget(target, id, hostKey),
-            )}
-          onWorkspaceDeletePendingChange={(id, hostKey, pending) => {
-            if (pending) {
-              addDeletingWorkspaceTarget(id, hostKey);
-            } else {
-              removeDeletingWorkspaceTarget(id, hostKey);
-            }
-          }}
-        />
-      {/snippet}
-      {@render terminalMainContent()}
-    </CollapsibleSidebar>
-  {/if}
+  </CollapsibleSidebar>
 </div>
 
-{#if renamePrompt !== null}
+{#if renamePrompt !== null && hostVisible}
   <Modal
-    open={renamePrompt !== null}
+    open={renamePrompt !== null && hostVisible}
     title="Rename tab"
     width={460}
     frameId="workspace-rename-session"
@@ -3268,7 +3381,7 @@
 {/if}
 
 <ConfirmDialog
-  open={stopPromptSession !== null}
+  open={stopPromptSession !== null && hostVisible}
   title={stopPromptSession
     ? `Stop ${stopPromptSession.label}?`
     : "Stop session?"}
@@ -3284,7 +3397,7 @@
 />
 
 <ConfirmDialog
-  open={forcePromptMessage !== null}
+  open={forcePromptMessage !== null && hostVisible}
   title="Force delete workspace?"
   message={forcePromptMessage ?? ""}
   hint="Force-deleting discards any uncommitted changes in the worktree. This cannot be undone."
@@ -3540,6 +3653,9 @@
   }
 
   .header-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     height: 22px;
     padding: 0 10px;
     border: 1px solid var(--border-default);

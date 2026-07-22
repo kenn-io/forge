@@ -3,11 +3,13 @@
   import { getStackDepth } from "../stores/keyboard/modal-stack.svelte.js";
   import ActivityFeed from "../components/ActivityFeed.svelte";
   import CommitDiffPanel from "../components/CommitDiffPanel.svelte";
+  import WorkspaceDockPanel from "../components/workspace/WorkspaceDockPanel.svelte";
   import { IconButton, SidebarToggle, SplitResizeHandle } from "@kenn-io/kit-ui";
   import type { SplitResizeEvent } from "@kenn-io/kit-ui";
   import type { PullRequestRouteRef } from "../routes.js";
   import PRListView from "./PRListView.svelte";
   import IssueListView from "./IssueListView.svelte";
+  import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
 
   type ActivityDetailTab = "conversation" | "files";
 
@@ -46,6 +48,7 @@
     onDetailTabChange?: (tab: ActivityDetailTab) => void;
     onDrawerItemChange?: (item: DrawerPRItem) => void;
     phone?: boolean;
+    inlineWorkspace?: InlineWorkspaceController | null;
   }
 
   let {
@@ -56,6 +59,7 @@
     onDetailTabChange,
     onDrawerItemChange,
     phone = false,
+    inlineWorkspace = null,
   }: Props = $props();
 
   const ACTIVITY_PANE_WIDTH_KEY = "middleman-activity-pane-width";
@@ -173,6 +177,24 @@
           provider: activeDrawer.provider,
           platformHost: activeDrawer.platformHost,
           repoPath: activeDrawer.repoPath,
+        }
+      : null,
+  );
+  // The claim itself is made by the embedded PRListView/IssueListView's own
+  // claim effect (they receive {inlineWorkspace} below); this view only
+  // renders the dock, so it needs the identity to ask the controller
+  // whether that claim is currently active.
+  const claimIdentity = $derived<WorkspaceItemIdentity | null>(
+    activeDrawer
+      ? {
+          provider: activeDrawer.provider,
+          platformHost: activeDrawer.platformHost,
+          owner: activeDrawer.owner,
+          name: activeDrawer.name,
+          repoPath: activeDrawer.repoPath,
+          number: activeDrawer.number,
+          // Drawer vocabulary ("pr"/"issue"); canonicalItemType maps it.
+          itemType: activeDrawer.itemType,
         }
       : null,
   );
@@ -385,26 +407,46 @@
             commitSha={commitDrawer.commitSha}
           />
         {/key}
-      {:else if drawerPRSelection}
-        <PRListView
-          selectedPR={drawerPRSelection}
-          detailTab={effectiveDetailTab}
-          isSidebarCollapsed={true}
-          hideSidebar={true}
-          autoSyncDetail="background"
-          hideStaleDetailWhileLoading={true}
-          workflowApprovalSync={false}
-          onDetailTabChange={handleDetailTabChange}
-          onStackMemberNavigate={handleStackMemberNavigate}
-        />
-      {:else if drawerIssueSelection}
-        <IssueListView
-          selectedIssue={drawerIssueSelection}
-          isSidebarCollapsed={true}
-          hideSidebar={true}
-          autoSyncDetail="background"
-          hideStaleDetailWhileLoading={true}
-        />
+      {:else if drawerPRSelection || drawerIssueSelection}
+        {#snippet activityEmbed()}
+          {#if drawerPRSelection}
+            <PRListView
+              selectedPR={drawerPRSelection}
+              detailTab={effectiveDetailTab}
+              isSidebarCollapsed={true}
+              hideSidebar={true}
+              autoSyncDetail="background"
+              hideStaleDetailWhileLoading={true}
+              workflowApprovalSync={false}
+              onDetailTabChange={handleDetailTabChange}
+              onStackMemberNavigate={handleStackMemberNavigate}
+              renderWorkspaceDock={false}
+              {inlineWorkspace}
+            />
+          {:else if drawerIssueSelection}
+            <IssueListView
+              selectedIssue={drawerIssueSelection}
+              isSidebarCollapsed={true}
+              hideSidebar={true}
+              autoSyncDetail="background"
+              hideStaleDetailWhileLoading={true}
+              renderWorkspaceDock={false}
+              {inlineWorkspace}
+            />
+          {/if}
+        {/snippet}
+
+        {#if inlineWorkspace}
+          <WorkspaceDockPanel
+            controller={inlineWorkspace}
+            active={claimIdentity !== null && inlineWorkspace.isClaimedFor(claimIdentity)}
+            detailTitle={activeDrawer ? `#${activeDrawer.number} ${activeDrawer.owner}/${activeDrawer.name}` : ""}
+          >
+            {@render activityEmbed()}
+          </WorkspaceDockPanel>
+        {:else}
+          {@render activityEmbed()}
+        {/if}
       {/if}
     </section>
   {/if}

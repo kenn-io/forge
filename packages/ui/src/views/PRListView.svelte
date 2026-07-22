@@ -16,6 +16,7 @@
   import PullList from "../components/sidebar/PullList.svelte";
   import PullDetail from "../components/detail/PullDetail.svelte";
   import DiffFilesLayout from "../components/diff/DiffFilesLayout.svelte";
+  import WorkspaceDockPanel from "../components/workspace/WorkspaceDockPanel.svelte";
   import type { ProviderCapabilities, PullDetail as PullDetailResponse } from "../api/types.js";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
   import { reviewThreadsFromEvents } from "../components/diff/review-thread-context.js";
@@ -25,7 +26,8 @@
     buildPullRequestRoute,
     type PullRequestRouteRef,
   } from "../routes.js";
-  import { canonicalProvider } from "../api/provider-routes.js";
+  import { canonicalProvider, resolvedPlatformHost } from "../api/provider-routes.js";
+  import { identityEquals, type InlineWorkspaceController, type WorkspaceItemIdentity } from "../workspace-inline.js";
 
   type StackMemberNavigate = (ref: PullRequestRouteRef) => boolean | void;
 
@@ -83,6 +85,10 @@
     onSidebarResize?: (width: number) => void;
     onDetailTabChange?: (tab: DetailTab) => void;
     onStackMemberNavigate?: StackMemberNavigate;
+    inlineWorkspace?: InlineWorkspaceController | null;
+    /** ActivityFeedView embeds this view twice and owns a single outer dock;
+     * it passes false so the embedded views never render their own. */
+    renderWorkspaceDock?: boolean;
   }
 
   let {
@@ -99,6 +105,8 @@
     onSidebarResize,
     onDetailTabChange,
     onStackMemberNavigate,
+    inlineWorkspace = null,
+    renderWorkspaceDock = true,
   }: Props = $props();
 
   let detailHost: HTMLDivElement | undefined = $state();
@@ -237,7 +245,8 @@
       detail.repo_name === ref.name &&
       detail.merge_request.Number === ref.number &&
       canonicalProvider(detail.repo?.provider ?? "") === canonicalProvider(ref.provider) &&
-      detail.repo?.platform_host === ref.platformHost &&
+      resolvedPlatformHost(ref.provider, detail.repo?.platform_host) ===
+        resolvedPlatformHost(ref.provider, ref.platformHost) &&
       detail.repo?.repo_path === ref.repoPath
     );
   }
@@ -247,17 +256,66 @@
     return detailMatchesSelected(detail, selectedPR) ? detail : null;
   });
 
+  function refreshSelectedDetail(): Promise<void> | undefined {
+    if (selectedPR === null) return undefined;
+    const ref = selectedPR;
+    return detailStore.loadDetail(ref.owner, ref.name, ref.number, {
+      sync: false,
+      provider: ref.provider,
+      platformHost: ref.platformHost,
+      repoPath: ref.repoPath,
+    });
+  }
+
   $effect(() => {
     if (selectedPR === null || (!splitViewActive && detailTab !== "files")) return;
     const ref = selectedPR;
     untrack(() => {
       if (detailMatchesSelected(detailStore.getDetail(), ref)) return;
-      void detailStore.loadDetail(ref.owner, ref.name, ref.number, {
-        sync: false,
-        provider: ref.provider,
-        platformHost: ref.platformHost,
-        repoPath: ref.repoPath,
-      });
+      void refreshSelectedDetail();
+    });
+  });
+
+  const claimIdentity = $derived<WorkspaceItemIdentity | null>(
+    selectedPR
+      ? {
+          provider: selectedPR.provider,
+          platformHost: selectedPR.platformHost,
+          owner: selectedPR.owner,
+          name: selectedPR.name,
+          repoPath: selectedPR.repoPath,
+          number: selectedPR.number,
+          itemType: "pull",
+        }
+      : null,
+  );
+
+  $effect(() => {
+    const controller = inlineWorkspace;
+    if (!controller) return;
+    const detail = detailStore.getDetail();
+    if (!claimIdentity || !detailMatchesSelected(detail, selectedPR ?? null)) {
+      controller.release();
+      return;
+    }
+    const ref = controller.effectiveWorkspaceRef(claimIdentity, detail?.workspace ?? null);
+    if (ref) controller.claim(claimIdentity, ref);
+    else controller.release();
+  });
+
+  $effect(() => {
+    const controller = inlineWorkspace;
+    if (!controller) return;
+    return () => controller.release();
+  });
+
+  $effect(() => {
+    const controller = inlineWorkspace;
+    if (!controller) return;
+    return controller.onIdentityInvalidated((identity) => {
+      if (claimIdentity && identityEquals(identity, claimIdentity)) {
+        void refreshSelectedDetail();
+      }
     });
   });
 
@@ -299,7 +357,7 @@
   {/snippet}
 
   {#if selectedPR !== null}
-    <div class="detail-host" bind:this={detailHost}>
+    {#snippet detailContent()}
       <div class="detail-tabs">
         <button
           class="detail-tab"
@@ -347,6 +405,7 @@
               hideTabs={true}
               hideStaleWhileLoading={hideStaleDetailWhileLoading}
               onStackMemberNavigate={handleStackMemberNavigate}
+              {inlineWorkspace}
             />
           </section>
           <SplitResizeHandle
@@ -409,7 +468,22 @@
           hideTabs={true}
           hideStaleWhileLoading={hideStaleDetailWhileLoading}
           onStackMemberNavigate={handleStackMemberNavigate}
+          {inlineWorkspace}
         />
+      {/if}
+    {/snippet}
+
+    <div class="detail-host" bind:this={detailHost}>
+      {#if inlineWorkspace && renderWorkspaceDock}
+        <WorkspaceDockPanel
+          controller={inlineWorkspace}
+          active={claimIdentity !== null && inlineWorkspace.isClaimedFor(claimIdentity)}
+          detailTitle={`#${selectedPR.number} ${selectedPR.owner}/${selectedPR.name}`}
+        >
+          {@render detailContent()}
+        </WorkspaceDockPanel>
+      {:else}
+        {@render detailContent()}
       {/if}
     </div>
   {:else}

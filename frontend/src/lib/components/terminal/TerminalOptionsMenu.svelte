@@ -7,9 +7,13 @@
 
   interface Props {
     disabled?: boolean;
+    /** False while the workspace host is parked/hidden: closes the popover
+     *  (and any nested dialog it hosts) so no invisible overlay, focus trap,
+     *  or window listener outlives the visible surface. */
+    hostVisible?: boolean;
   }
 
-  const { disabled = false }: Props = $props();
+  const { disabled = false, hostVisible = true }: Props = $props();
   const { settings: settingsStore } = getStores();
 
   let open = $state(false);
@@ -20,7 +24,7 @@
   let childSaving = $state(false);
 
   $effect(() => {
-    if (disabled) open = false;
+    if (disabled || !hostVisible) open = false;
   });
 
   function toggleOpen(): void {

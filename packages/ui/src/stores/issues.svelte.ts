@@ -1,8 +1,10 @@
 import type { Issue, IssueDetail, IssuesParams, IssueSettings, Label } from "../api/types.js";
 import {
+  canonicalProvider,
   providerDefaultHost,
   providerItemPath,
   providerRouteParams,
+  resolvedPlatformHost,
   type ProviderRouteRef,
 } from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
@@ -346,8 +348,12 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     if (!unsavedLocalBody) return next;
     if (!issueDetail) return next;
     if (
-      unsavedLocalBody.provider !== next.repo?.provider ||
-      unsavedLocalBody.platformHost !== next.repo?.platform_host ||
+      !sameBodyTarget(
+        unsavedLocalBody.provider,
+        unsavedLocalBody.platformHost,
+        next.repo?.provider,
+        next.repo?.platform_host,
+      ) ||
       unsavedLocalBody.owner !== next.repo_owner ||
       unsavedLocalBody.name !== next.repo_name ||
       unsavedLocalBody.number !== next.issue?.Number
@@ -407,14 +413,28 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return unsavedLocalBody !== null;
   }
 
+  // Callers pass route vocabulary (gh, omitted default host) while
+  // payloads carry canonical values; every provider/host comparison
+  // between the two must normalize both sides or a mutation on an
+  // aliased route silently no-ops against its own current detail.
+  function sameBodyTarget(
+    aProvider: string | undefined,
+    aHost: string | undefined,
+    bProvider: string | undefined,
+    bHost: string | undefined,
+  ): boolean {
+    const a = canonicalProvider(aProvider ?? "");
+    const b = canonicalProvider(bProvider ?? "");
+    return a === b && resolvedPlatformHost(a, aHost) === resolvedPlatformHost(b, bHost);
+  }
+
   function isIssueDetailShowingRef(ref: IssueDetailRequestRef): boolean {
     return (
       issueDetail !== null &&
       issueDetail.repo_owner === ref.owner &&
       issueDetail.repo_name === ref.name &&
       issueDetail.issue.Number === ref.number &&
-      issueDetail.repo?.provider === ref.provider &&
-      issueDetail.repo?.platform_host === ref.platformHost &&
+      sameBodyTarget(issueDetail.repo?.provider, issueDetail.repo?.platform_host, ref.provider, ref.platformHost) &&
       issueDetail.repo?.repo_path === ref.repoPath
     );
   }
@@ -836,8 +856,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   ): void {
     if (!issueDetail) return;
     if (
-      issueDetail.repo?.provider !== provider ||
-      issueDetail.repo?.platform_host !== platformHost ||
+      !sameBodyTarget(issueDetail.repo?.provider, issueDetail.repo?.platform_host, provider, platformHost) ||
       issueDetail.repo_owner !== owner ||
       issueDetail.repo_name !== name ||
       issueDetail.issue.Number !== number
@@ -877,8 +896,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     // an owner or name that contains a delimiter character can't
     // forge a collision with a different target. provider and
     // platformHost are part of the key so the same owner/name/number
-    // on different hosts or providers can't share a queue slot.
-    return JSON.stringify([provider, platformHost ?? "", owner, name, number]);
+    // on different hosts or providers can't share a queue slot —
+    // canonicalized, so an aliased route re-expression of the same
+    // issue can't hold two queue slots with out-of-order saves.
+    const canonical = canonicalProvider(provider);
+    return JSON.stringify([canonical, resolvedPlatformHost(canonical, platformHost), owner, name, number]);
   }
 
   async function runIssueBodyPatch(
@@ -915,8 +937,12 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       succeeded = true;
       localBodyMatchesSent =
         issueDetail !== null &&
-        issueDetail.repo?.provider === routeRef.provider &&
-        issueDetail.repo?.platform_host === routeRef.platformHost &&
+        sameBodyTarget(
+          issueDetail.repo?.provider,
+          issueDetail.repo?.platform_host,
+          routeRef.provider,
+          routeRef.platformHost,
+        ) &&
         issueDetail.repo_owner === owner &&
         issueDetail.repo_name === name &&
         issueDetail.issue.Number === number &&
@@ -931,8 +957,12 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       succeeded &&
       localBodyMatchesSent &&
       unsavedLocalBody &&
-      unsavedLocalBody.provider === routeRef.provider &&
-      unsavedLocalBody.platformHost === routeRef.platformHost &&
+      sameBodyTarget(
+        unsavedLocalBody.provider,
+        unsavedLocalBody.platformHost,
+        routeRef.provider,
+        routeRef.platformHost,
+      ) &&
       unsavedLocalBody.owner === owner &&
       unsavedLocalBody.name === name &&
       unsavedLocalBody.number === number

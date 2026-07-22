@@ -54,6 +54,14 @@ export {
   buildRoutedItemRoute,
 } from "./routes.js";
 export { supportsLocked } from "./api/provider-capabilities.js";
+export { canonicalItemType, identityEquals } from "./workspace-inline.js";
+export type {
+  InlineDockMode,
+  InlineWorkspaceController,
+  InlineWorkspaceSurface,
+  WorkspaceItemIdentity,
+  WorkspaceRefLite,
+} from "./workspace-inline.js";
 export { firstUnavailableGate, operationGate } from "./components/detail/operation-gates.js";
 export type { OperationGate } from "./components/detail/operation-gates.js";
 export { providerDefaultHost } from "./api/provider-routes.js";
@@ -167,6 +175,7 @@ export type {
 } from "./components/shared/tabbed-panel-layout.js";
 export { default as WorkspaceRightSidebar } from "./components/workspace/WorkspaceRightSidebar.svelte";
 export { default as WorkspaceDiffPanel } from "./components/workspace/WorkspaceDiffPanel.svelte";
+export { default as WorkspaceDockPanel } from "./components/workspace/WorkspaceDockPanel.svelte";
 export { default as DiffSidebar } from "./components/diff/DiffSidebar.svelte";
 export { default as DiffToolbar } from "./components/diff/DiffToolbar.svelte";
 export { default as DiffView } from "./components/diff/DiffView.svelte";

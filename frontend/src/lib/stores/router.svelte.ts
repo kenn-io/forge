@@ -568,11 +568,61 @@ function rememberActivityRoute(): void {
 // Seed the cache when the app loads directly on an Activity URL.
 rememberActivityRoute();
 
+// Same contract as lastActivityRoute, for the Workspaces tab: remember the
+// full last workspace-mode path (/workspaces, /terminal/{id}, or
+// /terminal/fleet/{hostKey}/{id}) so the top-bar tab restores the previous
+// selection instead of resetting to the bare list.
+let lastWorkspaceRoute = "/workspaces";
+
+// Terminal routes whose workspace has been deleted this session. Deletion
+// alone can't just reset lastWorkspaceRoute: deleting from the terminal
+// page navigates to /workspaces afterwards, and that navigate() re-captures
+// the dying /terminal/{id} URL as the "last" route. Remembering consults
+// this set so a deleted workspace's route can never come back.
+const forgottenTerminalKeys = new Set<string>();
+
+function terminalRouteKey(workspaceId: string, hostKey: string | undefined): string {
+  return `${hostKey ?? ""}\n${workspaceId}`;
+}
+
+function isForgottenTerminalPath(path: string): boolean {
+  const parsed = parseRoute(path);
+  return parsed.page === "terminal" && forgottenTerminalKeys.has(terminalRouteKey(parsed.workspaceId, parsed.hostKey));
+}
+
+// Called when a workspace is deleted: the Workspaces tab must never restore
+// a /terminal route for a workspace that no longer exists.
+export function forgetWorkspaceRoute(workspaceId: string, hostKey?: string): void {
+  forgottenTerminalKeys.add(terminalRouteKey(workspaceId, hostKey));
+  if (isForgottenTerminalPath(lastWorkspaceRoute)) {
+    lastWorkspaceRoute = "/workspaces";
+  }
+}
+
+export function getLastWorkspaceRoute(): string {
+  return lastWorkspaceRoute;
+}
+
+function rememberWorkspaceRoute(): void {
+  const currentPath = currentLocationPath();
+  const parsed = parseRoute(currentPath);
+  const onWorkspaceRoute =
+    (route.page === "workspaces" || route.page === "terminal") &&
+    (parsed.page === "workspaces" || parsed.page === "terminal");
+  if (onWorkspaceRoute && !isForgottenTerminalPath(currentPath)) {
+    lastWorkspaceRoute = stripBase(currentPath);
+  }
+}
+
+// Seed the cache when the app loads directly on a workspace URL.
+rememberWorkspaceRoute();
+
 if (typeof window !== "undefined") {
   const originalReplaceState = history.replaceState.bind(history);
   history.replaceState = ((data: unknown, unused: string, url?: string | URL | null) => {
     originalReplaceState(data, unused, url);
     rememberActivityRoute();
+    rememberWorkspaceRoute();
   }) as History["replaceState"];
 }
 
@@ -595,9 +645,15 @@ export function buildItemRoute(ref: RoutableItemRef): string {
 export function navigate(path: string, state?: Record<string, unknown>): void {
   // route still reflects the page being left; capture its live URL first.
   rememberActivityRoute();
+  rememberWorkspaceRoute();
   const fullPath = basePrefix + path;
   history.pushState(state ?? null, "", fullPath);
   route = parseRoute(fullPath);
+  // Record the workspace destination too: leaving it via browser
+  // Back/Forward skips navigate(), and the popstate handler only
+  // remembers the route it lands on — a terminal visit exited that way
+  // would otherwise never enter route memory.
+  rememberWorkspaceRoute();
   fireMiddlemanNavigateEvent(route);
   fireRouteChange(route);
 }
@@ -790,6 +846,7 @@ export function replaceUrl(path: string): void {
   history.replaceState(null, "", fullPath);
   route = parseRoute(fullPath);
   rememberActivityRoute();
+  rememberWorkspaceRoute();
   fireRouteChange(route);
 }
 
@@ -798,6 +855,7 @@ if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
     route = parseRoute(currentLocationPath());
     rememberActivityRoute();
+    rememberWorkspaceRoute();
     fireRouteChange(route);
   });
 }

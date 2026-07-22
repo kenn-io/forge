@@ -1,0 +1,393 @@
+import { page } from "vite-plus/test/browser";
+import { flushSync, mount, unmount } from "svelte";
+import { describe, expect, it, vi } from "vite-plus/test";
+import { DEFAULT_TERMINAL_SETTINGS } from "@middleman/ui";
+import { createDiffStore } from "@middleman/ui/stores/diff";
+import { getStackDepth } from "@middleman/ui/stores/keyboard/modal-stack";
+
+import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
+import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
+import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";
+
+const WAIT = 10_000;
+
+const workspace = {
+  id: "ws-1",
+  platform_host: "github.com",
+  repo_owner: "acme",
+  repo_name: "widget",
+  repo: {
+    provider: "github",
+    platform_host: "github.com",
+    owner: "acme",
+    name: "widget",
+    repo_path: "acme/widget",
+  },
+  item_type: "pull_request",
+  item_number: 7,
+  git_head_ref: "feature/host-visible",
+  worktree_path: "/tmp/worktree",
+  tmux_session: "middleman-ws-1",
+  status: "ready",
+  enrichment_status: "fresh",
+  created_at: "2026-04-29T00:00:00Z",
+};
+
+const emptyRuntime = { launch_targets: [], sessions: [] };
+
+function workspaceRoutes(): MockRouteOverride {
+  return (req) => {
+    if (req.url.pathname === "/api/v1/workspaces/ws-1" && req.method === "GET") {
+      return jsonResponse(workspace);
+    }
+    if (req.url.pathname === "/api/v1/workspaces/ws-1/runtime" && req.method === "GET") {
+      return jsonResponse(emptyRuntime);
+    }
+    if (req.url.pathname === "/api/v1/workspaces" && req.method === "GET") {
+      return jsonResponse({ workspaces: [workspace] });
+    }
+    // "Delete" always fires a real DELETE first; a 409 here is what opens
+    // the force-delete confirmation dialog under test — there is no
+    // separate "are you sure" step before the first delete attempt.
+    if (req.url.pathname === "/api/v1/workspaces/ws-1" && req.method === "DELETE") {
+      return jsonResponse({ detail: "Workspace has uncommitted changes." }, 409);
+    }
+    return null;
+  };
+}
+
+// A no-op EventSource: WTV opens one to watch for workspace/diff invalidation
+// events, and a real EventSource would spin retrying against a backend that
+// doesn't exist in this tier. Mirrors browserAppHarness.ts's NoopEventSource.
+class NoopEventSource {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
+
+  url: string;
+  readyState = 0;
+  withCredentials = false;
+  onopen: ((ev: unknown) => void) | null = null;
+  onmessage: ((ev: unknown) => void) | null = null;
+  onerror: ((ev: unknown) => void) | null = null;
+
+  constructor(url: string | URL) {
+    this.url = String(url);
+  }
+
+  addEventListener(): void {}
+  removeEventListener(): void {}
+  dispatchEvent(): boolean {
+    return false;
+  }
+  close(): void {
+    this.readyState = 2;
+  }
+}
+
+describe("WorkspaceTerminalView hostVisible", () => {
+  it("unmounts an open dialog while hidden and restores it when visible", async () => {
+    const api = createMockApiFetch([workspaceRoutes()]);
+    const originalFetch = globalThis.fetch;
+    const originalEventSource = globalThis.EventSource;
+    globalThis.fetch = api.fetch;
+    globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
+
+    // TerminalOptionsMenu (always present in the ready-workspace toolbar)
+    // reads settingsStore.getTerminalSettings() at initialization, so the
+    // main subtree cannot mount without a settings store on STORES_KEY.
+    const settingsStore = {
+      getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
+    };
+
+    // Mounted with Svelte's own `mount()` (rather than vitest-browser-svelte's
+    // render/rerender) so flipping `hostVisible` is a real fine-grained prop
+    // update: rerender()'s prop diffing coalesces every prop into one raw
+    // `$state` object, so any prop change re-invalidates all of them —
+    // including WTV's route-scoped effect that unconditionally clears
+    // renamePrompt/stopPromptSession/forcePromptMessage on every re-run.
+    // That would wipe the open dialog's state on the very rerender meant to
+    // hide it, defeating the test before hostVisible is even considered. A
+    // getter-backed prop plus flushSync() gives WTV real per-prop
+    // reactivity, matching how a parent passes hostVisible in production.
+    let hostVisible = $state(true);
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const instance = mount(WorkspaceTerminalView, {
+      target,
+      props: {
+        workspaceId: "ws-1",
+        hideWorkspaceList: true,
+        hideRightSidebar: true,
+        get hostVisible() {
+          return hostVisible;
+        },
+      },
+      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+    });
+
+    try {
+      await vi.waitFor(() => {
+        const el = document.querySelector(".header-btn.danger");
+        expect(el).not.toBeNull();
+      }, WAIT);
+
+      // Opens the force-delete confirmation dialog (the DELETE mock
+      // responds 409).
+      await page.getByRole("button", { name: "Delete" }).click();
+      await expect.element(page.getByRole("dialog")).toBeVisible();
+
+      hostVisible = false;
+      flushSync();
+
+      // Unmounted entirely: no dialog, no kit modal overlay, no Escape owner.
+      expect(document.querySelector(".kit-modal-overlay")).toBeNull();
+
+      hostVisible = true;
+      flushSync();
+
+      // Reappears with no further interaction: the open-state variable
+      // (forcePromptMessage) survived the hidden window.
+      await expect.element(page.getByRole("dialog")).toBeVisible();
+    } finally {
+      flushSync(() => unmount(instance));
+      target.remove();
+      globalThis.fetch = originalFetch;
+      globalThis.EventSource = originalEventSource;
+    }
+  });
+
+  it("hidden host releases the sidebar shortcut and never clamps geometry from hidden layout", async () => {
+    const api = createMockApiFetch([workspaceRoutes()]);
+    const originalFetch = globalThis.fetch;
+    const originalEventSource = globalThis.EventSource;
+    globalThis.fetch = api.fetch;
+    globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
+
+    const settingsStore = {
+      getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
+    };
+    // Opening the right sidebar mounts the diff panel, which reads the
+    // diff store from context. Created after the fetch swap so its API
+    // calls hit the mock (and fail harmlessly into the panel's error
+    // state — this test only asserts sidebar presence).
+    const diffStore = createDiffStore();
+
+    localStorage.removeItem("middleman-workspace-sidebar-open");
+    localStorage.setItem("middleman-workspace-sidebar-width", "400");
+
+    let hostVisible = $state(true);
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    // hideRightSidebar is false here: the Cmd/Ctrl+] shortcut and the
+    // width-clamp effects only exist for a view that renders the right
+    // sidebar at all.
+    const instance = mount(WorkspaceTerminalView, {
+      target,
+      props: {
+        workspaceId: "ws-1",
+        hideWorkspaceList: true,
+        hideRightSidebar: false,
+        get hostVisible() {
+          return hostVisible;
+        },
+      },
+      context: new Map([[STORES_KEY, { settings: settingsStore, diff: diffStore }]]),
+    });
+
+    const pressSidebarToggle = () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "]", metaKey: true, cancelable: true }));
+      flushSync();
+    };
+
+    try {
+      await vi.waitFor(() => {
+        const el = document.querySelector(".header-btn.danger");
+        expect(el).not.toBeNull();
+      }, WAIT);
+
+      // Visible: the window-level shortcut opens the right sidebar. The
+      // clamp against the (small) test viewport may legitimately shrink
+      // the stored width here; what's persisted now is the baseline.
+      pressSidebarToggle();
+      expect(document.querySelector(".right-sidebar")).not.toBeNull();
+      const visibleWidth = localStorage.getItem("middleman-workspace-sidebar-width");
+      expect(visibleWidth).not.toBe("0");
+
+      hostVisible = false;
+      flushSync();
+
+      // Hidden (parked host): the shortcut belongs to whatever page is
+      // actually on screen — it must not toggle this view's sidebar.
+      pressSidebarToggle();
+      expect(document.querySelector(".right-sidebar")).not.toBeNull();
+
+      // Hidden layout has zero geometry (the parking node is
+      // display:none); a window resize must not clamp the sidebar width
+      // against it and persist a collapsed value.
+      target.style.display = "none";
+      window.dispatchEvent(new Event("resize"));
+      flushSync();
+      expect(localStorage.getItem("middleman-workspace-sidebar-width")).toBe(visibleWidth);
+      target.style.display = "";
+
+      // Visible again: the shortcut is re-armed.
+      hostVisible = true;
+      flushSync();
+      pressSidebarToggle();
+      expect(document.querySelector(".right-sidebar")).toBeNull();
+    } finally {
+      flushSync(() => unmount(instance));
+      target.remove();
+      localStorage.removeItem("middleman-workspace-sidebar-open");
+      localStorage.removeItem("middleman-workspace-sidebar-width");
+      globalThis.fetch = originalFetch;
+      globalThis.EventSource = originalEventSource;
+    }
+  });
+
+  it("parking closes toolbar menus and their nested modal instead of leaving an invisible stack", async () => {
+    const api = createMockApiFetch([workspaceRoutes()]);
+    const originalFetch = globalThis.fetch;
+    const originalEventSource = globalThis.EventSource;
+    globalThis.fetch = api.fetch;
+    globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
+
+    // Unlike the other tests, this one actually mounts TerminalSettings
+    // (inside the options popover) with livePreview, which writes settings
+    // back through the store — so the stub needs a setter too.
+    const settingsStore = {
+      getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
+      setTerminalSettings: () => {},
+    };
+
+    let hostVisible = $state(true);
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const instance = mount(WorkspaceTerminalView, {
+      target,
+      props: {
+        workspaceId: "ws-1",
+        hideWorkspaceList: true,
+        hideRightSidebar: true,
+        get hostVisible() {
+          return hostVisible;
+        },
+      },
+      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+    });
+
+    try {
+      await vi.waitFor(() => {
+        const el = document.querySelector(".header-btn.danger");
+        expect(el).not.toBeNull();
+      }, WAIT);
+
+      // Terminal options popover, then the font picker Modal nested inside
+      // it — the deepest overlay stack a toolbar menu can build.
+      await page.getByRole("button", { name: "Terminal options" }).click();
+      await expect.element(page.getByRole("dialog", { name: "Terminal options" })).toBeVisible();
+      await page.getByRole("button", { name: "Choose" }).click();
+      await expect.element(page.getByRole("dialog", { name: "Choose monospace font" })).toBeVisible();
+      expect(getStackDepth()).toBeGreaterThan(0);
+
+      hostVisible = false;
+      flushSync();
+
+      // Parked with the stack open (e.g. browser Back mid-dialog): nothing
+      // may survive invisibly — no overlay blocking clicks, no focus trap,
+      // no modal-stack frame owning Escape, no popover window listeners.
+      expect(document.querySelector(".options-popover")).toBeNull();
+      expect(document.querySelector(".kit-modal-overlay")).toBeNull();
+      expect(getStackDepth()).toBe(0);
+
+      hostVisible = true;
+      flushSync();
+
+      // Menus are transient (unlike the confirm dialogs above, which
+      // restore): re-revealing must not resurrect the popover.
+      expect(document.querySelector(".options-popover")).toBeNull();
+      expect(getStackDepth()).toBe(0);
+    } finally {
+      flushSync(() => unmount(instance));
+      target.remove();
+      globalThis.fetch = originalFetch;
+      globalThis.EventSource = originalEventSource;
+    }
+  });
+
+  it("unmounts the workspace list's own delete dialog while hidden and restores it when visible", async () => {
+    const api = createMockApiFetch([workspaceRoutes()]);
+    const originalFetch = globalThis.fetch;
+    const originalEventSource = globalThis.EventSource;
+    globalThis.fetch = api.fetch;
+    globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
+
+    const settingsStore = {
+      getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
+    };
+
+    // Same getter-backed prop + flushSync() rationale as the test above:
+    // real per-prop reactivity, matching how WorkspaceHost passes
+    // hostVisible down in production. hideWorkspaceList is false here (the
+    // opposite of the test above) so WorkspaceListSidebar — not WTV's own
+    // toolbar — is what's under test.
+    let hostVisible = $state(true);
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const instance = mount(WorkspaceTerminalView, {
+      target,
+      props: {
+        workspaceId: "ws-1",
+        hideWorkspaceList: false,
+        hideRightSidebar: true,
+        get hostVisible() {
+          return hostVisible;
+        },
+      },
+      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+    });
+
+    try {
+      const row = await vi.waitFor(() => {
+        const el = document.querySelector(".ws-row");
+        expect(el).not.toBeNull();
+        return el as HTMLElement;
+      }, WAIT);
+
+      // Opens the row's context menu, then its delete confirmation — no
+      // network round trip needed; the dialog's open state is local
+      // (deleteConfirmWorkspace) and is what this test exercises.
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+      await page.getByRole("menuitem", { name: "Delete workspace..." }).click();
+      await expect.element(page.getByRole("dialog", { name: "Delete workspace?" })).toBeVisible();
+      expect(getStackDepth()).toBeGreaterThan(0);
+
+      hostVisible = false;
+      flushSync();
+
+      // Unmounted entirely: no dialog, no kit modal overlay, no lingering
+      // modal-stack frame or Escape owner left behind for the page under
+      // it (see WorkspaceListSidebar.svelte's hostVisible-gated
+      // ConfirmDialog).
+      expect(document.querySelector(".kit-modal-overlay")).toBeNull();
+      expect(getStackDepth()).toBe(0);
+
+      hostVisible = true;
+      flushSync();
+
+      // Reappears with no further interaction: deleteConfirmWorkspace
+      // survived the hidden window, matching WTV's own three dialogs.
+      await expect.element(page.getByRole("dialog", { name: "Delete workspace?" })).toBeVisible();
+    } finally {
+      flushSync(() => unmount(instance));
+      target.remove();
+      globalThis.fetch = originalFetch;
+      globalThis.EventSource = originalEventSource;
+    }
+  });
+});

@@ -1,0 +1,324 @@
+import { describe, expect, it, beforeEach } from "vite-plus/test";
+import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
+import { getLastWorkspaceRoute, navigate } from "./router.svelte.ts";
+import {
+  desiredKey,
+  desiredSlot,
+  getInlineWorkspaceController,
+  isHostVisible,
+  notifyWorkspaceDeleted,
+  onIdentityInvalidated,
+  rememberTerminalRouteKey,
+  resetWorkspaceHostForTest,
+} from "./workspace-host.svelte.ts";
+
+const identityA = {
+  provider: "github",
+  platformHost: "github.com",
+  owner: "acme",
+  name: "widgets",
+  repoPath: "acme/widgets",
+  number: 7,
+  itemType: "pull",
+};
+const identityB = { ...identityA, number: 8 };
+const refA = { id: "ws-a", status: "ready" };
+
+describe("workspace host store", () => {
+  beforeEach(() => {
+    resetWorkspaceHostForTest();
+    navigate("/pulls");
+  });
+
+  it("tab owns the host on workspaces and terminal routes regardless of claims", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    navigate("/terminal/ws-z");
+    expect(desiredSlot()).toBe("tab");
+    expect(desiredKey()).toEqual({ workspaceId: "ws-z", hostKey: undefined });
+    navigate("/workspaces");
+    expect(desiredSlot()).toBe("tab");
+    expect(desiredKey()).toEqual({ workspaceId: "", hostKey: undefined });
+  });
+
+  it("an inline claim displays only on its own page", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    expect(desiredSlot()).toBe("prs");
+    expect(desiredKey()).toEqual({ workspaceId: "ws-a", hostKey: undefined });
+    navigate("/activity");
+    expect(desiredSlot()).toBeNull(); // parked, not shown on another surface's page
+  });
+
+  it("parking keeps the hosted key sticky so sockets survive a detour", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    navigate("/activity");
+    expect(desiredSlot()).toBeNull();
+    expect(desiredKey()).toEqual({ workspaceId: "ws-a", hostKey: undefined });
+    navigate("/pulls");
+    expect(desiredSlot()).toBe("prs");
+  });
+
+  it("claim/release are effect-safe no-ops on identical input", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    prs.claim(identityA, { ...refA }); // same values, new object: no state churn
+    expect(desiredSlot()).toBe("prs");
+    prs.release();
+    prs.release();
+    expect(desiredSlot()).toBeNull();
+  });
+
+  it("overrides win over the envelope until reconciled", () => {
+    const prs = getInlineWorkspaceController("prs");
+    // create override: appears without waiting for refetch
+    prs.recordCreated(identityA, refA);
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(refA);
+    // stale envelope still lacking the workspace does not remove it
+    expect(prs.effectiveWorkspaceRef(identityA, undefined)).toEqual(refA);
+    // identity-matched refetch that agrees drops the override
+    prs.reconcile(identityA, refA);
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toEqual(refA);
+    // a disagreeing (stale) refetch payload leaves the override in force
+    prs.recordDeleted(identityA);
+    prs.reconcile(identityA, refA); // envelope still carries deleted ws — stale
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
+    prs.reconcile(identityA, null); // now it agrees
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toEqual(refA); // tombstone gone, envelope wins again
+  });
+
+  it("a tombstone never flickers back into a claim", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    prs.recordDeleted(identityA);
+    expect(desiredSlot()).toBeNull();
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull(); // stale envelope
+  });
+
+  it("overrides are identity-scoped", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.recordDeleted(identityA);
+    expect(prs.effectiveWorkspaceRef(identityB, refA)).toEqual(refA);
+  });
+
+  it("recordCreated only claims when the surface is still on that identity", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityB, { id: "ws-b", status: "ready" }); // selection moved to B
+    prs.recordCreated(identityA, refA); // A's late response
+    expect(desiredKey().workspaceId).toBe("ws-b"); // no claim theft
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(refA); // override still recorded
+  });
+
+  it("a late create response records the override without activating a released surface", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const issues = getInlineWorkspaceController("issues");
+    // PR A's create was still in flight when its views unmounted and the
+    // user moved to the issues page, where another item claims workspace B.
+    prs.claim(identityA, refA);
+    prs.release();
+    navigate("/issues");
+    const issueIdentity = { ...identityA, number: 9, itemType: "issue" };
+    issues.claim(issueIdentity, { id: "ws-b", status: "ready" });
+    // The late response must land its override, but claiming the released
+    // prs surface would move the hosted key under B's visible dock.
+    prs.recordCreated(identityA, { id: "ws-a2", status: "provisioning" });
+    expect(desiredSlot()).toBe("issues");
+    expect(desiredKey()).toEqual({ workspaceId: "ws-b", hostKey: undefined });
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual({ id: "ws-a2", status: "provisioning" });
+    // Returning to pulls: the surface stays unclaimed until a live
+    // selection confirms the identity through the claim effect.
+    navigate("/pulls");
+    expect(desiredSlot()).toBeNull();
+  });
+
+  it("the visible surface's claim keys the host even when the sticky key drifted", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    // Leaving a terminal route reasserts the sticky key with the tab's
+    // workspace; the pulls page's own claim must still win or the dock
+    // would host the tab's workspace under the claimed item's detail.
+    rememberTerminalRouteKey({ workspaceId: "ws-tab", hostKey: "fleet-host" });
+    expect(desiredKey()).toEqual({ workspaceId: "ws-a", hostKey: undefined });
+  });
+
+  it("notifyWorkspaceDeleted tombstones, releases, and invalidates the claiming identity", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const invalidated: unknown[] = [];
+    const off = onIdentityInvalidated((identity) => invalidated.push(identity));
+    prs.claim(identityA, refA);
+    notifyWorkspaceDeleted("ws-a");
+    expect(desiredSlot()).toBeNull();
+    expect(desiredKey().workspaceId).toBe(""); // hosted key cleared: WTV leaves the dead workspace
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
+    expect(invalidated).toEqual([identityA]);
+    off();
+  });
+
+  it("deletion tombstones a released claim so a stale envelope cannot re-claim it", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    prs.release(); // view unmounted: claim gone, but the workspace still exists
+    const invalidated: unknown[] = [];
+    const off = onIdentityInvalidated((identity) => invalidated.push(identity));
+    notifyWorkspaceDeleted("ws-a"); // deleted from the Workspaces tab
+    // The list view's cached envelope still carries the dead ref; revisiting
+    // must not re-claim it.
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
+    expect(invalidated).toEqual([identityA]);
+    off();
+  });
+
+  it("deletion with a caller-supplied identity tombstones a never-claimed workspace", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const invalidated: unknown[] = [];
+    const off = onIdentityInvalidated((identity) => invalidated.push(identity));
+    // No claim, no recordCreated: the workspace was only ever opened in the
+    // tab (or deleted straight from the sidebar list), so the store has no
+    // identity metadata of its own — the deletion callback supplies it.
+    notifyWorkspaceDeleted("ws-never", undefined, identityA);
+    expect(prs.effectiveWorkspaceRef(identityA, { id: "ws-never", status: "ready" })).toBeNull();
+    expect(invalidated).toEqual([identityA]);
+    off();
+  });
+
+  it("deletion tombstones a created-but-never-claimed workspace after release", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.recordCreated(identityA, refA);
+    prs.reconcile(identityA, refA); // refetch agreed: create override dropped
+    prs.release();
+    notifyWorkspaceDeleted("ws-a");
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
+  });
+
+  it("deleting a workspace forgets its remembered terminal route", () => {
+    navigate("/terminal/ws-host-del-1");
+    navigate("/pulls");
+    expect(getLastWorkspaceRoute()).toBe("/terminal/ws-host-del-1");
+    notifyWorkspaceDeleted("ws-host-del-1");
+    expect(getLastWorkspaceRoute()).toBe("/workspaces");
+  });
+
+  it("fleet deletion matches the host key and leaves local claims alone", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA); // local ws-a claim
+    navigate("/terminal/fleet/build-host/ws-a");
+    navigate("/pulls");
+    notifyWorkspaceDeleted("ws-a", "build-host");
+    expect(desiredSlot()).toBe("prs"); // same id on a fleet host is a different workspace
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toEqual(refA); // no tombstone
+    expect(getLastWorkspaceRoute()).toBe("/workspaces"); // fleet route forgotten
+  });
+
+  it("dock collapse means claimed-but-hidden", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    expect(isHostVisible()).toBe(true);
+    prs.setDockMode("collapsed");
+    expect(desiredSlot()).toBe("prs"); // still claimed
+    expect(isHostVisible()).toBe(false); // hostVisible contract applies
+    prs.setDockMode("split");
+    expect(isHostVisible()).toBe(true);
+  });
+
+  it("a PR and an issue sharing a repo and number never cross claims, overrides, or tombstones", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const issues = getInlineWorkspaceController("issues");
+    const issueIdentity = { ...identityA, itemType: "issue" };
+    const issueRef = { id: "ws-issue", status: "ready" };
+    // Same repo, same number 7 — but PR #7 and Issue #7 are unrelated items
+    // owning unrelated workspaces.
+    prs.claim(identityA, refA);
+    expect(issues.isClaimedFor(issueIdentity)).toBe(false);
+    expect(prs.isClaimedFor(issueIdentity)).toBe(false);
+    // A creation override for the issue must not display under the PR.
+    issues.recordCreated(issueIdentity, issueRef);
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
+    // Deleting the PR's workspace tombstones only the PR identity.
+    notifyWorkspaceDeleted("ws-a");
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
+    expect(issues.effectiveWorkspaceRef(issueIdentity, null)).toEqual(issueRef);
+  });
+
+  it("an omitted host keys the same identity as the provider default host", () => {
+    const prs = getInlineWorkspaceController("prs");
+    // Activity URLs may omit platform_host while workspace payloads carry
+    // github.com; claims and tombstones must not split across the two.
+    const hostless = { ...identityA, platformHost: undefined };
+    prs.claim(hostless, refA);
+    expect(prs.isClaimedFor(identityA)).toBe(true);
+    prs.recordDeleted(identityA);
+    expect(prs.effectiveWorkspaceRef(hostless, refA)).toBeNull();
+  });
+
+  it("item-type vocabularies key the same identity for claims and tombstones", () => {
+    const prs = getInlineWorkspaceController("prs");
+    // The activity drawer says "pr" and workspace envelopes say
+    // "pull_request"; a tombstone recorded through either vocabulary must
+    // hide the detail-claimed "pull" identity too.
+    prs.claim({ ...identityA, itemType: "pr" }, refA);
+    expect(prs.isClaimedFor(identityA)).toBe(true);
+    prs.recordDeleted({ ...identityA, itemType: "pull_request" });
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
+  });
+
+  it("provider aliases key the same identity for claims, overrides, and tombstones", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const aliasIdentity = { ...identityA, provider: "gh" };
+    prs.claim(aliasIdentity, refA);
+    expect(prs.isClaimedFor(identityA)).toBe(true);
+    prs.recordCreated(aliasIdentity, refA);
+    // Canonical form resolves the alias-recorded override slot.
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(refA);
+    // A tombstone recorded canonically hides the alias-keyed item too;
+    // otherwise a deleted workspace could be reclaimed through the alias
+    // route from stale detail data.
+    prs.recordDeleted(identityA);
+    expect(prs.effectiveWorkspaceRef(aliasIdentity, refA)).toBeNull();
+  });
+
+  it("replacing a claim with a different identity resets an expanded dock", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    prs.setDockMode("expanded");
+    // Direct replacement (selection change whose new detail already
+    // matches) never gives WorkspaceDockPanel an inactive gap, so the
+    // store must reset the mode itself or B's detail opens hidden behind
+    // a fullscreen terminal.
+    prs.claim(identityB, { id: "ws-b", status: "ready" });
+    expect(prs.getDockMode()).toBe("split");
+    // Same-identity re-asserts (ref status changes) keep expanded intact.
+    prs.setDockMode("expanded");
+    prs.claim(identityB, { id: "ws-b", status: "running" });
+    expect(prs.getDockMode()).toBe("expanded");
+  });
+
+  it("focusTerminal reveals a collapsed dock in split and never maximizes", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    // Collapsed: reveal restores the same split layout the workspace
+    // first appeared in — maximizing is the terminal toolbar's own
+    // action, never a side effect of asking for focus.
+    prs.setDockMode("collapsed");
+    prs.focusTerminal();
+    expect(prs.getDockMode()).toBe("split");
+    // Already visible: the mode is left alone.
+    prs.focusTerminal();
+    expect(prs.getDockMode()).toBe("split");
+    prs.setDockMode("expanded");
+    prs.focusTerminal();
+    expect(prs.getDockMode()).toBe("expanded");
+  });
+
+  it("refuses to reshape the dock while a modal frame is open", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    prs.setDockMode("collapsed");
+    const pop = pushModalFrame("test-frame", []);
+    prs.focusTerminal();
+    expect(prs.getDockMode()).toBe("collapsed");
+    pop();
+    prs.focusTerminal();
+    expect(prs.getDockMode()).toBe("split");
+  });
+});

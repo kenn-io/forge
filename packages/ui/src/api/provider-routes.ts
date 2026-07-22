@@ -38,6 +38,13 @@ export function providerDefaultHost(provider: string): string | undefined {
   return defaultHost(canonicalProvider(provider));
 }
 
+// resolvedPlatformHost normalizes an optional host against the provider's
+// default: refs from provider-default routes or query params (omitted host)
+// must compare equal to API payloads carrying the concrete default host.
+export function resolvedPlatformHost(provider: string, platformHost?: string | null): string {
+  return platformHost?.trim() || providerDefaultHost(provider) || "";
+}
+
 function shouldUseHostRoute(ref: ProviderRouteRef): boolean {
   const provider = canonicalProvider(ref.provider);
   const host = ref.platformHost?.trim();

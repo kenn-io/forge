@@ -92,6 +92,18 @@ describe("router initialization", () => {
     );
   });
 
+  it("defaults the last workspace route to /workspaces on initial load", async () => {
+    const { getLastWorkspaceRoute } = await importRouterAt("/");
+
+    expect(getLastWorkspaceRoute()).toBe("/workspaces");
+  });
+
+  it("seeds the last workspace route from an initial load on a terminal route", async () => {
+    const { getLastWorkspaceRoute } = await importRouterAt("/terminal/ws-seed");
+
+    expect(getLastWorkspaceRoute()).toBe("/terminal/ws-seed");
+  });
+
   it("preserves provider issue route state on popstate", async () => {
     const { getRoute } = await importRouterAt("/issues");
 

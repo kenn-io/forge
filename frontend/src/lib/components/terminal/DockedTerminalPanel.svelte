@@ -41,6 +41,9 @@
     height: number;
     loading?: boolean;
     disabled?: boolean;
+    // False while the owning WorkspaceTerminalView is parked in a hidden
+    // host: forwarded to TerminalSplitTree so its TerminalPanes deactivate.
+    hostVisible?: boolean;
     onToggle?: (() => void) | undefined;
     onNewTerminal?: (() => void) | undefined;
     onSplit?: ((direction: SplitDirection) => void) | undefined;
@@ -75,6 +78,7 @@
     height,
     loading = false,
     disabled = false,
+    hostVisible = true,
     onToggle,
     onNewTerminal,
     onSplit,
@@ -241,6 +245,7 @@
             {displayLabels}
             {activeSessionKey}
             {disabled}
+            {hostVisible}
             {onSelect}
             {onClose}
             {onRename}

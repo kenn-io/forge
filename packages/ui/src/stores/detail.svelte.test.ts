@@ -749,4 +749,23 @@ describe("createDetailStore", () => {
       tt.assertDetail(store.getDetail());
     }
   });
+
+  it("applies a local body edit addressed through a provider alias and omitted host", async () => {
+    // Task-list checkbox clicks pass the caller's route vocabulary; the
+    // loaded payload is canonical ("github"/"github.com"). An exact
+    // comparison would silently drop the optimistic toggle.
+    const get = vi.fn().mockResolvedValueOnce({ data: pullDetail("head") });
+    const store = createDetailStore({ client: mockClient({ GET: get }) });
+    await store.loadDetail("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+
+    store.setLocalPRBody("gh", undefined, "acme", "widget", 7, "- [x] done");
+
+    expect(store.getDetail()?.merge_request.Body).toBe("- [x] done");
+    expect(store.hasUnsavedLocalBody()).toBe(true);
+  });
 });

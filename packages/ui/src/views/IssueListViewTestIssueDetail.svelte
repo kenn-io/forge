@@ -11,6 +11,6 @@
   const { owner, name, number, inlineWorkspace = null }: Props = $props();
 </script>
 
-<div data-testid="pull-detail" data-has-inline-workspace={inlineWorkspace !== null}>
-  Conversation {owner}/{name}#{number}
+<div data-testid="issue-detail" data-has-inline-workspace={inlineWorkspace !== null}>
+  Issue {owner}/{name}#{number}
 </div>

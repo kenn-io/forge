@@ -39,6 +39,10 @@
     activeSessionKey: string | null;
     borderTrim?: BorderTrim | undefined;
     disabled?: boolean;
+    // False while the owning WorkspaceTerminalView is parked in a hidden
+    // host: ANDed into every TerminalPane's `active` prop so ResizeObserver-
+    // driven refresh/resize work in the pane suspends while hidden.
+    hostVisible?: boolean;
     onSelect?: ((sessionKey: string) => void) | undefined;
     onClose?: ((session: RuntimeSession) => void) | undefined;
     onRename?: ((session: RuntimeSession) => void) | undefined;
@@ -64,6 +68,7 @@
     activeSessionKey,
     borderTrim = {},
     disabled = false,
+    hostVisible = true,
     onSelect,
     onClose,
     onRename,
@@ -350,7 +355,7 @@
               workspaceHostKey,
             )}
             reconnectOnExit={false}
-            active={activeSessionKey === session.key}
+            active={activeSessionKey === session.key && hostVisible}
             {disabled}
             onExit={() => onExit?.(session)}
             initialStatus={session.status}
@@ -384,6 +389,7 @@
         {displayLabels}
         {activeSessionKey}
         {disabled}
+        {hostVisible}
         borderTrim={firstChildTrim(node.direction)}
         {onSelect}
         {onClose}
@@ -414,6 +420,7 @@
         {displayLabels}
         {activeSessionKey}
         {disabled}
+        {hostVisible}
         borderTrim={secondChildTrim(node.direction)}
         {onSelect}
         {onClose}

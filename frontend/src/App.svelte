@@ -31,7 +31,7 @@
   import Cheatsheet from "./lib/components/keyboard/Cheatsheet.svelte";
   import RepoSummaryPage from "./lib/components/repositories/RepoSummaryPage.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
-  import WorkspaceTerminalView from "./lib/components/terminal/WorkspaceTerminalView.svelte";
+  import WorkspaceHost from "./lib/components/terminal/WorkspaceHost.svelte";
   import WorkspaceEmbedShell from "./lib/components/terminal/WorkspaceEmbedShell.svelte";
   import WorkspaceFirstRunPanel from "./lib/components/terminal/WorkspaceFirstRunPanel.svelte";
   import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
@@ -86,6 +86,7 @@
     getSelectedPRFromRoute,
     type RoutableItemRef,
   } from "./lib/stores/router.svelte.ts";
+  import { getInlineWorkspaceController, tabSlotAttachment } from "./lib/stores/workspace-host.svelte.ts";
   import {
     buildActivitySelectionSearch,
     parseActivitySelection,
@@ -1153,6 +1154,8 @@
       {:else if getPage() === "settings"}
         <SettingsPage />
       {:else if getPage() === "activity"}
+        <!-- Desktop shell only: focus-presentation and mobile branches of
+             this view get no controller (structural eligibility). -->
         <ActivityFeedView
           {drawerItem}
           onSelectItem={handleActivitySelect}
@@ -1160,6 +1163,7 @@
           detailTab={drawerItem?.detailTab ?? "conversation"}
           onDetailTabChange={handleActivityDetailTabChange}
           onDrawerItemChange={handleActivityDrawerItemChange}
+          inlineWorkspace={getInlineWorkspaceController("activity")}
         />
       {:else if getPage() === "repos"}
         <RepoSummaryPage />
@@ -1220,6 +1224,8 @@
             stores?.pulls.getSelectedPR() ??
             null}
           {@const detailTab = getDetailTab()}
+          <!-- Desktop shell only: focus-presentation and mobile branches of
+               this view get no controller (structural eligibility). -->
           <PRListView
             {selectedPR}
             {detailTab}
@@ -1227,17 +1233,21 @@
             sidebarWidth={getSidebarWidth()}
             sidebarOverlay={isNarrow()}
             onSidebarResize={handleSidebarResize}
+            inlineWorkspace={getInlineWorkspaceController("prs")}
           />
         {/if}
       {:else if getPage() === "issues"}
         {@const selectedIssue =
           stores?.issues.getSelectedIssue() ?? null}
+          <!-- Desktop shell only: focus-presentation and mobile branches of
+               this view get no controller (structural eligibility). -->
           <IssueListView
             {selectedIssue}
           isSidebarCollapsed={isSidebarCollapsed()}
           sidebarWidth={getSidebarWidth()}
           sidebarOverlay={isNarrow()}
           onSidebarResize={handleSidebarResize}
+          inlineWorkspace={getInlineWorkspaceController("issues")}
         />
       {:else if getPage() === "reviews"}
         {@const route = getRoute()}
@@ -1255,23 +1265,11 @@
           />
         {/if}
       {:else if getPage() === "workspaces" || getPage() === "terminal"}
-        {@const r = getRoute()}
-        {@const wsId =
-          r.page === "terminal" ? r.workspaceId : ""}
-        {@const wsHostKey =
-          r.page === "terminal" ? r.hostKey : undefined}
-        <!-- Single mount across /workspaces and /terminal/{id};
-             WorkspaceTerminalView reacts to workspaceId changes
-             internally so the page doesn't flash on navigation. -->
-        <WorkspaceTerminalView
-          workspaceId={wsId}
-          workspaceHostKey={wsHostKey}
-          isSidebarCollapsed={isSidebarCollapsed()}
-          sidebarWidth={getSidebarWidth()}
-          onSidebarResize={handleSidebarResize}
-          isSidebarToggleEnabled={isSidebarToggleEnabled()}
-          onToggleSidebar={toggleSidebar}
-        />
+        <!-- Slot for the App-owned WorkspaceHost (mounted below, outside
+             this page-branch chain) to reparent its live WTV wrapper into.
+             WorkspaceHost reacts to workspaceId/route changes internally so
+             the page doesn't flash on navigation. -->
+        <div class="workspace-tab-slot" {@attach tabSlotAttachment}></div>
       {/if}
 
       {#if appReady && DocsFeature}
@@ -1309,6 +1307,28 @@
             onOpenIssue={kataLinkingEnabled ? openKataIssue : undefined}
           />
         </section>
+      {/if}
+
+      <!-- Mounted once across every desktop-shell page (this element is
+           never torn down by the page-branch {#if} chain above) so the
+           live WTV wrapper it hosts survives page switches; it physically
+           reparents into the tab slot, an inline dock slot, or a hidden
+           parking node depending on the route and inline claims. Gated on
+           appReady like the pages: a direct /terminal/{id} load must not
+           start workspace/runtime requests before the backend readiness
+           poll and settings initialization complete — early failures
+           would sit in the error state until a manual retry, and late
+           settings would replace an already-active terminal renderer.
+           appReady only resets when the whole shell tears down, so this
+           still never remounts across page switches. -->
+      {#if appReady}
+        <WorkspaceHost
+          isSidebarCollapsed={isSidebarCollapsed()}
+          sidebarWidth={getSidebarWidth()}
+          onSidebarResize={handleSidebarResize}
+          isSidebarToggleEnabled={isSidebarToggleEnabled()}
+          onToggleSidebar={toggleSidebar}
+        />
       {/if}
     </main>
 
@@ -1618,6 +1638,13 @@
     display: flex;
     flex-direction: column;
     position: relative;
+  }
+
+  .workspace-tab-slot {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
   }
 
   .loading-state {

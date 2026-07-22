@@ -227,7 +227,7 @@ test.describe("issue list view", () => {
     // The scroll container should span the detail pane so the native
     // scrollbar is flush with the pane edge, not the centered content
     // column. The header remains in the capped content column.
-    const detailArea = page.locator(".kit-sidebar-layout__main");
+    const detailArea = page.locator(".kit-sidebar-layout__main").filter({ visible: true });
     const contentHeader = page.locator(".issue-detail .detail-header");
     const areaBox = await detailArea.boundingBox();
     const detailBox = await scroller.boundingBox();

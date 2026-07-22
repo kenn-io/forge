@@ -10,6 +10,9 @@
     selectedPresetId?: string | null;
     applying?: boolean;
     disabled?: boolean;
+    /** False while the workspace host is parked/hidden: closes the popover
+     *  so its window listeners don't outlive the visible surface. */
+    hostVisible?: boolean;
     onSaveNew?: (() => void) | undefined;
     onUpdate?: ((presetId: string) => void) | undefined;
     onApply?: ((presetId: string) => void) | undefined;
@@ -21,6 +24,7 @@
     selectedPresetId = null,
     applying = false,
     disabled = false,
+    hostVisible = true,
     onSaveNew,
     onUpdate,
     onApply,
@@ -35,7 +39,7 @@
   );
 
   $effect(() => {
-    if (disabled) open = false;
+    if (disabled || !hostVisible) open = false;
   });
 
   $effect(() => {

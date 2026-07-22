@@ -724,6 +724,13 @@ export function createMockApiFetch(overrides: MockRouteOverride[] = []): MockApi
     const request = input instanceof Request ? input : new Request(new URL(String(input), window.location.href), init);
     const url = new URL(request.url);
     if (READINESS_PATHS.has(url.pathname)) {
+      // Overrides get first crack so startup-ordering specs can hold the
+      // readiness poll unready; every other spec falls through to ok.
+      const readinessReq: MockRequest = { method: request.method.toUpperCase(), url, bodyText: "" };
+      for (const override of overrides) {
+        const overridden = override(readinessReq);
+        if (overridden) return overridden;
+      }
       return jsonResponse({ status: "ok" });
     }
     return handler.handle({

@@ -11,6 +11,9 @@
     launchTargets: LaunchTarget[];
     launchingKey?: string | null;
     disabled?: boolean;
+    /** False while the workspace host is parked/hidden: closes the popover
+     *  so its window listeners don't outlive the visible surface. */
+    hostVisible?: boolean;
     onLaunch?: (targetKey: string) => void;
   }
 
@@ -18,6 +21,7 @@
     launchTargets,
     launchingKey = null,
     disabled = false,
+    hostVisible = true,
     onLaunch,
   }: LaunchMenuProps = $props();
 
@@ -27,7 +31,7 @@
   const visibleTargets = $derived(launchTargets.filter(isVisibleLaunchTarget));
 
   $effect(() => {
-    if (disabled) open = false;
+    if (disabled || !hostVisible) open = false;
   });
 
   function launch(targetKey: string): void {

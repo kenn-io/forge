@@ -19,6 +19,7 @@
     GroupedSidebarSection,
     ScrollBox,
     SidebarToggle,
+    type WorkspaceItemIdentity,
   } from "@middleman/ui";
   import {
     createRepoLabelFormatter,
@@ -107,8 +108,21 @@
       hostKey: string | undefined,
       pending: boolean,
     ) => void;
+    // Reports a successful delete from this list's own delete flow, so a
+    // hosting shell (e.g. an inline claimant) can react even though this
+    // sidebar isn't the one navigating away. Mirrors WorkspaceTerminalView's
+    // own onWorkspaceDeleted contract.
+    onWorkspaceDeleted?:
+      | ((workspaceId: string, hostKey?: string, identity?: WorkspaceItemIdentity) => void)
+      | undefined;
     isSidebarToggleEnabled?: boolean;
     onCollapseSidebar?: (() => void) | undefined;
+    // False while this instance is parked in a hidden host: every dialog
+    // unmounts (its state persists for reopen) the same way
+    // WorkspaceTerminalView's own dialogs do. Defaults to true so
+    // standalone/embedded usage (this component mounted outside the
+    // reparenting host) is unaffected.
+    hostVisible?: boolean;
   }
 
   const {
@@ -118,8 +132,10 @@
     onWorkspaceListStateChange,
     isWorkspaceActionDisabled,
     onWorkspaceDeletePendingChange,
+    onWorkspaceDeleted,
     isSidebarToggleEnabled = false,
     onCollapseSidebar,
+    hostVisible = true,
   }: Props = $props();
 
   const basePath = (
@@ -896,6 +912,29 @@
         showFlash(apiErrorMessage(error, fallback), { tone: "danger" });
         return;
       }
+      // Report the deletion regardless of selection so a hosting shell's
+      // inline claim (which owns no tombstone otherwise) doesn't briefly
+      // re-claim a workspace this list just destroyed. The row's identity
+      // rides along: a workspace never claimed inline has no identity
+      // metadata in the host store, and without it the cached detail
+      // envelope could re-claim the dead workspace on a later visit.
+      onWorkspaceDeleted?.(
+        ws.id,
+        ws.fleet_host_key ?? undefined,
+        ws.repo
+          ? {
+              provider: ws.repo.provider,
+              platformHost: ws.repo.platform_host,
+              owner: ws.repo.owner,
+              name: ws.repo.name,
+              repoPath: ws.repo.repo_path,
+              number: ws.item_number,
+              // Row vocabulary ("pull_request"/"issue"/"kata_task");
+              // canonicalItemType maps it for identity comparison.
+              itemType: ws.item_type,
+            }
+          : undefined,
+      );
       await fetchWorkspaces();
       closeContextMenu();
       if (isSelectedWorkspace(ws)) {
@@ -1415,7 +1454,7 @@
 {/if}
 
 <ConfirmDialog
-  open={deleteConfirmWorkspace !== null}
+  open={deleteConfirmWorkspace !== null && hostVisible}
   title="Delete workspace?"
   message={deleteConfirmWorkspace
     ? `Delete workspace "${displayName(deleteConfirmWorkspace)}"?`

@@ -211,7 +211,15 @@ such as `Resize Activity rail`.
 Use kit-ui `BottomDock` for resizable inline bottom panels. The app owns whether
 the dock is open plus its domain header/body/footer content; the shared dock
 owns shell geometry, top-edge resizing, bounds, close control, and body
-scrolling.
+scrolling. It exposes no prop to hide its resize handle; a mode that forces a
+controlled `height` (for example, an expanded 100% state) must hide the
+handle itself via a scoped `:global(.kit-split-resize-handle)` rule under an
+app-owned class, or a live drag will silently corrupt persisted height state
+that isn't visibly changing (`WorkspaceDockPanel.svelte`). Re-audit the
+selector on every kit-ui SHA bump — `frontend/src/lib/components/terminal/
+WorkspaceDockPanel.browser.svelte.ts` pins the actual computed `display` in a
+real browser, so a SHA bump that renames or restructures the handle out from
+under the override fails that test instead of only a manual check.
 
 ### Styling shared components
 
@@ -340,6 +348,8 @@ Default color intent:
 ## Implementation guidance
 
 When editing Svelte components, use the Svelte skills `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`) alongside this document.
+
+A `$state` record written by full-object reassignment (`x = { ...x, k: v }`) that is also read inside the same reactive scope — an `$effect`, or a `{@attach ...}` callback, which Svelte runs as one — is a self-referential dependency: Svelte detects it as `effect_update_depth_exceeded` and the attachment tears itself down and reattaches forever. Mutate the specific key instead (`x[k] = v`) (`frontend/src/lib/stores/workspace-host.svelte.ts::registerSlotElement`).
 
 For TypeScript/Svelte state and routing contracts, avoid anonymous object type literals when the shape represents a domain concept that is reused or exposed across modules. Name shared item identity shapes, route payloads, embed callbacks, and API view models near the module that owns the concept, then import those types at call sites. PR/issue/file/focus route identity and URL construction belongs in the shared route item module at `packages/ui/src/routes.ts`; the frontend router remains the browser-location adapter over those builders. New routed item callers should use those named refs and builders instead of repeating `{ owner; name; number; platformHost }` shapes or hand-building `/pulls`, `/issues`, or `/focus` URLs.
 

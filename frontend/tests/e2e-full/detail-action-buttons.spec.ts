@@ -60,7 +60,7 @@ async function waitForWorkspaceReady(api: APIRequestContext, workspaceId: string
 test.describe("detail action buttons", () => {
   test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
 
-  test("issue detail creates a middleman workspace and opens its terminal", async ({ page }) => {
+  test("issue detail creates a middleman workspace in the inline dock", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -99,13 +99,136 @@ test.describe("detail action buttons", () => {
       expect(createdWorkspace.item_number).toBe(10);
       expect(createdWorkspace.git_head_ref).toBe("middleman/issue-10-widget-rendering-broken-on-safari");
 
-      await expect(page).toHaveURL(new RegExp(`/terminal/${createdWorkspace.id}$`));
+      // Creation stays on the issue: the workspace claims the inline dock
+      // instead of navigating away.
+      await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/10$/);
+      // The dock panel div renders before any claim; the slot (and the
+      // reparented workspace host inside it) exists only once the created
+      // workspace actually claims and hosts the inline dock.
+      await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
 
       const readyWorkspace = await waitForWorkspaceReady(apiContext, createdWorkspace.id);
       await access(readyWorkspace.worktree_path);
       expect(gitOutput(readyWorkspace.worktree_path, ["branch", "--show-current"])).toBe(
         "middleman/issue-10-widget-rendering-broken-on-safari",
       );
+
+      // The secondary action still navigates to the full Workspaces view.
+      await page.getByRole("button", { name: "Open in Workspaces" }).click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${createdWorkspace.id}$`));
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("PR detail creates a middleman workspace in the inline dock", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      const server = isolatedServer;
+      const apiContext = api;
+
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+
+      // PR creation uses its own endpoint (POST /workspaces with an
+      // mr_number body), separate from the issue path covered above.
+      const createResponsePromise = page.waitForResponse((response) => {
+        return response.request().method() === "POST" && response.url() === `${server.info.base_url}/api/v1/workspaces`;
+      });
+
+      // PullDetail renders the workspace action in both its wide and
+      // narrow action layouts; only one is visible at a time.
+      await page.locator(".btn--workspace").filter({ visible: true }).click();
+
+      const createResponse = await createResponsePromise;
+      expect(createResponse.status()).toBe(202);
+
+      const createdWorkspace = (await createResponse.json()) as WorkspaceStatusResponse;
+      expect(createdWorkspace.platform_host).toBe("github.com");
+      expect(createdWorkspace.item_type).toBe("pull_request");
+      expect(createdWorkspace.item_number).toBe(1);
+
+      // Creation stays on the pull request: the workspace claims the
+      // inline dock instead of navigating away. The dock panel div renders
+      // before any claim; the slot (and the reparented workspace host
+      // inside it) exists only once the created workspace actually claims
+      // and hosts the inline dock.
+      await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1$/);
+      await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
+
+      const readyWorkspace = await waitForWorkspaceReady(apiContext, createdWorkspace.id);
+      await access(readyWorkspace.worktree_path);
+      expect(readyWorkspace.git_head_ref).toBeTruthy();
+      expect(gitOutput(readyWorkspace.worktree_path, ["branch", "--show-current"])).toBe(readyWorkspace.git_head_ref);
+
+      // The secondary action still navigates to the full Workspaces view.
+      await page.getByRole("button", { name: "Open in Workspaces" }).click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${createdWorkspace.id}$`));
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("activity feed hosts a created workspace in its inline dock", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      const server = isolatedServer;
+      const apiContext = api;
+
+      // The Activity surface's claim path runs through the embedded list
+      // views inside the split shell: selection -> detail load -> claim ->
+      // outer dock -> hosted terminal. Component tests stub the claim-owning
+      // children, so this is the only place the real chain is exercised.
+      await page.goto(`${server.info.base_url}/activity`);
+      const prRow = page
+        .locator(".activity-row")
+        .filter({ has: page.locator(".badge", { hasText: "PR" }) })
+        .filter({ hasText: "Add widget caching layer" })
+        .first();
+      await prRow.click();
+      await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
+
+      const createResponsePromise = page.waitForResponse((response) => {
+        return response.request().method() === "POST" && response.url() === `${server.info.base_url}/api/v1/workspaces`;
+      });
+      await page.locator(".btn--workspace").filter({ visible: true }).click();
+      const createResponse = await createResponsePromise;
+      expect(createResponse.status()).toBe(202);
+      const createdWorkspace = (await createResponse.json()) as WorkspaceStatusResponse;
+      expect(createdWorkspace.item_type).toBe("pull_request");
+
+      // The workspace claims Activity's own outer dock: the host reparents
+      // into its slot and the terminal view stays live on the activity page
+      // (the selection URL, not /terminal).
+      await expect(page).toHaveURL(/\?selected=pr%3A1/);
+      await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
+      await expect(page.locator(".workspace-dock-slot .terminal-view")).toBeVisible();
+
+      await waitForWorkspaceReady(apiContext, createdWorkspace.id);
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
@@ -202,7 +325,12 @@ test.describe("detail action buttons", () => {
     const createResponse = await createResponsePromise;
     expect(createResponse.status()).toBe(202);
     expect(createCalls).toBe(1);
-    await expect(page).toHaveURL(/\/terminal\/ws-issue-10$/);
+    // The workspace lands in the inline dock; the issue stays selected.
+    await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/10$/);
+    // The dock panel div renders before any claim; the slot (and the
+    // reparented workspace host inside it) exists only once the created
+    // workspace actually claims and hosts the inline dock.
+    await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
   });
 
   test("issue workspace conflict dialog can reuse the existing branch", async ({ page }) => {
@@ -306,7 +434,12 @@ test.describe("detail action buttons", () => {
           reuse_existing_branch: true,
         },
       ]);
-    await expect(page).toHaveURL(/\/terminal\/ws-issue-10$/);
+    // The workspace lands in the inline dock; the issue stays selected.
+    await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/10$/);
+    // The dock panel div renders before any claim; the slot (and the
+    // reparented workspace host inside it) exists only once the created
+    // workspace actually claims and hosts the inline dock.
+    await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
   });
 
   test("issue workspace conflict dialog can create a new suggested branch", async ({ page }) => {
@@ -406,7 +539,12 @@ test.describe("detail action buttons", () => {
           git_head_ref: "middleman/issue-10-2",
         },
       ]);
-    await expect(page).toHaveURL(/\/terminal\/ws-issue-10$/);
+    // The workspace lands in the inline dock; the issue stays selected.
+    await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/10$/);
+    // The dock panel div renders before any claim; the slot (and the
+    // reparented workspace host inside it) exists only once the created
+    // workspace actually claims and hosts the inline dock.
+    await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
   });
 
   test("supported pull request actions use shared ActionButton component", async ({ page }) => {

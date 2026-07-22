@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import type { Issue } from "../api/types.js";
+import type { Issue, IssueDetail } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 import { createIssuesStore } from "./issues.svelte.js";
@@ -143,5 +143,56 @@ describe("issues store bot visibility", () => {
 
     expect(store.getHideBots()).toBe(false);
     expect(getFlash()).toMatchObject({ message: "network unavailable", tone: "danger" });
+  });
+});
+
+function issueDetail(): IssueDetail {
+  return {
+    issue: {
+      Number: 7,
+      State: "open",
+      Body: "- [ ] done",
+    },
+    repo: {
+      provider: "github",
+      platform_host: "github.com",
+      repo_path: "acme/widget",
+    },
+    events: [],
+    detail_loaded: true,
+    repo_owner: "acme",
+    repo_name: "widget",
+  } as unknown as IssueDetail;
+}
+
+function mockClient(overrides: Partial<MiddlemanClient> = {}): MiddlemanClient {
+  return {
+    GET: vi.fn(),
+    POST: vi.fn(),
+    PUT: vi.fn(),
+    PATCH: vi.fn(),
+    DELETE: vi.fn(),
+    OPTIONS: vi.fn(),
+    HEAD: vi.fn(),
+    TRACE: vi.fn(),
+    ...overrides,
+  } as unknown as MiddlemanClient;
+}
+
+describe("createIssuesStore", () => {
+  it("applies a local body edit addressed through a provider alias and omitted host", async () => {
+    const get = vi.fn().mockResolvedValueOnce({ data: issueDetail() });
+    const store = createIssuesStore({ client: mockClient({ GET: get }) });
+    await store.loadIssueDetail("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+
+    store.setLocalIssueBody("gh", undefined, "acme", "widget", 7, "- [x] done");
+
+    expect(store.getIssueDetail()?.issue.Body).toBe("- [x] done");
+    expect(store.hasUnsavedLocalBody()).toBe(true);
   });
 });

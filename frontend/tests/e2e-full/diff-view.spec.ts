@@ -2015,7 +2015,7 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    const mainArea = page.locator(".kit-sidebar-layout__main");
+    const mainArea = page.locator(".kit-sidebar-layout__main").filter({ visible: true });
     const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
     await expect.poll(() => mainArea.evaluate((el) => Math.round(el.scrollTop))).toBe(0);
 
@@ -2032,7 +2032,7 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    const mainArea = page.locator(".kit-sidebar-layout__main");
+    const mainArea = page.locator(".kit-sidebar-layout__main").filter({ visible: true });
     const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
     await page.evaluate(() => {
       document.documentElement.style.overflow = "hidden";

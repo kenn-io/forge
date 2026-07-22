@@ -803,6 +803,19 @@ type mockClient struct {
 	dismissReviewCalls              atomic.Int32
 }
 
+type issueTimelineMockClient struct {
+	mockClient
+	issueTimelineCalls atomic.Int32
+	issueTimelineErr   error
+}
+
+func (c *issueTimelineMockClient) ListIssueTimelineEvents(
+	context.Context, string, string, int,
+) ([]PullRequestTimelineEvent, error) {
+	c.issueTimelineCalls.Add(1)
+	return nil, c.issueTimelineErr
+}
+
 func (m *mockClient) bypassNotificationReadRateReserve() bool {
 	return m.bypassNotificationReadReserve
 }
@@ -11309,6 +11322,68 @@ func TestSyncIssuesFromListStopsAfterWrappedRawDisabledResponse(t *testing.T) {
 	err = syncer.syncIssuesFromList(ctx, client, repo, repoID, issues, false)
 	require.ErrorIs(err, platform.ErrRepositoryFeatureDisabled)
 	assert.Equal(int32(1), commentCalls.Load())
+}
+
+func TestSyncIssuesFromListStopsAfterWrappedRawDisabledTimelineResponse(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "owner", Name: "repo",
+	}
+	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	client := &issueTimelineMockClient{
+		mockClient: mockClient{comments: []*gh.IssueComment{}},
+		issueTimelineErr: fmt.Errorf("list issue timeline: %w", &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusGone},
+			Message:  "Issues are disabled for this repo",
+		}),
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+
+	err = syncer.syncIssuesFromList(
+		ctx, client, repo, repoID,
+		[]*gh.Issue{buildOpenIssue(1, now), buildOpenIssue(2, now)}, false,
+	)
+
+	require.ErrorIs(err, platform.ErrRepositoryFeatureDisabled)
+	assert.Equal(int32(1), client.issueTimelineCalls.Load())
+	assert.Equal(int32(1), client.listIssueCommentsCalled.Load())
+}
+
+func TestSyncIssuesFromListRetainsBestEffortTimelineErrors(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "owner", Name: "repo",
+	}
+	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	client := &issueTimelineMockClient{
+		mockClient:       mockClient{comments: []*gh.IssueComment{}},
+		issueTimelineErr: errors.New("timeline temporarily unavailable"),
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+
+	err = syncer.syncIssuesFromList(
+		ctx, client, repo, repoID, []*gh.Issue{buildOpenIssue(1, now)}, false,
+	)
+
+	require.NoError(err)
+	require.Equal(int32(1), client.issueTimelineCalls.Load())
 }
 
 // TestSyncerMRListFailureMarksRepoFailed verifies that when the

@@ -409,6 +409,40 @@ func TestGitHubCooldownCanonicalizesIndexAndWatchedRepositoryIdentity(t *testing
 	assert.Zero(int(client.getPRCalls.Load()))
 }
 
+func TestWrappedRawDisabledResponseRenewsWatchedMergeRequestCooldown(t *testing.T) {
+	assert := assert.New(t)
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	rawDisabledErr := fmt.Errorf("list pull request comments: %w", &gh.ErrorResponse{
+		Response: &http.Response{StatusCode: http.StatusGone},
+		Message:  "Pull Requests are disabled for this repo",
+	})
+	client := &detailTrackingClient{}
+	client.singlePR = buildOpenPR(7, now)
+	client.listIssueCommentsFn = func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+		return nil, rawDisabledErr
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	syncer.now = func() time.Time { return now }
+	syncer.SetWatchedMRs([]WatchedMR{{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", Number: 7,
+	}})
+
+	syncer.syncWatchedMRs(t.Context())
+	syncer.syncWatchedMRs(t.Context())
+
+	assert.Equal(int32(1), client.getPRCalls.Load())
+	assert.Equal(int32(1), client.listIssueCommentsCalled.Load())
+}
+
 func TestConcurrentDisabledRenewalAfterNotModifiedListSkipsPRCommentRefresh(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

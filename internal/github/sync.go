@@ -3358,8 +3358,11 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 		}
 		err := s.syncMRWithWatchedRef(ctx, mr)
 		if err != nil {
-			disabled := s.recordRepositoryFeatureDisabled(
+			disabledErr := repositoryFeatureDisabledError(
 				repo, platform.RepositoryFeatureMergeRequests, err,
+			)
+			disabled := disabledErr != nil && s.recordRepositoryFeatureDisabled(
+				repo, platform.RepositoryFeatureMergeRequests, disabledErr,
 			)
 			probe.release()
 			if disabled {
@@ -8062,6 +8065,11 @@ func (s *Syncer) refreshIssueTimeline(
 			ctx, repo.Owner, repo.Name, number,
 		)
 		if err != nil {
+			if disabledErr := repositoryFeatureDisabledError(
+				repo, platform.RepositoryFeatureIssues, err,
+			); disabledErr != nil {
+				return disabledErr
+			}
 			slog.Warn("issue timeline event fetch failed during timeline refresh",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,

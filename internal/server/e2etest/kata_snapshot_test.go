@@ -249,64 +249,261 @@ func TestKataTaskSnapshotReusesSelectedEnrichmentUntilMutationInvalidatesEpochE2
 	assert.Equal(int64(2), fixture.daemon.graphCalls.Load())
 }
 
-func TestKataTaskSnapshotOversizedProjectHistoryReloadsCompleteSelectedHistoryE2E(t *testing.T) {
+func TestKataTaskSnapshotConcurrentSelectedHistoriesShareProjectPaginationE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newKataSnapshotE2EFixture(t, "Ready task")
-	selectedIssueUID := "issue-member"
+	memberIssueUID := "issue-member"
 	otherIssueUID := "issue-other"
+	releaseEvents := make(chan struct{})
 	fixture.daemon.mu.Lock()
+	fixture.daemon.includeOtherIssue = true
+	fixture.daemon.blockFirstProjectEvents = releaseEvents
 	fixture.daemon.projectEvents = []katagenerated.EventEnvelope{
 		{
-			Actor: "acceptance", ContentHash: "selected-before-oversized", CreatedAt: kataSnapshotE2ETime.Add(time.Second),
-			EventID: 1, EventUID: "event-1", IssueUID: &selectedIssueUID, OriginInstanceUID: "kata-e2e",
+			Actor: "acceptance", ContentHash: "member-1", CreatedAt: kataSnapshotE2ETime.Add(time.Second),
+			EventID: 1, EventUID: "event-1", IssueUID: &memberIssueUID, OriginInstanceUID: "kata-e2e",
 			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
 		},
 		{
-			Actor: "acceptance", ContentHash: strings.Repeat("x", 16<<20), CreatedAt: kataSnapshotE2ETime.Add(2 * time.Second),
+			Actor: "acceptance", ContentHash: "other-2", CreatedAt: kataSnapshotE2ETime.Add(2 * time.Second),
 			EventID: 2, EventUID: "event-2", IssueUID: &otherIssueUID, OriginInstanceUID: "kata-e2e",
 			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
 		},
 		{
-			Actor: "acceptance", ContentHash: "selected-after-oversized", CreatedAt: kataSnapshotE2ETime.Add(3 * time.Second),
-			EventID: 3, EventUID: "event-3", IssueUID: &selectedIssueUID, OriginInstanceUID: "kata-e2e",
+			Actor: "acceptance", ContentHash: "member-3", CreatedAt: kataSnapshotE2ETime.Add(3 * time.Second),
+			EventID: 3, EventUID: "event-3", IssueUID: &memberIssueUID, OriginInstanceUID: "kata-e2e",
+			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+		},
+		{
+			Actor: "acceptance", ContentHash: "other-4", CreatedAt: kataSnapshotE2ETime.Add(4 * time.Second),
+			EventID: 4, EventUID: "event-4", IssueUID: &otherIssueUID, OriginInstanceUID: "kata-e2e",
 			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
 		},
 	}
 	fixture.daemon.projectEventPageSize = 1
 	fixture.daemon.mu.Unlock()
 
+	type result struct {
+		selectedUID string
+		response    *apigenerated.GetKataTaskSnapshotResponse
+		err         error
+	}
+	start := make(chan struct{})
+	started := make(chan struct{}, 2)
+	results := make(chan result, 2)
+	go func() {
+		started <- struct{}{}
+		<-start
+		scope := apigenerated.Project
+		authority := apigenerated.Ready
+		projectUID := "project-a"
+		response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+			Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+			SelectedIssueUid: &memberIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		})
+		results <- result{selectedUID: memberIssueUID, response: response, err: err}
+	}()
+	go func() {
+		started <- struct{}{}
+		<-start
+		scope := apigenerated.Project
+		authority := apigenerated.Ready
+		projectUID := "project-a"
+		response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+			Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+			SelectedIssueUid: &otherIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		})
+		results <- result{selectedUID: otherIssueUID, response: response, err: err}
+	}()
+	<-started
+	<-started
+	close(start)
+	select {
+	case <-fixture.daemon.firstProjectEvents:
+	case <-time.After(2 * time.Second):
+		require.FailNow("shared project history request did not start")
+	}
+	close(releaseEvents)
+
+	got := make(map[string]*apigenerated.KataTaskSnapshotResponse, 2)
+	for range 2 {
+		completed := <-results
+		require.NoError(completed.err)
+		require.NotNil(completed.response)
+		require.Equal(http.StatusOK, completed.response.StatusCode(), string(completed.response.Body))
+		require.NotNil(completed.response.JSON200)
+		got[completed.selectedUID] = completed.response.JSON200
+	}
+	member := got[memberIssueUID]
+	require.NotNil(member)
+	require.NotNil(member.Enrichment.SelectedIssueUid)
+	assert.Equal(memberIssueUID, *member.Enrichment.SelectedIssueUid)
+	require.NotNil(member.Enrichment.SelectedHistory)
+	require.Len(*member.Enrichment.SelectedHistory, 2)
+	assert.Equal([]string{"member-1", "member-3"}, []string{
+		(*member.Enrichment.SelectedHistory)[0].ContentHash,
+		(*member.Enrichment.SelectedHistory)[1].ContentHash,
+	})
+	assert.Nil(member.Enrichment.Errors)
+	other := got[otherIssueUID]
+	require.NotNil(other)
+	require.NotNil(other.Enrichment.SelectedIssueUid)
+	assert.Equal(otherIssueUID, *other.Enrichment.SelectedIssueUid)
+	require.NotNil(other.Enrichment.SelectedHistory)
+	require.Len(*other.Enrichment.SelectedHistory, 2)
+	assert.Equal([]string{"other-2", "other-4"}, []string{
+		(*other.Enrichment.SelectedHistory)[0].ContentHash,
+		(*other.Enrichment.SelectedHistory)[1].ContentHash,
+	})
+	assert.Nil(other.Enrichment.Errors)
+	assert.Equal(int64(5), fixture.daemon.projectEventCalls.Load(), "concurrent selections must share one complete project pagination sequence")
+	fixture.daemon.mu.RLock()
+	assert.Equal([]int64{0, 1, 2, 3, 4}, fixture.daemon.projectEventCursors)
+	fixture.daemon.mu.RUnlock()
+}
+
+func TestKataTaskSnapshotConcurrentOversizedHistoriesStaySelectedAndUncachedE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newKataSnapshotE2EFixture(t, "Ready task")
+	memberIssueUID := "issue-member"
+	otherIssueUID := "issue-other"
+	unrelatedIssueUID := "issue-unrelated"
+	releaseEvents := make(chan struct{})
+	fixture.daemon.mu.Lock()
+	fixture.daemon.includeOtherIssue = true
+	fixture.daemon.blockFirstProjectEvents = releaseEvents
+	fixture.daemon.projectEvents = []katagenerated.EventEnvelope{
+		{
+			Actor: "acceptance", ContentHash: "member-before-oversized", CreatedAt: kataSnapshotE2ETime.Add(time.Second),
+			EventID: 1, EventUID: "event-1", IssueUID: &memberIssueUID, OriginInstanceUID: "kata-e2e",
+			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+		},
+		{
+			Actor: "acceptance", ContentHash: "other-before-oversized", CreatedAt: kataSnapshotE2ETime.Add(2 * time.Second),
+			EventID: 2, EventUID: "event-2", IssueUID: &otherIssueUID, OriginInstanceUID: "kata-e2e",
+			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+		},
+		{
+			Actor: "acceptance", ContentHash: strings.Repeat("x", 16<<20), CreatedAt: kataSnapshotE2ETime.Add(3 * time.Second),
+			EventID: 3, EventUID: "event-3", IssueUID: &unrelatedIssueUID, OriginInstanceUID: "kata-e2e",
+			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+		},
+		{
+			Actor: "acceptance", ContentHash: "member-after-oversized", CreatedAt: kataSnapshotE2ETime.Add(4 * time.Second),
+			EventID: 4, EventUID: "event-4", IssueUID: &memberIssueUID, OriginInstanceUID: "kata-e2e",
+			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+		},
+		{
+			Actor: "acceptance", ContentHash: "other-after-oversized", CreatedAt: kataSnapshotE2ETime.Add(5 * time.Second),
+			EventID: 5, EventUID: "event-5", IssueUID: &otherIssueUID, OriginInstanceUID: "kata-e2e",
+			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+		},
+	}
+	fixture.daemon.projectEventPageSize = 1
+	fixture.daemon.mu.Unlock()
+
+	type result struct {
+		selectedUID string
+		response    *apigenerated.GetKataTaskSnapshotResponse
+		err         error
+	}
+	start := make(chan struct{})
+	started := make(chan struct{}, 2)
+	results := make(chan result, 2)
+	go func() {
+		started <- struct{}{}
+		<-start
+		scope := apigenerated.Project
+		authority := apigenerated.Ready
+		projectUID := "project-a"
+		response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+			Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+			SelectedIssueUid: &memberIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		})
+		results <- result{selectedUID: memberIssueUID, response: response, err: err}
+	}()
+	go func() {
+		started <- struct{}{}
+		<-start
+		scope := apigenerated.Project
+		authority := apigenerated.Ready
+		projectUID := "project-a"
+		response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+			Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+			SelectedIssueUid: &otherIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		})
+		results <- result{selectedUID: otherIssueUID, response: response, err: err}
+	}()
+	<-started
+	<-started
+	close(start)
+	select {
+	case <-fixture.daemon.firstProjectEvents:
+	case <-time.After(2 * time.Second):
+		require.FailNow("oversized shared project history request did not start")
+	}
+	close(releaseEvents)
+
+	got := make(map[string]*apigenerated.KataTaskSnapshotResponse, 2)
+	for range 2 {
+		completed := <-results
+		require.NoError(completed.err)
+		require.NotNil(completed.response)
+		require.Equal(http.StatusOK, completed.response.StatusCode(), string(completed.response.Body))
+		require.NotNil(completed.response.JSON200)
+		got[completed.selectedUID] = completed.response.JSON200
+	}
+	member := got[memberIssueUID]
+	require.NotNil(member)
+	require.NotNil(member.Enrichment.SelectedIssueUid)
+	assert.Equal(memberIssueUID, *member.Enrichment.SelectedIssueUid)
+	require.NotNil(member.Enrichment.SelectedHistory)
+	require.Len(*member.Enrichment.SelectedHistory, 2)
+	assert.Equal([]string{"member-before-oversized", "member-after-oversized"}, []string{
+		(*member.Enrichment.SelectedHistory)[0].ContentHash,
+		(*member.Enrichment.SelectedHistory)[1].ContentHash,
+	})
+	assert.Nil(member.Enrichment.Errors)
+	other := got[otherIssueUID]
+	require.NotNil(other)
+	require.NotNil(other.Enrichment.SelectedIssueUid)
+	assert.Equal(otherIssueUID, *other.Enrichment.SelectedIssueUid)
+	require.NotNil(other.Enrichment.SelectedHistory)
+	require.Len(*other.Enrichment.SelectedHistory, 2)
+	assert.Equal([]string{"other-before-oversized", "other-after-oversized"}, []string{
+		(*other.Enrichment.SelectedHistory)[0].ContentHash,
+		(*other.Enrichment.SelectedHistory)[1].ContentHash,
+	})
+	assert.Nil(other.Enrichment.Errors)
+	assert.Equal(int64(12), fixture.daemon.projectEventCalls.Load(), "the second selection must retry after the oversized shared flight")
+	fixture.daemon.mu.RLock()
+	assert.Equal([]int64{0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5}, fixture.daemon.projectEventCursors)
+	fixture.daemon.mu.RUnlock()
+
 	scope := apigenerated.Project
 	authority := apigenerated.Ready
 	projectUID := "project-a"
-	firstResponse, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+	reloaded, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
-		SelectedIssueUid: &selectedIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		SelectedIssueUid: &memberIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
 	})
 	require.NoError(err)
-	require.Equal(http.StatusOK, firstResponse.StatusCode(), string(firstResponse.Body))
-	require.NotNil(firstResponse.JSON200)
-	require.NotNil(firstResponse.JSON200.Enrichment.SelectedHistory)
-	require.Len(*firstResponse.JSON200.Enrichment.SelectedHistory, 2)
-	assert.Equal([]string{"selected-before-oversized", "selected-after-oversized"}, []string{
-		(*firstResponse.JSON200.Enrichment.SelectedHistory)[0].ContentHash,
-		(*firstResponse.JSON200.Enrichment.SelectedHistory)[1].ContentHash,
-	})
-	assert.Nil(firstResponse.JSON200.Enrichment.Errors)
-	assert.Equal(int64(4), fixture.daemon.projectEventCalls.Load())
-
-	secondResponse, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
-		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
-		SelectedIssueUid: &selectedIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
-	})
-	require.NoError(err)
-	require.Equal(http.StatusOK, secondResponse.StatusCode(), string(secondResponse.Body))
-	require.NotNil(secondResponse.JSON200)
-	require.NotNil(secondResponse.JSON200.Enrichment.SelectedHistory)
-	require.Len(*secondResponse.JSON200.Enrichment.SelectedHistory, 2)
-	assert.Equal(firstResponse.JSON200.Enrichment.SelectedHistory, secondResponse.JSON200.Enrichment.SelectedHistory)
-	assert.Nil(secondResponse.JSON200.Enrichment.Errors)
-	assert.Equal(int64(8), fixture.daemon.projectEventCalls.Load(), "oversized project history must not be retained")
+	require.Equal(http.StatusOK, reloaded.StatusCode(), string(reloaded.Body))
+	require.NotNil(reloaded.JSON200)
+	require.NotNil(reloaded.JSON200.Enrichment.SelectedHistory)
+	require.Len(*reloaded.JSON200.Enrichment.SelectedHistory, 2)
+	assert.Equal(member.Enrichment.SelectedHistory, reloaded.JSON200.Enrichment.SelectedHistory)
+	assert.Nil(reloaded.JSON200.Enrichment.Errors)
+	assert.Equal(int64(18), fixture.daemon.projectEventCalls.Load(), "oversized project history must not be retained")
+	fixture.daemon.mu.RLock()
+	assert.Equal([]int64{
+		0, 1, 2, 3, 4, 5,
+		0, 1, 2, 3, 4, 5,
+		0, 1, 2, 3, 4, 5,
+	}, fixture.daemon.projectEventCursors)
+	fixture.daemon.mu.RUnlock()
 }
 
 func TestKataTaskSnapshotDiscardsPreResetHistoryAtRetainedBaselineE2E(t *testing.T) {
@@ -739,30 +936,34 @@ func writeKataSnapshotE2ECatalog(t *testing.T, home, daemonURL string) {
 }
 
 type kataSnapshotDaemonStub struct {
-	t                    *testing.T
-	server               *httptest.Server
-	mu                   sync.RWMutex
-	title                string
-	streamEvents         chan int64
-	streamStarted        chan struct{}
-	streamStartedOnce    sync.Once
-	firstProjects        chan struct{}
-	firstProjectsOnce    sync.Once
-	blockFirstProjects   <-chan struct{}
-	firstDetail          chan struct{}
-	firstDetailOnce      sync.Once
-	blockFirstDetail     <-chan struct{}
-	projectCalls         atomic.Int64
-	readyCalls           atomic.Int64
-	issueListCalls       atomic.Int64
-	detailCalls          atomic.Int64
-	graphCalls           atomic.Int64
-	projectEventCalls    atomic.Int64
-	graphFails           bool
-	projectEvents        []katagenerated.EventEnvelope
-	projectEventPages    []katagenerated.PollEventsBody
-	projectEventPageSize int
-	projectEventCursors  []int64
+	t                       *testing.T
+	server                  *httptest.Server
+	mu                      sync.RWMutex
+	title                   string
+	streamEvents            chan int64
+	streamStarted           chan struct{}
+	streamStartedOnce       sync.Once
+	firstProjects           chan struct{}
+	firstProjectsOnce       sync.Once
+	blockFirstProjects      <-chan struct{}
+	firstDetail             chan struct{}
+	firstDetailOnce         sync.Once
+	blockFirstDetail        <-chan struct{}
+	firstProjectEvents      chan struct{}
+	firstProjectEventsOnce  sync.Once
+	blockFirstProjectEvents <-chan struct{}
+	projectCalls            atomic.Int64
+	readyCalls              atomic.Int64
+	issueListCalls          atomic.Int64
+	detailCalls             atomic.Int64
+	graphCalls              atomic.Int64
+	projectEventCalls       atomic.Int64
+	graphFails              bool
+	includeOtherIssue       bool
+	projectEvents           []katagenerated.EventEnvelope
+	projectEventPages       []katagenerated.PollEventsBody
+	projectEventPageSize    int
+	projectEventCursors     []int64
 }
 
 func newKataSnapshotDaemonStub(t *testing.T, title string) *kataSnapshotDaemonStub {
@@ -770,6 +971,7 @@ func newKataSnapshotDaemonStub(t *testing.T, title string) *kataSnapshotDaemonSt
 	stub := &kataSnapshotDaemonStub{
 		t: t, title: title, graphFails: true, streamEvents: make(chan int64, 1),
 		streamStarted: make(chan struct{}), firstProjects: make(chan struct{}), firstDetail: make(chan struct{}),
+		firstProjectEvents: make(chan struct{}),
 	}
 	stub.server = httptest.NewServer(http.HandlerFunc(stub.serveHTTP))
 	t.Cleanup(stub.server.Close)
@@ -793,8 +995,16 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 		s.writeJSON(w, katagenerated.ListProjectsResponseBody{Projects: []katagenerated.ProjectOut{s.project()}})
 	case "/api/v1/projects/7/ready":
 		s.readyCalls.Add(1)
-		s.writeJSON(w, katagenerated.ReadyResponseBody{Issues: []katagenerated.IssueOut{s.issueOut()}})
-	case "/api/v1/issues/issue-member":
+		issues := []katagenerated.IssueOut{s.issueOut("issue-member")}
+		s.mu.RLock()
+		includeOtherIssue := s.includeOtherIssue
+		s.mu.RUnlock()
+		if includeOtherIssue {
+			issues = append(issues, s.issueOut("issue-other"))
+		}
+		s.writeJSON(w, katagenerated.ReadyResponseBody{Issues: issues})
+	case "/api/v1/issues/issue-member", "/api/v1/issues/issue-other":
+		issueUID := strings.TrimPrefix(r.URL.Path, "/api/v1/issues/")
 		if r.Method == http.MethodPost {
 			var input struct {
 				Title string `json:"title"`
@@ -833,7 +1043,7 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 			}
 		}
 		w.Header().Set("ETag", `"issue-revision"`)
-		s.writeJSON(w, katagenerated.ShowIssueResponseBody{Issue: s.issue()})
+		s.writeJSON(w, katagenerated.ShowIssueResponseBody{Issue: s.issue(issueUID)})
 	case "/api/v1/projects/7/issues/issue-member/graph":
 		s.graphCalls.Add(1)
 		s.mu.RLock()
@@ -867,12 +1077,32 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 		})
 	case "/api/v1/issues":
 		s.issueListCalls.Add(1)
-		s.writeJSON(w, katagenerated.ListIssuesResponseBody{Issues: []katagenerated.IssueOut{s.issueOut()}})
+		issues := []katagenerated.IssueOut{s.issueOut("issue-member")}
+		s.mu.RLock()
+		includeOtherIssue := s.includeOtherIssue
+		s.mu.RUnlock()
+		if includeOtherIssue {
+			issues = append(issues, s.issueOut("issue-other"))
+		}
+		s.writeJSON(w, katagenerated.ListIssuesResponseBody{Issues: issues})
 	case "/api/v1/events":
 		afterID, _ := strconv.ParseInt(r.URL.Query().Get("after_id"), 10, 64)
 		s.writeJSON(w, katagenerated.PollEventsBody{Events: []katagenerated.EventEnvelope{}, NextAfterID: afterID})
 	case "/api/v1/projects/7/events":
-		s.projectEventCalls.Add(1)
+		call := s.projectEventCalls.Add(1)
+		if call == 1 {
+			s.firstProjectEventsOnce.Do(func() { close(s.firstProjectEvents) })
+			s.mu.RLock()
+			blockFirstProjectEvents := s.blockFirstProjectEvents
+			s.mu.RUnlock()
+			if blockFirstProjectEvents != nil {
+				select {
+				case <-blockFirstProjectEvents:
+				case <-r.Context().Done():
+					return
+				}
+			}
+		}
 		afterID, _ := strconv.ParseInt(r.URL.Query().Get("after_id"), 10, 64)
 		requestedLimit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 		s.mu.Lock()
@@ -940,22 +1170,31 @@ func (s *kataSnapshotDaemonStub) project() katagenerated.ProjectOut {
 	}
 }
 
-func (s *kataSnapshotDaemonStub) issueOut() katagenerated.IssueOut {
+func (s *kataSnapshotDaemonStub) issueOut(uid string) katagenerated.IssueOut {
 	s.mu.RLock()
 	title := s.title
 	s.mu.RUnlock()
+	id := int64(11)
+	shortID := "task-1"
+	qualifiedID := "Project A#task-1"
+	if uid == "issue-other" {
+		id = 12
+		shortID = "task-2"
+		qualifiedID = "Project A#task-2"
+		title = "Other ready task"
+	}
 	projectUID := "project-a"
 	return katagenerated.IssueOut{
-		ID: 11, UID: "issue-member", ProjectID: 7, ProjectUID: &projectUID,
-		ShortID: "task-1", QualifiedID: "Project A#task-1", Title: title,
+		ID: id, UID: uid, ProjectID: 7, ProjectUID: &projectUID,
+		ShortID: shortID, QualifiedID: qualifiedID, Title: title,
 		Body: "Acceptance body", Status: "open", Metadata: map[string]any{"source": "e2e"},
 		Revision: 1, Author: "acceptance", CreatedAt: kataSnapshotE2ETime, UpdatedAt: kataSnapshotE2ETime,
 		Labels: []string{}, Blocks: []katagenerated.LinkPeer{}, BlockedBy: []katagenerated.LinkPeer{}, Related: []katagenerated.LinkPeer{},
 	}
 }
 
-func (s *kataSnapshotDaemonStub) issue() katagenerated.Issue {
-	issue := s.issueOut()
+func (s *kataSnapshotDaemonStub) issue(uid string) katagenerated.Issue {
+	issue := s.issueOut(uid)
 	return katagenerated.Issue{
 		ID: issue.ID, UID: issue.UID, ProjectID: issue.ProjectID, ProjectUID: issue.ProjectUID,
 		ShortID: issue.ShortID, Title: issue.Title, Body: issue.Body, Status: issue.Status,

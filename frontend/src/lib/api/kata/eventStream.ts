@@ -1,4 +1,5 @@
 import { KATA_DAEMON_HEADER } from "./daemons.js";
+import { createRuntimeClient } from "../runtime.js";
 
 interface FrameState {
   id?: number;
@@ -158,6 +159,7 @@ export class KataEventStreamParser {
 
 export async function readKataEventStream(options: ReadKataEventStreamOptions): Promise<void> {
   const fetchImpl = options.fetchImpl ?? fetch;
+  const client = createRuntimeClient(fetchImpl);
 
   const headers = new Headers({ Accept: "text/event-stream" });
   if (options.daemonId) {
@@ -168,12 +170,16 @@ export async function readKataEventStream(options: ReadKataEventStreamOptions): 
   }
 
   let response: Response;
+  let body: ReadableStream<Uint8Array> | null | undefined;
   try {
-    const init: RequestInit = { headers };
-    if (options.signal) {
-      init.signal = options.signal;
-    }
-    response = await fetchImpl("/api/v1/kata/tasks/events", init);
+    const init = {
+      headers,
+      parseAs: "stream" as const,
+      ...(options.signal ? { signal: options.signal } : {}),
+    };
+    const result = await client.GET("/kata/tasks/events", init);
+    response = result.response;
+    body = result.data;
   } catch (error) {
     if (options.signal?.aborted) return;
     throw error;
@@ -184,12 +190,17 @@ export async function readKataEventStream(options: ReadKataEventStreamOptions): 
       retryable: isRetryableStreamSetupStatus(response.status),
     });
   }
-  if (!response.body) {
+  if (!body) {
     throw new KataEventStreamError("Kata event stream response has no body", { retryable: false });
   }
   options.onOpen?.();
 
-  const reader = response.body.getReader();
+  const reader = body.getReader();
+  if (options.signal?.aborted) {
+    await reader.cancel();
+    reader.releaseLock();
+    return;
+  }
   const decoder = new TextDecoder();
   const parser = new KataEventStreamParser();
   const abortReader = () => {

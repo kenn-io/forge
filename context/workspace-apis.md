@@ -43,6 +43,9 @@ state.
 - `GET /kata/tasks/events`: compact reset/invalidation transport only. Replay
   starts at the accepted snapshot cursor; raw daemon events never enter browser
   authority (`frontend/src/lib/features/kata/kataWorkspaceAuthorityController.svelte.ts::KataWorkspaceAuthorityController`).
+- Frontend Kata event streaming must use the generated runtime client with stream
+  parsing; raw fetch paths bypass base-path and tracing policy
+  (`frontend/src/lib/api/kata/eventStream.ts::readKataEventStream`).
 - Auxiliary selected-detail reads must remain independent from shared global/all
   authority refresh; catalog-visible mutations refresh shared authority separately,
   without reclassifying an acknowledged write as failed

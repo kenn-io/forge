@@ -125,14 +125,39 @@ describe("KataEventStreamParser", () => {
 });
 
 describe("readKataEventStream", () => {
+  test("opens the generated stream endpoint under the configured app base path", async () => {
+    const previousBasePath = window.__BASE_PATH__;
+    window.__BASE_PATH__ = "/middleman/";
+    vi.resetModules();
+    try {
+      const { readKataEventStream: readConfiguredStream } = await import("./eventStream.js");
+      let requestURL = "";
+      const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+        requestURL = input instanceof Request ? input.url : String(input);
+        return new Response(streamFromText(": connected\n\n"), { status: 200 });
+      });
+
+      await expect(readConfiguredStream({ fetchImpl, onMessage: vi.fn() })).rejects.toThrow(
+        "Live updates disconnected",
+      );
+
+      expect(new URL(requestURL, window.location.origin).pathname).toBe("/middleman/api/v1/kata/tasks/events");
+    } finally {
+      if (previousBasePath === undefined) delete window.__BASE_PATH__;
+      else window.__BASE_PATH__ = previousBasePath;
+      vi.resetModules();
+    }
+  });
+
   test("opens the Middleman stream with daemon selection and snapshot cursor replay", async () => {
     let requestURL = "";
     let requestHeaders = new Headers();
     const onOpen = vi.fn();
     const onMessage = vi.fn();
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      requestURL = String(input);
-      requestHeaders = new Headers(init?.headers);
+      const request = input instanceof Request ? input : new Request(input, init);
+      requestURL = request.url;
+      requestHeaders = request.headers;
       return new Response(streamFromText(compactFrame(52, "kata.tasks.invalidated")), {
         status: 200,
         headers: { "Content-Type": "text/event-stream" },
@@ -153,7 +178,7 @@ describe("readKataEventStream", () => {
       retryable: true,
     } satisfies Partial<KataEventStreamError>);
 
-    expect(requestURL).toBe("/api/v1/kata/tasks/events");
+    expect(new URL(requestURL, window.location.origin).pathname).toBe("/api/v1/kata/tasks/events");
     expect(requestHeaders.get("Accept")).toBe("text/event-stream");
     expect(requestHeaders.get(KATA_DAEMON_HEADER)).toBe("work");
     expect(requestHeaders.get("Last-Event-ID")).toBe("51");

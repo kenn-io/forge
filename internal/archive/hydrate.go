@@ -20,17 +20,24 @@ func (s *Service) hydrateItem(
 	if s.items == nil {
 		return errors.New("archive item syncer is required")
 	}
-	requestCtx, release, err := s.admit(
-		ctx, repo, s.items.ArchiveItemSyncCost(repo.Ref.Platform, work.ItemType),
+	requestCtx, complete, err := s.admit(
+		ctx, repo, work.ItemType,
+		s.items.ArchiveItemSyncCost(repo.Ref.Platform, work.ItemType),
 	)
 	if err != nil {
+		if deferred, ok := featureDeferralFromError(err); ok {
+			return s.deferHydration(ctx, work, deferred.FeatureDeferral)
+		}
 		return err
 	}
 	syncErr := s.items.SyncArchiveItem(requestCtx, repo.Ref, work.ItemType, work.ItemNumber)
 	preempted := archivePreempted(ctx, requestCtx)
-	release()
+	deferred := complete(syncErr)
 	if preempted {
 		return errAdmissionDeferred
+	}
+	if deferred != nil {
+		return s.deferHydration(ctx, work, *deferred)
 	}
 	commit := db.ArchiveItemSyncCommit{
 		RepoID: work.RepoID, ItemType: work.ItemType, ItemNumber: work.ItemNumber,
@@ -53,6 +60,20 @@ func (s *Service) hydrateItem(
 		return s.db.CommitArchiveItemSync(ctx, commit)
 	}
 	return s.recordItemSyncFailure(ctx, commit, syncErr)
+}
+
+func (s *Service) deferHydration(
+	ctx context.Context,
+	work db.ArchiveItemWork,
+	deferred FeatureDeferral,
+) error {
+	if err := s.db.DeferArchiveItemSync(ctx, db.ArchiveItemSyncCommit{
+		RepoID: work.RepoID, ItemType: work.ItemType, ItemNumber: work.ItemNumber,
+		ScanGeneration: work.ScanGeneration, Now: s.now(),
+	}, deferred.RetryAt); err != nil {
+		return err
+	}
+	return errAdmissionDeferred
 }
 
 func archiveTerminalSyncOutcome(

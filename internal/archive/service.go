@@ -25,15 +25,21 @@ type ItemSyncer interface {
 }
 
 type AdmissionResult struct {
-	Allowed bool
-	RetryAt *time.Time
-	Context context.Context
-	Release func()
+	Allowed         bool
+	RetryAt         *time.Time
+	Context         context.Context
+	FeatureDeferred *FeatureDeferral
+	Complete        func(error) *FeatureDeferral
+	Detail          string
+}
+
+type FeatureDeferral struct {
+	RetryAt time.Time
 	Detail  string
 }
 
 type Admission interface {
-	Admit(context.Context, platform.RepoRef, int) (AdmissionResult, error)
+	Admit(context.Context, platform.RepoRef, db.ArchiveItemType, int) (AdmissionResult, error)
 }
 
 type RetryDecision struct {

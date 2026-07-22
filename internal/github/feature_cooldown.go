@@ -78,13 +78,13 @@ func repositoryFeatureKey(repo RepoRef, feature string) repositoryFeatureCooldow
 	}
 }
 
-func (c *repositoryFeatureCooldowns) beginProbe(
+func (c *repositoryFeatureCooldowns) beginProbeWithRetry(
 	repo RepoRef,
 	feature string,
 	now time.Time,
 	bypass repositoryFeatureCooldownBypass,
 	bypassEnabled bool,
-) (repositoryFeatureProbe, bool) {
+) (repositoryFeatureProbe, bool, time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	key := repositoryFeatureKey(repo, feature)
@@ -95,13 +95,16 @@ func (c *repositoryFeatureCooldowns) beginProbe(
 			key:        key,
 			generation: state.generation,
 			bypass:     true,
-		}, true
+		}, true, time.Time{}
 	}
 	if !ok {
-		return repositoryFeatureProbe{cooldowns: c, key: key}, true
+		return repositoryFeatureProbe{cooldowns: c, key: key}, true, time.Time{}
 	}
-	if state.reservation != 0 || state.nextProbe.After(now) {
-		return repositoryFeatureProbe{}, false
+	if state.reservation != 0 {
+		return repositoryFeatureProbe{}, false, now.Add(time.Second)
+	}
+	if state.nextProbe.After(now) {
+		return repositoryFeatureProbe{}, false, state.nextProbe
 	}
 	c.nextReservation++
 	state.reservation = c.nextReservation
@@ -111,7 +114,18 @@ func (c *repositoryFeatureCooldowns) beginProbe(
 		key:         key,
 		generation:  state.generation,
 		reservation: state.reservation,
-	}, true
+	}, true, time.Time{}
+}
+
+func (c *repositoryFeatureCooldowns) beginProbe(
+	repo RepoRef,
+	feature string,
+	now time.Time,
+	bypass repositoryFeatureCooldownBypass,
+	bypassEnabled bool,
+) (repositoryFeatureProbe, bool) {
+	probe, due, _ := c.beginProbeWithRetry(repo, feature, now, bypass, bypassEnabled)
+	return probe, due
 }
 
 func (c *repositoryFeatureCooldowns) currentGeneration() uint64 {
@@ -172,12 +186,32 @@ func (s *Syncer) beginRepositoryFeatureProbe(
 	)
 }
 
+func (s *Syncer) beginRepositoryFeatureProbeWithRetry(
+	ctx context.Context,
+	repo RepoRef,
+	feature string,
+) (repositoryFeatureProbe, bool, time.Time) {
+	bypass, bypassEnabled := repositoryFeatureCooldownBypassFromContext(ctx)
+	return s.featureCooldowns.beginProbeWithRetry(
+		repo, feature, s.now().UTC(), bypass, bypassEnabled,
+	)
+}
+
 func (s *Syncer) recordRepositoryFeatureDisabled(repo RepoRef, feature string, err error) bool {
+	_, recorded := s.recordRepositoryFeatureDisabledUntil(repo, feature, err)
+	return recorded
+}
+
+func (s *Syncer) recordRepositoryFeatureDisabledUntil(
+	repo RepoRef,
+	feature string,
+	err error,
+) (time.Time, bool) {
 	var platformErr *platform.Error
 	if !errors.As(err, &platformErr) ||
 		platformErr.Code != platform.ErrCodeRepositoryFeatureDisabled ||
 		platformErr.Capability != feature {
-		return false
+		return time.Time{}, false
 	}
 	nextProbe := s.now().UTC().Add(repositoryFeatureProbeInterval)
 	s.featureCooldowns.deferUntil(repo, feature, nextProbe)
@@ -188,7 +222,7 @@ func (s *Syncer) recordRepositoryFeatureDisabled(repo RepoRef, feature string, e
 		"feature", feature,
 		"next_probe_at", nextProbe,
 	)
-	return true
+	return nextProbe, true
 }
 
 func (s *Syncer) recordGitHubRepositoryFeatureDisabled(

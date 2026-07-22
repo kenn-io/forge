@@ -679,7 +679,12 @@ func (archiveTestRetryClassifier) Classify(error, int, time.Time) RetryDecision 
 	return RetryDecision{Code: db.ArchiveErrorCodeTransient}
 }
 
-func (a *archiveTestAdmission) Admit(ctx context.Context, _ platform.RepoRef, cost int) (AdmissionResult, error) {
+func (a *archiveTestAdmission) Admit(
+	ctx context.Context,
+	_ platform.RepoRef,
+	_ db.ArchiveItemType,
+	cost int,
+) (AdmissionResult, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.calls++
@@ -687,7 +692,13 @@ func (a *archiveTestAdmission) Admit(ctx context.Context, _ platform.RepoRef, co
 	if a.deny || a.denyAfter > 0 && a.calls > a.denyAfter {
 		return AdmissionResult{RetryAt: &a.retryAt, Detail: "test budget exhausted"}, nil
 	}
-	return AdmissionResult{Allowed: true, Context: ctx}, nil
+	return AdmissionResult{
+		Allowed: true,
+		Context: ctx,
+		Complete: func(error) *FeatureDeferral {
+			return nil
+		},
+	}, nil
 }
 
 type archiveServiceProvider struct {

@@ -790,6 +790,20 @@ func (p *gitHubClientProvider) archiveTransportError(capability platform.Archive
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
+	switch capability {
+	case platform.ArchiveCapabilityHistoricalIssues:
+		if disabled := githubRepositoryFeatureDisabled(
+			p.host, platform.RepositoryFeatureIssues, err,
+		); disabled != nil {
+			return disabled
+		}
+	case platform.ArchiveCapabilityHistoricalMergeRequests:
+		if disabled := githubRepositoryFeatureDisabled(
+			p.host, platform.RepositoryFeatureMergeRequests, err,
+		); disabled != nil {
+			return disabled
+		}
+	}
 	var existing *platform.Error
 	if errors.As(err, &existing) {
 		mapped := *existing

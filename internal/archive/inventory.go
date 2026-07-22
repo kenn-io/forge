@@ -28,7 +28,7 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 	if !archiveInventorySupported(repo, itemType) {
 		commit.Exhausted = true
 	} else {
-		requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(1))
+		requestCtx, complete, err := s.admit(ctx, repo, itemType, archiveAttemptCost(1))
 		if err != nil {
 			if errors.Is(err, errAdmissionDeferred) {
 				return err
@@ -43,7 +43,10 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 		case db.ArchiveItemTypeIssue:
 			page, err := repo.Issues.ListIssuesPage(requestCtx, repo.Ref, query)
 			preempted := archivePreempted(ctx, requestCtx)
-			release()
+			deferred := complete(err)
+			if deferred != nil {
+				return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
+			}
 			if err != nil {
 				if preempted {
 					return errAdmissionDeferred
@@ -60,7 +63,10 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 		case db.ArchiveItemTypeMergeRequest:
 			page, err := repo.MergeRequests.ListMergeRequestsPage(requestCtx, repo.Ref, query)
 			preempted := archivePreempted(ctx, requestCtx)
-			release()
+			deferred := complete(err)
+			if deferred != nil {
+				return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
+			}
 			if err != nil {
 				if preempted {
 					return errAdmissionDeferred
@@ -75,8 +81,9 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 				commit.Items = append(commit.Items, archiveInventoryMergeRequest(item))
 			}
 		default:
-			release()
-			return fmt.Errorf("archive inventory: invalid item type %q", itemType)
+			invalidErr := fmt.Errorf("archive inventory: invalid item type %q", itemType)
+			complete(invalidErr)
+			return invalidErr
 		}
 	}
 	_, err := s.commitInventoryPage(ctx, commit)

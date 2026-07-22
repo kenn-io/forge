@@ -52,6 +52,25 @@ func (s *Scheduler) Run(ctx context.Context, groups map[string][]resolvedReposit
 
 var errAdmissionDeferred = errors.New("archive request deferred by admission")
 
+type featureDeferredError struct {
+	FeatureDeferral
+	providerAttempted bool
+}
+
+func (e *featureDeferredError) Error() string { return e.Detail }
+func (e *featureDeferredError) Unwrap() error { return errAdmissionDeferred }
+
+func featureDeferralFromError(err error) (*featureDeferredError, bool) {
+	var deferred *featureDeferredError
+	ok := errors.As(err, &deferred)
+	return deferred, ok
+}
+
+func featureDeferredBeforeProvider(err error) bool {
+	deferred, ok := featureDeferralFromError(err)
+	return ok && !deferred.providerAttempted
+}
+
 func (s *Service) RunEligible(ctx context.Context) error {
 	if s.configured == nil {
 		return errors.New("run eligible archives: configured repository source is required")
@@ -93,7 +112,10 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 			continue
 		}
 		if archiveScanNotStarted(state.IssueInventory) {
-			return s.swallowAdmissionDeferred(s.inventoryPage(ctx, repo, state, db.ArchiveItemTypeIssue))
+			err := s.inventoryPage(ctx, repo, state, db.ArchiveItemTypeIssue)
+			if !featureDeferredBeforeProvider(err) {
+				return s.swallowAdmissionDeferred(err)
+			}
 		}
 		if archiveScanNotStarted(state.MergeRequestInventory) {
 			return s.swallowAdmissionDeferred(s.inventoryPage(ctx, repo, state, db.ArchiveItemTypeMergeRequest))
@@ -135,8 +157,10 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 		return s.swallowAdmissionDeferred(s.hydrateItem(ctx, repo, *item))
 	}
 
-	if repo, state, itemType, ok := nextInventoryWork(repos, stateByID, db.ArchiveCollectionModeFull, s.now()); ok {
-		return s.swallowAdmissionDeferred(s.inventoryPage(ctx, repo, state, itemType))
+	if handled, err := s.runNextInventoryWork(
+		ctx, repos, stateByID, db.ArchiveCollectionModeFull,
+	); handled || err != nil {
+		return err
 	}
 	for _, repo := range repos {
 		state := stateByID[repo.ID]
@@ -148,10 +172,40 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 			return s.swallowAdmissionDeferred(s.promptMaintenance(ctx, repo, state))
 		}
 	}
-	if repo, state, itemType, ok := nextInventoryWork(repos, stateByID, db.ArchiveCollectionModeDiscovery, s.now()); ok {
-		return s.swallowAdmissionDeferred(s.inventoryPage(ctx, repo, state, itemType))
+	if handled, err := s.runNextInventoryWork(
+		ctx, repos, stateByID, db.ArchiveCollectionModeDiscovery,
+	); handled || err != nil {
+		return err
 	}
 	return nil
+}
+
+type archiveInventoryScope struct {
+	repoID   int64
+	itemType db.ArchiveItemType
+}
+
+func (s *Service) runNextInventoryWork(
+	ctx context.Context,
+	repos []resolvedRepository,
+	states map[int64]db.ArchiveRepoState,
+	mode db.ArchiveCollectionMode,
+) (bool, error) {
+	skipped := make(map[archiveInventoryScope]struct{})
+	for {
+		repo, state, itemType, ok := nextInventoryWork(
+			repos, states, mode, s.now(), skipped,
+		)
+		if !ok {
+			return false, nil
+		}
+		err := s.inventoryPage(ctx, repo, state, itemType)
+		if featureDeferredBeforeProvider(err) {
+			skipped[archiveInventoryScope{repoID: repo.ID, itemType: itemType}] = struct{}{}
+			continue
+		}
+		return true, s.swallowAdmissionDeferred(err)
+	}
 }
 
 func (s *Service) swallowAdmissionDeferred(err error) error {
@@ -190,16 +244,22 @@ func maintenanceBoundaryActionable(state db.ArchiveRepoState) bool {
 	return state.MaintenanceIssues.Complete() && state.MaintenanceMergeRequests.Complete()
 }
 
-func nextInventoryWork(repos []resolvedRepository, states map[int64]db.ArchiveRepoState, mode db.ArchiveCollectionMode, now time.Time) (resolvedRepository, db.ArchiveRepoState, db.ArchiveItemType, bool) {
+func nextInventoryWork(
+	repos []resolvedRepository,
+	states map[int64]db.ArchiveRepoState,
+	mode db.ArchiveCollectionMode,
+	now time.Time,
+	skipped map[archiveInventoryScope]struct{},
+) (resolvedRepository, db.ArchiveRepoState, db.ArchiveItemType, bool) {
 	for _, repo := range repos {
 		state := states[repo.ID]
 		if state.CollectionMode != mode || state.OperatorState != db.ArchiveOperatorStateActive || archiveRepoDeferred(state, now) {
 			continue
 		}
-		if archiveScanEligible(state.IssueInventory) {
+		if _, skip := skipped[archiveInventoryScope{repoID: repo.ID, itemType: db.ArchiveItemTypeIssue}]; !skip && archiveScanEligible(state.IssueInventory) {
 			return repo, state, db.ArchiveItemTypeIssue, true
 		}
-		if archiveScanEligible(state.MergeRequestInventory) {
+		if _, skip := skipped[archiveInventoryScope{repoID: repo.ID, itemType: db.ArchiveItemTypeMergeRequest}]; !skip && archiveScanEligible(state.MergeRequestInventory) {
 			return repo, state, db.ArchiveItemTypeMergeRequest, true
 		}
 	}
@@ -229,17 +289,21 @@ func resolvedRepoByID(repos []resolvedRepository, repoID int64) resolvedReposito
 func (s *Service) admit(
 	ctx context.Context,
 	repo resolvedRepository,
+	itemType db.ArchiveItemType,
 	cost int,
-) (context.Context, func(), error) {
+) (context.Context, func(error) *FeatureDeferral, error) {
 	if err := s.db.ClearArchiveRepositoryError(ctx, repo.ID, s.now()); err != nil {
 		return nil, nil, err
 	}
 	if s.admission == nil {
-		return ctx, func() {}, nil
+		return ctx, func(error) *FeatureDeferral { return nil }, nil
 	}
-	result, err := s.admission.Admit(ctx, repo.Ref, cost)
+	result, err := s.admission.Admit(ctx, repo.Ref, itemType, cost)
 	if err != nil {
 		return nil, nil, err
+	}
+	if result.FeatureDeferred != nil {
+		return nil, nil, &featureDeferredError{FeatureDeferral: *result.FeatureDeferred}
 	}
 	if !result.Allowed {
 		if result.RetryAt == nil {
@@ -254,11 +318,11 @@ func (s *Service) admit(
 	if result.Context != nil {
 		requestCtx = result.Context
 	}
-	release := result.Release
-	if release == nil {
-		release = func() {}
+	complete := result.Complete
+	if complete == nil {
+		complete = func(error) *FeatureDeferral { return nil }
 	}
-	return requestCtx, release, nil
+	return requestCtx, complete, nil
 }
 
 type fixedClock struct{ value time.Time }

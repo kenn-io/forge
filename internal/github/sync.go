@@ -861,21 +861,45 @@ func (s *Syncer) ConfiguredRepositories(context.Context) ([]platform.RepoRef, er
 func (s *Syncer) Admit(
 	ctx context.Context,
 	ref platform.RepoRef,
+	itemType db.ArchiveItemType,
 	cost int,
 ) (archive.AdmissionResult, error) {
+	feature := ""
+	switch itemType {
+	case db.ArchiveItemTypeIssue:
+		feature = platform.RepositoryFeatureIssues
+	case db.ArchiveItemTypeMergeRequest:
+		feature = platform.RepositoryFeatureMergeRequests
+	default:
+		return archive.AdmissionResult{}, fmt.Errorf("archive admission: invalid item type %q", itemType)
+	}
+	repo := RepoRef{
+		Platform: ref.Platform, PlatformHost: ref.Host,
+		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+	}
+	probe, due, featureRetryAt := s.beginRepositoryFeatureProbeWithRetry(ctx, repo, feature)
+	if !due {
+		return archive.AdmissionResult{FeatureDeferred: &archive.FeatureDeferral{
+			RetryAt: featureRetryAt,
+			Detail:  "repository feature cooldown active",
+		}}, nil
+	}
 	now := s.now().UTC()
 	if s.running.Load() {
+		probe.release()
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "normal sync is active"}, nil
 	}
 	key := rateBucketKeyFor(ref.Platform, ref.Host)
 	if s.higherPriorityProviderWorkActive(key, archive.PriorityFullArchive) {
+		probe.release()
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
 	}
 	tracker := s.rateTrackers[key]
 	if tracker != nil && (tracker.IsPaused() ||
 		tracker.Known() && tracker.Remaining()-cost < RateReserveBuffer) {
+		probe.release()
 		retryAt := now.Add(time.Minute)
 		if reset := tracker.ResetAt(); reset != nil && reset.After(now) {
 			retryAt = reset.UTC()
@@ -889,24 +913,43 @@ func (s *Syncer) Admit(
 		available = budget.ArchiveSpendAvailable(now, resetAt, archiveLiveFloor(ref.Platform))
 	}
 	if available < cost {
+		probe.release()
 		retryAt := now.Add(time.Minute)
 		if resetAt != nil && resetAt.After(now) && resetAt.Before(retryAt) {
 			retryAt = resetAt.UTC()
 		}
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "archive surplus budget unavailable"}, nil
 	}
-	requestCtx, release, allowed := s.tryBeginArchiveProviderRequest(ctx, key)
+	requestCtx, releaseProviderRequest, allowed := s.tryBeginArchiveProviderRequest(ctx, key)
 	if !allowed {
+		probe.release()
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
+	}
+	var completeOnce sync.Once
+	var featureDeferred *archive.FeatureDeferral
+	complete := func(cause error) *archive.FeatureDeferral {
+		completeOnce.Do(func() {
+			if disabled := repositoryFeatureDisabledError(repo, feature, cause); disabled != nil {
+				nextProbe, _ := s.recordRepositoryFeatureDisabledUntil(repo, feature, disabled)
+				featureDeferred = &archive.FeatureDeferral{
+					RetryAt: nextProbe,
+					Detail:  disabled.Error(),
+				}
+			} else {
+				probe.release()
+			}
+			releaseProviderRequest()
+		})
+		return featureDeferred
 	}
 	// The declared cost is the admission minimum. Once admitted, the request may
 	// use the archive surplus currently available without crossing the live
 	// floor; provider-SDK and authentication retries share this allowance.
 	return archive.AdmissionResult{
-		Allowed: true,
-		Context: WithArchiveAttemptAllowance(WithArchiveSyncBudget(requestCtx), available),
-		Release: release,
+		Allowed:  true,
+		Context:  WithArchiveAttemptAllowance(WithArchiveSyncBudget(requestCtx), available),
+		Complete: complete,
 	}, nil
 }
 

@@ -34,16 +34,26 @@ func (s *Service) promptMaintenance(
 		return errors.New("run archive prompt maintenance: durable scan boundary is missing")
 	}
 	issueScan := state.MaintenanceIssues
+	var deferred error
 	if !issueScan.Complete() && !issueScan.Blocked() {
 		if err := s.promptPages(ctx, repo, db.ArchiveItemTypeIssue, state.PromptSince.UTC(), issueScan); err != nil {
-			return err
+			if !featureDeferredBeforeProvider(err) {
+				return err
+			}
+			deferred = err
 		}
 	}
 	mrScan := state.MaintenanceMergeRequests
 	if !mrScan.Complete() && !mrScan.Blocked() {
 		if err := s.promptPages(ctx, repo, db.ArchiveItemTypeMergeRequest, state.PromptSince.UTC(), mrScan); err != nil {
-			return err
+			if !featureDeferredBeforeProvider(err) {
+				return err
+			}
+			deferred = err
 		}
+	}
+	if deferred != nil {
+		return deferred
 	}
 	refreshed, err := s.db.ListArchiveRepoStates(ctx, []int64{repo.ID})
 	if err != nil {
@@ -75,7 +85,7 @@ func (s *Service) promptPages(
 	}
 	cursor := scan.Cursor()
 	for {
-		requestCtx, release, err := s.admit(ctx, repo, archiveAttemptCost(1))
+		requestCtx, complete, err := s.admit(ctx, repo, itemType, archiveAttemptCost(1))
 		if err != nil {
 			if errors.Is(err, errAdmissionDeferred) {
 				return err
@@ -96,7 +106,10 @@ func (s *Service) promptPages(
 		case db.ArchiveItemTypeIssue:
 			page, err := repo.Issues.ListIssuesPage(requestCtx, repo.Ref, query)
 			preempted := archivePreempted(ctx, requestCtx)
-			release()
+			deferred := complete(err)
+			if deferred != nil {
+				return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
+			}
 			if err != nil {
 				if preempted {
 					return errAdmissionDeferred
@@ -113,7 +126,10 @@ func (s *Service) promptPages(
 		case db.ArchiveItemTypeMergeRequest:
 			page, err := repo.MergeRequests.ListMergeRequestsPage(requestCtx, repo.Ref, query)
 			preempted := archivePreempted(ctx, requestCtx)
-			release()
+			deferred := complete(err)
+			if deferred != nil {
+				return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
+			}
 			if err != nil {
 				if preempted {
 					return errAdmissionDeferred
@@ -128,8 +144,9 @@ func (s *Service) promptPages(
 				commit.Items = append(commit.Items, archiveInventoryMergeRequest(item))
 			}
 		default:
-			release()
-			return fmt.Errorf("archive maintenance: invalid item type %q", itemType)
+			invalidErr := fmt.Errorf("archive maintenance: invalid item type %q", itemType)
+			complete(invalidErr)
+			return invalidErr
 		}
 		halted, err := s.commitInventoryPage(ctx, commit)
 		if err != nil {

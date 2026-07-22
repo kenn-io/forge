@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make Kata issue links inherit the workspace task-status scope, expose relationship filters, and show peer state only when open and closed links are mixed.
+**Goal:** Make Kata issue links inherit the workspace task-status scope, expose relationship filters, and show peer state whenever both Open and Closed are enabled.
 
-**Architecture:** Add a small pure filter model for status and relationship classification. Keep the filter state in `KataWorkspace.svelte` so relationship choices survive selected-task navigation, pass it through `KataIssueDetail.svelte`, and let `KataIssueDiscussion.svelte` hydrate full peer summaries and apply the filters. A focused `KataLinkFilterMenu.svelte` owns the checkbox popover and reuses kit-ui positioning and dismissal utilities.
+**Architecture:** Add a small pure filter model for status, relationship classification, and peer-resolution state. Keep bounded peer hydration and row presentation in the existing `KataIssueDiscussion.svelte` Links section, while controlled filter state lives in `KataWorkspace.svelte` so choices survive selected-task navigation on one daemon and reset on daemon changes. Pass that state through `KataIssueDetail.svelte`; a focused `KataLinkFilterMenu.svelte` owns the checkbox popover and reuses kit-ui positioning and dismissal utilities.
 
 **Tech Stack:** Svelte 5 runes, TypeScript, `@kenn-io/kit-ui`, `@middleman/ui`, Testing Library, Vite+ Vitest.
 
@@ -13,10 +13,13 @@
 - Keep the change frontend-only; do not alter Kata or middleman HTTP contracts.
 - Default status visibility from the active top-level `open`, `closed`, or `all` filter.
 - Keep Parent, Child, Blocks, Blocked by, and Related as relationship filters; do not derive a blocked task status.
-- Render Open/Closed state chips only when both task states are enabled.
+- Render Open/Closed state chips whenever both task states are enabled, including all-open or all-closed result sets.
 - Keep the link creation form and link-row navigation behavior unchanged.
-- Preserve relationship filter choices across selected-task navigation in the current Kata workspace.
+- Preserve relationship filter choices across selected-task navigation on the same Kata daemon.
 - Reset only the link task-state choices when the top-level status scope changes.
+- Reset task-state and relationship choices when the active Kata daemon changes.
+- Keep failed peer rows discoverable with an unavailable marker whenever at least one task state is enabled.
+- Do not show resolving state for disabled relationships or when both task states are disabled.
 - Use shared checkbox, chip, positioning, and dismissable-overlay primitives.
 - Use Svelte 5 runes and keyed each blocks; do not add legacy Svelte event syntax.
 - Follow TDD: every production behavior starts with a focused failing test and an observed expected failure.
@@ -31,7 +34,7 @@
 
 **Interfaces:**
 - Consumes: `KataTaskLink`, `KataTaskStatusFilter`, and `KataTaskSummary` from `frontend/src/lib/api/kata/taskTypes.ts`.
-- Produces: `KataLinkRelation`, `KataLinkFilters`, `KATA_LINK_RELATIONS`, `createKataLinkFilters`, `applyKataLinkStatusScope`, `relationForKataLink`, and `kataLinkMatchesFilters`.
+- Produces: `KataLinkRelation`, `KataLinkFilters`, `KataLinkPeerResolution`, `KATA_LINK_RELATIONS`, `createKataLinkFilters`, `applyKataLinkStatusScope`, `relationForKataLink`, `kataLinkCouldAffectVisibleResults`, and `kataLinkMatchesFilters`.
 
 - [ ] **Step 1: Write failing tests for defaults, relationship direction, scope reset, and unresolved peers**
 
@@ -43,6 +46,7 @@ import type { KataTaskLink, KataTaskSummary } from "../../api/kata/taskTypes.js"
 import {
   applyKataLinkStatusScope,
   createKataLinkFilters,
+  kataLinkCouldAffectVisibleResults,
   kataLinkMatchesFilters,
   relationForKataLink,
 } from "./kataLinkFilters.js";
@@ -125,14 +129,25 @@ describe("kata link filters", () => {
     });
   });
 
-  it("matches resolved peers by state and unresolved peers only in a mixed-state view", () => {
+  it("matches resolved, pending, and failed peers without silently hiding failures", () => {
     const openOnly = createKataLinkFilters("open");
     const mixed = createKataLinkFilters("all");
 
-    expect(kataLinkMatchesFilters(link(), selectedUID, peer("open"), openOnly)).toBe(true);
-    expect(kataLinkMatchesFilters(link(), selectedUID, peer("closed"), openOnly)).toBe(false);
-    expect(kataLinkMatchesFilters(link(), selectedUID, undefined, openOnly)).toBe(false);
-    expect(kataLinkMatchesFilters(link(), selectedUID, undefined, mixed)).toBe(true);
+    expect(kataLinkMatchesFilters(link(), selectedUID, { kind: "resolved", peer: peer("open") }, openOnly)).toBe(true);
+    expect(kataLinkMatchesFilters(link(), selectedUID, { kind: "resolved", peer: peer("closed") }, openOnly)).toBe(false);
+    expect(kataLinkMatchesFilters(link(), selectedUID, { kind: "pending" }, openOnly)).toBe(false);
+    expect(kataLinkMatchesFilters(link(), selectedUID, { kind: "pending" }, mixed)).toBe(true);
+    expect(kataLinkMatchesFilters(link(), selectedUID, { kind: "failed" }, openOnly)).toBe(true);
+  });
+
+  it("ignores pending work that disabled filters cannot reveal", () => {
+    const filters = createKataLinkFilters("open");
+    filters.relations.related = false;
+    expect(kataLinkCouldAffectVisibleResults(link(), selectedUID, filters)).toBe(false);
+
+    filters.relations.related = true;
+    filters.statuses.open = false;
+    expect(kataLinkCouldAffectVisibleResults(link(), selectedUID, filters)).toBe(false);
   });
 });
 ```
@@ -166,6 +181,11 @@ export interface KataLinkFilters {
   statuses: Record<KataTaskSummary["status"], boolean>;
   relations: Record<KataLinkRelation, boolean>;
 }
+
+export type KataLinkPeerResolution =
+  | { kind: "pending" }
+  | { kind: "failed" }
+  | { kind: "resolved"; peer: KataTaskSummary };
 
 function statusesForScope(scope: KataTaskStatusFilter): KataLinkFilters["statuses"] {
   return {
@@ -203,16 +223,27 @@ export function relationForKataLink(link: KataTaskLink, selectedUID: string): Ka
   return "related";
 }
 
+export function kataLinkCouldAffectVisibleResults(
+  link: KataTaskLink,
+  selectedUID: string,
+  filters: KataLinkFilters,
+): boolean {
+  return (
+    filters.relations[relationForKataLink(link, selectedUID)] &&
+    (filters.statuses.open || filters.statuses.closed)
+  );
+}
+
 export function kataLinkMatchesFilters(
   link: KataTaskLink,
   selectedUID: string,
-  peer: KataTaskSummary | undefined,
+  resolution: KataLinkPeerResolution,
   filters: KataLinkFilters,
 ): boolean {
-  const relation = relationForKataLink(link, selectedUID);
-  if (!filters.relations[relation]) return false;
-  if (!peer) return filters.statuses.open && filters.statuses.closed;
-  return filters.statuses[peer.status];
+  if (!kataLinkCouldAffectVisibleResults(link, selectedUID, filters)) return false;
+  if (resolution.kind === "failed") return true;
+  if (resolution.kind === "pending") return filters.statuses.open && filters.statuses.closed;
+  return filters.statuses[resolution.peer.status];
 }
 ```
 
@@ -496,6 +527,8 @@ Create `frontend/src/lib/components/kata/KataLinkFilterMenu.svelte` with these e
 </style>
 ```
 
+The trigger remains an application-owned native button because the shared `Button` component does not expose the underlying `HTMLButtonElement` needed by `floatingPopoverStyle` and `dismissable` for geometry and focus restoration. Reuse the shared radius, border, focus-ring, and popover tokens shown above; do not introduce a new general button primitive.
+
 - [ ] **Step 4: Run the focused menu tests and confirm they pass**
 
 Run:
@@ -542,7 +575,7 @@ Expected: commit succeeds without bypassing hooks.
 - Modify: `frontend/tests/e2e-full/kata.spec.ts`
 
 **Interfaces:**
-- Consumes: `KataLinkFilters`, `applyKataLinkStatusScope`, `createKataLinkFilters`, `kataLinkMatchesFilters`, and `relationForKataLink` from Task 1; `KataLinkFilterMenu` from Task 2.
+- Consumes: `KataLinkFilters`, `KataLinkPeerResolution`, `KataLinkRelation`, `applyKataLinkStatusScope`, `createKataLinkFilters`, `kataLinkCouldAffectVisibleResults`, `kataLinkMatchesFilters`, and `relationForKataLink` from Task 1; `KataLinkFilterMenu` from Task 2.
 - Produces: controlled props `linkFilters: KataLinkFilters` and `onLinkFiltersChange: (next: KataLinkFilters) => void` threaded from `KataWorkspace` through `KataIssueDetail` to `KataIssueDiscussion`.
 
 - [ ] **Step 1: Write failing discussion tests for inherited state, relationship filtering, chips, counts, and empty states**
@@ -621,7 +654,7 @@ it("shows only open peers by default and reports the filtered count", async () =
   expect(screen.queryByText("Open", { selector: ".state-badge" })).toBeNull();
 });
 
-it("shows state chips only for mixed-state results", async () => {
+it("shows state chips when both task-state filters are enabled", async () => {
   const selected = makeIssue();
   selected.links = [
     taskLink(1, "issue-open", "open", "related"),
@@ -652,6 +685,33 @@ it("shows state chips only for mixed-state results", async () => {
   expect(within(links).getByRole("button", { name: /Closed peer closed/ })).toBeTruthy();
   expect(within(links).getByText("Open", { selector: ".state-badge" })).toBeTruthy();
   expect(within(links).getByText("Closed", { selector: ".state-badge" })).toBeTruthy();
+});
+
+it("shows state chips when both filters are enabled even if every peer is open", async () => {
+  const selected = makeIssue();
+  selected.links = [taskLink(1, "issue-open", "open", "related")];
+  render(KataIssueDiscussion, {
+    props: {
+      issue: selected,
+      events: [],
+      currentView: { groups: [] },
+      api: makeAPI({
+        issueDetails: {
+          "issue-open": makeIssue({ uid: "issue-open", short_id: "open", title: "Only open peer", status: "open" }),
+        },
+      }),
+      activeDaemonId: "home",
+      linkFilters: createKataLinkFilters("all"),
+      onLinkFiltersChange: vi.fn(),
+      onAddComment: vi.fn(async () => true),
+      onEditIssue: vi.fn(async () => true),
+      onSelectIssue: vi.fn(),
+    },
+  });
+
+  const links = screen.getByRole("region", { name: "Links" });
+  await waitFor(() => expect(within(links).getByRole("button", { name: /Only open peer open/ })).toBeTruthy());
+  expect(within(links).getByText("Open", { selector: ".state-badge" })).toBeTruthy();
 });
 
 it("filters directional relationship types and shows the filtered-empty message", async () => {
@@ -713,7 +773,60 @@ it("shows a resolving state while a single-state filter waits for peer status", 
   expect(within(screen.getByRole("region", { name: "Links" })).getByText("Resolving linked tasks...")).toBeTruthy();
 });
 
-it("marks failed peer state as unavailable in a mixed-state view", async () => {
+it("does not show resolving state for a pending disabled relationship", () => {
+  const selected = makeIssue();
+  selected.links = [taskLink(1, "issue-pending", "pending", "related")];
+  const api = makeAPI();
+  vi.mocked(api.issue).mockImplementation(() => new Promise<KataTaskDetail>(() => {}));
+  const filters = createKataLinkFilters("open");
+  filters.relations.related = false;
+
+  render(KataIssueDiscussion, {
+    props: {
+      issue: selected,
+      events: [],
+      currentView: { groups: [] },
+      api,
+      activeDaemonId: "home",
+      linkFilters: filters,
+      onLinkFiltersChange: vi.fn(),
+      onAddComment: vi.fn(async () => true),
+      onEditIssue: vi.fn(async () => true),
+      onSelectIssue: vi.fn(),
+    },
+  });
+
+  const links = screen.getByRole("region", { name: "Links" });
+  expect(within(links).getByText("No links match these filters.")).toBeTruthy();
+  expect(within(links).queryByText(/Resolving/)).toBeNull();
+});
+
+it("shows the filtered-empty state when both task states are disabled", () => {
+  const selected = makeIssue();
+  selected.links = [taskLink(1, "issue-open", "open", "related")];
+  const filters = createKataLinkFilters("all");
+  filters.statuses.open = false;
+  filters.statuses.closed = false;
+
+  render(KataIssueDiscussion, {
+    props: {
+      issue: selected,
+      events: [],
+      currentView: makeView(),
+      api: makeAPI(),
+      activeDaemonId: "home",
+      linkFilters: filters,
+      onLinkFiltersChange: vi.fn(),
+      onAddComment: vi.fn(async () => true),
+      onEditIssue: vi.fn(async () => true),
+      onSelectIssue: vi.fn(),
+    },
+  });
+
+  expect(within(screen.getByRole("region", { name: "Links" })).getByText("No links match these filters.")).toBeTruthy();
+});
+
+it("keeps failed peer state discoverable in a single-state view", async () => {
   const selected = makeIssue();
   selected.links = [taskLink(1, "issue-missing", "missing", "related")];
   const api = makeAPI();
@@ -726,7 +839,7 @@ it("marks failed peer state as unavailable in a mixed-state view", async () => {
       currentView: { groups: [] },
       api,
       activeDaemonId: "home",
-      linkFilters: createKataLinkFilters("all"),
+      linkFilters: createKataLinkFilters("open"),
       onLinkFiltersChange: vi.fn(),
       onAddComment: vi.fn(async () => true),
       onEditIssue: vi.fn(async () => true),
@@ -737,6 +850,30 @@ it("marks failed peer state as unavailable in a mixed-state view", async () => {
   const links = screen.getByRole("region", { name: "Links" });
   await waitFor(() => expect(within(links).getByTitle("Task state unavailable")).toBeTruthy());
   expect(within(links).getByRole("button", { name: /missing state unavailable/ })).toBeTruthy();
+});
+
+it("uses current-view peer summaries without redundant detail requests", () => {
+  const selected = makeIssue();
+  selected.links = [taskLink(1, "issue-2", "I-2", "related")];
+  const api = makeAPI();
+
+  render(KataIssueDiscussion, {
+    props: {
+      issue: selected,
+      events: [],
+      currentView: makeView(),
+      api,
+      activeDaemonId: "home",
+      linkFilters: createKataLinkFilters("open"),
+      onLinkFiltersChange: vi.fn(),
+      onAddComment: vi.fn(async () => true),
+      onEditIssue: vi.fn(async () => true),
+      onSelectIssue: vi.fn(),
+    },
+  });
+
+  expect(screen.getByRole("button", { name: /Linked task/ })).toBeTruthy();
+  expect(api.issue).not.toHaveBeenCalled();
 });
 
 it("retries failed peers when the same selected detail refreshes", async () => {
@@ -786,7 +923,7 @@ Expected: FAIL because the component does not accept controlled filters, hydrate
 
 In `KataIssueDiscussion.svelte`:
 
-1. Import `ItemStateChip` from `@middleman/ui`, `KataTaskSummary`, the filter helpers, and `KataLinkFilterMenu`.
+1. Import `ItemStateChip` from `@middleman/ui`, `KataTaskSummary`, `KataLinkPeerResolution`, `KataLinkRelation`, `kataLinkCouldAffectVisibleResults`, `kataLinkMatchesFilters`, `relationForKataLink`, and `KataLinkFilterMenu`.
 2. Add required props:
 
 ```ts
@@ -804,6 +941,19 @@ let lastSelectedDetail: KataTaskDetail | null = null;
 ```
 
 4. Preserve the existing signature and generation guard, but store `detail.issue` on success and `null` on failure.
+   Build hydration candidates only for peers not already available from `currentViewPeer(uid)`, not cached in `hydratedPeers`, and not present in `pendingPeerKeys`. Keep the existing one-request-per-peer concurrency and signature guards; do not serialize the requests or add a second cache.
+
+```ts
+const peerUIDs = issue.links
+  .map((link) => linkPeerUIDFor(link, issue.issue.uid))
+  .filter(
+    (uid) =>
+      uid &&
+      currentViewPeer(uid) === undefined &&
+      hydratedPeers[uid] === undefined &&
+      !pendingPeerKeys.has(`${signature}:${uid}`),
+  );
+```
 5. Add a same-task refresh effect that drops only failed entries, causing the existing hydration effect to retry them while preserving successful peer summaries:
 
 ```ts
@@ -823,7 +973,7 @@ $effect(() => {
 ```
 
 This effect keys recovery on a new selected-detail object, not revision or link signature, because a refresh may replace the detail snapshot without changing either value.
-6. Resolve current-view peers without an API call:
+6. Resolve current-view peers without an API call and replace the existing independent `linkLabel` branching with formatting based on `relationForKataLink`:
 
 ```ts
 function currentViewPeer(uid: string): KataTaskSummary | undefined {
@@ -834,13 +984,26 @@ function currentViewPeer(uid: string): KataTaskSummary | undefined {
   return undefined;
 }
 
-function peerFor(link: KataTaskLink): KataTaskSummary | undefined {
+function peerResolution(link: KataTaskLink): KataLinkPeerResolution {
   const uid = linkPeerUID(link);
-  return currentViewPeer(uid) ?? hydratedPeers[uid] ?? undefined;
+  const current = currentViewPeer(uid);
+  if (current) return { kind: "resolved", peer: current };
+  const hydrated = hydratedPeers[uid];
+  if (hydrated === null) return { kind: "failed" };
+  if (hydrated !== undefined) return { kind: "resolved", peer: hydrated };
+  return { kind: "pending" };
 }
 
-function peerHydrationFailed(link: KataTaskLink): boolean {
-  return hydratedPeers[linkPeerUID(link)] === null;
+const relationLabels: Record<KataLinkRelation, string> = {
+  parent: "parent",
+  child: "child",
+  blocks: "blocks",
+  blocked_by: "blocked_by",
+  related: "related",
+};
+
+function linkLabel(link: KataTaskLink): string {
+  return relationLabels[relationForKataLink(link, issue.issue.uid)];
 }
 ```
 
@@ -849,15 +1012,16 @@ function peerHydrationFailed(link: KataTaskLink): boolean {
 ```ts
 const visibleLinks = $derived(
   issue.links.filter((link) =>
-    kataLinkMatchesFilters(link, issue.issue.uid, peerFor(link), linkFilters),
+    kataLinkMatchesFilters(link, issue.issue.uid, peerResolution(link), linkFilters),
   ),
 );
 const showStateChips = $derived(linkFilters.statuses.open && linkFilters.statuses.closed);
 const unresolvedPeerCount = $derived(
-  issue.links.filter((link) => {
-    const uid = linkPeerUID(link);
-    return currentViewPeer(uid) === undefined && hydratedPeers[uid] === undefined;
-  }).length,
+  issue.links.filter(
+    (link) =>
+      peerResolution(link).kind === "pending" &&
+      kataLinkCouldAffectVisibleResults(link, issue.issue.uid, linkFilters),
+  ).length,
 );
 ```
 
@@ -883,12 +1047,13 @@ Replace the Links header and list body with this structure:
 {:else}
   <div class="link-list" aria-busy={unresolvedPeerCount > 0}>
     {#each visibleLinks as link (link.id)}
-      {@const peer = peerFor(link)}
+      {@const resolution = peerResolution(link)}
+      {@const peer = resolution.kind === "resolved" ? resolution.peer : undefined}
       <button
         type="button"
         class="link-row"
         class:link-row--with-state={showStateChips}
-        aria-label={`${linkLabel(link)} ${linkPeerShortID(link)} ${peer?.title ?? ""}${showStateChips && peer ? ` ${peer.status}` : ""}${showStateChips && peerHydrationFailed(link) ? " state unavailable" : ""}`.trim()}
+        aria-label={`${linkLabel(link)} ${linkPeerShortID(link)} ${peer?.title ?? ""}${showStateChips && peer ? ` ${peer.status}` : ""}${resolution.kind === "failed" ? " state unavailable" : ""}`.trim()}
         onclick={() => void onSelectIssue(linkPeerUID(link))}
       >
         <span class="link-kind">{linkLabel(link)}</span>
@@ -896,7 +1061,7 @@ Replace the Links header and list body with this structure:
         {#if peer?.title}<span class="link-title">{peer.title}</span>{/if}
         {#if showStateChips && peer}
           <ItemStateChip state={peer.status} size="xs" />
-        {:else if showStateChips && peerHydrationFailed(link)}
+        {:else if resolution.kind === "failed"}
           <ItemStateChip state="unknown" size="xs" title="Task state unavailable" />
         {/if}
       </button>
@@ -917,45 +1082,7 @@ node ../node_modules/vite-plus/bin/vp test run --project unit src/lib/components
 
 Expected: PASS.
 
-- [ ] **Step 6: Thread controlled filter state through detail and workspace**
-
-In `KataIssueDetail.svelte`, add `linkFilters` and `onLinkFiltersChange` to `Props`, destructuring, and the `KataIssueDiscussion` call. Import `createKataLinkFilters` in `KataIssueDetail.test.ts` and update `renderDetail` with:
-
-```ts
-linkFilters: createKataLinkFilters("open"),
-onLinkFiltersChange: vi.fn(),
-```
-
-In `KataWorkspace.svelte`, import the filter model and add state beside the other workspace-owned UI state:
-
-```ts
-let linkFilters = $state<KataLinkFilters>(createKataLinkFilters("open"));
-let lastLinkStatusScope = $state<KataTaskSearchFilters["status"]>("open");
-```
-
-After `listStatusFilter` is defined, synchronize only task state:
-
-```ts
-$effect(() => {
-  const nextScope = listStatusFilter;
-  if (nextScope === lastLinkStatusScope) return;
-  lastLinkStatusScope = nextScope;
-  linkFilters = applyKataLinkStatusScope(linkFilters, nextScope);
-});
-```
-
-Pass the controlled state to `KataIssueDetail`:
-
-```svelte
-linkFilters={linkFilters}
-onLinkFiltersChange={(next) => {
-  linkFilters = next;
-}}
-```
-
-Do not key or reset `linkFilters` on selected issue changes. This is what preserves relationship choices while navigating tasks.
-
-- [ ] **Step 7: Add a workspace-level regression test for status reset and relationship persistence**
+- [ ] **Step 6: Write failing workspace regressions before controlled-state wiring**
 
 Add this test to `KataWorkspace.test.ts`:
 
@@ -1025,9 +1152,114 @@ it("keeps relationship filters across task navigation and resets state filters w
   expect((screen.getByRole("checkbox", { name: "Closed" }) as HTMLInputElement).checked).toBe(true);
   expect((screen.getByRole("checkbox", { name: "Related" }) as HTMLInputElement).checked).toBe(false);
 });
+
+it("resets the complete link-filter scope when switching daemons", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+    Response.json({
+      daemons: [
+        { id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
+        { id: "work", url: "http://127.0.0.1:8888", default: false, auth: "none", health: "connected" },
+      ],
+    }),
+  );
+  setActiveKataDaemon("home");
+  const homeRoot = issue("issue-home-root", "Home root", "project-kata");
+  const homePeer = issue("issue-home-peer", "Home peer", "project-kata");
+  const workRoot = issue("issue-work-root", "Work root", "project-kata");
+  const api = createDaemonWorkspaceAPI({ home: [homeRoot, homePeer], work: [workRoot] });
+  vi.mocked(api.issue).mockImplementation(async (uid: string) => {
+    const rows = [homeRoot, homePeer, workRoot];
+    const taskDetail = detail(uid, rows);
+    if (uid !== homeRoot.uid) return taskDetail;
+    return {
+      ...taskDetail,
+      links: [
+        {
+          id: 1,
+          project_id: homeRoot.project_id,
+          from: { uid: homeRoot.uid, short_id: homeRoot.short_id },
+          to: { uid: homePeer.uid, short_id: homePeer.short_id },
+          type: "related",
+          author: "fixture-user",
+          created_at: fetchedAt,
+        },
+      ],
+    };
+  });
+
+  render(KataWorkspaceRouteHost, { props: { api, initialIssue: homeRoot.uid } });
+  await waitFor(() => expect(screen.getByRole("heading", { name: "Home root" })).toBeTruthy());
+  await fireEvent.click(screen.getByRole("button", { name: "Filter links" }));
+  await fireEvent.click(screen.getByRole("checkbox", { name: "Related" }));
+  await fireEvent.keyDown(document, { key: "Escape" });
+
+  await fireEvent.click(screen.getByTestId("daemon-chip"));
+  const workDaemonRow = await screen.findByTestId("daemon-row-work");
+  await waitFor(() => expect((workDaemonRow as HTMLButtonElement).disabled).toBe(false));
+  await fireEvent.click(workDaemonRow);
+  await waitFor(() => expect(screen.getByRole("heading", { name: "Work root" })).toBeTruthy());
+
+  await fireEvent.click(screen.getByRole("button", { name: "Filter links" }));
+  expect((screen.getByRole("checkbox", { name: "Open" }) as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByRole("checkbox", { name: "Closed" }) as HTMLInputElement).checked).toBe(false);
+  expect((screen.getByRole("checkbox", { name: "Related" }) as HTMLInputElement).checked).toBe(true);
+});
 ```
 
 This test uses role-based queries and asserts only the interaction contract. Do not add API-call-count assertions unrelated to link filtering.
+
+Run the workspace test now:
+
+```bash
+node ../node_modules/vite-plus/bin/vp test run --project unit src/lib/features/kata/KataWorkspace.test.ts
+```
+
+Expected: FAIL because filter state is not owned by the workspace and no daemon-scoped reset exists.
+
+- [ ] **Step 7: Thread daemon-scoped controlled filter state through detail and workspace**
+
+In `KataIssueDetail.svelte`, add `linkFilters` and `onLinkFiltersChange` to `Props`, destructuring, and the `KataIssueDiscussion` call. Import `createKataLinkFilters` in `KataIssueDetail.test.ts` and update `renderDetail` with:
+
+```ts
+linkFilters: createKataLinkFilters("open"),
+onLinkFiltersChange: vi.fn(),
+```
+
+In `KataWorkspace.svelte`, import the filter model and add state beside the other workspace-owned UI state:
+
+```ts
+let linkFilters = $state<KataLinkFilters>(createKataLinkFilters("open"));
+let lastLinkFilterScope = $state<{
+  daemonID: string | undefined;
+  status: KataTaskSearchFilters["status"];
+}>({ daemonID: undefined, status: "open" });
+```
+
+After `activeKataDaemonId` and `listStatusFilter` are defined, synchronize the daemon and status scopes together:
+
+```ts
+$effect(() => {
+  const daemonID = activeKataDaemonId;
+  const status = listStatusFilter;
+  if (daemonID !== lastLinkFilterScope.daemonID) {
+    linkFilters = createKataLinkFilters(status);
+  } else if (status !== lastLinkFilterScope.status) {
+    linkFilters = applyKataLinkStatusScope(linkFilters, status);
+  }
+  lastLinkFilterScope = { daemonID, status };
+});
+```
+
+Pass the controlled state to `KataIssueDetail`:
+
+```svelte
+linkFilters={linkFilters}
+onLinkFiltersChange={(next) => {
+  linkFilters = next;
+}}
+```
+
+Do not key or reset `linkFilters` on selected issue changes. Task navigation on one daemon preserves the state; daemon changes reset both status and relationship choices.
 
 - [ ] **Step 8: Run all affected component and workspace tests**
 
@@ -1105,6 +1337,17 @@ await expect(links.getByText("Closed", { exact: true })).toBeVisible();
 await filterPanel.getByRole("checkbox", { name: "Parent" }).click();
 await expect(links).not.toContainText("Quarterly budget review with a long title");
 await expect(links).toContainText("1 / 2");
+await filterPanel.getByRole("checkbox", { name: "Parent" }).click();
+await filterPanel.getByRole("checkbox", { name: "Related" }).click();
+await page.keyboard.press("Escape");
+```
+
+Keep the existing navigation into the parent task and back to Pay rent. After returning, reopen **Filter links**, assert **Related** is still unchecked, then re-enable it before the existing add-related-link assertions:
+
+```ts
+await links.getByRole("button", { name: "Filter links" }).click();
+await expect(filterPanel.getByRole("checkbox", { name: "Related" })).not.toBeChecked();
+await filterPanel.getByRole("checkbox", { name: "Related" }).click();
 await page.keyboard.press("Escape");
 ```
 
@@ -1121,10 +1364,9 @@ Expected: PASS against the real middleman server and seeded external Kata daemon
 From the repository root:
 
 ```bash
-./node_modules/.bin/vp test run --project unit
+(cd frontend && node ../node_modules/vite-plus/bin/vp test run --project unit)
 ./node_modules/.bin/vp run frontend-check
-cd frontend
-node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts --grep "kata task links render"
+(cd frontend && node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts --grep "kata task links render")
 ```
 
 Expected: all commands exit 0. The component and workspace tests own filtering and state lifetime; the focused Playwright scenario owns fixed positioning, stacking, and clipping in the real split-pane layout.

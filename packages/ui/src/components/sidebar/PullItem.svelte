@@ -349,6 +349,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    flex: 1 1 auto;
     min-width: 0;
   }
 
@@ -370,7 +371,6 @@
     text-overflow: ellipsis;
     flex: 0 1 auto;
     min-width: 0;
-    max-width: 60%;
   }
 
   .meta-sep {

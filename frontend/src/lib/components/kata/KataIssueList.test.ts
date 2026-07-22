@@ -915,6 +915,50 @@ describe("KataIssueList", () => {
     expect(screen.getByRole("button", { name: /Parent task/ }).getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("reveals a hidden selected child when structural reset and reveal arrive together", async () => {
+    const root = task({
+      uid: "issue-reset-reveal-root",
+      short_id: "reset-reveal-root",
+      qualified_id: "Finances#reset-reveal-root",
+      title: "Reset reveal root",
+      child_counts: { open: 1, total: 1 },
+    });
+    const child = task({
+      uid: "issue-reset-reveal-child",
+      short_id: "reset-reveal-child",
+      qualified_id: "Finances#reset-reveal-child",
+      title: "Reset reveal child",
+      parent_short_id: root.short_id,
+    });
+    const scrollIntoView = vi.fn();
+    vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(scrollIntoView);
+    const { rerender } = render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([root]),
+        issueCatalog: [root, child],
+        selectedIssueUID: null,
+        loading: false,
+        resetGeneration: 0,
+        onSelect: () => {},
+      },
+    });
+    const refreshedRoot = { ...root, revision: root.revision + 1 };
+
+    await rerender({
+      currentView: viewWithIssues([refreshedRoot]),
+      issueCatalog: [refreshedRoot, child],
+      selectedIssueUID: child.uid,
+      loading: false,
+      resetGeneration: 1,
+      revealRequest: { uid: child.uid, chain: [refreshedRoot, child], generation: 1 },
+      onSelect: () => {},
+    });
+
+    expect(await screen.findByRole("button", { name: /Reset reveal child/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Reset reveal root/ }).getAttribute("aria-expanded")).toBe("true");
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }));
+  });
+
   it("expands restored ancestors root-first and scrolls the selected row nearest", async () => {
     const root = task({
       uid: "issue-reveal-root",

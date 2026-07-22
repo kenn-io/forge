@@ -673,6 +673,19 @@
     };
   });
 
+  // Clear stale expansion before the reveal effect below so a snapshot that
+  // changes structure can still restore its hidden selected ancestor chain.
+  $effect(() => {
+    if (lastResetGeneration === null) {
+      lastResetGeneration = resetGeneration;
+      return;
+    }
+    if (resetGeneration === lastResetGeneration) return;
+    lastResetGeneration = resetGeneration;
+    clearTemporaryReveal();
+    expanded = {};
+  });
+
   $effect(() => {
     if (!revealRequest) {
       clearTemporaryReveal();
@@ -703,17 +716,6 @@
       if (restoreFocusedTarget) targetRow?.focus({ preventScroll: true });
       targetRow?.scrollIntoView({ block: "nearest" });
     })();
-  });
-
-  $effect(() => {
-    if (lastResetGeneration === null) {
-      lastResetGeneration = resetGeneration;
-      return;
-    }
-    if (resetGeneration === lastResetGeneration) return;
-    lastResetGeneration = resetGeneration;
-    clearTemporaryReveal();
-    expanded = {};
   });
 
   // A pending keyboard selection dies the moment the workspace starts

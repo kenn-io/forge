@@ -17,6 +17,15 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 )
 
+type cooldownCapabilityOnlyProvider struct {
+	syncTestProvider
+	capabilities platform.Capabilities
+}
+
+func (p cooldownCapabilityOnlyProvider) Capabilities() platform.Capabilities {
+	return p.capabilities
+}
+
 func TestDisabledIssueScopeUsesDailyBackgroundProbeAndManualBypass(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -206,6 +215,70 @@ func TestCooldownSkippedIssueScopePreservesRetryUntilSuccessfulProbe(t *testing.
 	assert.False(ok)
 }
 
+func TestIndexReaderResolutionFailureAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	tests := []struct {
+		name         string
+		feature      string
+		capabilities platform.Capabilities
+		wantError    string
+	}{
+		{
+			name:         "merge requests",
+			feature:      platform.RepositoryFeatureMergeRequests,
+			capabilities: platform.Capabilities{ReadMergeRequests: true},
+			wantError:    "resolve merge request reader",
+		},
+		{
+			name:         "issues",
+			feature:      platform.RepositoryFeatureIssues,
+			capabilities: platform.Capabilities{ReadIssues: true},
+			wantError:    "resolve issue reader",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			database := openTestDB(t)
+			now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+			provider := cooldownCapabilityOnlyProvider{
+				syncTestProvider: syncTestProvider{kind: platform.KindGitLab, host: "gitlab.test"},
+				capabilities:     tc.capabilities,
+			}
+			registry, err := platform.NewRegistry(provider)
+			require.NoError(err)
+			repo := RepoRef{
+				Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
+				Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+			}
+			syncer := NewSyncerWithRegistry(
+				registry, database, nil, []RepoRef{repo}, time.Minute, nil, nil,
+			)
+			syncer.now = func() time.Time { return now }
+			repoID, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(platformRepoRef(repo)))
+			require.NoError(err)
+			require.True(syncer.recordRepositoryFeatureDisabled(
+				repo,
+				tc.feature,
+				platform.RepositoryFeatureDisabled(
+					platform.KindGitLab, "gitlab.test", tc.feature,
+					errors.New("repository feature disabled"),
+				),
+			))
+			now = now.Add(repositoryFeatureProbeInterval)
+
+			err = syncer.indexSyncRepo(t.Context(), repo, repoID, false)
+			require.ErrorContains(err, tc.wantError)
+
+			first, due := syncer.beginRepositoryFeatureProbe(t.Context(), repo, tc.feature)
+			require.True(due)
+			defer first.release()
+			_, due = syncer.beginRepositoryFeatureProbe(t.Context(), repo, tc.feature)
+			require.False(due)
+		})
+	}
+}
+
 func TestExpiredMergeRequestCooldownAllowsOneConcurrentBackgroundProbe(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -356,6 +429,55 @@ func TestDisabledIssueCooldownSkipsDetailDrain(t *testing.T) {
 	)
 
 	assert.Zero(int(client.conditionalCalls.Load()))
+}
+
+func TestDetailBudgetDenialAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: 1001, Number: 1,
+		URL: "https://github.com/acme/widget/issues/1", Title: "needs detail",
+		Author: "ada", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	client := &conditionalIssueTrackingClient{}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil, []RepoRef{repo},
+		time.Minute, nil, testBudget(0),
+	)
+	syncer.now = func() time.Time { return now }
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		repo, platform.RepositoryFeatureIssues,
+		platform.RepositoryFeatureDisabled(
+			platform.KindGitHub, "github.com", platform.RepositoryFeatureIssues,
+			errors.New("repository issues disabled"),
+		),
+	))
+	now = now.Add(repositoryFeatureProbeInterval)
+
+	syncer.drainDetailQueue(
+		ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos(),
+	)
+	require.Zero(int(client.conditionalCalls.Load()))
+
+	first, due := syncer.beginRepositoryFeatureProbe(
+		ctx, repo, platform.RepositoryFeatureIssues,
+	)
+	require.True(due)
+	defer first.release()
+	_, due = syncer.beginRepositoryFeatureProbe(
+		ctx, repo, platform.RepositoryFeatureIssues,
+	)
+	require.False(due)
 }
 
 func TestWrappedRawDisabledIssueResponseStopsDetailDrainAndStartsCooldown(t *testing.T) {

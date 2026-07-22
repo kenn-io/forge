@@ -5073,12 +5073,20 @@ func (s *Syncer) indexSyncRepo(
 		)
 	}
 	if caps.ReadMergeRequests && mrProbeDue {
-		defer mrProbe.release()
+		mrProviderAttempted := false
+		defer func() {
+			if mrProviderAttempted {
+				mrProbe.release()
+			} else {
+				mrProbe.abandon()
+			}
+		}()
 		attemptedScope |= failMR
 		mrReader, err := s.mergeRequestReaderFor(repo)
 		if err != nil {
 			return fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
 		}
+		mrProviderAttempted = true
 		openMRs, err := mrReader.ListOpenMergeRequests(ctx, platformRef)
 		mrListBlocked := false
 		if err != nil {
@@ -5180,7 +5188,14 @@ func (s *Syncer) indexSyncRepo(
 		)
 	}
 	if caps.ReadIssues && issueProbeDue {
-		defer issueProbe.release()
+		issueProviderAttempted := false
+		defer func() {
+			if issueProviderAttempted {
+				issueProbe.release()
+			} else {
+				issueProbe.abandon()
+			}
+		}()
 		attemptedScope |= failIssues
 		issueReader, err := s.issueReaderFor(repo)
 		if err != nil {
@@ -5194,6 +5209,7 @@ func (s *Syncer) indexSyncRepo(
 			}
 			return fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err)
 		}
+		issueProviderAttempted = true
 
 		var openIssues []platform.Issue
 		var ghIssues []*gh.Issue
@@ -8458,13 +8474,13 @@ func (s *Syncer) drainDetailQueue(
 			continue
 		}
 		if exhausted[bucket] {
-			probe.release()
+			probe.abandon()
 			continue
 		}
 
 		budget := s.budgets[bucket]
 		if budget == nil {
-			probe.release()
+			probe.abandon()
 			continue
 		}
 
@@ -8474,13 +8490,13 @@ func (s *Syncer) drainDetailQueue(
 		// work we almost certainly can't afford.
 		worstCase := qi.WorstCaseCost()
 		if !budget.CanSpend(worstCase) {
-			probe.release()
+			probe.abandon()
 			exhausted[bucket] = true
 			continue
 		}
 		repoID, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
 		if err != nil {
-			probe.release()
+			probe.abandon()
 			slog.Warn("detail drain: upsert repo failed",
 				"repo", qi.RepoOwner+"/"+qi.RepoName,
 				"err", err,
@@ -8504,12 +8520,13 @@ func (s *Syncer) drainDetailQueue(
 			}
 		}
 
+		providerCalls := 0
 		if qi.Type == QueueItemPR {
-			_, err = s.fetchMRDetail(
+			providerCalls, err = s.fetchMRDetail(
 				ctx, repo, repoID, qi.Number, cloneFetchOK,
 			)
 		} else {
-			_, err = s.fetchIssueDetail(
+			providerCalls, err = s.fetchIssueDetail(
 				ctx, repo, repoID, qi.Number,
 			)
 		}
@@ -8518,7 +8535,11 @@ func (s *Syncer) drainDetailQueue(
 			disabledErr := repositoryFeatureDisabledError(repo, feature, err)
 			disabled := disabledErr != nil &&
 				s.recordRepositoryFeatureDisabled(repo, feature, disabledErr)
-			probe.release()
+			if providerCalls > 0 {
+				probe.release()
+			} else {
+				probe.abandon()
+			}
 			if disabled {
 				continue
 			}
@@ -8530,7 +8551,11 @@ func (s *Syncer) drainDetailQueue(
 			)
 			continue
 		}
-		probe.release()
+		if providerCalls > 0 {
+			probe.release()
+		} else {
+			probe.abandon()
+		}
 	}
 }
 

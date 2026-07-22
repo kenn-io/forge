@@ -74,7 +74,7 @@ failure recovery.
 
 Repository-disabled issue and merge-request scopes use a 24-hour in-memory
 background probe gate. Expiry admits one reserved background probe across all
-lanes; pre-provider denial abandons only the reservation, while completed provider
+lanes; any pre-provider exit abandons only the reservation, while completed provider
 work either renews or releases the observed generation. (`internal/github/feature_cooldown.go::repositoryFeatureProbe.abandon`)
 Explicit sync bypasses only cooldown generations present when the run begins; any
 non-disabled attempt clears that observed generation even when retry bits remain, while

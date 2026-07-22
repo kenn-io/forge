@@ -1125,6 +1125,10 @@
         });
         if (!isCurrentWorkspace(id, hostKey)) return;
         if (!data) {
+          // 404 is authoritative: the workspace no longer exists (deleted
+          // by another client). Report it so cached refs, overrides, and
+          // created-records stop advertising it.
+          if (response.status === 404) onWorkspaceDeleted?.(id, hostKey);
           loadError = apiErrorMessage(
             error,
             `Failed to load workspace (${response.status})`,
@@ -1160,6 +1164,10 @@
       });
       if (!isCurrentWorkspace(id, hostKey)) return;
       if (!data) {
+        // 404 is authoritative: the workspace no longer exists (deleted
+        // by another client). Report it so cached refs, overrides, and
+        // created-records stop advertising it.
+        if (response.status === 404) onWorkspaceDeleted?.(id, hostKey);
         loadError = apiErrorMessage(
           error,
           `Failed to load workspace (${response.status})`,

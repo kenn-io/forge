@@ -1,6 +1,8 @@
 import { describe, expect, it, beforeEach } from "vite-plus/test";
 import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
 import {
+  nextWorkspaceLifecycleTick,
+  reconcileWorkspaceCreated,
   recordWorkspaceCreated,
   resetWorkspaceCreatePendingForTest,
 } from "@middleman/ui/stores/workspace-create-pending";
@@ -120,6 +122,35 @@ describe("workspace host store", () => {
     // An envelope carrying the workspace stays authoritative.
     const envelope = { id: "ws-a", status: "provisioning" };
     expect(prs.effectiveWorkspaceRef(identityA, envelope)).toEqual(envelope);
+  });
+
+  it("a post-creation null envelope authoritatively clears a created override", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const preCreateTick = nextWorkspaceLifecycleTick();
+    prs.recordCreated(identityA, refA);
+    // A null envelope from a request that started before the creation is
+    // a stale pre-create fetch: the override must survive it, with or
+    // without a tick.
+    prs.reconcile(identityA, null, preCreateTick);
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(refA);
+    prs.reconcile(identityA, null);
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(refA);
+    // A request started after the creation reporting no workspace means
+    // another client deleted it: the override must clear.
+    prs.reconcile(identityA, null, nextWorkspaceLifecycleTick());
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
+  });
+
+  it("a post-creation null envelope clears a controller-less created record", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const preCreateTick = nextWorkspaceLifecycleTick();
+    recordWorkspaceCreated(identityA, refA);
+    reconcileWorkspaceCreated(identityA, null, preCreateTick);
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(refA);
+    reconcileWorkspaceCreated(identityA, null);
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(refA);
+    reconcileWorkspaceCreated(identityA, null, nextWorkspaceLifecycleTick());
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
   });
 
   it("a deletion still masks a controller-less created record", () => {

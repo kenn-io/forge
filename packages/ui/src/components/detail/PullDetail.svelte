@@ -1110,9 +1110,14 @@
     if (!detailMatchesIdentity(detail, itemIdentity)) return;
     // The shared created-record reconciles the same way, controller or
     // not: an identity-matched envelope that carries the workspace is
-    // authoritative.
-    reconcileWorkspaceCreated(itemIdentity, detail.workspace ?? null);
-    if (inlineWorkspace) inlineWorkspace.reconcile(itemIdentity, detail.workspace ?? null);
+    // authoritative, and a null envelope whose request started after the
+    // creation was recorded (the tick comparison) is authoritative for
+    // absence — another client deleted the workspace. Reading the tick
+    // here also reruns this effect when a refreshed envelope's content
+    // is identical and the detail object itself is not reassigned.
+    const envelopeTick = detailStore.getDetailEnvelopeTick();
+    reconcileWorkspaceCreated(itemIdentity, detail.workspace ?? null, envelopeTick);
+    if (inlineWorkspace) inlineWorkspace.reconcile(itemIdentity, detail.workspace ?? null, envelopeTick);
   });
 
   let wsCreating = $state(false);

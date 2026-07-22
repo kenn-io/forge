@@ -62,8 +62,18 @@ export interface InlineWorkspaceController {
    * still carrying that workspace, not a recreation under a fresh ID.
    */
   recordDeleted(identity: WorkspaceItemIdentity, workspaceId: string): void;
-  /** Identity-matched refetch landed: drop the override if the envelope agrees. */
-  reconcile(identity: WorkspaceItemIdentity, envelopeRef: WorkspaceRefLite | null | undefined): void;
+  /**
+   * Identity-matched refetch landed: drop the override if the envelope
+   * agrees. A null envelope agrees with a positive (created) override only
+   * when `envelopeTick` shows its request started after the creation was
+   * recorded — otherwise it is a stale pre-create fetch and must not clear
+   * a workspace that exists.
+   */
+  reconcile(
+    identity: WorkspaceItemIdentity,
+    envelopeRef: WorkspaceRefLite | null | undefined,
+    envelopeTick?: number,
+  ): void;
   /** Dock UI state (persisted height lives in the dock; mode lives here so detail buttons can drive it). */
   getDockMode(): InlineDockMode;
   setDockMode(mode: InlineDockMode): void;

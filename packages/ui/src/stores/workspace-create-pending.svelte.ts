@@ -12,8 +12,21 @@ import { identityEquals, type WorkspaceItemIdentity, type WorkspaceRefLite } fro
 // response landed after unmount or a selection change.
 let pending = $state<WorkspaceItemIdentity[]>([]);
 
-type CreatedEntry = { identity: WorkspaceItemIdentity; ref: WorkspaceRefLite };
+type CreatedEntry = { identity: WorkspaceItemIdentity; ref: WorkspaceRefLite; tick: number };
 let created = $state<CreatedEntry[]>([]);
+
+// Monotonic ordering shared by creation confirmations and detail-envelope
+// requests: a null envelope can only be trusted to mean "the workspace is
+// gone" when its request STARTED after the creation was confirmed. Detail
+// stores stamp each envelope-producing request at request start; created
+// records stamp at confirmation. Comparing the two distinguishes a stale
+// pre-create fetch (must not clear) from a fresh post-create fetch whose
+// null is authoritative (another client deleted the workspace).
+let lifecycleClock = 0;
+
+export function nextWorkspaceLifecycleTick(): number {
+  return ++lifecycleClock;
+}
 
 export function beginWorkspaceCreate(identity: WorkspaceItemIdentity): void {
   if (isWorkspaceCreatePending(identity)) return;
@@ -34,11 +47,16 @@ export function isWorkspaceCreatePending(identity: WorkspaceItemIdentity): boole
 
 // Confirmed creation, published for every detail instance regardless of the
 // optional inline controller. Kept until a fresh identity-matched detail
-// envelope carries a workspace (the server is authoritative then) or the
-// workspace is deleted; a null envelope is a stale pre-create fetch and
-// must not drop the record.
+// envelope carries a workspace (the server is authoritative then), a
+// post-confirmation envelope reports the workspace absent (deleted by
+// another client), or a deletion event clears it by ID. A null envelope
+// from a request that started before the confirmation is a stale
+// pre-create fetch and must not drop the record.
 export function recordWorkspaceCreated(identity: WorkspaceItemIdentity, ref: WorkspaceRefLite): void {
-  created = [...created.filter((entry) => !identityEquals(entry.identity, identity)), { identity, ref }];
+  created = [
+    ...created.filter((entry) => !identityEquals(entry.identity, identity)),
+    { identity, ref, tick: nextWorkspaceLifecycleTick() },
+  ];
 }
 
 export function createdWorkspaceRef(identity: WorkspaceItemIdentity): WorkspaceRefLite | null {
@@ -48,10 +66,12 @@ export function createdWorkspaceRef(identity: WorkspaceItemIdentity): WorkspaceR
 export function reconcileWorkspaceCreated(
   identity: WorkspaceItemIdentity,
   envelopeRef: WorkspaceRefLite | null | undefined,
+  envelopeTick?: number,
 ): void {
-  if (!envelopeRef) return;
-  if (!created.some((entry) => identityEquals(entry.identity, identity))) return;
-  created = created.filter((entry) => !identityEquals(entry.identity, identity));
+  const entry = created.find((e) => identityEquals(e.identity, identity));
+  if (!entry) return;
+  if (!envelopeRef && (envelopeTick == null || envelopeTick <= entry.tick)) return;
+  created = created.filter((e) => !identityEquals(e.identity, identity));
 }
 
 // Deletions arrive by workspace ID (Workspaces tab, terminal toolbar),
@@ -64,4 +84,5 @@ export function clearCreatedWorkspaceById(workspaceId: string): void {
 export function resetWorkspaceCreatePendingForTest(): void {
   pending = [];
   created = [];
+  lifecycleClock = 0;
 }

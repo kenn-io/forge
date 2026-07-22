@@ -8,16 +8,18 @@
 // tearing down the terminal underneath it. A `data-continuity` tag applied
 // via evaluate is the proof a reparent preserves the exact DOM node — a
 // destroy+recreate (the reconnecting switch a differing remembered key
-// takes) cannot carry the tag forward. A screenshot hash of the tagged
-// element taken before and after typing corroborates that the session
-// behind it is still live, not just visually frozen — this reads the
-// browser's actual composited output rather than the terminal's backing
-// canvas, since xterm.js's WebGL renderer keeps its own GL context on that
-// canvas (a second, `getContext("2d")`-based readback is not possible on
-// the same element) and ghostty-web's canvas readback proved unreliable to
-// synchronize with this harness's headless GPU path.
+// takes) cannot carry the tag forward. After every reparent a command is
+// typed into the terminal that creates a marker file in the workspace's
+// worktree, and the test asserts the file appears on disk: keystrokes must
+// travel the WebSocket to the real tmux shell and execute. This is durable
+// evidence the session is live — unlike a screenshot-hash diff, which
+// cursor blinking or the tmux status clock can change even when terminal
+// input is broken (and canvas readback is unavailable anyway: xterm.js's
+// WebGL renderer owns the canvas GL context, and ghostty-web's readback
+// proved unreliable under this harness's headless GPU path).
 
-import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { execFileSync } from "node:child_process";
 import {
   expect,
@@ -33,6 +35,7 @@ import { openSettingsPanel } from "./support/settingsPanel";
 type WorkspaceStatusResponse = {
   id: string;
   status: string;
+  worktree_path: string;
   error_message?: string | null;
 };
 
@@ -49,12 +52,12 @@ function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   }
 }
 
-async function waitForWorkspaceReady(api: APIRequestContext, workspaceId: string): Promise<void> {
+async function waitForWorkspaceReady(api: APIRequestContext, workspaceId: string): Promise<WorkspaceStatusResponse> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const response = await api.get(`/api/v1/workspaces/${workspaceId}`);
     expect(response.ok()).toBe(true);
     const workspace = (await response.json()) as WorkspaceStatusResponse;
-    if (workspace.status === "ready") return;
+    if (workspace.status === "ready") return workspace;
     if (workspace.status === "error") {
       throw new Error(workspace.error_message ?? `workspace ${workspaceId} failed to become ready`);
     }
@@ -69,8 +72,9 @@ async function createIssueWorkspace(api: APIRequestContext, issueNumber: number)
   });
   expect(response.status()).toBe(202);
   const workspace = (await response.json()) as WorkspaceStatusResponse;
-  await waitForWorkspaceReady(api, workspace.id);
-  return workspace;
+  // Return the ready-state GET body: the 202 payload predates worktree
+  // provisioning, so only the polled response carries worktree_path.
+  return waitForWorkspaceReady(api, workspace.id);
 }
 
 async function openTerminalPanel(page: Page): Promise<Locator> {
@@ -85,6 +89,17 @@ async function typeIntoTerminal(page: Page, container: Locator, command: string)
   await container.click({ position: { x: 10, y: 10 } });
   await page.keyboard.type(command);
   await page.keyboard.press("Enter");
+}
+
+// Types a command that creates a marker file in the workspace worktree and
+// waits for the file to exist on disk. Durable proof the terminal's input
+// path (DOM focus -> WebSocket -> tmux -> shell) is live at this moment;
+// a rendering-level signal cannot fake it and a broken input path cannot
+// pass it.
+async function typeMarkerCommand(page: Page, container: Locator, worktreePath: string, marker: string): Promise<void> {
+  const markerPath = path.join(worktreePath, marker);
+  await typeIntoTerminal(page, container, `touch '${markerPath}'`);
+  await expect.poll(() => existsSync(markerPath), { timeout: 15_000 }).toBe(true);
 }
 
 async function selectTopBarTab(page: Page, label: string): Promise<void> {
@@ -109,15 +124,6 @@ async function switchRendererToGhosttyViaSettings(page: Page, baseURL: string): 
   expect((await saveResponsePromise).ok()).toBe(true);
 }
 
-async function screenshotHash(container: Locator): Promise<string> {
-  const buffer = await container.screenshot();
-  return createHash("sha256").update(buffer).digest("hex");
-}
-
-async function expectDistinctPaint(container: Locator, baselineHash: string): Promise<void> {
-  await expect.poll(async () => (await screenshotHash(container)) !== baselineHash, { timeout: 10_000 }).toBe(true);
-}
-
 test.describe("inline workspace dock continuity", () => {
   test.describe.configure({ mode: "serial", timeout: lockedWorkspaceTestTimeoutMs });
 
@@ -137,9 +143,7 @@ test.describe("inline workspace dock continuity", () => {
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
       const tabContainer = await openTerminalPanel(page);
-      const blank = await screenshotHash(tabContainer);
-      await typeIntoTerminal(page, tabContainer, "printf 'CONTINUITY_MARKER_ONE'");
-      await expectDistinctPaint(tabContainer, blank);
+      await typeMarkerCommand(page, tabContainer, workspace.worktree_path, "continuity-marker-one");
 
       await tabContainer.evaluate((el) => {
         el.setAttribute("data-continuity", "witness");
@@ -155,10 +159,7 @@ test.describe("inline workspace dock continuity", () => {
       await expect(witness).toBeVisible();
       const dockContainer = page.locator(".workspace-dock-panel .workspace-dock-slot .terminal-container");
       await expect(dockContainer).toHaveAttribute("data-continuity", "witness");
-      const afterReparent = await screenshotHash(dockContainer);
-
-      await typeIntoTerminal(page, dockContainer, "printf 'CONTINUITY_MARKER_TWO'");
-      await expectDistinctPaint(dockContainer, afterReparent);
+      await typeMarkerCommand(page, dockContainer, workspace.worktree_path, "continuity-marker-two");
 
       // Flip back to the Workspaces tab: route memory returns to
       // /terminal/{id} — the same hostedWorkspaceKey as the dock claim, so
@@ -169,12 +170,9 @@ test.describe("inline workspace dock continuity", () => {
       const backInTab = page.locator(".workspace-tab-slot .terminal-container");
       await expect(witness).toBeVisible();
       await expect(backInTab).toHaveAttribute("data-continuity", "witness");
-      // Still showing accumulated scrollback, not reset to the pristine
-      // blank pane a reconnect would produce (the tmux status bar's clock
-      // and the cursor blink mean an exact pixel match across time isn't a
-      // safe assertion, so this checks "still has content" rather than
-      // "identical frame").
-      expect(await screenshotHash(backInTab)).not.toBe(blank);
+      // The same session must still accept input after the second
+      // reparent — a torn-down or wedged terminal cannot run this.
+      await typeMarkerCommand(page, backInTab, workspace.worktree_path, "continuity-marker-three");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
@@ -200,9 +198,7 @@ test.describe("inline workspace dock continuity", () => {
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
       const tabContainer = await openTerminalPanel(page);
       await expect(tabContainer.locator("canvas")).toHaveCount(1);
-      const blank = await screenshotHash(tabContainer);
-      await typeIntoTerminal(page, tabContainer, "printf 'CONTINUITY_MARKER_ONE'");
-      await expectDistinctPaint(tabContainer, blank);
+      await typeMarkerCommand(page, tabContainer, workspace.worktree_path, "continuity-marker-one");
 
       await tabContainer.evaluate((el) => {
         el.setAttribute("data-continuity", "witness");
@@ -216,10 +212,7 @@ test.describe("inline workspace dock continuity", () => {
       await expect(witness).toBeVisible();
       const dockContainer = page.locator(".workspace-dock-panel .workspace-dock-slot .terminal-container");
       await expect(dockContainer).toHaveAttribute("data-continuity", "witness");
-      const afterReparent = await screenshotHash(dockContainer);
-
-      await typeIntoTerminal(page, dockContainer, "printf 'CONTINUITY_MARKER_TWO'");
-      await expectDistinctPaint(dockContainer, afterReparent);
+      await typeMarkerCommand(page, dockContainer, workspace.worktree_path, "continuity-marker-two");
 
       // Flip back to the Workspaces tab: same hostedWorkspaceKey, so the
       // tagged container (and the canvas inside it) must still be the one
@@ -229,9 +222,9 @@ test.describe("inline workspace dock continuity", () => {
       const backInTab = page.locator(".workspace-tab-slot .terminal-container");
       await expect(witness).toBeVisible();
       await expect(backInTab).toHaveAttribute("data-continuity", "witness");
-      // Still showing accumulated scrollback rather than the pristine blank
-      // pane a reconnect would produce.
-      expect(await screenshotHash(backInTab)).not.toBe(blank);
+      // The same session must still accept input after the second
+      // reparent — a torn-down or wedged terminal cannot run this.
+      await typeMarkerCommand(page, backInTab, workspace.worktree_path, "continuity-marker-three");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

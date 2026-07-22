@@ -9,6 +9,7 @@ import {
 } from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 import { showFlash } from "./flash.svelte.js";
+import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js";
 
 export type IssueDetailSyncMode = boolean | "background";
 
@@ -105,6 +106,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   // --- detail state ---
 
   let issueDetail = $state<IssueDetail | null>(null);
+  // Lifecycle tick captured when the request that produced the current
+  // envelope STARTED (not when it landed). Workspace-create reconciliation
+  // compares it against a creation confirmation's tick to tell a stale
+  // pre-create "no workspace" apart from an authoritative post-create one.
+  let issueDetailEnvelopeTick = $state(0);
   let detailLoading = $state(false);
   let detailSyncing = $state(false);
   let detailError = $state<string | null>(null);
@@ -205,6 +211,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   function getIssueDetail(): IssueDetail | null {
     return issueDetail;
+  }
+  function getIssueDetailEnvelopeTick(): number {
+    return issueDetailEnvelopeTick;
   }
   function isIssueDetailLoading(): boolean {
     return detailLoading;
@@ -496,6 +505,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     detailLoading = true;
     detailSyncing = false;
     detailError = null;
+    const envelopeTick = nextWorkspaceLifecycleTick();
     const promise = (async () => {
       try {
         const { data, error: requestError } = await apiClient.GET(providerItemPath("issues", requestRef, ""), {
@@ -516,6 +526,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               events: data.events ?? [],
             } as IssueDetail)
           : null;
+        if (envelopeTick > issueDetailEnvelopeTick) issueDetailEnvelopeTick = envelopeTick;
         issueDetailLoaded = data?.detail_loaded ?? false;
       } catch (err) {
         if (gen !== issueSyncGeneration) return;
@@ -592,6 +603,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     ref: IssueDetailRequestRef,
   ): Promise<void> {
     detailSyncing = true;
+    const envelopeTick = nextWorkspaceLifecycleTick();
     try {
       const { data, error: requestError } = await apiClient.POST(providerItemPath("issues", ref, "/sync"), {
         params: {
@@ -608,6 +620,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           ...data,
           events: data.events ?? [],
         } as IssueDetail);
+        if (envelopeTick > issueDetailEnvelopeTick) issueDetailEnvelopeTick = envelopeTick;
         issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
       }
     } catch {
@@ -630,6 +643,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     ref: IssueDetailRequestRef,
     expectedGen: number = issueSyncGeneration,
   ): Promise<{ ok: boolean; error?: string }> {
+    const envelopeTick = nextWorkspaceLifecycleTick();
     try {
       const { data, error: requestError } = await apiClient.GET(providerItemPath("issues", ref, ""), {
         params: {
@@ -648,6 +662,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           ...data,
           events: data.events ?? [],
         } as IssueDetail);
+        if (envelopeTick > issueDetailEnvelopeTick) issueDetailEnvelopeTick = envelopeTick;
         issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
         return { ok: true };
       }
@@ -921,6 +936,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     // host can't replace the now-displayed issue from another host
     // that happens to share owner/name/number.
     let localBodyMatchesSent = false;
+    const envelopeTick = nextWorkspaceLifecycleTick();
     try {
       const { data, error: requestError } = await apiClient.PATCH(providerItemPath("issues", ref, ""), {
         params: {
@@ -949,6 +965,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         issueDetail.issue.Body === body;
       if (data && localBodyMatchesSent) {
         issueDetail = data as IssueDetail;
+        if (envelopeTick > issueDetailEnvelopeTick) issueDetailEnvelopeTick = envelopeTick;
       }
     } catch (err) {
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
@@ -1152,6 +1169,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     clearIssueSelection,
     loadIssues,
     getIssueDetail,
+    getIssueDetailEnvelopeTick,
     isIssueDetailLoading,
     isIssueDetailSyncing,
     getIssueDetailError,

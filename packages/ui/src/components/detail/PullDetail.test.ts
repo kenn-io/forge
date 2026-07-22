@@ -5,7 +5,10 @@ import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } 
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import { createDetailStore } from "../../stores/detail.svelte.js";
 import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
-import { resetWorkspaceCreatePendingForTest } from "../../stores/workspace-create-pending.svelte.js";
+import {
+  nextWorkspaceLifecycleTick,
+  resetWorkspaceCreatePendingForTest,
+} from "../../stores/workspace-create-pending.svelte.js";
 import type { MiddlemanClient } from "../../types.js";
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
@@ -192,11 +195,13 @@ function renderPullDetail(
   } = {},
 ) {
   const actions = options.actions ?? { pull: [] };
+  let envelopeTick = 0;
   const detailStore = {
     loadDetail: vi.fn(async () => undefined),
     startDetailPolling: vi.fn(),
     stopDetailPolling: vi.fn(),
     getDetail: () => detail,
+    getDetailEnvelopeTick: () => envelopeTick,
     isDetailLoading: () => false,
     getDetailError: () => null,
     isDetailSyncing: () => options.detailSyncing ?? false,
@@ -239,7 +244,14 @@ function renderPullDetail(
       [NAVIGATE_KEY, navigate],
     ]),
   });
-  return { ...rendered, detailStore, navigate };
+  return {
+    ...rendered,
+    detailStore,
+    navigate,
+    setEnvelopeTick: (tick: number) => {
+      envelopeTick = tick;
+    },
+  };
 }
 
 function addReviewSuggestionToDetail(detail: PullDetail): void {
@@ -1637,6 +1649,35 @@ describe("PullDetail inline workspace handoff", () => {
     expect(apiClient.POST).toHaveBeenCalledTimes(1);
   });
 
+  it("a post-creation refetch reporting no workspace clears the stale created record", async () => {
+    // Another client deleted the workspace: a detail load whose request
+    // started AFTER the creation confirmed returns workspace: null, which
+    // is authoritative absence. Without clearing, the button would offer
+    // "Open Workspace" against a dead ID forever. The pre-clear state is
+    // proven first: the confirmation's own envelope (older tick) must not
+    // clear the record.
+    const { apiClient, resolvePost } = deferredWorkspaceApiClient();
+    const { rerender, setEnvelopeTick } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+    });
+
+    await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
+    resolvePost({ data: { id: "ws-new", status: "provisioning" } });
+    await vi.waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Open Workspace" }).length).toBeGreaterThan(0);
+    });
+
+    // A refetch initiated after the confirmation observes no workspace.
+    setEnvelopeTick(nextWorkspaceLifecycleTick());
+    await rerender({ number: 2 });
+    await rerender({ number: 1 });
+
+    await vi.waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Create Workspace" }).length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByRole("button", { name: "Open Workspace" })).toBeNull();
+  });
+
   it("publishes a confirmed creation across a selection round-trip", async () => {
     // A→B→A: returning to the original PR restores an identity that
     // matches the request, but the round-trip bumped the request
@@ -1787,7 +1828,7 @@ describe("PullDetail inline workspace handoff", () => {
       inlineWorkspace: controller,
     });
 
-    expect(controller.reconcile).toHaveBeenCalledWith(identity, { id: "ws-1", status: "ready" });
+    expect(controller.reconcile).toHaveBeenCalledWith(identity, { id: "ws-1", status: "ready" }, 0);
   });
 
   it("reconciles when the identity omits the host and the detail carries the provider default", async () => {
@@ -1809,6 +1850,7 @@ describe("PullDetail inline workspace handoff", () => {
     expect(controller.reconcile).toHaveBeenCalledWith(
       { ...identity, platformHost: undefined },
       { id: "ws-1", status: "ready" },
+      0,
     );
   });
 

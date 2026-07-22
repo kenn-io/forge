@@ -55,7 +55,14 @@ Interactive surfaces must agree on which item is selected.
   store records confirmed creations for detail instances WITHOUT an inline
   controller (focus/mobile views, DetailDrawer), which otherwise only see
   the detail envelope; records reconcile away when an identity-matched
-  envelope carries a workspace and clear on deletion by workspace ID. The
+  envelope carries a workspace and clear on deletion by workspace ID. A
+  workspace-absent envelope clears a created record or override only when
+  its request STARTED after the confirmation (shared lifecycle tick,
+  `nextWorkspaceLifecycleTick`): a stale pre-create fetch must not wipe a
+  creation, but a post-create fetch reporting absence — or a 404 on the
+  workspace itself — means another client deleted it and the record must
+  drop. E2e mocks of the create POST must keep the detail envelope
+  consistent (the real server inserts the row before returning 202). The
   host store's `effectiveRef` falls back to that record too — a create
   begun controller-less must surface on an inline surface after a layout
   switch, where no recordCreated override ever ran

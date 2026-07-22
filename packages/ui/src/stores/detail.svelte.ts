@@ -18,6 +18,7 @@ import {
 } from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 import { showFlash } from "./flash.svelte.js";
+import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js";
 
 export type DetailSyncMode = boolean | "background";
 
@@ -122,6 +123,13 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // --- state ---
 
   let detail = $state<PullDetail | null>(null);
+  // Lifecycle tick captured when the request that produced the current
+  // envelope STARTED (not when it landed). Workspace-create reconciliation
+  // compares it against a creation confirmation's tick to tell a stale
+  // pre-create "no workspace" apart from an authoritative post-create one.
+  // Reactive so reconcile effects rerun even when a refreshed envelope's
+  // content is identical and `detail` itself is not reassigned.
+  let detailEnvelopeTick = $state(0);
   let loading = $state(false);
   let syncing = $state(false);
   let storeError = $state<string | null>(null);
@@ -177,6 +185,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   function getDetail(): PullDetail | null {
     return detail;
+  }
+
+  function getDetailEnvelopeTick(): number {
+    return detailEnvelopeTick;
   }
 
   function isDetailLoading(): boolean {
@@ -386,6 +398,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const ref = detailRequestRef(owner, name, number, identity);
     const key = prKey(ref);
     const requestSequence = ++detailRequestSequence;
+    const envelopeTick = nextWorkspaceLifecycleTick();
     try {
       const { data, error: requestError } = await apiClient.GET(providerItemPath("pulls", ref, ""), {
         params: {
@@ -414,6 +427,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
           } as PullDetail),
         );
         noteObservedFetchedAt(data.detail_fetched_at);
+        if (envelopeTick > detailEnvelopeTick) detailEnvelopeTick = envelopeTick;
         detailLoaded = data.detail_loaded ?? detailLoaded;
         return { ok: true, ...(data.detail_fetched_at != null && { fetchedAt: data.detail_fetched_at }) };
       }
@@ -433,6 +447,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const ref = detailRequestRef(owner, name, number, identity);
     syncing = true;
     let refreshed = false;
+    const envelopeTick = nextWorkspaceLifecycleTick();
     try {
       const { data, error: requestError } = await apiClient.POST(providerItemPath("pulls", ref, "/sync"), {
         params: {
@@ -452,6 +467,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
           } as PullDetail),
         );
         noteObservedFetchedAt(data.detail_fetched_at);
+        if (envelopeTick > detailEnvelopeTick) detailEnvelopeTick = envelopeTick;
         detailLoaded = data.detail_loaded ?? detailLoaded;
         refreshed = true;
       }
@@ -550,6 +566,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     storeError = null;
     detailLoaded = false;
     const requestSequence = ++detailRequestSequence;
+    const envelopeTick = nextWorkspaceLifecycleTick();
     const promise = (async () => {
       try {
         const { data, error: requestError } = await apiClient.GET(providerItemPath("pulls", requestRef, ""), {
@@ -577,6 +594,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
             } as PullDetail)
           : null;
         noteObservedFetchedAt(data?.detail_fetched_at);
+        if (envelopeTick > detailEnvelopeTick) detailEnvelopeTick = envelopeTick;
         detailLoaded = data?.detail_loaded ?? false;
       } catch (err) {
         if (
@@ -690,6 +708,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       return activeCIRefresh.promise;
     }
     const gen = syncGeneration;
+    const envelopeTick = nextWorkspaceLifecycleTick();
     const promise = (async () => {
       syncing = true;
       try {
@@ -712,6 +731,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
             } as PullDetail),
           );
           noteObservedFetchedAt(data.detail_fetched_at);
+          if (envelopeTick > detailEnvelopeTick) detailEnvelopeTick = envelopeTick;
           detailLoaded = data.detail_loaded ?? detailLoaded;
           const warning = data.warnings?.[0];
           if (warning) {
@@ -908,6 +928,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       },
     };
 
+    const envelopeTick = nextWorkspaceLifecycleTick();
     try {
       const { data, error: requestError } = await apiClient.PATCH(providerItemPath("pulls", ref, ""), {
         params: {
@@ -921,6 +942,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       // Apply server-canonical response.
       if (data && isDetailShowingRef(ref)) {
         detail = data as PullDetail;
+        if (envelopeTick > detailEnvelopeTick) detailEnvelopeTick = envelopeTick;
         if (
           unsavedLocalBody &&
           sameBodyTarget(unsavedLocalBody.provider, unsavedLocalBody.platformHost, ref.provider, ref.platformHost) &&
@@ -1034,6 +1056,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // the user navigated to the same owner/name/number on another
     // host doesn't replace the new repo's detail.
     let localBodyMatchesSent = false;
+    const envelopeTick = nextWorkspaceLifecycleTick();
     try {
       const { data, error: requestError } = await apiClient.PATCH(providerItemPath("pulls", ref, ""), {
         params: {
@@ -1054,6 +1077,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         detail.merge_request.Body === body;
       if (data && localBodyMatchesSent) {
         detail = data as PullDetail;
+        if (envelopeTick > detailEnvelopeTick) detailEnvelopeTick = envelopeTick;
       }
     } catch (err) {
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
@@ -1408,6 +1432,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   return {
     getDetail,
+    getDetailEnvelopeTick,
     isDetailLoading,
     isDetailSyncing,
     getDetailError,

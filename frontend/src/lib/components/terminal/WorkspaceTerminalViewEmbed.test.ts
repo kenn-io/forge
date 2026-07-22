@@ -297,6 +297,44 @@ describe("WorkspaceTerminalView embed props", () => {
     });
   });
 
+  it("reports a 404 workspace load as a deletion so cached refs clear", async () => {
+    // A 404 is authoritative absence: the workspace was deleted by
+    // another client. Without reporting it, created-records and
+    // overrides keep advertising the dead ID indefinitely.
+    mocks.runtimeClient.GET.mockResolvedValue({
+      data: undefined,
+      error: { detail: "workspace not found" },
+      response: { status: 404 },
+    });
+    const onWorkspaceDeleted = vi.fn();
+
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", hideWorkspaceList: true, onWorkspaceDeleted },
+    });
+
+    await waitFor(() => {
+      expect(onWorkspaceDeleted).toHaveBeenCalledWith("ws-1", undefined);
+    });
+  });
+
+  it("a transient workspace load failure is not treated as a deletion", async () => {
+    mocks.runtimeClient.GET.mockResolvedValue({
+      data: undefined,
+      error: { detail: "upstream boom" },
+      response: { status: 500 },
+    });
+    const onWorkspaceDeleted = vi.fn();
+
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", hideWorkspaceList: true, onWorkspaceDeleted },
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Failed to load workspace (500)").length).toBeGreaterThan(0);
+    });
+    expect(onWorkspaceDeleted).not.toHaveBeenCalled();
+  });
+
   describe("inlineDock toolbar controls", () => {
     afterEach(() => {
       resetModalStack();

@@ -276,6 +276,31 @@ test.describe("detail action buttons", () => {
         body: JSON.stringify(createdWorkspace),
       });
     });
+    // The real create inserts the workspace row before returning 202, so a
+    // real detail fetch after creation always carries the workspace ref.
+    // The mocked create must keep the detail envelope consistent: the
+    // client rightly treats a post-create envelope WITHOUT the workspace
+    // as authoritative absence (deleted elsewhere) and drops the ref.
+    await page.route(
+      (url) => url.pathname === "/api/v1/issues/github/acme/widgets/10",
+      async (route) => {
+        if (route.request().method() !== "GET" || createCalls === 0) {
+          await route.fallback();
+          return;
+        }
+        try {
+          const response = await route.fetch();
+          const body = (await response.json()) as Record<string, unknown>;
+          body.workspace = { id: createdWorkspace.id, status: createdWorkspace.status };
+          await route.fulfill({ response, body: JSON.stringify(body) });
+        } catch {
+          // Page teardown can dispose the fetched response while a
+          // polling refetch is mid-handler; the request no longer
+          // matters then.
+          await route.continue().catch(() => {});
+        }
+      },
+    );
     await page.route("**/api/v1/workspaces/ws-issue-10", async (route) => {
       await route.fulfill({
         status: 200,
@@ -369,6 +394,7 @@ test.describe("detail action buttons", () => {
     };
 
     const payloads: Record<string, unknown>[] = [];
+    let workspaceCreated = false;
     await page.route("**/api/v1/issues/github/acme/widgets/10/workspace", async (route) => {
       payloads.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>);
       if (payloads.length === 1) {
@@ -379,12 +405,38 @@ test.describe("detail action buttons", () => {
         });
         return;
       }
+      workspaceCreated = true;
       await route.fulfill({
         status: 202,
         contentType: "application/json",
         body: JSON.stringify(createdWorkspace),
       });
     });
+    // The real create inserts the workspace row before returning 202, so a
+    // real detail fetch after creation always carries the workspace ref.
+    // The mocked create must keep the detail envelope consistent: the
+    // client rightly treats a post-create envelope WITHOUT the workspace
+    // as authoritative absence (deleted elsewhere) and drops the ref.
+    await page.route(
+      (url) => url.pathname === "/api/v1/issues/github/acme/widgets/10",
+      async (route) => {
+        if (route.request().method() !== "GET" || !workspaceCreated) {
+          await route.fallback();
+          return;
+        }
+        try {
+          const response = await route.fetch();
+          const body = (await response.json()) as Record<string, unknown>;
+          body.workspace = { id: createdWorkspace.id, status: createdWorkspace.status };
+          await route.fulfill({ response, body: JSON.stringify(body) });
+        } catch {
+          // Page teardown can dispose the fetched response while a
+          // polling refetch is mid-handler; the request no longer
+          // matters then.
+          await route.continue().catch(() => {});
+        }
+      },
+    );
     await page.route("**/api/v1/workspaces/ws-issue-10", async (route) => {
       await route.fulfill({
         status: 200,
@@ -478,6 +530,7 @@ test.describe("detail action buttons", () => {
     };
 
     const payloads: Record<string, unknown>[] = [];
+    let workspaceCreated = false;
     await page.route("**/api/v1/issues/github/acme/widgets/10/workspace", async (route) => {
       payloads.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>);
       if (payloads.length === 1) {
@@ -488,12 +541,38 @@ test.describe("detail action buttons", () => {
         });
         return;
       }
+      workspaceCreated = true;
       await route.fulfill({
         status: 202,
         contentType: "application/json",
         body: JSON.stringify(createdWorkspace),
       });
     });
+    // The real create inserts the workspace row before returning 202, so a
+    // real detail fetch after creation always carries the workspace ref.
+    // The mocked create must keep the detail envelope consistent: the
+    // client rightly treats a post-create envelope WITHOUT the workspace
+    // as authoritative absence (deleted elsewhere) and drops the ref.
+    await page.route(
+      (url) => url.pathname === "/api/v1/issues/github/acme/widgets/10",
+      async (route) => {
+        if (route.request().method() !== "GET" || !workspaceCreated) {
+          await route.fallback();
+          return;
+        }
+        try {
+          const response = await route.fetch();
+          const body = (await response.json()) as Record<string, unknown>;
+          body.workspace = { id: createdWorkspace.id, status: createdWorkspace.status };
+          await route.fulfill({ response, body: JSON.stringify(body) });
+        } catch {
+          // Page teardown can dispose the fetched response while a
+          // polling refetch is mid-handler; the request no longer
+          // matters then.
+          await route.continue().catch(() => {});
+        }
+      },
+    );
     await page.route("**/api/v1/workspaces/ws-issue-10", async (route) => {
       await route.fulfill({
         status: 200,

@@ -4,7 +4,10 @@ import type { IssueDetail } from "../../api/types.js";
 import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
-import { resetWorkspaceCreatePendingForTest } from "../../stores/workspace-create-pending.svelte.js";
+import {
+  nextWorkspaceLifecycleTick,
+  resetWorkspaceCreatePendingForTest,
+} from "../../stores/workspace-create-pending.svelte.js";
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
 import { createTestController } from "../workspace/WorkspaceDockPanelTestController.svelte.js";
@@ -147,11 +150,13 @@ function renderIssueDetail(
     POST: vi.fn(),
   },
 ) {
+  let envelopeTick = 0;
   const issuesStore = {
     loadIssueDetail: vi.fn(async () => undefined),
     startIssueDetailPolling: vi.fn(),
     stopIssueDetailPolling: vi.fn(),
     getIssueDetail: () => detail,
+    getIssueDetailEnvelopeTick: () => envelopeTick,
     isIssueDetailLoading: () => false,
     getIssueDetailError: () => null,
     isIssueStaleRefreshing: () => options.staleRefreshing ?? false,
@@ -194,7 +199,15 @@ function renderIssueDetail(
       [NAVIGATE_KEY, navigate],
     ]),
   });
-  return { ...result, deleteIssueComment, issuesStore, navigate };
+  return {
+    ...result,
+    deleteIssueComment,
+    issuesStore,
+    navigate,
+    setEnvelopeTick: (tick: number) => {
+      envelopeTick = tick;
+    },
+  };
 }
 
 describe("IssueDetail activity view", () => {
@@ -469,6 +482,33 @@ describe("IssueDetail inline workspace handoff", () => {
     expect(apiClient.POST).toHaveBeenCalledTimes(1);
   });
 
+  it("a post-creation refetch reporting no workspace clears the stale created record", async () => {
+    // Another client deleted the workspace: a detail load whose request
+    // started AFTER the creation confirmed returns workspace: null, which
+    // is authoritative absence. Without clearing, the button would offer
+    // "Open Workspace" against a dead ID forever. The pre-clear state is
+    // proven first: the confirmation's own envelope (older tick) must not
+    // clear the record.
+    const { apiClient, resolvePost } = deferredWorkspaceApiClient();
+    const { rerender, setEnvelopeTick } = renderIssueDetail(issueDetail(), undefined, {}, apiClient);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
+    resolvePost({ data: { id: "ws-new", status: "provisioning" } });
+    await vi.waitFor(() => {
+      expect(screen.getByRole("button", { name: "Open Workspace" })).toBeTruthy();
+    });
+
+    // A refetch initiated after the confirmation observes no workspace.
+    setEnvelopeTick(nextWorkspaceLifecycleTick());
+    await rerender({ number: 8 });
+    await rerender({ number: 7 });
+
+    await vi.waitFor(() => {
+      expect(screen.getByRole("button", { name: "Create Workspace" })).toBeTruthy();
+    });
+    expect(screen.queryByRole("button", { name: "Open Workspace" })).toBeNull();
+  });
+
   it("publishes a confirmed creation across a selection round-trip", async () => {
     // A→B→A: returning to the original issue restores an identity that
     // matches the request, but the round-trip bumped the request
@@ -650,7 +690,7 @@ describe("IssueDetail inline workspace handoff", () => {
 
     renderIssueDetail(detail, undefined, { inlineWorkspace: controller });
 
-    expect(controller.reconcile).toHaveBeenCalledWith(identity, { id: "ws-1", status: "ready" });
+    expect(controller.reconcile).toHaveBeenCalledWith(identity, { id: "ws-1", status: "ready" }, 0);
   });
 
   it("reconciles when the identity omits the host and the detail carries the provider default", async () => {
@@ -669,6 +709,7 @@ describe("IssueDetail inline workspace handoff", () => {
     expect(controller.reconcile).toHaveBeenCalledWith(
       { ...identity, platformHost: undefined },
       { id: "ws-1", status: "ready" },
+      0,
     );
   });
 

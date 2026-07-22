@@ -8,7 +8,11 @@ import type {
 } from "@middleman/ui";
 import { canonicalItemType } from "@middleman/ui";
 import { canonicalProvider, resolvedPlatformHost } from "@middleman/ui/api/provider-routes";
-import { clearCreatedWorkspaceById, createdWorkspaceRef } from "@middleman/ui/stores/workspace-create-pending";
+import {
+  clearCreatedWorkspaceById,
+  createdWorkspaceRef,
+  nextWorkspaceLifecycleTick,
+} from "@middleman/ui/stores/workspace-create-pending";
 import { getStackDepth } from "@middleman/ui/stores/keyboard/modal-stack";
 import { forgetWorkspaceRoute, getRoute, navigate } from "./router.svelte.ts";
 
@@ -30,12 +34,20 @@ const PAGE_SURFACE: Partial<Record<string, InlineWorkspaceSurface>> = {
 // the "workspace absent" envelope it waits for never arrives.
 type DeletionTombstone = { deletedId: string };
 
-function isTombstone(override: WorkspaceRefLite | DeletionTombstone | undefined): override is DeletionTombstone {
+// A positive override remembers WHEN the creation was recorded (a shared
+// lifecycle tick): a "no workspace" envelope can only clear it when its
+// request started after that tick — a stale pre-create fetch must not
+// wipe a creation, but a post-create fetch reporting the workspace absent
+// is authoritative (another client deleted it).
+type CreatedOverride = { ref: WorkspaceRefLite; tick: number };
+type Override = CreatedOverride | DeletionTombstone;
+
+function isTombstone(override: Override | undefined): override is DeletionTombstone {
   return override !== undefined && "deletedId" in override;
 }
 
 let claims = $state<Partial<Record<InlineWorkspaceSurface, InlineClaim>>>({});
-let overrides = $state<Record<string, WorkspaceRefLite | DeletionTombstone>>({});
+let overrides = $state<Record<string, Override>>({});
 let dockModes = $state<Record<InlineWorkspaceSurface, InlineDockMode>>({
   activity: "split",
   prs: "split",
@@ -136,7 +148,7 @@ function effectiveRef(
     if (envelopeRef && envelopeRef.id !== override.deletedId) return envelopeRef;
     return null;
   }
-  if (override) return override;
+  if (override) return override.ref;
   // Shared created-record fallback: a create that started in a
   // controller-less view (focus/mobile) publishes only there — if the
   // layout switched to an inline surface before the response landed,
@@ -297,7 +309,7 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       return !!claim && sameIdentity(claim.identity, identity);
     },
     recordCreated: (identity, ref) => {
-      overrides = { ...overrides, [identityKey(identity)]: ref };
+      overrides = { ...overrides, [identityKey(identity)]: { ref, tick: nextWorkspaceLifecycleTick() } };
       workspaceIdentityById.set(ref.id, identity);
       const claim = claims[surface];
       // Refresh a matching live claim's ref, but never claim an unclaimed
@@ -314,15 +326,21 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       const claim = claims[surface];
       if (claim && sameIdentity(claim.identity, identity)) clearClaim(surface);
     },
-    reconcile: (identity, envelopeRef) => {
+    reconcile: (identity, envelopeRef, envelopeTick) => {
       const key = identityKey(identity);
       const override = overrides[key];
       if (!override) return;
       // A tombstone reconciles when the envelope no longer carries the
       // deleted workspace — either absent, or a different ID (recreated).
+      // A created override reconciles when the envelope confirms the same
+      // workspace, or when a post-creation request authoritatively reports
+      // it absent (deleted by another client); a stale pre-create null
+      // must not clear it.
       const agrees = isTombstone(override)
         ? envelopeRef == null || envelopeRef.id !== override.deletedId
-        : envelopeRef != null && envelopeRef.id === override.id;
+        : envelopeRef != null
+          ? envelopeRef.id === override.ref.id
+          : envelopeTick != null && envelopeTick > override.tick;
       if (!agrees) return;
       const next = { ...overrides };
       delete next[key];

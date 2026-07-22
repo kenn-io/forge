@@ -31,6 +31,7 @@ type kataAuthoritySnapshotLoader interface {
 
 type kataSnapshotCoordinatorDeps struct {
 	cache               *kataSnapshotCache
+	enrichmentCache     *kataSnapshotEnrichmentCache
 	resolveDaemon       func(string) (kata.Daemon, *ProblemError)
 	newLoader           func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error)
 	newServerInstanceID func() string
@@ -39,6 +40,7 @@ type kataSnapshotCoordinatorDeps struct {
 type kataSnapshotCoordinator struct {
 	root             context.Context
 	cache            *kataSnapshotCache
+	enrichmentCache  *kataSnapshotEnrichmentCache
 	resolveDaemon    func(string) (kata.Daemon, *ProblemError)
 	newLoader        func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error)
 	serverInstanceID string
@@ -65,6 +67,9 @@ func newKataSnapshotCoordinator(root context.Context, deps kataSnapshotCoordinat
 	if deps.cache == nil {
 		deps.cache = newKataSnapshotCache()
 	}
+	if deps.enrichmentCache == nil {
+		deps.enrichmentCache = newKataSnapshotEnrichmentCacheWithRoot(root)
+	}
 	if deps.resolveDaemon == nil {
 		deps.resolveDaemon = selectKataDaemonForID
 	}
@@ -83,6 +88,7 @@ func newKataSnapshotCoordinator(root context.Context, deps kataSnapshotCoordinat
 	return &kataSnapshotCoordinator{
 		root:             root,
 		cache:            deps.cache,
+		enrichmentCache:  deps.enrichmentCache,
 		resolveDaemon:    deps.resolveDaemon,
 		newLoader:        deps.newLoader,
 		serverInstanceID: deps.newServerInstanceID(),
@@ -91,7 +97,12 @@ func newKataSnapshotCoordinator(root context.Context, deps kataSnapshotCoordinat
 
 func (c *kataSnapshotCoordinator) run(ctx context.Context) {
 	defer c.close()
+	var caches sync.WaitGroup
+	caches.Go(func() {
+		c.enrichmentCache.run(ctx)
+	})
 	c.cache.run(ctx)
+	caches.Wait()
 }
 
 func (c *kataSnapshotCoordinator) close() {
@@ -100,10 +111,13 @@ func (c *kataSnapshotCoordinator) close() {
 	c.loadsMu.Unlock()
 	c.loads.Wait()
 	c.cache.close()
+	c.enrichmentCache.close()
 }
 
 func (c *kataSnapshotCoordinator) invalidateDaemon(daemonID string) uint64 {
-	return c.cache.invalidateDaemon(daemonID)
+	epoch := c.cache.invalidateDaemon(daemonID)
+	c.enrichmentCache.invalidateDaemon(daemonID)
+	return epoch
 }
 
 func (c *kataSnapshotCoordinator) daemonEpoch(daemonID string) uint64 {

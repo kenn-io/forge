@@ -9,8 +9,61 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	katagenerated "go.kenn.io/kata/pkg/client/generated"
 	"go.kenn.io/middleman/internal/kata"
 )
+
+func TestKataSnapshotCoordinatorInvalidatesAllEnrichmentReads(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	enrichmentCache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8)
+	coordinator := newKataSnapshotCoordinator(t.Context(), kataSnapshotCoordinatorDeps{
+		cache:           newKataSnapshotCache(),
+		enrichmentCache: enrichmentCache,
+		newServerInstanceID: func() string {
+			return "server-a"
+		},
+	})
+	t.Cleanup(coordinator.close)
+	var detailLoads atomic.Int64
+	var eventLoads atomic.Int64
+	var graphLoads atomic.Int64
+	loadAll := func(epoch uint64) {
+		t.Helper()
+		response := testKataShowIssueResponse("issue-member")
+		_, err := enrichmentCache.issueDetail(t.Context(), kataIssueDetailCacheKey{
+			DaemonID: "local", DaemonEpoch: epoch, IssueUID: "issue-member",
+		}, func(context.Context) (kataCachedIssueDetail, error) {
+			detailLoads.Add(1)
+			return kataCachedIssueDetail{Body: response.JSON200, Issue: response.JSON200.Issue}, nil
+		})
+		require.NoError(err)
+		_, err = enrichmentCache.projectEvents(t.Context(), kataProjectEventsCacheKey{
+			DaemonID: "local", DaemonEpoch: epoch, ProjectID: 7,
+		}, func(context.Context) ([]katagenerated.EventEnvelope, error) {
+			eventLoads.Add(1)
+			return []katagenerated.EventEnvelope{testKataEvent(1, nil, time.Unix(1, 0))}, nil
+		})
+		require.NoError(err)
+		_, err = enrichmentCache.graph(t.Context(), kataGraphCacheKey{
+			DaemonID: "local", DaemonEpoch: epoch, SourceUID: "issue-source", Depth: "full",
+		}, func(context.Context) (*katagenerated.ReachableGraphResponseBody, error) {
+			graphLoads.Add(1)
+			return testKataGraphResponse("issue-source", "issue-linked").JSON200, nil
+		})
+		require.NoError(err)
+	}
+
+	loadAll(0)
+	loadAll(0)
+	require.Equal(uint64(1), coordinator.invalidateDaemon("local"))
+	loadAll(1)
+
+	require.Equal(int64(2), detailLoads.Load())
+	require.Equal(int64(2), eventLoads.Load())
+	require.Equal(int64(2), graphLoads.Load())
+}
 
 func TestKataSnapshotCoordinatorCoalescesAndCachesAuthority(t *testing.T) {
 	t.Parallel()

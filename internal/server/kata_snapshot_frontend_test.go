@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	katagenerated "go.kenn.io/kata/pkg/client/generated"
 	"go.kenn.io/middleman/internal/kata"
 )
 
@@ -103,6 +104,74 @@ func TestKataSnapshotFrontendEnsuresEventsBeforeBlockedAuthorityLoad(t *testing.
 	assert.Equal([]string{"issue-source", "issue-member"}, got.response.MemberIssueUIDs)
 	assert.Len(got.response.Issues, 2)
 	assert.Equal("issue-member", got.response.Enrichment.SelectedIssueUID)
+}
+
+func TestKataSnapshotFrontendReusesSelectedEnrichmentWithinDaemonEpoch(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	daemon := kata.Daemon{ID: "primary", URL: "https://kata.example.test"}
+	authority := testKataSnapshotFrontendAuthority(daemon, 3, 7)
+	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8)
+	t.Cleanup(cache.close)
+	var detailCalls atomic.Int64
+	var eventCalls atomic.Int64
+	client := &fakeKataSnapshotAPIClient{
+		showIssue: func(_ context.Context, options *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			detailCalls.Add(1)
+			uid := options.PathParams.UID
+			response := testKataShowIssueResponse(uid)
+			if uid == "issue-source" {
+				response.JSON200.Issue.ID = 1
+				response.JSON200.Issue.ShortID = "source"
+				response.JSON200.Issue.Title = "Source task"
+			}
+			return response, nil
+		},
+		pollProjectEvents: func(_ context.Context, options *katagenerated.PollProjectEventsRequestOptions) (*katagenerated.PollProjectEventsResp, error) {
+			eventCalls.Add(1)
+			afterID := *options.Query.AfterID
+			if afterID == 0 {
+				sourceUID := "issue-source"
+				memberUID := "issue-member"
+				return testKataPollProjectEventsResponse(2,
+					testKataEvent(1, &sourceUID, time.Unix(1, 0)),
+					testKataEvent(2, &memberUID, time.Unix(2, 0)),
+				), nil
+			}
+			return testKataPollProjectEventsResponse(afterID), nil
+		},
+	}
+	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
+			return fakeKataFrontendEventHandle{fingerprint: kataDaemonTargetFingerprint(daemon)}, nil
+		},
+		loadAuthority: func(context.Context, string, kataAuthorityRequest) (kataCoordinatedAuthority, error) {
+			return authority, nil
+		},
+		daemonEpoch: func(string) uint64 { return authority.InvalidationEpoch },
+		newClient:   func(context.Context, kata.Daemon) (kataAPIClient, error) { return client, nil },
+		enrich: func(ctx context.Context, client kataAPIClient, authority kataCoordinatedAuthority, request kataSnapshotEnrichmentRequest) (kataSnapshotEnrichment, error) {
+			return newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client, cache: cache}).Enrich(ctx, authority, request)
+		},
+	})
+
+	first, err := frontend.Snapshot(t.Context(), &kataTaskSnapshotInput{DaemonID: daemon.ID, SelectedIssueUID: "issue-member"})
+	require.NoError(err)
+	second, err := frontend.Snapshot(t.Context(), &kataTaskSnapshotInput{DaemonID: daemon.ID, SelectedIssueUID: "issue-member"})
+	require.NoError(err)
+	third, err := frontend.Snapshot(t.Context(), &kataTaskSnapshotInput{DaemonID: daemon.ID, SelectedIssueUID: "issue-source"})
+	require.NoError(err)
+
+	require.Len(first.Enrichment.SelectedHistory, 1)
+	require.Len(second.Enrichment.SelectedHistory, 1)
+	require.Len(third.Enrichment.SelectedHistory, 1)
+	assert.Equal(int64(2), detailCalls.Load(), "each selected issue has its own detail cache key")
+	assert.Equal(int64(2), eventCalls.Load(), "both issues share one complete project-history pagination sequence")
+	assert.Equal(int64(2), first.Enrichment.SelectedHistory[0].EventID)
+	assert.Equal(int64(1), third.Enrichment.SelectedHistory[0].EventID)
 }
 
 func TestKataTaskReferencesPrioritizeExactIdentifiersBeforeCappedSubstringMatches(t *testing.T) {

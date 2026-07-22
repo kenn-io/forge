@@ -120,6 +120,7 @@ func (s *Server) kataSnapshotFrontend() *kataSnapshotFrontend {
 		) (kataSnapshotEnrichment, error) {
 			enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
 				client: client,
+				cache:  s.kataSnapshots.enrichmentCache,
 				resolveWorkspaceTarget: func(ctx context.Context, metadata db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
 					return s.kataWorkspaceTargetForMetadata(ctx, metadata)
 				},

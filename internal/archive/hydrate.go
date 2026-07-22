@@ -29,7 +29,7 @@ func (s *Service) hydrateItem(
 	}
 	syncErr := s.items.SyncArchiveItem(requestCtx, repo.Ref, work.ItemType, work.ItemNumber)
 	preempted := archivePreempted(ctx, requestCtx)
-	deferred := complete(syncErr)
+	deferred := complete(syncErr, true)
 	if preempted {
 		return errAdmissionDeferred
 	}

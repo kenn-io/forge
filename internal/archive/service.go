@@ -29,9 +29,11 @@ type AdmissionResult struct {
 	RetryAt         *time.Time
 	Context         context.Context
 	FeatureDeferred *FeatureDeferral
-	Complete        func(error) *FeatureDeferral
+	Complete        AdmissionComplete
 	Detail          string
 }
+
+type AdmissionComplete func(cause error, providerAttempted bool) *FeatureDeferral
 
 type FeatureDeferral struct {
 	RetryAt time.Time

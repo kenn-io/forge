@@ -193,7 +193,7 @@ func (a *archiveFeatureDeferringAdmission) Admit(
 	return AdmissionResult{
 		Allowed: true,
 		Context: ctx,
-		Complete: func(error) *FeatureDeferral {
+		Complete: func(error, bool) *FeatureDeferral {
 			return nil
 		},
 	}, nil

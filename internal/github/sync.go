@@ -920,11 +920,14 @@ func (s *Syncer) Admit(
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
 	}
+	requestCtx = WithArchiveAttemptAllowance(WithArchiveSyncBudget(requestCtx), available)
 	var completeOnce sync.Once
 	var featureDeferred *archive.FeatureDeferral
-	complete := func(cause error) *archive.FeatureDeferral {
+	complete := func(cause error, providerAttempted bool) *archive.FeatureDeferral {
 		completeOnce.Do(func() {
-			if disabled := repositoryFeatureDisabledError(repo, feature, cause); disabled != nil {
+			if !providerAttempted {
+				probe.abandon()
+			} else if disabled := repositoryFeatureDisabledError(repo, feature, cause); disabled != nil {
 				nextProbe, _ := s.recordRepositoryFeatureDisabledUntil(repo, feature, disabled)
 				featureDeferred = &archive.FeatureDeferral{
 					RetryAt: nextProbe,
@@ -942,7 +945,7 @@ func (s *Syncer) Admit(
 	// floor; provider-SDK and authentication retries share this allowance.
 	return archive.AdmissionResult{
 		Allowed:  true,
-		Context:  WithArchiveAttemptAllowance(WithArchiveSyncBudget(requestCtx), available),
+		Context:  requestCtx,
 		Complete: complete,
 	}, nil
 }
@@ -3419,7 +3422,8 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 			continue
 		}
-		err := s.syncMRWithWatchedRef(ctx, mr)
+		providerAttempted := false
+		err := s.syncMRWithWatchedRefTracking(ctx, mr, &providerAttempted)
 		if err != nil {
 			disabledErr := repositoryFeatureDisabledError(
 				repo, platform.RepositoryFeatureMergeRequests, err,
@@ -3427,7 +3431,11 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			disabled := disabledErr != nil && s.recordRepositoryFeatureDisabled(
 				repo, platform.RepositoryFeatureMergeRequests, disabledErr,
 			)
-			probe.release()
+			if providerAttempted {
+				probe.release()
+			} else {
+				probe.abandon()
+			}
 			if disabled {
 				continue
 			}
@@ -3443,7 +3451,11 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			}
 			continue
 		}
-		probe.release()
+		if providerAttempted {
+			probe.release()
+		} else {
+			probe.abandon()
+		}
 		syncedAny = true
 	}
 
@@ -5704,31 +5716,31 @@ func (s *Syncer) refreshPRCommentsForItem(
 	client Client,
 	repo RepoRef,
 	pr *db.MergeRequest,
-) bool {
+) (bool, bool) {
 	if pr == nil || pr.DetailFetchedAt == nil {
-		return false
+		return false, false
 	}
 	if !s.canSpendCommentRefresh(repo) {
-		return false
+		return false, false
 	}
 	comments, err := s.listCommentsForRefresh(
 		ctx, client, repo, pr.Number, pr.CommentCount,
 	)
 	if err != nil {
 		if IsNotModified(err) {
-			return false
+			return true, false
 		}
 		if s.recordGitHubRepositoryFeatureDisabled(
 			repo, platform.RepositoryFeatureMergeRequests, err,
 		) {
-			return true
+			return true, true
 		}
 		slog.Warn("comment refresh: list PR comments failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", pr.Number,
 			"err", err,
 		)
-		return false
+		return true, false
 	}
 	if err := s.persistPRComments(ctx, repo, pr, comments); err != nil {
 		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
@@ -5738,7 +5750,7 @@ func (s *Syncer) refreshPRCommentsForItem(
 			"err", err,
 		)
 	}
-	return false
+	return true, false
 }
 
 func (s *Syncer) refreshIssueCommentsForItem(
@@ -5746,31 +5758,31 @@ func (s *Syncer) refreshIssueCommentsForItem(
 	client Client,
 	repo RepoRef,
 	issue *db.Issue,
-) bool {
+) (bool, bool) {
 	if issue == nil || issue.DetailFetchedAt == nil {
-		return false
+		return false, false
 	}
 	if !s.canSpendCommentRefresh(repo) {
-		return false
+		return false, false
 	}
 	comments, err := s.listCommentsForRefresh(
 		ctx, client, repo, issue.Number, issue.CommentCount,
 	)
 	if err != nil {
 		if IsNotModified(err) {
-			return false
+			return true, false
 		}
 		if s.recordGitHubRepositoryFeatureDisabled(
 			repo, platform.RepositoryFeatureIssues, err,
 		) {
-			return true
+			return true, true
 		}
 		slog.Warn("comment refresh: list issue comments failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", issue.Number,
 			"err", err,
 		)
-		return false
+		return true, false
 	}
 	if err := s.persistIssueComments(ctx, repo, issue, comments); err != nil {
 		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
@@ -5780,7 +5792,7 @@ func (s *Syncer) refreshIssueCommentsForItem(
 			"err", err,
 		)
 	}
-	return false
+	return true, false
 }
 
 func (s *Syncer) resetPendingCommentSyncs() {
@@ -5864,8 +5876,12 @@ func (s *Syncer) drainPendingCommentSyncs(
 		if !due {
 			continue
 		}
-		s.refreshPRCommentsForItem(ctx, client, item.repo, pr)
-		probe.release()
+		providerAttempted, _ := s.refreshPRCommentsForItem(ctx, client, item.repo, pr)
+		if providerAttempted {
+			probe.release()
+		} else {
+			probe.abandon()
+		}
 	}
 
 	for _, item := range issues {
@@ -5913,8 +5929,12 @@ func (s *Syncer) drainPendingCommentSyncs(
 		if !due {
 			continue
 		}
-		s.refreshIssueCommentsForItem(ctx, client, item.repo, issue)
-		probe.release()
+		providerAttempted, _ := s.refreshIssueCommentsForItem(ctx, client, item.repo, issue)
+		if providerAttempted {
+			probe.release()
+		} else {
+			probe.abandon()
+		}
 	}
 }
 
@@ -8206,7 +8226,14 @@ func (s *Syncer) refreshRepoPRComments(
 	if !due {
 		return
 	}
-	defer probe.release()
+	providerAttempted := false
+	defer func() {
+		if providerAttempted {
+			probe.release()
+		} else {
+			probe.abandon()
+		}
+	}()
 
 	prs, err := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
 		PlatformHost: repoHost(repo),
@@ -8235,7 +8262,9 @@ func (s *Syncer) refreshRepoPRComments(
 		if ctx.Err() != nil {
 			return
 		}
-		if s.refreshPRCommentsForItem(ctx, client, repo, &prs[i]) {
+		attempted, disabled := s.refreshPRCommentsForItem(ctx, client, repo, &prs[i])
+		providerAttempted = providerAttempted || attempted
+		if disabled {
 			return
 		}
 	}
@@ -8251,7 +8280,14 @@ func (s *Syncer) refreshRepoIssueComments(
 	if !due {
 		return
 	}
-	defer probe.release()
+	providerAttempted := false
+	defer func() {
+		if providerAttempted {
+			probe.release()
+		} else {
+			probe.abandon()
+		}
+	}()
 
 	issues, err := s.db.ListIssues(ctx, db.ListIssuesOpts{
 		PlatformHost: repoHost(repo),
@@ -8280,7 +8316,9 @@ func (s *Syncer) refreshRepoIssueComments(
 		if ctx.Err() != nil {
 			return
 		}
-		if s.refreshIssueCommentsForItem(ctx, client, repo, &issues[i]) {
+		attempted, disabled := s.refreshIssueCommentsForItem(ctx, client, repo, &issues[i])
+		providerAttempted = providerAttempted || attempted
+		if disabled {
 			return
 		}
 	}
@@ -8756,7 +8794,7 @@ func (s *Syncer) SyncMROnProvider(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	return s.syncMRForRepo(ctx, repo, number, false)
+	return s.syncMRForRepo(ctx, repo, number, false, nil)
 }
 
 // syncMRWithHost is the internal implementation of SyncMR.
@@ -8794,12 +8832,20 @@ func (s *Syncer) syncMRWithHost(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	return s.syncMRForRepo(ctx, repo, number, false)
+	return s.syncMRForRepo(ctx, repo, number, false, nil)
 }
 
 func (s *Syncer) syncMRWithWatchedRef(
 	ctx context.Context,
 	mr WatchedMR,
+) error {
+	return s.syncMRWithWatchedRefTracking(ctx, mr, nil)
+}
+
+func (s *Syncer) syncMRWithWatchedRefTracking(
+	ctx context.Context,
+	mr WatchedMR,
+	providerAttempted *bool,
 ) error {
 	kind := watchedMRPlatform(mr)
 	repo, ok := s.trackedRepoByIdentity(
@@ -8812,7 +8858,7 @@ func (s *Syncer) syncMRWithWatchedRef(
 			mr.Owner, mr.Name, kind, host,
 		)
 	}
-	return s.syncMRForRepo(ctx, repo, mr.Number, true)
+	return s.syncMRForRepo(ctx, repo, mr.Number, true, providerAttempted)
 }
 
 func (s *Syncer) syncMRForRepo(
@@ -8820,6 +8866,7 @@ func (s *Syncer) syncMRForRepo(
 	repo RepoRef,
 	number int,
 	useConditionalPRDetail bool,
+	providerAttempted *bool,
 ) error {
 	if !IsArchiveSyncBudgetContext(ctx) {
 		releaseProviderWork := s.beginProviderWork(
@@ -8859,6 +8906,9 @@ func (s *Syncer) syncMRForRepo(
 	}); ok {
 		if client, ok := s.optionalGitHubClientFor(repo); ok && useConditionalPRDetail {
 			var notModified bool
+			if providerAttempted != nil {
+				*providerAttempted = true
+			}
 			ghPR, newETag, notModified, err = s.getPullRequestForDetail(
 				ctx, client, repo, number,
 			)
@@ -8884,12 +8934,18 @@ func (s *Syncer) syncMRForRepo(
 				normalized, err = NormalizePR(repoID, ghPR)
 			}
 		} else {
+			if providerAttempted != nil {
+				*providerAttempted = true
+			}
 			ghPR, platformMR, err = rawReader.GetGitHubPullRequest(ctx, platformRepoRef(repo), number)
 			if err == nil {
 				normalized = platform.DBMergeRequest(repoID, platformMR)
 			}
 		}
 	} else {
+		if providerAttempted != nil {
+			*providerAttempted = true
+		}
 		platformMR, err = mrReader.GetMergeRequest(ctx, platformRepoRef(repo), number)
 		if err == nil {
 			normalized = platform.DBMergeRequest(repoID, platformMR)
@@ -9433,7 +9489,7 @@ func (s *Syncer) SyncArchiveItem(
 	case db.ArchiveItemTypeIssue:
 		return s.syncIssueForRepo(ctx, repo, number)
 	case db.ArchiveItemTypeMergeRequest:
-		err := s.syncMRForRepo(ctx, repo, number, false)
+		err := s.syncMRForRepo(ctx, repo, number, false, nil)
 		if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must propagate
 			return nil
 		}

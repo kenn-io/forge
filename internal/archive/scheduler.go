@@ -320,12 +320,12 @@ func (s *Service) admit(
 	repo resolvedRepository,
 	itemType db.ArchiveItemType,
 	cost int,
-) (context.Context, func(error) *FeatureDeferral, error) {
+) (context.Context, AdmissionComplete, error) {
 	if err := s.db.ClearArchiveRepositoryError(ctx, repo.ID, s.now()); err != nil {
 		return nil, nil, err
 	}
 	if s.admission == nil {
-		return ctx, func(error) *FeatureDeferral { return nil }, nil
+		return ctx, func(error, bool) *FeatureDeferral { return nil }, nil
 	}
 	result, err := s.admission.Admit(ctx, repo.Ref, itemType, cost)
 	if err != nil {
@@ -349,7 +349,7 @@ func (s *Service) admit(
 	}
 	complete := result.Complete
 	if complete == nil {
-		complete = func(error) *FeatureDeferral { return nil }
+		complete = func(error, bool) *FeatureDeferral { return nil }
 	}
 	return requestCtx, complete, nil
 }

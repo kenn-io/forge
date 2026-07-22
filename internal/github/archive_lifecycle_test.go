@@ -729,7 +729,7 @@ func TestArchiveAdmissionAttemptAllowanceUsesAvailableSurplus(t *testing.T) {
 	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
 	require.NoError(err)
 	require.True(admission.Allowed)
-	t.Cleanup(func() { admission.Complete(nil) })
+	t.Cleanup(func() { admission.Complete(nil, true) })
 	for range PRDetailWorstCase {
 		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
 	}
@@ -871,6 +871,54 @@ func TestArchiveAdmissionDenialAbandonsExpiredFeatureProbeReservation(t *testing
 	require.False(due)
 }
 
+func TestArchiveCompletionWithoutProviderAttemptAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	key := RateBucketKey("github", "github.test")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker.UpdateFromRate(Rate{
+		Limit: 5000, Remaining: 4999,
+		Reset: now.Add(repositoryFeatureProbeInterval + time.Minute),
+	})
+	syncer := NewSyncerWithRegistry(
+		nil, database, nil, nil, time.Hour,
+		map[string]*RateTracker{key: tracker},
+		map[string]*SyncBudget{key: NewSyncBudget(100)},
+	)
+	syncer.now = func() time.Time { return now }
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test", Owner: "acme", Name: "widget",
+	}
+	repo := RepoRef{
+		Platform: ref.Platform, PlatformHost: ref.Host, Owner: ref.Owner, Name: ref.Name,
+	}
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		repo,
+		platform.RepositoryFeatureIssues,
+		platform.RepositoryFeatureDisabled(
+			platform.KindGitHub, ref.Host, platform.RepositoryFeatureIssues,
+			errors.New("repository issues disabled"),
+		),
+	))
+	now = now.Add(repositoryFeatureProbeInterval)
+
+	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
+	require.NoError(err)
+	require.True(admission.Allowed, admission.Detail)
+	require.Nil(admission.Complete(errors.New("local archive failure"), false))
+
+	first, due := syncer.beginRepositoryFeatureProbe(
+		t.Context(), repo, platform.RepositoryFeatureIssues,
+	)
+	require.True(due)
+	defer first.release()
+	_, due = syncer.beginRepositoryFeatureProbe(
+		t.Context(), repo, platform.RepositoryFeatureIssues,
+	)
+	require.False(due)
+}
+
 func TestArchiveAdmissionLeaseSerializesProviderRequests(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -899,13 +947,13 @@ func TestArchiveAdmissionLeaseSerializesProviderRequests(t *testing.T) {
 	assert.False(second.Allowed)
 	assert.Contains(second.Detail, "higher-priority sync work is active")
 
-	first.Complete(nil)
-	first.Complete(nil)
+	first.Complete(nil, true)
+	first.Complete(nil, true)
 	third, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
 	require.NoError(err)
 	require.True(third.Allowed)
 	require.NotNil(third.Complete)
-	third.Complete(nil)
+	third.Complete(nil, true)
 }
 
 func TestLiveProviderWorkCancelsAndWaitsForArchiveRequest(t *testing.T) {

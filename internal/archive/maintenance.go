@@ -111,7 +111,7 @@ func (s *Service) promptPages(
 		case db.ArchiveItemTypeIssue:
 			page, err := repo.Issues.ListIssuesPage(requestCtx, repo.Ref, query)
 			preempted := archivePreempted(ctx, requestCtx)
-			deferred := complete(err)
+			deferred := complete(err, true)
 			if deferred != nil {
 				return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
 			}
@@ -131,7 +131,7 @@ func (s *Service) promptPages(
 		case db.ArchiveItemTypeMergeRequest:
 			page, err := repo.MergeRequests.ListMergeRequestsPage(requestCtx, repo.Ref, query)
 			preempted := archivePreempted(ctx, requestCtx)
-			deferred := complete(err)
+			deferred := complete(err, true)
 			if deferred != nil {
 				return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
 			}
@@ -150,7 +150,7 @@ func (s *Service) promptPages(
 			}
 		default:
 			invalidErr := fmt.Errorf("archive maintenance: invalid item type %q", itemType)
-			complete(invalidErr)
+			complete(invalidErr, false)
 			return invalidErr
 		}
 		halted, err := s.commitInventoryPage(ctx, commit)

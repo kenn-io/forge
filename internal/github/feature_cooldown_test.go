@@ -681,6 +681,112 @@ func TestDisabledMergeRequestCooldownSkipsWatchedSync(t *testing.T) {
 	assert.Zero(int(client.getPRCalls.Load()))
 }
 
+func TestWatchedSyncLocalFailureAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	syncer := NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	syncer.now = func() time.Time { return now }
+	syncer.SetWatchedMRs([]WatchedMR{{
+		Platform: repo.Platform, PlatformHost: repo.PlatformHost,
+		Owner: repo.Owner, Name: repo.Name, Number: 7,
+	}})
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		repo, platform.RepositoryFeatureMergeRequests,
+		platform.RepositoryFeatureDisabled(
+			platform.KindGitHub, "github.com", platform.RepositoryFeatureMergeRequests,
+			errors.New("repository pull requests disabled"),
+		),
+	))
+	now = now.Add(repositoryFeatureProbeInterval)
+
+	syncer.syncWatchedMRs(t.Context())
+
+	first, due := syncer.beginRepositoryFeatureProbe(
+		t.Context(), repo, platform.RepositoryFeatureMergeRequests,
+	)
+	require.True(due)
+	defer first.release()
+	_, due = syncer.beginRepositoryFeatureProbe(
+		t.Context(), repo, platform.RepositoryFeatureMergeRequests,
+	)
+	require.False(due)
+}
+
+func TestCommentRefreshWithoutProviderAttemptAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	tests := []struct {
+		name    string
+		feature string
+		run     func(context.Context, *Syncer, RepoRef)
+	}{
+		{
+			name:    "pending merge request missing detail",
+			feature: platform.RepositoryFeatureMergeRequests,
+			run: func(ctx context.Context, syncer *Syncer, repo RepoRef) {
+				syncer.queuePRCommentSync(repo, 7)
+				syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
+			},
+		},
+		{
+			name:    "repository issue list empty",
+			feature: platform.RepositoryFeatureIssues,
+			run: func(ctx context.Context, syncer *Syncer, repo RepoRef) {
+				syncer.refreshRepoIssueComments(ctx, repo)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+			repo := RepoRef{
+				Platform: platform.KindGitHub, PlatformHost: "github.com",
+				Owner: "acme", Name: "widget",
+			}
+			repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+			require.NoError(err)
+			if tc.feature == platform.RepositoryFeatureMergeRequests {
+				_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+					RepoID: repoID, PlatformID: 1007, Number: 7,
+					URL: "https://github.com/acme/widget/pull/7", Title: "needs comments",
+					Author: "ada", State: "open", HeadBranch: "feature", BaseBranch: "main",
+					CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+				})
+				require.NoError(err)
+			}
+			syncer := NewSyncer(
+				map[string]Client{"github.com": &mockClient{}}, database, nil,
+				[]RepoRef{repo}, time.Minute, nil, nil,
+			)
+			syncer.now = func() time.Time { return now }
+			require.True(syncer.recordRepositoryFeatureDisabled(
+				repo,
+				tc.feature,
+				platform.RepositoryFeatureDisabled(
+					platform.KindGitHub, "github.com", tc.feature,
+					errors.New("repository feature disabled"),
+				),
+			))
+			now = now.Add(repositoryFeatureProbeInterval)
+
+			tc.run(ctx, syncer, repo)
+
+			first, due := syncer.beginRepositoryFeatureProbe(ctx, repo, tc.feature)
+			require.True(due)
+			defer first.release()
+			_, due = syncer.beginRepositoryFeatureProbe(ctx, repo, tc.feature)
+			require.False(due)
+		})
+	}
+}
+
 func TestGitHubCooldownCanonicalizesIndexAndWatchedRepositoryIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

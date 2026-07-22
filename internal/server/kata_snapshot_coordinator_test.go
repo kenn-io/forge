@@ -9,7 +9,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	katagenerated "go.kenn.io/kata/pkg/client/generated"
 	"go.kenn.io/middleman/internal/kata"
 )
 
@@ -42,16 +41,16 @@ func TestKataSnapshotCoordinatorInvalidatesAllEnrichmentReads(t *testing.T) {
 		require.NoError(err)
 		_, err = enrichmentCache.projectEvents(t.Context(), kataProjectEventsCacheKey{
 			DaemonID: "local", DaemonEpoch: epoch, ProjectID: 7,
-		}, func(context.Context) ([]katagenerated.EventEnvelope, error) {
+		}, "issue-a", func(_ context.Context, maxBytes uint64) (kataProjectEventsLoadResult, error) {
 			eventLoads.Add(1)
-			return []katagenerated.EventEnvelope{testKataEvent(1, nil, time.Unix(1, 0))}, nil
+			return testKataProjectEventsLoadResult(maxBytes, "", testKataEvent(1, nil, time.Unix(1, 0))), nil
 		})
 		require.NoError(err)
 		_, err = enrichmentCache.graph(t.Context(), kataGraphCacheKey{
 			DaemonID: "local", DaemonEpoch: epoch, SourceUID: "issue-source", Depth: "full",
-		}, func(context.Context) (*katagenerated.ReachableGraphResponseBody, error) {
+		}, func(context.Context) (kataCachedGraph, error) {
 			graphLoads.Add(1)
-			return testKataGraphResponse("issue-source", "issue-linked").JSON200, nil
+			return kataCachedGraph{Body: testKataGraphResponse("issue-source", "issue-linked").JSON200}, nil
 		})
 		require.NoError(err)
 	}
@@ -100,10 +99,10 @@ func TestKataSnapshotCoordinatorRejectsEnrichmentCompletedAfterTargetRotation(t 
 	go func() {
 		_, loadErr := enrichmentCache.projectEvents(t.Context(), kataProjectEventsCacheKey{
 			DaemonID: "work", DaemonEpoch: firstAuthority.InvalidationEpoch, ProjectID: 7,
-		}, func(context.Context) ([]katagenerated.EventEnvelope, error) {
+		}, "issue-a", func(_ context.Context, maxBytes uint64) (kataProjectEventsLoadResult, error) {
 			close(started)
 			<-release
-			return []katagenerated.EventEnvelope{testKataEvent(1, nil, time.Unix(1, 0))}, nil
+			return testKataProjectEventsLoadResult(maxBytes, "", testKataEvent(1, nil, time.Unix(1, 0))), nil
 		})
 		oldErr <- loadErr
 	}()
@@ -119,13 +118,13 @@ func TestKataSnapshotCoordinatorRejectsEnrichmentCompletedAfterTargetRotation(t 
 	var freshLoads atomic.Int64
 	fresh, err := enrichmentCache.projectEvents(t.Context(), kataProjectEventsCacheKey{
 		DaemonID: "work", DaemonEpoch: rotatedAuthority.InvalidationEpoch, ProjectID: 7,
-	}, func(context.Context) ([]katagenerated.EventEnvelope, error) {
+	}, "issue-a", func(_ context.Context, maxBytes uint64) (kataProjectEventsLoadResult, error) {
 		freshLoads.Add(1)
-		return []katagenerated.EventEnvelope{testKataEvent(2, nil, time.Unix(2, 0))}, nil
+		return testKataProjectEventsLoadResult(maxBytes, "", testKataEvent(2, nil, time.Unix(2, 0))), nil
 	})
 	require.NoError(err)
-	require.Len(fresh, 1)
-	require.Equal(int64(2), fresh[0].EventID)
+	require.Len(fresh.Events, 1)
+	require.Equal(int64(2), fresh.Events[0].EventID)
 	require.Equal(int64(1), freshLoads.Load())
 }
 

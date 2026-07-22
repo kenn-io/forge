@@ -50,13 +50,35 @@ type kataCachedIssueDetail struct {
 	ETag  string
 }
 
+type kataCachedGraph struct {
+	Body      *katagenerated.ReachableGraphResponseBody
+	FetchedAt time.Time
+}
+
+type kataCachedProjectEvents struct {
+	Events         []katagenerated.EventEnvelope
+	SerializedCost uint64
+}
+
+type kataProjectEventsLoadResult struct {
+	ProjectEvents   []katagenerated.EventEnvelope
+	SelectedHistory []katagenerated.EventEnvelope
+	SerializedCost  uint64
+	Cacheable       bool
+}
+
+type kataProjectEventsResult struct {
+	Events          []katagenerated.EventEnvelope
+	CompleteProject bool
+}
+
 type kataSnapshotEnrichmentCache struct {
 	root   context.Context
 	cancel context.CancelFunc
 
 	details *ttlcache.Cache[kataIssueDetailCacheKey, kataCachedIssueDetail]
-	events  *ttlcache.Cache[kataProjectEventsCacheKey, []katagenerated.EventEnvelope]
-	graphs  *ttlcache.Cache[kataGraphCacheKey, *katagenerated.ReachableGraphResponseBody]
+	events  *ttlcache.Cache[kataProjectEventsCacheKey, kataCachedProjectEvents]
+	graphs  *ttlcache.Cache[kataGraphCacheKey, kataCachedGraph]
 
 	detailGroup singleflight.Group
 	eventGroup  singleflight.Group
@@ -131,16 +153,16 @@ func newKataSnapshotEnrichmentCacheWithLimits(
 		ttlcache.WithMaxCost[kataIssueDetailCacheKey, kataCachedIssueDetail](maxBytes, kataIssueDetailCacheCost),
 	)
 	events := ttlcache.New(
-		ttlcache.WithTTL[kataProjectEventsCacheKey, []katagenerated.EventEnvelope](ttl),
-		ttlcache.WithCapacity[kataProjectEventsCacheKey, []katagenerated.EventEnvelope](capacity),
-		ttlcache.WithDisableTouchOnHit[kataProjectEventsCacheKey, []katagenerated.EventEnvelope](),
-		ttlcache.WithMaxCost[kataProjectEventsCacheKey, []katagenerated.EventEnvelope](maxBytes, kataProjectEventsCacheCost),
+		ttlcache.WithTTL[kataProjectEventsCacheKey, kataCachedProjectEvents](ttl),
+		ttlcache.WithCapacity[kataProjectEventsCacheKey, kataCachedProjectEvents](capacity),
+		ttlcache.WithDisableTouchOnHit[kataProjectEventsCacheKey, kataCachedProjectEvents](),
+		ttlcache.WithMaxCost[kataProjectEventsCacheKey, kataCachedProjectEvents](maxBytes, kataProjectEventsCacheCost),
 	)
 	graphs := ttlcache.New(
-		ttlcache.WithTTL[kataGraphCacheKey, *katagenerated.ReachableGraphResponseBody](ttl),
-		ttlcache.WithCapacity[kataGraphCacheKey, *katagenerated.ReachableGraphResponseBody](capacity),
-		ttlcache.WithDisableTouchOnHit[kataGraphCacheKey, *katagenerated.ReachableGraphResponseBody](),
-		ttlcache.WithMaxCost[kataGraphCacheKey, *katagenerated.ReachableGraphResponseBody](maxBytes, kataGraphCacheCost),
+		ttlcache.WithTTL[kataGraphCacheKey, kataCachedGraph](ttl),
+		ttlcache.WithCapacity[kataGraphCacheKey, kataCachedGraph](capacity),
+		ttlcache.WithDisableTouchOnHit[kataGraphCacheKey, kataCachedGraph](),
+		ttlcache.WithMaxCost[kataGraphCacheKey, kataCachedGraph](maxBytes, kataGraphCacheCost),
 	)
 	cache := &kataSnapshotEnrichmentCache{
 		root:                cacheRoot,
@@ -160,10 +182,10 @@ func newKataSnapshotEnrichmentCacheWithLimits(
 		details.OnEviction(func(_ context.Context, _ ttlcache.EvictionReason, item *ttlcache.Item[kataIssueDetailCacheKey, kataCachedIssueDetail]) {
 			cache.removeDetailKey(item.Key())
 		}),
-		events.OnEviction(func(_ context.Context, _ ttlcache.EvictionReason, item *ttlcache.Item[kataProjectEventsCacheKey, []katagenerated.EventEnvelope]) {
+		events.OnEviction(func(_ context.Context, _ ttlcache.EvictionReason, item *ttlcache.Item[kataProjectEventsCacheKey, kataCachedProjectEvents]) {
 			cache.removeEventKey(item.Key())
 		}),
-		graphs.OnEviction(func(_ context.Context, _ ttlcache.EvictionReason, item *ttlcache.Item[kataGraphCacheKey, *katagenerated.ReachableGraphResponseBody]) {
+		graphs.OnEviction(func(_ context.Context, _ ttlcache.EvictionReason, item *ttlcache.Item[kataGraphCacheKey, kataCachedGraph]) {
 			cache.removeGraphKey(item.Key())
 		}),
 	)
@@ -221,23 +243,24 @@ func (c *kataSnapshotEnrichmentCache) issueDetail(
 func (c *kataSnapshotEnrichmentCache) projectEvents(
 	ctx context.Context,
 	key kataProjectEventsCacheKey,
-	load func(context.Context) ([]katagenerated.EventEnvelope, error),
-) ([]katagenerated.EventEnvelope, error) {
+	selectedUID string,
+	load func(context.Context, uint64) (kataProjectEventsLoadResult, error),
+) (kataProjectEventsResult, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return kataProjectEventsResult{}, err
 	}
 	if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
-		return nil, errKataSnapshotEnrichmentStale
+		return kataProjectEventsResult{}, errKataSnapshotEnrichmentStale
 	}
 	if item := c.events.Get(key); item != nil {
-		return slices.Clone(item.Value()), nil
+		return kataProjectEventsResult{Events: slices.Clone(item.Value().Events), CompleteProject: true}, nil
 	}
-	resultCh := c.eventGroup.DoChan(kataProjectEventsSingleflightKey(key), func() (any, error) {
+	resultCh := c.eventGroup.DoChan(kataProjectEventsSingleflightKey(key, selectedUID), func() (any, error) {
 		if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
 			return nil, errKataSnapshotEnrichmentStale
 		}
 		if item := c.events.Get(key); item != nil {
-			return slices.Clone(item.Value()), nil
+			return kataProjectEventsResult{Events: slices.Clone(item.Value().Events), CompleteProject: true}, nil
 		}
 		if !c.beginLoad() {
 			return nil, context.Canceled
@@ -245,38 +268,45 @@ func (c *kataSnapshotEnrichmentCache) projectEvents(
 		defer c.loads.Done()
 		loadCtx, cancel := context.WithTimeout(c.root, kataDaemonReadTimeout)
 		defer cancel()
-		value, err := load(loadCtx)
+		loaded, err := load(loadCtx, c.maxBytes)
 		if err != nil {
 			return nil, err
 		}
 		if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
 			return nil, errKataSnapshotEnrichmentStale
 		}
-		value = slices.Clone(value)
-		c.storeEvents(key, value)
-		return value, nil
+		if loaded.Cacheable {
+			value := kataCachedProjectEvents{
+				Events: slices.Clone(loaded.ProjectEvents), SerializedCost: loaded.SerializedCost,
+			}
+			c.storeEvents(key, value)
+			return kataProjectEventsResult{Events: value.Events, CompleteProject: true}, nil
+		}
+		return kataProjectEventsResult{Events: slices.Clone(loaded.SelectedHistory)}, nil
 	})
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return kataProjectEventsResult{}, ctx.Err()
 	case completed := <-resultCh:
 		if completed.Err != nil {
-			return nil, completed.Err
+			return kataProjectEventsResult{}, completed.Err
 		}
-		return slices.Clone(completed.Val.([]katagenerated.EventEnvelope)), nil
+		result := completed.Val.(kataProjectEventsResult)
+		result.Events = slices.Clone(result.Events)
+		return result, nil
 	}
 }
 
 func (c *kataSnapshotEnrichmentCache) graph(
 	ctx context.Context,
 	key kataGraphCacheKey,
-	load func(context.Context) (*katagenerated.ReachableGraphResponseBody, error),
-) (*katagenerated.ReachableGraphResponseBody, error) {
+	load func(context.Context) (kataCachedGraph, error),
+) (kataCachedGraph, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return kataCachedGraph{}, err
 	}
 	if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
-		return nil, errKataSnapshotEnrichmentStale
+		return kataCachedGraph{}, errKataSnapshotEnrichmentStale
 	}
 	if item := c.graphs.Get(key); item != nil {
 		return item.Value(), nil
@@ -306,12 +336,12 @@ func (c *kataSnapshotEnrichmentCache) graph(
 	})
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return kataCachedGraph{}, ctx.Err()
 	case completed := <-resultCh:
 		if completed.Err != nil {
-			return nil, completed.Err
+			return kataCachedGraph{}, completed.Err
 		}
-		return completed.Val.(*katagenerated.ReachableGraphResponseBody), nil
+		return completed.Val.(kataCachedGraph), nil
 	}
 }
 
@@ -368,8 +398,8 @@ func (c *kataSnapshotEnrichmentCache) storeDetail(key kataIssueDetailCacheKey, v
 	c.details.Set(key, value, ttlcache.DefaultTTL)
 }
 
-func (c *kataSnapshotEnrichmentCache) storeEvents(key kataProjectEventsCacheKey, value []katagenerated.EventEnvelope) {
-	if kataSerializedCost(value) > c.maxBytes {
+func (c *kataSnapshotEnrichmentCache) storeEvents(key kataProjectEventsCacheKey, value kataCachedProjectEvents) {
+	if value.SerializedCost > c.maxBytes {
 		return
 	}
 	c.mu.Lock()
@@ -383,10 +413,11 @@ func (c *kataSnapshotEnrichmentCache) storeEvents(key kataProjectEventsCacheKey,
 		c.eventKeysByDaemon[key.DaemonID] = keys
 	}
 	keys[key] = struct{}{}
-	c.events.Set(key, slices.Clone(value), ttlcache.DefaultTTL)
+	value.Events = slices.Clone(value.Events)
+	c.events.Set(key, value, ttlcache.DefaultTTL)
 }
 
-func (c *kataSnapshotEnrichmentCache) storeGraph(key kataGraphCacheKey, value *katagenerated.ReachableGraphResponseBody) {
+func (c *kataSnapshotEnrichmentCache) storeGraph(key kataGraphCacheKey, value kataCachedGraph) {
 	if kataSerializedCost(value) > c.maxBytes {
 		return
 	}
@@ -492,11 +523,11 @@ func kataIssueDetailCacheCost(item ttlcache.CostItem[kataIssueDetailCacheKey, ka
 	return kataSerializedCost(item.Value)
 }
 
-func kataProjectEventsCacheCost(item ttlcache.CostItem[kataProjectEventsCacheKey, []katagenerated.EventEnvelope]) uint64 {
-	return kataSerializedCost(item.Value)
+func kataProjectEventsCacheCost(item ttlcache.CostItem[kataProjectEventsCacheKey, kataCachedProjectEvents]) uint64 {
+	return item.Value.SerializedCost
 }
 
-func kataGraphCacheCost(item ttlcache.CostItem[kataGraphCacheKey, *katagenerated.ReachableGraphResponseBody]) uint64 {
+func kataGraphCacheCost(item ttlcache.CostItem[kataGraphCacheKey, kataCachedGraph]) uint64 {
 	return kataSerializedCost(item.Value)
 }
 
@@ -512,8 +543,8 @@ func kataIssueDetailSingleflightKey(key kataIssueDetailCacheKey) string {
 	return fmt.Sprintf("%s\x00%d\x00%s", key.DaemonID, key.DaemonEpoch, key.IssueUID)
 }
 
-func kataProjectEventsSingleflightKey(key kataProjectEventsCacheKey) string {
-	return fmt.Sprintf("%s\x00%d\x00%d", key.DaemonID, key.DaemonEpoch, key.ProjectID)
+func kataProjectEventsSingleflightKey(key kataProjectEventsCacheKey, selectedUID string) string {
+	return fmt.Sprintf("%s\x00%d\x00%d\x00%s", key.DaemonID, key.DaemonEpoch, key.ProjectID, selectedUID)
 }
 
 func kataGraphSingleflightKey(key kataGraphCacheKey) string {

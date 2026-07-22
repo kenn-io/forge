@@ -132,7 +132,7 @@ func (e *kataSnapshotEnricher) Enrich(
 			return result, nil
 		}
 
-		graph, _, err := e.loadGraph(ctx, authority, graphSource, projectsByID)
+		graph, _, graphFetchedAt, err := e.loadGraph(ctx, authority, graphSource, projectsByID)
 		if err != nil {
 			if contextErr := ctx.Err(); contextErr != nil {
 				return kataSnapshotEnrichment{}, contextErr
@@ -141,13 +141,12 @@ func (e *kataSnapshotEnricher) Enrich(
 			return result, nil
 		}
 		result.Graph = graph
-		fetchedAt := e.now().UTC()
-		result.GraphFetchedAt = &fetchedAt
+		result.GraphFetchedAt = &graphFetchedAt
 		return result, nil
 	}
 
 	if request.GraphSourceUID != "" && graphSourceIsMember {
-		graph, graphNodes, err := e.loadGraph(ctx, authority, graphSource, projectsByID)
+		graph, graphNodes, graphFetchedAt, err := e.loadGraph(ctx, authority, graphSource, projectsByID)
 		if err != nil {
 			if contextErr := kataEnrichmentContextError(ctx, err); contextErr != nil {
 				return kataSnapshotEnrichment{}, contextErr
@@ -155,8 +154,7 @@ func (e *kataSnapshotEnricher) Enrich(
 			result.addError(kataSnapshotEnrichmentStageGraph, CodeUpstreamError, "Could not load reachable graph.")
 		} else {
 			result.Graph = graph
-			fetchedAt := e.now().UTC()
-			result.GraphFetchedAt = &fetchedAt
+			result.GraphFetchedAt = &graphFetchedAt
 			if !selectedIsMember {
 				selected, selectedIsMember = graphNodes[request.SelectedIssueUID]
 			}
@@ -227,40 +225,40 @@ func (e *kataSnapshotEnricher) loadGraph(
 	authority kataCoordinatedAuthority,
 	source kataSnapshotEnrichmentIssue,
 	projectsByID map[int64]kataProjectSummary,
-) (*katagenerated.ReachableGraphResponseBody, map[string]kataSnapshotEnrichmentIssue, error) {
+) (*katagenerated.ReachableGraphResponseBody, map[string]kataSnapshotEnrichmentIssue, time.Time, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, nil, err
+		return nil, nil, time.Time{}, err
 	}
 	depth := "full"
 	hideDone := false
-	load := func(loadCtx context.Context) (*katagenerated.ReachableGraphResponseBody, error) {
+	load := func(loadCtx context.Context) (kataCachedGraph, error) {
 		graph, err := e.loadGraphResponse(loadCtx, source, depth, hideDone)
 		if err != nil {
-			return nil, err
+			return kataCachedGraph{}, err
 		}
 		if _, err := validateKataGraph(graph, source, projectsByID); err != nil {
-			return nil, err
+			return kataCachedGraph{}, err
 		}
-		return graph, nil
+		return kataCachedGraph{Body: graph, FetchedAt: e.now().UTC()}, nil
 	}
-	var graph *katagenerated.ReachableGraphResponseBody
+	var cachedGraph kataCachedGraph
 	var err error
 	if e.cache == nil {
-		graph, err = load(ctx)
+		cachedGraph, err = load(ctx)
 	} else {
-		graph, err = e.cache.graph(ctx, kataGraphCacheKey{
+		cachedGraph, err = e.cache.graph(ctx, kataGraphCacheKey{
 			DaemonID: authority.DaemonID, DaemonEpoch: authority.InvalidationEpoch,
 			SourceUID: source.UID, Depth: depth, HideDone: hideDone,
 		}, load)
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, time.Time{}, err
 	}
-	nodes, err := validateKataGraph(graph, source, projectsByID)
+	nodes, err := validateKataGraph(cachedGraph.Body, source, projectsByID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, time.Time{}, err
 	}
-	return graph, nodes, nil
+	return cachedGraph.Body, nodes, cachedGraph.FetchedAt, nil
 }
 
 func (e *kataSnapshotEnricher) loadGraphResponse(
@@ -421,40 +419,52 @@ func (e *kataSnapshotEnricher) loadHistory(
 	projectID int64,
 	selectedUID string,
 ) ([]katagenerated.EventEnvelope, error) {
-	load := func(loadCtx context.Context) ([]katagenerated.EventEnvelope, error) {
-		return e.loadProjectEvents(loadCtx, projectID)
-	}
-	var events []katagenerated.EventEnvelope
-	var err error
 	if e.cache == nil {
-		events, err = load(ctx)
-	} else {
-		events, err = e.cache.projectEvents(ctx, kataProjectEventsCacheKey{
-			DaemonID: authority.DaemonID, DaemonEpoch: authority.InvalidationEpoch, ProjectID: projectID,
-		}, load)
+		loaded, err := e.loadProjectEvents(ctx, projectID, selectedUID, 0)
+		if err != nil {
+			return nil, err
+		}
+		return loaded.SelectedHistory, nil
 	}
+	events, err := e.cache.projectEvents(ctx, kataProjectEventsCacheKey{
+		DaemonID: authority.DaemonID, DaemonEpoch: authority.InvalidationEpoch, ProjectID: projectID,
+	}, selectedUID, func(loadCtx context.Context, maxBytes uint64) (kataProjectEventsLoadResult, error) {
+		return e.loadProjectEvents(loadCtx, projectID, selectedUID, maxBytes)
+	})
 	if err != nil {
 		return nil, err
 	}
-	history := []katagenerated.EventEnvelope{}
+	if !events.CompleteProject {
+		return events.Events, nil
+	}
+	return filterKataProjectEvents(events.Events, selectedUID), nil
+}
+
+func filterKataProjectEvents(
+	events []katagenerated.EventEnvelope,
+	selectedUID string,
+) []katagenerated.EventEnvelope {
+	history := make([]katagenerated.EventEnvelope, 0)
 	for _, event := range events {
 		if event.IssueUID != nil && *event.IssueUID == selectedUID {
 			history = append(history, event)
 		}
 	}
-	return history, nil
+	return history
 }
 
 func (e *kataSnapshotEnricher) loadProjectEvents(
 	ctx context.Context,
 	projectID int64,
-) ([]katagenerated.EventEnvelope, error) {
-	events := []katagenerated.EventEnvelope{}
+	selectedUID string,
+	maxBytes uint64,
+) (kataProjectEventsLoadResult, error) {
+	loaded := newKataProjectEventsLoadResult(maxBytes)
 	afterID := int64(0)
 	resetHandled := false
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return kataProjectEventsLoadResult{}, err
 		}
 		limit := kataSnapshotHistoryPageLimit
 		response, err := e.client.PollProjectEventsWithResponse(ctx, &katagenerated.PollProjectEventsRequestOptions{
@@ -462,30 +472,57 @@ func (e *kataSnapshotEnricher) loadProjectEvents(
 			Query:      &katagenerated.PollProjectEventsQuery{AfterID: &afterID, Limit: &limit},
 		})
 		if err != nil {
-			return nil, err
+			return kataProjectEventsLoadResult{}, err
 		}
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return kataProjectEventsLoadResult{}, err
 		}
 		body, resetRequired, err := validateKataHistoryPage(response, afterID, resetHandled)
 		if err != nil {
-			return nil, err
+			return kataProjectEventsLoadResult{}, err
 		}
 		if resetRequired {
-			events = events[:0]
+			loaded = newKataProjectEventsLoadResult(maxBytes)
 			afterID = body.NextAfterID
 			resetHandled = true
 			continue
 		}
 		if len(body.Events) == 0 {
-			return events, nil
+			return loaded, nil
 		}
 		for _, event := range body.Events {
 			event.CreatedAt = event.CreatedAt.UTC()
-			events = append(events, event)
+			if event.IssueUID != nil && *event.IssueUID == selectedUID {
+				loaded.SelectedHistory = append(loaded.SelectedHistory, event)
+			}
+			loaded.admitProjectEvent(event, maxBytes)
 		}
 		afterID = body.NextAfterID
 	}
+}
+
+func newKataProjectEventsLoadResult(maxBytes uint64) kataProjectEventsLoadResult {
+	return kataProjectEventsLoadResult{SerializedCost: 2, Cacheable: maxBytes >= 2}
+}
+
+func (r *kataProjectEventsLoadResult) admitProjectEvent(event katagenerated.EventEnvelope, maxBytes uint64) {
+	if !r.Cacheable {
+		return
+	}
+	separatorCost := uint64(0)
+	if len(r.ProjectEvents) > 0 {
+		separatorCost = 1
+	}
+	eventCost := kataSerializedCost(event)
+	remaining := maxBytes - r.SerializedCost
+	if separatorCost > remaining || eventCost > remaining-separatorCost {
+		r.ProjectEvents = nil
+		r.SerializedCost = 0
+		r.Cacheable = false
+		return
+	}
+	r.SerializedCost += separatorCost + eventCost
+	r.ProjectEvents = append(r.ProjectEvents, event)
 }
 
 func validateKataHistoryPage(

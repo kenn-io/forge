@@ -33,6 +33,10 @@ state.
 - Cache capacity may evict Kata authority or enrichment entries but must never
   truncate an API result; daemon invalidation clears every cached read for that
   daemon (`internal/server/kata_snapshot_cache.go::kataSnapshotCache`).
+- Oversized project history must keep paginating selected history uncapped
+  without retaining the complete project stream (`internal/server/kata_snapshot_enrichment.go::loadProjectEvents`).
+- `GraphFetchedAt` identifies the daemon read that produced the graph and stays
+  stable across cache hits (`internal/server/kata_snapshot_enrichment.go::loadGraph`).
 - `GET /kata/tasks/events`: compact reset/invalidation transport only. Replay
   starts at the accepted snapshot cursor; raw daemon events never enter browser
   authority (`frontend/src/lib/features/kata/kataWorkspaceAuthorityController.svelte.ts::KataWorkspaceAuthorityController`).

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -171,6 +173,60 @@ func TestKataSnapshotEnricherLoadsCompleteRetainedSelectedHistoryFromProjectEven
 	assert.Len(result.SelectedHistory, 126)
 	assert.Equal([]int64{0, 2, 127}, cursors)
 	assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
+}
+
+func TestKataSnapshotEnricherDiscardsOversizedProjectAccumulatorAndReloadsSelectedHistory(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	const maxBytes = uint64(512)
+	selectedUID := "issue-member"
+	otherUID := "issue-other"
+	var calls atomic.Int64
+	client := &fakeKataSnapshotAPIClient{
+		pollProjectEvents: func(_ context.Context, options *katagenerated.PollProjectEventsRequestOptions) (*katagenerated.PollProjectEventsResp, error) {
+			requireKataProjectEventsRequest(t, options)
+			switch (calls.Add(1) - 1) % 3 {
+			case 0:
+				unrelated := testKataEvent(1, &otherUID, time.Unix(1, 0))
+				unrelated.ContentHash = strings.Repeat("x", int(maxBytes))
+				return testKataPollProjectEventsResponse(2,
+					unrelated,
+					testKataEvent(2, &selectedUID, time.Unix(2, 0)),
+				), nil
+			case 1:
+				return testKataPollProjectEventsResponse(3,
+					testKataEvent(3, &selectedUID, time.Unix(3, 0)),
+				), nil
+			default:
+				return testKataPollProjectEventsResponse(3), nil
+			}
+		},
+	}
+	cache := newKataSnapshotEnrichmentCacheWithLimits(
+		t.Context(), time.Minute, 8, maxBytes, func(string) uint64 { return 0 },
+	)
+	t.Cleanup(cache.close)
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client, cache: cache})
+
+	loaded, err := enricher.loadProjectEvents(t.Context(), 7, selectedUID, maxBytes)
+	require.NoError(err)
+	assert.False(loaded.Cacheable)
+	assert.Nil(loaded.ProjectEvents)
+	require.Len(loaded.SelectedHistory, 2)
+	assert.Equal([]int64{2, 3}, []int64{loaded.SelectedHistory[0].EventID, loaded.SelectedHistory[1].EventID})
+
+	authority := testKataCoordinatedAuthority()
+	first, err := enricher.loadHistory(t.Context(), authority, 7, selectedUID)
+	require.NoError(err)
+	second, err := enricher.loadHistory(t.Context(), authority, 7, selectedUID)
+	require.NoError(err)
+	require.Len(first, 2)
+	require.Len(second, 2)
+	assert.Equal([]int64{2, 3}, []int64{first[0].EventID, first[1].EventID})
+	assert.Equal([]int64{2, 3}, []int64{second[0].EventID, second[1].EventID})
+	assert.Equal(int64(9), calls.Load(), "an oversized project stream must reload on the next selection")
 }
 
 func TestKataSnapshotEnricherResumesRetainedProjectHistoryAfterCursorReset(t *testing.T) {
@@ -554,6 +610,48 @@ func TestKataSnapshotEnricherGraphNodeAuthorizesSelectionWithoutRerooting(t *tes
 		Title:       "Linked task",
 	}, workspaceMetadata)
 	assert.Empty(result.Errors)
+}
+
+func TestKataSnapshotEnricherPreservesGraphFetchTimestampOnCacheHit(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	fetchedAt := time.Date(2026, 7, 21, 15, 0, 0, 0, time.UTC)
+	later := fetchedAt.Add(time.Minute)
+	var graphCalls atomic.Int64
+	var nowCalls atomic.Int64
+	client := &fakeKataSnapshotAPIClient{
+		reachableGraph: func(context.Context, *katagenerated.ReachableIssueGraphRequestOptions) (*katagenerated.ReachableIssueGraphResp, error) {
+			graphCalls.Add(1)
+			return testKataGraphResponse("issue-source", "issue-linked"), nil
+		},
+	}
+	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8, func(string) uint64 { return 0 })
+	t.Cleanup(cache.close)
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
+		client: client,
+		cache:  cache,
+		now: func() time.Time {
+			if nowCalls.Add(1) == 1 {
+				return fetchedAt
+			}
+			return later
+		},
+	})
+	authority := testKataCoordinatedAuthority()
+	request := kataSnapshotEnrichmentRequest{GraphSourceUID: "issue-source"}
+
+	first, err := enricher.Enrich(t.Context(), authority, request)
+	require.NoError(err)
+	second, err := enricher.Enrich(t.Context(), authority, request)
+	require.NoError(err)
+
+	require.NotNil(first.GraphFetchedAt)
+	require.NotNil(second.GraphFetchedAt)
+	assert.Equal(fetchedAt, *first.GraphFetchedAt)
+	assert.Equal(fetchedAt, *second.GraphFetchedAt)
+	assert.Equal(int64(1), graphCalls.Load())
 }
 
 func TestKataSnapshotEnricherDoesNotAuthorizeDisconnectedGraphNode(t *testing.T) {

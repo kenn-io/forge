@@ -34,13 +34,13 @@ Extend the `saves a Kata mapping to a selected known Middleman project` fixture 
 
 ```ts
 {
-  display_name: "Agentsview",
+  display_name: "Tools",
   repo: {
     provider: "github",
     platform_host: "github.com",
-    owner: "kenn-io",
-    name: "agentsview",
-    repo_path: "kenn-io/agentsview",
+    owner: "acme",
+    name: "tools",
+    repo_path: "acme/tools",
     capabilities: defaultProviderCapabilities,
   },
 },
@@ -55,7 +55,7 @@ const query = screen.getByRole("combobox", { name: pickerName });
 await fireEvent.input(query, { target: { value: "middle" } });
 
 expect(screen.getByRole("option", { name: "Middleman · kenn-io/middleman" })).toBeTruthy();
-expect(screen.queryByRole("option", { name: "Agentsview · kenn-io/agentsview" })).toBeNull();
+expect(screen.queryByRole("option", { name: "Tools · acme/tools" })).toBeNull();
 await fireEvent.mouseDown(screen.getByRole("option", { name: "Middleman · kenn-io/middleman" }));
 ```
 

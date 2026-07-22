@@ -821,6 +821,15 @@ test("kata task columns float and preserve responsive grid alignment", async ({ 
     await expect(panel).toBeVisible();
     expect(await panel.evaluate((element) => getComputedStyle(element).position)).toBe("fixed");
     expect(Number(await panel.evaluate((element) => getComputedStyle(element).zIndex))).toBeGreaterThan(0);
+    const triggerBox = await page.getByRole("button", { name: "Columns" }).boundingBox();
+    const panelBox = await panel.boundingBox();
+    expect(triggerBox).not.toBeNull();
+    expect(panelBox).not.toBeNull();
+    expect(Math.abs(panelBox!.x + panelBox!.width - (triggerBox!.x + triggerBox!.width))).toBeLessThanOrEqual(2);
+    expect(panelBox!.y).toBeGreaterThanOrEqual(0);
+    expect(panelBox!.x).toBeGreaterThanOrEqual(0);
+    expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual((page.viewportSize()?.width ?? 0) + 1);
+    expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual((page.viewportSize()?.height ?? 0) + 1);
     await page.getByRole("checkbox", { name: "Tags" }).click();
     await expect(page.locator(".table-header .col-tags")).toHaveCount(0);
     await expect(page.locator(".issue-row .col-tags")).toHaveCount(0);
@@ -836,6 +845,14 @@ test("kata task columns float and preserve responsive grid alignment", async ({ 
     });
     await expect(page.locator(".table-header .col-owner")).toBeVisible();
     await expect(page.locator(".table-header .col-tags")).toHaveCount(0);
+
+    await page.setViewportSize({ width: 720, height: 540 });
+    const constrainedPanelBox = await panel.boundingBox();
+    expect(constrainedPanelBox).not.toBeNull();
+    expect(constrainedPanelBox!.x).toBeGreaterThanOrEqual(0);
+    expect(constrainedPanelBox!.y).toBeGreaterThanOrEqual(0);
+    expect(constrainedPanelBox!.x + constrainedPanelBox!.width).toBeLessThanOrEqual(721);
+    expect(constrainedPanelBox!.y + constrainedPanelBox!.height).toBeLessThanOrEqual(541);
 
     for (const column of ["id", "title", "updated", "priority", "due", "owner"]) {
       const headerBox = await page.locator(`.table-header .col-${column}`).boundingBox();
@@ -896,10 +913,10 @@ Run from `frontend/`:
 
 ```bash
 node ../node_modules/vite-plus/bin/vp test run --project browser src/lib/components/kata/KataIssueList.browser.svelte.ts
-node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts --grep "kata task columns float"
+node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts
 ```
 
-Expected: both commands pass.
+Expected: the browser test and the complete affected Kata Playwright file pass.
 
 - [ ] **Step 3: Run frontend formatting, lint, kit, and Svelte checks**
 

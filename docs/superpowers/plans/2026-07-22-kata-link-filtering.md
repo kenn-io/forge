@@ -1328,6 +1328,24 @@ const filterPanel = page.locator(".link-filter-panel");
 await expect(filterPanel).toBeVisible();
 expect(await filterPanel.evaluate((element) => getComputedStyle(element).position)).toBe("fixed");
 expect(Number(await filterPanel.evaluate((element) => getComputedStyle(element).zIndex))).toBeGreaterThan(0);
+const filterTriggerBox = await links.getByRole("button", { name: "Filter links" }).boundingBox();
+const filterPanelBox = await filterPanel.boundingBox();
+expect(filterTriggerBox).not.toBeNull();
+expect(filterPanelBox).not.toBeNull();
+expect(Math.abs(filterPanelBox!.x + filterPanelBox!.width - (filterTriggerBox!.x + filterTriggerBox!.width))).toBeLessThanOrEqual(2);
+expect(filterPanelBox!.x).toBeGreaterThanOrEqual(0);
+expect(filterPanelBox!.y).toBeGreaterThanOrEqual(0);
+expect(filterPanelBox!.x + filterPanelBox!.width).toBeLessThanOrEqual((page.viewportSize()?.width ?? 0) + 1);
+expect(filterPanelBox!.y + filterPanelBox!.height).toBeLessThanOrEqual((page.viewportSize()?.height ?? 0) + 1);
+
+await page.setViewportSize({ width: 720, height: 540 });
+const constrainedFilterPanelBox = await filterPanel.boundingBox();
+expect(constrainedFilterPanelBox).not.toBeNull();
+expect(constrainedFilterPanelBox!.x).toBeGreaterThanOrEqual(0);
+expect(constrainedFilterPanelBox!.y).toBeGreaterThanOrEqual(0);
+expect(constrainedFilterPanelBox!.x + constrainedFilterPanelBox!.width).toBeLessThanOrEqual(721);
+expect(constrainedFilterPanelBox!.y + constrainedFilterPanelBox!.height).toBeLessThanOrEqual(541);
+await page.setViewportSize({ width: 1280, height: 720 });
 await filterPanel.getByRole("checkbox", { name: "Closed" }).click();
 
 await expect(links).toContainText("Completed linked task");
@@ -1366,10 +1384,10 @@ From the repository root:
 ```bash
 (cd frontend && node ../node_modules/vite-plus/bin/vp test run --project unit)
 ./node_modules/.bin/vp run frontend-check
-(cd frontend && node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts --grep "kata task links render")
+(cd frontend && node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts)
 ```
 
-Expected: all commands exit 0. The component and workspace tests own filtering and state lifetime; the focused Playwright scenario owns fixed positioning, stacking, and clipping in the real split-pane layout.
+Expected: all commands exit 0. The component and workspace tests own filtering and state lifetime; the complete affected Kata Playwright file verifies fixed positioning, trigger anchoring, viewport containment, clipping, and the real maintainer workflow after the final spec edit.
 
 - [ ] **Step 12: Review the final diff and commit the integrated behavior**
 

@@ -654,8 +654,8 @@ func (archiveTestSource) SyncArchiveItem(
 	platform.RepoRef,
 	db.ArchiveItemType,
 	int,
-) error {
-	return nil
+) (bool, error) {
+	return true, nil
 }
 
 type archiveMutableSource struct{ refs []platform.RepoRef }

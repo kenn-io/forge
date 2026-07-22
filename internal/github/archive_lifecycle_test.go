@@ -906,7 +906,12 @@ func TestArchiveCompletionWithoutProviderAttemptAbandonsExpiredFeatureProbeReser
 	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
 	require.NoError(err)
 	require.True(admission.Allowed, admission.Detail)
-	require.Nil(admission.Complete(errors.New("local archive failure"), false))
+	providerAttempted, syncErr := syncer.SyncArchiveItem(
+		admission.Context, ref, db.ArchiveItemTypeIssue, 7,
+	)
+	require.Error(syncErr)
+	require.False(providerAttempted)
+	require.Nil(admission.Complete(syncErr, providerAttempted))
 
 	first, due := syncer.beginRepositoryFeatureProbe(
 		t.Context(), repo, platform.RepositoryFeatureIssues,

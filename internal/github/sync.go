@@ -9395,7 +9395,7 @@ func (s *Syncer) SyncIssueOnProvider(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	return s.syncIssueForRepo(ctx, repo, number)
+	return s.syncIssueForRepo(ctx, repo, number, nil)
 }
 
 func (s *Syncer) syncIssueWithHost(
@@ -9429,13 +9429,14 @@ func (s *Syncer) syncIssueWithHost(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	return s.syncIssueForRepo(ctx, repo, number)
+	return s.syncIssueForRepo(ctx, repo, number, nil)
 }
 
 func (s *Syncer) syncIssueForRepo(
 	ctx context.Context,
 	repo RepoRef,
 	number int,
+	providerAttempted *bool,
 ) error {
 	if !IsArchiveSyncBudgetContext(ctx) {
 		releaseProviderWork := s.beginProviderWork(
@@ -9449,7 +9450,11 @@ func (s *Syncer) syncIssueForRepo(
 		return fmt.Errorf("upsert repo %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 
-	if _, err := s.fetchIssueDetail(ctx, repo, repoID, number); err != nil {
+	providerCalls, err := s.fetchIssueDetail(ctx, repo, repoID, number)
+	if providerAttempted != nil && providerCalls > 0 {
+		*providerAttempted = true
+	}
+	if err != nil {
 		return err
 	}
 	return s.markClosedLinkedNotificationsDone(ctx)
@@ -9474,10 +9479,10 @@ func (s *Syncer) SyncArchiveItem(
 	ref platform.RepoRef,
 	itemType db.ArchiveItemType,
 	number int,
-) error {
+) (bool, error) {
 	repo, ok := s.trackedRepoByIdentity(ref.Platform, ref.Owner, ref.Name, ref.Host)
 	if !ok {
-		return fmt.Errorf(
+		return false, fmt.Errorf(
 			"repo %s/%s on %s/%s is not tracked",
 			ref.Owner, ref.Name, ref.Platform, ref.Host,
 		)
@@ -9487,15 +9492,18 @@ func (s *Syncer) SyncArchiveItem(
 	repo.PlatformHost = repoHost(repo)
 	switch itemType {
 	case db.ArchiveItemTypeIssue:
-		return s.syncIssueForRepo(ctx, repo, number)
+		providerAttempted := false
+		err := s.syncIssueForRepo(ctx, repo, number, &providerAttempted)
+		return providerAttempted, err
 	case db.ArchiveItemTypeMergeRequest:
-		err := s.syncMRForRepo(ctx, repo, number, false, nil)
+		providerAttempted := false
+		err := s.syncMRForRepo(ctx, repo, number, false, &providerAttempted)
 		if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must propagate
-			return nil
+			return providerAttempted, nil
 		}
-		return err
+		return providerAttempted, err
 	default:
-		return fmt.Errorf("sync archive item: invalid item type %q", itemType)
+		return false, fmt.Errorf("sync archive item: invalid item type %q", itemType)
 	}
 }
 

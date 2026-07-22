@@ -21,7 +21,9 @@ type ConfiguredRepositorySource interface {
 // grow a second provider read/normalize/persist pipeline.
 type ItemSyncer interface {
 	ArchiveItemSyncCost(platform.Kind, db.ArchiveItemType) int
-	SyncArchiveItem(context.Context, platform.RepoRef, db.ArchiveItemType, int) error
+	SyncArchiveItem(
+		context.Context, platform.RepoRef, db.ArchiveItemType, int,
+	) (providerAttempted bool, err error)
 }
 
 type AdmissionResult struct {

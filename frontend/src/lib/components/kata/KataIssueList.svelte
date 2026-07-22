@@ -1106,7 +1106,7 @@
     gap: var(--table-gap);
     align-items: center;
     padding: 3px 6px;
-    border-radius: var(--radius-sm);
+    border-radius: 0;
     text-align: left;
     border: 0;
     background: transparent;

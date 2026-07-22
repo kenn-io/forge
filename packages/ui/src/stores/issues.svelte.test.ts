@@ -77,6 +77,43 @@ describe("issues store bot visibility", () => {
     expect(store.getHideBots()).toBe(true);
   });
 
+  it("prevents out-of-order responses by serializing rapid visibility changes", async () => {
+    let resolveFirst!: (response: { data: { issues: { hide_bots: boolean } }; error: undefined }) => void;
+    const firstResponse = new Promise<{
+      data: { issues: { hide_bots: boolean } };
+      error: undefined;
+    }>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const put = vi
+      .fn()
+      .mockImplementationOnce(async () => firstResponse)
+      .mockResolvedValueOnce({
+        data: { issues: { hide_bots: false } },
+        error: undefined,
+      });
+    const store = createIssuesStore({
+      client: { PUT: put } as unknown as MiddlemanClient,
+    });
+
+    const hide = store.setHideBots(true);
+    const show = store.setHideBots(false);
+
+    expect(store.getHideBots()).toBe(false);
+    expect(put).toHaveBeenCalledTimes(1);
+
+    resolveFirst({
+      data: { issues: { hide_bots: true } },
+      error: undefined,
+    });
+    await vi.waitFor(() => expect(put).toHaveBeenCalledTimes(2));
+    expect(store.getHideBots()).toBe(false);
+
+    await Promise.all([hide, show]);
+    expect(put.mock.calls.map(([, options]) => options.body.issues.hide_bots)).toEqual([true, false]);
+    expect(store.getHideBots()).toBe(false);
+  });
+
   it("restores the previous preference when persistence fails", async () => {
     const store = createIssuesStore({
       client: {

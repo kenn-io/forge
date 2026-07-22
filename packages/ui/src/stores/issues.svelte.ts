@@ -90,6 +90,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   let issues = $state<Issue[]>([]);
   let hideBots = $state(false);
+  let confirmedHideBots = false;
+  let hideBotsMutationGeneration = 0;
+  let hideBotsSave: Promise<void> | null = null;
   let loading = $state(false);
   let storeError = $state<string | null>(null);
   let filterStarred = $state(false);
@@ -242,23 +245,40 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   function hydrateDefaults(settings: IssueSettings): void {
     hideBots = settings.hide_bots;
+    confirmedHideBots = settings.hide_bots;
+  }
+
+  async function persistHideBots(): Promise<void> {
+    for (;;) {
+      const generation = hideBotsMutationGeneration;
+      const value = hideBots;
+      try {
+        const { data, error: requestError } = await apiClient.PUT("/settings", {
+          body: { issues: { hide_bots: value } },
+        });
+        if (!data) {
+          throw new Error(apiErrorMessage(requestError ?? {}, "failed to save issue visibility"));
+        }
+        confirmedHideBots = data.issues.hide_bots;
+        if (generation !== hideBotsMutationGeneration) continue;
+        hideBots = confirmedHideBots;
+        return;
+      } catch (err) {
+        if (generation !== hideBotsMutationGeneration) continue;
+        hideBots = confirmedHideBots;
+        showFlash(err instanceof Error ? err.message : "failed to save issue visibility", { tone: "danger" });
+        return;
+      }
+    }
   }
 
   async function setHideBots(value: boolean): Promise<void> {
-    const previous = hideBots;
     hideBots = value;
-    try {
-      const { data, error: requestError } = await apiClient.PUT("/settings", {
-        body: { issues: { hide_bots: value } },
-      });
-      if (!data) {
-        throw new Error(apiErrorMessage(requestError ?? {}, "failed to save issue visibility"));
-      }
-      hideBots = data.issues.hide_bots;
-    } catch (err) {
-      hideBots = previous;
-      showFlash(err instanceof Error ? err.message : "failed to save issue visibility", { tone: "danger" });
-    }
+    hideBotsMutationGeneration += 1;
+    hideBotsSave ??= persistHideBots().finally(() => {
+      hideBotsSave = null;
+    });
+    await hideBotsSave;
   }
 
   function selectIssue(

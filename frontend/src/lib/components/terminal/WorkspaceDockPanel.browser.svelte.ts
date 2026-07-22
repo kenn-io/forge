@@ -9,8 +9,9 @@ const detailChildren = createRawSnippet(() => ({
 
 // context/ui-design-system.md: kit-ui's BottomDock has no prop to hide its
 // own top-edge resize handle, so WorkspaceDockPanel.svelte hides it in
-// expanded mode with a `:global(.kit-split-resize-handle) { display: none }`
-// override scoped to `.workspace-dock-panel--expanded`. A manual re-audit was
+// expanded mode with a `:global(.kit-bottom-dock > .kit-split-resize-handle)
+// { display: none }` override scoped to `.workspace-dock-panel--expanded`.
+// A manual re-audit was
 // the only guard against a future kit-ui bump renaming or restructuring that
 // handle out from under the override (silently un-hiding it, or hiding it
 // permanently) — this pins the actual computed style in a real browser
@@ -342,6 +343,43 @@ describe("WorkspaceDockPanel resize handle", () => {
       const restoredHandle = document.querySelector<HTMLElement>(".kit-split-resize-handle");
       expect(restoredHandle).not.toBeNull();
       expect(getComputedStyle(restoredHandle!).display).not.toBe("none");
+    } finally {
+      flushSync(() => unmount(instance));
+      target.remove();
+    }
+  });
+
+  it("keeps nested terminal split handles visible while expanded", () => {
+    // The hosted terminal reparents its split tree into the dock body, and
+    // its pane handles carry the same kit class as BottomDock's top-edge
+    // handle. The expanded-mode hide must only reach the dock's own direct
+    // child, or internal pane resizing silently dies in expanded mode.
+    const controller = createTestController("expanded");
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+
+    const instance = mount(WorkspaceDockPanel, {
+      target,
+      props: {
+        controller,
+        active: true,
+        detailTitle: "#7 Fix the widget",
+        children: detailChildren,
+      },
+    });
+
+    try {
+      flushSync();
+      const slot = document.querySelector<HTMLElement>(".workspace-dock-slot");
+      expect(slot).not.toBeNull();
+      const nestedHandle = document.createElement("div");
+      nestedHandle.className = "kit-split-resize-handle kit-split-resize-handle--horizontal";
+      slot!.appendChild(nestedHandle);
+
+      const dockHandle = document.querySelector<HTMLElement>(".kit-bottom-dock > .kit-split-resize-handle");
+      expect(dockHandle).not.toBeNull();
+      expect(getComputedStyle(dockHandle!).display).toBe("none");
+      expect(getComputedStyle(nestedHandle).display).not.toBe("none");
     } finally {
       flushSync(() => unmount(instance));
       target.remove();

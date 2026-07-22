@@ -213,9 +213,12 @@ the dock is open plus its domain header/body/footer content; the shared dock
 owns shell geometry, top-edge resizing, bounds, close control, and body
 scrolling. It exposes no prop to hide its resize handle; a mode that forces a
 controlled `height` (for example, an expanded 100% state) must hide the
-handle itself via a scoped `:global(.kit-split-resize-handle)` rule under an
-app-owned class, or a live drag will silently corrupt persisted height state
-that isn't visibly changing (`WorkspaceDockPanel.svelte`). Re-audit the
+handle itself via a scoped `:global(.kit-bottom-dock > .kit-split-resize-handle)`
+rule under an app-owned class, or a live drag will silently corrupt persisted
+height state that isn't visibly changing (`WorkspaceDockPanel.svelte`). Keep
+the child combinator: dock bodies can host content with its own kit split
+handles (the reparented terminal split tree), and a descendant selector
+would disable those nested handles too. Re-audit the
 selector on every kit-ui SHA bump — `frontend/src/lib/components/terminal/
 WorkspaceDockPanel.browser.svelte.ts` pins the actual computed `display` in a
 real browser, so a SHA bump that renames or restructures the handle out from

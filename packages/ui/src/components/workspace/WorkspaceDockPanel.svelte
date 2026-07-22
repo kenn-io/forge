@@ -284,8 +284,11 @@
    * so a drag would not visibly resize anything — but it would still fire
    * onHeightChange and corrupt the persisted split-mode height. Hiding the
    * handle removes it from the tab order (display: none) as well as pointer
-   * reach, so there is no dead/inert control left behind. */
-  .workspace-dock-panel--expanded :global(.kit-split-resize-handle) {
+   * reach, so there is no dead/inert control left behind. Scoped to the
+   * dock's own direct child: the hosted terminal reparents its split tree
+   * into the dock body, and its nested pane handles must keep working
+   * while expanded. */
+  .workspace-dock-panel--expanded :global(.kit-bottom-dock > .kit-split-resize-handle) {
     display: none;
   }
 </style>

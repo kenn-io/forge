@@ -208,6 +208,47 @@ func TestKataSnapshotEnricherResumesRetainedProjectHistoryAfterCursorReset(t *te
 	assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
 }
 
+func TestKataSnapshotEnricherDiscardsPreResetHistoryAtRetainedBaseline(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	selectedUID := "issue-member"
+	otherUID := "issue-other"
+	cursors := []int64{}
+	client := &fakeKataSnapshotAPIClient{
+		showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			return testKataShowIssueResponse(selectedUID), nil
+		},
+		pollProjectEvents: func(_ context.Context, options *katagenerated.PollProjectEventsRequestOptions) (*katagenerated.PollProjectEventsResp, error) {
+			requireKataProjectEventsRequest(t, options)
+			cursors = append(cursors, *options.Query.AfterID)
+			switch len(cursors) {
+			case 1:
+				return testKataPollProjectEventsResponse(2,
+					testKataEvent(1, &selectedUID, time.Unix(1, 0)),
+					testKataEvent(2, &otherUID, time.Unix(2, 0))), nil
+			case 2:
+				return testKataPollProjectEventsResetResponse(41), nil
+			case 3:
+				return testKataPollProjectEventsResponse(43,
+					testKataEvent(42, &selectedUID, time.Unix(42, 0)),
+					testKataEvent(43, &selectedUID, time.Unix(43, 0))), nil
+			default:
+				return testKataPollProjectEventsResponse(43), nil
+			}
+		},
+	}
+
+	result, err := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client}).Enrich(
+		t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: selectedUID},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, result.SelectedHistory, 2)
+	assert.Equal([]int64{42, 43}, []int64{result.SelectedHistory[0].EventID, result.SelectedHistory[1].EventID})
+	assert.Equal([]int64{0, 2, 41, 43}, cursors)
+	assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
+}
+
 func TestKataSnapshotEnricherRejectsRepeatedHistoryCursorReset(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

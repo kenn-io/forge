@@ -377,6 +377,7 @@ func (e *kataSnapshotEnricher) loadHistory(
 			return nil, err
 		}
 		if resetRequired {
+			history = history[:0]
 			afterID = body.NextAfterID
 			resetHandled = true
 			continue

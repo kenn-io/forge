@@ -116,7 +116,14 @@ func (s *Service) EnsureConfigured(ctx context.Context, refs []platform.RepoRef)
 		}
 	}
 	for _, ref := range refs {
-		if _, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(ref)); err != nil {
+		identity := platform.DBRepoIdentity(ref)
+		var err error
+		if identity.PlatformRepoID != "" {
+			_, err = s.db.UpsertRepoByProviderID(ctx, identity)
+		} else {
+			_, err = s.db.UpsertRepo(ctx, identity)
+		}
+		if err != nil {
 			return fmt.Errorf("seed archive repository %s: %w", archiveRepoIdentityKey(ref), err)
 		}
 	}

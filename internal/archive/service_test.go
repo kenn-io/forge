@@ -119,6 +119,37 @@ func TestArchiveServiceEnsureConfiguredSeedsFreshRepository(t *testing.T) {
 	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
 }
 
+func TestArchiveServiceEnsureConfiguredMergesRenamedRepositoryAtExistingDestination(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	previous := archiveServiceRef(platform.KindGitHub, "github.test", "previous")
+	previous.PlatformExternalID = "repo-current"
+	current := archiveServiceRef(platform.KindGitHub, "github.test", "current")
+	current.PlatformExternalID = "repo-current"
+	staleDestination := current
+	staleDestination.PlatformExternalID = "repo-obsolete"
+
+	sourceID, err := database.UpsertRepoByProviderID(t.Context(), platform.DBRepoIdentity(previous))
+	require.NoError(err)
+	destinationID, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(staleDestination))
+	require.NoError(err)
+	provider := newArchiveServiceProvider(current.Platform, current.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{current}, nil, now)
+
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{current}))
+	repos, err := database.ListRepos(t.Context())
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal(destinationID, repos[0].ID)
+	assert.Equal("repo-current", repos[0].PlatformRepoID)
+	assert.Equal("current", repos[0].Name)
+	assert.NotEqual(sourceID, destinationID)
+}
+
 func TestArchiveServiceAllScopeAndWakeLifecycle(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

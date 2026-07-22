@@ -35,12 +35,15 @@ func (s *Service) promptMaintenance(
 	}
 	issueScan := state.MaintenanceIssues
 	var deferred error
+	providerWorkCompleted := false
 	if !issueScan.Complete() && !issueScan.Blocked() {
 		if err := s.promptPages(ctx, repo, db.ArchiveItemTypeIssue, state.PromptSince.UTC(), issueScan); err != nil {
 			if !featureDeferredBeforeProvider(err) {
 				return err
 			}
 			deferred = err
+		} else {
+			providerWorkCompleted = true
 		}
 	}
 	mrScan := state.MaintenanceMergeRequests
@@ -50,9 +53,11 @@ func (s *Service) promptMaintenance(
 				return err
 			}
 			deferred = err
+		} else {
+			providerWorkCompleted = true
 		}
 	}
-	if deferred != nil {
+	if deferred != nil && !providerWorkCompleted {
 		return deferred
 	}
 	refreshed, err := s.db.ListArchiveRepoStates(ctx, []int64{repo.ID})

@@ -112,7 +112,11 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 			}
 		}
 		if archiveScanNotStarted(state.MergeRequestInventory) {
-			return s.swallowAdmissionDeferred(s.inventoryPage(ctx, repo, state, db.ArchiveItemTypeMergeRequest))
+			err := s.inventoryPage(ctx, repo, state, db.ArchiveItemTypeMergeRequest)
+			if featureDeferredBeforeProvider(err) {
+				continue
+			}
+			return s.swallowAdmissionDeferred(err)
 		}
 	}
 
@@ -130,7 +134,11 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 			state.OperatorState == db.ArchiveOperatorStateActive &&
 			state.PromptScanStartedAt != nil && !archiveRepoDeferred(state, s.now()) &&
 			maintenanceBoundaryActionable(state) {
-			return s.swallowAdmissionDeferred(s.promptMaintenance(ctx, repo, state))
+			err := s.promptMaintenance(ctx, repo, state)
+			if featureDeferredBeforeProvider(err) {
+				continue
+			}
+			return s.swallowAdmissionDeferred(err)
 		}
 	}
 
@@ -158,7 +166,11 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 			continue
 		}
 		if promptMaintenanceDue(state, s.now(), s.maintenanceInterval) && maintenanceBoundaryActionable(state) {
-			return s.swallowAdmissionDeferred(s.promptMaintenance(ctx, repo, state))
+			err := s.promptMaintenance(ctx, repo, state)
+			if featureDeferredBeforeProvider(err) {
+				continue
+			}
+			return s.swallowAdmissionDeferred(err)
 		}
 	}
 	if handled, err := s.runNextInventoryWork(

@@ -8,7 +8,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 func TestArchiveSchedulerDoesNotSerializeSameHostOutsideAdmission(t *testing.T) {
@@ -84,4 +86,115 @@ func TestArchiveWorkPrioritiesPreserveForegroundOrdering(t *testing.T) {
 	assert.Less(PriorityNotificationRefresh, PriorityActiveDetail)
 	assert.Less(PriorityActiveDetail, PriorityFullArchive)
 	assert.Less(PriorityFullArchive, PriorityDiscoveryInventory)
+}
+
+func TestArchiveBootstrapFeatureDeferralSkipsToNextRepository(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	cooled := archiveServiceRef(platform.KindGitHub, "github.test", "a-cooled")
+	ready := archiveServiceRef(platform.KindGitHub, "github.test", "b-ready")
+	cooledID := archiveServiceSeedRepo(t, database, cooled)
+	readyID := archiveServiceSeedRepo(t, database, ready)
+	provider := newArchiveServiceProvider(cooled.Platform, cooled.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	admission := &archiveFeatureDeferringAdmission{
+		repoName: cooled.Name,
+		itemTypes: map[db.ArchiveItemType]bool{
+			db.ArchiveItemTypeMergeRequest: true,
+		},
+	}
+	service := newArchiveTestService(
+		t, database, registry, []platform.RepoRef{cooled, ready}, admission, now,
+	)
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{cooled, ready}))
+	_, err = service.Start(t.Context(), []platform.RepoRef{cooled, ready})
+	require.NoError(err)
+
+	require.NoError(service.RunEligible(t.Context()))
+	admission.enabled = true
+	require.NoError(service.RunEligible(t.Context()))
+
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{cooledID, readyID})
+	require.NoError(err)
+	require.Len(states, 2)
+	assert.False(states[0].MergeRequestInventory.Complete())
+	assert.True(states[1].IssueInventory.Complete())
+}
+
+func TestArchiveMaintenanceFeatureDeferralSkipsToNextRepository(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	cooled := archiveServiceRef(platform.KindGitHub, "github.test", "a-cooled")
+	ready := archiveServiceRef(platform.KindGitHub, "github.test", "b-ready")
+	cooledID := archiveServiceSeedRepo(t, database, cooled)
+	readyID := archiveServiceSeedRepo(t, database, ready)
+	provider := newArchiveServiceProvider(cooled.Platform, cooled.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	admission := &archiveFeatureDeferringAdmission{
+		repoName: cooled.Name,
+		itemTypes: map[db.ArchiveItemType]bool{
+			db.ArchiveItemTypeIssue:        true,
+			db.ArchiveItemTypeMergeRequest: true,
+		},
+	}
+	service := newArchiveTestService(
+		t, database, registry, []platform.RepoRef{cooled, ready}, admission, now,
+	)
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{cooled, ready}))
+	_, err = service.Start(t.Context(), []platform.RepoRef{cooled, ready})
+	require.NoError(err)
+
+	var states []db.ArchiveRepoState
+	for range 12 {
+		states, err = database.ListArchiveRepoStates(t.Context(), []int64{cooledID, readyID})
+		require.NoError(err)
+		if states[0].InitialCompletedAt != nil && states[1].InitialCompletedAt != nil {
+			break
+		}
+		require.NoError(service.RunEligible(t.Context()))
+	}
+	require.NotNil(states[0].InitialCompletedAt)
+	require.NotNil(states[1].InitialCompletedAt)
+
+	admission.enabled = true
+	require.NoError(service.RunEligible(t.Context()))
+	states, err = database.ListArchiveRepoStates(t.Context(), []int64{cooledID, readyID})
+	require.NoError(err)
+	require.NotNil(states[0].PromptScanStartedAt)
+	assert.Nil(states[0].MaintenanceSucceededAt)
+	assert.Nil(states[1].PromptScanStartedAt)
+	assert.NotNil(states[1].MaintenanceSucceededAt)
+}
+
+type archiveFeatureDeferringAdmission struct {
+	enabled   bool
+	repoName  string
+	itemTypes map[db.ArchiveItemType]bool
+}
+
+func (a *archiveFeatureDeferringAdmission) Admit(
+	ctx context.Context,
+	ref platform.RepoRef,
+	itemType db.ArchiveItemType,
+	_ int,
+) (AdmissionResult, error) {
+	if a.enabled && ref.Name == a.repoName && a.itemTypes[itemType] {
+		return AdmissionResult{FeatureDeferred: &FeatureDeferral{
+			RetryAt: archiveTestTime().Add(24 * time.Hour),
+			Detail:  "repository feature cooldown active",
+		}}, nil
+	}
+	return AdmissionResult{
+		Allowed: true,
+		Context: ctx,
+		Complete: func(error) *FeatureDeferral {
+			return nil
+		},
+	}, nil
 }

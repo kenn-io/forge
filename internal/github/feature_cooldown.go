@@ -42,13 +42,24 @@ type repositoryFeatureProbe struct {
 
 type repositoryFeatureCooldownBypassKey struct{}
 
-func withRepositoryFeatureCooldownBypass(ctx context.Context) context.Context {
-	return context.WithValue(ctx, repositoryFeatureCooldownBypassKey{}, true)
+type repositoryFeatureCooldownBypass struct {
+	throughGeneration uint64
 }
 
-func repositoryFeatureCooldownBypassed(ctx context.Context) bool {
-	bypass, _ := ctx.Value(repositoryFeatureCooldownBypassKey{}).(bool)
-	return bypass
+func withRepositoryFeatureCooldownBypass(
+	ctx context.Context,
+	throughGeneration uint64,
+) context.Context {
+	return context.WithValue(ctx, repositoryFeatureCooldownBypassKey{}, repositoryFeatureCooldownBypass{
+		throughGeneration: throughGeneration,
+	})
+}
+
+func repositoryFeatureCooldownBypassFromContext(
+	ctx context.Context,
+) (repositoryFeatureCooldownBypass, bool) {
+	bypass, ok := ctx.Value(repositoryFeatureCooldownBypassKey{}).(repositoryFeatureCooldownBypass)
+	return bypass, ok
 }
 
 func repositoryFeatureKey(repo RepoRef, feature string) repositoryFeatureCooldownKey {
@@ -71,13 +82,14 @@ func (c *repositoryFeatureCooldowns) beginProbe(
 	repo RepoRef,
 	feature string,
 	now time.Time,
-	bypass bool,
+	bypass repositoryFeatureCooldownBypass,
+	bypassEnabled bool,
 ) (repositoryFeatureProbe, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	key := repositoryFeatureKey(repo, feature)
 	state, ok := c.states[key]
-	if bypass {
+	if bypassEnabled && (!ok || state.generation <= bypass.throughGeneration) {
 		return repositoryFeatureProbe{
 			cooldowns:  c,
 			key:        key,
@@ -100,6 +112,12 @@ func (c *repositoryFeatureCooldowns) beginProbe(
 		generation:  state.generation,
 		reservation: state.reservation,
 	}, true
+}
+
+func (c *repositoryFeatureCooldowns) currentGeneration() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.nextGeneration
 }
 
 func (c *repositoryFeatureCooldowns) deferUntil(repo RepoRef, feature string, nextProbe time.Time) {
@@ -148,8 +166,9 @@ func (s *Syncer) beginRepositoryFeatureProbe(
 	repo RepoRef,
 	feature string,
 ) (repositoryFeatureProbe, bool) {
+	bypass, bypassEnabled := repositoryFeatureCooldownBypassFromContext(ctx)
 	return s.featureCooldowns.beginProbe(
-		repo, feature, s.now().UTC(), repositoryFeatureCooldownBypassed(ctx),
+		repo, feature, s.now().UTC(), bypass, bypassEnabled,
 	)
 }
 

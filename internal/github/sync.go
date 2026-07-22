@@ -3938,7 +3938,9 @@ func (s *Syncer) runOnce(
 
 	rateLimitSnapshotCtx := ctx
 	if bypassNextSyncAfter {
-		ctx = withRepositoryFeatureCooldownBypass(ctx)
+		ctx = withRepositoryFeatureCooldownBypass(
+			ctx, s.featureCooldowns.currentGeneration(),
+		)
 	}
 
 	// Mark context so the budget transport counts HTTP calls
@@ -8629,7 +8631,9 @@ func (s *Syncer) SyncRepoOnProvider(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	return s.syncRepo(withRepositoryFeatureCooldownBypass(ctx), repo)
+	return s.syncRepo(withRepositoryFeatureCooldownBypass(
+		ctx, s.featureCooldowns.currentGeneration(),
+	), repo)
 }
 
 // SyncMR fetches fresh data for a single MR from GitHub and updates the DB.

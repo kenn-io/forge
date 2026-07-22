@@ -151,7 +151,7 @@ func TestSuccessfulProbeDoesNotClearConcurrentDisabledRenewal(t *testing.T) {
 	client := &partialFailureMock{listOpenPRsErr: notModifiedErr()}
 	client.listOpenIssuesFn = func(ctx context.Context, _, _ string) ([]*gh.Issue, error) {
 		call := issueListCalls.Add(1)
-		if repositoryFeatureCooldownBypassed(ctx) {
+		if _, bypassed := repositoryFeatureCooldownBypassFromContext(ctx); bypassed {
 			return nil, disabledErr
 		}
 		if call == 1 {

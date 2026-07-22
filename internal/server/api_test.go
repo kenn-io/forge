@@ -7702,6 +7702,82 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	}
 }
 
+func TestAPITriggerSyncStopsDetailDrainAfterDisabledIndexResult(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	disabledErr := platform.RepositoryFeatureDisabled(
+		platform.KindGitHub, "github.com", platform.RepositoryFeatureIssues,
+		errors.New("repository issues disabled"),
+	)
+
+	var issueListCalls atomic.Int32
+	var issueDetailCalls atomic.Int32
+	mock := &mockGH{
+		listOpenIssuesFn: func(context.Context, string, string) ([]*gh.Issue, error) {
+			issueListCalls.Add(1)
+			return nil, disabledErr
+		},
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+			issueDetailCalls.Add(1)
+			return nil, disabledErr
+		},
+	}
+	repo := ghclient.RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	repoID, err := database.UpsertRepo(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	for _, number := range []int{1, 2} {
+		_, err = database.UpsertIssue(ctx, &db.Issue{
+			RepoID: repoID, PlatformID: int64(7000 + number), Number: number,
+			URL:   fmt.Sprintf("https://github.com/acme/widget/issues/%d", number),
+			Title: fmt.Sprintf("stale issue %d", number), Author: "ada", State: "open",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock}, database, nil,
+		[]ghclient.RepoRef{repo}, time.Minute, nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(100)},
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	syncer.RunOnce(ctx)
+	assert.Equal(int32(1), issueListCalls.Load())
+	assert.Zero(int(issueDetailCalls.Load()))
+
+	done := make(chan struct{}, 1)
+	syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
+		if !status.Running {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
+	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		require.Fail("expected explicit global sync to complete")
+	}
+
+	assert.Equal(int32(2), issueListCalls.Load(),
+		"explicit sync must bypass the cooldown that existed at run start")
+	assert.Zero(int(issueDetailCalls.Load()),
+		"the disabled index result must suppress detail work in the same explicit run")
+}
+
 func TestAPIRepositorySyncRecoversDisabledIssueScopeThroughSQLite(t *testing.T) {
 	t.Parallel()
 

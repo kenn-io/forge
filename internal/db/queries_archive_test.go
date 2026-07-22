@@ -945,6 +945,41 @@ func TestArchiveDBBoundariesNormalizeTimestampsToUTC(t *testing.T) {
 	assert.Equal(1, progress[0].Counts.DueItemCount)
 }
 
+func TestDeferArchiveItemSyncPreservesProgressAndAttempts(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	retryAt := now.Add(24 * time.Hour)
+	repoID := insertTestRepoWithHost(t, d, "acme", "widget", "github.com")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 1, now)
+	insertArchiveProgressForTest(
+		t, d, repoID, ArchiveItemTypeIssue, 1,
+		ArchiveDatasetLookup, ArchiveDatasetProgressPending,
+	)
+	progress, err := d.GetDatasetProgress(
+		ctx, repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+
+	require.NoError(d.DeferArchiveItemSync(ctx, ArchiveItemSyncCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: 1,
+		ScanGeneration: progress.ScanGeneration, Now: now,
+	}, retryAt))
+
+	progress, err = d.GetDatasetProgress(
+		ctx, repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressPending, progress.Status)
+	assert.Zero(progress.AttemptCount)
+	require.NotNil(progress.NextRetryAt)
+	assert.Equal(retryAt, progress.NextRetryAt.UTC())
+}
+
 func TestScanScopedRepositoryFailureIsClaimFenced(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

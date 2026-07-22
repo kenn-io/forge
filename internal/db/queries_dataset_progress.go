@@ -175,6 +175,30 @@ func (d *DB) CommitArchiveItemSync(ctx context.Context, commit ArchiveItemSyncCo
 	return typedErr
 }
 
+// DeferArchiveItemSync schedules the current lookup generation for a later
+// retry without changing its status, attempt count, or earlier failure detail.
+func (d *DB) DeferArchiveItemSync(
+	ctx context.Context,
+	commit ArchiveItemSyncCommit,
+	retryAt time.Time,
+) error {
+	commit.Now = canonicalUTCTime(commit.Now)
+	retryAt = canonicalUTCTime(retryAt)
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_archive_dataset_progress
+		SET next_retry_at = ?, updated_at = ?
+		WHERE repo_id = ? AND item_type = ? AND item_number = ?
+		  AND dataset = 'lookup' AND scan_generation = ?
+		  AND status IN ('pending', 'running', 'failed')`,
+		formatDatasetProgressTime(retryAt), formatDatasetProgressTime(commit.Now),
+		commit.RepoID, commit.ItemType, commit.ItemNumber, commit.ScanGeneration,
+	)
+	if err != nil {
+		return fmt.Errorf("defer archive item sync: %w", err)
+	}
+	return nil
+}
+
 // FailArchiveItemSync applies one retry boundary to the item-level sync.
 func (d *DB) FailArchiveItemSync(
 	ctx context.Context,

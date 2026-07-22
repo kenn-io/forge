@@ -3163,6 +3163,105 @@ test("kata task list sorting preserves visible groups", async ({ page }) => {
   }
 });
 
+test("kata task columns float and preserve responsive grid alignment", async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 760 });
+  const backend = await startKataBackend();
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata`);
+    await expectKataDaemonSwitcherReady(page);
+    const list = page.locator(".issue-list");
+    await list.evaluate((element) => {
+      element.style.width = "940px";
+      element.style.flex = "none";
+    });
+
+    const titleHeader = page.locator(".table-header .col-title");
+    const titleHeaderLabel = titleHeader.locator("span").nth(1);
+    const titleCell = page.locator(".issue-row .cell-title").first();
+    const titleText = titleCell.locator(".title-text");
+    const titleWidthBefore = await titleCell.evaluate((element) => element.getBoundingClientRect().width);
+    const titleHeaderBox = await titleHeaderLabel.boundingBox();
+    const titleCellBox = await titleText.boundingBox();
+    expect(titleHeaderBox).not.toBeNull();
+    expect(titleCellBox).not.toBeNull();
+    expect(Math.abs(titleHeaderBox!.x - titleCellBox!.x)).toBeLessThanOrEqual(3);
+
+    const trigger = page.getByRole("button", { name: "Columns" });
+    await trigger.click();
+    const panel = page.locator(".column-picker__panel");
+    await expect(panel).toBeVisible();
+    expect(await panel.evaluate((element) => getComputedStyle(element).position)).toBe("fixed");
+    expect(Number(await panel.evaluate((element) => getComputedStyle(element).zIndex))).toBeGreaterThan(0);
+    const triggerBox = await trigger.boundingBox();
+    const panelBox = await panel.boundingBox();
+    expect(triggerBox).not.toBeNull();
+    expect(panelBox).not.toBeNull();
+    expect(Math.abs(panelBox!.x + panelBox!.width - (triggerBox!.x + triggerBox!.width))).toBeLessThanOrEqual(2);
+    expect(panelBox!.x).toBeGreaterThanOrEqual(0);
+    expect(panelBox!.y).toBeGreaterThanOrEqual(0);
+    expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual(1181);
+    expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(761);
+
+    await page.getByRole("checkbox", { name: "Tags" }).click();
+    await expect(page.locator(".table-header .col-tags")).toHaveCount(0);
+    await expect(page.locator(".issue-row .cell-tags")).toHaveCount(0);
+    const titleWidthAfter = await titleCell.evaluate((element) => element.getBoundingClientRect().width);
+    expect(titleWidthAfter).toBeGreaterThan(titleWidthBefore);
+
+    await list.evaluate((element) => {
+      element.style.width = "640px";
+    });
+    await expect(trigger.locator(".action-label")).toBeHidden();
+    await expect(page.locator(".table-header .col-owner")).toBeHidden();
+    await list.evaluate((element) => {
+      element.style.width = "940px";
+    });
+    await expect(page.locator(".table-header .col-owner")).toBeVisible();
+    await expect(page.locator(".table-header .col-tags")).toHaveCount(0);
+
+    await page.setViewportSize({ width: 720, height: 540 });
+    await expect
+      .poll(async () => {
+        const box = await panel.boundingBox();
+        return box ? box.x + box.width : Number.POSITIVE_INFINITY;
+      })
+      .toBeLessThanOrEqual(721);
+    await expect
+      .poll(async () => {
+        const box = await panel.boundingBox();
+        return box ? box.y + box.height : Number.POSITIVE_INFINITY;
+      })
+      .toBeLessThanOrEqual(541);
+    const constrainedPanelBox = await panel.boundingBox();
+    expect(constrainedPanelBox).not.toBeNull();
+    expect(constrainedPanelBox!.x).toBeGreaterThanOrEqual(0);
+    expect(constrainedPanelBox!.y).toBeGreaterThanOrEqual(0);
+
+    for (const column of ["id", "title", "updated", "priority", "due", "owner"]) {
+      const headerLocator =
+        column === "title"
+          ? page.locator(".table-header .col-title span").nth(1)
+          : page.locator(`.table-header .col-${column}`);
+      const rowLocator =
+        column === "title"
+          ? page.locator(".issue-row .title-text").first()
+          : page.locator(`.issue-row .cell-${column}`).first();
+      const headerBox = await headerLocator.boundingBox();
+      const rowBox = await rowLocator.boundingBox();
+      expect(headerBox).not.toBeNull();
+      expect(rowBox).not.toBeNull();
+      expect(Math.abs(headerBox!.x - rowBox!.x)).toBeLessThanOrEqual(column === "title" ? 3 : 1);
+    }
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata task list keyboard navigation moves focus and selection", async ({ page }) => {
   const backend = await startKataBackend();
   const kataHome = await configureKataHome(backend.url);

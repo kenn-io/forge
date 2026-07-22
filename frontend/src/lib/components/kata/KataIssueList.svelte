@@ -16,6 +16,15 @@
     type KataTaskSort,
     type KataTaskSortKey,
   } from "../../features/kata/taskSort.js";
+  import KataColumnPicker from "./KataColumnPicker.svelte";
+  import {
+    KATA_OPTIONAL_TASK_COLUMNS,
+    defaultKataTaskColumnVisibility,
+    loadKataTaskColumnVisibility,
+    persistKataTaskColumnVisibility,
+    type KataOptionalTaskColumn,
+    type KataTaskColumnVisibility,
+  } from "./kataTaskColumns.js";
 
   export interface KataIssueRevealRequest {
     uid: string;
@@ -57,6 +66,66 @@
 
   const SORT_STORAGE_KEY = "middleman:kata:issue-sort/v1";
   let sort: KataTaskSort = $state(loadSort());
+  let columnVisibility = $state(loadKataTaskColumnVisibility());
+
+  type TaskGridLayout = "wide" | "medium" | "compact" | "narrow";
+
+  const TASK_COLUMN_TRACKS: Record<
+    TaskGridLayout,
+    Record<KataOptionalTaskColumn, string | null>
+  > = {
+    wide: {
+      updated: "minmax(64px, 80px)",
+      priority: "minmax(68px, 80px)",
+      due: "minmax(56px, 70px)",
+      owner: "minmax(72px, 110px)",
+      tags: "minmax(96px, 200px)",
+    },
+    medium: {
+      updated: "minmax(64px, 80px)",
+      priority: "minmax(68px, 80px)",
+      due: "minmax(56px, 70px)",
+      owner: "minmax(72px, 110px)",
+      tags: null,
+    },
+    compact: {
+      updated: "minmax(60px, 76px)",
+      priority: "minmax(64px, 78px)",
+      due: "minmax(54px, 68px)",
+      owner: null,
+      tags: null,
+    },
+    narrow: {
+      updated: "minmax(58px, 72px)",
+      priority: "minmax(62px, 74px)",
+      due: null,
+      owner: null,
+      tags: null,
+    },
+  };
+
+  const TASK_TITLE_TRACKS: Record<TaskGridLayout, string> = {
+    wide: "minmax(220px, 1fr)",
+    medium: "minmax(220px, 1fr)",
+    compact: "minmax(180px, 1fr)",
+    narrow: "minmax(140px, 1fr)",
+  };
+
+  function taskGridColumns(layout: TaskGridLayout): string {
+    return [
+      "var(--table-id-col)",
+      TASK_TITLE_TRACKS[layout],
+      ...KATA_OPTIONAL_TASK_COLUMNS.flatMap((column) => {
+        const track = TASK_COLUMN_TRACKS[layout][column.id];
+        return columnVisibility[column.id] && track ? [track] : [];
+      }),
+    ].join(" ");
+  }
+
+  let wideGridColumns = $derived(taskGridColumns("wide"));
+  let mediumGridColumns = $derived(taskGridColumns("medium"));
+  let compactGridColumns = $derived(taskGridColumns("compact"));
+  let narrowGridColumns = $derived(taskGridColumns("narrow"));
 
   let expanded: Record<string, boolean> = $state({});
   let childrenByUID: Record<string, KataTaskSummary[]> = $state({});
@@ -165,6 +234,25 @@
   function handleSortClick(key: KataTaskSortKey) {
     sort = toggleKataTaskSort(sort, key);
     persistSort(sort);
+  }
+
+  function optionalColumnForSort(key: KataTaskSortKey): KataOptionalTaskColumn | null {
+    if (key === "updated" || key === "priority" || key === "owner") return key;
+    return null;
+  }
+
+  function setColumnVisibility(next: KataTaskColumnVisibility): void {
+    const activeSortColumn = optionalColumnForSort(sort.key);
+    if (activeSortColumn && !next[activeSortColumn]) {
+      sort = { key: "title", direction: "asc" };
+      persistSort(sort);
+    }
+    columnVisibility = next;
+    persistKataTaskColumnVisibility(next);
+  }
+
+  function showAllColumns(): void {
+    setColumnVisibility(defaultKataTaskColumnVisibility());
   }
 
   function viewTitle(view: KataCurrentView): string {
@@ -627,36 +715,54 @@
         <h2>{viewTitle(currentView)}</h2>
         <span class="count">{totalFilteredIssues()} {totalFilteredIssues() === 1 ? "task" : "tasks"}</span>
       </div>
-      {#if hasExpandableVisibleRows || hasAnyExpandedRows || bulkExpanding}
-        <div class="tree-actions" aria-label="Task tree controls">
-          <button
-            class="tree-action"
-            type="button"
-            disabled={bulkExpanding || allKnownExpandableRowsExpanded}
-            aria-busy={bulkExpanding ? "true" : undefined}
-            onclick={() => void expandAllVisible()}
-          >
-            <ListChevronsUpDownIcon size={13} strokeWidth={2} />
-            <span>{bulkExpanding ? "Expanding" : "Expand all"}</span>
-          </button>
-          <button
-            class="tree-action"
-            type="button"
-            disabled={!hasAnyExpandedRows}
-            onclick={collapseAllVisible}
-          >
-            <ListChevronsDownUpIcon size={13} strokeWidth={2} />
-            <span>Collapse all</span>
-          </button>
-        </div>
-      {/if}
+      <div class="header-actions">
+        <KataColumnPicker
+          visibility={columnVisibility}
+          onchange={setColumnVisibility}
+          onShowAll={showAllColumns}
+        />
+        {#if hasExpandableVisibleRows || hasAnyExpandedRows || bulkExpanding}
+          <div class="tree-actions" aria-label="Task tree controls">
+            <button
+              class="tree-action"
+              type="button"
+              aria-label={bulkExpanding ? "Expanding tasks" : "Expand all tasks"}
+              title={bulkExpanding ? "Expanding tasks" : "Expand all tasks"}
+              disabled={bulkExpanding || allKnownExpandableRowsExpanded}
+              aria-busy={bulkExpanding ? "true" : undefined}
+              onclick={() => void expandAllVisible()}
+            >
+              <ListChevronsUpDownIcon size={13} strokeWidth={2} />
+              <span class="action-label">{bulkExpanding ? "Expanding" : "Expand all"}</span>
+            </button>
+            <button
+              class="tree-action"
+              type="button"
+              aria-label="Collapse all tasks"
+              title="Collapse all tasks"
+              disabled={!hasAnyExpandedRows}
+              onclick={collapseAllVisible}
+            >
+              <ListChevronsDownUpIcon size={13} strokeWidth={2} />
+              <span class="action-label">Collapse all</span>
+            </button>
+          </div>
+        {/if}
+      </div>
     </div>
     {#if loading}
       <span class="kit-sr-only" aria-live="polite">Loading snapshot</span>
     {/if}
   </div>
 
-  <div class="table" class:table--project-scoped={isProjectScoped}>
+  <div
+    class="table"
+    class:table--project-scoped={isProjectScoped}
+    style:--table-cols-wide={wideGridColumns}
+    style:--table-cols-medium={mediumGridColumns}
+    style:--table-cols-compact={compactGridColumns}
+    style:--table-cols-narrow={narrowGridColumns}
+  >
     <!-- The table-body is the keyboard-nav root: any row inside this
          container is reachable via ↓/↑ (j/k), Home/End (g/G), and
          ↔ to expand or collapse subtasks. -->
@@ -694,50 +800,56 @@
             <ChevronDownIcon size={11} strokeWidth={2} />
           {/if}
         </button>
-        <button
-          class="col col-updated"
-          type="button"
-          aria-label={sortLabel("updated", "Updated")}
-          aria-pressed={sortIndicator("updated") !== null}
-          onclick={() => handleSortClick("updated")}
-        >
-          <span>Updated</span>
-          {#if sortIndicator("updated") === "asc"}
-            <ChevronUpIcon size={11} strokeWidth={2} />
-          {:else if sortIndicator("updated") === "desc"}
-            <ChevronDownIcon size={11} strokeWidth={2} />
-          {/if}
-        </button>
-        <button
-          class="col col-priority"
-          type="button"
-          aria-label={sortLabel("priority", "Priority")}
-          aria-pressed={sortIndicator("priority") !== null}
-          onclick={() => handleSortClick("priority")}
-        >
-          <span>Priority</span>
-          {#if sortIndicator("priority") === "asc"}
-            <ChevronUpIcon size={11} strokeWidth={2} />
-          {:else if sortIndicator("priority") === "desc"}
-            <ChevronDownIcon size={11} strokeWidth={2} />
-          {/if}
-        </button>
-        <span class="col col-due col-static">Due</span>
-        <button
-          class="col col-owner"
-          type="button"
-          aria-label={sortLabel("owner", "Owner")}
-          aria-pressed={sortIndicator("owner") !== null}
-          onclick={() => handleSortClick("owner")}
-        >
-          <span>Owner</span>
-          {#if sortIndicator("owner") === "asc"}
-            <ChevronUpIcon size={11} strokeWidth={2} />
-          {:else if sortIndicator("owner") === "desc"}
-            <ChevronDownIcon size={11} strokeWidth={2} />
-          {/if}
-        </button>
-        <span class="col col-tags col-static">Tags</span>
+        {#if columnVisibility.updated}
+          <button
+            class="col col-updated"
+            type="button"
+            aria-label={sortLabel("updated", "Updated")}
+            aria-pressed={sortIndicator("updated") !== null}
+            onclick={() => handleSortClick("updated")}
+          >
+            <span>Updated</span>
+            {#if sortIndicator("updated") === "asc"}
+              <ChevronUpIcon size={11} strokeWidth={2} />
+            {:else if sortIndicator("updated") === "desc"}
+              <ChevronDownIcon size={11} strokeWidth={2} />
+            {/if}
+          </button>
+        {/if}
+        {#if columnVisibility.priority}
+          <button
+            class="col col-priority"
+            type="button"
+            aria-label={sortLabel("priority", "Priority")}
+            aria-pressed={sortIndicator("priority") !== null}
+            onclick={() => handleSortClick("priority")}
+          >
+            <span>Priority</span>
+            {#if sortIndicator("priority") === "asc"}
+              <ChevronUpIcon size={11} strokeWidth={2} />
+            {:else if sortIndicator("priority") === "desc"}
+              <ChevronDownIcon size={11} strokeWidth={2} />
+            {/if}
+          </button>
+        {/if}
+        {#if columnVisibility.due}<span class="col col-due col-static">Due</span>{/if}
+        {#if columnVisibility.owner}
+          <button
+            class="col col-owner"
+            type="button"
+            aria-label={sortLabel("owner", "Owner")}
+            aria-pressed={sortIndicator("owner") !== null}
+            onclick={() => handleSortClick("owner")}
+          >
+            <span>Owner</span>
+            {#if sortIndicator("owner") === "asc"}
+              <ChevronUpIcon size={11} strokeWidth={2} />
+            {:else if sortIndicator("owner") === "desc"}
+              <ChevronDownIcon size={11} strokeWidth={2} />
+            {/if}
+          </button>
+        {/if}
+        {#if columnVisibility.tags}<span class="col col-tags col-static">Tags</span>{/if}
       </div>
 
       {#if visibleRootIssues.length === 0}
@@ -809,21 +921,29 @@
         {/if}
         <span class="title-text" id={titleId}>{issue.title}</span>
       </span>
-      <span class="cell cell-updated" title={issue.updated_at}>
-        {relativeTime(issue.updated_at)}
-      </span>
-      <span class="cell cell-priority">
-        {#if priority}
-          <span class={`pri-pill priority-${issue.priority}`}>{priority}</span>
-        {/if}
-      </span>
-      <span class="cell cell-due" title={issue.metadata.deadline_on ?? ""}>
-        {#if issue.metadata.deadline_on}{shortDate(issue.metadata.deadline_on)}{/if}
-      </span>
-      <span class="cell cell-owner">{issue.owner ?? ""}</span>
-      <span class="cell cell-tags" title={labels}>
-        {#if labels}{labels}{/if}
-      </span>
+      {#if columnVisibility.updated}
+        <span class="cell cell-updated" title={issue.updated_at}>
+          {relativeTime(issue.updated_at)}
+        </span>
+      {/if}
+      {#if columnVisibility.priority}
+        <span class="cell cell-priority">
+          {#if priority}
+            <span class={`pri-pill priority-${issue.priority}`}>{priority}</span>
+          {/if}
+        </span>
+      {/if}
+      {#if columnVisibility.due}
+        <span class="cell cell-due" title={issue.metadata.deadline_on ?? ""}>
+          {#if issue.metadata.deadline_on}{shortDate(issue.metadata.deadline_on)}{/if}
+        </span>
+      {/if}
+      {#if columnVisibility.owner}<span class="cell cell-owner">{issue.owner ?? ""}</span>{/if}
+      {#if columnVisibility.tags}
+        <span class="cell cell-tags" title={labels}>
+          {#if labels}{labels}{/if}
+        </span>
+      {/if}
       <span class="kit-sr-only">
         <span>project: {issue.project_name}</span>
         {#if issue.metadata.deadline_on}<span> · Due {shortDate(issue.metadata.deadline_on)}</span>{/if}
@@ -899,6 +1019,14 @@
     min-width: 0;
   }
 
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
   .pane-header h2 {
     font-size: var(--font-size-xl);
     line-height: 1.1;
@@ -964,16 +1092,7 @@
        leftover via `1fr` so the metadata cluster anchors at the
        right edge with no whitespace pocket. */
     --table-id-col: 13ch;         /* room for "Finances#rent" + badge padding */
-    --table-cols:
-      var(--table-id-col)         /* id badge */
-      minmax(220px, 1fr)          /* title — absorbs leftover space */
-      minmax(64px, 80px)          /* updated */
-      minmax(68px, 80px)          /* priority — wide enough that the
-                                     uppercase header doesn't overflow
-                                     into UPDATED's sort chevron */
-      minmax(56px, 70px)          /* due */
-      minmax(72px, 110px)         /* owner */
-      minmax(96px, 200px);        /* tags */
+    --table-cols: var(--table-cols-wide);
     --table-gap: 14px;
     --table-min-width: 720px;
   }
@@ -1332,13 +1451,7 @@
     }
 
     .table {
-      --table-cols:
-        var(--table-id-col)
-        minmax(220px, 1fr)
-        minmax(64px, 80px)
-        minmax(68px, 80px)
-        minmax(56px, 70px)
-        minmax(72px, 110px);
+      --table-cols: var(--table-cols-medium);
       --table-min-width: 580px;
     }
   }
@@ -1350,14 +1463,13 @@
     }
 
     .table {
-      --table-cols:
-        var(--table-id-col)
-        minmax(180px, 1fr)
-        minmax(60px, 76px)
-        minmax(64px, 78px)
-        minmax(54px, 68px);
+      --table-cols: var(--table-cols-compact);
       --table-gap: 12px;
       --table-min-width: 460px;
+    }
+
+    .header-actions :global(.action-label) {
+      display: none;
     }
   }
 
@@ -1368,11 +1480,7 @@
     }
 
     .table {
-      --table-cols:
-        var(--table-id-col)
-        minmax(140px, 1fr)
-        minmax(58px, 72px)
-        minmax(62px, 74px);
+      --table-cols: var(--table-cols-narrow);
       --table-gap: 10px;
       --table-min-width: 320px;
     }

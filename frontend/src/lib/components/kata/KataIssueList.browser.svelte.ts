@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import { render } from "vitest-browser-svelte";
 
 import "../../../app.css";
@@ -40,6 +40,31 @@ function currentView(issue: KataTaskSummary): KataCurrentView {
 }
 
 describe("KataIssueList table geometry (browser)", () => {
+  it("opens the column picker from the keyboard and restores focus on Escape", async () => {
+    await page.viewport(980, 620);
+    const issue = task();
+    render(KataIssueList, {
+      props: {
+        currentView: currentView(issue),
+        selectedIssueUID: issue.uid,
+        loading: false,
+        onSelect: () => {},
+      },
+    });
+
+    const trigger = page.getByRole("button", { name: "Columns" });
+    (trigger.element() as HTMLButtonElement).focus();
+    await userEvent.keyboard("{Enter}");
+    await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
+    const updated = page.getByRole("checkbox", { name: "Updated" });
+    await expect.element(updated).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+
+    await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect.element(trigger).toHaveFocus();
+  });
+
   it("paints the header and selected row flush with the table pane", async () => {
     await page.viewport(980, 620);
 

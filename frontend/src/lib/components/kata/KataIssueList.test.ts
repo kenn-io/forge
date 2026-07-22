@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { KataTaskAPI, KataTaskDetail, KataTaskSummary } from "../../api/kata/taskTypes.js";
 import type { KataCurrentView } from "../../stores/kata-workspace.svelte.js";
 import KataIssueList from "./KataIssueList.svelte";
+import { KATA_TASK_COLUMNS_STORAGE_KEY } from "./kataTaskColumns.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -157,6 +158,151 @@ describe("KataIssueList", () => {
 
     const labels = Array.from(tableHeader?.querySelectorAll(".col") ?? []).map((el) => el.textContent?.trim());
     expect(labels.slice(0, 3)).toEqual(["ID", "Title", "Updated"]);
+  });
+
+  it("hides an optional column while keeping ID and Title visible", async () => {
+    const { container } = render(KataIssueList, {
+      props: {
+        currentView,
+        selectedIssueUID: null,
+        loading: false,
+        onSelect: () => {},
+      },
+    });
+
+    const header = screen.getByRole("row");
+    const row = screen.getByText("Pay rent").closest("button");
+    const table = container.querySelector<HTMLElement>(".table");
+    expect(row).not.toBeNull();
+    expect(table).not.toBeNull();
+    expect(table!.style.getPropertyValue("--table-cols-wide")).toContain("minmax(96px, 200px)");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Tags" }));
+
+    expect(within(header).getByText("ID")).toBeTruthy();
+    expect(within(header).getByText("Title")).toBeTruthy();
+    expect(within(header).queryByText("Tags")).toBeNull();
+    expect(within(row!).queryByText("home · monthly")).toBeNull();
+    expect(table!.style.getPropertyValue("--table-cols-wide")).not.toContain("minmax(96px, 200px)");
+    expect(JSON.parse(localStorage.getItem(KATA_TASK_COLUMNS_STORAGE_KEY)!)).toEqual([
+      "updated",
+      "priority",
+      "due",
+      "owner",
+    ]);
+  });
+
+  it("restores hidden columns after remount and Show all resets the preference", async () => {
+    const first = render(KataIssueList, {
+      props: {
+        currentView,
+        selectedIssueUID: null,
+        loading: false,
+        onSelect: () => {},
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    for (const name of ["Priority", "Due", "Owner", "Tags"]) {
+      await fireEvent.click(screen.getByRole("checkbox", { name }));
+    }
+    first.unmount();
+
+    render(KataIssueList, {
+      props: {
+        currentView,
+        selectedIssueUID: null,
+        loading: false,
+        onSelect: () => {},
+      },
+    });
+
+    const header = screen.getByRole("row");
+    expect(within(header).getByText("Updated")).toBeTruthy();
+    expect(within(header).queryByText("Priority")).toBeNull();
+    expect(within(header).queryByText("Due")).toBeNull();
+    expect(within(header).queryByText("Owner")).toBeNull();
+    expect(within(header).queryByText("Tags")).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Show all" }));
+
+    expect(within(header).getByText("Priority")).toBeTruthy();
+    expect(within(header).getByText("Due")).toBeTruthy();
+    expect(within(header).getByText("Owner")).toBeTruthy();
+    expect(within(header).getByText("Tags")).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem(KATA_TASK_COLUMNS_STORAGE_KEY)!)).toEqual([
+      "updated",
+      "priority",
+      "due",
+      "owner",
+      "tags",
+    ]);
+  });
+
+  it("keeps column toggles usable when localStorage writes fail", async () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota");
+    });
+    render(KataIssueList, {
+      props: {
+        currentView,
+        selectedIssueUID: null,
+        loading: false,
+        onSelect: () => {},
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Owner" }));
+
+    expect(within(screen.getByRole("row")).queryByText("Owner")).toBeNull();
+  });
+
+  it("falls back to all columns for malformed saved data", () => {
+    localStorage.setItem(KATA_TASK_COLUMNS_STORAGE_KEY, JSON.stringify({ visible: ["updated"] }));
+    render(KataIssueList, {
+      props: {
+        currentView,
+        selectedIssueUID: null,
+        loading: false,
+        onSelect: () => {},
+      },
+    });
+
+    const header = screen.getByRole("row");
+    for (const name of ["Updated", "Priority", "Due", "Owner", "Tags"]) {
+      expect(within(header).getByText(name)).toBeTruthy();
+    }
+  });
+
+  it("resets an invisible active sort to Title ascending", async () => {
+    render(KataIssueList, {
+      props: {
+        currentView,
+        selectedIssueUID: null,
+        loading: false,
+        onSelect: () => {},
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Sort by Priority" }));
+    expect(
+      screen.getByRole("button", { name: "Sort by Priority, currently ascending" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Priority" }));
+
+    expect(screen.queryByRole("button", { name: /Sort by Priority/ })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Sort by Title, currently ascending" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(JSON.parse(localStorage.getItem("middleman:kata:issue-sort/v1")!)).toEqual({
+      key: "title",
+      direction: "asc",
+    });
   });
 
   it("defaults flat lists to recently updated first", () => {
@@ -448,8 +594,8 @@ describe("KataIssueList", () => {
       },
     });
 
-    const expandAll = screen.getByRole("button", { name: "Expand all" });
-    const collapseAll = screen.getByRole("button", { name: "Collapse all" });
+    const expandAll = screen.getByRole("button", { name: "Expand all tasks" });
+    const collapseAll = screen.getByRole("button", { name: "Collapse all tasks" });
     expect(collapseAll.hasAttribute("disabled")).toBe(true);
 
     await fireEvent.click(expandAll);
@@ -823,7 +969,7 @@ describe("KataIssueList", () => {
     expect(screen.getAllByRole("button", { name: /Restored child/ })).toHaveLength(1);
     expect(api.issue).toHaveBeenCalledWith(root.uid);
 
-    await fireEvent.click(screen.getByRole("button", { name: "Expand all" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Expand all tasks" }));
 
     expect(await screen.findByRole("button", { name: /Sibling grandchild/ })).toBeTruthy();
     expect(await screen.findByRole("button", { name: /Restored grandchild/ })).toBeTruthy();

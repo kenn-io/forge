@@ -120,7 +120,7 @@ Interactive surfaces must agree on which item is selected.
   successful load that produced the alias; path/anchor changes reuse that load,
   while repository, ref, or resolved-SHA changes invalidate it
   (`frontend/src/lib/features/repo-browser/RepoBrowserFeature.svelte::loadRoute`).
-- Render Kata selected detail, bounded history, mutation ETag, and workspace
+- Render Kata selected detail, complete selected history, mutation ETag, and workspace
   action atomically from accepted snapshot enrichment; do not merge a prior
   action target or mutation response into a newly accepted snapshot
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::acceptedSnapshot`).

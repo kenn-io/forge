@@ -26,6 +26,13 @@ state.
 - Middleman persists no Kata task, snapshot, or cursor state. Its only Kata
   authority storage is a bounded, non-touching in-memory TTL cache
   (`internal/server/kata_snapshot_cache.go::newKataSnapshotCacheWithConfig`).
+- Global Kata issue/event reads establish workspace authority and invalidation;
+  selected detail and complete history use the generated issue-detail and
+  project-event APIs, never a bounded prefix of the global stream
+  (`internal/server/kata_snapshot_enrichment.go::kataSnapshotEnricher`).
+- Cache capacity may evict Kata authority or enrichment entries but must never
+  truncate an API result; daemon invalidation clears every cached read for that
+  daemon (`internal/server/kata_snapshot_cache.go::kataSnapshotCache`).
 - `GET /kata/tasks/events`: compact reset/invalidation transport only. Replay
   starts at the accepted snapshot cursor; raw daemon events never enter browser
   authority (`frontend/src/lib/features/kata/kataWorkspaceAuthorityController.svelte.ts::KataWorkspaceAuthorityController`).

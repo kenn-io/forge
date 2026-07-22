@@ -7250,6 +7250,11 @@ func (s *Syncer) refreshTimeline(
 	timelineEventsFetched := true
 	timelineEvents, err := client.ListPullRequestTimelineEvents(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
+		if disabledErr := repositoryFeatureDisabledError(
+			repo, platform.RepositoryFeatureMergeRequests, err,
+		); disabledErr != nil {
+			return disabledErr
+		}
 		slog.Warn("timeline event fetch failed during timeline refresh",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,

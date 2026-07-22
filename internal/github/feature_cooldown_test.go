@@ -76,6 +76,49 @@ func TestDisabledIssueScopeUsesDailyBackgroundProbeAndManualBypass(t *testing.T)
 	assert.Equal(int32(5), issueListCalls.Load(), "successful manual probe must clear the cooldown")
 }
 
+func TestDisabledIssueAfterItemFailurePreservesRetryScope(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	rawDisabledErr := fmt.Errorf("list issue comments: %w", &gh.ErrorResponse{
+		Response: &http.Response{StatusCode: http.StatusGone},
+		Message:  "Issues are disabled for this repo",
+	})
+	var commentCalls atomic.Int32
+	client := &mockClient{
+		openIssues: []*gh.Issue{buildOpenIssue(1, now), buildOpenIssue(2, now)},
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			commentCalls.Add(1)
+			if number == 1 {
+				return nil, errors.New("transient issue comment failure")
+			}
+			return nil, rawDisabledErr
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	syncer.now = func() time.Time { return now }
+
+	syncer.RunOnce(ctx)
+
+	assert.Equal(int32(2), commentCalls.Load())
+	failed, ok := syncer.failedRepos.Load(repoFailKey(repo))
+	require.True(ok)
+	assert.Equal(failIssues, failed.(failScope))
+	_, due := syncer.beginRepositoryFeatureProbe(
+		ctx, repo, platform.RepositoryFeatureIssues,
+	)
+	assert.False(due)
+}
+
 func TestExpiredMergeRequestCooldownAllowsOneConcurrentBackgroundProbe(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

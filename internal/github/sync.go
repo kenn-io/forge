@@ -618,6 +618,32 @@ const (
 	failIssues                       // issue sync path failed
 )
 
+func preservePartialSyncFailure(scope failScope, failed bool, cause error) error {
+	if !failed {
+		return cause
+	}
+	return &PartialSyncError{
+		MergeRequests: scope&failMR != 0,
+		Issues:        scope&failIssues != 0,
+		Cause:         cause,
+	}
+}
+
+func partialSyncFailureScope(err error) failScope {
+	var partial *PartialSyncError
+	if !errors.As(err, &partial) {
+		return 0
+	}
+	var scope failScope
+	if partial.MergeRequests {
+		scope |= failMR
+	}
+	if partial.Issues {
+		scope |= failIssues
+	}
+	return scope
+}
+
 // markRepoFailed records that the most recent sync of this repo hit
 // a partial failure after the ETag cache may have been populated, so
 // the next cycle must force an unconditional refetch of the affected
@@ -5076,7 +5102,10 @@ func (s *Syncer) indexSyncRepo(
 								repo, platform.RepositoryFeatureMergeRequests, err,
 							) {
 								disabledScope |= failMR
-								s.clearRepoFailedScope(repo, failMR)
+								failedScope |= partialSyncFailureScope(err) & failMR
+								if failedScope&failMR == 0 {
+									s.clearRepoFailedScope(repo, failMR)
+								}
 							} else {
 								failedScope |= failMR
 							}
@@ -5094,7 +5123,10 @@ func (s *Syncer) indexSyncRepo(
 						repo, platform.RepositoryFeatureMergeRequests, err,
 					) {
 						disabledScope |= failMR
-						s.clearRepoFailedScope(repo, failMR)
+						failedScope |= partialSyncFailureScope(err) & failMR
+						if failedScope&failMR == 0 {
+							s.clearRepoFailedScope(repo, failMR)
+						}
 					} else {
 						slog.Error("merge request sync failed",
 							"repo", repo.Owner+"/"+repo.Name,
@@ -5195,7 +5227,10 @@ func (s *Syncer) indexSyncRepo(
 								repo, platform.RepositoryFeatureIssues, err,
 							) {
 								disabledScope |= failIssues
-								s.clearRepoFailedScope(repo, failIssues)
+								failedScope |= partialSyncFailureScope(err) & failIssues
+								if failedScope&failIssues == 0 {
+									s.clearRepoFailedScope(repo, failIssues)
+								}
 							} else {
 								failedScope |= failIssues
 							}
@@ -5214,7 +5249,10 @@ func (s *Syncer) indexSyncRepo(
 							repo, platform.RepositoryFeatureIssues, err,
 						) {
 							disabledScope |= failIssues
-							s.clearRepoFailedScope(repo, failIssues)
+							failedScope |= partialSyncFailureScope(err) & failIssues
+							if failedScope&failIssues == 0 {
+								s.clearRepoFailedScope(repo, failIssues)
+							}
 						} else {
 							slog.Error("REST issue sync failed",
 								"repo", repo.Owner+"/"+repo.Name,
@@ -5231,7 +5269,10 @@ func (s *Syncer) indexSyncRepo(
 							repo, platform.RepositoryFeatureIssues, err,
 						) {
 							disabledScope |= failIssues
-							s.clearRepoFailedScope(repo, failIssues)
+							failedScope |= partialSyncFailureScope(err) & failIssues
+							if failedScope&failIssues == 0 {
+								s.clearRepoFailedScope(repo, failIssues)
+							}
 						} else {
 							slog.Error("issue sync failed",
 								"repo", repo.Owner+"/"+repo.Name,
@@ -5306,7 +5347,7 @@ func (s *Syncer) syncMergeRequestsFromList(
 	for i, mr := range mrs {
 		if err := s.indexUpsertMergeRequest(ctx, repo, repoID, mr, cloneFetchOK); err != nil {
 			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
-				return err
+				return preservePartialSyncFailure(failMR, hadItemFailure, err)
 			}
 			slog.Error("index upsert MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -5330,7 +5371,7 @@ func (s *Syncer) syncMergeRequestsFromList(
 			ctx, reader, repo, repoID, number, cloneFetchOK,
 		); err != nil {
 			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
-				return err
+				return preservePartialSyncFailure(failMR, hadItemFailure, err)
 			}
 			slog.Error("update closed MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -5863,7 +5904,7 @@ func (s *Syncer) doSyncRepoGraphQL(
 			ctx, repo, repoID, bulk, cloneFetchOK,
 		); err != nil {
 			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
-				return err
+				return preservePartialSyncFailure(failMR, failedScope&failMR != 0, err)
 			}
 			slog.Error("GraphQL sync MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -5887,7 +5928,7 @@ func (s *Syncer) doSyncRepoGraphQL(
 			ctx, repo, repoID, number, cloneFetchOK,
 		); err != nil {
 			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
-				return err
+				return preservePartialSyncFailure(failMR, failedScope&failMR != 0, err)
 			}
 			slog.Error("update closed MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -5927,7 +5968,9 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 			if disabledErr := repositoryFeatureDisabledError(
 				repo, platform.RepositoryFeatureIssues, err,
 			); disabledErr != nil {
-				return disabledErr
+				return preservePartialSyncFailure(
+					failIssues, failedScope&failIssues != 0, disabledErr,
+				)
 			}
 			slog.Error("GraphQL sync issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -5953,7 +5996,9 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 			if disabledErr := repositoryFeatureDisabledError(
 				repo, platform.RepositoryFeatureIssues, err,
 			); disabledErr != nil {
-				return disabledErr
+				return preservePartialSyncFailure(
+					failIssues, failedScope&failIssues != 0, disabledErr,
+				)
 			}
 			slog.Error("update closed issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -7818,7 +7863,7 @@ func (s *Syncer) syncIssuesFromList(
 			if disabledErr := repositoryFeatureDisabledError(
 				repo, platform.RepositoryFeatureIssues, err,
 			); disabledErr != nil {
-				return disabledErr
+				return preservePartialSyncFailure(failIssues, hadItemFailure, disabledErr)
 			}
 			slog.Error("sync issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -7843,7 +7888,7 @@ func (s *Syncer) syncIssuesFromList(
 			if disabledErr := repositoryFeatureDisabledError(
 				repo, platform.RepositoryFeatureIssues, err,
 			); disabledErr != nil {
-				return disabledErr
+				return preservePartialSyncFailure(failIssues, hadItemFailure, disabledErr)
 			}
 			slog.Error("update closed issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -7879,7 +7924,7 @@ func (s *Syncer) syncPlatformIssuesFromList(
 	for i, issue := range issues {
 		if err := s.syncOpenPlatformIssue(ctx, reader, repo, repoID, issue, forceRefresh); err != nil {
 			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
-				return err
+				return preservePartialSyncFailure(failIssues, hadItemFailure, err)
 			}
 			slog.Error("sync issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -7902,7 +7947,7 @@ func (s *Syncer) syncPlatformIssuesFromList(
 			ctx, repo, repoID, number,
 		); err != nil {
 			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
-				return err
+				return preservePartialSyncFailure(failIssues, hadItemFailure, err)
 			}
 			slog.Error("update closed issue failed",
 				"repo", repo.Owner+"/"+repo.Name,

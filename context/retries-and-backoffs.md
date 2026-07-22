@@ -86,6 +86,8 @@ generation does not authorize an unchanged-list comment refresh. (`internal/gith
 Classify wrapped GitHub disabled responses before generic fallback or detail error handling;
 every lane must renew the same cooldown and stop further work for that scope.
 (`internal/github/feature_cooldown.go::repositoryFeatureDisabledError`)
+Recording a disabled result must preserve any earlier same-scope item failure so retry
+and ETag invalidation state survives the cooldown. (`internal/github/sync.go::indexSyncRepo`)
 Apply the gate before shared budget exhaustion so suppressed work cannot starve
 unaffected scopes. (`internal/github/sync.go::drainDetailQueue`)
 

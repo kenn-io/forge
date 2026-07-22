@@ -3712,11 +3712,12 @@ test.describe("delayed-response navigation", () => {
     });
   });
 
-  test("switching workspaces holds previous data and blocks actions until new load resolves", async ({ page }) => {
+  test("switching workspaces shows the loading state until the new load resolves", async ({ page }) => {
     // Workspace A loads instantly. Workspace B's GET is held back
-    // so the UI is forced into the transition window where the
-    // previous workspace's data is still on screen and any
-    // mutating actions must target the new id but be blocked.
+    // so the UI is forced into the transition window. Liveness
+    // rendering replaces A's view with the loading state there —
+    // a stale header with disabled (or worse, live) actions must
+    // never linger while the route already points at B.
     const wsA = {
       ...testWorkspace,
       id: "ws-aaa",
@@ -3815,19 +3816,15 @@ test.describe("delayed-response navigation", () => {
       })
       .click();
 
-    // URL has switched to B, but B's data hasn't arrived yet —
-    // the header bar should still show A's data (no flash to
-    // a loading/empty state).
+    // URL has switched to B, but B's data hasn't arrived yet — the
+    // loading state owns the window. A's header (and its actions,
+    // which could otherwise misfire at B's id) must be gone.
     await expect(page).toHaveURL(new RegExp(`/terminal/${wsB.id}$`));
-    await expect(page.locator(".terminal-main .header-name")).toContainText(wsA.mr_title);
+    await expect(page.locator(".terminal-main .state-message")).toContainText("Setting up workspace...");
+    await expect(page.locator(".terminal-main .header-name")).toHaveCount(0);
+    await expect(page.locator(".terminal-main .header-btn.danger")).toHaveCount(0);
 
-    // While the URL points at B but the screen still shows A,
-    // the Delete button must be disabled so a click can't
-    // delete B while the user looks at A.
-    await expect(page.locator(".terminal-main .header-btn.danger")).toBeDisabled();
-
-    // Release B's response — the UI should update in place to
-    // wsB without ever rendering a "Loading..." flash.
+    // Release B's response — the UI resolves to wsB with live actions.
     releaseB();
     await expect(page.locator(".terminal-main .header-name")).toContainText(wsB.mr_title);
     await expect(page.locator(".terminal-main .header-btn.danger")).toBeEnabled();
@@ -4290,13 +4287,16 @@ test.describe("delayed-response navigation", () => {
     await localFilesRequest;
 
     // Switch to the member-hosted workspace; its detail is held, so the
-    // screen still shows A while the route host is now "member".
+    // route host is "member" while B's data hasn't arrived.
     const bDetailRequest = page.waitForRequest(
       (request) => new URL(request.url()).pathname === `/api/v1/fleet/hosts/member/workspaces/${memberWorkspace.id}`,
     );
     await page.locator(".workspace-list-sidebar .ws-row", { hasText: "Member B" }).click();
     await expect(page).toHaveURL(new RegExp(`/terminal/fleet/member/${memberWorkspace.id}$`));
-    await expect(page.locator(".terminal-main .header-name")).toContainText("Local A");
+    // Liveness rendering unmounts A's view (including its diff sidebar)
+    // for the loading state while B's detail is held, so nothing can
+    // combine A's id with the member host during the window.
+    await expect(page.locator(".terminal-main .state-message")).toContainText("Setting up workspace...");
     await bDetailRequest;
 
     // The only member-host calls may be B's own detail/runtime. The

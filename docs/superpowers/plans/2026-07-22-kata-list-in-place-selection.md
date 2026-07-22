@@ -6,7 +6,7 @@
 
 **Architecture:** Key the list only by daemon identity, apply expansion resets through props, and make the workspace's expansion signature structural rather than freshness-based. Anchor a visible selected row across in-place snapshot updates by measuring it before the DOM patch and compensating the scroll container afterward. Retain the explicit reveal path for routed or hidden nested selections.
 
-**Tech Stack:** Svelte 5, TypeScript, Vite+ browser tests, vitest-browser-svelte.
+**Tech Stack:** Svelte 5, TypeScript, Vite+ browser tests, vitest-browser-svelte, Playwright.
 
 ## Global Constraints
 
@@ -62,7 +62,7 @@
   - `cd frontend && node ../node_modules/vite-plus/bin/vp test run --project unit src/lib/components/kata/KataIssueList.test.ts src/lib/features/kata/KataWorkspace.test.ts src/lib/features/kata/KataWorkspaceRouting.test.ts`
   - `cd frontend && node ../node_modules/vite-plus/bin/vp exec -- playwright test --config=playwright-e2e.config.ts --project=chromium tests/e2e-full/kata.spec.ts --grep "kata (visible selection stays anchored|focused nested selection survives)"`
 
-  Expected: all tests pass. The Playwright cases must use the existing external Kata daemon plus real Middleman HTTP/SQLite fixture to prove accepted selected-snapshot anchoring and focused nested reset recovery.
+  Expected: all tests pass. The Playwright cases must use external Kata daemons plus the real Middleman HTTP/SQLite fixture to prove accepted selected-snapshot anchoring and a production compact reset. The reset case expands an unrelated sentinel branch, rotates the daemon target through the real snapshot route, and proves the sentinel collapses while only the focused selected child's required ancestor chain is restored.
 
 - [ ] **Step 5: Validate Svelte and the live interaction**
 

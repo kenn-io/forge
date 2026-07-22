@@ -3183,7 +3183,36 @@ test("kata parent row expands children from the accepted snapshot catalog", asyn
   }
 });
 
-test("kata focused nested selection survives a structural snapshot reset", async ({ page }) => {
+test("kata focused nested selection survives a compact reset", async ({ page }) => {
+  const sentinelParent = issueSummary({
+    id: 403,
+    uid: "issue-reset-sentinel-parent",
+    project_id: 1,
+    project_uid: "project-finance",
+    project_name: "Finances",
+    short_id: "reset-sentinel-parent",
+    qualified_id: "Finances#reset-sentinel-parent",
+    title: "Reset sentinel parent",
+    body: "Unrelated expanded branch that must collapse on reset.",
+    labels: ["home"],
+    child_counts: { open: 1, total: 1 },
+    metadata: { scheduled_on: today },
+  });
+  const sentinelChild = issueSummary({
+    id: 404,
+    uid: "issue-reset-sentinel-child",
+    project_id: 1,
+    project_uid: "project-finance",
+    project_name: "Finances",
+    short_id: "reset-sentinel-child",
+    qualified_id: "Finances#reset-sentinel-child",
+    title: "Reset sentinel child",
+    body: "Unrelated child hidden after reset.",
+    labels: ["home"],
+    parent: issueLinkPeer(sentinelParent),
+    parent_short_id: sentinelParent.short_id,
+    metadata: { scheduled_on: today },
+  });
   const parent = issueSummary({
     id: 401,
     uid: "issue-reset-focus-parent",
@@ -3213,7 +3242,9 @@ test("kata focused nested selection survives a structural snapshot reset", async
     parent_short_id: parent.short_id,
     metadata: { scheduled_on: today },
   });
-  const backend = await startKataBackend({ issues: [parent, child] });
+  const resetIssues = [sentinelParent, sentinelChild, parent, child];
+  const backend = await startKataBackend({ issues: resetIssues });
+  const replacementBackend = await startKataBackend({ issues: resetIssues });
   const kataHome = await configureKataHome(backend.url);
   const server = await startIsolatedE2EServer();
 
@@ -3221,6 +3252,12 @@ test("kata focused nested selection survives a structural snapshot reset", async
     await page.goto(`${server.info.base_url}/kata`);
     await expectKataDaemonSwitcherReady(page);
     const list = page.locator(".kata-list");
+    const sentinelParentRow = list.getByRole("button", { name: /Reset sentinel parent/ });
+    await sentinelParentRow.press("ArrowRight");
+    await expect(sentinelParentRow).toHaveAttribute("aria-expanded", "true");
+    const sentinelChildRow = list.getByRole("button", { name: /Reset sentinel child/ });
+    await expect(sentinelChildRow).toBeVisible();
+
     const parentRow = list.getByRole("button", { name: /Reset focus parent/ });
     await parentRow.press("ArrowRight");
     await expect(parentRow).toHaveAttribute("aria-expanded", "true");
@@ -3232,8 +3269,6 @@ test("kata focused nested selection survives a structural snapshot reset", async
     await expect(childRow).toBeFocused();
     await expect.poll(() => backend.state.streams.size).toBeGreaterThan(0);
 
-    const updatedParent = { ...parent, revision: parent.revision + 1 };
-    backend.state.issues = backend.state.issues.map((issue) => (issue.uid === parent.uid ? updatedParent : issue));
     const acceptedReset = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return (
@@ -3242,20 +3277,19 @@ test("kata focused nested selection survives a structural snapshot reset", async
         response.ok()
       );
     });
-    emitDaemonChange(
-      backend.state,
-      eventRow({
-        event_id: 501,
-        event_uid: "event-reset-focused-parent",
-        type: "issue.updated",
-        project_id: parent.project_id,
-        project_uid: parent.project_uid,
-        project_name: parent.project_name,
-        issue: updatedParent,
-      }),
+    await writeFile(
+      path.join(kataHome.home, "config.toml"),
+      ['active_daemon = "e2e"', "", "[[daemon]]", 'name = "e2e"', `url = "${replacementBackend.url}"`, ""].join("\n"),
     );
+    const rotationResponse = await page.request.get(
+      `${server.info.base_url}/api/v1/kata/tasks/snapshot?scope=global&authority=open`,
+      { headers: { "X-Middleman-Kata-Daemon": "e2e" } },
+    );
+    expect(rotationResponse.ok()).toBe(true);
     await acceptedReset;
 
+    await expect(sentinelParentRow).toHaveAttribute("aria-expanded", "false");
+    await expect(sentinelChildRow).toHaveCount(0);
     await expect(parentRow).toHaveAttribute("aria-expanded", "true");
     await expect(childRow).toBeVisible();
     await expect(childRow).toBeInViewport();
@@ -3266,6 +3300,7 @@ test("kata focused nested selection survives a structural snapshot reset", async
     await server.stop();
     kataHome.restore();
     await backend.close();
+    await replacementBackend.close();
   }
 });
 

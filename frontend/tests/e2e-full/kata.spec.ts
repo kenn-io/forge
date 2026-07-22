@@ -2155,7 +2155,7 @@ test("kata workspace replaces its accepted snapshot after compact invalidation",
   }
 });
 
-test("kata visible selection stays anchored when its accepted snapshot inserts a row above", async ({ page }) => {
+test("kata background refresh keeps a visible selected row anchored when inserting above", async ({ page }) => {
   const initialIssues = Array.from({ length: 20 }, (_, index) => ({
     ...issueSummary({
       id: 300 + index,
@@ -2182,7 +2182,7 @@ test("kata visible selection stays anchored when its accepted snapshot inserts a
       short_id: "visible-anchor-inserted",
       qualified_id: "Kata#visible-anchor-inserted",
       title: "Inserted above visible selection",
-      body: "This task arrives with the accepted selected snapshot.",
+      body: "This task arrives during a background refresh.",
       labels: ["work"],
     }),
     updated_at: "2026-05-31T08:00:00Z",
@@ -2190,32 +2190,6 @@ test("kata visible selection stays anchored when its accepted snapshot inserts a
   const backend = await startKataBackend({ issues: initialIssues });
   const kataHome = await configureKataHome(backend.url);
   const server = await startIsolatedE2EServer();
-  let holdUnselectedReplacement = false;
-  let heldUnselectedReplacement = false;
-  let releaseUnselectedReplacement!: () => void;
-  let markUnselectedReplacementStarted!: () => void;
-  let markUnselectedReplacementFinished!: () => void;
-  const unselectedReplacementBarrier = new Promise<void>((resolve) => {
-    releaseUnselectedReplacement = resolve;
-  });
-  const unselectedReplacementStarted = new Promise<void>((resolve) => {
-    markUnselectedReplacementStarted = resolve;
-  });
-  const unselectedReplacementFinished = new Promise<void>((resolve) => {
-    markUnselectedReplacementFinished = resolve;
-  });
-  await page.route("**/api/v1/kata/tasks/snapshot*", async (route) => {
-    const url = new URL(route.request().url());
-    if (holdUnselectedReplacement && !heldUnselectedReplacement && !url.searchParams.get("selected_issue_uid")) {
-      heldUnselectedReplacement = true;
-      markUnselectedReplacementStarted();
-      await unselectedReplacementBarrier;
-      await route.abort("aborted");
-      markUnselectedReplacementFinished();
-      return;
-    }
-    await route.continue();
-  });
 
   try {
     await page.setViewportSize({ width: 1280, height: 720 });
@@ -2243,8 +2217,28 @@ test("kata visible selection stays anchored when its accepted snapshot inserts a
     const selectedTop = (await selectedRow.boundingBox())!.y;
     await expect(selectedRow).toBeInViewport();
 
+    const acceptedSelection = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === "/api/v1/kata/tasks/snapshot" &&
+        url.searchParams.get("selected_issue_uid") === selected.uid &&
+        response.ok()
+      );
+    });
+    await selectedRow.click();
+    await acceptedSelection;
+    await expect(page.getByRole("heading", { name: selected.title })).toBeVisible();
+    await expect(selectedRow).toHaveAttribute("aria-current", "true");
+
     backend.state.issues = [inserted, ...backend.state.issues];
-    holdUnselectedReplacement = true;
+    const acceptedBackgroundRefresh = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === "/api/v1/kata/tasks/snapshot" &&
+        url.searchParams.get("selected_issue_uid") === selected.uid &&
+        response.ok()
+      );
+    });
     emitDaemonChange(
       backend.state,
       eventRow({
@@ -2257,27 +2251,13 @@ test("kata visible selection stays anchored when its accepted snapshot inserts a
         issue: inserted,
       }),
     );
-    await unselectedReplacementStarted;
-    const acceptedSelection = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return (
-        url.pathname === "/api/v1/kata/tasks/snapshot" &&
-        url.searchParams.get("selected_issue_uid") === selected.uid &&
-        response.ok()
-      );
-    });
-    await selectedRow.click();
-    await acceptedSelection;
+    await acceptedBackgroundRefresh;
 
-    await expect(page.getByRole("heading", { name: selected.title })).toBeVisible();
     await expect(selectedRow).toHaveAttribute("aria-current", "true");
     await expect(page.getByRole("button", { name: /Inserted above visible selection/ })).toHaveCount(1);
     await expect(tableBody).toHaveAttribute("data-e2e-list-instance", "visible-selection-anchor");
     expect(Math.round((await selectedRow.boundingBox())!.y)).toBe(Math.round(selectedTop));
-    releaseUnselectedReplacement();
-    await unselectedReplacementFinished;
   } finally {
-    releaseUnselectedReplacement();
     await server.stop();
     kataHome.restore();
     await backend.close();

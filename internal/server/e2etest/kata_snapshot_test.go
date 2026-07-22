@@ -131,6 +131,117 @@ func TestKataTaskSnapshotLoadsCompleteRetainedProjectHistoryE2E(t *testing.T) {
 	fixture.daemon.mu.RUnlock()
 }
 
+func TestKataTaskSnapshotReusesSelectedEnrichmentUntilMutationInvalidatesEpochE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newKataSnapshotE2EFixture(t, "Before mutation")
+	selectedIssueUID := "issue-member"
+	otherIssueUID := "issue-other"
+	fixture.daemon.mu.Lock()
+	fixture.daemon.graphFails = false
+	fixture.daemon.projectEvents = []katagenerated.EventEnvelope{
+		{
+			Actor: "acceptance", ContentHash: "before-selected", CreatedAt: kataSnapshotE2ETime.Add(time.Second),
+			EventID: 1, EventUID: "event-1", IssueUID: &selectedIssueUID, OriginInstanceUID: "kata-e2e",
+			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+		},
+		{
+			Actor: "acceptance", ContentHash: "before-other", CreatedAt: kataSnapshotE2ETime.Add(2 * time.Second),
+			EventID: 2, EventUID: "event-2", IssueUID: &otherIssueUID, OriginInstanceUID: "kata-e2e",
+			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+		},
+	}
+	fixture.daemon.projectEventPageSize = 1
+	fixture.daemon.mu.Unlock()
+
+	scope := apigenerated.Project
+	authority := apigenerated.Ready
+	projectUID := "project-a"
+	firstResponse, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+		SelectedIssueUid: &selectedIssueUID, GraphSourceUid: &selectedIssueUID,
+		XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResponse.StatusCode(), string(firstResponse.Body))
+	require.NotNil(firstResponse.JSON200)
+	first := firstResponse.JSON200
+	require.NotNil(first.Enrichment.SelectedDetail)
+	require.NotNil(first.Enrichment.SelectedHistory)
+	require.Len(*first.Enrichment.SelectedHistory, 1)
+	assert.Equal("before-selected", (*first.Enrichment.SelectedHistory)[0].ContentHash)
+	require.NotNil(first.Enrichment.Graph)
+	require.NotNil(first.Enrichment.Graph.Nodes)
+	require.Len(*first.Enrichment.Graph.Nodes, 2)
+	assert.Equal("Before mutation", (*first.Enrichment.Graph.Nodes)[0].Title)
+	assert.Nil(first.Enrichment.Errors)
+	assert.Equal(int64(1), fixture.daemon.detailCalls.Load())
+	assert.Equal(int64(3), fixture.daemon.projectEventCalls.Load())
+	assert.Equal(int64(1), fixture.daemon.graphCalls.Load())
+
+	warmStarted := time.Now()
+	secondResponse, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+		SelectedIssueUid: &selectedIssueUID, GraphSourceUid: &selectedIssueUID,
+		XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResponse.StatusCode(), string(secondResponse.Body))
+	require.NotNil(secondResponse.JSON200)
+	require.Less(time.Since(warmStarted), 5*time.Second)
+	assert.Equal(first.Generation, secondResponse.JSON200.Generation)
+	assert.Equal(first.InvalidationEpoch, secondResponse.JSON200.InvalidationEpoch)
+	assert.Equal(int64(1), fixture.daemon.detailCalls.Load(), "warm detail must reuse the upstream result")
+	assert.Equal(int64(3), fixture.daemon.projectEventCalls.Load(), "warm history must reuse the complete paginated project stream")
+	assert.Equal(int64(1), fixture.daemon.graphCalls.Load(), "warm graph must reuse the upstream result")
+
+	mutationRequest, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		fixture.middleman.URL+"/api/v1/kata/proxy/api/v1/issues/issue-member",
+		strings.NewReader(`{"title":"After mutation"}`),
+	)
+	require.NoError(err)
+	mutationRequest.Header.Set("Content-Type", "application/json")
+	mutationRequest.Header.Set("Sec-Fetch-Site", "same-origin")
+	mutationResponse, err := fixture.middleman.Client().Do(mutationRequest)
+	require.NoError(err)
+	require.NoError(mutationResponse.Body.Close())
+	require.Equal(http.StatusNoContent, mutationResponse.StatusCode)
+
+	thirdResponse, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+		SelectedIssueUid: &selectedIssueUID, GraphSourceUid: &selectedIssueUID,
+		XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, thirdResponse.StatusCode(), string(thirdResponse.Body))
+	require.NotNil(thirdResponse.JSON200)
+	third := thirdResponse.JSON200
+	assert.Greater(third.InvalidationEpoch, first.InvalidationEpoch)
+	assert.Greater(third.Generation, first.Generation)
+	require.NotNil(third.Issues)
+	require.Len(*third.Issues, 1)
+	assert.Equal("After mutation", (*third.Issues)[0].Title)
+	require.NotNil(third.Enrichment.SelectedDetail)
+	detailBody, ok := third.Enrichment.SelectedDetail.Detail.(map[string]any)
+	require.True(ok)
+	detailIssue, ok := detailBody["issue"].(map[string]any)
+	require.True(ok)
+	assert.Equal("After mutation", detailIssue["title"])
+	require.NotNil(third.Enrichment.SelectedHistory)
+	require.Len(*third.Enrichment.SelectedHistory, 2)
+	assert.Equal("mutation-After mutation", (*third.Enrichment.SelectedHistory)[1].ContentHash)
+	require.NotNil(third.Enrichment.Graph)
+	require.NotNil(third.Enrichment.Graph.Nodes)
+	require.Len(*third.Enrichment.Graph.Nodes, 2)
+	assert.Equal("After mutation", (*third.Enrichment.Graph.Nodes)[0].Title)
+	assert.Nil(third.Enrichment.Errors)
+	assert.Equal(int64(2), fixture.daemon.detailCalls.Load())
+	assert.Equal(int64(7), fixture.daemon.projectEventCalls.Load())
+	assert.Equal(int64(2), fixture.daemon.graphCalls.Load())
+}
+
 func TestKataTaskSnapshotDiscardsPreResetHistoryAtRetainedBaselineE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -479,6 +590,10 @@ type kataSnapshotDaemonStub struct {
 	projectCalls         atomic.Int64
 	readyCalls           atomic.Int64
 	issueListCalls       atomic.Int64
+	detailCalls          atomic.Int64
+	graphCalls           atomic.Int64
+	projectEventCalls    atomic.Int64
+	graphFails           bool
 	projectEvents        []katagenerated.EventEnvelope
 	projectEventPages    []katagenerated.PollEventsBody
 	projectEventPageSize int
@@ -488,7 +603,7 @@ type kataSnapshotDaemonStub struct {
 func newKataSnapshotDaemonStub(t *testing.T, title string) *kataSnapshotDaemonStub {
 	t.Helper()
 	stub := &kataSnapshotDaemonStub{
-		t: t, title: title, streamEvents: make(chan int64, 1),
+		t: t, title: title, graphFails: true, streamEvents: make(chan int64, 1),
 		streamStarted: make(chan struct{}), firstProjects: make(chan struct{}),
 	}
 	stub.server = httptest.NewServer(http.HandlerFunc(stub.serveHTTP))
@@ -523,14 +638,58 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			s.setTitle(input.Title)
+			s.mu.Lock()
+			s.title = input.Title
+			nextEventID := int64(1)
+			if eventCount := len(s.projectEvents); eventCount > 0 {
+				nextEventID = s.projectEvents[eventCount-1].EventID + 1
+			}
+			issueUID := "issue-member"
+			s.projectEvents = append(s.projectEvents, katagenerated.EventEnvelope{
+				Actor: "acceptance", ContentHash: "mutation-" + input.Title,
+				CreatedAt: kataSnapshotE2ETime.Add(time.Duration(nextEventID) * time.Second),
+				EventID:   nextEventID, EventUID: fmt.Sprintf("event-%d", nextEventID), IssueUID: &issueUID,
+				OriginInstanceUID: "kata-e2e", ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a",
+				Type: "issue.updated",
+			})
+			s.mu.Unlock()
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		s.detailCalls.Add(1)
 		w.Header().Set("ETag", `"issue-revision"`)
 		s.writeJSON(w, katagenerated.ShowIssueResponseBody{Issue: s.issue()})
 	case "/api/v1/projects/7/issues/issue-member/graph":
-		http.Error(w, "forced graph failure", http.StatusBadGateway)
+		s.graphCalls.Add(1)
+		s.mu.RLock()
+		graphFails := s.graphFails
+		title := s.title
+		s.mu.RUnlock()
+		if graphFails {
+			http.Error(w, "forced graph failure", http.StatusBadGateway)
+			return
+		}
+		projectUID := "project-a"
+		s.writeJSON(w, katagenerated.ReachableGraphResponseBody{
+			SourceUID: "issue-member", Depth: "full", HideDone: false,
+			Edges: []katagenerated.ReachableGraphEdge{
+				{FromUID: "issue-linked", ToUID: "issue-member", Kind: katagenerated.ReachableGraphEdgeKindRelated},
+			},
+			Nodes: []katagenerated.ReachableGraphNode{
+				{
+					ID: 11, UID: "issue-member", ProjectID: 7, ProjectUID: &projectUID,
+					ShortID: "task-1", QualifiedID: "Project A#task-1", Title: title,
+					Author: "acceptance", Body: "Acceptance body", Status: "open", Metadata: map[string]any{"source": "e2e"},
+					Revision: 1, CreatedAt: kataSnapshotE2ETime, UpdatedAt: kataSnapshotE2ETime,
+				},
+				{
+					ID: 12, UID: "issue-linked", ProjectID: 7, ProjectUID: &projectUID,
+					ShortID: "task-2", QualifiedID: "Project A#task-2", Title: "Linked task",
+					Author: "acceptance", Body: "Linked body", Status: "open", Metadata: map[string]any{"source": "e2e"},
+					Revision: 1, CreatedAt: kataSnapshotE2ETime, UpdatedAt: kataSnapshotE2ETime,
+				},
+			},
+		})
 	case "/api/v1/issues":
 		s.issueListCalls.Add(1)
 		s.writeJSON(w, katagenerated.ListIssuesResponseBody{Issues: []katagenerated.IssueOut{s.issueOut()}})
@@ -538,6 +697,7 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 		afterID, _ := strconv.ParseInt(r.URL.Query().Get("after_id"), 10, 64)
 		s.writeJSON(w, katagenerated.PollEventsBody{Events: []katagenerated.EventEnvelope{}, NextAfterID: afterID})
 	case "/api/v1/projects/7/events":
+		s.projectEventCalls.Add(1)
 		afterID, _ := strconv.ParseInt(r.URL.Query().Get("after_id"), 10, 64)
 		requestedLimit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 		s.mu.Lock()

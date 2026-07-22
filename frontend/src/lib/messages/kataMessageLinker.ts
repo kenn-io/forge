@@ -3,6 +3,7 @@ import type {
   KataSelectedIssueAuthority,
   KataSelectedIssueDetail,
 } from "../features/kata/kataAuxiliaryAuthority.svelte";
+import { acknowledgeKataMutationThenRevalidate } from "../features/kata/kataMutationRevalidation";
 import type { MessageLinkInput } from "./messageLinks";
 import { computeAddMessageLinkPatch, readMessageLinks } from "./messageLinks";
 
@@ -24,7 +25,7 @@ export function createMessageIssueLinker(
       .catch(() => {})
       .then(async () => {
         const selected = await authority.selectIssue(issueUid);
-        result = await patchFreshDetail(api, actor, selected.detail, selected.daemonID, input);
+        result = await patchFreshDetail(authority, api, actor, issueUid, selected.detail, selected.daemonID, input);
       });
     queues.set(issueUid, next);
     try {
@@ -42,8 +43,10 @@ export function createMessageIssueLinker(
 }
 
 async function patchFreshDetail(
+  authority: KataSelectedIssueAuthority,
   api: Pick<KataTaskAPI, "patchIssueMetadata">,
   actor: string,
+  issueUID: string,
   fresh: KataSelectedIssueDetail,
   daemonID: string,
   input: MessageLinkInput,
@@ -54,7 +57,15 @@ async function patchFreshDetail(
   }
   const metadataPatch: KataTaskMetadataPatch = { mail_links: patch.mail_links };
   if (!fresh.etag) throw new Error(`Kata snapshot did not include an ETag for ${fresh.issue.qualified_id}`);
-  await api.patchIssueMetadata(mutationTarget(fresh), actor, metadataPatch, fresh.etag, { daemonId: daemonID });
+  const etag = fresh.etag;
+  const revalidation = await acknowledgeKataMutationThenRevalidate(
+    () => api.patchIssueMetadata(mutationTarget(fresh), actor, metadataPatch, etag, { daemonId: daemonID }),
+    () => authority.selectIssue(issueUID).then(() => true),
+  );
+  const replacement = await revalidation.replacement;
+  if (!replacement.replacementAccepted) {
+    throw new Error(replacement.replacementError ?? "Kata snapshot replacement was not accepted.");
+  }
   return { qualified_id: fresh.issue.qualified_id };
 }
 

@@ -54,7 +54,9 @@ const kataProjects = [
     uid: "project-messages",
     name: "Messages",
     metadata: { area: "Work", sidebar_order: 1 },
-    open_count: 2,
+    revision: 1,
+    created_at: kataNow,
+    stats: { open: 2, closed: 0 },
   },
 ];
 
@@ -2015,7 +2017,7 @@ test("message links a message to an external Kata task and refreshes linked mess
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Title or qualified ID..." }).click();
     await dialog.getByRole("combobox", { name: "Title or qualified ID..." }).fill("q3");
-    await dialog.getByRole("option", { name: /Kata#kat-7.*Email Susan re: Q3/ }).click();
+    await dialog.getByRole("option", { name: /kat-7.*Email Susan re: Q3/ }).click();
     await dialog.getByRole("button", { name: "Link", exact: true }).click();
 
     await expect(page.getByRole("status").filter({ hasText: "Linked to Kata#kat-7." })).toBeVisible();

@@ -19,6 +19,11 @@ type IssueRow = {
   body: string;
   status: "open" | "closed";
   labels: string[];
+  metadata: Record<string, unknown>;
+  revision: number;
+  author: string;
+  created_at: string;
+  updated_at: string;
 };
 
 type TaskBackend = {
@@ -80,13 +85,22 @@ const autocompleteIssues: IssueRow[] = [
 ];
 
 function issueRow(
-  input: Omit<IssueRow, "qualified_id" | "status" | "labels"> & Partial<Pick<IssueRow, "status" | "labels">>,
+  input: Omit<
+    IssueRow,
+    "qualified_id" | "status" | "labels" | "metadata" | "revision" | "author" | "created_at" | "updated_at"
+  > &
+    Partial<Pick<IssueRow, "status" | "labels" | "metadata">>,
 ): IssueRow {
   return {
     ...input,
     qualified_id: `${input.project_name}#${input.short_id}`,
     status: input.status ?? "open",
     labels: input.labels ?? [],
+    metadata: input.metadata ?? {},
+    revision: 1,
+    author: "e2e",
+    created_at: now,
+    updated_at: now,
   };
 }
 
@@ -149,11 +163,22 @@ async function handleTaskRequest(
 }
 
 function projectsFromIssues(issues: IssueRow[]) {
-  const projects = new Map<number, { id: number; uid: string; name: string; metadata: {}; open_count: number }>();
+  const projects = new Map<
+    number,
+    {
+      id: number;
+      uid: string;
+      name: string;
+      metadata: Record<string, unknown>;
+      revision: number;
+      created_at: string;
+      stats: { open: number; closed: number };
+    }
+  >();
   for (const issue of issues) {
     const existing = projects.get(issue.project_id);
     if (existing) {
-      if (issue.status === "open") existing.open_count += 1;
+      existing.stats[issue.status] += 1;
       continue;
     }
     projects.set(issue.project_id, {
@@ -161,7 +186,12 @@ function projectsFromIssues(issues: IssueRow[]) {
       uid: issue.project_uid,
       name: issue.project_name,
       metadata: {},
-      open_count: issue.status === "open" ? 1 : 0,
+      revision: 1,
+      created_at: now,
+      stats: {
+        open: issue.status === "open" ? 1 : 0,
+        closed: issue.status === "closed" ? 1 : 0,
+      },
     });
   }
   return [...projects.values()];

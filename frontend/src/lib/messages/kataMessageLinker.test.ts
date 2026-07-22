@@ -111,7 +111,8 @@ describe("createMessageIssueLinker", () => {
       qualified_id: "Kata#rent",
     });
 
-    expect(authority.selectIssue).toHaveBeenCalledWith("issue-pay-rent");
+    expect(authority.selectIssue).toHaveBeenNthCalledWith(1, "issue-pay-rent");
+    expect(authority.selectIssue).toHaveBeenNthCalledWith(2, "issue-pay-rent");
     expect(patchIssueMetadata).toHaveBeenCalledWith(
       { project_id: 7, ref: "issue-pay-rent" },
       "middleman",
@@ -136,7 +137,7 @@ describe("createMessageIssueLinker", () => {
     ]);
 
     expect(patchIssueMetadata).toHaveBeenCalledTimes(2);
-    expect(selectIssue).toHaveBeenCalledTimes(2);
+    expect(selectIssue).toHaveBeenCalledTimes(4);
     expect(patchIssueMetadata.mock.calls.map((call) => call[3])).toEqual(['"rev-1"', '"rev-2"']);
     expect(patchIssueMetadata.mock.calls.map((call) => call[4])).toEqual([
       { daemonId: "daemon-home" },

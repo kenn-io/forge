@@ -403,7 +403,7 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 	case "/api/v1/issues":
 		s.issueListCalls.Add(1)
 		s.writeJSON(w, katagenerated.ListIssuesResponseBody{Issues: []katagenerated.IssueOut{s.issueOut()}})
-	case "/api/v1/events":
+	case "/api/v1/events", "/api/v1/projects/7/events":
 		afterID, _ := strconv.ParseInt(r.URL.Query().Get("after_id"), 10, 64)
 		s.writeJSON(w, katagenerated.PollEventsBody{Events: []katagenerated.EventEnvelope{}, NextAfterID: afterID})
 	case "/api/v1/events/stream":

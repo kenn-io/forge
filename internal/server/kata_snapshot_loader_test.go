@@ -674,13 +674,14 @@ func newKataTestLinkPeer(uid, shortID string) *katagenerated.LinkPeer {
 }
 
 type fakeKataSnapshotAPIClient struct {
-	listProjects   func(context.Context, *katagenerated.ListProjectsRequestOptions) (*katagenerated.ListProjectsResp, error)
-	listIssues     func(context.Context, *katagenerated.ListAllIssuesRequestOptions) (*katagenerated.ListAllIssuesResp, error)
-	readyProject   func(context.Context, *katagenerated.ReadyIssuesRequestOptions) (*katagenerated.ReadyIssuesResp, error)
-	readyGlobal    func(context.Context, *katagenerated.ReadyIssuesGlobalRequestOptions) (*katagenerated.ReadyIssuesGlobalResp, error)
-	reachableGraph func(context.Context, *katagenerated.ReachableIssueGraphRequestOptions) (*katagenerated.ReachableIssueGraphResp, error)
-	showIssue      func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error)
-	pollEvents     func(context.Context, *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error)
+	listProjects      func(context.Context, *katagenerated.ListProjectsRequestOptions) (*katagenerated.ListProjectsResp, error)
+	listIssues        func(context.Context, *katagenerated.ListAllIssuesRequestOptions) (*katagenerated.ListAllIssuesResp, error)
+	readyProject      func(context.Context, *katagenerated.ReadyIssuesRequestOptions) (*katagenerated.ReadyIssuesResp, error)
+	readyGlobal       func(context.Context, *katagenerated.ReadyIssuesGlobalRequestOptions) (*katagenerated.ReadyIssuesGlobalResp, error)
+	reachableGraph    func(context.Context, *katagenerated.ReachableIssueGraphRequestOptions) (*katagenerated.ReachableIssueGraphResp, error)
+	showIssue         func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error)
+	pollEvents        func(context.Context, *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error)
+	pollProjectEvents func(context.Context, *katagenerated.PollProjectEventsRequestOptions) (*katagenerated.PollProjectEventsResp, error)
 }
 
 func (f *fakeKataSnapshotAPIClient) InstanceWithResponse(context.Context, ...runtime.RequestEditorFn) (*katagenerated.InstanceResp, error) {
@@ -703,6 +704,16 @@ func (f *fakeKataSnapshotAPIClient) PollEventsWithResponse(ctx context.Context, 
 		}, nil
 	}
 	return f.pollEvents(ctx, options)
+}
+
+func (f *fakeKataSnapshotAPIClient) PollProjectEventsWithResponse(ctx context.Context, options *katagenerated.PollProjectEventsRequestOptions, _ ...runtime.RequestEditorFn) (*katagenerated.PollProjectEventsResp, error) {
+	if f.pollProjectEvents == nil {
+		return &katagenerated.PollProjectEventsResp{
+			StatusCode: http.StatusOK,
+			JSON200:    &katagenerated.PollEventsBody{NextAfterID: 0},
+		}, nil
+	}
+	return f.pollProjectEvents(ctx, options)
 }
 
 func (f *fakeKataSnapshotAPIClient) ReadyIssuesWithResponse(ctx context.Context, options *katagenerated.ReadyIssuesRequestOptions, _ ...runtime.RequestEditorFn) (*katagenerated.ReadyIssuesResp, error) {

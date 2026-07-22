@@ -19,12 +19,7 @@ const (
 	kataSnapshotEnrichmentStageHistory         = "history"
 	kataSnapshotEnrichmentStageWorkspaceTarget = "workspace_target"
 	kataSnapshotHistoryPageLimit               = int64(1000)
-	kataSnapshotHistoryScanPageLimit           = 4
-	kataSnapshotHistoryScanEventLimit          = 4000
-	kataSnapshotHistoryResultLimit             = 100
 )
-
-var errKataSnapshotHistoryScanLimit = errors.New("selected task history scan limit exceeded")
 
 type kataSnapshotEnrichmentRequest struct {
 	SelectedIssueUID string
@@ -212,14 +207,10 @@ func (e *kataSnapshotEnricher) enrichSelected(
 		}
 	}
 
-	history, err := e.loadHistory(ctx, selected.UID)
+	history, err := e.loadHistory(ctx, selected.ProjectID, selected.UID)
 	if err != nil {
 		if contextErr := kataEnrichmentContextError(ctx, err); contextErr != nil {
 			return contextErr
-		}
-		if errors.Is(err, errKataSnapshotHistoryScanLimit) {
-			result.addError(kataSnapshotEnrichmentStageHistory, CodeUpstreamError, "Selected task history exceeded the bounded scan limit.")
-			return nil
 		}
 		result.addError(kataSnapshotEnrichmentStageHistory, CodeUpstreamError, "Could not load selected task history.")
 	} else {
@@ -358,17 +349,21 @@ func (e *kataSnapshotEnricher) loadDetail(
 	return response.JSON200, kataGeneratedIssueDetail{value: issue, etag: etag}, nil
 }
 
-func (e *kataSnapshotEnricher) loadHistory(ctx context.Context, selectedUID string) ([]katagenerated.EventEnvelope, error) {
-	history := make([]katagenerated.EventEnvelope, 0, kataSnapshotHistoryResultLimit)
+func (e *kataSnapshotEnricher) loadHistory(
+	ctx context.Context,
+	projectID int64,
+	selectedUID string,
+) ([]katagenerated.EventEnvelope, error) {
+	history := []katagenerated.EventEnvelope{}
 	afterID := int64(0)
-	scannedEvents := 0
-	for range kataSnapshotHistoryScanPageLimit {
+	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		limit := kataSnapshotHistoryPageLimit
-		response, err := e.client.PollEventsWithResponse(ctx, &katagenerated.PollEventsRequestOptions{
-			Query: &katagenerated.PollEventsQuery{AfterID: &afterID, Limit: &limit},
+		response, err := e.client.PollProjectEventsWithResponse(ctx, &katagenerated.PollProjectEventsRequestOptions{
+			PathParams: &katagenerated.PollProjectEventsPath{ProjectID: projectID},
+			Query:      &katagenerated.PollProjectEventsQuery{AfterID: &afterID, Limit: &limit},
 		})
 		if err != nil {
 			return nil, err
@@ -376,56 +371,55 @@ func (e *kataSnapshotEnricher) loadHistory(ctx context.Context, selectedUID stri
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if response == nil || response.StatusCode != http.StatusOK || response.JSON200 == nil {
-			return nil, fmt.Errorf("missing events 200 response body")
-		}
-		body := response.JSON200
-		if err := body.Validate(); err != nil {
-			return nil, fmt.Errorf("validate events response: %w", err)
-		}
-		if body.ResetRequired || body.ResetAfterID != nil {
-			return nil, fmt.Errorf("events response requires cursor reset")
+		body, err := validateKataHistoryPage(response, afterID)
+		if err != nil {
+			return nil, err
 		}
 		if len(body.Events) == 0 {
-			if body.NextAfterID != afterID {
-				return nil, fmt.Errorf("events response cursor does not match empty page")
-			}
 			return history, nil
 		}
-		lastEventID := afterID
 		for _, event := range body.Events {
-			if event.EventID <= 0 || event.EventID <= lastEventID {
-				return nil, fmt.Errorf("events response contains non-monotonic event ids")
-			}
-			lastEventID = event.EventID
-		}
-		if body.NextAfterID != lastEventID {
-			return nil, fmt.Errorf("events response cursor does not match last event")
-		}
-
-		remainingEvents := kataSnapshotHistoryScanEventLimit - scannedEvents
-		events := body.Events
-		scanLimitReached := len(events) > remainingEvents
-		if scanLimitReached {
-			events = events[:remainingEvents]
-		}
-		scannedEvents += len(events)
-		for _, event := range events {
 			if event.IssueUID == nil || *event.IssueUID != selectedUID {
 				continue
 			}
 			event.CreatedAt = event.CreatedAt.UTC()
 			history = append(history, event)
-			if len(history) == kataSnapshotHistoryResultLimit {
-				return history, nil
-			}
-		}
-		if scanLimitReached {
-			return nil, errKataSnapshotHistoryScanLimit
 		}
 		afterID = body.NextAfterID
 	}
-	return nil, errKataSnapshotHistoryScanLimit
+}
+
+func validateKataHistoryPage(
+	response *katagenerated.PollProjectEventsResp,
+	afterID int64,
+) (*katagenerated.PollEventsBody, error) {
+	if response == nil || response.StatusCode != http.StatusOK || response.JSON200 == nil {
+		return nil, fmt.Errorf("missing events 200 response body")
+	}
+	body := response.JSON200
+	if err := body.Validate(); err != nil {
+		return nil, fmt.Errorf("validate events response: %w", err)
+	}
+	if body.ResetRequired || body.ResetAfterID != nil {
+		return nil, fmt.Errorf("events response requires cursor reset")
+	}
+	if len(body.Events) == 0 {
+		if body.NextAfterID != afterID {
+			return nil, fmt.Errorf("events response cursor does not match empty page")
+		}
+		return body, nil
+	}
+	lastEventID := afterID
+	for _, event := range body.Events {
+		if event.EventID <= 0 || event.EventID <= lastEventID {
+			return nil, fmt.Errorf("events response contains non-monotonic event ids")
+		}
+		lastEventID = event.EventID
+	}
+	if body.NextAfterID != lastEventID {
+		return nil, fmt.Errorf("events response cursor does not match last event")
+	}
+	return body, nil
 }
 
 func (r *kataSnapshotEnrichment) addError(stage string, code ProblemCode, message string) {

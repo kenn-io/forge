@@ -158,7 +158,7 @@ func TestKataTaskSnapshotSerializesLocalEnrichmentErrorsAndIndependentGraphSourc
 	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task history."}, response.Enrichment.Errors[kataSnapshotEnrichmentStageHistory])
 	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load reachable graph."}, response.Enrichment.Errors[kataSnapshotEnrichmentStageGraph])
 	assert.True(slices.Contains(paths, "/api/v1/issues/issue-member"))
-	assert.True(slices.Contains(paths, "/api/v1/events"))
+	assert.True(slices.Contains(paths, "/api/v1/projects/7/events"))
 	assert.True(slices.Contains(paths, "/api/v1/projects/7/issues/issue-source/graph"))
 }
 
@@ -298,64 +298,91 @@ url = "`+daemon.URL+`"
 	assert.GreaterOrEqual(pollCalls.Load(), int64(2))
 }
 
-func TestKataTaskSnapshotKeepsHistoryCursorAndBoundFailuresLocalOverHTTP(t *testing.T) {
-	tests := []struct {
-		name        string
-		eventsBody  func() any
-		wantMessage string
-	}{
-		{
-			name: "cursor mismatch",
-			eventsBody: func() any {
-				selectedUID := "issue-member"
-				return testKataPollEventsResponse(2, testKataEvent(1, &selectedUID, time.Now().UTC())).JSON200
-			},
-			wantMessage: "Could not load selected task history.",
-		},
-		{
-			name: "bounded scan exhaustion",
-			eventsBody: func() any {
-				events := testKataEventPage(1, kataSnapshotHistoryScanEventLimit+1, nil)
-				return testKataPollEventsResponse(events[len(events)-1].EventID, events...).JSON200
-			},
-			wantMessage: "Selected task history exceeded the bounded scan limit.",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			assert := assert.New(t)
-			require := require.New(t)
-			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				switch r.URL.Path {
-				case "/api/v1/issues/issue-member":
-					assert.NoError(json.NewEncoder(w).Encode(testKataShowIssueResponse("issue-member").JSON200))
-				case "/api/v1/events":
-					assert.NoError(json.NewEncoder(w).Encode(test.eventsBody()))
-				default:
-					assert.Fail("unexpected Kata request", r.URL.String())
-					http.NotFound(w, r)
-				}
-			}))
-			defer upstream.Close()
-			daemon := kata.Daemon{ID: "primary", URL: upstream.URL}
-			snapshot := testKataCoordinatedAuthority().Snapshot
-			snapshot.FetchedAt = time.Date(2026, 7, 20, 21, 0, 0, 0, time.UTC)
-			srv := setupKataSnapshotRouteServer(t, daemon, snapshot, nil)
+func TestKataTaskSnapshotKeepsHistoryCursorFailureLocalOverHTTP(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	selectedUID := "issue-member"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/issues/issue-member":
+			assert.NoError(json.NewEncoder(w).Encode(testKataShowIssueResponse(selectedUID).JSON200))
+		case "/api/v1/projects/7/events":
+			assert.Equal("0", r.URL.Query().Get("after_id"))
+			assert.NoError(json.NewEncoder(w).Encode(testKataPollProjectEventsResponse(2, testKataEvent(1, &selectedUID, time.Now().UTC())).JSON200))
+		default:
+			assert.Fail("unexpected Kata request", r.URL.String())
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	daemon := kata.Daemon{ID: "primary", URL: upstream.URL}
+	snapshot := testKataCoordinatedAuthority().Snapshot
+	snapshot.FetchedAt = time.Date(2026, 7, 20, 21, 0, 0, 0, time.UTC)
+	srv := setupKataSnapshotRouteServer(t, daemon, snapshot, nil)
 
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/snapshot?selected_issue_uid=issue-member", nil)
-			req.Header.Set(kataDaemonHeaderName, "primary")
-			rr := httptest.NewRecorder()
-			srv.ServeHTTP(rr, req)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/snapshot?selected_issue_uid=issue-member", nil)
+	req.Header.Set(kataDaemonHeaderName, "primary")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
 
-			require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-			var response kataTaskSnapshotResponse
-			require.NoError(json.Unmarshal(rr.Body.Bytes(), &response))
-			assert.NotNil(response.Enrichment.SelectedDetail)
-			assert.Empty(response.Enrichment.SelectedHistory)
-			assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: test.wantMessage}, response.Enrichment.Errors[kataSnapshotEnrichmentStageHistory])
-		})
-	}
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var response kataTaskSnapshotResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &response))
+	assert.NotNil(response.Enrichment.SelectedDetail)
+	assert.Empty(response.Enrichment.SelectedHistory)
+	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task history."}, response.Enrichment.Errors[kataSnapshotEnrichmentStageHistory])
+}
+
+func TestKataTaskSnapshotLoadsCompleteProjectHistoryOverHTTP(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	selectedUID := "issue-member"
+	otherUID := "issue-other"
+	cursors := []string{}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/issues/issue-member":
+			assert.NoError(json.NewEncoder(w).Encode(testKataShowIssueResponse(selectedUID).JSON200))
+		case "/api/v1/projects/7/events":
+			assert.Equal("1000", r.URL.Query().Get("limit"))
+			cursors = append(cursors, r.URL.Query().Get("after_id"))
+			var body *katagenerated.PollEventsBody
+			switch len(cursors) {
+			case 1:
+				body = testKataPollProjectEventsResponse(2,
+					testKataEvent(1, &otherUID, time.Unix(1, 0)),
+					testKataEvent(2, &selectedUID, time.Unix(2, 0))).JSON200
+			case 2:
+				events := testKataEventPage(3, 125, &selectedUID)
+				body = testKataPollProjectEventsResponse(127, events...).JSON200
+			default:
+				body = testKataPollProjectEventsResponse(127).JSON200
+			}
+			assert.NoError(json.NewEncoder(w).Encode(body))
+		default:
+			assert.Fail("unexpected Kata request", r.URL.String())
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	daemon := kata.Daemon{ID: "primary", URL: upstream.URL}
+	snapshot := testKataCoordinatedAuthority().Snapshot
+	snapshot.FetchedAt = time.Date(2026, 7, 20, 21, 0, 0, 0, time.UTC)
+	srv := setupKataSnapshotRouteServer(t, daemon, snapshot, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/snapshot?selected_issue_uid=issue-member", nil)
+	req.Header.Set(kataDaemonHeaderName, "primary")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var response kataTaskSnapshotResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &response))
+	assert.Len(response.Enrichment.SelectedHistory, 126)
+	assert.Equal([]string{"0", "2", "127"}, cursors)
+	assert.NotContains(response.Enrichment.Errors, kataSnapshotEnrichmentStageHistory)
 }
 
 func TestKataTaskSnapshotDoesNotAuthorizeDisconnectedGraphNodeOverHTTP(t *testing.T) {

@@ -31,6 +31,11 @@ type kataAPIClient interface {
 		options *katagenerated.PollEventsRequestOptions,
 		reqEditors ...runtime.RequestEditorFn,
 	) (*katagenerated.PollEventsResp, error)
+	PollProjectEventsWithResponse(
+		ctx context.Context,
+		options *katagenerated.PollProjectEventsRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.PollProjectEventsResp, error)
 	ReadyIssuesWithResponse(
 		ctx context.Context,
 		options *katagenerated.ReadyIssuesRequestOptions,

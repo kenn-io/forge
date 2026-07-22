@@ -437,6 +437,58 @@ describe("WorkspaceTerminalView embed props", () => {
       expect(setMode).toHaveBeenCalledWith("collapsed");
     });
 
+    it("a failed in-place workspace switch shows the error state, not the stale toolbar", async () => {
+      // Switching the inline dock from A to B keeps A cached while B
+      // loads. When B's fetch fails, the error state (with its retry and
+      // collapse controls) must render instead of A's ready toolbar,
+      // which would be a stale header whose action guards leave the dock
+      // uncollapsible.
+      mocks.runtimeClient.GET.mockImplementation(async (_path: string, opts: { params: { path: { id: string } } }) => {
+        if (opts.params.path.id === "ws-2") {
+          return { data: undefined, error: { detail: "boom" }, response: { status: 500 } };
+        }
+        return { data: readyWorkspaceData, error: undefined, response: { status: 200 } };
+      });
+      const setMode = vi.fn();
+      const inlineDock = { getMode: () => "split" as const, setMode };
+      const { rerender } = render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1", hideWorkspaceList: true, inlineDock },
+      });
+
+      await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+
+      await rerender({ workspaceId: "ws-2", hideWorkspaceList: true, inlineDock });
+
+      await waitFor(() => expect(screen.getByText("Failed to load workspace (500)")).toBeTruthy());
+      expect(screen.queryByText("feature/embed-props")).toBeNull();
+
+      const collapse = screen.getByRole("button", { name: "Collapse Terminal" });
+      expect(collapse.hasAttribute("disabled")).toBe(false);
+      await fireEvent.click(collapse);
+      expect(setMode).toHaveBeenCalledWith("collapsed");
+    });
+
+    it("a slow in-place workspace switch shows the loading state, not the stale toolbar", async () => {
+      mocks.runtimeClient.GET.mockImplementation((_path: string, opts: { params: { path: { id: string } } }) => {
+        if (opts.params.path.id === "ws-2") {
+          return new Promise(() => {});
+        }
+        return Promise.resolve({ data: readyWorkspaceData, error: undefined, response: { status: 200 } });
+      });
+      const inlineDock = { getMode: () => "split" as const, setMode: vi.fn() };
+      const { rerender } = render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1", hideWorkspaceList: true, inlineDock },
+      });
+
+      await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+
+      await rerender({ workspaceId: "ws-2", hideWorkspaceList: true, inlineDock });
+
+      await waitFor(() => expect(screen.getByText("Setting up workspace...")).toBeTruthy());
+      expect(screen.queryByText("feature/embed-props")).toBeNull();
+      expect(screen.getByRole("button", { name: "Collapse Terminal" })).toBeTruthy();
+    });
+
     it("shows no collapse control in setup states without an inlineDock prop", async () => {
       mocks.runtimeClient.GET.mockResolvedValue({
         data: { ...readyWorkspaceData, status: "creating" },

@@ -178,6 +178,15 @@ Keyboard handlers must have one clear owner for each key press.
   their own collapse button or the dock cannot be closed short of deleting
   the workspace
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::inlineCollapseControl`).
+  Dock mode changes are pure local UI — never disable them behind mutation
+  guards like `actionsBlocked`; only the modal-stack guard applies, and only
+  to the expand direction.
+- The workspace view renders by liveness, not cached presence: the previous
+  workspace stays cached across an in-place A→B switch, and branching on
+  `workspace` alone shows A's stale ready toolbar (with action guards
+  engaged) while B is slow or failing. Gate the ready branch on
+  `workspaceLive` so the loading/error states own the switch window
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceLive`).
 
 ## Modal Ownership
 

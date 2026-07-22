@@ -484,7 +484,10 @@ test.describe("workspace tab persistence", () => {
 
       await page.locator(".workspace-list-sidebar .ws-row", { hasText: "Add dark mode support" }).click();
       await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceB.id}$`));
-      await expect(page.getByText("Loading workspace details...")).toBeVisible();
+      // While B's detail payload is still gated, liveness rendering
+      // replaces A's entire ready view with the loading state rather
+      // than leaving a stale toolbar and sidebar mounted.
+      await expect(page.getByText("Setting up workspace...")).toBeVisible();
       await expect(page.getByRole("region", { name: "Workspace Diff" })).toHaveCount(0);
 
       await page.waitForFunction(

@@ -1059,7 +1059,10 @@ describe("WorkspaceTerminalView", () => {
 
     await rerender({ workspaceId: "ws-2" });
 
-    expect(await screen.findByText("Loading workspace details...")).toBeTruthy();
+    // Liveness gating unmounts the stale ws-1 view entirely while ws-2
+    // loads: the old toolbar and sidebar are gone, not lingering behind
+    // action guards.
+    expect(await screen.findByText("Setting up workspace...")).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Workspace Diff" })).toBeNull();
     expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
 
@@ -1069,7 +1072,11 @@ describe("WorkspaceTerminalView", () => {
       }),
     );
     workspaceBGate.resolve(workspaceB);
-    await Promise.resolve();
+    // ws-2's payload landed but its runtime is still pending: the ready
+    // view mounts with the details-loading sub-state and the diff still
+    // waits for the matching runtime.
+    expect(await screen.findByText("Loading workspace details...")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Workspace Diff" })).toBeNull();
     expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
 
     runtimeBGate.resolve(runtimeWithStaleSession());

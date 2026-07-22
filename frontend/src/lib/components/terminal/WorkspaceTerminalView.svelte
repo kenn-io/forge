@@ -2870,7 +2870,7 @@
             Select a workspace from the sidebar
           </div>
         {/if}
-      {:else if loadError && !workspace}
+      {:else if loadError && !workspaceLive}
         <div class="state-message error">
           <span
             class="error-icon-badge"
@@ -2896,7 +2896,11 @@
           </button>
           {@render inlineCollapseControl()}
         </div>
-      {:else if !workspace || workspace.status === "creating"}
+      {:else if !workspace || !workspaceLive || workspace.status === "creating"}
+        <!-- Liveness, not mere presence: during an in-place A→B switch the
+             previous workspace stays cached while B loads, and rendering
+             its ready toolbar here would show a stale header with action
+             guards engaged — an uncollapsible dock if B is slow or fails. -->
         <div class="state-message">
           <Spinner size={18} />
           <span>Setting up workspace...</span>
@@ -3019,9 +3023,14 @@
               </IconButton>
             {/if}
             {#if inlineDock && inlineDockMode !== null}
+              <!-- Dock mode changes are pure local UI: they must stay
+                   available while server-side actions are blocked
+                   (deletes in flight), or the dock cannot be collapsed
+                   out of the way. Only the modal guard applies, and only
+                   to the expand direction. -->
               <button
                 class="header-btn"
-                disabled={actionsBlocked || (inlineDockMode !== "expanded" && inlineDockExpandBlocked)}
+                disabled={inlineDockMode !== "expanded" && inlineDockExpandBlocked}
                 title={
                   inlineDockMode !== "expanded" && inlineDockExpandBlocked
                     ? "Close the open dialog first."
@@ -3040,7 +3049,6 @@
               </button>
               <button
                 class="header-btn"
-                disabled={actionsBlocked}
                 onclick={() => inlineDock?.setMode("collapsed")}
               >
                 <PanelBottomCloseIcon size="14" strokeWidth="2.2" aria-hidden="true" />

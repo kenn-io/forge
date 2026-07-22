@@ -8,7 +8,7 @@ afterEach(() => {
   for (const item of getFlashes()) dismissFlash(item.id);
 });
 
-function issue(id: number, author: string): Issue {
+function issue(id: number, author: string, provider = "github"): Issue {
   return {
     ID: id,
     Number: id,
@@ -19,7 +19,7 @@ function issue(id: number, author: string): Issue {
     repo_name: "widgets",
     platform_host: "github.com",
     repo: {
-      provider: "github",
+      provider,
       platform_host: "github.com",
       owner: "acme",
       name: "widgets",
@@ -34,10 +34,14 @@ describe("issues store bot visibility", () => {
       GET: vi.fn(async () => ({
         data: [
           issue(1, "alice"),
-          issue(2, "renovate[bot]"),
-          issue(3, "release-bot"),
-          issue(4, "Talbot"),
-          issue(5, "Abbot"),
+          issue(2, "renovate[bot]", "github"),
+          issue(3, "project_123_bot_4ffca233d8298ea1", "gitlab"),
+          issue(4, "group_456_bot_8ea14ffca233d829", "gitlab"),
+          issue(5, "release-bot", "forgejo"),
+          issue(6, "renovate-bot", "gitea"),
+          issue(7, "Talbot", "github"),
+          issue(8, "Abbot", "gitea"),
+          issue(9, "project_alpha_bot_build", "gitlab"),
         ],
         error: undefined,
       })),
@@ -48,7 +52,12 @@ describe("issues store bot visibility", () => {
     store.hydrateDefaults({ hide_bots: true });
 
     expect(store.getHideBots()).toBe(true);
-    expect(store.getIssues().map((item) => item.Author)).toEqual(["alice", "Talbot", "Abbot"]);
+    expect(store.getIssues().map((item) => item.Author)).toEqual([
+      "alice",
+      "Talbot",
+      "Abbot",
+      "project_alpha_bot_build",
+    ]);
   });
 
   it("persists visibility changes and adopts the saved response", async () => {

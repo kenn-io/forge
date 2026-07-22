@@ -239,6 +239,15 @@
           onclick={() => grouping.setGroupingMode("flat")}
         >All</button>
       </div>
+    {:else}
+      <button
+        type="button"
+        class="visibility-btn"
+        class:visibility-btn--active={issues.getHideBots()}
+        aria-label="Hide bot-authored issues"
+        aria-pressed={issues.getHideBots()}
+        onclick={() => void issues.setHideBots(!issues.getHideBots())}
+      >Hide bots</button>
     {/if}
   </div>
   <div class="search-bar">
@@ -422,7 +431,8 @@
     margin-left: auto;
   }
 
-  .group-btn {
+  .group-btn,
+  .visibility-btn {
     font-size: var(--font-size-xs);
     padding: 2px 8px;
     border: none;
@@ -433,10 +443,23 @@
     white-space: nowrap;
   }
 
+  .visibility-btn {
+    margin-left: auto;
+    border: 1px solid var(--border-default);
+    background: var(--bg-inset);
+    font-weight: 600;
+  }
+
   .group-btn--active {
     background: var(--bg-surface);
     color: var(--text-primary);
     box-shadow: var(--shadow-sm);
+  }
+
+  .visibility-btn--active {
+    color: var(--accent-blue);
+    background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent-blue) 34%, transparent);
   }
 
   .workflow-group {
@@ -577,7 +600,8 @@
   }
 
   :global(.mobile-main) .state-btn,
-  :global(.mobile-main) .group-btn {
+  :global(.mobile-main) .group-btn,
+  :global(.mobile-main) .visibility-btn {
     min-height: var(--focus-mobile-hit-target);
     border-radius: var(--focus-mobile-radius-sm);
     padding: var(--focus-mobile-space-xs) var(--focus-mobile-space-sm);

@@ -63,11 +63,14 @@ function strongerSyncMode(a: IssueDetailSyncMode, b: IssueDetailSyncMode): Issue
   return syncIntentRank(b) > syncIntentRank(a) ? b : a;
 }
 
-const BOT_SUFFIXES = ["[bot]", "-bot"];
+const GITLAB_RESOURCE_BOT_USERNAME = /^(?:project|group)_\d+_bot_[a-z0-9]+$/;
 
-function isBotAuthor(author: string): boolean {
-  const lower = author.toLowerCase();
-  return BOT_SUFFIXES.some((suffix) => lower.endsWith(suffix));
+function isBotAuthor(issue: Issue): boolean {
+  const author = issue.Author.toLowerCase();
+  if (author.endsWith("-bot")) return true;
+  if (issue.repo.provider === "github") return author.endsWith("[bot]");
+  if (issue.repo.provider === "gitlab") return GITLAB_RESOURCE_BOT_USERNAME.test(author);
+  return false;
 }
 
 export function createIssuesStore(opts: IssuesStoreOptions) {
@@ -129,7 +132,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   function getIssues(): Issue[] {
     if (!hideBots) return issues;
-    return issues.filter((issue) => !isBotAuthor(issue.Author));
+    return issues.filter((issue) => !isBotAuthor(issue));
   }
 
   function getHideBots(): boolean {

@@ -474,7 +474,7 @@ test.describe("phone routes", () => {
     await expectReadableFocusList(page, ".issue-item");
   });
 
-  test("mobile issue bot visibility persists through the real settings API", async ({ page }) => {
+  test("mobile issue bot visibility can be toggled and persists through the real settings API", async ({ page }) => {
     const server = await startIsolatedE2EServerWithOptions();
     const botIssue = page.locator(".issue-item", { hasText: "Security advisory: prototype pollution" });
     const humanIssue = page.locator(".issue-item", { hasText: "Widget rendering broken on Safari" });
@@ -484,10 +484,16 @@ test.describe("phone routes", () => {
       await expect(botIssue).toBeVisible();
       await expect(humanIssue).toBeVisible();
 
-      const settingsUpdate = await page.request.put(`${server.info.base_url}/api/v1/settings`, {
-        data: { issues: { hide_bots: true } },
-      });
-      expect(settingsUpdate.ok()).toBe(true);
+      const hideBots = page.getByRole("button", { name: "Hide bot-authored issues" });
+      await expect(hideBots).toHaveAttribute("aria-pressed", "false");
+      const settingsUpdate = page.waitForResponse(
+        (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
+      );
+      await hideBots.click();
+      expect((await settingsUpdate).ok()).toBe(true);
+      await expect(hideBots).toHaveAttribute("aria-pressed", "true");
+      await expect(botIssue).toHaveCount(0);
+      await expect(humanIssue).toBeVisible();
 
       const settingsResponse = await page.request.get(`${server.info.base_url}/api/v1/settings`);
       expect(settingsResponse.ok()).toBe(true);
@@ -496,8 +502,17 @@ test.describe("phone routes", () => {
 
       await page.reload();
       await expect(page.locator(".issue-item").first()).toBeVisible();
+      await expect(hideBots).toHaveAttribute("aria-pressed", "true");
       await expect(botIssue).toHaveCount(0);
       await expect(humanIssue).toBeVisible();
+
+      const settingsReset = page.waitForResponse(
+        (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
+      );
+      await hideBots.click();
+      expect((await settingsReset).ok()).toBe(true);
+      await expect(hideBots).toHaveAttribute("aria-pressed", "false");
+      await expect(botIssue).toBeVisible();
     } finally {
       await server.stop();
     }

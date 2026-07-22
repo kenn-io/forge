@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 // Seeded data summary:
@@ -108,28 +108,6 @@ async function expectRepoNameToClipSafely(
     scrollWidth: (node as HTMLElement).scrollWidth,
   }));
   expect(labelOverflow.scrollWidth).toBeGreaterThanOrEqual(labelOverflow.clientWidth);
-}
-
-// Moves acme/widgets#2 ("Fix race condition in event loop") to the
-// "reviewing" kanban status so the sidebar status pill test below has a
-// real non-default row to assert against. widgets#1 ("Add widget caching
-// layer") is left at the default "new" status deliberately: that row is
-// also the one mocked to a long repo path for the clip-safety assertion,
-// and its meta-right already carries a CI cluster and review indicator,
-// so it needs the status chip's width back to leave room for the repo
-// name at the narrowed 180px item width.
-async function primeKanbanStateRows(browser: Browser, baseURL: string): Promise<void> {
-  const context = await browser.newContext({ baseURL });
-  try {
-    const response = await context.request.put("/api/v1/pulls/github/acme/widgets/2/state", {
-      data: { status: "reviewing" },
-    });
-    if (!response.ok()) {
-      throw new Error(`failed to prime kanban state: ${response.status()}`);
-    }
-  } finally {
-    await context.close();
-  }
 }
 
 async function expectPullReviewIndicator(page: Page, title: string, label: string): Promise<void> {
@@ -250,16 +228,15 @@ test.describe("PR list view", () => {
 test.describe("PR list sidebar", () => {
   let server: IsolatedE2EServer | undefined;
 
-  test.beforeAll(async ({ browser }) => {
+  test.beforeAll(async () => {
     server = await startIsolatedE2EServer();
-    await primeKanbanStateRows(browser, server.info.base_url);
   });
 
   test.afterAll(async () => {
     await server?.stop();
   });
 
-  test("sidebar status pills use the shared chip component", async ({ page }) => {
+  test("sidebar rows show review indicators, clip long repo names, and never show a status chip", async ({ page }) => {
     if (!server) {
       throw new Error("PR list sidebar e2e server was not started");
     }
@@ -277,15 +254,10 @@ test.describe("PR list sidebar", () => {
     await expect(repoName).toBeVisible();
     await expectRepoNameToClipSafely(firstItem, repoName, longRepoPath);
 
-    // primeKanbanStateRows moved "Fix race condition in event loop" to
-    // "reviewing", so its status chip renders.
-    const reviewingItem = page.locator(".pull-item", { hasText: "Fix race condition in event loop" });
-    await expect(reviewingItem.locator(".status-chip")).toBeVisible();
-
-    // "Add widget caching layer" was never primed and stays in the default
-    // "new" status, which renders no status chip: the chip is signal, not
-    // decoration.
-    await expect(firstItem.locator(".status-chip")).toHaveCount(0);
+    // The kanban status chip was removed from the sidebar entirely (the
+    // kanban feature itself may go away); no row shows one regardless of
+    // its workflow state.
+    await expect(page.locator(".pull-item .status-chip")).toHaveCount(0);
 
     // Compact layout: repo name lives in the meta row, no standalone repo
     // row, and rows keep a uniform two-line height regardless of labels.

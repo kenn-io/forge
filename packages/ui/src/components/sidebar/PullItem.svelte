@@ -13,7 +13,6 @@
   import CircleAlertIcon from "@lucide/svelte/icons/circle-alert";
   import CircleCheckBigIcon from "@lucide/svelte/icons/circle-check-big";
   import OctagonXIcon from "@lucide/svelte/icons/octagon-x";
-  import { Chip } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
   import { repoIdentityKey } from "../../utils/repo-label.js";
@@ -62,18 +61,6 @@
     }
   });
 
-  const kanbanLabels: Record<string, string> = {
-    new: "New",
-    reviewing: "Reviewing",
-    waiting: "Waiting",
-    awaiting_merge: "Ready",
-  };
-
-  const statusLabel = $derived(kanbanLabels[pr.KanbanStatus] ?? pr.KanbanStatus);
-  const statusClass = $derived(`status-chip--${pr.KanbanStatus.replace("_", "-")}`);
-  const showStatus = $derived(
-    pr.State !== "closed" && pr.State !== "merged" && pr.KanbanStatus !== "new",
-  );
   const ago = $derived(formatRelativeTime(pr.LastActivityAt));
   const hasWorktree = $derived(
     (pr.worktree_links?.length ?? 0) > 0,
@@ -274,9 +261,6 @@
           </svg>
         {/if}
       </span>
-      {#if showStatus && statusLabel}
-        <Chip size="xs" class={`status-chip ${statusClass}`}>{statusLabel}</Chip>
-      {/if}
       <span class="time">{ago}</span>
     </span>
   </div>
@@ -404,30 +388,6 @@
   .time {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
-  }
-
-  :global(.status-chip) {
-    flex-shrink: 0;
-  }
-
-  :global(.status-chip--new) {
-    background: color-mix(in srgb, var(--kanban-new) 18%, transparent);
-    color: var(--kanban-new);
-  }
-
-  :global(.status-chip--reviewing) {
-    background: color-mix(in srgb, var(--accent-amber) 18%, transparent);
-    color: var(--accent-amber);
-  }
-
-  :global(.status-chip--waiting) {
-    background: color-mix(in srgb, var(--accent-purple) 18%, transparent);
-    color: var(--accent-purple);
-  }
-
-  :global(.status-chip--awaiting-merge) {
-    background: color-mix(in srgb, var(--accent-green) 18%, transparent);
-    color: var(--accent-green);
   }
 
   .worktree-badge {
@@ -588,8 +548,7 @@
   }
 
   :global(.mobile-main) :global(.kit-chip),
-  :global(.mobile-main) :global(.state-chip),
-  :global(.mobile-main) :global(.status-chip) {
+  :global(.mobile-main) :global(.state-chip) {
     min-height: calc(var(--focus-mobile-hit-target, 37px) * 0.65);
     padding: 2.5px var(--focus-mobile-space-xs, 6.5px);
     border-radius: 999px;

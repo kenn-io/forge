@@ -295,65 +295,29 @@ describe("PullItem kanban status", () => {
     expect(screen.queryByLabelText("Changes requested")).toBeNull();
   });
 
-  it("shows the kanban status for open PRs", () => {
-    renderItem(
-      mkPR({
-        Title: "Cache widget details",
-        Author: "alice",
-        KanbanStatus: "reviewing",
-        LastActivityAt: "2026-05-01T12:00:00Z",
-        repo_owner: "acme",
-        repo_name: "widgets",
-      }),
-    );
+  it("never renders a status chip, regardless of kanban status or PR state", () => {
+    const cases = [
+      { State: "open", KanbanStatus: "new" },
+      { State: "open", KanbanStatus: "reviewing" },
+      { State: "closed", KanbanStatus: "reviewing" },
+      { State: "merged", KanbanStatus: "awaiting_merge" },
+    ];
 
-    expect(screen.getByText("Reviewing")).toBeTruthy();
-  });
+    for (const overrides of cases) {
+      renderItem(
+        mkPR({
+          Title: "Cache widget details",
+          Author: "alice",
+          LastActivityAt: "2026-05-01T12:00:00Z",
+          repo_owner: "acme",
+          repo_name: "widgets",
+          ...overrides,
+        }),
+      );
 
-  it("hides the kanban status for open PRs still in the default new state", () => {
-    renderItem(
-      mkPR({
-        Title: "Cache widget details",
-        Author: "alice",
-        KanbanStatus: "new",
-        LastActivityAt: "2026-05-01T12:00:00Z",
-        repo_owner: "acme",
-        repo_name: "widgets",
-      }),
-    );
-
-    expect(screen.queryByText("New")).toBeNull();
-  });
-
-  it("hides the kanban status for closed and merged PRs", () => {
-    renderItem(
-      mkPR({
-        Title: "Cache widget details",
-        Author: "alice",
-        State: "closed",
-        KanbanStatus: "reviewing",
-        LastActivityAt: "2026-05-01T12:00:00Z",
-        repo_owner: "acme",
-        repo_name: "widgets",
-      }),
-    );
-
-    expect(screen.queryByText("Reviewing")).toBeNull();
-    cleanup();
-
-    renderItem(
-      mkPR({
-        Title: "Cache widget details",
-        Author: "alice",
-        State: "merged",
-        KanbanStatus: "awaiting_merge",
-        LastActivityAt: "2026-05-01T12:00:00Z",
-        repo_owner: "acme",
-        repo_name: "widgets",
-      }),
-    );
-
-    expect(screen.queryByText("Ready")).toBeNull();
+      expect(document.querySelector(".status-chip")).toBeNull();
+      cleanup();
+    }
   });
 });
 

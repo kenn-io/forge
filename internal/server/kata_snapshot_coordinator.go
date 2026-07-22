@@ -68,8 +68,9 @@ func newKataSnapshotCoordinator(root context.Context, deps kataSnapshotCoordinat
 		deps.cache = newKataSnapshotCache()
 	}
 	if deps.enrichmentCache == nil {
-		deps.enrichmentCache = newKataSnapshotEnrichmentCacheWithRoot(root)
+		deps.enrichmentCache = newKataSnapshotEnrichmentCacheWithRoot(root, deps.cache.daemonEpoch)
 	}
+	deps.enrichmentCache.currentDaemonEpoch = deps.cache.daemonEpoch
 	if deps.resolveDaemon == nil {
 		deps.resolveDaemon = selectKataDaemonForID
 	}
@@ -116,7 +117,7 @@ func (c *kataSnapshotCoordinator) close() {
 
 func (c *kataSnapshotCoordinator) invalidateDaemon(daemonID string) uint64 {
 	epoch := c.cache.invalidateDaemon(daemonID)
-	c.enrichmentCache.invalidateDaemon(daemonID)
+	c.enrichmentCache.invalidateDaemon(daemonID, epoch)
 	return epoch
 }
 
@@ -142,7 +143,7 @@ func (c *kataSnapshotCoordinator) loadAuthority(
 			return kataCoordinatedAuthority{}, problem
 		}
 		fingerprint := kataDaemonTargetFingerprint(daemon)
-		epoch := c.cache.observeDaemonFingerprint(daemon.ID, fingerprint)
+		epoch := c.observeDaemonFingerprint(daemon.ID, fingerprint)
 		key := kataSnapshotKey{
 			DaemonID:          daemon.ID,
 			DaemonFingerprint: fingerprint,
@@ -156,7 +157,7 @@ func (c *kataSnapshotCoordinator) loadAuthority(
 				return kataCoordinatedAuthority{}, err
 			}
 			if !matches {
-				c.cache.invalidateDaemonIfEpoch(daemon.ID, epoch)
+				c.invalidateDaemonIfEpoch(daemon.ID, epoch)
 				continue
 			}
 			if c.cache.daemonEpoch(daemon.ID) != epoch {
@@ -191,7 +192,7 @@ func (c *kataSnapshotCoordinator) loadAuthority(
 					return nil, currentProblem
 				}
 				currentFingerprint := kataDaemonTargetFingerprint(currentDaemon)
-				currentEpoch := c.cache.observeDaemonFingerprint(daemon.ID, currentFingerprint)
+				currentEpoch := c.observeDaemonFingerprint(daemon.ID, currentFingerprint)
 				if currentFingerprint != key.DaemonFingerprint || currentEpoch != epoch {
 					return nil, errKataAuthorityStale
 				}
@@ -232,7 +233,7 @@ func (c *kataSnapshotCoordinator) loadAuthority(
 				return kataCoordinatedAuthority{}, err
 			}
 			if !matches {
-				c.cache.invalidateDaemonIfEpoch(daemon.ID, epoch)
+				c.invalidateDaemonIfEpoch(daemon.ID, epoch)
 				continue
 			}
 			if c.cache.daemonEpoch(daemon.ID) != epoch {
@@ -260,8 +261,24 @@ func (c *kataSnapshotCoordinator) targetMatches(key kataSnapshotKey) (bool, erro
 		return false, problem
 	}
 	fingerprint := kataDaemonTargetFingerprint(daemon)
-	c.cache.observeDaemonFingerprint(daemon.ID, fingerprint)
+	c.observeDaemonFingerprint(daemon.ID, fingerprint)
 	return fingerprint == key.DaemonFingerprint, nil
+}
+
+func (c *kataSnapshotCoordinator) observeDaemonFingerprint(daemonID, fingerprint string) uint64 {
+	epoch, advanced := c.cache.observeDaemonFingerprint(daemonID, fingerprint)
+	if advanced {
+		c.enrichmentCache.invalidateDaemon(daemonID, epoch)
+	}
+	return epoch
+}
+
+func (c *kataSnapshotCoordinator) invalidateDaemonIfEpoch(daemonID string, expectedEpoch uint64) (uint64, bool) {
+	epoch, invalidated := c.cache.invalidateDaemonIfEpoch(daemonID, expectedEpoch)
+	if invalidated {
+		c.enrichmentCache.invalidateDaemon(daemonID, epoch)
+	}
+	return epoch, invalidated
 }
 
 func (c *kataSnapshotCoordinator) coordinated(

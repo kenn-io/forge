@@ -19,7 +19,9 @@ func TestKataSnapshotEnrichmentCacheSharesProjectEventsAcrossIssues(t *testing.T
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
-	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8)
+	var epoch atomic.Uint64
+	epoch.Store(3)
+	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8, func(string) uint64 { return epoch.Load() })
 	t.Cleanup(cache.close)
 	var loads atomic.Int64
 	key := kataProjectEventsCacheKey{DaemonID: "local", DaemonEpoch: 3, ProjectID: 7}
@@ -35,7 +37,9 @@ func TestKataSnapshotEnrichmentCacheSharesProjectEventsAcrossIssues(t *testing.T
 	assert.Equal(first, second)
 	assert.Equal(int64(1), loads.Load())
 
-	cache.invalidateDaemon("local")
+	epoch.Store(4)
+	cache.invalidateDaemon("local", 4)
+	key.DaemonEpoch = 4
 	_, err = cache.projectEvents(t.Context(), key, load)
 	require.NoError(err)
 	assert.Equal(int64(2), loads.Load())
@@ -45,7 +49,7 @@ func TestKataSnapshotEnrichmentCacheDoesNotTouchTTLOnHit(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
-	cache := newKataSnapshotEnrichmentCacheWithConfig(80*time.Millisecond, 8)
+	cache := newKataSnapshotEnrichmentCacheWithConfig(80*time.Millisecond, 8, func(string) uint64 { return 0 })
 	t.Cleanup(cache.close)
 	var loads atomic.Int64
 	key := kataProjectEventsCacheKey{DaemonID: "local", ProjectID: 7}
@@ -70,7 +74,7 @@ func TestKataSnapshotEnrichmentCacheBoundsEntriesWithoutTruncatingResults(t *tes
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
-	cache := newKataSnapshotEnrichmentCacheWithLimits(t.Context(), time.Minute, 1, 1<<20)
+	cache := newKataSnapshotEnrichmentCacheWithLimits(t.Context(), time.Minute, 1, 1<<20, func(string) uint64 { return 0 })
 	t.Cleanup(cache.close)
 	var loads atomic.Int64
 	load := func(eventID int64) func(context.Context) ([]katagenerated.EventEnvelope, error) {
@@ -102,7 +106,7 @@ func TestKataSnapshotEnrichmentCacheReturnsOversizedProjectEventsWithoutCaching(
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
-	cache := newKataSnapshotEnrichmentCacheWithLimits(t.Context(), time.Minute, 8, 64)
+	cache := newKataSnapshotEnrichmentCacheWithLimits(t.Context(), time.Minute, 8, 64, func(string) uint64 { return 0 })
 	t.Cleanup(cache.close)
 	var loads atomic.Int64
 	issueUID := strings.Repeat("issue", 40)
@@ -128,7 +132,7 @@ func TestKataSnapshotEnrichmentCacheSeparatesDetailAndGraphKeys(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
-	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8)
+	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8, func(string) uint64 { return 2 })
 	t.Cleanup(cache.close)
 	var detailLoads atomic.Int64
 	var graphLoads atomic.Int64
@@ -169,7 +173,7 @@ func TestKataSnapshotEnrichmentCacheCoalescesLoadsWithoutCallerCancellation(t *t
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
-	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8)
+	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8, func(string) uint64 { return 0 })
 	t.Cleanup(cache.close)
 	key := kataProjectEventsCacheKey{DaemonID: "local", ProjectID: 7}
 	started := make(chan struct{})
@@ -213,7 +217,7 @@ func TestKataSnapshotEnrichmentCacheDoesNotCacheErrors(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
-	cache := newKataSnapshotEnrichmentCache()
+	cache := newKataSnapshotEnrichmentCache(func(string) uint64 { return 0 })
 	t.Cleanup(cache.close)
 	var loads atomic.Int64
 	key := kataGraphCacheKey{DaemonID: "local", SourceUID: "issue-a", Depth: "full"}
@@ -237,7 +241,9 @@ func TestKataSnapshotEnrichmentCacheRejectsOldEpochAfterAdvancement(t *testing.T
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
-	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8)
+	var currentEpoch atomic.Uint64
+	currentEpoch.Store(3)
+	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8, func(string) uint64 { return currentEpoch.Load() })
 	t.Cleanup(cache.close)
 	oldKey := kataProjectEventsCacheKey{DaemonID: "local", DaemonEpoch: 3, ProjectID: 7}
 	newKey := kataProjectEventsCacheKey{DaemonID: "local", DaemonEpoch: 4, ProjectID: 7}
@@ -254,15 +260,17 @@ func TestKataSnapshotEnrichmentCacheRejectsOldEpochAfterAdvancement(t *testing.T
 
 	_, err := cache.projectEvents(t.Context(), oldKey, load(3))
 	require.NoError(err)
+	currentEpoch.Store(4)
+	cache.invalidateDaemon("local", 4)
 	_, err = cache.projectEvents(t.Context(), newKey, load(4))
 	require.NoError(err)
 	_, err = cache.projectEvents(t.Context(), oldKey, load(3))
-	require.NoError(err)
+	require.ErrorIs(err, errKataSnapshotEnrichmentStale)
 	_, err = cache.projectEvents(t.Context(), oldKey, load(3))
-	require.NoError(err)
+	require.ErrorIs(err, errKataSnapshotEnrichmentStale)
 
 	mu.Lock()
 	defer mu.Unlock()
 	assert.Equal(1, loads[4])
-	assert.Equal(3, loads[3], "old-epoch values may be returned but must not be accepted into the cache")
+	assert.Equal(1, loads[3], "old-epoch values must not load after authority advances")
 }

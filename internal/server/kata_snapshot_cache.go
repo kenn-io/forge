@@ -195,22 +195,22 @@ func (c *kataSnapshotCache) daemonEpoch(daemonID string) uint64 {
 	return c.daemonEpochs[daemonID]
 }
 
-func (c *kataSnapshotCache) observeDaemonFingerprint(daemonID, fingerprint string) uint64 {
+func (c *kataSnapshotCache) observeDaemonFingerprint(daemonID, fingerprint string) (uint64, bool) {
 	if c == nil {
-		return 0
+		return 0, false
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	observed, ok := c.daemonTargets[daemonID]
 	if !ok {
 		c.daemonTargets[daemonID] = fingerprint
-		return c.daemonEpochs[daemonID]
+		return c.daemonEpochs[daemonID], false
 	}
 	if observed == fingerprint {
-		return c.daemonEpochs[daemonID]
+		return c.daemonEpochs[daemonID], false
 	}
 	c.daemonTargets[daemonID] = fingerprint
-	return c.invalidateDaemonLocked(daemonID)
+	return c.invalidateDaemonLocked(daemonID), true
 }
 
 func (c *kataSnapshotCache) invalidateDaemon(daemonID string) uint64 {

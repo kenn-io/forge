@@ -113,7 +113,9 @@ func TestKataSnapshotFrontendReusesSelectedEnrichmentWithinDaemonEpoch(t *testin
 
 	daemon := kata.Daemon{ID: "primary", URL: "https://kata.example.test"}
 	authority := testKataSnapshotFrontendAuthority(daemon, 3, 7)
-	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8)
+	cache := newKataSnapshotEnrichmentCacheWithConfig(
+		time.Minute, 8, func(string) uint64 { return authority.InvalidationEpoch },
+	)
 	t.Cleanup(cache.close)
 	var detailCalls atomic.Int64
 	var eventCalls atomic.Int64

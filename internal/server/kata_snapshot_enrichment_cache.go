@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -20,6 +21,8 @@ const (
 	kataSnapshotEnrichmentCacheCapacity = 128
 	kataSnapshotEnrichmentCacheMaxBytes = uint64(16 << 20)
 )
+
+var errKataSnapshotEnrichmentStale = errors.New("kata enrichment invalidated while loading")
 
 type kataIssueDetailCacheKey struct {
 	DaemonID    string
@@ -63,7 +66,7 @@ type kataSnapshotEnrichmentCache struct {
 	detailKeysByDaemon  map[string]map[kataIssueDetailCacheKey]struct{}
 	eventKeysByDaemon   map[string]map[kataProjectEventsCacheKey]struct{}
 	graphKeysByDaemon   map[string]map[kataGraphCacheKey]struct{}
-	daemonEpochs        map[string]uint64
+	currentDaemonEpoch  func(string) uint64
 	maxBytes            uint64
 	cleanupEvery        time.Duration
 	stopEvictionWorkers []func()
@@ -74,26 +77,37 @@ type kataSnapshotEnrichmentCache struct {
 	closeOnce     sync.Once
 }
 
-func newKataSnapshotEnrichmentCache() *kataSnapshotEnrichmentCache {
+func newKataSnapshotEnrichmentCache(currentDaemonEpoch func(string) uint64) *kataSnapshotEnrichmentCache {
 	return newKataSnapshotEnrichmentCacheWithLimits(
 		context.Background(),
 		kataSnapshotEnrichmentCacheTTL,
 		kataSnapshotEnrichmentCacheCapacity,
 		kataSnapshotEnrichmentCacheMaxBytes,
+		currentDaemonEpoch,
 	)
 }
 
-func newKataSnapshotEnrichmentCacheWithRoot(root context.Context) *kataSnapshotEnrichmentCache {
+func newKataSnapshotEnrichmentCacheWithRoot(
+	root context.Context,
+	currentDaemonEpoch func(string) uint64,
+) *kataSnapshotEnrichmentCache {
 	return newKataSnapshotEnrichmentCacheWithLimits(
 		root,
 		kataSnapshotEnrichmentCacheTTL,
 		kataSnapshotEnrichmentCacheCapacity,
 		kataSnapshotEnrichmentCacheMaxBytes,
+		currentDaemonEpoch,
 	)
 }
 
-func newKataSnapshotEnrichmentCacheWithConfig(ttl time.Duration, capacity uint64) *kataSnapshotEnrichmentCache {
-	return newKataSnapshotEnrichmentCacheWithLimits(context.Background(), ttl, capacity, kataSnapshotEnrichmentCacheMaxBytes)
+func newKataSnapshotEnrichmentCacheWithConfig(
+	ttl time.Duration,
+	capacity uint64,
+	currentDaemonEpoch func(string) uint64,
+) *kataSnapshotEnrichmentCache {
+	return newKataSnapshotEnrichmentCacheWithLimits(
+		context.Background(), ttl, capacity, kataSnapshotEnrichmentCacheMaxBytes, currentDaemonEpoch,
+	)
 }
 
 func newKataSnapshotEnrichmentCacheWithLimits(
@@ -101,9 +115,13 @@ func newKataSnapshotEnrichmentCacheWithLimits(
 	ttl time.Duration,
 	capacity uint64,
 	maxBytes uint64,
+	currentDaemonEpoch func(string) uint64,
 ) *kataSnapshotEnrichmentCache {
 	if root == nil {
 		root = context.Background()
+	}
+	if currentDaemonEpoch == nil {
+		panic("kata enrichment cache requires an authoritative daemon epoch source")
 	}
 	cacheRoot, cancel := context.WithCancel(root)
 	details := ttlcache.New(
@@ -133,7 +151,7 @@ func newKataSnapshotEnrichmentCacheWithLimits(
 		detailKeysByDaemon:  make(map[string]map[kataIssueDetailCacheKey]struct{}),
 		eventKeysByDaemon:   make(map[string]map[kataProjectEventsCacheKey]struct{}),
 		graphKeysByDaemon:   make(map[string]map[kataGraphCacheKey]struct{}),
-		daemonEpochs:        make(map[string]uint64),
+		currentDaemonEpoch:  currentDaemonEpoch,
 		maxBytes:            maxBytes,
 		cleanupEvery:        ttl,
 		stopEvictionWorkers: make([]func(), 0, 3),
@@ -160,16 +178,18 @@ func (c *kataSnapshotEnrichmentCache) issueDetail(
 	if err := ctx.Err(); err != nil {
 		return kataCachedIssueDetail{}, err
 	}
-	if c.prepareEpoch(key.DaemonID, key.DaemonEpoch) {
-		if item := c.details.Get(key); item != nil {
-			return item.Value(), nil
-		}
+	if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
+		return kataCachedIssueDetail{}, errKataSnapshotEnrichmentStale
+	}
+	if item := c.details.Get(key); item != nil {
+		return item.Value(), nil
 	}
 	resultCh := c.detailGroup.DoChan(kataIssueDetailSingleflightKey(key), func() (any, error) {
-		if c.prepareEpoch(key.DaemonID, key.DaemonEpoch) {
-			if item := c.details.Get(key); item != nil {
-				return item.Value(), nil
-			}
+		if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
+			return nil, errKataSnapshotEnrichmentStale
+		}
+		if item := c.details.Get(key); item != nil {
+			return item.Value(), nil
 		}
 		if !c.beginLoad() {
 			return nil, context.Canceled
@@ -180,6 +200,9 @@ func (c *kataSnapshotEnrichmentCache) issueDetail(
 		value, err := load(loadCtx)
 		if err != nil {
 			return nil, err
+		}
+		if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
+			return nil, errKataSnapshotEnrichmentStale
 		}
 		c.storeDetail(key, value)
 		return value, nil
@@ -203,16 +226,18 @@ func (c *kataSnapshotEnrichmentCache) projectEvents(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if c.prepareEpoch(key.DaemonID, key.DaemonEpoch) {
-		if item := c.events.Get(key); item != nil {
-			return slices.Clone(item.Value()), nil
-		}
+	if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
+		return nil, errKataSnapshotEnrichmentStale
+	}
+	if item := c.events.Get(key); item != nil {
+		return slices.Clone(item.Value()), nil
 	}
 	resultCh := c.eventGroup.DoChan(kataProjectEventsSingleflightKey(key), func() (any, error) {
-		if c.prepareEpoch(key.DaemonID, key.DaemonEpoch) {
-			if item := c.events.Get(key); item != nil {
-				return slices.Clone(item.Value()), nil
-			}
+		if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
+			return nil, errKataSnapshotEnrichmentStale
+		}
+		if item := c.events.Get(key); item != nil {
+			return slices.Clone(item.Value()), nil
 		}
 		if !c.beginLoad() {
 			return nil, context.Canceled
@@ -223,6 +248,9 @@ func (c *kataSnapshotEnrichmentCache) projectEvents(
 		value, err := load(loadCtx)
 		if err != nil {
 			return nil, err
+		}
+		if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
+			return nil, errKataSnapshotEnrichmentStale
 		}
 		value = slices.Clone(value)
 		c.storeEvents(key, value)
@@ -247,16 +275,18 @@ func (c *kataSnapshotEnrichmentCache) graph(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if c.prepareEpoch(key.DaemonID, key.DaemonEpoch) {
-		if item := c.graphs.Get(key); item != nil {
-			return item.Value(), nil
-		}
+	if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
+		return nil, errKataSnapshotEnrichmentStale
+	}
+	if item := c.graphs.Get(key); item != nil {
+		return item.Value(), nil
 	}
 	resultCh := c.graphGroup.DoChan(kataGraphSingleflightKey(key), func() (any, error) {
-		if c.prepareEpoch(key.DaemonID, key.DaemonEpoch) {
-			if item := c.graphs.Get(key); item != nil {
-				return item.Value(), nil
-			}
+		if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
+			return nil, errKataSnapshotEnrichmentStale
+		}
+		if item := c.graphs.Get(key); item != nil {
+			return item.Value(), nil
 		}
 		if !c.beginLoad() {
 			return nil, context.Canceled
@@ -267,6 +297,9 @@ func (c *kataSnapshotEnrichmentCache) graph(
 		value, err := load(loadCtx)
 		if err != nil {
 			return nil, err
+		}
+		if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
+			return nil, errKataSnapshotEnrichmentStale
 		}
 		c.storeGraph(key, value)
 		return value, nil
@@ -282,46 +315,39 @@ func (c *kataSnapshotEnrichmentCache) graph(
 	}
 }
 
-func (c *kataSnapshotEnrichmentCache) prepareEpoch(daemonID string, epoch uint64) bool {
-	if c == nil {
-		return false
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	current, known := c.daemonEpochs[daemonID]
-	if known && epoch < current {
-		return false
-	}
-	if !known || epoch > current {
-		c.daemonEpochs[daemonID] = epoch
-		c.deleteDaemonLocked(daemonID)
-	}
-	return true
+func (c *kataSnapshotEnrichmentCache) acceptsEpoch(daemonID string, epoch uint64) bool {
+	return c != nil && c.currentDaemonEpoch(daemonID) == epoch
 }
 
-func (c *kataSnapshotEnrichmentCache) invalidateDaemon(daemonID string) {
+func (c *kataSnapshotEnrichmentCache) invalidateDaemon(daemonID string, authorityEpoch uint64) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
-	c.daemonEpochs[daemonID]++
-	c.deleteDaemonLocked(daemonID)
+	if !c.acceptsEpoch(daemonID, authorityEpoch) {
+		c.mu.Unlock()
+		return
+	}
+	c.deleteDaemonBeforeEpochLocked(daemonID, authorityEpoch)
 	c.mu.Unlock()
 }
 
-func (c *kataSnapshotEnrichmentCache) deleteDaemonLocked(daemonID string) {
+func (c *kataSnapshotEnrichmentCache) deleteDaemonBeforeEpochLocked(daemonID string, authorityEpoch uint64) {
 	for key := range c.detailKeysByDaemon[daemonID] {
-		c.details.Delete(key)
+		if key.DaemonEpoch < authorityEpoch {
+			c.details.Delete(key)
+		}
 	}
 	for key := range c.eventKeysByDaemon[daemonID] {
-		c.events.Delete(key)
+		if key.DaemonEpoch < authorityEpoch {
+			c.events.Delete(key)
+		}
 	}
 	for key := range c.graphKeysByDaemon[daemonID] {
-		c.graphs.Delete(key)
+		if key.DaemonEpoch < authorityEpoch {
+			c.graphs.Delete(key)
+		}
 	}
-	delete(c.detailKeysByDaemon, daemonID)
-	delete(c.eventKeysByDaemon, daemonID)
-	delete(c.graphKeysByDaemon, daemonID)
 }
 
 func (c *kataSnapshotEnrichmentCache) storeDetail(key kataIssueDetailCacheKey, value kataCachedIssueDetail) {
@@ -330,7 +356,7 @@ func (c *kataSnapshotEnrichmentCache) storeDetail(key kataIssueDetailCacheKey, v
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.daemonEpochs[key.DaemonID] != key.DaemonEpoch {
+	if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
 		return
 	}
 	keys := c.detailKeysByDaemon[key.DaemonID]
@@ -348,7 +374,7 @@ func (c *kataSnapshotEnrichmentCache) storeEvents(key kataProjectEventsCacheKey,
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.daemonEpochs[key.DaemonID] != key.DaemonEpoch {
+	if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
 		return
 	}
 	keys := c.eventKeysByDaemon[key.DaemonID]
@@ -366,7 +392,7 @@ func (c *kataSnapshotEnrichmentCache) storeGraph(key kataGraphCacheKey, value *k
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.daemonEpochs[key.DaemonID] != key.DaemonEpoch {
+	if !c.acceptsEpoch(key.DaemonID, key.DaemonEpoch) {
 		return
 	}
 	keys := c.graphKeysByDaemon[key.DaemonID]

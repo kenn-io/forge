@@ -17,9 +17,10 @@ func TestKataSnapshotCoordinatorInvalidatesAllEnrichmentReads(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	enrichmentCache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8)
+	authorityCache := newKataSnapshotCache()
+	enrichmentCache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8, authorityCache.daemonEpoch)
 	coordinator := newKataSnapshotCoordinator(t.Context(), kataSnapshotCoordinatorDeps{
-		cache:           newKataSnapshotCache(),
+		cache:           authorityCache,
 		enrichmentCache: enrichmentCache,
 		newServerInstanceID: func() string {
 			return "server-a"
@@ -63,6 +64,69 @@ func TestKataSnapshotCoordinatorInvalidatesAllEnrichmentReads(t *testing.T) {
 	require.Equal(int64(2), detailLoads.Load())
 	require.Equal(int64(2), eventLoads.Load())
 	require.Equal(int64(2), graphLoads.Load())
+}
+
+func TestKataSnapshotCoordinatorRejectsEnrichmentCompletedAfterTargetRotation(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	root, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	authorityCache := newKataSnapshotCache()
+	enrichmentCache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8, authorityCache.daemonEpoch)
+	var daemonURL atomic.Value
+	daemonURL.Store("http://target-a.example")
+	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
+		cache:           authorityCache,
+		enrichmentCache: enrichmentCache,
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+			return kata.Daemon{ID: "work", URL: daemonURL.Load().(string)}, nil
+		},
+		newLoader: func(_ context.Context, daemon kata.Daemon) (kataAuthoritySnapshotLoader, error) {
+			return kataAuthoritySnapshotLoaderFunc(func(context.Context, kataAuthorityRequest) (kataAuthoritySnapshot, error) {
+				return kataAuthoritySnapshot{Issues: []kataTaskSummary{{UID: daemon.URL}}}, nil
+			}), nil
+		},
+		newServerInstanceID: func() string { return "server-a" },
+	})
+	t.Cleanup(coordinator.close)
+
+	firstAuthority, err := coordinator.loadAuthority(t.Context(), "work", kataAuthorityRequest{Scope: "global", Authority: "open"})
+	require.NoError(err)
+	require.Equal(uint64(0), firstAuthority.InvalidationEpoch)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	oldErr := make(chan error, 1)
+	go func() {
+		_, loadErr := enrichmentCache.projectEvents(t.Context(), kataProjectEventsCacheKey{
+			DaemonID: "work", DaemonEpoch: firstAuthority.InvalidationEpoch, ProjectID: 7,
+		}, func(context.Context) ([]katagenerated.EventEnvelope, error) {
+			close(started)
+			<-release
+			return []katagenerated.EventEnvelope{testKataEvent(1, nil, time.Unix(1, 0))}, nil
+		})
+		oldErr <- loadErr
+	}()
+	<-started
+
+	daemonURL.Store("http://target-b.example")
+	rotatedAuthority, err := coordinator.loadAuthority(t.Context(), "work", kataAuthorityRequest{Scope: "global", Authority: "open"})
+	require.NoError(err)
+	require.Equal(uint64(1), rotatedAuthority.InvalidationEpoch)
+	close(release)
+	require.Error(<-oldErr, "an old-epoch load completed after rotation must not be accepted")
+
+	var freshLoads atomic.Int64
+	fresh, err := enrichmentCache.projectEvents(t.Context(), kataProjectEventsCacheKey{
+		DaemonID: "work", DaemonEpoch: rotatedAuthority.InvalidationEpoch, ProjectID: 7,
+	}, func(context.Context) ([]katagenerated.EventEnvelope, error) {
+		freshLoads.Add(1)
+		return []katagenerated.EventEnvelope{testKataEvent(2, nil, time.Unix(2, 0))}, nil
+	})
+	require.NoError(err)
+	require.Len(fresh, 1)
+	require.Equal(int64(2), fresh[0].EventID)
+	require.Equal(int64(1), freshLoads.Load())
 }
 
 func TestKataSnapshotCoordinatorCoalescesAndCachesAuthority(t *testing.T) {

@@ -109,7 +109,7 @@ describe("KataProjectMappingsSettings", () => {
 
     expect((screen.getByLabelText("Kata project project-kata daemon ID") as HTMLInputElement).value).toBe("work");
     expect((screen.getByLabelText("Kata project project-kata UID") as HTMLInputElement).value).toBe("project-kata");
-    expect(screen.getByRole("combobox", { name: /project-kata repository target/ }).textContent).toContain("Middleman");
+    expect(screen.getByRole("button", { name: /project-kata repository target/ }).textContent).toContain("Middleman");
   });
 
   it("saves a Kata mapping to a selected known Middleman project", async () => {
@@ -138,6 +138,17 @@ describe("KataProjectMappingsSettings", () => {
             capabilities: defaultProviderCapabilities,
           },
         },
+        {
+          display_name: "Agentsview",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "kenn-io",
+            name: "agentsview",
+            repo_path: "kenn-io/agentsview",
+            capabilities: defaultProviderCapabilities,
+          },
+        },
       ],
     });
     const onUpdate = vi.fn();
@@ -160,10 +171,14 @@ describe("KataProjectMappingsSettings", () => {
       target: { value: "project-kata" },
     });
 
-    await fireEvent.click(screen.getByRole("combobox", { name: /repository target/ }));
-    const option = screen.getByRole("option", { name: "Middleman · kenn-io/middleman" });
-    expect(option).toBeTruthy();
-    await fireEvent.click(option);
+    const pickerName = "Kata project project-kata repository target";
+    await fireEvent.click(screen.getByRole("button", { name: pickerName }));
+    const query = screen.getByRole("combobox", { name: pickerName });
+    await fireEvent.input(query, { target: { value: "middle" } });
+
+    expect(screen.getByRole("option", { name: "Middleman · kenn-io/middleman" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "Agentsview · kenn-io/agentsview" })).toBeNull();
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Middleman · kenn-io/middleman" }));
 
     await fireEvent.click(screen.getByRole("button", { name: "Save Kata mappings" }));
 
@@ -202,7 +217,7 @@ describe("KataProjectMappingsSettings", () => {
     render(KataProjectMappingsSettings, { props: { mappings: [], onUpdate: vi.fn() } });
     await fireEvent.click(await screen.findByRole("button", { name: "Add override" }));
 
-    expect(screen.getByRole("combobox", { name: /project-unmapped repository target/ }).textContent).toContain(
+    expect(screen.getByRole("button", { name: /project-unmapped repository target/ }).textContent).toContain(
       "Select a repository",
     );
     expect((screen.getByRole("button", { name: "Save Kata mappings" }) as HTMLButtonElement).disabled).toBe(true);

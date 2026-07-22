@@ -2,6 +2,7 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
+  import { Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { onMount, untrack } from "svelte";
   import { Button, Chip, SelectDropdown } from "@middleman/ui";
   import type { KataProjectRepoMapping } from "@middleman/ui/api/types";
@@ -84,8 +85,8 @@
       .sort((left, right) => left.label.localeCompare(right.label));
   });
   const repoOptionsByKey = $derived.by(() => new Map(repoOptions.map((option) => [option.key, option])));
-  const repoSelectOptions = $derived(
-    repoOptions.map((option) => ({ value: option.key, label: option.label })),
+  const repoTypeaheadOptions = $derived<TypeaheadOption[]>(
+    repoOptions.map((option) => ({ name: option.key, label: option.label })),
   );
   const pendingMappings = $derived(buildPendingMappings());
   const isDirty = $derived(
@@ -432,11 +433,15 @@
                   />
                 </td>
                 <td>
-                  <SelectDropdown
-                    title={`Kata project ${label} repository target`}
+                  <Typeahead
                     value={draft.repoKey}
-                    options={[{ value: "", label: "Select a repository" }, ...repoSelectOptions]}
-                    onchange={(value) => { draft.repoKey = value; }}
+                    options={repoTypeaheadOptions}
+                    fallbackLabel="Select a repository"
+                    placeholder={`Kata project ${label} repository target`}
+                    emptyLabel="No matching repositories"
+                    onselect={(value) => {
+                      draft.repoKey = value;
+                    }}
                     disabled={embedded || saving}
                   />
                 </td>
@@ -601,15 +606,12 @@
     min-width: 160px;
   }
 
-  .mapping-table :global(.kit-select-dropdown) {
+  .mapping-table :global(.kit-typeahead) {
     width: 100%;
     min-width: 0;
-  }
-
-  .mapping-table :global(.kit-select-dropdown__trigger) {
-    height: 30px;
-    font-size: var(--font-size-sm);
-    font-weight: 400;
+    max-width: none;
+    --typeahead-control-height: 30px;
+    --typeahead-control-font-size: var(--font-size-sm);
   }
 
   .daemon-col {

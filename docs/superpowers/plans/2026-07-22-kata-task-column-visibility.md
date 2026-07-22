@@ -6,7 +6,7 @@
 
 **Architecture:** A focused TypeScript helper owns the allowlisted column model and best-effort `localStorage` serialization. A small Svelte popover component owns checkbox interaction and focus-safe dismissal. `KataIssueList.svelte` owns the active visibility state, conditionally renders headers and cells, and derives wide and responsive grid templates from the same state.
 
-**Tech Stack:** Svelte 5 runes, TypeScript, `@kenn-io/kit-ui` popover utilities and Checkbox, Testing Library, Vite+ unit tests.
+**Tech Stack:** Svelte 5 runes, TypeScript, `@kenn-io/kit-ui` popover utilities and Checkbox, Testing Library, Vite+ unit/browser tests, Playwright full-stack tests.
 
 ## Global Constraints
 
@@ -14,8 +14,10 @@
 - Updated, Priority, Due, Owner, and Tags are independently hideable.
 - One browser-local preference applies across every Kata view, project scope, and daemon.
 - Enabled columns may still auto-hide at the existing pane-width breakpoints; disabled columns never appear.
-- Sorting, row selection, tree expansion, task detail behavior, and backend contracts remain unchanged.
+- Hiding the active Updated, Priority, or Owner sort resets sorting to Title ascending; other sorting, row selection, tree expansion, task detail behavior, and backend contracts remain unchanged.
 - Storage failures are non-fatal and malformed values fall back to all optional columns visible.
+- Compact panes keep header actions on one line by visually hiding action labels while retaining icons, titles, and accessible names.
+- Browser-tab synchronization is out of scope.
 - Use Bun and Vite+ tooling. Never use npm.
 - Run the Svelte autofixer on every changed `.svelte` file before completion.
 
@@ -28,6 +30,8 @@
 - Create `frontend/src/lib/components/kata/KataColumnPicker.svelte`: trigger, checkbox popover, Show all action, dismissal, and focus restoration.
 - Modify `frontend/src/lib/components/kata/KataIssueList.svelte`: state ownership, conditional cells, responsive grid tracks, and header composition.
 - Modify `frontend/src/lib/components/kata/KataIssueList.test.ts`: user-visible toggle, restore, reset, fixed-column, and storage-failure coverage.
+- Modify `frontend/src/lib/components/kata/KataIssueList.browser.svelte.ts`: keyboard/focus semantics in a real browser.
+- Modify `frontend/tests/e2e-full/kata.spec.ts`: floating placement and responsive grid geometry against the seeded backend.
 
 ### Task 1: Define and test the persisted column model
 
@@ -345,6 +349,25 @@ it("closes the column picker with Escape and restores trigger focus", async () =
   expect(screen.queryByRole("checkbox", { name: "Updated" })).toBeNull();
   expect(document.activeElement).toBe(trigger);
 });
+
+it("resets an invisible active sort to Title ascending", async () => {
+  render(KataIssueList, {
+    props: { currentView, selectedIssueUID: null, loading: false, onSelect: () => {} },
+  });
+
+  await fireEvent.click(screen.getByRole("button", { name: "Sort by Priority" }));
+  expect(screen.getByRole("button", { name: "Sort by Priority, currently ascending" })).toHaveAttribute("aria-pressed", "true");
+
+  await fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+  await fireEvent.click(screen.getByRole("checkbox", { name: "Priority" }));
+
+  expect(screen.queryByRole("button", { name: /Sort by Priority/ })).toBeNull();
+  expect(screen.getByRole("button", { name: "Sort by Title, currently ascending" })).toHaveAttribute("aria-pressed", "true");
+  expect(JSON.parse(localStorage.getItem("middleman:kata:issue-sort/v1")!)).toEqual({
+    key: "title",
+    direction: "asc",
+  });
+});
 ```
 
 - [ ] **Step 2: Run the Kata issue-list test and verify red**
@@ -419,9 +442,16 @@ Create `KataColumnPicker.svelte` using:
 </script>
 
 <div class="column-picker">
-  <button bind:this={trigger} type="button" aria-expanded={open} onclick={() => void toggle()}>
+  <button
+    bind:this={trigger}
+    type="button"
+    aria-label="Columns"
+    title="Choose visible columns"
+    aria-expanded={open}
+    onclick={() => void toggle()}
+  >
     <Columns3Icon size={13} strokeWidth={2} aria-hidden="true" />
-    <span>Columns</span>
+    <span class="action-label">Columns</span>
   </button>
   {#if open}
     <div bind:this={panel} class="column-picker__panel kit-popover-card" style={panelStyle}>
@@ -472,10 +502,15 @@ Create `KataColumnPicker.svelte` using:
   }
 
   .column-picker__panel {
+    position: fixed;
+    z-index: var(--z-popover);
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
     min-width: 180px;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
     padding: var(--space-5);
   }
 
@@ -519,12 +554,22 @@ In `KataIssueList.svelte`:
 4. Add a `.header-actions` wrapper that always renders `KataColumnPicker`; keep `.tree-actions` conditional inside it.
 5. Wrap each optional header and matching row cell in `{#if columnVisibility.<id>}` blocks. Leave ID and Title unconditional.
 
-Use these state transitions:
+Use these state transitions so an optional sort cannot remain active after its control disappears:
 
 ```ts
 let columnVisibility = $state(loadKataTaskColumnVisibility());
 
+function optionalColumnForSort(key: KataTaskSortKey): KataOptionalTaskColumn | null {
+  if (key === "updated" || key === "priority" || key === "owner") return key;
+  return null;
+}
+
 function setColumnVisibility(next: KataTaskColumnVisibility): void {
+  const activeSortColumn = optionalColumnForSort(sort.key);
+  if (activeSortColumn && !next[activeSortColumn]) {
+    sort = { key: "title", direction: "asc" };
+    persistSort(sort);
+  }
   columnVisibility = next;
   persistKataTaskColumnVisibility(next);
 }
@@ -548,21 +593,25 @@ Replace the conditional top-right action block with this composition:
       <button
         class="tree-action"
         type="button"
+        aria-label={bulkExpanding ? "Expanding tasks" : "Expand all tasks"}
+        title={bulkExpanding ? "Expanding tasks" : "Expand all tasks"}
         disabled={bulkExpanding || allKnownExpandableRowsExpanded}
         aria-busy={bulkExpanding ? "true" : undefined}
         onclick={() => void expandAllVisible()}
       >
         <ListChevronsUpDownIcon size={13} strokeWidth={2} />
-        <span>{bulkExpanding ? "Expanding" : "Expand all"}</span>
+        <span class="action-label">{bulkExpanding ? "Expanding" : "Expand all"}</span>
       </button>
       <button
         class="tree-action"
         type="button"
+        aria-label="Collapse all tasks"
+        title="Collapse all tasks"
         disabled={!hasAnyExpandedRows}
         onclick={collapseAllVisible}
       >
         <ListChevronsDownUpIcon size={13} strokeWidth={2} />
-        <span>Collapse all</span>
+        <span class="action-label">Collapse all</span>
       </button>
     </div>
   {/if}
@@ -651,6 +700,7 @@ Publish the four strings on `.table` with Svelte style directives, set `--table-
   align-items: center;
   gap: var(--space-3);
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .table {
@@ -663,6 +713,15 @@ Publish the four strings on `.table` with Svelte style directives, set `--table-
 
 @container list (max-width: 680px) {
   .table { --table-cols: var(--table-cols-compact); }
+  .header-actions :global(.action-label) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
 }
 
 @container list (max-width: 520px) {
@@ -675,8 +734,9 @@ Publish the four strings on `.table` with Svelte style directives, set `--table-
 Run from the repository root:
 
 ```bash
-cd frontend && ../node_modules/.bin/vp exec -- svelte-mcp svelte-autofixer src/lib/components/kata/KataColumnPicker.svelte
-cd frontend && ../node_modules/.bin/vp exec -- svelte-mcp svelte-autofixer src/lib/components/kata/KataIssueList.svelte
+cd frontend
+../node_modules/.bin/vp exec -- svelte-mcp svelte-autofixer src/lib/components/kata/KataColumnPicker.svelte
+../node_modules/.bin/vp exec -- svelte-mcp svelte-autofixer src/lib/components/kata/KataIssueList.svelte
 ```
 
 Expected: no unresolved Svelte findings. Apply any safe suggested corrections with `apply_patch`, then rerun until clean.
@@ -693,7 +753,115 @@ node ../node_modules/vite-plus/bin/vp test run --project unit \
 
 Expected: PASS for both files with no warnings.
 
-- [ ] **Step 7: Commit the complete user-visible interaction**
+- [ ] **Step 7: Extend real-browser keyboard and focus coverage**
+
+Add this case to `KataIssueList.browser.svelte.ts`:
+
+```ts
+it("opens the column picker from the keyboard and restores focus on Escape", async () => {
+  await page.viewport(980, 620);
+  const issue = task();
+  render(KataIssueList, {
+    props: {
+      currentView: currentView(issue),
+      selectedIssueUID: issue.uid,
+      loading: false,
+      onSelect: () => {},
+    },
+  });
+
+  const trigger = page.getByRole("button", { name: "Columns" });
+  await trigger.focus();
+  await trigger.press("Enter");
+  await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
+  const updated = page.getByRole("checkbox", { name: "Updated" });
+  await expect.element(updated).toBeVisible();
+
+  await updated.press("Escape");
+
+  await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect.element(trigger).toHaveFocus();
+});
+```
+
+Run from `frontend/`:
+
+```bash
+node ../node_modules/vite-plus/bin/vp test run --project browser src/lib/components/kata/KataIssueList.browser.svelte.ts
+```
+
+Expected: PASS in Chromium.
+
+- [ ] **Step 8: Add full-stack Playwright geometry coverage**
+
+Add a focused test near the existing Kata task-list sorting tests in `frontend/tests/e2e-full/kata.spec.ts`. Use `startKataBackend`, `configureKataHome`, and `startIsolatedE2EServer`, then assert this sequence:
+
+```ts
+test("kata task columns float and preserve responsive grid alignment", async ({ page }) => {
+  const backend = await startKataBackend();
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata`);
+    await expectKataDaemonSwitcherReady(page);
+    const list = page.locator(".issue-list");
+    await list.evaluate((element) => {
+      element.style.width = "940px";
+      element.style.flex = "none";
+    });
+
+    const titleHeader = page.locator(".table-header .col-title");
+    const titleRow = page.locator(".issue-row .col-title").first();
+    const titleWidthBefore = await titleRow.evaluate((element) => element.getBoundingClientRect().width);
+    expect(Math.abs((await titleHeader.boundingBox())!.x - (await titleRow.boundingBox())!.x)).toBeLessThanOrEqual(1);
+
+    await page.getByRole("button", { name: "Columns" }).click();
+    const panel = page.locator(".column-picker__panel");
+    await expect(panel).toBeVisible();
+    expect(await panel.evaluate((element) => getComputedStyle(element).position)).toBe("fixed");
+    expect(Number(await panel.evaluate((element) => getComputedStyle(element).zIndex))).toBeGreaterThan(0);
+    await page.getByRole("checkbox", { name: "Tags" }).click();
+    await expect(page.locator(".table-header .col-tags")).toHaveCount(0);
+    await expect(page.locator(".issue-row .col-tags")).toHaveCount(0);
+    const titleWidthAfter = await titleRow.evaluate((element) => element.getBoundingClientRect().width);
+    expect(titleWidthAfter).toBeGreaterThan(titleWidthBefore);
+
+    await list.evaluate((element) => {
+      element.style.width = "640px";
+    });
+    await expect(page.locator(".table-header .col-owner")).toBeHidden();
+    await list.evaluate((element) => {
+      element.style.width = "940px";
+    });
+    await expect(page.locator(".table-header .col-owner")).toBeVisible();
+    await expect(page.locator(".table-header .col-tags")).toHaveCount(0);
+
+    for (const column of ["id", "title", "updated", "priority", "due", "owner"]) {
+      const headerBox = await page.locator(`.table-header .col-${column}`).boundingBox();
+      const rowBox = await page.locator(`.issue-row .col-${column}`).first().boundingBox();
+      expect(headerBox).not.toBeNull();
+      expect(rowBox).not.toBeNull();
+      expect(Math.abs(headerBox!.x - rowBox!.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(headerBox!.width - rowBox!.width)).toBeLessThanOrEqual(1);
+    }
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+```
+
+Run from `frontend/`:
+
+```bash
+node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts --grep "kata task columns float"
+```
+
+Expected: PASS with output recorded in the normal e2e log file.
+
+- [ ] **Step 9: Commit the complete user-visible interaction**
 
 Invoke `context-sync --commit`, then invoke the mandatory commit skill and create a commit with subject:
 
@@ -701,7 +869,7 @@ Invoke `context-sync --commit`, then invoke the mandatory commit skill and creat
 feat: let maintainers hide Kata task columns
 ```
 
-Stage only the picker, issue-list component, issue-list tests, and any Task 1 files changed during integration.
+Stage only the picker, issue-list component, unit/browser tests, the focused Kata Playwright test, and any Task 1 files changed during integration.
 
 ### Task 3: Run final frontend verification
 
@@ -710,7 +878,7 @@ Stage only the picker, issue-list component, issue-list tests, and any Task 1 fi
 
 **Interfaces:**
 - Consumes: the complete Tasks 1 and 2 implementation.
-- Produces: evidence that the focused behavior and affected frontend suite pass without a Playwright-only boundary.
+- Produces: evidence that unit logic, real-browser focus behavior, responsive geometry, and the affected frontend checks pass.
 
 - [ ] **Step 1: Run the full unit suite**
 
@@ -722,7 +890,18 @@ node ../node_modules/vite-plus/bin/vp test run --project unit
 
 Expected: PASS. Investigate any failure before continuing.
 
-- [ ] **Step 2: Run frontend formatting, lint, kit, and Svelte checks**
+- [ ] **Step 2: Run the full affected browser suite**
+
+Run from `frontend/`:
+
+```bash
+node ../node_modules/vite-plus/bin/vp test run --project browser src/lib/components/kata/KataIssueList.browser.svelte.ts
+node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts --grep "kata task columns float"
+```
+
+Expected: both commands pass.
+
+- [ ] **Step 3: Run frontend formatting, lint, kit, and Svelte checks**
 
 Run from the repository root:
 
@@ -732,7 +911,7 @@ make frontend-check
 
 Expected: PASS for formatting, lint, `kit-ui-check`, and `svelte-check`.
 
-- [ ] **Step 3: Confirm the final diff and persistence scope**
+- [ ] **Step 4: Confirm the final diff and persistence scope**
 
 Run:
 
@@ -742,9 +921,9 @@ git diff --stat HEAD~2..HEAD
 git diff HEAD~2..HEAD -- frontend/src/lib/components/kata
 ```
 
-Expected: only the approved Kata column preference, picker, list integration, and tests are present. No API, backend, route, migration, or Playwright files change.
+Expected: only the approved Kata column preference, picker, list integration, unit/browser tests, and focused Kata Playwright coverage are present. No API, backend, route, or migration files change.
 
-- [ ] **Step 4: Apply any verification fixes as a new commit**
+- [ ] **Step 5: Apply any verification fixes as a new commit**
 
 If verification required edits, rerun the focused tests, full unit suite, Svelte autofixer for changed `.svelte` files, and `make frontend-check`. Then invoke `context-sync --commit` and the mandatory commit skill. Create a new commit rather than amending, with a subject that states the corrected user-visible outcome.
 

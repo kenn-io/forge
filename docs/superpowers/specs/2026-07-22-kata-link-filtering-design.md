@@ -47,7 +47,7 @@ Use any matching peer already present in the current view immediately. Resolve r
 
 Until a peer resolves, retain its row as pending rather than guessing its status. Pending rows do not count as an Open or Closed match. The section should keep a quiet loading indication while unresolved peers remain so the user can distinguish incomplete hydration from an empty filter result.
 
-If a peer read fails, keep the existing short ID navigation affordance and mark its state unavailable. Failed peers remain visible only when the task-state filter includes both states, since their status cannot be classified safely. A later selected-task refresh retries hydration through the existing component lifecycle.
+If a peer read fails, keep the existing short ID navigation affordance and mark its state unavailable. Failed peers remain visible only when the task-state filter includes both states, since their status cannot be classified safely. When the selected detail is refreshed, even if its UID, revision, and link signature are unchanged, clear only failed peer entries and retry them. Successful peer summaries remain cached so a refresh does not restart every link request.
 
 ## Accessibility
 
@@ -68,5 +68,7 @@ Add focused component tests that prove:
 - A filtered-empty state differs from a task with no links.
 - Off-view peer hydration supplies title and status without changing link navigation.
 - Failed or pending peer hydration follows the documented visibility behavior.
+- A transient peer-read failure recovers after a same-task selected-detail refresh.
+- Relationship selections survive task-to-task navigation, while a later top-level status change resets only the Open/Closed choices.
 
-This is a UI-owned behavior change. Component tests cover the filtering and presentation contract. Add or update one affected Kata browser workflow only if the popover interaction or shared overlay behavior cannot be proved reliably in jsdom; no backend or API-contract test is required.
+This is a UI-owned behavior change. Component and workspace tests cover filtering, hydration, and state lifetime. Add one focused Kata Playwright workflow for the browser-only popover placement and clipping contract; use the real seeded Kata backend rather than a handwritten frontend fixture. No API-contract test is required.

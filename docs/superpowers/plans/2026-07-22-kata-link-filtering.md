@@ -466,7 +466,12 @@ Create `frontend/src/lib/components/kata/KataLinkFilterMenu.svelte` with these e
   }
 
   .link-filter-panel {
+    position: fixed;
+    z-index: var(--z-popover);
     width: 220px;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
     padding: 10px;
     display: grid;
     gap: 10px;
@@ -534,6 +539,7 @@ Expected: commit succeeds without bypassing hooks.
 - Modify: `frontend/src/lib/components/kata/KataIssueDetail.test.ts:1-145`
 - Modify: `frontend/src/lib/features/kata/KataWorkspace.svelte:1-270,2720-2770`
 - Modify: `frontend/src/lib/features/kata/KataWorkspace.test.ts`
+- Modify: `frontend/tests/e2e-full/kata.spec.ts`
 
 **Interfaces:**
 - Consumes: `KataLinkFilters`, `applyKataLinkStatusScope`, `createKataLinkFilters`, `kataLinkMatchesFilters`, and `relationForKataLink` from Task 1; `KataLinkFilterMenu` from Task 2.
@@ -732,6 +738,38 @@ it("marks failed peer state as unavailable in a mixed-state view", async () => {
   await waitFor(() => expect(within(links).getByTitle("Task state unavailable")).toBeTruthy());
   expect(within(links).getByRole("button", { name: /missing state unavailable/ })).toBeTruthy();
 });
+
+it("retries failed peers when the same selected detail refreshes", async () => {
+  const selected = makeIssue();
+  selected.links = [taskLink(1, "issue-retry", "retry", "related")];
+  const api = makeAPI();
+  vi.mocked(api.issue)
+    .mockRejectedValueOnce(new Error("temporary"))
+    .mockResolvedValueOnce(makeIssue({ uid: "issue-retry", short_id: "retry", title: "Recovered peer" }));
+  const props = {
+    issue: selected,
+    events: [],
+    currentView: { groups: [] },
+    api,
+    activeDaemonId: "home",
+    linkFilters: createKataLinkFilters("all"),
+    onLinkFiltersChange: vi.fn(),
+    onAddComment: vi.fn(async () => true),
+    onEditIssue: vi.fn(async () => true),
+    onSelectIssue: vi.fn(),
+  };
+  const { rerender } = render(KataIssueDiscussion, { props });
+  const links = screen.getByRole("region", { name: "Links" });
+  await waitFor(() => expect(within(links).getByTitle("Task state unavailable")).toBeTruthy());
+
+  await rerender({
+    ...props,
+    issue: { ...selected, issue: { ...selected.issue } },
+  });
+
+  await waitFor(() => expect(within(links).getByRole("button", { name: /Recovered peer open/ })).toBeTruthy());
+  expect(api.issue).toHaveBeenCalledTimes(2);
+});
 ```
 
 - [ ] **Step 2: Run the discussion test and verify the new assertions fail for missing props and unfiltered rows**
@@ -762,10 +800,30 @@ onLinkFiltersChange: (next: KataLinkFilters) => void;
 let hydratedPeers = $state<Record<string, KataTaskSummary | null>>({});
 let peerHydrationSignature = $state("");
 let pendingPeerKeys = $state<ReadonlySet<string>>(new Set());
+let lastSelectedDetail: KataTaskDetail | null = null;
 ```
 
 4. Preserve the existing signature and generation guard, but store `detail.issue` on success and `null` on failure.
-5. Resolve current-view peers without an API call:
+5. Add a same-task refresh effect that drops only failed entries, causing the existing hydration effect to retry them while preserving successful peer summaries:
+
+```ts
+$effect(() => {
+  const current = issue;
+  if (
+    lastSelectedDetail !== null &&
+    current !== lastSelectedDetail &&
+    current.issue.uid === lastSelectedDetail.issue.uid
+  ) {
+    hydratedPeers = Object.fromEntries(
+      Object.entries(hydratedPeers).filter(([, peer]) => peer !== null),
+    );
+  }
+  lastSelectedDetail = current;
+});
+```
+
+This effect keys recovery on a new selected-detail object, not revision or link signature, because a refresh may replace the detail snapshot without changing either value.
+6. Resolve current-view peers without an API call:
 
 ```ts
 function currentViewPeer(uid: string): KataTaskSummary | undefined {
@@ -786,7 +844,7 @@ function peerHydrationFailed(link: KataTaskLink): boolean {
 }
 ```
 
-6. Derive visible rows and loading state:
+7. Derive visible rows and loading state:
 
 ```ts
 const visibleLinks = $derived(
@@ -999,18 +1057,79 @@ From the repository root:
 
 Expected: no unresolved Svelte correctness findings.
 
-- [ ] **Step 10: Run the full affected frontend verification**
+- [ ] **Step 10: Extend the seeded Kata Playwright link workflow**
+
+Extend `test("kata task links render, navigate, and add related links through the configured external daemon", ...)` in `frontend/tests/e2e-full/kata.spec.ts`:
+
+1. Add a closed peer:
+
+```ts
+const closedPeer = {
+  ...issueSummary({
+    id: 34,
+    uid: "issue-closed-link",
+    project_id: 1,
+    project_uid: "project-finance",
+    project_name: "Finances",
+    short_id: "closed-link",
+    qualified_id: "Finances#closed-link",
+    title: "Completed linked task",
+    body: "Closed peer body.",
+    labels: ["home"],
+  }),
+  status: "closed" as const,
+  closed_reason: "done" as const,
+  closed_at: now,
+};
+```
+
+2. Include `closedPeer` in the backend issues and add a Related link from `issues[0]!` to it.
+3. After opening `issue-rent`, add these assertions before navigating through the existing parent link:
+
+```ts
+await expect(links).toContainText("Quarterly budget review with a long title");
+await expect(links).not.toContainText("Completed linked task");
+await expect(links).toContainText("1 / 2");
+
+await links.getByRole("button", { name: "Filter links" }).click();
+const filterPanel = page.locator(".link-filter-panel");
+await expect(filterPanel).toBeVisible();
+expect(await filterPanel.evaluate((element) => getComputedStyle(element).position)).toBe("fixed");
+expect(Number(await filterPanel.evaluate((element) => getComputedStyle(element).zIndex))).toBeGreaterThan(0);
+await filterPanel.getByRole("checkbox", { name: "Closed" }).click();
+
+await expect(links).toContainText("Completed linked task");
+await expect(links.getByText("Open", { exact: true })).toBeVisible();
+await expect(links.getByText("Closed", { exact: true })).toBeVisible();
+
+await filterPanel.getByRole("checkbox", { name: "Parent" }).click();
+await expect(links).not.toContainText("Quarterly budget review with a long title");
+await expect(links).toContainText("1 / 2");
+await page.keyboard.press("Escape");
+```
+
+Run from `frontend/`:
+
+```bash
+node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts --grep "kata task links render"
+```
+
+Expected: PASS against the real middleman server and seeded external Kata daemon.
+
+- [ ] **Step 11: Run the full affected frontend verification**
 
 From the repository root:
 
 ```bash
 ./node_modules/.bin/vp test run --project unit
 ./node_modules/.bin/vp run frontend-check
+cd frontend
+node ./scripts/run-e2e-to-file.ts tests/e2e-full/kata.spec.ts --grep "kata task links render"
 ```
 
-Expected: both commands exit 0. Do not add Playwright solely to repeat checkbox visibility; the component and workspace tests own this workflow, and no browser-only geometry is changing beyond the already-shared floating-position utilities.
+Expected: all commands exit 0. The component and workspace tests own filtering and state lifetime; the focused Playwright scenario owns fixed positioning, stacking, and clipping in the real split-pane layout.
 
-- [ ] **Step 11: Review the final diff and commit the integrated behavior**
+- [ ] **Step 12: Review the final diff and commit the integrated behavior**
 
 Review:
 
@@ -1029,7 +1148,8 @@ git add \
   frontend/src/lib/components/kata/KataIssueDetail.svelte \
   frontend/src/lib/components/kata/KataIssueDetail.test.ts \
   frontend/src/lib/features/kata/KataWorkspace.svelte \
-  frontend/src/lib/features/kata/KataWorkspace.test.ts
+  frontend/src/lib/features/kata/KataWorkspace.test.ts \
+  frontend/tests/e2e-full/kata.spec.ts
 git commit -m "feat: filter Kata links by task state and relation" \
   -m "Kata detail links should follow the maintainer's active task scope while still allowing local relationship filtering. Mixed-state results retain explicit state labels without repeating redundant chips in single-state views."
 ```

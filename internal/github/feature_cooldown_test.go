@@ -132,6 +132,62 @@ func TestExpiredMergeRequestCooldownAllowsOneConcurrentBackgroundProbe(t *testin
 	assert.Equal(int32(1), providerCalls.Load())
 }
 
+func TestSuccessfulProbeDoesNotClearConcurrentDisabledRenewal(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	disabledErr := platform.RepositoryFeatureDisabled(
+		platform.KindGitHub, "github.com", platform.RepositoryFeatureIssues,
+		errors.New("repository issues disabled"),
+	)
+	backgroundProbeStarted := make(chan struct{})
+	releaseBackgroundProbe := make(chan struct{})
+	var issueListCalls atomic.Int32
+	client := &partialFailureMock{listOpenPRsErr: notModifiedErr()}
+	client.listOpenIssuesFn = func(ctx context.Context, _, _ string) ([]*gh.Issue, error) {
+		call := issueListCalls.Add(1)
+		if repositoryFeatureCooldownBypassed(ctx) {
+			return nil, disabledErr
+		}
+		if call == 1 {
+			close(backgroundProbeStarted)
+			<-releaseBackgroundProbe
+		}
+		return nil, nil
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	syncer.now = func() time.Time { return now }
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		repo, platform.RepositoryFeatureIssues, disabledErr,
+	))
+	now = now.Add(repositoryFeatureProbeInterval)
+
+	backgroundDone := make(chan struct{})
+	go func() {
+		defer close(backgroundDone)
+		syncer.RunOnce(t.Context())
+	}()
+	<-backgroundProbeStarted
+	require.NoError(syncer.SyncRepoOnProvider(
+		t.Context(), platform.KindGitHub, "github.com", "acme", "widget",
+	))
+	close(releaseBackgroundProbe)
+	<-backgroundDone
+
+	syncer.RunOnce(t.Context())
+	assert.Equal(int32(2), issueListCalls.Load(),
+		"the concurrent disabled result must keep the renewed cooldown")
+}
+
 func TestDisabledIssueCooldownSkipsDetailDrain(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

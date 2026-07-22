@@ -22,18 +22,22 @@ type repositoryFeatureCooldownKey struct {
 type repositoryFeatureCooldowns struct {
 	mu              sync.Mutex
 	states          map[repositoryFeatureCooldownKey]repositoryFeatureCooldownState
+	nextGeneration  uint64
 	nextReservation uint64
 }
 
 type repositoryFeatureCooldownState struct {
 	nextProbe   time.Time
+	generation  uint64
 	reservation uint64
 }
 
 type repositoryFeatureProbe struct {
 	cooldowns   *repositoryFeatureCooldowns
 	key         repositoryFeatureCooldownKey
+	generation  uint64
 	reservation uint64
+	bypass      bool
 }
 
 type repositoryFeatureCooldownBypassKey struct{}
@@ -61,13 +65,22 @@ func (c *repositoryFeatureCooldowns) beginProbe(
 	repo RepoRef,
 	feature string,
 	now time.Time,
+	bypass bool,
 ) (repositoryFeatureProbe, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	key := repositoryFeatureKey(repo, feature)
 	state, ok := c.states[key]
+	if bypass {
+		return repositoryFeatureProbe{
+			cooldowns:  c,
+			key:        key,
+			generation: state.generation,
+			bypass:     true,
+		}, true
+	}
 	if !ok {
-		return repositoryFeatureProbe{}, true
+		return repositoryFeatureProbe{cooldowns: c, key: key}, true
 	}
 	if state.reservation != 0 || state.nextProbe.After(now) {
 		return repositoryFeatureProbe{}, false
@@ -78,6 +91,7 @@ func (c *repositoryFeatureCooldowns) beginProbe(
 	return repositoryFeatureProbe{
 		cooldowns:   c,
 		key:         key,
+		generation:  state.generation,
 		reservation: state.reservation,
 	}, true
 }
@@ -88,27 +102,39 @@ func (c *repositoryFeatureCooldowns) deferUntil(repo RepoRef, feature string, ne
 	if c.states == nil {
 		c.states = make(map[repositoryFeatureCooldownKey]repositoryFeatureCooldownState)
 	}
+	c.nextGeneration++
 	c.states[repositoryFeatureKey(repo, feature)] = repositoryFeatureCooldownState{
-		nextProbe: nextProbe,
+		nextProbe:  nextProbe,
+		generation: c.nextGeneration,
 	}
 }
 
-func (c *repositoryFeatureCooldowns) clear(repo RepoRef, feature string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.states, repositoryFeatureKey(repo, feature))
+func (probe repositoryFeatureProbe) release() {
+	if probe.cooldowns == nil || probe.reservation == 0 {
+		return
+	}
+	probe.cooldowns.mu.Lock()
+	defer probe.cooldowns.mu.Unlock()
+	state, ok := probe.cooldowns.states[probe.key]
+	if ok && state.generation == probe.generation && state.reservation == probe.reservation {
+		delete(probe.cooldowns.states, probe.key)
+	}
 }
 
-func (probe repositoryFeatureProbe) release() {
+func (probe repositoryFeatureProbe) clear() {
 	if probe.cooldowns == nil {
 		return
 	}
 	probe.cooldowns.mu.Lock()
 	defer probe.cooldowns.mu.Unlock()
 	state, ok := probe.cooldowns.states[probe.key]
-	if ok && state.reservation == probe.reservation {
-		delete(probe.cooldowns.states, probe.key)
+	if !ok || state.generation != probe.generation {
+		return
 	}
+	if !probe.bypass && probe.reservation != 0 && state.reservation != probe.reservation {
+		return
+	}
+	delete(probe.cooldowns.states, probe.key)
 }
 
 func (s *Syncer) beginRepositoryFeatureProbe(
@@ -116,10 +142,9 @@ func (s *Syncer) beginRepositoryFeatureProbe(
 	repo RepoRef,
 	feature string,
 ) (repositoryFeatureProbe, bool) {
-	if repositoryFeatureCooldownBypassed(ctx) {
-		return repositoryFeatureProbe{}, true
-	}
-	return s.featureCooldowns.beginProbe(repo, feature, s.now().UTC())
+	return s.featureCooldowns.beginProbe(
+		repo, feature, s.now().UTC(), repositoryFeatureCooldownBypassed(ctx),
+	)
 }
 
 func (s *Syncer) recordRepositoryFeatureDisabled(repo RepoRef, feature string, err error) bool {
@@ -146,8 +171,19 @@ func (s *Syncer) recordGitHubRepositoryFeatureDisabled(
 	feature string,
 	err error,
 ) bool {
-	if classified := githubRepositoryFeatureDisabled(repoHost(repo), feature, err); classified != nil {
-		err = classified
+	classified := repositoryFeatureDisabledError(repo, feature, err)
+	if classified == nil {
+		return false
 	}
-	return s.recordRepositoryFeatureDisabled(repo, feature, err)
+	return s.recordRepositoryFeatureDisabled(repo, feature, classified)
+}
+
+func repositoryFeatureDisabledError(repo RepoRef, feature string, err error) error {
+	if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
+		return err
+	}
+	if repoPlatform(repo) != platform.KindGitHub {
+		return nil
+	}
+	return githubRepositoryFeatureDisabled(repoHost(repo), feature, err)
 }

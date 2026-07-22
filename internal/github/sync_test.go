@@ -11274,6 +11274,43 @@ func TestDisabledIssuesStopClosureDetectionAfterFirstLookup(t *testing.T) {
 	assert.False(failed)
 }
 
+func TestSyncIssuesFromListStopsAfterWrappedRawDisabledResponse(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "owner", Name: "repo",
+	}
+	repoID, err := database.UpsertRepo(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)),
+	)
+	require.NoError(err)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	issues := []*gh.Issue{buildOpenIssue(1, now), buildOpenIssue(2, now)}
+	rawDisabledErr := fmt.Errorf("list issue comments: %w", &gh.ErrorResponse{
+		Response: &http.Response{StatusCode: http.StatusGone},
+		Message:  "Issues are disabled for this repo",
+	})
+	var commentCalls atomic.Int32
+	client := &mockClient{
+		comments: []*gh.IssueComment{},
+		listIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+			commentCalls.Add(1)
+			return nil, rawDisabledErr
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+
+	err = syncer.syncIssuesFromList(ctx, client, repo, repoID, issues, false)
+	require.ErrorIs(err, platform.ErrRepositoryFeatureDisabled)
+	assert.Equal(int32(1), commentCalls.Load())
+}
+
 // TestSyncerMRListFailureMarksRepoFailed verifies that when the
 // PR list fails, the MR path is marked failed, and the next cycle
 // invalidates the ETag and retries. Also verifies issue path is NOT

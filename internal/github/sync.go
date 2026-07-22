@@ -5241,11 +5241,11 @@ func (s *Syncer) indexSyncRepo(
 	}
 	if attemptedScope&failIssues != 0 &&
 		failedScope&failIssues == 0 && disabledScope&failIssues == 0 {
-		s.featureCooldowns.clear(repo, platform.RepositoryFeatureIssues)
+		issueProbe.clear()
 	}
 	if attemptedScope&failMR != 0 &&
 		failedScope&failMR == 0 && disabledScope&failMR == 0 {
-		s.featureCooldowns.clear(repo, platform.RepositoryFeatureMergeRequests)
+		mrProbe.clear()
 	}
 
 	if failedScope != 0 {
@@ -7801,8 +7801,10 @@ func (s *Syncer) syncIssuesFromList(
 	progress := newIssueSyncProgressLogger(repo, "rest", len(ghIssues))
 	for i, ghIssue := range ghIssues {
 		if err := s.syncOpenIssue(ctx, client, repo, repoID, ghIssue, forceRefresh); err != nil {
-			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
-				return err
+			if disabledErr := repositoryFeatureDisabledError(
+				repo, platform.RepositoryFeatureIssues, err,
+			); disabledErr != nil {
+				return disabledErr
 			}
 			slog.Error("sync issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -7824,8 +7826,10 @@ func (s *Syncer) syncIssuesFromList(
 		if err := s.fetchAndUpdateClosedIssue(
 			ctx, repo, repoID, number,
 		); err != nil {
-			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
-				return err
+			if disabledErr := repositoryFeatureDisabledError(
+				repo, platform.RepositoryFeatureIssues, err,
+			); disabledErr != nil {
+				return disabledErr
 			}
 			slog.Error("update closed issue failed",
 				"repo", repo.Owner+"/"+repo.Name,

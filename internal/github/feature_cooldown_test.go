@@ -76,6 +76,52 @@ func TestDisabledIssueScopeUsesDailyBackgroundProbeAndManualBypass(t *testing.T)
 	assert.Equal(int32(5), issueListCalls.Load(), "successful manual probe must clear the cooldown")
 }
 
+func TestExplicitTransientIssueProbeClearsCooldownAndPreservesRetryScope(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	var issueListCalls atomic.Int32
+	client := &partialFailureMock{listOpenPRsErr: notModifiedErr()}
+	client.listOpenIssuesFn = func(context.Context, string, string) ([]*gh.Issue, error) {
+		if issueListCalls.Add(1) == 1 {
+			return nil, errors.New("transient issue list failure")
+		}
+		return nil, nil
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	syncer.now = func() time.Time { return now }
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		repo,
+		platform.RepositoryFeatureIssues,
+		platform.RepositoryFeatureDisabled(
+			platform.KindGitHub,
+			"github.com",
+			platform.RepositoryFeatureIssues,
+			errors.New("repository issues disabled"),
+		),
+	))
+
+	require.Error(syncer.SyncRepoOnProvider(
+		t.Context(), platform.KindGitHub, "github.com", "acme", "widget",
+	))
+	failed, ok := syncer.failedRepos.Load(repoFailKey(repo))
+	require.True(ok)
+	assert.Equal(failIssues, failed.(failScope))
+
+	syncer.RunOnce(t.Context())
+	assert.Equal(int32(2), issueListCalls.Load())
+	_, ok = syncer.failedRepos.Load(repoFailKey(repo))
+	assert.False(ok)
+}
+
 func TestDisabledIssueAfterItemFailurePreservesRetryScope(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -75,8 +75,9 @@ failure recovery.
 Repository-disabled issue and merge-request scopes use a 24-hour in-memory
 background probe gate. Expiry admits one reserved background probe across all
 lanes; a disabled result renews the deadline, while any other result releases it.
-Explicit sync bypasses only cooldown generations present when the run begins; newer
-disabled results gate its follow-on lanes. (`internal/github/feature_cooldown.go::beginRepositoryFeatureProbe`)
+Explicit sync bypasses only cooldown generations present when the run begins; any
+non-disabled attempt clears that observed generation even when retry bits remain, while
+newer disabled results gate follow-on lanes. (`internal/github/feature_cooldown.go::repositoryFeatureProbe.release`)
 Cooldown keys use provider-canonical repository identity; GitHub host, owner/name case,
 and derived-path aliases must converge. (`internal/github/feature_cooldown.go::repositoryFeatureKey`)
 Completion clears only the observed generation, so a concurrent disabled renewal wins.

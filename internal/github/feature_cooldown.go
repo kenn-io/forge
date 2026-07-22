@@ -148,6 +148,10 @@ func (c *repositoryFeatureCooldowns) deferUntil(repo RepoRef, feature string, ne
 }
 
 func (probe repositoryFeatureProbe) release() {
+	if probe.bypass {
+		probe.clear()
+		return
+	}
 	if probe.cooldowns == nil || probe.reservation == 0 {
 		return
 	}

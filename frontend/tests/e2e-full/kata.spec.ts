@@ -6655,6 +6655,24 @@ test("kata task links render, navigate, and add related links through the config
     const linkList = links.locator(".link-list");
     await expect(linkList.getByText("Open", { exact: true })).toBeVisible();
     await expect(linkList.getByText("Closed", { exact: true })).toBeVisible();
+    const linkTextGaps = await linkList.getByRole("button", { name: /parent\s+budget/ }).evaluate((row) => {
+      const textBox = (selector: string): DOMRect => {
+        const element = row.querySelector(selector);
+        if (!element) throw new Error(`Missing ${selector}`);
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return range.getBoundingClientRect();
+      };
+      const kind = textBox(".link-kind");
+      const peer = textBox(".link-peer");
+      const title = textBox(".link-title");
+      return {
+        kindToPeer: peer.x - kind.right,
+        peerToTitle: title.x - peer.right,
+      };
+    });
+    expect(linkTextGaps.kindToPeer).toBeLessThanOrEqual(16);
+    expect(linkTextGaps.peerToTitle).toBeLessThanOrEqual(16);
 
     await filterPanel.getByRole("checkbox", { name: "Parent" }).click();
     await expect(links).not.toContainText("Quarterly budget review with a long title");

@@ -356,6 +356,7 @@ func (e *kataSnapshotEnricher) loadHistory(
 ) ([]katagenerated.EventEnvelope, error) {
 	history := []katagenerated.EventEnvelope{}
 	afterID := int64(0)
+	resetHandled := false
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -371,9 +372,14 @@ func (e *kataSnapshotEnricher) loadHistory(
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		body, err := validateKataHistoryPage(response, afterID)
+		body, resetRequired, err := validateKataHistoryPage(response, afterID, resetHandled)
 		if err != nil {
 			return nil, err
+		}
+		if resetRequired {
+			afterID = body.NextAfterID
+			resetHandled = true
+			continue
 		}
 		if len(body.Events) == 0 {
 			return history, nil
@@ -392,34 +398,53 @@ func (e *kataSnapshotEnricher) loadHistory(
 func validateKataHistoryPage(
 	response *katagenerated.PollProjectEventsResp,
 	afterID int64,
-) (*katagenerated.PollEventsBody, error) {
+	resetHandled bool,
+) (*katagenerated.PollEventsBody, bool, error) {
 	if response == nil || response.StatusCode != http.StatusOK || response.JSON200 == nil {
-		return nil, fmt.Errorf("missing events 200 response body")
+		return nil, false, fmt.Errorf("missing events 200 response body")
 	}
 	body := response.JSON200
 	if err := body.Validate(); err != nil {
-		return nil, fmt.Errorf("validate events response: %w", err)
+		return nil, false, fmt.Errorf("validate events response: %w", err)
 	}
-	if body.ResetRequired || body.ResetAfterID != nil {
-		return nil, fmt.Errorf("events response requires cursor reset")
+	if body.ResetRequired {
+		if resetHandled {
+			return nil, false, fmt.Errorf("events response repeated cursor reset")
+		}
+		if body.ResetAfterID == nil {
+			return nil, false, fmt.Errorf("events response cursor reset is missing reset cursor")
+		}
+		if len(body.Events) != 0 {
+			return nil, false, fmt.Errorf("events response cursor reset contains events")
+		}
+		if *body.ResetAfterID <= afterID {
+			return nil, false, fmt.Errorf("events response cursor reset does not advance")
+		}
+		if body.NextAfterID != *body.ResetAfterID {
+			return nil, false, fmt.Errorf("events response reset cursor does not match next cursor")
+		}
+		return body, true, nil
+	}
+	if body.ResetAfterID != nil {
+		return nil, false, fmt.Errorf("events response includes reset cursor without reset")
 	}
 	if len(body.Events) == 0 {
 		if body.NextAfterID != afterID {
-			return nil, fmt.Errorf("events response cursor does not match empty page")
+			return nil, false, fmt.Errorf("events response cursor does not match empty page")
 		}
-		return body, nil
+		return body, false, nil
 	}
 	lastEventID := afterID
 	for _, event := range body.Events {
 		if event.EventID <= 0 || event.EventID <= lastEventID {
-			return nil, fmt.Errorf("events response contains non-monotonic event ids")
+			return nil, false, fmt.Errorf("events response contains non-monotonic event ids")
 		}
 		lastEventID = event.EventID
 	}
 	if body.NextAfterID != lastEventID {
-		return nil, fmt.Errorf("events response cursor does not match last event")
+		return nil, false, fmt.Errorf("events response cursor does not match last event")
 	}
-	return body, nil
+	return body, false, nil
 }
 
 func (r *kataSnapshotEnrichment) addError(stage string, code ProblemCode, message string) {

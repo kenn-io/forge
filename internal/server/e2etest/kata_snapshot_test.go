@@ -2,6 +2,7 @@ package e2etest
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -69,6 +70,65 @@ func TestKataTaskSnapshotProjectReadyAuthorityE2E(t *testing.T) {
 	assert.Equal("ready", workspaceTarget.ExistingWorkspace.Status)
 	assert.Positive(snapshot.Generation)
 	assert.Positive(snapshot.EventCursor)
+}
+
+func TestKataTaskSnapshotLoadsCompleteRetainedProjectHistoryE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newKataSnapshotE2EFixture(t, "Ready task")
+	selectedIssueUID := "issue-member"
+	events := make([]katagenerated.EventEnvelope, 0, 128)
+	for eventID := int64(1); eventID <= 126; eventID++ {
+		events = append(events, katagenerated.EventEnvelope{
+			Actor:             "acceptance",
+			ContentHash:       fmt.Sprintf("content-%d", eventID),
+			CreatedAt:         kataSnapshotE2ETime.Add(time.Duration(eventID) * time.Second),
+			EventID:           eventID,
+			EventUID:          fmt.Sprintf("event-%d", eventID),
+			IssueUID:          &selectedIssueUID,
+			OriginInstanceUID: "kata-e2e",
+			ProjectID:         7,
+			ProjectName:       "Project A",
+			ProjectUID:        "project-a",
+			Type:              "issue.updated",
+		})
+	}
+	events = append(events,
+		katagenerated.EventEnvelope{
+			Actor: "acceptance", ContentHash: "content-127", CreatedAt: kataSnapshotE2ETime.Add(127 * time.Second),
+			EventID: 127, EventUID: "event-127", OriginInstanceUID: "kata-e2e",
+			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "project.updated",
+		},
+		katagenerated.EventEnvelope{
+			Actor: "acceptance", ContentHash: "content-128", CreatedAt: kataSnapshotE2ETime.Add(128 * time.Second),
+			EventID: 128, EventUID: "event-128", IssueUID: &selectedIssueUID, OriginInstanceUID: "kata-e2e",
+			ProjectID: 8, ProjectName: "Project B", ProjectUID: "project-b", Type: "issue.updated",
+		},
+	)
+	fixture.daemon.mu.Lock()
+	fixture.daemon.projectEvents = events
+	fixture.daemon.projectEventPageSize = 100
+	fixture.daemon.mu.Unlock()
+
+	scope := apigenerated.Project
+	authority := apigenerated.Ready
+	projectUID := "project-a"
+	response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+		SelectedIssueUid: &selectedIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+	})
+
+	require.NoError(err)
+	require.Equal(http.StatusOK, response.StatusCode(), string(response.Body))
+	require.NotNil(response.JSON200)
+	require.NotNil(response.JSON200.Enrichment.SelectedHistory)
+	require.Len(*response.JSON200.Enrichment.SelectedHistory, 126)
+	assert.Equal(int64(1), (*response.JSON200.Enrichment.SelectedHistory)[0].EventId)
+	assert.Equal(int64(126), (*response.JSON200.Enrichment.SelectedHistory)[125].EventId)
+	assert.Nil(response.JSON200.Enrichment.Errors)
+	fixture.daemon.mu.RLock()
+	assert.Equal([]int64{0, 100, 127}, fixture.daemon.projectEventCursors)
+	fixture.daemon.mu.RUnlock()
 }
 
 func TestKataTaskSnapshotPreservesGraphSourceWhenEnrichmentFailsE2E(t *testing.T) {
@@ -339,19 +399,22 @@ func writeKataSnapshotE2ECatalog(t *testing.T, home, daemonURL string) {
 }
 
 type kataSnapshotDaemonStub struct {
-	t                  *testing.T
-	server             *httptest.Server
-	mu                 sync.RWMutex
-	title              string
-	streamEvents       chan int64
-	streamStarted      chan struct{}
-	streamStartedOnce  sync.Once
-	firstProjects      chan struct{}
-	firstProjectsOnce  sync.Once
-	blockFirstProjects <-chan struct{}
-	projectCalls       atomic.Int64
-	readyCalls         atomic.Int64
-	issueListCalls     atomic.Int64
+	t                    *testing.T
+	server               *httptest.Server
+	mu                   sync.RWMutex
+	title                string
+	streamEvents         chan int64
+	streamStarted        chan struct{}
+	streamStartedOnce    sync.Once
+	firstProjects        chan struct{}
+	firstProjectsOnce    sync.Once
+	blockFirstProjects   <-chan struct{}
+	projectCalls         atomic.Int64
+	readyCalls           atomic.Int64
+	issueListCalls       atomic.Int64
+	projectEvents        []katagenerated.EventEnvelope
+	projectEventPageSize int
+	projectEventCursors  []int64
 }
 
 func newKataSnapshotDaemonStub(t *testing.T, title string) *kataSnapshotDaemonStub {
@@ -403,9 +466,36 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 	case "/api/v1/issues":
 		s.issueListCalls.Add(1)
 		s.writeJSON(w, katagenerated.ListIssuesResponseBody{Issues: []katagenerated.IssueOut{s.issueOut()}})
-	case "/api/v1/events", "/api/v1/projects/7/events":
+	case "/api/v1/events":
 		afterID, _ := strconv.ParseInt(r.URL.Query().Get("after_id"), 10, 64)
 		s.writeJSON(w, katagenerated.PollEventsBody{Events: []katagenerated.EventEnvelope{}, NextAfterID: afterID})
+	case "/api/v1/projects/7/events":
+		afterID, _ := strconv.ParseInt(r.URL.Query().Get("after_id"), 10, 64)
+		requestedLimit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		s.mu.Lock()
+		s.projectEventCursors = append(s.projectEventCursors, afterID)
+		configuredPageSize := s.projectEventPageSize
+		projectEvents := append([]katagenerated.EventEnvelope(nil), s.projectEvents...)
+		s.mu.Unlock()
+		page := make([]katagenerated.EventEnvelope, 0, len(projectEvents))
+		for _, event := range projectEvents {
+			if event.ProjectID == 7 && event.EventID > afterID {
+				page = append(page, event)
+			}
+		}
+		pageSize := len(page)
+		if requestedLimit > 0 && requestedLimit < pageSize {
+			pageSize = requestedLimit
+		}
+		if configuredPageSize > 0 && configuredPageSize < pageSize {
+			pageSize = configuredPageSize
+		}
+		page = page[:pageSize]
+		nextAfterID := afterID
+		if len(page) > 0 {
+			nextAfterID = page[len(page)-1].EventID
+		}
+		s.writeJSON(w, katagenerated.PollEventsBody{Events: page, NextAfterID: nextAfterID})
 	case "/api/v1/events/stream":
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)

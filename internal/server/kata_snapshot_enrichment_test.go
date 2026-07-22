@@ -136,7 +136,7 @@ func TestKataSnapshotEnricherLoadsExactSelectedHistoryAcrossPages(t *testing.T) 
 	assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
 }
 
-func TestKataSnapshotEnricherLoadsCompleteSelectedHistoryFromProjectEvents(t *testing.T) {
+func TestKataSnapshotEnricherLoadsCompleteRetainedSelectedHistoryFromProjectEvents(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 	selectedUID := "issue-member"
@@ -173,6 +173,66 @@ func TestKataSnapshotEnricherLoadsCompleteSelectedHistoryFromProjectEvents(t *te
 	assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
 }
 
+func TestKataSnapshotEnricherResumesRetainedProjectHistoryAfterCursorReset(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	selectedUID := "issue-member"
+	cursors := []int64{}
+	client := &fakeKataSnapshotAPIClient{
+		showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			return testKataShowIssueResponse(selectedUID), nil
+		},
+		pollProjectEvents: func(_ context.Context, options *katagenerated.PollProjectEventsRequestOptions) (*katagenerated.PollProjectEventsResp, error) {
+			requireKataProjectEventsRequest(t, options)
+			cursors = append(cursors, *options.Query.AfterID)
+			switch len(cursors) {
+			case 1:
+				return testKataPollProjectEventsResetResponse(41), nil
+			case 2:
+				return testKataPollProjectEventsResponse(43,
+					testKataEvent(42, &selectedUID, time.Unix(42, 0)),
+					testKataEvent(43, &selectedUID, time.Unix(43, 0))), nil
+			default:
+				return testKataPollProjectEventsResponse(43), nil
+			}
+		},
+	}
+
+	result, err := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client}).Enrich(
+		t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: selectedUID},
+	)
+
+	require.NoError(t, err)
+	assert.Len(result.SelectedHistory, 2)
+	assert.Equal([]int64{0, 41, 43}, cursors)
+	assert.NotContains(result.Errors, kataSnapshotEnrichmentStageHistory)
+}
+
+func TestKataSnapshotEnricherRejectsRepeatedHistoryCursorReset(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	resetCalls := 0
+	client := &fakeKataSnapshotAPIClient{
+		showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			return testKataShowIssueResponse("issue-member"), nil
+		},
+		pollProjectEvents: func(_ context.Context, options *katagenerated.PollProjectEventsRequestOptions) (*katagenerated.PollProjectEventsResp, error) {
+			requireKataProjectEventsRequest(t, options)
+			resetCalls++
+			return testKataPollProjectEventsResetResponse(int64(resetCalls * 41)), nil
+		},
+	}
+
+	result, err := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client}).Enrich(
+		t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: "issue-member"},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(2, resetCalls)
+	assert.Empty(result.SelectedHistory)
+	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task history."}, result.Errors[kataSnapshotEnrichmentStageHistory])
+}
+
 func TestKataSnapshotEnricherRejectsInvalidHistoryPagination(t *testing.T) {
 	t.Parallel()
 
@@ -205,16 +265,28 @@ func TestKataSnapshotEnricherRejectsInvalidHistoryPagination(t *testing.T) {
 				testKataEvent(1, nil, time.Now().UTC()),
 			),
 		},
-		{
-			name: "reset required",
-			response: func() *katagenerated.PollProjectEventsResp {
-				resetAfterID := int64(9)
-				response := testKataPollProjectEventsResponse(9)
-				response.JSON200.ResetRequired = true
-				response.JSON200.ResetAfterID = &resetAfterID
-				return response
-			}(),
-		},
+		{name: "reset missing cursor", response: func() *katagenerated.PollProjectEventsResp {
+			response := testKataPollProjectEventsResponse(0)
+			response.JSON200.ResetRequired = true
+			return response
+		}()},
+		{name: "reset cursor does not advance", response: testKataPollProjectEventsResetResponse(0)},
+		{name: "reset cursor mismatches next cursor", response: func() *katagenerated.PollProjectEventsResp {
+			response := testKataPollProjectEventsResetResponse(9)
+			response.JSON200.NextAfterID = 10
+			return response
+		}()},
+		{name: "reset contains events", response: func() *katagenerated.PollProjectEventsResp {
+			response := testKataPollProjectEventsResetResponse(9)
+			response.JSON200.Events = []katagenerated.EventEnvelope{testKataEvent(9, nil, time.Now().UTC())}
+			return response
+		}()},
+		{name: "reset cursor without reset", response: func() *katagenerated.PollProjectEventsResp {
+			resetAfterID := int64(9)
+			response := testKataPollProjectEventsResponse(0)
+			response.JSON200.ResetAfterID = &resetAfterID
+			return response
+		}()},
 		{
 			name:     "nonempty page makes no cursor progress",
 			response: testKataPollProjectEventsResponse(0, testKataEvent(1, nil, time.Now().UTC())),
@@ -1012,6 +1084,13 @@ func testKataPollProjectEventsResponse(nextAfterID int64, events ...katagenerate
 			ResetRequired: false,
 		},
 	}
+}
+
+func testKataPollProjectEventsResetResponse(resetAfterID int64) *katagenerated.PollProjectEventsResp {
+	response := testKataPollProjectEventsResponse(resetAfterID)
+	response.JSON200.ResetRequired = true
+	response.JSON200.ResetAfterID = &resetAfterID
+	return response
 }
 
 func testKataEvent(eventID int64, issueUID *string, createdAt time.Time) katagenerated.EventEnvelope {

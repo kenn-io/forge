@@ -334,7 +334,7 @@ func TestKataTaskSnapshotKeepsHistoryCursorFailureLocalOverHTTP(t *testing.T) {
 	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task history."}, response.Enrichment.Errors[kataSnapshotEnrichmentStageHistory])
 }
 
-func TestKataTaskSnapshotLoadsCompleteProjectHistoryOverHTTP(t *testing.T) {
+func TestKataTaskSnapshotLoadsCompleteRetainedProjectHistoryOverHTTP(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	selectedUID := "issue-member"

@@ -198,6 +198,7 @@ type ProjectRow = {
 const now = "2026-05-15T10:00:00Z";
 const today = localDateString();
 const middlemanCSRFHeader = { "X-Middleman-Csrf": "1" };
+const kataProjectEventPageSize = 100;
 
 function daemonAPIPath(...segments: string[]): string {
   return ["", "api", "v1", ...segments].join("/");
@@ -641,6 +642,22 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
   const projectRoute = new RegExp(`^${daemonAPIPath("projects")}/(\\d+)$`).exec(url.pathname);
   if (projectRoute) {
     await handleProjectRename(state, req, res, Number(projectRoute[1]));
+    return;
+  }
+
+  const projectEventsRoute = new RegExp(`^${daemonAPIPath("projects")}/(\\d+)/events$`).exec(url.pathname);
+  if (projectEventsRoute) {
+    const projectID = Number(projectEventsRoute[1]);
+    const afterID = Number(url.searchParams.get("after_id") ?? "0");
+    const requestedLimit = Number(url.searchParams.get("limit") ?? "0");
+    const limit = requestedLimit > 0 ? Math.min(requestedLimit, kataProjectEventPageSize) : kataProjectEventPageSize;
+    const events = state.events.filter((event) => event.project_id === projectID && event.event_id > afterID);
+    const page = events.slice(0, limit);
+    writeJSON(res, 200, {
+      reset_required: false,
+      events: page,
+      next_after_id: page.at(-1)?.event_id ?? afterID,
+    });
     return;
   }
 
@@ -2398,11 +2415,25 @@ test("kata message unlink failure keeps the linked message visible", async ({ pa
   }
 });
 
-test("kata detail formats task history from selected snapshot enrichment", async ({ page }) => {
+test("kata detail formats complete retained multi-page task history from selected snapshot enrichment", async ({
+  page,
+}) => {
+  const selectedHistory = Array.from({ length: 125 }, (_, index) =>
+    eventRow({
+      event_id: index + 1,
+      event_uid: `event-history-${index + 1}`,
+      type: "issue.updated",
+      project_id: issues[0]!.project_id,
+      project_uid: issues[0]!.project_uid,
+      project_name: issues[0]!.project_name,
+      issue: issues[0]!,
+    }),
+  );
   const backend = await startKataBackend({
     events: [
+      ...selectedHistory,
       eventRow({
-        event_id: 7,
+        event_id: 126,
         event_uid: "event-links-changed",
         type: "issue.links_changed",
         project_id: issues[0]!.project_id,
@@ -2413,6 +2444,23 @@ test("kata detail formats task history from selected snapshot enrichment", async
           blocks_added: [{ uid: "issue-q3", short_id: "kat-7" }],
           related_removed: ["old-1", "old-2"],
         },
+      }),
+      eventRow({
+        event_id: 127,
+        event_uid: "event-project-only",
+        type: "project.updated",
+        project_id: issues[0]!.project_id,
+        project_uid: issues[0]!.project_uid,
+        project_name: issues[0]!.project_name,
+      }),
+      eventRow({
+        event_id: 128,
+        event_uid: "event-other-project",
+        type: "issue.updated",
+        project_id: issues[1]!.project_id,
+        project_uid: issues[1]!.project_uid,
+        project_name: issues[1]!.project_name,
+        issue: issues[1]!,
       }),
     ],
   });
@@ -2427,6 +2475,11 @@ test("kata detail formats task history from selected snapshot enrichment", async
     await expect(detail).toContainText("+blocks");
     await expect(detail).toContainText("-related (2)");
     await expect(detail).not.toContainText("issue.links_changed");
+    await expect(detail.locator(".events .event-row")).toHaveCount(126);
+    await expect(page.getByRole("alert").filter({ hasText: "Could not load selected task history." })).toHaveCount(0);
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/projects/1/events?after_id=0&limit=1000");
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/projects/1/events?after_id=100&limit=1000");
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/projects/1/events?after_id=127&limit=1000");
   } finally {
     await server.stop();
     kataHome.restore();

@@ -148,6 +148,10 @@
     text-overflow: ellipsis;
   }
 
+  .issue-item.selected .title-text {
+    font-weight: 600;
+  }
+
   .item-number {
     margin-left: auto;
     flex-shrink: 0;

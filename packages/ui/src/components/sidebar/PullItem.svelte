@@ -302,7 +302,7 @@
   }
 
   .pull-item.selected.active-worktree {
-    border-left-color: var(--accent-teal, var(--accent-green));
+    border-left-color: var(--accent-blue);
   }
 
   .title {
@@ -322,6 +322,10 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .pull-item.selected .title-text {
+    font-weight: 600;
   }
 
   .state-dot {

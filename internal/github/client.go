@@ -1818,7 +1818,14 @@ func (c *liveClient) ListPullRequestTimelineEvents(
 		}
 		c.trackGraphQLRateHeaders(resp)
 		if resp.StatusCode != http.StatusOK {
+			responseErr := gh.CheckResponse(resp)
 			_ = resp.Body.Close()
+			if responseErr != nil {
+				return nil, fmt.Errorf(
+					"list pull request timeline events for %s/%s#%d: %w",
+					owner, repo, number, responseErr,
+				)
+			}
 			return nil, fmt.Errorf(
 				"list pull request timeline events for %s/%s#%d: graphql status %s",
 				owner, repo, number, resp.Status,
@@ -2015,7 +2022,14 @@ func (c *liveClient) ListIssueTimelineEvents(
 		}
 		c.trackGraphQLRateHeaders(resp)
 		if resp.StatusCode != http.StatusOK {
+			responseErr := gh.CheckResponse(resp)
 			_ = resp.Body.Close()
+			if responseErr != nil {
+				return nil, fmt.Errorf(
+					"list issue timeline events for %s/%s#%d: %w",
+					owner, repo, number, responseErr,
+				)
+			}
 			return nil, fmt.Errorf(
 				"list issue timeline events for %s/%s#%d: graphql status %s",
 				owner, repo, number, resp.Status,

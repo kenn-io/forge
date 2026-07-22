@@ -1643,6 +1643,48 @@ func TestListPullRequestTimelineEventsReturnsGraphQLErrors(t *testing.T) {
 	require.ErrorContains(err, "permission denied")
 }
 
+func TestTimelineEventsPreserveGitHubHTTPErrorResponse(t *testing.T) {
+	tests := []struct {
+		name string
+		list func(*liveClient) ([]PullRequestTimelineEvent, error)
+	}{
+		{
+			name: "pull request",
+			list: func(c *liveClient) ([]PullRequestTimelineEvent, error) {
+				return c.ListPullRequestTimelineEvents(t.Context(), "owner", "repo", 42)
+			},
+		},
+		{
+			name: "issue",
+			list: func(c *liveClient) ([]PullRequestTimelineEvent, error) {
+				return c.ListIssueTimelineEvents(t.Context(), "owner", "repo", 42)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusGone)
+				_, _ = w.Write([]byte(`{"message":"Issues are disabled for this repo"}`))
+			}))
+			defer srv.Close()
+
+			c := &liveClient{httpClient: srv.Client(), graphQLEndpoint: srv.URL}
+			events, err := tc.list(c)
+			require.Nil(events)
+			require.Error(err)
+			var responseErr *gh.ErrorResponse
+			require.ErrorAs(err, &responseErr)
+			assert.Equal(http.StatusGone, responseErr.Response.StatusCode)
+			assert.Equal("Issues are disabled for this repo", responseErr.Message)
+		})
+	}
+}
+
 func TestListIssueTimelineEvents(t *testing.T) {
 	require := require.New(t)
 	var calls int

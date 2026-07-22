@@ -74,7 +74,8 @@ failure recovery.
 
 Repository-disabled issue and merge-request scopes use a 24-hour in-memory
 background probe gate. Expiry admits one reserved background probe across all
-lanes; a disabled result renews the deadline, while any other result releases it.
+lanes; pre-provider denial abandons only the reservation, while completed provider
+work either renews or releases the observed generation. (`internal/github/feature_cooldown.go::repositoryFeatureProbe.abandon`)
 Explicit sync bypasses only cooldown generations present when the run begins; any
 non-disabled attempt clears that observed generation even when retry bits remain, while
 newer disabled results gate follow-on lanes. (`internal/github/feature_cooldown.go::repositoryFeatureProbe.release`)
@@ -87,6 +88,9 @@ generation does not authorize an unchanged-list comment refresh. (`internal/gith
 Classify wrapped GitHub disabled responses before generic fallback or detail error handling;
 every lane must renew the same cooldown and stop further work for that scope.
 (`internal/github/feature_cooldown.go::repositoryFeatureDisabledError`)
+Custom GitHub GraphQL timeline transports must preserve structured non-2xx errors before
+closing the body so disabled-feature classification can inspect 410 responses.
+(`internal/github/client.go::ListPullRequestTimelineEvents`)
 Recording a disabled result must preserve any earlier same-scope item failure so retry
 and ETag invalidation state survives the cooldown. (`internal/github/sync.go::indexSyncRepo`)
 Apply the gate before shared budget exhaustion so suppressed work cannot starve

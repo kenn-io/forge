@@ -163,6 +163,20 @@ func (probe repositoryFeatureProbe) release() {
 	}
 }
 
+func (probe repositoryFeatureProbe) abandon() {
+	if probe.cooldowns == nil || probe.reservation == 0 {
+		return
+	}
+	probe.cooldowns.mu.Lock()
+	defer probe.cooldowns.mu.Unlock()
+	state, ok := probe.cooldowns.states[probe.key]
+	if !ok || state.generation != probe.generation || state.reservation != probe.reservation {
+		return
+	}
+	state.reservation = 0
+	probe.cooldowns.states[probe.key] = state
+}
+
 func (probe repositoryFeatureProbe) clear() {
 	if probe.cooldowns == nil {
 		return

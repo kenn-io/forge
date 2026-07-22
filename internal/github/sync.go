@@ -880,20 +880,20 @@ func (s *Syncer) Admit(
 	}
 	now := s.now().UTC()
 	if s.running.Load() {
-		probe.release()
+		probe.abandon()
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "normal sync is active"}, nil
 	}
 	key := rateBucketKeyFor(ref.Platform, ref.Host)
 	if s.higherPriorityProviderWorkActive(key, archive.PriorityFullArchive) {
-		probe.release()
+		probe.abandon()
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
 	}
 	tracker := s.rateTrackers[key]
 	if tracker != nil && (tracker.IsPaused() ||
 		tracker.Known() && tracker.Remaining()-cost < RateReserveBuffer) {
-		probe.release()
+		probe.abandon()
 		retryAt := now.Add(time.Minute)
 		if reset := tracker.ResetAt(); reset != nil && reset.After(now) {
 			retryAt = reset.UTC()
@@ -907,7 +907,7 @@ func (s *Syncer) Admit(
 		available = budget.ArchiveSpendAvailable(now, resetAt, archiveLiveFloor(ref.Platform))
 	}
 	if available < cost {
-		probe.release()
+		probe.abandon()
 		retryAt := now.Add(time.Minute)
 		if resetAt != nil && resetAt.After(now) && resetAt.Before(retryAt) {
 			retryAt = resetAt.UTC()
@@ -916,7 +916,7 @@ func (s *Syncer) Admit(
 	}
 	requestCtx, releaseProviderRequest, allowed := s.tryBeginArchiveProviderRequest(ctx, key)
 	if !allowed {
-		probe.release()
+		probe.abandon()
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
 	}

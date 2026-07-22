@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -826,6 +827,48 @@ func TestArchiveAdmissionDefersToNotificationAndActiveDetailWork(t *testing.T) {
 	allowed, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
 	require.NoError(err)
 	assert.True(allowed.Allowed)
+}
+
+func TestArchiveAdmissionDenialAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	key := RateBucketKey("github", "github.test")
+	syncer := NewSyncerWithRegistry(
+		nil, database, nil, nil, time.Hour,
+		nil, map[string]*SyncBudget{key: NewSyncBudget(100)},
+	)
+	syncer.now = func() time.Time { return now }
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test", Owner: "acme", Name: "widget",
+	}
+	repo := RepoRef{
+		Platform: ref.Platform, PlatformHost: ref.Host, Owner: ref.Owner, Name: ref.Name,
+	}
+	disabledErr := platform.RepositoryFeatureDisabled(
+		platform.KindGitHub, ref.Host, platform.RepositoryFeatureIssues,
+		errors.New("repository issues disabled"),
+	)
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		repo, platform.RepositoryFeatureIssues, disabledErr,
+	))
+	now = now.Add(repositoryFeatureProbeInterval)
+
+	syncer.running.Store(true)
+	denied, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
+	require.NoError(err)
+	require.False(denied.Allowed)
+	syncer.running.Store(false)
+
+	first, due := syncer.beginRepositoryFeatureProbe(
+		t.Context(), repo, platform.RepositoryFeatureIssues,
+	)
+	require.True(due)
+	defer first.release()
+	_, due = syncer.beginRepositoryFeatureProbe(
+		t.Context(), repo, platform.RepositoryFeatureIssues,
+	)
+	require.False(due)
 }
 
 func TestArchiveAdmissionLeaseSerializesProviderRequests(t *testing.T) {

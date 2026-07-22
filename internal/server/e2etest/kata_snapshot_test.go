@@ -191,6 +191,13 @@ func TestKataTaskSnapshotReusesSelectedEnrichmentUntilMutationInvalidatesEpochE2
 	require.Less(time.Since(warmStarted), 5*time.Second)
 	assert.Equal(first.Generation, secondResponse.JSON200.Generation)
 	assert.Equal(first.InvalidationEpoch, secondResponse.JSON200.InvalidationEpoch)
+	assert.Equal(first.Enrichment.SelectedDetail, secondResponse.JSON200.Enrichment.SelectedDetail)
+	assert.Equal(first.Enrichment.SelectedHistory, secondResponse.JSON200.Enrichment.SelectedHistory)
+	assert.Equal(first.Enrichment.Graph, secondResponse.JSON200.Enrichment.Graph)
+	require.NotNil(first.Enrichment.GraphFetchedAt)
+	require.NotNil(secondResponse.JSON200.Enrichment.GraphFetchedAt)
+	assert.Equal(*first.Enrichment.GraphFetchedAt, *secondResponse.JSON200.Enrichment.GraphFetchedAt)
+	assert.Equal(first.Enrichment.Errors, secondResponse.JSON200.Enrichment.Errors)
 	assert.Equal(int64(1), fixture.daemon.detailCalls.Load(), "warm detail must reuse the upstream result")
 	assert.Equal(int64(3), fixture.daemon.projectEventCalls.Load(), "warm history must reuse the complete paginated project stream")
 	assert.Equal(int64(1), fixture.daemon.graphCalls.Load(), "warm graph must reuse the upstream result")
@@ -240,6 +247,66 @@ func TestKataTaskSnapshotReusesSelectedEnrichmentUntilMutationInvalidatesEpochE2
 	assert.Equal(int64(2), fixture.daemon.detailCalls.Load())
 	assert.Equal(int64(7), fixture.daemon.projectEventCalls.Load())
 	assert.Equal(int64(2), fixture.daemon.graphCalls.Load())
+}
+
+func TestKataTaskSnapshotOversizedProjectHistoryReloadsCompleteSelectedHistoryE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newKataSnapshotE2EFixture(t, "Ready task")
+	selectedIssueUID := "issue-member"
+	otherIssueUID := "issue-other"
+	fixture.daemon.mu.Lock()
+	fixture.daemon.projectEvents = []katagenerated.EventEnvelope{
+		{
+			Actor: "acceptance", ContentHash: "selected-before-oversized", CreatedAt: kataSnapshotE2ETime.Add(time.Second),
+			EventID: 1, EventUID: "event-1", IssueUID: &selectedIssueUID, OriginInstanceUID: "kata-e2e",
+			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+		},
+		{
+			Actor: "acceptance", ContentHash: strings.Repeat("x", 16<<20), CreatedAt: kataSnapshotE2ETime.Add(2 * time.Second),
+			EventID: 2, EventUID: "event-2", IssueUID: &otherIssueUID, OriginInstanceUID: "kata-e2e",
+			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+		},
+		{
+			Actor: "acceptance", ContentHash: "selected-after-oversized", CreatedAt: kataSnapshotE2ETime.Add(3 * time.Second),
+			EventID: 3, EventUID: "event-3", IssueUID: &selectedIssueUID, OriginInstanceUID: "kata-e2e",
+			ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+		},
+	}
+	fixture.daemon.projectEventPageSize = 1
+	fixture.daemon.mu.Unlock()
+
+	scope := apigenerated.Project
+	authority := apigenerated.Ready
+	projectUID := "project-a"
+	firstResponse, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+		SelectedIssueUid: &selectedIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResponse.StatusCode(), string(firstResponse.Body))
+	require.NotNil(firstResponse.JSON200)
+	require.NotNil(firstResponse.JSON200.Enrichment.SelectedHistory)
+	require.Len(*firstResponse.JSON200.Enrichment.SelectedHistory, 2)
+	assert.Equal([]string{"selected-before-oversized", "selected-after-oversized"}, []string{
+		(*firstResponse.JSON200.Enrichment.SelectedHistory)[0].ContentHash,
+		(*firstResponse.JSON200.Enrichment.SelectedHistory)[1].ContentHash,
+	})
+	assert.Nil(firstResponse.JSON200.Enrichment.Errors)
+	assert.Equal(int64(4), fixture.daemon.projectEventCalls.Load())
+
+	secondResponse, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+		SelectedIssueUid: &selectedIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResponse.StatusCode(), string(secondResponse.Body))
+	require.NotNil(secondResponse.JSON200)
+	require.NotNil(secondResponse.JSON200.Enrichment.SelectedHistory)
+	require.Len(*secondResponse.JSON200.Enrichment.SelectedHistory, 2)
+	assert.Equal(firstResponse.JSON200.Enrichment.SelectedHistory, secondResponse.JSON200.Enrichment.SelectedHistory)
+	assert.Nil(secondResponse.JSON200.Enrichment.Errors)
+	assert.Equal(int64(8), fixture.daemon.projectEventCalls.Load(), "oversized project history must not be retained")
 }
 
 func TestKataTaskSnapshotDiscardsPreResetHistoryAtRetainedBaselineE2E(t *testing.T) {
@@ -451,6 +518,101 @@ func TestKataTaskSnapshotDaemonRotationRejectsInflightAuthorityE2E(t *testing.T)
 	assert.Positive(got.response.JSON200.InvalidationEpoch)
 }
 
+func TestKataTaskSnapshotDaemonRotationRejectsInflightSelectedEnrichmentE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	releaseOld := make(chan struct{})
+	oldDaemon := newKataSnapshotDaemonStub(t, "Stale target")
+	oldDaemon.blockFirstDetail = releaseOld
+	oldSelectedIssueUID := "issue-member"
+	oldDaemon.mu.Lock()
+	oldDaemon.graphFails = false
+	oldDaemon.projectEvents = []katagenerated.EventEnvelope{{
+		Actor: "acceptance", ContentHash: "stale-history", CreatedAt: kataSnapshotE2ETime.Add(time.Second),
+		EventID: 1, EventUID: "event-1", IssueUID: &oldSelectedIssueUID, OriginInstanceUID: "kata-e2e",
+		ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+	}}
+	oldDaemon.mu.Unlock()
+
+	newDaemon := newKataSnapshotDaemonStub(t, "Rotated target")
+	newSelectedIssueUID := "issue-member"
+	newDaemon.mu.Lock()
+	newDaemon.graphFails = false
+	newDaemon.projectEvents = []katagenerated.EventEnvelope{{
+		Actor: "acceptance", ContentHash: "rotated-history", CreatedAt: kataSnapshotE2ETime.Add(2 * time.Second),
+		EventID: 2, EventUID: "event-2", IssueUID: &newSelectedIssueUID, OriginInstanceUID: "kata-e2e",
+		ProjectID: 7, ProjectName: "Project A", ProjectUID: "project-a", Type: "issue.updated",
+	}}
+	newDaemon.mu.Unlock()
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeKataSnapshotE2ECatalog(t, home, oldDaemon.server.URL)
+	_, client := startKataSnapshotE2EMiddleman(t)
+
+	type result struct {
+		response *apigenerated.GetKataTaskSnapshotResponse
+		err      error
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		scope := apigenerated.Project
+		authority := apigenerated.Ready
+		projectUID := "project-a"
+		selectedIssueUID := "issue-member"
+		response, err := client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+			Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+			SelectedIssueUid: &selectedIssueUID, GraphSourceUid: &selectedIssueUID,
+			XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		})
+		resultCh <- result{response: response, err: err}
+	}()
+
+	select {
+	case <-oldDaemon.firstDetail:
+	case <-time.After(2 * time.Second):
+		require.FailNow("old target selected detail request did not start")
+	}
+	writeKataSnapshotE2ECatalog(t, home, newDaemon.server.URL)
+	close(releaseOld)
+
+	var got result
+	select {
+	case got = <-resultCh:
+	case <-time.After(3 * time.Second):
+		require.FailNow("snapshot request did not complete after selected enrichment target rotation")
+	}
+
+	require.NoError(got.err)
+	require.NotNil(got.response)
+	require.Equal(http.StatusOK, got.response.StatusCode(), string(got.response.Body))
+	require.NotNil(got.response.JSON200)
+	snapshot := got.response.JSON200
+	assert.Positive(snapshot.InvalidationEpoch)
+	require.NotNil(snapshot.Issues)
+	require.Len(*snapshot.Issues, 1)
+	assert.Equal("Rotated target", (*snapshot.Issues)[0].Title)
+	require.NotNil(snapshot.Enrichment.SelectedDetail)
+	detailBody, ok := snapshot.Enrichment.SelectedDetail.Detail.(map[string]any)
+	require.True(ok)
+	detailIssue, ok := detailBody["issue"].(map[string]any)
+	require.True(ok)
+	assert.Equal("Rotated target", detailIssue["title"])
+	require.NotNil(snapshot.Enrichment.SelectedHistory)
+	require.Len(*snapshot.Enrichment.SelectedHistory, 1)
+	assert.Equal("rotated-history", (*snapshot.Enrichment.SelectedHistory)[0].ContentHash)
+	require.NotNil(snapshot.Enrichment.Graph)
+	require.NotNil(snapshot.Enrichment.Graph.Nodes)
+	require.Len(*snapshot.Enrichment.Graph.Nodes, 2)
+	assert.Equal("Rotated target", (*snapshot.Enrichment.Graph.Nodes)[0].Title)
+	assert.Nil(snapshot.Enrichment.Errors)
+	assert.Positive(oldDaemon.detailCalls.Load())
+	assert.Positive(newDaemon.detailCalls.Load())
+	assert.Positive(newDaemon.projectEventCalls.Load())
+	assert.Positive(newDaemon.graphCalls.Load())
+}
+
 func TestKataProxySuccessfulMutationInvalidatesSnapshotBeforeResponseE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -587,6 +749,9 @@ type kataSnapshotDaemonStub struct {
 	firstProjects        chan struct{}
 	firstProjectsOnce    sync.Once
 	blockFirstProjects   <-chan struct{}
+	firstDetail          chan struct{}
+	firstDetailOnce      sync.Once
+	blockFirstDetail     <-chan struct{}
 	projectCalls         atomic.Int64
 	readyCalls           atomic.Int64
 	issueListCalls       atomic.Int64
@@ -604,7 +769,7 @@ func newKataSnapshotDaemonStub(t *testing.T, title string) *kataSnapshotDaemonSt
 	t.Helper()
 	stub := &kataSnapshotDaemonStub{
 		t: t, title: title, graphFails: true, streamEvents: make(chan int64, 1),
-		streamStarted: make(chan struct{}), firstProjects: make(chan struct{}),
+		streamStarted: make(chan struct{}), firstProjects: make(chan struct{}), firstDetail: make(chan struct{}),
 	}
 	stub.server = httptest.NewServer(http.HandlerFunc(stub.serveHTTP))
 	t.Cleanup(stub.server.Close)
@@ -656,7 +821,17 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		s.detailCalls.Add(1)
+		call := s.detailCalls.Add(1)
+		if call == 1 {
+			s.firstDetailOnce.Do(func() { close(s.firstDetail) })
+			if s.blockFirstDetail != nil {
+				select {
+				case <-s.blockFirstDetail:
+				case <-r.Context().Done():
+					return
+				}
+			}
+		}
 		w.Header().Set("ETag", `"issue-revision"`)
 		s.writeJSON(w, katagenerated.ShowIssueResponseBody{Issue: s.issue()})
 	case "/api/v1/projects/7/issues/issue-member/graph":

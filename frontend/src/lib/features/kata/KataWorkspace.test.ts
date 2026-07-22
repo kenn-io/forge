@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import KataWorkspace from "./KataWorkspace.svelte";
@@ -284,6 +285,32 @@ describe("KataWorkspace snapshot authority", () => {
     await fireEvent.click(childRow);
     await screen.findByRole("heading", { name: child.title });
     await waitFor(() => expect((document.activeElement as HTMLElement | null)?.dataset.uid).toBe(child.uid));
+  });
+
+  it("keeps the existing scrolled task list when accepting a visible row selection", async () => {
+    acceptHomeDaemon();
+    const selected = initialIssues[1]!;
+    const { api } = createWorkspaceAPI(initialIssues, {
+      snapshot: (request, snapshot) => ({
+        ...snapshot,
+        fetched_at: request.selectedIssueUID ? "2026-05-15T16:00:01.000Z" : snapshot.fetched_at,
+      }),
+    });
+    const onSelectedIssueChange = vi.fn();
+
+    const { container } = render(KataWorkspace, { props: { api, onSelectedIssueChange } });
+
+    const selectedRow = await screen.findByRole("button", { name: new RegExp(selected.title) });
+    const tableBody = container.querySelector(".table-body") as HTMLDivElement;
+    tableBody.scrollTop = 48;
+
+    await fireEvent.click(selectedRow);
+    await screen.findByRole("heading", { name: selected.title });
+    await waitFor(() => expect(onSelectedIssueChange).toHaveBeenCalledWith(selected.uid));
+    await tick();
+
+    expect(container.querySelector(".table-body")).toBe(tableBody);
+    expect(tableBody.scrollTop).toBe(48);
   });
 
   it("does not install mutation response task state while explicitly revalidating snapshot authority", async () => {

@@ -1011,7 +1011,7 @@
           `${group.id}:${issue.uid}:${issue.revision}:${issue.parent_short_id ?? ""}:${issue.child_counts?.open ?? 0}:${issue.child_counts?.total ?? 0}`,
       ),
     );
-    return [activeKataDaemonId ?? "", acceptedCurrentView.name, acceptedCurrentView.fetched_at ?? "", ...issueParts].join("|");
+    return [activeKataDaemonId ?? "", acceptedCurrentView.name, ...issueParts].join("|");
   }
 
   function visibleIssues(): KataTaskSummary[] {
@@ -1655,7 +1655,7 @@
         projects={visibleProjects}
         onChange={updateSearchFilters}
       />
-      {#key `${activeKataDaemonId ?? ""}:${listResetGeneration}`}
+      {#key activeKataDaemonId ?? ""}
         <KataIssueList
           currentView={acceptedCurrentView}
           issueCatalog={acceptedIssueCatalog}

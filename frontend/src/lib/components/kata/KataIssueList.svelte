@@ -146,6 +146,8 @@
   let temporaryRevealChain = $state<readonly KataTaskSummary[]>([]);
   let revealOwnedExpansionUIDs = $state<ReadonlySet<string>>(new Set());
   let lastRevealGeneration: number | null = null;
+  let lastAnchorSelectedIssueUID: string | null | undefined;
+  let anchorMeasurementGeneration = 0;
   let catalogByUID = $derived(new Map(issueCatalog.map((issue) => [issue.uid, issue])));
   let childrenByParentUID = $derived.by(() => {
     const byHierarchyKey = new Map(issueCatalog.map((issue) => [issueHierarchyKey(issue), issue]));
@@ -304,6 +306,11 @@
 
   function isSelected(issue: KataTaskSummary): boolean {
     return selectedIssueUID === issue.uid;
+  }
+
+  function rowElement(body: HTMLDivElement, uid: string): HTMLElement | null {
+    return Array.from(body.querySelectorAll<HTMLElement>("button.row[data-uid]"))
+      .find((row) => row.dataset.uid === uid) ?? null;
   }
 
   function revealSuccessor(issue: KataTaskSummary): KataTaskSummary | undefined {
@@ -625,6 +632,46 @@
     }
     return visible;
   }
+
+  $effect.pre(() => {
+    void currentView;
+    void issueCatalog;
+    void scopedProjectName;
+    void statusFilter;
+    void readyIssueUIDs;
+    void resetGeneration;
+
+    const generation = ++anchorMeasurementGeneration;
+    const body = tableBody;
+    const nextSelectedIssueUID = selectedIssueUID;
+    const selectionChanged =
+      lastAnchorSelectedIssueUID !== undefined && nextSelectedIssueUID !== lastAnchorSelectedIssueUID;
+    lastAnchorSelectedIssueUID = nextSelectedIssueUID;
+
+    if (!body || !nextSelectedIssueUID || selectionChanged) return;
+    const selectedRow = rowElement(body, nextSelectedIssueUID);
+    if (!selectedRow) return;
+
+    const bodyRect = body.getBoundingClientRect();
+    const rowRect = selectedRow.getBoundingClientRect();
+    if (rowRect.bottom <= bodyRect.top || rowRect.top >= bodyRect.bottom) return;
+    const selectedRowTop = rowRect.top;
+
+    void tick().then(() => {
+      if (
+        generation !== anchorMeasurementGeneration ||
+        tableBody !== body ||
+        selectedIssueUID !== nextSelectedIssueUID
+      ) return;
+      const refreshedSelectedRow = rowElement(body, nextSelectedIssueUID);
+      if (!refreshedSelectedRow) return;
+      body.scrollTop += refreshedSelectedRow.getBoundingClientRect().top - selectedRowTop;
+    });
+
+    return () => {
+      if (anchorMeasurementGeneration === generation) anchorMeasurementGeneration += 1;
+    };
+  });
 
   $effect(() => {
     if (!revealRequest) {

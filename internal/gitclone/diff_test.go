@@ -13,7 +13,7 @@ import (
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
-func TestDiff(t *testing.T) {
+func TestIntegrationDiff(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -79,7 +79,7 @@ func TestDiff(t *testing.T) {
 	assert.Equal("added", result.Files[1].Status)
 }
 
-func TestDiffFiles(t *testing.T) {
+func TestIntegrationDiffFiles(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -144,7 +144,7 @@ func TestDiffFiles(t *testing.T) {
 	assert.Zero(files[1].Deletions)
 }
 
-func TestDiffFilesEmpty(t *testing.T) {
+func TestIntegrationDiffFilesEmpty(t *testing.T) {
 	assert := assert.New(t)
 
 	// Diffing a commit against itself yields no files.
@@ -183,7 +183,7 @@ func TestDiffFilesEmpty(t *testing.T) {
 	assert.Empty(result.Files)
 }
 
-func TestDiffArgumentBuildersTerminateOptionsBeforeRevisions(t *testing.T) {
+func TestIntegrationDiffArgumentBuildersTerminateOptionsBeforeRevisions(t *testing.T) {
 	assert := assert.New(t)
 
 	assert.Contains(

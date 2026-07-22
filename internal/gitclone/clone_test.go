@@ -53,7 +53,7 @@ func run(t *testing.T, dir string, name string, args ...string) {
 	require.NoError(t, err, "command %s %v failed: %s%s", name, args, out, stderr)
 }
 
-func TestEnsureClone(t *testing.T) {
+func TestIntegrationEnsureClone(t *testing.T) {
 	remote, _ := setupTestRepo(t)
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
@@ -71,7 +71,7 @@ func TestEnsureClone(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestEnsureCloneInNamespacePartitionsStorage(t *testing.T) {
+func TestIntegrationEnsureCloneInNamespacePartitionsStorage(t *testing.T) {
 	remote, _ := setupTestRepo(t)
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
@@ -96,7 +96,7 @@ func TestEnsureCloneInNamespacePartitionsStorage(t *testing.T) {
 // with an already-canceled context does not start any clone work. The
 // pre-check exists so a canceled caller cannot trigger background
 // fetches that outlive the request it abandoned.
-func TestEnsureCloneShortCircuitsCanceledContext(t *testing.T) {
+func TestIntegrationEnsureCloneShortCircuitsCanceledContext(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -123,7 +123,7 @@ func TestEnsureCloneShortCircuitsCanceledContext(t *testing.T) {
 // git clone --bare. Without the sweep, git refuses to write into the
 // non-empty destination and every retry would fail with "destination
 // path already exists and is not an empty directory."
-func TestEnsureCloneSweepsPartialClone(t *testing.T) {
+func TestIntegrationEnsureCloneSweepsPartialClone(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -152,7 +152,7 @@ func TestEnsureCloneSweepsPartialClone(t *testing.T) {
 
 // TestEnsureCloneInstallsDefaultRefspecs verifies that a fresh clone gets the
 // bounded ref families workspace setup needs during background refresh.
-func TestEnsureCloneInstallsDefaultRefspecs(t *testing.T) {
+func TestIntegrationEnsureCloneInstallsDefaultRefspecs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -175,7 +175,7 @@ func TestEnsureCloneInstallsDefaultRefspecs(t *testing.T) {
 // TestEnsureCloneFetchesNewBranchCommits is the regression test for the bug
 // where a merged PR's merge commit was never fetched into the bare clone
 // because git clone --bare sets no default fetch refspec.
-func TestEnsureCloneFetchesNewBranchCommits(t *testing.T) {
+func TestIntegrationEnsureCloneFetchesNewBranchCommits(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -199,7 +199,7 @@ func TestEnsureCloneFetchesNewBranchCommits(t *testing.T) {
 	assert.Equal(newSHA, got)
 }
 
-func TestEnsureCloneDoesNotRefreshMovedRemoteTags(t *testing.T) {
+func TestIntegrationEnsureCloneDoesNotRefreshMovedRemoteTags(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -228,7 +228,7 @@ func TestEnsureCloneDoesNotRefreshMovedRemoteTags(t *testing.T) {
 	require.NoError(err)
 }
 
-func TestEnsureCloneDoesNotFetchGitLabMergeRequestHeadsByDefault(t *testing.T) {
+func TestIntegrationEnsureCloneDoesNotFetchGitLabMergeRequestHeadsByDefault(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -266,7 +266,7 @@ func TestEnsureCloneDoesNotFetchGitLabMergeRequestHeadsByDefault(t *testing.T) {
 // previous version of cloneBare (only pull refspec, no remote-tracking
 // refspec) and verifies ensureRefspecs migrates it so branch fetches
 // work again.
-func TestEnsureCloneMigratesBrokenClone(t *testing.T) {
+func TestIntegrationEnsureCloneMigratesBrokenClone(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -313,7 +313,7 @@ func TestEnsureCloneMigratesBrokenClone(t *testing.T) {
 // TestEnsureCloneRemovesLegacyBranchRefspec verifies that legacy clones stop
 // fetching origin branches into refs/heads/*, which would collide with a
 // workspace checking out the PR branch name locally.
-func TestEnsureCloneRemovesLegacyBranchRefspec(t *testing.T) {
+func TestIntegrationEnsureCloneRemovesLegacyBranchRefspec(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -350,7 +350,7 @@ func TestEnsureCloneRemovesLegacyBranchRefspec(t *testing.T) {
 // before any middleman-specific refspec was added). In that case
 // `git config --get-all remote.origin.fetch` exits 1, which must not
 // short-circuit ensureRefspecs.
-func TestEnsureCloneMigratesCloneWithNoRefspec(t *testing.T) {
+func TestIntegrationEnsureCloneMigratesCloneWithNoRefspec(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -394,7 +394,7 @@ func TestEnsureCloneMigratesCloneWithNoRefspec(t *testing.T) {
 // remote default-branch symref available as refs/remotes/origin/HEAD.
 // Issue workspaces start from origin/HEAD, so older clones that lack that
 // symref would otherwise fail to create a worktree.
-func TestEnsureCloneRestoresOriginHead(t *testing.T) {
+func TestIntegrationEnsureCloneRestoresOriginHead(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -421,7 +421,7 @@ func TestEnsureCloneRestoresOriginHead(t *testing.T) {
 	assert.Equal("refs/remotes/origin/main", headRef)
 }
 
-func TestEnsureCloneRepairsStaleOriginHead(t *testing.T) {
+func TestIntegrationEnsureCloneRepairsStaleOriginHead(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -449,7 +449,7 @@ func TestEnsureCloneRepairsStaleOriginHead(t *testing.T) {
 	assert.Equal("refs/remotes/origin/main", headRef)
 }
 
-func TestEnsureCloneToleratesUnresolvedRemoteHead(t *testing.T) {
+func TestIntegrationEnsureCloneToleratesUnresolvedRemoteHead(t *testing.T) {
 	require := require.New(t)
 
 	remote, _ := setupTestRepo(t)
@@ -495,7 +495,7 @@ func gitSymbolicRef(t *testing.T, dir, ref string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func TestEnsureCloneIgnoresInheritedGitEnv(t *testing.T) {
+func TestIntegrationEnsureCloneIgnoresInheritedGitEnv(t *testing.T) {
 	remote, _ := setupTestRepo(t)
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
@@ -522,7 +522,7 @@ func TestEnsureCloneIgnoresInheritedGitEnv(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestMergeBase(t *testing.T) {
+func TestIntegrationMergeBase(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 

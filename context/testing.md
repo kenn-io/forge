@@ -22,6 +22,10 @@ When changing structs, fields, aliases, fragments, pagination arguments, or nest
 
 CI runs the live GraphQL validation as a separate Go test step using the workflow `GITHUB_TOKEN` only in trusted contexts, such as pushes to `main`, manual `workflow_dispatch` runs, and same-repository pull requests. The general pull request Go test step does not receive a GitHub token.
 
+Integration-tagged top-level tests must use the `TestIntegration...` prefix;
+Go build tags are additive, so the dedicated lane relies on its matching run
+filter to avoid rerunning ordinary tests (`Makefile::test-integration`).
+
 ## CI path-gated test jobs
 
 The CI workflow classifies changed paths once in `.github/workflows/ci.yml::detect_changes`

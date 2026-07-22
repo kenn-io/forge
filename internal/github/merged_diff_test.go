@@ -94,7 +94,7 @@ func insertMergedPR(t *testing.T, ctx context.Context, d *db.DB, repoID int64, n
 	return mrID, revision
 }
 
-func TestComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
+func TestIntegrationComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -136,7 +136,7 @@ func TestComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
 	assert.NotEqual(prHead, shas.MergeBaseSHA, "diff should not be empty")
 }
 
-func TestComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *testing.T) {
+func TestIntegrationComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -182,7 +182,7 @@ func TestComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *testing.T) {
 	assert.Equal(forkPoint, shas.MergeBaseSHA, "force=true should overwrite with correct merge base")
 }
 
-func TestComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
+func TestIntegrationComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -222,7 +222,7 @@ func TestComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
 	assert.NotEqual(prHead, shas.MergeBaseSHA)
 }
 
-func TestComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
+func TestIntegrationComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -279,7 +279,7 @@ func TestComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
 // open -> merged transition through RunOnce. First sync inserts the PR as open
 // (before merge); second sync discovers it missing from ListOpenPullRequests,
 // calls fetchAndUpdateClosed, and computes diff SHAs via the merged-PR path.
-func TestSyncOpenToMergedTransition(t *testing.T) {
+func TestIntegrationSyncOpenToMergedTransition(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -414,7 +414,7 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 // RunOnce. The PR is inserted as open WITHOUT a clone manager (no diff SHAs
 // computed), then on the second sync (with clone manager) it transitions to
 // merged and computeMergedMRDiffSHAs must fill in the diff SHAs.
-func TestSyncFirstSeenMergedPR(t *testing.T) {
+func TestIntegrationSyncFirstSeenMergedPR(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -518,7 +518,7 @@ func TestSyncFirstSeenMergedPR(t *testing.T) {
 // merge commit), it still upserts the PR row, refreshes the timeline, and
 // returns the failure as a *DiffSyncError. The handler distinguishes this
 // from hard sync failures so the user sees a warning instead of a 502.
-func TestSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
+func TestIntegrationSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -628,7 +628,7 @@ func TestSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 // the item type as "pr" so the resolve endpoint can route the user to the
 // PR detail view. The diff failure is preserved in the returned error so
 // the caller can surface it as a warning if it cares.
-func TestSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
+func TestIntegrationSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 

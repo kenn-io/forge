@@ -283,7 +283,7 @@ test-short-precommit: ensure-embed-dir ensure-tmp-dir
 
 # Run integration tests that execute real git commands (excluded from test-short)
 test-integration: ensure-embed-dir ensure-tmp-dir
-	$(GOTESTSUM)=tmp/test-integration-output.json -- $(GO_TEST_P_FLAG) -tags integration ./... -shuffle=on
+	$(GOTESTSUM)=tmp/test-integration-output.json -- $(GO_TEST_P_FLAG) -tags integration ./... -run '^TestIntegration' -shuffle=on
 
 # Report per-package wall time for the slow race-test packages.
 race-times: ensure-embed-dir

@@ -251,7 +251,7 @@ jobs:
       - name: Run integration tests (git-dependent)
         run: |
           mkdir -p tmp
-          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-integration-output.json -- -tags integration ./... -shuffle=on -parallel=2
+          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-integration-output.json -- -tags integration ./... -run '^TestIntegration' -shuffle=on -parallel=2
 
       - name: Publish integration test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}

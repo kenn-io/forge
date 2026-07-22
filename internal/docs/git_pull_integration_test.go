@@ -34,7 +34,7 @@ func (g *gitRepo) remoteCommit(t *testing.T, rel, body string) string {
 	return gitOutput(t, clone, "rev-parse", "HEAD")
 }
 
-func TestGitPullFastForwards(t *testing.T) {
+func TestIntegrationGitPullFastForwards(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -58,7 +58,7 @@ func TestGitPullFastForwards(t *testing.T) {
 	assert.Equal("# remote\n", string(body))
 }
 
-func TestGitPullUpToDate(t *testing.T) {
+func TestIntegrationGitPullUpToDate(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -72,7 +72,7 @@ func TestGitPullUpToDate(t *testing.T) {
 	assert.Equal(head[:7], res.ShortCommit)
 }
 
-func TestGitPullRefusesDiverged(t *testing.T) {
+func TestIntegrationGitPullRefusesDiverged(t *testing.T) {
 	g := newGitRepo(t)
 	g.remoteCommit(t, "remote.md", "remote\n")
 	g.writeFile(t, "local.md", "local\n")
@@ -84,7 +84,7 @@ func TestGitPullRefusesDiverged(t *testing.T) {
 	require.ErrorIs(t, err, ErrDiverged)
 }
 
-func TestGitPullRefusesOverwritingDirtyWorktree(t *testing.T) {
+func TestIntegrationGitPullRefusesOverwritingDirtyWorktree(t *testing.T) {
 	g := newGitRepo(t)
 	g.remoteCommit(t, "seed.md", "remote seed\n")
 	g.writeFile(t, "seed.md", "local dirty\n")
@@ -100,7 +100,7 @@ func TestGitPullRefusesOverwritingDirtyWorktree(t *testing.T) {
 	assert.Equal(t, "local dirty\n", string(body))
 }
 
-func TestGitPullRefusesNoUpstream(t *testing.T) {
+func TestIntegrationGitPullRefusesNoUpstream(t *testing.T) {
 	g := newGitRepoNoUpstream(t)
 
 	_, err := g.registry.GitPull(context.Background(), g.folderID)
@@ -110,7 +110,7 @@ func TestGitPullRefusesNoUpstream(t *testing.T) {
 	assert.Contains(t, noUpstream.SuggestedCommand, "--set-upstream-to")
 }
 
-func TestGitPullRefusesNotARepo(t *testing.T) {
+func TestIntegrationGitPullRefusesNotARepo(t *testing.T) {
 	dir := t.TempDir()
 	reg := NewRegistry([]config.DocFolder{{ID: "f", Name: "F", Path: dir}})
 

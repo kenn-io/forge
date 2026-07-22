@@ -127,7 +127,7 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(runGit(t, dir, args...))
 }
 
-func TestGitChangesNotARepo(t *testing.T) {
+func TestIntegrationGitChangesNotARepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -140,7 +140,7 @@ func TestGitChangesNotARepo(t *testing.T) {
 	assert.Empty(res.Changes)
 }
 
-func TestGitChangesEmptyRepo(t *testing.T) {
+func TestIntegrationGitChangesEmptyRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -154,7 +154,7 @@ func TestGitChangesEmptyRepo(t *testing.T) {
 	assert.Equal("origin/main", res.Upstream)
 }
 
-func TestGitChangesIncludesUntrackedAndModifiedMarkdown(t *testing.T) {
+func TestIntegrationGitChangesIncludesUntrackedAndModifiedMarkdown(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -175,7 +175,7 @@ func TestGitChangesIncludesUntrackedAndModifiedMarkdown(t *testing.T) {
 	assert.Equal(suggestedCommitMessage(res.Changes), res.SuggestedMessage)
 }
 
-func TestGitChangesNoUpstream(t *testing.T) {
+func TestIntegrationGitChangesNoUpstream(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepoNoUpstream(t)
@@ -187,7 +187,7 @@ func TestGitChangesNoUpstream(t *testing.T) {
 	assert.Equal("main", res.Branch)
 }
 
-func TestGitPublishHappyPath(t *testing.T) {
+func TestIntegrationGitPublishHappyPath(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -208,7 +208,7 @@ func TestGitPublishHappyPath(t *testing.T) {
 	assert.Equal(res.Commit, head)
 }
 
-func TestGitPublishPushesConfiguredUpstreamDespitePushDefaults(t *testing.T) {
+func TestIntegrationGitPublishPushesConfiguredUpstreamDespitePushDefaults(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -230,7 +230,7 @@ func TestGitPublishPushesConfiguredUpstreamDespitePushDefaults(t *testing.T) {
 	assert.Equal(backupInitial, backupHead)
 }
 
-func TestGitPublishRefusesEmptyMessage(t *testing.T) {
+func TestIntegrationGitPublishRefusesEmptyMessage(t *testing.T) {
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
 
@@ -239,7 +239,7 @@ func TestGitPublishRefusesEmptyMessage(t *testing.T) {
 	require.ErrorIs(t, err, ErrEmptyMessage)
 }
 
-func TestGitPublishRefusesNoMarkdownChanges(t *testing.T) {
+func TestIntegrationGitPublishRefusesNoMarkdownChanges(t *testing.T) {
 	g := newGitRepo(t)
 	g.writeFile(t, "code.go", "package x\n")
 
@@ -248,7 +248,7 @@ func TestGitPublishRefusesNoMarkdownChanges(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoMarkdownChanges)
 }
 
-func TestGitPublishRefusesNotARepo(t *testing.T) {
+func TestIntegrationGitPublishRefusesNotARepo(t *testing.T) {
 	dir := t.TempDir()
 	reg := NewRegistry([]config.DocFolder{{ID: "f", Name: "F", Path: dir}})
 
@@ -257,7 +257,7 @@ func TestGitPublishRefusesNotARepo(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotAGitRepo)
 }
 
-func TestGitPublishRefusesIndexNotCleanUnrelatedStaged(t *testing.T) {
+func TestIntegrationGitPublishRefusesIndexNotCleanUnrelatedStaged(t *testing.T) {
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
 	g.writeFile(t, "code.go", "package x\n")
@@ -268,7 +268,7 @@ func TestGitPublishRefusesIndexNotCleanUnrelatedStaged(t *testing.T) {
 	require.ErrorIs(t, err, ErrIndexNotClean)
 }
 
-func TestGitPublishRefusesIndexNotCleanPartiallyStaged(t *testing.T) {
+func TestIntegrationGitPublishRefusesIndexNotCleanPartiallyStaged(t *testing.T) {
 	g := newGitRepo(t)
 	g.writeFile(t, "partial.md", "v1\n")
 	g.stage(t, "partial.md")
@@ -279,7 +279,7 @@ func TestGitPublishRefusesIndexNotCleanPartiallyStaged(t *testing.T) {
 	require.ErrorIs(t, err, ErrIndexNotClean)
 }
 
-func TestGitPublishRefusesConflict(t *testing.T) {
+func TestIntegrationGitPublishRefusesConflict(t *testing.T) {
 	g := newGitRepo(t)
 	runGit(t, g.dir, "checkout", "-b", "side")
 	g.writeFile(t, "seed.md", "side version\n")
@@ -298,7 +298,7 @@ func TestGitPublishRefusesConflict(t *testing.T) {
 	require.ErrorIs(t, err, ErrConflict)
 }
 
-func TestGitPublishRefusesNoUpstream(t *testing.T) {
+func TestIntegrationGitPublishRefusesNoUpstream(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepoNoUpstream(t)
@@ -312,7 +312,7 @@ func TestGitPublishRefusesNoUpstream(t *testing.T) {
 	assert.Equal("git push -u origin main", noUpstream.SuggestedCommand)
 }
 
-func TestGitPublishStagesRenamePair(t *testing.T) {
+func TestIntegrationGitPublishStagesRenamePair(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -326,7 +326,7 @@ func TestGitPublishStagesRenamePair(t *testing.T) {
 	assert.Contains(out, "renamed.md")
 }
 
-func TestGitPublishStagesWorktreeRename(t *testing.T) {
+func TestIntegrationGitPublishStagesWorktreeRename(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -342,7 +342,7 @@ func TestGitPublishStagesWorktreeRename(t *testing.T) {
 	assert.Contains(renames, "R")
 }
 
-func TestGitPublishPushFailedAfterCommit(t *testing.T) {
+func TestIntegrationGitPublishPushFailedAfterCommit(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -360,7 +360,7 @@ func TestGitPublishPushFailedAfterCommit(t *testing.T) {
 	assert.Equal(head, pushFailed.Commit)
 }
 
-func TestGitPublishDoesNotRunDocsRepoHooks(t *testing.T) {
+func TestIntegrationGitPublishDoesNotRunDocsRepoHooks(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -380,7 +380,7 @@ func TestGitPublishDoesNotRunDocsRepoHooks(t *testing.T) {
 	assert.NoFileExists(marker, "docs repo hook executed during publish")
 }
 
-func TestGitPublishIgnoresRepoHooksPathOverride(t *testing.T) {
+func TestIntegrationGitPublishIgnoresRepoHooksPathOverride(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -398,7 +398,7 @@ func TestGitPublishIgnoresRepoHooksPathOverride(t *testing.T) {
 	assert.NoFileExists(marker, "core.hooksPath hook executed during publish")
 }
 
-func TestGitPublishRejectsCommandBearingLocalConfig(t *testing.T) {
+func TestIntegrationGitPublishRejectsCommandBearingLocalConfig(t *testing.T) {
 	cases := []struct {
 		name  string
 		key   string
@@ -438,7 +438,7 @@ func TestGitPublishRejectsCommandBearingLocalConfig(t *testing.T) {
 	}
 }
 
-func TestGitPublishRejectsIncludedCommandBearingConfig(t *testing.T) {
+func TestIntegrationGitPublishRejectsIncludedCommandBearingConfig(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -457,7 +457,7 @@ func TestGitPublishRejectsIncludedCommandBearingConfig(t *testing.T) {
 	assert.NotEmpty(unsafe.Entries)
 }
 
-func TestGitPublishRejectsPushTargetInsideDocsFolder(t *testing.T) {
+func TestIntegrationGitPublishRejectsPushTargetInsideDocsFolder(t *testing.T) {
 	cases := []struct {
 		name string
 		url  func(g *gitRepo) string
@@ -497,7 +497,7 @@ func TestGitPublishRejectsPushTargetInsideDocsFolder(t *testing.T) {
 	}
 }
 
-func TestGitPublishRejectsPushInsteadOfRewriteIntoDocsFolder(t *testing.T) {
+func TestIntegrationGitPublishRejectsPushInsteadOfRewriteIntoDocsFolder(t *testing.T) {
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -513,7 +513,7 @@ func TestGitPublishRejectsPushInsteadOfRewriteIntoDocsFolder(t *testing.T) {
 	require.ErrorAs(err, &unsafe)
 }
 
-func TestGitPublishRejectsMixedLocalAndNetworkPushURLs(t *testing.T) {
+func TestIntegrationGitPublishRejectsMixedLocalAndNetworkPushURLs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -533,7 +533,7 @@ func TestGitPublishRejectsMixedLocalAndNetworkPushURLs(t *testing.T) {
 		"publish committed before rejecting the mixed push urls")
 }
 
-func TestGitPublishRejectsRemoteHelperPushTarget(t *testing.T) {
+func TestIntegrationGitPublishRejectsRemoteHelperPushTarget(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -548,7 +548,7 @@ func TestGitPublishRejectsRemoteHelperPushTarget(t *testing.T) {
 	assert.NoFileExists(marker, "ext:: remote helper executed during publish")
 }
 
-func TestGitPublishNeutralizesLocalRemoteReceiveHooks(t *testing.T) {
+func TestIntegrationGitPublishNeutralizesLocalRemoteReceiveHooks(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -569,7 +569,7 @@ func TestGitPublishNeutralizesLocalRemoteReceiveHooks(t *testing.T) {
 	assert.Equal(res.Commit, gitOutput(t, g.remote, "rev-parse", "main"))
 }
 
-func TestGitPublishRejectsFilterAttributes(t *testing.T) {
+func TestIntegrationGitPublishRejectsFilterAttributes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -585,7 +585,7 @@ func TestGitPublishRejectsFilterAttributes(t *testing.T) {
 	assert.NotEmpty(unsafe.Entries)
 }
 
-func TestGitPublishRejectsSubdirectoryFilterAttributes(t *testing.T) {
+func TestIntegrationGitPublishRejectsSubdirectoryFilterAttributes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -601,7 +601,7 @@ func TestGitPublishRejectsSubdirectoryFilterAttributes(t *testing.T) {
 	assert.NotEmpty(unsafe.Entries)
 }
 
-func TestGitPublishGatesAttributesBeforeStatusRunsFilter(t *testing.T) {
+func TestIntegrationGitPublishGatesAttributesBeforeStatusRunsFilter(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -627,7 +627,7 @@ func TestGitPublishGatesAttributesBeforeStatusRunsFilter(t *testing.T) {
 	assert.NoFileExists(marker, "clean filter ran during status before the attribute gate")
 }
 
-func TestGitStatusRejectsFilterAttributes(t *testing.T) {
+func TestIntegrationGitStatusRejectsFilterAttributes(t *testing.T) {
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, ".gitattributes", "*.md filter=lfs\n")
@@ -638,7 +638,7 @@ func TestGitStatusRejectsFilterAttributes(t *testing.T) {
 	require.ErrorAs(err, &unsafe)
 }
 
-func TestGitChangesRejectsFilterAttributes(t *testing.T) {
+func TestIntegrationGitChangesRejectsFilterAttributes(t *testing.T) {
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "sub/.gitattributes", "*.md diff=evil\n")
@@ -650,7 +650,7 @@ func TestGitChangesRejectsFilterAttributes(t *testing.T) {
 	require.ErrorAs(err, &unsafe)
 }
 
-func TestGitChangesRejectsCommandBearingLocalConfig(t *testing.T) {
+func TestIntegrationGitChangesRejectsCommandBearingLocalConfig(t *testing.T) {
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -665,7 +665,7 @@ func TestGitChangesRejectsCommandBearingLocalConfig(t *testing.T) {
 	require.ErrorAs(err, &unsafe)
 }
 
-func TestGitPublishAllowsBenignLocalConfig(t *testing.T) {
+func TestIntegrationGitPublishAllowsBenignLocalConfig(t *testing.T) {
 	require := require.New(t)
 	g := newGitRepo(t)
 	g.writeFile(t, "new.md", "# new\n")
@@ -680,7 +680,7 @@ func TestGitPublishAllowsBenignLocalConfig(t *testing.T) {
 	require.True(res.Pushed)
 }
 
-func TestGitStatusDoesNotRunRepoFsmonitor(t *testing.T) {
+func TestIntegrationGitStatusDoesNotRunRepoFsmonitor(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -697,7 +697,7 @@ func TestGitStatusDoesNotRunRepoFsmonitor(t *testing.T) {
 	assert.NoFileExists(marker, "core.fsmonitor program executed during git status")
 }
 
-func TestGitPublishBlocksExtRemoteHelperOnPush(t *testing.T) {
+func TestIntegrationGitPublishBlocksExtRemoteHelperOnPush(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -717,7 +717,7 @@ func TestGitPublishBlocksExtRemoteHelperOnPush(t *testing.T) {
 	assert.NoFileExists(marker, "ext:: remote helper executed during push")
 }
 
-func TestGitPublishCommitFailurePreservesStderr(t *testing.T) {
+func TestIntegrationGitPublishCommitFailurePreservesStderr(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
@@ -733,7 +733,7 @@ func TestGitPublishCommitFailurePreservesStderr(t *testing.T) {
 	assert.NotContains(commitFailed.Stderr, "exit status")
 }
 
-func TestGitPublishStagesLiteralPathspec(t *testing.T) {
+func TestIntegrationGitPublishStagesLiteralPathspec(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)

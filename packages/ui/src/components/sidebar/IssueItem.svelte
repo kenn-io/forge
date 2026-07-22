@@ -57,7 +57,7 @@
 <button class="issue-item" class:selected bind:this={el} onclick={onclick}>
   <p class="title">
     <span class="title-text">{issue.Title}</span>
-    <LabelRow {labels} dots />
+    <LabelRow {labels} compact />
     <span class="item-number">#{issue.Number}</span>
   </p>
   <div class="meta-row">

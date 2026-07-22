@@ -116,7 +116,7 @@ test.describe("issue list view", () => {
 
       await expect(firstItem.locator(".meta-row .repo-name")).toBeVisible();
       await expect(page.locator(".issue-item .repo-row")).toHaveCount(0);
-      await expect(page.locator(".issue-item:has(.label-dot)").first()).toBeVisible();
+      await expect(page.locator(".issue-item:has(.kit-color-label)").first()).toBeVisible();
       const rowHeights = await page
         .locator(".issue-item")
         .evaluateAll((nodes) => nodes.slice(0, 6).map((node) => node.getBoundingClientRect().height));

@@ -347,7 +347,7 @@ describe("PullItem compact layout", () => {
     expect(document.querySelector(".repo-row")).toBeNull();
   });
 
-  it("renders label dots on the title line instead of a label pill row", () => {
+  it("renders label pills on the title line", () => {
     renderItem(
       mkPR({
         labels: [
@@ -357,11 +357,26 @@ describe("PullItem compact layout", () => {
       }),
     );
 
-    expect(document.querySelectorAll(".title .label-dot")).toHaveLength(2);
-    expect(document.querySelector(".title .kit-tooltip-trigger")?.getAttribute("tabindex")).toBe("0");
-    expect(screen.getByText("Labels: bug, sync")).toBeTruthy();
-    expect(document.querySelector(".label-row")).toBeNull();
-    expect(screen.queryByText("bug")).toBeNull();
+    expect(document.querySelectorAll(".title .kit-color-label")).toHaveLength(2);
+    expect(screen.getByText("bug")).toBeTruthy();
+    expect(screen.getByText("sync")).toBeTruthy();
+    expect(document.querySelector(".label-dots")).toBeNull();
+  });
+
+  it("caps label pills at two plus an overflow count on the title line", () => {
+    renderItem(
+      mkPR({
+        labels: [
+          { name: "bug", color: "d73a4a" },
+          { name: "sync", color: "0075ca" },
+          { name: "docs", color: "008672" },
+        ],
+      }),
+    );
+
+    expect(document.querySelectorAll(".title .kit-color-label")).toHaveLength(2);
+    expect(screen.getByText("+1")).toBeTruthy();
+    expect(document.querySelector(".label-dots")).toBeNull();
   });
 
   it("keeps title text, top-right number, and plain author in the two-line structure", () => {

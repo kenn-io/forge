@@ -263,7 +263,7 @@ test.describe("PR list sidebar", () => {
     // row, and rows keep a uniform two-line height regardless of labels.
     await expect(firstItem.locator(".meta-row .repo-name")).toBeVisible();
     await expect(page.locator(".pull-item .repo-row")).toHaveCount(0);
-    await expect(page.locator(".pull-item:has(.label-dot)").first()).toBeVisible();
+    await expect(page.locator(".pull-item:has(.kit-color-label)").first()).toBeVisible();
     const rowHeights = await page
       .locator(".pull-item")
       .evaluateAll((nodes) => nodes.slice(0, 6).map((node) => node.getBoundingClientRect().height));

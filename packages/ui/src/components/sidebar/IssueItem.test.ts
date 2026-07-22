@@ -71,7 +71,7 @@ describe("IssueItem", () => {
     expect(document.querySelector(".repo-row")).toBeNull();
   });
 
-  it("renders label dots on the title line instead of a label pill row", () => {
+  it("renders label pills on the title line", () => {
     renderItem(
       mkIssue({
         labels: [
@@ -81,10 +81,26 @@ describe("IssueItem", () => {
       }),
     );
 
-    expect(document.querySelectorAll(".title .label-dot")).toHaveLength(2);
-    expect(document.querySelector(".title .kit-tooltip-trigger")?.getAttribute("tabindex")).toBe("0");
-    expect(screen.getByText("Labels: bug, docs")).toBeTruthy();
-    expect(document.querySelector(".label-row")).toBeNull();
+    expect(document.querySelectorAll(".title .kit-color-label")).toHaveLength(2);
+    expect(screen.getByText("bug")).toBeTruthy();
+    expect(screen.getByText("docs")).toBeTruthy();
+    expect(document.querySelector(".label-dots")).toBeNull();
+  });
+
+  it("caps label pills at two plus an overflow count on the title line", () => {
+    renderItem(
+      mkIssue({
+        labels: [
+          { name: "bug", color: "d73a4a" },
+          { name: "docs", color: "0075ca" },
+          { name: "help wanted", color: "008672" },
+        ],
+      }),
+    );
+
+    expect(document.querySelectorAll(".title .kit-color-label")).toHaveLength(2);
+    expect(screen.getByText("+1")).toBeTruthy();
+    expect(document.querySelector(".label-dots")).toBeNull();
   });
 
   it("keeps title text, top-right number, and plain author in the two-line structure", () => {

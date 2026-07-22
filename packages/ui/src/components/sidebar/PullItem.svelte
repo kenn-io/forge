@@ -164,7 +164,7 @@
   <p class="title">
     <span class="state-dot" style="background: {stateColors[prState]}"></span>
     <span class="title-text">{pr.Title}</span>
-    <LabelRow {labels} dots />
+    <LabelRow {labels} compact />
     <span class="item-number">#{pr.Number}</span>
   </p>
   <div class="meta-row">

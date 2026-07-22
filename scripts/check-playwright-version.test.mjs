@@ -14,15 +14,24 @@ test("reads the Playwright image version from the CI Dockerfile", async (t) => {
     await mkdir(path.join(root, directory), { recursive: true });
   }
 
-  const packageFile = JSON.stringify({
+  const workspacePackageFile = JSON.stringify({
     devDependencies: { "@playwright/test": "1.61.1" },
   });
-  for (const file of ["package.json", "frontend/package.json", "packages/github-app-ui/package.json"]) {
-    await writeFile(path.join(root, file), packageFile);
+  await writeFile(
+    path.join(root, "package.json"),
+    JSON.stringify({
+      devDependencies: { "@playwright/test": "1.61.1", "vite-plus": "0.2.3" },
+      packageManager: "bun@1.3.14",
+    }),
+  );
+  for (const file of ["frontend/package.json", "packages/github-app-ui/package.json"]) {
+    await writeFile(path.join(root, file), workspacePackageFile);
   }
   await writeFile(
     path.join(root, ".github/docker/playwright/Dockerfile"),
-    "ARG PLAYWRIGHT_BASE_IMAGE=mcr.microsoft.com/playwright@sha256:abc # v1.61.1-noble\n" +
+    `ARG BUN_IMAGE=oven/bun:1.3.14@sha256:${"d".repeat(64)}\n` +
+      "ARG PLAYWRIGHT_BASE_IMAGE=mcr.microsoft.com/playwright@sha256:abc # v1.61.1-noble\n" +
+      "ARG VITE_PLUS_VERSION=0.2.3\n" +
       "FROM ${PLAYWRIGHT_BASE_IMAGE}\n",
   );
 

@@ -21,6 +21,10 @@ If it does not exist, trusted same-repository runs build and push it, then
 resolve the resulting digest. Fork pull requests may consume an existing image
 but may not publish a missing one.
 
+New image layers use zstd level 3 with OCI media types. The export format is
+part of the recipe key so changing compression publishes one replacement image
+instead of silently reusing an older gzip-tagged manifest.
+
 The job exposes the digest-pinned GHCR reference as an output. Full-stack E2E,
 mock E2E, and browser-component jobs all depend on that output and authenticate
 their private job-container pull with `GITHUB_TOKEN`. They install the checked-out

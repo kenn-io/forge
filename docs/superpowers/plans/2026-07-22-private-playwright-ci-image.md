@@ -67,8 +67,9 @@ Dockerfile, and form a tag containing both values. Authenticate to GHCR with `GI
 - [x] **Step 3: Publish only when absent**
 
 When the tag does not exist on a trusted run, invoke `docker buildx build` with
-`--platform linux/amd64`, the pinned base build argument, `--push`, and
-`--provenance=false`. Do not rebuild an existing tag.
+`--platform linux/amd64`, the pinned base build argument, zstd level 3 OCI
+registry output, and `--provenance=false`. Include the export format in the
+recipe key and do not rebuild an existing tag.
 
 - [x] **Step 4: Resolve the immutable digest**
 

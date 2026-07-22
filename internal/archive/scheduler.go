@@ -60,15 +60,9 @@ type featureDeferredError struct {
 func (e *featureDeferredError) Error() string { return e.Detail }
 func (e *featureDeferredError) Unwrap() error { return errAdmissionDeferred }
 
-func featureDeferralFromError(err error) (*featureDeferredError, bool) {
-	var deferred *featureDeferredError
-	ok := errors.As(err, &deferred)
-	return deferred, ok
-}
-
 func featureDeferredBeforeProvider(err error) bool {
-	deferred, ok := featureDeferralFromError(err)
-	return ok && !deferred.providerAttempted
+	var deferred *featureDeferredError
+	return errors.As(err, &deferred) && deferred != nil && !deferred.providerAttempted
 }
 
 func (s *Service) RunEligible(ctx context.Context) error {

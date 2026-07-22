@@ -25,7 +25,8 @@ func (s *Service) hydrateItem(
 		s.items.ArchiveItemSyncCost(repo.Ref.Platform, work.ItemType),
 	)
 	if err != nil {
-		if deferred, ok := featureDeferralFromError(err); ok {
+		var deferred *featureDeferredError
+		if errors.As(err, &deferred) && deferred != nil {
 			return s.deferHydration(ctx, work, deferred.FeatureDeferral)
 		}
 		return err

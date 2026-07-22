@@ -1532,7 +1532,12 @@ describe("PullDetail inline workspace handoff", () => {
     expect(apiClient.POST).toHaveBeenCalled();
   });
 
-  it("discards a create response that lands after the selection changed", async () => {
+  it("publishes a confirmed creation even after the selection changed", async () => {
+    // The workspace exists server-side the moment the response confirms
+    // it. Discarding it because the selection moved on would leave the
+    // next visit to this PR offering "Create Workspace" again — a
+    // duplicate submission. Only presentation (refetch, navigation)
+    // stays tied to the live selection.
     const controller = createTestController("split");
     const { apiClient, resolvePost } = deferredWorkspaceApiClient();
     const { detailStore, navigate, rerender } = renderPullDetail(pullDetail(), undefined, apiClient, {
@@ -1546,9 +1551,32 @@ describe("PullDetail inline workspace handoff", () => {
     resolvePost({ data: { id: "ws-new", status: "provisioning" } });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(controller.recordCreated).not.toHaveBeenCalled();
+    expect(controller.recordCreated).toHaveBeenCalledWith(identity, { id: "ws-new", status: "provisioning" });
     expect(detailStore.refreshDetailOnly).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("publishes a confirmed creation across a selection round-trip", async () => {
+    // A→B→A: returning to the original PR restores an identity that
+    // matches the request, but the round-trip bumped the request
+    // generation. The confirmed creation must still land its override,
+    // or the re-rendered detail shows "Create Workspace" until an
+    // unrelated refetch.
+    const controller = createTestController("split");
+    const { apiClient, resolvePost } = deferredWorkspaceApiClient();
+    const { rerender } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+    });
+
+    await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
+    await rerender({ number: 2 });
+    await rerender({ number: 1 });
+    resolvePost({ data: { id: "ws-new", status: "provisioning" } });
+
+    await vi.waitFor(() => {
+      expect(controller.recordCreated).toHaveBeenCalledWith(identity, { id: "ws-new", status: "provisioning" });
+    });
   });
 
   it("discards a create failure that lands after the selection changed (no flash)", async () => {

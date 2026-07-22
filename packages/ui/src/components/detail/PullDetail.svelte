@@ -1404,34 +1404,41 @@
           },
         },
       );
-      // Superseded: the selection moved on while the request was in
-      // flight — nothing about this response applies to what the user
-      // is looking at now.
-      if (identityLeft()) return;
       if (reqError) {
-        if (componentDestroyed) return;
+        // Superseded or unmounted: an error about an item the user
+        // already left is noise.
+        if (responseIsStale()) return;
         throw new Error(
           reqError.detail ?? reqError.title ?? "failed to create workspace",
         );
       }
+      if (data?.id && inlineWorkspace) {
+        // Publish the confirmed creation to the identity-scoped store
+        // BEFORE any liveness guard: the workspace exists server-side
+        // even when the selection moved on (an A→B→A round-trip bumps
+        // the request generation) or a layout change replaced this
+        // component, and dropping the response leaves the replacement
+        // UI offering "Create Workspace" for a duplicate submission.
+        // recordCreated is claim-guarded, so a late publication only
+        // parks the ref under its identity — it can't activate an
+        // inactive surface.
+        inlineWorkspace.recordCreated(requestIdentity, {
+          id: data.id,
+          status: data.status ?? "provisioning",
+        });
+      }
+      // Everything below is presentation owned by this live component
+      // and its current selection. A destroyed component must not
+      // refetch: its frozen identity still matches its own props, but
+      // the shared detail store may already belong to a different
+      // selection, and loading the old item would replace it. The
+      // override above is enough — a replacement component loads its
+      // own detail on mount.
+      if (responseIsStale()) return;
       if (data?.id) {
         if (inlineWorkspace) {
-          // The workspace-host store outlives this component instance: a
-          // tab, split-view, or breakpoint change can unmount the detail
-          // mid-create with the same PR still selected, and the success
-          // must still land its override and refetch or the created
-          // workspace stays invisible until an unrelated refetch.
-          inlineWorkspace.recordCreated(requestIdentity, {
-            id: data.id,
-            status: data.status ?? "provisioning",
-          });
-          // A destroyed component must not refetch: its frozen identity
-          // still matches its own props, but the shared detail store may
-          // already belong to a different selection, and loading the old
-          // item would replace it. The override above is enough — a
-          // replacement component loads its own detail on mount.
-          if (!componentDestroyed) void refetchDetailForIdentity(requestIdentity);
-        } else if (!componentDestroyed) {
+          void refetchDetailForIdentity(requestIdentity);
+        } else {
           navigate(`/terminal/${data.id}`);
         }
       }

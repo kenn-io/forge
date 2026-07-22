@@ -22,8 +22,19 @@ const PAGE_SURFACE: Partial<Record<string, InlineWorkspaceSurface>> = {
   issues: "issues",
 };
 
+// A tombstone remembers WHICH workspace was deleted: it must keep masking
+// stale envelopes that still carry the dead ID, but an envelope carrying a
+// different ID is a recreation (Workspaces tab, another client) that must
+// surface immediately — an ID-less tombstone would hide it forever, since
+// the "workspace absent" envelope it waits for never arrives.
+type DeletionTombstone = { deletedId: string };
+
+function isTombstone(override: WorkspaceRefLite | DeletionTombstone | undefined): override is DeletionTombstone {
+  return override !== undefined && "deletedId" in override;
+}
+
 let claims = $state<Partial<Record<InlineWorkspaceSurface, InlineClaim>>>({});
-let overrides = $state<Record<string, WorkspaceRefLite | "deleted">>({});
+let overrides = $state<Record<string, WorkspaceRefLite | DeletionTombstone>>({});
 let dockModes = $state<Record<InlineWorkspaceSurface, InlineDockMode>>({
   activity: "split",
   prs: "split",
@@ -120,7 +131,10 @@ function effectiveRef(
   envelopeRef: WorkspaceRefLite | null | undefined,
 ): WorkspaceRefLite | null {
   const override = overrides[identityKey(identity)];
-  if (override === "deleted") return null;
+  if (isTombstone(override)) {
+    if (envelopeRef && envelopeRef.id !== override.deletedId) return envelopeRef;
+    return null;
+  }
   if (override) return override;
   return envelopeRef ?? null;
 }
@@ -184,7 +198,7 @@ export function notifyWorkspaceDeleted(workspaceId: string, hostKey?: string, id
       clearClaim(surface);
     }
     for (const [key, identity] of deadIdentities) {
-      overrides = { ...overrides, [key]: "deleted" };
+      overrides = { ...overrides, [key]: { deletedId: workspaceId } };
       for (const listener of invalidationListeners) listener(identity);
     }
     workspaceIdentityById.delete(workspaceId);
@@ -284,8 +298,8 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       // itself when its current selection confirms the identity.
       if (claim && sameIdentity(claim.identity, identity)) setClaim(surface, identity, ref);
     },
-    recordDeleted: (identity) => {
-      overrides = { ...overrides, [identityKey(identity)]: "deleted" };
+    recordDeleted: (identity, workspaceId) => {
+      overrides = { ...overrides, [identityKey(identity)]: { deletedId: workspaceId } };
       const claim = claims[surface];
       if (claim && sameIdentity(claim.identity, identity)) clearClaim(surface);
     },
@@ -293,8 +307,11 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       const key = identityKey(identity);
       const override = overrides[key];
       if (!override) return;
-      const agrees =
-        override === "deleted" ? envelopeRef == null : envelopeRef != null && envelopeRef.id === override.id;
+      // A tombstone reconciles when the envelope no longer carries the
+      // deleted workspace — either absent, or a different ID (recreated).
+      const agrees = isTombstone(override)
+        ? envelopeRef == null || envelopeRef.id !== override.deletedId
+        : envelopeRef != null && envelopeRef.id === override.id;
       if (!agrees) return;
       const next = { ...overrides };
       delete next[key];

@@ -40,11 +40,12 @@ Interactive surfaces must agree on which item is selected.
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
 - A response confirming a server-side outcome (a completed delete or create)
-  must update global state — claims, tombstones, creation overrides, route
-  memory — even when the component unmounted mid-request with the same item
-  selected (tab, split-view, or breakpoint changes do this); invalidate on
-  identity change, not on destroy alone, and gate only prompts, flashes, and
-  navigation on the live component
+  must publish to identity-scoped global state — claims, tombstones, creation
+  overrides, route memory — before any liveness guard: neither unmount nor a
+  selection that moved on (an A→B→A round-trip bumps the request generation)
+  may discard it, or the replacement UI re-offers the action for a duplicate
+  submission. Gate only presentation — refetches, prompts, flashes,
+  navigation — on the live component and current selection
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::handleDelete`,
   `packages/ui/src/components/detail/PullDetail.svelte::createWorkspace`).
 - Inline surface claims come only from live selection effects (the list
@@ -60,6 +61,11 @@ Interactive surfaces must agree on which item is selected.
   callbacks carry the provider-aware identity themselves so workspaces never
   claimed inline (tab-only, sidebar deletes) still tombstone
   (`frontend/src/lib/stores/workspace-host.svelte.ts::notifyWorkspaceDeleted`).
+  Tombstones carry the deleted workspace ID and suppress only envelopes still
+  carrying that ID: an envelope with a different ID is a recreation that must
+  surface immediately and reconcile the tombstone away — an ID-less tombstone
+  would mask it forever, because the workspace-absent envelope it waits for
+  never arrives once the item has a new workspace.
 - Catalog-backed routes must normalize missing selections even when the catalog
   is empty: select the first available item or `null`, and clear dependent route
   identity (`frontend/src/lib/components/docs/DocsWorkspace.svelte::loadFolders`).

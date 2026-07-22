@@ -81,7 +81,7 @@ describe("workspace host store", () => {
     prs.reconcile(identityA, refA);
     expect(prs.effectiveWorkspaceRef(identityA, refA)).toEqual(refA);
     // a disagreeing (stale) refetch payload leaves the override in force
-    prs.recordDeleted(identityA);
+    prs.recordDeleted(identityA, refA.id);
     prs.reconcile(identityA, refA); // envelope still carries deleted ws — stale
     expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
     prs.reconcile(identityA, null); // now it agrees
@@ -91,15 +91,40 @@ describe("workspace host store", () => {
   it("a tombstone never flickers back into a claim", () => {
     const prs = getInlineWorkspaceController("prs");
     prs.claim(identityA, refA);
-    prs.recordDeleted(identityA);
+    prs.recordDeleted(identityA, refA.id);
     expect(desiredSlot()).toBeNull();
     expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull(); // stale envelope
   });
 
   it("overrides are identity-scoped", () => {
     const prs = getInlineWorkspaceController("prs");
-    prs.recordDeleted(identityA);
+    prs.recordDeleted(identityA, refA.id);
     expect(prs.effectiveWorkspaceRef(identityB, refA)).toEqual(refA);
+  });
+
+  it("a tombstone does not mask a recreated workspace under a fresh ID", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const recreated = { id: "ws-a2", status: "provisioning" };
+    prs.recordDeleted(identityA, refA.id);
+    // Stale envelopes still carrying the deleted workspace stay masked.
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
+    // An envelope carrying a different ID is a recreation (Workspaces
+    // tab, another client) — the "workspace absent" envelope an ID-less
+    // tombstone would wait for never arrives, so it must show now.
+    expect(prs.effectiveWorkspaceRef(identityA, recreated)).toEqual(recreated);
+    // And the refetch that surfaced it clears the tombstone entirely.
+    prs.reconcile(identityA, recreated);
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toEqual(refA);
+  });
+
+  it("a deletion reported without an ID match keeps masking only its own workspace", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const recreated = { id: "ws-a2", status: "ready" };
+    prs.claim(identityA, refA);
+    prs.release();
+    notifyWorkspaceDeleted("ws-a"); // deleted from the Workspaces tab
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
+    expect(prs.effectiveWorkspaceRef(identityA, recreated)).toEqual(recreated);
   });
 
   it("recordCreated only claims when the surface is still on that identity", () => {
@@ -247,7 +272,7 @@ describe("workspace host store", () => {
     const hostless = { ...identityA, platformHost: undefined };
     prs.claim(hostless, refA);
     expect(prs.isClaimedFor(identityA)).toBe(true);
-    prs.recordDeleted(identityA);
+    prs.recordDeleted(identityA, refA.id);
     expect(prs.effectiveWorkspaceRef(hostless, refA)).toBeNull();
   });
 
@@ -258,7 +283,7 @@ describe("workspace host store", () => {
     // hide the detail-claimed "pull" identity too.
     prs.claim({ ...identityA, itemType: "pr" }, refA);
     expect(prs.isClaimedFor(identityA)).toBe(true);
-    prs.recordDeleted({ ...identityA, itemType: "pull_request" });
+    prs.recordDeleted({ ...identityA, itemType: "pull_request" }, refA.id);
     expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
   });
 
@@ -273,7 +298,7 @@ describe("workspace host store", () => {
     // A tombstone recorded canonically hides the alias-keyed item too;
     // otherwise a deleted workspace could be reclaimed through the alias
     // route from stale detail data.
-    prs.recordDeleted(identityA);
+    prs.recordDeleted(identityA, refA.id);
     expect(prs.effectiveWorkspaceRef(aliasIdentity, refA)).toBeNull();
   });
 

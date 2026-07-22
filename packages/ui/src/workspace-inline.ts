@@ -58,8 +58,10 @@ export interface InlineWorkspaceController {
    * tombstones every surface's claim on that workspace ID at once. Kept
    * for non-WTV delete surfaces (e.g. a future inline delete action that
    * only ever needs to affect its own claiming surface) — do not remove.
+   * The workspace ID scopes the tombstone: it suppresses stale envelopes
+   * still carrying that workspace, not a recreation under a fresh ID.
    */
-  recordDeleted(identity: WorkspaceItemIdentity): void;
+  recordDeleted(identity: WorkspaceItemIdentity, workspaceId: string): void;
   /** Identity-matched refetch landed: drop the override if the envelope agrees. */
   reconcile(identity: WorkspaceItemIdentity, envelopeRef: WorkspaceRefLite | null | undefined): void;
   /** Dock UI state (persisted height lives in the dock; mode lives here so detail buttons can drive it). */

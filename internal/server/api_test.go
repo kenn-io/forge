@@ -10196,7 +10196,7 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 			"state":"OPEN",
 			"body":"Synced through the HTTP API",
 			"url":"https://github.com/acme/widget/issues/80",
-			"author":{"login":"ivy"},
+			"author":{"__typename":"Bot","login":"renovate"},
 			"createdAt":"` + now + `",
 			"updatedAt":"` + now + `",
 			"closedAt":null,
@@ -10257,7 +10257,7 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 	apiIssue := (*listResp.JSON200)[0]
 	assert.Equal(int64(80), apiIssue.Number)
 	assert.Equal("Full stack GraphQL issue", apiIssue.Title)
-	assert.Equal("ivy", apiIssue.Author)
+	assert.Equal("renovate[bot]", apiIssue.Author)
 	assert.Equal("open", apiIssue.State)
 	require.NotNil(apiIssue.Labels)
 	require.Len(*apiIssue.Labels, 1)

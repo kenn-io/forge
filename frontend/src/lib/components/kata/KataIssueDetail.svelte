@@ -14,6 +14,7 @@
     KataTaskEvent,
     KataTaskGroup,
   } from "../../api/kata/taskTypes.js";
+  import type { KataLinkFilters } from "../../features/kata/kataLinkFilters.js";
   import type { MessageLinkRef } from "../../messages/types";
   import IssueMessageLinks from "../../features/kata/IssueMessageLinks.svelte";
   import RecurrencePanel from "../recurrence/RecurrencePanel.svelte";
@@ -36,6 +37,8 @@
     currentView: { groups: KataTaskGroup[] };
     api: KataTaskAPI;
     activeDaemonId?: string | undefined;
+    linkFilters: KataLinkFilters;
+    onLinkFiltersChange: (next: KataLinkFilters) => void;
     projects: KataProjectSummary[];
     ownerOptions: TypeaheadOption[];
     messageLinks: MessageLinkRef[];
@@ -75,6 +78,8 @@
     currentView,
     api,
     activeDaemonId = undefined,
+    linkFilters,
+    onLinkFiltersChange,
     projects,
     ownerOptions,
     messageLinks,
@@ -381,6 +386,8 @@
       {currentView}
       {api}
       {activeDaemonId}
+      {linkFilters}
+      {onLinkFiltersChange}
       onAddComment={onAddComment}
       onEditIssue={onEditIssue}
       onSelectIssue={onSelectIssue}

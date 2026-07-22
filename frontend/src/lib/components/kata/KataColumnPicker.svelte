@@ -51,6 +51,8 @@
     if (!open) return;
     await tick();
     position();
+    await tick();
+    position();
   }
 </script>
 
@@ -59,7 +61,7 @@
     bind:this={trigger}
     type="button"
     aria-label="Columns"
-    title="Choose visible columns"
+    title="Choose columns shown when space allows"
     aria-expanded={open}
     onclick={() => void toggle()}
   >
@@ -68,7 +70,7 @@
   </button>
   {#if open}
     <div bind:this={panel} class="column-picker__panel kit-popover-card" style={panelStyle}>
-      <div class="column-picker__title">Visible columns</div>
+      <div class="column-picker__title">Shown when space allows</div>
       {#each KATA_OPTIONAL_TASK_COLUMNS as column (column.id)}
         <Checkbox
           checked={visibility[column.id]}

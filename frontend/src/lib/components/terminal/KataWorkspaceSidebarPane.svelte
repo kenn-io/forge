@@ -14,6 +14,7 @@
   import { computeRemoveMessageLinkPatch, readMessageLinks } from "../../messages/messageLinks.js";
   import type { MessageLinkRef } from "../../messages/types";
   import KataRecurrenceDialogs from "../../features/kata/KataRecurrenceDialogs.svelte";
+  import { createKataLinkFilters, type KataLinkFilters } from "../../features/kata/kataLinkFilters.js";
   import { createKataWorkspaceStore } from "../../stores/kata-workspace.svelte.js";
 
   interface Props {
@@ -30,6 +31,7 @@
   let loading = $state(true);
   let loadError = $state<string | null>(null);
   let checklistRevealed = $state(false);
+  let linkFilters = $state<KataLinkFilters>(createKataLinkFilters("all"));
   let pendingMoveIssueUIDs = $state.raw<ReadonlySet<string>>(new Set());
   let unlinkBusyIds = $state<ReadonlySet<number>>(new Set());
   let loadRequestID = 0;
@@ -48,6 +50,7 @@
     loading = true;
     loadError = null;
     checklistRevealed = false;
+    linkFilters = createKataLinkFilters("all");
     void store
       .bootstrap("all", issueUID, { selectFirst: false })
       .catch((err) => {
@@ -228,6 +231,10 @@
       currentView={store.currentView}
       api={store.api}
       activeDaemonId={kata.daemon_id}
+      {linkFilters}
+      onLinkFiltersChange={(next) => {
+        linkFilters = next;
+      }}
       projects={store.projects}
       ownerOptions={ownerOptions()}
       messageLinks={selectedMessageLinks()}

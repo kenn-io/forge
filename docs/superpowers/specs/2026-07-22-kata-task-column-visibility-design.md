@@ -17,13 +17,13 @@ Let maintainers hide low-value metadata columns in the Kata task list and rememb
 
 ## Interaction
 
-Add an always-available **Columns** button to the task-list header beside the tree controls. It opens a compact popover containing one checkbox for each optional column and a **Show all** reset action.
+Add an always-available **Columns** button to the task-list header beside the tree controls. It opens a compact popover labeled **Shown when space allows**, containing one checkbox for each optional column and a **Show all** reset action. A checked box means user-enabled; actual rendering is the intersection of that preference and the columns supported by the current responsive layout.
 
 Checkbox changes apply immediately while the popover remains open. Escape and outside interaction close the popover using the application's existing overlay and focus conventions. The control remains available when the current task set has no expandable rows, unlike the conditional tree controls.
 
 ID and Title do not appear as toggleable options. Keeping them fixed prevents users from hiding task identity or leaving a list that cannot be scanned meaningfully.
 
-If the user hides the currently active optional sort column (Updated, Priority, or Owner), sorting resets immediately to Title ascending and persists through the existing sort preference. This avoids ordering the list by an invisible criterion. Hiding Due or Tags does not affect sorting because those columns are not sort controls. Showing columns again does not change the current sort.
+If the user hides the currently active optional sort column (Updated, Priority, or Owner), sorting resets immediately to Title ascending and persists through the existing sort preference. Restoring a saved visibility preference also reconciles an independently saved sort before first render. Responsive auto-hiding is temporary and does not change sorting; a user-enabled active sort column remains rendered, with horizontal overflow if necessary, so its indicator and control never disappear. Hiding Due or Tags does not affect sorting because those columns are not sort controls. Showing columns again does not change the current sort.
 
 ## State and Persistence
 
@@ -44,7 +44,7 @@ Synchronization between simultaneously open browser tabs is out of scope. Each t
 
 Hidden columns are removed from both the header and every task row. Their grid tracks are also removed so the Title column receives the freed width instead of leaving empty gaps.
 
-The existing container-width rules remain an additional visibility constraint. A user-enabled column may still auto-hide when the task pane is narrow; a user-disabled column never appears at any width. Expanding the pane restores only columns that are enabled in the saved preference.
+The existing container-width rules remain an additional visibility constraint. Effective visibility is `user-enabled ∩ layout-supported`, except that the active user-enabled sort column is always layout-supported so the ordering remains visible and controllable. Other user-enabled columns may auto-hide when the task pane is narrow, while a user-disabled column never appears at any width. Expanding the pane restores only columns that are enabled in the saved preference.
 
 Group headings, empty states, nested task indentation, row action placement, and the horizontal scroll container continue to span the resulting grid without changing their behavior.
 
@@ -65,8 +65,11 @@ Add focused component tests that prove:
 - hiding a column removes both its header and its row cells;
 - the saved preference is restored after remounting;
 - Show all restores every optional column and updates storage;
+- all optional columns can be disabled while ID and Title remain usable;
 - malformed or wrong-shaped stored data falls back safely, while unknown column keys are ignored;
 - storage failures do not break the interaction.
 - hiding the active Updated, Priority, or Owner sort resets sorting to Title ascending and persists it.
+- restoring inconsistent saved visibility and sort preferences reconciles to Title ascending before first render;
+- responsive auto-hiding leaves the saved sort unchanged and compact-layout header/row tracks remain aligned.
 
 Add a Vitest browser test for keyboard opening, `aria-expanded`, Escape dismissal, and trigger focus restoration. Extend the Kata full-stack Playwright coverage for the browser-only layout contract: the picker floats above the header, header and row cells stay aligned, enabled columns auto-hide and return across representative container widths, disabled columns remain absent after widening, and the Title track receives freed width. The Playwright test exercises the real seeded Kata backend because the existing Kata full-stack fixture already owns this visible workflow.

@@ -8,6 +8,7 @@ import type {
   KataTaskDetail,
   KataTaskViewResponse,
 } from "../../api/kata/taskTypes.js";
+import { createKataLinkFilters } from "../../features/kata/kataLinkFilters.js";
 import type { MessageLinkRef } from "../../messages/types";
 
 import KataIssueDetail from "./KataIssueDetail.svelte";
@@ -111,6 +112,8 @@ function renderDetail(props: Partial<KataIssueDetailProps> = {}) {
       currentView: makeView(),
       api: makeAPI(),
       activeDaemonId: "home",
+      linkFilters: createKataLinkFilters("open"),
+      onLinkFiltersChange: vi.fn(),
       projects: [makeProject("project-1", "Inbox", "inbox"), makeProject("project-2", "Roadmap")],
       ownerOptions: [],
       messageLinks: [],

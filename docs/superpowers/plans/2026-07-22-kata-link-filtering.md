@@ -29,10 +29,12 @@
 ### Task 1: Define the Kata link filter contract
 
 **Files:**
+
 - Create: `frontend/src/lib/features/kata/kataLinkFilters.ts`
 - Create: `frontend/src/lib/features/kata/kataLinkFilters.test.ts`
 
 **Interfaces:**
+
 - Consumes: `KataTaskLink`, `KataTaskStatusFilter`, and `KataTaskSummary` from `frontend/src/lib/api/kata/taskTypes.ts`.
 - Produces: `KataLinkRelation`, `KataLinkFilters`, `KataLinkPeerResolution`, `KATA_LINK_RELATIONS`, `createKataLinkFilters`, `applyKataLinkStatusScope`, `relationForKataLink`, `kataLinkCouldAffectVisibleResults`, and `kataLinkMatchesFilters`.
 
@@ -134,7 +136,9 @@ describe("kata link filters", () => {
     const mixed = createKataLinkFilters("all");
 
     expect(kataLinkMatchesFilters(link(), selectedUID, { kind: "resolved", peer: peer("open") }, openOnly)).toBe(true);
-    expect(kataLinkMatchesFilters(link(), selectedUID, { kind: "resolved", peer: peer("closed") }, openOnly)).toBe(false);
+    expect(kataLinkMatchesFilters(link(), selectedUID, { kind: "resolved", peer: peer("closed") }, openOnly)).toBe(
+      false,
+    );
     expect(kataLinkMatchesFilters(link(), selectedUID, { kind: "pending" }, openOnly)).toBe(false);
     expect(kataLinkMatchesFilters(link(), selectedUID, { kind: "pending" }, mixed)).toBe(true);
     expect(kataLinkMatchesFilters(link(), selectedUID, { kind: "failed" }, openOnly)).toBe(true);
@@ -167,11 +171,7 @@ Expected: FAIL because `./kataLinkFilters.js` does not exist.
 Create `frontend/src/lib/features/kata/kataLinkFilters.ts`:
 
 ```ts
-import type {
-  KataTaskLink,
-  KataTaskStatusFilter,
-  KataTaskSummary,
-} from "../../api/kata/taskTypes.js";
+import type { KataTaskLink, KataTaskStatusFilter, KataTaskSummary } from "../../api/kata/taskTypes.js";
 
 export const KATA_LINK_RELATIONS = ["parent", "child", "blocks", "blocked_by", "related"] as const;
 
@@ -207,10 +207,7 @@ export function createKataLinkFilters(scope: KataTaskStatusFilter): KataLinkFilt
   };
 }
 
-export function applyKataLinkStatusScope(
-  current: KataLinkFilters,
-  scope: KataTaskStatusFilter,
-): KataLinkFilters {
+export function applyKataLinkStatusScope(current: KataLinkFilters, scope: KataTaskStatusFilter): KataLinkFilters {
   return {
     statuses: statusesForScope(scope),
     relations: { ...current.relations },
@@ -229,8 +226,7 @@ export function kataLinkCouldAffectVisibleResults(
   filters: KataLinkFilters,
 ): boolean {
   return (
-    filters.relations[relationForKataLink(link, selectedUID)] &&
-    (filters.statuses.open || filters.statuses.closed)
+    filters.relations[relationForKataLink(link, selectedUID)] && (filters.statuses.open || filters.statuses.closed)
   );
 }
 
@@ -274,10 +270,12 @@ Expected: commit succeeds without `--no-verify`.
 ### Task 2: Build the accessible link-filter popover
 
 **Files:**
+
 - Create: `frontend/src/lib/components/kata/KataLinkFilterMenu.svelte`
 - Create: `frontend/src/lib/components/kata/KataLinkFilterMenu.test.ts`
 
 **Interfaces:**
+
 - Consumes: `KataLinkFilters`, `KataLinkRelation`, and `KATA_LINK_RELATIONS` from Task 1.
 - Produces: `KataLinkFilterMenu` with props `filters: KataLinkFilters` and `onChange: (next: KataLinkFilters) => void`.
 
@@ -566,6 +564,7 @@ Expected: commit succeeds without bypassing hooks.
 ### Task 3: Filter hydrated link rows and connect workspace scope
 
 **Files:**
+
 - Modify: `frontend/src/lib/components/kata/KataIssueDiscussion.svelte:1-205,294-370`
 - Modify: `frontend/src/lib/components/kata/KataIssueDiscussion.test.ts:1-430`
 - Modify: `frontend/src/lib/components/kata/KataIssueDetail.svelte:1-110,378-388`
@@ -575,6 +574,7 @@ Expected: commit succeeds without bypassing hooks.
 - Modify: `frontend/tests/e2e-full/kata.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `KataLinkFilters`, `KataLinkPeerResolution`, `KataLinkRelation`, `applyKataLinkStatusScope`, `createKataLinkFilters`, `kataLinkCouldAffectVisibleResults`, `kataLinkMatchesFilters`, and `relationForKataLink` from Task 1; `KataLinkFilterMenu` from Task 2.
 - Produces: controlled props `linkFilters: KataLinkFilters` and `onLinkFiltersChange: (next: KataLinkFilters) => void` threaded from `KataWorkspace` through `KataIssueDetail` to `KataIssueDiscussion`.
 
@@ -595,8 +595,8 @@ function makeAPI(
       issues: options.searchIssues ?? [],
       fetched_at: "2026-06-01T12:00:00Z",
     })),
-    issue: vi.fn(async (uid: string) =>
-      options.issueDetails?.[uid] ?? makeIssue({ uid, short_id: uid, title: "Hydrated task" }),
+    issue: vi.fn(
+      async (uid: string) => options.issueDetails?.[uid] ?? makeIssue({ uid, short_id: uid, title: "Hydrated task" }),
     ),
   } as unknown as KataTaskAPI;
 }
@@ -605,12 +605,7 @@ function makeAPI(
 Import `KataTaskLink` and `createKataLinkFilters`, and add required `linkFilters` / `onLinkFiltersChange` props to every existing render. Update the existing off-view hydration test from `makeAPI({ issueDetail: peerDetail })` to `makeAPI({ issueDetails: { "issue-peer": peerDetail } })`. Then add these focused tests:
 
 ```ts
-function taskLink(
-  id: number,
-  peerUID: string,
-  peerShortID: string,
-  type: KataTaskLink["type"],
-): KataTaskLink {
+function taskLink(id: number, peerUID: string, peerShortID: string, type: KataTaskLink["type"]): KataTaskLink {
   return {
     id,
     project_id: 1,
@@ -624,10 +619,7 @@ function taskLink(
 
 it("shows only open peers by default and reports the filtered count", async () => {
   const selected = makeIssue();
-  selected.links = [
-    taskLink(1, "issue-open", "open", "related"),
-    taskLink(2, "issue-closed", "closed", "blocks"),
-  ];
+  selected.links = [taskLink(1, "issue-open", "open", "related"), taskLink(2, "issue-closed", "closed", "blocks")];
   render(KataIssueDiscussion, {
     props: {
       issue: selected,
@@ -636,7 +628,12 @@ it("shows only open peers by default and reports the filtered count", async () =
       api: makeAPI({
         issueDetails: {
           "issue-open": makeIssue({ uid: "issue-open", short_id: "open", title: "Open peer", status: "open" }),
-          "issue-closed": makeIssue({ uid: "issue-closed", short_id: "closed", title: "Closed peer", status: "closed" }),
+          "issue-closed": makeIssue({
+            uid: "issue-closed",
+            short_id: "closed",
+            title: "Closed peer",
+            status: "closed",
+          }),
         },
       }),
       activeDaemonId: "home",
@@ -656,10 +653,7 @@ it("shows only open peers by default and reports the filtered count", async () =
 
 it("shows state chips when both task-state filters are enabled", async () => {
   const selected = makeIssue();
-  selected.links = [
-    taskLink(1, "issue-open", "open", "related"),
-    taskLink(2, "issue-closed", "closed", "blocks"),
-  ];
+  selected.links = [taskLink(1, "issue-open", "open", "related"), taskLink(2, "issue-closed", "closed", "blocks")];
   render(KataIssueDiscussion, {
     props: {
       issue: selected,
@@ -668,7 +662,12 @@ it("shows state chips when both task-state filters are enabled", async () => {
       api: makeAPI({
         issueDetails: {
           "issue-open": makeIssue({ uid: "issue-open", short_id: "open", title: "Open peer", status: "open" }),
-          "issue-closed": makeIssue({ uid: "issue-closed", short_id: "closed", title: "Closed peer", status: "closed" }),
+          "issue-closed": makeIssue({
+            uid: "issue-closed",
+            short_id: "closed",
+            title: "Closed peer",
+            status: "closed",
+          }),
         },
       }),
       activeDaemonId: "home",
@@ -940,7 +939,7 @@ let pendingPeerKeys = $state<ReadonlySet<string>>(new Set());
 let lastSelectedDetail: KataTaskDetail | null = null;
 ```
 
-4. Preserve the existing signature and generation guard, but store `detail.issue` on success and `null` on failure.
+4. Preserve the existing generation guard, but remove `issue.issue.revision` from the hydration signature. The cache-reset identity is daemon, selected task UID, and link identity; a same-task revision change must not discard successful peer summaries. Store `detail.issue` on success and `null` on failure.
    Build hydration candidates only for peers not already available from `currentViewPeer(uid)`, not cached in `hydratedPeers`, and not present in `pendingPeerKeys`. Keep the existing one-request-per-peer concurrency and signature guards; do not serialize the requests or add a second cache.
 
 ```ts
@@ -954,6 +953,7 @@ const peerUIDs = issue.links
       !pendingPeerKeys.has(`${signature}:${uid}`),
   );
 ```
+
 5. Add a same-task refresh effect that drops only failed entries, causing the existing hydration effect to retry them while preserving successful peer summaries:
 
 ```ts
@@ -964,16 +964,13 @@ $effect(() => {
     current !== lastSelectedDetail &&
     current.issue.uid === lastSelectedDetail.issue.uid
   ) {
-    hydratedPeers = Object.fromEntries(
-      Object.entries(hydratedPeers).filter(([, peer]) => peer !== null),
-    );
+    hydratedPeers = Object.fromEntries(Object.entries(hydratedPeers).filter(([, peer]) => peer !== null));
   }
   lastSelectedDetail = current;
 });
 ```
 
-This effect keys recovery on a new selected-detail object, not revision or link signature, because a refresh may replace the detail snapshot without changing either value.
-6. Resolve current-view peers without an API call and replace the existing independent `linkLabel` branching with formatting based on `relationForKataLink`:
+This effect keys recovery on a new selected-detail object, not revision or link signature, because a refresh may replace the detail snapshot without changing either value. Cover a refresh with an incremented revision and assert that successful peers remain cached while failed peers retry. 6. Resolve current-view peers without an API call and replace the existing independent `linkLabel` branching with formatting based on `relationForKataLink`:
 
 ```ts
 function currentViewPeer(uid: string): KataTaskSummary | undefined {
@@ -1011,16 +1008,13 @@ function linkLabel(link: KataTaskLink): string {
 
 ```ts
 const visibleLinks = $derived(
-  issue.links.filter((link) =>
-    kataLinkMatchesFilters(link, issue.issue.uid, peerResolution(link), linkFilters),
-  ),
+  issue.links.filter((link) => kataLinkMatchesFilters(link, issue.issue.uid, peerResolution(link), linkFilters)),
 );
 const showStateChips = $derived(linkFilters.statuses.open && linkFilters.statuses.closed);
 const unresolvedPeerCount = $derived(
   issue.links.filter(
     (link) =>
-      peerResolution(link).kind === "pending" &&
-      kataLinkCouldAffectVisibleResults(link, issue.issue.uid, linkFilters),
+      peerResolution(link).kind === "pending" && kataLinkCouldAffectVisibleResults(link, issue.issue.uid, linkFilters),
   ).length,
 );
 ```
@@ -1332,19 +1326,44 @@ const filterTriggerBox = await links.getByRole("button", { name: "Filter links" 
 const filterPanelBox = await filterPanel.boundingBox();
 expect(filterTriggerBox).not.toBeNull();
 expect(filterPanelBox).not.toBeNull();
-expect(Math.abs(filterPanelBox!.x + filterPanelBox!.width - (filterTriggerBox!.x + filterTriggerBox!.width))).toBeLessThanOrEqual(2);
+expect(
+  Math.abs(filterPanelBox!.x + filterPanelBox!.width - (filterTriggerBox!.x + filterTriggerBox!.width)),
+).toBeLessThanOrEqual(2);
+expect(
+  Math.min(
+    Math.abs(filterPanelBox!.y - (filterTriggerBox!.y + filterTriggerBox!.height)),
+    Math.abs(filterPanelBox!.y + filterPanelBox!.height - filterTriggerBox!.y),
+  ),
+).toBeLessThanOrEqual(5);
 expect(filterPanelBox!.x).toBeGreaterThanOrEqual(0);
 expect(filterPanelBox!.y).toBeGreaterThanOrEqual(0);
 expect(filterPanelBox!.x + filterPanelBox!.width).toBeLessThanOrEqual((page.viewportSize()?.width ?? 0) + 1);
 expect(filterPanelBox!.y + filterPanelBox!.height).toBeLessThanOrEqual((page.viewportSize()?.height ?? 0) + 1);
 
 await page.setViewportSize({ width: 720, height: 540 });
+const filterTrigger = links.getByRole("button", { name: "Filter links" });
+await filterTrigger.scrollIntoViewIfNeeded();
+const constrainedFilterTriggerBox = await filterTrigger.boundingBox();
 const constrainedFilterPanelBox = await filterPanel.boundingBox();
+expect(constrainedFilterTriggerBox).not.toBeNull();
 expect(constrainedFilterPanelBox).not.toBeNull();
 expect(constrainedFilterPanelBox!.x).toBeGreaterThanOrEqual(0);
 expect(constrainedFilterPanelBox!.y).toBeGreaterThanOrEqual(0);
 expect(constrainedFilterPanelBox!.x + constrainedFilterPanelBox!.width).toBeLessThanOrEqual(721);
 expect(constrainedFilterPanelBox!.y + constrainedFilterPanelBox!.height).toBeLessThanOrEqual(541);
+expect(
+  Math.abs(
+    constrainedFilterPanelBox!.x +
+      constrainedFilterPanelBox!.width -
+      (constrainedFilterTriggerBox!.x + constrainedFilterTriggerBox!.width),
+  ),
+).toBeLessThanOrEqual(2);
+expect(
+  Math.min(
+    Math.abs(constrainedFilterPanelBox!.y - (constrainedFilterTriggerBox!.y + constrainedFilterTriggerBox!.height)),
+    Math.abs(constrainedFilterPanelBox!.y + constrainedFilterPanelBox!.height - constrainedFilterTriggerBox!.y),
+  ),
+).toBeLessThanOrEqual(5);
 await page.setViewportSize({ width: 1280, height: 720 });
 await filterPanel.getByRole("checkbox", { name: "Closed" }).click();
 
@@ -1359,6 +1378,8 @@ await filterPanel.getByRole("checkbox", { name: "Parent" }).click();
 await filterPanel.getByRole("checkbox", { name: "Related" }).click();
 await page.keyboard.press("Escape");
 ```
+
+At both viewport sizes, re-read the trigger and panel boxes and assert the panel is still right-edge aligned and vertically adjacent using the helper's 4px trigger gap: either immediately below the trigger or flipped immediately above it. Containment alone is insufficient.
 
 Keep the existing navigation into the parent task and back to Pay rent. After returning, reopen **Filter links**, assert **Related** is still unchecked, then re-enable it before the existing add-related-link assertions:
 

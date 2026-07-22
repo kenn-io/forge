@@ -4,9 +4,11 @@ import type {
   KataTaskAPI,
   KataTaskDetail,
   KataTaskEvent,
+  KataTaskLink,
   KataTaskSummary,
   KataTaskViewResponse,
 } from "../../api/kata/taskTypes.js";
+import { createKataLinkFilters } from "../../features/kata/kataLinkFilters.js";
 
 import KataIssueDiscussion from "./KataIssueDiscussion.svelte";
 
@@ -102,7 +104,12 @@ function makeView(): KataTaskViewResponse {
   };
 }
 
-function makeAPI(options: { searchIssues?: KataTaskSummary[]; issueDetail?: KataTaskDetail } = {}): KataTaskAPI {
+function makeAPI(
+  options: {
+    searchIssues?: KataTaskSummary[];
+    issueDetails?: Record<string, KataTaskDetail>;
+  } = {},
+): KataTaskAPI {
   return {
     search: vi.fn(async () => ({
       filters: { scope: { kind: "all" }, status: "open", owner: "", label: "", query: "" },
@@ -110,9 +117,21 @@ function makeAPI(options: { searchIssues?: KataTaskSummary[]; issueDetail?: Kata
       fetched_at: "2026-06-01T12:00:00Z",
     })),
     issue: vi.fn(
-      async () => options.issueDetail ?? makeIssue({ uid: "issue-2", short_id: "I-2", title: "Hydrated task" }),
+      async (uid: string) => options.issueDetails?.[uid] ?? makeIssue({ uid, short_id: uid, title: "Hydrated task" }),
     ),
   } as unknown as KataTaskAPI;
+}
+
+function taskLink(id: number, peerUID: string, peerShortID: string, type: KataTaskLink["type"]): KataTaskLink {
+  return {
+    id,
+    project_id: 1,
+    from: { uid: "issue-1", short_id: "I-1" },
+    to: { uid: peerUID, short_id: peerShortID },
+    type,
+    author: "wes",
+    created_at: "2026-06-01T12:20:00Z",
+  };
 }
 
 function searchTask(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
@@ -152,6 +171,8 @@ describe("KataIssueDiscussion", () => {
         currentView: makeView(),
         api: makeAPI(),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("open"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment,
         onEditIssue,
         onSelectIssue: vi.fn(),
@@ -185,6 +206,8 @@ describe("KataIssueDiscussion", () => {
         currentView: makeView(),
         api: makeAPI(),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("open"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue,
@@ -213,6 +236,8 @@ describe("KataIssueDiscussion", () => {
         currentView: makeView(),
         api: makeAPI(),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("open"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => false),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue: vi.fn(),
@@ -236,6 +261,8 @@ describe("KataIssueDiscussion", () => {
         currentView: makeView(),
         api,
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("open"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue: vi.fn(),
@@ -292,6 +319,8 @@ describe("KataIssueDiscussion", () => {
         currentView: makeView(),
         api: makeAPI({ searchIssues: [sharedHome, ...filler, sharedWork] }),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("open"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue: vi.fn(),
@@ -321,6 +350,8 @@ describe("KataIssueDiscussion", () => {
         currentView: makeView(),
         api: makeAPI({ searchIssues: [searchTask({ short_id: "rent", title: "Rent" })] }),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("open"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue: vi.fn(),
@@ -357,6 +388,8 @@ describe("KataIssueDiscussion", () => {
         currentView: makeView(),
         api: makeAPI(),
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("open"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue: vi.fn(),
@@ -384,11 +417,13 @@ describe("KataIssueDiscussion", () => {
       },
     ];
     const api = makeAPI({
-      issueDetail: makeIssue({
-        uid: "issue-peer",
-        short_id: "P-1",
-        title: "Hydrated peer task",
-      }),
+      issueDetails: {
+        "issue-peer": makeIssue({
+          uid: "issue-peer",
+          short_id: "P-1",
+          title: "Hydrated peer task",
+        }),
+      },
     });
     render(KataIssueDiscussion, {
       props: {
@@ -397,6 +432,8 @@ describe("KataIssueDiscussion", () => {
         currentView: { groups: [] },
         api,
         activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("open"),
+        onLinkFiltersChange: vi.fn(),
         onAddComment: vi.fn(async () => true),
         onEditIssue: vi.fn(async () => true),
         onSelectIssue: vi.fn(),
@@ -408,5 +445,307 @@ describe("KataIssueDiscussion", () => {
       expect(within(links).getByText("Hydrated peer task")).toBeTruthy();
     });
     expect(api.issue).toHaveBeenCalledWith("issue-peer");
+  });
+
+  it("shows only open peers by default and reports the filtered count", async () => {
+    const selected = makeIssue();
+    selected.links = [taskLink(1, "issue-open", "open", "related"), taskLink(2, "issue-closed", "closed", "blocks")];
+    render(KataIssueDiscussion, {
+      props: {
+        issue: selected,
+        events: [],
+        currentView: { groups: [] },
+        api: makeAPI({
+          issueDetails: {
+            "issue-open": makeIssue({ uid: "issue-open", short_id: "open", title: "Open peer", status: "open" }),
+            "issue-closed": makeIssue({
+              uid: "issue-closed",
+              short_id: "closed",
+              title: "Closed peer",
+              status: "closed",
+            }),
+          },
+        }),
+        activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("open"),
+        onLinkFiltersChange: vi.fn(),
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /Open peer/ })).toBeTruthy());
+    expect(screen.queryByRole("button", { name: /Closed peer/ })).toBeNull();
+    const links = screen.getByRole("region", { name: "Links" });
+    expect(within(links).getByText("1 / 2")).toBeTruthy();
+    expect(links.querySelector(".state-badge")).toBeNull();
+  });
+
+  it("shows state chips when both task-state filters are enabled", async () => {
+    const selected = makeIssue();
+    selected.links = [taskLink(1, "issue-open", "open", "related"), taskLink(2, "issue-closed", "closed", "blocks")];
+    render(KataIssueDiscussion, {
+      props: {
+        issue: selected,
+        events: [],
+        currentView: { groups: [] },
+        api: makeAPI({
+          issueDetails: {
+            "issue-open": makeIssue({ uid: "issue-open", short_id: "open", title: "Open peer", status: "open" }),
+            "issue-closed": makeIssue({
+              uid: "issue-closed",
+              short_id: "closed",
+              title: "Closed peer",
+              status: "closed",
+            }),
+          },
+        }),
+        activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    const links = screen.getByRole("region", { name: "Links" });
+    await waitFor(() => expect(within(links).getByRole("button", { name: /Open peer open/ })).toBeTruthy());
+    expect(within(links).getByRole("button", { name: /Closed peer closed/ })).toBeTruthy();
+    expect(within(links).getByText("Open").closest(".state-badge")).toBeTruthy();
+    expect(within(links).getByText("Closed").closest(".state-badge")).toBeTruthy();
+  });
+
+  it("shows state chips when both filters are enabled even if every peer is open", async () => {
+    const selected = makeIssue();
+    selected.links = [taskLink(1, "issue-open", "open", "related")];
+    render(KataIssueDiscussion, {
+      props: {
+        issue: selected,
+        events: [],
+        currentView: { groups: [] },
+        api: makeAPI({
+          issueDetails: {
+            "issue-open": makeIssue({ uid: "issue-open", short_id: "open", title: "Only open peer", status: "open" }),
+          },
+        }),
+        activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    const links = screen.getByRole("region", { name: "Links" });
+    await waitFor(() => expect(within(links).getByRole("button", { name: /Only open peer open/ })).toBeTruthy());
+    expect(within(links).getByText("Open").closest(".state-badge")).toBeTruthy();
+  });
+
+  it("filters directional relationship types and shows the filtered-empty message", async () => {
+    const selected = makeIssue();
+    selected.links = [
+      taskLink(1, "issue-related", "related", "related"),
+      taskLink(2, "issue-blocked", "blocked", "blocks"),
+    ];
+    const filters = createKataLinkFilters("all");
+    filters.relations.related = false;
+    filters.relations.blocks = false;
+    render(KataIssueDiscussion, {
+      props: {
+        issue: selected,
+        events: [],
+        currentView: { groups: [] },
+        api: makeAPI({
+          issueDetails: {
+            "issue-related": makeIssue({ uid: "issue-related", short_id: "related", title: "Related peer" }),
+            "issue-blocked": makeIssue({ uid: "issue-blocked", short_id: "blocked", title: "Blocked peer" }),
+          },
+        }),
+        activeDaemonId: "home",
+        linkFilters: filters,
+        onLinkFiltersChange: vi.fn(),
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    const links = screen.getByRole("region", { name: "Links" });
+    await waitFor(() => expect(within(links).getByText("No links match these filters.")).toBeTruthy());
+    expect(within(links).queryByText("No links.")).toBeNull();
+    expect(within(links).getByText("0 / 2")).toBeTruthy();
+  });
+
+  it("shows a resolving state while a single-state filter waits for peer status", () => {
+    const selected = makeIssue();
+    selected.links = [taskLink(1, "issue-pending", "pending", "related")];
+    const api = makeAPI();
+    vi.mocked(api.issue).mockImplementation(() => new Promise<KataTaskDetail>(() => {}));
+
+    render(KataIssueDiscussion, {
+      props: {
+        issue: selected,
+        events: [],
+        currentView: { groups: [] },
+        api,
+        activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("open"),
+        onLinkFiltersChange: vi.fn(),
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    expect(within(screen.getByRole("region", { name: "Links" })).getByText("Resolving linked tasks...")).toBeTruthy();
+  });
+
+  it("does not show resolving state for a pending disabled relationship", () => {
+    const selected = makeIssue();
+    selected.links = [taskLink(1, "issue-pending", "pending", "related")];
+    const api = makeAPI();
+    vi.mocked(api.issue).mockImplementation(() => new Promise<KataTaskDetail>(() => {}));
+    const filters = createKataLinkFilters("open");
+    filters.relations.related = false;
+
+    render(KataIssueDiscussion, {
+      props: {
+        issue: selected,
+        events: [],
+        currentView: { groups: [] },
+        api,
+        activeDaemonId: "home",
+        linkFilters: filters,
+        onLinkFiltersChange: vi.fn(),
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    const links = screen.getByRole("region", { name: "Links" });
+    expect(within(links).getByText("No links match these filters.")).toBeTruthy();
+    expect(within(links).queryByText(/Resolving/)).toBeNull();
+  });
+
+  it("shows the filtered-empty state when both task states are disabled", () => {
+    const selected = makeIssue();
+    selected.links = [taskLink(1, "issue-open", "open", "related")];
+    const filters = createKataLinkFilters("all");
+    filters.statuses.open = false;
+    filters.statuses.closed = false;
+
+    render(KataIssueDiscussion, {
+      props: {
+        issue: selected,
+        events: [],
+        currentView: makeView(),
+        api: makeAPI(),
+        activeDaemonId: "home",
+        linkFilters: filters,
+        onLinkFiltersChange: vi.fn(),
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    expect(
+      within(screen.getByRole("region", { name: "Links" })).getByText("No links match these filters."),
+    ).toBeTruthy();
+  });
+
+  it("keeps failed peer state discoverable in a single-state view", async () => {
+    const selected = makeIssue();
+    selected.links = [taskLink(1, "issue-missing", "missing", "related")];
+    const api = makeAPI();
+    vi.mocked(api.issue).mockRejectedValue(new Error("unavailable"));
+
+    render(KataIssueDiscussion, {
+      props: {
+        issue: selected,
+        events: [],
+        currentView: { groups: [] },
+        api,
+        activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("open"),
+        onLinkFiltersChange: vi.fn(),
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    const links = screen.getByRole("region", { name: "Links" });
+    await waitFor(() => expect(within(links).getByTitle("Task state unavailable")).toBeTruthy());
+    expect(within(links).getByRole("button", { name: /missing state unavailable/ })).toBeTruthy();
+  });
+
+  it("uses current-view peer summaries without redundant detail requests", () => {
+    const selected = makeIssue();
+    selected.links = [taskLink(1, "issue-2", "I-2", "related")];
+    const api = makeAPI();
+
+    render(KataIssueDiscussion, {
+      props: {
+        issue: selected,
+        events: [],
+        currentView: makeView(),
+        api,
+        activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("open"),
+        onLinkFiltersChange: vi.fn(),
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue: vi.fn(),
+      },
+    });
+
+    expect(screen.getByRole("button", { name: /Linked task/ })).toBeTruthy();
+    expect(api.issue).not.toHaveBeenCalled();
+  });
+
+  it("retries only failed peers when a revised selected detail refreshes", async () => {
+    const selected = makeIssue();
+    selected.links = [taskLink(1, "issue-stable", "stable", "related"), taskLink(2, "issue-retry", "retry", "related")];
+    const api = makeAPI();
+    let retryCalls = 0;
+    vi.mocked(api.issue).mockImplementation(async (uid: string) => {
+      if (uid === "issue-stable") {
+        return makeIssue({ uid, short_id: "stable", title: "Stable peer" });
+      }
+      retryCalls += 1;
+      if (retryCalls === 1) throw new Error("temporary");
+      return makeIssue({ uid, short_id: "retry", title: "Recovered peer" });
+    });
+    const props = {
+      issue: selected,
+      events: [],
+      currentView: { groups: [] },
+      api,
+      activeDaemonId: "home",
+      linkFilters: createKataLinkFilters("all"),
+      onLinkFiltersChange: vi.fn(),
+      onAddComment: vi.fn(async () => true),
+      onEditIssue: vi.fn(async () => true),
+      onSelectIssue: vi.fn(),
+    };
+    const { rerender } = render(KataIssueDiscussion, { props });
+    const links = screen.getByRole("region", { name: "Links" });
+    await waitFor(() => expect(within(links).getByRole("button", { name: /Stable peer open/ })).toBeTruthy());
+    await waitFor(() => expect(within(links).getByTitle("Task state unavailable")).toBeTruthy());
+
+    await rerender({
+      ...props,
+      issue: { ...selected, issue: { ...selected.issue, revision: selected.issue.revision + 1 } },
+    });
+
+    await waitFor(() => expect(within(links).getByRole("button", { name: /Recovered peer open/ })).toBeTruthy());
+    expect(api.issue).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(api.issue).mock.calls.filter(([uid]) => uid === "issue-stable")).toHaveLength(1);
+    expect(vi.mocked(api.issue).mock.calls.filter(([uid]) => uid === "issue-retry")).toHaveLength(2);
   });
 });

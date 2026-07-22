@@ -1,6 +1,6 @@
 <script lang="ts">
   import { MentionTextarea, type MentionOption } from "@kenn-io/kit-ui";
-  import { Button } from "@middleman/ui";
+  import { Button, ItemStateChip } from "@middleman/ui";
   import { renderMarkdown, renderMarkdownSync } from "@middleman/ui/utils/markdown";
   import { localDateTimeLabel, timeAgo } from "@middleman/ui/utils/time";
 
@@ -11,8 +11,18 @@
     KataTaskEvent,
     KataTaskGroup,
     KataTaskLink,
+    KataTaskSummary,
   } from "../../api/kata/taskTypes.js";
   import { describeKataEvent } from "../../features/kata/eventFormatter";
+  import {
+    kataLinkCouldAffectVisibleResults,
+    kataLinkMatchesFilters,
+    relationForKataLink,
+    type KataLinkFilters,
+    type KataLinkPeerResolution,
+    type KataLinkRelation,
+  } from "../../features/kata/kataLinkFilters.js";
+  import KataLinkFilterMenu from "./KataLinkFilterMenu.svelte";
 
   interface Props {
     issue: KataTaskDetail;
@@ -20,6 +30,8 @@
     currentView: { groups: KataTaskGroup[] };
     api: KataTaskAPI;
     activeDaemonId?: string | undefined;
+    linkFilters: KataLinkFilters;
+    onLinkFiltersChange: (next: KataLinkFilters) => void;
     onAddComment: (uid: string, body: string) => boolean | Promise<boolean>;
     onEditIssue: (uid: string, patch: KataTaskEditPatch) => boolean | Promise<boolean>;
     onSelectIssue: (uid: string) => void | Promise<void>;
@@ -31,6 +43,8 @@
     currentView,
     api,
     activeDaemonId = undefined,
+    linkFilters,
+    onLinkFiltersChange,
     onAddComment,
     onEditIssue,
     onSelectIssue,
@@ -38,9 +52,10 @@
 
   let commentDraft = $state("");
   let relatedDraft = $state("");
-  let linkTitles = $state<Record<string, string>>({});
-  let linkTitleSignature = $state("");
-  let pendingLinkTitleKeys = $state<ReadonlySet<string>>(new Set());
+  let hydratedPeers = $state<Record<string, KataTaskSummary | null>>({});
+  let peerHydrationSignature = $state("");
+  let pendingPeerKeys = $state<ReadonlySet<string>>(new Set());
+  let lastSelectedDetail: KataTaskDetail | null = null;
 
   const sortedComments = $derived.by(() => {
     const comments = issue.comments ?? [];
@@ -53,34 +68,62 @@
   });
 
   $effect(() => {
+    const current = issue;
+    if (lastSelectedDetail !== null && current !== lastSelectedDetail && current.issue.uid === lastSelectedDetail.issue.uid) {
+      hydratedPeers = Object.fromEntries(Object.entries(hydratedPeers).filter(([, peer]) => peer !== null));
+    }
+    lastSelectedDetail = current;
+  });
+
+  $effect(() => {
     const signature = linkHydrationSignature();
-    if (signature !== linkTitleSignature) {
-      linkTitleSignature = signature;
-      linkTitles = {};
-      pendingLinkTitleKeys = new Set();
+    if (signature !== peerHydrationSignature) {
+      peerHydrationSignature = signature;
+      hydratedPeers = {};
+      pendingPeerKeys = new Set();
     }
     const peerUIDs = issue.links
       .map((link) => linkPeerUIDFor(link, issue.issue.uid))
-      .filter((uid) => uid && linkTitles[uid] === undefined && !pendingLinkTitleKeys.has(`${signature}:${uid}`));
+      .filter(
+        (uid) =>
+          uid &&
+          currentViewPeer(uid) === undefined &&
+          hydratedPeers[uid] === undefined &&
+          !pendingPeerKeys.has(`${signature}:${uid}`),
+      );
     if (peerUIDs.length === 0) return;
     for (const uid of new Set(peerUIDs)) {
       const key = `${signature}:${uid}`;
-      pendingLinkTitleKeys = new Set([...pendingLinkTitleKeys, key]);
+      pendingPeerKeys = new Set([...pendingPeerKeys, key]);
       void api
         .issue(uid)
         .then((detail) => {
           if (signature !== linkHydrationSignature()) return;
-          linkTitles = { ...linkTitles, [uid]: detail.issue.title };
+          hydratedPeers = { ...hydratedPeers, [uid]: detail.issue };
         })
         .catch(() => {
           if (signature !== linkHydrationSignature()) return;
-          linkTitles = { ...linkTitles, [uid]: "" };
+          hydratedPeers = { ...hydratedPeers, [uid]: null };
         })
         .finally(() => {
-          pendingLinkTitleKeys = new Set([...pendingLinkTitleKeys].filter((candidate) => candidate !== key));
+          pendingPeerKeys = new Set([...pendingPeerKeys].filter((candidate) => candidate !== key));
         });
     }
   });
+
+  const visibleLinks = $derived(
+    issue.links.filter((link) =>
+      kataLinkMatchesFilters(link, issue.issue.uid, peerResolution(link), linkFilters),
+    ),
+  );
+  const showStateChips = $derived(linkFilters.statuses.open && linkFilters.statuses.closed);
+  const unresolvedPeerCount = $derived(
+    issue.links.filter(
+      (link) =>
+        peerResolution(link).kind === "pending" &&
+        kataLinkCouldAffectVisibleResults(link, issue.issue.uid, linkFilters),
+    ).length,
+  );
 
   async function submitComment(): Promise<void> {
     const body = commentDraft.trim();
@@ -91,18 +134,17 @@
     }
   }
 
-  function currentIssueTitle(uid: string): string {
-    if (issue.issue.uid === uid) return issue.issue.title;
+  function currentViewPeer(uid: string): KataTaskSummary | undefined {
     for (const group of currentView.groups) {
-      const found = group.issues.find((item) => item.uid === uid);
-      if (found) return found.title;
+      const found = group.issues.find((candidate) => candidate.uid === uid);
+      if (found) return found;
     }
-    return linkTitles[uid] ?? "";
+    return undefined;
   }
 
   function linkHydrationSignature(): string {
     const links = issue.links.map((link) => `${link.id}:${linkPeerUIDFor(link, issue.issue.uid)}:${link.type}`).join("|");
-    return `${activeDaemonId ?? ""}:${issue.issue.uid}:${issue.issue.revision}:${links}`;
+    return `${activeDaemonId ?? ""}:${issue.issue.uid}:${links}`;
   }
 
   function linkPeerUIDFor(link: KataTaskLink, selectedUID: string | undefined): string {
@@ -117,14 +159,26 @@
     return link.from.uid === issue.issue.uid ? link.to.short_id : link.from.short_id;
   }
 
-  function linkPeerTitle(link: KataTaskLink): string {
-    return currentIssueTitle(linkPeerUID(link));
+  function peerResolution(link: KataTaskLink): KataLinkPeerResolution {
+    const uid = linkPeerUID(link);
+    const current = currentViewPeer(uid);
+    if (current) return { kind: "resolved", peer: current };
+    const hydrated = hydratedPeers[uid];
+    if (hydrated === null) return { kind: "failed" };
+    if (hydrated !== undefined) return { kind: "resolved", peer: hydrated };
+    return { kind: "pending" };
   }
 
+  const relationLabels: Record<KataLinkRelation, string> = {
+    parent: "parent",
+    child: "child",
+    blocks: "blocks",
+    blocked_by: "blocked_by",
+    related: "related",
+  };
+
   function linkLabel(link: KataTaskLink): string {
-    if (link.type === "blocks" && link.to.uid === issue.issue.uid) return "blocked_by";
-    if (link.type === "parent") return link.to.uid === issue.issue.uid ? "parent" : "child";
-    return link.type;
+    return relationLabels[relationForKataLink(link, issue.issue.uid)];
   }
 
   async function submitRelatedLink(): Promise<void> {
@@ -167,26 +221,44 @@
 </script>
 
 <section class="task-links" aria-label="Links">
-  <div class="section-header">
+  <div class="section-header link-section-header">
     <h3>Links</h3>
-    <span>{issue.links.length}</span>
+    <div class="link-header-actions">
+      <span>
+        {visibleLinks.length === issue.links.length
+          ? issue.links.length
+          : `${visibleLinks.length} / ${issue.links.length}`}
+      </span>
+      {#if unresolvedPeerCount > 0}<span class="link-loading">Resolving {unresolvedPeerCount}</span>{/if}
+      <KataLinkFilterMenu filters={linkFilters} onChange={onLinkFiltersChange} />
+    </div>
   </div>
   {#if issue.links.length === 0}
     <p class="link-empty">No links.</p>
+  {:else if visibleLinks.length === 0 && unresolvedPeerCount > 0}
+    <p class="link-empty">Resolving linked tasks...</p>
+  {:else if visibleLinks.length === 0}
+    <p class="link-empty">No links match these filters.</p>
   {:else}
-    <div class="link-list">
-      {#each issue.links as link (link.id)}
+    <div class="link-list" aria-busy={unresolvedPeerCount > 0}>
+      {#each visibleLinks as link (link.id)}
+        {@const resolution = peerResolution(link)}
+        {@const peer = resolution.kind === "resolved" ? resolution.peer : undefined}
         <button
           type="button"
-          class="link-row"
+          class={["link-row", (showStateChips || resolution.kind === "failed") && "link-row--with-state"]}
+          aria-label={`${linkLabel(link)} ${linkPeerShortID(link)} ${peer?.title ?? ""}${showStateChips && peer ? ` ${peer.status}` : ""}${resolution.kind === "failed" ? " state unavailable" : ""}`.trim()}
           onclick={() => {
             void onSelectIssue(linkPeerUID(link));
           }}
         >
           <span class="link-kind">{linkLabel(link)}</span>
           <span class="link-peer">{linkPeerShortID(link)}</span>
-          {#if linkPeerTitle(link)}
-            <span class="link-title">{linkPeerTitle(link)}</span>
+          {#if peer?.title}<span class="link-title">{peer.title}</span>{/if}
+          {#if showStateChips && peer}
+            <ItemStateChip state={peer.status} size="xs" />
+          {:else if resolution.kind === "failed"}
+            <ItemStateChip state="unknown" size="xs" title="Task state unavailable" />
           {/if}
         </button>
       {/each}
@@ -319,9 +391,19 @@
     margin: 0;
   }
 
-  .section-header > span {
+  .link-header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .link-header-actions > span {
     color: var(--text-muted);
     font-size: var(--font-size-xs);
+  }
+
+  .link-header-actions > .link-loading {
+    color: var(--text-faint);
   }
 
   .link-empty,
@@ -352,6 +434,10 @@
     font-size: var(--font-size-sm);
     text-align: left;
     cursor: pointer;
+  }
+
+  .link-row--with-state {
+    grid-template-columns: minmax(72px, max-content) minmax(54px, max-content) minmax(0, 1fr) max-content;
   }
 
   .link-row:hover {

@@ -13,11 +13,12 @@
 - ID and Title remain permanently visible.
 - Updated, Priority, Due, Owner, and Tags are independently hideable.
 - One browser-local preference applies across every Kata view, project scope, and daemon.
-- Enabled columns may still auto-hide at the existing pane-width breakpoints; disabled columns never appear.
-- Hiding the active Updated, Priority, or Owner sort resets sorting to Title ascending; other sorting, row selection, tree expansion, task detail behavior, and backend contracts remain unchanged.
+- Effective visibility is `user-enabled ∩ layout-supported`; the picker labels enabled choices as columns shown when space allows, disabled columns never appear, and the active user-enabled sort column remains layout-supported so its control cannot disappear.
+- Hiding the active Updated, Priority, or Owner sort resets sorting to Title ascending, including reconciliation of inconsistent saved preferences before first render. Responsive auto-hiding is temporary and does not reset sorting; keep the active Owner column rendered at compact widths, allowing horizontal overflow if necessary. Other sorting, row selection, tree expansion, task detail behavior, and backend contracts remain unchanged.
 - Storage failures are non-fatal and malformed values fall back to all optional columns visible.
 - Compact panes keep header actions on one line by visually hiding action labels while retaining icons, titles, and accessible names.
 - Browser-tab synchronization is out of scope.
+- The browser-local preference is global across Kata views, project scopes, and daemons.
 - Use Bun and Vite+ tooling. Never use npm.
 - Run the Svelte autofixer on every changed `.svelte` file before completion.
 
@@ -36,10 +37,12 @@
 ### Task 1: Define and test the persisted column model
 
 **Files:**
+
 - Create: `frontend/src/lib/components/kata/kataTaskColumns.ts`
 - Create: `frontend/src/lib/components/kata/kataTaskColumns.test.ts`
 
 **Interfaces:**
+
 - Produces: `KataOptionalTaskColumn`, `KataTaskColumnVisibility`, `KATA_OPTIONAL_TASK_COLUMNS`, `KATA_TASK_COLUMNS_STORAGE_KEY`, `defaultKataTaskColumnVisibility()`, `loadKataTaskColumnVisibility()`, and `persistKataTaskColumnVisibility()`.
 - Consumes: browser `localStorage` through the narrow `Pick<Storage, "getItem" | "setItem">` interface.
 
@@ -199,9 +202,7 @@ export function persistKataTaskColumnVisibility(
 ): void {
   if (!storage) return;
   try {
-    const visible = KATA_OPTIONAL_TASK_COLUMNS
-      .filter((column) => visibility[column.id])
-      .map((column) => column.id);
+    const visible = KATA_OPTIONAL_TASK_COLUMNS.filter((column) => visibility[column.id]).map((column) => column.id);
     storage.setItem(KATA_TASK_COLUMNS_STORAGE_KEY, JSON.stringify(visible));
   } catch {
     // Browser storage is best-effort. Keep the in-memory preference usable.
@@ -228,6 +229,7 @@ Stage only the two Task 1 files.
 ### Task 2: Add the column picker and integrate visible grid tracks
 
 **Files:**
+
 - Create: `frontend/src/lib/components/kata/KataColumnPicker.svelte`
 - Modify: `frontend/src/lib/components/kata/KataIssueList.svelte:1-168`
 - Modify: `frontend/src/lib/components/kata/KataIssueList.svelte:623-846`
@@ -235,6 +237,7 @@ Stage only the two Task 1 files.
 - Modify: `frontend/src/lib/components/kata/KataIssueList.test.ts:66-210`
 
 **Interfaces:**
+
 - Consumes: the Task 1 column constants, visibility type, default factory, loader, and persister.
 - Produces: `KataColumnPicker` props `{ visibility, onchange, onShowAll }` and responsive `--table-cols-*` custom properties used by both header and rows.
 
@@ -356,13 +359,19 @@ it("resets an invisible active sort to Title ascending", async () => {
   });
 
   await fireEvent.click(screen.getByRole("button", { name: "Sort by Priority" }));
-  expect(screen.getByRole("button", { name: "Sort by Priority, currently ascending" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Sort by Priority, currently ascending" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 
   await fireEvent.click(screen.getByRole("button", { name: "Columns" }));
   await fireEvent.click(screen.getByRole("checkbox", { name: "Priority" }));
 
   expect(screen.queryByRole("button", { name: /Sort by Priority/ })).toBeNull();
-  expect(screen.getByRole("button", { name: "Sort by Title, currently ascending" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Sort by Title, currently ascending" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   expect(JSON.parse(localStorage.getItem("middleman:kata:issue-sort/v1")!)).toEqual({
     key: "title",
     direction: "asc",
@@ -446,7 +455,7 @@ Create `KataColumnPicker.svelte` using:
     bind:this={trigger}
     type="button"
     aria-label="Columns"
-    title="Choose visible columns"
+    title="Choose columns shown when space allows"
     aria-expanded={open}
     onclick={() => void toggle()}
   >
@@ -455,7 +464,7 @@ Create `KataColumnPicker.svelte` using:
   </button>
   {#if open}
     <div bind:this={panel} class="column-picker__panel kit-popover-card" style={panelStyle}>
-      <div class="column-picker__title">Visible columns</div>
+      <div class="column-picker__title">Shown when space allows</div>
       {#each KATA_OPTIONAL_TASK_COLUMNS as column (column.id)}
         <Checkbox
           checked={visibility[column.id]}
@@ -549,7 +558,7 @@ Use `kit-popover-card` for shared surface chrome. Do not add a modal or a second
 In `KataIssueList.svelte`:
 
 1. Import `KataColumnPicker` and the Task 1 helper.
-2. Initialize `let columnVisibility = $state(loadKataTaskColumnVisibility());`.
+2. Load visibility before sort state, reconcile an optional sort whose column is disabled, and persist Title ascending when reconciliation changes it.
 3. Add `setColumnVisibility(next)` and `showAllColumns()` functions that update state first and then persist it.
 4. Add a `.header-actions` wrapper that always renders `KataColumnPicker`; keep `.tree-actions` conditional inside it.
 5. Wrap each optional header and matching row cell in `{#if columnVisibility.<id>}` blocks. Leave ID and Title unconditional.
@@ -557,17 +566,27 @@ In `KataIssueList.svelte`:
 Use these state transitions so an optional sort cannot remain active after its control disappears:
 
 ```ts
-let columnVisibility = $state(loadKataTaskColumnVisibility());
+const restoredColumnVisibility = loadKataTaskColumnVisibility();
+const restoredSort = loadSort();
+const initialSort = sortForColumnVisibility(restoredSort, restoredColumnVisibility);
+let sort: KataTaskSort = $state(initialSort);
+let columnVisibility = $state(restoredColumnVisibility);
+if (initialSort !== restoredSort) persistSort(initialSort);
 
 function optionalColumnForSort(key: KataTaskSortKey): KataOptionalTaskColumn | null {
   if (key === "updated" || key === "priority" || key === "owner") return key;
   return null;
 }
 
+function sortForColumnVisibility(current: KataTaskSort, visibility: KataTaskColumnVisibility): KataTaskSort {
+  const activeSortColumn = optionalColumnForSort(current.key);
+  return activeSortColumn && !visibility[activeSortColumn] ? { key: "title", direction: "asc" } : current;
+}
+
 function setColumnVisibility(next: KataTaskColumnVisibility): void {
-  const activeSortColumn = optionalColumnForSort(sort.key);
-  if (activeSortColumn && !next[activeSortColumn]) {
-    sort = { key: "title", direction: "asc" };
+  const nextSort = sortForColumnVisibility(sort, next);
+  if (nextSort !== sort) {
+    sort = nextSort;
     persistSort(sort);
   }
   columnVisibility = next;
@@ -623,10 +642,7 @@ Use this responsive grid derivation in the script:
 ```ts
 type TaskGridLayout = "wide" | "medium" | "compact" | "narrow";
 
-const TASK_COLUMN_TRACKS: Record<
-  TaskGridLayout,
-  Record<KataOptionalTaskColumn, string | null>
-> = {
+const TASK_COLUMN_TRACKS: Record<TaskGridLayout, Record<KataOptionalTaskColumn, string | null>> = {
   wide: {
     updated: "minmax(64px, 80px)",
     priority: "minmax(68px, 80px)",
@@ -669,10 +685,16 @@ function taskGridColumns(layout: TaskGridLayout): string {
     "var(--table-id-col)",
     TASK_TITLE_TRACKS[layout],
     ...KATA_OPTIONAL_TASK_COLUMNS.flatMap((column) => {
-      const track = TASK_COLUMN_TRACKS[layout][column.id];
+      const track = taskColumnTrack(layout, column.id);
       return columnVisibility[column.id] && track ? [track] : [];
     }),
   ].join(" ");
+}
+
+function taskColumnTrack(layout: TaskGridLayout, column: KataOptionalTaskColumn): string | null {
+  const track = TASK_COLUMN_TRACKS[layout][column];
+  if (track || column !== "owner" || sort.key !== "owner") return track;
+  return TASK_COLUMN_TRACKS.medium.owner;
 }
 
 let wideGridColumns = $derived(taskGridColumns("wide"));
@@ -681,7 +703,7 @@ let compactGridColumns = $derived(taskGridColumns("compact"));
 let narrowGridColumns = $derived(taskGridColumns("narrow"));
 ```
 
-Publish the four strings on `.table` with Svelte style directives, set `--table-cols: var(--table-cols-wide)` in the base rule, and replace the three hard-coded container-query templates with `var(--table-cols-medium)`, `var(--table-cols-compact)`, and `var(--table-cols-narrow)`. Keep the existing auto-hide selectors so enabled DOM cells disappear at the same breakpoints as their omitted tracks.
+Publish the four strings on `.table` with Svelte style directives, set `--table-cols: var(--table-cols-wide)` in the base rule, and replace the three hard-coded container-query templates with `var(--table-cols-medium)`, `var(--table-cols-compact)`, and `var(--table-cols-narrow)`. Keep the existing auto-hide selectors so enabled DOM cells disappear at the same breakpoints as their omitted tracks, except when Owner is the active user-enabled sort: retain its track and cells so the sort indicator remains visible.
 
 ```svelte
 <div
@@ -708,11 +730,15 @@ Publish the four strings on `.table` with Svelte style directives, set `--table-
 }
 
 @container list (max-width: 880px) {
-  .table { --table-cols: var(--table-cols-medium); }
+  .table {
+    --table-cols: var(--table-cols-medium);
+  }
 }
 
 @container list (max-width: 680px) {
-  .table { --table-cols: var(--table-cols-compact); }
+  .table {
+    --table-cols: var(--table-cols-compact);
+  }
   .header-actions :global(.action-label) {
     position: absolute;
     width: 1px;
@@ -725,7 +751,9 @@ Publish the four strings on `.table` with Svelte style directives, set `--table-
 }
 
 @container list (max-width: 520px) {
-  .table { --table-cols: var(--table-cols-narrow); }
+  .table {
+    --table-cols: var(--table-cols-narrow);
+  }
 }
 ```
 
@@ -826,6 +854,12 @@ test("kata task columns float and preserve responsive grid alignment", async ({ 
     expect(triggerBox).not.toBeNull();
     expect(panelBox).not.toBeNull();
     expect(Math.abs(panelBox!.x + panelBox!.width - (triggerBox!.x + triggerBox!.width))).toBeLessThanOrEqual(2);
+    expect(
+      Math.min(
+        Math.abs(panelBox!.y - (triggerBox!.y + triggerBox!.height)),
+        Math.abs(panelBox!.y + panelBox!.height - triggerBox!.y),
+      ),
+    ).toBeLessThanOrEqual(5);
     expect(panelBox!.y).toBeGreaterThanOrEqual(0);
     expect(panelBox!.x).toBeGreaterThanOrEqual(0);
     expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual((page.viewportSize()?.width ?? 0) + 1);
@@ -847,12 +881,25 @@ test("kata task columns float and preserve responsive grid alignment", async ({ 
     await expect(page.locator(".table-header .col-tags")).toHaveCount(0);
 
     await page.setViewportSize({ width: 720, height: 540 });
+    const constrainedTriggerBox = await page.getByRole("button", { name: "Columns" }).boundingBox();
     const constrainedPanelBox = await panel.boundingBox();
+    expect(constrainedTriggerBox).not.toBeNull();
     expect(constrainedPanelBox).not.toBeNull();
     expect(constrainedPanelBox!.x).toBeGreaterThanOrEqual(0);
     expect(constrainedPanelBox!.y).toBeGreaterThanOrEqual(0);
     expect(constrainedPanelBox!.x + constrainedPanelBox!.width).toBeLessThanOrEqual(721);
     expect(constrainedPanelBox!.y + constrainedPanelBox!.height).toBeLessThanOrEqual(541);
+    expect(
+      Math.abs(
+        constrainedPanelBox!.x + constrainedPanelBox!.width - (constrainedTriggerBox!.x + constrainedTriggerBox!.width),
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(
+      Math.min(
+        Math.abs(constrainedPanelBox!.y - (constrainedTriggerBox!.y + constrainedTriggerBox!.height)),
+        Math.abs(constrainedPanelBox!.y + constrainedPanelBox!.height - constrainedTriggerBox!.y),
+      ),
+    ).toBeLessThanOrEqual(5);
 
     for (const column of ["id", "title", "updated", "priority", "due", "owner"]) {
       const headerBox = await page.locator(`.table-header .col-${column}`).boundingBox();
@@ -869,6 +916,8 @@ test("kata task columns float and preserve responsive grid alignment", async ({ 
   }
 });
 ```
+
+At the initial and constrained viewport sizes, re-read both trigger and panel boxes and assert horizontal alignment plus vertical adjacency with the 4px trigger gap, accepting either the below placement or the helper's immediate above flip. Also measure header/row alignment while the list is compact, not only after widening it again.
 
 Run from `frontend/`:
 
@@ -891,9 +940,11 @@ Stage only the picker, issue-list component, unit/browser tests, the focused Kat
 ### Task 3: Run final frontend verification
 
 **Files:**
+
 - Verify only; no production file should be added in this task.
 
 **Interfaces:**
+
 - Consumes: the complete Tasks 1 and 2 implementation.
 - Produces: evidence that unit logic, real-browser focus behavior, responsive geometry, and the affected frontend checks pass.
 

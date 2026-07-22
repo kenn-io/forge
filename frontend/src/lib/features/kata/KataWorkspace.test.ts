@@ -4695,4 +4695,121 @@ describe("KataWorkspace", () => {
     await waitFor(() => expect(screen.queryByText("Lease renewal")).toBeNull());
     expect(loadKataWorkspaceState("home")).toEqual(persisted);
   });
+
+  it("keeps relationship filters across task navigation and resets state filters with the workspace scope", async () => {
+    const root = issue("issue-root", "Root task", "project-kata");
+    const next = issue("issue-next", "Next task", "project-kata");
+    const related = issue("issue-related", "Related task", "project-kata");
+    const blocked = issue("issue-blocked", "Blocked task", "project-kata");
+    const closed = {
+      ...issue("issue-closed", "Closed task", "project-kata"),
+      status: "closed" as const,
+      closed_reason: "done" as const,
+      closed_at: fetchedAt,
+    };
+    const rows = [root, next, related, blocked, closed];
+    const links: KataTaskLink[] = [
+      {
+        id: 1,
+        project_id: root.project_id,
+        from: { uid: root.uid, short_id: root.short_id },
+        to: { uid: related.uid, short_id: related.short_id },
+        type: "related",
+        author: "fixture-user",
+        created_at: fetchedAt,
+      },
+      {
+        id: 2,
+        project_id: root.project_id,
+        from: { uid: root.uid, short_id: root.short_id },
+        to: { uid: blocked.uid, short_id: blocked.short_id },
+        type: "blocks",
+        author: "fixture-user",
+        created_at: fetchedAt,
+      },
+    ];
+    const { api } = createWorkspaceAPI(rows);
+    vi.mocked(api.issue).mockImplementation(async (uid: string) => {
+      const taskDetail = detail(uid, rows);
+      return uid === root.uid ? { ...taskDetail, links } : taskDetail;
+    });
+
+    render(KataWorkspaceRouteHost, { props: { api, initialIssue: root.uid } });
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Root task" })).toBeTruthy());
+    await fireEvent.click(screen.getByRole("button", { name: "Filter links" }));
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Related" }));
+
+    const issues = screen.getByRole("main", { name: "Issues" });
+    await fireEvent.click(within(issues).getByRole("button", { name: /Next task/ }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Next task" })).toBeTruthy());
+    await fireEvent.click(within(issues).getByRole("button", { name: /Root task/ }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Root task" })).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole("button", { name: "Filter links" }));
+    expect((screen.getByRole("checkbox", { name: "Related" }) as HTMLInputElement).checked).toBe(false);
+    await fireEvent.keyDown(document, { key: "Escape" });
+
+    await fireEvent.click(screen.getByRole("combobox", { name: "Status: Open" }));
+    await fireEvent.click(screen.getByRole("option", { name: "All" }));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Status: All" })).toBeTruthy());
+    expect(screen.getByRole("heading", { name: "Root task" })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Filter links" }));
+    expect((screen.getByRole("checkbox", { name: "Open" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "Closed" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "Related" }) as HTMLInputElement).checked).toBe(false);
+  });
+
+  it("resets the complete link-filter scope when switching daemons", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          { id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
+          { id: "work", url: "http://127.0.0.1:8888", default: false, auth: "none", health: "connected" },
+        ],
+      }),
+    );
+    setActiveKataDaemon("home");
+    const homeRoot = issue("issue-home-root", "Home root", "project-kata");
+    const homePeer = issue("issue-home-peer", "Home peer", "project-kata");
+    const workRoot = issue("issue-work-root", "Work root", "project-kata");
+    const api = createDaemonWorkspaceAPI({ home: [homeRoot, homePeer], work: [workRoot] });
+    vi.mocked(api.issue).mockImplementation(async (uid: string) => {
+      const rows = [homeRoot, homePeer, workRoot];
+      const taskDetail = detail(uid, rows);
+      if (uid !== homeRoot.uid) return taskDetail;
+      return {
+        ...taskDetail,
+        links: [
+          {
+            id: 1,
+            project_id: homeRoot.project_id,
+            from: { uid: homeRoot.uid, short_id: homeRoot.short_id },
+            to: { uid: homePeer.uid, short_id: homePeer.short_id },
+            type: "related",
+            author: "fixture-user",
+            created_at: fetchedAt,
+          },
+        ],
+      };
+    });
+
+    render(KataWorkspaceRouteHost, { props: { api, initialIssue: homeRoot.uid } });
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Home root" })).toBeTruthy());
+    await fireEvent.click(screen.getByRole("button", { name: "Filter links" }));
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Related" }));
+    await fireEvent.keyDown(document, { key: "Escape" });
+
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+    const workDaemonRow = await screen.findByTestId("daemon-row-work");
+    await waitFor(() => expect((workDaemonRow as HTMLButtonElement).disabled).toBe(false));
+    await fireEvent.click(workDaemonRow);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Work root" })).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole("button", { name: "Filter links" }));
+    expect((screen.getByRole("checkbox", { name: "Open" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "Closed" }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("checkbox", { name: "Related" }) as HTMLInputElement).checked).toBe(true);
+  });
 });

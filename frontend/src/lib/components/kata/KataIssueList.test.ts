@@ -204,7 +204,7 @@ describe("KataIssueList", () => {
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Columns" }));
-    for (const name of ["Priority", "Due", "Owner", "Tags"]) {
+    for (const name of ["Updated", "Priority", "Due", "Owner", "Tags"]) {
       await fireEvent.click(screen.getByRole("checkbox", { name }));
     }
     first.unmount();
@@ -219,7 +219,7 @@ describe("KataIssueList", () => {
     });
 
     const header = screen.getByRole("row");
-    expect(within(header).getByText("Updated")).toBeTruthy();
+    expect(within(header).queryByText("Updated")).toBeNull();
     expect(within(header).queryByText("Priority")).toBeNull();
     expect(within(header).queryByText("Due")).toBeNull();
     expect(within(header).queryByText("Owner")).toBeNull();
@@ -239,6 +239,29 @@ describe("KataIssueList", () => {
       "owner",
       "tags",
     ]);
+  });
+
+  it("reconciles a restored sort whose optional column is disabled", () => {
+    localStorage.setItem(KATA_TASK_COLUMNS_STORAGE_KEY, JSON.stringify(["updated", "priority", "due", "tags"]));
+    localStorage.setItem("middleman:kata:issue-sort/v1", JSON.stringify({ key: "owner", direction: "desc" }));
+
+    render(KataIssueList, {
+      props: {
+        currentView,
+        selectedIssueUID: null,
+        loading: false,
+        onSelect: () => {},
+      },
+    });
+
+    expect(screen.queryByRole("button", { name: /Sort by Owner/ })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Sort by Title, currently ascending" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(JSON.parse(localStorage.getItem("middleman:kata:issue-sort/v1")!)).toEqual({
+      key: "title",
+      direction: "asc",
+    });
   });
 
   it("keeps column toggles usable when localStorage writes fail", async () => {

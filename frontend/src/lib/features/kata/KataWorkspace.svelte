@@ -55,6 +55,11 @@
   import KataRecurrenceDialogs from "./KataRecurrenceDialogs.svelte";
   import KataSearchPanel from "./KataSearchPanel.svelte";
   import { createKataEventStreamController } from "./kataEventStreamController.js";
+  import {
+    applyKataLinkStatusScope,
+    createKataLinkFilters,
+    type KataLinkFilters,
+  } from "./kataLinkFilters.js";
   import type { KataGraphLayoutDirection } from "./kataReachableGraph.js";
 
   interface Props {
@@ -160,6 +165,11 @@
   let unknownRoutedBootstrapPending = $state(false);
   let listMode = $state<ListMode>("tasks");
   let graphSourceIssue = $state.raw<KataTaskSummary | null>(null);
+  let linkFilters = $state<KataLinkFilters>(createKataLinkFilters("open"));
+  let lastLinkFilterScope: {
+    daemonID: string | undefined;
+    status: KataTaskSearchFilters["status"];
+  } = { daemonID: undefined, status: "open" };
   const store = createKataWorkspaceStore({ api: untrack(() => api) });
   const actor = "middleman";
   // Route synchronization is level-triggered: the URL is the source of
@@ -244,6 +254,16 @@
   const listStatusFilter = $derived<KataTaskSearchFilters["status"]>(
     store.currentView.name === "logbook" ? "all" : store.searchFilters.status,
   );
+  $effect(() => {
+    const daemonID = activeKataDaemonId;
+    const status = listStatusFilter;
+    if (daemonID !== lastLinkFilterScope.daemonID) {
+      linkFilters = createKataLinkFilters(status);
+    } else if (status !== lastLinkFilterScope.status) {
+      linkFilters = applyKataLinkStatusScope(untrack(() => linkFilters), status);
+    }
+    lastLinkFilterScope = { daemonID, status };
+  });
   const eventStream = createKataEventStreamController({
     getDaemonId: () => requestKataDaemonId,
     getLastEventID: () => store.eventCursor,
@@ -2727,6 +2747,10 @@
       currentView={store.currentView}
       api={store.api}
       activeDaemonId={activeKataDaemonId}
+      {linkFilters}
+      onLinkFiltersChange={(next) => {
+        linkFilters = next;
+      }}
       projects={store.projects}
       ownerOptions={ownerOptions()}
       messageLinks={selectedMessageLinks()}

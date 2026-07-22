@@ -61,6 +61,8 @@
     if (!open) return;
     await tick();
     position();
+    await tick();
+    position();
   }
 
   function changeStatus(status: "open" | "closed", checked: boolean): void {

@@ -65,8 +65,12 @@
   }: Props = $props();
 
   const SORT_STORAGE_KEY = "middleman:kata:issue-sort/v1";
-  let sort: KataTaskSort = $state(loadSort());
-  let columnVisibility = $state(loadKataTaskColumnVisibility());
+  const restoredColumnVisibility = loadKataTaskColumnVisibility();
+  const restoredSort = loadSort();
+  const initialSort = sortForColumnVisibility(restoredSort, restoredColumnVisibility);
+  let sort: KataTaskSort = $state(initialSort);
+  let columnVisibility = $state(restoredColumnVisibility);
+  if (initialSort !== restoredSort) persistSort(initialSort);
 
   type TaskGridLayout = "wide" | "medium" | "compact" | "narrow";
 
@@ -116,10 +120,16 @@
       "var(--table-id-col)",
       TASK_TITLE_TRACKS[layout],
       ...KATA_OPTIONAL_TASK_COLUMNS.flatMap((column) => {
-        const track = TASK_COLUMN_TRACKS[layout][column.id];
+        const track = taskColumnTrack(layout, column.id);
         return columnVisibility[column.id] && track ? [track] : [];
       }),
     ].join(" ");
+  }
+
+  function taskColumnTrack(layout: TaskGridLayout, column: KataOptionalTaskColumn): string | null {
+    const track = TASK_COLUMN_TRACKS[layout][column];
+    if (track || column !== "owner" || sort.key !== "owner") return track;
+    return TASK_COLUMN_TRACKS.medium.owner;
   }
 
   let wideGridColumns = $derived(taskGridColumns("wide"));
@@ -241,10 +251,20 @@
     return null;
   }
 
+  function sortForColumnVisibility(
+    current: KataTaskSort,
+    visibility: KataTaskColumnVisibility,
+  ): KataTaskSort {
+    const activeSortColumn = optionalColumnForSort(current.key);
+    return activeSortColumn && !visibility[activeSortColumn]
+      ? { key: "title", direction: "asc" }
+      : current;
+  }
+
   function setColumnVisibility(next: KataTaskColumnVisibility): void {
-    const activeSortColumn = optionalColumnForSort(sort.key);
-    if (activeSortColumn && !next[activeSortColumn]) {
-      sort = { key: "title", direction: "asc" };
+    const nextSort = sortForColumnVisibility(sort, next);
+    if (nextSort !== sort) {
+      sort = nextSort;
       persistSort(sort);
     }
     columnVisibility = next;
@@ -758,6 +778,7 @@
   <div
     class="table"
     class:table--project-scoped={isProjectScoped}
+    class:table--keep-owner-sort={sort.key === "owner" && columnVisibility.owner}
     style:--table-cols-wide={wideGridColumns}
     style:--table-cols-medium={mediumGridColumns}
     style:--table-cols-compact={compactGridColumns}
@@ -1083,15 +1104,16 @@
     overflow: hidden;
     /* Shared grid template — header and rows live in the same scroll
        plane and inherit this template, so horizontal movement stays
-       aligned in split views. The ID column uses a fixed ch-based
-       width per scope so every row (and the header) start the title
-       at the same x; max-content was being re-evaluated per row,
-       which let different IDs leave different gaps. The two widths
-       are tight enough for short_ids at top level / qualified_ids in
-       a project to fit without truncation. The title takes the
+       aligned in split views. The ID column uses a fixed absolute
+       width per scope so the header and rows do not resolve `ch`
+       against their different font sizes. This keeps every title at
+       the same x; max-content also let different IDs leave different
+       gaps. The two widths are tight enough for qualified ids at the
+       top level / short ids in a project to fit without truncation.
+       The title takes the
        leftover via `1fr` so the metadata cluster anchors at the
        right edge with no whitespace pocket. */
-    --table-id-col: 13ch;         /* room for "Finances#rent" + badge padding */
+    --table-id-col: 112px;        /* room for "Finances#rent" + badge padding */
     --table-cols: var(--table-cols-wide);
     --table-gap: 14px;
     --table-min-width: 720px;
@@ -1103,7 +1125,7 @@
        around each id adds 7px of padding on both sides, so include
        14px here — otherwise a 6-char id clips against the badge
        background. */
-    --table-id-col: calc(6ch + 14px);
+    --table-id-col: 60px;
   }
 
   .table-header {
@@ -1457,8 +1479,8 @@
   }
 
   @container list (max-width: 680px) {
-    .col-owner,
-    .cell-owner {
+    .table:not(.table--keep-owner-sort) .col-owner,
+    .table:not(.table--keep-owner-sort) .cell-owner {
       display: none;
     }
 
@@ -1466,6 +1488,10 @@
       --table-cols: var(--table-cols-compact);
       --table-gap: 12px;
       --table-min-width: 460px;
+    }
+
+    .table.table--keep-owner-sort {
+      --table-min-width: 560px;
     }
 
     .header-actions :global(.action-label) {

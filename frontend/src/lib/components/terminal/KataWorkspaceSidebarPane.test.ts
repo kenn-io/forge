@@ -107,6 +107,7 @@ describe("KataWorkspaceSidebarPane", () => {
     render(KataWorkspaceSidebarPane, { props: { kata } });
 
     await screen.findByRole("heading", { name: "Ship the thing" });
+    expect(screen.getByRole("button", { name: "Filter links" })).toBeTruthy();
     await fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     await fireEvent.click(screen.getByRole("menuitem", { name: "Move to another project" }));
     await fireEvent.click(screen.getByRole("button", { name: /Roadmap/ }));

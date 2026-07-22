@@ -506,6 +506,43 @@ func TestGraphQLFetcherFetchRepoIssuesUsesIssueTimelineFragments(t *testing.T) {
 	assert.NotContains(string(requestBody), "BaseRefChangedEvent")
 }
 
+func TestGraphQLFetcherFetchRepoIssuesPreservesBotAuthor(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[{
+			"databaseId":2001,
+			"number":3,
+			"title":"Dependency Dashboard",
+			"state":"OPEN",
+			"body":"",
+			"url":"https://github.com/example/project/issues/3",
+			"author":{"__typename":"Bot","login":"renovate"},
+			"createdAt":"` + now + `",
+			"updatedAt":"` + now + `",
+			"closedAt":null,
+			"labels":{"nodes":[]},
+			"comments":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+			"assignees":{"nodes":[]},
+			"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}
+		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+	}))
+	defer srv.Close()
+
+	fetcher := NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+	)
+
+	result, err := fetcher.FetchRepoIssues(t.Context(), "example", "project")
+	require.NoError(err)
+	require.NotNil(result)
+	require.Len(result.Issues, 1)
+	assert.Equal("renovate[bot]", result.Issues[0].Issue.GetUser().GetLogin())
+}
+
 func TestGraphQLFetcherFetchRepoIssuesLogsFetchProgressForPaginatedIssueSet(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

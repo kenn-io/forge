@@ -300,7 +300,7 @@ type gqlIssue struct {
 	State      string
 	Body       string
 	URL        string `graphql:"url"`
-	Author     struct{ Login string }
+	Author     gqlIssueAuthor
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	ClosedAt   *time.Time
@@ -319,6 +319,11 @@ type gqlIssue struct {
 		Nodes    []gqlIssueTimelineItem
 		PageInfo pageInfo
 	} `graphql:"timelineItems(itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT, CROSS_REFERENCED_EVENT, CLOSED_EVENT, REOPENED_EVENT], first: 100)"`
+}
+
+type gqlIssueAuthor struct {
+	Login    string
+	Typename string `graphql:"__typename"`
 }
 
 type gqlLabel struct {
@@ -418,6 +423,10 @@ func adaptPR(gql *gqlPR) *gh.PullRequest {
 
 func adaptIssue(gql *gqlIssue) *gh.Issue {
 	state := stateToREST(gql.State)
+	authorLogin := gql.Author.Login
+	if gql.Author.Typename == "Bot" && !strings.HasSuffix(authorLogin, "[bot]") {
+		authorLogin += "[bot]"
+	}
 	issue := &gh.Issue{
 		ID:       new(gql.DatabaseId),
 		Number:   new(gql.Number),
@@ -426,7 +435,7 @@ func adaptIssue(gql *gqlIssue) *gh.Issue {
 		Body:     new(gql.Body),
 		HTMLURL:  new(gql.URL),
 		Comments: new(gql.Comments.TotalCount),
-		User:     &gh.User{Login: new(gql.Author.Login)},
+		User:     &gh.User{Login: new(authorLogin)},
 	}
 
 	created := gh.Timestamp{Time: gql.CreatedAt}

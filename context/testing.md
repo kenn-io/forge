@@ -111,6 +111,10 @@ modules (`.github/workflows/ci.yml::e2e`). Keep CI unit tests serialized on
 memory-bounded self-hosted runners; assertions can finish before a pooled worker
 dies during teardown (`frontend/vite.config.ts::resolveUnitTestWorkers`).
 
+Timezone-sensitive Vitest tests must not mutate `process.env.TZ` after workers
+start; launch the test process with `TZ` or stub the locale formatter instead
+(`packages/ui/src/components/detail/operation-gates.test.ts:8`).
+
 Full-stack e2e serves the frontend embedded in the e2e-server binary
 (`internal/web/dist`), not live sources: run `make frontend` before building
 `cmd/e2e-server` locally, or the suite silently validates a stale bundle and

@@ -1,20 +1,14 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OperationAvailability } from "../../api/types.js";
 import { operationGate } from "./operation-gates.js";
 
-const originalTimeZone = process.env.TZ;
-
 afterEach(() => {
-  if (originalTimeZone === undefined) {
-    delete process.env.TZ;
-  } else {
-    process.env.TZ = originalTimeZone;
-  }
+  vi.restoreAllMocks();
 });
 
 describe("operationGate", () => {
   it("formats rate-limit retry times in the user's local timezone", () => {
-    process.env.TZ = "America/Chicago";
+    const toLocaleTimeString = vi.spyOn(Date.prototype, "toLocaleTimeString").mockReturnValue("09:35");
     const operation: OperationAvailability = {
       available: false,
       code: "rate_limited",
@@ -25,6 +19,11 @@ describe("operationGate", () => {
     expect(operationGate(operation)).toEqual({
       unavailable: true,
       reason: "github.com rate-limited; retry at 09:35",
+    });
+    expect(toLocaleTimeString).toHaveBeenCalledWith(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
     });
   });
 

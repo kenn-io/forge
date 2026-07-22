@@ -52,9 +52,6 @@
     repoPath: issue.repo.repo_path,
   }));
   const ago = $derived(formatRelativeTime(issue.LastActivityAt));
-  const stateLabel = $derived(
-    issue.State === "open" ? "Open" : "Closed",
-  );
 </script>
 
 <button class="issue-item" class:selected bind:this={el} onclick={onclick}>
@@ -94,7 +91,7 @@
         {/if}
       </span>
       {#if issue.State !== "open"}
-        <Chip size="xs" tone="merged" class="state-chip">{stateLabel}</Chip>
+        <Chip size="xs" tone="merged" class="state-chip">Closed</Chip>
       {/if}
       <span class="time">{ago}</span>
     </span>
@@ -288,8 +285,7 @@
   }
 
   :global(.mobile-main) :global(.kit-chip),
-  :global(.mobile-main) :global(.state-chip),
-  :global(.mobile-main) :global(.status-chip) {
+  :global(.mobile-main) :global(.state-chip) {
     min-height: calc(var(--focus-mobile-hit-target, 37px) * 0.65);
     padding: 2.5px var(--focus-mobile-space-xs, 6.5px);
     border-radius: 999px;

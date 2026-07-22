@@ -43,6 +43,12 @@
       "groupSlug": "docker-images"
     },
     {
+      "matchManagers": ["dockerfile"],
+      "matchDepNames": ["mcr.microsoft.com/playwright"],
+      "groupName": "JavaScript dependencies",
+      "groupSlug": "javascript-dependencies"
+    },
+    {
       "matchManagers": ["mise"],
       "groupName": "Developer tools",
       "groupSlug": "dev-tools"
@@ -65,16 +71,6 @@
       "depNameTemplate": "oven-sh/bun",
       "extractVersionTemplate": "^bun-v(?<version>\\d+\\.\\d+\\.\\d+)$",
       "versioningTemplate": "semver"
-    },
-    {
-      "customType": "regex",
-      "managerFilePatterns": ["/(^|/)\\.github/workflows/.+\\.ya?ml$/"],
-      "matchStrings": [
-        "mcr\\.microsoft\\.com/playwright@(?<currentDigest>sha256:[a-f0-9]{64})\\s*#\\s*(?<currentValue>v\\d+\\.\\d+\\.\\d+-noble)"
-      ],
-      "datasourceTemplate": "docker",
-      "depNameTemplate": "mcr.microsoft.com/playwright",
-      "versioningTemplate": "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-noble$"
     }
   ]
 }

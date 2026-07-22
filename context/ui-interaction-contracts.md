@@ -55,7 +55,11 @@ Interactive surfaces must agree on which item is selected.
   store records confirmed creations for detail instances WITHOUT an inline
   controller (focus/mobile views, DetailDrawer), which otherwise only see
   the detail envelope; records reconcile away when an identity-matched
-  envelope carries a workspace and clear on deletion by workspace ID.
+  envelope carries a workspace and clear on deletion by workspace ID. The
+  host store's `effectiveRef` falls back to that record too — a create
+  begun controller-less must surface on an inline surface after a layout
+  switch, where no recordCreated override ever ran
+  (`frontend/src/lib/stores/workspace-host.svelte.ts::effectiveRef`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and

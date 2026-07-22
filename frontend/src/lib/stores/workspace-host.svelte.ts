@@ -8,7 +8,7 @@ import type {
 } from "@middleman/ui";
 import { canonicalItemType } from "@middleman/ui";
 import { canonicalProvider, resolvedPlatformHost } from "@middleman/ui/api/provider-routes";
-import { clearCreatedWorkspaceById } from "@middleman/ui/stores/workspace-create-pending";
+import { clearCreatedWorkspaceById, createdWorkspaceRef } from "@middleman/ui/stores/workspace-create-pending";
 import { getStackDepth } from "@middleman/ui/stores/keyboard/modal-stack";
 import { forgetWorkspaceRoute, getRoute, navigate } from "./router.svelte.ts";
 
@@ -137,7 +137,14 @@ function effectiveRef(
     return null;
   }
   if (override) return override;
-  return envelopeRef ?? null;
+  // Shared created-record fallback: a create that started in a
+  // controller-less view (focus/mobile) publishes only there — if the
+  // layout switched to an inline surface before the response landed,
+  // no controller recordCreated ever ran, and without this fallback the
+  // inline view would re-offer "Create Workspace" for a workspace that
+  // exists. Deletions clear the record by ID, so a tombstoned identity
+  // cannot resurface through it.
+  return envelopeRef ?? createdWorkspaceRef(identity) ?? null;
 }
 
 function setClaim(surface: InlineWorkspaceSurface, identity: WorkspaceItemIdentity, ref: WorkspaceRefLite): void {

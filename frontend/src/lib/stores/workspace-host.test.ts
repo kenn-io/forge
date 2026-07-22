@@ -1,5 +1,9 @@
 import { describe, expect, it, beforeEach } from "vite-plus/test";
 import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
+import {
+  recordWorkspaceCreated,
+  resetWorkspaceCreatePendingForTest,
+} from "@middleman/ui/stores/workspace-create-pending";
 import { getLastWorkspaceRoute, navigate } from "./router.svelte.ts";
 import {
   desiredKey,
@@ -27,6 +31,7 @@ const refA = { id: "ws-a", status: "ready" };
 describe("workspace host store", () => {
   beforeEach(() => {
     resetWorkspaceHostForTest();
+    resetWorkspaceCreatePendingForTest();
     navigate("/pulls");
   });
 
@@ -100,6 +105,31 @@ describe("workspace host store", () => {
     const prs = getInlineWorkspaceController("prs");
     prs.recordDeleted(identityA, refA.id);
     expect(prs.effectiveWorkspaceRef(identityB, refA)).toEqual(refA);
+  });
+
+  it("a creation recorded without a controller surfaces through effectiveWorkspaceRef", () => {
+    // A create that starts in a controller-less focus/mobile view records
+    // only the shared created entry; if the layout switches to an inline
+    // surface before the response lands, no recordCreated override exists.
+    // The inline view must still see the workspace or it re-offers
+    // "Create Workspace" for a workspace that exists.
+    const prs = getInlineWorkspaceController("prs");
+    recordWorkspaceCreated(identityA, refA);
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(refA);
+    expect(prs.effectiveWorkspaceRef(identityB, null)).toBeNull();
+    // An envelope carrying the workspace stays authoritative.
+    const envelope = { id: "ws-a", status: "provisioning" };
+    expect(prs.effectiveWorkspaceRef(identityA, envelope)).toEqual(envelope);
+  });
+
+  it("a deletion still masks a controller-less created record", () => {
+    const prs = getInlineWorkspaceController("prs");
+    recordWorkspaceCreated(identityA, refA);
+    notifyWorkspaceDeleted("ws-a", undefined, identityA);
+    // The tombstone masks stale envelopes AND the record was cleared by
+    // ID, so the dead workspace cannot resurface through the fallback.
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
   });
 
   it("a tombstone does not mask a recreated workspace under a fresh ID", () => {

@@ -178,7 +178,7 @@ font-size-token-check: check-vite-plus-bin
 huma-route-check:
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./tools/nohttpmux ./...
 
-# Keep the CI Playwright container image tag in lockstep with the @playwright/test pin
+# Keep the browser CI image in lockstep with the Playwright, Bun, and Vite+ pins
 playwright-version-check: check-vite-plus-bin
 	$(VITE_PLUS_BIN) exec -- node scripts/check-playwright-version.mjs
 

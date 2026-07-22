@@ -438,12 +438,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
+      - name: Restore Bun package cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          node-version-file: package.json
-          cache: true
-          run-install: true
+          path: /usr/local/install/cache
+          key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
+          restore-keys: |
+            browser-bun-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
 
       - name: Make $HOME owned by the current user for Firefox
         if: matrix.browser == 'firefox'
@@ -468,7 +472,8 @@ jobs:
       contents: read
       packages: read
     # The prerequisite job resolves a private, digest-pinned Playwright image
-    # with tmux preinstalled, so browser jobs never depend on Ubuntu mirrors.
+    # with Bun, Vite+, and tmux preinstalled, so browser jobs skip repeated
+    # toolchain bootstrap downloads and never depend on Ubuntu mirrors.
     container:
       image: ${{ needs.ensure_playwright_image.outputs.image }}
       credentials:
@@ -489,15 +494,18 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
+      - name: Restore Bun package cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          node-version-file: package.json
-          # The Playwright container must install its own dependency tree.
-          # Restoring the host cache can leave Vite's CSS pipeline with stale
-          # virtual modules, producing intermittent invalid-selector builds.
-          cache: false
-          run-install: true
+          path: /usr/local/install/cache
+          key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
+          restore-keys: |
+            browser-bun-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install frontend dependencies
+        # Restore only Bun's package cache; materialize node_modules from the
+        # checked-out lockfile inside this job container.
+        run: bun install --frozen-lockfile
 
       - name: Make $HOME owned by the current user for Firefox
         # GitHub mounts the container $HOME (/github/home) owned by the runner
@@ -505,7 +513,7 @@ jobs:
         # not owned by the current user (Chromium does not check), so the
         # firefox leg fails every test at browser launch. Re-own the directory
         # itself (not its contents) so the launch check passes; HOME stays
-        # /github/home, leaving the setup-go/setup-vp caches untouched.
+        # /github/home, leaving the setup-go cache untouched.
         run: chown "$(id -u):$(id -g)" "$HOME"
 
       - name: Build frontend
@@ -615,15 +623,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
+      - name: Restore Bun package cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          node-version-file: package.json
-          # The Playwright container already consumes most of the hosted
-          # runner's disk. Restoring the dependency cache as well can exhaust
-          # the workspace while Vitest browser mode is still running.
-          cache: false
-          run-install: true
+          path: /usr/local/install/cache
+          key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
+          restore-keys: |
+            browser-bun-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
 
       - name: Run frontend browser tests
         run: cd frontend && vp test run --project browser

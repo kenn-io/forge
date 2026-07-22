@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace repeated Ubuntu `tmux` installs with a private GHCR Playwright image that CI creates only when its pinned base or recipe changes.
+**Goal:** Replace repeated Ubuntu and frontend-tool bootstrap downloads with a private GHCR Playwright image that CI creates only when its pinned toolchain or recipe changes.
 
-**Architecture:** A small Dockerfile adds `tmux` to the pinned Microsoft Playwright image. A prerequisite GitHub Actions job checks a content-derived GHCR tag, publishes it only when missing on a trusted run, resolves its manifest digest, and passes that immutable reference to every Playwright job.
+**Architecture:** A small Dockerfile adds the pinned Bun runtime, Vite+ launcher, and `tmux` to the pinned Microsoft Playwright image. A prerequisite GitHub Actions job checks a content-derived GHCR tag, publishes it only when missing on a trusted run, resolves its manifest digest, and passes that immutable reference to every Playwright job.
 
 **Tech Stack:** GitHub Actions, Docker Buildx, GHCR, Playwright, Ubuntu Noble
 
@@ -28,7 +28,7 @@
 **Interfaces:**
 
 - Consumes: the tag-and-digest-pinned `PLAYWRIGHT_BASE_IMAGE` default, which CI may pass explicitly as a build argument.
-- Produces: a Linux amd64 image containing the Playwright browsers, their OS dependencies, and `tmux`.
+- Produces: a Linux amd64 image containing the Playwright browsers, their OS dependencies, Bun, Vite+, and `tmux`.
 
 - [x] **Step 1: Add the Dockerfile**
 
@@ -101,6 +101,12 @@ credentials using `${{ github.actor }}` and `${{ github.token }}`.
 
 Delete the `Install tmux for workspace PTY sessions` step from the full-stack
 E2E job because `tmux` is now part of the job image.
+
+- [x] **Step 4: Use the baked frontend bootstrap**
+
+Restore Bun's content-addressed package cache, install the checked-out `bun.lock`
+with the baked Bun runtime, and run the baked, package-pinned Vite+ launcher
+instead of downloading it in each Playwright job.
 
 ### Task 4: Verify the workflow
 

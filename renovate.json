@@ -44,7 +44,7 @@
     },
     {
       "matchManagers": ["dockerfile"],
-      "matchDepNames": ["mcr.microsoft.com/playwright"],
+      "matchDepNames": ["mcr.microsoft.com/playwright", "oven/bun"],
       "groupName": "JavaScript dependencies",
       "groupSlug": "javascript-dependencies"
     },
@@ -70,6 +70,14 @@
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "oven-sh/bun",
       "extractVersionTemplate": "^bun-v(?<version>\\d+\\.\\d+\\.\\d+)$",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)\\.github/docker/playwright/Dockerfile$/"],
+      "matchStrings": ["ARG VITE_PLUS_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "datasourceTemplate": "npm",
+      "depNameTemplate": "vite-plus",
       "versioningTemplate": "semver"
     }
   ]

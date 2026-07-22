@@ -105,11 +105,9 @@ Vitest owns unhandled errors in the root runner, so `onUnhandledError` belongs
 in the root `test` config rather than a browser project; keep any ignored error
 exact by message and framework stack frame (`frontend/vite.config.ts:495`).
 
-Playwright-backed CI jobs consume the private GHCR image resolved by
-`ensure_playwright_image`; update its base tag and digest only in the image recipe,
-and never add apt installs to test jobs (`.github/workflows/ci.yml::ensure_playwright_image`, `.github/docker/playwright/Dockerfile:3`).
-Jobs that build the frontend must install dependencies without the Vite+ host cache;
-restored host trees can leave stale virtual CSS modules (`.github/workflows/ci.yml::e2e`). Keep CI unit tests serialized on
+Playwright CI uses the private image from `ensure_playwright_image`; keep its
+Playwright, Bun, and Vite+ pins in the recipe, cache only `/usr/local/install/cache`,
+and materialize `node_modules` from the lockfile before invoking baked `vp` (`.github/workflows/ci.yml::ensure_playwright_image`, `.github/docker/playwright/Dockerfile:3`). Keep CI unit tests serialized on
 memory-bounded self-hosted runners; assertions can finish before a pooled worker
 dies during teardown (`frontend/vite.config.ts::resolveUnitTestWorkers`).
 

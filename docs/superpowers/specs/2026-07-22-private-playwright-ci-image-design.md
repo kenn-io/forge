@@ -9,8 +9,8 @@ self-hosted GitHub Actions runners.
 ## Image lifecycle
 
 The repository-owned Dockerfile keeps the tag-and-digest-pinned Microsoft
-Playwright image as the base image source of truth, adds `tmux`, and removes apt
-indexes. The derived image is stored privately at
+Playwright image as the base image source of truth, copies the repository-pinned
+Bun runtime, installs the repository-pinned Vite+ launcher, adds `tmux`, and removes apt indexes. The derived image is stored privately at
 `ghcr.io/kenn-io/middleman-playwright`.
 
 Before any Playwright-dependent job starts, an `ensure_playwright_image` job
@@ -23,7 +23,10 @@ but may not publish a missing one.
 
 The job exposes the digest-pinned GHCR reference as an output. Full-stack E2E,
 mock E2E, and browser-component jobs all depend on that output and authenticate
-their private job-container pull with `GITHUB_TOKEN`.
+their private job-container pull with `GITHUB_TOKEN`. They install the checked-out
+`bun.lock`, restore Bun's content-addressed package cache without caching
+`node_modules`, and invoke the baked Vite+ launcher instead of downloading it
+for every job.
 
 ## Change detection and failure behavior
 

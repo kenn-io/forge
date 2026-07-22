@@ -1,11 +1,8 @@
 #!/usr/bin/env node
 
-// Guard that the CI Playwright base image stays in lockstep with the pinned
-// @playwright/test version. The browser jobs run inside a repository-owned
-// image derived from mcr.microsoft.com/playwright, whose browsers are pre-baked
-// and keyed to the image's Playwright version. If the base image tag drifts
-// from the npm pin, Playwright silently re-downloads browsers or runs
-// mismatched binaries. This check keeps that version coupling explicit.
+// Guard that the browser CI image stays in lockstep with the repository's
+// Playwright, Bun, and Vite+ pins. The browser jobs run inside a
+// repository-owned image derived from mcr.microsoft.com/playwright.
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -19,6 +16,8 @@ const IMAGE_FILE = ".github/docker/playwright/Dockerfile";
 //   mcr.microsoft.com/playwright:v1.60.0-noble
 //   mcr.microsoft.com/playwright@sha256:...  # v1.60.0-noble
 const IMAGE_REF_RE = /mcr\.microsoft\.com\/playwright[:@]/;
+const BUN_IMAGE_REF_RE = /oven\/bun:(\d+\.\d+\.\d+)@sha256:[a-f0-9]{64}/;
+const VITE_PLUS_VERSION_RE = /^ARG VITE_PLUS_VERSION=(\d+\.\d+\.\d+)$/;
 // The version lives either in the tag (:v1.60.0-noble) or, for a digest pin, in
 // the trailing "# v1.60.0-noble" comment. Either way it is the v<semver> token;
 // a 64-hex sha256 digest carries no such token, so it cannot match by accident.
@@ -31,6 +30,7 @@ function pinnedPlaywright(pkg) {
 export async function checkPlaywrightVersion({ root = process.cwd() } = {}) {
   const rootPath = resolve(root);
   const findings = [];
+  let rootPackage;
 
   // Collect the pinned @playwright/test version from each package.json.
   const pins = new Map();
@@ -44,6 +44,7 @@ export async function checkPlaywrightVersion({ root = process.cwd() } = {}) {
     }
     const version = pinnedPlaywright(pkg);
     if (version) pins.set(rel, version);
+    if (rel === "package.json") rootPackage = pkg;
   }
 
   // Every package.json must pin the same version.
@@ -70,28 +71,51 @@ export async function checkPlaywrightVersion({ root = process.cwd() } = {}) {
   }
 
   imageFile.split(/\r?\n/).forEach((line, index) => {
-    if (!IMAGE_REF_RE.test(line)) return;
-
-    const versionMatch = line.match(VERSION_RE);
-    if (!versionMatch) {
-      findings.push({
-        file: IMAGE_FILE,
-        line: index + 1,
-        message:
-          "Playwright base image has no v<version> tag to verify. Keep the readable tag " +
-          "alongside the digest so the pin remains checkable against @playwright/test.",
-      });
-      return;
+    if (IMAGE_REF_RE.test(line)) {
+      const versionMatch = line.match(VERSION_RE);
+      if (!versionMatch) {
+        findings.push({
+          file: IMAGE_FILE,
+          line: index + 1,
+          message:
+            "Playwright base image has no v<version> tag to verify. Keep the readable tag " +
+            "alongside the digest so the pin remains checkable against @playwright/test.",
+        });
+      } else {
+        const imageVersion = versionMatch[1];
+        if (expected && imageVersion !== expected) {
+          findings.push({
+            file: IMAGE_FILE,
+            line: index + 1,
+            message:
+              `Playwright base image is v${imageVersion} but @playwright/test is ${expected}. ` +
+              `Update its tag and digest so the pre-baked browsers match.`,
+          });
+        }
+      }
     }
 
-    const imageVersion = versionMatch[1];
-    if (expected && imageVersion !== expected) {
+    const bunImageMatch = line.match(BUN_IMAGE_REF_RE);
+    const packageManagerMatch = rootPackage?.packageManager?.match(/^bun@(\d+\.\d+\.\d+)$/);
+    if (bunImageMatch && packageManagerMatch && bunImageMatch[1] !== packageManagerMatch[1]) {
       findings.push({
         file: IMAGE_FILE,
         line: index + 1,
         message:
-          `Playwright base image is v${imageVersion} but @playwright/test is ${expected}. ` +
-          `Update its tag and digest so the pre-baked browsers match.`,
+          `Bun image is ${bunImageMatch[1]} but packageManager is bun@${packageManagerMatch[1]}. ` +
+          "Update its tag and digest together.",
+      });
+    }
+
+    const vitePlusImageMatch = line.match(VITE_PLUS_VERSION_RE);
+    const vitePlusPin = rootPackage?.devDependencies?.["vite-plus"];
+    if (vitePlusImageMatch && vitePlusPin && vitePlusImageMatch[1] !== vitePlusPin) {
+      findings.push({
+        file: IMAGE_FILE,
+        line: index + 1,
+        message:
+          `Baked Vite+ is ${vitePlusImageMatch[1]} but package.json pins vite-plus ${vitePlusPin}. ` +
+          "Update them together.",
       });
     }
   });

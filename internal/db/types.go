@@ -388,8 +388,14 @@ type ArchiveItemState struct {
 }
 
 type ClaimArchiveItemOpts struct {
-	RepoIDs []int64
-	Now     time.Time
+	RepoIDs        []int64
+	Now            time.Time
+	ExcludedScopes []ArchiveItemScope
+}
+
+type ArchiveItemScope struct {
+	RepoID   int64
+	ItemType ArchiveItemType
 }
 
 // IssueSnapshot and MergeRequestSnapshot contain provider-owned content from

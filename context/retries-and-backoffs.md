@@ -90,9 +90,12 @@ Recording a disabled result must preserve any earlier same-scope item failure so
 and ETag invalidation state survives the cooldown. (`internal/github/sync.go::indexSyncRepo`)
 Apply the gate before shared budget exhaustion so suppressed work cannot starve
 unaffected scopes. (`internal/github/sync.go::drainDetailQueue`)
-Archive inventory, maintenance, and hydration share this gate; feature deferral preserves
-scan cursors and pending item lookup state instead of recording provider-budget wait or
-lookup success. (`internal/github/sync.go::Admit`)
+Archive inventory, maintenance, and hydration share this in-memory gate; feature deferral
+preserves scan cursors and pending lookup state and is never persisted as provider-budget
+or item-retry state. (`internal/github/sync.go::Admit`)
+Hydration excludes the cooled repository feature only while selecting work in the current
+pass, so unaffected due items remain eligible and restart or manual recovery can resume
+immediately. (`internal/archive/scheduler.go::runNextHydrationWork`)
 
 ## Single-flight: `Manager.EnsureClone`
 

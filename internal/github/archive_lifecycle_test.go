@@ -387,34 +387,52 @@ func TestArchiveDisabledIssueInventorySharesCooldownWithoutBlockingMergeRequests
 	assert.Equal(int32(2), issueCalls.Load())
 }
 
-func TestArchiveDisabledIssueHydrationRemainsPendingUntilCooldownExpires(t *testing.T) {
-	assert := assert.New(t)
+type disabledArchiveHydrationFixture struct {
+	database       *db.DB
+	now            time.Time
+	ref            platform.RepoRef
+	item           *gh.Issue
+	disabled       atomic.Bool
+	hydrationCalls atomic.Int32
+	client         *archivePageMockClient
+	tracker        *RateTracker
+	syncer         *Syncer
+	service        *archive.Service
+}
+
+func newDisabledArchiveHydrationFixture(t *testing.T) *disabledArchiveHydrationFixture {
+	t.Helper()
 	require := require.New(t)
-	database := dbtest.Open(t)
-	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
-	ref := platform.RepoRef{
-		Platform: platform.KindGitHub, Host: "github.com",
-		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	fixture := &disabledArchiveHydrationFixture{
+		database: dbtest.Open(t),
+		now:      time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC),
+		ref: platform.RepoRef{
+			Platform: platform.KindGitHub, Host: "github.com",
+			Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		},
 	}
-	item := buildOpenIssue(7, now)
+	fixture.disabled.Store(true)
+	fixture.item = buildOpenIssue(7, fixture.now)
 	state := "closed"
-	item.State = &state
+	fixture.item.State = &state
 	rawDisabled := fmt.Errorf("get archive issue: %w", &gh.ErrorResponse{
 		Response: &http.Response{StatusCode: http.StatusGone},
 		Message:  "Issues are disabled for this repo",
 	})
-	var hydrationCalls atomic.Int32
-	client := &archivePageMockClient{
+	fixture.client = &archivePageMockClient{
 		mockClient: &mockClient{
 			getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
-				hydrationCalls.Add(1)
-				return nil, rawDisabled
+				fixture.hydrationCalls.Add(1)
+				if fixture.disabled.Load() {
+					return nil, rawDisabled
+				}
+				return fixture.item, nil
 			},
 		},
 		listInventoryIssuesPageFn: func(
 			context.Context, string, string, string, string, string,
 		) ([]*gh.Issue, string, bool, error) {
-			return []*gh.Issue{item}, "", true, nil
+			return []*gh.Issue{fixture.item}, "", true, nil
 		},
 		listInventoryPullRequestsPageFn: func(
 			context.Context, string, string, string, int,
@@ -422,52 +440,103 @@ func TestArchiveDisabledIssueHydrationRemainsPendingUntilCooldownExpires(t *test
 			return nil, false, nil
 		},
 	}
-	tracker := NewPlatformRateTracker(database, "github", "github.com", "rest")
-	tracker.UpdateFromRate(Rate{
-		Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute),
+	fixture.tracker = NewPlatformRateTracker(
+		fixture.database, "github", "github.com", "rest",
+	)
+	fixture.tracker.UpdateFromRate(Rate{
+		Limit: 5000, Remaining: 4999, Reset: fixture.now.Add(time.Minute),
 	})
-	syncer := NewSyncer(
-		map[string]Client{"github.com": client}, database, nil,
+	fixture.syncer = NewSyncer(
+		map[string]Client{"github.com": fixture.client}, fixture.database, nil,
 		[]RepoRef{{
 			Platform: platform.KindGitHub, PlatformHost: "github.com",
 			Owner: "acme", Name: "widget",
 		}},
-		time.Hour, map[string]*RateTracker{"github.com": tracker}, testBudget(5000),
+		time.Hour,
+		map[string]*RateTracker{"github.com": fixture.tracker},
+		testBudget(5000),
 	)
-	syncer.now = func() time.Time { return now }
-	clock := archiveLifecycleClock{now: func() time.Time { return now }}
-	service, err := archive.NewService(
-		database, syncer.clients, syncer, syncer, nil, clock,
+	fixture.syncer.now = func() time.Time { return fixture.now }
+	clock := archiveLifecycleClock{now: func() time.Time { return fixture.now }}
+	var err error
+	fixture.service, err = archive.NewService(
+		fixture.database, fixture.syncer.clients,
+		fixture.syncer, fixture.syncer, nil, clock,
 	)
 	require.NoError(err)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
-	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(fixture.service.EnsureConfigured(t.Context(), []platform.RepoRef{fixture.ref}))
+	_, err = fixture.service.Start(t.Context(), []platform.RepoRef{fixture.ref})
 	require.NoError(err)
+	for range 3 {
+		require.NoError(fixture.service.RunEligible(t.Context()))
+	}
+	return fixture
+}
 
-	require.NoError(service.RunEligible(t.Context()))
-	require.NoError(service.RunEligible(t.Context()))
-	require.NoError(service.RunEligible(t.Context()))
-	require.NoError(service.RunEligible(t.Context()))
-
-	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
+func (f *disabledArchiveHydrationFixture) progress(t *testing.T) db.ArchiveDatasetProgress {
+	t.Helper()
+	require := require.New(t)
+	repo, err := f.database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(f.ref))
 	require.NoError(err)
 	require.NotNil(repo)
-	progress, err := database.GetDatasetProgress(
+	progress, err := f.database.GetDatasetProgress(
 		t.Context(), repo.ID, db.ArchiveItemTypeIssue, 7, db.ArchiveDatasetLookup,
 	)
 	require.NoError(err)
+	return progress
+}
+
+func TestArchiveDisabledIssueHydrationRecoversImmediatelyAfterRestart(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newDisabledArchiveHydrationFixture(t)
+	progress := fixture.progress(t)
 	assert.Equal(db.ArchiveDatasetProgressPending, progress.Status)
 	assert.Zero(progress.AttemptCount)
-	require.NotNil(progress.NextRetryAt)
-	assert.Equal(now.Add(repositoryFeatureProbeInterval), progress.NextRetryAt.UTC())
-	assert.Equal(int32(1), hydrationCalls.Load())
+	assert.Nil(progress.NextRetryAt)
+	assert.Equal(int32(1), fixture.hydrationCalls.Load())
 
-	now = now.Add(repositoryFeatureProbeInterval)
-	tracker.UpdateFromRate(Rate{
-		Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute),
+	fixture.disabled.Store(false)
+	fixture.now = fixture.now.Add(time.Minute)
+	restartedTracker := NewPlatformRateTracker(
+		fixture.database, "github", "github.com", "rest",
+	)
+	restartedTracker.UpdateFromRate(Rate{
+		Limit: 5000, Remaining: 4999, Reset: fixture.now.Add(time.Minute),
 	})
+	restarted := NewSyncer(
+		map[string]Client{"github.com": fixture.client}, fixture.database, nil,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "widget",
+		}},
+		time.Hour,
+		map[string]*RateTracker{"github.com": restartedTracker},
+		testBudget(5000),
+	)
+	restarted.now = func() time.Time { return fixture.now }
+	service, err := archive.NewService(
+		fixture.database, restarted.clients, restarted, restarted, nil,
+		archiveLifecycleClock{now: func() time.Time { return fixture.now }},
+	)
+	require.NoError(err)
 	require.NoError(service.RunEligible(t.Context()))
-	assert.Equal(int32(2), hydrationCalls.Load())
+	assert.Equal(db.ArchiveDatasetProgressComplete, fixture.progress(t).Status)
+	assert.Equal(int32(2), fixture.hydrationCalls.Load())
+}
+
+func TestArchiveDisabledIssueHydrationRecoversAfterManualProbe(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newDisabledArchiveHydrationFixture(t)
+	fixture.disabled.Store(false)
+
+	require.NoError(fixture.syncer.SyncRepoOnProvider(
+		t.Context(), platform.KindGitHub, "github.com", "acme", "widget",
+	))
+	require.NoError(fixture.service.RunEligible(t.Context()))
+	assert.Equal(db.ArchiveDatasetProgressComplete, fixture.progress(t).Status)
+	assert.Equal(int32(2), fixture.hydrationCalls.Load())
 }
 
 func (*archiveLifecycleRecorder) RunEligible(context.Context) error { return nil }

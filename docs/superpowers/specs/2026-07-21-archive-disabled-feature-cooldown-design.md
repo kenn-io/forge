@@ -22,7 +22,7 @@ No database schema change or second cooldown store is introduced. The existing i
 
 ## Scheduling Semantics
 
-- A deferred hydration stays pending and receives an item-level retry deadline without incrementing its failure attempt count. It is never committed as `present`.
+- A deferred hydration stays pending without a persisted retry deadline or failure attempt. The worker excludes that repository feature for the current pass so other due work can proceed, and the item is never committed as `present`.
 - A deferred inventory or maintenance page leaves its scan generation and cursor unchanged.
 - A pre-call feature deferral may be skipped within the same provider-host worker pass so another repository or the unaffected item type can proceed.
 - A provider call that discovers a disabled feature still ends the current bounded worker pass; the next pass observes the newly established cooldown and skips that scope without another provider request.
@@ -37,7 +37,8 @@ GitHub archive inventory converts wrapped HTTP 410 responses containing the prov
 Focused archive integration coverage will use the real archive service, syncer admission, and SQLite state to prove:
 
 - repeated disabled issue inventory work performs one provider request while merge-request inventory can still advance;
-- disabled hydration performs one provider request, remains pending with the cooldown retry deadline, and does not become `present`;
+- disabled hydration performs one provider request, remains pending without a durable cooldown deadline, and does not become `present`;
+- restart or successful manual recovery makes pending hydration immediately eligible again;
 - advancing the clock past the cooldown permits one new probe;
 - non-disabled failures continue through existing retry handling;
 - existing provider-budget and preemption behavior remains unchanged.

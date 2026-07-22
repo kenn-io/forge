@@ -25,10 +25,6 @@ func (s *Service) hydrateItem(
 		s.items.ArchiveItemSyncCost(repo.Ref.Platform, work.ItemType),
 	)
 	if err != nil {
-		var deferred *featureDeferredError
-		if errors.As(err, &deferred) && deferred != nil {
-			return s.deferHydration(ctx, work, deferred.FeatureDeferral)
-		}
 		return err
 	}
 	syncErr := s.items.SyncArchiveItem(requestCtx, repo.Ref, work.ItemType, work.ItemNumber)
@@ -38,7 +34,7 @@ func (s *Service) hydrateItem(
 		return errAdmissionDeferred
 	}
 	if deferred != nil {
-		return s.deferHydration(ctx, work, *deferred)
+		return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
 	}
 	commit := db.ArchiveItemSyncCommit{
 		RepoID: work.RepoID, ItemType: work.ItemType, ItemNumber: work.ItemNumber,
@@ -61,20 +57,6 @@ func (s *Service) hydrateItem(
 		return s.db.CommitArchiveItemSync(ctx, commit)
 	}
 	return s.recordItemSyncFailure(ctx, commit, syncErr)
-}
-
-func (s *Service) deferHydration(
-	ctx context.Context,
-	work db.ArchiveItemWork,
-	deferred FeatureDeferral,
-) error {
-	if err := s.db.DeferArchiveItemSync(ctx, db.ArchiveItemSyncCommit{
-		RepoID: work.RepoID, ItemType: work.ItemType, ItemNumber: work.ItemNumber,
-		ScanGeneration: work.ScanGeneration, Now: s.now(),
-	}, deferred.RetryAt); err != nil {
-		return err
-	}
-	return errAdmissionDeferred
 }
 
 func archiveTerminalSyncOutcome(

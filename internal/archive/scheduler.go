@@ -142,13 +142,8 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 			fullIDs = append(fullIDs, repo.ID)
 		}
 	}
-	item, err := s.db.ClaimArchiveItem(ctx, db.ClaimArchiveItemOpts{RepoIDs: fullIDs, Now: s.now()})
-	if err != nil {
+	if handled, err := s.runNextHydrationWork(ctx, repos, fullIDs); handled || err != nil {
 		return err
-	}
-	if item != nil {
-		repo := resolvedRepoByID(repos, item.RepoID)
-		return s.swallowAdmissionDeferred(s.hydrateItem(ctx, repo, *item))
 	}
 
 	if handled, err := s.runNextInventoryWork(
@@ -177,6 +172,34 @@ func (s *Service) runProviderHostWork(ctx context.Context, repos []resolvedRepos
 type archiveInventoryScope struct {
 	repoID   int64
 	itemType db.ArchiveItemType
+}
+
+func (s *Service) runNextHydrationWork(
+	ctx context.Context,
+	repos []resolvedRepository,
+	repoIDs []int64,
+) (bool, error) {
+	var excluded []db.ArchiveItemScope
+	for {
+		item, err := s.db.ClaimArchiveItem(ctx, db.ClaimArchiveItemOpts{
+			RepoIDs: repoIDs, Now: s.now(), ExcludedScopes: excluded,
+		})
+		if err != nil {
+			return false, err
+		}
+		if item == nil {
+			return false, nil
+		}
+		repo := resolvedRepoByID(repos, item.RepoID)
+		err = s.hydrateItem(ctx, repo, *item)
+		if featureDeferredBeforeProvider(err) {
+			excluded = append(excluded, db.ArchiveItemScope{
+				RepoID: item.RepoID, ItemType: item.ItemType,
+			})
+			continue
+		}
+		return true, s.swallowAdmissionDeferred(err)
+	}
 }
 
 func (s *Service) runNextInventoryWork(

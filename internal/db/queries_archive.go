@@ -604,7 +604,9 @@ func (d *DB) claimArchiveItem(
 	defer func() { _ = tx.Rollback() }()
 	candidates := make([]ArchiveItemWork, 0, len(repoIDs))
 	for _, repoID := range repoIDs {
-		candidate, err := claimArchiveItemForRepo(ctx, tx, repoID, opts.Now)
+		candidate, err := claimArchiveItemForRepo(
+			ctx, tx, repoID, opts.Now, excludedArchiveItemTypes(opts.ExcludedScopes, repoID),
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -644,19 +646,27 @@ const dueArchiveItemsQuery = `
 	  AND ai.lifecycle_state = 'active'
 	  AND p.dataset = 'lookup'
 	  AND p.status IN ('pending', 'running', 'failed')
-	  AND (p.next_retry_at IS NULL OR p.next_retry_at <= ?)
-	ORDER BY ai.provider_created_at, ai.item_type, ai.item_number
-	LIMIT 1`
+	  AND (p.next_retry_at IS NULL OR p.next_retry_at <= ?)`
 
 func claimArchiveItemForRepo(
 	ctx context.Context,
 	queryer archiveQueryer,
 	repoID int64,
 	now time.Time,
+	excludedItemTypes []ArchiveItemType,
 ) (*ArchiveItemWork, error) {
+	query := dueArchiveItemsQuery
+	args := []any{repoID, now, formatDatasetProgressTime(now)}
+	if len(excludedItemTypes) > 0 {
+		query += fmt.Sprintf(" AND ai.item_type NOT IN (%s)", sqlPlaceholders(len(excludedItemTypes)))
+		for _, itemType := range excludedItemTypes {
+			args = append(args, itemType)
+		}
+	}
+	query += ` ORDER BY ai.provider_created_at, ai.item_type, ai.item_number LIMIT 1`
 	var work ArchiveItemWork
 	err := queryer.QueryRowContext(
-		ctx, dueArchiveItemsQuery, repoID, now, formatDatasetProgressTime(now),
+		ctx, query, args...,
 	).Scan(
 		&work.RepoID, &work.ItemType, &work.ItemNumber,
 		&work.ProviderCreatedAt, &work.ScanGeneration,
@@ -669,6 +679,24 @@ func claimArchiveItemForRepo(
 	}
 	work.ProviderCreatedAt = work.ProviderCreatedAt.UTC()
 	return &work, nil
+}
+
+func excludedArchiveItemTypes(
+	scopes []ArchiveItemScope,
+	repoID int64,
+) []ArchiveItemType {
+	seen := make(map[ArchiveItemType]struct{})
+	for _, scope := range scopes {
+		if scope.RepoID == repoID {
+			seen[scope.ItemType] = struct{}{}
+		}
+	}
+	itemTypes := make([]ArchiveItemType, 0, len(seen))
+	for itemType := range seen {
+		itemTypes = append(itemTypes, itemType)
+	}
+	slices.Sort(itemTypes)
+	return itemTypes
 }
 
 func archiveItemStableLess(left, right ArchiveItemWork) bool {

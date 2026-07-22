@@ -119,6 +119,47 @@ func TestDisabledIssueAfterItemFailurePreservesRetryScope(t *testing.T) {
 	assert.False(due)
 }
 
+func TestCooldownSkippedIssueScopePreservesRetryUntilSuccessfulProbe(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	client := &mockClient{}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	syncer.now = func() time.Time { return now }
+	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	syncer.markRepoFailed(repo, failIssues)
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		repo,
+		platform.RepositoryFeatureIssues,
+		platform.RepositoryFeatureDisabled(
+			platform.KindGitHub,
+			"github.com",
+			platform.RepositoryFeatureIssues,
+			errors.New("repository issues disabled"),
+		),
+	))
+
+	require.NoError(syncer.indexSyncRepo(ctx, repo, repoID, false))
+	failed, ok := syncer.failedRepos.Load(repoFailKey(repo))
+	require.True(ok)
+	assert.Equal(failIssues, failed.(failScope))
+
+	now = now.Add(repositoryFeatureProbeInterval)
+	require.NoError(syncer.indexSyncRepo(ctx, repo, repoID, false))
+	_, ok = syncer.failedRepos.Load(repoFailKey(repo))
+	assert.False(ok)
+}
+
 func TestExpiredMergeRequestCooldownAllowsOneConcurrentBackgroundProbe(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -647,7 +647,7 @@ func partialSyncFailureScope(err error) failScope {
 // markRepoFailed records that the most recent sync of this repo hit
 // a partial failure after the ETag cache may have been populated, so
 // the next cycle must force an unconditional refetch of the affected
-// list endpoints. Matched by clearRepoFailed on a clean cycle.
+// list endpoints. Successful attempted scopes clear their own bits.
 func (s *Syncer) markRepoFailed(repo RepoRef, scope failScope) {
 	key := repoFailKey(repo)
 	for {
@@ -667,12 +667,6 @@ func (s *Syncer) markRepoFailed(repo RepoRef, scope failScope) {
 		}
 		// Another goroutine raced us; retry.
 	}
-}
-
-// clearRepoFailed clears the partial-failure flag after a clean
-// doSyncRepo pass.
-func (s *Syncer) clearRepoFailed(repo RepoRef) {
-	s.failedRepos.Delete(repoFailKey(repo))
 }
 
 func (s *Syncer) clearRepoFailedScope(repo RepoRef, scope failScope) {
@@ -5099,7 +5093,6 @@ func (s *Syncer) indexSyncRepo(
 				repo, platform.RepositoryFeatureMergeRequests, err,
 			) {
 				disabledScope |= failMR
-				s.clearRepoFailedScope(repo, failMR)
 				mrListBlocked = true
 			} else {
 				s.markRepoFailed(repo, failMR)
@@ -5129,7 +5122,6 @@ func (s *Syncer) indexSyncRepo(
 							repo, platform.RepositoryFeatureMergeRequests, gqlErr,
 						) {
 							disabledScope |= failMR
-							s.clearRepoFailedScope(repo, failMR)
 							graphQLDone = true
 						} else {
 							slog.Warn("GraphQL fetch failed, falling back to REST index",
@@ -5146,9 +5138,6 @@ func (s *Syncer) indexSyncRepo(
 							) {
 								disabledScope |= failMR
 								failedScope |= partialSyncFailureScope(err) & failMR
-								if failedScope&failMR == 0 {
-									s.clearRepoFailedScope(repo, failMR)
-								}
 							} else {
 								failedScope |= failMR
 							}
@@ -5167,9 +5156,6 @@ func (s *Syncer) indexSyncRepo(
 					) {
 						disabledScope |= failMR
 						failedScope |= partialSyncFailureScope(err) & failMR
-						if failedScope&failMR == 0 {
-							s.clearRepoFailedScope(repo, failMR)
-						}
 					} else {
 						slog.Error("merge request sync failed",
 							"repo", repo.Owner+"/"+repo.Name,
@@ -5233,7 +5219,6 @@ func (s *Syncer) indexSyncRepo(
 				repo, platform.RepositoryFeatureIssues, issueListErr,
 			) {
 				disabledScope |= failIssues
-				s.clearRepoFailedScope(repo, failIssues)
 			} else {
 				slog.Error("list open issues failed",
 					"repo", repo.Owner+"/"+repo.Name,
@@ -5254,7 +5239,6 @@ func (s *Syncer) indexSyncRepo(
 							repo, platform.RepositoryFeatureIssues, gqlErr,
 						) {
 							disabledScope |= failIssues
-							s.clearRepoFailedScope(repo, failIssues)
 							graphQLIssuesDone = true
 						} else {
 							slog.Warn("GraphQL issue fetch failed, falling back to REST",
@@ -5271,9 +5255,6 @@ func (s *Syncer) indexSyncRepo(
 							) {
 								disabledScope |= failIssues
 								failedScope |= partialSyncFailureScope(err) & failIssues
-								if failedScope&failIssues == 0 {
-									s.clearRepoFailedScope(repo, failIssues)
-								}
 							} else {
 								failedScope |= failIssues
 							}
@@ -5293,9 +5274,6 @@ func (s *Syncer) indexSyncRepo(
 						) {
 							disabledScope |= failIssues
 							failedScope |= partialSyncFailureScope(err) & failIssues
-							if failedScope&failIssues == 0 {
-								s.clearRepoFailedScope(repo, failIssues)
-							}
 						} else {
 							slog.Error("REST issue sync failed",
 								"repo", repo.Owner+"/"+repo.Name,
@@ -5313,9 +5291,6 @@ func (s *Syncer) indexSyncRepo(
 						) {
 							disabledScope |= failIssues
 							failedScope |= partialSyncFailureScope(err) & failIssues
-							if failedScope&failIssues == 0 {
-								s.clearRepoFailedScope(repo, failIssues)
-							}
 						} else {
 							slog.Error("issue sync failed",
 								"repo", repo.Owner+"/"+repo.Name,
@@ -5342,9 +5317,10 @@ func (s *Syncer) indexSyncRepo(
 		// failed so the next cycle forces an unconditional refetch
 		// only for the affected list endpoints.
 		s.markRepoFailed(repo, failedScope)
-	} else {
-		// Clean pass — drop any leftover flag from a prior cycle.
-		s.clearRepoFailed(repo)
+	}
+	succeededScope := attemptedScope &^ failedScope &^ disabledScope
+	if succeededScope != 0 {
+		s.clearRepoFailedScope(repo, succeededScope)
 	}
 
 	if caps.ReadMergeRequests && prListUnchanged &&

@@ -529,6 +529,39 @@ func TestArchiveClaimItemUsesEligibleDueWorkAndStableOrder(t *testing.T) {
 	assert.Nil(claim)
 }
 
+func TestArchiveClaimItemExcludesFeatureScope(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, d, "acme", "feature-scope")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 1, now.Add(-time.Hour))
+	insertArchiveProgressForTest(
+		t, d, repoID, ArchiveItemTypeIssue, 1,
+		ArchiveDatasetLookup, ArchiveDatasetProgressPending,
+	)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 2, now)
+	insertArchiveProgressForTest(
+		t, d, repoID, ArchiveItemTypeMergeRequest, 2,
+		ArchiveDatasetLookup, ArchiveDatasetProgressPending,
+	)
+
+	claim, err := d.ClaimArchiveItem(ctx, ClaimArchiveItemOpts{
+		RepoIDs: []int64{repoID},
+		Now:     now,
+		ExcludedScopes: []ArchiveItemScope{{
+			RepoID: repoID, ItemType: ArchiveItemTypeIssue,
+		}},
+	})
+	require.NoError(err)
+	require.NotNil(claim)
+	assert.Equal(ArchiveItemTypeMergeRequest, claim.ItemType)
+	assert.Equal(2, claim.ItemNumber)
+}
+
 func TestArchivePromptRediscoveryMakesTerminalItemClaimable(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -943,41 +976,6 @@ func TestArchiveDBBoundariesNormalizeTimestampsToUTC(t *testing.T) {
 	require.NoError(err)
 	require.Len(progress, 1)
 	assert.Equal(1, progress[0].Counts.DueItemCount)
-}
-
-func TestDeferArchiveItemSyncPreservesProgressAndAttempts(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-	now := archiveTestTime()
-	retryAt := now.Add(24 * time.Hour)
-	repoID := insertTestRepoWithHost(t, d, "acme", "widget", "github.com")
-	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
-	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
-	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 1, now)
-	insertArchiveProgressForTest(
-		t, d, repoID, ArchiveItemTypeIssue, 1,
-		ArchiveDatasetLookup, ArchiveDatasetProgressPending,
-	)
-	progress, err := d.GetDatasetProgress(
-		ctx, repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup,
-	)
-	require.NoError(err)
-
-	require.NoError(d.DeferArchiveItemSync(ctx, ArchiveItemSyncCommit{
-		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: 1,
-		ScanGeneration: progress.ScanGeneration, Now: now,
-	}, retryAt))
-
-	progress, err = d.GetDatasetProgress(
-		ctx, repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup,
-	)
-	require.NoError(err)
-	assert.Equal(ArchiveDatasetProgressPending, progress.Status)
-	assert.Zero(progress.AttemptCount)
-	require.NotNil(progress.NextRetryAt)
-	assert.Equal(retryAt, progress.NextRetryAt.UTC())
 }
 
 func TestScanScopedRepositoryFailureIsClaimFenced(t *testing.T) {

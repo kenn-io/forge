@@ -647,6 +647,7 @@ func TestSharedHostCloneAuthFollowsSurvivingProviderTokenE2E(t *testing.T) {
 	giteaClient, err := platformgitea.NewClient(
 		"code.example.com", giteaSource,
 		platformgitea.WithBaseURLForTesting(forgeAPI.URL),
+		platformgitea.WithServerVersionForTesting("1.26.0"),
 	)
 	require.NoError(err)
 	registry, err := platform.NewRegistry(forgejoClient, giteaClient)

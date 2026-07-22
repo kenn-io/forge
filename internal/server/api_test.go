@@ -18056,7 +18056,10 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 			token: "gitea-token",
 			newClient: func(host, token, baseURL string) (platform.Provider, error) {
 				return giteaplatform.NewClient(
-					host, testTokenSource(token), giteaplatform.WithBaseURLForTesting(baseURL),
+					host,
+					testTokenSource(token),
+					giteaplatform.WithBaseURLForTesting(baseURL),
+					giteaplatform.WithServerVersionForTesting("1.26.0"),
 				)
 			},
 		},

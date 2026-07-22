@@ -8,10 +8,34 @@ import (
 	"testing"
 	"time"
 
+	giteasdk "code.gitea.io/sdk/gitea"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 )
+
+func TestGiteaReviewThreadPreservesContextCoordinates(t *testing.T) {
+	assert := assert.New(t)
+	thread := giteaReviewThread(
+		&giteasdk.PullReview{ID: 99},
+		&giteasdk.PullReviewComment{
+			ID:         101,
+			Path:       "src/main.go",
+			LineNum:    7,
+			OldLineNum: 5,
+		},
+	)
+
+	assert.Equal("right", thread.Range.Side)
+	assert.Equal(7, thread.Range.Line)
+	if assert.NotNil(thread.Range.OldLine) {
+		assert.Equal(5, *thread.Range.OldLine)
+	}
+	if assert.NotNil(thread.Range.NewLine) {
+		assert.Equal(7, *thread.Range.NewLine)
+	}
+	assert.Equal("context", thread.Range.LineType)
+}
 
 func TestListMergeRequestReviewThreadsReadsEveryReviewPageAndComment(t *testing.T) {
 	assert := assert.New(t)
@@ -69,7 +93,7 @@ func TestListMergeRequestReviewThreadsReadsEveryReviewPageAndComment(t *testing.
 	}))
 	defer server.Close()
 
-	client, err := NewClient("gitea.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
+	client, err := NewClient("gitea.test", testTokenSource("token"), WithBaseURLForTesting(server.URL), WithServerVersionForTesting(testGiteaServerVersion))
 	require.NoError(err)
 	threads, err := client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
 		Platform: platform.KindGitea, Host: "gitea.test", Owner: "acme", Name: "widgets",
@@ -123,7 +147,7 @@ func TestListMergeRequestReviewThreadsRejectsPartialDataset(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient("gitea.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
+	client, err := NewClient("gitea.test", testTokenSource("token"), WithBaseURLForTesting(server.URL), WithServerVersionForTesting(testGiteaServerVersion))
 	require.NoError(err)
 	threads, err := client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
 		Owner: "acme", Name: "widgets",

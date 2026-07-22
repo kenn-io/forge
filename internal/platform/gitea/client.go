@@ -41,7 +41,12 @@ type Client struct {
 func WithBaseURLForTesting(baseURL string) ClientOption {
 	return func(opts *clientOptions) {
 		opts.baseURL = strings.TrimRight(baseURL, "/")
-		opts.serverVersion = "1.26.0"
+	}
+}
+
+func WithServerVersionForTesting(serverVersion string) ClientOption {
+	return func(opts *clientOptions) {
+		opts.serverVersion = serverVersion
 	}
 }
 

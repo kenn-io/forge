@@ -631,6 +631,7 @@ func gitealikeLabelVariants() []gitealikeLabelVariant {
 					platform.DefaultGiteaHost,
 					staticTokenSource("token"),
 					gitea.WithBaseURLForTesting(upstreamURL),
+					gitea.WithServerVersionForTesting("1.26.0"),
 				)
 				require.NoError(t, err)
 				return client

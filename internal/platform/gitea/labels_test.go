@@ -43,7 +43,7 @@ func TestClientListLabelsFetchesRepoLabelCatalog(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURLForTesting(server.URL))
+	client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURLForTesting(server.URL), WithServerVersionForTesting(testGiteaServerVersion))
 	require.NoError(err)
 
 	catalog, err := client.ListLabels(context.Background(), giteaLabelTestRef())
@@ -98,7 +98,7 @@ func TestClientSetLabelsReplacesByResolvedIDs(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURLForTesting(server.URL))
+			client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURLForTesting(server.URL), WithServerVersionForTesting(testGiteaServerVersion))
 			require.NoError(err)
 
 			labels, err := tt.set(client, context.Background())

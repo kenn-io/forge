@@ -12,6 +12,7 @@ import (
 	gh "github.com/google/go-github/v88/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
@@ -30,6 +31,20 @@ func (c *routeRecordingClient) GetRepository(
 ) (*gh.Repository, error) {
 	c.calls = append(c.calls, "get:"+owner+"/"+repo)
 	return &gh.Repository{Name: new(c.marker)}, nil
+}
+
+func (c *routeRecordingClient) ListInventoryIssuesPage(
+	_ context.Context, owner, repo, sortBy, cursor, since string,
+) ([]*gh.Issue, string, bool, error) {
+	c.calls = append(c.calls, "inventory-issues:"+owner+"/"+repo+":"+sortBy+":"+cursor+":"+since)
+	return []*gh.Issue{{Title: new(c.marker)}}, "next-" + c.marker, false, nil
+}
+
+func (c *routeRecordingClient) ListInventoryPullRequestsPage(
+	_ context.Context, owner, repo, sortBy string, page int,
+) ([]*gh.PullRequest, bool, error) {
+	c.calls = append(c.calls, "inventory-pulls:"+owner+"/"+repo+":"+sortBy+":"+strconv.Itoa(page))
+	return []*gh.PullRequest{{Title: new(c.marker)}}, true, nil
 }
 
 func (c *routeRecordingClient) ListRepositoriesByOwner(
@@ -318,6 +333,69 @@ func TestRoutedClientDelegatesByRepositoryOwnerAndFallback(t *testing.T) {
 	_, err = client.GetRateLimitSnapshot(t.Context())
 	require.NoError(err)
 	assert.True(client.bypassNotificationReadRateReserve())
+}
+
+func TestRoutedClientPreservesAndRoutesArchiveInventory(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	fallbackClient := &routeRecordingClient{marker: "fallback"}
+	ownerClient := &routeRecordingClient{marker: "owner"}
+	router, err := NewHostRouter(
+		"github.com",
+		&Route{Key: RouteKey{Host: "github.com"}, Client: fallbackClient},
+		&Route{Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: ownerClient},
+	)
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+	paged, ok := any(routed).(pageClient)
+	require.True(ok, "routed GitHub clients must preserve archive inventory support")
+	if !ok {
+		return
+	}
+	provider := &gitHubClientProvider{host: "github.com", client: routed}
+	assert.Equal(platform.ArchiveCapabilities{
+		HistoricalIssues: true, HistoricalMergeRequests: true,
+		OrdinaryComments: true, SubmittedReviews: true, InlineReviewComments: true,
+	}, provider.Capabilities().Archive)
+
+	issues, next, exhausted, err := paged.ListInventoryIssuesPage(
+		t.Context(), "acme", "widget", "created", "after-1", "since-1",
+	)
+	require.NoError(err)
+	require.Len(issues, 1)
+	assert.Equal("owner", issues[0].GetTitle())
+	assert.Equal("next-owner", next)
+	assert.False(exhausted)
+	pulls, hasMore, err := paged.ListInventoryPullRequestsPage(
+		t.Context(), "acme", "widget", "updated", 3,
+	)
+	require.NoError(err)
+	require.Len(pulls, 1)
+	assert.Equal("owner", pulls[0].GetTitle())
+	assert.True(hasMore)
+	assert.Equal([]string{
+		"inventory-issues:acme/widget:created:after-1:since-1",
+		"inventory-pulls:acme/widget:updated:3",
+	}, ownerClient.calls)
+	assert.Empty(fallbackClient.calls)
+
+	unsupportedRouter, err := NewHostRouter(
+		"github.com",
+		&Route{Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: &mockClient{}},
+	)
+	require.NoError(err)
+	unsupported, err := NewRoutedClient(unsupportedRouter)
+	require.NoError(err)
+	unsupportedPaged, ok := any(unsupported).(pageClient)
+	require.True(ok)
+	if !ok {
+		return
+	}
+	_, _, _, err = unsupportedPaged.ListInventoryIssuesPage(
+		t.Context(), "acme", "widget", "created", "", "",
+	)
+	require.ErrorContains(err, "does not support archive inventory pages")
 }
 
 func TestRoutedClientWithoutFallbackRejectsOwnerlessAPIs(t *testing.T) {

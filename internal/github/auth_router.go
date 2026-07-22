@@ -212,6 +212,7 @@ var (
 	_ githubLabelClient                   = (*RoutedClient)(nil)
 	_ githubAssigneeClient                = (*RoutedClient)(nil)
 	_ githubReviewerClient                = (*RoutedClient)(nil)
+	_ pageClient                          = (*RoutedClient)(nil)
 )
 
 func NewRoutedClient(routes *HostRouter) (*RoutedClient, error) {
@@ -234,6 +235,50 @@ func (c *RoutedClient) routeForRepo(owner, repo string) (Client, error) {
 		return nil, fmt.Errorf("GitHub route for %s/%s on %s has no client", owner, repo, c.routes.host)
 	}
 	return route.Client, nil
+}
+
+func (c *RoutedClient) pageClientForRepo(owner, repo string) (pageClient, error) {
+	client, err := c.routeForRepo(owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	paged, ok := client.(pageClient)
+	if !ok {
+		return nil, fmt.Errorf(
+			"GitHub route for %s/%s does not support archive inventory pages",
+			owner, repo,
+		)
+	}
+	return paged, nil
+}
+
+func (c *RoutedClient) ListInventoryIssuesPage(
+	ctx context.Context,
+	owner string,
+	repo string,
+	sortBy string,
+	cursor string,
+	since string,
+) ([]*gh.Issue, string, bool, error) {
+	paged, err := c.pageClientForRepo(owner, repo)
+	if err != nil {
+		return nil, "", false, err
+	}
+	return paged.ListInventoryIssuesPage(ctx, owner, repo, sortBy, cursor, since)
+}
+
+func (c *RoutedClient) ListInventoryPullRequestsPage(
+	ctx context.Context,
+	owner string,
+	repo string,
+	sortBy string,
+	page int,
+) ([]*gh.PullRequest, bool, error) {
+	paged, err := c.pageClientForRepo(owner, repo)
+	if err != nil {
+		return nil, false, err
+	}
+	return paged.ListInventoryPullRequestsPage(ctx, owner, repo, sortBy, page)
 }
 
 func (c *RoutedClient) fallbackClient() (Client, error) {

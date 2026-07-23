@@ -419,6 +419,12 @@ func (t *kataFrontendEventTarget) runSupervisor(
 		}
 		if err == nil {
 			_ = t.stream(ctx, client, &upstreamCursor, &liveOnly)
+			// A live-only stream that disconnects before its first event would
+			// otherwise skip catch-up on every reconnect and silently miss any
+			// events from the gap. Resume bounded catch-up from the last
+			// cursor; it re-degrades to live-only (with an invalidation) when
+			// the backlog is still too large.
+			liveOnly = false
 		}
 		if ctx.Err() != nil {
 			return

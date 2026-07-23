@@ -249,6 +249,42 @@ func TestKataTaskSnapshotReusesSelectedEnrichmentUntilMutationInvalidatesEpochE2
 	assert.Equal(int64(2), fixture.daemon.graphCalls.Load())
 }
 
+func TestKataTaskSnapshotRetriesWhenSelectedRevisionChangesBetweenReadsE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newKataSnapshotE2EFixture(t, "Racing task")
+	selectedIssueUID := "issue-member"
+	fixture.daemon.mu.Lock()
+	fixture.daemon.bumpRevisionOnFirstDetail = true
+	fixture.daemon.mu.Unlock()
+
+	scope := apigenerated.Project
+	authority := apigenerated.Ready
+	projectUID := "project-a"
+	response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+		SelectedIssueUid:     &selectedIssueUID,
+		XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+	})
+
+	require.NoError(err)
+	require.Equal(http.StatusOK, response.StatusCode(), string(response.Body))
+	require.NotNil(response.JSON200)
+	snapshot := response.JSON200
+	require.NotNil(snapshot.Issues)
+	require.Len(*snapshot.Issues, 1)
+	assert.Equal(int64(2), (*snapshot.Issues)[0].Revision, "authority must be reloaded at the post-change revision")
+	require.NotNil(snapshot.Enrichment.SelectedDetail)
+	detailBody, ok := snapshot.Enrichment.SelectedDetail.Detail.(map[string]any)
+	require.True(ok)
+	detailIssue, ok := detailBody["issue"].(map[string]any)
+	require.True(ok)
+	assert.InDelta(float64(2), detailIssue["revision"], 0, "detail must match the reloaded authority revision")
+	assert.Equal(int64(2), fixture.daemon.detailCalls.Load(), "stale detail must trigger exactly one retry")
+	assert.Positive(snapshot.InvalidationEpoch, "revision mismatch must invalidate the authority epoch")
+	assert.Nil(snapshot.Enrichment.Errors)
+}
+
 func TestKataTaskSnapshotConcurrentSelectedHistoriesShareProjectPaginationE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -936,40 +972,42 @@ func writeKataSnapshotE2ECatalog(t *testing.T, home, daemonURL string) {
 }
 
 type kataSnapshotDaemonStub struct {
-	t                       *testing.T
-	server                  *httptest.Server
-	mu                      sync.RWMutex
-	title                   string
-	streamEvents            chan int64
-	streamStarted           chan struct{}
-	streamStartedOnce       sync.Once
-	firstProjects           chan struct{}
-	firstProjectsOnce       sync.Once
-	blockFirstProjects      <-chan struct{}
-	firstDetail             chan struct{}
-	firstDetailOnce         sync.Once
-	blockFirstDetail        <-chan struct{}
-	firstProjectEvents      chan struct{}
-	firstProjectEventsOnce  sync.Once
-	blockFirstProjectEvents <-chan struct{}
-	projectCalls            atomic.Int64
-	readyCalls              atomic.Int64
-	issueListCalls          atomic.Int64
-	detailCalls             atomic.Int64
-	graphCalls              atomic.Int64
-	projectEventCalls       atomic.Int64
-	graphFails              bool
-	includeOtherIssue       bool
-	projectEvents           []katagenerated.EventEnvelope
-	projectEventPages       []katagenerated.PollEventsBody
-	projectEventPageSize    int
-	projectEventCursors     []int64
+	t                         *testing.T
+	server                    *httptest.Server
+	mu                        sync.RWMutex
+	title                     string
+	streamEvents              chan int64
+	streamStarted             chan struct{}
+	streamStartedOnce         sync.Once
+	firstProjects             chan struct{}
+	firstProjectsOnce         sync.Once
+	blockFirstProjects        <-chan struct{}
+	firstDetail               chan struct{}
+	firstDetailOnce           sync.Once
+	blockFirstDetail          <-chan struct{}
+	firstProjectEvents        chan struct{}
+	firstProjectEventsOnce    sync.Once
+	blockFirstProjectEvents   <-chan struct{}
+	projectCalls              atomic.Int64
+	readyCalls                atomic.Int64
+	issueListCalls            atomic.Int64
+	detailCalls               atomic.Int64
+	graphCalls                atomic.Int64
+	projectEventCalls         atomic.Int64
+	graphFails                bool
+	includeOtherIssue         bool
+	revision                  int64
+	bumpRevisionOnFirstDetail bool
+	projectEvents             []katagenerated.EventEnvelope
+	projectEventPages         []katagenerated.PollEventsBody
+	projectEventPageSize      int
+	projectEventCursors       []int64
 }
 
 func newKataSnapshotDaemonStub(t *testing.T, title string) *kataSnapshotDaemonStub {
 	t.Helper()
 	stub := &kataSnapshotDaemonStub{
-		t: t, title: title, graphFails: true, streamEvents: make(chan int64, 1),
+		t: t, title: title, graphFails: true, revision: 1, streamEvents: make(chan int64, 1),
 		streamStarted: make(chan struct{}), firstProjects: make(chan struct{}), firstDetail: make(chan struct{}),
 		firstProjectEvents: make(chan struct{}),
 	}
@@ -1041,6 +1079,13 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 					return
 				}
 			}
+			s.mu.Lock()
+			if s.bumpRevisionOnFirstDetail {
+				// The authority for this request was read at the previous
+				// revision, so this detail response is deliberately torn.
+				s.revision++
+			}
+			s.mu.Unlock()
 		}
 		w.Header().Set("ETag", `"issue-revision"`)
 		s.writeJSON(w, katagenerated.ShowIssueResponseBody{Issue: s.issue(issueUID)})
@@ -1173,6 +1218,7 @@ func (s *kataSnapshotDaemonStub) project() katagenerated.ProjectOut {
 func (s *kataSnapshotDaemonStub) issueOut(uid string) katagenerated.IssueOut {
 	s.mu.RLock()
 	title := s.title
+	revision := s.revision
 	s.mu.RUnlock()
 	id := int64(11)
 	shortID := "task-1"
@@ -1188,7 +1234,7 @@ func (s *kataSnapshotDaemonStub) issueOut(uid string) katagenerated.IssueOut {
 		ID: id, UID: uid, ProjectID: 7, ProjectUID: &projectUID,
 		ShortID: shortID, QualifiedID: qualifiedID, Title: title,
 		Body: "Acceptance body", Status: "open", Metadata: map[string]any{"source": "e2e"},
-		Revision: 1, Author: "acceptance", CreatedAt: kataSnapshotE2ETime, UpdatedAt: kataSnapshotE2ETime,
+		Revision: revision, Author: "acceptance", CreatedAt: kataSnapshotE2ETime, UpdatedAt: kataSnapshotE2ETime,
 		Labels: []string{}, Blocks: []katagenerated.LinkPeer{}, BlockedBy: []katagenerated.LinkPeer{}, Related: []katagenerated.LinkPeer{},
 	}
 }

@@ -46,11 +46,12 @@ type kataProjectEventsCacheKey struct {
 }
 
 type kataGraphCacheKey struct {
-	DaemonID    string
-	DaemonEpoch uint64
-	SourceUID   string
-	Depth       string
-	HideDone    bool
+	DaemonID       string
+	DaemonEpoch    uint64
+	SourceUID      string
+	SourceRevision int64
+	Depth          string
+	HideDone       bool
 }
 
 type kataCachedIssueDetail struct {

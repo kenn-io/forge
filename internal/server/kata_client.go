@@ -169,7 +169,11 @@ func (d kataGeneratedHTTPDoer) Do(ctx context.Context, req *http.Request) (*http
 }
 
 func kataGeneratedResponseLimit(path string) int64 {
-	if path == "/api/v1/issues" || path == "/api/v1/ready" ||
+	// Daemon base URLs may carry a path prefix (for example a daemon behind a
+	// reverse proxy), so authority endpoints are identified by suffix rather
+	// than exact match. The issue-detail path /api/v1/issues/{uid} does not
+	// end in /api/v1/issues and keeps the default limit.
+	if strings.HasSuffix(path, "/api/v1/issues") ||
 		strings.HasSuffix(path, "/ready") || strings.HasSuffix(path, "/graph") {
 		return kataGeneratedAuthorityResponseMaxBytes
 	}

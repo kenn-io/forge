@@ -134,4 +134,12 @@ func TestKataGeneratedResponseLimitLeavesRoomForCompleteAuthorities(t *testing.T
 	require.Equal(int64(128<<20), kataGeneratedResponseLimit("/api/v1/projects/7/ready"))
 	require.Equal(int64(32<<20), kataGeneratedResponseLimit("/api/v1/projects"))
 	require.Equal(int64(32<<20), kataGeneratedResponseLimit("/api/v1/projects/7/events"))
+
+	// Daemons served under a base-path prefix must keep the enlarged
+	// authority budgets; detail reads must not inherit them.
+	require.Equal(int64(128<<20), kataGeneratedResponseLimit("/kata/api/v1/issues"))
+	require.Equal(int64(128<<20), kataGeneratedResponseLimit("/kata/api/v1/ready"))
+	require.Equal(int64(128<<20), kataGeneratedResponseLimit("/kata/api/v1/projects/7/ready"))
+	require.Equal(int64(32<<20), kataGeneratedResponseLimit("/api/v1/issues/issue-a"))
+	require.Equal(int64(32<<20), kataGeneratedResponseLimit("/kata/api/v1/projects/7/events"))
 }

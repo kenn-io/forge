@@ -33,13 +33,20 @@ state.
 - Cache capacity may evict Kata authority or enrichment entries but must never
   truncate an API result; daemon invalidation clears every cached read for that
   daemon (`internal/server/kata_snapshot_cache.go::kataSnapshotCache`).
-- Oversized project history must keep paginating selected history uncapped
-  without retaining the complete project stream (`internal/server/kata_snapshot_enrichment.go::loadProjectEvents`).
+- Oversized project history must keep paginating selected history without
+  retaining the complete project stream, but aggregated selected history is
+  bounded by `kataSelectedHistoryMaxBytes`; exceeding it degrades the history
+  stage instead of growing memory without bound
+  (`internal/server/kata_snapshot_enrichment.go::loadProjectEvents`).
 - Initial project-event miss coalescing is daemon + exact epoch + project;
   selected UID belongs only to oversized selected-history fallback flights
   (`internal/server/kata_snapshot_enrichment_cache.go::projectEvents`).
 - `GraphFetchedAt` identifies the daemon read that produced the graph and stays
   stable across cache hits (`internal/server/kata_snapshot_enrichment.go::loadGraph`).
+- Selected detail and graph enrichment are revision-fenced against the
+  authority and cached under that revision; a mismatch is stale and retries
+  through epoch invalidation, never merged into an accepted snapshot
+  (`internal/server/kata_snapshot_enrichment.go::validateKataGraph`).
 - `GET /kata/tasks/events`: compact reset/invalidation transport only. Replay
   starts at the accepted snapshot cursor; raw daemon events never enter browser
   authority (`frontend/src/lib/features/kata/kataWorkspaceAuthorityController.svelte.ts::KataWorkspaceAuthorityController`).

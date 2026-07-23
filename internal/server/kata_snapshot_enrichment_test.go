@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -261,6 +262,139 @@ func TestKataSnapshotEnricherReusesCachedLinkedPeerLookupWithinEpoch(t *testing.
 	require.Len(first.CatalogIssues, 1)
 	require.Len(second.CatalogIssues, 1)
 	assert.Equal(t, int64(2), calls.Load(), "selected detail and linked peer should each load once")
+}
+
+func TestKataSnapshotEnricherBoundsSelectedHistoryAcrossEndlessPages(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	selectedUID := "issue-member"
+	largeHash := strings.Repeat("x", 1<<20)
+	var pages atomic.Int64
+	client := &fakeKataSnapshotAPIClient{
+		showIssue: func(context.Context, *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			return testKataShowIssueResponse(selectedUID), nil
+		},
+		pollProjectEvents: func(_ context.Context, options *katagenerated.PollProjectEventsRequestOptions) (*katagenerated.PollProjectEventsResp, error) {
+			requireKataProjectEventsRequest(t, options)
+			page := pages.Add(1)
+			start := (page - 1) * 10
+			events := make([]katagenerated.EventEnvelope, 10)
+			for i := range events {
+				event := testKataEvent(start+int64(i)+1, &selectedUID, time.Unix(start+int64(i)+1, 0).UTC())
+				event.ContentHash = largeHash
+				events[i] = event
+			}
+			return testKataPollProjectEventsResponse(start+10, events...), nil
+		},
+	}
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+	result, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: selectedUID})
+
+	require.NoError(err)
+	assert.Empty(result.SelectedHistory)
+	assert.Equal(
+		kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task history."},
+		result.Errors[kataSnapshotEnrichmentStageHistory],
+	)
+	assert.LessOrEqual(pages.Load(), int64(8), "endless advancing pages must terminate at the history budget")
+	assert.NotNil(result.SelectedDetail)
+}
+
+func TestKataSnapshotEnricherRejectsGraphSourceAtDifferentRevision(t *testing.T) {
+	t.Parallel()
+
+	graph := testKataGraphResponse("issue-source", "issue-linked")
+	graph.JSON200.Nodes[0].Revision = 5
+	client := &fakeKataSnapshotAPIClient{
+		reachableGraph: func(context.Context, *katagenerated.ReachableIssueGraphRequestOptions) (*katagenerated.ReachableIssueGraphResp, error) {
+			return graph, nil
+		},
+	}
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client})
+
+	_, err := enricher.Enrich(t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{GraphSourceUID: "issue-source"})
+
+	require.ErrorIs(t, err, errKataSnapshotEnrichmentStale)
+}
+
+func TestKataSnapshotEnricherReloadsGraphWhenAuthorityRevisionChanges(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	var revision atomic.Int64
+	var calls atomic.Int64
+	client := &fakeKataSnapshotAPIClient{
+		reachableGraph: func(context.Context, *katagenerated.ReachableIssueGraphRequestOptions) (*katagenerated.ReachableIssueGraphResp, error) {
+			calls.Add(1)
+			graph := testKataGraphResponse("issue-source", "issue-linked")
+			graph.JSON200.Nodes[0].Revision = revision.Load()
+			return graph, nil
+		},
+	}
+	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8, func(string) uint64 { return 0 })
+	t.Cleanup(cache.close)
+	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client, cache: cache})
+	authority := testKataCoordinatedAuthority()
+
+	_, err := enricher.Enrich(t.Context(), authority, kataSnapshotEnrichmentRequest{GraphSourceUID: "issue-source"})
+	require.NoError(err)
+	reused, err := enricher.Enrich(t.Context(), authority, kataSnapshotEnrichmentRequest{GraphSourceUID: "issue-source"})
+	require.NoError(err)
+	require.NotNil(reused.Graph)
+	assert.Equal(int64(1), calls.Load(), "an unchanged revision must reuse the cached graph")
+
+	revision.Store(4)
+	authority.Snapshot.Issues[0].Revision = 4
+	second, err := enricher.Enrich(t.Context(), authority, kataSnapshotEnrichmentRequest{GraphSourceUID: "issue-source"})
+	require.NoError(err)
+
+	assert.Equal(int64(2), calls.Load(), "a new authority revision must not reuse the cached graph")
+	require.NotNil(second.Graph)
+}
+
+func TestKataSnapshotEnricherBoundsLinkedPeerFanout(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	peerCount := kataLinkedPeerLoadLimit + 5
+	links := make([]katagenerated.LinkOut, 0, peerCount)
+	for i := range peerCount {
+		links = append(links, katagenerated.LinkOut{
+			ID: int64(i + 1), Type: "related", Author: "actor", CreatedAt: time.Date(2026, 7, 20, 16, 0, 0, 0, time.UTC),
+			From: katagenerated.LinkPeer{UID: "issue-member", ShortID: "member", QualifiedID: "Project A#member", Project: "Project A", Status: "open"},
+			To:   katagenerated.LinkPeer{UID: fmt.Sprintf("peer-%03d", i), ShortID: fmt.Sprintf("p%03d", i), QualifiedID: fmt.Sprintf("Project A#p%03d", i), Project: "Project A", Status: "open"},
+		})
+	}
+	var peerCalls atomic.Int64
+	client := &fakeKataSnapshotAPIClient{
+		showIssue: func(_ context.Context, options *katagenerated.ShowIssueByUIDRequestOptions) (*katagenerated.ShowIssueByUIDResp, error) {
+			response := testKataShowIssueResponse(options.PathParams.UID)
+			if options.PathParams.UID == "issue-member" {
+				response.JSON200.Links = links
+				return response, nil
+			}
+			peerCalls.Add(1)
+			response.JSON200.Issue.ID = 100 + int64(peerCalls.Load())
+			response.JSON200.Issue.ShortID = "p" + options.PathParams.UID
+			return response, nil
+		},
+	}
+
+	result, err := newKataSnapshotEnricher(kataSnapshotEnricherDeps{client: client}).Enrich(
+		t.Context(), testKataCoordinatedAuthority(), kataSnapshotEnrichmentRequest{SelectedIssueUID: "issue-member"},
+	)
+
+	require.NoError(err)
+	require.Len(result.CatalogIssues, kataLinkedPeerLoadLimit, "peers beyond the limit must stay unresolved")
+	assert.Equal(int64(kataLinkedPeerLoadLimit), peerCalls.Load(), "excess peers must not be fetched")
+	for i, summary := range result.CatalogIssues {
+		assert.Equal(fmt.Sprintf("peer-%03d", i), summary.UID, "capped catalog must keep deterministic link order")
+	}
 }
 
 func TestKataSnapshotEnricherLoadsCompleteRetainedSelectedHistoryFromProjectEvents(t *testing.T) {

@@ -818,12 +818,12 @@ func TestKataFrontendEventCatchUpStopsAtPrivateTimeBudget(t *testing.T) {
 	}
 }
 
-func TestKataFrontendEventSupervisorUsesLiveOnlyModeAfterCatchUpExhaustion(t *testing.T) {
+func TestKataFrontendEventSupervisorResumesCatchUpAfterLiveOnlyDisconnect(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	var operationsMu sync.Mutex
 	var operations []string
-	secondPoll := make(chan struct{})
+	finalPoll := make(chan struct{})
 	pollCalls := 0
 	streamCalls := 0
 	client := &fakeKataFrontendEventClient{
@@ -836,7 +836,9 @@ func TestKataFrontendEventSupervisorUsesLiveOnlyModeAfterCatchUpExhaustion(t *te
 			operationsMu.Lock()
 			operations = append(operations, "poll:"+strconv.FormatInt(afterID, 10))
 			operationsMu.Unlock()
-			if pollCalls == 1 {
+			switch pollCalls {
+			case 1:
+				// Exhaust the catch-up budget so the first stream is live-only.
 				return &katagenerated.PollEventsResp{
 					StatusCode: http.StatusOK,
 					JSON200: &katagenerated.PollEventsBody{
@@ -847,10 +849,18 @@ func TestKataFrontendEventSupervisorUsesLiveOnlyModeAfterCatchUpExhaustion(t *te
 						NextAfterID: 2,
 					},
 				}, nil
+			case 2:
+				// The live-only stream dropped without delivering an event;
+				// the reconnect must catch up from the last cursor.
+				return &katagenerated.PollEventsResp{
+					StatusCode: http.StatusOK,
+					JSON200:    &katagenerated.PollEventsBody{NextAfterID: afterID},
+				}, nil
+			default:
+				close(finalPoll)
+				<-ctx.Done()
+				return nil, ctx.Err()
 			}
-			close(secondPoll)
-			<-ctx.Done()
-			return nil, ctx.Err()
 		},
 		stream: func(_ context.Context, options *katagenerated.StreamEventsRequestOptions) (*http.Response, error) {
 			streamCalls++
@@ -889,9 +899,9 @@ func TestKataFrontendEventSupervisorUsesLiveOnlyModeAfterCatchUpExhaustion(t *te
 	}()
 
 	select {
-	case <-secondPoll:
+	case <-finalPoll:
 	case <-time.After(time.Second):
-		require.FailNow("supervisor did not resume catch-up after a live cursor")
+		require.FailNow("supervisor did not resume catch-up after the live-only disconnect")
 	}
 	cancel()
 	select {
@@ -901,9 +911,9 @@ func TestKataFrontendEventSupervisorUsesLiveOnlyModeAfterCatchUpExhaustion(t *te
 	}
 
 	operationsMu.Lock()
-	assert.Equal([]string{"poll:0", "stream:none", "stream:none", "poll:77"}, operations)
+	assert.Equal([]string{"poll:0", "stream:none", "poll:2", "stream:2", "poll:77"}, operations)
 	operationsMu.Unlock()
-	assert.Equal(2, pollCalls)
+	assert.Equal(3, pollCalls)
 	assert.Equal(2, streamCalls)
 	select {
 	case <-target.invalidated:

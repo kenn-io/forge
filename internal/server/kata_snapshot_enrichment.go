@@ -20,7 +20,18 @@ const (
 	kataSnapshotEnrichmentStageHistory         = "history"
 	kataSnapshotEnrichmentStageWorkspaceTarget = "workspace_target"
 	kataSnapshotHistoryPageLimit               = int64(1000)
-	kataLinkedPeerLoadConcurrency              = 8
+	// kataSelectedHistoryMaxBytes bounds the serialized cost of one selected
+	// task's aggregated history across pagination. A daemon that keeps
+	// returning matching events must exhaust this budget instead of
+	// Middleman's memory; the history stage then degrades with an upstream
+	// error instead of failing the snapshot.
+	kataSelectedHistoryMaxBytes   = uint64(32 << 20)
+	kataLinkedPeerLoadConcurrency = 8
+	// kataLinkedPeerLoadLimit bounds how many off-authority linked peers one
+	// snapshot enriches. Peers beyond the limit stay unresolved so a highly
+	// linked task cannot fan out unbounded daemon detail reads or grow the
+	// aggregate catalog without bound.
+	kataLinkedPeerLoadLimit = 100
 )
 
 type kataSnapshotEnrichmentRequest struct {
@@ -142,6 +153,9 @@ func (e *kataSnapshotEnricher) Enrich(
 			if contextErr := ctx.Err(); contextErr != nil {
 				return kataSnapshotEnrichment{}, contextErr
 			}
+			if errors.Is(err, errKataSnapshotEnrichmentStale) {
+				return kataSnapshotEnrichment{}, err
+			}
 			result.addError(kataSnapshotEnrichmentStageGraph, CodeUpstreamError, "Could not load reachable graph.")
 			return result, nil
 		}
@@ -155,6 +169,9 @@ func (e *kataSnapshotEnricher) Enrich(
 		if err != nil {
 			if contextErr := kataEnrichmentContextError(ctx, err); contextErr != nil {
 				return kataSnapshotEnrichment{}, contextErr
+			}
+			if errors.Is(err, errKataSnapshotEnrichmentStale) {
+				return kataSnapshotEnrichment{}, err
 			}
 			result.addError(kataSnapshotEnrichmentStageGraph, CodeUpstreamError, "Could not load reachable graph.")
 		} else {
@@ -262,7 +279,7 @@ func (e *kataSnapshotEnricher) loadGraph(
 	} else {
 		cachedGraph, err = e.cache.graph(ctx, kataGraphCacheKey{
 			DaemonID: authority.DaemonID, DaemonEpoch: authority.InvalidationEpoch,
-			SourceUID: source.UID, Depth: depth, HideDone: hideDone,
+			SourceUID: source.UID, SourceRevision: source.Revision, Depth: depth, HideDone: hideDone,
 		}, load)
 	}
 	if err != nil {
@@ -341,6 +358,12 @@ func validateKataGraph(
 	}
 	if sourceNode.ID != source.ID || sourceNode.ProjectID != source.ProjectID || sourceNode.ProjectUID != source.ProjectUID {
 		return nil, fmt.Errorf("graph source identity does not match authority")
+	}
+	if sourceNode.Revision != source.Revision {
+		return nil, fmt.Errorf(
+			"%w: graph source %q changed from revision %d to %d",
+			errKataSnapshotEnrichmentStale, source.UID, source.Revision, sourceNode.Revision,
+		)
 	}
 	adjacent := make(map[string][]string, len(nodes))
 	for _, edge := range graph.Edges {
@@ -464,6 +487,16 @@ func (e *kataSnapshotEnricher) loadLinkedPeerCatalog(
 	if len(peerUIDs) == 0 {
 		return nil, nil
 	}
+	if len(peerUIDs) > kataLinkedPeerLoadLimit {
+		peerUIDs = peerUIDs[:kataLinkedPeerLoadLimit]
+	}
+
+	// Each peer read carries its own daemon read timeout, so batches of slow
+	// peers could otherwise multiply that timeout. One shared deadline bounds
+	// the whole fanout; expiry degrades to a partial catalog rather than
+	// failing the snapshot.
+	fanoutCtx, cancel := context.WithTimeout(ctx, kataDaemonReadTimeout)
+	defer cancel()
 
 	results := make([]*kataTaskSummary, len(peerUIDs))
 	jobs := make(chan int)
@@ -471,20 +504,19 @@ func (e *kataSnapshotEnricher) loadLinkedPeerCatalog(
 	for range min(kataLinkedPeerLoadConcurrency, len(peerUIDs)) {
 		workers.Go(func() {
 			for index := range jobs {
-				summary, err := e.loadLinkedPeerSummary(ctx, authority, peerUIDs[index], projectsByID)
+				summary, err := e.loadLinkedPeerSummary(fanoutCtx, authority, peerUIDs[index], projectsByID)
 				if err == nil {
 					results[index] = &summary
 				}
 			}
 		})
 	}
+dispatch:
 	for index := range peerUIDs {
 		select {
 		case jobs <- index:
-		case <-ctx.Done():
-			close(jobs)
-			workers.Wait()
-			return nil, ctx.Err()
+		case <-fanoutCtx.Done():
+			break dispatch
 		}
 	}
 	close(jobs)
@@ -634,6 +666,7 @@ func (e *kataSnapshotEnricher) loadProjectEvents(
 	loaded := newKataProjectEventsLoadResult(maxBytes)
 	afterID := int64(0)
 	resetHandled := false
+	selectedCost := uint64(0)
 	for {
 		if err := ctx.Err(); err != nil {
 			return kataProjectEventsLoadResult{}, err
@@ -657,6 +690,7 @@ func (e *kataSnapshotEnricher) loadProjectEvents(
 			loaded = newKataProjectEventsLoadResult(maxBytes)
 			afterID = body.NextAfterID
 			resetHandled = true
+			selectedCost = 0
 			continue
 		}
 		if len(body.Events) == 0 {
@@ -665,6 +699,12 @@ func (e *kataSnapshotEnricher) loadProjectEvents(
 		for _, event := range body.Events {
 			event.CreatedAt = event.CreatedAt.UTC()
 			if event.IssueUID != nil && *event.IssueUID == selectedUID {
+				selectedCost += kataSerializedCost(event)
+				if selectedCost > kataSelectedHistoryMaxBytes {
+					return kataProjectEventsLoadResult{}, fmt.Errorf(
+						"selected history for %q exceeded %d bytes", selectedUID, kataSelectedHistoryMaxBytes,
+					)
+				}
 				loaded.SelectedHistory = append(loaded.SelectedHistory, event)
 			}
 			loaded.admitProjectEvent(event, maxBytes)

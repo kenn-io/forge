@@ -81,7 +81,11 @@ async function openTerminalPanel(page: Page): Promise<Locator> {
   await page.getByRole("button", { name: "Open terminal panel" }).click();
   const container = page.locator(".terminal-panel.open .terminal-container");
   await expect(container).toBeVisible();
-  await expect(container.locator("canvas").first()).toBeVisible();
+  // Renderer-agnostic readiness: ghostty-web always paints a canvas, but
+  // xterm.js only does when its WebGL addon activates — without WebGL
+  // (headless Firefox) it silently falls back to the DOM renderer, which
+  // renders .xterm-screen rows and never creates a canvas.
+  await expect(container.locator("canvas, .xterm-screen").first()).toBeVisible();
   return container;
 }
 

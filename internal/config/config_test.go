@@ -2413,7 +2413,7 @@ name = "b"
 	require.NoError(err)
 
 	assert.Equal("xterm", cfg.Terminal.Renderer)
-	assert.Equal(14, cfg.Terminal.FontSize)
+	assert.Equal(12, cfg.Terminal.FontSize)
 	assert.Equal(1000, cfg.Terminal.Scrollback)
 	assert.InDelta(1.0, cfg.Terminal.LineHeight, 0.001)
 	assert.Equal(0, cfg.Terminal.LetterSpacing)

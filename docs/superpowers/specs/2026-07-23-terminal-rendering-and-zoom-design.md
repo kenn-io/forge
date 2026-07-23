@@ -29,7 +29,7 @@ The server, PTY, tmux snapshot, and ghostty-web paths do not change.
 Add a compact zoom control to terminal chrome beside the existing Terminal
 options button. It shows decrease, current pixel size, increase, and reset
 actions. The allowed range remains the existing 8–32 px configuration range;
-each step is one pixel and reset restores the existing 14 px default.
+each step is one pixel and reset restores the 12 px default.
 
 The same actions are available from `Cmd/Ctrl` + `+`, `-`, and `0` while focus
 is inside a terminal. Outside a terminal these keys keep their browser

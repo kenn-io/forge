@@ -38,6 +38,11 @@ function createHarness(
 }
 
 describe("terminal zoom controller", () => {
+  it("uses the shared 12px terminal default as its reset target", () => {
+    expect(DEFAULT_TERMINAL_SETTINGS.font_size).toBe(12);
+    expect(RESET_TERMINAL_FONT_SIZE).toBe(DEFAULT_TERMINAL_SETTINGS.font_size);
+  });
+
   it("updates the shared settings immediately and clamps persisted font sizes", async () => {
     const persist = vi.fn(async (settings: TerminalSettings) => settings);
     const harness = createHarness(persist);
@@ -64,17 +69,17 @@ describe("terminal zoom controller", () => {
 
     harness.controller.increase();
     harness.controller.increase();
-    expect(harness.getSettings().font_size).toBe(16);
+    expect(harness.getSettings().font_size).toBe(14);
     await Promise.resolve();
     expect(persist).toHaveBeenCalledTimes(1);
 
-    first.resolve({ ...DEFAULT_TERMINAL_SETTINGS, font_size: 15 });
+    first.resolve({ ...DEFAULT_TERMINAL_SETTINGS, font_size: 13 });
     await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(2));
-    expect(harness.getSettings().font_size).toBe(16);
+    expect(harness.getSettings().font_size).toBe(14);
 
-    second.resolve({ ...DEFAULT_TERMINAL_SETTINGS, font_size: 16 });
+    second.resolve({ ...DEFAULT_TERMINAL_SETTINGS, font_size: 14 });
     await harness.controller.whenIdle();
-    expect(harness.getSettings().font_size).toBe(16);
+    expect(harness.getSettings().font_size).toBe(14);
   });
 
   it("rolls back the latest failed save to the last confirmed font size", async () => {
@@ -84,7 +89,7 @@ describe("terminal zoom controller", () => {
     const harness = createHarness(persist);
 
     harness.controller.increase();
-    expect(harness.getSettings().font_size).toBe(15);
+    expect(harness.getSettings().font_size).toBe(13);
     await harness.controller.whenIdle();
 
     expect(harness.getSettings().font_size).toBe(RESET_TERMINAL_FONT_SIZE);
@@ -108,7 +113,7 @@ describe("terminal zoom controller", () => {
     Object.defineProperty(increaseEvent, "target", { value: input });
     expect(harness.controller.handleKeydown(increaseEvent)).toBe(true);
     expect(increaseEvent.defaultPrevented).toBe(true);
-    expect(harness.getSettings().font_size).toBe(15);
+    expect(harness.getSettings().font_size).toBe(13);
 
     const browserSpecificIncreaseEvent = new KeyboardEvent("keydown", {
       code: "Equal",
@@ -120,7 +125,7 @@ describe("terminal zoom controller", () => {
       value: input,
     });
     expect(harness.controller.handleKeydown(browserSpecificIncreaseEvent)).toBe(true);
-    expect(harness.getSettings().font_size).toBe(16);
+    expect(harness.getSettings().font_size).toBe(14);
 
     const resetEvent = new KeyboardEvent("keydown", { key: "0", ctrlKey: true, cancelable: true });
     Object.defineProperty(resetEvent, "target", { value: input });

@@ -70,7 +70,7 @@ export type ModeVisibility = components["schemas"]["ModeVisibility"];
 
 export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   font_family: "",
-  font_size: 14,
+  font_size: 12,
   scrollback: 1000,
   line_height: 1,
   letter_spacing: 0,

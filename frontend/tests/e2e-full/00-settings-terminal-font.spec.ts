@@ -73,7 +73,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
   await openSettingsPanel(page, "Terminal");
 
   const input = page.getByLabel("Monospace font family");
-  const fontSize = page.getByLabel("Font size");
+  const fontSize = page.getByRole("spinbutton", { name: "Font size", exact: true });
   const scrollback = page.getByLabel("Scrollback");
   const lineHeight = page.getByLabel("Line height");
   const letterSpacing = page.getByLabel("Letter spacing");
@@ -86,7 +86,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
     exact: true,
   });
   await expect(input).toHaveValue("");
-  await expect(fontSize).toHaveValue("14");
+  await expect(fontSize).toHaveValue("12");
   await expect(scrollback).toHaveValue("1000");
   await expect(lineHeight).toHaveValue("1");
   await expect(letterSpacing).toHaveValue("0");
@@ -148,7 +148,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
   await page.reload();
   await openSettingsPanel(page, "Terminal");
   await expect(page.getByLabel("Monospace font family")).toHaveValue('"Iosevka Term", monospace');
-  await expect(page.getByLabel("Font size")).toHaveValue("18");
+  await expect(page.getByRole("spinbutton", { name: "Font size", exact: true })).toHaveValue("18");
   await expect(page.getByLabel("Scrollback")).toHaveValue("5000");
   await expect(page.getByLabel("Line height")).toHaveValue("1.15");
   await expect(page.getByLabel("Letter spacing")).toHaveValue("1");
@@ -238,7 +238,7 @@ test.describe("terminal options popover", () => {
       await expect(terminalOptionsDialog).toBeVisible();
       await expect(terminalOptionsDialog.getByText("Visible modes")).toHaveCount(0);
       await expect(terminalOptionsDialog.getByRole("button", { name: "Save visible modes" })).toHaveCount(0);
-      await page.getByLabel("Font size").fill("20");
+      await terminalOptionsDialog.getByRole("spinbutton", { name: "Font size", exact: true }).fill("20");
       await expect.poll(() => terminalScreenSizeKey(page)).not.toBe(initialScreenSize);
 
       await page.keyboard.press("Escape");
@@ -246,7 +246,7 @@ test.describe("terminal options popover", () => {
       await expect.poll(() => terminalScreenSizeKey(page)).toBe(initialScreenSize);
 
       await page.getByRole("button", { name: "Terminal options" }).click();
-      await page.getByLabel("Font size").fill("18");
+      await terminalOptionsDialog.getByRole("spinbutton", { name: "Font size", exact: true }).fill("18");
       await expect.poll(() => terminalScreenSizeKey(page)).not.toBe(initialScreenSize);
       let releaseSettingsSave: (() => void) | undefined;
       await page.route("**/api/v1/settings", async (route) => {

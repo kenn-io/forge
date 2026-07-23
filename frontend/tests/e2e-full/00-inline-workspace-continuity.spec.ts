@@ -248,10 +248,10 @@ test.describe("inline workspace dock continuity", () => {
       const resetZoom = page.getByRole("button", {
         name: "Reset terminal font size",
       });
-      await expect(resetZoom).toHaveText("14px");
+      await expect(resetZoom).toHaveText("12px");
       await page.getByRole("button", { name: "Increase terminal font size" }).click();
-      await expect(resetZoom).toHaveText("15px");
-      await expectPersistedTerminalFontSize(api, 15);
+      await expect(resetZoom).toHaveText("13px");
+      await expectPersistedTerminalFontSize(api, 13);
 
       await tabContainer.evaluate((el) => {
         el.setAttribute("data-continuity", "witness");
@@ -268,8 +268,8 @@ test.describe("inline workspace dock continuity", () => {
       await typeMarkerCommand(page, dockContainer, workspace.worktree_path, "continuity-marker-two");
       await dockContainer.click({ position: { x: 10, y: 10 } });
       await page.keyboard.press("Control+=");
-      await expect(resetZoom).toHaveText("16px");
-      await expectPersistedTerminalFontSize(api, 16);
+      await expect(resetZoom).toHaveText("14px");
+      await expectPersistedTerminalFontSize(api, 14);
 
       // Flip back to the Workspaces tab: same hostedWorkspaceKey, so the
       // tagged container (and the canvas inside it) must still be the one
@@ -279,12 +279,12 @@ test.describe("inline workspace dock continuity", () => {
       const backInTab = page.locator(".workspace-tab-slot .terminal-container");
       await expect(witness).toBeVisible();
       await expect(backInTab).toHaveAttribute("data-continuity", "witness");
-      await expect(resetZoom).toHaveText("16px");
+      await expect(resetZoom).toHaveText("14px");
       // The same session must still accept input after the second
       // reparent — a torn-down or wedged terminal cannot run this.
       await typeMarkerCommand(page, backInTab, workspace.worktree_path, "continuity-marker-three");
       await page.reload();
-      await expect(page.getByRole("button", { name: "Reset terminal font size" })).toHaveText("16px");
+      await expect(page.getByRole("button", { name: "Reset terminal font size" })).toHaveText("14px");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

@@ -566,7 +566,7 @@ const (
 	TerminalRendererXterm   = "xterm"
 	TerminalRendererGhostty = "ghostty-web"
 
-	DefaultTerminalFontSize      = 14
+	DefaultTerminalFontSize      = 12
 	DefaultTerminalScrollback    = 1000
 	DefaultTerminalLineHeight    = 1.0
 	DefaultTerminalLetterSpacing = 0

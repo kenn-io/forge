@@ -285,7 +285,7 @@ export const mockSettings = {
   kata_projects: [],
   terminal: {
     font_family: "",
-    font_size: 14,
+    font_size: 12,
     scrollback: 1000,
     line_height: 1,
     letter_spacing: 0,

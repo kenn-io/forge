@@ -1,8 +1,8 @@
-import type { TerminalSettings } from "@middleman/ui/api/types";
+import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "@middleman/ui/api/types";
 
 export const MIN_TERMINAL_FONT_SIZE = 8;
 export const MAX_TERMINAL_FONT_SIZE = 32;
-export const RESET_TERMINAL_FONT_SIZE = 14;
+export const RESET_TERMINAL_FONT_SIZE = DEFAULT_TERMINAL_SETTINGS.font_size;
 
 interface TerminalZoomControllerOptions {
   getSettings: () => TerminalSettings;

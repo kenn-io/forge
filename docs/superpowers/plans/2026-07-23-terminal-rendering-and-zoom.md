@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Terminal font size remains an integer from 8 through 32 px.
-- Reset restores the existing 14 px default.
+- Reset restores the 12 px default.
 - Zoom updates every mounted xterm and ghostty-web pane through the shared settings store.
 - Keyboard shortcuts intercept browser zoom only while focus is inside a terminal.
 - Persistence uses the existing terminal settings API and rolls back on failure.
@@ -119,7 +119,7 @@ Implement constants and clamping:
 ```ts
 export const TERMINAL_FONT_SIZE_MIN = 8;
 export const TERMINAL_FONT_SIZE_MAX = 32;
-export const TERMINAL_FONT_SIZE_DEFAULT = 14;
+export const TERMINAL_FONT_SIZE_DEFAULT = 12;
 
 export function clampTerminalFontSize(value: number): number {
   return Math.min(
@@ -162,7 +162,7 @@ Expected: PASS.
 Render `TerminalZoomControl` with a fake controller and assert:
 
 ```ts
-expect(screen.getByText("14px")).toBeInTheDocument();
+expect(screen.getByText("12px")).toBeInTheDocument();
 await fireEvent.click(screen.getByRole("button", { name: "Decrease terminal font size" }));
 expect(decrease).toHaveBeenCalledOnce();
 await fireEvent.click(screen.getByRole("button", { name: "Reset terminal font size" }));

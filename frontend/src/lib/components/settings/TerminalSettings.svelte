@@ -250,10 +250,7 @@
   onDestroy(() => {
     if (!livePreview) return;
     if (saving) return;
-    restoreTerminalSettingsPreview(
-      settingsStore,
-      livePreviewBaseline ?? currentTerminal,
-    );
+    restoreTerminalSettingsPreview(settingsStore);
   });
 
   async function loadLocalFonts(): Promise<void> {

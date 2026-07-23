@@ -202,6 +202,7 @@
     settingsStore.getTerminalFontSize(),
   );
 
+  let terminalOptionsSaving = $state(false);
   let workspace = $state<Workspace | null>(null);
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
   let appliedRuntimeState:
@@ -2821,7 +2822,9 @@
   class="terminal-view"
   inert={modalOpen}
   onkeydowncapture={(event) => {
-    if (terminalSettingsReady) terminalZoom.handleKeydown(event);
+    if (terminalSettingsReady && !terminalOptionsSaving) {
+      terminalZoom.handleKeydown(event);
+    }
   }}
 >
   {#snippet inlineCollapseControl()}
@@ -3131,7 +3134,7 @@
                   />
                   <TerminalZoomControl
                     fontSize={terminalFontSize}
-                    disabled={actionsBlocked || !terminalSettingsReady}
+                    disabled={actionsBlocked || !terminalSettingsReady || terminalOptionsSaving}
                     onDecrease={terminalZoom.decrease}
                     onIncrease={terminalZoom.increase}
                     onReset={terminalZoom.reset}
@@ -3139,6 +3142,9 @@
                   <TerminalOptionsMenu
                     disabled={actionsBlocked || !terminalSettingsReady}
                     {hostVisible}
+                    onSavingChange={(saving) => {
+                      terminalOptionsSaving = saving;
+                    }}
                   />
                   <LaunchMenu
                     launchTargets={launchTargets}

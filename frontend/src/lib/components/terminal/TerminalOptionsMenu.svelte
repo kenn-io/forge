@@ -11,9 +11,14 @@
      *  (and any nested dialog it hosts) so no invisible overlay, focus trap,
      *  or window listener outlives the visible surface. */
     hostVisible?: boolean;
+    onSavingChange?: (saving: boolean) => void;
   }
 
-  const { disabled = false, hostVisible = true }: Props = $props();
+  const {
+    disabled = false,
+    hostVisible = true,
+    onSavingChange,
+  }: Props = $props();
   const { settings: settingsStore } = getStores();
 
   let open = $state(false);
@@ -95,6 +100,7 @@
         }}
         onSavingChange={(saving) => {
           childSaving = saving;
+          onSavingChange?.(saving);
         }}
       />
     </div>

@@ -4,6 +4,7 @@ import {
   beginTerminalSettingsHydration,
   hydrateTerminalSettings,
   previewTerminalSettings,
+  restoreTerminalSettingsPreview,
   saveTerminalSettings,
 } from "@middleman/ui/stores/terminal-settings-persistence";
 
@@ -408,6 +409,46 @@ describe("terminal settings persistence", () => {
       ...DEFAULT_TERMINAL_SETTINGS,
       font_family: '"Hydrated Font", monospace',
       font_size: 14,
+    });
+  });
+
+  it("rebases an active preview when hydration confirms its draft value", async () => {
+    const store = createStore();
+    const baseline = store.getTerminalSettings();
+
+    previewTerminalSettings(store, baseline, {
+      ...baseline,
+      font_size: 13,
+    });
+    const hydration = beginTerminalSettingsHydration(store);
+
+    hydrateTerminalSettings(hydration, {
+      ...baseline,
+      font_size: 13,
+    });
+    previewTerminalSettings(store, baseline, {
+      ...baseline,
+      font_size: 13,
+      scrollback: 2000,
+    });
+    restoreTerminalSettingsPreview(store);
+
+    expect(store.getTerminalSettings()).toEqual({
+      ...baseline,
+      font_size: 13,
+    });
+
+    const persist = vi.fn(async (settings: TerminalSettings) => settings);
+    await saveTerminalSettings({
+      baseline,
+      changes: { scrollback: 2000 },
+      persist,
+      store,
+    });
+    expect(persist).toHaveBeenCalledWith({
+      ...baseline,
+      font_size: 13,
+      scrollback: 2000,
     });
   });
 

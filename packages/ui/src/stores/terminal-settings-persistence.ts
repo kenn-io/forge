@@ -10,9 +10,11 @@ interface SaveQueue {
   fieldConfirmedGenerations: Partial<Record<keyof TerminalSettings, number>>;
   fieldOptimisticGenerations: Partial<Record<keyof TerminalSettings, number>>;
   fieldPendingGenerations: Partial<Record<keyof TerminalSettings, Set<number>>>;
+  fieldPreviewGenerations: Partial<Record<keyof TerminalSettings, number>>;
   hydrationGeneration: number;
   mutationGeneration: number;
   pending: number;
+  previewGeneration: number;
   tail: Promise<void>;
 }
 
@@ -26,6 +28,7 @@ interface SaveTerminalSettingsOptions {
 interface TerminalSettingsPreview {
   baseline: TerminalSettings;
   changes: Partial<TerminalSettings>;
+  fieldGenerations: Partial<Record<keyof TerminalSettings, number>>;
 }
 
 export interface TerminalSettingsHydration {
@@ -39,6 +42,11 @@ const previews = new WeakMap<TerminalSettingsStore, TerminalSettingsPreview>();
 
 function changedKeys<T extends object>(settings: T): (keyof T)[] {
   return Object.keys(settings) as (keyof T)[];
+}
+
+function previewOwnsField(queue: SaveQueue, preview: TerminalSettingsPreview, key: keyof TerminalSettings): boolean {
+  const generation = preview.fieldGenerations[key];
+  return generation !== undefined && queue.fieldPreviewGenerations[key] === generation;
 }
 
 function reconcileSettings(
@@ -63,11 +71,12 @@ function reconcileSettings(
 function settingsWithoutPreview(store: TerminalSettingsStore): TerminalSettings {
   const current = store.getTerminalSettings();
   const preview = previews.get(store);
-  if (!preview) return { ...current };
+  const queue = saveQueues.get(store);
+  if (!preview || !queue) return { ...current };
 
   const settings = { ...current };
   for (const key of changedKeys(preview.changes)) {
-    if (Object.is(current[key], preview.changes[key])) {
+    if (previewOwnsField(queue, preview, key) && Object.is(current[key], preview.changes[key])) {
       Object.assign(settings, { [key]: preview.baseline[key] });
     }
   }
@@ -82,9 +91,11 @@ function getSaveQueue(store: TerminalSettingsStore, baseline: TerminalSettings):
       fieldConfirmedGenerations: {},
       fieldOptimisticGenerations: {},
       fieldPendingGenerations: {},
+      fieldPreviewGenerations: {},
       hydrationGeneration: 0,
       mutationGeneration: 0,
       pending: 0,
+      previewGeneration: 0,
       tail: Promise.resolve(),
     };
     saveQueues.set(store, queue);
@@ -109,16 +120,26 @@ function settlePendingMutation(queue: SaveQueue, key: keyof TerminalSettings, ge
 
 function confirmPreviewChanges(store: TerminalSettingsStore, changes: Partial<TerminalSettings>): void {
   const preview = previews.get(store);
-  if (!preview) return;
+  const queue = saveQueues.get(store);
+  if (!preview || !queue) return;
 
   const remaining = { ...preview.changes };
+  const remainingGenerations = { ...preview.fieldGenerations };
   for (const key of changedKeys(changes)) {
     if (Object.is(changes[key], preview.changes[key])) {
       delete remaining[key];
+      delete remainingGenerations[key];
+      if (previewOwnsField(queue, preview, key)) {
+        delete queue.fieldPreviewGenerations[key];
+      }
     }
   }
   if (changedKeys(remaining).length > 0) {
-    previews.set(store, { ...preview, changes: remaining });
+    previews.set(store, {
+      ...preview,
+      changes: remaining,
+      fieldGenerations: remainingGenerations,
+    });
   } else {
     previews.delete(store);
   }
@@ -139,35 +160,63 @@ export function previewTerminalSettings(
   baseline: TerminalSettings,
   next: TerminalSettings,
 ): void {
-  const changes = terminalSettingsChanges(baseline, next);
-  const previous = previews.get(store)?.changes ?? {};
+  const queue = getSaveQueue(store, baseline);
   const current = store.getTerminalSettings();
-  const updates: Partial<TerminalSettings> = {};
-
-  for (const key of changedKeys(previous)) {
-    if (!(key in changes) && Object.is(current[key], previous[key])) {
-      Object.assign(updates, { [key]: baseline[key] });
+  const authoritativeBaseline = { ...queue.confirmed };
+  for (const key of changedKeys(queue.fieldPendingGenerations)) {
+    if ((queue.fieldPendingGenerations[key]?.size ?? 0) > 0) {
+      Object.assign(authoritativeBaseline, { [key]: current[key] });
     }
   }
-  Object.assign(updates, changes);
+  const changes = terminalSettingsChanges(authoritativeBaseline, next);
+  queue.previewGeneration += 1;
+  const previewGeneration = queue.previewGeneration;
+  const previousPreview = previews.get(store);
+  const previous = previousPreview?.changes ?? {};
+  const updates: Partial<TerminalSettings> = {};
+  const fieldGenerations: Partial<Record<keyof TerminalSettings, number>> = {};
+
+  for (const key of changedKeys(previous)) {
+    if (
+      !(key in changes) &&
+      previousPreview !== undefined &&
+      previewOwnsField(queue, previousPreview, key) &&
+      Object.is(current[key], previous[key])
+    ) {
+      Object.assign(updates, { [key]: authoritativeBaseline[key] });
+      delete queue.fieldPreviewGenerations[key];
+    }
+  }
+  for (const key of changedKeys(changes)) {
+    Object.assign(updates, { [key]: changes[key] });
+    fieldGenerations[key] = previewGeneration;
+    queue.fieldPreviewGenerations[key] = previewGeneration;
+  }
 
   if (changedKeys(updates).length > 0) {
     store.setTerminalSettings({ ...current, ...updates });
   }
   if (changedKeys(changes).length > 0) {
     previews.set(store, {
-      baseline: { ...baseline },
+      baseline: authoritativeBaseline,
       changes,
+      fieldGenerations,
     });
   } else {
     previews.delete(store);
   }
 }
 
-export function restoreTerminalSettingsPreview(store: TerminalSettingsStore, baseline: TerminalSettings): void {
+export function restoreTerminalSettingsPreview(store: TerminalSettingsStore): void {
   const preview = previews.get(store);
-  if (!preview) return;
-  reconcileSettings(store, preview.changes, baseline);
+  const queue = saveQueues.get(store);
+  if (!preview || !queue) return;
+  reconcileSettings(store, preview.changes, preview.baseline, (key) => previewOwnsField(queue, preview, key));
+  for (const key of changedKeys(preview.changes)) {
+    if (previewOwnsField(queue, preview, key)) {
+      delete queue.fieldPreviewGenerations[key];
+    }
+  }
   previews.delete(store);
 }
 
@@ -197,6 +246,31 @@ export function hydrateTerminalSettings(hydration: TerminalSettingsHydration, se
     Object.assign(confirmed, { [key]: queue.confirmed[key] });
     Object.assign(hydrated, { [key]: current[key] });
   }
+  const preview = previews.get(store);
+  if (preview) {
+    const changes: Partial<TerminalSettings> = {};
+    const fieldGenerations: Partial<Record<keyof TerminalSettings, number>> = {};
+    for (const key of changedKeys(preview.changes)) {
+      const previewGeneration = preview.fieldGenerations[key];
+      if (previewGeneration === undefined || queue.fieldPreviewGenerations[key] !== previewGeneration) continue;
+      if (Object.is(preview.changes[key], confirmed[key])) {
+        delete queue.fieldPreviewGenerations[key];
+        continue;
+      }
+      Object.assign(changes, { [key]: preview.changes[key] });
+      Object.assign(hydrated, { [key]: preview.changes[key] });
+      fieldGenerations[key] = previewGeneration;
+    }
+    if (changedKeys(changes).length > 0) {
+      previews.set(store, {
+        baseline: { ...confirmed },
+        changes,
+        fieldGenerations,
+      });
+    } else {
+      previews.delete(store);
+    }
+  }
   queue.confirmed = confirmed;
   store.setTerminalSettings(hydrated);
 }
@@ -216,6 +290,7 @@ export function saveTerminalSettings({
   for (const key of changedKeys(changes)) {
     addPendingMutation(activeQueue, key, mutationGeneration);
     activeQueue.fieldOptimisticGenerations[key] = mutationGeneration;
+    delete activeQueue.fieldPreviewGenerations[key];
   }
   activeQueue.pending += 1;
   store.setTerminalSettings({

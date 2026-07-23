@@ -95,7 +95,11 @@ describe("workspace host store", () => {
     prs.reconcile(identityA, refA); // envelope still carries deleted ws — stale
     expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
     prs.reconcile(identityA, null); // now it agrees
-    expect(prs.effectiveWorkspaceRef(identityA, refA)).toEqual(refA); // tombstone gone, envelope wins again
+    // The tombstone is gone, but a session-deleted ID never resurfaces —
+    // envelope authority returns only for live workspaces.
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
+    const fresh = { id: "ws-a2", status: "ready" };
+    expect(prs.effectiveWorkspaceRef(identityA, fresh)).toEqual(fresh);
   });
 
   it("a tombstone never flickers back into a claim", () => {
@@ -109,7 +113,13 @@ describe("workspace host store", () => {
   it("overrides are identity-scoped", () => {
     const prs = getInlineWorkspaceController("prs");
     prs.recordDeleted(identityA, refA.id);
-    expect(prs.effectiveWorkspaceRef(identityB, refA)).toEqual(refA);
+    // identityA's tombstone leaves another item's workspace untouched.
+    // (The deleted ID itself is masked for every identity — workspace IDs
+    // are unique and a workspace belongs to exactly one item, so ws-a
+    // appearing under identityB could only ever be stale data.)
+    const refB = { id: "ws-b", status: "ready" };
+    expect(prs.effectiveWorkspaceRef(identityB, refB)).toEqual(refB);
+    expect(prs.effectiveWorkspaceRef(identityB, refA)).toBeNull();
   });
 
   it("a creation recorded without a controller surfaces through effectiveWorkspaceRef", () => {
@@ -241,6 +251,52 @@ describe("workspace host store", () => {
     expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
   });
 
+  it("a stale earlier-generation envelope does not shadow a recreation past a newer tombstone", () => {
+    const prs = getInlineWorkspaceController("prs");
+    // Generation one: created and deleted (tombstone remembers ws-0).
+    prs.claim(identityA, { id: "ws-0", status: "ready" });
+    notifyWorkspaceDeleted("ws-0", undefined, identityA);
+    // Generation two: recreated, then deleted from the Workspaces tab —
+    // the tombstone now remembers ws-a, no longer ws-0.
+    recordWorkspaceCreated(identityA, refA);
+    notifyWorkspaceDeleted("ws-a", undefined, identityA);
+    // Generation three: controller-less recreation, then a layout switch
+    // to the inline surface while a stale envelope still carries the
+    // FIRST deleted workspace. Its ID differs from the tombstone's, but
+    // it is just as dead — surfacing it would let the dock claim a
+    // deleted workspace over the confirmed recreation.
+    const recreated = { id: "ws-b", status: "provisioning" };
+    recordWorkspaceCreated(identityA, recreated);
+    expect(prs.effectiveWorkspaceRef(identityA, { id: "ws-0", status: "ready" })).toEqual(recreated);
+  });
+
+  it("a created record shadows a different-ID envelope until reconciled", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    notifyWorkspaceDeleted("ws-a", undefined, identityA);
+    const recreated = { id: "ws-b", status: "provisioning" };
+    recordWorkspaceCreated(identityA, recreated);
+    // A different-ID envelope — even one never deleted — is accepted only
+    // after reconciliation removes the newer confirmed record; until then
+    // the record is fresher than any cached envelope.
+    expect(prs.effectiveWorkspaceRef(identityA, { id: "ws-c", status: "ready" })).toEqual(recreated);
+    // A same-ID envelope is the server refreshing the recorded workspace:
+    // its status wins.
+    const refreshed = { id: "ws-b", status: "ready" };
+    expect(prs.effectiveWorkspaceRef(identityA, refreshed)).toEqual(refreshed);
+  });
+
+  it("a created record shadows a stale deleted envelope without any tombstone", () => {
+    const prs = getInlineWorkspaceController("prs");
+    // Deleted from the Workspaces tab before anything claimed the
+    // identity: no tombstone exists for it, only the deleted-ID memory.
+    notifyWorkspaceDeleted("ws-0");
+    const recreated = { id: "ws-b", status: "provisioning" };
+    recordWorkspaceCreated(identityA, recreated);
+    expect(prs.effectiveWorkspaceRef(identityA, { id: "ws-0", status: "ready" })).toEqual(recreated);
+    expect(prs.effectiveWorkspaceRef(identityA, { id: "ws-c", status: "ready" })).toEqual(recreated);
+  });
+
   it("a stale different-ID envelope does not clear a fresh created record", () => {
     // Delete ws-old, recreate as ws-a: a pre-create fetch still carrying
     // ws-old must not erase the recreation's record — only a same-ID
@@ -276,6 +332,10 @@ describe("workspace host store", () => {
     // The record stays authoritative until reconciled, matching the host
     // store's positive-override semantics.
     expect(resolveControllerlessWorkspaceRef(identityA, { id: "ws-c", status: "ready" })).toEqual(recreated);
+    // Except for a same-ID envelope: that is the server refreshing the
+    // recorded workspace, and its status is fresher.
+    const refreshed = { id: "ws-b", status: "ready" };
+    expect(resolveControllerlessWorkspaceRef(identityA, refreshed)).toEqual(refreshed);
   });
 
   it("a tombstone does not mask a recreated workspace under a fresh ID", () => {
@@ -288,9 +348,11 @@ describe("workspace host store", () => {
     // tab, another client) — the "workspace absent" envelope an ID-less
     // tombstone would wait for never arrives, so it must show now.
     expect(prs.effectiveWorkspaceRef(identityA, recreated)).toEqual(recreated);
-    // And the refetch that surfaced it clears the tombstone entirely.
+    // And the refetch that surfaced it clears the tombstone entirely; the
+    // recreation keeps surfacing while the deleted ID stays masked.
     prs.reconcile(identityA, recreated);
-    expect(prs.effectiveWorkspaceRef(identityA, refA)).toEqual(refA);
+    expect(prs.effectiveWorkspaceRef(identityA, recreated)).toEqual(recreated);
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
   });
 
   it("a deletion reported without an ID match keeps masking only its own workspace", () => {

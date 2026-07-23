@@ -118,6 +118,9 @@ export function resolveControllerlessWorkspaceRef(
   envelopeRef: WorkspaceRefLite | null | undefined,
 ): WorkspaceRefLite | null {
   const created = createdWorkspaceRef(identity);
+  // A same-ID envelope is the server refreshing the workspace this record
+  // confirmed — its status is fresher than the confirmation snapshot.
+  if (created && envelopeRef?.id === created.id) return envelopeRef;
   if (created) return created;
   if (envelopeRef && !deletedIds.has(envelopeRef.id)) return envelopeRef;
   return null;

@@ -14,6 +14,7 @@ import {
   isWorkspaceIdDeleted,
   markWorkspaceIdDeleted,
   nextWorkspaceLifecycleTick,
+  resolveControllerlessWorkspaceRef,
 } from "@middleman/ui/stores/workspace-create-pending";
 import { getStackDepth } from "@middleman/ui/stores/keyboard/modal-stack";
 import { forgetWorkspaceRoute, getRoute, navigate } from "./router.svelte.ts";
@@ -147,24 +148,33 @@ function effectiveRef(
 ): WorkspaceRefLite | null {
   const override = overrides[identityKey(identity)];
   if (isTombstone(override)) {
-    if (envelopeRef && envelopeRef.id !== override.deletedId) return envelopeRef;
+    // An envelope survives the masks only when it carries neither this
+    // tombstone's deleted ID nor any other workspace deleted this session
+    // — an earlier-generation stale envelope is just as dead as the one
+    // the tombstone remembers.
+    const envelope =
+      envelopeRef && envelopeRef.id !== override.deletedId && !isWorkspaceIdDeleted(envelopeRef.id)
+        ? envelopeRef
+        : null;
     // A controller-less recreation (focus/mobile create after the delete)
-    // records only the shared created entry, under a fresh ID. The
-    // tombstone masks its own deleted ID, not the recreation — hiding it
-    // would re-offer "Create Workspace" for a workspace that exists.
+    // records only the shared created entry, under a fresh ID. It wins
+    // over a different-ID envelope until reconciliation removes it: a
+    // stale pre-confirmation envelope must not shadow — or let the dock
+    // claim over — the confirmed recreation. A same-ID envelope is the
+    // server refreshing that workspace, with fresher status.
     const created = createdWorkspaceRef(identity);
-    if (created && created.id !== override.deletedId) return created;
-    return null;
+    if (created && created.id !== override.deletedId) {
+      return envelope && envelope.id === created.id ? envelope : created;
+    }
+    return envelope;
   }
   if (override) return override.ref;
-  // Shared created-record fallback: a create that started in a
-  // controller-less view (focus/mobile) publishes only there — if the
-  // layout switched to an inline surface before the response landed,
-  // no controller recordCreated ever ran, and without this fallback the
-  // inline view would re-offer "Create Workspace" for a workspace that
-  // exists. Deletions clear the record by ID, so a tombstoned identity
-  // cannot resurface through it.
-  return envelopeRef ?? createdWorkspaceRef(identity) ?? null;
+  // No override: same resolution as controller-less views — the shared
+  // created record wins until reconciled (a create that started in a
+  // focus/mobile view publishes only there, and a stale envelope must not
+  // shadow it after a layout switch), and session-deleted envelope IDs
+  // stay masked.
+  return resolveControllerlessWorkspaceRef(identity, envelopeRef);
 }
 
 function setClaim(surface: InlineWorkspaceSurface, identity: WorkspaceItemIdentity, ref: WorkspaceRefLite): void {

@@ -75,12 +75,15 @@ Interactive surfaces must agree on which item is selected.
   override — same-ID envelope or newer-tick request only; a stale
   different-ID envelope must not erase a recreation
   (`packages/ui/src/stores/workspace-create-pending.svelte.ts::reconcileWorkspaceCreated`).
-  Controller-less detail views (focus/mobile, DetailDrawer) resolve
-  through `resolveControllerlessWorkspaceRef`, never bare
-  `envelope ?? createdWorkspaceRef`: the created record wins until
-  reconciled and session-deleted envelope IDs are masked, because those
-  views subscribe to no invalidation and their cached envelope outlives
-  a deletion until the next fetch. E2e mocks
+  Controller-less detail views (focus/mobile, DetailDrawer) AND the host
+  store's `effectiveRef` (both its tombstone and no-override branches)
+  resolve under one rule — `resolveControllerlessWorkspaceRef`, never
+  bare `envelope ?? createdWorkspaceRef`: the created record wins over a
+  different-ID envelope until reconciled (a stale pre-confirmation
+  envelope must not shadow, or let the dock claim over, a confirmed
+  recreation), a same-ID envelope wins for its fresher status, and
+  session-deleted envelope IDs are masked — globally across identities
+  and past tombstone reconciliation, since IDs are never reused. E2e mocks
   of the create POST must keep the detail envelope consistent (the real
   server inserts the row before returning 202). The
   host store's `effectiveRef` falls back to that record too — a create

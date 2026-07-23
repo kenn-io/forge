@@ -1475,10 +1475,27 @@
 
   async function deleteRecurrence(recurrence: KataRecurrence): Promise<boolean> {
     if (mutationActionsBlocked) return false;
-    return runViewTask(() => runAuthorityMutation(
-      () => taskAPI.deleteRecurrence(recurrence.project_id, recurrence.uid, actor, acceptedMutationOptions()),
-      { refreshRecurrences: true },
-    ), "flash");
+    return runViewTask(async () => {
+      try {
+        return await runAuthorityMutation(
+          () => taskAPI.deleteRecurrence(
+            recurrence.project_id,
+            recurrence.uid,
+            actor,
+            acceptedMutationOptions(),
+            `"rev-${recurrence.revision}"`,
+          ),
+          { refreshRecurrences: true },
+        );
+      } catch (error) {
+        // A revision conflict means another client changed this recurrence;
+        // reload the list so a retry acts on current data.
+        if ((error as { status?: number }).status === 412 && acceptedSnapshot) {
+          scheduleSelectedRecurrenceLoad(acceptedSnapshot);
+        }
+        throw error;
+      }
+    }, "flash");
   }
 
   async function closeSelectedIssue(

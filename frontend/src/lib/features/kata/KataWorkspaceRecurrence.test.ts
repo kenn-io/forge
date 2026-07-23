@@ -79,6 +79,7 @@ describe("KataWorkspace", () => {
       uid: "recurrence-selected",
       project_id: selected.project_id,
       template_title: "Snapshot recurrence",
+      revision: 6,
     });
     const {
       api,
@@ -107,6 +108,13 @@ describe("KataWorkspace", () => {
     const deleteDialog = screen.getByRole("dialog", { name: "Delete recurrence" });
     await fireEvent.click(within(deleteDialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(deleteRecurrence).toHaveBeenCalledOnce());
+    expect(deleteRecurrence).toHaveBeenCalledWith(
+      selected.project_id,
+      "recurrence-selected",
+      "middleman",
+      expect.any(Object),
+      '"rev-6"',
+    );
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Delete recurrence" })).toBeNull());
 
     await fireEvent.click(screen.getByRole("button", { name: "+ New recurrence" }));
@@ -116,6 +124,56 @@ describe("KataWorkspace", () => {
     });
     await fireEvent.click(within(createDialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(createRecurrence).toHaveBeenCalledOnce());
+  });
+
+  it("sends the recurrence revision and reloads the list on a delete conflict", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          {
+            id: "home",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      }),
+    );
+    const selected = initialIssues[0]!;
+    const recurrenceRow = recurrence({
+      id: 41,
+      uid: "recurrence-selected",
+      project_id: selected.project_id,
+      template_title: "Snapshot recurrence",
+      revision: 9,
+    });
+    const {
+      api,
+      recurrences: recurrenceReads,
+      deleteRecurrence,
+    } = createWorkspaceAPI([selected], {
+      recurrences: [recurrenceRow],
+    });
+    deleteRecurrence.mockRejectedValueOnce(Object.assign(new Error("recurrence revision conflict"), { status: 412 }));
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
+
+    await screen.findByRole("heading", { name: selected.title });
+    await waitFor(() => expect(recurrenceReads).toHaveBeenCalledOnce());
+
+    await fireEvent.click(screen.getByRole("button", { name: "Delete recurrence" }));
+    const deleteDialog = screen.getByRole("dialog", { name: "Delete recurrence" });
+    await fireEvent.click(within(deleteDialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(deleteRecurrence).toHaveBeenCalledOnce());
+    expect(deleteRecurrence).toHaveBeenCalledWith(
+      selected.project_id,
+      "recurrence-selected",
+      "middleman",
+      expect.any(Object),
+      '"rev-9"',
+    );
+    await waitFor(() => expect(recurrenceReads).toHaveBeenCalledTimes(2));
   });
 
   it("opens the recurrence editor from the task action menu", async () => {

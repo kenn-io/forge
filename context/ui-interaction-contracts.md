@@ -166,6 +166,9 @@ Persisted controls must state their scope clearly.
   serialized mutation path and reconcile only their optimistic fields; stale
   full-object saves can erase unrelated preferences
   (`frontend/src/lib/components/terminal/terminalSettingsPersistence.ts::saveTerminalSettings`).
+- An idle full-object settings queue must rebase from the shared store before
+  its next mutation; cached confirmations otherwise overwrite authoritative
+  reloads (`frontend/src/lib/components/terminal/terminalSettingsPersistence.ts::saveTerminalSettings`).
 
 Whenever a control persists, document and test:
 

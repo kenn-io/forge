@@ -150,6 +150,41 @@ describe("terminal settings persistence", () => {
     });
   });
 
+  it("rebases an idle queue on authoritative settings from the store", async () => {
+    const store = createStore();
+    const persist = vi.fn(async (settings: TerminalSettings) => settings);
+    const staleBaseline = store.getTerminalSettings();
+
+    await saveTerminalSettings({
+      baseline: staleBaseline,
+      changes: { font_size: 13 },
+      persist,
+      store,
+    });
+
+    store.setTerminalSettings({
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_family: '"Iosevka Term", monospace',
+      font_size: 17,
+      renderer: "ghostty-web",
+    });
+
+    await saveTerminalSettings({
+      baseline: staleBaseline,
+      changes: { scrollback: 2000 },
+      persist,
+      store,
+    });
+
+    expect(persist).toHaveBeenNthCalledWith(2, {
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_family: '"Iosevka Term", monospace',
+      font_size: 17,
+      renderer: "ghostty-web",
+      scrollback: 2000,
+    });
+  });
+
   it("restores a previously previewed field when the draft returns to its baseline", () => {
     const store = createStore();
     const baseline = store.getTerminalSettings();

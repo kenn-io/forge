@@ -142,12 +142,14 @@
     {#if r.page === "embed-workspace-list"}
       <WorkspaceListSidebar selectedId="" />
     {:else if r.page === "embed-workspace-terminal"}
-      <WorkspaceTerminalView
-        workspaceId={r.workspaceId}
-        hideWorkspaceList={true}
-        hideRightSidebar={true}
-        {terminalSettingsReady}
-      />
+      {#if terminalSettingsReady}
+        <WorkspaceTerminalView
+          workspaceId={r.workspaceId}
+          hideWorkspaceList={true}
+          hideRightSidebar={true}
+          {terminalSettingsReady}
+        />
+      {/if}
     {:else if r.page === "embed-workspace-detail"}
       <WorkspaceRightSidebar
         activeTab={r.tab ??

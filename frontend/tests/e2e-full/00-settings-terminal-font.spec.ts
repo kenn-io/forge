@@ -214,6 +214,8 @@ test.describe("terminal options popover", () => {
 
     let workspaceServer: IsolatedE2EServer | null = null;
     let workspaceApi: APIRequestContext | null = null;
+    let settingsDelayed = false;
+    let releaseSettings: (() => void) | undefined;
     try {
       workspaceServer = await startIsolatedWorkspaceE2EServer();
       workspaceApi = await playwrightRequest.newContext({
@@ -227,7 +229,7 @@ test.describe("terminal options popover", () => {
         letter_spacing: 1,
         cursor_blink: false,
         font_ligatures: true,
-        renderer: "xterm",
+        renderer: "ghostty-web",
         hide_tmux_status: true,
       };
       const settingsResponse = await workspaceApi.put("/api/v1/settings", {
@@ -242,9 +244,31 @@ test.describe("terminal options popover", () => {
       const workspace = (await createResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(workspaceApi, workspace.id);
 
+      let settingsRequestStarted: (() => void) | undefined;
+      const settingsRequest = new Promise<void>((resolve) => {
+        settingsRequestStarted = resolve;
+      });
+      await page.route("**/api/v1/settings", async (route) => {
+        if (route.request().method() === "GET" && !settingsDelayed) {
+          settingsDelayed = true;
+          settingsRequestStarted?.();
+          await new Promise<void>((resolve) => {
+            releaseSettings = resolve;
+          });
+        }
+        await route.continue();
+      });
+
       await page.goto(`${workspaceServer.info.base_url}/workspaces/embed/terminal/${workspace.id}`);
+      await settingsRequest;
+      await expect(page.locator(".terminal-view")).toHaveCount(0);
+
+      releaseSettings?.();
+      releaseSettings = undefined;
       const resetZoom = page.getByRole("button", { name: "Reset terminal font size" });
       await expect(resetZoom).toHaveText("17px");
+      await page.getByRole("button", { name: "Open terminal panel" }).click();
+      await expect(page.locator(".terminal-container canvas")).toBeVisible();
       await page.getByRole("button", { name: "Increase terminal font size" }).click();
 
       await expect
@@ -257,6 +281,7 @@ test.describe("terminal options popover", () => {
         })
         .toEqual({ ...configuredTerminal, font_size: 18 });
     } finally {
+      releaseSettings?.();
       await workspaceApi?.dispose();
       await workspaceServer?.stop();
     }

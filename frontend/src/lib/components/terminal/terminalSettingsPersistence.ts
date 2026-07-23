@@ -7,6 +7,7 @@ export interface TerminalSettingsStore {
 
 interface SaveQueue {
   confirmed: TerminalSettings;
+  pending: number;
   tail: Promise<void>;
 }
 
@@ -96,12 +97,17 @@ export function saveTerminalSettings({
   if (!queue) {
     queue = {
       confirmed: { ...baseline },
+      pending: 0,
       tail: Promise.resolve(),
     };
     saveQueues.set(store, queue);
   }
 
   const activeQueue = queue;
+  if (activeQueue.pending === 0) {
+    activeQueue.confirmed = { ...store.getTerminalSettings() };
+  }
+  activeQueue.pending += 1;
   store.setTerminalSettings({
     ...store.getTerminalSettings(),
     ...changes,
@@ -119,10 +125,13 @@ export function saveTerminalSettings({
       throw error;
     }
   });
-  activeQueue.tail = save.then(
+  const result = save.finally(() => {
+    activeQueue.pending -= 1;
+  });
+  activeQueue.tail = result.then(
     () => undefined,
     () => undefined,
   );
 
-  return save;
+  return result;
 }

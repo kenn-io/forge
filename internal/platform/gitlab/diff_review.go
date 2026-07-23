@@ -144,9 +144,11 @@ func (c *Client) ListMergeRequestReviewThreads(
 	}
 	parentURL := gitLabMergeRequestURL(normalizedRef, number)
 	return collectGitLabPages(ctx, func(ctx context.Context, page int64) ([]platform.MergeRequestReviewThread, int64, error) {
-		discussions, nextPage, err := c.listMergeRequestDiscussionsPage(ctx, pid, number, page)
+		discussions, nextPage, err := c.listMergeRequestDiscussionsPage(
+			ctx, pid, normalizedRef, number, page,
+		)
 		if err != nil {
-			return nil, 0, c.mapGitLabError("list_merge_request_discussions", err)
+			return nil, 0, err
 		}
 		var out []platform.MergeRequestReviewThread
 		for _, discussion := range discussions {

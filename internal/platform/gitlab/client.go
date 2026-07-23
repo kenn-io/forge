@@ -423,7 +423,10 @@ func (c *Client) ListOpenMergeRequests(
 	for {
 		mrs, resp, err := c.api.MergeRequests.ListProjectMergeRequests(pid, opt, gitlab.WithContext(ctx))
 		if err != nil {
-			return nil, mapGitLabError("list_merge_requests", err)
+			return nil, c.repositoryFeatureError(
+				ctx, normalizedRef, platform.RepositoryFeatureMergeRequests,
+				"list_merge_requests", err,
+			)
 		}
 		for _, mr := range mrs {
 			normalized := NormalizeMergeRequest(normalizedRef, mr, nil)
@@ -452,7 +455,10 @@ func (c *Client) GetMergeRequest(
 	}
 	mr, _, err := c.api.MergeRequests.GetMergeRequest(pid, int64(number), nil, gitlab.WithContext(ctx))
 	if err != nil {
-		return platform.MergeRequest{}, mapGitLabError("get_merge_request", err)
+		return platform.MergeRequest{}, c.repositoryFeatureError(
+			ctx, normalizedRef, platform.RepositoryFeatureMergeRequests,
+			"get_merge_request", err,
+		)
 	}
 	normalized := NormalizeDetailedMergeRequest(normalizedRef, mr)
 	normalized.HeadRepoCloneURL, normalized.HeadRepoCloneURLUnknown, err =
@@ -473,7 +479,7 @@ func (c *Client) ListMergeRequestEvents(
 	if err != nil {
 		return nil, err
 	}
-	commits, err := c.listMergeRequestCommits(ctx, pid, number)
+	commits, err := c.listMergeRequestCommits(ctx, pid, normalizedRef, number)
 	if err != nil {
 		return nil, err
 	}
@@ -503,11 +509,7 @@ func (c *Client) listMergeRequestDiscussionEvents(
 	number int,
 ) ([]platform.MergeRequestEvent, error) {
 	discussions, err := collectGitLabPages(ctx, func(ctx context.Context, page int64) ([]*gitlab.Discussion, int64, error) {
-		discussions, nextPage, err := c.listMergeRequestDiscussionsPage(ctx, pid, number, page)
-		if err != nil {
-			return nil, 0, c.mapGitLabError("list_merge_request_discussions", err)
-		}
-		return discussions, nextPage, nil
+		return c.listMergeRequestDiscussionsPage(ctx, pid, normalizedRef, number, page)
 	})
 	if err != nil {
 		return nil, err
@@ -536,7 +538,10 @@ func (c *Client) ListOpenIssues(ctx context.Context, ref platform.RepoRef) ([]pl
 	for {
 		issues, resp, err := c.api.Issues.ListProjectIssues(pid, opt, gitlab.WithContext(ctx))
 		if err != nil {
-			return nil, mapGitLabError("list_issues", err)
+			return nil, c.repositoryFeatureError(
+				ctx, normalizedRef, platform.RepositoryFeatureIssues,
+				"list_issues", err,
+			)
 		}
 		for _, issue := range issues {
 			out = append(out, NormalizeIssue(normalizedRef, issue))
@@ -555,7 +560,10 @@ func (c *Client) GetIssue(ctx context.Context, ref platform.RepoRef, number int)
 	}
 	issue, _, err := c.api.Issues.GetIssue(pid, int64(number), nil, gitlab.WithContext(ctx))
 	if err != nil {
-		return platform.Issue{}, mapGitLabError("get_issue", err)
+		return platform.Issue{}, c.repositoryFeatureError(
+			ctx, normalizedRef, platform.RepositoryFeatureIssues,
+			"get_issue", err,
+		)
 	}
 	return NormalizeIssue(normalizedRef, issue), nil
 }
@@ -565,20 +573,21 @@ func (c *Client) ListIssueComments(ctx context.Context, ref platform.RepoRef, nu
 	if err != nil {
 		return nil, err
 	}
-	discussions, err := c.listIssueDiscussions(ctx, pid, number)
+	discussions, err := c.listIssueDiscussions(ctx, pid, normalizedRef, number)
 	if err != nil {
 		return nil, err
 	}
 	return NormalizeIssueDiscussions(normalizedRef, number, gitLabIssueURL(normalizedRef, number), discussions), nil
 }
 
-func (c *Client) listIssueDiscussions(ctx context.Context, pid any, number int) ([]*gitlab.Discussion, error) {
+func (c *Client) listIssueDiscussions(
+	ctx context.Context,
+	pid any,
+	ref platform.RepoRef,
+	number int,
+) ([]*gitlab.Discussion, error) {
 	return collectGitLabPages(ctx, func(ctx context.Context, page int64) ([]*gitlab.Discussion, int64, error) {
-		discussions, nextPage, err := c.listIssueDiscussionsPage(ctx, pid, number, page)
-		if err != nil {
-			return nil, 0, c.mapGitLabError("list_issue_discussions", err)
-		}
-		return discussions, nextPage, nil
+		return c.listIssueDiscussionsPage(ctx, pid, ref, number, page)
 	})
 }
 
@@ -669,13 +678,21 @@ func (c *Client) ListCIChecks(
 	return []platform.CICheck{NormalizePipeline(normalizedRef, pipelines[0])}, nil
 }
 
-func (c *Client) listMergeRequestCommits(ctx context.Context, pid any, number int) ([]*gitlab.Commit, error) {
+func (c *Client) listMergeRequestCommits(
+	ctx context.Context,
+	pid any,
+	ref platform.RepoRef,
+	number int,
+) ([]*gitlab.Commit, error) {
 	opt := &gitlab.GetMergeRequestCommitsOptions{ListOptions: gitlab.ListOptions{Page: 1, PerPage: defaultPageSize}}
 	var out []*gitlab.Commit
 	for {
 		commits, resp, err := c.api.MergeRequests.GetMergeRequestCommits(pid, int64(number), opt, gitlab.WithContext(ctx))
 		if err != nil {
-			return nil, mapGitLabError("list_merge_request_commits", err)
+			return nil, c.repositoryFeatureError(
+				ctx, ref, platform.RepositoryFeatureMergeRequests,
+				"list_merge_request_commits", err,
+			)
 		}
 		out = append(out, commits...)
 		if resp == nil || resp.NextPage == 0 {

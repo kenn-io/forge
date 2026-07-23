@@ -146,7 +146,8 @@ func (c *Client) listInventoryIssuesPage(
 	}
 	issues, resp, err := c.api.Issues.ListProjectIssues(pid, opts, requestOptions...)
 	if err != nil {
-		return platform.Page[platform.Issue]{}, c.mapGitLabError(
+		return platform.Page[platform.Issue]{}, c.repositoryFeatureError(
+			ctx, normalizedRef, platform.RepositoryFeatureIssues,
 			string(platform.ArchiveCapabilityHistoricalIssues), err,
 		)
 	}
@@ -195,7 +196,10 @@ func (c *Client) listInventoryMergeRequestsPage(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.Page[platform.MergeRequest]{}, c.mapGitLabError("read_merge_requests", err)
+		return platform.Page[platform.MergeRequest]{}, c.repositoryFeatureError(
+			ctx, normalizedRef, platform.RepositoryFeatureMergeRequests,
+			"read_merge_requests", err,
+		)
 	}
 	items := make([]platform.MergeRequest, 0, len(mrs))
 	for _, mr := range mrs {
@@ -316,6 +320,7 @@ func collectGitLabPages[T any](
 func (c *Client) listIssueDiscussionsPage(
 	ctx context.Context,
 	pid any,
+	ref platform.RepoRef,
 	number int,
 	page int64,
 ) ([]*gitlab.Discussion, int64, error) {
@@ -325,7 +330,10 @@ func (c *Client) listIssueDiscussionsPage(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, c.repositoryFeatureError(
+			ctx, ref, platform.RepositoryFeatureIssues,
+			"list_issue_discussions", err,
+		)
 	}
 	return discussions, nextGitLabPage(resp), nil
 }
@@ -337,6 +345,7 @@ func (c *Client) listIssueDiscussionsPage(
 func (c *Client) listMergeRequestDiscussionsPage(
 	ctx context.Context,
 	pid any,
+	ref platform.RepoRef,
 	number int,
 	page int64,
 ) ([]*gitlab.Discussion, int64, error) {
@@ -346,7 +355,10 @@ func (c *Client) listMergeRequestDiscussionsPage(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, c.repositoryFeatureError(
+			ctx, ref, platform.RepositoryFeatureMergeRequests,
+			"list_merge_request_discussions", err,
+		)
 	}
 	return discussions, nextGitLabPage(resp), nil
 }

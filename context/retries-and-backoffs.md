@@ -85,9 +85,9 @@ Completion clears only the observed generation, so a concurrent disabled renewal
 (`internal/github/feature_cooldown.go::repositoryFeatureProbe.clear`)
 Follow-on lanes after index completion must acquire a fresh probe; clearing the index
 generation does not authorize an unchanged-list comment refresh. (`internal/github/sync.go::refreshRepoPRComments`)
-Classify wrapped GitHub disabled responses before generic fallback or detail error handling;
-every lane must renew the same cooldown and stop further work for that scope.
-(`internal/github/feature_cooldown.go::repositoryFeatureDisabledError`)
+Classify repository-disabled reads before generic fallback or detail handling. GitHub
+uses its definitive disabled 410; other providers confirm candidate 403/404/410 failures
+against repository metadata and preserve unconfirmed errors. (`internal/platform/gitealike/feature_disabled.go::Provider.repositoryFeatureError`)
 Custom GitHub GraphQL timeline transports must preserve structured non-2xx errors before
 closing the body so disabled-feature classification can inspect 410 responses.
 (`internal/github/client.go::ListPullRequestTimelineEvents`)

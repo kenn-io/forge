@@ -165,12 +165,13 @@ Persisted controls must state their scope clearly.
 - Concurrent controls for one server-backed settings object must share a
   serialized mutation path and reconcile only their optimistic fields; stale
   full-object saves can erase unrelated preferences
-  (`frontend/src/lib/components/terminal/terminalSettingsPersistence.ts::saveTerminalSettings`).
+  (`packages/ui/src/stores/terminal-settings-persistence.ts::saveTerminalSettings`).
 - An idle settings queue must rebase from authoritative store values, excluding
   fields still owned by live preview; otherwise reloads are erased or drafts leak
-  into unrelated saves (`frontend/src/lib/components/terminal/terminalSettingsPersistence.ts::settingsWithoutPreview`).
+  into unrelated saves (`packages/ui/src/stores/terminal-settings-persistence.ts::settingsWithoutPreview`).
 - Settings hydration must share the mutation coordinator; a stale read must
-  preserve fields changed after it began (`frontend/src/lib/components/terminal/terminalSettingsPersistence.ts::beginTerminalSettingsHydration`).
+  preserve both pending fields and fields confirmed after the read began
+  (`packages/ui/src/stores/terminal-settings-persistence.ts::beginTerminalSettingsHydration`).
 - Settings that select a runtime must hydrate before that runtime starts, but
   the gate must abort timed-out or superseded reads and expose retry rather than strand the surface
   (`frontend/src/lib/components/terminal/WorkspaceEmbedShell.svelte::loadTerminalSettings`).

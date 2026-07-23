@@ -1,5 +1,5 @@
 import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "@middleman/ui/api/types";
-import { saveTerminalSettings, type TerminalSettingsStore } from "./terminalSettingsPersistence";
+import { saveTerminalSettings, type TerminalSettingsStore } from "@middleman/ui/stores/terminal-settings-persistence";
 
 export const MIN_TERMINAL_FONT_SIZE = 8;
 export const MAX_TERMINAL_FONT_SIZE = 32;

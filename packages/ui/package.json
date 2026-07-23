@@ -96,6 +96,9 @@
       "svelte": "./src/stores/settings.svelte.ts",
       "default": "./src/stores/settings.svelte.ts"
     },
+    "./stores/terminal-settings-persistence": {
+      "default": "./src/stores/terminal-settings-persistence.ts"
+    },
     "./stores/flash": {
       "svelte": "./src/stores/flash.svelte.ts",
       "default": "./src/stores/flash.svelte.ts"

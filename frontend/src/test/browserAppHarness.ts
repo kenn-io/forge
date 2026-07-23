@@ -19,9 +19,11 @@ import { render } from "vitest-browser-svelte";
 import "../app.css";
 import { createMockApiFetch, type MockApiHandle, type MockRouteOverride } from "./mockApiFetch.js";
 
-// A no-op EventSource so the live-update store's stream connect is inert. The
-// app shell only needs it not to throw and not to keep retrying; it never
-// asserts on streamed events in this tier.
+// An in-memory EventSource so the live-update store never opens a real backend
+// connection. Tests can also emit specific events when they need to exercise
+// the app's reload behavior.
+const browserEventSources = new Set<NoopEventSource>();
+
 class NoopEventSource {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
@@ -33,18 +35,49 @@ class NoopEventSource {
   onopen: ((ev: unknown) => void) | null = null;
   onmessage: ((ev: unknown) => void) | null = null;
   onerror: ((ev: unknown) => void) | null = null;
+  private listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
 
   constructor(url: string | URL) {
     this.url = String(url);
+    browserEventSources.add(this);
   }
 
-  addEventListener(): void {}
-  removeEventListener(): void {}
-  dispatchEvent(): boolean {
-    return false;
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject | null): void {
+    if (!listener) return;
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+  removeEventListener(type: string, listener: EventListenerOrEventListenerObject | null): void {
+    if (!listener) return;
+    this.listeners.get(type)?.delete(listener);
+  }
+  dispatchEvent(event: Event): boolean {
+    for (const listener of this.listeners.get(event.type) ?? []) {
+      if (typeof listener === "function") {
+        listener.call(this, event);
+      } else {
+        listener.handleEvent(event);
+      }
+    }
+    return !event.defaultPrevented;
   }
   close(): void {
     this.readyState = 2;
+    browserEventSources.delete(this);
+  }
+}
+
+export function getBrowserEventSourceCount(): number {
+  return browserEventSources.size;
+}
+
+export function emitBrowserEventSource(type: string, data: unknown): void {
+  const event = new MessageEvent(type, {
+    data: JSON.stringify(data),
+  });
+  for (const source of browserEventSources) {
+    source.dispatchEvent(event);
   }
 }
 

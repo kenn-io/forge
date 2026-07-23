@@ -5,7 +5,7 @@ import {
   hydrateTerminalSettings,
   previewTerminalSettings,
   saveTerminalSettings,
-} from "./terminalSettingsPersistence";
+} from "@middleman/ui/stores/terminal-settings-persistence";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -311,6 +311,65 @@ describe("terminal settings persistence", () => {
       font_family: '"Hydrated Font", monospace',
       font_size: 13,
       scrollback: 2000,
+    });
+  });
+
+  it("preserves queued zooms when hydration begins after their optimistic changes", async () => {
+    const firstSave = deferred<TerminalSettings>();
+    const secondSave = deferred<TerminalSettings>();
+    const store = createStore();
+    const persist = vi
+      .fn<(settings: TerminalSettings) => Promise<TerminalSettings>>()
+      .mockImplementationOnce(() => firstSave.promise)
+      .mockImplementationOnce(() => secondSave.promise);
+
+    const firstZoom = saveTerminalSettings({
+      baseline: store.getTerminalSettings(),
+      changes: { font_size: 13 },
+      persist,
+      store,
+    });
+    const secondZoom = saveTerminalSettings({
+      baseline: store.getTerminalSettings(),
+      changes: { font_size: 14 },
+      persist,
+      store,
+    });
+    const hydration = beginTerminalSettingsHydration(store);
+
+    hydrateTerminalSettings(hydration, {
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_family: '"Hydrated Font", monospace',
+    });
+
+    expect(store.getTerminalSettings()).toEqual({
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_family: '"Hydrated Font", monospace',
+      font_size: 14,
+    });
+
+    firstSave.resolve({
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_size: 13,
+    });
+    await firstZoom;
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(2));
+    expect(persist).toHaveBeenNthCalledWith(2, {
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_family: '"Hydrated Font", monospace',
+      font_size: 14,
+    });
+    secondSave.resolve({
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_family: '"Hydrated Font", monospace',
+      font_size: 14,
+    });
+    await secondZoom;
+
+    expect(store.getTerminalSettings()).toEqual({
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_family: '"Hydrated Font", monospace',
+      font_size: 14,
     });
   });
 

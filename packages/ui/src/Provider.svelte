@@ -77,6 +77,11 @@
     createSettingsStore,
   } from "./stores/settings.svelte.js";
   import {
+    beginTerminalSettingsHydration,
+    hydrateTerminalSettings,
+    type TerminalSettingsHydration,
+  } from "./stores/terminal-settings-persistence.js";
+  import {
     createEventsStore,
   } from "./stores/events.svelte.js";
   import type {
@@ -242,11 +247,12 @@
       activity: ActivitySettings,
       issues: Settings["issues"],
       terminal: TerminalSettings,
+      terminalHydration: TerminalSettingsHydration,
       modes: Settings["modes"],
       pullRequests: Settings["pull_requests"],
     ): void {
       settingsStore.setConfiguredRepos(repos);
-      settingsStore.setTerminalSettings(terminal);
+      hydrateTerminalSettings(terminalHydration, terminal);
       settingsStore.setModeVisibility(modes);
       settingsStore.setPullRequestSettings(pullRequests);
       activityStore.hydrateDefaults(activity);
@@ -254,6 +260,7 @@
     }
 
     async function reloadSettingsAfterConfigChange(): Promise<void> {
+      const terminalHydration = beginTerminalSettingsHydration(settingsStore);
       const { data } = await cl.GET("/settings");
       if (!data) return;
       hydrateSettings(
@@ -261,6 +268,7 @@
         data.activity,
         data.issues,
         data.terminal,
+        terminalHydration,
         data.modes,
         data.pull_requests,
       );

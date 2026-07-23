@@ -3,7 +3,7 @@ import type { Settings } from "@middleman/ui/api/types";
 import {
   beginTerminalSettingsHydration,
   hydrateTerminalSettings,
-} from "../components/terminal/terminalSettingsPersistence.js";
+} from "@middleman/ui/stores/terminal-settings-persistence";
 
 export interface AppStartupDeps {
   waitUntilBackendReady?: (signal: AbortSignal) => Promise<void>;

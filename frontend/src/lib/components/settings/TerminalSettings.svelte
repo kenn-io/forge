@@ -16,7 +16,7 @@
     restoreTerminalSettingsPreview,
     saveTerminalSettings,
     terminalSettingsChanges,
-  } from "../terminal/terminalSettingsPersistence.js";
+  } from "@middleman/ui/stores/terminal-settings-persistence";
 
   interface FontData {
     family: string;

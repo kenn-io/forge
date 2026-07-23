@@ -41,7 +41,7 @@
   import {
     beginTerminalSettingsHydration,
     hydrateTerminalSettings,
-  } from "./terminalSettingsPersistence.js";
+  } from "@middleman/ui/stores/terminal-settings-persistence";
   import { showFlash } from "@middleman/ui/stores/flash";
 
   let stores = $state<StoreInstances | undefined>();

@@ -3,7 +3,13 @@ import { page } from "vite-plus/test/browser";
 import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "@middleman/ui/api/types";
 
 import { createTerminalZoomController } from "./lib/components/terminal/terminalZoom.js";
-import { firePopstate, mountBrowserApp, type MountedBrowserApp } from "./test/browserAppHarness.js";
+import {
+  emitBrowserEventSource,
+  firePopstate,
+  getBrowserEventSourceCount,
+  mountBrowserApp,
+  type MountedBrowserApp,
+} from "./test/browserAppHarness.js";
 import { mockSettings } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
@@ -190,6 +196,76 @@ describe("terminal settings response races", () => {
       font_size: 13,
     });
     await zoom.whenIdle();
+    expect(settingsStore.getTerminalSettings().font_size).toBe(13);
+  });
+
+  it("preserves an in-flight zoom when a config reload resolves", async () => {
+    await page.viewport(1280, 900);
+    let delayConfigReload = false;
+    let releaseConfigReload: (() => void) | undefined;
+    mounted = await mountBrowserApp("/", {
+      overrides: [
+        (request) => {
+          if (!delayConfigReload || request.method !== "GET" || request.url.pathname !== "/api/v1/settings") {
+            return null;
+          }
+          delayConfigReload = false;
+          const responseBody = new ReadableStream<Uint8Array>({
+            start(controller) {
+              releaseConfigReload = () => {
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    JSON.stringify({
+                      ...mockSettings,
+                      terminal: {
+                        ...mockSettings.terminal,
+                        font_family: '"Reloaded Font", monospace',
+                      },
+                    }),
+                  ),
+                );
+                controller.close();
+              };
+            },
+          });
+          return new Response(responseBody, {
+            headers: { "content-type": "application/json" },
+          });
+        },
+      ],
+    });
+    await vi.waitFor(() => expect(document.querySelector(".activity-feed")).not.toBeNull(), WAIT);
+    await vi.waitFor(() => expect(getBrowserEventSourceCount()).toBe(1), WAIT);
+
+    const pendingSave = deferred<TerminalSettings>();
+    const settingsStore = settingsStoreCapture.current!;
+    const zoom = createTerminalZoomController({
+      store: settingsStore,
+      persist: () => pendingSave.promise,
+      reportError: vi.fn(),
+    });
+    zoom.setFontSize(13);
+
+    delayConfigReload = true;
+    emitBrowserEventSource("config.changed", {
+      valid: true,
+      restart_required: false,
+    });
+    await vi.waitFor(() => expect(releaseConfigReload).toBeTypeOf("function"), WAIT);
+    releaseConfigReload!();
+    await vi.waitFor(
+      () => expect(settingsStore.getTerminalSettings().font_family).toBe('"Reloaded Font", monospace'),
+      WAIT,
+    );
+    const fontSizeAfterReload = settingsStore.getTerminalSettings().font_size;
+
+    pendingSave.resolve({
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_size: 13,
+    });
+    await zoom.whenIdle();
+
+    expect(fontSizeAfterReload).toBe(13);
     expect(settingsStore.getTerminalSettings().font_size).toBe(13);
   });
 });

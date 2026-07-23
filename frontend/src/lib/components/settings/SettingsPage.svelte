@@ -17,7 +17,7 @@
   import {
     beginTerminalSettingsHydration,
     hydrateTerminalSettings,
-  } from "../terminal/terminalSettingsPersistence.js";
+  } from "@middleman/ui/stores/terminal-settings-persistence";
   import { SETTINGS_PANELS, settingsPanelsForModes } from "./settingsPanels.js";
 
   // Switched-panel model on kit SettingsLayout: this list is the single

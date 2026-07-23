@@ -1,4 +1,4 @@
-import type { TerminalSettings } from "@middleman/ui/api/types";
+import type { TerminalSettings } from "../api/types.js";
 
 export interface TerminalSettingsStore {
   getTerminalSettings: () => TerminalSettings;
@@ -7,7 +7,8 @@ export interface TerminalSettingsStore {
 
 interface SaveQueue {
   confirmed: TerminalSettings;
-  fieldMutationGenerations: Partial<Record<keyof TerminalSettings, number>>;
+  fieldConfirmedGenerations: Partial<Record<keyof TerminalSettings, number>>;
+  fieldPendingGenerations: Partial<Record<keyof TerminalSettings, Set<number>>>;
   hydrationGeneration: number;
   mutationGeneration: number;
   pending: number;
@@ -27,8 +28,8 @@ interface TerminalSettingsPreview {
 }
 
 export interface TerminalSettingsHydration {
+  fieldConfirmedGenerations: Partial<Record<keyof TerminalSettings, number>>;
   hydrationGeneration: number;
-  mutationGeneration: number;
   store: TerminalSettingsStore;
 }
 
@@ -76,7 +77,8 @@ function getSaveQueue(store: TerminalSettingsStore, baseline: TerminalSettings):
   if (!queue) {
     queue = {
       confirmed: { ...baseline },
-      fieldMutationGenerations: {},
+      fieldConfirmedGenerations: {},
+      fieldPendingGenerations: {},
       hydrationGeneration: 0,
       mutationGeneration: 0,
       pending: 0,
@@ -85,6 +87,21 @@ function getSaveQueue(store: TerminalSettingsStore, baseline: TerminalSettings):
     saveQueues.set(store, queue);
   }
   return queue;
+}
+
+function addPendingMutation(queue: SaveQueue, key: keyof TerminalSettings, generation: number): void {
+  const pending = queue.fieldPendingGenerations[key] ?? new Set<number>();
+  pending.add(generation);
+  queue.fieldPendingGenerations[key] = pending;
+}
+
+function settlePendingMutation(queue: SaveQueue, key: keyof TerminalSettings, generation: number): void {
+  const pending = queue.fieldPendingGenerations[key];
+  if (!pending) return;
+  pending.delete(generation);
+  if (pending.size === 0) {
+    delete queue.fieldPendingGenerations[key];
+  }
 }
 
 function confirmPreviewChanges(store: TerminalSettingsStore, changes: Partial<TerminalSettings>): void {
@@ -155,8 +172,8 @@ export function beginTerminalSettingsHydration(store: TerminalSettingsStore): Te
   const queue = getSaveQueue(store, settingsWithoutPreview(store));
   queue.hydrationGeneration += 1;
   return {
+    fieldConfirmedGenerations: { ...queue.fieldConfirmedGenerations },
     hydrationGeneration: queue.hydrationGeneration,
-    mutationGeneration: queue.mutationGeneration,
     store,
   };
 }
@@ -169,9 +186,11 @@ export function hydrateTerminalSettings(hydration: TerminalSettingsHydration, se
   const current = store.getTerminalSettings();
   const confirmed = { ...settings };
   const hydrated = { ...settings };
-  for (const key of changedKeys(queue.fieldMutationGenerations)) {
-    const fieldGeneration = queue.fieldMutationGenerations[key] ?? 0;
-    if (fieldGeneration <= hydration.mutationGeneration) continue;
+  for (const key of changedKeys(settings)) {
+    const confirmedAtStart = hydration.fieldConfirmedGenerations[key] ?? 0;
+    const confirmedNow = queue.fieldConfirmedGenerations[key] ?? 0;
+    const hasPendingMutation = (queue.fieldPendingGenerations[key]?.size ?? 0) > 0;
+    if (!hasPendingMutation && confirmedNow <= confirmedAtStart) continue;
     Object.assign(confirmed, { [key]: queue.confirmed[key] });
     Object.assign(hydrated, { [key]: current[key] });
   }
@@ -190,8 +209,9 @@ export function saveTerminalSettings({
     activeQueue.confirmed = settingsWithoutPreview(store);
   }
   activeQueue.mutationGeneration += 1;
+  const mutationGeneration = activeQueue.mutationGeneration;
   for (const key of changedKeys(changes)) {
-    activeQueue.fieldMutationGenerations[key] = activeQueue.mutationGeneration;
+    addPendingMutation(activeQueue, key, mutationGeneration);
   }
   activeQueue.pending += 1;
   store.setTerminalSettings({
@@ -203,7 +223,12 @@ export function saveTerminalSettings({
     const request = { ...activeQueue.confirmed, ...changes };
     try {
       const saved = await persist(request);
-      activeQueue.confirmed = saved;
+      const confirmed = { ...activeQueue.confirmed };
+      for (const key of changedKeys(changes)) {
+        Object.assign(confirmed, { [key]: saved[key] });
+        activeQueue.fieldConfirmedGenerations[key] = mutationGeneration;
+      }
+      activeQueue.confirmed = confirmed;
       confirmPreviewChanges(store, changes);
       reconcileSettings(store, changes, saved);
       return saved;
@@ -213,6 +238,9 @@ export function saveTerminalSettings({
     }
   });
   const result = save.finally(() => {
+    for (const key of changedKeys(changes)) {
+      settlePendingMutation(activeQueue, key, mutationGeneration);
+    }
     activeQueue.pending -= 1;
   });
   activeQueue.tail = result.then(

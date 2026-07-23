@@ -112,7 +112,9 @@ func (p *Provider) listInventoryIssuesPage(
 		Since:       inclusiveWatermark(since), Before: parseCursorTime(cursor.Before),
 	})
 	if err != nil {
-		return platform.Page[platform.Issue]{}, p.mapError(err)
+		return platform.Page[platform.Issue]{}, p.repositoryFeatureError(
+			ctx, ref, platform.RepositoryFeatureIssues, err,
+		)
 	}
 	// The Gitea-compatible issue endpoint has no sort parameter and returns
 	// newest pages first. The first request of a fresh traversal discovers the
@@ -242,7 +244,9 @@ func (p *Provider) listInventoryMergeRequestsPage(
 		PageOptions: PageOptions{Page: cursor.Page, PageSize: defaultPageSize}, Sort: sortMode,
 	})
 	if err != nil {
-		return platform.Page[platform.MergeRequest]{}, p.mapError(err)
+		return platform.Page[platform.MergeRequest]{}, p.repositoryFeatureError(
+			ctx, ref, platform.RepositoryFeatureMergeRequests, err,
+		)
 	}
 	if order == platform.ItemOrderCreated {
 		sort.SliceStable(items, func(i, j int) bool {

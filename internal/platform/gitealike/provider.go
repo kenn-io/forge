@@ -140,7 +140,9 @@ func (p *Provider) ListOpenMergeRequests(
 		return p.transport.ListOpenPullRequests(ctx, ref, opts)
 	})
 	if err != nil {
-		return nil, p.mapError(err)
+		return nil, p.repositoryFeatureError(
+			ctx, ref, platform.RepositoryFeatureMergeRequests, err,
+		)
 	}
 	out := make([]platform.MergeRequest, 0, len(items))
 	for _, item := range items {
@@ -156,7 +158,9 @@ func (p *Provider) GetMergeRequest(
 ) (platform.MergeRequest, error) {
 	pr, err := p.transport.GetPullRequest(ctx, ref, number)
 	if err != nil {
-		return platform.MergeRequest{}, p.mapError(err)
+		return platform.MergeRequest{}, p.repositoryFeatureError(
+			ctx, ref, platform.RepositoryFeatureMergeRequests, err,
+		)
 	}
 	return NormalizePullRequest(ref, pr), nil
 }
@@ -170,22 +174,30 @@ func (p *Provider) ListMergeRequestEvents(
 		return p.transport.ListPullRequestComments(ctx, ref, number, opts)
 	})
 	if err != nil {
-		return nil, p.mapError(err)
+		return nil, p.repositoryFeatureError(
+			ctx, ref, platform.RepositoryFeatureMergeRequests, err,
+		)
 	}
 	reviews, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]ReviewDTO, Page, error) {
 		return p.transport.ListPullRequestReviews(ctx, ref, number, opts)
 	})
 	if err != nil {
-		return nil, p.mapError(err)
+		return nil, p.repositoryFeatureError(
+			ctx, ref, platform.RepositoryFeatureMergeRequests, err,
+		)
 	}
 	commits, err := collectTransportPages(ctx, func(ctx context.Context, opts PageOptions) ([]CommitDTO, Page, error) {
 		return p.transport.ListPullRequestCommits(ctx, ref, number, opts)
 	})
 	if err != nil {
-		return nil, p.mapError(err)
+		return nil, p.repositoryFeatureError(
+			ctx, ref, platform.RepositoryFeatureMergeRequests, err,
+		)
 	}
 	events := NormalizeMergeRequestEvents(p.kind, ref, number, comments, reviews, commits)
-	timeline, err := p.listTimelineEvents(ctx, ref, number)
+	timeline, err := p.listTimelineEvents(
+		ctx, ref, number, platform.RepositoryFeatureMergeRequests,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +213,9 @@ func (p *Provider) ListOpenIssues(
 		return p.transport.ListOpenIssues(ctx, ref, opts)
 	})
 	if err != nil {
-		return nil, p.mapError(err)
+		return nil, p.repositoryFeatureError(
+			ctx, ref, platform.RepositoryFeatureIssues, err,
+		)
 	}
 	out := make([]platform.Issue, 0, len(items))
 	for _, item := range items {
@@ -219,7 +233,9 @@ func (p *Provider) GetIssue(
 ) (platform.Issue, error) {
 	issue, err := p.transport.GetIssue(ctx, ref, number)
 	if err != nil {
-		return platform.Issue{}, p.mapError(err)
+		return platform.Issue{}, p.repositoryFeatureError(
+			ctx, ref, platform.RepositoryFeatureIssues, err,
+		)
 	}
 	return NormalizeIssue(ref, issue), nil
 }
@@ -233,10 +249,14 @@ func (p *Provider) ListIssueEvents(
 		return p.transport.ListIssueComments(ctx, ref, number, opts)
 	})
 	if err != nil {
-		return nil, p.mapError(err)
+		return nil, p.repositoryFeatureError(
+			ctx, ref, platform.RepositoryFeatureIssues, err,
+		)
 	}
 	events := NormalizeIssueComments(p.kind, ref, number, comments)
-	timeline, err := p.listTimelineEvents(ctx, ref, number)
+	timeline, err := p.listTimelineEvents(
+		ctx, ref, number, platform.RepositoryFeatureIssues,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -248,6 +268,7 @@ func (p *Provider) listTimelineEvents(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
+	feature string,
 ) ([]TimelineEventDTO, error) {
 	timelineTransport, ok := p.transport.(TimelineTransport)
 	if !ok {
@@ -257,7 +278,7 @@ func (p *Provider) listTimelineEvents(
 		return timelineTransport.ListIssueTimeline(ctx, ref, number, opts)
 	})
 	if err != nil {
-		err = p.mapError(err)
+		err = p.repositoryFeatureError(ctx, ref, feature, err)
 		if errors.Is(err, platform.ErrNotFound) {
 			return nil, nil
 		}

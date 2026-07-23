@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -205,12 +206,24 @@ func TestHumaContractMetadata(t *testing.T) {
 func TestHumaConvenienceRoutesUseDocumentOperation(t *testing.T) {
 	require := require.New(t)
 
-	paths, err := filepath.Glob("*.go")
+	var paths []string
+	err := filepath.WalkDir(".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) == ".go" {
+			paths = append(paths, path)
+		}
+		return nil
+	})
 	require.NoError(err)
 
 	var failures []string
 	for _, path := range paths {
-		if strings.HasSuffix(path, "_test.go") || path == "health_routes.go" {
+		if strings.HasSuffix(path, "_test.go") || filepath.Base(path) == "health_routes.go" {
 			continue
 		}
 		source, err := os.ReadFile(path)

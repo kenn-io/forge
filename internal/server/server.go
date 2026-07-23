@@ -25,11 +25,11 @@ import (
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/configwatch"
 	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/docs"
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
+	"go.kenn.io/middleman/internal/server/docsapi"
 	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/telemetry"
 	"go.kenn.io/middleman/internal/tokenauth"
@@ -216,8 +216,7 @@ type Server struct {
 	kataProxyIdleCloseOnce      sync.Once
 	kataSnapshots               *kataSnapshotCoordinator
 	kataEvents                  *kataFrontendEventRegistry
-	docsRegistry                *docs.Registry
-	docsPublishLocks            *docsPublishLockSet
+	docsAPI                     *docsapi.Handler
 	msgvault                    *msgvaultHandler
 
 	// toolingStatus caches the assembled CLI tooling probe;
@@ -736,7 +735,6 @@ func newServer(
 		workspaceEnrichmentPending:     make(map[string]workspaceEnrichmentJob),
 		workspaceEnrichmentSlots:       make(chan struct{}, tmuxProbeMaxConcurrency),
 		deferredMergeMaxWait:           deferredMergeMaxWait,
-		docsPublishLocks:               newDocsPublishLockSet(),
 		msgvault:                       newMsgvaultHandler(cfg, basePath, options.msgvaultRemoteImageDeps),
 		bgCtx: shutdownAwareContext{
 			parent:   bgBaseCtx,
@@ -745,12 +743,14 @@ func newServer(
 		bgCancel:   bgCancel,
 		bgDeadline: bgDeadline,
 	}
-	var docFolders []config.DocFolder
+	s.docsAPI = docsapi.New(docsapi.Deps{
+		Config:     cfg,
+		ConfigPath: cfgPath,
+		ConfigMu:   &s.cfgMu,
+	})
 	if cfg != nil {
-		docFolders = cfg.DocFolders
+		docsapi.WarnDaemonBindings(cfg.DocFolders)
 	}
-	s.docsRegistry = docs.NewRegistry(docFolders)
-	warnDocFolderDaemonBindings(docFolders)
 	s.workspaceDiffCache = newWorkspaceDiffCache(s.bgCtx, workspaceDiffCacheDeps{
 		onReady: func(workspaceID string, revision uint64, version string) {
 			s.hub.Broadcast(Event{Type: "workspace_diff_ready", Data: workspaceDiffEventData{

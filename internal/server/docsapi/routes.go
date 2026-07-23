@@ -1,4 +1,4 @@
-package server
+package docsapi
 
 import (
 	"context"
@@ -18,6 +18,46 @@ import (
 )
 
 const docsMaxBodyBytes = 4 << 20
+
+type Deps struct {
+	Config     *config.Config
+	ConfigPath string
+	ConfigMu   *sync.Mutex
+}
+
+type Handler struct {
+	cfg              *config.Config
+	cfgPath          string
+	cfgMu            *sync.Mutex
+	docsRegistry     *docs.Registry
+	docsPublishLocks *PublishLockSet
+}
+
+func New(deps Deps) *Handler {
+	var folders []config.DocFolder
+	if deps.Config != nil {
+		folders = deps.Config.DocFolders
+	}
+	return &Handler{
+		cfg:              deps.Config,
+		cfgPath:          deps.ConfigPath,
+		cfgMu:            deps.ConfigMu,
+		docsRegistry:     docs.NewRegistry(folders),
+		docsPublishLocks: NewPublishLockSet(),
+	}
+}
+
+func (s *Handler) Registry() *docs.Registry {
+	return s.docsRegistry
+}
+
+func (s *Handler) PublishLocks() *PublishLockSet {
+	return s.docsPublishLocks
+}
+
+func (s *Handler) ReplaceFolders(folders []config.DocFolder) {
+	s.docsRegistry.Replace(folders)
+}
 
 type docsFolderResponse struct {
 	ID     string `json:"id"`
@@ -192,16 +232,16 @@ type docsGitPublishInput struct {
 	}
 }
 
-type docsPublishLockSet struct {
+type PublishLockSet struct {
 	mu    sync.Mutex
 	locks map[string]struct{}
 }
 
-func newDocsPublishLockSet() *docsPublishLockSet {
-	return &docsPublishLockSet{locks: make(map[string]struct{})}
+func NewPublishLockSet() *PublishLockSet {
+	return &PublishLockSet{locks: make(map[string]struct{})}
 }
 
-func (l *docsPublishLockSet) tryAcquire(folderID string) bool {
+func (l *PublishLockSet) TryAcquire(folderID string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if _, ok := l.locks[folderID]; ok {
@@ -211,13 +251,13 @@ func (l *docsPublishLockSet) tryAcquire(folderID string) bool {
 	return true
 }
 
-func (l *docsPublishLockSet) release(folderID string) {
+func (l *PublishLockSet) Release(folderID string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.locks, folderID)
 }
 
-func (s *Server) registerDocsAPI(api huma.API) {
+func (s *Handler) Register(api huma.API) {
 	huma.Get(api, "/docs/folders", s.listDocsFolders,
 		httpapi.DocumentOperation("list-docs-folders", "List docs folders", "Docs"))
 	huma.Register(api, huma.Operation{
@@ -330,13 +370,13 @@ func (s *Server) registerDocsAPI(api huma.API) {
 		httpapi.DocumentOperation("search-docs", "Search docs", "Docs"))
 }
 
-func (s *Server) listDocsFolders(_ context.Context, _ *struct{}) (*listDocsFoldersOutput, error) {
+func (s *Handler) listDocsFolders(_ context.Context, _ *struct{}) (*listDocsFoldersOutput, error) {
 	out := &listDocsFoldersOutput{}
 	out.Body.Folders = docsFoldersToResponse(s.docsRegistry.Folders())
 	return out, nil
 }
 
-func (s *Server) createDocsFolder(_ context.Context, in *createDocsFolderInput) (*createDocsFolderOutput, error) {
+func (s *Handler) createDocsFolder(_ context.Context, in *createDocsFolderInput) (*createDocsFolderOutput, error) {
 	if s.cfgPath == "" || s.cfg == nil {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
@@ -375,7 +415,7 @@ func (s *Server) createDocsFolder(_ context.Context, in *createDocsFolderInput) 
 	return out, nil
 }
 
-func (s *Server) updateDocsFolder(_ context.Context, in *updateDocsFolderInput) (*docsFolderOutput, error) {
+func (s *Handler) updateDocsFolder(_ context.Context, in *updateDocsFolderInput) (*docsFolderOutput, error) {
 	if s.cfgPath == "" || s.cfg == nil {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
@@ -401,7 +441,7 @@ func (s *Server) updateDocsFolder(_ context.Context, in *updateDocsFolderInput) 
 	return out, nil
 }
 
-func (s *Server) deleteDocsFolder(_ context.Context, in *docsFolderIDInput) (*docsNoContentOutput, error) {
+func (s *Handler) deleteDocsFolder(_ context.Context, in *docsFolderIDInput) (*docsNoContentOutput, error) {
 	if s.cfgPath == "" || s.cfg == nil {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
@@ -420,7 +460,7 @@ func (s *Server) deleteDocsFolder(_ context.Context, in *docsFolderIDInput) (*do
 	return &docsNoContentOutput{Status: http.StatusNoContent}, nil
 }
 
-func (s *Server) browseDocsFolders(_ context.Context, in *docsBrowseInput) (*docsBrowseOutput, error) {
+func (s *Handler) browseDocsFolders(_ context.Context, in *docsBrowseInput) (*docsBrowseOutput, error) {
 	path := in.Path
 	if path == "" {
 		path = "~"
@@ -457,7 +497,7 @@ func (s *Server) browseDocsFolders(_ context.Context, in *docsBrowseInput) (*doc
 	return out, nil
 }
 
-func (s *Server) getDocsTree(_ context.Context, in *docsFolderIDInput) (*httpapi.BodyOutput[docs.Node], error) {
+func (s *Handler) getDocsTree(_ context.Context, in *docsFolderIDInput) (*httpapi.BodyOutput[docs.Node], error) {
 	tree, err := s.docsRegistry.Tree(in.ID)
 	if err != nil {
 		return nil, docsRegistryProblem(err)
@@ -465,7 +505,7 @@ func (s *Server) getDocsTree(_ context.Context, in *docsFolderIDInput) (*httpapi
 	return &httpapi.BodyOutput[docs.Node]{Body: tree}, nil
 }
 
-func (s *Server) getDocsGitStatus(ctx context.Context, in *docsFolderIDInput) (*httpapi.BodyOutput[docs.GitStatusResponse], error) {
+func (s *Handler) getDocsGitStatus(ctx context.Context, in *docsFolderIDInput) (*httpapi.BodyOutput[docs.GitStatusResponse], error) {
 	status, err := s.docsRegistry.GitStatus(ctx, in.ID)
 	if err != nil {
 		return nil, docsRegistryProblem(err)
@@ -473,7 +513,7 @@ func (s *Server) getDocsGitStatus(ctx context.Context, in *docsFolderIDInput) (*
 	return &httpapi.BodyOutput[docs.GitStatusResponse]{Body: status}, nil
 }
 
-func (s *Server) getDocsGitChanges(ctx context.Context, in *docsFolderIDInput) (*httpapi.BodyOutput[docs.GitChangesResponse], error) {
+func (s *Handler) getDocsGitChanges(ctx context.Context, in *docsFolderIDInput) (*httpapi.BodyOutput[docs.GitChangesResponse], error) {
 	changes, err := s.docsRegistry.GitChanges(ctx, in.ID)
 	if err != nil {
 		return nil, docsRegistryProblem(err)
@@ -481,7 +521,7 @@ func (s *Server) getDocsGitChanges(ctx context.Context, in *docsFolderIDInput) (
 	return &httpapi.BodyOutput[docs.GitChangesResponse]{Body: changes}, nil
 }
 
-func (s *Server) publishDocsGit(ctx context.Context, in *docsGitPublishInput) (*httpapi.BodyOutput[docs.PublishResponse], error) {
+func (s *Handler) publishDocsGit(ctx context.Context, in *docsGitPublishInput) (*httpapi.BodyOutput[docs.PublishResponse], error) {
 	folder, err := s.docsRegistry.Lookup(in.ID)
 	if err != nil {
 		return nil, docsRegistryProblem(err)
@@ -489,14 +529,14 @@ func (s *Server) publishDocsGit(ctx context.Context, in *docsGitPublishInput) (*
 	// Git operations lock on the folder path, not the folder ID: the
 	// registry allows several IDs over one path, and a git operation is
 	// per-repository (FETCH_HEAD, the index, and HEAD are repo-global).
-	if !s.docsPublishLocks.tryAcquire(folder.Path) {
+	if !s.docsPublishLocks.TryAcquire(folder.Path) {
 		return nil, httpapi.Conflict(
 			httpapi.CodeConflict,
 			"another publish is in flight for this folder",
 			map[string]any{"reason": "publishInProgress"},
 		)
 	}
-	defer s.docsPublishLocks.release(folder.Path)
+	defer s.docsPublishLocks.Release(folder.Path)
 
 	published, err := s.docsRegistry.GitPublish(ctx, in.ID, in.Body.Message)
 	if err != nil {
@@ -505,7 +545,7 @@ func (s *Server) publishDocsGit(ctx context.Context, in *docsGitPublishInput) (*
 	return &httpapi.BodyOutput[docs.PublishResponse]{Body: published}, nil
 }
 
-func (s *Server) pullDocsGit(ctx context.Context, in *docsFolderIDInput) (*httpapi.BodyOutput[docs.PullResponse], error) {
+func (s *Handler) pullDocsGit(ctx context.Context, in *docsFolderIDInput) (*httpapi.BodyOutput[docs.PullResponse], error) {
 	folder, err := s.docsRegistry.Lookup(in.ID)
 	if err != nil {
 		return nil, docsRegistryProblem(err)
@@ -516,14 +556,14 @@ func (s *Server) pullDocsGit(ctx context.Context, in *docsFolderIDInput) (*httpa
 	// with uncommitted changes — the same protection a terminal `git pull`
 	// gives against a concurrent editor save — and the UI additionally
 	// disables pull while the markdown editor is open.
-	if !s.docsPublishLocks.tryAcquire(folder.Path) {
+	if !s.docsPublishLocks.TryAcquire(folder.Path) {
 		return nil, httpapi.Conflict(
 			httpapi.CodeConflict,
 			"another git operation is in flight for this folder",
 			map[string]any{"reason": "gitOperationInProgress"},
 		)
 	}
-	defer s.docsPublishLocks.release(folder.Path)
+	defer s.docsPublishLocks.Release(folder.Path)
 
 	pulled, err := s.docsRegistry.GitPull(ctx, in.ID)
 	if err != nil {
@@ -532,7 +572,7 @@ func (s *Server) pullDocsGit(ctx context.Context, in *docsFolderIDInput) (*httpa
 	return &httpapi.BodyOutput[docs.PullResponse]{Body: pulled}, nil
 }
 
-func (s *Server) readDocsFile(_ context.Context, in *docsFolderPathInput) (*docsReadFileOutput, error) {
+func (s *Handler) readDocsFile(_ context.Context, in *docsFolderPathInput) (*docsReadFileOutput, error) {
 	if in.Path == "" {
 		return nil, docsMissingPathProblem()
 	}
@@ -546,7 +586,7 @@ func (s *Server) readDocsFile(_ context.Context, in *docsFolderPathInput) (*docs
 	return out, nil
 }
 
-func (s *Server) writeDocsFile(_ context.Context, in *docsWriteFileInput) (*docsWriteFileOutput, error) {
+func (s *Handler) writeDocsFile(_ context.Context, in *docsWriteFileInput) (*docsWriteFileOutput, error) {
 	if in.Path == "" {
 		return nil, docsMissingPathProblem()
 	}
@@ -558,7 +598,7 @@ func (s *Server) writeDocsFile(_ context.Context, in *docsWriteFileInput) (*docs
 	}, nil
 }
 
-func (s *Server) createDocsFile(_ context.Context, in *docsCreateFileInput) (*docsCreateFileOutput, error) {
+func (s *Handler) createDocsFile(_ context.Context, in *docsCreateFileInput) (*docsCreateFileOutput, error) {
 	if in.Path == "" {
 		return nil, docsMissingPathProblem()
 	}
@@ -575,7 +615,7 @@ func (s *Server) createDocsFile(_ context.Context, in *docsCreateFileInput) (*do
 	}, nil
 }
 
-func (s *Server) deleteDocsFile(_ context.Context, in *docsFolderPathInput) (*docsNoContentOutput, error) {
+func (s *Handler) deleteDocsFile(_ context.Context, in *docsFolderPathInput) (*docsNoContentOutput, error) {
 	if in.Path == "" {
 		return nil, docsMissingPathProblem()
 	}
@@ -585,7 +625,7 @@ func (s *Server) deleteDocsFile(_ context.Context, in *docsFolderPathInput) (*do
 	return &docsNoContentOutput{Status: http.StatusNoContent}, nil
 }
 
-func (s *Server) renameDocsFile(_ context.Context, in *docsRenameFileInput) (*docsRenameFileOutput, error) {
+func (s *Handler) renameDocsFile(_ context.Context, in *docsRenameFileInput) (*docsRenameFileOutput, error) {
 	if in.Body.From == "" || in.Body.To == "" {
 		return nil, docsMissingPathProblem()
 	}
@@ -598,7 +638,7 @@ func (s *Server) renameDocsFile(_ context.Context, in *docsRenameFileInput) (*do
 	return out, nil
 }
 
-func (s *Server) readDocsBlob(_ context.Context, in *docsFolderPathInput) (*docsBlobOutput, error) {
+func (s *Handler) readDocsBlob(_ context.Context, in *docsFolderPathInput) (*docsBlobOutput, error) {
 	if in.Path == "" {
 		return nil, docsMissingPathProblem()
 	}
@@ -614,7 +654,7 @@ func (s *Server) readDocsBlob(_ context.Context, in *docsFolderPathInput) (*docs
 	}, nil
 }
 
-func (s *Server) searchDocsFolder(_ context.Context, in *docsSearchInput) (*docsSearchOutput, error) {
+func (s *Handler) searchDocsFolder(_ context.Context, in *docsSearchInput) (*docsSearchOutput, error) {
 	hits, err := s.docsRegistry.Search(in.ID, in.Query, docsSearchLimit(in.Limit))
 	if err != nil {
 		return nil, docsRegistryProblem(err)
@@ -628,7 +668,7 @@ func (s *Server) searchDocsFolder(_ context.Context, in *docsSearchInput) (*docs
 	return out, nil
 }
 
-func (s *Server) searchDocs(ctx context.Context, in *docsSearchAllInput) (*docsSearchAllOutput, error) {
+func (s *Handler) searchDocs(ctx context.Context, in *docsSearchAllInput) (*docsSearchAllOutput, error) {
 	result, err := s.docsRegistry.SearchAll(ctx, in.Query, docsSearchLimit(in.Limit))
 	if err != nil {
 		return nil, httpapi.Internal("docs search failed: " + err.Error())

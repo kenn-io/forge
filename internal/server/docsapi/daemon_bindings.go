@@ -1,4 +1,4 @@
-package server
+package docsapi
 
 import (
 	"log/slog"
@@ -8,8 +8,8 @@ import (
 	"go.kenn.io/middleman/internal/kata"
 )
 
-func warnDocFolderDaemonBindings(folders []config.DocFolder) {
-	if !hasDocFolderDaemonBinding(folders) {
+func WarnDaemonBindings(folders []config.DocFolder) {
+	if !HasDaemonBinding(folders) {
 		return
 	}
 	catalog, err := kata.LoadCatalog()
@@ -37,7 +37,7 @@ func warnDocFolderDaemonBindings(folders []config.DocFolder) {
 	}
 }
 
-func hasDocFolderDaemonBinding(folders []config.DocFolder) bool {
+func HasDaemonBinding(folders []config.DocFolder) bool {
 	for _, folder := range folders {
 		if strings.TrimSpace(folder.Daemon) != "" {
 			return true

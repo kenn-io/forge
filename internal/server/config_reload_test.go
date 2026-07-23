@@ -503,14 +503,14 @@ func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
 	assert.Equal("Handbook", gotCfgFolders[0].Name)
 	assert.Equal(updatedRoot, gotCfgFolders[0].Path)
 
-	gotRegistryFolders := srv.docsRegistry.Folders()
+	gotRegistryFolders := srv.docsAPI.Registry().Folders()
 	require.Len(gotRegistryFolders, 1)
 	assert.Equal("handbook", gotRegistryFolders[0].ID)
 	assert.Equal("Handbook", gotRegistryFolders[0].Name)
 	wantRegistryRoot, err := filepath.EvalSymlinks(updatedRoot)
 	require.NoError(err)
 	assert.Equal(wantRegistryRoot, gotRegistryFolders[0].Path)
-	_, err = srv.docsRegistry.Lookup("notes")
+	_, err = srv.docsAPI.Registry().Lookup("notes")
 	require.ErrorIs(err, docs.ErrFolderNotFound)
 
 	listRR := doDocsJSON(t, srv, http.MethodGet, "/api/v1/docs/folders", nil)

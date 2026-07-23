@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/middleman/internal/configwatch"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/server/docsapi"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
@@ -354,7 +355,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	if s.reloadCredentialNeedsClientRebuild(ctx, newCfg) {
 		restartRequired = true
 	}
-	warnDocFolderDaemonBindings(newCfg.DocFolders)
+	docsapi.WarnDaemonBindings(newCfg.DocFolders)
 
 	// Resolve the new repo set against the boot-time registry. Repos
 	// whose (platform, host) the registry never learned about cannot
@@ -390,8 +391,8 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
 	*s.cfg = cloneReloadedConfig(newCfg)
-	if s.docsRegistry != nil {
-		s.docsRegistry.Replace(newCfg.DocFolders)
+	if s.docsAPI != nil {
+		s.docsAPI.ReplaceFolders(newCfg.DocFolders)
 	}
 	if s.msgvault != nil {
 		s.msgvault.applyConfig(newCfg)

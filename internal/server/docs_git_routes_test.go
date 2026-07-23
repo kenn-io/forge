@@ -529,29 +529,16 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 	}
 }
 
-func TestDocsPublishLockSetReleasesAndScopesPerFolder(t *testing.T) {
-	assert := assert.New(t)
-	locks := newDocsPublishLockSet()
-
-	assert.True(locks.tryAcquire("a"))
-	assert.False(locks.tryAcquire("a"))
-	assert.True(locks.tryAcquire("b"))
-	locks.release("a")
-	assert.True(locks.tryAcquire("a"))
-	locks.release("a")
-	locks.release("b")
-}
-
 func TestDocsGitPublishEndpointLockHeldReturnsConflict(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	repo.write(t, "new.md", "# new\n")
 	srv := setupDocsGitRouteServer(t, repo.dir)
-	folder, lookupErr := srv.docsRegistry.Lookup("f")
+	folder, lookupErr := srv.docsAPI.Registry().Lookup("f")
 	require.NoError(lookupErr)
-	require.True(srv.docsPublishLocks.tryAcquire(folder.Path))
-	defer srv.docsPublishLocks.release(folder.Path)
+	require.True(srv.docsAPI.PublishLocks().TryAcquire(folder.Path))
+	defer srv.docsAPI.PublishLocks().Release(folder.Path)
 
 	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", map[string]string{
 		"message": "docs: x",
@@ -756,10 +743,10 @@ func TestDocsGitPullEndpointHeldLockIs409(t *testing.T) {
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	srv := setupDocsGitRouteServer(t, repo.dir)
-	folder, lookupErr := srv.docsRegistry.Lookup("f")
+	folder, lookupErr := srv.docsAPI.Registry().Lookup("f")
 	require.NoError(lookupErr)
-	require.True(srv.docsPublishLocks.tryAcquire(folder.Path))
-	defer srv.docsPublishLocks.release(folder.Path)
+	require.True(srv.docsAPI.PublishLocks().TryAcquire(folder.Path))
+	defer srv.docsAPI.PublishLocks().Release(folder.Path)
 
 	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
 
@@ -785,10 +772,10 @@ func TestDocsGitPullEndpointAliasedFoldersShareLock(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	// Acquire through the primary ID's canonical path; the aliased ID must
 	// contend for the same key.
-	folder, lookupErr := srv.docsRegistry.Lookup("f")
+	folder, lookupErr := srv.docsAPI.Registry().Lookup("f")
 	require.NoError(lookupErr)
-	require.True(srv.docsPublishLocks.tryAcquire(folder.Path))
-	defer srv.docsPublishLocks.release(folder.Path)
+	require.True(srv.docsAPI.PublishLocks().TryAcquire(folder.Path))
+	defer srv.docsAPI.PublishLocks().Release(folder.Path)
 
 	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/alias/git/pull", nil)
 

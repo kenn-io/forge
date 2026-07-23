@@ -756,7 +756,7 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Get(api, "/activity", s.listActivity,
 		httpapi.DocumentOperation("list-activity", "List activity", "Activity"))
 	s.registerKataAPI(api)
-	s.registerDocsAPI(api)
+	s.docsAPI.Register(api)
 	s.registerMsgvaultAPI(api)
 	s.registerMessagesAPI(api)
 	s.registerArchiveAPI(api)

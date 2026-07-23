@@ -139,7 +139,6 @@
               terminal={loaded.terminal}
               onUpdate={(terminal) => {
                 settings = { ...settings!, terminal };
-                settingsStore.setTerminalSettings(terminal);
               }}
             />
           {:else if meta.id === "settings-kata-projects"}

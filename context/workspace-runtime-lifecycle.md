@@ -85,6 +85,9 @@ stale tabs.
   backend view of live launched sessions.
 - The frontend may react immediately to terminal exit events, but should then
   reconcile with a runtime refresh.
+- Only the active terminal pane may publish cell geometry; font-metric changes
+  must refit and send columns/rows because unchanged container pixels do not
+  trigger resize observation (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`).
 - Keyboard and pointer interactions inside workspace rows must not trigger
   unintended navigation when the user is targeting a nested control.
 - Persisted "last active tab" state must be scoped per workspace.

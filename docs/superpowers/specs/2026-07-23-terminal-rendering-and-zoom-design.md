@@ -48,12 +48,35 @@ Rapid changes are serialized so a slower response cannot overwrite the newest
 font size. The persisted server setting remains the source of truth across
 reloads and navigation.
 
+## PTY Geometry
+
+Changing font metrics alters the number of terminal cells that fit inside the
+same pixel-sized container. A font change therefore must not rely on
+`ResizeObserver`, which only reports container geometry changes.
+
+After applying font settings, each xterm and ghostty-web pane fits its renderer
+and sends the resulting columns and rows through the existing terminal
+WebSocket resize message. Only an active pane may claim resize authority.
+Hidden panes do not resize tmux; the existing activation refresh fits and
+propagates their current geometry when they become active. If the WebSocket is
+not open during a font change, that activation or connection refresh supplies
+the latest size without reconnecting the terminal.
+
+The server, PTY, and tmux resize path remains unchanged. The correction is at
+the renderer-to-WebSocket boundary where the newly fitted geometry was
+previously not forwarded.
+
 ## Verification
 
 - Unit-test size clamping, reset, shared-store updates, save serialization, and
   rollback.
 - Component-test the compact zoom controls and accessible labels.
+- Component-test that active xterm and ghostty-web panes send their fitted
+  columns and rows after font metrics change, while inactive panes do not claim
+  resize authority.
 - Browser-test focused keyboard shortcuts, persistence through the API, and
   synchronized sizing in both regular and inline workspace placements.
+- In a real tmux workspace, record `stty size` before and after zoom and assert
+  the PTY geometry follows the renderer for both terminal implementations.
 - Verify the Bun patch applies under a frozen install and inspect the built
   addon for linear texture filters without `generateMipmap`.

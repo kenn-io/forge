@@ -9,6 +9,32 @@ import (
 	Require "github.com/stretchr/testify/require"
 )
 
+func TestConvertRepositoryPreservesFeatureState(t *testing.T) {
+	tests := []struct {
+		name         string
+		issues       bool
+		pullRequests bool
+	}{
+		{name: "issues disabled", pullRequests: true},
+		{name: "pull requests disabled", issues: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo, err := convertRepository(&forgejosdk.Repository{
+				ID: 1, Name: "repo", FullName: "owner/repo",
+				HasIssues: tt.issues, HasPullRequests: tt.pullRequests,
+			})
+			require := Require.New(t)
+			require.NoError(err)
+			require.NotNil(repo.IssuesEnabled)
+			require.NotNil(repo.MergeRequestsEnabled)
+			assert := assert.New(t)
+			assert.Equal(tt.issues, *repo.IssuesEnabled)
+			assert.Equal(tt.pullRequests, *repo.MergeRequestsEnabled)
+		})
+	}
+}
+
 func TestConvertForgejoSDKRecords(t *testing.T) {
 	assert := assert.New(t)
 	require := Require.New(t)

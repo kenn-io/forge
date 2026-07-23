@@ -35,6 +35,46 @@ var (
 	_ platform.MergeRequestPageReader = (*Client)(nil)
 )
 
+func TestClientClassifiesDisabledIssuesFromRepositoryMetadata(t *testing.T) {
+	assert := assert.New(t)
+	require := Require.New(t)
+	issueRequests := 0
+	repositoryRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/repos/owner/repo/issues":
+			issueRequests++
+			http.Error(w, "issues disabled", http.StatusNotFound)
+		case "/api/v1/repos/owner/repo":
+			repositoryRequests++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"id":1,"name":"repo","full_name":"owner/repo",
+				"owner":{"id":2,"login":"owner"},
+				"has_issues":false,"has_pull_requests":true
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client, err := NewClient("gitea.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+
+	_, err = client.ListOpenIssues(t.Context(), platform.RepoRef{
+		Platform: platform.KindGitea, Host: "gitea.test", Owner: "owner", Name: "repo",
+	})
+
+	require.ErrorIs(err, platform.ErrRepositoryFeatureDisabled)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.KindGitea, platformErr.Provider)
+	assert.Equal("gitea.test", platformErr.PlatformHost)
+	assert.Equal(platform.RepositoryFeatureIssues, platformErr.Capability)
+	assert.Equal(1, issueRequests)
+	assert.Equal(1, repositoryRequests)
+}
+
 func TestArchiveInventoryUsesAllStateOrderingAndOneBudgetedRequestPerPage(t *testing.T) {
 	assert := assert.New(t)
 	require := Require.New(t)
@@ -666,7 +706,8 @@ func TestClientMapsNotFoundResponsesToPlatformError(t *testing.T) {
 			// removal apart from repository-level access loss.
 			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
 				"id": 1, "name": "repo", "full_name": "owner/repo",
-				"owner": map[string]any{"login": "owner"},
+				"owner":      map[string]any{"login": "owner"},
+				"has_issues": true, "has_pull_requests": true,
 			}))
 		default:
 			http.NotFound(w, r)

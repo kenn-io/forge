@@ -19,24 +19,28 @@ func convertRepository(repo *forgejosdk.Repository) (gitealike.RepositoryDTO, er
 		canPush = &repo.Permissions.Push
 		canAdmin = &repo.Permissions.Admin
 	}
+	issuesEnabled := repo.HasIssues
+	mergeRequestsEnabled := repo.HasPullRequests
 	return gitealike.RepositoryDTO{
-		ID:            repo.ID,
-		Owner:         convertUser(repo.Owner),
-		Name:          repo.Name,
-		FullName:      repo.FullName,
-		HTMLURL:       repo.HTMLURL,
-		CloneURL:      repo.CloneURL,
-		DefaultBranch: repo.DefaultBranch,
-		Private:       repo.Private,
-		Archived:      repo.Archived,
-		Description:   repo.Description,
-		AllowSquash:   repo.AllowSquash,
-		AllowMerge:    repo.AllowMerge,
-		AllowRebase:   repo.AllowRebase || repo.AllowRebaseMerge,
-		CanPush:       canPush,
-		CanAdmin:      canAdmin,
-		Created:       repo.Created,
-		Updated:       repo.Updated,
+		ID:                   repo.ID,
+		Owner:                convertUser(repo.Owner),
+		Name:                 repo.Name,
+		FullName:             repo.FullName,
+		HTMLURL:              repo.HTMLURL,
+		CloneURL:             repo.CloneURL,
+		DefaultBranch:        repo.DefaultBranch,
+		Private:              repo.Private,
+		Archived:             repo.Archived,
+		Description:          repo.Description,
+		AllowSquash:          repo.AllowSquash,
+		AllowMerge:           repo.AllowMerge,
+		AllowRebase:          repo.AllowRebase || repo.AllowRebaseMerge,
+		CanPush:              canPush,
+		CanAdmin:             canAdmin,
+		IssuesEnabled:        &issuesEnabled,
+		MergeRequestsEnabled: &mergeRequestsEnabled,
+		Created:              repo.Created,
+		Updated:              repo.Updated,
 	}, nil
 }
 

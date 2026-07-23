@@ -63,7 +63,9 @@ state.
 - Frontend mutation results are acknowledgement-only `{ changed }`; canonical
   project/task identity and rendered state come from a newly accepted snapshot,
   never mutation response payloads (`frontend/src/lib/api/kata/taskTypes.ts::KataTaskMutationResponse`).
-- `GET /kata/tasks/references`: middleman's global/open Kata reference service.
+- `GET /kata/tasks/references`: middleman's global Kata reference service; it
+  defaults to open tasks for autocomplete, while navigation explicitly requests
+  `status=all` and routes from the returned canonical task status.
   Rank exact short, qualified, or UID matches before substring matches and only
   then apply the response limit. The returned `reference` decides whether a
   short ID is globally unique; syntax-specific consumers may wrap that identity

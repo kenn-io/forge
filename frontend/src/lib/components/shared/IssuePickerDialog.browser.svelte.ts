@@ -24,6 +24,7 @@ describe("IssuePickerDialog (browser)", () => {
           project_id: 7,
           project_uid: "project-kata",
           project_name: "Kata",
+          status: "open" as const,
         },
       ],
       fetched_at: "2026-07-15T12:00:00Z",
@@ -59,6 +60,7 @@ describe("IssuePickerDialog (browser)", () => {
       project_id: 7,
       project_uid: "project-kata",
       project_name: "Kata",
+      status: "open",
     });
   });
 });

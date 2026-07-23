@@ -3144,6 +3144,11 @@ components:
           type: string
         short_id:
           type: string
+        status:
+          enum:
+            - open
+            - closed
+          type: string
         title:
           type: string
         uid:
@@ -3157,6 +3162,7 @@ components:
         - qualified_id
         - title
         - reference
+        - status
       type: object
     KataTaskReferenceResponse:
       additionalProperties: false
@@ -14451,6 +14457,15 @@ paths:
             maximum: 50
             minimum: 1
             type: integer
+        - explode: false
+          in: query
+          name: status
+          schema:
+            default: open
+            enum:
+              - open
+              - all
+            type: string
       responses:
         "200":
           content:
@@ -14468,7 +14483,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
-      summary: Search open Kata task references
+      summary: Search Kata task references
       tags:
         - Kata
   /kata/tasks/snapshot:

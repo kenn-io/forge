@@ -88,7 +88,7 @@ describe("Kata snapshot client", () => {
     expect(seenHeaders.map((headers) => headers.get(KATA_DAEMON_HEADER))).toEqual(["home", "work"]);
   });
 
-  it("searches references through the separate generated global/open endpoint", async () => {
+  it("maps an explicit all-status reference search onto the generated endpoint", async () => {
     let seenRequest: Request | undefined;
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       seenRequest = input instanceof Request ? new Request(input, init) : new Request(requestURL(input), init);
@@ -102,11 +102,11 @@ describe("Kata snapshot client", () => {
       });
     });
 
-    await searchKataTaskReferences("project#a", { daemon_id: "home", limit: 12, fetchImpl });
+    await searchKataTaskReferences("project#a", { daemon_id: "home", limit: 12, status: "all", fetchImpl });
 
     const url = new URL(seenRequest!.url);
     expect(url.pathname).toBe("/api/v1/kata/tasks/references");
-    expect(Object.fromEntries(url.searchParams)).toEqual({ q: "project#a", limit: "12" });
+    expect(Object.fromEntries(url.searchParams)).toEqual({ q: "project#a", limit: "12", status: "all" });
     expect(seenRequest!.headers.get(KATA_DAEMON_HEADER)).toBe("home");
   });
 });

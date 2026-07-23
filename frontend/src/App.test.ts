@@ -544,6 +544,7 @@ describe("App feature routes", () => {
           qualified_id: "Project A#solo",
           reference: "solo",
           title: "Open task",
+          status: "open",
         },
       ],
     });
@@ -558,10 +559,30 @@ describe("App feature routes", () => {
     await waitFor(() =>
       expect(window.location.pathname + window.location.search).toBe("/kata?view=all&scope=project-a&issue=issue-solo"),
     );
-    expect(kataReferences.search).toHaveBeenCalledWith("solo", {});
+    expect(kataReferences.search).toHaveBeenCalledWith("solo", { status: "all" });
   });
 
-  it("does not route a closed task omitted by the open reference service", async () => {
+  it("routes completed textual Kata references through all-status resolution", async () => {
+    kataReferences.search.mockResolvedValueOnce({
+      server_instance_id: "server-a",
+      daemon_id: "home",
+      generation: 7,
+      invalidation_epoch: 2,
+      fetched_at: "2026-07-20T12:00:00Z",
+      references: [
+        {
+          uid: "issue-closed",
+          project_id: 7,
+          project_uid: "project-a",
+          project_name: "Project A",
+          short_id: "closed-task",
+          qualified_id: "Project A#closed-task",
+          reference: "closed-task",
+          title: "Completed task",
+          status: "closed",
+        },
+      ],
+    });
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
@@ -570,8 +591,12 @@ describe("App feature routes", () => {
     await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
     await fireEvent.click(screen.getByRole("button", { name: "Open closed Kata reference" }));
 
-    await waitFor(() => expect(kataReferences.search).toHaveBeenCalledWith("closed-task", {}));
-    expect(window.location.pathname + window.location.search).toBe("/docs?folder=notes&doc=README.md");
+    await waitFor(() =>
+      expect(window.location.pathname + window.location.search).toBe(
+        "/kata?view=logbook&scope=project-a&issue=issue-closed",
+      ),
+    );
+    expect(kataReferences.search).toHaveBeenCalledWith("closed-task", { status: "all" });
   });
 
   it("does not route an ambiguous bare reference from a qualified server result", async () => {
@@ -591,6 +616,7 @@ describe("App feature routes", () => {
           qualified_id: "Project A#solo",
           reference: "Project A#solo",
           title: "Ambiguous task",
+          status: "open",
         },
       ],
     });
@@ -602,7 +628,7 @@ describe("App feature routes", () => {
     await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
     await fireEvent.click(screen.getByRole("button", { name: "Open Kata reference" }));
 
-    await waitFor(() => expect(kataReferences.search).toHaveBeenCalledWith("solo", {}));
+    await waitFor(() => expect(kataReferences.search).toHaveBeenCalledWith("solo", { status: "all" }));
     expect(window.location.pathname + window.location.search).toBe("/docs?folder=notes&doc=README.md");
   });
 });

@@ -426,7 +426,7 @@
       const requestedReference = project ? `${project}#${shortId}` : shortId;
       const results = await searchKataTaskReferences(
         requestedReference,
-        daemonId ? { daemon_id: daemonId } : {},
+        { ...(daemonId ? { daemon_id: daemonId } : {}), status: "all" },
       );
       const match = (results.references ?? []).find((reference) =>
         reference.reference === requestedReference
@@ -438,7 +438,7 @@
       if (match) {
         openKataIssue({
           uid: match.uid,
-          status: "open",
+          status: match.status,
           project_uid: match.project_uid,
           ...(daemonId ? { daemon_id: daemonId } : {}),
         });

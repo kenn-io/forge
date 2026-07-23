@@ -59,7 +59,7 @@ func (s *Server) registerKataAPI(api huma.API) {
 	huma.Get(api, "/kata/tasks/snapshot", s.kataTaskSnapshot,
 		documentOperation("get-kata-task-snapshot", "Get authoritative Kata task snapshot", "Kata"))
 	huma.Get(api, "/kata/tasks/references", s.kataTaskReferences,
-		documentOperation("search-kata-task-references", "Search open Kata task references", "Kata"))
+		documentOperation("search-kata-task-references", "Search Kata task references", "Kata"))
 	registerKataWorkspaceAPI(api, s)
 	huma.Register(api, huma.Operation{
 		OperationID: "stream-kata-task-events",

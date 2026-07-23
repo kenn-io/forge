@@ -2243,7 +2243,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Search open Kata task references */
+        /** Search Kata task references */
         get: operations["search-kata-task-references"];
         put?: never;
         post?: never;
@@ -5806,6 +5806,8 @@ export interface components {
             qualified_id: string;
             reference: string;
             short_id: string;
+            /** @enum {string} */
+            status: "open" | "closed";
             title: string;
             uid: string;
         };
@@ -13108,6 +13110,7 @@ export interface operations {
             query?: {
                 q?: string;
                 limit?: number;
+                status?: "open" | "all";
             };
             header?: {
                 /** @description Kata daemon id; the effective default daemon when empty */
@@ -17948,6 +17951,7 @@ type ReadonlyArray<T> = [
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const pathsHostPlatform_hostPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const pathsHostPlatform_hostRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
+export const pathsKataTasksReferencesGetParametersQueryStatusValues: ReadonlyArray<FlattenedDeepRequired<paths>["/kata/tasks/references"]["get"]["parameters"]["query"]["status"]> = ["open", "all"];
 export const pathsKataTasksSnapshotGetParametersQueryScopeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/kata/tasks/snapshot"]["get"]["parameters"]["query"]["scope"]> = ["global", "project"];
 export const pathsKataTasksSnapshotGetParametersQueryAuthorityValues: ReadonlyArray<FlattenedDeepRequired<paths>["/kata/tasks/snapshot"]["get"]["parameters"]["query"]["authority"]> = ["open", "ready", "closed", "all"];
 export const pathsPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
@@ -17973,6 +17977,7 @@ export const archiveStatusResponseOperator_stateValues: ReadonlyArray<FlattenedD
 export const archiveStatusResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveStatusResponse"]["status"]> = ["running", "waiting_for_budget", "current", "partial", "paused", "blocked"];
 export const issueWorkflowStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Issue"]["WorkflowStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const issueResponseWorkflowStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["IssueResponse"]["WorkflowStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
+export const kataTaskReferenceStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["KataTaskReference"]["status"]> = ["open", "closed"];
 export const mergeRequestKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["State"]> = ["open", "closed", "merged"];
 export const mergeRequestResponseKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];

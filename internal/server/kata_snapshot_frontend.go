@@ -59,6 +59,7 @@ type kataTaskReferenceInput struct {
 	DaemonID string `header:"X-Middleman-Kata-Daemon" doc:"Kata daemon id; the effective default daemon when empty"`
 	Query    string `query:"q"`
 	Limit    int    `query:"limit" default:"20" minimum:"1" maximum:"50"`
+	Status   string `query:"status" default:"open" enum:"open,all"`
 }
 
 type kataTaskReference struct {
@@ -70,6 +71,7 @@ type kataTaskReference struct {
 	QualifiedID string `json:"qualified_id"`
 	Title       string `json:"title"`
 	Reference   string `json:"reference"`
+	Status      string `json:"status" enum:"open,closed"`
 }
 
 type kataTaskReferenceResponse struct {
@@ -265,6 +267,13 @@ func (f *kataSnapshotFrontend) References(
 	ctx context.Context,
 	input *kataTaskReferenceInput,
 ) (kataTaskReferenceResponse, error) {
+	status := strings.TrimSpace(input.Status)
+	if status == "" {
+		status = "open"
+	}
+	if status != "open" && status != "all" {
+		return kataTaskReferenceResponse{}, problemValidation("status", "status must be open or all", "open", "all")
+	}
 	limit := input.Limit
 	if limit == 0 {
 		limit = kataReferenceDefaultLimit
@@ -284,7 +293,7 @@ func (f *kataSnapshotFrontend) References(
 		if err != nil {
 			return kataTaskReferenceResponse{}, problemServiceUnavailable("Kata task events are unavailable while the server is shutting down")
 		}
-		authority, err := f.deps.loadAuthority(ctx, daemon.ID, kataAuthorityRequest{Scope: "global", Authority: "open"})
+		authority, err := f.deps.loadAuthority(ctx, daemon.ID, kataAuthorityRequest{Scope: "global", Authority: status})
 		if err != nil {
 			return kataTaskReferenceResponse{}, err
 		}
@@ -335,7 +344,7 @@ func kataTaskReferencesFromAuthority(
 			references = append(references, kataTaskReference{
 				UID: issue.UID, ProjectID: issue.ProjectID, ProjectUID: issue.ProjectUID,
 				ProjectName: issue.ProjectName, ShortID: issue.ShortID, QualifiedID: issue.QualifiedID,
-				Title: issue.Title, Reference: reference,
+				Title: issue.Title, Reference: reference, Status: issue.Status,
 			})
 			if len(references) == limit {
 				break

@@ -34,6 +34,7 @@ export interface FetchKataSnapshotOptions extends KataClientOptions {}
 export interface SearchKataTaskReferencesOptions extends KataClientOptions {
   daemon_id?: string | undefined;
   limit?: number | undefined;
+  status?: "open" | "all" | undefined;
 }
 
 export type KataTaskReferenceSearchOptions = Pick<SearchKataTaskReferencesOptions, "daemon_id" | "limit" | "signal">;
@@ -91,6 +92,7 @@ export async function searchKataTaskReferences(
       query: {
         q: query,
         ...(options.limit === undefined ? {} : { limit: options.limit }),
+        ...(options.status === undefined ? {} : { status: options.status }),
       },
     },
     ...(options.signal ? { signal: options.signal } : {}),

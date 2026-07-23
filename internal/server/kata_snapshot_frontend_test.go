@@ -436,10 +436,10 @@ func TestKataSnapshotFrontendReferencesUseGlobalOpenAuthorityAndFullSetUniquenes
 	authority := testKataSnapshotFrontendAuthority(daemon, 4, 8)
 	authority.Snapshot.MemberIssueUIDs = []string{"issue-a", "issue-b", "issue-unique"}
 	authority.Snapshot.Issues = []kataTaskSummary{
-		{ID: 1, UID: "issue-a", ProjectID: 7, ProjectUID: "project-a", ProjectName: "Project A", ShortID: "dup", QualifiedID: "Project A#dup", Title: "Matching task"},
-		{ID: 2, UID: "issue-b", ProjectID: 8, ProjectUID: "project-b", ProjectName: "Project B", ShortID: "dup", QualifiedID: "Project B#dup", Title: "Outside query"},
-		{ID: 3, UID: "issue-unique", ProjectID: 7, ProjectUID: "project-a", ProjectName: "Project A", ShortID: "solo", QualifiedID: "Project A#solo", Title: "Another matching task"},
-		{ID: 4, UID: "issue-nonmember", ProjectID: 7, ProjectUID: "project-a", ProjectName: "Project A", ShortID: "hidden", QualifiedID: "Project A#hidden", Title: "Matching hidden task"},
+		{ID: 1, UID: "issue-a", ProjectID: 7, ProjectUID: "project-a", ProjectName: "Project A", ShortID: "dup", QualifiedID: "Project A#dup", Title: "Matching task", Status: "open"},
+		{ID: 2, UID: "issue-b", ProjectID: 8, ProjectUID: "project-b", ProjectName: "Project B", ShortID: "dup", QualifiedID: "Project B#dup", Title: "Outside query", Status: "open"},
+		{ID: 3, UID: "issue-unique", ProjectID: 7, ProjectUID: "project-a", ProjectName: "Project A", ShortID: "solo", QualifiedID: "Project A#solo", Title: "Another matching task", Status: "open"},
+		{ID: 4, UID: "issue-nonmember", ProjectID: 7, ProjectUID: "project-a", ProjectName: "Project A", ShortID: "hidden", QualifiedID: "Project A#hidden", Title: "Matching hidden task", Status: "open"},
 	}
 	var loads atomic.Int64
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
@@ -468,8 +468,42 @@ func TestKataSnapshotFrontendReferencesUseGlobalOpenAuthorityAndFullSetUniquenes
 	require.Len(response.References, 1)
 	assert.Equal(kataTaskReference{
 		UID: "issue-a", ProjectID: 7, ProjectUID: "project-a", ProjectName: "Project A",
-		ShortID: "dup", QualifiedID: "Project A#dup", Title: "Matching task", Reference: "Project A#dup",
+		ShortID: "dup", QualifiedID: "Project A#dup", Title: "Matching task", Reference: "Project A#dup", Status: "open",
 	}, response.References[0])
+}
+
+func TestKataSnapshotFrontendReferencesCanResolveAcrossAllStatuses(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	daemon := kata.Daemon{ID: "primary", URL: "https://kata.example.test"}
+	authority := testKataSnapshotFrontendAuthority(daemon, 4, 8)
+	authority.Snapshot.MemberIssueUIDs = []string{"issue-closed"}
+	authority.Snapshot.Issues = []kataTaskSummary{{
+		ID: 9, UID: "issue-closed", ProjectID: 7, ProjectUID: "project-a", ProjectName: "Project A",
+		ShortID: "closed-task", QualifiedID: "Project A#closed-task", Title: "Completed task", Status: "closed",
+	}}
+	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
+		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
+			return fakeKataFrontendEventHandle{fingerprint: kataDaemonTargetFingerprint(daemon)}, nil
+		},
+		loadAuthority: func(_ context.Context, daemonID string, intent kataAuthorityRequest) (kataCoordinatedAuthority, error) {
+			assert.Equal("primary", daemonID)
+			assert.Equal(kataAuthorityRequest{Scope: "global", Authority: "all"}, intent)
+			return authority, nil
+		},
+		daemonEpoch: func(string) uint64 { return 4 },
+	})
+
+	response, err := frontend.References(t.Context(), &kataTaskReferenceInput{
+		DaemonID: "primary", Query: "closed-task", Status: "all",
+	})
+
+	require.NoError(err)
+	require.Len(response.References, 1)
+	assert.Equal("closed", response.References[0].Status)
 }
 
 func TestKataSnapshotFrontendReferencesEnsuresEventsBeforeBlockedAuthorityLoad(t *testing.T) {

@@ -416,6 +416,24 @@ func (e IssueResponseWorkflowStatus) Valid() bool {
 	}
 }
 
+// Defines values for KataTaskReferenceStatus.
+const (
+	KataTaskReferenceStatusClosed KataTaskReferenceStatus = "closed"
+	KataTaskReferenceStatusOpen   KataTaskReferenceStatus = "open"
+)
+
+// Valid indicates whether the value is a known member of the KataTaskReferenceStatus enum.
+func (e KataTaskReferenceStatus) Valid() bool {
+	switch e {
+	case KataTaskReferenceStatusClosed:
+		return true
+	case KataTaskReferenceStatusOpen:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MergeRequestKanbanStatus.
 const (
 	MergeRequestKanbanStatusAwaitingMerge MergeRequestKanbanStatus = "awaiting_merge"
@@ -698,6 +716,24 @@ func (e ResolveRepoItemOnHostParamsItemType) Valid() bool {
 	case ResolveRepoItemOnHostParamsItemTypeIssue:
 		return true
 	case ResolveRepoItemOnHostParamsItemTypePr:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SearchKataTaskReferencesParamsStatus.
+const (
+	SearchKataTaskReferencesParamsStatusAll  SearchKataTaskReferencesParamsStatus = "all"
+	SearchKataTaskReferencesParamsStatusOpen SearchKataTaskReferencesParamsStatus = "open"
+)
+
+// Valid indicates whether the value is a known member of the SearchKataTaskReferencesParamsStatus enum.
+func (e SearchKataTaskReferencesParamsStatus) Valid() bool {
+	switch e {
+	case SearchKataTaskReferencesParamsStatusAll:
+		return true
+	case SearchKataTaskReferencesParamsStatusOpen:
 		return true
 	default:
 		return false
@@ -2165,15 +2201,19 @@ type KataSnapshotSelectedDetail struct {
 
 // KataTaskReference defines model for KataTaskReference.
 type KataTaskReference struct {
-	ProjectId   int64  `json:"project_id"`
-	ProjectName string `json:"project_name"`
-	ProjectUid  string `json:"project_uid"`
-	QualifiedId string `json:"qualified_id"`
-	Reference   string `json:"reference"`
-	ShortId     string `json:"short_id"`
-	Title       string `json:"title"`
-	Uid         string `json:"uid"`
+	ProjectId   int64                   `json:"project_id"`
+	ProjectName string                  `json:"project_name"`
+	ProjectUid  string                  `json:"project_uid"`
+	QualifiedId string                  `json:"qualified_id"`
+	Reference   string                  `json:"reference"`
+	ShortId     string                  `json:"short_id"`
+	Status      KataTaskReferenceStatus `json:"status"`
+	Title       string                  `json:"title"`
+	Uid         string                  `json:"uid"`
 }
+
+// KataTaskReferenceStatus defines model for KataTaskReference.Status.
+type KataTaskReferenceStatus string
 
 // KataTaskReferenceResponse defines model for KataTaskReferenceResponse.
 type KataTaskReferenceResponse struct {
@@ -4466,12 +4506,16 @@ type StreamKataTaskEventsParams struct {
 
 // SearchKataTaskReferencesParams defines parameters for SearchKataTaskReferences.
 type SearchKataTaskReferencesParams struct {
-	Q     *string `form:"q,omitempty" json:"q,omitempty"`
-	Limit *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+	Q      *string                               `form:"q,omitempty" json:"q,omitempty"`
+	Limit  *int64                                `form:"limit,omitempty" json:"limit,omitempty"`
+	Status *SearchKataTaskReferencesParamsStatus `form:"status,omitempty" json:"status,omitempty"`
 
 	// XMiddlemanKataDaemon Kata daemon id; the effective default daemon when empty
 	XMiddlemanKataDaemon *string `json:"X-Middleman-Kata-Daemon,omitempty"`
 }
+
+// SearchKataTaskReferencesParamsStatus defines parameters for SearchKataTaskReferences.
+type SearchKataTaskReferencesParamsStatus string
 
 // GetKataTaskSnapshotParams defines parameters for GetKataTaskSnapshot.
 type GetKataTaskSnapshotParams struct {
@@ -20866,6 +20910,18 @@ func NewSearchKataTaskReferencesRequest(server string, params *SearchKataTaskRef
 		if params.Limit != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Status != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "status", *params.Status, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

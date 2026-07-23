@@ -15,6 +15,7 @@ function reference(overrides: Partial<KataTaskReference> = {}): KataTaskReferenc
     qualified_id: overrides.qualified_id ?? "household#rent",
     reference: overrides.reference ?? "rent",
     title: overrides.title ?? "Pay rent",
+    status: overrides.status ?? "open",
   };
 }
 

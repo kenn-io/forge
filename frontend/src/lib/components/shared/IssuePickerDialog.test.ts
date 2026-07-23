@@ -19,6 +19,7 @@ function fakeReference(overrides: Partial<KataTaskReference> = {}): KataTaskRefe
     project_id: overrides.project_id ?? 10,
     project_uid: overrides.project_uid ?? "project-kata",
     project_name: overrides.project_name ?? "Kata",
+    status: overrides.status ?? "open",
   };
 }
 
@@ -247,6 +248,7 @@ describe("IssuePickerDialog selection", () => {
       project_id: 10,
       project_uid: "project-kata",
       project_name: "Kata",
+      status: "open",
     });
   });
 

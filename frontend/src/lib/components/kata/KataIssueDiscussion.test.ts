@@ -129,6 +129,7 @@ function searchTask(overrides: Partial<KataTaskReference> = {}): KataTaskReferen
     qualified_id: "INBOX-2",
     reference: "I-2",
     title: "Linked task",
+    status: "open",
     ...overrides,
   };
 }

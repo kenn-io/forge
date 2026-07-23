@@ -163,12 +163,13 @@
   let recurrenceDialogs = $state<KataRecurrenceDialogController | null>(null);
   let selectedRecurrences = $state.raw<KataRecurrence[]>([]);
   let recurrenceLoadGeneration = 0;
-  let latestRecurrenceLoad: Promise<void> = Promise.resolve();
+  let latestRecurrenceLoad: Promise<boolean> = Promise.resolve(true);
   let pendingMutationCount = $state(0);
   let mutationRefreshPending = $state(false);
   let mutationAcknowledged = $state(false);
   let mutationDraftResetGeneration = $state(0);
   let mutationRecurrenceRefreshRequired = false;
+  let recurrenceConflictRecoveryPending = $state(false);
   let mutationRefreshError = $state<string | null>(null);
   let mutationRefreshRequest: KataWorkspaceAuthorityRequest | null = null;
   let mutationRefreshGeneration = 0;
@@ -271,7 +272,9 @@
         if (recoveredSelection.direct) persistActiveWorkspaceState();
       }
       const awaitRecurrenceRefresh =
-        mutationRefreshPending && mutationAcknowledged && mutationRecurrenceRefreshRequired;
+        mutationRefreshPending &&
+        mutationRecurrenceRefreshRequired &&
+        (mutationAcknowledged || recurrenceConflictRecoveryPending);
       if (!awaitRecurrenceRefresh) finishAcceptedMutationRefresh();
       authorityRetrying = false;
       const pendingProject = pendingCreatedProjectScope;
@@ -328,13 +331,16 @@
     workspaceActionsBlocked || authorityStore.state.phase !== "accepted",
   );
   const detailAuthorityBlocked = $derived(
-    (mutationRefreshPending && mutationAcknowledged) || authorityStore.state.phase !== "accepted",
+    (mutationRefreshPending && (mutationAcknowledged || recurrenceConflictRecoveryPending)) ||
+      authorityStore.state.phase !== "accepted",
   );
   const authorityRecoveryMessage = $derived(
     switchingDaemon || routedDaemonError
       ? null
       : mutationRefreshError
-      ? `Change saved, but Kata snapshot refresh failed: ${mutationRefreshError}`
+      ? recurrenceConflictRecoveryPending
+        ? `The recurrence changed, but its current revision could not be loaded: ${mutationRefreshError}`
+        : `Change saved, but Kata snapshot refresh failed: ${mutationRefreshError}`
       : authorityStore.state.phase === "degraded" || authorityStore.state.phase === "abandoned"
         ? authorityStore.state.error
         : workspaceOwnershipPending
@@ -398,7 +404,8 @@
   );
   const graphEnrichmentError = $derived(
     acceptedSnapshot?.graph_source_uid && acceptedSnapshot.graph_source_uid === acceptedGraphSourceIssue?.uid
-      ? acceptedSnapshot.enrichment_errors.graph?.message ?? null
+      ? acceptedSnapshot.enrichment_errors.graph?.message ??
+        (acceptedGraph ? null : "Reachable task graph is unavailable.")
       : null,
   );
   const acceptedReadyIssueUIDs = $derived(acceptedSnapshot?.member_issue_uid_set ?? new Set<string>());
@@ -673,6 +680,7 @@
     mutationRefreshError = null;
     mutationRefreshRequest = null;
     mutationRecurrenceRefreshRequired = false;
+    recurrenceConflictRecoveryPending = false;
     mutationRefreshGeneration += 1;
   }
 
@@ -682,41 +690,46 @@
   function scheduleSelectedRecurrenceLoad(
     snapshot: KataWorkspaceSnapshotProjection,
     requiredForMutation = false,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const generation = ++recurrenceLoadGeneration;
     selectedRecurrences = [];
     const detail = snapshot.selected_detail;
     if (!detail) {
       if (requiredForMutation) finishAcceptedMutationRefresh();
-      latestRecurrenceLoad = Promise.resolve();
+      latestRecurrenceLoad = Promise.resolve(true);
       return latestRecurrenceLoad;
     }
     const load = taskAPI
       .recurrences(detail.issue.project_id, { daemonId: snapshot.daemon_id })
       .then((response) => {
-        if (generation !== recurrenceLoadGeneration) return;
+        if (generation !== recurrenceLoadGeneration) return false;
         const current = authorityStore.snapshot;
         if (
           current?.daemon_id !== snapshot.daemon_id ||
           current.selected_issue_uid !== detail.issue.uid ||
           current.selected_detail?.issue.project_id !== detail.issue.project_id
         ) {
-          return;
+          return false;
         }
         selectedRecurrences = response.recurrences;
         recurrenceDialogs?.reconcileRecurrences(response.recurrences);
         if (requiredForMutation) finishAcceptedMutationRefresh();
+        return true;
       })
       .catch((recurrenceError) => {
-        if (generation !== recurrenceLoadGeneration) return;
+        if (generation !== recurrenceLoadGeneration) return false;
         selectedRecurrences = [];
-        if (!requiredForMutation) return;
+        if (!requiredForMutation) return false;
         mutationRefreshPending = true;
         mutationRefreshError =
           recurrenceError instanceof Error ? recurrenceError.message : "Could not refresh Kata recurrences.";
-        showFlash("Change saved, but Kata recurrences could not refresh. Retry before making more changes.", {
-          tone: "warning",
-        });
+        showFlash(
+          recurrenceConflictRecoveryPending
+            ? "The current recurrence revision could not refresh. Retry before making more changes."
+            : "Change saved, but Kata recurrences could not refresh. Retry before making more changes.",
+          { tone: "warning" },
+        );
+        return false;
       });
     latestRecurrenceLoad = load;
     return load;
@@ -725,12 +738,25 @@
   // Awaits recurrence reloads until no newer load has superseded the one
   // awaited, so conflict recovery cannot re-enable the delete dialog while an
   // event-triggered reload that will reconcile it is still in flight.
-  async function awaitWinningRecurrenceLoad(): Promise<void> {
-    let awaited: Promise<void>;
+  async function awaitWinningRecurrenceLoad(): Promise<boolean> {
+    let awaited: Promise<boolean>;
+    let refreshed = false;
     do {
       awaited = latestRecurrenceLoad;
-      await awaited;
+      refreshed = await awaited;
     } while (awaited !== latestRecurrenceLoad);
+    return refreshed;
+  }
+
+  function beginRecurrenceConflictRecovery(): void {
+    recurrenceDialogs?.closeAll();
+    mutationRefreshGeneration += 1;
+    mutationRefreshPending = true;
+    mutationAcknowledged = false;
+    mutationRecurrenceRefreshRequired = true;
+    recurrenceConflictRecoveryPending = true;
+    mutationRefreshError = "Could not refresh Kata recurrences.";
+    mutationRefreshRequest = acceptedAuthorityRequest();
   }
 
   function acceptedDaemonIDForMutation(): string {
@@ -1664,11 +1690,12 @@
       } catch (error) {
         // A revision conflict means another client changed this recurrence;
         // reload the list and wait for the winning reload to reconcile the
-        // open dialog so a retry acts on current data, never the stale
-        // revision.
+        // open dialog. If reconciliation fails, fence that stale dialog until
+        // a retry loads the current revision.
         if ((error as { status?: number }).status === 412 && acceptedSnapshot) {
           void scheduleSelectedRecurrenceLoad(acceptedSnapshot);
-          await awaitWinningRecurrenceLoad();
+          const refreshed = await awaitWinningRecurrenceLoad();
+          if (!refreshed) beginRecurrenceConflictRecovery();
         }
         throw error;
       }
@@ -1779,9 +1806,13 @@
     </div>
   </header>
 
-  {#if mutationRefreshPending && mutationAcknowledged && !mutationRefreshError}
+  {#if mutationRefreshPending && (mutationAcknowledged || recurrenceConflictRecoveryPending) && !mutationRefreshError}
     <section class="kata-authority-recovery" role="status">
-      <span>Change saved. Refreshing Kata snapshot…</span>
+      <span>
+        {recurrenceConflictRecoveryPending
+          ? "Refreshing the current recurrence revision…"
+          : "Change saved. Refreshing Kata snapshot…"}
+      </span>
     </section>
   {:else if authorityRecoveryMessage}
     <section class="kata-authority-recovery" role="alert">

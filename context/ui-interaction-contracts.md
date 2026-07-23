@@ -443,6 +443,8 @@ responses, and discard stale responses instead of patching another item.
 - Separate Kata mutation transport from post-acknowledgement authority recovery:
   transport failure preserves drafts; acknowledgement fences mutation actions without clearing editors; only the matching unchanged draft resets after accepted snapshot and required recurrence replacement; Retry never repeats the mutation
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::runAuthorityMutation`).
+- A recurrence 412 is not an acknowledged mutation: if revision reconciliation fails, keep the stale dialog and all mutations fenced until Retry refreshes both snapshot and recurrence data; Retry must never repeat the delete
+  (`frontend/src/lib/features/kata/KataWorkspace.svelte::beginRecurrenceConflictRecovery`).
 
 ## Testing Expectations
 

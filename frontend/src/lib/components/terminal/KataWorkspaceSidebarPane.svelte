@@ -47,6 +47,7 @@
   let mutationDraftResetGeneration = $state(0);
   let mutationRefreshError = $state<string | null>(null);
   let mutationRefreshRetrying = $state(false);
+  let recurrenceConflictRecoveryPending = $state(false);
   let mutationRefreshGeneration = 0;
   let mutationTransportPending = false;
   let mutationRecurrenceRefreshRequired = false;
@@ -86,7 +87,7 @@
   );
   const detailAuthorityBlocked = $derived(
     disabled ||
-      (mutationRefreshPending && mutationAcknowledged) ||
+      (mutationRefreshPending && (mutationAcknowledged || recurrenceConflictRecoveryPending)) ||
       authorityStore.state.phase !== "accepted",
   );
 
@@ -119,7 +120,18 @@
     mutationAcknowledged = false;
     mutationRefreshError = null;
     mutationRecurrenceRefreshRequired = false;
+    recurrenceConflictRecoveryPending = false;
     mutationRefreshGeneration += 1;
+  }
+
+  function beginRecurrenceConflictRecovery(): void {
+    recurrenceDialogs?.closeAll();
+    mutationRefreshGeneration += 1;
+    mutationRefreshPending = true;
+    mutationAcknowledged = false;
+    mutationRecurrenceRefreshRequired = true;
+    recurrenceConflictRecoveryPending = true;
+    mutationRefreshError = "Could not refresh Kata recurrences.";
   }
 
   async function loadSelectedSnapshot(uid: string, requestID = ++loadRequestID): Promise<boolean> {
@@ -367,26 +379,30 @@
   }
 
   async function deleteRecurrence(recurrence: KataRecurrence): Promise<boolean> {
-    return runTask(() => mutateSelected(async () => {
-      const options = acceptedMutationOptions();
+    return runTask(async () => {
       try {
-        await api.deleteRecurrence(
-          recurrence.project_id,
-          recurrence.uid,
-          actor,
-          options,
-          `"rev-${recurrence.revision}"`,
+        await mutateSelected(
+          () => api.deleteRecurrence(
+            recurrence.project_id,
+            recurrence.uid,
+            actor,
+            acceptedMutationOptions(),
+            `"rev-${recurrence.revision}"`,
+          ),
+          { refreshRecurrences: true },
         );
       } catch (error) {
         // A revision conflict means another client changed this recurrence;
-        // reload the list and wait for the still-open dialog to reconcile so
-        // a retry acts on current data, never the stale revision.
+        // reload the list so the open dialog uses the current revision. If
+        // reconciliation fails, fence that stale dialog until a retry loads
+        // fresh recurrence data.
         if ((error as { status?: number }).status === 412 && selectedIssue) {
-          await loadSelectedRecurrences(selectedIssue, options.daemonId, loadRequestID);
+          const refreshed = await loadSelectedRecurrences(selectedIssue, acceptedDaemonIDForMutation(), loadRequestID);
+          if (!refreshed) beginRecurrenceConflictRecovery();
         }
         throw error;
       }
-    }, { refreshRecurrences: true }));
+    });
   }
 
   async function createRecurrence(projectID: number, input: KataCreateRecurrenceInput): Promise<void> {
@@ -477,11 +493,19 @@
 </script>
 
 <div class="kata-workspace-sidebar" inert={disabled}>
-  {#if mutationRefreshPending && mutationAcknowledged && !mutationRefreshError}
-    <div class="authority-recovery" role="status">Change saved. Refreshing Kata snapshot…</div>
+  {#if mutationRefreshPending && (mutationAcknowledged || recurrenceConflictRecoveryPending) && !mutationRefreshError}
+    <div class="authority-recovery" role="status">
+      {recurrenceConflictRecoveryPending
+        ? "Refreshing the current recurrence revision…"
+        : "Change saved. Refreshing Kata snapshot…"}
+    </div>
   {:else if mutationRefreshError}
     <div class="authority-recovery" role="alert">
-      <span>Change saved, but Kata snapshot refresh failed: {mutationRefreshError}</span>
+      <span>
+        {recurrenceConflictRecoveryPending
+          ? `The recurrence changed, but its current revision could not be loaded: ${mutationRefreshError}`
+          : `Change saved, but Kata snapshot refresh failed: ${mutationRefreshError}`}
+      </span>
       <button type="button" disabled={mutationRefreshRetrying} onclick={() => void retryMutationSnapshot()}>
         {mutationRefreshRetrying ? "Retrying…" : "Retry Kata snapshot"}
       </button>

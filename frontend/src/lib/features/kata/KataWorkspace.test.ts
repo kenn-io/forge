@@ -550,6 +550,29 @@ describe("KataWorkspace snapshot authority", () => {
     expect(await screen.findByRole("button", { name: new RegExp(initialIssues[1]!.title) })).toBeTruthy();
   });
 
+  it("makes an accepted graph intent recoverable when the graph is missing", async () => {
+    acceptHomeDaemon();
+    const selected = initialIssues[0]!;
+    const { api } = createWorkspaceAPI(initialIssues, {
+      snapshot: (request, snapshot) => {
+        if (!request.graphSourceUID) return snapshot;
+        const { graph: _graph, graph_fetched_at: _graphFetchedAt, ...enrichment } = snapshot.enrichment;
+        return { ...snapshot, enrichment };
+      },
+    });
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
+
+    await screen.findByRole("heading", { name: selected.title });
+    const sourceRow = screen.getByRole("button", { name: new RegExp(selected.title) });
+    await fireEvent.click(within(sourceRow.parentElement!).getByRole("button", { name: "Open reachable graph" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Reachable task graph is unavailable.");
+    expect(screen.queryByText("Loading graph...")).toBeNull();
+    expect(screen.getByRole("button", { name: "Back to task list" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry graph" })).toBeTruthy();
+  });
+
   it("shows selected detail enrichment failure instead of an empty selection", async () => {
     acceptHomeDaemon();
     const selected = initialIssues[0]!;

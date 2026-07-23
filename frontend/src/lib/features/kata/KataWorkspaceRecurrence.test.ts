@@ -243,6 +243,63 @@ describe("KataWorkspace", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Delete recurrence" })).toBeNull());
   });
 
+  it("fences a stale delete dialog when conflict reconciliation fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          {
+            id: "home",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      }),
+    );
+    const selected = initialIssues[0]!;
+    const staleRow = recurrence({
+      id: 41,
+      uid: "recurrence-selected",
+      project_id: selected.project_id,
+      template_title: "Snapshot recurrence",
+      revision: 9,
+    });
+    const freshRow = { ...staleRow, revision: 10 };
+    const {
+      api,
+      recurrences: recurrenceReads,
+      deleteRecurrence,
+    } = createWorkspaceAPI([selected], { recurrences: [freshRow] });
+    recurrenceReads
+      .mockResolvedValueOnce({ recurrences: [staleRow], fetched_at: "2026-02-11T08:00:00Z" })
+      .mockRejectedValueOnce(new Error("recurrence refresh failed"));
+    deleteRecurrence.mockRejectedValueOnce(Object.assign(new Error("recurrence revision conflict"), { status: 412 }));
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
+
+    await screen.findByRole("button", { name: staleRow.template_title });
+    await fireEvent.click(screen.getByRole("button", { name: "Delete recurrence" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Delete recurrence" })).getByRole("button", { name: "Delete" }),
+    );
+
+    await waitFor(() => expect(recurrenceReads).toHaveBeenCalledTimes(2));
+    const staleDialog = screen.getByRole("dialog", { name: "Delete recurrence" });
+    await waitFor(() =>
+      expect((within(staleDialog).getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled).toBe(true),
+    );
+    expect((await screen.findByRole("alert")).textContent).toContain("current revision could not be loaded");
+    expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(true);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Retry Kata snapshot" }));
+    await waitFor(() => expect(recurrenceReads).toHaveBeenCalledTimes(3));
+    await waitForWorkspaceWritable();
+    expect(screen.getByRole("button", { name: freshRow.template_title })).toBeTruthy();
+    expect((within(staleDialog).getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(deleteRecurrence).toHaveBeenCalledOnce();
+  });
+
   it("opens the recurrence editor from the task action menu", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({

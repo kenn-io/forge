@@ -33,7 +33,6 @@ func NormalizeProject(host string, p *gitlab.Project) (platform.Repository, erro
 	if err := validateSafeProjectName(name); err != nil {
 		return platform.Repository{}, err
 	}
-
 	ref := platform.RepoRef{
 		Platform:           platform.KindGitLab,
 		Host:               host,
@@ -53,7 +52,11 @@ func NormalizeProject(host string, p *gitlab.Project) (platform.Repository, erro
 		Description:        p.Description,
 		Private:            p.Visibility == gitlab.PrivateVisibility,
 		Archived:           p.Archived,
-		ViewerCanMerge:     gitLabViewerCanMerge(p.Permissions),
+		Features: platform.RepositoryFeatures{
+			IssuesEnabled:        gitLabFeatureEnabled(p.IssuesAccessLevel),
+			MergeRequestsEnabled: gitLabFeatureEnabled(p.MergeRequestsAccessLevel),
+		},
+		ViewerCanMerge: gitLabViewerCanMerge(p.Permissions),
 		// GitLab accepts MRs under the project's configured merge method
 		// with squash as a per-merge flag; there is no per-merge rebase,
 		// so clients must not offer "Rebase and merge". squash_option
@@ -70,6 +73,19 @@ func NormalizeProject(host string, p *gitlab.Project) (platform.Repository, erro
 		CreatedAt:     timeValue(p.CreatedAt),
 		UpdatedAt:     timeValue(p.UpdatedAt),
 	}, nil
+}
+
+func gitLabFeatureEnabled(accessLevel gitlab.AccessControlValue) *bool {
+	var enabled bool
+	switch accessLevel {
+	case gitlab.DisabledAccessControl:
+		enabled = false
+	case gitlab.EnabledAccessControl, gitlab.PrivateAccessControl, gitlab.PublicAccessControl:
+		enabled = true
+	default:
+		return nil
+	}
+	return &enabled
 }
 
 func gitLabViewerCanMerge(perms *gitlab.Permissions) *bool {

@@ -147,8 +147,10 @@ func TestNormalizeRepositoryPreservesFeatureState(t *testing.T) {
 		IssuesEnabled: &issuesEnabled, MergeRequestsEnabled: &pullsEnabled,
 	})
 	require.NoError(t, err)
-	assert.Same(t, &issuesEnabled, repo.Features.IssuesEnabled)
-	assert.Same(t, &pullsEnabled, repo.Features.MergeRequestsEnabled)
+	require.NotNil(t, repo.Features.IssuesEnabled)
+	require.NotNil(t, repo.Features.MergeRequestsEnabled)
+	assert.False(t, *repo.Features.IssuesEnabled)
+	assert.True(t, *repo.Features.MergeRequestsEnabled)
 }
 ```
 
@@ -159,7 +161,8 @@ func TestNormalizeProjectPreservesFeatureState(t *testing.T) {
 	t.Parallel()
 	repo, err := NormalizeProject("gitlab.example.com", &gitlab.Project{
 		ID: 42, Path: "project", PathWithNamespace: "group/project",
-		IssuesEnabled: false, MergeRequestsEnabled: true,
+		IssuesAccessLevel: gitlab.DisabledAccessControl,
+		MergeRequestsAccessLevel: gitlab.PrivateAccessControl,
 	})
 	require.NoError(t, err)
 	issuesEnabled, known := repo.FeatureEnabled(platform.RepositoryFeatureIssues)
@@ -199,19 +202,29 @@ Features: platform.RepositoryFeatures{
 },
 ```
 
-In `NormalizeProject`, copy the SDK booleans into stable local addresses before the return literal:
+In `NormalizeProject`, map access levels through a tri-state helper:
 
 ```go
-issuesEnabled := p.IssuesEnabled
-mergeRequestsEnabled := p.MergeRequestsEnabled
+func gitLabFeatureEnabled(accessLevel gitlab.AccessControlValue) *bool {
+	var enabled bool
+	switch accessLevel {
+	case gitlab.DisabledAccessControl:
+		enabled = false
+	case gitlab.EnabledAccessControl, gitlab.PrivateAccessControl, gitlab.PublicAccessControl:
+		enabled = true
+	default:
+		return nil
+	}
+	return &enabled
+}
 ```
 
 Then add:
 
 ```go
 Features: platform.RepositoryFeatures{
-	IssuesEnabled:        &issuesEnabled,
-	MergeRequestsEnabled: &mergeRequestsEnabled,
+	IssuesEnabled:        gitLabFeatureEnabled(p.IssuesAccessLevel),
+	MergeRequestsEnabled: gitLabFeatureEnabled(p.MergeRequestsAccessLevel),
 },
 ```
 
@@ -694,8 +707,8 @@ For candidate disabled cases, the project endpoint returns:
   "id": 42,
   "path": "project",
   "path_with_namespace": "group/project",
-  "issues_enabled": false,
-  "merge_requests_enabled": true
+  "issues_access_level": "disabled",
+  "merge_requests_access_level": "enabled"
 }
 ```
 

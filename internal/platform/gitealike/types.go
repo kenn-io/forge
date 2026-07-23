@@ -101,23 +101,25 @@ type UserDTO struct {
 }
 
 type RepositoryDTO struct {
-	ID            int64
-	Owner         UserDTO
-	Name          string
-	FullName      string
-	HTMLURL       string
-	CloneURL      string
-	DefaultBranch string
-	Private       bool
-	Archived      bool
-	Description   string
-	AllowSquash   bool
-	AllowMerge    bool
-	AllowRebase   bool
-	CanPush       *bool
-	CanAdmin      *bool
-	Created       time.Time
-	Updated       time.Time
+	ID                   int64
+	Owner                UserDTO
+	Name                 string
+	FullName             string
+	HTMLURL              string
+	CloneURL             string
+	DefaultBranch        string
+	Private              bool
+	Archived             bool
+	Description          string
+	AllowSquash          bool
+	AllowMerge           bool
+	AllowRebase          bool
+	CanPush              *bool
+	CanAdmin             *bool
+	IssuesEnabled        *bool
+	MergeRequestsEnabled *bool
+	Created              time.Time
+	Updated              time.Time
 }
 
 type BranchDTO struct {

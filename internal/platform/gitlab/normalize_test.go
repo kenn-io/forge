@@ -54,6 +54,32 @@ func TestNormalizeProjectPreservesGitLabIdentity(t *testing.T) {
 	assert.False(repo.MergeSettings.AllowRebaseMerge, "GitLab has no per-merge rebase")
 }
 
+func TestNormalizeProjectPreservesFeatureState(t *testing.T) {
+	assert := assert.New(t)
+	repo, err := NormalizeProject("gitlab.example.com", &gitlab.Project{
+		ID:                       42,
+		Path:                     "project",
+		PathWithNamespace:        "group/project",
+		IssuesAccessLevel:        gitlab.DisabledAccessControl,
+		MergeRequestsAccessLevel: gitlab.PrivateAccessControl,
+	})
+	require.NoError(t, err)
+
+	issuesEnabled, known := repo.FeatureEnabled(platform.RepositoryFeatureIssues)
+	assert.True(known)
+	assert.False(issuesEnabled)
+	mergeRequestsEnabled, known := repo.FeatureEnabled(platform.RepositoryFeatureMergeRequests)
+	assert.True(known)
+	assert.True(mergeRequestsEnabled)
+
+	unknown, err := NormalizeProject("gitlab.example.com", &gitlab.Project{
+		ID: 43, Path: "project", PathWithNamespace: "group/project",
+	})
+	require.NoError(t, err)
+	_, known = unknown.FeatureEnabled(platform.RepositoryFeatureIssues)
+	assert.False(known)
+}
+
 func TestNormalizeProjectMapsSquashNeverToSquashDisallowed(t *testing.T) {
 	assert := assert.New(t)
 	repo, err := NormalizeProject("gitlab.example.com", &gitlab.Project{

@@ -43,6 +43,10 @@ func NormalizeRepository(
 		Description:        repo.Description,
 		Private:            repo.Private,
 		Archived:           repo.Archived,
+		Features: platform.RepositoryFeatures{
+			IssuesEnabled:        repo.IssuesEnabled,
+			MergeRequestsEnabled: repo.MergeRequestsEnabled,
+		},
 		MergeSettings: &platform.RepositoryMergeSettings{
 			AllowSquashMerge: repo.AllowSquash,
 			AllowMergeCommit: repo.AllowMerge,

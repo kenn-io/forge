@@ -7,6 +7,38 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestRepositoryFeatureEnabled(t *testing.T) {
+	t.Parallel()
+	issuesEnabled := false
+	mergeRequestsEnabled := true
+	repo := Repository{Features: RepositoryFeatures{
+		IssuesEnabled:        &issuesEnabled,
+		MergeRequestsEnabled: &mergeRequestsEnabled,
+	}}
+
+	tests := []struct {
+		name    string
+		feature string
+		enabled bool
+		known   bool
+	}{
+		{name: "issues disabled", feature: RepositoryFeatureIssues, known: true},
+		{name: "merge requests enabled", feature: RepositoryFeatureMergeRequests, enabled: true, known: true},
+		{name: "unsupported feature", feature: "releases"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			enabled, known := repo.FeatureEnabled(tt.feature)
+			assert.Equal(t, tt.enabled, enabled)
+			assert.Equal(t, tt.known, known)
+		})
+	}
+
+	_, known := (Repository{}).FeatureEnabled(RepositoryFeatureIssues)
+	assert.False(t, known)
+}
+
 func TestArchiveCapabilitiesSupport(t *testing.T) {
 	caps := ArchiveCapabilities{
 		HistoricalIssues:        true,

@@ -47,6 +47,11 @@ func (r RepoRef) DisplayName() string {
 	return r.Owner + "/" + r.Name
 }
 
+type RepositoryFeatures struct {
+	IssuesEnabled        *bool
+	MergeRequestsEnabled *bool
+}
+
 type Repository struct {
 	Ref                RepoRef
 	PlatformID         int64
@@ -54,6 +59,7 @@ type Repository struct {
 	Description        string
 	Private            bool
 	Archived           bool
+	Features           RepositoryFeatures
 	MergeSettings      *RepositoryMergeSettings
 	ViewerCanMerge     *bool
 	DefaultBranch      string
@@ -61,6 +67,22 @@ type Repository struct {
 	CloneURL           string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+}
+
+func (r Repository) FeatureEnabled(feature string) (bool, bool) {
+	var enabled *bool
+	switch feature {
+	case RepositoryFeatureIssues:
+		enabled = r.Features.IssuesEnabled
+	case RepositoryFeatureMergeRequests:
+		enabled = r.Features.MergeRequestsEnabled
+	default:
+		return false, false
+	}
+	if enabled == nil {
+		return false, false
+	}
+	return *enabled, true
 }
 
 type RepositoryMergeSettings struct {

@@ -63,11 +63,12 @@ A nil pointer means the provider response does not authoritatively expose the
 state. Non-nil false means the feature is definitively disabled. Non-nil true
 means it is enabled.
 
-GitLab populates the state from `issues_enabled` and
-`merge_requests_enabled`. The shared Gitea-like repository DTO gains the same
-tri-state fields; Gitea and Forgejo populate them from `has_issues` and
-`has_pull_requests`, and shared normalization copies them into
-`platform.Repository`.
+GitLab populates the state from `issues_access_level` and
+`merge_requests_access_level`: `disabled` is false, enabled/private/public are
+true, and a missing or unrecognized level is unknown. The shared Gitea-like
+repository DTO gains the same tri-state fields; Gitea and Forgejo populate them
+from `has_issues` and `has_pull_requests`, and shared normalization copies them
+into `platform.Repository`.
 
 The supported repository endpoints define these fields as part of their normal
 response shape, so the three adapters return known values. Other providers or

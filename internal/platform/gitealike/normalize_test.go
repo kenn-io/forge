@@ -61,6 +61,25 @@ func TestNormalizeRepositoryMapsSharedDTO(t *testing.T) {
 	assert.Equal(updated, repo.UpdatedAt)
 }
 
+func TestNormalizeRepositoryPreservesFeatureState(t *testing.T) {
+	issuesEnabled := false
+	mergeRequestsEnabled := true
+	repo, err := NormalizeRepository(platform.KindGitea, "gitea.example", RepositoryDTO{
+		ID:                   1,
+		Owner:                UserDTO{UserName: "owner"},
+		Name:                 "repo",
+		FullName:             "owner/repo",
+		IssuesEnabled:        &issuesEnabled,
+		MergeRequestsEnabled: &mergeRequestsEnabled,
+	})
+	require := Require.New(t)
+	require.NoError(err)
+	require.NotNil(repo.Features.IssuesEnabled)
+	require.NotNil(repo.Features.MergeRequestsEnabled)
+	require.False(*repo.Features.IssuesEnabled)
+	require.True(*repo.Features.MergeRequestsEnabled)
+}
+
 func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 	assert := assert.New(t)
 	require := Require.New(t)

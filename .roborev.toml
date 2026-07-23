@@ -23,6 +23,10 @@ ADR, or the appropriate living context document instead. Flag later PRs that
 rewrite these historical artifacts unless the change is explicitly correcting
 the record itself.
 
+Resource ceilings bound accepted or retained data, not peak process memory;
+transient processing amplification is acceptable. Do not demand finer
+allocation accounting without an unbounded input or observed problem.
+
 End-to-end tests are non-negotiable in this repository. Major features,
 bug fixes, refactors, and user-visible changes affecting API behavior,
 data flow, or maintainer workflows require e2e coverage that exercises

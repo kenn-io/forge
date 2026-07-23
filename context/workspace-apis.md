@@ -33,6 +33,10 @@ state.
 - Cache capacity may evict Kata authority or enrichment entries but must never
   truncate an API result; daemon invalidation clears every cached read for that
   daemon (`internal/server/kata_snapshot_cache.go::kataSnapshotCache`).
+- The 128 MiB Kata authority/graph response and authority-cache ceilings bound
+  input and retention, not peak heap; transient processing amplification is acceptable
+  (`internal/server/kata_client.go::kataGeneratedResponseLimit`).
+- Do not approximate heap use with finer payload quotas absent an observed problem.
 - Oversized project history must keep paginating selected history without
   retaining the complete project stream, but aggregated selected history is
   bounded by `kataSelectedHistoryMaxBytes`; exceeding it degrades the history

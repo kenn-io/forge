@@ -14,6 +14,7 @@
     type KataSnapshotIntent,
     type KataTaskReferenceSearch,
   } from "../../api/kata/snapshot.js";
+  import type { KataIssueNavigationTarget } from "../../api/kata/navigation.js";
   import type { KataWorkspaceSnapshotProjection } from "../../api/kata/snapshotProjection.js";
   import { createKataWorkspaceForTask, kataWorkspaceIdentityFromIssue } from "../../api/kata/workspaces.js";
   import type {
@@ -101,6 +102,7 @@
     openEditRecurrence: (recurrence: KataRecurrence) => void;
     openDeleteRecurrence: (recurrence: KataRecurrence) => void;
     closeAll: () => void;
+    reconcileRecurrences: (recurrences: readonly KataRecurrence[]) => void;
   }
 
   interface KataConnectionState {
@@ -690,6 +692,7 @@
           return;
         }
         selectedRecurrences = response.recurrences;
+        recurrenceDialogs?.reconcileRecurrences(response.recurrences);
         if (requiredForMutation) finishAcceptedMutationRefresh();
       })
       .catch((recurrenceError) => {
@@ -1285,6 +1288,40 @@
     void selectIssue(uid, true, true);
   }
 
+  async function selectLinkedIssue(target: KataIssueNavigationTarget): Promise<void> {
+    // Members of the current authority select in place. Off-authority peers
+    // (closed or cross-project links) carry their full identity, so route to
+    // the authority that contains them instead of requesting a non-member
+    // selection the server would refuse.
+    if (acceptedSnapshot?.member_issue_uid_set.has(target.uid)) {
+      await selectIssue(target.uid);
+      return;
+    }
+    replaceNextSelectionScopeUID = null;
+    beginNavigation();
+    closeReachableGraph(false);
+    resetDetailDrafts();
+    const rowSelection = { uid: target.uid, notify: false, direct: false, replaceRoute: false };
+    rowNavigationSelection = rowSelection;
+    const viewName: KataTaskViewName = target.status === "closed" ? "logbook" : "all";
+    currentViewName = viewName;
+    searchFilters = {
+      ...defaultKataTaskSearchFilters(viewName),
+      scope: { kind: "project", project_uid: target.project_uid },
+    };
+    const accepted = await runViewTask(async () =>
+      authorityController.load(kataWorkspaceAuthorityRequest({
+        daemonID: activeKataDaemonId,
+        view: viewName,
+        filters: searchFilters,
+        selectedIssueUID: target.uid,
+      })), "view");
+    if (rowNavigationSelection === rowSelection) rowNavigationSelection = null;
+    if (!accepted) return;
+    onRouteStateChange?.(canonicalRoute(viewName, target.project_uid, target.uid, true));
+    persistActiveWorkspaceState();
+  }
+
   function openReachableGraph(issue: KataTaskSummary): void {
     graphSourceIssue = issue;
     graphAuthoritySourceUID = issue.uid;
@@ -1758,8 +1795,8 @@
       onCloseIssue={closeSelectedIssue}
       onReopenIssue={reopenSelectedIssue}
       onDeleteIssue={deleteSelectedIssue}
-      onSelectIssue={(uid) => {
-        void selectIssue(uid);
+      onSelectIssue={(target) => {
+        void selectLinkedIssue(target);
       }}
       onOpenGraph={openReachableGraph}
       workspaceAction={selectedWorkspaceAction()}

@@ -521,8 +521,8 @@
       onCloseIssue={closeSelectedIssue}
       onReopenIssue={reopenSelectedIssue}
       onDeleteIssue={deleteSelectedIssue}
-      onSelectIssue={(uid) => {
-        void selectIssue(uid);
+      onSelectIssue={(target) => {
+        void selectIssue(target.uid);
       }}
       />
     {:else}

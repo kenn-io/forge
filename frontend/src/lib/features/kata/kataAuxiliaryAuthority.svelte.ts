@@ -147,6 +147,8 @@ export class KataAuxiliaryAuthority implements KataAuxiliaryAuthoritySource, Kat
     return this.controller.retry();
   }
 
+  // Terminal: a stopped authority never refreshes or streams again. Callers
+  // that need a live authority after stop() must create a new instance.
   stop(): void {
     this.stopped = true;
     this.controller.stop();

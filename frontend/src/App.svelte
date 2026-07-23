@@ -278,13 +278,19 @@
     navigate(kataIssueHref(target, targetDaemon));
   }
 
+  let auxiliaryNavigationToken = 0;
+
   async function openAuxiliaryKataIssue(uid: string, daemonID?: string): Promise<void> {
     // UID-only sources carry no status/project authority, and rows in the
     // shared auxiliary snapshot can be stale during invalidation reloads.
     // Always resolve routing authority through an isolated pinned selection,
     // honoring an explicit daemon (for example a daemon-bound Docs folder).
+    // Only the latest click may navigate or surface an error: an older
+    // selection resolving after a newer one must not steal the route.
+    const token = ++auxiliaryNavigationToken;
     try {
       const selection = await kataAuxiliaryAuthority.selectIssue(uid, daemonID);
+      if (token !== auxiliaryNavigationToken) return;
       navigate(kataIssueHref(
         {
           uid,
@@ -294,6 +300,7 @@
         selection.daemonID,
       ));
     } catch {
+      if (token !== auxiliaryNavigationToken) return;
       showFlash("Could not open linked task", { tone: "danger" });
     }
   }

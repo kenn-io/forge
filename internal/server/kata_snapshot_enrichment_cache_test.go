@@ -308,6 +308,60 @@ func TestKataSnapshotEnrichmentCacheSeparatesDetailAndGraphKeys(t *testing.T) {
 	assert.Equal(int64(2), graphLoads.Load())
 }
 
+func TestKataSnapshotEnrichmentCacheDoesNotCoalesceGraphLoadsAcrossRevisions(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	cache := newKataSnapshotEnrichmentCacheWithConfig(time.Minute, 8, func(string) uint64 { return 2 })
+	t.Cleanup(cache.close)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var loads atomic.Int64
+	keyAt := func(revision int64) kataGraphCacheKey {
+		return kataGraphCacheKey{
+			DaemonID: "local", DaemonEpoch: 2, SourceUID: "issue-a", SourceRevision: revision, Depth: "full",
+		}
+	}
+	blockingLoad := func(context.Context) (kataCachedGraph, error) {
+		loads.Add(1)
+		close(started)
+		<-release
+		return kataCachedGraph{Body: testKataGraphResponse("issue-a", "issue-b").JSON200}, nil
+	}
+	freshLoad := func(context.Context) (kataCachedGraph, error) {
+		loads.Add(1)
+		return kataCachedGraph{Body: testKataGraphResponse("issue-a", "issue-b").JSON200}, nil
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := cache.graph(t.Context(), keyAt(1), blockingLoad)
+		firstDone <- err
+	}()
+	<-started
+	secondDone := make(chan struct{})
+	go func() {
+		_, err := cache.graph(t.Context(), keyAt(2), freshLoad)
+		assert.NoError(err)
+		close(secondDone)
+	}()
+	freshCompletedIndependently := false
+	select {
+	case <-secondDone:
+		freshCompletedIndependently = true
+	case <-time.After(2 * time.Second):
+	}
+	close(release)
+	require.NoError(<-firstDone)
+	<-secondDone
+
+	assert.True(
+		freshCompletedIndependently,
+		"a load at a new source revision must not join the in-flight load for the old revision",
+	)
+	assert.Equal(int64(2), loads.Load())
+}
+
 func TestKataSnapshotEnrichmentCacheCoalescesLoadsWithoutCallerCancellation(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

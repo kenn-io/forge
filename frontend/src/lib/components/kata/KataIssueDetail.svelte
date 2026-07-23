@@ -17,6 +17,7 @@
     KataTaskEvent,
     KataTaskSummary,
   } from "../../api/kata/taskTypes.js";
+  import type { KataIssueNavigationTarget } from "../../api/kata/navigation.js";
   import type { KataLinkFilters } from "../../features/kata/kataLinkFilters.js";
   import type { MessageLinkRef } from "../../messages/types";
   import IssueMessageLinks from "../../features/kata/IssueMessageLinks.svelte";
@@ -73,7 +74,7 @@
     ) => boolean | Promise<boolean>;
     onReopenIssue: () => void | Promise<void>;
     onDeleteIssue: () => boolean | Promise<boolean>;
-    onSelectIssue: (uid: string) => void | Promise<void>;
+    onSelectIssue: (target: KataIssueNavigationTarget) => void | Promise<void>;
     onOpenGraph?: ((issue: KataTaskDetail["issue"]) => void) | undefined;
     workspaceAction?: WorkspaceAction | undefined;
   }

@@ -633,6 +633,94 @@ describe("KataWorkspace snapshot authority", () => {
     ).toBeTruthy();
   });
 
+  it("routes an off-authority closed link peer to an authority that contains it", async () => {
+    acceptHomeDaemon();
+    const selected = initialIssues[0]!;
+    const closedPeer = { ...issue("issue-9021", "Archived peer", "project-kata"), status: "closed" as const };
+    const linkedDetail = detail(selected.uid, initialIssues);
+    linkedDetail.links = [
+      {
+        id: 1,
+        project_id: selected.project_id,
+        from: { uid: selected.uid, short_id: selected.short_id },
+        to: { uid: closedPeer.uid, short_id: closedPeer.short_id },
+        type: "related",
+        author: "middleman",
+        created_at: fetchedAt,
+      },
+    ];
+    const seenAuthorities: Array<{
+      authority: string;
+      scope: string;
+      projectUID?: string | undefined;
+      selectedIssueUID?: string | undefined;
+    }> = [];
+    const onRouteStateChange = vi.fn();
+    const { api } = createWorkspaceAPI([...initialIssues, closedPeer], {
+      snapshot: (request, snapshot) => {
+        seenAuthorities.push({
+          authority: request.authority,
+          scope: request.scope,
+          projectUID: request.projectUID,
+          selectedIssueUID: request.selectedIssueUID,
+        });
+        if (request.selectedIssueUID !== selected.uid) return snapshot;
+        const catalogTemplate = snapshot.issues?.[0];
+        if (!catalogTemplate) throw new Error("expected snapshot catalog fixture");
+        // Mirror server-side link-peer enrichment: the closed peer joins the
+        // catalog without joining member_issue_uids.
+        return {
+          ...snapshot,
+          issues: [
+            ...(snapshot.issues ?? []),
+            {
+              ...catalogTemplate,
+              id: closedPeer.id,
+              uid: closedPeer.uid,
+              project_id: closedPeer.project_id,
+              project_uid: closedPeer.project_uid,
+              project_name: closedPeer.project_name,
+              short_id: closedPeer.short_id,
+              qualified_id: closedPeer.qualified_id,
+              title: closedPeer.title,
+              status: closedPeer.status,
+            },
+          ],
+          enrichment: {
+            ...snapshot.enrichment,
+            selected_detail: {
+              detail: linkedDetail,
+              etag: '"snapshot-etag"',
+              workspace_target: { available: false },
+            },
+          },
+        };
+      },
+    });
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid, onRouteStateChange } });
+
+    await screen.findByRole("heading", { name: selected.title });
+    const links = screen.getByRole("region", { name: "Links" });
+    await fireEvent.click(within(links).getByRole("button", { name: "Filter links" }));
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Closed" }));
+    await fireEvent.click(within(links).getByRole("button", { name: /Archived peer/ }));
+
+    await screen.findByRole("heading", { name: "Archived peer" });
+    expect(seenAuthorities).toContainEqual({
+      authority: "closed",
+      scope: "project",
+      projectUID: closedPeer.project_uid,
+      selectedIssueUID: closedPeer.uid,
+    });
+    await waitFor(() =>
+      expect(onRouteStateChange).toHaveBeenCalledWith({
+        view: "logbook",
+        scope: "project-kata",
+        issue: closedPeer.uid,
+      }),
+    );
+  });
+
   it("keeps relationship filters across task navigation and resets state filters with the workspace scope", async () => {
     acceptHomeDaemon();
     const root = { ...issue("issue-root", "Root task", "project-kata"), id: 101 };

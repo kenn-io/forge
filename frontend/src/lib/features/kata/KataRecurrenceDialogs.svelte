@@ -55,6 +55,21 @@
     closeDeleteRecurrence();
   }
 
+  // A delete conflict (412) reloads the recurrence list; without reconciling,
+  // the open delete dialog would retry with the stale revision forever.
+  export function reconcileRecurrences(recurrences: readonly KataRecurrence[]): void {
+    const target = recurrenceDelete.recurrence;
+    if (!recurrenceDelete.open || !target) return;
+    const fresh = recurrences.find((item) => item.uid === target.uid);
+    if (!fresh) {
+      recurrenceDelete = { open: false, recurrence: null };
+      return;
+    }
+    if (fresh.revision !== target.revision) {
+      recurrenceDelete = { open: true, recurrence: fresh };
+    }
+  }
+
   function closeRecurrenceDialog(): void {
     recurrenceDialog = { open: false, mode: "create", recurrence: null, etag: "" };
   }

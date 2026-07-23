@@ -129,6 +129,11 @@ Interactive surfaces must agree on which item is selected.
   never a shared-snapshot row, which can be stale during invalidation reloads —
   and honor an explicitly pinned daemon such as a daemon-bound Docs folder
   (`frontend/src/App.svelte::openAuxiliaryKataIssue`).
+- In-workspace Kata link navigation is typed as a full-identity target
+  (`uid`, `status`, `project_uid`); bare-UID peer navigation must not be
+  representable, and off-authority peers route to an authority that contains
+  them instead of requesting a non-member selection
+  (`frontend/src/lib/features/kata/KataWorkspace.svelte::selectLinkedIssue`).
 
 Responsive layout changes must not change route identity.
 

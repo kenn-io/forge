@@ -4,6 +4,7 @@
   import { renderMarkdown, renderMarkdownSync } from "@middleman/ui/utils/markdown";
   import { localDateTimeLabel, timeAgo } from "@middleman/ui/utils/time";
 
+  import type { KataIssueNavigationTarget } from "../../api/kata/navigation.js";
   import type { KataTaskReferenceSearch } from "../../api/kata/snapshot.js";
   import type {
     KataTaskDetail,
@@ -34,7 +35,9 @@
     draftResetGeneration?: number | undefined;
     onAddComment: (uid: string, body: string) => boolean | Promise<boolean>;
     onEditIssue: (uid: string, patch: KataTaskEditPatch) => boolean | Promise<boolean>;
-    onSelectIssue: (uid: string) => void | Promise<void>;
+    // Navigation always carries the peer's full identity from the resolved
+    // catalog row; bare-UID navigation is not representable.
+    onSelectIssue: (target: KataIssueNavigationTarget) => void | Promise<void>;
   }
 
   interface PendingDraftReset {
@@ -242,8 +245,11 @@
           type="button"
           class={["link-row", (showStateChips || resolution.kind === "failed") && "link-row--with-state"]}
           aria-label={`${linkLabel(link)} ${linkPeerShortID(link)} ${peer?.title ?? ""}${showStateChips && peer ? ` ${peer.status}` : ""}${resolution.kind === "failed" ? " state unavailable" : ""}`.trim()}
+          disabled={!peer}
+          title={peer ? undefined : "Task state unavailable; the link cannot be opened"}
           onclick={() => {
-            void onSelectIssue(linkPeerUID(link));
+            if (!peer) return;
+            void onSelectIssue({ uid: peer.uid, status: peer.status, project_uid: peer.project_uid });
           }}
         >
           <span class="link-kind">{linkLabel(link)}</span>

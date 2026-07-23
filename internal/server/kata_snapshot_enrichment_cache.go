@@ -588,5 +588,8 @@ func kataSelectedProjectEventsSingleflightKey(key kataProjectEventsCacheKey, sel
 }
 
 func kataGraphSingleflightKey(key kataGraphCacheKey) string {
-	return fmt.Sprintf("%s\x00%d\x00%s\x00%s\x00%t", key.DaemonID, key.DaemonEpoch, key.SourceUID, key.Depth, key.HideDone)
+	return fmt.Sprintf(
+		"%s\x00%d\x00%s\x00%d\x00%s\x00%t",
+		key.DaemonID, key.DaemonEpoch, key.SourceUID, key.SourceRevision, key.Depth, key.HideDone,
+	)
 }

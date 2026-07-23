@@ -1154,6 +1154,15 @@ async function handleRecurrenceDetail(
     return;
   }
 
+  if (req.method === "PATCH" || req.method === "DELETE") {
+    const ifMatch = req.headers["if-match"]?.toString() ?? "";
+    state.seenIfMatches.push(ifMatch);
+    if (ifMatch !== `"rev-${found.revision}"`) {
+      writeJSON(res, 412, { error: "revision_conflict" });
+      return;
+    }
+  }
+
   if (req.method === "PATCH") {
     const payload = await readJSONBody(req);
     if (typeof payload.rrule === "string") found.rrule = payload.rrule;
@@ -4483,6 +4492,102 @@ test("docs task links resolve distinct task IDs through the folder-bound externa
   }
 });
 
+test("docs uid links resolve colliding tasks through the folder-bound external daemon", async ({ page }) => {
+  const homeProject = {
+    id: 101,
+    uid: "project-home",
+    name: "Home",
+    metadata: { area: "Personal", sidebar_order: 1 },
+    open_count: 1,
+  };
+  const workProject = {
+    id: 202,
+    uid: "project-work",
+    name: "Work",
+    metadata: { area: "Work", sidebar_order: 1 },
+    open_count: 0,
+  };
+  const home = await startKataBackend({
+    projects: [homeProject],
+    issues: [
+      issueSummary({
+        id: 1011,
+        uid: "issue-shared",
+        project_id: homeProject.id,
+        project_uid: homeProject.uid,
+        project_name: homeProject.name,
+        short_id: "shared-1",
+        qualified_id: "Home#shared-1",
+        title: "Default daemon copy",
+        body: "This task should not open from the bound docs folder.",
+        labels: ["home"],
+      }),
+    ],
+  });
+  const boundClosedCopy = {
+    ...issueSummary({
+      id: 2021,
+      uid: "issue-shared",
+      project_id: workProject.id,
+      project_uid: workProject.uid,
+      project_name: workProject.name,
+      short_id: "shared-1",
+      qualified_id: "Work#shared-1",
+      title: "Bound daemon copy",
+      body: "Opened through the folder daemon UID binding.",
+      labels: ["work"],
+    }),
+    status: "closed" as const,
+    closed_reason: "done" as const,
+    closed_at: now,
+  };
+  const work = await startKataBackend({
+    projects: [workProject],
+    issues: [boundClosedCopy],
+  });
+  const kataHome = await configureKataHomeDaemons(
+    [
+      { name: "home", url: home.url },
+      { name: "work", url: work.url },
+    ],
+    "home",
+  );
+  const docsRoot = await createDocsFixture();
+  await writeFile(
+    path.join(docsRoot, "uid-link.md"),
+    ["# UID Link", "", "[Open the bound task](kata://issue/issue-shared)", ""].join("\n"),
+  );
+  const server = await startIsolatedE2EServer();
+
+  try {
+    const res = await page.request.post(`${server.info.base_url}/api/v1/docs/folders`, {
+      data: {
+        id: "work-notes",
+        name: "Work Notes",
+        path: docsRoot,
+        daemon: "work",
+      },
+    });
+    expect(res.status()).toBe(201);
+    await expect(res.json()).resolves.toMatchObject({ folder: { daemon: "work" } });
+
+    await page.goto(`${server.info.base_url}/docs?folder=work-notes&doc=uid-link.md`);
+    await expect(page.getByRole("heading", { name: "UID Link" })).toBeVisible();
+
+    await page.getByRole("link", { name: "Open the bound task" }).click();
+
+    await expect(page).toHaveURL(/\/kata\?view=logbook&scope=project-work&issue=issue-shared&daemon=work/);
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText(
+      "Opened through the folder daemon UID binding.",
+    );
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await home.close();
+    await work.close();
+  }
+});
+
 test("message linking follows the daemon activated by a folder-bound docs link", async ({ page }) => {
   const workProject = {
     id: 202,
@@ -5012,11 +5117,11 @@ test("kata task links render, navigate, and add related links through the config
     ...issueSummary({
       id: 34,
       uid: "issue-closed-link",
-      project_id: 1,
-      project_uid: "project-finance",
-      project_name: "Finances",
+      project_id: 2,
+      project_uid: "project-kata",
+      project_name: "Kata",
       short_id: "closed-link",
-      qualified_id: "Finances#closed-link",
+      qualified_id: "Kata#closed-link",
       title: "Completed linked task",
       body: "Closed peer body.",
       labels: ["home"],
@@ -5158,6 +5263,13 @@ test("kata task links render, navigate, and add related links through the config
     await expect(links.getByRole("button", { name: /related\s+kat-7/ })).toBeVisible();
     await expect.poll(() => backend.state.seenPaths).toContain("PATCH /api/v1/projects/1/issues/issue-rent");
     expect(backend.state.links.some((link) => link.type === "related" && link.to.uid === "issue-q3")).toBe(true);
+
+    await links.getByRole("button", { name: /related\s+closed-link/ }).click();
+    await expect(detail.getByRole("heading", { name: "Completed linked task" })).toBeVisible();
+    await expect(page).toHaveURL(/view=logbook/);
+    await expect(page).toHaveURL(/scope=project-kata/);
+    await expect(page).toHaveURL(/issue=issue-closed-link/);
+    await expect(page.locator(".kata-list").getByRole("button", { name: /Completed linked task/ })).toBeVisible();
   } finally {
     await server.stop();
     kataHome.restore();
@@ -5672,6 +5784,10 @@ test("kata recurrence panel creates edits and deletes through the configured ext
     await expect
       .poll(() => backend.state.seenPaths)
       .toContain("DELETE /api/v1/projects/2/recurrences/recurrence-1?actor=middleman");
+    // The backend 412s any recurrence mutation without a matching If-Match, so
+    // the successful edit and delete above prove the revisions were carried.
+    expect(backend.state.seenIfMatches).toContain('"rev-1"');
+    expect(backend.state.seenIfMatches).toContain('"rev-2"');
   } finally {
     await server.stop();
     kataHome.restore();

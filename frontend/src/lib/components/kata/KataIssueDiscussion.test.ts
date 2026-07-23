@@ -268,7 +268,11 @@ describe("KataIssueDiscussion", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: /Linked task/ }));
 
-    expect(onSelectIssue).toHaveBeenCalledWith("issue-2");
+    expect(onSelectIssue).toHaveBeenCalledWith({
+      uid: "issue-2",
+      status: "open",
+      project_uid: "project-1",
+    });
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Linked task/ })).toBeTruthy();
@@ -635,5 +639,44 @@ describe("KataIssueDiscussion", () => {
     expect(within(links).getByRole("button", { name: /P-1 state unavailable/ })).toBeTruthy();
     expect(within(links).queryByText("Hydrated peer task")).toBeNull();
     expect(searchReferences).not.toHaveBeenCalled();
+  });
+
+  it("never navigates a catalog-missing link with a partial identity", async () => {
+    const onSelectIssue = vi.fn();
+    const issue = makeIssue({
+      uid: "issue-1",
+      short_id: "I-1",
+    });
+    issue.links = [
+      {
+        id: 1,
+        project_id: 1,
+        from: { uid: "issue-1", short_id: "I-1" },
+        to: { uid: "issue-peer", short_id: "P-1" },
+        type: "related",
+        author: "wes",
+        created_at: "2026-06-01T12:00:00Z",
+      },
+    ];
+    render(KataIssueDiscussion, {
+      props: {
+        issue,
+        events: [],
+        issueCatalog: [],
+        searchReferences: makeSearch(),
+        activeDaemonId: "home",
+        linkFilters: createKataLinkFilters("all"),
+        onLinkFiltersChange: vi.fn(),
+        onAddComment: vi.fn(async () => true),
+        onEditIssue: vi.fn(async () => true),
+        onSelectIssue,
+      },
+    });
+
+    const links = screen.getByRole("region", { name: "Links" });
+    const row = within(links).getByRole("button", { name: /P-1 state unavailable/ }) as HTMLButtonElement;
+    expect(row.disabled).toBe(true);
+    await fireEvent.click(row);
+    expect(onSelectIssue).not.toHaveBeenCalled();
   });
 });

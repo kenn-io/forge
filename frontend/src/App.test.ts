@@ -514,6 +514,43 @@ describe("App feature routes", () => {
     expect(kataAuxiliary.instance.selectIssue).toHaveBeenCalledWith("issue-doc", "docs-daemon");
   });
 
+  it("ignores an older auxiliary selection that resolves after a newer navigation", async () => {
+    kataDaemons.rows = [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }];
+    let resolveOlder!: (value: unknown) => void;
+    const older = new Promise((resolve) => {
+      resolveOlder = resolve;
+    });
+    kataAuxiliary.instance.selectIssue.mockReturnValueOnce(older as never).mockResolvedValueOnce({
+      daemonID: "home",
+      detail: { issue: { uid: "issue-new", status: "open", project_uid: "project-new" } },
+    });
+    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
+    replaceUrl("/messages");
+    const { default: App } = await import("./App.svelte");
+
+    render(App, { target: createAppTarget() });
+    await waitFor(() => expect(appSurfaceProps.messages).not.toBeNull());
+
+    const openIssue = appSurfaceProps.messages?.onOpenIssue as ((uid: string) => void) | undefined;
+    openIssue?.("issue-old");
+    openIssue?.("issue-new");
+
+    await waitFor(() =>
+      expect(window.location.pathname + window.location.search).toBe(
+        "/kata?view=all&scope=project-new&issue=issue-new&daemon=home",
+      ),
+    );
+
+    resolveOlder({
+      daemonID: "home",
+      detail: { issue: { uid: "issue-old", status: "closed", project_uid: "project-old" } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(window.location.pathname + window.location.search).toBe(
+      "/kata?view=all&scope=project-new&issue=issue-new&daemon=home",
+    );
+  });
+
   it("handles an initial auxiliary authority load rejection at the app lifecycle boundary", async () => {
     kataDaemons.rows = [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }];
     const catchRejection = vi.fn(() => Promise.resolve(false));

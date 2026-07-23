@@ -285,6 +285,41 @@ func TestKataTaskSnapshotRetriesWhenSelectedRevisionChangesBetweenReadsE2E(t *te
 	assert.Nil(snapshot.Enrichment.Errors)
 }
 
+func TestKataTaskSnapshotRetriesWhenGraphRevisionChangesBetweenReadsE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newKataSnapshotE2EFixture(t, "Racing graph task")
+	fixture.daemon.mu.Lock()
+	fixture.daemon.graphFails = false
+	fixture.daemon.bumpRevisionOnFirstGraph = true
+	fixture.daemon.mu.Unlock()
+
+	scope := apigenerated.Project
+	authority := apigenerated.Ready
+	projectUID := "project-a"
+	graphSourceUID := "issue-member"
+	response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
+		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
+		GraphSourceUid:       &graphSourceUID,
+		XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+	})
+
+	require.NoError(err)
+	require.Equal(http.StatusOK, response.StatusCode(), string(response.Body))
+	require.NotNil(response.JSON200)
+	snapshot := response.JSON200
+	require.NotNil(snapshot.Issues)
+	require.Len(*snapshot.Issues, 1)
+	assert.Equal(int64(2), (*snapshot.Issues)[0].Revision, "authority must be reloaded at the post-change revision")
+	require.NotNil(snapshot.Enrichment.Graph)
+	require.NotNil(snapshot.Enrichment.Graph.Nodes)
+	require.Len(*snapshot.Enrichment.Graph.Nodes, 2)
+	assert.Equal(int64(2), (*snapshot.Enrichment.Graph.Nodes)[0].Revision, "graph must match the reloaded authority revision")
+	assert.Equal(int64(2), fixture.daemon.graphCalls.Load(), "stale graph must trigger exactly one retry")
+	assert.Positive(snapshot.InvalidationEpoch, "revision mismatch must invalidate the authority epoch")
+	assert.Nil(snapshot.Enrichment.Errors)
+}
+
 func TestKataTaskSnapshotConcurrentSelectedHistoriesShareProjectPaginationE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -998,6 +1033,7 @@ type kataSnapshotDaemonStub struct {
 	includeOtherIssue         bool
 	revision                  int64
 	bumpRevisionOnFirstDetail bool
+	bumpRevisionOnFirstGraph  bool
 	projectEvents             []katagenerated.EventEnvelope
 	projectEventPages         []katagenerated.PollEventsBody
 	projectEventPageSize      int
@@ -1090,11 +1126,17 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 		w.Header().Set("ETag", `"issue-revision"`)
 		s.writeJSON(w, katagenerated.ShowIssueResponseBody{Issue: s.issue(issueUID)})
 	case "/api/v1/projects/7/issues/issue-member/graph":
-		s.graphCalls.Add(1)
-		s.mu.RLock()
+		call := s.graphCalls.Add(1)
+		s.mu.Lock()
+		if call == 1 && s.bumpRevisionOnFirstGraph {
+			// The authority for this request was read at the previous
+			// revision, so this graph response is deliberately torn.
+			s.revision++
+		}
 		graphFails := s.graphFails
 		title := s.title
-		s.mu.RUnlock()
+		revision := s.revision
+		s.mu.Unlock()
 		if graphFails {
 			http.Error(w, "forced graph failure", http.StatusBadGateway)
 			return
@@ -1110,7 +1152,7 @@ func (s *kataSnapshotDaemonStub) serveHTTP(w http.ResponseWriter, r *http.Reques
 					ID: 11, UID: "issue-member", ProjectID: 7, ProjectUID: &projectUID,
 					ShortID: "task-1", QualifiedID: "Project A#task-1", Title: title,
 					Author: "acceptance", Body: "Acceptance body", Status: "open", Metadata: map[string]any{"source": "e2e"},
-					Revision: 1, CreatedAt: kataSnapshotE2ETime, UpdatedAt: kataSnapshotE2ETime,
+					Revision: revision, CreatedAt: kataSnapshotE2ETime, UpdatedAt: kataSnapshotE2ETime,
 				},
 				{
 					ID: 12, UID: "issue-linked", ProjectID: 7, ProjectUID: &projectUID,

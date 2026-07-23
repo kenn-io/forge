@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { DEFAULT_TERMINAL_SETTINGS } from "@middleman/ui/api/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { replaceUrl } from "../../stores/router.svelte.js";
@@ -57,5 +58,23 @@ describe("WorkspaceEmbedShell settings requests", () => {
 
     mounted.unmount();
     expect(secondSignal?.aborted).toBe(true);
+  });
+
+  it("loads terminal settings once when hydration succeeds", async () => {
+    mocks.getSettings.mockResolvedValueOnce({
+      terminal: {
+        ...DEFAULT_TERMINAL_SETTINGS,
+        font_size: 14,
+      },
+    });
+    replaceUrl("/workspaces/embed/empty/noSelection");
+
+    render(WorkspaceEmbedShell);
+    await waitFor(() => expect(mocks.getSettings).toHaveBeenCalledTimes(1));
+    for (let index = 0; index < 5; index += 1) {
+      await Promise.resolve();
+    }
+
+    expect(mocks.getSettings).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import {
     Button,
     EmptyState,
@@ -102,7 +102,9 @@
     const controller = new AbortController();
     settingsLoadController = controller;
     const sequence = ++settingsLoadSequence;
-    const terminalHydration = beginTerminalSettingsHydration(activeStores.settings);
+    const terminalHydration = untrack(() =>
+      beginTerminalSettingsHydration(activeStores.settings)
+    );
     terminalSettingsReady = false;
     terminalSettingsError = null;
     try {

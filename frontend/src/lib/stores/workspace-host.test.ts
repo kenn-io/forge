@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from "vite-plus/test";
 import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
 import {
+  createdWorkspaceRef,
   nextWorkspaceLifecycleTick,
   reconcileWorkspaceCreated,
   recordWorkspaceCreated,
@@ -191,6 +192,51 @@ describe("workspace host store", () => {
     // ID, so the dead workspace cannot resurface through the fallback.
     expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
     expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull();
+  });
+
+  it("a delayed create response cannot overwrite its own deletion tombstone", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    notifyWorkspaceDeleted("ws-a", undefined, identityA);
+    // The original create response lands after the workspace was deleted
+    // from another surface: recording it would replace the tombstone with
+    // a positive override advertising a dead workspace.
+    prs.recordCreated(identityA, refA);
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toBeNull(); // stale envelope stays masked
+  });
+
+  it("a delayed create response cannot republish a deleted controller-less record", () => {
+    const prs = getInlineWorkspaceController("prs");
+    // Deleted from the Workspaces tab before anything claimed or remembered
+    // the identity: no tombstone exists, so only the deleted-ID memory can
+    // block the late publication.
+    notifyWorkspaceDeleted("ws-a");
+    recordWorkspaceCreated(identityA, refA);
+    expect(createdWorkspaceRef(identityA)).toBeNull();
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
+  });
+
+  it("a delayed create response under a fresh ID supersedes the deletion tombstone", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    notifyWorkspaceDeleted("ws-a", undefined, identityA);
+    // A create retried after the deletion resolves under a new ID: that is
+    // a genuine recreation, not the lost race, and must surface.
+    const recreated = { id: "ws-b", status: "provisioning" };
+    prs.recordCreated(identityA, recreated);
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(recreated);
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toEqual(recreated);
+  });
+
+  it("recordDeleted blocks a later same-ID create publication in both stores", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.recordDeleted(identityA, refA.id);
+    prs.recordCreated(identityA, refA);
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
+    recordWorkspaceCreated(identityA, refA);
+    expect(createdWorkspaceRef(identityA)).toBeNull();
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
   });
 
   it("a tombstone does not mask a recreated workspace under a fresh ID", () => {

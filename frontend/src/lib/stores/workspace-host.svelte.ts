@@ -11,6 +11,8 @@ import { canonicalProvider, resolvedPlatformHost } from "@middleman/ui/api/provi
 import {
   clearCreatedWorkspaceById,
   createdWorkspaceRef,
+  isWorkspaceIdDeleted,
+  markWorkspaceIdDeleted,
   nextWorkspaceLifecycleTick,
 } from "@middleman/ui/stores/workspace-create-pending";
 import { getStackDepth } from "@middleman/ui/stores/keyboard/modal-stack";
@@ -229,7 +231,10 @@ export function notifyWorkspaceDeleted(workspaceId: string, hostKey?: string, id
     }
     workspaceIdentityById.delete(workspaceId);
     // The shared created-record (which detail instances without an inline
-    // controller consult) must not keep advertising a deleted workspace.
+    // controller consult) must not keep advertising a deleted workspace —
+    // and a create response for this ID still in flight must not
+    // republish it when it lands.
+    markWorkspaceIdDeleted(workspaceId);
     clearCreatedWorkspaceById(workspaceId);
   }
   if (lastInlineKey.workspaceId === workspaceId && lastInlineKey.hostKey === hostKey) {
@@ -315,6 +320,12 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       return !!claim && sameIdentity(claim.identity, identity);
     },
     recordCreated: (identity, ref) => {
+      // A delayed create response can lose the race with its own deletion
+      // (the workspace appeared in the Workspaces tab and was deleted
+      // there before this response landed). Recording it would overwrite
+      // the deletion tombstone and resurrect a dead ref. A recreation
+      // always carries a fresh ID and supersedes the tombstone below.
+      if (isWorkspaceIdDeleted(ref.id)) return;
       overrides = { ...overrides, [identityKey(identity)]: { ref, tick: nextWorkspaceLifecycleTick() } };
       workspaceIdentityById.set(ref.id, identity);
       const claim = claims[surface];
@@ -328,6 +339,7 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       if (claim && sameIdentity(claim.identity, identity)) setClaim(surface, identity, ref);
     },
     recordDeleted: (identity, workspaceId) => {
+      markWorkspaceIdDeleted(workspaceId);
       overrides = { ...overrides, [identityKey(identity)]: { deletedId: workspaceId } };
       const claim = claims[surface];
       if (claim && sameIdentity(claim.identity, identity)) clearClaim(surface);

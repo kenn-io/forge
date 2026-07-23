@@ -28,6 +28,22 @@ export function nextWorkspaceLifecycleTick(): number {
   return ++lifecycleClock;
 }
 
+// Deleted workspace IDs persist for the session: a delayed create response
+// can land after its workspace was already deleted from another surface
+// (Workspaces tab, terminal toolbar), and publishing it would resurrect a
+// dead ref. Workspace IDs are never reused, so a genuine recreation always
+// arrives under a fresh ID and passes the guard. A plain Set, not $state:
+// it is only consulted at publication time, never rendered.
+const deletedIds = new Set<string>();
+
+export function markWorkspaceIdDeleted(workspaceId: string): void {
+  deletedIds.add(workspaceId);
+}
+
+export function isWorkspaceIdDeleted(workspaceId: string): boolean {
+  return deletedIds.has(workspaceId);
+}
+
 export function beginWorkspaceCreate(identity: WorkspaceItemIdentity): void {
   if (isWorkspaceCreatePending(identity)) return;
   pending = [...pending, identity];
@@ -53,6 +69,9 @@ export function isWorkspaceCreatePending(identity: WorkspaceItemIdentity): boole
 // from a request that started before the confirmation is a stale
 // pre-create fetch and must not drop the record.
 export function recordWorkspaceCreated(identity: WorkspaceItemIdentity, ref: WorkspaceRefLite): void {
+  // A create response that lost the race with its own deletion must not
+  // republish the dead workspace.
+  if (deletedIds.has(ref.id)) return;
   created = [
     ...created.filter((entry) => !identityEquals(entry.identity, identity)),
     { identity, ref, tick: nextWorkspaceLifecycleTick() },
@@ -85,4 +104,5 @@ export function resetWorkspaceCreatePendingForTest(): void {
   pending = [];
   created = [];
   lifecycleClock = 0;
+  deletedIds.clear();
 }

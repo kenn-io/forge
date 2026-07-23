@@ -65,7 +65,12 @@ Interactive surfaces must agree on which item is selected.
   another client deleted it and the record must drop. Detail stores apply
   envelope payload and tick atomically (last-started-wins) so a stale
   response cannot pair with a newer tick, and tombstones mask only their
-  own deleted ID — a fresh-ID created record supersedes them. E2e mocks
+  own deleted ID — a fresh-ID created record supersedes them. Deleted
+  workspace IDs persist for the session (`markWorkspaceIdDeleted`) and
+  creation publications for a deleted ID are refused in both stores: a
+  delayed create response that lost the race with its own deletion must
+  not overwrite the tombstone or republish the record (IDs are never
+  reused, so fresh-ID recreations pass the guard). E2e mocks
   of the create POST must keep the detail envelope consistent (the real
   server inserts the row before returning 202). The
   host store's `effectiveRef` falls back to that record too — a create

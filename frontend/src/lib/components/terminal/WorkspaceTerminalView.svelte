@@ -12,6 +12,7 @@
   import WorkspaceHome from "./WorkspaceHome.svelte";
   import LaunchMenu from "./LaunchMenu.svelte";
   import TerminalOptionsMenu from "./TerminalOptionsMenu.svelte";
+  import TerminalZoomControl from "./TerminalZoomControl.svelte";
   import DockedTerminalPanel from "./DockedTerminalPanel.svelte";
   import WorkflowSplitTree, {
     type WorkflowTabDescriptor,
@@ -77,6 +78,7 @@
   } from "./terminal-drag";
   import { shouldRetryFleetDiffWatch } from "./fleet-diff-watch.js";
   import { Button, CollapsibleSidebar,
+    getStores,
     SplitResizeHandle,
     WorkspaceRightSidebar,
     type InlineDockMode,
@@ -91,8 +93,10 @@
     RefreshIcon,
   } from "../../icons.ts";
   import { apiErrorMessage, client } from "../../api/runtime.js";
+  import { updateSettings } from "../../api/settings.js";
   import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
   import { showFlash } from "@middleman/ui/stores/flash";
+  import { createTerminalZoomController } from "./terminalZoom";
 
   interface Workspace {
     id: string;
@@ -181,6 +185,21 @@
   const basePath = (
     window.__BASE_PATH__ ?? "/"
   ).replace(/\/$/, "");
+  const { settings: settingsStore } = getStores();
+  const terminalZoom = createTerminalZoomController({
+    getSettings: () => settingsStore.getTerminalSettings(),
+    setSettings: (settings) => settingsStore.setTerminalSettings(settings),
+    persist: async (terminal) => (await updateSettings({ terminal })).terminal,
+    reportError: (error) => {
+      const detail = error instanceof Error ? error.message : "Unknown error";
+      showFlash(`Couldn't save terminal font size: ${detail}`, {
+        tone: "danger",
+      });
+    },
+  });
+  const terminalFontSize = $derived(
+    settingsStore.getTerminalFontSize(),
+  );
 
   let workspace = $state<Workspace | null>(null);
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
@@ -2797,7 +2816,11 @@
   });
 </script>
 
-<div class="terminal-view" inert={modalOpen}>
+<div
+  class="terminal-view"
+  inert={modalOpen}
+  onkeydowncapture={(event) => terminalZoom.handleKeydown(event)}
+>
   {#snippet inlineCollapseControl()}
     <!-- Collapsing the inline dock is pure local UI and must stay
          reachable in every workspace state: the toolbar that carries the
@@ -3102,6 +3125,13 @@
                     onDelete={deleteWorkflowPreset}
                     disabled={actionsBlocked}
                     {hostVisible}
+                  />
+                  <TerminalZoomControl
+                    fontSize={terminalFontSize}
+                    disabled={actionsBlocked}
+                    onDecrease={terminalZoom.decrease}
+                    onIncrease={terminalZoom.increase}
+                    onReset={terminalZoom.reset}
                   />
                   <TerminalOptionsMenu disabled={actionsBlocked} {hostVisible} />
                   <LaunchMenu

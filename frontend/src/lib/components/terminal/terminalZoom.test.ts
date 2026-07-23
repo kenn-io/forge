@@ -1,0 +1,132 @@
+import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "@middleman/ui/api/types";
+import { describe, expect, it, vi } from "vite-plus/test";
+import {
+  MAX_TERMINAL_FONT_SIZE,
+  MIN_TERMINAL_FONT_SIZE,
+  RESET_TERMINAL_FONT_SIZE,
+  createTerminalZoomController,
+} from "./terminalZoom";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
+function createHarness(
+  persist: (settings: TerminalSettings) => Promise<TerminalSettings> = async (settings) => settings,
+) {
+  let settings = { ...DEFAULT_TERMINAL_SETTINGS };
+  const reportError = vi.fn();
+  const controller = createTerminalZoomController({
+    getSettings: () => settings,
+    persist,
+    reportError,
+    setSettings: (next) => {
+      settings = next;
+    },
+  });
+  return {
+    controller,
+    getSettings: () => settings,
+    reportError,
+  };
+}
+
+describe("terminal zoom controller", () => {
+  it("updates the shared settings immediately and clamps persisted font sizes", async () => {
+    const persist = vi.fn(async (settings: TerminalSettings) => settings);
+    const harness = createHarness(persist);
+
+    harness.controller.setFontSize(MAX_TERMINAL_FONT_SIZE + 10);
+    expect(harness.getSettings().font_size).toBe(MAX_TERMINAL_FONT_SIZE);
+    await harness.controller.whenIdle();
+    expect(persist).toHaveBeenLastCalledWith(expect.objectContaining({ font_size: MAX_TERMINAL_FONT_SIZE }));
+
+    harness.controller.setFontSize(MIN_TERMINAL_FONT_SIZE - 10);
+    expect(harness.getSettings().font_size).toBe(MIN_TERMINAL_FONT_SIZE);
+    await harness.controller.whenIdle();
+    expect(persist).toHaveBeenLastCalledWith(expect.objectContaining({ font_size: MIN_TERMINAL_FONT_SIZE }));
+  });
+
+  it("serializes rapid saves without letting an older response overwrite the latest zoom", async () => {
+    const first = deferred<TerminalSettings>();
+    const second = deferred<TerminalSettings>();
+    const persist = vi
+      .fn<(settings: TerminalSettings) => Promise<TerminalSettings>>()
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+    const harness = createHarness(persist);
+
+    harness.controller.increase();
+    harness.controller.increase();
+    expect(harness.getSettings().font_size).toBe(16);
+    await Promise.resolve();
+    expect(persist).toHaveBeenCalledTimes(1);
+
+    first.resolve({ ...DEFAULT_TERMINAL_SETTINGS, font_size: 15 });
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(2));
+    expect(harness.getSettings().font_size).toBe(16);
+
+    second.resolve({ ...DEFAULT_TERMINAL_SETTINGS, font_size: 16 });
+    await harness.controller.whenIdle();
+    expect(harness.getSettings().font_size).toBe(16);
+  });
+
+  it("rolls back the latest failed save to the last confirmed font size", async () => {
+    const persist = vi.fn(async () => {
+      throw new Error("settings unavailable");
+    });
+    const harness = createHarness(persist);
+
+    harness.controller.increase();
+    expect(harness.getSettings().font_size).toBe(15);
+    await harness.controller.whenIdle();
+
+    expect(harness.getSettings().font_size).toBe(RESET_TERMINAL_FONT_SIZE);
+    expect(harness.reportError).toHaveBeenCalledWith(expect.objectContaining({ message: "settings unavailable" }));
+  });
+
+  it("handles browser zoom shortcuts only from a focused terminal", async () => {
+    const harness = createHarness();
+    const terminal = document.createElement("div");
+    terminal.className = "terminal-container";
+    const input = document.createElement("textarea");
+    terminal.append(input);
+    const outside = document.createElement("button");
+
+    const outsideEvent = new KeyboardEvent("keydown", { key: "+", metaKey: true, cancelable: true });
+    Object.defineProperty(outsideEvent, "target", { value: outside });
+    expect(harness.controller.handleKeydown(outsideEvent)).toBe(false);
+    expect(outsideEvent.defaultPrevented).toBe(false);
+
+    const increaseEvent = new KeyboardEvent("keydown", { key: "=", metaKey: true, cancelable: true });
+    Object.defineProperty(increaseEvent, "target", { value: input });
+    expect(harness.controller.handleKeydown(increaseEvent)).toBe(true);
+    expect(increaseEvent.defaultPrevented).toBe(true);
+    expect(harness.getSettings().font_size).toBe(15);
+
+    const browserSpecificIncreaseEvent = new KeyboardEvent("keydown", {
+      code: "Equal",
+      ctrlKey: true,
+      key: "Unidentified",
+      cancelable: true,
+    });
+    Object.defineProperty(browserSpecificIncreaseEvent, "target", {
+      value: input,
+    });
+    expect(harness.controller.handleKeydown(browserSpecificIncreaseEvent)).toBe(true);
+    expect(harness.getSettings().font_size).toBe(16);
+
+    const resetEvent = new KeyboardEvent("keydown", { key: "0", ctrlKey: true, cancelable: true });
+    Object.defineProperty(resetEvent, "target", { value: input });
+    expect(harness.controller.handleKeydown(resetEvent)).toBe(true);
+    expect(harness.getSettings().font_size).toBe(RESET_TERMINAL_FONT_SIZE);
+
+    await harness.controller.whenIdle();
+  });
+});

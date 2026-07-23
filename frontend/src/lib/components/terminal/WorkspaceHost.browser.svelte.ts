@@ -102,6 +102,7 @@ function waitForReparent(): Promise<void> {
 }
 
 const settingsStore = {
+  getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
   getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
 };
 

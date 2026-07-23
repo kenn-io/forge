@@ -11,7 +11,9 @@ const mocks = vi.hoisted(() => ({
   mockLoadAddon: vi.fn(),
   mockOnData: vi.fn(),
   mockOpen: vi.fn(),
+  mockSetTerminalSettings: vi.fn(),
   mockTerminalInstances: [] as Array<{ options: Record<string, unknown> }>,
+  mockUpdateSettings: vi.fn(),
   renameWorkspaceSession: vi.fn(),
   showFlash: vi.fn(),
   stopWorkspaceSession: vi.fn(),
@@ -116,7 +118,7 @@ vi.mock("@middleman/ui", async (importOriginal) => {
           font_ligatures: false,
           renderer: "ghostty-web",
         }),
-        setTerminalSettings: vi.fn(),
+        setTerminalSettings: mocks.mockSetTerminalSettings,
         getModeVisibility: () => ({
           activity: true,
           repos: true,
@@ -152,6 +154,10 @@ vi.mock("../../api/workspace-runtime.js", () => ({
   workspaceSessionWebSocketPath: (workspaceId: string, sessionKey: string) =>
     `/ws/v1/workspaces/${workspaceId}/runtime/sessions/${sessionKey}/terminal`,
   workspaceTmuxWebSocketPath: (workspaceId: string) => `/ws/v1/workspaces/${workspaceId}/terminal`,
+}));
+
+vi.mock("../../api/settings.js", () => ({
+  updateSettings: mocks.mockUpdateSettings,
 }));
 
 vi.mock("@middleman/ui/stores/flash", () => ({
@@ -348,6 +354,11 @@ describe("WorkspaceTerminalView", () => {
     mocks.stopWorkspaceSession.mockReset();
     mocks.terminalWrite.mockReset();
     mocks.mockTerminalInstances.length = 0;
+    mocks.mockSetTerminalSettings.mockReset();
+    mocks.mockUpdateSettings.mockReset();
+    mocks.mockUpdateSettings.mockImplementation(async ({ terminal }) => ({
+      terminal,
+    }));
 
     vi.stubGlobal(
       "fetch",
@@ -489,6 +500,40 @@ describe("WorkspaceTerminalView", () => {
 
     expect(await screen.findByRole("tab", { name: "Helper, Helper running" })).toBeTruthy();
     expect(screen.getByLabelText("Helper running").classList.contains("kit-status-dot--idle")).toBe(true);
+  });
+
+  it("persists toolbar and focused-terminal font zoom through shared settings", async () => {
+    const { container } = render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Increase terminal font size",
+      }),
+    );
+    await waitFor(() => {
+      expect(mocks.mockUpdateSettings).toHaveBeenCalledWith({
+        terminal: expect.objectContaining({ font_size: 15 }),
+      });
+    });
+    expect(mocks.mockSetTerminalSettings).toHaveBeenCalledWith(expect.objectContaining({ font_size: 15 }));
+
+    mocks.mockUpdateSettings.mockClear();
+    const terminalInput = document.createElement("textarea");
+    container.querySelector(".terminal-container")?.append(terminalInput);
+    terminalInput.focus();
+    await fireEvent.keyDown(terminalInput, {
+      key: "=",
+      metaKey: true,
+    });
+    await waitFor(() => {
+      expect(mocks.mockUpdateSettings).toHaveBeenCalledWith({
+        terminal: expect.objectContaining({ font_size: 15 }),
+      });
+    });
   });
 
   it.each([

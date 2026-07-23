@@ -83,6 +83,7 @@ describe("WorkspaceTerminalView layout flip", () => {
     // reads settingsStore.getTerminalSettings() at initialization, so the
     // main subtree cannot mount without a settings store on STORES_KEY.
     const settingsStore = {
+      getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
     };
 

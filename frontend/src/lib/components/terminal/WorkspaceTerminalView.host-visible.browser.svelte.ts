@@ -97,6 +97,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     // reads settingsStore.getTerminalSettings() at initialization, so the
     // main subtree cannot mount without a settings store on STORES_KEY.
     const settingsStore = {
+      getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
     };
 
@@ -166,6 +167,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
 
     const settingsStore = {
+      getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
     };
     // Opening the right sidebar mounts the diff panel, which reads the
@@ -259,6 +261,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     // (inside the options popover) with livePreview, which writes settings
     // back through the store — so the stub needs a setter too.
     const settingsStore = {
+      getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
       setTerminalSettings: () => {},
     };
@@ -327,6 +330,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
 
     const settingsStore = {
+      getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
     };
 

@@ -106,6 +106,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@xterm/addon-webgl@0.19.0": "patches/@xterm%2Faddon-webgl@0.19.0.patch",
+  },
   "overrides": {
     "dompurify": "3.4.11",
   },

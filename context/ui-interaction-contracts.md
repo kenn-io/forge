@@ -210,10 +210,12 @@ Keyboard handlers must have one clear owner for each key press.
   affordance at the bottom of the pane
   (`frontend/src/lib/stores/workspace-host.svelte.ts::focusTerminal`).
 - An expanded dock mode must not outlive its claim: WorkspaceDockPanel resets
-  on inactive and on teardown, and the store resets `expanded` when a claim is
-  directly replaced by a different identity — the panel never observes an
-  inactive gap in that case
-  (`frontend/src/lib/stores/workspace-host.svelte.ts::setClaim`).
+  on inactive and on teardown, and the store resets `expanded` itself both
+  when a claim is directly replaced by a different identity (`setClaim`) and
+  synchronously on release (`clearClaim`) — a release-and-reclaim within one
+  update leaves no observable inactive gap for the panel and no previous
+  claim for setClaim's replacement check
+  (`frontend/src/lib/stores/workspace-host.svelte.ts::clearClaim`).
 - A collapse control must be reachable in every inline workspace state, not
   only from the ready toolbar: WorkspaceDockPanel's BottomDock is not
   closable, so the creating, fetch-failure, and setup-error branches render

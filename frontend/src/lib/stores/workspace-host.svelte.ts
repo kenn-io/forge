@@ -196,6 +196,18 @@ function setClaim(surface: InlineWorkspaceSurface, identity: WorkspaceItemIdenti
 
 function clearClaim(surface: InlineWorkspaceSurface): void {
   if (!claims[surface]) return;
+  // A claim ending while expanded resets to split here, synchronously —
+  // not only when WorkspaceDockPanel observes the inactive gap. A reclaim
+  // landing in the same update (selection change to an item whose detail
+  // is already cached) leaves no observable gap: the panel's
+  // reset-on-inactive effect never fires and setClaim sees no previous
+  // claim to detect the replacement, so the new item's detail would open
+  // hidden behind a fullscreen terminal. Focus restoration is unaffected:
+  // the panel reclaims focus on the dockOpen -> closed transition, which
+  // an observed release still produces whatever the mode.
+  if (dockModes[surface] === "expanded") {
+    dockModes = { ...dockModes, [surface]: "split" };
+  }
   const next = { ...claims };
   delete next[surface];
   claims = next;

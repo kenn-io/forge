@@ -556,6 +556,21 @@ describe("workspace host store", () => {
     expect(prs.getDockMode()).toBe("expanded");
   });
 
+  it("an expanded dock resets to split across a same-update release and reclaim", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    prs.setDockMode("expanded");
+    // Selection change to an item whose detail is already cached: the old
+    // view's effect cleanup releases and the new claim lands in the same
+    // update. WorkspaceDockPanel's effects only see the final claimed
+    // state — no inactive gap — and setClaim sees no previous claim to
+    // detect the replacement, so the release itself must reset the mode
+    // or B's detail opens hidden behind a fullscreen terminal.
+    prs.release();
+    prs.claim(identityB, { id: "ws-b", status: "ready" });
+    expect(prs.getDockMode()).toBe("split");
+  });
+
   it("focusTerminal reveals a collapsed dock in split and never maximizes", () => {
     const prs = getInlineWorkspaceController("prs");
     prs.claim(identityA, refA);

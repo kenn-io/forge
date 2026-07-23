@@ -380,6 +380,19 @@ export function createDetailStore(opts: DetailStoreOptions) {
     detail = next;
   }
 
+  // Applies an envelope payload and its request-start tick atomically. A
+  // response whose request started before the currently applied envelope's
+  // request is stale: applying its payload while the newer tick stands
+  // would let pre-creation "no workspace" data masquerade as authoritative.
+  // Rejecting it keeps last-started-wins consistent across every
+  // detail-producing path, including sync and PATCH responses that lack
+  // the GET paths' per-selection sequence guards.
+  function applyEnvelopeAt(envelopeTick: number, assign: () => void): void {
+    if (envelopeTick < detailEnvelopeTick) return;
+    assign();
+    detailEnvelopeTick = envelopeTick;
+  }
+
   function noteObservedFetchedAt(fetchedAt: string | null | undefined): void {
     if (fetchedAt != null) lastObservedFetchedAt = fetchedAt;
   }
@@ -420,15 +433,16 @@ export function createDetailStore(opts: DetailStoreOptions) {
       }
       if (data !== undefined) {
         latestSuccessfulDetailRequestSequenceBySelection.set(key, requestSequence);
-        applyRefreshedDetail(
-          withPreservedLocalBody({
-            ...data,
-            events: data.events ?? [],
-          } as PullDetail),
-        );
+        applyEnvelopeAt(envelopeTick, () => {
+          applyRefreshedDetail(
+            withPreservedLocalBody({
+              ...data,
+              events: data.events ?? [],
+            } as PullDetail),
+          );
+          detailLoaded = data.detail_loaded ?? detailLoaded;
+        });
         noteObservedFetchedAt(data.detail_fetched_at);
-        if (envelopeTick > detailEnvelopeTick) detailEnvelopeTick = envelopeTick;
-        detailLoaded = data.detail_loaded ?? detailLoaded;
         return { ok: true, ...(data.detail_fetched_at != null && { fetchedAt: data.detail_fetched_at }) };
       }
       return { ok: false, error: "Pull request refresh returned no detail" };
@@ -460,16 +474,17 @@ export function createDetailStore(opts: DetailStoreOptions) {
       }
       if (data) {
         storeError = null;
-        applyRefreshedDetail(
-          withPreservedLocalBody({
-            ...data,
-            events: data.events ?? [],
-          } as PullDetail),
-        );
+        applyEnvelopeAt(envelopeTick, () => {
+          applyRefreshedDetail(
+            withPreservedLocalBody({
+              ...data,
+              events: data.events ?? [],
+            } as PullDetail),
+          );
+          detailLoaded = data.detail_loaded ?? detailLoaded;
+          refreshed = true;
+        });
         noteObservedFetchedAt(data.detail_fetched_at);
-        if (envelopeTick > detailEnvelopeTick) detailEnvelopeTick = envelopeTick;
-        detailLoaded = data.detail_loaded ?? detailLoaded;
-        refreshed = true;
       }
     } catch {
       // Sync failure is non-fatal.
@@ -587,15 +602,16 @@ export function createDetailStore(opts: DetailStoreOptions) {
           throw new Error(requestError.detail ?? requestError.title ?? "failed to load pull request");
         }
         latestSuccessfulDetailRequestSequenceBySelection.set(key, requestSequence);
-        detail = data
-          ? withPreservedLocalBody({
-              ...data,
-              events: data.events ?? [],
-            } as PullDetail)
-          : null;
+        applyEnvelopeAt(envelopeTick, () => {
+          detail = data
+            ? withPreservedLocalBody({
+                ...data,
+                events: data.events ?? [],
+              } as PullDetail)
+            : null;
+          detailLoaded = data?.detail_loaded ?? false;
+        });
         noteObservedFetchedAt(data?.detail_fetched_at);
-        if (envelopeTick > detailEnvelopeTick) detailEnvelopeTick = envelopeTick;
-        detailLoaded = data?.detail_loaded ?? false;
       } catch (err) {
         if (
           gen !== syncGeneration ||
@@ -724,15 +740,16 @@ export function createDetailStore(opts: DetailStoreOptions) {
         }
         if (data) {
           storeError = null;
-          applyRefreshedDetail(
-            withPreservedLocalBody({
-              ...data,
-              events: data.events ?? [],
-            } as PullDetail),
-          );
+          applyEnvelopeAt(envelopeTick, () => {
+            applyRefreshedDetail(
+              withPreservedLocalBody({
+                ...data,
+                events: data.events ?? [],
+              } as PullDetail),
+            );
+            detailLoaded = data.detail_loaded ?? detailLoaded;
+          });
           noteObservedFetchedAt(data.detail_fetched_at);
-          if (envelopeTick > detailEnvelopeTick) detailEnvelopeTick = envelopeTick;
-          detailLoaded = data.detail_loaded ?? detailLoaded;
           const warning = data.warnings?.[0];
           if (warning) {
             showFlash(warning, { tone: "warning" });
@@ -941,8 +958,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
       }
       // Apply server-canonical response.
       if (data && isDetailShowingRef(ref)) {
-        detail = data as PullDetail;
-        if (envelopeTick > detailEnvelopeTick) detailEnvelopeTick = envelopeTick;
+        applyEnvelopeAt(envelopeTick, () => {
+          detail = data as PullDetail;
+        });
         if (
           unsavedLocalBody &&
           sameBodyTarget(unsavedLocalBody.provider, unsavedLocalBody.platformHost, ref.provider, ref.platformHost) &&
@@ -1076,8 +1094,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
         sameBodyTarget(detail.repo?.provider, detail.repo?.platform_host, routeRef.provider, routeRef.platformHost) &&
         detail.merge_request.Body === body;
       if (data && localBodyMatchesSent) {
-        detail = data as PullDetail;
-        if (envelopeTick > detailEnvelopeTick) detailEnvelopeTick = envelopeTick;
+        applyEnvelopeAt(envelopeTick, () => {
+          detail = data as PullDetail;
+        });
       }
     } catch (err) {
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });

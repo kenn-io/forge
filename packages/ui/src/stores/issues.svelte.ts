@@ -215,6 +215,18 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function getIssueDetailEnvelopeTick(): number {
     return issueDetailEnvelopeTick;
   }
+
+  // Applies an envelope payload and its request-start tick atomically. A
+  // response whose request started before the currently applied envelope's
+  // request is stale: applying its payload while the newer tick stands
+  // would let pre-creation "no workspace" data masquerade as authoritative.
+  // Rejecting it keeps last-started-wins consistent across every
+  // detail-producing path, including sync and PATCH responses.
+  function applyEnvelopeAt(envelopeTick: number, assign: () => void): void {
+    if (envelopeTick < issueDetailEnvelopeTick) return;
+    assign();
+    issueDetailEnvelopeTick = envelopeTick;
+  }
   function isIssueDetailLoading(): boolean {
     return detailLoading;
   }
@@ -520,14 +532,15 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         if (requestError) {
           throw new Error(apiErrorMessage(requestError, "failed to load issue"));
         }
-        issueDetail = data
-          ? withPreservedLocalBody({
-              ...data,
-              events: data.events ?? [],
-            } as IssueDetail)
-          : null;
-        if (envelopeTick > issueDetailEnvelopeTick) issueDetailEnvelopeTick = envelopeTick;
-        issueDetailLoaded = data?.detail_loaded ?? false;
+        applyEnvelopeAt(envelopeTick, () => {
+          issueDetail = data
+            ? withPreservedLocalBody({
+                ...data,
+                events: data.events ?? [],
+              } as IssueDetail)
+            : null;
+          issueDetailLoaded = data?.detail_loaded ?? false;
+        });
       } catch (err) {
         if (gen !== issueSyncGeneration) return;
         detailError = err instanceof Error ? err.message : String(err);
@@ -616,12 +629,13 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       }
       if (data) {
         detailError = null;
-        issueDetail = withPreservedLocalBody({
-          ...data,
-          events: data.events ?? [],
-        } as IssueDetail);
-        if (envelopeTick > issueDetailEnvelopeTick) issueDetailEnvelopeTick = envelopeTick;
-        issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
+        applyEnvelopeAt(envelopeTick, () => {
+          issueDetail = withPreservedLocalBody({
+            ...data,
+            events: data.events ?? [],
+          } as IssueDetail);
+          issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
+        });
       }
     } catch {
       // Sync failure is non-fatal.
@@ -658,12 +672,13 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         return { ok: false, error: apiErrorMessage(requestError, "failed to refresh issue") };
       }
       if (data !== undefined) {
-        issueDetail = withPreservedLocalBody({
-          ...data,
-          events: data.events ?? [],
-        } as IssueDetail);
-        if (envelopeTick > issueDetailEnvelopeTick) issueDetailEnvelopeTick = envelopeTick;
-        issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
+        applyEnvelopeAt(envelopeTick, () => {
+          issueDetail = withPreservedLocalBody({
+            ...data,
+            events: data.events ?? [],
+          } as IssueDetail);
+          issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
+        });
         return { ok: true };
       }
       return { ok: false, error: "Issue refresh returned no detail" };
@@ -964,8 +979,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         issueDetail.issue.Number === number &&
         issueDetail.issue.Body === body;
       if (data && localBodyMatchesSent) {
-        issueDetail = data as IssueDetail;
-        if (envelopeTick > issueDetailEnvelopeTick) issueDetailEnvelopeTick = envelopeTick;
+        applyEnvelopeAt(envelopeTick, () => {
+          issueDetail = data as IssueDetail;
+        });
       }
     } catch (err) {
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });

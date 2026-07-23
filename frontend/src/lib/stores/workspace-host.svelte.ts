@@ -146,6 +146,12 @@ function effectiveRef(
   const override = overrides[identityKey(identity)];
   if (isTombstone(override)) {
     if (envelopeRef && envelopeRef.id !== override.deletedId) return envelopeRef;
+    // A controller-less recreation (focus/mobile create after the delete)
+    // records only the shared created entry, under a fresh ID. The
+    // tombstone masks its own deleted ID, not the recreation — hiding it
+    // would re-offer "Create Workspace" for a workspace that exists.
+    const created = createdWorkspaceRef(identity);
+    if (created && created.id !== override.deletedId) return created;
     return null;
   }
   if (override) return override.ref;
@@ -333,14 +339,14 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       // A tombstone reconciles when the envelope no longer carries the
       // deleted workspace — either absent, or a different ID (recreated).
       // A created override reconciles when the envelope confirms the same
-      // workspace, or when a post-creation request authoritatively reports
-      // it absent (deleted by another client); a stale pre-create null
-      // must not clear it.
+      // workspace, or when any post-creation request reports something
+      // else — absence (deleted by another client) or a replacement
+      // workspace under a different ID (deleted and recreated). Stale
+      // pre-create envelopes, null or different-ID, must not clear it.
       const agrees = isTombstone(override)
         ? envelopeRef == null || envelopeRef.id !== override.deletedId
-        : envelopeRef != null
-          ? envelopeRef.id === override.ref.id
-          : envelopeTick != null && envelopeTick > override.tick;
+        : (envelopeRef != null && envelopeRef.id === override.ref.id) ||
+          (envelopeTick != null && envelopeTick > override.tick);
       if (!agrees) return;
       const next = { ...overrides };
       delete next[key];

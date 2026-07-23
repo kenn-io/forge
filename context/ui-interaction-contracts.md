@@ -59,10 +59,15 @@ Interactive surfaces must agree on which item is selected.
   workspace-absent envelope clears a created record or override only when
   its request STARTED after the confirmation (shared lifecycle tick,
   `nextWorkspaceLifecycleTick`): a stale pre-create fetch must not wipe a
-  creation, but a post-create fetch reporting absence — or a 404 on the
-  workspace itself — means another client deleted it and the record must
-  drop. E2e mocks of the create POST must keep the detail envelope
-  consistent (the real server inserts the row before returning 202). The
+  creation, but a post-create fetch reporting absence or a replacement
+  workspace ID — or a 404 on the workspace itself, which also drops the
+  cached envelope so liveness rendering shows the error state — means
+  another client deleted it and the record must drop. Detail stores apply
+  envelope payload and tick atomically (last-started-wins) so a stale
+  response cannot pair with a newer tick, and tombstones mask only their
+  own deleted ID — a fresh-ID created record supersedes them. E2e mocks
+  of the create POST must keep the detail envelope consistent (the real
+  server inserts the row before returning 202). The
   host store's `effectiveRef` falls back to that record too — a create
   begun controller-less must surface on an inline surface after a layout
   switch, where no recordCreated override ever ran

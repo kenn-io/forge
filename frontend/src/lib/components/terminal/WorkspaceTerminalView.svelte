@@ -1103,6 +1103,21 @@
     return ws.fleet_host_key;
   }
 
+  // A 404 on the workspace fetch is authoritative: the workspace no longer
+  // exists (deleted by another client). Snapshot the identity from the
+  // cached envelope BEFORE dropping it — the deletion callback needs it to
+  // tombstone controller-less cached detail — then clear the cached
+  // envelope so liveness rendering shows the error state instead of
+  // continuing to display the deleted workspace.
+  function handleWorkspaceGone(id: string, hostKey: string | undefined): void {
+    onWorkspaceDeleted?.(id, hostKey, workspaceIdentitySnapshot(id));
+    if (workspace?.id === id) {
+      workspace = null;
+      stopPolling();
+      stopRuntimePolling();
+    }
+  }
+
   async function fetchWorkspace(): Promise<void> {
     // Capture the id at call time. With workspaceId changing across
     // navigations, a slow in-flight fetch for the previous id could
@@ -1125,10 +1140,7 @@
         });
         if (!isCurrentWorkspace(id, hostKey)) return;
         if (!data) {
-          // 404 is authoritative: the workspace no longer exists (deleted
-          // by another client). Report it so cached refs, overrides, and
-          // created-records stop advertising it.
-          if (response.status === 404) onWorkspaceDeleted?.(id, hostKey);
+          if (response.status === 404) handleWorkspaceGone(id, hostKey);
           loadError = apiErrorMessage(
             error,
             `Failed to load workspace (${response.status})`,
@@ -1164,10 +1176,7 @@
       });
       if (!isCurrentWorkspace(id, hostKey)) return;
       if (!data) {
-        // 404 is authoritative: the workspace no longer exists (deleted
-        // by another client). Report it so cached refs, overrides, and
-        // created-records stop advertising it.
-        if (response.status === 404) onWorkspaceDeleted?.(id, hostKey);
+        if (response.status === 404) handleWorkspaceGone(id, hostKey);
         loadError = apiErrorMessage(
           error,
           `Failed to load workspace (${response.status})`,

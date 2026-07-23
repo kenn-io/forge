@@ -313,7 +313,65 @@ describe("WorkspaceTerminalView embed props", () => {
     });
 
     await waitFor(() => {
-      expect(onWorkspaceDeleted).toHaveBeenCalledWith("ws-1", undefined);
+      // No cached envelope yet, so no identity snapshot to report.
+      expect(onWorkspaceDeleted).toHaveBeenCalledWith("ws-1", undefined, undefined);
+    });
+  });
+
+  it("a 404 after a successful load clears the cached workspace and reports the identity", async () => {
+    // The workspace was deleted by another client mid-session. Liveness
+    // rendering keys off the cached envelope, so without clearing it the
+    // route would keep showing the deleted workspace; and the deletion
+    // callback needs the identity snapshot to tombstone controller-less
+    // cached detail.
+    const workspaceWithRepo = {
+      ...readyWorkspaceData,
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "widget",
+        repo_path: "acme/widget",
+      },
+    };
+    let gone = false;
+    mocks.runtimeClient.GET.mockImplementation(async (path: string) => {
+      if (path === "/workspaces/{id}" && gone) {
+        return { data: undefined, error: { detail: "workspace not found" }, response: { status: 404 } };
+      }
+      return { data: workspaceWithRepo, error: undefined, response: { status: 200 } };
+    });
+    const listeners = new Map<string, (e: { data: string }) => void>();
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        addEventListener(type: string, cb: (e: { data: string }) => void): void {
+          listeners.set(type, cb);
+        }
+        close(): void {}
+      },
+    );
+    const onWorkspaceDeleted = vi.fn();
+
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", hideWorkspaceList: true, onWorkspaceDeleted },
+    });
+    await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+
+    gone = true;
+    listeners.get("workspace_status")?.({ data: JSON.stringify({ id: "ws-1" }) });
+
+    await waitFor(() => {
+      expect(onWorkspaceDeleted).toHaveBeenCalledWith(
+        "ws-1",
+        undefined,
+        expect.objectContaining({ provider: "github", owner: "acme", name: "widget", number: 7 }),
+      );
+    });
+    // The dead cached envelope must not keep rendering as live.
+    await waitFor(() => {
+      expect(screen.queryAllByText("feature/embed-props")).toHaveLength(0);
+      expect(screen.getAllByText("Failed to load workspace (404)").length).toBeGreaterThan(0);
     });
   });
 

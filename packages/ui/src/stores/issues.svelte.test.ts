@@ -179,7 +179,22 @@ function mockClient(overrides: Partial<MiddlemanClient> = {}): MiddlemanClient {
   } as unknown as MiddlemanClient;
 }
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 describe("createIssuesStore", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("applies a local body edit addressed through a provider alias and omitted host", async () => {
     const get = vi.fn().mockResolvedValueOnce({ data: issueDetail() });
     const store = createIssuesStore({ client: mockClient({ GET: get }) });
@@ -194,5 +209,41 @@ describe("createIssuesStore", () => {
 
     expect(store.getIssueDetail()?.issue.Body).toBe("- [x] done");
     expect(store.hasUnsavedLocalBody()).toBe(true);
+  });
+
+  it("an older-started refresh cannot overwrite a newer envelope", async () => {
+    // Polling refreshes have no in-flight dedup: two can overlap, and the
+    // older-started one may land last. Without atomic payload+tick
+    // application its stale response would replace newer detail while the
+    // newer tick stands — letting pre-creation "no workspace" data
+    // masquerade as an authoritative post-create absence.
+    vi.useFakeTimers();
+    const identity = {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    };
+    const withWorkspace = { ...issueDetail(), workspace: { id: "ws-1", status: "ready" } };
+    const olderPoll = deferred<{ data: IssueDetail }>();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: issueDetail() })
+      .mockReturnValueOnce(olderPoll.promise)
+      .mockResolvedValueOnce({ data: withWorkspace });
+    const store = createIssuesStore({ client: mockClient({ GET: get }) });
+    await store.loadIssueDetail("acme", "widget", 7, { ...identity, sync: false });
+    store.startIssueDetailPolling("acme", "widget", 7, identity);
+
+    await vi.advanceTimersByTimeAsync(60_000); // older poll fires, held
+    await vi.advanceTimersByTimeAsync(60_000); // newer poll fires and applies
+    expect(store.getIssueDetail()?.workspace?.id).toBe("ws-1");
+    const newerTick = store.getIssueDetailEnvelopeTick();
+
+    olderPoll.resolve({ data: issueDetail() });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(store.getIssueDetail()?.workspace?.id).toBe("ws-1");
+    expect(store.getIssueDetailEnvelopeTick()).toBe(newerTick);
+    store.stopIssueDetailPolling();
   });
 });

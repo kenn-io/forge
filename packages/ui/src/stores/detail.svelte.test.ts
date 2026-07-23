@@ -161,6 +161,40 @@ describe("createDetailStore", () => {
     expect(store.getDetail()?.platform_head_sha).toBe("newer-head");
   });
 
+  it("an older-started sync response cannot overwrite a newer envelope", async () => {
+    // The sync path has no per-selection sequence guard; without atomic
+    // payload+tick application its stale response would replace newer
+    // detail while the newer tick stands — letting pre-creation "no
+    // workspace" data masquerade as an authoritative post-create absence.
+    const routeIdentity = {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    };
+    const withWorkspace = { ...pullDetail("head"), workspace: { id: "ws-1", status: "ready" } };
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: pullDetail("head") })
+      .mockResolvedValueOnce({ data: withWorkspace });
+    const syncPost = deferred<{ data: PullDetail }>();
+    const post = vi.fn().mockReturnValueOnce(syncPost.promise);
+    const store = createDetailStore({ client: mockClient({ GET: get, POST: post }) });
+    await store.loadDetail("acme", "widget", 7, { ...routeIdentity, sync: false });
+
+    // The sync's request starts before the refresh below applies a newer
+    // envelope carrying the workspace.
+    const syncing = store.syncDetailNow("acme", "widget", 7, routeIdentity);
+    await store.refreshDetailOnly("acme", "widget", 7, routeIdentity);
+    expect(store.getDetail()?.workspace?.id).toBe("ws-1");
+    const newerTick = store.getDetailEnvelopeTick();
+
+    syncPost.resolve({ data: pullDetail("head") });
+    await syncing;
+
+    expect(store.getDetail()?.workspace?.id).toBe("ws-1");
+    expect(store.getDetailEnvelopeTick()).toBe(newerTick);
+  });
+
   it("applies a pending initial load when a newer refresh fails for the same selection", async () => {
     const initialLoad = deferred<{ data?: PullDetail; error?: ProblemBody }>();
     const newerRefresh = deferred<{ data?: PullDetail; error?: ProblemBody }>();

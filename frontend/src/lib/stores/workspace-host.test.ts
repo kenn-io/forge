@@ -153,6 +153,36 @@ describe("workspace host store", () => {
     expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
   });
 
+  it("a controller-less recreation under a fresh ID supersedes the tombstone", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    notifyWorkspaceDeleted("ws-a", undefined, identityA);
+    // Focus/mobile recreate the workspace: only the shared created record
+    // exists (no controller recordCreated ran). The tombstone masks only
+    // its own deleted ID, not the recreation — hiding it would re-offer
+    // "Create Workspace" for a workspace that exists.
+    const recreated = { id: "ws-b", status: "provisioning" };
+    recordWorkspaceCreated(identityA, recreated);
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(recreated);
+    // A stale envelope still carrying the deleted ID stays masked in
+    // favor of the recreation.
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toEqual(recreated);
+  });
+
+  it("a post-override envelope carrying a replacement workspace clears the override", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const preCreateTick = nextWorkspaceLifecycleTick();
+    prs.recordCreated(identityA, refA);
+    const replacement = { id: "ws-b", status: "ready" };
+    // A pre-create envelope with a different ID is stale and stays masked.
+    prs.reconcile(identityA, replacement, preCreateTick);
+    expect(prs.effectiveWorkspaceRef(identityA, replacement)).toEqual(refA);
+    // A request started after the creation carrying a different workspace
+    // means delete+recreate elsewhere: the envelope is authoritative.
+    prs.reconcile(identityA, replacement, nextWorkspaceLifecycleTick());
+    expect(prs.effectiveWorkspaceRef(identityA, replacement)).toEqual(replacement);
+  });
+
   it("a deletion still masks a controller-less created record", () => {
     const prs = getInlineWorkspaceController("prs");
     recordWorkspaceCreated(identityA, refA);

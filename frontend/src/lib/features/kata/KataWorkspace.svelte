@@ -1260,7 +1260,7 @@
     const persisted = loadKataWorkspaceState(id);
     let targetViewName = persisted?.view ?? "all";
     let targetFilters = persisted?.filters ?? defaultKataTaskSearchFilters(targetViewName);
-    let targetSelectedIssueUID = persisted?.selectedIssueUID ?? null;
+    let targetSelectedIssueUID = persisted?.selectedIssueUID ?? acceptedSelectedIssue?.issue.uid ?? null;
     const generation = beginNavigation();
     replaceNextSelectionScopeUID = null;
     supersededRouteSelectionUID = selectedIssueUID?.trim() || acceptedSelectedIssue?.issue.uid || null;

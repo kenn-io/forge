@@ -771,6 +771,7 @@ describe("KataWorkspace compact snapshot stream", () => {
     expect(Object.fromEntries(new URL(harness.snapshotRequests[1]!.url).searchParams)).toEqual({
       scope: "global",
       authority: "open",
+      selected_issue_uid: source.uid,
     });
     await screen.findByRole("button", { name: new RegExp(target.title) });
     await waitFor(() =>

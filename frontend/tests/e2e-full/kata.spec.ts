@@ -3233,9 +3233,26 @@ test("kata focused nested selection survives a compact reset", async ({ page }) 
   });
   const resetIssues = [sentinelParent, sentinelChild, parent, child];
   const backend = await startKataBackend({ issues: resetIssues });
-  const replacementBackend = await startKataBackend({ issues: resetIssues });
   const kataHome = await configureKataHome(backend.url);
   const server = await startIsolatedE2EServer();
+  let interceptNextEventStream = false;
+  let releaseControlledEventStream!: (frame: string) => void;
+  const controlledEventStreamFrame = new Promise<string>((resolve) => {
+    releaseControlledEventStream = resolve;
+  });
+  await page.route("**/api/v1/kata/tasks/events", async (route) => {
+    if (!interceptNextEventStream) {
+      await route.continue();
+      return;
+    }
+    interceptNextEventStream = false;
+    const frame = await controlledEventStreamFrame;
+    await route.fulfill({
+      status: 200,
+      headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+      body: `: connected\n\n${frame}`,
+    });
+  });
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
@@ -3250,13 +3267,27 @@ test("kata focused nested selection survives a compact reset", async ({ page }) 
     const parentRow = list.getByRole("button", { name: /Reset focus parent/ });
     await parentRow.press("ArrowRight");
     await expect(parentRow).toHaveAttribute("aria-expanded", "true");
+    await expect.poll(() => backend.state.streams.size).toBeGreaterThan(0);
 
     const childRow = list.getByRole("button", { name: /Reset focus child/ });
+    const selectedSnapshotResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === "/api/v1/kata/tasks/snapshot" &&
+        url.searchParams.get("selected_issue_uid") === child.uid &&
+        response.ok()
+      );
+    });
+    interceptNextEventStream = true;
     await childRow.click();
+    const selectedSnapshot = (await (await selectedSnapshotResponse).json()) as {
+      server_instance_id: string;
+      invalidation_epoch: number;
+      event_cursor: number;
+    };
     await expect(page.getByRole("heading", { name: child.title })).toBeVisible();
     await childRow.focus();
     await expect(childRow).toBeFocused();
-    await expect.poll(() => backend.state.streams.size).toBeGreaterThan(0);
 
     const acceptedReset = page.waitForResponse((response) => {
       const url = new URL(response.url());
@@ -3266,15 +3297,47 @@ test("kata focused nested selection survives a compact reset", async ({ page }) 
         response.ok()
       );
     });
-    await writeFile(
-      path.join(kataHome.home, "config.toml"),
-      ['active_daemon = "e2e"', "", "[[daemon]]", 'name = "e2e"', `url = "${replacementBackend.url}"`, ""].join("\n"),
+    emitDaemonChange(
+      backend.state,
+      eventRow({
+        event_id: 501,
+        event_uid: "event-reset-focus-child",
+        type: "issue.updated",
+        project_id: child.project_id,
+        project_uid: child.project_uid,
+        project_name: child.project_name,
+        issue: child,
+      }),
     );
-    const rotationResponse = await page.request.get(
-      `${server.info.base_url}/api/v1/kata/tasks/snapshot?scope=global&authority=open`,
-      { headers: { "X-Middleman-Kata-Daemon": "e2e" } },
+    let resetSnapshot = selectedSnapshot;
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(
+          `${server.info.base_url}/api/v1/kata/tasks/snapshot?scope=global&authority=open&selected_issue_uid=${child.uid}`,
+          { headers: { "X-Middleman-Kata-Daemon": "e2e" } },
+        );
+        resetSnapshot = (await response.json()) as typeof selectedSnapshot;
+        return (
+          response.ok() &&
+          resetSnapshot.invalidation_epoch > selectedSnapshot.invalidation_epoch &&
+          resetSnapshot.event_cursor > selectedSnapshot.event_cursor
+        );
+      })
+      .toBe(true);
+    releaseControlledEventStream(
+      [
+        `id: ${resetSnapshot.event_cursor}`,
+        "event: kata.tasks.reset",
+        `data: ${JSON.stringify({
+          server_instance_id: resetSnapshot.server_instance_id,
+          daemon_id: "e2e",
+          epoch: resetSnapshot.invalidation_epoch,
+          cursor: resetSnapshot.event_cursor,
+        })}`,
+        "",
+        "",
+      ].join("\n"),
     );
-    expect(rotationResponse.ok()).toBe(true);
     await acceptedReset;
 
     await expect(sentinelParentRow).toHaveAttribute("aria-expanded", "false");
@@ -3289,7 +3352,6 @@ test("kata focused nested selection survives a compact reset", async ({ page }) 
     await server.stop();
     kataHome.restore();
     await backend.close();
-    await replacementBackend.close();
   }
 });
 

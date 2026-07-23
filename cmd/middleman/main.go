@@ -886,46 +886,6 @@ func splitProviderHostKey(key string) (string, string) {
 	return platformName, host
 }
 
-func validateProviderHostKeys[T any](providerTokens map[string]T) error {
-	type hostToken struct {
-		platform string
-		token    string
-	}
-	byHost := make(map[string]hostToken, len(providerTokens))
-	for key, token := range providerTokens {
-		platformName, host := splitProviderHostKey(key)
-		if source, ok := any(token).(tokenauth.Source); ok {
-			desc := source.Descriptor()
-			if desc.Key.Platform == string(platform.KindGitHub) && desc.Key.Scope != "" {
-				continue
-			}
-		}
-		tokenID := providerHostTokenID(token)
-		if existing, ok := byHost[host]; ok {
-			if existing.token != tokenID {
-				return fmt.Errorf(
-					"host %s is configured for both %s and %s with different clone tokens; use identical tokens or separate hosts",
-					host, existing.platform, platformName,
-				)
-			}
-			continue
-		}
-		byHost[host] = hostToken{platform: platformName, token: tokenID}
-	}
-	return nil
-}
-
-func providerHostTokenID[T any](token T) string {
-	switch typed := any(token).(type) {
-	case string:
-		return typed
-	case tokenauth.Source:
-		return typed.Descriptor().CanonicalSourceString()
-	default:
-		return ""
-	}
-}
-
 func repoPlatform(repo ghclient.RepoRef) platform.Kind {
 	if repo.Platform != "" {
 		return repo.Platform

@@ -1351,7 +1351,7 @@ func (c *Config) validate() error {
 		return err
 	}
 
-	if err := c.ValidateSharedHostCloneTokenSources(); err != nil {
+	if err := c.ValidateRepoTokenSourceConsistency(); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
 
@@ -2393,16 +2393,19 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 }
 
 // CloneTokenDescriptors returns one descriptor per platform host carrying the
-// host's effective git clone/fetch credential chain under
-// tokenauth.CloneKey(host). Git transport auth is host-scoped: every provider
-// sharing a host must use a canonically identical chain (enforced at startup
-// and by reload validation), so the host chain is the first non-empty plan
-// chain in ProviderTokenSources order. Hosts whose plans are all
-// credential-less keep an empty chain so a reload clears a previously tokened
-// live clone source instead of leaving the removed credential active.
+// host's ownerless git fallback chain under tokenauth.CloneKey(host).
+// Repository-scoped Git operations select credentials by (provider, host,
+// owner, name) and never consult this fallback; it exists only for genuinely
+// ownerless host operations. When every tokened provider on a hostname agrees
+// on one canonical chain, that chain is the fallback; when providers disagree,
+// the fallback is disabled (empty chain) because an ownerless operation cannot
+// select a provider safely. Hosts whose plans are all credential-less also
+// keep an empty chain so a reload clears a previously tokened live clone
+// source instead of leaving the removed credential active.
 func (c *Config) CloneTokenDescriptors() []tokenauth.Descriptor {
 	plans := c.ProviderTokenSources()
 	indexByHost := make(map[string]int, len(plans))
+	chainByHost := make(map[string]string, len(plans))
 	out := make([]tokenauth.Descriptor, 0, len(plans))
 	for _, plan := range plans {
 		host := plan.Descriptor.Key.Host
@@ -2412,35 +2415,41 @@ func (c *Config) CloneTokenDescriptors() []tokenauth.Descriptor {
 			out = append(out, tokenauth.Descriptor{Key: tokenauth.CloneKey(host)})
 			idx = len(out) - 1
 		}
-		// Until the clone manager selects scoped GitHub routes directly,
-		// its host fallback must come from the unscoped provider descriptor.
-		// Non-GitHub providers remain host-scoped and use their first usable
-		// plan as before.
+		// Managed Git selects scoped GitHub routes by repository identity;
+		// only unscoped provider chains participate in the host fallback.
 		if plan.Descriptor.Key.Platform == defaultPlatform &&
 			plan.Descriptor.Key.Scope != "" {
 			continue
 		}
-		if len(out[idx].Candidates) == 0 {
+		if len(plan.Descriptor.Candidates) == 0 {
+			continue
+		}
+		chain := plan.Descriptor.CanonicalSourceString()
+		existing, seen := chainByHost[host]
+		if !seen {
+			chainByHost[host] = chain
 			out[idx].Candidates = plan.Descriptor.Candidates
+			continue
+		}
+		if existing != chain {
+			out[idx].Candidates = nil
 		}
 	}
 	return out
 }
 
-// ValidateSharedHostCloneTokenSources requires every unscoped credential on
-// one hostname to identify the same source chain. Repository- and owner-scoped
-// GitHub routes are excluded because managed Git selects them by repository
-// identity; ownerless host operations cannot safely choose between different
-// provider fallbacks on the same host.
-func (c *Config) ValidateSharedHostCloneTokenSources() error {
+// ValidateRepoTokenSourceConsistency requires repositories sharing one
+// non-GitHub (provider, host) to declare the same effective token chain,
+// because those providers resolve API and clone credentials per provider-host
+// pair. The check must use each repository's own descriptor:
+// ProviderTokenSources deduplicates by key and keeps only the first same-host
+// plan, which would hide the conflict. Distinct providers sharing a hostname
+// may carry different chains; ownerless host operations lose their fallback
+// in that case (see CloneTokenDescriptors) instead of failing validation.
+func (c *Config) ValidateRepoTokenSourceConsistency() error {
 	if c == nil {
 		return nil
 	}
-	// Non-GitHub providers resolve API and clone credentials by host, so two
-	// repositories on one (platform, host) must not declare conflicting
-	// effective token chains. This check must use each repository's own
-	// descriptor: ProviderTokenSources deduplicates by key and keeps only the
-	// first same-host plan, which would hide the conflict.
 	repoSources := make(map[tokenauth.Key]tokenauth.Descriptor, len(c.Repos))
 	for _, r := range c.Repos {
 		if r.PlatformOrDefault() == defaultPlatform {
@@ -2462,34 +2471,6 @@ func (c *Config) ValidateSharedHostCloneTokenSources() error {
 			"conflicting token source for %s host %q (conflicting token_env): %s vs %s",
 			r.PlatformOrDefault(), r.PlatformHostOrDefault(),
 			prev.SafeString(), effective.SafeString(),
-		)
-	}
-	type hostSource struct {
-		platform string
-		sourceID string
-	}
-	plans := c.ProviderTokenSources()
-	byHost := make(map[string]hostSource, len(plans))
-	for _, plan := range plans {
-		desc := plan.Descriptor
-		if desc.Key.Host == "" || len(desc.Candidates) == 0 {
-			continue
-		}
-		if desc.Key.Scope != "" {
-			continue
-		}
-		existing, ok := byHost[desc.Key.Host]
-		sourceID := desc.CanonicalSourceString()
-		if !ok {
-			byHost[desc.Key.Host] = hostSource{platform: desc.Key.Platform, sourceID: sourceID}
-			continue
-		}
-		if existing.sourceID == sourceID {
-			continue
-		}
-		return fmt.Errorf(
-			"host %s has different clone token sources for %s and %s; use identical tokens or separate hosts",
-			desc.Key.Host, existing.platform, desc.Key.Platform,
 		)
 	}
 	return nil

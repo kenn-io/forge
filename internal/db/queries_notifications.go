@@ -664,33 +664,43 @@ func scanReturnedNotificationIDs(rows *sql.Rows, action string) ([]int64, error)
 	return ids, nil
 }
 
-func (d *DB) GetNotificationSyncWatermark(ctx context.Context, platform, host string, trackedReposKey string) (*NotificationSyncWatermark, error) {
+func canonicalizeNotificationRepo(owner, name string) (string, string, error) {
+	owner = strings.ToLower(strings.TrimSpace(owner))
+	name = strings.ToLower(strings.TrimSpace(name))
+	if owner == "" || name == "" {
+		return "", "", fmt.Errorf("notification sync watermark requires repository owner and name")
+	}
+	return owner, name, nil
+}
+
+func (d *DB) GetNotificationSyncWatermark(ctx context.Context, platform, host, owner, name string) (*NotificationSyncWatermark, error) {
 	var err error
 	platform, host, err = canonicalizeNotificationPlatformHost(platform, host)
 	if err != nil {
 		return nil, err
 	}
+	owner, name, err = canonicalizeNotificationRepo(owner, name)
+	if err != nil {
+		return nil, err
+	}
 	var rawLastSuccessful string
 	var rawLastFull sql.NullString
-	var syncCursor string
-	var storedTrackedReposKey string
 	err = d.ro.QueryRowContext(ctx, `
-		SELECT last_successful_sync_at, last_full_sync_at, sync_cursor, tracked_repos_key
+		SELECT last_successful_sync_at, last_full_sync_at
 		FROM middleman_notification_sync_watermarks
-		WHERE platform = ? AND platform_host = ?`, platform, host).Scan(&rawLastSuccessful, &rawLastFull, &syncCursor, &storedTrackedReposKey)
+		WHERE platform = ? AND platform_host = ? AND repo_owner = ? AND repo_name = ?`,
+		platform, host, owner, name).Scan(&rawLastSuccessful, &rawLastFull)
 	if err == nil {
-		if storedTrackedReposKey != trackedReposKey {
-			return nil, nil
-		}
 		lastSuccessful, parseErr := parseDBTime(rawLastSuccessful)
 		if parseErr != nil {
 			return nil, fmt.Errorf("parse notification sync watermark: %w", parseErr)
 		}
 		state := NotificationSyncWatermark{
 			Platform:             platform,
+			PlatformHost:         host,
+			RepoOwner:            owner,
+			RepoName:             name,
 			LastSuccessfulSyncAt: canonicalUTCTime(lastSuccessful),
-			SyncCursor:           syncCursor,
-			TrackedReposKey:      storedTrackedReposKey,
 		}
 		if rawLastFull.Valid && rawLastFull.String != "" {
 			lastFull, parseErr := parseDBTime(rawLastFull.String)
@@ -708,22 +718,25 @@ func (d *DB) GetNotificationSyncWatermark(ctx context.Context, platform, host st
 	return nil, fmt.Errorf("get notification sync watermark: %w", err)
 }
 
-func (d *DB) UpdateNotificationSyncWatermark(ctx context.Context, platform, host string, syncedAt time.Time, lastFullSyncedAt *time.Time, syncCursor string, trackedReposKey string) error {
+func (d *DB) UpdateNotificationSyncWatermark(ctx context.Context, platform, host, owner, name string, syncedAt time.Time, lastFullSyncedAt *time.Time) error {
 	var err error
 	platform, host, err = canonicalizeNotificationPlatformHost(platform, host)
+	if err != nil {
+		return err
+	}
+	owner, name, err = canonicalizeNotificationRepo(owner, name)
 	if err != nil {
 		return err
 	}
 	syncedAt = canonicalUTCTime(syncedAt)
 	lastFullValue := nullableNotificationTime(lastFullSyncedAt)
 	_, err = d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_notification_sync_watermarks (platform, platform_host, last_successful_sync_at, last_full_sync_at, sync_cursor, tracked_repos_key)
+		INSERT INTO middleman_notification_sync_watermarks (platform, platform_host, repo_owner, repo_name, last_successful_sync_at, last_full_sync_at)
 		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(platform, platform_host) DO UPDATE SET
+		ON CONFLICT(platform, platform_host, repo_owner, repo_name) DO UPDATE SET
 			last_successful_sync_at = excluded.last_successful_sync_at,
-			last_full_sync_at = excluded.last_full_sync_at,
-			sync_cursor = excluded.sync_cursor,
-			tracked_repos_key = excluded.tracked_repos_key`, platform, host, syncedAt, lastFullValue, syncCursor, trackedReposKey)
+			last_full_sync_at = excluded.last_full_sync_at`,
+		platform, host, owner, name, syncedAt, lastFullValue)
 	if err != nil {
 		return fmt.Errorf("update notification sync watermark: %w", err)
 	}

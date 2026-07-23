@@ -200,6 +200,11 @@ borrow an arbitrary owner PAT. Repository notifications use the user/write
 identity. App-only routes may read, but notifications and mutations remain
 disabled until restart establishes a stable user identity.
 
+Notification sync watermarks are per repository identity, never host-wide: a
+repository whose credential route is unavailable or exhausted reports its error
+without holding back watermark advancement for healthy repositories on the same
+host (`internal/github/notifications_sync.go::Syncer.syncNotificationsForRepo`).
+
 Selected-repository App routes may expose installation-repository listing as an
 owner-scoped discovery route, but that route must never become a fallback for
 other repository operations, and it applies only when no owner or fallback PAT

@@ -1051,16 +1051,27 @@ token_env = "REPO_TOKEN"
 	require.NoError(t, validateReloadCloneTokenSources(cfg))
 }
 
-func TestValidateReloadCloneTokenSourcesRejectsDifferentProviderFallbacksOnSharedHost(t *testing.T) {
+func TestValidateReloadCloneTokenSourcesAllowsDifferentProviderFallbacksOnSharedHost(t *testing.T) {
+	// Credentials are provider-scoped, so providers sharing one hostname may
+	// carry different fallback tokens; the ownerless host fallback is
+	// disabled in that case rather than the reload being rejected.
 	cfg := &config.Config{Platforms: []config.PlatformConfig{
 		{Type: "github", Host: "code.example.com", TokenEnv: "GITHUB_PAT"},
 		{Type: "forgejo", Host: "code.example.com", TokenEnv: "FORGEJO_PAT"},
 	}}
 
+	require.NoError(t, validateReloadCloneTokenSources(cfg))
+}
+
+func TestValidateReloadCloneTokenSourcesRejectsConflictingRepoOverrides(t *testing.T) {
+	cfg := &config.Config{Repos: []config.Repo{
+		{Platform: "gitlab", PlatformHost: "gitlab.com", Owner: "group", Name: "one", TokenEnv: "TOKEN_A"},
+		{Platform: "gitlab", PlatformHost: "gitlab.com", Owner: "group", Name: "two", TokenEnv: "TOKEN_B"},
+	}}
+
 	err := validateReloadCloneTokenSources(cfg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "code.example.com")
-	assert.Contains(t, err.Error(), "different clone token sources")
+	assert.Contains(t, err.Error(), "conflicting token source")
 }
 
 func TestValidateReloadCloneTokenSourcesAllowsEquivalentChainsOnSameHost(t *testing.T) {

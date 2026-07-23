@@ -640,11 +640,17 @@ func TestNotificationPlatformScopedOperationsRejectBlankPlatform(t *testing.T) {
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 
-	_, err := d.GetNotificationSyncWatermark(t.Context(), "", "github.com", "tracked")
+	_, err := d.GetNotificationSyncWatermark(t.Context(), "", "github.com", "acme", "widget")
 	require.ErrorContains(err, "notification platform is required")
 
-	err = d.UpdateNotificationSyncWatermark(t.Context(), "", "github.com", now, nil, "", "tracked")
+	err = d.UpdateNotificationSyncWatermark(t.Context(), "", "github.com", "acme", "widget", now, nil)
 	require.ErrorContains(err, "notification platform is required")
+
+	_, err = d.GetNotificationSyncWatermark(t.Context(), "github", "github.com", "", "widget")
+	require.ErrorContains(err, "repository owner and name")
+
+	err = d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", "acme", "", now, nil)
+	require.ErrorContains(err, "repository owner and name")
 
 	err = d.MarkNotificationsAcknowledged(t.Context(), "", "github.com", []string{"thread-1"}, now)
 	require.ErrorContains(err, "notification platform is required")
@@ -656,26 +662,38 @@ func TestNotificationPlatformScopedOperationsRejectBlankPlatform(t *testing.T) {
 	require.ErrorContains(err, "notification platform is required")
 }
 
-func TestNotificationSyncWatermarksAreScopedByPlatformAndHost(t *testing.T) {
+func TestNotificationSyncWatermarksAreScopedByRepoIdentity(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	full := now.Add(-time.Hour)
 
-	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "code.example.com", now, &full, "", "github/code.example.com/acme/widget"))
-	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "gitlab", "code.example.com", now.Add(time.Minute), nil, "cursor-2", "gitlab/code.example.com/acme/widget"))
+	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "code.example.com", "acme", "widget", now, &full))
+	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "gitlab", "code.example.com", "acme", "widget", now.Add(time.Minute), nil))
+	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "code.example.com", "acme", "gadget", now.Add(2*time.Minute), nil))
 
-	githubWatermark, err := d.GetNotificationSyncWatermark(t.Context(), "github", "code.example.com", "github/code.example.com/acme/widget")
+	githubWatermark, err := d.GetNotificationSyncWatermark(t.Context(), "github", "code.example.com", "Acme", "Widget")
 	require.NoError(err)
 	require.NotNil(githubWatermark)
 	require.Equal("github", githubWatermark.Platform)
-	require.Empty(githubWatermark.SyncCursor)
+	require.Equal("acme", githubWatermark.RepoOwner)
+	require.Equal(now, githubWatermark.LastSuccessfulSyncAt)
+	require.NotNil(githubWatermark.LastFullSyncAt)
 
-	gitlabWatermark, err := d.GetNotificationSyncWatermark(t.Context(), "gitlab", "code.example.com", "gitlab/code.example.com/acme/widget")
+	gitlabWatermark, err := d.GetNotificationSyncWatermark(t.Context(), "gitlab", "code.example.com", "acme", "widget")
 	require.NoError(err)
 	require.NotNil(gitlabWatermark)
 	require.Equal("gitlab", gitlabWatermark.Platform)
-	require.Equal("cursor-2", gitlabWatermark.SyncCursor)
+	require.Equal(now.Add(time.Minute), gitlabWatermark.LastSuccessfulSyncAt)
+
+	siblingWatermark, err := d.GetNotificationSyncWatermark(t.Context(), "github", "code.example.com", "acme", "gadget")
+	require.NoError(err)
+	require.NotNil(siblingWatermark)
+	require.Equal(now.Add(2*time.Minute), siblingWatermark.LastSuccessfulSyncAt)
+
+	missing, err := d.GetNotificationSyncWatermark(t.Context(), "github", "code.example.com", "acme", "other")
+	require.NoError(err)
+	require.Nil(missing)
 }
 
 func TestQueuedNotificationAcksStayWithinPlatformAndHost(t *testing.T) {

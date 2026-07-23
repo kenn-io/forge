@@ -36,13 +36,15 @@ events must be scoped by persisted repo ID or full provider identity.
 
 ## Provider Hosts And Tokens
 
-Each configured provider-host pair may have its own fallback token source.
-Across providers sharing one hostname, unscoped fallback chains must be
-canonically equivalent because ownerless host operations cannot select a provider
-safely (`internal/config/config.go::Config.ValidateSharedHostCloneTokenSources`).
-Non-GitHub repositories on one (provider, host) must also declare equivalent
+Each configured provider-host pair may have its own fallback token source;
+providers sharing one hostname may carry different chains. When their chains
+disagree, the ownerless host clone fallback is disabled rather than borrowing
+one provider's credential, because an ownerless operation cannot select a
+provider safely (`internal/config/config.go::Config.CloneTokenDescriptors`).
+Non-GitHub repositories on one (provider, host) must declare equivalent
 effective chains, checked against each repository's own descriptor —
-`ProviderTokenSources` deduplicates by key and would hide the conflict.
+`ProviderTokenSources` deduplicates by key and would hide the conflict
+(`internal/config/config.go::Config.ValidateRepoTokenSourceConsistency`).
 GitHub may additionally define exact-repository and owner authorization routes.
 
 - Legacy GitHub config still defaults to `github` on `github.com`.

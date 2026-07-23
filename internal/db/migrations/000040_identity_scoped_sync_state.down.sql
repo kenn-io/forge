@@ -32,3 +32,20 @@ WHERE r.id = (
 
 DROP TABLE middleman_rate_limits;
 ALTER TABLE middleman_rate_limits_v39 RENAME TO middleman_rate_limits;
+
+-- Downgrade is lossy: per-repository watermarks cannot be collapsed into one
+-- honest host-wide row, so the table returns empty and the next notification
+-- pass runs as a full sync.
+CREATE TABLE middleman_notification_sync_watermarks_v39 (
+    platform TEXT NOT NULL,
+    platform_host TEXT NOT NULL,
+    last_successful_sync_at TEXT NOT NULL,
+    last_full_sync_at TEXT,
+    sync_cursor TEXT NOT NULL DEFAULT '',
+    tracked_repos_key TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (platform, platform_host)
+);
+
+DROP TABLE middleman_notification_sync_watermarks;
+ALTER TABLE middleman_notification_sync_watermarks_v39
+    RENAME TO middleman_notification_sync_watermarks;

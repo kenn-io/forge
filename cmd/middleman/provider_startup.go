@@ -197,7 +197,7 @@ func collectProviderTokenSources(
 	cfg *config.Config,
 	set *tokenauth.SourceSet,
 ) (map[string]tokenauth.Source, error) {
-	if err := cfg.ValidateSharedHostCloneTokenSources(); err != nil {
+	if err := cfg.ValidateRepoTokenSourceConsistency(); err != nil {
 		return nil, err
 	}
 	providerSources := make(map[string]tokenauth.Source, len(cfg.Repos)+len(cfg.Platforms)+1)
@@ -248,7 +248,7 @@ func buildProviderStartup(
 	factories map[string]providerFactory,
 	resolver github.IdentityResolver,
 ) (providerStartup, error) {
-	if err := cfg.ValidateSharedHostCloneTokenSources(); err != nil {
+	if err := cfg.ValidateRepoTokenSourceConsistency(); err != nil {
 		return providerStartup{}, err
 	}
 	budgetPerHour := cfg.BudgetPerHour()

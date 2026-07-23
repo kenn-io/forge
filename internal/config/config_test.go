@@ -1283,11 +1283,12 @@ func TestConfigProviderTokenSourcesKeepsCredentiallessPlatformHosts(t *testing.T
 func TestConfigCloneTokenDescriptorsUseFirstNonEmptyHostChain(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	// Clone auth is host-scoped. The credential-less forgejo entry comes
-	// first, so the host descriptor must carry the first non-empty plan
-	// chain (gitlab's), not the first plan's; a host whose providers are
-	// all credential-less keeps an empty chain so reload clears a
-	// previously tokened clone source instead of leaving it active.
+	// The ownerless host fallback carries the chain every tokened provider
+	// on the host agrees on. The credential-less forgejo entry does not
+	// conflict, so the host descriptor carries the only non-empty chain
+	// (gitlab's); a host whose providers are all credential-less keeps an
+	// empty chain so reload clears a previously tokened clone source
+	// instead of leaving it active.
 	cfg := &Config{
 		Platforms: []PlatformConfig{
 			{Type: "forgejo", Host: "code.example.com"},
@@ -1748,8 +1749,10 @@ token_env = "GITLAB_TOKEN_B"
 	assert.Contains(t, err.Error(), "conflicting token_env")
 }
 
-func TestLoadRejectsDifferentProviderFallbacksOnSharedHost(t *testing.T) {
-	path := writeConfig(t, `
+func TestLoadAllowsDifferentProviderFallbacksOnSharedHostAndDisablesOwnerlessFallback(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	cfg, err := Load(writeConfig(t, `
 [[platforms]]
 type = "github"
 host = "code.example.com"
@@ -1759,12 +1762,22 @@ token_env = "GITHUB_PAT"
 type = "forgejo"
 host = "code.example.com"
 token_env = "FORGEJO_PAT"
-`)
+`))
+	require.NoError(err,
+		"credentials are provider-scoped; providers sharing a hostname may differ")
 
-	_, err := Load(path)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "code.example.com")
-	assert.Contains(t, err.Error(), "different clone token sources")
+	// Ownerless host operations cannot select a provider safely when the
+	// providers' chains disagree, so the host clone fallback is disabled
+	// instead of borrowing whichever provider came first.
+	var hostChain *tokenauth.Descriptor
+	for _, desc := range cfg.CloneTokenDescriptors() {
+		if desc.Key == tokenauth.CloneKey("code.example.com") {
+			d := desc
+			hostChain = &d
+		}
+	}
+	require.NotNil(hostChain)
+	assert.Empty(hostChain.Candidates)
 }
 
 func TestLoadGitLabNestedNamespaceURL(t *testing.T) {

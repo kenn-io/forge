@@ -1995,20 +1995,18 @@ func TestSyncNotificationsContinuesAfterRepoErrorOnSameHost(t *testing.T) {
 	require.Len(items, 1)
 	assert.Equal("thread-ok", items[0].PlatformNotificationID)
 
-	tracked := map[string]RepoRef{
-		notificationRepoKey("github", "github.com", "acme", "broken"): {
-			Owner: "acme", Name: "broken", PlatformHost: "github.com",
-		},
-		notificationRepoKey("github", "github.com", "acme", "widget"): {
-			Owner: "acme", Name: "widget", PlatformHost: "github.com",
-		},
-	}
-	watermark, watermarkErr := database.GetNotificationSyncWatermark(
-		t.Context(), "github", "github.com",
-		notificationTrackedReposKey("github", "github.com", tracked),
+	brokenWatermark, watermarkErr := database.GetNotificationSyncWatermark(
+		t.Context(), "github", "github.com", "acme", "broken",
 	)
 	require.NoError(watermarkErr)
-	assert.Nil(watermark, "partial host passes must not advance the watermark")
+	assert.Nil(brokenWatermark, "a failing repository must not advance its own watermark")
+	widgetWatermark, watermarkErr := database.GetNotificationSyncWatermark(
+		t.Context(), "github", "github.com", "acme", "widget",
+	)
+	require.NoError(watermarkErr)
+	require.NotNil(widgetWatermark,
+		"a healthy repository must advance its watermark despite a failing sibling on the host")
+	assert.False(widgetWatermark.LastSuccessfulSyncAt.IsZero())
 }
 
 func TestSyncNotificationsIgnoresReadRateReserveWhenNotificationClientBypassesReserve(t *testing.T) {
@@ -3304,26 +3302,6 @@ func TestProcessQueuedNotificationReadsReopensAfterPostAckRefetchError(t *testin
 	check.Empty(unread[0].SourceAckError)
 }
 
-func TestNotificationTrackedReposKeyIncludesPlatform(t *testing.T) {
-	require := require.New(t)
-	tracked := map[string]RepoRef{}
-	tracked[notificationRepoKey("github", "github.com", "acme", "widget")] = RepoRef{
-		Platform:     platform.KindGitHub,
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
-	}
-	tracked[notificationRepoKey("gitlab", "code.example.com", "acme", "widget")] = RepoRef{
-		Platform:     platform.KindGitLab,
-		PlatformHost: "code.example.com",
-		Owner:        "acme",
-		Name:         "widget",
-	}
-
-	require.Equal("github/github.com/acme/widget", notificationTrackedReposKey("github", "github.com", tracked))
-	require.Equal("gitlab/code.example.com/acme/widget", notificationTrackedReposKey("gitlab", "code.example.com", tracked))
-}
-
 func TestSyncNotificationsSkipsHostsWithoutTrackedRepos(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
@@ -3357,8 +3335,7 @@ func TestSyncNotificationsUsesPersistedSinceWatermark(t *testing.T) {
 	require.NoError(err)
 	watermark := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	lastFullSyncAt := time.Now().UTC()
-	watermarkKey := notificationRepoKey("github", "github.com", "acme", "widget")
-	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", watermark, &lastFullSyncAt, "", watermarkKey))
+	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", "acme", "widget", watermark, &lastFullSyncAt))
 	var seen []NotificationListOptions
 	syncer := NewSyncer(
 		map[string]Client{
@@ -3405,8 +3382,7 @@ func TestSyncNotificationsDoesPeriodicFullSyncForReadState(t *testing.T) {
 	require.NoError(err)
 	watermark := time.Now().UTC().Add(-2 * notificationFullSyncInterval)
 	lastFullSyncAt := watermark
-	watermarkKey := notificationRepoKey("github", "github.com", "acme", "widget")
-	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", watermark, &lastFullSyncAt, "", watermarkKey))
+	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", "acme", "widget", watermark, &lastFullSyncAt))
 	var seen []NotificationListOptions
 	syncer := NewSyncer(
 		map[string]Client{
@@ -3441,7 +3417,7 @@ func TestSyncNotificationsDoesPeriodicFullSyncForReadState(t *testing.T) {
 	assert.Nil(seen[1].Since)
 }
 
-func TestSyncNotificationsClearsSinceWhenTrackedReposChange(t *testing.T) {
+func TestSyncNotificationsNewRepoFullSyncsWithoutResettingSiblings(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -3451,8 +3427,7 @@ func TestSyncNotificationsClearsSinceWhenTrackedReposChange(t *testing.T) {
 	require.NoError(err)
 	watermark := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	lastFullSyncAt := time.Now().UTC()
-	oldKey := notificationRepoKey("github", "github.com", "acme", "widget")
-	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", watermark, &lastFullSyncAt, "", oldKey))
+	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", "acme", "widget", watermark, &lastFullSyncAt))
 	var seen []NotificationListOptions
 	syncer := NewSyncer(
 		map[string]Client{
@@ -3476,6 +3451,10 @@ func TestSyncNotificationsClearsSinceWhenTrackedReposChange(t *testing.T) {
 
 	require.NoError(syncer.SyncNotifications(t.Context()))
 	require.Len(seen, 4)
+	// Repos scan in sorted order: the newly tracked repository has no
+	// watermark and full-syncs, while the established sibling keeps its
+	// incremental since window instead of being reset by the tracked-set
+	// change.
 	assert.True(seen[0].All)
 	assert.True(seen[0].Participating)
 	assert.Equal(1, seen[0].Page)
@@ -3493,13 +3472,17 @@ func TestSyncNotificationsClearsSinceWhenTrackedReposChange(t *testing.T) {
 	assert.Equal(1, seen[2].Page)
 	assert.Equal("acme", seen[2].RepoOwner)
 	assert.Equal("widget", seen[2].RepoName)
-	assert.Nil(seen[2].Since)
+	if assert.NotNil(seen[2].Since) {
+		assert.True(watermark.Add(-notificationSyncSinceOverlap).Equal(*seen[2].Since))
+	}
 	assert.True(seen[3].All)
 	assert.False(seen[3].Participating)
 	assert.Equal(1, seen[3].Page)
 	assert.Equal("acme", seen[3].RepoOwner)
 	assert.Equal("widget", seen[3].RepoName)
-	assert.Nil(seen[3].Since)
+	if assert.NotNil(seen[3].Since) {
+		assert.True(watermark.Add(-notificationSyncSinceOverlap).Equal(*seen[3].Since))
+	}
 }
 
 func TestRepoSyncMarksClosedLinkedNotificationsDone(t *testing.T) {

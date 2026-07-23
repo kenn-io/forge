@@ -997,12 +997,16 @@ type NotificationSummary struct {
 	ByRepo      map[string]int
 }
 
+// NotificationSyncWatermark tracks notification sync progress per repository
+// identity so one unavailable credential route cannot block watermark
+// advancement for healthy repositories sharing the host.
 type NotificationSyncWatermark struct {
 	Platform             string
+	PlatformHost         string
+	RepoOwner            string
+	RepoName             string
 	LastSuccessfulSyncAt time.Time
 	LastFullSyncAt       *time.Time
-	SyncCursor           string
-	TrackedReposKey      string
 }
 
 // WorktreeLink associates a merge request with an external worktree.

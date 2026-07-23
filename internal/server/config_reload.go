@@ -610,7 +610,7 @@ func (s *Server) validateReloadProviderTokenSources(
 }
 
 func validateReloadCloneTokenSources(cfg *config.Config) error {
-	return cfg.ValidateSharedHostCloneTokenSources()
+	return cfg.ValidateRepoTokenSourceConsistency()
 }
 
 func cloneReloadedConfig(in *config.Config) config.Config {

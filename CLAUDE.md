@@ -207,6 +207,7 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 ## Pull Requests
 
 - Treat this as a public repository: before pushing or opening a PR, run the scrub-private-data skill and remove unnecessary internal project names, hostnames, credentials, runner topology, and infrastructure details from the diff, commit messages, and PR metadata.
+- Do not watch or poll pull-request GitHub Actions checks unless the user explicitly asks, or the work is being performed through the `$kenn:refine-pr` skill.
 - This public repository intentionally runs pull-request CI on organization-managed ephemeral self-hosted runners. Repository policy permits only collaborators to create pull requests, and every external fork workflow run requires explicit approval. Treat collaborators and explicitly approved runs as trusted principals; do not flag self-hosted `pull_request` execution on its own.
 - Never delete, minimize, hide, resolve, or otherwise remove PR comments, review comments, review threads, or CI/review bot comments unless the user explicitly asks for that exact action. If a comment is stale, false-positive, superseded, or contradicted by current evidence, leave it in place and explain the evidence in a reply or final report instead.
 - PR descriptions should be concise: summarize what changed, not how or why in detail

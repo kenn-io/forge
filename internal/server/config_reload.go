@@ -14,6 +14,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server/docsapi"
+	"go.kenn.io/middleman/internal/server/messagesapi"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
@@ -394,8 +395,8 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	if s.docsAPI != nil {
 		s.docsAPI.ReplaceFolders(newCfg.DocFolders)
 	}
-	if s.msgvault != nil {
-		s.msgvault.applyConfig(newCfg)
+	if s.messagesAPI != nil {
+		s.messagesAPI.ApplyConfig(newCfg)
 	}
 
 	if s.syncer != nil {
@@ -592,14 +593,6 @@ func validateReloadCloneTokenSources(cfg *config.Config) error {
 	return nil
 }
 
-func cloneMsgvault(in *config.Msgvault) *config.Msgvault {
-	if in == nil {
-		return nil
-	}
-	out := *in
-	return &out
-}
-
 func cloneReloadedConfig(in *config.Config) config.Config {
 	if in == nil {
 		return config.Config{}
@@ -617,7 +610,7 @@ func cloneReloadedConfig(in *config.Config) config.Config {
 	out.Modes = cloneModeVisibility(in.Modes)
 	out.Agents = cloneConfigAgents(in.Agents)
 	out.DocFolders = slices.Clone(in.DocFolders)
-	out.Msgvault = cloneMsgvault(in.Msgvault)
+	out.Msgvault = messagesapi.CloneConfig(in.Msgvault)
 	out.Tmux.Command = slices.Clone(in.Tmux.Command)
 	if in.Tmux.AgentSessions != nil {
 		v := *in.Tmux.AgentSessions

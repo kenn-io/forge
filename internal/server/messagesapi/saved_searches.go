@@ -1,4 +1,4 @@
-package server
+package messagesapi
 
 import (
 	"context"
@@ -29,14 +29,14 @@ type replaceMessagesSavedSearchesInput struct {
 	}
 }
 
-func (s *Server) registerMessagesAPI(api huma.API) {
-	huma.Get(api, "/messages/saved-searches", s.msgvault.savedSearches,
+func (h *Handler) registerSavedSearches(api huma.API) {
+	huma.Get(api, "/messages/saved-searches", h.savedSearches,
 		httpapi.DocumentOperation("list-messages-saved-searches", "List messages saved searches", "Messages"))
-	huma.Put(api, "/messages/saved-searches", s.msgvault.replaceSavedSearches,
+	huma.Put(api, "/messages/saved-searches", h.replaceSavedSearches,
 		httpapi.DocumentOperation("replace-messages-saved-searches", "Replace messages saved searches", "Messages"))
 }
 
-func (h *msgvaultHandler) savedSearches(context.Context, *struct{}) (*messagesSavedSearchesOutput, error) {
+func (h *Handler) savedSearches(context.Context, *struct{}) (*messagesSavedSearchesOutput, error) {
 	list, err := messages.LoadSavedSearches()
 	if err != nil {
 		return nil, httpapi.Internal("saved searches file is unreadable")
@@ -52,7 +52,7 @@ func (h *msgvaultHandler) savedSearches(context.Context, *struct{}) (*messagesSa
 	}, nil
 }
 
-func (h *msgvaultHandler) replaceSavedSearches(
+func (h *Handler) replaceSavedSearches(
 	_ context.Context,
 	in *replaceMessagesSavedSearchesInput,
 ) (*messagesSavedSearchesOutput, error) {

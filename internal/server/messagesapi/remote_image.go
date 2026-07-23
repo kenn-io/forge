@@ -1,4 +1,4 @@
-package server
+package messagesapi
 
 import (
 	"bytes"
@@ -19,57 +19,57 @@ import (
 )
 
 const (
-	msgvaultRemoteImageMaxBytes     = 5 << 20
-	msgvaultRemoteImageMaxRedirects = 3
+	RemoteImageMaxBytes             = 5 << 20
+	RemoteImageMaxRedirects         = 3
 	msgvaultRemoteImageDialTimeout  = 5 * time.Second
 	msgvaultRemoteImageRespTimeout  = 10 * time.Second
 	msgvaultRemoteImageTotalTimeout = 15 * time.Second
 )
 
 var (
-	errMsgvaultRemoteImageBadScheme = errors.New("scheme not allowed")
-	errMsgvaultRemoteImageUserinfo  = errors.New("userinfo in url")
-	errMsgvaultRemoteImageZoneID    = errors.New("zone id in host")
-	errMsgvaultRemoteImageBadPort   = errors.New("port not allowed")
-	errMsgvaultRemoteImagePrivateIP = errors.New("private or reserved address")
-	errMsgvaultRemoteImageNoIPs     = errors.New("no addresses resolved")
+	ErrRemoteImageBadScheme = errors.New("scheme not allowed")
+	ErrRemoteImageUserinfo  = errors.New("userinfo in url")
+	ErrRemoteImageZoneID    = errors.New("zone id in host")
+	ErrRemoteImageBadPort   = errors.New("port not allowed")
+	ErrRemoteImagePrivateIP = errors.New("private or reserved address")
+	ErrRemoteImageNoIPs     = errors.New("no addresses resolved")
 )
 
-type msgvaultRemoteImageLookupFunc func(ctx context.Context, host string) ([]netip.Addr, error)
-type msgvaultRemoteImageDialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
+type RemoteImageLookupFunc func(ctx context.Context, host string) ([]netip.Addr, error)
+type RemoteImageDialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 
-type msgvaultRemoteImageDeps struct {
-	lookup msgvaultRemoteImageLookupFunc
-	dial   msgvaultRemoteImageDialFunc
+type RemoteImageDeps struct {
+	Lookup RemoteImageLookupFunc
+	Dial   RemoteImageDialFunc
 }
 
-func defaultMsgvaultRemoteImageDeps() msgvaultRemoteImageDeps {
-	return msgvaultRemoteImageDeps{
-		lookup: func(ctx context.Context, host string) ([]netip.Addr, error) {
+func DefaultRemoteImageDeps() RemoteImageDeps {
+	return RemoteImageDeps{
+		Lookup: func(ctx context.Context, host string) ([]netip.Addr, error) {
 			return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
 		},
-		dial: (&net.Dialer{Timeout: msgvaultRemoteImageDialTimeout}).DialContext,
+		Dial: (&net.Dialer{Timeout: msgvaultRemoteImageDialTimeout}).DialContext,
 	}
 }
 
-func (d msgvaultRemoteImageDeps) dialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+func (d RemoteImageDeps) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
 	}
-	ips, err := d.lookup(ctx, host)
+	ips, err := d.Lookup(ctx, host)
 	if err != nil {
 		return nil, err
 	}
 	if len(ips) == 0 {
-		return nil, errMsgvaultRemoteImageNoIPs
+		return nil, ErrRemoteImageNoIPs
 	}
-	if slices.ContainsFunc(ips, isMsgvaultRemoteImagePrivateOrReserved) {
-		return nil, errMsgvaultRemoteImagePrivateIP
+	if slices.ContainsFunc(ips, IsRemoteImagePrivateOrReserved) {
+		return nil, ErrRemoteImagePrivateIP
 	}
 	var lastErr error
 	for _, ip := range ips {
-		conn, err := d.dial(ctx, network, net.JoinHostPort(ip.String(), port))
+		conn, err := d.Dial(ctx, network, net.JoinHostPort(ip.String(), port))
 		if err == nil {
 			return conn, nil
 		}
@@ -81,15 +81,15 @@ func (d msgvaultRemoteImageDeps) dialContext(ctx context.Context, network, addr 
 	return nil, lastErr
 }
 
-func validateMsgvaultRemoteImageURL(u *url.URL) error {
+func ValidateRemoteImageURL(u *url.URL) error {
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return errMsgvaultRemoteImageBadScheme
+		return ErrRemoteImageBadScheme
 	}
 	if u.User != nil {
-		return errMsgvaultRemoteImageUserinfo
+		return ErrRemoteImageUserinfo
 	}
 	if strings.ContainsRune(u.Hostname(), '%') {
-		return errMsgvaultRemoteImageZoneID
+		return ErrRemoteImageZoneID
 	}
 	port := u.Port()
 	if port == "" {
@@ -100,7 +100,7 @@ func validateMsgvaultRemoteImageURL(u *url.URL) error {
 		}
 	}
 	if port != "80" && port != "443" {
-		return errMsgvaultRemoteImageBadPort
+		return ErrRemoteImageBadPort
 	}
 	return nil
 }
@@ -130,8 +130,8 @@ var msgvaultRemoteImagePrivatePrefixes = []netip.Prefix{
 	netip.MustParsePrefix("ff00::/8"),
 }
 
-func isMsgvaultRemoteImagePrivateOrReserved(ip netip.Addr) bool {
-	if ip.Is4In6() && isMsgvaultRemoteImagePrivateOrReserved(ip.Unmap()) {
+func IsRemoteImagePrivateOrReserved(ip netip.Addr) bool {
+	if ip.Is4In6() && IsRemoteImagePrivateOrReserved(ip.Unmap()) {
 		return true
 	}
 	for _, prefix := range msgvaultRemoteImagePrivatePrefixes {
@@ -149,7 +149,7 @@ var msgvaultRemoteImageAllowedMIME = map[string]struct{}{
 	"image/webp": {},
 }
 
-func (h *msgvaultHandler) remoteImage(ctx context.Context, in *msgvaultRemoteImageInput) (*msgvaultRawImageOutput, error) {
+func (h *Handler) remoteImage(ctx context.Context, in *msgvaultRemoteImageInput) (*msgvaultRawImageOutput, error) {
 	if _, prob := h.requireConfigured(); prob != nil {
 		return nil, prob
 	}
@@ -175,7 +175,7 @@ func (h *msgvaultHandler) remoteImage(ctx context.Context, in *msgvaultRemoteIma
 	}
 	imageURL := urls[in.Idx]
 	u, parseErr := url.Parse(imageURL)
-	if parseErr != nil || validateMsgvaultRemoteImageURL(u) != nil {
+	if parseErr != nil || ValidateRemoteImageURL(u) != nil {
 		return nil, msgvaultImageRejectedProblem()
 	}
 
@@ -215,14 +215,14 @@ func (h *msgvaultHandler) remoteImage(ctx context.Context, in *msgvaultRemoteIma
 	}
 
 	var buf bytes.Buffer
-	n, err := io.Copy(&buf, io.LimitReader(resp.Body, msgvaultRemoteImageMaxBytes+1))
+	n, err := io.Copy(&buf, io.LimitReader(resp.Body, RemoteImageMaxBytes+1))
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil, nil
 		}
 		return nil, msgvaultImageFetchFailedProblem()
 	}
-	if n > msgvaultRemoteImageMaxBytes {
+	if n > RemoteImageMaxBytes {
 		return nil, msgvaultImageFetchFailedProblem()
 	}
 	return &msgvaultRawImageOutput{
@@ -234,11 +234,11 @@ func (h *msgvaultHandler) remoteImage(ctx context.Context, in *msgvaultRemoteIma
 	}, nil
 }
 
-func (h *msgvaultHandler) remoteImageHTTPClient() *http.Client {
+func (h *Handler) remoteImageHTTPClient() *http.Client {
 	transport := &http.Transport{
 		Proxy:                 nil,
 		DisableCompression:    true,
-		DialContext:           h.remoteDeps.dialContext,
+		DialContext:           h.remoteDeps.DialContext,
 		TLSHandshakeTimeout:   5 * time.Second,
 		ResponseHeaderTimeout: msgvaultRemoteImageRespTimeout,
 	}
@@ -247,15 +247,15 @@ func (h *msgvaultHandler) remoteImageHTTPClient() *http.Client {
 		Timeout:   msgvaultRemoteImageTotalTimeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			req.Header.Del("Referer")
-			if len(via) > msgvaultRemoteImageMaxRedirects {
+			if len(via) > RemoteImageMaxRedirects {
 				return errors.New("too many redirects")
 			}
-			return validateMsgvaultRemoteImageURL(req.URL)
+			return ValidateRemoteImageURL(req.URL)
 		},
 	}
 }
 
-func (h *msgvaultHandler) remoteImageURLs(messageID int64, token string, generation uint64) ([]string, bool) {
+func (h *Handler) remoteImageURLs(messageID int64, token string, generation uint64) ([]string, bool) {
 	h.mu.Lock()
 	sanitizer := h.sanitizer
 	h.mu.Unlock()
@@ -270,7 +270,7 @@ const (
 	msgvaultRemoteImageRefetchUpstreamErr
 )
 
-func (h *msgvaultHandler) refetchAndResanitize(ctx context.Context, messageID int64, requestedToken string) ([]string, msgvaultRemoteImageRefetchStatus) {
+func (h *Handler) refetchAndResanitize(ctx context.Context, messageID int64, requestedToken string) ([]string, msgvaultRemoteImageRefetchStatus) {
 	client, sanitizer, gen, prob := h.requireConfiguredWithSanitizer()
 	if prob != nil {
 		return nil, msgvaultRemoteImageRefetchUpstreamErr

@@ -757,8 +757,7 @@ func (s *Server) registerAPI(api huma.API) {
 		httpapi.DocumentOperation("list-activity", "List activity", "Activity"))
 	s.registerKataAPI(api)
 	s.docsAPI.Register(api)
-	s.registerMsgvaultAPI(api)
-	s.registerMessagesAPI(api)
+	s.messagesAPI.Register(api)
 	s.registerArchiveAPI(api)
 	huma.Register(api, huma.Operation{
 		OperationID:   "list-notifications",

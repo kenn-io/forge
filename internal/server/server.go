@@ -31,6 +31,7 @@ import (
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
 	"go.kenn.io/middleman/internal/server/docsapi"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/messagesapi"
 	"go.kenn.io/middleman/internal/telemetry"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
@@ -78,7 +79,7 @@ type ServerOptions struct {
 	// port matching after HostCheck/cfg options have been selected.
 	// Use this for httptest-style listeners on ephemeral ports.
 	HostCheckAllowLoopbackAnyPort bool
-	msgvaultRemoteImageDeps       *msgvaultRemoteImageDeps
+	msgvaultRemoteImageDeps       *messagesapi.RemoteImageDeps
 	deferredMergeMaxWait          time.Duration
 }
 
@@ -217,7 +218,7 @@ type Server struct {
 	kataSnapshots               *kataSnapshotCoordinator
 	kataEvents                  *kataFrontendEventRegistry
 	docsAPI                     *docsapi.Handler
-	msgvault                    *msgvaultHandler
+	messagesAPI                 *messagesapi.Handler
 
 	// toolingStatus caches the assembled CLI tooling probe;
 	// toolingRun overrides the probe subprocess runner in tests.
@@ -735,7 +736,6 @@ func newServer(
 		workspaceEnrichmentPending:     make(map[string]workspaceEnrichmentJob),
 		workspaceEnrichmentSlots:       make(chan struct{}, tmuxProbeMaxConcurrency),
 		deferredMergeMaxWait:           deferredMergeMaxWait,
-		msgvault:                       newMsgvaultHandler(cfg, basePath, options.msgvaultRemoteImageDeps),
 		bgCtx: shutdownAwareContext{
 			parent:   bgBaseCtx,
 			deadline: bgDeadline,
@@ -751,6 +751,20 @@ func newServer(
 	if cfg != nil {
 		docsapi.WarnDaemonBindings(cfg.DocFolders)
 	}
+	s.messagesAPI = messagesapi.New(messagesapi.Deps{
+		Config: cfg,
+		ConfigPath: func() string {
+			return s.cfgPath
+		},
+		ConfigMu:    &s.cfgMu,
+		BasePath:    basePath,
+		RemoteImage: options.msgvaultRemoteImageDeps,
+		UpdateRuntimeStripEnv: func(cfg *config.Config) {
+			if s.runtime != nil {
+				s.runtime.UpdateStripEnvVars(s.updateRuntimeStripEnvVarsLocked(cfg))
+			}
+		},
+	})
 	s.workspaceDiffCache = newWorkspaceDiffCache(s.bgCtx, workspaceDiffCacheDeps{
 		onReady: func(workspaceID string, revision uint64, version string) {
 			s.hub.Broadcast(Event{Type: "workspace_diff_ready", Data: workspaceDiffEventData{

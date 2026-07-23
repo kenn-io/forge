@@ -21,12 +21,13 @@ import (
 
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/messagesapi"
 )
 
 func setupMsgvaultRouteServerWithRemoteImageDeps(
 	t *testing.T,
 	upstream http.Handler,
-	deps msgvaultRemoteImageDeps,
+	deps messagesapi.RemoteImageDeps,
 ) (*Server, func()) {
 	t.Helper()
 	upstreamSrv := httptest.NewServer(upstream)
@@ -38,7 +39,7 @@ func setupMsgvaultRouteServerWithRemoteImageDeps(
 	return srv, upstreamSrv.Close
 }
 
-func startMsgvaultImageUpstream(t *testing.T, handler http.HandlerFunc) (*httptest.Server, msgvaultRemoteImageDialFunc) {
+func startMsgvaultImageUpstream(t *testing.T, handler http.HandlerFunc) (*httptest.Server, messagesapi.RemoteImageDialFunc) {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	dial := func(ctx context.Context, network, _ string) (net.Conn, error) {
@@ -47,12 +48,12 @@ func startMsgvaultImageUpstream(t *testing.T, handler http.HandlerFunc) (*httpte
 	return srv, dial
 }
 
-func msgvaultTestProxyDeps(fixedAddr netip.Addr, dial msgvaultRemoteImageDialFunc) msgvaultRemoteImageDeps {
-	return msgvaultRemoteImageDeps{
-		lookup: func(context.Context, string) ([]netip.Addr, error) {
+func msgvaultTestProxyDeps(fixedAddr netip.Addr, dial messagesapi.RemoteImageDialFunc) messagesapi.RemoteImageDeps {
+	return messagesapi.RemoteImageDeps{
+		Lookup: func(context.Context, string) ([]netip.Addr, error) {
 			return []netip.Addr{fixedAddr}, nil
 		},
-		dial: dial,
+		Dial: dial,
 	}
 }
 
@@ -336,17 +337,17 @@ func TestMsgvaultValidateRemoteImageURL(t *testing.T) {
 		{"http://x/", nil},
 		{"https://x/", nil},
 		{"https://x:443/", nil},
-		{"ftp://x/y", errMsgvaultRemoteImageBadScheme},
-		{"file:///etc/passwd", errMsgvaultRemoteImageBadScheme},
-		{"https://user:pass@x/", errMsgvaultRemoteImageUserinfo},
-		{"https://x:8080/", errMsgvaultRemoteImageBadPort},
-		{"http://x:22/", errMsgvaultRemoteImageBadPort},
-		{"https://[fe80::1%25eth0]/", errMsgvaultRemoteImageZoneID},
+		{"ftp://x/y", messagesapi.ErrRemoteImageBadScheme},
+		{"file:///etc/passwd", messagesapi.ErrRemoteImageBadScheme},
+		{"https://user:pass@x/", messagesapi.ErrRemoteImageUserinfo},
+		{"https://x:8080/", messagesapi.ErrRemoteImageBadPort},
+		{"http://x:22/", messagesapi.ErrRemoteImageBadPort},
+		{"https://[fe80::1%25eth0]/", messagesapi.ErrRemoteImageZoneID},
 	} {
 		t.Run(tc.raw, func(t *testing.T) {
 			u, err := url.Parse(tc.raw)
 			require.NoError(t, err)
-			assert.ErrorIs(t, validateMsgvaultRemoteImageURL(u), tc.want)
+			assert.ErrorIs(t, messagesapi.ValidateRemoteImageURL(u), tc.want)
 		})
 	}
 }
@@ -379,34 +380,34 @@ func TestMsgvaultRemoteImagePrivateOrReserved(t *testing.T) {
 		{"2001:4860:4860::8888", false},
 	} {
 		t.Run(tc.ip, func(t *testing.T) {
-			got := isMsgvaultRemoteImagePrivateOrReserved(netip.MustParseAddr(tc.ip))
+			got := messagesapi.IsRemoteImagePrivateOrReserved(netip.MustParseAddr(tc.ip))
 			assert.Equal(t, tc.want, got)
 		})
 	}
 }
 
 func TestMsgvaultRemoteImageDialerRejectsMixedPrivate(t *testing.T) {
-	deps := msgvaultRemoteImageDeps{
-		lookup: func(context.Context, string) ([]netip.Addr, error) {
+	deps := messagesapi.RemoteImageDeps{
+		Lookup: func(context.Context, string) ([]netip.Addr, error) {
 			return []netip.Addr{
 				netip.MustParseAddr("1.2.3.4"),
 				netip.MustParseAddr("10.0.0.1"),
 			}, nil
 		},
-		dial: func(context.Context, string, string) (net.Conn, error) {
+		Dial: func(context.Context, string, string) (net.Conn, error) {
 			require.FailNow(t, "dial should not be called when lookup includes private address")
 			return nil, nil
 		},
 	}
-	_, err := deps.dialContext(context.Background(), "tcp", "x.com:443")
-	assert.ErrorIs(t, err, errMsgvaultRemoteImagePrivateIP)
+	_, err := deps.DialContext(context.Background(), "tcp", "x.com:443")
+	assert.ErrorIs(t, err, messagesapi.ErrRemoteImagePrivateIP)
 }
 
 func TestMsgvaultRemoteImageDialerFallsBackAcrossPublicAddresses(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	deps := msgvaultRemoteImageDeps{
-		lookup: func(context.Context, string) ([]netip.Addr, error) {
+	deps := messagesapi.RemoteImageDeps{
+		Lookup: func(context.Context, string) ([]netip.Addr, error) {
 			return []netip.Addr{
 				netip.MustParseAddr("1.2.3.4"),
 				netip.MustParseAddr("8.8.8.8"),
@@ -414,7 +415,7 @@ func TestMsgvaultRemoteImageDialerFallsBackAcrossPublicAddresses(t *testing.T) {
 		},
 	}
 	var attempts []string
-	deps.dial = func(_ context.Context, _, addr string) (net.Conn, error) {
+	deps.Dial = func(_ context.Context, _, addr string) (net.Conn, error) {
 		attempts = append(attempts, addr)
 		if strings.HasPrefix(addr, "1.2.3.4:") {
 			return nil, errors.New("unreachable")
@@ -424,7 +425,7 @@ func TestMsgvaultRemoteImageDialerFallsBackAcrossPublicAddresses(t *testing.T) {
 		return client, nil
 	}
 
-	conn, err := deps.dialContext(context.Background(), "tcp", "example.com:443")
+	conn, err := deps.DialContext(context.Background(), "tcp", "example.com:443")
 
 	require.NoError(err)
 	t.Cleanup(func() { _ = conn.Close() })
@@ -439,8 +440,8 @@ func TestMsgvaultRemoteImageRouteFallsBackAcrossPublicAddresses(t *testing.T) {
 		_, _ = w.Write([]byte{0x89, 'P', 'N', 'G'})
 	})
 	defer imageSrv.Close()
-	deps := msgvaultRemoteImageDeps{
-		lookup: func(context.Context, string) ([]netip.Addr, error) {
+	deps := messagesapi.RemoteImageDeps{
+		Lookup: func(context.Context, string) ([]netip.Addr, error) {
 			return []netip.Addr{
 				netip.MustParseAddr("1.2.3.4"),
 				netip.MustParseAddr("8.8.8.8"),
@@ -448,7 +449,7 @@ func TestMsgvaultRemoteImageRouteFallsBackAcrossPublicAddresses(t *testing.T) {
 		},
 	}
 	var attempts []string
-	deps.dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+	deps.Dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		attempts = append(attempts, addr)
 		if strings.HasPrefix(addr, "1.2.3.4:") {
 			return nil, errors.New("unreachable")
@@ -523,7 +524,7 @@ func TestMsgvaultRemoteImageRejectsContentEncoding(t *testing.T) {
 func TestMsgvaultRemoteImageRejectsOversize(t *testing.T) {
 	imageSrv, dial := startMsgvaultImageUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write(make([]byte, msgvaultRemoteImageMaxBytes+1))
+		_, _ = w.Write(make([]byte, messagesapi.RemoteImageMaxBytes+1))
 	})
 	defer imageSrv.Close()
 	deps := msgvaultTestProxyDeps(netip.MustParseAddr("1.2.3.4"), dial)
@@ -632,7 +633,7 @@ func TestMsgvaultRemoteImageRedirectChainCap(t *testing.T) {
 			w.WriteHeader(http.StatusFound)
 		}))
 	}
-	depsFor := func(srv *httptest.Server) msgvaultRemoteImageDeps {
+	depsFor := func(srv *httptest.Server) messagesapi.RemoteImageDeps {
 		dial := func(ctx context.Context, network, _ string) (net.Conn, error) {
 			return (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, network, srv.Listener.Addr().String())
 		}
@@ -640,7 +641,7 @@ func TestMsgvaultRemoteImageRedirectChainCap(t *testing.T) {
 	}
 
 	t.Run("exactly max succeeds", func(t *testing.T) {
-		imageSrv := chain(msgvaultRemoteImageMaxRedirects + 1)
+		imageSrv := chain(messagesapi.RemoteImageMaxRedirects + 1)
 		defer imageSrv.Close()
 		srv, cleanup := setupMsgvaultRouteServerWithRemoteImageDeps(
 			t,
@@ -656,7 +657,7 @@ func TestMsgvaultRemoteImageRedirectChainCap(t *testing.T) {
 	})
 
 	t.Run("max plus one rejected", func(t *testing.T) {
-		imageSrv := chain(msgvaultRemoteImageMaxRedirects + 2)
+		imageSrv := chain(messagesapi.RemoteImageMaxRedirects + 2)
 		defer imageSrv.Close()
 		srv, cleanup := setupMsgvaultRouteServerWithRemoteImageDeps(
 			t,
@@ -718,7 +719,7 @@ func TestMsgvaultRemoteImageErrorEnvelopeShape(t *testing.T) {
 	srv, cleanup := setupMsgvaultRouteServerWithRemoteImageDeps(
 		t,
 		msgvaultFixtureUpstream(t, 1, ""),
-		defaultMsgvaultRemoteImageDeps(),
+		messagesapi.DefaultRemoteImageDeps(),
 	)
 	defer cleanup()
 
@@ -738,11 +739,11 @@ func TestMsgvaultRemoteImageContextCancel(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	deps := msgvaultRemoteImageDeps{
-		lookup: func(context.Context, string) ([]netip.Addr, error) {
+	deps := messagesapi.RemoteImageDeps{
+		Lookup: func(context.Context, string) ([]netip.Addr, error) {
 			return []netip.Addr{netip.MustParseAddr("1.2.3.4")}, nil
 		},
-		dial: slowDial,
+		Dial: slowDial,
 	}
 	srv, cleanup := setupMsgvaultRouteServerWithRemoteImageDeps(
 		t,

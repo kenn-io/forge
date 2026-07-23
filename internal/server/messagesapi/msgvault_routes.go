@@ -1,4 +1,4 @@
-package server
+package messagesapi
 
 import (
 	"bytes"
@@ -143,7 +143,12 @@ type msgvaultConfigureRequest struct {
 	APIKeyEnv string `json:"api_key_env"`
 }
 
-type msgvaultHandler struct {
+type Handler struct {
+	cfg                   *config.Config
+	configPath            func() string
+	cfgMu                 *sync.Mutex
+	updateRuntimeStripEnv func(*config.Config)
+
 	mu            sync.Mutex
 	state         config.MsgvaultState
 	configErr     error
@@ -152,7 +157,7 @@ type msgvaultHandler struct {
 	configuredEnv string
 	gen           uint64
 	sanitizer     *msgvault.Sanitizer
-	remoteDeps    msgvaultRemoteImageDeps
+	remoteDeps    RemoteImageDeps
 
 	capMu       sync.Mutex
 	capCache    *msgvaultHealthBody
@@ -171,17 +176,30 @@ type msgvaultHealthSnapshot struct {
 	gen           uint64
 }
 
-func newMsgvaultHandler(cfg *config.Config, basePath string, remoteDeps *msgvaultRemoteImageDeps) *msgvaultHandler {
-	h := &msgvaultHandler{remoteDeps: defaultMsgvaultRemoteImageDeps()}
-	if remoteDeps != nil {
-		h.remoteDeps = *remoteDeps
+type Deps struct {
+	Config                *config.Config
+	ConfigPath            func() string
+	ConfigMu              *sync.Mutex
+	BasePath              string
+	RemoteImage           *RemoteImageDeps
+	UpdateRuntimeStripEnv func(*config.Config)
+}
+
+func New(deps Deps) *Handler {
+	h := &Handler{remoteDeps: DefaultRemoteImageDeps()}
+	h.cfg = deps.Config
+	h.configPath = deps.ConfigPath
+	h.cfgMu = deps.ConfigMu
+	h.updateRuntimeStripEnv = deps.UpdateRuntimeStripEnv
+	if deps.RemoteImage != nil {
+		h.remoteDeps = *deps.RemoteImage
 	}
-	h.sanitizer = msgvault.NewSanitizerForBasePath(basePath)
-	h.applyConfig(cfg)
+	h.sanitizer = msgvault.NewSanitizerForBasePath(deps.BasePath)
+	h.ApplyConfig(deps.Config)
 	return h
 }
 
-func (h *msgvaultHandler) applyConfig(cfg *config.Config) {
+func (h *Handler) ApplyConfig(cfg *config.Config) {
 	state, upstreamURL, apiKey, cfgErr := cfg.MsgvaultState()
 	configuredURL := upstreamURL
 	configuredEnv := ""
@@ -209,20 +227,20 @@ func (h *msgvaultHandler) applyConfig(cfg *config.Config) {
 	h.gen++
 }
 
-func (s *Server) registerMsgvaultAPI(api huma.API) {
-	huma.Get(api, "/msgvault/health", s.msgvault.health,
+func (h *Handler) Register(api huma.API) {
+	huma.Get(api, "/msgvault/health", h.health,
 		httpapi.DocumentOperation("get-msgvault-health", "Get msgvault health", "Msgvault"))
-	huma.Get(api, "/msgvault/search", s.msgvault.search,
+	huma.Get(api, "/msgvault/search", h.search,
 		httpapi.DocumentOperation("search-msgvault", "Search msgvault", "Msgvault"))
-	huma.Get(api, "/msgvault/messages/{id}", s.msgvault.message,
+	huma.Get(api, "/msgvault/messages/{id}", h.message,
 		httpapi.DocumentOperation("get-msgvault-message", "Get msgvault message", "Msgvault"))
-	huma.Get(api, "/msgvault/messages/{id}/inline", s.msgvault.inline,
+	huma.Get(api, "/msgvault/messages/{id}/inline", h.inline,
 		httpapi.DocumentOperation("get-msgvault-inline-image", "Get msgvault inline image", "Msgvault"))
-	huma.Get(api, "/msgvault/messages/{id}/remote-image/{token}/{idx}", s.msgvault.remoteImage,
+	huma.Get(api, "/msgvault/messages/{id}/remote-image/{token}/{idx}", h.remoteImage,
 		httpapi.DocumentOperation("get-msgvault-remote-image", "Get msgvault remote image", "Msgvault"))
-	huma.Get(api, "/msgvault/aggregates", s.msgvault.aggregates,
+	huma.Get(api, "/msgvault/aggregates", h.aggregates,
 		httpapi.DocumentOperation("get-msgvault-aggregates", "Get msgvault aggregates", "Msgvault"))
-	huma.Get(api, "/msgvault/threads/{conversation_id}", s.msgvault.thread,
+	huma.Get(api, "/msgvault/threads/{conversation_id}", h.thread,
 		httpapi.DocumentOperation("get-msgvault-thread", "Get msgvault thread", "Msgvault"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "configure-msgvault",
@@ -232,18 +250,19 @@ func (s *Server) registerMsgvaultAPI(api huma.API) {
 		Summary:       "Configure msgvault",
 		Tags:          []string{"Msgvault"},
 		MaxBodyBytes:  msgvaultConfigureMaxBodyBytes,
-	}, s.configureMsgvault)
+	}, h.configure)
 	documentMsgvaultConfigureJSONBody(api)
 	documentMsgvaultRequiredQuery(api, "/msgvault/aggregates", "view_type")
 	documentMsgvaultRawImageRoute(api, "/msgvault/messages/{id}/inline", "cid")
 	documentMsgvaultRawImageRoute(api, "/msgvault/messages/{id}/remote-image/{token}/{idx}", "")
+	h.registerSavedSearches(api)
 }
 
-func (h *msgvaultHandler) health(context.Context, *struct{}) (*msgvaultHealthOutput, error) {
+func (h *Handler) health(context.Context, *struct{}) (*msgvaultHealthOutput, error) {
 	return &msgvaultHealthOutput{Body: h.healthValue()}, nil
 }
 
-func (h *msgvaultHandler) search(ctx context.Context, in *msgvaultSearchInput) (*msgvaultSearchOutput, error) {
+func (h *Handler) search(ctx context.Context, in *msgvaultSearchInput) (*msgvaultSearchOutput, error) {
 	client, prob := h.requireConfigured()
 	if prob != nil {
 		return nil, prob
@@ -291,7 +310,7 @@ func (h *msgvaultHandler) search(ctx context.Context, in *msgvaultSearchInput) (
 	}}, nil
 }
 
-func (h *msgvaultHandler) message(ctx context.Context, in *msgvaultMessageInput) (*msgvaultMessageOutput, error) {
+func (h *Handler) message(ctx context.Context, in *msgvaultMessageInput) (*msgvaultMessageOutput, error) {
 	client, sanitizer, gen, prob := h.requireConfiguredWithSanitizer()
 	if prob != nil {
 		return nil, prob
@@ -322,7 +341,7 @@ func (h *msgvaultHandler) message(ctx context.Context, in *msgvaultMessageInput)
 	return &msgvaultMessageOutput{Body: out}, nil
 }
 
-func (h *msgvaultHandler) inline(ctx context.Context, in *msgvaultInlineInput) (*msgvaultRawImageOutput, error) {
+func (h *Handler) inline(ctx context.Context, in *msgvaultInlineInput) (*msgvaultRawImageOutput, error) {
 	client, prob := h.requireConfigured()
 	if prob != nil {
 		return nil, prob
@@ -374,7 +393,7 @@ func (h *msgvaultHandler) inline(ctx context.Context, in *msgvaultInlineInput) (
 	}, nil
 }
 
-func (h *msgvaultHandler) aggregates(ctx context.Context, in *msgvaultAggregatesInput) (*msgvaultAggregatesOutput, error) {
+func (h *Handler) aggregates(ctx context.Context, in *msgvaultAggregatesInput) (*msgvaultAggregatesOutput, error) {
 	client, prob := h.requireConfigured()
 	if prob != nil {
 		return nil, prob
@@ -405,7 +424,7 @@ func (h *msgvaultHandler) aggregates(ctx context.Context, in *msgvaultAggregates
 	return &msgvaultAggregatesOutput{Body: *out}, nil
 }
 
-func (h *msgvaultHandler) thread(ctx context.Context, in *msgvaultThreadInput) (*msgvaultThreadOutput, error) {
+func (h *Handler) thread(ctx context.Context, in *msgvaultThreadInput) (*msgvaultThreadOutput, error) {
 	client, prob := h.requireConfigured()
 	if prob != nil {
 		return nil, prob
@@ -420,7 +439,7 @@ func (h *msgvaultHandler) thread(ctx context.Context, in *msgvaultThreadInput) (
 	}}, nil
 }
 
-func (s *Server) configureMsgvault(_ context.Context, in *configureMsgvaultInput) (*msgvaultConfigureOutput, error) {
+func (h *Handler) configure(_ context.Context, in *configureMsgvaultInput) (*msgvaultConfigureOutput, error) {
 	if !isMsgvaultJSONMediaType(in.ContentType) {
 		return nil, httpapi.NewProblem(
 			http.StatusUnsupportedMediaType,
@@ -458,27 +477,39 @@ func (s *Server) configureMsgvault(_ context.Context, in *configureMsgvaultInput
 			map[string]any{"reason": "invalidEnvVarName"},
 		)
 	}
-	if s.cfgPath == "" || s.cfg == nil {
+	cfgPath := ""
+	if h.configPath != nil {
+		cfgPath = h.configPath()
+	}
+	if cfgPath == "" || h.cfg == nil {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
-	s.cfgMu.Lock()
-	prev := cloneMsgvault(s.cfg.Msgvault)
-	s.cfg.Msgvault = &config.Msgvault{URL: cleanURL, APIKeyEnv: apiKeyEnv}
-	if err := s.cfg.Save(s.cfgPath); err != nil {
-		s.cfg.Msgvault = prev
-		s.msgvault.applyConfig(s.cfg)
-		s.cfgMu.Unlock()
+	h.cfgMu.Lock()
+	prev := CloneConfig(h.cfg.Msgvault)
+	h.cfg.Msgvault = &config.Msgvault{URL: cleanURL, APIKeyEnv: apiKeyEnv}
+	if err := h.cfg.Save(cfgPath); err != nil {
+		h.cfg.Msgvault = prev
+		h.ApplyConfig(h.cfg)
+		h.cfgMu.Unlock()
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
-	s.msgvault.applyConfig(s.cfg)
-	if s.runtime != nil {
-		s.runtime.UpdateStripEnvVars(s.updateRuntimeStripEnvVarsLocked(s.cfg))
+	h.ApplyConfig(h.cfg)
+	if h.updateRuntimeStripEnv != nil {
+		h.updateRuntimeStripEnv(h.cfg)
 	}
-	snapshot := s.msgvault.healthSnapshot()
-	s.cfgMu.Unlock()
+	snapshot := h.healthSnapshot()
+	h.cfgMu.Unlock()
 
 	return &msgvaultConfigureOutput{Body: snapshot.healthValue()}, nil
+}
+
+func CloneConfig(in *config.Msgvault) *config.Msgvault {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
 }
 
 func buildMsgvaultMessageBody(detail *msgvault.MessageDetail) msgvaultMessageBody {
@@ -501,7 +532,7 @@ func buildMsgvaultMessageBody(detail *msgvault.MessageDetail) msgvaultMessageBod
 	}
 }
 
-func (h *msgvaultHandler) requireConfigured() (*msgvault.Client, huma.StatusError) {
+func (h *Handler) requireConfigured() (*msgvault.Client, huma.StatusError) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	switch h.state {
@@ -536,7 +567,7 @@ func (h *msgvaultHandler) requireConfigured() (*msgvault.Client, huma.StatusErro
 	}
 }
 
-func (h *msgvaultHandler) requireConfiguredWithSanitizer() (*msgvault.Client, *msgvault.Sanitizer, uint64, huma.StatusError) {
+func (h *Handler) requireConfiguredWithSanitizer() (*msgvault.Client, *msgvault.Sanitizer, uint64, huma.StatusError) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	switch h.state {
@@ -571,7 +602,7 @@ func (h *msgvaultHandler) requireConfiguredWithSanitizer() (*msgvault.Client, *m
 	}
 }
 
-func (h *msgvaultHandler) sanitizerGeneration() uint64 {
+func (h *Handler) sanitizerGeneration() uint64 {
 	h.mu.Lock()
 	sanitizer := h.sanitizer
 	h.mu.Unlock()
@@ -628,7 +659,7 @@ func msgvaultMalformedUpstreamProblem(detail string) huma.StatusError {
 	)
 }
 
-func (h *msgvaultHandler) healthValue() msgvaultHealthBody {
+func (h *Handler) healthValue() msgvaultHealthBody {
 	snapshot := h.healthSnapshot()
 	switch snapshot.state {
 	case config.MsgvaultAbsent, config.MsgvaultMisconfigured:
@@ -649,7 +680,7 @@ func (h *msgvaultHandler) healthValue() msgvaultHealthBody {
 	return body
 }
 
-func (h *msgvaultHandler) healthSnapshot() msgvaultHealthSnapshot {
+func (h *Handler) healthSnapshot() msgvaultHealthSnapshot {
 	h.mu.Lock()
 	snapshot := msgvaultHealthSnapshot{
 		state:         h.state,

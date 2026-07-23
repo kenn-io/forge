@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 type docsFolderWire struct {
@@ -174,9 +175,9 @@ func TestDocsFolderAddRejectsNonLoopback(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	require.Equal(http.StatusForbidden, rr.Code, rr.Body.String())
-	var problem ProblemError
+	var problem httpapi.ProblemError
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal(CodeForbidden, problem.Code)
+	assert.Equal(httpapi.CodeForbidden, problem.Code)
 	assert.Equal("loopbackOnly", problem.Details["reason"])
 	assert.Contains(problem.Detail, "docs mutations require a loopback client")
 }
@@ -255,7 +256,7 @@ func TestDocsFolderAddDerivesIDAndRejectsInvalidRequests(t *testing.T) {
 		"path": t.TempDir(),
 	})
 	require.Equal(http.StatusBadRequest, slashIDRR.Code, slashIDRR.Body.String())
-	var slashIDProblem ProblemError
+	var slashIDProblem httpapi.ProblemError
 	require.NoError(json.NewDecoder(slashIDRR.Body).Decode(&slashIDProblem))
 	assert.Equal("invalidFolder", slashIDProblem.Details["reason"])
 }
@@ -270,9 +271,9 @@ func TestDocsFolderMutationsRequireConfigPersistenceAndRollbackOnSaveFailure(t *
 		"path": t.TempDir(),
 	})
 	require.Equal(http.StatusNotFound, unavailableRR.Code, unavailableRR.Body.String())
-	var unavailable ProblemError
+	var unavailable httpapi.ProblemError
 	require.NoError(json.NewDecoder(unavailableRR.Body).Decode(&unavailable))
-	assert.Equal(CodeSettingsUnavailable, unavailable.Code)
+	assert.Equal(httpapi.CodeSettingsUnavailable, unavailable.Code)
 
 	root := t.TempDir()
 	cfg := &config.Config{
@@ -364,9 +365,9 @@ func TestDocsBrowseEndpointRejectsNonLoopback(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	require.Equal(http.StatusForbidden, rr.Code, rr.Body.String())
-	var problem ProblemError
+	var problem httpapi.ProblemError
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal(CodeForbidden, problem.Code)
+	assert.Equal(httpapi.CodeForbidden, problem.Code)
 	assert.Equal("loopbackOnly", problem.Details["reason"])
 }
 
@@ -723,9 +724,9 @@ func TestDocsFileMutationsRejectNonLoopback(t *testing.T) {
 			srv.ServeHTTP(rr, req)
 
 			require.Equal(http.StatusForbidden, rr.Code, rr.Body.String())
-			var problem ProblemError
+			var problem httpapi.ProblemError
 			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-			assert.Equal(CodeForbidden, problem.Code)
+			assert.Equal(httpapi.CodeForbidden, problem.Code)
 			assert.Equal("loopbackOnly", problem.Details["reason"])
 		})
 	}
@@ -790,9 +791,9 @@ func TestDocsMutationsRejectBodyTooLarge(t *testing.T) {
 			srv.ServeHTTP(rr, req)
 
 			require.Equal(http.StatusRequestEntityTooLarge, rr.Code, rr.Body.String())
-			var problem ProblemError
+			var problem httpapi.ProblemError
 			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-			assert.Equal(CodePayloadTooLarge, problem.Code)
+			assert.Equal(httpapi.CodePayloadTooLarge, problem.Code)
 		})
 	}
 }
@@ -850,9 +851,9 @@ func TestDocsReadEndpointsRejectNonLoopback(t *testing.T) {
 			srv.ServeHTTP(rr, req)
 
 			require.Equal(http.StatusForbidden, rr.Code, rr.Body.String())
-			var problem ProblemError
+			var problem httpapi.ProblemError
 			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-			assert.Equal(CodeForbidden, problem.Code)
+			assert.Equal(httpapi.CodeForbidden, problem.Code)
 			assert.Equal("loopbackOnly", problem.Details["reason"])
 		})
 	}

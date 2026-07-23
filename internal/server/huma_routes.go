@@ -26,6 +26,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/platform/gitealike"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
@@ -41,7 +42,7 @@ type listPullsInput struct {
 	Offset  int    `query:"offset"`
 }
 
-type listPullsOutput = bodyOutput[[]mergeRequestResponse]
+type listPullsOutput = httpapi.BodyOutput[[]mergeRequestResponse]
 
 type repoNumberInput struct {
 	Provider     string `path:"provider"`
@@ -51,23 +52,23 @@ type repoNumberInput struct {
 	Number       int    `path:"number"`
 }
 
-type getPullOutput = bodyOutput[mergeRequestDetailResponse]
+type getPullOutput = httpapi.BodyOutput[mergeRequestDetailResponse]
 
 func providerRouteLookupError(err error) error {
 	if errors.Is(err, errRepoPathRequired) {
-		return problemBadRequest(CodeBadRequest, err.Error(), nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	if errors.Is(err, errRepoNotFound) {
-		return problemNotFound(CodeRepoNotFound, "repo not found", nil)
+		return httpapi.NotFound(httpapi.CodeRepoNotFound, "repo not found", nil)
 	}
 	if strings.Contains(err.Error(), "platform_host is required") ||
 		strings.Contains(err.Error(), "unsupported platform") {
-		return problemBadRequest(CodeBadRequest, err.Error(), nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
-	return problemInternal("get repo failed")
+	return httpapi.Internal("get repo failed")
 }
 
-type getMRImportMetadataOutput = bodyOutput[mrImportMetadataResponse]
+type getMRImportMetadataOutput = httpapi.BodyOutput[mrImportMetadataResponse]
 
 type setKanbanStateInput struct {
 	Provider     string `path:"provider"`
@@ -80,7 +81,7 @@ type setKanbanStateInput struct {
 	}
 }
 
-type statusOnlyOutput = okStatusOutput
+type statusOnlyOutput = httpapi.OKStatusOutput
 
 type postCommentInput struct {
 	Provider     string `path:"provider"`
@@ -93,7 +94,7 @@ type postCommentInput struct {
 	}
 }
 
-type postCommentOutput = createdOutput[mergeRequestEventResponse]
+type postCommentOutput = httpapi.CreatedOutput[mergeRequestEventResponse]
 
 type editCommentInput struct {
 	Provider     string `path:"provider"`
@@ -107,7 +108,7 @@ type editCommentInput struct {
 	}
 }
 
-type editCommentOutput = bodyOutput[mergeRequestEventResponse]
+type editCommentOutput = httpapi.BodyOutput[mergeRequestEventResponse]
 
 type deleteCommentInput struct {
 	Provider     string `path:"provider"`
@@ -122,7 +123,7 @@ type deleteCommentOutput struct {
 	Status int `status:"204"`
 }
 
-type getDiffReviewDraftOutput = bodyOutput[diffReviewDraftResponse]
+type getDiffReviewDraftOutput = httpapi.BodyOutput[diffReviewDraftResponse]
 
 type createDiffReviewDraftCommentInput struct {
 	Provider     string `path:"provider"`
@@ -136,7 +137,7 @@ type createDiffReviewDraftCommentInput struct {
 	}
 }
 
-type createDiffReviewDraftCommentOutput = createdOutput[diffReviewDraftComment]
+type createDiffReviewDraftCommentOutput = httpapi.CreatedOutput[diffReviewDraftComment]
 
 type editDiffReviewDraftCommentInput struct {
 	Provider       string `path:"provider"`
@@ -151,7 +152,7 @@ type editDiffReviewDraftCommentInput struct {
 	}
 }
 
-type editDiffReviewDraftCommentOutput = bodyOutput[diffReviewDraftComment]
+type editDiffReviewDraftCommentOutput = httpapi.BodyOutput[diffReviewDraftComment]
 
 type deleteDiffReviewDraftCommentInput struct {
 	Provider       string `path:"provider"`
@@ -198,7 +199,7 @@ type applyReviewSuggestionResponse struct {
 	CommitURL string `json:"commit_url,omitempty"`
 }
 
-type applyReviewSuggestionOutput = bodyOutput[applyReviewSuggestionResponse]
+type applyReviewSuggestionOutput = httpapi.BodyOutput[applyReviewSuggestionResponse]
 
 type discardDiffReviewDraftInput = repoNumberInput
 
@@ -221,7 +222,7 @@ type listIssuesInput struct {
 	Offset   int    `query:"offset"`
 }
 
-type listIssuesOutput = bodyOutput[[]issueResponse]
+type listIssuesOutput = httpapi.BodyOutput[[]issueResponse]
 
 type issueRepoNumberInput struct {
 	Provider     string `path:"provider"`
@@ -231,7 +232,7 @@ type issueRepoNumberInput struct {
 	Number       int    `path:"number"`
 }
 
-type getIssueOutput = bodyOutput[issueDetailResponse]
+type getIssueOutput = httpapi.BodyOutput[issueDetailResponse]
 
 type resolveItemInput struct {
 	Provider     string `path:"provider"`
@@ -253,7 +254,7 @@ type postIssueCommentInput struct {
 	}
 }
 
-type postIssueCommentOutput = createdOutput[db.IssueEvent]
+type postIssueCommentOutput = httpapi.CreatedOutput[db.IssueEvent]
 
 type editIssueCommentInput struct {
 	Provider     string `path:"provider"`
@@ -267,7 +268,7 @@ type editIssueCommentInput struct {
 	}
 }
 
-type editIssueCommentOutput = bodyOutput[db.IssueEvent]
+type editIssueCommentOutput = httpapi.BodyOutput[db.IssueEvent]
 
 type deleteIssueCommentInput struct {
 	Provider     string `path:"provider"`
@@ -294,7 +295,7 @@ type replyToDiscussionInput struct {
 	}
 }
 
-type replyToDiscussionOutput = createdOutput[mergeRequestEventResponse]
+type replyToDiscussionOutput = httpapi.CreatedOutput[mergeRequestEventResponse]
 
 type resolveDiscussionInput struct {
 	Provider     string `path:"provider"`
@@ -308,14 +309,14 @@ type resolveDiscussionInput struct {
 	}
 }
 
-type resolveDiscussionOutput = okStatusOutput
+type resolveDiscussionOutput = httpapi.OKStatusOutput
 
 // discussionIDPattern validates GitLab discussion IDs which are 40-char lowercase hex strings.
 var discussionIDPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 
 func validateDiscussionID(discussionID string) error {
 	if !discussionIDPattern.MatchString(discussionID) {
-		return problemValidation("path.discussion_id", "discussion_id must be a 40-character lowercase hex string")
+		return httpapi.Validation("path.discussion_id", "discussion_id must be a 40-character lowercase hex string")
 	}
 	return nil
 }
@@ -331,7 +332,7 @@ type createIssueInput struct {
 	}
 }
 
-type createIssueOutput = createdOutput[issueResponse]
+type createIssueOutput = httpapi.CreatedOutput[issueResponse]
 
 type starredInput struct {
 	Body starredRequest
@@ -344,7 +345,7 @@ type getRepoInput struct {
 	Name         string `path:"name"`
 }
 
-type getRepoOutput = bodyOutput[repoResponse]
+type getRepoOutput = httpapi.BodyOutput[repoResponse]
 
 type getRepoCommitDiffInput struct {
 	Provider     string `path:"provider"`
@@ -364,7 +365,7 @@ type getRepoCommitDiffHostInput struct {
 	Whitespace   string `query:"whitespace"`
 }
 
-type getRepoCommitDiffOutput = bodyOutput[diffResponse]
+type getRepoCommitDiffOutput = httpapi.BodyOutput[diffResponse]
 
 type commentAutocompleteInput struct {
 	Provider     string `path:"provider"`
@@ -376,7 +377,7 @@ type commentAutocompleteInput struct {
 	Limit        int    `query:"limit"`
 }
 
-type commentAutocompleteOutput = bodyOutput[commentAutocompleteResponse]
+type commentAutocompleteOutput = httpapi.BodyOutput[commentAutocompleteResponse]
 
 type approvePRInput struct {
 	Provider     string `path:"provider"`
@@ -411,7 +412,7 @@ type actionStatusBody struct {
 	ApprovedCount int    `json:"approved_count,omitempty"`
 }
 
-type actionStatusOutput = bodyOutput[actionStatusBody]
+type actionStatusOutput = httpapi.BodyOutput[actionStatusBody]
 
 type mergePRInput struct {
 	Provider     string `path:"provider"`
@@ -447,14 +448,14 @@ type mergePRBody struct {
 	Message string `json:"message"`
 }
 
-type mergePROutput = bodyOutput[mergePRBody]
+type mergePROutput = httpapi.BodyOutput[mergePRBody]
 
 type deferMergePRBody struct {
 	Status        string `json:"status"`
 	PendingChecks int    `json:"pending_checks"`
 }
 
-type deferMergePROutput = acceptedBodyOutput[deferMergePRBody]
+type deferMergePROutput = httpapi.AcceptedBodyOutput[deferMergePRBody]
 
 type editPRContentInput struct {
 	Provider     string `path:"provider"`
@@ -468,7 +469,7 @@ type editPRContentInput struct {
 	}
 }
 
-type editPRContentOutput = bodyOutput[mergeRequestDetailResponse]
+type editPRContentOutput = httpapi.BodyOutput[mergeRequestDetailResponse]
 
 type editIssueContentInput struct {
 	Provider     string `path:"provider"`
@@ -482,7 +483,7 @@ type editIssueContentInput struct {
 	}
 }
 
-type editIssueContentOutput = bodyOutput[issueDetailResponse]
+type editIssueContentOutput = httpapi.BodyOutput[issueDetailResponse]
 
 type githubStateInput struct {
 	Provider     string `path:"provider"`
@@ -499,33 +500,33 @@ type githubStateOutputBody struct {
 	State string `json:"state"`
 }
 
-type githubStateOutput = bodyOutput[githubStateOutputBody]
+type githubStateOutput = httpapi.BodyOutput[githubStateOutputBody]
 
-type listReposOutput = bodyOutput[[]repoResponse]
+type listReposOutput = httpapi.BodyOutput[[]repoResponse]
 
-type listRepoSummariesOutput = bodyOutput[[]repoSummaryResponse]
+type listRepoSummariesOutput = httpapi.BodyOutput[[]repoSummaryResponse]
 
-type acceptedOutput = acceptedStatusOutput
+type acceptedOutput = httpapi.AcceptedStatusOutput
 
-type syncPROutput = bodyOutput[mergeRequestDetailResponse]
+type syncPROutput = httpapi.BodyOutput[mergeRequestDetailResponse]
 
-type syncPRCIOutput = bodyOutput[mergeRequestDetailResponse]
+type syncPRCIOutput = httpapi.BodyOutput[mergeRequestDetailResponse]
 
-type syncIssueOutput = bodyOutput[issueDetailResponse]
+type syncIssueOutput = httpapi.BodyOutput[issueDetailResponse]
 
-type resolveItemOutput = bodyOutput[resolveItemResponse]
+type resolveItemOutput = httpapi.BodyOutput[resolveItemResponse]
 
-type syncStatusOutput = bodyOutput[*ghclient.SyncStatus]
+type syncStatusOutput = httpapi.BodyOutput[*ghclient.SyncStatus]
 
-type rateLimitsOutput = bodyOutput[rateLimitsResponse]
+type rateLimitsOutput = httpapi.BodyOutput[rateLimitsResponse]
 
 type listStacksInput struct {
 	Repo string `query:"repo"`
 }
 
-type listStacksOutput = bodyOutput[[]stackResponse]
+type listStacksOutput = httpapi.BodyOutput[[]stackResponse]
 
-type getStackForPROutput = bodyOutput[stackContextResponse]
+type getStackForPROutput = httpapi.BodyOutput[stackContextResponse]
 
 type createWorkspaceInput struct {
 	Body struct {
@@ -647,25 +648,25 @@ type listWorkspacesOutputBody struct {
 	Workspaces []workspaceResponse `json:"workspaces"`
 }
 
-type listWorkspacesOutput = bodyOutput[listWorkspacesOutputBody]
+type listWorkspacesOutput = httpapi.BodyOutput[listWorkspacesOutputBody]
 
-type getWorkspaceOutput = bodyOutput[workspaceResponse]
+type getWorkspaceOutput = httpapi.BodyOutput[workspaceResponse]
 
-type getWorkspaceDiffOutput = bodyOutput[diffResponse]
-type getWorkspaceFilePreviewOutput = bodyOutput[filePreviewResponse]
-type getWorkspaceFilesOutput = bodyOutput[filesResponse]
-type watchWorkspaceDiffOutput = bodyOutput[workspaceDiffWatchResponse]
-type getWorkspaceCommitsOutput = bodyOutput[commitsResponse]
+type getWorkspaceDiffOutput = httpapi.BodyOutput[diffResponse]
+type getWorkspaceFilePreviewOutput = httpapi.BodyOutput[filePreviewResponse]
+type getWorkspaceFilesOutput = httpapi.BodyOutput[filesResponse]
+type watchWorkspaceDiffOutput = httpapi.BodyOutput[workspaceDiffWatchResponse]
+type getWorkspaceCommitsOutput = httpapi.BodyOutput[commitsResponse]
 
-type getWorkspaceRuntimeOutput = bodyOutput[workspaceRuntimeResponse]
+type getWorkspaceRuntimeOutput = httpapi.BodyOutput[workspaceRuntimeResponse]
 
-type workspaceRuntimeSessionOutput = bodyOutput[localruntime.SessionInfo]
+type workspaceRuntimeSessionOutput = httpapi.BodyOutput[localruntime.SessionInfo]
 
-type runtimeAttachSpecOutput = bodyOutput[runtimeAttachSpecResponse]
+type runtimeAttachSpecOutput = httpapi.BodyOutput[runtimeAttachSpecResponse]
 
-type createWorkspaceOutput = acceptedBodyOutput[workspaceResponse]
+type createWorkspaceOutput = httpapi.AcceptedBodyOutput[workspaceResponse]
 
-type refreshWorkspaceOutput = bodyOutput[workspaceResponse]
+type refreshWorkspaceOutput = httpapi.BodyOutput[workspaceResponse]
 
 type workspaceDiffRequest struct {
 	Summary           *db.WorkspaceSummary
@@ -688,7 +689,7 @@ type triggerSyncInput struct {
 	OnlyRepos     []string `query:"only_repo" doc:"Optional repository filters to sync exclusively. Accepts repeated provider|platform_host/repo_path values or comma-separated values."`
 }
 
-type listActivityOutput = bodyOutput[activityResponse]
+type listActivityOutput = httpapi.BodyOutput[activityResponse]
 
 type listNotificationsInput struct {
 	State  string   `query:"state"`
@@ -727,21 +728,6 @@ func apiConfig(basePath string) huma.Config {
 	return config
 }
 
-// documentOperation returns an operation-builder callback that sets Summary,
-// Tags, and OperationID on the resulting *huma.Operation. Use it with the
-// huma.Get/Post/Put/Patch/Delete convenience helpers so routes registered
-// through shorthand still carry the metadata that the OpenAPI contract test
-// enforces.
-func documentOperation(
-	operationID, summary string, tags ...string,
-) func(*huma.Operation) {
-	return func(o *huma.Operation) {
-		o.OperationID = operationID
-		o.Summary = summary
-		o.Tags = tags
-	}
-}
-
 func repoBrowserAssetResponses() map[string]*huma.Response {
 	return map[string]*huma.Response{
 		"200": {
@@ -768,7 +754,7 @@ func (s *Server) registerAPI(api huma.API) {
 	}, s.getVersion)
 
 	huma.Get(api, "/activity", s.listActivity,
-		documentOperation("list-activity", "List activity", "Activity"))
+		httpapi.DocumentOperation("list-activity", "List activity", "Activity"))
 	s.registerKataAPI(api)
 	s.registerDocsAPI(api)
 	s.registerMsgvaultAPI(api)
@@ -815,9 +801,9 @@ func (s *Server) registerAPI(api huma.API) {
 		Tags:          []string{"Activity"},
 	}, s.markNotificationsUndone)
 	huma.Get(api, "/pulls", s.listPulls,
-		documentOperation("list-pulls", "List pull requests", "Pull Requests"))
+		httpapi.DocumentOperation("list-pulls", "List pull requests", "Pull Requests"))
 	huma.Get(api, "/issues", s.listIssues,
-		documentOperation("list-issues", "List issues", "Issues"))
+		httpapi.DocumentOperation("list-issues", "List issues", "Issues"))
 	s.registerProviderRepoAPI(api)
 	s.registerFleetRoutes(api)
 
@@ -847,7 +833,7 @@ func (s *Server) registerAPI(api huma.API) {
 	}, s.unsetStarred)
 
 	huma.Get(api, "/repos", s.listRepos,
-		documentOperation("list-repos", "List repositories", "Repositories"))
+		httpapi.DocumentOperation("list-repos", "List repositories", "Repositories"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "preview-repos",
 		Method:        http.MethodPost,
@@ -889,9 +875,9 @@ func (s *Server) registerAPI(api huma.API) {
 		},
 	}, s.streamEvents)
 	huma.Get(api, "/sync/status", s.syncStatus,
-		documentOperation("get-sync-status", "Get sync status", "Sync"))
+		httpapi.DocumentOperation("get-sync-status", "Get sync status", "Sync"))
 	huma.Get(api, "/rate-limits", s.getRateLimits,
-		documentOperation("get-rate-limits", "Get rate limits", "Sync"))
+		httpapi.DocumentOperation("get-rate-limits", "Get rate limits", "Sync"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "capture-telemetry-event",
 		Method:        http.MethodPost,
@@ -909,7 +895,7 @@ func (s *Server) registerAPI(api huma.API) {
 	}, s.getRoborevStatus)
 
 	huma.Get(api, "/stacks", s.listStacks,
-		documentOperation("list-stacks", "List stacks", "Stacks"))
+		httpapi.DocumentOperation("list-stacks", "List stacks", "Stacks"))
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-workspace",
@@ -920,19 +906,19 @@ func (s *Server) registerAPI(api huma.API) {
 		Tags:          []string{"Workspaces"},
 	}, s.createWorkspace)
 	huma.Get(api, "/workspaces", s.listWorkspaces,
-		documentOperation("list-workspaces", "List workspaces", "Workspaces"))
+		httpapi.DocumentOperation("list-workspaces", "List workspaces", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}", s.getWorkspace,
-		documentOperation("get-workspace", "Get workspace", "Workspaces"))
+		httpapi.DocumentOperation("get-workspace", "Get workspace", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/commits", s.getWorkspaceCommits,
-		documentOperation("get-workspace-commits", "Get workspace commits", "Workspaces"))
+		httpapi.DocumentOperation("get-workspace-commits", "Get workspace commits", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/diff", s.getWorkspaceDiff,
-		documentOperation("get-workspace-diff", "Get workspace diff", "Workspaces"))
+		httpapi.DocumentOperation("get-workspace-diff", "Get workspace diff", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/file-preview", s.getWorkspaceFilePreview,
-		documentOperation("get-workspace-file-preview", "Get workspace file preview", "Workspaces"))
+		httpapi.DocumentOperation("get-workspace-file-preview", "Get workspace file preview", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/files", s.getWorkspaceFiles,
-		documentOperation("get-workspace-files", "Get workspace files", "Workspaces"))
+		httpapi.DocumentOperation("get-workspace-files", "Get workspace files", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/diff/watch", s.watchWorkspaceDiff,
-		documentOperation("watch-workspace-diff", "Watch selected workspace diff", "Workspaces"))
+		httpapi.DocumentOperation("watch-workspace-diff", "Watch selected workspace diff", "Workspaces"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "retry-workspace",
 		Method:        http.MethodPost,
@@ -1261,13 +1247,13 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 	hostIssuePath := hostIssueRepoPath + "/{number}"
 
 	huma.Get(api, pullPath, s.getPull,
-		documentOperation("get-pull", "Get pull request", "Pull Requests"))
+		httpapi.DocumentOperation("get-pull", "Get pull request", "Pull Requests"))
 	huma.Get(api, hostPullPath, s.getPullOnHost,
-		documentOperation("get-pull-on-host", "Get pull request", "Pull Requests"))
+		httpapi.DocumentOperation("get-pull-on-host", "Get pull request", "Pull Requests"))
 	huma.Get(api, pullPath+"/import-metadata", s.getMRImportMetadata,
-		documentOperation("get-pull-import-metadata", "Get pull request import metadata", "Pull Requests"))
+		httpapi.DocumentOperation("get-pull-import-metadata", "Get pull request import metadata", "Pull Requests"))
 	huma.Get(api, hostPullPath+"/import-metadata", s.getMRImportMetadataOnHost,
-		documentOperation("get-pull-import-metadata-on-host", "Get pull request import metadata", "Pull Requests"))
+		httpapi.DocumentOperation("get-pull-import-metadata-on-host", "Get pull request import metadata", "Pull Requests"))
 	huma.Register(api, huma.Operation{OperationID: "set-kanban-state", Method: http.MethodPut, Path: pullPath + "/state", DefaultStatus: http.StatusOK, Summary: "Set pull request kanban state", Tags: []string{"Pull Requests"}}, s.setKanbanState)
 	huma.Register(api, huma.Operation{OperationID: "set-kanban-state-on-host", Method: http.MethodPut, Path: hostPullPath + "/state", DefaultStatus: http.StatusOK, Summary: "Set pull request kanban state", Tags: []string{"Pull Requests"}}, s.setKanbanStateOnHost)
 	huma.Register(api, huma.Operation{OperationID: "edit-pr-content", Method: http.MethodPatch, Path: pullPath, DefaultStatus: http.StatusOK, Summary: "Edit pull request content", Tags: []string{"Pull Requests"}}, s.editPRContent)
@@ -1310,9 +1296,9 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "create-issue", Method: http.MethodPost, Path: issueRepoPath, DefaultStatus: http.StatusCreated, Summary: "Create issue", Tags: []string{"Issues"}}, s.createIssue)
 	huma.Register(api, huma.Operation{OperationID: "create-issue-on-host", Method: http.MethodPost, Path: hostIssueRepoPath, DefaultStatus: http.StatusCreated, Summary: "Create issue", Tags: []string{"Issues"}}, s.createIssueOnHost)
 	huma.Get(api, issuePath, s.getIssue,
-		documentOperation("get-issue", "Get issue", "Issues"))
+		httpapi.DocumentOperation("get-issue", "Get issue", "Issues"))
 	huma.Get(api, hostIssuePath, s.getIssueOnHost,
-		documentOperation("get-issue-on-host", "Get issue", "Issues"))
+		httpapi.DocumentOperation("get-issue-on-host", "Get issue", "Issues"))
 	huma.Register(api, huma.Operation{OperationID: "post-issue-comment", Method: http.MethodPost, Path: issuePath + "/comments", DefaultStatus: http.StatusCreated, Summary: "Post issue comment", Tags: []string{"Issues"}}, s.postIssueComment)
 	huma.Register(api, huma.Operation{OperationID: "post-issue-comment-on-host", Method: http.MethodPost, Path: hostIssuePath + "/comments", DefaultStatus: http.StatusCreated, Summary: "Post issue comment", Tags: []string{"Issues"}}, s.postIssueCommentOnHost)
 	huma.Register(api, huma.Operation{OperationID: "edit-issue-content", Method: http.MethodPatch, Path: issuePath, DefaultStatus: http.StatusOK, Summary: "Edit issue content", Tags: []string{"Issues"}}, s.editIssueContent)
@@ -1327,25 +1313,25 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "set-issue-assignees-on-host", Method: http.MethodPut, Path: hostIssuePath + "/assignees", DefaultStatus: http.StatusOK, Summary: "Set issue assignees", Tags: []string{"Issues"}}, s.setIssueAssigneesOnHost)
 
 	huma.Post(api, repoPath+"/resolve/{number}", s.resolveItem,
-		documentOperation("resolve-repo-item", "Resolve repository item", "Repositories"))
+		httpapi.DocumentOperation("resolve-repo-item", "Resolve repository item", "Repositories"))
 	huma.Post(api, hostRepoPath+"/resolve/{number}", s.resolveItemOnHost,
-		documentOperation("resolve-repo-item-on-host", "Resolve repository item", "Repositories"))
+		httpapi.DocumentOperation("resolve-repo-item-on-host", "Resolve repository item", "Repositories"))
 	huma.Get(api, repoPath, s.getRepo,
-		documentOperation("get-repo", "Get repository", "Repositories"))
+		httpapi.DocumentOperation("get-repo", "Get repository", "Repositories"))
 	huma.Get(api, hostRepoPath, s.getRepoOnHost,
-		documentOperation("get-repo-on-host", "Get repository", "Repositories"))
+		httpapi.DocumentOperation("get-repo-on-host", "Get repository", "Repositories"))
 	huma.Get(api, repoPath+"/browser/refs", s.listRepoBrowserRefs,
-		documentOperation("list-repo-browser-refs", "List repository browser refs", "Repositories"))
+		httpapi.DocumentOperation("list-repo-browser-refs", "List repository browser refs", "Repositories"))
 	huma.Get(api, hostRepoPath+"/browser/refs", s.listRepoBrowserRefsOnHost,
-		documentOperation("list-repo-browser-refs-on-host", "List repository browser refs", "Repositories"))
+		httpapi.DocumentOperation("list-repo-browser-refs-on-host", "List repository browser refs", "Repositories"))
 	huma.Get(api, repoPath+"/browser/tree", s.listRepoBrowserTree,
-		documentOperation("list-repo-browser-tree", "List repository browser tree", "Repositories"))
+		httpapi.DocumentOperation("list-repo-browser-tree", "List repository browser tree", "Repositories"))
 	huma.Get(api, hostRepoPath+"/browser/tree", s.listRepoBrowserTreeOnHost,
-		documentOperation("list-repo-browser-tree-on-host", "List repository browser tree", "Repositories"))
+		httpapi.DocumentOperation("list-repo-browser-tree-on-host", "List repository browser tree", "Repositories"))
 	huma.Get(api, repoPath+"/browser/blob", s.getRepoBrowserBlob,
-		documentOperation("get-repo-browser-blob", "Get repository browser blob", "Repositories"))
+		httpapi.DocumentOperation("get-repo-browser-blob", "Get repository browser blob", "Repositories"))
 	huma.Get(api, hostRepoPath+"/browser/blob", s.getRepoBrowserBlobOnHost,
-		documentOperation("get-repo-browser-blob-on-host", "Get repository browser blob", "Repositories"))
+		httpapi.DocumentOperation("get-repo-browser-blob-on-host", "Get repository browser blob", "Repositories"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "get-repo-browser-asset",
 		Method:        http.MethodGet,
@@ -1367,48 +1353,48 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 		Responses:     repoBrowserAssetResponses(),
 	}, s.getRepoBrowserAssetOnHost)
 	huma.Get(api, repoPath+"/browser/last-changed", s.getRepoBrowserLastChanged,
-		documentOperation("get-repo-browser-last-changed", "Get repository browser last changed commits", "Repositories"))
+		httpapi.DocumentOperation("get-repo-browser-last-changed", "Get repository browser last changed commits", "Repositories"))
 	huma.Get(api, hostRepoPath+"/browser/last-changed", s.getRepoBrowserLastChangedOnHost,
-		documentOperation("get-repo-browser-last-changed-on-host", "Get repository browser last changed commits", "Repositories"))
+		httpapi.DocumentOperation("get-repo-browser-last-changed-on-host", "Get repository browser last changed commits", "Repositories"))
 	huma.Get(api, repoPath+"/browser/history", s.getRepoBrowserHistory,
-		documentOperation("get-repo-browser-history", "Get repository browser file history", "Repositories"))
+		httpapi.DocumentOperation("get-repo-browser-history", "Get repository browser file history", "Repositories"))
 	huma.Get(api, hostRepoPath+"/browser/history", s.getRepoBrowserHistoryOnHost,
-		documentOperation("get-repo-browser-history-on-host", "Get repository browser file history", "Repositories"))
+		httpapi.DocumentOperation("get-repo-browser-history-on-host", "Get repository browser file history", "Repositories"))
 	huma.Get(api, repoPath+"/browser/commit", s.getRepoBrowserCommit,
-		documentOperation("get-repo-browser-commit", "Get repository browser commit", "Repositories"))
+		httpapi.DocumentOperation("get-repo-browser-commit", "Get repository browser commit", "Repositories"))
 	huma.Get(api, hostRepoPath+"/browser/commit", s.getRepoBrowserCommitOnHost,
-		documentOperation("get-repo-browser-commit-on-host", "Get repository browser commit", "Repositories"))
+		httpapi.DocumentOperation("get-repo-browser-commit-on-host", "Get repository browser commit", "Repositories"))
 	huma.Get(api, repoPath+"/commits/{sha}/diff", s.getRepoCommitDiff,
-		documentOperation("get-repo-commit-diff", "Get repository commit diff", "Repositories"))
+		httpapi.DocumentOperation("get-repo-commit-diff", "Get repository commit diff", "Repositories"))
 	huma.Get(api, hostRepoPath+"/commits/{sha}/diff", s.getRepoCommitDiffOnHost,
-		documentOperation("get-repo-commit-diff-on-host", "Get repository commit diff", "Repositories"))
+		httpapi.DocumentOperation("get-repo-commit-diff-on-host", "Get repository commit diff", "Repositories"))
 	huma.Register(api, huma.Operation{OperationID: "list-repo-labels", Method: http.MethodGet, Path: repoPath + "/labels", DefaultStatus: http.StatusOK, Summary: "List repository labels", Tags: []string{"Repositories"}}, s.listRepoLabels)
 	huma.Register(api, huma.Operation{OperationID: "list-repo-labels-on-host", Method: http.MethodGet, Path: hostRepoPath + "/labels", DefaultStatus: http.StatusOK, Summary: "List repository labels", Tags: []string{"Repositories"}}, s.listRepoLabelsOnHost)
 	huma.Get(api, repoPath+"/comment-autocomplete", s.getCommentAutocomplete,
-		documentOperation("get-comment-autocomplete", "Get comment autocomplete", "Repositories"))
+		httpapi.DocumentOperation("get-comment-autocomplete", "Get comment autocomplete", "Repositories"))
 	huma.Get(api, hostRepoPath+"/comment-autocomplete", s.getCommentAutocompleteOnHost,
-		documentOperation("get-comment-autocomplete-on-host", "Get comment autocomplete", "Repositories"))
+		httpapi.DocumentOperation("get-comment-autocomplete-on-host", "Get comment autocomplete", "Repositories"))
 
 	huma.Post(api, pullPath+"/approve", s.approvePR,
-		documentOperation("approve-pull", "Approve pull request", "Pull Requests"))
+		httpapi.DocumentOperation("approve-pull", "Approve pull request", "Pull Requests"))
 	huma.Post(api, hostPullPath+"/approve", s.approvePROnHost,
-		documentOperation("approve-pull-on-host", "Approve pull request", "Pull Requests"))
+		httpapi.DocumentOperation("approve-pull-on-host", "Approve pull request", "Pull Requests"))
 	huma.Post(api, pullPath+"/request-changes", s.requestChangesPR,
-		documentOperation("request-pull-changes", "Request pull request changes", "Pull Requests"))
+		httpapi.DocumentOperation("request-pull-changes", "Request pull request changes", "Pull Requests"))
 	huma.Post(api, hostPullPath+"/request-changes", s.requestChangesPROnHost,
-		documentOperation("request-pull-changes-on-host", "Request pull request changes", "Pull Requests"))
+		httpapi.DocumentOperation("request-pull-changes-on-host", "Request pull request changes", "Pull Requests"))
 	huma.Post(api, pullPath+"/approve-workflows", s.approveWorkflows,
-		documentOperation("approve-pull-workflows", "Approve pull request workflows", "Pull Requests"))
+		httpapi.DocumentOperation("approve-pull-workflows", "Approve pull request workflows", "Pull Requests"))
 	huma.Post(api, hostPullPath+"/approve-workflows", s.approveWorkflowsOnHost,
-		documentOperation("approve-pull-workflows-on-host", "Approve pull request workflows", "Pull Requests"))
+		httpapi.DocumentOperation("approve-pull-workflows-on-host", "Approve pull request workflows", "Pull Requests"))
 	huma.Post(api, pullPath+"/ready-for-review", s.readyForReview,
-		documentOperation("mark-pull-ready-for-review", "Mark pull request ready for review", "Pull Requests"))
+		httpapi.DocumentOperation("mark-pull-ready-for-review", "Mark pull request ready for review", "Pull Requests"))
 	huma.Post(api, hostPullPath+"/ready-for-review", s.readyForReviewOnHost,
-		documentOperation("mark-pull-ready-for-review-on-host", "Mark pull request ready for review", "Pull Requests"))
+		httpapi.DocumentOperation("mark-pull-ready-for-review-on-host", "Mark pull request ready for review", "Pull Requests"))
 	huma.Post(api, pullPath+"/merge", s.mergePR,
-		documentOperation("merge-pull", "Merge pull request", "Pull Requests"))
+		httpapi.DocumentOperation("merge-pull", "Merge pull request", "Pull Requests"))
 	huma.Post(api, hostPullPath+"/merge", s.mergePROnHost,
-		documentOperation("merge-pull-on-host", "Merge pull request", "Pull Requests"))
+		httpapi.DocumentOperation("merge-pull-on-host", "Merge pull request", "Pull Requests"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "defer-merge-pull",
 		Method:        http.MethodPost,
@@ -1426,19 +1412,19 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 		Tags:          []string{"Pull Requests"},
 	}, s.deferMergePROnHost)
 	huma.Post(api, pullPath+"/sync", s.syncPR,
-		documentOperation("sync-pull", "Sync pull request", "Pull Requests"))
+		httpapi.DocumentOperation("sync-pull", "Sync pull request", "Pull Requests"))
 	huma.Post(api, hostPullPath+"/sync", s.syncPROnHost,
-		documentOperation("sync-pull-on-host", "Sync pull request", "Pull Requests"))
+		httpapi.DocumentOperation("sync-pull-on-host", "Sync pull request", "Pull Requests"))
 	huma.Post(api, pullPath+"/ci-refresh", s.syncPRCI,
-		documentOperation("refresh-pull-ci", "Refresh pull request CI", "Pull Requests"))
+		httpapi.DocumentOperation("refresh-pull-ci", "Refresh pull request CI", "Pull Requests"))
 	huma.Post(api, hostPullPath+"/ci-refresh", s.syncPRCIOnHost,
-		documentOperation("refresh-pull-ci-on-host", "Refresh pull request CI", "Pull Requests"))
+		httpapi.DocumentOperation("refresh-pull-ci-on-host", "Refresh pull request CI", "Pull Requests"))
 	huma.Register(api, huma.Operation{OperationID: "enqueue-pr-sync", Method: http.MethodPost, Path: pullPath + "/sync/async", DefaultStatus: http.StatusAccepted, Summary: "Enqueue pull request sync", Tags: []string{"Pull Requests"}}, s.enqueuePRSync)
 	huma.Register(api, huma.Operation{OperationID: "enqueue-pr-sync-on-host", Method: http.MethodPost, Path: hostPullPath + "/sync/async", DefaultStatus: http.StatusAccepted, Summary: "Enqueue pull request sync", Tags: []string{"Pull Requests"}}, s.enqueuePRSyncOnHost)
 	huma.Post(api, issuePath+"/sync", s.syncIssue,
-		documentOperation("sync-issue", "Sync issue", "Issues"))
+		httpapi.DocumentOperation("sync-issue", "Sync issue", "Issues"))
 	huma.Post(api, hostIssuePath+"/sync", s.syncIssueOnHost,
-		documentOperation("sync-issue-on-host", "Sync issue", "Issues"))
+		httpapi.DocumentOperation("sync-issue-on-host", "Sync issue", "Issues"))
 	huma.Register(api, huma.Operation{OperationID: "enqueue-issue-sync", Method: http.MethodPost, Path: issuePath + "/sync/async", DefaultStatus: http.StatusAccepted, Summary: "Enqueue issue sync", Tags: []string{"Issues"}}, s.enqueueIssueSync)
 	huma.Register(api, huma.Operation{OperationID: "enqueue-issue-sync-on-host", Method: http.MethodPost, Path: hostIssuePath + "/sync/async", DefaultStatus: http.StatusAccepted, Summary: "Enqueue issue sync", Tags: []string{"Issues"}}, s.enqueueIssueSyncOnHost)
 	huma.Register(api, huma.Operation{OperationID: "set-pr-github-state", Method: http.MethodPost, Path: pullPath + "/github-state", DefaultStatus: http.StatusOK, Summary: "Set pull request GitHub state", Tags: []string{"Pull Requests"}}, s.setPRGitHubState)
@@ -1447,25 +1433,25 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "set-issue-github-state-on-host", Method: http.MethodPost, Path: hostIssuePath + "/github-state", DefaultStatus: http.StatusOK, Summary: "Set issue GitHub state", Tags: []string{"Issues"}}, s.setIssueGitHubStateOnHost)
 
 	huma.Get(api, pullPath+"/commits", s.getCommits,
-		documentOperation("get-pull-commits", "Get pull request commits", "Pull Requests"))
+		httpapi.DocumentOperation("get-pull-commits", "Get pull request commits", "Pull Requests"))
 	huma.Get(api, hostPullPath+"/commits", s.getCommitsOnHost,
-		documentOperation("get-pull-commits-on-host", "Get pull request commits", "Pull Requests"))
+		httpapi.DocumentOperation("get-pull-commits-on-host", "Get pull request commits", "Pull Requests"))
 	huma.Get(api, pullPath+"/diff", s.getDiff,
-		documentOperation("get-pull-diff", "Get pull request diff", "Pull Requests"))
+		httpapi.DocumentOperation("get-pull-diff", "Get pull request diff", "Pull Requests"))
 	huma.Get(api, hostPullPath+"/diff", s.getDiffOnHost,
-		documentOperation("get-pull-diff-on-host", "Get pull request diff", "Pull Requests"))
+		httpapi.DocumentOperation("get-pull-diff-on-host", "Get pull request diff", "Pull Requests"))
 	huma.Get(api, pullPath+"/files", s.getFiles,
-		documentOperation("get-pull-files", "Get pull request files", "Pull Requests"))
+		httpapi.DocumentOperation("get-pull-files", "Get pull request files", "Pull Requests"))
 	huma.Get(api, hostPullPath+"/files", s.getFilesOnHost,
-		documentOperation("get-pull-files-on-host", "Get pull request files", "Pull Requests"))
+		httpapi.DocumentOperation("get-pull-files-on-host", "Get pull request files", "Pull Requests"))
 	huma.Get(api, pullPath+"/file-preview", s.getFilePreview,
-		documentOperation("get-pull-file-preview", "Get pull request file preview", "Pull Requests"))
+		httpapi.DocumentOperation("get-pull-file-preview", "Get pull request file preview", "Pull Requests"))
 	huma.Get(api, hostPullPath+"/file-preview", s.getFilePreviewOnHost,
-		documentOperation("get-pull-file-preview-on-host", "Get pull request file preview", "Pull Requests"))
+		httpapi.DocumentOperation("get-pull-file-preview-on-host", "Get pull request file preview", "Pull Requests"))
 	huma.Get(api, pullPath+"/stack", s.getStackForPR,
-		documentOperation("get-pull-stack", "Get pull request stack", "Pull Requests"))
+		httpapi.DocumentOperation("get-pull-stack", "Get pull request stack", "Pull Requests"))
 	huma.Get(api, hostPullPath+"/stack", s.getStackForPROnHost,
-		documentOperation("get-pull-stack-on-host", "Get pull request stack", "Pull Requests"))
+		httpapi.DocumentOperation("get-pull-stack-on-host", "Get pull request stack", "Pull Requests"))
 	huma.Register(api, huma.Operation{OperationID: "create-issue-workspace", Method: http.MethodPost, Path: issuePath + "/workspace", DefaultStatus: http.StatusAccepted, Summary: "Create issue workspace", Tags: []string{"Issues"}}, s.createIssueWorkspace)
 	huma.Register(api, huma.Operation{OperationID: "create-issue-workspace-on-host", Method: http.MethodPost, Path: hostIssuePath + "/workspace", DefaultStatus: http.StatusAccepted, Summary: "Create issue workspace", Tags: []string{"Issues"}}, s.createIssueWorkspaceOnHost)
 }
@@ -1484,7 +1470,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 			"open": true, "closed": true, "all": true,
 		}
 		if !valid[input.State] {
-			return nil, problemValidation(
+			return nil, httpapi.Validation(
 				"query.state",
 				"state must be one of: open, closed, all",
 				"open", "closed", "all",
@@ -1492,7 +1478,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		}
 	}
 	if hasInvalidRepoFilter(input.Repo) {
-		return nil, problemValidation("query.repo", "repo filter must be provider|platform_host/repo_path")
+		return nil, httpapi.Validation("query.repo", "repo filter must be provider|platform_host/repo_path")
 	}
 
 	opts := db.ListMergeRequestsOpts{
@@ -1507,12 +1493,12 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 
 	mrs, err := s.db.ListMergeRequests(ctx, opts)
 	if err != nil {
-		return nil, problemInternal("list pulls failed")
+		return nil, httpapi.Internal("list pulls failed")
 	}
 
 	repoByID, err := s.lookupRepoMap(ctx)
 	if err != nil {
-		return nil, problemInternal("repo lookup failed")
+		return nil, httpapi.Internal("repo lookup failed")
 	}
 
 	mrIDs := make([]int64, len(mrs))
@@ -1521,11 +1507,11 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 	}
 	stackConflictBlocked, err := s.db.ListMRsBlockedByStackConflicts(ctx, mrIDs)
 	if err != nil {
-		return nil, problemInternal("load stack conflict state failed")
+		return nil, httpapi.Internal("load stack conflict state failed")
 	}
 	links, err := s.db.GetWorktreeLinksForMRs(ctx, mrIDs)
 	if err != nil {
-		return nil, problemInternal("load worktree links failed")
+		return nil, httpapi.Internal("load worktree links failed")
 	}
 	linksByMR := indexWorktreeLinksByMR(
 		links,
@@ -1533,7 +1519,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 	)
 	workspacesByItem, err := s.buildWorkspaceRefLookup(ctx)
 	if err != nil {
-		return nil, problemInternal("load workspace refs failed")
+		return nil, httpapi.Internal("load workspace refs failed")
 	}
 
 	out := make([]mergeRequestResponse, 0, len(mrs))
@@ -1579,10 +1565,10 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 	}
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get pull request failed")
+		return nil, httpapi.Internal("get pull request failed")
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 
 	body, err := s.buildPullDetailResponse(ctx, mr)
@@ -1598,7 +1584,7 @@ func (s *Server) getRepoCommitDiff(
 	input *getRepoCommitDiffInput,
 ) (*getRepoCommitDiffOutput, error) {
 	if s.clones == nil {
-		return nil, problemServiceUnavailable("diff view not available: clone manager not configured")
+		return nil, httpapi.ServiceUnavailable("diff view not available: clone manager not configured")
 	}
 
 	repo, err := s.lookupRepoByProviderRoute(
@@ -1610,35 +1596,35 @@ func (s *Server) getRepoCommitDiff(
 
 	host := repoProviderHost(*repo)
 	if !isFullGitObjectID(input.SHA) {
-		return nil, problemValidation("path.sha", "commit SHA must be a full object ID")
+		return nil, httpapi.Validation("path.sha", "commit SHA must be a full object ID")
 	}
 
 	sha, err := s.clones.ResolveCommit(ctx, host, repo.Owner, repo.Name, input.SHA)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
-			return nil, problemNotFound(CodeNotFound, "diff not available: referenced commit not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
 		}
 		slog.Error("failed to resolve repo commit", "owner", input.Owner, "name", input.Name, "sha", input.SHA, "err", err)
-		return nil, problemUpstream("failed to compute diff", "", "")
+		return nil, httpapi.Upstream("failed to compute diff", "", "")
 	}
 
 	parent, err := s.clones.ParentOf(ctx, host, repo.Owner, repo.Name, sha)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
-			return nil, problemNotFound(CodeNotFound, "diff not available: referenced commit not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
 		}
 		slog.Error("failed to resolve commit parent", "owner", input.Owner, "name", input.Name, "sha", sha, "err", err)
-		return nil, problemUpstream("failed to compute diff", "", "")
+		return nil, httpapi.Upstream("failed to compute diff", "", "")
 	}
 
 	hideWhitespace := input.Whitespace == "hide"
 	result, err := s.clones.Diff(ctx, host, repo.Owner, repo.Name, parent, sha, hideWhitespace)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
-			return nil, problemNotFound(CodeNotFound, "diff not available: referenced commit not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
 		}
 		slog.Error("failed to compute repo commit diff", "owner", input.Owner, "name", input.Name, "sha", sha, "err", err)
-		return nil, problemUpstream("failed to compute diff", "", "")
+		return nil, httpapi.Upstream("failed to compute diff", "", "")
 	}
 
 	return &getRepoCommitDiffOutput{Body: diffResponse{
@@ -1690,7 +1676,7 @@ func (s *Server) buildPullDetailResponse(
 ) (mergeRequestDetailResponse, error) {
 	events, err := s.db.ListMREvents(ctx, mr.ID)
 	if err != nil {
-		return mergeRequestDetailResponse{}, problemInternal("list mr events failed")
+		return mergeRequestDetailResponse{}, httpapi.Internal("list mr events failed")
 	}
 	if events == nil {
 		events = []db.MREvent{}
@@ -1705,12 +1691,12 @@ func (s *Server) buildPullDetailResponse(
 
 	dbLinks, err := s.db.GetWorktreeLinksForMR(ctx, mr.ID)
 	if err != nil {
-		return mergeRequestDetailResponse{}, problemInternal("load worktree links failed")
+		return mergeRequestDetailResponse{}, httpapi.Internal("load worktree links failed")
 	}
 
 	repo, err := s.db.GetRepoByID(ctx, mr.RepoID)
 	if err != nil || repo == nil {
-		return mergeRequestDetailResponse{}, problemInternal("load repo failed")
+		return mergeRequestDetailResponse{}, httpapi.Internal("load repo failed")
 	}
 	resp := mergeRequestDetailResponse{
 		Events:               eventResponses,
@@ -1735,7 +1721,7 @@ func (s *Server) buildPullDetailResponse(
 
 	stack, members, err := s.db.GetStackForPRByRepoID(ctx, mr.RepoID, mr.Number)
 	if err != nil {
-		return mergeRequestDetailResponse{}, problemInternal("get stack for pr failed")
+		return mergeRequestDetailResponse{}, httpapi.Internal("get stack for pr failed")
 	}
 	if stack != nil {
 		stackContext := stackContextForPR(mr.Number, stack, members)
@@ -1956,10 +1942,10 @@ func (s *Server) getMRImportMetadata(
 	}
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("failed to query merge request")
+		return nil, httpapi.Internal("failed to query merge request")
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "merge request not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "merge request not found", nil)
 	}
 	return &getMRImportMetadataOutput{
 		Body: mrImportMetadataResponse{
@@ -1976,7 +1962,7 @@ func (s *Server) getMRImportMetadata(
 
 func (s *Server) setKanbanState(ctx context.Context, input *setKanbanStateInput) (*statusOnlyOutput, error) {
 	if !validKanbanStates[input.Body.Status] {
-		return nil, problemValidation(
+		return nil, httpapi.Validation(
 			"body.status",
 			"status must be one of: new, reviewing, waiting, awaiting_merge",
 			"new", "reviewing", "waiting", "awaiting_merge",
@@ -1998,10 +1984,10 @@ func (s *Server) setKanbanState(ctx context.Context, input *setKanbanStateInput)
 	}
 	mrID, err := s.lookupMRID(ctx, ref)
 	if err != nil {
-		return nil, problemNotFound(CodePullNotFound, err.Error(), nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, err.Error(), nil)
 	}
 	if err := s.db.SetKanbanState(ctx, mrID, input.Body.Status); err != nil {
-		return nil, problemInternal("set kanban state failed")
+		return nil, httpapi.Internal("set kanban state failed")
 	}
 
 	return &statusOnlyOutput{Status: http.StatusOK}, nil
@@ -2011,12 +1997,12 @@ func (s *Server) editPRContent(
 	ctx context.Context, input *editPRContentInput,
 ) (*editPRContentOutput, error) {
 	if input.Body.Title == nil && input.Body.Body == nil {
-		return nil, problemValidation("body",
+		return nil, httpapi.Validation("body",
 			"at least one of title or body must be provided",
 		)
 	}
 	if input.Body.Title != nil && strings.TrimSpace(*input.Body.Title) == "" {
-		return nil, problemValidation("body.title", "title must not be blank")
+		return nil, httpapi.Validation("body.title", "title must not be blank")
 	}
 
 	repo, err := s.requireRepoRouteCapability(
@@ -2040,17 +2026,17 @@ func (s *Server) editPRContent(
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get pull request failed")
+		return nil, httpapi.Internal("get pull request failed")
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 
 	updatedMR, err := mutator.EditMergeRequestContent(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Title, input.Body.Body,
 	)
 	if err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"provider API error: "+err.Error(),
@@ -2076,12 +2062,12 @@ func (s *Server) editPRContent(
 	if err := s.db.UpdateMRTitleBody(
 		ctx, mr.ID, newTitle, newBody, updatedAt,
 	); err != nil {
-		return nil, problemInternal("update title/body failed")
+		return nil, httpapi.Internal("update title/body failed")
 	}
 
 	mr, err = s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil || mr == nil {
-		return nil, problemInternal("re-read pull request failed")
+		return nil, httpapi.Internal("re-read pull request failed")
 	}
 
 	body, err := s.buildPullDetailResponse(ctx, mr)
@@ -2096,12 +2082,12 @@ func (s *Server) editIssueContent(
 	ctx context.Context, input *editIssueContentInput,
 ) (*editIssueContentOutput, error) {
 	if input.Body.Title == nil && input.Body.Body == nil {
-		return nil, problemValidation("body",
+		return nil, httpapi.Validation("body",
 			"at least one of title or body must be provided",
 		)
 	}
 	if input.Body.Title != nil && strings.TrimSpace(*input.Body.Title) == "" {
-		return nil, problemValidation("body.title", "title must not be blank")
+		return nil, httpapi.Validation("body.title", "title must not be blank")
 	}
 
 	repo, err := s.requireRepoRouteCapability(
@@ -2125,17 +2111,17 @@ func (s *Server) editIssueContent(
 
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get issue failed")
+		return nil, httpapi.Internal("get issue failed")
 	}
 	if issue == nil {
-		return nil, problemNotFound(CodeIssueNotFound, "issue not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
 	}
 
 	updatedIssue, err := mutator.EditIssueContent(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Title, input.Body.Body,
 	)
 	if err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"provider API error: "+err.Error(),
@@ -2161,12 +2147,12 @@ func (s *Server) editIssueContent(
 	if err := s.db.UpdateIssueTitleBody(
 		ctx, issue.ID, newTitle, newBody, updatedAt,
 	); err != nil {
-		return nil, problemInternal("update title/body failed")
+		return nil, httpapi.Internal("update title/body failed")
 	}
 
 	issue, err = s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil || issue == nil {
-		return nil, problemInternal("re-read issue failed")
+		return nil, httpapi.Internal("re-read issue failed")
 	}
 
 	body, err := s.buildIssueDetailResponse(ctx, repo, issue)
@@ -2179,7 +2165,7 @@ func (s *Server) editIssueContent(
 
 func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*postCommentOutput, error) {
 	if strings.TrimSpace(input.Body.Body) == "" {
-		return nil, problemValidation("body.body", "comment body must not be empty")
+		return nil, httpapi.Validation("body.body", "comment body must not be empty")
 	}
 
 	repo, err := s.requireRepoRouteCapability(
@@ -2205,7 +2191,7 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
 	)
 	if err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"create comment on provider failed",
@@ -2221,7 +2207,7 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 	}
 	mrID, err := s.lookupMRID(ctx, ref)
 	if err != nil {
-		return nil, problemNotFound(CodePullNotFound, err.Error(), nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, err.Error(), nil)
 	}
 
 	event := platform.DBMREvent(mrID, platformEvent)
@@ -2234,7 +2220,7 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 
 func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*editCommentOutput, error) {
 	if strings.TrimSpace(input.Body.Body) == "" {
-		return nil, problemValidation("body.body", "comment body must not be empty")
+		return nil, httpapi.Validation("body.body", "comment body must not be empty")
 	}
 
 	repo, err := s.requireRepoRouteCapability(
@@ -2265,22 +2251,22 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 	}
 	mrID, err := s.lookupMRID(ctx, ref)
 	if err != nil {
-		return nil, problemNotFound(CodePullNotFound, err.Error(), nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, err.Error(), nil)
 	}
 
 	exists, err := s.db.MRCommentEventExists(ctx, mrID, input.CommentID)
 	if err != nil {
-		return nil, problemInternal("validate comment target failed")
+		return nil, httpapi.Internal("validate comment target failed")
 	}
 	if !exists {
-		return nil, problemNotFound(CodeCommentNotFound, "comment not found for pull request", nil)
+		return nil, httpapi.NotFound(httpapi.CodeCommentNotFound, "comment not found for pull request", nil)
 	}
 
 	platformEvent, err := mutator.EditMergeRequestComment(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID, input.Body.Body,
 	)
 	if err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"edit comment on provider failed",
@@ -2290,7 +2276,7 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 
 	event := platform.DBMREvent(mrID, platformEvent)
 	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
-		return nil, problemInternal("persist edited comment failed")
+		return nil, httpapi.Internal("persist edited comment failed")
 	}
 
 	return &editCommentOutput{Body: mergeRequestEventResponseFromDB(event)}, nil
@@ -2318,19 +2304,19 @@ func (s *Server) deleteComment(ctx context.Context, input *deleteCommentInput) (
 	}
 	mrID, err := s.lookupMRID(ctx, ref)
 	if err != nil {
-		return nil, problemNotFound(CodePullNotFound, err.Error(), nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, err.Error(), nil)
 	}
 	commentExists, err := s.db.MRCommentEventExists(ctx, mrID, input.CommentID)
 	if err != nil {
-		return nil, problemInternal("validate comment target failed")
+		return nil, httpapi.Internal("validate comment target failed")
 	}
 	if !commentExists {
-		return nil, problemNotFound(CodeCommentNotFound, "comment not found for pull request", nil)
+		return nil, httpapi.NotFound(httpapi.CodeCommentNotFound, "comment not found for pull request", nil)
 	}
 	if err := mutator.DeleteMergeRequestComment(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID,
 	); err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err, string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"delete comment on provider failed",
 		)
@@ -2340,7 +2326,7 @@ func (s *Server) deleteComment(ctx context.Context, input *deleteCommentInput) (
 
 func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussionInput) (*replyToDiscussionOutput, error) {
 	if strings.TrimSpace(input.Body.Body) == "" {
-		return nil, problemValidation("body.body", "reply body must not be empty")
+		return nil, httpapi.Validation("body.body", "reply body must not be empty")
 	}
 
 	repo, err := s.requireRepoRouteCapability(
@@ -2359,15 +2345,15 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 	// creating upstream replies for untracked or non-existent PRs.
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get pull request failed")
+		return nil, httpapi.Internal("get pull request failed")
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 
 	provider, err := s.syncer.Registry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
 	if err != nil {
-		return nil, problemInternal("provider lookup failed")
+		return nil, httpapi.Internal("provider lookup failed")
 	}
 
 	replier, ok := provider.(platform.ThreadReplier)
@@ -2376,7 +2362,7 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 		if !caps.ThreadReply {
 			return nil, unsupportedCapabilityProblem(*repo, capabilityThreadReply)
 		}
-		return nil, problemInternal("provider does not implement ThreadReplier")
+		return nil, httpapi.Internal("provider does not implement ThreadReplier")
 	}
 
 	providerDiscussionID := input.DiscussionID
@@ -2384,27 +2370,27 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 	if threadID, parseErr := strconv.ParseInt(input.DiscussionID, 10, 64); parseErr == nil && threadID > 0 {
 		thread, err := s.db.GetMRReviewThread(ctx, mr.ID, threadID)
 		if err != nil {
-			return nil, problemInternal("get review thread failed")
+			return nil, httpapi.Internal("get review thread failed")
 		}
 		if thread == nil {
 			if repoProviderKind(*repo) == platform.KindGitHub {
-				return nil, problemNotFound(CodeNotFound, "review thread not found", nil)
+				return nil, httpapi.NotFound(httpapi.CodeNotFound, "review thread not found", nil)
 			}
 			if err := validateDiscussionID(input.DiscussionID); err != nil {
 				return nil, err
 			}
 		} else if repoProviderKind(*repo) == platform.KindGitHub {
 			if strings.TrimSpace(thread.ProviderCommentID) == "" {
-				return nil, problemInternal("review thread is missing provider comment id")
+				return nil, httpapi.Internal("review thread is missing provider comment id")
 			}
 			if strings.TrimSpace(thread.ProviderThreadID) == "" {
-				return nil, problemInternal("review thread is missing provider thread id")
+				return nil, httpapi.Internal("review thread is missing provider thread id")
 			}
 			providerDiscussionID = thread.ProviderCommentID
 			eventThreadID = thread.ProviderThreadID
 		} else {
 			if strings.TrimSpace(thread.ProviderThreadID) == "" {
-				return nil, problemInternal("review thread is missing provider thread id")
+				return nil, httpapi.Internal("review thread is missing provider thread id")
 			}
 			providerDiscussionID = thread.ProviderThreadID
 		}
@@ -2422,7 +2408,7 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 		ctx, platformRepoRefFromDB(*repo), input.Number, providerDiscussionID, input.Body.Body,
 	)
 	if err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"reply to discussion on provider failed",
@@ -2436,7 +2422,7 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
 		slog.ErrorContext(ctx, "failed to persist discussion reply event",
 			"mr_id", mr.ID, "discussion_id", input.DiscussionID, "error", err)
-		return nil, problemInternal("failed to persist reply event")
+		return nil, httpapi.Internal("failed to persist reply event")
 	}
 
 	return &replyToDiscussionOutput{Status: http.StatusCreated, Body: mergeRequestEventResponseFromDB(event)}, nil
@@ -2463,15 +2449,15 @@ func (s *Server) resolveDiscussion(ctx context.Context, input *resolveDiscussion
 	// resolving discussions on untracked or non-existent PRs.
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get pull request failed")
+		return nil, httpapi.Internal("get pull request failed")
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 
 	provider, err := s.syncer.Registry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
 	if err != nil {
-		return nil, problemInternal("provider lookup failed")
+		return nil, httpapi.Internal("provider lookup failed")
 	}
 
 	resolver, ok := provider.(platform.ThreadResolver)
@@ -2480,13 +2466,13 @@ func (s *Server) resolveDiscussion(ctx context.Context, input *resolveDiscussion
 		if !caps.ThreadResolve {
 			return nil, unsupportedCapabilityProblem(*repo, capabilityThreadResolve)
 		}
-		return nil, problemInternal("provider does not implement ThreadResolver")
+		return nil, httpapi.Internal("provider does not implement ThreadResolver")
 	}
 
 	if err := resolver.ResolveThread(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.DiscussionID, input.Body.Resolved,
 	); err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"resolve discussion on provider failed",
@@ -2510,7 +2496,7 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 			"open": true, "closed": true, "all": true,
 		}
 		if !valid[input.State] {
-			return nil, problemValidation(
+			return nil, httpapi.Validation(
 				"query.state",
 				"state must be one of: open, closed, all",
 				"open", "closed", "all",
@@ -2518,7 +2504,7 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 		}
 	}
 	if hasInvalidRepoFilter(input.Repo) {
-		return nil, problemValidation("query.repo", "repo filter must be provider|platform_host/repo_path")
+		return nil, httpapi.Validation("query.repo", "repo filter must be provider|platform_host/repo_path")
 	}
 
 	opts := db.ListIssuesOpts{
@@ -2533,16 +2519,16 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 
 	issues, err := s.db.ListIssues(ctx, opts)
 	if err != nil {
-		return nil, problemInternal("list issues failed")
+		return nil, httpapi.Internal("list issues failed")
 	}
 
 	repoByID, err := s.lookupRepoMap(ctx)
 	if err != nil {
-		return nil, problemInternal("repo lookup failed")
+		return nil, httpapi.Internal("repo lookup failed")
 	}
 	workspacesByItem, err := s.buildWorkspaceRefLookup(ctx)
 	if err != nil {
-		return nil, problemInternal("load workspace refs failed")
+		return nil, httpapi.Internal("load workspace refs failed")
 	}
 
 	out := make([]issueResponse, 0, len(issues))
@@ -2574,7 +2560,7 @@ func (s *Server) createIssue(
 ) (*createIssueOutput, error) {
 	title := strings.TrimSpace(input.Body.Title)
 	if title == "" {
-		return nil, problemValidation("body.title", "issue title must not be empty")
+		return nil, httpapi.Validation("body.title", "issue title must not be empty")
 	}
 
 	repo, err := s.lookupRepoByProviderRoute(
@@ -2600,7 +2586,7 @@ func (s *Server) createIssue(
 		ctx, platformRepoRefFromDB(*repo), title, input.Body.Body,
 	)
 	if err != nil {
-		return nil, providerCallProblem(
+		return nil, httpapi.ProviderCallProblem(
 			err, string(repoProviderKind(*repo)), repoProviderHost(*repo),
 		)
 	}
@@ -2608,17 +2594,17 @@ func (s *Server) createIssue(
 	issue := platform.DBIssue(repo.ID, platformIssue)
 	issueID, err := s.db.UpsertIssue(ctx, issue)
 	if err != nil {
-		return nil, problemInternal("save issue failed")
+		return nil, httpapi.Internal("save issue failed")
 	}
 	if err := s.db.ReplaceIssueLabels(ctx, repo.ID, issueID, issue.Labels); err != nil {
-		return nil, problemInternal("save issue labels failed")
+		return nil, httpapi.Internal("save issue labels failed")
 	}
 
 	savedIssue, err := s.db.GetIssueByRepoIDAndNumber(
 		ctx, repo.ID, issue.Number,
 	)
 	if err != nil || savedIssue == nil {
-		return nil, problemInternal("re-read issue failed")
+		return nil, httpapi.Internal("re-read issue failed")
 	}
 	savedIssue.ID = issueID
 
@@ -2649,10 +2635,10 @@ func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*ge
 	}
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get issue failed")
+		return nil, httpapi.Internal("get issue failed")
 	}
 	if issue == nil {
-		return nil, problemNotFound(CodeIssueNotFound, "issue not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
 	}
 
 	issueResp, err := s.buildIssueDetailResponse(ctx, repo, issue)
@@ -2669,7 +2655,7 @@ func (s *Server) buildIssueDetailResponse(
 ) (issueDetailResponse, error) {
 	events, err := s.db.ListIssueEvents(ctx, issue.ID)
 	if err != nil {
-		return issueDetailResponse{}, problemInternal("list issue events failed")
+		return issueDetailResponse{}, httpapi.Internal("list issue events failed")
 	}
 	if events == nil {
 		events = []db.IssueEvent{}
@@ -2715,7 +2701,7 @@ func (s *Server) issueWorkflowMetaResponse(
 ) (*workflowStateMetaResponse, error) {
 	row, err := s.db.GetItemWorkflowState(ctx, repoID, db.ItemTypeIssue, number)
 	if err != nil {
-		return nil, problemInternal("read issue workflow state failed")
+		return nil, httpapi.Internal("read issue workflow state failed")
 	}
 	if row == nil {
 		return &workflowStateMetaResponse{Status: db.KanbanStatusNew}, nil
@@ -2755,7 +2741,7 @@ func normalizeWorkflowStatus(status string, logAttrs ...any) db.KanbanStatus {
 
 func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentInput) (*postIssueCommentOutput, error) {
 	if strings.TrimSpace(input.Body.Body) == "" {
-		return nil, problemValidation("body.body", "comment body must not be empty")
+		return nil, httpapi.Validation("body.body", "comment body must not be empty")
 	}
 
 	repo, err := s.lookupRepoByProviderRoute(
@@ -2782,7 +2768,7 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
 	)
 	if err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"create comment on provider failed",
@@ -2798,7 +2784,7 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 	}
 	issueID, err := s.lookupIssueID(ctx, ref)
 	if err != nil {
-		return nil, problemNotFound(CodeIssueNotFound, err.Error(), nil)
+		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, err.Error(), nil)
 	}
 
 	event := platform.DBIssueEvent(issueID, platformEvent)
@@ -2811,7 +2797,7 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 
 func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentInput) (*editIssueCommentOutput, error) {
 	if strings.TrimSpace(input.Body.Body) == "" {
-		return nil, problemValidation("body.body", "comment body must not be empty")
+		return nil, httpapi.Validation("body.body", "comment body must not be empty")
 	}
 
 	repo, err := s.lookupRepoByProviderRoute(
@@ -2843,22 +2829,22 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 	}
 	issueID, err := s.lookupIssueID(ctx, ref)
 	if err != nil {
-		return nil, problemNotFound(CodeIssueNotFound, err.Error(), nil)
+		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, err.Error(), nil)
 	}
 
 	exists, err := s.db.IssueCommentEventExists(ctx, issueID, input.CommentID)
 	if err != nil {
-		return nil, problemInternal("validate comment target failed")
+		return nil, httpapi.Internal("validate comment target failed")
 	}
 	if !exists {
-		return nil, problemNotFound(CodeCommentNotFound, "comment not found for issue", nil)
+		return nil, httpapi.NotFound(httpapi.CodeCommentNotFound, "comment not found for issue", nil)
 	}
 
 	platformEvent, err := mutator.EditIssueComment(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID, input.Body.Body,
 	)
 	if err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"edit comment on provider failed",
@@ -2868,7 +2854,7 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 
 	event := platform.DBIssueEvent(issueID, platformEvent)
 	if err := s.db.UpsertIssueEvents(ctx, []db.IssueEvent{event}); err != nil {
-		return nil, problemInternal("persist edited comment failed")
+		return nil, httpapi.Internal("persist edited comment failed")
 	}
 
 	return &editIssueCommentOutput{Body: event}, nil
@@ -2899,19 +2885,19 @@ func (s *Server) deleteIssueComment(
 	}
 	issueID, err := s.lookupIssueID(ctx, ref)
 	if err != nil {
-		return nil, problemNotFound(CodeIssueNotFound, err.Error(), nil)
+		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, err.Error(), nil)
 	}
 	commentExists, err := s.db.IssueCommentEventExists(ctx, issueID, input.CommentID)
 	if err != nil {
-		return nil, problemInternal("validate comment target failed")
+		return nil, httpapi.Internal("validate comment target failed")
 	}
 	if !commentExists {
-		return nil, problemNotFound(CodeCommentNotFound, "comment not found for issue", nil)
+		return nil, httpapi.NotFound(httpapi.CodeCommentNotFound, "comment not found for issue", nil)
 	}
 	if err := mutator.DeleteIssueComment(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID,
 	); err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err, string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"delete comment on provider failed",
 		)
@@ -2925,7 +2911,7 @@ func (s *Server) setStarred(ctx context.Context, input *starredInput) (*statusOn
 		return nil, err
 	}
 	if err := s.db.SetStarred(ctx, input.Body.ItemType, repoID, input.Body.Number); err != nil {
-		return nil, problemInternal("set starred failed")
+		return nil, httpapi.Internal("set starred failed")
 	}
 	return &statusOnlyOutput{Status: http.StatusOK}, nil
 }
@@ -2936,7 +2922,7 @@ func (s *Server) unsetStarred(ctx context.Context, input *starredInput) (*status
 		return nil, err
 	}
 	if err := s.db.UnsetStarred(ctx, input.Body.ItemType, repoID, input.Body.Number); err != nil {
-		return nil, problemInternal("unset starred failed")
+		return nil, httpapi.Internal("unset starred failed")
 	}
 	return &statusOnlyOutput{Status: http.StatusOK}, nil
 }
@@ -2982,7 +2968,7 @@ func (s *Server) getCommentAutocomplete(
 			limit,
 		)
 		if err != nil {
-			return nil, problemInternal("list comment autocomplete users failed")
+			return nil, httpapi.Internal("list comment autocomplete users failed")
 		}
 		return &commentAutocompleteOutput{Body: commentAutocompleteResponse{Users: users}}, nil
 	case "#", "!":
@@ -2993,7 +2979,7 @@ func (s *Server) getCommentAutocomplete(
 				itemKind = "pull"
 			}
 		} else if input.Trigger == "!" {
-			return nil, problemValidation(
+			return nil, httpapi.Validation(
 				"query.trigger",
 				"trigger ! is only supported for GitLab merge requests",
 				"@",
@@ -3011,11 +2997,11 @@ func (s *Server) getCommentAutocomplete(
 			limit,
 		)
 		if err != nil {
-			return nil, problemInternal("list comment autocomplete references failed")
+			return nil, httpapi.Internal("list comment autocomplete references failed")
 		}
 		return &commentAutocompleteOutput{Body: commentAutocompleteResponse{References: references}}, nil
 	default:
-		return nil, problemValidation("query.trigger", "trigger must be @, #, or GitLab !", "@", "#", "!")
+		return nil, httpapi.Validation("query.trigger", "trigger must be @, #, or GitLab !", "@", "#", "!")
 	}
 }
 
@@ -3040,10 +3026,10 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get pull request failed")
+		return nil, httpapi.Internal("get pull request failed")
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 	if s.mergeRequestAuthoredByViewer(ctx, *repo, *mr) {
 		return nil, selfApprovalProblem(*repo)
@@ -3069,7 +3055,7 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 				}
 			})
 		}
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"provider API error",
@@ -3104,7 +3090,7 @@ func (s *Server) requestChangesPR(ctx context.Context, input *requestChangesPRIn
 	}
 	caps := s.capabilitiesForRepo(*repo)
 	if !reviewActionSupported(caps, platform.ReviewActionRequestChanges) {
-		return nil, problemUnsupportedCapability(*repo, "review_action_request_changes")
+		return nil, httpapi.UnsupportedCapability(*repo, "review_action_request_changes")
 	}
 	body := strings.TrimSpace(input.Body.Body)
 	if body == "" {
@@ -3113,13 +3099,13 @@ func (s *Server) requestChangesPR(ctx context.Context, input *requestChangesPRIn
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get pull request failed")
+		return nil, httpapi.Internal("get pull request failed")
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 	if s.mergeRequestAuthoredByViewer(ctx, *repo, *mr) {
-		return nil, problemForbidden(
+		return nil, httpapi.Forbidden(
 			"You cannot request changes on your own pull request",
 			map[string]any{"reason": availabilityCodeSelfApproval, "provider": string(repoProviderKind(*repo)), "platformHost": repoProviderHost(*repo)},
 		)
@@ -3128,7 +3114,7 @@ func (s *Server) requestChangesPR(ctx context.Context, input *requestChangesPRIn
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, problemUnsupportedCapability(*repo, "review_action_request_changes")
+		return nil, httpapi.UnsupportedCapability(*repo, "review_action_request_changes")
 	}
 	expectedHeadSHA := approvalReviewHeadSHA(mr, input.Body.ExpectedHeadSHA)
 	err = mutator.RequestChanges(ctx, platformRepoRefFromDB(*repo), input.Number, body, expectedHeadSHA)
@@ -3136,7 +3122,7 @@ func (s *Server) requestChangesPR(ctx context.Context, input *requestChangesPRIn
 		if errors.Is(err, platform.ErrStaleState) {
 			s.syncAfterStaleReviewDraftPublish(*repo, input.Number)
 		}
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"provider API error",
@@ -3192,10 +3178,10 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 	}
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get pull request failed")
+		return nil, httpapi.Internal("get pull request failed")
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 
 	client, err := s.syncer.ClientForHost(repo.PlatformHost)
@@ -3211,14 +3197,14 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 
 	pr, err := client.GetPullRequest(ctx, input.Owner, input.Name, input.Number)
 	if err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"GitHub API error",
 		)
 	}
 	if pr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 
 	headSHA := pr.GetHead().GetSHA()
@@ -3228,7 +3214,7 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 
 	runs, err := client.ListWorkflowRunsForHeadSHA(ctx, input.Owner, input.Name, headSHA)
 	if err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"GitHub API error",
@@ -3255,7 +3241,7 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 					slog.Warn("sync after workflow approval failure", "err", syncErr)
 				}
 			}
-			return nil, providerCallProblemWithDetail(
+			return nil, httpapi.ProviderCallProblemWithDetail(
 				err,
 				string(repoProviderKind(*repo)), repoProviderHost(*repo),
 				err.Error(),
@@ -3342,14 +3328,14 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 			"number", input.Number,
 			"err", err,
 		)
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			err.Error(),
 		)
 	}
 	if pr.Number == 0 {
-		return nil, problemUpstream(
+		return nil, httpapi.Upstream(
 			"provider API returned no pull request",
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 		)
@@ -3400,10 +3386,10 @@ func (s *Server) mergePRWithBody(
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
 	if err != nil {
-		return mergePRBody{}, problemInternal("get pull request failed")
+		return mergePRBody{}, httpapi.Internal("get pull request failed")
 	}
 	if mr == nil {
-		return mergePRBody{}, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return mergePRBody{}, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 	if err := s.requireMidStackMergeAllowed(ctx, repo.ID, number); err != nil {
 		return mergePRBody{}, err
@@ -3453,15 +3439,15 @@ func (s *Server) mergePRWithBody(
 						}
 					})
 				}
-				return mergePRBody{}, problemConflict(CodeConflict, message, map[string]any{"reason": reason})
+				return mergePRBody{}, httpapi.Conflict(httpapi.CodeConflict, message, map[string]any{"reason": reason})
 			}
 
 			// Forward 4xx provider errors as-is so the user sees the real cause
 			// (e.g. 422 validation, 403 forbidden). 5xx becomes 502.
 			if status >= 400 && status < 500 {
-				return mergePRBody{}, newProblem(status, codeForStatus(status), message, nil)
+				return mergePRBody{}, httpapi.NewProblem(status, httpapi.CodeForStatus(status), message, nil)
 			}
-			return mergePRBody{}, problemUpstream(
+			return mergePRBody{}, httpapi.Upstream(
 				"provider merge error: "+message,
 				string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			)
@@ -3470,7 +3456,7 @@ func (s *Server) mergePRWithBody(
 			"owner", owner, "repo", name,
 			"number", number, "method", body.Method,
 			"err", err)
-		return mergePRBody{}, providerCallProblemWithDetail(
+		return mergePRBody{}, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"provider merge error: "+err.Error(),
@@ -3505,7 +3491,7 @@ func (s *Server) requireMidStackMergeAllowed(ctx context.Context, repoID int64, 
 
 	stack, members, err := s.db.GetStackForPRByRepoID(ctx, repoID, number)
 	if err != nil {
-		return problemInternal("get stack for pull request failed")
+		return httpapi.Internal("get stack for pull request failed")
 	}
 	if stack == nil {
 		return nil
@@ -3516,8 +3502,8 @@ func (s *Server) requireMidStackMergeAllowed(ctx context.Context, repoID int64, 
 			return nil
 		}
 		if member.State != string(db.MergeRequestStateMerged) {
-			return problemConflict(
-				CodeConflict,
+			return httpapi.Conflict(
+				httpapi.CodeConflict,
 				"mid-stack merges are disabled; merge the bottom unmerged branch first",
 				map[string]any{
 					"reason":          "mid_stack_merge_disallowed",
@@ -3536,15 +3522,15 @@ func (s *Server) preflightMergePR(
 	body mergePRInputBody,
 ) (string, error) {
 	if mr.State == db.MergeRequestStateClosed || mr.State == db.MergeRequestStateMerged {
-		return "", problemConflict(
-			CodeConflict,
+		return "", httpapi.Conflict(
+			httpapi.CodeConflict,
 			"pull request is not open",
 			map[string]any{"reason": "not_open"},
 		)
 	}
 	validMethods := map[string]bool{"merge": true, "squash": true, "rebase": true}
 	if !validMethods[body.Method] {
-		return "", problemValidation(
+		return "", httpapi.Validation(
 			"body.method",
 			"invalid merge method: must be merge, squash, or rebase",
 			"merge", "squash", "rebase",
@@ -3563,7 +3549,7 @@ func (s *Server) preflightMergePR(
 	// holds now, which may be newer than what the user reviewed.
 	if strings.TrimSpace(body.ExpectedHeadSHA) == "" &&
 		s.capabilitiesForRepo(*repo).MutationHeadBinding {
-		return "", problemValidation(
+		return "", httpapi.Validation(
 			"body.expected_head_sha",
 			"required for this provider: echo the platform_head_sha you rendered",
 		)
@@ -3591,8 +3577,8 @@ func (s *Server) reviewedHeadSHA(
 		return mr.PlatformHeadSHA, nil
 	}
 	if mr.DiffHeadSHA == "" {
-		return "", problemConflict(
-			CodeConflict,
+		return "", httpapi.Conflict(
+			httpapi.CodeConflict,
 			"reviewed diff data is unavailable for this pull request; refresh and re-review it once diff sync completes",
 			map[string]any{"reason": "head_unknown"},
 		)
@@ -3607,8 +3593,8 @@ func (s *Server) reviewedHeadSHA(
 				slog.Warn("background sync after stale reviewed diff", "err", syncErr)
 			}
 		})
-		return "", problemConflict(
-			CodeConflict,
+		return "", httpapi.Conflict(
+			httpapi.CodeConflict,
 			"reviewed diff data is out of date for this pull request; refresh and re-review it",
 			map[string]any{"reason": "stale_state"},
 		)
@@ -3650,15 +3636,15 @@ func verifyClientReviewedHeadWithoutRefresh(clientSHA, boundSHA string) error {
 		return nil
 	}
 	if boundSHA == "" {
-		return problemConflict(
-			CodeConflict,
+		return httpapi.Conflict(
+			httpapi.CodeConflict,
 			"merge request head commit has not been synced; re-review it once the next sync completes",
 			map[string]any{"reason": "head_unknown"},
 		)
 	}
 	if clientSHA != boundSHA {
-		return problemConflict(
-			CodeConflict,
+		return httpapi.Conflict(
+			httpapi.CodeConflict,
 			"target changed since it was reviewed; refresh and retry",
 			map[string]any{"reason": "stale_state"},
 		)
@@ -3728,7 +3714,7 @@ func (s *Server) setPRGitHubState(
 	ctx context.Context, input *githubStateInput,
 ) (*githubStateOutput, error) {
 	if input.Body.State != "open" && input.Body.State != "closed" && input.Body.State != "draft" {
-		return nil, problemValidation(
+		return nil, httpapi.Validation(
 			"body.state",
 			"state must be 'open', 'closed', or 'draft'",
 			"open", "closed", "draft",
@@ -3753,14 +3739,14 @@ func (s *Server) setPRGitHubState(
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get pull request: " + err.Error())
+		return nil, httpapi.Internal("get pull request: " + err.Error())
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 	if mr.State == "merged" {
-		return nil, problemConflict(
-			CodeConflict,
+		return nil, httpapi.Conflict(
+			httpapi.CodeConflict,
 			"cannot change state of a merged pull request",
 			nil,
 		)
@@ -3775,14 +3761,14 @@ func (s *Server) setPRGitHubState(
 		if err := mutator.ConvertMergeRequestToDraft(
 			ctx, platformRepoRefFromDB(*repo), input.Number,
 		); err != nil {
-			return nil, providerCallProblemWithDetail(
+			return nil, httpapi.ProviderCallProblemWithDetail(
 				err,
 				string(repoProviderKind(*repo)), repoProviderHost(*repo),
 				"Provider API error: "+err.Error(),
 			)
 		}
 		if err := s.db.UpdateMRDraftState(ctx, repo.ID, input.Number, true); err != nil {
-			return nil, problemInternal("update mr draft state: " + err.Error())
+			return nil, httpapi.Internal("update mr draft state: " + err.Error())
 		}
 		out := &githubStateOutput{}
 		out.Body.State = input.Body.State
@@ -3814,14 +3800,14 @@ func (s *Server) setPRGitHubState(
 				)
 				if fetchErr == nil {
 					if ghPR == nil {
-						return nil, problemUpstream(
+						return nil, httpapi.Upstream(
 							"GitHub API returned no pull request",
 							string(repoProviderKind(*repo)), repoProviderHost(*repo),
 						)
 					}
 					normalized, normalizeErr := ghclient.NormalizePR(repoID, ghPR)
 					if normalizeErr != nil {
-						return nil, problemUpstream(
+						return nil, httpapi.Upstream(
 							"GitHub API error: "+normalizeErr.Error(),
 							string(repoProviderKind(*repo)), repoProviderHost(*repo),
 						)
@@ -3829,8 +3815,8 @@ func (s *Server) setPRGitHubState(
 					_, _, _ = s.db.UpsertMergeRequestSnapshot(ctx, normalized)
 					s.markClosedLinkedNotificationsDone(ctx)
 					if ghPR.GetMerged() {
-						return nil, problemConflict(
-							CodeConflict,
+						return nil, httpapi.Conflict(
+							httpapi.CodeConflict,
 							"cannot change state of a merged pull request",
 							nil,
 						)
@@ -3844,7 +3830,7 @@ func (s *Server) setPRGitHubState(
 				}
 			}
 		}
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"GitHub API error: "+err.Error(),
@@ -3862,7 +3848,7 @@ func (s *Server) setPRGitHubState(
 		ctx, repoID, input.Number,
 		input.Body.State, nil, closedAt,
 	); err != nil {
-		return nil, problemInternal("update mr state: " + err.Error())
+		return nil, httpapi.Internal("update mr state: " + err.Error())
 	}
 	if input.Body.State == "closed" {
 		s.markClosedLinkedNotificationsDone(ctx)
@@ -3877,7 +3863,7 @@ func (s *Server) setIssueGitHubState(
 	ctx context.Context, input *githubStateInput,
 ) (*githubStateOutput, error) {
 	if input.Body.State != "open" && input.Body.State != "closed" {
-		return nil, problemValidation(
+		return nil, httpapi.Validation(
 			"body.state",
 			"state must be 'open' or 'closed'",
 			"open", "closed",
@@ -3894,10 +3880,10 @@ func (s *Server) setIssueGitHubState(
 	}
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get issue: " + err.Error())
+		return nil, httpapi.Internal("get issue: " + err.Error())
 	}
 	if issue == nil {
-		return nil, problemNotFound(CodeIssueNotFound, "issue not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
 	}
 	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
 		return nil, err
@@ -3926,7 +3912,7 @@ func (s *Server) setIssueGitHubState(
 			)
 			if fetchErr == nil {
 				if ghIssue == nil {
-					return nil, problemUpstream(
+					return nil, httpapi.Upstream(
 						"GitHub API returned no issue",
 						string(repoProviderKind(*repo)), repoProviderHost(*repo),
 					)
@@ -3935,7 +3921,7 @@ func (s *Server) setIssueGitHubState(
 					repo.ID, ghIssue,
 				)
 				if normalizeErr != nil {
-					return nil, problemUpstream(
+					return nil, httpapi.Upstream(
 						"GitHub API error: "+normalizeErr.Error(),
 						string(repoProviderKind(*repo)), repoProviderHost(*repo),
 					)
@@ -3949,7 +3935,7 @@ func (s *Server) setIssueGitHubState(
 				}
 			}
 		}
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"GitHub API error: "+err.Error(),
@@ -3965,7 +3951,7 @@ func (s *Server) setIssueGitHubState(
 		ctx, repo.ID, issue.Number,
 		input.Body.State, closedAt,
 	); err != nil {
-		return nil, problemInternal("update issue state: " + err.Error())
+		return nil, httpapi.Internal("update issue state: " + err.Error())
 	}
 	if input.Body.State == "closed" {
 		s.markClosedLinkedNotificationsDone(ctx)
@@ -3979,7 +3965,7 @@ func (s *Server) setIssueGitHubState(
 func (s *Server) listRepos(ctx context.Context, _ *struct{}) (*listReposOutput, error) {
 	repos, err := s.db.ListRepos(ctx)
 	if err != nil {
-		return nil, problemInternal("list repos failed")
+		return nil, httpapi.Internal("list repos failed")
 	}
 	if repos == nil {
 		repos = []db.Repo{}
@@ -4001,7 +3987,7 @@ func (s *Server) listRepoSummaries(
 ) (*listRepoSummariesOutput, error) {
 	summaries, err := s.db.ListRepoSummaries(ctx)
 	if err != nil {
-		return nil, problemInternal("list repo summaries failed")
+		return nil, httpapi.Internal("list repo summaries failed")
 	}
 	if s.cfg != nil {
 		summaries = s.filterConfiguredRepoSummaries(summaries)
@@ -4023,12 +4009,12 @@ func (s *Server) triggerSync(
 	input *triggerSyncInput,
 ) (*acceptedOutput, error) {
 	if s.syncer == nil {
-		return nil, problemServiceUnavailable("syncer not configured")
+		return nil, httpapi.ServiceUnavailable("syncer not configured")
 	}
 	if len(input.OnlyRepos) > 0 {
 		repos, err := s.onlyReposFromFilter(input.OnlyRepos)
 		if err != nil {
-			return nil, problemValidation("query.only_repo", err.Error())
+			return nil, httpapi.Validation("query.only_repo", err.Error())
 		}
 		s.syncer.TriggerRunForRepos(context.WithoutCancel(ctx), repos)
 		return &acceptedOutput{Status: http.StatusAccepted}, nil
@@ -4238,10 +4224,10 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get pull request: " + err.Error())
+		return nil, httpapi.Internal("get pull request: " + err.Error())
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
 		ctx,
@@ -4261,7 +4247,7 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 		mr.PlatformHeadSHA,
 	)
 	if err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"refresh PR CI: "+err.Error(),
@@ -4270,10 +4256,10 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 
 	mr, err = s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get pull request: " + err.Error())
+		return nil, httpapi.Internal("get pull request: " + err.Error())
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found after CI refresh", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found after CI refresh", nil)
 	}
 	body, err := s.buildPullDetailResponse(ctx, mr)
 	if err != nil {
@@ -4302,9 +4288,9 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 	)
 	if syncErr != nil && !errors.As(syncErr, &diffErr) {
 		if strings.Contains(syncErr.Error(), "is not tracked") {
-			return nil, problemForbidden(syncErr.Error(), nil)
+			return nil, httpapi.Forbidden(syncErr.Error(), nil)
 		}
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			syncErr,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"sync PR: "+syncErr.Error(),
@@ -4313,10 +4299,10 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get pull request: " + err.Error())
+		return nil, httpapi.Internal("get pull request: " + err.Error())
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found after sync", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found after sync", nil)
 	}
 
 	body, err := s.buildPullDetailResponse(ctx, mr)
@@ -4384,9 +4370,9 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "is not tracked") {
-			return nil, problemForbidden(err.Error(), nil)
+			return nil, httpapi.Forbidden(err.Error(), nil)
 		}
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"sync issue: "+err.Error(),
@@ -4395,10 +4381,10 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get issue: " + err.Error())
+		return nil, httpapi.Internal("get issue: " + err.Error())
 	}
 	if issue == nil {
-		return nil, problemNotFound(CodeIssueNotFound, "issue not found after sync", nil)
+		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found after sync", nil)
 	}
 
 	syncIssueResp, err := s.buildIssueDetailResponse(ctx, repo, issue)
@@ -4441,7 +4427,7 @@ func (s *Server) enqueueIssueSync(ctx context.Context, input *issueRepoNumberInp
 
 func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*listActivityOutput, error) {
 	if hasInvalidRepoFilter(input.Repo) {
-		return nil, problemValidation("query.repo", "repo filter must be provider|platform_host/repo_path")
+		return nil, httpapi.Validation("query.repo", "repo filter must be provider|platform_host/repo_path")
 	}
 
 	opts := db.ListActivityOpts{
@@ -4460,7 +4446,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	if input.Since != "" {
 		t, err := time.Parse(time.RFC3339, input.Since)
 		if err != nil {
-			return nil, problemValidation("query.since", "invalid since: "+err.Error())
+			return nil, httpapi.Validation("query.since", "invalid since: "+err.Error())
 		}
 		opts.Since = &t
 	} else {
@@ -4471,7 +4457,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	if input.After != "" {
 		t, source, sourceID, err := db.DecodeCursor(input.After)
 		if err != nil {
-			return nil, problemValidation("query.after", "invalid after cursor: "+err.Error())
+			return nil, httpapi.Validation("query.after", "invalid after cursor: "+err.Error())
 		}
 		opts.AfterTime = &t
 		opts.AfterSource = source
@@ -4481,7 +4467,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	if s.cfg != nil {
 		trackedRepos, err := s.trackedNotificationRepoFilters()
 		if err != nil {
-			return nil, problemInternal("load tracked notification repos failed")
+			return nil, httpapi.Internal("load tracked notification repos failed")
 		}
 		opts.NotificationRepoFilters = trackedRepos
 	}
@@ -4489,7 +4475,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	items, err := s.db.ListActivity(ctx, opts)
 	if err != nil {
 		slog.Error("list activity failed", "err", err)
-		return nil, problemInternal("list activity failed")
+		return nil, httpapi.Internal("list activity failed")
 	}
 
 	if s.cfg != nil {
@@ -4519,7 +4505,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 
 	workspacesByItem, err := s.buildWorkspaceRefLookup(ctx)
 	if err != nil {
-		return nil, problemInternal("load workspace refs failed")
+		return nil, httpapi.Internal("load workspace refs failed")
 	}
 
 	out := make([]activityItemResponse, len(items))
@@ -4623,7 +4609,7 @@ func (s *Server) resolveItem(
 	if requestedItemType != "" &&
 		requestedItemType != "pr" &&
 		requestedItemType != "issue" {
-		return nil, problemValidation("query.item_type",
+		return nil, httpapi.Validation("query.item_type",
 			"item_type must be 'pr' or 'issue'", "pr", "issue")
 	}
 	repo, err := s.lookupRepoByProviderRoute(
@@ -4666,7 +4652,7 @@ func (s *Server) resolveItem(
 		itemType, found, err = s.db.ResolveItemNumber(ctx, repo.ID, number)
 	}
 	if err != nil {
-		return nil, problemInternal("resolve item: " + err.Error())
+		return nil, httpapi.Internal("resolve item: " + err.Error())
 	}
 	if found {
 		return &resolveItemOutput{
@@ -4693,9 +4679,9 @@ func (s *Server) resolveItem(
 		var diffErr *ghclient.DiffSyncError
 		if syncErr != nil && !errors.As(syncErr, &diffErr) {
 			if strings.Contains(syncErr.Error(), "is not tracked") {
-				return nil, problemForbidden(syncErr.Error(), nil)
+				return nil, httpapi.Forbidden(syncErr.Error(), nil)
 			}
-			return nil, providerCallProblemWithDetail(
+			return nil, httpapi.ProviderCallProblemWithDetail(
 				syncErr, string(providerKind), providerHost,
 				"resolve item: "+syncErr.Error(),
 			)
@@ -4704,10 +4690,10 @@ func (s *Server) resolveItem(
 			ctx, repo.ID, number, itemTypeHint,
 		)
 		if err != nil {
-			return nil, problemInternal("resolve item: " + err.Error())
+			return nil, httpapi.Internal("resolve item: " + err.Error())
 		}
 		if !found {
-			return nil, problemNotFound(CodeNotFound, "item not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "item not found", nil)
 		}
 		if diffErr != nil {
 			slog.Warn("resolve item: diff sync failed but PR row was synced",
@@ -4727,14 +4713,14 @@ func (s *Server) resolveItem(
 	}
 
 	if providerKind != platform.KindGitHub {
-		return nil, problemNotFound(CodeNotFound, "item not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "item not found", nil)
 	}
 
 	itemType, err = s.syncer.SyncItemByNumber(
 		ctx, repo.Owner, repo.Name, number,
 	)
 	if err == nil && itemTypeHint != "" && itemType != itemTypeHint {
-		return nil, problemNotFound(CodeNotFound, "item not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "item not found", nil)
 	}
 	// A DiffSyncError means the PR row was upserted but the diff
 	// computation failed. Resolution doesn't need diff data, so treat
@@ -4749,21 +4735,21 @@ func (s *Server) resolveItem(
 		// typed problems instead of collapsing into an internal error.
 		var platformErr *platform.Error
 		if errors.As(err, &platformErr) {
-			return nil, mapPlatformError(err)
+			return nil, httpapi.MapPlatformError(err)
 		}
 		var ghErr *gh.ErrorResponse
 		if errors.As(err, &ghErr) {
 			if ghErr.Response != nil &&
 				ghErr.Response.StatusCode == 404 {
-				return nil, problemNotFound(CodeNotFound,
+				return nil, httpapi.NotFound(httpapi.CodeNotFound,
 					"item not found: "+err.Error(), nil)
 			}
-			return nil, problemUpstream(
+			return nil, httpapi.Upstream(
 				"GitHub API error: "+err.Error(),
 				string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			)
 		}
-		return nil, problemInternal("resolve item: " + err.Error())
+		return nil, httpapi.Internal("resolve item: " + err.Error())
 	}
 	if diffErr != nil {
 		slog.Warn("resolve item: diff sync failed but PR row was synced",
@@ -4785,11 +4771,11 @@ func (s *Server) resolveItem(
 
 func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (int64, error) {
 	if !validateStarredRequest(body) {
-		return 0, problemValidation("body.item_type",
+		return 0, httpapi.Validation("body.item_type",
 			"item_type must be 'pr' or 'issue'", "pr", "issue")
 	}
 	if strings.TrimSpace(body.Provider) == "" {
-		return 0, problemValidation("body.provider", "provider is required")
+		return 0, httpapi.Validation("body.provider", "provider is required")
 	}
 
 	repo, err := s.lookupRepoByProviderRoute(
@@ -4797,7 +4783,7 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 	)
 	if err != nil {
 		if errors.Is(err, errRepoNotFound) {
-			return 0, problemNotFound(CodeRepoNotFound, err.Error(), nil)
+			return 0, httpapi.NotFound(httpapi.CodeRepoNotFound, err.Error(), nil)
 		}
 		return 0, providerRouteLookupError(err)
 	}
@@ -4807,11 +4793,11 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 
 // --- Commits ---
 
-type getCommitsOutput = bodyOutput[commitsResponse]
+type getCommitsOutput = httpapi.BodyOutput[commitsResponse]
 
 func (s *Server) getCommits(ctx context.Context, input *repoNumberInput) (*getCommitsOutput, error) {
 	if s.clones == nil {
-		return nil, problemServiceUnavailable("commits not available: clone manager not configured")
+		return nil, httpapi.ServiceUnavailable("commits not available: clone manager not configured")
 	}
 
 	repo, err := s.lookupRepoByProviderRoute(
@@ -4822,22 +4808,22 @@ func (s *Server) getCommits(ctx context.Context, input *repoNumberInput) (*getCo
 	}
 	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("failed to look up PR")
+		return nil, httpapi.Internal("failed to look up PR")
 	}
 	if shas == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
-		return nil, problemNotFound(CodeNotFound, "commits not available for this pull request", nil)
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "commits not available for this pull request", nil)
 	}
 
 	host := repoProviderHost(*repo)
 	commits, err := s.clones.ListCommits(ctx, host, repo.Owner, repo.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
-			return nil, problemNotFound(CodeNotFound, "commits not available: referenced commit not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "commits not available: referenced commit not found", nil)
 		}
-		return nil, problemUpstream(
+		return nil, httpapi.Upstream(
 			"failed to list commits: "+err.Error(),
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 		)
@@ -4869,7 +4855,7 @@ type getDiffInput struct {
 	To           string `query:"to"     doc:"End SHA for range diff (inclusive)"`
 }
 
-type getDiffOutput = bodyOutput[diffResponse]
+type getDiffOutput = httpapi.BodyOutput[diffResponse]
 
 type resolvedDiffRange struct {
 	host     string
@@ -4892,13 +4878,13 @@ func (s *Server) resolveDiffRange(
 	}
 	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("failed to look up PR")
+		return nil, httpapi.Internal("failed to look up PR")
 	}
 	if shas == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
-		return nil, problemNotFound(CodeNotFound, "diff not available for this pull request", nil)
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available for this pull request", nil)
 	}
 
 	host := repoProviderHost(*repo)
@@ -4919,7 +4905,7 @@ func (s *Server) resolveDiffRange(
 		}
 		parent, err := s.clones.ParentOf(ctx, host, repo.Owner, repo.Name, input.Commit)
 		if err != nil {
-			return nil, problemInternal("failed to resolve parent: " + err.Error())
+			return nil, httpapi.Internal("failed to resolve parent: " + err.Error())
 		}
 		diffFrom = parent
 		diffTo = input.Commit
@@ -4931,17 +4917,17 @@ func (s *Server) resolveDiffRange(
 		}
 		// In newest-first order, "from" (older) must have a higher index than "to" (newer).
 		if indexMap[input.From] <= indexMap[input.To] {
-			return nil, problemValidation("query", "invalid range: 'from' must be older than 'to'")
+			return nil, httpapi.Validation("query", "invalid range: 'from' must be older than 'to'")
 		}
 		parent, err := s.clones.ParentOf(ctx, host, repo.Owner, repo.Name, input.From)
 		if err != nil {
-			return nil, problemInternal("failed to resolve parent: " + err.Error())
+			return nil, httpapi.Internal("failed to resolve parent: " + err.Error())
 		}
 		diffFrom = parent
 		diffTo = input.To
 
 	default:
-		return nil, problemValidation("query", "invalid scope: use 'commit' alone or 'from'+'to' together")
+		return nil, httpapi.Validation("query", "invalid scope: use 'commit' alone or 'from'+'to' together")
 	}
 
 	return &resolvedDiffRange{
@@ -4956,7 +4942,7 @@ func (s *Server) resolveDiffRange(
 
 func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutput, error) {
 	if s.clones == nil {
-		return nil, problemServiceUnavailable("diff view not available: clone manager not configured")
+		return nil, httpapi.ServiceUnavailable("diff view not available: clone manager not configured")
 	}
 
 	resolved, err := s.resolveDiffRange(ctx, input)
@@ -4968,10 +4954,10 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 	result, err := s.clones.Diff(ctx, resolved.host, resolved.owner, resolved.name, resolved.fromSHA, resolved.toSHA, hideWhitespace)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
-			return nil, problemNotFound(CodeNotFound, "diff not available: referenced commit not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
 		}
 		slog.Error("failed to compute diff", "owner", input.Owner, "name", input.Name, "number", input.Number, "err", err)
-		return nil, problemUpstream("failed to compute diff", "", "")
+		return nil, httpapi.Upstream("failed to compute diff", "", "")
 	}
 
 	result.Stale = resolved.diffSHAs.Stale()
@@ -5001,18 +4987,18 @@ type getFilePreviewInput struct {
 	To           string `query:"to"     doc:"End SHA for range diff (inclusive)"`
 }
 
-type getFilePreviewOutput = bodyOutput[filePreviewResponse]
+type getFilePreviewOutput = httpapi.BodyOutput[filePreviewResponse]
 
 func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput) (*getFilePreviewOutput, error) {
 	if s.clones == nil {
-		return nil, problemServiceUnavailable("file preview not available: clone manager not configured")
+		return nil, httpapi.ServiceUnavailable("file preview not available: clone manager not configured")
 	}
 	if strings.TrimSpace(input.Path) == "" {
-		return nil, problemValidation("query.path", "path is required")
+		return nil, httpapi.Validation("query.path", "path is required")
 	}
 	side := strings.TrimSpace(input.Side)
 	if side != "" && side != "old" && side != "new" {
-		return nil, problemValidation("query.side", "side must be old or new")
+		return nil, httpapi.Validation("query.side", "side must be old or new")
 	}
 
 	resolved, err := s.resolveDiffRange(ctx, &getDiffInput{
@@ -5041,10 +5027,10 @@ func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput)
 	)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
-			return nil, problemNotFound(CodeNotFound, "file preview not available: referenced commit not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "file preview not available: referenced commit not found", nil)
 		}
 		slog.Error("failed to validate preview path", "owner", input.Owner, "name", input.Name, "number", input.Number, "path", input.Path, "err", err)
-		return nil, problemUpstream("failed to validate file preview", "", "")
+		return nil, httpapi.Upstream("failed to validate file preview", "", "")
 	}
 	found := false
 	for _, file := range files {
@@ -5054,7 +5040,7 @@ func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput)
 		found = true
 		if side == "old" {
 			if file.Status == "added" {
-				return nil, problemNotFound(CodeNotFound, "file preview not available: old side does not exist", nil)
+				return nil, httpapi.NotFound(httpapi.CodeNotFound, "file preview not available: old side does not exist", nil)
 			}
 			previewRef = resolved.fromSHA
 			previewPath = file.OldPath
@@ -5063,7 +5049,7 @@ func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput)
 			}
 		} else if side == "new" {
 			if file.Status == "deleted" {
-				return nil, problemNotFound(CodeNotFound, "file preview not available: new side does not exist", nil)
+				return nil, httpapi.NotFound(httpapi.CodeNotFound, "file preview not available: new side does not exist", nil)
 			}
 			previewRef = resolved.toSHA
 			previewPath = file.Path
@@ -5077,7 +5063,7 @@ func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput)
 		break
 	}
 	if !found {
-		return nil, problemNotFound(CodeNotFound, "file preview not available: file is not changed in this diff", nil)
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "file preview not available: file is not changed in this diff", nil)
 	}
 
 	content, err := s.clones.FileContent(
@@ -5091,13 +5077,13 @@ func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput)
 	)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
-			return nil, problemNotFound(CodeNotFound, "file preview not available: referenced file not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "file preview not available: referenced file not found", nil)
 		}
 		if errors.Is(err, gitclone.ErrTooLarge) {
-			return nil, problemPayloadTooLarge("file preview is too large", maxFilePreviewBytes)
+			return nil, httpapi.PayloadTooLarge("file preview is too large", maxFilePreviewBytes)
 		}
 		slog.Error("failed to read file preview", "owner", input.Owner, "name", input.Name, "number", input.Number, "path", input.Path, "err", err)
-		return nil, problemUpstream("failed to read file preview", "", "")
+		return nil, httpapi.Upstream("failed to read file preview", "", "")
 	}
 
 	return &getFilePreviewOutput{Body: filePreviewResponse{
@@ -5140,11 +5126,11 @@ type getFilesInput struct {
 	Number       int    `path:"number"`
 }
 
-type getFilesOutput = bodyOutput[filesResponse]
+type getFilesOutput = httpapi.BodyOutput[filesResponse]
 
 func (s *Server) getFiles(ctx context.Context, input *getFilesInput) (*getFilesOutput, error) {
 	if s.clones == nil {
-		return nil, problemServiceUnavailable("files view not available: clone manager not configured")
+		return nil, httpapi.ServiceUnavailable("files view not available: clone manager not configured")
 	}
 
 	repo, err := s.lookupRepoByProviderRoute(
@@ -5155,23 +5141,23 @@ func (s *Server) getFiles(ctx context.Context, input *getFilesInput) (*getFilesO
 	}
 	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("failed to look up PR")
+		return nil, httpapi.Internal("failed to look up PR")
 	}
 	if shas == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
-		return nil, problemNotFound(CodeNotFound, "file list not available for this pull request", nil)
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "file list not available for this pull request", nil)
 	}
 
 	host := repoProviderHost(*repo)
 	files, err := s.clones.DiffFiles(ctx, host, repo.Owner, repo.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
-			return nil, problemNotFound(CodeNotFound, "file list not available: referenced commit not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "file list not available: referenced commit not found", nil)
 		}
 		slog.Error("failed to list files", "owner", input.Owner, "name", input.Name, "number", input.Number, "err", err)
-		return nil, problemUpstream("failed to list files", "", "")
+		return nil, httpapi.Upstream("failed to list files", "", "")
 	}
 
 	return &getFilesOutput{Body: filesResponse{
@@ -5191,7 +5177,7 @@ func (s *Server) validateSHAs(
 ) (map[string]int, error) {
 	commits, err := s.clones.ListCommits(ctx, host, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
 	if err != nil {
-		return nil, problemInternal("failed to list commits for validation: " + err.Error())
+		return nil, httpapi.Internal("failed to list commits for validation: " + err.Error())
 	}
 	indexMap := make(map[string]int, len(commits))
 	for i, c := range commits {
@@ -5199,7 +5185,7 @@ func (s *Server) validateSHAs(
 	}
 	for _, sha := range userSHAs {
 		if _, ok := indexMap[sha]; !ok {
-			return nil, problemValidation("query", "sha not in pull request: "+sha)
+			return nil, httpapi.Validation("query", "sha not in pull request: "+sha)
 		}
 	}
 	return indexMap, nil
@@ -5210,16 +5196,16 @@ func (s *Server) validateSHAs(
 func (s *Server) listStacks(ctx context.Context, input *listStacksInput) (*listStacksOutput, error) {
 	if input.Repo != "" {
 		if strings.Count(input.Repo, "/") != 1 {
-			return nil, problemValidation("query.repo", "invalid repo filter: expected owner/name")
+			return nil, httpapi.Validation("query.repo", "invalid repo filter: expected owner/name")
 		}
 		owner, name, _ := strings.Cut(input.Repo, "/")
 		if owner == "" || name == "" {
-			return nil, problemValidation("query.repo", "invalid repo filter: expected owner/name")
+			return nil, httpapi.Validation("query.repo", "invalid repo filter: expected owner/name")
 		}
 	}
 	stackList, memberMap, err := s.db.ListStacksWithMembers(ctx, input.Repo)
 	if err != nil {
-		return nil, problemInternal("list stacks failed")
+		return nil, httpapi.Internal("list stacks failed")
 	}
 
 	out := make([]stackResponse, 0, len(stackList))
@@ -5266,10 +5252,10 @@ func (s *Server) getStackForPR(ctx context.Context, input *repoNumberInput) (*ge
 	}
 	stack, members, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get stack for pr failed")
+		return nil, httpapi.Internal("get stack for pr failed")
 	}
 	if stack == nil {
-		return nil, problemNotFound(CodeNotFound, "PR is not part of a stack", nil)
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "PR is not part of a stack", nil)
 	}
 
 	return &getStackForPROutput{
@@ -5288,7 +5274,7 @@ func (s *Server) createWorkspace(
 	ctx context.Context, input *createWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
 	if s.workspaces == nil {
-		return nil, problemServiceUnavailable("workspace manager not configured")
+		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
 	provider, err := s.createWorkspaceProvider(ctx, input)
 	if err != nil {
@@ -5305,26 +5291,26 @@ func (s *Server) createWorkspace(
 	)
 	if err != nil {
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
-			return nil, problemNotFound(CodeWorkspaceNotFound, err.Error(), nil)
+			return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, err.Error(), nil)
 		}
 		if errors.Is(err, workspace.ErrWorkspaceNotSynced) {
-			return nil, problemNotFound(CodeWorkspaceNotFound, err.Error(), nil)
+			return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, err.Error(), nil)
 		}
 		if errors.Is(err, workspace.ErrWorkspaceDuplicate) {
-			return nil, problemConflict(CodeConflict,
+			return nil, httpapi.Conflict(httpapi.CodeConflict,
 				"workspace already exists for this MR", nil)
 		}
-		return nil, problemInternal("create workspace: " + err.Error())
+		return nil, httpapi.Internal("create workspace: " + err.Error())
 	}
 
 	s.runWorkspaceSetup(ws)
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
 	if err != nil {
-		return nil, problemInternal("get workspace summary: " + err.Error())
+		return nil, httpapi.Internal("get workspace summary: " + err.Error())
 	}
 	if summary == nil {
-		return nil, problemInternal("workspace summary missing after create")
+		return nil, httpapi.Internal("workspace summary missing after create")
 	}
 	return &createWorkspaceOutput{
 		Status: http.StatusAccepted,
@@ -5338,12 +5324,12 @@ func (s *Server) createWorkspaceProvider(
 	if strings.TrimSpace(input.Body.Provider) != "" {
 		provider, err := normalizeRouteProvider(input.Body.Provider)
 		if err != nil {
-			return "", problemValidation("body.provider", err.Error())
+			return "", httpapi.Validation("body.provider", err.Error())
 		}
 		return provider, nil
 	}
 	_ = ctx
-	return "", problemValidation("body.provider", "provider is required")
+	return "", httpapi.Validation("body.provider", "provider is required")
 }
 
 func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
@@ -5437,7 +5423,7 @@ func (s *Server) createIssueWorkspace(
 	ctx context.Context, input *createIssueWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
 	if s.workspaces == nil {
-		return nil, problemServiceUnavailable("workspace manager not configured")
+		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
 	repo, err := s.lookupRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
@@ -5455,15 +5441,15 @@ func (s *Server) createIssueWorkspace(
 		input.Number,
 	)
 	if err != nil {
-		return nil, problemInternal("lookup existing issue workspace: " + err.Error())
+		return nil, httpapi.Internal("lookup existing issue workspace: " + err.Error())
 	}
 	if existing != nil {
 		summary, getErr := s.workspaces.GetSummary(ctx, existing.ID)
 		if getErr != nil {
-			return nil, problemInternal("get workspace summary: " + getErr.Error())
+			return nil, httpapi.Internal("get workspace summary: " + getErr.Error())
 		}
 		if summary == nil {
-			return nil, problemInternal("workspace summary missing for existing workspace")
+			return nil, httpapi.Internal("workspace summary missing for existing workspace")
 		}
 		return &createWorkspaceOutput{
 			Status: http.StatusAccepted,
@@ -5492,9 +5478,9 @@ func (s *Server) createIssueWorkspace(
 			// branch + suggested alternative. The legacy Errors[]
 			// entries are populated for callers still introspecting
 			// per-field huma error details.
-			conflict := newProblem(
+			conflict := httpapi.NewProblem(
 				http.StatusConflict,
-				CodeBranchConflict,
+				httpapi.CodeBranchConflict,
 				"A local branch with the requested name already exists.",
 				map[string]any{
 					"branch":          branchConflict.Branch,
@@ -5518,13 +5504,13 @@ func (s *Server) createIssueWorkspace(
 			return nil, conflict
 		}
 		if strings.Contains(msg, "not tracked") {
-			return nil, problemNotFound(CodeNotFound, msg, nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, msg, nil)
 		}
 		if strings.Contains(msg, "not synced") {
-			return nil, problemNotFound(CodeNotFound, msg, nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, msg, nil)
 		}
 		if strings.Contains(msg, "invalid branch name") {
-			return nil, problemValidation("body.git_head_ref", msg)
+			return nil, httpapi.Validation("body.git_head_ref", msg)
 		}
 		if strings.Contains(msg, "UNIQUE constraint") {
 			existing, getErr := s.workspaces.GetByIssueForProvider(
@@ -5545,17 +5531,17 @@ func (s *Server) createIssueWorkspace(
 				}
 			}
 		}
-		return nil, problemInternal("create issue workspace: " + msg)
+		return nil, httpapi.Internal("create issue workspace: " + msg)
 	}
 
 	s.runWorkspaceSetup(ws)
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
 	if err != nil {
-		return nil, problemInternal("get workspace summary: " + err.Error())
+		return nil, httpapi.Internal("get workspace summary: " + err.Error())
 	}
 	if summary == nil {
-		return nil, problemInternal("workspace summary missing after create")
+		return nil, httpapi.Internal("workspace summary missing after create")
 	}
 
 	return &createWorkspaceOutput{
@@ -5582,7 +5568,7 @@ func (s *Server) listWorkspaces(
 
 	summaries, err := s.workspaces.ListSummaries(ctx)
 	if err != nil {
-		return nil, problemInternal("list workspaces failed")
+		return nil, httpapi.Internal("list workspaces failed")
 	}
 	s.trimWorkspaceEnrichmentCache(summaries)
 
@@ -5611,15 +5597,15 @@ func (s *Server) getWorkspace(
 	ctx context.Context, input *getWorkspaceInput,
 ) (*getWorkspaceOutput, error) {
 	if s.workspaces == nil {
-		return nil, problemServiceUnavailable("workspace manager not configured")
+		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
 
 	summary, err := s.workspaces.GetSummary(ctx, input.ID)
 	if err != nil {
-		return nil, problemInternal("get workspace failed")
+		return nil, httpapi.Internal("get workspace failed")
 	}
 	if summary == nil {
-		return nil, problemNotFound(CodeWorkspaceNotFound, "workspace not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, "workspace not found", nil)
 	}
 
 	return &getWorkspaceOutput{
@@ -5631,19 +5617,19 @@ func (s *Server) refreshWorkspace(
 	ctx context.Context, input *refreshWorkspaceInput,
 ) (*refreshWorkspaceOutput, error) {
 	if s.workspaces == nil {
-		return nil, problemServiceUnavailable("workspace manager not configured")
+		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
 	if s.syncer == nil {
-		return nil, problemServiceUnavailable("syncer not configured")
+		return nil, httpapi.ServiceUnavailable("syncer not configured")
 	}
 
 	summary, err := s.workspaces.GetSummary(ctx, input.ID)
 	if err != nil {
-		return nil, problemInternal("get workspace failed")
+		return nil, httpapi.Internal("get workspace failed")
 	}
 	if summary == nil {
-		return nil, problemNotFound(
-			CodeWorkspaceNotFound, "workspace not found", nil,
+		return nil, httpapi.NotFound(
+			httpapi.CodeWorkspaceNotFound, "workspace not found", nil,
 		)
 	}
 	if s.workspaceDiffCache != nil {
@@ -5677,7 +5663,7 @@ func (s *Server) refreshWorkspace(
 		// Kata tasks are not provider issues. The live task pane refreshes
 		// through the Kata daemon; this route only refreshes the mapped repo.
 	default:
-		return nil, problemInternal("workspace has unsupported item type")
+		return nil, httpapi.Internal("workspace has unsupported item type")
 	}
 
 	if err := s.refreshWorkspaceRepoIndex(
@@ -5691,7 +5677,7 @@ func (s *Server) refreshWorkspace(
 			ctx, input.ID,
 		)
 		if err != nil {
-			return nil, problemInternal("refresh workspace PR association: " + err.Error())
+			return nil, httpapi.Internal("refresh workspace PR association: " + err.Error())
 		}
 		if changed {
 			s.broadcastWorkspaceStatus(update.WorkspaceID)
@@ -5701,11 +5687,11 @@ func (s *Server) refreshWorkspace(
 
 	refreshed, err := s.workspaces.GetSummary(ctx, input.ID)
 	if err != nil {
-		return nil, problemInternal("get workspace failed")
+		return nil, httpapi.Internal("get workspace failed")
 	}
 	if refreshed == nil {
-		return nil, problemNotFound(
-			CodeWorkspaceNotFound, "workspace not found", nil,
+		return nil, httpapi.NotFound(
+			httpapi.CodeWorkspaceNotFound, "workspace not found", nil,
 		)
 	}
 	if prNumber, ok := workspaceAssociatedPRNumber(refreshed); ok {
@@ -5716,11 +5702,11 @@ func (s *Server) refreshWorkspace(
 		}
 		refreshed, err = s.workspaces.GetSummary(ctx, input.ID)
 		if err != nil {
-			return nil, problemInternal("get workspace failed")
+			return nil, httpapi.Internal("get workspace failed")
 		}
 		if refreshed == nil {
-			return nil, problemNotFound(
-				CodeWorkspaceNotFound, "workspace not found", nil,
+			return nil, httpapi.NotFound(
+				httpapi.CodeWorkspaceNotFound, "workspace not found", nil,
 			)
 		}
 	}
@@ -5765,9 +5751,9 @@ func (s *Server) refreshWorkspaceRepoIndex(
 		return nil
 	}
 	if strings.Contains(err.Error(), "is not tracked") {
-		return problemForbidden(err.Error(), nil)
+		return httpapi.Forbidden(err.Error(), nil)
 	}
-	return providerCallProblemWithDetail(
+	return httpapi.ProviderCallProblemWithDetail(
 		err, string(kind), host, "sync repo: "+err.Error(),
 	)
 }
@@ -5783,9 +5769,9 @@ func (s *Server) refreshWorkspaceIssue(
 		return nil
 	}
 	if strings.Contains(err.Error(), "is not tracked") {
-		return problemForbidden(err.Error(), nil)
+		return httpapi.Forbidden(err.Error(), nil)
 	}
-	return providerCallProblemWithDetail(
+	return httpapi.ProviderCallProblemWithDetail(
 		err, string(kind), host, "sync issue: "+err.Error(),
 	)
 }
@@ -5800,9 +5786,9 @@ func (s *Server) refreshWorkspacePullRequest(
 	err := s.syncer.SyncMROnProvider(ctx, kind, host, owner, name, number)
 	if err != nil && !errors.As(err, &diffErr) {
 		if strings.Contains(err.Error(), "is not tracked") {
-			return problemForbidden(err.Error(), nil)
+			return httpapi.Forbidden(err.Error(), nil)
 		}
-		return providerCallProblemWithDetail(
+		return httpapi.ProviderCallProblemWithDetail(
 			err, string(kind), host, "sync PR: "+err.Error(),
 		)
 	}
@@ -5833,10 +5819,10 @@ func (s *Server) getWorkspaceCommits(
 			"workspace_id", input.ID,
 			"err", err,
 		)
-		return nil, problemUpstream("failed to list workspace commits", "", "")
+		return nil, httpapi.Upstream("failed to list workspace commits", "", "")
 	}
 	if !ok {
-		return nil, problemNotFound(CodeNotFound,
+		return nil, httpapi.NotFound(httpapi.CodeNotFound,
 			"commits not available for this workspace", nil)
 	}
 
@@ -5902,7 +5888,7 @@ func (s *Server) getWorkspaceFiles(
 			"base", req.Base,
 			"err", diffErr,
 		)
-		return nil, problemUpstream("failed to list workspace files", "", "")
+		return nil, httpapi.Upstream("failed to list workspace files", "", "")
 	}
 	return &getWorkspaceFilesOutput{Body: filesResponse{
 		Stale:               snapshot.Diff.Stale,
@@ -5937,7 +5923,7 @@ func (s *Server) watchWorkspaceDiff(
 		if errors.Is(err, errWorkspaceDiffBaseUnavailable) {
 			return nil, workspaceDiffBaseUnavailable(req.Base)
 		}
-		return nil, problemUpstream("failed to prepare selected workspace diff", "", "")
+		return nil, httpapi.Upstream("failed to prepare selected workspace diff", "", "")
 	}
 	if input.Version == "" || input.Version != snapshot.Version {
 		return &watchWorkspaceDiffOutput{Body: workspaceDiffWatchResponse{
@@ -5975,7 +5961,7 @@ func (s *Server) watchWorkspaceDiff(
 			}
 			current, _, getErr := s.workspaceDiffCache.Get(ctx, key)
 			if getErr != nil {
-				return nil, problemUpstream("failed to read selected workspace diff", "", "")
+				return nil, httpapi.Upstream("failed to read selected workspace diff", "", "")
 			}
 			if current.Version == input.Version {
 				continue
@@ -6015,11 +6001,11 @@ func (s *Server) getWorkspaceDiff(
 			"base", req.Base,
 			"err", diffErr,
 		)
-		return nil, problemUpstream("failed to compute workspace diff", "", "")
+		return nil, httpapi.Upstream("failed to compute workspace diff", "", "")
 	}
 	if input.Revision != "" && input.Revision != snapshot.Version {
-		return nil, problemConflict(
-			CodeConflict,
+		return nil, httpapi.Conflict(
+			httpapi.CodeConflict,
 			"workspace diff snapshot changed; reload the file list",
 			map[string]any{"reason": "snapshot_changed", "snapshot_version": snapshot.Version},
 		)
@@ -6041,11 +6027,11 @@ func (s *Server) getWorkspaceFilePreview(
 	input *getWorkspaceFilePreviewInput,
 ) (*getWorkspaceFilePreviewOutput, error) {
 	if strings.TrimSpace(input.Path) == "" {
-		return nil, problemValidation("query.path", "path is required")
+		return nil, httpapi.Validation("query.path", "path is required")
 	}
 	side := strings.TrimSpace(input.Side)
 	if side != "" && side != "old" && side != "new" {
-		return nil, problemValidation("query.side", "side must be old or new")
+		return nil, httpapi.Validation("query.side", "side must be old or new")
 	}
 
 	req, err := s.workspaceDiffRequest(ctx, input.ID, input.Base)
@@ -6065,8 +6051,8 @@ func (s *Server) getWorkspaceFilePreview(
 	var content *gitclone.FileContent
 	if err == nil {
 		if input.Revision != "" && input.Revision != snapshot.Version {
-			return nil, problemConflict(
-				CodeConflict,
+			return nil, httpapi.Conflict(
+				httpapi.CodeConflict,
 				"workspace diff snapshot changed; reload the file list",
 				map[string]any{"reason": "snapshot_changed", "snapshot_version": snapshot.Version},
 			)
@@ -6085,10 +6071,10 @@ func (s *Server) getWorkspaceFilePreview(
 			return nil, workspaceDiffBaseUnavailable(req.Base)
 		}
 		if errors.Is(err, gitclone.ErrNotFound) {
-			return nil, problemNotFound(CodeNotFound, "workspace file preview not available: file is not changed in this diff", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "workspace file preview not available: file is not changed in this diff", nil)
 		}
 		if errors.Is(err, gitclone.ErrTooLarge) {
-			return nil, problemPayloadTooLarge("file preview is too large", maxFilePreviewBytes)
+			return nil, httpapi.PayloadTooLarge("file preview is too large", maxFilePreviewBytes)
 		}
 		slog.Error(
 			"failed to read workspace file preview",
@@ -6097,10 +6083,10 @@ func (s *Server) getWorkspaceFilePreview(
 			"path", input.Path,
 			"err", err,
 		)
-		return nil, problemUpstream("failed to read workspace file preview", "", "")
+		return nil, httpapi.Upstream("failed to read workspace file preview", "", "")
 	}
 	if content == nil {
-		return nil, problemUpstream("failed to read workspace file preview", "", "")
+		return nil, httpapi.Upstream("failed to read workspace file preview", "", "")
 	}
 	return &getWorkspaceFilePreviewOutput{Body: filePreviewResponse{
 		Path:      content.Path,
@@ -6117,23 +6103,23 @@ func (s *Server) workspaceDiffRequest(
 	baseInput string,
 ) (workspaceDiffRequest, error) {
 	if s.workspaces == nil {
-		return workspaceDiffRequest{}, problemServiceUnavailable(
+		return workspaceDiffRequest{}, httpapi.ServiceUnavailable(
 			"workspace manager not configured",
 		)
 	}
 
 	summary, err := s.workspaces.GetSummary(ctx, id)
 	if err != nil {
-		return workspaceDiffRequest{}, problemInternal("get workspace failed")
+		return workspaceDiffRequest{}, httpapi.Internal("get workspace failed")
 	}
 	if summary == nil {
-		return workspaceDiffRequest{}, problemNotFound(
-			CodeWorkspaceNotFound, "workspace not found", nil,
+		return workspaceDiffRequest{}, httpapi.NotFound(
+			httpapi.CodeWorkspaceNotFound, "workspace not found", nil,
 		)
 	}
 	if summary.Status != "ready" {
-		return workspaceDiffRequest{}, problemConflict(
-			CodeConflict, "workspace is not ready", nil,
+		return workspaceDiffRequest{}, httpapi.Conflict(
+			httpapi.CodeConflict, "workspace is not ready", nil,
 		)
 	}
 
@@ -6158,7 +6144,7 @@ func (s *Server) workspaceDiffRequest(
 			MergeTargetBranch: targetBranch,
 		}, nil
 	default:
-		return workspaceDiffRequest{}, problemValidation(
+		return workspaceDiffRequest{}, httpapi.Validation(
 			"query.base",
 			"base must be head, pushed, or merge-target",
 			"head", "pushed", "merge-target",
@@ -6238,7 +6224,7 @@ func (s *Server) applyWorkspaceDiffScope(
 			ctx, req.Summary.WorktreePath, commit,
 		)
 		if err != nil {
-			return problemInternal("failed to resolve parent: " + err.Error())
+			return httpapi.Internal("failed to resolve parent: " + err.Error())
 		}
 		req.FromSHA = parent
 		req.ToSHA = commit
@@ -6250,7 +6236,7 @@ func (s *Server) applyWorkspaceDiffScope(
 			return err
 		}
 		if indexMap[from] < indexMap[to] {
-			return problemValidation("query",
+			return httpapi.Validation("query",
 				"invalid range: 'from' must be older than or equal to 'to'",
 			)
 		}
@@ -6258,14 +6244,14 @@ func (s *Server) applyWorkspaceDiffScope(
 			ctx, req.Summary.WorktreePath, from,
 		)
 		if err != nil {
-			return problemInternal("failed to resolve parent: " + err.Error())
+			return httpapi.Internal("failed to resolve parent: " + err.Error())
 		}
 		req.FromSHA = parent
 		req.ToSHA = to
 		return nil
 
 	default:
-		return problemValidation("query",
+		return httpapi.Validation("query",
 			"invalid scope: use 'commit' alone or 'from'+'to' together",
 		)
 	}
@@ -6278,12 +6264,12 @@ func (s *Server) validateWorkspaceSHAs(
 ) (map[string]int, error) {
 	commits, ok, err := s.workspaceCommits(ctx, req)
 	if err != nil {
-		return nil, problemUpstream(
+		return nil, httpapi.Upstream(
 			"failed to list workspace commits: "+err.Error(), "", "",
 		)
 	}
 	if !ok {
-		return nil, problemNotFound(CodeNotFound,
+		return nil, httpapi.NotFound(httpapi.CodeNotFound,
 			"commits not available for this workspace", nil)
 	}
 	indexMap := make(map[string]int, len(commits))
@@ -6292,7 +6278,7 @@ func (s *Server) validateWorkspaceSHAs(
 	}
 	for _, sha := range shas {
 		if _, ok := indexMap[sha]; !ok {
-			return nil, problemValidation("query",
+			return nil, httpapi.Validation("query",
 				"invalid scope: commit is not in this workspace branch",
 			)
 		}
@@ -6322,7 +6308,7 @@ func (s *Server) workspaceMergeTargetBranch(
 		Name:         summary.RepoName,
 	})
 	if err != nil {
-		return "", false, problemInternal("get workspace repo failed")
+		return "", false, httpapi.Internal("get workspace repo failed")
 	}
 	if repo == nil {
 		return "", false, nil
@@ -6332,7 +6318,7 @@ func (s *Server) workspaceMergeTargetBranch(
 		ctx, repo.ID, prNumber,
 	)
 	if err != nil {
-		return "", false, problemInternal("get workspace pull request failed")
+		return "", false, httpapi.Internal("get workspace pull request failed")
 	}
 	if mr == nil || strings.TrimSpace(mr.BaseBranch) == "" {
 		return "", false, nil
@@ -6344,10 +6330,10 @@ func workspaceDiffBaseUnavailable(
 	base workspace.WorktreeDiffBase,
 ) error {
 	if base == workspace.WorktreeDiffBaseMergeTarget {
-		return problemNotFound(CodeNotFound,
+		return httpapi.NotFound(httpapi.CodeNotFound,
 			"workspace merge target branch not available", nil)
 	}
-	return problemNotFound(CodeNotFound,
+	return httpapi.NotFound(httpapi.CodeNotFound,
 		"workspace pushed branch not available", nil)
 }
 
@@ -6355,18 +6341,18 @@ func (s *Server) retryWorkspace(
 	ctx context.Context, input *retryWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
 	if s.workspaces == nil {
-		return nil, problemServiceUnavailable("workspace manager not configured")
+		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
 
 	ws, startNow, err := s.workspaces.RequestRetry(ctx, input.ID)
 	if err != nil {
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
-			return nil, problemNotFound(CodeWorkspaceNotFound, err.Error(), nil)
+			return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, err.Error(), nil)
 		}
 		if errors.Is(err, workspace.ErrWorkspaceInvalidState) {
-			return nil, problemConflict(CodeConflict, err.Error(), nil)
+			return nil, httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
 		}
-		return nil, problemInternal("retry workspace: " + err.Error())
+		return nil, httpapi.Internal("retry workspace: " + err.Error())
 	}
 	s.invalidateWorkspaceEnrichment(ws.ID)
 
@@ -6376,10 +6362,10 @@ func (s *Server) retryWorkspace(
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
 	if err != nil {
-		return nil, problemInternal("get workspace summary: " + err.Error())
+		return nil, httpapi.Internal("get workspace summary: " + err.Error())
 	}
 	if summary == nil {
-		return nil, problemInternal("workspace summary missing after retry")
+		return nil, httpapi.Internal("workspace summary missing after retry")
 	}
 	resp := s.toWorkspaceResponse(ctx, summary)
 	s.hub.Broadcast(Event{
@@ -6660,7 +6646,7 @@ func (s *Server) getWorkspaceRuntime(
 	}
 	sessions, err := s.workspaceRuntimeSessions(ctx, summary.ID)
 	if err != nil {
-		return nil, problemInternal("list runtime sessions: " + err.Error())
+		return nil, httpapi.Internal("list runtime sessions: " + err.Error())
 	}
 
 	return &getWorkspaceRuntimeOutput{
@@ -6770,14 +6756,14 @@ func (s *Server) launchWorkspaceRuntimeSession(
 	}
 	targetKey := strings.TrimSpace(input.Body.TargetKey)
 	if targetKey == "" {
-		return nil, problemValidation("body.target_key", "target_key is required")
+		return nil, httpapi.Validation("body.target_key", "target_key is required")
 	}
 	if workspaceRuntimeTargetIsAgent(s.runtime, targetKey) {
 		if err := s.workspaces.PrepareAgentLaunchContext(ctx, workspace.PrepareAgentLaunchContextOptions{
 			WorkspaceID: summary.ID,
 			TargetKey:   targetKey,
 		}); err != nil {
-			return nil, problemInternal("prepare agent context: " + err.Error())
+			return nil, httpapi.Internal("prepare agent context: " + err.Error())
 		}
 	}
 
@@ -6875,7 +6861,7 @@ func (s *Server) recordRuntimeSession(
 			CreatedAt:     session.CreatedAt,
 		},
 	); err != nil {
-		return problemInternal("record runtime session: " + err.Error())
+		return httpapi.Internal("record runtime session: " + err.Error())
 	}
 	return nil
 }
@@ -6913,7 +6899,7 @@ func (s *Server) stopWorkspaceRuntimeSession(
 				ctx, summary.ID, input.SessionKey,
 			)
 			if stopErr != nil {
-				return nil, problemInternal(
+				return nil, httpapi.Internal(
 					"stop stored runtime session: " + stopErr.Error(),
 				)
 			}
@@ -6921,14 +6907,14 @@ func (s *Server) stopWorkspaceRuntimeSession(
 				s.invalidateWorkspaceEnrichment(summary.ID)
 				return nil, nil
 			}
-			return nil, problemNotFound(CodeNotFound, err.Error(), nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, err.Error(), nil)
 		}
-		return nil, problemInternal("stop runtime session: " + err.Error())
+		return nil, httpapi.Internal("stop runtime session: " + err.Error())
 	}
 	if err := s.workspaces.ForgetRuntimeSession(
 		ctx, summary.ID, input.SessionKey,
 	); err != nil {
-		return nil, problemInternal("forget runtime session: " + err.Error())
+		return nil, httpapi.Internal("forget runtime session: " + err.Error())
 	}
 	s.invalidateWorkspaceEnrichment(summary.ID)
 	return nil, nil
@@ -6946,19 +6932,19 @@ func (s *Server) getWorkspaceRuntimeSessionAttachSpec(
 		s.runtime.ListSessions(summary.ID),
 		input.SessionKey,
 	) {
-		return nil, problemBadRequest(
-			CodeBadRequest, "runtime session is not tmux-backed", nil,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest, "runtime session is not tmux-backed", nil,
 		)
 	}
 	stored, err := s.db.ListWorkspaceRuntimeTmuxSessions(ctx, summary.ID)
 	if err != nil {
-		return nil, problemInternal("list runtime tmux sessions: " + err.Error())
+		return nil, httpapi.Internal("list runtime tmux sessions: " + err.Error())
 	}
 	targetKey, tmuxSession, ok := workspaceRuntimeAttachTarget(
 		input.SessionKey, stored,
 	)
 	if !ok {
-		return nil, problemNotFound(CodeNotFound, "runtime session not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "runtime session not found", nil)
 	}
 	spec, err := runtimeAttachSpec(
 		ctx, s.cfg.TmuxCommand(), input.SessionKey, targetKey, tmuxSession,
@@ -7016,7 +7002,7 @@ func (s *Server) renameWorkspaceRuntimeSession(
 	}
 	label := strings.TrimSpace(input.Body.Label)
 	if label == "" {
-		return nil, problemValidation("body.label", "label is required")
+		return nil, httpapi.Validation("body.label", "label is required")
 	}
 
 	session, err := s.runtime.RenameSession(
@@ -7028,23 +7014,23 @@ func (s *Server) renameWorkspaceRuntimeSession(
 				ctx, summary.ID, input.SessionKey, label,
 			)
 			if renameErr != nil {
-				return nil, problemInternal(
+				return nil, httpapi.Internal(
 					"rename stored runtime session: " + renameErr.Error(),
 				)
 			}
 			if renamed {
 				return &workspaceRuntimeSessionOutput{Body: stored}, nil
 			}
-			return nil, problemNotFound(CodeNotFound, err.Error(), nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, err.Error(), nil)
 		}
-		return nil, problemInternal("rename runtime session: " + err.Error())
+		return nil, httpapi.Internal("rename runtime session: " + err.Error())
 	}
 
 	updated, err := s.workspaces.UpdateRuntimeSessionLabel(
 		ctx, summary.ID, input.SessionKey, session.Label,
 	)
 	if err != nil {
-		return nil, problemInternal("update runtime session label: " + err.Error())
+		return nil, httpapi.Internal("update runtime session label: " + err.Error())
 	}
 	if !updated {
 		if err := s.recordRuntimeSession(ctx, summary.ID, session, "session"); err != nil {
@@ -7083,15 +7069,15 @@ func (s *Server) getRuntimeWorkspace(
 	id string,
 ) (*db.WorkspaceSummary, error) {
 	if s.workspaces == nil || s.runtime == nil {
-		return nil, problemServiceUnavailable("workspace runtime not configured")
+		return nil, httpapi.ServiceUnavailable("workspace runtime not configured")
 	}
 
 	summary, err := s.workspaces.GetSummary(ctx, id)
 	if err != nil {
-		return nil, problemInternal("get workspace failed")
+		return nil, httpapi.Internal("get workspace failed")
 	}
 	if summary == nil {
-		return nil, problemNotFound(CodeWorkspaceNotFound, "workspace not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, "workspace not found", nil)
 	}
 	return summary, nil
 }
@@ -7105,7 +7091,7 @@ func (s *Server) getReadyRuntimeWorkspace(
 		return nil, err
 	}
 	if summary.Status != "ready" {
-		return nil, problemConflict(CodeConflict,
+		return nil, httpapi.Conflict(httpapi.CodeConflict,
 			"workspace not ready (status: "+summary.Status+")", nil)
 	}
 	return summary, nil
@@ -7114,16 +7100,16 @@ func (s *Server) getReadyRuntimeWorkspace(
 func workspaceRuntimeLaunchError(err error) error {
 	msg := err.Error()
 	if errors.Is(err, tokenauth.ErrMissingToken) {
-		return problemBadRequest(CodeBadRequest, msg, nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, msg, nil)
 	}
 	if strings.Contains(msg, "target not found") {
-		return problemNotFound(CodeNotFound, msg, nil)
+		return httpapi.NotFound(httpapi.CodeNotFound, msg, nil)
 	}
 	if strings.Contains(msg, "not available") ||
 		strings.Contains(msg, "no command") {
-		return problemBadRequest(CodeBadRequest, msg, nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, msg, nil)
 	}
-	return problemInternal("launch session: " + msg)
+	return httpapi.Internal("launch session: " + msg)
 }
 
 // deleteWorkspace tears down a middleman-managed workspace.
@@ -7134,7 +7120,7 @@ func (s *Server) deleteWorkspace(
 	ctx context.Context, input *deleteWorkspaceInput,
 ) (*struct{}, error) {
 	if s.workspaces == nil {
-		return nil, problemServiceUnavailable("workspace manager not configured")
+		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
 
 	if s.runtime != nil {
@@ -7157,12 +7143,12 @@ func (s *Server) deleteWorkspace(
 	)
 	if err != nil {
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
-			return nil, problemNotFound(CodeWorkspaceNotFound, err.Error(), nil)
+			return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, err.Error(), nil)
 		}
-		return nil, problemInternal("delete workspace: " + err.Error())
+		return nil, httpapi.Internal("delete workspace: " + err.Error())
 	}
 	if len(dirty) > 0 {
-		return nil, problemConflict(CodeConflict,
+		return nil, httpapi.Conflict(httpapi.CodeConflict,
 			"workspace has uncommitted changes: "+strings.Join(dirty, ", "), nil)
 	}
 

@@ -4,9 +4,10 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
-type healthOutput = bodyOutput[healthResponse]
+type healthOutput = httpapi.BodyOutput[healthResponse]
 
 type healthResponse struct {
 	Status string `json:"status"`
@@ -34,12 +35,12 @@ func (s *Server) livez(_ context.Context, _ *struct{}) (*healthOutput, error) {
 
 func (s *Server) healthz(ctx context.Context, _ *struct{}) (*healthOutput, error) {
 	if s.db == nil {
-		return nil, problemServiceUnavailable("database unavailable")
+		return nil, httpapi.ServiceUnavailable("database unavailable")
 	}
 
 	var probe int
 	if err := s.db.ReadDB().QueryRowContext(ctx, "SELECT 1").Scan(&probe); err != nil {
-		return nil, problemServiceUnavailable("database unavailable")
+		return nil, httpapi.ServiceUnavailable("database unavailable")
 	}
 
 	return &healthOutput{

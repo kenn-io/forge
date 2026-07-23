@@ -15,6 +15,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"go.kenn.io/middleman/internal/kata"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 const (
@@ -37,7 +38,7 @@ type kataDaemonRosterResponse struct {
 	Source  string               `json:"source,omitempty"`
 }
 
-type listKataDaemonsOutput = bodyOutput[kataDaemonRosterResponse]
+type listKataDaemonsOutput = httpapi.BodyOutput[kataDaemonRosterResponse]
 
 type streamKataTaskEventsInput struct {
 	DaemonID string `header:"X-Middleman-Kata-Daemon" doc:"Kata daemon id; the effective default daemon when empty"`
@@ -55,11 +56,11 @@ type kataDaemonInflightProbe struct {
 
 func (s *Server) registerKataAPI(api huma.API) {
 	huma.Get(api, "/kata/daemons", s.listKataDaemons,
-		documentOperation("list-kata-daemons", "List Kata daemons", "Kata"))
+		httpapi.DocumentOperation("list-kata-daemons", "List Kata daemons", "Kata"))
 	huma.Get(api, "/kata/tasks/snapshot", s.kataTaskSnapshot,
-		documentOperation("get-kata-task-snapshot", "Get authoritative Kata task snapshot", "Kata"))
+		httpapi.DocumentOperation("get-kata-task-snapshot", "Get authoritative Kata task snapshot", "Kata"))
 	huma.Get(api, "/kata/tasks/references", s.kataTaskReferences,
-		documentOperation("search-kata-task-references", "Search Kata task references", "Kata"))
+		httpapi.DocumentOperation("search-kata-task-references", "Search Kata task references", "Kata"))
 	registerKataWorkspaceAPI(api, s)
 	huma.Register(api, huma.Operation{
 		OperationID: "stream-kata-task-events",
@@ -115,14 +116,14 @@ func (s *Server) streamKataTaskEvents(
 func (s *Server) listKataDaemons(context.Context, *struct{}) (*listKataDaemonsOutput, error) {
 	catalog, err := kata.LoadCatalog()
 	if err != nil {
-		return nil, problemBadRequest(CodeBadRequest, err.Error(), nil)
+		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 
 	resolved := make([]kata.Daemon, len(catalog.Daemons))
 	for i, configured := range catalog.Daemons {
 		d, err := kata.ResolveDaemon(configured)
 		if err != nil {
-			return nil, problemBadRequest(CodeBadRequest, err.Error(), nil)
+			return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 		}
 		if d.Local && d.URL == "" {
 			d.URL = kata.DiscoverLocalDaemonURL()

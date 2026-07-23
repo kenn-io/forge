@@ -8,6 +8,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"go.kenn.io/middleman/internal/messages"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 type messagesSavedSearchesBody struct {
@@ -30,15 +31,15 @@ type replaceMessagesSavedSearchesInput struct {
 
 func (s *Server) registerMessagesAPI(api huma.API) {
 	huma.Get(api, "/messages/saved-searches", s.msgvault.savedSearches,
-		documentOperation("list-messages-saved-searches", "List messages saved searches", "Messages"))
+		httpapi.DocumentOperation("list-messages-saved-searches", "List messages saved searches", "Messages"))
 	huma.Put(api, "/messages/saved-searches", s.msgvault.replaceSavedSearches,
-		documentOperation("replace-messages-saved-searches", "Replace messages saved searches", "Messages"))
+		httpapi.DocumentOperation("replace-messages-saved-searches", "Replace messages saved searches", "Messages"))
 }
 
 func (h *msgvaultHandler) savedSearches(context.Context, *struct{}) (*messagesSavedSearchesOutput, error) {
 	list, err := messages.LoadSavedSearches()
 	if err != nil {
-		return nil, problemInternal("saved searches file is unreadable")
+		return nil, httpapi.Internal("saved searches file is unreadable")
 	}
 	list = messages.CanonicalizeSavedSearches(list)
 	if list == nil {
@@ -82,13 +83,13 @@ func (h *msgvaultHandler) replaceSavedSearches(
 	if in.IfMatch != "" {
 		current, err := messages.LoadSavedSearches()
 		if err != nil {
-			return nil, problemInternal("saved searches file is unreadable")
+			return nil, httpapi.Internal("saved searches file is unreadable")
 		}
 		current = messages.CanonicalizeSavedSearches(current)
 		if messages.SavedSearchesETag(current) != in.IfMatch {
-			return nil, newProblem(
+			return nil, httpapi.NewProblem(
 				http.StatusPreconditionFailed,
-				CodeConflict,
+				httpapi.CodeConflict,
 				"saved searches have changed since last load; refetch and retry",
 				map[string]any{"reason": "stale_etag"},
 			)
@@ -100,7 +101,7 @@ func (h *msgvaultHandler) replaceSavedSearches(
 		canonical = []messages.SavedSearch{}
 	}
 	if err := messages.SaveSavedSearches(canonical); err != nil {
-		return nil, problemInternal("saved searches could not be written")
+		return nil, httpapi.Internal("saved searches could not be written")
 	}
 	etag := messages.SavedSearchesETag(canonical)
 	return &messagesSavedSearchesOutput{

@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/workspace"
 )
 
@@ -16,7 +17,7 @@ type revealWorkspaceInput struct {
 	ID string `path:"id"`
 }
 
-type workspaceBranchActionOutput = bodyOutput[workspaceResponse]
+type workspaceBranchActionOutput = httpapi.BodyOutput[workspaceResponse]
 
 var revealWorkspacePath = workspace.RevealWorktreePath
 
@@ -44,9 +45,9 @@ func (s *Server) revealWorkspace(
 	}
 	if err := revealWorkspacePath(ctx, summary.WorktreePath); err != nil {
 		if errors.Is(err, workspace.ErrRevealUnsupported) {
-			return nil, problemBadRequest(CodeUnsupportedCapability, err.Error(), nil)
+			return nil, httpapi.BadRequest(httpapi.CodeUnsupportedCapability, err.Error(), nil)
 		}
-		return nil, problemConflict(CodeConflict, err.Error(), nil)
+		return nil, httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
 	}
 	return nil, nil
 }
@@ -65,10 +66,10 @@ func (s *Server) runWorkspaceBranchAction(
 	}
 	refreshed, err := s.workspaces.GetSummary(ctx, id)
 	if err != nil {
-		return nil, problemInternal("get workspace summary: " + err.Error())
+		return nil, httpapi.Internal("get workspace summary: " + err.Error())
 	}
 	if refreshed == nil {
-		return nil, problemNotFound(CodeWorkspaceNotFound, "workspace not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, "workspace not found", nil)
 	}
 	resp := s.refreshWorkspaceResponse(ctx, refreshed)
 	return &workspaceBranchActionOutput{Body: resp}, nil
@@ -79,14 +80,14 @@ func (s *Server) getWorkspaceActionSummary(
 	id string,
 ) (*db.WorkspaceSummary, error) {
 	if s.workspaces == nil {
-		return nil, problemServiceUnavailable("workspace manager not configured")
+		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
 	summary, err := s.workspaces.GetSummary(ctx, id)
 	if err != nil {
-		return nil, problemInternal("get workspace summary: " + err.Error())
+		return nil, httpapi.Internal("get workspace summary: " + err.Error())
 	}
 	if summary == nil {
-		return nil, problemNotFound(CodeWorkspaceNotFound, "workspace not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, "workspace not found", nil)
 	}
 	return summary, nil
 }
@@ -94,13 +95,13 @@ func (s *Server) getWorkspaceActionSummary(
 func workspaceBranchActionProblem(err error) error {
 	switch {
 	case errors.Is(err, workspace.ErrWorktreeDirty):
-		return problemConflict(CodeWorktreeDirty, err.Error(), nil)
+		return httpapi.Conflict(httpapi.CodeWorktreeDirty, err.Error(), nil)
 	case errors.Is(err, workspace.ErrWorktreeDiverged):
-		return problemConflict(CodeBranchConflict, err.Error(), nil)
+		return httpapi.Conflict(httpapi.CodeBranchConflict, err.Error(), nil)
 	case errors.Is(err, workspace.ErrWorktreeNoUpstream),
 		errors.Is(err, workspace.ErrWorktreeInSync):
-		return problemConflict(CodeConflict, err.Error(), nil)
+		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
 	default:
-		return problemConflict(CodeConflict, err.Error(), nil)
+		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
 	}
 }

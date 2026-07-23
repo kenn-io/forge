@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
@@ -416,16 +417,16 @@ func (s *Server) defaultPlatformHost() string {
 // not a 502 upstream error.
 func classifyResolveProblem(err error) huma.StatusError {
 	if errors.Is(err, ghclient.ErrConfiguredRepoArchived) {
-		return problemBadRequest(CodeBadRequest, err.Error(), nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
-	return providerCallProblem(err, "github", "")
+	return httpapi.ProviderCallProblem(err, "github", "")
 }
 
 func (s *Server) getSettings(
 	_ context.Context, _ *struct{},
 ) (*getSettingsOutput, error) {
 	if s.cfg == nil {
-		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
 	return &getSettingsOutput{Body: s.buildLocalSettingsResponse()}, nil
@@ -435,7 +436,7 @@ func (s *Server) updateSettings(
 	_ context.Context, input *updateSettingsInput,
 ) (*settingsOutput, error) {
 	if s.cfgPath == "" {
-		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
 	s.cfgMu.Lock()
@@ -483,7 +484,7 @@ func (s *Server) updateSettings(
 		s.cfg.Agents = prevAgents
 		s.cfg.KataProjects = prevKataProjects
 		s.cfgMu.Unlock()
-		return nil, problemBadRequest(CodeBadRequest, err.Error(), nil)
+		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Activity = prevActivity
@@ -494,7 +495,7 @@ func (s *Server) updateSettings(
 		s.cfg.Agents = prevAgents
 		s.cfg.KataProjects = prevKataProjects
 		s.cfgMu.Unlock()
-		return nil, problemInternal("save config: " + err.Error())
+		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	if s.syncer != nil {
 		s.syncer.SetBranchActivityLimits(
@@ -611,15 +612,15 @@ func (s *Server) addConfiguredRepo(
 	ctx context.Context, input *addRepoInput,
 ) (*settingsOutput, error) {
 	if s.cfgPath == "" {
-		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 	if input.Body.Owner == "" || input.Body.Name == "" {
-		return nil, problemValidation("body", "owner and name are required")
+		return nil, httpapi.Validation("body", "owner and name are required")
 	}
 
 	provider, err := normalizeRouteProvider(input.Body.Provider)
 	if err != nil {
-		return nil, problemValidation("body.provider", err.Error())
+		return nil, httpapi.Validation("body.provider", err.Error())
 	}
 	newRepo := config.Repo{
 		Platform:     provider,
@@ -633,7 +634,7 @@ func (s *Server) addConfiguredRepo(
 	for _, rp := range s.cfg.Repos {
 		if sameConfiguredRepo(rp, newRepo) {
 			s.cfgMu.Unlock()
-			return nil, problemBadRequest(CodeBadRequest,
+			return nil, httpapi.BadRequest(httpapi.CodeBadRequest,
 				input.Body.Owner+"/"+input.Body.Name+
 					" is already configured", nil)
 		}
@@ -654,7 +655,7 @@ func (s *Server) addConfiguredRepo(
 	for _, rp := range s.cfg.Repos {
 		if sameConfiguredRepo(rp, newRepo) {
 			s.cfgMu.Unlock()
-			return nil, problemBadRequest(CodeBadRequest,
+			return nil, httpapi.BadRequest(httpapi.CodeBadRequest,
 				input.Body.Owner+"/"+input.Body.Name+
 					" is already configured", nil)
 		}
@@ -663,12 +664,12 @@ func (s *Server) addConfiguredRepo(
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Repos = s.cfg.Repos[:len(s.cfg.Repos)-1]
 		s.cfgMu.Unlock()
-		return nil, problemBadRequest(CodeBadRequest, err.Error(), nil)
+		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = s.cfg.Repos[:len(s.cfg.Repos)-1]
 		s.cfgMu.Unlock()
-		return nil, problemInternal("save config: " + err.Error())
+		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	s.mergeTrackedRepos(expanded)
 	s.cfgMu.Unlock()
@@ -681,14 +682,14 @@ func (s *Server) refreshConfiguredRepo(
 	ctx context.Context, input *repoConfigInput,
 ) (*settingsOutput, error) {
 	if s.cfgPath == "" {
-		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
 	owner := input.Owner
 	name := input.Name
 	provider, err := normalizeRouteProvider(input.Provider)
 	if err != nil {
-		return nil, problemValidation("path.provider", err.Error())
+		return nil, httpapi.Validation("path.provider", err.Error())
 	}
 	targetRef := config.Repo{
 		Platform:     provider,
@@ -712,11 +713,11 @@ func (s *Server) refreshConfiguredRepo(
 		}
 	}
 	if target == nil {
-		return nil, problemNotFound(CodeRepoNotFound,
+		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound,
 			owner+"/"+name+" is not configured", nil)
 	}
 	if !target.HasNameGlob() {
-		return nil, problemBadRequest(CodeBadRequest,
+		return nil, httpapi.BadRequest(httpapi.CodeBadRequest,
 			"refresh is only supported for glob patterns", nil)
 	}
 
@@ -746,12 +747,12 @@ func (s *Server) refreshConfiguredRepo(
 	}
 	if !stillExists {
 		s.cfgMu.Unlock()
-		return nil, problemNotFound(CodeRepoNotFound,
+		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound,
 			owner+"/"+name+" is no longer configured", nil)
 	}
 	if err := s.persistResolvedRepos(ctx, expanded); err != nil {
 		s.cfgMu.Unlock()
-		return nil, problemInternal("persist resolved repos: " + err.Error())
+		return nil, httpapi.Internal("persist resolved repos: " + err.Error())
 	}
 	s.replaceGlobRepos(*target, expanded, currentRepos)
 	s.cfgMu.Unlock()
@@ -797,12 +798,12 @@ func (s *Server) updateConfiguredRepoWorktreeBasePath(
 	ctx context.Context, ref repoConfigInput, rawPath string,
 ) (*settingsOutput, error) {
 	if s.cfgPath == "" {
-		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
 	provider, err := normalizeRouteProvider(ref.Provider)
 	if err != nil {
-		return nil, problemValidation("path.provider", err.Error())
+		return nil, httpapi.Validation("path.provider", err.Error())
 	}
 	targetRef := config.Repo{
 		Platform:     provider,
@@ -818,7 +819,7 @@ func (s *Server) updateConfiguredRepoWorktreeBasePath(
 			ref.Owner, ref.Name,
 		)
 		if err != nil {
-			return nil, problemValidation("body.worktree_base_path", err.Error())
+			return nil, httpapi.Validation("body.worktree_base_path", err.Error())
 		}
 		worktreeBasePath = abs
 	}
@@ -833,13 +834,13 @@ func (s *Server) updateConfiguredRepoWorktreeBasePath(
 	}
 	if idx == -1 {
 		s.cfgMu.Unlock()
-		return nil, problemNotFound(CodeRepoNotFound,
+		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound,
 			ref.Owner+"/"+ref.Name+" is not configured", nil)
 	}
 	if s.cfg.Repos[idx].HasNameGlob() {
 		s.cfgMu.Unlock()
-		return nil, problemBadRequest(
-			CodeBadRequest,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest,
 			"worktree base paths are only supported for exact repositories",
 			nil,
 		)
@@ -850,12 +851,12 @@ func (s *Server) updateConfiguredRepoWorktreeBasePath(
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Repos[idx].WorktreeBasePath = prev
 		s.cfgMu.Unlock()
-		return nil, problemBadRequest(CodeBadRequest, err.Error(), nil)
+		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos[idx].WorktreeBasePath = prev
 		s.cfgMu.Unlock()
-		return nil, problemInternal("save config: " + err.Error())
+		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	s.cfgMu.Unlock()
 
@@ -866,14 +867,14 @@ func (s *Server) deleteConfiguredRepo(
 	_ context.Context, input *repoConfigInput,
 ) (*struct{}, error) {
 	if s.cfgPath == "" {
-		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
 	owner := input.Owner
 	name := input.Name
 	provider, err := normalizeRouteProvider(input.Provider)
 	if err != nil {
-		return nil, problemValidation("path.provider", err.Error())
+		return nil, httpapi.Validation("path.provider", err.Error())
 	}
 	targetRef := config.Repo{
 		Platform:     provider,
@@ -895,7 +896,7 @@ func (s *Server) deleteConfiguredRepo(
 	}
 	if idx == -1 {
 		s.cfgMu.Unlock()
-		return nil, problemNotFound(CodeRepoNotFound,
+		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound,
 			owner+"/"+name+" is not configured", nil)
 	}
 
@@ -906,7 +907,7 @@ func (s *Server) deleteConfiguredRepo(
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = prevRepos
 		s.cfgMu.Unlock()
-		return nil, problemInternal("save config: " + err.Error())
+		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	s.removeConfigRepos(s.cfg.Repos)
 	s.cfgMu.Unlock()

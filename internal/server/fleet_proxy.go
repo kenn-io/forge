@@ -23,6 +23,7 @@ import (
 
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/tracing"
 )
 
@@ -730,9 +731,9 @@ func (s *Server) serveLocalFleetRESTProxy(
 	targetPath string,
 ) {
 	if s.handler == nil {
-		writeProblemResponse(w, newProblem(
+		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusServiceUnavailable,
-			CodeServiceUnavailable,
+			httpapi.CodeServiceUnavailable,
 			"server handler not configured",
 			nil,
 		))
@@ -755,9 +756,9 @@ func (s *Server) serveRemoteFleetRESTProxy(
 		r.Body,
 	)
 	if err != nil {
-		writeProblemResponse(w, newProblem(
+		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusBadGateway,
-			CodeUpstreamError,
+			httpapi.CodeUpstreamError,
 			"build fleet peer request: "+err.Error(),
 			map[string]any{"hostKey": peer.Key},
 		))
@@ -768,9 +769,9 @@ func (s *Server) serveRemoteFleetRESTProxy(
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		writeProblemResponse(w, newProblem(
+		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusBadGateway,
-			CodeUpstreamError,
+			httpapi.CodeUpstreamError,
 			"fleet peer request failed: "+err.Error(),
 			map[string]any{"hostKey": peer.Key},
 		))
@@ -802,9 +803,9 @@ func (s *Server) serveFleetWebSocketProxy(
 	}
 	if target.self {
 		if s.handler == nil {
-			writeProblemResponse(w, newProblem(
+			writeProblemResponse(w, httpapi.NewProblem(
 				http.StatusServiceUnavailable,
-				CodeServiceUnavailable,
+				httpapi.CodeServiceUnavailable,
 				"server handler not configured",
 				nil,
 			))
@@ -831,9 +832,9 @@ func (s *Server) serveFleetWebSocketProxy(
 	})
 	if err != nil {
 		attachSpan.SetAttributes(attribute.Bool("error", true))
-		writeProblemResponse(w, newProblem(
+		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusBadGateway,
-			CodeUpstreamError,
+			httpapi.CodeUpstreamError,
 			"fleet peer websocket failed: "+err.Error(),
 			map[string]any{"hostKey": target.peer.Key},
 		))
@@ -877,9 +878,9 @@ func (s *Server) serveSSHFleetWebSocketTerminal(
 	attachSpecPath, ok := attachSpecPathForFleetTerminalTarget(targetPath)
 	if !ok {
 		attachSpan.SetAttributes(attribute.Bool("error", true))
-		writeProblemResponse(w, newProblem(
+		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusNotImplemented,
-			CodeUnsupportedCapability,
+			httpapi.CodeUnsupportedCapability,
 			"workspace-level WebSocket terminals are not supported for ssh fleet hosts; use a runtime session terminal",
 			map[string]any{"hostKey": peer.Key},
 		))
@@ -894,9 +895,9 @@ func (s *Server) serveSSHFleetWebSocketTerminal(
 	resp, err := s.sshFleet.relay(r.Context(), peer, http.MethodGet, attachSpecPath, nil)
 	if err != nil {
 		attachSpan.SetAttributes(attribute.Bool("error", true))
-		writeProblemResponse(w, newProblem(
+		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusBadGateway,
-			CodeUpstreamError,
+			httpapi.CodeUpstreamError,
 			"fleet ssh relay failed: "+err.Error(),
 			map[string]any{"hostKey": peer.Key},
 		))
@@ -921,9 +922,9 @@ func (s *Server) serveSSHFleetWebSocketTerminal(
 	var spec runtimeAttachSpecResponse
 	if err := json.Unmarshal(out, &spec); err != nil {
 		attachSpan.SetAttributes(attribute.Bool("error", true))
-		writeProblemResponse(w, newProblem(
+		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusBadGateway,
-			CodeUpstreamError,
+			httpapi.CodeUpstreamError,
 			"fleet ssh attach-spec was invalid: "+err.Error(),
 			map[string]any{"hostKey": peer.Key},
 		))
@@ -932,9 +933,9 @@ func (s *Server) serveSSHFleetWebSocketTerminal(
 	attach, err := startFleetSSHAttachPTY(r.Context(), spec, r)
 	if err != nil {
 		attachSpan.SetAttributes(attribute.Bool("error", true))
-		writeProblemResponse(w, newProblem(
+		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusBadGateway,
-			CodeUpstreamError,
+			httpapi.CodeUpstreamError,
 			"start fleet ssh terminal attach: "+err.Error(),
 			map[string]any{"hostKey": peer.Key},
 		))
@@ -1382,20 +1383,20 @@ func isHopByHopHeader(key string) bool {
 	}
 }
 
-func fleetHostNotFoundProblem(hostKey string) *ProblemError {
-	return newProblem(
+func fleetHostNotFoundProblem(hostKey string) *httpapi.ProblemError {
+	return httpapi.NewProblem(
 		http.StatusNotFound,
-		CodeNotFound,
+		httpapi.CodeNotFound,
 		"fleet host not found",
 		map[string]any{"hostKey": hostKey},
 	)
 }
 
-func writeProblemResponse(w http.ResponseWriter, problem *ProblemError) {
+func writeProblemResponse(w http.ResponseWriter, problem *httpapi.ProblemError) {
 	if problem == nil {
-		problem = newProblem(
+		problem = httpapi.NewProblem(
 			http.StatusInternalServerError,
-			CodeInternalError,
+			httpapi.CodeInternalError,
 			"internal error",
 			nil,
 		)

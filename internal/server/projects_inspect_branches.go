@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
@@ -51,9 +52,9 @@ func (s *Server) listProjectBranches(
 	project, err := s.db.GetProjectByID(ctx, input.ProjectID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeProjectNotFound, "project not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeProjectNotFound, "project not found", nil)
 		}
-		return nil, problemInternal("get project: " + err.Error())
+		return nil, httpapi.Internal("get project: " + err.Error())
 	}
 
 	output, err := gitDiscoveryOutput(
@@ -61,7 +62,7 @@ func (s *Server) listProjectBranches(
 		"for-each-ref", "--format=%(refname:short)", "refs/heads",
 	)
 	if err != nil {
-		return nil, problemInternal("list branches: " + err.Error())
+		return nil, httpapi.Internal("list branches: " + err.Error())
 	}
 
 	out := &listProjectBranchesOutput{}
@@ -81,26 +82,26 @@ func (s *Server) inspectProjectWorktree(
 	worktree, err := s.db.GetProjectWorktreeByID(ctx, input.WorktreeID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return nil, problemInternal("get worktree: " + err.Error())
+		return nil, httpapi.Internal("get worktree: " + err.Error())
 	}
 	if worktree.ProjectID != input.ProjectID {
-		return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 	}
 	project, err := s.db.GetProjectByID(ctx, input.ProjectID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return nil, problemInternal("get project: " + err.Error())
+		return nil, httpapi.Internal("get project: " + err.Error())
 	}
 
 	out := &inspectProjectWorktreeOutput{}
 	out.Body.IsDirty, out.Body.DirtyFileCount = worktreeDirtyState(ctx, worktree.Path)
 	aliveCount, err := s.countAliveWorktreeSessions(ctx, input.ProjectID, worktree.ID)
 	if err != nil {
-		return nil, problemInternal("list worktree sessions: " + err.Error())
+		return nil, httpapi.Internal("list worktree sessions: " + err.Error())
 	}
 	out.Body.AliveSessionCount = aliveCount
 

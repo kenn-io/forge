@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/kata"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 const kataProxyTestDaemonHeaderName = "X-Middleman-Kata-Daemon"
@@ -499,7 +500,7 @@ token_env = "MIDDLEMAN_KATA_PROXY_MISSING_TOKEN"
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeBadRequest, problem.Code)
+	assert.Equal(httpapi.CodeBadRequest, problem.Code)
 	assert.Contains(problem.Detail, "token_env")
 	assert.Contains(problem.Detail, "MIDDLEMAN_KATA_PROXY_MISSING_TOKEN")
 	assert.False(reached)
@@ -533,7 +534,7 @@ local = true
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeBadRequest, problem.Code)
+	assert.Equal(httpapi.CodeBadRequest, problem.Code)
 	assert.Contains(problem.Detail, "duplicate")
 	assert.Contains(problem.Detail, "home")
 	assert.False(reached)
@@ -627,9 +628,9 @@ func TestKataProxyLocalNoAuthDoesNotForwardAuthChallenge(t *testing.T) {
 	require := require.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		writeProblemResponse(w, newProblem(
+		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusUnauthorized,
-			CodeUnauthorized,
+			httpapi.CodeUnauthorized,
 			"Authentication required",
 			nil,
 		))
@@ -654,7 +655,7 @@ local = true
 
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeUpstreamError, problem.Code)
+	assert.Equal(httpapi.CodeUpstreamError, problem.Code)
 	assert.NotContains(rr.Body.String(), "Authentication required")
 }
 

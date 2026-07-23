@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
@@ -226,9 +227,9 @@ func TestServeHTTPRejectsLoopbackHostFromNonLoopbackPeer(t *testing.T) {
 
 			require.Equal(tt.want, rec.Code, rec.Body.String())
 			if tt.want == http.StatusForbidden {
-				var body ProblemError
+				var body httpapi.ProblemError
 				require.NoError(json.NewDecoder(rec.Body).Decode(&body))
-				assert.Equal(CodeForbidden, body.Code)
+				assert.Equal(httpapi.CodeForbidden, body.Code)
 				assert.Equal("hostNotAllowed", body.Details["reason"])
 			}
 		})

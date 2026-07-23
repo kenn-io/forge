@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 type kataDaemonWire struct {
@@ -165,7 +166,7 @@ token_env = "MIDDLEMAN_KATA_MISSING_TOKEN"
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeBadRequest, problem.Code)
+	assert.Equal(httpapi.CodeBadRequest, problem.Code)
 	assert.Contains(problem.Detail, "token_env")
 	assert.Contains(problem.Detail, "MIDDLEMAN_KATA_MISSING_TOKEN")
 }
@@ -191,7 +192,7 @@ local = true
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeBadRequest, problem.Code)
+	assert.Equal(httpapi.CodeBadRequest, problem.Code)
 	assert.Contains(problem.Detail, "duplicate")
 	assert.Contains(problem.Detail, "work")
 }

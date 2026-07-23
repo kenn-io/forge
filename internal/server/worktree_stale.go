@@ -8,6 +8,7 @@ import (
 
 	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 // worktreeScopedKeyPrefix is the fleet scoped-key prefix for worktrees. The
@@ -45,27 +46,27 @@ func (s *Server) removeStaleWorktree(
 		strings.TrimPrefix(strings.TrimSpace(input.Body.ScopedKey), worktreeScopedKeyPrefix),
 	)
 	if path == "" {
-		return nil, problemValidation("body.scopedKey", "scopedKey is required")
+		return nil, httpapi.Validation("body.scopedKey", "scopedKey is required")
 	}
 
 	worktree, err := s.db.GetProjectWorktreeByPath(ctx, path)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return nil, problemInternal("get worktree: " + err.Error())
+		return nil, httpapi.Internal("get worktree: " + err.Error())
 	}
 	if !worktree.IsStale {
-		return nil, problemConflict(CodeConflict, "worktree is not stale", nil)
+		return nil, httpapi.Conflict(httpapi.CodeConflict, "worktree is not stale", nil)
 	}
 	if _, statErr := os.Stat(worktree.Path); statErr == nil {
-		return nil, problemConflict(
-			CodeConflict, "worktree path still exists on disk", nil,
+		return nil, httpapi.Conflict(
+			httpapi.CodeConflict, "worktree path still exists on disk", nil,
 		)
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		// A permission or I/O error is not evidence the checkout is gone;
 		// refusing keeps a possibly-live worktree (and its branch) intact.
-		return nil, problemInternal(
+		return nil, httpapi.Internal(
 			"stat worktree path: " + statErr.Error(),
 		)
 	}
@@ -73,7 +74,7 @@ func (s *Server) removeStaleWorktree(
 	release, err := s.stopWorktreeRuntimeState(ctx, worktree.ID)
 	defer release()
 	if err != nil {
-		return nil, problemInternal(
+		return nil, httpapi.Internal(
 			"stop worktree runtime sessions: " + err.Error(),
 		)
 	}
@@ -88,9 +89,9 @@ func (s *Server) removeStaleWorktree(
 
 	if err := s.db.DeleteProjectWorktree(ctx, worktree.ProjectID, worktree.ID); err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return nil, problemInternal("delete worktree: " + err.Error())
+		return nil, httpapi.Internal("delete worktree: " + err.Error())
 	}
 	s.recomputeWorktreeLinksNow(ctx)
 

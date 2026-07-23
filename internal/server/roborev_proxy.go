@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 // roborevProxy returns an HTTP handler that reverse-proxies requests
@@ -47,7 +48,7 @@ type roborevStatusResponse struct {
 	Endpoint  string `json:"endpoint"`
 }
 
-type roborevStatusOutput = bodyOutput[roborevStatusResponse]
+type roborevStatusOutput = httpapi.BodyOutput[roborevStatusResponse]
 
 // getRoborevStatus probes the roborev daemon and reports whether
 // it is reachable and what version it advertises.

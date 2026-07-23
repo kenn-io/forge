@@ -23,6 +23,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/projects"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
@@ -321,21 +322,21 @@ func (s *Server) registerProject(
 ) (*registerProjectOutput, error) {
 	rawPath := strings.TrimSpace(input.Body.LocalPath)
 	if rawPath == "" {
-		return nil, problemValidation("body.local_path", "local_path is required")
+		return nil, httpapi.Validation("body.local_path", "local_path is required")
 	}
 	abs, err := filepath.Abs(rawPath)
 	if err != nil {
-		return nil, problemValidation("body.local_path", "resolve local_path: "+err.Error())
+		return nil, httpapi.Validation("body.local_path", "resolve local_path: "+err.Error())
 	}
 	stat, err := os.Stat(abs)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, problemValidation("body.local_path", "local_path does not exist: "+abs)
+			return nil, httpapi.Validation("body.local_path", "local_path does not exist: "+abs)
 		}
-		return nil, problemInternal("stat local_path: " + err.Error())
+		return nil, httpapi.Internal("stat local_path: " + err.Error())
 	}
 	if !stat.IsDir() {
-		return nil, problemValidation("body.local_path", "local_path is not a directory: "+abs)
+		return nil, httpapi.Validation("body.local_path", "local_path is not a directory: "+abs)
 	}
 
 	displayName := strings.TrimSpace(input.Body.DisplayName)
@@ -378,7 +379,7 @@ func (s *Server) registerProjectAtPath(
 			Name:         identity.Name,
 		})
 		if upsertErr != nil {
-			return nil, problemInternal(
+			return nil, httpapi.Internal(
 				"upsert repo identity: " + upsertErr.Error(),
 			)
 		}
@@ -393,13 +394,13 @@ func (s *Server) registerProjectAtPath(
 	})
 	if err != nil {
 		if errors.Is(err, db.ErrProjectPathTaken) {
-			return nil, problemConflict(
-				CodeConflict,
+			return nil, httpapi.Conflict(
+				httpapi.CodeConflict,
 				"a project is already registered at "+abs,
 				nil,
 			)
 		}
-		return nil, problemInternal("register project: " + err.Error())
+		return nil, httpapi.Internal("register project: " + err.Error())
 	}
 
 	// Discover the checkout's worktrees and repository kind immediately so a
@@ -426,7 +427,7 @@ func (s *Server) resolveProjectIdentity(
 		owner := strings.TrimSpace(caller.Owner)
 		name := strings.TrimSpace(caller.Name)
 		if platform == "" || host == "" || owner == "" || name == "" {
-			return nil, problemValidation(
+			return nil, httpapi.Validation(
 				"body.platform_identity",
 				"platform_identity requires platform, platform_host, owner, and name",
 			)
@@ -437,7 +438,7 @@ func (s *Server) resolveProjectIdentity(
 		ctx, abs, s.knownProjectPlatformHosts(),
 	)
 	if err != nil {
-		return nil, problemInternal(
+		return nil, httpapi.Internal(
 			"resolve platform identity: " + err.Error(),
 		)
 	}
@@ -473,7 +474,7 @@ func (s *Server) listProjects(
 ) (*listProjectsOutput, error) {
 	rows, err := s.db.ListProjects(ctx)
 	if err != nil {
-		return nil, problemInternal("list projects: " + err.Error())
+		return nil, httpapi.Internal("list projects: " + err.Error())
 	}
 	out := &listProjectsOutput{}
 	out.Body.Projects = projectResponsesFromDB(rows)
@@ -486,9 +487,9 @@ func (s *Server) getProject(
 	project, err := s.db.GetProjectByID(ctx, input.ProjectID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeProjectNotFound, "project not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeProjectNotFound, "project not found", nil)
 		}
-		return nil, problemInternal("get project: " + err.Error())
+		return nil, httpapi.Internal("get project: " + err.Error())
 	}
 	return &getProjectOutput{Body: projectResponseFromDB(project)}, nil
 }
@@ -505,24 +506,24 @@ func (s *Server) deleteProject(
 	worktrees, err := s.db.ListProjectWorktrees(ctx, input.ProjectID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeProjectNotFound, "project not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeProjectNotFound, "project not found", nil)
 		}
-		return nil, problemInternal("list project worktrees: " + err.Error())
+		return nil, httpapi.Internal("list project worktrees: " + err.Error())
 	}
 	for _, worktree := range worktrees {
 		release, err := s.stopWorktreeRuntimeState(ctx, worktree.ID)
 		defer release()
 		if err != nil {
-			return nil, problemInternal(
+			return nil, httpapi.Internal(
 				"stop worktree runtime sessions: " + err.Error(),
 			)
 		}
 	}
 	if err := s.db.DeleteProject(ctx, input.ProjectID); err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeProjectNotFound, "project not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeProjectNotFound, "project not found", nil)
 		}
-		return nil, problemInternal("delete project: " + err.Error())
+		return nil, httpapi.Internal("delete project: " + err.Error())
 	}
 	s.recomputeWorktreeLinksNow(ctx)
 	return nil, nil
@@ -577,11 +578,11 @@ func (s *Server) registerWorktree(
 ) (*registerWorktreeOutput, error) {
 	branch := strings.TrimSpace(input.Body.Branch)
 	if branch == "" {
-		return nil, problemValidation("body.branch", "branch is required")
+		return nil, httpapi.Validation("body.branch", "branch is required")
 	}
 	path := strings.TrimSpace(input.Body.Path)
 	if path == "" && !input.Body.CreateOnDisk {
-		return nil, problemValidation("body.path", "path is required")
+		return nil, httpapi.Validation("body.path", "path is required")
 	}
 
 	if input.Body.CreateOnDisk {
@@ -590,7 +591,7 @@ func (s *Server) registerWorktree(
 
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return nil, problemValidation("body.path", "resolve path: "+err.Error())
+		return nil, httpapi.Validation("body.path", "resolve path: "+err.Error())
 	}
 
 	created, err := s.db.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
@@ -601,15 +602,15 @@ func (s *Server) registerWorktree(
 	if err != nil {
 		switch {
 		case errors.Is(err, db.ErrProjectNotFound):
-			return nil, problemNotFound(CodeProjectNotFound, "project not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeProjectNotFound, "project not found", nil)
 		case errors.Is(err, db.ErrWorktreePathTaken):
-			return nil, problemConflict(
-				CodeConflict,
+			return nil, httpapi.Conflict(
+				httpapi.CodeConflict,
 				"a worktree is already registered at "+abs,
 				nil,
 			)
 		}
-		return nil, problemInternal("register worktree: " + err.Error())
+		return nil, httpapi.Internal("register worktree: " + err.Error())
 	}
 	s.recomputeWorktreeLinksNow(ctx)
 	return &registerWorktreeOutput{Body: worktreeResponseFromDB(
@@ -627,9 +628,9 @@ func (s *Server) createWorktreeOnDisk(
 	project, err := s.db.GetProjectByID(ctx, input.ProjectID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeProjectNotFound, "project not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeProjectNotFound, "project not found", nil)
 		}
-		return nil, problemInternal("get project: " + err.Error())
+		return nil, httpapi.Internal("get project: " + err.Error())
 	}
 
 	created, err := managedworktree.CreateWorktreeOnDisk(ctx, managedworktree.CreateWorktreeOptions{
@@ -667,13 +668,13 @@ func (s *Server) registerMaterializedWorktree(
 	if err != nil {
 		_, _ = created.Rollback(ctx)
 		if errors.Is(err, db.ErrWorktreePathTaken) {
-			return nil, problemConflict(
-				CodeDestinationExists,
+			return nil, httpapi.Conflict(
+				httpapi.CodeDestinationExists,
 				"a worktree is already registered at "+created.Path,
 				nil,
 			)
 		}
-		return nil, problemInternal("register worktree: " + err.Error())
+		return nil, httpapi.Internal("register worktree: " + err.Error())
 	}
 	s.recomputeWorktreeLinksNow(ctx)
 	return &registerWorktreeOutput{Body: worktreeResponseFromDB(
@@ -692,19 +693,19 @@ func (s *Server) createProjectWorktreeFromMergeRequest(
 ) (*worktreeFromMergeRequestOutput, error) {
 	branch := strings.TrimSpace(input.Body.Branch)
 	if branch == "" {
-		return nil, problemValidation("body.branch", "branch is required")
+		return nil, httpapi.Validation("body.branch", "branch is required")
 	}
 	project, err := s.db.GetProjectByID(ctx, input.ProjectID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeProjectNotFound, "project not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeProjectNotFound, "project not found", nil)
 		}
-		return nil, problemInternal("get project: " + err.Error())
+		return nil, httpapi.Internal("get project: " + err.Error())
 	}
 	identity := project.PlatformIdentity
 	if identity == nil {
-		return nil, problemBadRequest(
-			CodeBadRequest,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest,
 			"project has no platform identity; merge requests cannot be resolved for it",
 			nil,
 		)
@@ -719,7 +720,7 @@ func (s *Server) createProjectWorktreeFromMergeRequest(
 		ctx, repo.ID, input.Body.Number,
 	)
 	if err != nil {
-		return nil, problemInternal("failed to query merge request")
+		return nil, httpapi.Internal("failed to query merge request")
 	}
 	if mr == nil {
 		// Sync on demand so callers (e.g. a fleet hub proxying into
@@ -735,13 +736,13 @@ func (s *Server) createProjectWorktreeFromMergeRequest(
 				ctx, repo.ID, input.Body.Number,
 			)
 			if err != nil {
-				return nil, problemInternal("failed to query merge request")
+				return nil, httpapi.Internal("failed to query merge request")
 			}
 		}
 	}
 	if mr == nil {
-		return nil, problemNotFound(
-			CodePullNotFound,
+		return nil, httpapi.NotFound(
+			httpapi.CodePullNotFound,
 			"merge request not found; sync it before importing",
 			nil,
 		)
@@ -822,15 +823,15 @@ func (s *Server) refusePrimaryWorktreeRemoval(
 	project, err := s.db.GetProjectByID(ctx, projectID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return problemNotFound(CodeNotFound, "worktree not found", nil)
+			return httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return problemInternal("get project: " + err.Error())
+		return httpapi.Internal("get project: " + err.Error())
 	}
 	if normPath(worktree.Path) != normPath(project.LocalPath) {
 		return nil
 	}
-	return problemConflict(
-		CodeConflict,
+	return httpapi.Conflict(
+		httpapi.CodeConflict,
 		"refusing to remove the primary worktree (the project root checkout)",
 		nil,
 	)
@@ -848,12 +849,12 @@ func (s *Server) removeProjectWorktree(
 	worktree, err := s.db.GetProjectWorktreeByID(ctx, input.WorktreeID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return nil, problemInternal("get worktree: " + err.Error())
+		return nil, httpapi.Internal("get worktree: " + err.Error())
 	}
 	if worktree.ProjectID != input.ProjectID {
-		return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 	}
 	if problem := s.refusePrimaryWorktreeRemoval(ctx, input.ProjectID, worktree); problem != nil {
 		return nil, problem
@@ -863,13 +864,13 @@ func (s *Server) removeProjectWorktree(
 		project, err := s.db.GetProjectByID(ctx, input.ProjectID)
 		if err != nil {
 			if errors.Is(err, db.ErrProjectNotFound) {
-				return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+				return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 			}
-			return nil, problemInternal("get project: " + err.Error())
+			return nil, httpapi.Internal("get project: " + err.Error())
 		}
 		if project.DefaultBranch != "" && worktree.Branch == project.DefaultBranch {
-			return nil, problemConflict(
-				CodeBranchProtected,
+			return nil, httpapi.Conflict(
+				httpapi.CodeBranchProtected,
 				"refusing to remove the default-branch worktree "+worktree.Branch,
 				nil,
 			)
@@ -878,11 +879,11 @@ func (s *Server) removeProjectWorktree(
 			if _, statErr := os.Stat(worktree.Path); statErr == nil {
 				dirty, dirtyErr := managedWorktreeIsDirty(ctx, worktree.Path)
 				if dirtyErr != nil {
-					return nil, problemInternal(dirtyErr.Error())
+					return nil, httpapi.Internal(dirtyErr.Error())
 				}
 				if dirty {
-					return nil, problemConflict(
-						CodeWorktreeDirty,
+					return nil, httpapi.Conflict(
+						httpapi.CodeWorktreeDirty,
 						"worktree has uncommitted changes; retry with force",
 						nil,
 					)
@@ -908,7 +909,7 @@ func (s *Server) removeProjectWorktree(
 	release, err := s.stopWorktreeRuntimeState(ctx, input.WorktreeID)
 	defer release()
 	if err != nil {
-		return nil, problemInternal(
+		return nil, httpapi.Internal(
 			"stop worktree runtime sessions: " + err.Error(),
 		)
 	}
@@ -916,9 +917,9 @@ func (s *Server) removeProjectWorktree(
 		ctx, input.ProjectID, input.WorktreeID,
 	); err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return nil, problemInternal("delete worktree: " + err.Error())
+		return nil, httpapi.Internal("delete worktree: " + err.Error())
 	}
 	s.recomputeWorktreeLinksNow(ctx)
 	return nil, nil
@@ -935,8 +936,8 @@ func worktreeLifecycleProblem(err error, hookField string) error {
 	var changeRequestErr *managedworktree.ChangeRequestError
 	switch {
 	case errors.As(err, &hookErr):
-		return newProblem(
-			http.StatusUnprocessableEntity, CodeHookFailed,
+		return httpapi.NewProblem(
+			http.StatusUnprocessableEntity, httpapi.CodeHookFailed,
 			hookErr.Error(), map[string]any{
 				"scriptPath": hookErr.Script,
 				"exitCode":   hookErr.ExitCode,
@@ -944,22 +945,22 @@ func worktreeLifecycleProblem(err error, hookField string) error {
 			},
 		)
 	case errors.Is(err, managedworktree.ErrWorktreeDestinationExists):
-		return problemConflict(CodeDestinationExists, err.Error(), nil)
+		return httpapi.Conflict(httpapi.CodeDestinationExists, err.Error(), nil)
 	case errors.Is(err, managedworktree.ErrBranchAlreadyExists):
-		return problemConflict(CodeBranchConflict, err.Error(), nil)
+		return httpapi.Conflict(httpapi.CodeBranchConflict, err.Error(), nil)
 	case errors.Is(err, managedworktree.ErrBranchInUse):
-		return problemConflict(CodeBranchInUse, err.Error(), nil)
+		return httpapi.Conflict(httpapi.CodeBranchInUse, err.Error(), nil)
 	case errors.Is(err, managedworktree.ErrInvalidBranchName):
-		return problemValidation("body.branch", err.Error())
+		return httpapi.Validation("body.branch", err.Error())
 	case errors.Is(err, managedworktree.ErrHookOutsideProject):
-		return problemValidation(hookField, err.Error())
+		return httpapi.Validation(hookField, err.Error())
 	case errors.As(err, &changeRequestErr) &&
 		changeRequestErr.Kind == managedworktree.ChangeRequestHeadChanged:
-		return problemConflict(CodeConflict, changeRequestErr.Error(), map[string]any{
+		return httpapi.Conflict(httpapi.CodeConflict, changeRequestErr.Error(), map[string]any{
 			"reason": "stale_state",
 		})
 	}
-	return problemInternal("worktree lifecycle: " + err.Error())
+	return httpapi.Internal("worktree lifecycle: " + err.Error())
 }
 
 func managedWorktreeIsDirty(ctx context.Context, path string) (bool, error) {
@@ -1011,12 +1012,12 @@ func (s *Server) deleteProjectWorktree(
 	worktree, err := s.db.GetProjectWorktreeByID(ctx, input.WorktreeID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return nil, problemInternal("get worktree: " + err.Error())
+		return nil, httpapi.Internal("get worktree: " + err.Error())
 	}
 	if worktree.ProjectID != input.ProjectID {
-		return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 	}
 	if problem := s.refusePrimaryWorktreeRemoval(ctx, input.ProjectID, worktree); problem != nil {
 		return nil, problem
@@ -1024,7 +1025,7 @@ func (s *Server) deleteProjectWorktree(
 	release, err := s.stopWorktreeRuntimeState(ctx, input.WorktreeID)
 	defer release()
 	if err != nil {
-		return nil, problemInternal(
+		return nil, httpapi.Internal(
 			"stop worktree runtime sessions: " + err.Error(),
 		)
 	}
@@ -1032,9 +1033,9 @@ func (s *Server) deleteProjectWorktree(
 		ctx, input.ProjectID, input.WorktreeID,
 	); err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return nil, problemInternal("delete worktree: " + err.Error())
+		return nil, httpapi.Internal("delete worktree: " + err.Error())
 	}
 	s.recomputeWorktreeLinksNow(ctx)
 	return nil, nil
@@ -1053,9 +1054,9 @@ func (s *Server) setProjectWorktreeHidden(
 	)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return nil, problemInternal("set worktree hidden: " + err.Error())
+		return nil, httpapi.Internal("set worktree hidden: " + err.Error())
 	}
 	return &registerWorktreeOutput{Body: worktreeResponseFromDB(
 		updated, s.projectRootPath(ctx, input.ProjectID),
@@ -1080,7 +1081,7 @@ func (s *Server) setProjectWorktreeSessionBackend(
 	case "", fleet.SessionBackendLocalPTY,
 		fleet.SessionBackendLocalTmux, fleet.SessionBackendRemoteTmux:
 	default:
-		return nil, problemValidation(
+		return nil, httpapi.Validation(
 			"body.session_backend",
 			"unsupported session backend "+strconv.Quote(backend),
 			fleet.SessionBackendLocalPTY,
@@ -1093,9 +1094,9 @@ func (s *Server) setProjectWorktreeSessionBackend(
 	)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return nil, problemInternal("set worktree session backend: " + err.Error())
+		return nil, httpapi.Internal("set worktree session backend: " + err.Error())
 	}
 	return &registerWorktreeOutput{Body: worktreeResponseFromDB(
 		updated, s.projectRootPath(ctx, input.ProjectID),
@@ -1117,9 +1118,9 @@ func (s *Server) setProjectWorktreeLinkedIssues(
 	)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return nil, problemInternal("set worktree linked issues: " + err.Error())
+		return nil, httpapi.Internal("set worktree linked issues: " + err.Error())
 	}
 	return &registerWorktreeOutput{Body: worktreeResponseFromDB(
 		updated, s.projectRootPath(ctx, input.ProjectID),
@@ -1140,24 +1141,24 @@ func (s *Server) refreshProjectWorktreeStats(
 	worktree, err := s.db.GetProjectWorktreeByID(ctx, input.WorktreeID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return nil, problemInternal("get worktree: " + err.Error())
+		return nil, httpapi.Internal("get worktree: " + err.Error())
 	}
 	if worktree.ProjectID != input.ProjectID {
-		return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 	}
 	project, err := s.db.GetProjectByID(ctx, input.ProjectID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return nil, problemInternal("get project: " + err.Error())
+		return nil, httpapi.Internal("get project: " + err.Error())
 	}
 	if err := s.fleetWorktreeStatsSampler.refreshWorktreeStats(
 		ctx, worktree.Path, project.DefaultBranch,
 	); err != nil {
-		return nil, problemInternal("refresh worktree stats: " + err.Error())
+		return nil, httpapi.Internal("refresh worktree stats: " + err.Error())
 	}
 	return &registerWorktreeOutput{Body: worktreeResponseFromDB(
 		worktree, s.projectRootPath(ctx, input.ProjectID),
@@ -1170,9 +1171,9 @@ func (s *Server) listWorktrees(
 	rows, err := s.db.ListProjectWorktrees(ctx, input.ProjectID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeProjectNotFound, "project not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeProjectNotFound, "project not found", nil)
 		}
-		return nil, problemInternal("list worktrees: " + err.Error())
+		return nil, httpapi.Internal("list worktrees: " + err.Error())
 	}
 	out := &listWorktreesOutput{}
 	out.Body.Worktrees = worktreeResponsesFromDB(
@@ -1186,9 +1187,9 @@ func (s *Server) listLaunchTargets(
 ) (*listLaunchTargetsOutput, error) {
 	if _, err := s.db.GetProjectByID(ctx, input.ProjectID); err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeProjectNotFound, "project not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeProjectNotFound, "project not found", nil)
 		}
-		return nil, problemInternal("get project: " + err.Error())
+		return nil, httpapi.Internal("get project: " + err.Error())
 	}
 	// Resolve fresh on every call so PATH changes (a newly installed
 	// agent, a deleted binary) take effect without restarting the
@@ -1221,7 +1222,7 @@ func (s *Server) getProjectWorktreeRuntime(
 		ctx, input.ProjectID, worktree.ID, scope,
 	)
 	if err != nil {
-		return nil, problemInternal("list project worktree runtime sessions: " + err.Error())
+		return nil, httpapi.Internal("list project worktree runtime sessions: " + err.Error())
 	}
 
 	out := projectWorktreeRuntimeResponse{
@@ -1278,7 +1279,7 @@ func (s *Server) ensureProjectWorktreeRuntimeShell(
 			if !session.Reused {
 				_ = s.runtime.Stop(ctx, scope, session.Key)
 			}
-			return nil, problemInternal(
+			return nil, httpapi.Internal(
 				"record project worktree runtime tmux session: " + err.Error(),
 			)
 		}
@@ -1299,13 +1300,13 @@ func (s *Server) launchProjectWorktreeRuntimeSession(
 	targetKey := strings.TrimSpace(input.Body.TargetKey)
 	if len(input.Body.Command) > 0 {
 		if targetKey != "" {
-			return nil, problemValidation(
+			return nil, httpapi.Validation(
 				"body.command",
 				"command and target_key are mutually exclusive",
 			)
 		}
 		if strings.TrimSpace(input.Body.Command[0]) == "" {
-			return nil, problemValidation(
+			return nil, httpapi.Validation(
 				"body.command", "command executable must not be empty",
 			)
 		}
@@ -1315,17 +1316,17 @@ func (s *Server) launchProjectWorktreeRuntimeSession(
 	}
 	if input.Body.SessionKey != "" || len(input.Body.Env) > 0 ||
 		input.Body.Label != "" || input.Body.CWD != "" {
-		return nil, problemValidation(
+		return nil, httpapi.Validation(
 			"body.command",
 			"session_key, env, label, and cwd require a command launch",
 		)
 	}
 	if targetKey == "" {
-		return nil, problemValidation("body.target_key", "target_key is required")
+		return nil, httpapi.Validation("body.target_key", "target_key is required")
 	}
 	if targetKey == string(localruntime.LaunchTargetPlainShell) {
-		return nil, problemBadRequest(
-			CodeBadRequest,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest,
 			"plain_shell must be launched through /runtime/shell",
 			nil,
 		)
@@ -1348,7 +1349,7 @@ func (s *Server) launchProjectWorktreeRuntimeSession(
 			},
 		); err != nil {
 			_ = s.runtime.Stop(ctx, scope, session.Key)
-			return nil, problemInternal(
+			return nil, httpapi.Internal(
 				"record project worktree runtime tmux session: " + err.Error(),
 			)
 		}
@@ -1369,7 +1370,7 @@ func (s *Server) launchProjectWorktreeRuntimeCommandSession(
 ) (*projectWorktreeRuntimeSessionOutput, error) {
 	for key := range input.Body.Env {
 		if !localruntime.IsShellIdentifier(key) {
-			return nil, problemValidation(
+			return nil, httpapi.Validation(
 				"body.env",
 				"env var "+strconv.Quote(key)+" is not a valid shell identifier",
 			)
@@ -1412,7 +1413,7 @@ func (s *Server) launchProjectWorktreeRuntimeCommandSession(
 			if !session.Reused {
 				_ = s.runtime.Stop(ctx, scope, session.Key)
 			}
-			return nil, problemInternal(
+			return nil, httpapi.Internal(
 				"record project worktree runtime tmux session: " + err.Error(),
 			)
 		}
@@ -1442,22 +1443,22 @@ func (s *Server) stopProjectWorktreeRuntimeSession(
 				ctx, worktree.ID, input.SessionKey,
 			)
 			if stopErr != nil {
-				return nil, problemInternal(
+				return nil, httpapi.Internal(
 					"stop stored project worktree runtime session: " + stopErr.Error(),
 				)
 			}
 			if stopped {
 				return nil, nil
 			}
-			return nil, problemNotFound(CodeNotFound, err.Error(), nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, err.Error(), nil)
 		}
-		return nil, problemInternal("stop project worktree runtime session: " + err.Error())
+		return nil, httpapi.Internal("stop project worktree runtime session: " + err.Error())
 	}
 	if tmuxSession != "" {
 		if err := s.db.DeleteProjectWorktreeTmuxSession(
 			ctx, worktree.ID, input.SessionKey,
 		); err != nil {
-			return nil, problemInternal(
+			return nil, httpapi.Internal(
 				"forget project worktree runtime tmux session: " + err.Error(),
 			)
 		}
@@ -1480,13 +1481,13 @@ func (s *Server) getProjectWorktreeRuntimeSessionAttachSpec(
 		s.runtime.ListSessions(scope),
 		input.SessionKey,
 	) {
-		return nil, problemBadRequest(
-			CodeBadRequest, "runtime session is not tmux-backed", nil,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest, "runtime session is not tmux-backed", nil,
 		)
 	}
 	rows, err := s.db.ListProjectWorktreeTmuxSessions(ctx, worktree.ID)
 	if err != nil {
-		return nil, problemInternal(
+		return nil, httpapi.Internal(
 			"list project worktree runtime tmux sessions: " + err.Error(),
 		)
 	}
@@ -1494,7 +1495,7 @@ func (s *Server) getProjectWorktreeRuntimeSessionAttachSpec(
 		input.SessionKey, rows,
 	)
 	if !ok {
-		return nil, problemNotFound(CodeNotFound, "runtime session not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "runtime session not found", nil)
 	}
 	spec, err := runtimeAttachSpec(
 		ctx, s.cfg.TmuxCommand(), input.SessionKey, targetKey, tmuxSession,
@@ -1597,36 +1598,36 @@ func (s *Server) readyRuntimeProjectWorktree(
 	worktreeID string,
 ) (*db.ProjectWorktree, error) {
 	if s.runtime == nil {
-		return nil, problemServiceUnavailable("project worktree runtime not configured")
+		return nil, httpapi.ServiceUnavailable("project worktree runtime not configured")
 	}
 	if _, err := s.db.GetProjectByID(ctx, projectID); err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeProjectNotFound, "project not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeProjectNotFound, "project not found", nil)
 		}
-		return nil, problemInternal("get project: " + err.Error())
+		return nil, httpapi.Internal("get project: " + err.Error())
 	}
 	worktree, err := s.db.GetProjectWorktreeByID(ctx, worktreeID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 		}
-		return nil, problemInternal("get project worktree: " + err.Error())
+		return nil, httpapi.Internal("get project worktree: " + err.Error())
 	}
 	if worktree.ProjectID != projectID {
-		return nil, problemNotFound(CodeNotFound, "worktree not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "worktree not found", nil)
 	}
 	stat, err := os.Stat(worktree.Path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, problemConflict(
-				CodeConflict, "worktree path does not exist: "+worktree.Path, nil,
+			return nil, httpapi.Conflict(
+				httpapi.CodeConflict, "worktree path does not exist: "+worktree.Path, nil,
 			)
 		}
-		return nil, problemInternal("stat worktree path: " + err.Error())
+		return nil, httpapi.Internal("stat worktree path: " + err.Error())
 	}
 	if !stat.IsDir() {
-		return nil, problemBadRequest(
-			CodeBadRequest, "worktree path is not a directory: "+worktree.Path, nil,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest, "worktree path is not a directory: "+worktree.Path, nil,
 		)
 	}
 	return worktree, nil
@@ -1749,14 +1750,14 @@ func projectWorktreeRuntimeSessionFromStored(
 func projectWorktreeRuntimeLaunchError(err error) error {
 	msg := err.Error()
 	if errors.Is(err, localruntime.ErrSessionKeyConflict) {
-		return problemConflict(CodeConflict, msg, nil)
+		return httpapi.Conflict(httpapi.CodeConflict, msg, nil)
 	}
 	if strings.Contains(msg, "target not found") ||
 		strings.Contains(msg, "not available") ||
 		strings.Contains(msg, "no command") {
-		return problemBadRequest(CodeBadRequest, msg, nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, msg, nil)
 	}
-	return problemInternal("launch project worktree session: " + msg)
+	return httpapi.Internal("launch project worktree session: " + msg)
 }
 
 func projectResponseFromDB(p *db.Project) projectResponse {

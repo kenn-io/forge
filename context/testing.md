@@ -197,7 +197,7 @@ metadata at the route registration site:
 - exactly one tag from the API tag taxonomy enforced in
   `internal/server/route_metadata_test.go`.
 
-Use `documentOperation(...)` for Huma convenience helpers such as `huma.Get`
+Use `httpapi.DocumentOperation(...)` for Huma convenience helpers such as `huma.Get`
 and `huma.Post`. Use inline `Summary`, `Tags`, and `OperationID` fields for
 `huma.Register` blocks. Do not rely on Huma's generated summary or operation
 ID; those names feed checked-in generated clients, so changing an

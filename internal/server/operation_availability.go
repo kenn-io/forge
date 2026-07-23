@@ -10,6 +10,7 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/ratelimit"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
@@ -295,7 +296,7 @@ func selfApprovalUnavailable() OperationAvailability {
 }
 
 func selfApprovalProblem(repo db.Repo) huma.StatusError {
-	return problemForbidden(
+	return httpapi.Forbidden(
 		"You cannot approve your own pull request",
 		map[string]any{
 			"reason":       availabilityCodeSelfApproval,

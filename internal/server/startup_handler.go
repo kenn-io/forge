@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 // SwitchHandler delegates each request to the currently installed handler.
@@ -83,9 +84,9 @@ func NewStartupHandler(
 }
 
 func writeStartupUnavailable(w http.ResponseWriter, _ *http.Request) {
-	writeProblemResponse(w, newProblem(
+	writeProblemResponse(w, httpapi.NewProblem(
 		http.StatusServiceUnavailable,
-		CodeServiceUnavailable,
+		httpapi.CodeServiceUnavailable,
 		"middleman is still starting",
 		map[string]any{"reason": "starting"},
 	))

@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 func setupMsgvaultRouteServerWithRemoteImageDeps(
@@ -202,9 +203,9 @@ func msgvaultLiveRemoteImageToken(t *testing.T, baseURL string, id int64) string
 	return token
 }
 
-func decodeMsgvaultProblemResponse(t *testing.T, resp *http.Response) ProblemError {
+func decodeMsgvaultProblemResponse(t *testing.T, resp *http.Response) httpapi.ProblemError {
 	t.Helper()
-	var body ProblemError
+	var body httpapi.ProblemError
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	return body
 }
@@ -246,28 +247,28 @@ func TestMsgvaultRemoteImageLiveHTTPRefetchErrors(t *testing.T) {
 		name       string
 		upstream   http.Handler
 		wantStatus int
-		wantCode   ProblemCode
+		wantCode   httpapi.ProblemCode
 		wantReason string
 	}{
 		{
 			name:       "token mismatch maps to not found",
 			upstream:   msgvaultFixtureUpstream(t, 1, `<img src="http://example.com/x">`),
 			wantStatus: http.StatusNotFound,
-			wantCode:   CodeNotFound,
+			wantCode:   httpapi.CodeNotFound,
 			wantReason: "imageNotFound",
 		},
 		{
 			name:       "upstream refetch failure maps to bad gateway",
 			upstream:   msgvaultFlakyUpstream(t, 1, `<img src="http://example.com/x">`, 1),
 			wantStatus: http.StatusBadGateway,
-			wantCode:   CodeUpstreamError,
+			wantCode:   httpapi.CodeUpstreamError,
 			wantReason: "imageFetchFailed",
 		},
 		{
 			name:       "nil refetch maps to bad gateway",
 			upstream:   msgvaultNilRefetchUpstream(t, 1, `<img src="http://example.com/x">`),
 			wantStatus: http.StatusBadGateway,
-			wantCode:   CodeUpstreamError,
+			wantCode:   httpapi.CodeUpstreamError,
 			wantReason: "imageFetchFailed",
 		},
 	} {
@@ -493,7 +494,7 @@ func TestMsgvaultRemoteImageRejectsWrongContentType(t *testing.T) {
 
 	require.Equal(t, http.StatusUnsupportedMediaType, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(t, CodeBadRequest, problem.Code)
+	assert.Equal(t, httpapi.CodeBadRequest, problem.Code)
 	assert.Equal(t, "unsupportedImageType", problem.Details["reason"])
 }
 
@@ -726,7 +727,7 @@ func TestMsgvaultRemoteImageErrorEnvelopeShape(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(t, CodeNotFound, problem.Code)
+	assert.Equal(t, httpapi.CodeNotFound, problem.Code)
 	assert.Equal(t, "imageNotFound", problem.Details["reason"])
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/workspace"
 )
 
@@ -93,7 +94,7 @@ func TestWorkspacePullBranchRouteRejectsDirtyWorktree(t *testing.T) {
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	var problem rawProblemDetail
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.New(t).Equal(string(CodeWorktreeDirty), problem.Code)
+	assert.New(t).Equal(string(httpapi.CodeWorktreeDirty), problem.Code)
 }
 
 func TestWorkspaceRevealRouteOpensWorkspacePath(t *testing.T) {

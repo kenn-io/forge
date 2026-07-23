@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 func TestSyncRoutesWithoutSyncer(t *testing.T) {
@@ -35,8 +36,8 @@ func TestSyncRoutesWithoutSyncer(t *testing.T) {
 	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
 	require.Equal(http.StatusServiceUnavailable, syncRR.Code, syncRR.Body.String())
 
-	var problem ProblemError
+	var problem httpapi.ProblemError
 	require.NoError(json.NewDecoder(syncRR.Body).Decode(&problem))
-	assert.Equal(CodeServiceUnavailable, problem.Code)
+	assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
 	assert.Equal("syncer not configured", problem.Detail)
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/workspace"
 )
 
@@ -102,13 +103,13 @@ func (body kataWorkspaceTaskRequest) metadata() (db.WorkspaceKataMetadata, error
 		Title:       strings.TrimSpace(body.Title),
 	}
 	if metadata.ProjectUID == "" {
-		return metadata, problemValidation("body.project_uid", "project_uid is required")
+		return metadata, httpapi.Validation("body.project_uid", "project_uid is required")
 	}
 	if metadata.DaemonID == "" {
-		return metadata, problemValidation("body.daemon_id", "daemon_id is required")
+		return metadata, httpapi.Validation("body.daemon_id", "daemon_id is required")
 	}
 	if metadata.IssueUID == "" {
-		return metadata, problemValidation("body.issue_uid", "issue_uid is required")
+		return metadata, httpapi.Validation("body.issue_uid", "issue_uid is required")
 	}
 	return metadata, nil
 }
@@ -143,7 +144,7 @@ func (s *Server) kataWorkspaceTargetForMetadata(
 		resp.ItemKey,
 	)
 	if err != nil {
-		return kataWorkspaceTargetResponse{}, problemInternal("lookup existing Kata workspace: " + err.Error())
+		return kataWorkspaceTargetResponse{}, httpapi.Internal("lookup existing Kata workspace: " + err.Error())
 	}
 	if existing != nil {
 		resp.ExistingWorkspace = &workspaceRef{
@@ -159,7 +160,7 @@ func (s *Server) createKataWorkspace(
 	input *kataWorkspaceTaskInput,
 ) (*createWorkspaceOutput, error) {
 	if s.workspaces == nil {
-		return nil, problemServiceUnavailable("workspace manager not configured")
+		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
 	metadata, err := input.Body.metadata()
 	if err != nil {
@@ -171,8 +172,8 @@ func (s *Server) createKataWorkspace(
 	}
 	target := resolution.Target
 	if resolution.Status != "mapped" {
-		return nil, problemNotFound(
-			CodeNotFound,
+		return nil, httpapi.NotFound(
+			httpapi.CodeNotFound,
 			"no repository mapping for Kata project",
 			map[string]any{"project_uid": metadata.ProjectUID},
 		)
@@ -188,7 +189,7 @@ func (s *Server) createKataWorkspace(
 		db.KataWorkspaceItemKey(metadata),
 	)
 	if err != nil {
-		return nil, problemInternal("lookup existing Kata workspace: " + err.Error())
+		return nil, httpapi.Internal("lookup existing Kata workspace: " + err.Error())
 	}
 	if existing != nil {
 		return s.kataWorkspaceCreateOutput(ctx, existing.ID)
@@ -216,15 +217,15 @@ func (s *Server) createKataWorkspace(
 			if getErr == nil && existing != nil {
 				return s.kataWorkspaceCreateOutput(ctx, existing.ID)
 			}
-			return nil, problemConflict(CodeConflict, "workspace already exists for this Kata task", nil)
+			return nil, httpapi.Conflict(httpapi.CodeConflict, "workspace already exists for this Kata task", nil)
 		}
 		if strings.Contains(err.Error(), "not tracked") {
-			return nil, problemNotFound(CodeNotFound, err.Error(), nil)
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, err.Error(), nil)
 		}
 		if strings.Contains(err.Error(), "invalid branch name") {
-			return nil, problemValidation("body.short_id", err.Error())
+			return nil, httpapi.Validation("body.short_id", err.Error())
 		}
-		return nil, problemInternal("create Kata workspace: " + err.Error())
+		return nil, httpapi.Internal("create Kata workspace: " + err.Error())
 	}
 
 	s.runWorkspaceSetupWithBasePath(ws, target.BasePath)
@@ -236,10 +237,10 @@ func (s *Server) kataWorkspaceCreateOutput(
 ) (*createWorkspaceOutput, error) {
 	summary, err := s.workspaces.GetSummary(ctx, workspaceID)
 	if err != nil {
-		return nil, problemInternal("get workspace summary: " + err.Error())
+		return nil, httpapi.Internal("get workspace summary: " + err.Error())
 	}
 	if summary == nil {
-		return nil, problemInternal("workspace summary missing after create")
+		return nil, httpapi.Internal("workspace summary missing after create")
 	}
 	return &createWorkspaceOutput{
 		Status: httpStatusAccepted,
@@ -698,13 +699,13 @@ func (s *Server) getKataProjectMappings(
 	}
 	client, baseURL, err := kataDaemonHTTPClient(daemon)
 	if err != nil {
-		return nil, problemBadRequest("", "invalid Kata daemon target", map[string]any{"daemon": daemon.ID})
+		return nil, httpapi.BadRequest("", "invalid Kata daemon target", map[string]any{"daemon": daemon.ID})
 	}
 	upstreamCtx, cancel := context.WithTimeout(ctx, kataDaemonReadTimeout)
 	result := kataDaemonGet(upstreamCtx, client, daemon, baseURL+"/api/v1/projects")
 	cancel()
 	if result.err != nil || result.status < http.StatusOK || result.status >= http.StatusMultipleChoices {
-		return nil, newProblem(http.StatusBadGateway, CodeUpstreamError, "Kata daemon projects read failed", map[string]any{"daemon": daemon.ID})
+		return nil, httpapi.NewProblem(http.StatusBadGateway, httpapi.CodeUpstreamError, "Kata daemon projects read failed", map[string]any{"daemon": daemon.ID})
 	}
 	var payload struct {
 		Projects []struct {
@@ -713,7 +714,7 @@ func (s *Server) getKataProjectMappings(
 		} `json:"projects"`
 	}
 	if err := json.Unmarshal(result.body, &payload); err != nil {
-		return nil, newProblem(http.StatusBadGateway, CodeUpstreamError, "Kata daemon returned an unexpected projects payload", map[string]any{"daemon": daemon.ID})
+		return nil, httpapi.NewProblem(http.StatusBadGateway, httpapi.CodeUpstreamError, "Kata daemon returned an unexpected projects payload", map[string]any{"daemon": daemon.ID})
 	}
 	out = &kataProjectMappingsOutput{Vary: kataDaemonHeaderName}
 	out.Body.DaemonID = daemon.ID
@@ -727,7 +728,7 @@ func (s *Server) getKataProjectMappings(
 			DaemonID: daemon.ID, ProjectUID: uid, ProjectName: strings.TrimSpace(project.Name),
 		})
 		if err != nil {
-			return nil, problemInternal("resolve Kata project mapping: " + err.Error())
+			return nil, httpapi.Internal("resolve Kata project mapping: " + err.Error())
 		}
 		diagnostic := kataProjectMappingDiagnostic{
 			DaemonID: daemon.ID, ProjectUID: uid, ProjectName: strings.TrimSpace(project.Name),
@@ -747,7 +748,7 @@ func (s *Server) getKataProjectMappings(
 	})
 	out.Body.Targets, err = s.kataMappingTargets(ctx)
 	if err != nil {
-		return nil, problemInternal("list Kata mapping targets: " + err.Error())
+		return nil, httpapi.Internal("list Kata mapping targets: " + err.Error())
 	}
 	return out, nil
 }

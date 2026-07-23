@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
@@ -81,9 +82,9 @@ func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 
 	assert.Equal(http.StatusServiceUnavailable, apiRR.Code)
 	assert.Equal("application/problem+json", apiRR.Header().Get("Content-Type"))
-	var problem ProblemError
+	var problem httpapi.ProblemError
 	require.NoError(t, json.Unmarshal(apiRR.Body.Bytes(), &problem))
-	assert.Equal(CodeServiceUnavailable, problem.Code)
+	assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
 
 	assetReq := httptest.NewRequest(http.MethodGet, "/assets/index-DEADBEEF.js", nil)
 	assetReq.Host = "127.0.0.1:8091"

@@ -5,6 +5,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 const (
@@ -83,7 +84,7 @@ func capabilityEnabled(
 // problems.go's helper by its new name. Both spellings are kept for
 // readability at the call sites.
 func unsupportedCapabilityProblem(repo db.Repo, capability string) huma.StatusError {
-	return problemUnsupportedCapability(repo, capability)
+	return httpapi.UnsupportedCapability(repo, capability)
 }
 
 func (s *Server) requireSyncerCapability(repo db.Repo, capability string) error {
@@ -104,7 +105,7 @@ func (s *Server) requireRepoRouteCapability(
 		return nil, providerRouteLookupError(err)
 	}
 	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capability) {
-		return nil, problemUnsupportedCapability(*repo, capability)
+		return nil, httpapi.UnsupportedCapability(*repo, capability)
 	}
 	return repo, nil
 }
@@ -112,4 +113,4 @@ func (s *Server) requireRepoRouteCapability(
 // Compile-time guard that huma is imported even after the migration
 // removed the direct ErrorDetail/StatusError usage from this file. The
 // huma_routes.go file still imports huma so this is belt-and-suspenders.
-var _ huma.StatusError = (*ProblemError)(nil)
+var _ huma.StatusError = (*httpapi.ProblemError)(nil)

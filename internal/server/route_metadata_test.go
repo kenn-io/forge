@@ -153,20 +153,31 @@ func collectConvenienceRouteMetadataFailures(path string, source []byte) []strin
 			if !ok {
 				continue
 			}
-			ident, ok := argCall.Fun.(*ast.Ident)
-			if ok && ident.Name == "documentOperation" {
+			if isDocumentOperationCall(argCall.Fun) {
 				return true
 			}
 		}
 		pos := fset.Position(call.Pos())
 		failures = append(failures, fmt.Sprintf(
-			"%s:%d: huma.%s must use documentOperation for OpenAPI metadata",
+			"%s:%d: huma.%s must use httpapi.DocumentOperation for OpenAPI metadata",
 			path, pos.Line, selector.Sel.Name,
 		))
 		return true
 	})
 	sort.Strings(failures)
 	return failures
+}
+
+func isDocumentOperationCall(expr ast.Expr) bool {
+	switch typed := expr.(type) {
+	case *ast.Ident:
+		return typed.Name == "documentOperation"
+	case *ast.SelectorExpr:
+		pkg, ok := typed.X.(*ast.Ident)
+		return ok && pkg.Name == "httpapi" && typed.Sel.Name == "DocumentOperation"
+	default:
+		return false
+	}
 }
 
 func isHumaConvenienceMethod(name string) bool {
@@ -271,5 +282,5 @@ func (s *Server) register(api huma.API) {
 
 	failures := collectConvenienceRouteMetadataFailures("sample.go", source)
 	require.Contains(failures,
-		"sample.go:3: huma.Get must use documentOperation for OpenAPI metadata")
+		"sample.go:3: huma.Get must use httpapi.DocumentOperation for OpenAPI metadata")
 }

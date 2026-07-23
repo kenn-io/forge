@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 // API auth gates /api and /ws routes behind the daemon's bearer token
@@ -79,9 +81,9 @@ func (s *Server) authorizeAPIRequest(
 		}
 	}
 	w.Header().Set("WWW-Authenticate", `Bearer realm="middleman"`)
-	writeProblemResponse(w, newProblem(
+	writeProblemResponse(w, httpapi.NewProblem(
 		http.StatusUnauthorized,
-		CodeUnauthorized,
+		httpapi.CodeUnauthorized,
 		"missing or invalid API auth token",
 		nil,
 	))

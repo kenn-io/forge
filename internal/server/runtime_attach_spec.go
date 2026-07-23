@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 func runtimeAttachSpec(
@@ -20,19 +21,19 @@ func runtimeAttachSpec(
 ) (runtimeAttachSpecResponse, error) {
 	tmuxSession = strings.TrimSpace(tmuxSession)
 	if tmuxSession == "" {
-		return runtimeAttachSpecResponse{}, problemBadRequest(
-			CodeBadRequest, "runtime session is not tmux-backed", nil,
+		return runtimeAttachSpecResponse{}, httpapi.BadRequest(
+			httpapi.CodeBadRequest, "runtime session is not tmux-backed", nil,
 		)
 	}
 	exists, err := attachSpecTmuxSessionExists(ctx, tmuxCommand, tmuxSession)
 	if err != nil {
-		return runtimeAttachSpecResponse{}, problemServiceUnavailable(
+		return runtimeAttachSpecResponse{}, httpapi.ServiceUnavailable(
 			"check tmux session: " + err.Error(),
 		)
 	}
 	if !exists {
-		return runtimeAttachSpecResponse{}, problemNotFound(
-			CodeNotFound, "runtime tmux session not found", nil,
+		return runtimeAttachSpecResponse{}, httpapi.NotFound(
+			httpapi.CodeNotFound, "runtime tmux session not found", nil,
 		)
 	}
 	command := runtimeAttachCommand(tmuxCommand, tmuxSession)

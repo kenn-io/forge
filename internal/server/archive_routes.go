@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/middleman/internal/archive/report"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 type archiveRepositoryRef struct {
@@ -77,7 +78,7 @@ type archiveStatusResponse struct {
 	Failure                *archiveFailureResponse       `json:"failure,omitempty"`
 }
 
-type archiveStatusesOutput = bodyOutput[[]archiveStatusResponse]
+type archiveStatusesOutput = httpapi.BodyOutput[[]archiveStatusResponse]
 
 type archiveReportCountsResponse struct {
 	IssuesOpened         int `json:"issues_opened"`
@@ -137,7 +138,7 @@ type archiveReportResponse struct {
 	Activity     []archiveReportActivityResponse    `json:"activity,omitempty"`
 }
 
-type archiveReportOutput = bodyOutput[archiveReportResponse]
+type archiveReportOutput = httpapi.BodyOutput[archiveReportResponse]
 
 func (s *Server) registerArchiveAPI(api huma.API) {
 	huma.Register(api, huma.Operation{
@@ -163,7 +164,7 @@ func (s *Server) startArchives(
 	input *archiveMutationInput,
 ) (*archiveStatusesOutput, error) {
 	if s.archive == nil {
-		return nil, problemServiceUnavailable("archive service not configured")
+		return nil, httpapi.ServiceUnavailable("archive service not configured")
 	}
 	refs, all, err := archiveMutationRefs(input.Body)
 	if err != nil {
@@ -186,7 +187,7 @@ func (s *Server) pauseArchives(
 	input *archiveMutationInput,
 ) (*archiveStatusesOutput, error) {
 	if s.archive == nil {
-		return nil, problemServiceUnavailable("archive service not configured")
+		return nil, httpapi.ServiceUnavailable("archive service not configured")
 	}
 	refs, all, err := archiveMutationRefs(input.Body)
 	if err != nil {
@@ -209,7 +210,7 @@ func (s *Server) listArchiveStatus(
 	input *archiveStatusInput,
 ) (*archiveStatusesOutput, error) {
 	if s.archive == nil {
-		return nil, problemServiceUnavailable("archive service not configured")
+		return nil, httpapi.ServiceUnavailable("archive service not configured")
 	}
 	refs, err := archiveQueryRefs(input.Repositories)
 	if err != nil {
@@ -227,7 +228,7 @@ func (s *Server) getArchiveReport(
 	input *archiveReportInput,
 ) (*archiveReportOutput, error) {
 	if s.archive == nil {
-		return nil, problemServiceUnavailable("archive service not configured")
+		return nil, httpapi.ServiceUnavailable("archive service not configured")
 	}
 	start, err := parseArchiveUTCTime("query.start", input.Start)
 	if err != nil {
@@ -238,7 +239,7 @@ func (s *Server) getArchiveReport(
 		return nil, err
 	}
 	if !start.Before(end) {
-		return nil, problemValidation("query.end", "end must be after start")
+		return nil, httpapi.Validation("query.end", "end must be after start")
 	}
 	refs, err := archiveQueryRefs(input.Repositories)
 	if err != nil {
@@ -255,10 +256,10 @@ func (s *Server) getArchiveReport(
 
 func archiveMutationRefs(body archiveMutationBody) ([]platform.RepoRef, bool, error) {
 	if body.All && len(body.Repositories) > 0 {
-		return nil, false, problemValidation("body.repositories", "all and repositories are mutually exclusive")
+		return nil, false, httpapi.Validation("body.repositories", "all and repositories are mutually exclusive")
 	}
 	if !body.All && len(body.Repositories) == 0 {
-		return nil, false, problemValidation("body.repositories", "repositories must not be empty when all is false")
+		return nil, false, httpapi.Validation("body.repositories", "repositories must not be empty when all is false")
 	}
 	refs := make([]platform.RepoRef, len(body.Repositories))
 	for i, ref := range body.Repositories {
@@ -267,7 +268,7 @@ func archiveMutationRefs(body archiveMutationBody) ([]platform.RepoRef, bool, er
 			Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
 		}
 		if err := platform.ValidateCanonicalRepoRef(converted); err != nil {
-			return nil, false, problemValidation(
+			return nil, false, httpapi.Validation(
 				"body.repositories",
 				"repository references must carry canonical provider, host, owner, name, and repo_path",
 			)
@@ -284,7 +285,7 @@ func archiveQueryRefs(values []string) ([]platform.RepoRef, error) {
 		provider, host, _, _, repoPath := parseRepoFilter(value)
 		separator := strings.LastIndex(repoPath, "/")
 		if provider == "" || host == "" || separator <= 0 || separator == len(repoPath)-1 {
-			return nil, problemValidation(
+			return nil, httpapi.Validation(
 				"query.repo", "repo filter must be provider|platform_host/repo_path",
 			)
 		}
@@ -293,7 +294,7 @@ func archiveQueryRefs(values []string) ([]platform.RepoRef, error) {
 			Name: repoPath[separator+1:], RepoPath: repoPath,
 		}
 		if err := platform.ValidateCanonicalRepoRef(ref); err != nil {
-			return nil, problemValidation(
+			return nil, httpapi.Validation(
 				"query.repo", "repo filter must be a canonical provider|platform_host/repo_path",
 			)
 		}
@@ -305,11 +306,11 @@ func archiveQueryRefs(values []string) ([]platform.RepoRef, error) {
 func parseArchiveUTCTime(field, value string) (time.Time, error) {
 	parsed, err := time.Parse(time.RFC3339, value)
 	if err != nil {
-		return time.Time{}, problemValidation(field, "timestamp must be RFC3339")
+		return time.Time{}, httpapi.Validation(field, "timestamp must be RFC3339")
 	}
 	_, offset := parsed.Zone()
 	if offset != 0 {
-		return time.Time{}, problemValidation(field, "timestamp must use UTC")
+		return time.Time{}, httpapi.Validation(field, "timestamp must use UTC")
 	}
 	return parsed.UTC(), nil
 }
@@ -353,8 +354,8 @@ func archiveStatusResponses(statuses []archive.Status) []archiveStatusResponse {
 func archiveOperationProblem(err error) error {
 	var limit *report.LimitError
 	if errors.As(err, &limit) {
-		return newProblem(
-			http.StatusRequestEntityTooLarge, CodePayloadTooLarge,
+		return httpapi.NewProblem(
+			http.StatusRequestEntityTooLarge, httpapi.CodePayloadTooLarge,
 			"archive report exceeds detailed limits", map[string]any{
 				"reason": "reportTooLarge", "observedRecords": limit.ObservedRecords,
 				"maxRecords": limit.MaxRecords, "observedTextBytes": limit.ObservedTextBytes,
@@ -363,17 +364,17 @@ func archiveOperationProblem(err error) error {
 		)
 	}
 	if errors.Is(err, archive.ErrEmptyReportScope) {
-		return problemBadRequest(CodeBadRequest, err.Error(), nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	var platformErr *platform.Error
 	if errors.As(err, &platformErr) {
-		return mapPlatformError(err)
+		return httpapi.MapPlatformError(err)
 	}
 	var missingState *db.ArchiveRepoStateNotFoundError
 	if errors.As(err, &missingState) {
-		return problemBadRequest(CodeBadRequest, "repository is not available for archiving", nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, "repository is not available for archiving", nil)
 	}
-	return problemInternal("archive operation failed")
+	return httpapi.Internal("archive operation failed")
 }
 
 func archiveReportModelResponse(model report.Model) archiveReportResponse {

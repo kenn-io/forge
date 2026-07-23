@@ -20,6 +20,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
@@ -33,9 +34,9 @@ func TestAPIArchiveRoutesRemainRegisteredWithoutController(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	assert.Equal(http.StatusServiceUnavailable, rr.Code)
-	var problem server.ProblemError
+	var problem httpapi.ProblemError
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &problem))
-	assert.Equal(server.CodeServiceUnavailable, problem.Code)
+	assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
 }
 
 func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {

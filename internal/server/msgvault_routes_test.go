@@ -23,6 +23,7 @@ import (
 
 	"go.kenn.io/middleman/internal/config"
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
@@ -183,9 +184,9 @@ func decodeMsgvaultHealthMap(t *testing.T, rr *httptest.ResponseRecorder) map[st
 	return body
 }
 
-func decodeMsgvaultProblem(t *testing.T, rr *httptest.ResponseRecorder) ProblemError {
+func decodeMsgvaultProblem(t *testing.T, rr *httptest.ResponseRecorder) httpapi.ProblemError {
 	t.Helper()
-	var body ProblemError
+	var body httpapi.ProblemError
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
 	return body
 }
@@ -578,7 +579,7 @@ func TestMsgvaultSearchRejectsUnsupportedMode(t *testing.T) {
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeBadRequest, problem.Code)
+	assert.Equal(httpapi.CodeBadRequest, problem.Code)
 	assert.Equal("modeUnsupported", problem.Details["reason"])
 }
 
@@ -591,7 +592,7 @@ func TestMsgvaultSearchNotConfiguredIs503(t *testing.T) {
 
 	require.Equal(http.StatusServiceUnavailable, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeServiceUnavailable, problem.Code)
+	assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
 	assert.Equal("notConfigured", problem.Details["reason"])
 }
 
@@ -615,7 +616,7 @@ func TestMsgvaultSearchNilUpstreamPayloadIs502(t *testing.T) {
 
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeUpstreamError, problem.Code)
+	assert.Equal(httpapi.CodeUpstreamError, problem.Code)
 	assert.Equal("upstreamMalformed", problem.Details["reason"])
 }
 
@@ -673,7 +674,7 @@ func TestMsgvaultMessageNilUpstreamPayloadIs502(t *testing.T) {
 
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeUpstreamError, problem.Code)
+	assert.Equal(httpapi.CodeUpstreamError, problem.Code)
 	assert.Equal("upstreamMalformed", problem.Details["reason"])
 }
 
@@ -912,7 +913,7 @@ func TestMsgvaultMessageBadIDIs422(t *testing.T) {
 
 	require.Equal(http.StatusUnprocessableEntity, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeValidationError, problem.Code)
+	assert.Equal(httpapi.CodeValidationError, problem.Code)
 }
 
 func TestMsgvaultInlineStreamsAndPassesContentType(t *testing.T) {
@@ -968,7 +969,7 @@ func TestMsgvaultInlineRejectsUnsafeContentType(t *testing.T) {
 
 			require.Equal(http.StatusUnsupportedMediaType, rr.Code, rr.Body.String())
 			problem := decodeMsgvaultProblem(t, rr)
-			assert.Equal(CodeBadRequest, problem.Code)
+			assert.Equal(httpapi.CodeBadRequest, problem.Code)
 			assert.Equal("inlineTypeNotAllowed", problem.Details["reason"])
 		})
 	}
@@ -987,7 +988,7 @@ func TestMsgvaultInlineMissingCidIs400(t *testing.T) {
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeBadRequest, problem.Code)
+	assert.Equal(httpapi.CodeBadRequest, problem.Code)
 	assert.Equal("missingCID", problem.Details["reason"])
 }
 
@@ -1037,7 +1038,7 @@ func TestMsgvaultAggregatesNilUpstreamPayloadIs502(t *testing.T) {
 
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeUpstreamError, problem.Code)
+	assert.Equal(httpapi.CodeUpstreamError, problem.Code)
 	assert.Equal("upstreamMalformed", problem.Details["reason"])
 }
 
@@ -1078,7 +1079,7 @@ func TestMsgvaultAggregatesMissingViewTypeIs400(t *testing.T) {
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeBadRequest, problem.Code)
+	assert.Equal(httpapi.CodeBadRequest, problem.Code)
 	assert.Equal("missingViewType", problem.Details["reason"])
 }
 
@@ -1169,7 +1170,7 @@ func TestMsgvaultThreadNilUpstreamPayloadIs502(t *testing.T) {
 
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeUpstreamError, problem.Code)
+	assert.Equal(httpapi.CodeUpstreamError, problem.Code)
 	assert.Equal("upstreamMalformed", problem.Details["reason"])
 }
 
@@ -1186,7 +1187,7 @@ func TestMsgvaultThreadBadConversationIDIs422(t *testing.T) {
 
 	require.Equal(http.StatusUnprocessableEntity, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeValidationError, problem.Code)
+	assert.Equal(httpapi.CodeValidationError, problem.Code)
 }
 
 func TestMsgvaultConfigureHappyPathPersistsAndHotReloads(t *testing.T) {
@@ -1368,7 +1369,7 @@ func TestMsgvaultConfigureRejectsAPIKey(t *testing.T) {
 
 			require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 			problem := decodeMsgvaultProblem(t, rr)
-			assert.Equal(CodeBadRequest, problem.Code)
+			assert.Equal(httpapi.CodeBadRequest, problem.Code)
 			assert.Equal("apiKeyUnsupported", problem.Details["reason"])
 			reloaded, err := config.Load(cfgPath)
 			require.NoError(err)
@@ -1403,7 +1404,7 @@ func TestMsgvaultConfigureRejectsMalformedURL(t *testing.T) {
 
 			require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 			problem := decodeMsgvaultProblem(t, rr)
-			assert.Equal(CodeBadRequest, problem.Code)
+			assert.Equal(httpapi.CodeBadRequest, problem.Code)
 			assert.Equal("invalidURL", problem.Details["reason"])
 		})
 	}
@@ -1436,7 +1437,7 @@ func TestMsgvaultConfigureRejectsBadEnvVarName(t *testing.T) {
 
 			require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 			problem := decodeMsgvaultProblem(t, rr)
-			assert.Equal(CodeBadRequest, problem.Code)
+			assert.Equal(httpapi.CodeBadRequest, problem.Code)
 			assert.Equal("invalidEnvVarName", problem.Details["reason"])
 		})
 	}
@@ -1795,7 +1796,7 @@ func TestMsgvaultConfigureRejectsBadJSONAndUnknownFields(t *testing.T) {
 
 			require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 			problem := decodeMsgvaultProblem(t, rr)
-			assert.Equal(CodeBadRequest, problem.Code)
+			assert.Equal(httpapi.CodeBadRequest, problem.Code)
 			assert.Equal("badRequest", problem.Details["reason"])
 		})
 	}
@@ -1820,7 +1821,7 @@ func TestMsgvaultConfigureRejectsBodyTooLarge(t *testing.T) {
 
 	require.Equal(http.StatusRequestEntityTooLarge, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodePayloadTooLarge, problem.Code)
+	assert.Equal(httpapi.CodePayloadTooLarge, problem.Code)
 	reloaded, err := config.Load(cfgPath)
 	require.NoError(err)
 	assert.Nil(reloaded.Msgvault)
@@ -1853,7 +1854,7 @@ func TestMsgvaultConfigureRequiresMiddlemanCSRFHeader(t *testing.T) {
 
 	require.Equal(http.StatusForbidden, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeForbidden, problem.Code)
+	assert.Equal(httpapi.CodeForbidden, problem.Code)
 	assert.Equal("missingCsrfHeader", problem.Details["reason"])
 	reloaded, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -1871,7 +1872,7 @@ func TestMsgvaultConfigureRejectsNonLoopback(t *testing.T) {
 
 	require.Equal(http.StatusForbidden, rr.Code, rr.Body.String())
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeForbidden, problem.Code)
+	assert.Equal(httpapi.CodeForbidden, problem.Code)
 	assert.Equal("loopbackOnly", problem.Details["reason"])
 }
 

@@ -1,4 +1,4 @@
-package server
+package httpapi
 
 import (
 	"context"
@@ -80,7 +80,7 @@ func TestProblemErrorRoundTripJSONPreservesCodeAndDetails(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	original := newProblem(
+	original := NewProblem(
 		http.StatusConflict,
 		CodeUnsupportedCapability,
 		"Unsupported provider capability",
@@ -128,7 +128,7 @@ func TestCodeForStatus(t *testing.T) {
 
 	assert := assert.New(t)
 	for _, tc := range cases {
-		assert.Equal(tc.want, codeForStatus(tc.status), "status %d", tc.status)
+		assert.Equal(tc.want, CodeForStatus(tc.status), "status %d", tc.status)
 	}
 }
 
@@ -145,14 +145,14 @@ func TestProblemHelpersSetStatusCodeAndDetails(t *testing.T) {
 	}{
 		{
 			name:       "BadRequestDefault",
-			make:       func() huma.StatusError { return problemBadRequest("", "go away", nil) },
+			make:       func() huma.StatusError { return BadRequest("", "go away", nil) },
 			wantStatus: http.StatusBadRequest,
 			wantCode:   CodeBadRequest,
 		},
 		{
 			name: "BadRequestCustomCode",
 			make: func() huma.StatusError {
-				return problemBadRequest(CodeRepoNotFound, "x", map[string]any{"owner": "acme"})
+				return BadRequest(CodeRepoNotFound, "x", map[string]any{"owner": "acme"})
 			},
 			wantStatus:  http.StatusBadRequest,
 			wantCode:    CodeRepoNotFound,
@@ -160,70 +160,70 @@ func TestProblemHelpersSetStatusCodeAndDetails(t *testing.T) {
 		},
 		{
 			name:        "Validation",
-			make:        func() huma.StatusError { return problemValidation("body.status", "bad", "a", "b") },
+			make:        func() huma.StatusError { return Validation("body.status", "bad", "a", "b") },
 			wantStatus:  http.StatusBadRequest,
 			wantCode:    CodeValidationError,
 			wantDetails: map[string]any{"field": "body.status", "allowed": []string{"a", "b"}},
 		},
 		{
 			name:       "NotFoundDefault",
-			make:       func() huma.StatusError { return problemNotFound("", "nope", nil) },
+			make:       func() huma.StatusError { return NotFound("", "nope", nil) },
 			wantStatus: http.StatusNotFound,
 			wantCode:   CodeNotFound,
 		},
 		{
 			name:       "NotFoundCustom",
-			make:       func() huma.StatusError { return problemNotFound(CodePullNotFound, "nope", nil) },
+			make:       func() huma.StatusError { return NotFound(CodePullNotFound, "nope", nil) },
 			wantStatus: http.StatusNotFound,
 			wantCode:   CodePullNotFound,
 		},
 		{
 			name:       "ConflictDefault",
-			make:       func() huma.StatusError { return problemConflict("", "boom", nil) },
+			make:       func() huma.StatusError { return Conflict("", "boom", nil) },
 			wantStatus: http.StatusConflict,
 			wantCode:   CodeConflict,
 		},
 		{
 			name:       "Forbidden",
-			make:       func() huma.StatusError { return problemForbidden("nope", nil) },
+			make:       func() huma.StatusError { return Forbidden("nope", nil) },
 			wantStatus: http.StatusForbidden,
 			wantCode:   CodeForbidden,
 		},
 		{
 			name:       "Internal",
-			make:       func() huma.StatusError { return problemInternal("boom") },
+			make:       func() huma.StatusError { return Internal("boom") },
 			wantStatus: http.StatusInternalServerError,
 			wantCode:   CodeInternalError,
 		},
 		{
 			name:        "UpstreamWithProviderHost",
-			make:        func() huma.StatusError { return problemUpstream("boom", "gitlab", "gitlab.com") },
+			make:        func() huma.StatusError { return Upstream("boom", "gitlab", "gitlab.com") },
 			wantStatus:  http.StatusBadGateway,
 			wantCode:    CodeUpstreamError,
 			wantDetails: map[string]any{"provider": "gitlab", "platformHost": "gitlab.com"},
 		},
 		{
 			name:       "UpstreamWithoutContext",
-			make:       func() huma.StatusError { return problemUpstream("boom", "", "") },
+			make:       func() huma.StatusError { return Upstream("boom", "", "") },
 			wantStatus: http.StatusBadGateway,
 			wantCode:   CodeUpstreamError,
 		},
 		{
 			name:        "PayloadTooLarge",
-			make:        func() huma.StatusError { return problemPayloadTooLarge("too big", 1024) },
+			make:        func() huma.StatusError { return PayloadTooLarge("too big", 1024) },
 			wantStatus:  http.StatusRequestEntityTooLarge,
 			wantCode:    CodePayloadTooLarge,
 			wantDetails: map[string]any{"maxBytes": int64(1024)},
 		},
 		{
 			name:       "ServiceUnavailable",
-			make:       func() huma.StatusError { return problemServiceUnavailable("down") },
+			make:       func() huma.StatusError { return ServiceUnavailable("down") },
 			wantStatus: http.StatusServiceUnavailable,
 			wantCode:   CodeServiceUnavailable,
 		},
 		{
 			name:        "BranchConflict",
-			make:        func() huma.StatusError { return problemBranchConflict("main", "main-fix") },
+			make:        func() huma.StatusError { return BranchConflict("main", "main-fix") },
 			wantStatus:  http.StatusConflict,
 			wantCode:    CodeBranchConflict,
 			wantDetails: map[string]any{"branch": "main", "suggestedBranch": "main-fix"},
@@ -253,7 +253,7 @@ func TestProblemHelpersRedactTokenMaterial(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	err := newProblem(
+	err := NewProblem(
 		http.StatusBadGateway,
 		CodeUpstreamError,
 		"provider returned https://x-access-token:ghp_problem_secret@github.com/acme/widgets.git",
@@ -293,7 +293,7 @@ func TestProblemRateLimitedFormatsResetAt(t *testing.T) {
 	require := require.New(t)
 
 	reset := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
-	err := problemRateLimited("github", "github.com", &reset)
+	err := RateLimited("github", "github.com", &reset)
 	pe, ok := err.(*ProblemError)
 	require.True(ok)
 
@@ -304,7 +304,7 @@ func TestProblemRateLimitedFormatsResetAt(t *testing.T) {
 	assert.Equal("2026-05-19T12:00:00Z", pe.Details["retryAfter"])
 
 	// nil reset → no retryAfter key.
-	err = problemRateLimited("github", "github.com", nil)
+	err = RateLimited("github", "github.com", nil)
 	pe = err.(*ProblemError)
 	_, has := pe.Details["retryAfter"]
 	assert.False(has, "details should not contain retryAfter when reset is nil")
@@ -475,7 +475,7 @@ func TestMapPlatformError(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mapPlatformError(tc.input)
+			got := MapPlatformError(tc.input)
 			if tc.wantNil {
 				assert.Nil(got)
 				return
@@ -496,7 +496,7 @@ func TestProviderCallProblemMapsRuntimeMissingToken(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	got := providerCallProblem(
+	got := ProviderCallProblem(
 		fmt.Errorf("clone token unavailable: %w", tokenauth.ErrMissingToken),
 		"github",
 		"github.com",
@@ -513,7 +513,7 @@ func TestProviderCallProblemDoesNotReturnNilForContextWrappedPlatformError(t *te
 	assert := assert.New(t)
 	require := require.New(t)
 
-	got := providerCallProblem(
+	got := ProviderCallProblem(
 		&platform.Error{
 			Code: platform.ErrCodeRateLimited,
 			Err:  context.Canceled,

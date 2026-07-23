@@ -15,6 +15,7 @@ import (
 
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/messages"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 type savedSearchesWire struct {
@@ -98,7 +99,7 @@ func TestMessagesSavedSearchesPutIfMatchStaleReturns412(t *testing.T) {
 
 	require.Equal(http.StatusPreconditionFailed, rr.Code)
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeConflict, problem.Code)
+	assert.Equal(httpapi.CodeConflict, problem.Code)
 	assert.Equal("stale_etag", problem.Details["reason"])
 }
 
@@ -119,7 +120,7 @@ func TestMessagesSavedSearchesPutRequiresMiddlemanCSRFHeader(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, rr.Code)
 	assert := assert.New(t)
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeForbidden, problem.Code)
+	assert.Equal(httpapi.CodeForbidden, problem.Code)
 	assert.Equal("missingCsrfHeader", problem.Details["reason"])
 }
 
@@ -146,7 +147,7 @@ func TestMessagesSavedSearchesPutLoopbackOnly(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, rr.Code)
 	assert := assert.New(t)
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeForbidden, problem.Code)
+	assert.Equal(httpapi.CodeForbidden, problem.Code)
 	assert.Equal("loopbackOnly", problem.Details["reason"])
 }
 
@@ -158,7 +159,7 @@ func TestMessagesSavedSearchesGetLoopbackOnly(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, rr.Code)
 	assert := assert.New(t)
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeForbidden, problem.Code)
+	assert.Equal(httpapi.CodeForbidden, problem.Code)
 	assert.Equal("loopbackOnly", problem.Details["reason"])
 }
 
@@ -168,7 +169,7 @@ func TestMessagesSavedSearchesPutInvalidJSON(t *testing.T) {
 	rr := doMsgvaultRaw(t, srv, http.MethodPut, "/api/v1/messages/saved-searches", "127.0.0.1:12345", "application/json", "{")
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
-	assert.Equal(t, CodeBadRequest, decodeMsgvaultProblem(t, rr).Code)
+	assert.Equal(t, httpapi.CodeBadRequest, decodeMsgvaultProblem(t, rr).Code)
 }
 
 func TestMessagesSavedSearchesPutMissingSearchesField(t *testing.T) {
@@ -179,7 +180,7 @@ func TestMessagesSavedSearchesPutMissingSearchesField(t *testing.T) {
 	require.Equal(t, http.StatusUnprocessableEntity, rr.Code)
 	assert := assert.New(t)
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeValidationError, problem.Code)
+	assert.Equal(httpapi.CodeValidationError, problem.Code)
 }
 
 func TestMessagesSavedSearchesPutNullSearchesField(t *testing.T) {
@@ -190,7 +191,7 @@ func TestMessagesSavedSearchesPutNullSearchesField(t *testing.T) {
 	require.Equal(t, http.StatusUnprocessableEntity, rr.Code)
 	assert := assert.New(t)
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeValidationError, problem.Code)
+	assert.Equal(httpapi.CodeValidationError, problem.Code)
 }
 
 func TestMessagesSavedSearchesPutTolerantPerEntry(t *testing.T) {
@@ -259,7 +260,7 @@ func TestMessagesSavedSearchesConcurrentSameETagPutsSerialize(t *testing.T) {
 		case http.StatusOK:
 			okCount++
 		case http.StatusPreconditionFailed:
-			var problem ProblemError
+			var problem httpapi.ProblemError
 			require.NoError(json.NewDecoder(strings.NewReader(responseBodies[i])).Decode(&problem))
 			assert.Equal("stale_etag", problem.Details["reason"])
 			staleCount++

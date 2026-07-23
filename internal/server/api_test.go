@@ -52,6 +52,7 @@ import (
 	platformgitlab "go.kenn.io/middleman/internal/platform/gitlab"
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/ptyowner"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/stacks"
 	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
@@ -7636,9 +7637,9 @@ func TestAPITriggerSyncRejectsUnknownOnlyRepo(t *testing.T) {
 	)
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 
-	var problem ProblemError
+	var problem httpapi.ProblemError
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal(CodeValidationError, problem.Code)
+	assert.Equal(httpapi.CodeValidationError, problem.Code)
 	assert.Equal("query.only_repo", problem.Details["field"])
 }
 
@@ -16793,7 +16794,7 @@ func TestAPIApplyReviewSuggestionRejectsNonOpenPullRequest(t *testing.T) {
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	var problem rawProblemDetail
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal(string(CodeConflict), problem.Code)
+	assert.Equal(string(httpapi.CodeConflict), problem.Code)
 	assert.Equal("pull request is not open", problem.Detail)
 	require.NotNil(problem.Details)
 	assert.Equal("not_open", problem.Details["reason"])
@@ -16840,7 +16841,7 @@ func TestAPIApplyReviewSuggestionRejectsUnknownHeadRepoOnGitHub(t *testing.T) {
 			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 			var problem rawProblemDetail
 			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-			assert.Equal(string(CodeConflict), problem.Code)
+			assert.Equal(string(httpapi.CodeConflict), problem.Code)
 			assert.Equal("pull request head repository is unknown", problem.Detail)
 			require.NotNil(problem.Details)
 			assert.Equal("head_repo_unknown", problem.Details["reason"])
@@ -16962,7 +16963,7 @@ func TestAPIApplyReviewSuggestionMapsProviderConflictReason(t *testing.T) {
 			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 			var problem rawProblemDetail
 			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-			assert.Equal(string(CodeConflict), problem.Code)
+			assert.Equal(string(httpapi.CodeConflict), problem.Code)
 			require.NotNil(problem.Details)
 			assert.Equal(tt.reason, problem.Details["reason"])
 		})
@@ -17022,7 +17023,7 @@ func TestAPIApplyReviewSuggestionMapsProviderStaleStateAndRefreshesDetail(t *tes
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	var problem rawProblemDetail
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal(string(CodeConflict), problem.Code)
+	assert.Equal(string(httpapi.CodeConflict), problem.Code)
 	assert.Equal("target changed since it was reviewed; refresh and retry", problem.Detail)
 	require.NotNil(problem.Details)
 	assert.Equal("stale_state", problem.Details["reason"])

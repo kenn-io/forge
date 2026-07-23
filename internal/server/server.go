@@ -30,6 +30,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/telemetry"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
@@ -47,7 +48,7 @@ type BuildInfo struct {
 }
 
 type versionOutputBody BuildInfo
-type versionOutput = bodyOutput[versionOutputBody]
+type versionOutput = httpapi.BodyOutput[versionOutputBody]
 
 type ServerOptions struct {
 	// APIAuthToken, when non-empty, gates /api routes behind bearer
@@ -1203,9 +1204,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if s.isMutatingDocsAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
-			writeProblemResponse(w, newProblem(
+			writeProblemResponse(w, httpapi.NewProblem(
 				http.StatusForbidden,
-				CodeForbidden,
+				httpapi.CodeForbidden,
 				"docs mutations require a loopback client",
 				map[string]any{"reason": "loopbackOnly"},
 			))
@@ -1213,18 +1214,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if s.isMutatingMessagesAPIRequest(r) {
 			if !isLoopbackRemoteAddr(r.RemoteAddr) {
-				writeProblemResponse(w, newProblem(
+				writeProblemResponse(w, httpapi.NewProblem(
 					http.StatusForbidden,
-					CodeForbidden,
+					httpapi.CodeForbidden,
 					"message configuration changes require a loopback client",
 					map[string]any{"reason": "loopbackOnly"},
 				))
 				return
 			}
 			if r.Header.Get(middlemanCSRFHeaderName) == "" {
-				writeProblemResponse(w, newProblem(
+				writeProblemResponse(w, httpapi.NewProblem(
 					http.StatusForbidden,
-					CodeForbidden,
+					httpapi.CodeForbidden,
 					"message mutations require the "+middlemanCSRFHeaderName+" header",
 					map[string]any{"reason": "missingCsrfHeader"},
 				))
@@ -1233,27 +1234,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if r.Method == http.MethodGet && s.isDocsBrowseAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
-		writeProblemResponse(w, newProblem(
+		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusForbidden,
-			CodeForbidden,
+			httpapi.CodeForbidden,
 			"docs browse requires a loopback client",
 			map[string]any{"reason": "loopbackOnly"},
 		))
 		return
 	}
 	if r.Method == http.MethodGet && s.isDocsReadAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
-		writeProblemResponse(w, newProblem(
+		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusForbidden,
-			CodeForbidden,
+			httpapi.CodeForbidden,
 			"docs reads require a loopback client",
 			map[string]any{"reason": "loopbackOnly"},
 		))
 		return
 	}
 	if r.Method == http.MethodGet && s.isMessagesSavedSearchesAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
-		writeProblemResponse(w, newProblem(
+		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusForbidden,
-			CodeForbidden,
+			httpapi.CodeForbidden,
 			"message saved searches require a loopback client",
 			map[string]any{"reason": "loopbackOnly"},
 		))
@@ -1280,9 +1281,9 @@ func checkListenerHost(
 	if !authorityIsLoopbackHost(r.Host) || isLoopbackRemoteAddr(r.RemoteAddr) {
 		return true
 	}
-	writeProblemResponse(w, newProblem(
+	writeProblemResponse(w, httpapi.NewProblem(
 		http.StatusForbidden,
-		CodeForbidden,
+		httpapi.CodeForbidden,
 		"host is not allowed",
 		map[string]any{"reason": "hostNotAllowed"},
 	))

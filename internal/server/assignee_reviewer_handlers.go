@@ -6,10 +6,11 @@ import (
 	"strings"
 
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
-type setAssigneesOutput = bodyOutput[itemAssigneesResponse]
-type setReviewersOutput = bodyOutput[itemReviewersResponse]
+type setAssigneesOutput = httpapi.BodyOutput[itemAssigneesResponse]
+type setReviewersOutput = httpapi.BodyOutput[itemReviewersResponse]
 
 type setPullAssigneesInput struct {
 	Provider     string `path:"provider"`
@@ -73,10 +74,10 @@ func (s *Server) setPullAssignees(
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get pull failed")
+		return nil, httpapi.Internal("get pull failed")
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull not found", nil)
 	}
 
 	mutator, err := s.syncer.AssigneeMutator(repoProviderKind(*repo), repoProviderHost(*repo))
@@ -87,14 +88,14 @@ func (s *Server) setPullAssignees(
 		ctx, platformRepoRefFromDB(*repo), input.Number, names,
 	)
 	if err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"provider API error: "+err.Error(),
 		)
 	}
 	if err := s.db.UpdateMergeRequestAssignees(ctx, repo.ID, mr.ID, assignees); err != nil {
-		return nil, problemInternal("save pull assignees failed")
+		return nil, httpapi.Internal("save pull assignees failed")
 	}
 	return &setAssigneesOutput{Body: itemAssigneesResponse{Assignees: emptyIfNil(assignees)}}, nil
 }
@@ -115,10 +116,10 @@ func (s *Server) setIssueAssignees(
 
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get issue failed")
+		return nil, httpapi.Internal("get issue failed")
 	}
 	if issue == nil {
-		return nil, problemNotFound(CodeIssueNotFound, "issue not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
 	}
 
 	mutator, err := s.syncer.AssigneeMutator(repoProviderKind(*repo), repoProviderHost(*repo))
@@ -129,14 +130,14 @@ func (s *Server) setIssueAssignees(
 		ctx, platformRepoRefFromDB(*repo), input.Number, names,
 	)
 	if err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"provider API error: "+err.Error(),
 		)
 	}
 	if err := s.db.UpdateIssueAssignees(ctx, repo.ID, issue.ID, assignees); err != nil {
-		return nil, problemInternal("save issue assignees failed")
+		return nil, httpapi.Internal("save issue assignees failed")
 	}
 	return &setAssigneesOutput{Body: itemAssigneesResponse{Assignees: emptyIfNil(assignees)}}, nil
 }
@@ -159,10 +160,10 @@ func (s *Server) setPullReviewers(
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemInternal("get pull failed")
+		return nil, httpapi.Internal("get pull failed")
 	}
 	if mr == nil {
-		return nil, problemNotFound(CodePullNotFound, "pull not found", nil)
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull not found", nil)
 	}
 
 	mutator, err := s.syncer.ReviewerMutator(repoProviderKind(*repo), repoProviderHost(*repo))
@@ -178,7 +179,7 @@ func (s *Server) setPullReviewers(
 	ref := platformRepoRefFromDB(*repo)
 	current, err := mutator.RequestMergeRequestReviewers(ctx, ref, input.Number, nil)
 	if err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"provider API error: "+err.Error(),
@@ -195,11 +196,11 @@ func (s *Server) setPullReviewers(
 		// describing pre-mutation state while the provider moved on.
 		if err == nil {
 			if dbErr := s.db.UpdateMergeRequestReviewers(ctx, repo.ID, mr.ID, reviewers); dbErr != nil {
-				return nil, problemInternal("save pull reviewers failed")
+				return nil, httpapi.Internal("save pull reviewers failed")
 			}
 		}
 		if err != nil {
-			return nil, providerCallProblemWithDetail(
+			return nil, httpapi.ProviderCallProblemWithDetail(
 				err,
 				string(repoProviderKind(*repo)), repoProviderHost(*repo),
 				"provider API error: "+err.Error(),
@@ -209,7 +210,7 @@ func (s *Server) setPullReviewers(
 	if len(toRemove) > 0 {
 		reviewers, err = mutator.RemoveMergeRequestReviewers(ctx, ref, input.Number, toRemove)
 		if err != nil {
-			return nil, providerCallProblemWithDetail(
+			return nil, httpapi.ProviderCallProblemWithDetail(
 				err,
 				string(repoProviderKind(*repo)), repoProviderHost(*repo),
 				"provider API error: "+err.Error(),
@@ -217,7 +218,7 @@ func (s *Server) setPullReviewers(
 		}
 	}
 	if err := s.db.UpdateMergeRequestReviewers(ctx, repo.ID, mr.ID, reviewers); err != nil {
-		return nil, problemInternal("save pull reviewers failed")
+		return nil, httpapi.Internal("save pull reviewers failed")
 	}
 	return &setReviewersOutput{Body: itemReviewersResponse{Reviewers: emptyIfNil(reviewers)}}, nil
 }
@@ -242,7 +243,7 @@ func (s *Server) resolveUserMutationRequest(
 		return nil, nil, unsupportedCapabilityProblem(*repo, capability)
 	}
 	if raw == nil {
-		return nil, nil, problemValidation(field, "value must be an array of usernames")
+		return nil, nil, httpapi.Validation(field, "value must be an array of usernames")
 	}
 
 	seen := make(map[string]struct{}, len(*raw))
@@ -250,11 +251,11 @@ func (s *Server) resolveUserMutationRequest(
 	for _, value := range *raw {
 		username := strings.TrimSpace(value)
 		if username == "" {
-			return nil, nil, problemValidation(field, "usernames must not be empty")
+			return nil, nil, httpapi.Validation(field, "usernames must not be empty")
 		}
 		key := strings.ToLower(username)
 		if _, ok := seen[key]; ok {
-			return nil, nil, problemValidation(field, fmt.Sprintf("duplicate username %q", username))
+			return nil, nil, httpapi.Validation(field, fmt.Sprintf("duplicate username %q", username))
 		}
 		seen[key] = struct{}{}
 		resolved = append(resolved, username)

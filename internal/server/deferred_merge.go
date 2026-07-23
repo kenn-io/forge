@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 const (
@@ -114,14 +115,14 @@ func (s *Server) enqueueDeferredMerge(
 	}
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
 	if err != nil {
-		return deferMergePRBody{}, problemInternal("get pull request failed")
+		return deferMergePRBody{}, httpapi.Internal("get pull request failed")
 	}
 	if mr == nil {
-		return deferMergePRBody{}, problemNotFound(CodePullNotFound, "pull request not found", nil)
+		return deferMergePRBody{}, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
 	}
 	if mr.State != db.MergeRequestStateOpen {
-		return deferMergePRBody{}, problemConflict(
-			CodeConflict,
+		return deferMergePRBody{}, httpapi.Conflict(
+			httpapi.CodeConflict,
 			"pull request is not open",
 			map[string]any{"reason": "not_open"},
 		)
@@ -138,20 +139,20 @@ func (s *Server) enqueueDeferredMerge(
 		queuedTarget.HeadSHA = expectedHeadSHA
 	}
 	if strings.TrimSpace(queuedTarget.BaseSHA) == "" {
-		return deferMergePRBody{}, problemConflict(
-			CodeConflict,
+		return deferMergePRBody{}, httpapi.Conflict(
+			httpapi.CodeConflict,
 			"target base commit has not been synced; refresh and retry",
 			map[string]any{"reason": "base_unknown"},
 		)
 	}
 	pendingKeys, err := pendingDeferredMergeCheckKeys(mr.CIChecksJSON)
 	if err != nil {
-		return deferMergePRBody{}, problemValidation("ci_checks", err.Error())
+		return deferMergePRBody{}, httpapi.Validation("ci_checks", err.Error())
 	}
 	aggregateState := deferredMergeAggregateState(mr.CIStatus)
 	if aggregateState == "failed" {
-		return deferMergePRBody{}, problemConflict(
-			CodeConflict,
+		return deferMergePRBody{}, httpapi.Conflict(
+			httpapi.CodeConflict,
 			"CI checks have already failed",
 			map[string]any{"reason": "ci_failed"},
 		)
@@ -164,16 +165,16 @@ func (s *Server) enqueueDeferredMerge(
 		pendingKeys = refreshedKeys
 		aggregateState = deferredMergeAggregateState(refreshed.CIStatus)
 		if aggregateState == "failed" {
-			return deferMergePRBody{}, problemConflict(
-				CodeConflict,
+			return deferMergePRBody{}, httpapi.Conflict(
+				httpapi.CodeConflict,
 				"CI checks have already failed",
 				map[string]any{"reason": "ci_failed"},
 			)
 		}
 	}
 	if len(pendingKeys) == 0 && aggregateState != "pending" {
-		return deferMergePRBody{}, problemConflict(
-			CodeConflict,
+		return deferMergePRBody{}, httpapi.Conflict(
+			httpapi.CodeConflict,
 			"no pending CI checks to wait for",
 			map[string]any{"reason": "no_pending_checks"},
 		)
@@ -181,8 +182,8 @@ func (s *Server) enqueueDeferredMerge(
 	key := deferredMergeKey(*repo, number)
 	handle, marked := s.markDeferredMergeInFlight(key)
 	if !marked {
-		return deferMergePRBody{}, problemConflict(
-			CodeConflict,
+		return deferMergePRBody{}, httpapi.Conflict(
+			httpapi.CodeConflict,
 			"a deferred merge is already waiting for this pull request",
 			map[string]any{"reason": "already_pending"},
 		)
@@ -193,7 +194,7 @@ func (s *Server) enqueueDeferredMerge(
 	})
 	if !started {
 		s.clearDeferredMergeInFlight(key, handle)
-		return deferMergePRBody{}, problemServiceUnavailable("server is shutting down")
+		return deferMergePRBody{}, httpapi.ServiceUnavailable("server is shutting down")
 	}
 	return deferMergePRBody{
 		Status:        "queued",
@@ -332,36 +333,36 @@ func (s *Server) refreshPendingDeferredMergeCheckKeys(
 		queuedTarget.HeadSHA,
 	)
 	if err != nil {
-		return nil, nil, providerCallProblemWithDetail(
+		return nil, nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(repo)), repoProviderHost(repo),
 			"refresh PR CI before deferring merge: "+err.Error(),
 		)
 	}
 	if len(warnings) > 0 {
-		return nil, nil, problemConflict(
-			CodeConflict,
+		return nil, nil, httpapi.Conflict(
+			httpapi.CodeConflict,
 			"could not refresh CI checks before deferring merge",
 			map[string]any{"reason": "ci_refresh_unavailable", "warnings": warnings},
 		)
 	}
 	refreshed, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
 	if err != nil {
-		return nil, nil, problemInternal("get pull request after CI refresh failed")
+		return nil, nil, httpapi.Internal("get pull request after CI refresh failed")
 	}
 	if refreshed == nil {
-		return nil, nil, problemNotFound(CodePullNotFound, "pull request not found after CI refresh", nil)
+		return nil, nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found after CI refresh", nil)
 	}
 	if err := deferredMergeTargetMatchesDB(refreshed, queuedTarget); err != nil {
-		return nil, nil, problemConflict(
-			CodeConflict,
+		return nil, nil, httpapi.Conflict(
+			httpapi.CodeConflict,
 			err.Error(),
 			map[string]any{"reason": "stale_state"},
 		)
 	}
 	keys, err := pendingDeferredMergeCheckKeys(refreshed.CIChecksJSON)
 	if err != nil {
-		return nil, nil, problemValidation("ci_checks", err.Error())
+		return nil, nil, httpapi.Validation("ci_checks", err.Error())
 	}
 	return refreshed, keys, nil
 }

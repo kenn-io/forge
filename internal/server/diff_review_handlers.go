@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 func (s *Server) getDiffReviewDraft(
@@ -178,12 +179,12 @@ func (s *Server) applyReviewSuggestions(
 		return nil, err
 	}
 	if len(input.Body.Suggestions) == 0 {
-		return nil, problemValidation("body.suggestions", "at least one suggestion is required")
+		return nil, httpapi.Validation("body.suggestions", "at least one suggestion is required")
 	}
 	caps := s.capabilitiesForRepo(*repo)
 	expectedHeadSHA := strings.TrimSpace(input.Body.ExpectedHeadSHA)
 	if expectedHeadSHA == "" && caps.MutationHeadBinding {
-		return nil, problemValidation(
+		return nil, httpapi.Validation(
 			"body.expected_head_sha",
 			"required for this provider: echo the platform_head_sha you rendered",
 		)
@@ -205,15 +206,15 @@ func (s *Server) applyReviewSuggestions(
 		return nil, huma.Error404NotFound("pull request not found")
 	}
 	if mr.State != db.MergeRequestStateOpen {
-		return nil, problemConflict(
-			CodeConflict,
+		return nil, httpapi.Conflict(
+			httpapi.CodeConflict,
 			"pull request is not open",
 			map[string]any{"reason": "not_open"},
 		)
 	}
 	if repoProviderKind(*repo) == platform.KindGitHub && ghclient.ParseHeadRepoFullName(mr.HeadRepoCloneURL) == "" {
-		return nil, problemConflict(
-			CodeConflict,
+		return nil, httpapi.Conflict(
+			httpapi.CodeConflict,
 			"pull request head repository is unknown",
 			map[string]any{"reason": "head_repo_unknown"},
 		)
@@ -227,10 +228,10 @@ func (s *Server) applyReviewSuggestions(
 		field := "body.suggestions[" + strconv.Itoa(i) + "].thread_id"
 		threadID, err := parseReviewLocalID(request.ThreadID, "review thread")
 		if err != nil {
-			return nil, problemValidation(field, "review thread id must be a positive integer")
+			return nil, httpapi.Validation(field, "review thread id must be a positive integer")
 		}
 		if _, ok := seenThreadIDs[threadID]; ok {
-			return nil, problemValidation(field, "duplicate review thread id")
+			return nil, httpapi.Validation(field, "duplicate review thread id")
 		}
 		seenThreadIDs[threadID] = struct{}{}
 		thread, err := s.db.GetMRReviewThread(ctx, mr.ID, threadID)
@@ -248,7 +249,7 @@ func (s *Server) applyReviewSuggestions(
 		}
 		replacement, err := verifyReviewSuggestionReplacement(thread.Body, request.Replacement)
 		if err != nil {
-			return nil, problemValidation(
+			return nil, httpapi.Validation(
 				"body.suggestions["+strconv.Itoa(i)+"].replacement",
 				err.Error(),
 			)
@@ -274,7 +275,7 @@ func (s *Server) applyReviewSuggestions(
 	)
 	s.syncAfterReviewSuggestionApply(*repo, input.Number)
 	if err != nil {
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)),
 			repoProviderHost(*repo),
@@ -307,15 +308,15 @@ func validateReviewSuggestionThread(thread db.MRReviewThread, expectedHeadSHA st
 		return huma.Error400BadRequest("review thread start line must be before line")
 	}
 	if strings.TrimSpace(lineRange.DiffHeadSHA) == "" {
-		return problemConflict(
-			CodeConflict,
+		return httpapi.Conflict(
+			httpapi.CodeConflict,
 			"review suggestion is missing a reviewed head commit",
 			map[string]any{"reason": "head_unknown"},
 		)
 	}
 	if expectedHeadSHA != "" && lineRange.DiffHeadSHA != expectedHeadSHA {
-		return problemConflict(
-			CodeConflict,
+		return httpapi.Conflict(
+			httpapi.CodeConflict,
 			"target changed since it was reviewed; refresh and retry",
 			map[string]any{"reason": "stale_state"},
 		)
@@ -330,7 +331,7 @@ func (s *Server) requireReviewSuggestionCapabilities(repo db.Repo) error {
 		capabilityReadReviewThreads,
 	} {
 		if !capabilityEnabled(caps, capability) {
-			return problemUnsupportedCapability(repo, capability)
+			return httpapi.UnsupportedCapability(repo, capability)
 		}
 	}
 	return nil
@@ -501,7 +502,7 @@ func (s *Server) publishDiffReviewDraft(
 	}
 	caps := s.capabilitiesForRepo(*repo)
 	if !reviewActionSupported(caps, action) {
-		return nil, problemUnsupportedCapability(*repo, "review_action_"+string(action))
+		return nil, httpapi.UnsupportedCapability(*repo, "review_action_"+string(action))
 	}
 	if action == platform.ReviewActionApprove && s.mergeRequestAuthoredByViewer(ctx, *repo, *mr) {
 		return nil, selfApprovalProblem(*repo)
@@ -588,7 +589,7 @@ func (s *Server) publishDiffReviewDraft(
 		if errors.Is(err, platform.ErrStaleState) {
 			s.syncAfterStaleReviewDraftPublish(*repo, input.Number)
 		}
-		return nil, providerCallProblemWithDetail(
+		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)),
 			repoProviderHost(*repo),
@@ -630,8 +631,8 @@ func diffReviewPartialPublishProblem(
 	if platformErr.Code != platform.ErrCodeStaleState {
 		return nil
 	}
-	mapped := providerCallProblem(err.Err, string(repoProviderKind(repo)), repoProviderHost(repo))
-	if problem, ok := mapped.(*ProblemError); ok {
+	mapped := httpapi.ProviderCallProblem(err.Err, string(repoProviderKind(repo)), repoProviderHost(repo))
+	if problem, ok := mapped.(*httpapi.ProblemError); ok {
 		if problem.Details == nil {
 			problem.Details = map[string]any{}
 		}

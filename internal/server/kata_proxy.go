@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"go.kenn.io/middleman/internal/kata"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 const (
@@ -63,9 +64,9 @@ func (s *Server) kataProxy() http.Handler {
 		if err != nil {
 			slog.Warn("kata proxy target invalid",
 				"daemon", selected.ID, "target", kata.RedactURL(selected.URL), "err", err)
-			writeProblemResponse(w, newProblem(
+			writeProblemResponse(w, httpapi.NewProblem(
 				http.StatusBadRequest,
-				CodeBadRequest,
+				httpapi.CodeBadRequest,
 				"invalid Kata daemon target",
 				map[string]any{"daemon": selected.ID},
 			))
@@ -136,20 +137,20 @@ func (s *Server) selectKataProxyDaemon(w http.ResponseWriter, r *http.Request) (
 // X-Middleman-Kata-Daemon header value (the effective default daemon when
 // empty) to a reachable target. Shared by the passthrough proxy and the
 // server-side Kata task reads.
-func selectKataDaemonForID(headerID string) (kata.Daemon, *ProblemError) {
+func selectKataDaemonForID(headerID string) (kata.Daemon, *httpapi.ProblemError) {
 	catalog, err := kata.LoadCatalog()
 	if err != nil {
-		return kata.Daemon{}, newProblem(
+		return kata.Daemon{}, httpapi.NewProblem(
 			http.StatusBadRequest,
-			CodeBadRequest,
+			httpapi.CodeBadRequest,
 			err.Error(),
 			nil,
 		)
 	}
 	if len(catalog.Daemons) == 0 {
-		return kata.Daemon{}, newProblem(
+		return kata.Daemon{}, httpapi.NewProblem(
 			http.StatusServiceUnavailable,
-			CodeServiceUnavailable,
+			httpapi.CodeServiceUnavailable,
 			"no Kata daemon configured",
 			nil,
 		)
@@ -169,9 +170,9 @@ func selectKataDaemonForID(headerID string) (kata.Daemon, *ProblemError) {
 		}
 	}
 	if !found {
-		return kata.Daemon{}, newProblem(
+		return kata.Daemon{}, httpapi.NewProblem(
 			http.StatusBadRequest,
-			CodeBadRequest,
+			httpapi.CodeBadRequest,
 			"unknown Kata daemon",
 			map[string]any{"daemon": id},
 		)
@@ -179,9 +180,9 @@ func selectKataDaemonForID(headerID string) (kata.Daemon, *ProblemError) {
 
 	selected, err := kata.ResolveDaemon(configured)
 	if err != nil {
-		return kata.Daemon{}, newProblem(
+		return kata.Daemon{}, httpapi.NewProblem(
 			http.StatusBadRequest,
-			CodeBadRequest,
+			httpapi.CodeBadRequest,
 			err.Error(),
 			map[string]any{"daemon": configured.ID},
 		)
@@ -197,9 +198,9 @@ func selectKataDaemonForID(headerID string) (kata.Daemon, *ProblemError) {
 		}
 	}
 	if selected.URL == "" {
-		return kata.Daemon{}, newProblem(
+		return kata.Daemon{}, httpapi.NewProblem(
 			http.StatusServiceUnavailable,
-			CodeServiceUnavailable,
+			httpapi.CodeServiceUnavailable,
 			"Kata daemon is not reachable",
 			map[string]any{"daemon": selected.ID},
 		)
@@ -249,9 +250,9 @@ func newKataDaemonProxyEntryWithTimeout(
 			if !isKataLocalDaemonChallenge(d, resp.StatusCode) {
 				return nil
 			}
-			problem := newProblem(
+			problem := httpapi.NewProblem(
 				http.StatusBadGateway,
-				CodeUpstreamError,
+				httpapi.CodeUpstreamError,
 				"Kata daemon is unreachable",
 				map[string]any{"daemon": d.ID},
 			)
@@ -285,9 +286,9 @@ func newKataDaemonProxyEntryWithTimeout(
 			}
 			slog.Warn("kata proxy failed",
 				"daemon", d.ID, "target", kata.RedactURL(d.URL), "err", cause)
-			writeProblemResponse(w, newProblem(
+			writeProblemResponse(w, httpapi.NewProblem(
 				http.StatusBadGateway,
-				CodeUpstreamError,
+				httpapi.CodeUpstreamError,
 				"Kata daemon is unreachable",
 				map[string]any{"daemon": d.ID},
 			))

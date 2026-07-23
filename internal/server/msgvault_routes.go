@@ -20,6 +20,7 @@ import (
 
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/messages/msgvault"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 const msgvaultCapabilityCacheTTL = 5 * time.Second
@@ -124,12 +125,12 @@ var msgvaultInlineSafeContentTypes = map[string]struct{}{
 	"image/webp": {},
 }
 
-type msgvaultHealthOutput = bodyOutput[msgvaultHealthBody]
-type msgvaultConfigureOutput = bodyOutput[msgvaultHealthBody]
-type msgvaultSearchOutput = bodyOutput[msgvaultSearchBody]
-type msgvaultAggregatesOutput = bodyOutput[msgvault.AggregateResult]
-type msgvaultMessageOutput = bodyOutput[msgvaultMessageBody]
-type msgvaultThreadOutput = bodyOutput[msgvaultThreadBody]
+type msgvaultHealthOutput = httpapi.BodyOutput[msgvaultHealthBody]
+type msgvaultConfigureOutput = httpapi.BodyOutput[msgvaultHealthBody]
+type msgvaultSearchOutput = httpapi.BodyOutput[msgvaultSearchBody]
+type msgvaultAggregatesOutput = httpapi.BodyOutput[msgvault.AggregateResult]
+type msgvaultMessageOutput = httpapi.BodyOutput[msgvaultMessageBody]
+type msgvaultThreadOutput = httpapi.BodyOutput[msgvaultThreadBody]
 
 type configureMsgvaultInput struct {
 	ContentType   string `header:"Content-Type"`
@@ -210,19 +211,19 @@ func (h *msgvaultHandler) applyConfig(cfg *config.Config) {
 
 func (s *Server) registerMsgvaultAPI(api huma.API) {
 	huma.Get(api, "/msgvault/health", s.msgvault.health,
-		documentOperation("get-msgvault-health", "Get msgvault health", "Msgvault"))
+		httpapi.DocumentOperation("get-msgvault-health", "Get msgvault health", "Msgvault"))
 	huma.Get(api, "/msgvault/search", s.msgvault.search,
-		documentOperation("search-msgvault", "Search msgvault", "Msgvault"))
+		httpapi.DocumentOperation("search-msgvault", "Search msgvault", "Msgvault"))
 	huma.Get(api, "/msgvault/messages/{id}", s.msgvault.message,
-		documentOperation("get-msgvault-message", "Get msgvault message", "Msgvault"))
+		httpapi.DocumentOperation("get-msgvault-message", "Get msgvault message", "Msgvault"))
 	huma.Get(api, "/msgvault/messages/{id}/inline", s.msgvault.inline,
-		documentOperation("get-msgvault-inline-image", "Get msgvault inline image", "Msgvault"))
+		httpapi.DocumentOperation("get-msgvault-inline-image", "Get msgvault inline image", "Msgvault"))
 	huma.Get(api, "/msgvault/messages/{id}/remote-image/{token}/{idx}", s.msgvault.remoteImage,
-		documentOperation("get-msgvault-remote-image", "Get msgvault remote image", "Msgvault"))
+		httpapi.DocumentOperation("get-msgvault-remote-image", "Get msgvault remote image", "Msgvault"))
 	huma.Get(api, "/msgvault/aggregates", s.msgvault.aggregates,
-		documentOperation("get-msgvault-aggregates", "Get msgvault aggregates", "Msgvault"))
+		httpapi.DocumentOperation("get-msgvault-aggregates", "Get msgvault aggregates", "Msgvault"))
 	huma.Get(api, "/msgvault/threads/{conversation_id}", s.msgvault.thread,
-		documentOperation("get-msgvault-thread", "Get msgvault thread", "Msgvault"))
+		httpapi.DocumentOperation("get-msgvault-thread", "Get msgvault thread", "Msgvault"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "configure-msgvault",
 		Method:        http.MethodPost,
@@ -252,8 +253,8 @@ func (h *msgvaultHandler) search(ctx context.Context, in *msgvaultSearchInput) (
 		mode = "fts"
 	}
 	if mode != "fts" {
-		return nil, problemBadRequest(
-			CodeBadRequest,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest,
 			"only mode=fts is supported",
 			map[string]any{"reason": "modeUnsupported"},
 		)
@@ -327,8 +328,8 @@ func (h *msgvaultHandler) inline(ctx context.Context, in *msgvaultInlineInput) (
 		return nil, prob
 	}
 	if in.CID == "" {
-		return nil, problemBadRequest(
-			CodeBadRequest,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest,
 			"cid query parameter is required",
 			map[string]any{"reason": "missingCID"},
 		)
@@ -340,26 +341,26 @@ func (h *msgvaultHandler) inline(ctx context.Context, in *msgvaultInlineInput) (
 	defer func() { _ = body.Close() }()
 	baseType := strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
 	if _, ok := msgvaultInlineSafeContentTypes[baseType]; !ok {
-		return nil, newProblem(
+		return nil, httpapi.NewProblem(
 			http.StatusUnsupportedMediaType,
-			CodeBadRequest,
+			httpapi.CodeBadRequest,
 			"inline parts must be image/png, image/jpeg, image/gif, or image/webp",
 			map[string]any{"reason": "inlineTypeNotAllowed"},
 		)
 	}
 	buf, err := io.ReadAll(io.LimitReader(body, msgvaultInlineMaxBytes+1))
 	if err != nil {
-		return nil, newProblem(
+		return nil, httpapi.NewProblem(
 			http.StatusBadGateway,
-			CodeUpstreamError,
+			httpapi.CodeUpstreamError,
 			"failed to read inline body from upstream",
 			map[string]any{"reason": "inlineReadFailed"},
 		)
 	}
 	if len(buf) > msgvaultInlineMaxBytes {
-		return nil, newProblem(
+		return nil, httpapi.NewProblem(
 			http.StatusBadGateway,
-			CodeUpstreamError,
+			httpapi.CodeUpstreamError,
 			fmt.Sprintf("inline body exceeded %d bytes", msgvaultInlineMaxBytes),
 			map[string]any{"reason": "inlineTooLarge"},
 		)
@@ -379,8 +380,8 @@ func (h *msgvaultHandler) aggregates(ctx context.Context, in *msgvaultAggregates
 		return nil, prob
 	}
 	if in.ViewType == "" {
-		return nil, problemBadRequest(
-			CodeBadRequest,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest,
 			"view_type is required",
 			map[string]any{"reason": "missingViewType"},
 		)
@@ -421,20 +422,20 @@ func (h *msgvaultHandler) thread(ctx context.Context, in *msgvaultThreadInput) (
 
 func (s *Server) configureMsgvault(_ context.Context, in *configureMsgvaultInput) (*msgvaultConfigureOutput, error) {
 	if !isMsgvaultJSONMediaType(in.ContentType) {
-		return nil, newProblem(
+		return nil, httpapi.NewProblem(
 			http.StatusUnsupportedMediaType,
-			CodeBadRequest,
+			httpapi.CodeBadRequest,
 			"configure requires Content-Type: application/json",
 			nil,
 		)
 	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(in.RawBody, &raw); err != nil {
-		return nil, problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "badRequest"})
+		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "badRequest"})
 	}
 	if _, present := raw["api_key"]; present {
-		return nil, problemBadRequest(
-			CodeBadRequest,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest,
 			"api_key is not stored; set the env var named by api_key_env instead",
 			map[string]any{"reason": "apiKeyUnsupported"},
 		)
@@ -443,22 +444,22 @@ func (s *Server) configureMsgvault(_ context.Context, in *configureMsgvaultInput
 	dec.DisallowUnknownFields()
 	var req msgvaultConfigureRequest
 	if err := dec.Decode(&req); err != nil {
-		return nil, problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "badRequest"})
+		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "badRequest"})
 	}
 	cleanURL, err := validateMsgvaultConfigureURL(req.URL)
 	if err != nil {
-		return nil, problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "invalidURL"})
+		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "invalidURL"})
 	}
 	apiKeyEnv := strings.TrimSpace(req.APIKeyEnv)
 	if !msgvaultEnvVarNameRegex.MatchString(apiKeyEnv) {
-		return nil, problemBadRequest(
-			CodeBadRequest,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest,
 			fmt.Sprintf("api_key_env must match /%s/", msgvaultEnvVarNameRegex.String()),
 			map[string]any{"reason": "invalidEnvVarName"},
 		)
 	}
 	if s.cfgPath == "" || s.cfg == nil {
-		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
 	s.cfgMu.Lock()
@@ -468,7 +469,7 @@ func (s *Server) configureMsgvault(_ context.Context, in *configureMsgvaultInput
 		s.cfg.Msgvault = prev
 		s.msgvault.applyConfig(s.cfg)
 		s.cfgMu.Unlock()
-		return nil, problemInternal("save config: " + err.Error())
+		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	s.msgvault.applyConfig(s.cfg)
 	if s.runtime != nil {
@@ -508,9 +509,9 @@ func (h *msgvaultHandler) requireConfigured() (*msgvault.Client, huma.StatusErro
 		if h.client != nil {
 			return h.client, nil
 		}
-		return nil, newProblem(
+		return nil, httpapi.NewProblem(
 			http.StatusServiceUnavailable,
-			CodeServiceUnavailable,
+			httpapi.CodeServiceUnavailable,
 			"msgvault client is not configured",
 			map[string]any{"reason": "misconfigured"},
 		)
@@ -519,16 +520,16 @@ func (h *msgvaultHandler) requireConfigured() (*msgvault.Client, huma.StatusErro
 		if h.configErr != nil {
 			details["error"] = h.configErr.Error()
 		}
-		return nil, newProblem(
+		return nil, httpapi.NewProblem(
 			http.StatusServiceUnavailable,
-			CodeServiceUnavailable,
+			httpapi.CodeServiceUnavailable,
 			"msgvault is misconfigured",
 			details,
 		)
 	default:
-		return nil, newProblem(
+		return nil, httpapi.NewProblem(
 			http.StatusServiceUnavailable,
-			CodeServiceUnavailable,
+			httpapi.CodeServiceUnavailable,
 			"msgvault is not configured",
 			map[string]any{"reason": "notConfigured"},
 		)
@@ -543,9 +544,9 @@ func (h *msgvaultHandler) requireConfiguredWithSanitizer() (*msgvault.Client, *m
 		if h.client != nil && h.sanitizer != nil {
 			return h.client, h.sanitizer, h.sanitizer.Generation(), nil
 		}
-		return nil, nil, 0, newProblem(
+		return nil, nil, 0, httpapi.NewProblem(
 			http.StatusServiceUnavailable,
-			CodeServiceUnavailable,
+			httpapi.CodeServiceUnavailable,
 			"msgvault client is not configured",
 			map[string]any{"reason": "misconfigured"},
 		)
@@ -554,16 +555,16 @@ func (h *msgvaultHandler) requireConfiguredWithSanitizer() (*msgvault.Client, *m
 		if h.configErr != nil {
 			details["error"] = h.configErr.Error()
 		}
-		return nil, nil, 0, newProblem(
+		return nil, nil, 0, httpapi.NewProblem(
 			http.StatusServiceUnavailable,
-			CodeServiceUnavailable,
+			httpapi.CodeServiceUnavailable,
 			"msgvault is misconfigured",
 			details,
 		)
 	default:
-		return nil, nil, 0, newProblem(
+		return nil, nil, 0, httpapi.NewProblem(
 			http.StatusServiceUnavailable,
-			CodeServiceUnavailable,
+			httpapi.CodeServiceUnavailable,
 			"msgvault is not configured",
 			map[string]any{"reason": "notConfigured"},
 		)
@@ -583,45 +584,45 @@ func msgvaultUpstreamProblem(err error) huma.StatusError {
 	}
 	switch msgvault.Classify(err) {
 	case "unauthorized":
-		return newProblem(
+		return httpapi.NewProblem(
 			http.StatusServiceUnavailable,
-			CodeServiceUnavailable,
+			httpapi.CodeServiceUnavailable,
 			"msgvault rejected the configured API key",
 			map[string]any{"reason": "unauthorized"},
 		)
 	case "not_found":
-		return problemNotFound(
-			CodeNotFound,
+		return httpapi.NotFound(
+			httpapi.CodeNotFound,
 			err.Error(),
 			map[string]any{"reason": "upstreamNotFound"},
 		)
 	case "rate_limited":
-		return problemRateLimited("", "", nil)
+		return httpapi.RateLimited("", "", nil)
 	case "timeout":
-		return newProblem(
+		return httpapi.NewProblem(
 			http.StatusGatewayTimeout,
-			CodeUpstreamError,
+			httpapi.CodeUpstreamError,
 			err.Error(),
 			map[string]any{"reason": "upstreamTimeout"},
 		)
 	case "down":
-		return newProblem(
+		return httpapi.NewProblem(
 			http.StatusBadGateway,
-			CodeUpstreamError,
+			httpapi.CodeUpstreamError,
 			err.Error(),
 			map[string]any{"reason": "upstreamDown"},
 		)
 	case "malformed":
 		return msgvaultMalformedUpstreamProblem(err.Error())
 	default:
-		return problemUpstream(err.Error(), "", "")
+		return httpapi.Upstream(err.Error(), "", "")
 	}
 }
 
 func msgvaultMalformedUpstreamProblem(detail string) huma.StatusError {
-	return newProblem(
+	return httpapi.NewProblem(
 		http.StatusBadGateway,
-		CodeUpstreamError,
+		httpapi.CodeUpstreamError,
 		detail,
 		map[string]any{"reason": "upstreamMalformed"},
 	)

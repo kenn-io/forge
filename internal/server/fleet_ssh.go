@@ -13,6 +13,7 @@ import (
 
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/fleet"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/sshfleet"
 )
 
@@ -307,9 +308,9 @@ func (s *Server) serveSSHFleetRESTProxy(
 	if r.Body != nil {
 		raw, err := io.ReadAll(r.Body)
 		if err != nil {
-			writeProblemResponse(w, newProblem(
+			writeProblemResponse(w, httpapi.NewProblem(
 				http.StatusBadRequest,
-				CodeBadRequest,
+				httpapi.CodeBadRequest,
 				"read fleet relay body: "+err.Error(),
 				map[string]any{"hostKey": peer.Key},
 			))
@@ -323,9 +324,9 @@ func (s *Server) serveSSHFleetRESTProxy(
 	}
 	resp, err := t.relay(r.Context(), peer, r.Method, path, body)
 	if err != nil {
-		writeProblemResponse(w, newProblem(
+		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusBadGateway,
-			CodeUpstreamError,
+			httpapi.CodeUpstreamError,
 			"fleet ssh relay failed: "+err.Error(),
 			map[string]any{"hostKey": peer.Key},
 		))

@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/middleman/internal/config"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 type repoPreviewInput struct {
@@ -29,7 +30,7 @@ type repoPreviewRequest struct {
 	Pattern      string `json:"pattern"`
 }
 
-type repoPreviewOutput = bodyOutput[repoPreviewResponse]
+type repoPreviewOutput = httpapi.BodyOutput[repoPreviewResponse]
 
 type repoPreviewResponse struct {
 	Provider     string           `json:"provider"`
@@ -60,7 +61,7 @@ type bulkAddReposRequest struct {
 	Repos []bulkAddRepoRequest `json:"repos" nullable:"false"`
 }
 
-type bulkAddReposOutput = createdOutput[settingsResponse]
+type bulkAddReposOutput = httpapi.CreatedOutput[settingsResponse]
 
 type bulkAddRepoRequest struct {
 	Provider     string `json:"provider"`
@@ -416,7 +417,7 @@ func (s *Server) previewRepos(
 	input *repoPreviewInput,
 ) (*repoPreviewOutput, error) {
 	if s.cfgPath == "" {
-		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
 	provider, host, err := normalizeImportPlatform(
@@ -424,13 +425,13 @@ func (s *Server) previewRepos(
 		importRequestHost(input.Body.Host, input.Body.PlatformHost),
 	)
 	if err != nil {
-		return nil, problemValidation("body.provider", err.Error())
+		return nil, httpapi.Validation("body.provider", err.Error())
 	}
 	owner, pattern, err := normalizeImportOwnerPattern(
 		provider, input.Body.Owner, input.Body.Pattern,
 	)
 	if err != nil {
-		return nil, problemValidation("body", err.Error())
+		return nil, httpapi.Validation("body", err.Error())
 	}
 
 	s.cfgMu.Lock()
@@ -444,24 +445,24 @@ func (s *Server) previewRepos(
 	if provider == platform.KindGitHub {
 		client, err := s.syncer.ClientForHost(host)
 		if err != nil {
-			return nil, providerCallProblem(err, "github", host)
+			return nil, httpapi.ProviderCallProblem(err, "github", host)
 		}
 		rows, err = buildRepoPreviewRows(
 			ctx, client, exactConfiguredRepoSet(repos), owner, pattern, host,
 		)
 		if err != nil {
-			return nil, providerCallProblem(err, "github", host)
+			return nil, httpapi.ProviderCallProblem(err, "github", host)
 		}
 	} else {
 		reader, err := s.syncer.RepositoryReader(provider, host)
 		if err != nil {
-			return nil, providerCallProblem(err, string(provider), host)
+			return nil, httpapi.ProviderCallProblem(err, string(provider), host)
 		}
 		rows, err = buildPlatformRepoPreviewRows(
 			ctx, reader, provider, host, exactConfiguredRepoSet(repos), owner, pattern,
 		)
 		if err != nil {
-			return nil, providerCallProblem(err, string(provider), host)
+			return nil, httpapi.ProviderCallProblem(err, string(provider), host)
 		}
 	}
 	return &repoPreviewOutput{
@@ -561,8 +562,8 @@ func (s *Server) applyBulkExactRepos(
 	}
 	if len(addConfigs) == 0 {
 		s.cfgMu.Unlock()
-		return settingsResponse{}, &bulkApplyError{problem: problemBadRequest(
-			CodeBadRequest,
+		return settingsResponse{}, &bulkApplyError{problem: httpapi.BadRequest(
+			httpapi.CodeBadRequest,
 			"all selected repositories are already configured",
 			nil,
 		)}
@@ -573,21 +574,21 @@ func (s *Server) applyBulkExactRepos(
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Repos = prev
 		s.cfgMu.Unlock()
-		return settingsResponse{}, &bulkApplyError{problem: problemBadRequest(
-			CodeBadRequest, err.Error(), nil,
+		return settingsResponse{}, &bulkApplyError{problem: httpapi.BadRequest(
+			httpapi.CodeBadRequest, err.Error(), nil,
 		)}
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = prev
 		s.cfgMu.Unlock()
-		return settingsResponse{}, &bulkApplyError{problem: problemInternal(
+		return settingsResponse{}, &bulkApplyError{problem: httpapi.Internal(
 			"save config: " + err.Error(),
 		)}
 	}
 	if err := s.persistResolvedRepos(ctx, addRefs); err != nil {
 		s.cfg.Repos = prev
 		s.cfgMu.Unlock()
-		return settingsResponse{}, &bulkApplyError{problem: problemInternal(err.Error())}
+		return settingsResponse{}, &bulkApplyError{problem: httpapi.Internal(err.Error())}
 	}
 	s.mergeTrackedRepos(addRefs)
 	s.cfgMu.Unlock()
@@ -600,11 +601,11 @@ func (s *Server) bulkAddRepos(
 	input *bulkAddReposInput,
 ) (*bulkAddReposOutput, error) {
 	if s.cfgPath == "" {
-		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
 	if len(input.Body.Repos) == 0 {
-		return nil, problemValidation("body.repos", "repos are required")
+		return nil, httpapi.Validation("body.repos", "repos are required")
 	}
 
 	candidates := make([]config.Repo, 0, len(input.Body.Repos))
@@ -614,7 +615,7 @@ func (s *Server) bulkAddRepos(
 	for _, raw := range input.Body.Repos {
 		repo, err := normalizeExactRepoInput(raw)
 		if err != nil {
-			return nil, problemValidation("body.repos", err.Error())
+			return nil, httpapi.Validation("body.repos", err.Error())
 		}
 		key := configuredRepoImportKey(repo)
 		if _, ok := existing[key]; ok {
@@ -623,8 +624,8 @@ func (s *Server) bulkAddRepos(
 		candidates = append(candidates, repo)
 	}
 	if len(candidates) == 0 {
-		return nil, problemBadRequest(
-			CodeBadRequest,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest,
 			"all selected repositories are already configured",
 			nil,
 		)
@@ -640,7 +641,7 @@ func (s *Server) bulkAddRepos(
 		if errors.As(err, &bae) {
 			return nil, bae.problem
 		}
-		return nil, problemInternal(err.Error())
+		return nil, httpapi.Internal(err.Error())
 	}
 
 	s.syncer.TriggerRun(context.WithoutCancel(ctx))

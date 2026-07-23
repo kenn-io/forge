@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 // Filesystem discovery endpoints back project-registration UX: a client
@@ -70,7 +72,7 @@ func (s *Server) completeFilesystemPath(
 			errors.Is(err, os.ErrInvalid) {
 			return out, nil
 		}
-		return nil, problemInternal("read directory: " + err.Error())
+		return nil, httpapi.Internal("read directory: " + err.Error())
 	}
 	for _, entry := range entries {
 		if !completionEntryIsDir(searchDir, entry) {
@@ -117,7 +119,7 @@ func (s *Server) validateFilesystemRepo(
 			out.Body.Message = "Directory not found"
 			return out, nil
 		}
-		return nil, problemInternal("stat path: " + err.Error())
+		return nil, httpapi.Internal("stat path: " + err.Error())
 	}
 	if !info.IsDir() {
 		out.Body.Message = "Directory not found"

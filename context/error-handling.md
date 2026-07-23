@@ -63,9 +63,10 @@ branch. Keep the OpenAPI enum stable and regenerate API artifacts with
 
 ## Server Construction
 
-`internal/server` owns HTTP error construction. Prefer package helpers over
-direct `huma.Error4xx` / `huma.Error5xx` calls in production handlers so status,
-wire code, and details stay consistent.
+`internal/server/httpapi` owns the shared HTTP problem contract. Server domain
+packages must use its constructors instead of direct `huma.Error4xx` /
+`huma.Error5xx` calls so status, wire code, and details stay consistent
+(`internal/server/httpapi/problems.go::ProblemError`).
 
 Rules for handler code:
 

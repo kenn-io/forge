@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 const (
@@ -204,9 +206,9 @@ func (h *msgvaultHandler) remoteImage(ctx context.Context, in *msgvaultRemoteIma
 	}
 	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if _, ok := msgvaultRemoteImageAllowedMIME[mediaType]; !ok {
-		return nil, newProblem(
+		return nil, httpapi.NewProblem(
 			http.StatusUnsupportedMediaType,
-			CodeBadRequest,
+			httpapi.CodeBadRequest,
 			"unsupported image type",
 			map[string]any{"reason": "unsupportedImageType"},
 		)
@@ -295,25 +297,25 @@ func (h *msgvaultHandler) refetchAndResanitize(ctx context.Context, messageID in
 }
 
 func msgvaultImageRejectedProblem() error {
-	return problemBadRequest(
-		CodeBadRequest,
+	return httpapi.BadRequest(
+		httpapi.CodeBadRequest,
 		"image rejected",
 		map[string]any{"reason": "imageRejected"},
 	)
 }
 
 func msgvaultImageNotFoundProblem() error {
-	return problemNotFound(
-		CodeNotFound,
+	return httpapi.NotFound(
+		httpapi.CodeNotFound,
 		"image not found",
 		map[string]any{"reason": "imageNotFound"},
 	)
 }
 
 func msgvaultImageFetchFailedProblem() error {
-	return newProblem(
+	return httpapi.NewProblem(
 		http.StatusBadGateway,
-		CodeUpstreamError,
+		httpapi.CodeUpstreamError,
 		"image fetch failed",
 		map[string]any{"reason": "imageFetchFailed"},
 	)

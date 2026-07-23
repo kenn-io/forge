@@ -1,5 +1,8 @@
-// Package server's problems.go defines the RFC 9457 (application/problem+json)
-// error envelope that every internal/server/ failure path returns. The
+// Package httpapi defines the shared HTTP response contract used by the
+// server's independently registered API domains.
+//
+// Problems are returned as an RFC 9457 (application/problem+json) error
+// envelope. The
 // envelope adds two top-level fields beyond the huma defaults so frontend
 // code can branch on stable, machine-readable signals instead of substring-
 // matching English prose:
@@ -11,7 +14,7 @@
 // huma.NewError so legacy huma.Error4xx/Error5xx callers (which we migrate
 // away from in the same change set) still produce a valid envelope with
 // a status-derived code while migration is in flight.
-package server
+package httpapi
 
 import (
 	"context"
@@ -19,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -189,7 +193,7 @@ func (p *ProblemError) ContentType(ct string) string {
 // codeForStatus maps an HTTP status to the default wire code. Used when
 // callers reach for huma.Error4xx without specifying a code (e.g. during
 // migration) or when our own helpers don't pick a richer code.
-func codeForStatus(status int) ProblemCode {
+func CodeForStatus(status int) ProblemCode {
 	switch status {
 	case http.StatusBadRequest:
 		return CodeBadRequest
@@ -232,9 +236,9 @@ func titleForStatus(status int) string {
 // status and (when code is empty) the default code; detail is the
 // human-readable message; details is the machine-readable context. The
 // returned value satisfies huma.StatusError.
-func newProblem(status int, code ProblemCode, detail string, details map[string]any) *ProblemError {
+func NewProblem(status int, code ProblemCode, detail string, details map[string]any) *ProblemError {
 	if code == "" {
-		code = codeForStatus(status)
+		code = CodeForStatus(status)
 	}
 	return &ProblemError{
 		Status:  status,
@@ -305,17 +309,17 @@ func sanitizeProblemErrors(errors []*huma.ErrorDetail) []*huma.ErrorDetail {
 
 // problemBadRequest returns a 400 with the supplied code (defaults to
 // CodeBadRequest when "").
-func problemBadRequest(code ProblemCode, detail string, details map[string]any) huma.StatusError {
+func BadRequest(code ProblemCode, detail string, details map[string]any) huma.StatusError {
 	if code == "" {
 		code = CodeBadRequest
 	}
-	return newProblem(http.StatusBadRequest, code, detail, details)
+	return NewProblem(http.StatusBadRequest, code, detail, details)
 }
 
 // problemValidation returns a 400 with code CodeValidationError, embedding
 // the offending field and (optionally) the allowed values. Field is the
 // JSON path of the value at fault ("body.status", "query.repo", etc.).
-func problemValidation(field, detail string, allowed ...string) huma.StatusError {
+func Validation(field, detail string, allowed ...string) huma.StatusError {
 	d := map[string]any{}
 	if field != "" {
 		d["field"] = field
@@ -326,40 +330,40 @@ func problemValidation(field, detail string, allowed ...string) huma.StatusError
 	if len(d) == 0 {
 		d = nil
 	}
-	return newProblem(http.StatusBadRequest, CodeValidationError, detail, d)
+	return NewProblem(http.StatusBadRequest, CodeValidationError, detail, d)
 }
 
 // problemNotFound returns a 404 with the supplied code. Pass CodeNotFound
 // for the generic case or one of CodeRepoNotFound, CodePullNotFound, etc.
 // for richer semantics.
-func problemNotFound(code ProblemCode, detail string, details map[string]any) huma.StatusError {
+func NotFound(code ProblemCode, detail string, details map[string]any) huma.StatusError {
 	if code == "" {
 		code = CodeNotFound
 	}
-	return newProblem(http.StatusNotFound, code, detail, details)
+	return NewProblem(http.StatusNotFound, code, detail, details)
 }
 
 // problemConflict returns a 409 with the supplied code.
-func problemConflict(code ProblemCode, detail string, details map[string]any) huma.StatusError {
+func Conflict(code ProblemCode, detail string, details map[string]any) huma.StatusError {
 	if code == "" {
 		code = CodeConflict
 	}
-	return newProblem(http.StatusConflict, code, detail, details)
+	return NewProblem(http.StatusConflict, code, detail, details)
 }
 
 // problemForbidden returns a 403.
-func problemForbidden(detail string, details map[string]any) huma.StatusError {
-	return newProblem(http.StatusForbidden, CodeForbidden, detail, details)
+func Forbidden(detail string, details map[string]any) huma.StatusError {
+	return NewProblem(http.StatusForbidden, CodeForbidden, detail, details)
 }
 
 // problemInternal returns a 500.
-func problemInternal(detail string) huma.StatusError {
-	return newProblem(http.StatusInternalServerError, CodeInternalError, detail, nil)
+func Internal(detail string) huma.StatusError {
+	return NewProblem(http.StatusInternalServerError, CodeInternalError, detail, nil)
 }
 
 // problemUpstream returns a 502 (provider API failure). The optional
 // provider/host are surfaced in details when non-empty.
-func problemUpstream(detail, provider, host string) huma.StatusError {
+func Upstream(detail, provider, host string) huma.StatusError {
 	d := map[string]any{}
 	if provider != "" {
 		d["provider"] = provider
@@ -370,33 +374,45 @@ func problemUpstream(detail, provider, host string) huma.StatusError {
 	if len(d) == 0 {
 		d = nil
 	}
-	return newProblem(http.StatusBadGateway, CodeUpstreamError, detail, d)
+	return NewProblem(http.StatusBadGateway, CodeUpstreamError, detail, d)
 }
 
 // problemServiceUnavailable returns a 503.
-func problemServiceUnavailable(detail string) huma.StatusError {
-	return newProblem(http.StatusServiceUnavailable, CodeServiceUnavailable, detail, nil)
+func ServiceUnavailable(detail string) huma.StatusError {
+	return NewProblem(http.StatusServiceUnavailable, CodeServiceUnavailable, detail, nil)
 }
 
 // problemPayloadTooLarge returns a 413 with maxBytes in details when known.
-func problemPayloadTooLarge(detail string, maxBytes int64) huma.StatusError {
+func PayloadTooLarge(detail string, maxBytes int64) huma.StatusError {
 	var d map[string]any
 	if maxBytes > 0 {
 		d = map[string]any{"maxBytes": maxBytes}
 	}
-	return newProblem(http.StatusRequestEntityTooLarge, CodePayloadTooLarge, detail, d)
+	return NewProblem(http.StatusRequestEntityTooLarge, CodePayloadTooLarge, detail, d)
 }
 
 // problemUnsupportedCapability returns a 409 with code
 // CodeUnsupportedCapability and details {capability, provider,
 // platformHost}.
-func problemUnsupportedCapability(repo db.Repo, capability string) huma.StatusError {
+func UnsupportedCapability(repo db.Repo, capability string) huma.StatusError {
+	provider := platform.Kind(strings.TrimSpace(repo.Platform))
+	if provider == "" {
+		provider = platform.KindGitHub
+	}
+	host := strings.TrimSpace(repo.PlatformHost)
+	if host == "" {
+		if defaultHost, ok := platform.DefaultHost(provider); ok {
+			host = defaultHost
+		} else {
+			host = platform.DefaultGitHubHost
+		}
+	}
 	details := map[string]any{
 		"capability":   capability,
-		"provider":     string(repoProviderKind(repo)),
-		"platformHost": repoProviderHost(repo),
+		"provider":     string(provider),
+		"platformHost": host,
 	}
-	return newProblem(
+	return NewProblem(
 		http.StatusConflict,
 		CodeUnsupportedCapability,
 		"Unsupported provider capability",
@@ -407,7 +423,7 @@ func problemUnsupportedCapability(repo db.Repo, capability string) huma.StatusEr
 // problemRateLimited returns a 429 with code CodeRateLimited. retryAfter
 // is rendered as an RFC 3339 string when non-nil; provider/host go into
 // details when non-empty.
-func problemRateLimited(provider, host string, retryAfter *time.Time) huma.StatusError {
+func RateLimited(provider, host string, retryAfter *time.Time) huma.StatusError {
 	d := map[string]any{}
 	if retryAfter != nil {
 		d["retryAfter"] = retryAfter.UTC().Format(time.RFC3339)
@@ -421,7 +437,7 @@ func problemRateLimited(provider, host string, retryAfter *time.Time) huma.Statu
 	if len(d) == 0 {
 		d = nil
 	}
-	return newProblem(
+	return NewProblem(
 		http.StatusTooManyRequests,
 		CodeRateLimited,
 		"Upstream rate limit exceeded",
@@ -429,31 +445,10 @@ func problemRateLimited(provider, host string, retryAfter *time.Time) huma.Statu
 	)
 }
 
-func problemOperationRateLimited(repo db.Repo, rate rateLimitAvailability) huma.StatusError {
-	detail := rate.reason
-	if detail == "" {
-		detail = "Upstream rate limit exceeded"
-	}
-	details := map[string]any{
-		"reason":       availabilityCodeRateLimited,
-		"provider":     string(repoProviderKind(repo)),
-		"platformHost": repoProviderHost(repo),
-	}
-	if rate.retryAt != "" {
-		details["retryAfter"] = rate.retryAt
-	}
-	return newProblem(
-		http.StatusTooManyRequests,
-		CodeRateLimited,
-		detail,
-		details,
-	)
-}
-
 // problemBranchConflict returns the 409 used when a local branch already
 // exists with the workspace's requested name. The branch and suggested
 // alternative go into details.
-func problemBranchConflict(branch, suggested string) huma.StatusError {
+func BranchConflict(branch, suggested string) huma.StatusError {
 	d := map[string]any{}
 	if branch != "" {
 		d["branch"] = branch
@@ -464,7 +459,7 @@ func problemBranchConflict(branch, suggested string) huma.StatusError {
 	if len(d) == 0 {
 		d = nil
 	}
-	return newProblem(
+	return NewProblem(
 		http.StatusConflict,
 		CodeBranchConflict,
 		"A local branch with the requested name already exists.",
@@ -476,11 +471,11 @@ func problemBranchConflict(branch, suggested string) huma.StatusError {
 // problem. Provider/host narrow the upstream problem when no platform.Error
 // is in the chain; when one is, mapPlatformError handles the translation
 // (and ignores the provider/host arguments).
-func providerCallProblem(err error, provider, host string) huma.StatusError {
-	return providerCallProblemWithDetail(err, provider, host, "")
+func ProviderCallProblem(err error, provider, host string) huma.StatusError {
+	return ProviderCallProblemWithDetail(err, provider, host, "")
 }
 
-func providerCallProblemWithDetail(
+func ProviderCallProblemWithDetail(
 	err error,
 	provider, host, detail string,
 ) huma.StatusError {
@@ -491,18 +486,18 @@ func providerCallProblemWithDetail(
 		if detail == "" {
 			detail = err.Error()
 		}
-		return problemBadRequest(CodeBadRequest, detail, nil)
+		return BadRequest(CodeBadRequest, detail, nil)
 	}
 	var pe *platform.Error
 	if errors.As(err, &pe) {
-		if mapped := mapPlatformError(err); mapped != nil {
+		if mapped := MapPlatformError(err); mapped != nil {
 			return mapped
 		}
 	}
 	if detail == "" {
 		detail = err.Error()
 	}
-	return problemUpstream(detail, provider, host)
+	return Upstream(detail, provider, host)
 }
 
 // mapPlatformError translates an error from internal/platform into a wire
@@ -510,7 +505,7 @@ func providerCallProblemWithDetail(
 // can propagate those without altering control flow. Returns a generic
 // upstream problem with the error's text when no platform.Error is in
 // the chain.
-func mapPlatformError(err error) huma.StatusError {
+func MapPlatformError(err error) huma.StatusError {
 	if err == nil {
 		return nil
 	}
@@ -518,11 +513,11 @@ func mapPlatformError(err error) huma.StatusError {
 		return nil
 	}
 	if errors.Is(err, tokenauth.ErrMissingToken) {
-		return problemBadRequest(CodeBadRequest, err.Error(), nil)
+		return BadRequest(CodeBadRequest, err.Error(), nil)
 	}
 	var pe *platform.Error
 	if !errors.As(err, &pe) {
-		return problemUpstream(err.Error(), "", "")
+		return Upstream(err.Error(), "", "")
 	}
 	provider := string(pe.Provider)
 	host := pe.PlatformHost
@@ -535,7 +530,7 @@ func mapPlatformError(err error) huma.StatusError {
 			"provider":     provider,
 			"platformHost": host,
 		}
-		return newProblem(
+		return NewProblem(
 			http.StatusConflict,
 			CodeUnsupportedCapability,
 			"Unsupported provider capability",
@@ -546,20 +541,20 @@ func mapPlatformError(err error) huma.StatusError {
 		if pe.Field != "" {
 			details["field"] = pe.Field
 		}
-		return newProblem(
+		return NewProblem(
 			http.StatusBadGateway,
 			CodeUpstreamError,
 			err.Error(),
 			details,
 		)
 	case platform.ErrCodeRateLimited:
-		return problemRateLimited(provider, host, pe.ResetAt)
+		return RateLimited(provider, host, pe.ResetAt)
 	case platform.ErrCodePermissionDenied:
 		d := platformErrorDetails(provider, host)
 		if len(d) == 0 {
 			d = nil
 		}
-		return problemForbidden(err.Error(), d)
+		return Forbidden(err.Error(), d)
 	case platform.ErrCodeNotFound:
 		// A moved-lookup not_found carries the destination repository;
 		// surface the full provider-aware identity as stable extension
@@ -573,7 +568,7 @@ func mapPlatformError(err error) huma.StatusError {
 			details["destinationOwner"] = pe.Destination.Owner
 			details["destinationName"] = pe.Destination.Name
 		}
-		return problemNotFound(CodeNotFound, err.Error(), details)
+		return NotFound(CodeNotFound, err.Error(), details)
 	// Both conflict flavors share wire code `conflict` and HTTP 409;
 	// details.reason is the stable discriminator clients branch on
 	// (stale_state: reload and re-review; conflict: the provider refuses
@@ -596,7 +591,7 @@ func mapPlatformError(err error) huma.StatusError {
 				d[key] = value
 			}
 		}
-		return problemConflict(CodeConflict, detail, d)
+		return Conflict(CodeConflict, detail, d)
 	case platform.ErrCodeConflict:
 		d := platformErrorDetails(provider, host)
 		d["reason"] = "conflict"
@@ -609,14 +604,14 @@ func mapPlatformError(err error) huma.StatusError {
 				d[key] = value
 			}
 		}
-		return problemConflict(CodeConflict, err.Error(), d)
+		return Conflict(CodeConflict, err.Error(), d)
 	case platform.ErrCodeProviderNotConfigured,
 		platform.ErrCodeMissingToken,
 		platform.ErrCodeInvalidRepoRef,
 		platform.ErrCodeInvalidArgument:
-		return problemBadRequest(CodeBadRequest, err.Error(), nil)
+		return BadRequest(CodeBadRequest, err.Error(), nil)
 	default:
-		return problemUpstream(err.Error(), provider, host)
+		return Upstream(err.Error(), provider, host)
 	}
 }
 
@@ -652,7 +647,7 @@ func init() {
 			}
 			details = append(details, &huma.ErrorDetail{Message: e.Error()})
 		}
-		p := newProblem(status, codeForStatus(status), msg, nil)
+		p := NewProblem(status, CodeForStatus(status), msg, nil)
 		if len(details) > 0 {
 			p.Errors = sanitizeProblemErrors(details)
 		}

@@ -9,6 +9,7 @@ import (
 
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 type repoBrowserInput struct {
@@ -134,21 +135,21 @@ type repoBrowserAssetOutput struct {
 func (s *Server) listRepoBrowserRefs(
 	ctx context.Context,
 	input *repoBrowserInput,
-) (*bodyOutput[repoBrowserRefsResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserRefsResponse], error) {
 	return s.listRepoBrowserRefsFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath)
 }
 
 func (s *Server) listRepoBrowserRefsOnHost(
 	ctx context.Context,
 	input *repoBrowserHostInput,
-) (*bodyOutput[repoBrowserRefsResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserRefsResponse], error) {
 	return s.listRepoBrowserRefsFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath)
 }
 
 func (s *Server) listRepoBrowserRefsFor(
 	ctx context.Context,
 	provider, platformHost, owner, name, repoPath string,
-) (*bodyOutput[repoBrowserRefsResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserRefsResponse], error) {
 	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
@@ -157,7 +158,7 @@ func (s *Server) listRepoBrowserRefsFor(
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
-	return &bodyOutput[repoBrowserRefsResponse]{Body: repoBrowserRefsResponse{
+	return &httpapi.BodyOutput[repoBrowserRefsResponse]{Body: repoBrowserRefsResponse{
 		Repo:       s.repoRefFromRepo(*repo),
 		Refs:       refs,
 		DefaultRef: defaultRef,
@@ -168,14 +169,14 @@ func (s *Server) listRepoBrowserRefsFor(
 func (s *Server) listRepoBrowserTree(
 	ctx context.Context,
 	input *repoBrowserRefInput,
-) (*bodyOutput[repoBrowserTreeResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserTreeResponse], error) {
 	return s.listRepoBrowserTreeFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA))
 }
 
 func (s *Server) listRepoBrowserTreeOnHost(
 	ctx context.Context,
 	input *repoBrowserHostRefInput,
-) (*bodyOutput[repoBrowserTreeResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserTreeResponse], error) {
 	return s.listRepoBrowserTreeFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA))
 }
 
@@ -183,7 +184,7 @@ func (s *Server) listRepoBrowserTreeFor(
 	ctx context.Context,
 	provider, platformHost, owner, name, repoPath string,
 	ref gitclone.RepoBrowserRef,
-) (*bodyOutput[repoBrowserTreeResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserTreeResponse], error) {
 	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
@@ -196,7 +197,7 @@ func (s *Server) listRepoBrowserTreeFor(
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
-	return &bodyOutput[repoBrowserTreeResponse]{Body: repoBrowserTreeResponse{
+	return &httpapi.BodyOutput[repoBrowserTreeResponse]{Body: repoBrowserTreeResponse{
 		Repo:      s.repoRefFromRepo(*repo),
 		Ref:       resolvedRef,
 		Entries:   entries,
@@ -207,14 +208,14 @@ func (s *Server) listRepoBrowserTreeFor(
 func (s *Server) getRepoBrowserBlob(
 	ctx context.Context,
 	input *repoBrowserPathInput,
-) (*bodyOutput[repoBrowserBlobResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserBlobResponse], error) {
 	return s.getRepoBrowserBlobFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
 }
 
 func (s *Server) getRepoBrowserBlobOnHost(
 	ctx context.Context,
 	input *repoBrowserHostPathInput,
-) (*bodyOutput[repoBrowserBlobResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserBlobResponse], error) {
 	return s.getRepoBrowserBlobFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
 }
 
@@ -223,7 +224,7 @@ func (s *Server) getRepoBrowserBlobFor(
 	provider, platformHost, owner, name, repoPath string,
 	ref gitclone.RepoBrowserRef,
 	path string,
-) (*bodyOutput[repoBrowserBlobResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserBlobResponse], error) {
 	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
@@ -236,7 +237,7 @@ func (s *Server) getRepoBrowserBlobFor(
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
-	return &bodyOutput[repoBrowserBlobResponse]{Body: repoBrowserBlobResponse{
+	return &httpapi.BodyOutput[repoBrowserBlobResponse]{Body: repoBrowserBlobResponse{
 		Repo: s.repoRefFromRepo(*repo),
 		Ref:  resolvedRef,
 		Blob: blob,
@@ -309,14 +310,14 @@ func isRepoBrowserFullHexSHA(value string) bool {
 func (s *Server) getRepoBrowserLastChanged(
 	ctx context.Context,
 	input *repoBrowserLastChangedInput,
-) (*bodyOutput[repoBrowserLastChangedResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserLastChangedResponse], error) {
 	return s.getRepoBrowserLastChangedFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Paths)
 }
 
 func (s *Server) getRepoBrowserLastChangedOnHost(
 	ctx context.Context,
 	input *repoBrowserHostLastChangedInput,
-) (*bodyOutput[repoBrowserLastChangedResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserLastChangedResponse], error) {
 	return s.getRepoBrowserLastChangedFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Paths)
 }
 
@@ -325,7 +326,7 @@ func (s *Server) getRepoBrowserLastChangedFor(
 	provider, platformHost, owner, name, repoPath string,
 	ref gitclone.RepoBrowserRef,
 	paths []string,
-) (*bodyOutput[repoBrowserLastChangedResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserLastChangedResponse], error) {
 	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
@@ -338,7 +339,7 @@ func (s *Server) getRepoBrowserLastChangedFor(
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
-	return &bodyOutput[repoBrowserLastChangedResponse]{Body: repoBrowserLastChangedResponse{
+	return &httpapi.BodyOutput[repoBrowserLastChangedResponse]{Body: repoBrowserLastChangedResponse{
 		Repo:    s.repoRefFromRepo(*repo),
 		Ref:     resolvedRef,
 		Commits: commits,
@@ -348,14 +349,14 @@ func (s *Server) getRepoBrowserLastChangedFor(
 func (s *Server) getRepoBrowserHistory(
 	ctx context.Context,
 	input *repoBrowserPathInput,
-) (*bodyOutput[repoBrowserHistoryResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserHistoryResponse], error) {
 	return s.getRepoBrowserHistoryFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
 }
 
 func (s *Server) getRepoBrowserHistoryOnHost(
 	ctx context.Context,
 	input *repoBrowserHostPathInput,
-) (*bodyOutput[repoBrowserHistoryResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserHistoryResponse], error) {
 	return s.getRepoBrowserHistoryFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path)
 }
 
@@ -364,7 +365,7 @@ func (s *Server) getRepoBrowserHistoryFor(
 	provider, platformHost, owner, name, repoPath string,
 	ref gitclone.RepoBrowserRef,
 	path string,
-) (*bodyOutput[repoBrowserHistoryResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserHistoryResponse], error) {
 	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
@@ -377,7 +378,7 @@ func (s *Server) getRepoBrowserHistoryFor(
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
-	return &bodyOutput[repoBrowserHistoryResponse]{Body: repoBrowserHistoryResponse{
+	return &httpapi.BodyOutput[repoBrowserHistoryResponse]{Body: repoBrowserHistoryResponse{
 		Repo:    s.repoRefFromRepo(*repo),
 		Ref:     resolvedRef,
 		Path:    path,
@@ -388,14 +389,14 @@ func (s *Server) getRepoBrowserHistoryFor(
 func (s *Server) getRepoBrowserCommit(
 	ctx context.Context,
 	input *repoBrowserCommitInput,
-) (*bodyOutput[repoBrowserCommitResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserCommitResponse], error) {
 	return s.getRepoBrowserCommitFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path, input.SHA)
 }
 
 func (s *Server) getRepoBrowserCommitOnHost(
 	ctx context.Context,
 	input *repoBrowserHostCommitInput,
-) (*bodyOutput[repoBrowserCommitResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserCommitResponse], error) {
 	return s.getRepoBrowserCommitFor(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.RepoPath, repoBrowserRef(input.RefType, input.RefName, input.RefSHA), input.Path, input.SHA)
 }
 
@@ -404,7 +405,7 @@ func (s *Server) getRepoBrowserCommitFor(
 	provider, platformHost, owner, name, repoPath string,
 	ref gitclone.RepoBrowserRef,
 	path, sha string,
-) (*bodyOutput[repoBrowserCommitResponse], error) {
+) (*httpapi.BodyOutput[repoBrowserCommitResponse], error) {
 	repo, repoRef, err := s.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
@@ -417,7 +418,7 @@ func (s *Server) getRepoBrowserCommitFor(
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
-	return &bodyOutput[repoBrowserCommitResponse]{Body: repoBrowserCommitResponse{
+	return &httpapi.BodyOutput[repoBrowserCommitResponse]{Body: repoBrowserCommitResponse{
 		Repo:   s.repoRefFromRepo(*repo),
 		Ref:    resolvedRef,
 		Path:   path,
@@ -506,40 +507,40 @@ func repoBrowserProblem(err error) error {
 		return nil
 	}
 	if errors.Is(err, errRepoPathRequired) {
-		return problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "missing_repo_path"})
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "missing_repo_path"})
 	}
 	if errors.Is(err, errRepoNotFound) {
-		return problemNotFound(CodeRepoNotFound, "repo not found", map[string]any{"reason": "repo_not_found"})
+		return httpapi.NotFound(httpapi.CodeRepoNotFound, "repo not found", map[string]any{"reason": "repo_not_found"})
 	}
 	if errors.Is(err, errRepoBrowserCloneUnavailable) {
-		return problemNotFound(CodeNotFound, "repo browser clone unavailable", map[string]any{"reason": "clone_unavailable"})
+		return httpapi.NotFound(httpapi.CodeNotFound, "repo browser clone unavailable", map[string]any{"reason": "clone_unavailable"})
 	}
 	if errors.Is(err, errRepoBrowserMutableAssetRef) {
-		return problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "mutable_ref_not_allowed"})
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "mutable_ref_not_allowed"})
 	}
 	if errors.Is(err, gitclone.ErrUnsafePath) {
-		return problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "unsafe_path"})
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "unsafe_path"})
 	}
 	if errors.Is(err, gitclone.ErrTooManyPaths) {
-		return problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "too_many_paths"})
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "too_many_paths"})
 	}
 	if errors.Is(err, gitclone.ErrTooLarge) || errors.Is(err, gitclone.ErrTooLargeAsset) {
-		return newProblem(http.StatusRequestEntityTooLarge, CodeBadRequest, err.Error(), map[string]any{"reason": "too_large"})
+		return httpapi.NewProblem(http.StatusRequestEntityTooLarge, httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "too_large"})
 	}
 	if errors.Is(err, gitclone.ErrUnsupportedAsset) {
-		return newProblem(http.StatusUnsupportedMediaType, CodeBadRequest, err.Error(), map[string]any{"reason": "unsupported_asset"})
+		return httpapi.NewProblem(http.StatusUnsupportedMediaType, httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "unsupported_asset"})
 	}
 	if errors.Is(err, gitclone.ErrCommitOutOfScope) {
-		return problemNotFound(CodeNotFound, err.Error(), map[string]any{"reason": "commit_out_of_scope"})
+		return httpapi.NotFound(httpapi.CodeNotFound, err.Error(), map[string]any{"reason": "commit_out_of_scope"})
 	}
 	if errors.Is(err, gitclone.ErrNotFound) {
-		return problemNotFound(CodeNotFound, err.Error(), map[string]any{"reason": "not_found"})
+		return httpapi.NotFound(httpapi.CodeNotFound, err.Error(), map[string]any{"reason": "not_found"})
 	}
 	if strings.Contains(err.Error(), "platform_host is required") ||
 		strings.Contains(err.Error(), "unsupported platform") {
-		return problemBadRequest(CodeBadRequest, err.Error(), nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
-	return problemInternal(err.Error())
+	return httpapi.Internal(err.Error())
 }
 
 func strconvFormatInt(v int64) string {

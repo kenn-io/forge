@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"go.kenn.io/middleman/internal/server/httpapi"
 	telemetrypkg "go.kenn.io/middleman/internal/telemetry"
 )
 
@@ -19,7 +20,7 @@ type telemetryEventResponse struct {
 	Status string `json:"status"`
 }
 
-type telemetryEventOutput = acceptedBodyOutput[telemetryEventResponse]
+type telemetryEventOutput = httpapi.AcceptedBodyOutput[telemetryEventResponse]
 
 func (s *Server) captureTelemetryEvent(
 	_ context.Context,
@@ -27,18 +28,18 @@ func (s *Server) captureTelemetryEvent(
 ) (*telemetryEventOutput, error) {
 	event := strings.TrimSpace(input.Body.Event)
 	if event == "" {
-		return nil, problemBadRequest(
-			CodeBadRequest, "telemetry event is required", nil,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest, "telemetry event is required", nil,
 		)
 	}
 	if len(event) > 120 {
-		return nil, problemBadRequest(
-			CodeBadRequest, "telemetry event is too long", nil,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest, "telemetry event is too long", nil,
 		)
 	}
 	if !telemetrypkg.EventAllowed(event) {
-		return nil, problemBadRequest(
-			CodeBadRequest, "unsupported telemetry event", nil,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest, "unsupported telemetry event", nil,
 		)
 	}
 
@@ -47,11 +48,11 @@ func (s *Server) captureTelemetryEvent(
 	)
 	if err != nil {
 		if errors.Is(err, telemetrypkg.ErrUnsupportedEvent) {
-			return nil, problemBadRequest(
-				CodeBadRequest, "unsupported telemetry event", nil,
+			return nil, httpapi.BadRequest(
+				httpapi.CodeBadRequest, "unsupported telemetry event", nil,
 			)
 		}
-		return nil, problemInternal("sanitize telemetry event failed")
+		return nil, httpapi.Internal("sanitize telemetry event failed")
 	}
 
 	if s.telemetry == nil || !s.telemetry.Enabled() {
@@ -63,11 +64,11 @@ func (s *Server) captureTelemetryEvent(
 
 	if err := s.telemetry.Capture(event, safeProperties); err != nil {
 		if errors.Is(err, telemetrypkg.ErrUnsupportedEvent) {
-			return nil, problemBadRequest(
-				CodeBadRequest, "unsupported telemetry event", nil,
+			return nil, httpapi.BadRequest(
+				httpapi.CodeBadRequest, "unsupported telemetry event", nil,
 			)
 		}
-		return nil, problemInternal("capture telemetry event failed")
+		return nil, httpapi.Internal("capture telemetry event failed")
 	}
 	return &telemetryEventOutput{
 		Status: 202,

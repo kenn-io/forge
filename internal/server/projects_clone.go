@@ -10,6 +10,7 @@ import (
 	gitcmd "go.kenn.io/kit/git/cmd"
 
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 // Clone-and-register backs remote project acquisition: the host that
@@ -37,25 +38,25 @@ func (s *Server) cloneProject(
 ) (*registerProjectOutput, error) {
 	rawURL := strings.TrimSpace(input.Body.URL)
 	if rawURL == "" {
-		return nil, problemValidation("body.url", "url is required")
+		return nil, httpapi.Validation("body.url", "url is required")
 	}
 	rawPath := expandHomeCWD(strings.TrimSpace(input.Body.Path))
 	if rawPath == "" {
-		return nil, problemValidation("body.path", "path is required")
+		return nil, httpapi.Validation("body.path", "path is required")
 	}
 	abs, err := filepath.Abs(rawPath)
 	if err != nil {
-		return nil, problemValidation("body.path", "resolve path: "+err.Error())
+		return nil, httpapi.Validation("body.path", "resolve path: "+err.Error())
 	}
 	if _, statErr := os.Stat(abs); statErr == nil {
-		return nil, problemConflict(
-			CodeDestinationExists,
+		return nil, httpapi.Conflict(
+			httpapi.CodeDestinationExists,
 			"destination already exists: "+abs,
 			nil,
 		)
 	}
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-		return nil, problemInternal("create destination parent: " + err.Error())
+		return nil, httpapi.Internal("create destination parent: " + err.Error())
 	}
 	// Reserve the destination before cloning: git clones happily into
 	// an existing empty directory, and creating it here means every
@@ -63,13 +64,13 @@ func (s *Server) cloneProject(
 	// concurrent creator loses the Mkdir race and conflicts instead.
 	if err := os.Mkdir(abs, 0o755); err != nil {
 		if os.IsExist(err) {
-			return nil, problemConflict(
-				CodeDestinationExists,
+			return nil, httpapi.Conflict(
+				httpapi.CodeDestinationExists,
 				"destination already exists: "+abs,
 				nil,
 			)
 		}
-		return nil, problemInternal("create destination: " + err.Error())
+		return nil, httpapi.Internal("create destination: " + err.Error())
 	}
 
 	args := []string{"clone"}
@@ -82,8 +83,8 @@ func (s *Server) cloneProject(
 		// submodule failures can leave a partial directory that would
 		// make every retry hit destinationExists.
 		_ = os.RemoveAll(abs)
-		return nil, problemBadRequest(
-			CodeBadRequest,
+		return nil, httpapi.BadRequest(
+			httpapi.CodeBadRequest,
 			"git clone failed: "+err.Error(),
 			nil,
 		)

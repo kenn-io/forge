@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 // The user-repositories endpoint backs "pick one of your repositories"
@@ -69,9 +71,9 @@ func (s *Server) listUserRepositories(
 	provider := strings.ToLower(strings.TrimSpace(input.Provider))
 	platformHost := strings.TrimSpace(input.PlatformHost)
 	if provider != "" && provider != "github" {
-		return nil, newProblem(
+		return nil, httpapi.NewProblem(
 			http.StatusConflict,
-			CodeUnsupportedCapability,
+			httpapi.CodeUnsupportedCapability,
 			"Unsupported provider capability",
 			map[string]any{
 				"capability":   "user-repositories",
@@ -144,7 +146,7 @@ func (s *Server) fetchUserRepositoriesPage(
 	out, err := run(subCtx, "gh", args...)
 	if err != nil {
 		if errors.Is(subCtx.Err(), context.DeadlineExceeded) {
-			return nil, problemUpstream(
+			return nil, httpapi.Upstream(
 				"listing repositories timed out — check the network or rerun after `gh auth status`",
 				"github", platformHost,
 			)
@@ -153,7 +155,7 @@ func (s *Server) fetchUserRepositoriesPage(
 	}
 	var raw []ghUserRepository
 	if err := json.Unmarshal(out, &raw); err != nil {
-		return nil, problemInternal(
+		return nil, httpapi.Internal(
 			"decode repository listing: " + err.Error(),
 		)
 	}
@@ -167,8 +169,8 @@ func (s *Server) fetchUserRepositoriesPage(
 func userRepositoriesProblem(err error, platformHost string) error {
 	var execErr *exec.Error
 	if errors.As(err, &execErr) && errors.Is(execErr.Err, exec.ErrNotFound) {
-		return problemNotFound(
-			CodeToolMissing,
+		return httpapi.NotFound(
+			httpapi.CodeToolMissing,
 			"the gh CLI is not installed on this host",
 			nil,
 		)
@@ -182,12 +184,12 @@ func userRepositoriesProblem(err error, platformHost string) error {
 	if strings.Contains(lowered, "auth") ||
 		strings.Contains(lowered, "logged in") ||
 		strings.Contains(lowered, "authentication") {
-		return newProblem(
+		return httpapi.NewProblem(
 			http.StatusForbidden,
-			CodeToolUnauthenticated,
+			httpapi.CodeToolUnauthenticated,
 			"gh is not authenticated on this host: "+message,
 			nil,
 		)
 	}
-	return problemUpstream("gh api user/repos failed: "+message, "github", platformHost)
+	return httpapi.Upstream("gh api user/repos failed: "+message, "github", platformHost)
 }

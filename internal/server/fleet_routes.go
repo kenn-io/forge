@@ -6,6 +6,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"go.kenn.io/middleman/internal/fleet"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 type snapshotInput struct {
@@ -23,11 +24,11 @@ type rawSnapshotOutput struct {
 // registerFleetRoutes registers the fleet snapshot read endpoints.
 func (s *Server) registerFleetRoutes(api huma.API) {
 	huma.Get(api, "/snapshot", s.getSnapshot,
-		documentOperation("get-snapshot", "Read the workspace snapshot", "Fleet"))
+		httpapi.DocumentOperation("get-snapshot", "Read the workspace snapshot", "Fleet"))
 	huma.Get(api, "/snapshot/raw", s.getSnapshotRaw,
-		documentOperation("get-snapshot-raw", "Read the local raw inventory", "Fleet"))
+		httpapi.DocumentOperation("get-snapshot-raw", "Read the local raw inventory", "Fleet"))
 	huma.Post(api, "/snapshot/refresh-stats", s.refreshFleetStats,
-		documentOperation("refresh-fleet-stats",
+		httpapi.DocumentOperation("refresh-fleet-stats",
 			"Refresh all worktree git stats", "Fleet"))
 	s.registerFleetOperationRoutes(api)
 	s.registerFleetProjectRoutes(api)
@@ -59,7 +60,7 @@ func (s *Server) refreshFleetStats(
 func (s *Server) getSnapshot(ctx context.Context, in *snapshotInput) (*snapshotOutput, error) {
 	snap, err := s.buildFleetSnapshot(ctx, in.IncludePeers)
 	if err != nil {
-		return nil, problemInternal("build snapshot: " + err.Error())
+		return nil, httpapi.Internal("build snapshot: " + err.Error())
 	}
 	return &snapshotOutput{Body: snap}, nil
 }
@@ -69,7 +70,7 @@ func (s *Server) getSnapshot(ctx context.Context, in *snapshotInput) (*snapshotO
 func (s *Server) getSnapshotRaw(ctx context.Context, _ *struct{}) (*rawSnapshotOutput, error) {
 	raw, err := s.buildLocalRaw(ctx)
 	if err != nil {
-		return nil, problemInternal("build raw snapshot: " + err.Error())
+		return nil, httpapi.Internal("build raw snapshot: " + err.Error())
 	}
 	return &rawSnapshotOutput{Body: raw}, nil
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/docs"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 const docsMaxBodyBytes = 4 << 20
@@ -101,7 +102,7 @@ type docsFileWriteBody struct {
 	Size    int    `json:"size"`
 }
 
-type docsWriteFileOutput = bodyOutput[docsFileWriteBody]
+type docsWriteFileOutput = httpapi.BodyOutput[docsFileWriteBody]
 
 type docsCreateFileInput struct {
 	ID   string `path:"id"`
@@ -111,7 +112,7 @@ type docsCreateFileInput struct {
 	}
 }
 
-type docsCreateFileOutput = createdOutput[docsFileWriteBody]
+type docsCreateFileOutput = httpapi.CreatedOutput[docsFileWriteBody]
 
 type docsRenameFileInput struct {
 	ID   string `path:"id"`
@@ -218,7 +219,7 @@ func (l *docsPublishLockSet) release(folderID string) {
 
 func (s *Server) registerDocsAPI(api huma.API) {
 	huma.Get(api, "/docs/folders", s.listDocsFolders,
-		documentOperation("list-docs-folders", "List docs folders", "Docs"))
+		httpapi.DocumentOperation("list-docs-folders", "List docs folders", "Docs"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-docs-folder",
 		Method:        http.MethodPost,
@@ -245,13 +246,13 @@ func (s *Server) registerDocsAPI(api huma.API) {
 		Tags:          []string{"Docs"},
 	}, s.deleteDocsFolder)
 	huma.Get(api, "/docs/browse", s.browseDocsFolders,
-		documentOperation("browse-docs-folders", "Browse docs folders", "Docs"))
+		httpapi.DocumentOperation("browse-docs-folders", "Browse docs folders", "Docs"))
 	huma.Get(api, "/docs/folders/{id}/tree", s.getDocsTree,
-		documentOperation("get-docs-tree", "Get docs folder tree", "Docs"))
+		httpapi.DocumentOperation("get-docs-tree", "Get docs folder tree", "Docs"))
 	huma.Get(api, "/docs/folders/{id}/git", s.getDocsGitStatus,
-		documentOperation("get-docs-git-status", "Get docs Git status", "Docs"))
+		httpapi.DocumentOperation("get-docs-git-status", "Get docs Git status", "Docs"))
 	huma.Get(api, "/docs/folders/{id}/git/changes", s.getDocsGitChanges,
-		documentOperation("get-docs-git-changes", "Get docs Git changes", "Docs"))
+		httpapi.DocumentOperation("get-docs-git-changes", "Get docs Git changes", "Docs"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "publish-docs-git",
 		Method:        http.MethodPost,
@@ -270,7 +271,7 @@ func (s *Server) registerDocsAPI(api huma.API) {
 		Tags:          []string{"Docs"},
 	}, s.pullDocsGit)
 	huma.Get(api, "/docs/folders/{id}/file", s.readDocsFile,
-		documentOperation("read-docs-file", "Read docs file", "Docs"))
+		httpapi.DocumentOperation("read-docs-file", "Read docs file", "Docs"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "write-docs-file",
 		Method:        http.MethodPut,
@@ -324,9 +325,9 @@ func (s *Server) registerDocsAPI(api huma.API) {
 		},
 	}, s.readDocsBlob)
 	huma.Get(api, "/docs/folders/{id}/search", s.searchDocsFolder,
-		documentOperation("search-docs-folder", "Search docs folder", "Docs"))
+		httpapi.DocumentOperation("search-docs-folder", "Search docs folder", "Docs"))
 	huma.Get(api, "/docs/search", s.searchDocs,
-		documentOperation("search-docs", "Search docs", "Docs"))
+		httpapi.DocumentOperation("search-docs", "Search docs", "Docs"))
 }
 
 func (s *Server) listDocsFolders(_ context.Context, _ *struct{}) (*listDocsFoldersOutput, error) {
@@ -337,11 +338,11 @@ func (s *Server) listDocsFolders(_ context.Context, _ *struct{}) (*listDocsFolde
 
 func (s *Server) createDocsFolder(_ context.Context, in *createDocsFolderInput) (*createDocsFolderOutput, error) {
 	if s.cfgPath == "" || s.cfg == nil {
-		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 	path := strings.TrimSpace(in.Body.Path)
 	if strings.TrimSpace(path) == "" {
-		return nil, problemBadRequest(CodeBadRequest, "path is required", map[string]any{"reason": "missingPath"})
+		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, "path is required", map[string]any{"reason": "missingPath"})
 	}
 
 	s.cfgMu.Lock()
@@ -351,7 +352,7 @@ func (s *Server) createDocsFolder(_ context.Context, in *createDocsFolderInput) 
 	if id == "" {
 		derivedPath, err := docsFolderDerivePath(path)
 		if err != nil {
-			return nil, problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "invalidFolder"})
+			return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "invalidFolder"})
 		}
 		id = docs.DeriveFolderID(derivedPath, prev)
 	}
@@ -363,7 +364,7 @@ func (s *Server) createDocsFolder(_ context.Context, in *createDocsFolderInput) 
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.DocFolders = prev
 		s.docsRegistry.Replace(prev)
-		return nil, problemInternal("save config: " + err.Error())
+		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	added, err := s.docsRegistry.Lookup(id)
 	if err != nil {
@@ -376,7 +377,7 @@ func (s *Server) createDocsFolder(_ context.Context, in *createDocsFolderInput) 
 
 func (s *Server) updateDocsFolder(_ context.Context, in *updateDocsFolderInput) (*docsFolderOutput, error) {
 	if s.cfgPath == "" || s.cfg == nil {
-		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
@@ -389,7 +390,7 @@ func (s *Server) updateDocsFolder(_ context.Context, in *updateDocsFolderInput) 
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.DocFolders = prev
 		s.docsRegistry.Replace(prev)
-		return nil, problemInternal("save config: " + err.Error())
+		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	renamed, err := s.docsRegistry.Lookup(id)
 	if err != nil {
@@ -402,7 +403,7 @@ func (s *Server) updateDocsFolder(_ context.Context, in *updateDocsFolderInput) 
 
 func (s *Server) deleteDocsFolder(_ context.Context, in *docsFolderIDInput) (*docsNoContentOutput, error) {
 	if s.cfgPath == "" || s.cfg == nil {
-		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
@@ -414,7 +415,7 @@ func (s *Server) deleteDocsFolder(_ context.Context, in *docsFolderIDInput) (*do
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.DocFolders = prev
 		s.docsRegistry.Replace(prev)
-		return nil, problemInternal("save config: " + err.Error())
+		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	return &docsNoContentOutput{Status: http.StatusNoContent}, nil
 }
@@ -426,14 +427,14 @@ func (s *Server) browseDocsFolders(_ context.Context, in *docsBrowseInput) (*doc
 	}
 	expanded, err := docsFolderDerivePath(path)
 	if err != nil {
-		return nil, problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "invalidFolder"})
+		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "invalidFolder"})
 	}
 	entries, err := os.ReadDir(expanded)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, problemNotFound(CodeNotFound, err.Error(), map[string]any{"reason": "notFound"})
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, err.Error(), map[string]any{"reason": "notFound"})
 		}
-		return nil, problemInternal(err.Error())
+		return nil, httpapi.Internal(err.Error())
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Name() < entries[j].Name()
@@ -456,31 +457,31 @@ func (s *Server) browseDocsFolders(_ context.Context, in *docsBrowseInput) (*doc
 	return out, nil
 }
 
-func (s *Server) getDocsTree(_ context.Context, in *docsFolderIDInput) (*bodyOutput[docs.Node], error) {
+func (s *Server) getDocsTree(_ context.Context, in *docsFolderIDInput) (*httpapi.BodyOutput[docs.Node], error) {
 	tree, err := s.docsRegistry.Tree(in.ID)
 	if err != nil {
 		return nil, docsRegistryProblem(err)
 	}
-	return &bodyOutput[docs.Node]{Body: tree}, nil
+	return &httpapi.BodyOutput[docs.Node]{Body: tree}, nil
 }
 
-func (s *Server) getDocsGitStatus(ctx context.Context, in *docsFolderIDInput) (*bodyOutput[docs.GitStatusResponse], error) {
+func (s *Server) getDocsGitStatus(ctx context.Context, in *docsFolderIDInput) (*httpapi.BodyOutput[docs.GitStatusResponse], error) {
 	status, err := s.docsRegistry.GitStatus(ctx, in.ID)
 	if err != nil {
 		return nil, docsRegistryProblem(err)
 	}
-	return &bodyOutput[docs.GitStatusResponse]{Body: status}, nil
+	return &httpapi.BodyOutput[docs.GitStatusResponse]{Body: status}, nil
 }
 
-func (s *Server) getDocsGitChanges(ctx context.Context, in *docsFolderIDInput) (*bodyOutput[docs.GitChangesResponse], error) {
+func (s *Server) getDocsGitChanges(ctx context.Context, in *docsFolderIDInput) (*httpapi.BodyOutput[docs.GitChangesResponse], error) {
 	changes, err := s.docsRegistry.GitChanges(ctx, in.ID)
 	if err != nil {
 		return nil, docsRegistryProblem(err)
 	}
-	return &bodyOutput[docs.GitChangesResponse]{Body: changes}, nil
+	return &httpapi.BodyOutput[docs.GitChangesResponse]{Body: changes}, nil
 }
 
-func (s *Server) publishDocsGit(ctx context.Context, in *docsGitPublishInput) (*bodyOutput[docs.PublishResponse], error) {
+func (s *Server) publishDocsGit(ctx context.Context, in *docsGitPublishInput) (*httpapi.BodyOutput[docs.PublishResponse], error) {
 	folder, err := s.docsRegistry.Lookup(in.ID)
 	if err != nil {
 		return nil, docsRegistryProblem(err)
@@ -489,8 +490,8 @@ func (s *Server) publishDocsGit(ctx context.Context, in *docsGitPublishInput) (*
 	// registry allows several IDs over one path, and a git operation is
 	// per-repository (FETCH_HEAD, the index, and HEAD are repo-global).
 	if !s.docsPublishLocks.tryAcquire(folder.Path) {
-		return nil, problemConflict(
-			CodeConflict,
+		return nil, httpapi.Conflict(
+			httpapi.CodeConflict,
 			"another publish is in flight for this folder",
 			map[string]any{"reason": "publishInProgress"},
 		)
@@ -501,10 +502,10 @@ func (s *Server) publishDocsGit(ctx context.Context, in *docsGitPublishInput) (*
 	if err != nil {
 		return nil, docsGitPublishProblem(err)
 	}
-	return &bodyOutput[docs.PublishResponse]{Body: published}, nil
+	return &httpapi.BodyOutput[docs.PublishResponse]{Body: published}, nil
 }
 
-func (s *Server) pullDocsGit(ctx context.Context, in *docsFolderIDInput) (*bodyOutput[docs.PullResponse], error) {
+func (s *Server) pullDocsGit(ctx context.Context, in *docsFolderIDInput) (*httpapi.BodyOutput[docs.PullResponse], error) {
 	folder, err := s.docsRegistry.Lookup(in.ID)
 	if err != nil {
 		return nil, docsRegistryProblem(err)
@@ -516,8 +517,8 @@ func (s *Server) pullDocsGit(ctx context.Context, in *docsFolderIDInput) (*bodyO
 	// gives against a concurrent editor save — and the UI additionally
 	// disables pull while the markdown editor is open.
 	if !s.docsPublishLocks.tryAcquire(folder.Path) {
-		return nil, problemConflict(
-			CodeConflict,
+		return nil, httpapi.Conflict(
+			httpapi.CodeConflict,
 			"another git operation is in flight for this folder",
 			map[string]any{"reason": "gitOperationInProgress"},
 		)
@@ -528,7 +529,7 @@ func (s *Server) pullDocsGit(ctx context.Context, in *docsFolderIDInput) (*bodyO
 	if err != nil {
 		return nil, docsGitPullProblem(err)
 	}
-	return &bodyOutput[docs.PullResponse]{Body: pulled}, nil
+	return &httpapi.BodyOutput[docs.PullResponse]{Body: pulled}, nil
 }
 
 func (s *Server) readDocsFile(_ context.Context, in *docsFolderPathInput) (*docsReadFileOutput, error) {
@@ -630,7 +631,7 @@ func (s *Server) searchDocsFolder(_ context.Context, in *docsSearchInput) (*docs
 func (s *Server) searchDocs(ctx context.Context, in *docsSearchAllInput) (*docsSearchAllOutput, error) {
 	result, err := s.docsRegistry.SearchAll(ctx, in.Query, docsSearchLimit(in.Limit))
 	if err != nil {
-		return nil, problemInternal("docs search failed: " + err.Error())
+		return nil, httpapi.Internal("docs search failed: " + err.Error())
 	}
 	hits := result.Hits
 	if hits == nil {
@@ -673,8 +674,8 @@ func docsFolderDerivePath(path string) (string, error) {
 }
 
 func docsMissingPathProblem() huma.StatusError {
-	return problemBadRequest(
-		CodeBadRequest,
+	return httpapi.BadRequest(
+		httpapi.CodeBadRequest,
 		"path query parameter is required",
 		map[string]any{"reason": "missingPath"},
 	)
@@ -684,23 +685,23 @@ func docsRegistryProblem(err error) huma.StatusError {
 	var unsafeConfig *docs.UnsafeGitConfigError
 	switch {
 	case errors.As(err, &unsafeConfig):
-		return problemBadRequest(CodeBadRequest, unsafeConfig.Error(), map[string]any{"reason": "unsafeGitConfig"})
+		return httpapi.BadRequest(httpapi.CodeBadRequest, unsafeConfig.Error(), map[string]any{"reason": "unsafeGitConfig"})
 	case errors.Is(err, docs.ErrFolderNotFound):
-		return problemNotFound(CodeNotFound, err.Error(), map[string]any{"reason": "folderNotFound"})
+		return httpapi.NotFound(httpapi.CodeNotFound, err.Error(), map[string]any{"reason": "folderNotFound"})
 	case errors.Is(err, docs.ErrDuplicateFolderID):
-		return problemConflict(CodeConflict, err.Error(), map[string]any{"reason": "duplicateFolderID"})
+		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": "duplicateFolderID"})
 	case errors.Is(err, docs.ErrInvalidFolder):
-		return problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "invalidFolder"})
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "invalidFolder"})
 	case errors.Is(err, docs.ErrOutsideFolder):
-		return problemForbidden(err.Error(), map[string]any{"reason": "outsideFolder"})
+		return httpapi.Forbidden(err.Error(), map[string]any{"reason": "outsideFolder"})
 	case errors.Is(err, docs.ErrUnsupportedExtension):
-		return newProblem(http.StatusUnsupportedMediaType, CodeBadRequest, err.Error(), map[string]any{"reason": "unsupportedExtension"})
+		return httpapi.NewProblem(http.StatusUnsupportedMediaType, httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "unsupportedExtension"})
 	case errors.Is(err, docs.ErrAlreadyExists):
-		return problemConflict(CodeConflict, err.Error(), map[string]any{"reason": "alreadyExists"})
+		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": "alreadyExists"})
 	case errors.Is(err, os.ErrNotExist):
-		return problemNotFound(CodeNotFound, err.Error(), map[string]any{"reason": "notFound"})
+		return httpapi.NotFound(httpapi.CodeNotFound, err.Error(), map[string]any{"reason": "notFound"})
 	default:
-		return problemInternal(err.Error())
+		return httpapi.Internal(err.Error())
 	}
 }
 
@@ -710,27 +711,27 @@ func docsGitPublishProblem(err error) huma.StatusError {
 	var pushFailed *docs.PushFailedAfterCommitError
 	switch {
 	case errors.Is(err, docs.ErrEmptyMessage):
-		return problemBadRequest(CodeBadRequest, "commit message is required", map[string]any{"reason": "emptyMessage"})
+		return httpapi.BadRequest(httpapi.CodeBadRequest, "commit message is required", map[string]any{"reason": "emptyMessage"})
 	case errors.Is(err, docs.ErrNoMarkdownChanges):
-		return problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "noMarkdownChanges"})
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "noMarkdownChanges"})
 	case errors.Is(err, docs.ErrNotAGitRepo):
-		return problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "notGitRepo"})
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "notGitRepo"})
 	case errors.Is(err, docs.ErrIndexNotClean):
-		return problemConflict(CodeConflict, err.Error(), map[string]any{"reason": "indexNotClean"})
+		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": "indexNotClean"})
 	case errors.Is(err, docs.ErrConflict):
-		return problemConflict(CodeConflict, err.Error(), map[string]any{"reason": "conflict"})
+		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": "conflict"})
 	case errors.As(err, &noUpstream):
-		return problemBadRequest(CodeBadRequest, noUpstream.Error(), map[string]any{
+		return httpapi.BadRequest(httpapi.CodeBadRequest, noUpstream.Error(), map[string]any{
 			"reason":            "noUpstream",
 			"branch":            noUpstream.Branch,
 			"suggested_command": noUpstream.SuggestedCommand,
 		})
 	case errors.As(err, &commitFailed):
-		return newProblem(http.StatusInternalServerError, CodeInternalError, commitFailed.Stderr, map[string]any{
+		return httpapi.NewProblem(http.StatusInternalServerError, httpapi.CodeInternalError, commitFailed.Stderr, map[string]any{
 			"reason": "commitFailed",
 		})
 	case errors.As(err, &pushFailed):
-		return newProblem(http.StatusBadGateway, CodeUpstreamError, pushFailed.Error(), map[string]any{
+		return httpapi.NewProblem(http.StatusBadGateway, httpapi.CodeUpstreamError, pushFailed.Error(), map[string]any{
 			"reason": "pushFailedAfterCommit",
 			"commit": pushFailed.Commit,
 		})
@@ -744,17 +745,17 @@ func docsGitPullProblem(err error) huma.StatusError {
 	var pullFailed *docs.PullFailedError
 	switch {
 	case errors.Is(err, docs.ErrNotAGitRepo):
-		return problemBadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "notGitRepo"})
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "notGitRepo"})
 	case errors.Is(err, docs.ErrDiverged):
-		return problemConflict(CodeConflict, err.Error(), map[string]any{"reason": "diverged"})
+		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": "diverged"})
 	case errors.As(err, &noUpstream):
-		return problemBadRequest(CodeBadRequest, noUpstream.Error(), map[string]any{
+		return httpapi.BadRequest(httpapi.CodeBadRequest, noUpstream.Error(), map[string]any{
 			"reason":            "noUpstream",
 			"branch":            noUpstream.Branch,
 			"suggested_command": noUpstream.SuggestedCommand,
 		})
 	case errors.As(err, &pullFailed):
-		return newProblem(http.StatusBadGateway, CodeUpstreamError, pullFailed.Error(), map[string]any{
+		return httpapi.NewProblem(http.StatusBadGateway, httpapi.CodeUpstreamError, pullFailed.Error(), map[string]any{
 			"reason": "pullFailed",
 		})
 	default:

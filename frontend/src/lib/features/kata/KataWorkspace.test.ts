@@ -721,6 +721,107 @@ describe("KataWorkspace snapshot authority", () => {
     );
   });
 
+  it("re-resolves a link peer whose identity moved after catalog enrichment", async () => {
+    acceptHomeDaemon();
+    const selected = initialIssues[0]!;
+    const movedPeer = { ...issue("issue-9022", "Reopened peer", "project-kata"), status: "open" as const };
+    const linkedDetail = detail(selected.uid, initialIssues);
+    linkedDetail.links = [
+      {
+        id: 1,
+        project_id: selected.project_id,
+        from: { uid: selected.uid, short_id: selected.short_id },
+        to: { uid: movedPeer.uid, short_id: movedPeer.short_id },
+        type: "related",
+        author: "middleman",
+        created_at: fetchedAt,
+      },
+    ];
+    const seenAuthorities: Array<{
+      authority: string;
+      scope: string;
+      projectUID?: string | undefined;
+      selectedIssueUID?: string | undefined;
+    }> = [];
+    const onRouteStateChange = vi.fn();
+    const { api } = createWorkspaceAPI([...initialIssues, movedPeer], {
+      snapshot: (request, snapshot) => {
+        seenAuthorities.push({
+          authority: request.authority,
+          scope: request.scope,
+          projectUID: request.projectUID,
+          selectedIssueUID: request.selectedIssueUID,
+        });
+        // The routing attempt derived from the stale closed identity: the
+        // server omits the non-member selection, mirroring a peer that
+        // reopened after enrichment.
+        if (request.authority === "closed" && request.selectedIssueUID === movedPeer.uid) {
+          return { ...snapshot, enrichment: {} };
+        }
+        if (request.selectedIssueUID !== selected.uid) return snapshot;
+        const catalogTemplate = snapshot.issues?.[0];
+        if (!catalogTemplate) throw new Error("expected snapshot catalog fixture");
+        // The accepted snapshot enriched the peer while it was still closed;
+        // it reopened afterwards, so the live rows disagree with this catalog.
+        return {
+          ...snapshot,
+          member_issue_uids: (snapshot.member_issue_uids ?? []).filter((uid: string) => uid !== movedPeer.uid),
+          issues: [
+            ...(snapshot.issues ?? []).filter((row: { uid: string }) => row.uid !== movedPeer.uid),
+            {
+              ...catalogTemplate,
+              id: movedPeer.id,
+              uid: movedPeer.uid,
+              project_id: movedPeer.project_id,
+              project_uid: movedPeer.project_uid,
+              project_name: movedPeer.project_name,
+              short_id: movedPeer.short_id,
+              qualified_id: movedPeer.qualified_id,
+              title: movedPeer.title,
+              status: "closed",
+            },
+          ],
+          enrichment: {
+            ...snapshot.enrichment,
+            selected_detail: {
+              detail: linkedDetail,
+              etag: '"snapshot-etag"',
+              workspace_target: { available: false },
+            },
+          },
+        };
+      },
+    });
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid, onRouteStateChange } });
+
+    await screen.findByRole("heading", { name: selected.title });
+    const links = screen.getByRole("region", { name: "Links" });
+    await fireEvent.click(within(links).getByRole("button", { name: "Filter links" }));
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Closed" }));
+    await fireEvent.click(within(links).getByRole("button", { name: /Reopened peer/ }));
+
+    await screen.findByRole("heading", { name: "Reopened peer" });
+    expect(seenAuthorities).toContainEqual({
+      authority: "closed",
+      scope: "project",
+      projectUID: movedPeer.project_uid,
+      selectedIssueUID: movedPeer.uid,
+    });
+    expect(seenAuthorities).toContainEqual({
+      authority: "all",
+      scope: "global",
+      projectUID: undefined,
+      selectedIssueUID: movedPeer.uid,
+    });
+    await waitFor(() =>
+      expect(onRouteStateChange).toHaveBeenCalledWith({
+        view: null,
+        scope: "project-kata",
+        issue: movedPeer.uid,
+      }),
+    );
+  });
+
   it("keeps relationship filters across task navigation and resets state filters with the workspace scope", async () => {
     acceptHomeDaemon();
     const root = { ...issue("issue-root", "Root task", "project-kata"), id: 101 };

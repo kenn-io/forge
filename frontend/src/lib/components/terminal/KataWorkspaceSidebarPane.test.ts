@@ -373,6 +373,75 @@ describe("KataWorkspaceSidebarPane", () => {
     expect(deleteAttempts).toBe(1);
   });
 
+  it("retries a conflicted recurrence delete with the reloaded revision", async () => {
+    let snapshotAttempts = 0;
+    let recurrenceReads = 0;
+    const seenIfMatches: string[] = [];
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(
+        typeof input === "string" ? input : input instanceof URL ? input : input.url,
+        window.location.origin,
+      );
+      if (url.pathname === "/api/v1/kata/tasks/snapshot") {
+        snapshotAttempts += 1;
+        return response({
+          server_instance_id: "server-1",
+          daemon_id: "home",
+          intent: { scope: "global", authority: "all" },
+          generation: snapshotAttempts,
+          invalidation_epoch: snapshotAttempts,
+          event_cursor: 0,
+          fetched_at: fetchedAt,
+          projects,
+          member_issue_uids: [issue().uid],
+          issues: [issue()],
+          enrichment: {
+            selected_issue_uid: issue().uid,
+            selected_detail: {
+              detail: detail(),
+              etag: `"rev-${snapshotAttempts}"`,
+              workspace_target: { available: false },
+            },
+            selected_history: [],
+          },
+        });
+      }
+      if (url.pathname.endsWith("/recurrences") && init?.method !== "DELETE") {
+        recurrenceReads += 1;
+        // The recurrence is bumped by another client after the first read, so
+        // the post-conflict reload serves a newer revision.
+        const revision = recurrenceReads === 1 ? 9 : 10;
+        return response({ recurrences: [{ ...recurrence(), revision }], fetched_at: fetchedAt });
+      }
+      if (url.pathname.endsWith(`/recurrences/${recurrence().uid}`) && init?.method === "DELETE") {
+        const ifMatch = new Headers(init?.headers).get("If-Match") ?? "";
+        seenIfMatches.push(ifMatch);
+        if (ifMatch !== '"rev-10"') {
+          return response({ error: { code: "revision_conflict", message: "Recurrence changed." } }, 412);
+        }
+        return new Response(null, { status: 204 });
+      }
+      return response({ error: { code: "not_found", message: `Unhandled ${url.pathname}` } }, 404);
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+
+    render(KataWorkspaceSidebarPane, { props: { kata } });
+    await screen.findByRole("button", { name: recurrence().template_title });
+    await fireEvent.click(screen.getByRole("button", { name: "Delete recurrence" }));
+    const deleteDialog = screen.getByRole("dialog", { name: "Delete recurrence" });
+    await fireEvent.click(within(deleteDialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(seenIfMatches).toEqual(['"rev-9"']));
+    await waitFor(() => expect(recurrenceReads).toBe(2));
+    // Let the failed delete settle so the dialog accepts the retry click.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole("dialog", { name: "Delete recurrence" })).toBeTruthy();
+
+    await fireEvent.click(within(deleteDialog).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(seenIfMatches).toEqual(['"rev-9"', '"rev-10"']));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Delete recurrence" })).toBeNull());
+  });
+
   it("keeps a failed project move retryable through the embedded workspace", async () => {
     const { fetchImpl, moveAttempts } = createFetchStub();
     vi.stubGlobal("fetch", fetchImpl);

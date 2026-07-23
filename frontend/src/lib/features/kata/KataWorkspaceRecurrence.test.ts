@@ -226,6 +226,9 @@ describe("KataWorkspace", () => {
       '"rev-9"',
     );
     await waitFor(() => expect(recurrenceReads).toHaveBeenCalledTimes(2));
+    // Let the failed delete settle so the dialog accepts the retry click:
+    // the conflict path awaits the reload before completing the attempt.
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(screen.getByRole("dialog", { name: "Delete recurrence" })).toBeTruthy();
     await fireEvent.click(within(deleteDialog).getByRole("button", { name: "Delete" }));

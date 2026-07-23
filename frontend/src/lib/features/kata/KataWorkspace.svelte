@@ -69,6 +69,7 @@
     projectKataWorkspaceView,
     type KataWorkspaceAuthorityRequest,
   } from "./kataWorkspaceAuthority.js";
+  import { createKataAuthorityStore } from "../../stores/kata-authority.svelte.js";
   import { createKataWorkspaceAuthorityController } from "./kataWorkspaceAuthorityController.svelte.js";
   import type { KataGraphLayoutDirection } from "./kataReachableGraph.js";
 
@@ -301,7 +302,7 @@
       error = null;
       viewError = null;
       persistActiveWorkspaceState();
-      scheduleSelectedRecurrenceLoad(snapshot, awaitRecurrenceRefresh);
+      void scheduleSelectedRecurrenceLoad(snapshot, awaitRecurrenceRefresh);
     },
     onStreamOpen: () => {
       connection = { status: "online" };
@@ -670,18 +671,21 @@
     mutationRefreshGeneration += 1;
   }
 
+  // Returns a promise that settles once the reload has been applied (or
+  // skipped); conflict recovery awaits it so an open dialog cannot retry
+  // with a stale revision before reconciliation lands.
   function scheduleSelectedRecurrenceLoad(
     snapshot: KataWorkspaceSnapshotProjection,
     requiredForMutation = false,
-  ): void {
+  ): Promise<void> {
     const generation = ++recurrenceLoadGeneration;
     selectedRecurrences = [];
     const detail = snapshot.selected_detail;
     if (!detail) {
       if (requiredForMutation) finishAcceptedMutationRefresh();
-      return;
+      return Promise.resolve();
     }
-    void taskAPI
+    return taskAPI
       .recurrences(detail.issue.project_id, { daemonId: snapshot.daemon_id })
       .then((response) => {
         if (generation !== recurrenceLoadGeneration) return;
@@ -1357,7 +1361,28 @@
     void selectIssue(uid, true, true);
   }
 
-  async function selectLinkedIssue(target: KataIssueNavigationTarget): Promise<void> {
+  // Resolves a link target's current identity through an isolated all-status
+  // read pinned to the active daemon, for peers whose catalog identity moved
+  // (closed/reopened or changed project) between enrichment and the click.
+  async function resolveCurrentLinkTarget(uid: string): Promise<KataIssueNavigationTarget | null> {
+    try {
+      const store = createKataAuthorityStore();
+      const daemonID = activeKataDaemonId;
+      const accepted = await store.loadSnapshot({
+        ...(daemonID ? { daemon_id: daemonID } : {}),
+        scope: "global",
+        authority: "all",
+        selected_issue_uid: uid,
+      });
+      const detail = store.snapshot?.selected_detail;
+      if (!accepted || store.snapshot?.selected_issue_uid !== uid || !detail) return null;
+      return { uid, status: detail.issue.status, project_uid: detail.issue.project_uid };
+    } catch {
+      return null;
+    }
+  }
+
+  async function selectLinkedIssue(target: KataIssueNavigationTarget, allowRetry = true): Promise<void> {
     // Members of the current authority select in place. Off-authority peers
     // (closed or cross-project links) carry their full identity, so route to
     // the authority that contains them instead of requesting a non-member
@@ -1387,6 +1412,16 @@
       })), "view");
     if (rowNavigationSelection === rowSelection) rowNavigationSelection = null;
     if (!accepted) return;
+    if (authorityStore.snapshot?.selected_issue_uid !== target.uid) {
+      // The peer's identity moved after enrichment, so the requested
+      // authority no longer contains it. Re-resolve its current identity and
+      // retry once with fresh status/project.
+      if (!allowRetry) return;
+      const current = await resolveCurrentLinkTarget(target.uid);
+      if (!current || (current.status === target.status && current.project_uid === target.project_uid)) return;
+      await selectLinkedIssue(current, false);
+      return;
+    }
     onRouteStateChange?.(canonicalRoute(viewName, target.project_uid, target.uid, true));
     persistActiveWorkspaceState();
   }
@@ -1595,9 +1630,10 @@
         );
       } catch (error) {
         // A revision conflict means another client changed this recurrence;
-        // reload the list so a retry acts on current data.
+        // reload the list and wait for the open dialog to reconcile so a
+        // retry acts on current data, never the stale revision.
         if ((error as { status?: number }).status === 412 && acceptedSnapshot) {
-          scheduleSelectedRecurrenceLoad(acceptedSnapshot);
+          await scheduleSelectedRecurrenceLoad(acceptedSnapshot);
         }
         throw error;
       }

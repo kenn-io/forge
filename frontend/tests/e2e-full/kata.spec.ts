@@ -5334,6 +5334,77 @@ test("kata task links render, navigate, and add related links through the config
   }
 });
 
+test("kata task links recover a peer reopened after catalog enrichment", async ({ page }) => {
+  const movedPeer = {
+    ...issueSummary({
+      id: 44,
+      uid: "issue-moved",
+      project_id: 2,
+      project_uid: "project-kata",
+      project_name: "Kata",
+      short_id: "moved-1",
+      qualified_id: "Kata#moved-1",
+      title: "Reopened linked task",
+      body: "Reopened after the snapshot was enriched.",
+      labels: ["work"],
+    }),
+    status: "closed" as const,
+    closed_reason: "done" as const,
+    closed_at: now,
+  };
+  const backend = await startKataBackend({
+    issues: [...issues, movedPeer],
+    links: [
+      linkRow({
+        id: 1,
+        project_id: 1,
+        from: issues[0]!,
+        to: movedPeer,
+        type: "related",
+      }),
+    ],
+  });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?issue=issue-rent`);
+    const detail = page.getByRole("region", { name: "Task detail" });
+    const links = detail.getByRole("region", { name: "Links" });
+    await expect(links.getByRole("heading", { name: "Links" })).toBeVisible();
+    await links.getByRole("button", { name: "Filter links" }).click();
+    await page.locator(".link-filter-panel").getByRole("checkbox", { name: "Closed" }).click();
+    await page.keyboard.press("Escape");
+    await expect(links).toContainText("Reopened linked task");
+
+    // The peer reopens after the snapshot enriched it as closed. The daemon
+    // event invalidates the catalog (the link state chip flips to Open), and
+    // navigating afterwards must land on the authority that now contains the
+    // peer, not the stale logbook route.
+    const row = backend.state.issues.find((issue) => issue.uid === "issue-moved");
+    expect(row).toBeTruthy();
+    row!.status = "open";
+    row!.closed_at = undefined;
+    delete (row as { closed_reason?: string }).closed_reason;
+    publishProjectMutationChange(
+      backend.state,
+      backend.state.projects.find((project) => project.id === 2)!,
+      "issue.updated",
+    );
+    await expect(links.locator(".link-list").getByText("Open", { exact: true })).toBeVisible();
+
+    await links.getByRole("button", { name: /related\s+moved-1/ }).click();
+    // The reopened peer is a member of the current open authority again, so
+    // it selects in place rather than routing to the stale logbook.
+    await expect(detail.getByRole("heading", { name: "Reopened linked task" })).toBeVisible();
+    await expect(page).toHaveURL(/\/kata\?issue=issue-moved$/);
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata detail properties mutate through the configured external daemon", async ({ page }) => {
   const backend = await startKataBackend({
     issues: [
@@ -5838,21 +5909,18 @@ test("kata recurrence panel creates edits and deletes through the configured ext
 
     // Another client bumps the recurrence while the delete dialog is open:
     // the first delete must 412, the list must reload and reconcile the
-    // dialog, and the retry must succeed with the refreshed revision.
+    // dialog, and exactly one retry must succeed with the refreshed revision.
     const conflicted = backend.state.recurrences.find((row) => row.uid === "recurrence-1");
     expect(conflicted).toBeTruthy();
     conflicted!.revision += 1;
     await deleteDialog.getByRole("button", { name: "Delete" }).click();
-    await expect.poll(() => backend.state.seenIfMatches).toContain('"rev-2"');
+    // The conflict flash renders only after the failed delete awaited the
+    // recurrence reload and dialog reconciliation, so a single retry click
+    // after it must carry the refreshed revision.
+    await expect(page.locator(".kit-flash-stack").getByRole("status")).toBeVisible();
+    expect(backend.state.seenIfMatches).toContain('"rev-2"');
     await expect(deleteDialog).toBeVisible();
-    await expect
-      .poll(async () => {
-        if (await deleteDialog.isVisible()) {
-          await deleteDialog.getByRole("button", { name: "Delete" }).click();
-        }
-        return backend.state.seenIfMatches.includes('"rev-3"');
-      })
-      .toBe(true);
+    await deleteDialog.getByRole("button", { name: "Delete" }).click();
 
     await expect(recurrence).toHaveCount(0);
     await expect
@@ -5860,11 +5928,11 @@ test("kata recurrence panel creates edits and deletes through the configured ext
       .toContain("DELETE /api/v1/projects/2/recurrences/recurrence-1?actor=middleman");
     // The backend 412s any recurrence mutation without a matching If-Match, so
     // the successful edit and conflict retry above prove the revisions were
-    // carried: rev-1 on the edit, rev-2 on the conflicted delete, rev-3 on
-    // the reconciled retry.
+    // carried: rev-1 on the edit, rev-2 on the single conflicted delete,
+    // rev-3 on the single reconciled retry.
     expect(backend.state.seenIfMatches).toContain('"rev-1"');
-    expect(backend.state.seenIfMatches).toContain('"rev-2"');
-    expect(backend.state.seenIfMatches).toContain('"rev-3"');
+    expect(backend.state.seenIfMatches.filter((value) => value === '"rev-2"')).toHaveLength(1);
+    expect(backend.state.seenIfMatches.filter((value) => value === '"rev-3"')).toHaveLength(1);
     expect(backend.state.recurrences.find((row) => row.uid === "recurrence-1")?.deleted_at).toBeTruthy();
   } finally {
     await server.stop();

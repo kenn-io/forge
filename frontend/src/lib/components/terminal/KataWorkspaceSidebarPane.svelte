@@ -379,10 +379,10 @@
         );
       } catch (error) {
         // A revision conflict means another client changed this recurrence;
-        // reload the list so the still-open dialog reconciles and a retry
-        // acts on current data.
+        // reload the list and wait for the still-open dialog to reconcile so
+        // a retry acts on current data, never the stale revision.
         if ((error as { status?: number }).status === 412 && selectedIssue) {
-          void loadSelectedRecurrences(selectedIssue, options.daemonId, loadRequestID);
+          await loadSelectedRecurrences(selectedIssue, options.daemonId, loadRequestID);
         }
         throw error;
       }

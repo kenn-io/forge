@@ -21,7 +21,7 @@
     "vite-plus": "0.2.3"
   },
   "overrides": {
-    "dompurify": "3.4.11"
+    "dompurify": "3.4.12"
   },
   "devEngines": {
     "packageManager": {

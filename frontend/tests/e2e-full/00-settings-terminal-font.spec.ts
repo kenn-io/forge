@@ -295,6 +295,7 @@ test.describe("terminal options popover", () => {
       await expect(terminalOptionsDialog.getByText("Visible modes")).toHaveCount(0);
       await expect(terminalOptionsDialog.getByRole("button", { name: "Save visible modes" })).toHaveCount(0);
       await terminalOptionsDialog.getByRole("spinbutton", { name: "Font size", exact: true }).fill("20");
+      await expect(page.getByRole("button", { name: "Reset terminal font size" })).toHaveText("20px");
       await expect.poll(() => terminalScreenSizeKey(page)).not.toBe(initialScreenSize);
 
       await page.keyboard.press("Escape");

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Checkbox } from "@kenn-io/kit-ui";
   import Modal from "../shared/Modal.svelte";
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import {
     DEFAULT_TERMINAL_SETTINGS,
     getStores,
@@ -240,11 +240,11 @@
   $effect(() => {
     if (!draftReady) return;
     if (!livePreview) return;
-    previewTerminalSettings(
-      settingsStore,
-      livePreviewBaseline ?? currentTerminal,
-      pendingTerminal,
-    );
+    const baseline = livePreviewBaseline ?? currentTerminal;
+    const preview = pendingTerminal;
+    untrack(() => {
+      previewTerminalSettings(settingsStore, baseline, preview);
+    });
   });
 
   onDestroy(() => {

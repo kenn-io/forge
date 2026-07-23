@@ -1,6 +1,6 @@
 import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "@middleman/ui/api/types";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { saveTerminalSettings } from "./terminalSettingsPersistence";
+import { previewTerminalSettings, saveTerminalSettings } from "./terminalSettingsPersistence";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -99,6 +99,76 @@ describe("terminal settings persistence", () => {
     expect(persist).toHaveBeenNthCalledWith(2, {
       ...DEFAULT_TERMINAL_SETTINGS,
       font_size: 14,
+    });
+  });
+
+  it("keeps the composite confirmation for a later save from a stale component baseline", async () => {
+    const firstSave = deferred<TerminalSettings>();
+    const store = createStore();
+    const persist = vi
+      .fn<(settings: TerminalSettings) => Promise<TerminalSettings>>()
+      .mockImplementationOnce(() => firstSave.promise)
+      .mockImplementation(async (settings) => settings);
+
+    const optionsSave = saveTerminalSettings({
+      baseline: store.getTerminalSettings(),
+      changes: { font_family: '"Iosevka Term", monospace' },
+      persist,
+      store,
+    });
+    const zoomSave = saveTerminalSettings({
+      baseline: store.getTerminalSettings(),
+      changes: { font_size: 13 },
+      persist,
+      store,
+    });
+    firstSave.resolve({
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_family: '"Iosevka Term", monospace',
+    });
+    const staleOptionsBaseline = await optionsSave;
+    await zoomSave;
+
+    await saveTerminalSettings({
+      baseline: staleOptionsBaseline,
+      changes: { scrollback: 2000 },
+      persist,
+      store,
+    });
+
+    expect(persist).toHaveBeenNthCalledWith(3, {
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_family: '"Iosevka Term", monospace',
+      font_size: 13,
+      scrollback: 2000,
+    });
+    expect(store.getTerminalSettings()).toEqual({
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_family: '"Iosevka Term", monospace',
+      font_size: 13,
+      scrollback: 2000,
+    });
+  });
+
+  it("restores a previously previewed field when the draft returns to its baseline", () => {
+    const store = createStore();
+    const baseline = store.getTerminalSettings();
+
+    previewTerminalSettings(store, baseline, {
+      ...baseline,
+      font_size: 20,
+    });
+    expect(store.getTerminalSettings().font_size).toBe(20);
+    store.setTerminalSettings({
+      ...store.getTerminalSettings(),
+      scrollback: 2000,
+    });
+
+    previewTerminalSettings(store, baseline, baseline);
+
+    expect(store.getTerminalSettings()).toEqual({
+      ...baseline,
+      scrollback: 2000,
     });
   });
 });

@@ -466,6 +466,7 @@ test("full app reinitializes after navigating through an embed route", async ({ 
   });
   await expect(page).toHaveURL(/\/workspaces\/embed\/list$/);
   await expect(page.locator("header.app-top-bar")).toHaveCount(0);
+  await expect.poll(() => settingsRequests).toBe(2);
   await expect
     .poll(async () => page.evaluate(() => window.__middleman_event_source_counts?.().closed ?? 0))
     .toBeGreaterThanOrEqual(initialEventSources);
@@ -475,7 +476,7 @@ test("full app reinitializes after navigating through an embed route", async ({ 
   });
   await expect(page).toHaveURL(/\/pulls$/);
   await expect(page.locator("header.app-top-bar")).toBeVisible();
-  await expect.poll(() => settingsRequests).toBe(2);
+  await expect.poll(() => settingsRequests).toBe(3);
   await expect
     .poll(async () => page.evaluate(() => window.__middleman_event_source_counts?.().created ?? 0))
     .toBeGreaterThan(initialEventSources);

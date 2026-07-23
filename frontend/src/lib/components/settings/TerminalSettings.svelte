@@ -253,7 +253,6 @@
     restoreTerminalSettingsPreview(
       settingsStore,
       livePreviewBaseline ?? currentTerminal,
-      pendingTerminal,
     );
   });
 

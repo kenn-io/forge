@@ -154,7 +154,11 @@ async function openMergeModalAndConfirm(page: Page): Promise<void> {
   await page.locator(".btn--merge").first().click();
   const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
   await expect(modal).toBeVisible();
+  const mergeResponse = page.waitForResponse((response) => {
+    return response.request().method() === "POST" && /\/merge$/.test(new URL(response.url()).pathname);
+  });
   await modal.getByRole("button", { name: "Squash and merge" }).click();
+  await mergeResponse;
 }
 
 async function submitApproval(page: Page): Promise<void> {

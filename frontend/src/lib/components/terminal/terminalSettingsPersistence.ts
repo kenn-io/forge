@@ -7,7 +7,6 @@ export interface TerminalSettingsStore {
 
 interface SaveQueue {
   confirmed: TerminalSettings;
-  pending: number;
   tail: Promise<void>;
 }
 
@@ -19,6 +18,7 @@ interface SaveTerminalSettingsOptions {
 }
 
 const saveQueues = new WeakMap<TerminalSettingsStore, SaveQueue>();
+const previewChanges = new WeakMap<TerminalSettingsStore, Partial<TerminalSettings>>();
 
 function changedKeys(settings: Partial<TerminalSettings>): (keyof TerminalSettings)[] {
   return Object.keys(settings) as (keyof TerminalSettings)[];
@@ -58,18 +58,32 @@ export function previewTerminalSettings(
   next: TerminalSettings,
 ): void {
   const changes = terminalSettingsChanges(baseline, next);
-  store.setTerminalSettings({
-    ...store.getTerminalSettings(),
-    ...changes,
-  });
+  const previous = previewChanges.get(store) ?? {};
+  const current = store.getTerminalSettings();
+  const updates: Partial<TerminalSettings> = {};
+
+  for (const key of changedKeys(previous)) {
+    if (!(key in changes) && Object.is(current[key], previous[key])) {
+      Object.assign(updates, { [key]: baseline[key] });
+    }
+  }
+  Object.assign(updates, changes);
+
+  if (changedKeys(updates).length > 0) {
+    store.setTerminalSettings({ ...current, ...updates });
+  }
+  if (changedKeys(changes).length > 0) {
+    previewChanges.set(store, changes);
+  } else {
+    previewChanges.delete(store);
+  }
 }
 
-export function restoreTerminalSettingsPreview(
-  store: TerminalSettingsStore,
-  baseline: TerminalSettings,
-  preview: TerminalSettings,
-): void {
-  reconcileSettings(store, terminalSettingsChanges(baseline, preview), baseline);
+export function restoreTerminalSettingsPreview(store: TerminalSettingsStore, baseline: TerminalSettings): void {
+  const changes = previewChanges.get(store);
+  if (!changes) return;
+  reconcileSettings(store, changes, baseline);
+  previewChanges.delete(store);
 }
 
 export function saveTerminalSettings({
@@ -82,14 +96,12 @@ export function saveTerminalSettings({
   if (!queue) {
     queue = {
       confirmed: { ...baseline },
-      pending: 0,
       tail: Promise.resolve(),
     };
     saveQueues.set(store, queue);
   }
 
   const activeQueue = queue;
-  activeQueue.pending += 1;
   store.setTerminalSettings({
     ...store.getTerminalSettings(),
     ...changes,
@@ -112,10 +124,5 @@ export function saveTerminalSettings({
     () => undefined,
   );
 
-  return save.finally(() => {
-    activeQueue.pending -= 1;
-    if (activeQueue.pending === 0 && saveQueues.get(store) === activeQueue) {
-      saveQueues.delete(store);
-    }
-  });
+  return save;
 }

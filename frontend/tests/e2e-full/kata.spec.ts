@@ -5405,6 +5405,105 @@ test("kata task links recover a peer reopened after catalog enrichment", async (
   }
 });
 
+test("kata task links re-resolve a stale link identity through an isolated lookup", async ({ page }) => {
+  const movedPeer = {
+    ...issueSummary({
+      id: 44,
+      uid: "issue-moved",
+      project_id: 2,
+      project_uid: "project-kata",
+      project_name: "Kata",
+      short_id: "moved-1",
+      qualified_id: "Kata#moved-1",
+      title: "Reopened linked task",
+      body: "Reopened after the snapshot was enriched.",
+      labels: ["work"],
+    }),
+    status: "closed" as const,
+    closed_reason: "done" as const,
+    closed_at: now,
+  };
+  const backend = await startKataBackend({
+    issues: [...issues, movedPeer],
+    links: [
+      linkRow({
+        id: 1,
+        project_id: 1,
+        from: issues[0]!,
+        to: movedPeer,
+        type: "related",
+      }),
+    ],
+  });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    // Keep the browser's catalog stale by blocking its invalidation stream;
+    // middleman itself still ingests the daemon event. This pins the race
+    // where a link is clicked with identity the daemon has already moved on
+    // from.
+    await page.route("**/api/v1/kata/tasks/events**", (route) => route.abort());
+    await page.goto(`${server.info.base_url}/kata?issue=issue-rent`);
+    const detail = page.getByRole("region", { name: "Task detail" });
+    const links = detail.getByRole("region", { name: "Links" });
+    await expect(links.getByRole("heading", { name: "Links" })).toBeVisible();
+    await links.getByRole("button", { name: "Filter links" }).click();
+    await page.locator(".link-filter-panel").getByRole("checkbox", { name: "Closed" }).click();
+    await page.keyboard.press("Escape");
+    await expect(links).toContainText("Reopened linked task");
+
+    const row = backend.state.issues.find((issue) => issue.uid === "issue-moved");
+    expect(row).toBeTruthy();
+    row!.status = "open";
+    row!.closed_at = undefined;
+    delete (row as { closed_reason?: string }).closed_reason;
+    publishProjectMutationChange(
+      backend.state,
+      backend.state.projects.find((project) => project.id === 2)!,
+      "issue.updated",
+    );
+    await expect
+      .poll(async () => {
+        const res = await page.request.get(
+          `${server.info.base_url}/api/v1/kata/tasks/snapshot?scope=global&authority=all&selected_issue_uid=issue-moved`,
+        );
+        const body = (await res.json()) as {
+          enrichment?: { selected_detail?: { detail?: { issue?: { status?: string } } } };
+        };
+        return body.enrichment?.selected_detail?.detail?.issue?.status;
+      })
+      .toBe("open");
+
+    // The stale closed identity routes to the logbook, which omits the
+    // selection; the workspace must re-resolve through an isolated
+    // all-authority lookup and land on the peer's current authority.
+    const isolatedLookup = page.waitForRequest(
+      (request) =>
+        request.url().includes("/api/v1/kata/tasks/snapshot") &&
+        request.url().includes("authority=all") &&
+        request.url().includes("selected_issue_uid=issue-moved"),
+    );
+    await links.getByRole("button", { name: /related\s+moved-1/ }).click();
+    await isolatedLookup;
+
+    await expect(detail.getByRole("heading", { name: "Reopened linked task" })).toBeVisible();
+    await expect(page).toHaveURL(/scope=project-kata/);
+    await expect(page).toHaveURL(/issue=issue-moved/);
+    expect(page.url()).not.toContain("view=logbook");
+
+    // Recovery is one navigation transaction: Back returns to the source
+    // task, not to an issue-less intermediate route.
+    await page.goBack();
+    await expect(page).toHaveURL(/\/kata\?issue=issue-rent$/);
+    await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata detail properties mutate through the configured external daemon", async ({ page }) => {
   const backend = await startKataBackend({
     issues: [

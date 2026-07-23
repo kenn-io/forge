@@ -163,6 +163,7 @@
   let recurrenceDialogs = $state<KataRecurrenceDialogController | null>(null);
   let selectedRecurrences = $state.raw<KataRecurrence[]>([]);
   let recurrenceLoadGeneration = 0;
+  let latestRecurrenceLoad: Promise<void> = Promise.resolve();
   let pendingMutationCount = $state(0);
   let mutationRefreshPending = $state(false);
   let mutationAcknowledged = $state(false);
@@ -243,8 +244,12 @@
       const recoveredSelection = pendingRecoveredSelection?.uid === snapshot.selected_issue_uid
         ? pendingRecoveredSelection
         : null;
+      // A selection-less snapshot accepted mid row-navigation is one leg of a
+      // navigation transaction (for example moved-link-peer recovery); do not
+      // rewrite the current history entry while its outcome is pending.
       const rowSelectionAccepted =
-        rowNavigationSelection !== null && rowNavigationSelection.uid === snapshot.selected_issue_uid;
+        rowNavigationSelection !== null &&
+        (rowNavigationSelection.uid === snapshot.selected_issue_uid || !snapshot.selected_issue_uid);
       if (
         requestedIssueUID &&
         requestedIssueUID !== supersededRouteSelectionUID &&
@@ -683,9 +688,10 @@
     const detail = snapshot.selected_detail;
     if (!detail) {
       if (requiredForMutation) finishAcceptedMutationRefresh();
-      return Promise.resolve();
+      latestRecurrenceLoad = Promise.resolve();
+      return latestRecurrenceLoad;
     }
-    return taskAPI
+    const load = taskAPI
       .recurrences(detail.issue.project_id, { daemonId: snapshot.daemon_id })
       .then((response) => {
         if (generation !== recurrenceLoadGeneration) return;
@@ -712,6 +718,19 @@
           tone: "warning",
         });
       });
+    latestRecurrenceLoad = load;
+    return load;
+  }
+
+  // Awaits recurrence reloads until no newer load has superseded the one
+  // awaited, so conflict recovery cannot re-enable the delete dialog while an
+  // event-triggered reload that will reconcile it is still in flight.
+  async function awaitWinningRecurrenceLoad(): Promise<void> {
+    let awaited: Promise<void>;
+    do {
+      awaited = latestRecurrenceLoad;
+      await awaited;
+    } while (awaited !== latestRecurrenceLoad);
   }
 
   function acceptedDaemonIDForMutation(): string {
@@ -1392,7 +1411,7 @@
       return;
     }
     replaceNextSelectionScopeUID = null;
-    beginNavigation();
+    const generation = beginNavigation();
     closeReachableGraph(false);
     resetDetailDrafts();
     const rowSelection = { uid: target.uid, notify: false, direct: false, replaceRoute: false };
@@ -1411,14 +1430,28 @@
         selectedIssueUID: target.uid,
       })), "view");
     if (rowNavigationSelection === rowSelection) rowNavigationSelection = null;
-    if (!accepted) return;
+    if (!accepted || !isCurrentNavigation(generation)) return;
     if (authorityStore.snapshot?.selected_issue_uid !== target.uid) {
       // The peer's identity moved after enrichment, so the requested
       // authority no longer contains it. Re-resolve its current identity and
-      // retry once with fresh status/project.
-      if (!allowRetry) return;
+      // retry once with fresh status/project — unless the user has navigated
+      // elsewhere while the lookup was pending. On definitive failure, push
+      // the selection-less authority route so the URL matches the view while
+      // the source task stays one history entry back.
+      const failRecovery = (): void => {
+        onRouteStateChange?.(canonicalRoute(viewName, target.project_uid, null, true));
+        persistActiveWorkspaceState();
+      };
+      if (!allowRetry) {
+        failRecovery();
+        return;
+      }
       const current = await resolveCurrentLinkTarget(target.uid);
-      if (!current || (current.status === target.status && current.project_uid === target.project_uid)) return;
+      if (!isCurrentNavigation(generation)) return;
+      if (!current || (current.status === target.status && current.project_uid === target.project_uid)) {
+        failRecovery();
+        return;
+      }
       await selectLinkedIssue(current, false);
       return;
     }
@@ -1630,10 +1663,12 @@
         );
       } catch (error) {
         // A revision conflict means another client changed this recurrence;
-        // reload the list and wait for the open dialog to reconcile so a
-        // retry acts on current data, never the stale revision.
+        // reload the list and wait for the winning reload to reconcile the
+        // open dialog so a retry acts on current data, never the stale
+        // revision.
         if ((error as { status?: number }).status === 412 && acceptedSnapshot) {
-          await scheduleSelectedRecurrenceLoad(acceptedSnapshot);
+          void scheduleSelectedRecurrenceLoad(acceptedSnapshot);
+          await awaitWinningRecurrenceLoad();
         }
         throw error;
       }

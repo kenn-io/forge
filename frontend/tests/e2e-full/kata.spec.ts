@@ -4157,6 +4157,63 @@ test("docs task links resolve through the configured external daemon", async ({ 
   }
 });
 
+test("docs task links resolve completed tasks to the logbook through the configured external daemon", async ({
+  page,
+}) => {
+  const archived = {
+    ...issueSummary({
+      id: 33,
+      uid: "issue-archived",
+      project_id: 2,
+      project_uid: "project-kata",
+      project_name: "Kata",
+      short_id: "kat-9",
+      qualified_id: "Kata#kat-9",
+      title: "Archived launch checklist",
+      body: "Completed before the launch retro.",
+      labels: ["work"],
+    }),
+    status: "closed" as const,
+    closed_reason: "done" as const,
+    closed_at: now,
+  };
+  const backend = await startKataBackend({ issues: [...issues, archived] });
+  const kataHome = await configureKataHome(backend.url);
+  const docsRoot = await createDocsFixture();
+  await writeFile(
+    path.join(docsRoot, "retro.md"),
+    ["# Launch Retro", "", "Findings recorded in #kat-9 before close-out.", ""].join("\n"),
+  );
+  const server = await startIsolatedE2EServer();
+
+  try {
+    const res = await page.request.post(`${server.info.base_url}/api/v1/docs/folders`, {
+      data: {
+        id: "notes",
+        name: "Notes",
+        path: docsRoot,
+      },
+    });
+    expect(res.status()).toBe(201);
+
+    await page.goto(`${server.info.base_url}/docs?folder=notes&doc=retro.md`);
+    await expect(page.getByRole("heading", { name: "Launch Retro" })).toBeVisible();
+
+    const referenceLookup = page.waitForRequest(
+      (request) => request.url().includes("/api/v1/kata/tasks/references") && request.url().includes("status=all"),
+    );
+    await page.getByRole("link", { name: "#kat-9" }).click();
+    await referenceLookup;
+
+    await expect(page).toHaveURL(/\/kata\?view=logbook&scope=project-kata&issue=issue-archived/);
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Completed before the launch retro.");
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("command palette opens task and docs search results", async ({ page }) => {
   const backend = await startKataBackend();
   const kataHome = await configureKataHome(backend.url);
@@ -5778,16 +5835,37 @@ test("kata recurrence panel creates edits and deletes through the configured ext
     const deleteDialog = page.getByRole("dialog", { name: "Delete recurrence" });
     await expect(deleteDialog).toBeVisible();
     await expect(deleteDialog.getByText("Weekly project follow-up")).toBeVisible();
+
+    // Another client bumps the recurrence while the delete dialog is open:
+    // the first delete must 412, the list must reload and reconcile the
+    // dialog, and the retry must succeed with the refreshed revision.
+    const conflicted = backend.state.recurrences.find((row) => row.uid === "recurrence-1");
+    expect(conflicted).toBeTruthy();
+    conflicted!.revision += 1;
     await deleteDialog.getByRole("button", { name: "Delete" }).click();
+    await expect.poll(() => backend.state.seenIfMatches).toContain('"rev-2"');
+    await expect(deleteDialog).toBeVisible();
+    await expect
+      .poll(async () => {
+        if (await deleteDialog.isVisible()) {
+          await deleteDialog.getByRole("button", { name: "Delete" }).click();
+        }
+        return backend.state.seenIfMatches.includes('"rev-3"');
+      })
+      .toBe(true);
 
     await expect(recurrence).toHaveCount(0);
     await expect
       .poll(() => backend.state.seenPaths)
       .toContain("DELETE /api/v1/projects/2/recurrences/recurrence-1?actor=middleman");
     // The backend 412s any recurrence mutation without a matching If-Match, so
-    // the successful edit and delete above prove the revisions were carried.
+    // the successful edit and conflict retry above prove the revisions were
+    // carried: rev-1 on the edit, rev-2 on the conflicted delete, rev-3 on
+    // the reconciled retry.
     expect(backend.state.seenIfMatches).toContain('"rev-1"');
     expect(backend.state.seenIfMatches).toContain('"rev-2"');
+    expect(backend.state.seenIfMatches).toContain('"rev-3"');
+    expect(backend.state.recurrences.find((row) => row.uid === "recurrence-1")?.deleted_at).toBeTruthy();
   } finally {
     await server.stop();
     kataHome.restore();

@@ -134,6 +134,10 @@ Interactive surfaces must agree on which item is selected.
   representable, and off-authority peers route to an authority that contains
   them instead of requesting a non-member selection
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::selectLinkedIssue`).
+  Catalog identity here is the accepted snapshot the user is acting on — unlike
+  the shared auxiliary snapshot above — and the routing load re-resolves
+  against the daemon, so a peer whose identity moved since enrichment degrades
+  to the containing authority view rather than a refused stale selection.
 
 Responsive layout changes must not change route identity.
 

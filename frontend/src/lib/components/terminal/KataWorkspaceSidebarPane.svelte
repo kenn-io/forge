@@ -64,6 +64,7 @@
     openEditRecurrence: (recurrence: KataRecurrence) => void;
     openDeleteRecurrence: (recurrence: KataRecurrence) => void;
     closeAll: () => void;
+    reconcileRecurrences: (recurrences: readonly KataRecurrence[]) => void;
   } | null>(null);
   const acceptedSnapshot = $derived(authorityStore.snapshot);
   const selectedIssue = $derived(
@@ -103,6 +104,7 @@
       const response = await api.recurrences(detail.issue.project_id, { daemonId: daemonID });
       if (requestID !== loadRequestID || selectedIssue?.issue.uid !== detail.issue.uid) return false;
       selectedRecurrences = response.recurrences;
+      recurrenceDialogs?.reconcileRecurrences(response.recurrences);
       return true;
     } catch {
       if (requestID !== loadRequestID || selectedIssue?.issue.uid !== detail.issue.uid) return false;
@@ -367,13 +369,23 @@
   async function deleteRecurrence(recurrence: KataRecurrence): Promise<boolean> {
     return runTask(() => mutateSelected(async () => {
       const options = acceptedMutationOptions();
-      await api.deleteRecurrence(
-        recurrence.project_id,
-        recurrence.uid,
-        actor,
-        options,
-        `"rev-${recurrence.revision}"`,
-      );
+      try {
+        await api.deleteRecurrence(
+          recurrence.project_id,
+          recurrence.uid,
+          actor,
+          options,
+          `"rev-${recurrence.revision}"`,
+        );
+      } catch (error) {
+        // A revision conflict means another client changed this recurrence;
+        // reload the list so the still-open dialog reconciles and a retry
+        // acts on current data.
+        if ((error as { status?: number }).status === 412 && selectedIssue) {
+          void loadSelectedRecurrences(selectedIssue, options.daemonId, loadRequestID);
+        }
+        throw error;
+      }
     }, { refreshRecurrences: true }));
   }
 

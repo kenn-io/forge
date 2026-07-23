@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	giteasdk "code.gitea.io/sdk/gitea"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	ghsync "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 )
 
@@ -155,4 +157,44 @@ func TestListMergeRequestReviewThreadsRejectsPartialDataset(t *testing.T) {
 
 	require.Error(err)
 	assert.Nil(threads)
+}
+
+func TestListMergeRequestReviewThreadsRejectsDatasetBeyondWireAttemptAllowance(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/repos/acme/widgets/pulls/42/reviews":
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{"id": 99}, {"id": 100}}))
+		case "/api/v1/repos/acme/widgets/pulls/42/reviews/99/comments":
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{"id": 101, "body": "partial"}}))
+		case "/api/v1/repos/acme/widgets/pulls/42/reviews/100/comments":
+			assert.Fail("request exceeded admitted wire-attempt allowance")
+			http.Error(w, "unexpected request", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	budget := ghsync.NewSyncBudget(20)
+	client, err := NewClient(
+		"gitea.test", testTokenSource("token"),
+		WithBaseURLForTesting(server.URL),
+		WithServerVersionForTesting(testGiteaServerVersion),
+		WithSyncBudget(budget),
+	)
+	require.NoError(err)
+	ctx := ghsync.WithWireAttemptAllowance(ghsync.WithSyncBudget(t.Context()), 2)
+	threads, err := client.ListMergeRequestReviewThreads(ctx, platform.RepoRef{
+		Owner: "acme", Name: "widgets",
+	}, 42)
+
+	require.ErrorIs(err, platform.ErrWireAttemptBudget)
+	assert.Nil(threads)
+	assert.Equal(int32(2), requests.Load())
+	assert.Equal(2, budget.Spent())
 }

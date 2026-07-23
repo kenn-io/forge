@@ -8574,7 +8574,6 @@ func (s *Syncer) drainDetailQueue(
 				cloneFetchOK = true
 			}
 		}
-
 		providerCalls := 0
 		if qi.Type == QueueItemPR {
 			providerCalls, err = s.fetchMRDetail(

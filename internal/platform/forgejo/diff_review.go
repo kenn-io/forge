@@ -184,13 +184,22 @@ func forgejoReviewThread(
 	lineType := "add"
 	var oldLine *int
 	var newLine *int
-	if comment.OldLineNum > 0 {
-		line = int(comment.OldLineNum)
+	if comment.OldLineNum > 0 && comment.LineNum > 0 {
+		old := int(comment.OldLineNum)
+		new := int(comment.LineNum)
+		line = new
+		lineType = "context"
+		oldLine = &old
+		newLine = &new
+	} else if comment.OldLineNum > 0 {
+		old := int(comment.OldLineNum)
+		line = old
 		side = "left"
 		lineType = "delete"
-		oldLine = &line
-	} else {
-		newLine = &line
+		oldLine = &old
+	} else if comment.LineNum > 0 {
+		new := int(comment.LineNum)
+		newLine = &new
 	}
 	resolvedAt := (*time.Time)(nil)
 	resolved := comment.Resolver != nil

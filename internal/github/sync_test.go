@@ -917,6 +917,7 @@ type syncTestReadProvider struct {
 	listReviewThreads   atomic.Int32
 	listMRMergeEvents   []platform.MergeRequestEvent
 	reviewThreads       []platform.MergeRequestReviewThread
+	listReviewThreadsFn func(context.Context, platform.RepoRef, int) ([]platform.MergeRequestReviewThread, error)
 	listIssueReadEvents []platform.IssueEvent
 	readReviewThreads   bool
 }
@@ -1056,11 +1057,14 @@ func (p *syncTestReadProvider) ListMergeRequestEvents(
 }
 
 func (p *syncTestReadProvider) ListMergeRequestReviewThreads(
-	context.Context,
-	platform.RepoRef,
-	int,
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
 ) ([]platform.MergeRequestReviewThread, error) {
 	p.listReviewThreads.Add(1)
+	if p.listReviewThreadsFn != nil {
+		return p.listReviewThreadsFn(ctx, ref, number)
+	}
 	return p.reviewThreads, nil
 }
 
@@ -6123,6 +6127,97 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	clonePath, err := clones.ClonePath("gitlab.example.com", "group/subgroup", "project")
 	require.NoError(err)
 	require.FileExists(filepath.Join(clonePath, "HEAD"))
+}
+
+func TestDetailDrainRetainsReviewThreadsWhenProviderExceedsAdmittedCost(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform:     platform.KindGitea,
+		PlatformHost: "gitea.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	}
+	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	mrID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     1001,
+		Number:         7,
+		URL:            "https://gitea.example.com/acme/widget/pulls/7",
+		Title:          "cached MR",
+		Author:         "ada",
+		State:          "open",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CreatedAt:      now.Add(-time.Hour),
+		UpdatedAt:      now.Add(-time.Hour),
+		LastActivityAt: now.Add(-time.Hour),
+	})
+	require.NoError(err)
+	require.NoError(database.UpsertMRReviewThreads(ctx, mrID, []db.MRReviewThread{{
+		ProviderThreadID: "cached-thread",
+		Body:             "cached review note",
+		CreatedAt:        now.Add(-time.Hour),
+		UpdatedAt:        now.Add(-time.Hour),
+	}}))
+
+	var wireAttempts atomic.Int32
+	provider := &syncTestReadProvider{
+		syncTestProvider: syncTestProvider{kind: platform.KindGitea, host: "gitea.example.com"},
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           platformRepoRef(repo),
+			PlatformID:     1001,
+			Number:         7,
+			URL:            "https://gitea.example.com/acme/widget/pulls/7",
+			Title:          "fresh MR",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
+		readReviewThreads: true,
+		listReviewThreadsFn: func(ctx context.Context, _ platform.RepoRef, _ int) ([]platform.MergeRequestReviewThread, error) {
+			for range PRDetailWorstCase + 1 {
+				if !ConsumeWireAttemptAllowance(ctx) {
+					return nil, platform.ErrWireAttemptBudget
+				}
+				wireAttempts.Add(1)
+			}
+			return []platform.MergeRequestReviewThread{{
+				ProviderThreadID: "fresh-thread",
+				Body:             "fresh review note",
+				CreatedAt:        now,
+				UpdatedAt:        now,
+			}}, nil
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	rateKey := RateBucketKey("gitea", "gitea.example.com")
+	syncer := NewSyncerWithRegistry(
+		registry, database, nil, []RepoRef{repo}, time.Minute, nil,
+		map[string]*SyncBudget{rateKey: NewSyncBudget(100)},
+	)
+
+	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true}, syncer.TrackedRepos())
+
+	assert.Equal(int32(PRDetailWorstCase), wireAttempts.Load())
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Nil(stored.DetailFetchedAt)
+	threads, err := database.ListMRReviewThreads(ctx, mrID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	assert.Equal("cached-thread", threads[0].ProviderThreadID)
+	assert.Equal("cached review note", threads[0].Body)
 }
 
 func TestSyncMRUsesConfiguredProviderRegistry(t *testing.T) {

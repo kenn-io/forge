@@ -8,10 +8,34 @@ import (
 	"testing"
 	"time"
 
+	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
 	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 )
+
+func TestForgejoReviewThreadPreservesContextCoordinates(t *testing.T) {
+	assert := assert.New(t)
+	thread := forgejoReviewThread(
+		&forgejosdk.PullReview{ID: 99},
+		&forgejosdk.PullReviewComment{
+			ID:         101,
+			Path:       "src/main.go",
+			LineNum:    7,
+			OldLineNum: 5,
+		},
+	)
+
+	assert.Equal("right", thread.Range.Side)
+	assert.Equal(7, thread.Range.Line)
+	if assert.NotNil(thread.Range.OldLine) {
+		assert.Equal(5, *thread.Range.OldLine)
+	}
+	if assert.NotNil(thread.Range.NewLine) {
+		assert.Equal(7, *thread.Range.NewLine)
+	}
+	assert.Equal("context", thread.Range.LineType)
+}
 
 func TestPublishDiffReviewDraftCreatesForgejoReview(t *testing.T) {
 	assert := assert.New(t)

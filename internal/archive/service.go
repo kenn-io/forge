@@ -444,7 +444,7 @@ func (defaultRetryClassifier) Classify(err error, attempt int, now time.Time) Re
 
 func defaultArchiveRetryDecision(err error, attempt int, now time.Time) RetryDecision {
 	switch {
-	case errors.Is(err, platform.ErrArchiveAttemptBudget):
+	case errors.Is(err, platform.ErrWireAttemptBudget):
 		// A refused wire attempt means this admitted request ran out of its
 		// per-attempt allowance, not that the repository or its contract is
 		// broken. Some providers (GitLab) wrap the transport error as a

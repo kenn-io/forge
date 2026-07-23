@@ -158,11 +158,17 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      - name: Cache Bun package downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version-file: package.json
-          cache: true
+          cache: false
           run-install: true
 
       - name: Stub frontend embed dir
@@ -272,11 +278,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Cache Bun package downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version-file: package.json
-          cache: true
+          cache: false
           run-install: true
 
       - name: Run frontend unit tests
@@ -404,11 +416,17 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      - name: Cache Bun package downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version-file: package.json
-          cache: true
+          cache: false
           run-install: true
 
       - name: Build frontend
@@ -587,11 +605,17 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      - name: Cache Bun package downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version-file: package.json
-          cache: true
+          cache: false
           run-install: true
 
       - name: Run roborev E2E tests

@@ -115,6 +115,8 @@ and materialize `node_modules` from the lockfile before invoking baked `vp` (`.g
 memory-bounded self-hosted runners; assertions can finish before a pooled worker
 dies during teardown (`frontend/vite.config.ts::resolveUnitTestWorkers`).
 
+Non-container Vite+ jobs cache only Bun downloads with an exact OS, architecture, lockfile, and workspace-manifest key; do not use prefix restores, because stale package caches can poison a lockfile-correct install (`.github/workflows/ci.yml::build`).
+
 Timezone-sensitive Vitest tests must not mutate `process.env.TZ` after workers
 start; launch the test process with `TZ` or stub the locale formatter instead
 (`packages/ui/src/components/detail/operation-gates.test.ts:8`).

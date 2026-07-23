@@ -58,8 +58,8 @@ function normalizeUpdateRequest(settings: {
   return request;
 }
 
-export async function getSettings(): Promise<Settings> {
-  const { data, error, response } = await client.GET("/settings");
+export async function getSettings(options: { signal?: AbortSignal } = {}): Promise<Settings> {
+  const { data, error, response } = await client.GET("/settings", options.signal ? { signal: options.signal } : {});
   if (!data) {
     throw new Error(requestErrorMessage(error, `GET /settings -> ${response.status}`));
   }

@@ -38,12 +38,17 @@
   import WorkspaceEmbedEmptyState from "./WorkspaceEmbedEmptyState.svelte";
   import WorkspaceFirstRunPanel from "./WorkspaceFirstRunPanel.svelte";
   import WorkspaceProjectCard from "./WorkspaceProjectCard.svelte";
+  import {
+    beginTerminalSettingsHydration,
+    hydrateTerminalSettings,
+  } from "./terminalSettingsPersistence.js";
   import { showFlash } from "@middleman/ui/stores/flash";
 
   let stores = $state<StoreInstances | undefined>();
   let terminalSettingsReady = $state(false);
   let terminalSettingsError = $state<string | null>(null);
   let settingsLoadSequence = 0;
+  let settingsLoadController: AbortController | undefined;
   const terminalSettingsTimeoutMs = 8_000;
 
   onMount(() => {
@@ -69,17 +74,21 @@
     void loadTerminalSettings(activeStores);
     return () => {
       settingsLoadSequence += 1;
+      settingsLoadController?.abort();
+      settingsLoadController = undefined;
     };
   });
 
-  async function getSettingsWithTimeout() {
+  async function getSettingsWithTimeout(controller: AbortController) {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
-        getSettings(),
+        getSettings({ signal: controller.signal }),
         new Promise<never>((_, reject) => {
           timeout = setTimeout(() => {
-            reject(new Error("Timed out loading terminal settings"));
+            const error = new Error("Timed out loading terminal settings");
+            controller.abort(error);
+            reject(error);
           }, terminalSettingsTimeoutMs);
         }),
       ]);
@@ -89,13 +98,17 @@
   }
 
   async function loadTerminalSettings(activeStores: StoreInstances): Promise<void> {
+    settingsLoadController?.abort();
+    const controller = new AbortController();
+    settingsLoadController = controller;
     const sequence = ++settingsLoadSequence;
+    const terminalHydration = beginTerminalSettingsHydration(activeStores.settings);
     terminalSettingsReady = false;
     terminalSettingsError = null;
     try {
-      const settings = await getSettingsWithTimeout();
+      const settings = await getSettingsWithTimeout(controller);
       if (sequence !== settingsLoadSequence) return;
-      activeStores.settings.setTerminalSettings(settings.terminal);
+      hydrateTerminalSettings(terminalHydration, settings.terminal);
       terminalSettingsReady = true;
     } catch (error) {
       if (sequence !== settingsLoadSequence) return;
@@ -104,6 +117,10 @@
       showFlash(`Couldn't load terminal settings: ${detail}`, {
         tone: "danger",
       });
+    } finally {
+      if (settingsLoadController === controller) {
+        settingsLoadController = undefined;
+      }
     }
   }
 

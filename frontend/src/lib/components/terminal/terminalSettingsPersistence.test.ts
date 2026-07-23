@@ -1,6 +1,11 @@
 import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "@middleman/ui/api/types";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { previewTerminalSettings, saveTerminalSettings } from "./terminalSettingsPersistence";
+import {
+  beginTerminalSettingsHydration,
+  hydrateTerminalSettings,
+  previewTerminalSettings,
+  saveTerminalSettings,
+} from "./terminalSettingsPersistence";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -259,6 +264,52 @@ describe("terminal settings persistence", () => {
       font_family: '"Iosevka Term", monospace',
       font_size: 17,
       renderer: "ghostty-web",
+      scrollback: 2000,
+    });
+  });
+
+  it("preserves fields mutated after a settings hydration begins", async () => {
+    const pendingZoom = deferred<TerminalSettings>();
+    const store = createStore();
+    const persist = vi
+      .fn<(settings: TerminalSettings) => Promise<TerminalSettings>>()
+      .mockImplementationOnce(() => pendingZoom.promise)
+      .mockImplementation(async (settings) => settings);
+    const hydration = beginTerminalSettingsHydration(store);
+    const zoomSave = saveTerminalSettings({
+      baseline: store.getTerminalSettings(),
+      changes: { font_size: 13 },
+      persist,
+      store,
+    });
+
+    hydrateTerminalSettings(hydration, {
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_family: '"Hydrated Font", monospace',
+    });
+
+    expect(store.getTerminalSettings()).toEqual({
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_family: '"Hydrated Font", monospace',
+      font_size: 13,
+    });
+
+    pendingZoom.resolve({
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_size: 13,
+    });
+    await zoomSave;
+    await saveTerminalSettings({
+      baseline: store.getTerminalSettings(),
+      changes: { scrollback: 2000 },
+      persist,
+      store,
+    });
+
+    expect(persist).toHaveBeenNthCalledWith(2, {
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_family: '"Hydrated Font", monospace',
+      font_size: 13,
       scrollback: 2000,
     });
   });

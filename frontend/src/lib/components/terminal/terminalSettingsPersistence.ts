@@ -7,6 +7,9 @@ export interface TerminalSettingsStore {
 
 interface SaveQueue {
   confirmed: TerminalSettings;
+  fieldMutationGenerations: Partial<Record<keyof TerminalSettings, number>>;
+  hydrationGeneration: number;
+  mutationGeneration: number;
   pending: number;
   tail: Promise<void>;
 }
@@ -23,11 +26,17 @@ interface TerminalSettingsPreview {
   changes: Partial<TerminalSettings>;
 }
 
+export interface TerminalSettingsHydration {
+  hydrationGeneration: number;
+  mutationGeneration: number;
+  store: TerminalSettingsStore;
+}
+
 const saveQueues = new WeakMap<TerminalSettingsStore, SaveQueue>();
 const previews = new WeakMap<TerminalSettingsStore, TerminalSettingsPreview>();
 
-function changedKeys(settings: Partial<TerminalSettings>): (keyof TerminalSettings)[] {
-  return Object.keys(settings) as (keyof TerminalSettings)[];
+function changedKeys<T extends object>(settings: T): (keyof T)[] {
+  return Object.keys(settings) as (keyof T)[];
 }
 
 function reconcileSettings(
@@ -60,6 +69,22 @@ function settingsWithoutPreview(store: TerminalSettingsStore): TerminalSettings 
     }
   }
   return settings;
+}
+
+function getSaveQueue(store: TerminalSettingsStore, baseline: TerminalSettings): SaveQueue {
+  let queue = saveQueues.get(store);
+  if (!queue) {
+    queue = {
+      confirmed: { ...baseline },
+      fieldMutationGenerations: {},
+      hydrationGeneration: 0,
+      mutationGeneration: 0,
+      pending: 0,
+      tail: Promise.resolve(),
+    };
+    saveQueues.set(store, queue);
+  }
+  return queue;
 }
 
 function confirmPreviewChanges(store: TerminalSettingsStore, changes: Partial<TerminalSettings>): void {
@@ -126,25 +151,47 @@ export function restoreTerminalSettingsPreview(store: TerminalSettingsStore, bas
   previews.delete(store);
 }
 
+export function beginTerminalSettingsHydration(store: TerminalSettingsStore): TerminalSettingsHydration {
+  const queue = getSaveQueue(store, settingsWithoutPreview(store));
+  queue.hydrationGeneration += 1;
+  return {
+    hydrationGeneration: queue.hydrationGeneration,
+    mutationGeneration: queue.mutationGeneration,
+    store,
+  };
+}
+
+export function hydrateTerminalSettings(hydration: TerminalSettingsHydration, settings: TerminalSettings): void {
+  const { store } = hydration;
+  const queue = getSaveQueue(store, settingsWithoutPreview(store));
+  if (hydration.hydrationGeneration !== queue.hydrationGeneration) return;
+
+  const current = store.getTerminalSettings();
+  const confirmed = { ...settings };
+  const hydrated = { ...settings };
+  for (const key of changedKeys(queue.fieldMutationGenerations)) {
+    const fieldGeneration = queue.fieldMutationGenerations[key] ?? 0;
+    if (fieldGeneration <= hydration.mutationGeneration) continue;
+    Object.assign(confirmed, { [key]: queue.confirmed[key] });
+    Object.assign(hydrated, { [key]: current[key] });
+  }
+  queue.confirmed = confirmed;
+  store.setTerminalSettings(hydrated);
+}
+
 export function saveTerminalSettings({
   baseline,
   changes,
   persist,
   store,
 }: SaveTerminalSettingsOptions): Promise<TerminalSettings> {
-  let queue = saveQueues.get(store);
-  if (!queue) {
-    queue = {
-      confirmed: { ...baseline },
-      pending: 0,
-      tail: Promise.resolve(),
-    };
-    saveQueues.set(store, queue);
-  }
-
-  const activeQueue = queue;
+  const activeQueue = getSaveQueue(store, baseline);
   if (activeQueue.pending === 0) {
     activeQueue.confirmed = settingsWithoutPreview(store);
+  }
+  activeQueue.mutationGeneration += 1;
+  for (const key of changedKeys(changes)) {
+    activeQueue.fieldMutationGenerations[key] = activeQueue.mutationGeneration;
   }
   activeQueue.pending += 1;
   store.setTerminalSettings({

@@ -169,8 +169,10 @@ Persisted controls must state their scope clearly.
 - An idle settings queue must rebase from authoritative store values, excluding
   fields still owned by live preview; otherwise reloads are erased or drafts leak
   into unrelated saves (`frontend/src/lib/components/terminal/terminalSettingsPersistence.ts::settingsWithoutPreview`).
+- Settings hydration must share the mutation coordinator; a stale read must
+  preserve fields changed after it began (`frontend/src/lib/components/terminal/terminalSettingsPersistence.ts::beginTerminalSettingsHydration`).
 - Settings that select a runtime must hydrate before that runtime starts, but
-  the gate must time out into a retryable state rather than strand the surface
+  the gate must abort timed-out or superseded reads and expose retry rather than strand the surface
   (`frontend/src/lib/components/terminal/WorkspaceEmbedShell.svelte::loadTerminalSettings`).
 
 Whenever a control persists, document and test:

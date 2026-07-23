@@ -1,14 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { runAppStartup } from "./appStartup.js";
 import type { StoreInstances } from "@middleman/ui";
-import type { Settings } from "@middleman/ui/api/types";
+import { DEFAULT_TERMINAL_SETTINGS, type Settings, type TerminalSettings } from "@middleman/ui/api/types";
 
 function makeStores(): StoreInstances {
+  let terminalSettings = { ...DEFAULT_TERMINAL_SETTINGS };
   return {
     settings: {
       setConfiguredRepos: vi.fn(),
       setModeVisibility: vi.fn(),
-      setTerminalSettings: vi.fn(),
+      getTerminalSettings: () => terminalSettings,
+      setTerminalSettings: vi.fn((settings: TerminalSettings) => {
+        terminalSettings = settings;
+      }),
       setPullRequestSettings: vi.fn(),
       setTerminalFontFamily: vi.fn(),
       setTerminalRenderer: vi.fn(),

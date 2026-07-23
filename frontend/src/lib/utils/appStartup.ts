@@ -1,5 +1,9 @@
 import type { StoreInstances } from "@middleman/ui";
 import type { Settings } from "@middleman/ui/api/types";
+import {
+  beginTerminalSettingsHydration,
+  hydrateTerminalSettings,
+} from "../components/terminal/terminalSettingsPersistence.js";
 
 export interface AppStartupDeps {
   waitUntilBackendReady?: (signal: AbortSignal) => Promise<void>;
@@ -55,6 +59,8 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
     }
     if (cancelled) return;
     deps.afterBackendReady?.(abort.signal);
+    const settingsStore = deps.getStores()?.settings;
+    const terminalHydration = settingsStore ? beginTerminalSettingsHydration(settingsStore) : null;
     try {
       const settings = await loadSettingsWithTimeout(deps.getSettings);
       if (cancelled) return;
@@ -62,7 +68,12 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
       if (stores) {
         stores.settings.setConfiguredRepos(settings.repos);
         stores.settings.setModeVisibility(settings.modes);
-        stores.settings.setTerminalSettings(settings.terminal);
+        if (terminalHydration?.store === stores.settings) {
+          hydrateTerminalSettings(terminalHydration, settings.terminal);
+        } else {
+          const currentHydration = beginTerminalSettingsHydration(stores.settings);
+          hydrateTerminalSettings(currentHydration, settings.terminal);
+        }
         stores.settings.setPullRequestSettings(settings.pull_requests);
         stores.activity.hydrateDefaults(settings.activity);
         stores.issues.hydrateDefaults(settings.issues);

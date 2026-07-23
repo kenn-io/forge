@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
-import type { TerminalSettings } from "@middleman/ui/api/types";
+import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "@middleman/ui/api/types";
 
-import { mountBrowserApp, type MountedBrowserApp } from "./test/browserAppHarness.js";
+import { createTerminalZoomController } from "./lib/components/terminal/terminalZoom.js";
+import { firePopstate, mountBrowserApp, type MountedBrowserApp } from "./test/browserAppHarness.js";
 import { mockSettings } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
@@ -31,6 +32,14 @@ function navLabels(): string[] {
   return Array.from(document.querySelectorAll<HTMLElement>(".kit-settings__nav-label")).map(
     (element) => element.textContent?.trim() ?? "",
   );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 describe("terminal settings response races", () => {
@@ -113,6 +122,74 @@ describe("terminal settings response races", () => {
     releaseSaveResponse!();
 
     await vi.waitFor(() => expect(settingsStore.getTerminalSettings().font_family).toBe(savedFontFamily), WAIT);
+    expect(settingsStore.getTerminalSettings().font_size).toBe(13);
+  });
+
+  it("preserves a pending zoom when a stale settings hydration resolves", async () => {
+    await page.viewport(1280, 900);
+    let delaySettingsHydration = false;
+    let releaseSettingsHydration: (() => void) | undefined;
+    mounted = await mountBrowserApp("/", {
+      overrides: [
+        (request) => {
+          if (!delaySettingsHydration || request.method !== "GET" || request.url.pathname !== "/api/v1/settings") {
+            return null;
+          }
+          delaySettingsHydration = false;
+          const responseBody = new ReadableStream<Uint8Array>({
+            start(controller) {
+              releaseSettingsHydration = () => {
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    JSON.stringify({
+                      ...mockSettings,
+                      terminal: {
+                        ...mockSettings.terminal,
+                        font_family: '"Hydrated Font", monospace',
+                      },
+                    }),
+                  ),
+                );
+                controller.close();
+              };
+            },
+          });
+          return new Response(responseBody, {
+            headers: { "content-type": "application/json" },
+          });
+        },
+      ],
+    });
+    await vi.waitFor(() => expect(document.querySelector(".activity-feed")).not.toBeNull(), WAIT);
+
+    delaySettingsHydration = true;
+    firePopstate("/settings");
+    await vi.waitFor(() => expect(releaseSettingsHydration).toBeTypeOf("function"), WAIT);
+    firePopstate("/");
+    await vi.waitFor(() => expect(document.querySelector(".settings-page")).toBeNull(), WAIT);
+
+    const pendingSave = deferred<TerminalSettings>();
+    const settingsStore = settingsStoreCapture.current!;
+    const zoom = createTerminalZoomController({
+      store: settingsStore,
+      persist: () => pendingSave.promise,
+      reportError: vi.fn(),
+    });
+    zoom.setFontSize(13);
+    expect(settingsStore.getTerminalSettings().font_size).toBe(13);
+
+    releaseSettingsHydration!();
+    await vi.waitFor(
+      () => expect(settingsStore.getTerminalSettings().font_family).toBe('"Hydrated Font", monospace'),
+      WAIT,
+    );
+    expect(settingsStore.getTerminalSettings().font_size).toBe(13);
+
+    pendingSave.resolve({
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_size: 13,
+    });
+    await zoom.whenIdle();
     expect(settingsStore.getTerminalSettings().font_size).toBe(13);
   });
 });

@@ -383,6 +383,83 @@ token_env = "ORG_A_PAT"
 		"a routed GitHub host without a matching route must fail closed")
 }
 
+// TestProviderStartupDisablesAmbiguousOwnerlessFallbackOnSharedHost pins the
+// shared-host disagreement rule end to end: providers keep their own
+// credentials for repository-scoped operations, while the ownerless host
+// fallback fails closed instead of exposing the GitHub credential for work
+// that may belong to another provider.
+func TestProviderStartupDisablesAmbiguousOwnerlessFallbackOnSharedHost(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("GITHUB_HOST_PAT", "github-secret")
+	t.Setenv("FORGEJO_PAT", "forgejo-secret")
+	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/version" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"version":"9.0.0"}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(api.Close)
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = api.Client().Transport
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+	host := strings.TrimPrefix(api.URL, "https://")
+	path := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(os.WriteFile(path, fmt.Appendf(nil, `
+[[platforms]]
+type = "github"
+host = %[1]q
+token_env = "GITHUB_HOST_PAT"
+
+[[platforms]]
+type = "forgejo"
+host = %[1]q
+token_env = "FORGEJO_PAT"
+`, host), 0o600))
+	cfg, err := config.Load(path)
+	require.NoError(err)
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubCLI: func(context.Context, string) (string, error) {
+			return "", tokenauth.ErrMissingToken
+		},
+	})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	startup, err := buildProviderStartup(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+		fakeGitHubIdentityResolver{
+			byEnv: map[string]github.GitHubIdentity{
+				"GITHUB_HOST_PAT": {
+					Key: github.IdentityKey{Host: host, Principal: "user:777"},
+				},
+			},
+		},
+	)
+	require.NoError(err)
+
+	var routes gitclone.RouteResolver = &startup
+	forgejoSource := routes.SourceForRepo("forgejo", host, "acme", "widget")
+	require.NotNil(forgejoSource)
+	forgejoToken, err := forgejoSource.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("forgejo-secret", forgejoToken)
+
+	githubSource := routes.SourceForRepo("github", host, "acme", "widget")
+	require.NotNil(githubSource)
+	githubToken, err := githubSource.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("github-secret", githubToken)
+
+	fallback := routes.FallbackSource(host)
+	require.NotNil(fallback)
+	_, err = fallback.Token(t.Context())
+	require.ErrorIs(err, tokenauth.ErrMissingToken,
+		"an ambiguous shared-host ownerless fallback must fail closed")
+}
+
 func TestSelectedGitHubAppSupportsOwnerPreviewWithoutPATFallback(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -467,17 +544,15 @@ func TestSelectedGitHubAppSupportsOwnerPreviewWithoutPATFallback(t *testing.T) {
 	assert.Equal("Bearer app-token", installationAuth)
 }
 
-func TestBuildProviderStartupSkipsImplicitOptionalFallbackIdentityLookup(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	database := dbtest.Open(t)
-	t.Setenv("ORG_A_PAT", "org-a-token")
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "invalid-implicit-fallback-token")
+func TestBuildProviderStartupProbesImplicitFallbackBestEffort(t *testing.T) {
 	// Load from disk: Load defaults github_token_env to the built-in env
-	// name, so a config that never mentions it must still be treated as an
-	// implicit fallback whose invalid token cannot fail startup.
-	path := filepath.Join(t.TempDir(), "config.toml")
-	require.NoError(os.WriteFile(path, []byte(`
+	// name, so a config that never mentions it is an implicit fallback that
+	// must be probed best-effort: kept when its token resolves, skipped with
+	// a warning (never failing startup) when it does not.
+	loadConfig := func(t *testing.T) *config.Config {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "config.toml")
+		require.NoError(t, os.WriteFile(path, []byte(`
 [[repos]]
 owner = "org-a"
 name = "one"
@@ -487,20 +562,37 @@ host = "github.com"
 owner = "org-a"
 token_env = "ORG_A_PAT"
 `), 0o600))
-	cfg, err := config.Load(path)
-	require.NoError(err)
-	set := tokenauth.NewSourceSet(tokenauth.Options{
-		GitHubCLI: func(context.Context, string) (string, error) {
-			return "", tokenauth.ErrMissingToken
-		},
-	})
-	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
-	require.NoError(err)
-	var identityLookups atomic.Int32
+		cfg, err := config.Load(path)
+		require.NoError(t, err)
+		return cfg
+	}
+	fallbackKey := tokenauth.Key{Platform: "github", Host: "github.com"}
+	buildStartup := func(
+		t *testing.T, resolver fakeGitHubIdentityResolver,
+	) (providerStartup, error) {
+		t.Helper()
+		cfg := loadConfig(t)
+		set := tokenauth.NewSourceSet(tokenauth.Options{
+			GitHubCLI: func(context.Context, string) (string, error) {
+				return "", tokenauth.ErrMissingToken
+			},
+		})
+		sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+		require.NoError(t, err)
+		return buildProviderStartup(
+			t.Context(), dbtest.Open(t), cfg, set, sources,
+			defaultProviderFactories(), resolver,
+		)
+	}
 
-	startup, err := buildProviderStartup(
-		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
-		fakeGitHubIdentityResolver{
+	t.Run("invalid token skips fallback without failing startup", func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		t.Setenv("ORG_A_PAT", "org-a-token")
+		t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "invalid-implicit-fallback-token")
+		var identityLookups atomic.Int32
+
+		startup, err := buildStartup(t, fakeGitHubIdentityResolver{
 			byEnv: map[string]github.GitHubIdentity{
 				"ORG_A_PAT": {
 					Key: github.IdentityKey{Host: "github.com", Principal: "user:123"},
@@ -510,12 +602,34 @@ token_env = "ORG_A_PAT"
 				"MIDDLEMAN_GITHUB_TOKEN": errors.New("401 bad credentials"),
 			},
 			calls: &identityLookups,
-		},
-	)
-	require.NoError(err)
-	assert.Equal(int32(1), identityLookups.Load())
-	assert.NotContains(startup.githubRoutes, tokenauth.Key{
-		Platform: "github", Host: "github.com",
+		})
+		require.NoError(err)
+		assert.Equal(int32(2), identityLookups.Load(),
+			"the implicit fallback must be probed, not silently dropped")
+		assert.NotContains(startup.githubRoutes, fallbackKey)
+	})
+
+	t.Run("valid token keeps ownerless APIs routed", func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		t.Setenv("ORG_A_PAT", "org-a-token")
+		t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "valid-implicit-fallback-token")
+		var identityLookups atomic.Int32
+
+		startup, err := buildStartup(t, fakeGitHubIdentityResolver{
+			byEnv: map[string]github.GitHubIdentity{
+				"ORG_A_PAT": {
+					Key: github.IdentityKey{Host: "github.com", Principal: "user:123"},
+				},
+				"MIDDLEMAN_GITHUB_TOKEN": {
+					Key: github.IdentityKey{Host: "github.com", Principal: "user:555"},
+				},
+			},
+			calls: &identityLookups,
+		})
+		require.NoError(err)
+		assert.Equal(int32(2), identityLookups.Load())
+		assert.Contains(startup.githubRoutes, fallbackKey)
 	})
 }
 

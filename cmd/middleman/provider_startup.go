@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"go.kenn.io/middleman/internal/config"
@@ -133,6 +134,15 @@ func (s *providerStartup) FallbackSource(host string) tokenauth.Source {
 		return nil
 	}
 	host = strings.ToLower(strings.TrimSpace(host))
+	clone := s.cloneAuth[host]
+	// A present-but-empty host chain means providers sharing this hostname
+	// disagree (Config.CloneTokenDescriptors disabled the ownerless
+	// fallback); the GitHub fallback route must not resurrect it, or an
+	// ownerless operation would expose GitHub's credential for work that may
+	// belong to another provider.
+	if clone != nil && len(clone.Descriptor().Candidates) == 0 {
+		return clone
+	}
 	if route, ok := s.githubRoutes[tokenauth.Key{
 		Platform: string(platform.KindGitHub), Host: host,
 	}]; ok && route.source != nil {
@@ -140,7 +150,7 @@ func (s *providerStartup) FallbackSource(host string) tokenauth.Source {
 			Source: route.source, writeIdentity: route.writeIdentity,
 		}
 	}
-	return s.cloneAuth[host]
+	return clone
 }
 
 func defaultProviderFactories() map[string]providerFactory {
@@ -418,16 +428,13 @@ func buildGitHubIdentityRuntimes(
 	resolvedPATs := make(map[string]resolvedGitHubPAT, len(plans))
 	for _, plan := range plans {
 		desc := plan.Descriptor
-		if !plan.Required && desc.Key.Scope == "" {
-			// Scoped routes already carry every credential needed for their
-			// repositories. Do not turn an implicit default env/gh CLI token
-			// into an additional startup /user dependency unless the user
-			// explicitly configured that host fallback.
-			if len(requiredHosts) > 0 &&
-				!hasExplicitGitHubFallback(cfg, desc.Key.Host) {
-				continue
-			}
-		}
+		// Scoped routes already carry every credential needed for their
+		// repositories, so an implicit default env/gh CLI fallback is probed
+		// best-effort: a valid token keeps ownerless APIs served, while a
+		// missing or invalid one is skipped with a warning instead of
+		// failing startup. Explicit host fallbacks still fail hard.
+		bestEffort := !plan.Required && desc.Key.Scope == "" &&
+			len(requiredHosts) > 0 && !hasExplicitGitHubFallback(cfg, desc.Key.Host)
 		var source tokenauth.Source = set.Upsert(desc)
 		app, hasApp := activeGitHubAppCandidate(desc, plan.GitHubOwner)
 		resolvedWrite, err := resolveGitHubPATIdentity(
@@ -438,6 +445,14 @@ func buildGitHubIdentityRuntimes(
 			if errors.Is(err, tokenauth.ErrMissingToken) && hasApp {
 				writeIdentity = github.GitHubIdentity{}
 			} else if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
+				continue
+			} else if bestEffort {
+				slog.Warn(
+					"skipping implicit GitHub host fallback; ownerless APIs stay unrouted until it resolves",
+					"host", desc.Key.Host,
+					"source", desc.SafeString(),
+					"error", err,
+				)
 				continue
 			} else {
 				return fmt.Errorf(

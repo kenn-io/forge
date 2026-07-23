@@ -169,11 +169,14 @@ must share one runtime; App reads use their installation identity.
 
 - Startup PAT identity discovery must use a bounded per-request context
   (`internal/github/identity.go::HTTPIdentityResolver.ResolvePAT`).
-- When required scoped routes cover configured repositories, do not resolve an
-  implicit ownerless fallback unless the host fallback is explicitly configured;
-  a `github_token_env` equal to the built-in default does not count because
-  Load, Save, and the sample config all materialize that name
-  (`internal/config/config.go::Config.HasExplicitGitHubTokenEnv`).
+- When required scoped routes cover configured repositories, the implicit
+  ownerless fallback is probed best-effort: a resolvable token keeps ownerless
+  APIs routed, while a missing or invalid one is skipped with a warning instead
+  of failing startup. Only an explicitly configured host fallback fails hard; a
+  `github_token_env` equal to the built-in default does not count as explicit
+  because Load, Save, and the sample config all materialize that name
+  (`internal/config/config.go::Config.HasExplicitGitHubTokenEnv`,
+  `cmd/middleman/provider_startup.go::buildGitHubIdentityRuntimes`).
 - A configured router with no exact, owner, or fallback route is a routing
   failure; operation availability must fail closed instead of treating it as an
   unrouted legacy host (`internal/github/auth_router.go::MissingRouteError`,
@@ -207,10 +210,12 @@ host (`internal/github/notifications_sync.go::Syncer.syncNotificationsForRepo`).
 
 Selected-repository App routes may expose installation-repository listing as an
 owner-scoped discovery route, but that route must never become a fallback for
-other repository operations, and it applies only when no owner or fallback PAT
-route serves the owner — a PAT lists everything it can access, while the App
-client lists only its selection
-(`internal/github/auth_router.go::RoutedClient.discoveryClientForOwner`).
+other repository operations. Owner discovery unions the PAT route's listing
+with the selected-App listing and dedupes by repository ID — a PAT lists
+everything it can access but misses selection-only grants, while the App client
+lists only its selection — and fails closed if either configured source fails
+rather than silently narrowing coverage
+(`internal/github/auth_router.go::RoutedClient.listRepositoriesByOwnerAcrossRoutes`).
 
 Managed Git uses exact-repository or owner PAT routes with mutation context and
 must never expose an App installation token to smart HTTP. Thread full provider,

@@ -2009,6 +2009,71 @@ func TestSyncNotificationsContinuesAfterRepoErrorOnSameHost(t *testing.T) {
 	assert.False(widgetWatermark.LastSuccessfulSyncAt.IsZero())
 }
 
+func TestSyncNotificationsSkipsUnroutedRepoAndAdvancesRoutedSibling(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	for _, identity := range []db.RepoIdentity{
+		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+		db.GitHubRepoIdentity("github.com", "unrouted", "thing"),
+	} {
+		_, err := database.UpsertRepo(t.Context(), identity)
+		require.NoError(err)
+	}
+	number := 7
+	client := &mockClient{
+		listNotificationsFn: func(_ context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error) {
+			if opts.Participating || opts.RepoName != "widget" {
+				return nil, false, nil
+			}
+			return []NotificationThread{{
+				ID: "thread-ok", RepoOwner: "acme", RepoName: "widget",
+				SubjectType: "PullRequest", SubjectTitle: "Review requested",
+				WebURL:     "https://github.com/acme/widget/pull/7",
+				ItemNumber: &number, ItemType: "pr", Reason: "mention",
+				Unread: true, UpdatedAt: time.Now().UTC(),
+			}}, false, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{
+			{Platform: platform.KindGitHub, Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Platform: platform.KindGitHub, Owner: "unrouted", Name: "thing", PlatformHost: "github.com"},
+		},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	router, err := NewHostRouter("github.com", &Route{
+		Key:           RouteKey{Host: "github.com", Owner: "acme"},
+		Client:        client,
+		ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:9"},
+		WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:9"},
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+
+	err = syncer.SyncNotifications(t.Context())
+	require.Error(err, "the unrouted repository must surface its failure")
+	widgetWatermark, wmErr := database.GetNotificationSyncWatermark(
+		t.Context(), "github", "github.com", "acme", "widget",
+	)
+	require.NoError(wmErr)
+	require.NotNil(widgetWatermark,
+		"a routed sibling must sync and advance despite an unroutable repository on the host")
+	unroutedWatermark, wmErr := database.GetNotificationSyncWatermark(
+		t.Context(), "github", "github.com", "unrouted", "thing",
+	)
+	require.NoError(wmErr)
+	assert.Nil(unroutedWatermark)
+	items, listErr := database.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all"},
+	)
+	require.NoError(listErr)
+	require.Len(items, 1)
+	assert.Equal("thread-ok", items[0].PlatformNotificationID)
+}
+
 func TestSyncNotificationsIgnoresReadRateReserveWhenNotificationClientBypassesReserve(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

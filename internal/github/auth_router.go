@@ -325,24 +325,75 @@ func (c *RoutedClient) routeForOwner(owner string) (Client, error) {
 	return route.Client, nil
 }
 
-// discoveryClientForOwner selects the credential used to enumerate an owner's
-// repositories. Owner and fallback PAT routes win: a PAT lists every
-// repository it can access, while a selected-installation App client lists
-// only its selection, so preferring it would silently drop PAT-accessible
-// repositories from discovery. The App discovery client applies only when no
-// other route can serve the owner.
-func (c *RoutedClient) discoveryClientForOwner(owner string) (Client, error) {
-	client, err := c.routeForOwner(owner)
-	if err == nil {
-		return client, nil
+// listRepositoriesByOwnerAcrossRoutes enumerates an owner's repositories
+// across every credential that can see them. A PAT route lists everything the
+// PAT can access but may lack access to repositories a selected-installation
+// App covers; the App discovery client lists only its selection. Neither may
+// shadow the other, so both configured sources are queried and merged, and a
+// failure of either fails discovery rather than silently narrowing it.
+func (c *RoutedClient) listRepositoriesByOwnerAcrossRoutes(
+	ctx context.Context, owner string,
+) ([]*gh.Repository, error) {
+	var discovery Client
+	if c != nil && c.routes != nil {
+		discovery = c.routes.discoveryOwners[ownerRouteMapKey(owner)]
 	}
-	var missing *MissingRouteError
-	if errors.As(err, &missing) && c != nil && c.routes != nil {
-		if discovery := c.routes.discoveryOwners[ownerRouteMapKey(owner)]; discovery != nil {
-			return discovery, nil
+	routed, routeErr := c.routeForOwner(owner)
+	if routeErr != nil {
+		var missing *MissingRouteError
+		if errors.As(routeErr, &missing) && discovery != nil {
+			return discovery.ListRepositoriesByOwner(ctx, owner)
+		}
+		return nil, routeErr
+	}
+	repos, err := routed.ListRepositoriesByOwner(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	if discovery == nil || discovery == routed {
+		return repos, nil
+	}
+	appRepos, err := discovery.ListRepositoriesByOwner(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	return mergeRepositoryLists(repos, appRepos), nil
+}
+
+func mergeRepositoryLists(lists ...[]*gh.Repository) []*gh.Repository {
+	total := 0
+	for _, list := range lists {
+		total += len(list)
+	}
+	seenIDs := make(map[int64]struct{}, total)
+	seenNames := make(map[string]struct{}, total)
+	merged := make([]*gh.Repository, 0, total)
+	for _, list := range lists {
+		for _, repo := range list {
+			if repo == nil {
+				continue
+			}
+			if id := repo.GetID(); id != 0 {
+				if _, ok := seenIDs[id]; ok {
+					continue
+				}
+				seenIDs[id] = struct{}{}
+			} else {
+				name := strings.ToLower(strings.TrimSpace(repo.GetFullName()))
+				if name == "" {
+					name = strings.ToLower(strings.TrimSpace(
+						repo.GetOwner().GetLogin() + "/" + repo.GetName(),
+					))
+				}
+				if _, ok := seenNames[name]; ok {
+					continue
+				}
+				seenNames[name] = struct{}{}
+			}
+			merged = append(merged, repo)
 		}
 	}
-	return nil, err
+	return merged
 }
 
 func (c *RoutedClient) AuthenticatedViewerLoginForRepo(
@@ -497,11 +548,7 @@ func (c *RoutedClient) GetPullRequest(ctx context.Context, owner, repo string, n
 	return client.GetPullRequest(ctx, owner, repo, number)
 }
 func (c *RoutedClient) ListRepositoriesByOwner(ctx context.Context, owner string) ([]*gh.Repository, error) {
-	client, err := c.discoveryClientForOwner(owner)
-	if err != nil {
-		return nil, err
-	}
-	return client.ListRepositoriesByOwner(ctx, owner)
+	return c.listRepositoriesByOwnerAcrossRoutes(ctx, owner)
 }
 func (c *RoutedClient) ListReleases(ctx context.Context, owner, repo string, perPage int) ([]*gh.RepositoryRelease, error) {
 	client, err := c.routeForRepo(owner, repo)

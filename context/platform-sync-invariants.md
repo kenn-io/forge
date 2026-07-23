@@ -40,7 +40,11 @@ Each configured provider-host pair may have its own fallback token source;
 providers sharing one hostname may carry different chains. When their chains
 disagree, the ownerless host clone fallback is disabled rather than borrowing
 one provider's credential, because an ownerless operation cannot select a
-provider safely (`internal/config/config.go::Config.CloneTokenDescriptors`).
+provider safely; providers with no credential chain of their own do not veto
+the fallback, and runtime route resolution must honor the disabled state
+instead of falling through to another provider's unscoped route
+(`internal/config/config.go::Config.CloneTokenDescriptors`,
+`cmd/middleman/provider_startup.go::providerStartup.FallbackSource`).
 Non-GitHub repositories on one (provider, host) must declare equivalent
 effective chains, checked against each repository's own descriptor —
 `ProviderTokenSources` deduplicates by key and would hide the conflict

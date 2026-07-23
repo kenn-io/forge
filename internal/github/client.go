@@ -2484,6 +2484,15 @@ func (c *liveClient) GetRepository(
 	if !c.splitAuthActive() {
 		return r, nil
 	}
+	if IsArchiveSyncBudgetContext(ctx) {
+		// Archive requests hold admission and provider-work leases for the
+		// read identity only, so they must not spend the write credential on
+		// the viewer overlay. Archive classification does not need viewer
+		// permissions; clear the app's instead of persisting the wrong
+		// viewer's.
+		r.Permissions = nil
+		return r, nil
+	}
 	viewerRepo, viewerResp, viewerErr := c.writeGH().Repositories.Get(ctx, owner, repo)
 	c.trackWriteRate(viewerResp)
 	if viewerErr != nil {

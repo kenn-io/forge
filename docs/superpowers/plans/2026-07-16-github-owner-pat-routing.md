@@ -280,10 +280,11 @@ Test that `tokenauth.Key.String()` includes `Scope`, `SourceSet` stores two same
 func TestHTTPIdentityResolverResolvesStableUserID(t *testing.T) {
     // Server asserts Authorization: Bearer token-a and returns
     // {"id":123,"login":"maintainer"}.
-    got, err := resolver.ResolvePAT(t.Context(), "github.com", source)
+    got, token, err := resolver.ResolvePAT(t.Context(), "github.com", source)
     require.NoError(t, err)
     assert.Equal(t, IdentityKey{Host: "github.com", Principal: "user:123"}, got.Key)
     assert.Equal(t, "maintainer", got.Login)
+    assert.Equal(t, "token-a", token)
 }
 ```
 
@@ -328,19 +329,20 @@ type HTTPIdentityResolver struct {
 
 func (r HTTPIdentityResolver) ResolvePAT(
     ctx context.Context, host string, source tokenauth.Source,
-) (GitHubIdentity, error) {
+) (GitHubIdentity, string, error) {
     client := r.NewHTTPClient(host, source)
     req, err := http.NewRequestWithContext(ctx, http.MethodGet, authenticatedUserURL(host), nil)
     if err != nil {
-        return GitHubIdentity{}, err
+        return GitHubIdentity{}, "", err
     }
     resp, err := client.Do(req)
     if err != nil {
-        return GitHubIdentity{}, fmt.Errorf("resolve GitHub identity for %s via %s: %w", host, source.Descriptor().SafeString(), err)
+        return GitHubIdentity{}, "", fmt.Errorf("resolve GitHub identity for %s via %s: %w", host, source.Descriptor().SafeString(), err)
     }
     defer resp.Body.Close()
     // Decode only id and login; require id > 0; map non-2xx responses to a
-    // safe error that never includes response authorization data.
+    // safe error that never includes response authorization data. Return the
+    // exact verified token alongside the identity so startup can bind it.
 }
 ```
 
@@ -392,6 +394,7 @@ git commit -m "feat: resolve GitHub credentials to stable identities" \
 - Create: `internal/db/migrations/000040_identity_scoped_sync_state.down.sql`
 - Modify: `internal/db/types.go`
 - Modify: `internal/db/queries.go`
+- Modify: `internal/db/queries_notifications.go`
 - Modify: `internal/db/db_test.go`
 - Modify: `internal/ratelimit/rate.go`
 - Modify: `internal/ratelimit/rate_test.go`
@@ -465,6 +468,8 @@ WHERE platform != 'github';
 ```
 
 Drop/rename the old table. The down migration selects the most recently updated row per old unique key and comments that collapsing identities is lossy.
+
+The same migration also rebuilds `middleman_notification_sync_watermarks` to per-repository identity — primary key `(platform, platform_host, repo_owner, repo_name)` with lowercased owner/name — retiring the host-wide `sync_cursor` and `tracked_repos_key` columns. Existing host-wide rows are dropped rather than migrated because they cannot be attributed to individual repositories; each repository full-syncs once and re-establishes its own watermark. The down migration restores the empty 000035 host-wide shape.
 
 - [ ] **Step 4: Update DB types and query signatures**
 
@@ -654,7 +659,8 @@ git commit -m "feat: allocate GitHub sync budgets per identity" \
       Key    RouteKey
       Client Client
       // DiscoveryClient narrowly serves owner repository enumeration for
-      // selected-installation App routes when no PAT route covers the owner.
+      // selected-installation App routes. Owner discovery unions its listing
+      // with the PAT route's listing, deduped by repository ID.
       DiscoveryClient Client
       // WriteSnapshotClient snapshots the write identity's rate state on
       // App-read/PAT-write routes; querying with the route's read client
@@ -683,7 +689,7 @@ Cover:
 - ownerless API uses fallback;
 - owner matching is case-insensitive;
 - two clients with different tokens can share the same identity runtime;
-- `ListRepositoriesByOwner` uses the owner route;
+- `ListRepositoriesByOwner` unions the owner PAT route's listing with selected-App discovery, deduped by repository ID, and fails closed when either configured source fails;
 - repository reads and mutations delegate to the same route but use that route's read/write client split.
 
 Use distinct fake clients that record method, owner, repo, and token marker.
@@ -743,15 +749,16 @@ func (c *RoutedClient) GetRepository(
 func (c *RoutedClient) ListRepositoriesByOwner(
     ctx context.Context, owner string,
 ) ([]*gh.Repository, error) {
-    route, err := c.routes.RouteForOwner(owner)
-    if err != nil {
-        return nil, err
-    }
-    return route.Client.ListRepositoriesByOwner(ctx, owner)
+    // Discovery unions the owner/fallback PAT route's listing with the
+    // route's selected-App discovery listing, deduped by repository ID:
+    // a PAT misses selection-only grants, the App lists only its selection.
+    // Either configured source failing fails discovery rather than
+    // silently narrowing coverage.
+    return c.listRepositoriesByOwnerAcrossRoutes(ctx, owner)
 }
 ```
 
-Delegate ownerless notification APIs and authenticated-viewer APIs to the fallback. Use `internal/github/public_api_guard_test.go` to fail if a new owner-bearing interface method is added without an explicit routed implementation.
+Delegate ownerless notification APIs and authenticated-viewer APIs to the fallback; repository-scoped notification and read-propagation traffic routes by repository and is accounted to that route's write identity, not to the fallback. Use `internal/github/public_api_guard_test.go` to fail if a new owner-bearing interface method is added without an explicit routed implementation.
 
 - [ ] **Step 5: Make GraphQL fetcher lookup route-specific**
 
@@ -921,13 +928,13 @@ git commit -m "fix: throttle GitHub sync by authenticated identity" \
 - Produces:
   ```go
   type gitclone.RouteResolver interface {
-      SourceForRepo(host, owner, name string) tokenauth.Source
+      SourceForRepo(platform, host, owner, name string) tokenauth.Source
       FallbackSource(host string) tokenauth.Source
   }
 
   func (m *Manager) RunGitForRepo(
       ctx context.Context,
-      host, owner, name, dir string,
+      platform, host, owner, name, dir string,
       args ...string,
   ) ([]byte, error)
   ```
@@ -979,11 +986,11 @@ client, err := s.syncer.ClientForGitHubOwner(host, owner)
 Change `gitclone.New` to accept a resolver interface, not `map[string]tokenauth.Source`. Select source before every networked operation:
 
 ```go
-func (m *Manager) sourceForRepo(host, owner, name string) tokenauth.Source {
+func (m *Manager) sourceForRepo(platform, host, owner, name string) tokenauth.Source {
     if m.routes == nil {
         return nil
     }
-    return m.routes.SourceForRepo(host, owner, name)
+    return m.routes.SourceForRepo(platform, host, owner, name)
 }
 ```
 

@@ -153,14 +153,10 @@ func (s *Syncer) SyncNotifications(ctx context.Context) error {
 	clients := s.notificationClients()
 	var errs []error
 	for _, entry := range clients {
-		releaseProviderWork, err := s.beginNotificationProviderWork(
+		releaseProviderWork := s.beginNotificationProviderWork(
 			entry.platform, entry.host, tracked,
 		)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		err = s.syncNotificationsForHost(ctx, entry.platform, entry.host, entry.client, tracked)
+		err := s.syncNotificationsForHost(ctx, entry.platform, entry.host, entry.client, tracked)
 		releaseProviderWork()
 		if err != nil {
 			errs = append(errs, err)
@@ -176,20 +172,19 @@ func (s *Syncer) beginNotificationProviderWork(
 	kind platform.Kind,
 	host string,
 	tracked map[string]RepoRef,
-) (func(), error) {
+) func() {
 	seen := make(map[string]struct{})
 	releases := make([]func(), 0)
-	releaseAll := func() {
-		for i := len(releases) - 1; i >= 0; i-- {
-			releases[i]()
-		}
-	}
+	// A repository whose credential route cannot resolve registers nothing:
+	// its own wire calls fail closed at routing without upstream I/O and its
+	// per-repository sync reports the error. Aborting the whole host here
+	// would block healthy siblings from syncing and advancing their
+	// watermarks — the exact coupling per-repository watermarks remove.
 	for _, repo := range notificationTrackedRepos(string(kind), host, tracked) {
 		useWriteIdentity := repoPlatform(repo) == platform.KindGitHub
 		bucket, err := s.bucketKeyForRepo(repo, useWriteIdentity)
 		if err != nil {
-			releaseAll()
-			return nil, err
+			continue
 		}
 		if _, ok := seen[bucket]; ok {
 			continue
@@ -199,7 +194,11 @@ func (s *Syncer) beginNotificationProviderWork(
 			bucket, archive.PriorityNotificationRefresh,
 		))
 	}
-	return releaseAll, nil
+	return func() {
+		for i := len(releases) - 1; i >= 0; i-- {
+			releases[i]()
+		}
+	}
 }
 
 // notificationClient is the provider surface the notification sync

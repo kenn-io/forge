@@ -380,6 +380,16 @@ func TestViewerPermissionOverlayChargesWriteBudget(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(1, writeBudget.Spent(), "foreground mutations stay uncharged")
 	assert.Equal(1, readBudget.Spent())
+
+	// Archive requests hold leases for the read identity only: the viewer
+	// overlay is skipped so the write credential is never spent, and the
+	// app's permissions are cleared rather than persisted.
+	repo, err = client.GetRepository(WithArchiveSyncBudget(t.Context()), "acme", "widgets")
+	require.NoError(err)
+	assert.Nil(repo.Permissions)
+	assert.Equal(1, writeBudget.Spent(),
+		"archive repository reads must not spend the write identity")
+	assert.Equal(2, readBudget.Spent())
 }
 
 // TestMutationAuthFallsBackToReadClientWhenUnsplit pins the hand-built

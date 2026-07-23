@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -335,9 +336,17 @@ func TestRoutedClientDelegatesByRepositoryOwnerAndFallback(t *testing.T) {
 	assert.True(client.bypassNotificationReadRateReserve())
 }
 
-func TestRoutedClientDiscoveryPrefersOwnerAndFallbackRoutes(t *testing.T) {
+func TestRoutedClientDiscoveryMergesPATAndSelectedAppResults(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
+	repoWithID := func(id int64, name string) *gh.Repository {
+		return &gh.Repository{ID: &id, Name: &name}
+	}
+	listClient := func(repos ...*gh.Repository) *mockClient {
+		return &mockClient{listReposByOwnerFn: func(context.Context, string) ([]*gh.Repository, error) {
+			return repos, nil
+		}}
+	}
 	newAppRoute := func(discovery Client) *Route {
 		return &Route{
 			Key:             RouteKey{Host: "github.com", Owner: "acme", Name: "covered"},
@@ -345,45 +354,73 @@ func TestRoutedClientDiscoveryPrefersOwnerAndFallbackRoutes(t *testing.T) {
 			DiscoveryClient: discovery,
 		}
 	}
+	repoNames := func(repos []*gh.Repository) []string {
+		names := make([]string, 0, len(repos))
+		for _, repo := range repos {
+			names = append(names, repo.GetName())
+		}
+		return names
+	}
 
-	// An owner PAT lists every repository it can access; the
-	// selected-installation discovery client must not shadow it.
-	ownerClient := &routeRecordingClient{marker: "owner-pat"}
+	// A PAT sees repositories the selected installation does not cover and
+	// vice versa: discovery must return the union, deduplicating overlap.
 	router, err := NewHostRouter("github.com",
-		newAppRoute(&routeRecordingClient{marker: "app-discovery"}),
-		&Route{Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: ownerClient},
+		newAppRoute(listClient(repoWithID(1, "covered"), repoWithID(2, "app-only"))),
+		&Route{
+			Key:    RouteKey{Host: "github.com", Owner: "acme"},
+			Client: listClient(repoWithID(1, "covered"), repoWithID(3, "pat-only")),
+		},
 	)
 	require.NoError(err)
 	client, err := NewRoutedClient(router)
 	require.NoError(err)
 	repos, err := client.ListRepositoriesByOwner(t.Context(), "Acme")
 	require.NoError(err)
-	assert.Equal("owner-pat", repos[0].GetName())
+	assert.Equal([]string{"covered", "pat-only", "app-only"}, repoNames(repos))
 
-	// The same holds for a host fallback PAT.
-	fallbackClient := &routeRecordingClient{marker: "fallback-pat"}
+	// The same union applies over a host fallback PAT.
 	router, err = NewHostRouter("github.com",
-		newAppRoute(&routeRecordingClient{marker: "app-discovery"}),
-		&Route{Key: RouteKey{Host: "github.com"}, Client: fallbackClient},
+		newAppRoute(listClient(repoWithID(2, "app-only"))),
+		&Route{
+			Key:    RouteKey{Host: "github.com"},
+			Client: listClient(repoWithID(3, "pat-only")),
+		},
 	)
 	require.NoError(err)
 	client, err = NewRoutedClient(router)
 	require.NoError(err)
 	repos, err = client.ListRepositoriesByOwner(t.Context(), "acme")
 	require.NoError(err)
-	assert.Equal("fallback-pat", repos[0].GetName())
+	assert.Equal([]string{"pat-only", "app-only"}, repoNames(repos))
 
-	// Only when no other route serves the owner does the selected-App
-	// discovery client apply.
+	// A failure of either configured source fails discovery instead of
+	// silently narrowing the result set.
 	router, err = NewHostRouter("github.com",
-		newAppRoute(&routeRecordingClient{marker: "app-discovery"}),
+		newAppRoute(&mockClient{listReposByOwnerFn: func(context.Context, string) ([]*gh.Repository, error) {
+			return nil, errors.New("installation token expired")
+		}}),
+		&Route{
+			Key:    RouteKey{Host: "github.com", Owner: "acme"},
+			Client: listClient(repoWithID(3, "pat-only")),
+		},
+	)
+	require.NoError(err)
+	client, err = NewRoutedClient(router)
+	require.NoError(err)
+	_, err = client.ListRepositoriesByOwner(t.Context(), "acme")
+	require.ErrorContains(err, "installation token expired")
+
+	// With no PAT route at all, the selected-App discovery client serves the
+	// owner alone.
+	router, err = NewHostRouter("github.com",
+		newAppRoute(listClient(repoWithID(2, "app-only"))),
 	)
 	require.NoError(err)
 	client, err = NewRoutedClient(router)
 	require.NoError(err)
 	repos, err = client.ListRepositoriesByOwner(t.Context(), "acme")
 	require.NoError(err)
-	assert.Equal("app-discovery", repos[0].GetName())
+	assert.Equal([]string{"app-only"}, repoNames(repos))
 
 	// Owners with no route and no discovery client still fail closed.
 	_, err = client.ListRepositoriesByOwner(t.Context(), "other")

@@ -40,12 +40,6 @@
     onLaunch?.(targetKey);
   }
 
-  function sourceLabel(target: LaunchTarget): string {
-    if (target.kind === "plain_shell") return "shell";
-    if (target.source === "config") return "configured";
-    return target.source;
-  }
-
   function targetLabel(target: LaunchTarget): string {
     return target.kind === "plain_shell" ? "Shell" : target.label;
   }
@@ -121,7 +115,6 @@
             {/if}
           </span>
           <span class="option-label">{targetLabel(target)}</span>
-          <span class="option-source">{sourceLabel(target)}</span>
         </button>
       {/each}
     </div>
@@ -198,7 +191,7 @@
 
   .launch-option {
     display: grid;
-    grid-template-columns: 16px 1fr auto;
+    grid-template-columns: 16px 1fr;
     align-items: center;
     gap: 8px;
     width: 100%;
@@ -250,15 +243,4 @@
     font-weight: 500;
   }
 
-  .option-source {
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
-    text-transform: lowercase;
-    letter-spacing: 0;
-  }
-
-  .launch-option:hover:not(:disabled) .option-source {
-    color: color-mix(in srgb, var(--accent-blue) 80%, var(--text-muted));
-  }
 </style>

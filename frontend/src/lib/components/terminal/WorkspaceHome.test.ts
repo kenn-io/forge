@@ -89,13 +89,11 @@ describe("WorkspaceHome", () => {
 
     expect(screen.getByText("Improve workspace UX")).toBeTruthy();
     expect(screen.getByText("/tmp/widget")).toBeTruthy();
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Codex",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(false);
+    const codexLaunchButton = screen.getByRole("button", {
+      name: "Codex",
+    }) as HTMLButtonElement;
+    expect(codexLaunchButton.disabled).toBe(false);
+    expect(codexLaunchButton.textContent?.trim()).toBe("Codex");
     expect(
       (
         screen.getByRole("button", {
@@ -107,9 +105,14 @@ describe("WorkspaceHome", () => {
     expect(screen.queryByRole("button", { name: "Plain shell" })).toBeNull();
     expect(screen.queryByRole("button", { name: "shell" })).toBeNull();
 
-    await fireEvent.click(screen.getByRole("button", { name: "Codex" }));
+    const shellLaunchButton = screen.getByRole("button", {
+      name: "Shell",
+    }) as HTMLButtonElement;
+    expect(shellLaunchButton.textContent?.trim()).toBe("Shell");
+
+    await fireEvent.click(codexLaunchButton);
     expect(onLaunch).toHaveBeenCalledWith("codex");
-    await fireEvent.click(screen.getByRole("button", { name: "Shell" }));
+    await fireEvent.click(shellLaunchButton);
     expect(onLaunch).toHaveBeenCalledWith("plain_shell");
 
     await fireEvent.click(screen.getByRole("button", { name: /Codex\s+Running/ }));

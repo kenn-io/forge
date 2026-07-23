@@ -51,12 +51,6 @@
     return workspace?.mr_title ?? workspace?.git_head_ref ?? "Workspace";
   }
 
-  function sourceLabel(target: LaunchTarget): string {
-    if (target.source === "config") return "configured";
-    if (target.kind === "plain_shell") return "shell";
-    return "detected";
-  }
-
   function targetLabel(target: LaunchTarget): string {
     return target.kind === "plain_shell" ? "Shell" : target.label;
   }
@@ -127,7 +121,6 @@
             {/if}
           </span>
           <span class="card-label">{targetLabel(target)}</span>
-          <span class="card-source">{sourceLabel(target)}</span>
           {#if isLaunching}
             <span class="card-status">starting…</span>
           {/if}
@@ -290,7 +283,7 @@
 
   .launch-card {
     display: grid;
-    grid-template-columns: 16px 1fr auto;
+    grid-template-columns: 16px 1fr;
     align-items: center;
     gap: 4px 8px;
     /* min-height instead of fixed height: when a card flips into the
@@ -344,13 +337,6 @@
     white-space: nowrap;
     font-weight: 600;
     letter-spacing: 0.005em;
-  }
-
-  .card-source {
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
-    letter-spacing: 0;
   }
 
   .card-status {

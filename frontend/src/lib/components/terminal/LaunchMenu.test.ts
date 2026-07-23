@@ -49,12 +49,13 @@ describe("LaunchMenu", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Launch" }));
 
-    expect(screen.getByRole("button", { name: /Codex/ })).toBeTruthy();
+    const codexOption = screen.getByRole("button", { name: /Codex/ });
+    expect(codexOption.textContent?.trim()).toBe("Codex");
     expect((screen.getByRole("button", { name: /Missing/ }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole("button", { name: /Disabled config/ })).toBeNull();
-    expect(screen.getByRole("button", { name: /Shell/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Shell/ }).textContent?.trim()).toBe("Shell");
 
-    await fireEvent.click(screen.getByRole("button", { name: /Codex/ }));
+    await fireEvent.click(codexOption);
     expect(onLaunch).toHaveBeenCalledWith("codex");
   });
 });

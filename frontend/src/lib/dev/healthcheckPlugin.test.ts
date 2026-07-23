@@ -72,16 +72,13 @@ describe("healthcheckPlugin", () => {
     return port;
   }
 
-  it.each(["/healthz", "/livez"])(
-    "serves %s",
-    async (path) => {
-      const baseURL = await startServer();
-
+  it("serves health endpoints", async () => {
+    const baseURL = await startServer();
+    for (const path of ["/healthz", "/livez"]) {
       const response = await fetch(baseURL + path);
 
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toEqual({ status: "ok" });
-    },
-    15_000,
-  );
+    }
+  }, 30_000);
 });

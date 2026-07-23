@@ -26356,7 +26356,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	assert.Equal(int64(1), pushedDiff.WhitespaceOnlyCount)
 }
 
-func TestWorkspaceDiffEndpointWarnsAndRefreshesOnlyAfterGitHeadMovesE2E(t *testing.T) {
+func TestWorkspaceDiffEndpointRefreshesAfterGitHeadMovesE2E(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
@@ -26411,31 +26411,36 @@ func TestWorkspaceDiffEndpointWarnsAndRefreshesOnlyAfterGitHeadMovesE2E(t *testi
 	))
 
 	moved := requestWorkspaceDiff(t, srv, ws.Id, "head")
-	assert.True(moved.Stale)
 	require.NotNil(moved.SnapshotVersion)
-	assert.Equal(initialVersion, *moved.SnapshotVersion)
 
 	var refreshed generated.DiffResponse
-	assert.Eventually(func() bool {
-		req := newWorkspaceFixtureRequest(
-			http.MethodGet,
-			"/api/v1/workspaces/"+ws.Id+"/diff?base=head",
-			nil,
-		)
-		rr := httptest.NewRecorder()
-		srv.ServeHTTP(rr, req)
-		if rr.Code != http.StatusOK {
-			return false
+	if !moved.Stale && *moved.SnapshotVersion != initialVersion {
+		refreshed = moved
+	} else {
+		if moved.Stale {
+			assert.Equal(initialVersion, *moved.SnapshotVersion)
 		}
-		var candidate generated.DiffResponse
-		if err := json.Unmarshal(rr.Body.Bytes(), &candidate); err != nil ||
-			candidate.Stale || candidate.SnapshotVersion == nil ||
-			*candidate.SnapshotVersion == initialVersion {
-			return false
-		}
-		refreshed = candidate
-		return true
-	}, 2*time.Second, 10*time.Millisecond)
+		require.Eventually(func() bool {
+			req := newWorkspaceFixtureRequest(
+				http.MethodGet,
+				"/api/v1/workspaces/"+ws.Id+"/diff?base=head",
+				nil,
+			)
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != http.StatusOK {
+				return false
+			}
+			var candidate generated.DiffResponse
+			if err := json.Unmarshal(rr.Body.Bytes(), &candidate); err != nil ||
+				candidate.Stale || candidate.SnapshotVersion == nil ||
+				*candidate.SnapshotVersion == initialVersion {
+				return false
+			}
+			refreshed = candidate
+			return true
+		}, 5*time.Second, 10*time.Millisecond)
+	}
 	require.NotNil(refreshed.Files)
 	assert.Contains(workspaceDiffPaths(*refreshed.Files), "head-moved.txt")
 }

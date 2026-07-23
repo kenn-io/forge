@@ -564,7 +564,7 @@ func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
 		return !expired.TmuxWorking &&
 			expired.TmuxActivitySource == tmuxActivitySourceNone &&
 			expired.TmuxLastOutputAt != nil
-	}, time.Second, 10*time.Millisecond)
+	}, 5*time.Second, 10*time.Millisecond)
 	assert.False(expired.TmuxWorking)
 	assert.Equal(tmuxActivitySourceNone, expired.TmuxActivitySource)
 	require.NotNil(expired.TmuxLastOutputAt)

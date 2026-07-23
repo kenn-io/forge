@@ -43,7 +43,7 @@ if [ "${SKIP_BUILD:-}" != "1" ]; then
   if [ ! -x "$REPO_ROOT/node_modules/vite-plus/bin/vp" ]; then
     cd "$REPO_ROOT" && bun install --frozen-lockfile
   fi
-  cd "$REPO_ROOT/frontend" && node ../node_modules/vite-plus/bin/vp build --logLevel warn
+  cd "$REPO_ROOT" && node scripts/build-frontend.mjs
   rm -rf "$REPO_ROOT/internal/web/dist"
   cp -r "$REPO_ROOT/frontend/dist" "$REPO_ROOT/internal/web/dist"
 

@@ -161,7 +161,7 @@ export function saveTerminalSettings({
       reconcileSettings(store, changes, saved);
       return saved;
     } catch (error) {
-      reconcileSettings(store, changes, baseline);
+      reconcileSettings(store, changes, activeQueue.confirmed);
       throw error;
     }
   });

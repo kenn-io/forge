@@ -107,6 +107,36 @@ describe("terminal settings persistence", () => {
     });
   });
 
+  it("rolls consecutive rejected saves back to the last confirmed value", async () => {
+    const firstSave = deferred<TerminalSettings>();
+    const secondSave = deferred<TerminalSettings>();
+    const store = createStore();
+    const persist = vi
+      .fn<(settings: TerminalSettings) => Promise<TerminalSettings>>()
+      .mockImplementationOnce(() => firstSave.promise)
+      .mockImplementationOnce(() => secondSave.promise);
+
+    const firstZoom = saveTerminalSettings({
+      baseline: store.getTerminalSettings(),
+      changes: { font_size: 13 },
+      persist,
+      store,
+    });
+    const secondZoom = saveTerminalSettings({
+      baseline: store.getTerminalSettings(),
+      changes: { font_size: 14 },
+      persist,
+      store,
+    });
+
+    firstSave.reject(new Error("first save failed"));
+    await expect(firstZoom).rejects.toThrow("first save failed");
+    secondSave.reject(new Error("second save failed"));
+    await expect(secondZoom).rejects.toThrow("second save failed");
+
+    expect(store.getTerminalSettings().font_size).toBe(DEFAULT_TERMINAL_SETTINGS.font_size);
+  });
+
   it("excludes a rejected options preview from a queued zoom save", async () => {
     const firstSave = deferred<TerminalSettings>();
     const store = createStore();

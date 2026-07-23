@@ -412,7 +412,7 @@ jobs:
           run-install: true
 
       - name: Build frontend
-        run: cd frontend && ../node_modules/.bin/vp build --logLevel warn
+        run: node scripts/build-frontend.mjs
 
       - name: Embed frontend
         run: |
@@ -523,7 +523,7 @@ jobs:
         run: chown "$(id -u):$(id -g)" "$HOME"
 
       - name: Build frontend
-        run: cd frontend && ../node_modules/.bin/vp build --logLevel warn
+        run: node scripts/build-frontend.mjs
 
       - name: Embed frontend
         run: |

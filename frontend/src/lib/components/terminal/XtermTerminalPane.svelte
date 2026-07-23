@@ -497,6 +497,7 @@
     }
     redrawTerminalTextureAtlas();
     fitAddon?.fit();
+    if (active) scheduleTerminalRefresh();
   });
 
   $effect(() => {

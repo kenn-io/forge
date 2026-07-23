@@ -407,6 +407,7 @@
     terminal.options.cursorBlink = terminalCursorBlink;
     terminal.options.disableStdin = disabled;
     fitAddon?.fit();
+    if (active) scheduleTerminalRefresh();
   });
 
   $effect(() => {

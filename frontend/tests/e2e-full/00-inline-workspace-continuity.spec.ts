@@ -18,7 +18,7 @@
 // WebGL renderer owns the canvas GL context, and ghostty-web's readback
 // proved unreliable under this harness's headless GPU path).
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import {
@@ -39,7 +39,13 @@ type WorkspaceStatusResponse = {
   error_message?: string | null;
 };
 
+type TerminalGeometryFrame = {
+  cols: number;
+  rows: number;
+};
+
 const lockedWorkspaceTestTimeoutMs = 120_000;
+const ZOOMED_TERMINAL_FONT_SIZE = 16;
 const SAFARI_ISSUE_TITLE = "Widget rendering broken on Safari";
 const DARK_MODE_ISSUE_TITLE = "Add dark mode support";
 
@@ -50,6 +56,27 @@ function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   } catch {
     return false;
   }
+}
+
+function observeTerminalRefreshFrames(page: Page): TerminalGeometryFrame[] {
+  const frames: TerminalGeometryFrame[] = [];
+  page.on("websocket", (socket) => {
+    socket.on("framesent", ({ payload }) => {
+      if (typeof payload !== "string") return;
+      try {
+        const message = JSON.parse(payload) as {
+          type?: string;
+          cols?: number;
+          rows?: number;
+        };
+        if (message.type !== "refresh" || message.cols === undefined || message.rows === undefined) return;
+        frames.push({ cols: message.cols, rows: message.rows });
+      } catch {
+        // Terminal input uses binary frames; ignore non-control payloads.
+      }
+    });
+  });
+  return frames;
 }
 
 async function waitForWorkspaceReady(api: APIRequestContext, workspaceId: string): Promise<WorkspaceStatusResponse> {
@@ -106,6 +133,44 @@ async function typeMarkerCommand(page: Page, container: Locator, worktreePath: s
   await expect.poll(() => existsSync(markerPath), { timeout: 15_000 }).toBe(true);
 }
 
+async function readPtyGeometry(
+  page: Page,
+  container: Locator,
+  worktreePath: string,
+  name: string,
+): Promise<{ rows: number; cols: number }> {
+  const outputPath = path.join(worktreePath, name);
+  await typeIntoTerminal(page, container, `stty size > '${outputPath}'`);
+  await expect
+    .poll(
+      () => {
+        if (!existsSync(outputPath)) return "";
+        return readFileSync(outputPath, "utf8").trim();
+      },
+      { timeout: 15_000 },
+    )
+    .toMatch(/^[1-9]\d*\s+[1-9]\d*$/);
+  const [rows, cols] = readFileSync(outputPath, "utf8").trim().split(/\s+/).map(Number);
+  expect(rows).toBeGreaterThan(0);
+  expect(cols).toBeGreaterThan(0);
+  return { rows: rows!, cols: cols! };
+}
+
+async function waitForPtyColumnsBelow(
+  page: Page,
+  container: Locator,
+  worktreePath: string,
+  name: string,
+  maximumCols: number,
+): Promise<{ rows: number; cols: number }> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const geometry = await readPtyGeometry(page, container, worktreePath, `${name}-${attempt}`);
+    if (geometry.cols < maximumCols) return geometry;
+    await page.waitForTimeout(100);
+  }
+  throw new Error(`tmux PTY columns did not fall below ${maximumCols}`);
+}
+
 async function selectTopBarTab(page: Page, label: string): Promise<void> {
   await page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: label }).click();
 }
@@ -152,6 +217,7 @@ test.describe("inline workspace dock continuity", () => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     try {
+      const refreshFrames = observeTerminalRefreshFrames(page);
       isolatedServer = await startIsolatedWorkspaceE2EServer();
       api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
 
@@ -175,6 +241,31 @@ test.describe("inline workspace dock continuity", () => {
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
       const tabContainer = await openTerminalPanel(page);
       await typeMarkerCommand(page, tabContainer, workspace.worktree_path, "continuity-marker-one");
+      const beforeZoom = await readPtyGeometry(
+        page,
+        tabContainer,
+        workspace.worktree_path,
+        "xterm-geometry-before-zoom",
+      );
+      const resetZoom = page.getByRole("button", {
+        name: "Reset terminal font size",
+      });
+      await expect(resetZoom).toHaveText("12px");
+      const refreshCountBeforeZoom = refreshFrames.length;
+      for (let fontSize = 13; fontSize <= ZOOMED_TERMINAL_FONT_SIZE; fontSize += 1) {
+        await page.getByRole("button", { name: "Increase terminal font size" }).click();
+        await expect(resetZoom).toHaveText(`${fontSize}px`);
+      }
+      await expectPersistedTerminalFontSize(api, ZOOMED_TERMINAL_FONT_SIZE);
+      await expect.poll(() => refreshFrames.length).toBeGreaterThan(refreshCountBeforeZoom);
+      await expect.poll(() => refreshFrames.at(-1)?.cols).toBeLessThan(beforeZoom.cols);
+      await waitForPtyColumnsBelow(
+        page,
+        tabContainer,
+        workspace.worktree_path,
+        "xterm-geometry-after-zoom",
+        beforeZoom.cols,
+      );
       if (browserName === "chromium") {
         await expect(tabContainer.locator("canvas").first()).toBeVisible();
         await expect
@@ -234,6 +325,7 @@ test.describe("inline workspace dock continuity", () => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     try {
+      const refreshFrames = observeTerminalRefreshFrames(page);
       isolatedServer = await startIsolatedWorkspaceE2EServer();
       api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
 
@@ -245,13 +337,31 @@ test.describe("inline workspace dock continuity", () => {
       const tabContainer = await openTerminalPanel(page);
       await expect(tabContainer.locator("canvas")).toHaveCount(1);
       await typeMarkerCommand(page, tabContainer, workspace.worktree_path, "continuity-marker-one");
+      const beforeZoom = await readPtyGeometry(
+        page,
+        tabContainer,
+        workspace.worktree_path,
+        "ghostty-geometry-before-zoom",
+      );
       const resetZoom = page.getByRole("button", {
         name: "Reset terminal font size",
       });
       await expect(resetZoom).toHaveText("12px");
-      await page.getByRole("button", { name: "Increase terminal font size" }).click();
-      await expect(resetZoom).toHaveText("13px");
-      await expectPersistedTerminalFontSize(api, 13);
+      const refreshCountBeforeZoom = refreshFrames.length;
+      for (let fontSize = 13; fontSize <= ZOOMED_TERMINAL_FONT_SIZE; fontSize += 1) {
+        await page.getByRole("button", { name: "Increase terminal font size" }).click();
+        await expect(resetZoom).toHaveText(`${fontSize}px`);
+      }
+      await expectPersistedTerminalFontSize(api, ZOOMED_TERMINAL_FONT_SIZE);
+      await expect.poll(() => refreshFrames.length).toBeGreaterThan(refreshCountBeforeZoom);
+      await expect.poll(() => refreshFrames.at(-1)?.cols).toBeLessThan(beforeZoom.cols);
+      await waitForPtyColumnsBelow(
+        page,
+        tabContainer,
+        workspace.worktree_path,
+        "ghostty-geometry-after-zoom",
+        beforeZoom.cols,
+      );
 
       await tabContainer.evaluate((el) => {
         el.setAttribute("data-continuity", "witness");
@@ -268,8 +378,8 @@ test.describe("inline workspace dock continuity", () => {
       await typeMarkerCommand(page, dockContainer, workspace.worktree_path, "continuity-marker-two");
       await dockContainer.click({ position: { x: 10, y: 10 } });
       await page.keyboard.press("Control+=");
-      await expect(resetZoom).toHaveText("14px");
-      await expectPersistedTerminalFontSize(api, 14);
+      await expect(resetZoom).toHaveText(`${ZOOMED_TERMINAL_FONT_SIZE + 1}px`);
+      await expectPersistedTerminalFontSize(api, ZOOMED_TERMINAL_FONT_SIZE + 1);
 
       // Flip back to the Workspaces tab: same hostedWorkspaceKey, so the
       // tagged container (and the canvas inside it) must still be the one
@@ -279,12 +389,14 @@ test.describe("inline workspace dock continuity", () => {
       const backInTab = page.locator(".workspace-tab-slot .terminal-container");
       await expect(witness).toBeVisible();
       await expect(backInTab).toHaveAttribute("data-continuity", "witness");
-      await expect(resetZoom).toHaveText("14px");
+      await expect(resetZoom).toHaveText(`${ZOOMED_TERMINAL_FONT_SIZE + 1}px`);
       // The same session must still accept input after the second
       // reparent — a torn-down or wedged terminal cannot run this.
       await typeMarkerCommand(page, backInTab, workspace.worktree_path, "continuity-marker-three");
       await page.reload();
-      await expect(page.getByRole("button", { name: "Reset terminal font size" })).toHaveText("14px");
+      await expect(page.getByRole("button", { name: "Reset terminal font size" })).toHaveText(
+        `${ZOOMED_TERMINAL_FONT_SIZE + 1}px`,
+      );
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

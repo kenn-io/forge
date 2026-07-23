@@ -47,11 +47,11 @@
   import { identityEquals, type InlineWorkspaceController, type WorkspaceItemIdentity } from "../../workspace-inline.js";
   import {
     beginWorkspaceCreate,
-    createdWorkspaceRef,
     endWorkspaceCreate,
     isWorkspaceCreatePending,
     reconcileWorkspaceCreated,
     recordWorkspaceCreated,
+    resolveControllerlessWorkspaceRef,
   } from "../../stores/workspace-create-pending.svelte.js";
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
@@ -566,12 +566,12 @@
   const workspace = $derived(
     inlineWorkspace
       ? inlineWorkspace.effectiveWorkspaceRef(itemIdentity, issues.getIssueDetail()?.workspace ?? null)
-      : // Without a controller there is no override store: a confirmed
-        // creation whose response landed after unmount or a selection
-        // change is only visible through the shared created-record, or
-        // the replacement view re-offers "Create Workspace" against a
-        // pre-create envelope.
-        (issues.getIssueDetail()?.workspace ?? createdWorkspaceRef(itemIdentity)),
+      : // Without a controller there is no override store: the shared
+        // resolver stands in — the confirmed created record wins over a
+        // stale cached envelope, and an envelope still carrying a
+        // session-deleted workspace ID is masked instead of re-offering
+        // "Open Workspace" for a workspace that no longer exists.
+        resolveControllerlessWorkspaceRef(itemIdentity, issues.getIssueDetail()?.workspace ?? null),
   );
 
   // Once a detail load lands for the identity this component is currently

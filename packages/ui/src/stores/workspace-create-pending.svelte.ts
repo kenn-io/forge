@@ -32,12 +32,16 @@ export function nextWorkspaceLifecycleTick(): number {
 // can land after its workspace was already deleted from another surface
 // (Workspaces tab, terminal toolbar), and publishing it would resurrect a
 // dead ref. Workspace IDs are never reused, so a genuine recreation always
-// arrives under a fresh ID and passes the guard. A plain Set, not $state:
-// it is only consulted at publication time, never rendered.
-const deletedIds = new Set<string>();
+// arrives under a fresh ID and passes the guard. Reactive: the
+// controller-less resolver masks deleted envelope IDs at render time, so a
+// deletion must invalidate views currently showing the dead workspace.
+let deletedIds = $state<ReadonlySet<string>>(new Set());
 
 export function markWorkspaceIdDeleted(workspaceId: string): void {
-  deletedIds.add(workspaceId);
+  if (deletedIds.has(workspaceId)) return;
+  const next = new Set(deletedIds);
+  next.add(workspaceId);
+  deletedIds = next;
 }
 
 export function isWorkspaceIdDeleted(workspaceId: string): boolean {
@@ -89,8 +93,34 @@ export function reconcileWorkspaceCreated(
 ): void {
   const entry = created.find((e) => identityEquals(e.identity, identity));
   if (!entry) return;
-  if (!envelopeRef && (envelopeTick == null || envelopeTick <= entry.tick)) return;
+  // Mirrors the host store's CreatedOverride reconcile: a same-ID envelope
+  // confirms the creation (server authoritative), and any request started
+  // after the confirmation is authoritative whatever it carries — absence
+  // or a replacement ID means the workspace was deleted (and possibly
+  // recreated) elsewhere. A stale pre-create envelope, null or carrying a
+  // different (e.g. previously deleted) ID, must not erase the record.
+  const agrees =
+    (envelopeRef != null && envelopeRef.id === entry.ref.id) || (envelopeTick != null && envelopeTick > entry.tick);
+  if (!agrees) return;
   created = created.filter((e) => !identityEquals(e.identity, identity));
+}
+
+// Workspace resolution for detail instances WITHOUT an inline controller
+// (focus/mobile views, DetailDrawer) — the controller-less mirror of the
+// host store's effectiveRef. The confirmed creation record wins until
+// reconciled away (it is fresher than any cached envelope), and an
+// envelope still carrying a session-deleted ID is masked — the
+// tombstone equivalent, since these views subscribe to no invalidation
+// and their cached envelope outlives the deletion until the next fetch.
+// A fresh-ID envelope stays authoritative.
+export function resolveControllerlessWorkspaceRef(
+  identity: WorkspaceItemIdentity,
+  envelopeRef: WorkspaceRefLite | null | undefined,
+): WorkspaceRefLite | null {
+  const created = createdWorkspaceRef(identity);
+  if (created) return created;
+  if (envelopeRef && !deletedIds.has(envelopeRef.id)) return envelopeRef;
+  return null;
 }
 
 // Deletions arrive by workspace ID (Workspaces tab, terminal toolbar),
@@ -104,5 +134,5 @@ export function resetWorkspaceCreatePendingForTest(): void {
   pending = [];
   created = [];
   lifecycleClock = 0;
-  deletedIds.clear();
+  deletedIds = new Set();
 }

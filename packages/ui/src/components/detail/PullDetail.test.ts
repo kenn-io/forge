@@ -6,7 +6,9 @@ import { createDetailActivityViewStore } from "../../stores/detail-activity-view
 import { createDetailStore } from "../../stores/detail.svelte.js";
 import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
 import {
+  markWorkspaceIdDeleted,
   nextWorkspaceLifecycleTick,
+  recordWorkspaceCreated,
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
 import type { MiddlemanClient } from "../../types.js";
@@ -1786,6 +1788,39 @@ describe("PullDetail inline workspace handoff", () => {
     expect(screen.queryByRole("button", { name: "Focus Terminal" })).toBeNull();
     await fireEvent.click(screen.getAllByRole("button", { name: "Open Workspace" })[0]!);
     expect(navigate).toHaveBeenCalledWith("/terminal/ws-1");
+  });
+
+  it("without a controller a session-deleted envelope workspace is masked", async () => {
+    // Controller-less views subscribe to no invalidation: after a deletion
+    // from another surface their cached envelope still carries the dead
+    // workspace until the next fetch, and following it would offer "Open
+    // Workspace" against a 404.
+    const detail = pullDetail();
+    detail.workspace = { id: "ws-1", status: "ready" };
+
+    renderPullDetail(detail, undefined, undefined, { hideWorkspaceAction: false });
+    expect(screen.getAllByRole("button", { name: "Open Workspace" }).length).toBeGreaterThan(0);
+
+    markWorkspaceIdDeleted("ws-1");
+    await vi.waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Create Workspace" }).length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByRole("button", { name: "Open Workspace" })).toBeNull();
+  });
+
+  it("without a controller the created record wins over a stale envelope", async () => {
+    // The confirmed creation is fresher than any cached envelope: a
+    // pre-create envelope still carrying the previously deleted workspace
+    // must not shadow the recreation.
+    markWorkspaceIdDeleted("ws-old");
+    const detail = pullDetail();
+    detail.workspace = { id: "ws-old", status: "ready" };
+    recordWorkspaceCreated(identity, { id: "ws-new", status: "ready" });
+
+    const { navigate } = renderPullDetail(detail, undefined, undefined, { hideWorkspaceAction: false });
+
+    await fireEvent.click(screen.getAllByRole("button", { name: "Open Workspace" })[0]!);
+    expect(navigate).toHaveBeenCalledWith("/terminal/ws-new");
   });
 
   it("consults the override layer for button state", () => {

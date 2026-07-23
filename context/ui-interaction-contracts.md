@@ -70,7 +70,17 @@ Interactive surfaces must agree on which item is selected.
   creation publications for a deleted ID are refused in both stores: a
   delayed create response that lost the race with its own deletion must
   not overwrite the tombstone or republish the record (IDs are never
-  reused, so fresh-ID recreations pass the guard). E2e mocks
+  reused, so fresh-ID recreations pass the guard). The shared created
+  record reconciles under the same rule as the host store's positive
+  override — same-ID envelope or newer-tick request only; a stale
+  different-ID envelope must not erase a recreation
+  (`packages/ui/src/stores/workspace-create-pending.svelte.ts::reconcileWorkspaceCreated`).
+  Controller-less detail views (focus/mobile, DetailDrawer) resolve
+  through `resolveControllerlessWorkspaceRef`, never bare
+  `envelope ?? createdWorkspaceRef`: the created record wins until
+  reconciled and session-deleted envelope IDs are masked, because those
+  views subscribe to no invalidation and their cached envelope outlives
+  a deletion until the next fetch. E2e mocks
   of the create POST must keep the detail envelope consistent (the real
   server inserts the row before returning 202). The
   host store's `effectiveRef` falls back to that record too — a create

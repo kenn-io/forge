@@ -11,7 +11,7 @@
     api?: DocsAPI;
     searchReferences?: KataTaskReferenceSearch;
     kataIssues?: readonly IssueSummary[];
-    onOpenIssue?: (uid: string) => void;
+    onOpenIssue?: (uid: string, daemonId?: string) => void;
     onOpenKataShortId?: (shortId: string, project?: string, daemonId?: string) => void;
   }
 

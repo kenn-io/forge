@@ -188,6 +188,68 @@ describe("createMessageIssueLinker", () => {
     });
   });
 
+  it("refreshes the shared catalog when the message is already linked", async () => {
+    const fresh = detail(
+      issue({
+        mail_links: [
+          {
+            message_id: 5001,
+            subject: "Alpha",
+            from: "alice@example.com",
+            sent_at: fetchedAt,
+            added_at: fetchedAt,
+          },
+        ],
+      }),
+      '"rev-7"',
+    );
+    const refreshIssues = vi.fn(async () => true);
+    const authority = {
+      selectIssue: vi.fn(async () => ({ daemonID: "daemon-a", detail: fresh })),
+      refreshIssues,
+    };
+    const patchIssueMetadata = vi.fn(async (): Promise<KataTaskMutationResponse> => ({ changed: true }));
+    const linker = createMessageIssueLinker(authority, { patchIssueMetadata });
+
+    await expect(linker.linkMessage("issue-pay-rent", input(5001, "Alpha"))).resolves.toEqual({
+      qualified_id: "Kata#rent",
+    });
+
+    expect(patchIssueMetadata).not.toHaveBeenCalled();
+    expect(refreshIssues).toHaveBeenCalledWith("daemon-a");
+  });
+
+  it("reports a no-op link as successful when the catalog refresh fails", async () => {
+    const fresh = detail(
+      issue({
+        mail_links: [
+          {
+            message_id: 5001,
+            subject: "Alpha",
+            from: "alice@example.com",
+            sent_at: fetchedAt,
+            added_at: fetchedAt,
+          },
+        ],
+      }),
+      '"rev-7"',
+    );
+    const refreshIssues = vi.fn(async () => {
+      throw new Error("catalog unavailable");
+    });
+    const authority = {
+      selectIssue: vi.fn(async () => ({ daemonID: "daemon-a", detail: fresh })),
+      refreshIssues,
+    };
+    const patchIssueMetadata = vi.fn(async (): Promise<KataTaskMutationResponse> => ({ changed: true }));
+    const linker = createMessageIssueLinker(authority, { patchIssueMetadata });
+
+    await expect(linker.linkMessage("issue-pay-rent", input(5001, "Alpha"))).resolves.toEqual({
+      qualified_id: "Kata#rent",
+    });
+    expect(patchIssueMetadata).not.toHaveBeenCalled();
+  });
+
   it("does not report an acknowledged link as failed when the shared catalog refresh fails", async () => {
     const selected = detail(issue(), '"rev-7"');
     const refreshIssues = vi.fn(async () => {

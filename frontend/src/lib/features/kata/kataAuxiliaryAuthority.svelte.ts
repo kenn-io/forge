@@ -44,7 +44,7 @@ export interface KataSelectedIssueSelection {
 }
 
 export interface KataSelectedIssueAuthority {
-  selectIssue(issueUID: string): Promise<KataSelectedIssueSelection>;
+  selectIssue(issueUID: string, daemonID?: string): Promise<KataSelectedIssueSelection>;
   refreshIssues(daemonID: string): Promise<boolean>;
 }
 
@@ -67,6 +67,7 @@ export class KataAuxiliaryAuthority implements KataAuxiliaryAuthoritySource, Kat
   private readonly loadSnapshot: (intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>;
   private desiredDaemonID: string | undefined;
   private refreshTail: Promise<void> = Promise.resolve();
+  private stopped = false;
 
   constructor(options: CreateKataAuxiliaryAuthorityOptions = {}) {
     this.loadSnapshot = options.loadSnapshot ?? fetchKataWorkspaceSnapshot;
@@ -106,11 +107,13 @@ export class KataAuxiliaryAuthority implements KataAuxiliaryAuthoritySource, Kat
     return accepted;
   }
 
-  async selectIssue(issueUID: string): Promise<KataSelectedIssueSelection> {
+  async selectIssue(issueUID: string, daemonID?: string): Promise<KataSelectedIssueSelection> {
     const selectedIssueUID = issueUID.trim();
     if (!selectedIssueUID) throw new Error("Kata issue UID is required");
     const selectionStore = createKataAuthorityStore({ loadSnapshot: this.loadSnapshot });
-    const accepted = await selectionStore.loadSnapshot(intent(this.desiredDaemonID, selectedIssueUID));
+    const accepted = await selectionStore.loadSnapshot(
+      intent(daemonID?.trim() || this.desiredDaemonID, selectedIssueUID),
+    );
     const snapshot = selectionStore.snapshot;
     if (!accepted || snapshot?.selected_issue_uid !== selectedIssueUID || !snapshot.selected_detail) {
       throw new Error(`Kata snapshot did not include selected task ${selectedIssueUID}`);
@@ -126,6 +129,9 @@ export class KataAuxiliaryAuthority implements KataAuxiliaryAuthoritySource, Kat
     const refresh = this.refreshTail
       .catch(() => {})
       .then(async () => {
+        // A refresh queued behind another one can reach this point after
+        // stop(); retrying then would restart the event stream past teardown.
+        if (this.stopped) return;
         if (this.desiredDaemonID !== requestedDaemonID) return;
         accepted = await this.controller.retry();
       });
@@ -142,6 +148,7 @@ export class KataAuxiliaryAuthority implements KataAuxiliaryAuthoritySource, Kat
   }
 
   stop(): void {
+    this.stopped = true;
     this.controller.stop();
   }
 }

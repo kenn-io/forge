@@ -259,4 +259,27 @@ describe("readKataEventStream", () => {
     await expect(stream).resolves.toBeUndefined();
     expect(cancelCalled).toBe(true);
   });
+
+  test("returns cleanly when aborted before reading an already-errored body", async () => {
+    const controller = new AbortController();
+    const fetchImpl = vi.fn(async () => {
+      controller.abort();
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(streamController) {
+            streamController.error(new Error("body torn down"));
+          },
+        }),
+        { status: 200 },
+      );
+    });
+
+    await expect(
+      readKataEventStream({
+        fetchImpl,
+        signal: controller.signal,
+        onMessage: vi.fn(),
+      }),
+    ).resolves.toBeUndefined();
+  });
 });

@@ -125,7 +125,9 @@ Interactive surfaces must agree on which item is selected.
   action target or mutation response into a newly accepted snapshot
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::acceptedSnapshot`).
 - Cross-surface Kata navigation must carry daemon, project UID, and status authority;
-  resolve selected detail before routing when a source has only the issue UID
+  UID-only sources always resolve an isolated selected-detail read for routing —
+  never a shared-snapshot row, which can be stale during invalidation reloads —
+  and honor an explicitly pinned daemon such as a daemon-bound Docs folder
   (`frontend/src/App.svelte::openAuxiliaryKataIssue`).
 
 Responsive layout changes must not change route identity.

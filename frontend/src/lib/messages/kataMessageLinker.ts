@@ -53,6 +53,14 @@ async function patchFreshDetail(
 ): Promise<{ qualified_id: string }> {
   const patch = computeAddMessageLinkPatch(readMessageLinks(fresh.issue.metadata), input);
   if (patch === null) {
+    // The link already exists on the fresh detail, but the shared catalog may
+    // still be stale from an earlier failed refresh. Refresh it here too so a
+    // retried link attempt can self-heal the Linked messages view.
+    try {
+      await authority.refreshIssues(daemonID);
+    } catch {
+      // Best-effort, mirroring the mutation path below.
+    }
     return { qualified_id: fresh.issue.qualified_id };
   }
   const metadataPatch: KataTaskMetadataPatch = { mail_links: patch.mail_links };

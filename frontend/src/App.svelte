@@ -278,25 +278,24 @@
     navigate(kataIssueHref(target, targetDaemon));
   }
 
-  async function openAuxiliaryKataIssue(uid: string): Promise<void> {
-    let issue = kataAuxiliaryAuthority.issues.find((candidate) => candidate.uid === uid);
-    let daemonID = kataAuxiliaryAuthority.daemonID;
-    if (!issue) {
-      try {
-        const selection = await kataAuxiliaryAuthority.selectIssue(uid);
-        issue = selection.detail.issue;
-        daemonID = selection.daemonID;
-      } catch {
-        showFlash("Could not open linked task", { tone: "danger" });
-        return;
-      }
+  async function openAuxiliaryKataIssue(uid: string, daemonID?: string): Promise<void> {
+    // UID-only sources carry no status/project authority, and rows in the
+    // shared auxiliary snapshot can be stale during invalidation reloads.
+    // Always resolve routing authority through an isolated pinned selection,
+    // honoring an explicit daemon (for example a daemon-bound Docs folder).
+    try {
+      const selection = await kataAuxiliaryAuthority.selectIssue(uid, daemonID);
+      navigate(kataIssueHref(
+        {
+          uid,
+          status: selection.detail.issue.status,
+          project_uid: selection.detail.issue.project_uid,
+        },
+        selection.daemonID,
+      ));
+    } catch {
+      showFlash("Could not open linked task", { tone: "danger" });
     }
-    openKataIssue({
-      uid,
-      status: issue.status,
-      project_uid: issue.project_uid,
-      ...(daemonID ? { daemon_id: daemonID } : {}),
-    });
   }
 
   function updateKataRoute(update: KataRouteUpdate, options?: { replace?: boolean }): void {

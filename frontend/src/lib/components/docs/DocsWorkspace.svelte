@@ -44,7 +44,7 @@
     route: DocsRoute;
     onRouteChange: (next: DocsRoute, options?: { replace?: boolean }) => void;
     api?: DocsAPI | undefined;
-    onOpenIssue?: ((uid: string) => void) | undefined;
+    onOpenIssue?: ((uid: string, daemonId?: string) => void) | undefined;
     onOpenKataShortId?: ((shortId: string, project?: string, daemonId?: string) => void) | undefined;
     // Snapshot of issues currently loaded in the tasks store. Powers
     // the immediate `#` autocomplete results before the daemon search
@@ -450,7 +450,7 @@
   }
 
   function handleIssueLink(uid: string) {
-    onOpenIssue?.(uid);
+    onOpenIssue?.(uid, folderDaemon());
   }
 
   function handleKataShortIdLink(shortId: string, project?: string) {

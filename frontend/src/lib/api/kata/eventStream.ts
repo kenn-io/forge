@@ -197,14 +197,22 @@ export async function readKataEventStream(options: ReadKataEventStreamOptions): 
 
   const reader = body.getReader();
   if (options.signal?.aborted) {
-    await reader.cancel();
-    reader.releaseLock();
+    try {
+      // An aborted response body may already be errored, in which case
+      // cancel() rejects with the stored stream error; the abort contract is
+      // still a clean return.
+      await reader.cancel();
+    } catch {
+      // Ignored: cancellation of an errored stream.
+    } finally {
+      reader.releaseLock();
+    }
     return;
   }
   const decoder = new TextDecoder();
   const parser = new KataEventStreamParser();
   const abortReader = () => {
-    void reader.cancel();
+    reader.cancel().catch(() => {});
   };
   options.signal?.addEventListener("abort", abortReader, { once: true });
 

@@ -251,4 +251,45 @@ describe("Kata auxiliary authority", () => {
     expect(selected.daemonID).toBe("work");
     authority.stop();
   });
+
+  it("selects against an explicitly requested daemon over the ambient one", async () => {
+    const loadSnapshot = vi.fn(async (intent: KataSnapshotIntent) => snapshot(intent));
+    const stream = streamHarness();
+    const authority = createKataAuxiliaryAuthority({ loadSnapshot, readEventStream: stream.readEventStream });
+    await authority.load("home");
+
+    const selected = await authority.selectIssue("issue-doc", "docs-daemon");
+
+    expect(loadSnapshot.mock.calls[1]?.[0]).toMatchObject({
+      daemon_id: "docs-daemon",
+      selected_issue_uid: "issue-doc",
+    });
+    expect(selected.daemonID).toBe("docs-daemon");
+    authority.stop();
+  });
+
+  it("drops a queued refresh that would run after stop", async () => {
+    const pendingRetry = deferred<KataWorkspaceSnapshotResponse>();
+    let loads = 0;
+    const loadSnapshot = vi.fn(async (intent: KataSnapshotIntent) => {
+      loads += 1;
+      if (loads === 2) return pendingRetry.promise;
+      return snapshot(intent);
+    });
+    const stream = streamHarness();
+    const authority = createKataAuxiliaryAuthority({ loadSnapshot, readEventStream: stream.readEventStream });
+    await authority.load("home");
+    expect(stream.streams).toHaveLength(1);
+
+    const first = authority.refreshIssues("home");
+    await vi.waitFor(() => expect(loadSnapshot).toHaveBeenCalledTimes(2));
+    const queued = authority.refreshIssues("home");
+    authority.stop();
+    pendingRetry.resolve(snapshot({ scope: "global", authority: "all", daemon_id: "home" }, { generation: 2 }));
+
+    await expect(first).resolves.toBe(false);
+    await expect(queued).resolves.toBe(false);
+    expect(loadSnapshot).toHaveBeenCalledTimes(2);
+    expect(stream.streams).toHaveLength(1);
+  });
 });

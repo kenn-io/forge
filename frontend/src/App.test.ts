@@ -58,6 +58,7 @@ const modePalette = vi.hoisted(() => ({
 const appSurfaceProps = vi.hoisted(() => ({
   palette: null as Record<string, unknown> | null,
   messages: null as Record<string, unknown> | null,
+  docs: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@middleman/ui", async () => {
@@ -118,8 +119,12 @@ vi.mock("./lib/features/docs/DocsFeature.svelte", async () => {
     featureImports.failDocsOnce = false;
     throw new Error("docs chunk unavailable");
   }
+  const Feature = (await import("./lib/testing/AppDocsFeatureMock.svelte")).default;
   return {
-    default: (await import("./lib/testing/AppDocsFeatureMock.svelte")).default,
+    default: (anchor: Parameters<typeof Feature>[0], props: Parameters<typeof Feature>[1]) => {
+      appSurfaceProps.docs = props as Record<string, unknown>;
+      return Feature(anchor, props);
+    },
   };
 });
 vi.mock("./lib/features/docs/DocsFeature.svelte?retry", async () => {
@@ -259,8 +264,10 @@ describe("App feature routes", () => {
     startup.readyCallbacks = [];
     messagesHealth.pendingCapabilities = false;
     kataDaemons.rows = [];
+    kataAuxiliary.instance.issues = [];
     appSurfaceProps.palette = null;
     appSurfaceProps.messages = null;
+    appSurfaceProps.docs = null;
     kataReferences.search.mockResolvedValue({
       server_instance_id: "server-a",
       daemon_id: "home",
@@ -451,8 +458,12 @@ describe("App feature routes", () => {
     );
   });
 
-  it("resolves missing auxiliary task metadata before cross-surface navigation", async () => {
+  it("resolves cross-surface navigation authority through an isolated selection", async () => {
     kataDaemons.rows = [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }];
+    // A stale shared-snapshot row must not short-circuit routing authority:
+    // the task was reopened and closed again, so only the isolated selection
+    // carries its current status.
+    kataAuxiliary.instance.issues = [{ uid: "issue-closed", status: "open", project_uid: "project-stale" }] as never;
     kataAuxiliary.instance.selectIssue.mockResolvedValue({
       daemonID: "home",
       detail: { issue: { uid: "issue-closed", status: "closed", project_uid: "project-target" } },
@@ -472,7 +483,35 @@ describe("App feature routes", () => {
         "/kata?view=logbook&scope=project-target&issue=issue-closed&daemon=home",
       ),
     );
-    expect(kataAuxiliary.instance.selectIssue).toHaveBeenCalledWith("issue-closed");
+    expect(kataAuxiliary.instance.selectIssue).toHaveBeenCalledWith("issue-closed", undefined);
+  });
+
+  it("pins docs-originated task links to the folder daemon", async () => {
+    kataDaemons.rows = [
+      { id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
+      { id: "docs-daemon", url: "http://127.0.0.1:7778", default: false, auth: "none", health: "connected" },
+    ];
+    kataAuxiliary.instance.selectIssue.mockResolvedValue({
+      daemonID: "docs-daemon",
+      detail: { issue: { uid: "issue-doc", status: "open", project_uid: "project-doc" } },
+    });
+    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
+    replaceUrl("/docs?folder=notes&doc=README.md");
+    const { default: App } = await import("./App.svelte");
+
+    render(App, { target: createAppTarget() });
+    await waitFor(() => expect(appSurfaceProps.docs).not.toBeNull());
+
+    const openIssue = appSurfaceProps.docs?.onOpenIssue as ((uid: string, daemonId?: string) => void) | undefined;
+    expect(openIssue).toBeTypeOf("function");
+    openIssue?.("issue-doc", "docs-daemon");
+
+    await waitFor(() =>
+      expect(window.location.pathname + window.location.search).toBe(
+        "/kata?view=all&scope=project-doc&issue=issue-doc&daemon=docs-daemon",
+      ),
+    );
+    expect(kataAuxiliary.instance.selectIssue).toHaveBeenCalledWith("issue-doc", "docs-daemon");
   });
 
   it("handles an initial auxiliary authority load rejection at the app lifecycle boundary", async () => {

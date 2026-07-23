@@ -752,13 +752,24 @@ func newServer(
 		docsapi.WarnDaemonBindings(cfg.DocFolders)
 	}
 	s.messagesAPI = messagesapi.New(messagesapi.Deps{
-		Config: cfg,
-		ConfigPath: func() string {
-			return s.cfgPath
-		},
-		ConfigMu:    &s.cfgMu,
+		Config:      cfg,
 		BasePath:    basePath,
 		RemoteImage: options.msgvaultRemoteImageDeps,
+		SaveConfig: func(next *config.Msgvault) (*config.Config, error) {
+			if s.cfgPath == "" || s.cfg == nil {
+				return nil, messagesapi.ErrSettingsUnavailable
+			}
+			s.cfgMu.Lock()
+			defer s.cfgMu.Unlock()
+			previous := messagesapi.CloneConfig(s.cfg.Msgvault)
+			s.cfg.Msgvault = messagesapi.CloneConfig(next)
+			if err := s.cfg.Save(s.cfgPath); err != nil {
+				s.cfg.Msgvault = previous
+				return nil, err
+			}
+			snapshot := cloneReloadedConfig(s.cfg)
+			return &snapshot, nil
+		},
 		UpdateRuntimeStripEnv: func(cfg *config.Config) {
 			if s.runtime != nil {
 				s.runtime.UpdateStripEnvVars(s.updateRuntimeStripEnvVarsLocked(cfg))

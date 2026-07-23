@@ -27,6 +27,8 @@ const msgvaultCapabilityCacheTTL = 5 * time.Second
 const msgvaultConfigureMaxBodyBytes = 4 << 20
 const msgvaultInlineMaxBytes = 5 * 1024 * 1024
 
+var ErrSettingsUnavailable = errors.New("settings unavailable")
+
 type msgvaultHealthBody struct {
 	Configured   bool           `json:"configured"`
 	OK           bool           `json:"ok"`
@@ -144,9 +146,7 @@ type msgvaultConfigureRequest struct {
 }
 
 type Handler struct {
-	cfg                   *config.Config
-	configPath            func() string
-	cfgMu                 *sync.Mutex
+	saveConfig            func(*config.Msgvault) (*config.Config, error)
 	updateRuntimeStripEnv func(*config.Config)
 
 	mu            sync.Mutex
@@ -178,18 +178,15 @@ type msgvaultHealthSnapshot struct {
 
 type Deps struct {
 	Config                *config.Config
-	ConfigPath            func() string
-	ConfigMu              *sync.Mutex
 	BasePath              string
 	RemoteImage           *RemoteImageDeps
+	SaveConfig            func(*config.Msgvault) (*config.Config, error)
 	UpdateRuntimeStripEnv func(*config.Config)
 }
 
 func New(deps Deps) *Handler {
 	h := &Handler{remoteDeps: DefaultRemoteImageDeps()}
-	h.cfg = deps.Config
-	h.configPath = deps.ConfigPath
-	h.cfgMu = deps.ConfigMu
+	h.saveConfig = deps.SaveConfig
 	h.updateRuntimeStripEnv = deps.UpdateRuntimeStripEnv
 	if deps.RemoteImage != nil {
 		h.remoteDeps = *deps.RemoteImage
@@ -477,29 +474,22 @@ func (h *Handler) configure(_ context.Context, in *configureMsgvaultInput) (*msg
 			map[string]any{"reason": "invalidEnvVarName"},
 		)
 	}
-	cfgPath := ""
-	if h.configPath != nil {
-		cfgPath = h.configPath()
-	}
-	if cfgPath == "" || h.cfg == nil {
+	if h.saveConfig == nil {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
-	h.cfgMu.Lock()
-	prev := CloneConfig(h.cfg.Msgvault)
-	h.cfg.Msgvault = &config.Msgvault{URL: cleanURL, APIKeyEnv: apiKeyEnv}
-	if err := h.cfg.Save(cfgPath); err != nil {
-		h.cfg.Msgvault = prev
-		h.ApplyConfig(h.cfg)
-		h.cfgMu.Unlock()
+	cfg, err := h.saveConfig(&config.Msgvault{URL: cleanURL, APIKeyEnv: apiKeyEnv})
+	if err != nil {
+		if errors.Is(err, ErrSettingsUnavailable) {
+			return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
+		}
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
-	h.ApplyConfig(h.cfg)
+	h.ApplyConfig(cfg)
 	if h.updateRuntimeStripEnv != nil {
-		h.updateRuntimeStripEnv(h.cfg)
+		h.updateRuntimeStripEnv(cfg)
 	}
 	snapshot := h.healthSnapshot()
-	h.cfgMu.Unlock()
 
 	return &msgvaultConfigureOutput{Body: snapshot.healthValue()}, nil
 }

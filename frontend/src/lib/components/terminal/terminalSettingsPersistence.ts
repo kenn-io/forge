@@ -18,8 +18,13 @@ interface SaveTerminalSettingsOptions {
   store: TerminalSettingsStore;
 }
 
+interface TerminalSettingsPreview {
+  baseline: TerminalSettings;
+  changes: Partial<TerminalSettings>;
+}
+
 const saveQueues = new WeakMap<TerminalSettingsStore, SaveQueue>();
-const previewChanges = new WeakMap<TerminalSettingsStore, Partial<TerminalSettings>>();
+const previews = new WeakMap<TerminalSettingsStore, TerminalSettingsPreview>();
 
 function changedKeys(settings: Partial<TerminalSettings>): (keyof TerminalSettings)[] {
   return Object.keys(settings) as (keyof TerminalSettings)[];
@@ -43,6 +48,37 @@ function reconcileSettings(
   }
 }
 
+function settingsWithoutPreview(store: TerminalSettingsStore): TerminalSettings {
+  const current = store.getTerminalSettings();
+  const preview = previews.get(store);
+  if (!preview) return { ...current };
+
+  const settings = { ...current };
+  for (const key of changedKeys(preview.changes)) {
+    if (Object.is(current[key], preview.changes[key])) {
+      Object.assign(settings, { [key]: preview.baseline[key] });
+    }
+  }
+  return settings;
+}
+
+function confirmPreviewChanges(store: TerminalSettingsStore, changes: Partial<TerminalSettings>): void {
+  const preview = previews.get(store);
+  if (!preview) return;
+
+  const remaining = { ...preview.changes };
+  for (const key of changedKeys(changes)) {
+    if (Object.is(changes[key], preview.changes[key])) {
+      delete remaining[key];
+    }
+  }
+  if (changedKeys(remaining).length > 0) {
+    previews.set(store, { ...preview, changes: remaining });
+  } else {
+    previews.delete(store);
+  }
+}
+
 export function terminalSettingsChanges(baseline: TerminalSettings, next: TerminalSettings): Partial<TerminalSettings> {
   const changes: Partial<TerminalSettings> = {};
   for (const key of changedKeys(next)) {
@@ -59,7 +95,7 @@ export function previewTerminalSettings(
   next: TerminalSettings,
 ): void {
   const changes = terminalSettingsChanges(baseline, next);
-  const previous = previewChanges.get(store) ?? {};
+  const previous = previews.get(store)?.changes ?? {};
   const current = store.getTerminalSettings();
   const updates: Partial<TerminalSettings> = {};
 
@@ -74,17 +110,20 @@ export function previewTerminalSettings(
     store.setTerminalSettings({ ...current, ...updates });
   }
   if (changedKeys(changes).length > 0) {
-    previewChanges.set(store, changes);
+    previews.set(store, {
+      baseline: { ...baseline },
+      changes,
+    });
   } else {
-    previewChanges.delete(store);
+    previews.delete(store);
   }
 }
 
 export function restoreTerminalSettingsPreview(store: TerminalSettingsStore, baseline: TerminalSettings): void {
-  const changes = previewChanges.get(store);
-  if (!changes) return;
-  reconcileSettings(store, changes, baseline);
-  previewChanges.delete(store);
+  const preview = previews.get(store);
+  if (!preview) return;
+  reconcileSettings(store, preview.changes, baseline);
+  previews.delete(store);
 }
 
 export function saveTerminalSettings({
@@ -105,7 +144,7 @@ export function saveTerminalSettings({
 
   const activeQueue = queue;
   if (activeQueue.pending === 0) {
-    activeQueue.confirmed = { ...store.getTerminalSettings() };
+    activeQueue.confirmed = settingsWithoutPreview(store);
   }
   activeQueue.pending += 1;
   store.setTerminalSettings({
@@ -118,6 +157,7 @@ export function saveTerminalSettings({
     try {
       const saved = await persist(request);
       activeQueue.confirmed = saved;
+      confirmPreviewChanges(store, changes);
       reconcileSettings(store, changes, saved);
       return saved;
     } catch (error) {

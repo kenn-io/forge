@@ -30,9 +30,14 @@ describe("terminal settings persistence", () => {
       .fn<(settings: TerminalSettings) => Promise<TerminalSettings>>()
       .mockImplementationOnce(() => firstSave.promise)
       .mockImplementation(async (settings) => settings);
+    const baseline = store.getTerminalSettings();
 
+    previewTerminalSettings(store, baseline, {
+      ...baseline,
+      font_family: '"Iosevka Term", monospace',
+    });
     const optionsSave = saveTerminalSettings({
-      baseline: store.getTerminalSettings(),
+      baseline,
       changes: { font_family: '"Iosevka Term", monospace' },
       persist,
       store,
@@ -102,6 +107,44 @@ describe("terminal settings persistence", () => {
     });
   });
 
+  it("excludes a rejected options preview from a queued zoom save", async () => {
+    const firstSave = deferred<TerminalSettings>();
+    const store = createStore();
+    const baseline = store.getTerminalSettings();
+    const previewedFontFamily = '"Iosevka Term", monospace';
+    const persist = vi
+      .fn<(settings: TerminalSettings) => Promise<TerminalSettings>>()
+      .mockImplementationOnce(() => firstSave.promise)
+      .mockImplementation(async (settings) => settings);
+
+    previewTerminalSettings(store, baseline, {
+      ...baseline,
+      font_family: previewedFontFamily,
+    });
+    const optionsSave = saveTerminalSettings({
+      baseline,
+      changes: { font_family: previewedFontFamily },
+      persist,
+      store,
+    });
+    const zoomSave = saveTerminalSettings({
+      baseline: store.getTerminalSettings(),
+      changes: { font_size: 13 },
+      persist,
+      store,
+    });
+
+    await Promise.resolve();
+    firstSave.reject(new Error("settings unavailable"));
+    await expect(optionsSave).rejects.toThrow("settings unavailable");
+    await zoomSave;
+
+    expect(persist).toHaveBeenNthCalledWith(2, {
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_size: 13,
+    });
+  });
+
   it("keeps the composite confirmation for a later save from a stale component baseline", async () => {
     const firstSave = deferred<TerminalSettings>();
     const store = createStore();
@@ -109,9 +152,14 @@ describe("terminal settings persistence", () => {
       .fn<(settings: TerminalSettings) => Promise<TerminalSettings>>()
       .mockImplementationOnce(() => firstSave.promise)
       .mockImplementation(async (settings) => settings);
+    const baseline = store.getTerminalSettings();
 
+    previewTerminalSettings(store, baseline, {
+      ...baseline,
+      font_family: '"Iosevka Term", monospace',
+    });
     const optionsSave = saveTerminalSettings({
-      baseline: store.getTerminalSettings(),
+      baseline,
       changes: { font_family: '"Iosevka Term", monospace' },
       persist,
       store,

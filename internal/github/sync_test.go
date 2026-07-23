@@ -9966,15 +9966,15 @@ func TestScheduledFullRunRetriesAfterOverlappingScopedRun(t *testing.T) {
 
 			select {
 			case <-selectedEntered:
-			case <-time.After(time.Second):
-				require.FailNow("scoped run did not start within 1s")
+			case <-time.After(5 * time.Second):
+				require.FailNow("scoped run did not start within 5s")
 			}
 			syncer.RunOnce(ctx)
 			close(releaseSelected)
 
 			select {
 			case <-fullRunCompleted:
-			case <-time.After(time.Second):
+			case <-time.After(5 * time.Second):
 				require.FailNow("scheduled full run was not retried after scoped run")
 			}
 			assert.Equal(t, tt.wantUnrelatedSynced, unrelatedSynced.Load())

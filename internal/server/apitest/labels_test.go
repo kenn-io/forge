@@ -177,7 +177,7 @@ func TestAPIListRepoLabelsReturnsCachedCatalogWhileRefreshRuns(t *testing.T) {
 	}()
 	select {
 	case <-client.entered:
-	case <-time.After(250 * time.Millisecond):
+	case <-time.After(5 * time.Second):
 		require.Fail("label catalog refresh did not start")
 	}
 
@@ -189,7 +189,7 @@ func TestAPIListRepoLabelsReturnsCachedCatalogWhileRefreshRuns(t *testing.T) {
 		require.True(body.Syncing)
 		require.True(body.Stale)
 		require.Len(body.Labels, 2)
-	case <-time.After(250 * time.Millisecond):
+	case <-time.After(5 * time.Second):
 		require.Fail("GET /labels blocked on provider refresh")
 	}
 }

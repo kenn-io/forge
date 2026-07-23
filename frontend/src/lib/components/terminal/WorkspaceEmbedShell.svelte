@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { FlashBanner } from "@kenn-io/kit-ui";
+  import {
+    Button,
+    EmptyState,
+    FlashBanner,
+    Spinner,
+  } from "@kenn-io/kit-ui";
   import { Provider, WorkspaceRightSidebar } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
 
@@ -37,7 +42,9 @@
 
   let stores = $state<StoreInstances | undefined>();
   let terminalSettingsReady = $state(false);
+  let terminalSettingsError = $state<string | null>(null);
   let settingsLoadSequence = 0;
+  const terminalSettingsTimeoutMs = 8_000;
 
   onMount(() => {
     initTheme();
@@ -59,28 +66,52 @@
     const activeStores = stores;
     if (!activeStores) return;
 
-    const sequence = ++settingsLoadSequence;
-    terminalSettingsReady = false;
-    void getSettings()
-      .then((settings) => {
-        if (sequence !== settingsLoadSequence) return;
-        activeStores.settings.setTerminalSettings(settings.terminal);
-        terminalSettingsReady = true;
-      })
-      .catch((error) => {
-        if (sequence !== settingsLoadSequence) return;
-        const detail = error instanceof Error ? error.message : "Unknown error";
-        showFlash(`Couldn't load terminal settings: ${detail}`, {
-          tone: "danger",
-        });
-      });
-
+    void loadTerminalSettings(activeStores);
     return () => {
-      if (sequence === settingsLoadSequence) {
-        settingsLoadSequence += 1;
-      }
+      settingsLoadSequence += 1;
     };
   });
+
+  async function getSettingsWithTimeout() {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        getSettings(),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => {
+            reject(new Error("Timed out loading terminal settings"));
+          }, terminalSettingsTimeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
+  }
+
+  async function loadTerminalSettings(activeStores: StoreInstances): Promise<void> {
+    const sequence = ++settingsLoadSequence;
+    terminalSettingsReady = false;
+    terminalSettingsError = null;
+    try {
+      const settings = await getSettingsWithTimeout();
+      if (sequence !== settingsLoadSequence) return;
+      activeStores.settings.setTerminalSettings(settings.terminal);
+      terminalSettingsReady = true;
+    } catch (error) {
+      if (sequence !== settingsLoadSequence) return;
+      const detail = error instanceof Error ? error.message : "Unknown error";
+      terminalSettingsError = detail;
+      showFlash(`Couldn't load terminal settings: ${detail}`, {
+        tone: "danger",
+      });
+    }
+  }
+
+  function retryTerminalSettings(): void {
+    const activeStores = stores;
+    if (!activeStores) return;
+    void loadTerminalSettings(activeStores);
+  }
 </script>
 
 <Provider
@@ -149,6 +180,23 @@
           hideRightSidebar={true}
           {terminalSettingsReady}
         />
+      {:else if terminalSettingsError}
+        <EmptyState
+          title="Couldn't load terminal settings"
+          description={terminalSettingsError}
+        >
+          <Button
+            label="Retry"
+            ariaLabel="Retry terminal settings"
+            onclick={retryTerminalSettings}
+          />
+        </EmptyState>
+      {:else}
+        <EmptyState title="Loading terminal settings">
+          {#snippet icon()}
+            <Spinner size={18} label="Loading terminal settings" />
+          {/snippet}
+        </EmptyState>
       {/if}
     {:else if r.page === "embed-workspace-detail"}
       <WorkspaceRightSidebar

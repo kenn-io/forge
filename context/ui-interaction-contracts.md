@@ -169,6 +169,9 @@ Persisted controls must state their scope clearly.
 - An idle full-object settings queue must rebase from the shared store before
   its next mutation; cached confirmations otherwise overwrite authoritative
   reloads (`frontend/src/lib/components/terminal/terminalSettingsPersistence.ts::saveTerminalSettings`).
+- Settings that select a runtime must hydrate before that runtime starts, but
+  the gate must time out into a retryable state rather than strand the surface
+  (`frontend/src/lib/components/terminal/WorkspaceEmbedShell.svelte::loadTerminalSettings`).
 
 Whenever a control persists, document and test:
 

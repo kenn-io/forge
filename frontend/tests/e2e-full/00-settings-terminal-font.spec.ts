@@ -263,8 +263,11 @@ test.describe("terminal options popover", () => {
       await settingsRequest;
       await expect(page.locator(".terminal-view")).toHaveCount(0);
 
-      releaseSettings?.();
-      releaseSettings = undefined;
+      const retrySettings = page.getByRole("button", {
+        name: "Retry terminal settings",
+      });
+      await expect(retrySettings).toBeVisible({ timeout: 10_000 });
+      await retrySettings.click();
       const resetZoom = page.getByRole("button", { name: "Reset terminal font size" });
       await expect(resetZoom).toHaveText("17px");
       await page.getByRole("button", { name: "Open terminal panel" }).click();

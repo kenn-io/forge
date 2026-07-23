@@ -22,13 +22,16 @@ function createHarness(
 ) {
   let settings = { ...DEFAULT_TERMINAL_SETTINGS };
   const reportError = vi.fn();
-  const controller = createTerminalZoomController({
-    getSettings: () => settings,
-    persist,
-    reportError,
-    setSettings: (next) => {
+  const store = {
+    getTerminalSettings: () => settings,
+    setTerminalSettings: (next: TerminalSettings) => {
       settings = next;
     },
+  };
+  const controller = createTerminalZoomController({
+    persist,
+    reportError,
+    store,
   });
   return {
     controller,

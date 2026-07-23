@@ -162,6 +162,10 @@ Persisted controls must state their scope clearly.
   navigation is part of the feature contract.
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
+- Concurrent controls for one server-backed settings object must share a
+  serialized mutation path and reconcile only their optimistic fields; stale
+  full-object saves can erase unrelated preferences
+  (`frontend/src/lib/components/terminal/terminalSettingsPersistence.ts::saveTerminalSettings`).
 
 Whenever a control persists, document and test:
 

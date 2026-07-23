@@ -5,6 +5,7 @@
   import type { StoreInstances } from "@middleman/ui";
 
   import { client } from "../../api/runtime.js";
+  import { getSettings } from "../../api/settings.js";
   import {
     getBasePath,
     getPage,
@@ -35,6 +36,8 @@
   import { showFlash } from "@middleman/ui/stores/flash";
 
   let stores = $state<StoreInstances | undefined>();
+  let terminalSettingsReady = $state(false);
+  let settingsLoadSequence = 0;
 
   onMount(() => {
     initTheme();
@@ -50,6 +53,33 @@
 
   $effect(() => {
     reapplyTheme();
+  });
+
+  $effect(() => {
+    const activeStores = stores;
+    if (!activeStores) return;
+
+    const sequence = ++settingsLoadSequence;
+    terminalSettingsReady = false;
+    void getSettings()
+      .then((settings) => {
+        if (sequence !== settingsLoadSequence) return;
+        activeStores.settings.setTerminalSettings(settings.terminal);
+        terminalSettingsReady = true;
+      })
+      .catch((error) => {
+        if (sequence !== settingsLoadSequence) return;
+        const detail = error instanceof Error ? error.message : "Unknown error";
+        showFlash(`Couldn't load terminal settings: ${detail}`, {
+          tone: "danger",
+        });
+      });
+
+    return () => {
+      if (sequence === settingsLoadSequence) {
+        settingsLoadSequence += 1;
+      }
+    };
   });
 </script>
 
@@ -116,6 +146,7 @@
         workspaceId={r.workspaceId}
         hideWorkspaceList={true}
         hideRightSidebar={true}
+        {terminalSettingsReady}
       />
     {:else if r.page === "embed-workspace-detail"}
       <WorkspaceRightSidebar

@@ -206,6 +206,62 @@ test("settings saves visible modes and hides disabled nav entries", async ({ pag
 test.describe("terminal options popover", () => {
   test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
 
+  test("hydrates embedded terminal settings before zoom can persist them", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let workspaceServer: IsolatedE2EServer | null = null;
+    let workspaceApi: APIRequestContext | null = null;
+    try {
+      workspaceServer = await startIsolatedWorkspaceE2EServer();
+      workspaceApi = await playwrightRequest.newContext({
+        baseURL: workspaceServer.info.base_url,
+      });
+      const configuredTerminal = {
+        font_family: '"Iosevka Term", monospace',
+        font_size: 17,
+        scrollback: 4200,
+        line_height: 1.2,
+        letter_spacing: 1,
+        cursor_blink: false,
+        font_ligatures: true,
+        renderer: "xterm",
+        hide_tmux_status: true,
+      };
+      const settingsResponse = await workspaceApi.put("/api/v1/settings", {
+        data: { terminal: configuredTerminal },
+      });
+      expect(settingsResponse.ok()).toBe(true);
+
+      const createResponse = await workspaceApi.post("/api/v1/issues/github/acme/widgets/10/workspace", {
+        data: {},
+      });
+      expect(createResponse.status()).toBe(202);
+      const workspace = (await createResponse.json()) as WorkspaceStatusResponse;
+      await waitForWorkspaceReady(workspaceApi, workspace.id);
+
+      await page.goto(`${workspaceServer.info.base_url}/workspaces/embed/terminal/${workspace.id}`);
+      const resetZoom = page.getByRole("button", { name: "Reset terminal font size" });
+      await expect(resetZoom).toHaveText("17px");
+      await page.getByRole("button", { name: "Increase terminal font size" }).click();
+
+      await expect
+        .poll(async () => {
+          const response = await workspaceApi!.get("/api/v1/settings");
+          const settings = (await response.json()) as {
+            terminal: typeof configuredTerminal;
+          };
+          return settings.terminal;
+        })
+        .toEqual({ ...configuredTerminal, font_size: 18 });
+    } finally {
+      await workspaceApi?.dispose();
+      await workspaceServer?.stop();
+    }
+  });
+
   test("live previews, reverts unsaved changes, and saves from the toolbar", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),

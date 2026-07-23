@@ -165,6 +165,7 @@
     // Backs the toolbar's expand/show-details/collapse controls, which
     // replace the inline dock's own removed header bar.
     inlineDock?: { getMode(): InlineDockMode; setMode(mode: InlineDockMode): void } | null;
+    terminalSettingsReady?: boolean;
   }
 
   const {
@@ -180,6 +181,7 @@
     hostVisible = true,
     onWorkspaceDeleted = undefined,
     inlineDock = null,
+    terminalSettingsReady = true,
   }: Props = $props();
 
   const basePath = (
@@ -187,8 +189,7 @@
   ).replace(/\/$/, "");
   const { settings: settingsStore } = getStores();
   const terminalZoom = createTerminalZoomController({
-    getSettings: () => settingsStore.getTerminalSettings(),
-    setSettings: (settings) => settingsStore.setTerminalSettings(settings),
+    store: settingsStore,
     persist: async (terminal) => (await updateSettings({ terminal })).terminal,
     reportError: (error) => {
       const detail = error instanceof Error ? error.message : "Unknown error";
@@ -2819,7 +2820,9 @@
 <div
   class="terminal-view"
   inert={modalOpen}
-  onkeydowncapture={(event) => terminalZoom.handleKeydown(event)}
+  onkeydowncapture={(event) => {
+    if (terminalSettingsReady) terminalZoom.handleKeydown(event);
+  }}
 >
   {#snippet inlineCollapseControl()}
     <!-- Collapsing the inline dock is pure local UI and must stay
@@ -3128,12 +3131,15 @@
                   />
                   <TerminalZoomControl
                     fontSize={terminalFontSize}
-                    disabled={actionsBlocked}
+                    disabled={actionsBlocked || !terminalSettingsReady}
                     onDecrease={terminalZoom.decrease}
                     onIncrease={terminalZoom.increase}
                     onReset={terminalZoom.reset}
                   />
-                  <TerminalOptionsMenu disabled={actionsBlocked} {hostVisible} />
+                  <TerminalOptionsMenu
+                    disabled={actionsBlocked || !terminalSettingsReady}
+                    {hostVisible}
+                  />
                   <LaunchMenu
                     launchTargets={launchTargets}
                     {launchingKey}

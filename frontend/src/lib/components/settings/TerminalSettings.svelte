@@ -11,6 +11,12 @@
   import type { TerminalSettings as TerminalSettingsType } from "@middleman/ui/api/types";
   import { updateSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
+  import {
+    previewTerminalSettings,
+    restoreTerminalSettingsPreview,
+    saveTerminalSettings,
+    terminalSettingsChanges,
+  } from "../terminal/terminalSettingsPersistence.js";
 
   interface FontData {
     family: string;
@@ -234,13 +240,21 @@
   $effect(() => {
     if (!draftReady) return;
     if (!livePreview) return;
-    settingsStore.setTerminalSettings(pendingTerminal);
+    previewTerminalSettings(
+      settingsStore,
+      livePreviewBaseline ?? currentTerminal,
+      pendingTerminal,
+    );
   });
 
   onDestroy(() => {
     if (!livePreview) return;
     if (saving) return;
-    settingsStore.setTerminalSettings(livePreviewBaseline ?? currentTerminal);
+    restoreTerminalSettingsPreview(
+      settingsStore,
+      livePreviewBaseline ?? currentTerminal,
+      pendingTerminal,
+    );
   });
 
   async function loadLocalFonts(): Promise<void> {
@@ -281,19 +295,19 @@
     saving = true;
     onSavingChange?.(true);
     try {
-      const settings = await updateSettings({ terminal: pendingTerminal });
-      const updated = settings.terminal;
+      const updated = await saveTerminalSettings({
+        baseline: currentTerminal,
+        changes: terminalSettingsChanges(currentTerminal, pendingTerminal),
+        persist: async (next) => (await updateSettings({ terminal: next })).terminal,
+        store: settingsStore,
+      });
       syncDraftFromTerminal(updated);
       if (livePreview) {
         livePreviewBaseline = updated;
       }
       onUpdate(updated);
-      settingsStore.setTerminalSettings(updated);
     } catch (err) {
       syncDraftFromTerminal(currentTerminal);
-      if (livePreview) {
-        settingsStore.setTerminalSettings(currentTerminal);
-      }
       showFlash(err instanceof Error ? err.message : "Failed to save terminal settings.", { tone: "danger" });
     } finally {
       saving = false;

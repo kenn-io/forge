@@ -1,10 +1,28 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-const { mockSetTerminalSettings, mockUpdateSettings } = vi.hoisted(() => ({
-  mockSetTerminalSettings: vi.fn(),
-  mockUpdateSettings: vi.fn(),
-}));
+const { mockGetTerminalSettings, mockSetTerminalSettings, mockTerminalStore, mockUpdateSettings } = vi.hoisted(() => {
+  const defaultTerminal = {
+    font_family: "",
+    font_size: 14,
+    scrollback: 1000,
+    line_height: 1,
+    letter_spacing: 0,
+    cursor_blink: true,
+    font_ligatures: false,
+    renderer: "xterm" as const,
+    hide_tmux_status: false,
+  };
+  const store = { terminal: { ...defaultTerminal } };
+  return {
+    mockGetTerminalSettings: vi.fn(() => store.terminal),
+    mockSetTerminalSettings: vi.fn((terminal: typeof defaultTerminal) => {
+      store.terminal = terminal;
+    }),
+    mockTerminalStore: { defaultTerminal, store },
+    mockUpdateSettings: vi.fn(),
+  };
+});
 
 vi.mock("@middleman/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@middleman/ui")>();
@@ -23,6 +41,7 @@ vi.mock("@middleman/ui", async (importOriginal) => {
     },
     getStores: () => ({
       settings: {
+        getTerminalSettings: mockGetTerminalSettings,
         setTerminalSettings: mockSetTerminalSettings,
       },
     }),
@@ -43,6 +62,13 @@ describe("TerminalSettings", () => {
   afterEach(() => {
     cleanup();
     mockSetTerminalSettings.mockReset();
+    mockSetTerminalSettings.mockImplementation((terminal) => {
+      mockTerminalStore.store.terminal = terminal;
+    });
+    mockGetTerminalSettings.mockClear();
+    mockTerminalStore.store.terminal = {
+      ...mockTerminalStore.defaultTerminal,
+    };
     mockUpdateSettings.mockReset();
   });
 
@@ -107,16 +133,18 @@ describe("TerminalSettings", () => {
         },
       });
     });
-    expect(onUpdate).toHaveBeenCalledWith({
-      font_family: '"Iosevka Term", monospace',
-      font_size: 14,
-      scrollback: 1000,
-      line_height: 1,
-      letter_spacing: 0,
-      cursor_blink: true,
-      font_ligatures: false,
-      renderer: "xterm",
-      hide_tmux_status: false,
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledWith({
+        font_family: '"Iosevka Term", monospace',
+        font_size: 14,
+        scrollback: 1000,
+        line_height: 1,
+        letter_spacing: 0,
+        cursor_blink: true,
+        font_ligatures: false,
+        renderer: "xterm",
+        hide_tmux_status: false,
+      });
     });
     expect(mockSetTerminalSettings).toHaveBeenCalledWith({
       font_family: '"Iosevka Term", monospace',
@@ -187,16 +215,18 @@ describe("TerminalSettings", () => {
         },
       });
     });
-    expect(onUpdate).toHaveBeenCalledWith({
-      font_family: "",
-      font_size: 14,
-      scrollback: 1000,
-      line_height: 1,
-      letter_spacing: 0,
-      cursor_blink: true,
-      font_ligatures: false,
-      renderer: "ghostty-web",
-      hide_tmux_status: false,
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledWith({
+        font_family: "",
+        font_size: 14,
+        scrollback: 1000,
+        line_height: 1,
+        letter_spacing: 0,
+        cursor_blink: true,
+        font_ligatures: false,
+        renderer: "ghostty-web",
+        hide_tmux_status: false,
+      });
     });
     expect(mockSetTerminalSettings).toHaveBeenCalledWith({
       font_family: "",
@@ -600,7 +630,8 @@ describe("TerminalSettings", () => {
 
     unmount();
 
-    expect(mockSetTerminalSettings).toHaveBeenLastCalledWith({
+    expect(mockSetTerminalSettings).not.toHaveBeenCalled();
+    expect(mockGetTerminalSettings()).toEqual({
       font_family: "",
       font_size: 19,
       scrollback: 1000,

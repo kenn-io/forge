@@ -1,12 +1,12 @@
 import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "@middleman/ui/api/types";
+import { saveTerminalSettings, type TerminalSettingsStore } from "./terminalSettingsPersistence";
 
 export const MIN_TERMINAL_FONT_SIZE = 8;
 export const MAX_TERMINAL_FONT_SIZE = 32;
 export const RESET_TERMINAL_FONT_SIZE = DEFAULT_TERMINAL_SETTINGS.font_size;
 
 interface TerminalZoomControllerOptions {
-  getSettings: () => TerminalSettings;
-  setSettings: (settings: TerminalSettings) => void;
+  store: TerminalSettingsStore;
   persist: (settings: TerminalSettings) => Promise<TerminalSettings>;
   reportError: (error: unknown) => void;
 }
@@ -40,53 +40,36 @@ function terminalShortcutAction(event: KeyboardEvent): TerminalZoomAction | null
 }
 
 export function createTerminalZoomController({
-  getSettings,
-  setSettings,
+  store,
   persist,
   reportError,
 }: TerminalZoomControllerOptions): TerminalZoomController {
-  let confirmedFontSize = getSettings().font_size;
-  let latestRequest = 0;
-  let pendingRequests = 0;
   let saveQueue = Promise.resolve();
 
   function setFontSize(fontSize: number): void {
     const nextFontSize = clampFontSize(fontSize);
-    const current = getSettings();
+    const current = store.getTerminalSettings();
     if (current.font_size === nextFontSize) return;
-    if (pendingRequests === 0) {
-      confirmedFontSize = current.font_size;
-    }
 
-    const request = ++latestRequest;
-    pendingRequests += 1;
-    const pending = { ...current, font_size: nextFontSize };
-    setSettings(pending);
-
-    saveQueue = saveQueue.then(async () => {
-      try {
-        const saved = await persist(pending);
-        confirmedFontSize = saved.font_size;
-        if (request === latestRequest) {
-          setSettings({ ...getSettings(), font_size: saved.font_size });
-        }
-      } catch (error) {
-        if (request === latestRequest) {
-          setSettings({ ...getSettings(), font_size: confirmedFontSize });
-        }
+    saveQueue = saveTerminalSettings({
+      baseline: current,
+      changes: { font_size: nextFontSize },
+      persist,
+      store,
+    }).then(
+      () => undefined,
+      (error) => {
         reportError(error);
-      } finally {
-        pendingRequests -= 1;
-      }
-    });
+      },
+    );
   }
 
   function increase(): void {
-    setFontSize(getSettings().font_size + 1);
+    setFontSize(store.getTerminalSettings().font_size + 1);
   }
 
   function decrease(): void {
-    setFontSize(getSettings().font_size - 1);
+    setFontSize(store.getTerminalSettings().font_size - 1);
   }
 
   function reset(): void {

@@ -414,11 +414,13 @@ func (t *kataFrontendEventTarget) runSupervisor(
 	liveOnly := false
 	for ctx.Err() == nil {
 		client, err := newClient(ctx, t.daemon)
+		invalidateAfterStreamOpen := false
 		if err == nil && !liveOnly {
 			upstreamCursor, liveOnly, err = t.catchUp(ctx, client, upstreamCursor)
+			invalidateAfterStreamOpen = err == nil && liveOnly
 		}
 		if err == nil {
-			_ = t.stream(ctx, client, &upstreamCursor, &liveOnly)
+			_ = t.stream(ctx, client, &upstreamCursor, &liveOnly, invalidateAfterStreamOpen)
 			// A live-only stream that disconnects before its first event would
 			// otherwise skip catch-up on every reconnect and silently miss any
 			// events from the gap. Resume bounded catch-up from the last
@@ -447,8 +449,9 @@ func (t *kataFrontendEventTarget) catchUp(
 	afterID int64,
 ) (int64, bool, error) {
 	dirty := false
+	invalidateAfterStreamOpen := false
 	defer func() {
-		if dirty {
+		if dirty && !invalidateAfterStreamOpen {
 			t.queueInvalidation()
 		}
 	}()
@@ -463,6 +466,7 @@ func (t *kataFrontendEventTarget) catchUp(
 		if err != nil {
 			if catchUpCtx.Err() != nil && ctx.Err() == nil {
 				dirty = true
+				invalidateAfterStreamOpen = true
 				return afterID, true, nil
 			}
 			return afterID, false, err
@@ -491,6 +495,7 @@ func (t *kataFrontendEventTarget) catchUp(
 		afterID = lastID
 		eventCount += len(body.Events)
 		if eventCount >= t.catchUpMaxEvents {
+			invalidateAfterStreamOpen = true
 			return afterID, true, nil
 		}
 	}
@@ -501,6 +506,7 @@ func (t *kataFrontendEventTarget) stream(
 	client kataAPIClient,
 	upstreamCursor *int64,
 	liveOnly *bool,
+	invalidateAfterOpen bool,
 ) error {
 	query := &katagenerated.StreamEventsQuery{}
 	if !*liveOnly {
@@ -511,6 +517,9 @@ func (t *kataFrontendEventTarget) stream(
 	})
 	if err != nil {
 		return err
+	}
+	if invalidateAfterOpen {
+		t.queueInvalidation()
 	}
 	defer func() { _ = response.Body.Close() }()
 	closed := make(chan struct{})

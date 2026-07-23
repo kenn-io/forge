@@ -231,6 +231,56 @@ describe("KataWorkspace snapshot routing", () => {
     expect(onSelectedIssueChange).not.toHaveBeenCalledWith(initialIssues[0]!.uid);
   });
 
+  it("publishes only the latest route when project and system navigation loads finish out of order", async () => {
+    acceptHomeDaemon();
+    const pendingProject = deferred<KataWorkspaceSnapshotResponse>();
+    const pendingToday = deferred<KataWorkspaceSnapshotResponse>();
+    let requestCount = 0;
+    let projectResponseFinished = false;
+    let todayResponseFinished = false;
+    let projectSnapshot: KataWorkspaceSnapshotResponse | null = null;
+    let todaySnapshot: KataWorkspaceSnapshotResponse | null = null;
+    const { api } = createWorkspaceAPI(initialIssues, {
+      snapshot: async (_request, snapshot) => {
+        requestCount += 1;
+        if (requestCount === 2) {
+          projectSnapshot = snapshot;
+          const response = await pendingProject.promise;
+          projectResponseFinished = true;
+          return response;
+        }
+        if (requestCount === 3) {
+          todaySnapshot = snapshot;
+          const response = await pendingToday.promise;
+          todayResponseFinished = true;
+          return response;
+        }
+        return snapshot;
+      },
+    });
+    const onRouteStateChange = vi.fn();
+
+    render(KataWorkspace, { props: { api, onRouteStateChange } });
+    await screen.findByRole("button", { name: /Pay rent/ });
+
+    await fireEvent.click(screen.getByRole("button", { name: /^Finances\s+1$/ }));
+    await waitFor(() => expect(requestCount).toBe(2));
+    await fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    await waitFor(() => expect(requestCount).toBe(3));
+    await fireEvent.click(screen.getByRole("button", { name: "Upcoming" }));
+
+    await waitFor(() =>
+      expect(onRouteStateChange).toHaveBeenCalledWith({ view: "upcoming", scope: null, issue: null }),
+    );
+
+    pendingToday.resolve(todaySnapshot!);
+    pendingProject.resolve(projectSnapshot!);
+    await waitFor(() => expect(todayResponseFinished && projectResponseFinished).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onRouteStateChange).toHaveBeenCalledTimes(1);
+  });
+
   it("does not publish a superseded row selection", async () => {
     acceptHomeDaemon();
     const slowEmail = deferred<KataWorkspaceSnapshotResponse>();

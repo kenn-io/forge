@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import type { KataWorkspaceSnapshotResponse } from "../../api/kata/snapshot.js";
 import type { KataTaskSummary } from "../../api/kata/taskTypes.js";
 import KataWorkspace from "./KataWorkspace.svelte";
+import { saveKataWorkspaceState } from "./kataWorkspacePersistence.js";
 import {
   createWorkspaceAPI,
   deferred,
@@ -733,6 +734,114 @@ describe("KataWorkspace compact snapshot stream", () => {
     await screen.findByRole("button", { name: /Pay rent/ });
   });
 
+  it("drops a source-only project scope when switching to a daemon without saved state", async () => {
+    const source = initialIssues[0]!;
+    const target = initialIssues[1]!;
+    const onRouteStateChange = vi.fn();
+    const { api } = createWorkspaceAPI();
+    const harness = installFetchHarness([
+      snapshot(
+        source,
+        {
+          intent: { scope: "project", project_uid: source.project_uid, authority: "open" },
+        },
+        true,
+      ),
+      snapshot(target, {
+        daemon_id: "work",
+        generation: 1,
+        event_cursor: 7,
+      }),
+    ]);
+
+    render(KataWorkspace, {
+      props: {
+        api,
+        routeScopeUID: source.project_uid,
+        selectedIssueUID: source.uid,
+        onRouteStateChange,
+      },
+    });
+    await screen.findByRole("heading", { name: source.title });
+
+    await fireEvent.click(screen.getByRole("button", { name: /Switch Kata daemon: home/ }));
+    await fireEvent.click(await screen.findByRole("menuitemradio", { name: /work/ }));
+
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
+    expect(Object.fromEntries(new URL(harness.snapshotRequests[1]!.url).searchParams)).toEqual({
+      scope: "global",
+      authority: "open",
+    });
+    await screen.findByRole("button", { name: new RegExp(target.title) });
+    await waitFor(() =>
+      expect(onRouteStateChange).toHaveBeenCalledWith(
+        { view: null, scope: null, issue: null, daemon: null },
+        { replace: true },
+      ),
+    );
+  });
+
+  it("falls back to global defaults when the target daemon's saved project no longer exists", async () => {
+    const source = initialIssues[0]!;
+    const target = initialIssues[1]!;
+    saveKataWorkspaceState("work", {
+      view: "today",
+      filters: {
+        scope: { kind: "project", project_uid: "project-removed" },
+        status: "ready",
+        owner: "work-owner",
+        label: "work-label",
+        query: "work-query",
+      },
+      selectedIssueUID: "issue-removed",
+    });
+    const onRouteStateChange = vi.fn();
+    const { api } = createWorkspaceAPI();
+    const harness = installFetchHarness([
+      snapshot(source),
+      Response.json(
+        {
+          type: "about:blank",
+          title: "Kata project not found",
+          status: 404,
+          code: "projectNotFound",
+          detail: "Kata project not found",
+        },
+        { status: 404 },
+      ),
+      snapshot(target, {
+        daemon_id: "work",
+        generation: 1,
+        event_cursor: 7,
+      }),
+    ]);
+
+    render(KataWorkspace, { props: { api, onRouteStateChange } });
+    await screen.findByRole("button", { name: new RegExp(source.title) });
+
+    await fireEvent.click(screen.getByRole("button", { name: /Switch Kata daemon: home/ }));
+    await fireEvent.click(await screen.findByRole("menuitemradio", { name: /work/ }));
+
+    await waitFor(() => expect(harness.snapshotRequests).toHaveLength(3));
+    expect(Object.fromEntries(new URL(harness.snapshotRequests[1]!.url).searchParams)).toEqual({
+      scope: "project",
+      authority: "ready",
+      project_uid: "project-removed",
+      selected_issue_uid: "issue-removed",
+    });
+    expect(Object.fromEntries(new URL(harness.snapshotRequests[2]!.url).searchParams)).toEqual({
+      scope: "global",
+      authority: "open",
+    });
+    await screen.findByRole("button", { name: new RegExp(target.title) });
+    await waitFor(() =>
+      expect(onRouteStateChange).toHaveBeenCalledWith(
+        { view: null, scope: null, issue: null, daemon: null },
+        { replace: true },
+      ),
+    );
+  });
+
   it("retries changed selection and graph intent after a stale generation response", async () => {
     const source = initialIssues[0]!;
     const target = initialIssues[1]!;
@@ -980,8 +1089,12 @@ describe("KataWorkspace compact snapshot stream", () => {
 
     await waitFor(() => expect(harness.snapshotRequests).toHaveLength(2));
     await waitFor(() => expect(screen.getByText("Select a task")).toBeTruthy());
-    await waitFor(() => expect(onRouteStateChange).toHaveBeenCalledWith({ daemon: null }, { replace: true }));
-    expect(onRouteStateChange).toHaveBeenCalledWith({ issue: null }, { replace: true });
+    await waitFor(() =>
+      expect(onRouteStateChange).toHaveBeenCalledWith(
+        { view: null, scope: null, issue: null, daemon: null },
+        { replace: true },
+      ),
+    );
   });
 
   it("opens a created project after explicit replacement snapshot authority reveals its UID", async () => {

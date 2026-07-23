@@ -329,6 +329,9 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   Kata snapshot loads are sequence- and intent-fenced; cross-authority changes
   clear prior authority instead of painting it under the new route
   (`frontend/src/lib/stores/kata-authority.svelte.ts::KataAuthorityStore.loadSnapshot`).
+- Kata route callbacks require both an accepted snapshot and the current navigation
+  generation; daemon switches restore the target daemon's persisted authority, never
+  source-daemon scope or selection (`frontend/src/lib/features/kata/KataWorkspace.svelte::switchKataDaemon`).
 - Reserve disabled navigation choices for exclusive transactions such as
   writes, initial ownership setup, or a context switch already in progress;
   background refresh counters are presentation state, not transaction locks

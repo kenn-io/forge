@@ -739,7 +739,7 @@ func TestKataFrontendEventCatchUpQueuesInvalidationAfterPartialFailure(t *testin
 	}
 }
 
-func TestKataFrontendEventCatchUpUsesHundredEventPagesAndStopsAtThousand(t *testing.T) {
+func TestKataFrontendEventCatchUpUsesHundredEventPagesAndDefersLiveOnlyInvalidation(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	var calls int
@@ -775,12 +775,12 @@ func TestKataFrontendEventCatchUpUsesHundredEventPagesAndStopsAtThousand(t *test
 	assert.True(liveOnly)
 	select {
 	case <-target.invalidated:
+		require.FailNow("bounded live-only catch-up queued invalidation before stream establishment")
 	default:
-		require.FailNow("bounded dirty catch-up did not queue invalidation")
 	}
 }
 
-func TestKataFrontendEventCatchUpStopsAtPrivateTimeBudget(t *testing.T) {
+func TestKataFrontendEventCatchUpStopsAtPrivateTimeBudgetAndDefersInvalidation(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	target := &kataFrontendEventTarget{
@@ -813,8 +813,8 @@ func TestKataFrontendEventCatchUpStopsAtPrivateTimeBudget(t *testing.T) {
 	assert.True(liveOnly)
 	select {
 	case <-target.invalidated:
+		require.FailNow("time-bounded live-only catch-up queued invalidation before stream establishment")
 	default:
-		require.FailNow("time-bounded dirty catch-up did not queue invalidation")
 	}
 }
 
@@ -919,6 +919,74 @@ func TestKataFrontendEventSupervisorResumesCatchUpAfterLiveOnlyDisconnect(t *tes
 	case <-target.invalidated:
 	default:
 		require.FailNow("catch-up exhaustion did not queue invalidation")
+	}
+}
+
+func TestKataFrontendEventSupervisorDefersLiveOnlyInvalidationUntilStreamEstablished(t *testing.T) {
+	require := require.New(t)
+
+	streamEstablishing := make(chan struct{})
+	establishStream := make(chan struct{})
+	mutationApplied := atomic.Bool{}
+	client := &fakeKataFrontendEventClient{
+		poll: func(context.Context, *katagenerated.PollEventsRequestOptions) (*katagenerated.PollEventsResp, error) {
+			return &katagenerated.PollEventsResp{
+				StatusCode: http.StatusOK,
+				JSON200: &katagenerated.PollEventsBody{
+					Events:      []katagenerated.EventEnvelope{testKataEventEnvelope(1)},
+					NextAfterID: 1,
+				},
+			}, nil
+		},
+		stream: func(context.Context, *katagenerated.StreamEventsRequestOptions) (*http.Response, error) {
+			close(streamEstablishing)
+			<-establishStream
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+	target := &kataFrontendEventTarget{
+		daemon:           kata.Daemon{ID: "primary", URL: "http://kata.test"},
+		invalidated:      make(chan struct{}, 1),
+		retryDelay:       time.Hour,
+		catchUpMaxEvents: 1,
+		catchUpTimeout:   time.Second,
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		target.runSupervisor(ctx, func(context.Context, kata.Daemon) (kataAPIClient, error) {
+			return client, nil
+		})
+	}()
+
+	select {
+	case <-streamEstablishing:
+	case <-time.After(time.Second):
+		require.FailNow("supervisor did not begin live-only stream establishment")
+	}
+	select {
+	case <-target.invalidated:
+		require.FailNow("live-only invalidation queued before stream establishment")
+	default:
+	}
+	mutationApplied.Store(true)
+	close(establishStream)
+	select {
+	case <-target.invalidated:
+		require.True(mutationApplied.Load(), "mutation must precede the live-only invalidation")
+	case <-time.After(time.Second):
+		require.FailNow("live-only invalidation was not queued after stream establishment")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		require.FailNow("supervisor did not stop")
 	}
 }
 

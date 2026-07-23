@@ -13,6 +13,18 @@ export type KataTaskReferenceResponse = components["schemas"]["KataTaskReference
 export type KataAuthorityScope = "global" | "project";
 export type KataAuthority = "open" | "ready" | "closed" | "all";
 
+export class KataSnapshotAPIError extends Error {
+  readonly status: number;
+  readonly code: string | undefined;
+
+  constructor(input: { status: number; code?: string | undefined; message: string }) {
+    super(input.message);
+    this.name = "KataSnapshotAPIError";
+    this.status = input.status;
+    this.code = input.code;
+  }
+}
+
 export interface KataSnapshotIntent {
   daemon_id?: string | undefined;
   scope: KataAuthorityScope;
@@ -76,7 +88,11 @@ export async function fetchKataWorkspaceSnapshot(
     ...(options.signal ? { signal: options.signal } : {}),
   });
   if (!response.ok || !data) {
-    throw new Error(apiErrorMessage(error, `Could not load Kata task snapshot (${response.status})`));
+    throw new KataSnapshotAPIError({
+      status: response.status,
+      ...(typeof error?.code === "string" ? { code: error.code } : {}),
+      message: apiErrorMessage(error, `Could not load Kata task snapshot (${response.status})`),
+    });
   }
   return data;
 }

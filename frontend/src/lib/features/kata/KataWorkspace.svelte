@@ -10,6 +10,7 @@
   import { fetchKataDaemons, type KataDaemonInfo } from "../../api/kata/daemons.js";
   import { createKataTaskAPI } from "../../api/kata/taskClient.js";
   import {
+    KataSnapshotAPIError,
     searchKataTaskReferences,
     type KataSnapshotIntent,
     type KataTaskReferenceSearch,
@@ -192,7 +193,7 @@
   let connection = $state.raw<KataConnectionState>({ status: "offline" });
   let bootstrapDaemonId = $state<string | undefined>(undefined);
   let pendingCreatedProjectScope: PendingCreatedProjectScope | null = null;
-  let projectNavigationSelectionUID: string | null = null;
+  let supersededRouteSelectionUID: string | null = null;
   let rowNavigationSelection: PendingRecoveredSelection | null = null;
   let replaceNextSelectionScopeUID: string | null = null;
   let pendingRecoveredSelection: PendingRecoveredSelection | null = null;
@@ -245,7 +246,7 @@
         rowNavigationSelection !== null && rowNavigationSelection.uid === snapshot.selected_issue_uid;
       if (
         requestedIssueUID &&
-        requestedIssueUID !== projectNavigationSelectionUID &&
+        requestedIssueUID !== supersededRouteSelectionUID &&
         !rowSelectionAccepted &&
         !recoveredSelection &&
         snapshot.selected_issue_uid !== requestedIssueUID
@@ -643,6 +644,7 @@
   function beginNavigation(): number {
     pendingRecoveredSelection = null;
     rowNavigationSelection = null;
+    supersededRouteSelectionUID = null;
     revealRequest = null;
     captureOpen = false;
     navigationGeneration += 1;
@@ -1129,19 +1131,22 @@
 
   async function openRoutedSystemView(viewName: KataTaskViewName, direct = false): Promise<void> {
     replaceNextSelectionScopeUID = null;
-    beginNavigation();
+    const generation = beginNavigation();
     closeReachableGraph(false);
     resetDetailDrafts();
     currentViewName = viewName;
     searchFilters = defaultKataTaskSearchFilters(viewName);
-    await runViewTask(async () => {
-      await authorityController.load(kataWorkspaceAuthorityRequest({
+    const accepted = await runViewTask(
+      () => authorityController.load(kataWorkspaceAuthorityRequest({
         daemonID: activeKataDaemonId,
         view: viewName,
         filters: searchFilters,
         selectedIssueUID: acceptedSelectedIssue?.issue.uid ?? selectedIssueUID,
-      }));
-    }, "view");
+      })),
+      "view",
+      () => isCurrentNavigation(generation),
+    );
+    if (!accepted || !isCurrentNavigation(generation)) return;
     const route = canonicalRoute(viewName, null, acceptedSelectedIssue?.issue.uid ?? null);
     onRouteStateChange?.(route);
     if (direct) persistActiveWorkspaceState();
@@ -1149,7 +1154,7 @@
 
   async function openRoutedProjectScope(projectUID: string, direct = false): Promise<void> {
     replaceNextSelectionScopeUID = null;
-    beginNavigation();
+    const generation = beginNavigation();
     closeReachableGraph(false);
     resetDetailDrafts();
     const previousSelectedIssue = acceptedSelectedIssue?.issue;
@@ -1162,16 +1167,19 @@
       ...defaultKataTaskSearchFilters(),
       scope: { kind: "project", project_uid: projectUID },
     };
-    projectNavigationSelectionUID = previousSelectedIssueUID;
-    const accepted = await runViewTask(async () => {
-      await authorityController.load(kataWorkspaceAuthorityRequest({
+    supersededRouteSelectionUID = previousSelectedIssueUID;
+    const accepted = await runViewTask(
+      () => authorityController.load(kataWorkspaceAuthorityRequest({
         daemonID: activeKataDaemonId,
         view: "all",
         filters: searchFilters,
         selectedIssueUID: selectedIssueUIDForScope,
-      }));
-    }, "view");
-    projectNavigationSelectionUID = null;
+      })),
+      "view",
+      () => isCurrentNavigation(generation),
+    );
+    if (!isCurrentNavigation(generation)) return;
+    supersededRouteSelectionUID = null;
     if (!accepted) return;
     if (previousSelectedIssueUID && acceptedSelectedIssue?.issue.uid !== previousSelectedIssueUID) {
       replaceNextSelectionScopeUID = projectUID;
@@ -1220,27 +1228,88 @@
 
   async function switchKataDaemon(id: string): Promise<void> {
     if ((id === activeKataDaemonId && acceptedSnapshot) || switchingDaemon) return;
+    const sourceViewName = currentViewName;
+    const sourceFilters = structuredClone(searchFilters) as KataTaskSearchFilters;
+    const sourceListMode = listMode;
+    const sourceGraphSourceIssue = graphSourceIssue;
+    const sourceGraphAuthoritySourceUID = graphAuthoritySourceUID;
+    const sourceAppliedGraphSourceUID = appliedGraphSourceUID;
+    const persisted = loadKataWorkspaceState(id);
+    let targetViewName = persisted?.view ?? "all";
+    let targetFilters = persisted?.filters ?? defaultKataTaskSearchFilters(targetViewName);
+    let targetSelectedIssueUID = persisted?.selectedIssueUID ?? null;
+    const generation = beginNavigation();
     replaceNextSelectionScopeUID = null;
+    supersededRouteSelectionUID = selectedIssueUID?.trim() || acceptedSelectedIssue?.issue.uid || null;
+    closeReachableGraph(false);
+    resetDetailDrafts();
+    currentViewName = targetViewName;
+    searchFilters = targetFilters;
     switchingDaemon = true;
     workspaceOwnershipPending = true;
     viewError = null;
+    let switched = false;
     try {
-      const accepted = await authorityController.load(kataWorkspaceAuthorityRequest({
-        daemonID: id,
-        view: acceptedCurrentView.name,
-        filters: searchFilters,
-        selectedIssueUID: acceptedSelectedIssue?.issue.uid ?? selectedIssueUID,
-        graphSourceUID: graphSourceIssue?.uid,
-      }));
-      if (!accepted) return;
-      onRouteStateChange?.({ daemon: null }, { replace: true });
+      let accepted: boolean;
+      try {
+        accepted = await authorityController.load(kataWorkspaceAuthorityRequest({
+          daemonID: id,
+          view: targetViewName,
+          filters: targetFilters,
+          selectedIssueUID: targetSelectedIssueUID,
+        }));
+      } catch (switchError) {
+        if (
+          !(switchError instanceof KataSnapshotAPIError) ||
+          switchError.code !== "projectNotFound" ||
+          persisted?.filters.scope.kind !== "project"
+        ) {
+          throw switchError;
+        }
+        targetViewName = "all";
+        targetFilters = defaultKataTaskSearchFilters();
+        targetSelectedIssueUID = null;
+        currentViewName = targetViewName;
+        searchFilters = targetFilters;
+        accepted = await authorityController.load(kataWorkspaceAuthorityRequest({
+          daemonID: id,
+          view: targetViewName,
+          filters: targetFilters,
+        }));
+      }
+      if (!accepted || !isCurrentNavigation(generation)) return;
+      supersededRouteSelectionUID = null;
+      const targetScopeUID = targetFilters.scope.kind === "project" ? targetFilters.scope.project_uid : null;
+      onRouteStateChange?.(
+        {
+          ...canonicalRoute(
+            targetViewName,
+            targetScopeUID,
+            acceptedSelectedIssue?.issue.uid ?? null,
+            true,
+          ),
+          daemon: null,
+        },
+        { replace: true },
+      );
+      switched = true;
     } catch (switchError) {
       error = kataRequestErrorMessage(switchError);
       authorityStore.abandon(error);
       showFlash(error, { tone: "danger" });
     } finally {
+      if (!switched && isCurrentNavigation(generation)) {
+        currentViewName = sourceViewName;
+        searchFilters = sourceFilters;
+        listMode = sourceListMode;
+        graphSourceIssue = sourceGraphSourceIssue;
+        graphAuthoritySourceUID = sourceGraphAuthoritySourceUID;
+        appliedGraphSourceUID = sourceAppliedGraphSourceUID;
+        supersededRouteSelectionUID = null;
+      }
       if (acceptedSnapshot) workspaceOwnershipPending = false;
       switchingDaemon = false;
+      if (switched) persistActiveWorkspaceState();
     }
   }
 

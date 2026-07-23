@@ -54,6 +54,9 @@ state.
 - `GET /kata/tasks/events`: compact reset/invalidation transport only. Replay
   starts at the accepted snapshot cursor; raw daemon events never enter browser
   authority (`frontend/src/lib/features/kata/kataWorkspaceAuthorityController.svelte.ts::KataWorkspaceAuthorityController`).
+- Cursorless live-only catch-up establishes its stream before invalidating; publishing
+  first creates an unreplayable mutation gap between snapshot reload and subscription
+  (`internal/server/kata_event_hub.go::runSupervisor`).
 - Frontend Kata event streaming must use the generated runtime client with stream
   parsing; raw fetch paths bypass base-path and tracing policy
   (`frontend/src/lib/api/kata/eventStream.ts::readKataEventStream`).

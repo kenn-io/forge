@@ -163,8 +163,9 @@ Persisted controls must state their scope clearly.
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
 - Concurrent controls for one server-backed settings object must share a
-  serialized mutation path and reconcile only their optimistic fields; stale
-  full-object saves can erase unrelated preferences
+  serialized mutation path and reconcile only fields still owned by the settling
+  mutation generation; value equality alone is ABA-prone, while stale full-object
+  saves can erase unrelated preferences
   (`packages/ui/src/stores/terminal-settings-persistence.ts::saveTerminalSettings`).
 - An idle settings queue must rebase from authoritative store values, excluding
   fields still owned by live preview; otherwise reloads are erased or drafts leak

@@ -112,6 +112,44 @@ describe("terminal settings persistence", () => {
     });
   });
 
+  it("does not let an older rejection reclaim a field after an ABA change", async () => {
+    const firstSave = deferred<TerminalSettings>();
+    const store = createStore();
+    const persist = vi
+      .fn<(settings: TerminalSettings) => Promise<TerminalSettings>>()
+      .mockImplementationOnce(() => firstSave.promise)
+      .mockImplementation(async (settings) => settings);
+
+    const firstZoom = saveTerminalSettings({
+      baseline: store.getTerminalSettings(),
+      changes: { font_size: 13 },
+      persist,
+      store,
+    });
+    const secondZoom = saveTerminalSettings({
+      baseline: store.getTerminalSettings(),
+      changes: { font_size: 14 },
+      persist,
+      store,
+    });
+    const thirdZoom = saveTerminalSettings({
+      baseline: store.getTerminalSettings(),
+      changes: { font_size: 13 },
+      persist,
+      store,
+    });
+
+    firstSave.reject(new Error("settings unavailable"));
+    await expect(firstZoom).rejects.toThrow("settings unavailable");
+    await Promise.all([secondZoom, thirdZoom]);
+
+    expect(persist).toHaveBeenNthCalledWith(3, {
+      ...DEFAULT_TERMINAL_SETTINGS,
+      font_size: 13,
+    });
+    expect(store.getTerminalSettings().font_size).toBe(13);
+  });
+
   it("rolls consecutive rejected saves back to the last confirmed value", async () => {
     const firstSave = deferred<TerminalSettings>();
     const secondSave = deferred<TerminalSettings>();

@@ -8,6 +8,7 @@ export interface TerminalSettingsStore {
 interface SaveQueue {
   confirmed: TerminalSettings;
   fieldConfirmedGenerations: Partial<Record<keyof TerminalSettings, number>>;
+  fieldOptimisticGenerations: Partial<Record<keyof TerminalSettings, number>>;
   fieldPendingGenerations: Partial<Record<keyof TerminalSettings, Set<number>>>;
   hydrationGeneration: number;
   mutationGeneration: number;
@@ -44,12 +45,13 @@ function reconcileSettings(
   store: TerminalSettingsStore,
   expected: Partial<TerminalSettings>,
   replacement: TerminalSettings,
+  ownsField: (key: keyof TerminalSettings) => boolean = () => true,
 ): void {
   const current = store.getTerminalSettings();
   const updates: Partial<TerminalSettings> = {};
 
   for (const key of changedKeys(expected)) {
-    if (Object.is(current[key], expected[key])) {
+    if (ownsField(key) && Object.is(current[key], expected[key])) {
       Object.assign(updates, { [key]: replacement[key] });
     }
   }
@@ -78,6 +80,7 @@ function getSaveQueue(store: TerminalSettingsStore, baseline: TerminalSettings):
     queue = {
       confirmed: { ...baseline },
       fieldConfirmedGenerations: {},
+      fieldOptimisticGenerations: {},
       fieldPendingGenerations: {},
       hydrationGeneration: 0,
       mutationGeneration: 0,
@@ -212,6 +215,7 @@ export function saveTerminalSettings({
   const mutationGeneration = activeQueue.mutationGeneration;
   for (const key of changedKeys(changes)) {
     addPendingMutation(activeQueue, key, mutationGeneration);
+    activeQueue.fieldOptimisticGenerations[key] = mutationGeneration;
   }
   activeQueue.pending += 1;
   store.setTerminalSettings({
@@ -230,16 +234,29 @@ export function saveTerminalSettings({
       }
       activeQueue.confirmed = confirmed;
       confirmPreviewChanges(store, changes);
-      reconcileSettings(store, changes, saved);
+      reconcileSettings(
+        store,
+        changes,
+        saved,
+        (key) => activeQueue.fieldOptimisticGenerations[key] === mutationGeneration,
+      );
       return saved;
     } catch (error) {
-      reconcileSettings(store, changes, activeQueue.confirmed);
+      reconcileSettings(
+        store,
+        changes,
+        activeQueue.confirmed,
+        (key) => activeQueue.fieldOptimisticGenerations[key] === mutationGeneration,
+      );
       throw error;
     }
   });
   const result = save.finally(() => {
     for (const key of changedKeys(changes)) {
       settlePendingMutation(activeQueue, key, mutationGeneration);
+      if (activeQueue.fieldOptimisticGenerations[key] === mutationGeneration) {
+        delete activeQueue.fieldOptimisticGenerations[key];
+      }
     }
     activeQueue.pending -= 1;
   });

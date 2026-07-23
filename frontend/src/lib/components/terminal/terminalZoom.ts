@@ -9,6 +9,7 @@ interface TerminalZoomControllerOptions {
   store: TerminalSettingsStore;
   persist: (settings: TerminalSettings) => Promise<TerminalSettings>;
   reportError: (error: unknown) => void;
+  onPendingChange?: (pending: boolean) => void;
 }
 
 export interface TerminalZoomController {
@@ -43,25 +44,35 @@ export function createTerminalZoomController({
   store,
   persist,
   reportError,
+  onPendingChange,
 }: TerminalZoomControllerOptions): TerminalZoomController {
   let saveQueue = Promise.resolve();
+  let pendingSaves = 0;
 
   function setFontSize(fontSize: number): void {
     const nextFontSize = clampFontSize(fontSize);
     const current = store.getTerminalSettings();
     if (current.font_size === nextFontSize) return;
 
-    saveQueue = saveTerminalSettings({
+    const save = saveTerminalSettings({
       baseline: current,
       changes: { font_size: nextFontSize },
       persist,
       store,
-    }).then(
-      () => undefined,
-      (error) => {
-        reportError(error);
-      },
-    );
+    });
+    pendingSaves += 1;
+    if (pendingSaves === 1) onPendingChange?.(true);
+    saveQueue = save
+      .then(
+        () => undefined,
+        (error) => {
+          reportError(error);
+        },
+      )
+      .finally(() => {
+        pendingSaves -= 1;
+        if (pendingSaves === 0) onPendingChange?.(false);
+      });
   }
 
   function increase(): void {

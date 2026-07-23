@@ -168,8 +168,8 @@ Persisted controls must state their scope clearly.
   saves can erase unrelated preferences
   (`packages/ui/src/stores/terminal-settings-persistence.ts::saveTerminalSettings`).
 - A settings form that snapshots its baseline must either merge sibling mutations
-  or gate those controls while its save settles
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::terminalOptionsSaving`).
+  or keep the form and those controls mutually gated while either save settles
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::terminalZoomSaving`).
 - An idle settings queue must rebase from authoritative store values, excluding
   fields still owned by live preview; otherwise reloads are erased or drafts leak
   into unrelated saves (`packages/ui/src/stores/terminal-settings-persistence.ts::settingsWithoutPreview`).

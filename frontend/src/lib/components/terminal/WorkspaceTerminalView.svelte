@@ -188,6 +188,8 @@
     window.__BASE_PATH__ ?? "/"
   ).replace(/\/$/, "");
   const { settings: settingsStore } = getStores();
+  let terminalZoomSaving = $state(false);
+  let terminalOptionsSaving = $state(false);
   const terminalZoom = createTerminalZoomController({
     store: settingsStore,
     persist: async (terminal) => (await updateSettings({ terminal })).terminal,
@@ -197,12 +199,14 @@
         tone: "danger",
       });
     },
+    onPendingChange: (pending) => {
+      terminalZoomSaving = pending;
+    },
   });
   const terminalFontSize = $derived(
     settingsStore.getTerminalFontSize(),
   );
 
-  let terminalOptionsSaving = $state(false);
   let workspace = $state<Workspace | null>(null);
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
   let appliedRuntimeState:
@@ -3140,7 +3144,7 @@
                     onReset={terminalZoom.reset}
                   />
                   <TerminalOptionsMenu
-                    disabled={actionsBlocked || !terminalSettingsReady}
+                    disabled={actionsBlocked || !terminalSettingsReady || terminalZoomSaving}
                     {hostVisible}
                     onSavingChange={(saving) => {
                       terminalOptionsSaving = saving;

@@ -396,16 +396,34 @@ const markdownImageSourceSanitizer: UponSanitizeAttributeHook = (node, data) => 
 };
 
 function proxiedMarkdownImageSource(source: string, repo: RepoContext): string | null {
-  if (canonicalProvider(repo.provider) !== "github") return null;
+  const provider = canonicalProvider(repo.provider);
+  if (provider !== "github" && provider !== "gitlab") return null;
   try {
-    const url = new URL(source);
-    const host = repo.platformHost?.trim() || "github.com";
+    const host = repo.platformHost?.trim() || (provider === "github" ? "github.com" : "gitlab.com");
+    const normalizedSource =
+      provider === "gitlab" ? normalizedGitLabMarkdownImageSource(source, host, repo.repoPath) : source;
+    if (!normalizedSource) return null;
+    const url = new URL(normalizedSource);
     if (url.protocol !== "https:" || url.host.toLowerCase() !== host.toLowerCase()) return null;
-    if (!url.pathname.startsWith("/user-attachments/assets/")) return null;
+    if (provider === "github" && !url.pathname.startsWith("/user-attachments/assets/")) return null;
+    if (
+      provider === "gitlab" &&
+      !url.pathname.startsWith(`/${repo.repoPath}/uploads/`) &&
+      !/^\/-\/project\/\d+\/uploads\//.test(url.pathname)
+    )
+      return null;
     return providerRepoResourceURL(repo, "/markdown-image", { source: url.toString() });
   } catch {
     return null;
   }
+}
+
+function normalizedGitLabMarkdownImageSource(source: string, host: string, repoPath: string): string | null {
+  if (/^https:\/\//i.test(source)) return source;
+  const uploadPath = source.replace(/^\//, "");
+  if (uploadPath.startsWith("uploads/")) return `https://${host}/${repoPath}/${uploadPath}`;
+  if (uploadPath.startsWith(`${repoPath}/uploads/`)) return `https://${host}/${uploadPath}`;
+  return null;
 }
 
 function shikiNonce(): string {

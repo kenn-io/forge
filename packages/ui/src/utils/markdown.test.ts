@@ -20,6 +20,34 @@ describe("renderMarkdown task lists", () => {
     expect(html).toContain('height="1000"');
   });
 
+  it("proxies private GitLab upload images through the repo-scoped API", async () => {
+    const source = "/uploads/0123456789abcdef/private-image.png";
+    const canonicalSource = "https://gitlab.example.com/group/project/uploads/0123456789abcdef/private-image.png";
+    const html = await renderMarkdown(`![Private image](${source})`, {
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      owner: "group",
+      name: "project",
+      repoPath: "group/project",
+    });
+
+    expect(html).toContain(
+      `src="/api/v1/host/gitlab.example.com/repo/gitlab/group/project/markdown-image?source=${encodeURIComponent(canonicalSource)}"`,
+    );
+
+    const fullSource = "https://gitlab.example.com/-/project/42/uploads/0123456789abcdef/private-image.png";
+    const fullPathHtml = await renderMarkdown(`![Private image](${fullSource})`, {
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      owner: "group",
+      name: "project",
+      repoPath: "group/project",
+    });
+    expect(fullPathHtml).toContain(
+      `src="/api/v1/host/gitlab.example.com/repo/gitlab/group/project/markdown-image?source=${encodeURIComponent(fullSource)}"`,
+    );
+  });
+
   it("renders item references with the shared internal route and data attributes", async () => {
     const html = await renderMarkdown("See #12 and acme/tools#13", {
       provider: "github",

@@ -192,6 +192,10 @@ GitLab API calls address projects by numeric id or URL-escaped path with
 slashes. Middleman should prefer the stored provider id after resolution and
 preserve `path_with_namespace` as `repo_path`.
 
+GitLab private Markdown upload web URLs do not accept API-token authentication.
+Translate only repo-scoped upload URLs to the authenticated project-upload API;
+never proxy arbitrary provider URLs. (`internal/platform/gitlab/markdown_images.go::GetMarkdownImage`)
+
 GitLab merge request and issue `iid` values are repo-scoped numbers. Persist
 provider object ids separately from user-visible numbers, and scope events by
 provider identity so equal GitHub/GitLab ids do not collide.

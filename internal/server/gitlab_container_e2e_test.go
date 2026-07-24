@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
@@ -129,6 +130,49 @@ func TestGitLabContainerE2E(t *testing.T) {
 		platformgitlab.WithForegroundTimeoutForTesting(time.Minute),
 	)
 	require.NoError(err)
+
+	imageBytes := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
+	var uploadBody bytes.Buffer
+	uploadWriter := multipart.NewWriter(&uploadBody)
+	uploadPart, err := uploadWriter.CreateFormFile("file", "private-markdown-image.png")
+	require.NoError(err)
+	_, err = uploadPart.Write(imageBytes)
+	require.NoError(err)
+	require.NoError(uploadWriter.Close())
+	uploadReq, err := http.NewRequestWithContext(
+		ctx, http.MethodPost,
+		fmt.Sprintf("%s/projects/%d/uploads", manifest.APIURL, manifest.ProjectID),
+		&uploadBody,
+	)
+	require.NoError(err)
+	uploadReq.Header.Set("PRIVATE-TOKEN", manifest.Token)
+	uploadReq.Header.Set("Content-Type", uploadWriter.FormDataContentType())
+	uploadResp, err := http.DefaultClient.Do(uploadReq)
+	require.NoError(err)
+	uploadRaw, err := io.ReadAll(io.LimitReader(uploadResp.Body, 1<<20))
+	uploadResp.Body.Close()
+	require.NoError(err)
+	require.Less(uploadResp.StatusCode, 300, string(uploadRaw))
+	var upload struct {
+		FullPath string `json:"full_path"`
+	}
+	require.NoError(json.Unmarshal(uploadRaw, &upload), string(uploadRaw))
+	require.NotEmpty(upload.FullPath)
+	attachmentURL := manifest.BaseURL + upload.FullPath
+	anonymousReq, err := http.NewRequestWithContext(ctx, http.MethodGet, attachmentURL, nil)
+	require.NoError(err)
+	anonymousResp, err := http.DefaultClient.Do(anonymousReq)
+	require.NoError(err)
+	anonymousResp.Body.Close()
+	assert.GreaterOrEqual(anonymousResp.StatusCode, 400)
+	markdownImage, err := client.GetMarkdownImage(ctx, platform.RepoRef{
+		Platform: platform.KindGitLab, Host: manifest.Host,
+		RepoPath: manifest.RepoPath, PlatformID: manifest.ProjectID,
+	}, attachmentURL)
+	require.NoError(err)
+	assert.Equal("image/png", markdownImage.ContentType)
+	assert.Equal(imageBytes, markdownImage.Content)
+
 	registry, err := platform.NewRegistry(client)
 	require.NoError(err)
 

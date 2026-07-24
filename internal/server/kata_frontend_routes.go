@@ -30,7 +30,7 @@ func (s *Server) registerKataFrontendAPI(api huma.API) {
 		Responses: map[string]*huma.Response{
 			"200": {
 				Description: "Server-sent Kata task invalidation stream",
-				Content: map[string]*huma.MediaType{"text/event-stream": {}},
+				Content:     map[string]*huma.MediaType{"text/event-stream": {}},
 			},
 		},
 	}, s.streamKataTaskEvents)

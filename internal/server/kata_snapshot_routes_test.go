@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -16,7 +18,16 @@ import (
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
 
 	"go.kenn.io/middleman/internal/kata"
+	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/kataapi"
 )
+
+func writeKataServerCatalog(t *testing.T, home, body string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(home, "config.toml"), []byte(body), 0o600,
+	))
+}
 
 func TestKataTaskSnapshotReturnsServiceUnavailableWhenEventRegistryIsClosed(t *testing.T) {
 	assert := assert.New(t)
@@ -40,14 +51,14 @@ url = "`+upstream.URL+`"
 	srv.kataEvents.Close()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/snapshot?scope=global&authority=open", nil)
-	req.Header.Set(kataDaemonHeaderName, "primary")
+	req.Header.Set(kataapi.DaemonHeaderName, "primary")
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
 	require.Equal(http.StatusServiceUnavailable, rr.Code, rr.Body.String())
-	assert.Contains(rr.Header().Values("Vary"), kataDaemonHeaderName)
+	assert.Contains(rr.Header().Values("Vary"), kataapi.DaemonHeaderName)
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeServiceUnavailable, problem.Code)
+	assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
 }
 
 func TestKataTaskReferencesReturnsServiceUnavailableWhenEventRegistryIsClosed(t *testing.T) {
@@ -72,14 +83,14 @@ url = "`+upstream.URL+`"
 	srv.kataEvents.Close()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/references", nil)
-	req.Header.Set(kataDaemonHeaderName, "primary")
+	req.Header.Set(kataapi.DaemonHeaderName, "primary")
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
 	require.Equal(http.StatusServiceUnavailable, rr.Code, rr.Body.String())
-	assert.Contains(rr.Header().Values("Vary"), kataDaemonHeaderName)
+	assert.Contains(rr.Header().Values("Vary"), kataapi.DaemonHeaderName)
 	problem := decodeMsgvaultProblem(t, rr)
-	assert.Equal(CodeServiceUnavailable, problem.Code)
+	assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
 }
 
 func TestKataTaskSnapshotSerializesAuthorityAndReplayableCursor(t *testing.T) {
@@ -92,12 +103,12 @@ func TestKataTaskSnapshotSerializesAuthorityAndReplayableCursor(t *testing.T) {
 	srv := setupKataSnapshotRouteServer(t, daemon, snapshot, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/snapshot?scope=project&project_uid=project-a&authority=ready&selected_issue_uid=not-a-member&graph_source_uid=not-a-member", nil)
-	req.Header.Set(kataDaemonHeaderName, "primary")
+	req.Header.Set(kataapi.DaemonHeaderName, "primary")
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	assert.Contains(rr.Header().Values("Vary"), kataDaemonHeaderName)
+	assert.Contains(rr.Header().Values("Vary"), kataapi.DaemonHeaderName)
 	raw := rr.Body.String()
 	var response kataTaskSnapshotResponse
 	require.NoError(json.Unmarshal([]byte(raw), &response))
@@ -143,7 +154,7 @@ func TestKataTaskSnapshotSerializesLocalEnrichmentErrorsAndIndependentGraphSourc
 	srv := setupKataSnapshotRouteServer(t, daemon, snapshot, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/snapshot?selected_issue_uid=issue-member&graph_source_uid=issue-source", nil)
-	req.Header.Set(kataDaemonHeaderName, "primary")
+	req.Header.Set(kataapi.DaemonHeaderName, "primary")
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -154,9 +165,9 @@ func TestKataTaskSnapshotSerializesLocalEnrichmentErrorsAndIndependentGraphSourc
 	assert.Equal("issue-member", response.Enrichment.SelectedIssueUID)
 	assert.Nil(response.Enrichment.SelectedDetail)
 	assert.Nil(response.Enrichment.Graph)
-	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task detail."}, response.Enrichment.Errors[kataSnapshotEnrichmentStageDetail])
-	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task history."}, response.Enrichment.Errors[kataSnapshotEnrichmentStageHistory])
-	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load reachable graph."}, response.Enrichment.Errors[kataSnapshotEnrichmentStageGraph])
+	assert.Equal(kataSnapshotEnrichmentError{Code: httpapi.CodeUpstreamError, Message: "Could not load selected task detail."}, response.Enrichment.Errors[kataSnapshotEnrichmentStageDetail])
+	assert.Equal(kataSnapshotEnrichmentError{Code: httpapi.CodeUpstreamError, Message: "Could not load selected task history."}, response.Enrichment.Errors[kataSnapshotEnrichmentStageHistory])
+	assert.Equal(kataSnapshotEnrichmentError{Code: httpapi.CodeUpstreamError, Message: "Could not load reachable graph."}, response.Enrichment.Errors[kataSnapshotEnrichmentStageGraph])
 	assert.True(slices.Contains(paths, "/api/v1/issues/issue-member"))
 	assert.True(slices.Contains(paths, "/api/v1/projects/7/events"))
 	assert.True(slices.Contains(paths, "/api/v1/projects/7/issues/issue-source/graph"))
@@ -179,11 +190,11 @@ func TestKataTaskReferencesReuseCachedGlobalOpenAuthority(t *testing.T) {
 
 	request := func(query string) kataTaskReferenceResponse {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/references?q="+query+"&limit=1", nil)
-		req.Header.Set(kataDaemonHeaderName, "primary")
+		req.Header.Set(kataapi.DaemonHeaderName, "primary")
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
 		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-		assert.Contains(rr.Header().Values("Vary"), kataDaemonHeaderName)
+		assert.Contains(rr.Header().Values("Vary"), kataapi.DaemonHeaderName)
 		var response kataTaskReferenceResponse
 		require.NoError(json.Unmarshal(rr.Body.Bytes(), &response))
 		var wire map[string]json.RawMessage
@@ -220,7 +231,7 @@ url = "`+daemon.URL+`"
 	snapshot := testKataCoordinatedAuthority().Snapshot
 	var loads atomic.Int64
 	srv.kataSnapshots = newKataSnapshotCoordinator(t.Context(), kataSnapshotCoordinatorDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		newLoader: func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error) {
 			return kataAuthoritySnapshotLoaderFunc(func(context.Context, kataAuthorityRequest) (kataAuthoritySnapshot, error) {
 				loads.Add(1)
@@ -271,7 +282,7 @@ url = "`+daemon.URL+`"
 
 	request := func() kataTaskReferenceResponse {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/references", nil)
-		req.Header.Set(kataDaemonHeaderName, "primary")
+		req.Header.Set(kataapi.DaemonHeaderName, "primary")
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
 		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -322,7 +333,7 @@ func TestKataTaskSnapshotKeepsHistoryCursorFailureLocalOverHTTP(t *testing.T) {
 	srv := setupKataSnapshotRouteServer(t, daemon, snapshot, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/snapshot?selected_issue_uid=issue-member", nil)
-	req.Header.Set(kataDaemonHeaderName, "primary")
+	req.Header.Set(kataapi.DaemonHeaderName, "primary")
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -331,7 +342,7 @@ func TestKataTaskSnapshotKeepsHistoryCursorFailureLocalOverHTTP(t *testing.T) {
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &response))
 	assert.NotNil(response.Enrichment.SelectedDetail)
 	assert.Empty(response.Enrichment.SelectedHistory)
-	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task history."}, response.Enrichment.Errors[kataSnapshotEnrichmentStageHistory])
+	assert.Equal(kataSnapshotEnrichmentError{Code: httpapi.CodeUpstreamError, Message: "Could not load selected task history."}, response.Enrichment.Errors[kataSnapshotEnrichmentStageHistory])
 }
 
 func TestKataTaskSnapshotLoadsCompleteRetainedProjectHistoryOverHTTP(t *testing.T) {
@@ -373,7 +384,7 @@ func TestKataTaskSnapshotLoadsCompleteRetainedProjectHistoryOverHTTP(t *testing.
 	srv := setupKataSnapshotRouteServer(t, daemon, snapshot, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/snapshot?selected_issue_uid=issue-member", nil)
-	req.Header.Set(kataDaemonHeaderName, "primary")
+	req.Header.Set(kataapi.DaemonHeaderName, "primary")
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -407,7 +418,7 @@ func TestKataTaskSnapshotDoesNotAuthorizeDisconnectedGraphNodeOverHTTP(t *testin
 	srv := setupKataSnapshotRouteServer(t, daemon, snapshot, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/tasks/snapshot?selected_issue_uid=issue-linked&graph_source_uid=issue-source", nil)
-	req.Header.Set(kataDaemonHeaderName, "primary")
+	req.Header.Set(kataapi.DaemonHeaderName, "primary")
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -439,7 +450,7 @@ url = "`+daemon.URL+`"
 `)
 	srv, _ := setupTestServer(t)
 	srv.kataSnapshots = newKataSnapshotCoordinator(t.Context(), kataSnapshotCoordinatorDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		newLoader: func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error) {
 			return kataAuthoritySnapshotLoaderFunc(func(context.Context, kataAuthorityRequest) (kataAuthoritySnapshot, error) {
 				if loads != nil {

@@ -15,6 +15,8 @@ import (
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
 
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/kataapi"
 )
 
 func TestKataSnapshotEnricherSkipsDirectNonmemberSelection(t *testing.T) {
@@ -25,9 +27,9 @@ func TestKataSnapshotEnricherSkipsDirectNonmemberSelection(t *testing.T) {
 	workspaceCalls := 0
 	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
 		client: &fakeKataSnapshotAPIClient{},
-		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
+		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataapi.KataWorkspaceTargetResponse, error) {
 			workspaceCalls++
-			return kataWorkspaceTargetResponse{}, nil
+			return kataapi.KataWorkspaceTargetResponse{}, nil
 		},
 	})
 	authority := testKataCoordinatedAuthority()
@@ -296,7 +298,7 @@ func TestKataSnapshotEnricherBoundsSelectedHistoryAcrossEndlessPages(t *testing.
 	require.NoError(err)
 	assert.Empty(result.SelectedHistory)
 	assert.Equal(
-		kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task history."},
+		kataSnapshotEnrichmentError{Code: httpapi.CodeUpstreamError, Message: "Could not load selected task history."},
 		result.Errors[kataSnapshotEnrichmentStageHistory],
 	)
 	assert.LessOrEqual(pages.Load(), int64(8), "endless advancing pages must terminate at the history budget")
@@ -586,7 +588,7 @@ func TestKataSnapshotEnricherRejectsRepeatedHistoryCursorReset(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(2, resetCalls)
 	assert.Empty(result.SelectedHistory)
-	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task history."}, result.Errors[kataSnapshotEnrichmentStageHistory])
+	assert.Equal(kataSnapshotEnrichmentError{Code: httpapi.CodeUpstreamError, Message: "Could not load selected task history."}, result.Errors[kataSnapshotEnrichmentStageHistory])
 }
 
 func TestKataSnapshotEnricherRejectsInvalidHistoryPagination(t *testing.T) {
@@ -666,7 +668,7 @@ func TestKataSnapshotEnricherRejectsInvalidHistoryPagination(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Empty(t, result.SelectedHistory)
-			assert.Equal(t, kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task history."}, result.Errors[kataSnapshotEnrichmentStageHistory])
+			assert.Equal(t, kataSnapshotEnrichmentError{Code: httpapi.CodeUpstreamError, Message: "Could not load selected task history."}, result.Errors[kataSnapshotEnrichmentStageHistory])
 		})
 	}
 }
@@ -714,7 +716,7 @@ func TestKataSnapshotEnricherRejectsHistoryCursorMismatch(t *testing.T) {
 			require.NoError(t, err)
 			assert.NotNil(result.SelectedDetail)
 			assert.Empty(result.SelectedHistory)
-			assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task history."}, result.Errors[kataSnapshotEnrichmentStageHistory])
+			assert.Equal(kataSnapshotEnrichmentError{Code: httpapi.CodeUpstreamError, Message: "Could not load selected task history."}, result.Errors[kataSnapshotEnrichmentStageHistory])
 		})
 	}
 }
@@ -838,9 +840,9 @@ func TestKataSnapshotEnricherGraphNodeAuthorizesSelectionWithoutRerooting(t *tes
 	var workspaceMetadata db.WorkspaceKataMetadata
 	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
 		client: client,
-		resolveWorkspaceTarget: func(_ context.Context, metadata db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
+		resolveWorkspaceTarget: func(_ context.Context, metadata db.WorkspaceKataMetadata) (kataapi.KataWorkspaceTargetResponse, error) {
 			workspaceMetadata = metadata
-			return kataWorkspaceTargetResponse{Available: true, ItemKey: "kata-item"}, nil
+			return kataapi.KataWorkspaceTargetResponse{Available: true, ItemKey: "kata-item"}, nil
 		},
 		now: func() time.Time { return time.Date(2026, 7, 20, 16, 0, 0, 0, time.UTC) },
 	})
@@ -938,9 +940,9 @@ func TestKataSnapshotEnricherDoesNotAuthorizeDisconnectedGraphNode(t *testing.T)
 	}
 	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
 		client: client,
-		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
+		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataapi.KataWorkspaceTargetResponse, error) {
 			workspaceCalls++
-			return kataWorkspaceTargetResponse{}, nil
+			return kataapi.KataWorkspaceTargetResponse{}, nil
 		},
 	})
 
@@ -1039,9 +1041,9 @@ func TestKataSnapshotEnricherAllowsCatalogedCrossProjectGraphSelection(t *testin
 	var workspaceMetadata db.WorkspaceKataMetadata
 	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
 		client: client,
-		resolveWorkspaceTarget: func(_ context.Context, metadata db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
+		resolveWorkspaceTarget: func(_ context.Context, metadata db.WorkspaceKataMetadata) (kataapi.KataWorkspaceTargetResponse, error) {
 			workspaceMetadata = metadata
-			return kataWorkspaceTargetResponse{Available: false}, nil
+			return kataapi.KataWorkspaceTargetResponse{Available: false}, nil
 		},
 	})
 	authority := testKataCoordinatedAuthority()
@@ -1149,9 +1151,9 @@ func TestKataSnapshotEnricherRejectsMalformedGeneratedDetail(t *testing.T) {
 	}
 	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
 		client: client,
-		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
+		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataapi.KataWorkspaceTargetResponse, error) {
 			workspaceCalls++
-			return kataWorkspaceTargetResponse{}, nil
+			return kataapi.KataWorkspaceTargetResponse{}, nil
 		},
 	})
 
@@ -1179,9 +1181,9 @@ func TestKataSnapshotEnricherRejectsDetailShortIDMismatch(t *testing.T) {
 	}
 	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
 		client: client,
-		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
+		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataapi.KataWorkspaceTargetResponse, error) {
 			workspaceCalls++
-			return kataWorkspaceTargetResponse{}, nil
+			return kataapi.KataWorkspaceTargetResponse{}, nil
 		},
 	})
 
@@ -1237,8 +1239,8 @@ func TestKataSnapshotEnricherKeepsGraphSourceIndependentFromSelectedIssue(t *tes
 	}
 	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
 		client: client,
-		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
-			return kataWorkspaceTargetResponse{Available: false}, nil
+		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataapi.KataWorkspaceTargetResponse, error) {
+			return kataapi.KataWorkspaceTargetResponse{Available: false}, nil
 		},
 	})
 
@@ -1267,8 +1269,8 @@ func TestKataSnapshotEnricherKeepsFailuresLocalToTheirStage(t *testing.T) {
 	}
 	enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
 		client: client,
-		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
-			return kataWorkspaceTargetResponse{}, errors.New("workspace unavailable")
+		resolveWorkspaceTarget: func(context.Context, db.WorkspaceKataMetadata) (kataapi.KataWorkspaceTargetResponse, error) {
+			return kataapi.KataWorkspaceTargetResponse{}, errors.New("workspace unavailable")
 		},
 	})
 
@@ -1282,8 +1284,8 @@ func TestKataSnapshotEnricherKeepsFailuresLocalToTheirStage(t *testing.T) {
 	assert.Nil(result.Graph)
 	require.NotNil(result.SelectedDetail)
 	assert.False(result.SelectedDetail.WorkspaceTarget.Available)
-	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load reachable graph."}, result.Errors[kataSnapshotEnrichmentStageGraph])
-	assert.Equal(kataSnapshotEnrichmentError{Code: CodeInternalError, Message: "Could not resolve workspace target."}, result.Errors[kataSnapshotEnrichmentStageWorkspaceTarget])
+	assert.Equal(kataSnapshotEnrichmentError{Code: httpapi.CodeUpstreamError, Message: "Could not load reachable graph."}, result.Errors[kataSnapshotEnrichmentStageGraph])
+	assert.Equal(kataSnapshotEnrichmentError{Code: httpapi.CodeInternalError, Message: "Could not resolve workspace target."}, result.Errors[kataSnapshotEnrichmentStageWorkspaceTarget])
 }
 
 func TestKataSnapshotEnricherPreservesMemberEnrichmentWhenOptionalGraphTimesOut(t *testing.T) {
@@ -1318,7 +1320,7 @@ func TestKataSnapshotEnricherPreservesMemberEnrichmentWhenOptionalGraphTimesOut(
 	assert.NotNil(result.SelectedDetail)
 	assert.Len(result.SelectedHistory, 1)
 	assert.Nil(result.Graph)
-	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load reachable graph."}, result.Errors[kataSnapshotEnrichmentStageGraph])
+	assert.Equal(kataSnapshotEnrichmentError{Code: httpapi.CodeUpstreamError, Message: "Could not load reachable graph."}, result.Errors[kataSnapshotEnrichmentStageGraph])
 }
 
 func TestKataSnapshotEnricherPropagatesRequestCancellationFromOptionalGraph(t *testing.T) {
@@ -1384,8 +1386,8 @@ func TestKataSnapshotEnricherRejectsWrongReturnedIdentitiesLocally(t *testing.T)
 	require.NoError(t, err)
 	assert.Nil(result.Graph)
 	assert.Nil(result.SelectedDetail)
-	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load reachable graph."}, result.Errors[kataSnapshotEnrichmentStageGraph])
-	assert.Equal(kataSnapshotEnrichmentError{Code: CodeUpstreamError, Message: "Could not load selected task detail."}, result.Errors[kataSnapshotEnrichmentStageDetail])
+	assert.Equal(kataSnapshotEnrichmentError{Code: httpapi.CodeUpstreamError, Message: "Could not load reachable graph."}, result.Errors[kataSnapshotEnrichmentStageGraph])
+	assert.Equal(kataSnapshotEnrichmentError{Code: httpapi.CodeUpstreamError, Message: "Could not load selected task detail."}, result.Errors[kataSnapshotEnrichmentStageDetail])
 }
 
 func testKataCoordinatedAuthority() kataCoordinatedAuthority {

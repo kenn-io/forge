@@ -1,16 +1,31 @@
-package server
+package workspaceapi
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	managedworktree "go.kenn.io/kit/git/managed"
+
 	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
+
+func TestWorktreeLifecycleProblemMapsExistingBranch(t *testing.T) {
+	err := worktreeLifecycleProblem(
+		managedworktree.ErrBranchAlreadyExists, "body.setup_script",
+	)
+
+	problem, ok := err.(*httpapi.ProblemError)
+	require.True(t, ok, "want *ProblemError, got %T", err)
+	assert.Equal(t, http.StatusConflict, problem.Status)
+	assert.Equal(t, httpapi.CodeBranchConflict, problem.Code)
+}
 
 func TestManagedWorktreeExecutionUsesSharedProcessLimiter(t *testing.T) {
 	require := require.New(t)

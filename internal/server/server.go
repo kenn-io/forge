@@ -982,7 +982,9 @@ func newServer(
 		WorkspaceAPI:     s.workspaceAPI.Workspaces(),
 		SamePlatformHost: samePlatformHost,
 		ConfigRepoPath:   configRepoPath,
-		InvalidateDaemon: s.kataSnapshots.invalidateDaemon,
+		InvalidateDaemon: func(id string) {
+			s.kataSnapshots.invalidateDaemon(id)
+		},
 	})
 	s.pullAPI = pullapi.New(pullapi.Deps{
 		DB:                   database,

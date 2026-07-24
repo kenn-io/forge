@@ -16,6 +16,8 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"go.kenn.io/middleman/internal/kata"
+	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/kataapi"
 )
 
 var (
@@ -32,7 +34,7 @@ type kataAuthoritySnapshotLoader interface {
 type kataSnapshotCoordinatorDeps struct {
 	cache               *kataSnapshotCache
 	enrichmentCache     *kataSnapshotEnrichmentCache
-	resolveDaemon       func(string) (kata.Daemon, *ProblemError)
+	resolveDaemon       func(string) (kata.Daemon, *httpapi.ProblemError)
 	newLoader           func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error)
 	newServerInstanceID func() string
 }
@@ -41,7 +43,7 @@ type kataSnapshotCoordinator struct {
 	root             context.Context
 	cache            *kataSnapshotCache
 	enrichmentCache  *kataSnapshotEnrichmentCache
-	resolveDaemon    func(string) (kata.Daemon, *ProblemError)
+	resolveDaemon    func(string) (kata.Daemon, *httpapi.ProblemError)
 	newLoader        func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error)
 	serverInstanceID string
 	generation       atomic.Uint64
@@ -72,7 +74,7 @@ func newKataSnapshotCoordinator(root context.Context, deps kataSnapshotCoordinat
 	}
 	deps.enrichmentCache.currentDaemonEpoch = deps.cache.daemonEpoch
 	if deps.resolveDaemon == nil {
-		deps.resolveDaemon = selectKataDaemonForID
+		deps.resolveDaemon = kataapi.ResolveDefaultDaemonForID
 	}
 	if deps.newLoader == nil {
 		deps.newLoader = func(ctx context.Context, daemon kata.Daemon) (kataAuthoritySnapshotLoader, error) {
@@ -300,24 +302,24 @@ func validateKataAuthorityRequest(request kataAuthorityRequest) error {
 	switch request.Scope {
 	case "global":
 		if request.ProjectUID != "" {
-			return problemValidation("project_uid", "project_uid is only valid for project scope")
+			return httpapi.Validation("project_uid", "project_uid is only valid for project scope")
 		}
 	case "project":
 		trimmedProjectUID := strings.TrimSpace(request.ProjectUID)
 		if trimmedProjectUID == "" {
-			return problemValidation("project_uid", "project_uid is required for project scope")
+			return httpapi.Validation("project_uid", "project_uid is required for project scope")
 		}
 		if trimmedProjectUID != request.ProjectUID {
-			return problemValidation("project_uid", "project_uid must not contain leading or trailing whitespace")
+			return httpapi.Validation("project_uid", "project_uid must not contain leading or trailing whitespace")
 		}
 	default:
-		return problemValidation("scope", "unsupported Kata scope", "global", "project")
+		return httpapi.Validation("scope", "unsupported Kata scope", "global", "project")
 	}
 	switch request.Authority {
 	case "open", "ready", "closed", "all":
 		return nil
 	default:
-		return problemValidation("authority", "unsupported Kata authority", "open", "ready", "closed", "all")
+		return httpapi.Validation("authority", "unsupported Kata authority", "open", "ready", "closed", "all")
 	}
 }
 
@@ -329,7 +331,7 @@ func kataAuthoritySingleflightKey(key kataSnapshotKey, epoch uint64) string {
 		key.ProjectUID,
 		key.Authority,
 		strconv.FormatUint(epoch, 10),
-	}, kataDaemonCacheKeyDelim)
+	}, kataapi.DaemonCacheKeyDelim)
 }
 
 func kataDaemonTargetFingerprint(daemon kata.Daemon) string {
@@ -341,8 +343,8 @@ func kataDaemonTargetFingerprint(daemon kata.Daemon) string {
 		daemon.URL,
 		mode,
 		strconv.FormatBool(daemon.AllowInsecure),
-		kataDaemonForwardToken(daemon),
-	}, kataDaemonCacheKeyDelim)))
+		kataapi.DaemonForwardToken(daemon),
+	}, kataapi.DaemonCacheKeyDelim)))
 	return hex.EncodeToString(digest[:])
 }
 

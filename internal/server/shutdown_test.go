@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/middleman/internal/server/kataapi"
 )
 
 type pullLifecycleRecorder struct {
@@ -731,7 +733,7 @@ url = "`+upstream.URL+`"
 
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+addr+"/api/v1/kata/tasks/events", nil)
 	req.NoError(err)
-	request.Header.Set(kataDaemonHeaderName, "primary")
+	request.Header.Set(kataapi.DaemonHeaderName, "primary")
 	response, err := http.DefaultClient.Do(request)
 	req.NoError(err)
 	defer response.Body.Close()
@@ -788,14 +790,14 @@ url = "http://127.0.0.1:1"
 		nil,
 	)
 	req.NoError(err)
-	request.Header.Set(kataDaemonHeaderName, "primary")
+	request.Header.Set(kataapi.DaemonHeaderName, "primary")
 	response, err := http.DefaultClient.Do(request)
 	req.NoError(err)
 	body, readErr := io.ReadAll(response.Body)
 	_ = response.Body.Close()
 	req.NoError(readErr)
 	req.Equal(http.StatusServiceUnavailable, response.StatusCode, string(body))
-	req.Contains(response.Header.Values("Vary"), kataDaemonHeaderName)
+	req.Contains(response.Header.Values("Vary"), kataapi.DaemonHeaderName)
 	req.NotEqual("text/event-stream", response.Header.Get("Content-Type"))
 	req.Contains(string(body), "serviceUnavailable")
 

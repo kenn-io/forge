@@ -225,6 +225,8 @@ func (s *Server) updateFleetSSHPeers(
 			httpapi.CodeSettingsUnavailable, "settings not available", nil,
 		)
 	}
+	s.configReloadMu.Lock()
+	defer s.configReloadMu.Unlock()
 	next := append(
 		[]config.FleetSSHPeer(nil), input.Body.SSHPeers...,
 	)

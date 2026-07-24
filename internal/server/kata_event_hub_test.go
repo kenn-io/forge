@@ -22,6 +22,7 @@ import (
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
 
 	"go.kenn.io/middleman/internal/kata"
+	"go.kenn.io/middleman/internal/server/kataapi"
 )
 
 func TestKataFrontendEventRegistryEnsureDoesNotWaitForCatchUp(t *testing.T) {
@@ -1058,7 +1059,7 @@ url = "`+upstream.URL+`"
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, middleman.URL+"/api/v1/kata/tasks/events", nil)
 	require.NoError(t, err)
-	req.Header.Set(kataDaemonHeaderName, "primary")
+	req.Header.Set(kataapi.DaemonHeaderName, "primary")
 	req.Header.Set("Last-Event-ID", "0")
 	response, err := middleman.Client().Do(req)
 	require.NoError(t, err)
@@ -1070,7 +1071,7 @@ url = "`+upstream.URL+`"
 
 	assert.Equal(http.StatusOK, response.StatusCode)
 	assert.Equal("text/event-stream", response.Header.Get("Content-Type"))
-	assert.Contains(response.Header.Values("Vary"), kataDaemonHeaderName)
+	assert.Contains(response.Header.Values("Vary"), kataapi.DaemonHeaderName)
 	assert.Equal("kata.tasks.reset", reset.Event)
 	assert.Contains(reset.Data, `"daemon_id":"primary"`)
 	assert.Equal("kata.tasks.invalidated", frame.Event)
@@ -1104,7 +1105,7 @@ url = "`+upstream.URL+`"
 	`)
 	srv, _ := setupTestServer(t)
 	middleman := httptest.NewServer(srv)
-	daemon, problem := selectKataDaemonForID("primary")
+	daemon, problem := srv.kataAPI.SelectDaemonForID("primary")
 	require.Nil(problem)
 	binding := requireKataFrontendEventBinding(t, srv.kataEvents, daemon)
 	binding.target.invalidateAndBroadcast()
@@ -1121,7 +1122,7 @@ url = "`+upstream.URL+`"
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, middleman.URL+"/api/v1/kata/tasks/events", nil)
 	require.NoError(err)
-	req.Header.Set(kataDaemonHeaderName, "primary")
+	req.Header.Set(kataapi.DaemonHeaderName, "primary")
 	response, err := middleman.Client().Do(req)
 	require.NoError(err)
 	defer func() { _ = response.Body.Close() }()

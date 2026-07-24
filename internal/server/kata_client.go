@@ -6,14 +6,18 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
 
 	"go.kenn.io/middleman/internal/kata"
+	"go.kenn.io/middleman/internal/server/kataapi"
 )
 
 const (
+	kataDaemonReadTimeout = 20 * time.Second
+
 	// Generated responses are decoded from a complete byte slice by the
 	// generated runtime. Keep a generous default ceiling while still bounding
 	// the memory a configured daemon can make Middleman retain per request.
@@ -79,14 +83,14 @@ type kataAPIClient interface {
 }
 
 func newKataAPIClient(ctx context.Context, daemon kata.Daemon) (kataAPIClient, error) {
-	httpClient, baseURL, err := kataDaemonHTTPClient(daemon)
+	httpClient, baseURL, err := kataapi.DefaultDaemonHTTPClient(daemon)
 	if err != nil {
 		return nil, err
 	}
 	options := []runtime.APIClientOption{
 		runtime.WithHTTPClient(kataGeneratedHTTPDoer{client: httpClient}),
 	}
-	if token := kataDaemonForwardToken(daemon); token != "" {
+	if token := kataapi.DaemonForwardToken(daemon); token != "" {
 		options = append(options, runtime.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
 			req.Header.Set("Authorization", "Bearer "+token)
 			return nil

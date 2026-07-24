@@ -220,6 +220,7 @@ func (h *Handler) Start(parent context.Context, tmuxAvailable, disableMonitors b
 	}
 	h.lifecycleStarted = true
 	h.lifecycleMu.Unlock()
+	h.sshFleet.start()
 	h.runBackground(func(ctx context.Context) {
 		select {
 		case <-parent.Done():

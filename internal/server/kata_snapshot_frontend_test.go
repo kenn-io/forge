@@ -11,6 +11,7 @@ import (
 
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
 	"go.kenn.io/middleman/internal/kata"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 type fakeKataFrontendEventHandle struct {
@@ -41,7 +42,7 @@ func TestKataSnapshotFrontendEnsuresEventsBeforeBlockedAuthorityLoad(t *testing.
 	loadStarted := make(chan struct{})
 	releaseLoad := make(chan struct{})
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		ensureEvents: func(got kata.Daemon) (kataFrontendEventHandle, error) {
 			assert.Equal(daemon, got)
 			ensured.Store(true)
@@ -113,7 +114,7 @@ func TestKataSnapshotFrontendPublishesLinkedCatalogPeersWithoutAuthorityMembersh
 	daemon := kata.Daemon{ID: "primary", URL: "https://kata.example.test"}
 	authority := testKataSnapshotFrontendAuthority(daemon, 3, 7)
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
 			return fakeKataFrontendEventHandle{fingerprint: kataDaemonTargetFingerprint(daemon)}, nil
 		},
@@ -183,7 +184,7 @@ func TestKataSnapshotFrontendReusesSelectedEnrichmentWithinDaemonEpoch(t *testin
 		},
 	}
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
 			return fakeKataFrontendEventHandle{fingerprint: kataDaemonTargetFingerprint(daemon)}, nil
 		},
@@ -238,7 +239,7 @@ func TestKataSnapshotFrontendRetriesInvalidationBeforePublish(t *testing.T) {
 	var loads atomic.Int64
 	var enrichments atomic.Int64
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
 			return fakeKataFrontendEventHandle{fingerprint: fingerprint, cursor: func() uint64 { return 90 + epoch.Load() }}, nil
 		},
@@ -277,7 +278,7 @@ func TestKataSnapshotFrontendRetriesAuthorityDetailRevisionMismatch(t *testing.T
 	var enrichments atomic.Int64
 	var invalidations atomic.Int64
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
 			return fakeKataFrontendEventHandle{fingerprint: fingerprint}, nil
 		},
@@ -332,7 +333,7 @@ func TestKataSnapshotFrontendRetriesTargetRotationDuringEnrichment(t *testing.T)
 	var enrichments int
 	var clientURLs []string
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return current, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return current, nil },
 		ensureEvents: func(daemon kata.Daemon) (kataFrontendEventHandle, error) {
 			cursor := uint64(11)
 			if daemon.URL == second.URL {
@@ -375,7 +376,7 @@ func TestKataSnapshotFrontendStopsAfterTwoDeliveryAttempts(t *testing.T) {
 	fingerprint := kataDaemonTargetFingerprint(daemon)
 	var loads atomic.Int64
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
 			return fakeKataFrontendEventHandle{fingerprint: fingerprint, cursor: func() uint64 { return 1 }}, nil
 		},
@@ -405,7 +406,7 @@ func TestKataSnapshotFrontendDoesNotPublishAfterCancellationDuringEnrichment(t *
 	fingerprint := kataDaemonTargetFingerprint(daemon)
 	ctx, cancel := context.WithCancel(t.Context())
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
 			return fakeKataFrontendEventHandle{fingerprint: fingerprint, cursor: func() uint64 { return 1 }}, nil
 		},
@@ -443,7 +444,7 @@ func TestKataSnapshotFrontendReferencesUseGlobalOpenAuthorityAndFullSetUniquenes
 	}
 	var loads atomic.Int64
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
 			return fakeKataFrontendEventHandle{fingerprint: kataDaemonTargetFingerprint(daemon)}, nil
 		},
@@ -485,7 +486,7 @@ func TestKataSnapshotFrontendReferencesCanResolveAcrossAllStatuses(t *testing.T)
 		ShortID: "closed-task", QualifiedID: "Project A#closed-task", Title: "Completed task", Status: "closed",
 	}}
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
 			return fakeKataFrontendEventHandle{fingerprint: kataDaemonTargetFingerprint(daemon)}, nil
 		},
@@ -516,7 +517,7 @@ func TestKataSnapshotFrontendReferencesEnsuresEventsBeforeBlockedAuthorityLoad(t
 	loadStarted := make(chan struct{})
 	releaseLoad := make(chan struct{})
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		ensureEvents: func(got kata.Daemon) (kataFrontendEventHandle, error) {
 			assert.Equal(daemon, got)
 			ensured.Store(true)
@@ -564,7 +565,7 @@ func TestKataSnapshotFrontendReferencesRetriesInvalidationBeforeReturn(t *testin
 	fingerprint := kataDaemonTargetFingerprint(daemon)
 	var loads atomic.Int64
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
 			return fakeKataFrontendEventHandle{fingerprint: fingerprint}, nil
 		},
@@ -592,7 +593,7 @@ func TestKataSnapshotFrontendReferencesRetriesTargetRotationBeforeReturn(t *test
 	var loads int
 	var ensuredURLs []string
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return current, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return current, nil },
 		ensureEvents: func(daemon kata.Daemon) (kataFrontendEventHandle, error) {
 			ensuredURLs = append(ensuredURLs, daemon.URL)
 			return fakeKataFrontendEventHandle{fingerprint: kataDaemonTargetFingerprint(daemon)}, nil
@@ -625,7 +626,7 @@ func TestKataSnapshotFrontendReferencesStopsAfterTwoDeliveryAttempts(t *testing.
 	fingerprint := kataDaemonTargetFingerprint(daemon)
 	var loads atomic.Int64
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
 			return fakeKataFrontendEventHandle{fingerprint: fingerprint}, nil
 		},
@@ -639,9 +640,9 @@ func TestKataSnapshotFrontendReferencesStopsAfterTwoDeliveryAttempts(t *testing.
 	_, err := frontend.References(t.Context(), &kataTaskReferenceInput{DaemonID: "primary"})
 
 	require.Error(err)
-	problem, ok := err.(*ProblemError)
-	require.True(ok, "want *ProblemError, got %T", err)
-	assert.Equal(CodeUpstreamError, problem.Code)
+	problem, ok := err.(*httpapi.ProblemError)
+	require.True(ok, "want *httpapi.ProblemError, got %T", err)
+	assert.Equal(httpapi.CodeUpstreamError, problem.Code)
 	assert.Contains(problem.Detail, "deliver consistent snapshot")
 	assert.Equal(int64(kataSnapshotDeliveryAttempts), loads.Load())
 }
@@ -652,7 +653,7 @@ func TestKataSnapshotFrontendReferencesPreservesCancellationAfterAuthorityLoad(t
 	daemon := kata.Daemon{ID: "primary", URL: "https://kata.example.test"}
 	ctx, cancel := context.WithCancel(t.Context())
 	frontend := newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) { return daemon, nil },
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) { return daemon, nil },
 		ensureEvents: func(kata.Daemon) (kataFrontendEventHandle, error) {
 			return fakeKataFrontendEventHandle{fingerprint: kataDaemonTargetFingerprint(daemon)}, nil
 		},

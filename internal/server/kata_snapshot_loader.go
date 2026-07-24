@@ -9,6 +9,7 @@ import (
 	"time"
 
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 type kataAuthorityRequest struct {
@@ -37,7 +38,7 @@ func (l *kataSnapshotLoader) Load(ctx context.Context, request kataAuthorityRequ
 	case "open", "closed", "all":
 		issues, err = l.loadIssues(ctx, request.Authority, projectID, projectsByID)
 	default:
-		return kataAuthoritySnapshot{}, problemValidation("authority", "unsupported Kata authority", "open", "ready", "closed", "all")
+		return kataAuthoritySnapshot{}, httpapi.Validation("authority", "unsupported Kata authority", "open", "ready", "closed", "all")
 	}
 	if err != nil {
 		return kataAuthoritySnapshot{}, err
@@ -87,10 +88,10 @@ func (l *kataSnapshotLoader) loadProjects(
 		return projects, projectsByID, nil, nil
 	}
 	if request.Scope != "project" {
-		return nil, nil, nil, problemValidation("scope", "unsupported Kata scope", "global", "project")
+		return nil, nil, nil, httpapi.Validation("scope", "unsupported Kata scope", "global", "project")
 	}
 	if projectID == nil {
-		return nil, nil, nil, problemNotFound(CodeProjectNotFound, "Kata project not found", map[string]any{"projectUid": request.ProjectUID})
+		return nil, nil, nil, httpapi.NotFound(httpapi.CodeProjectNotFound, "Kata project not found", map[string]any{"projectUid": request.ProjectUID})
 	}
 	return projects, projectsByID, projectID, nil
 }
@@ -221,7 +222,7 @@ func kataSnapshotUpstreamError(operation string, err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
-	return problemUpstream(fmt.Sprintf("Kata %s failed: %v", operation, err), "", "")
+	return httpapi.Upstream(fmt.Sprintf("Kata %s failed: %v", operation, err), "", "")
 }
 
 func kataProjectSummaryFromGenerated(project katagenerated.ProjectOut) kataProjectSummary {

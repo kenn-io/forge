@@ -11,6 +11,8 @@ import (
 
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/kata"
+	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/kataapi"
 )
 
 const (
@@ -89,7 +91,7 @@ type kataTaskReferenceOutput struct {
 }
 
 type kataSnapshotFrontendDeps struct {
-	resolveDaemon           func(string) (kata.Daemon, *ProblemError)
+	resolveDaemon           func(string) (kata.Daemon, *httpapi.ProblemError)
 	ensureEvents            func(kata.Daemon) (kataFrontendEventHandle, error)
 	loadAuthority           func(context.Context, string, kataAuthorityRequest) (kataCoordinatedAuthority, error)
 	daemonEpoch             func(string) uint64
@@ -108,7 +110,7 @@ func newKataSnapshotFrontend(deps kataSnapshotFrontendDeps) *kataSnapshotFronten
 
 func (s *Server) kataSnapshotFrontend() *kataSnapshotFrontend {
 	return newKataSnapshotFrontend(kataSnapshotFrontendDeps{
-		resolveDaemon: selectKataDaemonForID,
+		resolveDaemon: s.kataAPI.SelectDaemonForID,
 		ensureEvents: func(daemon kata.Daemon) (kataFrontendEventHandle, error) {
 			return s.kataEvents.Ensure(daemon)
 		},
@@ -125,8 +127,8 @@ func (s *Server) kataSnapshotFrontend() *kataSnapshotFrontend {
 			enricher := newKataSnapshotEnricher(kataSnapshotEnricherDeps{
 				client: client,
 				cache:  s.kataSnapshots.enrichmentCache,
-				resolveWorkspaceTarget: func(ctx context.Context, metadata db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
-					return s.kataWorkspaceTargetForMetadata(ctx, metadata)
+				resolveWorkspaceTarget: func(ctx context.Context, metadata db.WorkspaceKataMetadata) (kataapi.KataWorkspaceTargetResponse, error) {
+					return s.kataAPI.WorkspaceTargetForMetadata(ctx, metadata)
 				},
 			})
 			return enricher.Enrich(ctx, authority, request)
@@ -140,14 +142,14 @@ func (s *Server) kataTaskSnapshot(
 ) (out *kataTaskSnapshotOutput, err error) {
 	defer func() {
 		if err != nil {
-			err = huma.ErrorWithHeaders(err, http.Header{"Vary": []string{kataDaemonHeaderName}})
+			err = huma.ErrorWithHeaders(err, http.Header{"Vary": []string{kataapi.DaemonHeaderName}})
 		}
 	}()
 	response, err := s.kataSnapshotFrontend().Snapshot(ctx, input)
 	if err != nil {
 		return nil, err
 	}
-	return &kataTaskSnapshotOutput{Vary: kataDaemonHeaderName, Body: response}, nil
+	return &kataTaskSnapshotOutput{Vary: kataapi.DaemonHeaderName, Body: response}, nil
 }
 
 func (s *Server) kataTaskReferences(
@@ -156,14 +158,14 @@ func (s *Server) kataTaskReferences(
 ) (out *kataTaskReferenceOutput, err error) {
 	defer func() {
 		if err != nil {
-			err = huma.ErrorWithHeaders(err, http.Header{"Vary": []string{kataDaemonHeaderName}})
+			err = huma.ErrorWithHeaders(err, http.Header{"Vary": []string{kataapi.DaemonHeaderName}})
 		}
 	}()
 	response, err := s.kataSnapshotFrontend().References(ctx, input)
 	if err != nil {
 		return nil, err
 	}
-	return &kataTaskReferenceOutput{Vary: kataDaemonHeaderName, Body: response}, nil
+	return &kataTaskReferenceOutput{Vary: kataapi.DaemonHeaderName, Body: response}, nil
 }
 
 func (f *kataSnapshotFrontend) Snapshot(
@@ -195,7 +197,7 @@ func (f *kataSnapshotFrontend) Snapshot(
 		}
 		binding, err := f.deps.ensureEvents(daemon)
 		if err != nil {
-			return kataTaskSnapshotResponse{}, problemServiceUnavailable("Kata task events are unavailable while the server is shutting down")
+			return kataTaskSnapshotResponse{}, httpapi.ServiceUnavailable("Kata task events are unavailable while the server is shutting down")
 		}
 		authority, err := f.deps.loadAuthority(ctx, daemon.ID, intent)
 		if err != nil {
@@ -272,14 +274,14 @@ func (f *kataSnapshotFrontend) References(
 		status = "open"
 	}
 	if status != "open" && status != "all" {
-		return kataTaskReferenceResponse{}, problemValidation("status", "status must be open or all", "open", "all")
+		return kataTaskReferenceResponse{}, httpapi.Validation("status", "status must be open or all", "open", "all")
 	}
 	limit := input.Limit
 	if limit == 0 {
 		limit = kataReferenceDefaultLimit
 	}
 	if limit < 1 || limit > kataReferenceMaxLimit {
-		return kataTaskReferenceResponse{}, problemValidation("limit", "limit must be between 1 and 50")
+		return kataTaskReferenceResponse{}, httpapi.Validation("limit", "limit must be between 1 and 50")
 	}
 	for range kataSnapshotDeliveryAttempts {
 		if err := ctx.Err(); err != nil {
@@ -291,7 +293,7 @@ func (f *kataSnapshotFrontend) References(
 		}
 		binding, err := f.deps.ensureEvents(daemon)
 		if err != nil {
-			return kataTaskReferenceResponse{}, problemServiceUnavailable("Kata task events are unavailable while the server is shutting down")
+			return kataTaskReferenceResponse{}, httpapi.ServiceUnavailable("Kata task events are unavailable while the server is shutting down")
 		}
 		authority, err := f.deps.loadAuthority(ctx, daemon.ID, kataAuthorityRequest{Scope: "global", Authority: status})
 		if err != nil {

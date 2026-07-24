@@ -28,11 +28,28 @@ const (
 // DaemonHeaderName selects the Kata daemon used for a request.
 const DaemonHeaderName = kataDaemonHeaderName
 
+// DaemonCacheKeyDelim separates daemon identity components in cache keys.
+const DaemonCacheKeyDelim = kataDaemonCacheKeyDelim
+
 // IsProxyPath reports whether an API path belongs to Kata's passthrough
 // boundary. Root middleware uses this to preserve the proxy's content-type
 // and same-origin handling without owning Kata route details.
 func IsProxyPath(path string) bool {
 	return path == kataProxyPrefix || strings.HasPrefix(path, kataProxyPrefix+"/")
+}
+
+func isKataMutationMethod(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+// DaemonForwardToken returns the bearer token configured for daemon reads.
+func DaemonForwardToken(d kata.Daemon) string {
+	return kataDaemonForwardToken(d)
 }
 
 type kataProxyCacheKey struct {
@@ -226,6 +243,12 @@ func (h *Handler) selectKataDaemonForID(headerID string) (kata.Daemon, *httpapi.
 // frontend streaming routes.
 func (h *Handler) SelectDaemonForID(id string) (kata.Daemon, *httpapi.ProblemError) {
 	return h.selectKataDaemonForID(id)
+}
+
+// ResolveDefaultDaemonForID resolves a daemon using the standard catalog and
+// runtime discovery dependencies.
+func ResolveDefaultDaemonForID(id string) (kata.Daemon, *httpapi.ProblemError) {
+	return New(Deps{}).selectKataDaemonForID(id)
 }
 
 func newKataDaemonProxyEntryWithTimeout(d kata.Daemon, requestTimeout time.Duration) (kataProxyCacheEntry, error) {

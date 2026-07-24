@@ -40,8 +40,9 @@ type sshFleetTransport struct {
 	// are deliberately left running (ControlPersist semantics): a
 	// restarted daemon adopts live sockets instead of re-dialing, and
 	// the idle monitor reaps masters with no activity.
-	stop     chan struct{}
-	stopOnce sync.Once
+	stop      chan struct{}
+	startOnce sync.Once
+	stopOnce  sync.Once
 
 	// inflight single-flights the per-peer snapshot fetch so repeated
 	// snapshot reads against a cold peer share one connect/fetch instead of piling
@@ -80,8 +81,14 @@ func newSSHFleetTransport(
 		peers:  peers,
 		stop:   make(chan struct{}),
 	}
-	conns.StartIdleMonitor(t.stop)
 	return t
+}
+
+func (t *sshFleetTransport) start() {
+	if t == nil {
+		return
+	}
+	t.startOnce.Do(func() { t.conns.StartIdleMonitor(t.stop) })
 }
 
 // shutdown stops the idle monitor. Masters stay alive by design (see

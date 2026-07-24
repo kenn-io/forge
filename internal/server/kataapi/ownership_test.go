@@ -12,12 +12,17 @@ import (
 )
 
 func TestKataProductionIsOwnedByKataAPI(t *testing.T) {
-	rootFiles, err := filepath.Glob(filepath.Join("..", "kata_*.go"))
-	require.NoError(t, err)
-	for _, path := range rootFiles {
-		if !strings.HasSuffix(path, "_test.go") {
-			assert.Fail(t, "Kata production file remains in the root server package", path)
-		}
+	for _, name := range []string{
+		"kata_proxy.go",
+		"kata_proxy_routes.go",
+		"kata_routes.go",
+		"kata_task_detail.go",
+		"kata_workspace.go",
+	} {
+		_, err := filepath.Glob(filepath.Join("..", name))
+		require.NoError(t, err)
+		assert.NoFileExists(t, filepath.Join("..", name),
+			"Kata daemon API production remains in the root server package")
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	"github.com/stretchr/testify/require"
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 func TestKataSnapshotLoaderLoadsGlobalReadyAuthority(t *testing.T) {
@@ -361,9 +362,9 @@ func TestKataSnapshotLoaderMapsGeneratedFailuresToUpstreamProblem(t *testing.T) 
 
 	_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "global", Authority: "open"})
 	require.Error(err)
-	problem, ok := err.(*ProblemError)
-	require.True(ok, "want *ProblemError, got %T", err)
-	require.Equal(CodeUpstreamError, problem.Code)
+	problem, ok := err.(*httpapi.ProblemError)
+	require.True(ok, "want *httpapi.ProblemError, got %T", err)
+	require.Equal(httpapi.CodeUpstreamError, problem.Code)
 }
 
 func TestKataSnapshotLoaderPreservesCancellation(t *testing.T) {
@@ -395,8 +396,8 @@ func TestKataSnapshotLoaderValidatesRequestBeforeUpstreamCalls(t *testing.T) {
 	_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "global", ProjectUID: "invalid", Authority: "open"})
 	require.Error(err)
 	require.False(called.Load())
-	problem, ok := err.(*ProblemError)
-	require.True(ok, "want *ProblemError, got %T", err)
+	problem, ok := err.(*httpapi.ProblemError)
+	require.True(ok, "want *httpapi.ProblemError, got %T", err)
 	require.Equal(http.StatusBadRequest, problem.Status)
 }
 
@@ -447,8 +448,8 @@ func TestKataSnapshotLoaderRejectsNonOKGeneratedResponse(t *testing.T) {
 
 	_, err := loader.Load(t.Context(), kataAuthorityRequest{Scope: "global", Authority: "open"})
 	require.Error(err)
-	problem, ok := err.(*ProblemError)
-	require.True(ok, "want *ProblemError, got %T", err)
+	problem, ok := err.(*httpapi.ProblemError)
+	require.True(ok, "want *httpapi.ProblemError, got %T", err)
 	require.Equal(http.StatusBadGateway, problem.Status)
 }
 
@@ -658,8 +659,8 @@ func requireKataSnapshotUpstreamProblem(t *testing.T, err error) {
 	t.Helper()
 	require := require.New(t)
 	require.Error(err)
-	problem, ok := err.(*ProblemError)
-	require.True(ok, "want *ProblemError, got %T", err)
+	problem, ok := err.(*httpapi.ProblemError)
+	require.True(ok, "want *httpapi.ProblemError, got %T", err)
 	require.Equal(http.StatusBadGateway, problem.Status)
 }
 

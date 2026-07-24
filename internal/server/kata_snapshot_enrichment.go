@@ -12,6 +12,8 @@ import (
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
 
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/kataapi"
 )
 
 const (
@@ -40,8 +42,8 @@ type kataSnapshotEnrichmentRequest struct {
 }
 
 type kataSnapshotEnrichmentError struct {
-	Code    ProblemCode `json:"code"`
-	Message string      `json:"message"`
+	Code    httpapi.ProblemCode `json:"code"`
+	Message string              `json:"message"`
 }
 
 type kataSnapshotEnrichment struct {
@@ -55,22 +57,22 @@ type kataSnapshotEnrichment struct {
 }
 
 type kataSnapshotSelectedDetail struct {
-	Detail          any                         `json:"detail" doc:"Verbatim Kata daemon issue detail payload"`
-	ETag            string                      `json:"etag,omitempty" doc:"Daemon issue detail ETag, when the daemon provided one"`
-	WorkspaceTarget kataWorkspaceTargetResponse `json:"workspace_target"`
+	Detail          any                                 `json:"detail" doc:"Verbatim Kata daemon issue detail payload"`
+	ETag            string                              `json:"etag,omitempty" doc:"Daemon issue detail ETag, when the daemon provided one"`
+	WorkspaceTarget kataapi.KataWorkspaceTargetResponse `json:"workspace_target"`
 }
 
 type kataSnapshotEnricherDeps struct {
 	client                 kataAPIClient
 	cache                  *kataSnapshotEnrichmentCache
-	resolveWorkspaceTarget func(context.Context, db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error)
+	resolveWorkspaceTarget func(context.Context, db.WorkspaceKataMetadata) (kataapi.KataWorkspaceTargetResponse, error)
 	now                    func() time.Time
 }
 
 type kataSnapshotEnricher struct {
 	client                 kataAPIClient
 	cache                  *kataSnapshotEnrichmentCache
-	resolveWorkspaceTarget func(context.Context, db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error)
+	resolveWorkspaceTarget func(context.Context, db.WorkspaceKataMetadata) (kataapi.KataWorkspaceTargetResponse, error)
 	now                    func() time.Time
 }
 
@@ -93,8 +95,8 @@ func newKataSnapshotEnricher(deps kataSnapshotEnricherDeps) *kataSnapshotEnriche
 	}
 	resolveWorkspaceTarget := deps.resolveWorkspaceTarget
 	if resolveWorkspaceTarget == nil {
-		resolveWorkspaceTarget = func(context.Context, db.WorkspaceKataMetadata) (kataWorkspaceTargetResponse, error) {
-			return kataWorkspaceTargetResponse{Available: false}, nil
+		resolveWorkspaceTarget = func(context.Context, db.WorkspaceKataMetadata) (kataapi.KataWorkspaceTargetResponse, error) {
+			return kataapi.KataWorkspaceTargetResponse{Available: false}, nil
 		}
 	}
 	return &kataSnapshotEnricher{
@@ -156,7 +158,7 @@ func (e *kataSnapshotEnricher) Enrich(
 			if errors.Is(err, errKataSnapshotEnrichmentStale) {
 				return kataSnapshotEnrichment{}, err
 			}
-			result.addError(kataSnapshotEnrichmentStageGraph, CodeUpstreamError, "Could not load reachable graph.")
+			result.addError(kataSnapshotEnrichmentStageGraph, httpapi.CodeUpstreamError, "Could not load reachable graph.")
 			return result, nil
 		}
 		result.Graph = graph
@@ -173,7 +175,7 @@ func (e *kataSnapshotEnricher) Enrich(
 			if errors.Is(err, errKataSnapshotEnrichmentStale) {
 				return kataSnapshotEnrichment{}, err
 			}
-			result.addError(kataSnapshotEnrichmentStageGraph, CodeUpstreamError, "Could not load reachable graph.")
+			result.addError(kataSnapshotEnrichmentStageGraph, httpapi.CodeUpstreamError, "Could not load reachable graph.")
 		} else {
 			result.Graph = graph
 			result.GraphFetchedAt = &graphFetchedAt
@@ -208,7 +210,7 @@ func (e *kataSnapshotEnricher) enrichSelected(
 		if errors.Is(err, errKataSnapshotEnrichmentStale) {
 			return err
 		}
-		result.addError(kataSnapshotEnrichmentStageDetail, CodeUpstreamError, "Could not load selected task detail.")
+		result.addError(kataSnapshotEnrichmentStageDetail, httpapi.CodeUpstreamError, "Could not load selected task detail.")
 	} else {
 		result.SelectedDetail = &kataSnapshotSelectedDetail{Detail: detail, ETag: issue.ETag}
 		catalogIssues, catalogErr := e.loadLinkedPeerCatalog(ctx, authority, detail, projectsByID)
@@ -230,7 +232,7 @@ func (e *kataSnapshotEnricher) enrichSelected(
 			if contextErr := kataEnrichmentContextError(ctx, targetErr); contextErr != nil {
 				return contextErr
 			}
-			result.addError(kataSnapshotEnrichmentStageWorkspaceTarget, CodeInternalError, "Could not resolve workspace target.")
+			result.addError(kataSnapshotEnrichmentStageWorkspaceTarget, httpapi.CodeInternalError, "Could not resolve workspace target.")
 		} else {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -244,7 +246,7 @@ func (e *kataSnapshotEnricher) enrichSelected(
 		if contextErr := kataEnrichmentContextError(ctx, err); contextErr != nil {
 			return contextErr
 		}
-		result.addError(kataSnapshotEnrichmentStageHistory, CodeUpstreamError, "Could not load selected task history.")
+		result.addError(kataSnapshotEnrichmentStageHistory, httpapi.CodeUpstreamError, "Could not load selected task history.")
 	} else {
 		result.SelectedHistory = history
 	}
@@ -789,7 +791,7 @@ func validateKataHistoryPage(
 	return body, false, nil
 }
 
-func (r *kataSnapshotEnrichment) addError(stage string, code ProblemCode, message string) {
+func (r *kataSnapshotEnrichment) addError(stage string, code httpapi.ProblemCode, message string) {
 	if r.Errors == nil {
 		r.Errors = make(map[string]kataSnapshotEnrichmentError)
 	}

@@ -18,9 +18,10 @@ import (
 	gitenv "go.kenn.io/kit/git/env"
 
 	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/procutil"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/testutil/servertest"
@@ -186,7 +187,7 @@ func TestCreateWorktreeFromMergeRequestRouteRejectsChangedHead(t *testing.T) {
 	require := Require.New(t)
 	assert := assert.New(t)
 
-	srv, database := setupTestServer(t)
+	srv, database := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -215,7 +216,7 @@ func TestCreateWorktreeFromMergeRequestRouteRejectsChangedHead(t *testing.T) {
 
 	logUnexpectedResponse(t, resp, http.StatusConflict)
 	assert.Equal(http.StatusConflict, resp.StatusCode)
-	var problem ProblemError
+	var problem httpapi.ProblemError
 	require.NoError(json.NewDecoder(resp.Body).Decode(&problem))
 	assert.Equal("stale_state", problem.Details["reason"])
 	assert.NoDirExists(destination)
@@ -224,7 +225,7 @@ func TestCreateWorktreeFromMergeRequestRouteRejectsChangedHead(t *testing.T) {
 func TestCreateWorktreeFromGitLabMergeRequestRefRoute(t *testing.T) {
 	require := Require.New(t)
 	assert := assert.New(t)
-	srv, database := setupTestServer(t)
+	srv, database := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -263,7 +264,7 @@ func TestCreateWorktreeFromGitLabMergeRequestRefRoute(t *testing.T) {
 func TestCreateWorktreeFromRelativeForkRoutePersistsAbsoluteTracking(t *testing.T) {
 	require := Require.New(t)
 	assert := assert.New(t)
-	srv, database := setupTestServer(t)
+	srv, database := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 

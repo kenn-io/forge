@@ -41,7 +41,7 @@ type kataWorkspaceTaskInput struct {
 	Body kataWorkspaceTaskRequest
 }
 
-type kataWorkspaceTargetResponse struct {
+type KataWorkspaceTargetResponse struct {
 	Available         bool                       `json:"available"`
 	Repo              *httpapi.RepoRefResponse   `json:"repo,omitempty"`
 	ItemType          string                     `json:"item_type,omitempty"`
@@ -117,18 +117,18 @@ func (body kataWorkspaceTaskRequest) metadata() (db.WorkspaceKataMetadata, error
 func (h *Handler) kataWorkspaceTargetForMetadata(
 	ctx context.Context,
 	metadata db.WorkspaceKataMetadata,
-) (kataWorkspaceTargetResponse, error) {
+) (KataWorkspaceTargetResponse, error) {
 	target, ok, err := h.resolveKataWorkspaceRepo(ctx, metadata)
 	if err != nil {
-		return kataWorkspaceTargetResponse{}, err
+		return KataWorkspaceTargetResponse{}, err
 	}
 	if !ok {
-		return kataWorkspaceTargetResponse{Available: false}, nil
+		return KataWorkspaceTargetResponse{Available: false}, nil
 	}
 	repoRef := h.repoRefFromParts(
 		target.Provider, target.PlatformHost, target.Owner, target.Name,
 	)
-	resp := kataWorkspaceTargetResponse{
+	resp := KataWorkspaceTargetResponse{
 		Available: true,
 		Repo:      &repoRef,
 		ItemType:  db.WorkspaceItemTypeKataTask,
@@ -144,7 +144,7 @@ func (h *Handler) kataWorkspaceTargetForMetadata(
 		resp.ItemKey,
 	)
 	if err != nil {
-		return kataWorkspaceTargetResponse{}, httpapi.Internal("lookup existing Kata workspace: " + err.Error())
+		return KataWorkspaceTargetResponse{}, httpapi.Internal("lookup existing Kata workspace: " + err.Error())
 	}
 	if existing != nil {
 		resp.ExistingWorkspace = &workspaceapi.WorkspaceRef{
@@ -153,6 +153,15 @@ func (h *Handler) kataWorkspaceTargetForMetadata(
 		}
 	}
 	return resp, nil
+}
+
+// WorkspaceTargetForMetadata resolves the workspace action embedded in Kata
+// snapshot enrichment.
+func (h *Handler) WorkspaceTargetForMetadata(
+	ctx context.Context,
+	metadata db.WorkspaceKataMetadata,
+) (KataWorkspaceTargetResponse, error) {
+	return h.kataWorkspaceTargetForMetadata(ctx, metadata)
 }
 
 func (h *Handler) createKataWorkspace(

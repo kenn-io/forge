@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/kata"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 func TestKataSnapshotCoordinatorInvalidatesAllEnrichmentReads(t *testing.T) {
@@ -78,7 +79,7 @@ func TestKataSnapshotCoordinatorRejectsEnrichmentCompletedAfterTargetRotation(t 
 	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
 		cache:           authorityCache,
 		enrichmentCache: enrichmentCache,
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) {
 			return kata.Daemon{ID: "work", URL: daemonURL.Load().(string)}, nil
 		},
 		newLoader: func(_ context.Context, daemon kata.Daemon) (kataAuthoritySnapshotLoader, error) {
@@ -139,7 +140,7 @@ func TestKataSnapshotCoordinatorCoalescesAndCachesAuthority(t *testing.T) {
 	release := make(chan struct{})
 	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
 		cache: newKataSnapshotCache(),
-		resolveDaemon: func(id string) (kata.Daemon, *ProblemError) {
+		resolveDaemon: func(id string) (kata.Daemon, *httpapi.ProblemError) {
 			return kata.Daemon{ID: id, URL: "http://" + id + ".example"}, nil
 		},
 		newLoader: func(_ context.Context, daemon kata.Daemon) (kataAuthoritySnapshotLoader, error) {
@@ -201,7 +202,7 @@ func TestKataSnapshotCoordinatorRetriesLoadInvalidatedInFlight(t *testing.T) {
 	release := make(chan struct{})
 	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
 		cache: cache,
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) {
 			return kata.Daemon{ID: "work", URL: "http://work.example"}, nil
 		},
 		newLoader: func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error) {
@@ -253,7 +254,7 @@ func TestKataSnapshotCoordinatorDoesNotDeliverCacheHitInvalidatedDuringTargetChe
 	var resolves atomic.Int64
 	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
 		cache: cache,
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) {
 			if resolves.Add(1) == 2 {
 				epoch := cache.invalidateDaemon("work")
 				require.True(cache.setIfDaemonEpoch(key, kataAuthoritySnapshot{Generation: 2, Issues: []kataTaskSummary{{UID: "new"}}}, epoch))
@@ -280,7 +281,7 @@ func TestKataSnapshotCoordinatorRetriesWhenDaemonTargetRotates(t *testing.T) {
 	var loads atomic.Int64
 	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
 		cache: newKataSnapshotCache(),
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) {
 			if resolves.Add(1) <= 2 {
 				return kata.Daemon{ID: "work", URL: "http://target-1.example"}, nil
 			}
@@ -313,7 +314,7 @@ func TestKataSnapshotCoordinatorDoesNotResurrectCachedTargetAfterRoundTripRotati
 	var loads atomic.Int64
 	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
 		cache: newKataSnapshotCache(),
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) {
 			return kata.Daemon{ID: "work", URL: currentURL}, nil
 		},
 		newLoader: func(_ context.Context, daemon kata.Daemon) (kataAuthoritySnapshotLoader, error) {
@@ -359,7 +360,7 @@ func TestKataSnapshotCoordinatorCallerCancellationDoesNotCancelSharedLoad(t *tes
 	release := make(chan struct{})
 	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
 		cache: newKataSnapshotCache(),
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) {
 			return kata.Daemon{ID: "work", URL: "http://work.example"}, nil
 		},
 		newLoader: func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error) {
@@ -414,7 +415,7 @@ func TestKataSnapshotCoordinatorRunWaitsForDetachedSharedLoad(t *testing.T) {
 	release := make(chan struct{})
 	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
 		cache: newKataSnapshotCache(),
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) {
 			return kata.Daemon{ID: "work", URL: "http://work.example"}, nil
 		},
 		newLoader: func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error) {
@@ -465,7 +466,7 @@ func TestKataSnapshotCoordinatorRetriesCrossResponseInconsistency(t *testing.T) 
 	var loads atomic.Int64
 	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
 		cache: newKataSnapshotCache(),
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) {
 			return kata.Daemon{ID: "work", URL: "http://work.example"}, nil
 		},
 		newLoader: func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error) {
@@ -495,7 +496,7 @@ func TestKataSnapshotCoordinatorBoundsPersistentCrossResponseInconsistency(t *te
 	var loads atomic.Int64
 	coordinator := newKataSnapshotCoordinator(root, kataSnapshotCoordinatorDeps{
 		cache: newKataSnapshotCache(),
-		resolveDaemon: func(string) (kata.Daemon, *ProblemError) {
+		resolveDaemon: func(string) (kata.Daemon, *httpapi.ProblemError) {
 			return kata.Daemon{ID: "work", URL: "http://work.example"}, nil
 		},
 		newLoader: func(context.Context, kata.Daemon) (kataAuthoritySnapshotLoader, error) {
@@ -511,8 +512,8 @@ func TestKataSnapshotCoordinatorBoundsPersistentCrossResponseInconsistency(t *te
 	_, err := coordinator.loadAuthority(t.Context(), "work", kataAuthorityRequest{Scope: "global", Authority: "open"})
 	require.Error(err)
 	require.Equal(int64(2), loads.Load())
-	problem, ok := err.(*ProblemError)
-	require.True(ok, "want *ProblemError, got %T", err)
+	problem, ok := err.(*httpapi.ProblemError)
+	require.True(ok, "want *httpapi.ProblemError, got %T", err)
 	require.Equal(502, problem.Status)
 }
 
@@ -526,7 +527,7 @@ func TestValidateKataAuthorityRequestRejectsPaddedProjectUID(t *testing.T) {
 		Authority:  "open",
 	})
 	require.Error(err)
-	problem, ok := err.(*ProblemError)
-	require.True(ok, "want *ProblemError, got %T", err)
+	problem, ok := err.(*httpapi.ProblemError)
+	require.True(ok, "want *httpapi.ProblemError, got %T", err)
 	require.Equal(http.StatusBadRequest, problem.Status)
 }

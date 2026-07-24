@@ -1,4 +1,4 @@
-package server
+package workspacetest
 
 import (
 	"context"
@@ -23,6 +23,7 @@ import (
 // corrupt `worktrees/` metadata.
 func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
 	t.Parallel()
+	acquireWorkspaceGitSlot(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -35,10 +36,7 @@ func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
 	// concurrent creates target the same bare clone but different
 	// worktree paths. Same-repo head evidence keeps setup on the branch
 	// path; without it the fixture remote would need refs/pull/2/head.
-	seedPROnHost(
-		t, fixture.database, "github.com", "acme", "widget", 2,
-		withSeedPRHeadRepoCloneURL("https://github.com/acme/widget.git"),
-	)
+	seedPROnHost(t, fixture.database, "github.com", "acme", "widget", 2)
 
 	type createResult struct {
 		num int

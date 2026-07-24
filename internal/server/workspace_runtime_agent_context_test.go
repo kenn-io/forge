@@ -27,6 +27,7 @@ import (
 
 func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
 	t.Parallel()
+	acquireRootWorkspaceGitSlot(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	d := dbtest.Open(t)

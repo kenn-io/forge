@@ -187,6 +187,9 @@ behavior.
 - Workspace/Projects handler and Git-heavy wire tests belong to
   `internal/server/workspaceapi` or `internal/server/workspacetest`; Git and
   worktree cases in the public wire lane must acquire its weighted semaphore.
+- Root-retained Git tests must cross a root composition boundary and acquire
+  the root Git semaphore before expensive setup; `t.Parallel` alone is never
+  a Git-work concurrency bound (`internal/server/api_test.go::acquireRootWorkspaceGitSlot`).
 - A server test that creates a workspace must wait for setup to reach a terminal
   state (`waitForWorkspaceReady`) before it returns. The `202 Accepted` create
   runs clone/setup in a background goroutine; if the test returns first, that

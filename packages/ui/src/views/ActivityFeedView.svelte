@@ -440,7 +440,6 @@
           <WorkspaceDockPanel
             controller={inlineWorkspace}
             active={claimIdentity !== null && inlineWorkspace.isClaimedFor(claimIdentity)}
-            detailTitle={activeDrawer ? `#${activeDrawer.number} ${activeDrawer.owner}/${activeDrawer.name}` : ""}
           >
             {@render activityEmbed()}
           </WorkspaceDockPanel>

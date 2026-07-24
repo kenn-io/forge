@@ -1,5 +1,5 @@
 import { page } from "vite-plus/test/browser";
-import { flushSync, mount, unmount } from "svelte";
+import { createRawSnippet, flushSync, mount, unmount } from "svelte";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS } from "@middleman/ui";
 import { createDiffStore } from "@middleman/ui/stores/diff";
@@ -14,6 +14,7 @@ import {
   resetWorkspaceHostForTest,
 } from "../../stores/workspace-host.svelte.ts";
 import WorkspaceHost from "./WorkspaceHost.svelte";
+import WorkspaceDockPanel from "../../../../../packages/ui/src/components/workspace/WorkspaceDockPanel.svelte";
 
 const WAIT = 10_000;
 
@@ -50,6 +51,10 @@ const workspace = {
 };
 
 const emptyRuntime = { launch_targets: [], sessions: [] };
+
+const detailChildren = createRawSnippet(() => ({
+  render: () => `<div>PR detail</div>`,
+}));
 
 function workspaceRoutes(): MockRouteOverride {
   return (req) => {
@@ -355,6 +360,57 @@ describe("WorkspaceHost", () => {
     const parkedScope = page.elementLocator(host);
     expect(parkedScope.getByRole("button", { name: "Expand Terminal" }).query()).toBeNull();
     expect(parkedScope.getByRole("button", { name: "Collapse Terminal" }).query()).toBeNull();
+  });
+
+  it("fills the expanded PR pane with the existing hosted workspace shell", async () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.setDockMode("split");
+
+    const panelTarget = document.createElement("div");
+    panelTarget.style.cssText = "display: flex; width: 800px; height: 600px;";
+    document.body.appendChild(panelTarget);
+    const panel = mount(WorkspaceDockPanel, {
+      target: panelTarget,
+      props: {
+        controller: prs,
+        active: true,
+        children: detailChildren,
+      },
+    });
+
+    try {
+      instance = mount(WorkspaceHost, {
+        target: hostContainer,
+        context: new Map([[STORES_KEY, { settings: settingsStore }]]),
+      });
+
+      prs.claim(identityA, { id: "ws-1", status: "ready" });
+      navigate("/pulls");
+      flushSync();
+      await waitForReparent();
+
+      const panelElement = panelTarget.querySelector<HTMLElement>(".workspace-dock-panel");
+      const host = panelTarget.querySelector<HTMLElement>(".workspace-host-wrapper");
+      expect(panelElement).not.toBeNull();
+      expect(host).not.toBeNull();
+      await vi.waitFor(() => expect(host?.inert).toBe(false), WAIT);
+      const existingStage = host!.querySelector(".workspace-stage");
+      expect(existingStage).not.toBeNull();
+
+      flushSync(() => prs.setDockMode("expanded"));
+
+      const panelRect = panelElement!.getBoundingClientRect();
+      const hostRect = host!.getBoundingClientRect();
+      expect(host!.querySelector(".workspace-stage")).toBe(existingStage);
+      expect({
+        top: Math.round(hostRect.top - panelRect.top),
+        bottom: Math.round(panelRect.bottom - hostRect.bottom),
+        height: Math.round(hostRect.height),
+      }).toEqual({ top: 0, bottom: 0, height: 600 });
+    } finally {
+      flushSync(() => unmount(panel));
+      panelTarget.remove();
+    }
   });
 
   it("unmounts the right sidebar while parked and restores it on reveal", async () => {

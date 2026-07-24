@@ -27,7 +27,6 @@ describe("WorkspaceDockPanel teardown", () => {
       props: {
         controller,
         active: true,
-        detailTitle: "#7 Fix the widget",
         children: detailChildren,
       },
     });
@@ -75,7 +74,6 @@ describe("WorkspaceDockPanel dock-close focus", () => {
       props: {
         controller,
         active: true,
-        detailTitle: "#7 Fix the widget",
         children: detailChildren,
       },
     });
@@ -112,7 +110,6 @@ describe("WorkspaceDockPanel dock-close focus", () => {
         get active() {
           return active;
         },
-        detailTitle: "#7 Fix the widget",
         children: detailChildren,
       },
     });
@@ -152,7 +149,6 @@ describe("WorkspaceDockPanel dock-close focus", () => {
       props: {
         controller,
         active: true,
-        detailTitle: "#7 Fix the widget",
         children: detailChildren,
       },
     });
@@ -183,7 +179,6 @@ describe("WorkspaceDockPanel dock-close focus", () => {
       props: {
         controller,
         active: true,
-        detailTitle: "#7 Fix the widget",
         children: detailChildren,
       },
     });
@@ -219,7 +214,6 @@ describe("WorkspaceDockPanel dock-close focus", () => {
       props: {
         controller,
         active: true,
-        detailTitle: "#7 Fix the widget",
         children: detailChildren,
       },
     });
@@ -253,7 +247,6 @@ describe("WorkspaceDockPanel collapsed reopen strip", () => {
       props: {
         controller,
         active: true,
-        detailTitle: "#7 Fix the widget",
         children: detailChildren,
       },
     });
@@ -288,7 +281,6 @@ describe("WorkspaceDockPanel collapsed reopen strip", () => {
         get active() {
           return active;
         },
-        detailTitle: "#7 Fix the widget",
         children: detailChildren,
       },
     });
@@ -322,7 +314,6 @@ describe("WorkspaceDockPanel resize handle", () => {
       props: {
         controller,
         active: true,
-        detailTitle: "#7 Fix the widget",
         children: detailChildren,
       },
     });
@@ -363,7 +354,6 @@ describe("WorkspaceDockPanel resize handle", () => {
       props: {
         controller,
         active: true,
-        detailTitle: "#7 Fix the widget",
         children: detailChildren,
       },
     });

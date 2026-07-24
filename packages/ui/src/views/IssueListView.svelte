@@ -150,7 +150,6 @@
         <WorkspaceDockPanel
           controller={inlineWorkspace}
           active={claimIdentity !== null && inlineWorkspace.isClaimedFor(claimIdentity)}
-          detailTitle={`#${selectedIssue.number} ${selectedIssue.owner}/${selectedIssue.name}`}
         >
           {@render detailContent()}
         </WorkspaceDockPanel>

@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { flushSync, tick, untrack, type Snippet } from "svelte";
+  import { tick, untrack, type Snippet } from "svelte";
   import { BottomDock, Button } from "@kenn-io/kit-ui";
-  import ChevronsDownIcon from "@lucide/svelte/icons/chevrons-down";
   import ChevronsUpIcon from "@lucide/svelte/icons/chevrons-up";
   import type { InlineDockMode, InlineWorkspaceController } from "../../workspace-inline.js";
 
@@ -9,13 +8,11 @@
     controller: InlineWorkspaceController;
     /** True while the surface's claim is active — gates the dock entirely. */
     active: boolean;
-    /** Title strip text while the terminal is expanded (e.g. "#7 Fix the widget"). */
-    detailTitle: string;
     /** The detail subtree; stays mounted (hidden + inert) while expanded. */
     children: Snippet;
   }
 
-  let { controller, active, detailTitle, children }: Props = $props();
+  let { controller, active, children }: Props = $props();
 
   const MIN_DOCK_PX = 160;
   const MAX_DOCK_RATIO = 0.8;
@@ -85,32 +82,12 @@
     return dockSlotEl?.contains(focused) ?? false;
   }
 
-  // Focus policy: terminal gets focus when revealed via
-  // controller.focusTerminal (which reopens a collapsed dock in split, never
-  // expanded); the detail pane gets it back on collapse-from-expanded. `expanded`
-  // (and the wrapper's hidden/inert attributes) is a $derived that only
-  // recomputes on the next reactive flush, so focusing synchronously right
-  // after setDockMode would target an element that is still hidden/inert —
-  // a silent no-op when a real browser enforces it. `collapseToDetail` is
-  // invoked from a DOM event handler, outside any active Svelte flush, so
-  // the write is deferred to a microtask by default; flushSync forces that
-  // flush to complete before we focus.
-  function collapseToDetail(): void {
-    flushSync(() => {
-      controller.setDockMode("split");
-    });
-    detailWrapper?.focus();
-  }
-
   // The expand/collapse controls live in the embedded WorkspaceTerminalView's
-  // own toolbar now, outside this panel, so an expanded -> split transition
-  // can land here without collapseToDetail ever running (e.g. its "Show
-  // Details" button). Track the previous mode and apply the same focus
-  // contract for any such transition while active. Like the reset-on-inactive
-  // effect below, this runs inside an already-active flush, so the mode
-  // write that drove it has already resolved by the time this body runs;
-  // tick() is kept for defensive consistency with collapseToDetail rather
-  // than relying on that scheduling detail.
+  // own toolbar, so track an expanded -> split transition and return focus
+  // to the detail after it becomes visible. Like the reset-on-inactive effect
+  // below, this runs inside an already-active flush, so the mode write that
+  // drove it has resolved by the time this body runs; tick() keeps the focus
+  // after the DOM update without relying on that scheduling detail.
   let lastObservedMode: InlineDockMode = untrack(() => mode);
   $effect(() => {
     const current = mode;
@@ -175,15 +152,6 @@
 </script>
 
 <div class="workspace-dock-panel" class:workspace-dock-panel--expanded={expanded}>
-  {#if expanded}
-    <div class="workspace-dock-titlestrip">
-      <span class="workspace-dock-title" title={detailTitle}>{detailTitle}</span>
-      <Button size="sm" surface="soft" tone="neutral" label="Show details" onclick={collapseToDetail}>
-        <ChevronsDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-      </Button>
-    </div>
-  {/if}
-
   <div
     class="workspace-dock-detail"
     bind:this={detailWrapper}
@@ -252,15 +220,6 @@
     min-height: 0;
     min-width: 0;
     height: 100%;
-  }
-  .workspace-dock-titlestrip {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 6px 12px;
-    border-bottom: 1px solid var(--border-muted);
-    background: var(--bg-inset);
   }
   .workspace-dock-reopenstrip {
     display: flex;

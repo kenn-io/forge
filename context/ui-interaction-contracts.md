@@ -238,6 +238,9 @@ Keyboard handlers must have one clear owner for each key press.
   toolbar's explicit action. A collapsed dock also keeps its own reopen
   affordance at the bottom of the pane
   (`frontend/src/lib/stores/workspace-host.svelte.ts::focusTerminal`).
+- Expanded inline workspaces reuse the live hosted shell and fill the pane
+  edge-to-edge; never add outer chrome or mutate the shell's workflow/terminal
+  layout state (`packages/ui/src/components/workspace/WorkspaceDockPanel.svelte::expanded`).
 - An expanded dock mode must not outlive its claim: WorkspaceDockPanel resets
   on inactive and on teardown, and the store resets `expanded` itself both
   when a claim is directly replaced by a different identity (`setClaim`) and

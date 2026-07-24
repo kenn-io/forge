@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { createRawSnippet, tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
@@ -15,9 +15,9 @@ const detailChildren = createRawSnippet(() => ({
   render: () => `<div data-testid="detail-marker">detail alive</div>`,
 }));
 
-function renderPanel(controller: InlineWorkspaceController, active: boolean, detailTitle = "#7 Fix the widget") {
+function renderPanel(controller: InlineWorkspaceController, active: boolean) {
   return render(WorkspaceDockPanel, {
-    props: { controller, active, detailTitle, children: detailChildren },
+    props: { controller, active, children: detailChildren },
   });
 }
 
@@ -116,7 +116,7 @@ describe("WorkspaceDockPanel", () => {
 
   it("expanded mode hides the detail but keeps it mounted with state", () => {
     const controller = createTestController("expanded");
-    renderPanel(controller, true, "#7 Fix the widget");
+    renderPanel(controller, true);
 
     const detail = screen.getByTestId("detail-marker").closest<HTMLElement>(".workspace-dock-detail");
     expect(detail?.hasAttribute("hidden")).toBe(true);
@@ -125,14 +125,6 @@ describe("WorkspaceDockPanel", () => {
     // check here.
     expect(detail?.inert).toBe(true);
     expect(screen.getByTestId("detail-marker")).toBeTruthy();
-
-    const titlestrip = document.querySelector<HTMLElement>(".workspace-dock-titlestrip");
-    expect(titlestrip?.textContent).toContain("#7 Fix the widget");
-    // The title strip's own "Show details" button is now the only one in
-    // this panel: the dock header that used to offer a second, identically
-    // labeled control is gone (moved to the WTV toolbar as "Show Details").
-    expect(titlestrip && within(titlestrip).getByRole("button", { name: "Show details" })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "Show details" })).toHaveLength(1);
   });
 
   it("persists height per surface and clamps on restore", async () => {
@@ -200,43 +192,12 @@ describe("WorkspaceDockPanel", () => {
 
     expect(controller.setDockMode).not.toHaveBeenCalled();
 
-    await rerender({ controller, active: false, detailTitle: "#7 Fix the widget", children: detailChildren });
+    await rerender({ controller, active: false, children: detailChildren });
     await tick();
 
     expect(controller.setDockMode).toHaveBeenCalledWith("split");
     const detail = screen.getByTestId("detail-marker").closest(".workspace-dock-detail");
     expect(detail?.hasAttribute("hidden")).toBe(false);
-  });
-
-  it("returns focus to the detail pane, only once it is visible, when collapsing via the control", async () => {
-    const controller = createTestController("expanded");
-    renderPanel(controller, true);
-    const detail = screen.getByTestId("detail-marker").closest<HTMLElement>(".workspace-dock-detail");
-    expect(detail).toBeTruthy();
-
-    // Capture whether the detail pane still carried hidden/inert at the
-    // exact moment .focus() was invoked on it — a real browser silently
-    // ignores focus() on a hidden/inert element, so this is the load-bearing
-    // assertion (document.activeElement alone is not: jsdom does not
-    // enforce that restriction and would report success either way).
-    let hiddenAtFocusTime: boolean | undefined;
-    let inertAtFocusTime: boolean | undefined;
-    const originalFocus = HTMLElement.prototype.focus;
-    vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (this: HTMLElement) {
-      if (this === detail) {
-        hiddenAtFocusTime = this.hidden;
-        inertAtFocusTime = this.inert;
-      }
-      return originalFocus.call(this);
-    });
-
-    const titlestrip = document.querySelector<HTMLElement>(".workspace-dock-titlestrip");
-    expect(titlestrip).toBeTruthy();
-    await fireEvent.click(within(titlestrip as HTMLElement).getByRole("button", { name: "Show details" }));
-
-    expect(hiddenAtFocusTime).toBe(false);
-    expect(inertAtFocusTime).toBe(false);
-    expect(document.activeElement).toBe(detail);
   });
 
   it("returns focus to the detail pane, only once it is visible, when the claim goes away while expanded", async () => {
@@ -262,7 +223,7 @@ describe("WorkspaceDockPanel", () => {
       return originalFocus.call(this);
     });
 
-    await rerender({ controller, active: false, detailTitle: "#7 Fix the widget", children: detailChildren });
+    await rerender({ controller, active: false, children: detailChildren });
 
     await waitFor(() => expect(document.activeElement).toBe(detail));
     expect(hiddenAtFocusTime).toBe(false);
@@ -272,9 +233,7 @@ describe("WorkspaceDockPanel", () => {
     // The expand/collapse controls now live in the embedded
     // WorkspaceTerminalView's toolbar, outside this panel, so this drives
     // the same expanded -> split transition the way that toolbar's "Show
-    // Details" button does: directly through the controller, never through
-    // this panel's own collapseToDetail (which only the title strip's
-    // button still calls).
+    // Details" button does: directly through the controller.
     const controller = createTestController("expanded");
     renderPanel(controller, true);
     const detail = screen.getByTestId("detail-marker").closest<HTMLElement>(".workspace-dock-detail");

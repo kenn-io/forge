@@ -1,3 +1,5 @@
+import { configuredAPIPath } from "@middleman/ui/api/runtime-base";
+
 import { KATA_DAEMON_HEADER, kataProxyPath } from "./daemons.js";
 import { normalizeKataRecurrenceResponse, normalizeKataRecurrences } from "./taskNormalizers.js";
 import type {
@@ -34,8 +36,6 @@ interface ErrorEnvelope {
   details?: unknown;
 }
 
-const KATA_TASK_API_PREFIX = "/api" + "/v1";
-
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -58,7 +58,7 @@ function parseErrorEnvelope(body: unknown, status: number): ErrorEnvelope {
 }
 
 function taskPath(path: string): string {
-  return `${KATA_TASK_API_PREFIX}${path}`;
+  return configuredAPIPath(path);
 }
 
 interface KataCreateProtocolResponse extends KataTaskMutationResponse {

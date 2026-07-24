@@ -1,16 +1,13 @@
 import type { QuerySerializerOptions } from "openapi-fetch";
 
 import { createAPIClient } from "@middleman/ui/api/client";
+import { configuredAPIBaseURL } from "@middleman/ui/api/runtime-base";
 import type { components } from "@middleman/ui/api/schema";
 import { csrfFetch, type FetchFn } from "@middleman/ui/api/csrf";
 
 import { traceHeadersForRequest } from "../instrumentation/traceContext.js";
 
-const basePath = typeof window !== "undefined" ? (window.__BASE_PATH__ ?? "/") : "/";
-const baseUrl =
-  typeof window !== "undefined"
-    ? new URL(`${basePath.replace(/\/$/, "")}/api/v1`, window.location.origin).toString()
-    : "http://localhost/api/v1";
+const baseUrl = configuredAPIBaseURL();
 
 export const apiBaseURL = baseUrl;
 

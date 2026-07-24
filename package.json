@@ -18,6 +18,7 @@
     "@playwright/test": "1.61.1",
     "@sveltejs/mcp": "0.1.25",
     "svelte-check": "4.7.1",
+    "typescript": "5.9.3",
     "vite-plus": "0.2.3"
   },
   "overrides": {

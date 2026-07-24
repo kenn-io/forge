@@ -3,13 +3,20 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const API_MARKER = "/api/v1";
 const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".svelte", ".ts", ".tsx"]);
 
 const DEFAULT_SCAN_PATHS = ["frontend/src", "packages/ui/src"];
 
-const GENERATED_CLIENT_RUNTIME_FILES = new Set(["frontend/src/lib/api/runtime.ts"]);
+const API_URL_MESSAGE =
+  "Manual Middleman API URL in production frontend code. Use the generated client through the frontend runtime (or injected typed UI client) for REST requests; use the configured API base helper for browser resource URLs. Only scoped streaming transport helpers are exempt.";
+
+const GENERATED_CLIENT_RUNTIME_FILES = new Set([
+  "frontend/src/lib/api/runtime.ts",
+  "packages/ui/src/api/runtime-base.ts",
+]);
 
 function toPosix(path) {
   return path.split(sep).join("/");
@@ -77,6 +84,162 @@ function isApiBasePathOnly(line, column) {
   return next === undefined || next === "`" || next === "'" || next === '"';
 }
 
+function lineNumberAt(content, offset) {
+  return content.slice(0, offset).split(/\r?\n/).length;
+}
+
+function svelteScriptRegions(content, path) {
+  if (!path.endsWith(".svelte")) return [{ content, offset: 0 }];
+
+  const regions = [];
+  const scriptPattern = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi;
+  for (const match of content.matchAll(scriptPattern)) {
+    const script = match[1] ?? "";
+    const matchOffset = match.index ?? 0;
+    const contentOffset = match[0].indexOf(script);
+    regions.push({ content: script, offset: matchOffset + contentOffset });
+  }
+  return regions;
+}
+
+function unwrapExpression(node) {
+  while (
+    ts.isParenthesizedExpression(node) ||
+    ts.isAsExpression(node) ||
+    ts.isSatisfiesExpression(node) ||
+    ts.isTypeAssertionExpression(node)
+  ) {
+    node = node.expression;
+  }
+  return node;
+}
+
+function staticString(node, declarations, seen = new Set()) {
+  node = unwrapExpression(node);
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    const left = staticString(node.left, declarations, seen);
+    const right = staticString(node.right, declarations, seen);
+    return left === null || right === null ? null : left + right;
+  }
+
+  if (ts.isTemplateExpression(node)) {
+    let value = node.head.text;
+    for (const span of node.templateSpans) {
+      const expression = staticString(span.expression, declarations, seen);
+      if (expression === null) return null;
+      value += expression + span.literal.text;
+    }
+    return value;
+  }
+
+  if (ts.isIdentifier(node)) {
+    if (seen.has(node.text)) return null;
+    const declaration = declarations.get(node.text);
+    if (!declaration) return null;
+    const nextSeen = new Set(seen);
+    nextSeen.add(node.text);
+    return staticString(declaration, declarations, nextSeen);
+  }
+
+  return null;
+}
+
+function constDeclarations(sourceFile) {
+  const declarations = new Map();
+
+  function visit(node) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isVariableDeclarationList(node.parent) &&
+      (node.parent.flags & ts.NodeFlags.Const) !== 0
+    ) {
+      declarations.set(node.name.text, node.initializer);
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return declarations;
+}
+
+function referencesForbiddenConstant(node, declarations) {
+  let found = false;
+
+  function visit(child) {
+    if (found) return;
+    if (ts.isIdentifier(child)) {
+      const initializer = declarations.get(child.text);
+      if (initializer && staticString(initializer, declarations)?.includes(API_MARKER)) {
+        found = true;
+        return;
+      }
+    }
+    ts.forEachChild(child, visit);
+  }
+
+  visit(node);
+  return found;
+}
+
+function structuralFindings(content, path) {
+  const findings = [];
+
+  for (const region of svelteScriptRegions(content, path)) {
+    const sourceFile = ts.createSourceFile(path, region.content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const declarations = constDeclarations(sourceFile);
+
+    function addFinding(node) {
+      const offset = region.offset + node.getStart(sourceFile);
+      const line = lineNumberAt(content, offset);
+      const lineText = content.split(/\r?\n/)[line - 1] ?? "";
+      const column = offset - content.lastIndexOf("\n", offset - 1);
+      const context = contextFor(content.split(/\r?\n/), line - 1);
+      if (isAllowedStreamingTransport(lineText, context)) return;
+      findings.push({ file: path, line, column, message: API_URL_MESSAGE });
+    }
+
+    function visit(node) {
+      if (ts.isVariableDeclaration(node) && node.initializer) {
+        const value = staticString(node.initializer, declarations);
+        if (
+          value?.includes(API_MARKER) &&
+          (!node.initializer.getText(sourceFile).includes(API_MARKER) || value === API_MARKER) &&
+          !referencesForbiddenConstant(node.initializer, declarations)
+        ) {
+          addFinding(node.initializer);
+        }
+        return;
+      }
+
+      if (
+        ts.isBinaryExpression(node) ||
+        ts.isTemplateExpression(node) ||
+        ts.isStringLiteral(node) ||
+        ts.isNoSubstitutionTemplateLiteral(node)
+      ) {
+        const value = staticString(node, declarations);
+        if (
+          value?.includes(API_MARKER) &&
+          (!node.getText(sourceFile).includes(API_MARKER) || value === API_MARKER) &&
+          !referencesForbiddenConstant(node, declarations)
+        ) {
+          addFinding(node);
+          return;
+        }
+      }
+      ts.forEachChild(node, visit);
+    }
+
+    visit(sourceFile);
+  }
+
+  return findings;
+}
+
 async function collectFiles(path) {
   const info = await stat(path).catch(() => null);
   if (!info) return [];
@@ -120,6 +283,8 @@ export async function lintApiUrls({ root = process.cwd(), paths = DEFAULT_SCAN_P
     const content = await readFile(file, "utf8");
     const lines = content.split(/\r?\n/);
 
+    findings.push(...structuralFindings(content, relPath));
+
     lines.forEach((line, index) => {
       const column = line.indexOf(API_MARKER);
       if (column === -1 || isCommentOnly(line)) return;
@@ -132,8 +297,7 @@ export async function lintApiUrls({ root = process.cwd(), paths = DEFAULT_SCAN_P
         file: relPath,
         line: index + 1,
         column: column + 1,
-        message:
-          "Hardcoded /api/v1 endpoint in production frontend code. Use the generated client instead; only scoped streaming transports are allowed.",
+        message: API_URL_MESSAGE,
       });
     });
   }

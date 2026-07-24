@@ -33,6 +33,27 @@ test("flags hardcoded production /api/v1 endpoint calls", async () => {
   assert.match(findings[0].message, /generated client/);
 });
 
+test("flags API prefixes assembled through constants", async () => {
+  const root = await makeRoot();
+  await write(
+    root,
+    "packages/ui/src/api/provider-routes.ts",
+    [
+      'const API_PREFIX = "/api" + "/v1";',
+      "const MARKDOWN_IMAGE_URL = `${API_PREFIX}/repo/github/acme/widgets/markdown-image`;",
+      "export { MARKDOWN_IMAGE_URL };",
+      "",
+    ].join("\n"),
+  );
+
+  const findings = await lintApiUrls({ root });
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].line, 1);
+  assert.match(findings[0].message, /generated client/);
+  assert.match(findings[0].message, /configured API base/);
+});
+
 test("ignores tests, generated code, and OpenAPI schema files", async () => {
   const root = await makeRoot();
   await write(root, "frontend/src/lib/api/settings.test.ts", 'expect(url).toBe("/api/v1/settings");\n');

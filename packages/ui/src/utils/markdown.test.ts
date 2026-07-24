@@ -20,6 +20,29 @@ describe("renderMarkdown task lists", () => {
     expect(html).toContain('height="1000"');
   });
 
+  it("keeps the configured base path in proxied image URLs", async () => {
+    const previousBasePath = window.__BASE_PATH__;
+    window.__BASE_PATH__ = "/middleman/";
+    const source = "https://github.com/user-attachments/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+
+    try {
+      const html = await renderMarkdown(`![Private image](${source})`, {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repoPath: "acme/widgets",
+      });
+
+      expect(html).toContain(
+        `src="/middleman/api/v1/repo/github/acme/widgets/markdown-image?source=${encodeURIComponent(source)}"`,
+      );
+    } finally {
+      if (previousBasePath === undefined) delete window.__BASE_PATH__;
+      else window.__BASE_PATH__ = previousBasePath;
+    }
+  });
+
   it("proxies private GitLab upload images through the repo-scoped API", async () => {
     const source = "/uploads/0123456789abcdef/private-image.png";
     const canonicalSource = "https://gitlab.example.com/group/project/uploads/0123456789abcdef/private-image.png";

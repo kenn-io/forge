@@ -1,3 +1,5 @@
+import { configuredAPIPath } from "./runtime-base.js";
+
 export type ProviderRouteRef = {
   provider: string;
   platformHost?: string | undefined;
@@ -17,8 +19,6 @@ const defaultHosts: Record<string, string> = {
   fj: "codeberg.org",
   gitea: "gitea.com",
 };
-
-const API_PREFIX = "/api" + "/v1";
 
 export function canonicalProvider(provider: string): string {
   const normalized = provider.toLowerCase();
@@ -168,7 +168,7 @@ export function providerRepoResourceURL(
   const name = encodeURIComponent(params.name);
   const hostPrefix = params.platform_host ? `/host/${encodeURIComponent(params.platform_host)}` : "";
   const search = new URLSearchParams(query).toString();
-  return `${API_PREFIX}${hostPrefix}/repo/${provider}/${owner}/${name}${suffix}${search ? `?${search}` : ""}`;
+  return configuredAPIPath(`${hostPrefix}/repo/${provider}/${owner}/${name}${suffix}${search ? `?${search}` : ""}`);
 }
 
 type CollectionKind = Exclude<RouteKind, "repo">;

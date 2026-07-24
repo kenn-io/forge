@@ -1,3 +1,4 @@
+import { configuredAPIBaseURL, configuredAPIPath } from "@middleman/ui/api/runtime-base";
 import type { components } from "@middleman/ui/api/schema";
 
 import { createRuntimeClient } from "../runtime.js";
@@ -6,23 +7,15 @@ export const KATA_DAEMON_HEADER = "X-Middleman-Kata-Daemon";
 
 export type KataDaemonInfo = components["schemas"]["KataDaemonResponse"];
 
-const API_PREFIX = "/api" + "/v1";
-const KATA_PROXY_ROUTE = `${API_PREFIX}/kata/proxy`;
-
-function appPath(path: string): string {
-  const basePath = typeof window !== "undefined" ? (window.__BASE_PATH__ ?? "/") : "/";
-  const prefix = basePath === "/" ? "" : basePath.replace(/\/$/, "");
-  return `${prefix}${path}`;
-}
+const KATA_PROXY_ROUTE = "/kata/proxy";
 
 function apiBaseURL(): string {
-  const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost";
-  return new URL(appPath(API_PREFIX), origin).toString();
+  return configuredAPIBaseURL();
 }
 
 export function kataProxyPath(path: string): string {
   const normalized = path.startsWith("/") ? path : `/${path}`;
-  return appPath(`${KATA_PROXY_ROUTE}${normalized}`);
+  return configuredAPIPath(`${KATA_PROXY_ROUTE}${normalized}`);
 }
 
 export async function fetchKataDaemons(fetchImpl: typeof fetch = fetch): Promise<KataDaemonInfo[]> {

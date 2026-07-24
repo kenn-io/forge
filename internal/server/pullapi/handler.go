@@ -153,10 +153,14 @@ func (s *Handler) ApplyConfig(config ConfigSnapshot) {
 	s.configMu.Unlock()
 }
 
-func (s *Handler) allowMidStackMerges() bool {
+func (s *Handler) ConfigSnapshot() ConfigSnapshot {
 	s.configMu.RLock()
 	defer s.configMu.RUnlock()
-	return s.config.AllowMidStackMerges
+	return s.config
+}
+
+func (s *Handler) allowMidStackMerges() bool {
+	return s.ConfigSnapshot().AllowMidStackMerges
 }
 
 func (s *Handler) runBackground(fn func(context.Context)) bool {
@@ -174,7 +178,9 @@ func (s *Handler) runBackground(fn func(context.Context)) bool {
 	return true
 }
 
-func (s *Handler) Shutdown(ctx context.Context) error {
+// Stop closes admission for new Pull background work and cancels active
+// workers. It is idempotent and does not wait for workers to return.
+func (s *Handler) Stop() {
 	s.bgMu.Lock()
 	if !s.stopping {
 		s.stopping = true
@@ -184,6 +190,15 @@ func (s *Handler) Shutdown(ctx context.Context) error {
 			close(s.shutdownDone)
 		}()
 	}
+	s.bgMu.Unlock()
+}
+
+// Shutdown starts Pull shutdown if necessary and waits for active workers
+// within the caller's context. A later call can retry the wait with a longer
+// context after an earlier timeout.
+func (s *Handler) Shutdown(ctx context.Context) error {
+	s.Stop()
+	s.bgMu.Lock()
 	done := s.shutdownDone
 	s.bgMu.Unlock()
 	select {

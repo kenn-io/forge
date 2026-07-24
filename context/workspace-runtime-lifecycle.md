@@ -65,9 +65,10 @@ workspace sessions.
 
 Workspace and Fleet own independent idempotent, context-bounded lifecycles;
 Fleet starts after Workspace and shuts down its workers and SSH transport before
-Workspace stops (`internal/server/fleetapi/handler.go::Handler.Shutdown`). Root
-drains HTTP and remaining Workspace consumers before that ordered shutdown, then
-stops Workspace's runtime dependency (`internal/server/server.go::Server.Shutdown`).
+Workspace stops (`internal/server/fleetapi/handler.go::Handler.Shutdown`). Root closes
+Pull admission and cancels its workers before HTTP drain, then waits for Pull before
+Fleet in the post-drain dependency stage (`internal/server/server.go::Server.Shutdown`,
+`internal/server/pullapi/handler.go::Handler.Stop`).
 If any stage times out, shutdown must not advance; a later call resumes at the
 blocked stage (`internal/server/workspace_dependency_shutdown.go::workspaceDependencyShutdown`).
 

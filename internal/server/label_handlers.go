@@ -66,14 +66,14 @@ func (s *Server) listRepoLabels(
 	ctx context.Context,
 	input *getRepoInput,
 ) (*listRepoLabelsOutput, error) {
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.ProviderRouteLookupError(err)
 	}
-	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityReadLabels) {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityReadLabels)
+	if !httpapi.CapabilityEnabled(s.repoResolver.CapabilitiesForRepo(*repo), capabilityReadLabels) {
+		return nil, httpapi.UnsupportedCapability(*repo, capabilityReadLabels)
 	}
 
 	labels, freshness, err := s.db.ListRepoLabelCatalog(ctx, repo.ID)
@@ -120,19 +120,19 @@ func (s *Server) setIssueLabels(
 	}
 
 	if s.syncer == nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)
+		return nil, httpapi.UnsupportedCapability(*repo, capabilityLabelMutation)
 	}
-	mutator, err := s.syncer.LabelMutator(repoProviderKind(*repo), repoProviderHost(*repo))
+	mutator, err := s.syncer.LabelMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)
+		return nil, httpapi.UnsupportedCapability(*repo, capabilityLabelMutation)
 	}
 	providerLabels, err := mutator.SetIssueLabels(
-		ctx, platformRepoRefFromDB(*repo), input.Number, names,
+		ctx, httpapi.PlatformRepoRef(*repo), input.Number, names,
 	)
 	if err != nil {
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
-			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 			"provider API error: "+err.Error(),
 		)
 	}
@@ -158,16 +158,16 @@ func (s *Server) resolveRequestedLabelNames(
 	name string,
 	names []string,
 ) (*db.Repo, []string, error) {
-	repo, err := s.lookupRepoByProviderRoute(ctx, provider, platformHost, owner, name)
+	repo, err := s.repoResolver.LookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
-		return nil, nil, providerRouteLookupError(err)
+		return nil, nil, httpapi.ProviderRouteLookupError(err)
 	}
-	caps := s.capabilitiesForRepo(*repo)
-	if !capabilityEnabled(caps, capabilityReadLabels) {
-		return nil, nil, unsupportedCapabilityProblem(*repo, capabilityReadLabels)
+	caps := s.repoResolver.CapabilitiesForRepo(*repo)
+	if !httpapi.CapabilityEnabled(caps, capabilityReadLabels) {
+		return nil, nil, httpapi.UnsupportedCapability(*repo, capabilityReadLabels)
 	}
-	if !capabilityEnabled(caps, capabilityLabelMutation) {
-		return nil, nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)
+	if !httpapi.CapabilityEnabled(caps, capabilityLabelMutation) {
+		return nil, nil, httpapi.UnsupportedCapability(*repo, capabilityLabelMutation)
 	}
 	if names == nil {
 		return nil, nil, httpapi.Validation("body.labels", "labels must be an array")

@@ -9,6 +9,7 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/server/workspaceapi"
 )
 
@@ -87,7 +88,7 @@ func workspaceRefForRepoItem(
 	number int,
 ) *workspaceapi.WorkspaceRef {
 	ref, ok := lookup[workspaceLookupKey(
-		repo.Platform, repoProviderHost(repo), repo.Owner, repo.Name,
+		repo.Platform, httpapi.ProviderHost(repo), repo.Owner, repo.Name,
 		itemType, number,
 	)]
 	if !ok {
@@ -176,12 +177,32 @@ func (s *Server) trackedConfiguredRepoSet() map[string]struct{} {
 
 func configuredDBRepoKey(repo db.Repo) string {
 	return trackedRepoKey(ghclient.RepoRef{
-		Platform:     repoProviderKind(repo),
-		PlatformHost: repoProviderHost(repo),
+		Platform:     httpapi.ProviderKind(repo),
+		PlatformHost: httpapi.ProviderHost(repo),
 		Owner:        repo.Owner,
 		Name:         repo.Name,
 		RepoPath:     repo.RepoPath,
 	})
+}
+
+func (s *Server) repoResponse(repo db.Repo) repoResponse {
+	return repoResponse{
+		ID:                  repo.ID,
+		Platform:            repo.Platform,
+		PlatformHost:        repo.PlatformHost,
+		Owner:               repo.Owner,
+		Name:                repo.Name,
+		LastSyncStartedAt:   repo.LastSyncStartedAt,
+		LastSyncCompletedAt: repo.LastSyncCompletedAt,
+		LastSyncError:       repo.LastSyncError,
+		AllowSquashMerge:    repo.AllowSquashMerge,
+		AllowMergeCommit:    repo.AllowMergeCommit,
+		AllowRebaseMerge:    repo.AllowRebaseMerge,
+		ViewerCanMerge:      repo.ViewerCanMerge,
+		CreatedAt:           repo.CreatedAt,
+		Capabilities:        s.repoResolver.CapabilitiesForRepo(repo),
+		Operations:          s.repoOperations(repo),
+	}
 }
 
 func (s *Server) isConfiguredRepoTracked(repo db.Repo) bool {
@@ -279,7 +300,7 @@ func (s *Server) toRepoSummaryResponse(
 	defaultPlatformHost string,
 ) repoSummaryResponse {
 	resp := repoSummaryResponse{
-		Repo:                s.repoRefFromRepo(summary.Repo),
+		Repo:                s.repoResolver.Ref(summary.Repo),
 		PlatformHost:        summary.Repo.PlatformHost,
 		DefaultPlatformHost: defaultPlatformHost,
 		Owner:               summary.Repo.Owner,

@@ -40,17 +40,17 @@ func (s *Server) setIssueAssignees(
 		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
 	}
 
-	mutator, err := s.syncer.AssigneeMutator(repoProviderKind(*repo), repoProviderHost(*repo))
+	mutator, err := s.syncer.AssigneeMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityAssigneeMutation)
+		return nil, httpapi.UnsupportedCapability(*repo, capabilityAssigneeMutation)
 	}
 	assignees, err := mutator.SetIssueAssignees(
-		ctx, platformRepoRefFromDB(*repo), input.Number, names,
+		ctx, httpapi.PlatformRepoRef(*repo), input.Number, names,
 	)
 	if err != nil {
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
-			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 			"provider API error: "+err.Error(),
 		)
 	}
@@ -70,15 +70,15 @@ func (s *Server) resolveUserMutationRequest(
 	field string,
 	raw *[]string,
 ) (*db.Repo, []string, error) {
-	repo, err := s.lookupRepoByProviderRoute(ctx, provider, platformHost, owner, name)
+	repo, err := s.repoResolver.LookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
-		return nil, nil, providerRouteLookupError(err)
+		return nil, nil, httpapi.ProviderRouteLookupError(err)
 	}
-	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capability) {
-		return nil, nil, unsupportedCapabilityProblem(*repo, capability)
+	if !httpapi.CapabilityEnabled(s.repoResolver.CapabilitiesForRepo(*repo), capability) {
+		return nil, nil, httpapi.UnsupportedCapability(*repo, capability)
 	}
 	if s.syncer == nil {
-		return nil, nil, unsupportedCapabilityProblem(*repo, capability)
+		return nil, nil, httpapi.UnsupportedCapability(*repo, capability)
 	}
 	if raw == nil {
 		return nil, nil, httpapi.Validation(field, "value must be an array of usernames")

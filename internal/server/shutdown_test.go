@@ -6,12 +6,50 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+type pullLifecycleRecorder struct {
+	stopOnce      sync.Once
+	stopCalls     atomic.Int32
+	shutdownCalls atomic.Int32
+	admissionOpen atomic.Bool
+	canceled      chan struct{}
+	release       chan struct{}
+}
+
+func newPullLifecycleRecorder() *pullLifecycleRecorder {
+	recorder := &pullLifecycleRecorder{
+		canceled: make(chan struct{}),
+		release:  make(chan struct{}),
+	}
+	recorder.admissionOpen.Store(true)
+	return recorder
+}
+
+func (r *pullLifecycleRecorder) Stop() {
+	r.stopCalls.Add(1)
+	r.stopOnce.Do(func() {
+		r.admissionOpen.Store(false)
+		close(r.canceled)
+	})
+}
+
+func (r *pullLifecycleRecorder) Shutdown(ctx context.Context) error {
+	r.shutdownCalls.Add(1)
+	r.Stop()
+	select {
+	case <-r.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
 // TestServerShutdownWaitsForBackgroundTask verifies that Shutdown
 // blocks until an in-flight runBackground task returns.
@@ -332,6 +370,93 @@ func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
 		req.ErrorIs(e, http.ErrServerClosed)
 	case <-time.After(time.Second):
 		req.FailNow("Serve did not return after Shutdown")
+	}
+}
+
+func TestServerShutdownStopsPullBeforeHTTPDrainAndRetriesDependencyWait(t *testing.T) {
+	require := require.New(t)
+	srv, _ := setupTestServer(t)
+	pull := newPullLifecycleRecorder()
+	srv.pullLifecycle = pull
+
+	var dependencyOrder []string
+	srv.workspaceDependencyStop.shutdownWorkspace = func(ctx context.Context) error {
+		if err := srv.pullLifecycle.Shutdown(ctx); err != nil {
+			return err
+		}
+		dependencyOrder = append(dependencyOrder, "pull", "fleet", "kata", "workspace")
+		return nil
+	}
+	srv.workspaceDependencyStop.shutdownDependents = func() {
+		dependencyOrder = append(dependencyOrder, "runtime")
+	}
+
+	httpRelease := make(chan struct{})
+	httpStarted := make(chan struct{}, 1)
+	srv.handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		select {
+		case httpStarted <- struct{}{}:
+		default:
+		}
+		<-httpRelease
+		w.WriteHeader(http.StatusOK)
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(err)
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.Serve(ln) }()
+	requestDone := make(chan struct{})
+	go func() {
+		resp, requestErr := http.Get("http://" + ln.Addr().String() + "/slow")
+		if requestErr == nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}
+		close(requestDone)
+	}()
+
+	select {
+	case <-httpStarted:
+	case <-time.After(time.Second):
+		require.FailNow("slow HTTP handler did not start")
+	}
+
+	shortCtx, shortCancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer shortCancel()
+	require.ErrorIs(srv.Shutdown(shortCtx), context.DeadlineExceeded)
+	select {
+	case <-pull.canceled:
+	default:
+		require.FailNow("Pull workers were not canceled before HTTP drain returned")
+	}
+	require.False(pull.admissionOpen.Load(), "Pull admission remained open after shutdown began")
+	require.Zero(pull.shutdownCalls.Load(), "dependency wait advanced before HTTP drained")
+	require.Empty(dependencyOrder)
+
+	shutdownDone := make(chan error, 1)
+	go func() {
+		longCtx, longCancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer longCancel()
+		shutdownDone <- srv.Shutdown(longCtx)
+	}()
+	close(httpRelease)
+	<-requestDone
+	select {
+	case <-shutdownDone:
+		require.FailNow("shutdown advanced past an active Pull worker")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(pull.release)
+	require.NoError(<-shutdownDone)
+	require.Equal(int32(1), pull.shutdownCalls.Load())
+	require.Equal([]string{"pull", "fleet", "kata", "workspace", "runtime"}, dependencyOrder)
+
+	select {
+	case err := <-serveErr:
+		require.ErrorIs(err, http.ErrServerClosed)
+	case <-time.After(time.Second):
+		require.FailNow("Serve did not return after Shutdown")
 	}
 }
 

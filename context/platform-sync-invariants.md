@@ -99,7 +99,7 @@ registry helpers return typed errors for missing providers or capabilities.
   non-suggestion fences skipped, fences may be indented up to three spaces,
   CRLF normalized to LF, no other rewriting; UI preview mirrors this). Never
   trust clients for ids, ranges, paths, or patch content
-  (`internal/server/diff_review_handlers.go::applyReviewSuggestions`).
+  (`internal/server/pullapi/diff_review_handlers.go::Handler.applyReviewSuggestions`).
 - Providers report every upstream bucket the apply consumes through
   `OperationRateLimitReporter`; an empty or unknown report fails closed as
   `rate_limited`, and mutation handlers re-check buckets immediately before the
@@ -112,7 +112,7 @@ registry helpers return typed errors for missing providers or capabilities.
   target); live branch or SHA movement → `stale_state`. The live re-check
   before mutation is best-effort — no provider offers commit-only-if-open — so
   expected-head binding is the final integrity check
-  (`internal/server/diff_review_handlers.go::applyReviewSuggestions`, `internal/github/client.go::ensureReviewSuggestionPullMutable`).
+  (`internal/server/pullapi/diff_review_handlers.go::Handler.applyReviewSuggestions`, `internal/github/client.go::ensureReviewSuggestionPullMutable`).
 - Post-apply refresh goes through the detail-sync broadcaster and must rerun
   after any in-flight sync for the same PR — that sync may predate the commit
   (`internal/server/detail_sync.go::enqueueDetailSyncOrRerun`).

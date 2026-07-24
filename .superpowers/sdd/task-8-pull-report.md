@@ -50,3 +50,24 @@ The final capped server-tree run is materially below the recorded Task 8 baselin
 - Added `internal/server/pullapi/` and `internal/server/httpapi/item_mutation_types.go`.
 - Removed the former root-owned Pull deferred-merge, diff-review, stack-health implementations and their root-focused tests after moving ownership.
 - Updated root API composition, shared resolver contracts, settings/config publication, root sync detail assembly, and wire tests for the new boundary.
+
+## Review fix follow-up
+
+- Split Pull lifecycle control into idempotent, nonblocking `Stop` and context-bounded `Shutdown`. Root invokes `Stop` before attempting HTTP drain, so deferred-merge admission closes and active workers receive cancellation even when the drain times out. The dependency stage later waits for Pull before advancing to Fleet, Kata, Workspace, and runtime cleanup, and remains retryable with a longer context.
+- Added a deterministic composed-server timeout/retry test plus a Pull lifecycle test. They prove early admission close and worker cancellation, no dependency advance during a failed HTTP drain, bounded Pull waiting, and one ordered dependency advance after retry.
+- Removed root's duplicate repository lookup, provider/default-host normalization, repository-ref construction, capability evaluation, and capability-error wrappers. Root Issue, Repo, sync, and operation-availability consumers now call `httpapi.RepositoryResolver` and its canonical helpers directly. The old `repo_ref.go`, `capabilities.go`, and duplicate root ref tests were deleted; parity coverage now lives with `httpapi.RepositoryResolver`.
+- Added composed settings and file-reload coverage for the Pull mid-stack snapshot. Successful persistence/reload publishes the new value; failed persistence/parse retains the last committed snapshot.
+- Expanded Pull registration parity to all 68 Pull-owned operations, including method, path, and default status. The same test explicitly excludes the six root-owned sync, CI-refresh, and async-sync operation IDs.
+
+## Review fix verification
+
+- `GOMAXPROCS=24 go test ./internal/server/... -parallel=8 -shuffle=on` — root `125.638s`, Pull `2.547s`; every server package passed.
+- `go test -race ./internal/server/pullapi -shuffle=on` — passed (`4.950s`).
+- Focused root/httpapi provider identity, capability, route, and operation-availability tests — passed.
+- Focused Pull/PR `apitest` and provider Pull/PR/Merge/Review/Assignee/Label `e2etest` suites — passed.
+- Root and `cmd/...` compile-only tests — passed.
+- `make api-generate` — passed with no generated artifact drift.
+- `make testify-helper-check` — passed.
+- `make lint` — zero issues.
+- `scripts/context-sync --check` — structural check passed.
+- `git diff --check` — passed.

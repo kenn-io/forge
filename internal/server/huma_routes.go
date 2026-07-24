@@ -31,8 +31,11 @@ type repoNumberInput struct {
 	Number       int    `path:"number"`
 }
 
-func providerRouteLookupError(err error) error {
-	return httpapi.ProviderRouteLookupError(err)
+func (s *Server) requireSyncerCapability(repo db.Repo, capability string) error {
+	if s.syncer == nil {
+		return httpapi.UnsupportedCapability(repo, capability)
+	}
+	return nil
 }
 
 type statusOnlyOutput = httpapi.OKStatusOutput
@@ -567,14 +570,14 @@ func (s *Server) getRepoCommitDiff(
 		return nil, httpapi.ServiceUnavailable("diff view not available: clone manager not configured")
 	}
 
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.ProviderRouteLookupError(err)
 	}
 
-	host := repoProviderHost(*repo)
+	host := httpapi.ProviderHost(*repo)
 	if !isFullGitObjectID(input.SHA) {
 		return nil, httpapi.Validation("path.sha", "commit SHA must be a full object ID")
 	}
@@ -662,7 +665,7 @@ func (s *Server) editIssueContent(
 		return nil, httpapi.Validation("body.title", "title must not be blank")
 	}
 
-	repo, err := s.requireRepoRouteCapability(
+	repo, err := s.repoResolver.RequireRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityStateMutation,
@@ -675,10 +678,10 @@ func (s *Server) editIssueContent(
 	}
 
 	mutator, err := s.syncer.IssueContentMutator(
-		repoProviderKind(*repo), repoProviderHost(*repo),
+		httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
+		return nil, httpapi.UnsupportedCapability(*repo, capabilityStateMutation)
 	}
 
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
@@ -690,12 +693,12 @@ func (s *Server) editIssueContent(
 	}
 
 	updatedIssue, err := mutator.EditIssueContent(
-		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Title, input.Body.Body,
+		ctx, httpapi.PlatformRepoRef(*repo), input.Number, input.Body.Title, input.Body.Body,
 	)
 	if err != nil {
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
-			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 			"provider API error: "+err.Error(),
 		)
 	}
@@ -784,7 +787,7 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 		}
 		resp := issueResponse{
 			Issue:        issueResponseModel(issue),
-			Repo:         s.repoRefFromRepo(rp),
+			Repo:         s.repoResolver.Ref(rp),
 			PlatformHost: rp.PlatformHost,
 			RepoOwner:    rp.Owner,
 			RepoName:     rp.Name,
@@ -808,31 +811,31 @@ func (s *Server) createIssue(
 		return nil, httpapi.Validation("body.title", "issue title must not be empty")
 	}
 
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.ProviderRouteLookupError(err)
 	}
-	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityIssueMutation) {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityIssueMutation)
+	if !httpapi.CapabilityEnabled(s.repoResolver.CapabilitiesForRepo(*repo), capabilityIssueMutation) {
+		return nil, httpapi.UnsupportedCapability(*repo, capabilityIssueMutation)
 	}
 	if err := s.requireSyncerCapability(*repo, capabilityIssueMutation); err != nil {
 		return nil, err
 	}
 
 	mutator, err := s.syncer.IssueMutator(
-		repoProviderKind(*repo), repoProviderHost(*repo),
+		httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityIssueMutation)
+		return nil, httpapi.UnsupportedCapability(*repo, capabilityIssueMutation)
 	}
 	platformIssue, err := mutator.CreateIssue(
-		ctx, platformRepoRefFromDB(*repo), title, input.Body.Body,
+		ctx, httpapi.PlatformRepoRef(*repo), title, input.Body.Body,
 	)
 	if err != nil {
 		return nil, httpapi.ProviderCallProblem(
-			err, string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			err, string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 		)
 	}
 
@@ -855,7 +858,7 @@ func (s *Server) createIssue(
 
 	out := issueResponse{
 		Issue:        issueResponseModel(*savedIssue),
-		Repo:         s.repoRefFromRepo(*repo),
+		Repo:         s.repoResolver.Ref(*repo),
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,
@@ -872,11 +875,11 @@ func (s *Server) createIssue(
 }
 
 func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*getIssueOutput, error) {
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.ProviderRouteLookupError(err)
 	}
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
@@ -910,11 +913,14 @@ func (s *Server) buildIssueDetailResponse(
 		return issueDetailResponse{}, err
 	}
 	issueModel := issueResponseModel(*issue)
+	repoRef := s.repoResolver.Ref(*repo)
+	operations := s.repoOperations(*repo)
+	repoRef.Operations = &operations
 
 	issueResp := issueDetailResponse{
 		Issue:        &issueModel,
 		Events:       events,
-		Repo:         s.repoRefWithOperations(*repo),
+		Repo:         repoRef,
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,
@@ -989,33 +995,33 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 		return nil, httpapi.Validation("body.body", "comment body must not be empty")
 	}
 
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.ProviderRouteLookupError(err)
 	}
-	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityCommentMutation) {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
+	if !httpapi.CapabilityEnabled(s.repoResolver.CapabilitiesForRepo(*repo), capabilityCommentMutation) {
+		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
 	}
 	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
 		return nil, err
 	}
 
 	mutator, err := s.syncer.CommentMutator(
-		repoProviderKind(*repo), repoProviderHost(*repo),
+		httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
+		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
 	}
 
 	platformEvent, err := mutator.CreateIssueComment(
-		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
+		ctx, httpapi.PlatformRepoRef(*repo), input.Number, input.Body.Body,
 	)
 	if err != nil {
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
-			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 			"create comment on provider failed",
 		)
 	}
@@ -1045,24 +1051,24 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 		return nil, httpapi.Validation("body.body", "comment body must not be empty")
 	}
 
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.ProviderRouteLookupError(err)
 	}
-	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityCommentMutation) {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
+	if !httpapi.CapabilityEnabled(s.repoResolver.CapabilitiesForRepo(*repo), capabilityCommentMutation) {
+		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
 	}
 	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
 		return nil, err
 	}
 
 	mutator, err := s.syncer.CommentMutator(
-		repoProviderKind(*repo), repoProviderHost(*repo),
+		httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
+		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
 	}
 
 	ref := repoNumberPathRef{
@@ -1086,12 +1092,12 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 	}
 
 	platformEvent, err := mutator.EditIssueComment(
-		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID, input.Body.Body,
+		ctx, httpapi.PlatformRepoRef(*repo), input.Number, input.CommentID, input.Body.Body,
 	)
 	if err != nil {
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
-			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 			"edit comment on provider failed",
 		)
 	}
@@ -1109,7 +1115,7 @@ func (s *Server) deleteIssueComment(
 	ctx context.Context,
 	input *deleteIssueCommentInput,
 ) (*deleteIssueCommentOutput, error) {
-	repo, err := s.requireRepoRouteCapability(
+	repo, err := s.repoResolver.RequireRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityCommentMutation,
@@ -1120,9 +1126,9 @@ func (s *Server) deleteIssueComment(
 	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
 		return nil, err
 	}
-	mutator, err := s.syncer.CommentMutator(repoProviderKind(*repo), repoProviderHost(*repo))
+	mutator, err := s.syncer.CommentMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
+		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
 	}
 	ref := repoNumberPathRef{
 		repoID: repo.ID, owner: repo.Owner, name: repo.Name,
@@ -1140,10 +1146,10 @@ func (s *Server) deleteIssueComment(
 		return nil, httpapi.NotFound(httpapi.CodeCommentNotFound, "comment not found for issue", nil)
 	}
 	if err := mutator.DeleteIssueComment(
-		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID,
+		ctx, httpapi.PlatformRepoRef(*repo), input.Number, input.CommentID,
 	); err != nil {
 		return nil, httpapi.ProviderCallProblemWithDetail(
-			err, string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			err, string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 			"delete comment on provider failed",
 		)
 	}
@@ -1173,11 +1179,11 @@ func (s *Server) unsetStarred(ctx context.Context, input *starredInput) (*status
 }
 
 func (s *Server) getRepo(ctx context.Context, input *getRepoInput) (*getRepoOutput, error) {
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.ProviderRouteLookupError(err)
 	}
 	return &getRepoOutput{Body: s.repoResponse(*repo)}, nil
 }
@@ -1186,11 +1192,11 @@ func (s *Server) getCommentAutocomplete(
 	ctx context.Context,
 	input *commentAutocompleteInput,
 ) (*commentAutocompleteOutput, error) {
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.ProviderRouteLookupError(err)
 	}
 
 	limit := input.Limit
@@ -1218,7 +1224,7 @@ func (s *Server) getCommentAutocomplete(
 		return &commentAutocompleteOutput{Body: commentAutocompleteResponse{Users: users}}, nil
 	case "#", "!":
 		itemKind := ""
-		if repoProviderKind(*repo) == platform.KindGitLab {
+		if httpapi.ProviderKind(*repo) == platform.KindGitLab {
 			itemKind = "issue"
 			if input.Trigger == "!" {
 				itemKind = "pull"
@@ -1261,7 +1267,7 @@ func (s *Server) setIssueGitHubState(
 		)
 	}
 
-	repo, err := s.requireRepoRouteCapability(
+	repo, err := s.repoResolver.RequireRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityStateMutation,
@@ -1281,13 +1287,13 @@ func (s *Server) setIssueGitHubState(
 	}
 
 	mutator, err := s.syncer.StateMutator(
-		repoProviderKind(*repo), repoProviderHost(*repo),
+		httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
+		return nil, httpapi.UnsupportedCapability(*repo, capabilityStateMutation)
 	}
 	if _, err := mutator.SetIssueState(
-		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.State,
+		ctx, httpapi.PlatformRepoRef(*repo), input.Number, input.Body.State,
 	); err != nil {
 		var ghErr *gh.ErrorResponse
 		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
@@ -1296,7 +1302,7 @@ func (s *Server) setIssueGitHubState(
 			// requested state (concurrent edit), treat as success.
 			client, clientErr := s.syncer.ClientForHost(repo.PlatformHost)
 			if clientErr != nil {
-				return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
+				return nil, httpapi.UnsupportedCapability(*repo, capabilityStateMutation)
 			}
 			ghIssue, fetchErr := client.GetIssue(
 				ctx, input.Owner, input.Name, input.Number,
@@ -1305,7 +1311,7 @@ func (s *Server) setIssueGitHubState(
 				if ghIssue == nil {
 					return nil, httpapi.Upstream(
 						"GitHub API returned no issue",
-						string(repoProviderKind(*repo)), repoProviderHost(*repo),
+						string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 					)
 				}
 				normalized, normalizeErr := ghclient.NormalizeIssue(
@@ -1314,7 +1320,7 @@ func (s *Server) setIssueGitHubState(
 				if normalizeErr != nil {
 					return nil, httpapi.Upstream(
 						"GitHub API error: "+normalizeErr.Error(),
-						string(repoProviderKind(*repo)), repoProviderHost(*repo),
+						string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 					)
 				}
 				_, _ = s.db.UpsertIssue(ctx, normalized)
@@ -1328,7 +1334,7 @@ func (s *Server) setIssueGitHubState(
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
-			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 			"GitHub API error: "+err.Error(),
 		)
 	}
@@ -1606,11 +1612,11 @@ func (s *Server) getRateLimits(
 }
 
 func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRCIOutput, error) {
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.ProviderRouteLookupError(err)
 	}
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
@@ -1623,10 +1629,10 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
 		ctx,
 		ghclient.RepoRef{
-			Platform:           repoProviderKind(*repo),
+			Platform:           httpapi.ProviderKind(*repo),
 			Owner:              repo.Owner,
 			Name:               repo.Name,
-			PlatformHost:       repoProviderHost(*repo),
+			PlatformHost:       httpapi.ProviderHost(*repo),
 			RepoPath:           repo.RepoPath,
 			PlatformExternalID: repo.PlatformRepoID,
 			WebURL:             repo.WebURL,
@@ -1640,7 +1646,7 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 	if err != nil {
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
-			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 			"refresh PR CI: "+err.Error(),
 		)
 	}
@@ -1661,11 +1667,11 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 }
 
 func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROutput, error) {
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.ProviderRouteLookupError(err)
 	}
 	// SyncMR distinguishes a non-fatal diff failure from a hard sync failure
 	// via DiffSyncError. The PR row, timeline, and CI status are all current
@@ -1674,7 +1680,7 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 	// is stale or empty.
 	var diffErr *ghclient.DiffSyncError
 	syncErr := s.syncer.SyncMROnProvider(
-		ctx, repoProviderKind(*repo), repoProviderHost(*repo),
+		ctx, httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
 		repo.Owner, repo.Name, input.Number,
 	)
 	if syncErr != nil && !errors.As(syncErr, &diffErr) {
@@ -1683,7 +1689,7 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			syncErr,
-			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 			"sync PR: "+syncErr.Error(),
 		)
 	}
@@ -1718,14 +1724,14 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 }
 
 func (s *Server) enqueuePRSync(ctx context.Context, input *repoNumberInput) (*acceptedOutput, error) {
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.ProviderRouteLookupError(err)
 	}
-	kind := repoProviderKind(*repo)
-	host := repoProviderHost(*repo)
+	kind := httpapi.ProviderKind(*repo)
+	host := httpapi.ProviderHost(*repo)
 	key := "pr:" + string(kind) + ":" + host + ":" + repo.RepoPath +
 		"#" + strconv.Itoa(input.Number)
 	s.enqueueDetailSync(
@@ -1749,14 +1755,14 @@ func (s *Server) enqueuePRSync(ctx context.Context, input *repoNumberInput) (*ac
 }
 
 func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*syncIssueOutput, error) {
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.ProviderRouteLookupError(err)
 	}
 	err = s.syncer.SyncIssueOnProvider(
-		ctx, repoProviderKind(*repo), repoProviderHost(*repo),
+		ctx, httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
 		repo.Owner, repo.Name, input.Number,
 	)
 	if err != nil {
@@ -1765,7 +1771,7 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
-			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 			"sync issue: "+err.Error(),
 		)
 	}
@@ -1786,14 +1792,14 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 }
 
 func (s *Server) enqueueIssueSync(ctx context.Context, input *issueRepoNumberInput) (*acceptedOutput, error) {
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.ProviderRouteLookupError(err)
 	}
-	kind := repoProviderKind(*repo)
-	host := repoProviderHost(*repo)
+	kind := httpapi.ProviderKind(*repo)
+	host := httpapi.ProviderHost(*repo)
 	key := "issue:" + string(kind) + ":" + host + ":" + repo.RepoPath +
 		"#" + strconv.Itoa(input.Number)
 	s.enqueueDetailSync(
@@ -1905,7 +1911,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			ID:           it.Source + ":" + strconv.FormatInt(it.SourceID, 10),
 			Cursor:       db.EncodeCursor(it.CreatedAt, it.Source, it.SourceID),
 			ActivityType: it.ActivityType,
-			Repo: s.repoRefFromParts(
+			Repo: s.repoResolver.RefFromParts(
 				it.Platform, it.PlatformHost, it.RepoOwner, it.RepoName,
 			),
 			PlatformHost: it.PlatformHost,
@@ -2003,7 +2009,7 @@ func (s *Server) resolveItem(
 		return nil, httpapi.Validation("query.item_type",
 			"item_type must be 'pr' or 'issue'", "pr", "issue")
 	}
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if errors.Is(err, httpapi.ErrRepoNotFound) {
@@ -2015,10 +2021,10 @@ func (s *Server) resolveItem(
 		}, nil
 	}
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, httpapi.ProviderRouteLookupError(err)
 	}
-	providerKind := repoProviderKind(*repo)
-	providerHost := repoProviderHost(*repo)
+	providerKind := httpapi.ProviderKind(*repo)
+	providerHost := httpapi.ProviderHost(*repo)
 	itemTypeHint := requestedItemType
 	if providerKind != platform.KindGitLab {
 		itemTypeHint = ""
@@ -2137,7 +2143,7 @@ func (s *Server) resolveItem(
 			}
 			return nil, httpapi.Upstream(
 				"GitHub API error: "+err.Error(),
-				string(repoProviderKind(*repo)), repoProviderHost(*repo),
+				string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
 			)
 		}
 		return nil, httpapi.Internal("resolve item: " + err.Error())
@@ -2169,14 +2175,14 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 		return 0, httpapi.Validation("body.provider", "provider is required")
 	}
 
-	repo, err := s.lookupRepoByProviderRoute(
+	repo, err := s.repoResolver.LookupRoute(
 		ctx, body.Provider, body.PlatformHost, body.Owner, body.Name,
 	)
 	if err != nil {
 		if errors.Is(err, httpapi.ErrRepoNotFound) {
 			return 0, httpapi.NotFound(httpapi.CodeRepoNotFound, err.Error(), nil)
 		}
-		return 0, providerRouteLookupError(err)
+		return 0, httpapi.ProviderRouteLookupError(err)
 	}
 
 	return repo.ID, nil

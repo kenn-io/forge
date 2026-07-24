@@ -68,3 +68,80 @@ func TestRepositoryResolverBuildsCanonicalRef(t *testing.T) {
 	assert.Equal("group/subgroup/widget", ref.RepoPath)
 	assert.True(ref.Capabilities.ReadRepositories)
 }
+
+func TestPlatformRepoRefRestoresProviderIdentityAndNumericID(t *testing.T) {
+	assert := assert.New(t)
+
+	ref := PlatformRepoRef(db.Repo{
+		Platform:       string(platform.KindGitLab),
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "4242",
+		Owner:          "group",
+		Name:           "project",
+		RepoPath:       "group/project",
+	})
+
+	assert.Equal(platform.KindGitLab, ref.Platform)
+	assert.Equal("gitlab.example.com", ref.Host)
+	assert.Equal("group/project", ref.RepoPath)
+	assert.Equal(int64(4242), ref.PlatformID)
+	assert.Equal("4242", ref.PlatformExternalID)
+}
+
+func TestPlatformRepoRefPreservesExternalIDAndGitHubDefaults(t *testing.T) {
+	assert := assert.New(t)
+
+	ref := PlatformRepoRef(db.Repo{
+		PlatformRepoID: "gid://github/Repository/4242",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+
+	assert.Equal(platform.KindGitHub, ref.Platform)
+	assert.Equal(platform.DefaultGitHubHost, ref.Host)
+	assert.Equal("acme/widget", ref.RepoPath)
+	assert.Zero(ref.PlatformID)
+	assert.Equal("gid://github/Repository/4242", ref.PlatformExternalID)
+}
+
+func TestRepositoryResolverRequireRouteCapabilityUsesCanonicalContract(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "project",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	resolver := NewRepositoryResolver(RepositoryResolverDeps{
+		DB: database,
+		ProviderCapabilities: func(platform.Kind, string) (platform.Capabilities, error) {
+			return platform.Capabilities{IssueMutation: true}, nil
+		},
+	})
+
+	repo, err := resolver.RequireRouteCapability(
+		t.Context(), "gitlab", "gitlab.example.com", "group", "project", "issue_mutation",
+	)
+	require.NoError(err)
+	require.Equal("group/project", repo.RepoPath)
+
+	_, err = resolver.RequireRouteCapability(
+		t.Context(), "gitlab", "gitlab.example.com", "group", "project", "merge_mutation",
+	)
+	var problem *ProblemError
+	require.ErrorAs(err, &problem)
+	require.Equal(CodeUnsupportedCapability, problem.Code)
+}
+
+func TestRepositoryResolverRefFromPartsAppliesCanonicalDefaults(t *testing.T) {
+	resolver := NewRepositoryResolver(RepositoryResolverDeps{})
+
+	ref := resolver.RefFromParts("", "", "acme", "widget")
+
+	assert.Equal(t, string(platform.KindGitHub), ref.Provider)
+	assert.Equal(t, platform.DefaultGitHubHost, ref.PlatformHost)
+	assert.Equal(t, "acme/widget", ref.RepoPath)
+}

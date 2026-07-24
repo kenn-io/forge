@@ -148,6 +148,11 @@ func (c shutdownAwareContext) Value(key any) any {
 	return c.parent.Value(key)
 }
 
+type pullLifecycle interface {
+	Stop()
+	Shutdown(context.Context) error
+}
+
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
 	db             *db.DB
@@ -203,6 +208,7 @@ type Server struct {
 	messagesAPI            *messagesapi.Handler
 	repoBrowserAPI         *repobrowserapi.Handler
 	pullAPI                *pullapi.Handler
+	pullLifecycle          pullLifecycle
 	workspaceAPI           *workspaceapi.Handler
 
 	// toolingStatus caches the assembled CLI tooling probe;
@@ -357,6 +363,9 @@ func (s *Server) stopWorkspaceDependents() <-chan struct{} {
 // drain for both HTTP handlers and the bg group. Only the first
 // caller closes the hub and cancels bgCtx.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.pullLifecycle != nil {
+		s.pullLifecycle.Stop()
+	}
 	s.bgMu.Lock()
 	first := !s.shuttingDown
 	if first {
@@ -960,7 +969,7 @@ func newServer(
 		RecomputeWorktreeLinks:  s.fleetAPI.RecomputeWorktreeLinks,
 		RefreshWorktreeStats:    s.fleetAPI.RefreshWorktreeStats,
 		RefreshProjectInventory: s.fleetAPI.RefreshProjectInventory,
-		LookupRepo:              s.lookupRepoByProviderRoute,
+		LookupRepo:              repoResolver.LookupRoute,
 		EnqueueDetailSync:       s.enqueueDetailSyncWithCompletion,
 	})
 	s.kataAPI = kataapi.New(kataapi.Deps{
@@ -997,6 +1006,7 @@ func newServer(
 		},
 		MarkClosedLinkedNotificationsDone: s.markClosedLinkedNotificationsDone,
 	})
+	s.pullLifecycle = s.pullAPI
 	s.shutdownKata = s.kataAPI.Shutdown
 	s.workspaceDependencyStop = newWorkspaceDependencyShutdown(
 		func(ctx context.Context) error {
@@ -1013,7 +1023,7 @@ func newServer(
 			return nil
 		},
 		func(ctx context.Context) error {
-			if err := s.pullAPI.Shutdown(ctx); err != nil {
+			if err := s.pullLifecycle.Shutdown(ctx); err != nil {
 				return err
 			}
 			if err := s.fleetAPI.Shutdown(ctx); err != nil {

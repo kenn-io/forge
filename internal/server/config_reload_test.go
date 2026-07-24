@@ -383,6 +383,32 @@ func TestConfigReload_WatcherFiresOnInPlaceEdit(t *testing.T) {
 	assert.Equal("30d", gotActivity.TimeRange)
 }
 
+func TestConfigReloadPublishesPullConfigOnlyAfterSuccessfulReload(t *testing.T) {
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfigContent(
+		t, validReloadConfig, &mockGH{},
+	)
+	require.False(srv.pullAPI.ConfigSnapshot().AllowMidStackMerges)
+
+	reloadPath := filepath.Join(t.TempDir(), "reload.toml")
+	srv.cfgPath = reloadPath
+	writeConfigToml(t, reloadPath, validReloadConfig+`
+[pull_requests]
+allow_mid_stack_merges = true
+`)
+	event := srv.applyConfigChange(t.Context())
+	require.True(event.Valid, event.Error)
+	require.True(srv.pullAPI.ConfigSnapshot().AllowMidStackMerges)
+
+	writeConfigToml(t, reloadPath, malformedTomlConfig)
+	event = srv.applyConfigChange(t.Context())
+	require.False(event.Valid)
+	require.True(
+		srv.pullAPI.ConfigSnapshot().AllowMidStackMerges,
+		"failed reload published an invalid Pull config",
+	)
+}
+
 // A server constructed without a syncer (Server.New permits nil; embedded
 // and docs/msgvault-only setups use it) must hot-reload non-sync surfaces
 // instead of panicking in the watcher goroutine. Regression test for a nil

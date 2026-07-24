@@ -230,6 +230,22 @@ func (r *RepositoryResolver) Ref(repo db.Repo) RepoRefResponse {
 	}
 }
 
+func (r *RepositoryResolver) RefFromParts(
+	provider, host, owner, name string,
+) RepoRefResponse {
+	return r.Ref(db.Repo{
+		Platform:     provider,
+		PlatformHost: host,
+		Owner:        owner,
+		Name:         name,
+		RepoPath:     owner + "/" + name,
+	})
+}
+
+func (r *RepositoryResolver) CapabilitiesForRepo(repo db.Repo) ProviderCapabilitiesResponse {
+	return r.Capabilities(ProviderKind(repo), ProviderHost(repo))
+}
+
 // Capabilities preserves the server's established fallback policy: a missing
 // live registry still exposes the baseline GitHub feature set, while unknown
 // non-GitHub providers report no capabilities. Every HTTP domain uses this

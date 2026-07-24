@@ -13,6 +13,28 @@ import (
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
+const (
+	capabilityCommentMutation             = "comment_mutation"
+	capabilityStateMutation               = "state_mutation"
+	capabilityMergeMutation               = "merge_mutation"
+	capabilityReviewMutation              = "review_mutation"
+	capabilityWorkflowApproval            = "workflow_approval"
+	capabilityReadyForReview              = "ready_for_review"
+	capabilityDraftMutation               = "draft_mutation"
+	capabilityIssueMutation               = "issue_mutation"
+	capabilityReadLabels                  = "read_labels"
+	capabilityLabelMutation               = "label_mutation"
+	capabilityAssigneeMutation            = "assignee_mutation"
+	capabilityReviewerMutation            = "reviewer_mutation"
+	capabilityThreadReply                 = "thread_reply"
+	capabilityThreadResolve               = "thread_resolve"
+	capabilityReviewDraftMutation         = "review_draft_mutation"
+	capabilityReviewThreadResolution      = "review_thread_resolution"
+	capabilityReviewSuggestionApplication = "review_suggestion_application"
+	capabilityReadReviewThreads           = "read_review_threads"
+	capabilityMutationHeadBinding         = "mutation_head_binding"
+)
+
 // Operation names. These string literals are the JSON field names
 // of httpapi.RepoOperations and are part of the wire contract; renaming one
 // is a breaking change for clients pinned to an older schema.
@@ -156,7 +178,7 @@ func (s *Server) repoOperationsWithContext(
 	repo db.Repo,
 	opContext operationAvailabilityContext,
 ) httpapi.RepoOperations {
-	caps := s.capabilitiesForRepo(repo)
+	caps := s.repoResolver.CapabilitiesForRepo(repo)
 	writeCred := s.writeCredentialGateForRepo(repo)
 	derive := func(op operationDescriptor) httpapi.OperationAvailability {
 		return deriveOperationAvailabilityWithContext(
@@ -221,7 +243,7 @@ func deriveOperationAvailabilityWithContext(
 	opContext operationAvailabilityContext,
 ) httpapi.OperationAvailability {
 	for _, capability := range op.requiredCapabilities {
-		if !capabilityEnabled(caps, capability) {
+		if !httpapi.CapabilityEnabled(caps, capability) {
 			return httpapi.OperationAvailability{
 				Code:               availabilityCodeUnsupportedCapability,
 				UnavailableReason:  fmt.Sprintf("Provider does not support %s", capability),
@@ -270,13 +292,13 @@ func (s *Server) mergeRequestAuthoredByViewer(
 		return false
 	}
 	resolver, err := s.syncer.Registry().MergeRequestViewerResolver(
-		repoProviderKind(repo), repoProviderHost(repo),
+		httpapi.ProviderKind(repo), httpapi.ProviderHost(repo),
 	)
 	if err != nil {
 		return false
 	}
 	authored, err := resolver.ViewerAuthoredMergeRequest(ctx, platform.MergeRequest{
-		Repo:   platformRepoRefFromDB(repo),
+		Repo:   httpapi.PlatformRepoRef(repo),
 		Number: mr.Number,
 		Author: mr.Author,
 	})
@@ -300,7 +322,7 @@ func (s *Server) operationRateLimit(
 
 func (s *Server) operationRateLimitBuckets(repo db.Repo, op operationDescriptor) ([]apiBucket, bool) {
 	if s != nil && s.syncer != nil && s.syncer.Registry() != nil {
-		provider, err := s.syncer.Registry().Provider(repoProviderKind(repo), repoProviderHost(repo))
+		provider, err := s.syncer.Registry().Provider(httpapi.ProviderKind(repo), httpapi.ProviderHost(repo))
 		if err == nil {
 			if reporter, ok := provider.(platform.OperationRateLimitReporter); ok {
 				if buckets, ok := reporter.OperationRateLimitBuckets(platform.OperationName(op.name)); ok {
@@ -382,8 +404,8 @@ func (s *Server) mutationRateLimitedReason(
 	if s == nil || s.syncer == nil {
 		return rateLimitAvailability{}
 	}
-	host := repoProviderHost(repo)
-	key := ratelimit.RateBucketKey(string(repoProviderKind(repo)), host)
+	host := httpapi.ProviderHost(repo)
+	key := ratelimit.RateBucketKey(string(httpapi.ProviderKind(repo)), host)
 	var writeTrackers map[string]*ratelimit.RateTracker
 	switch bucket {
 	case apiBucketREST:
@@ -406,8 +428,8 @@ func (s *Server) rateLimitedReason(repo db.Repo, bucket apiBucket) rateLimitAvai
 	if s == nil || s.syncer == nil {
 		return rateLimitAvailability{}
 	}
-	host := repoProviderHost(repo)
-	providerName := string(repoProviderKind(repo))
+	host := httpapi.ProviderHost(repo)
+	providerName := string(httpapi.ProviderKind(repo))
 	key := ratelimit.RateBucketKey(providerName, host)
 
 	var trackers map[string]*ratelimit.RateTracker
@@ -484,8 +506,8 @@ func (s *Server) writeCredentialGateForRepo(repo db.Repo) writeCredentialGate {
 		return writeCredentialGate{}
 	}
 	key := tokenauth.Key{
-		Platform: string(repoProviderKind(repo)),
-		Host:     repoProviderHost(repo),
+		Platform: string(httpapi.ProviderKind(repo)),
+		Host:     httpapi.ProviderHost(repo),
 	}
 	src, ok := s.tokenSources.Get(key)
 	if !ok || src == nil {

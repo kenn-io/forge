@@ -69,7 +69,7 @@ Rules:
   synchronization observes provider absence. DELETE itself changes no SQLite comment
   state; the UI hides a confirmed deletion while ordinary sync converges. Authoritative
   replacement updates comment rows and the parent count in one transaction
-  (`internal/server/huma_routes.go::deleteComment`,
+  (`internal/server/pullapi/routes.go::Handler.deleteComment`,
   `internal/server/huma_routes.go::deleteIssueComment`,
   `internal/db/queries.go::ReplaceMRCommentEvents`,
   `internal/db/queries.go::ReplaceIssueCommentEvents`).

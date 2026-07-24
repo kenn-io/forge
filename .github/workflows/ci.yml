@@ -331,11 +331,6 @@ jobs:
   race:
     name: go test -race
     runs-on: kenn-linux-x64
-    # Seven four-thread package processes can use 28 burst cores; the runner's
-    # 28 GiB memory guarantee leaves room for race instrumentation overhead.
-    env:
-      GOMAXPROCS: "4"
-      GOFLAGS: "-p=7"
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
@@ -356,7 +351,7 @@ jobs:
       - name: Run tests (race detector)
         run: |
           mkdir -p tmp
-          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race ./... -shuffle=on -parallel=4 -timeout 20m
+          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race ./... -shuffle=on -timeout 20m
 
       - name: Summarize race test timings
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}

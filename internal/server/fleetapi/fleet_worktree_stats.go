@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/workspace"
 )
 
@@ -27,16 +28,20 @@ type fleetWorktreeStatsSampler struct {
 	// onChanged, when set, is invoked once after a sampling pass (background,
 	// fleet-wide, or single-worktree) observes changed git stats. It is a
 	// payload-free signal — a refetch hint — not a stats carrier. May be nil.
-	onChanged func()
+	onChanged         func()
+	workspaceSnapshot func(context.Context) (workspaceapi.FleetSnapshot, error)
 }
 
 func newFleetWorktreeStatsSampler(
-	database *db.DB, onChanged func(),
+	database *db.DB,
+	workspaceSnapshot func(context.Context) (workspaceapi.FleetSnapshot, error),
+	onChanged func(),
 ) *fleetWorktreeStatsSampler {
 	return &fleetWorktreeStatsSampler{
-		db:        database,
-		interval:  fleetWorktreeStatsInterval,
-		onChanged: onChanged,
+		db:                database,
+		interval:          fleetWorktreeStatsInterval,
+		onChanged:         onChanged,
+		workspaceSnapshot: workspaceSnapshot,
 	}
 }
 
@@ -166,12 +171,15 @@ func (s *fleetWorktreeStatsSampler) collectTargets(
 		}
 	}
 
-	summaries, err := s.db.ListWorkspaceSummaries(ctx)
-	if err != nil {
-		return nil, err
+	var workspaceSnapshot workspaceapi.FleetSnapshot
+	if s.workspaceSnapshot != nil {
+		workspaceSnapshot, err = s.workspaceSnapshot(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
-	for i := range summaries {
-		sum := summaries[i]
+	for i := range workspaceSnapshot.Workspaces {
+		sum := workspaceSnapshot.Workspaces[i]
 		if seen[normPath(sum.WorktreePath)] {
 			continue
 		}

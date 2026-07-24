@@ -165,6 +165,8 @@ func (s *Server) updateFleetSettings(
 			httpapi.CodeSettingsUnavailable, "settings not available", nil,
 		)
 	}
+	s.configReloadMu.Lock()
+	defer s.configReloadMu.Unlock()
 
 	next := config.Fleet{
 		Enabled:     input.Body.Enabled,
@@ -187,6 +189,7 @@ func (s *Server) updateFleetSettings(
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	s.cfg.Fleet = candidate.Fleet
+	s.applyFleetConfigLocked()
 	out := s.buildFleetSettingsResponseLocked()
 	s.cfgMu.Unlock()
 	return &getFleetSettingsOutput{Body: out}, nil

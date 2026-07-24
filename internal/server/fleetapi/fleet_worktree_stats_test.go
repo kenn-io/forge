@@ -11,6 +11,7 @@ import (
 
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/fleet"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
@@ -83,7 +84,21 @@ func TestFleetWorktreeStatsCollectTargetsDedupesByPath(t *testing.T) {
 		WorktreePath: orphanPath, Status: "ready",
 	}))
 
-	sampler := &fleetWorktreeStatsSampler{db: database}
+	sampler := &fleetWorktreeStatsSampler{
+		db: database,
+		workspaceSnapshot: func(context.Context) (workspaceapi.FleetSnapshot, error) {
+			return workspaceapi.FleetSnapshot{Workspaces: []db.WorkspaceSummary{
+				{Workspace: db.Workspace{
+					ID: "ws-feat", Platform: "github", PlatformHost: "github.com",
+					RepoOwner: "o", RepoName: "app", WorktreePath: featPath, Status: "ready",
+				}},
+				{Workspace: db.Workspace{
+					ID: "ws-orphan", Platform: "github", PlatformHost: "github.com",
+					RepoOwner: "o", RepoName: "orphan", WorktreePath: orphanPath, Status: "ready",
+				}},
+			}}, nil
+		},
+	}
 	targets, err := sampler.collectTargets(ctx)
 	require.NoError(err)
 
@@ -97,6 +112,28 @@ func TestFleetWorktreeStatsCollectTargetsDedupesByPath(t *testing.T) {
 		"registered worktree wins over the workspace at the same path")
 	require.Empty(byPath[normPath(orphanPath)],
 		"orphan workspace with an unsynced repo has no default branch")
+}
+
+func TestFleetWorktreeStatsCollectTargetsUsesWorkspaceSnapshot(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	orphanPath := filepath.Join(t.TempDir(), "snapshot-only")
+	sampler := &fleetWorktreeStatsSampler{
+		db: database,
+		workspaceSnapshot: func(context.Context) (workspaceapi.FleetSnapshot, error) {
+			return workspaceapi.FleetSnapshot{Workspaces: []db.WorkspaceSummary{{
+				Workspace: db.Workspace{
+					ID: "snapshot-only", Platform: "github", PlatformHost: "github.com",
+					RepoOwner: "o", RepoName: "snapshot-only", WorktreePath: orphanPath,
+				},
+			}}}, nil
+		},
+	}
+
+	targets, err := sampler.collectTargets(t.Context())
+	require.NoError(err)
+	require.Len(targets, 1)
+	require.Equal(normPath(orphanPath), targets[0].path)
 }
 
 func TestFleetWorktreeStatsSamplerSurfacesLiveDiffInSnapshot(t *testing.T) {

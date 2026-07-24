@@ -111,7 +111,7 @@ func New(deps Deps) *Handler {
 	)
 	h.fleetWorktreeDiscoverer = newFleetWorktreeDiscoverer(deps.DB)
 	h.fleetWorktreeStatsSampler = newFleetWorktreeStatsSampler(
-		deps.DB, h.notifyWorktreeStatsChanged,
+		deps.DB, deps.WorkspaceSnapshot, h.notifyWorktreeStatsChanged,
 	)
 	h.fleetPlatformAuthMonitor = newFleetPlatformAuthMonitor(
 		h.snapshotPlatformAuthConfig,

@@ -44,8 +44,9 @@ type sshFleetTransport struct {
 	stopOnce sync.Once
 
 	// inflight single-flights the per-peer snapshot fetch so repeated
-	// snapshot reads against a cold peer share one connect/fetch
-	// instead of piling goroutines behind the connect mutex.
+	// snapshot reads against a cold peer share one connect/fetch instead of piling
+	// goroutines behind the connect mutex. Warm-ups belong to Fleet's lifecycle so
+	// shutdown cancels and drains them.
 	inflightMu sync.Mutex
 	inflight   map[string]*inflightFetch
 }
@@ -211,8 +212,8 @@ func (s *Handler) fetchSSHPeerRawBounded(
 	if f == nil {
 		f = &inflightFetch{done: make(chan struct{})}
 		t.inflight[p.Key] = f
-		go func() {
-			f.res = s.fetchSSHPeerRaw(context.WithoutCancel(ctx), t, p)
+		admitted := s.runBackground(func(lifecycleCtx context.Context) {
+			f.res = s.fetchSSHPeerRaw(lifecycleCtx, t, p)
 			// Publish completion before retiring the entry: a reader
 			// landing between the two either waits on the closed done
 			// (and gets res) or misses the entry and starts a fresh
@@ -221,14 +222,30 @@ func (s *Handler) fetchSSHPeerRawBounded(
 			t.inflightMu.Lock()
 			delete(t.inflight, p.Key)
 			t.inflightMu.Unlock()
-		}()
+		})
+		if !admitted {
+			delete(t.inflight, p.Key)
+			f = nil
+		}
 	}
 	t.inflightMu.Unlock()
+	if f == nil {
+		msg := "fleet is shutting down"
+		destination := p.Destination
+		return fleet.PeerResult{
+			Key: p.Key, Name: p.Name, Platform: p.Platform,
+			ObservedAt:     s.now().UTC().Format(time.RFC3339),
+			SSHDestination: &destination, PreferredTransport: "ssh",
+			Err: &msg,
+		}
+	}
 
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	select {
 	case <-f.done:
 		return f.res
-	case <-time.After(timeout):
+	case <-timer.C:
 	case <-ctx.Done():
 	}
 	dest := p.Destination

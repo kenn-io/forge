@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"go.kenn.io/middleman/internal/apiclient/generated"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/fleet"
 	"go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
@@ -158,6 +160,104 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	require.NoError(json.NewDecoder(reGetResp.Body).Decode(&reGet))
 	assert.True(reGet.Activity.CollapseThreads)
 	assert.True(reGet.Terminal.HideTmuxStatus)
+}
+
+func TestFleetSettingsPublishesOnlyCommittedRuntimeSnapshot(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	var peerRequests atomic.Int32
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		peerRequests.Add(1)
+		select {
+		case <-time.After(250 * time.Millisecond):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"schemaVersion":2,"host":{"hostname":"remote","platform":"linux"}}`))
+		case <-r.Context().Done():
+		}
+	}))
+	defer peer.Close()
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+host = "127.0.0.1"
+port = 8091
+
+[fleet]
+enabled = false
+key = "before"
+peer_timeout = "2s"
+`, &mockGH{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	putFleet := func(key, timeout string, enabled bool, peers []map[string]any) *http.Response {
+		return doServerJSON(t, ts.Client(), http.MethodPut,
+			ts.URL+"/api/v1/settings/fleet", map[string]any{
+				"enabled": enabled, "key": key, "peer_timeout": timeout,
+				"sessions": map[string]any{"include_unmanaged_details": false},
+				"peers":    peers, "ssh_peers": []map[string]any{},
+			})
+	}
+	readSnapshot := func() (fleet.Snapshot, time.Duration) {
+		started := time.Now()
+		resp := doServerJSON(t, ts.Client(), http.MethodGet,
+			ts.URL+"/api/v1/snapshot?include_peers=true", nil)
+		defer resp.Body.Close()
+		require.Equal(http.StatusOK, resp.StatusCode)
+		var snapshot fleet.Snapshot
+		require.NoError(json.NewDecoder(resp.Body).Decode(&snapshot))
+		return snapshot, time.Since(started)
+	}
+	hostKeys := func(snapshot fleet.Snapshot) []string {
+		keys := make([]string, 0, len(snapshot.Hosts))
+		for _, host := range snapshot.Hosts {
+			keys = append(keys, host.ConfigKey)
+		}
+		return keys
+	}
+	hostByKey := func(snapshot fleet.Snapshot, key string) *fleet.HostSummary {
+		for i := range snapshot.Hosts {
+			if snapshot.Hosts[i].ConfigKey == key {
+				return &snapshot.Hosts[i]
+			}
+		}
+		return nil
+	}
+
+	update := putFleet("hub", "40ms", true, []map[string]any{{
+		"key": "remote", "name": "Remote", "base_url": peer.URL,
+	}})
+	defer update.Body.Close()
+	require.Equal(http.StatusOK, update.StatusCode)
+
+	snapshot, elapsed := readSnapshot()
+	assert.Contains(hostKeys(snapshot), "hub")
+	assert.Contains(hostKeys(snapshot), "remote")
+	assert.Positive(peerRequests.Load())
+	remote := hostByKey(snapshot, "remote")
+	require.NotNil(remote)
+	assert.False(remote.Reachable,
+		"the newly committed timeout must degrade the still-blocked peer")
+	assert.Less(elapsed, 1500*time.Millisecond,
+		"the newly committed peer timeout must bound the immediate read")
+
+	require.NoError(os.Remove(cfgPath))
+	require.NoError(os.Mkdir(cfgPath, 0o700))
+	failed := putFleet("unpublished", "3s", false, []map[string]any{})
+	defer failed.Body.Close()
+	require.Equal(http.StatusInternalServerError, failed.StatusCode)
+
+	requestsBefore := peerRequests.Load()
+	snapshot, elapsed = readSnapshot()
+	assert.Contains(hostKeys(snapshot), "hub")
+	assert.Contains(hostKeys(snapshot), "remote")
+	remote = hostByKey(snapshot, "remote")
+	require.NotNil(remote)
+	assert.False(remote.Reachable)
+	assert.Greater(peerRequests.Load(), requestsBefore,
+		"failed persistence must leave the committed peer published")
+	assert.Less(elapsed, 1500*time.Millisecond,
+		"failed persistence must leave the committed timeout published")
 }
 
 func findSettingsLaunchTarget(

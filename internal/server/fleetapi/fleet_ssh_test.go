@@ -25,6 +25,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/fleet"
 	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/sshfleet"
 )
@@ -537,6 +538,75 @@ func TestSSHFleetSnapshotDegradesColdPeerFast(t *testing.T) {
 		return hostByKey()["epyc"].Reachable
 	}, 5*time.Second, 100*time.Millisecond,
 		"the warmed fetch must surface on a later read")
+}
+
+func TestSSHFleetWarmupIsCanceledAndDrainedByShutdown(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	started := make(chan struct{})
+	canceled := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	exec := func(
+		ctx context.Context, _ []string, _ []byte,
+	) ([]byte, []byte, int, error) {
+		calls.Add(1)
+		close(started)
+		<-ctx.Done()
+		close(canceled)
+		<-release
+		return nil, nil, 1, ctx.Err()
+	}
+	conns := sshfleet.NewConnectionManager(t.TempDir(), sshfleet.Config{
+		RunSSH: func(args []string) (int, error) {
+			for i, arg := range args {
+				if arg == "-o" && strings.HasPrefix(args[i+1], "ControlPath=") {
+					_ = os.WriteFile(strings.TrimPrefix(args[i+1], "ControlPath="), nil, 0o600)
+				}
+			}
+			return 0, nil
+		},
+	})
+	h := New(Deps{})
+	transport := &sshFleetTransport{
+		conns: conns, runner: sshfleet.NewRunnerWithExec(conns, exec),
+		peers: []config.FleetSSHPeer{{Key: "epyc", Destination: "dev@epyc"}},
+	}
+	h.sshFleet = transport
+	peer := transport.peers[0]
+	fetchDone := make(chan fleet.PeerResult, 1)
+	go func() {
+		fetchDone <- h.fetchSSHPeerRawBounded(t.Context(), transport, peer, time.Second)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		require.Fail("warm-up did not start")
+	}
+	shutdownCtx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(h.Shutdown(shutdownCtx), context.DeadlineExceeded,
+		"Shutdown must wait for the canceled warm-up to return")
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		require.Fail("warm-up did not observe Fleet cancellation")
+	}
+
+	close(release)
+	require.NoError(h.Shutdown(t.Context()))
+	assert.NoError(h.Shutdown(t.Context()))
+	select {
+	case <-fetchDone:
+	case <-time.After(time.Second):
+		require.Fail("canceled warm-up did not publish completion")
+	}
+
+	result := h.fetchSSHPeerRawBounded(t.Context(), transport, peer, time.Second)
+	assert.False(result.Reachable)
+	assert.Equal(int32(1), calls.Load(), "stopped Fleet must reject new warm-ups")
 }
 
 // TestSSHFleetRelayAutoStartsRemoteDaemon pins the ensure-then-retry

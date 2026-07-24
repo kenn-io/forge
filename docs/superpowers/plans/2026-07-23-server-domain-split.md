@@ -61,19 +61,18 @@ Tasks are numbered by domain inventory, but dependency order is: 1, 2, 4, 5, 7, 
 - Create: `internal/server/docsapi/handler.go`
 - Create: `internal/server/docsapi/routes.go`
 - Create: `internal/server/docsapi/problems.go`
-- Move: `internal/server/docs_routes_test.go` to `internal/server/docsapi/routes_test.go`
-- Move: `internal/server/docs_git_routes_test.go` to `internal/server/docsapi/git_routes_test.go`
-- Move: `internal/server/docs_daemon_bindings_test.go` to `internal/server/docsapi/daemon_bindings_test.go`
+- Move handler-focused Docs tests into `internal/server/docsapi`; retain only middleware/composition and observable full-stack wire tests in the root.
 - Modify: `internal/server/server.go`, `internal/server/config_reload.go`, `internal/server/huma_routes.go`
 
 **Interfaces:**
-- Consumes: `docsapi.Deps{Config, ConfigPath, ConfigMu, Registry}`.
-- Produces: `(*docsapi.Handler).Register(huma.API)`, `ReplaceFolders`, and registry inspection methods needed by configuration reload tests.
+- Consumes: an initial committed config snapshot plus root-owned `BeginConfigMutation` and `SaveFolders` callbacks. The handler never receives the root config path, mutex, or mutable registry.
+- Produces: `(*docsapi.Handler).Register(huma.API)`, `ReplaceFolders`, and a read-only folder snapshot for reload verification.
 
 - [x] Move docs route types, handlers, publish locking, problem mapping, and daemon-binding validation into `docsapi`.
 - [x] Register the handler from the root server and update config reload through committed folder snapshots.
 - [x] Keep loopback/CSRF path classification in the root middleware because it is cross-domain policy.
 - [x] Keep mutable registry and publish-lock internals private; package-local tests cover rollback and lock behavior.
+- [ ] Move the remaining handler-focused Docs tests into the domain package; keep real route-level concurrency tests in the root until a shared external fixture owns them.
 - [x] Run focused Docs/config tests and verify generated OpenAPI artifacts are unchanged.
 - [x] Commit as `refactor(server): carve out the docs API` with the transactional ownership follow-up.
 
@@ -128,9 +127,10 @@ Tasks are numbered by domain inventory, but dependency order is: 1, 2, 4, 5, 7, 
 
 - [x] Preserve provider/host-aware clone identity and pinned revision validation.
 - [x] Move shared repository capability/ref wire types below the root so the extracted handler preserves OpenAPI schema identities without a dependency cycle.
+- [x] Centralize repository lookup, host normalization, ref construction, capability conversion, and fallback policy in `httpapi.RepositoryResolver`; browser and root provider routes share it.
 - [x] Add a package-local weighted semaphore of two for Git-heavy tests.
 - [x] Run the full package at 24 CPUs and verify generated OpenAPI artifacts are unchanged.
-- [ ] Commit as `refactor(server): carve out the repository browser API`.
+- [x] Commit as `refactor(server): carve out the repository browser API`.
 
 ### Task 6: Fleet API
 
@@ -172,6 +172,8 @@ Tasks are numbered by domain inventory, but dependency order is: 1, 2, 4, 5, 7, 
 
 ### Task 8: Provider and Admin APIs
 
+**Prerequisite:** Extend the lower-level provider HTTP contract before moving routes. `httpapi.RepositoryResolver` owns repository lookup, default-host normalization, capability conversion/fallback, and `RepoRefResponse`; add shared provider route inputs, stable provider error mapping, and rate-limit helpers there rather than duplicating them across route packages.
+
 **Files:**
 - Create: `internal/server/pullapi/handler.go`
 - Create: `internal/server/issueapi/handler.go`
@@ -188,7 +190,7 @@ Tasks are numbered by domain inventory, but dependency order is: 1, 2, 4, 5, 7, 
 - Modify: `internal/server/server.go`, `internal/server/huma_routes.go`, `internal/server/api_test.go`
 
 **Interfaces:**
-- Provider-domain `Deps` consume only the database, platform registry, syncer, clone manager, event broadcaster, and capability checks each route group needs.
+- Provider-domain `Deps` consume the shared provider HTTP contract plus only the database, platform registry, syncer, clone manager, and event broadcaster each route group needs.
 - `adminapi.Deps` consumes config persistence/reload, archive controller, tooling runner, token sources, and host runtime.
 - Every package produces a concrete `Register(huma.API)` method.
 

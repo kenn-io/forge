@@ -2,8 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -11,8 +9,6 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server/httpapi"
 )
-
-var errRepoPathRequired = errors.New("repo_path is required")
 
 type repoRefInput struct {
 	Provider     string `query:"provider"`
@@ -24,36 +20,7 @@ func (s *Server) lookupRepoByRefInput(
 	ctx context.Context,
 	input repoRefInput,
 ) (*db.Repo, error) {
-	provider := strings.TrimSpace(input.Provider)
-	host := strings.TrimSpace(input.PlatformHost)
-	repoPath := strings.Trim(input.RepoPath, "/ ")
-	kind, err := platform.NormalizeKind(provider)
-	if err != nil {
-		return nil, err
-	}
-	provider = string(kind)
-	if host == "" {
-		var ok bool
-		host, ok = platform.DefaultHost(kind)
-		if !ok {
-			return nil, fmt.Errorf("platform_host is required for provider %q", kind)
-		}
-	}
-	if repoPath == "" {
-		return nil, errRepoPathRequired
-	}
-	repo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     provider,
-		PlatformHost: host,
-		RepoPath:     repoPath,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("lookup repo: %w", err)
-	}
-	if repo == nil {
-		return nil, errRepoNotFound
-	}
-	return repo, nil
+	return s.repoResolver.Lookup(ctx, input.Provider, input.PlatformHost, input.RepoPath)
 }
 
 func (s *Server) lookupRepoByProviderRoute(
@@ -63,7 +30,7 @@ func (s *Server) lookupRepoByProviderRoute(
 	owner = strings.Trim(owner, "/ ")
 	name = strings.Trim(name, "/ ")
 	if owner == "" || name == "" {
-		return nil, errRepoPathRequired
+		return nil, httpapi.ErrRepoPathRequired
 	}
 	return s.lookupRepoByRefInput(ctx, repoRefInput{
 		Provider:     provider,
@@ -72,28 +39,8 @@ func (s *Server) lookupRepoByProviderRoute(
 	})
 }
 
-func repoRefFromRepo(repo db.Repo) httpapi.RepoRefResponse {
-	provider := strings.TrimSpace(repo.Platform)
-	if provider == "" {
-		provider = string(platform.KindGitHub)
-	}
-	repoPath := strings.TrimSpace(repo.RepoPath)
-	if repoPath == "" {
-		repoPath = repo.Owner + "/" + repo.Name
-	}
-	return httpapi.RepoRefResponse{
-		Provider:     provider,
-		PlatformHost: repo.PlatformHost,
-		RepoPath:     repoPath,
-		Owner:        repo.Owner,
-		Name:         repo.Name,
-	}
-}
-
 func (s *Server) repoRefFromRepo(repo db.Repo) httpapi.RepoRefResponse {
-	resp := repoRefFromRepo(repo)
-	resp.Capabilities = s.capabilitiesForRepo(repo)
-	return resp
+	return s.repoResolver.Ref(repo)
 }
 
 // repoRefWithOperations is repoRefFromRepo plus the per-operation
@@ -157,64 +104,6 @@ func (s *Server) repoRefFromParts(
 	resp := repoRefFromParts(provider, host, owner, name)
 	resp.Capabilities = s.capabilitiesForProvider(provider, host)
 	return resp
-}
-
-func providerCapabilitiesFromPlatform(caps platform.Capabilities) httpapi.ProviderCapabilitiesResponse {
-	reviewActions := make([]string, 0, len(caps.SupportedReviewActions))
-	for _, action := range caps.SupportedReviewActions {
-		reviewActions = append(reviewActions, string(action))
-	}
-	return httpapi.ProviderCapabilitiesResponse{
-		ReadRepositories:            caps.ReadRepositories,
-		ReadMergeRequests:           caps.ReadMergeRequests,
-		ReadIssues:                  caps.ReadIssues,
-		ReadComments:                caps.ReadComments,
-		ReadReleases:                caps.ReadReleases,
-		ReadCI:                      caps.ReadCI,
-		ReadLabels:                  caps.ReadLabels,
-		CommentMutation:             caps.CommentMutation,
-		StateMutation:               caps.StateMutation,
-		MergeMutation:               caps.MergeMutation,
-		ReviewMutation:              caps.ReviewMutation,
-		WorkflowApproval:            caps.WorkflowApproval,
-		ReadyForReview:              caps.ReadyForReview,
-		DraftMutation:               caps.DraftMutation,
-		IssueMutation:               caps.IssueMutation,
-		LabelMutation:               caps.LabelMutation,
-		AssigneeMutation:            caps.AssigneeMutation,
-		ReviewerMutation:            caps.ReviewerMutation,
-		ThreadReply:                 caps.ThreadReply,
-		ThreadResolve:               caps.ThreadResolve,
-		ReviewDraftMutation:         caps.ReviewDraftMutation,
-		ReviewThreadResolution:      caps.ReviewThreadResolution,
-		ReviewSuggestionApplication: caps.ReviewSuggestionApplication,
-		ReadReviewThreads:           caps.ReadReviewThreads,
-		NativeMultilineRanges:       caps.NativeMultilineRanges,
-		MutationHeadBinding:         caps.MutationHeadBinding,
-		SupportedReviewActions:      reviewActions,
-	}
-}
-
-func defaultGitHubProviderCapabilities() httpapi.ProviderCapabilitiesResponse {
-	return providerCapabilitiesFromPlatform(platform.Capabilities{
-		ReadRepositories:            true,
-		ReadMergeRequests:           true,
-		ReadIssues:                  true,
-		ReadComments:                true,
-		ReadReleases:                true,
-		ReadCI:                      true,
-		ReadLabels:                  false,
-		CommentMutation:             true,
-		StateMutation:               true,
-		MergeMutation:               true,
-		ReviewMutation:              true,
-		WorkflowApproval:            true,
-		ReadyForReview:              true,
-		DraftMutation:               true,
-		IssueMutation:               true,
-		LabelMutation:               false,
-		ReviewSuggestionApplication: true,
-	})
 }
 
 func repoProviderKind(repo db.Repo) platform.Kind {
@@ -282,14 +171,5 @@ func (s *Server) capabilitiesForProvider(
 			return httpapi.ProviderCapabilitiesResponse{}
 		}
 	}
-	if s != nil && s.syncer != nil {
-		caps, err := s.syncer.ProviderCapabilities(kind, host)
-		if err == nil {
-			return providerCapabilitiesFromPlatform(caps)
-		}
-	}
-	if kind == platform.KindGitHub {
-		return defaultGitHubProviderCapabilities()
-	}
-	return httpapi.ProviderCapabilitiesResponse{}
+	return s.repoResolver.Capabilities(kind, host)
 }

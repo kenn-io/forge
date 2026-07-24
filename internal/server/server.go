@@ -144,6 +144,7 @@ func (c shutdownAwareContext) Value(key any) any {
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
 	db                          *db.DB
+	repoResolver                *httpapi.RepositoryResolver
 	syncer                      *ghclient.Syncer
 	archive                     archive.Controller
 	clones                      *gitclone.Manager
@@ -713,9 +714,19 @@ func newServer(
 	if deferredMergeMaxWait <= 0 {
 		deferredMergeMaxWait = defaultDeferredMergeMaxWait
 	}
+	repoResolver := httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{
+		DB: database,
+		ProviderCapabilities: func(kind platform.Kind, host string) (platform.Capabilities, error) {
+			if syncer == nil {
+				return platform.Capabilities{}, errors.New("provider registry unavailable")
+			}
+			return syncer.ProviderCapabilities(kind, host)
+		},
+	})
 
 	s := &Server{
 		db:                             database,
+		repoResolver:                   repoResolver,
 		basePath:                       basePath,
 		syncer:                         syncer,
 		archive:                        options.Archive,
@@ -747,6 +758,10 @@ func newServer(
 	}
 	s.docsAPI = docsapi.New(docsapi.Deps{
 		Config: cfg,
+		BeginConfigMutation: func() func() {
+			s.configReloadMu.Lock()
+			return s.configReloadMu.Unlock
+		},
 		SaveFolders: func(folders []config.DocFolder) error {
 			if s.cfgPath == "" || s.cfg == nil {
 				return docsapi.ErrSettingsUnavailable
@@ -769,6 +784,10 @@ func newServer(
 		Config:      cfg,
 		BasePath:    basePath,
 		RemoteImage: options.msgvaultRemoteImageDeps,
+		BeginConfigMutation: func() func() {
+			s.configReloadMu.Lock()
+			return s.configReloadMu.Unlock
+		},
 		SaveConfig: func(next *config.Msgvault) (*config.Config, error) {
 			if s.cfgPath == "" || s.cfg == nil {
 				return nil, messagesapi.ErrSettingsUnavailable
@@ -786,20 +805,17 @@ func newServer(
 		},
 		UpdateRuntimeStripEnv: func(cfg *config.Config) {
 			if s.runtime != nil {
-				s.runtime.UpdateStripEnvVars(s.updateRuntimeStripEnvVarsLocked(cfg))
+				s.cfgMu.Lock()
+				stripEnvVars := s.updateRuntimeStripEnvVarsLocked(cfg)
+				s.cfgMu.Unlock()
+				s.runtime.UpdateStripEnvVars(stripEnvVars)
 			}
 		},
 	})
 	s.repoBrowserAPI = repobrowserapi.New(repobrowserapi.Deps{
-		DB:     database,
-		Clones: clones,
-		ProviderCapabilities: func(kind platform.Kind, host string) (platform.Capabilities, error) {
-			if syncer == nil {
-				return platform.Capabilities{}, errors.New("provider registry unavailable")
-			}
-			return syncer.ProviderCapabilities(kind, host)
-		},
-		Config: cfg,
+		Resolver: repoResolver,
+		Clones:   clones,
+		Config:   cfg,
 	})
 	s.workspaceDiffCache = newWorkspaceDiffCache(s.bgCtx, workspaceDiffCacheDeps{
 		onReady: func(workspaceID string, revision uint64, version string) {

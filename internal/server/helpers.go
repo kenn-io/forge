@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -28,8 +27,6 @@ type starredRequest struct {
 	Number       int    `json:"number"`
 	PlatformHost string `json:"platform_host"`
 }
-
-var errRepoNotFound = errors.New("repo not found")
 
 // buildRepoLookup materializes a repo-id keyed map used to annotate list
 // responses with owner/name information.

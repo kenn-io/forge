@@ -22,15 +22,17 @@ const docsMaxBodyBytes = 4 << 20
 var ErrSettingsUnavailable = errors.New("settings unavailable")
 
 type Deps struct {
-	Config      *config.Config
-	SaveFolders func([]config.DocFolder) error
+	Config              *config.Config
+	BeginConfigMutation func() func()
+	SaveFolders         func([]config.DocFolder) error
 }
 
 type Handler struct {
-	mu               sync.Mutex
-	saveFolders      func([]config.DocFolder) error
-	docsRegistry     *docs.Registry
-	docsPublishLocks *PublishLockSet
+	mu                  sync.Mutex
+	beginConfigMutation func() func()
+	saveFolders         func([]config.DocFolder) error
+	docsRegistry        *docs.Registry
+	docsPublishLocks    *PublishLockSet
 }
 
 func New(deps Deps) *Handler {
@@ -39,9 +41,10 @@ func New(deps Deps) *Handler {
 		folders = deps.Config.DocFolders
 	}
 	return &Handler{
-		saveFolders:      deps.SaveFolders,
-		docsRegistry:     docs.NewRegistry(folders),
-		docsPublishLocks: NewPublishLockSet(),
+		beginConfigMutation: deps.BeginConfigMutation,
+		saveFolders:         deps.SaveFolders,
+		docsRegistry:        docs.NewRegistry(folders),
+		docsPublishLocks:    NewPublishLockSet(),
 	}
 }
 
@@ -381,6 +384,11 @@ func (s *Handler) createDocsFolder(_ context.Context, in *createDocsFolderInput)
 		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, "path is required", map[string]any{"reason": "missingPath"})
 	}
 
+	releaseConfigMutation := func() {}
+	if s.beginConfigMutation != nil {
+		releaseConfigMutation = s.beginConfigMutation()
+	}
+	defer releaseConfigMutation()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	prev := s.docsRegistry.Folders()
@@ -416,6 +424,11 @@ func (s *Handler) updateDocsFolder(_ context.Context, in *updateDocsFolderInput)
 	if s.saveFolders == nil {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
+	releaseConfigMutation := func() {}
+	if s.beginConfigMutation != nil {
+		releaseConfigMutation = s.beginConfigMutation()
+	}
+	defer releaseConfigMutation()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	prev := s.docsRegistry.Folders()
@@ -443,6 +456,11 @@ func (s *Handler) deleteDocsFolder(_ context.Context, in *docsFolderIDInput) (*d
 	if s.saveFolders == nil {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
+	releaseConfigMutation := func() {}
+	if s.beginConfigMutation != nil {
+		releaseConfigMutation = s.beginConfigMutation()
+	}
+	defer releaseConfigMutation()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	prev := s.docsRegistry.Folders()

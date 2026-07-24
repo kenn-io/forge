@@ -534,7 +534,13 @@ func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	repo.write(t, "blocked.md", "# blocked\n")
-	srv := setupDocsGitRouteServer(t, repo.dir)
+	srv := New(openTestDB(t), nil, nil, "/", &config.Config{
+		DocFolders: []config.DocFolder{
+			{ID: "f", Name: "F", Path: repo.dir},
+			{ID: "alias", Name: "Alias", Path: repo.dir},
+		},
+	}, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
 	// The publish safety gate forbids command-bearing config, so hold the
 	// publish in-flight by hanging its push: point origin at an HTTP server
@@ -605,6 +611,13 @@ func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
 	require.NoError(json.NewDecoder(conflictRR.Body).Decode(&problem))
 	assert.Equal(httpapi.CodeConflict, problem.Code)
 	assert.Equal("publishInProgress", problem.Details["reason"])
+
+	aliasPull := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/alias/git/pull", nil)
+	require.Equal(http.StatusConflict, aliasPull.Code, aliasPull.Body.String())
+	var aliasProblem httpapi.ProblemError
+	require.NoError(json.NewDecoder(aliasPull.Body).Decode(&aliasProblem))
+	assert.Equal(httpapi.CodeConflict, aliasProblem.Code)
+	assert.Equal("gitOperationInProgress", aliasProblem.Details["reason"])
 
 	// Release the hung push; the first publish commits but fails to push.
 	doRelease()

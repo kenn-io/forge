@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -527,6 +528,120 @@ func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
 
 	oldReadRR := doDocsJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/notes/file?path=old.md", nil)
 	assert.Equal(http.StatusNotFound, oldReadRR.Code, oldReadRR.Body.String())
+}
+
+func TestConfigReloadThenMsgvaultConfigurePreservesReloadedState(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Setenv("MSGVAULT_API_KEY_TEST", "secret-key")
+	upstream := msgvaultOKUpstream(t)
+	defer upstream.Close()
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfig, &mockGH{},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+	writeConfigToml(t, cfgPath, validReloadConfigRepoTokenEnv)
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid)
+
+	owner := &msgvaultRuntimeOwner{}
+	srv.runtime = localruntime.NewManager(localruntime.Options{
+		Targets: []localruntime.LaunchTarget{{
+			Key:       "helper",
+			Label:     "Helper",
+			Kind:      localruntime.LaunchTargetAgent,
+			Source:    "test",
+			Command:   []string{"/bin/echo"},
+			Available: true,
+		}},
+		PtyOwnerRuntime: owner,
+	})
+	t.Cleanup(srv.runtime.Shutdown)
+
+	rr := doMsgvaultJSON(t, srv, http.MethodPost, "/api/v1/msgvault/configure", map[string]any{
+		"url":         upstream.URL,
+		"api_key_env": "MSGVAULT_API_KEY_TEST",
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal(upstream.URL, decodeMsgvaultHealth(t, rr).URL)
+
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Len(reloaded.Repos, 1)
+	assert.Equal("MIDDLEMAN_REPO_TOKEN", reloaded.Repos[0].TokenEnv)
+	require.NotNil(reloaded.Msgvault)
+	assert.Equal(upstream.URL, reloaded.Msgvault.URL)
+
+	srv.cfgMu.Lock()
+	inMemory := cloneReloadedConfig(srv.cfg)
+	srv.cfgMu.Unlock()
+	require.Len(inMemory.Repos, 1)
+	assert.Equal("MIDDLEMAN_REPO_TOKEN", inMemory.Repos[0].TokenEnv)
+	require.NotNil(inMemory.Msgvault)
+	assert.Equal(upstream.URL, inMemory.Msgvault.URL)
+
+	health := doMsgvaultJSON(t, srv, http.MethodGet, "/api/v1/msgvault/health", nil)
+	require.Equal(http.StatusOK, health.Code, health.Body.String())
+	assert.Equal(upstream.URL, decodeMsgvaultHealth(t, health).URL)
+
+	_, err = srv.runtime.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
+	require.NoError(err)
+	assert.Contains(owner.startedStripEnvVars, "MIDDLEMAN_REPO_TOKEN")
+	assert.Contains(owner.startedStripEnvVars, "MSGVAULT_API_KEY_TEST")
+}
+
+func TestConfigReloadSerializesDocsFolderMutation(t *testing.T) {
+	require := require.New(t)
+	initialRoot := t.TempDir()
+	reloadedRoot := t.TempDir()
+	createdRoot := t.TempDir()
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t,
+		validReloadConfigWithDocFolder("initial", "Initial", initialRoot),
+		&mockGH{},
+	)
+	writeConfigToml(t, cfgPath, validReloadConfigWithDocFolder("reloaded", "Reloaded", reloadedRoot))
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var mutation *httptest.ResponseRecorder
+	mutationBody := strings.NewReader(fmt.Sprintf(
+		`{"id":"created","name":"Created","path":%q}`,
+		createdRoot,
+	))
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		srv.handleConfigFileChanged()
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/docs/folders", mutationBody)
+		setAcceptedHostForServerTest(req, srv)
+		req.RemoteAddr = "127.0.0.1:12345"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(middlemanCSRFHeaderName, "1")
+		mutation = httptest.NewRecorder()
+		srv.ServeHTTP(mutation, req)
+	}()
+	close(start)
+	wg.Wait()
+	require.NotNil(mutation)
+	require.Equal(http.StatusCreated, mutation.Code, mutation.Body.String())
+
+	disk, err := config.Load(cfgPath)
+	require.NoError(err)
+	srv.cfgMu.Lock()
+	inMemory := slices.Clone(srv.cfg.DocFolders)
+	srv.cfgMu.Unlock()
+	registry := srv.docsAPI.Folders()
+	assert.Equal(t, disk.DocFolders, inMemory)
+	assert.Equal(t, disk.DocFolders, registry)
 }
 
 func TestConfigReload_UpdatesMsgvaultHealthHandler(t *testing.T) {

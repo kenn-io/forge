@@ -3,7 +3,6 @@ package repobrowserapi
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,30 +11,26 @@ import (
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 type Handler struct {
-	db                   *db.DB
-	clones               *gitclone.Manager
-	providerCapabilities func(platform.Kind, string) (platform.Capabilities, error)
-	refreshEvery         time.Duration
+	resolver     *httpapi.RepositoryResolver
+	clones       *gitclone.Manager
+	refreshEvery time.Duration
 }
 
 type Deps struct {
-	DB                   *db.DB
-	Clones               *gitclone.Manager
-	ProviderCapabilities func(platform.Kind, string) (platform.Capabilities, error)
-	Config               *config.Config
+	Resolver *httpapi.RepositoryResolver
+	Clones   *gitclone.Manager
+	Config   *config.Config
 }
 
 func New(deps Deps) *Handler {
 	return &Handler{
-		db:                   deps.DB,
-		clones:               deps.Clones,
-		providerCapabilities: deps.ProviderCapabilities,
-		refreshEvery:         refreshIntervalForConfig(deps.Config),
+		resolver:     deps.Resolver,
+		clones:       deps.Clones,
+		refreshEvery: refreshIntervalForConfig(deps.Config),
 	}
 }
 
@@ -500,12 +495,11 @@ func (h *Handler) ensureRepoBrowserClone(
 	if h.clones == nil {
 		return nil, gitclone.RepoBrowserRepoRef{}, errRepoBrowserCloneUnavailable
 	}
+	if h.resolver == nil {
+		return nil, gitclone.RepoBrowserRepoRef{}, httpapi.ErrRepositoryStoreUnavailable
+	}
 	repoPath = canonicalRepoBrowserRepoPath(owner, name, repoPath)
-	repo, err := h.lookupRepoByRefInput(ctx, repoRefInput{
-		Provider:     provider,
-		PlatformHost: platformHost,
-		RepoPath:     repoPath,
-	})
+	repo, err := h.resolver.Lookup(ctx, provider, platformHost, repoPath)
 	if err != nil {
 		return nil, gitclone.RepoBrowserRepoRef{}, err
 	}
@@ -526,131 +520,8 @@ func (h *Handler) ensureRepoBrowserClone(
 	return repo, repoRef, nil
 }
 
-type repoRefInput struct {
-	Provider     string
-	PlatformHost string
-	RepoPath     string
-}
-
-func (h *Handler) lookupRepoByRefInput(ctx context.Context, input repoRefInput) (*db.Repo, error) {
-	provider := strings.TrimSpace(input.Provider)
-	host := strings.TrimSpace(input.PlatformHost)
-	repoPath := strings.Trim(input.RepoPath, "/ ")
-	kind, err := platform.NormalizeKind(provider)
-	if err != nil {
-		return nil, err
-	}
-	provider = string(kind)
-	if host == "" {
-		var ok bool
-		host, ok = platform.DefaultHost(kind)
-		if !ok {
-			return nil, fmt.Errorf("platform_host is required for provider %q", kind)
-		}
-	}
-	if repoPath == "" {
-		return nil, errRepoPathRequired
-	}
-	repo, err := h.db.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     provider,
-		PlatformHost: host,
-		RepoPath:     repoPath,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("lookup repo: %w", err)
-	}
-	if repo == nil {
-		return nil, errRepoNotFound
-	}
-	return repo, nil
-}
-
 func (h *Handler) repoRefFromRepo(repo db.Repo) httpapi.RepoRefResponse {
-	provider := strings.TrimSpace(repo.Platform)
-	if provider == "" {
-		provider = string(platform.KindGitHub)
-	}
-	host := strings.TrimSpace(repo.PlatformHost)
-	if host == "" {
-		host, _ = platform.DefaultHost(platform.Kind(provider))
-	}
-	repoPath := strings.TrimSpace(repo.RepoPath)
-	if repoPath == "" {
-		repoPath = repo.Owner + "/" + repo.Name
-	}
-	return httpapi.RepoRefResponse{
-		Provider:     provider,
-		PlatformHost: host,
-		RepoPath:     repoPath,
-		Owner:        repo.Owner,
-		Name:         repo.Name,
-		Capabilities: h.capabilitiesForProvider(platform.Kind(provider), host),
-	}
-}
-
-func (h *Handler) capabilitiesForProvider(kind platform.Kind, host string) httpapi.ProviderCapabilitiesResponse {
-	if h.providerCapabilities != nil {
-		caps, err := h.providerCapabilities(kind, host)
-		if err == nil {
-			return providerCapabilitiesFromPlatform(caps)
-		}
-	}
-	if kind == platform.KindGitHub {
-		return providerCapabilitiesFromPlatform(platform.Capabilities{
-			ReadRepositories:            true,
-			ReadMergeRequests:           true,
-			ReadIssues:                  true,
-			ReadComments:                true,
-			ReadReleases:                true,
-			ReadCI:                      true,
-			CommentMutation:             true,
-			StateMutation:               true,
-			MergeMutation:               true,
-			ReviewMutation:              true,
-			WorkflowApproval:            true,
-			ReadyForReview:              true,
-			DraftMutation:               true,
-			IssueMutation:               true,
-			ReviewSuggestionApplication: true,
-		})
-	}
-	return httpapi.ProviderCapabilitiesResponse{}
-}
-
-func providerCapabilitiesFromPlatform(caps platform.Capabilities) httpapi.ProviderCapabilitiesResponse {
-	reviewActions := make([]string, 0, len(caps.SupportedReviewActions))
-	for _, action := range caps.SupportedReviewActions {
-		reviewActions = append(reviewActions, string(action))
-	}
-	return httpapi.ProviderCapabilitiesResponse{
-		ReadRepositories:            caps.ReadRepositories,
-		ReadMergeRequests:           caps.ReadMergeRequests,
-		ReadIssues:                  caps.ReadIssues,
-		ReadComments:                caps.ReadComments,
-		ReadReleases:                caps.ReadReleases,
-		ReadCI:                      caps.ReadCI,
-		ReadLabels:                  caps.ReadLabels,
-		CommentMutation:             caps.CommentMutation,
-		StateMutation:               caps.StateMutation,
-		MergeMutation:               caps.MergeMutation,
-		ReviewMutation:              caps.ReviewMutation,
-		WorkflowApproval:            caps.WorkflowApproval,
-		ReadyForReview:              caps.ReadyForReview,
-		DraftMutation:               caps.DraftMutation,
-		IssueMutation:               caps.IssueMutation,
-		LabelMutation:               caps.LabelMutation,
-		AssigneeMutation:            caps.AssigneeMutation,
-		ReviewerMutation:            caps.ReviewerMutation,
-		ThreadReply:                 caps.ThreadReply,
-		ThreadResolve:               caps.ThreadResolve,
-		ReviewDraftMutation:         caps.ReviewDraftMutation,
-		ReviewThreadResolution:      caps.ReviewThreadResolution,
-		ReviewSuggestionApplication: caps.ReviewSuggestionApplication,
-		ReadReviewThreads:           caps.ReadReviewThreads,
-		NativeMultilineRanges:       caps.NativeMultilineRanges,
-		MutationHeadBinding:         caps.MutationHeadBinding,
-		SupportedReviewActions:      reviewActions,
-	}
+	return h.resolver.Ref(repo)
 }
 
 func (h *Handler) resolveRepoBrowserReadRef(
@@ -683,8 +554,6 @@ func canonicalRepoBrowserRepoPath(owner, name, repoPath string) string {
 
 var errRepoBrowserCloneUnavailable = errors.New("repo browser clone unavailable")
 var errRepoBrowserMutableAssetRef = errors.New("repo browser asset requires immutable commit ref")
-var errRepoPathRequired = errors.New("repo_path is required")
-var errRepoNotFound = errors.New("repo not found")
 
 func repoBrowserRef(refType, name, sha string) gitclone.RepoBrowserRef {
 	typ := gitclone.RepoBrowserRefType(strings.TrimSpace(refType))
@@ -702,10 +571,10 @@ func repoBrowserProblem(err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, errRepoPathRequired) {
+	if errors.Is(err, httpapi.ErrRepoPathRequired) {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "missing_repo_path"})
 	}
-	if errors.Is(err, errRepoNotFound) {
+	if errors.Is(err, httpapi.ErrRepoNotFound) {
 		return httpapi.NotFound(httpapi.CodeRepoNotFound, "repo not found", map[string]any{"reason": "repo_not_found"})
 	}
 	if errors.Is(err, errRepoBrowserCloneUnavailable) {

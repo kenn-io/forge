@@ -45,10 +45,10 @@ func refreshIntervalForConfig(cfg *config.Config) time.Duration {
 }
 
 func (h *Handler) SeedRefreshRepos(ctx context.Context) {
-	if h.clones == nil || h.db == nil {
+	if h.clones == nil || h.resolver == nil {
 		return
 	}
-	repos, err := h.db.ListRepos(ctx)
+	repos, err := h.resolver.List(ctx)
 	if err != nil {
 		slog.Warn("failed to seed repo browser refresh repos", "err", err)
 		return

@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/server/repobrowserapi"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"golang.org/x/sync/semaphore"
@@ -71,6 +72,14 @@ func TestRepoBrowserRefsUsesProviderRouteWhenRepoPathMissing(t *testing.T) {
 	assert.Equal("github.com", body.Repo.PlatformHost)
 	assert.Equal("acme/widgets", body.Repo.RepoPath)
 	assert.Equal("main", body.DefaultRef.Name)
+
+	canonical := repoBrowserRequest(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widgets")
+	require.Equal(http.StatusOK, canonical.Code, canonical.Body.String())
+	var canonicalBody struct {
+		Capabilities httpapi.ProviderCapabilitiesResponse `json:"capabilities"`
+	}
+	require.NoError(json.Unmarshal(canonical.Body.Bytes(), &canonicalBody))
+	assert.Equal(canonicalBody.Capabilities, body.Repo.Capabilities)
 }
 
 func TestRepoBrowserRefsReportsTruncationForLargeRefSets(t *testing.T) {

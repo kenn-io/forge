@@ -146,6 +146,8 @@ type msgvaultConfigureRequest struct {
 }
 
 type Handler struct {
+	configureMu           sync.Mutex
+	beginConfigMutation   func() func()
 	saveConfig            func(*config.Msgvault) (*config.Config, error)
 	updateRuntimeStripEnv func(*config.Config)
 
@@ -180,12 +182,14 @@ type Deps struct {
 	Config                *config.Config
 	BasePath              string
 	RemoteImage           *RemoteImageDeps
+	BeginConfigMutation   func() func()
 	SaveConfig            func(*config.Msgvault) (*config.Config, error)
 	UpdateRuntimeStripEnv func(*config.Config)
 }
 
 func New(deps Deps) *Handler {
 	h := &Handler{remoteDeps: DefaultRemoteImageDeps()}
+	h.beginConfigMutation = deps.BeginConfigMutation
 	h.saveConfig = deps.SaveConfig
 	h.updateRuntimeStripEnv = deps.UpdateRuntimeStripEnv
 	if deps.RemoteImage != nil {
@@ -197,6 +201,12 @@ func New(deps Deps) *Handler {
 }
 
 func (h *Handler) ApplyConfig(cfg *config.Config) {
+	h.configureMu.Lock()
+	defer h.configureMu.Unlock()
+	h.applyConfigLocked(cfg)
+}
+
+func (h *Handler) applyConfigLocked(cfg *config.Config) {
 	state, upstreamURL, apiKey, cfgErr := cfg.MsgvaultState()
 	configuredURL := upstreamURL
 	configuredEnv := ""
@@ -478,18 +488,27 @@ func (h *Handler) configure(_ context.Context, in *configureMsgvaultInput) (*msg
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
+	releaseConfigMutation := func() {}
+	if h.beginConfigMutation != nil {
+		releaseConfigMutation = h.beginConfigMutation()
+	}
+	h.configureMu.Lock()
 	cfg, err := h.saveConfig(&config.Msgvault{URL: cleanURL, APIKeyEnv: apiKeyEnv})
 	if err != nil {
+		h.configureMu.Unlock()
+		releaseConfigMutation()
 		if errors.Is(err, ErrSettingsUnavailable) {
 			return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 		}
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
-	h.ApplyConfig(cfg)
+	h.applyConfigLocked(cfg)
 	if h.updateRuntimeStripEnv != nil {
 		h.updateRuntimeStripEnv(cfg)
 	}
 	snapshot := h.healthSnapshot()
+	h.configureMu.Unlock()
+	releaseConfigMutation()
 
 	return &msgvaultConfigureOutput{Body: snapshot.healthValue()}, nil
 }

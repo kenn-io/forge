@@ -55,10 +55,10 @@ type repoNumberInput struct {
 type getPullOutput = httpapi.BodyOutput[mergeRequestDetailResponse]
 
 func providerRouteLookupError(err error) error {
-	if errors.Is(err, errRepoPathRequired) {
+	if errors.Is(err, httpapi.ErrRepoPathRequired) {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
-	if errors.Is(err, errRepoNotFound) {
+	if errors.Is(err, httpapi.ErrRepoNotFound) {
 		return httpapi.NotFound(httpapi.CodeRepoNotFound, "repo not found", nil)
 	}
 	if strings.Contains(err.Error(), "platform_host is required") ||
@@ -4555,7 +4555,7 @@ func (s *Server) resolveItem(
 	repo, err := s.lookupRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
-	if errors.Is(err, errRepoNotFound) {
+	if errors.Is(err, httpapi.ErrRepoNotFound) {
 		return &resolveItemOutput{
 			Body: resolveItemResponse{
 				Number:      number,
@@ -4722,7 +4722,7 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 		ctx, body.Provider, body.PlatformHost, body.Owner, body.Name,
 	)
 	if err != nil {
-		if errors.Is(err, errRepoNotFound) {
+		if errors.Is(err, httpapi.ErrRepoNotFound) {
 			return 0, httpapi.NotFound(httpapi.CodeRepoNotFound, err.Error(), nil)
 		}
 		return 0, providerRouteLookupError(err)

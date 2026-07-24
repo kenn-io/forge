@@ -9,6 +9,7 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 )
 
 type repoNumberPathRef struct {
@@ -60,12 +61,12 @@ func workspaceLookupKey(
 
 func (s *Server) buildWorkspaceRefLookup(
 	ctx context.Context,
-) (map[string]workspaceRef, error) {
+) (map[string]workspaceapi.WorkspaceRef, error) {
 	workspaces, err := s.db.ListWorkspaces(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list workspaces: %w", err)
 	}
-	lookup := make(map[string]workspaceRef, len(workspaces))
+	lookup := make(map[string]workspaceapi.WorkspaceRef, len(workspaces))
 	for _, ws := range workspaces {
 		key := workspaceLookupKey(
 			ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
@@ -74,17 +75,17 @@ func (s *Server) buildWorkspaceRefLookup(
 		if _, exists := lookup[key]; exists {
 			continue
 		}
-		lookup[key] = workspaceRef{ID: ws.ID, Status: ws.Status}
+		lookup[key] = workspaceapi.WorkspaceRef{ID: ws.ID, Status: ws.Status}
 	}
 	return lookup, nil
 }
 
 func workspaceRefForRepoItem(
-	lookup map[string]workspaceRef,
+	lookup map[string]workspaceapi.WorkspaceRef,
 	repo db.Repo,
 	itemType string,
 	number int,
-) *workspaceRef {
+) *workspaceapi.WorkspaceRef {
 	ref, ok := lookup[workspaceLookupKey(
 		repo.Platform, repoProviderHost(repo), repo.Owner, repo.Name,
 		itemType, number,
@@ -107,9 +108,9 @@ func workspaceItemTypeFromActivity(itemType string) string {
 }
 
 func workspaceRefForActivityItem(
-	lookup map[string]workspaceRef,
+	lookup map[string]workspaceapi.WorkspaceRef,
 	item db.ActivityItem,
-) *workspaceRef {
+) *workspaceapi.WorkspaceRef {
 	workspaceItemType := workspaceItemTypeFromActivity(item.ItemType)
 	if workspaceItemType == "" {
 		return nil

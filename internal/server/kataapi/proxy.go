@@ -1,4 +1,4 @@
-package server
+package kataapi
 
 import (
 	"bytes"
@@ -24,6 +24,16 @@ const (
 	kataProxyPrefix               = "/api/v1/kata/proxy"
 	kataDaemonProxyRequestTimeout = 30 * time.Second
 )
+
+// DaemonHeaderName selects the Kata daemon used for a request.
+const DaemonHeaderName = kataDaemonHeaderName
+
+// IsProxyPath reports whether an API path belongs to Kata's passthrough
+// boundary. Root middleware uses this to preserve the proxy's content-type
+// and same-origin handling without owning Kata route details.
+func IsProxyPath(path string) bool {
+	return path == kataProxyPrefix || strings.HasPrefix(path, kataProxyPrefix+"/")
+}
 
 type kataProxyCacheKey struct {
 	id    string
@@ -52,15 +62,15 @@ func (h *kataProxyDeadlineHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	h.proxy.ServeHTTP(w, r.WithContext(ctx))
 }
 
-func (s *Server) kataProxy() http.Handler {
+func (h *Handler) kataProxy() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Vary", kataDaemonHeaderName)
 
-		selected, ok := s.selectKataProxyDaemon(w, r)
+		selected, ok := h.selectKataProxyDaemon(w, r)
 		if !ok {
 			return
 		}
-		entry, err := s.kataProxyForDaemon(selected)
+		entry, err := h.kataProxyForDaemon(selected)
 		if err != nil {
 			slog.Warn("kata proxy target invalid",
 				"daemon", selected.ID, "target", kata.RedactURL(selected.URL), "err", err)
@@ -77,45 +87,49 @@ func (s *Server) kataProxy() http.Handler {
 	})
 }
 
-func (s *Server) kataProxyForDaemon(d kata.Daemon) (kataProxyCacheEntry, error) {
+func (h *Handler) kataProxyForDaemon(d kata.Daemon) (kataProxyCacheEntry, error) {
 	key := kataProxyCacheKey{id: d.ID, url: d.URL, token: kataDaemonForwardToken(d), local: d.Local}
-	s.kataProxyMu.Lock()
-	if entry, ok := s.kataProxyCache[key]; ok {
-		s.kataProxyMu.Unlock()
+	h.kataProxyMu.Lock()
+	if entry, ok := h.kataProxyCache[key]; ok {
+		h.kataProxyMu.Unlock()
 		return entry, nil
 	}
-	s.kataProxyMu.Unlock()
+	h.kataProxyMu.Unlock()
 
-	entry, err := newKataDaemonProxyEntry(d, func() {
-		s.kataSnapshots.invalidateDaemon(d.ID)
-	})
+	entry, err := newKataDaemonProxyEntryWithTransport(
+		d, kataDaemonProxyRequestTimeout, h.newHTTPTransport(), func() {
+			if h.invalidateDaemon != nil {
+				h.invalidateDaemon(d.ID)
+			}
+		},
+	)
 	if err != nil {
 		return kataProxyCacheEntry{}, err
 	}
 
-	s.kataProxyMu.Lock()
-	if s.kataProxyCache == nil {
-		s.kataProxyCache = make(map[kataProxyCacheKey]kataProxyCacheEntry)
+	h.kataProxyMu.Lock()
+	if h.kataProxyCache == nil {
+		h.kataProxyCache = make(map[kataProxyCacheKey]kataProxyCacheEntry)
 	}
-	if existing, ok := s.kataProxyCache[key]; ok {
-		s.kataProxyMu.Unlock()
+	if existing, ok := h.kataProxyCache[key]; ok {
+		h.kataProxyMu.Unlock()
 		if entry.closeIdle != nil {
 			entry.closeIdle()
 		}
 		return existing, nil
 	}
-	s.kataProxyCache[key] = entry
-	s.kataProxyMu.Unlock()
+	h.kataProxyCache[key] = entry
+	h.kataProxyMu.Unlock()
 	return entry, nil
 }
 
-func (s *Server) closeKataProxyIdleConnections() {
-	s.kataProxyMu.Lock()
-	entries := make([]kataProxyCacheEntry, 0, len(s.kataProxyCache))
-	for _, entry := range s.kataProxyCache {
+func (h *Handler) closeKataProxyIdleConnections() {
+	h.kataProxyMu.Lock()
+	entries := make([]kataProxyCacheEntry, 0, len(h.kataProxyCache))
+	for _, entry := range h.kataProxyCache {
 		entries = append(entries, entry)
 	}
-	s.kataProxyMu.Unlock()
+	h.kataProxyMu.Unlock()
 
 	for _, entry := range entries {
 		if entry.closeIdle != nil {
@@ -124,8 +138,8 @@ func (s *Server) closeKataProxyIdleConnections() {
 	}
 }
 
-func (s *Server) selectKataProxyDaemon(w http.ResponseWriter, r *http.Request) (kata.Daemon, bool) {
-	selected, problem := selectKataDaemonForID(r.Header.Get(kataDaemonHeaderName))
+func (h *Handler) selectKataProxyDaemon(w http.ResponseWriter, r *http.Request) (kata.Daemon, bool) {
+	selected, problem := h.selectKataDaemonForID(r.Header.Get(kataDaemonHeaderName))
 	if problem != nil {
 		writeProblemResponse(w, problem)
 		return kata.Daemon{}, false
@@ -137,8 +151,8 @@ func (s *Server) selectKataProxyDaemon(w http.ResponseWriter, r *http.Request) (
 // X-Middleman-Kata-Daemon header value (the effective default daemon when
 // empty) to a reachable target. Shared by the passthrough proxy and the
 // server-side Kata task reads.
-func selectKataDaemonForID(headerID string) (kata.Daemon, *httpapi.ProblemError) {
-	catalog, err := kata.LoadCatalog()
+func (h *Handler) selectKataDaemonForID(headerID string) (kata.Daemon, *httpapi.ProblemError) {
+	catalog, err := h.loadCatalog()
 	if err != nil {
 		return kata.Daemon{}, httpapi.NewProblem(
 			http.StatusBadRequest,
@@ -178,7 +192,7 @@ func selectKataDaemonForID(headerID string) (kata.Daemon, *httpapi.ProblemError)
 		)
 	}
 
-	selected, err := kata.ResolveDaemon(configured)
+	selected, err := h.resolveDaemon(configured)
 	if err != nil {
 		return kata.Daemon{}, httpapi.NewProblem(
 			http.StatusBadRequest,
@@ -188,7 +202,7 @@ func selectKataDaemonForID(headerID string) (kata.Daemon, *httpapi.ProblemError)
 		)
 	}
 	if selected.Local && selected.URL == "" {
-		selected.URL = kata.DiscoverLocalDaemonURL()
+		selected.URL = h.discoverLocalDaemonURL()
 		if selected.URL != "" {
 			if err := kata.ValidateLocalTarget(selected); err != nil {
 				slog.Warn("kata local daemon target rejected",
@@ -208,13 +222,22 @@ func selectKataDaemonForID(headerID string) (kata.Daemon, *httpapi.ProblemError)
 	return selected, nil
 }
 
-func newKataDaemonProxyEntry(d kata.Daemon, invalidate func()) (kataProxyCacheEntry, error) {
-	return newKataDaemonProxyEntryWithTimeout(d, kataDaemonProxyRequestTimeout, invalidate)
+// SelectDaemonForID resolves the configured daemon for root-owned Kata
+// frontend streaming routes.
+func (h *Handler) SelectDaemonForID(id string) (kata.Daemon, *httpapi.ProblemError) {
+	return h.selectKataDaemonForID(id)
 }
 
-func newKataDaemonProxyEntryWithTimeout(
+func newKataDaemonProxyEntryWithTimeout(d kata.Daemon, requestTimeout time.Duration) (kataProxyCacheEntry, error) {
+	return newKataDaemonProxyEntryWithTransport(
+		d, requestTimeout, newDefaultKataDaemonTransport(), nil,
+	)
+}
+
+func newKataDaemonProxyEntryWithTransport(
 	d kata.Daemon,
 	requestTimeout time.Duration,
+	defaultTransport http.RoundTripper,
 	invalidate func(),
 ) (kataProxyCacheEntry, error) {
 	target, transport, err := kataDaemonProxyTarget(d.URL)
@@ -222,7 +245,7 @@ func newKataDaemonProxyEntryWithTimeout(
 		return kataProxyCacheEntry{}, err
 	}
 	if transport == nil {
-		transport = newDefaultKataDaemonTransport()
+		transport = defaultTransport
 	}
 
 	proxy := &httputil.ReverseProxy{
@@ -244,7 +267,7 @@ func newKataDaemonProxyEntryWithTimeout(
 			}
 		},
 		ModifyResponse: func(resp *http.Response) error {
-			if isKataMutationMethod(resp.Request.Method) && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			if invalidate != nil && isKataMutationMethod(resp.Request.Method) && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				invalidate()
 			}
 			if !isKataLocalDaemonChallenge(d, resp.StatusCode) {
@@ -304,15 +327,6 @@ func newKataDaemonProxyEntryWithTimeout(
 		handler = &kataProxyDeadlineHandler{proxy: proxy, requestTimeout: requestTimeout}
 	}
 	return kataProxyCacheEntry{handler: handler, closeIdle: closeIdle}, nil
-}
-
-func isKataMutationMethod(method string) bool {
-	switch method {
-	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		return true
-	default:
-		return false
-	}
 }
 
 func kataDaemonProxyTarget(target string) (*url.URL, http.RoundTripper, error) {

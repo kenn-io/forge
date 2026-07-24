@@ -396,6 +396,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		s.runtime.UpdateStripEnvVars(s.updateRuntimeStripEnvVarsLocked(newCfg))
 	}
 	s.applyWorkspaceConfigLocked()
+	s.applyKataConfigLocked()
 	s.cfgMu.Unlock()
 
 	if s.syncer != nil {

@@ -335,9 +335,9 @@ func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
 	}
 }
 
-// TestServerShutdownClosesKataProxyIdleConnectionsAfterHTTPDrain verifies
-// that upstream proxy transports are closed only after active handlers finish.
-func TestServerShutdownClosesKataProxyIdleConnectionsAfterHTTPDrain(t *testing.T) {
+// TestServerShutdownStopsKataAfterHTTPDrain verifies that Kata lifecycle
+// cleanup starts only after active handlers finish.
+func TestServerShutdownStopsKataAfterHTTPDrain(t *testing.T) {
 	req := require.New(t)
 	srv, _ := setupTestServer(t)
 
@@ -355,12 +355,9 @@ func TestServerShutdownClosesKataProxyIdleConnectionsAfterHTTPDrain(t *testing.T
 	})
 
 	closeCalled := make(chan bool, 1)
-	srv.kataProxyCache = map[kataProxyCacheKey]kataProxyCacheEntry{
-		{id: "primary", url: "http://127.0.0.1:1"}: {
-			closeIdle: func() {
-				closeCalled <- handlerFinished.Load()
-			},
-		},
+	srv.shutdownKata = func(context.Context) error {
+		closeCalled <- handlerFinished.Load()
+		return nil
 	}
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -428,10 +425,9 @@ func TestServerShutdownClosesKataProxyIdleConnectionsAfterHTTPDrain(t *testing.T
 	}
 }
 
-// TestServerShutdownRetryClosesKataProxyIdleConnectionsAfterHTTPDrain verifies
-// that a timed-out first Shutdown does not spend the one cleanup pass before a
-// later retry drains active handlers.
-func TestServerShutdownRetryClosesKataProxyIdleConnectionsAfterHTTPDrain(t *testing.T) {
+// TestServerShutdownRetryStopsKataAfterHTTPDrain verifies that a timed-out
+// first Shutdown does not stop Kata before a later retry drains handlers.
+func TestServerShutdownRetryStopsKataAfterHTTPDrain(t *testing.T) {
 	req := require.New(t)
 	srv, _ := setupTestServer(t)
 
@@ -449,12 +445,9 @@ func TestServerShutdownRetryClosesKataProxyIdleConnectionsAfterHTTPDrain(t *test
 	})
 
 	closeCalled := make(chan bool, 2)
-	srv.kataProxyCache = map[kataProxyCacheKey]kataProxyCacheEntry{
-		{id: "primary", url: "http://127.0.0.1:1"}: {
-			closeIdle: func() {
-				closeCalled <- handlerFinished.Load()
-			},
-		},
+	srv.shutdownKata = func(context.Context) error {
+		closeCalled <- handlerFinished.Load()
+		return nil
 	}
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

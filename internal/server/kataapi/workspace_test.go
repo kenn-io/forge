@@ -1,4 +1,4 @@
-package server
+package kataapi
 
 import (
 	"database/sql"
@@ -362,12 +362,12 @@ port = 8091
 	require.NotNil(resp.Repo)
 	assert.Equal("acme", resp.Repo.Owner)
 	assert.Equal("kata", resp.Repo.Name)
-	basePath, ok, err := srv.worktreeBasePathForRepo(
-		t.Context(), "github", "github.com", "acme", "kata",
-	)
+	resolution, err := srv.resolveKataWorkspaceRepoResolution(t.Context(), db.WorkspaceKataMetadata{
+		DaemonID: "desktop", ProjectUID: "project-kata", ProjectName: "Kata",
+	})
 	require.NoError(err)
-	assert.True(ok)
-	assert.Equal(projectPath, basePath)
+	assert.Equal("mapped", resolution.Status)
+	assert.Equal(projectPath, resolution.Target.BasePath)
 }
 
 func TestKataWorkspaceTargetRegisteredProjectsWithDifferentCheckoutsAreAmbiguous(t *testing.T) {

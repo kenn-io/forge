@@ -3,6 +3,8 @@ package server
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -16,7 +18,7 @@ func TestDocFolderDaemonBindingWarnsWhenCatalogTargetMissingOnStartup(t *testing
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
-	writeKataServerCatalog(t, home, `
+	writeDocsKataCatalog(t, home, `
 [[daemon]]
 name = "home"
 local = true
@@ -49,7 +51,7 @@ func TestConfigReloadWarnsWhenDocFolderDaemonBindingTargetIsMissing(t *testing.T
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
-	writeKataServerCatalog(t, home, `
+	writeDocsKataCatalog(t, home, `
 [[daemon]]
 name = "home"
 local = true
@@ -86,7 +88,7 @@ func TestConfigWatcherWarnsWhenDocFolderDaemonBindingTargetIsMissing(t *testing.
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
-	writeKataServerCatalog(t, home, `
+	writeDocsKataCatalog(t, home, `
 [[daemon]]
 name = "home"
 local = true
@@ -118,6 +120,12 @@ local = true
 	assert.Contains(logs, "doc folder references missing Kata daemon")
 	assert.Contains(logs, "folder=handbook")
 	assert.Contains(logs, "daemon=gone")
+}
+
+func writeDocsKataCatalog(t *testing.T, home, body string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(home, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(home, "config.toml"), []byte(body), 0o644))
 }
 
 func validReloadConfigWithDocFolderDaemon(id, name, root, daemon string) string {

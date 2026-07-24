@@ -21,6 +21,13 @@ type filePreviewResponse = httpapi.FilePreviewResponse
 type commitResponse = httpapi.CommitResponse
 type commitsResponse = httpapi.CommitsResponse
 
+// WorkspaceRef is the lightweight link from item detail APIs back to an
+// existing middleman workspace.
+type WorkspaceRef struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
 type workspaceResponse struct {
 	ID                    string                    `json:"id"`
 	Repo                  httpapi.RepoRefResponse   `json:"repo"`

@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/platform/gitealike"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 )
 
 type listPullsInput struct {
@@ -591,7 +592,8 @@ func (s *Server) registerAPI(api huma.API) {
 
 	huma.Get(api, "/activity", s.listActivity,
 		httpapi.DocumentOperation("list-activity", "List activity", "Activity"))
-	s.registerKataAPI(api)
+	s.kataAPI.Register(api)
+	s.registerKataFrontendAPI(api)
 	s.docsAPI.Register(api)
 	s.messagesAPI.Register(api)
 	s.registerArchiveAPI(api)
@@ -1267,7 +1269,7 @@ func (s *Server) buildPullDetailResponse(
 			mr.Number,
 		)
 		if wsErr == nil && wsRef != nil {
-			resp.Workspace = &workspaceRef{
+			resp.Workspace = &workspaceapi.WorkspaceRef{
 				ID:     wsRef.ID,
 				Status: wsRef.Status,
 			}
@@ -2200,7 +2202,7 @@ func (s *Server) buildIssueDetailResponse(
 			issue.Number,
 		)
 		if wsErr == nil && wsRef != nil {
-			issueResp.Workspace = &workspaceRef{
+			issueResp.Workspace = &workspaceapi.WorkspaceRef{
 				ID:     wsRef.ID,
 				Status: wsRef.Status,
 			}

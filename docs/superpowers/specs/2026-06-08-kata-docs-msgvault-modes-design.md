@@ -514,7 +514,7 @@ Kata frontend adaptation:
   requests, including response bodies, while the live event stream stays
   exempt. Rejection releases the view-work gate and propagates to stream
   reconnect handling
-  (`internal/server/kata_proxy.go::newKataDaemonProxyEntryWithTimeout`).
+  (`internal/server/kataapi/proxy.go::newKataDaemonProxyEntryWithTimeout`).
 - Replace direct daemon URL/localStorage bootstrap with calls to middleman's
   Kata daemon roster and proxy.
 - Use a middleman-owned selector header for proxied daemon requests.

@@ -1,4 +1,4 @@
-package server
+package kataapi
 
 import (
 	"net/http"
@@ -8,8 +8,8 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 )
 
-func (s *Server) registerKataProxyAPI(api huma.API) {
-	proxy := s.kataProxy()
+func (h *Handler) registerKataProxyAPI(api huma.API) {
+	proxy := h.kataProxy()
 	for _, method := range []string{
 		http.MethodGet,
 		http.MethodPost,

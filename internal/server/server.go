@@ -34,6 +34,7 @@ import (
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
 	"go.kenn.io/middleman/internal/server/docsapi"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/kataapi"
 	"go.kenn.io/middleman/internal/server/messagesapi"
 	"go.kenn.io/middleman/internal/server/repobrowserapi"
 	"go.kenn.io/middleman/internal/server/workspaceapi"
@@ -198,15 +199,11 @@ type Server struct {
 	writeCredProbeMu       sync.Mutex
 	writeCredProbes        map[string]writeCredentialProbe
 	writeCredProbeInFlight map[string]chan struct{}
-	kataHealthMu           sync.Mutex
-	kataHealthCache        map[string]kataDaemonHealthCacheEntry
-	kataHealthInFlight     map[string]*kataDaemonInflightProbe
-	kataProxyMu            sync.Mutex
-	kataProxyCache         map[kataProxyCacheKey]kataProxyCacheEntry
-	kataProxyIdleCloseOnce sync.Once
 	kataSnapshots          *kataSnapshotCoordinator
 	kataEvents             *kataFrontendEventRegistry
 	docsAPI                *docsapi.Handler
+	kataAPI                *kataapi.Handler
+	shutdownKata           func(context.Context) error
 	messagesAPI            *messagesapi.Handler
 	repoBrowserAPI         *repobrowserapi.Handler
 	workspaceAPI           *workspaceapi.Handler
@@ -261,6 +258,8 @@ type Server struct {
 	workspaceDependentsOnce   sync.Once
 	workspaceLifecycleCtx     context.Context
 	workspaceLifecycleCancel  context.CancelFunc
+	kataLifecycleCtx          context.Context
+	kataLifecycleCancel       context.CancelFunc
 	workspaceDependencyStop   *workspaceDependencyShutdown
 }
 
@@ -408,10 +407,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 			}
 		}
 		httpDrained = httpErr == nil
-	}
-
-	if httpDrained {
-		s.kataProxyIdleCloseOnce.Do(s.closeKataProxyIdleConnections)
 	}
 
 	if first {
@@ -632,9 +627,25 @@ func workspaceConfigSnapshot(
 	return snapshot
 }
 
+func kataConfigSnapshot(cfg *config.Config) kataapi.ConfigSnapshot {
+	if cfg == nil {
+		return kataapi.ConfigSnapshot{}
+	}
+	return kataapi.ConfigSnapshot{
+		Repos:        slices.Clone(cfg.Repos),
+		KataProjects: slices.Clone(cfg.KataProjects),
+	}
+}
+
 func (s *Server) applyWorkspaceConfigLocked() {
 	if s.workspaceAPI != nil {
 		s.workspaceAPI.ApplyConfig(workspaceConfigSnapshot(s.cfg, s.tmuxCmd))
+	}
+}
+
+func (s *Server) applyKataConfigLocked() {
+	if s.kataAPI != nil {
+		s.kataAPI.ApplyConfig(kataConfigSnapshot(s.cfg))
 	}
 }
 
@@ -700,6 +711,7 @@ func newServer(
 	}
 	s.workspaceDependentsCtx, s.workspaceDependentsCancel = context.WithCancel(s.bgCtx)
 	s.workspaceLifecycleCtx, s.workspaceLifecycleCancel = context.WithCancel(context.Background())
+	s.kataLifecycleCtx, s.kataLifecycleCancel = context.WithCancel(context.Background())
 	workspaceNow := s.now
 	if options.WorkspaceNow != nil {
 		workspaceNow = options.WorkspaceNow
@@ -909,6 +921,17 @@ func newServer(
 		LookupRepo:        s.lookupRepoByProviderRoute,
 		EnqueueDetailSync: s.enqueueDetailSyncWithCompletion,
 	})
+	s.kataAPI = kataapi.New(kataapi.Deps{
+		DB:               database,
+		Resolver:         repoResolver,
+		Config:           kataConfigSnapshot(cfg),
+		Workspaces:       s.workspaces,
+		WorkspaceAPI:     s.workspaceAPI.Workspaces(),
+		SamePlatformHost: samePlatformHost,
+		ConfigRepoPath:   configRepoPath,
+		InvalidateDaemon: s.kataSnapshots.invalidateDaemon,
+	})
+	s.shutdownKata = s.kataAPI.Shutdown
 	s.workspaceDependencyStop = newWorkspaceDependencyShutdown(
 		func(ctx context.Context) error {
 			for _, done := range []<-chan struct{}{
@@ -924,6 +947,10 @@ func newServer(
 			return nil
 		},
 		func(ctx context.Context) error {
+			s.kataLifecycleCancel()
+			if err := s.shutdownKata(ctx); err != nil {
+				return err
+			}
 			s.workspaceLifecycleCancel()
 			return s.workspaceAPI.Shutdown(ctx)
 		},
@@ -938,6 +965,7 @@ func newServer(
 		slog.Warn("restore runtime tmux sessions", "err", err)
 	}
 	s.workspaceAPI.Start(s.workspaceLifecycleCtx, options.DisableWorkspaceBackgroundMonitors)
+	s.kataAPI.Start(s.kataLifecycleCtx)
 
 	if s.workspaces != nil && tmuxAvailable && s.fleetTmuxMonitor != nil {
 		s.runWorkspaceDependent(s.fleetTmuxMonitor.run)
@@ -1272,7 +1300,7 @@ func (s *Server) isKataProxyAPIRequest(r *http.Request) bool {
 		prefix := strings.TrimSuffix(s.basePath, "/")
 		path = strings.TrimPrefix(path, prefix)
 	}
-	return path == kataProxyPrefix || strings.HasPrefix(path, kataProxyPrefix+"/")
+	return kataapi.IsProxyPath(path)
 }
 
 func (s *Server) isMutatingDocsAPIRequest(r *http.Request) bool {

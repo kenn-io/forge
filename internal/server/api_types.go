@@ -5,6 +5,7 @@ import (
 
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 )
 
 type worktreeLinkResponse struct {
@@ -35,14 +36,14 @@ type repoResponse struct {
 // mergeRequestResponse extends db.MergeRequest with resolved repo owner/name fields.
 type mergeRequestResponse struct {
 	db.MergeRequest
-	Repo            httpapi.RepoRefResponse `json:"repo"`
-	RepoOwner       string                  `json:"repo_owner"`
-	RepoName        string                  `json:"repo_name"`
-	PlatformHost    string                  `json:"platform_host"`
-	WorktreeLinks   []worktreeLinkResponse  `json:"worktree_links"`
-	Workspace       *workspaceRef           `json:"workspace,omitempty"`
-	DetailLoaded    bool                    `json:"detail_loaded"`
-	DetailFetchedAt string                  `json:"detail_fetched_at,omitempty"`
+	Repo            httpapi.RepoRefResponse    `json:"repo"`
+	RepoOwner       string                     `json:"repo_owner"`
+	RepoName        string                     `json:"repo_name"`
+	PlatformHost    string                     `json:"platform_host"`
+	WorktreeLinks   []worktreeLinkResponse     `json:"worktree_links"`
+	Workspace       *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
+	DetailLoaded    bool                       `json:"detail_loaded"`
+	DetailFetchedAt string                     `json:"detail_fetched_at,omitempty"`
 }
 
 type mergeRequestEventResponse struct {
@@ -90,10 +91,10 @@ type mergeRequestDetailResponse struct {
 	// worker is currently waiting on this pull request in this server
 	// process, so the UI can show the queued state instead of a merge
 	// action.
-	DeferredMergePending bool                  `json:"deferred_merge_pending"`
-	DetailFetchedAt      string                `json:"detail_fetched_at,omitempty"`
-	Workspace            *workspaceRef         `json:"workspace,omitempty"`
-	Stack                *stackContextResponse `json:"stack,omitempty"`
+	DeferredMergePending bool                       `json:"deferred_merge_pending"`
+	DetailFetchedAt      string                     `json:"detail_fetched_at,omitempty"`
+	Workspace            *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
+	Stack                *stackContextResponse      `json:"stack,omitempty"`
 	// Checks is the merge request's CI checks decoded from its cached
 	// ci_checks_json. Omitted when the merge request has no cached checks.
 	Checks []db.CICheck `json:"checks,omitempty"`
@@ -116,13 +117,13 @@ type workflowStateMetaResponse struct {
 
 type issueResponse struct {
 	db.Issue
-	Repo            httpapi.RepoRefResponse `json:"repo"`
-	PlatformHost    string                  `json:"platform_host"`
-	RepoOwner       string                  `json:"repo_owner"`
-	RepoName        string                  `json:"repo_name"`
-	Workspace       *workspaceRef           `json:"workspace,omitempty"`
-	DetailLoaded    bool                    `json:"detail_loaded"`
-	DetailFetchedAt string                  `json:"detail_fetched_at,omitempty"`
+	Repo            httpapi.RepoRefResponse    `json:"repo"`
+	PlatformHost    string                     `json:"platform_host"`
+	RepoOwner       string                     `json:"repo_owner"`
+	RepoName        string                     `json:"repo_name"`
+	Workspace       *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
+	DetailLoaded    bool                       `json:"detail_loaded"`
+	DetailFetchedAt string                     `json:"detail_fetched_at,omitempty"`
 }
 
 type issueDetailResponse struct {
@@ -134,7 +135,7 @@ type issueDetailResponse struct {
 	RepoName        string                     `json:"repo_name"`
 	DetailLoaded    bool                       `json:"detail_loaded"`
 	DetailFetchedAt string                     `json:"detail_fetched_at,omitempty"`
-	Workspace       *workspaceRef              `json:"workspace,omitempty"`
+	Workspace       *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
 	Workflow        *workflowStateMetaResponse `json:"workflow,omitempty"`
 }
 
@@ -370,16 +371,6 @@ type rateLimitsResponse struct {
 type commitResponse = httpapi.CommitResponse
 type commitsResponse = httpapi.CommitsResponse
 
-// workspaceRef is the lightweight link from item detail APIs back to an
-// existing middleman workspace.
-//
-// Its purpose is to let PR and issue detail screens switch from "create
-// workspace" to "open workspace" without embedding the full workspace payload.
-type workspaceRef struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
-}
-
 const activitySafetyCap = 5000
 
 type activityResponse struct {
@@ -419,33 +410,33 @@ type stackContextResponse struct {
 }
 
 type activityItemResponse struct {
-	ID             string                  `json:"id"`
-	Cursor         string                  `json:"cursor"`
-	ActivityType   string                  `json:"activity_type"`
-	Repo           httpapi.RepoRefResponse `json:"repo"`
-	PlatformHost   string                  `json:"platform_host"`
-	RepoOwner      string                  `json:"repo_owner"`
-	RepoName       string                  `json:"repo_name"`
-	ItemType       string                  `json:"item_type"`
-	ItemNumber     int                     `json:"item_number"`
-	ItemTitle      string                  `json:"item_title"`
-	ItemURL        string                  `json:"item_url"`
-	ItemState      string                  `json:"item_state"`
-	Workspace      *workspaceRef           `json:"workspace,omitempty"`
-	Author         string                  `json:"author"`
-	ItemAuthor     string                  `json:"item_author,omitempty"`
-	CreatedAt      string                  `json:"created_at"`
-	BodyPreview    string                  `json:"body_preview"`
-	BranchName     string                  `json:"branch_name,omitempty"`
-	CommitSHA      string                  `json:"commit_sha,omitempty"`
-	BeforeSHA      string                  `json:"before_sha,omitempty"`
-	AfterSHA       string                  `json:"after_sha,omitempty"`
-	AuthorName     string                  `json:"author_name,omitempty"`
-	AuthorEmail    string                  `json:"author_email,omitempty"`
-	CommitterName  string                  `json:"committer_name,omitempty"`
-	CommitterEmail string                  `json:"committer_email,omitempty"`
-	AuthoredAt     string                  `json:"authored_at,omitempty"`
-	CommittedAt    string                  `json:"committed_at,omitempty"`
-	ActivityURL    string                  `json:"activity_url,omitempty"`
-	SubjectState   string                  `json:"subject_state,omitempty"`
+	ID             string                     `json:"id"`
+	Cursor         string                     `json:"cursor"`
+	ActivityType   string                     `json:"activity_type"`
+	Repo           httpapi.RepoRefResponse    `json:"repo"`
+	PlatformHost   string                     `json:"platform_host"`
+	RepoOwner      string                     `json:"repo_owner"`
+	RepoName       string                     `json:"repo_name"`
+	ItemType       string                     `json:"item_type"`
+	ItemNumber     int                        `json:"item_number"`
+	ItemTitle      string                     `json:"item_title"`
+	ItemURL        string                     `json:"item_url"`
+	ItemState      string                     `json:"item_state"`
+	Workspace      *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
+	Author         string                     `json:"author"`
+	ItemAuthor     string                     `json:"item_author,omitempty"`
+	CreatedAt      string                     `json:"created_at"`
+	BodyPreview    string                     `json:"body_preview"`
+	BranchName     string                     `json:"branch_name,omitempty"`
+	CommitSHA      string                     `json:"commit_sha,omitempty"`
+	BeforeSHA      string                     `json:"before_sha,omitempty"`
+	AfterSHA       string                     `json:"after_sha,omitempty"`
+	AuthorName     string                     `json:"author_name,omitempty"`
+	AuthorEmail    string                     `json:"author_email,omitempty"`
+	CommitterName  string                     `json:"committer_name,omitempty"`
+	CommitterEmail string                     `json:"committer_email,omitempty"`
+	AuthoredAt     string                     `json:"authored_at,omitempty"`
+	CommittedAt    string                     `json:"committed_at,omitempty"`
+	ActivityURL    string                     `json:"activity_url,omitempty"`
+	SubjectState   string                     `json:"subject_state,omitempty"`
 }

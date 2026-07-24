@@ -1,4 +1,4 @@
-package server
+package kataapi
 
 import (
 	"context"
@@ -10,9 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"go.kenn.io/middleman/internal/kata"
 	"go.kenn.io/middleman/internal/server/httpapi"
@@ -40,10 +37,6 @@ type kataDaemonRosterResponse struct {
 
 type listKataDaemonsOutput = httpapi.BodyOutput[kataDaemonRosterResponse]
 
-type streamKataTaskEventsInput struct {
-	DaemonID string `header:"X-Middleman-Kata-Daemon" doc:"Kata daemon id; the effective default daemon when empty"`
-}
-
 type kataDaemonHealthCacheEntry struct {
 	state   string
 	expires time.Time
@@ -54,79 +47,20 @@ type kataDaemonInflightProbe struct {
 	result string
 }
 
-func (s *Server) registerKataAPI(api huma.API) {
-	huma.Get(api, "/kata/daemons", s.listKataDaemons,
-		httpapi.DocumentOperation("list-kata-daemons", "List Kata daemons", "Kata"))
-	huma.Get(api, "/kata/tasks/snapshot", s.kataTaskSnapshot,
-		httpapi.DocumentOperation("get-kata-task-snapshot", "Get authoritative Kata task snapshot", "Kata"))
-	huma.Get(api, "/kata/tasks/references", s.kataTaskReferences,
-		httpapi.DocumentOperation("search-kata-task-references", "Search Kata task references", "Kata"))
-	registerKataWorkspaceAPI(api, s)
-	huma.Register(api, huma.Operation{
-		OperationID: "stream-kata-task-events",
-		Method:      http.MethodGet,
-		Path:        "/kata/tasks/events",
-		Summary:     "Stream Kata task invalidations",
-		Tags:        []string{"Kata"},
-		Responses: map[string]*huma.Response{
-			"200": {
-				Description: "Server-sent Kata task invalidation stream",
-				Content: map[string]*huma.MediaType{
-					"text/event-stream": {},
-				},
-			},
-		},
-	}, s.streamKataTaskEvents)
-	s.registerKataProxyAPI(api)
-}
-
-func (s *Server) streamKataTaskEvents(
-	_ context.Context,
-	input *streamKataTaskEventsInput,
-) (*huma.StreamResponse, error) {
-	daemon, problem := selectKataDaemonForID(input.DaemonID)
-	if problem != nil {
-		return nil, huma.ErrorWithHeaders(problem, http.Header{
-			"Vary": []string{kataDaemonHeaderName},
-		})
-	}
-	binding, err := s.kataEvents.Ensure(daemon)
-	if err != nil {
-		return nil, huma.ErrorWithHeaders(
-			problemServiceUnavailable("Kata task events are unavailable while the server is shutting down"),
-			http.Header{"Vary": []string{kataDaemonHeaderName}},
-		)
-	}
-	return &huma.StreamResponse{
-		Body: func(ctx huma.Context) {
-			ctx.SetHeader("Content-Type", "text/event-stream")
-			ctx.SetHeader("Cache-Control", "no-cache")
-			ctx.SetHeader("Connection", "keep-alive")
-			ctx.AppendHeader("Vary", kataDaemonHeaderName)
-
-			r, w := humago.Unwrap(ctx)
-			rc := http.NewResponseController(w)
-			_ = rc.SetWriteDeadline(time.Time{})
-			cursor, hasCursor := parseLastEventID(r)
-			binding.serve(ctx.Context(), w, rc, cursor, hasCursor)
-		},
-	}, nil
-}
-
-func (s *Server) listKataDaemons(context.Context, *struct{}) (*listKataDaemonsOutput, error) {
-	catalog, err := kata.LoadCatalog()
+func (h *Handler) listKataDaemons(context.Context, *struct{}) (*listKataDaemonsOutput, error) {
+	catalog, err := h.loadCatalog()
 	if err != nil {
 		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 
 	resolved := make([]kata.Daemon, len(catalog.Daemons))
 	for i, configured := range catalog.Daemons {
-		d, err := kata.ResolveDaemon(configured)
+		d, err := h.resolveDaemon(configured)
 		if err != nil {
 			return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 		}
 		if d.Local && d.URL == "" {
-			d.URL = kata.DiscoverLocalDaemonURL()
+			d.URL = h.discoverLocalDaemonURL()
 		}
 		resolved[i] = d
 	}
@@ -137,7 +71,7 @@ func (s *Server) listKataDaemons(context.Context, *struct{}) (*listKataDaemonsOu
 	for i, configured := range catalog.Daemons {
 		go func() {
 			defer wg.Done()
-			health[i] = s.kataDaemonHealth(configured.ID, resolved[i])
+			health[i] = h.kataDaemonHealth(configured.ID, resolved[i])
 		}()
 	}
 	wg.Wait()
@@ -183,43 +117,43 @@ func effectiveKataDefaultID(daemons []kata.Daemon) string {
 	return ""
 }
 
-func (s *Server) kataDaemonHealth(id string, d kata.Daemon) string {
+func (h *Handler) kataDaemonHealth(id string, d kata.Daemon) string {
 	if d.URL == "" {
 		return "down"
 	}
 	cacheKey := kataDaemonHealthCacheKey(id, d)
 
-	s.kataHealthMu.Lock()
-	if s.kataHealthCache == nil {
-		s.kataHealthCache = map[string]kataDaemonHealthCacheEntry{}
+	h.kataHealthMu.Lock()
+	if h.kataHealthCache == nil {
+		h.kataHealthCache = map[string]kataDaemonHealthCacheEntry{}
 	}
-	if s.kataHealthInFlight == nil {
-		s.kataHealthInFlight = map[string]*kataDaemonInflightProbe{}
+	if h.kataHealthInFlight == nil {
+		h.kataHealthInFlight = map[string]*kataDaemonInflightProbe{}
 	}
-	if c, ok := s.kataHealthCache[cacheKey]; ok && time.Now().Before(c.expires) {
+	if c, ok := h.kataHealthCache[cacheKey]; ok && time.Now().Before(c.expires) {
 		state := c.state
-		s.kataHealthMu.Unlock()
+		h.kataHealthMu.Unlock()
 		return state
 	}
-	if fp, ok := s.kataHealthInFlight[cacheKey]; ok {
-		s.kataHealthMu.Unlock()
+	if fp, ok := h.kataHealthInFlight[cacheKey]; ok {
+		h.kataHealthMu.Unlock()
 		fp.wg.Wait()
 		return fp.result
 	}
 	fp := &kataDaemonInflightProbe{}
 	fp.wg.Add(1)
-	s.kataHealthInFlight[cacheKey] = fp
-	s.kataHealthMu.Unlock()
+	h.kataHealthInFlight[cacheKey] = fp
+	h.kataHealthMu.Unlock()
 
-	state := probeKataDaemon(id, d)
+	state := h.probeKataDaemon(id, d)
 
-	s.kataHealthMu.Lock()
-	s.kataHealthCache[cacheKey] = kataDaemonHealthCacheEntry{
+	h.kataHealthMu.Lock()
+	h.kataHealthCache[cacheKey] = kataDaemonHealthCacheEntry{
 		state:   state,
 		expires: time.Now().Add(kataDaemonHealthTTL),
 	}
-	delete(s.kataHealthInFlight, cacheKey)
-	s.kataHealthMu.Unlock()
+	delete(h.kataHealthInFlight, cacheKey)
+	h.kataHealthMu.Unlock()
 
 	fp.result = state
 	fp.wg.Done()
@@ -234,7 +168,7 @@ func kataDaemonHealthCacheKey(id string, d kata.Daemon) string {
 	return strings.Join([]string{id, d.URL, mode, kataDaemonForwardToken(d)}, kataDaemonCacheKeyDelim)
 }
 
-func probeKataDaemon(id string, d kata.Daemon) string {
+func (h *Handler) probeKataDaemon(id string, d kata.Daemon) string {
 	probeURL, transport, err := kataDaemonProbeTarget(d.URL)
 	if err != nil {
 		slog.Warn("kata daemon health probe target invalid",
@@ -243,6 +177,8 @@ func probeKataDaemon(id string, d kata.Daemon) string {
 	}
 	if transport != nil {
 		transport = disposableKataDaemonTransport(transport)
+	} else {
+		transport = disposableKataDaemonTransport(h.newHTTPTransport())
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), kataDaemonProbeTimeout)

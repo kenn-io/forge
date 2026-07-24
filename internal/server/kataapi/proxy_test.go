@@ -1,11 +1,10 @@
-package server
+package kataapi
 
 import (
 	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -290,7 +289,6 @@ func TestKataProxyOrdinaryRequestsHaveTotalDeadline(t *testing.T) {
 			entry, err := newKataDaemonProxyEntryWithTimeout(
 				kata.Daemon{ID: "home", URL: daemon.URL},
 				25*time.Millisecond,
-				func() {},
 			)
 			require.NoError(t, err)
 			rr := httptest.NewRecorder()
@@ -318,7 +316,6 @@ func TestKataProxyRequestDeadlineExemptsEventStream(t *testing.T) {
 	entry, err := newKataDaemonProxyEntryWithTimeout(
 		kata.Daemon{ID: "home", URL: daemon.URL},
 		10*time.Millisecond,
-		func() {},
 	)
 	require.NoError(t, err)
 	rr := httptest.NewRecorder()
@@ -351,7 +348,6 @@ func TestKataProxyUnixRequestHasTotalDeadline(t *testing.T) {
 	entry, err := newKataDaemonProxyEntryWithTimeout(
 		kata.Daemon{ID: "home", URL: "unix://" + socketPath},
 		25*time.Millisecond,
-		func() {},
 	)
 	require.NoError(err)
 	rr := httptest.NewRecorder()
@@ -892,150 +888,6 @@ token = "unix-secret"
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	assert.JSONEq(`{"instance":"unix"}`, rr.Body.String())
-}
-
-func TestKataProxyForwardsNonJSONMutationWithSameOriginFetchSite(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	var receivedContentType, receivedBody string
-	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		receivedContentType = r.Header.Get("Content-Type")
-		receivedBody = string(body)
-		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte("created"))
-	}))
-	defer daemon.Close()
-
-	home := t.TempDir()
-	t.Setenv("KATA_HOME", home)
-	writeKataProxyCatalog(t, home, `
-[[daemon]]
-name = "home"
-url = "`+daemon.URL+`"
-`)
-	srv, _ := setupTestServer(t)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/kata/proxy/api/v1/files", strings.NewReader("raw markdown"))
-	req.Header.Set("Content-Type", "text/markdown")
-	req.Header.Set("Sec-Fetch-Site", "same-origin")
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-
-	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
-	assert.Equal("text/markdown", receivedContentType)
-	assert.Equal("raw markdown", receivedBody)
-	assert.Equal("created", strings.TrimSpace(rr.Body.String()))
-}
-
-func TestKataProxyInvalidatesSnapshotOnlyAfterSuccessfulMutations(t *testing.T) {
-	tests := []struct {
-		name           string
-		method         string
-		upstreamStatus int
-		closeUpstream  bool
-		wantStatus     int
-		wantEpoch      uint64
-	}{
-		{name: "post", method: http.MethodPost, upstreamStatus: http.StatusCreated, wantStatus: http.StatusCreated, wantEpoch: 1},
-		{name: "put", method: http.MethodPut, upstreamStatus: http.StatusOK, wantStatus: http.StatusOK, wantEpoch: 1},
-		{name: "patch", method: http.MethodPatch, upstreamStatus: http.StatusNoContent, wantStatus: http.StatusNoContent, wantEpoch: 1},
-		{name: "delete", method: http.MethodDelete, upstreamStatus: http.StatusAccepted, wantStatus: http.StatusAccepted, wantEpoch: 1},
-		{name: "get", method: http.MethodGet, upstreamStatus: http.StatusOK, wantStatus: http.StatusOK},
-		{name: "mutation non-2xx", method: http.MethodPost, upstreamStatus: http.StatusConflict, wantStatus: http.StatusConflict},
-		{name: "mutation transport failure", method: http.MethodPost, upstreamStatus: http.StatusOK, closeUpstream: true, wantStatus: http.StatusBadGateway},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(tt.upstreamStatus)
-			}))
-			if tt.closeUpstream {
-				daemon.Close()
-			} else {
-				defer daemon.Close()
-			}
-
-			home := t.TempDir()
-			t.Setenv("KATA_HOME", home)
-			writeKataProxyCatalog(t, home, `
-[[daemon]]
-name = "home"
-url = "`+daemon.URL+`"
-`)
-			srv, _ := setupTestServer(t)
-
-			req := httptest.NewRequest(tt.method, "/api/v1/kata/proxy/api/v1/issues/issue-uid", strings.NewReader(`{"title":"updated"}`))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Sec-Fetch-Site", "same-origin")
-			rr := httptest.NewRecorder()
-			srv.ServeHTTP(rr, req)
-
-			require.Equal(t, tt.wantStatus, rr.Code, rr.Body.String())
-			assert.Equal(t, tt.wantEpoch, srv.kataSnapshots.daemonEpoch("home"))
-		})
-	}
-}
-
-func TestKataProxyRejectsNonJSONMutationWithoutFetchSiteProof(t *testing.T) {
-	require := require.New(t)
-
-	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusCreated)
-	}))
-	defer daemon.Close()
-
-	home := t.TempDir()
-	t.Setenv("KATA_HOME", home)
-	writeKataProxyCatalog(t, home, `
-[[daemon]]
-name = "home"
-url = "`+daemon.URL+`"
-`)
-	srv, _ := setupTestServer(t)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/kata/proxy/api/v1/files", strings.NewReader("raw markdown"))
-	req.Header.Set("Content-Type", "text/markdown")
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-
-	require.Equal(http.StatusUnsupportedMediaType, rr.Code, rr.Body.String())
-}
-
-func TestKataProxyRejectsCrossSiteMutationBeforeForwarding(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	var reached bool
-	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		reached = true
-		w.WriteHeader(http.StatusCreated)
-	}))
-	defer daemon.Close()
-
-	home := t.TempDir()
-	t.Setenv("KATA_HOME", home)
-	writeKataProxyCatalog(t, home, `
-[[daemon]]
-name = "home"
-url = "`+daemon.URL+`"
-`)
-	srv, _ := setupTestServer(t)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/kata/proxy/api/v1/files", strings.NewReader(`{"ok":true}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Sec-Fetch-Site", "cross-site")
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-
-	require.Equal(http.StatusForbidden, rr.Code, rr.Body.String())
-	assert.False(reached)
 }
 
 func TestKataProxyDoesNotForwardTrace(t *testing.T) {

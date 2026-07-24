@@ -1,4 +1,4 @@
-package server
+package kataapi
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 
@@ -43,11 +42,11 @@ type kataWorkspaceTaskInput struct {
 }
 
 type kataWorkspaceTargetResponse struct {
-	Available         bool                     `json:"available"`
-	Repo              *httpapi.RepoRefResponse `json:"repo,omitempty"`
-	ItemType          string                   `json:"item_type,omitempty"`
-	ItemKey           string                   `json:"item_key,omitempty"`
-	ExistingWorkspace *workspaceRef            `json:"existing_workspace,omitempty"`
+	Available         bool                       `json:"available"`
+	Repo              *httpapi.RepoRefResponse   `json:"repo,omitempty"`
+	ItemType          string                     `json:"item_type,omitempty"`
+	ItemKey           string                     `json:"item_key,omitempty"`
+	ExistingWorkspace *workspaceapi.WorkspaceRef `json:"existing_workspace,omitempty"`
 }
 
 type kataResolvedWorkspaceRepo struct {
@@ -115,18 +114,18 @@ func (body kataWorkspaceTaskRequest) metadata() (db.WorkspaceKataMetadata, error
 	return metadata, nil
 }
 
-func (s *Server) kataWorkspaceTargetForMetadata(
+func (h *Handler) kataWorkspaceTargetForMetadata(
 	ctx context.Context,
 	metadata db.WorkspaceKataMetadata,
 ) (kataWorkspaceTargetResponse, error) {
-	target, ok, err := s.resolveKataWorkspaceRepo(ctx, metadata)
+	target, ok, err := h.resolveKataWorkspaceRepo(ctx, metadata)
 	if err != nil {
 		return kataWorkspaceTargetResponse{}, err
 	}
 	if !ok {
 		return kataWorkspaceTargetResponse{Available: false}, nil
 	}
-	repoRef := s.repoRefFromParts(
+	repoRef := h.repoRefFromParts(
 		target.Provider, target.PlatformHost, target.Owner, target.Name,
 	)
 	resp := kataWorkspaceTargetResponse{
@@ -135,7 +134,7 @@ func (s *Server) kataWorkspaceTargetForMetadata(
 		ItemType:  db.WorkspaceItemTypeKataTask,
 		ItemKey:   db.KataWorkspaceItemKey(metadata),
 	}
-	existing, err := s.db.GetWorkspaceByItemKeyForProvider(
+	existing, err := h.db.GetWorkspaceByItemKeyForProvider(
 		ctx,
 		target.Provider,
 		target.PlatformHost,
@@ -148,7 +147,7 @@ func (s *Server) kataWorkspaceTargetForMetadata(
 		return kataWorkspaceTargetResponse{}, httpapi.Internal("lookup existing Kata workspace: " + err.Error())
 	}
 	if existing != nil {
-		resp.ExistingWorkspace = &workspaceRef{
+		resp.ExistingWorkspace = &workspaceapi.WorkspaceRef{
 			ID:     existing.ID,
 			Status: existing.Status,
 		}
@@ -156,18 +155,18 @@ func (s *Server) kataWorkspaceTargetForMetadata(
 	return resp, nil
 }
 
-func (s *Server) createKataWorkspace(
+func (h *Handler) createKataWorkspace(
 	ctx context.Context,
 	input *kataWorkspaceTaskInput,
 ) (*workspaceapi.CreateWorkspaceOutput, error) {
-	if s.workspaces == nil {
+	if h.workspaces == nil {
 		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
 	metadata, err := input.Body.metadata()
 	if err != nil {
 		return nil, err
 	}
-	resolution, err := s.resolveKataWorkspaceRepoResolution(ctx, metadata)
+	resolution, err := h.resolveKataWorkspaceRepoResolution(ctx, metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +179,7 @@ func (s *Server) createKataWorkspace(
 		)
 	}
 
-	existing, err := s.workspaces.GetByItemKeyForProvider(
+	existing, err := h.workspaces.GetByItemKeyForProvider(
 		ctx,
 		target.Provider,
 		target.PlatformHost,
@@ -193,10 +192,10 @@ func (s *Server) createKataWorkspace(
 		return nil, httpapi.Internal("lookup existing Kata workspace: " + err.Error())
 	}
 	if existing != nil {
-		return s.kataWorkspaceCreateOutput(ctx, existing.ID)
+		return h.kataWorkspaceCreateOutput(ctx, existing.ID)
 	}
 
-	ws, err := s.workspaces.CreateKataTask(
+	ws, err := h.workspaces.CreateKataTask(
 		ctx,
 		target.Provider,
 		target.PlatformHost,
@@ -206,7 +205,7 @@ func (s *Server) createKataWorkspace(
 	)
 	if err != nil {
 		if errors.Is(err, workspace.ErrWorkspaceDuplicate) {
-			existing, getErr := s.workspaces.GetByItemKeyForProvider(
+			existing, getErr := h.workspaces.GetByItemKeyForProvider(
 				ctx,
 				target.Provider,
 				target.PlatformHost,
@@ -216,7 +215,7 @@ func (s *Server) createKataWorkspace(
 				db.KataWorkspaceItemKey(metadata),
 			)
 			if getErr == nil && existing != nil {
-				return s.kataWorkspaceCreateOutput(ctx, existing.ID)
+				return h.kataWorkspaceCreateOutput(ctx, existing.ID)
 			}
 			return nil, httpapi.Conflict(httpapi.CodeConflict, "workspace already exists for this Kata task", nil)
 		}
@@ -229,14 +228,14 @@ func (s *Server) createKataWorkspace(
 		return nil, httpapi.Internal("create Kata workspace: " + err.Error())
 	}
 
-	s.workspaceAPI.RunWorkspaceSetupWithBasePath(ws, target.BasePath)
-	return s.kataWorkspaceCreateOutput(ctx, ws.ID)
+	h.workspaceAPI.RunWorkspaceSetupWithBasePath(ws, target.BasePath)
+	return h.kataWorkspaceCreateOutput(ctx, ws.ID)
 }
 
-func (s *Server) kataWorkspaceCreateOutput(
+func (h *Handler) kataWorkspaceCreateOutput(
 	ctx context.Context, workspaceID string,
 ) (*workspaceapi.CreateWorkspaceOutput, error) {
-	summary, err := s.workspaces.GetSummary(ctx, workspaceID)
+	summary, err := h.workspaces.GetSummary(ctx, workspaceID)
 	if err != nil {
 		return nil, httpapi.Internal("get workspace summary: " + err.Error())
 	}
@@ -245,32 +244,27 @@ func (s *Server) kataWorkspaceCreateOutput(
 	}
 	return &workspaceapi.CreateWorkspaceOutput{
 		Status: httpStatusAccepted,
-		Body:   s.workspaceAPI.Response(ctx, summary),
+		Body:   h.workspaceAPI.Response(ctx, summary),
 	}, nil
 }
 
-func (s *Server) resolveKataWorkspaceRepo(
+func (h *Handler) resolveKataWorkspaceRepo(
 	ctx context.Context,
 	metadata db.WorkspaceKataMetadata,
 ) (kataResolvedWorkspaceRepo, bool, error) {
-	resolution, err := s.resolveKataWorkspaceRepoResolution(ctx, metadata)
+	resolution, err := h.resolveKataWorkspaceRepoResolution(ctx, metadata)
 	return resolution.Target, resolution.Status == "mapped", err
 }
 
-func (s *Server) resolveKataWorkspaceRepoResolution(
+func (h *Handler) resolveKataWorkspaceRepoResolution(
 	ctx context.Context,
 	metadata db.WorkspaceKataMetadata,
 ) (kataWorkspaceRepoResolution, error) {
-	var repos []config.Repo
-	var mappings []config.KataProjectRepoMapping
-	if s.cfg != nil {
-		s.cfgMu.Lock()
-		repos = slices.Clone(s.cfg.Repos)
-		mappings = slices.Clone(s.cfg.KataProjects)
-		s.cfgMu.Unlock()
-	}
+	snapshot := h.configSnapshot()
+	repos := snapshot.Repos
+	mappings := snapshot.KataProjects
 
-	projects, err := s.db.ListProjects(ctx)
+	projects, err := h.db.ListProjects(ctx)
 	if err != nil {
 		return kataWorkspaceRepoResolution{}, fmt.Errorf("list registered projects for Kata workspace: %w", err)
 	}
@@ -278,7 +272,7 @@ func (s *Server) resolveKataWorkspaceRepoResolution(
 		daemonSpecific bool
 		source         string
 	}{{true, "manual_daemon"}, {false, "manual_global"}} {
-		target, found, valid, err := s.kataManualWorkspaceTarget(
+		target, found, valid, err := h.kataManualWorkspaceTarget(
 			ctx, repos, projects, mappings, metadata, candidate.daemonSpecific,
 		)
 		if err != nil {
@@ -305,11 +299,11 @@ func (s *Server) resolveKataWorkspaceRepoResolution(
 	} else if matches > 1 {
 		return kataWorkspaceRepoResolution{Status: "ambiguous", Source: "registered_project"}, nil
 	}
-	tracked, err := s.db.ListRepos(ctx)
+	tracked, err := h.db.ListRepos(ctx)
 	if err != nil {
 		return kataWorkspaceRepoResolution{}, fmt.Errorf("list tracked repos for Kata workspace: %w", err)
 	}
-	if target, matches := kataAutomaticWorkspaceRepoByTrackedRepos(repos, tracked, metadata.ProjectName); matches == 1 {
+	if target, matches := h.kataAutomaticWorkspaceRepoByTrackedRepos(repos, tracked, metadata.ProjectName); matches == 1 {
 		return kataWorkspaceRepoResolution{Target: target, Status: "mapped", Source: "tracked_repo"}, nil
 	} else if matches > 1 {
 		return kataWorkspaceRepoResolution{Status: "ambiguous", Source: "tracked_repo"}, nil
@@ -317,7 +311,7 @@ func (s *Server) resolveKataWorkspaceRepoResolution(
 	return kataWorkspaceRepoResolution{Status: "unmapped"}, nil
 }
 
-func (s *Server) kataManualWorkspaceTarget(
+func (h *Handler) kataManualWorkspaceTarget(
 	ctx context.Context,
 	repos []config.Repo,
 	projects []db.Project,
@@ -341,7 +335,7 @@ func (s *Server) kataManualWorkspaceTarget(
 			return kataResolvedWorkspaceRepo{}, true, false, nil
 		}
 		for _, repo := range repos {
-			if !repo.HasNameGlob() && kataMappingMatchesRepo(mapping, repo) {
+			if !repo.HasNameGlob() && h.kataMappingMatchesRepo(mapping, repo) {
 				return kataResolvedRepoFromConfig(repo), true, true, nil
 			}
 		}
@@ -360,14 +354,14 @@ func (s *Server) kataManualWorkspaceTarget(
 		if len(registered) > 1 {
 			return kataResolvedWorkspaceRepo{}, true, false, nil
 		}
-		repo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+		repo, err := h.db.GetRepoByIdentity(ctx, db.RepoIdentity{
 			Platform: target.Provider, PlatformHost: target.PlatformHost,
 			Owner: target.Owner, Name: target.Name,
 		})
 		if err != nil {
 			return kataResolvedWorkspaceRepo{}, false, false, err
 		}
-		return target, true, repo != nil && kataTrackedRepoMatchesAnyConfig(*repo, repos), nil
+		return target, true, repo != nil && h.kataTrackedRepoMatchesAnyConfig(*repo, repos), nil
 	}
 	return kataResolvedWorkspaceRepo{}, false, false, nil
 }
@@ -446,13 +440,13 @@ func kataResolvedRepoKey(repo kataResolvedWorkspaceRepo) string {
 		strings.ToLower(repo.Name)
 }
 
-func kataMappingMatchesRepo(mapping config.KataProjectRepoMapping, repo config.Repo) bool {
+func (h *Handler) kataMappingMatchesRepo(mapping config.KataProjectRepoMapping, repo config.Repo) bool {
 	if repo.HasNameGlob() {
 		return false
 	}
 	return strings.EqualFold(mapping.Provider, repo.PlatformOrDefault()) &&
-		samePlatformHost(mapping.PlatformHost, repo.PlatformHostOrDefault()) &&
-		strings.EqualFold(mapping.RepoPath, configRepoPath(repo))
+		h.samePlatformHost(mapping.PlatformHost, repo.PlatformHostOrDefault()) &&
+		strings.EqualFold(mapping.RepoPath, h.configRepoPath(repo))
 }
 
 func kataAutomaticWorkspaceRepo(repos []config.Repo, projectUID string, projectName string) (config.Repo, int) {
@@ -501,7 +495,7 @@ func kataAutomaticWorkspaceRepoByTOML(repos []config.Repo, matches func(kataProj
 	return matched[0], 1
 }
 
-func kataAutomaticWorkspaceRepoByTrackedRepos(
+func (h *Handler) kataAutomaticWorkspaceRepoByTrackedRepos(
 	configured []config.Repo,
 	tracked []db.Repo,
 	projectName string,
@@ -513,10 +507,10 @@ func kataAutomaticWorkspaceRepoByTrackedRepos(
 	var matched []kataResolvedWorkspaceRepo
 	seen := make(map[string]struct{})
 	for _, repo := range tracked {
-		if !kataTrackedRepoMatchesAnyConfig(repo, configured) {
+		if !h.kataTrackedRepoMatchesAnyConfig(repo, configured) {
 			continue
 		}
-		if kataTrackedRepoHasConfiguredProjectMetadata(repo, configured) {
+		if h.kataTrackedRepoHasConfiguredProjectMetadata(repo, configured) {
 			continue
 		}
 		if !strings.EqualFold(repo.Name, projectName) && !strings.EqualFold(kataTrackedRepoPath(repo), projectName) {
@@ -538,18 +532,18 @@ func kataAutomaticWorkspaceRepoByTrackedRepos(
 	return matched[0], 1
 }
 
-func kataTrackedRepoMatchesAnyConfig(repo db.Repo, configured []config.Repo) bool {
+func (h *Handler) kataTrackedRepoMatchesAnyConfig(repo db.Repo, configured []config.Repo) bool {
 	for _, raw := range configured {
-		if kataTrackedRepoMatchesConfig(repo, raw) {
+		if h.kataTrackedRepoMatchesConfig(repo, raw) {
 			return true
 		}
 	}
 	return false
 }
 
-func kataTrackedRepoMatchesConfig(repo db.Repo, raw config.Repo) bool {
+func (h *Handler) kataTrackedRepoMatchesConfig(repo db.Repo, raw config.Repo) bool {
 	if !strings.EqualFold(repo.Platform, raw.PlatformOrDefault()) ||
-		!samePlatformHost(repo.PlatformHost, raw.PlatformHostOrDefault()) {
+		!h.samePlatformHost(repo.PlatformHost, raw.PlatformHostOrDefault()) {
 		return false
 	}
 	if raw.HasNameGlob() {
@@ -562,15 +556,15 @@ func kataTrackedRepoMatchesConfig(repo db.Repo, raw config.Repo) bool {
 		)
 		return matched
 	}
-	return strings.EqualFold(kataTrackedRepoPath(repo), configRepoPath(raw))
+	return strings.EqualFold(kataTrackedRepoPath(repo), h.configRepoPath(raw))
 }
 
-func kataTrackedRepoHasConfiguredProjectMetadata(repo db.Repo, configured []config.Repo) bool {
+func (h *Handler) kataTrackedRepoHasConfiguredProjectMetadata(repo db.Repo, configured []config.Repo) bool {
 	for _, raw := range configured {
 		if raw.HasNameGlob() || strings.TrimSpace(raw.WorktreeBasePath) == "" {
 			continue
 		}
-		if !kataTrackedRepoMatchesConfig(repo, raw) {
+		if !h.kataTrackedRepoMatchesConfig(repo, raw) {
 			continue
 		}
 		project, ok := readKataProjectTOML(raw.WorktreeBasePath)
@@ -685,7 +679,7 @@ func kataResolvedRepoFromProject(project db.Project) kataResolvedWorkspaceRepo {
 	}
 }
 
-func (s *Server) getKataProjectMappings(
+func (h *Handler) getKataProjectMappings(
 	ctx context.Context,
 	input *kataProjectMappingsInput,
 ) (out *kataProjectMappingsOutput, err error) {
@@ -694,11 +688,11 @@ func (s *Server) getKataProjectMappings(
 			err = huma.ErrorWithHeaders(err, http.Header{"Vary": []string{kataDaemonHeaderName}})
 		}
 	}()
-	daemon, problem := selectKataDaemonForID(input.DaemonID)
+	daemon, problem := h.selectKataDaemonForID(input.DaemonID)
 	if problem != nil {
 		return nil, problem
 	}
-	client, baseURL, err := kataDaemonHTTPClient(daemon)
+	client, baseURL, err := h.kataDaemonHTTPClient(daemon)
 	if err != nil {
 		return nil, httpapi.BadRequest("", "invalid Kata daemon target", map[string]any{"daemon": daemon.ID})
 	}
@@ -725,7 +719,7 @@ func (s *Server) getKataProjectMappings(
 		if uid == "" {
 			continue
 		}
-		resolution, err := s.resolveKataWorkspaceRepoResolution(ctx, db.WorkspaceKataMetadata{
+		resolution, err := h.resolveKataWorkspaceRepoResolution(ctx, db.WorkspaceKataMetadata{
 			DaemonID: daemon.ID, ProjectUID: uid, ProjectName: strings.TrimSpace(project.Name),
 		})
 		if err != nil {
@@ -736,7 +730,7 @@ func (s *Server) getKataProjectMappings(
 			Status: resolution.Status, Source: resolution.Source,
 		}
 		if resolution.Status == "mapped" {
-			repo := s.repoRefFromParts(
+			repo := h.repoRefFromParts(
 				resolution.Target.Provider, resolution.Target.PlatformHost,
 				resolution.Target.Owner, resolution.Target.Name,
 			)
@@ -747,37 +741,32 @@ func (s *Server) getKataProjectMappings(
 	sort.Slice(out.Body.Projects, func(i, j int) bool {
 		return strings.ToLower(out.Body.Projects[i].ProjectName) < strings.ToLower(out.Body.Projects[j].ProjectName)
 	})
-	out.Body.Targets, err = s.kataMappingTargets(ctx)
+	out.Body.Targets, err = h.kataMappingTargets(ctx)
 	if err != nil {
 		return nil, httpapi.Internal("list Kata mapping targets: " + err.Error())
 	}
 	return out, nil
 }
 
-func (s *Server) kataMappingTargets(ctx context.Context) ([]kataMappingTargetResponse, error) {
+func (h *Handler) kataMappingTargets(ctx context.Context) ([]kataMappingTargetResponse, error) {
 	seen := make(map[string]kataMappingTargetResponse)
-	var configured []config.Repo
-	if s.cfg != nil {
-		s.cfgMu.Lock()
-		configured = slices.Clone(s.cfg.Repos)
-		s.cfgMu.Unlock()
-	}
+	configured := h.configSnapshot().Repos
 	for _, repo := range configured {
 		if repo.HasNameGlob() {
 			continue
 		}
 		target := kataResolvedRepoFromConfig(repo)
 		seen[kataResolvedRepoKey(target)] = kataMappingTargetResponse{
-			DisplayName: configRepoPath(repo),
-			Repo:        s.repoRefFromParts(target.Provider, target.PlatformHost, target.Owner, target.Name),
+			DisplayName: h.configRepoPath(repo),
+			Repo:        h.repoRefFromParts(target.Provider, target.PlatformHost, target.Owner, target.Name),
 		}
 	}
-	tracked, err := s.db.ListRepos(ctx)
+	tracked, err := h.db.ListRepos(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for _, repo := range tracked {
-		if !kataTrackedRepoMatchesAnyConfig(repo, configured) {
+		if !h.kataTrackedRepoMatchesAnyConfig(repo, configured) {
 			continue
 		}
 		target := kataResolvedRepoFromDB(repo)
@@ -785,11 +774,11 @@ func (s *Server) kataMappingTargets(ctx context.Context) ([]kataMappingTargetRes
 		if _, exists := seen[key]; !exists {
 			seen[key] = kataMappingTargetResponse{
 				DisplayName: kataTrackedRepoPath(repo),
-				Repo:        s.repoRefFromParts(target.Provider, target.PlatformHost, target.Owner, target.Name),
+				Repo:        h.repoRefFromParts(target.Provider, target.PlatformHost, target.Owner, target.Name),
 			}
 		}
 	}
-	projects, err := s.db.ListProjects(ctx)
+	projects, err := h.db.ListProjects(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -804,7 +793,7 @@ func (s *Server) kataMappingTargets(ctx context.Context) ([]kataMappingTargetRes
 		}
 		seen[key] = kataMappingTargetResponse{
 			DisplayName: project.DisplayName,
-			Repo:        s.repoRefFromParts(target.Provider, target.PlatformHost, target.Owner, target.Name),
+			Repo:        h.repoRefFromParts(target.Provider, target.PlatformHost, target.Owner, target.Name),
 		}
 	}
 	result := make([]kataMappingTargetResponse, 0, len(seen))
@@ -821,14 +810,14 @@ func (s *Server) kataMappingTargets(ctx context.Context) ([]kataMappingTargetRes
 
 const httpStatusAccepted = 202
 
-func registerKataWorkspaceAPI(api huma.API, s *Server) {
+func registerKataWorkspaceAPI(api huma.API, h *Handler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-kata-project-mappings",
 		Method:      "GET",
 		Path:        "/kata/project-mappings",
 		Summary:     "Inspect effective Kata project repository mappings",
 		Tags:        []string{"Kata"},
-	}, s.getKataProjectMappings)
+	}, h.getKataProjectMappings)
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-kata-workspace",
 		Method:        "POST",
@@ -836,5 +825,5 @@ func registerKataWorkspaceAPI(api huma.API, s *Server) {
 		DefaultStatus: httpStatusAccepted,
 		Summary:       "Create Kata workspace",
 		Tags:          []string{"Kata"},
-	}, s.createKataWorkspace)
+	}, h.createKataWorkspace)
 }

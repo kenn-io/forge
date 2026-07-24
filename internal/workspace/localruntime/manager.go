@@ -623,7 +623,7 @@ func (m *Manager) restoredRuntimeCommand(
 	if len(command) == 0 {
 		command = []string{"tmux"}
 	}
-	return append(command, "attach-session", "-t", restored.TmuxSession), nil
+	return tmuxAttachSessionCommand(command, restored.TmuxSession), nil
 }
 
 func isTmuxCommandUnavailable(err error) bool {

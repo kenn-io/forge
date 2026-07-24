@@ -175,9 +175,7 @@ func (h *Handler) ServeHTTP(
 	if len(prefix) == 0 {
 		prefix = []string{"tmux"}
 	}
-	argv := make([]string, 0, len(prefix)+3)
-	argv = append(argv, prefix...)
-	argv = append(argv, "attach-session", "-t", ws.TmuxSession)
+	argv := tmuxAttachCommand(prefix, ws.TmuxSession)
 	cmd := procutil.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	logWebsocketDebug(
@@ -311,6 +309,14 @@ func (h *Handler) ServeHTTP(
 		"workspace_id", id,
 		"exit_code", exitCode,
 	)
+}
+
+func tmuxAttachCommand(prefix []string, session string) []string {
+	argv := make([]string, 0, len(prefix)+4)
+	argv = append(argv, prefix...)
+	// Middleman may run as a service without locale variables. Force UTF-8 so
+	// tmux does not replace non-ASCII terminal output with underscores.
+	return append(argv, "-u", "attach-session", "-t", session)
 }
 
 func bridgePtyOwnerAttachment(

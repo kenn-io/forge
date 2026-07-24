@@ -30,6 +30,7 @@ for a in "$@"; do
   if [ "$prev" = "-t" ]; then target="$a"; fi
   prev="$a"
 done
+if [ "$1" = "-u" ]; then shift; fi
 case "$1" in
   has-session)
     echo "can't find session: $target" >&2

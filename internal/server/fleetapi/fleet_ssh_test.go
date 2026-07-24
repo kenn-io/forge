@@ -388,7 +388,7 @@ func TestSSHFleetAttachSpecWrapped(t *testing.T) {
 	assert := assert.New(t)
 
 	remoteSpec := `{"version":1,"kind":"tmux","session_key":"s1","target_key":"",` +
-		`"tmux_session":"mm-s1","command":["tmux","attach-session","-t","mm-s1"],` +
+		`"tmux_session":"mm-s1","command":["tmux","-u","attach-session","-t","mm-s1"],` +
 		`"requires_local_host":true}`
 	fake := &fakeSSHExec{routes: map[string]string{
 		"GET /api/v1/runtime/sessions/s1/attach-spec": framedJSON(200, remoteSpec),
@@ -419,7 +419,7 @@ func TestSSHFleetAttachSpecWrapped(t *testing.T) {
 	joined := strings.Join(spec.Command, " ")
 	assert.Contains(joined, "ControlPath="+srv.sshFleet.conns.SocketPath("epyc"))
 	assert.Contains(joined, "-t wes@epyc.local")
-	assert.Contains(joined, "tmux attach-session -t mm-s1")
+	assert.Contains(joined, "tmux -u attach-session -t mm-s1")
 	assert.False(spec.RequiresLocalHost,
 		"the wrapped spec runs from the hub host")
 	assert.Equal("mm-s1", spec.TmuxSession)

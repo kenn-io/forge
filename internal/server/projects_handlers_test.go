@@ -242,7 +242,10 @@ func TestProjectWorktreeRuntimeAttachSpecUsesStoredTmuxSession(t *testing.T) {
 	assert.Equal("helper", spec.TargetKey)
 	assert.Equal("project-runtime-live", spec.TmuxSession)
 	assert.Equal(
-		[]string{tmuxScript, "--socket", "runtime", "attach-session", "-t", "project-runtime-live"},
+		[]string{
+			tmuxScript, "--socket", "runtime",
+			"-u", "attach-session", "-t", "project-runtime-live",
+		},
 		spec.Command,
 	)
 	assert.True(spec.RequiresLocalHost)

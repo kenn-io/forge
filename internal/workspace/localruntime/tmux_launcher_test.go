@@ -97,6 +97,21 @@ func TestTmuxLauncherCanHideStatusOnNewSessions(t *testing.T) {
 	assert.NotContains(launcher.attachSessionCommand(), "status")
 }
 
+func TestTmuxLauncherAttachForcesUTF8(t *testing.T) {
+	launcher := tmuxLauncher{
+		TmuxCommand: []string{"/usr/bin/tmux", "-L", "middleman-test"},
+		Session:     "middleman-test",
+	}
+
+	assert.Equal(t,
+		[]string{
+			"/usr/bin/tmux", "-L", "middleman-test",
+			"-u", "attach-session", "-t", "middleman-test",
+		},
+		launcher.attachSessionCommand(),
+	)
+}
+
 func TestTmuxLauncherCleansUpWhenHideStatusFails(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -172,7 +187,7 @@ exit 0
 		"kill-session", "-t", "middleman-test",
 	})
 	assert.NotContains(records, []string{
-		"attach-session", "-t", "middleman-test",
+		"-u", "attach-session", "-t", "middleman-test",
 	})
 	assert.NoFileExists(created)
 }
@@ -246,7 +261,7 @@ exit 0
 		"show-options", "-qv", "-t", "middleman-test", "@middleman_owner",
 	})
 	assert.NotContains(records, []string{
-		"attach-session", "-t", "middleman-test",
+		"-u", "attach-session", "-t", "middleman-test",
 	})
 	assert.NotContains(records, []string{
 		"new-session", "-e", "PATH", "-e", "TERM",

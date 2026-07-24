@@ -28,6 +28,7 @@ func writeCommandSessionFakeTmux(
 	tmuxPath = filepath.Join(dir, "tmux")
 	script := fmt.Sprintf(`#!/bin/sh
 printf '%%s\0' "$#" "$@" >> %s
+if [ "$1" = "-u" ]; then shift; fi
 case "$1" in
   has-session)
     if [ -f %s ]; then exit 0; fi

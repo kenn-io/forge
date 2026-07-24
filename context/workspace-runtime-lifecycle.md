@@ -86,6 +86,9 @@ still exists.
 - During middleman shutdown, detach/restart behavior is different: do not treat
   normal server shutdown as a natural user exit that should erase recoverable
   base runtime state.
+- Every tmux client attach must force UTF-8; service launchers may omit locale
+  variables, causing tmux to replace non-ASCII output before WebSocket transport
+  (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).
 
 ## UI Contract Rules
 

@@ -284,6 +284,7 @@ func TestSettingsAPIE2EHideTmuxStatusUpdateAffectsRuntimeSessions(t *testing.T) 
 	require.NoError(os.WriteFile(tmuxPath, fmt.Appendf(nil, `#!/bin/sh
 record=%q
 printf '%%s\0' "$#" "$@" >> "$record"
+if [ "$1" = "-u" ]; then shift; fi
 case "$1" in
   has-session)
     echo "can't find session: $3" >&2

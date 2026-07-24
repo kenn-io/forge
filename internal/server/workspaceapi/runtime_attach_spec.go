@@ -68,7 +68,9 @@ func runtimeAttachCommand(tmuxCommand []string, tmuxSession string) []string {
 	if len(command) == 0 {
 		command = []string{"tmux"}
 	}
-	return append(command, "attach-session", "-t", tmuxSession)
+	// Remote consumers may launch this command without locale variables.
+	// Force UTF-8 so tmux preserves non-ASCII terminal output.
+	return append(command, "-u", "attach-session", "-t", tmuxSession)
 }
 
 func attachSpecTmuxSessionExists(

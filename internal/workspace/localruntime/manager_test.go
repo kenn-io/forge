@@ -328,7 +328,10 @@ exit 0
 	require.NoError(err)
 	sessionName := tmuxSessionName("ws:alpha", "codex")
 
-	assert.Equal([]string{tmuxPath, "attach-session", "-t", sessionName}, launch.Command)
+	assert.Equal(
+		[]string{tmuxPath, "-u", "attach-session", "-t", sessionName},
+		launch.Command,
+	)
 	assert.Equal(sessionName, launch.TmuxSession)
 	records := readNullArgvRecord(t, record)
 	assert.Contains(records, []string{"has-session", "-t", sessionName})
@@ -388,7 +391,8 @@ exit 0
 	require.NoError(err)
 
 	assert.Equal(tmuxPath, launch.Command[0])
-	assert.Equal("attach-session", launch.Command[1])
+	assert.Equal("-u", launch.Command[1])
+	assert.Equal("attach-session", launch.Command[2])
 }
 
 func TestManagerLaunchCommandRejectsRelativeTmuxCommandWhenWrapped(t *testing.T) {
@@ -448,7 +452,10 @@ exit 0
 	require.NoError(err)
 	sessionName := tmuxSessionName("ws-1", "codex")
 
-	assert.Equal([]string{tmuxPath, "attach-session", "-t", sessionName}, launch.Command)
+	assert.Equal(
+		[]string{tmuxPath, "-u", "attach-session", "-t", sessionName},
+		launch.Command,
+	)
 	assert.Equal(sessionName, launch.TmuxSession)
 	records := readNullArgvRecord(t, record)
 	require.Len(records, 2)
@@ -471,6 +478,7 @@ func TestManagerLaunchPlainShellWrapsInTmuxWhenAvailable(t *testing.T) {
 	tmuxPath := filepath.Join(dir, "tmux")
 	require.NoError(os.WriteFile(tmuxPath, fmt.Appendf(nil, `#!/bin/sh
 printf '%%s\0' "$#" "$@" >> %s
+if [ "$1" = "-u" ]; then shift; fi
 if [ "$1" = "attach-session" ]; then
   trap 'exit 0' HUP INT TERM
   while :; do sleep 1; done
@@ -568,6 +576,26 @@ func TestManagerRestoreTmuxSessionRestoresPlainShellRuntimeSession(t *testing.T)
 	assert.Equal("Shell", shell.Label)
 	assert.Equal("middleman-ws-1-shell", shell.TmuxSession)
 	assert.Equal(createdAt, shell.CreatedAt)
+}
+
+func TestManagerRestoredRuntimeCommandForcesUTF8(t *testing.T) {
+	mgr := NewManager(Options{
+		TmuxCommand: []string{"/usr/bin/tmux", "-L", "middleman-test"},
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	command, err := mgr.restoredRuntimeCommand(RestoredRuntimeSession{
+		TmuxSession: "middleman-ws-1-shell",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t,
+		[]string{
+			"/usr/bin/tmux", "-L", "middleman-test",
+			"-u", "attach-session", "-t", "middleman-ws-1-shell",
+		},
+		command,
+	)
 }
 
 func TestManagerRestoreTmuxSessionReusesExistingPlainShellRuntimeSession(t *testing.T) {
@@ -732,6 +760,7 @@ func TestManagerRestoreTmuxSessionAttachesStoredSessionWithoutOwnerValidation(t 
 	dir := t.TempDir()
 	tmuxPath := filepath.Join(dir, "tmux")
 	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+if [ "$1" = "-u" ]; then shift; fi
 if [ "$1" = "show-options" ]; then
   exit 99
 fi
@@ -1972,6 +2001,7 @@ func writeLongRunningAttachTmux(t *testing.T) string {
 	t.Helper()
 	tmuxPath := filepath.Join(t.TempDir(), "tmux")
 	require.NoError(t, os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+if [ "$1" = "-u" ]; then shift; fi
 if [ "$1" = "attach-session" ]; then
   trap 'exit 0' HUP INT TERM
   while :; do sleep 1; done

@@ -130,6 +130,20 @@ func TestHandlerRejectsConcurrentWorkspaceTerminals(t *testing.T) {
 	release3()
 }
 
+func TestTmuxAttachCommandForcesUTF8(t *testing.T) {
+	assert.Equal(
+		t,
+		[]string{
+			"/usr/bin/env", "tmux", "-u",
+			"attach-session", "-t", "middleman-test",
+		},
+		tmuxAttachCommand(
+			[]string{"/usr/bin/env", "tmux"},
+			"middleman-test",
+		),
+	)
+}
+
 func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 	require := require.New(t)
 

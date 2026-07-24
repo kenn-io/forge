@@ -24910,6 +24910,7 @@ func TestWorkspaceRuntimeNaturalTmuxAgentExitForgetsStoredSessionE2E(
 	tmuxPath := filepath.Join(dir, "fake-tmux")
 	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
 printf '%s\0' "$@" >> "$TMUX_RECORD"
+if [ "$1" = "-u" ]; then shift; fi
 case "$1" in
   has-session)
     echo "can't find session: $3" >&2
@@ -24972,6 +24973,7 @@ func TestWorkspaceRuntimeIncludesStoredRuntimeSessionsAfterReloadE2E(t *testing.
 	dir := t.TempDir()
 	tmuxPath := filepath.Join(dir, "fake-tmux")
 	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+if [ "$1" = "-u" ]; then shift; fi
 case "$1" in
   list-sessions)
     printf '%s\n' middleman-0000000000000001
@@ -25098,6 +25100,7 @@ if [ "$mode" = "capture-pane" ]; then
   printf 'stable\n'
   exit 0
 fi
+if [ "$1" = "-u" ]; then shift; fi
 if [ "$1" = "has-session" ]; then
   echo "can't find session: $3" >&2
   exit 1
@@ -25305,6 +25308,7 @@ for a in "$@"; do
   if [ "$a" = "capture-pane" ]; then mode="capture-pane"; fi
   prev="$a"
 done
+if [ "$1" = "-u" ]; then shift; fi
 case "$1" in
   list-sessions)
     printf '%s\n' 'middleman-0000000000000001-e81d3b0e9d82feaa'
@@ -25744,6 +25748,7 @@ for a in "$@"; do
   if [ "$prev" = "-t" ]; then target="$a"; fi
   prev="$a"
 done
+if [ "$1" = "-u" ]; then shift; fi
 if [ "$1" = "attach-session" ]; then
   cat >/dev/null
   exit 0
@@ -27563,6 +27568,10 @@ owner_arg() {
 }
 cmd="${1:-}"
 [ "$#" -gt 0 ] && shift || true
+if [ "$cmd" = "-u" ]; then
+  cmd="${1:-}"
+  [ "$#" -gt 0 ] && shift || true
+fi
 case "$cmd" in
   list-sessions)
     for session in "$state_dir"/*; do

@@ -417,8 +417,15 @@ func (l tmuxLauncher) killSessionCommand() []string {
 }
 
 func (l tmuxLauncher) attachSessionCommand() []string {
+	return tmuxAttachSessionCommand(l.TmuxCommand, l.Session)
+}
+
+func tmuxAttachSessionCommand(command []string, session string) []string {
+	// Middleman may run as a service without locale variables. Force UTF-8 so
+	// tmux does not replace non-ASCII terminal output with underscores.
 	return append(
-		slices.Clone(l.TmuxCommand), "attach-session", "-t", l.Session,
+		slices.Clone(command),
+		"-u", "attach-session", "-t", session,
 	)
 }
 

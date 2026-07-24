@@ -14,6 +14,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 )
 
 const (
@@ -304,7 +305,7 @@ func (s *Server) refreshDeferredMergeCI(
 	}
 	s.hub.Broadcast(Event{
 		Type: "pr_ci_refreshed",
-		Data: prCIRefreshedPayload{
+		Data: workspaceapi.PRCIRefreshedPayload{
 			Provider:     string(repoProviderKind(repo)),
 			PlatformHost: repoProviderHost(repo),
 			RepoPath:     repo.RepoPath,

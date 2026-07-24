@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 )
 
 func TestWorkspacePushedHeadObserverE2ERefreshesPRDetailAndSSE(t *testing.T) {
@@ -79,7 +80,7 @@ func TestWorkspacePushedHeadObserverE2ERefreshesPRDetailAndSSE(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode)
 	scanner := bufio.NewScanner(resp.Body)
 
-	srv.runWorkspacePushedHeadObserverPass(ctx)
+	srv.workspaceAPI.RunPushedHeadObserverPass(ctx)
 	changed := readSSEFrameWithin(t, scanner, 5*time.Second, nil)
 	queued := readSSEFrameWithin(t, scanner, 5*time.Second, nil)
 	refreshed := readSSEFrameWithin(t, scanner, 5*time.Second, nil)
@@ -87,7 +88,7 @@ func TestWorkspacePushedHeadObserverE2ERefreshesPRDetailAndSSE(t *testing.T) {
 	assert.Equal("workspace_pr_refresh_queued", queued.Event)
 	assert.Equal("pr_detail_refreshed", refreshed.Event)
 
-	var changedPayload workspacePushedHeadChangedPayload
+	var changedPayload workspaceapi.WorkspacePushedHeadChangedPayload
 	require.NoError(json.Unmarshal([]byte(changed.Data), &changedPayload))
 	assert.Equal("ws-pr", changedPayload.WorkspaceID)
 	assert.Equal("github", changedPayload.Provider)
@@ -159,7 +160,7 @@ func TestWorkspacePushedHeadObserverE2ELocalOnlyCommitTriggersNothing(t *testing
 	}, 2*time.Second, 5*time.Millisecond)
 	scanner := bufio.NewScanner(resp.Body)
 
-	srv.runWorkspacePushedHeadObserverPass(ctx)
+	srv.workspaceAPI.RunPushedHeadObserverPass(ctx)
 
 	// The pass enqueues nothing, so the sentinel broadcast after it must
 	// be the first frame the subscriber sees.
@@ -239,7 +240,7 @@ func TestWorkspacePushedHeadObserverE2EStopsAfterNonConvergingRefresh(t *testing
 	scanner := bufio.NewScanner(resp.Body)
 
 	// First pass refreshes once: enqueue, provider sync, completion.
-	srv.runWorkspacePushedHeadObserverPass(ctx)
+	srv.workspaceAPI.RunPushedHeadObserverPass(ctx)
 	assert.Equal("workspace_pushed_head_changed", readSSEFrameWithin(t, scanner, 5*time.Second, nil).Event)
 	assert.Equal("workspace_pr_refresh_queued", readSSEFrameWithin(t, scanner, 5*time.Second, nil).Event)
 	assert.Equal("pr_detail_refreshed", readSSEFrameWithin(t, scanner, 5*time.Second, nil).Event)
@@ -248,10 +249,10 @@ func TestWorkspacePushedHeadObserverE2EStopsAfterNonConvergingRefresh(t *testing
 
 	// Well past the failure-retry interval, the succeeded-but-still-
 	// different refresh must not be repeated.
-	srv.workspacePushedHeadObserver.SetNowForTest(func() time.Time {
+	srv.workspaceAPI.SetPushedHeadObserverNow(func() time.Time {
 		return time.Now().Add(time.Minute)
 	})
-	srv.runWorkspacePushedHeadObserverPass(ctx)
+	srv.workspaceAPI.RunPushedHeadObserverPass(ctx)
 	srv.Hub().Broadcast(Event{Type: "sentinel_after_pass", Data: map[string]any{}})
 	frame := readSSEFrameWithin(t, scanner, 5*time.Second, nil)
 	assert.Equal("sentinel_after_pass", frame.Event)
@@ -259,7 +260,7 @@ func TestWorkspacePushedHeadObserverE2EStopsAfterNonConvergingRefresh(t *testing
 
 	// A real local push moves the tracking ref and refreshes again.
 	pushNewPushedHeadE2ECommit(t, worktreePath)
-	srv.runWorkspacePushedHeadObserverPass(ctx)
+	srv.workspaceAPI.RunPushedHeadObserverPass(ctx)
 	assert.Equal("workspace_pushed_head_changed", readSSEFrameWithin(t, scanner, 5*time.Second, nil).Event)
 	assert.Equal("workspace_pr_refresh_queued", readSSEFrameWithin(t, scanner, 5*time.Second, nil).Event)
 	assert.Equal("pr_detail_refreshed", readSSEFrameWithin(t, scanner, 5*time.Second, nil).Event)

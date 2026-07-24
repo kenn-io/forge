@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
@@ -79,15 +80,15 @@ func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
 		TmuxCommand:             []string{tmuxPath},
 		WrapAgentSessionsInTmux: true,
 	})
-	server := &Server{
-		db:         d,
-		workspaces: workspace.NewManager(d, t.TempDir()),
-		runtime:    runtime,
-	}
-	input := &launchWorkspaceRuntimeSessionInput{ID: ws.ID}
+	handler := workspaceapi.New(workspaceapi.Deps{
+		DB:         d,
+		Workspaces: workspace.NewManager(d, t.TempDir()),
+		Runtime:    runtime,
+	})
+	input := &workspaceapi.LaunchWorkspaceRuntimeSessionInput{ID: ws.ID}
 	input.Body.TargetKey = "Codex yolo"
 
-	_, err := server.launchWorkspaceRuntimeSession(t.Context(), input)
+	_, err := handler.LaunchWorkspaceRuntimeSession(t.Context(), input)
 	require.NoError(err)
 
 	override, err := os.ReadFile(filepath.Join(worktree, "AGENTS.override.md"))
@@ -231,6 +232,7 @@ func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
 		TmuxCommand:             []string{tmuxPath},
 		WrapAgentSessionsInTmux: true,
 	})
+	srv.workspaceAPI.SetRuntimeManager(srv.runtime)
 
 	issueWorktree := initServerWorkspaceGitRepo(t)
 	seedIssue(t, database, "acme", "widget", 7, "open")

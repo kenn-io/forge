@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/fleet"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/sshfleet"
 )
 
@@ -356,7 +357,7 @@ func isAttachSpecPath(path string) bool {
 func wrapAttachSpecForSSH(
 	body []byte, socketPath, destination string,
 ) ([]byte, bool) {
-	var spec runtimeAttachSpecResponse
+	var spec workspaceapi.RuntimeAttachSpecResponse
 	if err := json.Unmarshal(body, &spec); err != nil {
 		return nil, false
 	}

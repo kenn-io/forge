@@ -1,4 +1,4 @@
-package server
+package workspaceapi
 
 import (
 	"bytes"
@@ -47,6 +47,21 @@ func runtimeAttachSpec(
 		RequiresLocalHost: true,
 	}, nil
 }
+
+// RuntimeAttachSpec builds a local tmux attachment contract shared by host,
+// workspace, project-worktree, and Fleet runtime routes.
+func RuntimeAttachSpec(
+	ctx context.Context,
+	tmuxCommand []string,
+	sessionKey string,
+	targetKey string,
+	tmuxSession string,
+) (RuntimeAttachSpecResponse, error) {
+	return runtimeAttachSpec(ctx, tmuxCommand, sessionKey, targetKey, tmuxSession)
+}
+
+// RuntimeAttachSpecOutput is the shared Huma response envelope.
+type RuntimeAttachSpecOutput = httpapi.BodyOutput[runtimeAttachSpecResponse]
 
 func runtimeAttachCommand(tmuxCommand []string, tmuxSession string) []string {
 	command := append([]string{}, tmuxCommand...)

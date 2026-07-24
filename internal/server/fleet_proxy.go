@@ -24,6 +24,7 @@ import (
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/tracing"
 )
 
@@ -919,7 +920,7 @@ func (s *Server) serveSSHFleetWebSocketTerminal(
 		return
 	}
 
-	var spec runtimeAttachSpecResponse
+	var spec workspaceapi.RuntimeAttachSpecResponse
 	if err := json.Unmarshal(out, &spec); err != nil {
 		attachSpan.SetAttributes(attribute.Bool("error", true))
 		writeProblemResponse(w, httpapi.NewProblem(
@@ -982,14 +983,14 @@ type fleetSSHPTYAttachment struct {
 
 func startFleetSSHAttachPTY(
 	ctx context.Context,
-	spec runtimeAttachSpecResponse,
+	spec workspaceapi.RuntimeAttachSpecResponse,
 	r *http.Request,
 ) (*fleetSSHPTYAttachment, error) {
 	if len(spec.Command) == 0 || strings.TrimSpace(spec.Command[0]) == "" {
 		return nil, errors.New("attach-spec command is empty")
 	}
-	active := parseRuntimeTerminalResizeActive(r)
-	cols, rows, ok := parseRuntimeTerminalSize(r)
+	active := workspaceapi.ParseRuntimeTerminalResizeActive(r)
+	cols, rows, ok := workspaceapi.ParseRuntimeTerminalSize(r)
 	if !ok || !active {
 		cols, rows = 120, 30
 	}
@@ -1001,8 +1002,8 @@ func startFleetSSHAttachPTY(
 	cmd := procutil.Command(spec.Command[0], spec.Command[1:]...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
-		Cols: clampTerminalDim(cols),
-		Rows: clampTerminalDim(rows),
+		Cols: workspaceapi.ClampTerminalDim(cols),
+		Rows: workspaceapi.ClampTerminalDim(rows),
 	})
 	if err != nil {
 		release()
@@ -1061,8 +1062,8 @@ func (a *fleetSSHPTYAttachment) resizeIfActive(cols, rows int) {
 		return
 	}
 	_ = pty.Setsize(a.ptmx, &pty.Winsize{
-		Cols: clampTerminalDim(cols),
-		Rows: clampTerminalDim(rows),
+		Cols: workspaceapi.ClampTerminalDim(cols),
+		Rows: workspaceapi.ClampTerminalDim(rows),
 	})
 }
 
@@ -1140,7 +1141,7 @@ func bridgeFleetSSHAttachPTY(
 }
 
 func handleFleetSSHAttachControl(attach *fleetSSHPTYAttachment, data []byte) {
-	var msg runtimeTerminalControlMsg
+	var msg workspaceapi.RuntimeTerminalControlMsg
 	if err := json.Unmarshal(data, &msg); err != nil {
 		slog.Warn("bad fleet ssh terminal control message", "err", err)
 		return

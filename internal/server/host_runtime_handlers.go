@@ -11,6 +11,7 @@ import (
 
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
@@ -121,7 +122,7 @@ func (s *Server) launchHostRuntimeSession(
 		},
 	)
 	if err != nil {
-		return nil, projectWorktreeRuntimeLaunchError(err)
+		return nil, workspaceapi.RuntimeLaunchError(err)
 	}
 	// Always upsert with the returned session's generation: ensure semantics
 	// can return a live reused session or a brand-new one, and the stored
@@ -253,7 +254,7 @@ func (s *Server) stopStoredHostRuntimeTmuxSession(
 		if row.SessionKey != sessionKey {
 			continue
 		}
-		if err := killProjectRuntimeTmuxSession(
+		if err := workspaceapi.KillRuntimeTmuxSession(
 			ctx, s.cfg.TmuxCommand(), row.SessionName,
 		); err != nil {
 			return true, err
@@ -271,7 +272,7 @@ func (s *Server) stopStoredHostRuntimeTmuxSession(
 func (s *Server) getHostRuntimeSessionAttachSpec(
 	ctx context.Context,
 	input *hostRuntimeSessionKeyInput,
-) (*runtimeAttachSpecOutput, error) {
+) (*workspaceapi.RuntimeAttachSpecOutput, error) {
 	rows, err := s.db.ListHostRuntimeTmuxSessions(ctx)
 	if err != nil {
 		return nil, httpapi.Internal(
@@ -282,14 +283,14 @@ func (s *Server) getHostRuntimeSessionAttachSpec(
 		if row.SessionKey != input.SessionKey {
 			continue
 		}
-		spec, err := runtimeAttachSpec(
+		spec, err := workspaceapi.RuntimeAttachSpec(
 			ctx, s.cfg.TmuxCommand(), input.SessionKey, "",
 			row.SessionName,
 		)
 		if err != nil {
 			return nil, err
 		}
-		return &runtimeAttachSpecOutput{Body: spec}, nil
+		return &workspaceapi.RuntimeAttachSpecOutput{Body: spec}, nil
 	}
 	return nil, httpapi.NotFound(httpapi.CodeNotFound, "runtime session not found", nil)
 }

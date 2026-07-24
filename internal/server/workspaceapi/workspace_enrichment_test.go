@@ -1,22 +1,58 @@
-package server
+package workspaceapi
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
+
+func newEnrichmentTestHandler(t *testing.T, tmuxScript string) *Handler {
+	t.Helper()
+	database := dbtest.Open(t)
+	manager := workspace.NewManager(database, t.TempDir())
+	if tmuxScript != "" {
+		manager.SetTmuxCommand([]string{tmuxScript})
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	handler := New(Deps{
+		DB:                database,
+		Workspaces:        manager,
+		BackgroundContext: ctx,
+		RunBackground: func(run func(context.Context)) bool {
+			wg.Go(func() {
+				run(ctx)
+			})
+			return true
+		},
+	})
+	t.Cleanup(func() {
+		cancel()
+		wg.Wait()
+		handler.Shutdown()
+	})
+	return handler
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	_, stderr, err := gitcmd.New().WithConfig("init.defaultBranch", "main").Run(
+		t.Context(), dir, nil, args...,
+	)
+	require.NoError(t, err, "git %v failed: %s", args, stderr)
+}
 
 func TestWorkspaceEnrichmentSupersedeRejectsOlderRefreshAndPreservesCache(t *testing.T) {
 	assert := assert.New(t)
@@ -109,7 +145,7 @@ func TestWorkspaceEnrichmentSupersededResponseUsesCurrentCacheState(t *testing.T
 
 func TestWorkspaceEnrichmentPendingJobUsesLatestSummary(t *testing.T) {
 	require := require.New(t)
-	_, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	srv := newEnrichmentTestHandler(t, "")
 	srv.workspaceEnrichmentDisabled = false
 	for range cap(srv.workspaceEnrichmentSlots) {
 		srv.workspaceEnrichmentSlots <- struct{}{}
@@ -162,7 +198,7 @@ func TestTrimWorkspaceEnrichmentCacheDropsDeletedPendingState(t *testing.T) {
 func TestCachedWorkspaceEnrichmentReportsStaleAndFailedState(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	_, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	srv := newEnrichmentTestHandler(t, "")
 	srv.workspaceEnrichmentDisabled = false
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	srv.now = func() time.Time { return now }
@@ -213,7 +249,7 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "fake-tmux")
 	require.NoError(os.WriteFile(script, []byte("#!/bin/sh\nexit 1\n"), 0o755))
-	_, _, _, srv := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	srv := newEnrichmentTestHandler(t, script)
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	srv.now = func() time.Time { return now }
 	worktree := filepath.Join(dir, "worktree")
@@ -318,63 +354,6 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 	assert.Equal(lastGood.response.TmuxPaneTitle, synchronousEntry.response.TmuxPaneTitle)
 }
 
-func TestWorkspaceEnrichmentCompletionBroadcastsWorkspaceStatusE2E(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-	srv.workspaceEnrichmentDisabled = false
-	srv.workspaceEnrichmentMu.Lock()
-	clear(srv.workspaceEnrichmentCache)
-	srv.workspaceEnrichmentMu.Unlock()
-
-	httpServer := httptest.NewServer(srv)
-	t.Cleanup(httpServer.Close)
-	req, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, httpServer.URL+"/api/v1/events", nil,
-	)
-	require.NoError(err)
-	eventsResp, err := httpServer.Client().Do(req)
-	require.NoError(err)
-	t.Cleanup(func() { eventsResp.Body.Close() })
-	require.Equal(http.StatusOK, eventsResp.StatusCode)
-
-	initial, err := client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
-	require.NoError(err)
-	require.Equal(http.StatusOK, initial.StatusCode())
-	require.NotNil(initial.JSON200)
-	assert.Equal("pending", string(initial.JSON200.EnrichmentStatus))
-
-	scanner := bufio.NewScanner(eventsResp.Body)
-	var frame sseFrame
-	for {
-		frame = readSSEFrameWithin(t, scanner, 5*time.Second, nil)
-		if frame.Event != "workspace_status" {
-			continue
-		}
-		var payload map[string]json.RawMessage
-		require.NoError(json.Unmarshal([]byte(frame.Data), &payload))
-		if len(payload) != 1 {
-			continue
-		}
-		var id string
-		require.NoError(json.Unmarshal(payload["id"], &id))
-		if id == ws.Id {
-			break
-		}
-	}
-	assert.Equal("workspace_status", frame.Event)
-
-	require.Eventually(func() bool {
-		got, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
-		return getErr == nil &&
-			got.StatusCode() == http.StatusOK &&
-			got.JSON200 != nil &&
-			string(got.JSON200.EnrichmentStatus) == workspaceEnrichmentFresh
-	}, 2*time.Second, 10*time.Millisecond)
-}
-
 func TestWorkspaceEnrichmentBroadcastsOnlyDurableChanges(t *testing.T) {
 	assert := assert.New(t)
 	srv := &Server{
@@ -436,7 +415,7 @@ func TestWorkspaceEnrichmentBroadcastsOnlyDurableChanges(t *testing.T) {
 
 func TestWorkspaceEnrichmentUsesBoundedWorkersPastBackgroundCapacity(t *testing.T) {
 	require := require.New(t)
-	_, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	srv := newEnrichmentTestHandler(t, "")
 	srv.workspaceEnrichmentDisabled = false
 	for range cap(srv.workspaceEnrichmentSlots) {
 		srv.workspaceEnrichmentSlots <- struct{}{}
@@ -465,7 +444,7 @@ func TestWorkspaceEnrichmentUsesBoundedWorkersPastBackgroundCapacity(t *testing.
 }
 
 func TestWorkspaceTmuxPruneUsesEnrichmentBackgroundCapacity(t *testing.T) {
-	_, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	srv := newEnrichmentTestHandler(t, "")
 	srv.workspaceEnrichmentDisabled = false
 	for range cap(srv.workspaceEnrichmentSlots) {
 		srv.workspaceEnrichmentSlots <- struct{}{}
@@ -486,50 +465,14 @@ func TestWorkspaceTmuxPruneUsesEnrichmentBackgroundCapacity(t *testing.T) {
 	assert.False(t, inFlight)
 }
 
-func TestWorkspacePushInvalidatesCachedDivergence(t *testing.T) {
-	require := require.New(t)
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
-	srv.workspaceEnrichmentDisabled = false
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
-	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
-	require.NoError(os.WriteFile(
-		filepath.Join(ws.WorktreePath, "ahead.txt"), []byte("ahead\n"), 0o644,
-	))
-	runGit(t, ws.WorktreePath, "add", ".")
-	runGit(t, ws.WorktreePath, "commit", "-m", "ahead")
-	ahead := 1
-	behind := 0
-	srv.workspaceEnrichmentMu.Lock()
-	srv.workspaceEnrichmentCache[ws.Id] = workspaceEnrichmentCacheEntry{
-		response: workspaceResponse{
-			CommitsAhead:  &ahead,
-			CommitsBehind: &behind,
-		},
-		hasDivergence:         true,
-		divergenceRefreshedAt: srv.now(),
-	}
-	srv.workspaceEnrichmentMu.Unlock()
-
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/workspaces/"+ws.Id+"/push", nil)
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	getResp, err := client.HTTP.GetWorkspaceWithResponse(ctx, ws.Id)
-	require.NoError(err)
-	require.Equal(http.StatusOK, getResp.StatusCode())
-	require.NotNil(getResp.JSON200)
-	require.NotNil(getResp.JSON200.CommitsAhead)
-	assert.Zero(t, *getResp.JSON200.CommitsAhead)
-}
-
 func TestWorkspaceRuntimeExitInvalidatesCachedTmuxEnrichment(t *testing.T) {
-	_, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	srv := newEnrichmentTestHandler(t, "")
 	srv.workspaceEnrichmentCache["ws-runtime"] = workspaceEnrichmentCacheEntry{
 		hasTmux:         true,
 		tmuxRefreshedAt: srv.now(),
 	}
 
-	srv.handleRuntimeSessionExit(localruntime.SessionInfo{
+	srv.HandleRuntimeSessionExit(localruntime.SessionInfo{
 		WorkspaceID: "ws-runtime",
 		Key:         "agent",
 		CreatedAt:   srv.now(),

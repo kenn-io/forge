@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/workspace"
 )
 
@@ -158,7 +159,7 @@ func (s *Server) kataWorkspaceTargetForMetadata(
 func (s *Server) createKataWorkspace(
 	ctx context.Context,
 	input *kataWorkspaceTaskInput,
-) (*createWorkspaceOutput, error) {
+) (*workspaceapi.CreateWorkspaceOutput, error) {
 	if s.workspaces == nil {
 		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
@@ -228,13 +229,13 @@ func (s *Server) createKataWorkspace(
 		return nil, httpapi.Internal("create Kata workspace: " + err.Error())
 	}
 
-	s.runWorkspaceSetupWithBasePath(ws, target.BasePath)
+	s.workspaceAPI.RunWorkspaceSetupWithBasePath(ws, target.BasePath)
 	return s.kataWorkspaceCreateOutput(ctx, ws.ID)
 }
 
 func (s *Server) kataWorkspaceCreateOutput(
 	ctx context.Context, workspaceID string,
-) (*createWorkspaceOutput, error) {
+) (*workspaceapi.CreateWorkspaceOutput, error) {
 	summary, err := s.workspaces.GetSummary(ctx, workspaceID)
 	if err != nil {
 		return nil, httpapi.Internal("get workspace summary: " + err.Error())
@@ -242,9 +243,9 @@ func (s *Server) kataWorkspaceCreateOutput(
 	if summary == nil {
 		return nil, httpapi.Internal("workspace summary missing after create")
 	}
-	return &createWorkspaceOutput{
+	return &workspaceapi.CreateWorkspaceOutput{
 		Status: httpStatusAccepted,
-		Body:   s.toWorkspaceResponse(ctx, summary),
+		Body:   s.workspaceAPI.Response(ctx, summary),
 	}, nil
 }
 

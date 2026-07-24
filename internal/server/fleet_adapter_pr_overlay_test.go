@@ -214,6 +214,7 @@ func TestSnapshotEndpointCarriesWorkspacePREnrichment(t *testing.T) {
 	// setupTestServer leaves workspaces nil (no WorktreeDir); wire a manager so
 	// the workspace-overlay branch of buildLocalRaw runs on the snapshot read.
 	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
 	ctx := t.Context()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 

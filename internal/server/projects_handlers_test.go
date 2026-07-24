@@ -21,6 +21,7 @@ import (
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
@@ -970,7 +971,7 @@ func TestProjectWorktreeRuntimeAttachSpecUsesStoredTmuxSession(t *testing.T) {
 	)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	defer resp.Body.Close()
-	var spec runtimeAttachSpecResponse
+	var spec workspaceapi.RuntimeAttachSpecResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&spec))
 	assert.Equal(1, spec.Version)
 	assert.Equal("tmux", spec.Kind)
@@ -1101,7 +1102,7 @@ func TestProjectWorktreeRuntimeExitForgetsStoredTmuxSession(t *testing.T) {
 	require := require.New(t)
 
 	srv, _, worktreeID := setupProjectWorktreeRuntimeTest(t)
-	scope := projectWorktreeRuntimeScope(worktreeID)
+	scope := workspaceapi.ProjectWorktreeRuntimeScope(worktreeID)
 	targetKey := "helper"
 	sessionName := "project-runtime-exited"
 	sessionKey := worktreeID + "_helper"

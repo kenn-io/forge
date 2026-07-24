@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/workspace"
 )
 
@@ -410,6 +411,7 @@ port = 8091
 	})
 	require.NoError(err)
 	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
 	srv.workspaces.SetTmuxCommand([]string{"sh", "-c", "exit 0"})
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspaces", map[string]any{
@@ -421,7 +423,7 @@ port = 8091
 		"title":        "Use registered checkout",
 	})
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
-	var created workspaceResponse
+	var created workspaceapi.WorkspaceResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&created))
 
 	var stored *db.Workspace
@@ -1063,6 +1065,7 @@ repo_path = "acme/widget"
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspaces", map[string]any{
 		"daemon_id":    "desktop",
@@ -1075,7 +1078,7 @@ repo_path = "acme/widget"
 	})
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 
-	var created workspaceResponse
+	var created workspaceapi.WorkspaceResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&created))
 	assert.Equal(db.WorkspaceItemTypeKataTask, created.ItemType)
 	assert.Equal(db.KataWorkspaceItemKey(db.WorkspaceKataMetadata{
@@ -1126,6 +1129,7 @@ name = %q
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
 	require.NoError(err)
 	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
 
 	metadata := db.WorkspaceKataMetadata{
 		DaemonID:    "desktop",
@@ -1145,7 +1149,7 @@ name = %q
 	})
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 
-	var created workspaceResponse
+	var created workspaceapi.WorkspaceResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&created))
 	assert.Equal("github", created.Repo.Provider)
 	assert.Equal("github.com", created.Repo.PlatformHost)
@@ -1196,6 +1200,7 @@ repo_path = "acme/widget"
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
 
 	body := map[string]any{
 		"daemon_id":    "desktop",
@@ -1207,12 +1212,12 @@ repo_path = "acme/widget"
 	}
 	first := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspaces", body)
 	require.Equal(http.StatusAccepted, first.Code, first.Body.String())
-	var created workspaceResponse
+	var created workspaceapi.WorkspaceResponse
 	require.NoError(json.NewDecoder(first.Body).Decode(&created))
 
 	second := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspaces", body)
 	require.Equal(http.StatusAccepted, second.Code, second.Body.String())
-	var reused workspaceResponse
+	var reused workspaceapi.WorkspaceResponse
 	require.NoError(json.NewDecoder(second.Body).Decode(&reused))
 
 	assert.Equal(created.ID, reused.ID)

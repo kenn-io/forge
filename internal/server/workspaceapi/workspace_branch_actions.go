@@ -1,4 +1,4 @@
-package server
+package workspaceapi
 
 import (
 	"context"
@@ -20,6 +20,16 @@ type revealWorkspaceInput struct {
 type workspaceBranchActionOutput = httpapi.BodyOutput[workspaceResponse]
 
 var revealWorkspacePath = workspace.RevealWorktreePath
+
+// SetRevealWorkspacePathForTest replaces the OS reveal action and returns a
+// restore function.
+func SetRevealWorkspacePathForTest(
+	reveal func(context.Context, string) error,
+) func() {
+	previous := revealWorkspacePath
+	revealWorkspacePath = reveal
+	return func() { revealWorkspacePath = previous }
+}
 
 func (s *Server) pushWorkspaceBranch(
 	ctx context.Context,

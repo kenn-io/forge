@@ -50,6 +50,7 @@ func TestWorkspaceRuntimeLaunchMissingTokenReturnsBadRequestE2E(t *testing.T) {
 		}},
 		PtyOwnerRuntime: missingTokenRuntimePtyOwner{},
 	})
+	srv.workspaceAPI.SetRuntimeManager(srv.runtime)
 	seedReadyWorkspaceForRuntimeTokenTest(t, database, filepath.Join(dir, "workspace"))
 
 	body := bytes.NewBufferString(`{"target_key":"tokenfail"}`)

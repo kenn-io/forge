@@ -25,6 +25,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/sshfleet"
 )
 
@@ -631,7 +632,7 @@ func TestSSHFleetWebSocketTerminalUsesAttachSpecCommand(t *testing.T) {
 		cfg.Fleet.Enabled = true
 	})
 	writeFakeSSHForAttach(t)
-	remoteSpec := runtimeAttachSpecResponse{
+	remoteSpec := workspaceapi.RuntimeAttachSpecResponse{
 		Version:           1,
 		Kind:              "tmux",
 		SessionKey:        "sess-1",
@@ -694,7 +695,7 @@ func TestSSHFleetWebSocketTerminalHonorsResizeActive(t *testing.T) {
 		cfg.Fleet.Enabled = true
 	})
 	writeFakeSSHForAttach(t)
-	remoteSpec := runtimeAttachSpecResponse{
+	remoteSpec := workspaceapi.RuntimeAttachSpecResponse{
 		Version:     1,
 		Kind:        "tmux",
 		SessionKey:  "sess-1",

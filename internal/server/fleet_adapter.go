@@ -9,6 +9,7 @@ import (
 
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/fleet"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
@@ -409,7 +410,7 @@ func ownedTmuxSessionsForProjectWorktree(
 	if err != nil {
 		return nil, err
 	}
-	scope := projectWorktreeRuntimeScope(worktree.ID)
+	scope := workspaceapi.ProjectWorktreeRuntimeScope(worktree.ID)
 	runtimeByKey := runtimeSessionByKey(s, scope)
 	out := make([]fleetOwnedTmuxSession, 0, len(stored))
 	for _, storedSession := range stored {
@@ -478,7 +479,7 @@ func nonTmuxRuntimeSessionsForProjectWorktree(
 	if s.runtime == nil {
 		return nil
 	}
-	scope := projectWorktreeRuntimeScope(worktree.ID)
+	scope := workspaceapi.ProjectWorktreeRuntimeScope(worktree.ID)
 	var out []fleet.RawSession
 	for _, si := range s.runtime.ListSessions(scope) {
 		if si.TmuxSession != "" {

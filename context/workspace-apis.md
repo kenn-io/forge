@@ -89,20 +89,20 @@ state.
 - `GET /workspaces/{id}`: load one persisted workspace for terminal view.
 - List/detail reads return persisted plus last-known-good enrichment without
   foreground git or tmux probes; stale components reconcile through bounded
-  background workers (`internal/server/workspace_enrichment.go::toCachedWorkspaceResponse`).
+  background workers (`internal/server/workspaceapi/workspace_enrichment.go::toCachedWorkspaceResponse`).
 - `enrichment_status` is aggregate across reads and refresh/push/pull responses:
   failed reconciliation retains last-known-good components while preserving
   failure status/error
-  (`internal/server/workspace_enrichment.go::refreshWorkspaceResponse`).
+  (`internal/server/workspaceapi/workspace_enrichment.go::refreshWorkspaceResponse`).
 - Overlapping tmux probes wait for the active sample within the caller budget;
   fallback carries an error only when waiting or sample production fails
-  (`internal/server/huma_routes.go::probeOneTmuxSession`).
+  (`internal/server/workspaceapi/routes_handlers.go::probeOneTmuxSession`).
 - Background completion emits `workspace_status` only for durable changes:
   first completion, divergence movement, or error-state change — never for
   tmux-activity-only movement, and tmux prune broadcasts only when it pruned.
   Unconditional broadcasts made every client refetch schedule the next
   enrichment, a permanent refresh loop
-  (`internal/server/workspace_enrichment.go::workspaceEnrichmentBroadcastWorthy`).
+  (`internal/server/workspaceapi/workspace_enrichment.go::workspaceEnrichmentBroadcastWorthy`).
 - Client detail stores mirror this: a background poll or sync whose payload is
   content-identical (ignoring fetch timestamps) must not replace displayed
   store state — equal-but-new objects re-render the whole panel every cycle
@@ -241,7 +241,7 @@ server check exactly.
 
 - Files and patches project from one immutable snapshot. Preview membership is
   revision-pinned too, but new-side bytes remain live and may move afterward
-  (`internal/server/workspace_diff_cache.go::workspaceDiffCache`).
+  (`internal/server/workspaceapi/workspace_diff_cache.go::workspaceDiffCache`).
 - Cache entries are stale-while-revalidate with last-known-good fallback.
   `jellydator/ttlcache/v3` owns entry storage, TTL expiration, and inactive-entry
   cost pressure through separate protected and cost-limited pools; middleman's
@@ -251,7 +251,7 @@ server check exactly.
   (`internal/server/server.go::streamEvents`).
 - A workspace response is user-visibly stale only when a bounded, coalesced
   head-only probe confirms cached/current Git HEAD mismatch and queues refresh;
-  cache age, probe timeout, and resolution failure do not warn (`internal/server/workspace_diff_cache.go::workspaceDiffCache.Get`).
+  cache age, probe timeout, and resolution failure do not warn (`internal/server/workspaceapi/workspace_diff_cache.go::workspaceDiffCache.Get`).
 - A local workspace becomes selected through its scoped SSE stream. The server
   subscribes that stream before acquiring the selection lease, then emits
   `workspace_diff_ready` only when cold/coalesced default-HEAD preparation
@@ -260,7 +260,7 @@ server check exactly.
 - Fleet selection uses `/workspaces/{id}/diff/watch` through the fleet proxy to
   hold the remote lease, prewarm HEAD, and relay opaque versions. Switching
   aborts and replaces the watch, so only the selected remote workspace refreshes
-  (`internal/server/huma_routes.go::watchWorkspaceDiff`). Empty or foreign
+  (`internal/server/workspaceapi/routes_handlers.go::watchWorkspaceDiff`). Empty or foreign
   tokens return `changed=true`; matches wait 25 seconds and timeout unchanged.
   A `409` while the workspace is still being created is transient and the client
   retries it with the normal watch backoff; unsupported watch responses remain
@@ -289,7 +289,7 @@ server check exactly.
   Entryless cold failures stay with selection prewarm's five-second retry;
   periodic validation handles only published entries, so its one-second cadence
   cannot bypass cold backoff
-  (`internal/server/workspace_diff_cache.go::validateSelected`).
+  (`internal/server/workspaceapi/workspace_diff_cache.go::validateSelected`).
 - The 128 MiB inactive-cache budget evicts least-recently-used inactive
   entries, never active snapshots. A newly published snapshot has a one-minute
   files/diff revision lease so an oversized `/files` response cannot evict
@@ -297,7 +297,7 @@ server check exactly.
   after 10 minutes without access. Selected and pair-retained snapshots have
   zero eviction cost and may temporarily put the total working set above the
   inactive-cache budget
-  (`internal/server/workspace_diff_cache.go::maintainLocked`).
+  (`internal/server/workspaceapi/workspace_diff_cache.go::maintainLocked`).
 - Publishing a dirty-worktree snapshot requires matching before/after resolved
   refs and fingerprints; repository-local attributes are fingerprint inputs.
   Commit/range generated-file checks use the resolved head commit as the Git
@@ -330,7 +330,7 @@ server check exactly.
   (`packages/ui/src/stores/diff.svelte.ts::loadWorkspaceDiff`).
 - Workspace diff and preview paths identify the current path first. Old paths
   are fallback aliases only, since a rename source can coexist with a new file
-  at that path (`internal/server/huma_routes.go::filterWorkspaceDiffSnapshotPath`).
+  at that path (`internal/server/workspaceapi/routes_handlers.go::filterWorkspaceDiffSnapshotPath`).
 - Live worktree reads use Go's `os.Root` containment. Final symlinks are read as
   links, regular files are identity-checked across the open, and intermediate
   symlinks may resolve only within the worktree. Untracked patch reads and

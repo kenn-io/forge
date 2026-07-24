@@ -1,4 +1,4 @@
-package server
+package workspaceapi
 
 import (
 	"context"
@@ -24,6 +24,9 @@ type workspacePushedHeadChangedPayload struct {
 	TrackingRef  string `json:"tracking_ref"`
 	ObservedAt   string `json:"observed_at"`
 }
+
+// WorkspacePushedHeadChangedPayload is the observer's stable event DTO.
+type WorkspacePushedHeadChangedPayload = workspacePushedHeadChangedPayload
 
 type workspacePRAssociatedPayload struct {
 	WorkspaceID  string `json:"workspace_id"`
@@ -85,6 +88,9 @@ type prCIRefreshedPayload struct {
 	RefreshedAt  string   `json:"refreshed_at"`
 	Warnings     []string `json:"warnings"`
 }
+
+// PRCIRefreshedPayload is shared with the deferred-merge event producer.
+type PRCIRefreshedPayload = prCIRefreshedPayload
 
 func (s *Server) enqueueWorkspacePushedHeadRefresh(change workspace.PushedHeadUpdate) bool {
 	if s.syncer == nil {

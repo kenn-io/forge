@@ -1,4 +1,4 @@
-package server
+package workspaceapi
 
 import (
 	"context"
@@ -18,6 +18,12 @@ const (
 	workspaceEnrichmentStale          = "stale"
 	workspaceEnrichmentFailed         = "failed"
 )
+
+// EnrichmentTTL is the cache freshness interval for workspace reconciliation.
+const EnrichmentTTL = workspaceEnrichmentTTL
+
+// EnrichmentFresh is the stable wire value for complete fresh enrichment.
+const EnrichmentFresh = workspaceEnrichmentFresh
 
 type workspaceEnrichmentCacheEntry struct {
 	response              workspaceResponse

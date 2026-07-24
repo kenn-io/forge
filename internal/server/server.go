@@ -35,6 +35,7 @@ import (
 	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/server/messagesapi"
 	"go.kenn.io/middleman/internal/server/repobrowserapi"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/telemetry"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
@@ -143,28 +144,24 @@ func (c shutdownAwareContext) Value(key any) any {
 
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
-	db                          *db.DB
-	repoResolver                *httpapi.RepositoryResolver
-	syncer                      *ghclient.Syncer
-	archive                     archive.Controller
-	clones                      *gitclone.Manager
-	workspaces                  *workspace.Manager
-	workspacePRMonitor          *workspace.PRMonitor
-	workspacePushedHeadObserver *workspace.PushedHeadObserver
-	workspaceDiffCache          *workspaceDiffCache
-	tmuxActivity                *tmuxActivityTracker
-	fleetTmuxMonitor            *fleetTmuxMonitor
-	fleetWorktreeDiscoverer     *fleetWorktreeDiscoverer
-	fleetWorktreeStatsSampler   *fleetWorktreeStatsSampler
-	fleetPlatformAuthMonitor    *fleetPlatformAuthMonitor
-	runtime                     *localruntime.Manager
-	tmuxCmd                     []string
-	telemetry                   telemetry.Client
-	cfg                         *config.Config
-	cfgPath                     string
-	tokenSources                *tokenauth.SourceSet
-	cfgMu                       sync.Mutex
-	configReloadMu              sync.Mutex
+	db                        *db.DB
+	repoResolver              *httpapi.RepositoryResolver
+	syncer                    *ghclient.Syncer
+	archive                   archive.Controller
+	clones                    *gitclone.Manager
+	workspaces                *workspace.Manager
+	fleetTmuxMonitor          *fleetTmuxMonitor
+	fleetWorktreeDiscoverer   *fleetWorktreeDiscoverer
+	fleetWorktreeStatsSampler *fleetWorktreeStatsSampler
+	fleetPlatformAuthMonitor  *fleetPlatformAuthMonitor
+	runtime                   *localruntime.Manager
+	tmuxCmd                   []string
+	telemetry                 telemetry.Client
+	cfg                       *config.Config
+	cfgPath                   string
+	tokenSources              *tokenauth.SourceSet
+	cfgMu                     sync.Mutex
+	configReloadMu            sync.Mutex
 	// bootCfgSnapshot freezes the subset of config fields that are
 	// bound at startup (registry, listeners, clone manager, etc.) so a
 	// config-file watcher reload can detect when those changed and
@@ -179,50 +176,37 @@ type Server struct {
 	// hostOpts is atomic: Serve repoints an ephemeral (port-0) bind
 	// at the kernel-assigned port while requests may already be
 	// reading the options.
-	hostOpts                       atomic.Pointer[HostCheckOptions]
-	buildInfo                      BuildInfo
-	now                            func() time.Time
-	handler                        http.Handler
-	hub                            *EventHub
-	activeWorktreeMu               sync.Mutex
-	activeWorktreeKey              string
-	activeWorktreeSet              bool
-	labelCatalogRefreshMu          sync.Mutex
-	labelCatalogRefreshIDs         map[int64]struct{}
-	detailSyncMu                   sync.Mutex
-	detailSyncInFlight             map[string]struct{}
-	detailSyncPending              map[string]detailSyncJob
-	workspaceEnrichmentMu          sync.Mutex
-	workspaceEnrichmentCache       map[string]workspaceEnrichmentCacheEntry
-	workspaceEnrichmentInFlight    map[string]uint64
-	workspaceEnrichmentGenerations map[string]uint64
-	workspaceEnrichmentPending     map[string]workspaceEnrichmentJob
-	workspaceEnrichmentWorkers     int
-	workspaceEnrichmentSlots       chan struct{}
-	// workspaceEnrichmentDisabled keeps the shared heavyweight test fixture
-	// from starting reconciliation unrelated to the behavior under test.
-	// Production constructors leave it false.
-	workspaceEnrichmentDisabled bool
-	workspaceTmuxPrunedAt       time.Time
-	workspaceTmuxPrunePending   bool
-	workspaceTmuxPruneInFlight  bool
-	deferredMergeMu             sync.Mutex
-	deferredMergeInFlight       map[string]*deferredMergeHandle
-	deferredMergeMaxWait        time.Duration
-	writeCredProbeMu            sync.Mutex
-	writeCredProbes             map[string]writeCredentialProbe
-	writeCredProbeInFlight      map[string]chan struct{}
-	kataHealthMu                sync.Mutex
-	kataHealthCache             map[string]kataDaemonHealthCacheEntry
-	kataHealthInFlight          map[string]*kataDaemonInflightProbe
-	kataProxyMu                 sync.Mutex
-	kataProxyCache              map[kataProxyCacheKey]kataProxyCacheEntry
-	kataProxyIdleCloseOnce      sync.Once
-	kataSnapshots               *kataSnapshotCoordinator
-	kataEvents                  *kataFrontendEventRegistry
-	docsAPI                     *docsapi.Handler
-	messagesAPI                 *messagesapi.Handler
-	repoBrowserAPI              *repobrowserapi.Handler
+	hostOpts               atomic.Pointer[HostCheckOptions]
+	buildInfo              BuildInfo
+	now                    func() time.Time
+	handler                http.Handler
+	hub                    *EventHub
+	activeWorktreeMu       sync.Mutex
+	activeWorktreeKey      string
+	activeWorktreeSet      bool
+	labelCatalogRefreshMu  sync.Mutex
+	labelCatalogRefreshIDs map[int64]struct{}
+	detailSyncMu           sync.Mutex
+	detailSyncInFlight     map[string]struct{}
+	detailSyncPending      map[string]detailSyncJob
+	deferredMergeMu        sync.Mutex
+	deferredMergeInFlight  map[string]*deferredMergeHandle
+	deferredMergeMaxWait   time.Duration
+	writeCredProbeMu       sync.Mutex
+	writeCredProbes        map[string]writeCredentialProbe
+	writeCredProbeInFlight map[string]chan struct{}
+	kataHealthMu           sync.Mutex
+	kataHealthCache        map[string]kataDaemonHealthCacheEntry
+	kataHealthInFlight     map[string]*kataDaemonInflightProbe
+	kataProxyMu            sync.Mutex
+	kataProxyCache         map[kataProxyCacheKey]kataProxyCacheEntry
+	kataProxyIdleCloseOnce sync.Once
+	kataSnapshots          *kataSnapshotCoordinator
+	kataEvents             *kataFrontendEventRegistry
+	docsAPI                *docsapi.Handler
+	messagesAPI            *messagesapi.Handler
+	repoBrowserAPI         *repobrowserapi.Handler
+	workspaceAPI           *workspaceapi.Handler
 
 	// toolingStatus caches the assembled CLI tooling probe;
 	// toolingRun overrides the probe subprocess runner in tests.
@@ -265,12 +249,6 @@ type Server struct {
 	connWG sync.WaitGroup
 }
 
-type workspaceDiffEventData struct {
-	WorkspaceID string `json:"workspace_id"`
-	Revision    uint64 `json:"revision"`
-	Version     string `json:"version"`
-}
-
 // trackHTTPConn is installed as http.Server.ConnState by Serve so
 // Shutdown can wait for per-connection goroutines to fully unwind.
 func (s *Server) trackHTTPConn(_ net.Conn, state http.ConnState) {
@@ -292,6 +270,30 @@ func (s *Server) Hub() *EventHub { return s.hub }
 // race against the handler's Subscribe call).
 func (s *Server) SubscriberCount() int { return s.hub.SubscriberCount() }
 
+func (s *Server) subscribeWorkspaceEvents(
+	ctx context.Context, injectCached bool,
+) (<-chan workspaceapi.RecordedEvent, <-chan struct{}) {
+	source, done := s.hub.Subscribe(ctx, injectCached)
+	events := make(chan workspaceapi.RecordedEvent, cap(source))
+	go func() {
+		defer close(events)
+		for event := range source {
+			select {
+			case events <- workspaceapi.RecordedEvent{
+				ID: event.ID,
+				Event: workspaceapi.Event{
+					Type: event.Event.Type,
+					Data: event.Event.Data,
+				},
+			}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return events, done
+}
+
 // SetBuildInfo sets the metadata returned by GET /api/v1/version.
 func (s *Server) SetBuildInfo(info BuildInfo) { s.buildInfo = info }
 
@@ -312,121 +314,6 @@ func (s *Server) runBackground(fn func(ctx context.Context)) bool {
 		fn(s.bgCtx)
 	}()
 	return true
-}
-
-func (s *Server) runWorkspacePRMonitorLoop(ctx context.Context) {
-	if s.workspacePRMonitor == nil {
-		return
-	}
-
-	s.runWorkspacePRMonitorPass(ctx)
-
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.runWorkspacePRMonitorPass(ctx)
-		}
-	}
-}
-
-func (s *Server) runWorkspacePRMonitorPass(ctx context.Context) {
-	if s.workspacePRMonitor == nil {
-		return
-	}
-
-	updates, err := s.workspacePRMonitor.RunOnce(ctx)
-	if err != nil {
-		slog.Warn("workspace PR monitor pass failed", "err", err)
-		return
-	}
-	for i := range updates {
-		update := updates[i]
-		s.broadcastWorkspaceStatus(update.WorkspaceID)
-		s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
-	}
-}
-
-func (s *Server) runWorkspacePushedHeadObserverLoop(ctx context.Context) {
-	if s.workspacePushedHeadObserver == nil {
-		return
-	}
-
-	s.runWorkspacePushedHeadObserverPass(ctx)
-
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.runWorkspacePushedHeadObserverPass(ctx)
-		}
-	}
-}
-
-func (s *Server) runWorkspacePushedHeadObserverPass(ctx context.Context) {
-	if s.workspacePushedHeadObserver == nil {
-		return
-	}
-
-	result, err := s.workspacePushedHeadObserver.RunOnce(ctx)
-	if err != nil {
-		slog.Warn("workspace pushed-head observer pass failed", "err", err)
-		return
-	}
-	for i := range result.Associations {
-		association := result.Associations[i]
-		s.hub.Broadcast(Event{
-			Type: "workspace_pr_associated",
-			Data: workspacePRAssociatedPayload{
-				WorkspaceID:  association.WorkspaceID,
-				Provider:     string(association.Provider),
-				PlatformHost: association.PlatformHost,
-				RepoPath:     association.RepoPath,
-				Owner:        association.Owner,
-				Name:         association.Name,
-				IssueNumber:  association.IssueNumber,
-				PRNumber:     association.PRNumber,
-				AssociatedAt: formatUTCRFC3339(association.AssociatedAt),
-			},
-		})
-		s.broadcastWorkspaceStatus(association.WorkspaceID)
-		s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
-	}
-	for i := range result.HeadChanges {
-		change := result.HeadChanges[i]
-		s.hub.Broadcast(Event{
-			Type: "workspace_pushed_head_changed",
-			Data: workspacePushedHeadChangedPayload{
-				WorkspaceID:  change.WorkspaceID,
-				Provider:     string(change.Provider),
-				PlatformHost: change.PlatformHost,
-				RepoPath:     change.RepoPath,
-				Owner:        change.Owner,
-				Name:         change.Name,
-				Number:       change.Number,
-				OldSHA:       change.OldSHA,
-				NewSHA:       change.NewSHA,
-				Remote:       change.RemoteName,
-				Branch:       change.BranchName,
-				TrackingRef:  change.TrackingRef,
-				ObservedAt:   formatUTCRFC3339(change.ObservedAt),
-			},
-		})
-		s.enqueueWorkspacePushedHeadRefresh(change)
-	}
-}
-
-func (s *Server) broadcastWorkspaceStatus(workspaceID string) {
-	s.hub.Broadcast(Event{
-		Type: "workspace_status",
-		Data: map[string]string{"id": workspaceID},
-	})
 }
 
 // Shutdown stops the HTTP listener (if started via ListenAndServe
@@ -725,30 +612,24 @@ func newServer(
 	})
 
 	s := &Server{
-		db:                             database,
-		repoResolver:                   repoResolver,
-		basePath:                       basePath,
-		syncer:                         syncer,
-		archive:                        options.Archive,
-		clones:                         clones,
-		telemetry:                      options.Telemetry,
-		cfg:                            cfg,
-		cfgPath:                        cfgPath,
-		tokenSources:                   options.TokenSources,
-		bootCfgSnapshot:                snapshotStartupConfig(cfg),
-		runtimeStripEnvVars:            initialRuntimeStripEnvNames(cfg),
-		options:                        options,
-		apiAuthToken:                   options.APIAuthToken,
-		now:                            time.Now,
-		hub:                            NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
-		tmuxActivity:                   newTmuxActivityTracker(nil),
-		labelCatalogRefreshIDs:         make(map[int64]struct{}),
-		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
-		workspaceEnrichmentInFlight:    make(map[string]uint64),
-		workspaceEnrichmentGenerations: make(map[string]uint64),
-		workspaceEnrichmentPending:     make(map[string]workspaceEnrichmentJob),
-		workspaceEnrichmentSlots:       make(chan struct{}, tmuxProbeMaxConcurrency),
-		deferredMergeMaxWait:           deferredMergeMaxWait,
+		db:                     database,
+		repoResolver:           repoResolver,
+		basePath:               basePath,
+		syncer:                 syncer,
+		archive:                options.Archive,
+		clones:                 clones,
+		telemetry:              options.Telemetry,
+		cfg:                    cfg,
+		cfgPath:                cfgPath,
+		tokenSources:           options.TokenSources,
+		bootCfgSnapshot:        snapshotStartupConfig(cfg),
+		runtimeStripEnvVars:    initialRuntimeStripEnvNames(cfg),
+		options:                options,
+		apiAuthToken:           options.APIAuthToken,
+		now:                    time.Now,
+		hub:                    NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
+		labelCatalogRefreshIDs: make(map[int64]struct{}),
+		deferredMergeMaxWait:   deferredMergeMaxWait,
 		bgCtx: shutdownAwareContext{
 			parent:   bgBaseCtx,
 			deadline: bgDeadline,
@@ -817,26 +698,6 @@ func newServer(
 		Clones:   clones,
 		Config:   cfg,
 	})
-	s.workspaceDiffCache = newWorkspaceDiffCache(s.bgCtx, workspaceDiffCacheDeps{
-		onReady: func(workspaceID string, revision uint64, version string) {
-			s.hub.Broadcast(Event{Type: "workspace_diff_ready", Data: workspaceDiffEventData{
-				WorkspaceID: workspaceID,
-				Revision:    revision,
-				Version:     version,
-			}})
-		},
-		onChanged: func(workspaceID string, revision uint64, version string) {
-			s.hub.Broadcast(Event{Type: "workspace_diff_changed", Data: workspaceDiffEventData{
-				WorkspaceID: workspaceID,
-				Revision:    revision,
-				Version:     version,
-			}})
-		},
-	})
-	s.runBackground(func(ctx context.Context) {
-		<-ctx.Done()
-		s.workspaceDiffCache.Wait()
-	})
 	s.kataSnapshots = newKataSnapshotCoordinator(s.bgCtx, kataSnapshotCoordinatorDeps{})
 	s.runBackground(s.kataSnapshots.run)
 	s.kataEvents = newKataFrontendEventRegistry(s.bgCtx, kataFrontendEventRegistryDeps{
@@ -848,7 +709,6 @@ func newServer(
 		<-ctx.Done()
 		s.kataEvents.Close()
 	})
-
 	s.hostOpts.Store(&hostOpts)
 	if hostOpts.TrustReverseProxy && len(hostOpts.Allowed) == 0 {
 		slog.Warn(
@@ -890,8 +750,6 @@ func newServer(
 	}
 	if options.WorktreeDir != "" {
 		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
-		s.workspacePRMonitor = workspace.NewPRMonitor(database)
-		s.workspacePushedHeadObserver = workspace.NewPushedHeadObserver(database)
 		s.workspaces.SetTmuxCommand(tmuxCmd)
 		s.workspaces.SetHideTmuxStatus(hideTmuxStatus)
 		s.workspaces.SetIssueBranchSlugEnabled(
@@ -955,15 +813,41 @@ func newServer(
 			PtyOwnerRuntime:          runtimePtyOwner,
 			KnownPtyOwnerSessionKeys: s.workspaces.RuntimeSessionKeysForWorkspace,
 		})
-		if err := s.restoreRuntimeSessions(context.Background()); err != nil {
-			slog.Warn("restore runtime tmux sessions", "err", err)
-		}
 	}
+	s.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
+		DB:                database,
+		Resolver:          repoResolver,
+		Syncer:            syncer,
+		Config:            cfg,
+		Workspaces:        s.workspaces,
+		Runtime:           s.runtime,
+		TmuxCommand:       tmuxCmd,
+		Now:               s.now,
+		BackgroundContext: s.bgCtx,
+		RunBackground:     s.runBackground,
+		Broadcast: func(event workspaceapi.Event) uint64 {
+			return s.hub.Broadcast(Event{Type: event.Type, Data: event.Data})
+		},
+		Subscribe:              s.subscribeWorkspaceEvents,
+		Generation:             s.hub.Generation,
+		RecomputeWorktreeLinks: s.recomputeWorktreeLinksNow,
+		RefreshWorktreeStats:   s.fleetWorktreeStatsSampler.refreshWorktreeStats,
+		RefreshProjectInventory: func(ctx context.Context, projectID string) error {
+			project, err := database.GetProjectByID(ctx, projectID)
+			if err != nil {
+				return err
+			}
+			s.fleetWorktreeDiscoverer.refreshProject(ctx, project.ID, project.LocalPath)
+			return nil
+		},
+		LookupRepo:        s.lookupRepoByProviderRoute,
+		EnqueueDetailSync: s.enqueueDetailSyncWithCompletion,
+	})
+	if err := s.workspaceAPI.RestoreRuntimeSessions(context.Background()); err != nil {
+		slog.Warn("restore runtime tmux sessions", "err", err)
+	}
+	s.workspaceAPI.Start(options.DisableWorkspaceBackgroundMonitors)
 
-	if s.workspaces != nil && !options.DisableWorkspaceBackgroundMonitors {
-		s.runBackground(s.runWorkspacePRMonitorLoop)
-		s.runBackground(s.runWorkspacePushedHeadObserverLoop)
-	}
 	if s.workspaces != nil && tmuxAvailable && s.fleetTmuxMonitor != nil {
 		s.runBackground(s.fleetTmuxMonitor.run)
 	}
@@ -1035,64 +919,6 @@ func newServer(
 	return s
 }
 
-func (s *Server) restoreRuntimeSessions(ctx context.Context) error {
-	if s.db == nil || s.runtime == nil || s.workspaces == nil {
-		return nil
-	}
-	stored, err := s.db.ListAllWorkspaceRuntimeSessions(ctx)
-	if err != nil {
-		return err
-	}
-	for _, session := range stored {
-		summary, err := s.workspaces.GetSummary(ctx, session.WorkspaceID)
-		if err != nil {
-			return err
-		}
-		if summary == nil {
-			continue
-		}
-		restored := localruntime.RestoredRuntimeSession{
-			WorkspaceID: session.WorkspaceID,
-			SessionKey:  session.SessionKey,
-			TargetKey:   session.TargetKey,
-			Label:       session.Label,
-			Kind:        localruntime.LaunchTargetKind(session.Kind),
-			TmuxSession: session.TmuxSession,
-			CWD:         summary.WorktreePath,
-			CreatedAt:   session.CreatedAt,
-		}
-		err = s.runtime.RestoreRuntimeSessions(
-			ctx, []localruntime.RestoredRuntimeSession{restored},
-		)
-		if err == nil {
-			continue
-		}
-		if errors.Is(err, localruntime.ErrSessionNotFound) {
-			if _, forgetErr := s.workspaces.ForgetRuntimeSessionCreatedAt(
-				ctx, session.WorkspaceID, session.SessionKey, session.CreatedAt,
-			); forgetErr != nil {
-				return forgetErr
-			}
-			continue
-		}
-		if errors.Is(err, localruntime.ErrSessionUnavailable) {
-			slog.Warn(
-				"runtime session unavailable after restore",
-				"workspace_id", session.WorkspaceID,
-				"session_key", session.SessionKey,
-				"target_key", session.TargetKey,
-				"tmux_session", session.TmuxSession,
-				"err", err,
-			)
-			continue
-		}
-		return err
-	}
-
-	slog.Debug("restored runtime sessions", "count", len(stored))
-	return nil
-}
-
 func (s *Server) handleRuntimeSessionExit(info localruntime.SessionInfo) {
 	if info.WorkspaceID == hostRuntimeScope {
 		if s.db == nil || info.TmuxSession == "" {
@@ -1145,27 +971,9 @@ func (s *Server) handleRuntimeSessionExit(info localruntime.SessionInfo) {
 		})
 		return
 	}
-	if s.workspaces == nil {
-		return
+	if s.workspaceAPI != nil {
+		s.workspaceAPI.HandleRuntimeSessionExit(info)
 	}
-	s.invalidateWorkspaceEnrichment(info.WorkspaceID)
-	s.runBackground(func(ctx context.Context) {
-		cleanupCtx, cancel := context.WithTimeout(
-			ctx, runtimeSessionCleanupTimeout,
-		)
-		defer cancel()
-		if _, err := s.workspaces.ForgetRuntimeSessionAfterExit(
-			cleanupCtx, info.WorkspaceID, info.Key, info.CreatedAt,
-			info.TmuxSession,
-		); err != nil {
-			slog.Warn(
-				"forget exited runtime session",
-				"workspace_id", info.WorkspaceID,
-				"session_key", info.Key,
-				"err", err,
-			)
-		}
-	})
 }
 
 func preferPtyOwnerForWorkspaces(
@@ -1606,19 +1414,8 @@ func (s *Server) streamEvents(
 			cursor, hasCursor := parseLastEventID(r)
 			ch, done := s.hub.Subscribe(ctx.Context(), !hasCursor)
 			releaseSelection := func() {}
-			if input.WorkspaceID != "" && s.workspaceDiffCache != nil {
-				releaseSelection = s.workspaceDiffCache.Select(
-					input.WorkspaceID,
-					func(resolveCtx context.Context) (workspaceDiffLogicalKey, error) {
-						req, err := s.workspaceDiffRequest(
-							resolveCtx, input.WorkspaceID, string(workspace.WorktreeDiffBaseHead),
-						)
-						if err != nil {
-							return workspaceDiffLogicalKey{}, err
-						}
-						return s.workspaceDiffCacheKey(req, false), nil
-					},
-				)
+			if input.WorkspaceID != "" && s.workspaceAPI != nil {
+				releaseSelection = s.workspaceAPI.SelectWorkspaceDiff(input.WorkspaceID)
 			}
 			defer releaseSelection()
 			s.serveSSESubscribed(ctx.Context(), w, rc, cursor, hasCursor, ch, done)

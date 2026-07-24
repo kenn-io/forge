@@ -4,9 +4,7 @@ import (
 	"time"
 
 	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitclone"
 	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 type worktreeLinkResponse struct {
@@ -268,28 +266,8 @@ type resolveItemResponse struct {
 	RepoTracked bool   `json:"repo_tracked"`
 }
 
-type diffResponse struct {
-	Stale               bool                `json:"stale"`
-	WhitespaceOnlyCount int                 `json:"whitespace_only_count"`
-	Files               []gitclone.DiffFile `json:"files"`
-	SnapshotVersion     string              `json:"snapshot_version,omitempty" doc:"Opaque workspace diff snapshot version used to keep files and patches coherent."`
-	// DiffHeadSHA is the synced PR diff snapshot head this diff was
-	// computed from; clients compare it against platform_head_sha to
-	// detect stale cached diff context. Empty for non-PR diffs.
-	DiffHeadSHA string `json:"diff_head_sha,omitempty" doc:"Synced PR diff snapshot head this diff was computed from. Always set for pull request diffs (the endpoint fails when no snapshot head is synced); empty for commit and workspace diffs. Compare with the pull detail's platform_head_sha to detect stale cached diff context; unrelated to 'stale', which reports clone-refresh staleness."`
-}
-
-type filesResponse struct {
-	Stale               bool                `json:"stale"`
-	WhitespaceOnlyCount int                 `json:"whitespace_only_count"`
-	Files               []gitclone.DiffFile `json:"files"`
-	SnapshotVersion     string              `json:"snapshot_version,omitempty" doc:"Opaque workspace diff snapshot version to pin on the following workspace diff request."`
-}
-
-type workspaceDiffWatchResponse struct {
-	Changed bool   `json:"changed" doc:"True when the caller must reload the watched default-HEAD snapshot."`
-	Version string `json:"version" doc:"Opaque version of the current default-HEAD snapshot; never a version from another diff scope."`
-}
+type diffResponse = httpapi.DiffResponse
+type filesResponse = httpapi.FilesResponse
 
 type diffReviewLineRange struct {
 	Path        string `json:"path"`
@@ -352,13 +330,7 @@ type diffReviewThreadResponse struct {
 	UpdatedAt         string `json:"updated_at"`
 }
 
-type filePreviewResponse struct {
-	Path      string `json:"path"`
-	MediaType string `json:"media_type"`
-	Encoding  string `json:"encoding"`
-	Content   string `json:"content"`
-	Size      int64  `json:"size"`
-}
+type filePreviewResponse = httpapi.FilePreviewResponse
 
 type mrImportMetadataResponse struct {
 	Number           int    `json:"number"`
@@ -395,73 +367,8 @@ type rateLimitsResponse struct {
 	Hosts map[string]rateLimitHostStatus `json:"hosts"`
 }
 
-type commitResponse struct {
-	SHA        string    `json:"sha"         doc:"Full commit SHA"`
-	Message    string    `json:"message"     doc:"First line of commit message"`
-	AuthorName string    `json:"author_name" doc:"Commit author display name"`
-	AuthoredAt time.Time `json:"authored_at" doc:"Commit author date (RFC3339)"`
-	Pushed     *bool     `json:"pushed,omitempty" doc:"Whether the commit is reachable from the workspace branch's upstream tracking ref; false means it has not been pushed. Omitted when push status is unknown, such as pull request commits."`
-}
-
-type commitsResponse struct {
-	Commits []commitResponse `json:"commits" doc:"Commits in newest-first order"`
-}
-
-// workspaceResponse describes one middleman-managed workspace.
-//
-// This payload exists so the UI can reopen a durable local workspace and render
-// the correct item-specific presentation around it. It represents middleman's
-// own persisted workspace model, not an arbitrary host worktree inventory.
-type workspaceResponse struct {
-	ID                    string                    `json:"id"`
-	Repo                  httpapi.RepoRefResponse   `json:"repo"`
-	PlatformHost          string                    `json:"platform_host"`
-	RepoOwner             string                    `json:"repo_owner"`
-	RepoName              string                    `json:"repo_name"`
-	ItemType              string                    `json:"item_type"`
-	ItemNumber            int                       `json:"item_number"`
-	ItemKey               string                    `json:"item_key"`
-	GitHeadRef            string                    `json:"git_head_ref"`
-	WorktreePath          string                    `json:"worktree_path"`
-	TmuxSession           string                    `json:"tmux_session"`
-	TmuxPaneTitle         *string                   `json:"tmux_pane_title,omitempty"`
-	TmuxWorking           bool                      `json:"tmux_working"`
-	TmuxActivitySource    string                    `json:"tmux_activity_source"`
-	TmuxLastOutputAt      *string                   `json:"tmux_last_output_at"`
-	Status                string                    `json:"status"`
-	ErrorMessage          *string                   `json:"error_message,omitempty"`
-	CreatedAt             string                    `json:"created_at"`
-	ItemLastActivityAt    *string                   `json:"item_last_activity_at,omitempty"`
-	MRTitle               *string                   `json:"mr_title,omitempty"`
-	MRState               *string                   `json:"mr_state,omitempty"`
-	MRIsDraft             *bool                     `json:"mr_is_draft,omitempty"`
-	MRCIStatus            *string                   `json:"mr_ci_status,omitempty"`
-	MRReviewDecision      *string                   `json:"mr_review_decision,omitempty"`
-	MRAdditions           *int                      `json:"mr_additions,omitempty"`
-	MRDeletions           *int                      `json:"mr_deletions,omitempty"`
-	CommitsAhead          *int                      `json:"commits_ahead,omitempty"`
-	CommitsBehind         *int                      `json:"commits_behind,omitempty"`
-	EnrichmentStatus      string                    `json:"enrichment_status" enum:"not_applicable,pending,fresh,stale,failed" doc:"Aggregate git-divergence and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available."`
-	EnrichmentRefreshedAt *string                   `json:"enrichment_refreshed_at,omitempty" doc:"Oldest successful refresh time across the populated enrichment components."`
-	EnrichmentError       *string                   `json:"enrichment_error,omitempty" doc:"Combined error from the most recent reconciliation attempt; populated component fields may still contain last-known-good values."`
-	AssociatedPRNumber    *int                      `json:"associated_pr_number,omitempty"`
-	Kata                  *db.WorkspaceKataMetadata `json:"kata,omitempty"`
-}
-
-type workspaceRuntimeResponse struct {
-	LaunchTargets []localruntime.LaunchTarget `json:"launch_targets"`
-	Sessions      []localruntime.SessionInfo  `json:"sessions"`
-}
-
-type runtimeAttachSpecResponse struct {
-	Version           int      `json:"version"`
-	Kind              string   `json:"kind"`
-	SessionKey        string   `json:"session_key"`
-	TargetKey         string   `json:"target_key"`
-	TmuxSession       string   `json:"tmux_session"`
-	Command           []string `json:"command"`
-	RequiresLocalHost bool     `json:"requires_local_host"`
-}
+type commitResponse = httpapi.CommitResponse
+type commitsResponse = httpapi.CommitsResponse
 
 // workspaceRef is the lightweight link from item detail APIs back to an
 // existing middleman workspace.
@@ -471,46 +378,6 @@ type runtimeAttachSpecResponse struct {
 type workspaceRef struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
-}
-
-// toWorkspaceResponse maps the DB workspace summary into the API shape used by
-// the workspaces page and terminal view.
-func toWorkspaceResponse(
-	s *db.WorkspaceSummary,
-) workspaceResponse {
-	var itemLastActivityAt *string
-	if s.ItemLastActivityAt != nil {
-		formatted := s.ItemLastActivityAt.UTC().Format(time.RFC3339)
-		itemLastActivityAt = &formatted
-	}
-	return workspaceResponse{
-		ID:                 s.ID,
-		Repo:               repoRefFromParts(s.Platform, s.PlatformHost, s.RepoOwner, s.RepoName),
-		PlatformHost:       s.PlatformHost,
-		RepoOwner:          s.RepoOwner,
-		RepoName:           s.RepoName,
-		ItemType:           s.ItemType,
-		ItemNumber:         s.ItemNumber,
-		ItemKey:            s.ItemKey,
-		GitHeadRef:         s.GitHeadRef,
-		WorktreePath:       s.WorktreePath,
-		TmuxSession:        s.TmuxSession,
-		Status:             s.Status,
-		EnrichmentStatus:   workspaceEnrichmentNotApplicable,
-		TmuxActivitySource: tmuxActivitySourceUnknown,
-		ErrorMessage:       s.ErrorMessage,
-		CreatedAt:          s.CreatedAt.UTC().Format(time.RFC3339),
-		ItemLastActivityAt: itemLastActivityAt,
-		MRTitle:            s.MRTitle,
-		MRState:            s.MRState,
-		MRIsDraft:          s.MRIsDraft,
-		MRCIStatus:         s.MRCIStatus,
-		MRReviewDecision:   s.MRReviewDecision,
-		MRAdditions:        s.MRAdditions,
-		MRDeletions:        s.MRDeletions,
-		AssociatedPRNumber: s.AssociatedPRNumber,
-		Kata:               s.KataMetadata,
-	}
 }
 
 const activitySafetyCap = 5000

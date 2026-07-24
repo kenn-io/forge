@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 )
 
 func launchCommandSessionForDeleteTest(
@@ -76,7 +77,7 @@ func TestRemoveProjectWorktreeStopsRuntimeSessions(t *testing.T) {
 	resp.Body.Close()
 
 	assertFakeTmuxKilledSession(t, recordPath, tmuxSession)
-	scope := projectWorktreeRuntimeScope(worktreeID)
+	scope := workspaceapi.ProjectWorktreeRuntimeScope(worktreeID)
 	assert.Empty(srv.runtime.ListSessions(scope))
 	rows, err := srv.db.ListProjectWorktreeTmuxSessions(
 		context.Background(), worktreeID,
@@ -106,7 +107,7 @@ func TestDeleteProjectStopsWorktreeRuntimeSessions(t *testing.T) {
 	resp.Body.Close()
 
 	assertFakeTmuxKilledSession(t, recordPath, tmuxSession)
-	scope := projectWorktreeRuntimeScope(worktreeID)
+	scope := workspaceapi.ProjectWorktreeRuntimeScope(worktreeID)
 	assert.Empty(srv.runtime.ListSessions(scope))
 }
 

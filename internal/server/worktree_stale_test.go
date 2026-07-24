@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 )
 
 // TestRemoveStaleWorktreeRoute exercises the stale-worktree removal ported from
@@ -111,7 +112,7 @@ func TestRemoveStaleWorktreeRouteStopsRuntimeSessions(t *testing.T) {
 	resp.Body.Close()
 
 	assertFakeTmuxKilledSession(t, recordPath, tmuxSession)
-	assert.Empty(srv.runtime.ListSessions(projectWorktreeRuntimeScope(worktreeID)))
+	assert.Empty(srv.runtime.ListSessions(workspaceapi.ProjectWorktreeRuntimeScope(worktreeID)))
 	rows, err := srv.db.ListProjectWorktreeTmuxSessions(
 		context.Background(), worktreeID,
 	)

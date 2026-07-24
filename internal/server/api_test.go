@@ -53,6 +53,7 @@ import (
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/ptyowner"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/stacks"
 	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
@@ -9642,6 +9643,7 @@ func TestAPIGetIssueWorkspaceUsesProviderScopedLookup(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
 	req := httptest.NewRequest(
@@ -9726,6 +9728,7 @@ func TestAPIGetPRWorkspaceUsesProviderScopedLookup(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
 	req := httptest.NewRequest(
@@ -9754,6 +9757,7 @@ func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 
 	srv, database := setupTestServer(t)
 	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
 	for _, provider := range []string{"github", "gitlab"} {
 		repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
 			Platform:     provider,
@@ -9806,6 +9810,7 @@ func TestAPICreateWorkspaceRejectsOmittedProviderForUnambiguousRepo(t *testing.T
 
 	srv, database := setupTestServer(t)
 	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
 	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
 		Platform:     "github",
 		PlatformHost: "github.com",
@@ -13664,6 +13669,7 @@ func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
 	srv.workspaces = workspace.NewManager(
 		database, filepath.Join(t.TempDir(), "worktrees"),
 	)
+	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
 	srv.workspaces.SetTmuxCommand([]string{"sh", "-c", "exit 0"})
 	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
 		ID:           "gitlabcap0000001",
@@ -14257,7 +14263,7 @@ func TestRefreshWorkspaceRepoIndexToleratesPartialSyncFailure(t *testing.T) {
 	// issue hits closure detection and its refresh fails (nil issue).
 	partialSrv, partialDB := setupTestServerWithMock(t, &mockGH{})
 	seedIssue(t, partialDB, "acme", "widget", 7, "open")
-	err := partialSrv.refreshWorkspaceRepoIndex(
+	err := partialSrv.workspaceAPI.RefreshWorkspaceRepoIndex(
 		ctx, platform.KindGitHub, "github.com", "acme", "widget",
 	)
 	require.NoError(err,
@@ -14279,7 +14285,7 @@ func TestRefreshWorkspaceRepoIndexToleratesPartialSyncFailure(t *testing.T) {
 		},
 	})
 	seedPR(t, mrDB, "acme", "widget", 1)
-	err = mrSrv.refreshWorkspaceRepoIndex(
+	err = mrSrv.workspaceAPI.RefreshWorkspaceRepoIndex(
 		ctx, platform.KindGitHub, "github.com", "acme", "widget",
 	)
 	require.Error(err,
@@ -14291,7 +14297,7 @@ func TestRefreshWorkspaceRepoIndexToleratesPartialSyncFailure(t *testing.T) {
 			return nil, errors.New("list open PRs down")
 		},
 	})
-	err = hardSrv.refreshWorkspaceRepoIndex(
+	err = hardSrv.workspaceAPI.RefreshWorkspaceRepoIndex(
 		ctx, platform.KindGitHub, "github.com", "acme", "widget",
 	)
 	assert.Error(err, "a hard repository failure must still abort the refresh")
@@ -23063,7 +23069,7 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 		}
 	}
 	srv := New(database, syncer, nil, basePath, cfg, options)
-	srv.workspaceEnrichmentDisabled = true
+	srv.workspaceAPI.SetEnrichmentDisabled(true)
 	t.Cleanup(func() { cleanupWorkspaceServerFixtureTmuxSessions(t, dir) })
 	// Cleanup callbacks run LIFO. Drain the server first so async
 	// workspace setup cannot create a tmux session after fixture
@@ -23849,7 +23855,7 @@ func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 	assert := assert.New(t)
 
 	fixture, _, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
-	fixture.server.workspaceEnrichmentDisabled = false
+	fixture.server.workspaceAPI.SetEnrichmentDisabled(false)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
@@ -23884,12 +23890,12 @@ func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 		}
 		got = resp.JSON200
 		return got.TmuxWorking &&
-			got.TmuxActivitySource == tmuxActivitySourceTitle &&
+			got.TmuxActivitySource == workspaceapi.TmuxActivitySourceTitle &&
 			got.TmuxPaneTitle != nil
 	}, 6*time.Second, 50*time.Millisecond)
 	require.NotNil(got)
 	assert.True(got.TmuxWorking)
-	assert.Equal(tmuxActivitySourceTitle, got.TmuxActivitySource)
+	assert.Equal(workspaceapi.TmuxActivitySourceTitle, got.TmuxActivitySource)
 	require.NotNil(got.TmuxPaneTitle)
 	assert.Equal("⠴ t3code-b5014b03", *got.TmuxPaneTitle)
 }
@@ -25120,7 +25126,7 @@ exit 0
 		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	srv.workspaceEnrichmentDisabled = false
+	srv.workspaceAPI.SetEnrichmentDisabled(false)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
@@ -25179,12 +25185,12 @@ exit 0
 			}
 		}
 		return listed != nil && listed.TmuxWorking &&
-			listed.TmuxActivitySource == tmuxActivitySourceTitle &&
+			listed.TmuxActivitySource == workspaceapi.TmuxActivitySourceTitle &&
 			listed.TmuxPaneTitle != nil
 	}, 2*time.Second, 10*time.Millisecond)
 	require.NotNil(listed)
 	assert.True(listed.TmuxWorking)
-	assert.Equal(tmuxActivitySourceTitle, listed.TmuxActivitySource)
+	assert.Equal(workspaceapi.TmuxActivitySourceTitle, listed.TmuxActivitySource)
 	require.NotNil(listed.TmuxPaneTitle)
 	assert.Equal("⠴ t3code-b5014b03", *listed.TmuxPaneTitle)
 	assert.Contains(readTmuxRecord(t, record), []string{
@@ -25374,12 +25380,12 @@ exit 0
 		}
 		got = resp.JSON200
 		return got.TmuxWorking &&
-			got.TmuxActivitySource == tmuxActivitySourceTitle &&
+			got.TmuxActivitySource == workspaceapi.TmuxActivitySourceTitle &&
 			got.TmuxPaneTitle != nil
 	}, 2*time.Second, 10*time.Millisecond)
 	require.NotNil(got)
 	assert.True(got.TmuxWorking)
-	assert.Equal(tmuxActivitySourceTitle, got.TmuxActivitySource)
+	assert.Equal(workspaceapi.TmuxActivitySourceTitle, got.TmuxActivitySource)
 	require.NotNil(got.TmuxPaneTitle)
 	assert.Equal("⠴ t3code-b5014b03", *got.TmuxPaneTitle)
 	assert.Contains(readTmuxRecord(t, record), []string{
@@ -25862,7 +25868,7 @@ exit 0
 `), 0o755))
 	cfg := &config.Config{Tmux: config.Tmux{Command: []string{tmuxPath}}}
 	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	srv.workspaceEnrichmentDisabled = false
+	srv.workspaceAPI.SetEnrichmentDisabled(false)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 	require.NotEmpty(ws.TmuxSession)
@@ -25897,12 +25903,12 @@ exit 0
 			}
 		}
 		return listed != nil && listed.TmuxWorking &&
-			listed.TmuxActivitySource == tmuxActivitySourceTitle &&
+			listed.TmuxActivitySource == workspaceapi.TmuxActivitySourceTitle &&
 			listed.TmuxPaneTitle != nil
 	}, 6*time.Second, 10*time.Millisecond)
 	require.NotNil(listed)
 	assert.True(listed.TmuxWorking)
-	assert.Equal(tmuxActivitySourceTitle, listed.TmuxActivitySource)
+	assert.Equal(workspaceapi.TmuxActivitySourceTitle, listed.TmuxActivitySource)
 	require.NotNil(listed.TmuxPaneTitle)
 	assert.Equal("⠴ claude-activity", *listed.TmuxPaneTitle)
 }
@@ -26102,21 +26108,17 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 	assert := assert.New(t)
 
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
-	srv.workspaceEnrichmentDisabled = false
+	srv.workspaceAPI.SetEnrichmentDisabled(false)
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	var clockNow atomic.Int64
 	clockNow.Store(now.UnixNano())
-	srv.now = func() time.Time {
+	srv.workspaceAPI.SetNow(func() time.Time {
 		return time.Unix(0, clockNow.Load()).UTC()
-	}
+	})
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 	require.Eventually(func() bool {
-		srv.workspaceEnrichmentMu.Lock()
-		_, cached := srv.workspaceEnrichmentCache[ws.Id]
-		_, inFlight := srv.workspaceEnrichmentInFlight[ws.Id]
-		srv.workspaceEnrichmentMu.Unlock()
-		return cached && !inFlight
+		return srv.workspaceAPI.EnrichmentSettled(ws.Id)
 	}, 2*time.Second, 10*time.Millisecond)
 
 	// runGit strips global/system git config, so the workspace's
@@ -26139,7 +26141,7 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 	))
 	runGit(t, ws.WorktreePath, "add", ".")
 	runGit(t, ws.WorktreePath, "commit", "-m", "ahead 2")
-	clockNow.Store(now.Add(workspaceEnrichmentTTL + time.Second).UnixNano())
+	clockNow.Store(now.Add(workspaceapi.EnrichmentTTL + time.Second).UnixNano())
 
 	var found *generated.WorkspaceResponse
 	require.Eventually(func() bool {
@@ -26188,13 +26190,13 @@ func TestWorkspaceListRestoresAheadBehindAfterUpstreamHealE2E(t *testing.T) {
 	assert := assert.New(t)
 
 	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
-	srv.workspaceEnrichmentDisabled = false
+	srv.workspaceAPI.SetEnrichmentDisabled(false)
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 	var clockNow atomic.Int64
 	clockNow.Store(now.UnixNano())
-	srv.now = func() time.Time {
+	srv.workspaceAPI.SetNow(func() time.Time {
 		return time.Unix(0, clockNow.Load()).UTC()
-	}
+	})
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
@@ -26216,7 +26218,7 @@ func TestWorkspaceListRestoresAheadBehindAfterUpstreamHealE2E(t *testing.T) {
 	branch := ws.GitHeadRef
 	runGit(t, ws.WorktreePath, "config", "--unset", "branch."+branch+".remote")
 	runGit(t, ws.WorktreePath, "config", "--unset", "branch."+branch+".merge")
-	clockNow.Store(now.Add(workspaceEnrichmentTTL + time.Second).UnixNano())
+	clockNow.Store(now.Add(workspaceapi.EnrichmentTTL + time.Second).UnixNano())
 
 	findWorkspace := func() *generated.WorkspaceResponse {
 		listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
@@ -26239,7 +26241,7 @@ func TestWorkspaceListRestoresAheadBehindAfterUpstreamHealE2E(t *testing.T) {
 		broken = findWorkspace()
 		return broken.CommitsAhead == nil &&
 			broken.CommitsBehind == nil &&
-			string(broken.EnrichmentStatus) == workspaceEnrichmentFresh
+			string(broken.EnrichmentStatus) == workspaceapi.EnrichmentFresh
 	}, 2*time.Second, 10*time.Millisecond,
 		"counts must be omitted while the branch has no upstream")
 
@@ -26247,8 +26249,8 @@ func TestWorkspaceListRestoresAheadBehindAfterUpstreamHealE2E(t *testing.T) {
 	// positively places the head branch in the base repository.
 	seedPR(t, database, "acme", "widget", 1,
 		withSeedPRHeadRepoCloneURL("https://github.com/acme/widget.git"))
-	srv.runWorkspacePushedHeadObserverPass(ctx)
-	clockNow.Store(now.Add(2 * (workspaceEnrichmentTTL + time.Second)).UnixNano())
+	srv.workspaceAPI.RunPushedHeadObserverPass(ctx)
+	clockNow.Store(now.Add(2 * (workspaceapi.EnrichmentTTL + time.Second)).UnixNano())
 	var healed *generated.WorkspaceResponse
 	require.Eventually(func() bool {
 		healed = findWorkspace()
@@ -26256,7 +26258,7 @@ func TestWorkspaceListRestoresAheadBehindAfterUpstreamHealE2E(t *testing.T) {
 			healed.CommitsBehind != nil &&
 			*healed.CommitsAhead == 1 &&
 			*healed.CommitsBehind == 0 &&
-			string(healed.EnrichmentStatus) == workspaceEnrichmentFresh
+			string(healed.EnrichmentStatus) == workspaceapi.EnrichmentFresh
 	}, 2*time.Second, 10*time.Millisecond)
 	require.NotNil(healed.CommitsAhead,
 		"observer pass must restore the branch upstream")
@@ -26280,32 +26282,18 @@ func TestWorkspaceDiffEndpointWarnsAndRefreshesOnlyAfterGitHeadMovesE2E(t *testi
 	assert.False(initial.Stale)
 	require.NotNil(initial.SnapshotVersion)
 	initialVersion := *initial.SnapshotVersion
-	key := workspaceDiffLogicalKey{
-		WorkspaceID: ws.Id,
-		Spec: workspace.DiffSnapshotSpec{
-			WorktreePath: ws.WorktreePath,
-			Base:         workspace.WorktreeDiffBaseHead,
-		},
-	}
-	srv.workspaceDiffCache.mu.Lock()
-	entry := srv.workspaceDiffCache.peekEntryLocked(key)
-	if entry != nil {
-		entry.validatedAt = time.Now().Add(-workspaceDiffCacheFreshFor - time.Second)
-		entry.retryAfter = time.Now().Add(time.Hour)
-	}
-	srv.workspaceDiffCache.mu.Unlock()
-	require.NotNil(entry)
+	require.True(srv.workspaceAPI.ExpireDefaultHeadValidation(
+		ws.Id, ws.WorktreePath, time.Now().Add(time.Hour),
+	))
 
 	unchanged := requestWorkspaceDiff(t, srv, ws.Id, "head")
 	assert.False(unchanged.Stale)
-	srv.workspaceDiffCache.mu.Lock()
-	entry = srv.workspaceDiffCache.peekEntryLocked(key)
-	if entry != nil {
-		entry.retryAfter = time.Time{}
-	}
-	srv.workspaceDiffCache.mu.Unlock()
-	require.NotNil(entry)
-	require.NoError(srv.workspaceDiffCache.validate(t.Context(), key))
+	require.True(srv.workspaceAPI.ExpireDefaultHeadValidation(
+		ws.Id, ws.WorktreePath, time.Time{},
+	))
+	require.NoError(srv.workspaceAPI.ValidateDefaultHead(
+		t.Context(), ws.Id, ws.WorktreePath,
+	))
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "head-moved.txt"),
 		[]byte("committed\n"),
@@ -26404,14 +26392,9 @@ func TestWorkspaceDiffSnapshotRefreshesSameSizeEditAndPinsRevisionE2E(t *testing
 
 	events, _ := srv.hub.Subscribe(t.Context(), false)
 	require.NoError(os.WriteFile(path, []byte("b1\n"), 0o644))
-	key := workspaceDiffLogicalKey{
-		WorkspaceID: ws.Id,
-		Spec: workspace.DiffSnapshotSpec{
-			WorktreePath: ws.WorktreePath,
-			Base:         workspace.WorktreeDiffBaseHead,
-		},
-	}
-	require.NoError(srv.workspaceDiffCache.validate(t.Context(), key))
+	require.NoError(srv.workspaceAPI.ValidateDefaultHead(
+		t.Context(), ws.Id, ws.WorktreePath,
+	))
 
 	select {
 	case event := <-events:
@@ -26465,21 +26448,7 @@ func TestWorkspaceDiffPairLeaseSurvivesCostPressureE2E(t *testing.T) {
 	files := requestWorkspaceFiles(t, srv, ws.Id, "head")
 	require.NotNil(files.SnapshotVersion)
 
-	now := time.Now()
-	entry := func() *workspaceDiffCacheEntry {
-		return &workspaceDiffCacheEntry{
-			snapshot:   &workspaceDiffSnapshot{SizeBytes: workspaceDiffCacheMaxBytes},
-			lastAccess: now,
-		}
-	}
-	first := workspaceDiffLogicalKey{WorkspaceID: "pressure-1"}
-	second := workspaceDiffLogicalKey{WorkspaceID: "pressure-2"}
-	srv.workspaceDiffCache.mu.Lock()
-	storedFirst := srv.workspaceDiffCache.storeEntryLocked(first, entry(), now)
-	storedSecond := srv.workspaceDiffCache.storeEntryLocked(second, entry(), now)
-	srv.workspaceDiffCache.mu.Unlock()
-	require.True(storedFirst)
-	require.True(storedSecond)
+	require.True(srv.workspaceAPI.AddDiffCachePressureEntries(time.Now()))
 
 	diff := requestWorkspaceDiffQuery(
 		t, srv, ws.Id,
@@ -26496,26 +26465,29 @@ func TestWorkspaceDiffSelectionLeaseFollowsScopedEventStreamE2E(t *testing.T) {
 
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
 	ws := createReadyWorkspace(t, context.Background(), client)
-	srv.workspaceDiffCache.deps.resolve = func(
-		_ context.Context, spec workspace.DiffSnapshotSpec,
-	) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
-		return workspace.ResolvedDiffSnapshotSpec{
-			DiffSnapshotSpec: spec,
-			BaseRef:          "HEAD",
-			BaseOID:          "base",
-			HeadOID:          "head",
-		}, true, nil
-	}
-	srv.workspaceDiffCache.deps.fingerprint = func(
-		context.Context, workspace.ResolvedDiffSnapshotSpec,
-	) (workspace.DiffFingerprint, error) {
-		return "ready", nil
-	}
-	srv.workspaceDiffCache.deps.prepare = func(
-		context.Context, workspace.ResolvedDiffSnapshotSpec,
-	) (*gitclone.DiffResult, error) {
-		return workspaceDiffTestResult("ready.txt"), nil
-	}
+	restoreDiffDeps := srv.workspaceAPI.SetDiffTestDeps(workspaceapi.DiffTestDeps{
+		Resolve: func(
+			_ context.Context, spec workspace.DiffSnapshotSpec,
+		) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
+			return workspace.ResolvedDiffSnapshotSpec{
+				DiffSnapshotSpec: spec,
+				BaseRef:          "HEAD",
+				BaseOID:          "base",
+				HeadOID:          "head",
+			}, true, nil
+		},
+		Fingerprint: func(
+			context.Context, workspace.ResolvedDiffSnapshotSpec,
+		) (workspace.DiffFingerprint, error) {
+			return "ready", nil
+		},
+		Prepare: func(
+			context.Context, workspace.ResolvedDiffSnapshotSpec,
+		) (*gitclone.DiffResult, error) {
+			return workspaceAPIDiffTestResult("ready.txt"), nil
+		},
+	})
+	t.Cleanup(restoreDiffDeps)
 	httpServer := httptest.NewServer(srv)
 	t.Cleanup(httpServer.Close)
 
@@ -26543,17 +26515,22 @@ func TestWorkspaceDiffSelectionLeaseFollowsScopedEventStreamE2E(t *testing.T) {
 	assert.Equal(ws.Id, readyData.WorkspaceID)
 	assert.NotEmpty(readyData.Version)
 
-	srv.workspaceDiffCache.mu.Lock()
-	assert.Equal(1, srv.workspaceDiffCache.selected[ws.Id])
-	srv.workspaceDiffCache.mu.Unlock()
+	assert.Equal(1, srv.workspaceAPI.SelectedDiffCount(ws.Id))
 
 	cancel()
 	require.NoError(response.Body.Close())
 	require.Eventually(func() bool {
-		srv.workspaceDiffCache.mu.Lock()
-		defer srv.workspaceDiffCache.mu.Unlock()
-		return srv.workspaceDiffCache.selected[ws.Id] == 0
+		return srv.workspaceAPI.SelectedDiffCount(ws.Id) == 0
 	}, time.Second, 10*time.Millisecond)
+}
+
+func workspaceAPIDiffTestResult(path string) *gitclone.DiffResult {
+	return &gitclone.DiffResult{Files: []gitclone.DiffFile{{
+		Path: path, Status: "modified", Patch: "patch",
+		Hunks: []gitclone.Hunk{{Lines: []gitclone.Line{{
+			Type: "add", Content: "line",
+		}}}},
+	}}}
 }
 
 func TestWorkspaceDiffWatchPrewarmsAndPushesSelectedChangesE2E(t *testing.T) {
@@ -26582,12 +26559,8 @@ func TestWorkspaceDiffWatchPrewarmsAndPushesSelectedChangesE2E(t *testing.T) {
 	assert.True(first.Changed)
 	require.NotEmpty(first.Version)
 
-	pushedRequest, err := srv.workspaceDiffRequest(
-		t.Context(), ws.Id, string(workspace.WorktreeDiffBasePushed),
-	)
-	require.NoError(err)
-	pushed, _, err := srv.workspaceDiffCache.Get(
-		t.Context(), srv.workspaceDiffCacheKey(pushedRequest, false),
+	pushed, err := srv.workspaceAPI.DiffSnapshotForBase(
+		t.Context(), ws.Id, workspace.WorktreeDiffBasePushed,
 	)
 	require.NoError(err)
 	require.NotEqual(first.Version, pushed.Version)
@@ -26634,11 +26607,9 @@ func TestWorkspaceDiffWatchPrewarmsAndPushesSelectedChangesE2E(t *testing.T) {
 	}()
 
 	require.Eventually(func() bool {
-		srv.workspaceDiffCache.mu.Lock()
-		defer srv.workspaceDiffCache.mu.Unlock()
-		return srv.workspaceDiffCache.selected[ws.Id] == 1
+		return srv.workspaceAPI.SelectedDiffCount(ws.Id) == 1
 	}, time.Second, 10*time.Millisecond)
-	srv.hub.Broadcast(Event{Type: "workspace_diff_changed", Data: workspaceDiffEventData{
+	srv.hub.Broadcast(Event{Type: "workspace_diff_changed", Data: workspaceapi.DiffEventData{
 		WorkspaceID: ws.Id,
 		Revision:    pushed.Revision,
 		Version:     pushed.Version,
@@ -26690,14 +26661,12 @@ func TestFleetWorkspaceDiffWatchCancellationReleasesRemoteSelectionE2E(t *testin
 	firstResponse, err := http.Get(watchURL)
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResponse.StatusCode)
-	var first workspaceDiffWatchResponse
+	var first workspaceapi.WorkspaceDiffWatchResponse
 	require.NoError(json.NewDecoder(firstResponse.Body).Decode(&first))
 	require.NoError(firstResponse.Body.Close())
 	require.NotEmpty(first.Version)
 	require.Eventually(func() bool {
-		peerServer.workspaceDiffCache.mu.Lock()
-		defer peerServer.workspaceDiffCache.mu.Unlock()
-		return peerServer.workspaceDiffCache.selected[ws.Id] == 0
+		return peerServer.workspaceAPI.SelectedDiffCount(ws.Id) == 0
 	}, time.Second, 10*time.Millisecond)
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -26717,9 +26686,7 @@ func TestFleetWorkspaceDiffWatchCancellationReleasesRemoteSelectionE2E(t *testin
 		requestDone <- requestErr
 	}()
 	require.Eventually(func() bool {
-		peerServer.workspaceDiffCache.mu.Lock()
-		defer peerServer.workspaceDiffCache.mu.Unlock()
-		return peerServer.workspaceDiffCache.selected[ws.Id] == 1
+		return peerServer.workspaceAPI.SelectedDiffCount(ws.Id) == 1
 	}, time.Second, 10*time.Millisecond)
 
 	cancel()
@@ -26730,9 +26697,7 @@ func TestFleetWorkspaceDiffWatchCancellationReleasesRemoteSelectionE2E(t *testin
 		require.Fail("fleet diff watch cancellation did not reach the proxy client")
 	}
 	require.Eventually(func() bool {
-		peerServer.workspaceDiffCache.mu.Lock()
-		defer peerServer.workspaceDiffCache.mu.Unlock()
-		return peerServer.workspaceDiffCache.selected[ws.Id] == 0
+		return peerServer.workspaceAPI.SelectedDiffCount(ws.Id) == 0
 	}, time.Second, 10*time.Millisecond)
 }
 
@@ -26780,7 +26745,7 @@ func TestFleetWorkspaceDiffWatchTransitionsFromCreatingToReadyE2E(t *testing.T) 
 				return
 			}
 
-			var body workspaceDiffWatchResponse
+			var body workspaceapi.WorkspaceDiffWatchResponse
 			require.NoError(json.NewDecoder(response.Body).Decode(&body))
 			assert.True(body.Changed)
 			assert.NotEmpty(body.Version)
@@ -26803,22 +26768,26 @@ func TestWorkspaceManualRefreshRevalidatesCachedDiffWhenProviderRefreshFailsE2E(
 
 	events, _ := srv.hub.Subscribe(t.Context(), false)
 	require.NoError(os.WriteFile(path, []byte("after\n"), 0o644))
-	originalPrepare := srv.workspaceDiffCache.deps.prepare
 	prepareStarted := make(chan struct{})
 	releasePrepare := make(chan struct{})
 	var signalPrepare sync.Once
-	srv.workspaceDiffCache.deps.prepare = func(
-		ctx context.Context,
-		resolved workspace.ResolvedDiffSnapshotSpec,
-	) (*gitclone.DiffResult, error) {
-		signalPrepare.Do(func() { close(prepareStarted) })
-		select {
-		case <-releasePrepare:
-			return originalPrepare(ctx, resolved)
-		case <-ctx.Done():
-			return nil, ctx.Err()
+	restorePrepare := srv.workspaceAPI.WrapDiffPrepare(func(
+		original func(context.Context, workspace.ResolvedDiffSnapshotSpec) (*gitclone.DiffResult, error),
+	) func(context.Context, workspace.ResolvedDiffSnapshotSpec) (*gitclone.DiffResult, error) {
+		return func(
+			ctx context.Context,
+			resolved workspace.ResolvedDiffSnapshotSpec,
+		) (*gitclone.DiffResult, error) {
+			signalPrepare.Do(func() { close(prepareStarted) })
+			select {
+			case <-releasePrepare:
+				return original(ctx, resolved)
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}
-	}
+	})
+	t.Cleanup(restorePrepare)
 
 	request := newWorkspaceFixtureRequest(
 		http.MethodPost,
@@ -26845,7 +26814,7 @@ func TestWorkspaceManualRefreshRevalidatesCachedDiffWhenProviderRefreshFailsE2E(
 	}
 	close(releasePrepare)
 
-	var changed workspaceDiffEventData
+	var changed workspaceapi.DiffEventData
 	select {
 	case event := <-events:
 		for event.Event.Type != "workspace_diff_changed" {
@@ -26856,7 +26825,7 @@ func TestWorkspaceManualRefreshRevalidatesCachedDiffWhenProviderRefreshFailsE2E(
 			}
 		}
 		var ok bool
-		changed, ok = event.Event.Data.(workspaceDiffEventData)
+		changed, ok = event.Event.Data.(workspaceapi.DiffEventData)
 		require.True(ok)
 	case <-time.After(5 * time.Second):
 		require.Fail("workspace diff change event not received")
@@ -27269,7 +27238,7 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 		Tmux: config.Tmux{Command: []string{script}},
 	}
 	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	srv.workspaceEnrichmentDisabled = false
+	srv.workspaceAPI.SetEnrichmentDisabled(false)
 	ctx := context.Background()
 
 	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
@@ -27730,7 +27699,7 @@ func TestBridgeRuntimeAttachmentOutputClosedEmitsExitFrameBeforeDone(t *testing.
 				acceptErr <- err
 				return
 			}
-			exited := bridgeRuntimeAttachment(r.Context(), conn, attach)
+			exited := workspaceapi.BridgeRuntimeAttachment(r.Context(), conn, attach)
 			bridgeReturn <- exited
 			conn.Close(websocket.StatusNormalClosure, "test done")
 		},
@@ -27878,7 +27847,7 @@ func TestBridgeRuntimeAttachmentSubscriberDropDoesNotEmitExitFrame(t *testing.T)
 				acceptErr <- err
 				return
 			}
-			exited := bridgeRuntimeAttachment(r.Context(), conn, attach)
+			exited := workspaceapi.BridgeRuntimeAttachment(r.Context(), conn, attach)
 			bridgeReturn <- exited
 			conn.Close(websocket.StatusNormalClosure, "test done")
 		},
@@ -29578,7 +29547,7 @@ func TestWorkspaceIssueMonitorAssociatesPRAndKeepsIssueOwnership(t *testing.T) {
 	var sawUpdate bool
 	require.Eventually(func() bool {
 		var runErr error
-		updates, runErr = fixture.server.workspacePRMonitor.RunOnce(ctx)
+		updates, runErr = fixture.server.workspaceAPI.RunPRMonitorOnce(ctx)
 		require.NoError(runErr)
 		if len(updates) == 1 {
 			sawUpdate = true
@@ -29635,7 +29604,7 @@ func TestWorkspaceMonitorPassBroadcastsInvalidationEvents(t *testing.T) {
 	fixture, created := prepareIssueWorkspaceAssociationFixture(t)
 	ch, _ := fixture.server.Hub().Subscribe(ctx, true)
 
-	fixture.server.runWorkspacePRMonitorPass(ctx)
+	fixture.server.workspaceAPI.RunPRMonitorPass(ctx)
 
 	status := readEventMatching(t, ch, func(ev Event) bool {
 		data, ok := ev.Data.(map[string]string)

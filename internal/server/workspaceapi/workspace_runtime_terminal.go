@@ -1,4 +1,4 @@
-package server
+package workspaceapi
 
 import (
 	"context"
@@ -25,6 +25,9 @@ type runtimeTerminalControlMsg struct {
 	Rows   int    `json:"rows,omitempty"`
 	Active *bool  `json:"active,omitempty"`
 }
+
+// RuntimeTerminalControlMsg is shared with Fleet's websocket relay.
+type RuntimeTerminalControlMsg = runtimeTerminalControlMsg
 
 const runtimeTerminalSetupStepTimeout = 2 * time.Second
 
@@ -87,6 +90,12 @@ func runtimeTerminalResizePriority(r *http.Request) localruntime.ResizePriority 
 func parseRuntimeTerminalResizeActive(r *http.Request) bool {
 	raw := r.URL.Query().Get("resize_active")
 	return raw == "" || raw == "1" || raw == "true"
+}
+
+// ParseRuntimeTerminalResizeActive reports whether a proxied terminal resize
+// belongs to the active display region.
+func ParseRuntimeTerminalResizeActive(r *http.Request) bool {
+	return parseRuntimeTerminalResizeActive(r)
 }
 
 func (s *Server) serveRuntimeTerminal(
@@ -236,6 +245,11 @@ func parseRuntimeTerminalSize(
 	return cols, rows, colsOK && rowsOK
 }
 
+// ParseRuntimeTerminalSize parses the requested terminal dimensions.
+func ParseRuntimeTerminalSize(r *http.Request) (int, int, bool) {
+	return parseRuntimeTerminalSize(r)
+}
+
 // clampTerminalDim bounds a client-supplied terminal dimension into the
 // uint16 range pty.Winsize requires, so an oversized cols/rows value is
 // capped rather than silently truncated by the narrowing conversion.
@@ -249,6 +263,9 @@ func clampTerminalDim(v int) uint16 {
 		return uint16(v)
 	}
 }
+
+// ClampTerminalDim bounds a terminal dimension to the PTY wire range.
+func ClampTerminalDim(v int) uint16 { return clampTerminalDim(v) }
 
 func parsePositiveQueryInt(r *http.Request, name string) (int, bool) {
 	raw := r.URL.Query().Get(name)
@@ -377,6 +394,16 @@ func bridgeRuntimeAttachment(
 	case <-ctx.Done():
 		return false
 	}
+}
+
+// BridgeRuntimeAttachment bridges a websocket to an active runtime
+// attachment. It is shared by workspace and Fleet terminal tests.
+func BridgeRuntimeAttachment(
+	ctx context.Context,
+	conn *websocket.Conn,
+	attachment *localruntime.Attachment,
+) bool {
+	return bridgeRuntimeAttachment(ctx, conn, attachment)
 }
 
 func handleRuntimeTerminalControl(

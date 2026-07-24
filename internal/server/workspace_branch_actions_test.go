@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/workspace"
 )
 
@@ -103,15 +104,12 @@ func TestWorkspaceRevealRouteOpensWorkspacePath(t *testing.T) {
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
-	previous := revealWorkspacePath
 	var opened string
-	revealWorkspacePath = func(_ context.Context, path string) error {
+	restoreReveal := workspaceapi.SetRevealWorkspacePathForTest(func(_ context.Context, path string) error {
 		opened = path
 		return nil
-	}
-	t.Cleanup(func() {
-		revealWorkspacePath = previous
 	})
+	t.Cleanup(restoreReveal)
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/workspaces/"+ws.Id+"/reveal", nil)
 

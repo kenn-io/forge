@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 )
 
 type repoNumberHostInput struct {
@@ -923,8 +925,8 @@ func (s *Server) getStackForPROnHost(ctx context.Context, input *repoNumberHostI
 	return s.getStackForPR(ctx, &next)
 }
 
-func (s *Server) createIssueWorkspaceOnHost(ctx context.Context, input *createIssueWorkspaceHostInput) (*createWorkspaceOutput, error) {
-	next := createIssueWorkspaceInput{
+func (s *Server) createIssueWorkspaceOnHost(ctx context.Context, input *createIssueWorkspaceHostInput) (*workspaceapi.CreateWorkspaceOutput, error) {
+	next := workspaceapi.CreateIssueWorkspaceInput{
 		Provider:     input.Provider,
 		PlatformHost: input.PlatformHost,
 		Owner:        input.Owner,
@@ -932,5 +934,5 @@ func (s *Server) createIssueWorkspaceOnHost(ctx context.Context, input *createIs
 		Number:       input.Number,
 		Body:         input.Body,
 	}
-	return s.createIssueWorkspace(ctx, &next)
+	return s.workspaceAPI.CreateIssueWorkspace(ctx, &next)
 }

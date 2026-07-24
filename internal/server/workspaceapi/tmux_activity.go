@@ -17,7 +17,7 @@
 // request unless the previous sample is old enough to refresh. Refresh probes
 // are bounded globally and coalesced per session; if a probe is already running
 // or the limit is full, callers reuse the last cached result when one exists.
-package server
+package workspaceapi
 
 import (
 	"context"
@@ -40,6 +40,21 @@ const (
 	tmuxActivitySourceNone    = "none"
 	tmuxActivitySourceUnknown = "unknown"
 )
+
+// TmuxActivitySourceTitle identifies pane-title-based activity.
+const TmuxActivitySourceTitle = tmuxActivitySourceTitle
+
+const (
+	TmuxActivitySourceNone    = tmuxActivitySourceNone
+	TmuxActivitySourceOutput  = tmuxActivitySourceOutput
+	TmuxActivitySourceUnknown = tmuxActivitySourceUnknown
+	TmuxSampleMinInterval     = tmuxSampleMinInterval
+	TmuxActivityTTL           = tmuxActivityTTL
+	TmuxProbeMaxConcurrency   = tmuxProbeMaxConcurrency
+)
+
+// IsWorkingTmuxTitle reports whether a pane title carries the working spinner.
+func IsWorkingTmuxTitle(title string) bool { return isWorkingTmuxTitle(title) }
 
 type TmuxActivitySample struct {
 	Session        string

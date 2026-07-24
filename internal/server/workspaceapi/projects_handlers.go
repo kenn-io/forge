@@ -1,4 +1,4 @@
-package server
+package workspaceapi
 
 import (
 	"bytes"
@@ -72,6 +72,9 @@ type projectWorktreeIDInput struct {
 	WorktreeID string `path:"worktree_id"`
 }
 
+// ProjectWorktreeIDInput identifies one registered project worktree.
+type ProjectWorktreeIDInput = projectWorktreeIDInput
+
 type getProjectOutput struct {
 	Body projectResponse
 }
@@ -103,6 +106,9 @@ type registerWorktreeInput struct {
 		WorktreeName string `json:"worktree_name,omitempty"`
 	}
 }
+
+// RegisterWorktreeInput is the shared project worktree registration contract.
+type RegisterWorktreeInput = registerWorktreeInput
 
 type removeWorktreeInput struct {
 	ProjectID  string `path:"project_id"`
@@ -405,8 +411,8 @@ func (s *Server) registerProjectAtPath(
 
 	// Discover the checkout's worktrees and repository kind immediately so a
 	// freshly registered project does not wait for the next background pass.
-	if s.fleetWorktreeDiscoverer != nil {
-		s.fleetWorktreeDiscoverer.refreshProject(ctx, created.ID, created.LocalPath)
+	if s.refreshProjectInventory != nil {
+		_ = s.refreshProjectInventory(ctx, created.ID)
 	}
 
 	return created, nil
@@ -616,6 +622,13 @@ func (s *Server) registerWorktree(
 	return &registerWorktreeOutput{Body: worktreeResponseFromDB(
 		created, s.projectRootPath(ctx, input.ProjectID),
 	)}, nil
+}
+
+// RegisterWorktree registers or materializes a project worktree.
+func (s *Handler) RegisterWorktree(
+	ctx context.Context, input *RegisterWorktreeInput,
+) (*registerWorktreeOutput, error) {
+	return s.registerWorktree(ctx, input)
 }
 
 // createWorktreeOnDisk is the materializing half of registerWorktree: it
@@ -1041,6 +1054,13 @@ func (s *Server) deleteProjectWorktree(
 	return nil, nil
 }
 
+// DeleteProjectWorktree removes a worktree registry row.
+func (s *Handler) DeleteProjectWorktree(
+	ctx context.Context, input *ProjectWorktreeIDInput,
+) (*struct{}, error) {
+	return s.deleteProjectWorktree(ctx, input)
+}
+
 // setProjectWorktreeHidden handles
 // PUT /api/v1/projects/{project_id}/worktrees/{worktree_id}/hidden. Hiding keeps
 // the worktree registered and discoverable but out of the active list; the flag
@@ -1155,7 +1175,10 @@ func (s *Server) refreshProjectWorktreeStats(
 		}
 		return nil, httpapi.Internal("get project: " + err.Error())
 	}
-	if err := s.fleetWorktreeStatsSampler.refreshWorktreeStats(
+	if s.refreshWorktreeStats == nil {
+		return nil, httpapi.ServiceUnavailable("worktree stats unavailable")
+	}
+	if err := s.refreshWorktreeStats(
 		ctx, worktree.Path, project.DefaultBranch,
 	); err != nil {
 		return nil, httpapi.Internal("refresh worktree stats: " + err.Error())
@@ -1580,6 +1603,13 @@ func killProjectRuntimeTmuxSession(
 	return fmt.Errorf("%w: %s", err, msg)
 }
 
+// KillRuntimeTmuxSession terminates a stored tmux runtime session.
+func KillRuntimeTmuxSession(
+	ctx context.Context, tmuxCommand []string, sessionName string,
+) error {
+	return killProjectRuntimeTmuxSession(ctx, tmuxCommand, sessionName)
+}
+
 func projectRuntimeTmuxSessionAbsent(stderr []byte, err error) bool {
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
@@ -1635,6 +1665,12 @@ func (s *Server) readyRuntimeProjectWorktree(
 
 func projectWorktreeRuntimeScope(worktreeID string) string {
 	return "project-worktree:" + worktreeID
+}
+
+// ProjectWorktreeRuntimeScope returns the runtime-manager scope for a
+// registered project worktree.
+func ProjectWorktreeRuntimeScope(worktreeID string) string {
+	return projectWorktreeRuntimeScope(worktreeID)
 }
 
 // projectWorktreeShellSession returns the runtime's plain_shell session for a
@@ -1758,6 +1794,12 @@ func projectWorktreeRuntimeLaunchError(err error) error {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, msg, nil)
 	}
 	return httpapi.Internal("launch project worktree session: " + msg)
+}
+
+// RuntimeLaunchError maps runtime-manager failures to the stable API problem
+// contract shared by host and project-worktree command launches.
+func RuntimeLaunchError(err error) error {
+	return projectWorktreeRuntimeLaunchError(err)
 }
 
 func projectResponseFromDB(p *db.Project) projectResponse {

@@ -12,6 +12,7 @@ import (
 	realdb "go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/fleet"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
@@ -195,6 +196,11 @@ func newLinkTriggerServer(
 	t.Cleanup(syncer.Stop)
 	hub := NewEventHub()
 	srv := &Server{db: database, syncer: syncer, hub: hub}
+	srv.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
+		DB:                     database,
+		Syncer:                 syncer,
+		RecomputeWorktreeLinks: srv.recomputeWorktreeLinksNow,
+	})
 	return srv, func() int { return countLinkHints(hub) }
 }
 
@@ -238,11 +244,11 @@ func TestRegisterWorktreeRecomputesBranchMatchLinks(t *testing.T) {
 
 	srv, fired := newLinkTriggerServer(t, database)
 	wtPath := filepath.Join(t.TempDir(), "widget-feature")
-	var input registerWorktreeInput
+	var input workspaceapi.RegisterWorktreeInput
 	input.ProjectID = proj.ID
 	input.Body.Branch = "feature"
 	input.Body.Path = wtPath
-	_, err = srv.registerWorktree(ctx, &input)
+	_, err = srv.workspaceAPI.RegisterWorktree(ctx, &input)
 	require.NoError(err)
 
 	links, err := database.GetAllWorktreeLinks(ctx)
@@ -290,10 +296,10 @@ func TestDeleteProjectWorktreeRecomputesBranchMatchLinks(t *testing.T) {
 		LinkedAt:       now,
 	}}))
 
-	var input projectWorktreeIDInput
+	var input workspaceapi.ProjectWorktreeIDInput
 	input.ProjectID = proj.ID
 	input.WorktreeID = wt.ID
-	_, err = srv.deleteProjectWorktree(ctx, &input)
+	_, err = srv.workspaceAPI.DeleteProjectWorktree(ctx, &input)
 	require.NoError(err)
 
 	links, err := database.GetAllWorktreeLinks(ctx)

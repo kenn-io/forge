@@ -70,6 +70,7 @@ test.describe.serial("Roborev", () => {
     });
 
     test("panel parent expands to real member rows through the daemon proxy", async ({ page }) => {
+      await page.route("**/api/roborev/api/stream/events", (route) => route.abort());
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 

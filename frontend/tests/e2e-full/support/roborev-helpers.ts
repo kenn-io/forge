@@ -46,10 +46,19 @@ export function restartDaemon(): void {
 function waitForDaemonHealthy(): void {
   const env = readEnvFile();
   const port = env["ROBOREV_PORT"] ?? "17373";
-  const url = `http://127.0.0.1:${port}/api/status`;
+  const daemonURL = `http://127.0.0.1:${port}/api/status`;
+  const baseURL = process.env["PLAYWRIGHT_E2E_BASE_URL"];
+  if (!baseURL) {
+    throw new Error("PLAYWRIGHT_E2E_BASE_URL not set");
+  }
+  const proxyURL = `${baseURL}/api/roborev/api/status`;
   for (let i = 0; i < 30; i++) {
     try {
-      execSync(`curl -sf ${url}`, {
+      execSync(`curl -sf ${daemonURL}`, {
+        stdio: "pipe",
+        timeout: 2_000,
+      });
+      execSync(`curl -sf ${proxyURL}`, {
         stdio: "pipe",
         timeout: 2_000,
       });
@@ -58,7 +67,7 @@ function waitForDaemonHealthy(): void {
       execSync("sleep 1", { stdio: "pipe" });
     }
   }
-  throw new Error("Daemon not healthy after 30 attempts");
+  throw new Error("Daemon not healthy through Middleman's proxy after 30 attempts");
 }
 
 export async function countRoborevDaemonEventStreams(): Promise<number> {

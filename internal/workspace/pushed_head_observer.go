@@ -128,11 +128,11 @@ func NewPushedHeadObserver(database *db.DB) *PushedHeadObserver {
 	}
 }
 
-func (o *PushedHeadObserver) SetGitReaderForTest(reader remoteHeadGitReader) {
+func (o *PushedHeadObserver) setGitReaderForTest(reader remoteHeadGitReader) {
 	o.git = reader
 }
 
-func (o *PushedHeadObserver) SetNowForTest(now func() time.Time) {
+func (o *PushedHeadObserver) setNowForTest(now func() time.Time) {
 	o.now = now
 }
 

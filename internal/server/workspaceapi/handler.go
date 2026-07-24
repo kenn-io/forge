@@ -72,17 +72,18 @@ type workspaceDiffEventData struct {
 // the root server package while preserving the shared shutdown and event
 // ordering owned by the composition root.
 type Deps struct {
-	DB          *db.DB
-	Resolver    *httpapi.RepositoryResolver
-	Syncer      *ghclient.Syncer
-	Config      ConfigSnapshot
-	Workspaces  *workspace.Manager
-	Runtime     *localruntime.Manager
-	TmuxCommand []string
-	Now         func() time.Time
-	Broadcast   func(Event) uint64
-	Subscribe   func(context.Context, bool) (<-chan RecordedEvent, <-chan struct{})
-	Generation  func() uint64
+	DB                 *db.DB
+	Resolver           *httpapi.RepositoryResolver
+	Syncer             *ghclient.Syncer
+	Config             ConfigSnapshot
+	Workspaces         *workspace.Manager
+	Runtime            *localruntime.Manager
+	TmuxCommand        []string
+	Now                func() time.Time
+	EnrichmentDisabled bool
+	Broadcast          func(Event) uint64
+	Subscribe          func(context.Context, bool) (<-chan RecordedEvent, <-chan struct{})
+	Generation         func() uint64
 
 	RecomputeWorktreeLinks  func(context.Context)
 	RefreshWorktreeStats    func(context.Context, string, string) error
@@ -169,7 +170,8 @@ func New(deps Deps) *Handler {
 		workspaceEnrichmentGenerations: make(map[string]uint64),
 		workspaceEnrichmentPending:     make(map[string]workspaceEnrichmentJob),
 		workspaceEnrichmentSlots:       make(chan struct{}, tmuxProbeMaxConcurrency),
-		tmuxActivity:                   newTmuxActivityTracker(nil),
+		workspaceEnrichmentDisabled:    deps.EnrichmentDisabled,
+		tmuxActivity:                   newTmuxActivityTracker(now),
 		lifecycleCtx:                   lifecycleCtx,
 		lifecycleCancel:                lifecycleCancel,
 		lifecycleDone:                  make(chan struct{}),
@@ -200,138 +202,6 @@ func (h *Handler) Projects() *Handler { return h }
 func (h *Handler) RevalidateSelectedDiffs() {
 	if h != nil && h.workspaceDiffCache != nil {
 		h.workspaceDiffCache.RevalidateSelected()
-	}
-}
-
-// SetEnrichmentDisabled disables background enrichment. It is intended for
-// deterministic integration fixtures that exercise unrelated workspace paths.
-func (h *Handler) SetEnrichmentDisabled(disabled bool) {
-	if h != nil {
-		h.workspaceEnrichmentDisabled = disabled
-	}
-}
-
-// SetNow overrides the handler clock. It is used by deterministic tests and
-// applies to observers, caches, and response enrichment.
-func (h *Handler) SetNow(now func() time.Time) {
-	if h != nil && now != nil {
-		h.now = now
-	}
-}
-
-// SetTmuxActivityClock replaces the activity tracker with the supplied clock.
-func (h *Handler) SetTmuxActivityClock(now func() time.Time) {
-	if h != nil {
-		h.tmuxActivity = newTmuxActivityTracker(now)
-	}
-}
-
-// EnrichmentSettled reports whether a workspace has cached enrichment and no
-// reconciliation currently in flight.
-func (h *Handler) EnrichmentSettled(workspaceID string) bool {
-	if h == nil {
-		return false
-	}
-	h.workspaceEnrichmentMu.Lock()
-	defer h.workspaceEnrichmentMu.Unlock()
-	_, cached := h.workspaceEnrichmentCache[workspaceID]
-	_, inFlight := h.workspaceEnrichmentInFlight[workspaceID]
-	return cached && !inFlight
-}
-
-// EnrichmentIdle reports whether no reconciliation is in flight.
-func (h *Handler) EnrichmentIdle() bool {
-	h.workspaceEnrichmentMu.Lock()
-	defer h.workspaceEnrichmentMu.Unlock()
-	return len(h.workspaceEnrichmentInFlight) == 0
-}
-
-// ClearEnrichmentCache clears cached reconciliation responses.
-func (h *Handler) ClearEnrichmentCache() {
-	h.workspaceEnrichmentMu.Lock()
-	clear(h.workspaceEnrichmentCache)
-	h.workspaceEnrichmentMu.Unlock()
-}
-
-// EnrichmentCached reports whether every workspace has a cached response.
-func (h *Handler) EnrichmentCached(workspaceIDs ...string) bool {
-	h.workspaceEnrichmentMu.Lock()
-	defer h.workspaceEnrichmentMu.Unlock()
-	for _, workspaceID := range workspaceIDs {
-		if _, ok := h.workspaceEnrichmentCache[workspaceID]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
-// HoldEnrichmentSlots occupies every worker slot until release is called.
-func (h *Handler) HoldEnrichmentSlots() func() {
-	for range cap(h.workspaceEnrichmentSlots) {
-		h.workspaceEnrichmentSlots <- struct{}{}
-	}
-	return func() {
-		for range cap(h.workspaceEnrichmentSlots) {
-			<-h.workspaceEnrichmentSlots
-		}
-	}
-}
-
-// EnrichmentPending reports queued or active reconciliation for a workspace.
-func (h *Handler) EnrichmentPending(workspaceID string) bool {
-	h.workspaceEnrichmentMu.Lock()
-	defer h.workspaceEnrichmentMu.Unlock()
-	_, pending := h.workspaceEnrichmentPending[workspaceID]
-	_, inFlight := h.workspaceEnrichmentInFlight[workspaceID]
-	return pending || inFlight
-}
-
-// EnrichmentQueued reports a queued job that has not started running.
-func (h *Handler) EnrichmentQueued(workspaceID string) bool {
-	h.workspaceEnrichmentMu.Lock()
-	defer h.workspaceEnrichmentMu.Unlock()
-	_, pending := h.workspaceEnrichmentPending[workspaceID]
-	_, inFlight := h.workspaceEnrichmentInFlight[workspaceID]
-	return pending && !inFlight
-}
-
-// EnrichmentCacheCountSettled reports cache size after all workers settle.
-func (h *Handler) EnrichmentCacheCountSettled(want int) bool {
-	h.workspaceEnrichmentMu.Lock()
-	defer h.workspaceEnrichmentMu.Unlock()
-	return len(h.workspaceEnrichmentCache) == want &&
-		len(h.workspaceEnrichmentInFlight) == 0
-}
-
-// RunPushedHeadObserverPass runs one observer pass synchronously.
-func (h *Handler) RunPushedHeadObserverPass(ctx context.Context) {
-	if h != nil {
-		h.runWorkspacePushedHeadObserverPass(ctx)
-	}
-}
-
-// SetPushedHeadObserverNow overrides the observer clock for deterministic
-// convergence tests.
-func (h *Handler) SetPushedHeadObserverNow(now func() time.Time) {
-	if h != nil && h.workspacePushedHeadObserver != nil {
-		h.workspacePushedHeadObserver.SetNowForTest(now)
-	}
-}
-
-// RunPRMonitorOnce runs one association reconciliation pass.
-func (h *Handler) RunPRMonitorOnce(
-	ctx context.Context,
-) ([]workspace.PRAssociationUpdate, error) {
-	if h == nil || h.workspacePRMonitor == nil {
-		return nil, nil
-	}
-	return h.workspacePRMonitor.RunOnce(ctx)
-}
-
-// RunPRMonitorPass runs one pass and emits its invalidation events.
-func (h *Handler) RunPRMonitorPass(ctx context.Context) {
-	if h != nil {
-		h.runWorkspacePRMonitorPass(ctx)
 	}
 }
 

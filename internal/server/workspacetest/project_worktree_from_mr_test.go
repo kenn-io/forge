@@ -1,8 +1,7 @@
-package server
+package workspacetest
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -20,6 +19,11 @@ import (
 
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/procutil"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/testutil"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 // registerIdentifiedProject registers localPath as a project carrying the
@@ -107,10 +111,11 @@ func seedMergeRequestForRepo(
 // same-repo merge request: the head branch is fetched from the project's
 // origin, materialized as a new worktree, and registered.
 func TestCreateWorktreeFromMergeRequestRoute(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 	assert := assert.New(t)
 
-	srv, database := setupTestServer(t)
+	srv, database := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -308,10 +313,11 @@ func worktreeConfigForRoute(t *testing.T, dir, key string) string {
 // TestCreateWorktreeFromMergeRequestRouteUnknownNumber: an unsynced merge
 // request is a 404 with the pullNotFound code, and nothing touches disk.
 func TestCreateWorktreeFromMergeRequestRouteUnknownNumber(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -336,9 +342,10 @@ func TestCreateWorktreeFromMergeRequestRouteUnknownNumber(t *testing.T) {
 // TestCreateWorktreeFromMergeRequestRouteNoIdentity: a local-only project
 // cannot resolve merge requests.
 func TestCreateWorktreeFromMergeRequestRouteNoIdentity(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -360,6 +367,7 @@ func TestCreateWorktreeFromMergeRequestRouteNoIdentity(t *testing.T) {
 // import instead of failing with pullNotFound, so a caller (e.g. a fleet
 // hub proxying into this host) does not need a separate sync step.
 func TestCreateWorktreeFromMergeRequestRouteSyncsOnDemand(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 	assert := assert.New(t)
 
@@ -373,44 +381,48 @@ func TestCreateWorktreeFromMergeRequestRouteSyncsOnDemand(t *testing.T) {
 	lifecycleRouteGit(t, origin, "checkout", "-q", "main")
 
 	now := time.Now()
-	mock := &mockGH{
-		getPullRequestFn: func(
-			_ context.Context, _, _ string, number int,
-		) (*gh.PullRequest, error) {
-			require.Equal(43, number)
-			prID := int64(9043)
-			nodeID := "PR_kwDO9043"
-			title := "on-demand sync"
-			state := "open"
-			url := "https://github.com/acme/widget/pull/43"
-			author := "ada"
-			headRef := "feature-y"
-			baseRef := "main"
-			cloneURL := "https://github.com/acme/widget.git"
-			fullName := "acme/widget"
-			return &gh.PullRequest{
-				ID:        &prID,
-				NodeID:    &nodeID,
-				Number:    &number,
-				HTMLURL:   &url,
-				Title:     &title,
-				State:     &state,
-				User:      &gh.User{Login: &author},
-				CreatedAt: &gh.Timestamp{Time: now},
-				UpdatedAt: &gh.Timestamp{Time: now},
-				Head: &gh.PullRequestBranch{
-					Ref: &headRef,
-					SHA: &headSHA,
-					Repo: &gh.Repository{
-						CloneURL: &cloneURL,
-						FullName: &fullName,
-					},
-				},
-				Base: &gh.PullRequestBranch{Ref: &baseRef},
-			}, nil
+	prID := int64(9043)
+	number := 43
+	nodeID := "PR_kwDO9043"
+	title := "on-demand sync"
+	state := "open"
+	url := "https://github.com/acme/widget/pull/43"
+	author := "ada"
+	headRef := "feature-y"
+	baseRef := "main"
+	cloneURL := "https://github.com/acme/widget.git"
+	fullName := "acme/widget"
+	mock := testutil.NewFixtureClient().(*testutil.FixtureClient)
+	mock.PRs["acme/widget"] = []*gh.PullRequest{{
+		ID:        &prID,
+		NodeID:    &nodeID,
+		Number:    &number,
+		HTMLURL:   &url,
+		Title:     &title,
+		State:     &state,
+		User:      &gh.User{Login: &author},
+		CreatedAt: &gh.Timestamp{Time: now},
+		UpdatedAt: &gh.Timestamp{Time: now},
+		Head: &gh.PullRequestBranch{
+			Ref: &headRef,
+			SHA: &headSHA,
+			Repo: &gh.Repository{
+				CloneURL: &cloneURL,
+				FullName: &fullName,
+			},
 		},
-	}
-	srv, _ := setupTestServerWithMock(t, mock)
+		Base: &gh.PullRequestBranch{Ref: &baseRef},
+	}}
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock}, database, nil,
+		[]ghclient.RepoRef{{Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget"}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+	})
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 

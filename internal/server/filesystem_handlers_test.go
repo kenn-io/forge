@@ -74,7 +74,12 @@ func TestFilesystemValidateRepo(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	repo := initLifecycleRouteRepo(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	require.NoError(os.MkdirAll(repo, 0o755))
+	runGit(t, repo, "init", "--initial-branch=main")
+	runGit(t, repo, "config", "user.email", "test@example.com")
+	runGit(t, repo, "config", "user.name", "Test User")
+	runGit(t, repo, "commit", "--allow-empty", "-m", "initial")
 	require.NoError(os.MkdirAll(filepath.Join(repo, "subdir"), 0o755))
 
 	decode := func(path string) (bool, string, string) {

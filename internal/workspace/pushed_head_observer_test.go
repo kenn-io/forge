@@ -117,8 +117,8 @@ func newPushedHeadObserverForTest(
 ) *PushedHeadObserver {
 	t.Helper()
 	observer := NewPushedHeadObserver(d)
-	observer.SetGitReaderForTest(reader)
-	observer.SetNowForTest(func() time.Time {
+	observer.setGitReaderForTest(reader)
+	observer.setNowForTest(func() time.Time {
 		return time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
 	})
 	return observer
@@ -203,8 +203,8 @@ func TestPushedHeadObserverRetriesObservedSHAUntilProviderHeadMatches(t *testing
 	}
 	now := time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
 	observer := NewPushedHeadObserver(d)
-	observer.SetGitReaderForTest(reader)
-	observer.SetNowForTest(func() time.Time { return now })
+	observer.setGitReaderForTest(reader)
+	observer.setNowForTest(func() time.Time { return now })
 
 	first, err := observer.RunOnce(context.Background())
 	require.NoError(err)
@@ -267,8 +267,8 @@ func TestPushedHeadObserverStopsRetryingAfterSuccessfulRefreshStillDiffers(t *te
 	}
 	now := time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
 	observer := NewPushedHeadObserver(d)
-	observer.SetGitReaderForTest(reader)
-	observer.SetNowForTest(func() time.Time { return now })
+	observer.setGitReaderForTest(reader)
+	observer.setNowForTest(func() time.Time { return now })
 
 	first, err := observer.RunOnce(context.Background())
 	require.NoError(err)
@@ -314,8 +314,8 @@ func TestPushedHeadObserverRetriesNewSHAWhenEnqueueWasDropped(t *testing.T) {
 	}
 	now := time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
 	observer := NewPushedHeadObserver(d)
-	observer.SetGitReaderForTest(reader)
-	observer.SetNowForTest(func() time.Time { return now })
+	observer.setGitReaderForTest(reader)
+	observer.setNowForTest(func() time.Time { return now })
 
 	// Suppressed steady state for the first SHA: refresh enqueued and
 	// succeeded, provider still reports a different head.
@@ -358,8 +358,8 @@ func TestPushedHeadObserverLateSuccessForOldSHADoesNotDisturbNewCycle(t *testing
 	}
 	now := time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
 	observer := NewPushedHeadObserver(d)
-	observer.SetGitReaderForTest(reader)
-	observer.SetNowForTest(func() time.Time { return now })
+	observer.setGitReaderForTest(reader)
+	observer.setNowForTest(func() time.Time { return now })
 
 	first, err := observer.RunOnce(context.Background())
 	require.NoError(err)
@@ -434,7 +434,7 @@ func TestPushedHeadObserverAssociatesIssueWorkspaceAndObservesHead(t *testing.T)
 	insertMonitorWorkspace(t, d, worktreePath, nil)
 
 	observer := NewPushedHeadObserver(d)
-	observer.SetNowForTest(func() time.Time {
+	observer.setNowForTest(func() time.Time {
 		return time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
 	})
 	result, err := observer.RunOnce(context.Background())

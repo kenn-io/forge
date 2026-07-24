@@ -65,6 +65,8 @@ type ServerOptions struct {
 	Clones                             *gitclone.Manager // optional clone manager for diff view
 	WorktreeDir                        string            // base dir for workspace worktrees
 	DisableWorkspaceBackgroundMonitors bool
+	DisableWorkspaceEnrichment         bool
+	WorkspaceNow                       func() time.Time
 	PtyOwnerDir                        string
 	PtyOwnerExePath                    string
 	PtyOwnerExeArgs                    []string
@@ -259,6 +261,7 @@ type Server struct {
 	workspaceDependentsOnce   sync.Once
 	workspaceLifecycleCtx     context.Context
 	workspaceLifecycleCancel  context.CancelFunc
+	workspaceDependencyStop   *workspaceDependencyShutdown
 }
 
 // trackHTTPConn is installed as http.Server.ConnState by Serve so
@@ -433,18 +436,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		shutdownErr = errors.Join(shutdownErr, ctx.Err())
 	}
-	if s.workspaceAPI != nil {
-		if first {
-			s.workspaceLifecycleCancel()
-		}
-		shutdownErr = errors.Join(shutdownErr, s.workspaceAPI.Shutdown(ctx))
-	}
-	if first && s.runtime != nil {
-		s.runtime.Shutdown()
-	}
 	if first {
-		s.sshFleet.shutdown()
+		s.workspaceLifecycleCancel()
 	}
+	shutdownErr = errors.Join(shutdownErr, s.workspaceDependencyStop.Shutdown(ctx))
 	return errors.Join(httpErr, shutdownErr)
 }
 
@@ -720,6 +715,9 @@ func newServer(
 	}
 	s.workspaceDependentsCtx, s.workspaceDependentsCancel = context.WithCancel(s.bgCtx)
 	s.workspaceLifecycleCtx, s.workspaceLifecycleCancel = context.WithCancel(context.Background())
+	if options.WorkspaceNow != nil {
+		s.now = options.WorkspaceNow
+	}
 	s.docsAPI = docsapi.New(docsapi.Deps{
 		Config: cfg,
 		BeginConfigMutation: func() func() {
@@ -898,14 +896,15 @@ func newServer(
 		})
 	}
 	s.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
-		DB:          database,
-		Resolver:    repoResolver,
-		Syncer:      syncer,
-		Config:      workspaceConfigSnapshot(cfg, tmuxCmd),
-		Workspaces:  s.workspaces,
-		Runtime:     s.runtime,
-		TmuxCommand: tmuxCmd,
-		Now:         s.now,
+		DB:                 database,
+		Resolver:           repoResolver,
+		Syncer:             syncer,
+		Config:             workspaceConfigSnapshot(cfg, tmuxCmd),
+		Workspaces:         s.workspaces,
+		Runtime:            s.runtime,
+		TmuxCommand:        tmuxCmd,
+		Now:                s.now,
+		EnrichmentDisabled: options.DisableWorkspaceEnrichment,
 		Broadcast: func(event workspaceapi.Event) uint64 {
 			return s.hub.Broadcast(Event{Type: event.Type, Data: event.Data})
 		},
@@ -924,6 +923,15 @@ func newServer(
 		LookupRepo:        s.lookupRepoByProviderRoute,
 		EnqueueDetailSync: s.enqueueDetailSyncWithCompletion,
 	})
+	s.workspaceDependencyStop = newWorkspaceDependencyShutdown(
+		s.workspaceAPI.Shutdown,
+		func() {
+			if s.runtime != nil {
+				s.runtime.Shutdown()
+			}
+			s.sshFleet.shutdown()
+		},
+	)
 	if err := s.workspaceAPI.RestoreRuntimeSessions(context.Background()); err != nil {
 		slog.Warn("restore runtime tmux sessions", "err", err)
 	}

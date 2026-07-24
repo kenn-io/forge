@@ -36,6 +36,7 @@ type workspaceServerFixture struct {
 func setupWorkspaceServerFixture(
 	t *testing.T,
 	cfg *config.Config,
+	serverOptions ...server.ServerOptions,
 ) workspaceServerFixture {
 	t.Helper()
 
@@ -90,16 +91,20 @@ func setupWorkspaceServerFixture(
 		basePath = cfg.BasePath
 	}
 	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
-	srv := servertest.New(t, database, syncer, nil, basePath, cfg, server.ServerOptions{
-		Clones:                             clones,
-		WorktreeDir:                        worktreeDir,
+	options := server.ServerOptions{
 		DisableWorkspaceBackgroundMonitors: true,
 		PtyOwnerInProcess:                  true,
-		HostCheck: server.HostCheckOptions{
-			Bind:    config.HostKey{Host: "127.0.0.1", Port: "8091"},
-			Allowed: []config.HostKey{{Host: "middleman.test", Port: ""}},
-		},
-	})
+	}
+	if len(serverOptions) > 0 {
+		options = serverOptions[0]
+	}
+	options.Clones = clones
+	options.WorktreeDir = worktreeDir
+	options.HostCheck = server.HostCheckOptions{
+		Bind:    config.HostKey{Host: "127.0.0.1", Port: "8091"},
+		Allowed: []config.HostKey{{Host: "middleman.test", Port: ""}},
+	}
+	srv := servertest.New(t, database, syncer, nil, basePath, cfg, options)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()

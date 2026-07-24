@@ -14262,61 +14262,6 @@ func (p *issueMutatorGitLabProvider) EditMergeRequestContent(
 	return platform.MergeRequest{}, p.providerErr
 }
 
-// TestRefreshWorkspaceRepoIndexToleratesPartialSyncFailure pins the workspace
-// refresh decision point: a repo sync cycle that only failed per-item work in
-// one scope (here a seeded open issue whose closed-item refresh fails) must
-// not abort the workspace refresh — sync health already records the partial
-// failure — while a hard repository failure (the open-PR list itself failing)
-// still aborts.
-func TestRefreshWorkspaceRepoIndexToleratesPartialSyncFailure(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-
-	// Partial: the default mock lists no open issues, so the seeded open
-	// issue hits closure detection and its refresh fails (nil issue).
-	partialSrv, partialDB := setupTestServerWithMock(t, &mockGH{})
-	seedIssue(t, partialDB, "acme", "widget", 7, "open")
-	err := partialSrv.workspaceAPI.RefreshWorkspaceRepoIndex(
-		ctx, platform.KindGitHub, "github.com", "acme", "widget",
-	)
-	require.NoError(err,
-		"an issue-scope partial failure must not abort the workspace refresh")
-	repo, err := partialDB.GetRepoByIdentity(
-		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
-	)
-	require.NoError(err)
-	require.NotNil(repo)
-	assert.NotEmpty(repo.LastSyncError,
-		"the tolerated partial failure must still be recorded in sync health")
-
-	// MR-scope partial: a seeded open PR fails its closed-item refresh.
-	// The workspace flow depends on merge-request data, so the refresh
-	// must abort rather than report success over a stale association.
-	mrSrv, mrDB := setupTestServerWithMock(t, &mockGH{
-		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
-			return nil, errors.New("closed PR refresh failed")
-		},
-	})
-	seedPR(t, mrDB, "acme", "widget", 1)
-	err = mrSrv.workspaceAPI.RefreshWorkspaceRepoIndex(
-		ctx, platform.KindGitHub, "github.com", "acme", "widget",
-	)
-	require.Error(err,
-		"a merge-request-scope partial failure must abort the workspace refresh")
-
-	// Hard: the open-PR list itself fails; the refresh must abort.
-	hardSrv, _ := setupTestServerWithMock(t, &mockGH{
-		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
-			return nil, errors.New("list open PRs down")
-		},
-	})
-	err = hardSrv.workspaceAPI.RefreshWorkspaceRepoIndex(
-		ctx, platform.KindGitHub, "github.com", "acme", "widget",
-	)
-	assert.Error(err, "a hard repository failure must still abort the refresh")
-}
-
 // TestAPIResolveItemMapsLookupOutcomes drives GitHub item resolution
 // (/repo/.../resolve/{number}) through a mock client whose type-probe fetch
 // reports a removed, inaccessible, or transferred item. The problem envelope
@@ -22946,6 +22891,17 @@ func setupTestServerWithWorkspacesServer(
 	return fixture.client, fixture.database, fixture.bare, fixture.remote, fixture.server
 }
 
+func setupTestServerWithWorkspacesServerAndEnrichment(
+	t *testing.T,
+	cfg *config.Config,
+) (*apiclient.Client, *db.DB, string, string, *Server) {
+	t.Helper()
+	fixture := setupWorkspaceServerFixtureWithOptions(
+		t, cfg, ServerOptions{PtyOwnerInProcess: true}, true,
+	)
+	return fixture.client, fixture.database, fixture.bare, fixture.remote, fixture.server
+}
+
 type workspaceServerFixture struct {
 	server    *Server
 	client    *apiclient.Client
@@ -22969,10 +22925,11 @@ func setupWorkspaceServerFixtureWithOptions(
 	t *testing.T,
 	cfg *config.Config,
 	options ServerOptions,
+	enableEnrichment ...bool,
 ) workspaceServerFixture {
 	t.Helper()
 	return setupWorkspaceServerFixtureWithHostAndOptions(
-		t, cfg, "github.com", options,
+		t, cfg, "github.com", options, enableEnrichment...,
 	)
 }
 
@@ -22992,9 +22949,10 @@ func setupWorkspaceServerFixtureWithHostAndOptions(
 	cfg *config.Config,
 	platformHost string,
 	options ServerOptions,
+	enableEnrichment ...bool,
 ) workspaceServerFixture {
 	return setupWorkspaceServerFixtureWithMockHostAndOptions(
-		t, cfg, &mockGH{}, platformHost, options,
+		t, cfg, &mockGH{}, platformHost, options, enableEnrichment...,
 	)
 }
 
@@ -23004,6 +22962,7 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 	mock *mockGH,
 	platformHost string,
 	options ServerOptions,
+	enableEnrichment ...bool,
 ) workspaceServerFixture {
 	t.Helper()
 
@@ -23078,6 +23037,7 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 	}
 	options.Clones = clones
 	options.WorktreeDir = worktreeDir
+	options.DisableWorkspaceEnrichment = len(enableEnrichment) == 0 || !enableEnrichment[0]
 	options.HostCheckAllowLoopbackAnyPort = true
 	if !options.HostCheck.Valid() {
 		options.HostCheck = HostCheckOptions{
@@ -23086,7 +23046,6 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 		}
 	}
 	srv := New(database, syncer, nil, basePath, cfg, options)
-	srv.workspaceAPI.SetEnrichmentDisabled(true)
 	t.Cleanup(func() { cleanupWorkspaceServerFixtureTmuxSessions(t, dir) })
 	// Cleanup callbacks run LIFO. Drain the server first so async
 	// workspace setup cannot create a tmux session after fixture
@@ -23871,8 +23830,7 @@ func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	fixture, _, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
-	fixture.server.workspaceAPI.SetEnrichmentDisabled(false)
+	fixture, _, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t, true)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
@@ -24538,6 +24496,7 @@ func TestWorkspacePtyOwnerTerminalFlushesFinalOutputOnExitE2E(t *testing.T) {
 
 func setupPtyOwnerWorkspaceFixture(
 	t *testing.T,
+	enableEnrichment ...bool,
 ) (workspaceServerFixture, string, string) {
 	t.Helper()
 
@@ -24547,7 +24506,7 @@ func setupPtyOwnerWorkspaceFixture(
 		Command: []string{filepath.Join(dir, "missing-tmux")},
 	}}
 	return setupWorkspaceServerFixtureWithOptions(
-		t, cfg, ptyOwnerServerOptions(ptyOwnerDir),
+		t, cfg, ptyOwnerServerOptions(ptyOwnerDir), enableEnrichment...,
 	), dir, ptyOwnerDir
 }
 
@@ -25142,8 +25101,7 @@ exit 0
 		}},
 		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
-	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	srv.workspaceAPI.SetEnrichmentDisabled(false)
+	client, database, _, _, srv := setupTestServerWithWorkspacesServerAndEnrichment(t, cfg)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
@@ -25884,8 +25842,7 @@ fi
 exit 0
 `), 0o755))
 	cfg := &config.Config{Tmux: config.Tmux{Command: []string{tmuxPath}}}
-	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	srv.workspaceAPI.SetEnrichmentDisabled(false)
+	client, database, _, _, _ := setupTestServerWithWorkspacesServerAndEnrichment(t, cfg)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 	require.NotEmpty(ws.TmuxSession)
@@ -27177,14 +27134,6 @@ func requireWorkspaceDiffFile(
 	return generated.DiffFile{}
 }
 
-func workspaceDiffPaths(files []generated.DiffFile) []string {
-	paths := make([]string, 0, len(files))
-	for _, file := range files {
-		paths = append(paths, file.Path)
-	}
-	return paths
-}
-
 func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -27206,8 +27155,7 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 	cfg := &config.Config{
 		Tmux: config.Tmux{Command: []string{script}},
 	}
-	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	srv.workspaceAPI.SetEnrichmentDisabled(false)
+	client, database, _, _, _ := setupTestServerWithWorkspacesServerAndEnrichment(t, cfg)
 	ctx := context.Background()
 
 	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
@@ -28688,162 +28636,6 @@ type rawProblemDetail struct {
 		Location string `json:"location"`
 		Value    any    `json:"value"`
 	} `json:"errors"`
-}
-
-func prepareIssueWorkspaceAssociationFixture(
-	t *testing.T,
-) (workspaceServerFixture, rawWorkspaceStatusResponse) {
-	t.Helper()
-	require := require.New(t)
-
-	fixture := setupWorkspaceServerFixtureWithOptions(t, nil, ServerOptions{
-		DisableWorkspaceBackgroundMonitors: true,
-	})
-	ctx := context.Background()
-
-	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
-	repo, err := fixture.database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
-	require.NotNil(repo)
-
-	createRR := doJSON(
-		t,
-		fixture.server,
-		http.MethodPost,
-		"/api/v1/issues/gh/acme/widget/7/workspace",
-		map[string]string{},
-	)
-	require.Equal(http.StatusAccepted, createRR.Code, createRR.Body.String())
-
-	var created rawWorkspaceStatusResponse
-	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
-	require.NotEmpty(created.ID)
-
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
-	require.NoError(os.WriteFile(
-		filepath.Join(ready.WorktreePath, "feature.txt"),
-		[]byte("feature\n"),
-		0o644,
-	))
-	runGit(t, ready.WorktreePath, "config", "user.email", "test@test.com")
-	runGit(t, ready.WorktreePath, "config", "user.name", "Test")
-	runGit(t, ready.WorktreePath, "add", ".")
-	runGit(t, ready.WorktreePath, "commit", "-m", "feature commit")
-	runGit(t, ready.WorktreePath, "push", "-u", "origin", ready.GitHeadRef)
-	runGit(
-		t, ready.WorktreePath,
-		"remote", "set-url", "origin", "git@github.com:acme/widget.git",
-	)
-
-	now := time.Now().UTC().Truncate(time.Second)
-	headSHA := testGitSHA(t, ready.WorktreePath, "HEAD")
-	mr := &db.MergeRequest{
-		RepoID:           repo.ID,
-		PlatformID:       7000,
-		Number:           42,
-		URL:              "https://github.com/acme/widget/pull/42",
-		Title:            "Workspace monitor association",
-		Author:           "alice",
-		State:            "open",
-		HeadBranch:       ready.GitHeadRef,
-		HeadRepoCloneURL: "https://github.com/acme/widget.git",
-		PlatformHeadSHA:  headSHA,
-		BaseBranch:       "main",
-		CIStatus:         "success",
-		ReviewDecision:   "APPROVED",
-		CreatedAt:        now,
-		UpdatedAt:        now,
-		LastActivityAt:   now,
-	}
-	_, err = fixture.database.UpsertMergeRequest(ctx, mr)
-	require.NoError(err)
-
-	return fixture, created
-}
-
-func TestWorkspaceIssueMonitorAssociatesPRAndKeepsIssueOwnership(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := context.Background()
-
-	fixture, created := prepareIssueWorkspaceAssociationFixture(t)
-
-	var updates []workspace.PRAssociationUpdate
-	var sawUpdate bool
-	require.Eventually(func() bool {
-		var runErr error
-		updates, runErr = fixture.server.workspaceAPI.RunPRMonitorOnce(ctx)
-		require.NoError(runErr)
-		if len(updates) == 1 {
-			sawUpdate = true
-			return true
-		}
-		stored, getErr := fixture.database.GetWorkspace(ctx, created.ID)
-		require.NoError(getErr)
-		return stored != nil &&
-			stored.AssociatedPRNumber != nil &&
-			*stored.AssociatedPRNumber == 42
-	}, 30*time.Second, 100*time.Millisecond)
-	if sawUpdate {
-		assert.Equal(created.ID, updates[0].WorkspaceID)
-		assert.Equal(42, updates[0].PRNumber)
-	}
-
-	getRR := doJSON(
-		t,
-		fixture.server,
-		http.MethodGet,
-		"/api/v1/workspaces/"+created.ID,
-		nil,
-	)
-	require.Equal(http.StatusOK, getRR.Code, getRR.Body.String())
-
-	var got rawWorkspaceStatusResponse
-	require.NoError(json.NewDecoder(getRR.Body).Decode(&got))
-	assert.Equal("issue", got.ItemType)
-	assert.Equal(7, got.ItemNumber)
-	require.NotNil(got.AssociatedPRNumber)
-	assert.Equal(42, *got.AssociatedPRNumber)
-
-	getIssueRR := doJSON(
-		t,
-		fixture.server,
-		http.MethodGet,
-		"/api/v1/issues/gh/acme/widget/7",
-		nil,
-	)
-	require.Equal(http.StatusOK, getIssueRR.Code, getIssueRR.Body.String())
-
-	var issueDetail rawIssueDetailResponse
-	require.NoError(json.NewDecoder(getIssueRR.Body).Decode(&issueDetail))
-	require.NotNil(issueDetail.Workspace)
-	assert.Equal(created.ID, issueDetail.Workspace.ID)
-}
-
-func TestWorkspaceMonitorPassBroadcastsInvalidationEvents(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	ctx := t.Context()
-
-	fixture, created := prepareIssueWorkspaceAssociationFixture(t)
-	ch, _ := fixture.server.Hub().Subscribe(ctx, true)
-
-	fixture.server.workspaceAPI.RunPRMonitorPass(ctx)
-
-	status := readEventMatching(t, ch, func(ev Event) bool {
-		data, ok := ev.Data.(map[string]string)
-		return ev.Type == "workspace_status" && ok && data["id"] == created.ID
-	})
-	changed := readEventMatching(t, ch, func(ev Event) bool {
-		return ev.Type == "data_changed"
-	})
-
-	assert.Equal("workspace_status", status.Type)
-	assert.Equal(map[string]string{"id": created.ID}, status.Data)
-	assert.Equal("data_changed", changed.Type)
 }
 
 func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {

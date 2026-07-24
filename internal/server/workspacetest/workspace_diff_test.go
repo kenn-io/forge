@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -592,6 +593,154 @@ func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
 	assert.False(requireWorkspaceDiffFile(t, *diff.Files, "src.ts").IsGenerated)
 }
 
+func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ws := createReadyWorkspace(t, context.Background(), fixture.client)
+
+	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "first.go"), []byte("package first\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "second.go"), []byte("package second\n"), 0o644))
+
+	diff := requestWorkspaceDiffForPath(t, fixture.server, ws.Id, "head", "first.go")
+	require.NotNil(diff.Files)
+	require.Len(*diff.Files, 1)
+	file := (*diff.Files)[0]
+	assert.Equal("first.go", file.Path)
+	assert.Equal("added", file.Status)
+	assert.Contains(file.Patch, "diff --git a/first.go b/first.go\n")
+	assert.Contains(file.Patch, "new file mode 100644\n")
+	require.NotNil(file.Hunks)
+	require.Len(*file.Hunks, 1)
+	assert.NotContains(workspaceDiffPaths(*diff.Files), "second.go")
+}
+
+func TestWorkspaceDiffPathPrefersCurrentPathOverEarlierRenameE2E(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ws := createReadyWorkspace(t, context.Background(), fixture.client)
+	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "z.txt"), []byte("renamed content\n"), 0o644))
+	runGit(t, ws.WorktreePath, "add", "z.txt")
+	runGit(t, ws.WorktreePath, "commit", "-m", "add rename source")
+	require.NoError(os.Rename(filepath.Join(ws.WorktreePath, "z.txt"), filepath.Join(ws.WorktreePath, "a.txt")))
+	runGit(t, ws.WorktreePath, "add", "-A")
+	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "z.txt"), []byte("new current path\n"), 0o644))
+
+	diff := requestWorkspaceDiffForPath(t, fixture.server, ws.Id, "head", "z.txt")
+	require.NotNil(diff.Files)
+	require.Len(*diff.Files, 1)
+	assert.Equal("z.txt", (*diff.Files)[0].Path)
+	assert.Equal("added", (*diff.Files)[0].Status)
+
+	preview := requestWorkspaceFilePreview(t, fixture.server, ws.Id, "head", "z.txt", "new")
+	content, err := base64.StdEncoding.DecodeString(preview.Content)
+	require.NoError(err)
+	assert.Equal("z.txt", preview.Path)
+	assert.Equal("new current path\n", string(content))
+}
+
+func TestWorkspaceDiffEndpointKeepsModifiedSourcePatchSeparateFromCopyE2E(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ws := createReadyWorkspace(t, context.Background(), fixture.client)
+	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+
+	sourcePath := filepath.Join(ws.WorktreePath, "src", "a.txt")
+	copiedPath := filepath.Join(ws.WorktreePath, "src", "z.txt")
+	require.NoError(os.MkdirAll(filepath.Dir(sourcePath), 0o755))
+	require.NoError(os.WriteFile(sourcePath, []byte("base line\nshared line\n"), 0o644))
+	runGit(t, ws.WorktreePath, "add", ".")
+	runGit(t, ws.WorktreePath, "commit", "-m", "add copy source fixture")
+	require.NoError(os.WriteFile(copiedPath, []byte("base line\nshared line\n"), 0o644))
+	require.NoError(os.WriteFile(sourcePath, []byte("changed line\nshared line\n"), 0o644))
+	runGit(t, ws.WorktreePath, "add", "src/z.txt")
+
+	diff := requestWorkspaceDiff(t, fixture.server, ws.Id, "head")
+	require.NotNil(diff.Files)
+	source := requireWorkspaceDiffFile(t, *diff.Files, "src/a.txt")
+	copied := requireWorkspaceDiffFile(t, *diff.Files, "src/z.txt")
+	assert.Equal("modified", source.Status)
+	assert.Equal(int64(1), source.Additions)
+	assert.Equal(int64(1), source.Deletions)
+	assert.Contains(source.Patch, "diff --git a/src/a.txt b/src/a.txt\n")
+	assert.Contains(source.Patch, "+changed line\n")
+	assert.NotContains(source.Patch, "copy to src/z.txt")
+	require.NotNil(source.Hunks)
+	require.Len(*source.Hunks, 1)
+	assert.Equal("copied", copied.Status)
+	assert.Zero(copied.Additions)
+	assert.Zero(copied.Deletions)
+	assert.Empty(copied.Patch)
+	require.NotNil(copied.Hunks)
+	assert.Empty(*copied.Hunks)
+}
+
+func TestWorkspaceDiffEndpointQuotesDangerousPathsE2E(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	worktreePath := filepath.Join(dir, "worktree")
+	runGit(t, dir, "init", "--initial-branch=main", worktreePath)
+	runGit(t, worktreePath, "config", "user.email", "test@test.com")
+	runGit(t, worktreePath, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(filepath.Join(worktreePath, "base.txt"), []byte("base\n"), 0o644))
+	runGit(t, worktreePath, "add", ".")
+	runGit(t, worktreePath, "commit", "-m", "base commit")
+
+	maliciousPath := "src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@"
+	require.NoError(os.MkdirAll(filepath.Join(worktreePath, "src"), 0o755))
+	require.NoError(os.WriteFile(filepath.Join(worktreePath, maliciousPath), []byte("real content\n"), 0o644))
+	unicodeSeparatorPath := "src/unicode\u2028separator\u2029file.go"
+	require.NoError(os.WriteFile(filepath.Join(worktreePath, unicodeSeparatorPath), []byte("unicode separator content\n"), 0o644))
+
+	database := dbtest.Open(t)
+	srv := server.New(database, nil, nil, "/", nil, server.ServerOptions{WorktreeDir: filepath.Join(dir, "managed-worktrees")})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+		defer cancel()
+		require.NoError(srv.Shutdown(ctx))
+	})
+	require.NoError(database.InsertWorkspace(t.Context(), &workspace.Workspace{
+		ID: "ws-control-paths", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 1, GitHeadRef: "feature/control-paths",
+		WorkspaceBranch: "middleman/pr-1", WorktreePath: worktreePath,
+		TmuxSession: "middleman-control-paths", Status: "ready",
+	}))
+
+	diff := requestWorkspaceDiff(t, srv, "ws-control-paths", "head")
+	require.NotNil(diff.Files)
+	file := requireWorkspaceDiffFile(t, *diff.Files, filepath.ToSlash(maliciousPath))
+	assert.Contains(file.Patch, `diff --git "a/src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@" "b/src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@"`)
+	assert.Contains(file.Patch, `+++ "b/src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@"`)
+	assert.NotContains(file.Patch, "\n--- forged\n")
+	assert.NotContains(file.Patch, "\n+++ forged\n")
+	assert.NotContains(file.Patch, "\n@@ -1,1 +1,1 @@\n")
+	assert.Equal(1, strings.Count(file.Patch, "\n@@ "))
+
+	unicodeFile := requireWorkspaceDiffFile(t, *diff.Files, filepath.ToSlash(unicodeSeparatorPath))
+	assert.Contains(unicodeFile.Patch, `diff --git "a/src/unicode\u2028separator\u2029file.go" "b/src/unicode\u2028separator\u2029file.go"`)
+	assert.Contains(unicodeFile.Patch, `+++ "b/src/unicode\u2028separator\u2029file.go"`)
+	assert.NotContains(unicodeFile.Patch, "\u2028")
+	assert.NotContains(unicodeFile.Patch, "\u2029")
+}
+
 func requestWorkspaceFiles(
 	t *testing.T,
 	srv *server.Server,
@@ -666,6 +815,20 @@ func requestWorkspaceDiffQuery(
 ) generated.DiffResponse {
 	t.Helper()
 	return requestWorkspaceDiffPath(t, srv, "/api/v1/workspaces/"+workspaceID+"/diff?"+query)
+}
+
+func requestWorkspaceDiffForPath(
+	t *testing.T,
+	srv *server.Server,
+	workspaceID string,
+	base string,
+	path string,
+) generated.DiffResponse {
+	t.Helper()
+	return requestWorkspaceDiffQuery(
+		t, srv, workspaceID,
+		"base="+url.QueryEscape(base)+"&path="+url.QueryEscape(path),
+	)
 }
 
 func requestWorkspaceDiffPath(t *testing.T, srv *server.Server, query string) generated.DiffResponse {

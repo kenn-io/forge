@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"go.kenn.io/middleman/internal/workspace"
 )
 
 func (s *Handler) runWorkspacePRMonitorLoop(ctx context.Context) {
@@ -35,6 +37,12 @@ func (s *Handler) runWorkspacePRMonitorPass(ctx context.Context) {
 		slog.Warn("workspace PR monitor pass failed", "err", err)
 		return
 	}
+	s.publishWorkspacePRAssociationUpdates(updates)
+}
+
+func (s *Handler) publishWorkspacePRAssociationUpdates(
+	updates []workspace.PRAssociationUpdate,
+) {
 	for i := range updates {
 		update := updates[i]
 		s.broadcastWorkspaceStatus(update.WorkspaceID)
@@ -71,6 +79,12 @@ func (s *Handler) runWorkspacePushedHeadObserverPass(ctx context.Context) {
 		slog.Warn("workspace pushed-head observer pass failed", "err", err)
 		return
 	}
+	s.publishWorkspacePushedHeadResult(result)
+}
+
+func (s *Handler) publishWorkspacePushedHeadResult(
+	result workspace.PushedHeadPassResult,
+) {
 	for i := range result.Associations {
 		association := result.Associations[i]
 		s.hub.Broadcast(Event{

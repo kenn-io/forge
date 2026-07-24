@@ -173,6 +173,37 @@ func TestServerShutdownRetryWithLongerCtx(t *testing.T) {
 	require.NoError(t, srv.Shutdown(longCtx))
 }
 
+func TestWorkspaceDependencyShutdownPreservesOrderAcrossTimeoutRetry(t *testing.T) {
+	require := require.New(t)
+	releaseWorkspace := make(chan struct{})
+	var runtimeStops atomic.Int32
+
+	shutdown := newWorkspaceDependencyShutdown(
+		func(ctx context.Context) error {
+			select {
+			case <-releaseWorkspace:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+		func() { runtimeStops.Add(1) },
+	)
+
+	shortCtx, shortCancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer shortCancel()
+	require.ErrorIs(shutdown.Shutdown(shortCtx), context.DeadlineExceeded)
+	require.Zero(runtimeStops.Load(), "runtime stopped before Workspace completed")
+
+	close(releaseWorkspace)
+	longCtx, longCancel := context.WithTimeout(t.Context(), time.Second)
+	defer longCancel()
+	require.NoError(shutdown.Shutdown(longCtx))
+	require.Equal(int32(1), runtimeStops.Load())
+	require.NoError(shutdown.Shutdown(longCtx))
+	require.Equal(int32(1), runtimeStops.Load(), "runtime shutdown must remain idempotent")
+}
+
 // TestServerShutdownRetryWaitsForHTTPHandler verifies that when the
 // first Shutdown call times out while an HTTP handler is in flight,
 // a later call with a longer deadline still invokes

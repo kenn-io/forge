@@ -15,9 +15,9 @@ state.
   boundary. The handler receives deep-copied committed config snapshots; it
   never retains the root mutable config pointer or mutex
   (`internal/server/workspaceapi/config.go::ConfigSnapshot`).
-- Construct Workspace manager, runtime, and tmux dependencies before handler
-  startup; production and test callers must not add post-start replacement
-  setters (`internal/server/server.go::New`).
+- Construct Workspace manager, runtime, tmux, clock, and enrichment policy
+  before handler startup; production and test callers must not mutate
+  dependencies or test controls after `Start` (`internal/server/workspaceapi/handler.go::Deps`).
 
 ## Endpoint Intent
 

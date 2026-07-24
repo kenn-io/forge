@@ -682,18 +682,6 @@ func (s *Handler) refreshWorkspaceRepoIndex(
 	)
 }
 
-// RefreshWorkspaceRepoIndex refreshes the provider repository scopes needed by
-// manual workspace refresh.
-func (s *Handler) RefreshWorkspaceRepoIndex(
-	ctx context.Context,
-	provider platform.Kind,
-	platformHost string,
-	owner string,
-	name string,
-) error {
-	return s.refreshWorkspaceRepoIndex(ctx, provider, platformHost, owner, name)
-}
-
 func (s *Handler) refreshWorkspaceIssue(
 	ctx context.Context,
 	kind platform.Kind,

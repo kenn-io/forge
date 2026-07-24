@@ -1,4 +1,4 @@
-package server
+package workspacetest
 
 import (
 	"bytes"
@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -31,20 +30,6 @@ func lifecycleRouteGit(t *testing.T, dir string, args ...string) string {
 }
 
 // initLifecycleRouteRepo creates a git repo with one commit on "main".
-func initLifecycleRouteRepo(t *testing.T) string {
-	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-	dir := filepath.Join(t.TempDir(), "repo")
-	Require.NoError(t, os.MkdirAll(dir, 0o755))
-	lifecycleRouteGit(t, dir, "init", "-q", "-b", "main")
-	lifecycleRouteGit(t, dir, "config", "user.email", "t@e.st")
-	lifecycleRouteGit(t, dir, "config", "user.name", "Tester")
-	lifecycleRouteGit(t, dir, "config", "commit.gpgsign", "false")
-	lifecycleRouteGit(t, dir, "commit", "--allow-empty", "-m", "initial")
-	return dir
-}
 
 func decodeProblemCode(t *testing.T, resp *http.Response) string {
 	t.Helper()
@@ -55,53 +40,12 @@ func decodeProblemCode(t *testing.T, resp *http.Response) string {
 	return problem.Code
 }
 
-func listWorktreeRows(t *testing.T, ts *httptest.Server, projectID string) []map[string]any {
-	t.Helper()
-	resp := httpDo(t, ts, http.MethodGet,
-		"/api/v1/projects/"+projectID+"/worktrees", nil)
-	Require.Equal(t, http.StatusOK, resp.StatusCode)
-	defer resp.Body.Close()
-	var out struct {
-		Worktrees []map[string]any `json:"worktrees"`
-	}
-	Require.NoError(t, json.NewDecoder(resp.Body).Decode(&out))
-	return out.Worktrees
-}
-
-// worktreeRowByBranch returns the first listed row checked out on branch, or
-// nil when absent. List order is created_at,id, so rows are selected by
-// identity instead of position.
-func worktreeRowByBranch(rows []map[string]any, branch string) map[string]any {
-	for _, row := range rows {
-		if row["branch"] == branch {
-			return row
-		}
-	}
-	return nil
-}
-
-// worktreeRowByPathBase returns the first listed row whose path ends in base,
-// or nil when absent. Root rows are matched this way because the stored
-// project path may be symlink-resolved (e.g. a /private prefix on macOS)
-// relative to the temp dir the test created.
-func worktreeRowByPathBase(rows []map[string]any, base string) map[string]any {
-	for _, row := range rows {
-		if p, ok := row["path"].(string); ok && filepath.Base(p) == base {
-			return row
-		}
-	}
-	return nil
-}
-
-// TestWorktreeCreateOnDiskRoute covers the materializing register: with
-// create_on_disk the route performs the git work (derived destination, new
-// branch) and registers the result, so the response identity matches what
-// is on disk.
 func TestWorktreeCreateOnDiskRoute(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -144,10 +88,11 @@ func TestWorktreeCreateOnDiskRoute(t *testing.T) {
 // TestWorktreeCreateOnDiskBranchInUse covers the distinct problem code for
 // attaching a branch that is already checked out (the primary checkout).
 func TestWorktreeCreateOnDiskBranchInUse(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -173,10 +118,11 @@ func TestWorktreeCreateOnDiskBranchInUse(t *testing.T) {
 // response carries the hookFailed code with script detail, and the git work
 // is rolled back so nothing is registered and a retry is possible.
 func TestWorktreeCreateOnDiskHookFailure(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -221,10 +167,11 @@ func TestWorktreeCreateOnDiskHookFailure(t *testing.T) {
 // succeeds but the registry insert hits a path conflict, the route rolls
 // the git work back so the conflicting state is not made worse.
 func TestWorktreeCreateOnDiskRollsBackWhenRowConflicts(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -259,10 +206,11 @@ func TestWorktreeCreateOnDiskRollsBackWhenRowConflicts(t *testing.T) {
 // TestWorktreeDeleteFromDiskRoute covers the materializing delete: worktree
 // directory removed, branch deleted, registry row dropped.
 func TestWorktreeDeleteFromDiskRoute(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -309,10 +257,11 @@ func TestWorktreeDeleteFromDiskRoute(t *testing.T) {
 // TestWorktreeDeleteFromDiskRefusesDirtyWithoutForce: dirty worktrees are
 // kept (registry row and disk both intact) unless force is set.
 func TestWorktreeDeleteFromDiskRefusesDirtyWithoutForce(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -368,10 +317,11 @@ func TestWorktreeDeleteFromDiskRefusesDirtyWithoutForce(t *testing.T) {
 // TestWorktreeDeleteFromDiskRefusesDefaultBranch: a worktree on the
 // project's default branch is protected from disk-removing deletes.
 func TestWorktreeDeleteFromDiskRefusesDefaultBranch(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -410,10 +360,11 @@ func TestWorktreeDeleteFromDiskRefusesDefaultBranch(t *testing.T) {
 // TestWorktreeDeleteFromDiskRunsTeardownHook: the teardown script runs in
 // the worktree before removal; its failure aborts the delete entirely.
 func TestWorktreeDeleteFromDiskRunsTeardownHook(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -457,10 +408,11 @@ func TestWorktreeDeleteFromDiskRunsTeardownHook(t *testing.T) {
 // TestWorktreeDeleteFromDiskAbortsOnTeardownFailure: a failing teardown
 // keeps both the disk worktree and the registry row.
 func TestWorktreeDeleteFromDiskAbortsOnTeardownFailure(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -507,9 +459,10 @@ func TestWorktreeDeleteFromDiskAbortsOnTeardownFailure(t *testing.T) {
 // TestWorktreeRegisterWithoutCreateOnDiskUnchanged pins the legacy
 // registry-only contract: path is required and no git work happens.
 func TestWorktreeRegisterWithoutCreateOnDiskUnchanged(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -539,10 +492,11 @@ func TestWorktreeRegisterWithoutCreateOnDiskUnchanged(t *testing.T) {
 // barrier maximizes overlap, but a sequential interleaving also
 // satisfies (and must satisfy) the same contract.
 func TestWorktreeCreateOnDiskSameBranchConcurrent(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
 	require := Require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 

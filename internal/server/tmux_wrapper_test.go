@@ -12,11 +12,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -150,10 +148,6 @@ func normalizeRecordedTmuxArg(arg string) string {
 	default:
 		return arg
 	}
-}
-
-func containsArg(argv []string, want string) bool {
-	return slices.Contains(argv, want)
 }
 
 func argAfter(argv []string, flag string) (string, bool) {

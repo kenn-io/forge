@@ -47,6 +47,118 @@ func runGit(t *testing.T, dir string, args ...string) {
 	require.NoError(t, err, "git %v failed: %s", args, stderr)
 }
 
+func TestWorkspaceEnrichmentRestoresDivergenceAfterObserverHealsUpstream(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	seed := filepath.Join(dir, "seed")
+	worktree := filepath.Join(dir, "worktree")
+
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	runGit(t, dir, "clone", remote, seed)
+	runGit(t, seed, "config", "user.email", "test@test.com")
+	runGit(t, seed, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(filepath.Join(seed, "base.txt"), []byte("base\n"), 0o644))
+	runGit(t, seed, "add", ".")
+	runGit(t, seed, "commit", "-m", "base")
+	runGit(t, seed, "push", "-u", "origin", "main")
+	runGit(t, seed, "checkout", "-b", "feature")
+	require.NoError(os.WriteFile(filepath.Join(seed, "feature.txt"), []byte("feature\n"), 0o644))
+	runGit(t, seed, "add", ".")
+	runGit(t, seed, "commit", "-m", "feature")
+	runGit(t, seed, "push", "-u", "origin", "feature")
+	runGit(t, dir, "clone", remote, worktree)
+	runGit(t, worktree, "checkout", "feature")
+	runGit(t, worktree, "config", "user.email", "test@test.com")
+	runGit(t, worktree, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(filepath.Join(worktree, "ahead.txt"), []byte("ahead\n"), 0o644))
+	runGit(t, worktree, "add", ".")
+	runGit(t, worktree, "commit", "-m", "ahead")
+	runGit(t, worktree, "config", "--unset", "branch.feature.remote")
+	runGit(t, worktree, "config", "--unset", "branch.feature.merge")
+
+	database := dbtest.Open(t)
+	repoID, err := database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	seedMR := func(headRepoCloneURL string) {
+		_, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+			RepoID:           repoID,
+			PlatformID:       1000,
+			Number:           1,
+			URL:              "https://github.com/acme/widget/pull/1",
+			Title:            "Test PR #1",
+			Author:           "testuser",
+			State:            db.MergeRequestStateOpen,
+			HeadBranch:       "feature",
+			HeadRepoCloneURL: headRepoCloneURL,
+			BaseBranch:       "main",
+			CreatedAt:        now,
+			UpdatedAt:        now,
+			LastActivityAt:   now,
+		})
+		require.NoError(err)
+	}
+	seedMR("https://github.com/contributor/widget.git")
+	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID:              "ws-upstream-heal",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      1,
+		GitHeadRef:      "feature",
+		WorkspaceBranch: "feature",
+		WorktreePath:    worktree,
+		Status:          "ready",
+		CreatedAt:       now,
+	}))
+	summary, err := database.GetWorkspaceSummary(t.Context(), "ws-upstream-heal")
+	require.NoError(err)
+	require.NotNil(summary)
+
+	clockNow := now
+	manager := workspace.NewManager(database, filepath.Join(dir, "managed-worktrees"))
+	handler := New(Deps{
+		DB:         database,
+		Workspaces: manager,
+		Now:        func() time.Time { return clockNow },
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	handler.Start(ctx, true)
+	t.Cleanup(func() {
+		cancel()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+		defer shutdownCancel()
+		require.NoError(handler.Shutdown(shutdownCtx))
+	})
+
+	broken := handler.refreshWorkspaceResponse(t.Context(), summary)
+	assert.Nil(broken.CommitsAhead)
+	assert.Nil(broken.CommitsBehind)
+	assert.Equal(workspaceEnrichmentFresh, broken.EnrichmentStatus)
+
+	seedMR("https://github.com/acme/widget.git")
+	handler.runWorkspacePushedHeadObserverPass(t.Context())
+	clockNow = now.Add(workspaceEnrichmentTTL + time.Second)
+
+	var healed workspaceResponse
+	require.Eventually(func() bool {
+		healed = handler.toCachedWorkspaceResponse(summary)
+		return healed.CommitsAhead != nil && healed.CommitsBehind != nil &&
+			*healed.CommitsAhead == 1 && *healed.CommitsBehind == 0 &&
+			healed.EnrichmentStatus == workspaceEnrichmentFresh
+	}, 2*time.Second, 10*time.Millisecond)
+	require.NotNil(healed.CommitsAhead)
+	require.NotNil(healed.CommitsBehind)
+	assert.Equal(1, *healed.CommitsAhead)
+	assert.Equal(0, *healed.CommitsBehind)
+}
+
 func TestWorkspaceEnrichmentSupersedeRejectsOlderRefreshAndPreservesCache(t *testing.T) {
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	ghsync "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform/gitealike"
 )
 
 func TestGiteaReviewThreadPreservesContextCoordinates(t *testing.T) {
@@ -157,6 +158,145 @@ func TestListMergeRequestReviewThreadsRejectsPartialDataset(t *testing.T) {
 
 	require.Error(err)
 	assert.Nil(threads)
+}
+
+func TestListMergeRequestReviewThreadsMapsAuthenticationErrors(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			require := require.New(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, http.StatusText(status), status)
+			}))
+			defer server.Close()
+
+			client, err := NewClient(
+				"gitea.test", testTokenSource("token"),
+				WithBaseURLForTesting(server.URL),
+				WithServerVersionForTesting(testGiteaServerVersion),
+			)
+			require.NoError(err)
+			_, err = client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
+				Owner: "acme", Name: "widgets",
+			}, 42)
+
+			require.ErrorIs(err, platform.ErrPermissionDenied)
+			var platformErr *platform.Error
+			require.ErrorAs(err, &platformErr)
+			require.Equal(platform.KindGitea, platformErr.Provider)
+			require.Equal("gitea.test", platformErr.PlatformHost)
+		})
+	}
+}
+
+func TestListMergeRequestReviewThreadsDefersOversizedReviewDatasetBeforeFanout(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var commentRequests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/repos/acme/widgets/pulls/42/reviews" {
+			reviews := make([]map[string]any, gitealike.MaxReviewHydrationReviews+1)
+			for i := range reviews {
+				reviews[i] = map[string]any{"id": i + 1}
+			}
+			assert.NoError(json.NewEncoder(w).Encode(reviews))
+			return
+		}
+		commentRequests.Add(1)
+		assert.NoError(json.NewEncoder(w).Encode([]map[string]any{}))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(
+		"gitea.test", testTokenSource("token"),
+		WithBaseURLForTesting(server.URL),
+		WithServerVersionForTesting(testGiteaServerVersion),
+	)
+	require.NoError(err)
+	threads, err := client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
+		Owner: "acme", Name: "widgets",
+	}, 42)
+
+	require.ErrorIs(err, platform.ErrPageLimit)
+	assert.Nil(threads)
+	assert.Zero(commentRequests.Load())
+}
+
+func TestListMergeRequestReviewThreadsDefersOversizedCommentDataset(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/repos/acme/widgets/pulls/42/reviews":
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{"id": 99}}))
+		case "/api/v1/repos/acme/widgets/pulls/42/reviews/99/comments":
+			comments := make([]map[string]any, gitealike.MaxReviewHydrationComments+1)
+			for i := range comments {
+				comments[i] = map[string]any{"id": i + 1}
+			}
+			assert.NoError(json.NewEncoder(w).Encode(comments))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(
+		"gitea.test", testTokenSource("token"),
+		WithBaseURLForTesting(server.URL),
+		WithServerVersionForTesting(testGiteaServerVersion),
+	)
+	require.NoError(err)
+	threads, err := client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
+		Owner: "acme", Name: "widgets",
+	}, 42)
+
+	require.ErrorIs(err, platform.ErrPageLimit)
+	assert.Nil(threads)
+}
+
+func TestListMergeRequestReviewThreadsRejectsReviewPageCycleBeforeFanout(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var requests atomic.Int32
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/v1/repos/acme/widgets/pulls/42/reviews" {
+			assert.Fail("review comments must not be fetched from a cyclic review listing")
+			http.Error(w, "unexpected request", http.StatusInternalServerError)
+			return
+		}
+		page := r.URL.Query().Get("page")
+		nextPage := "2"
+		reviewID := 1
+		if page == "2" {
+			nextPage = "1"
+			reviewID = 2
+		}
+		w.Header().Set("Link", fmt.Sprintf(
+			`<%s/api/v1/repos/acme/widgets/pulls/42/reviews?page=%s&limit=100>; rel="next"`,
+			server.URL, nextPage,
+		))
+		assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{"id": reviewID}}))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(
+		"gitea.test", testTokenSource("token"),
+		WithBaseURLForTesting(server.URL),
+		WithServerVersionForTesting(testGiteaServerVersion),
+	)
+	require.NoError(err)
+	threads, err := client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
+		Owner: "acme", Name: "widgets",
+	}, 42)
+
+	require.ErrorIs(err, platform.ErrProviderContract)
+	assert.Nil(threads)
+	assert.Equal(int32(2), requests.Load())
 }
 
 func TestListMergeRequestReviewThreadsRejectsDatasetBeyondWireAttemptAllowance(t *testing.T) {

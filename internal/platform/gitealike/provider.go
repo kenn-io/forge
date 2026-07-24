@@ -912,6 +912,12 @@ func isHeadMismatchConflict(err error) bool {
 }
 
 func (p *Provider) mapError(err error) error {
+	return p.MapError(err)
+}
+
+// MapError attaches provider identity and stable platform classification to a
+// transport error returned by a concrete provider extension.
+func (p *Provider) MapError(err error) error {
 	return mapTransportError(p.kind, p.host, err)
 }
 

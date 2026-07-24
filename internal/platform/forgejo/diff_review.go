@@ -8,6 +8,7 @@ import (
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform/gitealike"
 )
 
 func (c *Client) PublishDiffReviewDraft(
@@ -91,6 +92,13 @@ func (t *transport) ListMergeRequestReviewThreads(
 		if err != nil {
 			return nil, err
 		}
+		commentCount := len(threads) + len(comments)
+		if commentCount > gitealike.MaxReviewHydrationComments {
+			return nil, gitealike.ReviewHydrationLimit(
+				"review_hydration_comments", commentCount,
+				gitealike.MaxReviewHydrationComments,
+			)
+		}
 		for _, comment := range comments {
 			threads = append(threads, forgejoReviewThread(review, comment))
 		}
@@ -103,12 +111,20 @@ func (t *transport) listAllPullReviews(
 	ref platform.RepoRef,
 	number int,
 ) ([]*forgejosdk.PullReview, error) {
-	var out []*forgejosdk.PullReview
-	page := 1
-	for {
+	accepted := 0
+	return platform.CollectPages(ctx, "1", func(
+		ctx context.Context,
+		cursor string,
+	) (platform.Page[*forgejosdk.PullReview], error) {
+		page, err := strconv.Atoi(cursor)
+		if err != nil {
+			return platform.Page[*forgejosdk.PullReview]{}, fmt.Errorf(
+				"parse Forgejo review page cursor: %w", err,
+			)
+		}
 		var reviews []*forgejosdk.PullReview
 		var resp *forgejosdk.Response
-		err := t.withRequestContext(ctx, func() error {
+		err = t.withRequestContext(ctx, func() error {
 			var err error
 			reviews, resp, err = t.api.ListPullReviews(ref.Owner, ref.Name, int64(number), forgejosdk.ListPullReviewsOptions{
 				ListOptions: forgejosdk.ListOptions{Page: page, PageSize: 100},
@@ -116,14 +132,22 @@ func (t *transport) listAllPullReviews(
 			return err
 		})
 		if err != nil {
-			return nil, forgejoHTTPError(resp, err)
+			return platform.Page[*forgejosdk.PullReview]{}, forgejoHTTPError(resp, err)
 		}
-		out = append(out, reviews...)
+		accepted += len(reviews)
+		if accepted > gitealike.MaxReviewHydrationReviews {
+			return platform.Page[*forgejosdk.PullReview]{}, gitealike.ReviewHydrationLimit(
+				"review_hydration_reviews", accepted,
+				gitealike.MaxReviewHydrationReviews,
+			)
+		}
 		if resp == nil || resp.NextPage == 0 {
-			return out, nil
+			return platform.Page[*forgejosdk.PullReview]{Items: reviews, Exhausted: true}, nil
 		}
-		page = resp.NextPage
-	}
+		return platform.Page[*forgejosdk.PullReview]{
+			Items: reviews, NextCursor: strconv.Itoa(resp.NextPage),
+		}, nil
+	})
 }
 
 func (t *transport) listPullReviewComments(

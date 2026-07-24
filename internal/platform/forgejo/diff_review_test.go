@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform/gitealike"
 )
 
 func TestForgejoReviewThreadPreservesContextCoordinates(t *testing.T) {
@@ -286,4 +288,64 @@ func TestListMergeRequestReviewThreadsClassifiesDisabledMergeRequests(t *testing
 			assert.Equal(1, metadataRequests)
 		})
 	}
+}
+
+func TestListMergeRequestReviewThreadsMapsAuthenticationErrors(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			require := Require.New(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, http.StatusText(status), status)
+			}))
+			defer server.Close()
+
+			client, err := NewClient(
+				"codeberg.test", testTokenSource("token"),
+				WithBaseURLForTesting(server.URL),
+			)
+			require.NoError(err)
+			_, err = client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
+				Owner: "acme", Name: "widgets",
+			}, 42)
+
+			require.ErrorIs(err, platform.ErrPermissionDenied)
+			var platformErr *platform.Error
+			require.ErrorAs(err, &platformErr)
+			require.Equal(platform.KindForgejo, platformErr.Provider)
+			require.Equal("codeberg.test", platformErr.PlatformHost)
+		})
+	}
+}
+
+func TestListMergeRequestReviewThreadsDefersOversizedReviewDatasetBeforeFanout(t *testing.T) {
+	assert := assert.New(t)
+	require := Require.New(t)
+	var commentRequests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/repos/acme/widgets/pulls/42/reviews" {
+			reviews := make([]map[string]any, gitealike.MaxReviewHydrationReviews+1)
+			for i := range reviews {
+				reviews[i] = map[string]any{"id": i + 1}
+			}
+			assert.NoError(json.NewEncoder(w).Encode(reviews))
+			return
+		}
+		commentRequests.Add(1)
+		assert.NoError(json.NewEncoder(w).Encode([]map[string]any{}))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(
+		"codeberg.test", testTokenSource("token"),
+		WithBaseURLForTesting(server.URL),
+	)
+	require.NoError(err)
+	threads, err := client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
+		Owner: "acme", Name: "widgets",
+	}, 42)
+
+	require.ErrorIs(err, platform.ErrPageLimit)
+	assert.Nil(threads)
+	assert.Zero(commentRequests.Load())
 }

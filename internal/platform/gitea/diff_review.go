@@ -2,11 +2,13 @@ package gitea
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
 	giteasdk "code.gitea.io/sdk/gitea"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform/gitealike"
 )
 
 func (c *Client) ListMergeRequestReviewThreads(
@@ -19,7 +21,11 @@ func (c *Client) ListMergeRequestReviewThreads(
 			platform.KindGitea, c.host, "read_review_threads",
 		)
 	}
-	return c.transport.listMergeRequestReviewThreads(ctx, ref, number)
+	threads, err := c.transport.listMergeRequestReviewThreads(ctx, ref, number)
+	if err != nil {
+		return nil, c.MapError(err)
+	}
+	return threads, nil
 }
 
 func (t *transport) listMergeRequestReviewThreads(
@@ -37,6 +43,13 @@ func (t *transport) listMergeRequestReviewThreads(
 		if err != nil {
 			return nil, err
 		}
+		commentCount := len(threads) + len(comments)
+		if commentCount > gitealike.MaxReviewHydrationComments {
+			return nil, gitealike.ReviewHydrationLimit(
+				"review_hydration_comments", commentCount,
+				gitealike.MaxReviewHydrationComments,
+			)
+		}
 		for _, comment := range comments {
 			threads = append(threads, giteaReviewThread(review, comment))
 		}
@@ -49,12 +62,20 @@ func (t *transport) listAllPullReviews(
 	ref platform.RepoRef,
 	number int,
 ) ([]*giteasdk.PullReview, error) {
-	var out []*giteasdk.PullReview
-	page := 1
-	for {
+	accepted := 0
+	return platform.CollectPages(ctx, "1", func(
+		ctx context.Context,
+		cursor string,
+	) (platform.Page[*giteasdk.PullReview], error) {
+		page, err := strconv.Atoi(cursor)
+		if err != nil {
+			return platform.Page[*giteasdk.PullReview]{}, fmt.Errorf(
+				"parse Gitea review page cursor: %w", err,
+			)
+		}
 		var reviews []*giteasdk.PullReview
 		var resp *giteasdk.Response
-		err := t.withRequestContext(ctx, func() error {
+		err = t.withRequestContext(ctx, func() error {
 			var err error
 			reviews, resp, err = t.api.ListPullReviews(
 				ref.Owner, ref.Name, int64(number),
@@ -65,14 +86,22 @@ func (t *transport) listAllPullReviews(
 			return err
 		})
 		if err != nil {
-			return nil, giteaHTTPError(resp, err)
+			return platform.Page[*giteasdk.PullReview]{}, giteaHTTPError(resp, err)
 		}
-		out = append(out, reviews...)
+		accepted += len(reviews)
+		if accepted > gitealike.MaxReviewHydrationReviews {
+			return platform.Page[*giteasdk.PullReview]{}, gitealike.ReviewHydrationLimit(
+				"review_hydration_reviews", accepted,
+				gitealike.MaxReviewHydrationReviews,
+			)
+		}
 		if resp == nil || resp.NextPage == 0 {
-			return out, nil
+			return platform.Page[*giteasdk.PullReview]{Items: reviews, Exhausted: true}, nil
 		}
-		page = resp.NextPage
-	}
+		return platform.Page[*giteasdk.PullReview]{
+			Items: reviews, NextCursor: strconv.Itoa(resp.NextPage),
+		}, nil
+	})
 }
 
 func (t *transport) listPullReviewComments(

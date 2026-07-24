@@ -146,9 +146,8 @@ registry helpers return typed errors for missing providers or capabilities.
   whitespace-padded paths) fail the entire batch with stable reasons.
 - Forgejo and Gitea currently expose only SDK-proven mutations: comments,
   issue creation, issue and PR content/state edits, merge, review approval, and
-  request changes. Their shared review mutations must map SDK failures through
-  the provider error mapper so permission and not-found responses retain typed
-  platform errors.
+  request changes. Their shared review operations must map SDK failures through
+  the provider error mapper so reads and mutations retain typed platform errors.
   Workflow approval and ready-for-review must remain hidden or return typed
   `unsupported_capability` errors until proven per provider.
 - GitHub GraphQL bulk fetch, ETag recovery, and detailed diff behavior are
@@ -238,6 +237,10 @@ tests prove those exact operations.
 Archive access probes preserve transient and rate-limit failures for retry. Only
 authoritative repository permission or not-found responses may become permanent
 inaccessibility. (`internal/platform/gitealike/pages.go::classifyLookupOutcome`)
+
+Inline review hydration is complete-or-deferred: bound review pagination and
+per-review comment fan-out before revision-fenced dataset replacement
+(`internal/platform/gitealike/review_hydration.go::MaxReviewHydrationReviews`).
 
 ## Import And Routes
 

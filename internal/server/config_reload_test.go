@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
@@ -903,6 +904,53 @@ func TestConfigReload_GitHubTokenEnvChangeUpdatesConfigSnapshot(t *testing.T) {
 	saved, err := config.Load(savePath)
 	require.NoError(err)
 	assert.Equal("MIDDLEMAN_NEW_GITHUB_TOKEN", saved.GitHubTokenEnv)
+}
+
+func TestConfigReloadPublishesCommittedWorkspaceSnapshot(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, cfgPath := setupTestServerWithConfigContent(t, `
+host = "127.0.0.1"
+port = 8091
+
+[[agents]]
+key = "before"
+command = ["sh"]
+`, &mockGH{})
+	project, err := database.CreateProject(t.Context(), db.CreateProjectInput{
+		DisplayName: "Workspace config snapshot",
+		LocalPath:   t.TempDir(),
+	})
+	require.NoError(err)
+
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+host = "127.0.0.1"
+port = 8091
+
+[[agents]]
+key = "after"
+command = ["sh"]
+`), 0o644))
+	event := srv.applyConfigChange(t.Context())
+	require.True(event.Valid, event.Error)
+
+	rr := doJSON(
+		t, srv, http.MethodGet,
+		"/api/v1/projects/"+project.ID+"/launch-targets", nil,
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var body struct {
+		LaunchTargets []struct {
+			Key string `json:"key"`
+		} `json:"launch_targets"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	keys := make([]string, 0, len(body.LaunchTargets))
+	for _, target := range body.LaunchTargets {
+		keys = append(keys, target.Key)
+	}
+	assert.Contains(keys, "after")
+	assert.NotContains(keys, "before")
 }
 
 func TestConfigReload_InvalidTokenSourceKeepsLastKnownGoodSource(t *testing.T) {

@@ -591,6 +591,7 @@ func (s *Server) applyBulkExactRepos(
 		return settingsResponse{}, &bulkApplyError{problem: httpapi.Internal(err.Error())}
 	}
 	s.mergeTrackedRepos(addRefs)
+	s.applyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
 
 	return s.buildLocalSettingsResponse(), nil

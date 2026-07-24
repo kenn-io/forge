@@ -46,7 +46,7 @@ type inspectProjectWorktreeOutput struct {
 	}
 }
 
-func (s *Server) listProjectBranches(
+func (s *Handler) listProjectBranches(
 	ctx context.Context, input *listProjectBranchesInput,
 ) (*listProjectBranchesOutput, error) {
 	project, err := s.db.GetProjectByID(ctx, input.ProjectID)
@@ -76,7 +76,7 @@ func (s *Server) listProjectBranches(
 	return out, nil
 }
 
-func (s *Server) inspectProjectWorktree(
+func (s *Handler) inspectProjectWorktree(
 	ctx context.Context, input *inspectProjectWorktreeInput,
 ) (*inspectProjectWorktreeOutput, error) {
 	worktree, err := s.db.GetProjectWorktreeByID(ctx, input.WorktreeID)
@@ -142,7 +142,7 @@ func worktreeDirtyState(ctx context.Context, path string) (bool, int) {
 // countAliveWorktreeSessions counts through the same merged source the
 // runtime listing serves: in-memory runtime sessions plus stored tmux
 // rows, so durable sessions that survived a daemon restart still count.
-func (s *Server) countAliveWorktreeSessions(
+func (s *Handler) countAliveWorktreeSessions(
 	ctx context.Context, projectID, worktreeID string,
 ) (int, error) {
 	if s.runtime == nil {
@@ -185,7 +185,7 @@ func isDetachedWorktreeBranch(branch string) bool {
 // the primary checkout and the default branch are never deletable, a
 // detached worktree has no branch to delete, and a branch checked out
 // in sibling worktrees must not be deleted from under them.
-func (s *Server) branchDeleteEligibility(
+func (s *Handler) branchDeleteEligibility(
 	ctx context.Context, project *db.Project, worktree *db.ProjectWorktree,
 ) (bool, string, []string) {
 	if normPath(worktree.Path) == normPath(project.LocalPath) {

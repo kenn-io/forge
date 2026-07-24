@@ -61,6 +61,15 @@ Workspace deletion is intentionally conservative.
 This ordering prevents a rejected delete from silently killing the user's live
 workspace sessions.
 
+## Server Shutdown Ordering
+
+Workspace owns its observer, enrichment, and diff-cache lifecycle. Start is
+idempotent; shutdown cancels that domain and waits only within the caller's
+context (`internal/server/workspaceapi/lifecycle.go::Handler.Shutdown`). The
+root drains HTTP plus later-started Fleet/repository-browser consumers and
+root background work before stopping Workspace, then stops the lower-level
+runtime dependency Workspace consumes (`internal/server/server.go::Server.Shutdown`).
+
 ## Tmux Persistence Rules
 
 Persisted tmux-backed runtime rows are only valid while the backing tmux session
@@ -172,6 +181,9 @@ behavior.
 
 - Use real SQLite-backed server tests for delete ordering, tmux cleanup, and
   runtime-session API behavior.
+- Workspace/Projects handler and Git-heavy wire tests belong to
+  `internal/server/workspaceapi` or `internal/server/workspacetest`; Git and
+  worktree cases in the public wire lane must acquire its weighted semaphore.
 - A server test that creates a workspace must wait for setup to reach a terminal
   state (`waitForWorkspaceReady`) before it returns. The `202 Accepted` create
   runs clone/setup in a background goroutine; if the test returns first, that

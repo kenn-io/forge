@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func (s *Server) runWorkspacePRMonitorLoop(ctx context.Context) {
+func (s *Handler) runWorkspacePRMonitorLoop(ctx context.Context) {
 	if s.workspacePRMonitor == nil {
 		return
 	}
@@ -25,7 +25,7 @@ func (s *Server) runWorkspacePRMonitorLoop(ctx context.Context) {
 	}
 }
 
-func (s *Server) runWorkspacePRMonitorPass(ctx context.Context) {
+func (s *Handler) runWorkspacePRMonitorPass(ctx context.Context) {
 	if s.workspacePRMonitor == nil {
 		return
 	}
@@ -42,7 +42,7 @@ func (s *Server) runWorkspacePRMonitorPass(ctx context.Context) {
 	}
 }
 
-func (s *Server) runWorkspacePushedHeadObserverLoop(ctx context.Context) {
+func (s *Handler) runWorkspacePushedHeadObserverLoop(ctx context.Context) {
 	if s.workspacePushedHeadObserver == nil {
 		return
 	}
@@ -61,7 +61,7 @@ func (s *Server) runWorkspacePushedHeadObserverLoop(ctx context.Context) {
 	}
 }
 
-func (s *Server) runWorkspacePushedHeadObserverPass(ctx context.Context) {
+func (s *Handler) runWorkspacePushedHeadObserverPass(ctx context.Context) {
 	if s.workspacePushedHeadObserver == nil {
 		return
 	}
@@ -114,7 +114,7 @@ func (s *Server) runWorkspacePushedHeadObserverPass(ctx context.Context) {
 	}
 }
 
-func (s *Server) broadcastWorkspaceStatus(workspaceID string) {
+func (s *Handler) broadcastWorkspaceStatus(workspaceID string) {
 	s.hub.Broadcast(Event{
 		Type: "workspace_status",
 		Data: map[string]string{"id": workspaceID},

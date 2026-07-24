@@ -46,6 +46,17 @@ func setupTestServerWithConfigContent(
 	cfgContent string,
 	mock *mockGH,
 ) (*Server, *db.DB, string) {
+	return setupTestServerWithConfigContentAndOptions(
+		t, cfgContent, mock, ServerOptions{HostCheckAllowLoopbackAnyPort: true},
+	)
+}
+
+func setupTestServerWithConfigContentAndOptions(
+	t *testing.T,
+	cfgContent string,
+	mock *mockGH,
+	options ServerOptions,
+) (*Server, *db.DB, string) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -68,7 +79,7 @@ func setupTestServerWithConfigContent(
 	t.Cleanup(syncer.Stop)
 	srv := NewWithConfig(
 		database, syncer, nil, nil, cfg, cfgPath,
-		ServerOptions{HostCheckAllowLoopbackAnyPort: true},
+		options,
 	)
 	return srv, database, cfgPath
 }

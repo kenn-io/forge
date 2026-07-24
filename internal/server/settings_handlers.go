@@ -504,6 +504,7 @@ func (s *Server) updateSettings(
 		)
 	}
 	s.refreshRuntimeTargetsLocked()
+	s.applyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
 
 	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
@@ -672,6 +673,7 @@ func (s *Server) addConfiguredRepo(
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	s.mergeTrackedRepos(expanded)
+	s.applyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
 
 	s.syncer.TriggerRun(context.WithoutCancel(ctx))
@@ -910,6 +912,7 @@ func (s *Server) deleteConfiguredRepo(
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	s.removeConfigRepos(s.cfg.Repos)
+	s.applyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
 
 	return nil, nil

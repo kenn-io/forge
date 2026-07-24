@@ -11,6 +11,13 @@ state.
 - Materialize that entry as a local Git worktree plus tmux session.
 - Let the UI reopen the same workspace from `/workspaces` or `/terminal/:id`.
 - Carry enough item metadata to render the correct sidebar behavior.
+- Keep Workspace and Projects request state below the root server composition
+  boundary. The handler receives deep-copied committed config snapshots; it
+  never retains the root mutable config pointer or mutex
+  (`internal/server/workspaceapi/config.go::ConfigSnapshot`).
+- Construct Workspace manager, runtime, and tmux dependencies before handler
+  startup; production and test callers must not add post-start replacement
+  setters (`internal/server/server.go::New`).
 
 ## Endpoint Intent
 

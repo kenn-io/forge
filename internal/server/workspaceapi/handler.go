@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server/httpapi"
@@ -73,19 +72,17 @@ type workspaceDiffEventData struct {
 // the root server package while preserving the shared shutdown and event
 // ordering owned by the composition root.
 type Deps struct {
-	DB                *db.DB
-	Resolver          *httpapi.RepositoryResolver
-	Syncer            *ghclient.Syncer
-	Config            *config.Config
-	Workspaces        *workspace.Manager
-	Runtime           *localruntime.Manager
-	TmuxCommand       []string
-	Now               func() time.Time
-	BackgroundContext context.Context
-	RunBackground     func(func(context.Context)) bool
-	Broadcast         func(Event) uint64
-	Subscribe         func(context.Context, bool) (<-chan RecordedEvent, <-chan struct{})
-	Generation        func() uint64
+	DB          *db.DB
+	Resolver    *httpapi.RepositoryResolver
+	Syncer      *ghclient.Syncer
+	Config      ConfigSnapshot
+	Workspaces  *workspace.Manager
+	Runtime     *localruntime.Manager
+	TmuxCommand []string
+	Now         func() time.Time
+	Broadcast   func(Event) uint64
+	Subscribe   func(context.Context, bool) (<-chan RecordedEvent, <-chan struct{})
+	Generation  func() uint64
 
 	RecomputeWorktreeLinks  func(context.Context)
 	RefreshWorktreeStats    func(context.Context, string, string) error
@@ -99,19 +96,18 @@ type Deps struct {
 // Handler implements both the workspace and local-project services so their
 // Git-heavy tests and process limits remain in one package and test binary.
 type Handler struct {
-	db            *db.DB
-	resolver      *httpapi.RepositoryResolver
-	syncer        *ghclient.Syncer
-	cfg           *config.Config
-	workspaces    *workspace.Manager
-	runtime       *localruntime.Manager
-	tmuxCmd       []string
-	now           func() time.Time
-	bgCtx         context.Context
-	runBackground func(func(context.Context)) bool
-	broadcast     func(Event) uint64
-	subscribe     func(context.Context, bool) (<-chan RecordedEvent, <-chan struct{})
-	generation    func() uint64
+	db         *db.DB
+	resolver   *httpapi.RepositoryResolver
+	syncer     *ghclient.Syncer
+	configMu   sync.RWMutex
+	config     ConfigSnapshot
+	workspaces *workspace.Manager
+	runtime    *localruntime.Manager
+	tmuxCmd    []string
+	now        func() time.Time
+	broadcast  func(Event) uint64
+	subscribe  func(context.Context, bool) (<-chan RecordedEvent, <-chan struct{})
+	generation func() uint64
 
 	recomputeWorktreeLinks         func(context.Context)
 	refreshWorktreeStats           func(context.Context, string, string) error
@@ -134,11 +130,14 @@ type Handler struct {
 	workspaceTmuxPrunedAt          time.Time
 	workspaceTmuxPrunePending      bool
 	workspaceTmuxPruneInFlight     bool
+	lifecycleMu                    sync.Mutex
+	lifecycleCtx                   context.Context
+	lifecycleCancel                context.CancelFunc
+	lifecycleWG                    sync.WaitGroup
+	lifecycleStarted               bool
+	lifecycleStopping              bool
+	lifecycleDone                  chan struct{}
 }
-
-// Server keeps the moved receiver declarations source-compatible while the
-// public boundary is named Handler.
-type Server = Handler
 
 // New creates the workspace and project handler.
 func New(deps Deps) *Handler {
@@ -146,21 +145,16 @@ func New(deps Deps) *Handler {
 	if now == nil {
 		now = time.Now
 	}
-	bgCtx := deps.BackgroundContext
-	if bgCtx == nil {
-		bgCtx = context.Background()
-	}
+	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	h := &Handler{
 		db:                             deps.DB,
 		resolver:                       deps.Resolver,
 		syncer:                         deps.Syncer,
-		cfg:                            deps.Config,
+		config:                         cloneConfigSnapshot(deps.Config),
 		workspaces:                     deps.Workspaces,
 		runtime:                        deps.Runtime,
 		tmuxCmd:                        slices.Clone(deps.TmuxCommand),
 		now:                            now,
-		bgCtx:                          bgCtx,
-		runBackground:                  deps.RunBackground,
 		broadcast:                      deps.Broadcast,
 		subscribe:                      deps.Subscribe,
 		generation:                     deps.Generation,
@@ -176,12 +170,15 @@ func New(deps Deps) *Handler {
 		workspaceEnrichmentPending:     make(map[string]workspaceEnrichmentJob),
 		workspaceEnrichmentSlots:       make(chan struct{}, tmuxProbeMaxConcurrency),
 		tmuxActivity:                   newTmuxActivityTracker(nil),
+		lifecycleCtx:                   lifecycleCtx,
+		lifecycleCancel:                lifecycleCancel,
+		lifecycleDone:                  make(chan struct{}),
 	}
 	if deps.DB != nil && deps.Workspaces != nil {
 		h.workspacePRMonitor = workspace.NewPRMonitor(deps.DB)
 		h.workspacePushedHeadObserver = workspace.NewPushedHeadObserver(deps.DB)
 	}
-	h.workspaceDiffCache = newWorkspaceDiffCache(bgCtx, workspaceDiffCacheDeps{
+	h.workspaceDiffCache = newWorkspaceDiffCache(lifecycleCtx, workspaceDiffCacheDeps{
 		onReady: func(workspaceID string, revision uint64, version string) {
 			h.hub.Broadcast(Event{Type: "workspace_diff_ready", Data: workspaceDiffEventData{WorkspaceID: workspaceID, Revision: revision, Version: version}})
 		},
@@ -198,31 +195,6 @@ func (h *Handler) Workspaces() *Handler { return h }
 // Projects returns the shared project service boundary.
 func (h *Handler) Projects() *Handler { return h }
 
-// Start launches workspace-owned background observers.
-func (h *Handler) Start(disableMonitors bool) {
-	if h == nil {
-		return
-	}
-	if h.runBackground != nil {
-		h.runBackground(func(ctx context.Context) {
-			<-ctx.Done()
-			h.Shutdown()
-		})
-	}
-	if h.workspaces != nil && !disableMonitors && h.runBackground != nil {
-		h.runBackground(h.runWorkspacePRMonitorLoop)
-		h.runBackground(h.runWorkspacePushedHeadObserverLoop)
-	}
-}
-
-// Shutdown waits for the workspace diff cache worker to stop after the shared
-// background context is cancelled.
-func (h *Handler) Shutdown() {
-	if h != nil && h.workspaceDiffCache != nil {
-		h.workspaceDiffCache.Wait()
-	}
-}
-
 // RevalidateSelectedDiffs schedules validation for active workspace diff
 // leases after worktree stats change.
 func (h *Handler) RevalidateSelectedDiffs() {
@@ -236,27 +208,6 @@ func (h *Handler) RevalidateSelectedDiffs() {
 func (h *Handler) SetEnrichmentDisabled(disabled bool) {
 	if h != nil {
 		h.workspaceEnrichmentDisabled = disabled
-	}
-}
-
-// SetWorkspaceManager replaces the manager for fixtures that attach workspace
-// support after constructing the root server.
-func (h *Handler) SetWorkspaceManager(manager *workspace.Manager) {
-	if h == nil {
-		return
-	}
-	h.workspaces = manager
-	if h.db != nil && manager != nil {
-		h.workspacePRMonitor = workspace.NewPRMonitor(h.db)
-		h.workspacePushedHeadObserver = workspace.NewPushedHeadObserver(h.db)
-	}
-}
-
-// SetRuntimeManager replaces the runtime manager for fixtures that attach a
-// custom runtime after constructing the root server.
-func (h *Handler) SetRuntimeManager(runtime *localruntime.Manager) {
-	if h != nil {
-		h.runtime = runtime
 	}
 }
 

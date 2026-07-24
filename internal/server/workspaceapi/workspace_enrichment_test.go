@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -26,22 +25,16 @@ func newEnrichmentTestHandler(t *testing.T, tmuxScript string) *Handler {
 		manager.SetTmuxCommand([]string{tmuxScript})
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
 	handler := New(Deps{
-		DB:                database,
-		Workspaces:        manager,
-		BackgroundContext: ctx,
-		RunBackground: func(run func(context.Context)) bool {
-			wg.Go(func() {
-				run(ctx)
-			})
-			return true
-		},
+		DB:         database,
+		Workspaces: manager,
 	})
+	handler.Start(ctx, true)
 	t.Cleanup(func() {
 		cancel()
-		wg.Wait()
-		handler.Shutdown()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+		defer shutdownCancel()
+		require.NoError(t, handler.Shutdown(shutdownCtx))
 	})
 	return handler
 }
@@ -57,7 +50,7 @@ func runGit(t *testing.T, dir string, args ...string) {
 func TestWorkspaceEnrichmentSupersedeRejectsOlderRefreshAndPreservesCache(t *testing.T) {
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	srv := &Server{
+	srv := &Handler{
 		now:                            func() time.Time { return now },
 		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
 		workspaceEnrichmentGenerations: make(map[string]uint64),
@@ -88,7 +81,7 @@ func TestWorkspaceEnrichmentSupersedeRejectsOlderRefreshAndPreservesCache(t *tes
 
 func TestWorkspaceEnrichmentRejectsResultAfterGenerationIsTrimmed(t *testing.T) {
 	assert := assert.New(t)
-	srv := &Server{
+	srv := &Handler{
 		now:                            time.Now,
 		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
 		workspaceEnrichmentGenerations: make(map[string]uint64),
@@ -112,7 +105,7 @@ func TestWorkspaceEnrichmentSupersededResponseUsesCurrentCacheState(t *testing.T
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	srv := &Server{now: func() time.Time { return now }}
+	srv := &Handler{now: func() time.Time { return now }}
 	summary := db.WorkspaceSummary{Workspace: db.Workspace{
 		ID:     "ws-superseded",
 		Status: "ready",
@@ -171,7 +164,7 @@ func TestWorkspaceEnrichmentPendingJobUsesLatestSummary(t *testing.T) {
 
 func TestTrimWorkspaceEnrichmentCacheDropsDeletedPendingState(t *testing.T) {
 	assert := assert.New(t)
-	srv := &Server{
+	srv := &Handler{
 		workspaceEnrichmentCache: map[string]workspaceEnrichmentCacheEntry{
 			"keep": {},
 			"drop": {},
@@ -356,7 +349,7 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 
 func TestWorkspaceEnrichmentBroadcastsOnlyDurableChanges(t *testing.T) {
 	assert := assert.New(t)
-	srv := &Server{
+	srv := &Handler{
 		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
 		workspaceEnrichmentGenerations: map[string]uint64{"ws-1": 1},
 		now: func() time.Time {

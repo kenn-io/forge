@@ -29,6 +29,7 @@ import (
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/projects"
 	"go.kenn.io/middleman/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
 	"go.kenn.io/middleman/internal/server/docsapi"
@@ -247,6 +248,17 @@ type Server struct {
 	// after http.Server.Shutdown so that the deferred setState in
 	// (*conn).serve finishes before tests tear down dependencies.
 	connWG sync.WaitGroup
+
+	// workspaceDependents tracks Fleet and repository-browser loops started
+	// after Workspace. Root shutdown drains this group before stopping the
+	// Workspace domain they consume.
+	workspaceDependentsCtx    context.Context
+	workspaceDependentsCancel context.CancelFunc
+	workspaceDependentsWG     sync.WaitGroup
+	workspaceDependentsDone   chan struct{}
+	workspaceDependentsOnce   sync.Once
+	workspaceLifecycleCtx     context.Context
+	workspaceLifecycleCancel  context.CancelFunc
 }
 
 // trackHTTPConn is installed as http.Server.ConnState by Serve so
@@ -316,10 +328,31 @@ func (s *Server) runBackground(fn func(ctx context.Context)) bool {
 	return true
 }
 
+func (s *Server) runWorkspaceDependent(fn func(context.Context)) {
+	if fn == nil {
+		return
+	}
+	s.workspaceDependentsWG.Go(func() {
+		fn(s.workspaceDependentsCtx)
+	})
+}
+
+func (s *Server) stopWorkspaceDependents() <-chan struct{} {
+	s.workspaceDependentsOnce.Do(func() {
+		s.workspaceDependentsCancel()
+		go func() {
+			s.workspaceDependentsWG.Wait()
+			close(s.workspaceDependentsDone)
+		}()
+	})
+	return s.workspaceDependentsDone
+}
+
 // Shutdown stops the HTTP listener (if started via ListenAndServe
 // or Serve), closes the SSE event hub so streaming handlers exit,
-// cancels background goroutines' context, and blocks until they
-// finish or ctx expires. Safe to call concurrently and repeatedly.
+// drains later-started Workspace consumers, shuts Workspace down before its
+// runtime dependency, cancels remaining background goroutines, and blocks
+// until they finish or ctx expires. Safe to call concurrently and repeatedly.
 // Every caller drives http.Server.Shutdown with its own ctx
 // (stdlib polls idle-conn closure per call) and waits on a shared
 // drain channel, so a retry with a longer deadline observes true
@@ -349,13 +382,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if first && s.kataEvents != nil {
 		s.kataEvents.Close()
 	}
-	if first && s.runtime != nil {
-		s.runtime.Shutdown()
-	}
-	if first {
-		s.sshFleet.shutdown()
-	}
-
 	var httpErr error
 	httpDrained := httpSrv == nil
 	if httpSrv != nil {
@@ -386,22 +412,40 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 
 	if first {
+		s.stopWorkspaceDependents()
+	}
+
+	var shutdownErr error
+	select {
+	case <-s.workspaceDependentsDone:
+	case <-ctx.Done():
+		shutdownErr = errors.Join(shutdownErr, ctx.Err())
+	}
+	if first {
 		s.bgCancel()
 		go func() {
 			s.bg.Wait()
 			close(drainDone)
 		}()
 	}
-
 	select {
 	case <-drainDone:
-		return httpErr
 	case <-ctx.Done():
-		if httpErr != nil {
-			return errors.Join(httpErr, ctx.Err())
-		}
-		return ctx.Err()
+		shutdownErr = errors.Join(shutdownErr, ctx.Err())
 	}
+	if s.workspaceAPI != nil {
+		if first {
+			s.workspaceLifecycleCancel()
+		}
+		shutdownErr = errors.Join(shutdownErr, s.workspaceAPI.Shutdown(ctx))
+	}
+	if first && s.runtime != nil {
+		s.runtime.Shutdown()
+	}
+	if first {
+		s.sshFleet.shutdown()
+	}
+	return errors.Join(httpErr, shutdownErr)
 }
 
 // SetActiveWorktreeKey sets the key of the currently
@@ -578,6 +622,42 @@ func fallbackHostCheckOptions() HostCheckOptions {
 	}
 }
 
+func workspaceConfigSnapshot(
+	cfg *config.Config, tmuxCommand []string,
+) workspaceapi.ConfigSnapshot {
+	snapshot := workspaceapi.ConfigSnapshot{TmuxCommand: slices.Clone(tmuxCommand)}
+	if cfg == nil {
+		return snapshot
+	}
+	snapshot.Agents = cloneConfigAgents(cfg.Agents)
+	snapshot.KnownPlatformHosts = make(
+		[]projects.KnownPlatformHost, 0, len(cfg.Platforms)+len(cfg.Repos)+1,
+	)
+	snapshot.KnownPlatformHosts = append(snapshot.KnownPlatformHosts, projects.KnownPlatformHost{
+		Platform: string(platform.KindGitHub),
+		Host:     cfg.DefaultPlatformHost,
+	})
+	for _, configured := range cfg.Platforms {
+		snapshot.KnownPlatformHosts = append(snapshot.KnownPlatformHosts, projects.KnownPlatformHost{
+			Platform: configured.Type,
+			Host:     configured.Host,
+		})
+	}
+	for _, repo := range cfg.Repos {
+		snapshot.KnownPlatformHosts = append(snapshot.KnownPlatformHosts, projects.KnownPlatformHost{
+			Platform: repo.PlatformOrDefault(),
+			Host:     repo.PlatformHostOrDefault(),
+		})
+	}
+	return snapshot
+}
+
+func (s *Server) applyWorkspaceConfigLocked() {
+	if s.workspaceAPI != nil {
+		s.workspaceAPI.ApplyConfig(workspaceConfigSnapshot(s.cfg, s.tmuxCmd))
+	}
+}
+
 func newServer(
 	database *db.DB,
 	syncer *ghclient.Syncer,
@@ -634,9 +714,12 @@ func newServer(
 			parent:   bgBaseCtx,
 			deadline: bgDeadline,
 		},
-		bgCancel:   bgCancel,
-		bgDeadline: bgDeadline,
+		bgCancel:                bgCancel,
+		bgDeadline:              bgDeadline,
+		workspaceDependentsDone: make(chan struct{}),
 	}
+	s.workspaceDependentsCtx, s.workspaceDependentsCancel = context.WithCancel(s.bgCtx)
+	s.workspaceLifecycleCtx, s.workspaceLifecycleCancel = context.WithCancel(context.Background())
 	s.docsAPI = docsapi.New(docsapi.Deps{
 		Config: cfg,
 		BeginConfigMutation: func() func() {
@@ -815,16 +898,14 @@ func newServer(
 		})
 	}
 	s.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
-		DB:                database,
-		Resolver:          repoResolver,
-		Syncer:            syncer,
-		Config:            cfg,
-		Workspaces:        s.workspaces,
-		Runtime:           s.runtime,
-		TmuxCommand:       tmuxCmd,
-		Now:               s.now,
-		BackgroundContext: s.bgCtx,
-		RunBackground:     s.runBackground,
+		DB:          database,
+		Resolver:    repoResolver,
+		Syncer:      syncer,
+		Config:      workspaceConfigSnapshot(cfg, tmuxCmd),
+		Workspaces:  s.workspaces,
+		Runtime:     s.runtime,
+		TmuxCommand: tmuxCmd,
+		Now:         s.now,
 		Broadcast: func(event workspaceapi.Event) uint64 {
 			return s.hub.Broadcast(Event{Type: event.Type, Data: event.Data})
 		},
@@ -846,23 +927,23 @@ func newServer(
 	if err := s.workspaceAPI.RestoreRuntimeSessions(context.Background()); err != nil {
 		slog.Warn("restore runtime tmux sessions", "err", err)
 	}
-	s.workspaceAPI.Start(options.DisableWorkspaceBackgroundMonitors)
+	s.workspaceAPI.Start(s.workspaceLifecycleCtx, options.DisableWorkspaceBackgroundMonitors)
 
 	if s.workspaces != nil && tmuxAvailable && s.fleetTmuxMonitor != nil {
-		s.runBackground(s.fleetTmuxMonitor.run)
+		s.runWorkspaceDependent(s.fleetTmuxMonitor.run)
 	}
 	if s.fleetWorktreeDiscoverer != nil && !options.DisableWorkspaceBackgroundMonitors {
-		s.runBackground(s.fleetWorktreeDiscoverer.run)
+		s.runWorkspaceDependent(s.fleetWorktreeDiscoverer.run)
 	}
 	if s.fleetWorktreeStatsSampler != nil && !options.DisableWorkspaceBackgroundMonitors {
-		s.runBackground(s.fleetWorktreeStatsSampler.run)
+		s.runWorkspaceDependent(s.fleetWorktreeStatsSampler.run)
 	}
 	if s.fleetPlatformAuthMonitor != nil && !options.DisableWorkspaceBackgroundMonitors {
-		s.runBackground(s.fleetPlatformAuthMonitor.run)
+		s.runWorkspaceDependent(s.fleetPlatformAuthMonitor.run)
 	}
 	if clones != nil && !options.DisableWorkspaceBackgroundMonitors {
 		s.repoBrowserAPI.SeedRefreshRepos(context.Background())
-		s.runBackground(s.repoBrowserAPI.RunRefreshLoop)
+		s.runWorkspaceDependent(s.repoBrowserAPI.RunRefreshLoop)
 	}
 
 	// Watch the config file so an external edit (vim, dotfiles deploy,

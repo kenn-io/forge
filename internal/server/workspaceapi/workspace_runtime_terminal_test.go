@@ -161,7 +161,7 @@ func runtimeTerminalTestServer(
 	srv := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			defer close(handlerDone)
-			new(Server).serveRuntimeTerminal(
+			new(Handler).serveRuntimeTerminal(
 				w,
 				r,
 				attachment,

@@ -178,7 +178,7 @@ func TestProbeOneTmuxSessionWaitsForCoalescedProbeWithFallback(t *testing.T) {
 		err      error
 	}
 	result := make(chan probeResult, 1)
-	srv := &Server{tmuxActivity: tracker}
+	srv := &Handler{tmuxActivity: tracker}
 	ctx := &doneObservedContext{
 		Context:      context.Background(),
 		doneObserved: make(chan struct{}),
@@ -243,7 +243,7 @@ func TestProbeOneTmuxSessionReturnsFallbackWhenCoalescedWaitTimesOut(t *testing.
 		err      error
 	}
 	result := make(chan probeResult, 1)
-	srv := &Server{tmuxActivity: tracker}
+	srv := &Handler{tmuxActivity: tracker}
 	go func() {
 		activity, ok, err := srv.probeOneTmuxSession(
 			ctx,

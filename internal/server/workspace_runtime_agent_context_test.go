@@ -203,36 +203,23 @@ func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
+	tmuxPath := writeRuntimeTmuxLifecycleRecorder(t, dir, filepath.Join(dir, "tmux-record"))
+	cfg := &config.Config{
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
+		Agents: []config.Agent{{
+			Key:     "codex",
+			Label:   "Codex",
+			Command: []string{"/bin/sh", "-c", "exit 0"},
+		}},
+	}
 	srv := New(
-		database, syncer, nil, "/", nil,
+		database, syncer, nil, "/", cfg,
 		ServerOptions{
 			WorktreeDir:                        filepath.Join(dir, "worktrees"),
 			DisableWorkspaceBackgroundMonitors: true,
 		},
 	)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	tmuxPath := writeRuntimeTmuxLifecycleRecorder(t, dir, filepath.Join(dir, "tmux-record"))
-	srv.runtime = localruntime.NewManager(localruntime.Options{
-		Targets: []localruntime.LaunchTarget{
-			{
-				Key:       "codex",
-				Label:     "Codex",
-				Kind:      localruntime.LaunchTargetAgent,
-				Command:   []string{"/bin/sh", "-c", "exit 0"},
-				Available: true,
-			},
-			{
-				Key:       string(localruntime.LaunchTargetShell),
-				Label:     "tmux",
-				Kind:      localruntime.LaunchTargetShell,
-				Command:   []string{tmuxPath},
-				Available: true,
-			},
-		},
-		TmuxCommand:             []string{tmuxPath},
-		WrapAgentSessionsInTmux: true,
-	})
-	srv.workspaceAPI.SetRuntimeManager(srv.runtime)
 
 	issueWorktree := initServerWorkspaceGitRepo(t)
 	seedIssue(t, database, "acme", "widget", 7, "open")

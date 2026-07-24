@@ -181,7 +181,7 @@ type workspaceDiffRequest struct {
 // This API exists so a tracked pull request can have a durable local execution
 // context that middleman owns and can reopen later. It is not a generic
 // worktree-creation endpoint for arbitrary branches.
-func (s *Server) createWorkspace(
+func (s *Handler) createWorkspace(
 	ctx context.Context, input *createWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
 	if s.workspaces == nil {
@@ -229,7 +229,7 @@ func (s *Server) createWorkspace(
 	}, nil
 }
 
-func (s *Server) createWorkspaceProvider(
+func (s *Handler) createWorkspaceProvider(
 	ctx context.Context, input *createWorkspaceInput,
 ) (string, error) {
 	if strings.TrimSpace(input.Body.Provider) != "" {
@@ -243,11 +243,11 @@ func (s *Server) createWorkspaceProvider(
 	return "", httpapi.Validation("body.provider", "provider is required")
 }
 
-func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
+func (s *Handler) runWorkspaceSetup(ws *workspace.Workspace) {
 	s.runWorkspaceSetupWithBasePath(ws, "")
 }
 
-func (s *Server) runWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePath string) {
+func (s *Handler) runWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePath string) {
 	s.runBackground(func(bgCtx context.Context) {
 		for {
 			setupErr := s.workspaces.SetupWithWorktreeBasePath(bgCtx, ws, basePath)
@@ -336,7 +336,7 @@ func (s *Handler) RunWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePat
 // even when there is no PR branch yet. These workspaces start from the repo's
 // current origin/HEAD and are presented in the UI with issue-specific sidebar
 // behavior instead of PR/reviews affordances.
-func (s *Server) createIssueWorkspace(
+func (s *Handler) createIssueWorkspace(
 	ctx context.Context, input *createIssueWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
 	if s.workspaces == nil {
@@ -479,7 +479,7 @@ func (s *Handler) CreateIssueWorkspace(
 // Its purpose is to drive the workspaces page and terminal picker from
 // middleman's own database model, rather than from ad hoc discovery of host
 // worktrees.
-func (s *Server) listWorkspaces(
+func (s *Handler) listWorkspaces(
 	ctx context.Context, _ *struct{},
 ) (*listWorkspacesOutput, error) {
 	if s.workspaces == nil {
@@ -517,7 +517,7 @@ func derefString(value *string) string {
 //
 // The terminal view uses this to reopen an existing local execution context and
 // determine whether the workspace is PR-backed or issue-backed.
-func (s *Server) getWorkspace(
+func (s *Handler) getWorkspace(
 	ctx context.Context, input *getWorkspaceInput,
 ) (*getWorkspaceOutput, error) {
 	if s.workspaces == nil {
@@ -537,7 +537,7 @@ func (s *Server) getWorkspace(
 	}, nil
 }
 
-func (s *Server) refreshWorkspace(
+func (s *Handler) refreshWorkspace(
 	ctx context.Context, input *refreshWorkspaceInput,
 ) (*refreshWorkspaceOutput, error) {
 	if s.workspaces == nil {
@@ -654,7 +654,7 @@ func workspaceAssociatedPRNumber(summary *db.WorkspaceSummary) (int, bool) {
 	return *summary.AssociatedPRNumber, *summary.AssociatedPRNumber > 0
 }
 
-func (s *Server) refreshWorkspaceRepoIndex(
+func (s *Handler) refreshWorkspaceRepoIndex(
 	ctx context.Context,
 	kind platform.Kind,
 	host, owner, name string,
@@ -694,7 +694,7 @@ func (s *Handler) RefreshWorkspaceRepoIndex(
 	return s.refreshWorkspaceRepoIndex(ctx, provider, platformHost, owner, name)
 }
 
-func (s *Server) refreshWorkspaceIssue(
+func (s *Handler) refreshWorkspaceIssue(
 	ctx context.Context,
 	kind platform.Kind,
 	host, owner, name string,
@@ -712,7 +712,7 @@ func (s *Server) refreshWorkspaceIssue(
 	)
 }
 
-func (s *Server) refreshWorkspacePullRequest(
+func (s *Handler) refreshWorkspacePullRequest(
 	ctx context.Context,
 	kind platform.Kind,
 	host, owner, name string,
@@ -740,7 +740,7 @@ func (s *Server) refreshWorkspacePullRequest(
 	return nil
 }
 
-func (s *Server) getWorkspaceCommits(
+func (s *Handler) getWorkspaceCommits(
 	ctx context.Context, input *getWorkspaceCommitsInput,
 ) (*getWorkspaceCommitsOutput, error) {
 	req, err := s.workspaceDiffRequest(ctx, input.ID, "")
@@ -797,7 +797,7 @@ func (s *Server) getWorkspaceCommits(
 	return &getWorkspaceCommitsOutput{Body: resp}, nil
 }
 
-func (s *Server) getWorkspaceFiles(
+func (s *Handler) getWorkspaceFiles(
 	ctx context.Context, input *getWorkspaceFilesInput,
 ) (*getWorkspaceFilesOutput, error) {
 	req, err := s.workspaceDiffRequest(ctx, input.ID, input.Base)
@@ -836,7 +836,7 @@ func (s *Server) getWorkspaceFiles(
 
 const workspaceDiffWatchTimeout = 25 * time.Second
 
-func (s *Server) watchWorkspaceDiff(
+func (s *Handler) watchWorkspaceDiff(
 	ctx context.Context,
 	input *watchWorkspaceDiffInput,
 ) (*watchWorkspaceDiffOutput, error) {
@@ -910,7 +910,7 @@ func (s *Server) watchWorkspaceDiff(
 	}
 }
 
-func (s *Server) getWorkspaceDiff(
+func (s *Handler) getWorkspaceDiff(
 	ctx context.Context, input *getWorkspaceDiffInput,
 ) (*getWorkspaceDiffOutput, error) {
 	req, err := s.workspaceDiffRequest(ctx, input.ID, input.Base)
@@ -958,7 +958,7 @@ func (s *Server) getWorkspaceDiff(
 	}}, nil
 }
 
-func (s *Server) getWorkspaceFilePreview(
+func (s *Handler) getWorkspaceFilePreview(
 	ctx context.Context,
 	input *getWorkspaceFilePreviewInput,
 ) (*getWorkspaceFilePreviewOutput, error) {
@@ -1033,7 +1033,7 @@ func (s *Server) getWorkspaceFilePreview(
 	}}, nil
 }
 
-func (s *Server) workspaceDiffRequest(
+func (s *Handler) workspaceDiffRequest(
 	ctx context.Context,
 	id string,
 	baseInput string,
@@ -1088,7 +1088,7 @@ func (s *Server) workspaceDiffRequest(
 	}
 }
 
-func (s *Server) workspaceDiffCacheKey(
+func (s *Handler) workspaceDiffCacheKey(
 	req workspaceDiffRequest,
 	hideWhitespace bool,
 ) workspaceDiffLogicalKey {
@@ -1142,7 +1142,7 @@ func filterWorkspaceDiffSnapshotPath(
 	return []gitclone.DiffFile{}
 }
 
-func (s *Server) workspaceCommits(
+func (s *Handler) workspaceCommits(
 	ctx context.Context,
 	req workspaceDiffRequest,
 ) ([]gitclone.Commit, bool, error) {
@@ -1157,7 +1157,7 @@ func (s *Server) workspaceCommits(
 	)
 }
 
-func (s *Server) applyWorkspaceDiffScope(
+func (s *Handler) applyWorkspaceDiffScope(
 	ctx context.Context,
 	req *workspaceDiffRequest,
 	commit string,
@@ -1213,7 +1213,7 @@ func (s *Server) applyWorkspaceDiffScope(
 	}
 }
 
-func (s *Server) validateWorkspaceSHAs(
+func (s *Handler) validateWorkspaceSHAs(
 	ctx context.Context,
 	req workspaceDiffRequest,
 	shas ...string,
@@ -1242,7 +1242,7 @@ func (s *Server) validateWorkspaceSHAs(
 	return indexMap, nil
 }
 
-func (s *Server) workspaceMergeTargetBranch(
+func (s *Handler) workspaceMergeTargetBranch(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 ) (string, bool, error) {
@@ -1293,7 +1293,7 @@ func workspaceDiffBaseUnavailable(
 		"workspace pushed branch not available", nil)
 }
 
-func (s *Server) retryWorkspace(
+func (s *Handler) retryWorkspace(
 	ctx context.Context, input *retryWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
 	if s.workspaces == nil {
@@ -1334,7 +1334,7 @@ func (s *Server) retryWorkspace(
 	}, nil
 }
 
-func (s *Server) toWorkspaceResponse(
+func (s *Handler) toWorkspaceResponse(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 ) workspaceResponse {
@@ -1348,7 +1348,7 @@ func (s *Handler) Response(
 	return s.toWorkspaceResponse(ctx, summary)
 }
 
-func (s *Server) workspaceResponseWithEnrichment(
+func (s *Handler) workspaceResponseWithEnrichment(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 ) workspaceEnrichmentProbeResult {
@@ -1390,7 +1390,7 @@ func (s *Server) workspaceResponseWithEnrichment(
 	return result
 }
 
-func (s *Server) workspaceTmuxActivitySessions(
+func (s *Handler) workspaceTmuxActivitySessions(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 ) ([]string, error) {
@@ -1435,7 +1435,7 @@ func (s *Server) workspaceTmuxActivitySessions(
 	return sessions, listErr
 }
 
-func (s *Server) probeWorkspaceTmuxActivity(
+func (s *Handler) probeWorkspaceTmuxActivity(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 	sessions []string,
@@ -1473,7 +1473,7 @@ func (s *Server) probeWorkspaceTmuxActivity(
 	return result, ok, errors.Join(probeErrs...)
 }
 
-func (s *Server) probeOneTmuxSession(
+func (s *Handler) probeOneTmuxSession(
 	ctx context.Context,
 	tracker *tmuxActivityTracker,
 	summary *db.WorkspaceSummary,
@@ -1599,7 +1599,7 @@ func isWorkingTmuxTitle(title string) bool {
 	return false
 }
 
-func (s *Server) getWorkspaceRuntime(
+func (s *Handler) getWorkspaceRuntime(
 	ctx context.Context,
 	input *getWorkspaceRuntimeInput,
 ) (*getWorkspaceRuntimeOutput, error) {
@@ -1620,7 +1620,7 @@ func (s *Server) getWorkspaceRuntime(
 	}, nil
 }
 
-func (s *Server) workspaceRuntimeSessions(
+func (s *Handler) workspaceRuntimeSessions(
 	ctx context.Context,
 	workspaceID string,
 ) ([]localruntime.SessionInfo, error) {
@@ -1709,7 +1709,7 @@ func storedRuntimeSessionInfo(
 	}
 }
 
-func (s *Server) launchWorkspaceRuntimeSession(
+func (s *Handler) launchWorkspaceRuntimeSession(
 	ctx context.Context,
 	input *launchWorkspaceRuntimeSessionInput,
 ) (*workspaceRuntimeSessionOutput, error) {
@@ -1774,7 +1774,7 @@ func workspaceRuntimeTargetIsAgent(runtime *localruntime.Manager, targetKey stri
 	return false
 }
 
-func (s *Server) forgetRecordedRuntimeSessionIfExited(
+func (s *Handler) forgetRecordedRuntimeSessionIfExited(
 	ctx context.Context,
 	session localruntime.SessionInfo,
 ) {
@@ -1808,7 +1808,7 @@ func (s *Server) forgetRecordedRuntimeSessionIfExited(
 	s.invalidateWorkspaceEnrichment(session.WorkspaceID)
 }
 
-func (s *Server) recordRuntimeSession(
+func (s *Handler) recordRuntimeSession(
 	ctx context.Context,
 	workspaceID string,
 	session localruntime.SessionInfo,
@@ -1853,7 +1853,7 @@ func normalizeRuntimeDisplayRegion(
 	return "workflow"
 }
 
-func (s *Server) stopWorkspaceRuntimeSession(
+func (s *Handler) stopWorkspaceRuntimeSession(
 	ctx context.Context,
 	input *stopWorkspaceRuntimeSessionInput,
 ) (*struct{}, error) {
@@ -1890,7 +1890,7 @@ func (s *Server) stopWorkspaceRuntimeSession(
 	return nil, nil
 }
 
-func (s *Server) getWorkspaceRuntimeSessionAttachSpec(
+func (s *Handler) getWorkspaceRuntimeSessionAttachSpec(
 	ctx context.Context,
 	input *getWorkspaceRuntimeSessionAttachSpecInput,
 ) (*runtimeAttachSpecOutput, error) {
@@ -1917,7 +1917,7 @@ func (s *Server) getWorkspaceRuntimeSessionAttachSpec(
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, "runtime session not found", nil)
 	}
 	spec, err := runtimeAttachSpec(
-		ctx, s.cfg.TmuxCommand(), input.SessionKey, targetKey, tmuxSession,
+		ctx, s.tmuxCommand(), input.SessionKey, targetKey, tmuxSession,
 	)
 	if err != nil {
 		return nil, err
@@ -1962,7 +1962,7 @@ func runtimeSessionTmuxSession(
 	return ""
 }
 
-func (s *Server) renameWorkspaceRuntimeSession(
+func (s *Handler) renameWorkspaceRuntimeSession(
 	ctx context.Context,
 	input *renameWorkspaceRuntimeSessionInput,
 ) (*workspaceRuntimeSessionOutput, error) {
@@ -2010,7 +2010,7 @@ func (s *Server) renameWorkspaceRuntimeSession(
 	return &workspaceRuntimeSessionOutput{Body: session}, nil
 }
 
-func (s *Server) renameStoredRuntimeSession(
+func (s *Handler) renameStoredRuntimeSession(
 	ctx context.Context,
 	workspaceID string,
 	sessionKey string,
@@ -2034,7 +2034,7 @@ func (s *Server) renameStoredRuntimeSession(
 	return localruntime.SessionInfo{}, false, nil
 }
 
-func (s *Server) getRuntimeWorkspace(
+func (s *Handler) getRuntimeWorkspace(
 	ctx context.Context,
 	id string,
 ) (*db.WorkspaceSummary, error) {
@@ -2052,7 +2052,7 @@ func (s *Server) getRuntimeWorkspace(
 	return summary, nil
 }
 
-func (s *Server) getReadyRuntimeWorkspace(
+func (s *Handler) getReadyRuntimeWorkspace(
 	ctx context.Context,
 	id string,
 ) (*db.WorkspaceSummary, error) {
@@ -2086,7 +2086,7 @@ func workspaceRuntimeLaunchError(err error) error {
 //
 // This exists to remove the persisted workspace entry plus its managed local
 // resources. It is not intended to delete arbitrary worktrees on disk.
-func (s *Server) deleteWorkspace(
+func (s *Handler) deleteWorkspace(
 	ctx context.Context, input *deleteWorkspaceInput,
 ) (*struct{}, error) {
 	if s.workspaces == nil {

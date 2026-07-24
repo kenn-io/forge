@@ -16,8 +16,21 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/server/workspaceapi"
-	"go.kenn.io/middleman/internal/workspace"
 )
+
+func setupWorkspaceTestServerWithConfigContent(
+	t *testing.T, cfgContent string, mock *mockGH,
+) (*Server, *db.DB, string) {
+	t.Helper()
+	return setupTestServerWithConfigContentAndOptions(
+		t, cfgContent, mock,
+		ServerOptions{
+			HostCheckAllowLoopbackAnyPort:      true,
+			WorktreeDir:                        t.TempDir(),
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+}
 
 func TestKataWorkspaceTargetAutomaticMapping(t *testing.T) {
 	assert := assert.New(t)
@@ -281,7 +294,7 @@ func TestKataWorkspaceTargetAutomaticMappingFromTrackedRepoName(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -396,11 +409,14 @@ func TestCreateKataWorkspaceUsesRegisteredProjectCheckout(t *testing.T) {
 
 	projectPath, _, platformHost := setupHTTPWorktreeBaseForServerTest(t, "feature")
 
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
+
+[tmux]
+command = ["sh", "-c", "exit 0"]
 `, &mockGH{})
 	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity(platformHost, "acme", "widget"))
 	require.NoError(err)
@@ -410,10 +426,6 @@ port = 8091
 		RepoID:      sql.NullInt64{Int64: repoID, Valid: true},
 	})
 	require.NoError(err)
-	srv.workspaces = workspace.NewManager(database, t.TempDir())
-	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
-	srv.workspaces.SetTmuxCommand([]string{"sh", "-c", "exit 0"})
-
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspaces", map[string]any{
 		"daemon_id":    "desktop",
 		"project_uid":  "project-kata",
@@ -446,7 +458,7 @@ func TestKataManualMappingRejectsHistoricalUnconfiguredRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1046,7 +1058,7 @@ func TestCreateKataWorkspaceDoesNotRequireProviderIssue(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1064,8 +1076,6 @@ repo_path = "acme/widget"
 `, &mockGH{})
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	srv.workspaces = workspace.NewManager(database, t.TempDir())
-	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspaces", map[string]any{
 		"daemon_id":    "desktop",
@@ -1125,11 +1135,9 @@ port = 8091
 owner = "acme"
 name = %q
 `, configuredRepoName)
-	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
+	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, cfg, &mockGH{})
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
 	require.NoError(err)
-	srv.workspaces = workspace.NewManager(database, t.TempDir())
-	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
 
 	metadata := db.WorkspaceKataMetadata{
 		DaemonID:    "desktop",
@@ -1181,7 +1189,7 @@ func TestCreateKataWorkspaceReusesExistingScopedTaskWorkspace(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1199,8 +1207,6 @@ repo_path = "acme/widget"
 `, &mockGH{})
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	srv.workspaces = workspace.NewManager(database, t.TempDir())
-	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
 
 	body := map[string]any{
 		"daemon_id":    "desktop",

@@ -33,7 +33,7 @@ type cloneProjectInput struct {
 	}
 }
 
-func (s *Server) cloneProject(
+func (s *Handler) cloneProject(
 	ctx context.Context, input *cloneProjectInput,
 ) (*registerProjectOutput, error) {
 	rawURL := strings.TrimSpace(input.Body.URL)

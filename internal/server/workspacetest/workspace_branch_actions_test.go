@@ -1,9 +1,8 @@
-package server
+package workspacetest
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,14 +12,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/workspace"
 )
 
 func TestWorkspacePushBranchRoutePushesAheadBranch(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	client, srv := fixture.client, fixture.server
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
@@ -41,27 +42,27 @@ func TestWorkspacePushBranchRoutePushesAheadBranch(t *testing.T) {
 }
 
 func TestWorkspacePullBranchRouteFastForwardsBehindBranch(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	client, srv := fixture.client, fixture.server
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
-	err := srv.workspaces.PushWorktreeBranch(ctx, ws.PlatformHost, ws.WorktreePath)
-	if err != nil && !errors.Is(err, workspace.ErrWorktreeInSync) {
-		require.NoError(err)
-	}
+	runGit(t, ws.WorktreePath, "push", "-u", "origin", "HEAD")
 	div, ok, err := workspace.WorktreeDivergence(ctx, ws.WorktreePath)
 	require.NoError(err)
 	require.True(ok)
 	require.Equal(workspace.Divergence{}, div)
-	upstreamRef := gitOutput(
+	upstreamRef := workspaceGitOutput(
 		t, ws.WorktreePath,
 		"rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}",
 	)
 	upstreamBranch := strings.TrimPrefix(upstreamRef, "origin/")
 
 	other := filepath.Join(t.TempDir(), "other")
-	originURL := gitOutput(t, ws.WorktreePath, "remote", "get-url", "origin")
+	originURL := workspaceGitOutput(t, ws.WorktreePath, "remote", "get-url", "origin")
 	runGit(t, t.TempDir(), "clone", originURL, other)
 	runGit(t, other, "config", "user.email", "test@test.com")
 	runGit(t, other, "config", "user.name", "Test")
@@ -82,8 +83,11 @@ func TestWorkspacePullBranchRouteFastForwardsBehindBranch(t *testing.T) {
 }
 
 func TestWorkspacePullBranchRouteRejectsDirtyWorktree(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
 	require := require.New(t)
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	client, srv := fixture.client, fixture.server
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 	require.NoError(os.WriteFile(
@@ -96,23 +100,4 @@ func TestWorkspacePullBranchRouteRejectsDirtyWorktree(t *testing.T) {
 	var problem rawProblemDetail
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
 	assert.New(t).Equal(string(httpapi.CodeWorktreeDirty), problem.Code)
-}
-
-func TestWorkspaceRevealRouteOpensWorkspacePath(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-	var opened string
-	restoreReveal := workspaceapi.SetRevealWorkspacePathForTest(func(_ context.Context, path string) error {
-		opened = path
-		return nil
-	})
-	t.Cleanup(restoreReveal)
-
-	rr := doJSON(t, srv, http.MethodPost, "/api/v1/workspaces/"+ws.Id+"/reveal", nil)
-
-	require.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
-	assert.Equal(ws.WorktreePath, opened)
 }

@@ -92,7 +92,7 @@ type prCIRefreshedPayload struct {
 // PRCIRefreshedPayload is shared with the deferred-merge event producer.
 type PRCIRefreshedPayload = prCIRefreshedPayload
 
-func (s *Server) enqueueWorkspacePushedHeadRefresh(change workspace.PushedHeadUpdate) bool {
+func (s *Handler) enqueueWorkspacePushedHeadRefresh(change workspace.PushedHeadUpdate) bool {
 	if s.syncer == nil {
 		return false
 	}
@@ -152,7 +152,7 @@ func (s *Server) enqueueWorkspacePushedHeadRefresh(change workspace.PushedHeadUp
 	return true
 }
 
-func (s *Server) broadcastPRDetailRefreshed(ctx context.Context, change workspace.PushedHeadUpdate) {
+func (s *Handler) broadcastPRDetailRefreshed(ctx context.Context, change workspace.PushedHeadUpdate) {
 	repo, mr := s.lookupPushedHeadMR(ctx, change)
 	headSHA := change.NewSHA
 	if mr != nil && mr.PlatformHeadSHA != "" {
@@ -179,7 +179,7 @@ func (s *Server) broadcastPRDetailRefreshed(ctx context.Context, change workspac
 	s.hub.Broadcast(Event{Type: "pr_detail_refreshed", Data: payload})
 }
 
-func (s *Server) maybeEnqueuePushedHeadCIRefresh(ctx context.Context, change workspace.PushedHeadUpdate) {
+func (s *Handler) maybeEnqueuePushedHeadCIRefresh(ctx context.Context, change workspace.PushedHeadUpdate) {
 	if s.syncer == nil {
 		return
 	}
@@ -252,7 +252,7 @@ func (s *Server) maybeEnqueuePushedHeadCIRefresh(ctx context.Context, change wor
 	})
 }
 
-func (s *Server) lookupPushedHeadMR(ctx context.Context, change workspace.PushedHeadUpdate) (*db.Repo, *db.MergeRequest) {
+func (s *Handler) lookupPushedHeadMR(ctx context.Context, change workspace.PushedHeadUpdate) (*db.Repo, *db.MergeRequest) {
 	repo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     string(change.Provider),
 		PlatformHost: change.PlatformHost,

@@ -17,7 +17,6 @@ import (
 
 	gitcmd "go.kenn.io/kit/git/cmd"
 	managedworktree "go.kenn.io/kit/git/managed"
-	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/fleet"
 	ghclient "go.kenn.io/middleman/internal/github"
@@ -323,7 +322,7 @@ type projectWorktreeRuntimeSessionOutput struct {
 // repo to sync; sync subscription remains driven by the user's TOML config
 // and the AddRepo settings handler. The middleman_repos row exists solely
 // as a stable FK target so the project's identity cannot drift.
-func (s *Server) registerProject(
+func (s *Handler) registerProject(
 	ctx context.Context, input *registerProjectInput,
 ) (*registerProjectOutput, error) {
 	rawPath := strings.TrimSpace(input.Body.LocalPath)
@@ -364,7 +363,7 @@ func (s *Server) registerProject(
 // registerProjectAtPath runs the post-validation registration core shared
 // by project registration and clone-and-register: identity resolution,
 // repo upsert, project row creation, and an immediate discovery pass.
-func (s *Server) registerProjectAtPath(
+func (s *Handler) registerProjectAtPath(
 	ctx context.Context,
 	abs string,
 	displayName string,
@@ -422,7 +421,7 @@ func (s *Server) registerProjectAtPath(
 // project. Caller-provided identity wins; otherwise the handler tries to
 // parse the path's git origin remote. Returns (nil, nil) when neither is
 // available - that path produces a local-only project.
-func (s *Server) resolveProjectIdentity(
+func (s *Handler) resolveProjectIdentity(
 	ctx context.Context,
 	caller *platformIdentityPayload,
 	abs string,
@@ -451,31 +450,11 @@ func (s *Server) resolveProjectIdentity(
 	return resolved, nil
 }
 
-func (s *Server) knownProjectPlatformHosts() []projects.KnownPlatformHost {
-	if s.cfg == nil {
-		return nil
-	}
-	known := make([]projects.KnownPlatformHost, 0, len(s.cfg.Platforms)+len(s.cfg.Repos)+1)
-	known = append(known, projects.KnownPlatformHost{
-		Platform: "github",
-		Host:     s.cfg.DefaultPlatformHost,
-	})
-	for _, platform := range s.cfg.Platforms {
-		known = append(known, projects.KnownPlatformHost{
-			Platform: platform.Type,
-			Host:     platform.Host,
-		})
-	}
-	for _, repo := range s.cfg.Repos {
-		known = append(known, projects.KnownPlatformHost{
-			Platform: repo.PlatformOrDefault(),
-			Host:     repo.PlatformHostOrDefault(),
-		})
-	}
-	return known
+func (s *Handler) knownProjectPlatformHosts() []projects.KnownPlatformHost {
+	return s.configSnapshot().KnownPlatformHosts
 }
 
-func (s *Server) listProjects(
+func (s *Handler) listProjects(
 	ctx context.Context, _ *struct{},
 ) (*listProjectsOutput, error) {
 	rows, err := s.db.ListProjects(ctx)
@@ -487,7 +466,7 @@ func (s *Server) listProjects(
 	return out, nil
 }
 
-func (s *Server) getProject(
+func (s *Handler) getProject(
 	ctx context.Context, input *projectIDInput,
 ) (*getProjectOutput, error) {
 	project, err := s.db.GetProjectByID(ctx, input.ProjectID)
@@ -506,7 +485,7 @@ func (s *Server) getProject(
 // state. The project row then cascades to worktrees and their stored runtime
 // tmux sessions. Returns 404 when no project matches the id so a caller can
 // distinguish a missing project from a successful delete.
-func (s *Server) deleteProject(
+func (s *Handler) deleteProject(
 	ctx context.Context, input *projectIDInput,
 ) (*struct{}, error) {
 	worktrees, err := s.db.ListProjectWorktrees(ctx, input.ProjectID)
@@ -542,7 +521,7 @@ func (s *Server) deleteProject(
 // blocked until it runs; callers deleting the worktree's rows must defer it
 // past the DB delete so a concurrent launch cannot slip in between stopping
 // the sessions and removing the rows. It is safe to call even on error.
-func (s *Server) stopWorktreeRuntimeState(
+func (s *Handler) stopWorktreeRuntimeState(
 	ctx context.Context, worktreeID string,
 ) (release func(), err error) {
 	release = func() {}
@@ -564,7 +543,7 @@ func (s *Server) stopWorktreeRuntimeState(
 	}
 	for _, row := range rows {
 		if err := killProjectRuntimeTmuxSession(
-			ctx, s.cfg.TmuxCommand(), row.SessionName,
+			ctx, s.tmuxCommand(), row.SessionName,
 		); err != nil {
 			return release, fmt.Errorf(
 				"kill stored tmux session %q: %w", row.SessionName, err,
@@ -579,7 +558,7 @@ func (s *Server) stopWorktreeRuntimeState(
 	return release, nil
 }
 
-func (s *Server) registerWorktree(
+func (s *Handler) registerWorktree(
 	ctx context.Context, input *registerWorktreeInput,
 ) (*registerWorktreeOutput, error) {
 	branch := strings.TrimSpace(input.Body.Branch)
@@ -635,7 +614,7 @@ func (s *Handler) RegisterWorktree(
 // performs the git work via the lifecycle engine, then registers the
 // resulting worktree. A registry conflict after successful git work rolls
 // the git work back so a retry is possible.
-func (s *Server) createWorktreeOnDisk(
+func (s *Handler) createWorktreeOnDisk(
 	ctx context.Context, input *registerWorktreeInput, branch, path string,
 ) (*registerWorktreeOutput, error) {
 	project, err := s.db.GetProjectByID(ctx, input.ProjectID)
@@ -668,7 +647,7 @@ func (s *Server) createWorktreeOnDisk(
 // registerMaterializedWorktree records a worktree the lifecycle engine just
 // created on disk. A registry refusal rolls the git work back so the
 // conflict does not compound.
-func (s *Server) registerMaterializedWorktree(
+func (s *Handler) registerMaterializedWorktree(
 	ctx context.Context,
 	project *db.Project,
 	created managedworktree.CreateWorktreeResult,
@@ -701,7 +680,7 @@ func (s *Server) registerMaterializedWorktree(
 // worktree (fetch, branch, optional upstream tracking, optional setup
 // hook) and registers it. Freshness is the caller's concern: sync the
 // merge request first if staleness matters.
-func (s *Server) createProjectWorktreeFromMergeRequest(
+func (s *Handler) createProjectWorktreeFromMergeRequest(
 	ctx context.Context, input *createWorktreeFromMergeRequestInput,
 ) (*worktreeFromMergeRequestOutput, error) {
 	branch := strings.TrimSpace(input.Body.Branch)
@@ -816,7 +795,7 @@ func (s *Server) createProjectWorktreeFromMergeRequest(
 
 // projectRootPath resolves a project's local checkout path for primary-row
 // labeling; unknown projects resolve to "" (no row matches).
-func (s *Server) projectRootPath(
+func (s *Handler) projectRootPath(
 	ctx context.Context, projectID string,
 ) string {
 	project, err := s.db.GetProjectByID(ctx, projectID)
@@ -830,7 +809,7 @@ func (s *Server) projectRootPath(
 // the project's own root checkout. Dropping the row would only be undone by
 // the next discovery pass, and removing it from disk would remove the
 // repository itself; unregister the project instead.
-func (s *Server) refusePrimaryWorktreeRemoval(
+func (s *Handler) refusePrimaryWorktreeRemoval(
 	ctx context.Context, projectID string, worktree *db.ProjectWorktree,
 ) error {
 	project, err := s.db.GetProjectByID(ctx, projectID)
@@ -856,7 +835,7 @@ func (s *Server) refusePrimaryWorktreeRemoval(
 // branch, dirty state unless forced), the teardown hook, the git removal,
 // the optional branch delete, and finally the registry row. Without
 // remove_from_disk it only drops the row, like the legacy DELETE route.
-func (s *Server) removeProjectWorktree(
+func (s *Handler) removeProjectWorktree(
 	ctx context.Context, input *removeWorktreeInput,
 ) (*struct{}, error) {
 	worktree, err := s.db.GetProjectWorktreeByID(ctx, input.WorktreeID)
@@ -1017,7 +996,7 @@ func runManagedWorktreeHook(
 // registry row. Primary worktrees are synthesized from the project row and have
 // no registry row, so they cannot be deleted through this route. A worktree id
 // that does not exist under the given project is a 404.
-func (s *Server) deleteProjectWorktree(
+func (s *Handler) deleteProjectWorktree(
 	ctx context.Context, input *projectWorktreeIDInput,
 ) (*struct{}, error) {
 	// Verify ownership before touching runtime state so a request with the
@@ -1066,7 +1045,7 @@ func (s *Handler) DeleteProjectWorktree(
 // the worktree registered and discoverable but out of the active list; the flag
 // survives discovery reconciliation. Primary worktrees have no registry row and
 // so cannot be hidden through this route.
-func (s *Server) setProjectWorktreeHidden(
+func (s *Handler) setProjectWorktreeHidden(
 	ctx context.Context, input *setWorktreeHiddenInput,
 ) (*registerWorktreeOutput, error) {
 	updated, err := s.db.SetProjectWorktreeHidden(
@@ -1090,7 +1069,7 @@ func (s *Server) setProjectWorktreeHidden(
 // empty->localPTY default applies again. The override survives discovery
 // reconciliation. Primary worktrees have no registry row and so cannot carry an
 // override through this route.
-func (s *Server) setProjectWorktreeSessionBackend(
+func (s *Handler) setProjectWorktreeSessionBackend(
 	ctx context.Context, input *setWorktreeSessionBackendInput,
 ) (*registerWorktreeOutput, error) {
 	backend := ""
@@ -1130,7 +1109,7 @@ func (s *Server) setProjectWorktreeSessionBackend(
 // links survive discovery reconciliation. These are snapshot metadata attached
 // to a worktree, not a relational issue-link model. Primary worktrees have no
 // registry row and so cannot carry links through this route.
-func (s *Server) setProjectWorktreeLinkedIssues(
+func (s *Handler) setProjectWorktreeLinkedIssues(
 	ctx context.Context, input *setWorktreeLinkedIssuesInput,
 ) (*registerWorktreeOutput, error) {
 	updated, err := s.db.SetProjectWorktreeLinkedIssues(
@@ -1155,7 +1134,7 @@ func (s *Server) setProjectWorktreeLinkedIssues(
 // waiting for the background sampler's next pass. Primary worktrees are
 // synthesized from the project row and have no registry row, so they cannot be
 // refreshed through this route; an unknown worktree under the project is a 404.
-func (s *Server) refreshProjectWorktreeStats(
+func (s *Handler) refreshProjectWorktreeStats(
 	ctx context.Context, input *projectWorktreeIDInput,
 ) (*registerWorktreeOutput, error) {
 	worktree, err := s.db.GetProjectWorktreeByID(ctx, input.WorktreeID)
@@ -1188,7 +1167,7 @@ func (s *Server) refreshProjectWorktreeStats(
 	)}, nil
 }
 
-func (s *Server) listWorktrees(
+func (s *Handler) listWorktrees(
 	ctx context.Context, input *projectIDInput,
 ) (*listWorktreesOutput, error) {
 	rows, err := s.db.ListProjectWorktrees(ctx, input.ProjectID)
@@ -1205,7 +1184,7 @@ func (s *Server) listWorktrees(
 	return out, nil
 }
 
-func (s *Server) listLaunchTargets(
+func (s *Handler) listLaunchTargets(
 	ctx context.Context, input *projectIDInput,
 ) (*listLaunchTargetsOutput, error) {
 	if _, err := s.db.GetProjectByID(ctx, input.ProjectID); err != nil {
@@ -1219,11 +1198,8 @@ func (s *Server) listLaunchTargets(
 	// server. The runtime manager caches targets at startup and is
 	// only initialized when options.WorktreeDir is set; this endpoint
 	// must work either way.
-	var agents []config.Agent
-	if s.cfg != nil {
-		agents = s.cfg.Agents
-	}
-	targets := localruntime.ResolveLaunchTargets(agents, s.cfg.TmuxCommand(), nil)
+	snapshot := s.configSnapshot()
+	targets := localruntime.ResolveLaunchTargets(snapshot.Agents, snapshot.TmuxCommand, nil)
 	if targets == nil {
 		targets = []localruntime.LaunchTarget{}
 	}
@@ -1232,7 +1208,7 @@ func (s *Server) listLaunchTargets(
 	return out, nil
 }
 
-func (s *Server) getProjectWorktreeRuntime(
+func (s *Handler) getProjectWorktreeRuntime(
 	ctx context.Context,
 	input *projectWorktreeIDInput,
 ) (*getProjectWorktreeRuntimeOutput, error) {
@@ -1261,7 +1237,7 @@ func (s *Server) getProjectWorktreeRuntime(
 	return &getProjectWorktreeRuntimeOutput{Body: out}, nil
 }
 
-func (s *Server) ensureProjectWorktreeRuntimeShell(
+func (s *Handler) ensureProjectWorktreeRuntimeShell(
 	ctx context.Context,
 	input *projectWorktreeIDInput,
 ) (*projectWorktreeRuntimeSessionOutput, error) {
@@ -1312,7 +1288,7 @@ func (s *Server) ensureProjectWorktreeRuntimeShell(
 	}, nil
 }
 
-func (s *Server) launchProjectWorktreeRuntimeSession(
+func (s *Handler) launchProjectWorktreeRuntimeSession(
 	ctx context.Context,
 	input *launchProjectWorktreeRuntimeSessionInput,
 ) (*projectWorktreeRuntimeSessionOutput, error) {
@@ -1386,7 +1362,7 @@ func (s *Server) launchProjectWorktreeRuntimeSession(
 // POST .../runtime/sessions: a caller-supplied argv launched in a tmux-backed
 // session, optionally under a caller-owned durable session key with ensure
 // semantics (re-launching with the same key returns the live session).
-func (s *Server) launchProjectWorktreeRuntimeCommandSession(
+func (s *Handler) launchProjectWorktreeRuntimeCommandSession(
 	ctx context.Context,
 	input *launchProjectWorktreeRuntimeSessionInput,
 	worktree *db.ProjectWorktree,
@@ -1448,7 +1424,7 @@ func (s *Server) launchProjectWorktreeRuntimeCommandSession(
 	}, nil
 }
 
-func (s *Server) stopProjectWorktreeRuntimeSession(
+func (s *Handler) stopProjectWorktreeRuntimeSession(
 	ctx context.Context,
 	input *stopProjectWorktreeRuntimeSessionInput,
 ) (*struct{}, error) {
@@ -1489,7 +1465,7 @@ func (s *Server) stopProjectWorktreeRuntimeSession(
 	return nil, nil
 }
 
-func (s *Server) getProjectWorktreeRuntimeSessionAttachSpec(
+func (s *Handler) getProjectWorktreeRuntimeSessionAttachSpec(
 	ctx context.Context,
 	input *getProjectWorktreeRuntimeSessionAttachSpecInput,
 ) (*runtimeAttachSpecOutput, error) {
@@ -1521,7 +1497,7 @@ func (s *Server) getProjectWorktreeRuntimeSessionAttachSpec(
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, "runtime session not found", nil)
 	}
 	spec, err := runtimeAttachSpec(
-		ctx, s.cfg.TmuxCommand(), input.SessionKey, targetKey, tmuxSession,
+		ctx, s.tmuxCommand(), input.SessionKey, targetKey, tmuxSession,
 	)
 	if err != nil {
 		return nil, err
@@ -1542,7 +1518,7 @@ func projectWorktreeRuntimeAttachTarget(
 	return "", "", false
 }
 
-func (s *Server) stopStoredProjectWorktreeRuntimeTmuxSession(
+func (s *Handler) stopStoredProjectWorktreeRuntimeTmuxSession(
 	ctx context.Context,
 	worktreeID string,
 	sessionKey string,
@@ -1556,7 +1532,7 @@ func (s *Server) stopStoredProjectWorktreeRuntimeTmuxSession(
 			continue
 		}
 		if err := killProjectRuntimeTmuxSession(
-			ctx, s.cfg.TmuxCommand(), row.SessionName,
+			ctx, s.tmuxCommand(), row.SessionName,
 		); err != nil {
 			return true, err
 		}
@@ -1622,7 +1598,7 @@ func projectRuntimeTmuxSessionAbsent(stderr []byte, err error) bool {
 			strings.Contains(msg, "No such file or directory"))
 }
 
-func (s *Server) readyRuntimeProjectWorktree(
+func (s *Handler) readyRuntimeProjectWorktree(
 	ctx context.Context,
 	projectID string,
 	worktreeID string,
@@ -1686,7 +1662,7 @@ func projectWorktreeShellSession(
 	return nil
 }
 
-func (s *Server) projectWorktreeRuntimeSessions(
+func (s *Handler) projectWorktreeRuntimeSessions(
 	ctx context.Context,
 	projectID string,
 	worktreeID string,

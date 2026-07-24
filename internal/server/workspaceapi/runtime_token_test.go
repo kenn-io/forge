@@ -1,4 +1,4 @@
-package server
+package workspaceapi
 
 import (
 	"bytes"
@@ -13,15 +13,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
@@ -30,17 +32,8 @@ func TestWorkspaceRuntimeLaunchMissingTokenReturnsBadRequestE2E(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	database := dbtest.Open(t)
-	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
-	t.Cleanup(syncer.Stop)
-	srv := New(
-		database, syncer, nil, "/", nil,
-		ServerOptions{
-			WorktreeDir:                        filepath.Join(dir, "worktrees"),
-			DisableWorkspaceBackgroundMonitors: true,
-		},
-	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	srv.runtime = localruntime.NewManager(localruntime.Options{
+	manager := workspace.NewManager(database, filepath.Join(dir, "worktrees"))
+	runtime := localruntime.NewManager(localruntime.Options{
 		Targets: []localruntime.LaunchTarget{{
 			Key:       "tokenfail",
 			Label:     "Token fail",
@@ -50,9 +43,18 @@ func TestWorkspaceRuntimeLaunchMissingTokenReturnsBadRequestE2E(t *testing.T) {
 		}},
 		PtyOwnerRuntime: missingTokenRuntimePtyOwner{},
 	})
-	srv.workspaceAPI.SetRuntimeManager(srv.runtime)
+	h := New(Deps{DB: database, Workspaces: manager, Runtime: runtime})
+	h.Start(t.Context(), true)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(h.Shutdown(ctx))
+	})
 	seedReadyWorkspaceForRuntimeTokenTest(t, database, filepath.Join(dir, "workspace"))
 
+	mux := http.NewServeMux()
+	api := humago.NewWithPrefix(mux, "/api/v1", huma.DefaultConfig("workspace test", "1"))
+	h.Register(api)
 	body := bytes.NewBufferString(`{"target_key":"tokenfail"}`)
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -61,7 +63,7 @@ func TestWorkspaceRuntimeLaunchMissingTokenReturnsBadRequestE2E(t *testing.T) {
 	)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	assert.Equal(http.StatusBadRequest, rec.Code)
 	var problem struct {
@@ -73,35 +75,22 @@ func TestWorkspaceRuntimeLaunchMissingTokenReturnsBadRequestE2E(t *testing.T) {
 
 type missingTokenRuntimePtyOwner struct{}
 
-func (missingTokenRuntimePtyOwner) HasState(string) bool {
-	return false
-}
+func (missingTokenRuntimePtyOwner) HasState(string) bool { return false }
 
-func (missingTokenRuntimePtyOwner) Attach(
-	context.Context,
-	string,
-) (ptyownerruntime.PTY, error) {
+func (missingTokenRuntimePtyOwner) Attach(context.Context, string) (ptyownerruntime.PTY, error) {
 	return nil, errors.New("unexpected attach")
 }
 
 func (missingTokenRuntimePtyOwner) Start(
-	context.Context,
-	string,
-	string,
-	[]string,
-	[]string,
+	context.Context, string, string, []string, []string,
 ) (ptyownerruntime.PTY, error) {
 	return nil, fmt.Errorf("resolve runtime token: %w", tokenauth.ErrMissingToken)
 }
 
-func (missingTokenRuntimePtyOwner) Stop(context.Context, string) error {
-	return nil
-}
+func (missingTokenRuntimePtyOwner) Stop(context.Context, string) error { return nil }
 
 func seedReadyWorkspaceForRuntimeTokenTest(
-	t *testing.T,
-	database *db.DB,
-	worktreePath string,
+	t *testing.T, database *db.DB, worktreePath string,
 ) {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(worktreePath, 0o755))

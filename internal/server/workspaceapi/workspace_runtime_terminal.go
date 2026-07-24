@@ -31,7 +31,7 @@ type RuntimeTerminalControlMsg = runtimeTerminalControlMsg
 
 const runtimeTerminalSetupStepTimeout = 2 * time.Second
 
-func (s *Server) handleWorkspaceRuntimeSessionTerminal(
+func (s *Handler) handleWorkspaceRuntimeSessionTerminal(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
@@ -98,7 +98,7 @@ func ParseRuntimeTerminalResizeActive(r *http.Request) bool {
 	return parseRuntimeTerminalResizeActive(r)
 }
 
-func (s *Server) serveRuntimeTerminal(
+func (s *Handler) serveRuntimeTerminal(
 	w http.ResponseWriter,
 	r *http.Request,
 	attachment *localruntime.Attachment,
@@ -212,7 +212,7 @@ func forwardAvailableRuntimeOutput(
 	return nil
 }
 
-func (s *Server) runtimeWorkspaceForHTTP(
+func (s *Handler) runtimeWorkspaceForHTTP(
 	w http.ResponseWriter,
 	r *http.Request,
 	id string,

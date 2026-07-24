@@ -47,7 +47,7 @@ type workspaceEnrichmentProbeResult struct {
 	err                error
 }
 
-func (s *Server) toCachedWorkspaceResponse(
+func (s *Handler) toCachedWorkspaceResponse(
 	summary *db.WorkspaceSummary,
 ) workspaceResponse {
 	resp := toWorkspaceResponse(summary)
@@ -69,7 +69,7 @@ func (s *Server) toCachedWorkspaceResponse(
 	return resp
 }
 
-func (s *Server) workspaceResponseFromEnrichmentCacheEntry(
+func (s *Handler) workspaceResponseFromEnrichmentCacheEntry(
 	summary *db.WorkspaceSummary,
 	entry *workspaceEnrichmentCacheEntry,
 ) workspaceResponse {
@@ -138,7 +138,7 @@ func applyWorkspaceEnrichmentCacheEntry(
 	}
 }
 
-func (s *Server) cachedWorkspaceEnrichment(
+func (s *Handler) cachedWorkspaceEnrichment(
 	workspaceID string,
 ) (*workspaceEnrichmentCacheEntry, bool) {
 	s.workspaceEnrichmentMu.Lock()
@@ -160,7 +160,7 @@ func (s *Server) cachedWorkspaceEnrichment(
 		s.now().Sub(latestAttempt) >= workspaceEnrichmentTTL
 }
 
-func (s *Server) refreshWorkspaceResponse(
+func (s *Handler) refreshWorkspaceResponse(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 ) workspaceResponse {
@@ -177,7 +177,7 @@ func (s *Server) refreshWorkspaceResponse(
 	return result.response
 }
 
-func (s *Server) workspaceResponseAfterEnrichmentAttempt(
+func (s *Handler) workspaceResponseAfterEnrichmentAttempt(
 	summary *db.WorkspaceSummary,
 	result workspaceEnrichmentProbeResult,
 	entry workspaceEnrichmentCacheEntry,
@@ -190,7 +190,7 @@ func (s *Server) workspaceResponseAfterEnrichmentAttempt(
 	return result.response
 }
 
-func (s *Server) scheduleWorkspaceEnrichment(summary db.WorkspaceSummary) {
+func (s *Handler) scheduleWorkspaceEnrichment(summary db.WorkspaceSummary) {
 	s.workspaceEnrichmentMu.Lock()
 	defer s.workspaceEnrichmentMu.Unlock()
 	if s.workspaceEnrichmentGenerations == nil {
@@ -220,7 +220,7 @@ func (s *Server) scheduleWorkspaceEnrichment(summary db.WorkspaceSummary) {
 	s.startWorkspaceEnrichmentWorkersLocked()
 }
 
-func (s *Server) startWorkspaceEnrichmentWorkersLocked() {
+func (s *Handler) startWorkspaceEnrichmentWorkersLocked() {
 	pending := len(s.workspaceEnrichmentPending)
 	if s.workspaceTmuxPrunePending {
 		pending++
@@ -235,7 +235,7 @@ func (s *Server) startWorkspaceEnrichmentWorkersLocked() {
 	}
 }
 
-func (s *Server) runWorkspaceEnrichmentWorker(ctx context.Context) {
+func (s *Handler) runWorkspaceEnrichmentWorker(ctx context.Context) {
 	select {
 	case s.workspaceEnrichmentSlots <- struct{}{}:
 		defer func() { <-s.workspaceEnrichmentSlots }()
@@ -258,7 +258,7 @@ func (s *Server) runWorkspaceEnrichmentWorker(ctx context.Context) {
 	}
 }
 
-func (s *Server) nextWorkspaceEnrichmentJob() (
+func (s *Handler) nextWorkspaceEnrichmentJob() (
 	workspaceEnrichmentJob,
 	bool,
 	bool,
@@ -282,7 +282,7 @@ func (s *Server) nextWorkspaceEnrichmentJob() (
 	return workspaceEnrichmentJob{}, false, false
 }
 
-func (s *Server) runWorkspaceEnrichmentJob(
+func (s *Handler) runWorkspaceEnrichmentJob(
 	ctx context.Context,
 	job workspaceEnrichmentJob,
 ) {
@@ -299,21 +299,21 @@ func (s *Server) runWorkspaceEnrichmentJob(
 	}
 }
 
-func (s *Server) workspaceEnrichmentGeneration(workspaceID string) uint64 {
+func (s *Handler) workspaceEnrichmentGeneration(workspaceID string) uint64 {
 	s.workspaceEnrichmentMu.Lock()
 	defer s.workspaceEnrichmentMu.Unlock()
 	return s.workspaceEnrichmentGenerations[workspaceID]
 }
 
-func (s *Server) invalidateWorkspaceEnrichment(workspaceID string) uint64 {
+func (s *Handler) invalidateWorkspaceEnrichment(workspaceID string) uint64 {
 	return s.advanceWorkspaceEnrichmentGeneration(workspaceID, false)
 }
 
-func (s *Server) supersedeWorkspaceEnrichment(workspaceID string) uint64 {
+func (s *Handler) supersedeWorkspaceEnrichment(workspaceID string) uint64 {
 	return s.advanceWorkspaceEnrichmentGeneration(workspaceID, true)
 }
 
-func (s *Server) advanceWorkspaceEnrichmentGeneration(
+func (s *Handler) advanceWorkspaceEnrichmentGeneration(
 	workspaceID string,
 	preserveCache bool,
 ) uint64 {
@@ -330,7 +330,7 @@ func (s *Server) advanceWorkspaceEnrichmentGeneration(
 	return generation
 }
 
-func (s *Server) recordWorkspaceEnrichmentResult(
+func (s *Handler) recordWorkspaceEnrichmentResult(
 	workspaceID string,
 	generation uint64,
 	result workspaceEnrichmentProbeResult,
@@ -391,7 +391,7 @@ func intPointerEqual(a, b *int) bool {
 	return *a == *b
 }
 
-func (s *Server) finishWorkspaceEnrichment(
+func (s *Handler) finishWorkspaceEnrichment(
 	workspaceID string,
 	generation uint64,
 ) {
@@ -402,7 +402,7 @@ func (s *Server) finishWorkspaceEnrichment(
 	s.workspaceEnrichmentMu.Unlock()
 }
 
-func (s *Server) trimWorkspaceEnrichmentCache(
+func (s *Handler) trimWorkspaceEnrichmentCache(
 	summaries []db.WorkspaceSummary,
 ) {
 	valid := make(map[string]struct{}, len(summaries))
@@ -432,7 +432,7 @@ func (s *Server) trimWorkspaceEnrichmentCache(
 	}
 }
 
-func (s *Server) scheduleWorkspaceTmuxPrune() {
+func (s *Handler) scheduleWorkspaceTmuxPrune() {
 	if s.workspaces == nil || s.workspaceEnrichmentDisabled {
 		return
 	}
@@ -450,7 +450,7 @@ func (s *Server) scheduleWorkspaceTmuxPrune() {
 	s.workspaceEnrichmentMu.Unlock()
 }
 
-func (s *Server) runWorkspaceTmuxPrune(ctx context.Context) {
+func (s *Handler) runWorkspaceTmuxPrune(ctx context.Context) {
 	defer func() {
 		s.workspaceEnrichmentMu.Lock()
 		s.workspaceTmuxPruneInFlight = false

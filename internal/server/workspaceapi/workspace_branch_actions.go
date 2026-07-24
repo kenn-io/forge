@@ -21,31 +21,21 @@ type workspaceBranchActionOutput = httpapi.BodyOutput[workspaceResponse]
 
 var revealWorkspacePath = workspace.RevealWorktreePath
 
-// SetRevealWorkspacePathForTest replaces the OS reveal action and returns a
-// restore function.
-func SetRevealWorkspacePathForTest(
-	reveal func(context.Context, string) error,
-) func() {
-	previous := revealWorkspacePath
-	revealWorkspacePath = reveal
-	return func() { revealWorkspacePath = previous }
-}
-
-func (s *Server) pushWorkspaceBranch(
+func (s *Handler) pushWorkspaceBranch(
 	ctx context.Context,
 	input *workspaceBranchActionInput,
 ) (*workspaceBranchActionOutput, error) {
 	return s.runWorkspaceBranchAction(ctx, input.ID, s.workspaces.PushWorktreeBranch)
 }
 
-func (s *Server) pullWorkspaceBranch(
+func (s *Handler) pullWorkspaceBranch(
 	ctx context.Context,
 	input *workspaceBranchActionInput,
 ) (*workspaceBranchActionOutput, error) {
 	return s.runWorkspaceBranchAction(ctx, input.ID, s.workspaces.PullWorktreeBranch)
 }
 
-func (s *Server) revealWorkspace(
+func (s *Handler) revealWorkspace(
 	ctx context.Context,
 	input *revealWorkspaceInput,
 ) (*struct{}, error) {
@@ -62,7 +52,7 @@ func (s *Server) revealWorkspace(
 	return nil, nil
 }
 
-func (s *Server) runWorkspaceBranchAction(
+func (s *Handler) runWorkspaceBranchAction(
 	ctx context.Context,
 	id string,
 	action func(ctx context.Context, platformHost, dir string) error,
@@ -85,7 +75,7 @@ func (s *Server) runWorkspaceBranchAction(
 	return &workspaceBranchActionOutput{Body: resp}, nil
 }
 
-func (s *Server) getWorkspaceActionSummary(
+func (s *Handler) getWorkspaceActionSummary(
 	ctx context.Context,
 	id string,
 ) (*db.WorkspaceSummary, error) {

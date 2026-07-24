@@ -39,7 +39,7 @@ type removeStaleWorktreeOutput struct {
 // the registry row. When removeBranch is set, the worktree's branch is deleted
 // from the owning checkout on a best-effort basis (a missing branch never
 // blocks the removal), mirroring the host behavior this route replaces.
-func (s *Server) removeStaleWorktree(
+func (s *Handler) removeStaleWorktree(
 	ctx context.Context, input *removeStaleWorktreeInput,
 ) (*removeStaleWorktreeOutput, error) {
 	path := strings.TrimSpace(

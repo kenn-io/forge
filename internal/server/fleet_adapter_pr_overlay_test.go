@@ -210,11 +210,13 @@ func TestSnapshotEndpointCarriesPREnrichment(t *testing.T) {
 // rather than slip past the hand-built-struct unit tests.
 func TestSnapshotEndpointCarriesWorkspacePREnrichment(t *testing.T) {
 	require := require.New(t)
-	srv, database := setupTestServer(t)
-	// setupTestServer leaves workspaces nil (no WorktreeDir); wire a manager so
-	// the workspace-overlay branch of buildLocalRaw runs on the snapshot read.
-	srv.workspaces = workspace.NewManager(database, t.TempDir())
-	srv.workspaceAPI.SetWorkspaceManager(srv.workspaces)
+	srv, database := setupTestServerWithReposAndOptions(
+		t, &mockGH{}, defaultTestRepos,
+		ServerOptions{
+			WorktreeDir:                        t.TempDir(),
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
 	ctx := t.Context()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 

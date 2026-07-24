@@ -3,23 +3,24 @@ import { ensureE2EServer } from "./tests/e2e-full/support/e2eServer";
 
 const serverInfo = await ensureE2EServer();
 
-// Local worker count, tuned per engine: chromium scales to 75% of cores,
-// while firefox's heavier per-worker processes degrade past ~50% (measured
-// locally: 9 workers beat both 6 and 13). CI runners are small; they keep
-// Playwright's default.
-function localWorkers(): string {
+// Chromium can use 28 of the runner's 32 burst cores. Firefox's heavier
+// per-worker processes degrade past about 50% of available cores (measured
+// locally: 9 workers beat both 6 and 13), so CI caps it at the guaranteed
+// 14-core baseline.
+function configuredWorkers(): number | string {
   const args = process.argv.join(" ");
-  return /--project[= ]firefox/.test(args) ? "50%" : "75%";
+  const firefox = /--project[= ]firefox/.test(args);
+  if (process.env.CI) return firefox ? 14 : 28;
+  return firefox ? "50%" : "75%";
 }
 
 export default defineConfig({
   testDir: "./tests/e2e-full",
   testIgnore: /support\//,
   fullyParallel: true,
-  workers: 2,
+  workers: configuredWorkers(),
   timeout: 30_000,
   retries: process.env.CI ? 2 : 0,
-  ...(process.env.CI ? {} : { workers: localWorkers() }),
   expect: {
     timeout: 5_000,
   },

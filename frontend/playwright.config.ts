@@ -6,10 +6,19 @@ const port = parseE2EPort(process.env.PLAYWRIGHT_PORT) ?? (await getAvailablePor
 process.env.PLAYWRIGHT_PORT = String(port);
 const baseURL = `http://${host}:${port}`;
 
+function ciWorkers(): number | undefined {
+  if (!process.env.CI) return undefined;
+
+  const args = process.argv.join(" ");
+  return /--project[= ]firefox/.test(args) ? 14 : 28;
+}
+
+const workers = ciWorkers();
+
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
-  ...(process.env.CI ? { workers: 2 } : {}),
+  ...(workers ? { workers } : {}),
   timeout: 30_000,
   retries: process.env.CI ? 2 : 0,
   expect: {

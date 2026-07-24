@@ -6129,7 +6129,7 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	require.FileExists(filepath.Join(clonePath, "HEAD"))
 }
 
-func TestDetailDrainRetainsReviewThreadsWhenProviderExceedsAdmittedCost(t *testing.T) {
+func TestDetailDrainCompletesWhenProviderExceedsAdmittedCost(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -6208,16 +6208,16 @@ func TestDetailDrainRetainsReviewThreadsWhenProviderExceedsAdmittedCost(t *testi
 
 	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true}, syncer.TrackedRepos())
 
-	assert.Equal(int32(PRDetailWorstCase), wireAttempts.Load())
+	assert.Equal(int32(PRDetailWorstCase+1), wireAttempts.Load())
 	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(stored)
-	assert.Nil(stored.DetailFetchedAt)
+	assert.NotNil(stored.DetailFetchedAt)
 	threads, err := database.ListMRReviewThreads(ctx, mrID)
 	require.NoError(err)
 	require.Len(threads, 1)
-	assert.Equal("cached-thread", threads[0].ProviderThreadID)
-	assert.Equal("cached review note", threads[0].Body)
+	assert.Equal("fresh-thread", threads[0].ProviderThreadID)
+	assert.Equal("fresh review note", threads[0].Body)
 }
 
 func TestSyncMRUsesConfiguredProviderRegistry(t *testing.T) {

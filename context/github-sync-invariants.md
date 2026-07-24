@@ -52,9 +52,9 @@ what "current" means.
   one item.
 - If a PR or issue is marked as detail-fetched, the persisted fields that power
   the user-visible detail view must match that claim.
-- Budgeted detail drain must enforce each queue item's admitted worst-case cost
-  as a wire-attempt allowance; provider pagination and retries cannot exceed it
-  or commit a partial child dataset (`internal/github/sync.go::drainDetailQueue`).
+- Budgeted detail drain treats each queue item's worst-case cost as soft admission;
+  provider pagination and child hydration may exceed it because the transport counts
+  actual wire attempts (`internal/github/sync.go::drainDetailQueue`).
 
 For pull requests, that means:
 

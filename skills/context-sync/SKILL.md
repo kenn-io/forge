@@ -74,8 +74,12 @@ knowledge that changes what future agents should do.
 | `frontend` | `context/ui-design-system.md`, `context/ui-interaction-contracts.md`, `context/vscode-workflow-panel-interaction-spec.md` | `frontend/src/` |
 | `inline-review` | `context/inline-review-comments.md` | review draft/thread paths in `internal/platform/`, `internal/server/`, and `packages/ui/` |
 | `mobile` | `context/mobile-ux.md` | frontend `/m` routes and phone-first components |
-| `kata` | `context/kata-mode.md`, `context/workspace-apis.md` | `internal/kata/`, `internal/server/kataapi/` |
-| `docs` | `context/docs-mode.md` | `internal/docs/`, `internal/server/docsapi/` |
+| `kata` | `context/kata-mode.md`, `context/workspace-apis.md` | `internal/kata/`; Kata-owned paths in `internal/server/`, `internal/config/`, and `frontend/`, including shared app and configuration files |
+| `docs` | `context/docs-mode.md` | `internal/docs/`; Docs-owned paths in `internal/server/`, `internal/config/`, and `frontend/`, including shared app and configuration files |
+
+Mode scopes intentionally overlap the generic `server`, `config`, and `frontend` areas.
+For `--changed`, select every matching mode and generic area rather than choosing only
+the broadest or most specific row.
 
 ## Audit Workflow
 

@@ -5198,6 +5198,8 @@ components:
           type: boolean
         read_labels:
           type: boolean
+        read_markdown_images:
+          type: boolean
         read_merge_requests:
           type: boolean
         read_releases:
@@ -5240,6 +5242,7 @@ components:
         - read_releases
         - read_ci
         - read_labels
+        - read_markdown_images
         - comment_mutation
         - state_mutation
         - merge_mutation
@@ -13619,6 +13622,91 @@ paths:
       summary: List repository labels
       tags:
         - Repositories
+  /host/{platform_host}/repo/{provider}/{owner}/{name}/markdown-image:
+    get:
+      operationId: get-markdown-image-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: source
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            image/avif:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/bmp:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/gif:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/jpeg:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/png:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/webp:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+          description: Image response
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: string
+            Content-Type:
+              schema:
+                type: string
+            X-Content-Type-Options:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get markdown image
+      tags:
+        - Repositories
   /host/{platform_host}/repo/{provider}/{owner}/{name}/refresh:
     post:
       operationId: refresh-repo-on-host
@@ -18183,6 +18271,86 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List repository labels
+      tags:
+        - Repositories
+  /repo/{provider}/{owner}/{name}/markdown-image:
+    get:
+      operationId: get-markdown-image
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: source
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            image/avif:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/bmp:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/gif:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/jpeg:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/png:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/webp:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+          description: Image response
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: string
+            Content-Type:
+              schema:
+                type: string
+            X-Content-Type-Options:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get markdown image
       tags:
         - Repositories
   /repo/{provider}/{owner}/{name}/refresh:

@@ -478,15 +478,16 @@ func archiveContractError(kind Kind, host, field, format string, args ...any) er
 }
 
 type Capabilities struct {
-	ReadRepositories  bool
-	ReadMergeRequests bool
-	ReadIssues        bool
-	ReadComments      bool
-	ReadReleases      bool
-	ReadCI            bool
-	ReadLabels        bool
-	ReadNotifications bool
-	CommentMutation   bool
+	ReadRepositories   bool
+	ReadMergeRequests  bool
+	ReadIssues         bool
+	ReadComments       bool
+	ReadReleases       bool
+	ReadCI             bool
+	ReadLabels         bool
+	ReadMarkdownImages bool
+	ReadNotifications  bool
+	CommentMutation    bool
 	// StateMutation means the provider can PATCH the item itself:
 	// open/close state transitions AND title/body/content updates.
 	// Every provider implements both through the same mutator, and

@@ -34,6 +34,7 @@ export const defaultProviderCapabilities: ProviderCapabilities = {
   read_releases: true,
   read_ci: true,
   read_labels: false,
+  read_markdown_images: false,
   comment_mutation: true,
   state_mutation: true,
   merge_mutation: true,

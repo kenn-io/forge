@@ -399,6 +399,16 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 		httpapi.DocumentOperation("get-repo", "Get repository", "Repositories"))
 	huma.Get(api, hostRepoPath, s.getRepoOnHost,
 		httpapi.DocumentOperation("get-repo-on-host", "Get repository", "Repositories"))
+	huma.Register(api, huma.Operation{
+		OperationID: "get-markdown-image", Method: http.MethodGet, Path: repoPath + "/markdown-image",
+		DefaultStatus: http.StatusOK, Summary: "Get markdown image", Tags: []string{"Repositories"},
+		Responses: markdownImageResponses(),
+	}, s.getMarkdownImage)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-markdown-image-on-host", Method: http.MethodGet, Path: hostRepoPath + "/markdown-image",
+		DefaultStatus: http.StatusOK, Summary: "Get markdown image", Tags: []string{"Repositories"},
+		Responses: markdownImageResponses(),
+	}, s.getMarkdownImageOnHost)
 	huma.Get(api, repoPath+"/commits/{sha}/diff", s.getRepoCommitDiff,
 		httpapi.DocumentOperation("get-repo-commit-diff", "Get repository commit diff", "Repositories"))
 	huma.Get(api, hostRepoPath+"/commits/{sha}/diff", s.getRepoCommitDiffOnHost,

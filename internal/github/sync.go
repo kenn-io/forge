@@ -1120,6 +1120,7 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 	_, assignees := p.client.(githubAssigneeClient)
 	_, reviewers := p.client.(githubReviewerClient)
 	_, archivePages := p.client.(pageClient)
+	_, markdownImages := p.client.(markdownImageClient)
 	return platform.Capabilities{
 		ReadRepositories:            true,
 		ReadMergeRequests:           true,
@@ -1128,6 +1129,7 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 		ReadReleases:                true,
 		ReadCI:                      true,
 		ReadLabels:                  labels,
+		ReadMarkdownImages:          markdownImages,
 		ReadNotifications:           true,
 		CommentMutation:             true,
 		StateMutation:               true,
@@ -1160,6 +1162,18 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 			platform.ReviewActionRequestChanges,
 		},
 	}
+}
+
+func (p *gitHubClientProvider) GetMarkdownImage(
+	ctx context.Context,
+	ref platform.RepoRef,
+	sourceURL string,
+) (platform.MarkdownImage, error) {
+	reader, ok := p.client.(markdownImageClient)
+	if !ok {
+		return platform.MarkdownImage{}, platform.UnsupportedCapability(platform.KindGitHub, p.host, "read_markdown_images")
+	}
+	return reader.GetMarkdownImage(ctx, ref.Owner, sourceURL)
 }
 
 func (p *gitHubClientProvider) OperationRateLimitBuckets(

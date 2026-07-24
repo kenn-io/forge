@@ -47,6 +47,7 @@
     read_comments: true,
     read_releases: true,
     read_labels: true,
+    read_markdown_images: false,
     read_ci: true,
     comment_mutation: true,
     thread_reply: false,

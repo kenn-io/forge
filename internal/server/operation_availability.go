@@ -23,6 +23,7 @@ const (
 	capabilityDraftMutation               = "draft_mutation"
 	capabilityIssueMutation               = "issue_mutation"
 	capabilityReadLabels                  = "read_labels"
+	capabilityReadMarkdownImages          = "read_markdown_images"
 	capabilityLabelMutation               = "label_mutation"
 	capabilityAssigneeMutation            = "assignee_mutation"
 	capabilityReviewerMutation            = "reviewer_mutation"

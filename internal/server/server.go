@@ -212,6 +212,7 @@ type Server struct {
 	issueAPI               *issueapi.Handler
 	pullLifecycle          pullLifecycle
 	workspaceAPI           *workspaceapi.Handler
+	markdownImages         *markdownImageCache
 
 	// toolingStatus caches the assembled CLI tooling probe;
 	// toolingRun overrides the probe subprocess runner in tests.
@@ -720,6 +721,10 @@ func newServer(
 		options.HostCheckAllowLoopbackAnyPort,
 	)
 	deferredMergeMaxWait := options.deferredMergeMaxWait
+	markdownImageDataDir := ""
+	if cfg != nil {
+		markdownImageDataDir = cfg.DataDir
+	}
 	repoResolver := httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{
 		DB: database,
 		ProviderCapabilities: func(kind platform.Kind, host string) (platform.Capabilities, error) {
@@ -748,6 +753,7 @@ func newServer(
 		now:                    time.Now,
 		hub:                    NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
 		labelCatalogRefreshIDs: make(map[int64]struct{}),
+		markdownImages:         newMarkdownImageCache(markdownImageCacheRoot(markdownImageDataDir)),
 		bgCtx: shutdownAwareContext{
 			parent:   bgBaseCtx,
 			deadline: bgDeadline,

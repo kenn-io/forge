@@ -39,6 +39,18 @@ type RepositoryReader interface {
 	) ([]Repository, error)
 }
 
+type MarkdownImage struct {
+	Content     []byte
+	ContentType string
+}
+
+// MarkdownImageReader fetches provider-hosted images embedded in repository
+// Markdown. Providers should accept only their own trusted attachment URLs;
+// callers must not be able to turn this into a general-purpose URL fetcher.
+type MarkdownImageReader interface {
+	GetMarkdownImage(ctx context.Context, ref RepoRef, sourceURL string) (MarkdownImage, error)
+}
+
 type MergeRequestReader interface {
 	ListOpenMergeRequests(ctx context.Context, ref RepoRef) ([]MergeRequest, error)
 	GetMergeRequest(ctx context.Context, ref RepoRef, number int) (MergeRequest, error)

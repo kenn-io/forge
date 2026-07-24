@@ -2946,6 +2946,7 @@ type ProviderCapabilitiesResponse struct {
 	ReadComments                bool      `json:"read_comments"`
 	ReadIssues                  bool      `json:"read_issues"`
 	ReadLabels                  bool      `json:"read_labels"`
+	ReadMarkdownImages          bool      `json:"read_markdown_images"`
 	ReadMergeRequests           bool      `json:"read_merge_requests"`
 	ReadReleases                bool      `json:"read_releases"`
 	ReadRepositories            bool      `json:"read_repositories"`
@@ -4471,6 +4472,11 @@ type GetRepoCommitDiffOnHostParams struct {
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
 }
 
+// GetMarkdownImageOnHostParams defines parameters for GetMarkdownImageOnHost.
+type GetMarkdownImageOnHostParams struct {
+	Source *string `form:"source,omitempty" json:"source,omitempty"`
+}
+
 // ResolveRepoItemOnHostParams defines parameters for ResolveRepoItemOnHost.
 type ResolveRepoItemOnHostParams struct {
 	// ItemType Optional item type hint for providers whose issues and merge requests have separate number spaces.
@@ -4711,6 +4717,11 @@ type GetCommentAutocompleteParams struct {
 // GetRepoCommitDiffParams defines parameters for GetRepoCommitDiff.
 type GetRepoCommitDiffParams struct {
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
+}
+
+// GetMarkdownImageParams defines parameters for GetMarkdownImage.
+type GetMarkdownImageParams struct {
+	Source *string `form:"source,omitempty" json:"source,omitempty"`
 }
 
 // ResolveRepoItemParams defines parameters for ResolveRepoItem.
@@ -5708,6 +5719,9 @@ type ClientInterface interface {
 	// ListRepoLabelsOnHost request
 	ListRepoLabelsOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetMarkdownImageOnHost request
+	GetMarkdownImageOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetMarkdownImageOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// RefreshRepoOnHost request
 	RefreshRepoOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -6121,6 +6135,9 @@ type ClientInterface interface {
 
 	// ListRepoLabels request
 	ListRepoLabels(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetMarkdownImage request
+	GetMarkdownImage(ctx context.Context, provider string, owner string, name string, params *GetMarkdownImageParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RefreshRepo request
 	RefreshRepo(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -8444,6 +8461,18 @@ func (c *Client) ListRepoLabelsOnHost(ctx context.Context, platformHost string, 
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetMarkdownImageOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetMarkdownImageOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMarkdownImageOnHostRequest(c.Server, platformHost, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) RefreshRepoOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRefreshRepoOnHostRequest(c.Server, platformHost, provider, owner, name)
 	if err != nil {
@@ -10258,6 +10287,18 @@ func (c *Client) GetRepoCommitDiff(ctx context.Context, provider string, owner s
 
 func (c *Client) ListRepoLabels(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListRepoLabelsRequest(c.Server, provider, owner, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetMarkdownImage(ctx context.Context, provider string, owner string, name string, params *GetMarkdownImageParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMarkdownImageRequest(c.Server, provider, owner, name, params)
 	if err != nil {
 		return nil, err
 	}
@@ -19647,6 +19688,88 @@ func NewListRepoLabelsOnHostRequest(server string, platformHost string, provider
 	return req, nil
 }
 
+// NewGetMarkdownImageOnHostRequest generates requests for GetMarkdownImageOnHost
+func NewGetMarkdownImageOnHostRequest(server string, platformHost string, provider string, owner string, name string, params *GetMarkdownImageOnHostParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s/markdown-image", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Source != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "source", *params.Source, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewRefreshRepoOnHostRequest generates requests for RefreshRepoOnHost
 func NewRefreshRepoOnHostRequest(server string, platformHost string, provider string, owner string, name string) (*http.Request, error) {
 	var err error
@@ -26676,6 +26799,81 @@ func NewListRepoLabelsRequest(server string, provider string, owner string, name
 	return req, nil
 }
 
+// NewGetMarkdownImageRequest generates requests for GetMarkdownImage
+func NewGetMarkdownImageRequest(server string, provider string, owner string, name string, params *GetMarkdownImageParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s/markdown-image", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Source != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "source", *params.Source, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewRefreshRepoRequest generates requests for RefreshRepo
 func NewRefreshRepoRequest(server string, provider string, owner string, name string) (*http.Request, error) {
 	var err error
@@ -29470,6 +29668,9 @@ type ClientWithResponsesInterface interface {
 	// ListRepoLabelsOnHostWithResponse request
 	ListRepoLabelsOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*ListRepoLabelsOnHostResponse, error)
 
+	// GetMarkdownImageOnHostWithResponse request
+	GetMarkdownImageOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetMarkdownImageOnHostParams, reqEditors ...RequestEditorFn) (*GetMarkdownImageOnHostResponse, error)
+
 	// RefreshRepoOnHostWithResponse request
 	RefreshRepoOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoOnHostResponse, error)
 
@@ -29880,6 +30081,9 @@ type ClientWithResponsesInterface interface {
 
 	// ListRepoLabelsWithResponse request
 	ListRepoLabelsWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*ListRepoLabelsResponse, error)
+
+	// GetMarkdownImageWithResponse request
+	GetMarkdownImageWithResponse(ctx context.Context, provider string, owner string, name string, params *GetMarkdownImageParams, reqEditors ...RequestEditorFn) (*GetMarkdownImageResponse, error)
 
 	// RefreshRepoWithResponse request
 	RefreshRepoWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoResponse, error)
@@ -33019,6 +33223,28 @@ func (r ListRepoLabelsOnHostResponse) StatusCode() int {
 	return 0
 }
 
+type GetMarkdownImageOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMarkdownImageOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMarkdownImageOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type RefreshRepoOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -35501,6 +35727,28 @@ func (r ListRepoLabelsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListRepoLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetMarkdownImageResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMarkdownImageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMarkdownImageResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -38217,6 +38465,15 @@ func (c *ClientWithResponses) ListRepoLabelsOnHostWithResponse(ctx context.Conte
 	return ParseListRepoLabelsOnHostResponse(rsp)
 }
 
+// GetMarkdownImageOnHostWithResponse request returning *GetMarkdownImageOnHostResponse
+func (c *ClientWithResponses) GetMarkdownImageOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetMarkdownImageOnHostParams, reqEditors ...RequestEditorFn) (*GetMarkdownImageOnHostResponse, error) {
+	rsp, err := c.GetMarkdownImageOnHost(ctx, platformHost, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMarkdownImageOnHostResponse(rsp)
+}
+
 // RefreshRepoOnHostWithResponse request returning *RefreshRepoOnHostResponse
 func (c *ClientWithResponses) RefreshRepoOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoOnHostResponse, error) {
 	rsp, err := c.RefreshRepoOnHost(ctx, platformHost, provider, owner, name, reqEditors...)
@@ -39532,6 +39789,15 @@ func (c *ClientWithResponses) ListRepoLabelsWithResponse(ctx context.Context, pr
 		return nil, err
 	}
 	return ParseListRepoLabelsResponse(rsp)
+}
+
+// GetMarkdownImageWithResponse request returning *GetMarkdownImageResponse
+func (c *ClientWithResponses) GetMarkdownImageWithResponse(ctx context.Context, provider string, owner string, name string, params *GetMarkdownImageParams, reqEditors ...RequestEditorFn) (*GetMarkdownImageResponse, error) {
+	rsp, err := c.GetMarkdownImage(ctx, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMarkdownImageResponse(rsp)
 }
 
 // RefreshRepoWithResponse request returning *RefreshRepoResponse
@@ -44273,6 +44539,32 @@ func ParseListRepoLabelsOnHostResponse(rsp *http.Response) (*ListRepoLabelsOnHos
 	return response, nil
 }
 
+// ParseGetMarkdownImageOnHostResponse parses an HTTP response from a GetMarkdownImageOnHostWithResponse call
+func ParseGetMarkdownImageOnHostResponse(rsp *http.Response) (*GetMarkdownImageOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMarkdownImageOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseRefreshRepoOnHostResponse parses an HTTP response from a RefreshRepoOnHostWithResponse call
 func ParseRefreshRepoOnHostResponse(rsp *http.Response) (*RefreshRepoOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -47725,6 +48017,32 @@ func ParseListRepoLabelsResponse(rsp *http.Response) (*ListRepoLabelsResponse, e
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetMarkdownImageResponse parses an HTTP response from a GetMarkdownImageWithResponse call
+func ParseGetMarkdownImageResponse(rsp *http.Response) (*GetMarkdownImageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMarkdownImageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

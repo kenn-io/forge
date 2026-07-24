@@ -18,6 +18,8 @@ const defaultHosts: Record<string, string> = {
   gitea: "gitea.com",
 };
 
+const API_PREFIX = "/api" + "/v1";
+
 export function canonicalProvider(provider: string): string {
   const normalized = provider.toLowerCase();
   if (normalized === "gh") return "github";
@@ -137,6 +139,7 @@ type RepoSuffix =
   | "/comment-autocomplete"
   | "/commits/{sha}/diff"
   | "/labels"
+  | "/markdown-image"
   | "/refresh"
   | "/worktree-base"
   | "/resolve/{number}";
@@ -152,6 +155,20 @@ export function providerRepoPath(ref: ProviderRouteRef, suffix = ""): string {
     return `/host/{platform_host}/repo/{provider}/{owner}/{name}${suffix}`;
   }
   return `/repo/{provider}/{owner}/{name}${suffix}`;
+}
+
+export function providerRepoResourceURL(
+  ref: ProviderRouteRef,
+  suffix: RepoSuffix,
+  query: Record<string, string> = {},
+): string {
+  const params = providerRouteParams(ref);
+  const provider = encodeURIComponent(params.provider);
+  const owner = encodeURIComponent(params.owner);
+  const name = encodeURIComponent(params.name);
+  const hostPrefix = params.platform_host ? `/host/${encodeURIComponent(params.platform_host)}` : "";
+  const search = new URLSearchParams(query).toString();
+  return `${API_PREFIX}${hostPrefix}/repo/${provider}/${owner}/${name}${suffix}${search ? `?${search}` : ""}`;
 }
 
 type CollectionKind = Exclude<RouteKind, "repo">;

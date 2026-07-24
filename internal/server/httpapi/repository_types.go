@@ -8,6 +8,7 @@ type ProviderCapabilitiesResponse struct {
 	ReadReleases                bool     `json:"read_releases"`
 	ReadCI                      bool     `json:"read_ci"`
 	ReadLabels                  bool     `json:"read_labels"`
+	ReadMarkdownImages          bool     `json:"read_markdown_images"`
 	CommentMutation             bool     `json:"comment_mutation"`
 	StateMutation               bool     `json:"state_mutation"`
 	MergeMutation               bool     `json:"merge_mutation"`

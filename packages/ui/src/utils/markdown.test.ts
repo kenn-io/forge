@@ -3,6 +3,23 @@ import { buildCanonicalProviderItemURL } from "./item-reference.js";
 import { renderMarkdown, renderMarkdownBlocks } from "./markdown.js";
 
 describe("renderMarkdown task lists", () => {
+  it("proxies private GitHub attachment images through the repo-scoped API", async () => {
+    const source = "https://github.com/user-attachments/assets/11111111-2222-3333-4444-555555555555";
+    const html = await renderMarkdown(`<img width="1440" height="1000" alt="Project list" src="${source}" />`, {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+    });
+
+    expect(html).toContain(
+      `src="/api/v1/repo/github/acme/widgets/markdown-image?source=${encodeURIComponent(source)}"`,
+    );
+    expect(html).toContain('width="1440"');
+    expect(html).toContain('height="1000"');
+  });
+
   it("renders item references with the shared internal route and data attributes", async () => {
     const html = await renderMarkdown("See #12 and acme/tools#13", {
       provider: "github",

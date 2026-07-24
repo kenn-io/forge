@@ -178,6 +178,9 @@ owner actually resolves to an app installation. Gating it on whether the host ha
 any active app sends a PAT-backed owner that shares the host with another owner's
 app to an endpoint its credential cannot use, which fails even though the token
 chain "correctly" falls back to the PAT.
+- Private `user-attachments` reads are the exception to app-token-first reads:
+  GitHub returns 404 to installation tokens, so the repo-scoped image proxy must
+  use the user's PAT/`gh` chain (`internal/github/client.go::GetMarkdownImage`).
 Config may carry multiple `[[github_apps]]` rows for one host, but those rows
 represent distinct app credentials. Management commands must target one row by
 app owner/installation account or app id, and duplicate installation accounts on

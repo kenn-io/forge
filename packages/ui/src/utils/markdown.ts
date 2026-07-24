@@ -17,7 +17,7 @@ import type { UponSanitizeAttributeHook } from "dompurify";
 import { codeFenceLanguage, codeHighlightPlan, escapeHtml, shikiStyleIsAllowed } from "@kenn-io/kit-ui/utils/markdown";
 import { mermaidCodeFence } from "@kenn-io/kit-ui/utils/markdown-mermaid";
 import { getSingletonHighlighter, type BundledLanguage, type Highlighter } from "shiki";
-import { canonicalProvider } from "../api/provider-routes.js";
+import { canonicalProvider, providerRepoResourceURL } from "../api/provider-routes.js";
 import { itemReferenceAnchorAttributes } from "./item-reference.js";
 import type { ItemReferenceType } from "./item-reference.js";
 
@@ -181,6 +181,7 @@ let renderState: {
   // otherwise data-task-index values would drift from the source
   // and clicks would mutate the wrong line.
   blockquoteDepth: number;
+  repo?: RepoContext | undefined;
 } = {
   taskIndex: 0,
   interactiveTasks: false,
@@ -189,6 +190,7 @@ let renderState: {
   shikiNonce: "",
   itemStack: [],
   blockquoteDepth: 0,
+  repo: undefined,
 };
 
 const htmlCache = new Map<string, Promise<string>>();
@@ -357,6 +359,7 @@ export interface RenderedMarkdownBlock {
 
 function resetRenderState(
   opts: RenderMarkdownOpts,
+  repo?: RepoContext,
   highlightCode = true,
   highlightedCodeTokens?: WeakSet<Tokens.Code>,
 ): void {
@@ -368,11 +371,13 @@ function resetRenderState(
     shikiNonce: shikiNonce(),
     itemStack: [],
     blockquoteDepth: 0,
+    repo,
   };
 }
 
 function sanitizeMarkdownHtml(html: string): string {
   DOMPurify.addHook("uponSanitizeAttribute", shikiStyleSanitizer);
+  DOMPurify.addHook("uponSanitizeAttribute", markdownImageSourceSanitizer);
   try {
     const sanitized = DOMPurify.sanitize(html, {
       ADD_ATTR: MARKDOWN_ALLOWED_ATTRS,
@@ -380,6 +385,26 @@ function sanitizeMarkdownHtml(html: string): string {
     return sanitized.replaceAll(new RegExp(`\\s${SHIKI_GENERATED_ATTR}="[^"]*"`, "g"), "");
   } finally {
     DOMPurify.removeHook("uponSanitizeAttribute", shikiStyleSanitizer);
+    DOMPurify.removeHook("uponSanitizeAttribute", markdownImageSourceSanitizer);
+  }
+}
+
+const markdownImageSourceSanitizer: UponSanitizeAttributeHook = (node, data) => {
+  if (data.attrName !== "src" || node.tagName.toLowerCase() !== "img" || !renderState.repo) return;
+  const source = proxiedMarkdownImageSource(data.attrValue, renderState.repo);
+  if (source) data.attrValue = source;
+};
+
+function proxiedMarkdownImageSource(source: string, repo: RepoContext): string | null {
+  if (canonicalProvider(repo.provider) !== "github") return null;
+  try {
+    const url = new URL(source);
+    const host = repo.platformHost?.trim() || "github.com";
+    if (url.protocol !== "https:" || url.host.toLowerCase() !== host.toLowerCase()) return null;
+    if (!url.pathname.startsWith("/user-attachments/assets/")) return null;
+    return providerRepoResourceURL(repo, "/markdown-image", { source: url.toString() });
+  } catch {
+    return null;
   }
 }
 
@@ -467,7 +492,7 @@ export function renderMarkdownBlocks(
   const tokens = marked.lexer(raw) as Tokens.Generic[];
   // Rich-preview block slicing is synchronous by design; keep code fences
   // plain here instead of making output depend on prior async Shiki loads.
-  resetRenderState(opts, false);
+  resetRenderState(opts, repo, false);
   const blocks: RenderedMarkdownBlock[] = [];
   let line = 1;
   for (let i = 0; i < tokens.length; i++) {
@@ -549,23 +574,24 @@ async function renderMarkdownUncached(
   // shared highlight budget.
   const highlightPlan = codeHighlightPlan(marked, tokens, (_code, lang) => lang === "mermaid");
   await loadCodeFenceLanguages(highlightPlan.languages);
-  return renderMarkdownTokens(marked, tokens, opts, true, highlightPlan.tokens);
+  return renderMarkdownTokens(marked, tokens, opts, repo, true, highlightPlan.tokens);
 }
 
 export function renderMarkdownSync(raw: string, repo?: RepoContext, opts: RenderMarkdownOpts = {}): string {
   if (!raw) return "";
   const marked = getMarked(repo);
   const tokens = marked.lexer(raw) as Tokens.Generic[];
-  return renderMarkdownTokens(marked, tokens, opts, false);
+  return renderMarkdownTokens(marked, tokens, opts, repo, false);
 }
 
 function renderMarkdownTokens(
   marked: Marked,
   tokens: Tokens.Generic[],
   opts: RenderMarkdownOpts,
+  repo?: RepoContext,
   highlightCode = true,
   highlightedCodeTokens?: WeakSet<Tokens.Code>,
 ): string {
-  resetRenderState(opts, highlightCode, highlightedCodeTokens);
+  resetRenderState(opts, repo, highlightCode, highlightedCodeTokens);
   return sanitizeMarkdownHtml(marked.parser(tokens) as string);
 }

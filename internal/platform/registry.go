@@ -79,6 +79,19 @@ func (r *Registry) RepositoryReader(kind Kind, host string) (RepositoryReader, e
 	return reader, nil
 }
 
+func (r *Registry) MarkdownImageReader(kind Kind, host string) (MarkdownImageReader, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+
+	reader, ok := provider.(MarkdownImageReader)
+	if !ok || !provider.Capabilities().ReadMarkdownImages {
+		return nil, UnsupportedCapability(kind, host, "read_markdown_images")
+	}
+	return reader, nil
+}
+
 func (r *Registry) MergeRequestReader(kind Kind, host string) (MergeRequestReader, error) {
 	provider, err := r.Provider(kind, host)
 	if err != nil {

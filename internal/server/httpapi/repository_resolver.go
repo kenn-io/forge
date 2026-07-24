@@ -124,6 +124,8 @@ func CapabilityEnabled(caps ProviderCapabilitiesResponse, capability string) boo
 		return caps.IssueMutation
 	case "read_labels":
 		return caps.ReadLabels
+	case "read_markdown_images":
+		return caps.ReadMarkdownImages
 	case "label_mutation":
 		return caps.LabelMutation
 	case "assignee_mutation":
@@ -292,6 +294,7 @@ func ProviderCapabilitiesFromPlatform(caps platform.Capabilities) ProviderCapabi
 		ReadReleases:                caps.ReadReleases,
 		ReadCI:                      caps.ReadCI,
 		ReadLabels:                  caps.ReadLabels,
+		ReadMarkdownImages:          caps.ReadMarkdownImages,
 		CommentMutation:             caps.CommentMutation,
 		StateMutation:               caps.StateMutation,
 		MergeMutation:               caps.MergeMutation,

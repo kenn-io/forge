@@ -245,6 +245,7 @@ type mockGH struct {
 	listIssueCommentsErr       error
 	listNotificationsFn        func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error)
 	markNotificationReadFn     func(context.Context, string) error
+	getMarkdownImageFn         func(context.Context, string, string) (platform.MarkdownImage, error)
 }
 
 func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
@@ -707,6 +708,16 @@ func (m *mockGH) MarkNotificationThreadRead(ctx context.Context, threadID string
 		return m.markNotificationReadFn(ctx, threadID)
 	}
 	return nil
+}
+
+func (m *mockGH) GetMarkdownImage(
+	ctx context.Context,
+	owner, sourceURL string,
+) (platform.MarkdownImage, error) {
+	if m.getMarkdownImageFn != nil {
+		return m.getMarkdownImageFn(ctx, owner, sourceURL)
+	}
+	return platform.MarkdownImage{}, nil
 }
 
 // InvalidateListETagsForRepo is a no-op for the server test mock,

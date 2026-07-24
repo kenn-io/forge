@@ -201,10 +201,10 @@ jobs:
     runs-on: kenn-linux-x64
     # The runner guarantees 14 cores and can burst to 32. Seven four-thread
     # package processes can use 28 burst cores while leaving headroom for the
-    # runner and compiler; per-process memory stays bounded for the 28 GiB job.
+    # runner and compiler. The 28 GiB job does not need an artificial Go heap
+    # limit; package fan-out remains bounded by GOFLAGS.
     env:
       GOMAXPROCS: "4"
-      GOMEMLIMIT: "3GiB"
       GOFLAGS: "-p=7"
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
@@ -332,10 +332,9 @@ jobs:
     name: go test -race
     runs-on: kenn-linux-x64
     # Race-instrumented packages are especially memory-intensive, so keep four
-    # four-thread package processes within the 28 GiB runner memory guarantee.
+    # four-thread package processes rather than using the full burst ceiling.
     env:
       GOMAXPROCS: "4"
-      GOMEMLIMIT: "5GiB"
       GOFLAGS: "-p=4"
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'

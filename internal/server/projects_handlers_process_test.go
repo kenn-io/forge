@@ -34,9 +34,4 @@ func TestManagedWorktreeExecutionUsesSharedProcessLimiter(t *testing.T) {
 
 	_, err = managedWorktreeIsDirty(context.Background(), t.TempDir())
 	require.ErrorIs(err, procutil.ErrProcessLimitReached)
-
-	_, err = managedProjectRepoIdentity(
-		context.Background(), t.TempDir(), "github.com/acme/widget",
-	)
-	require.ErrorIs(err, procutil.ErrProcessLimitReached)
 }

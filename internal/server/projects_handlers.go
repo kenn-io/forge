@@ -17,7 +17,6 @@ import (
 
 	gitcmd "go.kenn.io/kit/git/cmd"
 	managedworktree "go.kenn.io/kit/git/managed"
-	gitremote "go.kenn.io/kit/git/remote"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/fleet"
@@ -748,14 +747,6 @@ func (s *Server) createProjectWorktreeFromMergeRequest(
 		)
 	}
 
-	projectRepoIdentity, err := managedProjectRepoIdentity(
-		ctx, project.LocalPath, strings.ToLower(
-			identity.Host+"/"+identity.Owner+"/"+identity.Name,
-		),
-	)
-	if err != nil {
-		return nil, problemInternal("inspect project Git remote")
-	}
 	created, err := managedworktree.CreateWorktreeFromMergeRequest(
 		ctx, managedworktree.MergeRequestWorktreeOptions{
 			ProjectRoot:           project.LocalPath,
@@ -772,7 +763,11 @@ func (s *Server) createProjectWorktreeFromMergeRequest(
 			HeadRepoCloneURL:      mr.HeadRepoCloneURL,
 			ExpectedHeadSHA:       mr.PlatformHeadSHA,
 			Platform:              identity.Platform,
-			ProjectRepoIdentity:   projectRepoIdentity,
+			// This is the logical provider identity. The trusted project
+			// remote may be a local mirror of the same repository.
+			ProjectRepoIdentity: strings.ToLower(
+				identity.Host + "/" + identity.Owner + "/" + identity.Name,
+			),
 		})
 	if err != nil {
 		return nil, worktreeLifecycleProblem(err, "body.setup_script")
@@ -963,27 +958,6 @@ func worktreeLifecycleProblem(err error, hookField string) error {
 		})
 	}
 	return problemInternal("worktree lifecycle: " + err.Error())
-}
-
-// managedProjectRepoIdentity keeps hosted project provenance tied to the
-// provider identity while preserving exact local/file origins used by local
-// mirrors and tests. Kit revalidates the effective origin against this value
-// before fetching or configuring tracking.
-func managedProjectRepoIdentity(
-	ctx context.Context, projectRoot, hostedIdentity string,
-) (string, error) {
-	output, err := runManagedWorktreeGit(
-		ctx, gitcmd.New(), projectRoot, "remote", "get-url", "origin",
-	)
-	if err != nil {
-		return "", err
-	}
-	remoteURL := strings.TrimSpace(string(output))
-	if gitremote.RemoteHost(remoteURL) == "" &&
-		gitremote.RemoteRepoPath(remoteURL) == "" {
-		return remoteURL, nil
-	}
-	return hostedIdentity, nil
 }
 
 func managedWorktreeIsDirty(ctx context.Context, path string) (bool, error) {

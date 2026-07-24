@@ -124,8 +124,10 @@ func TestCreateWorktreeFromMergeRequestRoute(t *testing.T) {
 	lifecycleRouteGit(t, origin, "checkout", "-q", "main")
 
 	projectID := registerIdentifiedProject(t, ts, clone)
-	// The MR head repo is the project repo itself (same-repo scenario).
-	seedMergeRequest(t, database, 42, "feature-x", headSHA, origin)
+	// Providers report the hosted clone URL even when this project uses a
+	// local mirror as origin.
+	seedMergeRequest(t, database, 42, "feature-x", headSHA,
+		"https://github.com/acme/widget.git")
 
 	dest := filepath.Join(t.TempDir(), "wt")
 	body := mustMarshal(t, map[string]any{

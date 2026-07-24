@@ -243,7 +243,8 @@ Frontend state should keep a reusable provider ref:
 Use `providerRouteParams()` and `providerItemPath()` or `providerRepoPath()` for
 repo-scoped requests. Do not hand-build `/api/v1` URLs or assume GitHub defaults
 inside components/stores. Host defaults may be omitted from URLs only by the
-shared route helper.
+shared route helper; browser resource URLs must use the configured API base so
+non-root deployments retain their `base_path` (`frontend/src/lib/api/runtime.ts::apiBaseURL`).
 
 ## Notification Identity
 

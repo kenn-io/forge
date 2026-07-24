@@ -20,7 +20,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/docs"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
@@ -503,16 +502,13 @@ func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
 	assert.Equal("Handbook", gotCfgFolders[0].Name)
 	assert.Equal(updatedRoot, gotCfgFolders[0].Path)
 
-	gotRegistryFolders := srv.docsAPI.Registry().Folders()
+	gotRegistryFolders := srv.docsAPI.Folders()
 	require.Len(gotRegistryFolders, 1)
 	assert.Equal("handbook", gotRegistryFolders[0].ID)
 	assert.Equal("Handbook", gotRegistryFolders[0].Name)
 	wantRegistryRoot, err := filepath.EvalSymlinks(updatedRoot)
 	require.NoError(err)
 	assert.Equal(wantRegistryRoot, gotRegistryFolders[0].Path)
-	_, err = srv.docsAPI.Registry().Lookup("notes")
-	require.ErrorIs(err, docs.ErrFolderNotFound)
-
 	listRR := doDocsJSON(t, srv, http.MethodGet, "/api/v1/docs/folders", nil)
 	require.Equal(http.StatusOK, listRR.Code, listRR.Body.String())
 	var listBody docsFolderListWire

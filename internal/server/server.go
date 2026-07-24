@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -744,9 +745,21 @@ func newServer(
 		bgDeadline: bgDeadline,
 	}
 	s.docsAPI = docsapi.New(docsapi.Deps{
-		Config:     cfg,
-		ConfigPath: cfgPath,
-		ConfigMu:   &s.cfgMu,
+		Config: cfg,
+		SaveFolders: func(folders []config.DocFolder) error {
+			if s.cfgPath == "" || s.cfg == nil {
+				return docsapi.ErrSettingsUnavailable
+			}
+			s.cfgMu.Lock()
+			defer s.cfgMu.Unlock()
+			previous := slices.Clone(s.cfg.DocFolders)
+			s.cfg.DocFolders = slices.Clone(folders)
+			if err := s.cfg.Save(s.cfgPath); err != nil {
+				s.cfg.DocFolders = previous
+				return err
+			}
+			return nil
+		},
 	})
 	if cfg != nil {
 		docsapi.WarnDaemonBindings(cfg.DocFolders)

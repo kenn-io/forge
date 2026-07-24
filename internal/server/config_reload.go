@@ -390,14 +390,12 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	}
 
 	s.cfgMu.Lock()
-	defer s.cfgMu.Unlock()
 	*s.cfg = cloneReloadedConfig(newCfg)
-	if s.docsAPI != nil {
-		s.docsAPI.ReplaceFolders(newCfg.DocFolders)
+	s.refreshRuntimeTargetsLocked()
+	if s.runtime != nil {
+		s.runtime.UpdateStripEnvVars(s.updateRuntimeStripEnvVarsLocked(newCfg))
 	}
-	if s.messagesAPI != nil {
-		s.messagesAPI.ApplyConfig(newCfg)
-	}
+	s.cfgMu.Unlock()
 
 	if s.syncer != nil {
 		s.syncer.SetBranchActivityLimits(
@@ -408,9 +406,11 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		s.syncer.SetActiveMRWindow(newCfg.ActivePRWindowDuration())
 	}
 
-	s.refreshRuntimeTargetsLocked()
-	if s.runtime != nil {
-		s.runtime.UpdateStripEnvVars(s.updateRuntimeStripEnvVarsLocked(newCfg))
+	if s.docsAPI != nil {
+		s.docsAPI.ReplaceFolders(newCfg.DocFolders)
+	}
+	if s.messagesAPI != nil {
+		s.messagesAPI.ApplyConfig(newCfg)
 	}
 
 	slog.Info(

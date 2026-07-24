@@ -19,16 +19,16 @@ import (
 
 const docsMaxBodyBytes = 4 << 20
 
+var ErrSettingsUnavailable = errors.New("settings unavailable")
+
 type Deps struct {
-	Config     *config.Config
-	ConfigPath string
-	ConfigMu   *sync.Mutex
+	Config      *config.Config
+	SaveFolders func([]config.DocFolder) error
 }
 
 type Handler struct {
-	cfg              *config.Config
-	cfgPath          string
-	cfgMu            *sync.Mutex
+	mu               sync.Mutex
+	saveFolders      func([]config.DocFolder) error
 	docsRegistry     *docs.Registry
 	docsPublishLocks *PublishLockSet
 }
@@ -39,23 +39,19 @@ func New(deps Deps) *Handler {
 		folders = deps.Config.DocFolders
 	}
 	return &Handler{
-		cfg:              deps.Config,
-		cfgPath:          deps.ConfigPath,
-		cfgMu:            deps.ConfigMu,
+		saveFolders:      deps.SaveFolders,
 		docsRegistry:     docs.NewRegistry(folders),
 		docsPublishLocks: NewPublishLockSet(),
 	}
 }
 
-func (s *Handler) Registry() *docs.Registry {
-	return s.docsRegistry
-}
-
-func (s *Handler) PublishLocks() *PublishLockSet {
-	return s.docsPublishLocks
+func (s *Handler) Folders() []config.DocFolder {
+	return s.docsRegistry.Folders()
 }
 
 func (s *Handler) ReplaceFolders(folders []config.DocFolder) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.docsRegistry.Replace(folders)
 }
 
@@ -377,7 +373,7 @@ func (s *Handler) listDocsFolders(_ context.Context, _ *struct{}) (*listDocsFold
 }
 
 func (s *Handler) createDocsFolder(_ context.Context, in *createDocsFolderInput) (*createDocsFolderOutput, error) {
-	if s.cfgPath == "" || s.cfg == nil {
+	if s.saveFolders == nil {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 	path := strings.TrimSpace(in.Body.Path)
@@ -385,9 +381,9 @@ func (s *Handler) createDocsFolder(_ context.Context, in *createDocsFolderInput)
 		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, "path is required", map[string]any{"reason": "missingPath"})
 	}
 
-	s.cfgMu.Lock()
-	defer s.cfgMu.Unlock()
-	prev := cloneDocFolders(s.cfg.DocFolders)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prev := s.docsRegistry.Folders()
 	id := strings.TrimSpace(in.Body.ID)
 	if id == "" {
 		derivedPath, err := docsFolderDerivePath(path)
@@ -400,10 +396,11 @@ func (s *Handler) createDocsFolder(_ context.Context, in *createDocsFolderInput)
 	if err := s.docsRegistry.Add(folder); err != nil {
 		return nil, docsRegistryProblem(err)
 	}
-	s.cfg.DocFolders = s.docsRegistry.Folders()
-	if err := s.cfg.Save(s.cfgPath); err != nil {
-		s.cfg.DocFolders = prev
+	if err := s.saveFolders(s.docsRegistry.Folders()); err != nil {
 		s.docsRegistry.Replace(prev)
+		if errors.Is(err, ErrSettingsUnavailable) {
+			return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
+		}
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	added, err := s.docsRegistry.Lookup(id)
@@ -416,20 +413,21 @@ func (s *Handler) createDocsFolder(_ context.Context, in *createDocsFolderInput)
 }
 
 func (s *Handler) updateDocsFolder(_ context.Context, in *updateDocsFolderInput) (*docsFolderOutput, error) {
-	if s.cfgPath == "" || s.cfg == nil {
+	if s.saveFolders == nil {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
-	s.cfgMu.Lock()
-	defer s.cfgMu.Unlock()
-	prev := cloneDocFolders(s.cfg.DocFolders)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prev := s.docsRegistry.Folders()
 	id := strings.TrimSpace(in.ID)
 	if err := s.docsRegistry.Rename(id, in.Body.Name); err != nil {
 		return nil, docsRegistryProblem(err)
 	}
-	s.cfg.DocFolders = s.docsRegistry.Folders()
-	if err := s.cfg.Save(s.cfgPath); err != nil {
-		s.cfg.DocFolders = prev
+	if err := s.saveFolders(s.docsRegistry.Folders()); err != nil {
 		s.docsRegistry.Replace(prev)
+		if errors.Is(err, ErrSettingsUnavailable) {
+			return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
+		}
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	renamed, err := s.docsRegistry.Lookup(id)
@@ -442,19 +440,20 @@ func (s *Handler) updateDocsFolder(_ context.Context, in *updateDocsFolderInput)
 }
 
 func (s *Handler) deleteDocsFolder(_ context.Context, in *docsFolderIDInput) (*docsNoContentOutput, error) {
-	if s.cfgPath == "" || s.cfg == nil {
+	if s.saveFolders == nil {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
-	s.cfgMu.Lock()
-	defer s.cfgMu.Unlock()
-	prev := cloneDocFolders(s.cfg.DocFolders)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prev := s.docsRegistry.Folders()
 	if err := s.docsRegistry.Remove(in.ID); err != nil {
 		return nil, docsRegistryProblem(err)
 	}
-	s.cfg.DocFolders = s.docsRegistry.Folders()
-	if err := s.cfg.Save(s.cfgPath); err != nil {
-		s.cfg.DocFolders = prev
+	if err := s.saveFolders(s.docsRegistry.Folders()); err != nil {
 		s.docsRegistry.Replace(prev)
+		if errors.Is(err, ErrSettingsUnavailable) {
+			return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
+		}
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	return &docsNoContentOutput{Status: http.StatusNoContent}, nil
@@ -690,12 +689,6 @@ func docsSearchLimit(limit int) int {
 		return limit
 	}
 	return 25
-}
-
-func cloneDocFolders(v []config.DocFolder) []config.DocFolder {
-	out := make([]config.DocFolder, len(v))
-	copy(out, v)
-	return out
 }
 
 func docsFolderDerivePath(path string) (string, error) {

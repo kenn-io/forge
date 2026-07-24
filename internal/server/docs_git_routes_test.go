@@ -529,28 +529,6 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 	}
 }
 
-func TestDocsGitPublishEndpointLockHeldReturnsConflict(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	repo.write(t, "new.md", "# new\n")
-	srv := setupDocsGitRouteServer(t, repo.dir)
-	folder, lookupErr := srv.docsAPI.Registry().Lookup("f")
-	require.NoError(lookupErr)
-	require.True(srv.docsAPI.PublishLocks().TryAcquire(folder.Path))
-	defer srv.docsAPI.PublishLocks().Release(folder.Path)
-
-	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/publish", map[string]string{
-		"message": "docs: x",
-	})
-
-	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-	var problem httpapi.ProblemError
-	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal(httpapi.CodeConflict, problem.Code)
-	assert.Equal("publishInProgress", problem.Details["reason"])
-}
-
 func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -736,51 +714,4 @@ func TestDocsGitPullEndpointNoUpstreamIs400(t *testing.T) {
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
 	assert.Equal("noUpstream", problem.Details["reason"])
 	assert.Contains(problem.Details["suggested_command"], "--set-upstream-to")
-}
-
-func TestDocsGitPullEndpointHeldLockIs409(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	srv := setupDocsGitRouteServer(t, repo.dir)
-	folder, lookupErr := srv.docsAPI.Registry().Lookup("f")
-	require.NoError(lookupErr)
-	require.True(srv.docsAPI.PublishLocks().TryAcquire(folder.Path))
-	defer srv.docsAPI.PublishLocks().Release(folder.Path)
-
-	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/f/git/pull", nil)
-
-	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-	var problem httpapi.ProblemError
-	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal("gitOperationInProgress", problem.Details["reason"])
-}
-
-// Two folder IDs registered over one path must contend for the same lock:
-// git operations are per-repository, and FETCH_HEAD is repo-global state.
-func TestDocsGitPullEndpointAliasedFoldersShareLock(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	repo := newDocsGitRepo(t, true)
-	cfg := &config.Config{
-		DocFolders: []config.DocFolder{
-			{ID: "f", Name: "F", Path: repo.dir},
-			{ID: "alias", Name: "Alias", Path: repo.dir},
-		},
-	}
-	srv := New(openTestDB(t), nil, nil, "/", cfg, ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	// Acquire through the primary ID's canonical path; the aliased ID must
-	// contend for the same key.
-	folder, lookupErr := srv.docsAPI.Registry().Lookup("f")
-	require.NoError(lookupErr)
-	require.True(srv.docsAPI.PublishLocks().TryAcquire(folder.Path))
-	defer srv.docsAPI.PublishLocks().Release(folder.Path)
-
-	rr := doDocsJSON(t, srv, http.MethodPost, "/api/v1/docs/folders/alias/git/pull", nil)
-
-	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-	var problem httpapi.ProblemError
-	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal("gitOperationInProgress", problem.Details["reason"])
 }

@@ -8,6 +8,15 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 )
 
+func (p *Provider) ClassifyRepositoryFeatureError(
+	ctx context.Context,
+	ref platform.RepoRef,
+	feature string,
+	err error,
+) error {
+	return p.repositoryFeatureError(ctx, ref, feature, err)
+}
+
 func (p *Provider) repositoryFeatureError(
 	ctx context.Context,
 	ref platform.RepoRef,

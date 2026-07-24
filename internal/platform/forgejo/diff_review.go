@@ -24,7 +24,13 @@ func (c *Client) ListMergeRequestReviewThreads(
 	ref platform.RepoRef,
 	number int,
 ) ([]platform.MergeRequestReviewThread, error) {
-	return c.transport.ListMergeRequestReviewThreads(ctx, ref, number)
+	threads, err := c.transport.ListMergeRequestReviewThreads(ctx, ref, number)
+	if err != nil {
+		return nil, c.ClassifyRepositoryFeatureError(
+			ctx, ref, platform.RepositoryFeatureMergeRequests, err,
+		)
+	}
+	return threads, nil
 }
 
 func (t *transport) PublishDiffReviewDraft(

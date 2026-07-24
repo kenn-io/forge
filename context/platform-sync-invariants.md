@@ -85,9 +85,9 @@ registry helpers return typed errors for missing providers or capabilities.
 - `priority_repo` reorders a full run; `only_repo` restricts every repo-derived
   phase and must not delay full-run cadence. Resolve both by full identity, and
   never fall back from invalid exclusive scope. (`internal/github/sync.go::runOnce`)
-- A repository-disabled issue or merge-request response is typed
-  `repository_feature_disabled` only from definitive evidence: GitHub's disabled
-  410, or a GitLab/Gitea/Forgejo candidate confirmed by repository metadata. (`internal/platform/gitlab/feature_disabled.go::Client.repositoryFeatureError`)
+- Every issue or merge-request read boundary that can receive a disabled-feature
+  candidate must route through definitive classification: GitHub's disabled 410,
+  or GitLab/Gitea/Forgejo repository metadata confirmation. (`internal/platform/gitlab/feature_disabled.go::Client.repositoryFeatureError`, `internal/platform/gitealike/feature_disabled.go::Provider.ClassifyRepositoryFeatureError`)
 - Mutation routes must check provider capabilities before posting comments,
   changing state, merging, requesting review, or approving workflows.
   Server handlers translate these typed platform errors into the stable problem

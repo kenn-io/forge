@@ -197,3 +197,69 @@ func TestListMergeRequestReviewThreadsReadsForgejoReviewComments(t *testing.T) {
 	assert.Equal(7, threads[0].Range.Line)
 	assert.Equal("head-sha", threads[0].Range.CommitSHA)
 }
+
+func TestListMergeRequestReviewThreadsClassifiesDisabledMergeRequests(t *testing.T) {
+	tests := []struct {
+		name       string
+		failedPath string
+		status     int
+	}{
+		{
+			name:       "list reviews",
+			failedPath: "/api/v1/repos/acme/widgets/pulls/42/reviews",
+			status:     http.StatusForbidden,
+		},
+		{
+			name:       "list review comments",
+			failedPath: "/api/v1/repos/acme/widgets/pulls/42/reviews/99/comments",
+			status:     http.StatusGone,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := Require.New(t)
+			metadataRequests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == tt.failedPath {
+					http.Error(w, "pull requests disabled", tt.status)
+					return
+				}
+				switch r.URL.Path {
+				case "/api/v1/repos/acme/widgets/pulls/42/reviews":
+					assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{"id": 99}}))
+				case "/api/v1/repos/acme/widgets":
+					metadataRequests++
+					assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+						"id":                1,
+						"name":              "widgets",
+						"full_name":         "acme/widgets",
+						"owner":             map[string]any{"id": 2, "login": "acme"},
+						"has_issues":        true,
+						"has_pull_requests": false,
+					}))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
+			require.NoError(err)
+			_, err = client.ListMergeRequestReviewThreads(context.Background(), platform.RepoRef{
+				Platform: platform.KindForgejo,
+				Host:     "codeberg.test",
+				Owner:    "acme",
+				Name:     "widgets",
+			}, 42)
+
+			require.ErrorIs(err, platform.ErrRepositoryFeatureDisabled)
+			var platformErr *platform.Error
+			require.ErrorAs(err, &platformErr)
+			assert.Equal(platform.RepositoryFeatureMergeRequests, platformErr.Capability)
+			assert.Equal(1, metadataRequests)
+		})
+	}
+}

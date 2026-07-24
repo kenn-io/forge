@@ -42,11 +42,11 @@ type kataWorkspaceTaskInput struct {
 }
 
 type kataWorkspaceTargetResponse struct {
-	Available         bool             `json:"available"`
-	Repo              *repoRefResponse `json:"repo,omitempty"`
-	ItemType          string           `json:"item_type,omitempty"`
-	ItemKey           string           `json:"item_key,omitempty"`
-	ExistingWorkspace *workspaceRef    `json:"existing_workspace,omitempty"`
+	Available         bool                     `json:"available"`
+	Repo              *httpapi.RepoRefResponse `json:"repo,omitempty"`
+	ItemType          string                   `json:"item_type,omitempty"`
+	ItemKey           string                   `json:"item_key,omitempty"`
+	ExistingWorkspace *workspaceRef            `json:"existing_workspace,omitempty"`
 }
 
 type kataResolvedWorkspaceRepo struct {
@@ -64,12 +64,12 @@ type kataWorkspaceRepoResolution struct {
 }
 
 type kataProjectMappingDiagnostic struct {
-	DaemonID    string           `json:"daemon_id"`
-	ProjectUID  string           `json:"project_uid"`
-	ProjectName string           `json:"project_name"`
-	Status      string           `json:"status"`
-	Source      string           `json:"source,omitempty"`
-	Repo        *repoRefResponse `json:"repo,omitempty"`
+	DaemonID    string                   `json:"daemon_id"`
+	ProjectUID  string                   `json:"project_uid"`
+	ProjectName string                   `json:"project_name"`
+	Status      string                   `json:"status"`
+	Source      string                   `json:"source,omitempty"`
+	Repo        *httpapi.RepoRefResponse `json:"repo,omitempty"`
 }
 
 type kataProjectMappingsInput struct {
@@ -83,8 +83,8 @@ type kataProjectMappingsResponse struct {
 }
 
 type kataMappingTargetResponse struct {
-	DisplayName string          `json:"display_name"`
-	Repo        repoRefResponse `json:"repo"`
+	DisplayName string                  `json:"display_name"`
+	Repo        httpapi.RepoRefResponse `json:"repo"`
 }
 
 type kataProjectMappingsOutput struct {

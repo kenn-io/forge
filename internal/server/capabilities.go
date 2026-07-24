@@ -31,7 +31,7 @@ const (
 )
 
 func capabilityEnabled(
-	caps providerCapabilitiesResponse,
+	caps httpapi.ProviderCapabilitiesResponse,
 	capability string,
 ) bool {
 	switch capability {

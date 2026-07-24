@@ -1,4 +1,4 @@
-package server
+package repobrowserapi
 
 import (
 	"context"
@@ -12,15 +12,15 @@ import (
 
 const defaultRepoBrowserRefreshInterval = 5 * time.Minute
 
-func (s *Server) runRepoBrowserRefreshLoop(ctx context.Context) {
-	if s.clones == nil {
+func (h *Handler) RunRefreshLoop(ctx context.Context) {
+	if h.clones == nil {
 		return
 	}
-	interval := s.repoBrowserRefreshEvery
+	interval := h.refreshEvery
 	if interval <= 0 {
 		interval = defaultRepoBrowserRefreshInterval
 	}
-	s.runRepoBrowserRefreshPass(ctx)
+	h.runRefreshPass(ctx)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -29,12 +29,12 @@ func (s *Server) runRepoBrowserRefreshLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.runRepoBrowserRefreshPass(ctx)
+			h.runRefreshPass(ctx)
 		}
 	}
 }
 
-func repoBrowserRefreshIntervalForConfig(cfg *config.Config) time.Duration {
+func refreshIntervalForConfig(cfg *config.Config) time.Duration {
 	if cfg == nil {
 		return defaultRepoBrowserRefreshInterval
 	}
@@ -44,11 +44,11 @@ func repoBrowserRefreshIntervalForConfig(cfg *config.Config) time.Duration {
 	return defaultRepoBrowserRefreshInterval
 }
 
-func (s *Server) seedRepoBrowserRefreshRepos(ctx context.Context) {
-	if s.clones == nil || s.db == nil {
+func (h *Handler) SeedRefreshRepos(ctx context.Context) {
+	if h.clones == nil || h.db == nil {
 		return
 	}
-	repos, err := s.db.ListRepos(ctx)
+	repos, err := h.db.ListRepos(ctx)
 	if err != nil {
 		slog.Warn("failed to seed repo browser refresh repos", "err", err)
 		return
@@ -65,7 +65,7 @@ func (s *Server) seedRepoBrowserRefreshRepos(ctx context.Context) {
 			RepoPath:  repo.RepoPath,
 			RemoteURL: repo.CloneURL,
 		}
-		registered, err := s.clones.RegisterExistingRepoBrowserClone(ctx, repoRef)
+		registered, err := h.clones.RegisterExistingRepoBrowserClone(ctx, repoRef)
 		if err != nil {
 			slog.Warn("failed to seed repo browser refresh repo",
 				"provider", repo.Platform,
@@ -83,10 +83,10 @@ func (s *Server) seedRepoBrowserRefreshRepos(ctx context.Context) {
 	}
 }
 
-func (s *Server) runRepoBrowserRefreshPass(ctx context.Context) {
-	if s.clones == nil {
+func (h *Handler) runRefreshPass(ctx context.Context) {
+	if h.clones == nil {
 		return
 	}
 	slog.Debug("refreshing repo browser clones")
-	s.clones.RefreshRepoBrowserClones(ctx)
+	h.clones.RefreshRepoBrowserClones(ctx)
 }

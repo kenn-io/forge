@@ -1,4 +1,4 @@
-package server
+package repobrowserapi_test
 
 import (
 	"context"
@@ -15,12 +15,27 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/server/repobrowserapi"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"golang.org/x/sync/semaphore"
 )
 
+var repoBrowserTestSlots = semaphore.NewWeighted(2)
+
+func acquireRepoBrowserTestSlot(t *testing.T) {
+	t.Helper()
+	t.Parallel()
+	require.NoError(t, repoBrowserTestSlots.Acquire(t.Context(), 1))
+	t.Cleanup(func() { repoBrowserTestSlots.Release(1) })
+}
+
 func TestRepoBrowserRefsUsesRepoPathIdentity(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _ := setupRepoBrowserServer(t, "gitlab", "gitlab.example.com", "group/subgroup/project")
@@ -30,7 +45,7 @@ func TestRepoBrowserRefsUsesRepoPathIdentity(t *testing.T) {
 	)
 
 	require.Equal(http.StatusOK, rr.Code)
-	var body repoBrowserRefsResponse
+	var body repobrowserapi.RepoBrowserRefsResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
 	assert.Equal("gitlab", body.Repo.Provider)
 	assert.Equal("gitlab.example.com", body.Repo.PlatformHost)
@@ -40,6 +55,7 @@ func TestRepoBrowserRefsUsesRepoPathIdentity(t *testing.T) {
 }
 
 func TestRepoBrowserRefsUsesProviderRouteWhenRepoPathMissing(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _ := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
@@ -49,7 +65,7 @@ func TestRepoBrowserRefsUsesProviderRouteWhenRepoPathMissing(t *testing.T) {
 	)
 
 	require.Equal(http.StatusOK, rr.Code)
-	var body repoBrowserRefsResponse
+	var body repobrowserapi.RepoBrowserRefsResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
 	assert.Equal("github", body.Repo.Provider)
 	assert.Equal("github.com", body.Repo.PlatformHost)
@@ -58,6 +74,7 @@ func TestRepoBrowserRefsUsesProviderRouteWhenRepoPathMissing(t *testing.T) {
 }
 
 func TestRepoBrowserRefsReportsTruncationForLargeRefSets(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
@@ -72,7 +89,7 @@ func TestRepoBrowserRefsReportsTruncationForLargeRefSets(t *testing.T) {
 	)
 
 	require.Equal(http.StatusOK, rr.Code)
-	var body repoBrowserRefsResponse
+	var body repobrowserapi.RepoBrowserRefsResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
 	assert.True(body.Truncated)
 	assert.Len(body.Refs, gitclone.RepoBrowserRefLimit)
@@ -81,9 +98,10 @@ func TestRepoBrowserRefsReportsTruncationForLargeRefSets(t *testing.T) {
 }
 
 func TestRepoBrowserCloneCacheSeparatesProvidersWithSameHostAndPath(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	database := openTestDB(t)
+	database := dbtest.Open(t)
 	githubRemote, githubWork := setupServerRepoBrowserGitRepo(t)
 	gitlabRemote, gitlabWork := setupServerRepoBrowserGitRepo(t)
 	require.NoError(os.WriteFile(filepath.Join(githubWork, "README.md"), []byte("github repo\n"), 0o644))
@@ -123,7 +141,7 @@ func TestRepoBrowserCloneCacheSeparatesProvidersWithSameHostAndPath(t *testing.T
 	clones := gitclone.New(filepath.Join(t.TempDir(), "clones"), nil)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{Clones: clones})
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -134,7 +152,7 @@ func TestRepoBrowserCloneCacheSeparatesProvidersWithSameHostAndPath(t *testing.T
 		"/api/v1/host/git.example.com/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md",
 	)
 	require.Equal(http.StatusOK, githubBlob.Code)
-	var githubBody repoBrowserBlobResponse
+	var githubBody repobrowserapi.RepoBrowserBlobResponse
 	require.NoError(json.Unmarshal(githubBlob.Body.Bytes(), &githubBody))
 	assert.Equal("github repo\n", githubBody.Blob.Content)
 
@@ -142,12 +160,13 @@ func TestRepoBrowserCloneCacheSeparatesProvidersWithSameHostAndPath(t *testing.T
 		"/api/v1/host/git.example.com/repo/gitlab/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md",
 	)
 	require.Equal(http.StatusOK, gitlabBlob.Code)
-	var gitlabBody repoBrowserBlobResponse
+	var gitlabBody repobrowserapi.RepoBrowserBlobResponse
 	require.NoError(json.Unmarshal(gitlabBlob.Body.Bytes(), &gitlabBody))
 	assert.Equal("gitlab repo\n", gitlabBody.Blob.Content)
 }
 
 func TestRepoBrowserBlobReturnsTypedLargeAndBinaryStates(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
@@ -161,7 +180,7 @@ func TestRepoBrowserBlobReturnsTypedLargeAndBinaryStates(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=large.txt",
 	)
 	require.Equal(http.StatusOK, large.Code)
-	var largeBody repoBrowserBlobResponse
+	var largeBody repobrowserapi.RepoBrowserBlobResponse
 	require.NoError(json.Unmarshal(large.Body.Bytes(), &largeBody))
 	assert.True(largeBody.Blob.TooLarge)
 	assert.False(largeBody.Blob.Binary)
@@ -171,7 +190,7 @@ func TestRepoBrowserBlobReturnsTypedLargeAndBinaryStates(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=bin.dat",
 	)
 	require.Equal(http.StatusOK, binary.Code)
-	var binaryBody repoBrowserBlobResponse
+	var binaryBody repobrowserapi.RepoBrowserBlobResponse
 	require.NoError(json.Unmarshal(binary.Body.Bytes(), &binaryBody))
 	assert.True(binaryBody.Blob.Binary)
 	assert.False(binaryBody.Blob.TooLarge)
@@ -179,6 +198,7 @@ func TestRepoBrowserBlobReturnsTypedLargeAndBinaryStates(t *testing.T) {
 }
 
 func TestRepoBrowserBranchRefReportsStaleRequestedSHA(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
@@ -194,7 +214,7 @@ func TestRepoBrowserBranchRefReportsStaleRequestedSHA(t *testing.T) {
 	)
 
 	require.Equal(http.StatusOK, tree.Code)
-	var body repoBrowserTreeResponse
+	var body repobrowserapi.RepoBrowserTreeResponse
 	require.NoError(json.Unmarshal(tree.Body.Bytes(), &body))
 	assert.Equal(gitclone.RepoBrowserRefBranch, body.Ref.Type)
 	assert.Equal("main", body.Ref.Name)
@@ -204,9 +224,10 @@ func TestRepoBrowserBranchRefReportsStaleRequestedSHA(t *testing.T) {
 }
 
 func TestRepoBrowserReadsStayPinnedAfterBranchAdvances(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
+	srv, work, clones := setupRepoBrowserServerWithClones(t, "github", "github.com", "acme/widgets")
 	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Selected\n"), 0o644))
 	serverRepoBrowserGit(t, work, "add", ".")
 	serverRepoBrowserGit(t, work, "commit",
@@ -221,7 +242,7 @@ func TestRepoBrowserReadsStayPinnedAfterBranchAdvances(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main",
 	)
 	require.Equal(http.StatusOK, tree.Code)
-	var treeBody repoBrowserTreeResponse
+	var treeBody repobrowserapi.RepoBrowserTreeResponse
 	require.NoError(json.Unmarshal(tree.Body.Bytes(), &treeBody))
 	require.Equal(selectedSHA, treeBody.Ref.SHA)
 
@@ -233,13 +254,13 @@ func TestRepoBrowserReadsStayPinnedAfterBranchAdvances(t *testing.T) {
 	)
 	advancedSHA := testGitSHA(t, work, "HEAD")
 	serverRepoBrowserGit(t, work, "push", "origin", "main")
-	srv.clones.RefreshRepoBrowserClones(t.Context())
+	clones.RefreshRepoBrowserClones(t.Context())
 
 	branchBlob := repoBrowserRequest(t, srv, http.MethodGet,
 		"/api/v1/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md",
 	)
 	require.Equal(http.StatusOK, branchBlob.Code)
-	var branchBlobBody repoBrowserBlobResponse
+	var branchBlobBody repobrowserapi.RepoBrowserBlobResponse
 	require.NoError(json.Unmarshal(branchBlob.Body.Bytes(), &branchBlobBody))
 	assert.Equal(advancedSHA, branchBlobBody.Ref.SHA)
 	assert.Equal("# Advanced\n", branchBlobBody.Blob.Content)
@@ -248,7 +269,7 @@ func TestRepoBrowserReadsStayPinnedAfterBranchAdvances(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha="+url.QueryEscape(selectedSHA)+"&path=README.md",
 	)
 	require.Equal(http.StatusOK, pinnedBlob.Code)
-	var pinnedBlobBody repoBrowserBlobResponse
+	var pinnedBlobBody repobrowserapi.RepoBrowserBlobResponse
 	require.NoError(json.Unmarshal(pinnedBlob.Body.Bytes(), &pinnedBlobBody))
 	assert.Equal(selectedSHA, pinnedBlobBody.Ref.SHA)
 	assert.Equal("# Selected\n", pinnedBlobBody.Blob.Content)
@@ -257,7 +278,7 @@ func TestRepoBrowserReadsStayPinnedAfterBranchAdvances(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha="+url.QueryEscape(selectedSHA)+"&path=README.md",
 	)
 	require.Equal(http.StatusOK, lastChanged.Code)
-	var lastChangedBody repoBrowserLastChangedResponse
+	var lastChangedBody repobrowserapi.RepoBrowserLastChangedResponse
 	require.NoError(json.Unmarshal(lastChanged.Body.Bytes(), &lastChangedBody))
 	assert.Equal(selectedSHA, lastChangedBody.Commits["README.md"].SHA)
 	assert.Equal("selected readme", lastChangedBody.Commits["README.md"].Subject)
@@ -266,7 +287,7 @@ func TestRepoBrowserReadsStayPinnedAfterBranchAdvances(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha="+url.QueryEscape(selectedSHA)+"&path=README.md",
 	)
 	require.Equal(http.StatusOK, history.Code)
-	var historyBody repoBrowserHistoryResponse
+	var historyBody repobrowserapi.RepoBrowserHistoryResponse
 	require.NoError(json.Unmarshal(history.Body.Bytes(), &historyBody))
 	require.NotEmpty(historyBody.Commits)
 	assert.Equal(selectedSHA, historyBody.Commits[0].SHA)
@@ -276,13 +297,14 @@ func TestRepoBrowserReadsStayPinnedAfterBranchAdvances(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha="+url.QueryEscape(selectedSHA)+"&path=README.md&sha="+url.QueryEscape(selectedSHA),
 	)
 	require.Equal(http.StatusOK, commitDetail.Code)
-	var commitBody repoBrowserCommitResponse
+	var commitBody repobrowserapi.RepoBrowserCommitResponse
 	require.NoError(json.Unmarshal(commitDetail.Body.Bytes(), &commitBody))
 	assert.Equal(selectedSHA, commitBody.Commit.SHA)
 	assert.Equal("Selected body.", commitBody.Commit.Body)
 }
 
 func TestRepoBrowserStaleInitialRefCanRecoverThroughValidRef(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
@@ -292,7 +314,7 @@ func TestRepoBrowserStaleInitialRefCanRecoverThroughValidRef(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/refs?repo_path=acme%2Fwidgets",
 	)
 	require.Equal(http.StatusOK, refs.Code)
-	var refsBody repoBrowserRefsResponse
+	var refsBody repobrowserapi.RepoBrowserRefsResponse
 	require.NoError(json.Unmarshal(refs.Body.Bytes(), &refsBody))
 	assert.Equal("main", refsBody.DefaultRef.Name)
 	assert.Equal(mainSHA, refsBody.DefaultRef.SHA)
@@ -307,13 +329,14 @@ func TestRepoBrowserStaleInitialRefCanRecoverThroughValidRef(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha="+url.QueryEscape(mainSHA),
 	)
 	require.Equal(http.StatusOK, recovered.Code)
-	var recoveredBody repoBrowserTreeResponse
+	var recoveredBody repobrowserapi.RepoBrowserTreeResponse
 	require.NoError(json.Unmarshal(recovered.Body.Bytes(), &recoveredBody))
 	assert.Equal(mainSHA, recoveredBody.Ref.SHA)
 	assert.Contains(repoBrowserEntryPaths(recoveredBody.Entries), "README.md")
 }
 
 func TestRepoBrowserRejectsRevisionExpressionRefs(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	assert := assert.New(t)
 	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
 	mainSHA := testGitSHA(t, work, "main")
@@ -331,6 +354,7 @@ func TestRepoBrowserRejectsRevisionExpressionRefs(t *testing.T) {
 }
 
 func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
@@ -352,7 +376,7 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main",
 	)
 	require.Equal(http.StatusOK, tree.Code)
-	var treeBody repoBrowserTreeResponse
+	var treeBody repobrowserapi.RepoBrowserTreeResponse
 	require.NoError(json.Unmarshal(tree.Body.Bytes(), &treeBody))
 	assert.False(treeBody.Truncated)
 	assert.Contains(repoBrowserEntryPaths(treeBody.Entries), "docs/image.png")
@@ -369,7 +393,7 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/last-changed?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md&path=docs%2Fimage.png",
 	)
 	require.Equal(http.StatusOK, lastChanged.Code)
-	var lastChangedBody repoBrowserLastChangedResponse
+	var lastChangedBody repobrowserapi.RepoBrowserLastChangedResponse
 	require.NoError(json.Unmarshal(lastChanged.Body.Bytes(), &lastChangedBody))
 	assert.Equal("docs asset", lastChangedBody.Commits["README.md"].Subject)
 	assert.Equal("docs asset", lastChangedBody.Commits["docs/image.png"].Subject)
@@ -380,7 +404,7 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/history?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md",
 	)
 	require.Equal(http.StatusOK, history.Code)
-	var historyBody repoBrowserHistoryResponse
+	var historyBody repobrowserapi.RepoBrowserHistoryResponse
 	require.NoError(json.Unmarshal(history.Body.Bytes(), &historyBody))
 	require.NotEmpty(historyBody.Commits)
 	assert.Equal("docs asset", historyBody.Commits[0].Subject)
@@ -389,7 +413,7 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md&sha="+url.QueryEscape(historyBody.Commits[0].SHA),
 	)
 	require.Equal(http.StatusOK, commitDetail.Code)
-	var commitBody repoBrowserCommitResponse
+	var commitBody repobrowserapi.RepoBrowserCommitResponse
 	require.NoError(json.Unmarshal(commitDetail.Body.Bytes(), &commitBody))
 	assert.Equal(historyBody.Commits[0].SHA, commitBody.Commit.SHA)
 	assert.Equal("Document asset changes.\n\nKeep preview useful.", commitBody.Commit.Body)
@@ -408,6 +432,7 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 }
 
 func TestRepoBrowserLastChangedFallsBackPastBatchLogLimit(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
@@ -426,13 +451,14 @@ func TestRepoBrowserLastChangedFallsBackPastBatchLogLimit(t *testing.T) {
 	)
 
 	require.Equal(http.StatusOK, rr.Code)
-	var body repoBrowserLastChangedResponse
+	var body repobrowserapi.RepoBrowserLastChangedResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
 	assert.Equal(readmeSHA, body.Commits["README.md"].SHA)
 	assert.Equal(churnSHA, body.Commits["churn.txt"].SHA)
 }
 
 func TestRepoBrowserAssetRejectsActiveContentTypes(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
@@ -454,9 +480,10 @@ func TestRepoBrowserAssetRejectsActiveContentTypes(t *testing.T) {
 }
 
 func TestRepoBrowserAssetOpenAPIResponseIsBinary(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	doc := NewOpenAPI()
+	doc := server.NewOpenAPI()
 	for _, path := range []string{
 		"/repo/{provider}/{owner}/{name}/browser/asset",
 		"/host/{platform_host}/repo/{provider}/{owner}/{name}/browser/asset",
@@ -480,6 +507,7 @@ func TestRepoBrowserAssetOpenAPIResponseIsBinary(t *testing.T) {
 }
 
 func TestRepoBrowserCommitRejectsSHAOutsideSelectedFileHistory(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
@@ -503,7 +531,7 @@ func TestRepoBrowserCommitRejectsSHAOutsideSelectedFileHistory(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/commit?ref_type=branch&ref_name=main&path=other.txt&sha="+url.QueryEscape(otherSHA),
 	)
 	require.Equal(http.StatusOK, ok.Code)
-	var body repoBrowserCommitResponse
+	var body repobrowserapi.RepoBrowserCommitResponse
 	require.NoError(json.Unmarshal(ok.Body.Bytes(), &body))
 	assert.Equal(otherSHA, body.Commit.SHA)
 	assert.Equal("other file", body.Commit.Subject)
@@ -511,6 +539,7 @@ func TestRepoBrowserCommitRejectsSHAOutsideSelectedFileHistory(t *testing.T) {
 }
 
 func TestRepoBrowserCommitAcceptsMergeCommitTouchingPathThroughHTTP(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
@@ -532,13 +561,14 @@ func TestRepoBrowserCommitAcceptsMergeCommitTouchingPathThroughHTTP(t *testing.T
 	)
 
 	require.Equal(http.StatusOK, rr.Code)
-	var body repoBrowserCommitResponse
+	var body repobrowserapi.RepoBrowserCommitResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
 	assert.Equal(mergeSHA, body.Commit.SHA)
 	assert.Equal("merge feature", body.Commit.Subject)
 }
 
 func TestRepoBrowserCommitRejectsUnknownFullSHA(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _ := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
@@ -552,6 +582,7 @@ func TestRepoBrowserCommitRejectsUnknownFullSHA(t *testing.T) {
 }
 
 func TestRepoBrowserCommitAcceptsOlderFileHistoryThroughHTTP(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, work := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
@@ -573,16 +604,17 @@ func TestRepoBrowserCommitAcceptsOlderFileHistoryThroughHTTP(t *testing.T) {
 	)
 
 	require.Equal(http.StatusOK, rr.Code)
-	var body repoBrowserCommitResponse
+	var body repobrowserapi.RepoBrowserCommitResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
 	assert.Equal(readmeSHA, body.Commit.SHA)
 	assert.Equal("initial", body.Commit.Subject)
 }
 
 func TestRepoBrowserStartupRefreshSeedsExistingClone(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	database := openTestDB(t)
+	database := dbtest.Open(t)
 	remote, work := setupServerRepoBrowserGitRepo(t)
 	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
@@ -599,7 +631,7 @@ func TestRepoBrowserStartupRefreshSeedsExistingClone(t *testing.T) {
 	initialClones := gitclone.New(cloneBase, nil)
 	initialSyncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(initialSyncer.Stop)
-	initialServer := New(database, initialSyncer, nil, "/", nil, ServerOptions{
+	initialServer := server.New(database, initialSyncer, nil, "/", nil, server.ServerOptions{
 		Clones:                             initialClones,
 		DisableWorkspaceBackgroundMonitors: true,
 	})
@@ -618,7 +650,7 @@ func TestRepoBrowserStartupRefreshSeedsExistingClone(t *testing.T) {
 	restartedClones := gitclone.New(cloneBase, nil)
 	restartedSyncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(restartedSyncer.Stop)
-	restartedServer := New(database, restartedSyncer, nil, "/", nil, ServerOptions{Clones: restartedClones})
+	restartedServer := server.New(database, restartedSyncer, nil, "/", nil, server.ServerOptions{Clones: restartedClones})
 	t.Cleanup(func() { gracefulShutdown(t, restartedServer) })
 
 	require.Eventually(func() bool {
@@ -628,7 +660,7 @@ func TestRepoBrowserStartupRefreshSeedsExistingClone(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			return false
 		}
-		var body repoBrowserRefsResponse
+		var body repobrowserapi.RepoBrowserRefsResponse
 		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 			return false
 		}
@@ -639,14 +671,15 @@ func TestRepoBrowserStartupRefreshSeedsExistingClone(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/blob?ref_type=branch&ref_name=main&path=README.md",
 	)
 	require.Equal(http.StatusOK, rr.Code)
-	var body repoBrowserBlobResponse
+	var body repobrowserapi.RepoBrowserBlobResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
 	assert.Equal("# Updated\n", body.Blob.Content)
 }
 
 func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
-	database := openTestDB(t)
+	database := dbtest.Open(t)
 	remote, work := setupServerRepoBrowserGitRepo(t)
 	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
@@ -663,7 +696,7 @@ func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T)
 	initialClones := gitclone.New(cloneBase, nil)
 	initialSyncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(initialSyncer.Stop)
-	initialServer := New(database, initialSyncer, nil, "/", nil, ServerOptions{
+	initialServer := server.New(database, initialSyncer, nil, "/", nil, server.ServerOptions{
 		Clones:                             initialClones,
 		DisableWorkspaceBackgroundMonitors: true,
 	})
@@ -682,7 +715,7 @@ func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T)
 	disabledClones := gitclone.New(cloneBase, nil)
 	disabledSyncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(disabledSyncer.Stop)
-	disabledServer := New(database, disabledSyncer, nil, "/", nil, ServerOptions{
+	disabledServer := server.New(database, disabledSyncer, nil, "/", nil, server.ServerOptions{
 		Clones:                             disabledClones,
 		DisableWorkspaceBackgroundMonitors: true,
 	})
@@ -708,6 +741,7 @@ func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T)
 }
 
 func TestRepoBrowserRejectsUnsafePath(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _ := setupRepoBrowserServer(t, "github", "github.com", "acme/widgets")
@@ -730,9 +764,18 @@ func repoBrowserEntryPaths(entries []gitclone.RepoBrowserTreeEntry) []string {
 	return paths
 }
 
-func setupRepoBrowserServer(t *testing.T, provider, host, repoPath string) (*Server, string) {
+func setupRepoBrowserServer(t *testing.T, provider, host, repoPath string) (*server.Server, string) {
 	t.Helper()
-	database := openTestDB(t)
+	srv, work, _ := setupRepoBrowserServerWithClones(t, provider, host, repoPath)
+	return srv, work
+}
+
+func setupRepoBrowserServerWithClones(
+	t *testing.T,
+	provider, host, repoPath string,
+) (*server.Server, string, *gitclone.Manager) {
+	t.Helper()
+	database := dbtest.Open(t)
 	remote, work := setupServerRepoBrowserGitRepo(t)
 	owner, name := splitServerRepoPathForTest(repoPath)
 	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
@@ -755,13 +798,13 @@ func setupRepoBrowserServer(t *testing.T, provider, host, repoPath string) (*Ser
 	clones := gitclone.New(filepath.Join(t.TempDir(), "clones"), nil)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{Clones: clones})
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		require.NoError(t, srv.Shutdown(ctx))
 	})
-	return srv, work
+	return srv, work, clones
 }
 
 func setupServerRepoBrowserGitRepo(t *testing.T) (remote string, work string) {
@@ -782,15 +825,31 @@ func setupServerRepoBrowserGitRepo(t *testing.T) (remote string, work string) {
 
 func serverRepoBrowserGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	runGit(t, dir, args...)
+	runner := gitcmd.New().WithConfig("init.defaultBranch", "main")
+	out, stderr, err := runner.Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 }
 
-func repoBrowserRequest(t *testing.T, srv *Server, method, path string) *httptest.ResponseRecorder {
+func testGitSHA(t *testing.T, dir, ref string) string {
+	t.Helper()
+	out, err := gitcmd.New().Output(t.Context(), dir, "rev-parse", ref)
+	require.NoError(t, err)
+	return strings.TrimSpace(string(out))
+}
+
+func repoBrowserRequest(t *testing.T, srv *server.Server, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, path, nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	return rr
+}
+
+func gracefulShutdown(t *testing.T, srv *server.Server) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, srv.Shutdown(ctx))
 }
 
 func splitServerRepoPathForTest(repoPath string) (string, string) {

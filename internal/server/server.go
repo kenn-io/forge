@@ -28,11 +28,13 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
 	"go.kenn.io/middleman/internal/server/docsapi"
 	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/server/messagesapi"
+	"go.kenn.io/middleman/internal/server/repobrowserapi"
 	"go.kenn.io/middleman/internal/telemetry"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
@@ -160,7 +162,6 @@ type Server struct {
 	cfg                         *config.Config
 	cfgPath                     string
 	tokenSources                *tokenauth.SourceSet
-	repoBrowserRefreshEvery     time.Duration
 	cfgMu                       sync.Mutex
 	configReloadMu              sync.Mutex
 	// bootCfgSnapshot freezes the subset of config fields that are
@@ -220,6 +221,7 @@ type Server struct {
 	kataEvents                  *kataFrontendEventRegistry
 	docsAPI                     *docsapi.Handler
 	messagesAPI                 *messagesapi.Handler
+	repoBrowserAPI              *repobrowserapi.Handler
 
 	// toolingStatus caches the assembled CLI tooling probe;
 	// toolingRun overrides the probe subprocess runner in tests.
@@ -722,7 +724,6 @@ func newServer(
 		cfg:                            cfg,
 		cfgPath:                        cfgPath,
 		tokenSources:                   options.TokenSources,
-		repoBrowserRefreshEvery:        repoBrowserRefreshIntervalForConfig(cfg),
 		bootCfgSnapshot:                snapshotStartupConfig(cfg),
 		runtimeStripEnvVars:            initialRuntimeStripEnvNames(cfg),
 		options:                        options,
@@ -788,6 +789,17 @@ func newServer(
 				s.runtime.UpdateStripEnvVars(s.updateRuntimeStripEnvVarsLocked(cfg))
 			}
 		},
+	})
+	s.repoBrowserAPI = repobrowserapi.New(repobrowserapi.Deps{
+		DB:     database,
+		Clones: clones,
+		ProviderCapabilities: func(kind platform.Kind, host string) (platform.Capabilities, error) {
+			if syncer == nil {
+				return platform.Capabilities{}, errors.New("provider registry unavailable")
+			}
+			return syncer.ProviderCapabilities(kind, host)
+		},
+		Config: cfg,
 	})
 	s.workspaceDiffCache = newWorkspaceDiffCache(s.bgCtx, workspaceDiffCacheDeps{
 		onReady: func(workspaceID string, revision uint64, version string) {
@@ -949,8 +961,8 @@ func newServer(
 		s.runBackground(s.fleetPlatformAuthMonitor.run)
 	}
 	if clones != nil && !options.DisableWorkspaceBackgroundMonitors {
-		s.seedRepoBrowserRefreshRepos(context.Background())
-		s.runBackground(s.runRepoBrowserRefreshLoop)
+		s.repoBrowserAPI.SeedRefreshRepos(context.Background())
+		s.runBackground(s.repoBrowserAPI.RunRefreshLoop)
 	}
 
 	// Watch the config file so an external edit (vim, dotfiles deploy,

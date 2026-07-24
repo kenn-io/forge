@@ -728,22 +728,6 @@ func apiConfig(basePath string) huma.Config {
 	return config
 }
 
-func repoBrowserAssetResponses() map[string]*huma.Response {
-	return map[string]*huma.Response{
-		"200": {
-			Description: "Image response",
-			Content: map[string]*huma.MediaType{
-				"image/avif": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
-				"image/bmp":  {Schema: &huma.Schema{Type: "string", Format: "binary"}},
-				"image/gif":  {Schema: &huma.Schema{Type: "string", Format: "binary"}},
-				"image/jpeg": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
-				"image/png":  {Schema: &huma.Schema{Type: "string", Format: "binary"}},
-				"image/webp": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
-			},
-		},
-	}
-}
-
 func (s *Server) registerAPI(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-version",
@@ -804,6 +788,7 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Get(api, "/issues", s.listIssues,
 		httpapi.DocumentOperation("list-issues", "List issues", "Issues"))
 	s.registerProviderRepoAPI(api)
+	s.repoBrowserAPI.Register(api)
 	s.registerFleetRoutes(api)
 
 	huma.Register(api, huma.Operation{
@@ -1319,50 +1304,6 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 		httpapi.DocumentOperation("get-repo", "Get repository", "Repositories"))
 	huma.Get(api, hostRepoPath, s.getRepoOnHost,
 		httpapi.DocumentOperation("get-repo-on-host", "Get repository", "Repositories"))
-	huma.Get(api, repoPath+"/browser/refs", s.listRepoBrowserRefs,
-		httpapi.DocumentOperation("list-repo-browser-refs", "List repository browser refs", "Repositories"))
-	huma.Get(api, hostRepoPath+"/browser/refs", s.listRepoBrowserRefsOnHost,
-		httpapi.DocumentOperation("list-repo-browser-refs-on-host", "List repository browser refs", "Repositories"))
-	huma.Get(api, repoPath+"/browser/tree", s.listRepoBrowserTree,
-		httpapi.DocumentOperation("list-repo-browser-tree", "List repository browser tree", "Repositories"))
-	huma.Get(api, hostRepoPath+"/browser/tree", s.listRepoBrowserTreeOnHost,
-		httpapi.DocumentOperation("list-repo-browser-tree-on-host", "List repository browser tree", "Repositories"))
-	huma.Get(api, repoPath+"/browser/blob", s.getRepoBrowserBlob,
-		httpapi.DocumentOperation("get-repo-browser-blob", "Get repository browser blob", "Repositories"))
-	huma.Get(api, hostRepoPath+"/browser/blob", s.getRepoBrowserBlobOnHost,
-		httpapi.DocumentOperation("get-repo-browser-blob-on-host", "Get repository browser blob", "Repositories"))
-	huma.Register(api, huma.Operation{
-		OperationID:   "get-repo-browser-asset",
-		Method:        http.MethodGet,
-		Path:          repoPath + "/browser/asset",
-		DefaultStatus: http.StatusOK,
-		Summary:       "Get repository browser asset",
-		Description:   "Returns raw image bytes for a repository file. Asset reads require ref_type=commit with ref_sha set to a full 40-character commit SHA; branch and tag refs are rejected with mutable_ref_not_allowed.",
-		Tags:          []string{"Repositories"},
-		Responses:     repoBrowserAssetResponses(),
-	}, s.getRepoBrowserAsset)
-	huma.Register(api, huma.Operation{
-		OperationID:   "get-repo-browser-asset-on-host",
-		Method:        http.MethodGet,
-		Path:          hostRepoPath + "/browser/asset",
-		DefaultStatus: http.StatusOK,
-		Summary:       "Get repository browser asset",
-		Description:   "Returns raw image bytes for a repository file. Asset reads require ref_type=commit with ref_sha set to a full 40-character commit SHA; branch and tag refs are rejected with mutable_ref_not_allowed.",
-		Tags:          []string{"Repositories"},
-		Responses:     repoBrowserAssetResponses(),
-	}, s.getRepoBrowserAssetOnHost)
-	huma.Get(api, repoPath+"/browser/last-changed", s.getRepoBrowserLastChanged,
-		httpapi.DocumentOperation("get-repo-browser-last-changed", "Get repository browser last changed commits", "Repositories"))
-	huma.Get(api, hostRepoPath+"/browser/last-changed", s.getRepoBrowserLastChangedOnHost,
-		httpapi.DocumentOperation("get-repo-browser-last-changed-on-host", "Get repository browser last changed commits", "Repositories"))
-	huma.Get(api, repoPath+"/browser/history", s.getRepoBrowserHistory,
-		httpapi.DocumentOperation("get-repo-browser-history", "Get repository browser file history", "Repositories"))
-	huma.Get(api, hostRepoPath+"/browser/history", s.getRepoBrowserHistoryOnHost,
-		httpapi.DocumentOperation("get-repo-browser-history-on-host", "Get repository browser file history", "Repositories"))
-	huma.Get(api, repoPath+"/browser/commit", s.getRepoBrowserCommit,
-		httpapi.DocumentOperation("get-repo-browser-commit", "Get repository browser commit", "Repositories"))
-	huma.Get(api, hostRepoPath+"/browser/commit", s.getRepoBrowserCommitOnHost,
-		httpapi.DocumentOperation("get-repo-browser-commit-on-host", "Get repository browser commit", "Repositories"))
 	huma.Get(api, repoPath+"/commits/{sha}/diff", s.getRepoCommitDiff,
 		httpapi.DocumentOperation("get-repo-commit-diff", "Get repository commit diff", "Repositories"))
 	huma.Get(api, hostRepoPath+"/commits/{sha}/diff", s.getRepoCommitDiffOnHost,

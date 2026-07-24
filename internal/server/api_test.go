@@ -1701,7 +1701,7 @@ func TestAPIListPulls(t *testing.T) {
 	raw := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
 	require.Equal(http.StatusOK, raw.Code)
 	var body []struct {
-		Repo repoRefResponse `json:"repo"`
+		Repo httpapi.RepoRefResponse `json:"repo"`
 	}
 	require.NoError(json.Unmarshal(raw.Body.Bytes(), &body))
 	require.Len(body, 1)
@@ -9947,7 +9947,7 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 	// clear after a sync.
 	var withOps struct {
 		Repo struct {
-			Operations *RepoOperations `json:"operations"`
+			Operations *httpapi.RepoOperations `json:"operations"`
 		} `json:"repo"`
 	}
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &withOps))

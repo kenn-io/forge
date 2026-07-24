@@ -1110,7 +1110,7 @@ func parseReviewAction(value string) (platform.ReviewAction, error) {
 	}
 }
 
-func reviewActionSupported(caps providerCapabilitiesResponse, action platform.ReviewAction) bool {
+func reviewActionSupported(caps httpapi.ProviderCapabilitiesResponse, action platform.ReviewAction) bool {
 	return slices.Contains(caps.SupportedReviewActions, string(action))
 }
 

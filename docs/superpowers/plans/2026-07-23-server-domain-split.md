@@ -126,9 +126,10 @@ Tasks are numbered by domain inventory, but dependency order is: 1, 2, 4, 5, 7, 
 - Consumes: clone manager, database, provider registry/auth resolver, background context, and refresh scheduling.
 - Produces: `(*repobrowserapi.Handler).Register(huma.API)`, startup seeding, and shutdown behavior.
 
-- [ ] Preserve provider/host-aware clone identity and pinned revision validation.
-- [ ] Add a package-local weighted semaphore of two for Git-heavy tests.
-- [ ] Run `go test ./internal/server/repobrowserapi -shuffle=on`.
+- [x] Preserve provider/host-aware clone identity and pinned revision validation.
+- [x] Move shared repository capability/ref wire types below the root so the extracted handler preserves OpenAPI schema identities without a dependency cycle.
+- [x] Add a package-local weighted semaphore of two for Git-heavy tests.
+- [x] Run the full package at 24 CPUs and verify generated OpenAPI artifacts are unchanged.
 - [ ] Commit as `refactor(server): carve out the repository browser API`.
 
 ### Task 6: Fleet API

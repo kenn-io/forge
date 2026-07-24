@@ -5,6 +5,7 @@ import (
 
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
@@ -13,36 +14,6 @@ type worktreeLinkResponse struct {
 	WorktreeKey    string `json:"worktree_key"`
 	WorktreePath   string `json:"worktree_path,omitempty"`
 	WorktreeBranch string `json:"worktree_branch,omitempty"`
-}
-
-type providerCapabilitiesResponse struct {
-	ReadRepositories            bool     `json:"read_repositories"`
-	ReadMergeRequests           bool     `json:"read_merge_requests"`
-	ReadIssues                  bool     `json:"read_issues"`
-	ReadComments                bool     `json:"read_comments"`
-	ReadReleases                bool     `json:"read_releases"`
-	ReadCI                      bool     `json:"read_ci"`
-	ReadLabels                  bool     `json:"read_labels"`
-	CommentMutation             bool     `json:"comment_mutation"`
-	StateMutation               bool     `json:"state_mutation"`
-	MergeMutation               bool     `json:"merge_mutation"`
-	ReviewMutation              bool     `json:"review_mutation"`
-	WorkflowApproval            bool     `json:"workflow_approval"`
-	ReadyForReview              bool     `json:"ready_for_review"`
-	DraftMutation               bool     `json:"draft_mutation"`
-	IssueMutation               bool     `json:"issue_mutation"`
-	LabelMutation               bool     `json:"label_mutation"`
-	AssigneeMutation            bool     `json:"assignee_mutation"`
-	ReviewerMutation            bool     `json:"reviewer_mutation"`
-	ThreadReply                 bool     `json:"thread_reply"`
-	ThreadResolve               bool     `json:"thread_resolve"`
-	ReviewDraftMutation         bool     `json:"review_draft_mutation"`
-	ReviewThreadResolution      bool     `json:"review_thread_resolution"`
-	ReviewSuggestionApplication bool     `json:"review_suggestion_application"`
-	ReadReviewThreads           bool     `json:"read_review_threads"`
-	NativeMultilineRanges       bool     `json:"native_multiline_ranges"`
-	MutationHeadBinding         bool     `json:"mutation_head_binding"`
-	SupportedReviewActions      []string `json:"supported_review_actions"`
 }
 
 type repoResponse struct {
@@ -59,21 +30,21 @@ type repoResponse struct {
 	AllowRebaseMerge    bool
 	ViewerCanMerge      bool
 	CreatedAt           time.Time
-	Capabilities        providerCapabilitiesResponse `json:"capabilities"`
-	Operations          RepoOperations               `json:"operations"`
+	Capabilities        httpapi.ProviderCapabilitiesResponse `json:"capabilities"`
+	Operations          httpapi.RepoOperations               `json:"operations"`
 }
 
 // mergeRequestResponse extends db.MergeRequest with resolved repo owner/name fields.
 type mergeRequestResponse struct {
 	db.MergeRequest
-	Repo            repoRefResponse        `json:"repo"`
-	RepoOwner       string                 `json:"repo_owner"`
-	RepoName        string                 `json:"repo_name"`
-	PlatformHost    string                 `json:"platform_host"`
-	WorktreeLinks   []worktreeLinkResponse `json:"worktree_links"`
-	Workspace       *workspaceRef          `json:"workspace,omitempty"`
-	DetailLoaded    bool                   `json:"detail_loaded"`
-	DetailFetchedAt string                 `json:"detail_fetched_at,omitempty"`
+	Repo            httpapi.RepoRefResponse `json:"repo"`
+	RepoOwner       string                  `json:"repo_owner"`
+	RepoName        string                  `json:"repo_name"`
+	PlatformHost    string                  `json:"platform_host"`
+	WorktreeLinks   []worktreeLinkResponse  `json:"worktree_links"`
+	Workspace       *workspaceRef           `json:"workspace,omitempty"`
+	DetailLoaded    bool                    `json:"detail_loaded"`
+	DetailFetchedAt string                  `json:"detail_fetched_at,omitempty"`
 }
 
 type mergeRequestEventResponse struct {
@@ -104,7 +75,7 @@ type workflowApprovalResponse struct {
 type mergeRequestDetailResponse struct {
 	MergeRequest     *db.MergeRequest            `json:"merge_request"`
 	Events           []mergeRequestEventResponse `json:"events"`
-	Repo             repoRefResponse             `json:"repo"`
+	Repo             httpapi.RepoRefResponse     `json:"repo"`
 	RepoOwner        string                      `json:"repo_owner"`
 	RepoName         string                      `json:"repo_name"`
 	PlatformHost     string                      `json:"platform_host"`
@@ -147,19 +118,19 @@ type workflowStateMetaResponse struct {
 
 type issueResponse struct {
 	db.Issue
-	Repo            repoRefResponse `json:"repo"`
-	PlatformHost    string          `json:"platform_host"`
-	RepoOwner       string          `json:"repo_owner"`
-	RepoName        string          `json:"repo_name"`
-	Workspace       *workspaceRef   `json:"workspace,omitempty"`
-	DetailLoaded    bool            `json:"detail_loaded"`
-	DetailFetchedAt string          `json:"detail_fetched_at,omitempty"`
+	Repo            httpapi.RepoRefResponse `json:"repo"`
+	PlatformHost    string                  `json:"platform_host"`
+	RepoOwner       string                  `json:"repo_owner"`
+	RepoName        string                  `json:"repo_name"`
+	Workspace       *workspaceRef           `json:"workspace,omitempty"`
+	DetailLoaded    bool                    `json:"detail_loaded"`
+	DetailFetchedAt string                  `json:"detail_fetched_at,omitempty"`
 }
 
 type issueDetailResponse struct {
 	Issue           *db.Issue                  `json:"issue"`
 	Events          []db.IssueEvent            `json:"events"`
-	Repo            repoRefResponse            `json:"repo"`
+	Repo            httpapi.RepoRefResponse    `json:"repo"`
 	PlatformHost    string                     `json:"platform_host"`
 	RepoOwner       string                     `json:"repo_owner"`
 	RepoName        string                     `json:"repo_name"`
@@ -199,7 +170,7 @@ type repoSummaryCommitPointResponse struct {
 }
 
 type repoSummaryResponse struct {
-	Repo                 repoRefResponse                  `json:"repo"`
+	Repo                 httpapi.RepoRefResponse          `json:"repo"`
 	PlatformHost         string                           `json:"platform_host"`
 	DefaultPlatformHost  string                           `json:"default_platform_host"`
 	Owner                string                           `json:"owner"`
@@ -220,47 +191,7 @@ type repoSummaryResponse struct {
 	TimelineUpdatedAt    string                           `json:"timeline_updated_at,omitempty"`
 	ActiveAuthors        []repoSummaryAuthorResponse      `json:"active_authors"`
 	RecentIssues         []repoSummaryIssueResponse       `json:"recent_issues"`
-	Operations           RepoOperations                   `json:"operations"`
-}
-
-type repoBrowserRefsResponse struct {
-	Repo       repoRefResponse           `json:"repo"`
-	Refs       []gitclone.RepoBrowserRef `json:"refs"`
-	DefaultRef gitclone.RepoBrowserRef   `json:"default_ref"`
-	Truncated  bool                      `json:"truncated"`
-}
-
-type repoBrowserTreeResponse struct {
-	Repo      repoRefResponse                 `json:"repo"`
-	Ref       gitclone.RepoBrowserRef         `json:"ref"`
-	Entries   []gitclone.RepoBrowserTreeEntry `json:"entries"`
-	Truncated bool                            `json:"truncated"`
-}
-
-type repoBrowserBlobResponse struct {
-	Repo repoRefResponse          `json:"repo"`
-	Ref  gitclone.RepoBrowserRef  `json:"ref"`
-	Blob gitclone.RepoBrowserBlob `json:"blob"`
-}
-
-type repoBrowserLastChangedResponse struct {
-	Repo    repoRefResponse                       `json:"repo"`
-	Ref     gitclone.RepoBrowserRef               `json:"ref"`
-	Commits map[string]gitclone.RepoBrowserCommit `json:"commits"`
-}
-
-type repoBrowserHistoryResponse struct {
-	Repo    repoRefResponse              `json:"repo"`
-	Ref     gitclone.RepoBrowserRef      `json:"ref"`
-	Path    string                       `json:"path"`
-	Commits []gitclone.RepoBrowserCommit `json:"commits"`
-}
-
-type repoBrowserCommitResponse struct {
-	Repo   repoRefResponse            `json:"repo"`
-	Ref    gitclone.RepoBrowserRef    `json:"ref"`
-	Path   string                     `json:"path"`
-	Commit gitclone.RepoBrowserCommit `json:"commit"`
+	Operations           httpapi.RepoOperations           `json:"operations"`
 }
 
 type commentAutocompleteResponse struct {
@@ -483,7 +414,7 @@ type commitsResponse struct {
 // own persisted workspace model, not an arbitrary host worktree inventory.
 type workspaceResponse struct {
 	ID                    string                    `json:"id"`
-	Repo                  repoRefResponse           `json:"repo"`
+	Repo                  httpapi.RepoRefResponse   `json:"repo"`
 	PlatformHost          string                    `json:"platform_host"`
 	RepoOwner             string                    `json:"repo_owner"`
 	RepoName              string                    `json:"repo_name"`
@@ -621,33 +552,33 @@ type stackContextResponse struct {
 }
 
 type activityItemResponse struct {
-	ID             string          `json:"id"`
-	Cursor         string          `json:"cursor"`
-	ActivityType   string          `json:"activity_type"`
-	Repo           repoRefResponse `json:"repo"`
-	PlatformHost   string          `json:"platform_host"`
-	RepoOwner      string          `json:"repo_owner"`
-	RepoName       string          `json:"repo_name"`
-	ItemType       string          `json:"item_type"`
-	ItemNumber     int             `json:"item_number"`
-	ItemTitle      string          `json:"item_title"`
-	ItemURL        string          `json:"item_url"`
-	ItemState      string          `json:"item_state"`
-	Workspace      *workspaceRef   `json:"workspace,omitempty"`
-	Author         string          `json:"author"`
-	ItemAuthor     string          `json:"item_author,omitempty"`
-	CreatedAt      string          `json:"created_at"`
-	BodyPreview    string          `json:"body_preview"`
-	BranchName     string          `json:"branch_name,omitempty"`
-	CommitSHA      string          `json:"commit_sha,omitempty"`
-	BeforeSHA      string          `json:"before_sha,omitempty"`
-	AfterSHA       string          `json:"after_sha,omitempty"`
-	AuthorName     string          `json:"author_name,omitempty"`
-	AuthorEmail    string          `json:"author_email,omitempty"`
-	CommitterName  string          `json:"committer_name,omitempty"`
-	CommitterEmail string          `json:"committer_email,omitempty"`
-	AuthoredAt     string          `json:"authored_at,omitempty"`
-	CommittedAt    string          `json:"committed_at,omitempty"`
-	ActivityURL    string          `json:"activity_url,omitempty"`
-	SubjectState   string          `json:"subject_state,omitempty"`
+	ID             string                  `json:"id"`
+	Cursor         string                  `json:"cursor"`
+	ActivityType   string                  `json:"activity_type"`
+	Repo           httpapi.RepoRefResponse `json:"repo"`
+	PlatformHost   string                  `json:"platform_host"`
+	RepoOwner      string                  `json:"repo_owner"`
+	RepoName       string                  `json:"repo_name"`
+	ItemType       string                  `json:"item_type"`
+	ItemNumber     int                     `json:"item_number"`
+	ItemTitle      string                  `json:"item_title"`
+	ItemURL        string                  `json:"item_url"`
+	ItemState      string                  `json:"item_state"`
+	Workspace      *workspaceRef           `json:"workspace,omitempty"`
+	Author         string                  `json:"author"`
+	ItemAuthor     string                  `json:"item_author,omitempty"`
+	CreatedAt      string                  `json:"created_at"`
+	BodyPreview    string                  `json:"body_preview"`
+	BranchName     string                  `json:"branch_name,omitempty"`
+	CommitSHA      string                  `json:"commit_sha,omitempty"`
+	BeforeSHA      string                  `json:"before_sha,omitempty"`
+	AfterSHA       string                  `json:"after_sha,omitempty"`
+	AuthorName     string                  `json:"author_name,omitempty"`
+	AuthorEmail    string                  `json:"author_email,omitempty"`
+	CommitterName  string                  `json:"committer_name,omitempty"`
+	CommitterEmail string                  `json:"committer_email,omitempty"`
+	AuthoredAt     string                  `json:"authored_at,omitempty"`
+	CommittedAt    string                  `json:"committed_at,omitempty"`
+	ActivityURL    string                  `json:"activity_url,omitempty"`
+	SubjectState   string                  `json:"subject_state,omitempty"`
 }

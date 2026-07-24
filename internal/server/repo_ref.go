@@ -9,6 +9,7 @@ import (
 
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 var errRepoPathRequired = errors.New("repo_path is required")
@@ -17,20 +18,6 @@ type repoRefInput struct {
 	Provider     string `query:"provider"`
 	PlatformHost string `query:"platform_host"`
 	RepoPath     string `query:"repo_path"`
-}
-
-type repoRefResponse struct {
-	Provider     string                       `json:"provider"`
-	PlatformHost string                       `json:"platform_host"`
-	RepoPath     string                       `json:"repo_path"`
-	Owner        string                       `json:"owner"`
-	Name         string                       `json:"name"`
-	Capabilities providerCapabilitiesResponse `json:"capabilities"`
-	// Operations is set on detail responses only (PR and issue
-	// detail), where action buttons and the keyboard palette gate
-	// mutations on per-operation availability. List rows omit it to
-	// keep payloads small.
-	Operations *RepoOperations `json:"operations,omitempty"`
 }
 
 func (s *Server) lookupRepoByRefInput(
@@ -85,7 +72,7 @@ func (s *Server) lookupRepoByProviderRoute(
 	})
 }
 
-func repoRefFromRepo(repo db.Repo) repoRefResponse {
+func repoRefFromRepo(repo db.Repo) httpapi.RepoRefResponse {
 	provider := strings.TrimSpace(repo.Platform)
 	if provider == "" {
 		provider = string(platform.KindGitHub)
@@ -94,7 +81,7 @@ func repoRefFromRepo(repo db.Repo) repoRefResponse {
 	if repoPath == "" {
 		repoPath = repo.Owner + "/" + repo.Name
 	}
-	return repoRefResponse{
+	return httpapi.RepoRefResponse{
 		Provider:     provider,
 		PlatformHost: repo.PlatformHost,
 		RepoPath:     repoPath,
@@ -103,7 +90,7 @@ func repoRefFromRepo(repo db.Repo) repoRefResponse {
 	}
 }
 
-func (s *Server) repoRefFromRepo(repo db.Repo) repoRefResponse {
+func (s *Server) repoRefFromRepo(repo db.Repo) httpapi.RepoRefResponse {
 	resp := repoRefFromRepo(repo)
 	resp.Capabilities = s.capabilitiesForRepo(repo)
 	return resp
@@ -112,7 +99,7 @@ func (s *Server) repoRefFromRepo(repo db.Repo) repoRefResponse {
 // repoRefWithOperations is repoRefFromRepo plus the per-operation
 // mutation availability detail views need to gate their action
 // buttons and palette commands.
-func (s *Server) repoRefWithOperations(repo db.Repo) repoRefResponse {
+func (s *Server) repoRefWithOperations(repo db.Repo) httpapi.RepoRefResponse {
 	resp := s.repoRefFromRepo(repo)
 	ops := s.repoOperations(repo)
 	resp.Operations = &ops
@@ -123,7 +110,7 @@ func (s *Server) repoRefWithMergeRequestOperations(
 	ctx context.Context,
 	repo db.Repo,
 	mr db.MergeRequest,
-) repoRefResponse {
+) httpapi.RepoRefResponse {
 	resp := s.repoRefFromRepo(repo)
 	ops := s.repoOperationsForMergeRequest(ctx, repo, mr)
 	resp.Operations = &ops
@@ -150,12 +137,12 @@ func (s *Server) repoResponse(repo db.Repo) repoResponse {
 	}
 }
 
-func repoRefFromParts(provider, host, owner, name string) repoRefResponse {
+func repoRefFromParts(provider, host, owner, name string) httpapi.RepoRefResponse {
 	provider = strings.TrimSpace(provider)
 	if provider == "" {
 		provider = string(platform.KindGitHub)
 	}
-	return repoRefResponse{
+	return httpapi.RepoRefResponse{
 		Provider:     provider,
 		PlatformHost: host,
 		RepoPath:     owner + "/" + name,
@@ -166,18 +153,18 @@ func repoRefFromParts(provider, host, owner, name string) repoRefResponse {
 
 func (s *Server) repoRefFromParts(
 	provider, host, owner, name string,
-) repoRefResponse {
+) httpapi.RepoRefResponse {
 	resp := repoRefFromParts(provider, host, owner, name)
 	resp.Capabilities = s.capabilitiesForProvider(provider, host)
 	return resp
 }
 
-func providerCapabilitiesFromPlatform(caps platform.Capabilities) providerCapabilitiesResponse {
+func providerCapabilitiesFromPlatform(caps platform.Capabilities) httpapi.ProviderCapabilitiesResponse {
 	reviewActions := make([]string, 0, len(caps.SupportedReviewActions))
 	for _, action := range caps.SupportedReviewActions {
 		reviewActions = append(reviewActions, string(action))
 	}
-	return providerCapabilitiesResponse{
+	return httpapi.ProviderCapabilitiesResponse{
 		ReadRepositories:            caps.ReadRepositories,
 		ReadMergeRequests:           caps.ReadMergeRequests,
 		ReadIssues:                  caps.ReadIssues,
@@ -208,7 +195,7 @@ func providerCapabilitiesFromPlatform(caps platform.Capabilities) providerCapabi
 	}
 }
 
-func defaultGitHubProviderCapabilities() providerCapabilitiesResponse {
+func defaultGitHubProviderCapabilities() httpapi.ProviderCapabilitiesResponse {
 	return providerCapabilitiesFromPlatform(platform.Capabilities{
 		ReadRepositories:            true,
 		ReadMergeRequests:           true,
@@ -274,7 +261,7 @@ func repoNumericPlatformID(repo db.Repo) int64 {
 	return id
 }
 
-func (s *Server) capabilitiesForRepo(repo db.Repo) providerCapabilitiesResponse {
+func (s *Server) capabilitiesForRepo(repo db.Repo) httpapi.ProviderCapabilitiesResponse {
 	return s.capabilitiesForProvider(
 		string(repoProviderKind(repo)), repoProviderHost(repo),
 	)
@@ -282,17 +269,17 @@ func (s *Server) capabilitiesForRepo(repo db.Repo) providerCapabilitiesResponse 
 
 func (s *Server) capabilitiesForProvider(
 	provider, host string,
-) providerCapabilitiesResponse {
+) httpapi.ProviderCapabilitiesResponse {
 	kind, err := platform.NormalizeKind(provider)
 	if err != nil {
-		return providerCapabilitiesResponse{}
+		return httpapi.ProviderCapabilitiesResponse{}
 	}
 	host = strings.TrimSpace(host)
 	if host == "" {
 		var ok bool
 		host, ok = platform.DefaultHost(kind)
 		if !ok {
-			return providerCapabilitiesResponse{}
+			return httpapi.ProviderCapabilitiesResponse{}
 		}
 	}
 	if s != nil && s.syncer != nil {
@@ -304,5 +291,5 @@ func (s *Server) capabilitiesForProvider(
 	if kind == platform.KindGitHub {
 		return defaultGitHubProviderCapabilities()
 	}
-	return providerCapabilitiesResponse{}
+	return httpapi.ProviderCapabilitiesResponse{}
 }

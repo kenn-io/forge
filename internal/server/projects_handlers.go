@@ -945,6 +945,8 @@ func worktreeLifecycleProblem(err error, hookField string) error {
 		)
 	case errors.Is(err, managedworktree.ErrWorktreeDestinationExists):
 		return problemConflict(CodeDestinationExists, err.Error(), nil)
+	case errors.Is(err, managedworktree.ErrBranchAlreadyExists):
+		return problemConflict(CodeBranchConflict, err.Error(), nil)
 	case errors.Is(err, managedworktree.ErrBranchInUse):
 		return problemConflict(CodeBranchInUse, err.Error(), nil)
 	case errors.Is(err, managedworktree.ErrInvalidBranchName):

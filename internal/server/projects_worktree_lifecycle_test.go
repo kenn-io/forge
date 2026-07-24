@@ -16,6 +16,7 @@ import (
 	Require "github.com/stretchr/testify/require"
 
 	gitenv "go.kenn.io/kit/git/env"
+	managedworktree "go.kenn.io/kit/git/managed"
 	"go.kenn.io/middleman/internal/procutil"
 )
 
@@ -618,4 +619,15 @@ func TestWorktreeCreateOnDiskSameBranchConcurrent(t *testing.T) {
 	rows := listWorktreeRows(t, ts, projectID)
 	require.Len(rows, 2, "root row plus exactly one created worktree")
 	assert.NotNil(worktreeRowByBranch(rows, "feat/race"))
+}
+
+func TestWorktreeLifecycleProblemMapsExistingBranch(t *testing.T) {
+	err := worktreeLifecycleProblem(
+		managedworktree.ErrBranchAlreadyExists, "body.setup_script",
+	)
+
+	problem, ok := err.(*ProblemError)
+	Require.True(t, ok, "want *ProblemError, got %T", err)
+	assert.Equal(t, http.StatusConflict, problem.Status)
+	assert.Equal(t, CodeBranchConflict, problem.Code)
 }

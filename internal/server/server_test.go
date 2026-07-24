@@ -31,6 +31,18 @@ func newTestServer(t *testing.T) *Server {
 	return New(openTestDB(t), nil, nil, "/", nil, ServerOptions{})
 }
 
+func TestWorkspaceClockDoesNotReplaceRootServerClock(t *testing.T) {
+	assert := assert.New(t)
+	workspaceNow := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	srv := New(openTestDB(t), nil, nil, "/", nil, ServerOptions{
+		WorkspaceNow: func() time.Time { return workspaceNow },
+	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	assert.WithinDuration(time.Now(), srv.now(), time.Second)
+	assert.NotEqual(workspaceNow, srv.now())
+}
+
 func TestPreferPtyOwnerForWorkspacesOnWindows(t *testing.T) {
 	require := require.New(t)
 

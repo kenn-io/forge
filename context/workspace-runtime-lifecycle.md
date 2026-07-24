@@ -69,9 +69,9 @@ context (`internal/server/workspaceapi/lifecycle.go::Handler.Shutdown`). The
 root drains HTTP plus later-started Fleet/repository-browser consumers and
 root background work before stopping Workspace, then stops the lower-level
 runtime dependency Workspace consumes (`internal/server/server.go::Server.Shutdown`).
-If Workspace shutdown times out, runtime and SSH Fleet remain live; a later
-`Shutdown` call must finish Workspace before stopping either dependency
-(`internal/server/workspace_dependency_shutdown.go::workspaceDependencyShutdown`).
+If any drain stage times out, shutdown must not advance to the next dependency;
+a later `Shutdown` call resumes at the blocked stage before Workspace, runtime,
+or SSH Fleet stop (`internal/server/workspace_dependency_shutdown.go::workspaceDependencyShutdown`).
 
 ## Tmux Persistence Rules
 

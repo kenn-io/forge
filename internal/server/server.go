@@ -416,31 +416,16 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	if first {
 		s.stopWorkspaceDependents()
-	}
-
-	var shutdownErr error
-	select {
-	case <-s.workspaceDependentsDone:
-	case <-ctx.Done():
-		shutdownErr = errors.Join(shutdownErr, ctx.Err())
-	}
-	if first {
 		s.bgCancel()
 		go func() {
 			s.bg.Wait()
 			close(drainDone)
 		}()
 	}
-	select {
-	case <-drainDone:
-	case <-ctx.Done():
-		shutdownErr = errors.Join(shutdownErr, ctx.Err())
+	if !httpDrained {
+		return httpErr
 	}
-	if first {
-		s.workspaceLifecycleCancel()
-	}
-	shutdownErr = errors.Join(shutdownErr, s.workspaceDependencyStop.Shutdown(ctx))
-	return errors.Join(httpErr, shutdownErr)
+	return s.workspaceDependencyStop.Shutdown(ctx)
 }
 
 // SetActiveWorktreeKey sets the key of the currently
@@ -715,8 +700,9 @@ func newServer(
 	}
 	s.workspaceDependentsCtx, s.workspaceDependentsCancel = context.WithCancel(s.bgCtx)
 	s.workspaceLifecycleCtx, s.workspaceLifecycleCancel = context.WithCancel(context.Background())
+	workspaceNow := s.now
 	if options.WorkspaceNow != nil {
-		s.now = options.WorkspaceNow
+		workspaceNow = options.WorkspaceNow
 	}
 	s.docsAPI = docsapi.New(docsapi.Deps{
 		Config: cfg,
@@ -903,7 +889,7 @@ func newServer(
 		Workspaces:         s.workspaces,
 		Runtime:            s.runtime,
 		TmuxCommand:        tmuxCmd,
-		Now:                s.now,
+		Now:                workspaceNow,
 		EnrichmentDisabled: options.DisableWorkspaceEnrichment,
 		Broadcast: func(event workspaceapi.Event) uint64 {
 			return s.hub.Broadcast(Event{Type: event.Type, Data: event.Data})
@@ -924,7 +910,23 @@ func newServer(
 		EnqueueDetailSync: s.enqueueDetailSyncWithCompletion,
 	})
 	s.workspaceDependencyStop = newWorkspaceDependencyShutdown(
-		s.workspaceAPI.Shutdown,
+		func(ctx context.Context) error {
+			for _, done := range []<-chan struct{}{
+				s.workspaceDependentsDone,
+				s.drainDone,
+			} {
+				select {
+				case <-done:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			return nil
+		},
+		func(ctx context.Context) error {
+			s.workspaceLifecycleCancel()
+			return s.workspaceAPI.Shutdown(ctx)
+		},
 		func() {
 			if s.runtime != nil {
 				s.runtime.Shutdown()

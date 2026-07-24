@@ -173,12 +173,69 @@ func TestServerShutdownRetryWithLongerCtx(t *testing.T) {
 	require.NoError(t, srv.Shutdown(longCtx))
 }
 
+func TestServerShutdownDoesNotAdvancePastActiveWorkspaceConsumers(t *testing.T) {
+	require := require.New(t)
+	srv, _ := setupTestServer(t)
+	releaseConsumer := make(chan struct{})
+	releaseRootWork := make(chan struct{})
+	consumerReleased := false
+	rootWorkReleased := false
+	t.Cleanup(func() {
+		if !consumerReleased {
+			close(releaseConsumer)
+		}
+		if !rootWorkReleased {
+			close(releaseRootWork)
+		}
+	})
+	var workspaceStops atomic.Int32
+	var runtimeStops atomic.Int32
+	srv.runWorkspaceDependent(func(ctx context.Context) {
+		<-ctx.Done()
+		<-releaseConsumer
+	})
+	srv.runBackground(func(ctx context.Context) {
+		<-ctx.Done()
+		<-releaseRootWork
+	})
+	srv.workspaceDependencyStop.shutdownWorkspace = func(context.Context) error {
+		workspaceStops.Add(1)
+		return nil
+	}
+	srv.workspaceDependencyStop.shutdownDependents = func() {
+		runtimeStops.Add(1)
+	}
+
+	shortCtx, shortCancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer shortCancel()
+	require.ErrorIs(srv.Shutdown(shortCtx), context.DeadlineExceeded)
+	require.Zero(workspaceStops.Load(), "Workspace stopped before its consumer drained")
+	require.Zero(runtimeStops.Load(), "runtime stopped before its consumer drained")
+
+	close(releaseConsumer)
+	consumerReleased = true
+	rootCtx, rootCancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer rootCancel()
+	require.ErrorIs(srv.Shutdown(rootCtx), context.DeadlineExceeded)
+	require.Zero(workspaceStops.Load(), "Workspace stopped before root work drained")
+	require.Zero(runtimeStops.Load(), "runtime stopped before root work drained")
+
+	close(releaseRootWork)
+	rootWorkReleased = true
+	longCtx, longCancel := context.WithTimeout(t.Context(), time.Second)
+	defer longCancel()
+	require.NoError(srv.Shutdown(longCtx))
+	require.Equal(int32(1), workspaceStops.Load())
+	require.Equal(int32(1), runtimeStops.Load())
+}
+
 func TestWorkspaceDependencyShutdownPreservesOrderAcrossTimeoutRetry(t *testing.T) {
 	require := require.New(t)
 	releaseWorkspace := make(chan struct{})
 	var runtimeStops atomic.Int32
 
 	shutdown := newWorkspaceDependencyShutdown(
+		nil,
 		func(ctx context.Context) error {
 			select {
 			case <-releaseWorkspace:

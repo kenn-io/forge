@@ -18,6 +18,9 @@ state.
 - Construct Workspace manager, runtime, tmux, clock, and enrichment policy
   before handler startup; production and test callers must not mutate
   dependencies or test controls after `Start` (`internal/server/workspaceapi/handler.go::Deps`).
+- Workspace clock overrides remain scoped to the handler; replacing the root
+  server clock also changes unrelated domain timestamps
+  (`internal/server/server.go::newServer`).
 
 ## Endpoint Intent
 

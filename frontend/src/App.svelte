@@ -1694,7 +1694,8 @@
 
   .app-main {
     flex: 1;
-    overflow: hidden;
+    min-height: 0;
+    overflow: clip;
     display: flex;
     flex-direction: column;
     position: relative;

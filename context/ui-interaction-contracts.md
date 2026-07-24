@@ -241,6 +241,9 @@ Keyboard handlers must have one clear owner for each key press.
 - Expanded inline workspaces reuse the live hosted shell and fill the pane
   edge-to-edge; never add outer chrome or mutate the shell's workflow/terminal
   layout state (`packages/ui/src/components/workspace/WorkspaceDockPanel.svelte::expanded`).
+- The desktop `.app-main` clips overflow but must never become a scroll
+  container; focus-driven scrolling there shifts every mode rail and creates
+  matching chrome gaps (`frontend/src/App.svelte::.app-main`).
 - An expanded dock mode must not outlive its claim: WorkspaceDockPanel resets
   on inactive and on teardown, and the store resets `expanded` itself both
   when a claim is directly replaced by a different identity (`setClaim`) and

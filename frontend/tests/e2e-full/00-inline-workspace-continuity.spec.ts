@@ -208,6 +208,77 @@ async function expectPersistedTerminalFontSize(api: APIRequestContext, fontSize:
 test.describe("inline workspace dock continuity", () => {
   test.describe.configure({ mode: "serial", timeout: lockedWorkspaceTestTimeoutMs });
 
+  test("expanding an inline workspace keeps the app frame fixed and its controls reachable", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      await createIssueWorkspace(api, 10);
+
+      await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      const appMain = page.locator(".app-main");
+      const itemRail = page.locator(".issue-list");
+      const expand = page.getByRole("button", { name: "Expand Terminal" });
+      await expect(expand).toBeVisible();
+      const overflowMetrics = await appMain.evaluate((element) => {
+        const overflowProbe = document.createElement("div");
+        overflowProbe.dataset.testOverflowProbe = "true";
+        overflowProbe.style.cssText = "flex: 0 0 2000px; width: 1px;";
+        element.appendChild(overflowProbe);
+        element.scrollTop = 40;
+        return { clientHeight: element.clientHeight, scrollHeight: element.scrollHeight };
+      });
+      expect(overflowMetrics.scrollHeight).toBeGreaterThan(overflowMetrics.clientHeight);
+      await expect(appMain).toHaveJSProperty("scrollTop", 0);
+      await appMain.locator("[data-test-overflow-probe]").evaluate((element) => element.remove());
+
+      await expand.click();
+
+      const collapse = page.getByRole("button", { name: "Collapse Terminal" });
+      const showDetails = page.getByRole("button", { name: "Show Details" });
+      await expect(showDetails).toBeVisible();
+      await expect(collapse).toBeVisible();
+      await showDetails.click();
+      await expect(expand).toBeVisible();
+      await expand.click();
+      await expect(showDetails).toBeVisible();
+      await expect(appMain).toHaveJSProperty("scrollTop", 0);
+      await expect
+        .poll(async () => {
+          const [mainBox, railBox, panelBox] = await Promise.all([
+            appMain.boundingBox(),
+            itemRail.boundingBox(),
+            page.locator(".workspace-dock-panel").boundingBox(),
+          ]);
+          return {
+            railTopDelta: railBox && mainBox ? railBox.y - mainBox.y : undefined,
+            railBottomDelta: railBox && mainBox ? railBox.y + railBox.height - (mainBox.y + mainBox.height) : undefined,
+            panelTopDelta: panelBox && mainBox ? panelBox.y - mainBox.y : undefined,
+            panelBottomDelta:
+              panelBox && mainBox ? panelBox.y + panelBox.height - (mainBox.y + mainBox.height) : undefined,
+          };
+        })
+        .toEqual({
+          railTopDelta: 0,
+          railBottomDelta: 0,
+          panelTopDelta: 0,
+          panelBottomDelta: 0,
+        });
+
+      await collapse.click();
+      await expect(page.locator(".workspace-dock-slot")).toHaveCount(0);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("tab flip preserves the live terminal (xterm)", async ({ browserName, page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),

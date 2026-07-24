@@ -53,6 +53,7 @@ import (
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/ptyowner"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/issueapi"
 	"go.kenn.io/middleman/internal/server/pullapi"
 	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/stacks"
@@ -2248,7 +2249,7 @@ func TestAPIRepoFilterAcceptsMultipleRepos(t *testing.T) {
 
 	rawIssues := doJSON(t, srv, http.MethodGet, "/api/v1/issues?repo="+filter, nil)
 	require.Equal(http.StatusOK, rawIssues.Code)
-	var issues []issueResponse
+	var issues []issueapi.IssueResponse
 	require.NoError(json.Unmarshal(rawIssues.Body.Bytes(), &issues))
 	require.Len(issues, 2)
 	assert.ElementsMatch([]string{"widget", "worker"}, []string{
@@ -7164,7 +7165,7 @@ func TestAPIDeleteIssueCommentLeavesLocalStateForSync(t *testing.T) {
 	detailRec := httptest.NewRecorder()
 	srv.ServeHTTP(detailRec, detailReq)
 	require.Equal(http.StatusOK, detailRec.Code, detailRec.Body.String())
-	var detail issueDetailResponse
+	var detail issueapi.IssueDetailResponse
 	require.NoError(json.NewDecoder(detailRec.Body).Decode(&detail))
 	require.Len(detail.Events, 1)
 	assert.Equal("remove from issue detail", detail.Events[0].Body)
@@ -10623,7 +10624,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalIssueDetail(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 	require.Equal(http.StatusOK, rr.Code)
 
-	var detailResp issueDetailResponse
+	var detailResp issueapi.IssueDetailResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &detailResp))
 	require.NotNil(detailResp.Issue)
 	assert.Equal("changed issue detail", detailResp.Issue.Title)

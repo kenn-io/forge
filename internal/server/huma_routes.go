@@ -19,8 +19,8 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/issueapi"
 	"go.kenn.io/middleman/internal/server/pullapi"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
 )
 
 type repoNumberInput struct {
@@ -31,26 +31,7 @@ type repoNumberInput struct {
 	Number       int    `path:"number"`
 }
 
-func (s *Server) requireSyncerCapability(repo db.Repo, capability string) error {
-	if s.syncer == nil {
-		return httpapi.UnsupportedCapability(repo, capability)
-	}
-	return nil
-}
-
 type statusOnlyOutput = httpapi.OKStatusOutput
-
-type listIssuesInput struct {
-	Repo     string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
-	State    string `query:"state"`
-	Starred  bool   `query:"starred"`
-	Q        string `query:"q"`
-	Assignee string `query:"assignee"`
-	Limit    int    `query:"limit"`
-	Offset   int    `query:"offset"`
-}
-
-type listIssuesOutput = httpapi.BodyOutput[[]issueResponse]
 
 type issueRepoNumberInput struct {
 	Provider     string `path:"provider"`
@@ -60,8 +41,6 @@ type issueRepoNumberInput struct {
 	Number       int    `path:"number"`
 }
 
-type getIssueOutput = httpapi.BodyOutput[issueDetailResponse]
-
 type resolveItemInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string
@@ -70,59 +49,6 @@ type resolveItemInput struct {
 	Number       int    `path:"number"`
 	ItemType     string `query:"item_type" enum:"pr,issue" doc:"Optional item type hint for providers whose issues and merge requests have separate number spaces."`
 }
-
-type postIssueCommentInput struct {
-	Provider     string `path:"provider"`
-	PlatformHost string
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	Body         struct {
-		Body string `json:"body"`
-	}
-}
-
-type postIssueCommentOutput = httpapi.CreatedOutput[db.IssueEvent]
-
-type editIssueCommentInput struct {
-	Provider     string `path:"provider"`
-	PlatformHost string
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	CommentID    int64  `path:"comment_id"`
-	Body         struct {
-		Body string `json:"body"`
-	}
-}
-
-type editIssueCommentOutput = httpapi.BodyOutput[db.IssueEvent]
-
-type deleteIssueCommentInput struct {
-	Provider     string `path:"provider"`
-	PlatformHost string
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	CommentID    int64  `path:"comment_id"`
-}
-
-type deleteIssueCommentOutput struct {
-	Status int `status:"204"`
-}
-
-type createIssueInput struct {
-	Provider     string `path:"provider"`
-	PlatformHost string
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Body         struct {
-		Title string `json:"title"`
-		Body  string `json:"body"`
-	}
-}
-
-type createIssueOutput = httpapi.CreatedOutput[issueResponse]
 
 type starredInput struct {
 	Body starredRequest
@@ -169,33 +95,6 @@ type commentAutocompleteInput struct {
 
 type commentAutocompleteOutput = httpapi.BodyOutput[commentAutocompleteResponse]
 
-type editIssueContentInput struct {
-	Provider     string `path:"provider"`
-	PlatformHost string
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	Body         struct {
-		Title *string `json:"title,omitempty"`
-		Body  *string `json:"body,omitempty"`
-	}
-}
-
-type editIssueContentOutput = httpapi.BodyOutput[issueDetailResponse]
-
-type githubStateInput struct {
-	Provider     string `path:"provider"`
-	PlatformHost string
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	Body         struct {
-		State string `json:"state"`
-	}
-}
-
-type githubStateOutput = httpapi.BodyOutput[httpapi.GithubStateOutputBody]
-
 type listReposOutput = httpapi.BodyOutput[[]repoResponse]
 
 type listRepoSummariesOutput = httpapi.BodyOutput[[]repoSummaryResponse]
@@ -206,7 +105,7 @@ type syncPROutput = httpapi.BodyOutput[pullapi.MergeRequestDetailResponse]
 
 type syncPRCIOutput = httpapi.BodyOutput[pullapi.MergeRequestDetailResponse]
 
-type syncIssueOutput = httpapi.BodyOutput[issueDetailResponse]
+type syncIssueOutput = httpapi.BodyOutput[issueapi.IssueDetailResponse]
 
 type resolveItemOutput = httpapi.BodyOutput[resolveItemResponse]
 
@@ -327,8 +226,7 @@ func (s *Server) registerAPI(api huma.API) {
 		Tags:          []string{"Activity"},
 	}, s.markNotificationsUndone)
 	s.pullAPI.Register(api)
-	huma.Get(api, "/issues", s.listIssues,
-		httpapi.DocumentOperation("list-issues", "List issues", "Issues"))
+	s.issueAPI.Register(api)
 	s.registerProviderRepoAPI(api)
 	s.repoBrowserAPI.Register(api)
 	s.fleetAPI.Register(api)
@@ -493,25 +391,6 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 	issuePath := issueRepoPath + "/{number}"
 	hostIssuePath := hostIssueRepoPath + "/{number}"
 
-	huma.Register(api, huma.Operation{OperationID: "create-issue", Method: http.MethodPost, Path: issueRepoPath, DefaultStatus: http.StatusCreated, Summary: "Create issue", Tags: []string{"Issues"}}, s.createIssue)
-	huma.Register(api, huma.Operation{OperationID: "create-issue-on-host", Method: http.MethodPost, Path: hostIssueRepoPath, DefaultStatus: http.StatusCreated, Summary: "Create issue", Tags: []string{"Issues"}}, s.createIssueOnHost)
-	huma.Get(api, issuePath, s.getIssue,
-		httpapi.DocumentOperation("get-issue", "Get issue", "Issues"))
-	huma.Get(api, hostIssuePath, s.getIssueOnHost,
-		httpapi.DocumentOperation("get-issue-on-host", "Get issue", "Issues"))
-	huma.Register(api, huma.Operation{OperationID: "post-issue-comment", Method: http.MethodPost, Path: issuePath + "/comments", DefaultStatus: http.StatusCreated, Summary: "Post issue comment", Tags: []string{"Issues"}}, s.postIssueComment)
-	huma.Register(api, huma.Operation{OperationID: "post-issue-comment-on-host", Method: http.MethodPost, Path: hostIssuePath + "/comments", DefaultStatus: http.StatusCreated, Summary: "Post issue comment", Tags: []string{"Issues"}}, s.postIssueCommentOnHost)
-	huma.Register(api, huma.Operation{OperationID: "edit-issue-content", Method: http.MethodPatch, Path: issuePath, DefaultStatus: http.StatusOK, Summary: "Edit issue content", Tags: []string{"Issues"}}, s.editIssueContent)
-	huma.Register(api, huma.Operation{OperationID: "edit-issue-content-on-host", Method: http.MethodPatch, Path: hostIssuePath, DefaultStatus: http.StatusOK, Summary: "Edit issue content", Tags: []string{"Issues"}}, s.editIssueContentOnHost)
-	huma.Register(api, huma.Operation{OperationID: "edit-issue-comment", Method: http.MethodPatch, Path: issuePath + "/comments/{comment_id}", DefaultStatus: http.StatusOK, Summary: "Edit issue comment", Tags: []string{"Issues"}}, s.editIssueComment)
-	huma.Register(api, huma.Operation{OperationID: "edit-issue-comment-on-host", Method: http.MethodPatch, Path: hostIssuePath + "/comments/{comment_id}", DefaultStatus: http.StatusOK, Summary: "Edit issue comment", Tags: []string{"Issues"}}, s.editIssueCommentOnHost)
-	huma.Register(api, huma.Operation{OperationID: "delete-issue-comment", Method: http.MethodDelete, Path: issuePath + "/comments/{comment_id}", DefaultStatus: http.StatusNoContent, Summary: "Delete issue comment", Tags: []string{"Issues"}}, s.deleteIssueComment)
-	huma.Register(api, huma.Operation{OperationID: "delete-issue-comment-on-host", Method: http.MethodDelete, Path: hostIssuePath + "/comments/{comment_id}", DefaultStatus: http.StatusNoContent, Summary: "Delete issue comment", Tags: []string{"Issues"}}, s.deleteIssueCommentOnHost)
-	huma.Register(api, huma.Operation{OperationID: "set-issue-labels", Method: http.MethodPut, Path: issuePath + "/labels", DefaultStatus: http.StatusOK, Summary: "Set issue labels", Tags: []string{"Issues"}}, s.setIssueLabels)
-	huma.Register(api, huma.Operation{OperationID: "set-issue-labels-on-host", Method: http.MethodPut, Path: hostIssuePath + "/labels", DefaultStatus: http.StatusOK, Summary: "Set issue labels", Tags: []string{"Issues"}}, s.setIssueLabelsOnHost)
-	huma.Register(api, huma.Operation{OperationID: "set-issue-assignees", Method: http.MethodPut, Path: issuePath + "/assignees", DefaultStatus: http.StatusOK, Summary: "Set issue assignees", Tags: []string{"Issues"}}, s.setIssueAssignees)
-	huma.Register(api, huma.Operation{OperationID: "set-issue-assignees-on-host", Method: http.MethodPut, Path: hostIssuePath + "/assignees", DefaultStatus: http.StatusOK, Summary: "Set issue assignees", Tags: []string{"Issues"}}, s.setIssueAssigneesOnHost)
-
 	huma.Post(api, repoPath+"/resolve/{number}", s.resolveItem,
 		httpapi.DocumentOperation("resolve-repo-item", "Resolve repository item", "Repositories"))
 	huma.Post(api, hostRepoPath+"/resolve/{number}", s.resolveItemOnHost,
@@ -547,9 +426,6 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 		httpapi.DocumentOperation("sync-issue-on-host", "Sync issue", "Issues"))
 	huma.Register(api, huma.Operation{OperationID: "enqueue-issue-sync", Method: http.MethodPost, Path: issuePath + "/sync/async", DefaultStatus: http.StatusAccepted, Summary: "Enqueue issue sync", Tags: []string{"Issues"}}, s.enqueueIssueSync)
 	huma.Register(api, huma.Operation{OperationID: "enqueue-issue-sync-on-host", Method: http.MethodPost, Path: hostIssuePath + "/sync/async", DefaultStatus: http.StatusAccepted, Summary: "Enqueue issue sync", Tags: []string{"Issues"}}, s.enqueueIssueSyncOnHost)
-	huma.Register(api, huma.Operation{OperationID: "set-issue-github-state", Method: http.MethodPost, Path: issuePath + "/github-state", DefaultStatus: http.StatusOK, Summary: "Set issue GitHub state", Tags: []string{"Issues"}}, s.setIssueGitHubState)
-	huma.Register(api, huma.Operation{OperationID: "set-issue-github-state-on-host", Method: http.MethodPost, Path: hostIssuePath + "/github-state", DefaultStatus: http.StatusOK, Summary: "Set issue GitHub state", Tags: []string{"Issues"}}, s.setIssueGitHubStateOnHost)
-
 	huma.Register(api, huma.Operation{OperationID: "create-issue-workspace", Method: http.MethodPost, Path: issuePath + "/workspace", DefaultStatus: http.StatusAccepted, Summary: "Create issue workspace", Tags: []string{"Issues"}}, s.workspaceAPI.CreateIssueWorkspace)
 	huma.Register(api, huma.Operation{OperationID: "create-issue-workspace-on-host", Method: http.MethodPost, Path: hostIssuePath + "/workspace", DefaultStatus: http.StatusAccepted, Summary: "Create issue workspace", Tags: []string{"Issues"}}, s.createIssueWorkspaceOnHost)
 }
@@ -653,509 +529,6 @@ func isFullGitObjectID(value string) bool {
 	return true
 }
 
-func (s *Server) editIssueContent(
-	ctx context.Context, input *editIssueContentInput,
-) (*editIssueContentOutput, error) {
-	if input.Body.Title == nil && input.Body.Body == nil {
-		return nil, httpapi.Validation("body",
-			"at least one of title or body must be provided",
-		)
-	}
-	if input.Body.Title != nil && strings.TrimSpace(*input.Body.Title) == "" {
-		return nil, httpapi.Validation("body.title", "title must not be blank")
-	}
-
-	repo, err := s.repoResolver.RequireRouteCapability(
-		ctx,
-		input.Provider, input.PlatformHost, input.Owner, input.Name,
-		capabilityStateMutation,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
-		return nil, err
-	}
-
-	mutator, err := s.syncer.IssueContentMutator(
-		httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
-	)
-	if err != nil {
-		return nil, httpapi.UnsupportedCapability(*repo, capabilityStateMutation)
-	}
-
-	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
-	if err != nil {
-		return nil, httpapi.Internal("get issue failed")
-	}
-	if issue == nil {
-		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
-	}
-
-	updatedIssue, err := mutator.EditIssueContent(
-		ctx, httpapi.PlatformRepoRef(*repo), input.Number, input.Body.Title, input.Body.Body,
-	)
-	if err != nil {
-		return nil, httpapi.ProviderCallProblemWithDetail(
-			err,
-			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
-			"provider API error: "+err.Error(),
-		)
-	}
-
-	newTitle := issue.Title
-	if updatedIssue.Title != "" {
-		newTitle = updatedIssue.Title
-	} else if input.Body.Title != nil {
-		newTitle = *input.Body.Title
-	}
-	newBody := issue.Body
-	if updatedIssue.Body != "" {
-		newBody = updatedIssue.Body
-	} else if input.Body.Body != nil {
-		newBody = *input.Body.Body
-	}
-	updatedAt := s.now().UTC()
-	if !updatedIssue.UpdatedAt.IsZero() {
-		updatedAt = updatedIssue.UpdatedAt.UTC()
-	}
-	if err := s.db.UpdateIssueTitleBody(
-		ctx, issue.ID, newTitle, newBody, updatedAt,
-	); err != nil {
-		return nil, httpapi.Internal("update title/body failed")
-	}
-
-	issue, err = s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
-	if err != nil || issue == nil {
-		return nil, httpapi.Internal("re-read issue failed")
-	}
-
-	body, err := s.buildIssueDetailResponse(ctx, repo, issue)
-	if err != nil {
-		return nil, err
-	}
-
-	return &editIssueContentOutput{Body: body}, nil
-}
-
-func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listIssuesOutput, error) {
-	if input.State != "" {
-		valid := map[string]bool{
-			"open": true, "closed": true, "all": true,
-		}
-		if !valid[input.State] {
-			return nil, httpapi.Validation(
-				"query.state",
-				"state must be one of: open, closed, all",
-				"open", "closed", "all",
-			)
-		}
-	}
-	if hasInvalidRepoFilter(input.Repo) {
-		return nil, httpapi.Validation("query.repo", "repo filter must be provider|platform_host/repo_path")
-	}
-
-	opts := db.ListIssuesOpts{
-		State:       input.State,
-		Search:      input.Q,
-		Starred:     input.Starred,
-		Assignee:    input.Assignee,
-		Limit:       input.Limit,
-		Offset:      input.Offset,
-		RepoFilters: parseRepoFilters(input.Repo),
-	}
-
-	issues, err := s.db.ListIssues(ctx, opts)
-	if err != nil {
-		return nil, httpapi.Internal("list issues failed")
-	}
-
-	repoByID, err := s.lookupRepoMap(ctx)
-	if err != nil {
-		return nil, httpapi.Internal("repo lookup failed")
-	}
-	workspacesByItem, err := s.buildWorkspaceRefLookup(ctx)
-	if err != nil {
-		return nil, httpapi.Internal("load workspace refs failed")
-	}
-
-	out := make([]issueResponse, 0, len(issues))
-	for _, issue := range issues {
-		rp, ok := repoByID[issue.RepoID]
-		if !ok {
-			continue
-		}
-		resp := issueResponse{
-			Issue:        issueResponseModel(issue),
-			Repo:         s.repoResolver.Ref(rp),
-			PlatformHost: rp.PlatformHost,
-			RepoOwner:    rp.Owner,
-			RepoName:     rp.Name,
-			Workspace:    workspaceRefForRepoItem(workspacesByItem, rp, db.WorkspaceItemTypeIssue, issue.Number),
-			DetailLoaded: issue.DetailFetchedAt != nil,
-		}
-		if issue.DetailFetchedAt != nil {
-			resp.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
-		}
-		out = append(out, resp)
-	}
-
-	return &listIssuesOutput{Body: out}, nil
-}
-
-func (s *Server) createIssue(
-	ctx context.Context, input *createIssueInput,
-) (*createIssueOutput, error) {
-	title := strings.TrimSpace(input.Body.Title)
-	if title == "" {
-		return nil, httpapi.Validation("body.title", "issue title must not be empty")
-	}
-
-	repo, err := s.repoResolver.LookupRoute(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
-	)
-	if err != nil {
-		return nil, httpapi.ProviderRouteLookupError(err)
-	}
-	if !httpapi.CapabilityEnabled(s.repoResolver.CapabilitiesForRepo(*repo), capabilityIssueMutation) {
-		return nil, httpapi.UnsupportedCapability(*repo, capabilityIssueMutation)
-	}
-	if err := s.requireSyncerCapability(*repo, capabilityIssueMutation); err != nil {
-		return nil, err
-	}
-
-	mutator, err := s.syncer.IssueMutator(
-		httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
-	)
-	if err != nil {
-		return nil, httpapi.UnsupportedCapability(*repo, capabilityIssueMutation)
-	}
-	platformIssue, err := mutator.CreateIssue(
-		ctx, httpapi.PlatformRepoRef(*repo), title, input.Body.Body,
-	)
-	if err != nil {
-		return nil, httpapi.ProviderCallProblem(
-			err, string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
-		)
-	}
-
-	issue := platform.DBIssue(repo.ID, platformIssue)
-	issueID, err := s.db.UpsertIssue(ctx, issue)
-	if err != nil {
-		return nil, httpapi.Internal("save issue failed")
-	}
-	if err := s.db.ReplaceIssueLabels(ctx, repo.ID, issueID, issue.Labels); err != nil {
-		return nil, httpapi.Internal("save issue labels failed")
-	}
-
-	savedIssue, err := s.db.GetIssueByRepoIDAndNumber(
-		ctx, repo.ID, issue.Number,
-	)
-	if err != nil || savedIssue == nil {
-		return nil, httpapi.Internal("re-read issue failed")
-	}
-	savedIssue.ID = issueID
-
-	out := issueResponse{
-		Issue:        issueResponseModel(*savedIssue),
-		Repo:         s.repoResolver.Ref(*repo),
-		PlatformHost: repo.PlatformHost,
-		RepoOwner:    repo.Owner,
-		RepoName:     repo.Name,
-		DetailLoaded: savedIssue.DetailFetchedAt != nil,
-	}
-	if savedIssue.DetailFetchedAt != nil {
-		out.DetailFetchedAt = formatUTCRFC3339(*savedIssue.DetailFetchedAt)
-	}
-
-	return &createIssueOutput{
-		Status: http.StatusCreated,
-		Body:   out,
-	}, nil
-}
-
-func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*getIssueOutput, error) {
-	repo, err := s.repoResolver.LookupRoute(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
-	)
-	if err != nil {
-		return nil, httpapi.ProviderRouteLookupError(err)
-	}
-	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
-	if err != nil {
-		return nil, httpapi.Internal("get issue failed")
-	}
-	if issue == nil {
-		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
-	}
-
-	issueResp, err := s.buildIssueDetailResponse(ctx, repo, issue)
-	if err != nil {
-		return nil, err
-	}
-	return &getIssueOutput{Body: issueResp}, nil
-}
-
-func (s *Server) buildIssueDetailResponse(
-	ctx context.Context,
-	repo *db.Repo,
-	issue *db.Issue,
-) (issueDetailResponse, error) {
-	events, err := s.db.ListIssueEvents(ctx, issue.ID)
-	if err != nil {
-		return issueDetailResponse{}, httpapi.Internal("list issue events failed")
-	}
-	if events == nil {
-		events = []db.IssueEvent{}
-	}
-	workflow, err := s.issueWorkflowMetaResponse(ctx, repo.ID, issue.Number)
-	if err != nil {
-		return issueDetailResponse{}, err
-	}
-	issueModel := issueResponseModel(*issue)
-	repoRef := s.repoResolver.Ref(*repo)
-	operations := s.repoOperations(*repo)
-	repoRef.Operations = &operations
-
-	issueResp := issueDetailResponse{
-		Issue:        &issueModel,
-		Events:       events,
-		Repo:         repoRef,
-		PlatformHost: repo.PlatformHost,
-		RepoOwner:    repo.Owner,
-		RepoName:     repo.Name,
-		DetailLoaded: issue.DetailFetchedAt != nil,
-		Workflow:     workflow,
-	}
-	if issue.DetailFetchedAt != nil {
-		issueResp.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
-	}
-	if s.workspaces != nil {
-		wsRef, wsErr := s.workspaces.GetByIssueForProvider(
-			ctx, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name,
-			issue.Number,
-		)
-		if wsErr == nil && wsRef != nil {
-			issueResp.Workspace = &workspaceapi.WorkspaceRef{
-				ID:     wsRef.ID,
-				Status: wsRef.Status,
-			}
-		}
-	}
-	return issueResp, nil
-}
-
-func (s *Server) issueWorkflowMetaResponse(
-	ctx context.Context,
-	repoID int64,
-	number int,
-) (*workflowStateMetaResponse, error) {
-	row, err := s.db.GetItemWorkflowState(ctx, repoID, db.ItemTypeIssue, number)
-	if err != nil {
-		return nil, httpapi.Internal("read issue workflow state failed")
-	}
-	if row == nil {
-		return &workflowStateMetaResponse{Status: db.KanbanStatusNew}, nil
-	}
-	return &workflowStateMetaResponse{
-		Status: normalizeWorkflowStatus(
-			row.Status, "repo_id", repoID, "item_type", db.ItemTypeIssue, "item_number", number,
-		),
-		UpdatedAt:     formatUTCRFC3339(row.UpdatedAt),
-		UpdatedSource: row.UpdatedSource,
-		UpdatedActor:  row.UpdatedActor,
-		UpdatedReason: row.UpdatedReason,
-	}, nil
-}
-
-func issueResponseModel(issue db.Issue) db.Issue {
-	issue.WorkflowStatus = issueResponseWorkflowStatus(issue)
-	return issue
-}
-
-func issueResponseWorkflowStatus(issue db.Issue) db.KanbanStatus {
-	return normalizeWorkflowStatus(string(issue.WorkflowStatus), "issue_id", issue.ID)
-}
-
-func normalizeWorkflowStatus(status string, logAttrs ...any) db.KanbanStatus {
-	switch db.KanbanStatus(status) {
-	case db.KanbanStatusNew, db.KanbanStatusReviewing, db.KanbanStatusWaiting, db.KanbanStatusAwaitingMerge:
-		return db.KanbanStatus(status)
-	case "":
-		return db.KanbanStatusNew
-	default:
-		attrs := append([]any{"status", status}, logAttrs...)
-		slog.Warn("normalizing unexpected workflow status in response", attrs...)
-		return db.KanbanStatusNew
-	}
-}
-
-func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentInput) (*postIssueCommentOutput, error) {
-	if strings.TrimSpace(input.Body.Body) == "" {
-		return nil, httpapi.Validation("body.body", "comment body must not be empty")
-	}
-
-	repo, err := s.repoResolver.LookupRoute(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
-	)
-	if err != nil {
-		return nil, httpapi.ProviderRouteLookupError(err)
-	}
-	if !httpapi.CapabilityEnabled(s.repoResolver.CapabilitiesForRepo(*repo), capabilityCommentMutation) {
-		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
-	}
-	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
-		return nil, err
-	}
-
-	mutator, err := s.syncer.CommentMutator(
-		httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
-	)
-	if err != nil {
-		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
-	}
-
-	platformEvent, err := mutator.CreateIssueComment(
-		ctx, httpapi.PlatformRepoRef(*repo), input.Number, input.Body.Body,
-	)
-	if err != nil {
-		return nil, httpapi.ProviderCallProblemWithDetail(
-			err,
-			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
-			"create comment on provider failed",
-		)
-	}
-
-	ref := repoNumberPathRef{
-		repoID:       repo.ID,
-		owner:        repo.Owner,
-		name:         repo.Name,
-		number:       input.Number,
-		platformHost: repo.PlatformHost,
-	}
-	issueID, err := s.lookupIssueID(ctx, ref)
-	if err != nil {
-		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, err.Error(), nil)
-	}
-
-	event := platform.DBIssueEvent(issueID, platformEvent)
-	if err := s.db.UpsertIssueEvents(ctx, []db.IssueEvent{event}); err != nil {
-		_ = err
-	}
-
-	return &postIssueCommentOutput{Status: http.StatusCreated, Body: event}, nil
-}
-
-func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentInput) (*editIssueCommentOutput, error) {
-	if strings.TrimSpace(input.Body.Body) == "" {
-		return nil, httpapi.Validation("body.body", "comment body must not be empty")
-	}
-
-	repo, err := s.repoResolver.LookupRoute(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
-	)
-	if err != nil {
-		return nil, httpapi.ProviderRouteLookupError(err)
-	}
-	if !httpapi.CapabilityEnabled(s.repoResolver.CapabilitiesForRepo(*repo), capabilityCommentMutation) {
-		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
-	}
-	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
-		return nil, err
-	}
-
-	mutator, err := s.syncer.CommentMutator(
-		httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
-	)
-	if err != nil {
-		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
-	}
-
-	ref := repoNumberPathRef{
-		repoID:       repo.ID,
-		owner:        repo.Owner,
-		name:         repo.Name,
-		number:       input.Number,
-		platformHost: repo.PlatformHost,
-	}
-	issueID, err := s.lookupIssueID(ctx, ref)
-	if err != nil {
-		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, err.Error(), nil)
-	}
-
-	exists, err := s.db.IssueCommentEventExists(ctx, issueID, input.CommentID)
-	if err != nil {
-		return nil, httpapi.Internal("validate comment target failed")
-	}
-	if !exists {
-		return nil, httpapi.NotFound(httpapi.CodeCommentNotFound, "comment not found for issue", nil)
-	}
-
-	platformEvent, err := mutator.EditIssueComment(
-		ctx, httpapi.PlatformRepoRef(*repo), input.Number, input.CommentID, input.Body.Body,
-	)
-	if err != nil {
-		return nil, httpapi.ProviderCallProblemWithDetail(
-			err,
-			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
-			"edit comment on provider failed",
-		)
-	}
-	platformEvent.IssueNumber = input.Number
-
-	event := platform.DBIssueEvent(issueID, platformEvent)
-	if err := s.db.UpsertIssueEvents(ctx, []db.IssueEvent{event}); err != nil {
-		return nil, httpapi.Internal("persist edited comment failed")
-	}
-
-	return &editIssueCommentOutput{Body: event}, nil
-}
-
-func (s *Server) deleteIssueComment(
-	ctx context.Context,
-	input *deleteIssueCommentInput,
-) (*deleteIssueCommentOutput, error) {
-	repo, err := s.repoResolver.RequireRouteCapability(
-		ctx,
-		input.Provider, input.PlatformHost, input.Owner, input.Name,
-		capabilityCommentMutation,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
-		return nil, err
-	}
-	mutator, err := s.syncer.CommentMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
-	if err != nil {
-		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
-	}
-	ref := repoNumberPathRef{
-		repoID: repo.ID, owner: repo.Owner, name: repo.Name,
-		number: input.Number, platformHost: repo.PlatformHost,
-	}
-	issueID, err := s.lookupIssueID(ctx, ref)
-	if err != nil {
-		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, err.Error(), nil)
-	}
-	commentExists, err := s.db.IssueCommentEventExists(ctx, issueID, input.CommentID)
-	if err != nil {
-		return nil, httpapi.Internal("validate comment target failed")
-	}
-	if !commentExists {
-		return nil, httpapi.NotFound(httpapi.CodeCommentNotFound, "comment not found for issue", nil)
-	}
-	if err := mutator.DeleteIssueComment(
-		ctx, httpapi.PlatformRepoRef(*repo), input.Number, input.CommentID,
-	); err != nil {
-		return nil, httpapi.ProviderCallProblemWithDetail(
-			err, string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
-			"delete comment on provider failed",
-		)
-	}
-	return &deleteIssueCommentOutput{Status: http.StatusNoContent}, nil
-}
-
 func (s *Server) setStarred(ctx context.Context, input *starredInput) (*statusOnlyOutput, error) {
 	repoID, err := s.lookupStarredRepoID(ctx, input.Body)
 	if err != nil {
@@ -1254,109 +627,6 @@ func (s *Server) getCommentAutocomplete(
 	default:
 		return nil, httpapi.Validation("query.trigger", "trigger must be @, #, or GitLab !", "@", "#", "!")
 	}
-}
-
-func (s *Server) setIssueGitHubState(
-	ctx context.Context, input *githubStateInput,
-) (*githubStateOutput, error) {
-	if input.Body.State != "open" && input.Body.State != "closed" {
-		return nil, httpapi.Validation(
-			"body.state",
-			"state must be 'open' or 'closed'",
-			"open", "closed",
-		)
-	}
-
-	repo, err := s.repoResolver.RequireRouteCapability(
-		ctx,
-		input.Provider, input.PlatformHost, input.Owner, input.Name,
-		capabilityStateMutation,
-	)
-	if err != nil {
-		return nil, err
-	}
-	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
-	if err != nil {
-		return nil, httpapi.Internal("get issue: " + err.Error())
-	}
-	if issue == nil {
-		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
-	}
-	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
-		return nil, err
-	}
-
-	mutator, err := s.syncer.StateMutator(
-		httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
-	)
-	if err != nil {
-		return nil, httpapi.UnsupportedCapability(*repo, capabilityStateMutation)
-	}
-	if _, err := mutator.SetIssueState(
-		ctx, httpapi.PlatformRepoRef(*repo), input.Number, input.Body.State,
-	); err != nil {
-		var ghErr *gh.ErrorResponse
-		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
-			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
-			// Re-fetch to sync local state. If already in the
-			// requested state (concurrent edit), treat as success.
-			client, clientErr := s.syncer.ClientForHost(repo.PlatformHost)
-			if clientErr != nil {
-				return nil, httpapi.UnsupportedCapability(*repo, capabilityStateMutation)
-			}
-			ghIssue, fetchErr := client.GetIssue(
-				ctx, input.Owner, input.Name, input.Number,
-			)
-			if fetchErr == nil {
-				if ghIssue == nil {
-					return nil, httpapi.Upstream(
-						"GitHub API returned no issue",
-						string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
-					)
-				}
-				normalized, normalizeErr := ghclient.NormalizeIssue(
-					repo.ID, ghIssue,
-				)
-				if normalizeErr != nil {
-					return nil, httpapi.Upstream(
-						"GitHub API error: "+normalizeErr.Error(),
-						string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
-					)
-				}
-				_, _ = s.db.UpsertIssue(ctx, normalized)
-				s.markClosedLinkedNotificationsDone(ctx)
-				if ghIssue.GetState() == input.Body.State {
-					out := &githubStateOutput{}
-					out.Body.State = input.Body.State
-					return out, nil
-				}
-			}
-		}
-		return nil, httpapi.ProviderCallProblemWithDetail(
-			err,
-			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
-			"GitHub API error: "+err.Error(),
-		)
-	}
-
-	var closedAt *time.Time
-	if input.Body.State == "closed" {
-		now := s.now().UTC()
-		closedAt = &now
-	}
-	if err := s.db.UpdateIssueState(
-		ctx, repo.ID, issue.Number,
-		input.Body.State, closedAt,
-	); err != nil {
-		return nil, httpapi.Internal("update issue state: " + err.Error())
-	}
-	if input.Body.State == "closed" {
-		s.markClosedLinkedNotificationsDone(ctx)
-	}
-
-	out := &githubStateOutput{}
-	out.Body.State = input.Body.State
-	return out, nil
 }
 
 func (s *Server) listRepos(ctx context.Context, _ *struct{}) (*listReposOutput, error) {
@@ -1784,7 +1054,7 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found after sync", nil)
 	}
 
-	syncIssueResp, err := s.buildIssueDetailResponse(ctx, repo, issue)
+	syncIssueResp, err := s.issueAPI.BuildDetail(ctx, repo, issue)
 	if err != nil {
 		return nil, err
 	}

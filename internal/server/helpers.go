@@ -13,14 +13,6 @@ import (
 	"go.kenn.io/middleman/internal/server/workspaceapi"
 )
 
-type repoNumberPathRef struct {
-	repoID       int64
-	owner        string
-	name         string
-	number       int
-	platformHost string
-}
-
 type starredRequest struct {
 	ItemType     string `json:"item_type"`
 	Provider     string `json:"provider"`
@@ -28,16 +20,6 @@ type starredRequest struct {
 	Name         string `json:"name"`
 	Number       int    `json:"number"`
 	PlatformHost string `json:"platform_host"`
-}
-
-// buildRepoLookup materializes a repo-id keyed map used to annotate list
-// responses with owner/name information.
-func buildRepoLookup(repos []db.Repo) map[int64]db.Repo {
-	lookup := make(map[int64]db.Repo, len(repos))
-	for _, repo := range repos {
-		lookup[repo.ID] = repo
-	}
-	return lookup
 }
 
 func workspaceLookupKey(
@@ -81,22 +63,6 @@ func (s *Server) buildWorkspaceRefLookup(
 	return lookup, nil
 }
 
-func workspaceRefForRepoItem(
-	lookup map[string]workspaceapi.WorkspaceRef,
-	repo db.Repo,
-	itemType string,
-	number int,
-) *workspaceapi.WorkspaceRef {
-	ref, ok := lookup[workspaceLookupKey(
-		repo.Platform, httpapi.ProviderHost(repo), repo.Owner, repo.Name,
-		itemType, number,
-	)]
-	if !ok {
-		return nil
-	}
-	return &ref
-}
-
 func workspaceItemTypeFromActivity(itemType string) string {
 	switch itemType {
 	case "pr":
@@ -124,20 +90,6 @@ func workspaceRefForActivityItem(
 		return nil
 	}
 	return &ref
-}
-
-// lookupRepoMap fetches repos and returns an ID-keyed map. When config is
-// available, only currently tracked repos are included so that removed repos
-// are filtered out of list responses.
-func (s *Server) lookupRepoMap(ctx context.Context) (map[int64]db.Repo, error) {
-	repos, err := s.db.ListRepos(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list repos: %w", err)
-	}
-	if s.cfg != nil {
-		repos = s.filterConfiguredRepos(repos)
-	}
-	return buildRepoLookup(repos), nil
 }
 
 // filterConfiguredRepos returns only repos that are currently tracked.
@@ -208,22 +160,6 @@ func (s *Server) repoResponse(repo db.Repo) repoResponse {
 func (s *Server) isConfiguredRepoTracked(repo db.Repo) bool {
 	_, ok := s.trackedConfiguredRepoSet()[configuredDBRepoKey(repo)]
 	return ok
-}
-
-// lookupMRID resolves the internal MR id from the common route tuple.
-func (s *Server) lookupIssueID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
-	issue, err := s.db.GetIssueByRepoIDAndNumber(
-		ctx, ref.repoID, ref.number,
-	)
-	if err != nil {
-		return 0, err
-	}
-	if issue == nil {
-		return 0, fmt.Errorf(
-			"issue %s/%s#%d on %s not found", ref.owner, ref.name, ref.number, ref.platformHost,
-		)
-	}
-	return issue.ID, nil
 }
 
 // parseRepoFilter splits the shared repo query parameter used by pull, issue,

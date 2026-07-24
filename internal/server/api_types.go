@@ -26,39 +26,6 @@ type repoResponse struct {
 	Operations          httpapi.RepoOperations               `json:"operations"`
 }
 
-// mergeRequestResponse extends db.MergeRequest with resolved repo owner/name fields.
-type workflowStateMetaResponse struct {
-	Status        db.KanbanStatus `json:"status" enum:"new,reviewing,waiting,awaiting_merge"`
-	UpdatedAt     string          `json:"updated_at,omitempty" format:"date-time"`
-	UpdatedSource string          `json:"updated_source,omitempty"`
-	UpdatedActor  string          `json:"updated_actor,omitempty"`
-	UpdatedReason string          `json:"updated_reason,omitempty"`
-}
-
-type issueResponse struct {
-	db.Issue
-	Repo            httpapi.RepoRefResponse    `json:"repo"`
-	PlatformHost    string                     `json:"platform_host"`
-	RepoOwner       string                     `json:"repo_owner"`
-	RepoName        string                     `json:"repo_name"`
-	Workspace       *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
-	DetailLoaded    bool                       `json:"detail_loaded"`
-	DetailFetchedAt string                     `json:"detail_fetched_at,omitempty"`
-}
-
-type issueDetailResponse struct {
-	Issue           *db.Issue                  `json:"issue"`
-	Events          []db.IssueEvent            `json:"events"`
-	Repo            httpapi.RepoRefResponse    `json:"repo"`
-	PlatformHost    string                     `json:"platform_host"`
-	RepoOwner       string                     `json:"repo_owner"`
-	RepoName        string                     `json:"repo_name"`
-	DetailLoaded    bool                       `json:"detail_loaded"`
-	DetailFetchedAt string                     `json:"detail_fetched_at,omitempty"`
-	Workspace       *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
-	Workflow        *workflowStateMetaResponse `json:"workflow,omitempty"`
-}
-
 type repoSummaryAuthorResponse struct {
 	Login     string `json:"login"`
 	ItemCount int    `json:"item_count"`

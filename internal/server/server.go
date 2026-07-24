@@ -35,6 +35,7 @@ import (
 	"go.kenn.io/middleman/internal/server/docsapi"
 	"go.kenn.io/middleman/internal/server/fleetapi"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/issueapi"
 	"go.kenn.io/middleman/internal/server/kataapi"
 	"go.kenn.io/middleman/internal/server/messagesapi"
 	"go.kenn.io/middleman/internal/server/pullapi"
@@ -208,6 +209,7 @@ type Server struct {
 	messagesAPI            *messagesapi.Handler
 	repoBrowserAPI         *repobrowserapi.Handler
 	pullAPI                *pullapi.Handler
+	issueAPI               *issueapi.Handler
 	pullLifecycle          pullLifecycle
 	workspaceAPI           *workspaceapi.Handler
 
@@ -1004,6 +1006,21 @@ func newServer(
 		Broadcast: func(event pullapi.Event) uint64 {
 			return s.hub.Broadcast(Event{Type: event.Type, Data: event.Data})
 		},
+		MarkClosedLinkedNotificationsDone: s.markClosedLinkedNotificationsDone,
+	})
+	s.issueAPI = issueapi.New(issueapi.Deps{
+		DB:         database,
+		Resolver:   repoResolver,
+		Syncer:     syncer,
+		Workspaces: s.workspaces,
+		Now:        func() time.Time { return s.now() },
+		FilterRepos: func(repos []db.Repo) []db.Repo {
+			if s.cfg == nil {
+				return repos
+			}
+			return s.filterConfiguredRepos(repos)
+		},
+		RepoOperations:                    s.repoOperations,
 		MarkClosedLinkedNotificationsDone: s.markClosedLinkedNotificationsDone,
 	})
 	s.pullLifecycle = s.pullAPI

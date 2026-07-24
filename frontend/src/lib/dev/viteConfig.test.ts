@@ -15,9 +15,9 @@ describe("vite config", () => {
     expect(resolveBrowserTestWorkers({ CI: "1" })).toBe(2);
   });
 
-  it("serializes unit test execution in CI", () => {
+  it("uses the guaranteed CI cores for unit tests", () => {
     expect(resolveUnitTestWorkers({})).toBeUndefined();
-    expect(resolveUnitTestWorkers({ CI: "1" })).toBe(1);
+    expect(resolveUnitTestWorkers({ CI: "1" })).toBe(14);
   });
 
   it("runs unit tests in worker threads", () => {

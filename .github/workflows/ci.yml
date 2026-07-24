@@ -331,11 +331,11 @@ jobs:
   race:
     name: go test -race
     runs-on: kenn-linux-x64
-    # Race-instrumented packages are especially memory-intensive, so keep four
-    # four-thread package processes rather than using the full burst ceiling.
+    # Seven four-thread package processes can use 28 burst cores; the runner's
+    # 28 GiB memory guarantee leaves room for race instrumentation overhead.
     env:
       GOMAXPROCS: "4"
-      GOFLAGS: "-p=4"
+      GOFLAGS: "-p=7"
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:

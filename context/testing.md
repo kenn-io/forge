@@ -111,9 +111,10 @@ exact by message and framework stack frame (`frontend/vite.config.ts:495`).
 
 Playwright CI uses the private image from `ensure_playwright_image`; keep its
 Playwright, Bun, and Vite+ pins in the recipe, cache only `/usr/local/install/cache`,
-and materialize `node_modules` from the lockfile before invoking baked `vp` (`.github/workflows/ci.yml::ensure_playwright_image`, `.github/docker/playwright/Dockerfile:3`). Keep CI unit tests serialized on
-memory-bounded self-hosted runners; assertions can finish before a pooled worker
-dies during teardown (`frontend/vite.config.ts::resolveUnitTestWorkers`).
+and materialize `node_modules` from the lockfile before invoking baked `vp`
+(`.github/workflows/ci.yml::ensure_playwright_image`, `.github/docker/playwright/Dockerfile:3`).
+Frontend unit tests use the runner's 14 guaranteed cores; the previous single-worker
+cap was for the retired memory-constrained runner (`frontend/vite.config.ts::resolveUnitTestWorkers`).
 
 Mock Playwright shares one Vite dev server, so cap CI workers at guaranteed cores;
 burst-level worker counts starve navigation and reload requests into false 30-second

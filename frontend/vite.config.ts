@@ -144,7 +144,7 @@ export function resolveBrowserTestWorkers(env: Record<string, string | undefined
 }
 
 export function resolveUnitTestWorkers(env: Record<string, string | undefined> = process.env): number | undefined {
-  return env.CI ? 1 : undefined;
+  return env.CI ? 14 : undefined;
 }
 
 function terminalWebSocketProxy(url: string): ProxyOptions {
@@ -167,10 +167,9 @@ const unitTestProject = {
   extends: true,
   test: {
     name: "unit",
-    // A single thread avoids both fork teardown failures and the memory
-    // pressure seen with concurrent workers on the current CI runner. Revisit
-    // process isolation after the runner memory upgrade. Node's global Web
-    // Storage must stay disabled in workers so jsdom owns localStorage.
+    // Match the runner's guaranteed cores now that CI has enough memory for
+    // concurrent jsdom workers. Node's global Web Storage must stay disabled
+    // in workers so jsdom owns localStorage.
     pool: "threads",
     execArgv: ["--no-experimental-webstorage"],
     ...(unitTestMaxWorkers ? { maxWorkers: unitTestMaxWorkers } : {}),

@@ -359,8 +359,10 @@ func TestRunDetectionWithNativeStacksClaimsMembersBeforeInference(t *testing.T) 
 
 	require.NoError(RunDetectionWithNativeStacks(ctx, database, repoID, []int{42}))
 
-	_, nativeMembers, err := database.GetStackForPRByRepoID(ctx, repoID, 101)
+	nativeStack, nativeMembers, err := database.GetStackForPRByRepoID(ctx, repoID, 101)
 	require.NoError(err)
+	require.NotNil(nativeStack)
+	assert.Equal(102, nativeStack.BaseNumber)
 	assert.Equal([]int{102, 101}, stackNumbersFromMembers(nativeMembers))
 	_, inferredMembers, err := database.GetStackForPRByRepoID(ctx, repoID, 200)
 	require.NoError(err)

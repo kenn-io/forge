@@ -121,7 +121,8 @@ Stack reconciliation runs in this order after a successful repository sync:
 1. Load confirmed, usable native stacks for the repository.
 2. Project them into the existing `middleman_stacks` and
    `middleman_stack_members` tables, preserving GitHub's grouping and
-   bottom-to-top ordering.
+   bottom-to-top ordering. The projection's `base_number` is the bottom pull
+   request number; GitHub's independent stack number remains in the native cache.
 3. Mark every merge request assigned by a native stack as claimed.
 4. Run the existing branch-based detector only across unclaimed merge requests.
 5. Reconcile stale derived stacks while preserving every active native and

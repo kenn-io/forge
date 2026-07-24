@@ -156,6 +156,12 @@ fallback repository listing.
 - Compare current PR hints with cached stack rows; scan `/stacks` newest-first
   and stop once every target is found or passed.
   (`internal/github/native_stack_sync.go::refreshGitHubNativeStackCache`)
+- Native projections use the bottom PR number as the neutral stack key; GitHub's
+  independent stack number remains cache-only.
+  (`internal/stacks/detect.go::persistStackChain`)
+- Disabling the preference synchronously restores branch-derived projections;
+  cached native rows remain dormant.
+  (`internal/server/native_stack_settings.go::applyGitHubNativeStackPreference`)
 - Preview-only GraphQL fields must be absent from disabled query shapes;
   `@include(false)` does not bypass schema validation on servers without those
   fields. (`internal/github/graphql.go::gqlPRWithNativeStacks`)

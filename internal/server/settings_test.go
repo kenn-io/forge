@@ -23,6 +23,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/platform/gitealike"
+	"go.kenn.io/middleman/internal/stacks"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
@@ -546,6 +547,59 @@ func TestHandleUpdateSettings(t *testing.T) {
 	assert.InDelta(1.15, cfg2.Terminal.LineHeight, 0.001)
 	assert.True(cfg2.Terminal.FontLigatures)
 	assert.True(cfg2.Terminal.HideTmuxStatus)
+}
+
+func TestHandleUpdateSettingsDisablesNativeStackProjectionImmediately(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[pull_requests]
+prefer_github_native_stacks = true
+`, &mockGH{})
+	ctx := t.Context()
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Now().UTC()
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9001, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 11, State: "open", HeadRef: "feat/tip", HeadSHA: "sha11"},
+			{Position: 2, PullRequestNumber: 10, State: "open", HeadRef: "feat/base", HeadSHA: "sha10"},
+		},
+	}))
+	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
+	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+
+	before, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	require.NoError(err)
+	require.NotNil(before.JSON200)
+	require.NotNil(before.JSON200.Members)
+	assert.Equal([]int64{11, 10}, stackMemberNumbers(*before.JSON200.Members))
+
+	disabled := config.PullRequests{}
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		PullRequests: &disabled,
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	after, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	require.NoError(err)
+	require.NotNil(after.JSON200)
+	require.NotNil(after.JSON200.Members)
+	assert.Equal([]int64{10, 11}, stackMemberNumbers(*after.JSON200.Members))
 }
 
 func TestHandleUpdateTerminalSettingsPreservesActivity(t *testing.T) {

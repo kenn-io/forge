@@ -643,7 +643,7 @@ func (s *Server) registerAPI(api huma.API) {
 		httpapi.DocumentOperation("list-issues", "List issues", "Issues"))
 	s.registerProviderRepoAPI(api)
 	s.repoBrowserAPI.Register(api)
-	s.registerFleetRoutes(api)
+	s.fleetAPI.Register(api)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "list-repo-summaries",
@@ -1032,7 +1032,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 	}
 	linksByMR := indexWorktreeLinksByMR(
 		links,
-		s.fleetSelfKey(""),
+		s.fleetAPI.SelfKey(""),
 	)
 	workspacesByItem, err := s.buildWorkspaceRefLookup(ctx)
 	if err != nil {
@@ -1226,7 +1226,7 @@ func (s *Server) buildPullDetailResponse(
 		ReviewedHeadSHA:      verifiedReviewedHeadSHA(mr),
 		DiffHeadSHA:          mr.DiffHeadSHA,
 		MergeBaseSHA:         mr.MergeBaseSHA,
-		WorktreeLinks:        toWorktreeLinkResponses(dbLinks, s.fleetSelfKey("")),
+		WorktreeLinks:        toWorktreeLinkResponses(dbLinks, s.fleetAPI.SelfKey("")),
 		WorkflowApproval:     s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr),
 		Warnings:             s.diffWarnings(mr),
 		DetailLoaded:         mr.DetailFetchedAt != nil,

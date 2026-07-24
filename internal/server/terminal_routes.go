@@ -11,6 +11,6 @@ func terminalAPIConfig() huma.Config {
 }
 
 func (s *Server) registerTerminalAPI(api huma.API, _ []string) {
-	s.registerFleetTerminalRoutes(api)
+	s.fleetAPI.RegisterTerminal(api)
 	s.workspaceAPI.RegisterTerminal(api)
 }

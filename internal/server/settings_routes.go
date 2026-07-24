@@ -250,10 +250,7 @@ func (s *Server) updateFleetSSHPeers(
 func (s *Server) fleetSSHPeersRestartRequired(
 	persisted []config.FleetSSHPeer,
 ) bool {
-	var running []config.FleetSSHPeer
-	if s.sshFleet != nil {
-		running = s.sshFleet.snapshotPeers()
-	}
+	running := s.fleetAPI.SSHPeers()
 	if len(persisted) != len(running) {
 		return len(persisted) != 0 || len(running) != 0
 	}

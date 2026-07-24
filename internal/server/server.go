@@ -33,6 +33,7 @@ import (
 	"go.kenn.io/middleman/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
 	"go.kenn.io/middleman/internal/server/docsapi"
+	"go.kenn.io/middleman/internal/server/fleetapi"
 	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/server/kataapi"
 	"go.kenn.io/middleman/internal/server/messagesapi"
@@ -148,24 +149,21 @@ func (c shutdownAwareContext) Value(key any) any {
 
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
-	db                        *db.DB
-	repoResolver              *httpapi.RepositoryResolver
-	syncer                    *ghclient.Syncer
-	archive                   archive.Controller
-	clones                    *gitclone.Manager
-	workspaces                *workspace.Manager
-	fleetTmuxMonitor          *fleetTmuxMonitor
-	fleetWorktreeDiscoverer   *fleetWorktreeDiscoverer
-	fleetWorktreeStatsSampler *fleetWorktreeStatsSampler
-	fleetPlatformAuthMonitor  *fleetPlatformAuthMonitor
-	runtime                   *localruntime.Manager
-	tmuxCmd                   []string
-	telemetry                 telemetry.Client
-	cfg                       *config.Config
-	cfgPath                   string
-	tokenSources              *tokenauth.SourceSet
-	cfgMu                     sync.Mutex
-	configReloadMu            sync.Mutex
+	db             *db.DB
+	repoResolver   *httpapi.RepositoryResolver
+	syncer         *ghclient.Syncer
+	archive        archive.Controller
+	clones         *gitclone.Manager
+	workspaces     *workspace.Manager
+	fleetAPI       *fleetapi.Handler
+	runtime        *localruntime.Manager
+	tmuxCmd        []string
+	telemetry      telemetry.Client
+	cfg            *config.Config
+	cfgPath        string
+	tokenSources   *tokenauth.SourceSet
+	cfgMu          sync.Mutex
+	configReloadMu sync.Mutex
 	// bootCfgSnapshot freezes the subset of config fields that are
 	// bound at startup (registry, listeners, clone manager, etc.) so a
 	// config-file watcher reload can detect when those changed and
@@ -215,10 +213,6 @@ type Server struct {
 
 	// apiAuthToken gates /api routes when non-empty (api_auth.go).
 	apiAuthToken string
-
-	// sshFleet relays API exchanges to fleet peers reached over
-	// ssh(1); nil when no ssh peers are configured (fleet_ssh.go).
-	sshFleet *sshFleetTransport
 
 	// bg tracks short-lived goroutines that HTTP handlers spawn
 	// outside of the Syncer's own wait group (e.g. mergePR's
@@ -277,6 +271,9 @@ func (s *Server) trackHTTPConn(_ net.Conn, state http.ConnState) {
 // Hub returns the server's SSE event hub. Callers should never
 // retain the returned pointer beyond the server's lifetime.
 func (s *Server) Hub() *EventHub { return s.hub }
+
+// Fleet returns the composed Fleet service boundary.
+func (s *Server) Fleet() *fleetapi.Handler { return s.fleetAPI }
 
 // SubscriberCount returns the number of live SSE subscribers. Intended
 // for tests that need to wait for a connection to register before
@@ -637,9 +634,38 @@ func kataConfigSnapshot(cfg *config.Config) kataapi.ConfigSnapshot {
 	}
 }
 
+func fleetConfigSnapshot(cfg *config.Config, tmuxCommand []string) fleetapi.ConfigSnapshot {
+	if cfg == nil {
+		return fleetapi.ConfigSnapshot{TmuxCommand: slices.Clone(tmuxCommand)}
+	}
+	platformAuth := config.Config{
+		GitHubTokenEnv:      cfg.GitHubTokenEnv,
+		DefaultPlatformHost: cfg.DefaultPlatformHost,
+		Repos:               slices.Clone(cfg.Repos),
+		Platforms:           slices.Clone(cfg.Platforms),
+	}
+	sshSocketDir := ""
+	if cfg.DataDir != "" {
+		sshSocketDir = filepath.Join(cfg.DataDir, "ssh-sockets")
+	}
+	return fleetapi.ConfigSnapshot{
+		Fleet:               cfg.Fleet,
+		PlatformAuthConfig:  platformAuth,
+		PlatformAuthEnabled: true,
+		TmuxCommand:         slices.Clone(tmuxCommand),
+		SSHSocketDir:        sshSocketDir,
+	}
+}
+
 func (s *Server) applyWorkspaceConfigLocked() {
 	if s.workspaceAPI != nil {
 		s.workspaceAPI.ApplyConfig(workspaceConfigSnapshot(s.cfg, s.tmuxCmd))
+	}
+}
+
+func (s *Server) applyFleetConfigLocked() {
+	if s.fleetAPI != nil {
+		s.fleetAPI.ApplyConfig(fleetConfigSnapshot(s.cfg, s.tmuxCmd))
 	}
 }
 
@@ -806,27 +832,40 @@ func newServer(
 		hideTmuxStatus = cfg.Terminal.HideTmuxStatus
 	}
 	tmuxAvailable := tmuxCommandAvailable(tmuxCmd)
-	includeUnmanagedTmuxDetails := false
-	if cfg != nil {
-		includeUnmanagedTmuxDetails = cfg.Fleet.Sessions.IncludeUnmanagedDetails
-	}
-	s.fleetTmuxMonitor = newFleetTmuxMonitor(
-		tmuxCmd, includeUnmanagedTmuxDetails, nil,
-	)
-	s.fleetWorktreeDiscoverer = newFleetWorktreeDiscoverer(database)
-	s.fleetWorktreeStatsSampler = newFleetWorktreeStatsSampler(
-		database, s.notifyWorktreeStatsChanged,
-	)
-	s.fleetPlatformAuthMonitor = newFleetPlatformAuthMonitor(
-		s.snapshotPlatformAuthConfig,
-	)
-	if cfg != nil && len(cfg.Fleet.SSHPeers) > 0 && cfg.DataDir != "" {
-		s.sshFleet = newSSHFleetTransport(
-			filepath.Join(cfg.DataDir, "ssh-sockets"),
-			cfg.Fleet.SSHPeers,
-			s.hub,
-		)
-	}
+	s.fleetAPI = fleetapi.New(fleetapi.Deps{
+		DB:       database,
+		Syncer:   syncer,
+		Config:   fleetConfigSnapshot(cfg, tmuxCmd),
+		BasePath: basePath,
+		BuildVersion: func() string {
+			return s.buildInfo.Version
+		},
+		Now: workspaceNow,
+		LocalHandler: func() http.Handler {
+			return s.handler
+		},
+		Broadcast: func(event fleetapi.Event) uint64 {
+			return s.hub.Broadcast(Event{Type: event.Type, Data: event.Data})
+		},
+		Generation: s.hub.Generation,
+		WorkspaceSnapshot: func(ctx context.Context) (workspaceapi.FleetSnapshot, error) {
+			if s.workspaceAPI == nil {
+				return workspaceapi.FleetSnapshot{}, nil
+			}
+			return s.workspaceAPI.FleetSnapshot(ctx)
+		},
+		RuntimeSnapshot: func(scope string) workspaceapi.RuntimeSnapshot {
+			if s.workspaceAPI == nil {
+				return nil
+			}
+			return s.workspaceAPI.RuntimeSnapshot(scope)
+		},
+		RevalidateDiffs: func() {
+			if s.workspaceAPI != nil {
+				s.workspaceAPI.RevalidateSelectedDiffs()
+			}
+		},
+	})
 	if options.WorktreeDir != "" {
 		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
 		s.workspaces.SetTmuxCommand(tmuxCmd)
@@ -906,20 +945,13 @@ func newServer(
 		Broadcast: func(event workspaceapi.Event) uint64 {
 			return s.hub.Broadcast(Event{Type: event.Type, Data: event.Data})
 		},
-		Subscribe:              s.subscribeWorkspaceEvents,
-		Generation:             s.hub.Generation,
-		RecomputeWorktreeLinks: s.recomputeWorktreeLinksNow,
-		RefreshWorktreeStats:   s.fleetWorktreeStatsSampler.refreshWorktreeStats,
-		RefreshProjectInventory: func(ctx context.Context, projectID string) error {
-			project, err := database.GetProjectByID(ctx, projectID)
-			if err != nil {
-				return err
-			}
-			s.fleetWorktreeDiscoverer.refreshProject(ctx, project.ID, project.LocalPath)
-			return nil
-		},
-		LookupRepo:        s.lookupRepoByProviderRoute,
-		EnqueueDetailSync: s.enqueueDetailSyncWithCompletion,
+		Subscribe:               s.subscribeWorkspaceEvents,
+		Generation:              s.hub.Generation,
+		RecomputeWorktreeLinks:  s.fleetAPI.RecomputeWorktreeLinks,
+		RefreshWorktreeStats:    s.fleetAPI.RefreshWorktreeStats,
+		RefreshProjectInventory: s.fleetAPI.RefreshProjectInventory,
+		LookupRepo:              s.lookupRepoByProviderRoute,
+		EnqueueDetailSync:       s.enqueueDetailSyncWithCompletion,
 	})
 	s.kataAPI = kataapi.New(kataapi.Deps{
 		DB:               database,
@@ -947,6 +979,9 @@ func newServer(
 			return nil
 		},
 		func(ctx context.Context) error {
+			if err := s.fleetAPI.Shutdown(ctx); err != nil {
+				return err
+			}
 			s.kataLifecycleCancel()
 			if err := s.shutdownKata(ctx); err != nil {
 				return err
@@ -958,7 +993,6 @@ func newServer(
 			if s.runtime != nil {
 				s.runtime.Shutdown()
 			}
-			s.sshFleet.shutdown()
 		},
 	)
 	if err := s.workspaceAPI.RestoreRuntimeSessions(context.Background()); err != nil {
@@ -966,19 +1000,11 @@ func newServer(
 	}
 	s.workspaceAPI.Start(s.workspaceLifecycleCtx, options.DisableWorkspaceBackgroundMonitors)
 	s.kataAPI.Start(s.kataLifecycleCtx)
-
-	if s.workspaces != nil && tmuxAvailable && s.fleetTmuxMonitor != nil {
-		s.runWorkspaceDependent(s.fleetTmuxMonitor.run)
-	}
-	if s.fleetWorktreeDiscoverer != nil && !options.DisableWorkspaceBackgroundMonitors {
-		s.runWorkspaceDependent(s.fleetWorktreeDiscoverer.run)
-	}
-	if s.fleetWorktreeStatsSampler != nil && !options.DisableWorkspaceBackgroundMonitors {
-		s.runWorkspaceDependent(s.fleetWorktreeStatsSampler.run)
-	}
-	if s.fleetPlatformAuthMonitor != nil && !options.DisableWorkspaceBackgroundMonitors {
-		s.runWorkspaceDependent(s.fleetPlatformAuthMonitor.run)
-	}
+	s.fleetAPI.Start(
+		s.workspaceLifecycleCtx,
+		tmuxAvailable && s.workspaces != nil,
+		options.DisableWorkspaceBackgroundMonitors,
+	)
 	if clones != nil && !options.DisableWorkspaceBackgroundMonitors {
 		s.repoBrowserAPI.SeedRefreshRepos(context.Background())
 		s.runWorkspaceDependent(s.repoBrowserAPI.RunRefreshLoop)

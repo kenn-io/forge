@@ -16,6 +16,7 @@ import (
 	dbpkg "go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/server/fleetapi"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/testutil/servertest"
 )
@@ -92,8 +93,8 @@ func TestE2E_WorktreeLinkChangeReachesSSE(t *testing.T) {
 	// Compose the sync-completed hook exactly as cmd/middleman and the
 	// embedded Instance do — recompute feeding the server fanout — and
 	// fire it as the syncer would after a sync.
-	hook := server.WorktreeLinksSyncHook(
-		ctx, database, syncer, srv.NotifyWorktreeLinksChanged, nil,
+	hook := fleetapi.WorktreeLinksSyncHook(
+		ctx, database, syncer, srv.Fleet().NotifyWorktreeLinksChanged, nil,
 	)
 	hook(nil)
 

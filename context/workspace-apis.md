@@ -21,6 +21,9 @@ state.
 - Workspace clock overrides remain scoped to the handler; replacing the root
   server clock also changes unrelated domain timestamps
   (`internal/server/server.go::newServer`).
+- Fleet consumes Workspace-owned summary and runtime snapshots, never the
+  Workspace manager or root server receiver
+  (`internal/server/workspaceapi/fleet_snapshot.go::FleetSnapshot`).
 
 ## Endpoint Intent
 
@@ -294,7 +297,7 @@ server check exactly.
   Watcher hints validate selected keys even inside the freshness interval;
   periodic validation makes stale snapshots eligible for refresh, while the
   bounded queue is not a hard completion deadline
-  (`internal/server/server.go::notifyWorktreeStatsChanged`). One background worker
+  (`internal/server/fleetapi/fleet_worktree_links.go::Handler.notifyWorktreeStatsChanged`). One background worker
   serializes proactive validation; foreground cold reads bypass that queue.
   Entryless cold failures stay with selection prewarm's five-second retry;
   periodic validation handles only published entries, so its one-second cadence

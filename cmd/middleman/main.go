@@ -33,6 +33,7 @@ import (
 	"go.kenn.io/middleman/internal/ptyowner"
 	"go.kenn.io/middleman/internal/runtimelock"
 	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/server/fleetapi"
 	"go.kenn.io/middleman/internal/stacks"
 	"go.kenn.io/middleman/internal/telemetry"
 	"go.kenn.io/middleman/internal/tokenauth"
@@ -666,9 +667,9 @@ func run(opts serve.Options) error {
 	// detection, mirroring the embedding API wiring in middleman.go. The
 	// syncer is the watched-MR setter.
 	syncer.SetOnSyncCompleted(
-		server.WorktreeLinksSyncHook(
+		fleetapi.WorktreeLinksSyncHook(
 			ctx, database, syncer,
-			srv.NotifyWorktreeLinksChanged,
+			srv.Fleet().NotifyWorktreeLinksChanged,
 			stacks.SyncCompletedHook(ctx, database, nil),
 		),
 	)

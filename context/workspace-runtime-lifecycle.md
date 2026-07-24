@@ -63,15 +63,13 @@ workspace sessions.
 
 ## Server Shutdown Ordering
 
-Workspace owns its observer, enrichment, and diff-cache lifecycle. Start is
-idempotent; shutdown cancels that domain and waits only within the caller's
-context (`internal/server/workspaceapi/lifecycle.go::Handler.Shutdown`). The
-root drains HTTP plus later-started Fleet/repository-browser consumers and
-root background work before stopping Workspace, then stops the lower-level
-runtime dependency Workspace consumes (`internal/server/server.go::Server.Shutdown`).
-If any drain stage times out, shutdown must not advance to the next dependency;
-a later `Shutdown` call resumes at the blocked stage before Workspace, runtime,
-or SSH Fleet stop (`internal/server/workspace_dependency_shutdown.go::workspaceDependencyShutdown`).
+Workspace and Fleet own independent idempotent, context-bounded lifecycles;
+Fleet starts after Workspace and shuts down its workers and SSH transport before
+Workspace stops (`internal/server/fleetapi/handler.go::Handler.Shutdown`). Root
+drains HTTP and remaining Workspace consumers before that ordered shutdown, then
+stops Workspace's runtime dependency (`internal/server/server.go::Server.Shutdown`).
+If any stage times out, shutdown must not advance; a later call resumes at the
+blocked stage (`internal/server/workspace_dependency_shutdown.go::workspaceDependencyShutdown`).
 
 ## Tmux Persistence Rules
 
@@ -175,7 +173,7 @@ via `OTEL_TRACES_EXPORTER`.
   (`internal/server/otel_middleware.go::otelTraceable`).
 - Fleet proxy and SSH terminal WebSockets need their own bounded attach span,
   ending after setup and before the long-lived bridge
-  (`internal/server/fleet_proxy.go::startFleetAttachSpan`).
+  (`internal/server/fleetapi/fleet_proxy.go::startFleetAttachSpan`).
 
 ## Testing Expectations
 

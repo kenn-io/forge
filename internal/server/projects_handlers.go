@@ -15,6 +15,9 @@ import (
 	"sync"
 	"time"
 
+	gitcmd "go.kenn.io/kit/git/cmd"
+	managedworktree "go.kenn.io/kit/git/managed"
+	gitremote "go.kenn.io/kit/git/remote"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/fleet"
@@ -630,14 +633,17 @@ func (s *Server) createWorktreeOnDisk(
 		return nil, problemInternal("get project: " + err.Error())
 	}
 
-	created, err := projects.CreateWorktreeOnDisk(ctx, projects.CreateWorktreeOptions{
-		ProjectRoot:  project.LocalPath,
-		Branch:       branch,
-		Path:         path,
-		BaseDir:      input.Body.BaseDir,
-		BaseRef:      input.Body.BaseRef,
-		SetupScript:  input.Body.SetupScript,
-		WorktreeName: input.Body.WorktreeName,
+	created, err := managedworktree.CreateWorktreeOnDisk(ctx, managedworktree.CreateWorktreeOptions{
+		ProjectRoot:           project.LocalPath,
+		Branch:                branch,
+		Path:                  path,
+		BaseDir:               input.Body.BaseDir,
+		BaseRef:               input.Body.BaseRef,
+		SetupScript:           input.Body.SetupScript,
+		WorktreeName:          input.Body.WorktreeName,
+		HookEnvironmentPrefix: "MIDDLEMAN",
+		RunGit:                runManagedWorktreeGit,
+		RunHook:               runManagedWorktreeHook,
 	})
 	if err != nil {
 		return nil, worktreeLifecycleProblem(err, "body.setup_script")
@@ -652,7 +658,7 @@ func (s *Server) createWorktreeOnDisk(
 func (s *Server) registerMaterializedWorktree(
 	ctx context.Context,
 	project *db.Project,
-	created projects.CreateWorktreeResult,
+	created managedworktree.CreateWorktreeResult,
 ) (*registerWorktreeOutput, error) {
 	row, err := s.db.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
 		ProjectID: project.ID,
@@ -660,10 +666,7 @@ func (s *Server) registerMaterializedWorktree(
 		Path:      created.Path,
 	})
 	if err != nil {
-		projects.RollbackCreatedWorktree(
-			ctx, project.LocalPath, created.Path, created.Branch,
-			created.BranchCreated,
-		)
+		_, _ = created.Rollback(ctx)
 		if errors.Is(err, db.ErrWorktreePathTaken) {
 			return nil, problemConflict(
 				CodeDestinationExists,
@@ -745,21 +748,31 @@ func (s *Server) createProjectWorktreeFromMergeRequest(
 		)
 	}
 
-	created, err := projects.CreateWorktreeFromMergeRequest(
-		ctx, projects.MergeRequestWorktreeOptions{
-			ProjectRoot:      project.LocalPath,
-			Branch:           branch,
-			Path:             input.Body.Path,
-			BaseDir:          input.Body.BaseDir,
-			SetupScript:      input.Body.SetupScript,
-			WorktreeName:     input.Body.WorktreeName,
-			Number:           mr.Number,
-			HeadBranch:       mr.HeadBranch,
-			HeadRepoCloneURL: mr.HeadRepoCloneURL,
-			Platform:         identity.Platform,
-			ProjectRepoIdentity: strings.ToLower(
-				identity.Host + "/" + identity.Owner + "/" + identity.Name,
-			),
+	projectRepoIdentity, err := managedProjectRepoIdentity(
+		ctx, project.LocalPath, strings.ToLower(
+			identity.Host+"/"+identity.Owner+"/"+identity.Name,
+		),
+	)
+	if err != nil {
+		return nil, problemInternal("inspect project Git remote")
+	}
+	created, err := managedworktree.CreateWorktreeFromMergeRequest(
+		ctx, managedworktree.MergeRequestWorktreeOptions{
+			ProjectRoot:           project.LocalPath,
+			Branch:                branch,
+			Path:                  input.Body.Path,
+			BaseDir:               input.Body.BaseDir,
+			SetupScript:           input.Body.SetupScript,
+			WorktreeName:          input.Body.WorktreeName,
+			HookEnvironmentPrefix: "MIDDLEMAN",
+			RunGit:                runManagedWorktreeGit,
+			RunHook:               runManagedWorktreeHook,
+			Number:                mr.Number,
+			HeadBranch:            mr.HeadBranch,
+			HeadRepoCloneURL:      mr.HeadRepoCloneURL,
+			ExpectedHeadSHA:       mr.PlatformHeadSHA,
+			Platform:              identity.Platform,
+			ProjectRepoIdentity:   projectRepoIdentity,
 		})
 	if err != nil {
 		return nil, worktreeLifecycleProblem(err, "body.setup_script")
@@ -868,7 +881,7 @@ func (s *Server) removeProjectWorktree(
 		}
 		if !input.Body.Force {
 			if _, statErr := os.Stat(worktree.Path); statErr == nil {
-				dirty, dirtyErr := projects.WorktreeIsDirty(ctx, worktree.Path)
+				dirty, dirtyErr := managedWorktreeIsDirty(ctx, worktree.Path)
 				if dirtyErr != nil {
 					return nil, problemInternal(dirtyErr.Error())
 				}
@@ -881,14 +894,17 @@ func (s *Server) removeProjectWorktree(
 				}
 			}
 		}
-		if _, err := projects.RemoveWorktreeFromDisk(ctx, projects.RemoveWorktreeOptions{
-			ProjectRoot:    project.LocalPath,
-			Path:           worktree.Path,
-			Branch:         worktree.Branch,
-			Force:          input.Body.Force,
-			RemoveBranch:   input.Body.RemoveBranch,
-			TeardownScript: input.Body.TeardownScript,
-			WorktreeName:   input.Body.WorktreeName,
+		if _, err := managedworktree.RemoveWorktreeFromDisk(ctx, managedworktree.RemoveWorktreeOptions{
+			ProjectRoot:           project.LocalPath,
+			Path:                  worktree.Path,
+			Branch:                worktree.Branch,
+			Force:                 input.Body.Force,
+			RemoveBranch:          input.Body.RemoveBranch,
+			TeardownScript:        input.Body.TeardownScript,
+			WorktreeName:          input.Body.WorktreeName,
+			HookEnvironmentPrefix: "MIDDLEMAN",
+			RunGit:                runManagedWorktreeGit,
+			RunHook:               runManagedWorktreeHook,
 		}); err != nil {
 			return nil, worktreeLifecycleProblem(err, "body.teardown_script")
 		}
@@ -920,7 +936,8 @@ func (s *Server) removeProjectWorktree(
 // "body.teardown_script") so a confinement violation is reported against
 // the field the caller actually sent.
 func worktreeLifecycleProblem(err error, hookField string) error {
-	var hookErr *projects.HookError
+	var hookErr *managedworktree.HookError
+	var changeRequestErr *managedworktree.ChangeRequestError
 	switch {
 	case errors.As(err, &hookErr):
 		return newProblem(
@@ -931,16 +948,77 @@ func worktreeLifecycleProblem(err error, hookField string) error {
 				"stderr":     hookErr.Stderr,
 			},
 		)
-	case errors.Is(err, projects.ErrWorktreeDestinationExists):
+	case errors.Is(err, managedworktree.ErrWorktreeDestinationExists):
 		return problemConflict(CodeDestinationExists, err.Error(), nil)
-	case errors.Is(err, projects.ErrBranchInUse):
+	case errors.Is(err, managedworktree.ErrBranchInUse):
 		return problemConflict(CodeBranchInUse, err.Error(), nil)
-	case errors.Is(err, projects.ErrInvalidBranchName):
+	case errors.Is(err, managedworktree.ErrInvalidBranchName):
 		return problemValidation("body.branch", err.Error())
-	case errors.Is(err, projects.ErrHookOutsideProject):
+	case errors.Is(err, managedworktree.ErrHookOutsideProject):
 		return problemValidation(hookField, err.Error())
+	case errors.As(err, &changeRequestErr) &&
+		changeRequestErr.Kind == managedworktree.ChangeRequestHeadChanged:
+		return problemConflict(CodeConflict, changeRequestErr.Error(), map[string]any{
+			"reason": "stale_state",
+		})
 	}
 	return problemInternal("worktree lifecycle: " + err.Error())
+}
+
+// managedProjectRepoIdentity keeps hosted project provenance tied to the
+// provider identity while preserving exact local/file origins used by local
+// mirrors and tests. Kit revalidates the effective origin against this value
+// before fetching or configuring tracking.
+func managedProjectRepoIdentity(
+	ctx context.Context, projectRoot, hostedIdentity string,
+) (string, error) {
+	output, err := runManagedWorktreeGit(
+		ctx, gitcmd.New(), projectRoot, "remote", "get-url", "origin",
+	)
+	if err != nil {
+		return "", err
+	}
+	remoteURL := strings.TrimSpace(string(output))
+	if gitremote.RemoteHost(remoteURL) == "" &&
+		gitremote.RemoteRepoPath(remoteURL) == "" {
+		return remoteURL, nil
+	}
+	return hostedIdentity, nil
+}
+
+func managedWorktreeIsDirty(ctx context.Context, path string) (bool, error) {
+	release, err := procutil.TryAcquire(ctx, "worktree dirty check")
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	dirty, err := managedworktree.WorktreeIsDirty(ctx, path)
+	return dirty, procutil.WrapResourceExhaustion(err, "worktree dirty check")
+}
+
+func runManagedWorktreeGit(
+	ctx context.Context, runner gitcmd.Runner, dir string, args ...string,
+) ([]byte, error) {
+	release, err := procutil.TryAcquire(ctx, "worktree lifecycle git")
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	stdout, stderr, err := runner.Run(ctx, dir, nil, args...)
+	return append(stdout, stderr...), procutil.WrapResourceExhaustion(
+		err, "worktree lifecycle git",
+	)
+}
+
+func runManagedWorktreeHook(
+	ctx context.Context, command managedworktree.HookCommand,
+) error {
+	cmd := procutil.CommandContext(ctx, command.Script)
+	cmd.Dir = command.Dir
+	cmd.Env = command.Env
+	cmd.Stdout = command.Stdout
+	cmd.Stderr = command.Stderr
+	return procutil.Run(ctx, cmd, "worktree lifecycle hook")
 }
 
 // deleteProjectWorktree handles

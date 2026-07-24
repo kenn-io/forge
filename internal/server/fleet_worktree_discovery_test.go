@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	gitworktree "go.kenn.io/kit/git/worktree"
 	"go.kenn.io/middleman/internal/db"
 )
 
@@ -36,20 +37,20 @@ func TestParseGitWorktreeList(t *testing.T) {
 		"worktree /bare\nbare\n\n" +
 		"worktree /repo/.wt/detached\nHEAD 9f9f9f9f9f9f9f\ndetached\n"
 
-	entries := parseGitWorktreeList(out)
+	entries := gitworktree.ParsePorcelain(out)
 	require.Len(entries, 4)
 
-	require.Equal("/repo", entries[0].path)
-	require.Equal("main", entries[0].branch)
-	require.False(entries[0].bare)
+	require.Equal("/repo", entries[0].Path)
+	require.Equal("main", entries[0].Branch)
+	require.False(entries[0].Bare)
 
-	require.Equal("/repo/.wt/feature", entries[1].path)
-	require.Equal("feature/x", entries[1].branch, "refs/heads/ prefix is stripped")
+	require.Equal("/repo/.wt/feature", entries[1].Path)
+	require.Equal("feature/x", entries[1].Branch, "refs/heads/ prefix is stripped")
 
-	require.True(entries[2].bare)
+	require.True(entries[2].Bare)
 
-	require.True(entries[3].detached)
-	require.Empty(entries[3].branch)
+	require.True(entries[3].Detached)
+	require.Empty(entries[3].Branch)
 }
 
 func TestDiscoverProjectInventory_StandardRepoSurfacesLinkedWorktree(t *testing.T) {

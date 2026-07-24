@@ -9,6 +9,7 @@ import (
 	"time"
 
 	gitcmd "go.kenn.io/kit/git/cmd"
+	gitworktree "go.kenn.io/kit/git/worktree"
 	"go.kenn.io/middleman/internal/db"
 )
 
@@ -93,15 +94,6 @@ func (d *fleetWorktreeDiscoverer) refreshProject(
 	}
 }
 
-// gitWorktreeListEntry is one block parsed from `git worktree list --porcelain`.
-type gitWorktreeListEntry struct {
-	path     string
-	head     string
-	branch   string
-	bare     bool
-	detached bool
-}
-
 // discoverProjectInventory inspects a project's git checkout and returns its
 // repository kind, default branch, and every worktree — including the root
 // checkout itself, which gets a registry row like any linked worktree so its
@@ -132,16 +124,16 @@ func discoverProjectInventory(
 	primaryKey := resolvedPathKey(root)
 	worktrees := make([]db.DiscoveredWorktree, 0, len(entries))
 	for _, e := range entries {
-		path := normPath(e.path)
-		if e.bare {
+		path := normPath(e.Path)
+		if e.Bare {
 			continue
 		}
 		if resolvedPathKey(path) == primaryKey {
 			path = root
 		}
-		branch := e.branch
+		branch := e.Branch
 		if branch == "" {
-			branch = detachedWorktreeBranch(e.head)
+			branch = detachedWorktreeBranch(e.Head)
 		}
 		worktrees = append(worktrees, db.DiscoveredWorktree{
 			Path:   path,
@@ -164,55 +156,19 @@ func gitIsBareRepository(ctx context.Context, dir string) (bool, error) {
 	return strings.TrimSpace(out) == "true", nil
 }
 
-func gitWorktreeEntries(ctx context.Context, dir string) ([]gitWorktreeListEntry, error) {
+func gitWorktreeEntries(ctx context.Context, dir string) ([]gitworktree.PorcelainEntry, error) {
 	out, err := gitDiscoveryOutput(ctx, dir, "worktree", "list", "--porcelain")
 	if err != nil {
 		return nil, err
 	}
-	return parseGitWorktreeList(out), nil
-}
-
-// parseGitWorktreeList parses the porcelain worktree listing. Blocks are
-// separated by a blank line; each carries a worktree path plus optional HEAD,
-// branch, bare, and detached markers.
-func parseGitWorktreeList(output string) []gitWorktreeListEntry {
-	blocks := strings.Split(strings.TrimSpace(output), "\n\n")
-	entries := make([]gitWorktreeListEntry, 0, len(blocks))
-	for _, block := range blocks {
-		block = strings.TrimSpace(block)
-		if block == "" {
-			continue
-		}
-		var entry gitWorktreeListEntry
-		for line := range strings.SplitSeq(block, "\n") {
-			switch {
-			case strings.HasPrefix(line, "worktree "):
-				entry.path = strings.TrimSpace(strings.TrimPrefix(line, "worktree "))
-			case strings.HasPrefix(line, "HEAD "):
-				entry.head = strings.TrimSpace(strings.TrimPrefix(line, "HEAD "))
-			case strings.HasPrefix(line, "branch "):
-				entry.branch = strings.TrimPrefix(
-					strings.TrimSpace(strings.TrimPrefix(line, "branch ")),
-					"refs/heads/",
-				)
-			case line == "bare":
-				entry.bare = true
-			case line == "detached":
-				entry.detached = true
-			}
-		}
-		if entry.path != "" {
-			entries = append(entries, entry)
-		}
-	}
-	return entries
+	return gitworktree.ParsePorcelain(out), nil
 }
 
 // resolveDefaultBranch resolves a project's default branch from live git state,
 // preferring the remote's published HEAD and falling back through the local
 // HEAD, discovered branches, the ref list, and the configured init default.
 func resolveDefaultBranch(
-	ctx context.Context, root string, entries []gitWorktreeListEntry,
+	ctx context.Context, root string, entries []gitworktree.PorcelainEntry,
 ) string {
 	if originHead := gitSymbolicRef(ctx, root, "refs/remotes/origin/HEAD"); originHead != "" {
 		if i := strings.LastIndex(originHead, "/"); i >= 0 && i+1 < len(originHead) {
@@ -226,8 +182,8 @@ func resolveDefaultBranch(
 
 	discovered := make([]string, 0, len(entries))
 	for _, e := range entries {
-		if e.branch != "" {
-			discovered = append(discovered, e.branch)
+		if e.Branch != "" {
+			discovered = append(discovered, e.Branch)
 		}
 	}
 	if branch := preferredBranch(discovered); branch != "" {

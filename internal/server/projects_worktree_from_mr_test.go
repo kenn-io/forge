@@ -1,20 +1,25 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	gh "github.com/google/go-github/v88/github"
 	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
+	gitenv "go.kenn.io/kit/git/env"
 
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 // registerIdentifiedProject registers localPath as a project carrying the
@@ -22,14 +27,33 @@ import (
 func registerIdentifiedProject(
 	t *testing.T, ts *httptest.Server, localPath string,
 ) string {
+	return registerPlatformProject(
+		t, ts, localPath, "github", "github.com", "acme", "widget",
+	)
+}
+
+func logUnexpectedResponse(t *testing.T, resp *http.Response, want int) {
+	t.Helper()
+	if resp.StatusCode == want {
+		return
+	}
+	body, err := io.ReadAll(resp.Body)
+	Require.NoError(t, err)
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	t.Logf("unexpected response: %s", body)
+}
+
+func registerPlatformProject(
+	t *testing.T, ts *httptest.Server, localPath, platform, host, owner, name string,
+) string {
 	t.Helper()
 	body := mustMarshal(t, map[string]any{
 		"local_path": localPath,
 		"platform_identity": map[string]any{
-			"platform":      "github",
-			"platform_host": "github.com",
-			"owner":         "acme",
-			"name":          "widget",
+			"platform":      platform,
+			"platform_host": host,
+			"owner":         owner,
+			"name":          name,
 		},
 	})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", body)
@@ -43,12 +67,20 @@ func registerIdentifiedProject(
 }
 
 func seedMergeRequest(
-	t *testing.T, database *db.DB, number int, headBranch, cloneURL string,
+	t *testing.T, database *db.DB, number int, headBranch, headSHA, cloneURL string,
+) {
+	seedMergeRequestForRepo(t, database, db.GitHubRepoIdentity(
+		"github.com", "acme", "widget",
+	), number, headBranch, headSHA, cloneURL)
+}
+
+func seedMergeRequestForRepo(
+	t *testing.T, database *db.DB, identity db.RepoIdentity,
+	number int, headBranch, headSHA, cloneURL string,
 ) {
 	t.Helper()
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(
-		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, identity)
 	Require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -61,6 +93,7 @@ func seedMergeRequest(
 		State:            "open",
 		IsDraft:          true,
 		HeadBranch:       headBranch,
+		PlatformHeadSHA:  headSHA,
 		BaseBranch:       "main",
 		HeadRepoCloneURL: cloneURL,
 		CreatedAt:        now,
@@ -92,8 +125,7 @@ func TestCreateWorktreeFromMergeRequestRoute(t *testing.T) {
 
 	projectID := registerIdentifiedProject(t, ts, clone)
 	// The MR head repo is the project repo itself (same-repo scenario).
-	seedMergeRequest(t, database, 42, "feature-x",
-		"https://github.com/acme/widget.git")
+	seedMergeRequest(t, database, 42, "feature-x", headSHA, origin)
 
 	dest := filepath.Join(t.TempDir(), "wt")
 	body := mustMarshal(t, map[string]any{
@@ -133,10 +165,142 @@ func TestCreateWorktreeFromMergeRequestRoute(t *testing.T) {
 	assert.Equal(headSHA,
 		lifecycleRouteGit(t, dest, "rev-parse", "HEAD"),
 		"worktree starts at the merge request head")
+	assert.Equal("origin/feature-x",
+		lifecycleRouteGit(t, dest, "rev-parse", "--abbrev-ref",
+			"--symbolic-full-name", "@{upstream}"),
+		"same-repository imports track the project origin branch")
 	rows := listWorktreeRows(t, ts, projectID)
 	require.Len(rows, 2, "root checkout row plus the imported worktree")
 	require.NotNil(worktreeRowByBranch(rows, "pr-42"),
 		"imported worktree is registered")
+}
+
+func TestCreateWorktreeFromMergeRequestRouteRejectsChangedHead(t *testing.T) {
+	require := Require.New(t)
+	assert := assert.New(t)
+
+	srv, database := setupTestServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	origin := initLifecycleRouteRepo(t)
+	clone := filepath.Join(t.TempDir(), "clone")
+	lifecycleRouteGit(t, filepath.Dir(origin), "clone", "-q", origin, clone)
+	staleSHA := lifecycleRouteGit(t, origin, "rev-parse", "HEAD")
+	lifecycleRouteGit(t, origin, "checkout", "-q", "-b", "feature-moved")
+	lifecycleRouteGit(t, origin, "commit", "--allow-empty", "-m", "new head")
+	newHeadSHA := lifecycleRouteGit(t, origin, "rev-parse", "HEAD")
+	lifecycleRouteGit(t, origin, "update-ref", "refs/pull/44/head", newHeadSHA)
+	lifecycleRouteGit(t, origin, "checkout", "-q", "main")
+
+	projectID := registerIdentifiedProject(t, ts, clone)
+	seedMergeRequest(t, database, 44, "feature-moved", staleSHA,
+		"https://github.com/acme/widget.git")
+	destination := filepath.Join(t.TempDir(), "wt")
+	body := mustMarshal(t, map[string]any{
+		"number": 44,
+		"branch": "pr-44",
+		"path":   destination,
+	})
+	resp := httpDo(t, ts, http.MethodPost,
+		"/api/v1/projects/"+projectID+"/worktrees/from-merge-request", body)
+	defer resp.Body.Close()
+
+	logUnexpectedResponse(t, resp, http.StatusConflict)
+	assert.Equal(http.StatusConflict, resp.StatusCode)
+	var problem ProblemError
+	require.NoError(json.NewDecoder(resp.Body).Decode(&problem))
+	assert.Equal("stale_state", problem.Details["reason"])
+	assert.NoDirExists(destination)
+}
+
+func TestCreateWorktreeFromGitLabMergeRequestRefRoute(t *testing.T) {
+	require := Require.New(t)
+	assert := assert.New(t)
+	srv, database := setupTestServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	origin := initLifecycleRouteRepo(t)
+	lifecycleRouteGit(t, origin, "checkout", "-q", "-b", "gitlab-head")
+	lifecycleRouteGit(t, origin, "commit", "--allow-empty", "-m", "gitlab mr")
+	headSHA := lifecycleRouteGit(t, origin, "rev-parse", "HEAD")
+	lifecycleRouteGit(t, origin, "update-ref", "refs/merge-requests/55/head", headSHA)
+	lifecycleRouteGit(t, origin, "checkout", "-q", "main")
+	clone := filepath.Join(t.TempDir(), "clone")
+	lifecycleRouteGit(t, filepath.Dir(origin), "clone", "-q", origin, clone)
+
+	projectID := registerPlatformProject(
+		t, ts, clone, "gitlab", "gitlab.example.com", "acme", "widget",
+	)
+	seedMergeRequestForRepo(t, database, db.RepoIdentity{
+		Platform: "gitlab", PlatformHost: "gitlab.example.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}, 55, "", headSHA, "")
+
+	dest := filepath.Join(t.TempDir(), "wt")
+	resp := httpDo(t, ts, http.MethodPost,
+		"/api/v1/projects/"+projectID+"/worktrees/from-merge-request",
+		mustMarshal(t, map[string]any{"number": 55, "branch": "mr-55", "path": dest}))
+	defer resp.Body.Close()
+
+	logUnexpectedResponse(t, resp, http.StatusCreated)
+	require.Equal(http.StatusCreated, resp.StatusCode)
+	assert.Equal(headSHA, lifecycleRouteGit(t, dest, "rev-parse", "HEAD"))
+	assert.Empty(worktreeConfigForRoute(t, dest, "branch.mr-55.remote"))
+	rows := listWorktreeRows(t, ts, projectID)
+	require.Len(rows, 2)
+	require.NotNil(worktreeRowByBranch(rows, "mr-55"))
+}
+
+func TestCreateWorktreeFromRelativeForkRoutePersistsAbsoluteTracking(t *testing.T) {
+	require := Require.New(t)
+	assert := assert.New(t)
+	srv, database := setupTestServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	origin := initLifecycleRouteRepo(t)
+	clone := filepath.Join(t.TempDir(), "clone")
+	lifecycleRouteGit(t, filepath.Dir(origin), "clone", "-q", origin, clone)
+	fork := filepath.Join(filepath.Dir(clone), "forks", "octocat", "widget")
+	require.NoError(os.MkdirAll(filepath.Dir(fork), 0o755))
+	lifecycleRouteGit(t, filepath.Dir(fork), "clone", "-q", origin, fork)
+	lifecycleRouteGit(t, fork, "config", "user.email", "t@e.st")
+	lifecycleRouteGit(t, fork, "config", "user.name", "Tester")
+	lifecycleRouteGit(t, fork, "checkout", "-q", "-b", "relative-head")
+	lifecycleRouteGit(t, fork, "commit", "--allow-empty", "-m", "relative fork")
+	headSHA := lifecycleRouteGit(t, fork, "rev-parse", "HEAD")
+	lifecycleRouteGit(t, origin, "fetch", "-q", fork,
+		"+refs/heads/relative-head:refs/pull/45/head")
+	relativeFork, err := filepath.Rel(clone, fork)
+	require.NoError(err)
+
+	projectID := registerIdentifiedProject(t, ts, clone)
+	seedMergeRequest(t, database, 45, "relative-head", headSHA, relativeFork)
+	dest := filepath.Join(t.TempDir(), "wt")
+	resp := httpDo(t, ts, http.MethodPost,
+		"/api/v1/projects/"+projectID+"/worktrees/from-merge-request",
+		mustMarshal(t, map[string]any{"number": 45, "branch": "pr-45", "path": dest}))
+	defer resp.Body.Close()
+
+	logUnexpectedResponse(t, resp, http.StatusCreated)
+	require.Equal(http.StatusCreated, resp.StatusCode)
+	remote := worktreeConfigForRoute(t, dest, "branch.pr-45.remote")
+	require.NotEmpty(remote)
+	assert.Equal(fork, lifecycleRouteGit(t, clone, "remote", "get-url", remote))
+}
+
+func worktreeConfigForRoute(t *testing.T, dir, key string) string {
+	t.Helper()
+	cmd := procutil.Command("git", "config", "--get", key)
+	cmd.Dir = dir
+	cmd.Env = gitenv.StripAll(os.Environ())
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // TestCreateWorktreeFromMergeRequestRouteUnknownNumber: an unsynced merge
@@ -203,6 +367,7 @@ func TestCreateWorktreeFromMergeRequestRouteSyncsOnDemand(t *testing.T) {
 	lifecycleRouteGit(t, origin, "checkout", "-q", "-b", "feature-y")
 	lifecycleRouteGit(t, origin, "commit", "--allow-empty", "-m", "pr work")
 	headSHA := lifecycleRouteGit(t, origin, "rev-parse", "feature-y")
+	lifecycleRouteGit(t, origin, "update-ref", "refs/pull/43/head", headSHA)
 	lifecycleRouteGit(t, origin, "checkout", "-q", "main")
 
 	now := time.Now()

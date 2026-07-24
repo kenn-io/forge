@@ -54,6 +54,20 @@ test("flags API prefixes assembled through constants", async () => {
   assert.match(findings[0].message, /configured API base/);
 });
 
+test("flags assembled API prefixes in Svelte script tags with spaced closing syntax", async () => {
+  const root = await makeRoot();
+  await write(
+    root,
+    "frontend/src/lib/components/Example.svelte",
+    ["<script>", 'const API_PREFIX = "/api" + "/v1";', "</script >", "<p>Example</p>", ""].join("\n"),
+  );
+
+  const findings = await lintApiUrls({ root });
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].line, 2);
+});
+
 test("ignores tests, generated code, and OpenAPI schema files", async () => {
   const root = await makeRoot();
   await write(root, "frontend/src/lib/api/settings.test.ts", 'expect(url).toBe("/api/v1/settings");\n');

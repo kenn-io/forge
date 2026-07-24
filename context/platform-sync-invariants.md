@@ -82,6 +82,10 @@ registry helpers return typed errors for missing providers or capabilities.
 
 - Missing optional capabilities should degrade that feature with a typed
   platform error, not break unrelated sync work.
+- Never put foreground deadlines on a shared provider HTTP client; scope them to
+  the operation context (`internal/platform/gitlab/client.go::NewClient`).
+- Resolve opaque provider repo IDs by `repo_path` before numeric-only operations
+  (`internal/platform/gitlab/client.go::projectScopedArg`).
 - `priority_repo` reorders a full run; `only_repo` restricts every repo-derived
   phase and must not delay full-run cadence. Resolve both by full identity, and
   never fall back from invalid exclusive scope. (`internal/github/sync.go::runOnce`)

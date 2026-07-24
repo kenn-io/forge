@@ -7,11 +7,15 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
+	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	platformgitlab "go.kenn.io/middleman/internal/platform/gitlab"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 func repoBrowserRequest(
@@ -66,4 +70,74 @@ func TestMarkdownImageRouteFetchesThroughProvider(t *testing.T) {
 	entries, err := os.ReadDir(srv.markdownImages.root)
 	require.NoError(err)
 	assert.Len(entries, 1)
+}
+
+func TestMarkdownImageRouteResolvesOpaqueGitLabProjectID(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	imageBytes := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
+	var paths []string
+	gitlabServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.EscapedPath())
+		assert.Equal("gitlab-token", r.Header.Get("PRIVATE-TOKEN"))
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/group%2Fproject":
+			w.Header().Set("Content-Type", "application/json")
+			_, err := w.Write([]byte(`{
+				"id": 42,
+				"path": "project",
+				"path_with_namespace": "group/project",
+				"name": "Project"
+			}`))
+			assert.NoError(err)
+		case "/api/v4/projects/42/uploads/secret/private.png":
+			w.Header().Set("Content-Type", "image/png")
+			_, err := w.Write(imageBytes)
+			assert.NoError(err)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(gitlabServer.Close)
+
+	provider, err := platformgitlab.NewClient(
+		"gitlab.example.com",
+		testTokenSource("gitlab-token"),
+		platformgitlab.WithBaseURLForTesting(gitlabServer.URL+"/api/v4"),
+		platformgitlab.WithoutRetriesForTesting(),
+	)
+	require.NoError(err)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	_, err = database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "gid://gitlab/Project/4242",
+		Owner:          "group",
+		Name:           "project",
+		RepoPath:       "group/project",
+	})
+	require.NoError(err)
+	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	srv.markdownImages = newMarkdownImageCache(t.TempDir())
+	source := gitlabServer.URL + "/group/project/uploads/secret/private.png"
+
+	rr := repoBrowserRequest(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/host/gitlab.example.com/repo/gitlab/group/project/markdown-image?source="+url.QueryEscape(source),
+	)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal("image/png", rr.Header().Get("Content-Type"))
+	assert.Equal(imageBytes, rr.Body.Bytes())
+	assert.Equal([]string{
+		"/api/v4/projects/group%2Fproject",
+		"/api/v4/projects/42/uploads/secret/private.png",
+	}, paths)
 }

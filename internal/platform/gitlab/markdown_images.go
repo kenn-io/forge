@@ -30,6 +30,12 @@ func (c *Client) GetMarkdownImage(
 	ref platform.RepoRef,
 	sourceURL string,
 ) (platform.MarkdownImage, error) {
+	ctx, cancel := c.withForegroundTimeout(ctx)
+	defer cancel()
+	_, ref, err := c.projectScopedArg(ctx, ref)
+	if err != nil {
+		return platform.MarkdownImage{}, err
+	}
 	secret, filename, err := c.markdownUploadParts(ref, sourceURL)
 	if err != nil {
 		return platform.MarkdownImage{}, err

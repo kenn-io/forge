@@ -131,7 +131,6 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 		AllowedOrigin:       opts.baseURL,
 	}
 	httpClient := &http.Client{
-		Timeout:   opts.foregroundTimeout,
 		Transport: authRT,
 	}
 	clientOptions = append(clientOptions, gitlab.WithHTTPClient(httpClient))

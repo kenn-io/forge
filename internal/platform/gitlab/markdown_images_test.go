@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,6 +37,27 @@ func TestGetMarkdownImageUsesAuthenticatedProjectUploadAPI(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal("image/png", image.ContentType)
 	assert.Equal(imageBytes, image.Content)
+}
+
+func TestGetMarkdownImageUsesForegroundTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a})
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := NewClient(
+		server.Listener.Addr().String(),
+		testTokenSource("gitlab-token"),
+		WithBaseURLForTesting(server.URL+"/api/v4"),
+		WithForegroundTimeoutForTesting(time.Nanosecond),
+	)
+	require.NoError(t, err)
+	_, err = client.GetMarkdownImage(t.Context(), platform.RepoRef{
+		Platform: platform.KindGitLab, RepoPath: "group/project", PlatformID: 42,
+	}, server.URL+"/group/project/uploads/secret/private.png")
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 func TestGetMarkdownImageRejectsUntrustedSourcesAndActiveContent(t *testing.T) {

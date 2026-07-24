@@ -89,6 +89,23 @@ func TestClientTestHelperDisablesRetries(t *testing.T) {
 	assert.Equal(1, requests)
 }
 
+func TestForegroundTimeoutDoesNotApplyToRepositoryReads(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, `{
+			"id": 42,
+			"path": "project",
+			"path_with_namespace": "group/project",
+			"name": "Project"
+		}`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL, WithForegroundTimeoutForTesting(time.Nanosecond))
+	_, err := client.GetRepository(t.Context(), platform.RepoRef{RepoPath: "group/project"})
+
+	require.NoError(t, err)
+}
+
 func TestClientListOpenMergeRequestsPopulatesForkHeadRepoCloneURL(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

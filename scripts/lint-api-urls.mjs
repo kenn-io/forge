@@ -92,12 +92,31 @@ function svelteScriptRegions(content, path) {
   if (!path.endsWith(".svelte")) return [{ content, offset: 0 }];
 
   const regions = [];
-  const scriptPattern = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi;
-  for (const match of content.matchAll(scriptPattern)) {
-    const script = match[1] ?? "";
-    const matchOffset = match.index ?? 0;
-    const contentOffset = match[0].indexOf(script);
-    regions.push({ content: script, offset: matchOffset + contentOffset });
+  const lower = content.toLowerCase();
+  let cursor = 0;
+  while (cursor < content.length) {
+    const open = lower.indexOf("<script", cursor);
+    if (open === -1) break;
+    const boundary = lower[open + "<script".length];
+    if (boundary !== ">" && boundary?.trim() !== "") {
+      cursor = open + "<script".length;
+      continue;
+    }
+    const openEnd = lower.indexOf(">", open + "<script".length);
+    if (openEnd === -1) break;
+
+    let close = lower.indexOf("</script", openEnd + 1);
+    let closeEnd = -1;
+    while (close !== -1) {
+      closeEnd = lower.indexOf(">", close + "</script".length);
+      if (closeEnd === -1 || lower.slice(close + "</script".length, closeEnd).trim() === "") break;
+      close = lower.indexOf("</script", close + "</script".length);
+    }
+    if (close === -1 || closeEnd === -1) break;
+
+    const offset = openEnd + 1;
+    regions.push({ content: content.slice(offset, close), offset });
+    cursor = closeEnd + 1;
   }
   return regions;
 }

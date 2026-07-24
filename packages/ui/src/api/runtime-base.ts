@@ -5,7 +5,9 @@ function runtimeBasePath(): string {
 }
 
 export function configuredAPIBasePath(basePath = runtimeBasePath()): string {
-  const prefix = basePath === "/" ? "" : basePath.replace(/\/+$/, "");
+  let end = basePath.length;
+  while (end > 0 && basePath[end - 1] === "/") end -= 1;
+  const prefix = basePath.slice(0, end);
   return `${prefix}/api/v1`;
 }
 

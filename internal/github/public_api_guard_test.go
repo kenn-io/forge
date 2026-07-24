@@ -133,7 +133,7 @@ func functionHasParameterNamed(fn *ast.FuncType, names ...string) bool {
 func TestNewGraphQLFetcherBlocksPublicGitHubAPIInDefaultTests(t *testing.T) {
 	fetcher := NewGraphQLFetcher(testTokenSource("fake-token"), "github.com", nil, nil)
 
-	_, err := fetcher.FetchRepoPRs(t.Context(), "acme", "widgets")
+	_, err := fetcher.FetchRepoPRs(t.Context(), "acme", "widgets", false)
 
 	require.ErrorIs(t, err, ErrPublicGitHubAPIBlocked)
 }

@@ -568,6 +568,9 @@ type PullRequests struct {
 	// AllowMidStackMerges permits merging a stack member while an earlier
 	// member remains unmerged. The default is deliberately false.
 	AllowMidStackMerges bool `toml:"allow_mid_stack_merges,omitempty" json:"allow_mid_stack_merges"`
+	// PreferGitHubNativeStacks opts into GitHub's read-only stack preview.
+	// Branch-based detection remains the fallback when native data is unusable.
+	PreferGitHubNativeStacks bool `toml:"prefer_github_native_stacks,omitempty" json:"prefer_github_native_stacks"`
 }
 
 // Issues configures issue-list presentation preferences.

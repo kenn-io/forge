@@ -46,11 +46,20 @@ func SyncCompletedHook(ctx context.Context, database *db.DB, next func([]ghclien
 			if repo == nil {
 				continue
 			}
-			if err := RunDetection(ctx, database, repo.ID); err != nil {
+			var detectionErr error
+			if result.GitHubNativeStacks != nil {
+				detectionErr = RunDetectionWithNativeStacks(
+					ctx, database, repo.ID,
+					result.GitHubNativeStacks.ConfirmedNumbers,
+				)
+			} else {
+				detectionErr = RunDetection(ctx, database, repo.ID)
+			}
+			if detectionErr != nil {
 				slog.Error("stack detection failed",
 					"platform", result.Platform,
 					"host", result.PlatformHost,
-					"repo", result.Owner+"/"+result.Name, "err", err)
+					"repo", result.Owner+"/"+result.Name, "err", detectionErr)
 			}
 		}
 	}

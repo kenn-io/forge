@@ -316,6 +316,60 @@ func TestRunDetection(t *testing.T) {
 	assert.Equal(100, members[0].Number)
 }
 
+func TestRunDetectionWithNativeStacksClaimsMembersBeforeInference(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	repoID, err := database.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+		CloneURL: testRepoCloneURL, DefaultBranch: "main",
+	}))
+	now := time.Now().UTC()
+	prs := []struct {
+		number     int
+		head, base string
+	}{
+		{100, "feature/a", "main"},
+		{101, "feature/b", "feature/a"},
+		{102, "feature/c", "feature/b"},
+		{200, "other/a", "main"},
+		{201, "other/b", "other/a"},
+	}
+	for i, pr := range prs {
+		_, err := database.UpsertMergeRequest(ctx, &realdb.MergeRequest{
+			RepoID: repoID, PlatformID: int64(i + 1), Number: pr.number,
+			Title: "PR " + pr.head, Author: "a", State: prOpen,
+			HeadBranch: pr.head, BaseBranch: pr.base,
+			HeadRepoCloneURL: testRepoCloneURL,
+			CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, realdb.GitHubNativeStack{
+		RepoID: repoID, GitHubID: 9001, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native", LastObservedAt: now,
+		Members: []realdb.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 102, State: "open", HeadRef: "feature/c", HeadSHA: "ccc"},
+			{Position: 2, PullRequestNumber: 101, State: "open", HeadRef: "feature/b", HeadSHA: "bbb"},
+		},
+	}))
+
+	require.NoError(RunDetectionWithNativeStacks(ctx, database, repoID, []int{42}))
+
+	_, nativeMembers, err := database.GetStackForPRByRepoID(ctx, repoID, 101)
+	require.NoError(err)
+	assert.Equal([]int{102, 101}, stackNumbersFromMembers(nativeMembers))
+	_, inferredMembers, err := database.GetStackForPRByRepoID(ctx, repoID, 200)
+	require.NoError(err)
+	assert.Equal([]int{200, 201}, stackNumbersFromMembers(inferredMembers))
+	stack, _, err := database.GetStackForPRByRepoID(ctx, repoID, 100)
+	require.NoError(err)
+	assert.Nil(stack)
+}
+
 func TestRunDetection_ForkBranchNameDoesNotShadowUpstreamStackBranch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

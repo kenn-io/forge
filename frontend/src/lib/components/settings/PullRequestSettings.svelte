@@ -15,12 +15,16 @@
   const embedded = isEmbedded();
   let saving = $state(false);
 
-  async function toggleMidStackMerges(): Promise<void> {
+  type BooleanPullRequestSetting =
+    | "allow_mid_stack_merges"
+    | "prefer_github_native_stacks";
+
+  async function toggleSetting(key: BooleanPullRequestSetting): Promise<void> {
     if (embedded || saving) return;
     const previous = pullRequests;
     const pending = {
       ...pullRequests,
-      allow_mid_stack_merges: !pullRequests.allow_mid_stack_merges,
+      [key]: !pullRequests[key],
     };
     onUpdate(pending);
     saving = true;
@@ -37,27 +41,51 @@
   }
 </script>
 
-<div class="setting-row">
-  <div class="setting-copy">
-    <span class="setting-label">Allow mid-stack merges</span>
-    <span class="setting-description">
-      When off, only the bottom unmerged branch in a stack can be merged. When on, middleman warns before merging another stack member.
-    </span>
+<div class="settings-list">
+  <div class="setting-row">
+    <div class="setting-copy">
+      <span class="setting-label">Prefer GitHub native stacks</span>
+      <span class="setting-description">
+        Use GitHub's read-only stack preview when available. Middleman's branch-based detection remains the fallback.
+      </span>
+    </div>
+    <button
+      class={[
+        "toggle-btn",
+        pullRequests.prefer_github_native_stacks && "toggle-on",
+      ]}
+      type="button"
+      disabled={saving}
+      onclick={() => toggleSetting("prefer_github_native_stacks")}
+      aria-label="Prefer GitHub native stacks"
+      aria-pressed={pullRequests.prefer_github_native_stacks}
+    >
+      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+    </button>
   </div>
-  <button
-    class="toggle-btn"
-    class:toggle-on={pullRequests.allow_mid_stack_merges}
-    type="button"
-    disabled={saving}
-    onclick={toggleMidStackMerges}
-    aria-label="Allow mid-stack merges"
-    aria-pressed={pullRequests.allow_mid_stack_merges}
-  >
-    <span class="toggle-track"><span class="toggle-thumb"></span></span>
-  </button>
+
+  <div class="setting-row">
+    <div class="setting-copy">
+      <span class="setting-label">Allow mid-stack merges</span>
+      <span class="setting-description">
+        When off, only the bottom unmerged branch in a stack can be merged. When on, middleman warns before merging another stack member.
+      </span>
+    </div>
+    <button
+      class={["toggle-btn", pullRequests.allow_mid_stack_merges && "toggle-on"]}
+      type="button"
+      disabled={saving}
+      onclick={() => toggleSetting("allow_mid_stack_merges")}
+      aria-label="Allow mid-stack merges"
+      aria-pressed={pullRequests.allow_mid_stack_merges}
+    >
+      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+    </button>
+  </div>
 </div>
 
 <style>
+  .settings-list { display: flex; flex-direction: column; gap: var(--space-4); }
   .setting-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); min-height: 44px; }
   .setting-copy { display: flex; flex-direction: column; gap: 4px; }
   .setting-label { color: var(--text-secondary); font-size: var(--font-size-md); }

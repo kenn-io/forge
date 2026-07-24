@@ -24,11 +24,11 @@ const retryPageSize = 5
 
 // --- GraphQL query types (private) ---
 
-type gqlPRQuery struct {
+type gqlPRQuery[T any] struct {
 	Repository struct {
 		PullRequests struct {
 			TotalCount int
-			Nodes      []gqlPR
+			Nodes      []T
 			PageInfo   pageInfo
 		} `graphql:"pullRequests(first: $pageSize, states: OPEN, after: $cursor)"`
 	} `graphql:"repository(owner: $owner, name: $name)"`
@@ -97,6 +97,23 @@ type gqlPR struct {
 		Nodes    []gqlPullRequestTimelineItem
 		PageInfo pageInfo
 	} `graphql:"timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT], first: 100)"`
+}
+
+// gqlPRWithNativeStacks is a distinct query shape so preview-only fields are
+// absent from GraphQL requests while the setting is disabled. An @include
+// directive would still make servers without the preview schema validate the
+// unknown fields.
+type gqlPRWithNativeStacks struct {
+	gqlPR
+	Stack      *gqlNativeStack
+	StackEntry *struct{ Position int }
+}
+
+type gqlNativeStack struct {
+	ID          githubv4.ID
+	Number      int
+	Size        int
+	BaseRefName string
 }
 
 // gqlReviewRequest carries the requested reviewer of a pending review
@@ -632,6 +649,9 @@ type BulkIssue struct {
 // drain should fill in via REST.
 type BulkPR struct {
 	PR *gh.PullRequest
+	// NativeStack is present only when the preview setting was enabled and
+	// GitHub reported authoritative membership for this PR.
+	NativeStack *NativeStackHint
 	// ReviewDecision is GitHub's authoritative aggregate review decision for
 	// the PR (raw GraphQL enum: APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED,
 	// or empty when the repository enforces no decision). It is computed by the
@@ -794,10 +814,10 @@ func (g *GraphQLFetcher) ShouldBackoff() (bool, time.Duration) {
 }
 
 func (g *GraphQLFetcher) FetchRepoPRs(
-	ctx context.Context, owner, name string,
+	ctx context.Context, owner, name string, includeNativeStacks bool,
 ) (*RepoBulkResult, error) {
 	result, err := g.fetchRepoPRsWithPageSize(
-		ctx, owner, name, topLevelPageSize,
+		ctx, owner, name, topLevelPageSize, includeNativeStacks,
 	)
 	if err != nil {
 		slog.Warn("GraphQL query failed, retrying with smaller page",
@@ -805,14 +825,14 @@ func (g *GraphQLFetcher) FetchRepoPRs(
 			"err", err, "retryPageSize", retryPageSize,
 		)
 		result, err = g.fetchRepoPRsWithPageSize(
-			ctx, owner, name, retryPageSize,
+			ctx, owner, name, retryPageSize, includeNativeStacks,
 		)
 	}
 	return result, err
 }
 
 func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
-	ctx context.Context, owner, name string, pageSize int,
+	ctx context.Context, owner, name string, pageSize int, includeNativeStacks bool,
 ) (*RepoBulkResult, error) {
 	ctx = tokenauth.WithGitHubOwner(ctx, owner)
 	progress := newMergeRequestListFetchProgressLogger(RepoRef{
@@ -820,36 +840,58 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 		Name:         name,
 		PlatformHost: g.host,
 	}, "graphql")
-	gqlPRs, err := fetchAllPagesWithProgress(ctx, func(
+	result := &RepoBulkResult{}
+	if includeNativeStacks {
+		gqlPRs, err := fetchGraphQLPullRequestPages[gqlPRWithNativeStacks](
+			ctx, g.client, owner, name, pageSize, progress,
+		)
+		if err != nil {
+			return nil, err
+		}
+		result.PullRequests = make([]BulkPR, 0, len(gqlPRs))
+		for i := range gqlPRs {
+			result.PullRequests = append(result.PullRequests, convertGQLPRWithNativeStacks(&gqlPRs[i]))
+		}
+	} else {
+		gqlPRs, err := fetchGraphQLPullRequestPages[gqlPR](
+			ctx, g.client, owner, name, pageSize, progress,
+		)
+		if err != nil {
+			return nil, err
+		}
+		result.PullRequests = make([]BulkPR, 0, len(gqlPRs))
+		for i := range gqlPRs {
+			result.PullRequests = append(result.PullRequests, convertGQLPR(&gqlPRs[i]))
+		}
+	}
+	progress.done()
+	return result, nil
+}
+
+func fetchGraphQLPullRequestPages[T any](
+	ctx context.Context,
+	client *githubv4.Client,
+	owner, name string,
+	pageSize int,
+	progress *listFetchProgressLogger,
+) ([]T, error) {
+	return fetchAllPagesWithProgress(ctx, func(
 		ctx context.Context, cursor *string,
-	) ([]gqlPR, pageInfo, error) {
-		var q gqlPRQuery
+	) ([]T, pageInfo, error) {
+		var q gqlPRQuery[T]
 		vars := map[string]any{
 			"owner":    githubv4.String(owner),
 			"name":     githubv4.String(name),
 			"pageSize": githubv4.Int(pageSize),
 			"cursor":   cursorVar(cursor),
 		}
-		if err := g.client.Query(ctx, &q, vars); err != nil {
+		if err := client.Query(ctx, &q, vars); err != nil {
 			return nil, pageInfo{}, err
 		}
 		progress.setTotal(q.Repository.PullRequests.TotalCount)
 		return q.Repository.PullRequests.Nodes,
 			q.Repository.PullRequests.PageInfo, nil
 	}, progress.recordPage)
-	if err != nil {
-		return nil, err
-	}
-	progress.done()
-
-	result := &RepoBulkResult{
-		PullRequests: make([]BulkPR, 0, len(gqlPRs)),
-	}
-	for i := range gqlPRs {
-		bulk := convertGQLPR(&gqlPRs[i])
-		result.PullRequests = append(result.PullRequests, bulk)
-	}
-	return result, nil
 }
 
 func (g *GraphQLFetcher) FetchRepoIssues(
@@ -956,6 +998,17 @@ func convertGQLPR(gql *gqlPR) BulkPR {
 		}
 	}
 
+	return bulk
+}
+
+func convertGQLPRWithNativeStacks(gql *gqlPRWithNativeStacks) BulkPR {
+	bulk := convertGQLPR(&gql.gqlPR)
+	if gql.Stack != nil && gql.StackEntry != nil {
+		bulk.NativeStack = &NativeStackHint{
+			Number: gql.Stack.Number, Size: gql.Stack.Size,
+			Position: gql.StackEntry.Position, BaseRef: gql.Stack.BaseRefName,
+		}
+	}
 	return bulk
 }
 

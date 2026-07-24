@@ -2423,10 +2423,12 @@ name = "b"
 
 [pull_requests]
 allow_mid_stack_merges = true
+prefer_github_native_stacks = true
 `)
 	cfg, err := Load(path)
 	require.NoError(t, err)
 	assert.True(cfg.PullRequests.AllowMidStackMerges)
+	assert.True(cfg.PullRequests.PreferGitHubNativeStacks)
 
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
 	require.NoError(t, cfg.Save(savePath))
@@ -2434,6 +2436,7 @@ allow_mid_stack_merges = true
 	cfg2, err := Load(savePath)
 	require.NoError(t, err)
 	assert.True(cfg2.PullRequests.AllowMidStackMerges)
+	assert.True(cfg2.PullRequests.PreferGitHubNativeStacks)
 }
 
 func TestTerminalConfigRoundTrip(t *testing.T) {

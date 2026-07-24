@@ -201,6 +201,15 @@ func runtimeSessionKeyForTest(
 }
 
 // mockGH implements ghclient.Client for testing.
+type mockGHNativeStackAPI struct {
+	listOpenPullRequests func(
+		context.Context, string, string,
+	) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error)
+	listStackPage func(
+		context.Context, string, string, int,
+	) (ghclient.NativeStackPage, error)
+}
+
 type mockGH struct {
 	getRepositoryFn            func(context.Context, string, string) (*gh.Repository, error)
 	getPullRequestFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
@@ -231,6 +240,7 @@ type mockGH struct {
 	listReleasesFn             func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
 	listTagsFn                 func(context.Context, string, string, int) ([]*gh.RepositoryTag, error)
 	listOpenPullRequestsFn     func(context.Context, string, string) ([]*gh.PullRequest, error)
+	nativeStackAPI             *mockGHNativeStackAPI
 	listPullRequestsPageFn     func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
 	listIssuesPageFn           func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
 	listCheckRunsForRefFn      func(context.Context, string, string, string) ([]*gh.CheckRun, error)
@@ -256,6 +266,25 @@ func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) (
 		return nil, m.listOpenPRsErr
 	}
 	return nil, nil
+}
+
+func (m *mockGH) ListOpenPullRequestsWithNativeStackHints(
+	ctx context.Context, owner, repo string,
+) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error) {
+	if m.nativeStackAPI != nil && m.nativeStackAPI.listOpenPullRequests != nil {
+		return m.nativeStackAPI.listOpenPullRequests(ctx, owner, repo)
+	}
+	prs, err := m.ListOpenPullRequests(ctx, owner, repo)
+	return prs, nil, err
+}
+
+func (m *mockGH) ListNativeStacksPage(
+	ctx context.Context, owner, repo string, page int,
+) (ghclient.NativeStackPage, error) {
+	if m.nativeStackAPI != nil && m.nativeStackAPI.listStackPage != nil {
+		return m.nativeStackAPI.listStackPage(ctx, owner, repo, page)
+	}
+	return ghclient.NativeStackPage{}, nil
 }
 
 func (m *mockGH) ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error) {
@@ -22800,6 +22829,81 @@ func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
 	require.NotNil(ctxResp.JSON200)
 	assert.Equal("hook", ctxResp.JSON200.StackName)
 	assert.Equal(int64(2), ctxResp.JSON200.Size)
+}
+
+func TestAPIStacks_DetectionViaSyncHookPrefersGitHubNativeOrder(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	repoCloneURL := "https://github.com/acme/widget.git"
+	makeGHPR := func(id int64, number int, head, base string) *gh.PullRequest {
+		sha := fmt.Sprintf("sha%d", number)
+		title := fmt.Sprintf("PR #%d", number)
+		return &gh.PullRequest{
+			ID: &id, Number: &number, State: new("open"), Title: &title,
+			Body: new(""), User: &gh.User{Login: new("testuser")},
+			CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now},
+			Head: &gh.PullRequestBranch{
+				Ref: &head, SHA: &sha,
+				Repo: &gh.Repository{CloneURL: &repoCloneURL},
+			},
+			Base: &gh.PullRequestBranch{Ref: &base, SHA: new("basesha")},
+		}
+	}
+	prs := []*gh.PullRequest{
+		makeGHPR(1001, 10, "feat/base", "main"),
+		makeGHPR(1011, 11, "feat/tip", "feat/base"),
+	}
+	mock := &mockGH{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			nodeID := "repo-" + owner + "-" + repo
+			return &gh.Repository{
+				Name: &repo, NodeID: &nodeID, Owner: &gh.User{Login: &owner},
+				CloneURL: &repoCloneURL, Archived: new(false),
+			}, nil
+		},
+		nativeStackAPI: &mockGHNativeStackAPI{
+			listOpenPullRequests: func(
+				context.Context, string, string,
+			) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error) {
+				return prs, map[int]*ghclient.NativeStackHint{
+					10: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+					11: {Number: 42, Size: 2, Position: 1, BaseRef: "main"},
+				}, nil
+			},
+			listStackPage: func(
+				context.Context, string, string, int,
+			) (ghclient.NativeStackPage, error) {
+				return ghclient.NativeStackPage{Stacks: []ghclient.NativeStack{{
+					ID: 9001, Number: 42, BaseRef: "main", Open: true, CreatedAt: now,
+					Members: []ghclient.NativeStackMember{
+						{Position: 1, PullRequestNumber: 11, State: "open", HeadRef: "feat/tip", HeadSHA: "sha11"},
+						{Position: 2, PullRequestNumber: 10, State: "open", HeadRef: "feat/base", HeadSHA: "sha10"},
+					},
+				}}}, nil
+			},
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	client := setupTestClient(t, srv)
+	srv.syncer.SetPreferGitHubNativeStacks(true)
+	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	srv.syncer.RunOnce(ctx)
+
+	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	require.NoError(err)
+	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
+	require.NotNil(stackResp.JSON200)
+	require.NotNil(stackResp.JSON200.Members)
+	assert.Equal([]int64{11, 10}, stackMemberNumbers(*stackResp.JSON200.Members))
+
+	detailResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 10)
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.NotNil(detailResp.JSON200.Stack)
+	assert.Equal(int64(2), detailResp.JSON200.Stack.Position)
 }
 
 func TestAPIStacks_DetectionViaSyncHookIgnoresForkHeadBranchCollision(t *testing.T) {

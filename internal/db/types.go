@@ -1113,6 +1113,34 @@ type StackMemberWithPR struct {
 	MergeableState string
 }
 
+// GitHubNativeStack is a cached GitHub stack resource. It remains separate
+// from Stack, which is the provider-neutral projection served to the UI.
+type GitHubNativeStack struct {
+	ID                 int64
+	RepoID             int64
+	GitHubID           int64
+	Number             int
+	Size               int
+	BaseRef            string
+	IsOpen             bool
+	GitHubCreatedAt    time.Time
+	ContentFingerprint string
+	LastObservedAt     time.Time
+	Members            []GitHubNativeStackMember
+}
+
+// GitHubNativeStackMember is one bottom-to-top member of a cached native stack.
+type GitHubNativeStackMember struct {
+	StackID           int64
+	Position          int
+	PullRequestNumber int
+	State             string
+	Draft             bool
+	MergedAt          *time.Time
+	HeadRef           string
+	HeadSHA           string
+}
+
 const (
 	WorkspaceItemTypePullRequest = "pull_request"
 	WorkspaceItemTypeIssue       = "issue"

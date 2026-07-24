@@ -125,7 +125,7 @@ describe("RepoImportModal", () => {
     bulk.mockResolvedValue({
       repos: [],
       kata_projects: [],
-      pull_requests: { allow_mid_stack_merges: false },
+      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
@@ -204,7 +204,7 @@ describe("RepoImportModal", () => {
     bulk.mockResolvedValue({
       repos: [],
       kata_projects: [],
-      pull_requests: { allow_mid_stack_merges: false },
+      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",

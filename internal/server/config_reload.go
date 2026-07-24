@@ -437,6 +437,9 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		)
 		s.syncer.SetWatchInterval(newCfg.ActivePRRefreshDuration())
 		s.syncer.SetActiveMRWindow(newCfg.ActivePRWindowDuration())
+		s.syncer.SetPreferGitHubNativeStacks(
+			newCfg.PullRequests.PreferGitHubNativeStacks,
+		)
 	}
 
 	if s.docsAPI != nil {

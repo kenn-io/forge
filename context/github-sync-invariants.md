@@ -148,6 +148,18 @@ change what a field means. Provider-neutral persistence should receive the same
 semantic shape regardless of whether data came from GraphQL, REST, tags, or
 fallback repository listing.
 
+## Native Stack Rules
+
+- Confirmed native stacks claim and order their PRs first; branch inference always
+  runs afterward on every unclaimed PR, including when the preview is disabled,
+  incomplete, or failing. (`internal/stacks/detect.go::RunDetectionWithNativeStacks`)
+- Compare current PR hints with cached stack rows; scan `/stacks` newest-first
+  and stop once every target is found or passed.
+  (`internal/github/native_stack_sync.go::refreshGitHubNativeStackCache`)
+- Preview-only GraphQL fields must be absent from disabled query shapes;
+  `@include(false)` does not bypass schema validation on servers without those
+  fields. (`internal/github/graphql.go::gqlPRWithNativeStacks`)
+
 ## Historical Archive Rules
 
 - The legacy closed-item backfill is retired; configured repositories seed durable archive discovery before sync cutover, with no cursor translation. (`internal/github/sync.go::SetReposWithContext`)

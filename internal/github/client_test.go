@@ -65,6 +65,52 @@ func TestNewClientEmptyHost(t *testing.T) {
 	require.NotNil(t, c)
 }
 
+func TestNativeStackClientDecodesPullHintsAndStackPages(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	createdAt := "2026-07-24T12:00:00Z"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/repos/acme/widgets/pulls":
+			assert.Equal("open", r.URL.Query().Get("state"))
+			_, _ = io.WriteString(w, `[
+  {"number":101,"title":"base","state":"open","stack":{"id":987,"number":42,"size":2,"position":1,"base":{"ref":"main","sha":"base"}}},
+  {"number":102,"title":"standalone","state":"open","stack":null}
+]`)
+		case "/api/v3/repos/acme/widgets/stacks":
+			assert.Equal("3", r.URL.Query().Get("page"))
+			w.Header().Set("Link", "<https://api.github.com/repos/acme/widgets/stacks?per_page=100&page=4>; rel=\"next\"")
+			_, _ = io.WriteString(w, `[{"id":987,"number":42,"base":{"ref":"main"},"open":true,"created_at":"`+createdAt+`","pull_requests":[{"number":101,"state":"open","draft":false,"merged_at":null,"head":{"ref":"feature/a","sha":"aaa"}},{"number":103,"state":"open","draft":true,"merged_at":null,"head":{"ref":"feature/b","sha":"bbb"}}]}]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil, WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	nativeClient, ok := client.(NativeStackClient)
+	require.True(ok)
+
+	prs, hints, err := nativeClient.ListOpenPullRequestsWithNativeStackHints(t.Context(), "acme", "widgets")
+	require.NoError(err)
+	require.Len(prs, 2)
+	require.NotNil(hints[101])
+	assert.Equal(NativeStackHint{ID: 987, Number: 42, Size: 2, Position: 1, BaseRef: "main"}, *hints[101])
+	assert.Contains(hints, 102)
+	assert.Nil(hints[102])
+
+	page, err := nativeClient.ListNativeStacksPage(t.Context(), "acme", "widgets", 3)
+	require.NoError(err)
+	assert.Equal(4, page.NextPage)
+	require.Len(page.Stacks, 1)
+	assert.Equal(42, page.Stacks[0].Number)
+	assert.Equal("main", page.Stacks[0].BaseRef)
+	require.Len(page.Stacks[0].Members, 2)
+	assert.Equal(103, page.Stacks[0].Members[1].PullRequestNumber)
+	assert.Equal(2, page.Stacks[0].Members[1].Position)
+}
+
 func TestGraphQLEndpointForHost(t *testing.T) {
 	require.Equal(t, "https://api.github.com/graphql", graphQLEndpointForHost(""))
 	require.Equal(t, "https://api.github.com/graphql", graphQLEndpointForHost("github.com"))

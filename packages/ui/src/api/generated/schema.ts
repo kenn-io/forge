@@ -6471,6 +6471,7 @@ export interface components {
         };
         PullRequests: {
             allow_mid_stack_merges: boolean;
+            prefer_github_native_stacks: boolean;
         };
         PullResponse: {
             /**

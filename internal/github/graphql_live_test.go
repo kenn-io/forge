@@ -22,7 +22,7 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 		oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token}),
 	))
 
-	var prQuery gqlPRQuery
+	var prQuery gqlPRQuery[gqlPR]
 	vars := map[string]any{
 		"owner":    githubv4.String("wesm"),
 		"name":     githubv4.String("middleman"),

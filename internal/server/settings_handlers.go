@@ -502,6 +502,9 @@ func (s *Server) updateSettings(
 			s.cfg.BranchActivityRetention(),
 			s.cfg.Activity.DefaultBranchMaxCommits,
 		)
+		s.syncer.SetPreferGitHubNativeStacks(
+			s.cfg.PullRequests.PreferGitHubNativeStacks,
+		)
 	}
 	s.refreshRuntimeTargetsLocked()
 	s.applyWorkspaceConfigLocked()

@@ -2890,7 +2890,8 @@ type PublishResponse struct {
 
 // PullRequests defines model for PullRequests.
 type PullRequests struct {
-	AllowMidStackMerges bool `json:"allow_mid_stack_merges"`
+	AllowMidStackMerges      bool `json:"allow_mid_stack_merges"`
+	PreferGithubNativeStacks bool `json:"prefer_github_native_stacks"`
 }
 
 // PullResponse defines model for PullResponse.

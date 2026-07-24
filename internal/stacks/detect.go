@@ -225,6 +225,17 @@ func commonPrefix(a, b string) string {
 
 // RunDetection detects stacks for a single repo and persists results.
 func RunDetection(ctx context.Context, database *db.DB, repoID int64) error {
+	return RunDetectionWithNativeStacks(ctx, database, repoID, nil)
+}
+
+// RunDetectionWithNativeStacks projects confirmed GitHub-native stacks first,
+// then runs branch inference across only the merge requests left unclaimed.
+func RunDetectionWithNativeStacks(
+	ctx context.Context,
+	database *db.DB,
+	repoID int64,
+	confirmedNativeNumbers []int,
+) error {
 	repo, err := database.GetRepoByID(ctx, repoID)
 	if err != nil {
 		return err
@@ -238,34 +249,89 @@ func RunDetection(ctx context.Context, database *db.DB, repoID int64) error {
 		return err
 	}
 
-	chains := DetectChains(prs, repo.CloneURL)
+	activeIDs := make([]int64, 0)
+	claimed := make(map[int64]bool)
+	if len(confirmedNativeNumbers) > 0 {
+		confirmed := make(map[int]bool, len(confirmedNativeNumbers))
+		for _, number := range confirmedNativeNumbers {
+			confirmed[number] = true
+		}
+		nativeStacks, err := database.ListGitHubNativeStacks(ctx, repoID)
+		if err != nil {
+			return err
+		}
+		prsByNumber := make(map[int]db.MergeRequest, len(prs))
+		for _, pr := range prs {
+			prsByNumber[pr.Number] = pr
+		}
+		for _, nativeStack := range nativeStacks {
+			if !confirmed[nativeStack.Number] || !nativeStack.IsOpen ||
+				len(nativeStack.Members) != nativeStack.Size || len(nativeStack.Members) < 2 {
+				continue
+			}
+			chain := make([]db.MergeRequest, 0, len(nativeStack.Members))
+			usable := true
+			for _, member := range nativeStack.Members {
+				pr, ok := prsByNumber[member.PullRequestNumber]
+				if !ok {
+					usable = false
+					break
+				}
+				chain = append(chain, pr)
+			}
+			if !usable || !hasOpenMember(chain) {
+				continue
+			}
+			stackID, err := persistStackChain(ctx, database, repoID, chain)
+			if err != nil {
+				return err
+			}
+			activeIDs = append(activeIDs, stackID)
+			for _, pr := range chain {
+				claimed[pr.ID] = true
+			}
+		}
+	}
 
-	var activeIDs []int64
+	unclaimed := slices.DeleteFunc(slices.Clone(prs), func(pr db.MergeRequest) bool {
+		return claimed[pr.ID]
+	})
+	chains := DetectChains(unclaimed, repo.CloneURL)
 	for _, chain := range chains {
 		// Skip fully-merged chains — no open PRs means the stack is done.
 		if !hasOpenMember(chain) {
 			continue
 		}
-		name := DeriveStackName(chain)
-		baseNumber := chain[0].Number
-		stackID, err := database.UpsertStack(ctx, repoID, baseNumber, name)
+		stackID, err := persistStackChain(ctx, database, repoID, chain)
 		if err != nil {
 			return err
 		}
 		activeIDs = append(activeIDs, stackID)
-
-		members := make([]db.StackMember, len(chain))
-		for i, pr := range chain {
-			members[i] = db.StackMember{
-				StackID:        stackID,
-				MergeRequestID: pr.ID,
-				Position:       i + 1,
-			}
-		}
-		if err := database.ReplaceStackMembers(ctx, stackID, members); err != nil {
-			return err
-		}
 	}
 
 	return database.DeleteStaleStacks(ctx, repoID, activeIDs)
+}
+
+func persistStackChain(
+	ctx context.Context,
+	database *db.DB,
+	repoID int64,
+	chain []db.MergeRequest,
+) (int64, error) {
+	stackID, err := database.UpsertStack(
+		ctx, repoID, chain[0].Number, DeriveStackName(chain),
+	)
+	if err != nil {
+		return 0, err
+	}
+	members := make([]db.StackMember, len(chain))
+	for i, pr := range chain {
+		members[i] = db.StackMember{
+			StackID: stackID, MergeRequestID: pr.ID, Position: i + 1,
+		}
+	}
+	if err := database.ReplaceStackMembers(ctx, stackID, members); err != nil {
+		return 0, err
+	}
+	return stackID, nil
 }

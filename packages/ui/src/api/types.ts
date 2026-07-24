@@ -93,6 +93,7 @@ export const DEFAULT_MODE_VISIBILITY: ModeVisibility = {
 
 export const DEFAULT_PULL_REQUEST_SETTINGS: PullRequestSettings = {
   allow_mid_stack_merges: false,
+  prefer_github_native_stacks: false,
 };
 
 export type AgentSettings = components["schemas"]["Agent"];

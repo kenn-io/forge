@@ -115,6 +115,10 @@ and materialize `node_modules` from the lockfile before invoking baked `vp` (`.g
 memory-bounded self-hosted runners; assertions can finish before a pooled worker
 dies during teardown (`frontend/vite.config.ts::resolveUnitTestWorkers`).
 
+Mock Playwright shares one Vite dev server, so cap CI workers at guaranteed cores;
+burst-level worker counts starve navigation and reload requests into false 30-second
+timeouts (`frontend/playwright.config.ts::ciWorkers`).
+
 Non-container Vite+ jobs cache only Bun downloads with an exact OS, architecture, lockfile, and workspace-manifest key; do not use prefix restores, because stale package caches can poison a lockfile-correct install (`.github/workflows/ci.yml::build`).
 
 Timezone-sensitive Vitest tests must not mutate `process.env.TZ` after workers

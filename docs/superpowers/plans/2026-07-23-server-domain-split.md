@@ -165,6 +165,7 @@ Tasks are numbered by domain inventory, but dependency order is: 1, 2, 4, 5, 7, 
 - [ ] Keep workspace and projects in one package so the full suite launches one Git/worktree-heavy test binary.
 - [ ] Define the shared workspace DTO/service boundary consumed later by Kata and Fleet before moving either dependent domain.
 - [ ] Add a package-level weighted semaphore, initially eight, around tests that create clones/worktrees or run substantial Git subprocesses.
+- [x] Move the first Git-heavy workspace diff/commit wire group out of `api_test.go`; the 10-test `workspacetest` lane completes in about 10 seconds at 24 CPUs behind an eight-slot semaphore.
 - [ ] Keep the PTY semaphore at one.
 - [ ] Preserve generated-client wire behavior and all workspace event ordering.
 - [ ] Run `GOMAXPROCS=24 go test ./internal/server/workspaceapi ./internal/server/workspacetest -parallel=8 -shuffle=on`.

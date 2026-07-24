@@ -241,6 +241,33 @@ func TestRepositoryFeatureError(t *testing.T) {
 	}
 }
 
+func TestRepositoryItemLookupReusesFeatureMetadataConfirmation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	enabled := true
+	operationErr := &HTTPError{StatusCode: http.StatusNotFound}
+	transport := &featureFailureTransport{
+		fakeTransport: &fakeTransport{},
+		repository: RepositoryDTO{
+			ID: 1, Owner: UserDTO{UserName: "owner"}, Name: "repo", FullName: "owner/repo",
+			IssuesEnabled: &enabled,
+		},
+		failAt:       "issue",
+		operationErr: operationErr,
+	}
+	provider := NewProvider(platform.KindForgejo, "forge.example", transport)
+	ref := platform.RepoRef{
+		Platform: platform.KindForgejo, Host: "forge.example", Owner: "owner", Name: "repo",
+	}
+
+	_, err := provider.GetIssue(t.Context(), ref, 7)
+
+	require.ErrorIs(err, platform.ErrLookupNotPresent)
+	require.ErrorIs(err, platform.ErrNotFound)
+	require.ErrorIs(err, operationErr)
+	assert.Equal(1, transport.repositoryCalls)
+}
+
 func TestRepositoryFeatureReadBoundaries(t *testing.T) {
 	tests := []struct {
 		name    string

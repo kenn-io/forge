@@ -622,6 +622,27 @@ func TestArchiveBudgetDeferralDoesNotIncrementAttempts(t *testing.T) {
 	assert.Empty(provider.calls)
 }
 
+func TestArchiveInventoryAdmissionReservesProviderConfirmationAttempts(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	ref := archiveServiceRef(platform.KindGitLab, "gitlab.test", "repo")
+	archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	admission := &archiveTestAdmission{}
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, admission, now)
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+
+	require.NoError(service.RunEligible(t.Context()))
+
+	require.NotEmpty(admission.costs)
+	assert.Equal(t, 4, admission.costs[0])
+}
+
 func TestArchivePausePreventsFutureProviderReads(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)

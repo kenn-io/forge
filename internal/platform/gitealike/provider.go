@@ -158,7 +158,7 @@ func (p *Provider) GetMergeRequest(
 ) (platform.MergeRequest, error) {
 	pr, err := p.transport.GetPullRequest(ctx, ref, number)
 	if err != nil {
-		return platform.MergeRequest{}, p.repositoryFeatureError(
+		return platform.MergeRequest{}, p.repositoryItemLookupError(
 			ctx, ref, platform.RepositoryFeatureMergeRequests, err,
 		)
 	}
@@ -233,7 +233,7 @@ func (p *Provider) GetIssue(
 ) (platform.Issue, error) {
 	issue, err := p.transport.GetIssue(ctx, ref, number)
 	if err != nil {
-		return platform.Issue{}, p.repositoryFeatureError(
+		return platform.Issue{}, p.repositoryItemLookupError(
 			ctx, ref, platform.RepositoryFeatureIssues, err,
 		)
 	}

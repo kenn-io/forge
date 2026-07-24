@@ -132,6 +132,26 @@ func TestPromptMaintenanceResumesDurableCursorAfterBudgetDeferral(t *testing.T) 
 	require.NotNil(states[0].MaintenanceSucceededAt)
 }
 
+func TestPromptMaintenanceAdmissionReservesProviderConfirmationAttempts(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	ref := archiveServiceRef(platform.KindGitLab, "gitlab.test", "repo")
+	archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	service := archiveMaintenanceService(t, database, provider, ref, now)
+	completeArchiveInitial(t, service)
+	admission := &archiveTestAdmission{}
+	service.admission = admission
+	service.clock = fixedClock{value: now.Add(time.Hour)}
+	service.SetMaintenanceInterval(time.Minute)
+
+	require.NoError(service.RunEligible(t.Context()))
+
+	require.NotEmpty(admission.costs)
+	assert.Equal(t, 4, admission.costs[0])
+}
+
 func archiveMaintenanceService(
 	t *testing.T,
 	database *db.DB,

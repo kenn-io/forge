@@ -455,7 +455,7 @@ func (c *Client) GetMergeRequest(
 	}
 	mr, _, err := c.api.MergeRequests.GetMergeRequest(pid, int64(number), nil, gitlab.WithContext(ctx))
 	if err != nil {
-		return platform.MergeRequest{}, c.repositoryFeatureError(
+		return platform.MergeRequest{}, c.repositoryItemLookupError(
 			ctx, normalizedRef, platform.RepositoryFeatureMergeRequests,
 			"get_merge_request", err,
 		)
@@ -560,7 +560,7 @@ func (c *Client) GetIssue(ctx context.Context, ref platform.RepoRef, number int)
 	}
 	issue, _, err := c.api.Issues.GetIssue(pid, int64(number), nil, gitlab.WithContext(ctx))
 	if err != nil {
-		return platform.Issue{}, c.repositoryFeatureError(
+		return platform.Issue{}, c.repositoryItemLookupError(
 			ctx, normalizedRef, platform.RepositoryFeatureIssues,
 			"get_issue", err,
 		)

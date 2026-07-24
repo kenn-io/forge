@@ -38,13 +38,11 @@ type QueueItem struct {
 	LargeRepo       bool
 }
 
-// WorstCaseCost returns the maximum API calls this item's
-// detail fetch could require.
+// WorstCaseCost returns the maximum wire attempts this item's
+// detail fetch could require, including authentication retry and
+// provider metadata confirmation allowances.
 func (qi *QueueItem) WorstCaseCost() int {
-	if qi.Type == QueueItemPR {
-		return PRDetailWorstCase
-	}
-	return IssueDetailWorstCase
+	return detailWorstCaseAttemptCost(qi.Platform, qi.Type)
 }
 
 func (qi QueueItem) Compare(other QueueItem) int {

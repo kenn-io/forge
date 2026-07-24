@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 type WorkPriority int
@@ -366,6 +367,14 @@ func (c fixedClock) Now() time.Time { return c.value }
 // ceiling and the live floor it protects.
 func archiveAttemptCost(logical int) int {
 	return logical * 2
+}
+
+func archiveFeatureReadAttemptCost(kind platform.Kind) int {
+	logicalRequests := 1
+	if kind != platform.KindGitHub {
+		logicalRequests++ // repository metadata confirmation after a candidate feature error
+	}
+	return archiveAttemptCost(logicalRequests)
 }
 
 // archivePreempted reports whether a provider read failed because live

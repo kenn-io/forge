@@ -145,6 +145,41 @@ func TestRepositoryFeatureError(t *testing.T) {
 	}
 }
 
+func TestClientItemLookupReusesFeatureMetadataConfirmation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	featureCalls := 0
+	metadataCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/issues/7":
+			featureCalls++
+			http.Error(w, "issue missing", http.StatusNotFound)
+		case "/api/v4/projects/42":
+			metadataCalls++
+			writeJSON(w, `{
+				"id":42,"path":"project","path_with_namespace":"group/project",
+				"issues_access_level":"enabled","merge_requests_access_level":"enabled"
+			}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitLab, Host: "gitlab.example.com",
+		Owner: "group", Name: "project", RepoPath: "group/project", PlatformID: 42,
+	}
+
+	_, err := client.GetIssue(t.Context(), ref, 7)
+
+	require.ErrorIs(err, platform.ErrLookupNotPresent)
+	require.ErrorIs(err, platform.ErrNotFound)
+	assert.Equal(1, featureCalls)
+	assert.Equal(1, metadataCalls)
+}
+
 func TestClientClassifiesDisabledFeatureReads(t *testing.T) {
 	tests := []struct {
 		name         string

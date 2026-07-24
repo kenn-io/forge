@@ -993,9 +993,9 @@ func archiveBudgetResetAt(tracker *RateTracker) *time.Time {
 }
 
 func archiveLiveFloor(kind platform.Kind) int {
-	floor := PRDetailWorstCase + 1 // one full live detail plus one current-index page
+	floor := detailWorstCaseAttemptCost(kind, QueueItemPR) + wireAttemptsPerRequest
 	if kind == platform.KindGitHub {
-		floor++ // one notification page
+		floor += wireAttemptsPerRequest // one notification page
 	}
 	return floor
 }
@@ -7300,6 +7300,9 @@ func (s *Syncer) classifyProviderItemLookupError(
 	repo RepoRef,
 	err error,
 ) error {
+	if errors.Is(err, platform.ErrLookupNotPresent) {
+		return err
+	}
 	if !errors.Is(err, platform.ErrNotFound) {
 		return err
 	}
@@ -9463,11 +9466,11 @@ func (s *Syncer) syncIssueForRepo(
 // ArchiveItemSyncCost returns the worst-case wire-attempt allowance for the
 // existing full item sync. One logical request may spend a second attempt
 // after authentication refresh.
-func (s *Syncer) ArchiveItemSyncCost(_ platform.Kind, itemType db.ArchiveItemType) int {
+func (s *Syncer) ArchiveItemSyncCost(kind platform.Kind, itemType db.ArchiveItemType) int {
 	if itemType == db.ArchiveItemTypeMergeRequest {
-		return 2 * PRDetailWorstCase
+		return detailWorstCaseAttemptCost(kind, QueueItemPR)
 	}
-	return 2 * IssueDetailWorstCase
+	return detailWorstCaseAttemptCost(kind, QueueItemIssue)
 }
 
 // SyncArchiveItem runs archive hydration through the canonical live item

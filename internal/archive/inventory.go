@@ -28,7 +28,9 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 	if !archiveInventorySupported(repo, itemType) {
 		commit.Exhausted = true
 	} else {
-		requestCtx, complete, err := s.admit(ctx, repo, itemType, archiveAttemptCost(1))
+		requestCtx, complete, err := s.admit(
+			ctx, repo, itemType, archiveFeatureReadAttemptCost(repo.Ref.Platform),
+		)
 		if err != nil {
 			if errors.Is(err, errAdmissionDeferred) {
 				return err

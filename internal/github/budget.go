@@ -4,6 +4,8 @@ import (
 	"math"
 	"sync"
 	"time"
+
+	"go.kenn.io/middleman/internal/platform"
 )
 
 // PRDetailWorstCase is the maximum API calls a PR detail
@@ -15,6 +17,19 @@ const PRDetailWorstCase = 10
 // IssueDetailWorstCase is the maximum API calls an issue
 // detail fetch can make (detail + comments).
 const IssueDetailWorstCase = 2
+
+const wireAttemptsPerRequest = 2
+
+func detailWorstCaseAttemptCost(kind platform.Kind, itemType QueueItemType) int {
+	logicalRequests := IssueDetailWorstCase
+	if itemType == QueueItemPR {
+		logicalRequests = PRDetailWorstCase
+	}
+	if kind != platform.KindGitHub {
+		logicalRequests++ // repository metadata confirmation after a candidate feature error
+	}
+	return logicalRequests * wireAttemptsPerRequest
+}
 
 // SyncBudget tracks hourly API call spend for background
 // detail fetches on a single host.

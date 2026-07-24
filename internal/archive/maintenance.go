@@ -90,7 +90,9 @@ func (s *Service) promptPages(
 	}
 	cursor := scan.Cursor()
 	for {
-		requestCtx, complete, err := s.admit(ctx, repo, itemType, archiveAttemptCost(1))
+		requestCtx, complete, err := s.admit(
+			ctx, repo, itemType, archiveFeatureReadAttemptCost(repo.Ref.Platform),
+		)
 		if err != nil {
 			if errors.Is(err, errAdmissionDeferred) {
 				return err

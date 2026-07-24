@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 // Fixed reference time for deterministic tests.
@@ -12,10 +13,21 @@ var testNow = time.Date(2026, 4, 8, 12, 0, 0, 0, time.UTC)
 
 func TestQueueItemWorstCaseCost(t *testing.T) {
 	assert := assert.New(t)
-	pr := QueueItem{Type: QueueItemPR}
-	issue := QueueItem{Type: QueueItemIssue}
-	assert.Equal(PRDetailWorstCase, pr.WorstCaseCost())
-	assert.Equal(IssueDetailWorstCase, issue.WorstCaseCost())
+	tests := []struct {
+		name string
+		item QueueItem
+		want int
+	}{
+		{name: "GitHub pull request", item: QueueItem{Type: QueueItemPR, Platform: platform.KindGitHub}, want: 20},
+		{name: "GitLab pull request", item: QueueItem{Type: QueueItemPR, Platform: platform.KindGitLab}, want: 22},
+		{name: "GitHub issue", item: QueueItem{Type: QueueItemIssue, Platform: platform.KindGitHub}, want: 4},
+		{name: "Gitea issue", item: QueueItem{Type: QueueItemIssue, Platform: platform.KindGitea}, want: 6},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(test.want, test.item.WorstCaseCost())
+		})
+	}
 }
 
 func TestBuildQueueNeverFetchedOpenPR(t *testing.T) {

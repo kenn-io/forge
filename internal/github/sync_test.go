@@ -211,6 +211,11 @@ func TestSyncArchiveItemClassifiesOnlyConfirmedParentNotFound(t *testing.T) {
 			wantNotPresent: true, wantRepoQueries: 1,
 		},
 		{
+			name:           "provider metadata already confirms missing parent",
+			getIssueErr:    errors.Join(platform.ErrLookupNotPresent, platform.ErrNotFound),
+			wantNotPresent: true,
+		},
+		{
 			name: "child event not found stays retryable", issues: []platform.Issue{issue},
 			listEventsErr: platform.ErrNotFound,
 		},
@@ -245,6 +250,26 @@ func TestSyncArchiveItemClassifiesOnlyConfirmedParentNotFound(t *testing.T) {
 			require.Error(err)
 			assert.Equal(test.wantNotPresent, errors.Is(err, platform.ErrLookupNotPresent))
 			assert.Equal(test.wantRepoQueries, provider.getRepositoryCalls.Load())
+		})
+	}
+}
+
+func TestArchiveItemSyncCostIncludesProviderConfirmationAndAuthRetry(t *testing.T) {
+	syncer := &Syncer{}
+	tests := []struct {
+		name     string
+		kind     platform.Kind
+		itemType db.ArchiveItemType
+		want     int
+	}{
+		{name: "GitHub pull request", kind: platform.KindGitHub, itemType: db.ArchiveItemTypeMergeRequest, want: 20},
+		{name: "GitLab pull request", kind: platform.KindGitLab, itemType: db.ArchiveItemTypeMergeRequest, want: 22},
+		{name: "GitHub issue", kind: platform.KindGitHub, itemType: db.ArchiveItemTypeIssue, want: 4},
+		{name: "Forgejo issue", kind: platform.KindForgejo, itemType: db.ArchiveItemTypeIssue, want: 6},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, syncer.ArchiveItemSyncCost(test.kind, test.itemType))
 		})
 	}
 }
@@ -9758,11 +9783,11 @@ func TestDetailDrainRespectsBudget(t *testing.T) {
 		prs = append(prs, buildOpenPR(i, now))
 	}
 
-	// Index overhead: GetRepo(1) + ListPRs(1) + ListIssues(1) +
-	// GetUser(1, deduplicated by singleflight) = 4 calls. The PR
-	// detail admission reserve is 11 calls. Budget of 16 leaves
-	// enough nominal capacity for one detail, but not a second.
-	budget := testBudget(16)
+	// Index overhead: GetRepo(1) + releases(1) + tags(1) + ListPRs(1) +
+	// ListIssues(1) + GetUser(1, deduplicated by singleflight) = 6 calls.
+	// The PR detail admission reserve is 20 wire attempts. Budget of 26
+	// leaves enough nominal capacity for one detail, but not a second.
+	budget := testBudget(26)
 	mc := &detailTrackingClient{}
 	mc.budget = budget["github.com"]
 	mc.openPRs = prs
@@ -13907,7 +13932,7 @@ func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
 	d := openTestDB(t)
 
 	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
-	budget := testBudget(14)
+	budget := testBudget(23)
 	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}

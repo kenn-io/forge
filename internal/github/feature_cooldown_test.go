@@ -622,7 +622,7 @@ func TestDisabledPRCooldownDoesNotExhaustIssueDetailBudget(t *testing.T) {
 			UpdatedAt: &gh.Timestamp{Time: now},
 		}, nil
 	}
-	budget := testBudget(IssueDetailWorstCase)
+	budget := testBudget(detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemIssue))
 	client.budget = budget["github.com"]
 	syncer := NewSyncer(
 		map[string]Client{"github.com": client}, database, nil,

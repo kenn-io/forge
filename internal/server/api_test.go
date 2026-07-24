@@ -7859,6 +7859,182 @@ func TestAPIRepositorySyncRecoversDisabledIssueScopeThroughSQLite(t *testing.T) 
 	assert.Equal("issues are enabled again", issue.Title)
 }
 
+func TestAPIGitLabDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	var metadataCalls atomic.Int32
+	var issueCalls atomic.Int32
+	var mergeRequestCalls atomic.Int32
+	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42":
+			metadataCalls.Add(1)
+			_, _ = io.WriteString(w, `{
+				"id":42,"path":"project","path_with_namespace":"group/project",
+				"web_url":"https://gitlab.test/group/project",
+				"http_url_to_repo":"https://gitlab.test/group/project.git",
+				"default_branch":"main","issues_access_level":"disabled",
+				"merge_requests_access_level":"enabled"
+			}`)
+		case "/api/v4/projects/42/issues":
+			issueCalls.Add(1)
+			http.Error(w, "issues are disabled", http.StatusNotFound)
+		case "/api/v4/projects/42/merge_requests":
+			mergeRequestCalls.Add(1)
+			_, _ = io.WriteString(w, `[{
+				"id":7001,"iid":7,"project_id":42,"source_project_id":42,
+				"title":"unaffected merge request","state":"opened",
+				"web_url":"https://gitlab.test/group/project/-/merge_requests/7",
+				"author":{"username":"ada"},"source_branch":"feature",
+				"target_branch":"main","sha":"head-sha",
+				"created_at":"2026-07-22T12:00:00Z",
+				"updated_at":"2026-07-22T12:01:00Z"
+			}]`)
+		case "/api/v4/projects/42/releases",
+			"/api/v4/projects/42/repository/tags",
+			"/api/v4/projects/42/labels":
+			_, _ = io.WriteString(w, `[]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(providerServer.Close)
+
+	provider, err := platformgitlab.NewClient(
+		"gitlab.test",
+		testTokenSource("token"),
+		platformgitlab.WithBaseURLForTesting(providerServer.URL+"/api/v4"),
+		platformgitlab.WithoutRetriesForTesting(),
+	)
+	require.NoError(err)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	ref := ghclient.RepoRef{
+		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
+		Owner: "group", Name: "project", RepoPath: "group/project",
+		PlatformRepoID: 42, PlatformExternalID: "42",
+		WebURL:   "https://gitlab.test/group/project",
+		CloneURL: "https://gitlab.test/group/project.git", DefaultBranch: "main",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{ref}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
+
+	assert.Equal(int32(1), issueCalls.Load())
+	assert.Equal(int32(2), mergeRequestCalls.Load())
+	assert.Equal(int32(3), metadataCalls.Load())
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform: "gitlab", PlatformHost: "gitlab.test", RepoPath: "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	assert.Empty(repo.LastSyncError)
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("unaffected merge request", stored.Title)
+}
+
+func TestAPIGiteaDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	var metadataCalls atomic.Int32
+	var issueCalls atomic.Int32
+	var mergeRequestCalls atomic.Int32
+	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/api/v1/repos/tea/kettle":
+			metadataCalls.Add(1)
+			_, _ = io.WriteString(w, `{
+				"id":101,"name":"kettle","full_name":"tea/kettle",
+				"html_url":"https://gitea.test/tea/kettle",
+				"clone_url":"https://gitea.test/tea/kettle.git",
+				"default_branch":"main","owner":{"login":"tea"},
+				"has_issues":false,"has_pull_requests":true,
+				"created_at":"2026-07-22T12:00:00Z",
+				"updated_at":"2026-07-22T12:01:00Z"
+			}`)
+		case "/api/v1/repos/tea/kettle/issues":
+			issueCalls.Add(1)
+			http.Error(w, "issues are disabled", http.StatusNotFound)
+		case "/api/v1/repos/tea/kettle/pulls":
+			mergeRequestCalls.Add(1)
+			_, _ = io.WriteString(w, `[{
+				"id":201,"number":7,
+				"html_url":"https://gitea.test/tea/kettle/pulls/7",
+				"title":"unaffected pull request","state":"open",
+				"user":{"login":"ada"},
+				"head":{"ref":"feature","sha":"head-sha"},
+				"base":{"ref":"main","sha":"base-sha"},
+				"created_at":"2026-07-22T12:00:00Z",
+				"updated_at":"2026-07-22T12:01:00Z"
+			}]`)
+		case "/api/v1/repos/tea/kettle/releases",
+			"/api/v1/repos/tea/kettle/tags",
+			"/api/v1/repos/tea/kettle/labels":
+			_, _ = io.WriteString(w, `[]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(providerServer.Close)
+
+	provider, err := giteaplatform.NewClient(
+		"gitea.test",
+		testTokenSource("token"),
+		giteaplatform.WithBaseURLForTesting(providerServer.URL),
+	)
+	require.NoError(err)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	ref := ghclient.RepoRef{
+		Platform: platform.KindGitea, PlatformHost: "gitea.test",
+		Owner: "tea", Name: "kettle", RepoPath: "tea/kettle",
+		PlatformRepoID: 101, PlatformExternalID: "101",
+		WebURL:   "https://gitea.test/tea/kettle",
+		CloneURL: "https://gitea.test/tea/kettle.git", DefaultBranch: "main",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{ref}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
+
+	assert.Equal(int32(1), issueCalls.Load())
+	assert.Equal(int32(2), mergeRequestCalls.Load())
+	assert.Equal(int32(3), metadataCalls.Load())
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform: "gitea", PlatformHost: "gitea.test", RepoPath: "tea/kettle",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	assert.Empty(repo.LastSyncError)
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("unaffected pull request", stored.Title)
+}
+
 func TestMatchPriorityRepoRequiresProviderQualifiedRepoPaths(t *testing.T) {
 	assert := assert.New(t)
 

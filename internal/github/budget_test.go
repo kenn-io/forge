@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 func TestSyncBudgetBasics(t *testing.T) {
@@ -33,6 +34,12 @@ func TestSyncBudgetWorstCase(t *testing.T) {
 	assert.Equal(t, 10, PRDetailWorstCase)
 	assert.False(t, b.CanSpend(PRDetailWorstCase))   // 10 > 5 remaining
 	assert.True(t, b.CanSpend(IssueDetailWorstCase)) // 2 <= 5 remaining
+}
+
+func TestArchiveLiveFloorReservesWorstCaseWireAttempts(t *testing.T) {
+	assert.Equal(t, 24, archiveLiveFloor(platform.KindGitHub))
+	assert.Equal(t, 24, archiveLiveFloor(platform.KindGitLab))
+	assert.Equal(t, 24, archiveLiveFloor(platform.KindGitea))
 }
 
 func TestSyncBudgetArchiveAdmissionRampsTowardReset(t *testing.T) {

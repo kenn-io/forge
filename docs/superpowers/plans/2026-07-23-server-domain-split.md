@@ -16,6 +16,23 @@
 - Run direct Go tests with `-shuffle=on`, without `-count=1` or `-v`.
 - Keep PTY concurrency at one and bound Git/worktree-heavy workspace tests independently of `GOMAXPROCS`.
 - Use the generated API client for wire-level integration tests where it already covers the route.
+- Domain packages never import the root `internal/server` package. Shared wire types live below the root, while cross-domain behavior is injected through narrow callbacks or interfaces.
+- The root starts and stops domain-owned background workers in construction order and reverse shutdown order. Domain cleanup must be idempotent and honor the root shutdown context.
+- Mutable configuration is persisted by root-owned transactional callbacks. Domain handlers receive committed snapshots and must not retain the root config pointer or mutex.
+- After every carve-out, run `make api-generate` and require no generated-artifact diff unless an API change is explicitly intended.
+- Route metadata and stable-problem-code guards scan extracted packages recursively; each moved handler must replace generic Huma errors with `httpapi` problems where needed.
+- Handler-focused tests move with the domain. A small root suite remains only for composition, middleware, CSRF/loopback policy, and full `ServeHTTP` wire behavior. Shared public fixtures are added to `servertest` at the first point two extracted packages need them.
+
+## Success Criteria
+
+- `GOMAXPROCS=24 go test ./internal/server/... -parallel=8 -shuffle=on` completes without Git, tmux, PTY, or process-resource failures.
+- Server-subtree wall time is below 180 seconds on the profiling host, at least 46% lower than the 337.8-second capped baseline.
+- No single ordinary domain package exceeds 60 seconds; the resource-bounded workspace package may use up to 120 seconds.
+- The final timing report records each package elapsed time and the root package contains only composition/middleware tests.
+
+## Execution Order
+
+Tasks are numbered by domain inventory, but dependency order is: 1, 2, 4, 5, 7, 3, 6, then the provider/admin subdivisions in Task 8. Workspace moves before Kata and Fleet because those domains consume workspace DTOs and lifecycle services.
 
 ---
 
@@ -32,11 +49,11 @@
 - Produces: exported `ProblemError`, `ProblemCode`, problem constructors, generic output wrappers, and `DocumentOperation`.
 - Consumes: Huma, platform errors, database repository identity, and token redaction.
 
-- [ ] Export the existing problem-envelope implementation without changing its JSON shape or status mapping.
-- [ ] Replace root-package helper calls with `httpapi` calls directly; do not leave forwarding wrappers.
-- [ ] Move problem-envelope tests into `httpapi` and retain the root wire-level problem tests.
-- [ ] Run `go test ./internal/server/httpapi ./internal/server -run 'TestProblem|TestCodeForStatus|TestMapPlatformError|TestProviderCallProblem' -shuffle=on`.
-- [ ] Commit as `refactor(server): isolate the shared HTTP contract`.
+- [x] Export the existing problem-envelope implementation without changing its JSON shape or status mapping.
+- [x] Replace root-package helper calls with `httpapi` calls directly; do not leave forwarding wrappers.
+- [x] Move problem-envelope tests into `httpapi` and retain the root wire-level problem tests.
+- [x] Run `go test ./internal/server/httpapi ./internal/server -run 'TestProblem|TestCodeForStatus|TestMapPlatformError|TestProviderCallProblem' -shuffle=on`.
+- [x] Commit as `refactor(server): isolate the shared HTTP contract`.
 
 ### Task 2: Docs API
 
@@ -53,13 +70,16 @@
 - Consumes: `docsapi.Deps{Config, ConfigPath, ConfigMu, Registry}`.
 - Produces: `(*docsapi.Handler).Register(huma.API)`, `ReplaceFolders`, and registry inspection methods needed by configuration reload tests.
 
-- [ ] Move docs route types, handlers, publish locking, problem mapping, and daemon-binding validation into `docsapi`.
-- [ ] Register the handler from the root server and update config reload through `ReplaceFolders`.
-- [ ] Keep loopback/CSRF path classification in the root middleware because it is cross-domain policy.
-- [ ] Run `go test ./internal/server/docsapi ./internal/server -run 'TestDocs|TestConfigReload.*Doc' -shuffle=on`.
-- [ ] Commit as `refactor(server): carve out the docs API`.
+- [x] Move docs route types, handlers, publish locking, problem mapping, and daemon-binding validation into `docsapi`.
+- [x] Register the handler from the root server and update config reload through committed folder snapshots.
+- [x] Keep loopback/CSRF path classification in the root middleware because it is cross-domain policy.
+- [x] Keep mutable registry and publish-lock internals private; package-local tests cover rollback and lock behavior.
+- [x] Run focused Docs/config tests and verify generated OpenAPI artifacts are unchanged.
+- [x] Commit as `refactor(server): carve out the docs API` with the transactional ownership follow-up.
 
 ### Task 3: Kata API
+
+**Dependency:** Execute after Task 7. Kata receives workspace DTOs and operations from `workspaceapi`; it must not call root `Server` methods or duplicate workspace wire types.
 
 **Files:**
 - Create: `internal/server/kataapi/handler.go`
@@ -71,7 +91,7 @@
 - Consumes: daemon catalog selection, workspace manager access, config reads, HTTP transport, and root event callbacks through `kataapi.Deps`.
 - Produces: `(*kataapi.Handler).Register(huma.API)`, `ApplyConfig`, and shutdown cleanup.
 
-- [ ] Replace `Server` receiver methods with a concrete Kata handler.
+- [ ] Replace `Server` receiver methods with a concrete Kata handler after the Workspace boundary exists.
 - [ ] Preserve daemon selection headers, proxy caching, redirect behavior, and workspace mappings.
 - [ ] Run `go test ./internal/server/kataapi ./internal/server/e2etest -run 'TestKata' -shuffle=on`.
 - [ ] Commit as `refactor(server): carve out the Kata API`.
@@ -88,10 +108,12 @@
 - Consumes: config, base path, msgvault client transport, and remote-image dependencies.
 - Produces: `(*messagesapi.Handler).Register(huma.API)` and `ApplyConfig`.
 
-- [ ] Preserve `/messages` application naming and `/msgvault` backend API naming.
-- [ ] Preserve safe HTML/image behavior and stable upstream error envelopes.
-- [ ] Run `go test ./internal/server/messagesapi ./internal/server -run 'TestMsgvault|TestMessages' -shuffle=on`.
-- [ ] Commit as `refactor(server): carve out the messages API`.
+- [x] Preserve `/messages` application naming and `/msgvault` backend API naming.
+- [x] Preserve safe HTML/image behavior and stable upstream error envelopes.
+- [x] Replace shared config pointer/mutex ownership with a root-owned transactional save callback and package-local reload regression coverage.
+- [ ] Move handler and remote-image policy tests into `messagesapi`; keep only middleware/composition wire checks in the root.
+- [x] Run focused Messages tests and verify generated OpenAPI artifacts are unchanged.
+- [x] Commit as `refactor(server): carve out the messages API` with the transactional ownership follow-up.
 
 ### Task 5: Repository Browser API
 
@@ -110,6 +132,8 @@
 - [ ] Commit as `refactor(server): carve out the repository browser API`.
 
 ### Task 6: Fleet API
+
+**Dependency:** Execute after Task 7. Fleet consumes workspace/project snapshots and runtime services through exported `workspaceapi` contracts rather than root receivers.
 
 **Files:**
 - Create: `internal/server/fleetapi/handler.go`
@@ -138,6 +162,7 @@
 - Produces: `(*workspaceapi.Handler).Register(huma.API)`, workspace response enrichment, background observer lifecycle, and shutdown.
 
 - [ ] Keep workspace and projects in one package so the full suite launches one Git/worktree-heavy test binary.
+- [ ] Define the shared workspace DTO/service boundary consumed later by Kata and Fleet before moving either dependent domain.
 - [ ] Add a package-level weighted semaphore, initially eight, around tests that create clones/worktrees or run substantial Git subprocesses.
 - [ ] Keep the PTY semaphore at one.
 - [ ] Preserve generated-client wire behavior and all workspace event ordering.
@@ -147,22 +172,30 @@
 ### Task 8: Provider and Admin APIs
 
 **Files:**
-- Create: `internal/server/providerapi/handler.go`
+- Create: `internal/server/pullapi/handler.go`
+- Create: `internal/server/issueapi/handler.go`
+- Create: `internal/server/activityapi/handler.go`
+- Create: `internal/server/repoapi/handler.go`
+- Create: `internal/server/syncapi/handler.go`
 - Create: `internal/server/adminapi/handler.go`
-- Move pull/issue/activity/review/merge/sync/release handlers and tests into `providerapi`
+- Move pull/review/merge handlers and tests into `pullapi`
+- Move issue handlers and tests into `issueapi`
+- Move notifications/activity handlers and tests into `activityapi`
+- Move repository metadata/labels/releases handlers and tests into `repoapi`
+- Move explicit sync handlers and tests into `syncapi`
 - Move settings/config/repo-import/tooling/host-runtime/archive handlers and tests into `adminapi`
 - Modify: `internal/server/server.go`, `internal/server/huma_routes.go`, `internal/server/api_test.go`
 
 **Interfaces:**
-- `providerapi.Deps` consumes database, platform registry, syncer, clone manager, event broadcaster, and capability checks.
+- Provider-domain `Deps` consume only the database, platform registry, syncer, clone manager, event broadcaster, and capability checks each route group needs.
 - `adminapi.Deps` consumes config persistence/reload, archive controller, tooling runner, token sources, and host runtime.
-- Both produce concrete `Register(huma.API)` methods.
+- Every package produces a concrete `Register(huma.API)` method.
 
 - [ ] Preserve provider/host-aware route wrappers and capability errors.
 - [ ] Leave only composition, middleware, health, auth, SPA, OpenAPI assembly, and startup/shutdown tests in `internal/server`.
 - [ ] Run `GOMAXPROCS=24 go test ./internal/server/... -parallel=8 -shuffle=on`.
 - [ ] Compare package timings with the recorded 500.8-second unrestricted and 337.8-second capped baselines.
-- [ ] Commit `providerapi` and `adminapi` as separate commits, one domain per commit.
+- [ ] Commit each provider route group and `adminapi` separately, one domain per commit.
 
 ### Task 9: Final Verification
 

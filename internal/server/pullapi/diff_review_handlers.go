@@ -1,4 +1,4 @@
-package server
+package pullapi
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
-func (s *Server) getDiffReviewDraft(
+func (s *Handler) getDiffReviewDraft(
 	ctx context.Context,
 	input *repoNumberInput,
 ) (*getDiffReviewDraftOutput, error) {
@@ -35,7 +35,7 @@ func (s *Server) getDiffReviewDraft(
 	return &getDiffReviewDraftOutput{Body: s.diffReviewDraftResponse(ctx, *repo, *mr, draft)}, nil
 }
 
-func (s *Server) createDiffReviewDraftComment(
+func (s *Handler) createDiffReviewDraftComment(
 	ctx context.Context,
 	input *createDiffReviewDraftCommentInput,
 ) (*createDiffReviewDraftCommentOutput, error) {
@@ -73,7 +73,7 @@ func (s *Server) createDiffReviewDraftComment(
 	}, nil
 }
 
-func (s *Server) editDiffReviewDraftComment(
+func (s *Handler) editDiffReviewDraftComment(
 	ctx context.Context,
 	input *editDiffReviewDraftCommentInput,
 ) (*editDiffReviewDraftCommentOutput, error) {
@@ -115,7 +115,7 @@ func (s *Server) editDiffReviewDraftComment(
 	return &editDiffReviewDraftCommentOutput{Body: diffReviewDraftCommentResponse(*comment)}, nil
 }
 
-func (s *Server) deleteDiffReviewDraftComment(
+func (s *Handler) deleteDiffReviewDraftComment(
 	ctx context.Context,
 	input *deleteDiffReviewDraftCommentInput,
 ) (*statusOnlyOutput, error) {
@@ -144,7 +144,7 @@ func (s *Server) deleteDiffReviewDraftComment(
 	return &statusOnlyOutput{Status: http.StatusOK}, nil
 }
 
-func (s *Server) discardDiffReviewDraft(
+func (s *Handler) discardDiffReviewDraft(
 	ctx context.Context,
 	input *discardDiffReviewDraftInput,
 ) (*statusOnlyOutput, error) {
@@ -160,7 +160,7 @@ func (s *Server) discardDiffReviewDraft(
 	return &statusOnlyOutput{Status: http.StatusOK}, nil
 }
 
-func (s *Server) applyReviewSuggestions(
+func (s *Handler) applyReviewSuggestions(
 	ctx context.Context,
 	input *applyReviewSuggestionInput,
 ) (*applyReviewSuggestionOutput, error) {
@@ -195,8 +195,9 @@ func (s *Server) applyReviewSuggestions(
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
-	if rate := s.mutationOperationRateLimit(*repo, descApplyReviewSuggestion); rate.limited {
-		return nil, problemOperationRateLimited(*repo, rate)
+	if availability := s.operations(*repo).ApplyReviewSuggestion; !availability.Available &&
+		availability.Code == "rate_limited" {
+		return nil, operationRateLimitedProblem(*repo, availability)
 	}
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
@@ -282,7 +283,7 @@ func (s *Server) applyReviewSuggestions(
 			"apply review suggestions on provider failed",
 		)
 	}
-	response := applyReviewSuggestionResponse{Status: "applied"}
+	response := ApplyReviewSuggestionResponse{Status: "applied"}
 	if result != nil {
 		response.CommitSHA = result.CommitSHA
 		response.CommitURL = result.CommitURL
@@ -324,7 +325,7 @@ func validateReviewSuggestionThread(thread db.MRReviewThread, expectedHeadSHA st
 	return nil
 }
 
-func (s *Server) requireReviewSuggestionCapabilities(repo db.Repo) error {
+func (s *Handler) requireReviewSuggestionCapabilities(repo db.Repo) error {
 	caps := s.capabilitiesForRepo(repo)
 	for _, capability := range []string{
 		capabilityMutationHeadBinding,
@@ -452,7 +453,7 @@ func closesMarkdownFence(line string, fence markdownFence) bool {
 	return strings.TrimSpace(line[count:]) == ""
 }
 
-func (s *Server) syncAfterReviewSuggestionApply(repo db.Repo, number int) {
+func (s *Handler) syncAfterReviewSuggestionApply(repo db.Repo, number int) {
 	kind := repoProviderKind(repo)
 	host := repoProviderHost(repo)
 	key := "pr:" + string(kind) + ":" + host + ":" + repo.RepoPath +
@@ -477,7 +478,7 @@ func (s *Server) syncAfterReviewSuggestionApply(repo db.Repo, number int) {
 	)
 }
 
-func (s *Server) publishDiffReviewDraft(
+func (s *Handler) publishDiffReviewDraft(
 	ctx context.Context,
 	input *publishDiffReviewDraftInput,
 ) (*actionStatusOutput, error) {
@@ -584,7 +585,7 @@ func (s *Server) publishDiffReviewDraft(
 			if mapped := diffReviewPartialPublishProblem(partialErr, *repo); mapped != nil {
 				return nil, mapped
 			}
-			return &actionStatusOutput{Body: actionStatusBody{Status: "partially_published"}}, nil
+			return &actionStatusOutput{Body: ActionStatusBody{Status: "partially_published"}}, nil
 		}
 		if errors.Is(err, platform.ErrStaleState) {
 			s.syncAfterStaleReviewDraftPublish(*repo, input.Number)
@@ -602,10 +603,10 @@ func (s *Server) publishDiffReviewDraft(
 	if capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityReadReviewThreads) {
 		_ = s.ingestDiffReviewThreads(ctx, *repo, *mr)
 	}
-	return &actionStatusOutput{Body: actionStatusBody{Status: "published"}}, nil
+	return &actionStatusOutput{Body: ActionStatusBody{Status: "published"}}, nil
 }
 
-func (s *Server) syncAfterStaleReviewDraftPublish(repo db.Repo, number int) {
+func (s *Handler) syncAfterStaleReviewDraftPublish(repo db.Repo, number int) {
 	s.runBackground(func(bgCtx context.Context) {
 		if syncErr := s.syncer.SyncMROnProvider(
 			bgCtx,
@@ -642,7 +643,7 @@ func diffReviewPartialPublishProblem(
 	return mapped
 }
 
-func (s *Server) deletePublishedReviewDraftComments(
+func (s *Handler) deletePublishedReviewDraftComments(
 	ctx context.Context,
 	draftID int64,
 	mrID int64,
@@ -663,21 +664,21 @@ func (s *Server) deletePublishedReviewDraftComments(
 	return nil
 }
 
-func (s *Server) resolveDiffReviewThread(
+func (s *Handler) resolveDiffReviewThread(
 	ctx context.Context,
 	input *resolveDiffReviewThreadInput,
 ) (*statusOnlyOutput, error) {
 	return s.setDiffReviewThreadResolved(ctx, input, true)
 }
 
-func (s *Server) unresolveDiffReviewThread(
+func (s *Handler) unresolveDiffReviewThread(
 	ctx context.Context,
 	input *resolveDiffReviewThreadInput,
 ) (*statusOnlyOutput, error) {
 	return s.setDiffReviewThreadResolved(ctx, input, false)
 }
 
-func (s *Server) setDiffReviewThreadResolved(
+func (s *Handler) setDiffReviewThreadResolved(
 	ctx context.Context,
 	input *resolveDiffReviewThreadInput,
 	resolved bool,
@@ -740,7 +741,7 @@ func (s *Server) setDiffReviewThreadResolved(
 	return &statusOnlyOutput{Status: http.StatusOK}, nil
 }
 
-func (s *Server) lookupReviewDraftTarget(
+func (s *Handler) lookupReviewDraftTarget(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
 	number int,
@@ -759,7 +760,7 @@ func (s *Server) lookupReviewDraftTarget(
 	return repo, mr, nil
 }
 
-func (s *Server) lookupReviewDraftMutationTarget(
+func (s *Handler) lookupReviewDraftMutationTarget(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
 	number int,
@@ -782,7 +783,7 @@ func (s *Server) lookupReviewDraftMutationTarget(
 	return repo, mr, nil
 }
 
-func (s *Server) ingestDiffReviewThreads(
+func (s *Handler) ingestDiffReviewThreads(
 	ctx context.Context,
 	repo db.Repo,
 	mr db.MergeRequest,
@@ -865,7 +866,7 @@ func (s *Server) ingestDiffReviewThreads(
 	return nil
 }
 
-func (s *Server) diffReviewDraftResponse(
+func (s *Handler) diffReviewDraftResponse(
 	ctx context.Context,
 	repo db.Repo,
 	mr db.MergeRequest,
@@ -970,7 +971,7 @@ func mergeRequestEventResponseFromDB(event db.MREvent) mergeRequestEventResponse
 	}
 }
 
-func (s *Server) mergeRequestEventResponses(
+func (s *Handler) mergeRequestEventResponses(
 	ctx context.Context,
 	mrID int64,
 	events []db.MREvent,

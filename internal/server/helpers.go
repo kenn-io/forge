@@ -190,23 +190,6 @@ func (s *Server) isConfiguredRepoTracked(repo db.Repo) bool {
 }
 
 // lookupMRID resolves the internal MR id from the common route tuple.
-func (s *Server) lookupMRID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(
-		ctx, ref.repoID, ref.number,
-	)
-	if err != nil {
-		return 0, err
-	}
-	if mr == nil {
-		return 0, fmt.Errorf(
-			"pull request %s/%s#%d on %s not found",
-			ref.owner, ref.name, ref.number, ref.platformHost,
-		)
-	}
-	return mr.ID, nil
-}
-
-// lookupIssueID resolves the internal issue id from the common route tuple.
 func (s *Server) lookupIssueID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
 	issue, err := s.db.GetIssueByRepoIDAndNumber(
 		ctx, ref.repoID, ref.number,
@@ -384,39 +367,3 @@ func (s *Server) toRepoSummaryResponse(
 
 // toWorktreeLinkResponses converts DB links to API responses.
 // Returns an empty non-nil slice when input is nil.
-func toWorktreeLinkResponses(
-	links []db.WorktreeLink,
-	hostKey string,
-) []worktreeLinkResponse {
-	out := make([]worktreeLinkResponse, len(links))
-	for i, l := range links {
-		out[i] = worktreeLinkResponse{
-			HostKey:        hostKey,
-			WorktreeKey:    l.WorktreeKey,
-			WorktreePath:   l.WorktreePath,
-			WorktreeBranch: l.WorktreeBranch,
-		}
-	}
-	return out
-}
-
-// indexWorktreeLinksByMR groups worktree link responses by
-// merge request ID.
-func indexWorktreeLinksByMR(
-	links []db.WorktreeLink,
-	hostKey string,
-) map[int64][]worktreeLinkResponse {
-	m := make(map[int64][]worktreeLinkResponse)
-	for _, l := range links {
-		m[l.MergeRequestID] = append(
-			m[l.MergeRequestID],
-			worktreeLinkResponse{
-				HostKey:        hostKey,
-				WorktreeKey:    l.WorktreeKey,
-				WorktreePath:   l.WorktreePath,
-				WorktreeBranch: l.WorktreeBranch,
-			},
-		)
-	}
-	return m
-}

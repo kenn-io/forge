@@ -1,4 +1,4 @@
-package server
+package pullapi
 
 import (
 	"context"
@@ -59,7 +59,7 @@ type deferredMergeTargetSnapshot struct {
 	BaseSHA    string
 }
 
-type deferredMergeCompletedPayload struct {
+type DeferredMergeCompletedPayload struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
 	RepoPath     string `json:"repo_path"`
@@ -75,7 +75,7 @@ type deferredMergeCompletedPayload struct {
 	CompletedAt  string `json:"completed_at"`
 }
 
-func (s *Server) deferMergePR(
+func (s *Handler) deferMergePR(
 	ctx context.Context,
 	input *deferMergePRInput,
 ) (*deferMergePROutput, error) {
@@ -86,7 +86,7 @@ func (s *Server) deferMergePR(
 	return &deferMergePROutput{Status: 202, Body: body}, nil
 }
 
-func (s *Server) enqueueDeferredMerge(
+func (s *Handler) enqueueDeferredMerge(
 	ctx context.Context,
 	provider string,
 	platformHost string,
@@ -203,7 +203,7 @@ func (s *Server) enqueueDeferredMerge(
 	}, nil
 }
 
-func (s *Server) runDeferredMerge(
+func (s *Handler) runDeferredMerge(
 	ctx context.Context,
 	repo db.Repo,
 	number int,
@@ -257,7 +257,7 @@ func (s *Server) runDeferredMerge(
 	}
 }
 
-func (s *Server) refreshDeferredMergeCI(
+func (s *Handler) refreshDeferredMergeCI(
 	ctx context.Context,
 	repo db.Repo,
 	number int,
@@ -303,7 +303,7 @@ func (s *Server) refreshDeferredMergeCI(
 	if err := deferredMergeRequireOpenDB(refreshed); err != nil {
 		return "", err
 	}
-	s.hub.Broadcast(Event{
+	s.publish(Event{
 		Type: "pr_ci_refreshed",
 		Data: workspaceapi.PRCIRefreshedPayload{
 			Provider:     string(repoProviderKind(repo)),
@@ -320,7 +320,7 @@ func (s *Server) refreshDeferredMergeCI(
 	return deferredMergeCheckState(refreshed.CIStatus, pendingKeys, refreshed.CIChecksJSON)
 }
 
-func (s *Server) refreshPendingDeferredMergeCheckKeys(
+func (s *Handler) refreshPendingDeferredMergeCheckKeys(
 	ctx context.Context,
 	repo db.Repo,
 	number int,
@@ -382,7 +382,7 @@ func deferredMergeRepoRef(repo db.Repo) ghclient.RepoRef {
 	}
 }
 
-func (s *Server) completeDeferredMerge(
+func (s *Handler) completeDeferredMerge(
 	ctx context.Context,
 	repo db.Repo,
 	number int,
@@ -406,10 +406,10 @@ func (s *Server) completeDeferredMerge(
 	// moment they see deferred_merge_completed, and that refresh must not
 	// read a stale deferred_merge_pending=true.
 	s.clearDeferredMergeInFlight(deferredMergeKey(repo, number), handle)
-	s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
-	s.hub.Broadcast(Event{
+	s.publish(Event{Type: "data_changed", Data: struct{}{}})
+	s.publish(Event{
 		Type: "deferred_merge_completed",
-		Data: deferredMergeCompletedPayload{
+		Data: DeferredMergeCompletedPayload{
 			Provider:     string(repoProviderKind(repo)),
 			PlatformHost: repoProviderHost(repo),
 			RepoPath:     repo.RepoPath,
@@ -426,7 +426,7 @@ func (s *Server) completeDeferredMerge(
 	})
 }
 
-func (s *Server) ensureDeferredMergeTargetUnchanged(ctx context.Context, repo db.Repo, number int, queuedTarget deferredMergeTargetSnapshot) error {
+func (s *Handler) ensureDeferredMergeTargetUnchanged(ctx context.Context, repo db.Repo, number int, queuedTarget deferredMergeTargetSnapshot) error {
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
 	if err != nil {
 		return err
@@ -552,7 +552,7 @@ func deferredMergeHeadSHA(body mergePRInputBody, queuedHeadSHA string) string {
 	return queuedHeadSHA
 }
 
-func (s *Server) broadcastDeferredMergeFailure(repo db.Repo, number int, headSHA string, message string, handle *deferredMergeHandle) {
+func (s *Handler) broadcastDeferredMergeFailure(repo db.Repo, number int, headSHA string, message string, handle *deferredMergeHandle) {
 	// A superseded worker lost its pull request to a successful immediate
 	// merge; reporting a deferred-merge failure for it would be misleading.
 	if handle != nil && handle.isSuperseded() {
@@ -568,9 +568,9 @@ func (s *Server) broadcastDeferredMergeFailure(repo db.Repo, number int, headSHA
 		"number", number,
 		"err", message,
 	)
-	s.hub.Broadcast(Event{
+	s.publish(Event{
 		Type: "deferred_merge_completed",
-		Data: deferredMergeCompletedPayload{
+		Data: DeferredMergeCompletedPayload{
 			Provider:     string(repoProviderKind(repo)),
 			PlatformHost: repoProviderHost(repo),
 			RepoPath:     repo.RepoPath,
@@ -690,7 +690,7 @@ func deferredMergeKey(repo db.Repo, number int) string {
 	return string(repoProviderKind(repo)) + ":" + repoProviderHost(repo) + ":" + repo.RepoPath + "#" + strconv.Itoa(number)
 }
 
-func (s *Server) markDeferredMergeInFlight(key string) (*deferredMergeHandle, bool) {
+func (s *Handler) markDeferredMergeInFlight(key string) (*deferredMergeHandle, bool) {
 	s.deferredMergeMu.Lock()
 	defer s.deferredMergeMu.Unlock()
 	if s.deferredMergeInFlight == nil {
@@ -704,7 +704,7 @@ func (s *Server) markDeferredMergeInFlight(key string) (*deferredMergeHandle, bo
 	return handle, true
 }
 
-func (s *Server) isDeferredMergePending(repo db.Repo, number int) bool {
+func (s *Handler) isDeferredMergePending(repo db.Repo, number int) bool {
 	s.deferredMergeMu.Lock()
 	defer s.deferredMergeMu.Unlock()
 	_, ok := s.deferredMergeInFlight[deferredMergeKey(repo, number)]
@@ -715,7 +715,7 @@ func (s *Server) isDeferredMergePending(repo db.Repo, number int) bool {
 // handle. Terminal paths clear before broadcasting, so a new deferred merge
 // can be queued for the same key before the old worker goroutine runs its
 // deferred cleanup; that cleanup must not delete the newer handle.
-func (s *Server) clearDeferredMergeInFlight(key string, handle *deferredMergeHandle) {
+func (s *Handler) clearDeferredMergeInFlight(key string, handle *deferredMergeHandle) {
 	s.deferredMergeMu.Lock()
 	defer s.deferredMergeMu.Unlock()
 	if s.deferredMergeInFlight[key] == handle {
@@ -727,7 +727,7 @@ func (s *Server) clearDeferredMergeInFlight(key string, handle *deferredMergeHan
 // after a merge landed through another path. Pending state clears here, before
 // callers observe the merge result, so a detail refresh triggered by the merge
 // never reports a queued merge that no longer exists.
-func (s *Server) supersedeDeferredMerge(key string) {
+func (s *Handler) supersedeDeferredMerge(key string) {
 	s.deferredMergeMu.Lock()
 	defer s.deferredMergeMu.Unlock()
 	handle, ok := s.deferredMergeInFlight[key]

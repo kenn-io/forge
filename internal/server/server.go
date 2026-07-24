@@ -37,6 +37,7 @@ import (
 	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/server/kataapi"
 	"go.kenn.io/middleman/internal/server/messagesapi"
+	"go.kenn.io/middleman/internal/server/pullapi"
 	"go.kenn.io/middleman/internal/server/repobrowserapi"
 	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/telemetry"
@@ -191,9 +192,6 @@ type Server struct {
 	detailSyncMu           sync.Mutex
 	detailSyncInFlight     map[string]struct{}
 	detailSyncPending      map[string]detailSyncJob
-	deferredMergeMu        sync.Mutex
-	deferredMergeInFlight  map[string]*deferredMergeHandle
-	deferredMergeMaxWait   time.Duration
 	writeCredProbeMu       sync.Mutex
 	writeCredProbes        map[string]writeCredentialProbe
 	writeCredProbeInFlight map[string]chan struct{}
@@ -204,6 +202,7 @@ type Server struct {
 	shutdownKata           func(context.Context) error
 	messagesAPI            *messagesapi.Handler
 	repoBrowserAPI         *repobrowserapi.Handler
+	pullAPI                *pullapi.Handler
 	workspaceAPI           *workspaceapi.Handler
 
 	// toolingStatus caches the assembled CLI tooling probe;
@@ -634,6 +633,15 @@ func kataConfigSnapshot(cfg *config.Config) kataapi.ConfigSnapshot {
 	}
 }
 
+func pullConfigSnapshot(cfg *config.Config) pullapi.ConfigSnapshot {
+	if cfg == nil {
+		return pullapi.ConfigSnapshot{}
+	}
+	return pullapi.ConfigSnapshot{
+		AllowMidStackMerges: cfg.PullRequests.AllowMidStackMerges,
+	}
+}
+
 func fleetConfigSnapshot(cfg *config.Config, tmuxCommand []string) fleetapi.ConfigSnapshot {
 	if cfg == nil {
 		return fleetapi.ConfigSnapshot{TmuxCommand: slices.Clone(tmuxCommand)}
@@ -675,6 +683,12 @@ func (s *Server) applyKataConfigLocked() {
 	}
 }
 
+func (s *Server) applyPullConfigLocked() {
+	if s.pullAPI != nil {
+		s.pullAPI.ApplyConfig(pullConfigSnapshot(s.cfg))
+	}
+}
+
 func newServer(
 	database *db.DB,
 	syncer *ghclient.Syncer,
@@ -695,9 +709,6 @@ func newServer(
 		options.HostCheckAllowLoopbackAnyPort,
 	)
 	deferredMergeMaxWait := options.deferredMergeMaxWait
-	if deferredMergeMaxWait <= 0 {
-		deferredMergeMaxWait = defaultDeferredMergeMaxWait
-	}
 	repoResolver := httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{
 		DB: database,
 		ProviderCapabilities: func(kind platform.Kind, host string) (platform.Capabilities, error) {
@@ -726,7 +737,6 @@ func newServer(
 		now:                    time.Now,
 		hub:                    NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
 		labelCatalogRefreshIDs: make(map[int64]struct{}),
-		deferredMergeMaxWait:   deferredMergeMaxWait,
 		bgCtx: shutdownAwareContext{
 			parent:   bgBaseCtx,
 			deadline: bgDeadline,
@@ -963,6 +973,30 @@ func newServer(
 		ConfigRepoPath:   configRepoPath,
 		InvalidateDaemon: s.kataSnapshots.invalidateDaemon,
 	})
+	s.pullAPI = pullapi.New(pullapi.Deps{
+		DB:                   database,
+		Resolver:             repoResolver,
+		Syncer:               syncer,
+		Clones:               clones,
+		Workspaces:           s.workspaces,
+		Config:               pullConfigSnapshot(cfg),
+		Now:                  func() time.Time { return s.now() },
+		DeferredMergeMaxWait: deferredMergeMaxWait,
+		FleetSelfKey:         s.fleetAPI.SelfKey,
+		FilterRepos: func(repos []db.Repo) []db.Repo {
+			if s.cfg == nil {
+				return repos
+			}
+			return s.filterConfiguredRepos(repos)
+		},
+		RepoOperations:                s.repoOperations,
+		RepoOperationsForMergeRequest: s.repoOperationsForMergeRequest,
+		EnqueueDetailSyncOrRerun:      s.enqueueDetailSyncOrRerun,
+		Broadcast: func(event pullapi.Event) uint64 {
+			return s.hub.Broadcast(Event{Type: event.Type, Data: event.Data})
+		},
+		MarkClosedLinkedNotificationsDone: s.markClosedLinkedNotificationsDone,
+	})
 	s.shutdownKata = s.kataAPI.Shutdown
 	s.workspaceDependencyStop = newWorkspaceDependencyShutdown(
 		func(ctx context.Context) error {
@@ -979,6 +1013,9 @@ func newServer(
 			return nil
 		},
 		func(ctx context.Context) error {
+			if err := s.pullAPI.Shutdown(ctx); err != nil {
+				return err
+			}
 			if err := s.fleetAPI.Shutdown(ctx); err != nil {
 				return err
 			}

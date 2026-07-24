@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/ratelimit"
@@ -260,17 +259,6 @@ func selfApprovalUnavailable() httpapi.OperationAvailability {
 		Code:              availabilityCodeSelfApproval,
 		UnavailableReason: "You cannot approve your own pull request",
 	}
-}
-
-func selfApprovalProblem(repo db.Repo) huma.StatusError {
-	return httpapi.Forbidden(
-		"You cannot approve your own pull request",
-		map[string]any{
-			"reason":       availabilityCodeSelfApproval,
-			"provider":     string(repoProviderKind(repo)),
-			"platformHost": repoProviderHost(repo),
-		},
-	)
 }
 
 func (s *Server) mergeRequestAuthoredByViewer(

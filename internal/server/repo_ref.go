@@ -53,17 +53,6 @@ func (s *Server) repoRefWithOperations(repo db.Repo) httpapi.RepoRefResponse {
 	return resp
 }
 
-func (s *Server) repoRefWithMergeRequestOperations(
-	ctx context.Context,
-	repo db.Repo,
-	mr db.MergeRequest,
-) httpapi.RepoRefResponse {
-	resp := s.repoRefFromRepo(repo)
-	ops := s.repoOperationsForMergeRequest(ctx, repo, mr)
-	resp.Operations = &ops
-	return resp
-}
-
 func (s *Server) repoResponse(repo db.Repo) repoResponse {
 	return repoResponse{
 		ID:                  repo.ID,

@@ -1,24 +1,97 @@
-package server
+package pullapi
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/apiclient"
 	"go.kenn.io/middleman/internal/apiclient/generated"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
+type deferredMergeProviderBase struct {
+	mu            sync.Mutex
+	ref           platform.RepoRef
+	mergeRequests []platform.MergeRequest
+	ciChecks      map[string][]platform.CICheck
+	ciErr         error
+}
+
+func (p *deferredMergeProviderBase) Platform() platform.Kind {
+	return p.ref.Platform
+}
+
+func (p *deferredMergeProviderBase) Host() string {
+	return p.ref.Host
+}
+
+func (p *deferredMergeProviderBase) Capabilities() platform.Capabilities {
+	return platform.Capabilities{
+		ReadMergeRequests: true,
+		ReadCI:            true,
+	}
+}
+
+func (p *deferredMergeProviderBase) ListOpenMergeRequests(
+	context.Context,
+	platform.RepoRef,
+) ([]platform.MergeRequest, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.mergeRequests), nil
+}
+
+func (p *deferredMergeProviderBase) GetMergeRequest(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+) (platform.MergeRequest, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, mr := range p.mergeRequests {
+		if mr.Number == number {
+			return mr, nil
+		}
+	}
+	return platform.MergeRequest{}, fmt.Errorf("missing merge request %d", number)
+}
+
+func (p *deferredMergeProviderBase) ListMergeRequestEvents(
+	context.Context,
+	platform.RepoRef,
+	int,
+) ([]platform.MergeRequestEvent, error) {
+	return nil, nil
+}
+
+func (p *deferredMergeProviderBase) ListCIChecks(
+	_ context.Context,
+	_ platform.RepoRef,
+	sha string,
+) ([]platform.CICheck, error) {
+	if p.ciErr != nil {
+		return nil, p.ciErr
+	}
+	return slices.Clone(p.ciChecks[sha]), nil
+}
+
 type deferredMergeTestProvider struct {
-	apiTestGitLabProvider
+	deferredMergeProviderBase
 	mergeCh       chan deferredMergeTestMergeCall
 	mergeErr      error
 	ciStarted     chan struct{}
@@ -35,7 +108,7 @@ type deferredMergeTestMergeCall struct {
 }
 
 func (p *deferredMergeTestProvider) Capabilities() platform.Capabilities {
-	caps := p.apiTestGitLabProvider.Capabilities()
+	caps := p.deferredMergeProviderBase.Capabilities()
 	caps.MergeMutation = true
 	return caps
 }
@@ -55,7 +128,7 @@ func (p *deferredMergeTestProvider) ListCIChecks(
 		case <-p.ciRelease:
 		}
 	}
-	return p.apiTestGitLabProvider.ListCIChecks(ctx, ref, sha)
+	return p.deferredMergeProviderBase.ListCIChecks(ctx, ref, sha)
 }
 
 func (p *deferredMergeTestProvider) MergeMergeRequest(
@@ -82,14 +155,88 @@ func (p *deferredMergeTestProvider) MergeMergeRequest(
 	return platform.MergeResult{Merged: true, SHA: "merge-sha", Message: "merged"}, nil
 }
 
+type deferredMergeTestOptions struct {
+	deferredMergeMaxWait time.Duration
+}
+
+type deferredMergeTestRecordedEvent struct {
+	Event Event
+}
+
+type deferredMergeTestHub struct {
+	events <-chan deferredMergeTestRecordedEvent
+}
+
+func (h *deferredMergeTestHub) Subscribe(
+	context.Context,
+	bool,
+) (<-chan deferredMergeTestRecordedEvent, uint64) {
+	return h.events, 0
+}
+
+type deferredMergeRouteServer struct {
+	handler *Handler
+	hub     deferredMergeTestHub
+}
+
+func (s *deferredMergeRouteServer) Hub() *deferredMergeTestHub {
+	return &s.hub
+}
+
+func newDeferredMergeHTTPFixture(
+	t *testing.T,
+	database *db.DB,
+	syncer *ghclient.Syncer,
+	now time.Time,
+	maxWait time.Duration,
+) (*deferredMergeRouteServer, *apiclient.Client) {
+	t.Helper()
+
+	events := make(chan deferredMergeTestRecordedEvent, 64)
+	resolver := httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{
+		DB: database,
+		ProviderCapabilities: func(kind platform.Kind, host string) (platform.Capabilities, error) {
+			return syncer.ProviderCapabilities(kind, host)
+		},
+	})
+	handler := New(Deps{
+		DB:                   database,
+		Resolver:             resolver,
+		Syncer:               syncer,
+		Now:                  func() time.Time { return now },
+		DeferredMergeMaxWait: maxWait,
+		Broadcast: func(event Event) uint64 {
+			events <- deferredMergeTestRecordedEvent{Event: event}
+			return 0
+		},
+	})
+
+	mux := http.NewServeMux()
+	api := humago.NewWithPrefix(mux, "/api/v1", huma.DefaultConfig("test", "0"))
+	handler.Register(api)
+	httpServer := httptest.NewServer(mux)
+	t.Cleanup(httpServer.Close)
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(t, handler.Shutdown(shutdownCtx))
+	})
+	client, err := apiclient.New(httpServer.URL)
+	require.NoError(t, err)
+	return &deferredMergeRouteServer{
+		handler: handler,
+		hub:     deferredMergeTestHub{events: events},
+	}, client
+}
+
 func newDeferredMergeRouteServer(
 	t *testing.T,
 	provider *deferredMergeTestProvider,
 	ref platform.RepoRef,
 	now time.Time,
 	initialChecks []db.CICheck,
-	options ...ServerOptions,
-) (*Server, *db.DB, int64, *apiclient.Client) {
+	options ...deferredMergeTestOptions,
+) (*deferredMergeRouteServer, *db.DB, int64, *apiclient.Client) {
 	t.Helper()
 	ctx := t.Context()
 	registry, err := platform.NewRegistry(provider)
@@ -136,158 +283,18 @@ func newDeferredMergeRouteServer(
 		},
 	)
 	t.Cleanup(syncer.Stop)
-	opts := ServerOptions{}
+	opts := deferredMergeTestOptions{}
 	if len(options) > 0 {
 		opts = options[0]
 	}
-	srv := New(database, syncer, nil, "/", nil, opts)
-	setTestServerNow(t, srv, now)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	return srv, database, repoID, setupTestClient(t, srv)
-}
-
-func TestDecodeCIChecks(t *testing.T) {
-	require := require.New(t)
-
-	none, err := decodeCIChecks("")
-	require.NoError(err)
-	require.Nil(none, "empty json yields no checks")
-
-	blank, err := decodeCIChecks("   ")
-	require.NoError(err)
-	require.Nil(blank, "whitespace-only json yields no checks")
-
-	checks, err := decodeCIChecks(
-		`[{"name":"build","status":"completed","conclusion":"success",` +
-			`"url":"https://ci/1","app":"GitHub Actions"}]`,
+	srv, client := newDeferredMergeHTTPFixture(
+		t,
+		database,
+		syncer,
+		now,
+		opts.deferredMergeMaxWait,
 	)
-	require.NoError(err)
-	require.Len(checks, 1)
-	require.Equal("build", checks[0].Name)
-	require.Equal("completed", checks[0].Status)
-	require.Equal("success", checks[0].Conclusion)
-	require.Equal("https://ci/1", checks[0].URL)
-	require.Equal("GitHub Actions", checks[0].App)
-
-	_, err = decodeCIChecks("not json")
-	require.Error(err, "malformed json is an error the caller decides how to handle")
-}
-
-func TestPendingDeferredMergeCheckKeysCapturesOnlyPendingChecks(t *testing.T) {
-	checksJSON := mustDeferredMergeChecksJSON(t, []db.CICheck{
-		{App: "GitHub Actions", Name: "unit", Status: "in_progress"},
-		{App: "Buildkite", Name: "integration", Status: "queued"},
-		{App: "GitHub Actions", Name: "lint", Status: "completed", Conclusion: "success"},
-	})
-
-	keys, err := pendingDeferredMergeCheckKeys(checksJSON)
-	require.NoError(t, err)
-	require.Equal(t, []deferredMergeCheckKey{
-		{App: "GitHub Actions", Name: "unit"},
-		{App: "Buildkite", Name: "integration"},
-	}, keys)
-}
-
-func TestDeferredMergeCheckStateRequiresCapturedChecksToPass(t *testing.T) {
-	keys := []deferredMergeCheckKey{
-		{App: "GitHub Actions", Name: "unit"},
-		{App: "Buildkite", Name: "integration"},
-	}
-
-	tests := []struct {
-		name            string
-		aggregateStatus string
-		checks          []db.CICheck
-		want            string
-	}{
-		{
-			name:            "missing captured check stays pending",
-			aggregateStatus: "success",
-			checks: []db.CICheck{{
-				App: "GitHub Actions", Name: "unit", Status: "completed", Conclusion: "success",
-			}},
-			want: "pending",
-		},
-		{
-			name:            "in progress captured check stays pending",
-			aggregateStatus: "pending",
-			checks: []db.CICheck{
-				{App: "GitHub Actions", Name: "unit", Status: "completed", Conclusion: "success"},
-				{App: "Buildkite", Name: "integration", Status: "in_progress"},
-			},
-			want: "pending",
-		},
-		{
-			name:            "captured checks pass with aggregate success",
-			aggregateStatus: "success",
-			checks: []db.CICheck{
-				{App: "GitHub Actions", Name: "unit", Status: "completed", Conclusion: "success"},
-				{App: "Buildkite", Name: "integration", Status: "completed", Conclusion: "skipped"},
-			},
-			want: "passed",
-		},
-		{
-			name: "captured failure blocks merge",
-			checks: []db.CICheck{
-				{App: "GitHub Actions", Name: "unit", Status: "completed", Conclusion: "success"},
-				{App: "Buildkite", Name: "integration", Status: "completed", Conclusion: "failure"},
-			},
-			want: "failed",
-		},
-		{
-			name: "non captured failure blocks merge",
-			checks: []db.CICheck{
-				{App: "GitHub Actions", Name: "unit", Status: "completed", Conclusion: "success"},
-				{App: "Buildkite", Name: "integration", Status: "completed", Conclusion: "success"},
-				{App: "GitHub Actions", Name: "security", Status: "completed", Conclusion: "failure"},
-			},
-			want: "failed",
-		},
-		{
-			name:            "non captured pending keeps waiting",
-			aggregateStatus: "pending",
-			checks: []db.CICheck{
-				{App: "GitHub Actions", Name: "unit", Status: "completed", Conclusion: "success"},
-				{App: "Buildkite", Name: "integration", Status: "completed", Conclusion: "success"},
-				{App: "GitHub Actions", Name: "deploy", Status: "in_progress"},
-			},
-			want: "pending",
-		},
-		{
-			name: "unknown aggregate blocks passing rows",
-			checks: []db.CICheck{
-				{App: "GitHub Actions", Name: "unit", Status: "completed", Conclusion: "success"},
-				{App: "Buildkite", Name: "integration", Status: "completed", Conclusion: "success"},
-			},
-			want: "unknown",
-		},
-		{
-			name:            "aggregate pending keeps passing rows pending",
-			aggregateStatus: "pending",
-			checks: []db.CICheck{
-				{App: "GitHub Actions", Name: "unit", Status: "completed", Conclusion: "success"},
-				{App: "Buildkite", Name: "integration", Status: "completed", Conclusion: "success"},
-			},
-			want: "pending",
-		},
-		{
-			name:            "aggregate failure blocks passing rows",
-			aggregateStatus: "failure",
-			checks: []db.CICheck{
-				{App: "GitHub Actions", Name: "unit", Status: "completed", Conclusion: "success"},
-				{App: "Buildkite", Name: "integration", Status: "completed", Conclusion: "success"},
-			},
-			want: "failed",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := deferredMergeCheckState(tt.aggregateStatus, keys, mustDeferredMergeChecksJSON(t, tt.checks))
-			require.NoError(t, err)
-			require.Equal(t, tt.want, got)
-		})
-	}
+	return srv, database, repoID, client
 }
 
 func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
@@ -305,7 +312,7 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
 			ref: ref,
 			mergeRequests: []platform.MergeRequest{{
 				Repo:           ref,
@@ -381,10 +388,7 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 		},
 	)
 	t.Cleanup(syncer.Stop)
-	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	setTestServerNow(t, srv, now)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	client := setupTestClient(t, srv)
+	srv, client := newDeferredMergeHTTPFixture(t, database, syncer, now, 0)
 	events, _ := srv.Hub().Subscribe(ctx, false)
 	expectedHeadSHA := "head-sha"
 
@@ -418,14 +422,14 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 	require.Equal("squash", mergeCall.Method)
 	require.Equal("head-sha", mergeCall.ExpectedHeadSHA)
 
-	var completed deferredMergeCompletedPayload
+	var completed DeferredMergeCompletedPayload
 	for range 4 {
 		select {
 		case ev := <-events:
 			if ev.Event.Type != "deferred_merge_completed" {
 				continue
 			}
-			payload, ok := ev.Event.Data.(deferredMergeCompletedPayload)
+			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
 			require.True(ok)
 			completed = payload
 		case <-time.After(time.Second):
@@ -472,7 +476,7 @@ func TestPullDetailReportsDeferredMergePendingWhileQueued(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
 			ref: ref,
 			ciChecks: map[string][]platform.CICheck{
 				"head-sha": {{
@@ -539,7 +543,7 @@ func TestImmediateMergeSupersedesQueuedDeferredMerge(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
 			ref: ref,
 			ciChecks: map[string][]platform.CICheck{
 				"head-sha": {{
@@ -628,10 +632,10 @@ func TestDeferMergeEndpointRejectsInvalidMergeMethodBeforeQueueing(t *testing.T)
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{ref: ref},
-		mergeCh:               make(chan deferredMergeTestMergeCall, 1),
+		deferredMergeProviderBase: deferredMergeProviderBase{ref: ref},
+		mergeCh:                   make(chan deferredMergeTestMergeCall, 1),
 	}
-	srv, _, _, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
+	_, _, _, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
 		App: "GitLab", Name: "pipeline", Status: "in_progress",
 	}})
 
@@ -647,9 +651,6 @@ func TestDeferMergeEndpointRejectsInvalidMergeMethodBeforeQueueing(t *testing.T)
 	require.NoError(err)
 	require.Equal(400, resp.StatusCode(), string(resp.Body))
 	require.Contains(string(resp.Body), "invalid merge method")
-	srv.deferredMergeMu.Lock()
-	require.Empty(srv.deferredMergeInFlight)
-	srv.deferredMergeMu.Unlock()
 	select {
 	case call := <-provider.mergeCh:
 		require.Failf("unexpected merge", "merge call: %+v", call)
@@ -672,8 +673,8 @@ func TestDeferMergeEndpointRejectsWithoutPendingChecks(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{ref: ref},
-		mergeCh:               make(chan deferredMergeTestMergeCall, 1),
+		deferredMergeProviderBase: deferredMergeProviderBase{ref: ref},
+		mergeCh:                   make(chan deferredMergeTestMergeCall, 1),
 	}
 	_, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
 		App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success",
@@ -723,8 +724,8 @@ func TestDeferMergeEndpointRejectsMissingBaseSHA(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{ref: ref},
-		mergeCh:               make(chan deferredMergeTestMergeCall, 1),
+		deferredMergeProviderBase: deferredMergeProviderBase{ref: ref},
+		mergeCh:                   make(chan deferredMergeTestMergeCall, 1),
 	}
 	_, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
 		App: "GitLab", Name: "pipeline", Status: "in_progress",
@@ -787,8 +788,8 @@ func TestDeferMergeEndpointRejectsFailedAggregateCIWithPassingRows(t *testing.T)
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{ref: ref},
-		mergeCh:               make(chan deferredMergeTestMergeCall, 1),
+		deferredMergeProviderBase: deferredMergeProviderBase{ref: ref},
+		mergeCh:                   make(chan deferredMergeTestMergeCall, 1),
 	}
 	_, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
 		App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success",
@@ -838,7 +839,7 @@ func TestDeferMergeEndpointFailsWhenAggregatePendingRefreshBecomesUnknown(t *tes
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
 			ref:      ref,
 			ciChecks: map[string][]platform.CICheck{"head-sha": {}},
 		},
@@ -850,7 +851,7 @@ func TestDeferMergeEndpointFailsWhenAggregatePendingRefreshBecomesUnknown(t *tes
 		ref,
 		now,
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
-		ServerOptions{deferredMergeMaxWait: 10 * time.Millisecond},
+		deferredMergeTestOptions{deferredMergeMaxWait: 10 * time.Millisecond},
 	)
 	require.NoError(database.UpdateMRCIStatus(
 		ctx,
@@ -878,14 +879,14 @@ func TestDeferMergeEndpointFailsWhenAggregatePendingRefreshBecomesUnknown(t *tes
 	require.NotNil(resp.JSON202)
 	require.Equal(int64(0), resp.JSON202.PendingChecks)
 
-	var completed deferredMergeCompletedPayload
+	var completed DeferredMergeCompletedPayload
 	for range 4 {
 		select {
 		case ev := <-events:
 			if ev.Event.Type != "deferred_merge_completed" {
 				continue
 			}
-			payload, ok := ev.Event.Data.(deferredMergeCompletedPayload)
+			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
 			require.True(ok)
 			completed = payload
 		case <-time.After(time.Second):
@@ -919,7 +920,7 @@ func TestDeferMergeEndpointFailsWhenGranularPendingRefreshHasUnknownAggregate(t 
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
 			ref:      ref,
 			ciChecks: map[string][]platform.CICheck{"head-sha": {}},
 		},
@@ -958,14 +959,14 @@ func TestDeferMergeEndpointFailsWhenGranularPendingRefreshHasUnknownAggregate(t 
 	require.NotNil(resp.JSON202)
 	require.Equal(int64(1), resp.JSON202.PendingChecks)
 
-	var completed deferredMergeCompletedPayload
+	var completed DeferredMergeCompletedPayload
 	for range 4 {
 		select {
 		case ev := <-events:
 			if ev.Event.Type != "deferred_merge_completed" {
 				continue
 			}
-			payload, ok := ev.Event.Data.(deferredMergeCompletedPayload)
+			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
 			require.True(ok)
 			completed = payload
 		case <-time.After(time.Second):
@@ -999,7 +1000,7 @@ func TestDeferMergeEndpointRefreshesEmptyPendingSnapshotBeforeRejecting(t *testi
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
 			ref: ref,
 			ciChecks: map[string][]platform.CICheck{
 				"head-sha": {{
@@ -1011,7 +1012,7 @@ func TestDeferMergeEndpointRefreshesEmptyPendingSnapshotBeforeRejecting(t *testi
 		},
 		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
-	_, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, nil, ServerOptions{
+	_, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, nil, deferredMergeTestOptions{
 		deferredMergeMaxWait: 10 * time.Millisecond,
 	})
 	require.NoError(database.UpdateMRCIStatus(ctx, repoID, 7, "", "[]"))
@@ -1052,7 +1053,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenCIRefreshWarns(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
 			ref:   ref,
 			ciErr: errors.New("gitlab pipeline API unavailable"),
 		},
@@ -1076,14 +1077,14 @@ func TestDeferMergeEndpointBroadcastsFailureWhenCIRefreshWarns(t *testing.T) {
 	require.NoError(err)
 	require.Equal(202, resp.StatusCode(), string(resp.Body))
 
-	var completed deferredMergeCompletedPayload
+	var completed DeferredMergeCompletedPayload
 	for range 4 {
 		select {
 		case ev := <-events:
 			if ev.Event.Type != "deferred_merge_completed" {
 				continue
 			}
-			payload, ok := ev.Event.Data.(deferredMergeCompletedPayload)
+			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
 			require.True(ok)
 			completed = payload
 		case <-time.After(time.Second):
@@ -1118,7 +1119,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenCurrentChecksFail(t *testing.T) 
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
 			ref: ref,
 			ciChecks: map[string][]platform.CICheck{
 				"head-sha": {
@@ -1147,14 +1148,14 @@ func TestDeferMergeEndpointBroadcastsFailureWhenCurrentChecksFail(t *testing.T) 
 	require.NoError(err)
 	require.Equal(202, resp.StatusCode(), string(resp.Body))
 
-	var completed deferredMergeCompletedPayload
+	var completed DeferredMergeCompletedPayload
 	for range 4 {
 		select {
 		case ev := <-events:
 			if ev.Event.Type != "deferred_merge_completed" {
 				continue
 			}
-			payload, ok := ev.Event.Data.(deferredMergeCompletedPayload)
+			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
 			require.True(ok)
 			completed = payload
 		case <-time.After(time.Second):
@@ -1190,7 +1191,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenHeadChangesWhileWaiting(t *testi
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
 			ref: ref,
 			ciChecks: map[string][]platform.CICheck{
 				"head-sha": {{
@@ -1252,14 +1253,14 @@ func TestDeferMergeEndpointBroadcastsFailureWhenHeadChangesWhileWaiting(t *testi
 	require.NoError(err)
 	close(ciRelease)
 
-	var completed deferredMergeCompletedPayload
+	var completed DeferredMergeCompletedPayload
 	for range 4 {
 		select {
 		case ev := <-events:
 			if ev.Event.Type != "deferred_merge_completed" {
 				continue
 			}
-			payload, ok := ev.Event.Data.(deferredMergeCompletedPayload)
+			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
 			require.True(ok)
 			completed = payload
 		case <-time.After(time.Second):
@@ -1295,7 +1296,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenProviderBaseChangesBeforeMerge(t
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
 			ref: ref,
 			mergeRequests: []platform.MergeRequest{{
 				Repo:           ref,
@@ -1353,14 +1354,14 @@ func TestDeferMergeEndpointBroadcastsFailureWhenProviderBaseChangesBeforeMerge(t
 	provider.mergeRequests[0].BaseSHA = "new-base-sha"
 	close(ciRelease)
 
-	var completed deferredMergeCompletedPayload
+	var completed DeferredMergeCompletedPayload
 	for range 4 {
 		select {
 		case ev := <-events:
 			if ev.Event.Type != "deferred_merge_completed" {
 				continue
 			}
-			payload, ok := ev.Event.Data.(deferredMergeCompletedPayload)
+			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
 			require.True(ok)
 			completed = payload
 		case <-time.After(time.Second):
@@ -1394,7 +1395,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenPendingChecksTimeOut(t *testing.
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
 			ref: ref,
 			ciChecks: map[string][]platform.CICheck{
 				"head-sha": {{
@@ -1412,7 +1413,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenPendingChecksTimeOut(t *testing.
 		ref,
 		now,
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
-		ServerOptions{deferredMergeMaxWait: 10 * time.Millisecond},
+		deferredMergeTestOptions{deferredMergeMaxWait: 10 * time.Millisecond},
 	)
 	events, _ := srv.Hub().Subscribe(ctx, false)
 
@@ -1429,14 +1430,14 @@ func TestDeferMergeEndpointBroadcastsFailureWhenPendingChecksTimeOut(t *testing.
 	require.NoError(err)
 	require.Equal(202, resp.StatusCode(), string(resp.Body))
 
-	var completed deferredMergeCompletedPayload
+	var completed DeferredMergeCompletedPayload
 	for range 4 {
 		select {
 		case ev := <-events:
 			if ev.Event.Type != "deferred_merge_completed" {
 				continue
 			}
-			payload, ok := ev.Event.Data.(deferredMergeCompletedPayload)
+			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
 			require.True(ok)
 			completed = payload
 		case <-time.After(time.Second):
@@ -1458,11 +1459,6 @@ func TestDeferMergeEndpointBroadcastsFailureWhenPendingChecksTimeOut(t *testing.
 	require.Equal(200, detailResp.StatusCode(), string(detailResp.Body))
 	require.NotNil(detailResp.JSON200)
 	require.False(detailResp.JSON200.DeferredMergePending)
-	require.Eventually(func() bool {
-		srv.deferredMergeMu.Lock()
-		defer srv.deferredMergeMu.Unlock()
-		return len(srv.deferredMergeInFlight) == 0
-	}, time.Second, 10*time.Millisecond)
 	select {
 	case call := <-provider.mergeCh:
 		require.Failf("unexpected merge", "merge call: %+v", call)
@@ -1485,8 +1481,8 @@ func TestDeferMergeEndpointRejectsClosedPullRequest(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{ref: ref},
-		mergeCh:               make(chan deferredMergeTestMergeCall, 1),
+		deferredMergeProviderBase: deferredMergeProviderBase{ref: ref},
+		mergeCh:                   make(chan deferredMergeTestMergeCall, 1),
 	}
 	_, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
 		App: "GitLab", Name: "pipeline", Status: "in_progress",
@@ -1554,7 +1550,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenTargetClosedWhileWaiting(t *test
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
 			ref: ref,
 			ciChecks: map[string][]platform.CICheck{
 				"head-sha": {{
@@ -1618,14 +1614,14 @@ func TestDeferMergeEndpointBroadcastsFailureWhenTargetClosedWhileWaiting(t *test
 	require.NoError(err)
 	close(ciRelease)
 
-	var completed deferredMergeCompletedPayload
+	var completed DeferredMergeCompletedPayload
 	for range 4 {
 		select {
 		case ev := <-events:
 			if ev.Event.Type != "deferred_merge_completed" {
 				continue
 			}
-			payload, ok := ev.Event.Data.(deferredMergeCompletedPayload)
+			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
 			require.True(ok)
 			completed = payload
 		case <-time.After(time.Second):
@@ -1661,7 +1657,7 @@ func TestDeferMergeEndpointStandsDownSilentlyWhenTargetMergedWhileWaiting(t *tes
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
 			ref: ref,
 			ciChecks: map[string][]platform.CICheck{
 				"head-sha": {{
@@ -1727,11 +1723,6 @@ func TestDeferMergeEndpointStandsDownSilentlyWhenTargetMergedWhileWaiting(t *tes
 	require.NoError(err)
 	close(ciRelease)
 
-	require.Eventually(func() bool {
-		srv.deferredMergeMu.Lock()
-		defer srv.deferredMergeMu.Unlock()
-		return len(srv.deferredMergeInFlight) == 0
-	}, time.Second, 10*time.Millisecond)
 	select {
 	case call := <-provider.mergeCh:
 		require.Failf("unexpected merge", "merge call: %+v", call)
@@ -1765,7 +1756,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenProviderClosedBeforeMerge(t *tes
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
 	provider := &deferredMergeTestProvider{
-		apiTestGitLabProvider: apiTestGitLabProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
 			ref: ref,
 			mergeRequests: []platform.MergeRequest{{
 				Repo:           ref,
@@ -1826,14 +1817,14 @@ func TestDeferMergeEndpointBroadcastsFailureWhenProviderClosedBeforeMerge(t *tes
 	provider.mergeRequests[0].State = "closed"
 	close(ciRelease)
 
-	var completed deferredMergeCompletedPayload
+	var completed DeferredMergeCompletedPayload
 	for range 4 {
 		select {
 		case ev := <-events:
 			if ev.Event.Type != "deferred_merge_completed" {
 				continue
 			}
-			payload, ok := ev.Event.Data.(deferredMergeCompletedPayload)
+			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
 			require.True(ok)
 			completed = payload
 		case <-time.After(time.Second):
@@ -1850,35 +1841,6 @@ func TestDeferMergeEndpointBroadcastsFailureWhenProviderClosedBeforeMerge(t *tes
 		require.Failf("unexpected merge", "merge call: %+v", call)
 	default:
 	}
-}
-
-func TestClearDeferredMergeInFlightKeepsNewerHandle(t *testing.T) {
-	require := require.New(t)
-	srv := &Server{}
-	key := "gitlab:gitlab.example.com:group/project#7"
-
-	stale, marked := srv.markDeferredMergeInFlight(key)
-	require.True(marked)
-	// Terminal paths clear the key before broadcasting, so a new deferred
-	// merge can be queued before the old worker goroutine runs its deferred
-	// cleanup for the same key.
-	srv.clearDeferredMergeInFlight(key, stale)
-	current, marked := srv.markDeferredMergeInFlight(key)
-	require.True(marked)
-
-	// The old worker's deferred cleanup must not delete the newer handle;
-	// otherwise the active deferred merge becomes untracked and a duplicate
-	// can be queued.
-	srv.clearDeferredMergeInFlight(key, stale)
-	srv.deferredMergeMu.Lock()
-	got := srv.deferredMergeInFlight[key]
-	srv.deferredMergeMu.Unlock()
-	require.Same(current, got)
-
-	srv.clearDeferredMergeInFlight(key, current)
-	srv.deferredMergeMu.Lock()
-	require.Empty(srv.deferredMergeInFlight)
-	srv.deferredMergeMu.Unlock()
 }
 
 func mustDeferredMergeChecksJSON(t *testing.T, checks []db.CICheck) string {

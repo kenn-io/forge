@@ -505,6 +505,7 @@ func (s *Server) updateSettings(
 	}
 	s.refreshRuntimeTargetsLocked()
 	s.applyWorkspaceConfigLocked()
+	s.applyPullConfigLocked()
 	s.cfgMu.Unlock()
 
 	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil

@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/ratelimit"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/pullapi"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
@@ -868,7 +869,7 @@ func TestAPIPullDetailOperationsDisableSelfApproval(t *testing.T) {
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
 	require.Equal(http.StatusOK, rr.Code)
 
-	var resp mergeRequestDetailResponse
+	var resp pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.NotNil(resp.Repo.Operations)
 
@@ -898,7 +899,7 @@ func TestAPIPullDetailOperationsSkipViewerLookupWhenSubmitReviewUnavailable(t *t
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp mergeRequestDetailResponse
+	var resp pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.NotNil(resp.Repo.Operations)
 	assert.Equal(availabilityCodeMissingWriteCredential, resp.Repo.Operations.SubmitReview.Code)

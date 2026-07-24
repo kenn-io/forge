@@ -53,6 +53,7 @@ import (
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/ptyowner"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/server/pullapi"
 	"go.kenn.io/middleman/internal/server/workspaceapi"
 	"go.kenn.io/middleman/internal/stacks"
 	"go.kenn.io/middleman/internal/testutil"
@@ -1759,21 +1760,21 @@ func TestAPIPullResponsesNormalizeMissingKanbanStateToNew(t *testing.T) {
 
 	rawList := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
 	require.Equal(http.StatusOK, rawList.Code)
-	var list []mergeRequestResponse
+	var list []pullapi.MergeRequestResponse
 	require.NoError(json.Unmarshal(rawList.Body.Bytes(), &list))
 	require.Len(list, 1)
 	assert.Equal(db.KanbanStatusNew, list[0].KanbanStatus)
 
 	rawNewList := doJSON(t, srv, http.MethodGet, "/api/v1/pulls?kanban=new", nil)
 	require.Equal(http.StatusOK, rawNewList.Code)
-	var newList []mergeRequestResponse
+	var newList []pullapi.MergeRequestResponse
 	require.NoError(json.Unmarshal(rawNewList.Body.Bytes(), &newList))
 	require.Len(newList, 1)
 	assert.Equal(db.KanbanStatusNew, newList[0].KanbanStatus)
 
 	rawDetail := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
 	require.Equal(http.StatusOK, rawDetail.Code)
-	var detail mergeRequestDetailResponse
+	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.Unmarshal(rawDetail.Body.Bytes(), &detail))
 	require.NotNil(detail.MergeRequest)
 	assert.Equal(db.KanbanStatusNew, detail.MergeRequest.KanbanStatus)
@@ -1812,7 +1813,7 @@ func TestAPIGetPullIncludesCIChecks(t *testing.T) {
 
 	rawDetail := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
 	require.Equal(http.StatusOK, rawDetail.Code)
-	var detail mergeRequestDetailResponse
+	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.Unmarshal(rawDetail.Body.Bytes(), &detail))
 	require.Len(detail.Checks, 2)
 	assert.Equal("build", detail.Checks[0].Name)
@@ -1852,7 +1853,7 @@ func TestAPIGetPullToleratesMalformedCIChecks(t *testing.T) {
 
 	rawDetail := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
 	require.Equal(http.StatusOK, rawDetail.Code)
-	var detail mergeRequestDetailResponse
+	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.Unmarshal(rawDetail.Body.Bytes(), &detail))
 	require.Empty(detail.Checks, "malformed checks cache yields no checks, not an error")
 }
@@ -2237,7 +2238,7 @@ func TestAPIRepoFilterAcceptsMultipleRepos(t *testing.T) {
 
 	rawPulls := doJSON(t, srv, http.MethodGet, "/api/v1/pulls?repo="+filter, nil)
 	require.Equal(http.StatusOK, rawPulls.Code)
-	var pulls []mergeRequestResponse
+	var pulls []pullapi.MergeRequestResponse
 	require.NoError(json.Unmarshal(rawPulls.Body.Bytes(), &pulls))
 	require.Len(pulls, 2)
 	assert.ElementsMatch([]string{"widget", "worker"}, []string{
@@ -9763,7 +9764,7 @@ func TestAPIGetPRWorkspaceUsesProviderScopedLookup(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	var body mergeRequestDetailResponse
+	var body pullapi.MergeRequestDetailResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
 	if assert.NotNil(body.Workspace) {
 		assert.Equal("gitlab-pr-workspace", body.Workspace.ID)
@@ -10461,7 +10462,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 	require.Equal(http.StatusOK, rr.Code)
 
-	var detailResp mergeRequestDetailResponse
+	var detailResp pullapi.MergeRequestDetailResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &detailResp))
 	require.NotNil(detailResp.MergeRequest)
 	assert.Equal("changed PR detail", detailResp.MergeRequest.Title)
@@ -14805,7 +14806,7 @@ func TestAPIGitHubPublishReviewDraftSendsCommentsThroughServer(t *testing.T) {
 		"body":   " Needs changes. ",
 	})
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
-	var publishStatus actionStatusBody
+	var publishStatus pullapi.ActionStatusBody
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
 	assert.Equal("published", publishStatus.Status)
 
@@ -15466,7 +15467,7 @@ func TestAPIPublishReviewDraftPreservesDraftWhenPartialStatusIsUnknown(t *testin
 		map[string]string{"action": "comment"},
 	)
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
-	var publishStatus actionStatusBody
+	var publishStatus pullapi.ActionStatusBody
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
 	require.Equal("partially_published", publishStatus.Status)
 	require.Len(provider.publishedReviews, 1)
@@ -15641,7 +15642,7 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 		"action": "comment",
 	})
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
-	var publishStatus actionStatusBody
+	var publishStatus pullapi.ActionStatusBody
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
 	assert.Equal("partially_published", publishStatus.Status)
 	assert.Equal(int32(2), createAttempts.Load())
@@ -15752,7 +15753,7 @@ func TestAPIGitLabPublishReviewDraftSendsSummaryThroughServer(t *testing.T) {
 		"body":   " review summary from ui ",
 	})
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
-	var publishStatus actionStatusBody
+	var publishStatus pullapi.ActionStatusBody
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
 	assert.Equal("partially_published", publishStatus.Status)
 	assert.Equal([]string{"create-draft", "publish-draft", "summary-note", "approve"}, order)
@@ -16060,7 +16061,7 @@ func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
 
 	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/forgejo/acme/widgets/42", nil)
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
-	var detail mergeRequestDetailResponse
+	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
 	require.Len(detail.Events, 1)
 	require.NotNil(detail.Events[0].DiffThread)
@@ -16124,7 +16125,7 @@ func TestAPIForgejoSyncRecoversReviewThreadTimelineMetadata(t *testing.T) {
 
 	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/forgejo/acme/widgets/42", nil)
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
-	var detail mergeRequestDetailResponse
+	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
 	require.Len(detail.Events, 1)
 	require.NotNil(detail.Events[0].DiffThread)
@@ -16209,7 +16210,7 @@ func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *te
 
 	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7", nil)
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
-	var detail mergeRequestDetailResponse
+	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
 	require.Len(detail.Events, 2)
 	require.NotNil(detail.Events[0].DiffThread)
@@ -16288,7 +16289,7 @@ func TestAPIGitLabSyncRemovesMissingReviewThreadTimelineEvents(t *testing.T) {
 	require.Empty(threads)
 	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7", nil)
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
-	var detail mergeRequestDetailResponse
+	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
 	require.Empty(detail.Events)
 }
@@ -16350,7 +16351,7 @@ func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {
 
 	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7", nil)
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
-	var detail mergeRequestDetailResponse
+	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
 	require.Len(detail.Events, 1)
 	assert.Equal("review_comment", detail.Events[0].EventType)
@@ -16709,7 +16710,7 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 		},
 	)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	var response applyReviewSuggestionResponse
+	var response pullapi.ApplyReviewSuggestionResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
 	assert.Equal("applied", response.Status)
 	assert.Equal("suggestion-commit-sha", response.CommitSHA)
@@ -17054,7 +17055,7 @@ func TestAPIApplyReviewSuggestionReturnsAppliedWithoutCommitMetadata(t *testing.
 	)
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	var response applyReviewSuggestionResponse
+	var response pullapi.ApplyReviewSuggestionResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
 	assert.Equal("applied", response.Status)
 	assert.Empty(response.CommitSHA)
@@ -17104,7 +17105,7 @@ func TestAPIApplyReviewSuggestionReturnsAppliedForNilProviderResult(t *testing.T
 	)
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	var response applyReviewSuggestionResponse
+	var response pullapi.ApplyReviewSuggestionResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
 	assert.Equal("applied", response.Status)
 	assert.Empty(response.CommitSHA)

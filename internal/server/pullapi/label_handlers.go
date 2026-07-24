@@ -1,4 +1,4 @@
-package server
+package pullapi
 
 import (
 	"context"
@@ -12,10 +12,9 @@ import (
 	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
-type listRepoLabelsOutput = httpapi.BodyOutput[repoLabelsResponse]
 type setLabelsOutput = httpapi.BodyOutput[httpapi.ItemLabelsResponse]
 
-type setIssueLabelsInput struct {
+type setPullLabelsInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string
 	Owner        string `path:"owner"`
@@ -24,80 +23,9 @@ type setIssueLabelsInput struct {
 	Body         httpapi.SetLabelsRequest
 }
 
-type repoLabelsResponse struct {
-	Labels    []db.Label `json:"labels"`
-	Stale     bool       `json:"stale"`
-	Syncing   bool       `json:"syncing"`
-	SyncedAt  string     `json:"synced_at,omitempty"`
-	CheckedAt string     `json:"checked_at,omitempty"`
-	SyncError string     `json:"sync_error"`
-}
-
-func (s *Server) enqueueRepoLabelCatalogRefresh(repo db.Repo) bool {
-	if s.syncer == nil {
-		return false
-	}
-	s.labelCatalogRefreshMu.Lock()
-	if _, ok := s.labelCatalogRefreshIDs[repo.ID]; ok {
-		s.labelCatalogRefreshMu.Unlock()
-		return true
-	}
-	s.labelCatalogRefreshIDs[repo.ID] = struct{}{}
-	s.labelCatalogRefreshMu.Unlock()
-
-	started := s.runBackground(func(ctx context.Context) {
-		defer s.finishRepoLabelCatalogRefresh(repo.ID)
-		_ = s.syncer.RefreshRepoLabelCatalog(ctx, repo)
-	})
-	if !started {
-		s.finishRepoLabelCatalogRefresh(repo.ID)
-		return false
-	}
-	return true
-}
-
-func (s *Server) finishRepoLabelCatalogRefresh(repoID int64) {
-	s.labelCatalogRefreshMu.Lock()
-	delete(s.labelCatalogRefreshIDs, repoID)
-	s.labelCatalogRefreshMu.Unlock()
-}
-
-func (s *Server) listRepoLabels(
+func (s *Handler) setPullLabels(
 	ctx context.Context,
-	input *getRepoInput,
-) (*listRepoLabelsOutput, error) {
-	repo, err := s.lookupRepoByProviderRoute(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
-	)
-	if err != nil {
-		return nil, providerRouteLookupError(err)
-	}
-	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityReadLabels) {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityReadLabels)
-	}
-
-	labels, freshness, err := s.db.ListRepoLabelCatalog(ctx, repo.ID)
-	if err != nil {
-		return nil, httpapi.Internal("list repo labels failed")
-	}
-	syncing := false
-	if labelCatalogStale(freshness, time.Now().UTC()) {
-		syncing = s.enqueueRepoLabelCatalogRefresh(*repo)
-	}
-
-	return &listRepoLabelsOutput{Body: repoLabelsResponse{
-		Labels:    labels,
-		Stale:     labelCatalogStale(freshness, time.Now().UTC()),
-		Syncing:   syncing,
-		SyncedAt:  optionalTimeString(freshness.SyncedAt),
-		CheckedAt: optionalTimeString(freshness.CheckedAt),
-		SyncError: freshness.SyncError,
-	}}, nil
-}
-
-func (s *Server) setIssueLabels(
-	ctx context.Context,
-	input *setIssueLabelsInput,
+	input *setPullLabelsInput,
 ) (*setLabelsOutput, error) {
 	repo, names, err := s.resolveRequestedLabelNames(
 		ctx,
@@ -111,12 +39,12 @@ func (s *Server) setIssueLabels(
 		return nil, err
 	}
 
-	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, httpapi.Internal("get issue failed")
+		return nil, httpapi.Internal("get pull failed")
 	}
-	if issue == nil {
-		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
+	if mr == nil {
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull not found", nil)
 	}
 
 	if s.syncer == nil {
@@ -126,7 +54,7 @@ func (s *Server) setIssueLabels(
 	if err != nil {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)
 	}
-	providerLabels, err := mutator.SetIssueLabels(
+	providerLabels, err := mutator.SetMergeRequestLabels(
 		ctx, platformRepoRefFromDB(*repo), input.Number, names,
 	)
 	if err != nil {
@@ -137,20 +65,20 @@ func (s *Server) setIssueLabels(
 		)
 	}
 	labels := platform.DBLabels(providerLabels, time.Now().UTC())
-	if err := s.db.ReplaceIssueLabels(ctx, repo.ID, issue.ID, labels); err != nil {
-		return nil, httpapi.Internal("save issue labels failed")
+	if err := s.db.ReplaceMergeRequestLabels(ctx, repo.ID, mr.ID, labels); err != nil {
+		return nil, httpapi.Internal("save pull labels failed")
 	}
 	// Re-read the stored rows: the label store merges provider responses
 	// with the repo label catalog, so providers that return bare names
 	// (GitLab) still yield color and description here.
-	stored, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	stored, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil || stored == nil {
-		return nil, httpapi.Internal("get issue failed")
+		return nil, httpapi.Internal("get pull failed")
 	}
 	return &setLabelsOutput{Body: httpapi.ItemLabelsResponse{Labels: stored.Labels}}, nil
 }
 
-func (s *Server) resolveRequestedLabelNames(
+func (s *Handler) resolveRequestedLabelNames(
 	ctx context.Context,
 	provider string,
 	platformHost string,
@@ -220,11 +148,4 @@ func labelCatalogStale(freshness db.LabelCatalogFreshness, now time.Time) bool {
 		return true
 	}
 	return freshness.CheckedAt.Before(now.Add(-10 * time.Minute))
-}
-
-func optionalTimeString(t *time.Time) string {
-	if t == nil {
-		return ""
-	}
-	return formatUTCRFC3339(*t)
 }

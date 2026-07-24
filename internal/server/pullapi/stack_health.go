@@ -1,4 +1,4 @@
-package server
+package pullapi
 
 import "go.kenn.io/middleman/internal/db"
 

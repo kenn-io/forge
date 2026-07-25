@@ -139,6 +139,8 @@ def run_frontend_unit(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
         except OSError as error:
             print(
@@ -148,15 +150,20 @@ def run_frontend_unit(
             return _run_direct(test_command, frontend_dir)
 
         try:
-            log_file = vitest_log.open("w")
+            log_file = vitest_log.open("w", encoding="utf-8")
         except OSError:
             log_file = None
 
         assert process.stdout is not None
+        console_available = True
         try:
             for line in process.stdout:
-                sys.stdout.write(line)
-                sys.stdout.flush()
+                if console_available:
+                    try:
+                        sys.stdout.write(line)
+                        sys.stdout.flush()
+                    except (OSError, UnicodeError):
+                        console_available = False
                 if log_file is not None:
                     try:
                         log_file.write(line)
@@ -173,7 +180,8 @@ def run_frontend_unit(
                     log_file.close()
                 except OSError:
                     pass
-        return _status(process.wait())
+            returncode = process.wait()
+        return _status(returncode)
     finally:
         _capture_cgroup_metrics(cgroup_root, diagnostics_dir / "cgroup-after.txt")
 

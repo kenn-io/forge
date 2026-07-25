@@ -116,10 +116,11 @@ and materialize `node_modules` from the lockfile before invoking baked `vp`
 Frontend unit tests use the runner's 14 guaranteed cores; the previous single-worker
 cap was for the retired memory-constrained runner (`frontend/vite.config.ts::resolveUnitTestWorkers`).
 When a frontend unit run exits without a summary, download the
-`frontend-unit-diagnostics` artifact: it contains Vitest output, `/usr/bin/time`
-resource usage, Node fatal reports, and pre/post cgroup memory counters. If the exit
-is silent again, rerun it once with repository variable `ACTIONS_RUNNER_DEBUG=true`,
-download the runner diagnostic logs, then remove that variable.
+`frontend-unit-diagnostics` artifact: it contains any available Vitest output,
+`/usr/bin/time` resource usage, Node fatal reports, and pre/post cgroup memory
+counters. If the exit is silent again, rerun it once with repository variable
+`ACTIONS_RUNNER_DEBUG=true`, download the runner diagnostic logs, then remove
+that variable.
 
 Mock Playwright shares one Vite dev server, so cap CI workers at guaranteed cores;
 burst-level worker counts starve navigation and reload requests into false 30-second

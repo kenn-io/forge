@@ -37,7 +37,12 @@ class FrontendUnitCITest(unittest.TestCase):
         (self.root / "frontend").mkdir()
         self.diagnostics = self.root / "tmp" / "frontend-unit-diagnostics"
 
-    def run_child(self, source: str, **overrides: object) -> tuple[int, str, str]:
+    def run_child(
+        self,
+        source: str,
+        output: io.StringIO | None = None,
+        **overrides: object,
+    ) -> tuple[int, str, str]:
         options = {
             "repo_root": self.root,
             "diagnostics_dir": self.diagnostics,
@@ -45,7 +50,8 @@ class FrontendUnitCITest(unittest.TestCase):
             "version_commands": (),
         }
         options.update(overrides)
-        output = io.StringIO()
+        if output is None:
+            output = io.StringIO()
         warnings = io.StringIO()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(warnings):
             status = run_frontend_unit(**options)
@@ -68,6 +74,31 @@ class FrontendUnitCITest(unittest.TestCase):
         status, _, _ = self.run_child("import sys; print('failed'); sys.exit(23)")
         self.assertEqual(23, status)
         self.assertIn("failed", (self.diagnostics / "vitest.log").read_text())
+
+    def test_invalid_utf8_output_preserves_status_and_log(self) -> None:
+        status, _, _ = self.run_child(
+            "import sys; "
+            "sys.stdout.buffer.write(b'\\xff\\n'); "
+            "sys.stdout.buffer.flush(); "
+            "sys.exit(23)"
+        )
+        self.assertEqual(23, status)
+        self.assertIn("\ufffd", (self.diagnostics / "vitest.log").read_text())
+
+    def test_console_write_failure_preserves_status_and_log(self) -> None:
+        class FailingConsole(io.StringIO):
+            def write(self, _: str) -> int:
+                raise OSError("console write failed")
+
+            def flush(self) -> None:
+                raise OSError("console flush failed")
+
+        status, _, _ = self.run_child(
+            "print('child output'); import sys; sys.exit(23)",
+            output=FailingConsole(),
+        )
+        self.assertEqual(23, status)
+        self.assertIn("child output", (self.diagnostics / "vitest.log").read_text())
 
     def test_unavailable_diagnostics_runs_direct_command(self) -> None:
         blocked_parent = self.root / "blocked"

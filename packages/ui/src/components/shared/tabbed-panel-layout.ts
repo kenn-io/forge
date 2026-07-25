@@ -240,6 +240,33 @@ export function serializeTabbedPanelLayout(state: TabbedPanelLayoutState): strin
   return JSON.stringify(state);
 }
 
+/**
+ * Synthetic id for the flattened leaf.
+ *
+ * Safe as a constant because every structural edit is disabled while flattened
+ * (see the design spec): no mutation is ever applied against this id. A flat leaf
+ * merges tabs drawn from several real leaves, so targeting it would move tabs
+ * between panes the user cannot currently see.
+ */
+export const FLATTENED_TABBED_PANEL_LEAF_ID = "tabbed-panel-flattened";
+
+/**
+ * Collapse a tree to a single leaf for narrow viewports, without mutating the
+ * persisted tree.
+ *
+ * `preferredActiveTabKey` should be the surface's last-focused tab. A tree has no
+ * single active tab of its own — each leaf carries one — so without that hint
+ * flattening would silently jump to whichever leaf happens to come first.
+ */
+export function flattenTabbedPanelTree(node: TabbedPanelNode, preferredActiveTabKey?: string): TabbedPanelLeaf {
+  const tabs = collectTabbedPanelTabKeys(node);
+  const activeTabKey =
+    preferredActiveTabKey !== undefined && tabs.includes(preferredActiveTabKey)
+      ? preferredActiveTabKey
+      : (firstTabbedPanelLeaf(node)?.activeTabKey ?? tabs[0]!);
+  return { type: "leaf", id: FLATTENED_TABBED_PANEL_LEAF_ID, tabs, activeTabKey };
+}
+
 export function collectTabbedPanelLeafIDs(node: TabbedPanelNode | null): string[] {
   if (!node) return [];
   if (node.type === "leaf") return [node.id];

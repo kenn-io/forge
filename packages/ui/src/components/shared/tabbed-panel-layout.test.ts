@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  FLATTENED_TABBED_PANEL_LEAF_ID,
   collectTabbedPanelLeafIDs,
   createTabbedPanelLeaf,
   defaultTabbedPanelLayout,
+  flattenTabbedPanelTree,
   parseTabbedPanelLayout,
   pruneTabbedPanelTreeToAvailable,
   serializeTabbedPanelLayout,
@@ -147,6 +149,35 @@ describe("tabbed panel layout persistence", () => {
     const stored = serializeTabbedPanelLayout(defaultTabbedPanelLayout([...TABS, "retired"]));
     const parsed = parseTabbedPanelLayout(stored, TABS);
     expect(parsed.tree.type === "leaf" ? parsed.tree.tabs : []).not.toContain("retired");
+  });
+});
+
+describe("flatten fallback", () => {
+  it("collects every tab in traversal order under one synthetic leaf", () => {
+    const { tree } = splitLayout();
+    const flat = flattenTabbedPanelTree(tree);
+    expect(flat.type).toBe("leaf");
+    expect(flat.id).toBe(FLATTENED_TABBED_PANEL_LEAF_ID);
+    expect(flat.tabs).toEqual(["conversation", "files", "workspace"]);
+  });
+
+  it("honours a preferred active tab so flattening does not jump panes", () => {
+    // "The active tab" is undefined for a tree: each leaf has its own, and the
+    // default arrangement has a detail tab and the workspace active in
+    // different leaves. The surface's last-focused tab breaks the tie.
+    const { tree } = splitLayout();
+    expect(flattenTabbedPanelTree(tree, "workspace").activeTabKey).toBe("workspace");
+  });
+
+  it("ignores a preferred tab that is absent and falls back to the first leaf", () => {
+    const tree = createTabbedPanelLeaf(["conversation", "files"], "files");
+    expect(flattenTabbedPanelTree(tree, "workspace").activeTabKey).toBe("files");
+  });
+
+  it("is idempotent so repeated narrow renders stay stable", () => {
+    const { tree } = splitLayout();
+    const once = flattenTabbedPanelTree(tree, "files");
+    expect(flattenTabbedPanelTree(once, "files")).toEqual(once);
   });
 });
 

@@ -233,6 +233,13 @@ interface, give `RoutedClient` a repository-routed method and add its
 the interface so exact `repo:` routes pick their own credential
 (`internal/github/auth_router.go::RoutedClient.GetMarkdownImage`).
 
+A wire call issued during repository sync routes by repository even when the
+endpoint itself is host-scoped (`/users/{login}` for author display names).
+Owner-only and App-only configurations have no host fallback route, so a
+fallback-only lookup fails for every repository and, where a fallback does
+exist, spends the wrong identity's budget
+(`internal/github/auth_router.go::RoutedClient.GetUserForRepo`).
+
 Managed Git uses exact-repository or owner PAT routes with mutation context and
 must never expose an App installation token to smart HTTP. Thread full provider,
 host, owner, and repository identity through clone/fetch and local reads, passing

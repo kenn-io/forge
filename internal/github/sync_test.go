@@ -13116,6 +13116,13 @@ func TestSyncRepoGraphQLIssues(t *testing.T) {
 	assert.NotNil(issue.DetailFetchedAt)
 }
 
+// displayNameTestRepo is the repository whose credential display-name lookups
+// are routed through.
+var displayNameTestRepo = RepoRef{
+	Platform: platform.KindGitHub, PlatformHost: "github.com",
+	Owner: "acme", Name: "widget",
+}
+
 func TestResolveDisplayName(t *testing.T) {
 	ctx := t.Context()
 
@@ -13193,7 +13200,7 @@ func TestResolveDisplayName(t *testing.T) {
 				map[string]Client{"github.com": mc}, nil, nil, nil,
 				time.Minute, nil, nil,
 			)
-			name, ok := syncer.resolveDisplayName(ctx, mc, "github.com", tt.login)
+			name, ok := syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, tt.login)
 			assert.Equal(tt.wantName, name)
 			assert.Equal(tt.wantOK, ok)
 			assert.Equal(tt.wantAPICalled, apiCalled, "GetUser call expectation")
@@ -13218,13 +13225,13 @@ func TestResolveDisplayName_CachesNegativeResult(t *testing.T) {
 	)
 
 	// First call: hits API, returns failure.
-	name1, ok1 := syncer.resolveDisplayName(ctx, mc, "github.com", "renovate")
+	name1, ok1 := syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "renovate")
 	assert.Empty(name1)
 	assert.False(ok1)
 	assert.Equal(1, callCount)
 
 	// Second call: should use cache, no additional API call.
-	name2, ok2 := syncer.resolveDisplayName(ctx, mc, "github.com", "renovate")
+	name2, ok2 := syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "renovate")
 	assert.Empty(name2)
 	assert.False(ok2)
 	assert.Equal(1, callCount, "GetUser should not be called again for cached failure")
@@ -13247,13 +13254,13 @@ func TestResolveDisplayName_CachesSuccessfulEmptyName(t *testing.T) {
 	)
 
 	// First call: hits API, succeeds with empty name.
-	name1, ok1 := syncer.resolveDisplayName(ctx, mc, "github.com", "no-profile")
+	name1, ok1 := syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "no-profile")
 	assert.Empty(name1)
 	assert.True(ok1, "successful lookup of empty name should return ok=true")
 	assert.Equal(1, callCount)
 
 	// Second call: cache hit must still return ok=true, not flip to false.
-	name2, ok2 := syncer.resolveDisplayName(ctx, mc, "github.com", "no-profile")
+	name2, ok2 := syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "no-profile")
 	assert.Empty(name2)
 	assert.True(ok2, "cached empty name must remain ok=true")
 	assert.Equal(1, callCount, "GetUser should not be called again for cached success")
@@ -14669,7 +14676,7 @@ func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 	syncer.displayNames.now = func() time.Time { return fakeNow }
 
 	// Warm the cache with a successful lookup.
-	name, ok := syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	name, ok := syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "alice")
 	assert.Equal("Alice Smith", name)
 	assert.True(ok)
 	assert.Equal(1, callCount)
@@ -14679,7 +14686,7 @@ func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 	fakeNow = fakeNow.Add(displayNameSuccessTTL + time.Second)
 
 	// First refresh: API hit fails, stale name is returned.
-	name, ok = syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	name, ok = syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "alice")
 	assert.Equal("Alice Smith", name,
 		"stale name must be returned on refresh failure")
 	assert.True(ok)
@@ -14688,7 +14695,7 @@ func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 	// Second refresh inside failureTTL: no API call, still
 	// serves stale name.
 	fakeNow = fakeNow.Add(displayNameFailureTTL / 2)
-	name, ok = syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	name, ok = syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "alice")
 	assert.Equal("Alice Smith", name)
 	assert.True(ok)
 	assert.Equal(2, callCount,
@@ -14697,7 +14704,7 @@ func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 
 	// Past failureTTL: one more API attempt is allowed.
 	fakeNow = fakeNow.Add(displayNameFailureTTL + time.Second)
-	name, ok = syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	name, ok = syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "alice")
 	assert.Equal("Alice Smith", name)
 	assert.True(ok)
 	assert.Equal(3, callCount,
@@ -14707,7 +14714,7 @@ func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 	// Recovered upstream: next call refreshes successfully.
 	shouldFail = false
 	fakeNow = fakeNow.Add(displayNameFailureTTL + time.Second)
-	name, ok = syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	name, ok = syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "alice")
 	assert.Equal("Alice Smith", name)
 	assert.True(ok)
 	assert.Equal(4, callCount)

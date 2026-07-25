@@ -170,6 +170,17 @@ type Client interface {
 	InvalidateListETagsForRepo(owner, repo string, endpoints ...string)
 }
 
+// repoUserClient resolves a login with the credential serving a repository.
+// User lookups are host-scoped on the wire, but they happen during repository
+// sync, so an owner-scoped or App-only configuration with no host fallback
+// route must still be able to reach /users through the repository's own
+// credential rather than failing every display-name enrichment.
+type repoUserClient interface {
+	GetUserForRepo(
+		ctx context.Context, owner, repo, login string,
+	) (*gh.User, error)
+}
+
 // markdownImageClient carries the full repository identity even though the
 // attachment URL is host-scoped: credential selection is per repository, so a
 // repo-scoped route must be able to pick its own token for the fetch.

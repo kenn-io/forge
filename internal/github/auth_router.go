@@ -231,6 +231,7 @@ var (
 	_ githubReviewerClient                = (*RoutedClient)(nil)
 	_ pageClient                          = (*RoutedClient)(nil)
 	_ markdownImageClient                 = (*RoutedClient)(nil)
+	_ repoUserClient                      = (*RoutedClient)(nil)
 )
 
 func NewRoutedClient(routes *HostRouter) (*RoutedClient, error) {
@@ -518,6 +519,21 @@ func (c *RoutedClient) bypassNotificationReadRateReserve() bool {
 
 func (c *RoutedClient) GetUser(ctx context.Context, login string) (*gh.User, error) {
 	client, err := c.fallbackClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.GetUser(ctx, login)
+}
+
+// GetUserForRepo resolves a login with the repository's credential. Author
+// display-name enrichment runs inside repository sync, so routing it by
+// repository keeps owner-only and App-only configurations — which have no host
+// fallback route — able to read /users at all, and bills the request to the
+// identity whose repository triggered it.
+func (c *RoutedClient) GetUserForRepo(
+	ctx context.Context, owner, repo, login string,
+) (*gh.User, error) {
+	client, err := c.routeForRepo(owner, repo)
 	if err != nil {
 		return nil, err
 	}

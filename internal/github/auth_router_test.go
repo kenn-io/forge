@@ -57,6 +57,14 @@ func (c *routeRecordingClient) GetMarkdownImage(
 	}, nil
 }
 
+func (c *routeRecordingClient) GetUser(
+	_ context.Context, login string,
+) (*gh.User, error) {
+	c.calls = append(c.calls, "user:"+login)
+	name := c.marker + " display"
+	return &gh.User{Login: new(login), Name: new(name)}, nil
+}
+
 func (c *routeRecordingClient) ListRepositoriesByOwner(
 	_ context.Context, owner string,
 ) ([]*gh.Repository, error) {
@@ -189,6 +197,44 @@ func TestGitHubProviderRoutesMarkdownImagesByRepositoryCredential(t *testing.T) 
 	assert.Equal([]string{"markdown-image:acme/widget:" + source}, exact.calls)
 	assert.Empty(owner.calls)
 	assert.Empty(fallback.calls)
+}
+
+// Display-name enrichment runs inside repository sync, so it must use the
+// repository's credential. An owner-scoped or App-only configuration has no
+// host fallback route, and billing the lookup to a fallback identity would also
+// spend the wrong budget and skip repository provider-work accounting.
+func TestDisplayNameLookupUsesRepositoryCredentialWithoutHostFallback(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	owner := &routeRecordingClient{marker: "owner"}
+	exact := &routeRecordingClient{marker: "exact"}
+	router, err := NewHostRouter(
+		"github.com",
+		&Route{Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: owner},
+		&Route{
+			Key:    RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+			Client: exact,
+		},
+	)
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": routed}, openTestDB(t), nil, nil,
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	name, ok := syncer.resolveDisplayName(t.Context(), routed, RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}, "octocat")
+
+	require.True(ok, "an owner/App-only configuration still enriches authors")
+	assert.Equal("exact display", name)
+	assert.Equal([]string{"user:octocat"}, exact.calls)
+	assert.Empty(owner.calls,
+		"the repository's own credential pays for the lookup")
 }
 
 func TestSyncerRateSnapshotScopesAppRouteToOwner(t *testing.T) {

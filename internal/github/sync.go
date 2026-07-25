@@ -5916,7 +5916,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 		normalized.AuthorDisplayName == "" {
 		if client, ok := s.optionalGitHubClientFor(repo); ok {
 			if name, found := s.resolveDisplayName(
-				ctx, client, repoHost(repo), normalized.Author,
+				ctx, client, repo, normalized.Author,
 			); found {
 				normalized.AuthorDisplayName = name
 			}
@@ -6030,12 +6030,8 @@ func (s *Syncer) indexUpsertMR(
 
 	if normalized.Author != "" &&
 		normalized.AuthorDisplayName == "" {
-		host := repo.PlatformHost
-		if host == "" {
-			host = "github.com"
-		}
 		if name, ok := s.resolveDisplayName(
-			ctx, client, host, normalized.Author,
+			ctx, client, repo, normalized.Author,
 		); ok {
 			normalized.AuthorDisplayName = name
 		} else if existing != nil {
@@ -6649,14 +6645,10 @@ func (s *Syncer) syncOpenMRFromBulk(
 	// Resolve display name if missing.
 	if normalized.Author != "" &&
 		normalized.AuthorDisplayName == "" {
-		host := repo.PlatformHost
-		if host == "" {
-			host = "github.com"
-		}
 		client, clientErr := s.clientFor(repo)
 		if clientErr == nil {
 			if name, ok := s.resolveDisplayName(
-				ctx, client, host, normalized.Author,
+				ctx, client, repo, normalized.Author,
 			); ok {
 				normalized.AuthorDisplayName = name
 			}
@@ -6990,12 +6982,8 @@ func (s *Syncer) fetchMRDetail(
 
 	if normalized.Author != "" &&
 		normalized.AuthorDisplayName == "" {
-		host := repo.PlatformHost
-		if host == "" {
-			host = "github.com"
-		}
 		if name, ok := s.resolveDisplayName(
-			ctx, client, host, normalized.Author,
+			ctx, client, repo, normalized.Author,
 		); ok {
 			normalized.AuthorDisplayName = name
 		}
@@ -8240,10 +8228,15 @@ func (s *Syncer) replaceIssueCommentEvents(
 //
 // Bot logins (ending with "[bot]") are returned as-is since bot
 // accounts have no display name on the GitHub API.
+//
+// The lookup is routed by repo so a configuration with no host
+// fallback route still resolves names, and so the request is
+// billed to the identity serving that repository. A display name
+// does not vary by credential, so the cache stays host-keyed.
 func (s *Syncer) resolveDisplayName(
-	ctx context.Context, client Client, host, login string,
+	ctx context.Context, client Client, repo RepoRef, login string,
 ) (string, bool) {
-	key := host + "\x00" + login
+	key := repoHost(repo) + "\x00" + login
 	if cached, fresh := s.displayNames.get(key); fresh {
 		return cached.name, cached.ok
 	}
@@ -8259,7 +8252,7 @@ func (s *Syncer) resolveDisplayName(
 		if cached, fresh := s.displayNames.get(key); fresh {
 			return cached, nil
 		}
-		user, err := client.GetUser(ctx, login)
+		user, err := s.getUserForRepo(ctx, client, repo, login)
 		if err != nil {
 			return displayNameEntry{}, err
 		}
@@ -8288,6 +8281,19 @@ func (s *Syncer) resolveDisplayName(
 	}
 	result := v.(displayNameEntry)
 	return result.name, result.ok
+}
+
+// getUserForRepo prefers a repository-routed user lookup so routed hosts pick
+// the repository's credential. A client without repository routing, or a repo
+// ref missing owner/name, falls back to the plain host lookup.
+func (s *Syncer) getUserForRepo(
+	ctx context.Context, client Client, repo RepoRef, login string,
+) (*gh.User, error) {
+	if reader, ok := client.(repoUserClient); ok &&
+		repo.Owner != "" && repo.Name != "" {
+		return reader.GetUserForRepo(ctx, repo.Owner, repo.Name, login)
+	}
+	return client.GetUser(ctx, login)
 }
 
 // --- Issue sync ---
@@ -9382,7 +9388,7 @@ func (s *Syncer) syncMRForRepo(
 		// Resolve directly instead of using s.resolveDisplayName to
 		// preserve existing display names on failure.
 		if client, ok := s.optionalGitHubClientFor(repo); ok {
-			if displayName, found := s.resolveDisplayName(ctx, client, repo.PlatformHost, normalized.Author); found {
+			if displayName, found := s.resolveDisplayName(ctx, client, repo, normalized.Author); found {
 				normalized.AuthorDisplayName = displayName
 			}
 		}

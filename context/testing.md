@@ -100,6 +100,12 @@ owner:
   machine's, so assert the invariant that holds either side of a wrap boundary,
   never which side a chosen width lands on
   (`frontend/src/RoborevReviewDrawer.footer-layout.browser.svelte.ts`).
+- Browser specs must live under `frontend/src`, even when they cover a
+  `packages/ui` component. The browser project includes only
+  `src/**/*.browser.svelte.ts` while the unit project also includes
+  `../packages/ui/src/**` (`frontend/vite.config.ts:214`, `:178`), so a
+  `*.browser.svelte.ts` file placed beside a `packages/ui` component never runs
+  at all — it is silently collected by nothing rather than failing.
 - Use Playwright mock e2e when the regression is specifically about a
   multi-step browser workflow, viewport behavior, screenshots/video, drag,
   scroll/sticky/overflow geometry, canvas/xterm rendering, or browser navigation.

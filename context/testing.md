@@ -92,12 +92,6 @@ owner:
   backend persistence, sync, capabilities, normalization, route middleware, or
   wire serialization.
 
-Browser-lane computed styles are for observing a rendered outcome, not for
-asserting a CSS declaration that mirrors the stylesheet line a fix changed; such
-a test is a change-detector blind to the same regression reached by any other
-property. When only a pixel snapshot could prove the outcome, ship the fix
-untested rather than assert the declaration.
-
 A UI regression can be sufficiently covered by a backend/server test for the
 real runtime path plus a component or Vitest browser test for presentation. Do
 not require a duplicate full-stack browser test when it would only replay data

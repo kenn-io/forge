@@ -55,12 +55,11 @@ var (
 	ErrPageLimit                 = &Error{Code: ErrCodePageLimit}
 )
 
-// ErrWireAttemptBudget is returned by budget-counting transports when a sync
-// operation exhausts its admitted wire-attempt allowance. It bounds pagination,
-// provider-SDK retries, and authentication retries to the admitted cost. Archive
-// work treats it as a transient budget deferral and must never let it surface as
-// a repository-blocking contract error.
-var ErrWireAttemptBudget = errors.New("wire-attempt allowance exhausted")
+// ErrArchiveAttemptBudget is returned by budget-counting transports when an
+// archive request exhausts its admitted wire-attempt allowance. Archive work
+// treats it as a transient budget deferral and must never let it surface as a
+// repository-blocking contract error.
+var ErrArchiveAttemptBudget = errors.New("archive wire-attempt allowance exhausted")
 
 // ErrLookupInaccessible marks a single-item lookup that the provider has
 // explicitly classified as inaccessible rather than a generic authentication

@@ -6185,8 +6185,8 @@ func TestDetailDrainCompletesWhenProviderExceedsAdmittedCost(t *testing.T) {
 		readReviewThreads: true,
 		listReviewThreadsFn: func(ctx context.Context, _ platform.RepoRef, _ int) ([]platform.MergeRequestReviewThread, error) {
 			for range PRDetailWorstCase + 1 {
-				if !ConsumeWireAttemptAllowance(ctx) {
-					return nil, platform.ErrWireAttemptBudget
+				if !ConsumeArchiveAttemptAllowance(ctx) {
+					return nil, platform.ErrArchiveAttemptBudget
 				}
 				wireAttempts.Add(1)
 			}

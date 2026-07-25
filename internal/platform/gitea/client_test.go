@@ -61,7 +61,12 @@ func TestClientClassifiesDisabledIssuesFromRepositoryMetadata(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	client, err := NewClient("gitea.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
+	client, err := NewClient(
+		"gitea.test",
+		testTokenSource("token"),
+		WithBaseURLForTesting(server.URL),
+		WithServerVersionForTesting(testGiteaServerVersion),
+	)
 	require.NoError(err)
 
 	_, err = client.ListOpenIssues(t.Context(), platform.RepoRef{

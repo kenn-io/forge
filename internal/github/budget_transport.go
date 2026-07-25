@@ -10,33 +10,34 @@ import (
 
 type syncBudgetKey struct{}
 type archiveSyncBudgetKey struct{}
-type wireAttemptAllowanceKey struct{}
+type archiveAttemptAllowanceKey struct{}
 
-// wireAttemptAllowance is a shared, mutable counter of the wire attempts an
-// admitted sync operation is still allowed to make. Every budget-counting
+// archiveAttemptAllowance is a shared, mutable counter of the wire attempts an
+// admitted archive request is still allowed to make. Every budget-counting
 // transport decrements it once per attempt and refuses the attempt when it
-// falls below zero, so pagination, provider-SDK retries, and authentication
-// retries together cannot exceed the admitted cost.
-type wireAttemptAllowance struct {
+// falls below zero, so provider-SDK retries and authentication retries together
+// cannot exceed the admitted cost.
+type archiveAttemptAllowance struct {
 	remaining atomic.Int64
 }
 
-// WithWireAttemptAllowance attaches a per-operation wire-attempt allowance to
-// ctx. Admission sets attempts to the operation's admitted cost so the ceiling
-// enforced before work begins is also enforced atomically at every wire attempt.
-func WithWireAttemptAllowance(ctx context.Context, attempts int) context.Context {
-	allowance := &wireAttemptAllowance{}
+// WithArchiveAttemptAllowance attaches a per-request wire-attempt allowance to
+// ctx alongside the archive-budget marker. Admission sets attempts to the
+// admitted archive cost so the ceiling enforced at admission is also enforced
+// atomically at every wire attempt.
+func WithArchiveAttemptAllowance(ctx context.Context, attempts int) context.Context {
+	allowance := &archiveAttemptAllowance{}
 	allowance.remaining.Store(int64(attempts))
-	return context.WithValue(ctx, wireAttemptAllowanceKey{}, allowance)
+	return context.WithValue(ctx, archiveAttemptAllowanceKey{}, allowance)
 }
 
-// ConsumeWireAttemptAllowance reserves one wire attempt from the allowance in
-// ctx. It returns true when the attempt is permitted and false once the
-// allowance is exhausted, in which case the caller must refuse the attempt
-// without any upstream I/O. Contexts without an allowance always permit the
-// attempt.
-func ConsumeWireAttemptAllowance(ctx context.Context) bool {
-	allowance, ok := ctx.Value(wireAttemptAllowanceKey{}).(*wireAttemptAllowance)
+// ConsumeArchiveAttemptAllowance reserves one wire attempt from the archive
+// allowance in ctx. It returns true when the attempt is permitted and false
+// once the allowance is exhausted, in which case the caller must refuse the
+// attempt without any upstream I/O. Contexts without an allowance — every live
+// (non-archive) request — always permit the attempt.
+func ConsumeArchiveAttemptAllowance(ctx context.Context) bool {
+	allowance, ok := ctx.Value(archiveAttemptAllowanceKey{}).(*archiveAttemptAllowance)
 	if !ok {
 		return true
 	}
@@ -89,8 +90,8 @@ func WrapSyncBudgetTransport(base http.RoundTripper, budget *SyncBudget) http.Ro
 func (t *budgetTransport) RoundTrip(
 	req *http.Request,
 ) (*http.Response, error) {
-	if !ConsumeWireAttemptAllowance(req.Context()) {
-		return nil, platform.ErrWireAttemptBudget
+	if !ConsumeArchiveAttemptAllowance(req.Context()) {
+		return nil, platform.ErrArchiveAttemptBudget
 	}
 	resp, err := t.base.RoundTrip(req)
 	if IsSyncBudgetContext(req.Context()) &&

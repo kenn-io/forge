@@ -25,10 +25,10 @@ func TestArchiveRetryClassifierTreatsAttemptBudgetRefusalAsTransient(t *testing.
 	// repository-blocking contract error. The refusal must stay a transient
 	// budget deferral in every form.
 	wrapped := &platform.Error{
-		Code: platform.ErrCodeInvalidRepoRef, Err: platform.ErrWireAttemptBudget,
+		Code: platform.ErrCodeInvalidRepoRef, Err: platform.ErrArchiveAttemptBudget,
 	}
 	for name, cause := range map[string]error{
-		"bare":              platform.ErrWireAttemptBudget,
+		"bare":              platform.ErrArchiveAttemptBudget,
 		"provider-contract": wrapped,
 		"deeply-wrapped":    errors.Join(errors.New("list historical issues"), wrapped),
 	} {

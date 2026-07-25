@@ -731,7 +731,7 @@ func TestArchiveAdmissionAttemptAllowanceUsesAvailableSurplus(t *testing.T) {
 	require.True(admission.Allowed)
 	t.Cleanup(func() { admission.Complete(nil, true) })
 	for range PRDetailWorstCase {
-		assert.True(ConsumeWireAttemptAllowance(admission.Context))
+		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
 	}
 }
 

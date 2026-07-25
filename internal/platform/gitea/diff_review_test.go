@@ -299,7 +299,7 @@ func TestListMergeRequestReviewThreadsRejectsReviewPageCycleBeforeFanout(t *test
 	assert.Equal(int32(2), requests.Load())
 }
 
-func TestListMergeRequestReviewThreadsRejectsDatasetBeyondWireAttemptAllowance(t *testing.T) {
+func TestListMergeRequestReviewThreadsRejectsDatasetBeyondArchiveAttemptAllowance(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	var requests atomic.Int32
@@ -328,12 +328,12 @@ func TestListMergeRequestReviewThreadsRejectsDatasetBeyondWireAttemptAllowance(t
 		WithSyncBudget(budget),
 	)
 	require.NoError(err)
-	ctx := ghsync.WithWireAttemptAllowance(ghsync.WithSyncBudget(t.Context()), 2)
+	ctx := ghsync.WithArchiveAttemptAllowance(ghsync.WithArchiveSyncBudget(t.Context()), 2)
 	threads, err := client.ListMergeRequestReviewThreads(ctx, platform.RepoRef{
 		Owner: "acme", Name: "widgets",
 	}, 42)
 
-	require.ErrorIs(err, platform.ErrWireAttemptBudget)
+	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
 	assert.Nil(threads)
 	assert.Equal(int32(2), requests.Load())
 	assert.Equal(2, budget.Spent())

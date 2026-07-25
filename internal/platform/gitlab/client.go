@@ -156,8 +156,8 @@ type syncBudgetTransport struct {
 }
 
 func (t *syncBudgetTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if !ghsync.ConsumeWireAttemptAllowance(req.Context()) {
-		return nil, platform.ErrWireAttemptBudget
+	if !ghsync.ConsumeArchiveAttemptAllowance(req.Context()) {
+		return nil, platform.ErrArchiveAttemptBudget
 	}
 	resp, err := t.base.RoundTrip(req)
 	if ghsync.IsSyncBudgetContext(req.Context()) {

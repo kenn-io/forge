@@ -8034,6 +8034,7 @@ func TestAPIGiteaDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T)
 		"gitea.test",
 		testTokenSource("token"),
 		giteaplatform.WithBaseURLForTesting(providerServer.URL),
+		giteaplatform.WithServerVersionForTesting("1.26.0"),
 	)
 	require.NoError(err)
 	registry, err := platform.NewRegistry(provider)

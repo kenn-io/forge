@@ -430,7 +430,7 @@ func TestClientSyncBudgetChargesOnlyMarkedRoundTrips(t *testing.T) {
 	assert.Equal(3, requests)
 }
 
-func TestClientWireAttemptAllowanceCapsProviderRetries(t *testing.T) {
+func TestClientArchiveAttemptAllowanceCapsProviderRetries(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	var mu sync.Mutex
@@ -455,11 +455,11 @@ func TestClientWireAttemptAllowanceCapsProviderRetries(t *testing.T) {
 	ref := platform.RepoRef{
 		Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "group/project",
 	}
-	ctx := ghsync.WithWireAttemptAllowance(ghsync.WithArchiveSyncBudget(t.Context()), 2)
+	ctx := ghsync.WithArchiveAttemptAllowance(ghsync.WithArchiveSyncBudget(t.Context()), 2)
 
 	_, err = client.GetRepository(ctx, ref)
 	require.Error(err)
-	require.ErrorIs(err, platform.ErrWireAttemptBudget)
+	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
 
 	mu.Lock()
 	defer mu.Unlock()

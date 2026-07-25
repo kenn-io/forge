@@ -31,13 +31,13 @@ func (c *countingRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 	}, nil
 }
 
-func TestWireAttemptAllowanceRefusesBeyondAdmittedCeiling(t *testing.T) {
+func TestArchiveAttemptAllowanceRefusesBeyondAdmittedCeiling(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	base := &countingRoundTripper{status: http.StatusInternalServerError}
 	budget := NewSyncBudget(100)
 	transport := WrapSyncBudgetTransport(base, budget)
-	ctx := WithWireAttemptAllowance(WithArchiveSyncBudget(t.Context()), 2)
+	ctx := WithArchiveAttemptAllowance(WithArchiveSyncBudget(t.Context()), 2)
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
@@ -51,14 +51,14 @@ func TestWireAttemptAllowanceRefusesBeyondAdmittedCeiling(t *testing.T) {
 	require.NoError(err)
 	resp, err := transport.RoundTrip(req)
 	assert.Nil(resp)
-	require.ErrorIs(err, platform.ErrWireAttemptBudget)
+	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
 
 	assert.Equal(int64(2), base.calls.Load())
 	assert.Equal(2, budget.ArchiveSpent())
 	assert.Equal(2, budget.Spent())
 }
 
-func TestWireAttemptAllowanceBoundsAuthRetries(t *testing.T) {
+func TestArchiveAttemptAllowanceBoundsAuthRetries(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	base := &countingRoundTripper{status: http.StatusUnauthorized}
@@ -72,20 +72,20 @@ func TestWireAttemptAllowanceBoundsAuthRetries(t *testing.T) {
 		SetHeader:           tokenauth.BearerAuthHeader,
 		RetryOnUnauthorized: true,
 	}
-	ctx := WithWireAttemptAllowance(WithArchiveSyncBudget(t.Context()), 1)
+	ctx := WithArchiveAttemptAllowance(WithArchiveSyncBudget(t.Context()), 1)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
 	require.NoError(err)
 
 	resp, err := authRT.RoundTrip(req)
 	assert.Nil(resp)
-	require.ErrorIs(err, platform.ErrWireAttemptBudget)
+	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
 	// The initial attempt spent the only admitted unit; the authentication
 	// retry was refused locally without a second wire attempt.
 	assert.Equal(int64(1), base.calls.Load())
 	assert.Equal(1, budget.ArchiveSpent())
 }
 
-func TestWireAttemptAllowanceLeavesContextsWithoutAllowanceUnbounded(t *testing.T) {
+func TestArchiveAttemptAllowanceLeavesLiveContextsUnbounded(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	base := &countingRoundTripper{status: http.StatusInternalServerError}

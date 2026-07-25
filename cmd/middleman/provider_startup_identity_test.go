@@ -379,8 +379,17 @@ token_env = "ORG_A_PAT"
 	assert.Equal("org-a-token", githubToken,
 		"the scoped GitHub route must not borrow the forgejo host token")
 
-	assert.Nil(routes.SourceForRepo("github", host, "unmatched", "repo"),
+	// Fail closed means a source that reports the missing route, not a nil
+	// source: managed Git reads nil as permission to run git with no
+	// credential, which succeeds against any public repository.
+	unmatched := routes.SourceForRepo("github", host, "unmatched", "repo")
+	require.NotNil(unmatched,
+		"a routed GitHub host must never hand managed Git a credential-free runner")
+	_, err = unmatched.Token(t.Context())
+	var missing *github.MissingRouteError
+	require.ErrorAs(err, &missing,
 		"a routed GitHub host without a matching route must fail closed")
+	assert.Equal("unmatched", missing.Owner)
 }
 
 // TestProviderStartupDisablesAmbiguousOwnerlessFallbackOnSharedHost pins the
@@ -1177,4 +1186,64 @@ func TestSelectedGitHubAppKeepsOwnerDiscoveryWhenRepoOverridesPAT(t *testing.T) 
 	assert.Equal("covered", response.Repos[0].Name)
 	assert.Equal("Bearer app-token", installationAuth,
 		"owner discovery must still spend the installation's budget")
+}
+
+// A repository no configured route serves has no credential, and managed Git
+// must say so rather than fall back to running git with no credential at all.
+// Unauthenticated smart HTTP succeeds against any public repository, so a nil
+// source would turn a missing route into a silent success that spends no
+// identity's budget and reports no configuration problem.
+func TestManagedGitFailsClosedForUnroutedGitHubRepository(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	t.Setenv("ACME_PAT", "acme-secret")
+	var requestCount atomic.Int32
+	gitServer := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			requestCount.Add(1)
+			w.WriteHeader(http.StatusOK)
+		},
+	))
+	defer gitServer.Close()
+	host := gitServer.Listener.Addr().String()
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Repos: []config.Repo{{
+			Platform: "github", PlatformHost: host, Owner: "acme", Name: "widget",
+		}},
+		GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{{
+			Host: host, Owner: "acme", TokenEnv: "ACME_PAT",
+		}},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubCLI: func(context.Context, string) (string, error) {
+			return "", tokenauth.ErrMissingToken
+		},
+	})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+	startup, err := buildProviderStartup(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+		tokenGitHubIdentityResolver{"acme-secret": {
+			Key: github.IdentityKey{Host: host, Principal: "user:1"},
+		}},
+	)
+	require.NoError(err)
+
+	manager := gitclone.New(t.TempDir(), &startup)
+	_, err = manager.RunGitForRepo(
+		t.Context(), "github", host, "other", "thing", "",
+		"ls-remote", gitServer.URL+"/other/thing.git",
+	)
+
+	require.Error(err, "an unrouted repository must not fall back to no credential")
+	// gitclone flattens git failures into its own error type, so match the
+	// message the route type produces rather than unwrapping to it.
+	missing := &github.MissingRouteError{Host: host, Owner: "other", Name: "thing"}
+	require.ErrorContains(err, missing.Error())
+	assert.Zero(requestCount.Load(),
+		"managed Git must not contact the remote without a credential route")
 }

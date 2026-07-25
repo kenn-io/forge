@@ -67,6 +67,29 @@ func (s identityBoundMutationTokenSource) Token(ctx context.Context) (string, er
 	return s.Source.Token(tokenauth.WithMutationAuth(ctx))
 }
 
+// missingRouteTokenSource fails closed for a repository that no configured
+// credential route serves. Managed Git treats a nil source as permission to run
+// without credentials, so returning nil would let an unrouted repository reach
+// the remote unauthenticated and quietly succeed whenever it happens to be
+// public, instead of reporting that no credential route covers it.
+type missingRouteTokenSource struct {
+	host  string
+	owner string
+	name  string
+}
+
+func (s missingRouteTokenSource) Token(context.Context) (string, error) {
+	return "", &github.MissingRouteError{
+		Host: s.host, Owner: s.owner, Name: s.name,
+	}
+}
+
+func (missingRouteTokenSource) Invalidate() {}
+
+func (missingRouteTokenSource) Descriptor() tokenauth.Descriptor {
+	return tokenauth.Descriptor{}
+}
+
 type githubCredentialRoute struct {
 	key            tokenauth.Key
 	source         tokenauth.Source
@@ -124,7 +147,7 @@ func (s *providerStartup) SourceForRepo(
 		}
 	}
 	if s.githubRouters[host] != nil {
-		return nil
+		return missingRouteTokenSource{host: host, owner: owner, name: name}
 	}
 	return providerSource
 }

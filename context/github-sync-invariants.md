@@ -233,6 +233,12 @@ partition non-GitHub clone storage by provider on shared hosts. Before injecting
 a PAT into workspace fetch or push, require the branch upstream to be `origin`,
 reject repository-local URL rewrites, and validate every origin fetch/push URL.
 
+A nil `tokenauth.Source` is not fail-closed: `gitclone` reads it as permission to
+run git with no credential, which succeeds against any public repository and
+spends no identity's budget. A route resolver that cannot serve a repository must
+return a source whose `Token` reports the missing route
+(`cmd/middleman/provider_startup.go::missingRouteTokenSource`).
+
 Token-file rotation within the same GitHub user is hot-reloadable. Changing the
 authenticated user, adding a write identity to an App-only route, or adding or
 removing a bounded route requires restart. Added, removed, or descriptor-changed scoped routes require restart. The live

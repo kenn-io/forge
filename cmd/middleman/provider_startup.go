@@ -668,6 +668,11 @@ func githubCredentialPlans(cfg *config.Config) []config.ProviderTokenSource {
 type resolvedGitHubPAT struct {
 	identity github.GitHubIdentity
 	token    string
+	// missing records that this mutation chain has no credential at all.
+	// Only that verdict is cached: it is deterministic for the startup pass,
+	// while a transient resolution failure must stay retryable for the next
+	// route that shares the chain.
+	missing error
 }
 
 func resolveGitHubPATIdentity(
@@ -681,10 +686,21 @@ func resolveGitHubPATIdentity(
 	cacheKey := strings.ToLower(strings.TrimSpace(host)) + "\x00" +
 		mutationSourceIdentity(desc)
 	if resolved, ok := cache[cacheKey]; ok {
+		if resolved.missing != nil {
+			return resolvedGitHubPAT{}, resolved.missing
+		}
 		return resolved, nil
 	}
 	identity, token, err := resolver.ResolvePAT(ctx, host, source)
 	if err != nil {
+		// An App-only installation gives every one of its exact repository
+		// routes the same PAT-less mutation chain. Without caching the
+		// verdict each route repeats the lookup, and the gh CLI candidate
+		// shells out once per repository, so startup cost grows with the
+		// number of repositories.
+		if errors.Is(err, tokenauth.ErrMissingToken) {
+			cache[cacheKey] = resolvedGitHubPAT{missing: err}
+		}
 		return resolvedGitHubPAT{}, err
 	}
 	resolved := resolvedGitHubPAT{identity: identity, token: token}

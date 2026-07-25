@@ -1247,3 +1247,89 @@ func TestManagedGitFailsClosedForUnroutedGitHubRepository(t *testing.T) {
 	assert.Zero(requestCount.Load(),
 		"managed Git must not contact the remote without a credential route")
 }
+
+// An App-only selected installation plus a name pattern is a complete
+// configuration: the App's exact routes serve its repositories and owner
+// discovery expands the pattern. Startup must not demand an owner PAT the
+// configuration deliberately omits.
+//
+// Startup must also not resolve the absent PAT once per repository. Every exact
+// App route shares one PAT-less mutation chain ending in the gh CLI candidate,
+// so an uncached verdict shells out per repository. The assertion is that the
+// count does not grow with the installation, which is the property that matters
+// and does not depend on how many fixed-cost lookups startup makes elsewhere.
+func TestAppOnlySelectedGlobStartsWithoutPATAndResolvesMissingPATOnce(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	startupGhCLICalls := func(t *testing.T, selected []string) int {
+		t.Helper()
+		database := dbtest.Open(t)
+		var ghCLICalls atomic.Int32
+		api := httptest.NewTLSServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.Method == http.MethodGet &&
+					r.URL.Path == "/api/v3/installation/repositories" {
+					_, _ = io.WriteString(w, `{"repositories":[]}`)
+					return
+				}
+				http.NotFound(w, r)
+			},
+		))
+		t.Cleanup(api.Close)
+		originalTransport := http.DefaultTransport
+		http.DefaultTransport = api.Client().Transport
+		t.Cleanup(func() { http.DefaultTransport = originalTransport })
+		host := strings.TrimPrefix(api.URL, "https://")
+
+		cfg := &config.Config{
+			SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+			Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+			Repos: []config.Repo{{
+				Platform: "github", PlatformHost: host, Owner: "acme", Name: "*",
+			}},
+			GitHubApps: []config.GitHubAppConfig{{
+				Host: host, AppID: 7, PrivateKeyPath: "/keys/app.pem",
+				InstallationID: 789, InstallationAccount: "acme",
+				RepositorySelection: "selected", SelectedRepos: selected,
+			}},
+		}
+		require.NoError(cfg.Validate())
+		set := tokenauth.NewSourceSet(tokenauth.Options{
+			GitHubCLI: func(context.Context, string) (string, error) {
+				ghCLICalls.Add(1)
+				return "", tokenauth.ErrMissingToken
+			},
+			GitHubApp: func(
+				context.Context, tokenauth.Candidate,
+			) (string, time.Time, error) {
+				return "app-token", time.Now().Add(time.Hour), nil
+			},
+		})
+		sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+		require.NoError(err)
+
+		// This resolver resolves the mutation chain for real, so an uncached
+		// missing-PAT verdict reaches the gh CLI candidate once per route.
+		startup, err := buildProviderStartup(
+			t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+			tokenGitHubIdentityResolver{},
+		)
+		require.NoError(err,
+			"an App-only selected installation must not require an owner PAT")
+		require.NotNil(startup.githubRouters[host])
+		_, err = startup.githubRouters[host].RouteForRepo("acme", selected[0][len("acme/"):])
+		require.NoError(err,
+			"the App's exact route must serve its selected repository")
+		return int(ghCLICalls.Load())
+	}
+
+	small := startupGhCLICalls(t, []string{"acme/one", "acme/two"})
+	large := startupGhCLICalls(t, []string{
+		"acme/one", "acme/two", "acme/three", "acme/four", "acme/five",
+	})
+
+	assert.Equal(small, large,
+		"resolving the absent PAT must not cost one lookup per repository")
+}

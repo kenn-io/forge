@@ -411,3 +411,48 @@ token_env = "REPO_PAT"
 		"writes stay on the repository PAT so they are attributed to the user")
 	assert.Equal(1, mints, "mutation auth must not mint an installation token")
 }
+
+// A name pattern gets an owner-scoped route because a selected-repository App
+// cannot cover the literal pattern. Requiring that route would fail startup for
+// an App-only configuration, even though the App's exact routes serve every
+// repository the pattern expands to.
+func TestProviderTokenSourcesMakeAppServedGlobRouteOptional(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	keyPath := filepath.Join(t.TempDir(), "app.pem")
+	require.NoError(os.WriteFile(keyPath, []byte("private-key\n"), 0o600))
+	appConfig := `
+[[github_apps]]
+app_id = 42
+private_key_path = "` + keyPath + `"
+installation_id = 99
+installation_account = "acme"
+repository_selection = "selected"
+selected_repos = ["acme/widgets"]
+`
+	globRepo := `
+[[repos]]
+owner = "acme"
+name = "*"
+`
+	requiredByScope := func(t *testing.T, body string) map[string]bool {
+		t.Helper()
+		cfg, err := Load(writeConfig(t, body))
+		require.NoError(err)
+		out := map[string]bool{}
+		for _, plan := range cfg.ProviderTokenSources() {
+			out[plan.Descriptor.Key.Scope] = plan.Required
+		}
+		return out
+	}
+
+	withApp := requiredByScope(t, appConfig+globRepo)
+	assert.False(withApp["owner:acme"],
+		"the App's exact routes already serve the pattern's repositories")
+	assert.True(withApp["repo:acme/widgets"],
+		"the selected App route itself stays required")
+
+	withoutApp := requiredByScope(t, globRepo)
+	assert.True(withoutApp["owner:acme"],
+		"without a covering App the pattern still needs its own credential")
+}

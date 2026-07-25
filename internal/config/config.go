@@ -262,6 +262,14 @@ func (r Repo) ownerHasGlob() bool {
 	return strings.ContainsAny(r.Owner, "*?[")
 }
 
+// nameHasGlob reports whether the entry names a pattern rather than one
+// repository. A pattern's members are discovered at runtime, so its own
+// credential route is a discovery aid rather than the credential that serves
+// any particular repository.
+func (r Repo) nameHasGlob() bool {
+	return strings.ContainsAny(r.Name, "*?[")
+}
+
 type parsedRepoRef struct {
 	platform string
 	host     string
@@ -2123,6 +2131,38 @@ func (c *Config) ResolveRepoToken(r Repo) string {
 // demand. The `gh` CLI candidate is deliberately excluded: it shells out and is
 // host-scoped, so pollers resolve it once per host through TokenForPlatformHost
 // instead of once per route here.
+// globServedBySelectedApp reports whether repo is a name pattern whose
+// repositories a selected-repository App installation already covers. Such a
+// pattern gets an owner-scoped route because the App cannot cover the literal
+// pattern name, and requiring that route would fail startup for an App-only
+// configuration even though the App's own exact routes serve every repository
+// the pattern expands to. The route stays in the plan list so a PAT still
+// broadens discovery when one is configured; it simply must not be mandatory.
+func (c *Config) globServedBySelectedApp(repo Repo) bool {
+	if c == nil || !repo.nameHasGlob() {
+		return false
+	}
+	host := repo.PlatformHostOrDefault()
+	if repo.PlatformOrDefault() != defaultPlatform {
+		return false
+	}
+	for _, app := range c.GitHubAppsForHost(host) {
+		if app.AppID <= 0 || app.InstallationID <= 0 ||
+			app.PrivateKeyPath == "" ||
+			!strings.EqualFold(app.InstallationAccount, repo.Owner) ||
+			!strings.EqualFold(strings.TrimSpace(app.RepositorySelection), "selected") {
+			continue
+		}
+		for _, selected := range app.SelectedRepos {
+			owner, _, ok := strings.Cut(strings.TrimSpace(selected), "/")
+			if ok && strings.EqualFold(owner, repo.Owner) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (c *Config) ConfiguredCredentialAvailable() bool {
 	if c == nil {
 		return false
@@ -2351,7 +2391,7 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 	for _, repo := range c.Repos {
 		plan := ProviderTokenSource{
 			Descriptor: c.ResolveRepoTokenSource(repo),
-			Required:   true,
+			Required:   !c.globServedBySelectedApp(repo),
 		}
 		if repo.PlatformOrDefault() == defaultPlatform {
 			plan.GitHubOwner = repo.Owner

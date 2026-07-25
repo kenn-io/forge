@@ -1053,6 +1053,23 @@ func newServer(
 		s.runWorkspaceDependent(s.repoBrowserAPI.RunRefreshLoop)
 	}
 
+	// The syncer's native-stack preference is the transition authority for
+	// later settings changes, so every server binds it to the boot config
+	// rather than relying on the caller that assembled the syncer. This runs
+	// before the config watcher so the boot value cannot race a reload that
+	// swaps the preference and reconciles from its own snapshot.
+	if syncer != nil && cfg != nil {
+		syncer.SetPreferGitHubNativeStacks(cfg.PullRequests.PreferGitHubNativeStacks)
+		if !cfg.PullRequests.PreferGitHubNativeStacks {
+			// Boot is a transition point too: the setting may have been edited
+			// while the daemon was stopped, or a previous run may have saved it and
+			// exited before reconciling. Stored native ordering would otherwise
+			// keep driving the merge safeguard until each repository next synced,
+			// and forever for repositories no longer tracked.
+			s.restoreBranchDerivedStackProjections()
+		}
+	}
+
 	// Watch the config file so an external edit (vim, dotfiles deploy,
 	// sd -i, etc.) is picked up without a restart. Watcher init failures
 	// are logged inside startConfigWatcher; the server still serves.
@@ -1103,22 +1120,6 @@ func newServer(
 	s.handler = otelhttp.NewHandler(assembled, "middleman.http",
 		otelhttp.WithFilter(otelTraceable(basePath)),
 		otelhttp.WithSpanNameFormatter(otelSpanName))
-
-	// The syncer's native-stack preference is the transition authority for
-	// later settings changes, so every server binds it to the boot config
-	// rather than relying on the caller that assembled the syncer.
-	if syncer != nil && cfg != nil {
-		syncer.SetPreferGitHubNativeStacks(cfg.PullRequests.PreferGitHubNativeStacks)
-		if !cfg.PullRequests.PreferGitHubNativeStacks {
-			// Boot is a transition point too: the setting may have been edited
-			// while the daemon was stopped, or a previous run may have saved it and
-			// exited before reconciling. Stored native ordering would otherwise
-			// keep driving the merge safeguard until each repository next synced,
-			// and forever for repositories no longer tracked. Nothing is served
-			// yet, so this runs before the handler goes live.
-			s.restoreBranchDerivedStackProjections()
-		}
-	}
 
 	return s
 }

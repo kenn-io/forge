@@ -2880,6 +2880,7 @@ prefer_github_native_stacks = false
 	t.Cleanup(syncer.Stop)
 	srv := NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
 		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
 
 	// No sync has run, and the repository is not even tracked.

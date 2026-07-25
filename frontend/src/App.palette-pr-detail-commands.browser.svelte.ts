@@ -282,6 +282,33 @@ describe("pane layout palette commands", () => {
     expect(paletteRowsNamed(/Maximize pane/i)).toHaveLength(0);
   });
 
+  it("does not offer pane commands while the layout is flattened", async () => {
+    // Below the flatten width every structural edit is disabled, so the palette
+    // must not be a back door into rearranging a tree that is not on screen.
+    mounted = await mountBrowserApp("/pulls/github/acme/widgets/42");
+    await expect.element(page.getByText("Adds Playwright smoke tests")).toBeVisible();
+    await page.viewport(560, 900);
+    await vi.waitFor(() => expect(document.querySelector("[data-testid='pane-split-right']")).toBeNull());
+
+    await openPaletteWith("pane");
+
+    expect(paletteRowsNamed(/Split pane right/i)).toHaveLength(0);
+    expect(paletteRowsNamed(/Maximize pane/i)).toHaveLength(0);
+    expect(paletteRowsNamed(/Reset pane layout/i)).toHaveLength(0);
+  });
+
+  it("does not offer pane commands on a list with nothing selected", async () => {
+    // The page is a pane surface but has no layout mounted, so a command would
+    // rearrange a tree that only a future selection will render.
+    mounted = await mountBrowserApp("/pulls");
+    await vi.waitFor(() => expect(document.querySelector(".detail-pane-layout")).toBeNull());
+
+    await openPaletteWith("pane");
+
+    expect(paletteRowsNamed(/Split pane right/i)).toHaveLength(0);
+    expect(paletteRowsNamed(/Reset pane layout/i)).toHaveLength(0);
+  });
+
   it("does not offer pane commands outside a pane surface", async () => {
     // The Workspaces tab has its own tree with its own drag scope; detail pane
     // commands must not reach it.

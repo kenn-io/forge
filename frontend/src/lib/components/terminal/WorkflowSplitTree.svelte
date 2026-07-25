@@ -6,7 +6,7 @@
   import SparklesIcon from "@lucide/svelte/icons/sparkles";
   import TerminalIcon from "@lucide/svelte/icons/terminal";
   import HouseIcon from "@lucide/svelte/icons/house";
-  import { TabbedPanelTree, type TabbedPanelDescriptor } from "@middleman/ui";
+  import { TabbedPanelTree, workspaceTabDragScope, type TabbedPanelDescriptor } from "@middleman/ui";
   import type { SplitDirection, WorkflowNode, WorkflowTabKey } from "./terminal-layout";
   import {
     clearActiveTerminalDrag,
@@ -95,7 +95,7 @@
      plain string equality, so a bare workspace id equal to a detail surface key
      would let a detail pane land here the moment those overrides go away. -->
 <TabbedPanelTree
-  dragScope={`workspace:${workspaceId}`}
+  dragScope={workspaceTabDragScope(workspaceId)}
   {node}
   {tabs}
   {activeTabKey}

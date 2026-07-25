@@ -1,4 +1,3 @@
-import { untrack } from "svelte";
 import {
   identityEquals,
   type InlineWorkspaceController,
@@ -65,26 +64,41 @@ export function useItemWorkspaceClaim(options: ItemWorkspaceClaimOptions): ItemW
     return controller.effectiveWorkspaceRef(identity, options.envelopeRef() ?? null);
   });
 
+  // Which controller this hook currently holds a claim on. Tracked rather than
+  // assumed stable: a surface that swapped controllers would otherwise leave the
+  // old one claimed for good, and teardown would release the wrong one.
+  let claimedController: InlineWorkspaceController | null = null;
+
   $effect(() => {
     const controller = options.controller();
+    if (claimedController !== null && claimedController !== controller) {
+      // Released here rather than in a cleanup: a cleanup runs in the same flush
+      // as the new claim and would clobber it.
+      claimedController.release();
+      claimedController = null;
+    }
     if (!controller) return;
     const identity = options.identity();
     const ref = resolvedRef;
-    if (identity && ref) controller.claim(identity, ref);
-    else controller.release();
+    if (identity && ref) {
+      controller.claim(identity, ref);
+      claimedController = controller;
+    } else {
+      controller.release();
+      claimedController = null;
+    }
   });
 
-  // Reads the controller UNTRACKED so this effect has no dependencies and its
-  // cleanup therefore runs only at destruction. Reading it reactively re-runs
-  // the effect whenever the prop is reassigned — even to the same object — and
-  // the cleanup would then release a claim the effect above just made in the
-  // same flush, unmounting the workspace pane and reparenting the live terminal
-  // for nothing. A surface's controller is stable for the life of the view, so
-  // there is nothing to react to.
+  // Reads nothing reactive, so this effect runs once and its cleanup runs only at
+  // destruction. Reading the controller reactively here re-ran the effect whenever
+  // the prop was reassigned — even to the same object — and the cleanup then
+  // released a claim the effect above had just made in the same flush, unmounting
+  // the workspace pane and reparenting the live terminal for nothing.
   $effect(() => {
-    const controller = untrack(() => options.controller());
-    if (!controller) return;
-    return () => controller.release();
+    return () => {
+      claimedController?.release();
+      claimedController = null;
+    };
   });
 
   $effect(() => {

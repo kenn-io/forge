@@ -31,6 +31,14 @@ export interface PaneTabSpec {
 
 export const PANE_LAYOUT_STORAGE_PREFIX = "middleman-pane-layout-v1:";
 
+/** The state only the renderer knows, published for consumers outside the tree. */
+export interface PaneRenderReport {
+  /** Tabs the surface currently offers, availability already applied. */
+  availableTabs: readonly string[];
+  /** True while the narrow-width fallback shows one flat strip and disables edits. */
+  flattened: boolean;
+}
+
 export interface PaneLayoutStore {
   readonly surface: PaneSurfaceKey;
   /**
@@ -50,6 +58,16 @@ export interface PaneLayoutStore {
   leafIDForTab(tabKey: string): string | null;
   /** Whether this tab is the active one in its own leaf. */
   isTabActive(tabKey: string): boolean;
+  /**
+   * What the mounted renderer is currently showing, or null when none is mounted.
+   *
+   * Command-layer consumers cannot derive this: whether a surface has a layout on
+   * screen at all, which panes it offers, and whether the narrow-width fallback has
+   * flattened it are all decided in the renderer. Ephemeral — never persisted.
+   */
+  paneRender(): PaneRenderReport | null;
+  /** Called by the rendering host; null on teardown. */
+  notePaneRender(report: PaneRenderReport | null): void;
   /**
    * Whether splitting this tab out would change anything — it shares its leaf.
    * Callers that offer a split control need this to avoid a dead affordance,
@@ -95,6 +113,7 @@ export function createPaneLayoutStore(
   defaultTree: TabbedPanelNode,
 ): PaneLayoutStore {
   let state = $state<TabbedPanelLayoutState>(parseTabbedPanelLayout(readStored(surface), knownTabs, defaultTree));
+  let render = $state<PaneRenderReport | null>(null);
 
   function commit(next: TabbedPanelLayoutState): void {
     state = next;
@@ -134,6 +153,25 @@ export function createPaneLayoutStore(
     leafIDForTab: (tabKey) => findTabbedPanelLeafByTab(state.tree, tabKey)?.id ?? null,
 
     isTabActive: (tabKey) => findTabbedPanelLeafByTab(state.tree, tabKey)?.activeTabKey === tabKey,
+
+    paneRender: () => render,
+
+    notePaneRender: (report) => {
+      if (report === null) {
+        render = null;
+        return;
+      }
+      const current = render;
+      if (
+        current !== null &&
+        current.flattened === report.flattened &&
+        current.availableTabs.length === report.availableTabs.length &&
+        current.availableTabs.every((tab, index) => tab === report.availableTabs[index])
+      ) {
+        return;
+      }
+      render = { availableTabs: [...report.availableTabs], flattened: report.flattened };
+    },
 
     canSplitTab: (tabKey) => (findTabbedPanelLeafByTab(state.tree, tabKey)?.tabs.length ?? 0) > 1,
 

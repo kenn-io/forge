@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
-import { resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
+import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
 import { createClaimTestController, createReactiveValue } from "./viewWorkspaceTestDoubles.svelte.js";
 import type { InlineWorkspaceController } from "../workspace-inline.js";
 
@@ -213,5 +213,36 @@ describe("ActivityFeedView detail panes", () => {
     await rerender({ drawerItem: issueDrawer(9), inlineWorkspace: controller });
 
     expect(document.querySelector(".detail-pane-workspace-slot")).toBe(slot);
+  });
+
+  it("restores a customized arrangement after a selection kind removed one of its panes", async () => {
+    // The stored tree keeps unavailable panes; only the render prunes them. That
+    // is what lets an arrangement made against a PR come back after an issue,
+    // which contributes no diff pane at all, has been selected in between.
+    const layout = getPaneLayoutStore("activity");
+    const { rerender } = renderActivity({
+      drawerItem: prDrawer(12),
+      pullDetail: pullDetailFixture(12),
+      issueDetail: issueDetailFixture(9),
+    });
+
+    const detailLeaf = layout.leafIDForTab("conversation");
+    layout.splitTab("files", detailLeaf!, "horizontal", "after");
+    const filesLeaf = layout.leafIDForTab("files");
+    expect(filesLeaf).not.toBe(detailLeaf);
+    layout.toggleZoom(filesLeaf!);
+
+    await rerender({ drawerItem: issueDrawer(9) });
+
+    // The diff has no place in an issue, so it renders nothing and its zoom is
+    // dropped rather than blanking the surface.
+    expect(screen.queryByRole("tab", { name: "Files changed" })).toBeNull();
+    expect(layout.effectiveZoomedLeafID(["conversation"])).toBeNull();
+
+    await rerender({ drawerItem: prDrawer(12) });
+
+    expect(screen.getByRole("tab", { name: "Files changed" })).toBeTruthy();
+    expect(layout.leafIDForTab("files")).toBe(filesLeaf);
+    expect(layout.leafIDForTab("conversation")).toBe(detailLeaf);
   });
 });

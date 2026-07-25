@@ -183,6 +183,8 @@ export type {
   TabbedPanelStatus,
   TabbedPanelSplitEdge,
 } from "./components/shared/tabbed-panel-layout.js";
+export type { PaneRenderReport } from "./stores/paneLayout.svelte.js";
+export { workspaceTabDragScope } from "./components/shared/tabbed-panel-drag.js";
 export {
   PANE_LAYOUT_STORAGE_PREFIX,
   createPaneLayoutStore,

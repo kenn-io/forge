@@ -1,5 +1,17 @@
 export const TABBED_PANEL_TAB_DRAG_MIME = "application/x-middleman-tabbed-panel-tab";
 
+/**
+ * Drag scope for a workspace's own panel tree.
+ *
+ * Scope comparison is plain string equality, so every tree that uses this
+ * primitive has to namespace its scope or two unrelated trees become mutually
+ * droppable. Built here rather than inline at the call site so the namespaces stay
+ * in one place with the detail surfaces' `detail:<surface>`.
+ */
+export function workspaceTabDragScope(workspaceId: string): string {
+  return `workspace:${workspaceId}`;
+}
+
 export interface TabbedPanelTabDragPayload {
   scope: string;
   tabKey: string;

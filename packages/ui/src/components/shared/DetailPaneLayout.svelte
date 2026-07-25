@@ -73,9 +73,26 @@
     const tree = renderTree;
     if (!tree) return null;
     if (!flattened) return tree;
-    // A tree has no single active tab, so the surface's last-focused tab breaks
-    // the tie; the route-bound tab wins when there is one.
-    return flattenTabbedPanelTree(tree, routeTabKey ?? layout.lastFocusedTabKey() ?? undefined);
+    // A tree has no single active tab, so the surface's last-focused tab breaks the
+    // tie. Focus wins over the route rather than the other way around: the
+    // deep-link effect below notes focus whenever the route names a pane, so
+    // last-focused is never staler than the route, and preferring the route would
+    // make revealing a non-route pane (Focus Terminal) impossible here — the flat
+    // strip would snap straight back to the route's pane.
+    return flattenTabbedPanelTree(tree, layout.lastFocusedTabKey() ?? routeTabKey ?? undefined);
+  });
+
+  // Publish the renderer-only facts the command layer needs: that a layout is
+  // mounted here at all, which panes it offers, and whether the narrow-width
+  // fallback has flattened it (where every structural edit is disabled, so a
+  // palette command must not quietly rearrange a tree nobody can see).
+  $effect(() => {
+    const report = { availableTabs, flattened };
+    // Untracked because the store compares against the previous report before
+    // writing: reading it here would make this effect both a reader and a writer
+    // of the same state and it would re-run itself forever.
+    untrack(() => layout.notePaneRender(report));
+    return () => untrack(() => layout.notePaneRender(null));
   });
 
   const hiddenButAvailable = $derived(

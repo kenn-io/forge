@@ -18,6 +18,7 @@ import {
   isHostVisible,
   notifyWorkspaceDeleted,
   onIdentityInvalidated,
+  registerSlotElement,
   rememberTerminalRouteKey,
   resetWorkspaceHostForTest,
 } from "./workspace-host.svelte.ts";
@@ -33,6 +34,14 @@ const identityA = {
 };
 const identityB = { ...identityA, number: 8 };
 const refA = { id: "ws-a", status: "ready" };
+
+/**
+ * Stand in for the pane rendering: the portal slot element exists only while the
+ * workspace pane is on screen, and `isHostVisible()` reads exactly that.
+ */
+function mountWorkspaceSlot(surface: "prs" | "issues" | "activity", mounted: boolean): void {
+  registerSlotElement(surface, mounted ? document.createElement("div") : null);
+}
 
 describe("workspace host store", () => {
   beforeEach(() => {
@@ -477,11 +486,19 @@ describe("workspace host store", () => {
   it("dock collapse means claimed-but-hidden", () => {
     const prs = getInlineWorkspaceController("prs");
     prs.claim(identityA, refA);
+    const layout = getPaneLayoutStore("prs");
+    mountWorkspaceSlot("prs", true);
     expect(isHostVisible()).toBe(true);
     prs.setDockMode("collapsed");
+    expect(layout.hiddenTabKeys()).toContain("workspace");
+    // Collapsing hides the pane, which unmounts its slot; the host then reads as
+    // claimed but not visible.
+    mountWorkspaceSlot("prs", false);
     expect(desiredSlot()).toBe("prs"); // still claimed
     expect(isHostVisible()).toBe(false); // hostVisible contract applies
     prs.setDockMode("split");
+    expect(layout.hiddenTabKeys()).not.toContain("workspace");
+    mountWorkspaceSlot("prs", true);
     expect(isHostVisible()).toBe(true);
   });
 
@@ -600,12 +617,14 @@ describe("workspace host store", () => {
     // mode, but nothing on screen to focus.
     layout.toggleZoom(detailLeaf!);
     expect(prs.getDockMode()).toBe("split");
-    expect(isHostVisible()).toBe(false);
 
     prs.focusTerminal();
 
+    // The foreign zoom is what was hiding it, so reveal has to drop that rather
+    // than merely unhide a pane that was never hidden.
     expect(layout.zoomedLeafID()).toBeNull();
-    expect(isHostVisible()).toBe(true);
+    expect(layout.hiddenTabKeys()).not.toContain("workspace");
+    expect(layout.isTabActive("workspace")).toBe(true);
   });
 
   it("reveals a workspace tabbed behind a sibling pane", () => {
@@ -616,12 +635,16 @@ describe("workspace host store", () => {
     // unhidden, still not rendered.
     layout.appendTabToLeaf("workspace", layout.leafIDForTab("conversation")!);
     layout.activateTab("conversation");
-    expect(prs.getDockMode()).toBe("split");
-    expect(isHostVisible()).toBe(false);
+    expect(prs.getDockMode()).toBe("split"); // neither hidden nor maximized
+    expect(layout.isTabActive("workspace")).toBe(false);
 
     prs.focusTerminal();
 
-    expect(isHostVisible()).toBe(true);
+    expect(layout.isTabActive("workspace")).toBe(true);
+    // Focus is noted as well as activation, because the narrow-width flattened
+    // rendering picks its single visible tab from the last-focused one: without
+    // this, revealing the terminal did nothing at all below the flatten width.
+    expect(layout.lastFocusedTabKey()).toBe("workspace");
   });
 
   it("leaves the workspace's own zoom alone when revealing it", () => {

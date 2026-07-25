@@ -154,15 +154,15 @@ function dockModeFor(surface: InlineWorkspaceSurface): InlineDockMode {
  * leaf's zoom, renders nothing. The host is parked in both cases, so conflating
  * the two lets `isHostVisible()` claim a parked host is visible.
  *
- * Read from the stored tree, so it does not account for the narrow-width
- * flattened rendering, where the host component picks the active tab itself.
+ * Read from the physical portal slot rather than derived from the stored tree.
+ * The slot element is rendered only while the pane is, so its registration is the
+ * one observation that already accounts for availability pruning, the zoom, a
+ * sibling tab being active, and the narrow-width flattened strip — where the
+ * renderer picks the single visible tab and a tree-only derivation claimed a
+ * parked host was on screen.
  */
 function workspacePaneVisible(surface: InlineWorkspaceSurface): boolean {
-  const layout = getPaneLayoutStore(surface);
-  if (layout.hiddenTabKeys().includes(WORKSPACE_PANE_KEY)) return false;
-  if (!layout.isTabActive(WORKSPACE_PANE_KEY)) return false;
-  const zoomed = layout.zoomedLeafID();
-  return zoomed === null || zoomed === layout.leafIDForTab(WORKSPACE_PANE_KEY);
+  return getSlotElement(surface) !== null;
 }
 
 /**
@@ -172,11 +172,17 @@ function workspacePaneVisible(surface: InlineWorkspaceSurface): boolean {
  * zoom on another leaf. Both leave it structurally present and completely
  * invisible. A zoom held by the workspace's OWN leaf is left alone — revealing
  * must never undo the user's maximize.
+ *
+ * Noting focus is what makes this work at narrow widths too: the flattened
+ * single-strip rendering picks its visible tab from the surface's last-focused
+ * one, so activating within the stored tree alone would leave the flat strip on
+ * whatever it was already showing.
  */
 function revealWorkspacePane(surface: InlineWorkspaceSurface): void {
   const layout = getPaneLayoutStore(surface);
   layout.setHidden(WORKSPACE_PANE_KEY, false);
   layout.activateTab(WORKSPACE_PANE_KEY);
+  layout.noteFocused(WORKSPACE_PANE_KEY);
   const leafID = layout.leafIDForTab(WORKSPACE_PANE_KEY);
   const zoomed = layout.zoomedLeafID();
   if (zoomed !== null && zoomed !== leafID) layout.clearZoom();

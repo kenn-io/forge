@@ -264,10 +264,34 @@
     { key: "workspace", label: "Workspace", available: workspaceClaim.ref() !== null, hideable: true },
   ]);
 
+  // Whether the drawer's two route-bound panes are on screen at once, which is
+  // what decides that moving between them is a focus change rather than a
+  // navigation. Same arrangement rule as PRs mode.
+  const routePanesSplitApart = $derived(
+    paneLayout.leafIDForTab("conversation") !== paneLayout.leafIDForTab("files"),
+  );
+
   function handlePaneSelect(tabKey: string): void {
     // Only the PR's two panes are bound to the drawer's tab state; commit and
     // workspace have no equivalent.
     if (tabKey === "conversation" || tabKey === "files") handleDetailTabChange(tabKey);
+  }
+
+  /**
+   * Follow the user between the two route-bound panes when both are visible.
+   *
+   * Without this the drawer's `detailTab` — and so the pane the layout treats as
+   * route-bound — stays on whichever pane was last clicked, even after the user
+   * moves into the other one and starts working in it. Only while split: sharing
+   * a leaf means the invisible sibling can still take focus programmatically.
+   */
+  function handlePaneFocus(tabKey: string): void {
+    if (tabKey !== "conversation" && tabKey !== "files") return;
+    if (!isPRSelection || tabKey === effectiveDetailTab) return;
+    if (!routePanesSplitApart) return;
+    // Activity's selection lives in the query string and is always written with
+    // replaceUrl, so this only keeps the drawer's own tab state in step.
+    handleDetailTabChange(tabKey, { replace: true });
   }
 
   function handleDetailTabChange(
@@ -475,6 +499,7 @@
         leafLabel="Activity detail pane group"
         routeTabKey={isPRSelection ? effectiveDetailTab : undefined}
         onSelectTab={handlePaneSelect}
+        onFocusPane={handlePaneFocus}
       >
         {#snippet renderPane(tabKey, visible)}
           {#if tabKey === "commit" && commitDrawer && visible}

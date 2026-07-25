@@ -129,6 +129,41 @@ describe("item workspace claim lifecycle", () => {
     expect(release).toHaveBeenCalled();
   });
 
+  it("releases the previous controller when the surface swaps controllers", () => {
+    // The claim is per controller, so leaving the old one claimed would keep a
+    // dead surface holding a workspace no view is showing.
+    const first = fakeController();
+    const second = fakeController();
+    // Reactive so reassigning it re-runs the claim effect the way a prop change
+    // would.
+    let active = $state(first);
+    const cleanup = $effect.root(() => {
+      useItemWorkspaceClaim({
+        controller: () => active.controller,
+        identity: () => identity(),
+        detailMatches: () => true,
+        envelopeRef: () => REF,
+        refresh: () => {},
+      });
+    });
+    flushSync();
+    expect(first.claim).toHaveBeenCalledWith(identity(), REF);
+    first.release.mockClear();
+
+    active = second;
+    flushSync();
+
+    expect(first.release).toHaveBeenCalled();
+    expect(second.claim).toHaveBeenCalledWith(identity(), REF);
+
+    // Teardown releases the controller actually held, not the one captured first.
+    second.release.mockClear();
+    first.release.mockClear();
+    cleanup();
+    expect(second.release).toHaveBeenCalled();
+    expect(first.release).not.toHaveBeenCalled();
+  });
+
   it("refreshes only when the invalidated identity is the current one", () => {
     const { controller, invalidate } = fakeController();
     const refresh = vi.fn();

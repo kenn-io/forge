@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag, startTabbedPanelTabDrag } from "./tabbed-panel-drag.js";
+import {
+  clearActiveTabbedPanelDrag,
+  readTabbedPanelTabDrag,
+  startTabbedPanelTabDrag,
+  workspaceTabDragScope,
+} from "./tabbed-panel-drag.js";
+import { createPaneLayoutStore } from "../../stores/paneLayout.svelte.js";
 
 /**
  * jsdom has no DataTransfer, and the real one is write-only during dragstart
@@ -20,6 +26,28 @@ describe("tabbed panel tab drag scope", () => {
     clearActiveTabbedPanelDrag();
   });
 
+  it("keeps workspace scopes disjoint from every detail surface scope", () => {
+    // The collision this guards: a workspace id that equalled a surface key would
+    // make the Workspaces tree and a detail surface mutually droppable, moving a
+    // detail pane into a workspace's tab strip. Both namespaces are built by code
+    // under test rather than spelled out here, so reverting either one fails.
+    const surfaceScopes = (["prs", "issues", "activity"] as const).map(
+      (surface) =>
+        createPaneLayoutStore(surface, ["conversation"], {
+          type: "leaf",
+          id: "leaf",
+          tabs: ["conversation"],
+          activeTabKey: "conversation",
+        }).dragScope,
+    );
+
+    for (const scope of surfaceScopes) {
+      for (const id of ["prs", "issues", "activity", scope]) {
+        expect(workspaceTabDragScope(id)).not.toBe(scope);
+      }
+    }
+  });
+
   it("accepts a drop only in the scope the drag started in", () => {
     const store = new Map<string, string>();
     startTabbedPanelTabDrag(dragEvent(store), { scope: "detail:prs", tabKey: "files" });
@@ -35,10 +63,10 @@ describe("tabbed panel tab drag scope", () => {
 
   it("rejects a workspace-scoped drag in every detail surface", () => {
     const store = new Map<string, string>();
-    startTabbedPanelTabDrag(dragEvent(store), { scope: "workspace:ws-1", tabKey: "home" });
+    startTabbedPanelTabDrag(dragEvent(store), { scope: workspaceTabDragScope("ws-1"), tabKey: "home" });
 
-    expect(readTabbedPanelTabDrag(dragEvent(store), "workspace:ws-1")).toBe("home");
-    expect(readTabbedPanelTabDrag(dragEvent(store), "workspace:ws-2")).toBeNull();
+    expect(readTabbedPanelTabDrag(dragEvent(store), workspaceTabDragScope("ws-1"))).toBe("home");
+    expect(readTabbedPanelTabDrag(dragEvent(store), workspaceTabDragScope("ws-2"))).toBeNull();
     expect(readTabbedPanelTabDrag(dragEvent(store), "detail:prs")).toBeNull();
   });
 

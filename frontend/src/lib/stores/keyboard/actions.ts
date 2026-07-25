@@ -15,7 +15,12 @@ import {
   buildRepoBrowserRoute,
   type RepositoryRouteRef,
 } from "@middleman/ui/routes";
-import { getPaneLayoutStore, type PaneLayoutStore, type PaneSurfaceKey } from "@middleman/ui/stores/paneLayout";
+import {
+  getPaneLayoutStore,
+  type PaneLayoutStore,
+  type PaneRenderReport,
+  type PaneSurfaceKey,
+} from "@middleman/ui/stores/paneLayout";
 import type { ConfigRepo } from "@middleman/ui/api/types";
 import type { StoreInstances } from "@middleman/ui";
 import type { Action, Context, PreviewBlock } from "./types.js";
@@ -382,14 +387,34 @@ interface PaneCommandTarget {
 }
 
 /**
- * The pane a command acts on: the last one focused, falling back to the pane the
- * route names so the commands work before the user has touched a tab header.
+ * The layout a command may act on: one that is actually mounted and not flattened.
+ *
+ * A page can be a pane surface with nothing on screen (a list with no selection),
+ * and below the flatten width every structural edit is disabled — a command that
+ * ignored either would rearrange a persisted tree the user cannot see.
  */
-function paneCommandTarget(ctx: Context): PaneCommandTarget | null {
+function mountedPaneLayout(ctx: Context): { layout: PaneLayoutStore; render: PaneRenderReport } | null {
   const surface = paneSurfaceFor(ctx);
   if (surface === null) return null;
   const layout = getPaneLayoutStore(surface);
-  const tabKey = layout.lastFocusedTabKey() ?? (surface === "issues" ? "conversation" : ctx.detailTab);
+  const render = layout.paneRender();
+  if (render === null || render.flattened) return null;
+  return { layout, render };
+}
+
+/**
+ * The pane a command acts on: the last one focused, falling back to the pane the
+ * route names so the commands work before the user has touched a tab header. The
+ * target must be a pane this surface currently offers — Activity's diff pane, for
+ * instance, is gone the moment the selection stops being a pull request.
+ */
+function paneCommandTarget(ctx: Context): PaneCommandTarget | null {
+  const mounted = mountedPaneLayout(ctx);
+  if (mounted === null) return null;
+  const { layout, render } = mounted;
+  const preferred = layout.lastFocusedTabKey() ?? (paneSurfaceFor(ctx) === "issues" ? "conversation" : ctx.detailTab);
+  const tabKey = render.availableTabs.includes(preferred) ? preferred : render.availableTabs[0];
+  if (tabKey === undefined) return null;
   const leafID = layout.leafIDForTab(tabKey);
   if (leafID === null) return null;
   return { layout, tabKey, leafID };
@@ -624,12 +649,10 @@ export const defaultActions: Action[] = [
     binding: null,
     priority: 0,
     // Surface-scoped and only here: a leaf cluster is the wrong place for an
-    // action that discards arrangements the user cannot currently see.
-    when: (ctx) => paneSurfaceFor(ctx) !== null,
-    handler: (ctx) => {
-      const surface = paneSurfaceFor(ctx);
-      if (surface !== null) getPaneLayoutStore(surface).reset();
-    },
+    // action that discards arrangements the user cannot currently see. Gated on a
+    // mounted, unflattened layout for the same reason the splits are.
+    when: (ctx) => mountedPaneLayout(ctx) !== null,
+    handler: (ctx) => mountedPaneLayout(ctx)?.layout.reset(),
   },
   {
     id: "sync.repos",

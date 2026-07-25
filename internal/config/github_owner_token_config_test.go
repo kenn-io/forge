@@ -1,8 +1,11 @@
 package config
 
 import (
+	"context"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -165,7 +168,12 @@ name = "widgets"
 	}, candidateSafeStrings(desc))
 }
 
-func TestResolveGitHubRepoTokenSourceRepoOverrideIsExactAndTerminalForApp(t *testing.T) {
+// A repository PAT override makes the route exact and serves that repository's
+// writes, but it must not displace a covering App installation for reads: App
+// tokens carry their own rate-limit budget, so they lead every read chain.
+// Mutation resolution skips App candidates, so the override is still the
+// credential that signs writes.
+func TestResolveGitHubRepoTokenSourceRepoOverrideIsExactAndKeepsAppForReads(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 github_token_env = "DEFAULT_PAT"
 
@@ -191,14 +199,16 @@ token_env = "REPO_PAT"
 	assert := assert.New(t)
 	assert.Equal("repo:acme/widgets", desc.Key.Scope)
 	assert.Equal([]string{
+		"github_app:42@github.com/acme",
 		"env:REPO_PAT",
 		"env:ACME_PAT",
 		"env:DEFAULT_PAT",
 		"github_cli:github.com",
 	}, candidateSafeStrings(desc))
-	for _, candidate := range desc.Candidates {
-		assert.NotEqual(tokenauth.SourceKindGitHubApp, candidate.Kind)
-	}
+	assert.Equal(tokenauth.SourceKindGitHubApp, desc.Candidates[0].Kind,
+		"reads must prefer the installation token's own budget")
+	assert.Equal(tokenauth.SourceKindEnv, desc.Candidates[1].Kind,
+		"the repository override is the first PAT, so it signs writes")
 }
 
 func TestGitHubOwnersMayUseDifferentPATsOnOneHost(t *testing.T) {
@@ -233,4 +243,123 @@ func candidateSafeStrings(desc tokenauth.Descriptor) []string {
 		out = append(out, candidate.SafeString())
 	}
 	return out
+}
+
+// Fleet asks this question on a timer to report whether the platform backend
+// can act. It must see owner-scoped routes: a repository whose only credential
+// is its owner PAT is authenticated, and the same repository with that PAT
+// absent is not. The gh CLI candidate is excluded by contract, so both
+// directions hold whether or not the developer is signed in to gh.
+func TestRepoConfiguredCredentialAvailableSeesOwnerTokenRoute(t *testing.T) {
+	assert := assert.New(t)
+	cfg, err := Load(writeConfig(t, `
+github_token_env = "MIDDLEMAN_OWNER_ROUTE_TEST_ABSENT_DEFAULT"
+
+[[github_owner_tokens]]
+owner = "acme"
+token_env = "MIDDLEMAN_OWNER_ROUTE_TEST_ACME_PAT"
+
+[[repos]]
+owner = "acme"
+name = "widgets"
+
+[[repos]]
+owner = "other"
+name = "thing"
+`))
+	require.NoError(t, err)
+
+	assert.False(cfg.RepoConfiguredCredentialAvailable(cfg.Repos[0]),
+		"an owner route whose PAT env is unset supplies no credential")
+
+	t.Setenv("MIDDLEMAN_OWNER_ROUTE_TEST_ACME_PAT", "acme-tok")
+
+	assert.True(cfg.RepoConfiguredCredentialAvailable(cfg.Repos[0]),
+		"the owner PAT is the repository's credential")
+	assert.False(cfg.RepoConfiguredCredentialAvailable(cfg.Repos[1]),
+		"an owner PAT must not authenticate a different owner")
+}
+
+// A readable App private key is a usable credential: startup mints
+// installation tokens from it on demand, so a host with only an App
+// installation is authenticated.
+func TestRepoConfiguredCredentialAvailableAcceptsAppPrivateKey(t *testing.T) {
+	assert := assert.New(t)
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "app.pem")
+	require.NoError(t, os.WriteFile(keyPath, []byte("private-key\n"), 0o600))
+	cfg, err := Load(writeConfig(t, `
+github_token_env = "MIDDLEMAN_OWNER_ROUTE_TEST_ABSENT_DEFAULT"
+
+[[github_apps]]
+app_id = 42
+private_key_path = "`+keyPath+`"
+installation_id = 99
+installation_account = "acme"
+repository_selection = "all"
+
+[[repos]]
+owner = "acme"
+name = "widgets"
+`))
+	require.NoError(t, err)
+
+	assert.True(cfg.RepoConfiguredCredentialAvailable(cfg.Repos[0]))
+
+	require.NoError(t, os.WriteFile(keyPath, nil, 0o600))
+
+	assert.False(cfg.RepoConfiguredCredentialAvailable(cfg.Repos[0]),
+		"an empty private key file cannot mint installation tokens")
+}
+
+// The read/write split is expressed entirely by candidate order plus mutation
+// auth, so it is worth pinning end to end on a repository that configures its
+// own PAT while an App covers it: reads must spend the installation's budget,
+// writes must stay on the repository PAT so GitHub attributes them to the user.
+func TestOverriddenRepoReadsUseAppInstallationAndWritesUseRepoPAT(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("REPO_PAT", "repo-pat")
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "app.pem")
+	require.NoError(os.WriteFile(keyPath, []byte("private-key\n"), 0o600))
+	cfg, err := Load(writeConfig(t, `
+github_token_env = "MIDDLEMAN_APP_READ_TEST_ABSENT"
+
+[[github_apps]]
+app_id = 42
+private_key_path = "`+keyPath+`"
+installation_id = 99
+installation_account = "acme"
+repository_selection = "all"
+
+[[repos]]
+owner = "acme"
+name = "widgets"
+token_env = "REPO_PAT"
+`))
+	require.NoError(err)
+
+	var mints int
+	source := tokenauth.NewManagedSource(
+		cfg.ResolveGitHubRepoTokenSource(cfg.Repos[0]),
+		tokenauth.Options{GitHubApp: func(
+			context.Context, tokenauth.Candidate,
+		) (string, time.Time, error) {
+			mints++
+			return "ghs_installation", time.Now().Add(time.Hour), nil
+		}},
+	)
+	ctx := tokenauth.WithGitHubOwner(context.Background(), "acme")
+
+	read, err := source.Token(ctx)
+	require.NoError(err)
+	assert.Equal("ghs_installation", read,
+		"reads prefer the installation token's own rate-limit budget")
+
+	write, err := source.Token(tokenauth.WithMutationAuth(ctx))
+	require.NoError(err)
+	assert.Equal("repo-pat", write,
+		"writes stay on the repository PAT so they are attributed to the user")
+	assert.Equal(1, mints, "mutation auth must not mint an installation token")
 }

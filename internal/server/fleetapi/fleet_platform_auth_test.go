@@ -53,3 +53,50 @@ func TestPlatformAuthResolverEnvTokenIsAuthenticated(t *testing.T) {
 	require.True(platformAuthResolver(func() *config.Config { return cfg })(),
 		"a resolvable env token means the platform backend is authenticated")
 }
+
+// An owner PAT is the only credential in configurations that route every
+// repository by owner. The resolver must consult the repository-aware chain to
+// see it, and the snapshot must carry it across ApplyConfig, or Fleet reports
+// the platform backend as unauthenticated while sync and mutations work.
+//
+// The host is self-hosted so the resolution stays deterministic: the host-level
+// chain has no default env var for a non-github.com GitHub host and `gh auth
+// token` cannot answer for it, so a developer signed in to github.com does not
+// make this pass vacuously.
+func TestPlatformAuthResolverOwnerTokenOnlyIsAuthenticated(t *testing.T) {
+	require := require.New(t)
+	t.Setenv("MIDDLEMAN_PLATFORM_AUTH_TEST_OWNER_TOKEN", "owner-tok")
+	authConfig := config.Config{
+		// Names an env var that is never set, so only the owner
+		// route can supply a credential.
+		GitHubTokenEnv:      "MIDDLEMAN_PLATFORM_AUTH_TEST_ABSENT",
+		DefaultPlatformHost: "github.example.com",
+		Repos: []config.Repo{{
+			Platform: "github", PlatformHost: "github.example.com",
+			Owner: "acme", Name: "widget",
+		}},
+	}
+	handler := &Handler{}
+	handler.ApplyConfig(ConfigSnapshot{
+		PlatformAuthEnabled: true, PlatformAuthConfig: authConfig,
+	})
+
+	require.False(platformAuthResolver(handler.snapshotPlatformAuthConfig)(),
+		"no credential is configured for the self-hosted GitHub host yet")
+
+	authConfig.GitHubOwnerTokens = []config.GitHubOwnerTokenConfig{{
+		Host:     "github.example.com",
+		Owner:    "acme",
+		TokenEnv: "MIDDLEMAN_PLATFORM_AUTH_TEST_OWNER_TOKEN",
+	}}
+	handler.ApplyConfig(ConfigSnapshot{
+		PlatformAuthEnabled: true, PlatformAuthConfig: authConfig,
+	})
+
+	snapshot := handler.snapshotPlatformAuthConfig()
+	require.NotNil(snapshot)
+	require.Len(snapshot.GitHubOwnerTokens, 1,
+		"the auth snapshot must preserve owner token routes")
+	require.True(platformAuthResolver(handler.snapshotPlatformAuthConfig)(),
+		"an owner PAT is a usable platform credential")
+}

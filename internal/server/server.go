@@ -663,6 +663,12 @@ func fleetConfigSnapshot(cfg *config.Config, tmuxCommand []string) fleetapi.Conf
 		DefaultPlatformHost: cfg.DefaultPlatformHost,
 		Repos:               slices.Clone(cfg.Repos),
 		Platforms:           slices.Clone(cfg.Platforms),
+		// Owner PATs and App installations are credential routes in their
+		// own right: without them a repository served only by an owner
+		// token resolves to no credential and Fleet reports the platform
+		// backend as unauthenticated while sync and mutations work.
+		GitHubOwnerTokens: slices.Clone(cfg.GitHubOwnerTokens),
+		GitHubApps:        slices.Clone(cfg.GitHubApps),
 	}
 	sshSocketDir := ""
 	if cfg.DataDir != "" {

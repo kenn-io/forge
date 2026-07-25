@@ -133,6 +133,12 @@ func cloneConfigSnapshot(in ConfigSnapshot) ConfigSnapshot {
 	out.TmuxCommand = slices.Clone(in.TmuxCommand)
 	out.PlatformAuthConfig.Repos = slices.Clone(in.PlatformAuthConfig.Repos)
 	out.PlatformAuthConfig.Platforms = slices.Clone(in.PlatformAuthConfig.Platforms)
+	out.PlatformAuthConfig.GitHubOwnerTokens = slices.Clone(
+		in.PlatformAuthConfig.GitHubOwnerTokens,
+	)
+	out.PlatformAuthConfig.GitHubApps = slices.Clone(
+		in.PlatformAuthConfig.GitHubApps,
+	)
 	return out
 }
 

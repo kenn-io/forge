@@ -39,12 +39,13 @@ func newFleetPlatformAuthMonitor(
 
 // platformAuthResolver reports whether any configured platform host can
 // resolve a usable token, matching the snapshot's notion of platform
-// authentication: a resolvable token (repo-level token_env, [[platforms]]
-// token_env, default env var, else `gh auth token` for GitHub hosts) means
-// the platform backend can act. It walks the same per-repo and per-platform
-// token path provider startup uses, so token_env overrides and self-hosted
-// or non-default hosts are not misreported as unauthenticated. A nil config
-// is never authenticated.
+// authentication: a resolvable credential (repo-level token_env or token_file,
+// a covering GitHub App installation, an owner PAT, [[platforms]] token_env,
+// default env var, else `gh auth token` for GitHub hosts) means the platform
+// backend can act. It walks the same per-repo and per-platform credential path
+// provider startup uses, so token overrides, owner-scoped routes, and
+// self-hosted or non-default hosts are not misreported as unauthenticated. A
+// nil config is never authenticated.
 //
 // snapshot must return a config detached from concurrent reloads
 // (the resolver runs on its own goroutine and token resolution can
@@ -66,6 +67,13 @@ func platformAuthResolver(snapshot func() *config.Config) func() bool {
 			return cfg.TokenForPlatformHost(platform, host, tokenEnv) != ""
 		}
 		for _, repo := range cfg.Repos {
+			// The repository-aware chain first: it is the only one that
+			// sees owner PATs and App installations, so a repository
+			// served solely by an owner token is authenticated even
+			// though no host-level token exists.
+			if cfg.RepoConfiguredCredentialAvailable(repo) {
+				return true
+			}
 			if hasToken(
 				repo.PlatformOrDefault(), repo.PlatformHostOrDefault(),
 				repo.TokenEnv,
@@ -127,5 +135,7 @@ func (s *Handler) snapshotPlatformAuthConfig() *config.Config {
 	snapshot := committed.PlatformAuthConfig
 	snapshot.Repos = slices.Clone(snapshot.Repos)
 	snapshot.Platforms = slices.Clone(snapshot.Platforms)
+	snapshot.GitHubOwnerTokens = slices.Clone(snapshot.GitHubOwnerTokens)
+	snapshot.GitHubApps = slices.Clone(snapshot.GitHubApps)
 	return &snapshot
 }

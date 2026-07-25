@@ -250,6 +250,15 @@ GitHub's live manifest validator can report the missing hook URL as a generic
 `cmd/middleman-github-app/e2e_test.go::TestCreateFlowEndToEnd` asserting the
 serialized manifest shape so the fake cannot accept a payload GitHub rejects.
 
+A covering App installation leads every read chain, including on a repository
+that configures its own `token_env`/`token_file`: installation tokens carry
+their own rate-limit budget, so reads always prefer them and a repository
+override must never displace one. That override is still the first PAT, so it
+signs that repository's writes — mutation resolution skips App candidates
+(`internal/config/config.go::Config.ResolveGitHubRepoTokenSource`,
+`internal/tokenauth/source.go::WithMutationAuth`). Dropping the App candidate
+also costs the owner its only selection-only discovery credential.
+
 GitHub App installation tokens are account-scoped, not host-scoped. An app
 installation for one owner must not authenticate reads for another owner just
 because both repos share the same host. Repo-scoped GitHub reads must resolve app

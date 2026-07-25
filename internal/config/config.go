@@ -2113,6 +2113,35 @@ func (c *Config) ResolveRepoToken(r Repo) string {
 	)
 }
 
+// RepoConfiguredCredentialAvailable reports whether r's repository-aware
+// credential chain resolves to a configured credential right now, in the order
+// provider startup uses: repository override, covering GitHub App installation,
+// owner PAT, platform host token, then the host defaults. A readable App
+// private key counts, since it mints installation tokens on demand.
+//
+// It deliberately ignores the `gh` CLI candidate: that fallback shells out and
+// is host-scoped, so pollers resolve it once per host through
+// TokenForPlatformHost rather than once per repository here.
+func (c *Config) RepoConfiguredCredentialAvailable(r Repo) bool {
+	if c == nil {
+		return false
+	}
+	for _, candidate := range c.ResolveRepoTokenSource(r).Candidates {
+		switch candidate.Kind {
+		case tokenauth.SourceKindEnv:
+			if os.Getenv(candidate.EnvName) != "" {
+				return true
+			}
+		case tokenauth.SourceKindFile, tokenauth.SourceKindGitHubApp:
+			data, err := os.ReadFile(candidate.FilePath)
+			if err == nil && len(bytes.TrimSpace(data)) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (c *Config) ResolveRepoTokenSource(r Repo) tokenauth.Descriptor {
 	if c == nil {
 		return tokenauth.Descriptor{}
@@ -2161,6 +2190,14 @@ func (c *Config) GitHubOwnerTokenFor(
 // ResolveGitHubRepoTokenSource builds the credential route for one GitHub
 // repository. Repository overrides and selected-installation coverage are
 // exact routes; otherwise repositories under one owner share the owner route.
+//
+// A covering App installation always leads the chain, including on a repository
+// that also configures its own PAT. Installation tokens carry their own
+// rate-limit budget, so reads prefer them in every case; a repository PAT is
+// still the credential that serves that repository's writes, because mutation
+// resolution skips App candidates to keep writes attributed to the user
+// (tokenauth.WithMutationAuth). One ordered chain therefore expresses both:
+// App-first for reads, override-first among the PATs for writes.
 func (c *Config) ResolveGitHubRepoTokenSource(r Repo) tokenauth.Descriptor {
 	if c == nil {
 		return tokenauth.Descriptor{}
@@ -2175,8 +2212,7 @@ func (c *Config) ResolveGitHubRepoTokenSource(r Repo) tokenauth.Descriptor {
 		Host:     host,
 		Scope:    githubCredentialScope(r.Owner, r.Name, exact),
 	}}
-	appendTokenFileEnvCandidates(&desc, r.TokenFile, r.TokenEnv)
-	if !overridden && appCoversRepo {
+	if appCoversRepo {
 		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
 			Kind:                tokenauth.SourceKindGitHubApp,
 			Host:                host,
@@ -2186,6 +2222,7 @@ func (c *Config) ResolveGitHubRepoTokenSource(r Repo) tokenauth.Descriptor {
 			InstallationAccount: app.InstallationAccount,
 		})
 	}
+	appendTokenFileEnvCandidates(&desc, r.TokenFile, r.TokenEnv)
 	if ownerToken, ok := c.GitHubOwnerTokenFor(host, r.Owner); ok {
 		appendTokenFileEnvCandidates(
 			&desc, ownerToken.TokenFile, ownerToken.TokenEnv,

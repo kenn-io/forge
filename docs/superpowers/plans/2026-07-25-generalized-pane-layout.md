@@ -31,7 +31,7 @@
 | --- | --- |
 | `packages/ui/src/components/shared/tabbed-panel-layout.ts` (modify) | Pure tree model. Gains layout-state type, parse/serialize, availability pruning, flatten, zoom/collapse helpers. |
 | `packages/ui/src/components/shared/tabbed-panel-layout.test.ts` (create) | Unit tests for all of the above. No test file exists today. |
-| `packages/ui/src/components/shared/TabbedPanelTree.svelte` (modify) | Gains `leafActions` snippet, zoom rendering, collapsed-leaf strip. |
+| `packages/ui/src/components/shared/TabbedPanelTree.svelte` (modify) | Gains `leafActions` snippet, zoom rendering with divider suppression, and threaded effective visibility. |
 | `packages/ui/src/stores/paneLayout.svelte.ts` (create) | Per-surface persisted layout store; owns the six zoom/focus rules. |
 | `packages/ui/src/components/shared/DetailPaneLayout.svelte` (create) | Host: tab spec in, `TabbedPanelTree` out. Owns flatten threshold and the leaf icon cluster. |
 | `packages/ui/src/components/shared/PaneLeafActions.svelte` (create) | The three-icon cluster (split right, split down, maximize/restore). |
@@ -40,371 +40,81 @@
 | `packages/ui/src/views/IssueListView.svelte` (modify) | Same, two tabs. |
 | `packages/ui/src/views/ActivityFeedView.svelte` (modify) | Own the pane tree; stop embedding the two list views for detail. |
 | `frontend/src/lib/stores/workspace-host.svelte.ts` (modify) | Delete `dockModes`; derive mode from the layout store. |
-| `packages/ui/src/components/workspace/WorkspaceDockPanel.svelte` (delete) | Replaced by `DetailPaneLayout` + collapsed leaf. |
+| `packages/ui/src/components/workspace/WorkspaceDockPanel.svelte` (delete) | Replaced by `DetailPaneLayout` plus its reopen strip. |
+| `frontend/src/lib/components/terminal/WorkflowSplitTree.svelte` (modify) | Namespace its drag scope to `workspace:<id>` so detail panes cannot cross into it. |
+| `frontend/tests/e2e-full/{00-inline-workspace-continuity,detail-action-buttons,activity-drawer}.spec.ts` (modify) | Real-backend specs asserting DOM this work deletes. |
 
 ---
 
-### Task 1: Layout state, persistence, and availability pruning
 
-Pure functions only. No Svelte, no DOM.
+### Tasks 1-2: Layout state, persistence, pruning — PARTLY DONE (897f1162b)
 
-**Files:**
-- Modify: `packages/ui/src/components/shared/tabbed-panel-layout.ts`
-- Test: `packages/ui/src/components/shared/tabbed-panel-layout.test.ts` (create)
+Implemented in `packages/ui/src/components/shared/tabbed-panel-layout.ts` with
+`packages/ui/src/components/shared/tabbed-panel-layout.test.ts` (15 cases).
+**The committed code is authoritative; do not re-derive it from this plan.**
 
-**Interfaces:**
-- Consumes: existing `TabbedPanelNode`, `createTabbedPanelLeaf`, `normalizeTabbedPanelTree`, `clampTabbedPanelRatio` from the same file.
-- Produces:
-  - `interface TabbedPanelLayoutState { version: 1; tree: TabbedPanelNode; zoomedLeafID: string | null; collapsedLeafIDs: string[] }`
-  - `defaultTabbedPanelLayout(tabs: readonly string[]): TabbedPanelLayoutState`
-  - `parseTabbedPanelLayout(raw: string | null, knownTabs: readonly string[]): TabbedPanelLayoutState`
-  - `serializeTabbedPanelLayout(state: TabbedPanelLayoutState): string`
-  - `pruneTabbedPanelTreeToAvailable(node: TabbedPanelNode, availableTabs: readonly string[]): TabbedPanelNode | null`
-  - `collectTabbedPanelLeafIDs(node: TabbedPanelNode | null): string[]`
-
-- [ ] **Step 1: Write the failing tests**
-
-Create `packages/ui/src/components/shared/tabbed-panel-layout.test.ts`:
+Final exported surface, as landed and after roborev review:
 
 ```ts
-import { describe, expect, it } from "vite-plus/test";
-import {
-  collectTabbedPanelLeafIDs,
-  createTabbedPanelLeaf,
-  defaultTabbedPanelLayout,
-  parseTabbedPanelLayout,
-  pruneTabbedPanelTreeToAvailable,
-  serializeTabbedPanelLayout,
-  splitTabbedPanelTabIntoLeaf,
-  type TabbedPanelLayoutState,
-} from "./tabbed-panel-layout";
-
-const TABS = ["conversation", "files", "workspace"];
-
-describe("tabbed panel layout persistence", () => {
-  it("defaults to one leaf holding every known tab", () => {
-    const state = defaultTabbedPanelLayout(TABS);
-    expect(state.version).toBe(1);
-    expect(state.tree.type).toBe("leaf");
-    expect(collectTabbedPanelLeafIDs(state.tree)).toHaveLength(1);
-    expect(state.zoomedLeafID).toBeNull();
-    expect(state.collapsedLeafIDs).toEqual([]);
-  });
-
-  it("round-trips a split tree with zoom and collapse", () => {
-    const base = defaultTabbedPanelLayout(TABS);
-    const leafID = collectTabbedPanelLeafIDs(base.tree)[0]!;
-    const tree = splitTabbedPanelTabIntoLeaf(base.tree, "workspace", leafID, "vertical", "after")!;
-    const zoomedLeafID = collectTabbedPanelLeafIDs(tree)[1]!;
-    const state: TabbedPanelLayoutState = { version: 1, tree, zoomedLeafID, collapsedLeafIDs: [] };
-    const parsed = parseTabbedPanelLayout(serializeTabbedPanelLayout(state), TABS);
-    expect(parsed).toEqual(state);
-  });
-
-  it("falls back to the default on malformed, wrong-version, or null input", () => {
-    const fallback = defaultTabbedPanelLayout(TABS);
-    for (const raw of [null, "", "{", "[]", '{"version":2,"tree":null}']) {
-      const parsed = parseTabbedPanelLayout(raw, TABS);
-      expect(parsed.tree.type).toBe("leaf");
-      expect(parsed.collapsedLeafIDs).toEqual(fallback.collapsedLeafIDs);
-    }
-  });
-
-  it("rejects a persisted tree with a duplicate tab key across leaves", () => {
-    const dup = {
-      version: 1,
-      tree: {
-        type: "split",
-        id: "s0",
-        direction: "horizontal",
-        ratio: 0.5,
-        first: { type: "leaf", id: "l1", tabs: ["conversation", "workspace"], activeTabKey: "conversation" },
-        second: { type: "leaf", id: "l2", tabs: ["workspace"], activeTabKey: "workspace" },
-      },
-      zoomedLeafID: null,
-      collapsedLeafIDs: [],
-    };
-    const parsed = parseTabbedPanelLayout(JSON.stringify(dup), TABS);
-    expect(parsed.tree.type).toBe("leaf");
-  });
-
-  it("rejects a persisted tree with duplicate node ids", () => {
-    const dup = {
-      version: 1,
-      tree: {
-        type: "split",
-        id: "dup",
-        direction: "horizontal",
-        ratio: 0.5,
-        first: { type: "leaf", id: "dup", tabs: ["conversation"], activeTabKey: "conversation" },
-        second: { type: "leaf", id: "l2", tabs: ["files"], activeTabKey: "files" },
-      },
-      zoomedLeafID: null,
-      collapsedLeafIDs: [],
-    };
-    expect(parseTabbedPanelLayout(JSON.stringify(dup), TABS).tree.type).toBe("leaf");
-  });
-
-  it("drops a zoom or collapse entry naming a leaf that does not exist", () => {
-    const base = defaultTabbedPanelLayout(TABS);
-    const raw = JSON.stringify({ ...base, zoomedLeafID: "ghost", collapsedLeafIDs: ["ghost"] });
-    const parsed = parseTabbedPanelLayout(raw, TABS);
-    expect(parsed.zoomedLeafID).toBeNull();
-    expect(parsed.collapsedLeafIDs).toEqual([]);
-  });
-});
-
-describe("availability pruning", () => {
-  it("removes unavailable tabs without reinserting them", () => {
-    const base = defaultTabbedPanelLayout(TABS);
-    const leafID = collectTabbedPanelLeafIDs(base.tree)[0]!;
-    const tree = splitTabbedPanelTabIntoLeaf(base.tree, "workspace", leafID, "vertical", "after")!;
-    const pruned = pruneTabbedPanelTreeToAvailable(tree, ["conversation", "files"]);
-    expect(pruned?.type).toBe("leaf");
-    expect(pruned && pruned.type === "leaf" ? pruned.tabs : []).toEqual(["conversation", "files"]);
-  });
-
-  it("preserves the surviving leaf's id so intent edits stay addressable", () => {
-    const base = defaultTabbedPanelLayout(TABS);
-    const leafID = collectTabbedPanelLeafIDs(base.tree)[0]!;
-    const tree = splitTabbedPanelTabIntoLeaf(base.tree, "workspace", leafID, "vertical", "after")!;
-    const pruned = pruneTabbedPanelTreeToAvailable(tree, ["conversation", "files"]);
-    expect(pruned?.id).toBe(leafID);
-  });
-
-  it("returns null when nothing is available", () => {
-    expect(pruneTabbedPanelTreeToAvailable(createTabbedPanelLeaf(["workspace"]), [])).toBeNull();
-  });
-});
-```
-
-- [ ] **Step 2: Run the tests to verify they fail**
-
-Run from `frontend/`: `./node_modules/.bin/vp test --project unit tabbed-panel-layout`
-
-Expected: FAIL — `defaultTabbedPanelLayout`, `parseTabbedPanelLayout`, `serializeTabbedPanelLayout`, `pruneTabbedPanelTreeToAvailable`, `collectTabbedPanelLeafIDs` are not exported.
-
-- [ ] **Step 3: Implement the additions**
-
-Append to `packages/ui/src/components/shared/tabbed-panel-layout.ts`:
-
-```ts
-export interface TabbedPanelLayoutState {
+interface TabbedPanelLayoutState {
   version: 1;
   tree: TabbedPanelNode;
   zoomedLeafID: string | null;
-  collapsedLeafIDs: string[];
+  hiddenTabKeys: string[];        // per-TAB, not per-leaf
+  lastFocusedTabKey: string | null;
 }
-
-export function defaultTabbedPanelLayout(tabs: readonly string[]): TabbedPanelLayoutState {
-  return { version: 1, tree: createTabbedPanelLeaf(tabs), zoomedLeafID: null, collapsedLeafIDs: [] };
-}
-
-export function serializeTabbedPanelLayout(state: TabbedPanelLayoutState): string {
-  return JSON.stringify(state);
-}
-
-export function collectTabbedPanelLeafIDs(node: TabbedPanelNode | null): string[] {
-  if (!node) return [];
-  if (node.type === "leaf") return [node.id];
-  return [...collectTabbedPanelLeafIDs(node.first), ...collectTabbedPanelLeafIDs(node.second)];
-}
-
-function collectTabbedPanelNodeIDs(node: TabbedPanelNode): string[] {
-  if (node.type === "leaf") return [node.id];
-  return [node.id, ...collectTabbedPanelNodeIDs(node.first), ...collectTabbedPanelNodeIDs(node.second)];
-}
-
-// A singleton portal pane (the inline workspace) registers one slot element per
-// rendered tab, and edits are applied by node id. A duplicate tab key would
-// register two slots for one surface; a duplicate node id would make one edit
-// land in several nodes. Reject the persisted tree instead of repairing it.
-function hasUniqueTabbedPanelIdentity(node: TabbedPanelNode): boolean {
-  const tabs = collectTabbedPanelTabKeys(node);
-  const ids = collectTabbedPanelNodeIDs(node);
-  return new Set(tabs).size === tabs.length && new Set(ids).size === ids.length;
-}
-
-export function pruneTabbedPanelTreeToAvailable(
-  node: TabbedPanelNode,
-  availableTabs: readonly string[],
-): TabbedPanelNode | null {
-  return pruneTabbedPanelNode(node, new Set(availableTabs));
-}
-
-export function parseTabbedPanelLayout(
-  raw: string | null,
-  knownTabs: readonly string[],
-): TabbedPanelLayoutState {
-  const fallback = defaultTabbedPanelLayout(knownTabs);
-  if (!raw) return fallback;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return fallback;
-    const record = parsed as Record<string, unknown>;
-    if (record.version !== 1) return fallback;
-    const tree = parseTabbedPanelNode(record.tree);
-    if (!tree || !hasUniqueTabbedPanelIdentity(tree)) return fallback;
-    const normalized = normalizeTabbedPanelTree(tree, knownTabs);
-    const leafIDs = new Set(collectTabbedPanelLeafIDs(normalized));
-    const zoomedLeafID =
-      typeof record.zoomedLeafID === "string" && leafIDs.has(record.zoomedLeafID)
-        ? record.zoomedLeafID
-        : null;
-    const collapsedLeafIDs = Array.isArray(record.collapsedLeafIDs)
-      ? record.collapsedLeafIDs.filter((id): id is string => typeof id === "string" && leafIDs.has(id))
-      : [];
-    return { version: 1, tree: normalized, zoomedLeafID, collapsedLeafIDs };
-  } catch {
-    return fallback;
-  }
-}
-
-function parseTabbedPanelNode(value: unknown): TabbedPanelNode | null {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
-  const node = value as Record<string, unknown>;
-  if (typeof node.id !== "string" || node.id === "") return null;
-  if (node.type === "leaf") {
-    if (!Array.isArray(node.tabs)) return null;
-    const tabs = node.tabs.filter((tab): tab is string => typeof tab === "string" && tab !== "");
-    if (tabs.length === 0) return null;
-    const activeTabKey =
-      typeof node.activeTabKey === "string" && tabs.includes(node.activeTabKey)
-        ? node.activeTabKey
-        : tabs[0]!;
-    return { type: "leaf", id: node.id, tabs, activeTabKey };
-  }
-  if (node.type !== "split") return null;
-  const first = parseTabbedPanelNode(node.first);
-  const second = parseTabbedPanelNode(node.second);
-  if (!first || !second) return null;
-  return {
-    type: "split",
-    id: node.id,
-    direction: node.direction === "vertical" ? "vertical" : "horizontal",
-    ratio: clampTabbedPanelRatio(typeof node.ratio === "number" ? node.ratio : 0.5),
-    first,
-    second,
-  };
-}
+defaultTabbedPanelLayout(knownTabs, tree?): TabbedPanelLayoutState
+parseTabbedPanelLayout(raw, knownTabs, defaultTree?): TabbedPanelLayoutState
+serializeTabbedPanelLayout(state): string
+pruneTabbedPanelTreeToAvailable(node, availableTabs): TabbedPanelNode | null
+collectTabbedPanelLeafIDs(node): string[]
 ```
 
-Note: `parseTabbedPanelLayout` calls `normalizeTabbedPanelTree` with the surface's full known-tab list, so a newly introduced tab appears and a retired one is dropped. It must NOT be given the availability list — availability pruning is a render-time concern and lives in `pruneTabbedPanelTreeToAvailable`.
+Three corrections from review that later tasks must respect:
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- **`hiddenTabKeys` is per-tab.** A leaf-keyed collapse breaks when the workspace
+  shares a leaf with the conversation: hiding it would take the conversation down
+  too. Callers compute the render tree as
+  `pruneTabbedPanelTreeToAvailable(tree, available.filter(t => !hidden.includes(t)))`.
+- **Surfaces pass their own `defaultTree`.** The generic single-leaf default
+  contradicts the intended first-run arrangement, and Activity's `commit` tab must
+  be in its initial tree or it could never appear.
+- **`lastFocusedTabKey` is the single surface-level winner** used both for the
+  flattened leaf's active tab and for which of two visible panes the route
+  follows.
 
-Run from `frontend/`: `./node_modules/.bin/vp test --project unit tabbed-panel-layout`
-Expected: PASS, all cases.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add packages/ui/src/components/shared/tabbed-panel-layout.ts \
-        packages/ui/src/components/shared/tabbed-panel-layout.test.ts
-git commit  # via the kenn:commit skill
-```
+Still owed from Task 2 (not yet written): `FLATTENED_TABBED_PANEL_LEAF_ID` and
+`flattenTabbedPanelTree(node, preferredActiveTabKey?)`, per the spec's Responsive
+fallback section. Write these with tests before Task 5 consumes them.
 
 ---
 
-### Task 2: Flatten fallback
-
-**Files:**
-- Modify: `packages/ui/src/components/shared/tabbed-panel-layout.ts`
-- Test: `packages/ui/src/components/shared/tabbed-panel-layout.test.ts`
-
-**Interfaces:**
-- Produces:
-  - `FLATTENED_TABBED_PANEL_LEAF_ID: string`
-  - `flattenTabbedPanelTree(node: TabbedPanelNode, preferredActiveTabKey?: string): TabbedPanelLeaf`
-
-- [ ] **Step 1: Write the failing tests**
-
-Append to `tabbed-panel-layout.test.ts`:
-
-```ts
-describe("flatten fallback", () => {
-  it("collects every tab in traversal order under one synthetic leaf", () => {
-    const base = defaultTabbedPanelLayout(TABS);
-    const leafID = collectTabbedPanelLeafIDs(base.tree)[0]!;
-    const tree = splitTabbedPanelTabIntoLeaf(base.tree, "workspace", leafID, "vertical", "after")!;
-    const flat = flattenTabbedPanelTree(tree);
-    expect(flat.type).toBe("leaf");
-    expect(flat.id).toBe(FLATTENED_TABBED_PANEL_LEAF_ID);
-    expect(flat.tabs).toEqual(["conversation", "files", "workspace"]);
-  });
-
-  it("honours a preferred active tab so flattening does not jump panes", () => {
-    const base = defaultTabbedPanelLayout(TABS);
-    const leafID = collectTabbedPanelLeafIDs(base.tree)[0]!;
-    const tree = splitTabbedPanelTabIntoLeaf(base.tree, "workspace", leafID, "vertical", "after")!;
-    expect(flattenTabbedPanelTree(tree, "workspace").activeTabKey).toBe("workspace");
-  });
-
-  it("ignores a preferred tab that is absent and uses the first leaf's active tab", () => {
-    const tree = createTabbedPanelLeaf(["conversation", "files"], "files");
-    expect(flattenTabbedPanelTree(tree, "workspace").activeTabKey).toBe("files");
-  });
-});
-```
-
-Add `FLATTENED_TABBED_PANEL_LEAF_ID` and `flattenTabbedPanelTree` to the file's import list at the top of the test.
-
-- [ ] **Step 2: Run to verify failure**
-
-Run from `frontend/`: `./node_modules/.bin/vp test --project unit tabbed-panel-layout`
-Expected: FAIL — not exported.
-
-- [ ] **Step 3: Implement**
-
-```ts
-// Structural edits are disabled while flattened (see the design spec), so a
-// constant synthetic id is safe: no mutation is ever applied by this id.
-export const FLATTENED_TABBED_PANEL_LEAF_ID = "tabbed-panel-flattened";
-
-export function flattenTabbedPanelTree(
-  node: TabbedPanelNode,
-  preferredActiveTabKey?: string,
-): TabbedPanelLeaf {
-  const tabs = collectTabbedPanelTabKeys(node);
-  const firstActive = firstTabbedPanelLeaf(node)?.activeTabKey;
-  const activeTabKey =
-    preferredActiveTabKey !== undefined && tabs.includes(preferredActiveTabKey)
-      ? preferredActiveTabKey
-      : (firstActive ?? tabs[0]!);
-  return { type: "leaf", id: FLATTENED_TABBED_PANEL_LEAF_ID, tabs, activeTabKey };
-}
-```
-
-- [ ] **Step 4: Run to verify pass**
-
-Run from `frontend/`: `./node_modules/.bin/vp test --project unit tabbed-panel-layout`
-Expected: PASS.
-
-- [ ] **Step 5: Commit** (via the `kenn:commit` skill)
-
----
-
-### Task 3: `leafActions` snippet, zoom rendering, collapsed leaf
+### Task 3: `leafActions` snippet, zoom rendering, threaded visibility
 
 **Files:**
 - Modify: `packages/ui/src/components/shared/TabbedPanelTree.svelte`
 - Create: `frontend/src/lib/components/design-system/PaneTreeZoom.browser.svelte.ts`
 
 **Interfaces:**
-- Consumes: Task 1's `TabbedPanelLayoutState` shape (`zoomedLeafID`, `collapsedLeafIDs`) — passed as two props, not the whole state, so the component stays state-store agnostic.
+- Consumes: `zoomedLeafID` from `TabbedPanelLayoutState` — passed as a prop, not the whole state, so the component stays store-agnostic. Hidden tabs never reach this component: the caller already pruned them out of the tree it passes (they are indistinguishable from unavailable tabs here, which is the point).
 - Produces new `TabbedPanelTree` props:
   - `leafActions?: Snippet<[TabbedPanelLeaf]>` — rendered once per leaf, right-aligned in the tab strip, receiving the leaf so callers get its id.
   - `zoomedLeafID?: string | null`
-  - `collapsedLeafIDs?: readonly string[]`
-  - `collapsedLeaf?: Snippet<[TabbedPanelLeaf]>` — the reopen strip for a collapsed leaf.
+  - `ancestorHidden?: boolean` — internal, passed only by the recursive `<Self>` calls, default `false`.
 
 Rendering rules:
 - When `zoomedLeafID` names a leaf in this subtree, that leaf renders at full size and every sibling subtree is wrapped `hidden` + `inert` — mounted, so scroll position and the workspace slot survive.
-- A leaf in `collapsedLeafIDs` renders `collapsedLeaf` instead of its tab strip and bodies, and **does not render its tab panels at all** — the workspace slot must unmount so reopening changes slot identity (see spec, Workspace pane).
+- **Hide the `SplitResizeHandle` on every split along the path to the zoomed leaf**, and pass `disabled` to it. Hiding only the sibling child leaves ancestor dividers visible and draggable over a supposedly full-size pane, silently mutating invisible ratios. Today's dock hides its own handle for the same reason (`WorkspaceDockPanel.svelte:250`).
+- **Thread effective visibility down the recursion via `ancestorHidden`.** `renderPane`'s second argument is `!ancestorHidden && node.activeTabKey === tabKey`. Computing it per leaf reports `true` for a pane hidden by an ancestor's zoom, and the inline workspace's host placement and focus read this value.
+- There is no collapsed-leaf rendering here. A hidden tab is pruned upstream, so its panel is never mounted — which is exactly what makes the workspace slot unmount and reopening register a fresh slot element (see spec, Workspace pane). The reopen strip belongs to `DetailPaneLayout`, below the tree.
 
 - [ ] **Step 1: Write the failing browser spec**
 
-Create `frontend/src/lib/components/design-system/PaneTreeZoom.browser.svelte.ts`. It mounts the existing `DesignSystemPanelHarness` (extend it with the new props) and asserts: a zoomed leaf's sibling has `inert`; the zoomed leaf's panel has non-zero `getBoundingClientRect().width`; a collapsed leaf renders the `collapsedLeaf` snippet and has no `.tabbed-panel-tab-panel` descendant. Match the file's sibling `DesignSystemPanel.browser.svelte.ts` for mount helpers and assertion style — read it first.
+Create `frontend/src/lib/components/design-system/PaneTreeZoom.browser.svelte.ts`. Read the sibling `DesignSystemPanel.browser.svelte.ts` first for mount helpers and assertion style. Assert:
+- a zoomed leaf's sibling subtree has `inert`;
+- the zoomed leaf's panel fills the host (`getBoundingClientRect().width` within a pixel of the host's);
+- **no `.kit-split-resize-handle` is visible** while zoomed (computed `display`, not just absence);
+- `renderPane` receives `false` for a leaf's *active* tab when an ancestor's other branch holds the zoom — the regression that would silently break workspace focus.
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -413,13 +123,12 @@ Expected: FAIL — props not supported.
 
 - [ ] **Step 3: Implement in `TabbedPanelTree.svelte`**
 
-Add the four props with defaults (`leafActions = undefined`, `zoomedLeafID = null`, `collapsedLeafIDs = []`, `collapsedLeaf = undefined`), thread all four through both recursive `<Self>` calls, and:
-- In the leaf branch: if `collapsedLeafIDs.includes(node.id)` and `collapsedLeaf` is provided, render only that snippet inside `.tabbed-panel-leaf`. Otherwise render the strip, then `{#if leafActions}<div class="tabbed-panel-leaf-actions">{@render leafActions(node)}</div>{/if}` after the `{#each}` inside `.tabbed-panel-tabs`, then the body as today.
-- In the split branch: compute `firstHasZoom` / `secondHasZoom` via `collectTabbedPanelLeafIDs`; when one side has the zoom, give that child `flex: 1 1 100%` and wrap the other in a `hidden inert` div.
+Add `leafActions`, `zoomedLeafID`, and `ancestorHidden` with defaults; thread all three through both recursive `<Self>` calls. Then:
+- Leaf branch: render `{#if leafActions}<div class="tabbed-panel-leaf-actions">{@render leafActions(node)}</div>{/if}` after the `{#each}` inside `.tabbed-panel-tabs`. Pass `!ancestorHidden && node.activeTabKey === tabKey` as `renderPane`'s second argument.
+- Split branch: compute `zoomInFirst` / `zoomInSecond` with `collectTabbedPanelLeafIDs`. When either holds the zoom, give that child `flex: 1 1 100%`, pass `ancestorHidden={true}` to the other child while wrapping it `hidden inert`, and skip rendering the `SplitResizeHandle` entirely.
+- Style: `.tabbed-panel-leaf-actions { margin-left: auto; display: inline-flex; align-items: center; padding-right: 4px; }`.
 
-Style additions: `.tabbed-panel-leaf-actions { margin-left: auto; display: inline-flex; align-items: center; padding-right: 4px; }` and reuse the existing `.tabbed-panel-tab-tool` rules by exposing them to the new cluster.
-
-- [ ] **Step 4: Run to verify pass, plus the existing suites**
+- [ ] **Step 4: Run to verify pass, plus both existing consumers**
 
 Run from `frontend/`:
 ```
@@ -427,9 +136,9 @@ Run from `frontend/`:
 ./node_modules/.bin/vp test --project unit TabbedPanelTree
 ./node_modules/.bin/vp test --project browser DesignSystemPanel
 ```
-Expected: all PASS. The last two prove the new optional props did not disturb the two existing consumers.
+Expected: all PASS. The last two prove the new optional props did not disturb `WorkflowSplitTree` or the design-system surface.
 
-- [ ] **Step 5: Commit** (via the `kenn:commit` skill)
+- [ ] **Step 5: Commit** via the `kenn:commit` skill.
 
 ---
 
@@ -449,7 +158,10 @@ Expected: all PASS. The last two prove the new optional props did not disturb th
     readonly dragScope: string;                 // `detail:${surface}`
     renderTree(availableTabs: readonly string[]): TabbedPanelNode | null;
     zoomedLeafID(): string | null;
-    collapsedLeafIDs(): readonly string[];
+    hiddenTabKeys(): readonly string[];
+    lastFocusedTabKey(): string | null;
+    noteFocused(tabKey: string): void;
+    setHidden(tabKey: string, hidden: boolean): void;
     activateTab(tabKey: string): void;
     moveTabBefore(source: string, target: string): void;
     appendTabToLeaf(source: string, leafID: string): void;
@@ -457,7 +169,6 @@ Expected: all PASS. The last two prove the new optional props did not disturb th
     setRatio(splitID: string, ratio: number): void;
     toggleZoom(leafID: string): void;
     clearZoom(): void;
-    setCollapsed(leafID: string, collapsed: boolean): void;
     leafIDForTab(tabKey: string): string | null;
     reset(): void;
   }
@@ -466,7 +177,7 @@ Expected: all PASS. The last two prove the new optional props did not disturb th
 - Persistence key: `middleman-pane-layout-v1:<surface>`, written through try/catch like `WorkspaceDockPanel`'s existing helpers.
 - `toggleZoom` refuses while `getStackDepth() > 0` (import from `../stores/keyboard/modal-stack.svelte.js`).
 
-Tests must cover, one `it` each: per-surface isolation (two surfaces do not share a key); a malformed stored value falling back to default; zoom refused while a modal is open; `clearZoom` on identity change; and `setCollapsed` surviving a round trip. Use `vi.stubGlobal`/`localStorage` per the existing `terminalSettingsPersistence.test.ts` conventions — read that file first.
+Tests must cover, one `it` each: per-surface isolation (two surfaces do not share a key); a malformed stored value falling back to default; zoom refused while a modal is open; `clearZoom` on identity change; `setHidden` surviving a round trip, and hiding a tab that shares a leaf leaving its neighbours visible. Use `vi.stubGlobal`/`localStorage` per the existing `terminalSettingsPersistence.test.ts` conventions — read that file first.
 
 - [ ] **Step 1** Write the failing tests described above.
 - [ ] **Step 2** Run `./node_modules/.bin/vp test --project unit paneLayout` from `frontend/`. Expected FAIL.
@@ -499,15 +210,22 @@ Tests must cover, one `it` each: per-surface isolation (two surfaces do not shar
     surface: PaneSurfaceKey;
     tabs: PaneTabSpec[];
     renderPane: Snippet<[string, boolean]>;   // (tabKey, effectivelyVisible)
-    collapsedLeaf?: Snippet<[TabbedPanelLeaf]> | undefined;
+    reopenStrip?: Snippet<[readonly string[]]> | undefined;   // hidden-but-available tabs
     flattenBelowPx?: number;                  // default 1280
+    defaultTree: TabbedPanelNode;             // surface-specific first-run layout
+    /** Route-bound tab, if the surface has one. Controlled: the host owns the URL. */
+    routeTabKey?: string | undefined;
+    /** A tab was clicked. Surfaces route this through navigate(). */
+    onSelectTab?: ((tabKey: string) => void) | undefined;
+    /** A visible pane took focus. Surfaces route this through replaceUrl(). */
+    onPaneFocus?: ((tabKey: string) => void) | undefined;
   }
   ```
 - `renderPane`'s second argument is **effective visibility**: active in its leaf AND not hidden by a zoom elsewhere AND its leaf not collapsed.
 - Flatten: measure the host with `ResizeObserver` exactly as `PRListView` does today; below `flattenBelowPx`, render `flattenTabbedPanelTree(renderTree, activeTabKey)` and pass **only** `onSelectTab` — no `leafActions`, no mutation callbacks, so every structural interaction is read-only.
 - Icons in `PaneLeafActions.svelte`: `square-split-horizontal` (split right, `direction: "horizontal"`, `placement: "after"`), `square-split-vertical` (split down, `"vertical"`, `"after"`), `maximize`/`minimize` (zoom toggle). Both split buttons `disabled` when `leaf.tabs.length <= 1`. Every button carries `title` and `aria-label`.
 
-- [ ] **Step 1** Write failing jsdom tests: both split buttons disabled on a single-tab leaf; maximize label flips to Restore when the leaf is zoomed; an unavailable tab renders no panel; flattened mode renders no leaf-action cluster.
+- [ ] **Step 1** Write failing jsdom tests: both split buttons disabled on a single-tab leaf; maximize label flips to Restore when the leaf is zoomed; an unavailable tab renders no panel; flattened mode renders no leaf-action cluster; and — pinning the whole point of the icon choice — clicking Split right dispatches `direction: "horizontal"` while Split down dispatches `"vertical"`, both with `placement: "after"`. Without that last assertion the suite passes with the two icons transposed.
 - [ ] **Step 2** Run `./node_modules/.bin/vp test --project unit DetailPaneLayout`. Expected FAIL.
 - [ ] **Step 3** Implement both components; add the four icon paths to `optimizeDeps.include`; export `DetailPaneLayout`, `PaneLeafActions`, `getPaneLayoutStore`, and the `PaneTabSpec` / `PaneSurfaceKey` / `PaneLayoutStore` types from `packages/ui/src/index.ts`. Without the barrel export the frontend cannot import them and the build fails.
 - [ ] **Step 4** Run the same command. Expected PASS.
@@ -576,10 +294,10 @@ Highest-risk task. Read the spec's Zoom and Workspace pane sections and every co
 
 Replace `dockModes` with derivation from the surface's `PaneLayoutStore`:
 - `expanded` — the workspace tab's leaf is `zoomedLeafID`
-- `collapsed` — that leaf is in `collapsedLeafIDs`, or the workspace tab is absent from the render tree
+- `collapsed` — `"workspace"` is in `hiddenTabKeys`, or the workspace tab is absent from the render tree
 - `split` — otherwise
 
-`setDockMode` maps onto `toggleZoom` / `setCollapsed`. `focusTerminal` keeps its total-no-op modal guard and its best-effort-then-pending-flag sequence unchanged.
+`setDockMode` maps onto `toggleZoom` / `setHidden`. `focusTerminal` keeps its total-no-op modal guard and its best-effort-then-pending-flag sequence unchanged.
 
 All six behaviors from the spec's Zoom section need a test. The two that a tree-derived rewrite most easily breaks, and which `workspace-host.test.ts` already covers today, are: a same-identity claim re-assert must not un-zoom (`:543`), and a collapsed dock keeps its claim (`:476`).
 
@@ -620,6 +338,44 @@ Add Split right, Split down, Maximize/Restore, and Reset layout for the active s
 - [ ] **Step 2** Run `./node_modules/.bin/vp test --project browser palette-pr-detail-commands`. Expected FAIL.
 - [ ] **Step 3** Implement.
 - [ ] **Step 4** Full gate, per `CLAUDE.md`'s pre-push rule: `./node_modules/.bin/vp test` (whole suite, both projects) from `frontend/`, then the affected Playwright suite. Then `make lint`.
+- [ ] **Step 5** Commit via the `kenn:commit` skill.
+
+---
+
+### Task 12: Update the real-backend Playwright specs
+
+**Files:**
+- Modify: `frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts`
+- Modify: `frontend/tests/e2e-full/detail-action-buttons.spec.ts`
+- Modify: `frontend/tests/e2e-full/activity-drawer.spec.ts`
+
+These three assert the dock and split-view DOM this work deletes, and they are the only coverage of behavior no component test can reach: workspace creation against a real backend, claim switching as the selection changes, live-terminal continuity across those switches, and collapse/reopen. Updating their selectors is mandatory, not a re-run.
+
+Add, in the same lane because they need real geometry:
+- a ratio drag whose resulting pixel widths survive a page reload;
+- the flatten fallback at a narrow viewport, asserting no split or maximize control is reachable;
+- terminal continuity across a PR-to-issue selection change in Activity, proving the slot element is not remounted.
+
+- [ ] **Step 1** Read all three specs and list every selector they use that this work removes.
+- [ ] **Step 2** Run the three specs unchanged against the new UI to confirm they fail, so their coverage is proven live rather than assumed: `./node_modules/.bin/vp exec playwright test tests/e2e-full/00-inline-workspace-continuity.spec.ts tests/e2e-full/detail-action-buttons.spec.ts tests/e2e-full/activity-drawer.spec.ts`
+- [ ] **Step 3** Update the selectors and add the three cases above.
+- [ ] **Step 4** Re-run the three specs. Expected PASS.
+- [ ] **Step 5** Commit via the `kenn:commit` skill.
+
+---
+
+### Task 13: Namespace the Workspaces drag scope
+
+**Files:**
+- Modify: `frontend/src/lib/components/terminal/WorkflowSplitTree.svelte`
+- Test: extend the existing `TabbedPanelTree` drag coverage
+
+`WorkflowSplitTree` passes the raw `workspaceId` as `dragScope`, and scope comparison is plain string equality, so a workspace whose id equalled a surface key would collide with the detail scopes. Prefix it `workspace:`.
+
+- [ ] **Step 1** Write a failing test asserting a `detail:prs` payload is rejected by a `workspace:<id>` scope and vice versa.
+- [ ] **Step 2** Run `./node_modules/.bin/vp test --project unit tabbed-panel`. Expected FAIL.
+- [ ] **Step 3** Prefix the scope in `WorkflowSplitTree.svelte`.
+- [ ] **Step 4** Run `./node_modules/.bin/vp test --project unit "tabbed-panel"` and `--project unit WorkspaceTerminalView`. Expected PASS.
 - [ ] **Step 5** Commit via the `kenn:commit` skill.
 
 ---

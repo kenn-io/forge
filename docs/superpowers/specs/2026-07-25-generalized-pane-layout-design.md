@@ -109,8 +109,14 @@ tabbed-panel-layout.ts        (extended)
   share is the right place. Do not build a projection layer that reattributes
   resizes to intent-tree descendants. Splits existing only in intent keep stale
   ratios until they next render, which is harmless.
-- `flattenTabbedPanelTree(tree)` → single leaf preserving tab order and the
-  active tab.
+- `flattenTabbedPanelTree(tree, preferredActiveTabKey?)` → single leaf preserving
+  tab order.
+- `lastFocusedTabKey: string | null` in the layout state. "The active tab" is not
+  well defined for a tree — every leaf has its own, and the default tree has a
+  detail tab and the workspace active in *different* leaves. One surface-level
+  winner resolves two otherwise-undefined questions at once: which tab a
+  flattened narrow layout shows, and which of two simultaneously visible panes
+  the route follows. Without it both are ambiguous.
 
 ### Persistence
 
@@ -126,7 +132,10 @@ mechanically rather than by convention. Scope comparison is plain string equalit
 (`tabbed-panel-drag.ts`) and the Workspaces tree passes a raw `workspaceId`, so
 scopes are namespaced — `detail:prs`, `detail:issues`, `detail:activity`,
 `workspace:<id>` — rather than using bare surface keys that a workspace ID could
-in principle collide with.
+in principle collide with. This means `WorkflowSplitTree.svelte` is **not**
+unchanged after all: it currently passes the raw `workspaceId` and must adopt the
+`workspace:` prefix, with a test proving a detail pane cannot be dropped into the
+Workspaces tree.
 
 ### Effective visibility
 
@@ -141,6 +150,20 @@ workspace pane forwards this to `isHostVisible()`; see Workspace pane.
 When `zoomedLeafID` is set and that leaf exists, it renders at full size and
 every other subtree stays mounted but `hidden` + `inert` — the same semantics
 today's expanded dock applies to the detail side.
+
+Two rendering details that are easy to miss and both user-visible:
+
+- Every `SplitResizeHandle` on the path down to the zoomed leaf must be hidden
+  and non-interactive too. Hiding only the sibling *child* leaves ancestor
+  dividers sitting visible and draggable on top of a supposedly full-size pane,
+  where dragging one silently mutates ratios the user cannot see. Today's dock
+  hides its own handle for exactly this reason
+  (`WorkspaceDockPanel.svelte:250`).
+- Effective visibility must be threaded down through the recursion rather than
+  computed per leaf. A leaf's active tab is still invisible when an ancestor's
+  other branch holds the zoom, so a per-leaf computation reports `true` for a
+  pane the user cannot see. This is the value `renderPane` receives, and the
+  inline workspace's host placement and focus depend on it being right.
 
 `WorkspaceDockPanel` carries behaviors that must be ported into
 `paneLayout.svelte.ts`, not rediscovered later:
@@ -175,7 +198,7 @@ active" is both URL state and layout state. Rule:
 - While conversation and files share a leaf, the route and that leaf's
   `activeTabKey` are a two-way binding, as today.
 - Once they are split into separate leaves both are visible; the route follows
-  whichever of the two was most recently focused.
+  whichever of the two `lastFocusedTabKey` names.
 - A deep link activates the pane it names, and un-zooms if that pane is hidden
   by a zoom on another leaf.
 
@@ -201,8 +224,13 @@ across availability changes.
 | Issues | conversation, workspace | workspace requires a claim |
 | Activity | conversation, files, commit diff, workspace | files requires a PR selection; commit diff requires a commit selection; workspace requires a claim |
 
-Default trees reproduce today's arrangement: a leaf holding conversation and
-files, split vertically above a leaf holding workspace.
+**Each surface supplies its own default tree explicitly**, rather than relying on
+a generic "all tabs in one leaf" default. PRs and Issues default to a leaf
+holding conversation (and files, for PRs) split vertically above a leaf holding
+workspace, reproducing today's arrangement. Activity's default leaf must include
+its `commit` tab from the start: the intent tree only ever *retains* tabs, so a
+tab missing from the initial tree could not appear on a first commit selection
+without reintroducing the placement heuristic this design rejects.
 
 Panes are not closable, only rearranged — except the workspace pane, whose close
 action means collapse, supplied through the existing `tabActions` snippet.
@@ -260,16 +288,25 @@ activity alone. Removing the tab from availability instead would contradict
 "workspace requires a claim" and lose the claimed-but-hidden state; moving it to
 another leaf would destroy its persisted placement.
 
-So the layout state carries an explicit `collapsedLeafIDs: string[]` alongside
+So the layout state carries an explicit `hiddenTabKeys: string[]` alongside
 `tree` and `zoomedLeafID`. Mode then derives as:
 
 - `expanded` — the workspace tab's leaf is the zoomed leaf.
-- `collapsed` — that leaf is in `collapsedLeafIDs`, or the workspace tab is
+- `collapsed` — `"workspace"` is in `hiddenTabKeys`, or the workspace tab is
   absent from the render tree.
 - `split` — otherwise.
 
-A collapsed leaf renders as a reopen strip, matching today's
-`workspace-dock-reopenstrip`.
+**Hiding is keyed by tab, not by leaf.** A leaf-keyed collapse breaks as soon as
+the user drags the workspace into the same leaf as the conversation: closing the
+workspace would take the conversation down with it. A hidden tab is pruned from
+the render tree exactly like an unavailable one, so it keeps its place in the
+intent tree and returns where the user left it.
+
+When hiding empties the workspace's leaf, that leaf disappears from the render
+tree, so the reopen affordance cannot live inside it. `DetailPaneLayout` renders
+a slim reopen strip below the tree while any available tab is hidden — matching
+today's `workspace-dock-reopenstrip` — and the detail header's existing
+`focusTerminal()` action plus the palette remain the other ways back.
 
 **A collapsed workspace leaf must unmount its slot element, not merely hide
 it.** Today `{#if dockOpen}` unmounts the dock subtree
@@ -415,7 +452,17 @@ Following the four axes in `CLAUDE.md`:
   `DesignSystemPanel.browser.svelte.ts` rather than adding a third harness. Do
   not duplicate coverage the workspace tree already has.
 - **Playwright:** only where real geometry is required — a ratio drag producing
-  actual pixel widths, and the flatten fallback at a narrow viewport.
+  actual pixel widths that survive a reload, and the flatten fallback at a narrow
+  viewport.
+
+  Separately and non-optionally, three existing real-backend specs assert DOM
+  this design deletes and must be updated, not merely re-run:
+  `frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts`,
+  `detail-action-buttons.spec.ts`, and `activity-drawer.spec.ts`. Between them
+  they cover workspace creation, claim switching as the selection changes,
+  terminal continuity across those switches, and collapse/reopen — the behaviors
+  most at risk from replacing the dock, and the ones no component test can prove
+  because they depend on a live terminal and real backend state.
 
 Existing suites needing updates: `WorkspaceDockPanel.test.ts`,
 `WorkspaceDockPanel.browser.svelte.ts`, `PRListView.test.ts`,
@@ -434,7 +481,9 @@ detail-tab chrome.
    `dockModes`. Highest risk.
 6. Restructure Activity onto direct pane bodies; delete the double embed and
    `renderWorkspaceDock`.
-7. Pane menu and palette commands.
+7. Per-leaf icon controls and palette commands.
+8. Update the real-backend Playwright specs that assert the deleted DOM, and add
+   the two full-stack cases only Playwright can prove.
 
 ## Deferred
 

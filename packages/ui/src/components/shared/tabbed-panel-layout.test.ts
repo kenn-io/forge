@@ -28,19 +28,55 @@ describe("tabbed panel layout persistence", () => {
     expect(state.tree.type).toBe("leaf");
     expect(collectTabbedPanelLeafIDs(state.tree)).toHaveLength(1);
     expect(state.zoomedLeafID).toBeNull();
-    expect(state.collapsedLeafIDs).toEqual([]);
+    expect(state.hiddenTabKeys).toEqual([]);
+    expect(state.lastFocusedTabKey).toBeNull();
   });
 
-  it("round-trips a split tree carrying zoom and collapse", () => {
+  it("accepts a caller-supplied default tree so a surface controls first-run layout", () => {
+    // Surfaces want conversation and files sharing a leaf above the workspace,
+    // not every tab in one strip.
     const { tree } = splitLayout();
-    const leafIDs = collectTabbedPanelLeafIDs(tree);
+    const state = defaultTabbedPanelLayout(TABS, tree);
+    expect(state.tree).toEqual(tree);
+    expect(parseTabbedPanelLayout(null, TABS, tree).tree).toEqual(tree);
+  });
+
+  it("round-trips a split tree carrying zoom, hidden tabs, and last focus", () => {
+    const { tree } = splitLayout();
     const state: TabbedPanelLayoutState = {
       version: 1,
       tree,
-      zoomedLeafID: leafIDs[1]!,
-      collapsedLeafIDs: [leafIDs[0]!],
+      zoomedLeafID: collectTabbedPanelLeafIDs(tree)[1]!,
+      hiddenTabKeys: ["workspace"],
+      lastFocusedTabKey: "files",
     };
     expect(parseTabbedPanelLayout(serializeTabbedPanelLayout(state), TABS)).toEqual(state);
+  });
+
+  it("hides a tab without disturbing others sharing its leaf", () => {
+    // The reason hiding is keyed by tab and not by leaf: closing a workspace
+    // merged into the conversation's leaf must not take the conversation down.
+    const merged = createTabbedPanelLeaf(TABS, "conversation", "leaf-merged");
+    const state: TabbedPanelLayoutState = {
+      version: 1,
+      tree: merged,
+      zoomedLeafID: null,
+      hiddenTabKeys: ["workspace"],
+      lastFocusedTabKey: null,
+    };
+    const parsed = parseTabbedPanelLayout(serializeTabbedPanelLayout(state), TABS);
+    const visible = TABS.filter((tab) => !parsed.hiddenTabKeys.includes(tab));
+    const rendered = pruneTabbedPanelTreeToAvailable(parsed.tree, visible);
+    expect(rendered && rendered.type === "leaf" ? rendered.tabs : []).toEqual(["conversation", "files"]);
+    expect(parsed.tree.type === "leaf" ? parsed.tree.tabs : []).toContain("workspace");
+  });
+
+  it("drops a hidden tab key or last-focus key that is not in the tree", () => {
+    const base = defaultTabbedPanelLayout(TABS);
+    const raw = JSON.stringify({ ...base, hiddenTabKeys: ["ghost"], lastFocusedTabKey: "ghost" });
+    const parsed = parseTabbedPanelLayout(raw, TABS);
+    expect(parsed.hiddenTabKeys).toEqual([]);
+    expect(parsed.lastFocusedTabKey).toBeNull();
   });
 
   it("falls back to the default on null, empty, malformed, or wrong-version input", () => {
@@ -48,7 +84,7 @@ describe("tabbed panel layout persistence", () => {
       const parsed = parseTabbedPanelLayout(raw, TABS);
       expect(parsed.tree.type).toBe("leaf");
       expect(parsed.zoomedLeafID).toBeNull();
-      expect(parsed.collapsedLeafIDs).toEqual([]);
+      expect(parsed.hiddenTabKeys).toEqual([]);
     }
   });
 
@@ -66,7 +102,7 @@ describe("tabbed panel layout persistence", () => {
         second: { type: "leaf", id: "l2", tabs: ["workspace"], activeTabKey: "workspace" },
       },
       zoomedLeafID: null,
-      collapsedLeafIDs: [],
+      hiddenTabKeys: [],
     });
     expect(parseTabbedPanelLayout(raw, TABS).tree.type).toBe("leaf");
   });
@@ -84,17 +120,19 @@ describe("tabbed panel layout persistence", () => {
         second: { type: "leaf", id: "l2", tabs: ["files"], activeTabKey: "files" },
       },
       zoomedLeafID: null,
-      collapsedLeafIDs: [],
+      hiddenTabKeys: [],
     });
     expect(parseTabbedPanelLayout(raw, TABS).tree.type).toBe("leaf");
   });
 
-  it("drops zoom and collapse entries naming a leaf that does not exist", () => {
-    const base = defaultTabbedPanelLayout(TABS);
-    const raw = JSON.stringify({ ...base, zoomedLeafID: "ghost", collapsedLeafIDs: ["ghost"] });
-    const parsed = parseTabbedPanelLayout(raw, TABS);
-    expect(parsed.zoomedLeafID).toBeNull();
-    expect(parsed.collapsedLeafIDs).toEqual([]);
+  it("drops a zoom naming a leaf that does not exist but keeps a valid one", () => {
+    const { tree } = splitLayout();
+    const realLeafID = collectTabbedPanelLeafIDs(tree)[1]!;
+    const base = defaultTabbedPanelLayout(TABS, tree);
+    expect(parseTabbedPanelLayout(JSON.stringify({ ...base, zoomedLeafID: "ghost" }), TABS).zoomedLeafID).toBeNull();
+    expect(parseTabbedPanelLayout(JSON.stringify({ ...base, zoomedLeafID: realLeafID }), TABS).zoomedLeafID).toBe(
+      realLeafID,
+    );
   });
 
   it("adds a newly introduced known tab to a previously persisted layout", () => {

@@ -205,11 +205,35 @@ export interface TabbedPanelLayoutState {
   version: 1;
   tree: TabbedPanelNode;
   zoomedLeafID: string | null;
-  collapsedLeafIDs: string[];
+  /**
+   * Tabs the user explicitly hid, keyed by TAB rather than by leaf.
+   *
+   * Hiding must be per-tab: a user who drags the inline workspace into the same
+   * leaf as the conversation and then closes the workspace expects only the
+   * workspace to go, not the conversation beside it. A collapsed-leaf model
+   * would take the whole strip down with it.
+   *
+   * A hidden tab is pruned from the rendered tree exactly like an unavailable
+   * one, so it keeps its place in the persisted tree and returns where the user
+   * left it.
+   */
+  hiddenTabKeys: string[];
+  /**
+   * The tab the user most recently focused, across every leaf.
+   *
+   * Needed because "the active tab" is not well defined for a whole tree: each
+   * leaf has its own. This single winner resolves two otherwise-ambiguous cases
+   * — which tab a flattened narrow layout shows, and which of two
+   * simultaneously visible panes a route should follow.
+   */
+  lastFocusedTabKey: string | null;
 }
 
-export function defaultTabbedPanelLayout(tabs: readonly string[]): TabbedPanelLayoutState {
-  return { version: 1, tree: createTabbedPanelLeaf(tabs), zoomedLeafID: null, collapsedLeafIDs: [] };
+export function defaultTabbedPanelLayout(
+  knownTabs: readonly string[],
+  tree: TabbedPanelNode = createTabbedPanelLeaf(knownTabs),
+): TabbedPanelLayoutState {
+  return { version: 1, tree, zoomedLeafID: null, hiddenTabKeys: [], lastFocusedTabKey: null };
 }
 
 export function serializeTabbedPanelLayout(state: TabbedPanelLayoutState): string {
@@ -239,8 +263,15 @@ export function pruneTabbedPanelTreeToAvailable(
   return pruneTabbedPanelNode(node, new Set(availableTabs));
 }
 
-export function parseTabbedPanelLayout(raw: string | null, knownTabs: readonly string[]): TabbedPanelLayoutState {
-  const fallback = defaultTabbedPanelLayout(knownTabs);
+export function parseTabbedPanelLayout(
+  raw: string | null,
+  knownTabs: readonly string[],
+  defaultTree?: TabbedPanelNode,
+): TabbedPanelLayoutState {
+  // Surfaces pass their own default tree so a first run reproduces the intended
+  // arrangement — conversation and files sharing a leaf above the workspace —
+  // instead of dumping every tab into one strip.
+  const fallback = defaultTabbedPanelLayout(knownTabs, defaultTree);
   if (!raw) return fallback;
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -256,10 +287,15 @@ export function parseTabbedPanelLayout(raw: string | null, knownTabs: readonly s
     const leafIDs = new Set(collectTabbedPanelLeafIDs(normalized));
     const zoomedLeafID =
       typeof record.zoomedLeafID === "string" && leafIDs.has(record.zoomedLeafID) ? record.zoomedLeafID : null;
-    const collapsedLeafIDs = Array.isArray(record.collapsedLeafIDs)
-      ? record.collapsedLeafIDs.filter((id): id is string => typeof id === "string" && leafIDs.has(id))
+    const presentTabs = new Set(collectTabbedPanelTabKeys(normalized));
+    const hiddenTabKeys = Array.isArray(record.hiddenTabKeys)
+      ? record.hiddenTabKeys.filter((key): key is string => typeof key === "string" && presentTabs.has(key))
       : [];
-    return { version: 1, tree: normalized, zoomedLeafID, collapsedLeafIDs };
+    const lastFocusedTabKey =
+      typeof record.lastFocusedTabKey === "string" && presentTabs.has(record.lastFocusedTabKey)
+        ? record.lastFocusedTabKey
+        : null;
+    return { version: 1, tree: normalized, zoomedLeafID, hiddenTabKeys, lastFocusedTabKey };
   } catch {
     return fallback;
   }

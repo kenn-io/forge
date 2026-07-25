@@ -100,15 +100,15 @@ tabbed-panel-layout.ts        (extended)
   originating from a synthetic or flattened render leaf therefore needs an
   explicit mapping, not a bare ID lookup.
 
-  **Ratio edits need a projection policy.** Applying a rendered ratio straight
-  to the intent tree by split ID is wrong when pruning collapsed a split away.
-  For intent `S0(A, S1(B, C))` with `B` unavailable, the render tree is
-  `S0(A, C)`; dragging that divider to 70/30 writes `S0 = 0.7`, so when `B`
-  returns the user gets `A` at 70% and `B`/`C` sharing 30% — not the `A`/`C`
-  ratio they set. A resize must be attributed to the split that is actually
-  visible, which may be an intent-tree descendant of the split sharing its ID.
-  Splits existing only in intent also keep stale ratios no interaction can
-  correct.
+  **Ratio edits use the trivial projection, deliberately.** A resize writes the
+  rendered split's own ID straight into the intent tree, unchanged. For intent
+  `S0(A, S1(B, C))` with `B` unavailable, the render tree is `S0(A, C)`;
+  dragging to 70/30 writes `S0 = 0.7`, which renders exactly what the user set.
+  When `B` returns, `A` keeps 70% and `B`/`C` share 30%. That is correct rather
+  than a defect: `B` must take its space from somewhere, and its own subtree's
+  share is the right place. Do not build a projection layer that reattributes
+  resizes to intent-tree descendants. Splits existing only in intent keep stale
+  ratios until they next render, which is harmless.
 - `flattenTabbedPanelTree(tree)` → single leaf preserving tab order and the
   active tab.
 
@@ -304,7 +304,12 @@ going through a list view, so it is unaffected either way. An earlier draft
 lumped it in with the `hideSidebar` hosts, which was wrong.
 
 **In flattened mode every structural edit is disabled** — no split or maximize
-controls, no cross-leaf drag, tab switching and reordering only. A flat leaf
+controls, no drag at all, not even reordering within the flat strip: tab
+switching only. Reordering is not exempt, because a flat leaf's neighbours can
+come from different intent leaves, so a local-looking swap moves a tab between
+desktop panes. Mechanically this needs no new prop: `TabbedPanelTree` already
+treats an omitted mutation callback as making that interaction read-only, so the
+flat renderer passes `onSelectTab` and nothing else. A flat leaf
 merges tabs drawn from several intent leaves, so its ID is either synthetic
 (making leaf-targeted operations silently no-op) or borrowed from one intent leaf
 (targeting the wrong one). Reordering two flattened neighbours that live in

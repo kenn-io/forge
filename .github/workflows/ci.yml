@@ -294,58 +294,8 @@ jobs:
           cache: false
           run-install: true
 
-      - name: Prepare frontend unit diagnostics
-        continue-on-error: true
-        run: |
-          set -u
-          diagnostics=tmp/frontend-unit-diagnostics
-          mkdir -p "$diagnostics/node-reports"
-          {
-            node --version
-            bun --version
-            ./node_modules/.bin/vp --version
-          } > "$diagnostics/versions.txt"
-          for metric in memory.current memory.peak memory.max memory.events; do
-            if [[ -r "/sys/fs/cgroup/$metric" ]]; then
-              {
-                echo "== $metric =="
-                sed -n '1,120p' "/sys/fs/cgroup/$metric"
-              } >> "$diagnostics/cgroup-before.txt"
-            fi
-          done
-
       - name: Run frontend unit tests
-        run: |
-          set +e
-          diagnostics="$PWD/tmp/frontend-unit-diagnostics"
-          if ! mkdir -p "$diagnostics/node-reports" || \
-            ! test -w "$diagnostics/node-reports" || \
-            ! touch "$diagnostics/time.txt" "$diagnostics/vitest.log"; then
-            cd frontend
-            exec ../node_modules/.bin/vp test run --project unit
-          fi
-          cd frontend
-          NODE_OPTIONS="--report-on-fatalerror --report-uncaught-exception --report-exclude-env --report-directory=$diagnostics/node-reports" \
-            /usr/bin/time -v -o "$diagnostics/time.txt" \
-              ../node_modules/.bin/vp test run --project unit \
-              2>&1 | tee "$diagnostics/vitest.log"
-          test_status=${PIPESTATUS[0]}
-          exit "$test_status"
-
-      - name: Capture frontend unit cgroup diagnostics
-        if: always()
-        continue-on-error: true
-        run: |
-          set -u
-          diagnostics=tmp/frontend-unit-diagnostics
-          for metric in memory.current memory.peak memory.max memory.events; do
-            if [[ -r "/sys/fs/cgroup/$metric" ]]; then
-              {
-                echo "== $metric =="
-                sed -n '1,120p' "/sys/fs/cgroup/$metric"
-              } >> "$diagnostics/cgroup-after.txt"
-            fi
-          done
+        run: python3 scripts/frontend_unit_ci.py
 
       - name: Upload frontend unit diagnostics
         if: always()

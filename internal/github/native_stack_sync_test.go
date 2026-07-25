@@ -801,3 +801,48 @@ func TestRunOncePublishesConfirmedNativeStackNumbers(t *testing.T) {
 	require.NotNil(results[0].GitHubNativeStacks)
 	assert.Equal([]int{42}, results[0].GitHubNativeStacks.ConfirmedNumbers)
 }
+
+// TestSetPreferGitHubNativeStacksWaitsForStackProjection pins the ordering the
+// disable-time recheck depends on. Rechecking the preference under the
+// projection lock is only sound if a transition cannot land while that lock is
+// held; otherwise an enable can slip in mid-reconciliation and the older
+// disable overwrites the projection it just published.
+func TestSetPreferGitHubNativeStacksWaitsForStackProjection(t *testing.T) {
+	assert := assert.New(t)
+	database := openTestDB(t)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}}, database, nil, nil,
+		time.Minute, nil, nil,
+	)
+	holding := make(chan struct{})
+	release := make(chan struct{})
+	projectionDone := make(chan struct{})
+	go func() {
+		defer close(projectionDone)
+		syncer.RunUnderStackProjection(func() {
+			close(holding)
+			<-release
+		})
+	}()
+	<-holding
+
+	swapped := make(chan bool, 1)
+	go func() { swapped <- syncer.SetPreferGitHubNativeStacks(true) }()
+	select {
+	case <-swapped:
+		assert.Fail("preference swapped while a projection held the lock")
+	case <-time.After(50 * time.Millisecond):
+	}
+	assert.False(syncer.PrefersGitHubNativeStacks(),
+		"the projection must observe a stable preference for its whole run")
+
+	close(release)
+	<-projectionDone
+	select {
+	case previous := <-swapped:
+		assert.False(previous)
+		assert.True(syncer.PrefersGitHubNativeStacks())
+	case <-time.After(5 * time.Second):
+		assert.Fail("preference swap did not proceed after the projection finished")
+	}
+}

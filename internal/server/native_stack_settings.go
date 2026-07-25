@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 
 	"go.kenn.io/middleman/internal/db"
@@ -46,32 +47,10 @@ func (s *Server) reconcileGitHubNativeStackProjection(previous, enabled bool) {
 		if s.syncer.PrefersGitHubNativeStacks() {
 			return
 		}
-		for _, ref := range s.syncer.TrackedRepos() {
-			kind, err := platform.NormalizeKind(string(ref.Platform))
-			if err != nil || kind != platform.KindGitHub {
-				continue
-			}
-			host, ok := platform.HostOrDefault(kind, ref.PlatformHost)
-			if !ok {
-				continue
-			}
-			repo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
-				Platform: string(kind), PlatformHost: host,
-				Owner: ref.Owner, Name: ref.Name,
-			})
-			if err != nil {
+		for _, repoID := range s.nativeStackProjectionRepoIDs(ctx) {
+			if err := stacks.RunDetection(ctx, s.db, repoID); err != nil {
 				slog.Warn("reconcile stacks after disabling github native metadata",
-					"platform", kind, "host", host,
-					"repo", ref.Owner+"/"+ref.Name, "err", err)
-				continue
-			}
-			if repo == nil {
-				continue
-			}
-			if err := stacks.RunDetection(ctx, s.db, repo.ID); err != nil {
-				slog.Warn("reconcile stacks after disabling github native metadata",
-					"platform", kind, "host", host,
-					"repo", ref.Owner+"/"+ref.Name, "err", err)
+					"repo_id", repoID, "err", err)
 				continue
 			}
 			reconciled = true
@@ -80,4 +59,54 @@ func (s *Server) reconcileGitHubNativeStackProjection(previous, enabled bool) {
 	if reconciled {
 		s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
 	}
+}
+
+// nativeStackProjectionRepoIDs returns every repository whose projection the
+// preview could be driving: the tracked GitHub repositories plus any repository
+// still holding cached native stacks. A repository dropped from config keeps
+// serving its stored pull requests and no sync will revisit it, so restricting
+// reconciliation to the tracked set would strand native ordering there.
+func (s *Server) nativeStackProjectionRepoIDs(ctx context.Context) []int64 {
+	seen := make(map[int64]struct{})
+	var repoIDs []int64
+	add := func(repoID int64) {
+		if _, ok := seen[repoID]; ok {
+			return
+		}
+		seen[repoID] = struct{}{}
+		repoIDs = append(repoIDs, repoID)
+	}
+	for _, ref := range s.syncer.TrackedRepos() {
+		kind, err := platform.NormalizeKind(string(ref.Platform))
+		if err != nil || kind != platform.KindGitHub {
+			continue
+		}
+		host, ok := platform.HostOrDefault(kind, ref.PlatformHost)
+		if !ok {
+			continue
+		}
+		repo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+			Platform: string(kind), PlatformHost: host,
+			Owner: ref.Owner, Name: ref.Name,
+		})
+		if err != nil {
+			slog.Warn("reconcile stacks after disabling github native metadata",
+				"platform", kind, "host", host,
+				"repo", ref.Owner+"/"+ref.Name, "err", err)
+			continue
+		}
+		if repo == nil {
+			continue
+		}
+		add(repo.ID)
+	}
+	cached, err := s.db.ListReposWithGitHubNativeStacks(ctx)
+	if err != nil {
+		slog.Warn("list repos with cached github native stacks", "err", err)
+		return repoIDs
+	}
+	for _, repoID := range cached {
+		add(repoID)
+	}
+	return repoIDs
 }

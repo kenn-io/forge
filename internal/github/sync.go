@@ -2659,6 +2659,11 @@ func (s *Syncer) SetActiveMRWindow(d time.Duration) {
 // actually performed: two concurrent config writers reading the preference from
 // their own config snapshots could otherwise both believe they turned it off.
 func (s *Syncer) SetPreferGitHubNativeStacks(enabled bool) bool {
+	// The swap takes the projection lock so a transition cannot land while a
+	// reconciliation or a sync hook is mid-projection. Rechecking the preference
+	// inside that lock is only sound if no swap can interleave with the check.
+	s.stackProjectionMu.Lock()
+	defer s.stackProjectionMu.Unlock()
 	previous := s.preferGitHubNativeStacks.Swap(enabled)
 	if previous != enabled {
 		// Invalidate results captured under the old preference before any

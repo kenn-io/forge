@@ -168,7 +168,10 @@ fallback repository listing.
   reconciliation that follows the unlock is committed-state work: it runs on the
   server-lifecycle context, never the request's, and rechecks the current
   preference under the projection lock so a disable that lost to a later enable
-  cannot replay over it.
+  cannot replay over it. That recheck is only sound because the swap itself
+  takes the projection lock. Reconciliation covers every repository holding
+  cached native stacks, not just tracked ones: a repository dropped from config
+  still serves its stored pull requests and no sync will revisit it.
   (`internal/server/native_stack_settings.go::reconcileGitHubNativeStackProjection`,
   `internal/github/sync.go::SetPreferGitHubNativeStacks`)
 - Preview-only GraphQL fields must be absent from disabled query shapes;
